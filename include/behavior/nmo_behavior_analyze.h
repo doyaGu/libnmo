@@ -68,6 +68,7 @@ typedef struct nmo_behavior_graph {
     size_t edge_count;
     size_t broken_links;
     size_t missing_nodes;
+    size_t cycle_count;
 } nmo_behavior_graph_t;
 
 NMO_API bool nmo_behavior_graph_build(

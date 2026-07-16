@@ -27,6 +27,7 @@
 #include "type/nmo_reflection.h"
 #include "nmo_types.h"
 #include <stddef.h>
+#include <stdint.h>
 #include <stdalign.h>
 #include <string.h>
 
@@ -34,10 +35,10 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
     group,
     nmo_group_state_t,
     do {
-        nmo_status_t result = nmo_array_init(&state->object_ids, sizeof(nmo_object_id_t), 0, NULL);
+        nmo_status_t result = nmo_array_init(&state->object_ids, sizeof(nmo_ref_t), 0, NULL);
         if (result != NMO_OK) return result;
     } while (0),
-    ((void)0))
+    nmo_array_dispose(&state->object_ids))
 
 /* =============================================================================
  * REFLECTION FIELDS
@@ -47,7 +48,7 @@ static const nmo_type_field_t nmo_group_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_group_state_t, base),
                        sizeof(nmo_beobject_state_t), CKPGUID_BEOBJECT,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD_REF_ARRAY(nmo_group_state_t, object_ids)
+    NMO_FIELD_REF_RECORD_ARRAY(nmo_group_state_t, object_ids)
 };
 
 static int nmo_group_is_file_mode_ser(const nmo_chunk_t *chunk, void *context)
@@ -120,25 +121,36 @@ nmo_status_t nmo_group_deserialize(
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Group object count exceeds maximum");
     }
 
-    nmo_array_clear(&out_state->object_ids);
-    if (count == 0) {
-        NMO_RETURN_OK();
+    const nmo_chunk_parser_state_t *parser =
+        (const nmo_chunk_parser_state_t *)chunk->parser_state;
+    if (parser == NULL || parser->current_pos > chunk->data.count ||
+        (size_t)count > chunk->data.count - parser->current_pos) {
+        return NMO_ERR_TRUNCATED_CHUNK;
     }
 
-    result = nmo_array_reserve(&out_state->object_ids, count);
+    nmo_array_t decoded = {0};
+    result = nmo_array_init(&decoded, sizeof(nmo_ref_t), (size_t)count, NULL);
     if (result != NMO_OK) return result;
-
-    nmo_object_id_t *ids = NULL;
-    result = nmo_array_extend(&out_state->object_ids, count, (void **)&ids);
-    if (result != NMO_OK) return result;
-
-    /* Read object IDs */
-    for (int32_t i = 0; i < count; i++) {
-        result = nmo_chunk_read_object_id(chunk, &ids[i]);
-        if (result != NMO_OK) {
-            return result;
+    nmo_ref_t *refs = NULL;
+    result = nmo_array_extend(&decoded, (size_t)count, (void **)&refs);
+    for (int32_t i = 0; result == NMO_OK && i < count; i++) {
+        result = nmo_ref_read(chunk, &refs[i]);
+        if (result == NMO_OK) {
+            nmo_ref_check_class(
+                &refs[i],
+                (const nmo_object_repository_t *)
+                    nmo_deserialize_context_get_repository(context),
+                nmo_deserialize_context_get_type_registry(context),
+                NMO_CID_BEOBJECT);
         }
     }
+    if (result != NMO_OK) {
+        nmo_array_dispose(&decoded);
+        return result;
+    }
+    result = nmo_array_swap(&out_state->object_ids, &decoded);
+    nmo_array_dispose(&decoded);
+    if (result != NMO_OK) return result;
 
     NMO_RETURN_OK();
 }
@@ -191,7 +203,9 @@ nmo_status_t nmo_group_serialize(
     if (!is_file && in_state->object_ids.count == 0) {
         NMO_RETURN_OK();
     }
-    if (in_state->object_ids.count > 0 && !in_state->object_ids.data) {
+    if ((in_state->object_ids.count > 0 && !in_state->object_ids.data) ||
+        in_state->object_ids.element_size != sizeof(nmo_ref_t) ||
+        in_state->object_ids.count > INT32_MAX) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Group object IDs missing");
     }
 
@@ -205,9 +219,9 @@ nmo_status_t nmo_group_serialize(
 
     /* Write object IDs */
     if (in_state->object_ids.count > 0) {
-        const nmo_object_id_t *ids = NMO_ARRAY_DATA(nmo_object_id_t, &in_state->object_ids);
+        const nmo_ref_t *refs = NMO_ARRAY_DATA(nmo_ref_t, &in_state->object_ids);
         for (uint32_t i = 0; i < in_state->object_ids.count; i++) {
-            result = nmo_chunk_write_object_id(out_chunk, ids[i]);
+            result = nmo_ref_write(out_chunk, &refs[i]);
             if (result != NMO_OK) return result;
         }
     }
@@ -224,16 +238,64 @@ static nmo_status_t nmo_group_copy(
     const nmo_group_state_t *s = src;
     nmo_group_state_t *d = dst;
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
-    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->base.script_ids, &d->base.script_ids,
-                                        &s->base.script_ids.allocator));
-    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->base.attribute_parameter_ids,
-                                        &d->base.attribute_parameter_ids,
-                                        &s->base.attribute_parameter_ids.allocator));
-    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->base.attribute_types, &d->base.attribute_types,
-                                        &s->base.attribute_types.allocator));
-    NMO_RETURN_IF_ERROR(nmo_object_clone_chunk_array(arena, &d->base.attribute_chunks,
-                                                     &s->base.attribute_chunks));
+    if (d->base.scripts.data == s->base.scripts.data) {
+        memset(&d->base.scripts, 0, sizeof(d->base.scripts));
+    } else {
+        nmo_array_dispose(&d->base.scripts);
+    }
+    if (s->base.scripts.element_size == 0) {
+        NMO_RETURN_IF_ERROR(nmo_array_init(
+            &d->base.scripts, sizeof(nmo_ref_t), 0, NULL));
+    } else {
+        NMO_RETURN_IF_ERROR(nmo_array_clone(
+            &s->base.scripts, &d->base.scripts,
+            &s->base.scripts.allocator));
+    }
+    NMO_RETURN_IF_ERROR(nmo_beobject_clone_attributes(
+        arena, &d->base.attributes, &s->base.attributes));
+    if (d->object_ids.data == s->object_ids.data) {
+        memset(&d->object_ids, 0, sizeof(d->object_ids));
+    } else {
+        nmo_array_dispose(&d->object_ids);
+    }
     return nmo_array_clone(&s->object_ids, &d->object_ids, &s->object_ids.allocator);
+}
+
+static bool nmo_group_equals(const void *a, const void *b)
+{
+    if (a == b) return true;
+    if (a == NULL || b == NULL) return false;
+    const nmo_group_state_t *lhs = (const nmo_group_state_t *)a;
+    const nmo_group_state_t *rhs = (const nmo_group_state_t *)b;
+    if (!nmo_beobject_vtable.equals(&lhs->base, &rhs->base) ||
+        lhs->object_ids.count != rhs->object_ids.count ||
+        lhs->object_ids.element_size != rhs->object_ids.element_size) {
+        return false;
+    }
+    if (lhs->object_ids.count == 0) return true;
+    if (lhs->object_ids.data == NULL || rhs->object_ids.data == NULL ||
+        lhs->object_ids.element_size != sizeof(nmo_ref_t)) {
+        return false;
+    }
+    return memcmp(lhs->object_ids.data, rhs->object_ids.data,
+                  lhs->object_ids.count * sizeof(nmo_ref_t)) == 0;
+}
+
+static uint32_t nmo_group_hash(const void *instance)
+{
+    if (instance == NULL) return 0;
+    const nmo_group_state_t *state = (const nmo_group_state_t *)instance;
+    uint32_t hash = nmo_beobject_vtable.hash(&state->base);
+    hash ^= (uint32_t)nmo_hash_fnv1a(
+        &state->object_ids.count, sizeof(state->object_ids.count));
+    if (state->object_ids.data != NULL &&
+        state->object_ids.element_size == sizeof(nmo_ref_t) &&
+        state->object_ids.count > 0) {
+        hash ^= (uint32_t)nmo_hash_fnv1a(
+            state->object_ids.data,
+            state->object_ids.count * sizeof(nmo_ref_t));
+    }
+    return hash;
 }
 
 static nmo_status_t nmo_group_validate(
@@ -245,6 +307,9 @@ static nmo_status_t nmo_group_validate(
     (void)context;
     const nmo_group_state_t *s = instance;
     NMO_VALIDATE_COUNT(s->object_ids.data, s->object_ids.count, "object_ids");
+    if (s->object_ids.element_size != sizeof(nmo_ref_t)) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
     NMO_RETURN_OK();
 }
 
@@ -279,55 +344,8 @@ nmo_status_t nmo_group_remap_dependencies(
 
     nmo_group_state_t *group_state = (nmo_group_state_t *)instance;
 
-    /* Nothing to do for empty groups */
-    if (group_state->object_ids.count == 0 || !group_state->object_ids.data) {
-        NMO_RETURN_OK();
-    }
-
-    /* Validate and resolve all member object references
-     * 
-     * Group membership resolution:
-     * - Verify each object_id exists in repository
-     * - Count resolved vs unresolved references for diagnostics
-     * - External references (objects not in this file) are allowed
-     * 
-     * Note: Bidirectional membership (object->groups) is not currently tracked.
-     * This would require extending nmo_object_t with a groups list, which is
-     * deferred to future work. For now, groups->objects direction is sufficient
-     * for most use cases.
-     */
-    uint32_t referenced_count = 0;
-    uint32_t kept_count = 0;
-
-    nmo_object_id_t *ids = NMO_ARRAY_DATA(nmo_object_id_t, &group_state->object_ids);
-    for (uint32_t i = 0; i < group_state->object_ids.count; i++) {
-        nmo_object_id_t obj_id = ids[i];
-        
-        /* Skip null references */
-        if (obj_id == 0) {
-            continue;
-        }
-
-        referenced_count++;
-
-        if (context) {
-            nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
-            nmo_object_t *obj = nmo_object_repository_find_by_id(repo, obj_id);
-            if (obj == NULL) {
-                continue;
-            }
-        }
-
-        ids[kept_count++] = obj_id;
-    }
-
-    group_state->object_ids.count = kept_count;
-
-    if (referenced_count > 0) {
-        nmo_log_debug(NULL, "CKGroup remap_dependencies: %u referenced members", referenced_count);
-    }
-
-    NMO_RETURN_OK();
+    (void)context;
+    return nmo_group_validate(group_state, NULL, NULL);
 }
 
 nmo_status_t nmo_group_prepare_dependencies(
@@ -368,8 +386,6 @@ static void nmo_group_post_delete(
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
-
-NMO_DEFINE_OBJECT_STATE_OPS_CUSTOM(group, nmo_group_state_t)
 
 nmo_type_vtable_t nmo_group_vtable = {
     .prepare_dependencies = nmo_group_prepare_dependencies,

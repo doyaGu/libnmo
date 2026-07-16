@@ -14,6 +14,7 @@
 #include "type/nmo_type_query.h"
 #include "type/nmo_reflection.h"
 #include "object/nmo_object_repository.h"
+#include "object/nmo_ref.h"
 #include "format/nmo_object.h"
 #include "core/nmo_array.h"
 #include "core/nmo_arena.h"
@@ -226,6 +227,7 @@ static size_t import_element_size_for_field(
     const nmo_type_field_t *field,
     const nmo_type_descriptor_t *field_type)
 {
+    if (nmo_field_uses_ref_records(field)) return sizeof(nmo_ref_t);
     if (field && field->name &&
         (strcmp(field->name, "vertex_colors") == 0 ||
          strcmp(field->name, "vertex_specular") == 0)) {
@@ -314,6 +316,24 @@ static nmo_status_t import_array_element_value(
     }
 
     bool dry_run = (flags & NMO_IMPORT_DRY_RUN) != 0;
+    if (nmo_field_uses_ref_records(array_field)) {
+        yyjson_val *value = elem;
+        if (yyjson_is_obj(elem)) {
+            yyjson_val *nested = yyjson_obj_get(elem, "value");
+            if (nested != NULL) value = nested;
+        }
+        nmo_object_id_t id = NMO_OBJECT_ID_NONE;
+        nmo_type_field_t scalar_field = *array_field;
+        scalar_field.offset = 0;
+        scalar_field.size = sizeof(id);
+        scalar_field.flags = NMO_FIELD_REFERENCE;
+        scalar_field.count_field_name = NULL;
+        scalar_field.count_multiplier = 0;
+        NMO_RETURN_IF_ERROR(import_scalar_value(
+            &id, &scalar_field, registry, value, false));
+        *(nmo_ref_t *)dest = nmo_ref_from_id(id);
+        return NMO_OK;
+    }
     if (yyjson_is_obj(elem)) {
         const char *kind = yyjson_get_str(yyjson_obj_get(elem, "kind"));
         if (kind && strcmp(kind, "struct") == 0) {
@@ -495,6 +515,14 @@ static nmo_status_t import_field_value(void *state,
         }
 
         nmo_array_t *arr = (nmo_array_t *)fptr;
+        if (arr_count == 0) {
+            if (!dry_run) {
+                nmo_array_clear(arr);
+            }
+            result->fields_written++;
+            return NMO_OK;
+        }
+
         uint8_t stack_buf[256];
         void *elem_buf = stack_buf;
         if (elem_size > sizeof(stack_buf)) {
@@ -685,6 +713,23 @@ static nmo_status_t import_field_value(void *state,
 
     /* ---- REFERENCE (object ID field) ---- */
     if (field->flags & NMO_FIELD_REFERENCE) {
+        if (field->size == sizeof(nmo_ref_t)) {
+            nmo_object_id_t id = NMO_OBJECT_ID_NONE;
+            nmo_type_field_t id_field = *field;
+            id_field.offset = 0;
+            id_field.size = sizeof(id);
+            nmo_status_t st = import_scalar_value(
+                &id, &id_field, registry, json_val, false);
+            if (st == NMO_OK) {
+                if (!dry_run) {
+                    *(nmo_ref_t *)fptr = nmo_ref_from_id(id);
+                }
+                result->fields_written++;
+            } else {
+                result->fields_skipped++;
+            }
+            return NMO_OK;
+        }
         /* Handled the same as scalar: from_string accepts "#123" or name */
         nmo_status_t st = import_scalar_value(fptr, field, registry, json_val, dry_run);
         if (st == NMO_OK) {

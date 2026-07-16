@@ -49,6 +49,8 @@
 #include <string.h>
 #include <stdalign.h>
 
+#include "load_diagnostics_internal.h"
+
 #include "miniz.h"
 
 #define NMO_PARSER_MAX_HEADER1_SIZE (64u * 1024u * 1024u)
@@ -447,6 +449,29 @@ nmo_load_options_t nmo_load_options_default(void) {
     return opts;
 }
 
+void nmo_load_diagnostics_init(nmo_load_diagnostics_t *diagnostics)
+{
+    if (diagnostics != NULL) {
+        memset(diagnostics, 0, sizeof(*diagnostics));
+    }
+}
+
+void nmo_load_diagnostics_reset(nmo_load_diagnostics_t *diagnostics)
+{
+    if (diagnostics != NULL) {
+        diagnostics->count = 0;
+    }
+}
+
+void nmo_load_diagnostics_destroy(nmo_load_diagnostics_t *diagnostics)
+{
+    if (diagnostics == NULL) {
+        return;
+    }
+    free(diagnostics->issues);
+    memset(diagnostics, 0, sizeof(*diagnostics));
+}
+
 /* ============================================================================
  * Phased deserializer API
  * ============================================================================ */
@@ -479,6 +504,9 @@ nmo_deserializer_t *nmo_deserializer_create(
         ds->options = *options;
     } else {
         ds->options = nmo_load_options_default();
+    }
+    if (ds->options.diagnostics != NULL) {
+        nmo_load_diagnostics_reset(ds->options.diagnostics);
     }
     if (ds->options.collect_perf_stats) {
         ds->perf_stats = (ds->options.perf_stats != NULL)
@@ -972,7 +1000,9 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
     }
 
     {
-        const nmo_allocator_t *obj_allocator = nmo_context_get_allocator(ds->ctx);
+        const nmo_allocator_t *obj_allocator = ds->options.allocator != NULL
+            ? ds->options.allocator
+            : nmo_context_get_allocator(ds->ctx);
         uint64_t object_create_start = load_perf_begin(ds);
         int prep_result = nmo_object_system_prepare_loaded_objects(
             obj_allocator,
@@ -1096,6 +1126,7 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
             cb_id_lookup,
             id_map,
             ds->hdr1.object_count,
+            ds->options.diagnostics,
             &deser_stats);
         load_perf_end(ds, NMO_LOAD_PERF_OBJECT_DESERIALIZE, object_deser_start);
 
@@ -1113,6 +1144,13 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
                 deser_stats.no_schema,
                 deser_stats.skipped_no_chunk + deser_stats.skipped_null + deser_stats.skipped_empty_chunk,
                 deser_stats.errors);
+
+        if ((ds->options.flags & NMO_LOAD_STRICT) != 0 && deser_stats.errors > 0) {
+            nmo_id_mapping_end(id_map);
+            nmo_id_mapping_destroy(id_map);
+            ds->id_mapping = NULL;
+            return NMO_ERR_VALIDATION_FAILED;
+        }
 
         ds->stats.object_count = deser_stats.deserialized;
     }

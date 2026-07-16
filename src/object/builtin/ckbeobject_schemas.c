@@ -29,6 +29,7 @@
 #include "core/nmo_array.h"
 #include "core/nmo_arena.h"
 #include "object/nmo_object_repository.h"
+#include "object/nmo_ref_graph.h"
 #include "type/nmo_reflection.h"
 #include "nmo_types.h"
 #include <stddef.h>
@@ -37,19 +38,144 @@
 #include <stdalign.h>
 #include <string.h>
 
+static void nmo_beobject_attribute_dispose(void *element, void *user_data)
+{
+    (void)user_data;
+    nmo_beobject_attribute_t *attribute =
+        (nmo_beobject_attribute_t *)element;
+    if (attribute != NULL && attribute->chunk != NULL) {
+        nmo_chunk_destroy(attribute->chunk);
+        attribute->chunk = NULL;
+    }
+}
+
+static void nmo_beobject_attribute_array_set_lifecycle(nmo_array_t *attributes)
+{
+    nmo_container_lifecycle_t lifecycle = NMO_CONTAINER_LIFECYCLE_INIT;
+    lifecycle.dispose = nmo_beobject_attribute_dispose;
+    nmo_array_set_lifecycle(attributes, &lifecycle);
+}
+
+nmo_status_t nmo_beobject_script_array_append(
+    nmo_array_t *scripts,
+    nmo_object_id_t script_id)
+{
+    if (scripts == NULL || scripts->element_size != sizeof(nmo_ref_t)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    nmo_ref_t ref = nmo_ref_from_id(script_id);
+    return nmo_array_append(scripts, &ref);
+}
+
+int nmo_beobject_script_array_find(
+    const nmo_array_t *scripts,
+    nmo_object_id_t script_id,
+    size_t *out_index)
+{
+    if (scripts == NULL || scripts->element_size != sizeof(nmo_ref_t) ||
+        scripts->data == NULL) {
+        return 0;
+    }
+    const nmo_ref_t *refs = NMO_ARRAY_DATA(nmo_ref_t, scripts);
+    for (size_t i = 0; i < scripts->count; ++i) {
+        if (nmo_ref_runtime_id(&refs[i]) == script_id) {
+            if (out_index != NULL) *out_index = i;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+nmo_object_id_t nmo_beobject_script_array_get_id(
+    const nmo_array_t *scripts,
+    size_t index)
+{
+    if (scripts == NULL || scripts->element_size != sizeof(nmo_ref_t) ||
+        scripts->data == NULL || index >= scripts->count) {
+        return NMO_OBJECT_ID_NONE;
+    }
+    const nmo_ref_t *refs = NMO_ARRAY_DATA(nmo_ref_t, scripts);
+    return nmo_ref_runtime_id(&refs[index]);
+}
+
+nmo_status_t nmo_beobject_attribute_array_append(
+    nmo_array_t *attributes,
+    nmo_object_id_t parameter_id,
+    uint32_t type_id,
+    nmo_chunk_t *chunk)
+{
+    if (attributes == NULL ||
+        attributes->element_size != sizeof(nmo_beobject_attribute_t)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    nmo_beobject_attribute_t attribute = {
+        .parameter = nmo_ref_from_id(parameter_id),
+        .type_id = type_id,
+        .chunk = chunk,
+    };
+    return nmo_array_append(attributes, &attribute);
+}
+
+nmo_status_t nmo_beobject_clone_attributes(
+    nmo_arena_t *arena,
+    nmo_array_t *destination,
+    const nmo_array_t *source)
+{
+    if (arena == NULL || destination == NULL || source == NULL ||
+        (source->element_size != 0 &&
+         source->element_size != sizeof(nmo_beobject_attribute_t)) ||
+        (source->count > 0 &&
+         source->element_size != sizeof(nmo_beobject_attribute_t)) ||
+        (source->count > 0 && source->data == NULL)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    if (destination->data == source->data) {
+        memset(destination, 0, sizeof(*destination));
+    } else {
+        nmo_container_lifecycle_t no_lifecycle = NMO_CONTAINER_LIFECYCLE_INIT;
+        nmo_array_set_lifecycle(destination, &no_lifecycle);
+        nmo_array_dispose(destination);
+    }
+    NMO_RETURN_IF_ERROR(nmo_array_init(
+        destination,
+        sizeof(nmo_beobject_attribute_t),
+        source->count,
+        &source->allocator));
+    nmo_beobject_attribute_array_set_lifecycle(destination);
+
+    nmo_beobject_attribute_t *dst = NULL;
+    nmo_status_t result = nmo_array_extend(
+        destination, source->count, (void **)&dst);
+    if (result != NMO_OK) {
+        nmo_array_dispose(destination);
+        return result;
+    }
+    const nmo_beobject_attribute_t *src = NMO_ARRAY_DATA(
+        nmo_beobject_attribute_t, source);
+    for (size_t i = 0; i < source->count; ++i) {
+        dst[i].parameter = src[i].parameter;
+        dst[i].type_id = src[i].type_id;
+        if (src[i].chunk != NULL) {
+            dst[i].chunk = nmo_chunk_clone(src[i].chunk, arena);
+            if (dst[i].chunk == NULL) {
+                nmo_array_dispose(destination);
+                return NMO_ERR_NOMEM;
+            }
+        }
+    }
+    return NMO_OK;
+}
+
 NMO_DEFINE_OBJECT_LIFECYCLE(
     beobject,
     nmo_beobject_state_t,
     do {
-        nmo_status_t result = nmo_array_init(&state->script_ids, sizeof(nmo_object_id_t), 0, NULL);
+        nmo_status_t result = nmo_array_init(&state->scripts, sizeof(nmo_ref_t), 0, NULL);
         if (result != NMO_OK) return result;
-        result = nmo_array_init(&state->attribute_parameter_ids, sizeof(nmo_object_id_t), 0, NULL);
+        result = nmo_array_init(&state->attributes, sizeof(nmo_beobject_attribute_t), 0, NULL);
         if (result != NMO_OK) return result;
-        result = nmo_array_init(&state->attribute_types, sizeof(uint32_t), 0, NULL);
-        if (result != NMO_OK) return result;
-        result = nmo_array_init(&state->attribute_chunks, sizeof(nmo_chunk_t *), 0, NULL);
-        if (result != NMO_OK) return result;
-        nmo_object_array_set_chunk_lifecycle(&state->attribute_chunks);
+        nmo_beobject_attribute_array_set_lifecycle(&state->attributes);
         state->legacy_attr_count = 0;
         state->legacy_attr_old_version = 0;
         state->legacy_attr_cids = NULL;
@@ -70,13 +196,11 @@ static const nmo_type_field_t nmo_beobject_fields[] = {
                     sizeof(nmo_sceneobject_state_t), CKPGUID_SCENEOBJECT,
                     NMO_FIELD_REQUIRED, 0),
     /* Scripts */
-    NMO_FIELD_REF_ARRAY(nmo_beobject_state_t, script_ids),
+    NMO_FIELD_ARRAY(nmo_beobject_state_t, scripts, CKPGUID_NONE),
     /* Priority */
     NMO_FIELD(nmo_beobject_state_t, priority, CKPGUID_INT),
     /* Attributes */
-    NMO_FIELD_REF_ARRAY(nmo_beobject_state_t, attribute_parameter_ids),
-    NMO_FIELD_ARRAY(nmo_beobject_state_t, attribute_types, CKPGUID_UINT32),
-    NMO_FIELD_ARRAY(nmo_beobject_state_t, attribute_chunks, CKPGUID_STATECHUNK),
+    NMO_FIELD_ARRAY(nmo_beobject_state_t, attributes, CKPGUID_NONE),
     /* Legacy attributes */
     NMO_FIELD(nmo_beobject_state_t, legacy_attr_count, CKPGUID_UINT32),
     NMO_FIELD(nmo_beobject_state_t, legacy_attr_old_version, CKPGUID_BOOL),
@@ -118,7 +242,7 @@ static size_t nmo_beobject_identifier_remaining_dwords(nmo_chunk_t *chunk)
 
 static nmo_status_t nmo_beobject_read_object_sequence(
     nmo_chunk_t *chunk,
-    nmo_array_t *out_ids)
+    nmo_array_t *out_refs)
 {
     size_t count = 0;
     nmo_status_t result = nmo_chunk_read_object_sequence_start(chunk, &count);
@@ -126,31 +250,63 @@ static nmo_status_t nmo_beobject_read_object_sequence(
         return result;
     }
 
-    if (count == 0) {
-        nmo_array_clear(out_ids);
-        NMO_RETURN_OK();
-    }
-
     if (count > UINT32_MAX) {
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Invalid object sequence count");
     }
 
-    nmo_array_clear(out_ids);
-    result = nmo_array_reserve(out_ids, count);
+    nmo_array_t decoded;
+    result = nmo_array_init(
+        &decoded, sizeof(nmo_ref_t), count, &out_refs->allocator);
     if (result != NMO_OK) return result;
 
-    nmo_object_id_t *ids = NULL;
-    result = nmo_array_extend(out_ids, count, (void **)&ids);
-    if (result != NMO_OK) return result;
+    nmo_ref_t *refs = NULL;
+    result = nmo_array_extend(&decoded, count, (void **)&refs);
+    if (result != NMO_OK) {
+        nmo_array_dispose(&decoded);
+        return result;
+    }
 
     for (uint32_t i = 0; i < (uint32_t)count; ++i) {
-        result = nmo_chunk_read_object_sequence_item(chunk, &ids[i]);
+        result = nmo_ref_read(chunk, &refs[i]);
         if (result != NMO_OK) {
+            nmo_array_dispose(&decoded);
             return result;
         }
     }
 
+    NMO_RETURN_IF_ERROR(nmo_array_swap(out_refs, &decoded));
+    nmo_array_dispose(&decoded);
     NMO_RETURN_OK();
+}
+
+static void nmo_beobject_check_ref_classes(
+    nmo_beobject_state_t *state,
+    void *context)
+{
+    const nmo_deserialize_context_t *deser =
+        nmo_deserialize_context_get(context);
+    if (deser == NULL) return;
+    const nmo_object_repository_t *repo =
+        (const nmo_object_repository_t *)deser->repository;
+
+    if (state->scripts.data != NULL &&
+        state->scripts.element_size == sizeof(nmo_ref_t)) {
+        nmo_ref_t *scripts = NMO_ARRAY_DATA(nmo_ref_t, &state->scripts);
+        for (size_t i = 0; i < state->scripts.count; ++i) {
+            nmo_ref_check_class(
+                &scripts[i], repo, deser->type_registry, NMO_CID_BEHAVIOR);
+        }
+    }
+    if (state->attributes.data != NULL &&
+        state->attributes.element_size == sizeof(nmo_beobject_attribute_t)) {
+        nmo_beobject_attribute_t *attributes = NMO_ARRAY_DATA(
+            nmo_beobject_attribute_t, &state->attributes);
+        for (size_t i = 0; i < state->attributes.count; ++i) {
+            nmo_ref_check_class(
+                &attributes[i].parameter, repo, deser->type_registry,
+                NMO_CID_PARAMETER);
+        }
+    }
 }
 
 /* =============================================================================
@@ -198,14 +354,14 @@ nmo_status_t nmo_beobject_deserialize(
     if (is_file && data_version < 5) {
         result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAVIORS);
         if (result == NMO_OK) {
-            result = nmo_beobject_read_object_sequence(chunk, &out_state->script_ids);
+            result = nmo_beobject_read_object_sequence(chunk, &out_state->scripts);
             if (result != NMO_OK) return result;
         }
     }
 
     result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SCRIPTS);
     if (result == NMO_OK) {
-        result = nmo_beobject_read_object_sequence(chunk, &out_state->script_ids);
+        result = nmo_beobject_read_object_sequence(chunk, &out_state->scripts);
         if (result != NMO_OK) return result;
     }
 
@@ -214,33 +370,29 @@ nmo_status_t nmo_beobject_deserialize(
     if (result == NMO_OK) {
         if (!is_file) {
             int32_t ignored = 0;
-            (void)nmo_chunk_read_int(chunk, &ignored);
-            goto load_attributes;
-        }
-
-        uint32_t version_flag = 0;
-        result = nmo_chunk_read_dword(chunk, &version_flag);
-        if (result != NMO_OK) {
-            goto load_attributes;
-        }
-
-        if (data_version < 5) {
-            int32_t ignored = 0;
-            (void)nmo_chunk_read_int(chunk, &ignored);
-            (void)nmo_chunk_read_int(chunk, &ignored);
-            (void)nmo_chunk_read_int(chunk, &ignored);
-            (void)nmo_chunk_read_int(chunk, &out_state->priority);
-        } else if (version_flag & CK_DATAS_VERSION_FLAG) {
-            (void)nmo_chunk_read_int(chunk, &out_state->priority);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &ignored));
         } else {
-            if (data_version >= 5 && nmo_beobject_identifier_remaining_dwords(chunk) > 0) {
-                NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "CKBeObject: DATAS section missing version flag but contains data");
+            uint32_t version_flag = 0;
+            result = nmo_chunk_read_dword(chunk, &version_flag);
+            if (result != NMO_OK) return result;
+
+            if (data_version < 5) {
+                int32_t ignored = 0;
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &ignored));
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &ignored));
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &ignored));
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &out_state->priority));
+            } else if (version_flag & CK_DATAS_VERSION_FLAG) {
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &out_state->priority));
+            } else {
+                if (data_version >= 5 && nmo_beobject_identifier_remaining_dwords(chunk) > 0) {
+                    NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "CKBeObject: DATAS section missing version flag but contains data");
+                }
+                out_state->priority = 0;
             }
-            out_state->priority = 0;
         }
     }
 
-load_attributes:
     /* Load attributes - optional section */
     result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_NEWATTRIBUTES);
     if (result == NMO_OK) {
@@ -252,100 +404,81 @@ load_attributes:
             return result;
         }
 
-        nmo_array_clear(&out_state->attribute_parameter_ids);
-        nmo_array_clear(&out_state->attribute_types);
-        nmo_array_clear(&out_state->attribute_chunks);
+        if (attr_count > 100000u) {
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                             "CKBeObject: attribute count exceeds limit");
+        }
 
-        if (attr_count > 0) {
-            /* Allocate arrays for attributes */
-            result = nmo_array_reserve(&out_state->attribute_parameter_ids, attr_count);
-            if (result != NMO_OK) return result;
-            result = nmo_array_reserve(&out_state->attribute_types, attr_count);
-            if (result != NMO_OK) return result;
+        nmo_array_t decoded;
+        result = nmo_array_init(
+            &decoded,
+            sizeof(nmo_beobject_attribute_t),
+            attr_count,
+            &out_state->attributes.allocator);
+        if (result != NMO_OK) return result;
+        nmo_beobject_attribute_array_set_lifecycle(&decoded);
 
-            nmo_object_id_t *attr_ids = NULL;
-            uint32_t *attr_types = NULL;
-            result = nmo_array_extend(&out_state->attribute_parameter_ids, attr_count,
-                                      (void **)&attr_ids);
-            if (result != NMO_OK) return result;
-            result = nmo_array_extend(&out_state->attribute_types, attr_count,
-                                      (void **)&attr_types);
-            if (result != NMO_OK) return result;
-            memset(attr_types, 0, attr_count * sizeof(uint32_t));
+        nmo_beobject_attribute_t *attributes = NULL;
+        result = nmo_array_extend(&decoded, attr_count, (void **)&attributes);
+        if (result != NMO_OK) {
+            nmo_array_dispose(&decoded);
+            return result;
+        }
 
-            /* Read attribute parameter object IDs
-             * Reference: CKBeObject.cpp lines 542-544 */
-            for (size_t i = 0; i < attr_count; i++) {
-                result = nmo_chunk_read_object_sequence_item(chunk, &attr_ids[i]);
-                if (result != NMO_OK) {
-                    return result;
-                }
-            }
-
-            if (!is_file) {
-                size_t sub_count = 0;
-                result = nmo_chunk_start_read_sub_chunk_sequence(chunk, &sub_count);
-                if (result != NMO_OK) {
-                    return result;
-                }
-                if (sub_count != attr_count) {
-                    NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
-                                     "CKBeObject: attribute sub-chunk sequence count mismatch");
-                }
-
-                nmo_array_clear(&out_state->attribute_chunks);
-                result = nmo_array_reserve(&out_state->attribute_chunks, attr_count);
-                if (result != NMO_OK) return result;
-
-                nmo_chunk_t **chunks = NULL;
-                result = nmo_array_extend(&out_state->attribute_chunks, attr_count, (void **)&chunks);
-                if (result != NMO_OK) return result;
-
-                for (size_t i = 0; i < attr_count; ++i) {
-                    result = nmo_chunk_read_sub_chunk(chunk, &chunks[i]);
-                    if (result != NMO_OK) {
-                        return result;
-                    }
-                }
-            }
-
-            /* Read manager sequence for attribute types
-             * Reference: CKBeObject.cpp lines 555-577 */
-            nmo_guid_t manager_guid;
-            size_t seq_count = 0;
-            result = nmo_chunk_start_manager_read_sequence(chunk, &manager_guid, &seq_count);
+        for (size_t i = 0; i < attr_count; ++i) {
+            result = nmo_ref_read(chunk, &attributes[i].parameter);
             if (result != NMO_OK) {
+                nmo_array_dispose(&decoded);
                 return result;
             }
-            if (seq_count != attr_count) {
-                NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
-                                 "CKBeObject: attribute manager sequence count mismatch");
-            }
-            /* Verify it's the attribute manager GUID */
-            if (!nmo_guid_equals(manager_guid, NMO_MANAGER_GUID_ATTRIBUTE)) {
-                NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
-                                 "CKBeObject: attribute manager GUID mismatch");
-            }
+        }
 
-            /* Read attribute types from manager sequence */
-            for (size_t i = 0; i < attr_count; i++) {
-                result = nmo_chunk_read_dword(chunk, &attr_types[i]);
+        if (attr_count > 0 && !is_file) {
+            size_t sub_count = 0;
+            result = nmo_chunk_start_read_sub_chunk_sequence(chunk, &sub_count);
+            if (result != NMO_OK || sub_count != attr_count) {
+                nmo_array_dispose(&decoded);
+                return result != NMO_OK ? result : NMO_ERR_VALIDATION_FAILED;
+            }
+            for (size_t i = 0; i < attr_count; ++i) {
+                result = nmo_chunk_read_sub_chunk(chunk, &attributes[i].chunk);
                 if (result != NMO_OK) {
+                    nmo_array_dispose(&decoded);
                     return result;
                 }
             }
-            out_state->attribute_parameter_ids.count = attr_count;
-            out_state->attribute_types.count = attr_count;
         }
+
+        if (attr_count > 0) {
+            nmo_guid_t manager_guid;
+            size_t seq_count = 0;
+            result = nmo_chunk_start_manager_read_sequence(
+                chunk, &manager_guid, &seq_count);
+            if (result != NMO_OK || seq_count != attr_count ||
+                !nmo_guid_equals(manager_guid, NMO_MANAGER_GUID_ATTRIBUTE)) {
+                nmo_array_dispose(&decoded);
+                return result != NMO_OK ? result : NMO_ERR_VALIDATION_FAILED;
+            }
+            for (size_t i = 0; i < attr_count; ++i) {
+                result = nmo_chunk_read_dword(chunk, &attributes[i].type_id);
+                if (result != NMO_OK) {
+                    nmo_array_dispose(&decoded);
+                    return result;
+                }
+            }
+        }
+
+        NMO_RETURN_IF_ERROR(nmo_array_swap(&out_state->attributes, &decoded));
+        nmo_array_dispose(&decoded);
     } else if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_ATTRIBUTES) == NMO_OK) {
         /* Legacy attributes: two-pass parsing per reference (CKBeObject.cpp:582-647) */
         uint8_t old_version = 0;
         int32_t count_check = 0;
-        (void)nmo_chunk_read_int(chunk, &count_check);
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &count_check));
         if (count_check > 0) {
             int32_t a = 0, b = 0;
-            (void)nmo_chunk_read_int(chunk, &a);
-            (void)nmo_chunk_read_int(chunk, &b);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &a));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &b));
             if (a < 0 || a >= 0x36 || b <= 0 || b > 0x41) {
                 old_version = 1;
             }
@@ -354,53 +487,56 @@ load_attributes:
         /* Second pass: re-seek and parse each attribute */
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_ATTRIBUTES) == NMO_OK) {
             int32_t attr_count = 0;
-            (void)nmo_chunk_read_int(chunk, &attr_count);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &attr_count));
             if (attr_count > 0 && attr_count < 100000) {  /* Sanity check */
-                /* Allocate all arrays from arena */
-                out_state->legacy_attr_cids = (int32_t *)nmo_arena_alloc(
+                int32_t *legacy_attr_cids = (int32_t *)nmo_arena_alloc(
                     arena, (size_t)attr_count * sizeof(int32_t), alignof(int32_t));
-                out_state->legacy_attr_names = (char **)nmo_arena_alloc(
+                char **legacy_attr_names = (char **)nmo_arena_alloc(
                     arena, (size_t)attr_count * sizeof(char *), alignof(char *));
-                out_state->legacy_attr_categories = (char **)nmo_arena_alloc(
+                char **legacy_attr_categories = (char **)nmo_arena_alloc(
                     arena, (size_t)attr_count * sizeof(char *), alignof(char *));
-                out_state->legacy_attr_param_guids = (nmo_guid_t *)nmo_arena_alloc(
+                nmo_guid_t *legacy_attr_param_guids = (nmo_guid_t *)nmo_arena_alloc(
                     arena, (size_t)attr_count * sizeof(nmo_guid_t), alignof(nmo_guid_t));
-                out_state->legacy_attr_param_ids = (nmo_object_id_t *)nmo_arena_alloc(
+                nmo_object_id_t *legacy_attr_param_ids = (nmo_object_id_t *)nmo_arena_alloc(
                     arena, (size_t)attr_count * sizeof(nmo_object_id_t), alignof(nmo_object_id_t));
 
-                if (out_state->legacy_attr_cids && out_state->legacy_attr_names &&
-                    out_state->legacy_attr_categories && out_state->legacy_attr_param_guids &&
-                    out_state->legacy_attr_param_ids) {
+                if (legacy_attr_cids == NULL || legacy_attr_names == NULL ||
+                    legacy_attr_categories == NULL || legacy_attr_param_guids == NULL ||
+                    legacy_attr_param_ids == NULL) {
+                    NMO_RETURN_ERROR(
+                        NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                        "CKBeObject: failed to allocate legacy attributes");
+                }
 
-                    /* Parse each attribute */
-                    for (int32_t i = 0; i < attr_count; ++i) {
-                        /* Read compatibleCid if new version */
-                        if (!old_version) {
-                            (void)nmo_chunk_read_int(chunk, &out_state->legacy_attr_cids[i]);
-                        } else {
-                            out_state->legacy_attr_cids[i] = 0;
-                        }
-
-                        /* Read name (chunk's arena manages the string) */
-                        char *name = NULL;
-                        (void)nmo_chunk_read_string(chunk, &name);
-                        out_state->legacy_attr_names[i] = name;
-
-                        /* Read category (chunk's arena manages the string) */
-                        char *category = NULL;
-                        (void)nmo_chunk_read_string(chunk, &category);
-                        out_state->legacy_attr_categories[i] = category;
-
-                        /* Read parameter GUID */
-                        (void)nmo_chunk_read_guid(chunk, &out_state->legacy_attr_param_guids[i]);
-
-                        /* Read parameter object ID */
-                        (void)nmo_chunk_read_object_id(chunk, &out_state->legacy_attr_param_ids[i]);
+                for (int32_t i = 0; i < attr_count; ++i) {
+                    if (!old_version) {
+                        result = nmo_chunk_read_int(chunk, &legacy_attr_cids[i]);
+                        if (result != NMO_OK) return result;
+                    } else {
+                        legacy_attr_cids[i] = 0;
                     }
 
-                    out_state->legacy_attr_count = (uint32_t)attr_count;
-                    out_state->legacy_attr_old_version = old_version;
+                    result = nmo_chunk_read_string_checked(
+                        chunk, &legacy_attr_names[i], NULL);
+                    if (result != NMO_OK) return result;
+                    result = nmo_chunk_read_string_checked(
+                        chunk, &legacy_attr_categories[i], NULL);
+                    if (result != NMO_OK) return result;
+                    result = nmo_chunk_read_guid(
+                        chunk, &legacy_attr_param_guids[i]);
+                    if (result != NMO_OK) return result;
+                    result = nmo_chunk_read_object_id(
+                        chunk, &legacy_attr_param_ids[i]);
+                    if (result != NMO_OK) return result;
                 }
+
+                out_state->legacy_attr_cids = legacy_attr_cids;
+                out_state->legacy_attr_names = legacy_attr_names;
+                out_state->legacy_attr_categories = legacy_attr_categories;
+                out_state->legacy_attr_param_guids = legacy_attr_param_guids;
+                out_state->legacy_attr_param_ids = legacy_attr_param_ids;
+                out_state->legacy_attr_count = (uint32_t)attr_count;
+                out_state->legacy_attr_old_version = old_version;
             }
         }
     }
@@ -408,9 +544,10 @@ load_attributes:
 
     if (is_file && nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SINGLEACTIVITY) == NMO_OK) {
         out_state->has_single_activity = 1;
-        (void)nmo_chunk_read_dword(chunk, &out_state->single_activity_flags);
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->single_activity_flags));
     }
 
+    nmo_beobject_check_ref_classes(out_state, context);
     /* Deserialization completed - all sections are optional */
     NMO_RETURN_OK();
 }
@@ -455,16 +592,16 @@ nmo_status_t nmo_beobject_serialize(
     }
 
     /* Write scripts if present (file mode only) */
-    if (is_file && in_state->script_ids.count > 0 && in_state->script_ids.data) {
+    if (is_file && in_state->scripts.count > 0 && in_state->scripts.data) {
         nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_SCRIPTS);
         if (result != NMO_OK) return result;
 
         /* Write script object sequence */
-        result = nmo_chunk_write_object_sequence_start(out_chunk, (uint32_t)in_state->script_ids.count);
+        result = nmo_chunk_write_object_sequence_start(out_chunk, (uint32_t)in_state->scripts.count);
         if (result != NMO_OK) return result;
-        const nmo_object_id_t *script_ids = NMO_ARRAY_DATA(nmo_object_id_t, &in_state->script_ids);
-        for (uint32_t i = 0; i < in_state->script_ids.count; i++) {
-            result = nmo_chunk_write_object_sequence_item(out_chunk, script_ids[i]);
+        const nmo_ref_t *scripts = NMO_ARRAY_DATA(nmo_ref_t, &in_state->scripts);
+        for (uint32_t i = 0; i < in_state->scripts.count; i++) {
+            result = nmo_ref_write_sequence_item(out_chunk, &scripts[i]);
             if (result != NMO_OK) return result;
         }
     }
@@ -484,7 +621,7 @@ nmo_status_t nmo_beobject_serialize(
     }
 
     /* Write legacy attributes if no modern attributes were decoded */
-    if (in_state->legacy_attr_count > 0 && in_state->attribute_parameter_ids.count == 0) {
+    if (in_state->legacy_attr_count > 0 && in_state->attributes.count == 0) {
         nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_ATTRIBUTES);
         if (result != NMO_OK) return result;
 
@@ -521,45 +658,40 @@ nmo_status_t nmo_beobject_serialize(
     }
 
     /* Write attributes if present */
-    if (in_state->attribute_parameter_ids.count > 0) {
-        if (!in_state->attribute_parameter_ids.data || !in_state->attribute_types.data) {
+    if (in_state->attributes.count > 0) {
+        if (!in_state->attributes.data ||
+            in_state->attributes.element_size != sizeof(nmo_beobject_attribute_t)) {
             NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                             "CKBeObject: attribute arrays missing");
-        }
-        if (in_state->attribute_types.count != in_state->attribute_parameter_ids.count) {
-            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                             "CKBeObject: attribute type count mismatch");
+                             "CKBeObject: invalid attribute array");
         }
 
         nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_NEWATTRIBUTES);
         if (result != NMO_OK) return result;
 
-        uint32_t attr_count = (uint32_t)in_state->attribute_parameter_ids.count;
+        if (in_state->attributes.count > UINT32_MAX) {
+            return NMO_ERR_VALIDATION_FAILED;
+        }
+        uint32_t attr_count = (uint32_t)in_state->attributes.count;
+        const nmo_beobject_attribute_t *attributes = NMO_ARRAY_DATA(
+            nmo_beobject_attribute_t, &in_state->attributes);
 
         /* Start object ID sequence */
         result = nmo_chunk_write_object_sequence_start(out_chunk, attr_count);
         if (result != NMO_OK) return result;
 
         /* Write attribute parameter object IDs */
-        const nmo_object_id_t *attr_ids = NMO_ARRAY_DATA(nmo_object_id_t,
-                                                         &in_state->attribute_parameter_ids);
         for (uint32_t i = 0; i < attr_count; i++) {
-            result = nmo_chunk_write_object_sequence_item(out_chunk,
-                                                          attr_ids[i]);
+            result = nmo_ref_write_sequence_item(
+                out_chunk, &attributes[i].parameter);
             if (result != NMO_OK) return result;
         }
 
         if (!is_file) {
             result = nmo_chunk_start_sub_chunk_sequence(out_chunk, attr_count);
             if (result != NMO_OK) return result;
-            const nmo_chunk_t *const *attr_chunks = NMO_ARRAY_DATA(const nmo_chunk_t *,
-                                                                    &in_state->attribute_chunks);
             for (uint32_t i = 0; i < attr_count; i++) {
-                nmo_chunk_t *sub = NULL;
-                if (attr_chunks && i < in_state->attribute_chunks.count) {
-                    sub = (nmo_chunk_t *)attr_chunks[i];
-                }
-                result = nmo_chunk_write_sub_chunk_sequence(out_chunk, sub);
+                result = nmo_chunk_write_sub_chunk_sequence(
+                    out_chunk, attributes[i].chunk);
                 if (result != NMO_OK) return result;
             }
         }
@@ -570,9 +702,8 @@ nmo_status_t nmo_beobject_serialize(
         if (result != NMO_OK) return result;
 
         /* Write attribute types */
-        const uint32_t *attr_types = NMO_ARRAY_DATA(uint32_t, &in_state->attribute_types);
         for (uint32_t i = 0; i < attr_count; i++) {
-            result = nmo_chunk_write_dword(out_chunk, attr_types[i]);
+            result = nmo_chunk_write_dword(out_chunk, attributes[i].type_id);
             if (result != NMO_OK) return result;
         }
     }
@@ -597,13 +728,15 @@ static nmo_status_t nmo_beobject_copy(
     const nmo_beobject_state_t *s = src;
     nmo_beobject_state_t *d = dst;
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
-    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->script_ids, &d->script_ids, &s->script_ids.allocator));
-    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->attribute_parameter_ids, &d->attribute_parameter_ids,
-                                        &s->attribute_parameter_ids.allocator));
-    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->attribute_types, &d->attribute_types,
-                                        &s->attribute_types.allocator));
-    NMO_RETURN_IF_ERROR(nmo_object_clone_chunk_array(arena, &d->attribute_chunks,
-                                                     &s->attribute_chunks));
+    if (d->scripts.data == s->scripts.data) {
+        memset(&d->scripts, 0, sizeof(d->scripts));
+    } else {
+        nmo_array_dispose(&d->scripts);
+    }
+    NMO_RETURN_IF_ERROR(nmo_array_clone(
+        &s->scripts, &d->scripts, &s->scripts.allocator));
+    NMO_RETURN_IF_ERROR(nmo_beobject_clone_attributes(
+        arena, &d->attributes, &s->attributes));
 
     /* Deep copy legacy attributes */
     d->legacy_attr_count = s->legacy_attr_count;
@@ -676,11 +809,16 @@ static nmo_status_t nmo_beobject_validate(
     (void)type;
     (void)context;
     const nmo_beobject_state_t *s = instance;
-    NMO_VALIDATE_COUNT(s->script_ids.data, s->script_ids.count, "script_ids");
-    NMO_VALIDATE_COUNT(s->attribute_parameter_ids.data, s->attribute_parameter_ids.count,
-                       "attribute_parameter_ids");
-    NMO_VALIDATE_COUNT(s->attribute_types.data, s->attribute_types.count, "attribute_types");
-    NMO_VALIDATE_COUNT(s->attribute_chunks.data, s->attribute_chunks.count, "attribute_chunks");
+    NMO_VALIDATE_COUNT(s->scripts.data, s->scripts.count, "scripts");
+    if (s->scripts.element_size != 0 &&
+        s->scripts.element_size != sizeof(nmo_ref_t)) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    NMO_VALIDATE_COUNT(s->attributes.data, s->attributes.count, "attributes");
+    if (s->attributes.element_size != 0 &&
+        s->attributes.element_size != sizeof(nmo_beobject_attribute_t)) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
 
     /* Validate legacy attributes structure */
     if (s->legacy_attr_count > 0) {
@@ -720,120 +858,28 @@ nmo_status_t nmo_beobject_remap_dependencies(
     }
 
     nmo_beobject_state_t *state = (nmo_beobject_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
 
     NMO_RETURN_IF_ERROR(nmo_sceneobject_remap_dependencies(&state->base, NULL, context));
 
-    if (state->script_ids.count > 0 && state->script_ids.data == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "BeObject script_ids missing");
-    }
-
-    if (state->script_ids.count > 0) {
-        nmo_object_id_t *ids = NMO_ARRAY_DATA(nmo_object_id_t, &state->script_ids);
-        uint32_t kept = 0;
-        for (uint32_t i = 0; i < state->script_ids.count; ++i) {
-            nmo_object_id_t id = ids[i];
-            if (id == 0) {
-                continue;
-            }
-            if (repo && nmo_object_repository_find_by_id(repo, id) == NULL) {
-                continue;
-            }
-            bool seen = false;
-            for (uint32_t j = 0; j < kept; ++j) {
-                if (ids[j] == id) {
-                    seen = true;
-                    break;
-                }
-            }
-            if (seen) {
-                continue;
-            }
-            ids[kept++] = id;
-        }
-        state->script_ids.count = kept;
-    }
-
-    if (state->attribute_parameter_ids.count > 0 && state->attribute_parameter_ids.data == NULL) {
+    if ((state->scripts.count > 0 && state->scripts.data == NULL) ||
+        (state->scripts.element_size != 0 &&
+         state->scripts.element_size != sizeof(nmo_ref_t)) ||
+        (state->scripts.count > 0 &&
+         state->scripts.element_size != sizeof(nmo_ref_t))) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "BeObject attribute_parameter_ids missing");
-    }
-    if (state->attribute_types.count > 0 && state->attribute_types.data == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "BeObject attribute_types missing");
-    }
-    if (state->attribute_chunks.count > 0 && state->attribute_chunks.data == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "BeObject attribute_chunks missing");
+                         "BeObject scripts invalid");
     }
 
-    uint32_t attr_count = (uint32_t)state->attribute_parameter_ids.count;
-    if (state->attribute_types.count < attr_count) {
-        attr_count = (uint32_t)state->attribute_types.count;
+    if ((state->attributes.element_size != 0 &&
+         state->attributes.element_size != sizeof(nmo_beobject_attribute_t)) ||
+        (state->attributes.count > 0 &&
+         state->attributes.element_size != sizeof(nmo_beobject_attribute_t)) ||
+        (state->attributes.count > 0 && state->attributes.data == NULL)) {
+        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                         "BeObject attributes are invalid");
     }
 
-    if (attr_count == 0) {
-        state->attribute_parameter_ids.count = 0;
-        state->attribute_types.count = 0;
-        state->attribute_chunks.count = 0;
-    } else {
-        if (state->attribute_types.count != attr_count) {
-            state->attribute_types.count = attr_count;
-        }
-        if (state->attribute_parameter_ids.count != attr_count) {
-            state->attribute_parameter_ids.count = attr_count;
-        }
-        if (state->attribute_chunks.count > attr_count) {
-            state->attribute_chunks.count = attr_count;
-        }
-
-        nmo_object_id_t *attr_ids = NMO_ARRAY_DATA(nmo_object_id_t, &state->attribute_parameter_ids);
-        uint32_t *attr_types = NMO_ARRAY_DATA(uint32_t, &state->attribute_types);
-        nmo_chunk_t **attr_chunks = NULL;
-        if (state->attribute_chunks.count > 0 && state->attribute_chunks.data) {
-            attr_chunks = NMO_ARRAY_DATA(nmo_chunk_t *, &state->attribute_chunks);
-        }
-
-        uint32_t kept = 0;
-        for (uint32_t i = 0; i < attr_count; ++i) {
-            nmo_object_id_t id = attr_ids[i];
-            if (id == 0) {
-                continue;
-            }
-            if (repo && nmo_object_repository_find_by_id(repo, id) == NULL) {
-                continue;
-            }
-            attr_ids[kept] = id;
-            attr_types[kept] = attr_types[i];
-            if (attr_chunks && i < state->attribute_chunks.count) {
-                attr_chunks[kept] = attr_chunks[i];
-            }
-            kept++;
-        }
-
-        state->attribute_parameter_ids.count = kept;
-        state->attribute_types.count = kept;
-        if (state->attribute_chunks.count > kept) {
-            state->attribute_chunks.count = kept;
-        }
-    }
-
-    if (state->attribute_parameter_ids.count > 0) {
-        /* Clear legacy attributes if modern attributes exist */
-        state->legacy_attr_count = 0;
-        state->legacy_attr_old_version = 0;
-        state->legacy_attr_cids = NULL;
-        state->legacy_attr_names = NULL;
-        state->legacy_attr_categories = NULL;
-        state->legacy_attr_param_guids = NULL;
-        state->legacy_attr_param_ids = NULL;
-    }
-
-    if (!state->has_single_activity) {
-        state->single_activity_flags = 0;
-    } else {
-        state->has_single_activity = 1;
-    }
+    /* Preserve invalid references and legacy/modern section presence. */
 
     return nmo_beobject_validate(state, NULL, NULL);
 }
@@ -849,6 +895,9 @@ static nmo_status_t nmo_beobject_pre_delete(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "Invalid arguments to nmo_beobject_pre_delete");
     }
+    nmo_beobject_state_t *state = (nmo_beobject_state_t *)instance;
+    nmo_array_clear(&state->scripts);
+    nmo_array_clear(&state->attributes);
     NMO_RETURN_OK();
 }
 
@@ -862,18 +911,182 @@ static void nmo_beobject_post_delete(
     (void)context;
 }
 
+static nmo_status_t nmo_beobject_enumerate_refs(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    nmo_type_ref_visitor_fn visitor,
+    void *user_data)
+{
+    (void)type;
+    const nmo_beobject_state_t *state =
+        (const nmo_beobject_state_t *)instance;
+    if (state == NULL || visitor == NULL) return NMO_OK;
+    if ((state->scripts.count > 0 && state->scripts.data == NULL) ||
+        (state->scripts.element_size != 0 &&
+         state->scripts.element_size != sizeof(nmo_ref_t)) ||
+        (state->scripts.count > 0 &&
+         state->scripts.element_size != sizeof(nmo_ref_t)) ||
+        (state->attributes.count > 0 && state->attributes.data == NULL) ||
+        (state->attributes.element_size != 0 &&
+         state->attributes.element_size != sizeof(nmo_beobject_attribute_t)) ||
+        (state->attributes.count > 0 &&
+         state->attributes.element_size != sizeof(nmo_beobject_attribute_t))) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+
+    const nmo_ref_t *scripts = NMO_ARRAY_DATA(nmo_ref_t, &state->scripts);
+    for (size_t i = 0; i < state->scripts.count; ++i) {
+        const nmo_object_id_t id = nmo_ref_runtime_id(&scripts[i]);
+        if (id != NMO_OBJECT_ID_NONE &&
+            !visitor(user_data, id, NMO_REF_KIND_SCRIPT,
+                     "scripts", (uint32_t)i)) {
+            return NMO_OK;
+        }
+    }
+
+    const nmo_beobject_attribute_t *attributes = NMO_ARRAY_DATA(
+        nmo_beobject_attribute_t, &state->attributes);
+    for (size_t i = 0; i < state->attributes.count; ++i) {
+        const nmo_object_id_t id = nmo_ref_runtime_id(
+            &attributes[i].parameter);
+        if (id != NMO_OBJECT_ID_NONE &&
+            !visitor(user_data, id, NMO_REF_KIND_PARAMETER,
+                     "attributes", (uint32_t)i)) {
+            return NMO_OK;
+        }
+    }
+    return NMO_OK;
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_STATE_OPS_CUSTOM(beobject, nmo_beobject_state_t)
+static nmo_status_t nmo_beobject_canonical_bytes(
+    const nmo_beobject_state_t *state,
+    nmo_arena_t **out_arena,
+    void **out_data,
+    size_t *out_size)
+{
+    if (state == NULL || out_arena == NULL || out_data == NULL ||
+        out_size == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    *out_arena = NULL;
+    *out_data = NULL;
+    *out_size = 0;
+
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    if (arena == NULL) return NMO_ERR_NOMEM;
+    nmo_chunk_t *file_chunk = nmo_chunk_create(arena);
+    nmo_chunk_t *runtime_chunk = nmo_chunk_create(arena);
+    if (file_chunk == NULL || runtime_chunk == NULL) {
+        nmo_arena_destroy(arena);
+        return NMO_ERR_NOMEM;
+    }
+    file_chunk->class_id = NMO_CID_BEOBJECT;
+    file_chunk->data_version = 7;
+    file_chunk->chunk_options = NMO_CHUNK_OPTION_FILE;
+    runtime_chunk->class_id = NMO_CID_BEOBJECT;
+    runtime_chunk->data_version = 7;
+
+    nmo_status_t result = nmo_beobject_serialize(
+        state, file_chunk, NULL, NULL);
+    if (result == NMO_OK) {
+        nmo_chunk_close(file_chunk);
+        nmo_serialize_context_t runtime_context = nmo_serialize_context_create(
+            arena, NULL, 0, CK_STATESAVE_BEOBJECTONLY);
+        result = nmo_beobject_serialize(
+            state, runtime_chunk, NULL, &runtime_context);
+    }
+
+    void *file_data = NULL;
+    void *runtime_data = NULL;
+    size_t file_size = 0;
+    size_t runtime_size = 0;
+    if (result == NMO_OK) {
+        nmo_chunk_close(runtime_chunk);
+        result = nmo_chunk_serialize_version1(
+            file_chunk, &file_data, &file_size, arena);
+    }
+    if (result == NMO_OK) {
+        result = nmo_chunk_serialize_version1(
+            runtime_chunk, &runtime_data, &runtime_size, arena);
+    }
+    if (result == NMO_OK) {
+        if (file_size > SIZE_MAX - runtime_size - 2u * sizeof(size_t)) {
+            result = NMO_ERR_NOMEM;
+        } else {
+            *out_size = 2u * sizeof(size_t) + file_size + runtime_size;
+            uint8_t *combined = (uint8_t *)nmo_arena_alloc(
+                arena, *out_size, alignof(size_t));
+            if (combined == NULL) {
+                result = NMO_ERR_NOMEM;
+            } else {
+                memcpy(combined, &file_size, sizeof(file_size));
+                memcpy(combined + sizeof(file_size),
+                       &runtime_size, sizeof(runtime_size));
+                memcpy(combined + 2u * sizeof(size_t), file_data, file_size);
+                memcpy(combined + 2u * sizeof(size_t) + file_size,
+                       runtime_data, runtime_size);
+                *out_data = combined;
+            }
+        }
+    }
+    if (result != NMO_OK) {
+        nmo_arena_destroy(arena);
+        return result;
+    }
+    *out_arena = arena;
+    return NMO_OK;
+}
+
+static bool nmo_beobject_equals(const void *a, const void *b)
+{
+    if (a == b) return true;
+    if (a == NULL || b == NULL) return false;
+    nmo_arena_t *arena_a = NULL;
+    nmo_arena_t *arena_b = NULL;
+    void *data_a = NULL;
+    void *data_b = NULL;
+    size_t size_a = 0;
+    size_t size_b = 0;
+    const nmo_status_t result_a = nmo_beobject_canonical_bytes(
+        (const nmo_beobject_state_t *)a,
+        &arena_a, &data_a, &size_a);
+    const nmo_status_t result_b = nmo_beobject_canonical_bytes(
+        (const nmo_beobject_state_t *)b,
+        &arena_b, &data_b, &size_b);
+    const bool equal = result_a == NMO_OK && result_b == NMO_OK &&
+        size_a == size_b &&
+        (size_a == 0 || memcmp(data_a, data_b, size_a) == 0);
+    nmo_arena_destroy(arena_a);
+    nmo_arena_destroy(arena_b);
+    return equal;
+}
+
+static uint32_t nmo_beobject_hash(const void *instance)
+{
+    if (instance == NULL) return 0;
+    nmo_arena_t *arena = NULL;
+    void *data = NULL;
+    size_t size = 0;
+    if (nmo_beobject_canonical_bytes(
+            (const nmo_beobject_state_t *)instance,
+            &arena, &data, &size) != NMO_OK) {
+        return 0;
+    }
+    const uint32_t hash = (uint32_t)nmo_hash_fnv1a(data, size);
+    nmo_arena_destroy(arena);
+    return hash;
+}
 
 nmo_type_vtable_t nmo_beobject_vtable = {
     .prepare_dependencies = nmo_beobject_prepare_dependencies,
     .remap_dependencies = nmo_beobject_remap_dependencies,
     .pre_delete = nmo_beobject_pre_delete,
     .post_delete = nmo_beobject_post_delete,
-    NMO_OBJECT_VTABLE(
+    NMO_OBJECT_VTABLE_EX(
         nmo_beobject_create,
         nmo_beobject_destroy,
         nmo_beobject_serialize,
@@ -881,7 +1094,8 @@ nmo_type_vtable_t nmo_beobject_vtable = {
         nmo_beobject_copy,
         nmo_beobject_validate,
         nmo_beobject_equals,
-        nmo_beobject_hash)
+        nmo_beobject_hash,
+        nmo_beobject_enumerate_refs)
 };
 
 NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(

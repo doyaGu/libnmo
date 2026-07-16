@@ -4,6 +4,7 @@
  */
 
 #include "session/nmo_deserializer.h"
+#include "load_diagnostics_internal.h"
 
 #include "object/nmo_object_repository.h"
 #include "format/nmo_id_remap.h"
@@ -33,6 +34,8 @@
 
 #include <string.h>
 #include <stdalign.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 typedef struct object_system_ref_capture_ctx {
     nmo_reference_resolver_t *resolver;
@@ -52,6 +55,85 @@ static const char *object_system_name_or_default(const nmo_object_t *obj) {
     return (obj != NULL && obj->name != NULL && obj->name[0] != '\0')
         ? obj->name
         : "(null)";
+}
+
+static uint32_t object_system_current_section_id(const nmo_chunk_t *chunk)
+{
+    if (chunk == NULL || chunk->parser_state == NULL || chunk->data.data == NULL) {
+        return 0u;
+    }
+    const nmo_chunk_parser_state_t *parser =
+        (const nmo_chunk_parser_state_t *)chunk->parser_state;
+    if (parser->prev_identifier_pos >= chunk->data.count) {
+        return 0u;
+    }
+    const uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    return data[parser->prev_identifier_pos];
+}
+
+nmo_status_t nmo_load_diagnostics_append(
+    nmo_load_diagnostics_t *diagnostics,
+    const nmo_object_t *object,
+    const nmo_type_descriptor_t *schema_type,
+    const nmo_chunk_t *chunk,
+    uint32_t section_id,
+    nmo_status_t status,
+    const char *message)
+{
+    if (diagnostics == NULL) {
+        return NMO_OK;
+    }
+
+    if (diagnostics->count == diagnostics->capacity) {
+        size_t capacity = diagnostics->capacity == 0 ? 16u : diagnostics->capacity * 2u;
+        if (capacity < diagnostics->capacity ||
+            capacity > SIZE_MAX / sizeof(*diagnostics->issues)) {
+            return NMO_ERR_NOMEM;
+        }
+        nmo_load_issue_t *issues = (nmo_load_issue_t *)realloc(
+            diagnostics->issues, capacity * sizeof(*issues));
+        if (issues == NULL) {
+            return NMO_ERR_NOMEM;
+        }
+        diagnostics->issues = issues;
+        diagnostics->capacity = capacity;
+    }
+
+    nmo_load_issue_t *issue = &diagnostics->issues[diagnostics->count++];
+    memset(issue, 0, sizeof(*issue));
+    issue->status = status;
+    if (object != NULL) {
+        issue->object_id = object->id;
+        issue->file_id = object->file_id;
+        issue->class_id = object->class_id;
+    }
+    issue->section_id = section_id != 0u
+        ? section_id : object_system_current_section_id(chunk);
+    issue->dword_offset = chunk != NULL ? nmo_chunk_get_position(chunk) : 0u;
+    if (schema_type != NULL && schema_type->name != NULL) {
+        snprintf(issue->schema_name, sizeof(issue->schema_name), "%s", schema_type->name);
+    }
+    if (message != NULL) {
+        snprintf(issue->message, sizeof(issue->message), "%s", message);
+    }
+    return NMO_OK;
+}
+
+static nmo_status_t object_system_report_load_issue(
+    nmo_load_diagnostics_t *diagnostics,
+    const nmo_object_t *object,
+    const nmo_type_descriptor_t *schema_type,
+    const nmo_chunk_t *chunk,
+    nmo_status_t status,
+    const char *fallback)
+{
+    char message[NMO_LOAD_ISSUE_MESSAGE_MAX];
+    nmo_last_error_message_copy(message, sizeof(message));
+    if (message[0] == '\0' && fallback != NULL) {
+        snprintf(message, sizeof(message), "%s", fallback);
+    }
+    return nmo_load_diagnostics_append(
+        diagnostics, object, schema_type, chunk, 0u, status, message);
 }
 
 static bool object_system_capture_ref(
@@ -238,8 +320,11 @@ static void object_system_clear_failed_object_state(nmo_object_t *obj)
         return;
     }
 
-    obj->state = NULL;
-    obj->state_size = 0;
+    (void)nmo_object_alloc_state(obj, 0);
+    nmo_arena_t *storage_arena = nmo_object_get_storage_arena(obj);
+    if (storage_arena != NULL) {
+        nmo_arena_reset(storage_arena);
+    }
 }
 
 nmo_status_t nmo_object_system_create_objects_from_header1(
@@ -476,6 +561,7 @@ nmo_status_t nmo_object_system_prepare_loaded_objects(
     }
     file_ctx->file_to_runtime = remap_table;
     file_ctx->runtime_to_file = NULL;
+    file_ctx->repository = repo;
 
     if (created_objects != NULL) {
         for (size_t i = 0; i < desc_count; i++) {
@@ -568,6 +654,7 @@ nmo_status_t nmo_object_system_deserialize_loaded_objects(
     nmo_id_lookup_fn id_lookup_fn,
     void *id_lookup_ctx,
     size_t file_object_count,
+    nmo_load_diagnostics_t *diagnostics,
     nmo_object_system_deserialize_stats_t *out_stats)
 {
     if (repo == NULL || type_rt == NULL || type_rt->types == NULL ||
@@ -636,13 +723,16 @@ nmo_status_t nmo_object_system_deserialize_loaded_objects(
         nmo_status_t alloc_result = nmo_object_alloc_state(obj, state_size);
         if (alloc_result != NMO_OK) {
             stats.errors++;
+            (void)object_system_report_load_issue(
+                diagnostics, obj, schema_type, obj->chunk, alloc_result,
+                "Failed to allocate object state");
             if (logger) {
                 nmo_log(logger, NMO_LOG_ERROR,
                         "  Object file_index=%zu (ID=%u, file_id=%u, class=0x%08X, name='%s'): failed to allocate %u bytes for state",
                         file_index, obj->id, obj->file_id, obj->class_id, object_system_name_or_default(obj), state_size);
             }
             nmo_chunk_close(obj->chunk);
-            continue;
+            return alloc_result;
         }
 
         void *state = nmo_object_get_state(obj);
@@ -660,6 +750,9 @@ nmo_status_t nmo_object_system_deserialize_loaded_objects(
             created_layers, OBJECT_SYSTEM_MAX_HIERARCHY_DEPTH, &created_count);
         if (create_result != NMO_OK) {
             stats.errors++;
+            nmo_status_t issue_result = object_system_report_load_issue(
+                diagnostics, obj, schema_type, obj->chunk, create_result,
+                "Failed to initialize object state");
             if (logger) {
                 char error_msg[1024];
                 nmo_last_error_message_copy(error_msg, sizeof(error_msg));
@@ -674,6 +767,12 @@ nmo_status_t nmo_object_system_deserialize_loaded_objects(
                 state, &deser_ctx, created_layers, created_count);
             object_system_clear_failed_object_state(obj);
             nmo_chunk_close(obj->chunk);
+            if (issue_result != NMO_OK) {
+                return issue_result;
+            }
+            if (create_result == NMO_ERR_NOMEM || create_result == NMO_ERR_INTERNAL) {
+                return create_result;
+            }
             continue;
         }
 
@@ -708,6 +807,9 @@ nmo_status_t nmo_object_system_deserialize_loaded_objects(
         nmo_status_t read_result = nmo_chunk_start_read(obj->chunk);
         if (read_result != NMO_OK) {
             stats.errors++;
+            nmo_status_t issue_result = object_system_report_load_issue(
+                diagnostics, obj, schema_type, obj->chunk, read_result,
+                "Failed to start chunk read");
             if (logger) {
                 nmo_log(logger, NMO_LOG_ERROR,
                         "  Object file_index=%zu (ID=%u, file_id=%u, class=0x%08X, name='%s'): failed to start chunk read: %d",
@@ -717,6 +819,9 @@ nmo_status_t nmo_object_system_deserialize_loaded_objects(
                 state, &deser_ctx, created_layers, created_count);
             object_system_clear_failed_object_state(obj);
             nmo_chunk_close(obj->chunk);
+            if (issue_result != NMO_OK) {
+                return issue_result;
+            }
             continue;
         }
 
@@ -772,6 +877,9 @@ nmo_status_t nmo_object_system_deserialize_loaded_objects(
             nmo_chunk_close(obj->chunk);
         } else {
             stats.errors++;
+            nmo_status_t issue_result = object_system_report_load_issue(
+                diagnostics, obj, schema_type, obj->chunk, deser_result,
+                "Object deserialization failed");
             if (logger) {
                 char error_msg[1024];
                 nmo_last_error_message_copy(error_msg, sizeof(error_msg));
@@ -787,6 +895,12 @@ nmo_status_t nmo_object_system_deserialize_loaded_objects(
             object_system_clear_failed_object_state(obj);
 
             nmo_chunk_close(obj->chunk);
+            if (issue_result != NMO_OK) {
+                return issue_result;
+            }
+            if (deser_result == NMO_ERR_NOMEM || deser_result == NMO_ERR_INTERNAL) {
+                return deser_result;
+            }
         }
     }
 

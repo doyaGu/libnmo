@@ -246,8 +246,17 @@ static nmo_status_t nmo_struct_like_to_string(
         size_t avail = sb.cap > sb.len ? sb.cap - sb.len : 0;
         if (avail == 0) break;
         char *slot = sb.buf + sb.len;
+        nmo_object_id_t ref_id = NMO_OBJECT_ID_NONE;
+        const void *format_value = field_ptr;
+        if ((field->flags & NMO_FIELD_REFERENCE) != 0u &&
+            nmo_guid_equals(field->type_guid, CKPGUID_ID) &&
+            field->size == sizeof(nmo_ref_t)) {
+            const nmo_ref_t *ref = (const nmo_ref_t *)field_ptr;
+            ref_id = ref->state == NMO_REF_RESOLVED ? ref->id : ref->raw_id;
+            format_value = &ref_id;
+        }
         nmo_status_t r = nmo_type_value_to_string_depth_internal(
-            field_ptr, field_type, registry, slot, avail, depth + 1);
+            format_value, field_type, registry, slot, avail, depth + 1);
         if (r == NMO_OK) {
             sb.len += strlen(slot);
         } else {
@@ -392,8 +401,26 @@ static nmo_status_t nmo_parse_reflected_struct_field(
 
         char *field_string = NULL;
         NMO_RETURN_IF_ERROR(nmo_copy_trimmed_segment(value_start, value_end, &field_string));
-        nmo_status_t st = nmo_type_value_from_string(
-            (uint8_t *)value + field->offset, field_type, registry, field_string);
+        void *field_ptr = (uint8_t *)value + field->offset;
+        nmo_status_t st;
+        if ((field->flags & NMO_FIELD_REFERENCE) != 0u &&
+            nmo_guid_equals(field->type_guid, CKPGUID_ID) &&
+            field->size == sizeof(nmo_ref_t)) {
+            nmo_object_id_t id = NMO_OBJECT_ID_NONE;
+            st = nmo_type_value_from_string(
+                &id, field_type, registry, field_string);
+            if (st == NMO_OK) {
+                nmo_ref_t *ref = (nmo_ref_t *)field_ptr;
+                ref->raw_id = id;
+                ref->id = id;
+                ref->state = (id == NMO_OBJECT_ID_NONE ||
+                              id == NMO_OBJECT_ID_INVALID)
+                    ? NMO_REF_NONE : NMO_REF_RESOLVED;
+            }
+        } else {
+            st = nmo_type_value_from_string(
+                field_ptr, field_type, registry, field_string);
+        }
         free(field_string);
         return st;
     }

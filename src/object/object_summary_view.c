@@ -1,4 +1,5 @@
 #include "object/nmo_object_summary.h"
+#include "object/nmo_ref.h"
 
 #include "format/nmo_object.h"
 #include "../runtime/runtime_internal.h"
@@ -330,12 +331,16 @@ static nmo_status_t nmo_object_summary_fill_ref_names(
             continue;
         }
         if (field->size < sizeof(nmo_object_id_t) ||
-            owner->size < field->offset + sizeof(nmo_object_id_t)) {
+            owner->size < field->offset + field->size) {
             continue;
         }
 
         field_ptr = (const uint8_t *)nmo_object_get_state((nmo_object_t *)object) + field->offset;
-        memcpy(&id, field_ptr, sizeof(id));
+        if (field->size == sizeof(nmo_ref_t)) {
+            id = nmo_ref_runtime_id((const nmo_ref_t *)field_ptr);
+        } else {
+            memcpy(&id, field_ptr, sizeof(id));
+        }
         if (id == 0u) {
             continue;
         }

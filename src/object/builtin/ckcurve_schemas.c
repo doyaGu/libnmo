@@ -10,6 +10,7 @@
 #include "object/nmo_param_guids.h"
 #include "object/nmo_object_struct_guids.h"
 #include "object/nmo_serialize_context.h"
+#include "object/nmo_deserialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
@@ -48,7 +49,7 @@ static void nmo_curvepoint_set_defaults(nmo_curvepoint_state_t *state) {
 
     state->has_default_data = 1;
     state->defaultdata_is_modern = 1;
-    state->curve_id = 0;
+    state->curve = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     state->use_tcb = 0;
     state->linear = 0;
     state->tension = 0.0f;
@@ -95,21 +96,26 @@ static nmo_status_t read_object_sequence(
         *out_count = 0;
         NMO_RETURN_OK();
     }
+    if (count > UINT32_MAX || count > SIZE_MAX / sizeof(nmo_object_id_t)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Object ID array count overflow");
+    }
 
-    *out_count = (uint32_t)count;
-    *out_ids = (nmo_object_id_t *)nmo_arena_alloc(
-        arena, sizeof(nmo_object_id_t) * (*out_count), _Alignof(nmo_object_id_t));
-    if (!*out_ids) {
+    nmo_object_id_t *ids = (nmo_object_id_t *)nmo_arena_alloc(
+        arena, sizeof(nmo_object_id_t) * count, _Alignof(nmo_object_id_t));
+    if (!ids) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate object ID array");
     }
 
-    for (uint32_t i = 0; i < *out_count; ++i) {
-        result = nmo_chunk_read_object_sequence_item(chunk, &(*out_ids)[i]);
+    for (size_t i = 0; i < count; ++i) {
+        result = nmo_chunk_read_object_sequence_item(chunk, &ids[i]);
         if (result != NMO_OK) {
-            *out_count = i;
-            break;
+            return result;
         }
     }
+
+    *out_ids = ids;
+    *out_count = (uint32_t)count;
 
     NMO_RETURN_OK();
 }
@@ -133,7 +139,7 @@ static const nmo_type_field_t nmo_curvepoint_fields[] = {
                     sizeof(nmo_3dentity_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_curvepoint_state_t, has_default_data, CKPGUID_UINT8),
-    NMO_FIELD_REF(nmo_curvepoint_state_t, curve_id),
+    NMO_FIELD_REF(nmo_curvepoint_state_t, curve),
     NMO_FIELD(nmo_curvepoint_state_t, use_tcb, CKPGUID_INT),
     NMO_FIELD(nmo_curvepoint_state_t, linear, CKPGUID_INT),
     NMO_FIELD(nmo_curvepoint_state_t, tension, CKPGUID_FLOAT),
@@ -227,66 +233,12 @@ nmo_status_t nmo_curve_remap_dependencies(
     }
 
     nmo_curve_state_t *state = (nmo_curve_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
 
     NMO_RETURN_IF_ERROR(nmo_3dentity_remap_dependencies(&state->base, NULL, context));
-
-    state->has_curve_data = state->has_curve_data ? 1 : 0;
-    state->has_curveonly_chunk = state->has_curveonly_chunk ? 1 : 0;
-    state->has_controlpoints_chunk = state->has_controlpoints_chunk ? 1 : 0;
-    state->has_fitting_chunk = state->has_fitting_chunk ? 1 : 0;
-    state->has_steps_chunk = state->has_steps_chunk ? 1 : 0;
-    state->has_open_chunk = state->has_open_chunk ? 1 : 0;
-    state->has_savepoints_chunk = state->has_savepoints_chunk ? 1 : 0;
-    state->savepoints_in_file = state->savepoints_in_file ? 1 : 0;
-
-    if (!state->has_curve_data) {
-        state->control_point_count = 0;
-        state->control_point_ids = NULL;
-        state->fitting_coeff = 0.0f;
-        state->step_count = 0;
-        state->opened = 0;
-        state->has_curveonly_chunk = 0;
-        state->has_controlpoints_chunk = 0;
-        state->has_fitting_chunk = 0;
-        state->has_steps_chunk = 0;
-        state->has_open_chunk = 0;
-    }
 
     if (state->control_point_count > 0 && state->control_point_ids == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "Curve control_point_ids missing");
-    }
-
-    if (state->control_point_count > 0 && state->control_point_ids) {
-        uint32_t kept = 0;
-        for (uint32_t i = 0; i < state->control_point_count; ++i) {
-            nmo_object_id_t id = state->control_point_ids[i];
-            if (id == 0) {
-                continue;
-            }
-            if (repo && nmo_object_repository_find_by_id(repo, id) == NULL) {
-                continue;
-            }
-            bool seen = false;
-            for (uint32_t j = 0; j < kept; ++j) {
-                if (state->control_point_ids[j] == id) {
-                    seen = true;
-                    break;
-                }
-            }
-            if (seen) {
-                continue;
-            }
-            state->control_point_ids[kept++] = id;
-        }
-        state->control_point_count = kept;
-        if (state->control_point_count == 0) {
-            state->control_point_ids = NULL;
-        }
-    } else {
-        state->control_point_count = 0;
-        state->control_point_ids = NULL;
     }
 
     if (state->sub_point_count > 0 && state->sub_points == NULL) {
@@ -294,35 +246,7 @@ nmo_status_t nmo_curve_remap_dependencies(
                          "Curve sub_points missing");
     }
 
-    if (state->sub_point_count > 0 && state->sub_points) {
-        uint32_t kept = 0;
-        for (uint32_t i = 0; i < state->sub_point_count; ++i) {
-            nmo_object_id_t id = state->sub_points[i].point_id;
-            if (id == 0) {
-                continue;
-            }
-            if (repo && nmo_object_repository_find_by_id(repo, id) == NULL) {
-                continue;
-            }
-            state->sub_points[kept] = state->sub_points[i];
-            kept++;
-        }
-        state->sub_point_count = kept;
-        if (state->sub_point_count == 0) {
-            state->sub_points = NULL;
-        }
-    } else {
-        state->sub_point_count = 0;
-        state->sub_points = NULL;
-    }
-
-    if (!state->has_savepoints_chunk || state->sub_point_count == 0) {
-        state->has_savepoints_chunk = 0;
-        state->savepoints_in_file = 0;
-        state->sub_point_count = 0;
-        state->sub_points = NULL;
-    }
-
+    /* Dependency resolution must not rewrite authored curve topology. */
     return nmo_curve_validate(state, NULL, NULL);
 }
 
@@ -347,46 +271,10 @@ nmo_status_t nmo_curvepoint_remap_dependencies(
     }
 
     nmo_curvepoint_state_t *state = (nmo_curvepoint_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
 
     NMO_RETURN_IF_ERROR(nmo_3dentity_remap_dependencies(&state->base, NULL, context));
 
-    state->has_default_data = state->has_default_data ? 1 : 0;
-    state->defaultdata_is_modern = state->defaultdata_is_modern ? 1 : 0;
-    state->has_reserved_vector = state->has_reserved_vector ? 1 : 0;
-    state->has_tcb_chunk = state->has_tcb_chunk ? 1 : 0;
-    state->has_tangents_chunk = state->has_tangents_chunk ? 1 : 0;
-    state->has_legacy_position = state->has_legacy_position ? 1 : 0;
-
-    if (state->curve_id != 0 && repo &&
-        nmo_object_repository_find_by_id(repo, state->curve_id) == NULL) {
-        state->curve_id = 0;
-    }
-
-    if (!state->has_default_data) {
-        state->curve_id = 0;
-        state->use_tcb = 0;
-        state->linear = 0;
-        state->tension = 0.0f;
-        state->continuity = 0.0f;
-        state->bias = 0.0f;
-        state->tangent_in = (nmo_vector_t){0.0f, 0.0f, 0.0f};
-        state->tangent_out = (nmo_vector_t){0.0f, 0.0f, 0.0f};
-        state->has_reserved_vector = 0;
-        state->reserved_vector = (nmo_vector_t){0.0f, 0.0f, 0.0f};
-        state->has_tcb_chunk = 0;
-        state->has_tangents_chunk = 0;
-        state->has_legacy_position = 0;
-        state->legacy_position = (nmo_vector_t){0.0f, 0.0f, 0.0f};
-    } else {
-        if (!state->has_reserved_vector) {
-            state->reserved_vector = (nmo_vector_t){0.0f, 0.0f, 0.0f};
-        }
-        if (!state->has_legacy_position) {
-            state->legacy_position = (nmo_vector_t){0.0f, 0.0f, 0.0f};
-        }
-    }
-
+    /* Preserve optional-section flags and unresolved curve reference. */
     return nmo_curvepoint_validate(state, NULL, NULL);
 }
 
@@ -551,17 +439,17 @@ static nmo_status_t nmo_curve_deserialize_internal(
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEFITCOEFF) == NMO_OK) {
             out_state->has_curve_data = 1;
             out_state->has_fitting_chunk = 1;
-            (void)nmo_chunk_read_float(chunk, &out_state->fitting_coeff);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->fitting_coeff));
         }
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVESTEPS) == NMO_OK) {
             out_state->has_curve_data = 1;
             out_state->has_steps_chunk = 1;
-            (void)nmo_chunk_read_dword(chunk, &out_state->step_count);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->step_count));
         }
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEOPEN) == NMO_OK) {
             out_state->has_curve_data = 1;
             out_state->has_open_chunk = 1;
-            (void)nmo_chunk_read_dword(chunk, &out_state->opened);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->opened));
         }
     } else {
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEONLY) == NMO_OK) {
@@ -570,9 +458,9 @@ static nmo_status_t nmo_curve_deserialize_internal(
             (void)read_object_sequence(chunk, arena,
                                        &out_state->control_point_ids,
                                        &out_state->control_point_count);
-            (void)nmo_chunk_read_float(chunk, &out_state->fitting_coeff);
-            (void)nmo_chunk_read_dword(chunk, &out_state->step_count);
-            (void)nmo_chunk_read_dword(chunk, &out_state->opened);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->fitting_coeff));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->step_count));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->opened));
         }
     }
 
@@ -582,7 +470,7 @@ static nmo_status_t nmo_curve_deserialize_internal(
             out_state->savepoints_in_file = 1;
         }
         uint32_t count = 0;
-        (void)nmo_chunk_read_dword(chunk, &count);
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &count));
         if (count > 0) {
             out_state->sub_point_count = count;
             out_state->sub_points = (nmo_curve_point_subchunk_t *)nmo_arena_alloc(
@@ -593,8 +481,8 @@ static nmo_status_t nmo_curve_deserialize_internal(
             }
 
             for (uint32_t i = 0; i < count; ++i) {
-                (void)nmo_chunk_read_object_id(chunk, &out_state->sub_points[i].point_id);
-                (void)nmo_chunk_read_sub_chunk(chunk, &out_state->sub_points[i].chunk);
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &out_state->sub_points[i].point_id));
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_sub_chunk(chunk, &out_state->sub_points[i].chunk));
             }
         }
     }
@@ -719,7 +607,7 @@ static nmo_status_t nmo_curvepoint_deserialize_internal(
 
     out_state->has_default_data = 0;
     out_state->defaultdata_is_modern = (data_version >= 5);
-    out_state->curve_id = 0;
+    out_state->curve = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     out_state->use_tcb = 0;
     out_state->linear = 0;
     out_state->tension = 0.0f;
@@ -736,66 +624,102 @@ static nmo_status_t nmo_curvepoint_deserialize_internal(
 
     if (data_version < 5) {
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEPOINTDEFAULTDATA) == NMO_OK) {
-            out_state->has_default_data = 1;
-            out_state->defaultdata_is_modern = 0;
-            (void)nmo_chunk_read_object_id(chunk, &out_state->curve_id);
-            (void)nmo_chunk_read_int(chunk, &out_state->use_tcb);
-            (void)nmo_chunk_read_int(chunk, &out_state->linear);
+            nmo_ref_t curve = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+            int32_t use_tcb = 0;
+            int32_t linear = 0;
+            nmo_vector_t legacy_position = {0.0f, 0.0f, 0.0f};
+            NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &curve));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &use_tcb));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &linear));
 
             /* Legacy format includes position (3 floats) - consume it */
-            (void)nmo_chunk_read_float(chunk, &out_state->legacy_position.x);
-            (void)nmo_chunk_read_float(chunk, &out_state->legacy_position.y);
-            (void)nmo_chunk_read_float(chunk, &out_state->legacy_position.z);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &legacy_position.x));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &legacy_position.y));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &legacy_position.z));
+            nmo_ref_check_class(
+                &curve,
+                (const nmo_object_repository_t *)
+                    nmo_deserialize_context_get_repository(context),
+                nmo_deserialize_context_get_type_registry(context),
+                NMO_CID_CURVE);
+            out_state->has_default_data = 1;
+            out_state->defaultdata_is_modern = 0;
+            out_state->curve = curve;
+            out_state->use_tcb = use_tcb;
+            out_state->linear = linear;
+            out_state->legacy_position = legacy_position;
             out_state->has_legacy_position = 1;
         }
 
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEPOINTTCB) == NMO_OK) {
             out_state->has_tcb_chunk = 1;
-            (void)nmo_chunk_read_float(chunk, &out_state->tension);
-            (void)nmo_chunk_read_float(chunk, &out_state->continuity);
-            (void)nmo_chunk_read_float(chunk, &out_state->bias);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->tension));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->continuity));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->bias));
         }
 
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEPOINTCURVEPOS) == NMO_OK) {
             out_state->has_reserved_vector = 1;
-            (void)nmo_chunk_read_vector3(chunk, &out_state->reserved_vector);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_vector3(chunk, &out_state->reserved_vector));
         }
 
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEPOINTTANGENTS) == NMO_OK) {
             out_state->has_tangents_chunk = 1;
-            (void)nmo_chunk_read_vector3(chunk, &out_state->tangent_in);
-            (void)nmo_chunk_read_vector3(chunk, &out_state->tangent_out);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_vector3(chunk, &out_state->tangent_in));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_vector3(chunk, &out_state->tangent_out));
         }
     } else {
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEPOINTDEFAULTDATA) == NMO_OK) {
+            nmo_ref_t curve = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+            int32_t use_tcb = 0;
+            int32_t linear = 0;
+            float tension = 0.0f;
+            float continuity = 0.0f;
+            float bias = 0.0f;
+            nmo_vector_t tangent_in = {0.0f, 0.0f, 0.0f};
+            nmo_vector_t tangent_out = {0.0f, 0.0f, 0.0f};
+            NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &curve));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &use_tcb));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &linear));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &tension));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &continuity));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &bias));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_vector3(chunk, &tangent_in));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_vector3(chunk, &tangent_out));
+            nmo_ref_check_class(
+                &curve,
+                (const nmo_object_repository_t *)
+                    nmo_deserialize_context_get_repository(context),
+                nmo_deserialize_context_get_type_registry(context),
+                NMO_CID_CURVE);
             out_state->has_default_data = 1;
             out_state->defaultdata_is_modern = 1;
-            (void)nmo_chunk_read_object_id(chunk, &out_state->curve_id);
-            (void)nmo_chunk_read_int(chunk, &out_state->use_tcb);
-            (void)nmo_chunk_read_int(chunk, &out_state->linear);
-            (void)nmo_chunk_read_float(chunk, &out_state->tension);
-            (void)nmo_chunk_read_float(chunk, &out_state->continuity);
-            (void)nmo_chunk_read_float(chunk, &out_state->bias);
-            (void)nmo_chunk_read_vector3(chunk, &out_state->tangent_in);
-            (void)nmo_chunk_read_vector3(chunk, &out_state->tangent_out);
+            out_state->curve = curve;
+            out_state->use_tcb = use_tcb;
+            out_state->linear = linear;
+            out_state->tension = tension;
+            out_state->continuity = continuity;
+            out_state->bias = bias;
+            out_state->tangent_in = tangent_in;
+            out_state->tangent_out = tangent_out;
         }
 
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEPOINTTCB) == NMO_OK) {
             out_state->has_tcb_chunk = 1;
-            (void)nmo_chunk_read_float(chunk, &out_state->tension);
-            (void)nmo_chunk_read_float(chunk, &out_state->continuity);
-            (void)nmo_chunk_read_float(chunk, &out_state->bias);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->tension));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->continuity));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->bias));
         }
 
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEPOINTCURVEPOS) == NMO_OK) {
             out_state->has_reserved_vector = 1;
-            (void)nmo_chunk_read_vector3(chunk, &out_state->reserved_vector);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_vector3(chunk, &out_state->reserved_vector));
         }
 
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEPOINTTANGENTS) == NMO_OK) {
             out_state->has_tangents_chunk = 1;
-            (void)nmo_chunk_read_vector3(chunk, &out_state->tangent_in);
-            (void)nmo_chunk_read_vector3(chunk, &out_state->tangent_out);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_vector3(chunk, &out_state->tangent_in));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_vector3(chunk, &out_state->tangent_out));
         }
     }
 
@@ -827,7 +751,7 @@ static nmo_status_t nmo_curvepoint_serialize_internal(
     if (in_state->has_default_data) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_CURVEPOINTDEFAULTDATA);
         if (result != NMO_OK) return result;
-        result = nmo_chunk_write_object_id(out_chunk, in_state->curve_id);
+        result = nmo_ref_write(out_chunk, &in_state->curve);
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_int(out_chunk, in_state->use_tcb);
         if (result != NMO_OK) return result;

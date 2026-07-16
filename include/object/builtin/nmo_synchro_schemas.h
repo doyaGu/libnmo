@@ -7,6 +7,7 @@
 #define NMO_CKSYNCHRO_SCHEMAS_H
 
 #include "object/builtin/nmo_object_schemas.h"
+#include "object/nmo_ref.h"
 #include "object/nmo_object_type_common.h"
 #include "core/nmo_array.h"
 #include "nmo_types.h"
@@ -44,7 +45,7 @@ typedef struct nmo_state_state {
  */
 typedef struct nmo_criticalsection_state {
     nmo_object_state_t base;
-    nmo_object_id_t object_in_section_id;
+    nmo_ref_t object_in_section;
 } nmo_criticalsection_state_t;
 
 NMO_API nmo_status_t nmo_synchro_deserialize(

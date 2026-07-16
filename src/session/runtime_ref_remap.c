@@ -3,11 +3,22 @@
 #include "format/nmo_id_remap.h"
 #include "format/nmo_object.h"
 #include "object/nmo_object_repository.h"
+#include "object/nmo_class_ids.h"
+#include "object/builtin/nmo_behavior_schemas.h"
+#include "object/builtin/nmo_animation_schemas.h"
+#include "object/builtin/nmo_beobject_schemas.h"
+#include "object/builtin/nmo_grid_schemas.h"
+#include "object/builtin/nmo_patchmesh_schemas.h"
+#include "object/nmo_object_guids.h"
+#include "object/nmo_param_guids.h"
 #include "type/nmo_reflection.h"
+#include "type/nmo_type_query.h"
 #include "type/nmo_type_runtime.h"
 #include "type/nmo_type_system.h"
 #include "core/nmo_array.h"
 #include "../runtime/runtime_internal.h"
+
+#include <string.h>
 
 /* 鈹€鈹€ ID remap lookup 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
@@ -47,6 +58,17 @@ static bool runtime_remap_ref_field(
     }
 
     if (!nmo_field_is_array(field)) {
+        if (field->size == sizeof(nmo_ref_t)) {
+            nmo_ref_t *ref = (nmo_ref_t *)nmo_field_get_ptr(
+                ctx->instance, field);
+            if (ref != NULL && ref->state == NMO_REF_RESOLVED) {
+                nmo_object_id_t mapped = NMO_OBJECT_ID_NONE;
+                if (runtime_lookup_mapping(ctx->remap, ref->id, &mapped)) {
+                    ref->id = mapped;
+                }
+            }
+            return true;
+        }
         if (field->size == sizeof(nmo_object_id_t)) {
             nmo_object_id_t *id_ptr = (nmo_object_id_t *)nmo_field_get_ptr(ctx->instance, field);
             if (id_ptr != NULL && *id_ptr != NMO_OBJECT_ID_NONE) {
@@ -61,10 +83,22 @@ static bool runtime_remap_ref_field(
 
     if (field->size == sizeof(nmo_array_t)) {
         nmo_array_t *arr = (nmo_array_t *)nmo_field_get_ptr(ctx->instance, field);
-        if (arr == NULL || arr->data == NULL || arr->count == 0 ||
-            arr->element_size != sizeof(nmo_object_id_t)) {
+        if (arr == NULL || arr->data == NULL || arr->count == 0) {
             return true;
         }
+        if (nmo_field_uses_ref_records(field)) {
+            if (arr->element_size != sizeof(nmo_ref_t)) return true;
+            nmo_ref_t *refs = (nmo_ref_t *)arr->data;
+            for (size_t i = 0; i < arr->count; ++i) {
+                nmo_object_id_t mapped = NMO_OBJECT_ID_NONE;
+                if (refs[i].state == NMO_REF_RESOLVED &&
+                    runtime_lookup_mapping(ctx->remap, refs[i].id, &mapped)) {
+                    refs[i].id = mapped;
+                }
+            }
+            return true;
+        }
+        if (arr->element_size != sizeof(nmo_object_id_t)) return true;
 
         nmo_object_id_t *ids = (nmo_object_id_t *)arr->data;
         for (size_t i = 0; i < arr->count; i++) {
@@ -76,7 +110,26 @@ static bool runtime_remap_ref_field(
         return true;
     }
 
-    if (field->size == sizeof(nmo_object_id_t *)) {
+    if (field->size == sizeof(void *)) {
+        if (nmo_field_uses_ref_records(field)) {
+            nmo_ref_t **refs_ptr = (nmo_ref_t **)nmo_field_get_ptr(
+                ctx->instance, field);
+            if (refs_ptr == NULL || *refs_ptr == NULL) return true;
+            uint32_t count = 0;
+            if (nmo_field_resolve_count(
+                    ctx->type, field, ctx->instance, &count) != NMO_OK) {
+                return true;
+            }
+            for (uint32_t i = 0; i < count; ++i) {
+                nmo_object_id_t mapped = NMO_OBJECT_ID_NONE;
+                if ((*refs_ptr)[i].state == NMO_REF_RESOLVED &&
+                    runtime_lookup_mapping(
+                        ctx->remap, (*refs_ptr)[i].id, &mapped)) {
+                    (*refs_ptr)[i].id = mapped;
+                }
+            }
+            return true;
+        }
         nmo_object_id_t **ids_ptr = (nmo_object_id_t **)nmo_field_get_ptr(ctx->instance, field);
         if (ids_ptr == NULL || *ids_ptr == NULL) {
             return true;
@@ -211,5 +264,470 @@ nmo_status_t nmo_runtime_remap_all_refs(
         }
     }
 
+    return NMO_OK;
+}
+
+static bool normalize_id_is_invalid(
+    nmo_object_repository_t *repo,
+    nmo_object_id_t id)
+{
+    return id == NMO_OBJECT_ID_INVALID ||
+           (id != NMO_OBJECT_ID_NONE &&
+            nmo_object_repository_find_by_id(repo, id) == NULL);
+}
+
+static bool normalize_id_has_wrong_class(
+    nmo_object_repository_t *repo,
+    const nmo_type_registry_t *types,
+    nmo_object_id_t id,
+    nmo_class_id_t expected_class_id)
+{
+    if (id == NMO_OBJECT_ID_NONE || expected_class_id == 0 || types == NULL) {
+        return false;
+    }
+    const nmo_object_t *target = nmo_object_repository_find_by_id(repo, id);
+    return target != NULL && !nmo_type_registry_is_class_derived_from(
+        types, (uint32_t)nmo_object_get_class_id(target),
+        (uint32_t)expected_class_id);
+}
+
+static nmo_class_id_t normalize_expected_class_for_field(const char *name)
+{
+    if (name == NULL) return 0;
+    if (strstr(name, "mesh") != NULL) return NMO_CID_MESH;
+    if (strstr(name, "animation") != NULL || strstr(name, "anim") != NULL) {
+        return NMO_CID_OBJECTANIMATION;
+    }
+    if (strstr(name, "material") != NULL) return NMO_CID_MATERIAL;
+    if (strstr(name, "texture") != NULL) return NMO_CID_TEXTURE;
+    if (strstr(name, "parameter") != NULL ||
+        strcmp(name, "source_id") == 0 || strcmp(name, "in1_id") == 0 ||
+        strcmp(name, "in2_id") == 0 || strcmp(name, "out_id") == 0 ||
+        strcmp(name, "destination_ids") == 0) {
+        return NMO_CID_PARAMETER;
+    }
+    if (strstr(name, "script") != NULL) return NMO_CID_BEHAVIOR;
+    if (strcmp(name, "grid_id") == 0 || strcmp(name, "grid") == 0) {
+        return NMO_CID_GRID;
+    }
+    if (strcmp(name, "camera_id") == 0 || strcmp(name, "camera") == 0 ||
+        strcmp(name, "starting_camera_id") == 0) return NMO_CID_CAMERA;
+    if (strcmp(name, "level_id") == 0 || strcmp(name, "level") == 0) {
+        return NMO_CID_LEVEL;
+    }
+    if (strcmp(name, "target") == 0) return NMO_CID_3DENTITY;
+    if (strcmp(name, "curve_id") == 0 || strcmp(name, "curve") == 0) {
+        return NMO_CID_CURVE;
+    }
+    if (strcmp(name, "place_id") == 0 || strcmp(name, "place") == 0) {
+        return NMO_CID_PLACE;
+    }
+    if (strcmp(name, "attached_object") == 0) return NMO_CID_3DENTITY;
+    if (strcmp(name, "sprite_ref_id") == 0 ||
+        strcmp(name, "sprite_ref") == 0) return NMO_CID_SPRITE;
+    if (strstr(name, "body_part") != NULL) return NMO_CID_BODYPART;
+    return 0;
+}
+
+static nmo_class_id_t normalize_expected_class_for_typed_field(
+    const nmo_type_descriptor_t *type,
+    const nmo_type_field_t *field)
+{
+    if (type != NULL && field != NULL && field->name != NULL &&
+        strcmp(field->name, "parent") == 0) {
+        if (nmo_guid_equals(type->guid, CKPGUID_2DENTITY)) {
+            return NMO_CID_2DENTITY;
+        }
+        if (nmo_guid_equals(type->guid, CKPGUID_3DENTITY)) {
+            return NMO_CID_3DENTITY;
+        }
+    }
+    return normalize_expected_class_for_field(field ? field->name : NULL);
+}
+
+static bool normalize_id_is_invalid_for_typed_field(
+    nmo_object_repository_t *repo,
+    const nmo_type_registry_t *types,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_field_t *field,
+    nmo_object_id_t id)
+{
+    return normalize_id_is_invalid(repo, id) ||
+        normalize_id_has_wrong_class(
+            repo, types, id,
+            normalize_expected_class_for_typed_field(type, field));
+}
+
+static nmo_status_t normalize_beobject_attributes(
+    nmo_beobject_state_t *state,
+    nmo_object_repository_t *repo,
+    const nmo_type_registry_t *types,
+    size_t *changes)
+{
+    if (!state) return NMO_OK;
+    size_t count = state->attributes.count;
+    if ((state->attributes.element_size != 0 &&
+         state->attributes.element_size != sizeof(nmo_beobject_attribute_t)) ||
+        (count > 0 &&
+         state->attributes.element_size != sizeof(nmo_beobject_attribute_t)) ||
+        (count > 0 && state->attributes.data == NULL)) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+
+    for (size_t i = 0; i < count;) {
+        nmo_beobject_attribute_t *attributes = NMO_ARRAY_DATA(
+            nmo_beobject_attribute_t, &state->attributes);
+        const nmo_object_id_t id = nmo_ref_runtime_id(
+            &attributes[i].parameter);
+        if (id != NMO_OBJECT_ID_NONE &&
+            !normalize_id_is_invalid(repo, id)) {
+            ++i;
+            continue;
+        }
+        NMO_RETURN_IF_ERROR(nmo_array_remove(&state->attributes, i, NULL));
+        --count;
+        (*changes)++;
+    }
+
+    count = state->legacy_attr_count;
+    if (count > 0 && (!state->legacy_attr_cids || !state->legacy_attr_names ||
+        !state->legacy_attr_categories || !state->legacy_attr_param_guids ||
+        !state->legacy_attr_param_ids)) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    for (size_t i = 0; i < count;) {
+        if (!normalize_id_is_invalid(repo, state->legacy_attr_param_ids[i]) &&
+            !normalize_id_has_wrong_class(
+                repo, types, state->legacy_attr_param_ids[i],
+                NMO_CID_PARAMETER)) {
+            ++i;
+            continue;
+        }
+        size_t remaining = count - i - 1;
+        if (remaining > 0) {
+            memmove(&state->legacy_attr_cids[i], &state->legacy_attr_cids[i + 1],
+                    remaining * sizeof(*state->legacy_attr_cids));
+            memmove(&state->legacy_attr_names[i], &state->legacy_attr_names[i + 1],
+                    remaining * sizeof(*state->legacy_attr_names));
+            memmove(&state->legacy_attr_categories[i],
+                    &state->legacy_attr_categories[i + 1],
+                    remaining * sizeof(*state->legacy_attr_categories));
+            memmove(&state->legacy_attr_param_guids[i],
+                    &state->legacy_attr_param_guids[i + 1],
+                    remaining * sizeof(*state->legacy_attr_param_guids));
+            memmove(&state->legacy_attr_param_ids[i],
+                    &state->legacy_attr_param_ids[i + 1],
+                    remaining * sizeof(*state->legacy_attr_param_ids));
+        }
+        state->legacy_attr_count = (uint32_t)--count;
+        (*changes)++;
+    }
+    return NMO_OK;
+}
+
+static nmo_status_t normalize_grid_layers(
+    nmo_grid_state_t *state,
+    nmo_object_repository_t *repo,
+    size_t *changes)
+{
+    if (!state) return NMO_OK;
+    if (state->layers.count > 0 && !state->layers.data) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    for (size_t i = 0; i < state->layers.count;) {
+        nmo_grid_layer_t *layers = NMO_ARRAY_DATA(nmo_grid_layer_t, &state->layers);
+        const nmo_ref_t *ref = &layers[i].ref;
+        bool invalid = ref->state != NMO_REF_RESOLVED ||
+                       normalize_id_is_invalid(repo, ref->id);
+        if (!invalid) {
+            ++i;
+            continue;
+        }
+        NMO_RETURN_IF_ERROR(nmo_array_remove(&state->layers, i, NULL));
+        (*changes)++;
+    }
+    return NMO_OK;
+}
+
+static nmo_status_t normalize_patchmesh_patches(
+    nmo_patchmesh_state_t *state,
+    nmo_object_repository_t *repo,
+    const nmo_type_registry_t *types,
+    size_t *changes)
+{
+    if (!state) return NMO_OK;
+    if (state->patch_count > 0 &&
+        (!state->patch_material_ids || !state->patches)) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    uint32_t count = state->patch_count;
+    for (uint32_t i = 0; i < count;) {
+        if (!normalize_id_is_invalid(repo, state->patch_material_ids[i]) &&
+            !normalize_id_has_wrong_class(
+                repo, types, state->patch_material_ids[i],
+                NMO_CID_MATERIAL)) {
+            ++i;
+            continue;
+        }
+        uint32_t remaining = count - i - 1;
+        if (remaining > 0) {
+            memmove(&state->patch_material_ids[i], &state->patch_material_ids[i + 1],
+                    (size_t)remaining * sizeof(*state->patch_material_ids));
+            memmove(&state->patches[i], &state->patches[i + 1],
+                    (size_t)remaining * sizeof(*state->patches));
+        }
+        state->patch_count = --count;
+        (*changes)++;
+    }
+    return NMO_OK;
+}
+
+static nmo_status_t normalize_keyed_animation(
+    nmo_keyedanimation_state_t *state,
+    nmo_object_repository_t *repo,
+    const nmo_type_registry_t *types,
+    size_t *changes)
+{
+    if (!state) return NMO_OK;
+    if (state->animation_count > 0 && !state->animation_ids) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    if (state->subanim_count != 0 &&
+        (state->subanim_count != state->animation_count || !state->subanims)) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+
+    uint32_t count = state->animation_count;
+    for (uint32_t i = 0; i < count;) {
+        if (!normalize_id_is_invalid(repo, state->animation_ids[i]) &&
+            !normalize_id_has_wrong_class(
+                repo, types, state->animation_ids[i],
+                NMO_CID_OBJECTANIMATION)) {
+            ++i;
+            continue;
+        }
+        if (state->subanim_count != 0 && state->subanims[i].chunk != NULL) {
+            nmo_chunk_destroy(state->subanims[i].chunk);
+            state->subanims[i].chunk = NULL;
+        }
+        uint32_t remaining = count - i - 1;
+        if (remaining > 0) {
+            memmove(&state->animation_ids[i], &state->animation_ids[i + 1],
+                    (size_t)remaining * sizeof(*state->animation_ids));
+            if (state->subanim_count != 0) {
+                memmove(&state->subanims[i], &state->subanims[i + 1],
+                        (size_t)remaining * sizeof(*state->subanims));
+            }
+        }
+        --count;
+        state->animation_count = count;
+        if (state->subanim_count != 0) {
+            state->subanim_count = count;
+            if (state->subanims != NULL) {
+                state->subanims[count].chunk = NULL;
+            }
+        }
+        (*changes)++;
+    }
+    return NMO_OK;
+}
+
+typedef struct normalize_ref_ctx {
+    nmo_object_repository_t *repo;
+    const nmo_type_registry_t *types;
+    const nmo_type_descriptor_t *type;
+    void *instance;
+    size_t *changes;
+} normalize_ref_ctx_t;
+
+static bool normalize_ref_field(
+    void *user_data,
+    const nmo_type_field_t *field,
+    const void *field_ptr)
+{
+    (void)field_ptr;
+    normalize_ref_ctx_t *ctx = (normalize_ref_ctx_t *)user_data;
+    if (!ctx || !field || !nmo_field_is_ref(field)) return true;
+
+    if (!nmo_field_is_array(field) && field->size == sizeof(nmo_ref_t)) {
+        nmo_ref_t *ref = (nmo_ref_t *)nmo_field_get_ptr(
+            ctx->instance, field);
+        const nmo_object_id_t id = nmo_ref_runtime_id(ref);
+        if (ref != NULL && ref->state != NMO_REF_NONE &&
+            (id == NMO_OBJECT_ID_NONE ||
+             normalize_id_is_invalid_for_typed_field(
+                ctx->repo, ctx->types, ctx->type, field, id))) {
+            *ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+            (*ctx->changes)++;
+        }
+        return true;
+    }
+
+    if (!nmo_field_is_array(field) && field->size == sizeof(nmo_object_id_t)) {
+        nmo_object_id_t *id = (nmo_object_id_t *)nmo_field_get_ptr(
+            ctx->instance, field);
+        if (id && normalize_id_is_invalid_for_typed_field(
+                ctx->repo, ctx->types, ctx->type, field, *id)) {
+            *id = NMO_OBJECT_ID_NONE;
+            (*ctx->changes)++;
+        }
+        return true;
+    }
+
+    if (field->size == sizeof(nmo_array_t)) {
+        nmo_array_t *array = (nmo_array_t *)nmo_field_get_ptr(ctx->instance, field);
+        if (!array) return true;
+        if (nmo_field_uses_ref_records(field)) {
+            if (array->element_size != sizeof(nmo_ref_t)) return true;
+            for (size_t i = 0; i < array->count;) {
+                nmo_ref_t *refs = NMO_ARRAY_DATA(nmo_ref_t, array);
+                const nmo_object_id_t id = nmo_ref_runtime_id(&refs[i]);
+                if (refs[i].state == NMO_REF_RESOLVED &&
+                    !normalize_id_is_invalid_for_typed_field(
+                        ctx->repo, ctx->types, ctx->type, field, id)) {
+                    ++i;
+                    continue;
+                }
+                if (nmo_array_remove(array, i, NULL) != NMO_OK) return false;
+                (*ctx->changes)++;
+            }
+            return true;
+        }
+        if (array->element_size != sizeof(nmo_object_id_t)) return true;
+        for (size_t i = 0; i < array->count;) {
+            nmo_object_id_t *ids = NMO_ARRAY_DATA(nmo_object_id_t, array);
+            if (!normalize_id_is_invalid_for_typed_field(
+                    ctx->repo, ctx->types, ctx->type, field, ids[i])) {
+                ++i;
+                continue;
+            }
+            if (nmo_array_remove(array, i, NULL) != NMO_OK) return false;
+            (*ctx->changes)++;
+        }
+        return true;
+    }
+
+    if (field->size == sizeof(void *)) {
+        if (nmo_field_uses_ref_records(field)) {
+            nmo_ref_t **values = (nmo_ref_t **)nmo_field_get_ptr(
+                ctx->instance, field);
+            uint32_t count = 0;
+            if (!values || !*values || nmo_field_resolve_count(
+                    ctx->type, field, ctx->instance, &count) != NMO_OK) {
+                return true;
+            }
+            uint32_t kept = 0;
+            for (uint32_t i = 0; i < count; ++i) {
+                const nmo_object_id_t id = nmo_ref_runtime_id(&(*values)[i]);
+                if ((*values)[i].state != NMO_REF_RESOLVED ||
+                    normalize_id_is_invalid_for_typed_field(
+                        ctx->repo, ctx->types, ctx->type, field, id)) {
+                    (*ctx->changes)++;
+                    continue;
+                }
+                (*values)[kept++] = (*values)[i];
+            }
+            if (kept != count && field->count_field_name) {
+                const nmo_type_field_t *count_field = nmo_type_get_field_by_name(
+                    ctx->type, field->count_field_name);
+                if (count_field && count_field->size == sizeof(uint32_t)) {
+                    uint32_t *count_ptr = (uint32_t *)nmo_field_get_ptr(
+                        ctx->instance, count_field);
+                    if (count_ptr) *count_ptr = kept;
+                }
+            }
+            return true;
+        }
+        nmo_object_id_t **values = (nmo_object_id_t **)nmo_field_get_ptr(
+            ctx->instance, field);
+        uint32_t count = 0;
+        if (!values || !*values || nmo_field_resolve_count(
+                ctx->type, field, ctx->instance, &count) != NMO_OK) {
+            return true;
+        }
+        uint32_t kept = 0;
+        for (uint32_t i = 0; i < count; ++i) {
+            if (normalize_id_is_invalid_for_typed_field(
+                    ctx->repo, ctx->types, ctx->type, field, (*values)[i])) {
+                (*ctx->changes)++;
+                continue;
+            }
+            (*values)[kept++] = (*values)[i];
+        }
+        if (kept != count && field->count_field_name) {
+            const nmo_type_field_t *count_field = nmo_type_get_field_by_name(
+                ctx->type, field->count_field_name);
+            if (count_field && count_field->size == sizeof(uint32_t)) {
+                uint32_t *count_ptr = (uint32_t *)nmo_field_get_ptr(
+                    ctx->instance, count_field);
+                if (count_ptr) *count_ptr = kept;
+            }
+        }
+    }
+    return true;
+}
+
+nmo_status_t nmo_runtime_normalize_invalid_refs(
+    nmo_object_repository_t *repo,
+    const nmo_type_runtime_t *type_rt,
+    size_t *out_change_count)
+{
+    if (!repo || !type_rt || !type_rt->types) return NMO_ERR_INVALID_ARGUMENT;
+    size_t changed = 0;
+    size_t count = nmo_object_repository_get_count(repo);
+    for (size_t i = 0; i < count; ++i) {
+        nmo_object_t *obj = nmo_object_repository_get_by_index(repo, i);
+        if (!obj || !obj->state) continue;
+        nmo_behavior_state_t *state = (nmo_behavior_state_t *)
+            nmo_type_query_object_get_ancestor_state_by_guid(
+                type_rt->types, obj, CKPGUID_BEHAVIOR);
+        if (state) {
+            size_t object_changes = 0;
+            NMO_RETURN_IF_ERROR(nmo_behavior_normalize_references(
+                state, repo, &object_changes));
+            changed += object_changes;
+        }
+
+        nmo_beobject_state_t *beobject = (nmo_beobject_state_t *)
+            nmo_type_query_object_get_ancestor_state_by_guid(
+                type_rt->types, obj, CKPGUID_BEOBJECT);
+        NMO_RETURN_IF_ERROR(normalize_beobject_attributes(
+            beobject, repo, type_rt->types, &changed));
+        nmo_grid_state_t *grid = (nmo_grid_state_t *)
+            nmo_type_query_object_get_ancestor_state_by_guid(
+                type_rt->types, obj, CKPGUID_GRID);
+        NMO_RETURN_IF_ERROR(normalize_grid_layers(grid, repo, &changed));
+        nmo_patchmesh_state_t *patchmesh = (nmo_patchmesh_state_t *)
+            nmo_type_query_object_get_ancestor_state_by_guid(
+                type_rt->types, obj, CKPGUID_PATCHMESH);
+        NMO_RETURN_IF_ERROR(normalize_patchmesh_patches(
+            patchmesh, repo, type_rt->types, &changed));
+        nmo_keyedanimation_state_t *keyed = (nmo_keyedanimation_state_t *)
+            nmo_type_query_object_get_ancestor_state_by_guid(
+                type_rt->types, obj, CKPGUID_KEYEDANIMATION);
+        NMO_RETURN_IF_ERROR(normalize_keyed_animation(
+            keyed, repo, type_rt->types, &changed));
+
+        const nmo_type_descriptor_t *derived = runtime_find_type_for_object(type_rt, obj);
+        const nmo_type_descriptor_t *current = derived;
+        void *current_instance = obj->state;
+        for (size_t depth = 0; current && current_instance && depth < 64; ++depth) {
+            normalize_ref_ctx_t normalize_ctx = {
+                .repo = repo, .types = type_rt->types,
+                .type = current, .instance = current_instance,
+                .changes = &changed,
+            };
+            NMO_RETURN_IF_ERROR(nmo_type_foreach_ref_field(
+                current, current_instance, normalize_ref_field, &normalize_ctx));
+            if (nmo_guid_is_null(current->base_type)) break;
+            const nmo_type_descriptor_t *base = nmo_type_registry_find_by_guid(
+                type_rt->types, current->base_type);
+            if (!base) break;
+            current_instance = (void *)runtime_get_base_instance(
+                type_rt->types, derived, obj->state, current, current_instance, base);
+            current = base;
+        }
+    }
+    if (out_change_count) *out_change_count = changed;
     return NMO_OK;
 }

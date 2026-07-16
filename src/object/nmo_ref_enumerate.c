@@ -7,6 +7,7 @@
  */
 
 #include "object/nmo_ref_enumerate.h"
+#include "object/nmo_ref.h"
 #include "format/nmo_object.h"
 #include "type/nmo_reflection.h"
 #include "type/nmo_type_system.h"
@@ -101,7 +102,9 @@ static bool nmo_ref_field_visitor(
     nmo_ref_kind_t kind = nmo_ref_kind_from_field(field);
 
     if (!nmo_field_is_array(field)) {
-        nmo_object_id_t id = nmo_field_get_object_id(ctx->instance, field);
+        nmo_object_id_t id = field->size == sizeof(nmo_ref_t)
+            ? nmo_ref_runtime_id((const nmo_ref_t *)field_ptr)
+            : nmo_field_get_object_id(ctx->instance, field);
         if (id != 0) {
             return ctx->visitor(ctx->user_data, id, kind, field->name, 0);
         }
@@ -111,6 +114,18 @@ static bool nmo_ref_field_visitor(
     if (field->size == sizeof(nmo_array_t)) {
         const nmo_array_t *arr = (const nmo_array_t *)field_ptr;
         if (!arr->data || arr->count == 0) {
+            return true;
+        }
+        if (nmo_field_uses_ref_records(field)) {
+            if (arr->element_size != sizeof(nmo_ref_t)) return true;
+            const nmo_ref_t *refs = (const nmo_ref_t *)arr->data;
+            for (size_t i = 0; i < arr->count; ++i) {
+                const nmo_object_id_t id = nmo_ref_runtime_id(&refs[i]);
+                if (id != NMO_OBJECT_ID_NONE && !ctx->visitor(
+                        ctx->user_data, id, kind, field->name, (uint32_t)i)) {
+                    return false;
+                }
+            }
             return true;
         }
         if (arr->element_size != sizeof(nmo_object_id_t)) {
@@ -129,7 +144,24 @@ static bool nmo_ref_field_visitor(
         return true;
     }
 
-    if (field->size == sizeof(nmo_object_id_t *)) {
+    if (field->size == sizeof(void *)) {
+        if (nmo_field_uses_ref_records(field)) {
+            const nmo_ref_t *refs = *(const nmo_ref_t *const *)field_ptr;
+            if (!refs) return true;
+            uint32_t count = 0;
+            if (nmo_field_resolve_count(
+                    ctx->type, field, ctx->instance, &count) != NMO_OK) {
+                return true;
+            }
+            for (uint32_t i = 0; i < count; ++i) {
+                const nmo_object_id_t id = nmo_ref_runtime_id(&refs[i]);
+                if (id != NMO_OBJECT_ID_NONE && !ctx->visitor(
+                        ctx->user_data, id, kind, field->name, i)) {
+                    return false;
+                }
+            }
+            return true;
+        }
         const nmo_object_id_t *ids = *(const nmo_object_id_t *const *)field_ptr;
         if (!ids) {
             return true;
@@ -305,14 +337,28 @@ static nmo_status_t nmo_ref_enumerate_type_chain(
     const void *derived_instance = instance;
 
     for (size_t depth = 0; current && current_instance && depth < 64; ++depth) {
-        nmo_status_t status = nmo_ref_enumerate_fields(current, current_instance, visitor, user_data);
+        nmo_status_t status = NMO_OK;
+        if (current->vtable && current->vtable->enumerate_refs) {
+            nmo_ref_bridge_ctx_t bridge = {
+                .visitor = visitor,
+                .user_data = user_data
+            };
+            status = current->vtable->enumerate_refs(
+                current_instance, current, nmo_ref_bridge_visitor, &bridge);
+        } else {
+            status = nmo_ref_enumerate_fields(
+                current, current_instance, visitor, user_data);
+        }
         if (status != NMO_OK) {
             return status;
         }
 
-        status = nmo_ref_enumerate_struct_arrays(types, current, current_instance, visitor, user_data);
-        if (status != NMO_OK) {
-            return status;
+        if (!(current->vtable && current->vtable->enumerate_refs)) {
+            status = nmo_ref_enumerate_struct_arrays(
+                types, current, current_instance, visitor, user_data);
+            if (status != NMO_OK) {
+                return status;
+            }
         }
 
         if (nmo_guid_is_null(current->base_type)) {
@@ -360,15 +406,6 @@ NMO_API nmo_status_t nmo_ref_enumerate_object(
     const nmo_type_descriptor_t *type = nmo_type_registry_find_by_class_id(types, class_id);
     if (!type) {
         NMO_RETURN_OK();
-    }
-
-    if (type->vtable && type->vtable->enumerate_refs) {
-        nmo_ref_bridge_ctx_t bridge = {
-            .visitor = visitor,
-            .user_data = user_data
-        };
-
-        return type->vtable->enumerate_refs(state, type, nmo_ref_bridge_visitor, &bridge);
     }
 
     return nmo_ref_enumerate_type_chain(types, type, state, visitor, user_data);

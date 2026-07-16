@@ -131,7 +131,8 @@ nmo_status_t nmo_dataarray_deserialize(
 
                 /* Read column name */
                 char *temp_name = NULL;
-                nmo_chunk_read_string(chunk, &temp_name);
+                NMO_RETURN_IF_ERROR(
+                    nmo_chunk_read_string_checked(chunk, &temp_name, NULL));
                 fmt->name = temp_name; /* Note: This relies on chunk's internal buffer */
 
                 /* Read column type */
@@ -208,7 +209,8 @@ nmo_status_t nmo_dataarray_deserialize(
 
                         case CKARRAYTYPE_STRING: {
                             char *temp_str = NULL;
-                            nmo_chunk_read_string(chunk, &temp_str);
+                            NMO_RETURN_IF_ERROR(
+                                nmo_chunk_read_string_checked(chunk, &temp_str, NULL));
                             cell->string_value = temp_str; /* Note: Relies on chunk's buffer */
                             break;
                         }
@@ -463,7 +465,7 @@ nmo_status_t nmo_dataarray_remap_dependencies(
     }
 
     nmo_dataarray_state_t *state = (nmo_dataarray_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
+    (void)context;
 
     if (state->column_count > 0 && state->column_formats == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "DataArray column_formats missing");
@@ -472,50 +474,13 @@ nmo_status_t nmo_dataarray_remap_dependencies(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "DataArray rows missing");
     }
 
-    if (state->key_column < -1) {
-        state->key_column = -1;
-    }
-    if (state->column_count == 0) {
-        state->key_column = -1;
-        state->column_index = 0;
-    } else {
-        if ((uint32_t)state->key_column >= state->column_count) {
-            state->key_column = -1;
-        }
-        if (state->column_index >= state->column_count) {
-            state->column_index = 0;
-        }
-    }
-
     for (uint32_t r = 0; r < state->row_count; ++r) {
         nmo_dataarray_row_t *row = &state->rows[r];
         if (state->column_count > 0 && row->cells == NULL) {
             NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "DataArray row cells missing");
         }
-        row->column_count = state->column_count;
-
-        if (!repo || row->cells == NULL || state->column_formats == NULL) {
-            continue;
-        }
-
-        for (uint32_t c = 0; c < state->column_count; ++c) {
-            const nmo_dataarray_column_format_t *fmt = &state->column_formats[c];
-            nmo_dataarray_cell_t *cell = &row->cells[c];
-
-            if (fmt->type == CKARRAYTYPE_OBJECT) {
-                if (cell->object_id != 0 &&
-                    nmo_object_repository_find_by_id(repo, cell->object_id) == NULL) {
-                    cell->object_id = 0;
-                }
-            } else if (fmt->type == CKARRAYTYPE_PARAMETER) {
-                if (cell->parameter_chunk == NULL && cell->parameter_id != 0 &&
-                    nmo_object_repository_find_by_id(repo, cell->parameter_id) == NULL) {
-                    cell->parameter_id = 0;
-                }
-            }
-        }
     }
-
+    /* Cell references and raw indexing metadata are not normalized here. */
     return nmo_dataarray_validate(state, NULL, NULL);
 }
 

@@ -374,7 +374,7 @@ static bool add_owned_io_nodes(nmo_script_edit_graph_t *graph,
     for (i = 0; i < behavior_graph->node_count; ++i) {
         const nmo_behavior_graph_node_t *behavior_node = &behavior_graph->nodes[i];
         const nmo_behavior_state_t *state = NULL;
-        const nmo_object_id_t *ids = NULL;
+        const nmo_array_t *array = NULL;
         size_t count = 0;
         size_t slot = 0;
 
@@ -388,11 +388,11 @@ static bool add_owned_io_nodes(nmo_script_edit_graph_t *graph,
             continue;
         }
 
-        ids = (const nmo_object_id_t *)state->inputs.data;
+        array = &state->inputs;
         count = state->inputs.count;
         for (slot = 0; slot < count; ++slot) {
             nmo_script_edit_node_t node = {
-                .object_id = ids[slot],
+                .object_id = nmo_behavior_ref_array_get_id(array, slot),
                 .kind = NMO_SCRIPT_EDIT_NODE_IO,
                 .depth = behavior_node->depth + 1u,
                 .parent_behavior_id = behavior_node->id,
@@ -405,11 +405,11 @@ static bool add_owned_io_nodes(nmo_script_edit_graph_t *graph,
             }
         }
 
-        ids = (const nmo_object_id_t *)state->outputs.data;
+        array = &state->outputs;
         count = state->outputs.count;
         for (slot = 0; slot < count; ++slot) {
             nmo_script_edit_node_t node = {
-                .object_id = ids[slot],
+                .object_id = nmo_behavior_ref_array_get_id(array, slot),
                 .kind = NMO_SCRIPT_EDIT_NODE_IO,
                 .depth = behavior_node->depth + 1u,
                 .parent_behavior_id = behavior_node->id,
@@ -422,11 +422,11 @@ static bool add_owned_io_nodes(nmo_script_edit_graph_t *graph,
             }
         }
 
-        ids = (const nmo_object_id_t *)state->sub_behavior_links.data;
+        array = &state->sub_behavior_links;
         count = state->sub_behavior_links.count;
         for (slot = 0; slot < count; ++slot) {
             nmo_script_edit_node_t node = {
-                .object_id = ids[slot],
+                .object_id = nmo_behavior_ref_array_get_id(array, slot),
                 .kind = NMO_SCRIPT_EDIT_NODE_LINK,
                 .depth = behavior_node->depth + 1u,
                 .parent_behavior_id = behavior_node->id,
@@ -451,7 +451,7 @@ static bool add_owned_parameter_nodes(nmo_script_edit_graph_t *graph,
     for (i = 0; i < behavior_graph->node_count; ++i) {
         const nmo_behavior_graph_node_t *behavior_node = &behavior_graph->nodes[i];
         const nmo_behavior_state_t *state = NULL;
-        const nmo_object_id_t *ids = NULL;
+        const nmo_array_t *array = NULL;
         size_t count = 0;
         size_t slot = 0;
         nmo_port_kind_t kind = NMO_PORT_PARAM_IN;
@@ -469,19 +469,19 @@ static bool add_owned_parameter_nodes(nmo_script_edit_graph_t *graph,
         for (kind = NMO_PORT_PARAM_IN; kind <= NMO_PORT_PARAM_LOCAL; ++kind) {
             switch (kind) {
             case NMO_PORT_PARAM_IN:
-                ids = (const nmo_object_id_t *)state->in_parameters.data;
+                array = &state->in_parameters;
                 count = state->in_parameters.count;
                 break;
             case NMO_PORT_PARAM_OUT:
-                ids = (const nmo_object_id_t *)state->out_parameters.data;
+                array = &state->out_parameters;
                 count = state->out_parameters.count;
                 break;
             case NMO_PORT_PARAM_LOCAL:
-                ids = (const nmo_object_id_t *)state->local_parameters.data;
+                array = &state->local_parameters;
                 count = state->local_parameters.count;
                 break;
             default:
-                ids = NULL;
+                array = NULL;
                 count = 0u;
                 break;
             }
@@ -489,7 +489,7 @@ static bool add_owned_parameter_nodes(nmo_script_edit_graph_t *graph,
             for (slot = 0; slot < count; ++slot) {
                 nmo_object_t *object = NULL;
                 nmo_script_edit_node_t node = {
-                    .object_id = ids[slot],
+                    .object_id = nmo_behavior_ref_array_get_id(array, slot),
                     .kind = NMO_SCRIPT_EDIT_NODE_PARAMETER,
                     .depth = behavior_node->depth + 1u,
                     .parent_behavior_id = behavior_node->id,
@@ -498,8 +498,8 @@ static bool add_owned_parameter_nodes(nmo_script_edit_graph_t *graph,
                     .owner_slot_kind = (uint32_t)kind,
                 };
 
-                object = ids[slot] != 0u
-                    ? nmo_object_repository_find_by_id(graph->repo, ids[slot])
+                object = node.object_id != 0u
+                    ? nmo_object_repository_find_by_id(graph->repo, node.object_id)
                     : NULL;
                 if (object) {
                     node.name = nmo_object_get_name(object);
@@ -1295,7 +1295,7 @@ NMO_API nmo_status_t nmo_script_edit_graph_resolve_handle(
     nmo_object_id_t *out_object_id)
 {
     const nmo_behavior_state_t *behavior = NULL;
-    const nmo_object_id_t *ids = NULL;
+    const nmo_array_t *array = NULL;
     size_t count = 0;
 
     if (!graph || !handle || !out_object_id) {
@@ -1334,35 +1334,35 @@ NMO_API nmo_status_t nmo_script_edit_graph_resolve_handle(
 
     switch ((nmo_port_kind_t)handle->slot_kind) {
     case NMO_PORT_IO_IN:
-        ids = (const nmo_object_id_t *)behavior->inputs.data;
+        array = &behavior->inputs;
         count = behavior->inputs.count;
         break;
     case NMO_PORT_IO_OUT:
-        ids = (const nmo_object_id_t *)behavior->outputs.data;
+        array = &behavior->outputs;
         count = behavior->outputs.count;
         break;
     case NMO_PORT_PARAM_IN:
-        ids = (const nmo_object_id_t *)behavior->in_parameters.data;
+        array = &behavior->in_parameters;
         count = behavior->in_parameters.count;
         break;
     case NMO_PORT_PARAM_OUT:
-        ids = (const nmo_object_id_t *)behavior->out_parameters.data;
+        array = &behavior->out_parameters;
         count = behavior->out_parameters.count;
         break;
     case NMO_PORT_PARAM_LOCAL:
-        ids = (const nmo_object_id_t *)behavior->local_parameters.data;
+        array = &behavior->local_parameters;
         count = behavior->local_parameters.count;
         break;
     case NMO_PORT_OPERATION:
-        ids = (const nmo_object_id_t *)behavior->operations.data;
+        array = &behavior->operations;
         count = behavior->operations.count;
         break;
     case NMO_PORT_SUB_BEHAVIOR:
-        ids = (const nmo_object_id_t *)behavior->sub_behaviors.data;
+        array = &behavior->sub_behaviors;
         count = behavior->sub_behaviors.count;
         break;
     case NMO_PORT_SUB_LINK:
-        ids = (const nmo_object_id_t *)behavior->sub_behavior_links.data;
+        array = &behavior->sub_behavior_links;
         count = behavior->sub_behavior_links.count;
         break;
     default:
@@ -1375,7 +1375,8 @@ NMO_API nmo_status_t nmo_script_edit_graph_resolve_handle(
                          "slot index %d is out of range", handle->slot_index);
     }
 
-    *out_object_id = ids[handle->slot_index];
+    *out_object_id = nmo_behavior_ref_array_get_id(
+        array, (size_t)handle->slot_index);
     NMO_RETURN_OK();
 }
 

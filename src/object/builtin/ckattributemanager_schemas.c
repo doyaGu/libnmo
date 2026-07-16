@@ -105,19 +105,25 @@ nmo_status_t nmo_attributemanager_deserialize(
     if (attribute_count < 0 || attribute_count > 100000) {
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Invalid attribute count");
     }
+    const size_t minimum_entry_dwords =
+        (size_t)category_count + (size_t)attribute_count;
+    if (!nmo_chunk_has_read_capacity(chunk, minimum_entry_dwords)) {
+        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                         "Attribute manager counts exceed remaining DWORDs");
+    }
 
-    out_state->category_count = (uint32_t)category_count;
-    out_state->attribute_count = (uint32_t)attribute_count;
+    nmo_attribute_category_t *categories = NULL;
+    nmo_attribute_descriptor_t *attributes = NULL;
 
     /* Allocate categories */
     if (category_count > 0) {
-        out_state->categories = (nmo_attribute_category_t *)nmo_arena_alloc(
+        categories = (nmo_attribute_category_t *)nmo_arena_alloc(
             arena, category_count * sizeof(nmo_attribute_category_t),
             _Alignof(nmo_attribute_category_t));
-        if (!out_state->categories) {
+        if (!categories) {
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate categories");
         }
-        memset(out_state->categories, 0, category_count * sizeof(nmo_attribute_category_t));
+        memset(categories, 0, category_count * sizeof(nmo_attribute_category_t));
 
         /* Read each category */
         for (int32_t i = 0; i < category_count; i++) {
@@ -125,12 +131,12 @@ nmo_status_t nmo_attributemanager_deserialize(
             result = nmo_chunk_read_int(chunk, &present);
             if (result != NMO_OK) return result;
 
-            nmo_attribute_category_t *cat = &out_state->categories[i];
+            nmo_attribute_category_t *cat = &categories[i];
             cat->present = (present != 0);
 
             if (cat->present) {
                 char *name = NULL;
-                nmo_chunk_read_string(chunk, &name);
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_string_checked(chunk, &name, NULL));
                 cat->name = name;
 
                 result = nmo_chunk_read_dword(chunk, &cat->flags);
@@ -141,13 +147,13 @@ nmo_status_t nmo_attributemanager_deserialize(
 
     /* Allocate attributes */
     if (attribute_count > 0) {
-        out_state->attributes = (nmo_attribute_descriptor_t *)nmo_arena_alloc(
+        attributes = (nmo_attribute_descriptor_t *)nmo_arena_alloc(
             arena, attribute_count * sizeof(nmo_attribute_descriptor_t),
             _Alignof(nmo_attribute_descriptor_t));
-        if (!out_state->attributes) {
+        if (!attributes) {
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate attributes");
         }
-        memset(out_state->attributes, 0, attribute_count * sizeof(nmo_attribute_descriptor_t));
+        memset(attributes, 0, attribute_count * sizeof(nmo_attribute_descriptor_t));
 
         /* Read each attribute */
         for (int32_t i = 0; i < attribute_count; i++) {
@@ -155,12 +161,12 @@ nmo_status_t nmo_attributemanager_deserialize(
             result = nmo_chunk_read_int(chunk, &present);
             if (result != NMO_OK) return result;
 
-            nmo_attribute_descriptor_t *attr = &out_state->attributes[i];
+            nmo_attribute_descriptor_t *attr = &attributes[i];
             attr->present = (present != 0);
 
             if (attr->present) {
                 char *name = NULL;
-                nmo_chunk_read_string(chunk, &name);
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_string_checked(chunk, &name, NULL));
                 attr->name = name;
 
                 result = nmo_chunk_read_guid(chunk, &attr->parameter_type_guid);
@@ -177,6 +183,11 @@ nmo_status_t nmo_attributemanager_deserialize(
             }
         }
     }
+
+    out_state->category_count = (uint32_t)category_count;
+    out_state->categories = categories;
+    out_state->attribute_count = (uint32_t)attribute_count;
+    out_state->attributes = attributes;
 
     NMO_RETURN_OK();
 }
@@ -303,56 +314,14 @@ nmo_status_t nmo_attributemanager_remap_dependencies(
 
     nmo_attributemanager_state_t *state = (nmo_attributemanager_state_t *)instance;
 
-    if (state->category_count == 0) {
-        state->categories = NULL;
-    } else if (state->categories == NULL) {
+    if (state->category_count > 0 && state->categories == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "Attribute categories missing");
     }
 
-    if (state->attribute_count == 0) {
-        state->attributes = NULL;
-    } else if (state->attributes == NULL) {
+    if (state->attribute_count > 0 && state->attributes == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "Attribute descriptors missing");
-    }
-
-    if (state->categories) {
-        for (uint32_t i = 0; i < state->category_count; ++i) {
-            nmo_attribute_category_t *cat = &state->categories[i];
-            if (cat->present && (!cat->name || cat->name[0] == '\0')) {
-                cat->present = false;
-                cat->name = NULL;
-                cat->flags = 0;
-            }
-        }
-    }
-
-    if (state->attributes) {
-        for (uint32_t i = 0; i < state->attribute_count; ++i) {
-            nmo_attribute_descriptor_t *attr = &state->attributes[i];
-            if (attr->present && (!attr->name || attr->name[0] == '\0')) {
-                attr->present = false;
-                attr->name = NULL;
-                attr->parameter_type_guid = NMO_GUID_NULL;
-                attr->category_index = -1;
-                attr->compatible_class_id = 0;
-                attr->flags = 0;
-                continue;
-            }
-            if (attr->present) {
-                if (attr->category_index < -1 ||
-                    (state->category_count > 0 &&
-                     attr->category_index >= (int32_t)state->category_count)) {
-                    attr->category_index = -1;
-                }
-            } else {
-                attr->parameter_type_guid = NMO_GUID_NULL;
-                attr->category_index = -1;
-                attr->compatible_class_id = 0;
-                attr->flags = 0;
-            }
-        }
     }
 
     return nmo_object_default_validate(state, NULL, NULL);

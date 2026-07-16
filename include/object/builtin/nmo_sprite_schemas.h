@@ -20,6 +20,7 @@
 
 #include "nmo_types.h"
 #include "object/builtin/nmo_2dentity_schemas.h"
+#include "object/nmo_ref.h"
 #include "object/nmo_object_struct_defs.h"
 #include "object/nmo_object_type_common.h"
 #include "object/nmo_statesave_ids.h"
@@ -55,7 +56,7 @@ typedef struct nmo_sprite_state {
     
     /* Sprite reference (optional) */
     bool has_sprite_ref;                /**< True if cloning from another sprite */
-    nmo_object_id_t sprite_ref_id;      /**< Sprite to clone from (identifier 0x80000) */
+    nmo_ref_t sprite_ref;               /**< Sprite to clone from (identifier 0x80000) */
     
     /* Bitmap data (optional, not present if sprite_ref is used) */
     bool has_bitmap_data;               /**< True if bitmap payload is present */

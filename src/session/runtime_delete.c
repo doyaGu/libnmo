@@ -8,6 +8,20 @@
 #include "object/nmo_ref_graph.h"
 #include "format/nmo_object.h"
 #include "object/nmo_object_repository.h"
+#include "object/nmo_ref.h"
+#include "object/nmo_class_ids.h"
+#include "object/builtin/nmo_behavior_schemas.h"
+#include "object/builtin/nmo_behaviorlink_schemas.h"
+#include "object/builtin/nmo_animation_schemas.h"
+#include "object/builtin/nmo_beobject_schemas.h"
+#include "object/builtin/nmo_character_schemas.h"
+#include "object/builtin/nmo_curve_schemas.h"
+#include "object/builtin/nmo_grid_schemas.h"
+#include "object/builtin/nmo_group_schemas.h"
+#include "object/builtin/nmo_patchmesh_schemas.h"
+#include "object/nmo_object_guids.h"
+#include "type/nmo_reflection.h"
+#include "type/nmo_type_query.h"
 #include "type/nmo_type_runtime.h"
 #include "type/nmo_type_system.h"
 #include "core/nmo_logger.h"
@@ -170,12 +184,10 @@ static int runtime_collect_delete_set(
 /* 鈹€鈹€ Safe-detach pre-validation 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 /**
- * @brief Validate that safe-detach remap can succeed.
+ * @brief Validate that safe-detach supports every surviving referrer.
  *
  * For each surviving object that references a delete-set member, verify its
- * type has a remap_dependencies vtable hook.  Without this hook,
- * nmo_runtime_remap_all_refs() silently skips the object, leaving dangling
- * references in the saved file.
+ * type is registered and exposes the existing dependency hook contract.
  *
  * @return NMO_OK if all referencing objects support remap, error otherwise
  */
@@ -211,10 +223,9 @@ static int runtime_validate_safe_detach(
         }
 
         const nmo_type_descriptor_t *type = runtime_find_type_for_object(type_rt, referrer);
-        if (type != NULL &&
-            type->vtable != NULL &&
+        if (type != NULL && type->vtable != NULL &&
             type->vtable->remap_dependencies != NULL) {
-            continue; /* this object can be remapped */
+            continue;
         }
 
         /* Surviving object references a deleted object but cannot remap */
@@ -224,13 +235,625 @@ static int runtime_validate_safe_detach(
         }
         if (logger != NULL) {
             nmo_log(logger, NMO_LOG_WARN,
-                    "Object %u references deleted object %u but type lacks "
-                    "remap_dependencies; dangling reference will persist",
+                    "Object %u references deleted object %u but its type lacks "
+                    "remap_dependencies; safe detach is not supported",
                     edges[i].from, edges[i].to);
         }
     }
 
     return result;
+}
+
+static nmo_status_t runtime_remove_deleted_ids_from_array(
+    nmo_array_t *array,
+    nmo_array_t *parallel_chunks,
+    const runtime_id_set_t *delete_set)
+{
+    if (array == NULL || delete_set == NULL ||
+        (array->count > 0u && array->data == NULL)) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    if (parallel_chunks != NULL && parallel_chunks->count != 0u &&
+        (parallel_chunks->count != array->count ||
+         parallel_chunks->data == NULL)) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+
+    nmo_object_id_t *ids = NMO_ARRAY_DATA(nmo_object_id_t, array);
+    for (size_t i = array->count; i > 0u; --i) {
+        size_t index = i - 1u;
+        if (!runtime_id_set_contains(delete_set, ids[index])) {
+            continue;
+        }
+        if (parallel_chunks != NULL && parallel_chunks->count != 0u) {
+            NMO_RETURN_IF_ERROR(nmo_array_remove(parallel_chunks, index, NULL));
+        }
+        NMO_RETURN_IF_ERROR(nmo_array_remove(array, index, NULL));
+    }
+    return NMO_OK;
+}
+
+static nmo_status_t runtime_remove_deleted_behavior_refs(
+    nmo_array_t *array,
+    const runtime_id_set_t *delete_set)
+{
+    if (array == NULL || delete_set == NULL ||
+        array->element_size != sizeof(nmo_behavior_ref_t) ||
+        (array->count > 0u && array->data == NULL)) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    nmo_behavior_ref_t *refs = NMO_ARRAY_DATA(nmo_behavior_ref_t, array);
+    for (size_t i = array->count; i > 0u; --i) {
+        const size_t index = i - 1u;
+        const nmo_object_id_t id = nmo_behavior_ref_runtime_id(&refs[index]);
+        if (id == NMO_OBJECT_ID_NONE ||
+            !runtime_id_set_contains(delete_set, id)) {
+            continue;
+        }
+        NMO_RETURN_IF_ERROR(nmo_array_remove(array, index, NULL));
+    }
+    return NMO_OK;
+}
+
+static const void *runtime_delete_get_base_instance(
+    const nmo_type_registry_t *types,
+    const nmo_type_descriptor_t *derived_type,
+    const void *derived_instance,
+    const nmo_type_descriptor_t *current_type,
+    const void *current_instance,
+    const nmo_type_descriptor_t *base_type)
+{
+    const nmo_type_field_t *base_field =
+        nmo_type_get_field_by_name(current_type, "base");
+    if (base_field != NULL &&
+        nmo_guid_equals(base_field->type_guid, base_type->guid)) {
+        return nmo_field_get_ptr_const(current_instance, base_field);
+    }
+
+    if (derived_type != NULL && derived_type->ext != NULL &&
+        derived_type->ext->state_offsets != NULL) {
+        uint32_t offset = nmo_type_get_state_offset(
+            types, derived_type, base_type);
+        if (offset != (uint32_t)-1) {
+            return (const char *)derived_instance + offset;
+        }
+    }
+    return NULL;
+}
+
+static bool runtime_delete_is_atomic_ref_field(
+    const nmo_type_descriptor_t *type,
+    const nmo_type_field_t *field)
+{
+    if (type == NULL || field == NULL || field->name == NULL) return false;
+    return strcmp(field->name, "patch_material_ids") == 0 ||
+           strcmp(field->name, "legacy_material_ids") == 0 ||
+           strcmp(field->name, "body_part_ids") == 0 ||
+           strcmp(field->name, "control_point_ids") == 0 ||
+           (nmo_guid_equals(type->guid, CKPGUID_KEYEDANIMATION) &&
+            strcmp(field->name, "animation_ids") == 0);
+}
+
+typedef struct runtime_delete_ref_ctx {
+    const runtime_id_set_t *delete_set;
+    const nmo_type_descriptor_t *type;
+    void *instance;
+    bool validate_only;
+    nmo_status_t status;
+} runtime_delete_ref_ctx_t;
+
+static bool runtime_delete_ref_field(
+    void *user_data,
+    const nmo_type_field_t *field,
+    const void *field_ptr)
+{
+    (void)field_ptr;
+    runtime_delete_ref_ctx_t *ctx = (runtime_delete_ref_ctx_t *)user_data;
+    if (ctx == NULL || field == NULL || !nmo_field_is_ref(field) ||
+        runtime_delete_is_atomic_ref_field(ctx->type, field)) {
+        return true;
+    }
+
+    if (!nmo_field_is_array(field) &&
+        field->size == sizeof(nmo_ref_t)) {
+        nmo_ref_t *ref = (nmo_ref_t *)nmo_field_get_ptr(
+            ctx->instance, field);
+        if (!ctx->validate_only && ref != NULL &&
+            runtime_id_set_contains(
+                ctx->delete_set, nmo_ref_runtime_id(ref))) {
+            *ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+        }
+        return true;
+    }
+
+    if (!nmo_field_is_array(field) &&
+        field->size == sizeof(nmo_object_id_t)) {
+        nmo_object_id_t *id = (nmo_object_id_t *)nmo_field_get_ptr(
+            ctx->instance, field);
+        if (!ctx->validate_only && id != NULL &&
+            runtime_id_set_contains(ctx->delete_set, *id)) {
+            *id = NMO_OBJECT_ID_NONE;
+        }
+        return true;
+    }
+
+    if (field->size == sizeof(nmo_array_t)) {
+        nmo_array_t *array = (nmo_array_t *)nmo_field_get_ptr(
+            ctx->instance, field);
+        if (array == NULL) {
+            return true;
+        }
+        if (nmo_field_uses_ref_records(field)) {
+            if (array->element_size != sizeof(nmo_ref_t)) return true;
+            if (array->count > 0u && array->data == NULL) {
+                ctx->status = NMO_ERR_VALIDATION_FAILED;
+                return false;
+            }
+            if (!ctx->validate_only) {
+                for (size_t i = array->count; i > 0u; --i) {
+                    nmo_ref_t *refs = NMO_ARRAY_DATA(nmo_ref_t, array);
+                    if (runtime_id_set_contains(
+                            ctx->delete_set,
+                            nmo_ref_runtime_id(&refs[i - 1u]))) {
+                        ctx->status = nmo_array_remove(array, i - 1u, NULL);
+                        if (ctx->status != NMO_OK) return false;
+                    }
+                }
+            }
+            return true;
+        }
+        if (array->element_size != sizeof(nmo_object_id_t)) return true;
+        if (array->count > 0u && array->data == NULL) {
+            ctx->status = NMO_ERR_VALIDATION_FAILED;
+            return false;
+        }
+        if (!ctx->validate_only) {
+            ctx->status = runtime_remove_deleted_ids_from_array(
+                array, NULL, ctx->delete_set);
+            if (ctx->status != NMO_OK) return false;
+        }
+        return true;
+    }
+
+    if (field->size == sizeof(void *)) {
+        if (nmo_field_uses_ref_records(field)) {
+            nmo_ref_t **refs = (nmo_ref_t **)nmo_field_get_ptr(
+                ctx->instance, field);
+            uint32_t count = 0;
+            if (refs == NULL || nmo_field_resolve_count(
+                    ctx->type, field, ctx->instance, &count) != NMO_OK ||
+                (count > 0u && *refs == NULL)) {
+                ctx->status = NMO_ERR_VALIDATION_FAILED;
+                return false;
+            }
+            const nmo_type_field_t *count_field = field->count_field_name
+                ? nmo_type_get_field_by_name(ctx->type, field->count_field_name)
+                : NULL;
+            uint32_t *count_ptr = count_field &&
+                count_field->size == sizeof(uint32_t)
+                ? (uint32_t *)nmo_field_get_ptr(ctx->instance, count_field)
+                : NULL;
+            if (count_ptr == NULL) {
+                ctx->status = NMO_ERR_VALIDATION_FAILED;
+                return false;
+            }
+            if (!ctx->validate_only) {
+                uint32_t kept = 0;
+                for (uint32_t i = 0; i < count; ++i) {
+                    if (!runtime_id_set_contains(
+                            ctx->delete_set,
+                            nmo_ref_runtime_id(&(*refs)[i]))) {
+                        (*refs)[kept++] = (*refs)[i];
+                    }
+                }
+                *count_ptr = kept;
+                if (kept == 0u) *refs = NULL;
+            }
+            return true;
+        }
+        nmo_object_id_t **ids = (nmo_object_id_t **)nmo_field_get_ptr(
+            ctx->instance, field);
+        uint32_t count = 0;
+        if (ids == NULL || nmo_field_resolve_count(
+                ctx->type, field, ctx->instance, &count) != NMO_OK ||
+            (count > 0u && *ids == NULL)) {
+            ctx->status = NMO_ERR_VALIDATION_FAILED;
+            return false;
+        }
+        const nmo_type_field_t *count_field = field->count_field_name
+            ? nmo_type_get_field_by_name(ctx->type, field->count_field_name)
+            : NULL;
+        uint32_t *count_ptr = count_field &&
+            count_field->size == sizeof(uint32_t)
+            ? (uint32_t *)nmo_field_get_ptr(ctx->instance, count_field)
+            : NULL;
+        if (count_ptr == NULL) {
+            ctx->status = NMO_ERR_VALIDATION_FAILED;
+            return false;
+        }
+        if (!ctx->validate_only) {
+            uint32_t kept = 0;
+            for (uint32_t i = 0; i < count; ++i) {
+                if (!runtime_id_set_contains(ctx->delete_set, (*ids)[i])) {
+                    (*ids)[kept++] = (*ids)[i];
+                }
+            }
+            *count_ptr = kept;
+            if (kept == 0u) *ids = NULL;
+        }
+    }
+    return true;
+}
+
+static nmo_status_t runtime_delete_visit_ref_fields(
+    const nmo_type_runtime_t *type_rt,
+    nmo_object_t *obj,
+    const runtime_id_set_t *delete_set,
+    bool validate_only)
+{
+    const nmo_type_descriptor_t *derived =
+        runtime_find_type_for_object(type_rt, obj);
+    const nmo_type_descriptor_t *current = derived;
+    void *current_instance = obj->state;
+    for (size_t depth = 0u;
+         current != NULL && current_instance != NULL && depth < 64u;
+         ++depth) {
+        runtime_delete_ref_ctx_t ctx = {
+            .delete_set = delete_set,
+            .type = current,
+            .instance = current_instance,
+            .validate_only = validate_only,
+            .status = NMO_OK,
+        };
+        nmo_status_t status = nmo_type_foreach_ref_field(
+            current, current_instance, runtime_delete_ref_field, &ctx);
+        if (status != NMO_OK) return status;
+        if (ctx.status != NMO_OK) return ctx.status;
+        if (nmo_guid_is_null(current->base_type)) break;
+        const nmo_type_descriptor_t *base = nmo_type_registry_find_by_guid(
+            type_rt->types, current->base_type);
+        if (base == NULL) break;
+        current_instance = (void *)runtime_delete_get_base_instance(
+            type_rt->types, derived, obj->state, current,
+            current_instance, base);
+        current = base;
+    }
+    return NMO_OK;
+}
+
+static nmo_status_t runtime_delete_validate_atomic_refs(
+    const nmo_type_runtime_t *type_rt,
+    nmo_object_t *obj)
+{
+    nmo_beobject_state_t *beobject = (nmo_beobject_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            type_rt->types, obj, CKPGUID_BEOBJECT);
+    if (beobject != NULL &&
+        ((beobject->attributes.element_size != 0 &&
+          beobject->attributes.element_size != sizeof(nmo_beobject_attribute_t)) ||
+         (beobject->attributes.count > 0u &&
+          beobject->attributes.element_size != sizeof(nmo_beobject_attribute_t)) ||
+         (beobject->attributes.count > 0u &&
+          beobject->attributes.data == NULL))) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+
+    nmo_grid_state_t *grid = (nmo_grid_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            type_rt->types, obj, CKPGUID_GRID);
+    if (grid != NULL && grid->layers.count > 0u && grid->layers.data == NULL) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+
+    nmo_patchmesh_state_t *patchmesh = (nmo_patchmesh_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            type_rt->types, obj, CKPGUID_PATCHMESH);
+    if (patchmesh != NULL) {
+        if ((patchmesh->patch_count > 0u &&
+             patchmesh->patch_material_ids == NULL) ||
+            (patchmesh->legacy_material_count > 0u &&
+             patchmesh->legacy_material_ids == NULL)) {
+            return NMO_ERR_VALIDATION_FAILED;
+        }
+    }
+
+    nmo_keyedanimation_state_t *keyed = (nmo_keyedanimation_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            type_rt->types, obj, CKPGUID_KEYEDANIMATION);
+    if (keyed != NULL &&
+        ((keyed->animation_count > 0u && keyed->animation_ids == NULL) ||
+         (keyed->subanim_count != 0u &&
+          (keyed->subanim_count != keyed->animation_count ||
+           keyed->subanims == NULL)))) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+
+    nmo_character_state_t *character = (nmo_character_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            type_rt->types, obj, CKPGUID_CHARACTER);
+    if (character != NULL &&
+        ((character->body_part_count > 0u && character->body_part_ids == NULL) ||
+         (character->subpart_count != 0u &&
+          (character->subpart_count != character->body_part_count ||
+           character->subparts == NULL)))) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+
+    nmo_curve_state_t *curve = (nmo_curve_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            type_rt->types, obj, CKPGUID_CURVE);
+    if (curve != NULL &&
+        ((curve->control_point_count > 0u && curve->control_point_ids == NULL) ||
+         (curve->sub_point_count != 0u &&
+          (curve->sub_point_count != curve->control_point_count ||
+           curve->sub_points == NULL)))) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    return NMO_OK;
+}
+
+static nmo_status_t runtime_delete_detach_atomic_refs(
+    const nmo_type_runtime_t *type_rt,
+    nmo_object_t *obj,
+    const runtime_id_set_t *delete_set)
+{
+    nmo_beobject_state_t *beobject = (nmo_beobject_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            type_rt->types, obj, CKPGUID_BEOBJECT);
+    if (beobject != NULL) {
+        nmo_beobject_attribute_t *attributes = NMO_ARRAY_DATA(
+            nmo_beobject_attribute_t, &beobject->attributes);
+        for (size_t i = beobject->attributes.count; i > 0u; --i) {
+            size_t index = i - 1u;
+            const nmo_object_id_t id = nmo_ref_runtime_id(
+                &attributes[index].parameter);
+            if (!runtime_id_set_contains(delete_set, id)) continue;
+            NMO_RETURN_IF_ERROR(nmo_array_remove(
+                &beobject->attributes, index, NULL));
+        }
+    }
+
+    nmo_grid_state_t *grid = (nmo_grid_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            type_rt->types, obj, CKPGUID_GRID);
+    if (grid != NULL) {
+        nmo_grid_layer_t *layers = NMO_ARRAY_DATA(nmo_grid_layer_t, &grid->layers);
+        for (size_t i = grid->layers.count; i > 0u; --i) {
+            size_t index = i - 1u;
+            if (!runtime_id_set_contains(delete_set, layers[index].ref.id)) continue;
+            NMO_RETURN_IF_ERROR(nmo_array_remove(&grid->layers, index, NULL));
+        }
+    }
+
+    nmo_patchmesh_state_t *patchmesh = (nmo_patchmesh_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            type_rt->types, obj, CKPGUID_PATCHMESH);
+    if (patchmesh != NULL) {
+        for (uint32_t i = 0u; i < patchmesh->patch_count; ++i) {
+            if (runtime_id_set_contains(
+                    delete_set, patchmesh->patch_material_ids[i])) {
+                patchmesh->patch_material_ids[i] = NMO_OBJECT_ID_NONE;
+            }
+        }
+        for (uint32_t i = 0u; i < patchmesh->legacy_material_count; ++i) {
+            if (runtime_id_set_contains(
+                    delete_set, patchmesh->legacy_material_ids[i])) {
+                patchmesh->legacy_material_ids[i] = NMO_OBJECT_ID_NONE;
+            }
+        }
+    }
+
+    nmo_keyedanimation_state_t *keyed = (nmo_keyedanimation_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            type_rt->types, obj, CKPGUID_KEYEDANIMATION);
+    if (keyed != NULL) {
+        uint32_t count = keyed->animation_count;
+        for (uint32_t i = 0u; i < count;) {
+            if (!runtime_id_set_contains(delete_set, keyed->animation_ids[i])) {
+                ++i;
+                continue;
+            }
+            if (keyed->subanim_count != 0u && keyed->subanims[i].chunk != NULL) {
+                nmo_chunk_destroy(keyed->subanims[i].chunk);
+                keyed->subanims[i].chunk = NULL;
+            }
+            uint32_t remaining = count - i - 1u;
+            if (remaining > 0u) {
+                memmove(&keyed->animation_ids[i], &keyed->animation_ids[i + 1u],
+                        (size_t)remaining * sizeof(*keyed->animation_ids));
+                if (keyed->subanim_count != 0u) {
+                    memmove(&keyed->subanims[i], &keyed->subanims[i + 1u],
+                            (size_t)remaining * sizeof(*keyed->subanims));
+                }
+            }
+            --count;
+            keyed->animation_count = count;
+            if (keyed->subanim_count != 0u) keyed->subanim_count = count;
+        }
+    }
+
+    nmo_character_state_t *character = (nmo_character_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            type_rt->types, obj, CKPGUID_CHARACTER);
+    if (character != NULL) {
+        uint32_t count = character->body_part_count;
+        for (uint32_t i = 0u; i < count;) {
+            if (!runtime_id_set_contains(delete_set, character->body_part_ids[i])) {
+                ++i;
+                continue;
+            }
+            if (character->subpart_count != 0u &&
+                character->subparts[i].chunk != NULL) {
+                nmo_chunk_destroy(character->subparts[i].chunk);
+                character->subparts[i].chunk = NULL;
+            }
+            uint32_t remaining = count - i - 1u;
+            if (remaining > 0u) {
+                memmove(&character->body_part_ids[i],
+                        &character->body_part_ids[i + 1u],
+                        (size_t)remaining * sizeof(*character->body_part_ids));
+                if (character->subpart_count != 0u) {
+                    memmove(&character->subparts[i],
+                            &character->subparts[i + 1u],
+                            (size_t)remaining * sizeof(*character->subparts));
+                }
+            }
+            --count;
+            character->body_part_count = count;
+            if (character->subpart_count != 0u) character->subpart_count = count;
+        }
+    }
+
+    nmo_curve_state_t *curve = (nmo_curve_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            type_rt->types, obj, CKPGUID_CURVE);
+    if (curve != NULL) {
+        uint32_t count = curve->control_point_count;
+        for (uint32_t i = 0u; i < count;) {
+            if (!runtime_id_set_contains(delete_set, curve->control_point_ids[i])) {
+                ++i;
+                continue;
+            }
+            if (curve->sub_point_count != 0u && curve->sub_points[i].chunk != NULL) {
+                nmo_chunk_destroy(curve->sub_points[i].chunk);
+                curve->sub_points[i].chunk = NULL;
+            }
+            uint32_t remaining = count - i - 1u;
+            if (remaining > 0u) {
+                memmove(&curve->control_point_ids[i],
+                        &curve->control_point_ids[i + 1u],
+                        (size_t)remaining * sizeof(*curve->control_point_ids));
+                if (curve->sub_point_count != 0u) {
+                    memmove(&curve->sub_points[i], &curve->sub_points[i + 1u],
+                            (size_t)remaining * sizeof(*curve->sub_points));
+                }
+            }
+            --count;
+            curve->control_point_count = count;
+            if (curve->sub_point_count != 0u) curve->sub_point_count = count;
+        }
+    }
+    return NMO_OK;
+}
+
+static nmo_status_t runtime_detach_deleted_references(
+    nmo_object_repository_t *repo,
+    const nmo_type_runtime_t *type_rt,
+    const runtime_id_set_t *delete_set)
+{
+    if (type_rt == NULL || type_rt->types == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    /* Validate every atomic ID/chunk lane before mutating any object. */
+    size_t object_count = nmo_object_repository_get_count(repo);
+    for (size_t oi = 0; oi < object_count; ++oi) {
+        nmo_object_t *obj = nmo_object_repository_get_by_index(repo, oi);
+        if (!obj || !obj->state || runtime_id_set_contains(delete_set, obj->id)) {
+            continue;
+        }
+        NMO_RETURN_IF_ERROR(runtime_delete_validate_atomic_refs(type_rt, obj));
+        NMO_RETURN_IF_ERROR(runtime_delete_visit_ref_fields(
+            type_rt, obj, delete_set, true));
+        if (obj->class_id == NMO_CID_GROUP) {
+            nmo_group_state_t *group = (nmo_group_state_t *)obj->state;
+            if (group->object_ids.count > 0u && group->object_ids.data == NULL) {
+                return NMO_ERR_VALIDATION_FAILED;
+            }
+        }
+        if (!obj || obj->class_id != NMO_CID_BEHAVIOR || !obj->state ||
+            runtime_id_set_contains(delete_set, obj->id)) {
+            continue;
+        }
+
+        nmo_behavior_state_t *behavior = (nmo_behavior_state_t *)obj->state;
+        const nmo_array_t *plain_arrays[] = {
+            &behavior->sub_behaviors,
+            &behavior->local_parameters,
+            &behavior->sub_behavior_links,
+            &behavior->operations,
+            &behavior->in_parameters,
+            &behavior->out_parameters,
+            &behavior->inputs,
+            &behavior->outputs,
+        };
+        for (size_t ai = 0u;
+             ai < sizeof(plain_arrays) / sizeof(plain_arrays[0]); ++ai) {
+            if (plain_arrays[ai]->count > 0u &&
+                plain_arrays[ai]->data == NULL) {
+                return NMO_ERR_VALIDATION_FAILED;
+            }
+        }
+    }
+
+    for (size_t oi = 0; oi < object_count; ++oi) {
+        nmo_object_t *obj = nmo_object_repository_get_by_index(repo, oi);
+        if (!obj || !obj->state || runtime_id_set_contains(delete_set, obj->id)) {
+            continue;
+        }
+        NMO_RETURN_IF_ERROR(runtime_delete_detach_atomic_refs(
+            type_rt, obj, delete_set));
+        if (obj->class_id == NMO_CID_BEHAVIORLINK) {
+            nmo_behaviorlink_state_t *link =
+                (nmo_behaviorlink_state_t *)obj->state;
+            if (runtime_id_set_contains(delete_set, link->in_io_id)) {
+                link->in_io_id = NMO_OBJECT_ID_NONE;
+            }
+            if (runtime_id_set_contains(delete_set, link->out_io_id)) {
+                link->out_io_id = NMO_OBJECT_ID_NONE;
+            }
+            continue;
+        }
+        if (!obj || obj->class_id != NMO_CID_BEHAVIOR || !obj->state ||
+            runtime_id_set_contains(delete_set, obj->id)) {
+            NMO_RETURN_IF_ERROR(runtime_delete_visit_ref_fields(
+                type_rt, obj, delete_set, false));
+            continue;
+        }
+
+        nmo_behavior_state_t *behavior = (nmo_behavior_state_t *)obj->state;
+        if (runtime_id_set_contains(delete_set, behavior->owner_id)) {
+            behavior->owner_id = NMO_OBJECT_ID_NONE;
+        }
+        if (runtime_id_set_contains(delete_set, behavior->target_parameter_id)) {
+            behavior->target_parameter_id = NMO_OBJECT_ID_NONE;
+        }
+
+        NMO_RETURN_IF_ERROR(runtime_remove_deleted_behavior_refs(
+            &behavior->sub_behaviors, delete_set));
+        NMO_RETURN_IF_ERROR(runtime_remove_deleted_behavior_refs(
+            &behavior->local_parameters, delete_set));
+        NMO_RETURN_IF_ERROR(runtime_remove_deleted_behavior_refs(
+            &behavior->operations, delete_set));
+        NMO_RETURN_IF_ERROR(runtime_remove_deleted_behavior_refs(
+            &behavior->in_parameters, delete_set));
+        NMO_RETURN_IF_ERROR(runtime_remove_deleted_behavior_refs(
+            &behavior->out_parameters, delete_set));
+        NMO_RETURN_IF_ERROR(runtime_remove_deleted_behavior_refs(
+            &behavior->inputs, delete_set));
+        NMO_RETURN_IF_ERROR(runtime_remove_deleted_behavior_refs(
+            &behavior->outputs, delete_set));
+
+        nmo_behavior_ref_t *link_refs = NMO_ARRAY_DATA(
+            nmo_behavior_ref_t, &behavior->sub_behavior_links);
+        for (size_t i = behavior->sub_behavior_links.count; i > 0u; --i) {
+            const size_t index = i - 1u;
+            const nmo_object_id_t link_id =
+                nmo_behavior_ref_runtime_id(&link_refs[index]);
+            if (link_id == NMO_OBJECT_ID_NONE) continue;
+            nmo_object_t *link_obj = nmo_object_repository_find_by_id(repo, link_id);
+            const nmo_behaviorlink_state_t *link = link_obj && link_obj->state
+                ? (const nmo_behaviorlink_state_t *)link_obj->state : NULL;
+            if (runtime_id_set_contains(delete_set, link_id) ||
+                (link && (runtime_id_set_contains(delete_set, link->in_io_id) ||
+                          runtime_id_set_contains(delete_set, link->out_io_id)))) {
+                NMO_RETURN_IF_ERROR(nmo_array_remove(
+                    &behavior->sub_behavior_links, index, NULL));
+            }
+        }
+        NMO_RETURN_IF_ERROR(runtime_delete_visit_ref_fields(
+            type_rt, obj, delete_set, false));
+    }
+    return NMO_OK;
 }
 
 /* 鈹€鈹€ Public API 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
@@ -352,6 +975,15 @@ nmo_status_t nmo_runtime_execute_delete(
         return NMO_ERR_NOMEM;
     }
     size_t detached_count = 0;
+
+    if (request->flags & NMO_RUNTIME_REQUEST_SAFE_DETACH) {
+        nmo_status_t detach_result =
+            runtime_detach_deleted_references(repo, type_rt, &delete_set);
+        if (detach_result != NMO_OK) {
+            nmo_bit_array_dispose(&delete_set.bits);
+            return detach_result;
+        }
+    }
 
     for (size_t i = 0; i < ID_SET_COUNT(&delete_set); i++) {
         nmo_object_id_t object_id = ID_SET_AT(&delete_set, i);

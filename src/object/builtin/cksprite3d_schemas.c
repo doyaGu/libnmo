@@ -9,6 +9,7 @@
 #include "object/nmo_object_enum_defs.h"
 #include "object/nmo_object_enum_guids.h"
 #include "object/nmo_serialize_context.h"
+#include "object/nmo_deserialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
@@ -34,7 +35,7 @@ static void nmo_sprite3d_set_defaults(nmo_sprite3d_state_t *state) {
     state->uv_rect.top = 0.0f;
     state->uv_rect.right = 1.0f;
     state->uv_rect.bottom = 1.0f;
-    state->material_id = 0;
+    state->material = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
 }
 
 NMO_DEFINE_OBJECT_LIFECYCLE(
@@ -59,7 +60,7 @@ static const nmo_type_field_t nmo_sprite3d_fields[] = {
     NMO_FIELD(nmo_sprite3d_state_t, half_height, CKPGUID_FLOAT),
     NMO_FIELD(nmo_sprite3d_state_t, offset, CKPGUID_2DVECTOR),
     NMO_FIELD(nmo_sprite3d_state_t, uv_rect, CKPGUID_RECT),
-    NMO_FIELD_REF(nmo_sprite3d_state_t, material_id)
+    NMO_FIELD_REF(nmo_sprite3d_state_t, material)
 };
 
 static nmo_status_t nmo_sprite3d_deserialize_internal(
@@ -76,20 +77,39 @@ static nmo_status_t nmo_sprite3d_deserialize_internal(
         return result;
     }
 
+    nmo_sprite3d_set_defaults(out_state);
     out_state->has_data = 0;
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SPRITE3DDATA) == NMO_OK) {
+        uint32_t mode = 0;
+        float half_width = 0.0f;
+        float half_height = 0.0f;
+        nmo_vector2_t offset = {0.0f, 0.0f};
+        nmo_rect_t uv_rect = {0.0f, 0.0f, 0.0f, 0.0f};
+        nmo_ref_t material = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &mode));
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &half_width));
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &half_height));
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &offset.x));
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &offset.y));
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &uv_rect.left));
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &uv_rect.top));
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &uv_rect.right));
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &uv_rect.bottom));
+        NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &material));
+        nmo_ref_check_class(
+            &material,
+            (const nmo_object_repository_t *)
+                nmo_deserialize_context_get_repository(context),
+            nmo_deserialize_context_get_type_registry(context),
+            NMO_CID_MATERIAL);
         out_state->has_data = 1;
-        (void)nmo_chunk_read_dword(chunk, &out_state->mode);
-        (void)nmo_chunk_read_float(chunk, &out_state->half_width);
-        (void)nmo_chunk_read_float(chunk, &out_state->half_height);
-        (void)nmo_chunk_read_float(chunk, &out_state->offset.x);
-        (void)nmo_chunk_read_float(chunk, &out_state->offset.y);
-        (void)nmo_chunk_read_float(chunk, &out_state->uv_rect.left);
-        (void)nmo_chunk_read_float(chunk, &out_state->uv_rect.top);
-        (void)nmo_chunk_read_float(chunk, &out_state->uv_rect.right);
-        (void)nmo_chunk_read_float(chunk, &out_state->uv_rect.bottom);
-        (void)nmo_chunk_read_object_id(chunk, &out_state->material_id);
+        out_state->mode = mode;
+        out_state->half_width = half_width;
+        out_state->half_height = half_height;
+        out_state->offset = offset;
+        out_state->uv_rect = uv_rect;
+        out_state->material = material;
     }
 
     NMO_RETURN_OK();
@@ -140,7 +160,7 @@ static nmo_status_t nmo_sprite3d_serialize_internal(
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_float(out_chunk, in_state->uv_rect.bottom);
         if (result != NMO_OK) return result;
-        result = nmo_chunk_write_object_id(out_chunk, in_state->material_id);
+        result = nmo_ref_write(out_chunk, &in_state->material);
         if (result != NMO_OK) return result;
     }
 
@@ -193,13 +213,7 @@ nmo_status_t nmo_sprite3d_remap_dependencies(
 
     NMO_RETURN_IF_ERROR(nmo_3dentity_remap_dependencies(&state->base, NULL, context));
 
-    if (context && state->material_id != 0) {
-        nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
-        if (nmo_object_repository_find_by_id(repo, state->material_id) == NULL) {
-            state->material_id = 0;
-        }
-    }
-
+    /* Preserve unresolved material reference. */
     NMO_RETURN_OK();
 }
 

@@ -195,7 +195,8 @@ static nmo_chunk_t *serialize_object_with_schema(
     nmo_logger_t *logger,
     const nmo_shadow_storage_t *shadow_storage,
     const nmo_chunk_file_context_t *file_ctx,
-    int require_schema);
+    int require_schema,
+    nmo_status_t *out_status);
 
 static int should_save_as_reference(const nmo_object_t *obj, uint32_t flags);
 static void save_clear_chunk_file_context(nmo_chunk_t *chunk);
@@ -818,6 +819,7 @@ static nmo_status_t save_build_remap_plan(nmo_serializer_t *ctx) {
     }
     ctx->chunk_file_ctx->runtime_to_file = ctx->file_index_remap;
     ctx->chunk_file_ctx->file_to_runtime = NULL;
+    ctx->chunk_file_ctx->repository = ctx->repo;
 
     NMO_RETURN_OK();
 }
@@ -958,11 +960,16 @@ static nmo_status_t save_serialize_objects(nmo_serializer_t *ctx) {
         }
 
         nmo_chunk_t *old_chunk = obj->chunk;
+        nmo_status_t serialize_status = NMO_OK;
         obj->chunk = serialize_object_with_schema(
             obj, ctx->type_rt, ctx->arena, save_scratch(ctx), ctx->repo, ctx->logger,
-            shadow_storage, ctx->chunk_file_ctx, require_schema);
+            shadow_storage, ctx->chunk_file_ctx, require_schema, &serialize_status);
 
         if (obj->chunk == NULL) {
+            obj->chunk = old_chunk;
+            char serialize_detail[512];
+            size_t serialize_detail_len =
+                nmo_last_error_message_copy(serialize_detail, sizeof(serialize_detail));
             if (require_schema) {
                 save_log_require_schema_failure(
                     ctx->logger, obj, "Schema required but serialization returned NULL");
@@ -974,7 +981,15 @@ static nmo_status_t save_serialize_objects(nmo_serializer_t *ctx) {
             nmo_log(ctx->logger, NMO_LOG_ERROR,
                     "Failed to serialize object %u ('%s')",
                     obj->id, obj->name ? obj->name : "<unnamed>");
-            return SAVE_ERR(NMO_ERR_INTERNAL, "Object serialization failed");
+            nmo_status_t failure_status =
+                serialize_status != NMO_OK ? serialize_status : NMO_ERR_INTERNAL;
+            nmo_last_error_setf(
+                failure_status, NMO_SEVERITY_ERROR, __FILE__, __LINE__,
+                "Object %u ('%s') serialization failed%s%s",
+                obj->id, obj->name ? obj->name : "<unnamed>",
+                serialize_detail_len > 0u ? ": " : "",
+                serialize_detail_len > 0u ? serialize_detail : "");
+            return failure_status;
         }
 
         if (obj->chunk == old_chunk) {
@@ -1703,11 +1718,12 @@ static nmo_chunk_t *serialize_object_with_schema(
     nmo_logger_t *logger,
     const nmo_shadow_storage_t *shadow_storage,
     const nmo_chunk_file_context_t *file_ctx,
-    int require_schema)
+    int require_schema,
+    nmo_status_t *out_status)
 {
     nmo_chunk_t *chunk = nmo_object_system_serialize_object_chunk(
         obj, type_rt, arena, scratch, repo, logger,
-        shadow_storage, file_ctx);
+        shadow_storage, file_ctx, out_status);
 
     if (!require_schema) {
         return chunk;

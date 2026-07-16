@@ -13,6 +13,7 @@
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
 #include "object/nmo_object_repository.h"
+#include "object/nmo_deserialize_context.h"
 #include "type/nmo_reflection.h"
 #include <string.h>
 
@@ -27,7 +28,7 @@ static const nmo_type_field_t nmo_targetcamera_fields[] = {
                     sizeof(nmo_camera_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_targetcamera_state_t, has_target, CKPGUID_UINT8),
-    NMO_FIELD_REF(nmo_targetcamera_state_t, target_id)
+    NMO_FIELD_REF(nmo_targetcamera_state_t, target)
 };
 
 static nmo_status_t nmo_targetcamera_deserialize_internal(
@@ -45,14 +46,22 @@ static nmo_status_t nmo_targetcamera_deserialize_internal(
     }
 
     out_state->has_target = 0;
-    out_state->target_id = 0;
+    out_state->target = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_TCAMERATARGET) == NMO_OK) {
-        result = nmo_chunk_read_object_id(chunk, &out_state->target_id);
+        nmo_ref_t target = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+        result = nmo_ref_read(chunk, &target);
         if (result != NMO_OK) {
             return result;
         }
-        out_state->has_target = (out_state->target_id != 0);
+        nmo_ref_check_class(
+            &target,
+            (const nmo_object_repository_t *)
+                nmo_deserialize_context_get_repository(context),
+            nmo_deserialize_context_get_type_registry(context),
+            NMO_CID_3DENTITY);
+        out_state->target = target;
+        out_state->has_target = target.state != NMO_REF_NONE;
     }
 
     NMO_RETURN_OK();
@@ -83,20 +92,10 @@ nmo_status_t nmo_targetcamera_remap_dependencies(
     }
 
     nmo_targetcamera_state_t *state = (nmo_targetcamera_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
 
     NMO_RETURN_IF_ERROR(nmo_camera_remap_dependencies(&state->base, NULL, context));
 
-    if (state->target_id != 0 && repo &&
-        nmo_object_repository_find_by_id(repo, state->target_id) == NULL) {
-        state->target_id = 0;
-    }
-
-    state->has_target = (state->target_id != 0);
-    if (!state->has_target) {
-        state->target_id = 0;
-    }
-
+    /* Preserve target section presence and unresolved ID. */
     return nmo_object_default_validate(state, NULL, NULL);
 }
 
@@ -178,7 +177,7 @@ static nmo_status_t nmo_targetcamera_serialize_internal(
 
     result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_TCAMERATARGET);
     if (result != NMO_OK) return result;
-    result = nmo_chunk_write_object_id(out_chunk, in_state->target_id);
+    result = nmo_ref_write(out_chunk, &in_state->target);
     if (result != NMO_OK) return result;
 
     NMO_RETURN_OK();

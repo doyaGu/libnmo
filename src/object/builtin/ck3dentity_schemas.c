@@ -57,16 +57,16 @@ static const nmo_type_field_t nmo_3dentity_fields[] = {
     NMO_FIELD(nmo_3dentity_state_t, entity_flags, NMO_GUID_ENUM_CK_3DENTITY_FLAGS),
     NMO_FIELD(nmo_3dentity_state_t, moveable_flags, NMO_GUID_ENUM_VX_MOVEABLE_FLAGS),
     /* Hierarchy */
-    NMO_FIELD_REF(nmo_3dentity_state_t, parent_id),
-    NMO_FIELD_REF(nmo_3dentity_state_t, place_id),
+    NMO_FIELD_REF(nmo_3dentity_state_t, parent),
+    NMO_FIELD_REF(nmo_3dentity_state_t, place),
     NMO_FIELD(nmo_3dentity_state_t, z_order, CKPGUID_INT),
     /* Meshes */
-    NMO_FIELD_REF(nmo_3dentity_state_t, current_mesh_id),
+    NMO_FIELD_REF(nmo_3dentity_state_t, current_mesh),
     NMO_FIELD(nmo_3dentity_state_t, mesh_count, CKPGUID_UINT32),
-    NMO_FIELD_REF_ARRAY_COUNTED(nmo_3dentity_state_t, mesh_ids, mesh_count),
+    NMO_FIELD_REF_RECORD_ARRAY_COUNTED(nmo_3dentity_state_t, mesh_ids, mesh_count),
     /* Animations */
     NMO_FIELD(nmo_3dentity_state_t, animation_count, CKPGUID_UINT32),
-    NMO_FIELD_REF_ARRAY_COUNTED(nmo_3dentity_state_t, animation_ids, animation_count),
+    NMO_FIELD_REF_RECORD_ARRAY_COUNTED(nmo_3dentity_state_t, animation_ids, animation_count),
     /* Skin (optional) */
     NMO_FIELD_OPT(nmo_3dentity_state_t, skin, CKPGUID_POINTER)
 };
@@ -185,10 +185,10 @@ nmo_status_t nmo_3dentity_deserialize(
 
     out_state->entity_flags = 0;
     out_state->moveable_flags = 0;
-    out_state->parent_id = 0;
-    out_state->place_id = 0;
+    out_state->parent = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+    out_state->place = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     out_state->z_order = 0;
-    out_state->current_mesh_id = 0;
+    out_state->current_mesh = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     out_state->mesh_count = 0;
     out_state->mesh_ids = NULL;
     out_state->animation_count = 0;
@@ -207,62 +207,105 @@ nmo_status_t nmo_3dentity_deserialize(
 
     // Load object animations (identifier CK_STATESAVE_ANIMATION)
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_ANIMATION) == NMO_OK) {
-        out_state->has_animation_chunk = 1;
         size_t anim_count = 0;
         result = nmo_chunk_read_object_sequence_start(chunk, &anim_count);
-        if (result == NMO_OK && anim_count > 0) {
-            if (anim_count > UINT32_MAX) {
-                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                                 "Animation count exceeds limits");
-            }
-            out_state->animation_count = (uint32_t)anim_count;
-            out_state->animation_ids = (nmo_object_id_t *)nmo_arena_alloc(
-                arena, sizeof(nmo_object_id_t) * out_state->animation_count,
-                _Alignof(nmo_object_id_t));
-            if (!out_state->animation_ids) {
+        if (result != NMO_OK) return result;
+        if (anim_count > UINT32_MAX ||
+            anim_count > SIZE_MAX / sizeof(nmo_ref_t)) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Animation count exceeds limits");
+        }
+        size_t remaining_bytes = 0;
+        NMO_RETURN_IF_ERROR(nmo_3dentity_identifier_payload_size_bytes(
+            chunk, &remaining_bytes));
+        if (anim_count > remaining_bytes / sizeof(uint32_t)) {
+            NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                             "Animation count exceeds identifier payload");
+        }
+        nmo_ref_t *animation_ids = NULL;
+        if (anim_count > 0) {
+            animation_ids = (nmo_ref_t *)nmo_arena_alloc(
+                arena, sizeof(nmo_ref_t) * anim_count,
+                _Alignof(nmo_ref_t));
+            if (!animation_ids) {
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate animation IDs");
             }
-            for (uint32_t i = 0; i < out_state->animation_count; ++i) {
-                (void)nmo_chunk_read_object_sequence_item(chunk, &out_state->animation_ids[i]);
+            for (size_t i = 0; i < anim_count; ++i) {
+                NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &animation_ids[i]));
+                nmo_ref_check_class(
+                    &animation_ids[i],
+                    (const nmo_object_repository_t *)
+                        nmo_deserialize_context_get_repository(context),
+                    nmo_deserialize_context_get_type_registry(context),
+                    NMO_CID_OBJECTANIMATION);
             }
         }
+        out_state->animation_count = (uint32_t)anim_count;
+        out_state->animation_ids = animation_ids;
+        out_state->has_animation_chunk = 1;
     }
 
     // Load meshes (identifier CK_STATESAVE_MESHS)
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_MESHS) == NMO_OK) {
-        out_state->has_mesh_chunk = 1;
-        result = nmo_chunk_read_object_id(chunk, &out_state->current_mesh_id);
+        nmo_ref_t current_mesh = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+        result = nmo_ref_read(chunk, &current_mesh);
         if (result != NMO_OK) {
             return result;
         }
 
         size_t mesh_count = 0;
         result = nmo_chunk_read_object_sequence_start(chunk, &mesh_count);
-        if (result == NMO_OK && mesh_count > 0) {
-            if (mesh_count > UINT32_MAX) {
-                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                                 "Mesh count exceeds limits");
-            }
-            out_state->mesh_count = (uint32_t)mesh_count;
-            out_state->mesh_ids = (nmo_object_id_t *)nmo_arena_alloc(
-                arena, sizeof(nmo_object_id_t) * out_state->mesh_count,
-                _Alignof(nmo_object_id_t));
-            if (!out_state->mesh_ids) {
+        if (result != NMO_OK) return result;
+        if (mesh_count > UINT32_MAX ||
+            mesh_count > SIZE_MAX / sizeof(nmo_ref_t)) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Mesh count exceeds limits");
+        }
+        size_t remaining_bytes = 0;
+        NMO_RETURN_IF_ERROR(nmo_3dentity_identifier_payload_size_bytes(
+            chunk, &remaining_bytes));
+        if (mesh_count > remaining_bytes / sizeof(uint32_t)) {
+            NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                             "Mesh count exceeds identifier payload");
+        }
+        nmo_ref_t *mesh_ids = NULL;
+        if (mesh_count > 0) {
+            mesh_ids = (nmo_ref_t *)nmo_arena_alloc(
+                arena, sizeof(nmo_ref_t) * mesh_count,
+                _Alignof(nmo_ref_t));
+            if (!mesh_ids) {
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate mesh IDs");
             }
-            for (uint32_t i = 0; i < out_state->mesh_count; ++i) {
-                (void)nmo_chunk_read_object_sequence_item(chunk, &out_state->mesh_ids[i]);
+            for (size_t i = 0; i < mesh_count; ++i) {
+                NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &mesh_ids[i]));
+                nmo_ref_check_class(
+                    &mesh_ids[i],
+                    (const nmo_object_repository_t *)
+                        nmo_deserialize_context_get_repository(context),
+                    nmo_deserialize_context_get_type_registry(context),
+                    NMO_CID_MESH);
             }
         }
+        nmo_ref_check_class(
+            &current_mesh,
+            (const nmo_object_repository_t *)
+                nmo_deserialize_context_get_repository(context),
+            nmo_deserialize_context_get_type_registry(context),
+            NMO_CID_MESH);
+        out_state->current_mesh = current_mesh;
+        out_state->mesh_count = (uint32_t)mesh_count;
+        out_state->mesh_ids = mesh_ids;
+        out_state->has_mesh_chunk = 1;
     }
 
     // Load new-format entity data (identifier CK_STATESAVE_3DENTITYNDATA)
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_3DENTITYNDATA) == NMO_OK) {
-        out_state->has_entityndata_chunk = 1;
-        result = nmo_chunk_read_dword(chunk, &out_state->entity_flags);
+        nmo_3dentity_state_t data = *out_state;
+        data.has_entityndata_chunk = 1;
+        result = nmo_chunk_read_dword(chunk, &data.entity_flags);
         if (result != NMO_OK) return result;
 
-        result = nmo_chunk_read_dword(chunk, &out_state->moveable_flags);
+        result = nmo_chunk_read_dword(chunk, &data.moveable_flags);
         if (result != NMO_OK) return result;
 
         nmo_vector_t row0, row1, row2, row3;
@@ -275,59 +318,80 @@ nmo_status_t nmo_3dentity_deserialize(
         result = nmo_chunk_read_vector3(chunk, &row3);
         if (result != NMO_OK) return result;
 
-        out_state->world_matrix[0] = row0.x;
-        out_state->world_matrix[1] = row0.y;
-        out_state->world_matrix[2] = row0.z;
-        out_state->world_matrix[3] = 0.0f;
-        out_state->world_matrix[4] = row1.x;
-        out_state->world_matrix[5] = row1.y;
-        out_state->world_matrix[6] = row1.z;
-        out_state->world_matrix[7] = 0.0f;
-        out_state->world_matrix[8] = row2.x;
-        out_state->world_matrix[9] = row2.y;
-        out_state->world_matrix[10] = row2.z;
-        out_state->world_matrix[11] = 0.0f;
-        out_state->world_matrix[12] = row3.x;
-        out_state->world_matrix[13] = row3.y;
-        out_state->world_matrix[14] = row3.z;
-        out_state->world_matrix[15] = 1.0f;
+        data.world_matrix[0] = row0.x;
+        data.world_matrix[1] = row0.y;
+        data.world_matrix[2] = row0.z;
+        data.world_matrix[3] = 0.0f;
+        data.world_matrix[4] = row1.x;
+        data.world_matrix[5] = row1.y;
+        data.world_matrix[6] = row1.z;
+        data.world_matrix[7] = 0.0f;
+        data.world_matrix[8] = row2.x;
+        data.world_matrix[9] = row2.y;
+        data.world_matrix[10] = row2.z;
+        data.world_matrix[11] = 0.0f;
+        data.world_matrix[12] = row3.x;
+        data.world_matrix[13] = row3.y;
+        data.world_matrix[14] = row3.z;
+        data.world_matrix[15] = 1.0f;
 
-        if (out_state->entity_flags & CK_3DENTITY_PLACEVALID) {
-            (void)nmo_chunk_read_object_id(chunk, &out_state->place_id);
+        if (data.entity_flags & CK_3DENTITY_PLACEVALID) {
+            NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &data.place));
         } else {
-            out_state->place_id = 0;
+            data.place = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         }
 
-        if (out_state->entity_flags & CK_3DENTITY_PARENTVALID) {
-            (void)nmo_chunk_read_object_id(chunk, &out_state->parent_id);
+        if (data.entity_flags & CK_3DENTITY_PARENTVALID) {
+            NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &data.parent));
         } else {
-            out_state->parent_id = 0;
+            data.parent = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         }
 
-        if (out_state->entity_flags & CK_3DENTITY_ZORDERVALID) {
-            (void)nmo_chunk_read_int(chunk, &out_state->z_order);
+        if (data.entity_flags & CK_3DENTITY_ZORDERVALID) {
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &data.z_order));
         } else {
-            out_state->z_order = 0;
+            data.z_order = 0;
         }
+        nmo_ref_check_class(
+            &data.place,
+            (const nmo_object_repository_t *)
+                nmo_deserialize_context_get_repository(context),
+            nmo_deserialize_context_get_type_registry(context),
+            NMO_CID_PLACE);
+        nmo_ref_check_class(
+            &data.parent,
+            (const nmo_object_repository_t *)
+                nmo_deserialize_context_get_repository(context),
+            nmo_deserialize_context_get_type_registry(context),
+            NMO_CID_3DENTITY);
+        *out_state = data;
     }
 
     // Legacy parent chunk
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARENT) == NMO_OK) {
+        nmo_ref_t parent = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+        NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &parent));
+        nmo_ref_check_class(
+            &parent,
+            (const nmo_object_repository_t *)
+                nmo_deserialize_context_get_repository(context),
+            nmo_deserialize_context_get_type_registry(context),
+            NMO_CID_3DENTITY);
+        out_state->parent = parent;
         out_state->has_parent_chunk = 1;
-        (void)nmo_chunk_read_object_id(chunk, &out_state->parent_id);
     }
 
     // Legacy flags chunk
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_3DENTITYFLAGS) == NMO_OK) {
         out_state->has_flags_chunk = 1;
-        (void)nmo_chunk_read_dword(chunk, &out_state->entity_flags);
-        (void)nmo_chunk_read_dword(chunk, &out_state->moveable_flags);
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->entity_flags));
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->moveable_flags));
     }
 
     // Legacy matrix chunk
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_3DENTITYMATRIX) == NMO_OK) {
         out_state->has_matrix_chunk = 1;
-        (void)nmo_chunk_skip(chunk, 1);
+        NMO_RETURN_IF_ERROR(nmo_chunk_skip(chunk, 1));
         nmo_matrix_t mat;
         result = nmo_chunk_read_matrix(chunk, &mat);
         if (result == NMO_OK) {
@@ -350,7 +414,7 @@ nmo_status_t nmo_3dentity_deserialize(
         memset(out_state->skin, 0, sizeof(*out_state->skin));
 
         if (data_version < 6) {
-            (void)nmo_chunk_skip(chunk, 1);
+            NMO_RETURN_IF_ERROR(nmo_chunk_skip(chunk, 1));
         }
 
         result = nmo_chunk_read_matrix(chunk, &out_state->skin->object_init_matrix);
@@ -376,15 +440,15 @@ nmo_status_t nmo_3dentity_deserialize(
         }
 
         for (uint32_t i = 0; i < out_state->skin->bone_count; ++i) {
-            (void)nmo_chunk_read_object_sequence_item(chunk, &out_state->skin->bones[i].bone_id);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_object_sequence_item(chunk, &out_state->skin->bones[i].bone_id));
         }
 
         for (uint32_t i = 0; i < out_state->skin->bone_count; ++i) {
-            (void)nmo_chunk_read_dword(chunk, &out_state->skin->bones[i].bone_flags);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->skin->bones[i].bone_flags));
             if (data_version < 6) {
-                (void)nmo_chunk_skip(chunk, 1);
+                NMO_RETURN_IF_ERROR(nmo_chunk_skip(chunk, 1));
             }
-            (void)nmo_chunk_read_matrix(chunk, &out_state->skin->bones[i].inverse_bind_matrix);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_matrix(chunk, &out_state->skin->bones[i].inverse_bind_matrix));
         }
 
         int32_t vertex_count = 0;
@@ -415,13 +479,13 @@ nmo_status_t nmo_3dentity_deserialize(
             vertex->bone_count = (uint32_t)bone_count_i;
 
             if (data_version < 6) {
-                (void)nmo_chunk_skip(chunk, 1);
+                NMO_RETURN_IF_ERROR(nmo_chunk_skip(chunk, 1));
             }
 
-            (void)nmo_chunk_read_vector3(chunk, &vertex->initial_pos);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_vector3(chunk, &vertex->initial_pos));
 
             if (data_version < 6) {
-                (void)nmo_chunk_skip(chunk, 1);
+                NMO_RETURN_IF_ERROR(nmo_chunk_skip(chunk, 1));
             }
 
             if (vertex->bone_count > 0) {
@@ -438,7 +502,7 @@ nmo_status_t nmo_3dentity_deserialize(
             }
 
             if (data_version < 6) {
-                (void)nmo_chunk_skip(chunk, 1);
+                NMO_RETURN_IF_ERROR(nmo_chunk_skip(chunk, 1));
             }
 
             if (vertex->bone_count > 0) {
@@ -466,7 +530,7 @@ nmo_status_t nmo_3dentity_deserialize(
             uint32_t normal_count = vertex_count_u;
 
             if (payload_bytes == expected_bytes + sizeof(uint32_t)) {
-                (void)nmo_chunk_read_dword(chunk, &normal_count);
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &normal_count));
                 out_state->skin->normals_have_count = 1;
             } else if (payload_bytes == expected_bytes) {
                 out_state->skin->normals_have_count = 0;
@@ -544,7 +608,7 @@ nmo_status_t nmo_3dentity_serialize(
     }
 
     const bool want_mesh_chunk = in_state->has_mesh_chunk ||
-        in_state->current_mesh_id ||
+        in_state->current_mesh.state != NMO_REF_NONE ||
         (in_state->mesh_count > 0 && in_state->mesh_ids);
     if (want_mesh_chunk) {
         if (in_state->mesh_count > 0 && in_state->mesh_ids == NULL) {
@@ -554,13 +618,13 @@ nmo_status_t nmo_3dentity_serialize(
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_MESHS);
         if (result != NMO_OK) return result;
 
-        result = nmo_chunk_write_object_id(out_chunk, in_state->current_mesh_id);
+        result = nmo_ref_write(out_chunk, &in_state->current_mesh);
         if (result != NMO_OK) return result;
 
         result = nmo_chunk_write_object_sequence_start(out_chunk, in_state->mesh_count);
         if (result != NMO_OK) return result;
         for (uint32_t i = 0; i < in_state->mesh_count; ++i) {
-            result = nmo_chunk_write_object_sequence_item(out_chunk, in_state->mesh_ids[i]);
+            result = nmo_ref_write_sequence_item(out_chunk, &in_state->mesh_ids[i]);
             if (result != NMO_OK) return result;
         }
     }
@@ -578,7 +642,7 @@ nmo_status_t nmo_3dentity_serialize(
         result = nmo_chunk_write_object_sequence_start(out_chunk, in_state->animation_count);
         if (result != NMO_OK) return result;
         for (uint32_t i = 0; i < in_state->animation_count; ++i) {
-            result = nmo_chunk_write_object_sequence_item(out_chunk, in_state->animation_ids[i]);
+            result = nmo_ref_write_sequence_item(out_chunk, &in_state->animation_ids[i]);
             if (result != NMO_OK) return result;
         }
     }
@@ -591,12 +655,12 @@ nmo_status_t nmo_3dentity_serialize(
         if (result != NMO_OK) return result;
 
         uint32_t flags = in_state->entity_flags;
-        if (in_state->place_id != 0) {
+        if (in_state->place.state != NMO_REF_NONE) {
             flags |= CK_3DENTITY_PLACEVALID;
         } else {
             flags &= ~CK_3DENTITY_PLACEVALID;
         }
-        if (in_state->parent_id != 0) {
+        if (in_state->parent.state != NMO_REF_NONE) {
             flags |= CK_3DENTITY_PARENTVALID;
         } else {
             flags &= ~CK_3DENTITY_PARENTVALID;
@@ -627,11 +691,11 @@ nmo_status_t nmo_3dentity_serialize(
         if (result != NMO_OK) return result;
 
         if (flags & CK_3DENTITY_PLACEVALID) {
-            result = nmo_chunk_write_object_id(out_chunk, in_state->place_id);
+            result = nmo_ref_write(out_chunk, &in_state->place);
             if (result != NMO_OK) return result;
         }
         if (flags & CK_3DENTITY_PARENTVALID) {
-            result = nmo_chunk_write_object_id(out_chunk, in_state->parent_id);
+            result = nmo_ref_write(out_chunk, &in_state->parent);
             if (result != NMO_OK) return result;
         }
         if (flags & CK_3DENTITY_ZORDERVALID) {
@@ -643,7 +707,7 @@ nmo_status_t nmo_3dentity_serialize(
     if (in_state->has_parent_chunk) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_PARENT);
         if (result != NMO_OK) return result;
-        result = nmo_chunk_write_object_id(out_chunk, in_state->parent_id);
+        result = nmo_ref_write(out_chunk, &in_state->parent);
         if (result != NMO_OK) return result;
     }
 
@@ -794,6 +858,7 @@ nmo_status_t nmo_3dentity_remap_dependencies(
     void *context)
 {
     (void)type;
+    (void)context;
 
     if (!instance) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
@@ -801,7 +866,6 @@ nmo_status_t nmo_3dentity_remap_dependencies(
     }
 
     nmo_3dentity_state_t *state = (nmo_3dentity_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
 
     if (state->mesh_count > 0 && state->mesh_ids == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
@@ -812,95 +876,9 @@ nmo_status_t nmo_3dentity_remap_dependencies(
                          "CK3dEntity: animation_ids missing");
     }
 
-    const bool has_repo = (repo != NULL);
-
-    if (state->parent_id != 0) {
-        if (has_repo && nmo_object_repository_find_by_id(repo, state->parent_id) == NULL) {
-            state->parent_id = 0;
-            state->entity_flags &= ~CK_3DENTITY_PARENTVALID;
-        }
-    } else {
-        state->entity_flags &= ~CK_3DENTITY_PARENTVALID;
-    }
-
-    if (state->place_id != 0) {
-        if (has_repo && nmo_object_repository_find_by_id(repo, state->place_id) == NULL) {
-            state->place_id = 0;
-            state->entity_flags &= ~CK_3DENTITY_PLACEVALID;
-        }
-    } else {
-        state->entity_flags &= ~CK_3DENTITY_PLACEVALID;
-    }
-
-    if (state->mesh_count > 0) {
-        uint32_t out = 0;
-        for (uint32_t i = 0; i < state->mesh_count; ++i) {
-            nmo_object_id_t id = state->mesh_ids[i];
-            if (id == 0) {
-                continue;
-            }
-            if (has_repo && nmo_object_repository_find_by_id(repo, id) == NULL) {
-                continue;
-            }
-            bool seen = false;
-            for (uint32_t j = 0; j < out; ++j) {
-                if (state->mesh_ids[j] == id) {
-                    seen = true;
-                    break;
-                }
-            }
-            if (seen) {
-                continue;
-            }
-            state->mesh_ids[out++] = id;
-        }
-        state->mesh_count = out;
-    }
-
-    if (state->animation_count > 0) {
-        uint32_t out = 0;
-        for (uint32_t i = 0; i < state->animation_count; ++i) {
-            nmo_object_id_t id = state->animation_ids[i];
-            if (id == 0) {
-                continue;
-            }
-            if (has_repo && nmo_object_repository_find_by_id(repo, id) == NULL) {
-                continue;
-            }
-            bool seen = false;
-            for (uint32_t j = 0; j < out; ++j) {
-                if (state->animation_ids[j] == id) {
-                    seen = true;
-                    break;
-                }
-            }
-            if (seen) {
-                continue;
-            }
-            state->animation_ids[out++] = id;
-        }
-        state->animation_count = out;
-    }
-
-    if (state->current_mesh_id != 0) {
-        if (has_repo && nmo_object_repository_find_by_id(repo, state->current_mesh_id) == NULL) {
-            state->current_mesh_id = 0;
-        }
-    }
-
-    if (state->current_mesh_id != 0) {
-        bool found = false;
-        for (uint32_t i = 0; i < state->mesh_count; ++i) {
-            if (state->mesh_ids[i] == state->current_mesh_id) {
-                found = true;
-                break;
-            }
-        }
-        if (!found) {
-            state->current_mesh_id = 0;
-        }
-    }
-
+    /* Dependency remapping is observational. Invalid and duplicate references
+     * remain in serialized state so a later save can preserve their raw IDs.
+     * Destructive cleanup is available only through explicit normalization. */
     NMO_RETURN_OK();
 }
 
@@ -928,11 +906,93 @@ static void nmo_3dentity_post_delete(
     (void)context;
 }
 
+static bool nmo_3dentity_equals(const void *a, const void *b)
+{
+    if (a == b) return true;
+    if (a == NULL || b == NULL) return false;
+    const nmo_3dentity_state_t *lhs = (const nmo_3dentity_state_t *)a;
+    const nmo_3dentity_state_t *rhs = (const nmo_3dentity_state_t *)b;
+    if (lhs->mesh_count != rhs->mesh_count ||
+        lhs->animation_count != rhs->animation_count) {
+        return false;
+    }
+    if ((lhs->mesh_count > 0 && (!lhs->mesh_ids || !rhs->mesh_ids)) ||
+        (lhs->animation_count > 0 &&
+         (!lhs->animation_ids || !rhs->animation_ids))) {
+        return false;
+    }
+    nmo_3dentity_state_t lhs_value = *lhs;
+    nmo_3dentity_state_t rhs_value = *rhs;
+    lhs_value.mesh_ids = NULL;
+    rhs_value.mesh_ids = NULL;
+    lhs_value.animation_ids = NULL;
+    rhs_value.animation_ids = NULL;
+    if (memcmp(&lhs_value, &rhs_value, sizeof(lhs_value)) != 0) return false;
+    if (lhs->mesh_count > 0 && memcmp(
+            lhs->mesh_ids, rhs->mesh_ids,
+            (size_t)lhs->mesh_count * sizeof(nmo_ref_t)) != 0) {
+        return false;
+    }
+    return lhs->animation_count == 0 || memcmp(
+        lhs->animation_ids, rhs->animation_ids,
+        (size_t)lhs->animation_count * sizeof(nmo_ref_t)) == 0;
+}
+
+static uint32_t nmo_3dentity_hash(const void *instance)
+{
+    if (instance == NULL) return 0;
+    const nmo_3dentity_state_t *state = (const nmo_3dentity_state_t *)instance;
+    nmo_3dentity_state_t value = *state;
+    value.mesh_ids = NULL;
+    value.animation_ids = NULL;
+    uint32_t hash = (uint32_t)nmo_hash_fnv1a(&value, sizeof(value));
+    if (state->mesh_ids != NULL && state->mesh_count > 0) {
+        hash ^= (uint32_t)nmo_hash_fnv1a(
+            state->mesh_ids, (size_t)state->mesh_count * sizeof(nmo_ref_t));
+    }
+    if (state->animation_ids != NULL && state->animation_count > 0) {
+        hash ^= (uint32_t)nmo_hash_fnv1a(
+            state->animation_ids,
+            (size_t)state->animation_count * sizeof(nmo_ref_t));
+    }
+    return hash;
+}
+
+static nmo_status_t nmo_3dentity_copy(
+    const void *src,
+    void *dst,
+    const nmo_type_descriptor_t *type,
+    nmo_arena_t *arena)
+{
+    const nmo_3dentity_state_t *source = (const nmo_3dentity_state_t *)src;
+    nmo_3dentity_state_t *target = (nmo_3dentity_state_t *)dst;
+    NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(
+        arena, (void **)&target->mesh_ids, source->mesh_ids,
+        sizeof(nmo_ref_t), source->mesh_count));
+    return nmo_object_copy_array(
+        arena, (void **)&target->animation_ids, source->animation_ids,
+        sizeof(nmo_ref_t), source->animation_count);
+}
+
+static nmo_status_t nmo_3dentity_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    NMO_RETURN_IF_ERROR(nmo_object_default_validate(instance, type, context));
+    const nmo_3dentity_state_t *state =
+        (const nmo_3dentity_state_t *)instance;
+    if ((state->mesh_count > 0 && state->mesh_ids == NULL) ||
+        (state->animation_count > 0 && state->animation_ids == NULL)) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    return NMO_OK;
+}
+
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
-
-NMO_DEFINE_OBJECT_STATE_OPS(3dentity, nmo_3dentity_state_t)
 
 nmo_type_vtable_t nmo_3dentity_vtable = {
     .prepare_dependencies = nmo_3dentity_prepare_dependencies,

@@ -2683,14 +2683,13 @@ static nmo_status_t edit_report_note_io_detach_impacts(
                 nmo_object_get_class_id(behavior_obj) == NMO_CID_BEHAVIOR
             ? (nmo_behavior_state_t *)nmo_object_get_state(behavior_obj)
             : NULL;
-        const nmo_object_id_t *link_ids = behavior_state &&
-                behavior_state->sub_behavior_links.data
-            ? (const nmo_object_id_t *)behavior_state->sub_behavior_links.data
-            : NULL;
-        for (size_t j = 0u; link_ids != NULL &&
+        for (size_t j = 0u; behavior_state != NULL &&
                             j < behavior_state->sub_behavior_links.count; ++j) {
+            nmo_object_id_t link_id = nmo_behavior_ref_array_get_id(
+                &behavior_state->sub_behavior_links, j);
+            if (link_id == 0) continue;
             nmo_object_t *link_obj =
-                nmo_object_repository_find_by_id(repo, link_ids[j]);
+                nmo_object_repository_find_by_id(repo, link_id);
             const nmo_behaviorlink_state_t *link_state = link_obj
                 ? (const nmo_behaviorlink_state_t *)nmo_object_get_state(link_obj)
                 : NULL;
@@ -2700,7 +2699,7 @@ static nmo_status_t edit_report_note_io_detach_impacts(
             }
             NMO_RETURN_IF_ERROR(nmo_edit_report_add_deleted_object(
                 report,
-                link_ids[j],
+                link_id,
                 cause,
                 "detached_control_link"));
             NMO_RETURN_IF_ERROR(edit_report_note_control_link_endpoints(
@@ -2954,32 +2953,31 @@ static nmo_status_t edit_report_note_behavior_owned_deleted_objects(
 
     for (size_t i = 0u; i < sizeof(owned_arrays) / sizeof(owned_arrays[0]); ++i) {
         const nmo_array_t *array = owned_arrays[i].array;
-        const nmo_object_id_t *ids = array && array->data
-            ? (const nmo_object_id_t *)array->data
-            : NULL;
-        for (size_t j = 0u; ids != NULL && j < array->count; ++j) {
+        for (size_t j = 0u; array != NULL && j < array->count; ++j) {
+            nmo_object_id_t id = nmo_behavior_ref_array_get_id(array, j);
+            if (id == 0) continue;
             NMO_RETURN_IF_ERROR(nmo_edit_report_add_deleted_object(
                 report,
-                ids[j],
+                id,
                 cause,
                 owned_arrays[i].role));
         }
     }
 
-    const nmo_object_id_t *sub_ids = state->sub_behaviors.data
-        ? (const nmo_object_id_t *)state->sub_behaviors.data
-        : NULL;
-    for (size_t i = 0u; sub_ids != NULL && i < state->sub_behaviors.count; ++i) {
+    for (size_t i = 0u; i < state->sub_behaviors.count; ++i) {
+        nmo_object_id_t sub_id = nmo_behavior_ref_array_get_id(
+            &state->sub_behaviors, i);
+        if (sub_id == 0) continue;
         NMO_RETURN_IF_ERROR(nmo_edit_report_add_deleted_object(
             report,
-            sub_ids[i],
+            sub_id,
             cause,
             "owned_node"));
         NMO_RETURN_IF_ERROR(edit_report_note_behavior_owned_deleted_objects(
             tx,
             report,
             cause,
-            sub_ids[i]));
+            sub_id));
     }
 
     return NMO_OK;
@@ -3013,12 +3011,11 @@ static nmo_status_t edit_report_note_behavior_io_detach_impacts(
     };
     for (size_t i = 0u; i < sizeof(io_arrays) / sizeof(io_arrays[0]); ++i) {
         const nmo_array_t *array = io_arrays[i];
-        const nmo_object_id_t *ids = array && array->data
-            ? (const nmo_object_id_t *)array->data
-            : NULL;
-        for (size_t j = 0u; ids != NULL && j < array->count; ++j) {
+        for (size_t j = 0u; array != NULL && j < array->count; ++j) {
+            nmo_object_id_t id = nmo_behavior_ref_array_get_id(array, j);
+            if (id == 0) continue;
             NMO_RETURN_IF_ERROR(edit_report_note_io_detach_impacts(
-                tx, report, cause, ids[j]));
+                tx, report, cause, id));
         }
     }
 
@@ -3054,16 +3051,15 @@ static nmo_status_t edit_report_note_behavior_parameter_detach_impacts(
     };
     for (size_t i = 0u; i < sizeof(param_arrays) / sizeof(param_arrays[0]); ++i) {
         const nmo_array_t *array = param_arrays[i];
-        const nmo_object_id_t *ids = array && array->data
-            ? (const nmo_object_id_t *)array->data
-            : NULL;
-        for (size_t j = 0u; ids != NULL && j < array->count; ++j) {
+        for (size_t j = 0u; array != NULL && j < array->count; ++j) {
+            nmo_object_id_t id = nmo_behavior_ref_array_get_id(array, j);
+            if (id == 0) continue;
             nmo_object_id_t source_id =
-                edit_plan_get_parameterin_source(tx, ids[j]);
+                edit_plan_get_parameterin_source(tx, id);
             NMO_RETURN_IF_ERROR(edit_report_note_parameter_edge_source(
                 report, cause, source_id));
             NMO_RETURN_IF_ERROR(edit_report_note_parameter_detach_impacts(
-                tx, report, cause, ids[j]));
+                tx, report, cause, id));
         }
     }
 
@@ -4205,14 +4201,15 @@ static nmo_status_t edit_report_add_array_handles(
     if (array == NULL || array->count == 0u) {
         return NMO_OK;
     }
-    if (array->element_size != sizeof(nmo_object_id_t) ||
+    if (array->element_size != sizeof(nmo_behavior_ref_t) ||
         array->data == NULL) {
         return NMO_ERR_INVALID_STATE;
     }
-    const nmo_object_id_t *ids = (const nmo_object_id_t *)array->data;
     for (size_t i = 0; i < array->count; ++i) {
+        nmo_object_id_t id = nmo_behavior_ref_array_get_id(array, i);
+        if (id == 0) continue;
         NMO_RETURN_IF_ERROR(edit_report_add_named_handle(
-            report, operation_index, prefix, repo, ids[i]));
+            report, operation_index, prefix, repo, id));
     }
     return NMO_OK;
 }
@@ -4226,16 +4223,17 @@ static nmo_status_t edit_report_add_input_parameter_handles(
     if (array == NULL || array->count == 0u) {
         return NMO_OK;
     }
-    if (array->element_size != sizeof(nmo_object_id_t) ||
+    if (array->element_size != sizeof(nmo_behavior_ref_t) ||
         array->data == NULL) {
         return NMO_ERR_INVALID_STATE;
     }
-    const nmo_object_id_t *ids = (const nmo_object_id_t *)array->data;
     for (size_t i = 0; i < array->count; ++i) {
+        nmo_object_id_t id = nmo_behavior_ref_array_get_id(array, i);
+        if (id == 0) continue;
         NMO_RETURN_IF_ERROR(edit_report_add_named_handle(
-            report, operation_index, "input_param", repo, ids[i]));
+            report, operation_index, "input_param", repo, id));
         nmo_object_t *param_obj =
-            repo != NULL ? nmo_object_repository_find_by_id(repo, ids[i]) : NULL;
+            repo != NULL ? nmo_object_repository_find_by_id(repo, id) : NULL;
         nmo_parameterin_state_t *param_state = param_obj != NULL
             ? (nmo_parameterin_state_t *)nmo_object_get_state(param_obj)
             : NULL;

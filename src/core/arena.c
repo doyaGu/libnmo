@@ -301,6 +301,17 @@ size_t nmo_arena_bytes_used(nmo_arena_t *arena) {
     return arena ? arena->bytes_used : 0;
 }
 
+nmo_status_t nmo_arena_get_allocator(
+    const nmo_arena_t *arena,
+    nmo_allocator_t *out_allocator)
+{
+    if (arena == NULL || out_allocator == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    *out_allocator = arena->allocator;
+    return NMO_OK;
+}
+
 nmo_status_t nmo_arena_mark(nmo_arena_t *arena, nmo_arena_mark_t *out_mark) {
     if (arena == NULL || out_mark == NULL || arena->current == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;

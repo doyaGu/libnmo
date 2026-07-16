@@ -161,24 +161,28 @@ static bool probe_behavior_has_io(const nmo_behavior_state_t *state,
                                   nmo_object_id_t io_id)
 {
     return state != NULL && io_id != 0u &&
-           (nmo_array_find(&state->inputs, &io_id, NULL) != 0 ||
-            nmo_array_find(&state->outputs, &io_id, NULL) != 0);
+           (nmo_behavior_ref_array_find(&state->inputs, io_id, NULL) ||
+            nmo_behavior_ref_array_find(&state->outputs, io_id, NULL));
 }
 
 static bool probe_behavior_has_child_behavior(const nmo_behavior_state_t *state,
                                               nmo_object_id_t behavior_id)
 {
     return state != NULL && behavior_id != 0u &&
-           nmo_array_find(&state->sub_behaviors, &behavior_id, NULL) != 0;
+           nmo_behavior_ref_array_find(
+               &state->sub_behaviors, behavior_id, NULL);
 }
 
 static bool probe_behavior_has_parameter(const nmo_behavior_state_t *state,
                                          nmo_object_id_t parameter_id)
 {
     return state != NULL && parameter_id != 0u &&
-           (nmo_array_find(&state->in_parameters, &parameter_id, NULL) != 0 ||
-            nmo_array_find(&state->out_parameters, &parameter_id, NULL) != 0 ||
-            nmo_array_find(&state->local_parameters, &parameter_id, NULL) != 0 ||
+           (nmo_behavior_ref_array_find(
+                &state->in_parameters, parameter_id, NULL) ||
+            nmo_behavior_ref_array_find(
+                &state->out_parameters, parameter_id, NULL) ||
+            nmo_behavior_ref_array_find(
+                &state->local_parameters, parameter_id, NULL) ||
             state->target_parameter_id == parameter_id);
 }
 
@@ -538,11 +542,10 @@ static size_t probe_collect_touching_links(
 
     size_t candidate_count = 0u;
     size_t candidate_ids_len = 0u;
-    const nmo_object_id_t *link_ids =
-        (const nmo_object_id_t *)parent->sub_behavior_links.data;
-    for (size_t i = 0; link_ids != NULL &&
-                       i < parent->sub_behavior_links.count; ++i) {
-        nmo_object_id_t link_id = link_ids[i];
+    for (size_t i = 0; i < parent->sub_behavior_links.count; ++i) {
+        nmo_object_id_t link_id = nmo_behavior_ref_array_get_id(
+            &parent->sub_behavior_links, i);
+        if (link_id == 0) continue;
         nmo_object_t *link_obj =
             nmo_object_repository_find_by_id(repo, link_id);
         const nmo_behaviorlink_state_t *link =
@@ -694,7 +697,8 @@ static nmo_object_id_t probe_find_operation_owner_behavior(
         const nmo_behavior_state_t *behavior =
             (const nmo_behavior_state_t *)nmo_object_get_state(object);
         if (behavior != NULL &&
-            nmo_array_find(&behavior->operations, &operation_id, NULL) != 0) {
+            nmo_behavior_ref_array_find(
+                &behavior->operations, operation_id, NULL)) {
             return nmo_object_get_id(object);
         }
     }
@@ -864,12 +868,12 @@ static bool probe_explicit_endpoints_touch_operation_flow(
         related_count == 0u) {
         return false;
     }
-    const nmo_object_id_t *link_ids =
-        (const nmo_object_id_t *)parent->sub_behavior_links.data;
-    for (size_t i = 0; link_ids != NULL &&
-                       i < parent->sub_behavior_links.count; ++i) {
+    for (size_t i = 0; i < parent->sub_behavior_links.count; ++i) {
+        nmo_object_id_t link_id = nmo_behavior_ref_array_get_id(
+            &parent->sub_behavior_links, i);
+        if (link_id == 0) continue;
         nmo_object_t *link_obj =
-            nmo_object_repository_find_by_id(repo, link_ids[i]);
+            nmo_object_repository_find_by_id(repo, link_id);
         const nmo_behaviorlink_state_t *link =
             link_obj != NULL &&
                     nmo_object_get_class_id(link_obj) == NMO_CID_BEHAVIORLINK
@@ -918,11 +922,10 @@ static size_t probe_collect_operation_touching_links(
     }
 
     size_t count = 0u;
-    const nmo_object_id_t *link_ids =
-        (const nmo_object_id_t *)parent->sub_behavior_links.data;
-    for (size_t i = 0; link_ids != NULL &&
-                       i < parent->sub_behavior_links.count; ++i) {
-        nmo_object_id_t link_id = link_ids[i];
+    for (size_t i = 0; i < parent->sub_behavior_links.count; ++i) {
+        nmo_object_id_t link_id = nmo_behavior_ref_array_get_id(
+            &parent->sub_behavior_links, i);
+        if (link_id == 0) continue;
         nmo_object_t *link_obj =
             nmo_object_repository_find_by_id(repo, link_id);
         const nmo_behaviorlink_state_t *link =
@@ -1004,9 +1007,9 @@ static nmo_status_t probe_analyze_message(nmo_context_t *ctx,
                     "debug probe remove-link does not touch selected message-node");
             }
             if (parent == NULL ||
-                nmo_array_find(&parent->sub_behavior_links,
-                               &request->remove_link_id,
-                               NULL) == 0) {
+                !nmo_behavior_ref_array_find(&parent->sub_behavior_links,
+                                             request->remove_link_id,
+                                             NULL)) {
                 return probe_reject(
                     result,
                     mode,
@@ -1058,12 +1061,10 @@ static nmo_status_t probe_analyze_message(nmo_context_t *ctx,
     char candidate_ids[256];
     size_t candidate_ids_len = 0u;
     candidate_ids[0] = '\0';
-    const nmo_object_id_t *child_ids =
-        parent != NULL ? (const nmo_object_id_t *)parent->sub_behaviors.data
-                       : NULL;
-    for (size_t i = 0; child_ids != NULL && i < parent->sub_behaviors.count;
-         ++i) {
-        nmo_object_id_t child_id = child_ids[i];
+    for (size_t i = 0; parent != NULL && i < parent->sub_behaviors.count; ++i) {
+        nmo_object_id_t child_id = nmo_behavior_ref_array_get_id(
+            &parent->sub_behaviors, i);
+        if (child_id == 0) continue;
         const nmo_behavior_state_t *child =
             probe_behavior_state_by_id(repo, child_id);
         if (!probe_is_message_behavior(ctx, child)) {
@@ -1261,9 +1262,9 @@ static nmo_status_t probe_analyze_data_cell(
                           link_obj)
                     : NULL;
             if (link == NULL || parent == NULL ||
-                nmo_array_find(&parent->sub_behavior_links,
-                               &request->remove_link_id,
-                               NULL) == 0) {
+                !nmo_behavior_ref_array_find(&parent->sub_behavior_links,
+                                             request->remove_link_id,
+                                             NULL)) {
                 return probe_reject(
                     result,
                     NMO_PROBE_SELECTOR_MODE_EXPLICIT_OPERATION,
@@ -1397,9 +1398,9 @@ static nmo_status_t probe_analyze_data_cell(
                 "debug probe write-link target is not a behavior link");
         }
         if (parent == NULL ||
-            nmo_array_find(&parent->sub_behavior_links,
-                           &request->write_link_id,
-                           NULL) == 0) {
+            !nmo_behavior_ref_array_find(&parent->sub_behavior_links,
+                                         request->write_link_id,
+                                         NULL)) {
             return probe_reject(
                 result,
                 NMO_PROBE_SELECTOR_MODE_EXPLICIT_LINK,
@@ -1415,9 +1416,6 @@ static nmo_status_t probe_analyze_data_cell(
         return NMO_OK;
     }
 
-    const nmo_object_id_t *child_ids =
-        parent != NULL ? (const nmo_object_id_t *)parent->sub_behaviors.data
-                       : NULL;
     nmo_object_id_t selected_id = 0u;
     nmo_object_id_t selected_operation_id = 0u;
     nmo_object_id_t selected_link_id = 0u;
@@ -1426,9 +1424,10 @@ static nmo_status_t probe_analyze_data_cell(
     char candidate_ids[256];
     size_t candidate_ids_len = 0u;
     candidate_ids[0] = '\0';
-    for (size_t i = 0; child_ids != NULL && i < parent->sub_behaviors.count;
-         ++i) {
-        nmo_object_id_t child_id = child_ids[i];
+    for (size_t i = 0; parent != NULL && i < parent->sub_behaviors.count; ++i) {
+        nmo_object_id_t child_id = nmo_behavior_ref_array_get_id(
+            &parent->sub_behaviors, i);
+        if (child_id == 0) continue;
         const nmo_behavior_state_t *child =
             probe_behavior_state_by_id(repo, child_id);
         if (!probe_is_data_write_behavior(ctx, child)) {
@@ -1452,12 +1451,10 @@ static nmo_status_t probe_analyze_data_cell(
         selected_id = child_id;
         ++candidate_count;
     }
-    const nmo_object_id_t *operation_ids =
-        parent != NULL ? (const nmo_object_id_t *)parent->operations.data
-                       : NULL;
-    for (size_t i = 0; operation_ids != NULL && i < parent->operations.count;
-         ++i) {
-        nmo_object_id_t operation_id = operation_ids[i];
+    for (size_t i = 0; parent != NULL && i < parent->operations.count; ++i) {
+        nmo_object_id_t operation_id = nmo_behavior_ref_array_get_id(
+            &parent->operations, i);
+        if (operation_id == 0) continue;
         nmo_object_t *op_obj =
             nmo_object_repository_find_by_id(repo, operation_id);
         const nmo_parameteroperation_state_t *operation =

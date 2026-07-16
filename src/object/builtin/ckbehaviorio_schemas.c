@@ -159,10 +159,6 @@ nmo_status_t nmo_behaviorio_remap_dependencies(
 
     NMO_RETURN_IF_ERROR(nmo_object_remap_dependencies(&state->base, NULL, context));
 
-    if (!state->has_flags) {
-        state->old_flags = 0;
-    }
-
     return NMO_OK;
 }
 

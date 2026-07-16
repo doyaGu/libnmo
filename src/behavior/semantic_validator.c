@@ -276,7 +276,8 @@ static bool semantic_behavior_has_direct_child(
     if (parent_behavior_id == child_behavior_id) {
         return true;
     }
-    return nmo_array_find(&parent->sub_behaviors, &child_behavior_id, NULL) != 0;
+    return nmo_behavior_ref_array_find(
+        &parent->sub_behaviors, child_behavior_id, NULL);
 }
 
 static bool semantic_find_behavior_io_owner(
@@ -297,8 +298,8 @@ static bool semantic_find_behavior_io_owner(
         if (state == NULL) {
             continue;
         }
-        if (nmo_array_find(&state->inputs, &io_id, NULL) != 0 ||
-            nmo_array_find(&state->outputs, &io_id, NULL) != 0) {
+        if (nmo_behavior_ref_array_find(&state->inputs, io_id, NULL) ||
+            nmo_behavior_ref_array_find(&state->outputs, io_id, NULL)) {
             if (out_owner_id != NULL) {
                 *out_owner_id = nmo_object_get_id(object);
             }
@@ -326,7 +327,8 @@ static bool semantic_find_behavior_link_owner(
         if (state == NULL) {
             continue;
         }
-        if (nmo_array_find(&state->sub_behavior_links, &link_id, NULL) != 0) {
+        if (nmo_behavior_ref_array_find(
+                &state->sub_behavior_links, link_id, NULL)) {
             if (out_owner_id != NULL) {
                 *out_owner_id = nmo_object_get_id(object);
             }

@@ -12,6 +12,7 @@
 #define NMO_CKSOUND_SCHEMAS_H
 
 #include "object/builtin/nmo_beobject_schemas.h"
+#include "object/nmo_ref.h"
 #include "object/nmo_object_struct_defs.h"
 #include "object/nmo_object_type_common.h"
 #include "nmo_types.h"
@@ -62,7 +63,7 @@ typedef struct nmo_wavesound_state {
     float max_distance;
     uint32_t distance_behavior;
 
-    nmo_object_id_t attached_object_id;
+    nmo_ref_t attached_object;
     nmo_vector_t position;
     nmo_vector_t direction;
 } nmo_wavesound_state_t;

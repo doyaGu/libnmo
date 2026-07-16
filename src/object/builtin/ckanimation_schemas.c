@@ -369,46 +369,8 @@ nmo_status_t nmo_animation_remap_dependencies(
     }
 
     nmo_animation_state_t *state = (nmo_animation_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
 
     NMO_RETURN_IF_ERROR(nmo_sceneobject_remap_dependencies(&state->base, NULL, context));
-
-    if (state->frame_rate <= 0.0f) {
-        state->frame_rate = 30.0f;
-    }
-    if (state->length < 0.0f) {
-        state->length = 0.0f;
-    }
-    if (state->current_step < 0.0f) {
-        state->current_step = 0.0f;
-    }
-
-    if (repo) {
-        if (state->has_root_entity && state->root_entity_id != 0 &&
-            nmo_object_repository_find_by_id(repo, state->root_entity_id) == NULL) {
-            state->root_entity_id = 0;
-            state->has_root_entity = 0;
-        }
-        if (state->has_character && state->character_id != 0 &&
-            nmo_object_repository_find_by_id(repo, state->character_id) == NULL) {
-            state->character_id = 0;
-            state->has_character = 0;
-        }
-    } else {
-        if (state->root_entity_id == 0) {
-            state->has_root_entity = 0;
-        }
-        if (state->character_id == 0) {
-            state->has_character = 0;
-        }
-    }
-
-    if (!state->has_length) {
-        state->length = 0.0f;
-    }
-    if (!state->has_current_step) {
-        state->current_step = 0.0f;
-    }
 
     return nmo_animation_validate(state, NULL, NULL);
 }
@@ -434,7 +396,6 @@ nmo_status_t nmo_keyedanimation_remap_dependencies(
     }
 
     nmo_keyedanimation_state_t *state = (nmo_keyedanimation_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
 
     NMO_RETURN_IF_ERROR(nmo_animation_remap_dependencies(&state->base, NULL, context));
 
@@ -445,47 +406,8 @@ nmo_status_t nmo_keyedanimation_remap_dependencies(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "KeyedAnimation subanims missing");
     }
 
-    if (state->animation_count > 0) {
-        nmo_object_id_t *ids = state->animation_ids;
-        uint32_t kept = 0;
-        for (uint32_t i = 0; i < state->animation_count; ++i) {
-            nmo_object_id_t id = ids[i];
-            if (id == 0) {
-                continue;
-            }
-            if (repo && nmo_object_repository_find_by_id(repo, id) == NULL) {
-                continue;
-            }
-            bool seen = false;
-            for (uint32_t j = 0; j < kept; ++j) {
-                if (ids[j] == id) {
-                    seen = true;
-                    break;
-                }
-            }
-            if (seen) {
-                continue;
-            }
-            ids[kept++] = id;
-        }
-        state->animation_count = kept;
-    }
-
-    if (state->subanim_count > 0) {
-        uint32_t kept = 0;
-        for (uint32_t i = 0; i < state->subanim_count; ++i) {
-            nmo_keyedanimation_subanim_t sub = state->subanims[i];
-            if (sub.object_id == 0) {
-                continue;
-            }
-            if (repo && nmo_object_repository_find_by_id(repo, sub.object_id) == NULL) {
-                continue;
-            }
-            state->subanims[kept++] = sub;
-        }
-        state->subanim_count = kept;
-    }
-
+    /* Keep unresolved, duplicate, and null entries in their original lanes.
+     * Explicit normalization owns any destructive repair. */
     return nmo_keyedanimation_validate(state, NULL, NULL);
 }
 
@@ -510,66 +432,10 @@ nmo_status_t nmo_objectanimation_remap_dependencies(
     }
 
     nmo_objectanimation_state_t *state = (nmo_objectanimation_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
 
     NMO_RETURN_IF_ERROR(nmo_sceneobject_remap_dependencies(&state->base, NULL, context));
 
-    if (state->format < CKOBJANIM_FORMAT_NONE || state->format > CKOBJANIM_FORMAT_NEWDATA) {
-        state->format = CKOBJANIM_FORMAT_NONE;
-    }
-
-    if (state->has_length && state->length < 0.0f) {
-        state->length = 0.0f;
-    }
-    if (state->has_merge && state->merge_factor < 0.0f) {
-        state->merge_factor = 0.0f;
-    }
-
-    if (state->has_morph_counts) {
-        if (state->morph_vertex_count < 0) {
-            state->morph_vertex_count = 0;
-        }
-        if (state->morph_key_count < 0) {
-            state->morph_key_count = 0;
-        }
-    } else {
-        state->morph_vertex_count = 0;
-        state->morph_key_count = 0;
-    }
-
-    if (repo) {
-        if (state->entity_id != 0 &&
-            nmo_object_repository_find_by_id(repo, state->entity_id) == NULL) {
-            state->entity_id = 0;
-        }
-        if (state->anim1_id != 0 &&
-            nmo_object_repository_find_by_id(repo, state->anim1_id) == NULL) {
-            state->anim1_id = 0;
-        }
-        if (state->anim2_id != 0 &&
-            nmo_object_repository_find_by_id(repo, state->anim2_id) == NULL) {
-            state->anim2_id = 0;
-        }
-        if (state->has_shared_anim && state->shared_anim_id != 0 &&
-            nmo_object_repository_find_by_id(repo, state->shared_anim_id) == NULL) {
-            state->shared_anim_id = 0;
-            state->has_shared_anim = 0;
-        }
-    } else {
-        if (state->entity_id == 0) {
-            state->flags &= ~0x80u;
-        }
-    }
-
-    if ((state->flags & 0x80u) == 0) {
-        state->has_merge = 0;
-        state->anim1_id = 0;
-        state->anim2_id = 0;
-    } else if (state->anim1_id == 0 || state->anim2_id == 0) {
-        state->has_merge = 0;
-        state->flags &= ~0x80u;
-    }
-
+    /* Preserve serialized values during dependency resolution. */
     return nmo_objectanimation_validate(state, NULL, NULL);
 }
 
@@ -787,10 +653,8 @@ static nmo_status_t read_raw_tail(nmo_chunk_t *chunk, nmo_arena_t *arena,
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate raw tail buffer");
     }
 
-    size_t bytes_read = nmo_chunk_read_and_fill_buffer_nosize(chunk, data, remaining_bytes);
-    if (bytes_read != remaining_bytes) {
-        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR, "Failed to read raw tail buffer");
-    }
+    NMO_RETURN_IF_ERROR(
+        nmo_chunk_read_and_fill_buffer_nosize_checked(chunk, data, remaining_bytes));
 
     *out_data = data;
     *out_size = remaining_bytes;
@@ -824,11 +688,8 @@ static nmo_status_t read_controllers_loop(
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                                  "Failed to allocate controller data buffer");
             }
-            size_t bytes_read = nmo_chunk_read_and_fill_buffer_nosize(chunk, data, data_size);
-            if (bytes_read != data_size) {
-                NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
-                                 "Failed to read controller data");
-            }
+            NMO_RETURN_IF_ERROR(
+                nmo_chunk_read_and_fill_buffer_nosize_checked(chunk, data, data_size));
         }
 
         local_controllers[count].type = type;
@@ -893,11 +754,8 @@ static nmo_status_t read_newdata_controllers(
                     NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                                      "Failed to allocate morph key data");
                 }
-                size_t bytes_read = nmo_chunk_read_and_fill_buffer_nosize(chunk, data, size_bytes);
-                if (bytes_read != size_bytes) {
-                    NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
-                                     "Failed to read morph key data");
-                }
+                NMO_RETURN_IF_ERROR(
+                    nmo_chunk_read_and_fill_buffer_nosize_checked(chunk, data, size_bytes));
                 morph_keys[i].data = data;
             } else {
                 morph_keys[i].data = NULL;
@@ -928,11 +786,8 @@ static nmo_status_t read_newdata_controllers(
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                                  "Failed to allocate controller data");
             }
-            size_t bytes_read = nmo_chunk_read_and_fill_buffer_nosize(chunk, data, buf_size);
-            if (bytes_read != buf_size) {
-                NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
-                                 "Failed to read controller data");
-            }
+            NMO_RETURN_IF_ERROR(
+                nmo_chunk_read_and_fill_buffer_nosize_checked(chunk, data, buf_size));
 
             local_controllers[count].type = controller_types[i];
             local_controllers[count].key_count = key_count;
@@ -968,11 +823,8 @@ static nmo_status_t read_newdata_controllers(
                     NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                                      "Failed to allocate morph normal data");
                 }
-                size_t bytes_read = nmo_chunk_read_and_fill_buffer_nosize(chunk, data, size_bytes);
-                if (bytes_read != size_bytes) {
-                    NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
-                                     "Failed to read morph normal data");
-                }
+                NMO_RETURN_IF_ERROR(
+                    nmo_chunk_read_and_fill_buffer_nosize_checked(chunk, data, size_bytes));
                 data_ptrs[i] = data;
             } else {
                 data_ptrs[i] = NULL;
@@ -1006,11 +858,8 @@ static nmo_status_t read_newdata_controllers(
                     NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                                      "Failed to allocate morph normal data");
                 }
-                size_t bytes_read = nmo_chunk_read_and_fill_buffer_nosize(chunk, data, size_bytes);
-                if (bytes_read != size_bytes) {
-                    NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
-                                     "Failed to read morph normal data");
-                }
+                NMO_RETURN_IF_ERROR(
+                    nmo_chunk_read_and_fill_buffer_nosize_checked(chunk, data, size_bytes));
                 data_ptrs[i] = data;
             } else {
                 data_ptrs[i] = NULL;
@@ -1085,11 +934,8 @@ static nmo_status_t read_legacy_controllers(
                         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                                          "Failed to allocate morph key data");
                     }
-                    size_t bytes_read = nmo_chunk_read_and_fill_buffer_nosize(chunk, data, size_bytes);
-                    if (bytes_read != size_bytes) {
-                        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
-                                         "Failed to read morph key data");
-                    }
+                    NMO_RETURN_IF_ERROR(nmo_chunk_read_and_fill_buffer_nosize_checked(
+                        chunk, data, size_bytes));
                     morph_keys[i].data = data;
                 } else {
                     morph_keys[i].data = NULL;
@@ -1114,11 +960,8 @@ static nmo_status_t read_legacy_controllers(
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                                  "Failed to allocate position controller data");
             }
-            size_t bytes_read = nmo_chunk_read_and_fill_buffer_nosize(chunk, data, buf_size);
-            if (bytes_read != buf_size) {
-                NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
-                                 "Failed to read position controller data");
-            }
+            NMO_RETURN_IF_ERROR(
+                nmo_chunk_read_and_fill_buffer_nosize_checked(chunk, data, buf_size));
 
             local_controllers[count].type = CKANIMATION_LINPOS_CONTROL;
             local_controllers[count].key_count = key_count;
@@ -1141,11 +984,8 @@ static nmo_status_t read_legacy_controllers(
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                                  "Failed to allocate rotation controller data");
             }
-            size_t bytes_read = nmo_chunk_read_and_fill_buffer_nosize(chunk, data, rot_buf_size);
-            if (bytes_read != rot_buf_size) {
-                NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
-                                 "Failed to read rotation controller data");
-            }
+            NMO_RETURN_IF_ERROR(
+                nmo_chunk_read_and_fill_buffer_nosize_checked(chunk, data, rot_buf_size));
 
             local_controllers[count].type = CKANIMATION_LINROT_CONTROL;
             local_controllers[count].key_count = rot_key_count;
@@ -1165,11 +1005,8 @@ static nmo_status_t read_legacy_controllers(
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                                  "Failed to allocate scale axis controller data");
             }
-            size_t bytes_read = nmo_chunk_read_and_fill_buffer_nosize(chunk, data, axis_buf_size);
-            if (bytes_read != axis_buf_size) {
-                NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
-                                 "Failed to read scale axis controller data");
-            }
+            NMO_RETURN_IF_ERROR(
+                nmo_chunk_read_and_fill_buffer_nosize_checked(chunk, data, axis_buf_size));
 
             local_controllers[count].type = CKANIMATION_LINSCLAXIS_CONTROL;
             local_controllers[count].key_count = axis_key_count;
@@ -1192,11 +1029,8 @@ static nmo_status_t read_legacy_controllers(
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                                  "Failed to allocate scale controller data");
             }
-            size_t bytes_read = nmo_chunk_read_and_fill_buffer_nosize(chunk, data, buf_size);
-            if (bytes_read != buf_size) {
-                NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
-                                 "Failed to read scale controller data");
-            }
+            NMO_RETURN_IF_ERROR(
+                nmo_chunk_read_and_fill_buffer_nosize_checked(chunk, data, buf_size));
 
             local_controllers[count].type = CKANIMATION_LINSCL_CONTROL;
             local_controllers[count].key_count = key_count;

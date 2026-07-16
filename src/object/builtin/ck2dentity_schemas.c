@@ -50,9 +50,9 @@ static const nmo_type_field_t nmo_2dentity_fields[] = {
     NMO_FIELD(nmo_2dentity_state_t, has_z_order, CKPGUID_BOOL),
     NMO_FIELD(nmo_2dentity_state_t, z_order, CKPGUID_INT),
     NMO_FIELD(nmo_2dentity_state_t, has_parent, CKPGUID_BOOL),
-    NMO_FIELD_REF(nmo_2dentity_state_t, parent_id),
+    NMO_FIELD_REF(nmo_2dentity_state_t, parent),
     NMO_FIELD(nmo_2dentity_state_t, has_material, CKPGUID_BOOL),
-    NMO_FIELD_REF(nmo_2dentity_state_t, material_id),
+    NMO_FIELD_REF(nmo_2dentity_state_t, material),
     NMO_FIELD(nmo_2dentity_state_t, flags, NMO_GUID_ENUM_CK_2DENTITY_FLAGS)
 };
 
@@ -140,7 +140,8 @@ static void nmo_2dentity_set_default_source_rect(
 static nmo_status_t deserialize_modern(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
-    nmo_2dentity_state_t *out_state)
+    nmo_2dentity_state_t *out_state,
+    void *context)
 {
     (void)arena;
     nmo_status_t result;
@@ -158,7 +159,7 @@ static nmo_status_t deserialize_modern(
     out_state->has_source_rect = false;
     out_state->has_z_order = false;
     out_state->has_parent = false;
-    out_state->parent_id = 0;
+    out_state->parent = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     out_state->z_order = 0;
     nmo_2dentity_set_default_source_rect(out_state, class_id);
     
@@ -199,11 +200,19 @@ static nmo_status_t deserialize_modern(
     
     /* Optional block: parent ID (flag reserved2) */
     if (raw_flags & NMO_CK2DENTITY_FLAG_PARENT) {
-        out_state->has_parent = true;
-        result = nmo_chunk_read_object_id(chunk, &out_state->parent_id);
+        nmo_ref_t parent = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+        result = nmo_ref_read(chunk, &parent);
         if (result != NMO_OK) {
             NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read parent ID");
         }
+        nmo_ref_check_class(
+            &parent,
+            (const nmo_object_repository_t *)
+                nmo_deserialize_context_get_repository(context),
+            nmo_deserialize_context_get_type_registry(context),
+            NMO_CID_2DENTITY);
+        out_state->parent = parent;
+        out_state->has_parent = true;
     }
     
     NMO_RETURN_OK();
@@ -234,7 +243,7 @@ static nmo_status_t deserialize_legacy(
     out_state->has_source_rect = false;
     out_state->has_z_order = false;
     out_state->has_parent = false;
-    out_state->parent_id = 0;
+    out_state->parent = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     out_state->z_order = 0;
     nmo_2dentity_set_default_source_rect(out_state, class_id);
     
@@ -382,7 +391,7 @@ nmo_status_t nmo_2dentity_deserialize(
     }
 
     out_state->has_material = false;
-    out_state->material_id = 0;
+    out_state->material = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     
     /* Check chunk version to choose format */
     uint32_t data_version = nmo_chunk_get_data_version(chunk);
@@ -393,7 +402,7 @@ nmo_status_t nmo_2dentity_deserialize(
         if (seek_result != NMO_OK) {
             NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Missing modern CK2dEntity chunk (0x10F000)");
         }
-        result = deserialize_modern(chunk, arena, out_state);
+        result = deserialize_modern(chunk, arena, out_state, context);
     } else {
         /* Legacy format: separate identifiers */
         result = deserialize_legacy(chunk, arena, out_state);
@@ -406,11 +415,19 @@ nmo_status_t nmo_2dentity_deserialize(
     /* Optional material (identifier 0x200000, CKCID_2DENTITY only) */
     if (nmo_chunk_get_class_id(chunk) == NMO_CID_2DENTITY &&
         nmo_chunk_seek_identifier(chunk, CK_STATESAVE_2DENTITYMATERIAL) == NMO_OK) {
-        out_state->has_material = true;
-        result = nmo_chunk_read_object_id(chunk, &out_state->material_id);
+        nmo_ref_t material = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+        result = nmo_ref_read(chunk, &material);
         if (result != NMO_OK) {
             NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read material ID");
         }
+        nmo_ref_check_class(
+            &material,
+            (const nmo_object_repository_t *)
+                nmo_deserialize_context_get_repository(context),
+            nmo_deserialize_context_get_type_registry(context),
+            NMO_CID_MATERIAL);
+        out_state->material = material;
+        out_state->has_material = true;
     }
 
     NMO_RETURN_OK();
@@ -447,7 +464,8 @@ static nmo_status_t serialize_modern(
     if (write_z_order) {
         flags |= NMO_CK2DENTITY_FLAG_Z_ORDER;
     }
-    const bool write_parent = state->has_parent || state->parent_id != 0;
+    const bool write_parent = state->has_parent ||
+        state->parent.state != NMO_REF_NONE;
     if (write_parent) {
         flags |= NMO_CK2DENTITY_FLAG_PARENT;
     }
@@ -476,7 +494,7 @@ static nmo_status_t serialize_modern(
     }
     
     if (write_parent) {
-        result = nmo_chunk_write_object_id(chunk, state->parent_id);
+        result = nmo_ref_write(chunk, &state->parent);
         if (result != NMO_OK) return result;
     }
     
@@ -515,10 +533,10 @@ nmo_status_t nmo_2dentity_serialize(
     }
     
     /* Write material identifier if present */
-    if (in_state->has_material && in_state->material_id) {
+    if (in_state->has_material && in_state->material.state != NMO_REF_NONE) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_2DENTITYMATERIAL);
         if (result != NMO_OK) return result;
-        result = nmo_chunk_write_object_id(out_chunk, in_state->material_id);
+        result = nmo_ref_write(out_chunk, &in_state->material);
         if (result != NMO_OK) return result;
     }
 
@@ -542,46 +560,10 @@ nmo_status_t nmo_2dentity_remap_dependencies(
     }
 
     nmo_2dentity_state_t *state = (nmo_2dentity_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
 
     NMO_RETURN_IF_ERROR(nmo_renderobject_remap_dependencies(&state->base, NULL, context));
 
-    state->flags &= NMO_CK2DENTITY_FLAGS_MASK;
-
-    if (state->has_homogeneous_rect) {
-        state->flags |= NMO_CK2DENTITY_FLAG_HOMOGENEOUS;
-    } else {
-        state->flags &= ~NMO_CK2DENTITY_FLAG_HOMOGENEOUS;
-    }
-
-    if (!state->has_source_rect) {
-        state->has_source_rect = false;
-    }
-
-    if (!state->has_z_order) {
-        state->z_order = 0;
-    }
-
-    if (state->has_parent) {
-        if (state->parent_id == 0 ||
-            (repo && nmo_object_repository_find_by_id(repo, state->parent_id) == NULL)) {
-            state->has_parent = false;
-            state->parent_id = 0;
-        }
-    } else {
-        state->parent_id = 0;
-    }
-
-    if (state->has_material) {
-        if (state->material_id == 0 ||
-            (repo && nmo_object_repository_find_by_id(repo, state->material_id) == NULL)) {
-            state->has_material = false;
-            state->material_id = 0;
-        }
-    } else {
-        state->material_id = 0;
-    }
-
+    /* Keep raw flags and references unchanged during remap. */
     return nmo_object_default_validate(state, NULL, NULL);
 }
 
@@ -606,9 +588,9 @@ static nmo_status_t nmo_2dentity_pre_delete(
     }
     nmo_2dentity_state_t *state = (nmo_2dentity_state_t *)instance;
     state->has_parent = false;
-    state->parent_id = 0;
+    state->parent = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     state->has_material = false;
-    state->material_id = 0;
+    state->material = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     NMO_RETURN_OK();
 }
 

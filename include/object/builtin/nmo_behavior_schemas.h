@@ -22,6 +22,7 @@
 #include "core/nmo_guid.h"
 #include "object/builtin/nmo_sceneobject_schemas.h"
 #include "object/nmo_object_type_common.h"
+#include "object/nmo_ref.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -35,6 +36,43 @@ typedef struct nmo_logger nmo_logger_t;
 
 typedef struct nmo_type_descriptor nmo_type_descriptor_t;
 typedef struct nmo_object_repository nmo_object_repository_t;
+
+/** Atomic Behavior reference/sub-chunk pair for non-file state lanes. */
+typedef struct nmo_behavior_ref {
+    nmo_ref_t ref;
+    nmo_chunk_t *chunk;
+} nmo_behavior_ref_t;
+
+static inline nmo_behavior_ref_t nmo_behavior_ref_from_id(nmo_object_id_t id)
+{
+    nmo_behavior_ref_t value;
+    value.ref = nmo_ref_from_id(id);
+    value.chunk = NULL;
+    return value;
+}
+
+static inline nmo_object_id_t nmo_behavior_ref_runtime_id(
+    const nmo_behavior_ref_t *value)
+{
+    return value != NULL ? nmo_ref_runtime_id(&value->ref) : NMO_OBJECT_ID_NONE;
+}
+
+/** Append a resolved runtime reference. The array owns a non-NULL chunk. */
+NMO_API nmo_status_t nmo_behavior_ref_array_append(
+    nmo_array_t *array,
+    nmo_object_id_t id,
+    nmo_chunk_t *chunk);
+
+/** Find a resolved runtime reference by ID. */
+NMO_API int nmo_behavior_ref_array_find(
+    const nmo_array_t *array,
+    nmo_object_id_t id,
+    size_t *out_index);
+
+/** Return a resolved runtime ID, or NMO_OBJECT_ID_NONE for an invalid item. */
+NMO_API nmo_object_id_t nmo_behavior_ref_array_get_id(
+    const nmo_array_t *array,
+    size_t index);
 
 typedef struct nmo_behavior_interface_parse_stats {
     size_t attempted_count;
@@ -105,25 +143,23 @@ typedef struct nmo_behavior_state {
     nmo_object_id_t target_parameter_id;   /**< Target parameter ID */
     
     /* Graph data arrays (only if not building block) */
-    nmo_array_t sub_behaviors;             /**< Sub-behavior IDs (nmo_object_id_t) */
-    nmo_array_t sub_behavior_chunks;       /**< Sub-behavior sub-chunks (nmo_chunk_t *) */
+    nmo_array_t sub_behaviors;             /**< Sub-behaviors (nmo_behavior_ref_t) */
     
-    nmo_array_t sub_behavior_links;        /**< Sub-behavior link IDs (nmo_object_id_t) */
+    nmo_array_t sub_behavior_links;        /**< Sub-behavior links (nmo_behavior_ref_t) */
     
-    nmo_array_t operations;                /**< Operation IDs (nmo_object_id_t) */
+    nmo_array_t operations;                /**< Operations (nmo_behavior_ref_t) */
     
     /* Parameter arrays */
-    nmo_array_t in_parameters;             /**< Input parameter IDs (nmo_object_id_t) */
+    nmo_array_t in_parameters;             /**< Input parameters (nmo_behavior_ref_t) */
     
-    nmo_array_t out_parameters;            /**< Output parameter IDs (nmo_object_id_t) */
+    nmo_array_t out_parameters;            /**< Output parameters (nmo_behavior_ref_t) */
     
-    nmo_array_t local_parameters;          /**< Local parameter IDs (nmo_object_id_t) */
-    nmo_array_t local_parameter_chunks;    /**< Local parameter sub-chunks (nmo_chunk_t *) */
+    nmo_array_t local_parameters;          /**< Local parameters (nmo_behavior_ref_t) */
     
     /* I/O arrays */
-    nmo_array_t inputs;                    /**< Input IDs (BehaviorIO) */
+    nmo_array_t inputs;                    /**< Inputs (nmo_behavior_ref_t) */
     
-    nmo_array_t outputs;                   /**< Output IDs (BehaviorIO) */
+    nmo_array_t outputs;                   /**< Outputs (nmo_behavior_ref_t) */
     
     /* Scene activity (optional) */
     uint32_t single_activity_flags;        /**< Scene activity flags */
@@ -161,6 +197,12 @@ NMO_API nmo_status_t nmo_behavior_remap_dependencies(
     void *instance,
     const nmo_type_descriptor_t *type,
     void *context);
+
+/** Explicitly remove invalid Behavior references while preserving lane order. */
+NMO_API nmo_status_t nmo_behavior_normalize_references(
+    nmo_behavior_state_t *state,
+    nmo_object_repository_t *repository,
+    size_t *out_change_count);
 
 /**
  * @brief Parse all pending interface chunks in the repository

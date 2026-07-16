@@ -28,9 +28,44 @@
 #include "nmo_types.h"
 #include <string.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdalign.h>
 
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(texture, nmo_texture_state_t)
+
+static nmo_status_t nmo_texture_validate_array_count(
+    const nmo_chunk_t *chunk,
+    int32_t count,
+    size_t element_size,
+    size_t fixed_dwords,
+    size_t minimum_dwords_per_element,
+    const char *label)
+{
+    if (count < 0) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Texture %s count cannot be negative", label);
+    }
+
+    const size_t item_count = (size_t)count;
+    if (element_size != 0 && item_count > SIZE_MAX / element_size) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Texture %s allocation size overflow", label);
+    }
+    if (minimum_dwords_per_element != 0 &&
+        item_count > (SIZE_MAX - fixed_dwords) / minimum_dwords_per_element) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Texture %s DWORD count overflow", label);
+    }
+
+    const size_t required_dwords =
+        fixed_dwords + item_count * minimum_dwords_per_element;
+    if (!nmo_chunk_has_read_capacity(chunk, required_dwords)) {
+        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                         "Texture %s count exceeds remaining DWORDs", label);
+    }
+
+    NMO_RETURN_OK();
+}
 
 /* =============================================================================
  * REFLECTION FIELDS
@@ -335,7 +370,8 @@ static nmo_status_t nmo_texture_read_slot_filenames(
     int32_t count = 0;
     nmo_status_t result = nmo_chunk_read_int(chunk, &count);
     if (result != NMO_OK) return result;
-    if (count < 0) count = 0;
+    NMO_RETURN_IF_ERROR(nmo_texture_validate_array_count(
+        chunk, count, sizeof(char *), 0, 1, "filename"));
 
     if (count == 0) {
         NMO_RETURN_OK();
@@ -348,7 +384,7 @@ static nmo_status_t nmo_texture_read_slot_filenames(
 
     for (int32_t i = 0; i < count; ++i) {
         char *name = NULL;
-        nmo_chunk_read_string(chunk, &name);
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_string_checked(chunk, &name, NULL));
         names[i] = name;
     }
 
@@ -453,16 +489,16 @@ static size_t nmo_texture_apply_legacy_format(nmo_texture_state_t *state, nmo_ch
     int16_t bytes_per_entry = 0;
     int16_t color_map_entries = 0;
 
-    nmo_chunk_read_int(chunk, &width);
-    nmo_chunk_read_int(chunk, &height);
-    nmo_chunk_read_int(chunk, &bytes_per_line);
-    nmo_chunk_read_int(chunk, &bits_per_pixel);
-    nmo_chunk_read_dword(chunk, &red_mask);
-    nmo_chunk_read_dword(chunk, &green_mask);
-    nmo_chunk_read_dword(chunk, &blue_mask);
-    nmo_chunk_read_dword(chunk, &alpha_mask);
-    nmo_chunk_read_word(chunk, (uint16_t *)&bytes_per_entry);
-    nmo_chunk_read_word(chunk, (uint16_t *)&color_map_entries);
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &width));
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &height));
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &bytes_per_line));
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &bits_per_pixel));
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &red_mask));
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &green_mask));
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &blue_mask));
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &alpha_mask));
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_word(chunk, (uint16_t *)&bytes_per_entry));
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_word(chunk, (uint16_t *)&color_map_entries));
 
     desc.width = width;
     desc.height = height;
@@ -499,8 +535,9 @@ nmo_status_t nmo_texture_deserialize(
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_TEXREADER) == NMO_OK) {
         int32_t count = 0;
-        nmo_chunk_read_int(chunk, &count);
-        if (count < 0) count = 0;
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &count));
+        NMO_RETURN_IF_ERROR(nmo_texture_validate_array_count(
+            chunk, count, sizeof(nmo_texture_reader_slot_t), 3, 1, "reader slot"));
 
         int32_t width = 0;
         int32_t height = 0;
@@ -531,8 +568,9 @@ nmo_status_t nmo_texture_deserialize(
         }
     } else if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_TEXCOMPRESSED) == NMO_OK) {
         int32_t count = 0;
-        nmo_chunk_read_int(chunk, &count);
-        if (count < 0) count = 0;
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &count));
+        NMO_RETURN_IF_ERROR(nmo_texture_validate_array_count(
+            chunk, count, sizeof(nmo_texture_raw_slot_t), 0, 1, "raw slot"));
 
         if (count > 0) {
             nmo_texture_raw_slot_t *slots = (nmo_texture_raw_slot_t *)nmo_arena_alloc(
@@ -550,8 +588,9 @@ nmo_status_t nmo_texture_deserialize(
         }
     } else if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_TEXBITMAPS) == NMO_OK) {
         int32_t count = 0;
-        nmo_chunk_read_int(chunk, &count);
-        if (count < 0) count = 0;
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &count));
+        NMO_RETURN_IF_ERROR(nmo_texture_validate_array_count(
+            chunk, count, sizeof(nmo_texture_bitmap2_slot_t), 0, 2, "bitmap slot"));
 
         if (count > 0) {
             nmo_texture_bitmap2_slot_t *slots = (nmo_texture_bitmap2_slot_t *)nmo_arena_alloc(
@@ -576,14 +615,14 @@ nmo_status_t nmo_texture_deserialize(
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_TEXAVIFILENAME) == NMO_OK) {
         char *movie = NULL;
-        nmo_chunk_read_string(chunk, &movie);
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_string_checked(chunk, &movie, NULL));
         out_state->movie_filename = movie;
         out_state->has_movie_filename = (movie != NULL);
     }
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PICKTHRESHOLD) == NMO_OK) {
         int32_t threshold = 0;
-        nmo_chunk_read_int(chunk, &threshold);
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &threshold));
         out_state->pick_threshold = threshold;
         out_state->has_pick_threshold = 1;
     }
@@ -593,8 +632,8 @@ nmo_status_t nmo_texture_deserialize(
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_TEXTRANSPARENT) == NMO_OK) {
             uint32_t color = 0;
             uint32_t transparency = 0;
-            nmo_chunk_read_dword(chunk, &color);
-            nmo_chunk_read_dword(chunk, &transparency);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &color));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &transparency));
             out_state->transparent_color = color;
             out_state->has_transparent_color = 1;
             out_state->is_transparent = (transparency != 0);
@@ -602,7 +641,7 @@ nmo_status_t nmo_texture_deserialize(
 
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_TEXCURRENTIMAGE) == NMO_OK) {
             int32_t slot = 0;
-            nmo_chunk_read_int(chunk, &slot);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &slot));
             out_state->current_slot = slot;
             out_state->has_current_slot = 1;
         }
@@ -610,32 +649,27 @@ nmo_status_t nmo_texture_deserialize(
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_USERMIPMAP) == NMO_OK) {
             size_t payload = nmo_texture_identifier_payload_size(chunk);
             int32_t use_mipmap = 0;
-            nmo_chunk_read_int(chunk, &use_mipmap);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &use_mipmap));
             if (payload > sizeof(int32_t)) {
                 size_t consumed = nmo_texture_apply_legacy_format(out_state, chunk, payload);
                 size_t remaining = payload - sizeof(int32_t);
                 if (remaining > consumed) {
-                    nmo_chunk_skip(chunk, (remaining - consumed + 3) / 4);
+                    NMO_RETURN_IF_ERROR(nmo_chunk_skip(chunk, (remaining - consumed + 3) / 4));
                 }
             }
         }
 
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_TEXSYSTEMCACHING) == NMO_OK) {
             uint32_t save_options = 0;
-            nmo_chunk_read_dword(chunk, &save_options);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &save_options));
             out_state->save_options = (uint16_t)(save_options & 0xFF);
             out_state->has_save_format = 1;
 
             void *format = NULL;
             size_t size = 0;
-            nmo_chunk_read_buffer(chunk, &format, &size);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_buffer(chunk, &format, &size));
             out_state->save_format_data = format;
             out_state->save_format_size = size;
-        }
-
-        if (out_state->has_desired_video_format &&
-            out_state->desired_video_format > _32_X8L8V8U8) {
-            out_state->desired_video_format = _16_ARGB1555;
         }
 
         NMO_RETURN_OK();
@@ -644,7 +678,7 @@ nmo_status_t nmo_texture_deserialize(
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OLDTEXONLY) == NMO_OK) {
         size_t payload = nmo_texture_identifier_payload_size(chunk);
         uint32_t dword = 0;
-        nmo_chunk_read_dword(chunk, &dword);
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &dword));
 
         out_state->has_oldtexonly = 1;
         out_state->mipmap_level = (uint8_t)(dword & 0xFF);
@@ -658,46 +692,42 @@ nmo_status_t nmo_texture_deserialize(
         }
 
         if (payload == 3 * sizeof(uint32_t)) {
-            nmo_chunk_read_dword(chunk, &out_state->transparent_color);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->transparent_color));
             out_state->has_transparent_color = 1;
-            nmo_chunk_read_int(chunk, &out_state->current_slot);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &out_state->current_slot));
             out_state->has_current_slot = 1;
-            nmo_chunk_read_dword(chunk, &out_state->desired_video_format);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->desired_video_format));
             out_state->has_desired_video_format = 1;
         } else if (payload == 2 * sizeof(uint32_t)) {
             if (out_state->slot_count <= 1 || !out_state->has_desired_video_format) {
-                nmo_chunk_read_dword(chunk, &out_state->transparent_color);
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->transparent_color));
                 out_state->has_transparent_color = 1;
             }
             if (out_state->slot_count > 1) {
-                nmo_chunk_read_int(chunk, &out_state->current_slot);
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &out_state->current_slot));
                 out_state->has_current_slot = 1;
             }
             if (out_state->has_desired_video_format) {
-                nmo_chunk_read_dword(chunk, &out_state->desired_video_format);
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->desired_video_format));
             }
         } else if (payload == sizeof(uint32_t)) {
             if (out_state->has_desired_video_format) {
-                nmo_chunk_read_dword(chunk, &out_state->desired_video_format);
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->desired_video_format));
             } else if (out_state->slot_count <= 1) {
-                nmo_chunk_read_dword(chunk, &out_state->transparent_color);
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->transparent_color));
                 out_state->has_transparent_color = 1;
             } else {
-                nmo_chunk_read_int(chunk, &out_state->current_slot);
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &out_state->current_slot));
                 out_state->has_current_slot = 1;
             }
         }
     }
 
-    if (out_state->has_desired_video_format &&
-        out_state->desired_video_format > _32_X8L8V8U8) {
-        out_state->desired_video_format = _16_ARGB1555;
-    }
-
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_USERMIPMAP) == NMO_OK) {
         int32_t count = 0;
-        nmo_chunk_read_int(chunk, &count);
-        if (count < 0) count = 0;
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &count));
+        NMO_RETURN_IF_ERROR(nmo_texture_validate_array_count(
+            chunk, count, sizeof(nmo_texture_raw_slot_t), 0, 1, "mipmap"));
         if (count > 0) {
             nmo_texture_raw_slot_t *mips = (nmo_texture_raw_slot_t *)nmo_arena_alloc(
                 arena, sizeof(nmo_texture_raw_slot_t) * (size_t)count, _Alignof(nmo_texture_raw_slot_t));
@@ -717,7 +747,7 @@ nmo_status_t nmo_texture_deserialize(
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_TEXSAVEFORMAT) == NMO_OK) {
         void *format = NULL;
         size_t size = 0;
-        nmo_chunk_read_buffer(chunk, &format, &size);
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_buffer(chunk, &format, &size));
         out_state->has_save_format = 1;
         out_state->save_format_data = format;
         out_state->save_format_size = size;
@@ -788,16 +818,10 @@ static nmo_status_t nmo_texture_copy(
     const nmo_texture_state_t *s = src;
     nmo_texture_state_t *d = dst;
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
-    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->base.script_ids, &d->base.script_ids,
-                                        &s->base.script_ids.allocator));
-    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->base.attribute_parameter_ids,
-                                        &d->base.attribute_parameter_ids,
-                                        &s->base.attribute_parameter_ids.allocator));
-    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->base.attribute_types,
-                                        &d->base.attribute_types,
-                                        &s->base.attribute_types.allocator));
-    NMO_RETURN_IF_ERROR(nmo_object_clone_chunk_array(arena, &d->base.attribute_chunks,
-                                                     &s->base.attribute_chunks));
+    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->base.scripts, &d->base.scripts,
+                                        &s->base.scripts.allocator));
+    NMO_RETURN_IF_ERROR(nmo_beobject_clone_attributes(
+        arena, &d->base.attributes, &s->base.attributes));
 
     NMO_RETURN_IF_ERROR(nmo_object_copy_string(arena, &d->movie_filename, s->movie_filename));
     NMO_RETURN_IF_ERROR(nmo_object_copy_string_array(arena, &d->slot_filenames,
@@ -872,10 +896,10 @@ nmo_status_t nmo_texture_serialize(
     if (state->bitmap_kind == CKTEXTURE_BITMAP_READER && state->reader_slots && state->slot_count > 0) {
         nmo_status_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_TEXREADER);
         if (result != NMO_OK) return result;
-        nmo_chunk_write_int(chunk, (int32_t)state->slot_count);
-        nmo_chunk_write_int(chunk, state->reader_width);
-        nmo_chunk_write_int(chunk, state->reader_height);
-        nmo_chunk_write_int(chunk, state->reader_bpp);
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, (int32_t)state->slot_count));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, state->reader_width));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, state->reader_height));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, state->reader_bpp));
         for (uint32_t i = 0; i < state->slot_count; ++i) {
             result = nmo_texture_write_reader_slot(chunk, &state->reader_slots[i]);
             if (result != NMO_OK) return result;
@@ -883,7 +907,7 @@ nmo_status_t nmo_texture_serialize(
     } else if (state->bitmap_kind == CKTEXTURE_BITMAP_RAW && state->raw_slots && state->slot_count > 0) {
         nmo_status_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_TEXCOMPRESSED);
         if (result != NMO_OK) return result;
-        nmo_chunk_write_int(chunk, (int32_t)state->slot_count);
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, (int32_t)state->slot_count));
         for (uint32_t i = 0; i < state->slot_count; ++i) {
             result = nmo_texture_write_raw_slot(chunk, &state->raw_slots[i]);
             if (result != NMO_OK) return result;
@@ -891,7 +915,7 @@ nmo_status_t nmo_texture_serialize(
     } else if (state->bitmap_kind == CKTEXTURE_BITMAP_BITMAP2 && state->bitmap2_slots && state->slot_count > 0) {
         nmo_status_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_TEXBITMAPS);
         if (result != NMO_OK) return result;
-        nmo_chunk_write_int(chunk, (int32_t)state->slot_count);
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, (int32_t)state->slot_count));
         for (uint32_t i = 0; i < state->slot_count; ++i) {
             result = nmo_texture_write_bitmap2_slot(chunk, &state->bitmap2_slots[i]);
             if (result != NMO_OK) return result;
@@ -901,22 +925,22 @@ nmo_status_t nmo_texture_serialize(
     if (state->has_slot_filenames && state->slot_filenames && state->slot_count > 0) {
         nmo_status_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_TEXFILENAMES);
         if (result != NMO_OK) return result;
-        nmo_chunk_write_int(chunk, (int32_t)state->slot_count);
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, (int32_t)state->slot_count));
         for (uint32_t i = 0; i < state->slot_count; ++i) {
-            nmo_chunk_write_string(chunk, state->slot_filenames[i]);
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_string(chunk, state->slot_filenames[i]));
         }
     }
 
     if (state->has_movie_filename && state->movie_filename) {
         nmo_status_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_TEXAVIFILENAME);
         if (result != NMO_OK) return result;
-        nmo_chunk_write_string(chunk, state->movie_filename);
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_string(chunk, state->movie_filename));
     }
 
     if (state->pick_threshold != 0) {
         nmo_status_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_PICKTHRESHOLD);
         if (result != NMO_OK) return result;
-        nmo_chunk_write_int(chunk, state->pick_threshold);
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, state->pick_threshold));
     }
 
     {
@@ -929,15 +953,15 @@ nmo_status_t nmo_texture_serialize(
         if (state->is_cubemap) dword |= 0x400;
         if (state->has_desired_video_format && state->desired_video_format != UNKNOWN_PF) dword |= 0x200;
 
-        nmo_chunk_write_dword(chunk, dword);
-        nmo_chunk_write_dword(chunk, state->transparent_color);
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(chunk, dword));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(chunk, state->transparent_color));
 
         if (state->slot_count > 1) {
-            nmo_chunk_write_int(chunk, state->current_slot);
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, state->current_slot));
         }
 
         if (state->has_desired_video_format && state->desired_video_format != UNKNOWN_PF) {
-            nmo_chunk_write_dword(chunk, state->desired_video_format);
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(chunk, state->desired_video_format));
         }
     }
 
@@ -951,7 +975,7 @@ nmo_status_t nmo_texture_serialize(
     if (state->has_user_mipmaps && state->user_mipmap_count > 0 && state->user_mipmaps) {
         nmo_status_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_USERMIPMAP);
         if (result != NMO_OK) return result;
-        nmo_chunk_write_int(chunk, (int32_t)state->user_mipmap_count);
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, (int32_t)state->user_mipmap_count));
         for (uint32_t i = 0; i < state->user_mipmap_count; ++i) {
             result = nmo_texture_write_raw_slot(chunk, &state->user_mipmaps[i]);
             if (result != NMO_OK) return result;
@@ -985,11 +1009,7 @@ nmo_status_t nmo_texture_remap_dependencies(
 
     nmo_texture_state_t *state = (nmo_texture_state_t *)instance;
 
-    if (state->slot_count == 0) {
-        state->reader_slots = NULL;
-        state->raw_slots = NULL;
-        state->bitmap2_slots = NULL;
-    } else {
+    if (state->slot_count > 0) {
         if (state->bitmap_kind == CKTEXTURE_BITMAP_READER && state->reader_slots == NULL) {
             NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Missing reader slots");
         }
@@ -999,46 +1019,6 @@ nmo_status_t nmo_texture_remap_dependencies(
         if (state->bitmap_kind == CKTEXTURE_BITMAP_BITMAP2 && state->bitmap2_slots == NULL) {
             NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Missing bitmap2 slots");
         }
-        if (state->bitmap_kind == CKTEXTURE_BITMAP_NONE) {
-            state->reader_slots = NULL;
-            state->raw_slots = NULL;
-            state->bitmap2_slots = NULL;
-            state->slot_count = 0;
-        }
-    }
-
-    if (state->has_slot_filenames) {
-        if (!state->slot_filenames || state->slot_count == 0) {
-            state->has_slot_filenames = 0;
-        }
-    }
-
-    if (state->has_movie_filename && !state->movie_filename) {
-        state->has_movie_filename = 0;
-    }
-
-    if (state->has_desired_video_format &&
-        state->desired_video_format > _32_X8L8V8U8) {
-        state->desired_video_format = _16_ARGB1555;
-    }
-
-    if (state->has_current_slot) {
-        if (state->slot_count == 0 || state->current_slot < 0 ||
-            (uint32_t)state->current_slot >= state->slot_count) {
-            state->has_current_slot = 0;
-            state->current_slot = 0;
-        }
-    }
-
-    if (state->has_user_mipmaps && state->user_mipmap_count == 0) {
-        state->has_user_mipmaps = 0;
-        state->user_mipmaps = NULL;
-    }
-
-    if (state->has_save_format && (state->save_format_size == 0 || !state->save_format_data)) {
-        state->has_save_format = 0;
-        state->save_format_data = NULL;
-        state->save_format_size = 0;
     }
 
     return nmo_texture_validate(state, NULL, NULL);

@@ -29,6 +29,7 @@
 #include "../runtime/runtime_internal.h"
 #include "core/nmo_guid.h"
 #include "object/nmo_object_repository.h"
+#include "object/nmo_ref.h"
 #include "object/nmo_object_guids.h"
 #include "core/nmo_array.h"
 #include "core/nmo_hex.h"
@@ -179,6 +180,18 @@ static bool nmo_summary_is_object_ref_field(const nmo_type_field_t *field) {
     if (field->flags & NMO_FIELD_REFERENCE) return true;
     if (field->semantic == NMO_SEMANTIC_OBJECT_REF) return true;
     return nmo_guid_equals(field->type_guid, CKPGUID_ID);
+}
+
+static nmo_object_id_t nmo_summary_ref_runtime_id(
+    const nmo_type_field_t *field,
+    const void *field_ptr)
+{
+    if (!field || !field_ptr) return NMO_OBJECT_ID_NONE;
+    if (field->size == sizeof(nmo_ref_t)) {
+        return nmo_ref_runtime_id((const nmo_ref_t *)field_ptr);
+    }
+    return field->size >= sizeof(nmo_object_id_t)
+        ? *(const nmo_object_id_t *)field_ptr : NMO_OBJECT_ID_NONE;
 }
 
 static void nmo_summary_emit_stable_object_metadata(
@@ -400,6 +413,7 @@ static size_t nmo_snapshot_element_size_for_field(
     const nmo_type_field_t *field,
     const nmo_type_descriptor_t *field_type)
 {
+    if (nmo_field_uses_ref_records(field)) return sizeof(nmo_ref_t);
     if (field && field->name &&
         (strcmp(field->name, "vertex_colors") == 0 ||
          strcmp(field->name, "vertex_specular") == 0)) {
@@ -898,7 +912,7 @@ static bool nmo_summary_emit_select_path(
                     yyjson_mut_obj_add_uint(out->json_doc, item, "count", count);
 
                     size_t elem_size =
-                        nmo_summary_guess_element_size(field->type_guid, field_type);
+                        nmo_snapshot_element_size_for_field(field, field_type);
                     yyjson_mut_val *preview = nmo_summary_array_preview_json(
                         out, registry, field_type, field->type_guid,
                         array_ptr, count, elem_size, config->array_preview_max);
@@ -914,7 +928,7 @@ static bool nmo_summary_emit_select_path(
                     if (!array_ptr || count == 0) {
                         nmo_cli_print_kv(out->stream, label, "(empty)", 30, out->colorize);
                     } else {
-                        size_t elem_size = nmo_summary_guess_element_size(field->type_guid, field_type);
+                        size_t elem_size = nmo_snapshot_element_size_for_field(field, field_type);
                         nmo_summary_print_array_preview(
                             out, label, 30, registry, field_type, field->type_guid,
                             array_ptr, count, elem_size, config->text_preview_max);
@@ -937,7 +951,7 @@ static bool nmo_summary_emit_select_path(
                 return false;
             }
 
-            size_t elem_size = nmo_summary_guess_element_size(field->type_guid, field_type);
+            size_t elem_size = nmo_snapshot_element_size_for_field(field, field_type);
             const uint8_t *elem_ptr = (const uint8_t *)array_ptr + (size_t)index * elem_size;
 
             if (is_last) {
@@ -1323,7 +1337,7 @@ static bool nmo_summary_render_field(void *user_data, const nmo_type_field_t *fi
     if ((field->flags & NMO_FIELD_POINTER) && (field->flags & NMO_FIELD_REPEATED)) {
         const void *array_ptr = field_ptr ? *(const void *const *)field_ptr : NULL;
         uint64_t count = nmo_summary_guess_array_count(ctx->owner_type, ctx->owner_instance, field);
-        size_t elem_size = field_type ? (size_t)field_type->size : sizeof(uint32_t);
+        size_t elem_size = nmo_snapshot_element_size_for_field(field, field_type);
         nmo_summary_emit_array_field_preview(
             ctx, field, field_type, array_ptr, count, elem_size);
         return true;
@@ -1374,7 +1388,7 @@ static bool nmo_summary_render_field(void *user_data, const nmo_type_field_t *fi
     if (field->flags & NMO_FIELD_REPEATED) {
         const void *array_ptr = field_ptr ? *(const void*const*)field_ptr : NULL;
         uint64_t count = nmo_summary_guess_array_count(ctx->owner_type, ctx->owner_instance, field);
-        size_t elem_size = nmo_summary_guess_element_size(field->type_guid, field_type);
+        size_t elem_size = nmo_snapshot_element_size_for_field(field, field_type);
         nmo_summary_emit_array_field_preview(
             ctx, field, field_type, array_ptr, count, elem_size);
         return true;
@@ -1382,13 +1396,22 @@ static bool nmo_summary_render_field(void *user_data, const nmo_type_field_t *fi
 
     /* Handle scalar fields */
     char value_buf[NMO_SUMMARY_VALUE_BUFFER_SIZE];
+    nmo_object_id_t ref_id = NMO_OBJECT_ID_NONE;
+    const void *value_ptr = field_ptr;
+    size_t value_size = field->size;
+    if (nmo_summary_is_object_ref_field(field) &&
+        field->size == sizeof(nmo_ref_t)) {
+        ref_id = nmo_summary_ref_runtime_id(field, field_ptr);
+        value_ptr = &ref_id;
+        value_size = sizeof(ref_id);
+    }
     bool is_count = nmo_summary_is_metadata_count_field(ctx->owner_type, field);
     uint64_t count_value = 0;
     if (is_count && field_ptr && nmo_summary_read_u64_field(ctx->owner_instance, field, &count_value)) {
         (void)snprintf(value_buf, sizeof(value_buf), "%llu", (unsigned long long)count_value);
     } else {
         nmo_summary_format_value(ctx->registry, field_type, field->type_guid,
-                                field_ptr, field->size, value_buf, sizeof(value_buf));
+                                value_ptr, value_size, value_buf, sizeof(value_buf));
     }
 
     if (ctx->out->is_json) {
@@ -1400,7 +1423,7 @@ static bool nmo_summary_render_field(void *user_data, const nmo_type_field_t *fi
         } else {
             yyjson_mut_val *json_val = NULL;
             nmo_summary_format_value_to_json(ctx->out, ctx->registry, field_type,
-                                             field->type_guid, field_ptr, field->size, &json_val);
+                                             field->type_guid, value_ptr, value_size, &json_val);
             yyjson_mut_obj_add_val(ctx->out->json_doc, item, "value", json_val);
         }
 
@@ -1409,7 +1432,7 @@ static bool nmo_summary_render_field(void *user_data, const nmo_type_field_t *fi
 
         /* Resolve object reference names */
         if (nmo_summary_is_object_ref_field(field) && field_ptr && ctx->config->resolve_object_refs) {
-            nmo_object_id_t id = *(const nmo_object_id_t*)field_ptr;
+            nmo_object_id_t id = nmo_summary_ref_runtime_id(field, field_ptr);
             const char *name = nmo_summary_resolve_object_name(ctx->out, id);
             if (name) {
                 nmo_cli_json_add_str_safe(ctx->out->json_doc, item, "ref_name", name);
@@ -1420,7 +1443,7 @@ static bool nmo_summary_render_field(void *user_data, const nmo_type_field_t *fi
     } else {
         /* Text output with object reference resolution */
         if (nmo_summary_is_object_ref_field(field) && field_ptr && ctx->config->resolve_object_refs) {
-            nmo_object_id_t id = *(const nmo_object_id_t*)field_ptr;
+            nmo_object_id_t id = nmo_summary_ref_runtime_id(field, field_ptr);
             const char *name = nmo_summary_resolve_object_name(ctx->out, id);
             if (name) {
                 char ref_buf[256];
@@ -1777,6 +1800,20 @@ static yyjson_mut_val *nmo_snapshot_field(
                                    pointed, pointee_size, config));
             nmo_snapshot_add_raw_hex(out->json_doc, item, pointed, pointee_size);
         }
+        return item;
+    }
+
+    if (nmo_summary_is_object_ref_field(field) &&
+        field->size == sizeof(nmo_ref_t)) {
+        nmo_object_id_t id = nmo_summary_ref_runtime_id(field, field_ptr);
+        yyjson_mut_obj_add_str(out->json_doc, item, "kind", "scalar");
+        yyjson_mut_obj_add_val(
+            out->json_doc, item, "value",
+            nmo_snapshot_scalar_value(
+                out, registry, field_type, field->type_guid,
+                &id, sizeof(id)));
+        nmo_snapshot_add_raw_hex(
+            out->json_doc, item, field_ptr, field->size);
         return item;
     }
 

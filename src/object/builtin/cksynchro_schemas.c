@@ -54,7 +54,7 @@ static const nmo_type_field_t nmo_criticalsection_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_criticalsection_state_t, base),
                     sizeof(nmo_object_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD_REF(nmo_criticalsection_state_t, object_in_section_id)
+    NMO_FIELD_REF(nmo_criticalsection_state_t, object_in_section)
 };
 
 nmo_status_t nmo_state_prepare_dependencies(
@@ -218,36 +218,6 @@ nmo_status_t nmo_synchro_serialize(
  * CKSynchroObject FINISH LOADING (PostLoad equivalent)
  * ============================================================================= */
 
-static uint32_t nmo_synchro_prune_ids(
-    nmo_array_t *array,
-    nmo_object_repository_t *repo)
-{
-    if (!array || array->count == 0) {
-        return 0;
-    }
-    if (!array->data) {
-        return 0;
-    }
-
-    nmo_object_id_t *ids = NMO_ARRAY_DATA(nmo_object_id_t, array);
-    uint32_t kept = 0;
-    for (uint32_t i = 0; i < array->count; ++i) {
-        nmo_object_id_t id = ids[i];
-        if (id == 0) {
-            continue;
-        }
-        if (repo) {
-            nmo_object_t *obj = nmo_object_repository_find_by_id(repo, id);
-            if (obj == NULL) {
-                continue;
-            }
-        }
-        ids[kept++] = id;
-    }
-    array->count = kept;
-    return kept;
-}
-
 nmo_status_t nmo_synchro_prepare_dependencies(
     void *instance,
     const nmo_type_descriptor_t *type,
@@ -280,20 +250,8 @@ nmo_status_t nmo_synchro_remap_dependencies(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_synchro_remap_dependencies");
     }
 
-    nmo_synchro_state_t *state = (nmo_synchro_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
-
-    if (state->arrived_ids.count > 0 && !state->arrived_ids.data) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "CKSynchroObject: arrived_ids missing");
-    }
-    if (state->passed_ids.count > 0 && !state->passed_ids.data) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "CKSynchroObject: passed_ids missing");
-    }
-
-    (void)nmo_synchro_prune_ids(&state->arrived_ids, repo);
-    (void)nmo_synchro_prune_ids(&state->passed_ids, repo);
-
-    NMO_RETURN_OK();
+    (void)context;
+    return nmo_synchro_prepare_dependencies(instance, type, NULL);
 }
 
 /* =============================================================================
@@ -368,11 +326,15 @@ nmo_status_t nmo_criticalsection_deserialize(
     nmo_status_t result = deserialize_ckobject_base(&out_state->base, chunk, context);
     if (result != NMO_OK) return result;
 
+    out_state->object_in_section = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SYNCHRODATA) == NMO_OK) {
-        result = nmo_chunk_read_object_id(chunk, &out_state->object_in_section_id);
+        nmo_ref_t object_in_section = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+        result = nmo_ref_read(chunk, &object_in_section);
         if (result != NMO_OK) {
             return result;
         }
+        out_state->object_in_section = object_in_section;
     }
 
     NMO_RETURN_OK();
@@ -397,7 +359,7 @@ nmo_status_t nmo_criticalsection_serialize(
     result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_SYNCHRODATA);
     if (result != NMO_OK) return result;
 
-    return nmo_chunk_write_object_id(out_chunk, in_state->object_in_section_id);
+    return nmo_ref_write(out_chunk, &in_state->object_in_section);
 }
 
 /* =============================================================================
@@ -453,15 +415,8 @@ nmo_status_t nmo_criticalsection_remap_dependencies(
                          "Invalid arguments to nmo_criticalsection_remap_dependencies");
     }
 
-    nmo_criticalsection_state_t *state = (nmo_criticalsection_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
-
-    if (state->object_in_section_id != 0 && repo &&
-        nmo_object_repository_find_by_id(repo, state->object_in_section_id) == NULL) {
-        state->object_in_section_id = 0;
-    }
-
-    return nmo_object_default_validate(state, NULL, NULL);
+    (void)context;
+    return nmo_object_default_validate(instance, NULL, NULL);
 }
 
 static nmo_status_t nmo_synchro_pre_delete(

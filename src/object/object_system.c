@@ -153,6 +153,17 @@ static void object_system_destroy_state_layers(
     }
 }
 
+static void object_system_clear_failed_object_state(nmo_object_t *obj)
+{
+    if (obj != NULL) {
+        (void)nmo_object_alloc_state(obj, 0);
+        nmo_arena_t *storage_arena = nmo_object_get_storage_arena(obj);
+        if (storage_arena != NULL) {
+            nmo_arena_reset(storage_arena);
+        }
+    }
+}
+
 
 nmo_status_t nmo_object_system_deserialize_repository(
     nmo_object_repository_t *repo,
@@ -228,6 +239,12 @@ nmo_status_t nmo_object_system_deserialize_repository(
                         i, obj->id, obj->file_id, obj->class_id, object_system_name_or_default(obj), state_size);
             }
             nmo_chunk_close(obj->chunk);
+            if (out_stats != NULL) {
+                *out_stats = stats;
+            }
+            if (alloc_result == NMO_ERR_NOMEM || alloc_result == NMO_ERR_INTERNAL) {
+                return alloc_result;
+            }
             continue;
         }
 
@@ -272,7 +289,14 @@ nmo_status_t nmo_object_system_deserialize_repository(
 
             object_system_destroy_state_layers(
                 state, &deser_ctx, created_layers, created_count);
+            object_system_clear_failed_object_state(obj);
             nmo_chunk_close(obj->chunk);
+            if (create_result == NMO_ERR_NOMEM || create_result == NMO_ERR_INTERNAL) {
+                if (out_stats != NULL) {
+                    *out_stats = stats;
+                }
+                return create_result;
+            }
             continue;
         }
 
@@ -290,6 +314,10 @@ nmo_status_t nmo_object_system_deserialize_repository(
                         "  Object %zu (ID=%u, file_id=%u, class=0x%08X, name='%s'): failed to start chunk read: %d",
                         i, obj->id, obj->file_id, obj->class_id, object_system_name_or_default(obj), read_result);
             }
+            object_system_destroy_state_layers(
+                state, &deser_ctx, created_layers, created_count);
+            object_system_clear_failed_object_state(obj);
+            nmo_chunk_close(obj->chunk);
             continue;
         }
 
@@ -337,7 +365,15 @@ nmo_status_t nmo_object_system_deserialize_repository(
             object_system_destroy_state_layers(
                 state, &deser_ctx, created_layers, created_count);
 
+            object_system_clear_failed_object_state(obj);
+
             nmo_chunk_close(obj->chunk);
+            if (deser_result == NMO_ERR_NOMEM || deser_result == NMO_ERR_INTERNAL) {
+                if (out_stats != NULL) {
+                    *out_stats = stats;
+                }
+                return deser_result;
+            }
         }
     }
 
@@ -356,10 +392,18 @@ nmo_chunk_t *nmo_object_system_serialize_object_chunk(
     nmo_object_repository_t *repo,
     nmo_logger_t *logger,
     const nmo_shadow_storage_t *shadow_storage,
-    const nmo_chunk_file_context_t *file_ctx)
+    const nmo_chunk_file_context_t *file_ctx,
+    nmo_status_t *out_status)
 {
+    if (out_status != NULL) {
+        *out_status = NMO_ERR_INVALID_ARGUMENT;
+    }
     if (obj == NULL || arena == NULL || type_rt == NULL || type_rt->types == NULL) {
         return NULL;
+    }
+
+    if (out_status != NULL) {
+        *out_status = NMO_OK;
     }
 
     void *state = nmo_object_get_state(obj);
@@ -408,9 +452,18 @@ nmo_chunk_t *nmo_object_system_serialize_object_chunk(
                 if (file_ctx != NULL) {
                     nmo_chunk_set_file_context(empty_chunk, file_ctx);
                 }
-                nmo_chunk_start_write(empty_chunk);
+                nmo_status_t empty_result = nmo_chunk_start_write(empty_chunk);
+                if (empty_result != NMO_OK) {
+                    if (out_status != NULL) {
+                        *out_status = empty_result;
+                    }
+                    return NULL;
+                }
                 nmo_chunk_close(empty_chunk);
                 return empty_chunk;
+            }
+            if (out_status != NULL) {
+                *out_status = NMO_ERR_NOMEM;
             }
         }
 
@@ -422,6 +475,9 @@ nmo_chunk_t *nmo_object_system_serialize_object_chunk(
         if (logger) {
             nmo_log(logger, NMO_LOG_ERROR,
                     "    Failed to create chunk for object %u", obj->id);
+        }
+        if (out_status != NULL) {
+            *out_status = NMO_ERR_NOMEM;
         }
         return NULL;
     }
@@ -448,6 +504,9 @@ nmo_chunk_t *nmo_object_system_serialize_object_chunk(
             nmo_log(logger, NMO_LOG_ERROR,
                     "    Failed to start chunk write for object %u", obj->id);
         }
+        if (out_status != NULL) {
+            *out_status = result;
+        }
         return NULL;
     }
 
@@ -470,7 +529,10 @@ nmo_chunk_t *nmo_object_system_serialize_object_chunk(
         /* Clear file_context on the orphaned new_chunk so it does not hold
            a dangling pointer into scratch-arena memory. */
         nmo_chunk_set_file_context(new_chunk, NULL);
-        return obj->chunk;
+        if (out_status != NULL) {
+            *out_status = result;
+        }
+        return NULL;
     }
 
     if (shadow_storage != NULL) {
@@ -478,23 +540,22 @@ nmo_chunk_t *nmo_object_system_serialize_object_chunk(
         const void *tail = nmo_shadow_get_chunk_tail(shadow_storage, obj->id, &tail_size);
         if (tail != NULL && tail_size > 0) {
             nmo_status_t tail_result = nmo_chunk_write_buffer_no_size(new_chunk, tail, tail_size);
-            if (tail_result != NMO_OK && logger) {
-                nmo_log(logger, NMO_LOG_WARN,
-                        "    Failed to append shadow tail for object %u (code=%d)",
-                        obj->id, tail_result);
+            if (tail_result != NMO_OK) {
+                if (logger) {
+                    nmo_log(logger, NMO_LOG_ERROR,
+                            "    Failed to append shadow tail for object %u (code=%d)",
+                            obj->id, tail_result);
+                }
+                nmo_chunk_set_file_context(new_chunk, NULL);
+                if (out_status != NULL) {
+                    *out_status = tail_result;
+                }
+                return NULL;
             }
         }
     }
 
     nmo_chunk_close(new_chunk);
-
-    if (old_chunk != NULL && new_chunk->data.count == 0) {
-        if (logger) {
-            nmo_log(logger, NMO_LOG_WARN,
-                    "    Serialized object %u is empty; preserving original chunk", obj->id);
-        }
-        return (nmo_chunk_t *)old_chunk;
-    }
 
     if (logger) {
         nmo_log(logger, NMO_LOG_DEBUG,

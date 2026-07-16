@@ -7,6 +7,7 @@
 #define NMO_CKSPRITE3D_SCHEMAS_H
 
 #include "object/builtin/nmo_3dentity_schemas.h"
+#include "object/nmo_ref.h"
 #include "object/nmo_object_type_common.h"
 #include "core/nmo_math.h"
 #include "nmo_types.h"
@@ -33,7 +34,7 @@ typedef struct nmo_sprite3d_state {
     float half_height;
     nmo_vector2_t offset;
     nmo_rect_t uv_rect;
-    nmo_object_id_t material_id;
+    nmo_ref_t material;
 } nmo_sprite3d_state_t;
 
 NMO_API nmo_status_t nmo_sprite3d_deserialize(

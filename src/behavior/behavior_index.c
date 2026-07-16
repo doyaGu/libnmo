@@ -15,6 +15,7 @@
 #include "type/nmo_type_system.h"
 
 #include <string.h>
+#include <stdlib.h>
 
 /* ============================================================================
  * Hash table (linear probing, arena-allocated)
@@ -30,6 +31,7 @@ typedef struct index_slot {
 
 struct nmo_behavior_index {
     nmo_arena_t *arena;
+    nmo_allocator_t allocator;
     index_slot_t *slots;
     size_t capacity;
     size_t count;
@@ -54,10 +56,12 @@ static bool index_insert(
     if ((idx->count + 1) * 100 > idx->capacity * INDEX_LOAD_FACTOR) {
         size_t new_cap = idx->capacity * 2;
         if (new_cap == 0) new_cap = INDEX_INITIAL_CAP;
-        index_slot_t *new_slots = (index_slot_t *)nmo_arena_alloc(
-            idx->arena, new_cap * sizeof(index_slot_t), _Alignof(index_slot_t));
+        if (new_cap > SIZE_MAX / sizeof(index_slot_t)) return false;
+        size_t byte_count = new_cap * sizeof(index_slot_t);
+        index_slot_t *new_slots = (index_slot_t *)nmo_alloc(
+            &idx->allocator, byte_count, _Alignof(index_slot_t));
         if (!new_slots) return false;
-        memset(new_slots, 0, new_cap * sizeof(index_slot_t));
+        memset(new_slots, 0, byte_count);
 
         /* Rehash existing entries */
         for (size_t i = 0; i < idx->capacity; i++) {
@@ -68,6 +72,7 @@ static bool index_insert(
             }
             new_slots[h] = idx->slots[i];
         }
+        nmo_free(&idx->allocator, idx->slots);
         idx->slots = new_slots;
         idx->capacity = new_cap;
     }
@@ -108,11 +113,12 @@ typedef struct build_ctx {
 } build_ctx_t;
 
 static bool index_array(nmo_behavior_index_t *idx, nmo_object_id_t owner_id,
-                         const nmo_object_id_t *ids, size_t count, nmo_port_kind_t kind) {
-    for (size_t i = 0; i < count; i++) {
-        if (ids[i] == 0) continue;
+                         const nmo_array_t *array, nmo_port_kind_t kind) {
+    for (size_t i = 0; i < array->count; i++) {
+        nmo_object_id_t id = nmo_behavior_ref_array_get_id(array, i);
+        if (id == 0) continue;
         nmo_port_owner_t owner = {owner_id, (int32_t)i, kind};
-        if (!index_insert(idx, ids[i], &owner)) {
+        if (!index_insert(idx, id, &owner)) {
             return false;
         }
     }
@@ -136,35 +142,25 @@ static bool build_visitor(
 
     /* IO ports */
     if (state->inputs.data) {
-        if (!index_array(idx, behavior_id,
-                         (const nmo_object_id_t *)state->inputs.data,
-                         state->inputs.count, NMO_PORT_IO_IN))
+        if (!index_array(idx, behavior_id, &state->inputs, NMO_PORT_IO_IN))
             goto oom;
     }
     if (state->outputs.data) {
-        if (!index_array(idx, behavior_id,
-                         (const nmo_object_id_t *)state->outputs.data,
-                         state->outputs.count, NMO_PORT_IO_OUT))
+        if (!index_array(idx, behavior_id, &state->outputs, NMO_PORT_IO_OUT))
             goto oom;
     }
 
     /* Parameters */
     if (state->in_parameters.data) {
-        if (!index_array(idx, behavior_id,
-                         (const nmo_object_id_t *)state->in_parameters.data,
-                         state->in_parameters.count, NMO_PORT_PARAM_IN))
+        if (!index_array(idx, behavior_id, &state->in_parameters, NMO_PORT_PARAM_IN))
             goto oom;
     }
     if (state->out_parameters.data) {
-        if (!index_array(idx, behavior_id,
-                         (const nmo_object_id_t *)state->out_parameters.data,
-                         state->out_parameters.count, NMO_PORT_PARAM_OUT))
+        if (!index_array(idx, behavior_id, &state->out_parameters, NMO_PORT_PARAM_OUT))
             goto oom;
     }
     if (state->local_parameters.data) {
-        if (!index_array(idx, behavior_id,
-                         (const nmo_object_id_t *)state->local_parameters.data,
-                         state->local_parameters.count, NMO_PORT_PARAM_LOCAL))
+        if (!index_array(idx, behavior_id, &state->local_parameters, NMO_PORT_PARAM_LOCAL))
             goto oom;
     }
 
@@ -177,25 +173,19 @@ static bool build_visitor(
 
     /* Operations */
     if (state->operations.data) {
-        if (!index_array(idx, behavior_id,
-                         (const nmo_object_id_t *)state->operations.data,
-                         state->operations.count, NMO_PORT_OPERATION))
+        if (!index_array(idx, behavior_id, &state->operations, NMO_PORT_OPERATION))
             goto oom;
     }
 
     /* Sub-behaviors */
     if (state->sub_behaviors.data) {
-        if (!index_array(idx, behavior_id,
-                         (const nmo_object_id_t *)state->sub_behaviors.data,
-                         state->sub_behaviors.count, NMO_PORT_SUB_BEHAVIOR))
+        if (!index_array(idx, behavior_id, &state->sub_behaviors, NMO_PORT_SUB_BEHAVIOR))
             goto oom;
     }
 
     /* Sub-behavior links */
     if (state->sub_behavior_links.data) {
-        if (!index_array(idx, behavior_id,
-                         (const nmo_object_id_t *)state->sub_behavior_links.data,
-                         state->sub_behavior_links.count, NMO_PORT_SUB_LINK))
+        if (!index_array(idx, behavior_id, &state->sub_behavior_links, NMO_PORT_SUB_LINK))
             goto oom;
     }
 
@@ -217,11 +207,16 @@ nmo_behavior_index_t *nmo_behavior_index_create(nmo_arena_t *arena) {
     if (!idx) return NULL;
     memset(idx, 0, sizeof(*idx));
     idx->arena = arena;
+    if (nmo_arena_get_allocator(arena, &idx->allocator) != NMO_OK) return NULL;
     return idx;
 }
 
 void nmo_behavior_index_destroy(nmo_behavior_index_t *index) {
-    (void)index; /* arena-allocated */
+    if (!index) return;
+    nmo_free(&index->allocator, index->slots);
+    index->slots = NULL;
+    index->capacity = 0;
+    index->count = 0;
 }
 
 nmo_status_t nmo_behavior_index_build(
@@ -240,13 +235,18 @@ nmo_status_t nmo_behavior_index_build(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "no repository");
     }
 
+    if (index->slots && index->capacity > 0) {
+        memset(index->slots, 0, index->capacity * sizeof(*index->slots));
+    }
+    index->count = 0;
+
     /* Find all scripts and walk each one */
     nmo_array_t scripts;
     nmo_array_init(&scripts, sizeof(nmo_behavior_script_view_t), 32, NULL);
     document = nmo_workspace_get_document(workspace);
     st = nmo_behavior_query_collect_scripts(document, &scripts);
     if (st != NMO_OK) {
-        nmo_array_clear(&scripts);
+        nmo_array_dispose(&scripts);
         return st;
     }
 
@@ -255,16 +255,16 @@ nmo_status_t nmo_behavior_index_build(
     for (size_t i = 0; i < scripts.count; i++) {
         st = nmo_behavior_walk(workspace, entries[i].script_id, build_visitor, &bctx);
         if (st != NMO_OK) {
-            nmo_array_clear(&scripts);
+            nmo_array_dispose(&scripts);
             return st;
         }
         if (bctx.status != NMO_OK) {
-            nmo_array_clear(&scripts);
+            nmo_array_dispose(&scripts);
             return bctx.status;
         }
     }
 
-    nmo_array_clear(&scripts);
+    nmo_array_dispose(&scripts);
     return NMO_OK;
 }
 

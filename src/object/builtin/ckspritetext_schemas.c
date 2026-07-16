@@ -81,8 +81,7 @@ static nmo_status_t deserialize_text_content(
     nmo_spritetext_state_t *state
 ) {
     char *text_str = NULL;
-    size_t len = nmo_chunk_read_string(chunk, &text_str);
-    (void)len;  /* String length not needed */
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_string_checked(chunk, &text_str, NULL));
     (void)arena;
     state->text_content = text_str;
     
@@ -101,8 +100,7 @@ static nmo_status_t deserialize_font_properties(
     nmo_status_t result;
     
     /* Read font name */
-    size_t len = nmo_chunk_read_string(chunk, &font_name);
-    (void)len;  /* String length not needed */
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_string_checked(chunk, &font_name, NULL));
     
     (void)arena;
     state->font.font_name = font_name;

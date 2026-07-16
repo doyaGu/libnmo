@@ -126,16 +126,10 @@ static nmo_status_t nmo_renderobject_copy(
     const nmo_renderobject_state_t *s = src;
     nmo_renderobject_state_t *d = dst;
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
-    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->base.script_ids, &d->base.script_ids,
-                                        &s->base.script_ids.allocator));
-    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->base.attribute_parameter_ids,
-                                        &d->base.attribute_parameter_ids,
-                                        &s->base.attribute_parameter_ids.allocator));
-    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->base.attribute_types,
-                                        &d->base.attribute_types,
-                                        &s->base.attribute_types.allocator));
-    NMO_RETURN_IF_ERROR(nmo_object_clone_chunk_array(arena, &d->base.attribute_chunks,
-                                                     &s->base.attribute_chunks));
+    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->base.scripts, &d->base.scripts,
+                                        &s->base.scripts.allocator));
+    NMO_RETURN_IF_ERROR(nmo_beobject_clone_attributes(
+        arena, &d->base.attributes, &s->base.attributes));
     NMO_RETURN_OK();
 }
 
@@ -147,18 +141,13 @@ static nmo_status_t nmo_renderobject_validate(
     (void)type;
     (void)context;
     const nmo_renderobject_state_t *s = instance;
-    size_t script_count = nmo_array_size(&s->base.script_ids);
-    size_t attribute_count = nmo_array_size(&s->base.attribute_parameter_ids);
-    size_t chunk_count = nmo_array_size(&s->base.attribute_chunks);
+    size_t script_count = nmo_array_size(&s->base.scripts);
+    size_t attribute_count = nmo_array_size(&s->base.attributes);
 
-    NMO_VALIDATE_COUNT(nmo_array_data(&s->base.script_ids), (uint32_t)script_count,
-                       "script_ids");
-    NMO_VALIDATE_COUNT(nmo_array_data(&s->base.attribute_parameter_ids), (uint32_t)attribute_count,
-                       "attribute_parameter_ids");
-    NMO_VALIDATE_COUNT(nmo_array_data(&s->base.attribute_types), (uint32_t)attribute_count,
-                       "attribute_types");
-    NMO_VALIDATE_COUNT(nmo_array_data(&s->base.attribute_chunks), (uint32_t)chunk_count,
-                       "attribute_chunks");
+    NMO_VALIDATE_COUNT(nmo_array_data(&s->base.scripts), (uint32_t)script_count,
+                       "scripts");
+    NMO_VALIDATE_COUNT(nmo_array_data(&s->base.attributes), (uint32_t)attribute_count,
+                       "attributes");
     NMO_RETURN_OK();
 }
 

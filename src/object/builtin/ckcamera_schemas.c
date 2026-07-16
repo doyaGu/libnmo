@@ -138,40 +138,40 @@ nmo_status_t nmo_camera_deserialize(
     if (data_version < 5) {
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CAMERAFOV) == NMO_OK) {
             out_state->has_fov_chunk = 1;
-            (void)nmo_chunk_read_float(chunk, &out_state->fov);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->fov));
         }
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CAMERAPROJTYPE) == NMO_OK) {
             out_state->has_proj_chunk = 1;
-            (void)nmo_chunk_read_dword(chunk, &out_state->projection_type);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->projection_type));
         }
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CAMERAOTHOZOOM) == NMO_OK) {
             out_state->has_ortho_chunk = 1;
-            (void)nmo_chunk_read_float(chunk, &out_state->orthographic_zoom);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->orthographic_zoom));
         }
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CAMERAASPECT) == NMO_OK) {
             out_state->has_aspect_chunk = 1;
-            (void)nmo_chunk_read_int(chunk, &out_state->width);
-            (void)nmo_chunk_read_int(chunk, &out_state->height);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &out_state->width));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &out_state->height));
         }
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CAMERAPLANES) == NMO_OK) {
             out_state->has_planes_chunk = 1;
-            (void)nmo_chunk_read_float(chunk, &out_state->near_plane);
-            (void)nmo_chunk_read_float(chunk, &out_state->far_plane);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->near_plane));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->far_plane));
         }
     } else {
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CAMERAONLY) == NMO_OK) {
             out_state->has_cameraonly_chunk = 1;
-            (void)nmo_chunk_read_int(chunk, (int32_t *)&out_state->projection_type);
-            (void)nmo_chunk_read_float(chunk, &out_state->fov);
-            (void)nmo_chunk_read_float(chunk, &out_state->orthographic_zoom);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, (int32_t *)&out_state->projection_type));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->fov));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->orthographic_zoom));
 
             uint32_t packed = 0;
-            (void)nmo_chunk_read_dword(chunk, &packed);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &packed));
             out_state->width = (int32_t)(packed & 0xFFFF);
             out_state->height = (int32_t)((packed >> 16) & 0xFFFF);
 
-            (void)nmo_chunk_read_float(chunk, &out_state->near_plane);
-            (void)nmo_chunk_read_float(chunk, &out_state->far_plane);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->near_plane));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->far_plane));
         }
     }
 
@@ -278,38 +278,7 @@ nmo_status_t nmo_camera_remap_dependencies(
         return result;
     }
 
-    if (state->projection_type != 1u && state->projection_type != 2u) {
-        state->projection_type = 1u;
-    }
-
-    if (state->fov <= 0.0f) {
-        state->fov = 0.5f;
-    }
-    if (state->orthographic_zoom <= 0.0f) {
-        state->orthographic_zoom = 1.0f;
-    }
-
-    if (state->width <= 0) {
-        state->width = 4;
-    }
-    if (state->height <= 0) {
-        state->height = 3;
-    }
-    if (state->width > 65535) {
-        state->width = 65535;
-    }
-    if (state->height > 65535) {
-        state->height = 65535;
-    }
-
-    if (state->near_plane <= 0.0f) {
-        state->near_plane = 1.0f;
-    }
-    if (state->far_plane <= state->near_plane) {
-        state->far_plane = 4000.0f;
-    }
-
-    NMO_RETURN_OK();
+    return nmo_object_default_validate(state, NULL, NULL);
 }
 
 static nmo_status_t nmo_camera_pre_delete(

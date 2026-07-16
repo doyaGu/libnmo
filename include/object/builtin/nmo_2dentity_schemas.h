@@ -19,6 +19,7 @@
 #include "nmo_types.h"
 #include "core/nmo_math.h"
 #include "object/builtin/nmo_renderobject_schemas.h"
+#include "object/nmo_ref.h"
 #include "object/nmo_object_type_common.h"
 #include "object/nmo_statesave_ids.h"
 
@@ -66,10 +67,10 @@ typedef struct nmo_2dentity_state {
     int32_t z_order;                    /**< Rendering depth */
     
     bool has_parent;                    /**< True if parent reference is present */
-    nmo_object_id_t parent_id;          /**< Parent entity ID */
+    nmo_ref_t parent;                   /**< Parent entity reference */
     
     bool has_material;                  /**< True if material identifier is present */
-    nmo_object_id_t material_id;        /**< Material reference */
+    nmo_ref_t material;                 /**< Material reference */
     
     /* Flags (sanitized with 0xFFF8F7FF on load) */
     uint32_t flags;                     /**< Entity flags (visibility, clipping, etc.) */

@@ -19,6 +19,18 @@
 #include "type/nmo_reflection.h"
 #include <string.h>
 
+static nmo_status_t read_exact_sized_buffer(
+    nmo_chunk_t *chunk,
+    void *buffer,
+    size_t expected_size)
+{
+    size_t actual_size = 0;
+    nmo_status_t result = nmo_chunk_read_and_fill_buffer_checked(
+        chunk, buffer, expected_size, &actual_size);
+    if (result != NMO_OK) return result;
+    return actual_size == expected_size ? NMO_OK : NMO_ERR_INVALID_FORMAT;
+}
+
 NMO_DEFINE_OBJECT_LIFECYCLE(
     sound,
     nmo_sound_state_t,
@@ -34,6 +46,7 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
     do {
         state->base.save_options = CKSOUND_USEGLOBAL;
         state->base.file_name = NULL;
+        state->attached_object = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     } while (0),
     ((void)0))
 
@@ -78,7 +91,7 @@ static const nmo_type_field_t nmo_wavesound_fields[] = {
     NMO_FIELD(nmo_wavesound_state_t, min_distance, CKPGUID_FLOAT),
     NMO_FIELD(nmo_wavesound_state_t, max_distance, CKPGUID_FLOAT),
     NMO_FIELD(nmo_wavesound_state_t, distance_behavior, CKPGUID_UINT32),
-    NMO_FIELD_REF(nmo_wavesound_state_t, attached_object_id),
+    NMO_FIELD_REF(nmo_wavesound_state_t, attached_object),
     NMO_FIELD_NAMED("position", offsetof(nmo_wavesound_state_t, position),
                     sizeof(nmo_vector_t), CKPGUID_VECTOR,
                     NMO_FIELD_REQUIRED, 0),
@@ -140,7 +153,8 @@ nmo_status_t nmo_sound_deserialize(
         if (result != NMO_OK) {
             return result;
         }
-        (void)nmo_chunk_read_string(chunk, &out_state->file_name);
+        NMO_RETURN_IF_ERROR(
+            nmo_chunk_read_string_checked(chunk, &out_state->file_name, NULL));
     }
 
     NMO_RETURN_OK();
@@ -171,7 +185,7 @@ nmo_status_t nmo_sound_serialize(
     if (result != NMO_OK) return result;
 
     const char *base_name = nmo_sound_basename(in_state->file_name);
-    return nmo_chunk_write_string(out_chunk, base_name ? base_name : "");
+    return nmo_chunk_write_string(out_chunk, base_name);
 }
 
 /* =============================================================================
@@ -201,73 +215,89 @@ nmo_status_t nmo_wavesound_deserialize(
     out_state->has_duration = 0;
     out_state->duration = 0;
     out_state->has_data2 = 0;
+    out_state->state_flags = 0;
+    out_state->priority = 0.0f;
+    out_state->gain = 0.0f;
+    out_state->pan = 0.0f;
+    out_state->pitch = 0.0f;
+    out_state->cone_in_angle = 0.0f;
+    out_state->cone_out_angle = 0.0f;
+    out_state->cone_out_gain = 0.0f;
+    out_state->min_distance = 0.0f;
+    out_state->max_distance = 0.0f;
+    out_state->distance_behavior = 0;
+    out_state->attached_object = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+    out_state->position = (nmo_vector_t){0.0f, 0.0f, 0.0f};
+    out_state->direction = (nmo_vector_t){0.0f, 0.0f, 0.0f};
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_WAVSOUNDFILE) == NMO_OK) {
         out_state->has_wave_file_name = 1;
-        (void)nmo_chunk_read_string(chunk, &out_state->wave_file_name);
+        NMO_RETURN_IF_ERROR(
+            nmo_chunk_read_string_checked(chunk, &out_state->wave_file_name, NULL));
     }
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_WAVSOUNDDURATION) == NMO_OK) {
         out_state->has_duration = 1;
-        nmo_chunk_read_int(chunk, &out_state->duration);
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &out_state->duration));
     }
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_WAVSOUNDDATA2) == NMO_OK) {
-        out_state->has_data2 = 1;
+        nmo_wavesound_state_t data = *out_state;
+        data.has_data2 = 1;
         uint32_t data_version = nmo_chunk_get_data_version(chunk);
         if (data_version >= 3) {
-            nmo_chunk_read_dword(chunk, &out_state->state_flags);
-            nmo_chunk_read_float(chunk, &out_state->priority);
-            nmo_chunk_read_float(chunk, &out_state->gain);
-            nmo_chunk_read_float(chunk, &out_state->pan);
-            nmo_chunk_read_float(chunk, &out_state->pitch);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &data.state_flags));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &data.priority));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &data.gain));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &data.pan));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &data.pitch));
 
             /* Reserved floats */
             {
                 float reserved = 0.0f;
-                nmo_chunk_read_float(chunk, &reserved);
-                nmo_chunk_read_float(chunk, &reserved);
-                nmo_chunk_read_float(chunk, &reserved);
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &reserved));
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &reserved));
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &reserved));
             }
 
             /* Cone fields */
-            nmo_chunk_read_float(chunk, &out_state->cone_in_angle);
-            nmo_chunk_read_float(chunk, &out_state->cone_out_angle);
-            nmo_chunk_read_float(chunk, &out_state->cone_out_gain);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &data.cone_in_angle));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &data.cone_out_angle));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &data.cone_out_gain));
 
-            nmo_chunk_read_float(chunk, &out_state->min_distance);
-            nmo_chunk_read_float(chunk, &out_state->max_distance);
-            nmo_chunk_read_dword(chunk, &out_state->distance_behavior);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &data.min_distance));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &data.max_distance));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &data.distance_behavior));
 
-            nmo_chunk_read_object_id(chunk, &out_state->attached_object_id);
-            (void)nmo_chunk_read_and_fill_buffer(chunk, &out_state->position,
-                sizeof(out_state->position));
-            (void)nmo_chunk_read_and_fill_buffer(chunk, &out_state->direction,
-                sizeof(out_state->direction));
+            NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &data.attached_object));
+            NMO_RETURN_IF_ERROR(read_exact_sized_buffer(
+                chunk, &data.position, sizeof(data.position)));
+            NMO_RETURN_IF_ERROR(read_exact_sized_buffer(
+                chunk, &data.direction, sizeof(data.direction)));
 
             /* Reserved */
             {
                 uint32_t reserved = 0;
-                nmo_chunk_read_dword(chunk, &reserved);
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &reserved));
             }
         } else if (data_version >= 2) {
             /* Legacy layout (CK2 data version 2) */
-            nmo_chunk_read_dword(chunk, &out_state->state_flags);
-            nmo_chunk_read_float(chunk, &out_state->priority);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &data.state_flags));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &data.priority));
 
             {
                 uint32_t reserved = 0;
-                nmo_chunk_read_dword(chunk, &reserved);
-                nmo_chunk_read_dword(chunk, &reserved);
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &reserved));
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &reserved));
             }
 
-            nmo_chunk_read_float(chunk, &out_state->gain);
-            nmo_chunk_read_float(chunk, &out_state->pan);
-            nmo_chunk_read_float(chunk, &out_state->pitch);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &data.gain));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &data.pan));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &data.pitch));
 
             {
                 float reserved = 0.0f;
-                nmo_chunk_read_float(chunk, &reserved);
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &reserved));
             }
 
             /* Optional 3D block (not present for background sounds) */
@@ -275,30 +305,37 @@ nmo_status_t nmo_wavesound_deserialize(
                 size_t remaining = chunk->data.count - nmo_chunk_get_position(chunk);
                 if (remaining >= 16) {
                     float reserved = 0.0f;
-                    nmo_chunk_read_float(chunk, &reserved);
-                    nmo_chunk_read_float(chunk, &reserved);
+                    NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &reserved));
+                    NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &reserved));
 
-                    nmo_chunk_read_float(chunk, &out_state->cone_in_angle);
-                    nmo_chunk_read_float(chunk, &out_state->cone_out_angle);
-                    nmo_chunk_read_float(chunk, &out_state->cone_out_gain);
+                    NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &data.cone_in_angle));
+                    NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &data.cone_out_angle));
+                    NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &data.cone_out_gain));
 
-                    nmo_chunk_read_float(chunk, &out_state->min_distance);
-                    nmo_chunk_read_float(chunk, &out_state->max_distance);
-                    nmo_chunk_read_dword(chunk, &out_state->distance_behavior);
+                    NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &data.min_distance));
+                    NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &data.max_distance));
+                    NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &data.distance_behavior));
 
-                    nmo_chunk_read_object_id(chunk, &out_state->attached_object_id);
-                    (void)nmo_chunk_read_and_fill_buffer(chunk, &out_state->position,
-                        sizeof(out_state->position));
-                    (void)nmo_chunk_read_and_fill_buffer(chunk, &out_state->direction,
-                        sizeof(out_state->direction));
+                    NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &data.attached_object));
+                    NMO_RETURN_IF_ERROR(read_exact_sized_buffer(
+                        chunk, &data.position, sizeof(data.position)));
+                    NMO_RETURN_IF_ERROR(read_exact_sized_buffer(
+                        chunk, &data.direction, sizeof(data.direction)));
 
                     {
                         int32_t reserved_int = 0;
-                        nmo_chunk_read_int(chunk, &reserved_int);
+                        NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &reserved_int));
                     }
                 }
             }
         }
+        nmo_ref_check_class(
+            &data.attached_object,
+            (const nmo_object_repository_t *)
+                nmo_deserialize_context_get_repository(context),
+            nmo_deserialize_context_get_type_registry(context),
+            NMO_CID_3DENTITY);
+        *out_state = data;
     }
 
     NMO_RETURN_OK();
@@ -336,7 +373,7 @@ nmo_status_t nmo_wavesound_serialize(
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_WAVSOUNDFILE);
         if (result != NMO_OK) return result;
         const char *base_name = nmo_sound_basename(in_state->wave_file_name);
-        result = nmo_chunk_write_string(out_chunk, base_name ? base_name : "");
+        result = nmo_chunk_write_string(out_chunk, base_name);
         if (result != NMO_OK) return result;
     }
 
@@ -353,29 +390,29 @@ nmo_status_t nmo_wavesound_serialize(
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_WAVSOUNDDATA2);
         if (result != NMO_OK) return result;
 
-        nmo_chunk_write_dword(out_chunk, in_state->state_flags);
-        nmo_chunk_write_float(out_chunk, in_state->priority);
-        nmo_chunk_write_float(out_chunk, in_state->gain);
-        nmo_chunk_write_float(out_chunk, in_state->pan);
-        nmo_chunk_write_float(out_chunk, in_state->pitch);
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(out_chunk, in_state->state_flags));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, in_state->priority));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, in_state->gain));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, in_state->pan));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, in_state->pitch));
 
-        nmo_chunk_write_float(out_chunk, 0.0f);
-        nmo_chunk_write_float(out_chunk, 0.0f);
-        nmo_chunk_write_float(out_chunk, 0.0f);
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, 0.0f));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, 0.0f));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, 0.0f));
 
-        nmo_chunk_write_float(out_chunk, in_state->cone_in_angle);
-        nmo_chunk_write_float(out_chunk, in_state->cone_out_angle);
-        nmo_chunk_write_float(out_chunk, in_state->cone_out_gain);
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, in_state->cone_in_angle));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, in_state->cone_out_angle));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, in_state->cone_out_gain));
 
-        nmo_chunk_write_float(out_chunk, in_state->min_distance);
-        nmo_chunk_write_float(out_chunk, in_state->max_distance);
-        nmo_chunk_write_dword(out_chunk, in_state->distance_behavior);
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, in_state->min_distance));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, in_state->max_distance));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(out_chunk, in_state->distance_behavior));
 
-        nmo_chunk_write_object_id(out_chunk, in_state->attached_object_id);
-        nmo_chunk_write_buffer(out_chunk, &in_state->position, sizeof(in_state->position));
-        nmo_chunk_write_buffer(out_chunk, &in_state->direction, sizeof(in_state->direction));
+        NMO_RETURN_IF_ERROR(nmo_ref_write(out_chunk, &in_state->attached_object));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_buffer(out_chunk, &in_state->position, sizeof(in_state->position)));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_buffer(out_chunk, &in_state->direction, sizeof(in_state->direction)));
 
-        nmo_chunk_write_dword(out_chunk, 0);
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(out_chunk, 0));
     }
 
     NMO_RETURN_OK();
@@ -408,7 +445,8 @@ nmo_status_t nmo_midisound_deserialize(
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_MIDISOUNDFILE) == NMO_OK) {
         out_state->has_midi_file_name = 1;
-        (void)nmo_chunk_read_string(chunk, &out_state->midi_file_name);
+        NMO_RETURN_IF_ERROR(
+            nmo_chunk_read_string_checked(chunk, &out_state->midi_file_name, NULL));
     }
 
     NMO_RETURN_OK();
@@ -482,14 +520,6 @@ nmo_status_t nmo_sound_remap_dependencies(
     nmo_sound_state_t *state = (nmo_sound_state_t *)instance;
     NMO_RETURN_IF_ERROR(nmo_beobject_remap_dependencies(&state->base, NULL, context));
 
-    if (state->save_options > CKSOUND_USEGLOBAL) {
-        state->save_options = CKSOUND_USEGLOBAL;
-    }
-
-    if (state->file_name && state->file_name[0] == '\0') {
-        state->file_name = NULL;
-    }
-
     return nmo_sound_validate(state, NULL, NULL);
 }
 
@@ -538,42 +568,10 @@ nmo_status_t nmo_wavesound_remap_dependencies(
     }
 
     nmo_wavesound_state_t *state = (nmo_wavesound_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
 
     NMO_RETURN_IF_ERROR(nmo_sound_remap_dependencies(&state->base, NULL, context));
 
-    if (state->has_wave_file_name) {
-        if (!state->wave_file_name || state->wave_file_name[0] == '\0') {
-            state->has_wave_file_name = 0;
-            state->wave_file_name = NULL;
-        }
-    } else {
-        state->wave_file_name = NULL;
-    }
-
-    if (state->has_duration) {
-        if (state->duration < 0) {
-            state->duration = 0;
-        }
-    } else {
-        state->duration = 0;
-    }
-
-    if (state->has_data2) {
-        if (state->min_distance < 0.0f) {
-            state->min_distance = 0.0f;
-        }
-        if (state->max_distance < state->min_distance) {
-            state->max_distance = state->min_distance;
-        }
-        if (state->attached_object_id != 0 && repo &&
-            nmo_object_repository_find_by_id(repo, state->attached_object_id) == NULL) {
-            state->attached_object_id = 0;
-        }
-    } else {
-        state->attached_object_id = 0;
-    }
-
+    /* Preserve DATA2 presence and unresolved attachment reference. */
     return nmo_wavesound_validate(state, NULL, NULL);
 }
 
@@ -625,15 +623,6 @@ nmo_status_t nmo_midisound_remap_dependencies(
     nmo_midisound_state_t *state = (nmo_midisound_state_t *)instance;
 
     NMO_RETURN_IF_ERROR(nmo_sound_remap_dependencies(&state->base, NULL, context));
-
-    if (state->has_midi_file_name) {
-        if (!state->midi_file_name || state->midi_file_name[0] == '\0') {
-            state->has_midi_file_name = 0;
-            state->midi_file_name = NULL;
-        }
-    } else {
-        state->midi_file_name = NULL;
-    }
 
     return nmo_midisound_validate(state, NULL, NULL);
 }

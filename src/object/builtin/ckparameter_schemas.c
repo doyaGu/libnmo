@@ -388,37 +388,6 @@ static nmo_status_t nmo_parameter_validate(
     NMO_RETURN_OK();
 }
 
-static bool nmo_parameter_has_payload(const nmo_parameter_state_t *state)
-{
-    if (!state) {
-        return false;
-    }
-
-    if (state->mode != CKPARAM_MODE_NONE) {
-        return true;
-    }
-
-    if (state->buffer_data.count > 0) {
-        return true;
-    }
-
-    if (state->object_id != 0) {
-        return true;
-    }
-
-    if (state->subchunk != NULL) {
-        return true;
-    }
-
-    if (state->manager_guid.d1 != 0 ||
-        state->manager_guid.d2 != 0 ||
-        state->manager_value != 0) {
-        return true;
-    }
-
-    return false;
-}
-
 nmo_status_t nmo_parameter_prepare_dependencies(
     void *instance,
     const nmo_type_descriptor_t *type,
@@ -445,71 +414,10 @@ nmo_status_t nmo_parameter_remap_dependencies(
     }
 
     nmo_parameter_state_t *state = (nmo_parameter_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
 
     NMO_RETURN_IF_ERROR(nmo_object_remap_dependencies(&state->base, NULL, context));
 
-    if (state->mode < CKPARAM_MODE_SUBCHUNK || state->mode > CKPARAM_MODE_MANAGER) {
-        state->mode = CKPARAM_MODE_NONE;
-    }
-
-    switch (state->mode) {
-        case CKPARAM_MODE_SUBCHUNK:
-            nmo_array_clear(&state->buffer_data);
-            state->object_id = 0;
-            state->manager_guid = NMO_GUID_NULL;
-            state->manager_value = 0;
-            if (state->subchunk == NULL) {
-                state->mode = CKPARAM_MODE_NONE;
-            }
-            break;
-
-        case CKPARAM_MODE_BUFFER:
-            state->subchunk = NULL;
-            state->object_id = 0;
-            state->manager_guid = NMO_GUID_NULL;
-            state->manager_value = 0;
-            if (nmo_guid_equals(state->type_guid, CKPGUID_PARAMETERTYPE) &&
-                state->buffer_data.count != 0 &&
-                state->buffer_data.count != sizeof(nmo_guid_t)) {
-                nmo_array_clear(&state->buffer_data);
-            }
-            break;
-
-        case CKPARAM_MODE_OBJECT:
-            nmo_array_clear(&state->buffer_data);
-            state->subchunk = NULL;
-            state->manager_guid = NMO_GUID_NULL;
-            state->manager_value = 0;
-            if (state->object_id != 0 && repo != NULL &&
-                nmo_object_repository_find_by_id(repo, state->object_id) == NULL) {
-                state->object_id = 0;
-            }
-            break;
-
-        case CKPARAM_MODE_MANAGER:
-            nmo_array_clear(&state->buffer_data);
-            state->subchunk = NULL;
-            state->object_id = 0;
-            break;
-
-        case CKPARAM_MODE_NONE:
-        default:
-            nmo_array_clear(&state->buffer_data);
-            state->subchunk = NULL;
-            state->object_id = 0;
-            state->manager_guid = NMO_GUID_NULL;
-            state->manager_value = 0;
-            break;
-    }
-
-    /*
-     * CK2 distinguishes a missing value section from an explicit "no payload"
-     * value section.  CKParameter::Save writes paramState=3 for the latter,
-     * and CKParameter::Load reads that dword before returning.
-     */
-    state->has_state = state->has_state || nmo_parameter_has_payload(state);
-
+    /* Preserve the selected payload lane and unresolved object ID. */
     return nmo_parameter_validate(state, NULL, NULL);
 }
 

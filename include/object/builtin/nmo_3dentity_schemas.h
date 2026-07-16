@@ -7,6 +7,7 @@
 #define NMO_CK3DENTITY_SCHEMAS_H
 
 #include "object/builtin/nmo_renderobject_schemas.h"
+#include "object/nmo_ref.h"
 #include "object/nmo_object_struct_defs.h"
 #include "object/nmo_object_type_common.h"
 #include "core/nmo_math.h"
@@ -36,18 +37,18 @@ typedef struct nmo_3dentity_state {
     uint32_t moveable_flags;   ///< VX_MOVEABLE flags
 
     /* Hierarchy and references */
-    nmo_object_id_t parent_id;
-    nmo_object_id_t place_id;
+    nmo_ref_t parent;
+    nmo_ref_t place;
     int32_t z_order;
 
     /* Meshes */
-    nmo_object_id_t current_mesh_id;
+    nmo_ref_t current_mesh;
     uint32_t mesh_count;
-    nmo_object_id_t *mesh_ids;
+    nmo_ref_t *mesh_ids;
 
     /* Animations */
     uint32_t animation_count;
-    nmo_object_id_t *animation_ids;
+    nmo_ref_t *animation_ids;
 
     /* Skin data (optional) */
     nmo_3dentity_skin_t *skin;

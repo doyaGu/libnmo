@@ -169,8 +169,7 @@ nmo_status_t nmo_scene_deserialize(
                 result = nmo_chunk_read_object_sequence_item(chunk,
                     &descs[i].object_id);
                 if (result != NMO_OK) {
-                    out_state->object_descs.count = i;
-                    break;
+                    return result;
                 }
             }
 
@@ -201,7 +200,7 @@ nmo_status_t nmo_scene_deserialize(
                 uint32_t flags;
                 result = nmo_chunk_read_dword(chunk, &flags);
                 if (result != NMO_OK) {
-                    break;
+                    return result;
                 }
                 if (data_version >= 8) {
                     descs[i].flags = flags;
@@ -225,9 +224,7 @@ nmo_status_t nmo_scene_deserialize(
     result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SCENELAUNCHED);
     if (result == NMO_OK) {
         result = nmo_chunk_read_dword(chunk, &out_state->environment_settings);
-        if (result != NMO_OK) {
-            out_state->environment_settings = 0;
-        }
+        if (result != NMO_OK) return result;
     }
 
     /* Section 3: SCENERENDERSETTINGS - Rendering configuration */
@@ -408,16 +405,10 @@ static nmo_status_t nmo_scene_copy(
     const nmo_scene_state_t *s = src;
     nmo_scene_state_t *d = dst;
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
-    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->base.script_ids, &d->base.script_ids,
-                                        &s->base.script_ids.allocator));
-    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->base.attribute_parameter_ids,
-                                        &d->base.attribute_parameter_ids,
-                                        &s->base.attribute_parameter_ids.allocator));
-    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->base.attribute_types,
-                                        &d->base.attribute_types,
-                                        &s->base.attribute_types.allocator));
-    NMO_RETURN_IF_ERROR(nmo_object_clone_chunk_array(arena, &d->base.attribute_chunks,
-                                                     &s->base.attribute_chunks));
+    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->base.scripts, &d->base.scripts,
+                                        &s->base.scripts.allocator));
+    NMO_RETURN_IF_ERROR(nmo_beobject_clone_attributes(
+        arena, &d->base.attributes, &s->base.attributes));
 
     NMO_RETURN_IF_ERROR(nmo_array_clone(&s->object_descs, &d->object_descs,
                                         &s->object_descs.allocator));
@@ -461,43 +452,13 @@ nmo_status_t nmo_scene_remap_dependencies(
     }
 
     nmo_scene_state_t *state = (nmo_scene_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
+    (void)context;
 
     if (state->object_descs.count > 0 && state->object_descs.data == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Scene object_descs missing");
     }
 
-    if (repo) {
-        if (state->level_id != 0 &&
-            nmo_object_repository_find_by_id(repo, state->level_id) == NULL) {
-            state->level_id = 0;
-        }
-        if (state->background_texture_id != 0 &&
-            nmo_object_repository_find_by_id(repo, state->background_texture_id) == NULL) {
-            state->background_texture_id = 0;
-        }
-        if (state->starting_camera_id != 0 &&
-            nmo_object_repository_find_by_id(repo, state->starting_camera_id) == NULL) {
-            state->starting_camera_id = 0;
-        }
-    }
-
-    if (state->object_descs.count > 0) {
-        nmo_scene_object_desc_t *descs = NMO_ARRAY_DATA(nmo_scene_object_desc_t, &state->object_descs);
-        uint32_t kept = 0;
-        for (uint32_t i = 0; i < state->object_descs.count; ++i) {
-            nmo_scene_object_desc_t desc = descs[i];
-            if (desc.object_id == 0) {
-                continue;
-            }
-            if (repo && nmo_object_repository_find_by_id(repo, desc.object_id) == NULL) {
-                continue;
-            }
-            descs[kept++] = desc;
-        }
-        state->object_descs.count = kept;
-    }
-
+    /* Preserve unresolved descriptors and scalar references. */
     return nmo_scene_validate(state, NULL, NULL);
 }
 
@@ -597,35 +558,6 @@ static nmo_status_t nmo_scene_enumerate_refs(
         if (!visitor(user_data, s->starting_camera_id,
                      NMO_REF_KIND_UNKNOWN, "starting_camera_id", 0)) {
             NMO_RETURN_OK();
-        }
-    }
-
-    /* Base CKBeObject: script_ids -> NMO_REF_KIND_SCRIPT */
-    if (s->base.script_ids.count > 0 && s->base.script_ids.data != NULL) {
-        const nmo_object_id_t *ids =
-            NMO_ARRAY_DATA(nmo_object_id_t, &s->base.script_ids);
-        for (uint32_t i = 0; i < s->base.script_ids.count; ++i) {
-            if (ids[i] != 0) {
-                if (!visitor(user_data, ids[i], NMO_REF_KIND_SCRIPT,
-                             "script_ids", i)) {
-                    NMO_RETURN_OK();
-                }
-            }
-        }
-    }
-
-    /* Base CKBeObject: attribute_parameter_ids -> NMO_REF_KIND_PARAMETER */
-    if (s->base.attribute_parameter_ids.count > 0 &&
-        s->base.attribute_parameter_ids.data != NULL) {
-        const nmo_object_id_t *ids =
-            NMO_ARRAY_DATA(nmo_object_id_t, &s->base.attribute_parameter_ids);
-        for (uint32_t i = 0; i < s->base.attribute_parameter_ids.count; ++i) {
-            if (ids[i] != 0) {
-                if (!visitor(user_data, ids[i], NMO_REF_KIND_PARAMETER,
-                             "attribute_parameter_ids", i)) {
-                    NMO_RETURN_OK();
-                }
-            }
         }
     }
 

@@ -100,20 +100,26 @@ nmo_status_t nmo_messagemanager_deserialize(
     if (type_count > 10000) {
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Invalid message type count");
     }
+    if (!nmo_chunk_has_read_capacity(chunk, (size_t)type_count)) {
+        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                         "Message type count exceeds remaining DWORDs");
+    }
 
-    out_state->message_type_count = (uint32_t)type_count;
-    out_state->message_type_names = (const char **)nmo_arena_alloc(
+    const char **names = (const char **)nmo_arena_alloc(
         arena, type_count * sizeof(char *), _Alignof(char *));
-    if (!out_state->message_type_names) {
+    if (!names) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate message type names");
     }
 
     /* Read each message type name */
     for (int32_t i = 0; i < type_count; i++) {
         char *name = NULL;
-        nmo_chunk_read_string(chunk, &name);
-        out_state->message_type_names[i] = name; /* Chunk manages the buffer */
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_string_checked(chunk, &name, NULL));
+        names[i] = name; /* Chunk manages the buffer */
     }
+
+    out_state->message_type_count = (uint32_t)type_count;
+    out_state->message_type_names = names;
 
     NMO_RETURN_OK();
 }
@@ -153,18 +159,7 @@ nmo_status_t nmo_messagemanager_serialize(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Message type names missing");
     }
 
-    /* Don't write if no used message types (all names empty) */
-    uint32_t used_count = 0;
-    for (uint32_t i = 0; i < in_state->message_type_count; i++) {
-        const char *name = in_state->message_type_names
-            ? in_state->message_type_names[i]
-            : NULL;
-        if (name && name[0] != '\0') {
-            used_count++;
-            break;
-        }
-    }
-    if (used_count == 0) {
+    if (in_state->message_type_count == 0) {
         NMO_RETURN_OK();
     }
 
@@ -181,7 +176,7 @@ nmo_status_t nmo_messagemanager_serialize(
     /* Write each message type name */
     for (uint32_t i = 0; i < in_state->message_type_count; i++) {
         const char *name = in_state->message_type_names[i];
-        result = nmo_chunk_write_string(out_chunk, name ? name : "");
+        result = nmo_chunk_write_string(out_chunk, name);
         if (result != NMO_OK) return result;
     }
 
@@ -215,20 +210,9 @@ nmo_status_t nmo_messagemanager_remap_dependencies(
 
     nmo_messagemanager_state_t *state = (nmo_messagemanager_state_t *)instance;
 
-    if (state->message_type_count == 0) {
-        state->message_type_names = NULL;
-        return nmo_object_default_validate(state, NULL, NULL);
-    }
-
-    if (state->message_type_names == NULL) {
+    if (state->message_type_count > 0 && state->message_type_names == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "Message type names missing");
-    }
-
-    for (uint32_t i = 0; i < state->message_type_count; ++i) {
-        if (state->message_type_names[i] == NULL) {
-            state->message_type_names[i] = "";
-        }
     }
 
     return nmo_object_default_validate(state, NULL, NULL);

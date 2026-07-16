@@ -134,6 +134,19 @@ NMO_API size_t nmo_arena_total_allocated(nmo_arena_t *arena);
 NMO_API size_t nmo_arena_bytes_used(nmo_arena_t *arena);
 
 /**
+ * @brief Copy the allocator backing an arena.
+ *
+ * The returned allocator remains valid only while its user data remains valid.
+ *
+ * @param arena Arena allocator
+ * @param out_allocator Output allocator copy
+ * @return NMO_OK on success
+ */
+NMO_API nmo_status_t nmo_arena_get_allocator(
+    const nmo_arena_t *arena,
+    nmo_allocator_t *out_allocator);
+
+/**
  * @brief Capture current arena state for scoped rewinding.
  *
  * Marks must be rewound in strict LIFO order.

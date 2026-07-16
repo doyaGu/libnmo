@@ -15,7 +15,7 @@ static int classify_ownership_field(const char *field_name) {
         return 0;
     }
 
-    if (strcmp(field_name, "script_ids") == 0) {
+    if (strcmp(field_name, "scripts") == 0) {
         return 1;
     }
     if (strcmp(field_name, "sub_behaviors") == 0) {
@@ -45,7 +45,7 @@ static int classify_ownership_field(const char *field_name) {
     if (strcmp(field_name, "target_parameter_id") == 0) {
         return 1;
     }
-    if (strcmp(field_name, "attribute_parameter_ids") == 0) {
+    if (strcmp(field_name, "attributes") == 0) {
         return 1;
     }
     if (strcmp(field_name, "in1_id") == 0) {

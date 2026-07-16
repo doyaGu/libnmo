@@ -10,6 +10,7 @@
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_object.h"
 #include "object/nmo_object_repository.h"
+#include "object/nmo_ref.h"
 #include "object/nmo_ref_graph.h"
 #include "type/nmo_reflection.h"
 #include "type/nmo_type_guids.h"
@@ -269,6 +270,18 @@ static bool is_object_ref(const nmo_type_field_t *field)
     return nmo_guid_equals(field->type_guid, CKPGUID_ID);
 }
 
+static nmo_object_id_t object_ref_field_runtime_id(
+    const nmo_type_field_t *field,
+    const void *ptr)
+{
+    if (field == NULL || ptr == NULL) return NMO_OBJECT_ID_NONE;
+    if (field->size == sizeof(nmo_ref_t)) {
+        return nmo_ref_runtime_id((const nmo_ref_t *)ptr);
+    }
+    return field->size >= sizeof(nmo_object_id_t)
+        ? *(const nmo_object_id_t *)ptr : NMO_OBJECT_ID_NONE;
+}
+
 static void match_lookup_reset(match_lookup_t *lookup)
 {
     if (!lookup) return;
@@ -380,8 +393,8 @@ static bool scalar_equal(const nmo_type_field_t *f,
     }
 
     if (is_object_ref(f) && f->size >= sizeof(uint32_t) && !(f->flags & NMO_FIELD_REPEATED)) {
-        nmo_object_id_t id1 = *(const nmo_object_id_t *)p1;
-        nmo_object_id_t id2 = *(const nmo_object_id_t *)p2;
+        nmo_object_id_t id1 = object_ref_field_runtime_id(f, p1);
+        nmo_object_id_t id2 = object_ref_field_runtime_id(f, p2);
         return ref_equal_lookup(id1, id2, repo1, repo2, lookup);
     }
     if (nmo_guid_equals(f->type_guid, CKPGUID_STRING) && f->size == sizeof(char *)) {
@@ -1531,7 +1544,7 @@ static void format_field_value(char *buf, size_t buf_size,
     }
 
     if (is_object_ref(field) && field->size >= sizeof(nmo_object_id_t)) {
-        nmo_object_id_t id = *(const nmo_object_id_t *)ptr;
+        nmo_object_id_t id = object_ref_field_runtime_id(field, ptr);
         nmo_object_format_ref(buf, buf_size, id, repo, ctx);
         return;
     }

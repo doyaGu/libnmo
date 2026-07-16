@@ -8,6 +8,7 @@
 
 #include "object/builtin/nmo_light_schemas.h"
 #include "object/nmo_object_type_common.h"
+#include "object/nmo_ref.h"
 #include "nmo_types.h"
 
 #ifdef __cplusplus
@@ -26,7 +27,7 @@ typedef struct nmo_type_descriptor nmo_type_descriptor_t;
 typedef struct nmo_targetlight_state {
     nmo_light_state_t base;
     uint8_t has_target;
-    nmo_object_id_t target_id;
+    nmo_ref_t target;
 } nmo_targetlight_state_t;
 
 NMO_API nmo_status_t nmo_targetlight_deserialize(

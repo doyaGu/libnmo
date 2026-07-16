@@ -31,8 +31,8 @@ static nmo_status_t nmo_kinematicchain_deserialize_internal(
     }
 
     out_state->has_chain_data = 0;
-    out_state->start_effector_id = 0;
-    out_state->end_effector_id = 0;
+    out_state->start_effector = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+    out_state->end_effector = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
 
     nmo_status_t result = nmo_object_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;
@@ -42,10 +42,14 @@ static nmo_status_t nmo_kinematicchain_deserialize_internal(
         nmo_object_id_t placeholder = 0;
         result = nmo_chunk_read_object_id(chunk, &placeholder);
         if (result != NMO_OK) return result;
-        result = nmo_chunk_read_object_id(chunk, &out_state->start_effector_id);
+        nmo_ref_t start_effector = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+        nmo_ref_t end_effector = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+        result = nmo_ref_read(chunk, &start_effector);
         if (result != NMO_OK) return result;
-        result = nmo_chunk_read_object_id(chunk, &out_state->end_effector_id);
+        result = nmo_ref_read(chunk, &end_effector);
         if (result != NMO_OK) return result;
+        out_state->start_effector = start_effector;
+        out_state->end_effector = end_effector;
     }
 
     NMO_RETURN_OK();
@@ -56,8 +60,8 @@ static const nmo_type_field_t nmo_kinematicchain_fields[] = {
                     sizeof(nmo_object_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_kinematicchain_state_t, has_chain_data, CKPGUID_UINT8),
-    NMO_FIELD_REF(nmo_kinematicchain_state_t, start_effector_id),
-    NMO_FIELD_REF(nmo_kinematicchain_state_t, end_effector_id)
+    NMO_FIELD_REF(nmo_kinematicchain_state_t, start_effector),
+    NMO_FIELD_REF(nmo_kinematicchain_state_t, end_effector)
 };
 
 nmo_status_t nmo_kinematicchain_prepare_dependencies(
@@ -81,31 +85,10 @@ nmo_status_t nmo_kinematicchain_remap_dependencies(
     }
 
     nmo_kinematicchain_state_t *state = (nmo_kinematicchain_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
 
     NMO_RETURN_IF_ERROR(nmo_object_remap_dependencies(&state->base, NULL, context));
 
-    state->has_chain_data = state->has_chain_data ? 1 : 0;
-
-    if (!state->has_chain_data) {
-        state->start_effector_id = 0;
-        state->end_effector_id = 0;
-        return nmo_object_default_validate(state, NULL, NULL);
-    }
-
-    if (state->start_effector_id != 0 && repo &&
-        nmo_object_repository_find_by_id(repo, state->start_effector_id) == NULL) {
-        state->start_effector_id = 0;
-    }
-    if (state->end_effector_id != 0 && repo &&
-        nmo_object_repository_find_by_id(repo, state->end_effector_id) == NULL) {
-        state->end_effector_id = 0;
-    }
-
-    if (state->start_effector_id == 0 && state->end_effector_id == 0) {
-        state->has_chain_data = 0;
-    }
-
+    /* Preserve chain section presence and unresolved endpoints. */
     return nmo_object_default_validate(state, NULL, NULL);
 }
 
@@ -190,9 +173,9 @@ static nmo_status_t nmo_kinematicchain_serialize_internal(
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_object_id(out_chunk, 0);
         if (result != NMO_OK) return result;
-        result = nmo_chunk_write_object_id(out_chunk, in_state->start_effector_id);
+        result = nmo_ref_write(out_chunk, &in_state->start_effector);
         if (result != NMO_OK) return result;
-        result = nmo_chunk_write_object_id(out_chunk, in_state->end_effector_id);
+        result = nmo_ref_write(out_chunk, &in_state->end_effector);
         if (result != NMO_OK) return result;
     }
 

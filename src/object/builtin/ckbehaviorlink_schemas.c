@@ -253,28 +253,10 @@ nmo_status_t nmo_behaviorlink_remap_dependencies(
     }
 
     nmo_behaviorlink_state_t *state = (nmo_behaviorlink_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
 
     NMO_RETURN_IF_ERROR(nmo_object_remap_dependencies(&state->base, NULL, context));
 
-    if (repo) {
-        if (state->in_io_id != 0 &&
-            nmo_object_repository_find_by_id(repo, state->in_io_id) == NULL) {
-            state->in_io_id = 0;
-        }
-        if (state->out_io_id != 0 &&
-            nmo_object_repository_find_by_id(repo, state->out_io_id) == NULL) {
-            state->out_io_id = 0;
-        }
-    }
-
-    if (state->activation_delay < 0) {
-        state->activation_delay = 0;
-    }
-    if (state->initial_activation_delay < 0) {
-        state->initial_activation_delay = 0;
-    }
-
+    /* Preserve link endpoints and authored delays verbatim. */
     NMO_RETURN_OK();
 }
 

@@ -41,34 +41,6 @@ static const nmo_type_field_t nmo_parameterlocal_fields[] = {
     NMO_FIELD(nmo_parameterlocal_state_t, is_setting, CKPGUID_UINT8)
 };
 
-static bool nmo_parameterlocal_is_valid_owner(
-    void *context,
-    nmo_object_id_t object_id)
-{
-    if (object_id == 0) {
-        return false;
-    }
-
-    const nmo_type_registry_t *registry = nmo_deserialize_context_get_type_registry(context);
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)
-        nmo_deserialize_context_get_repository(context);
-
-    if (repo == NULL || registry == NULL) {
-        return true;
-    }
-
-    nmo_object_t *obj = nmo_object_repository_find_by_id(repo, object_id);
-    if (obj == NULL) {
-        return false;
-    }
-
-    const uint32_t class_id = (uint32_t)nmo_object_get_class_id(obj);
-    return nmo_type_registry_is_class_derived_from(
-        registry, class_id, (uint32_t)NMO_CID_BEHAVIOR) ||
-        nmo_type_registry_is_class_derived_from(
-            registry, class_id, (uint32_t)NMO_CID_PARAMETEROPERATION);
-}
-
 /* =============================================================================
  * CKParameterLocal DESERIALIZATION/SERIALIZATION
  * ============================================================================= */
@@ -96,13 +68,7 @@ nmo_status_t nmo_parameterlocal_deserialize(
     if (result != NMO_OK) return result;
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETEROUT_OWNER) == NMO_OK) {
-        nmo_object_id_t owner_id = 0;
-        nmo_chunk_read_object_id(chunk, &owner_id);
-        if (nmo_parameterlocal_is_valid_owner(context, owner_id)) {
-            out_state->owner_id = owner_id;
-        } else {
-            out_state->owner_id = 0;
-        }
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &out_state->owner_id));
     }
 
     /* Check if "myself" parameter */
@@ -209,29 +175,11 @@ nmo_status_t nmo_parameterlocal_remap_dependencies(
     }
 
     nmo_parameterlocal_state_t *state = (nmo_parameterlocal_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
 
     NMO_RETURN_IF_ERROR(nmo_object_remap_dependencies(&state->base.base, NULL, context));
     NMO_RETURN_IF_ERROR(nmo_parameter_remap_dependencies(&state->base, NULL, context));
 
-    if (state->owner_id != 0 && repo &&
-        nmo_object_repository_find_by_id(repo, state->owner_id) == NULL) {
-        state->owner_id = 0;
-    }
-
-    state->is_myself = state->is_myself ? 1 : 0;
-    state->is_setting = state->is_setting ? 1 : 0;
-
-    if (state->is_myself) {
-        state->base.mode = CKPARAM_MODE_NONE;
-        state->base.has_state = false;
-        state->base.object_id = 0;
-        state->base.manager_guid = NMO_GUID_NULL;
-        state->base.manager_value = 0;
-        state->base.subchunk = NULL;
-        nmo_array_clear(&state->base.buffer_data);
-    }
-
+    /* Preserve owner and payload fields; normalization is explicit. */
     return nmo_object_default_validate(state, NULL, NULL);
 }
 

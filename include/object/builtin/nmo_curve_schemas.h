@@ -7,6 +7,7 @@
 #define NMO_CKCURVE_SCHEMAS_H
 
 #include "object/builtin/nmo_3dentity_schemas.h"
+#include "object/nmo_ref.h"
 #include "object/nmo_object_struct_defs.h"
 #include "object/nmo_object_type_common.h"
 #include "core/nmo_math.h"
@@ -56,7 +57,7 @@ typedef struct nmo_curvepoint_state {
 
     uint8_t has_default_data;
     uint8_t defaultdata_is_modern;
-    nmo_object_id_t curve_id;
+    nmo_ref_t curve;
     int32_t use_tcb;
     int32_t linear;
     float tension;

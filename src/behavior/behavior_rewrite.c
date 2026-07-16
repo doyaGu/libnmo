@@ -108,13 +108,13 @@ static bool rewrite_array_ids_equal(const nmo_array_t *a,
     if (a->count == 0) {
         return true;
     }
-    if (a->element_size != sizeof(nmo_object_id_t) ||
-        b->element_size != sizeof(nmo_object_id_t)) {
-        return false;
+    for (size_t i = 0; i < a->count; ++i) {
+        if (nmo_behavior_ref_array_get_id(a, i) !=
+            nmo_behavior_ref_array_get_id(b, i)) {
+            return false;
+        }
     }
-    return a->data && b->data &&
-           memcmp(a->data, b->data,
-                  a->count * sizeof(nmo_object_id_t)) == 0;
+    return true;
 }
 
 typedef struct rewrite_workspace_edit_scope {
@@ -276,15 +276,14 @@ static nmo_status_t rewrite_add_array_delete_ids(nmo_object_id_t **ids,
     if (!array || array->count == 0 || !array->data) {
         return NMO_OK;
     }
-    const nmo_object_id_t *array_ids =
-        NMO_ARRAY_DATA(nmo_object_id_t, array);
     for (size_t i = 0; i < array->count; ++i) {
-        if (array_ids[i] == keep_id) {
+        nmo_object_id_t id = nmo_behavior_ref_array_get_id(array, i);
+        if (id == 0 || id == keep_id) {
             continue;
         }
         nmo_status_t rc = rewrite_add_unique_delete_id(ids, count,
                                                        capacity,
-                                                       array_ids[i]);
+                                                       id);
         if (rc != NMO_OK) {
             return rc;
         }
@@ -680,10 +679,10 @@ static bool rewrite_selected_behavior_has_unselected_child(
         return false;
     }
 
-    const nmo_object_id_t *child_ids =
-        NMO_ARRAY_DATA(nmo_object_id_t, &state->sub_behaviors);
     for (size_t i = 0; i < state->sub_behaviors.count; ++i) {
-        nmo_object_id_t child_id = child_ids[i];
+        nmo_object_id_t child_id = nmo_behavior_ref_array_get_id(
+            &state->sub_behaviors, i);
+        if (child_id == 0) continue;
         if (!rewrite_id_in_set(selected_ids, selected_count, child_id)) {
             if (out_missing_id) {
                 *out_missing_id = child_id;
@@ -872,11 +871,9 @@ static nmo_status_t rewrite_fold_transform_anchor_in_edit(
 
     if (clear_graph_state) {
         nmo_array_clear(&state->sub_behaviors);
-        nmo_array_clear(&state->sub_behavior_chunks);
         nmo_array_clear(&state->sub_behavior_links);
         nmo_array_clear(&state->operations);
         nmo_array_clear(&state->local_parameters);
-        nmo_array_clear(&state->local_parameter_chunks);
         state->save_flags &= ~(CK_STATESAVE_BEHAVIORSUBBEHAV |
                                CK_STATESAVE_BEHAVIORSUBLINKS |
                                CK_STATESAVE_BEHAVIOROPERATIONS |
@@ -972,8 +969,7 @@ static nmo_status_t rewrite_fold_anchor_io_at(
         return NMO_ERR_NOT_FOUND;
     }
 
-    const nmo_object_id_t *ids = NMO_ARRAY_DATA(nmo_object_id_t, ios);
-    *out_io_id = ids[index];
+    *out_io_id = nmo_behavior_ref_array_get_id(ios, index);
     return *out_io_id != 0 ? NMO_OK : NMO_ERR_NOT_FOUND;
 }
 
@@ -1005,8 +1001,7 @@ static nmo_status_t rewrite_fold_anchor_parameter_at(
         return NMO_ERR_NOT_FOUND;
     }
 
-    const nmo_object_id_t *ids = NMO_ARRAY_DATA(nmo_object_id_t, parameters);
-    *out_parameter_id = ids[index];
+    *out_parameter_id = nmo_behavior_ref_array_get_id(parameters, index);
     return *out_parameter_id != 0 ? NMO_OK : NMO_ERR_NOT_FOUND;
 }
 

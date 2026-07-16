@@ -62,6 +62,37 @@ typedef struct nmo_manager_data nmo_manager_data_t;
 /** Default maximum included file payload size (bytes). */
 #define NMO_LOAD_DEFAULT_MAX_INCLUDED_FILE_SIZE (512u * 1024u * 1024u)
 
+/** Maximum diagnostic message length, including the terminating NUL. */
+#define NMO_LOAD_ISSUE_MESSAGE_MAX 256u
+
+/** A recoverable object-load problem captured during deserialization. */
+typedef struct nmo_load_issue {
+    nmo_status_t status;
+    nmo_object_id_t object_id;
+    nmo_object_id_t file_id;
+    nmo_class_id_t class_id;
+    uint32_t section_id;
+    size_t dword_offset;
+    char schema_name[64];
+    char message[NMO_LOAD_ISSUE_MESSAGE_MAX];
+} nmo_load_issue_t;
+
+/** Caller-owned diagnostic list populated by a load operation. */
+typedef struct nmo_load_diagnostics {
+    nmo_load_issue_t *issues;
+    size_t count;
+    size_t capacity;
+} nmo_load_diagnostics_t;
+
+/** Initialize an empty caller-owned diagnostic list. */
+NMO_API void nmo_load_diagnostics_init(nmo_load_diagnostics_t *diagnostics);
+
+/** Clear captured issues while retaining allocated capacity. */
+NMO_API void nmo_load_diagnostics_reset(nmo_load_diagnostics_t *diagnostics);
+
+/** Release storage owned by a diagnostic list. */
+NMO_API void nmo_load_diagnostics_destroy(nmo_load_diagnostics_t *diagnostics);
+
 /**
  * @brief Load flags
  */
@@ -90,13 +121,14 @@ typedef enum nmo_load_profile {
  * @brief Load pipeline options
  */
 typedef struct nmo_load_options {
-    nmo_allocator_t *allocator;      /**< Custom allocator (NULL for default) */
+    nmo_allocator_t *allocator;      /**< Object/schema allocator (NULL uses context allocator) */
     nmo_load_flags_t flags;          /**< Standard load flags */
     nmo_load_profile_t profile;      /**< Load depth profile */
     uint32_t max_included_name_len;  /**< Max included filename length */
     uint32_t max_included_file_size; /**< Max included file payload size */
     bool collect_perf_stats;         /**< Collect phase-level timing stats */
     nmo_load_perf_stats_t *perf_stats; /**< Optional caller-owned stats sink */
+    nmo_load_diagnostics_t *diagnostics; /**< Optional caller-owned issue sink */
 } nmo_load_options_t;
 
 /**
@@ -244,6 +276,7 @@ NMO_API nmo_status_t nmo_object_system_deserialize_loaded_objects(
     nmo_id_lookup_fn id_lookup_fn,
     void *id_lookup_ctx,
     size_t file_object_count,
+    nmo_load_diagnostics_t *diagnostics,
     nmo_object_system_deserialize_stats_t *out_stats);
 
 #ifdef __cplusplus

@@ -40,8 +40,16 @@ typedef struct graph_build_ctx {
     size_t parameter_count;
     size_t parameter_cap;
 
+    nmo_object_id_t *visited_ids;
+    size_t visited_count;
+    size_t visited_cap;
+    nmo_object_id_t *active_ids;
+    size_t active_count;
+    size_t active_cap;
+
     size_t broken_links;
     size_t missing_nodes;
+    size_t cycle_count;
     uint32_t max_depth;
 } graph_build_ctx_t;
 
@@ -53,6 +61,13 @@ static bool is_behavior_class(nmo_type_registry_t *registry, nmo_class_id_t clas
     if (!registry) return false;
     return nmo_type_registry_is_class_derived_from(
         registry, (uint32_t)class_id, (uint32_t)NMO_CID_BEHAVIOR) ? true : false;
+}
+
+static bool has_id(const nmo_object_id_t *ids, size_t count, nmo_object_id_t id) {
+    for (size_t i = 0; i < count; ++i) {
+        if (ids[i] == id) return true;
+    }
+    return false;
 }
 
 static bool add_unique_id(nmo_object_id_t **ids, size_t *count, size_t *cap, nmo_object_id_t id) {
@@ -221,21 +236,33 @@ static bool build_behavior_contents(graph_build_ctx_t *gc,
                                     uint32_t depth)
 {
     if (depth > GRAPH_MAX_RECURSION) return true; /* guard against corrupt data */
+    if (has_id(gc->active_ids, gc->active_count, behavior_id)) {
+        gc->cycle_count++;
+        return true;
+    }
+    if (has_id(gc->visited_ids, gc->visited_count, behavior_id)) return true;
+    if (!add_unique_id(&gc->visited_ids, &gc->visited_count,
+                       &gc->visited_cap, behavior_id) ||
+        !add_unique_id(&gc->active_ids, &gc->active_count,
+                       &gc->active_cap, behavior_id)) {
+        return false;
+    }
     /* --- Sub-behaviors as nodes --- */
-    const nmo_object_id_t *sub_ids = NMO_ARRAY_DATA(nmo_object_id_t, &state->sub_behaviors);
     for (size_t i = 0; i < state->sub_behaviors.count; ++i) {
-        if (sub_ids[i] == 0) continue;
+        nmo_object_id_t sub_id = nmo_behavior_ref_array_get_id(
+            &state->sub_behaviors, i);
+        if (sub_id == 0) continue;
         if (!add_graph_node_from_object(&gc->nodes, &gc->node_count, &gc->node_cap,
-                                        gc->repo, gc->ctx, sub_ids[i], "behavior",
+                                        gc->repo, gc->ctx, sub_id, "behavior",
                                         "Behavior", &gc->missing_nodes))
             return false;
-        set_node_depth(gc->nodes, gc->node_count, sub_ids[i], depth + 1, behavior_id);
+        set_node_depth(gc->nodes, gc->node_count, sub_id, depth + 1, behavior_id);
     }
 
     /* --- Behavior links (control flow) --- */
-    const nmo_object_id_t *link_ids = NMO_ARRAY_DATA(nmo_object_id_t, &state->sub_behavior_links);
     for (size_t i = 0; i < state->sub_behavior_links.count; ++i) {
-        nmo_object_id_t link_id = link_ids[i];
+        nmo_object_id_t link_id = nmo_behavior_ref_array_get_id(
+            &state->sub_behavior_links, i);
         if (link_id == 0) continue;
 
         nmo_object_t *link_obj = nmo_object_repository_find_by_id(gc->repo, link_id);
@@ -280,38 +307,44 @@ static bool build_behavior_contents(graph_build_ctx_t *gc,
     }
 
     /* --- Parameters (in/out/local) --- */
-    const nmo_object_id_t *in_params = NMO_ARRAY_DATA(nmo_object_id_t, &state->in_parameters);
     for (size_t i = 0; i < state->in_parameters.count; ++i) {
+        nmo_object_id_t parameter_id = nmo_behavior_ref_array_get_id(
+            &state->in_parameters, i);
+        if (parameter_id == 0) continue;
         if (!add_parameter_edge(&gc->parameter_ids, &gc->parameter_count, &gc->parameter_cap,
                                 &gc->nodes, &gc->node_count, &gc->node_cap,
                                 &gc->edges, &gc->edge_count, &gc->edge_cap,
-                                gc->repo, gc->ctx, in_params[i], behavior_id, in_params[i],
+                                gc->repo, gc->ctx, parameter_id, behavior_id, parameter_id,
                                 "param_in", "in_parameters", &gc->missing_nodes, false))
             return false;
     }
-    const nmo_object_id_t *out_params = NMO_ARRAY_DATA(nmo_object_id_t, &state->out_parameters);
     for (size_t i = 0; i < state->out_parameters.count; ++i) {
+        nmo_object_id_t parameter_id = nmo_behavior_ref_array_get_id(
+            &state->out_parameters, i);
+        if (parameter_id == 0) continue;
         if (!add_parameter_edge(&gc->parameter_ids, &gc->parameter_count, &gc->parameter_cap,
                                 &gc->nodes, &gc->node_count, &gc->node_cap,
                                 &gc->edges, &gc->edge_count, &gc->edge_cap,
-                                gc->repo, gc->ctx, out_params[i], behavior_id, out_params[i],
+                                gc->repo, gc->ctx, parameter_id, behavior_id, parameter_id,
                                 "param_out", "out_parameters", &gc->missing_nodes, false))
             return false;
     }
-    const nmo_object_id_t *local_params = NMO_ARRAY_DATA(nmo_object_id_t, &state->local_parameters);
     for (size_t i = 0; i < state->local_parameters.count; ++i) {
+        nmo_object_id_t parameter_id = nmo_behavior_ref_array_get_id(
+            &state->local_parameters, i);
+        if (parameter_id == 0) continue;
         if (!add_parameter_edge(&gc->parameter_ids, &gc->parameter_count, &gc->parameter_cap,
                                 &gc->nodes, &gc->node_count, &gc->node_cap,
                                 &gc->edges, &gc->edge_count, &gc->edge_cap,
-                                gc->repo, gc->ctx, local_params[i], behavior_id, local_params[i],
+                                gc->repo, gc->ctx, parameter_id, behavior_id, parameter_id,
                                 "param_local", "local_parameters", &gc->missing_nodes, false))
             return false;
     }
 
     /* --- Operations --- */
-    const nmo_object_id_t *ops = NMO_ARRAY_DATA(nmo_object_id_t, &state->operations);
     for (size_t i = 0; i < state->operations.count; ++i) {
-        nmo_object_id_t op_id = ops[i];
+        nmo_object_id_t op_id = nmo_behavior_ref_array_get_id(&state->operations, i);
+        if (op_id == 0) continue;
         if (!add_graph_node_from_object(&gc->nodes, &gc->node_count, &gc->node_cap,
                                         gc->repo, gc->ctx, op_id, "operation",
                                         "Operation", &gc->missing_nodes))
@@ -355,7 +388,8 @@ static bool build_behavior_contents(graph_build_ctx_t *gc,
     /* --- Recurse into graph-type sub-behaviors --- */
     if (depth < gc->max_depth) {
         for (size_t i = 0; i < state->sub_behaviors.count; ++i) {
-            nmo_object_id_t sub_id = sub_ids[i];
+            nmo_object_id_t sub_id = nmo_behavior_ref_array_get_id(
+                &state->sub_behaviors, i);
             if (sub_id == 0) continue;
 
             nmo_object_t *sub_obj = nmo_object_repository_find_by_id(gc->repo, sub_id);
@@ -372,6 +406,7 @@ static bool build_behavior_contents(graph_build_ctx_t *gc,
         }
     }
 
+    if (gc->active_count > 0) gc->active_count--;
     return true;
 }
 
@@ -492,13 +527,18 @@ bool nmo_behavior_graph_build(nmo_workspace_t *workspace,
     out_graph->edge_count = gc.edge_count;
     out_graph->broken_links = gc.broken_links;
     out_graph->missing_nodes = gc.missing_nodes;
+    out_graph->cycle_count = gc.cycle_count;
 
     free(gc.parameter_ids);
+    free(gc.visited_ids);
+    free(gc.active_ids);
     nmo_last_error_clear();
     return true;
 
 fail_nomem:
     free(gc.parameter_ids);
+    free(gc.visited_ids);
+    free(gc.active_ids);
     free(gc.edges);
     free_graph_nodes(gc.nodes, gc.node_count);
     NMO_SET_LAST_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,

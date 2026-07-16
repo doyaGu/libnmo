@@ -66,77 +66,77 @@ nmo_status_t nmo_parameteroperation_deserialize(
 
     if (is_file) {
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OPERATIONNEWDATA) == NMO_OK) {
-            (void)nmo_chunk_read_guid(chunk, &out_state->operation_guid);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_guid(chunk, &out_state->operation_guid));
 
             size_t count = 0;
-            if (nmo_chunk_read_object_sequence_start(chunk, &count) == NMO_OK) {
-                if (nmo_chunk_get_data_version(chunk) < 5) {
-                    nmo_object_id_t dummy = 0;
-                    (void)nmo_chunk_read_object_sequence_item(chunk, &dummy);
-                    if (count > 0) {
-                        count -= 1;
-                    }
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_object_sequence_start(
+                chunk, &count));
+            if (nmo_chunk_get_data_version(chunk) < 5) {
+                nmo_object_id_t dummy = 0;
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_object_sequence_item(chunk, &dummy));
+                if (count > 0) {
+                    count -= 1;
                 }
-                if (count >= 1) {
-                    (void)nmo_chunk_read_object_sequence_item(chunk, &out_state->in1_id);
-                    out_state->has_in1 = 1;
-                }
-                if (count >= 2) {
-                    (void)nmo_chunk_read_object_sequence_item(chunk, &out_state->in2_id);
-                    out_state->has_in2 = 1;
-                }
-                if (count >= 3) {
-                    (void)nmo_chunk_read_object_sequence_item(chunk, &out_state->out_id);
-                    out_state->has_out = 1;
-                }
+            }
+            if (count >= 1) {
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_object_sequence_item(chunk, &out_state->in1_id));
+                out_state->has_in1 = 1;
+            }
+            if (count >= 2) {
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_object_sequence_item(chunk, &out_state->in2_id));
+                out_state->has_in2 = 1;
+            }
+            if (count >= 3) {
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_object_sequence_item(chunk, &out_state->out_id));
+                out_state->has_out = 1;
             }
             NMO_RETURN_OK();
         }
 
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OPERATIONOP) == NMO_OK) {
-            (void)nmo_chunk_read_guid(chunk, &out_state->operation_guid);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_guid(chunk, &out_state->operation_guid));
         }
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OPERATIONDEFAULTDATA) == NMO_OK) {
             out_state->has_owner = 1;
-            (void)nmo_chunk_read_object_id(chunk, &out_state->owner_id);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &out_state->owner_id));
         }
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OPERATIONOUTPUT) == NMO_OK) {
             out_state->has_out = 1;
-            (void)nmo_chunk_read_object_id(chunk, &out_state->out_id);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &out_state->out_id));
         }
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OPERATIONINPUTS) == NMO_OK) {
             out_state->has_in1 = 1;
-            (void)nmo_chunk_read_object_id(chunk, &out_state->in1_id);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &out_state->in1_id));
             out_state->has_in2 = 1;
-            (void)nmo_chunk_read_object_id(chunk, &out_state->in2_id);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &out_state->in2_id));
         }
 
         NMO_RETURN_OK();
     }
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OPERATIONOP) == NMO_OK) {
-        (void)nmo_chunk_read_guid(chunk, &out_state->operation_guid);
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_guid(chunk, &out_state->operation_guid));
     }
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OPERATIONDEFAULTDATA) == NMO_OK) {
         out_state->has_owner = 1;
-        (void)nmo_chunk_read_object_id(chunk, &out_state->owner_id);
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &out_state->owner_id));
     }
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OPERATIONOUTPUT) == NMO_OK) {
         out_state->has_out = 1;
-        (void)nmo_chunk_read_object_id(chunk, &out_state->out_id);
-        (void)nmo_chunk_read_sub_chunk(chunk, &out_state->out_chunk);
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &out_state->out_id));
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_sub_chunk(chunk, &out_state->out_chunk));
     }
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OPERATIONINPUTS) == NMO_OK) {
         out_state->has_in1 = 1;
-        (void)nmo_chunk_read_object_id(chunk, &out_state->in1_id);
-        (void)nmo_chunk_read_sub_chunk(chunk, &out_state->in1_chunk);
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &out_state->in1_id));
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_sub_chunk(chunk, &out_state->in1_chunk));
 
         out_state->has_in2 = 1;
-        (void)nmo_chunk_read_object_id(chunk, &out_state->in2_id);
-        (void)nmo_chunk_read_sub_chunk(chunk, &out_state->in2_chunk);
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &out_state->in2_id));
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_sub_chunk(chunk, &out_state->in2_chunk));
     }
 
     NMO_RETURN_OK();
@@ -193,53 +193,10 @@ nmo_status_t nmo_parameteroperation_remap_dependencies(
     }
 
     nmo_parameteroperation_state_t *state = (nmo_parameteroperation_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
 
     NMO_RETURN_IF_ERROR(nmo_object_remap_dependencies(&state->base, NULL, context));
 
-    if (state->owner_id != 0 && repo &&
-        nmo_object_repository_find_by_id(repo, state->owner_id) == NULL) {
-        state->owner_id = 0;
-    }
-
-    if (state->in1_id != 0 && repo &&
-        nmo_object_repository_find_by_id(repo, state->in1_id) == NULL &&
-        state->in1_chunk == NULL) {
-        state->in1_id = 0;
-    }
-    if (state->in2_id != 0 && repo &&
-        nmo_object_repository_find_by_id(repo, state->in2_id) == NULL &&
-        state->in2_chunk == NULL) {
-        state->in2_id = 0;
-    }
-    if (state->out_id != 0 && repo &&
-        nmo_object_repository_find_by_id(repo, state->out_id) == NULL &&
-        state->out_chunk == NULL) {
-        state->out_id = 0;
-    }
-
-    state->has_owner = (state->owner_id != 0);
-    state->has_in1 = (state->in1_id != 0 || state->in1_chunk != NULL);
-    state->has_in2 = (state->in2_id != 0 || state->in2_chunk != NULL);
-    state->has_out = (state->out_id != 0 || state->out_chunk != NULL);
-
-    if (!state->has_in1) {
-        state->in1_id = 0;
-        state->in1_chunk = NULL;
-    }
-    if (!state->has_in2) {
-        state->in2_id = 0;
-        state->in2_chunk = NULL;
-    }
-    if (!state->has_out) {
-        state->out_id = 0;
-        state->out_chunk = NULL;
-    }
-
-    if (!state->has_owner) {
-        state->owner_id = 0;
-    }
-
+    /* Preserve all reference/chunk lanes and presence flags. */
     return nmo_parameteroperation_validate(state, NULL, NULL);
 }
 
@@ -300,9 +257,9 @@ nmo_status_t nmo_parameteroperation_serialize(
         result = nmo_chunk_write_object_sequence_start(out_chunk, 3);
         if (result != NMO_OK) return result;
 
-        (void)nmo_chunk_write_object_sequence_item(out_chunk, in_state->in1_id);
-        (void)nmo_chunk_write_object_sequence_item(out_chunk, in_state->in2_id);
-        (void)nmo_chunk_write_object_sequence_item(out_chunk, in_state->out_id);
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_object_sequence_item(out_chunk, in_state->in1_id));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_object_sequence_item(out_chunk, in_state->in2_id));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_object_sequence_item(out_chunk, in_state->out_id));
 
         NMO_RETURN_OK();
     }

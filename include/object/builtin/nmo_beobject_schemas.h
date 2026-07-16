@@ -18,6 +18,7 @@
 #include "core/nmo_guid.h"
 #include "object/builtin/nmo_sceneobject_schemas.h"
 #include "object/nmo_object_type_common.h"
+#include "object/nmo_ref.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -28,6 +29,13 @@ typedef struct nmo_arena nmo_arena_t;
 typedef struct nmo_chunk nmo_chunk_t;
 
 typedef struct nmo_type_descriptor nmo_type_descriptor_t;
+
+/** One modern CKBeObject attribute lane, kept atomic during read/remap/write. */
+typedef struct nmo_beobject_attribute {
+    nmo_ref_t parameter;
+    uint32_t type_id;
+    nmo_chunk_t *chunk;
+} nmo_beobject_attribute_t;
 
 /* =============================================================================
  * CKBeObject STATE STRUCTURES
@@ -46,17 +54,13 @@ typedef struct nmo_beobject_state {
     nmo_sceneobject_state_t base;  /**< CKSceneObject base state */
     
     /* Scripts */
-    nmo_array_t script_ids;        /**< Script behavior IDs (nmo_object_id_t) */
+    nmo_array_t scripts;           /**< Script behavior references (nmo_ref_t) */
     
     /* Priority */
     int32_t priority;              /**< Execution priority (0 = default) */
     
     /* Attributes */
-    nmo_array_t attribute_parameter_ids;       /**< Attribute parameter IDs (nmo_object_id_t) */
-    nmo_array_t attribute_types;               /**< Attribute type IDs (uint32_t) */
-
-    /* Attribute parameter sub-chunks (non-file mode) */
-    nmo_array_t attribute_chunks;              /**< Attribute sub-chunks (nmo_chunk_t *) */
+    nmo_array_t attributes;                    /**< Modern attributes (nmo_beobject_attribute_t) */
 
     /* Single activity flags (file save only) */
     uint8_t has_single_activity;               /**< True if single activity flags exist */
@@ -97,6 +101,30 @@ NMO_API nmo_status_t nmo_beobject_remap_dependencies(
     void *instance,
     const nmo_type_descriptor_t *type,
     void *context);
+
+NMO_API nmo_status_t nmo_beobject_attribute_array_append(
+    nmo_array_t *attributes,
+    nmo_object_id_t parameter_id,
+    uint32_t type_id,
+    nmo_chunk_t *chunk);
+
+NMO_API nmo_status_t nmo_beobject_script_array_append(
+    nmo_array_t *scripts,
+    nmo_object_id_t script_id);
+
+NMO_API int nmo_beobject_script_array_find(
+    const nmo_array_t *scripts,
+    nmo_object_id_t script_id,
+    size_t *out_index);
+
+NMO_API nmo_object_id_t nmo_beobject_script_array_get_id(
+    const nmo_array_t *scripts,
+    size_t index);
+
+NMO_API nmo_status_t nmo_beobject_clone_attributes(
+    nmo_arena_t *arena,
+    nmo_array_t *destination,
+    const nmo_array_t *source);
 
 NMO_DECLARE_OBJECT_SCHEMA(nmo_beobject_vtable, nmo_register_beobject_type)
 

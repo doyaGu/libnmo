@@ -75,7 +75,6 @@ static nmo_status_t nmo_behavior_query_lookup(
     for (size_t i = 0; i < object_count; ++i) {
         nmo_object_t *owner = objects[i];
         const nmo_beobject_state_t *be_state = NULL;
-        const nmo_object_id_t *script_ids = NULL;
         size_t script_count = 0;
 
         if (owner == NULL) {
@@ -91,10 +90,11 @@ static nmo_status_t nmo_behavior_query_lookup(
             continue;
         }
 
-        script_ids = (const nmo_object_id_t *)be_state->script_ids.data;
-        script_count = be_state->script_ids.count;
+        script_count = be_state->scripts.count;
         for (size_t s = 0; s < script_count; ++s) {
-            nmo_object_id_t script_id = script_ids[s];
+            nmo_object_id_t script_id = nmo_beobject_script_array_get_id(
+                &be_state->scripts, s);
+            if (script_id == NMO_OBJECT_ID_NONE) continue;
             nmo_object_t *script = NULL;
 
             if (script_id == 0) {

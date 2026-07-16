@@ -79,6 +79,8 @@ NMO_API nmo_status_t nmo_object_system_deserialize_repository(
  * - arena: owns any newly generated chunk
  *
  * @param file_ctx Optional file context for CKFile-style ID remap during write
+ * @param out_status Optional detailed status. Set to NMO_OK for successful
+ *                   serialization or intentional raw-chunk reuse.
  * @ownership arena
  */
 NMO_API nmo_chunk_t *nmo_object_system_serialize_object_chunk(
@@ -89,7 +91,8 @@ NMO_API nmo_chunk_t *nmo_object_system_serialize_object_chunk(
     nmo_object_repository_t *repo,
     nmo_logger_t *logger,
     const nmo_shadow_storage_t *shadow_storage,
-    const nmo_chunk_file_context_t *file_ctx);
+    const nmo_chunk_file_context_t *file_ctx,
+    nmo_status_t *out_status);
 
 #ifdef __cplusplus
 }

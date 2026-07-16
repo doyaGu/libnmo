@@ -21,6 +21,18 @@
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(character, nmo_character_state_t)
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(bodypart, nmo_bodypart_state_t)
 
+static nmo_status_t read_exact_sized_buffer(
+    nmo_chunk_t *chunk,
+    void *buffer,
+    size_t expected_size)
+{
+    size_t actual_size = 0;
+    nmo_status_t result = nmo_chunk_read_and_fill_buffer_checked(
+        chunk, buffer, expected_size, &actual_size);
+    if (result != NMO_OK) return result;
+    return actual_size == expected_size ? NMO_OK : NMO_ERR_INVALID_FORMAT;
+}
+
 static int nmo_character_is_file_mode_deser(const nmo_chunk_t *chunk, void *context) {
     const nmo_deserialize_context_t *deser_ctx = nmo_deserialize_context_get(context);
     return (chunk && (chunk->chunk_options & NMO_CHUNK_OPTION_FILE)) ||
@@ -48,21 +60,26 @@ static nmo_status_t read_object_sequence(
         *out_count = 0;
         NMO_RETURN_OK();
     }
+    if (count > UINT32_MAX || count > SIZE_MAX / sizeof(nmo_object_id_t)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Object ID array count overflow");
+    }
 
-    *out_count = (uint32_t)count;
-    *out_ids = (nmo_object_id_t *)nmo_arena_alloc(
-        arena, sizeof(nmo_object_id_t) * (*out_count), _Alignof(nmo_object_id_t));
-    if (!*out_ids) {
+    nmo_object_id_t *ids = (nmo_object_id_t *)nmo_arena_alloc(
+        arena, sizeof(nmo_object_id_t) * count, _Alignof(nmo_object_id_t));
+    if (!ids) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate object ID array");
     }
 
-    for (uint32_t i = 0; i < *out_count; ++i) {
-        result = nmo_chunk_read_object_sequence_item(chunk, &(*out_ids)[i]);
+    for (size_t i = 0; i < count; ++i) {
+        result = nmo_chunk_read_object_sequence_item(chunk, &ids[i]);
         if (result != NMO_OK) {
-            *out_count = i;
             return result;
         }
     }
+
+    *out_ids = ids;
+    *out_count = (uint32_t)count;
 
     NMO_RETURN_OK();
 }
@@ -176,7 +193,6 @@ nmo_status_t nmo_character_remap_dependencies(
     }
 
     nmo_character_state_t *state = (nmo_character_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
 
     nmo_status_t result = nmo_3dentity_remap_dependencies(&state->base, NULL, context);
     if (result != NMO_OK) {
@@ -193,118 +209,7 @@ nmo_status_t nmo_character_remap_dependencies(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Character subparts missing");
     }
 
-    if (state->body_part_count > 0) {
-        nmo_object_id_t *ids = state->body_part_ids;
-        uint32_t kept = 0;
-        for (uint32_t i = 0; i < state->body_part_count; ++i) {
-            nmo_object_id_t id = ids[i];
-            if (id == 0) {
-                continue;
-            }
-            if (repo && nmo_object_repository_find_by_id(repo, id) == NULL) {
-                continue;
-            }
-            bool seen = false;
-            for (uint32_t j = 0; j < kept; ++j) {
-                if (ids[j] == id) {
-                    seen = true;
-                    break;
-                }
-            }
-            if (seen) {
-                continue;
-            }
-            ids[kept++] = id;
-        }
-        state->body_part_count = kept;
-    }
-
-    if (state->animation_count > 0) {
-        nmo_object_id_t *ids = state->animation_ids;
-        uint32_t kept = 0;
-        for (uint32_t i = 0; i < state->animation_count; ++i) {
-            nmo_object_id_t id = ids[i];
-            if (id == 0) {
-                continue;
-            }
-            if (repo && nmo_object_repository_find_by_id(repo, id) == NULL) {
-                continue;
-            }
-            bool seen = false;
-            for (uint32_t j = 0; j < kept; ++j) {
-                if (ids[j] == id) {
-                    seen = true;
-                    break;
-                }
-            }
-            if (seen) {
-                continue;
-            }
-            ids[kept++] = id;
-        }
-        state->animation_count = kept;
-    }
-
-    if (repo) {
-        if (state->active_animation_id != 0 &&
-            nmo_object_repository_find_by_id(repo, state->active_animation_id) == NULL) {
-            state->active_animation_id = 0;
-        }
-        if (state->anim_dest_id != 0 &&
-            nmo_object_repository_find_by_id(repo, state->anim_dest_id) == NULL) {
-            state->anim_dest_id = 0;
-        }
-        if (state->root_body_part_id != 0 &&
-            nmo_object_repository_find_by_id(repo, state->root_body_part_id) == NULL) {
-            state->root_body_part_id = 0;
-        }
-        if (state->floor_ref_id != 0 &&
-            nmo_object_repository_find_by_id(repo, state->floor_ref_id) == NULL) {
-            state->floor_ref_id = 0;
-        }
-    }
-
-    if (state->active_animation_id != 0) {
-        bool found = false;
-        for (uint32_t i = 0; i < state->animation_count; ++i) {
-            if (state->animation_ids[i] == state->active_animation_id) {
-                found = true;
-                break;
-            }
-        }
-        if (!found) {
-            state->active_animation_id = 0;
-        }
-    }
-
-    if (state->root_body_part_id != 0) {
-        bool found = false;
-        for (uint32_t i = 0; i < state->body_part_count; ++i) {
-            if (state->body_part_ids[i] == state->root_body_part_id) {
-                found = true;
-                break;
-            }
-        }
-        if (!found) {
-            state->root_body_part_id = 0;
-        }
-    }
-
-    if (state->subpart_count > 0) {
-        uint32_t kept = 0;
-        for (uint32_t i = 0; i < state->subpart_count; ++i) {
-            nmo_character_subpart_t sub = state->subparts[i];
-            if (sub.object_id == 0) {
-                continue;
-            }
-            if (repo && nmo_object_repository_find_by_id(repo, sub.object_id) == NULL) {
-                continue;
-            }
-            state->subparts[kept++] = sub;
-        }
-        state->subpart_count = kept;
-    }
-
+    /* Keep unresolved and duplicate references for lossless save. */
     return nmo_character_validate(state, NULL, NULL);
 }
 
@@ -329,27 +234,13 @@ nmo_status_t nmo_bodypart_remap_dependencies(
     }
 
     nmo_bodypart_state_t *state = (nmo_bodypart_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
 
     nmo_status_t result = nmo_3dobject_remap_dependencies(&state->base, NULL, context);
     if (result != NMO_OK) {
         return result;
     }
 
-    if (repo && state->has_character && state->character_id != 0) {
-        if (nmo_object_repository_find_by_id(repo, state->character_id) == NULL) {
-            state->character_id = 0;
-            state->has_character = 0;
-        }
-    } else if (state->character_id == 0) {
-        state->has_character = 0;
-    }
-
-    if ((state->base.entity.entity_flags & CK_3DENTITY_IKJOINTVALID) == 0) {
-        state->has_rotation_joint = 0;
-        memset(&state->rotation_joint, 0, sizeof(state->rotation_joint));
-    }
-
+    /* Preserve unresolved character references and optional sections. */
     return nmo_bodypart_validate(state, NULL, NULL);
 }
 
@@ -707,9 +598,8 @@ static nmo_status_t nmo_bodypart_deserialize_internal(
 
             if ((out_state->base.entity.entity_flags & CK_3DENTITY_IKJOINTVALID) != 0) {
                 out_state->has_rotation_joint = 1;
-                result = nmo_chunk_read_and_fill_buffer(chunk,
-                                                        &out_state->rotation_joint,
-                                                        sizeof(nmo_ik_joint_t));
+                result = read_exact_sized_buffer(
+                    chunk, &out_state->rotation_joint, sizeof(nmo_ik_joint_t));
                 if (result != NMO_OK) return result;
             }
         }
@@ -717,7 +607,7 @@ static nmo_status_t nmo_bodypart_deserialize_internal(
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BODYPARTROTJOINT) == NMO_OK) {
             nmo_vector_t vectors[6];
             memset(vectors, 0, sizeof(vectors));
-            nmo_status_t result = nmo_chunk_read_and_fill_buffer(chunk, vectors, sizeof(vectors));
+            nmo_status_t result = read_exact_sized_buffer(chunk, vectors, sizeof(vectors));
             if (result != NMO_OK) return result;
 
             out_state->has_rotation_joint = 1;

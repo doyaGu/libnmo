@@ -154,6 +154,10 @@ NMO_API nmo_status_t nmo_runtime_remap_all_refs(
     nmo_object_repository_t *repo,
     const nmo_type_runtime_t *type_rt,
     uint32_t request_flags);
+NMO_API nmo_status_t nmo_runtime_normalize_invalid_refs(
+    nmo_object_repository_t *repo,
+    const nmo_type_runtime_t *type_rt,
+    size_t *out_change_count);
 
 #ifdef __cplusplus
 }

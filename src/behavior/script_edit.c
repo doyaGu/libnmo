@@ -1106,17 +1106,18 @@ static bool script_edit_io_is_linked_in_repo(
     nmo_object_id_t io_id)
 {
     nmo_behavior_state_t *state = NULL;
-    nmo_object_id_t *link_ids = NULL;
 
     state = script_edit_find_behavior_state_in_repo(repo, behavior_id, NULL);
     if (!state || !state->sub_behavior_links.data) {
         return false;
     }
 
-    link_ids = (nmo_object_id_t *)state->sub_behavior_links.data;
     for (size_t i = 0; i < state->sub_behavior_links.count; ++i) {
+        nmo_object_id_t link_id = nmo_behavior_ref_array_get_id(
+            &state->sub_behavior_links, i);
+        if (link_id == 0) continue;
         nmo_object_t *link_obj =
-            repo ? nmo_object_repository_find_by_id(repo, link_ids[i]) : NULL;
+            repo ? nmo_object_repository_find_by_id(repo, link_id) : NULL;
         const nmo_behaviorlink_state_t *link_state =
             link_obj ? (const nmo_behaviorlink_state_t *)nmo_object_get_state(link_obj)
                      : NULL;
@@ -1170,17 +1171,17 @@ static nmo_status_t script_edit_remove_links_for_io(
                 nmo_object_get_class_id(behavior_obj) == NMO_CID_BEHAVIOR
             ? (nmo_behavior_state_t *)nmo_object_get_state(behavior_obj)
             : NULL;
-        nmo_object_id_t *link_ids = behavior_state &&
-                behavior_state->sub_behavior_links.data
-            ? (nmo_object_id_t *)behavior_state->sub_behavior_links.data
-            : NULL;
-        if (link_ids == NULL) {
+        if (behavior_state == NULL ||
+            behavior_state->sub_behavior_links.data == NULL) {
             continue;
         }
 
         for (size_t j = 0; j < behavior_state->sub_behavior_links.count; ++j) {
+            nmo_object_id_t link_id = nmo_behavior_ref_array_get_id(
+                &behavior_state->sub_behavior_links, j);
+            if (link_id == 0) continue;
             nmo_object_t *link_obj =
-                nmo_object_repository_find_by_id(repo, link_ids[j]);
+                nmo_object_repository_find_by_id(repo, link_id);
             const nmo_behaviorlink_state_t *link_state = link_obj
                 ? (const nmo_behaviorlink_state_t *)nmo_object_get_state(link_obj)
                 : NULL;
@@ -1210,7 +1211,7 @@ static nmo_status_t script_edit_remove_links_for_io(
             }
             matched_links[matched_count++] = (matched_link_t){
                 .parent_behavior_id = nmo_object_get_id(behavior_obj),
-                .link_id = link_ids[j],
+                .link_id = link_id,
             };
         }
     }
@@ -1246,24 +1247,23 @@ static nmo_status_t script_edit_remove_links_for_behavior_ios(
     };
     for (size_t i = 0; i < sizeof(io_arrays) / sizeof(io_arrays[0]); ++i) {
         const nmo_array_t *array = io_arrays[i];
-        const nmo_object_id_t *ids = array && array->data
-            ? (const nmo_object_id_t *)array->data
-            : NULL;
-        for (size_t j = 0; ids != NULL && j < array->count; ++j) {
+        for (size_t j = 0; array != NULL && j < array->count; ++j) {
+            nmo_object_id_t id = nmo_behavior_ref_array_get_id(array, j);
+            if (id == 0) continue;
             NMO_RETURN_IF_ERROR(script_edit_remove_links_for_io(
                 tx,
                 parent_behavior_id,
                 deleted_root_id,
-                ids[j]));
+                id));
         }
     }
-    const nmo_object_id_t *sub_ids = behavior->sub_behaviors.data
-        ? (const nmo_object_id_t *)behavior->sub_behaviors.data
-        : NULL;
-    for (size_t i = 0; sub_ids != NULL && i < behavior->sub_behaviors.count; ++i) {
+    for (size_t i = 0; i < behavior->sub_behaviors.count; ++i) {
+        nmo_object_id_t sub_id = nmo_behavior_ref_array_get_id(
+            &behavior->sub_behaviors, i);
+        if (sub_id == 0) continue;
         nmo_behavior_state_t *sub_state = script_edit_find_behavior_state_in_repo(
             nmo_workspace_internal_repository(tx->workspace),
-            sub_ids[i],
+            sub_id,
             NULL);
         if (sub_state == NULL) {
             continue;
@@ -1295,23 +1295,24 @@ static nmo_status_t script_edit_append_behavior_owned_destroy_objects(
         &state->sub_behavior_links,
     };
     for (size_t i = 0; i < sizeof(owned_arrays) / sizeof(owned_arrays[0]); ++i) {
-        nmo_object_id_t *ids =
-            owned_arrays[i]->data ? (nmo_object_id_t *)owned_arrays[i]->data : NULL;
-        for (size_t j = 0; ids && j < owned_arrays[i]->count; ++j) {
-            nmo_status_t rc = script_edit_append_deferred_destroy(tx, ids[j]);
+        for (size_t j = 0; j < owned_arrays[i]->count; ++j) {
+            nmo_object_id_t id = nmo_behavior_ref_array_get_id(
+                owned_arrays[i], j);
+            if (id == 0) continue;
+            nmo_status_t rc = script_edit_append_deferred_destroy(tx, id);
             if (rc != NMO_OK) {
                 return rc;
             }
         }
     }
 
-    nmo_object_id_t *sub_ids = state->sub_behaviors.data
-        ? (nmo_object_id_t *)state->sub_behaviors.data
-        : NULL;
-    for (size_t i = 0; sub_ids && i < state->sub_behaviors.count; ++i) {
+    for (size_t i = 0; i < state->sub_behaviors.count; ++i) {
+        nmo_object_id_t sub_id = nmo_behavior_ref_array_get_id(
+            &state->sub_behaviors, i);
+        if (sub_id == 0) continue;
         nmo_behavior_state_t *sub_state = script_edit_find_behavior_state_in_repo(
             nmo_workspace_internal_repository(tx->workspace),
-            sub_ids[i],
+            sub_id,
             NULL);
         if (sub_state == NULL) {
             continue;
@@ -1344,7 +1345,8 @@ static bool script_edit_behavior_is_direct_graph_member(
     if (!parent) {
         return false;
     }
-    return nmo_array_find(&parent->sub_behaviors, &behavior_id, NULL) != 0;
+    return nmo_behavior_ref_array_find(
+        &parent->sub_behaviors, behavior_id, NULL);
 }
 
 static bool script_edit_behavior_is_graph_member(
@@ -1353,7 +1355,6 @@ static bool script_edit_behavior_is_graph_member(
     nmo_object_id_t behavior_id)
 {
     nmo_behavior_state_t *root = NULL;
-    nmo_object_id_t *sub_behavior_ids = NULL;
 
     if (!session || root_behavior_id == 0u || behavior_id == 0u) {
         return false;
@@ -1367,11 +1368,13 @@ static bool script_edit_behavior_is_graph_member(
         return false;
     }
 
-    sub_behavior_ids = (nmo_object_id_t *)root->sub_behaviors.data;
     for (size_t i = 0; i < root->sub_behaviors.count; ++i) {
-        if (sub_behavior_ids[i] == behavior_id ||
+        nmo_object_id_t sub_behavior_id = nmo_behavior_ref_array_get_id(
+            &root->sub_behaviors, i);
+        if (sub_behavior_id == 0) continue;
+        if (sub_behavior_id == behavior_id ||
             script_edit_behavior_is_graph_member(session,
-                                                 sub_behavior_ids[i],
+                                                 sub_behavior_id,
                                                  behavior_id)) {
             return true;
         }
@@ -1410,7 +1413,8 @@ static bool script_edit_find_direct_parent_behavior_in_repo(
         }
 
         parent_id = nmo_object_get_id(object);
-        if (nmo_array_find(&state->sub_behaviors, &behavior_id, NULL) != 0) {
+        if (nmo_behavior_ref_array_find(
+                &state->sub_behaviors, behavior_id, NULL)) {
             if (out_parent_behavior_id) {
                 *out_parent_behavior_id = parent_id;
             }
@@ -2172,6 +2176,26 @@ static bool script_edit_interface_owner_matches(const nmo_port_owner_t *owner,
     return owner && owner->owner_id == owner_id && owner->kind == kind;
 }
 
+static bool script_edit_behavior_array_contains(
+    nmo_session_t *session,
+    nmo_object_id_t behavior_id,
+    const char *field_name,
+    nmo_object_id_t object_id)
+{
+    nmo_behavior_state_t *state = script_edit_find_behavior_state(
+        session, behavior_id, NULL);
+    if (!state || !field_name || object_id == NMO_OBJECT_ID_NONE) return false;
+    const nmo_array_t *array = NULL;
+    if (strcmp(field_name, "operations") == 0) {
+        array = &state->operations;
+    } else if (strcmp(field_name, "sub_behavior_links") == 0) {
+        array = &state->sub_behavior_links;
+    } else {
+        return false;
+    }
+    return nmo_behavior_ref_array_find(array, object_id, NULL);
+}
+
 typedef bool (*script_edit_interface_object_match_fn)(const nmo_object_t *object);
 
 static bool script_edit_interface_object_matches_any(
@@ -2326,6 +2350,10 @@ static bool script_edit_interface_link_is_valid(
     if (!script_edit_interface_owner_matches(owner, owner_id, NMO_PORT_SUB_LINK)) {
         return false;
     }
+    if (!script_edit_behavior_array_contains(
+            session, owner_id, "sub_behavior_links", link_id)) {
+        return false;
+    }
     return script_edit_interface_endpoint_exists(session,
                                                  link->start.id,
                                                  interface_ids_are_runtime) &&
@@ -2358,7 +2386,8 @@ static bool script_edit_interface_operation_is_valid(
     if (!script_edit_interface_owner_matches(owner, owner_id, NMO_PORT_OPERATION)) {
         return false;
     }
-    return operation_id != 0u;
+    return script_edit_behavior_array_contains(
+        session, owner_id, "operations", operation_id);
 }
 
 static bool script_edit_interface_shared_param_is_valid(
@@ -3175,7 +3204,7 @@ NMO_API nmo_status_t nmo_script_edit_add_node_ex(
             if (rc != NMO_OK) {
                 return rc;
             }
-            rc = nmo_array_append(&node_state->inputs, &io_id);
+            rc = nmo_behavior_ref_array_append(&node_state->inputs, io_id, NULL);
             if (rc != NMO_OK) {
                 return rc;
             }
@@ -3188,7 +3217,7 @@ NMO_API nmo_status_t nmo_script_edit_add_node_ex(
             if (rc != NMO_OK) {
                 return rc;
             }
-            rc = nmo_array_append(&node_state->outputs, &io_id);
+            rc = nmo_behavior_ref_array_append(&node_state->outputs, io_id, NULL);
             if (rc != NMO_OK) {
                 return rc;
             }
@@ -3205,7 +3234,8 @@ NMO_API nmo_status_t nmo_script_edit_add_node_ex(
             if (rc != NMO_OK) {
                 return rc;
             }
-            rc = nmo_array_append(&node_state->in_parameters, &parameter_id);
+            rc = nmo_behavior_ref_array_append(
+                &node_state->in_parameters, parameter_id, NULL);
             if (rc != NMO_OK) {
                 return rc;
             }
@@ -3222,7 +3252,8 @@ NMO_API nmo_status_t nmo_script_edit_add_node_ex(
             if (rc != NMO_OK) {
                 return rc;
             }
-            rc = nmo_array_append(&node_state->out_parameters, &parameter_id);
+            rc = nmo_behavior_ref_array_append(
+                &node_state->out_parameters, parameter_id, NULL);
             if (rc != NMO_OK) {
                 return rc;
             }
@@ -3266,7 +3297,8 @@ NMO_API nmo_status_t nmo_script_edit_add_node_ex(
             if (rc != NMO_OK) {
                 return rc;
             }
-            rc = nmo_array_append(&node_state->local_parameters, &parameter_id);
+            rc = nmo_behavior_ref_array_append(
+                &node_state->local_parameters, parameter_id, NULL);
             if (rc != NMO_OK) {
                 return rc;
             }
@@ -3295,7 +3327,8 @@ NMO_API nmo_status_t nmo_script_edit_add_node_ex(
                 return NMO_ERR_INVALID_STATE;
             }
             parameter_state->is_setting = 1u;
-            rc = nmo_array_append(&node_state->local_parameters, &parameter_id);
+            rc = nmo_behavior_ref_array_append(
+                &node_state->local_parameters, parameter_id, NULL);
             if (rc != NMO_OK) {
                 return rc;
             }
@@ -3303,7 +3336,8 @@ NMO_API nmo_status_t nmo_script_edit_add_node_ex(
     }
 
     script_edit_update_behavior_save_flags(node_state);
-    rc = nmo_array_append(&parent_state->sub_behaviors, &node_id);
+    rc = nmo_behavior_ref_array_append(
+        &parent_state->sub_behaviors, node_id, NULL);
     if (rc != NMO_OK) {
         return rc;
     }
@@ -3350,7 +3384,8 @@ NMO_API nmo_status_t nmo_script_edit_remove_node(
     if (!parent_state || !node_state) {
         return NMO_ERR_NOT_FOUND;
     }
-    if (nmo_array_find(&parent_state->sub_behaviors, &node_id, &node_index) == 0) {
+    if (!nmo_behavior_ref_array_find(
+            &parent_state->sub_behaviors, node_id, &node_index)) {
         return NMO_ERR_NOT_FOUND;
     }
 
@@ -3440,7 +3475,7 @@ NMO_API nmo_status_t nmo_script_edit_add_io(
 
     array = kind == NMO_SCRIPT_EDIT_IO_INPUT ? &behavior->inputs
                                              : &behavior->outputs;
-    rc = nmo_array_append(array, &io_id);
+    rc = nmo_behavior_ref_array_append(array, io_id, NULL);
     if (rc != NMO_OK) {
         return rc;
     }
@@ -4053,7 +4088,7 @@ NMO_API nmo_status_t nmo_script_edit_add_parameter(
         state->is_shared = 1u;
     }
 
-    rc = nmo_array_append(array, &parameter_id);
+    rc = nmo_behavior_ref_array_append(array, parameter_id, NULL);
     if (rc != NMO_OK) {
         return rc;
     }
@@ -4539,7 +4574,7 @@ NMO_API nmo_status_t nmo_script_edit_add_operation(
     state->in2_chunk = NULL;
     state->out_chunk = NULL;
 
-    rc = nmo_array_append(&behavior->operations, &operation_id);
+    rc = nmo_behavior_ref_array_append(&behavior->operations, operation_id, NULL);
     if (rc != NMO_OK) {
         return rc;
     }
@@ -4896,7 +4931,8 @@ NMO_API nmo_status_t nmo_script_edit_remove_behavior_link(
     if (!parent) {
         return NMO_ERR_NOT_FOUND;
     }
-    if (nmo_array_find(&parent->sub_behavior_links, &link_id, &link_index) == 0) {
+    if (!nmo_behavior_ref_array_find(
+            &parent->sub_behavior_links, link_id, &link_index)) {
         return NMO_ERR_NOT_FOUND;
     }
 

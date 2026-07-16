@@ -7,6 +7,7 @@
 #define NMO_CKLAYER_SCHEMAS_H
 
 #include "object/builtin/nmo_object_schemas.h"
+#include "object/nmo_ref.h"
 #include "object/nmo_object_type_common.h"
 #include "nmo_types.h"
 #include "core/nmo_guid.h"
@@ -27,7 +28,7 @@ typedef struct nmo_type_descriptor nmo_type_descriptor_t;
 typedef struct nmo_layer_state {
     nmo_object_state_t base;
 
-    nmo_object_id_t grid_id;
+    nmo_ref_t grid;
     int32_t type;
     int32_t format;
     int32_t version;

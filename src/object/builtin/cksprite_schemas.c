@@ -17,6 +17,7 @@
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
 #include "object/nmo_serialize_context.h"
+#include "object/nmo_deserialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_struct_guids.h"
 #include "object/nmo_object_enum_guids.h"
@@ -44,7 +45,7 @@ static const nmo_type_field_t nmo_sprite_fields[] = {
                     sizeof(nmo_2dentity_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_sprite_state_t, has_sprite_ref, CKPGUID_BOOL),
-    NMO_FIELD_REF(nmo_sprite_state_t, sprite_ref_id),
+    NMO_FIELD_REF(nmo_sprite_state_t, sprite_ref),
     NMO_FIELD(nmo_sprite_state_t, has_bitmap_data, CKPGUID_BOOL),
     NMO_FIELD_NAMED("bitmap_data", offsetof(nmo_sprite_state_t, bitmap_data),
                     sizeof(nmo_bitmapdata_t), NMO_GUID_STRUCT_CKBITMAPDATA,
@@ -144,66 +145,10 @@ nmo_status_t nmo_sprite_remap_dependencies(
     }
 
     nmo_sprite_state_t *state = (nmo_sprite_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
 
     NMO_RETURN_IF_ERROR(nmo_2dentity_remap_dependencies(&state->entity, NULL, context));
 
-    if (state->has_sprite_ref) {
-        if (state->sprite_ref_id == 0) {
-            state->has_sprite_ref = false;
-        } else if (repo != NULL) {
-            nmo_object_t *src_obj = nmo_object_repository_find_by_id(repo, state->sprite_ref_id);
-            if (src_obj && src_obj->state &&
-                nmo_object_get_class_id(src_obj) == NMO_CID_SPRITE) {
-                const nmo_sprite_state_t *src = (const nmo_sprite_state_t *)src_obj->state;
-
-                state->has_transparency = src->has_transparency;
-                state->is_transparent = src->is_transparent;
-                state->transparent_color = src->transparent_color;
-                state->has_slot = src->has_slot;
-                state->current_slot = src->current_slot;
-                state->has_save_options = src->has_save_options;
-                state->save_options = src->save_options;
-                state->has_bitmap_data = false;
-                state->bitmap_properties = NULL;
-                state->bitmap_properties_size = 0;
-            }
-
-            state->has_sprite_ref = false;
-            state->sprite_ref_id = 0;
-        }
-    }
-
-    if (!state->has_bitmap_data) {
-        state->bitmap_data.pixel_data = NULL;
-        state->bitmap_data.pixel_data_size = 0;
-        state->bitmap_data.palette_data = NULL;
-        state->bitmap_data.palette_size = 0;
-        state->bitmap_data.system_copy_data = NULL;
-        state->bitmap_data.system_copy_size = 0;
-        state->bitmap_data.video_backup_data = NULL;
-        state->bitmap_data.video_backup_size = 0;
-        state->bitmap_data.pixels_data = NULL;
-        state->bitmap_data.pixels_size = 0;
-        state->bitmap_data.raw_chunk_data = NULL;
-        state->bitmap_data.raw_chunk_size = 0;
-    }
-
-    if (!state->has_transparency) {
-        state->is_transparent = false;
-    }
-
-    if (!state->has_slot) {
-        state->current_slot = 0;
-    }
-
-    if (!state->has_save_options) {
-        state->bitmap_properties = NULL;
-        state->bitmap_properties_size = 0;
-    } else if (state->bitmap_properties_size > 0 && state->bitmap_properties == NULL) {
-        state->bitmap_properties_size = 0;
-    }
-
+    /* Keep clone reference and raw bitmap section state intact. */
     return nmo_sprite_validate(state, NULL, NULL);
 }
 
@@ -228,7 +173,7 @@ static nmo_status_t nmo_sprite_pre_delete(
     }
     nmo_sprite_state_t *state = (nmo_sprite_state_t *)instance;
     state->has_sprite_ref = false;
-    state->sprite_ref_id = 0;
+    state->sprite_ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     state->has_bitmap_data = false;
     state->bitmap_properties = NULL;
     state->bitmap_properties_size = 0;
@@ -266,11 +211,13 @@ static nmo_status_t deserialize_file_backed(
     /* Check for sprite reference (identifier 0x80000) */
     seek_result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SPRITESHARED);
     if (seek_result == NMO_OK) {
-        out_state->has_sprite_ref = true;
-        result = nmo_chunk_read_object_id(chunk, &out_state->sprite_ref_id);
+        nmo_ref_t sprite_ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+        result = nmo_ref_read(chunk, &sprite_ref);
         if (result != NMO_OK) {
             NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read sprite reference ID");
         }
+        out_state->sprite_ref = sprite_ref;
+        out_state->has_sprite_ref = sprite_ref.state != NMO_REF_NONE;
         /* When sprite ref is present, bitmap data is cloned from referenced sprite.
          * No bitmap payload should be present in this chunk. */
         out_state->has_bitmap_data = false;
@@ -331,7 +278,8 @@ static nmo_status_t deserialize_file_backed(
         void *props = NULL;
         size_t props_size = 0;
         result = nmo_chunk_read_buffer(chunk, &props, &props_size);
-        if (result == NMO_OK && props && props_size > 0) {
+        if (result != NMO_OK) return result;
+        if (props && props_size > 0) {
             out_state->bitmap_properties = (uint8_t *)props;
             out_state->bitmap_properties_size = props_size;
         }
@@ -386,11 +334,13 @@ static nmo_status_t deserialize_chunk_only(
     /* Read sprite reference (identifier 0x80000) */
     seek_result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SPRITESHARED);
     if (seek_result == NMO_OK) {
-        out_state->has_sprite_ref = true;
-        result = nmo_chunk_read_object_id(chunk, &out_state->sprite_ref_id);
+        nmo_ref_t sprite_ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+        result = nmo_ref_read(chunk, &sprite_ref);
         if (result != NMO_OK) {
             NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read sprite reference ID");
         }
+        out_state->sprite_ref = sprite_ref;
+        out_state->has_sprite_ref = sprite_ref.state != NMO_REF_NONE;
     }
     
     NMO_RETURN_OK();
@@ -423,6 +373,9 @@ nmo_status_t nmo_sprite_deserialize(
         return result;
     }
 
+    out_state->has_sprite_ref = false;
+    out_state->sprite_ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+
     /* Use chunk option to select file-backed vs chunk-only path */
     if ((chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) {
         result = deserialize_file_backed(chunk, arena, out_state);
@@ -431,6 +384,14 @@ nmo_status_t nmo_sprite_deserialize(
     }
     if (result != NMO_OK) {
         return result;
+    }
+    if (out_state->has_sprite_ref) {
+        nmo_ref_check_class(
+            &out_state->sprite_ref,
+            (const nmo_object_repository_t *)
+                nmo_deserialize_context_get_repository(context),
+            nmo_deserialize_context_get_type_registry(context),
+            NMO_CID_SPRITE);
     }
 
     NMO_RETURN_OK();
@@ -469,9 +430,19 @@ nmo_status_t nmo_sprite_serialize(
     if (result != NMO_OK) {
         return result;
     }
+
+    if (in_state->has_sprite_ref) {
+        if (is_file || (save_flags & CK_STATESAVE_SPRITESHARED) != 0u) {
+            result = nmo_chunk_write_identifier(
+                out_chunk, CK_STATESAVE_SPRITESHARED);
+            if (result != NMO_OK) return result;
+            result = nmo_ref_write(out_chunk, &in_state->sprite_ref);
+            if (result != NMO_OK) return result;
+        }
+    }
     
     if (is_file) {
-        if (in_state->has_bitmap_data) {
+        if (!in_state->has_sprite_ref && in_state->has_bitmap_data) {
             /* Write bitmap payloads in SDK order (no raw chunk) */
             if (in_state->bitmap_data.palette_data && in_state->bitmap_data.palette_size > 0) {
                 result = nmo_chunk_write_identifier(out_chunk, NMO_CKSPRITE_BITMAP_PALETTE);
@@ -586,17 +557,11 @@ static nmo_status_t nmo_sprite_copy(
     const nmo_sprite_state_t *s = src;
     nmo_sprite_state_t *d = dst;
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
-    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->entity.base.base.script_ids,
-                                         &d->entity.base.base.script_ids,
-                                         &s->entity.base.base.script_ids.allocator));
-    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->entity.base.base.attribute_parameter_ids,
-                                         &d->entity.base.base.attribute_parameter_ids,
-                                         &s->entity.base.base.attribute_parameter_ids.allocator));
-    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->entity.base.base.attribute_types,
-                                         &d->entity.base.base.attribute_types,
-                                         &s->entity.base.base.attribute_types.allocator));
-    NMO_RETURN_IF_ERROR(nmo_object_clone_chunk_array(arena, &d->entity.base.base.attribute_chunks,
-                                                    &s->entity.base.base.attribute_chunks));
+    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->entity.base.base.scripts,
+                                         &d->entity.base.base.scripts,
+                                         &s->entity.base.base.scripts.allocator));
+    NMO_RETURN_IF_ERROR(nmo_beobject_clone_attributes(
+        arena, &d->entity.base.base.attributes, &s->entity.base.base.attributes));
 
     if (s->has_bitmap_data) {
         NMO_RETURN_IF_ERROR(nmo_sprite_copy_bitmapdata(arena, &d->bitmap_data, &s->bitmap_data));

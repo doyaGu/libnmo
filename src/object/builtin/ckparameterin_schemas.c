@@ -42,62 +42,6 @@ static void nmo_parameterin_convert_legacy_guid(nmo_guid_t *guid) {
     }
 }
 
-static bool nmo_parameterin_is_valid_target(
-    void *context,
-    nmo_object_id_t object_id,
-    nmo_class_id_t expected_base)
-{
-    if (object_id == 0) {
-        return false;
-    }
-
-    const nmo_type_registry_t *registry = nmo_deserialize_context_get_type_registry(context);
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)
-        nmo_deserialize_context_get_repository(context);
-
-    if (repo == NULL || registry == NULL) {
-        return true;
-    }
-
-    nmo_object_t *obj = nmo_object_repository_find_by_id(repo, object_id);
-    if (obj == NULL) {
-        return false;
-    }
-
-    return nmo_type_registry_is_class_derived_from(
-        registry,
-        (uint32_t)nmo_object_get_class_id(obj),
-        (uint32_t)expected_base);
-}
-
-static bool nmo_parameterin_is_valid_owner(
-    void *context,
-    nmo_object_id_t object_id)
-{
-    if (object_id == 0) {
-        return false;
-    }
-
-    const nmo_type_registry_t *registry = nmo_deserialize_context_get_type_registry(context);
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)
-        nmo_deserialize_context_get_repository(context);
-
-    if (repo == NULL || registry == NULL) {
-        return true;
-    }
-
-    nmo_object_t *obj = nmo_object_repository_find_by_id(repo, object_id);
-    if (obj == NULL) {
-        return false;
-    }
-
-    const uint32_t class_id = (uint32_t)nmo_object_get_class_id(obj);
-    return nmo_type_registry_is_class_derived_from(
-        registry, class_id, (uint32_t)NMO_CID_BEHAVIOR) ||
-        nmo_type_registry_is_class_derived_from(
-            registry, class_id, (uint32_t)NMO_CID_PARAMETEROPERATION);
-}
-
 /* =============================================================================
  * REFLECTION FIELDS
  * ============================================================================= */
@@ -143,63 +87,42 @@ nmo_status_t nmo_parameterin_deserialize(
 
     if (data_version >= 1) {
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETERIN_DATASHARED) == NMO_OK) {
-            nmo_chunk_read_guid(chunk, &out_state->type_guid);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_guid(chunk, &out_state->type_guid));
             nmo_parameterin_convert_legacy_guid(&out_state->type_guid);
             if (data_version < 5) {
                 nmo_object_id_t legacy_id = 0;
-                (void)nmo_chunk_read_object_id(chunk, &legacy_id);
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &legacy_id));
             }
-            nmo_object_id_t shared_id = 0;
-            nmo_chunk_read_object_id(chunk, &shared_id);
-            if (nmo_parameterin_is_valid_target(context, shared_id, NMO_CID_PARAMETERIN)) {
-                out_state->source_id = shared_id;
-                out_state->is_shared = 1;
-            } else {
-                out_state->source_id = 0;
-                out_state->is_shared = 0;
-            }
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &out_state->source_id));
+            out_state->is_shared = 1;
         } else if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETERIN_DATASOURCE) == NMO_OK) {
-            nmo_chunk_read_guid(chunk, &out_state->type_guid);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_guid(chunk, &out_state->type_guid));
             nmo_parameterin_convert_legacy_guid(&out_state->type_guid);
             if (data_version < 5) {
                 nmo_object_id_t legacy_id = 0;
-                (void)nmo_chunk_read_object_id(chunk, &legacy_id);
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &legacy_id));
             }
-            nmo_object_id_t source_id = 0;
-            nmo_chunk_read_object_id(chunk, &source_id);
-            if (nmo_parameterin_is_valid_target(context, source_id, NMO_CID_PARAMETER)) {
-                out_state->source_id = source_id;
-                out_state->is_shared = 0;
-            } else {
-                out_state->source_id = 0;
-                out_state->is_shared = 0;
-            }
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &out_state->source_id));
+            out_state->is_shared = 0;
         } else if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETERIN_DEFAULTDATA) == NMO_OK) {
-            nmo_chunk_read_guid(chunk, &out_state->type_guid);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_guid(chunk, &out_state->type_guid));
             nmo_parameterin_convert_legacy_guid(&out_state->type_guid);
 
             nmo_object_id_t owner_id = 0;
             nmo_object_id_t out_source_id = 0;
             nmo_object_id_t param_id = 0;
-            (void)nmo_chunk_read_object_id(chunk, &owner_id);
-            (void)nmo_chunk_read_object_id(chunk, &out_source_id);
-            (void)nmo_chunk_read_object_id(chunk, &param_id);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &owner_id));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &out_source_id));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &param_id));
 
-            if (nmo_parameterin_is_valid_owner(context, owner_id)) {
-                out_state->owner_id = owner_id;
-            } else {
-                out_state->owner_id = 0;
-            }
+            out_state->owner_id = owner_id;
 
-            if (nmo_parameterin_is_valid_target(context, out_source_id, NMO_CID_PARAMETER)) {
+            if (out_source_id != 0) {
                 out_state->source_id = out_source_id;
                 out_state->is_shared = 0;
-            } else if (nmo_parameterin_is_valid_target(context, param_id, NMO_CID_PARAMETERIN)) {
+            } else if (param_id != 0) {
                 out_state->source_id = param_id;
                 out_state->is_shared = 1;
-            } else {
-                out_state->source_id = 0;
-                out_state->is_shared = 0;
             }
         }
 
@@ -209,33 +132,19 @@ nmo_status_t nmo_parameterin_deserialize(
     } else {
         /* Legacy path: CK2 uses DEFAULTDATA/OWNER/INSHARED/OUTSOURCE */
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETERIN_DEFAULTDATA) == NMO_OK) {
-            nmo_chunk_read_guid(chunk, &out_state->type_guid);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_guid(chunk, &out_state->type_guid));
             nmo_parameterin_convert_legacy_guid(&out_state->type_guid);
         }
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETERIN_OWNER) == NMO_OK) {
-            nmo_object_id_t owner_id = 0;
-            (void)nmo_chunk_read_object_id(chunk, &owner_id);
-            if (nmo_parameterin_is_valid_owner(context, owner_id)) {
-                out_state->owner_id = owner_id;
-            } else {
-                out_state->owner_id = 0;
-            }
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &out_state->owner_id));
         }
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETERIN_INSHARED) == NMO_OK) {
-            nmo_object_id_t shared_id = 0;
-            nmo_chunk_read_object_id(chunk, &shared_id);
-            if (nmo_parameterin_is_valid_target(context, shared_id, NMO_CID_PARAMETERIN)) {
-                out_state->source_id = shared_id;
-                out_state->is_shared = 1;
-            }
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &out_state->source_id));
+            out_state->is_shared = 1;
         }
         if (!out_state->is_shared &&
             nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETERIN_OUTSOURCE) == NMO_OK) {
-            nmo_object_id_t source_id = 0;
-            nmo_chunk_read_object_id(chunk, &source_id);
-            if (nmo_parameterin_is_valid_target(context, source_id, NMO_CID_PARAMETER)) {
-                out_state->source_id = source_id;
-            }
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &out_state->source_id));
         }
     }
 
@@ -360,25 +269,12 @@ nmo_status_t nmo_parameterin_remap_dependencies(
     }
 
     nmo_parameterin_state_t *state = (nmo_parameterin_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
 
     NMO_RETURN_IF_ERROR(nmo_object_remap_dependencies(&state->base, NULL, context));
 
     nmo_parameterin_convert_legacy_guid(&state->type_guid);
 
-    if (state->source_id != 0 && repo &&
-        nmo_object_repository_find_by_id(repo, state->source_id) == NULL) {
-        state->source_id = 0;
-    }
-
-    if (state->owner_id != 0 && repo &&
-        nmo_object_repository_find_by_id(repo, state->owner_id) == NULL) {
-        state->owner_id = 0;
-    }
-
-    state->is_shared = state->source_id != 0 ? (state->is_shared ? 1 : 0) : 0;
-    state->is_disabled = state->is_disabled ? 1 : 0;
-
+    /* Preserve unresolved source/owner references and authored flags. */
     return nmo_object_default_validate(state, NULL, NULL);
 }
 

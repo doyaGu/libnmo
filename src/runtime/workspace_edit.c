@@ -533,7 +533,17 @@ static nmo_status_t rollback_remove_array_id(nmo_workspace_edit_t *edit, void *p
         return NMO_ERR_INVALID_ARGUMENT;
     }
     size_t index = 0;
-    if (nmo_array_find(action->array, &action->id, &index) != 0) {
+    int found = 0;
+    if (action->array->element_size == sizeof(nmo_behavior_ref_t)) {
+        found = nmo_behavior_ref_array_find(
+            action->array, action->id, &index);
+    } else if (action->array->element_size == sizeof(nmo_ref_t)) {
+        found = nmo_beobject_script_array_find(
+            action->array, action->id, &index);
+    } else {
+        found = nmo_array_find(action->array, &action->id, &index);
+    }
+    if (found != 0) {
         return nmo_array_remove(action->array, index, NULL);
     }
     return NMO_OK;
@@ -545,6 +555,20 @@ static nmo_status_t rollback_insert_array_id(nmo_workspace_edit_t *edit, void *p
     array_id_action_t *action = (array_id_action_t *)payload;
     if (action == NULL || action->array == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (action->array->element_size == sizeof(nmo_behavior_ref_t)) {
+        nmo_behavior_ref_t value = nmo_behavior_ref_from_id(action->id);
+        if (action->index <= action->array->count) {
+            return nmo_array_insert(action->array, action->index, &value);
+        }
+        return nmo_array_append(action->array, &value);
+    }
+    if (action->array->element_size == sizeof(nmo_ref_t)) {
+        nmo_ref_t value = nmo_ref_from_id(action->id);
+        if (action->index <= action->array->count) {
+            return nmo_array_insert(action->array, action->index, &value);
+        }
+        return nmo_array_append(action->array, &value);
     }
     if (action->index <= action->array->count) {
         return nmo_array_insert(action->array, action->index, &action->id);
@@ -1530,8 +1554,10 @@ nmo_status_t workspace_edit_bind_script(
     }
 
     size_t existing_index = 0u;
-    if (nmo_array_find(&owner_state->script_ids, &behavior_id, &existing_index) == 0) {
-        status = nmo_array_append(&owner_state->script_ids, &behavior_id);
+    if (nmo_beobject_script_array_find(
+            &owner_state->scripts, behavior_id, &existing_index) == 0) {
+        status = nmo_beobject_script_array_append(
+            &owner_state->scripts, behavior_id);
         if (status != NMO_OK) {
             return workspace_edit_abort_status(edit, checkpoint, status);
         }
@@ -1539,9 +1565,9 @@ nmo_status_t workspace_edit_bind_script(
         array_id_action_t *rollback = NULL;
         status = workspace_edit_make_array_id_action(
             edit,
-            &owner_state->script_ids,
+            &owner_state->scripts,
             behavior_id,
-            owner_state->script_ids.count - 1u,
+            owner_state->scripts.count - 1u,
             &rollback);
         if (status != NMO_OK) {
             return workspace_edit_abort_status(edit, checkpoint, status);
@@ -1936,21 +1962,21 @@ nmo_status_t nmo_asset_edit_bind_entity_mesh(
     if (arena == NULL) {
         return NMO_ERR_INVALID_STATE;
     }
-    nmo_object_id_t *mesh_ids = (nmo_object_id_t *)nmo_arena_alloc(
+    nmo_ref_t *mesh_ids = (nmo_ref_t *)nmo_arena_alloc(
         arena,
         sizeof(*mesh_ids),
-        _Alignof(nmo_object_id_t));
+        _Alignof(nmo_ref_t));
     if (mesh_ids == NULL) {
         return NMO_ERR_NOMEM;
     }
-    mesh_ids[0] = mesh_id;
+    mesh_ids[0] = nmo_ref_from_id(mesh_id);
 
     status = nmo_workspace_edit_snapshot_bytes(edit, state, sizeof(*state));
     if (status != NMO_OK) {
         return status;
     }
 
-    state->current_mesh_id = mesh_id;
+    state->current_mesh = nmo_ref_from_id(mesh_id);
     state->mesh_count = 1u;
     state->mesh_ids = mesh_ids;
     state->has_mesh_chunk = 1u;
@@ -3096,7 +3122,7 @@ nmo_status_t nmo_entity_edit_set_parent(
         return status;
     }
 
-    state->parent_id = parent_id;
+    state->parent = nmo_ref_from_id(parent_id);
     nmo_workspace_edit_mark(
         edit,
         NMO_WORKSPACE_EDIT_OBJECT_STATE | NMO_WORKSPACE_EDIT_REFERENCES);
@@ -3178,7 +3204,7 @@ nmo_status_t nmo_entity_edit_set_camera_target(
         return status;
     }
     state->has_target = 1u;
-    state->target_id = target_id;
+    state->target = nmo_ref_from_id(target_id);
     nmo_workspace_edit_mark(
         edit,
         NMO_WORKSPACE_EDIT_OBJECT_STATE | NMO_WORKSPACE_EDIT_REFERENCES);
@@ -3270,7 +3296,7 @@ nmo_status_t nmo_entity_edit_set_light_target(
         return status;
     }
     state->has_target = 1u;
-    state->target_id = target_id;
+    state->target = nmo_ref_from_id(target_id);
     nmo_workspace_edit_mark(
         edit,
         NMO_WORKSPACE_EDIT_OBJECT_STATE | NMO_WORKSPACE_EDIT_REFERENCES);
@@ -3579,7 +3605,7 @@ nmo_status_t nmo_sound_edit_set_sound(
         wave_state->pitch = settings->has_pitch ? settings->pitch : 1.0f;
     }
     if (settings->has_attached_object) {
-        wave_state->attached_object_id = settings->attached_object_id;
+        wave_state->attached_object = nmo_ref_from_id(settings->attached_object_id);
     }
     if (settings->has_position) {
         wave_state->position.x = settings->position[0];
@@ -4923,7 +4949,8 @@ nmo_status_t workspace_edit_add_behavior_link(
         return workspace_edit_abort_status(edit, checkpoint, NMO_ERR_INTERNAL);
     }
     nmo_status_t append_result =
-        nmo_array_append(&parent_state->sub_behavior_links, &link_id);
+        nmo_behavior_ref_array_append(
+            &parent_state->sub_behavior_links, link_id, NULL);
     if (append_result != NMO_OK) {
         return workspace_edit_abort_status(edit, checkpoint, append_result);
     }
@@ -5002,7 +5029,8 @@ nmo_status_t workspace_edit_remove_behavior_link(
     }
 
     size_t index = 0;
-    if (nmo_array_find(&parent_state->sub_behavior_links, &link_id, &index) == 0) {
+    if (!nmo_behavior_ref_array_find(
+            &parent_state->sub_behavior_links, link_id, &index)) {
         return NMO_ERR_NOT_FOUND;
     }
 

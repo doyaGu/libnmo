@@ -39,14 +39,25 @@ static nmo_status_t walk_recursive(
     nmo_object_id_t behavior_id,
     uint32_t depth,
     nmo_behavior_walk_visitor_fn visitor,
-    void *user_data)
+    void *user_data,
+    nmo_array_t *visited)
 {
     if (depth > 256) {
         return NMO_OK; /* guard against infinite recursion */
     }
 
+    const nmo_object_id_t *visited_ids = NMO_ARRAY_DATA(
+        nmo_object_id_t, visited);
+    for (size_t i = 0; visited_ids && i < visited->count; ++i) {
+        if (visited_ids[i] == behavior_id) return NMO_OK;
+    }
+    nmo_object_id_t *visited_slot = NULL;
+    NMO_RETURN_IF_ERROR(nmo_array_extend(visited, 1, (void **)&visited_slot));
+    *visited_slot = behavior_id;
+
     nmo_object_t *obj = nmo_object_repository_find_by_id(repo, behavior_id);
     if (!obj) return NMO_OK;
+    if (nmo_object_get_class_id(obj) != NMO_CID_BEHAVIOR) return NMO_OK;
 
     const nmo_behavior_state_t *state =
         (const nmo_behavior_state_t *)nmo_object_get_state(obj);
@@ -59,15 +70,15 @@ static nmo_status_t walk_recursive(
 
     /* Recurse into sub-behaviors (only for graph behaviors) */
     if (state && !is_bb) {
-        const nmo_object_id_t *sub_ids =
-            (const nmo_object_id_t *)state->sub_behaviors.data;
         size_t sub_count = state->sub_behaviors.count;
 
         for (size_t i = 0; i < sub_count; ++i) {
-            if (sub_ids[i] == 0) continue;
+            nmo_object_id_t sub_id = nmo_behavior_ref_array_get_id(
+                &state->sub_behaviors, i);
+            if (sub_id == 0) continue;
             nmo_status_t st = walk_recursive(
-                workspace, repo, sub_ids[i],
-                depth + 1, visitor, user_data);
+                workspace, repo, sub_id,
+                depth + 1, visitor, user_data, visited);
             if (st != NMO_OK) return st;
         }
     }
@@ -92,8 +103,13 @@ nmo_status_t nmo_behavior_walk(
                          "No object repository in workspace");
     }
 
-    return walk_recursive(workspace, repo, root_behavior_id,
-                          0, visitor, user_data);
+    nmo_array_t visited;
+    NMO_RETURN_IF_ERROR(nmo_array_init(
+        &visited, sizeof(nmo_object_id_t), 32, NULL));
+    nmo_status_t status = walk_recursive(
+        workspace, repo, root_behavior_id, 0, visitor, user_data, &visited);
+    nmo_array_dispose(&visited);
+    return status;
 }
 
 /* ============================================================================
@@ -197,16 +213,17 @@ static void print_indent(FILE *out, uint32_t depth)
 
 static void dump_param_array(
     dump_ctx_t *dctx, const char *label,
-    const nmo_object_id_t *ids, size_t count, uint32_t depth)
+    const nmo_array_t *array, uint32_t depth)
 {
-    if (count == 0) return;
+    if (array->count == 0) return;
 
-    for (size_t i = 0; i < count; ++i) {
-        if (ids[i] == 0) continue;
-        nmo_object_t *pobj = nmo_object_repository_find_by_id(dctx->repo, ids[i]);
+    for (size_t i = 0; i < array->count; ++i) {
+        nmo_object_id_t id = nmo_behavior_ref_array_get_id(array, i);
+        if (id == 0) continue;
+        nmo_object_t *pobj = nmo_object_repository_find_by_id(dctx->repo, id);
         if (!pobj) {
             print_indent(dctx->out, depth);
-            fprintf(dctx->out, "%s[%zu]: #%u (missing)\n", label, i, ids[i]);
+            fprintf(dctx->out, "%s[%zu]: #%u (missing)\n", label, i, id);
             continue;
         }
 
@@ -214,7 +231,7 @@ static void dump_param_array(
         nmo_class_id_t pcid = nmo_object_get_class_id(pobj);
 
         print_indent(dctx->out, depth);
-        fprintf(dctx->out, "%s[%zu]: #%u", label, i, ids[i]);
+        fprintf(dctx->out, "%s[%zu]: #%u", label, i, id);
         if (pname && pname[0]) fprintf(dctx->out, " \"%s\"", pname);
 
         /* Decode parameter value if it's a CKParameter-derived object */
@@ -292,24 +309,18 @@ static bool dump_visitor(
     if (!state) return true;
 
     /* Print parameters */
-    dump_param_array(dctx, "  in",
-        (const nmo_object_id_t *)state->in_parameters.data,
-        state->in_parameters.count, depth);
-    dump_param_array(dctx, "  out",
-        (const nmo_object_id_t *)state->out_parameters.data,
-        state->out_parameters.count, depth);
-    dump_param_array(dctx, "  local",
-        (const nmo_object_id_t *)state->local_parameters.data,
-        state->local_parameters.count, depth);
+    dump_param_array(dctx, "  in", &state->in_parameters, depth);
+    dump_param_array(dctx, "  out", &state->out_parameters, depth);
+    dump_param_array(dctx, "  local", &state->local_parameters, depth);
 
     /* Print links */
-    const nmo_object_id_t *link_ids =
-        (const nmo_object_id_t *)state->sub_behavior_links.data;
     size_t link_count = state->sub_behavior_links.count;
 
     for (size_t i = 0; i < link_count; ++i) {
-        if (link_ids[i] == 0) continue;
-        nmo_object_t *lobj = nmo_object_repository_find_by_id(dctx->repo, link_ids[i]);
+        nmo_object_id_t link_id = nmo_behavior_ref_array_get_id(
+            &state->sub_behavior_links, i);
+        if (link_id == 0) continue;
+        nmo_object_t *lobj = nmo_object_repository_find_by_id(dctx->repo, link_id);
         if (!lobj) continue;
 
         const nmo_behaviorlink_state_t *link =

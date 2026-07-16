@@ -8,6 +8,7 @@
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
 #include "type/nmo_reflection.h"
+#include "type/nmo_type_system.h"
 #include "object/nmo_param_guids.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
@@ -18,15 +19,31 @@
 #include "object/nmo_object_repository.h"
 #include <string.h>
 
+static void grid_layer_dispose(void *element, void *user_data)
+{
+    (void)user_data;
+    nmo_grid_layer_t *layer = (nmo_grid_layer_t *)element;
+    if (layer && layer->chunk) {
+        nmo_chunk_destroy(layer->chunk);
+        layer->chunk = NULL;
+    }
+}
+
+static void grid_layers_set_lifecycle(nmo_array_t *layers)
+{
+    nmo_container_lifecycle_t lifecycle = NMO_CONTAINER_LIFECYCLE_INIT;
+    lifecycle.dispose = grid_layer_dispose;
+    nmo_array_set_lifecycle(layers, &lifecycle);
+}
+
 NMO_DEFINE_OBJECT_LIFECYCLE(
     grid,
     nmo_grid_state_t,
     do {
-        nmo_status_t result = nmo_array_init(&state->layer_ids, sizeof(nmo_object_id_t), 0, NULL);
+        nmo_status_t result = nmo_array_init(
+            &state->layers, sizeof(nmo_grid_layer_t), 0, NULL);
         if (result != NMO_OK) return result;
-        result = nmo_array_init(&state->layer_chunks, sizeof(nmo_chunk_t *), 0, NULL);
-        if (result != NMO_OK) return result;
-        nmo_object_array_set_chunk_lifecycle(&state->layer_chunks);
+        grid_layers_set_lifecycle(&state->layers);
         state->width = 0;
         state->length = 0;
         state->priority = 0;
@@ -65,52 +82,59 @@ nmo_status_t nmo_grid_deserialize(
     }
     out_state->has_grid_data = 1;
 
-    nmo_chunk_read_int(chunk, &out_state->width);
-    nmo_chunk_read_int(chunk, &out_state->length);
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &out_state->width));
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &out_state->length));
     {
         int32_t reserved = 0;
-        nmo_chunk_read_int(chunk, &reserved);
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &reserved));
     }
-    nmo_chunk_read_int(chunk, &out_state->priority);
-    nmo_chunk_read_dword(chunk, &out_state->orientation_mode);
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &out_state->priority));
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->orientation_mode));
 
     if (nmo_chunk_is_file_mode(chunk)) {
         int32_t file_flag = 0;
-        if (nmo_chunk_read_int(chunk, &file_flag) == NMO_OK) {
-            out_state->has_file_flag = 1;
-            out_state->file_flag = file_flag;
-        }
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &file_flag));
+        out_state->has_file_flag = 1;
+        out_state->file_flag = file_flag;
     }
 
     size_t count = 0;
-    result = nmo_chunk_read_object_sequence_start(chunk, &count);
-    nmo_array_clear(&out_state->layer_ids);
-    if (result == NMO_OK && count > 0) {
-        result = nmo_array_reserve(&out_state->layer_ids, count);
-        if (result != NMO_OK) return result;
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_object_sequence_start(chunk, &count));
 
-        nmo_object_id_t *layer_ids = NULL;
-        result = nmo_array_extend(&out_state->layer_ids, count, (void **)&layer_ids);
-        if (result != NMO_OK) return result;
-
+    nmo_array_t layers;
+    NMO_RETURN_IF_ERROR(nmo_array_init(
+        &layers, sizeof(nmo_grid_layer_t), count, &out_state->layers.allocator));
+    grid_layers_set_lifecycle(&layers);
+    nmo_grid_layer_t *items = NULL;
+    result = nmo_array_extend(&layers, count, (void **)&items);
+    if (result != NMO_OK) {
+        nmo_array_dispose(&layers);
+        return result;
+    }
+    for (size_t i = 0; i < count; ++i) {
+        result = nmo_ref_read(chunk, &items[i].ref);
+        if (result != NMO_OK) {
+            nmo_array_dispose(&layers);
+            return result;
+        }
+        nmo_ref_check_class(
+            &items[i].ref,
+            (const nmo_object_repository_t *)
+                nmo_deserialize_context_get_repository(context),
+            nmo_deserialize_context_get_type_registry(context),
+            NMO_CID_LAYER);
+    }
+    if (!nmo_chunk_is_file_mode(chunk)) {
         for (size_t i = 0; i < count; ++i) {
-            nmo_chunk_read_object_sequence_item(chunk, &layer_ids[i]);
+            result = nmo_chunk_read_sub_chunk(chunk, &items[i].chunk);
+            if (result != NMO_OK) {
+                nmo_array_dispose(&layers);
+                return result;
+            }
         }
     }
-
-    nmo_array_clear(&out_state->layer_chunks);
-    if (!nmo_chunk_is_file_mode(chunk) && out_state->layer_ids.count > 0) {
-        result = nmo_array_reserve(&out_state->layer_chunks, out_state->layer_ids.count);
-        if (result != NMO_OK) return result;
-
-        nmo_chunk_t **chunks = NULL;
-        result = nmo_array_extend(&out_state->layer_chunks, out_state->layer_ids.count, (void **)&chunks);
-        if (result != NMO_OK) return result;
-
-        for (uint32_t i = 0; i < out_state->layer_chunks.count; ++i) {
-            (void)nmo_chunk_read_sub_chunk(chunk, &chunks[i]);
-        }
-    }
+    nmo_array_dispose(&out_state->layers);
+    out_state->layers = layers;
 
     NMO_RETURN_OK();
 }
@@ -148,32 +172,27 @@ nmo_status_t nmo_grid_serialize(
     result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_GRIDDATA);
     if (result != NMO_OK) return result;
 
-    nmo_chunk_write_int(out_chunk, in_state->width);
-    nmo_chunk_write_int(out_chunk, in_state->length);
-    nmo_chunk_write_int(out_chunk, 0);
-    nmo_chunk_write_int(out_chunk, in_state->priority);
-    nmo_chunk_write_dword(out_chunk, in_state->orientation_mode);
+    NMO_RETURN_IF_ERROR(nmo_chunk_write_int(out_chunk, in_state->width));
+    NMO_RETURN_IF_ERROR(nmo_chunk_write_int(out_chunk, in_state->length));
+    NMO_RETURN_IF_ERROR(nmo_chunk_write_int(out_chunk, 0));
+    NMO_RETURN_IF_ERROR(nmo_chunk_write_int(out_chunk, in_state->priority));
+    NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(out_chunk, in_state->orientation_mode));
 
     if (is_file) {
-        nmo_chunk_write_int(out_chunk, in_state->has_file_flag ? in_state->file_flag : 1);
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_int(out_chunk, in_state->has_file_flag ? in_state->file_flag : 1));
     }
 
-    result = nmo_chunk_write_object_sequence_start(out_chunk, (uint32_t)in_state->layer_ids.count);
+    result = nmo_chunk_write_object_sequence_start(out_chunk, in_state->layers.count);
     if (result != NMO_OK) return result;
 
-    const nmo_object_id_t *layer_ids = NMO_ARRAY_DATA(nmo_object_id_t, &in_state->layer_ids);
-    for (uint32_t i = 0; i < in_state->layer_ids.count; ++i) {
-        nmo_chunk_write_object_sequence_item(out_chunk, layer_ids[i]);
+    const nmo_grid_layer_t *layers = NMO_ARRAY_DATA(nmo_grid_layer_t, &in_state->layers);
+    for (size_t i = 0; i < in_state->layers.count; ++i) {
+        NMO_RETURN_IF_ERROR(nmo_ref_write_sequence_item(out_chunk, &layers[i].ref));
     }
 
-    if (!is_file && in_state->layer_ids.count > 0) {
-        const nmo_chunk_t *const *chunks = NMO_ARRAY_DATA(const nmo_chunk_t *, &in_state->layer_chunks);
-        for (uint32_t i = 0; i < in_state->layer_ids.count; ++i) {
-            nmo_chunk_t *sub = NULL;
-            if (chunks && i < in_state->layer_chunks.count) {
-                sub = (nmo_chunk_t *)chunks[i];
-            }
-            nmo_chunk_write_sub_chunk(out_chunk, sub);
+    if (!is_file) {
+        for (size_t i = 0; i < in_state->layers.count; ++i) {
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_sub_chunk(out_chunk, layers[i].chunk));
         }
     }
 
@@ -190,8 +209,7 @@ static const nmo_type_field_t nmo_grid_fields[] = {
     NMO_FIELD(nmo_grid_state_t, orientation_mode, CKPGUID_UINT32),
     NMO_FIELD(nmo_grid_state_t, has_file_flag, CKPGUID_UINT8),
     NMO_FIELD(nmo_grid_state_t, file_flag, CKPGUID_INT),
-    NMO_FIELD_REF_ARRAY(nmo_grid_state_t, layer_ids),
-    NMO_FIELD_ARRAY(nmo_grid_state_t, layer_chunks, CKPGUID_STATECHUNK)
+    NMO_FIELD_ARRAY(nmo_grid_state_t, layers, CKPGUID_NONE)
 };
 
 static nmo_status_t nmo_grid_copy(
@@ -203,8 +221,28 @@ static nmo_status_t nmo_grid_copy(
     const nmo_grid_state_t *s = src;
     nmo_grid_state_t *d = dst;
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
-    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->layer_ids, &d->layer_ids, &s->layer_ids.allocator));
-    return nmo_object_clone_chunk_array(arena, &d->layer_chunks, &s->layer_chunks);
+    /* The default reflected clone is shallow for the nested chunk pointer.
+     * Release only its backing storage before building the deep clone. */
+    nmo_container_lifecycle_t no_lifecycle = NMO_CONTAINER_LIFECYCLE_INIT;
+    nmo_array_set_lifecycle(&d->layers, &no_lifecycle);
+    nmo_array_dispose(&d->layers);
+    NMO_RETURN_IF_ERROR(nmo_array_init(
+        &d->layers, sizeof(nmo_grid_layer_t), s->layers.count, &s->layers.allocator));
+    grid_layers_set_lifecycle(&d->layers);
+    nmo_grid_layer_t *dst_layers = NULL;
+    NMO_RETURN_IF_ERROR(nmo_array_extend(&d->layers, s->layers.count, (void **)&dst_layers));
+    const nmo_grid_layer_t *src_layers = NMO_ARRAY_DATA(nmo_grid_layer_t, &s->layers);
+    for (size_t i = 0; i < s->layers.count; ++i) {
+        dst_layers[i].ref = src_layers[i].ref;
+        if (src_layers[i].chunk) {
+            dst_layers[i].chunk = nmo_chunk_clone(src_layers[i].chunk, arena);
+            if (!dst_layers[i].chunk) {
+                nmo_array_dispose(&d->layers);
+                return NMO_ERR_NOMEM;
+            }
+        }
+    }
+    return NMO_OK;
 }
 
 static nmo_status_t nmo_grid_validate(
@@ -215,8 +253,7 @@ static nmo_status_t nmo_grid_validate(
     (void)type;
     (void)context;
     const nmo_grid_state_t *s = instance;
-    NMO_VALIDATE_COUNT(s->layer_ids.data, s->layer_ids.count, "layer_ids");
-    NMO_VALIDATE_COUNT(s->layer_chunks.data, s->layer_chunks.count, "layer_chunks");
+    NMO_VALIDATE_COUNT(s->layers.data, s->layers.count, "layers");
     NMO_RETURN_OK();
 }
 
@@ -241,52 +278,15 @@ nmo_status_t nmo_grid_remap_dependencies(
     }
 
     nmo_grid_state_t *state = (nmo_grid_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
-
     nmo_status_t result = nmo_3dentity_remap_dependencies(&state->base, NULL, context);
     if (result != NMO_OK) {
         return result;
     }
 
-    if (state->layer_ids.count > 0 && state->layer_ids.data == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Grid layer_ids missing");
+    if (state->layers.count > 0 && state->layers.data == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Grid layers missing");
     }
-    if (state->layer_chunks.count > 0 && state->layer_chunks.data == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Grid layer_chunks missing");
-    }
-
-    if (state->layer_ids.count > 0) {
-        nmo_object_id_t *ids = NMO_ARRAY_DATA(nmo_object_id_t, &state->layer_ids);
-        uint32_t kept = 0;
-        for (uint32_t i = 0; i < state->layer_ids.count; ++i) {
-            nmo_object_id_t id = ids[i];
-            if (id == 0) {
-                continue;
-            }
-            if (repo && nmo_object_repository_find_by_id(repo, id) == NULL) {
-                continue;
-            }
-            bool seen = false;
-            for (uint32_t j = 0; j < kept; ++j) {
-                if (ids[j] == id) {
-                    seen = true;
-                    break;
-                }
-            }
-            if (seen) {
-                continue;
-            }
-            ids[kept++] = id;
-        }
-        state->layer_ids.count = kept;
-
-        if (state->layer_chunks.count > kept) {
-            state->layer_chunks.count = kept;
-        }
-    } else {
-        state->layer_chunks.count = 0;
-    }
-
     return nmo_grid_validate(state, NULL, NULL);
 }
 
@@ -302,6 +302,34 @@ static nmo_status_t nmo_grid_pre_delete(
                          "Invalid arguments to nmo_grid_pre_delete");
     }
     NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_grid_enumerate_refs(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    nmo_type_ref_visitor_fn visitor,
+    void *user_data)
+{
+    (void)type;
+    const nmo_grid_state_t *state = instance;
+    if (!state || !visitor) return NMO_OK;
+    if (state->layers.count > 0 &&
+        (state->layers.data == NULL ||
+         state->layers.element_size != sizeof(nmo_grid_layer_t))) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    const nmo_grid_layer_t *layers = NMO_ARRAY_DATA(
+        nmo_grid_layer_t, &state->layers);
+    for (size_t i = 0; i < state->layers.count; ++i) {
+        if (layers[i].ref.state != NMO_REF_RESOLVED ||
+            layers[i].ref.id == NMO_OBJECT_ID_NONE) {
+            continue;
+        }
+        if (!visitor(user_data, layers[i].ref.id, 0, "layers", (uint32_t)i)) {
+            break;
+        }
+    }
+    return NMO_OK;
 }
 
 static void nmo_grid_post_delete(
@@ -325,7 +353,7 @@ nmo_type_vtable_t nmo_grid_vtable = {
     .remap_dependencies = nmo_grid_remap_dependencies,
     .pre_delete = nmo_grid_pre_delete,
     .post_delete = nmo_grid_post_delete,
-    NMO_OBJECT_VTABLE(
+    NMO_OBJECT_VTABLE_EX(
         nmo_grid_create,
         nmo_grid_destroy,
         nmo_grid_serialize,
@@ -333,7 +361,8 @@ nmo_type_vtable_t nmo_grid_vtable = {
         nmo_grid_copy,
         nmo_grid_validate,
         nmo_grid_equals,
-        nmo_grid_hash)
+        nmo_grid_hash,
+        nmo_grid_enumerate_refs)
 };
 
 NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(

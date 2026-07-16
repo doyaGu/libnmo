@@ -29,13 +29,13 @@ typedef struct nmo_place_state {
     nmo_3dentity_state_t base;
 
     uint8_t has_camera;
-    nmo_object_id_t camera_id;
+    nmo_ref_t camera;
 
     uint8_t has_level;
-    nmo_object_id_t level_id;
+    nmo_ref_t level;
 
     nmo_array_t portals;       /**< Portal entries (nmo_place_portal_entry_t) */
-    nmo_array_t reference_ids; /**< Reference IDs (nmo_object_id_t) */
+    nmo_array_t references;    /**< Reference records (nmo_ref_t) */
 } nmo_place_state_t;
 
 NMO_API nmo_status_t nmo_place_deserialize(

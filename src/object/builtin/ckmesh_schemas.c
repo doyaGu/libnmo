@@ -75,6 +75,14 @@
 #include <stddef.h>
 #include <stdbool.h>
 #include <stdalign.h>
+
+#define NMO_MESH_READ(expr, field_name) do { \
+    nmo_status_t mesh_read_result__ = (expr); \
+    if (mesh_read_result__ != NMO_OK) { \
+        NMO_RETURN_ERROR(mesh_read_result__, NMO_SEVERITY_ERROR, \
+                         "CKMesh %s is truncated", (field_name)); \
+    } \
+} while (0)
 #include <string.h>
 #include <math.h>
 
@@ -473,7 +481,12 @@ static nmo_status_t nmo_mesh_deserialize_modern(
             NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read material group count");
         }
         
-        if (group_count > 0 && group_count < 10000) {
+        if (group_count < 0 || group_count >= 10000) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Invalid modern mesh material group count %d",
+                             group_count);
+        }
+        if (group_count > 0) {
             out_state->material_groups = (nmo_material_group_t *)nmo_arena_alloc(
                 arena, sizeof(nmo_material_group_t) * (uint32_t)group_count,
                 alignof(nmo_material_group_t));
@@ -525,7 +538,11 @@ static nmo_status_t nmo_mesh_deserialize_modern(
             NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read face count");
         }
         
-        if (face_count > 0 && face_count < 10000000) {
+        if (face_count < 0 || face_count >= 10000000) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Invalid modern mesh face count %d", face_count);
+        }
+        if (face_count > 0) {
             out_state->face_count = (uint32_t)face_count;
             out_state->faces = (nmo_face_t *)nmo_arena_alloc(
                 arena, sizeof(nmo_face_t) * face_count, alignof(nmo_face_t));
@@ -569,18 +586,29 @@ static nmo_status_t nmo_mesh_deserialize_modern(
     if (result == NMO_OK) {
         int32_t line_count;
         result = nmo_chunk_read_int(chunk, &line_count);
-        if (result == NMO_OK && line_count > 0 && line_count < 1000000) {
+        if (result != NMO_OK) {
+            NMO_RETURN_ERROR(result, NMO_SEVERITY_ERROR,
+                             "CKMesh modern line count is truncated");
+        }
+        if (line_count < 0 || line_count >= 1000000) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Invalid mesh line count");
+        }
+        if (line_count > 0) {
             out_state->line_count = (uint32_t)line_count;
             out_state->line_indices = (uint16_t *)nmo_arena_alloc(
                 arena, sizeof(uint16_t) * line_count * 2, alignof(uint16_t));
-            
-            if (out_state->line_indices) {
-                size_t expected_bytes = (size_t)line_count * 2u * sizeof(uint16_t);
-                size_t bytes_read = nmo_chunk_read_and_fill_buffer(
-                    chunk, out_state->line_indices, expected_bytes);
-                if (bytes_read == 0 && expected_bytes > 0) {
-                    NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read line indices buffer");
-                }
+            if (!out_state->line_indices) return NMO_ERR_NOMEM;
+            size_t expected_bytes = (size_t)line_count * 2u * sizeof(uint16_t);
+            size_t bytes_read = 0;
+            result = nmo_chunk_read_and_fill_buffer_checked(
+                chunk, out_state->line_indices, expected_bytes, &bytes_read);
+            if (result != NMO_OK) {
+                NMO_RETURN_ERROR(result, NMO_SEVERITY_ERROR,
+                                 "CKMesh modern line indices are truncated");
+            }
+            if (bytes_read != expected_bytes) {
+                NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read line indices buffer");
             }
         }
     }
@@ -590,57 +618,72 @@ static nmo_status_t nmo_mesh_deserialize_modern(
     if (result == NMO_OK) {
         int32_t channel_count;
         result = nmo_chunk_read_int(chunk, &channel_count);
-        if (result == NMO_OK && channel_count > 0 && channel_count < 100) {
+        if (result != NMO_OK) {
+            NMO_RETURN_ERROR(result, NMO_SEVERITY_ERROR,
+                             "CKMesh modern channel count is truncated");
+        }
+        if (channel_count < 0 || channel_count >= 100) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Invalid mesh material channel count");
+        }
+        if (channel_count > 0) {
             out_state->material_channel_count = (uint32_t)channel_count;
             out_state->material_channels = (nmo_material_channel_t *)nmo_arena_alloc(
                 arena, sizeof(nmo_material_channel_t) * channel_count,
                 alignof(nmo_material_channel_t));
-            
-            if (out_state->material_channels) {
-                memset(out_state->material_channels, 0,
-                       sizeof(nmo_material_channel_t) * out_state->material_channel_count);
-                for (uint32_t i = 0; i < out_state->material_channel_count; i++) {
+            if (!out_state->material_channels) return NMO_ERR_NOMEM;
+            memset(out_state->material_channels, 0,
+                   sizeof(nmo_material_channel_t) * out_state->material_channel_count);
+            for (uint32_t i = 0; i < out_state->material_channel_count; i++) {
                     nmo_material_channel_t *ch = &out_state->material_channels[i];
-                    
-                    result = nmo_chunk_read_object_id(chunk, &ch->material_id);
-                    if (result != NMO_OK) break;
-                    result = nmo_chunk_read_dword(chunk, &ch->flags);
-                    if (result != NMO_OK) break;
-                    result = nmo_chunk_read_dword(chunk, &ch->source_blend);
-                    if (result != NMO_OK) break;
-                    result = nmo_chunk_read_dword(chunk, &ch->dest_blend);
-                    if (result != NMO_OK) break;
+                    NMO_MESH_READ(nmo_chunk_read_object_id(chunk, &ch->material_id),
+                                  "modern channel material ID");
+                    NMO_MESH_READ(nmo_chunk_read_dword(chunk, &ch->flags),
+                                  "modern channel flags");
+                    NMO_MESH_READ(nmo_chunk_read_dword(chunk, &ch->source_blend),
+                                  "modern channel source blend");
+                    NMO_MESH_READ(nmo_chunk_read_dword(chunk, &ch->dest_blend),
+                                  "modern channel destination blend");
                     
                     int32_t uv_count;
-                    result = nmo_chunk_read_int(chunk, &uv_count);
-                    if (result != NMO_OK) break;
+                    NMO_MESH_READ(nmo_chunk_read_int(chunk, &uv_count),
+                                  "modern channel UV count");
                     
-                    if (uv_count > 0 && uv_count < 1000000) {
+                    if (uv_count < 0 || uv_count >= 1000000) {
+                        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT,
+                                         NMO_SEVERITY_ERROR,
+                                         "Invalid modern mesh UV count %d",
+                                         uv_count);
+                    }
+                    if (uv_count > 0) {
                         uint32_t alloc_uv_count = (out_state->vertex_count > 0)
                             ? out_state->vertex_count
                             : (uint32_t)uv_count;
+                        if (alloc_uv_count < (uint32_t)uv_count) {
+                            alloc_uv_count = (uint32_t)uv_count;
+                        }
                         ch->uv_count = alloc_uv_count;
                         ch->uv_coords = (nmo_vector2_t *)nmo_arena_alloc(
                             arena, sizeof(nmo_vector2_t) * alloc_uv_count,
                             alignof(nmo_vector2_t));
                         
-                        if (ch->uv_coords) {
-                            for (uint32_t j = 0; j < (uint32_t)uv_count; j++) {
-                                result = nmo_chunk_read_float(chunk, &ch->uv_coords[j].x);
-                                if (result != NMO_OK) break;
-                                result = nmo_chunk_read_float(chunk, &ch->uv_coords[j].y);
-                                if (result != NMO_OK) break;
-                            }
-                            for (uint32_t j = (uint32_t)uv_count; j < alloc_uv_count; j++) {
-                                ch->uv_coords[j].x = 0.0f;
-                                ch->uv_coords[j].y = 0.0f;
-                            }
+                        if (!ch->uv_coords) return NMO_ERR_NOMEM;
+                        for (uint32_t j = 0; j < (uint32_t)uv_count; j++) {
+                            NMO_MESH_READ(nmo_chunk_read_float(
+                                chunk, &ch->uv_coords[j].x),
+                                "modern channel UV x");
+                            NMO_MESH_READ(nmo_chunk_read_float(
+                                chunk, &ch->uv_coords[j].y),
+                                "modern channel UV y");
+                        }
+                        for (uint32_t j = (uint32_t)uv_count; j < alloc_uv_count; j++) {
+                            ch->uv_coords[j].x = 0.0f;
+                            ch->uv_coords[j].y = 0.0f;
                         }
                     } else {
                         ch->uv_coords = NULL;
                         ch->uv_count = 0;
                     }
-                }
             }
         }
     }
@@ -651,7 +694,15 @@ static nmo_status_t nmo_mesh_deserialize_modern(
         size_t weights_bytes_total = nmo_mesh_identifier_remaining_dwords(chunk) * 4u;
         int32_t weight_count;
         result = nmo_chunk_read_int(chunk, &weight_count);
-        if (result == NMO_OK && weight_count > 0 && weight_count < 10000000) {
+        if (result != NMO_OK) {
+            NMO_RETURN_ERROR(result, NMO_SEVERITY_ERROR,
+                             "CKMesh modern weight count is truncated");
+        }
+        if (weight_count < 0 || weight_count >= 10000000) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Invalid modern mesh weight count %d", weight_count);
+        }
+        if (weight_count > 0) {
             out_state->vertex_weight_count = (uint32_t)weight_count;
 
             size_t remaining_bytes = (weights_bytes_total > sizeof(uint32_t))
@@ -668,34 +719,52 @@ static nmo_status_t nmo_mesh_deserialize_modern(
             if (remaining_bytes == sizeof(float)) {
                 float uniform_weight = 0.0f;
                 result = nmo_chunk_read_float(chunk, &uniform_weight);
-                if (result != NMO_OK) return result;
+                if (result != NMO_OK) {
+                    NMO_RETURN_ERROR(result, NMO_SEVERITY_ERROR,
+                                     "CKMesh modern uniform weight is truncated");
+                }
                 for (int32_t i = 0; i < weight_count; ++i) {
                     out_state->vertex_weights[i] = uniform_weight;
                 }
             } else if (remaining_bytes >= (sizeof(uint32_t) + sizeof(float))) {
                 uint32_t peek = 0;
                 result = nmo_mesh_peek_dword(chunk, &peek);
-                if (result != NMO_OK) return result;
+                if (result != NMO_OK) {
+                    NMO_RETURN_ERROR(result, NMO_SEVERITY_ERROR,
+                                     "CKMesh modern weight payload is truncated");
+                }
 
                 if (peek == (uint32_t)(weight_count * sizeof(float))) {
                     uint32_t buffer_size = 0;
                     result = nmo_chunk_read_dword(chunk, &buffer_size);
-                    if (result != NMO_OK) return result;
+                    if (result != NMO_OK) {
+                        NMO_RETURN_ERROR(result, NMO_SEVERITY_ERROR,
+                                         "CKMesh modern weight buffer size is truncated");
+                    }
 
                     if (buffer_size > 0) {
                         result = nmo_mesh_read_raw_bytes(chunk, out_state->vertex_weights, buffer_size);
-                        if (result != NMO_OK) return result;
+                        if (result != NMO_OK) {
+                            NMO_RETURN_ERROR(result, NMO_SEVERITY_ERROR,
+                                             "CKMesh modern weight buffer is truncated");
+                        }
                     }
 
                     if (remaining_bytes >= (size_t)sizeof(uint32_t) + buffer_size + sizeof(float)) {
                         float tail_weight = 0.0f;
                         result = nmo_chunk_read_float(chunk, &tail_weight);
-                        if (result != NMO_OK) return result;
+                        if (result != NMO_OK) {
+                            NMO_RETURN_ERROR(result, NMO_SEVERITY_ERROR,
+                                             "CKMesh modern tail weight is truncated");
+                        }
                     }
                 } else {
                     float uniform_weight = 0.0f;
                     result = nmo_chunk_read_float(chunk, &uniform_weight);
-                    if (result != NMO_OK) return result;
+                    if (result != NMO_OK) {
+                        NMO_RETURN_ERROR(result, NMO_SEVERITY_ERROR,
+                                         "CKMesh modern uniform weight is truncated");
+                    }
                     for (int32_t i = 0; i < weight_count; ++i) {
                         out_state->vertex_weights[i] = uniform_weight;
                     }
@@ -709,20 +778,38 @@ static nmo_status_t nmo_mesh_deserialize_modern(
     if (result == NMO_OK) {
         int32_t mask_face_count;
         result = nmo_chunk_read_int(chunk, &mask_face_count);
-        if (result == NMO_OK && mask_face_count > 0) {
+        if (result != NMO_OK) {
+            NMO_RETURN_ERROR(result, NMO_SEVERITY_ERROR,
+                             "CKMesh modern face-mask count is truncated");
+        }
+        if (mask_face_count < 0) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Invalid modern mesh face-mask count %d",
+                             mask_face_count);
+        }
+        if (mask_face_count > 0) {
             uint32_t face_count = out_state->face_count;
             uint32_t pair_count = (uint32_t)mask_face_count / 2u;
             uint32_t remainder = (uint32_t)mask_face_count % 2u;
 
+            /* CKMesh deliberately tolerates an oversized saved mask count.
+             * Only the masks backed by loaded faces are applied. */
             if (face_count < (uint32_t)mask_face_count) {
                 pair_count = face_count / 2u;
                 remainder = 0u;
+            } else if (face_count > 0u && out_state->faces == NULL) {
+                NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED,
+                                 NMO_SEVERITY_ERROR,
+                                 "Modern mesh faces missing for channel masks");
             }
 
             for (uint32_t i = 0; i < pair_count; i++) {
                 uint32_t packed_masks;
                 result = nmo_chunk_read_dword(chunk, &packed_masks);
-                if (result != NMO_OK) break;
+                if (result != NMO_OK) {
+                    NMO_RETURN_ERROR(result, NMO_SEVERITY_ERROR,
+                                     "CKMesh modern face masks are truncated");
+                }
 
                 nmo_unpack_dword_to_words(packed_masks,
                     &out_state->faces[i * 2].channel_mask,
@@ -732,6 +819,10 @@ static nmo_status_t nmo_mesh_deserialize_modern(
             if (remainder) {
                 result = nmo_chunk_read_word(chunk,
                     &out_state->faces[(uint32_t)mask_face_count - 1u].channel_mask);
+                if (result != NMO_OK) {
+                    NMO_RETURN_ERROR(result, NMO_SEVERITY_ERROR,
+                                     "CKMesh modern trailing face mask is truncated");
+                }
             }
         }
     }
@@ -796,7 +887,11 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
         result = nmo_chunk_read_dword(chunk, &save_flags);
         if (result != NMO_OK) return result;
 
-        if (vertex_count > 0 && vertex_count < 1000000) {
+        if (vertex_count < 0 || vertex_count >= 1000000) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Invalid legacy mesh vertex count %d", vertex_count);
+        }
+        if (vertex_count > 0) {
             out_state->vertex_count = (uint32_t)vertex_count;
             out_state->vertices = (nmo_vertex_t *)nmo_arena_alloc(
                 arena, sizeof(nmo_vertex_t) * out_state->vertex_count,
@@ -851,7 +946,11 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
         result = nmo_chunk_read_int(chunk, &face_count);
         if (result != NMO_OK) return result;
 
-        if (face_count > 0 && face_count < 10000000) {
+        if (face_count < 0 || face_count >= 10000000) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Invalid legacy mesh face count %d", face_count);
+        }
+        if (face_count > 0) {
             out_state->face_count = (uint32_t)face_count;
             out_state->faces = (nmo_face_t *)nmo_arena_alloc(
                 arena, sizeof(nmo_face_t) * out_state->face_count,
@@ -890,7 +989,11 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
         result = nmo_chunk_read_int(chunk, &line_count);
         if (result != NMO_OK) return result;
 
-        if (line_count > 0 && line_count < 1000000) {
+        if (line_count < 0 || line_count >= 1000000) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Invalid legacy mesh line count %d", line_count);
+        }
+        if (line_count > 0) {
             out_state->line_count = (uint32_t)line_count;
             out_state->line_indices = (uint16_t *)nmo_arena_alloc(
                 arena, sizeof(uint16_t) * out_state->line_count * 2,
@@ -914,57 +1017,60 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_MESHCHANNELS) == NMO_OK) {
         int32_t channel_count;
         result = nmo_chunk_read_int(chunk, &channel_count);
-        if (result == NMO_OK && channel_count > 0 && channel_count < 100) {
+        if (result != NMO_OK) return result;
+        if (channel_count < 0 || channel_count >= 100) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Invalid legacy mesh channel count %d", channel_count);
+        }
+        if (channel_count > 0) {
             out_state->material_channel_count = (uint32_t)channel_count;
             out_state->material_channels = (nmo_material_channel_t *)nmo_arena_alloc(
                 arena, sizeof(nmo_material_channel_t) * out_state->material_channel_count,
                 alignof(nmo_material_channel_t));
 
-            if (out_state->material_channels) {
-                memset(out_state->material_channels, 0,
-                       sizeof(nmo_material_channel_t) * out_state->material_channel_count);
-                for (uint32_t i = 0; i < out_state->material_channel_count; i++) {
+            if (!out_state->material_channels) return NMO_ERR_NOMEM;
+            memset(out_state->material_channels, 0,
+                   sizeof(nmo_material_channel_t) * out_state->material_channel_count);
+            for (uint32_t i = 0; i < out_state->material_channel_count; i++) {
                     nmo_material_channel_t *ch = &out_state->material_channels[i];
 
-                    result = nmo_chunk_read_object_id(chunk, &ch->material_id);
-                    if (result != NMO_OK) break;
-                    result = nmo_chunk_read_dword(chunk, &ch->flags);
-                    if (result != NMO_OK) break;
-                    result = nmo_chunk_read_dword(chunk, &ch->source_blend);
-                    if (result != NMO_OK) break;
-                    result = nmo_chunk_read_dword(chunk, &ch->dest_blend);
-                    if (result != NMO_OK) break;
+                    NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &ch->material_id));
+                    NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &ch->flags));
+                    NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &ch->source_blend));
+                    NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &ch->dest_blend));
 
                     int32_t uv_count;
-                    result = nmo_chunk_read_int(chunk, &uv_count);
-                    if (result != NMO_OK) break;
+                    NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &uv_count));
+                    if (uv_count < 0 || uv_count >= 1000000) {
+                        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                         "Invalid legacy mesh UV count %d", uv_count);
+                    }
 
-                    if (uv_count > 0 && uv_count < 1000000) {
+                    if (uv_count > 0) {
                         uint32_t alloc_uv_count = (out_state->vertex_count > 0)
                             ? out_state->vertex_count
                             : (uint32_t)uv_count;
+                        if (alloc_uv_count < (uint32_t)uv_count) {
+                            alloc_uv_count = (uint32_t)uv_count;
+                        }
                         ch->uv_count = alloc_uv_count;
                         ch->uv_coords = (nmo_vector2_t *)nmo_arena_alloc(
                             arena, sizeof(nmo_vector2_t) * alloc_uv_count,
                             alignof(nmo_vector2_t));
 
-                        if (ch->uv_coords) {
-                            for (uint32_t j = 0; j < (uint32_t)uv_count; j++) {
-                                result = nmo_chunk_read_float(chunk, &ch->uv_coords[j].x);
-                                if (result != NMO_OK) break;
-                                result = nmo_chunk_read_float(chunk, &ch->uv_coords[j].y);
-                                if (result != NMO_OK) break;
-                            }
-                            for (uint32_t j = (uint32_t)uv_count; j < alloc_uv_count; j++) {
-                                ch->uv_coords[j].x = 0.0f;
-                                ch->uv_coords[j].y = 0.0f;
-                            }
+                        if (!ch->uv_coords) return NMO_ERR_NOMEM;
+                        for (uint32_t j = 0; j < (uint32_t)uv_count; j++) {
+                            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &ch->uv_coords[j].x));
+                            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &ch->uv_coords[j].y));
+                        }
+                        for (uint32_t j = (uint32_t)uv_count; j < alloc_uv_count; j++) {
+                            ch->uv_coords[j].x = 0.0f;
+                            ch->uv_coords[j].y = 0.0f;
                         }
                     } else {
                         ch->uv_coords = NULL;
                         ch->uv_count = 0;
                     }
-                }
             }
         }
     }
@@ -974,7 +1080,12 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
         size_t weights_bytes_total = nmo_mesh_identifier_remaining_dwords(chunk) * 4u;
         int32_t weight_count;
         result = nmo_chunk_read_int(chunk, &weight_count);
-        if (result == NMO_OK && weight_count > 0 && weight_count < 10000000) {
+        if (result != NMO_OK) return result;
+        if (weight_count < 0 || weight_count >= 10000000) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Invalid legacy mesh weight count %d", weight_count);
+        }
+        if (weight_count > 0) {
             out_state->vertex_weight_count = (uint32_t)weight_count;
             size_t remaining_bytes = (weights_bytes_total > sizeof(uint32_t))
                 ? (weights_bytes_total - sizeof(uint32_t))
@@ -1028,7 +1139,13 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_MESHFACECHANMASK) == NMO_OK) {
         int32_t mask_face_count;
         result = nmo_chunk_read_int(chunk, &mask_face_count);
-        if (result == NMO_OK && mask_face_count > 0) {
+        if (result != NMO_OK) return result;
+        if (mask_face_count < 0) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Invalid legacy mesh face-mask count %d",
+                             mask_face_count);
+        }
+        if (mask_face_count > 0) {
             uint32_t face_count = out_state->face_count;
             uint32_t pair_count = (uint32_t)mask_face_count / 2u;
             uint32_t remainder = (uint32_t)mask_face_count % 2u;
@@ -1036,12 +1153,16 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
             if (face_count < (uint32_t)mask_face_count) {
                 pair_count = face_count / 2u;
                 remainder = 0u;
+            } else if (face_count > 0u && out_state->faces == NULL) {
+                NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED,
+                                 NMO_SEVERITY_ERROR,
+                                 "Legacy mesh faces missing for channel masks");
             }
 
             for (uint32_t i = 0; i < pair_count; i++) {
                 uint32_t packed_masks;
                 result = nmo_chunk_read_dword(chunk, &packed_masks);
-                if (result != NMO_OK) break;
+                if (result != NMO_OK) return result;
 
                 nmo_unpack_dword_to_words(packed_masks,
                     &out_state->faces[i * 2].channel_mask,
@@ -1051,6 +1172,7 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
             if (remainder) {
                 result = nmo_chunk_read_word(chunk,
                     &out_state->faces[(uint32_t)mask_face_count - 1u].channel_mask);
+                if (result != NMO_OK) return result;
             }
         }
     }
@@ -1106,7 +1228,13 @@ nmo_status_t nmo_mesh_deserialize(
         ? nmo_mesh_deserialize_modern(chunk, arena, out_state)
         : nmo_mesh_deserialize_legacy(chunk, arena, out_state);
     if (result != NMO_OK) {
-        return result;
+        char detail[256];
+        size_t detail_len = nmo_last_error_message_copy(detail, sizeof(detail));
+        NMO_RETURN_ERROR(result, NMO_SEVERITY_ERROR,
+                         "CKMesh data version %u deserialization failed%s%s",
+                         data_version,
+                         detail_len > 0u ? ": " : "",
+                         detail_len > 0u ? detail : "");
     }
 
     nmo_mesh_recompute_bounds(out_state);
@@ -1555,16 +1683,10 @@ static nmo_status_t nmo_mesh_copy(
     const nmo_mesh_state_t *s = src;
     nmo_mesh_state_t *d = dst;
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
-    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->beobject.script_ids, &d->beobject.script_ids,
-                                        &s->beobject.script_ids.allocator));
-    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->beobject.attribute_parameter_ids,
-                                        &d->beobject.attribute_parameter_ids,
-                                        &s->beobject.attribute_parameter_ids.allocator));
-    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->beobject.attribute_types,
-                                        &d->beobject.attribute_types,
-                                        &s->beobject.attribute_types.allocator));
-    NMO_RETURN_IF_ERROR(nmo_object_clone_chunk_array(arena, &d->beobject.attribute_chunks,
-                                                     &s->beobject.attribute_chunks));
+    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->beobject.scripts, &d->beobject.scripts,
+                                        &s->beobject.scripts.allocator));
+    NMO_RETURN_IF_ERROR(nmo_beobject_clone_attributes(
+        arena, &d->beobject.attributes, &s->beobject.attributes));
 
     NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->faces,
                                               s->faces, sizeof(nmo_face_t), s->face_count));
@@ -1663,7 +1785,7 @@ nmo_status_t nmo_mesh_remap_dependencies(
     }
 
     nmo_mesh_state_t *mesh_state = (nmo_mesh_state_t *)state;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
+    (void)context;
 
     if (mesh_state->material_group_count > 0 && mesh_state->material_groups == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Missing material groups");
@@ -1672,37 +1794,8 @@ nmo_status_t nmo_mesh_remap_dependencies(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Missing material channels");
     }
 
-    if (repo) {
-        for (uint32_t i = 0; i < mesh_state->material_group_count; ++i) {
-            nmo_object_id_t id = mesh_state->material_groups[i].material_id;
-            if (id == NMO_OBJECT_ID_NONE) {
-                continue;
-            }
-            if (nmo_object_repository_find_by_id(repo, id) == NULL) {
-                mesh_state->material_groups[i].material_id = NMO_OBJECT_ID_NONE;
-            }
-        }
-
-        for (uint32_t i = 0; i < mesh_state->material_channel_count; ++i) {
-            nmo_material_channel_t *channel = &mesh_state->material_channels[i];
-            if (channel->material_id == NMO_OBJECT_ID_NONE) {
-                continue;
-            }
-            if (nmo_object_repository_find_by_id(repo, channel->material_id) == NULL) {
-                channel->material_id = NMO_OBJECT_ID_NONE;
-            }
-        }
-    }
-
-    if (mesh_state->faces && mesh_state->face_count > 0 && mesh_state->material_group_count > 0) {
-        for (uint32_t i = 0; i < mesh_state->face_count; ++i) {
-            if (mesh_state->faces[i].material_group_idx >= mesh_state->material_group_count) {
-                mesh_state->faces[i].material_group_idx = 0;
-            }
-        }
-    }
-
-    NMO_RETURN_OK();
+    /* Preserve material references and face group indices verbatim. */
+    return nmo_mesh_validate(mesh_state, NULL, NULL);
 }
 
 static nmo_status_t nmo_mesh_pre_delete(

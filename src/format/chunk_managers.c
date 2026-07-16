@@ -115,6 +115,12 @@ nmo_status_t nmo_chunk_start_manager_read_sequence(nmo_chunk_t *chunk,
         return result;
     }
 
+    if (!nmo_chunk_has_read_capacity(chunk, (size_t)count_u32)) {
+        state->current_pos = start_pos;
+        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                         "Manager sequence count exceeds remaining DWORDs");
+    }
+
     *out_count = (size_t)count_u32;
     NMO_RETURN_OK();
 }

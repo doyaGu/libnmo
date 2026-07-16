@@ -41,63 +41,6 @@ static const nmo_type_field_t nmo_parameterout_fields[] = {
     NMO_FIELD_REF_ARRAY_COUNTED(nmo_parameterout_state_t, destination_ids, destination_count)
 };
 
-static bool nmo_parameterout_is_valid_target(
-    void *context,
-    nmo_object_id_t object_id)
-{
-    if (object_id == 0) {
-        return false;
-    }
-
-    const nmo_type_registry_t *registry = nmo_deserialize_context_get_type_registry(context);
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)
-        nmo_deserialize_context_get_repository(context);
-
-    if (repo == NULL || registry == NULL) {
-        return true;
-    }
-
-    nmo_object_t *obj = nmo_object_repository_find_by_id(repo, object_id);
-    if (obj == NULL) {
-        return false;
-    }
-
-    {
-        uint32_t class_id = (uint32_t)nmo_object_get_class_id(obj);
-        return nmo_type_registry_is_class_derived_from(
-                   registry, class_id, (uint32_t)NMO_CID_PARAMETER) ||
-               class_id == (uint32_t)NMO_CID_PARAMETERIN;
-    }
-}
-
-static bool nmo_parameterout_is_valid_owner(
-    void *context,
-    nmo_object_id_t object_id)
-{
-    if (object_id == 0) {
-        return false;
-    }
-
-    const nmo_type_registry_t *registry = nmo_deserialize_context_get_type_registry(context);
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)
-        nmo_deserialize_context_get_repository(context);
-
-    if (repo == NULL || registry == NULL) {
-        return true;
-    }
-
-    nmo_object_t *obj = nmo_object_repository_find_by_id(repo, object_id);
-    if (obj == NULL) {
-        return false;
-    }
-
-    const uint32_t class_id = (uint32_t)nmo_object_get_class_id(obj);
-    return nmo_type_registry_is_class_derived_from(
-        registry, class_id, (uint32_t)NMO_CID_BEHAVIOR) ||
-        nmo_type_registry_is_class_derived_from(
-            registry, class_id, (uint32_t)NMO_CID_PARAMETEROPERATION);
-}
-
 /* =============================================================================
  * CKParameterOut DESERIALIZATION/SERIALIZATION
  * ============================================================================= */
@@ -126,42 +69,28 @@ nmo_status_t nmo_parameterout_deserialize(
     if (result != NMO_OK) return result;
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETEROUT_OWNER) == NMO_OK) {
-        nmo_object_id_t owner_id = 0;
-        nmo_chunk_read_object_id(chunk, &owner_id);
-        if (nmo_parameterout_is_valid_owner(context, owner_id)) {
-            out_state->owner_id = owner_id;
-        } else {
-            out_state->owner_id = 0;
-        }
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &out_state->owner_id));
     }
 
     /* Read destinations if present */
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETEROUT_DESTINATIONS) == NMO_OK) {
-        int32_t count;
+        int32_t count = 0;
         nmo_status_t result = nmo_chunk_read_int(chunk, &count);
-        if (result == NMO_OK && count > 0) {
+        if (result != NMO_OK) return result;
+        if (count < 0) return NMO_ERR_INVALID_FORMAT;
+        if (!nmo_chunk_has_read_capacity(chunk, (size_t)count)) {
+            return NMO_ERR_TRUNCATED_CHUNK;
+        }
+        if (count > 0) {
             nmo_object_id_t *dest_ids = (nmo_object_id_t *)nmo_arena_alloc(
                 arena, count * sizeof(nmo_object_id_t), _Alignof(nmo_object_id_t));
+            if (dest_ids == NULL) return NMO_ERR_NOMEM;
 
-            uint32_t actual = 0;
             for (int32_t i = 0; i < count; i++) {
-                nmo_object_id_t dest_id = 0;
-                nmo_chunk_read_object_id(chunk, &dest_id);
-                if (nmo_parameterout_is_valid_target(context, dest_id)) {
-                    if (dest_ids) {
-                        dest_ids[actual] = dest_id;
-                    }
-                    actual++;
-                }
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &dest_ids[i]));
             }
-
-            if (actual > 0 && dest_ids != NULL) {
-                out_state->destination_ids = dest_ids;
-                out_state->destination_count = actual;
-            } else {
-                out_state->destination_ids = NULL;
-                out_state->destination_count = 0;
-            }
+            out_state->destination_ids = dest_ids;
+            out_state->destination_count = (uint32_t)count;
         }
     }
 
@@ -291,52 +220,16 @@ nmo_status_t nmo_parameterout_remap_dependencies(
     }
 
     nmo_parameterout_state_t *state = (nmo_parameterout_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
 
     NMO_RETURN_IF_ERROR(nmo_object_remap_dependencies(&state->base.base, NULL, context));
     NMO_RETURN_IF_ERROR(nmo_parameter_remap_dependencies(&state->base, NULL, context));
-
-    if (state->owner_id != 0 && repo &&
-        nmo_object_repository_find_by_id(repo, state->owner_id) == NULL) {
-        state->owner_id = 0;
-    }
 
     if (state->destination_count > 0 && state->destination_ids == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "ParameterOut destination_ids missing");
     }
 
-    if (state->destination_count > 0 && state->destination_ids) {
-        uint32_t kept = 0;
-        for (uint32_t i = 0; i < state->destination_count; ++i) {
-            nmo_object_id_t id = state->destination_ids[i];
-            if (id == 0) {
-                continue;
-            }
-            if (repo && nmo_object_repository_find_by_id(repo, id) == NULL) {
-                continue;
-            }
-            bool seen = false;
-            for (uint32_t j = 0; j < kept; ++j) {
-                if (state->destination_ids[j] == id) {
-                    seen = true;
-                    break;
-                }
-            }
-            if (seen) {
-                continue;
-            }
-            state->destination_ids[kept++] = id;
-        }
-        state->destination_count = kept;
-        if (state->destination_count == 0) {
-            state->destination_ids = NULL;
-        }
-    } else {
-        state->destination_count = 0;
-        state->destination_ids = NULL;
-    }
-
+    /* Preserve unresolved destinations, duplicates, and owner IDs. */
     return nmo_parameterout_validate(state, NULL, NULL);
 }
 

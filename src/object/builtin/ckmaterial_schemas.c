@@ -104,10 +104,10 @@ nmo_status_t nmo_material_deserialize(
             float diffuse_a = 0.0f;
             nmo_color_t color;
 
-            nmo_chunk_read_float(chunk, &r);
-            nmo_chunk_read_float(chunk, &g);
-            nmo_chunk_read_float(chunk, &b);
-            nmo_chunk_read_float(chunk, &a);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &r));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &g));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &b));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &a));
             diffuse_a = a;
             color.r = r;
             color.g = g;
@@ -115,39 +115,39 @@ nmo_status_t nmo_material_deserialize(
             color.a = a;
             out_state->diffuse_color = nmo_color_to_argb32(&color);
 
-            nmo_chunk_read_float(chunk, &r);
-            nmo_chunk_read_float(chunk, &g);
-            nmo_chunk_read_float(chunk, &b);
-            nmo_chunk_read_float(chunk, &a);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &r));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &g));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &b));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &a));
             color.r = r;
             color.g = g;
             color.b = b;
             color.a = a;
             out_state->ambient_color = nmo_color_to_argb32(&color);
 
-            nmo_chunk_read_float(chunk, &r);
-            nmo_chunk_read_float(chunk, &g);
-            nmo_chunk_read_float(chunk, &b);
-            nmo_chunk_read_float(chunk, &a);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &r));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &g));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &b));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &a));
             color.r = r;
             color.g = g;
             color.b = b;
             color.a = a;
             out_state->specular_color = nmo_color_to_argb32(&color);
 
-            nmo_chunk_read_float(chunk, &r);
-            nmo_chunk_read_float(chunk, &g);
-            nmo_chunk_read_float(chunk, &b);
-            nmo_chunk_read_float(chunk, &a);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &r));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &g));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &b));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &a));
             color.r = r;
             color.g = g;
             color.b = b;
             color.a = a;
             out_state->emissive_color = nmo_color_to_argb32(&color);
 
-            nmo_chunk_read_float(chunk, &out_state->specular_power);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->specular_power));
 
-            nmo_chunk_read_object_id(chunk, &out_state->texture_ids[0]);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &out_state->texture_ids[0]));
 
             uint32_t low_flags = 0;
             uint32_t tex_blend = 0;
@@ -160,17 +160,17 @@ nmo_status_t nmo_material_deserialize(
             uint32_t tex_address = 0;
             uint32_t zfunc = 0;
 
-            nmo_chunk_read_dword(chunk, &low_flags);
-            nmo_chunk_read_dword(chunk, &tex_blend);
-            nmo_chunk_read_dword(chunk, &tex_min);
-            nmo_chunk_read_dword(chunk, &tex_mag);
-            nmo_chunk_read_dword(chunk, &src_blend);
-            nmo_chunk_read_dword(chunk, &dst_blend);
-            nmo_chunk_read_dword(chunk, &shade_mode);
-            nmo_chunk_read_dword(chunk, &fill_mode);
-            nmo_chunk_read_dword(chunk, &tex_address);
-            nmo_chunk_read_dword(chunk, &out_state->texture_border_color);
-            nmo_chunk_read_dword(chunk, &zfunc);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &low_flags));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &tex_blend));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &tex_min));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &tex_mag));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &src_blend));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &dst_blend));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &shade_mode));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &fill_mode));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &tex_address));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->texture_border_color));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &zfunc));
 
             if (zfunc == 0) {
                 zfunc = (uint32_t)VXCMP_LESSEQUAL;
@@ -217,15 +217,15 @@ nmo_status_t nmo_material_deserialize(
                 (((uint32_t)VXCMP_ALWAYS & 0xF) << 16) |
                 ((uint32_t)0 << 24);
         } else {
-            nmo_chunk_read_dword(chunk, &out_state->diffuse_color);
-            nmo_chunk_read_dword(chunk, &out_state->ambient_color);
-            nmo_chunk_read_dword(chunk, &out_state->specular_color);
-            nmo_chunk_read_dword(chunk, &out_state->emissive_color);
-            nmo_chunk_read_float(chunk, &out_state->specular_power);
-            nmo_chunk_read_object_id(chunk, &out_state->texture_ids[0]);
-            nmo_chunk_read_dword(chunk, &out_state->texture_border_color);
-            nmo_chunk_read_dword(chunk, &out_state->packed_modes);
-            nmo_chunk_read_dword(chunk, &out_state->packed_flags);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->diffuse_color));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->ambient_color));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->specular_color));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->emissive_color));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->specular_power));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &out_state->texture_ids[0]));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->texture_border_color));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->packed_modes));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->packed_flags));
             out_state->packed_flags = nmo_material_normalize_packed_flags(out_state->packed_flags);
 
             uint32_t alpha_func = (out_state->packed_flags >> 16) & 0xFu;
@@ -243,21 +243,21 @@ nmo_status_t nmo_material_deserialize(
     }
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_MATDATA2) == NMO_OK) {
-        nmo_chunk_read_object_id(chunk, &out_state->texture_ids[1]);
-        nmo_chunk_read_object_id(chunk, &out_state->texture_ids[2]);
-        nmo_chunk_read_object_id(chunk, &out_state->texture_ids[3]);
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &out_state->texture_ids[1]));
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &out_state->texture_ids[2]));
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &out_state->texture_ids[3]));
         out_state->has_additional_textures = 1;
     }
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_MATDATA3) == NMO_OK) {
-        nmo_chunk_read_dword(chunk, &out_state->effect);
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->effect));
         out_state->has_effect = 1;
         out_state->has_effect_param = 0;
     }
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_MATDATA5) == NMO_OK) {
-        nmo_chunk_read_object_id(chunk, &out_state->effect_parameter_id);
-        nmo_chunk_read_dword(chunk, &out_state->effect);
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &out_state->effect_parameter_id));
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->effect));
         out_state->has_effect = 1;
         out_state->has_effect_param = 1;
     }
@@ -285,45 +285,8 @@ nmo_status_t nmo_material_remap_dependencies(
                          "Invalid arguments to nmo_material_remap_dependencies");
     }
 
-    nmo_material_state_t *state = (nmo_material_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
-
-    if (repo) {
-        for (uint32_t i = 0; i < 4; ++i) {
-            nmo_object_id_t id = state->texture_ids[i];
-            if (id == NMO_OBJECT_ID_NONE) {
-                continue;
-            }
-            if (nmo_object_repository_find_by_id(repo, id) == NULL) {
-                state->texture_ids[i] = NMO_OBJECT_ID_NONE;
-            }
-        }
-
-        if (state->has_effect_param && state->effect_parameter_id != NMO_OBJECT_ID_NONE) {
-            if (nmo_object_repository_find_by_id(repo, state->effect_parameter_id) == NULL) {
-                state->effect_parameter_id = NMO_OBJECT_ID_NONE;
-                state->has_effect_param = 0;
-            }
-        }
-    }
-
-    if (state->effect == 0) {
-        state->has_effect = 0;
-        state->has_effect_param = 0;
-        state->effect_parameter_id = NMO_OBJECT_ID_NONE;
-    } else if (state->has_effect_param && state->effect_parameter_id == NMO_OBJECT_ID_NONE) {
-        state->has_effect_param = 0;
-    }
-
-    if (state->texture_ids[1] == NMO_OBJECT_ID_NONE &&
-        state->texture_ids[2] == NMO_OBJECT_ID_NONE &&
-        state->texture_ids[3] == NMO_OBJECT_ID_NONE) {
-        state->has_additional_textures = 0;
-    } else {
-        state->has_additional_textures = 1;
-    }
-
-    NMO_RETURN_OK();
+    (void)context;
+    return nmo_object_default_validate(instance, NULL, NULL);
 }
 
 static nmo_status_t nmo_material_pre_delete(
@@ -410,26 +373,26 @@ nmo_status_t nmo_material_serialize(
     nmo_status_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_MATDATA);
     if (result != NMO_OK) return result;
 
-    nmo_chunk_write_dword(chunk, state->diffuse_color);
-    nmo_chunk_write_dword(chunk, state->ambient_color);
-    nmo_chunk_write_dword(chunk, state->specular_color);
-    nmo_chunk_write_dword(chunk, state->emissive_color);
-    nmo_chunk_write_float(chunk, state->specular_power);
-    nmo_chunk_write_object_id(chunk, state->texture_ids[0]);
-    nmo_chunk_write_dword(chunk, state->texture_border_color);
-    nmo_chunk_write_dword(chunk, state->packed_modes);
-    nmo_chunk_write_dword(chunk, nmo_material_normalize_packed_flags(state->packed_flags));
+    NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(chunk, state->diffuse_color));
+    NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(chunk, state->ambient_color));
+    NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(chunk, state->specular_color));
+    NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(chunk, state->emissive_color));
+    NMO_RETURN_IF_ERROR(nmo_chunk_write_float(chunk, state->specular_power));
+    NMO_RETURN_IF_ERROR(nmo_chunk_write_object_id(chunk, state->texture_ids[0]));
+    NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(chunk, state->texture_border_color));
+    NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(chunk, state->packed_modes));
+    NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(chunk, nmo_material_normalize_packed_flags(state->packed_flags)));
 
     if (state->has_effect && state->effect != 0) {
         if (state->has_effect_param) {
             result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_MATDATA5);
             if (result != NMO_OK) return result;
-            nmo_chunk_write_object_id(chunk, state->effect_parameter_id);
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_object_id(chunk, state->effect_parameter_id));
         } else {
             result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_MATDATA3);
             if (result != NMO_OK) return result;
         }
-        nmo_chunk_write_dword(chunk, state->effect);
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(chunk, state->effect));
     }
 
     if (state->texture_ids[1] != NMO_OBJECT_ID_NONE ||
@@ -437,9 +400,9 @@ nmo_status_t nmo_material_serialize(
         state->texture_ids[3] != NMO_OBJECT_ID_NONE) {
         result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_MATDATA2);
         if (result != NMO_OK) return result;
-        nmo_chunk_write_object_id(chunk, state->texture_ids[1]);
-        nmo_chunk_write_object_id(chunk, state->texture_ids[2]);
-        nmo_chunk_write_object_id(chunk, state->texture_ids[3]);
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_object_id(chunk, state->texture_ids[1]));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_object_id(chunk, state->texture_ids[2]));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_object_id(chunk, state->texture_ids[3]));
     }
 
     NMO_RETURN_OK();

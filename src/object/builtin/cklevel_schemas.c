@@ -146,7 +146,7 @@ nmo_status_t nmo_level_deserialize(
         if (result != NMO_OK) return result;
         for (size_t i = 0; i < legacy_count; ++i) {
             nmo_object_id_t ignored_id = 0;
-            (void)nmo_chunk_read_object_sequence_item(chunk, &ignored_id);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_object_sequence_item(chunk, &ignored_id));
         }
 
         /* 2) Legacy XObjectPointerArray (empty in modern files) */
@@ -154,7 +154,7 @@ nmo_status_t nmo_level_deserialize(
         if (result != NMO_OK) return result;
         for (size_t i = 0; i < legacy_count; ++i) {
             nmo_object_id_t ignored_id = 0;
-            (void)nmo_chunk_read_object_sequence_item(chunk, &ignored_id);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_object_sequence_item(chunk, &ignored_id));
         }
 
         /* 3) Scene list (XObjectPointerArray::Save) */
@@ -162,76 +162,92 @@ nmo_status_t nmo_level_deserialize(
         result = nmo_chunk_read_object_sequence_start(chunk, &scene_count);
         if (result != NMO_OK) return result;
 
-        nmo_array_clear(&out_state->scene_ids);
+        nmo_array_t scene_ids;
+        result = nmo_array_init(&scene_ids, sizeof(nmo_object_id_t),
+                                scene_count, &out_state->scene_ids.allocator);
+        if (result != NMO_OK) return result;
         if (scene_count > 0) {
             const uint32_t MAX_SCENES = 10000;
             if (scene_count > MAX_SCENES) {
-                NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Scene count exceeds maximum");
+                nmo_array_dispose(&scene_ids);
+                NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                                 "Scene count exceeds maximum");
             }
 
-            result = nmo_array_reserve(&out_state->scene_ids, scene_count);
-            if (result != NMO_OK) return result;
-
-            nmo_object_id_t *scene_ids = NULL;
-            result = nmo_array_extend(&out_state->scene_ids, scene_count, (void **)&scene_ids);
-            if (result != NMO_OK) return result;
+            nmo_object_id_t *ids = NULL;
+            result = nmo_array_extend(&scene_ids, scene_count, (void **)&ids);
+            if (result != NMO_OK) {
+                nmo_array_dispose(&scene_ids);
+                return result;
+            }
 
             for (size_t i = 0; i < scene_count; i++) {
-                result = nmo_chunk_read_object_sequence_item(chunk, &scene_ids[i]);
+                result = nmo_chunk_read_object_sequence_item(chunk, &ids[i]);
                 if (result != NMO_OK) {
-                    out_state->scene_ids.count = i;
-                    break;
+                    nmo_array_dispose(&scene_ids);
+                    return result;
                 }
             }
         }
+        NMO_RETURN_IF_ERROR(nmo_array_swap(&out_state->scene_ids, &scene_ids));
+        nmo_array_dispose(&scene_ids);
     }
 
     /* Section 2: LEVELSCENE - Current scene + level scene */
     result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_LEVELSCENE);
     if (result == NMO_OK) {
+        nmo_object_id_t current_scene_id = NMO_OBJECT_ID_NONE;
+        nmo_object_id_t level_scene_id = NMO_OBJECT_ID_NONE;
+        nmo_chunk_t *level_scene_chunk = NULL;
+
         /* Read current scene ID */
-        result = nmo_chunk_read_object_id(chunk, &out_state->current_scene_id);
+        result = nmo_chunk_read_object_id(chunk, &current_scene_id);
         if (result != NMO_OK) return result;
 
         /* Read level scene ID */
-        result = nmo_chunk_read_object_id(chunk, &out_state->level_scene_id);
+        result = nmo_chunk_read_object_id(chunk, &level_scene_id);
         if (result != NMO_OK) return result;
 
         /* Read level scene sub-chunk */
-        result = nmo_chunk_read_sub_chunk(chunk, &out_state->level_scene_chunk);
-        if (result != NMO_OK) {
-            /* Sub-chunk missing is not fatal - level scene might be simple */
-            out_state->level_scene_chunk = NULL;
-        }
+        result = nmo_chunk_read_sub_chunk(chunk, &level_scene_chunk);
+        if (result != NMO_OK) return result;
+
+        out_state->current_scene_id = current_scene_id;
+        out_state->level_scene_id = level_scene_id;
+        out_state->level_scene_chunk = level_scene_chunk;
     }
 
     /* Section 3: LEVELINACTIVEMAN (optional) - Inactive manager GUIDs */
     result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_LEVELINACTIVEMAN);
     if (result == NMO_OK) {
-        out_state->has_inactive_manager_section = 1;
         size_t section_size_bytes = 0;
         result = nmo_chunk_identifier_payload_size_bytes(chunk, &section_size_bytes);
         if (result != NMO_OK) return result;
-
-        uint32_t guid_count = 0;
-        if (section_size_bytes > 0) {
-            guid_count = (uint32_t)(section_size_bytes / sizeof(nmo_guid_t));
+        if (section_size_bytes % sizeof(nmo_guid_t) != 0) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Inactive manager section has a partial GUID");
         }
 
-        nmo_array_clear(&out_state->inactive_manager_guids);
-        if (guid_count > 0) {
-            result = nmo_array_reserve(&out_state->inactive_manager_guids, guid_count);
-            if (result != NMO_OK) return result;
+        const uint32_t guid_count =
+            (uint32_t)(section_size_bytes / sizeof(nmo_guid_t));
 
+        nmo_array_t inactive_guids;
+        result = nmo_array_init(&inactive_guids, sizeof(nmo_guid_t), guid_count,
+                                &out_state->inactive_manager_guids.allocator);
+        if (result != NMO_OK) return result;
+        if (guid_count > 0) {
             nmo_guid_t *guids = NULL;
-            result = nmo_array_extend(&out_state->inactive_manager_guids, guid_count, (void **)&guids);
-            if (result != NMO_OK) return result;
+            result = nmo_array_extend(&inactive_guids, guid_count, (void **)&guids);
+            if (result != NMO_OK) {
+                nmo_array_dispose(&inactive_guids);
+                return result;
+            }
 
             for (uint32_t i = 0; i < guid_count; i++) {
                 result = nmo_chunk_read_guid(chunk, &guids[i]);
                 if (result != NMO_OK) {
-                    out_state->inactive_manager_guids.count = i;
-                    break;
+                    nmo_array_dispose(&inactive_guids);
+                    return result;
                 }
             }
         }
@@ -239,20 +255,50 @@ nmo_status_t nmo_level_deserialize(
         /* Section 4: LEVELDUPLICATEMAN (optional) - Duplicate manager names */
         result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_LEVELDUPLICATEMAN);
         if (result == NMO_OK) {
-            nmo_array_clear(&out_state->duplicate_manager_names);
+            nmo_array_t duplicate_names;
+            result = nmo_array_init(
+                &duplicate_names, sizeof(char *), 0,
+                &out_state->duplicate_manager_names.allocator);
+            if (result != NMO_OK) {
+                nmo_array_dispose(&inactive_guids);
+                return result;
+            }
+            nmo_array_set_lifecycle(
+                &duplicate_names, &out_state->duplicate_manager_names.lifecycle);
             for (;;) {
                 char *name = NULL;
-                size_t len = nmo_chunk_read_string(chunk, &name);
+                size_t len = 0;
+                result = nmo_chunk_read_string_checked(chunk, &name, &len);
+                if (result != NMO_OK) {
+                    nmo_array_dispose(&duplicate_names);
+                    nmo_array_dispose(&inactive_guids);
+                    return result;
+                }
                 if (len == 0 || name == NULL) {
                     break;
                 }
 
                 char **slot = NULL;
-                result = nmo_array_extend(&out_state->duplicate_manager_names, 1, (void **)&slot);
-                if (result != NMO_OK) return result;
+                result = nmo_array_extend(&duplicate_names, 1, (void **)&slot);
+                if (result != NMO_OK) {
+                    nmo_array_dispose(&duplicate_names);
+                    nmo_array_dispose(&inactive_guids);
+                    return result;
+                }
                 *slot = name;
             }
+            result = nmo_array_swap(
+                &out_state->duplicate_manager_names, &duplicate_names);
+            nmo_array_dispose(&duplicate_names);
+            if (result != NMO_OK) {
+                nmo_array_dispose(&inactive_guids);
+                return result;
+            }
         }
+        NMO_RETURN_IF_ERROR(nmo_array_swap(
+            &out_state->inactive_manager_guids, &inactive_guids));
+        nmo_array_dispose(&inactive_guids);
+        out_state->has_inactive_manager_section = 1;
     }
 
     NMO_RETURN_OK();
@@ -379,16 +425,10 @@ static nmo_status_t nmo_level_copy(
     const nmo_level_state_t *s = src;
     nmo_level_state_t *d = dst;
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
-    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->base.script_ids, &d->base.script_ids,
-                                        &s->base.script_ids.allocator));
-    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->base.attribute_parameter_ids,
-                                        &d->base.attribute_parameter_ids,
-                                        &s->base.attribute_parameter_ids.allocator));
-    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->base.attribute_types,
-                                        &d->base.attribute_types,
-                                        &s->base.attribute_types.allocator));
-    NMO_RETURN_IF_ERROR(nmo_object_clone_chunk_array(arena, &d->base.attribute_chunks,
-                                                     &s->base.attribute_chunks));
+    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->base.scripts, &d->base.scripts,
+                                        &s->base.scripts.allocator));
+    NMO_RETURN_IF_ERROR(nmo_beobject_clone_attributes(
+        arena, &d->base.attributes, &s->base.attributes));
 
     NMO_RETURN_IF_ERROR(nmo_array_clone(&s->scene_ids, &d->scene_ids, &s->scene_ids.allocator));
     NMO_RETURN_IF_ERROR(nmo_object_copy_chunk(arena, &d->level_scene_chunk, s->level_scene_chunk));
@@ -427,67 +467,13 @@ nmo_status_t nmo_level_remap_dependencies(
     }
 
     nmo_level_state_t *state = (nmo_level_state_t *)instance;
-    nmo_object_repository_t *repo = (nmo_object_repository_t *)context;
+    (void)context;
 
     if (state->scene_ids.count > 0 && state->scene_ids.data == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Level scene_ids missing");
     }
 
-    if (repo) {
-        if (state->current_scene_id != 0 &&
-            nmo_object_repository_find_by_id(repo, state->current_scene_id) == NULL) {
-            state->current_scene_id = 0;
-        }
-        if (state->level_scene_id != 0 &&
-            nmo_object_repository_find_by_id(repo, state->level_scene_id) == NULL) {
-            state->level_scene_id = 0;
-        }
-    }
-
-    if (state->scene_ids.count > 0) {
-        nmo_object_id_t *ids = NMO_ARRAY_DATA(nmo_object_id_t, &state->scene_ids);
-        uint32_t kept = 0;
-        for (uint32_t i = 0; i < state->scene_ids.count; ++i) {
-            nmo_object_id_t id = ids[i];
-            if (id == 0) {
-                continue;
-            }
-            if (repo && nmo_object_repository_find_by_id(repo, id) == NULL) {
-                continue;
-            }
-            ids[kept++] = id;
-        }
-        state->scene_ids.count = kept;
-    }
-
-    if (state->current_scene_id != 0) {
-        bool found = false;
-        for (uint32_t i = 0; i < state->scene_ids.count; ++i) {
-            nmo_object_id_t id = NMO_ARRAY_DATA(nmo_object_id_t, &state->scene_ids)[i];
-            if (id == state->current_scene_id) {
-                found = true;
-                break;
-            }
-        }
-        if (!found) {
-            state->current_scene_id = 0;
-        }
-    }
-
-    if (state->level_scene_id != 0) {
-        bool found = false;
-        for (uint32_t i = 0; i < state->scene_ids.count; ++i) {
-            nmo_object_id_t id = NMO_ARRAY_DATA(nmo_object_id_t, &state->scene_ids)[i];
-            if (id == state->level_scene_id) {
-                found = true;
-                break;
-            }
-        }
-        if (!found) {
-            state->level_scene_id = 0;
-        }
-    }
-
+    /* Keep unresolved scene references and original ordering intact. */
     return nmo_level_validate(state, NULL, NULL);
 }
 

@@ -46,7 +46,7 @@ typedef struct nmo_group_state {
     nmo_beobject_state_t base;      /**< CKBeObject base state */
     
     /* Object array */
-    nmo_array_t object_ids;           /**< Grouped object IDs (nmo_object_id_t) */
+    nmo_array_t object_ids;           /**< Grouped object references (nmo_ref_t) */
 } nmo_group_state_t;
 
 /* =============================================================================
