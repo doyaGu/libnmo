@@ -33,6 +33,7 @@
 #include "object/builtin/nmo_parameterlocal_schemas.h"
 #include "object/builtin/nmo_parameterout_schemas.h"
 #include "object/builtin/nmo_parameteroperation_schemas.h"
+#include "object/builtin/nmo_patchmesh_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_guids.h"
 #include "object/nmo_param_guids.h"
@@ -3663,6 +3664,334 @@ TEST(chunk_id_remap, character_refs_round_trip_and_failure_is_atomic) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, patchmesh_data3_refs_round_trip_and_failure_is_atomic) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+    ASSERT_NOT_NULL(arena);
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+    nmo_id_remap_t *file_to_runtime = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(file_to_runtime);
+    nmo_chunk_file_context_t read_context = {
+        .file_to_runtime = file_to_runtime,
+    };
+
+    nmo_patchmesh_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_patchmesh_vtable.create(&source, NULL, NULL));
+    source.format = CKPATCHMESH_FORMAT_DATA3;
+    source.patch_flags = 0x5A5A1234u;
+    source.iteration_count = 4;
+    source.vec_count = 7;
+
+    nmo_patchmesh_patch_record_t patch = {
+        .material = nmo_ref_from_raw(701),
+        .patch = {
+            .type = 0x11223344u,
+            .smoothing_group = 0x55667788u,
+        },
+    };
+    for (size_t i = 0; i < sizeof(patch.patch.data); ++i) {
+        patch.patch.data[i] = (uint8_t)(i + 1u);
+    }
+    source.patch_count = 1;
+    source.patches = &patch;
+
+    nmo_patchmesh_channel_t channel = {
+        .material = nmo_ref_from_raw(702),
+        .flags = 0x10203040u,
+        .type = 3,
+        .subtype = 9,
+    };
+    source.channel_count = 1;
+    source.channels = &channel;
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    chunk->class_id = NMO_CID_PATCHMESH;
+    chunk->chunk_version = NMO_CHUNK_VERSION4;
+    chunk->data_version = 7;
+    chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_patchmesh_serialize(
+        &source, chunk, NULL, &serialize_context));
+    nmo_chunk_close(chunk);
+    nmo_chunk_set_file_context(chunk, &read_context);
+
+    nmo_patchmesh_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_patchmesh_vtable.create(&loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_patchmesh_deserialize(
+        &loaded, chunk, NULL, &deserialize_context));
+    ASSERT_EQ(CKPATCHMESH_FORMAT_DATA3, loaded.format);
+    ASSERT_EQ(0x5A5A1234u, loaded.patch_flags);
+    ASSERT_EQ(1u, loaded.patch_count);
+    ASSERT_EQ(701u, loaded.patches[0].material.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, loaded.patches[0].material.state);
+    ASSERT_EQ(0x11223344u, loaded.patches[0].patch.type);
+    ASSERT_EQ(0x55667788u, loaded.patches[0].patch.smoothing_group);
+    ASSERT_EQ(1u, loaded.channel_count);
+    ASSERT_EQ(702u, loaded.channels[0].material.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, loaded.channels[0].material.state);
+    ASSERT_EQ(0x10203040u, loaded.channels[0].flags);
+
+    nmo_chunk_t *roundtrip = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(roundtrip);
+    roundtrip->class_id = NMO_CID_PATCHMESH;
+    roundtrip->chunk_version = NMO_CHUNK_VERSION4;
+    roundtrip->data_version = 7;
+    roundtrip->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_patchmesh_serialize(
+        &loaded, roundtrip, NULL, &serialize_context));
+    nmo_chunk_close(roundtrip);
+    nmo_chunk_set_file_context(roundtrip, &read_context);
+
+    nmo_patchmesh_state_t reloaded;
+    ASSERT_EQ(NMO_OK, nmo_patchmesh_vtable.create(&reloaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_patchmesh_deserialize(
+        &reloaded, roundtrip, NULL, &deserialize_context));
+    ASSERT_EQ(701u, reloaded.patches[0].material.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, reloaded.patches[0].material.state);
+    ASSERT_EQ(702u, reloaded.channels[0].material.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, reloaded.channels[0].material.state);
+
+    nmo_chunk_t *truncated = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(truncated);
+    truncated->class_id = NMO_CID_PATCHMESH;
+    truncated->chunk_version = NMO_CHUNK_VERSION4;
+    truncated->data_version = 7;
+    truncated->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(truncated));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        truncated, CK_STATESAVE_PATCHMESHDATA3));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(truncated, 0xDEADBEEFu));
+    nmo_chunk_close(truncated);
+    nmo_chunk_set_file_context(truncated, &read_context);
+
+    nmo_patchmesh_patch_record_t previous_patch = {
+        .material = nmo_ref_from_raw(901),
+    };
+    nmo_patchmesh_state_t failed;
+    ASSERT_EQ(NMO_OK, nmo_patchmesh_vtable.create(&failed, NULL, NULL));
+    failed.format = CKPATCHMESH_FORMAT_DATA2;
+    failed.patch_flags = 0xCAFEBABEu;
+    failed.patch_count = 1;
+    failed.patches = &previous_patch;
+    ASSERT_NE(NMO_OK, nmo_patchmesh_deserialize(
+        &failed, truncated, NULL, &deserialize_context));
+    ASSERT_EQ(CKPATCHMESH_FORMAT_DATA2, failed.format);
+    ASSERT_EQ(0xCAFEBABEu, failed.patch_flags);
+    ASSERT_EQ(&previous_patch, failed.patches);
+    ASSERT_EQ(1u, failed.patch_count);
+    ASSERT_EQ(901u, failed.patches[0].material.raw_id);
+
+    nmo_patchmesh_vtable.destroy(&source, NULL, NULL);
+    nmo_patchmesh_vtable.destroy(&loaded, NULL, NULL);
+    nmo_patchmesh_vtable.destroy(&reloaded, NULL, NULL);
+    nmo_patchmesh_vtable.destroy(&failed, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_id_remap, patchmesh_data2_layout_and_empty_sections_round_trip) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
+    ASSERT_NOT_NULL(arena);
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+    nmo_id_remap_t *file_to_runtime = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(file_to_runtime);
+    nmo_chunk_file_context_t read_context = {
+        .file_to_runtime = file_to_runtime,
+    };
+
+    nmo_ref_t legacy_material = nmo_ref_from_raw(712);
+    nmo_patchmesh_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_patchmesh_vtable.create(&source, NULL, NULL));
+    source.format = CKPATCHMESH_FORMAT_DATA2;
+    source.patch_flags = 0xA5A51234u;
+    source.legacy_default_material = nmo_ref_from_raw(711);
+    source.iteration_count = 5;
+    source.vec_count = 8;
+    source.has_legacy_smoothing = 1;
+    source.has_legacy_materials = 1;
+    source.legacy_material_count = 1;
+    source.legacy_materials = &legacy_material;
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    chunk->class_id = NMO_CID_PATCHMESH;
+    chunk->chunk_version = NMO_CHUNK_VERSION4;
+    chunk->data_version = 7;
+    chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_patchmesh_serialize(
+        &source, chunk, NULL, &serialize_context));
+    nmo_chunk_close(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
+        chunk, CK_STATESAVE_PATCHMESHDATA2));
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_chunk_seek_identifier(
+        chunk, CK_STATESAVE_PATCHMESHDATA3));
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
+        chunk, CK_STATESAVE_PATCHMESHSMOOTH));
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
+        chunk, CK_STATESAVE_PATCHMESHMATERIALS));
+    nmo_chunk_set_file_context(chunk, &read_context);
+
+    nmo_patchmesh_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_patchmesh_vtable.create(&loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_patchmesh_deserialize(
+        &loaded, chunk, NULL, &deserialize_context));
+    ASSERT_EQ(CKPATCHMESH_FORMAT_DATA2, loaded.format);
+    ASSERT_EQ(0xA5A51234u, loaded.patch_flags);
+    ASSERT_EQ(0u, loaded.patch_count);
+    ASSERT_EQ(NULL, loaded.patches);
+    ASSERT_EQ(711u, loaded.legacy_default_material.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, loaded.legacy_default_material.state);
+    ASSERT_TRUE(loaded.has_legacy_smoothing);
+    ASSERT_EQ(0u, loaded.legacy_smoothing_count);
+    ASSERT_TRUE(loaded.has_legacy_materials);
+    ASSERT_EQ(1u, loaded.legacy_material_count);
+    ASSERT_EQ(712u, loaded.legacy_materials[0].raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, loaded.legacy_materials[0].state);
+
+    nmo_chunk_t *roundtrip = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(roundtrip);
+    roundtrip->class_id = NMO_CID_PATCHMESH;
+    roundtrip->chunk_version = NMO_CHUNK_VERSION4;
+    roundtrip->data_version = 7;
+    roundtrip->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_patchmesh_serialize(
+        &loaded, roundtrip, NULL, &serialize_context));
+    nmo_chunk_close(roundtrip);
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
+        roundtrip, CK_STATESAVE_PATCHMESHDATA2));
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_chunk_seek_identifier(
+        roundtrip, CK_STATESAVE_PATCHMESHDATA3));
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
+        roundtrip, CK_STATESAVE_PATCHMESHSMOOTH));
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
+        roundtrip, CK_STATESAVE_PATCHMESHMATERIALS));
+    nmo_chunk_set_file_context(roundtrip, &read_context);
+
+    nmo_patchmesh_state_t reloaded;
+    ASSERT_EQ(NMO_OK, nmo_patchmesh_vtable.create(&reloaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_patchmesh_deserialize(
+        &reloaded, roundtrip, NULL, &deserialize_context));
+    ASSERT_EQ(CKPATCHMESH_FORMAT_DATA2, reloaded.format);
+    ASSERT_TRUE(reloaded.has_legacy_smoothing);
+    ASSERT_TRUE(reloaded.has_legacy_materials);
+    ASSERT_EQ(711u, reloaded.legacy_default_material.raw_id);
+    ASSERT_EQ(712u, reloaded.legacy_materials[0].raw_id);
+
+    nmo_patchmesh_vtable.destroy(&source, NULL, NULL);
+    nmo_patchmesh_vtable.destroy(&loaded, NULL, NULL);
+    nmo_patchmesh_vtable.destroy(&reloaded, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_id_remap, patchmesh_serializer_rejects_partial_state) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_patchmesh_state_t invalid = {0};
+    invalid.format = CKPATCHMESH_FORMAT_DATA3;
+    invalid.total_count = 1;
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    chunk->class_id = NMO_CID_PATCHMESH;
+    chunk->chunk_version = NMO_CHUNK_VERSION4;
+    chunk->data_version = 7;
+    chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0x12345678u));
+    nmo_chunk_close(chunk);
+    ASSERT_NE(NMO_OK, nmo_patchmesh_serialize(
+        &invalid, chunk, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(chunk));
+    uint32_t preserved = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(chunk, &preserved));
+    ASSERT_EQ(0x12345678u, preserved);
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_id_remap, patchmesh_copy_preserves_atomic_records) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
+    ASSERT_NOT_NULL(arena);
+    nmo_patchmesh_state_t source;
+    nmo_patchmesh_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_patchmesh_vtable.create(&source, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_patchmesh_vtable.create(&copied, NULL, NULL));
+
+    nmo_patchmesh_patch_record_t patch = {
+        .material = nmo_ref_from_raw(801),
+        .patch = {.type = 17, .smoothing_group = 23},
+    };
+    uint8_t channel_patches[8] = {1, 2, 3, 4, 5, 6, 7, 8};
+    nmo_vector2_t channel_uv = {.x = 1.25f, .y = 2.5f};
+    nmo_patchmesh_channel_t channel = {
+        .material = nmo_ref_from_raw(802),
+        .flags = 31,
+        .type = 37,
+        .subtype = 41,
+        .patch_count = 1,
+        .patches_raw = channel_patches,
+        .uv_count = 1,
+        .uvs = &channel_uv,
+    };
+    source.format = CKPATCHMESH_FORMAT_DATA3;
+    source.patch_count = 1;
+    source.patches = &patch;
+    source.channel_count = 1;
+    source.channels = &channel;
+
+    nmo_beobject_legacy_attribute_t legacy_attribute = {
+        .name = "LegacyName",
+        .category = "LegacyCategory",
+        .parameter_guid = {3u, 5u},
+        .compatible_class_id = NMO_CID_OBJECT,
+        .parameter = nmo_ref_from_raw(803),
+    };
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &source.base.beobject.legacy_attributes, &legacy_attribute));
+    source.base.beobject.has_legacy_attributes = 1;
+
+    const nmo_type_descriptor_t patchmesh_type = {
+        .size = sizeof(nmo_patchmesh_state_t),
+    };
+    ASSERT_EQ(NMO_OK, nmo_patchmesh_vtable.copy(
+        &source, &copied, &patchmesh_type, arena));
+    ASSERT_TRUE(copied.patches != source.patches);
+    ASSERT_TRUE(copied.channels != source.channels);
+    ASSERT_TRUE(copied.channels[0].patches_raw !=
+                source.channels[0].patches_raw);
+    ASSERT_TRUE(copied.channels[0].uvs != source.channels[0].uvs);
+    ASSERT_EQ(801u, copied.patches[0].material.raw_id);
+    ASSERT_EQ(17u, copied.patches[0].patch.type);
+    ASSERT_EQ(802u, copied.channels[0].material.raw_id);
+    ASSERT_EQ(1u, copied.base.beobject.legacy_attributes.count);
+    ASSERT_TRUE(copied.base.beobject.legacy_attributes.data !=
+                source.base.beobject.legacy_attributes.data);
+    const nmo_beobject_legacy_attribute_t *copied_legacy = NMO_ARRAY_DATA(
+        nmo_beobject_legacy_attribute_t,
+        &copied.base.beobject.legacy_attributes);
+    ASSERT_STR_EQ("LegacyName", copied_legacy[0].name);
+    ASSERT_STR_EQ("LegacyCategory", copied_legacy[0].category);
+    ASSERT_TRUE(copied_legacy[0].name != legacy_attribute.name);
+    ASSERT_TRUE(nmo_patchmesh_vtable.equals(&source, &copied));
+    ASSERT_EQ(nmo_patchmesh_vtable.hash(&source),
+              nmo_patchmesh_vtable.hash(&copied));
+
+    copied.patches[0].patch.type = 99;
+    ASSERT_FALSE(nmo_patchmesh_vtable.equals(&source, &copied));
+
+    nmo_patchmesh_vtable.destroy(&source, NULL, NULL);
+    nmo_patchmesh_vtable.destroy(&copied, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, legacy_unresolved_id_preserves_raw_id) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
@@ -3761,5 +4090,9 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, beobject_legacy_attributes_are_lossless_and_atomic);
     REGISTER_TEST(chunk_id_remap, beobject_copy_preserves_content_equality);
     REGISTER_TEST(chunk_id_remap, character_refs_round_trip_and_failure_is_atomic);
+    REGISTER_TEST(chunk_id_remap, patchmesh_data3_refs_round_trip_and_failure_is_atomic);
+    REGISTER_TEST(chunk_id_remap, patchmesh_data2_layout_and_empty_sections_round_trip);
+    REGISTER_TEST(chunk_id_remap, patchmesh_serializer_rejects_partial_state);
+    REGISTER_TEST(chunk_id_remap, patchmesh_copy_preserves_atomic_records);
     REGISTER_TEST(chunk_id_remap, legacy_unresolved_id_preserves_raw_id);
 TEST_MAIN_END()
