@@ -7,6 +7,7 @@
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_animation_schemas.h"
 #include "object/builtin/nmo_beobject_schemas.h"
+#include "object/builtin/nmo_character_schemas.h"
 #include "object/builtin/nmo_grid_schemas.h"
 #include "object/builtin/nmo_patchmesh_schemas.h"
 #include "object/builtin/nmo_scene_schemas.h"
@@ -219,6 +220,30 @@ static nmo_status_t runtime_remap_beobject_attributes(
     return NMO_OK;
 }
 
+static nmo_status_t runtime_remap_character_parts(
+    nmo_character_state_t *state,
+    const nmo_id_remap_t *remap)
+{
+    if (state == NULL) return NMO_OK;
+    if ((state->body_parts.element_size != 0 &&
+         state->body_parts.element_size != sizeof(nmo_character_part_t)) ||
+        (state->body_parts.count > 0 &&
+         (state->body_parts.data == NULL ||
+          state->body_parts.element_size != sizeof(nmo_character_part_t)))) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    nmo_character_part_t *parts = NMO_ARRAY_DATA(
+        nmo_character_part_t, &state->body_parts);
+    for (size_t i = 0; i < state->body_parts.count; ++i) {
+        nmo_object_id_t mapped = NMO_OBJECT_ID_NONE;
+        if (parts[i].ref.state == NMO_REF_RESOLVED &&
+            runtime_lookup_mapping(remap, parts[i].ref.id, &mapped)) {
+            parts[i].ref.id = mapped;
+        }
+    }
+    return NMO_OK;
+}
+
 static const void *runtime_get_base_instance(
     const nmo_type_registry_t *types,
     const nmo_type_descriptor_t *derived_type,
@@ -286,6 +311,10 @@ nmo_status_t nmo_runtime_remap_copy_refs(
         if (nmo_guid_equals(current->guid, CKPGUID_BEOBJECT)) {
             NMO_RETURN_IF_ERROR(runtime_remap_beobject_attributes(
                 (nmo_beobject_state_t *)current_instance, remap));
+        }
+        if (nmo_guid_equals(current->guid, CKPGUID_CHARACTER)) {
+            NMO_RETURN_IF_ERROR(runtime_remap_character_parts(
+                (nmo_character_state_t *)current_instance, remap));
         }
 
         if (nmo_guid_is_null(current->base_type)) {
@@ -584,6 +613,38 @@ static nmo_status_t normalize_grid_layers(
     return NMO_OK;
 }
 
+static nmo_status_t normalize_character_parts(
+    nmo_character_state_t *state,
+    nmo_object_repository_t *repo,
+    const nmo_type_registry_t *types,
+    size_t *changes)
+{
+    if (state == NULL) return NMO_OK;
+    if ((state->body_parts.element_size != 0 &&
+         state->body_parts.element_size != sizeof(nmo_character_part_t)) ||
+        (state->body_parts.count > 0 &&
+         (state->body_parts.data == NULL ||
+          state->body_parts.element_size != sizeof(nmo_character_part_t)))) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    for (size_t i = 0; i < state->body_parts.count;) {
+        nmo_character_part_t *parts = NMO_ARRAY_DATA(
+            nmo_character_part_t, &state->body_parts);
+        const nmo_object_id_t id = nmo_ref_runtime_id(&parts[i].ref);
+        if (parts[i].ref.state == NMO_REF_RESOLVED &&
+            !normalize_id_is_invalid(repo, id) &&
+            !normalize_id_has_wrong_class(
+                repo, types, id, NMO_CID_BODYPART)) {
+            ++i;
+            continue;
+        }
+        NMO_RETURN_IF_ERROR(nmo_array_remove(
+            &state->body_parts, i, NULL));
+        (*changes)++;
+    }
+    return NMO_OK;
+}
+
 static nmo_status_t normalize_scene_objects(
     nmo_scene_state_t *state,
     nmo_object_repository_t *repo,
@@ -854,6 +915,11 @@ nmo_status_t nmo_runtime_normalize_invalid_refs(
                 type_rt->types, obj, CKPGUID_BEOBJECT);
         NMO_RETURN_IF_ERROR(normalize_beobject_attributes(
             beobject, repo, &changed));
+        nmo_character_state_t *character = (nmo_character_state_t *)
+            nmo_type_query_object_get_ancestor_state_by_guid(
+                type_rt->types, obj, CKPGUID_CHARACTER);
+        NMO_RETURN_IF_ERROR(normalize_character_parts(
+            character, repo, type_rt->types, &changed));
         nmo_grid_state_t *grid = (nmo_grid_state_t *)
             nmo_type_query_object_get_ancestor_state_by_guid(
                 type_rt->types, obj, CKPGUID_GRID);

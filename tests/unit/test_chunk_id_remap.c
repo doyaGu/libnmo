@@ -11,6 +11,7 @@
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"
 #include "object/builtin/nmo_beobject_schemas.h"
+#include "object/builtin/nmo_character_schemas.h"
 #include "object/builtin/nmo_targetcamera_schemas.h"
 #include "object/builtin/nmo_targetlight_schemas.h"
 #include "object/builtin/nmo_kinematicchain_schemas.h"
@@ -44,6 +45,7 @@
 #include "core/nmo_arena.h"
 #include "core/nmo_allocator.h"
 #include "type/nmo_type_system.h"
+#include "type/nmo_reflection.h"
 #include <stdio.h>
 #include <assert.h>
 #include <string.h>
@@ -3388,6 +3390,279 @@ TEST(chunk_id_remap, beobject_copy_preserves_content_equality) {
     nmo_arena_destroy(source_arena);
 }
 
+TEST(chunk_id_remap, character_refs_round_trip_and_failure_is_atomic) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
+    ASSERT_NOT_NULL(arena);
+    nmo_serialize_context_t file_serialize_context =
+        nmo_serialize_context_create(
+            arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_deserialize_context_t file_deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+    nmo_deserialize_context_t runtime_deserialize_context =
+        nmo_deserialize_context_create(arena, NULL, NULL, 0);
+    nmo_id_remap_t *file_to_runtime = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(file_to_runtime);
+    nmo_chunk_file_context_t read_context = {
+        .file_to_runtime = file_to_runtime,
+    };
+
+    nmo_character_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_character_vtable.create(&source, NULL, NULL));
+    nmo_chunk_t *part_chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(part_chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(part_chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(part_chunk, 0x12345678));
+    nmo_chunk_close(part_chunk);
+    nmo_character_part_t part = {
+        .ref = nmo_ref_from_raw(501),
+        .chunk = part_chunk,
+    };
+    nmo_ref_t animation = nmo_ref_from_raw(601);
+    ASSERT_EQ(NMO_OK, nmo_array_append(&source.body_parts, &part));
+    ASSERT_EQ(NMO_OK, nmo_array_append(&source.animations, &animation));
+    source.active_animation = nmo_ref_from_raw(602);
+    source.anim_dest = nmo_ref_from_raw(603);
+    source.root_body_part = nmo_ref_from_raw(504);
+    source.floor_ref = nmo_ref_from_raw(505);
+
+    nmo_chunk_t *file_chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(file_chunk);
+    file_chunk->class_id = NMO_CID_CHARACTER;
+    file_chunk->data_version = 5;
+    file_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_character_serialize(
+        &source, file_chunk, NULL, &file_serialize_context));
+    nmo_chunk_close(file_chunk);
+    nmo_chunk_set_file_context(file_chunk, &read_context);
+
+    nmo_character_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_character_vtable.create(&loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_character_deserialize(
+        &loaded, file_chunk, NULL, &file_deserialize_context));
+    ASSERT_EQ(1u, loaded.body_parts.count);
+    ASSERT_EQ(1u, loaded.animations.count);
+    const nmo_character_part_t *loaded_parts = NMO_ARRAY_DATA(
+        nmo_character_part_t, &loaded.body_parts);
+    const nmo_ref_t *loaded_animations = NMO_ARRAY_DATA(
+        nmo_ref_t, &loaded.animations);
+    ASSERT_EQ(501u, loaded_parts[0].ref.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, loaded_parts[0].ref.state);
+    ASSERT_EQ(NULL, loaded_parts[0].chunk);
+    ASSERT_EQ(601u, loaded_animations[0].raw_id);
+    ASSERT_EQ(602u, loaded.active_animation.raw_id);
+    ASSERT_EQ(603u, loaded.anim_dest.raw_id);
+    ASSERT_EQ(504u, loaded.root_body_part.raw_id);
+    ASSERT_EQ(505u, loaded.floor_ref.raw_id);
+
+    nmo_chunk_t *file_roundtrip = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(file_roundtrip);
+    file_roundtrip->class_id = NMO_CID_CHARACTER;
+    file_roundtrip->data_version = 5;
+    file_roundtrip->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_character_serialize(
+        &loaded, file_roundtrip, NULL, &file_serialize_context));
+    nmo_chunk_close(file_roundtrip);
+    nmo_chunk_set_file_context(file_roundtrip, &read_context);
+    nmo_character_state_t reloaded;
+    ASSERT_EQ(NMO_OK, nmo_character_vtable.create(&reloaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_character_deserialize(
+        &reloaded, file_roundtrip, NULL, &file_deserialize_context));
+    ASSERT_EQ(501u, NMO_ARRAY_DATA(
+        nmo_character_part_t, &reloaded.body_parts)[0].ref.raw_id);
+    ASSERT_EQ(601u, NMO_ARRAY_DATA(
+        nmo_ref_t, &reloaded.animations)[0].raw_id);
+
+    nmo_serialize_context_t runtime_context = nmo_serialize_context_create(
+        arena, NULL, 0,
+        CK_STATESAVE_3DENTITYONLY | CK_STATESAVE_CHARACTERONLY |
+            CK_STATESAVE_CHARACTERSAVEPARTS);
+    nmo_chunk_t *runtime_chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(runtime_chunk);
+    runtime_chunk->class_id = NMO_CID_CHARACTER;
+    runtime_chunk->data_version = 5;
+    ASSERT_EQ(NMO_OK, nmo_character_serialize(
+        &source, runtime_chunk, NULL, &runtime_context));
+    nmo_chunk_close(runtime_chunk);
+    runtime_chunk->file_context = &read_context;
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
+        runtime_chunk, CK_STATESAVE_CHARACTERBODYPARTS));
+    size_t runtime_part_count = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_object_sequence_start(
+        runtime_chunk, &runtime_part_count));
+    ASSERT_EQ(1u, runtime_part_count);
+    nmo_ref_t runtime_part_ref;
+    ASSERT_EQ(NMO_OK, nmo_ref_read(runtime_chunk, &runtime_part_ref));
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
+        runtime_chunk, CK_STATESAVE_CHARACTERSAVEPARTS));
+    size_t runtime_chunk_count = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read_sub_chunk_sequence(
+        runtime_chunk, &runtime_chunk_count));
+    ASSERT_EQ(1u, runtime_chunk_count);
+    nmo_chunk_t *runtime_part_chunk = NULL;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_sub_chunk(
+        runtime_chunk, &runtime_part_chunk));
+    ASSERT_NOT_NULL(runtime_part_chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
+        runtime_chunk, CK_STATESAVE_CHARACTERONLY));
+    size_t runtime_scalar_count = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_object_sequence_start(
+        runtime_chunk, &runtime_scalar_count));
+    ASSERT_EQ(4u, runtime_scalar_count);
+    for (size_t i = 0; i < runtime_scalar_count; ++i) {
+        nmo_ref_t scalar_ref;
+        ASSERT_EQ(NMO_OK, nmo_ref_read(runtime_chunk, &scalar_ref));
+    }
+    nmo_3dentity_state_t runtime_base = {0};
+    ASSERT_EQ(NMO_OK, nmo_3dentity_deserialize(
+        &runtime_base, runtime_chunk, NULL, &runtime_deserialize_context));
+    nmo_character_state_t runtime_loaded;
+    ASSERT_EQ(NMO_OK, nmo_character_vtable.create(
+        &runtime_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_character_deserialize(
+        &runtime_loaded, runtime_chunk, NULL,
+        &runtime_deserialize_context));
+    const nmo_character_part_t *runtime_parts = NMO_ARRAY_DATA(
+        nmo_character_part_t, &runtime_loaded.body_parts);
+    ASSERT_EQ(1u, runtime_loaded.body_parts.count);
+    ASSERT_EQ(501u, runtime_parts[0].ref.raw_id);
+    ASSERT_NOT_NULL(runtime_parts[0].chunk);
+
+    nmo_character_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_character_vtable.create(&copied, NULL, NULL));
+    const nmo_type_field_t character_copy_fields[] = {
+        NMO_FIELD_ARRAY(nmo_character_state_t, body_parts, CKPGUID_NONE),
+        NMO_FIELD_REF_RECORD_ARRAY(nmo_character_state_t, animations),
+    };
+    nmo_type_descriptor_t character_type = {
+        .size = sizeof(nmo_character_state_t),
+        .fields = character_copy_fields,
+        .field_count = sizeof(character_copy_fields) /
+            sizeof(character_copy_fields[0]),
+    };
+    ASSERT_EQ(NMO_OK, nmo_character_vtable.copy(
+        &source, &copied, &character_type, arena));
+    ASSERT_TRUE(nmo_character_vtable.equals(&source, &copied));
+    ASSERT_EQ(nmo_character_vtable.hash(&source),
+              nmo_character_vtable.hash(&copied));
+    const nmo_character_part_t *copied_parts = NMO_ARRAY_DATA(
+        nmo_character_part_t, &copied.body_parts);
+    ASSERT_TRUE(copied_parts[0].chunk != part_chunk);
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(part_chunk));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(copied_parts[0].chunk));
+
+    nmo_character_state_t failed;
+    ASSERT_EQ(NMO_OK, nmo_character_vtable.create(&failed, NULL, NULL));
+    nmo_character_part_t previous = {
+        .ref = nmo_ref_from_raw(901),
+    };
+    ASSERT_EQ(NMO_OK, nmo_array_append(&failed.body_parts, &previous));
+    void *previous_data = failed.body_parts.data;
+    nmo_chunk_t *truncated = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(truncated);
+    truncated->class_id = NMO_CID_CHARACTER;
+    truncated->data_version = 5;
+    truncated->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(truncated));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        truncated, CK_STATESAVE_CHARACTERBODYPARTS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(truncated, 1));
+    nmo_chunk_close(truncated);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_character_deserialize(
+        &failed, truncated, NULL, &file_deserialize_context));
+    ASSERT_EQ(previous_data, failed.body_parts.data);
+    ASSERT_EQ(1u, failed.body_parts.count);
+    ASSERT_EQ(901u, NMO_ARRAY_DATA(
+        nmo_character_part_t, &failed.body_parts)[0].ref.raw_id);
+
+    nmo_chunk_t *invalid_scalar_count = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(invalid_scalar_count);
+    invalid_scalar_count->class_id = NMO_CID_CHARACTER;
+    invalid_scalar_count->data_version = 5;
+    invalid_scalar_count->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(invalid_scalar_count));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        invalid_scalar_count, CK_STATESAVE_CHARACTERONLY));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(
+        invalid_scalar_count, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(
+        invalid_scalar_count, 5));
+    for (size_t i = 0; i < 5; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_sequence_item(
+            invalid_scalar_count, NMO_OBJECT_ID_NONE));
+    }
+    nmo_chunk_close(invalid_scalar_count);
+    nmo_chunk_set_file_context(invalid_scalar_count, &read_context);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_character_deserialize(
+        &failed, invalid_scalar_count, NULL, &file_deserialize_context));
+    ASSERT_EQ(previous_data, failed.body_parts.data);
+    ASSERT_EQ(1u, failed.body_parts.count);
+    ASSERT_EQ(901u, NMO_ARRAY_DATA(
+        nmo_character_part_t, &failed.body_parts)[0].ref.raw_id);
+
+    nmo_character_state_t allocation_failed;
+    ASSERT_EQ(NMO_OK, nmo_character_vtable.create(
+        &allocation_failed, NULL, NULL));
+    nmo_allocator_t original_allocator =
+        allocation_failed.body_parts.allocator;
+    allocation_failed.body_parts.allocator = nmo_allocator_custom(
+        beobject_fail_alloc, beobject_fail_free, NULL);
+    ASSERT_EQ(NMO_ERR_NOMEM, nmo_character_deserialize(
+        &allocation_failed, file_chunk, NULL,
+        &file_deserialize_context));
+    ASSERT_EQ(0u, allocation_failed.body_parts.count);
+    ASSERT_EQ(NULL, allocation_failed.body_parts.data);
+    allocation_failed.body_parts.allocator = original_allocator;
+
+    nmo_character_state_t invalid = {0};
+    invalid.body_parts.count = 1;
+    invalid.body_parts.element_size = sizeof(nmo_character_part_t);
+    nmo_chunk_t *partial = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(partial);
+    partial->class_id = NMO_CID_CHARACTER;
+    partial->data_version = 5;
+    partial->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, nmo_character_serialize(
+        &invalid, partial, NULL, &file_serialize_context));
+    ASSERT_EQ(0u, nmo_chunk_get_data_size(partial));
+
+    nmo_bodypart_state_t bodypart = {0};
+    bodypart.has_character = 1;
+    bodypart.character = nmo_ref_from_raw(701);
+    nmo_chunk_t *bodypart_chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(bodypart_chunk);
+    bodypart_chunk->class_id = NMO_CID_BODYPART;
+    bodypart_chunk->data_version = 5;
+    bodypart_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_bodypart_serialize(
+        &bodypart, bodypart_chunk, NULL, &file_serialize_context));
+    nmo_chunk_close(bodypart_chunk);
+    nmo_chunk_set_file_context(bodypart_chunk, &read_context);
+    nmo_bodypart_state_t bodypart_loaded = {0};
+    ASSERT_EQ(NMO_OK, nmo_bodypart_deserialize(
+        &bodypart_loaded, bodypart_chunk, NULL,
+        &file_deserialize_context));
+    ASSERT_EQ(1, bodypart_loaded.has_character);
+    ASSERT_EQ(701u, bodypart_loaded.character.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, bodypart_loaded.character.state);
+
+    nmo_array_dispose(&source.body_parts);
+    nmo_array_dispose(&source.animations);
+    nmo_array_dispose(&loaded.body_parts);
+    nmo_array_dispose(&loaded.animations);
+    nmo_array_dispose(&reloaded.body_parts);
+    nmo_array_dispose(&reloaded.animations);
+    nmo_array_dispose(&runtime_loaded.body_parts);
+    nmo_array_dispose(&runtime_loaded.animations);
+    nmo_array_dispose(&copied.body_parts);
+    nmo_array_dispose(&copied.animations);
+    nmo_array_dispose(&failed.body_parts);
+    nmo_array_dispose(&failed.animations);
+    nmo_array_dispose(&allocation_failed.body_parts);
+    nmo_array_dispose(&allocation_failed.animations);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, legacy_unresolved_id_preserves_raw_id) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
@@ -3485,5 +3760,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, beobject_attribute_failure_keeps_previous_atomic_state);
     REGISTER_TEST(chunk_id_remap, beobject_legacy_attributes_are_lossless_and_atomic);
     REGISTER_TEST(chunk_id_remap, beobject_copy_preserves_content_equality);
+    REGISTER_TEST(chunk_id_remap, character_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, legacy_unresolved_id_preserves_raw_id);
 TEST_MAIN_END()

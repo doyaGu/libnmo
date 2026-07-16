@@ -19,6 +19,7 @@
 #include "object/builtin/nmo_2dentity_schemas.h"
 #include "object/builtin/nmo_attributemanager_schemas.h"
 #include "object/builtin/nmo_camera_schemas.h"
+#include "object/builtin/nmo_character_schemas.h"
 #include "object/builtin/nmo_interfaceobjectmanager_schemas.h"
 #include "object/builtin/nmo_light_schemas.h"
 #include "object/builtin/nmo_level_schemas.h"
@@ -1511,6 +1512,143 @@ TEST(runtime_kernel, serializer_failure_does_not_reuse_raw_chunk) {
     nmo_context_release(ctx);
 }
 
+TEST(runtime_kernel, copy_remap_preserves_invalid_character_references) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    const nmo_type_runtime_t *type_rt = nmo_context_get_type_runtime(ctx);
+    const nmo_type_descriptor_t *character_type =
+        nmo_type_registry_find_by_class_id(type_rt->types, NMO_CID_CHARACTER);
+    ASSERT_NOT_NULL(character_type);
+
+    nmo_character_state_t state = {0};
+    ASSERT_EQ(NMO_OK, nmo_array_init(
+        &state.body_parts, sizeof(nmo_character_part_t), 0, NULL));
+    ASSERT_EQ(NMO_OK, nmo_array_init(
+        &state.animations, sizeof(nmo_ref_t), 0, NULL));
+
+    nmo_arena_t *chunk_arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(chunk_arena);
+    nmo_chunk_t *part_chunk = nmo_chunk_create(chunk_arena);
+    ASSERT_NOT_NULL(part_chunk);
+    nmo_character_part_t parts[] = {
+        {.ref = nmo_ref_from_id(101), .chunk = part_chunk},
+        {.ref = nmo_ref_from_raw(102), .chunk = NULL},
+    };
+    nmo_ref_t animations[] = {
+        nmo_ref_from_id(103),
+        nmo_ref_from_raw(104),
+    };
+    ASSERT_EQ(NMO_OK, nmo_array_append_array(&state.body_parts, parts, 2));
+    ASSERT_EQ(NMO_OK, nmo_array_append_array(&state.animations, animations, 2));
+    state.active_animation = nmo_ref_from_id(105);
+    state.anim_dest = nmo_ref_from_raw(106);
+    state.root_body_part = nmo_ref_from_id(107);
+    state.floor_ref = nmo_ref_from_raw(108);
+
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_id_remap_t *remap = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(remap);
+    for (nmo_object_id_t old_id = 101; old_id <= 108; ++old_id) {
+        ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, old_id, old_id + 100));
+    }
+
+    ASSERT_EQ(NMO_OK, nmo_runtime_remap_copy_refs(
+        type_rt, character_type, &state, remap));
+    nmo_character_part_t *remapped_parts = NMO_ARRAY_DATA(
+        nmo_character_part_t, &state.body_parts);
+    nmo_ref_t *remapped_animations = NMO_ARRAY_DATA(
+        nmo_ref_t, &state.animations);
+    ASSERT_EQ(201u, nmo_ref_runtime_id(&remapped_parts[0].ref));
+    ASSERT_EQ(101u, remapped_parts[0].ref.raw_id);
+    ASSERT_EQ(part_chunk, remapped_parts[0].chunk);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, remapped_parts[1].ref.state);
+    ASSERT_EQ(102u, remapped_parts[1].ref.raw_id);
+    ASSERT_EQ(203u, nmo_ref_runtime_id(&remapped_animations[0]));
+    ASSERT_EQ(103u, remapped_animations[0].raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, remapped_animations[1].state);
+    ASSERT_EQ(104u, remapped_animations[1].raw_id);
+    ASSERT_EQ(205u, nmo_ref_runtime_id(&state.active_animation));
+    ASSERT_EQ(105u, state.active_animation.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, state.anim_dest.state);
+    ASSERT_EQ(106u, state.anim_dest.raw_id);
+    ASSERT_EQ(207u, nmo_ref_runtime_id(&state.root_body_part));
+    ASSERT_EQ(107u, state.root_body_part.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, state.floor_ref.state);
+    ASSERT_EQ(108u, state.floor_ref.raw_id);
+
+    nmo_array_dispose(&state.animations);
+    nmo_array_dispose(&state.body_parts);
+    nmo_chunk_destroy(part_chunk);
+    nmo_arena_destroy(chunk_arena);
+    nmo_arena_destroy(arena);
+    nmo_context_release(ctx);
+}
+
+TEST(runtime_kernel, normalize_and_safe_detach_keep_character_parts_atomic) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_id_t character_id = 0;
+    nmo_object_id_t bodypart_id = 0;
+    nmo_object_id_t wrong_class_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_CHARACTER, "character", (nmo_guid_t){0, 0},
+        &character_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_BODYPART, "bodypart", (nmo_guid_t){0, 0},
+        &bodypart_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_OBJECT, "wrong-class", (nmo_guid_t){0, 0},
+        &wrong_class_id, NULL));
+
+    nmo_character_state_t *character = (nmo_character_state_t *)
+        nmo_object_repository_find_by_id(repo, character_id)->state;
+    ASSERT_NOT_NULL(character);
+    nmo_arena_t *chunk_arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(chunk_arena);
+    nmo_chunk_t *valid_chunk = nmo_chunk_create(chunk_arena);
+    nmo_chunk_t *unresolved_chunk = nmo_chunk_create(chunk_arena);
+    nmo_chunk_t *wrong_class_chunk = nmo_chunk_create(chunk_arena);
+    ASSERT_NOT_NULL(valid_chunk);
+    ASSERT_NOT_NULL(unresolved_chunk);
+    ASSERT_NOT_NULL(wrong_class_chunk);
+    nmo_character_part_t parts[] = {
+        {.ref = nmo_ref_from_id(bodypart_id), .chunk = valid_chunk},
+        {.ref = nmo_ref_from_raw(0x7FFFFF01u), .chunk = unresolved_chunk},
+        {.ref = nmo_ref_from_id(wrong_class_id), .chunk = wrong_class_chunk},
+    };
+    ASSERT_EQ(NMO_OK, nmo_array_append_array(&character->body_parts, parts, 3));
+
+    size_t changed = 0;
+    ASSERT_EQ(NMO_OK, nmo_runtime_normalize_invalid_refs(
+        repo, nmo_context_get_type_runtime(ctx), &changed));
+    ASSERT_EQ(2u, changed);
+    ASSERT_EQ(1u, character->body_parts.count);
+    nmo_character_part_t *remaining = NMO_ARRAY_DATA(
+        nmo_character_part_t, &character->body_parts);
+    ASSERT_EQ(bodypart_id, nmo_ref_runtime_id(&remaining[0].ref));
+    ASSERT_EQ(valid_chunk, remaining[0].chunk);
+
+    nmo_runtime_report_t report = {0};
+    ASSERT_EQ(NMO_OK, nmo_session_destroy_objects(
+        session, &bodypart_id, 1,
+        NMO_RUNTIME_REQUEST_STRICT | NMO_RUNTIME_REQUEST_SAFE_DETACH,
+        &report));
+    ASSERT_EQ(1u, report.deleted_objects);
+    character = (nmo_character_state_t *)
+        nmo_object_repository_find_by_id(repo, character_id)->state;
+    ASSERT_EQ(0u, character->body_parts.count);
+
+    nmo_session_destroy(session);
+    nmo_arena_destroy(chunk_arena);
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(runtime_kernel, execute_create_and_delete);
 REGISTER_TEST(runtime_kernel, invalid_execute_arguments);
@@ -1533,5 +1671,7 @@ REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_parameteroperatio
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_parameterout_refs);
 REGISTER_TEST(runtime_kernel, dependency_remap_preserves_nonreference_state);
 REGISTER_TEST(runtime_kernel, serializer_failure_does_not_reuse_raw_chunk);
+REGISTER_TEST(runtime_kernel, copy_remap_preserves_invalid_character_references);
+REGISTER_TEST(runtime_kernel, normalize_and_safe_detach_keep_character_parts_atomic);
 TEST_MAIN_END()
 

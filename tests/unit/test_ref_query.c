@@ -9,6 +9,7 @@
 #include "object/nmo_class_ids.h"
 #include "object/builtin/nmo_group_schemas.h"
 #include "object/builtin/nmo_scene_schemas.h"
+#include "object/builtin/nmo_character_schemas.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_ref_graph.h"
 #include "format/nmo_object.h"
@@ -289,12 +290,53 @@ TEST(ref_query, legacy_beobject_attribute_reference_is_enumerated) {
     nmo_context_release(ctx);
 }
 
+TEST(ref_query, character_part_reference_is_enumerated) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_document_t *document = nmo_document_create(ctx);
+    ASSERT_NOT_NULL(document);
+    nmo_session_t *session = nmo_document_internal_session(document);
+    ASSERT_NOT_NULL(session);
+
+    nmo_object_id_t character_id = 0;
+    nmo_object_id_t bodypart_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_CHARACTER, "character", (nmo_guid_t){0, 0},
+        &character_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_BODYPART, "bodypart", (nmo_guid_t){0, 0},
+        &bodypart_id, NULL));
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_character_state_t *character = (nmo_character_state_t *)
+        nmo_object_repository_find_by_id(repo, character_id)->state;
+    ASSERT_NOT_NULL(character);
+    nmo_character_part_t part = {
+        .ref = nmo_ref_from_id(bodypart_id),
+    };
+    ASSERT_EQ(NMO_OK, nmo_array_append(&character->body_parts, &part));
+    nmo_session_invalidate_ref_graph(session);
+
+    nmo_ref_graph_t *graph = nmo_session_get_ref_graph(session);
+    ASSERT_NOT_NULL(graph);
+    nmo_ref_edge_t *edges = NULL;
+    size_t edge_count = 0;
+    ASSERT_EQ(NMO_OK, nmo_ref_graph_get_object_edges(
+        graph, character_id, NMO_REF_DIR_OUTGOING, &edges, &edge_count));
+    ASSERT_EQ(1u, edge_count);
+    ASSERT_EQ(bodypart_id, edges[0].to);
+
+    nmo_document_destroy(document);
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(ref_query, counts_session_references_without_graph_handles);
     REGISTER_TEST(ref_query, reports_broken_reference_count);
     REGISTER_TEST(ref_query, visits_edges_without_exposing_graph_handles);
     REGISTER_TEST(ref_query, scene_base_references_are_enumerated_once);
     REGISTER_TEST(ref_query, legacy_beobject_attribute_reference_is_enumerated);
+    REGISTER_TEST(ref_query, character_part_reference_is_enumerated);
 TEST_MAIN_END()
 
 

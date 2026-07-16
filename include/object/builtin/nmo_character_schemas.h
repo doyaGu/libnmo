@@ -10,6 +10,8 @@
 #include "object/builtin/nmo_3dobject_schemas.h"
 #include "object/nmo_object_struct_defs.h"
 #include "object/nmo_object_type_common.h"
+#include "object/nmo_ref.h"
+#include "core/nmo_array.h"
 #include "core/nmo_math.h"
 #include "nmo_types.h"
 
@@ -26,22 +28,21 @@ typedef struct nmo_type_descriptor nmo_type_descriptor_t;
 /**
  * @brief CKCharacter state
  */
+typedef struct nmo_character_part {
+    nmo_ref_t ref;
+    nmo_chunk_t *chunk;
+} nmo_character_part_t;
+
 typedef struct nmo_character_state {
     nmo_3dentity_state_t base;
 
-    uint32_t body_part_count;
-    nmo_object_id_t *body_part_ids;
+    nmo_array_t body_parts;                 /**< nmo_character_part_t */
+    nmo_array_t animations;                 /**< nmo_ref_t */
 
-    uint32_t animation_count;
-    nmo_object_id_t *animation_ids;
-
-    nmo_object_id_t active_animation_id;
-    nmo_object_id_t anim_dest_id;
-    nmo_object_id_t root_body_part_id;
-    nmo_object_id_t floor_ref_id;
-
-    uint32_t subpart_count;
-    nmo_character_subpart_t *subparts;
+    nmo_ref_t active_animation;
+    nmo_ref_t anim_dest;
+    nmo_ref_t root_body_part;
+    nmo_ref_t floor_ref;
 } nmo_character_state_t;
 
 /**
@@ -51,7 +52,7 @@ typedef struct nmo_bodypart_state {
     nmo_3dobject_state_t base;
 
     uint8_t has_character;
-    nmo_object_id_t character_id;
+    nmo_ref_t character;
 
     uint8_t has_rotation_joint;
     nmo_ik_joint_t rotation_joint;

@@ -328,7 +328,6 @@ static bool runtime_delete_is_atomic_ref_field(
     if (type == NULL || field == NULL || field->name == NULL) return false;
     return strcmp(field->name, "patch_material_ids") == 0 ||
            strcmp(field->name, "legacy_material_ids") == 0 ||
-           strcmp(field->name, "body_part_ids") == 0 ||
            strcmp(field->name, "control_point_ids") == 0 ||
            (nmo_guid_equals(type->guid, CKPGUID_KEYEDANIMATION) &&
             strcmp(field->name, "animation_ids") == 0);
@@ -572,10 +571,12 @@ static nmo_status_t runtime_delete_validate_atomic_refs(
         nmo_type_query_object_get_ancestor_state_by_guid(
             type_rt->types, obj, CKPGUID_CHARACTER);
     if (character != NULL &&
-        ((character->body_part_count > 0u && character->body_part_ids == NULL) ||
-         (character->subpart_count != 0u &&
-          (character->subpart_count != character->body_part_count ||
-           character->subparts == NULL)))) {
+        ((character->body_parts.element_size != 0u &&
+          character->body_parts.element_size != sizeof(nmo_character_part_t)) ||
+         (character->body_parts.count > 0u &&
+          (character->body_parts.data == NULL ||
+           character->body_parts.element_size !=
+               sizeof(nmo_character_part_t))))) {
         return NMO_ERR_VALIDATION_FAILED;
     }
 
@@ -676,31 +677,16 @@ static nmo_status_t runtime_delete_detach_atomic_refs(
         nmo_type_query_object_get_ancestor_state_by_guid(
             type_rt->types, obj, CKPGUID_CHARACTER);
     if (character != NULL) {
-        uint32_t count = character->body_part_count;
-        for (uint32_t i = 0u; i < count;) {
-            if (!runtime_id_set_contains(delete_set, character->body_part_ids[i])) {
-                ++i;
+        for (size_t i = character->body_parts.count; i > 0u; --i) {
+            nmo_character_part_t *parts = NMO_ARRAY_DATA(
+                nmo_character_part_t, &character->body_parts);
+            size_t index = i - 1u;
+            if (!runtime_id_set_contains(
+                    delete_set, nmo_ref_runtime_id(&parts[index].ref))) {
                 continue;
             }
-            if (character->subpart_count != 0u &&
-                character->subparts[i].chunk != NULL) {
-                nmo_chunk_destroy(character->subparts[i].chunk);
-                character->subparts[i].chunk = NULL;
-            }
-            uint32_t remaining = count - i - 1u;
-            if (remaining > 0u) {
-                memmove(&character->body_part_ids[i],
-                        &character->body_part_ids[i + 1u],
-                        (size_t)remaining * sizeof(*character->body_part_ids));
-                if (character->subpart_count != 0u) {
-                    memmove(&character->subparts[i],
-                            &character->subparts[i + 1u],
-                            (size_t)remaining * sizeof(*character->subparts));
-                }
-            }
-            --count;
-            character->body_part_count = count;
-            if (character->subpart_count != 0u) character->subpart_count = count;
+            NMO_RETURN_IF_ERROR(nmo_array_remove(
+                &character->body_parts, index, NULL));
         }
     }
 
