@@ -247,11 +247,54 @@ TEST(ref_query, scene_base_references_are_enumerated_once) {
     nmo_context_release(ctx);
 }
 
+TEST(ref_query, legacy_beobject_attribute_reference_is_enumerated) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_document_t *document = nmo_document_create(ctx);
+    ASSERT_NOT_NULL(document);
+    nmo_session_t *session = nmo_document_internal_session(document);
+    ASSERT_NOT_NULL(session);
+
+    nmo_object_id_t parameter_id = 0;
+    nmo_object_id_t group_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_PARAMETER, "parameter", (nmo_guid_t){0, 0},
+        &parameter_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_GROUP, "group", (nmo_guid_t){0, 0},
+        &group_id, NULL));
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_group_state_t *group = (nmo_group_state_t *)
+        nmo_object_repository_find_by_id(repo, group_id)->state;
+    ASSERT_NOT_NULL(group);
+    nmo_beobject_legacy_attribute_t attribute = {
+        .parameter = nmo_ref_from_id(parameter_id),
+    };
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &group->base.legacy_attributes, &attribute));
+    nmo_session_invalidate_ref_graph(session);
+
+    nmo_ref_graph_t *graph = nmo_session_get_ref_graph(session);
+    ASSERT_NOT_NULL(graph);
+    nmo_ref_edge_t *edges = NULL;
+    size_t edge_count = 0;
+    ASSERT_EQ(NMO_OK, nmo_ref_graph_get_object_edges(
+        graph, group_id, NMO_REF_DIR_OUTGOING, &edges, &edge_count));
+    ASSERT_EQ(1u, edge_count);
+    ASSERT_EQ(parameter_id, edges[0].to);
+    ASSERT_EQ(NMO_REF_KIND_PARAMETER, edges[0].kind);
+
+    nmo_document_destroy(document);
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(ref_query, counts_session_references_without_graph_handles);
     REGISTER_TEST(ref_query, reports_broken_reference_count);
     REGISTER_TEST(ref_query, visits_edges_without_exposing_graph_handles);
     REGISTER_TEST(ref_query, scene_base_references_are_enumerated_once);
+    REGISTER_TEST(ref_query, legacy_beobject_attribute_reference_is_enumerated);
 TEST_MAIN_END()
 
 

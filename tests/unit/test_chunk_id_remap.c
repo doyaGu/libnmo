@@ -48,6 +48,19 @@
 #include <assert.h>
 #include <string.h>
 
+static void *beobject_fail_alloc(void *user_data, size_t size,
+                                 size_t alignment) {
+    (void)user_data;
+    (void)size;
+    (void)alignment;
+    return NULL;
+}
+
+static void beobject_fail_free(void *user_data, void *ptr) {
+    (void)user_data;
+    (void)ptr;
+}
+
 TEST(chunk_id_remap, id_remap_basic) {
     nmo_arena_t* arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
@@ -3050,6 +3063,288 @@ TEST(chunk_id_remap, beobject_attribute_failure_keeps_previous_atomic_state) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, beobject_legacy_attributes_are_lossless_and_atomic) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
+    ASSERT_NOT_NULL(arena);
+    nmo_id_remap_t *file_to_runtime = nmo_id_remap_create(arena);
+    nmo_id_remap_t *runtime_to_file = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(file_to_runtime);
+    ASSERT_NOT_NULL(runtime_to_file);
+    nmo_chunk_file_context_t write_context = {
+        .runtime_to_file = runtime_to_file,
+    };
+    nmo_chunk_file_context_t read_context = {
+        .file_to_runtime = file_to_runtime,
+    };
+
+    nmo_beobject_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(&source, NULL, NULL));
+    source.has_legacy_attributes = 1;
+    nmo_beobject_legacy_attribute_t source_attribute = {
+        .compatible_class_id = 12,
+        .name = "LegacyName",
+        .category = "LegacyCategory",
+        .parameter_guid = {0x12345678u, 0x9ABCDEF0u},
+        .parameter = nmo_ref_from_raw(777),
+    };
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &source.legacy_attributes, &source_attribute));
+
+    nmo_beobject_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(&copied, NULL, NULL));
+    nmo_type_descriptor_t beobject_type = {
+        .size = sizeof(nmo_beobject_state_t),
+    };
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.copy(
+        &source, &copied, &beobject_type, arena));
+    ASSERT_TRUE(nmo_beobject_vtable.equals(&source, &copied));
+    ASSERT_EQ(nmo_beobject_vtable.hash(&source),
+              nmo_beobject_vtable.hash(&copied));
+    const nmo_beobject_legacy_attribute_t *copied_attributes =
+        NMO_ARRAY_DATA(
+            nmo_beobject_legacy_attribute_t,
+            &copied.legacy_attributes);
+    ASSERT_TRUE(copied_attributes[0].name != source_attribute.name);
+    ASSERT_TRUE(copied_attributes[0].category != source_attribute.category);
+    ASSERT_STR_EQ("LegacyName", copied_attributes[0].name);
+    ASSERT_STR_EQ("LegacyCategory", copied_attributes[0].category);
+
+    nmo_chunk_t *first = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(first);
+    first->class_id = NMO_CID_BEOBJECT;
+    first->data_version = 7;
+    first->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(first, &write_context);
+    ASSERT_EQ(NMO_OK, nmo_beobject_serialize(
+        &source, first, NULL, NULL));
+    nmo_chunk_close(first);
+    nmo_chunk_set_file_context(first, &read_context);
+
+    nmo_beobject_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(&loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_deserialize(
+        &loaded, first, NULL, NULL));
+    ASSERT_EQ(1, loaded.has_legacy_attributes);
+    ASSERT_EQ(1u, loaded.legacy_attributes.count);
+    const nmo_beobject_legacy_attribute_t *loaded_attributes =
+        NMO_ARRAY_DATA(
+            nmo_beobject_legacy_attribute_t,
+            &loaded.legacy_attributes);
+    ASSERT_EQ(12, loaded_attributes[0].compatible_class_id);
+    ASSERT_STR_EQ("LegacyName", loaded_attributes[0].name);
+    ASSERT_STR_EQ("LegacyCategory", loaded_attributes[0].category);
+    ASSERT_TRUE(nmo_guid_equals(
+        source_attribute.parameter_guid,
+        loaded_attributes[0].parameter_guid));
+    ASSERT_EQ(777u, loaded_attributes[0].parameter.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, loaded_attributes[0].parameter.state);
+
+    nmo_chunk_t *second = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(second);
+    second->class_id = NMO_CID_BEOBJECT;
+    second->data_version = 7;
+    second->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(second, &write_context);
+    ASSERT_EQ(NMO_OK, nmo_beobject_serialize(
+        &loaded, second, NULL, NULL));
+    nmo_chunk_close(second);
+    nmo_chunk_set_file_context(second, &read_context);
+
+    nmo_beobject_state_t reloaded;
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(&reloaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_deserialize(
+        &reloaded, second, NULL, NULL));
+    const nmo_beobject_legacy_attribute_t *reloaded_attributes =
+        NMO_ARRAY_DATA(
+            nmo_beobject_legacy_attribute_t,
+            &reloaded.legacy_attributes);
+    ASSERT_EQ(1u, reloaded.legacy_attributes.count);
+    ASSERT_EQ(777u, reloaded_attributes[0].parameter.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, reloaded_attributes[0].parameter.state);
+
+    nmo_beobject_state_t failed;
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(&failed, NULL, NULL));
+    nmo_beobject_legacy_attribute_t previous_attribute = {
+        .compatible_class_id = 7,
+        .name = "Previous",
+        .category = "State",
+        .parameter = nmo_ref_from_raw(901),
+    };
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &failed.legacy_attributes, &previous_attribute));
+    failed.has_legacy_attributes = 1;
+    void *previous_data = failed.legacy_attributes.data;
+
+    nmo_chunk_t *truncated = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(truncated);
+    truncated->class_id = NMO_CID_BEOBJECT;
+    truncated->data_version = 7;
+    truncated->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(truncated));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        truncated, CK_STATESAVE_ATTRIBUTES));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(truncated, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(truncated, 8));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_string(truncated, "Truncated"));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_string(truncated, "Attribute"));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_guid(
+        truncated, (nmo_guid_t){1u, 2u}));
+    nmo_chunk_close(truncated);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_beobject_deserialize(
+        &failed, truncated, NULL, NULL));
+    ASSERT_EQ(previous_data, failed.legacy_attributes.data);
+    ASSERT_EQ(1u, failed.legacy_attributes.count);
+    ASSERT_EQ(901u, NMO_ARRAY_DATA(
+        nmo_beobject_legacy_attribute_t,
+        &failed.legacy_attributes)[0].parameter.raw_id);
+
+    nmo_chunk_t *negative_count = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(negative_count);
+    negative_count->class_id = NMO_CID_BEOBJECT;
+    negative_count->data_version = 7;
+    negative_count->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(negative_count));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        negative_count, CK_STATESAVE_ATTRIBUTES));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(negative_count, -1));
+    nmo_chunk_close(negative_count);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_beobject_deserialize(
+        &failed, negative_count, NULL, NULL));
+    ASSERT_EQ(previous_data, failed.legacy_attributes.data);
+
+    nmo_beobject_state_t allocation_failed;
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(
+        &allocation_failed, NULL, NULL));
+    nmo_allocator_t original_allocator =
+        allocation_failed.legacy_attributes.allocator;
+    allocation_failed.legacy_attributes.allocator = nmo_allocator_custom(
+        beobject_fail_alloc, beobject_fail_free, NULL);
+
+    nmo_chunk_t *impossible_count = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(impossible_count);
+    impossible_count->class_id = NMO_CID_BEOBJECT;
+    impossible_count->data_version = 7;
+    impossible_count->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(impossible_count));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        impossible_count, CK_STATESAVE_ATTRIBUTES));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(impossible_count, 2));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(impossible_count, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(impossible_count, 1));
+    nmo_chunk_close(impossible_count);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_beobject_deserialize(
+        &allocation_failed, impossible_count, NULL, NULL));
+    ASSERT_EQ(0u, allocation_failed.legacy_attributes.count);
+    ASSERT_EQ(NULL, allocation_failed.legacy_attributes.data);
+    ASSERT_EQ(0, allocation_failed.has_legacy_attributes);
+
+    ASSERT_EQ(NMO_ERR_NOMEM, nmo_beobject_deserialize(
+        &allocation_failed, first, NULL, NULL));
+    ASSERT_EQ(0u, allocation_failed.legacy_attributes.count);
+    ASSERT_EQ(NULL, allocation_failed.legacy_attributes.data);
+    ASSERT_EQ(0, allocation_failed.has_legacy_attributes);
+    allocation_failed.legacy_attributes.allocator = original_allocator;
+
+    nmo_beobject_state_t empty;
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(&empty, NULL, NULL));
+    empty.has_legacy_attributes = 1;
+    nmo_chunk_t *empty_chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(empty_chunk);
+    empty_chunk->class_id = NMO_CID_BEOBJECT;
+    empty_chunk->data_version = 7;
+    empty_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_beobject_serialize(
+        &empty, empty_chunk, NULL, NULL));
+    nmo_chunk_close(empty_chunk);
+    nmo_beobject_state_t empty_loaded;
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(
+        &empty_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_deserialize(
+        &empty_loaded, empty_chunk, NULL, NULL));
+    ASSERT_EQ(1, empty_loaded.has_legacy_attributes);
+    ASSERT_EQ(0u, empty_loaded.legacy_attributes.count);
+
+    nmo_beobject_state_t old_source;
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(
+        &old_source, NULL, NULL));
+    old_source.has_legacy_attributes = 1;
+    old_source.legacy_attr_old_version = 1;
+    nmo_beobject_legacy_attribute_t old_attribute = {
+        .name = "OldName",
+        .category = "OldCategory",
+        .parameter_guid = {3u, 4u},
+        .parameter = nmo_ref_from_raw(778),
+    };
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &old_source.legacy_attributes, &old_attribute));
+    nmo_chunk_t *old_chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(old_chunk);
+    old_chunk->class_id = NMO_CID_BEOBJECT;
+    old_chunk->data_version = 4;
+    old_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(old_chunk, &write_context);
+    ASSERT_EQ(NMO_OK, nmo_beobject_serialize(
+        &old_source, old_chunk, NULL, NULL));
+    nmo_chunk_close(old_chunk);
+    nmo_chunk_set_file_context(old_chunk, &read_context);
+    nmo_beobject_state_t old_loaded;
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(
+        &old_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_deserialize(
+        &old_loaded, old_chunk, NULL, NULL));
+    ASSERT_EQ(1, old_loaded.legacy_attr_old_version);
+    ASSERT_EQ(1u, old_loaded.legacy_attributes.count);
+    const nmo_beobject_legacy_attribute_t *old_loaded_attributes =
+        NMO_ARRAY_DATA(
+            nmo_beobject_legacy_attribute_t,
+            &old_loaded.legacy_attributes);
+    ASSERT_STR_EQ("OldName", old_loaded_attributes[0].name);
+    ASSERT_EQ(778u, old_loaded_attributes[0].parameter.raw_id);
+
+    nmo_beobject_state_t invalid = {0};
+    invalid.has_legacy_attributes = 1;
+    nmo_chunk_t *partial = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(partial);
+    partial->class_id = NMO_CID_BEOBJECT;
+    partial->data_version = 7;
+    partial->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, nmo_beobject_serialize(
+        &invalid, partial, NULL, NULL));
+    ASSERT_EQ(0u, nmo_chunk_get_data_size(partial));
+
+    nmo_array_dispose(&source.scripts);
+    nmo_array_dispose(&source.attributes);
+    nmo_array_dispose(&source.legacy_attributes);
+    nmo_array_dispose(&copied.scripts);
+    nmo_array_dispose(&copied.attributes);
+    nmo_array_dispose(&copied.legacy_attributes);
+    nmo_array_dispose(&loaded.scripts);
+    nmo_array_dispose(&loaded.attributes);
+    nmo_array_dispose(&loaded.legacy_attributes);
+    nmo_array_dispose(&reloaded.scripts);
+    nmo_array_dispose(&reloaded.attributes);
+    nmo_array_dispose(&reloaded.legacy_attributes);
+    nmo_array_dispose(&failed.scripts);
+    nmo_array_dispose(&failed.attributes);
+    nmo_array_dispose(&failed.legacy_attributes);
+    nmo_array_dispose(&allocation_failed.scripts);
+    nmo_array_dispose(&allocation_failed.attributes);
+    nmo_array_dispose(&allocation_failed.legacy_attributes);
+    nmo_array_dispose(&empty.scripts);
+    nmo_array_dispose(&empty.attributes);
+    nmo_array_dispose(&empty.legacy_attributes);
+    nmo_array_dispose(&empty_loaded.scripts);
+    nmo_array_dispose(&empty_loaded.attributes);
+    nmo_array_dispose(&empty_loaded.legacy_attributes);
+    nmo_array_dispose(&old_source.scripts);
+    nmo_array_dispose(&old_source.attributes);
+    nmo_array_dispose(&old_source.legacy_attributes);
+    nmo_array_dispose(&old_loaded.scripts);
+    nmo_array_dispose(&old_loaded.attributes);
+    nmo_array_dispose(&old_loaded.legacy_attributes);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, beobject_copy_preserves_content_equality) {
     nmo_arena_t *source_arena = nmo_arena_create(NULL, 8192);
     nmo_arena_t *copy_arena = nmo_arena_create(NULL, 8192);
@@ -3188,6 +3483,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, synchro_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, beobject_attribute_unresolved_ref_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, beobject_attribute_failure_keeps_previous_atomic_state);
+    REGISTER_TEST(chunk_id_remap, beobject_legacy_attributes_are_lossless_and_atomic);
     REGISTER_TEST(chunk_id_remap, beobject_copy_preserves_content_equality);
     REGISTER_TEST(chunk_id_remap, legacy_unresolved_id_preserves_raw_id);
 TEST_MAIN_END()

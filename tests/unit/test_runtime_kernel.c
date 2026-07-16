@@ -780,7 +780,7 @@ TEST(runtime_kernel, normalize_removes_only_invalid_reference_records) {
 
     uint32_t type_a = 11, type_invalid = 22, type_b = 33;
     ASSERT_EQ(NMO_OK, nmo_beobject_attribute_array_append(
-        &group->base.attributes, valid_a, type_a, NULL));
+        &group->base.attributes, valid_parameter, type_a, NULL));
     nmo_beobject_attribute_t invalid_attribute = {
         .parameter = nmo_ref_from_raw(invalid),
         .type_id = type_invalid,
@@ -788,7 +788,32 @@ TEST(runtime_kernel, normalize_removes_only_invalid_reference_records) {
     ASSERT_EQ(NMO_OK, nmo_array_append(
         &group->base.attributes, &invalid_attribute));
     ASSERT_EQ(NMO_OK, nmo_beobject_attribute_array_append(
-        &group->base.attributes, valid_b, type_b, NULL));
+        &group->base.attributes, valid_parameter_in, type_b, NULL));
+    nmo_beobject_legacy_attribute_t legacy_attributes[] = {
+        {
+            .compatible_class_id = 1,
+            .name = "valid-a",
+            .parameter = nmo_ref_from_id(valid_parameter),
+        },
+        {
+            .compatible_class_id = 2,
+            .name = "unresolved",
+            .parameter = nmo_ref_from_raw(invalid),
+        },
+        {
+            .compatible_class_id = 3,
+            .name = "wrong-class",
+            .parameter = nmo_ref_from_id(valid_a),
+        },
+        {
+            .compatible_class_id = 4,
+            .name = "valid-b",
+            .parameter = nmo_ref_from_id(valid_parameter_in),
+        },
+    };
+    ASSERT_EQ(NMO_OK, nmo_array_append_array(
+        &group->base.legacy_attributes, legacy_attributes, 4));
+    group->base.has_legacy_attributes = 1;
     nmo_grid_layer_t valid_layer = {
         .ref = {.raw_id = valid_a, .id = valid_a, .state = NMO_REF_RESOLVED},
     };
@@ -817,7 +842,7 @@ TEST(runtime_kernel, normalize_removes_only_invalid_reference_records) {
     size_t changed = 0;
     ASSERT_EQ(NMO_OK, nmo_runtime_normalize_invalid_refs(
         repo, nmo_context_get_type_runtime(ctx), &changed));
-    ASSERT_EQ(13, (int)changed);
+    ASSERT_EQ(15, (int)changed);
     ASSERT_EQ(2, (int)behavior->inputs.count);
     ASSERT_EQ(valid_a, nmo_behavior_ref_array_get_id(&behavior->inputs, 0));
     ASSERT_EQ(valid_b, nmo_behavior_ref_array_get_id(&behavior->inputs, 1));
@@ -832,10 +857,22 @@ TEST(runtime_kernel, normalize_removes_only_invalid_reference_records) {
     ASSERT_EQ(2, (int)group->base.attributes.count);
     nmo_beobject_attribute_t *attributes = NMO_ARRAY_DATA(
         nmo_beobject_attribute_t, &group->base.attributes);
-    ASSERT_EQ(valid_a, nmo_ref_runtime_id(&attributes[0].parameter));
-    ASSERT_EQ(valid_b, nmo_ref_runtime_id(&attributes[1].parameter));
+    ASSERT_EQ(valid_parameter,
+              nmo_ref_runtime_id(&attributes[0].parameter));
+    ASSERT_EQ(valid_parameter_in,
+              nmo_ref_runtime_id(&attributes[1].parameter));
     ASSERT_EQ(type_a, attributes[0].type_id);
     ASSERT_EQ(type_b, attributes[1].type_id);
+    ASSERT_EQ(2u, group->base.legacy_attributes.count);
+    nmo_beobject_legacy_attribute_t *normalized_legacy = NMO_ARRAY_DATA(
+        nmo_beobject_legacy_attribute_t,
+        &group->base.legacy_attributes);
+    ASSERT_EQ(valid_parameter,
+              nmo_ref_runtime_id(&normalized_legacy[0].parameter));
+    ASSERT_EQ(valid_parameter_in,
+              nmo_ref_runtime_id(&normalized_legacy[1].parameter));
+    ASSERT_STR_EQ("valid-a", normalized_legacy[0].name);
+    ASSERT_STR_EQ("valid-b", normalized_legacy[1].name);
     ASSERT_EQ(1, (int)grid->layers.count);
     nmo_grid_layer_t *layers = NMO_ARRAY_DATA(nmo_grid_layer_t, &grid->layers);
     ASSERT_EQ(valid_a, layers[0].ref.id);
@@ -1205,6 +1242,64 @@ TEST(runtime_kernel, copy_remap_updates_only_resolved_material_refs) {
     nmo_context_release(ctx);
 }
 
+TEST(runtime_kernel, copy_remap_updates_only_resolved_beobject_attributes) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    const nmo_type_runtime_t *type_rt = nmo_context_get_type_runtime(ctx);
+    const nmo_type_descriptor_t *beobject_type =
+        nmo_type_registry_find_by_class_id(
+            type_rt->types, NMO_CID_BEOBJECT);
+    ASSERT_NOT_NULL(beobject_type);
+
+    nmo_beobject_state_t state = {0};
+    ASSERT_EQ(NMO_OK, nmo_array_init(
+        &state.attributes, sizeof(nmo_beobject_attribute_t), 0, NULL));
+    ASSERT_EQ(NMO_OK, nmo_array_init(
+        &state.legacy_attributes,
+        sizeof(nmo_beobject_legacy_attribute_t), 0, NULL));
+    nmo_beobject_attribute_t modern[] = {
+        {.parameter = nmo_ref_from_id(101), .type_id = 1},
+        {.parameter = nmo_ref_from_raw(102), .type_id = 2},
+    };
+    nmo_beobject_legacy_attribute_t legacy[] = {
+        {.parameter = nmo_ref_from_id(103), .compatible_class_id = 3},
+        {.parameter = nmo_ref_from_raw(104), .compatible_class_id = 4},
+    };
+    ASSERT_EQ(NMO_OK, nmo_array_append_array(
+        &state.attributes, modern, 2));
+    ASSERT_EQ(NMO_OK, nmo_array_append_array(
+        &state.legacy_attributes, legacy, 2));
+
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_id_remap_t *remap = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(remap);
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, 101, 201));
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, 102, 202));
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, 103, 203));
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, 104, 204));
+
+    ASSERT_EQ(NMO_OK, nmo_runtime_remap_copy_refs(
+        type_rt, beobject_type, &state, remap));
+    nmo_beobject_attribute_t *remapped_modern = NMO_ARRAY_DATA(
+        nmo_beobject_attribute_t, &state.attributes);
+    nmo_beobject_legacy_attribute_t *remapped_legacy = NMO_ARRAY_DATA(
+        nmo_beobject_legacy_attribute_t, &state.legacy_attributes);
+    ASSERT_EQ(201u, nmo_ref_runtime_id(&remapped_modern[0].parameter));
+    ASSERT_EQ(101u, remapped_modern[0].parameter.raw_id);
+    ASSERT_EQ(102u, remapped_modern[1].parameter.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, remapped_modern[1].parameter.state);
+    ASSERT_EQ(203u, nmo_ref_runtime_id(&remapped_legacy[0].parameter));
+    ASSERT_EQ(103u, remapped_legacy[0].parameter.raw_id);
+    ASSERT_EQ(104u, remapped_legacy[1].parameter.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, remapped_legacy[1].parameter.state);
+
+    nmo_array_dispose(&state.attributes);
+    nmo_array_dispose(&state.legacy_attributes);
+    nmo_arena_destroy(arena);
+    nmo_context_release(ctx);
+}
+
 TEST(runtime_kernel, copy_remap_updates_only_resolved_parameteroperation_refs) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
@@ -1433,6 +1528,7 @@ REGISTER_TEST(runtime_kernel, dependency_remap_preserves_invalid_references);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_scene_members);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_behaviorlink_endpoints);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_material_refs);
+REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_beobject_attributes);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_parameteroperation_refs);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_parameterout_refs);
 REGISTER_TEST(runtime_kernel, dependency_remap_preserves_nonreference_state);

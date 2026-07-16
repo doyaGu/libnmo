@@ -174,6 +174,51 @@ static void runtime_remap_scene_objects(
     }
 }
 
+static nmo_status_t runtime_remap_beobject_attributes(
+    nmo_beobject_state_t *state,
+    const nmo_id_remap_t *remap)
+{
+    if (state == NULL) return NMO_OK;
+    if ((state->attributes.count > 0 && state->attributes.data == NULL) ||
+        (state->attributes.element_size != 0 &&
+         state->attributes.element_size != sizeof(nmo_beobject_attribute_t)) ||
+        (state->attributes.count > 0 &&
+         state->attributes.element_size != sizeof(nmo_beobject_attribute_t)) ||
+        (state->legacy_attributes.count > 0 &&
+         state->legacy_attributes.data == NULL) ||
+        (state->legacy_attributes.element_size != 0 &&
+         state->legacy_attributes.element_size !=
+             sizeof(nmo_beobject_legacy_attribute_t)) ||
+        (state->legacy_attributes.count > 0 &&
+         state->legacy_attributes.element_size !=
+             sizeof(nmo_beobject_legacy_attribute_t))) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+
+    nmo_beobject_attribute_t *attributes = NMO_ARRAY_DATA(
+        nmo_beobject_attribute_t, &state->attributes);
+    for (size_t i = 0; i < state->attributes.count; ++i) {
+        nmo_object_id_t mapped = NMO_OBJECT_ID_NONE;
+        if (attributes[i].parameter.state == NMO_REF_RESOLVED &&
+            runtime_lookup_mapping(
+                remap, attributes[i].parameter.id, &mapped)) {
+            attributes[i].parameter.id = mapped;
+        }
+    }
+
+    nmo_beobject_legacy_attribute_t *legacy_attributes = NMO_ARRAY_DATA(
+        nmo_beobject_legacy_attribute_t, &state->legacy_attributes);
+    for (size_t i = 0; i < state->legacy_attributes.count; ++i) {
+        nmo_object_id_t mapped = NMO_OBJECT_ID_NONE;
+        if (legacy_attributes[i].parameter.state == NMO_REF_RESOLVED &&
+            runtime_lookup_mapping(
+                remap, legacy_attributes[i].parameter.id, &mapped)) {
+            legacy_attributes[i].parameter.id = mapped;
+        }
+    }
+    return NMO_OK;
+}
+
 static const void *runtime_get_base_instance(
     const nmo_type_registry_t *types,
     const nmo_type_descriptor_t *derived_type,
@@ -237,6 +282,10 @@ nmo_status_t nmo_runtime_remap_copy_refs(
         if (nmo_guid_equals(current->guid, CKPGUID_SCENE)) {
             runtime_remap_scene_objects(
                 (nmo_scene_state_t *)current_instance, remap);
+        }
+        if (nmo_guid_equals(current->guid, CKPGUID_BEOBJECT)) {
+            NMO_RETURN_IF_ERROR(runtime_remap_beobject_attributes(
+                (nmo_beobject_state_t *)current_instance, remap));
         }
 
         if (nmo_guid_is_null(current->base_type)) {
@@ -415,6 +464,24 @@ static bool normalize_is_parameter_reference_class(nmo_class_id_t class_id)
            class_id == NMO_CID_PARAMETEROPERATION;
 }
 
+static bool normalize_is_attribute_parameter_class(nmo_class_id_t class_id)
+{
+    return class_id == NMO_CID_PARAMETER ||
+           class_id == NMO_CID_PARAMETERIN ||
+           class_id == NMO_CID_PARAMETEROUT ||
+           class_id == NMO_CID_PARAMETERLOCAL;
+}
+
+static bool normalize_id_is_invalid_attribute_parameter(
+    nmo_object_repository_t *repo,
+    nmo_object_id_t id)
+{
+    if (normalize_id_is_invalid(repo, id)) return true;
+    const nmo_object_t *target = nmo_object_repository_find_by_id(repo, id);
+    return target != NULL && !normalize_is_attribute_parameter_class(
+        nmo_object_get_class_id(target));
+}
+
 static bool normalize_id_is_invalid_for_typed_field(
     nmo_object_repository_t *repo,
     const nmo_type_registry_t *types,
@@ -438,7 +505,6 @@ static bool normalize_id_is_invalid_for_typed_field(
 static nmo_status_t normalize_beobject_attributes(
     nmo_beobject_state_t *state,
     nmo_object_repository_t *repo,
-    const nmo_type_registry_t *types,
     size_t *changes)
 {
     if (!state) return NMO_OK;
@@ -457,7 +523,7 @@ static nmo_status_t normalize_beobject_attributes(
         const nmo_object_id_t id = nmo_ref_runtime_id(
             &attributes[i].parameter);
         if (id != NMO_OBJECT_ID_NONE &&
-            !normalize_id_is_invalid(repo, id)) {
+            !normalize_id_is_invalid_attribute_parameter(repo, id)) {
             ++i;
             continue;
         }
@@ -466,37 +532,29 @@ static nmo_status_t normalize_beobject_attributes(
         (*changes)++;
     }
 
-    count = state->legacy_attr_count;
-    if (count > 0 && (!state->legacy_attr_cids || !state->legacy_attr_names ||
-        !state->legacy_attr_categories || !state->legacy_attr_param_guids ||
-        !state->legacy_attr_param_ids)) {
+    count = state->legacy_attributes.count;
+    if ((state->legacy_attributes.element_size != 0 &&
+         state->legacy_attributes.element_size !=
+             sizeof(nmo_beobject_legacy_attribute_t)) ||
+        (count > 0 &&
+         (state->legacy_attributes.data == NULL ||
+          state->legacy_attributes.element_size !=
+              sizeof(nmo_beobject_legacy_attribute_t)))) {
         return NMO_ERR_VALIDATION_FAILED;
     }
     for (size_t i = 0; i < count;) {
-        if (!normalize_id_is_invalid(repo, state->legacy_attr_param_ids[i]) &&
-            !normalize_id_has_wrong_class(
-                repo, types, state->legacy_attr_param_ids[i],
-                NMO_CID_PARAMETER)) {
+        nmo_beobject_legacy_attribute_t *legacy_attributes = NMO_ARRAY_DATA(
+            nmo_beobject_legacy_attribute_t, &state->legacy_attributes);
+        const nmo_object_id_t id = nmo_ref_runtime_id(
+            &legacy_attributes[i].parameter);
+        if (id != NMO_OBJECT_ID_NONE &&
+            !normalize_id_is_invalid_attribute_parameter(repo, id)) {
             ++i;
             continue;
         }
-        size_t remaining = count - i - 1;
-        if (remaining > 0) {
-            memmove(&state->legacy_attr_cids[i], &state->legacy_attr_cids[i + 1],
-                    remaining * sizeof(*state->legacy_attr_cids));
-            memmove(&state->legacy_attr_names[i], &state->legacy_attr_names[i + 1],
-                    remaining * sizeof(*state->legacy_attr_names));
-            memmove(&state->legacy_attr_categories[i],
-                    &state->legacy_attr_categories[i + 1],
-                    remaining * sizeof(*state->legacy_attr_categories));
-            memmove(&state->legacy_attr_param_guids[i],
-                    &state->legacy_attr_param_guids[i + 1],
-                    remaining * sizeof(*state->legacy_attr_param_guids));
-            memmove(&state->legacy_attr_param_ids[i],
-                    &state->legacy_attr_param_ids[i + 1],
-                    remaining * sizeof(*state->legacy_attr_param_ids));
-        }
-        state->legacy_attr_count = (uint32_t)--count;
+        NMO_RETURN_IF_ERROR(nmo_array_remove(
+            &state->legacy_attributes, i, NULL));
+        --count;
         (*changes)++;
     }
     return NMO_OK;
@@ -795,7 +853,7 @@ nmo_status_t nmo_runtime_normalize_invalid_refs(
             nmo_type_query_object_get_ancestor_state_by_guid(
                 type_rt->types, obj, CKPGUID_BEOBJECT);
         NMO_RETURN_IF_ERROR(normalize_beobject_attributes(
-            beobject, repo, type_rt->types, &changed));
+            beobject, repo, &changed));
         nmo_grid_state_t *grid = (nmo_grid_state_t *)
             nmo_type_query_object_get_ancestor_state_by_guid(
                 type_rt->types, obj, CKPGUID_GRID);

@@ -37,6 +37,15 @@ typedef struct nmo_beobject_attribute {
     nmo_chunk_t *chunk;
 } nmo_beobject_attribute_t;
 
+/** One legacy CKBeObject attribute lane, kept atomic during read/remap/write. */
+typedef struct nmo_beobject_legacy_attribute {
+    int32_t compatible_class_id;
+    char *name;
+    char *category;
+    nmo_guid_t parameter_guid;
+    nmo_ref_t parameter;
+} nmo_beobject_legacy_attribute_t;
+
 /* =============================================================================
  * CKBeObject STATE STRUCTURES
  * ============================================================================= */
@@ -67,13 +76,9 @@ typedef struct nmo_beobject_state {
     uint32_t single_activity_flags;            /**< Scene object activity flags */
 
     /* Legacy attributes (CK_STATESAVE_ATTRIBUTES, old format) */
-    uint32_t legacy_attr_count;
-    uint8_t  legacy_attr_old_version;          /**< True if very old format (no compatibleCid) */
-    int32_t *legacy_attr_cids;                 /**< Per-attribute compatible class ID */
-    char   **legacy_attr_names;                /**< Per-attribute name (arena-allocated strings) */
-    char   **legacy_attr_categories;           /**< Per-attribute category (NULL if none) */
-    nmo_guid_t *legacy_attr_param_guids;       /**< Per-attribute parameter GUID */
-    nmo_object_id_t *legacy_attr_param_ids;    /**< Per-attribute parameter object ID */
+    nmo_array_t legacy_attributes;             /**< nmo_beobject_legacy_attribute_t */
+    uint8_t has_legacy_attributes;             /**< Preserve an empty legacy section */
+    uint8_t legacy_attr_old_version;           /**< Very old format has no compatible class ID */
 } nmo_beobject_state_t;
 
 /* =============================================================================
