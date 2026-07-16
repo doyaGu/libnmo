@@ -334,11 +334,22 @@ static size_t check_object_references(nmo_object_repository_t *repo, const nmo_o
     switch (obj->class_id) {
         case NMO_CID_3DENTITY: {
             const nmo_3dentity_state_t *s = (const nmo_3dentity_state_t *)state;
-            if (!check_reference(repo, s->parent_id, &checked)) (*broken_count)++;
-            if (!check_reference(repo, s->place_id, &checked)) (*broken_count)++;
-            if (!check_reference(repo, s->current_mesh_id, &checked)) (*broken_count)++;
+            if (!check_reference(
+                    repo, nmo_ref_runtime_id(&s->parent), &checked)) {
+                (*broken_count)++;
+            }
+            if (!check_reference(
+                    repo, nmo_ref_runtime_id(&s->place), &checked)) {
+                (*broken_count)++;
+            }
+            if (!check_reference(
+                    repo, nmo_ref_runtime_id(&s->current_mesh), &checked)) {
+                (*broken_count)++;
+            }
             for (uint32_t i = 0; i < s->mesh_count; i++) {
-                if (!check_reference(repo, s->mesh_ids[i], &checked)) (*broken_count)++;
+                const nmo_object_id_t id = nmo_ref_runtime_id(&s->mesh_ids[i]);
+                if (id != NMO_OBJECT_ID_NONE &&
+                    !check_reference(repo, id, &checked)) (*broken_count)++;
             }
             break;
         }
@@ -354,7 +365,10 @@ static size_t check_object_references(nmo_object_repository_t *repo, const nmo_o
         }
         case NMO_CID_TARGETCAMERA: {
             const nmo_targetcamera_state_t *s = (const nmo_targetcamera_state_t *)state;
-            if (!check_reference(repo, s->target_id, &checked)) (*broken_count)++;
+            if (!check_reference(
+                    repo, nmo_ref_runtime_id(&s->target), &checked)) {
+                (*broken_count)++;
+            }
             checked += check_object_references(repo, (const nmo_object_t *)&s->base.entity, broken_count);
             break;
         }
@@ -365,7 +379,10 @@ static size_t check_object_references(nmo_object_repository_t *repo, const nmo_o
         }
         case NMO_CID_TARGETLIGHT: {
             const nmo_targetlight_state_t *s = (const nmo_targetlight_state_t *)state;
-            if (!check_reference(repo, s->target_id, &checked)) (*broken_count)++;
+            if (!check_reference(
+                    repo, nmo_ref_runtime_id(&s->target), &checked)) {
+                (*broken_count)++;
+            }
             checked += check_object_references(repo, (const nmo_object_t *)&s->base.entity, broken_count);
             break;
         }

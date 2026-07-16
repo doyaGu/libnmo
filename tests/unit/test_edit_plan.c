@@ -195,12 +195,12 @@ static nmo_object_id_t find_named_parameter_in_ids(
     const nmo_array_t *ids,
     const char *name)
 {
-    const nmo_object_id_t *data = ids ? (const nmo_object_id_t *)ids->data : NULL;
-    for (size_t i = 0; data != NULL && i < ids->count; ++i) {
-        nmo_object_t *param_obj = nmo_object_repository_find_by_id(repo, data[i]);
+    for (size_t i = 0; ids != NULL && i < ids->count; ++i) {
+        nmo_object_id_t id = nmo_behavior_ref_array_get_id(ids, i);
+        nmo_object_t *param_obj = nmo_object_repository_find_by_id(repo, id);
         const char *param_name = param_obj ? nmo_object_get_name(param_obj) : NULL;
         if (param_name != NULL && strcmp(param_name, name) == 0) {
-            return data[i];
+            return id;
         }
     }
     return 0u;
@@ -295,14 +295,14 @@ static void assert_named_ids_match_strings(
     const char *const *names,
     uint32_t count)
 {
-    const nmo_object_id_t *data = ids ? (const nmo_object_id_t *)ids->data : NULL;
     ASSERT_EQ((size_t)count, ids->count);
     if (count == 0u) {
         return;
     }
-    ASSERT_NOT_NULL(data);
+    ASSERT_NOT_NULL(ids->data);
     for (uint32_t i = 0; i < count; ++i) {
-        nmo_object_t *obj = nmo_object_repository_find_by_id(repo, data[i]);
+        nmo_object_id_t id = nmo_behavior_ref_array_get_id(ids, i);
+        nmo_object_t *obj = nmo_object_repository_find_by_id(repo, id);
         ASSERT_NOT_NULL(obj);
         ASSERT_STR_EQ(names[i], nmo_object_get_name(obj));
     }
@@ -317,19 +317,19 @@ static void assert_param_ids_match_proto(
     bool expect_settings,
     const nmo_edit_report_t *report)
 {
-    const nmo_object_id_t *data = ids ? (const nmo_object_id_t *)ids->data : NULL;
     ASSERT_EQ((size_t)count, ids->count);
     if (count == 0u) {
         return;
     }
-    ASSERT_NOT_NULL(data);
+    ASSERT_NOT_NULL(ids->data);
     for (uint32_t i = 0; i < count; ++i) {
-        nmo_object_t *obj = nmo_object_repository_find_by_id(fixture->repo, data[i]);
+        nmo_object_id_t id = nmo_behavior_ref_array_get_id(ids, i);
+        nmo_object_t *obj = nmo_object_repository_find_by_id(fixture->repo, id);
         ASSERT_NOT_NULL(obj);
         ASSERT_EQ(expected_class, nmo_object_get_class_id(obj));
         ASSERT_STR_EQ(params[i].name, nmo_object_get_name(obj));
         ASSERT_TRUE(report_contains_object_id(
-            report->created_objects, report->created_object_count, data[i]));
+            report->created_objects, report->created_object_count, id));
 
         if (expected_class == NMO_CID_PARAMETERIN) {
             nmo_parameterin_state_t *state =
@@ -420,19 +420,17 @@ static void assert_named_object_arrays_match(
     nmo_object_repository_t *actual_repo,
     const nmo_array_t *actual_ids)
 {
-    const nmo_object_id_t *golden_data =
-        golden_ids ? (const nmo_object_id_t *)golden_ids->data : NULL;
-    const nmo_object_id_t *actual_data =
-        actual_ids ? (const nmo_object_id_t *)actual_ids->data : NULL;
     ASSERT_EQ(golden_ids ? golden_ids->count : 0u,
               actual_ids ? actual_ids->count : 0u);
     for (size_t i = 0; golden_ids != NULL && i < golden_ids->count; ++i) {
-        ASSERT_NOT_NULL(golden_data);
-        ASSERT_NOT_NULL(actual_data);
+        ASSERT_NOT_NULL(golden_ids->data);
+        ASSERT_NOT_NULL(actual_ids->data);
+        nmo_object_id_t golden_id = nmo_behavior_ref_array_get_id(golden_ids, i);
+        nmo_object_id_t actual_id = nmo_behavior_ref_array_get_id(actual_ids, i);
         nmo_object_t *golden_obj =
-            nmo_object_repository_find_by_id(golden_repo, golden_data[i]);
+            nmo_object_repository_find_by_id(golden_repo, golden_id);
         nmo_object_t *actual_obj =
-            nmo_object_repository_find_by_id(actual_repo, actual_data[i]);
+            nmo_object_repository_find_by_id(actual_repo, actual_id);
         ASSERT_NOT_NULL(golden_obj);
         ASSERT_NOT_NULL(actual_obj);
         ASSERT_EQ(nmo_object_get_class_id(golden_obj),
@@ -448,19 +446,17 @@ static void assert_parameter_shape_arrays_match(
     nmo_object_repository_t *actual_repo,
     const nmo_array_t *actual_ids)
 {
-    const nmo_object_id_t *golden_data =
-        golden_ids ? (const nmo_object_id_t *)golden_ids->data : NULL;
-    const nmo_object_id_t *actual_data =
-        actual_ids ? (const nmo_object_id_t *)actual_ids->data : NULL;
     ASSERT_EQ(golden_ids ? golden_ids->count : 0u,
               actual_ids ? actual_ids->count : 0u);
     for (size_t i = 0; golden_ids != NULL && i < golden_ids->count; ++i) {
-        ASSERT_NOT_NULL(golden_data);
-        ASSERT_NOT_NULL(actual_data);
+        ASSERT_NOT_NULL(golden_ids->data);
+        ASSERT_NOT_NULL(actual_ids->data);
+        nmo_object_id_t golden_id = nmo_behavior_ref_array_get_id(golden_ids, i);
+        nmo_object_id_t actual_id = nmo_behavior_ref_array_get_id(actual_ids, i);
         nmo_object_t *golden_obj =
-            nmo_object_repository_find_by_id(golden_repo, golden_data[i]);
+            nmo_object_repository_find_by_id(golden_repo, golden_id);
         nmo_object_t *actual_obj =
-            nmo_object_repository_find_by_id(actual_repo, actual_data[i]);
+            nmo_object_repository_find_by_id(actual_repo, actual_id);
         ASSERT_NOT_NULL(golden_obj);
         ASSERT_NOT_NULL(actual_obj);
         ASSERT_EQ(nmo_object_get_class_id(golden_obj),
@@ -1051,7 +1047,7 @@ TEST(edit_plan, executor_adds_node_with_created_object_report) {
     const nmo_object_id_t target_parameter_id = node_state->target_parameter_id;
     const nmo_object_id_t first_input_id =
         node_state->inputs.count > 0u
-            ? ((const nmo_object_id_t *)node_state->inputs.data)[0]
+            ? nmo_behavior_ref_array_get_id(&node_state->inputs, 0)
             : 0u;
     ASSERT_TRUE(first_input_id != 0u);
 
@@ -1299,15 +1295,16 @@ TEST(edit_plan, executor_materializes_common_building_block_prototypes) {
             false,
             &report);
 
-        const nmo_object_id_t *locals =
-            (const nmo_object_id_t *)node_state->local_parameters.data;
         ASSERT_EQ((size_t)(proto->local_param_count + proto->setting_count),
                   node_state->local_parameters.count);
         nmo_array_t local_ids = {0};
         nmo_array_t setting_ids = {0};
-        local_ids.data = (void *)locals;
+        local_ids = node_state->local_parameters;
         local_ids.count = proto->local_param_count;
-        setting_ids.data = (void *)(locals + proto->local_param_count);
+        setting_ids = node_state->local_parameters;
+        setting_ids.data = (void *)(
+            NMO_ARRAY_DATA(nmo_behavior_ref_t, &node_state->local_parameters) +
+            proto->local_param_count);
         setting_ids.count = proto->setting_count;
         if (proto->local_param_count > 0u) {
             assert_param_ids_match_proto(
@@ -1762,7 +1759,8 @@ TEST(edit_plan, executor_connects_parameter_to_prior_node_handle) {
         : NULL;
     ASSERT_NOT_NULL(owner_state);
     ASSERT_NOT_NULL(root_state);
-    ASSERT_EQ(NMO_OK, nmo_array_append(&owner_state->script_ids, &root_id));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &owner_state->scripts, root_id));
     root_state->flags |= 0x00000002u;
     root_state->owner_id = owner_id;
 
@@ -1883,8 +1881,9 @@ TEST(edit_plan, executor_resolves_behavior_link_io_handles) {
     ASSERT_NOT_NULL(owner_state);
     ASSERT_NOT_NULL(root_state);
     ASSERT_NOT_NULL(child_state);
-    ASSERT_EQ(NMO_OK, nmo_array_append(&owner_state->script_ids, &root_id));
-    ASSERT_EQ(NMO_OK, nmo_array_append(&root_state->sub_behaviors, &child_id));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &owner_state->scripts, root_id));
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(&root_state->sub_behaviors, child_id, NULL));
     root_state->flags |= 0x00000002u;
     root_state->owner_id = owner_id;
     child_state->owner_id = root_id;
@@ -2097,8 +2096,9 @@ TEST(edit_plan, executor_reports_remove_node_detached_link_impact) {
     ASSERT_NOT_NULL(owner_state);
     ASSERT_NOT_NULL(root_state);
     ASSERT_NOT_NULL(child_state);
-    ASSERT_EQ(NMO_OK, nmo_array_append(&owner_state->script_ids, &root_id));
-    ASSERT_EQ(NMO_OK, nmo_array_append(&root_state->sub_behaviors, &child_id));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &owner_state->scripts, root_id));
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(&root_state->sub_behaviors, child_id, NULL));
     root_state->flags |= 0x00000002u;
     root_state->owner_id = owner_id;
     child_state->owner_id = root_id;
@@ -2206,8 +2206,9 @@ TEST(edit_plan, executor_reports_remove_node_parameter_edge_impact) {
     ASSERT_NOT_NULL(owner_state);
     ASSERT_NOT_NULL(root_state);
     ASSERT_NOT_NULL(child_state);
-    ASSERT_EQ(NMO_OK, nmo_array_append(&owner_state->script_ids, &root_id));
-    ASSERT_EQ(NMO_OK, nmo_array_append(&root_state->sub_behaviors, &child_id));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &owner_state->scripts, root_id));
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(&root_state->sub_behaviors, child_id, NULL));
     root_state->flags |= 0x00000002u;
     root_state->owner_id = owner_id;
     child_state->owner_id = root_id;
@@ -2299,8 +2300,9 @@ TEST(edit_plan, executor_detaches_removed_node_parameter_edges) {
     ASSERT_NOT_NULL(owner_state);
     ASSERT_NOT_NULL(root_state);
     ASSERT_NOT_NULL(child_state);
-    ASSERT_EQ(NMO_OK, nmo_array_append(&owner_state->script_ids, &root_id));
-    ASSERT_EQ(NMO_OK, nmo_array_append(&root_state->sub_behaviors, &child_id));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &owner_state->scripts, root_id));
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(&root_state->sub_behaviors, child_id, NULL));
     root_state->flags |= 0x00000002u;
     root_state->owner_id = owner_id;
     child_state->owner_id = root_id;
@@ -2398,9 +2400,10 @@ TEST(edit_plan, executor_reports_nested_removed_node_impact) {
     ASSERT_NOT_NULL(root_state);
     ASSERT_NOT_NULL(child_state);
     ASSERT_NOT_NULL(grandchild_state);
-    ASSERT_EQ(NMO_OK, nmo_array_append(&owner_state->script_ids, &root_id));
-    ASSERT_EQ(NMO_OK, nmo_array_append(&root_state->sub_behaviors, &child_id));
-    ASSERT_EQ(NMO_OK, nmo_array_append(&child_state->sub_behaviors, &grandchild_id));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &owner_state->scripts, root_id));
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(&root_state->sub_behaviors, child_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(&child_state->sub_behaviors, grandchild_id, NULL));
     root_state->flags |= 0x00000002u;
     child_state->flags |= 0x00000002u;
     root_state->owner_id = owner_id;
@@ -2489,9 +2492,10 @@ TEST(edit_plan, executor_reports_nested_removed_node_parameter_impact) {
     ASSERT_NOT_NULL(root_state);
     ASSERT_NOT_NULL(child_state);
     ASSERT_NOT_NULL(grandchild_state);
-    ASSERT_EQ(NMO_OK, nmo_array_append(&owner_state->script_ids, &root_id));
-    ASSERT_EQ(NMO_OK, nmo_array_append(&root_state->sub_behaviors, &child_id));
-    ASSERT_EQ(NMO_OK, nmo_array_append(&child_state->sub_behaviors, &grandchild_id));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &owner_state->scripts, root_id));
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(&root_state->sub_behaviors, child_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(&child_state->sub_behaviors, grandchild_id, NULL));
     root_state->flags |= 0x00000002u;
     child_state->flags |= 0x00000002u;
     root_state->owner_id = owner_id;
@@ -2576,8 +2580,9 @@ TEST(edit_plan, executor_reports_removed_node_operation_impact) {
     ASSERT_NOT_NULL(owner_state);
     ASSERT_NOT_NULL(root_state);
     ASSERT_NOT_NULL(child_state);
-    ASSERT_EQ(NMO_OK, nmo_array_append(&owner_state->script_ids, &root_id));
-    ASSERT_EQ(NMO_OK, nmo_array_append(&root_state->sub_behaviors, &child_id));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &owner_state->scripts, root_id));
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(&root_state->sub_behaviors, child_id, NULL));
     root_state->flags |= 0x00000002u;
     root_state->owner_id = owner_id;
     child_state->owner_id = root_id;
@@ -2682,9 +2687,10 @@ TEST(edit_plan, executor_reports_removed_node_control_link_impact) {
     ASSERT_NOT_NULL(root_state);
     ASSERT_NOT_NULL(child_state);
     ASSERT_NOT_NULL(grandchild_state);
-    ASSERT_EQ(NMO_OK, nmo_array_append(&owner_state->script_ids, &root_id));
-    ASSERT_EQ(NMO_OK, nmo_array_append(&root_state->sub_behaviors, &child_id));
-    ASSERT_EQ(NMO_OK, nmo_array_append(&child_state->sub_behaviors, &grandchild_id));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &owner_state->scripts, root_id));
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(&root_state->sub_behaviors, child_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(&child_state->sub_behaviors, grandchild_id, NULL));
     root_state->flags |= 0x00000002u;
     child_state->flags |= 0x00000002u;
     root_state->owner_id = owner_id;
@@ -2778,9 +2784,10 @@ TEST(edit_plan, executor_deletes_nested_removed_node_operations) {
     ASSERT_NOT_NULL(root_state);
     ASSERT_NOT_NULL(child_state);
     ASSERT_NOT_NULL(grandchild_state);
-    ASSERT_EQ(NMO_OK, nmo_array_append(&owner_state->script_ids, &root_id));
-    ASSERT_EQ(NMO_OK, nmo_array_append(&root_state->sub_behaviors, &child_id));
-    ASSERT_EQ(NMO_OK, nmo_array_append(&child_state->sub_behaviors, &grandchild_id));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &owner_state->scripts, root_id));
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(&root_state->sub_behaviors, child_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(&child_state->sub_behaviors, grandchild_id, NULL));
     root_state->flags |= 0x00000002u;
     child_state->flags |= 0x00000002u;
     root_state->owner_id = owner_id;
@@ -2887,9 +2894,10 @@ TEST(edit_plan, executor_detaches_nested_removed_node_control_links) {
     ASSERT_NOT_NULL(root_state);
     ASSERT_NOT_NULL(child_state);
     ASSERT_NOT_NULL(grandchild_state);
-    ASSERT_EQ(NMO_OK, nmo_array_append(&owner_state->script_ids, &root_id));
-    ASSERT_EQ(NMO_OK, nmo_array_append(&root_state->sub_behaviors, &child_id));
-    ASSERT_EQ(NMO_OK, nmo_array_append(&child_state->sub_behaviors, &grandchild_id));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &owner_state->scripts, root_id));
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(&root_state->sub_behaviors, child_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(&child_state->sub_behaviors, grandchild_id, NULL));
     root_state->flags |= 0x00000002u;
     child_state->flags |= 0x00000002u;
     root_state->owner_id = owner_id;
@@ -2945,11 +2953,9 @@ TEST(edit_plan, executor_detaches_nested_removed_node_control_links) {
         ? (nmo_behavior_state_t *)nmo_object_get_state(root_obj)
         : NULL;
     ASSERT_NOT_NULL(root_state);
-    const nmo_object_id_t *link_ids = root_state->sub_behavior_links.data
-        ? (const nmo_object_id_t *)root_state->sub_behavior_links.data
-        : NULL;
-    for (size_t i = 0; link_ids != NULL && i < root_state->sub_behavior_links.count; ++i) {
-        ASSERT_NE(link_id, link_ids[i]);
+    for (size_t i = 0; i < root_state->sub_behavior_links.count; ++i) {
+        ASSERT_NE(link_id, nmo_behavior_ref_array_get_id(
+            &root_state->sub_behavior_links, i));
     }
 
     nmo_edit_report_dispose(&report);
@@ -3020,7 +3026,8 @@ TEST(edit_plan, executor_reports_rewire_operation_slot_parameter_impact) {
         : NULL;
     ASSERT_NOT_NULL(owner_state);
     ASSERT_NOT_NULL(root_state);
-    ASSERT_EQ(NMO_OK, nmo_array_append(&owner_state->script_ids, &root_id));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &owner_state->scripts, root_id));
     root_state->flags |= 0x00000002u;
     root_state->owner_id = owner_id;
     nmo_workspace_destroy(fixture.workspace);
@@ -3123,7 +3130,8 @@ TEST(edit_plan, executor_reports_add_operation_slot_parameter_impact) {
         : NULL;
     ASSERT_NOT_NULL(owner_state);
     ASSERT_NOT_NULL(root_state);
-    ASSERT_EQ(NMO_OK, nmo_array_append(&owner_state->script_ids, &root_id));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &owner_state->scripts, root_id));
     root_state->flags |= 0x00000002u;
     root_state->owner_id = owner_id;
     nmo_workspace_destroy(fixture.workspace);
@@ -3251,7 +3259,8 @@ TEST(edit_plan, executor_reports_remove_parameter_operation_slot_impact) {
         : NULL;
     ASSERT_NOT_NULL(owner_state);
     ASSERT_NOT_NULL(root_state);
-    ASSERT_EQ(NMO_OK, nmo_array_append(&owner_state->script_ids, &root_id));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &owner_state->scripts, root_id));
     root_state->flags |= 0x00000002u;
     root_state->owner_id = owner_id;
     nmo_workspace_destroy(fixture.workspace);
@@ -3335,7 +3344,8 @@ TEST(edit_plan, executor_reports_remove_parameter_edge_impact) {
         : NULL;
     ASSERT_NOT_NULL(owner_state);
     ASSERT_NOT_NULL(root_state);
-    ASSERT_EQ(NMO_OK, nmo_array_append(&owner_state->script_ids, &root_id));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &owner_state->scripts, root_id));
     root_state->flags |= 0x00000002u;
     root_state->owner_id = owner_id;
     nmo_workspace_destroy(fixture.workspace);

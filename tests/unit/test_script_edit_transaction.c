@@ -277,22 +277,26 @@ static void setup_script_control_fixture(nmo_session_t *session,
     ASSERT_NOT_NULL(target_state);
 
     ASSERT_EQ(NMO_OK,
-              nmo_array_append(&owner_state->script_ids,
-                               &fixture->root_behavior_id));
+              nmo_beobject_script_array_append(
+                  &owner_state->scripts, fixture->root_behavior_id));
     ASSERT_EQ(NMO_OK,
-              nmo_array_append(&root_state->sub_behaviors,
-                               &fixture->source_behavior_id));
+              nmo_behavior_ref_array_append(&root_state->sub_behaviors,
+                                            fixture->source_behavior_id, NULL));
     ASSERT_EQ(NMO_OK,
-              nmo_array_append(&root_state->sub_behaviors,
-                               &fixture->target_behavior_id));
+              nmo_behavior_ref_array_append(&root_state->sub_behaviors,
+                                            fixture->target_behavior_id, NULL));
     ASSERT_EQ(NMO_OK,
-              nmo_array_append(&root_state->inputs, &fixture->root_input_id));
+              nmo_behavior_ref_array_append(
+                  &root_state->inputs, fixture->root_input_id, NULL));
     ASSERT_EQ(NMO_OK,
-              nmo_array_append(&root_state->outputs, &fixture->root_output_id));
+              nmo_behavior_ref_array_append(
+                  &root_state->outputs, fixture->root_output_id, NULL));
     ASSERT_EQ(NMO_OK,
-              nmo_array_append(&source_state->outputs, &fixture->source_output_id));
+              nmo_behavior_ref_array_append(
+                  &source_state->outputs, fixture->source_output_id, NULL));
     ASSERT_EQ(NMO_OK,
-              nmo_array_append(&target_state->inputs, &fixture->target_input_id));
+              nmo_behavior_ref_array_append(
+                  &target_state->inputs, fixture->target_input_id, NULL));
 
     root_state->flags |= 0x00000002u;
     root_state->owner_id = owner_id;
@@ -320,12 +324,12 @@ static nmo_object_id_t find_named_parameter_in_ids(
     const nmo_array_t *ids,
     const char *name)
 {
-    const nmo_object_id_t *data = ids ? (const nmo_object_id_t *)ids->data : NULL;
-    for (size_t i = 0; data && i < ids->count; ++i) {
-        nmo_object_t *param_obj = nmo_object_repository_find_by_id(repo, data[i]);
+    for (size_t i = 0; ids && i < ids->count; ++i) {
+        nmo_object_id_t id = nmo_behavior_ref_array_get_id(ids, i);
+        nmo_object_t *param_obj = nmo_object_repository_find_by_id(repo, id);
         const char *param_name = param_obj ? nmo_object_get_name(param_obj) : NULL;
         if (param_name && strcmp(param_name, name) == 0) {
-            return data[i];
+            return id;
         }
     }
     return 0;
@@ -356,7 +360,7 @@ TEST(script_edit_transaction, rollback_restores_original_state_after_validation_
     ASSERT_NOT_NULL(child_obj);
     child_state = (nmo_3dentity_state_t *)nmo_object_get_state(child_obj);
     ASSERT_NOT_NULL(child_state);
-    ASSERT_EQ(0u, child_state->parent_id);
+    ASSERT_EQ(NMO_REF_NONE, child_state->parent.state);
 
     ASSERT_EQ(NMO_OK,
               begin_test_script_edit(ctx, session, "rollback-test", &tx));
@@ -365,28 +369,28 @@ TEST(script_edit_transaction, rollback_restores_original_state_after_validation_
 
     snprintf(parent_text, sizeof(parent_text), "%u", parent_id);
     {
-        nmo_session_field_edit_t field = {"parent_id", parent_text};
+        nmo_session_field_edit_t field = {"parent", parent_text};
         ASSERT_EQ(NMO_OK,
                   nmo_object_edit_set_fields(
                       nmo_script_edit_workspace_edit(tx), child_id, &field, 1, NULL));
     }
-    ASSERT_EQ(parent_id, child_state->parent_id);
+    ASSERT_EQ(parent_id, nmo_ref_runtime_id(&child_state->parent));
 
     ASSERT_EQ(NMO_OK,
               nmo_workspace_edit_snapshot_bytes(
                   nmo_script_edit_workspace_edit(tx),
-                  &child_state->parent_id,
-                  sizeof(child_state->parent_id)));
-    child_state->parent_id = 999999u;
+                  &child_state->parent,
+                  sizeof(child_state->parent)));
+    child_state->parent = nmo_ref_from_id(999999u);
     nmo_script_edit_mark(
         tx, NMO_WORKSPACE_EDIT_OBJECT_STATE | NMO_WORKSPACE_EDIT_REFERENCES);
 
     ASSERT_NE(NMO_OK,
               nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_REFERENCES));
-    ASSERT_EQ(999999u, child_state->parent_id);
+    ASSERT_EQ(999999u, nmo_ref_runtime_id(&child_state->parent));
 
     nmo_script_edit_rollback(tx);
-    ASSERT_EQ(0u, child_state->parent_id);
+    ASSERT_EQ(NMO_REF_NONE, child_state->parent.state);
 
     nmo_session_destroy(session);
     nmo_context_release(ctx);
@@ -484,10 +488,10 @@ TEST(script_edit_transaction, add_node_keeps_ballance_script_edit_validation_gre
 
     {
         bool found_text_properties = false;
-        const nmo_object_id_t *ids =
-            (const nmo_object_id_t *)node_state->local_parameters.data;
-        for (size_t i = 0; ids && i < node_state->local_parameters.count; ++i) {
-            nmo_object_t *param_obj = nmo_object_repository_find_by_id(repo, ids[i]);
+        for (size_t i = 0; i < node_state->local_parameters.count; ++i) {
+            nmo_object_id_t id = nmo_behavior_ref_array_get_id(
+                &node_state->local_parameters, i);
+            nmo_object_t *param_obj = nmo_object_repository_find_by_id(repo, id);
             nmo_parameterlocal_state_t *param_state = param_obj
                 ? (nmo_parameterlocal_state_t *)nmo_object_get_state(param_obj)
                 : NULL;
@@ -523,10 +527,11 @@ TEST(script_edit_transaction, add_node_keeps_ballance_script_edit_validation_gre
         ASSERT_TRUE(fabsf(caret_value - 10.0f) < 0.0001f);
     }
     {
-        const nmo_object_id_t *ids = (const nmo_object_id_t *)node_state->inputs.data;
         ASSERT_TRUE(node_state->inputs.count > 0u);
-        for (size_t i = 0; ids && i < node_state->inputs.count; ++i) {
-            nmo_object_t *io_obj = nmo_object_repository_find_by_id(repo, ids[i]);
+        for (size_t i = 0; i < node_state->inputs.count; ++i) {
+            nmo_object_id_t id = nmo_behavior_ref_array_get_id(
+                &node_state->inputs, i);
+            nmo_object_t *io_obj = nmo_object_repository_find_by_id(repo, id);
             nmo_behaviorio_state_t *io_state = io_obj
                 ? (nmo_behaviorio_state_t *)nmo_object_get_state(io_obj)
                 : NULL;
@@ -536,10 +541,11 @@ TEST(script_edit_transaction, add_node_keeps_ballance_script_edit_validation_gre
         }
     }
     {
-        const nmo_object_id_t *ids = (const nmo_object_id_t *)node_state->outputs.data;
         ASSERT_TRUE(node_state->outputs.count > 0u);
-        for (size_t i = 0; ids && i < node_state->outputs.count; ++i) {
-            nmo_object_t *io_obj = nmo_object_repository_find_by_id(repo, ids[i]);
+        for (size_t i = 0; i < node_state->outputs.count; ++i) {
+            nmo_object_id_t id = nmo_behavior_ref_array_get_id(
+                &node_state->outputs, i);
+            nmo_object_t *io_obj = nmo_object_repository_find_by_id(repo, id);
             nmo_behaviorio_state_t *io_state = io_obj
                 ? (nmo_behaviorio_state_t *)nmo_object_get_state(io_obj)
                 : NULL;
@@ -566,41 +572,43 @@ TEST(script_edit_transaction, add_node_keeps_ballance_script_edit_validation_gre
     ASSERT_NOT_NULL(index);
 
     {
-        const nmo_object_id_t *ids = (const nmo_object_id_t *)node_state->inputs.data;
-        for (size_t i = 0; ids && i < node_state->inputs.count; ++i) {
-            ASSERT_NOT_NULL(nmo_object_repository_find_by_id(repo, ids[i]));
-            ASSERT_NOT_NULL(nmo_behavior_index_find(index, ids[i]));
+        for (size_t i = 0; i < node_state->inputs.count; ++i) {
+            nmo_object_id_t id = nmo_behavior_ref_array_get_id(
+                &node_state->inputs, i);
+            ASSERT_NOT_NULL(nmo_object_repository_find_by_id(repo, id));
+            ASSERT_NOT_NULL(nmo_behavior_index_find(index, id));
         }
     }
     {
-        const nmo_object_id_t *ids = (const nmo_object_id_t *)node_state->outputs.data;
-        for (size_t i = 0; ids && i < node_state->outputs.count; ++i) {
-            ASSERT_NOT_NULL(nmo_object_repository_find_by_id(repo, ids[i]));
-            ASSERT_NOT_NULL(nmo_behavior_index_find(index, ids[i]));
+        for (size_t i = 0; i < node_state->outputs.count; ++i) {
+            nmo_object_id_t id = nmo_behavior_ref_array_get_id(
+                &node_state->outputs, i);
+            ASSERT_NOT_NULL(nmo_object_repository_find_by_id(repo, id));
+            ASSERT_NOT_NULL(nmo_behavior_index_find(index, id));
         }
     }
     {
-        const nmo_object_id_t *ids =
-            (const nmo_object_id_t *)node_state->in_parameters.data;
-        for (size_t i = 0; ids && i < node_state->in_parameters.count; ++i) {
-            ASSERT_NOT_NULL(nmo_object_repository_find_by_id(repo, ids[i]));
-            ASSERT_NOT_NULL(nmo_behavior_index_find(index, ids[i]));
+        for (size_t i = 0; i < node_state->in_parameters.count; ++i) {
+            nmo_object_id_t id = nmo_behavior_ref_array_get_id(
+                &node_state->in_parameters, i);
+            ASSERT_NOT_NULL(nmo_object_repository_find_by_id(repo, id));
+            ASSERT_NOT_NULL(nmo_behavior_index_find(index, id));
         }
     }
     {
-        const nmo_object_id_t *ids =
-            (const nmo_object_id_t *)node_state->out_parameters.data;
-        for (size_t i = 0; ids && i < node_state->out_parameters.count; ++i) {
-            ASSERT_NOT_NULL(nmo_object_repository_find_by_id(repo, ids[i]));
-            ASSERT_NOT_NULL(nmo_behavior_index_find(index, ids[i]));
+        for (size_t i = 0; i < node_state->out_parameters.count; ++i) {
+            nmo_object_id_t id = nmo_behavior_ref_array_get_id(
+                &node_state->out_parameters, i);
+            ASSERT_NOT_NULL(nmo_object_repository_find_by_id(repo, id));
+            ASSERT_NOT_NULL(nmo_behavior_index_find(index, id));
         }
     }
     {
-        const nmo_object_id_t *ids =
-            (const nmo_object_id_t *)node_state->local_parameters.data;
-        for (size_t i = 0; ids && i < node_state->local_parameters.count; ++i) {
-            ASSERT_NOT_NULL(nmo_object_repository_find_by_id(repo, ids[i]));
-            ASSERT_NOT_NULL(nmo_behavior_index_find(index, ids[i]));
+        for (size_t i = 0; i < node_state->local_parameters.count; ++i) {
+            nmo_object_id_t id = nmo_behavior_ref_array_get_id(
+                &node_state->local_parameters, i);
+            ASSERT_NOT_NULL(nmo_object_repository_find_by_id(repo, id));
+            ASSERT_NOT_NULL(nmo_behavior_index_find(index, id));
         }
     }
     assert_behavior_owner_checks_green(repo, index);

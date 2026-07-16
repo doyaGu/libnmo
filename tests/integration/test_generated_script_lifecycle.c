@@ -36,17 +36,11 @@ static nmo_object_t *find_named_object(
     return object;
 }
 
-static bool array_contains_id(const nmo_array_t *array, nmo_object_id_t id)
+static bool behavior_ref_array_contains(
+    const nmo_array_t *array,
+    nmo_object_id_t id)
 {
-    const nmo_object_id_t *ids = array
-        ? (const nmo_object_id_t *)array->data
-        : NULL;
-    for (size_t i = 0u; ids && i < array->count; ++i) {
-        if (ids[i] == id) {
-            return true;
-        }
-    }
-    return false;
+    return nmo_behavior_ref_array_find(array, id, NULL);
 }
 
 static void assert_script_has_sub_behavior(
@@ -56,7 +50,7 @@ static void assert_script_has_sub_behavior(
 {
     nmo_object_t *node = find_named_object(document, name, NMO_CID_BEHAVIOR);
     ASSERT_NOT_NULL(node);
-    ASSERT_TRUE(array_contains_id(
+    ASSERT_TRUE(behavior_ref_array_contains(
         &script_state->sub_behaviors,
         nmo_object_get_id(node)));
 }
@@ -125,10 +119,11 @@ TEST(generated_script_lifecycle, binds_generated_script_to_object)
         (const nmo_behavior_state_t *)nmo_object_get_state(script_object);
     ASSERT_NOT_NULL(cube_state);
     ASSERT_NOT_NULL(script_state);
-    ASSERT_TRUE(array_contains_id(&cube_state->script_ids, script_id));
+    ASSERT_TRUE(nmo_beobject_script_array_find(
+        &cube_state->scripts, script_id, NULL));
     ASSERT_TRUE((script_state->flags & CKBEHAVIOR_SCRIPT) != 0u);
     ASSERT_EQ(NMO_CID_3DENTITY, script_state->compatible_class_id);
-    ASSERT_TRUE(array_contains_id(&script_state->sub_behaviors, debug_id));
+    ASSERT_TRUE(behavior_ref_array_contains(&script_state->sub_behaviors, debug_id));
 
     nmo_document_destroy(document);
     nmo_context_release(ctx);
@@ -245,10 +240,9 @@ TEST(generated_script_lifecycle, generates_v2_debug_templates)
         const nmo_behavior_state_t *script_state =
             (const nmo_behavior_state_t *)nmo_object_get_state(script_object);
         ASSERT_NOT_NULL(script_state);
-        ASSERT_TRUE(array_contains_id(
-            &owner_state->script_ids,
-            nmo_object_get_id(script_object)));
-        ASSERT_TRUE(array_contains_id(
+        ASSERT_TRUE(nmo_beobject_script_array_find(
+            &owner_state->scripts, nmo_object_get_id(script_object), NULL));
+        ASSERT_TRUE(behavior_ref_array_contains(
             &script_state->sub_behaviors,
             nmo_object_get_id(debug_object)));
         assert_script_has_sub_behavior(document, script_state, trigger_names[i]);

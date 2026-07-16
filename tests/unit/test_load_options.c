@@ -11,11 +11,17 @@
 #include "io/nmo_io_file.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
+#include "format/nmo_chunk.h"
+#include "format/nmo_chunk_api.h"
+#include "format/nmo_object.h"
 #include "runtime/nmo_context.h"
 #include "session/nmo_deserializer.h"
 #include "session/nmo_serializer.h"
 #include "session/nmo_session.h"
 #include "runtime/nmo_workspace.h"
+#include "type/nmo_type_system.h"
+#include "core/nmo_allocator.h"
+#include "../../src/session/load_diagnostics_internal.h"
 
 #include <stdio.h>
 
@@ -335,6 +341,101 @@ TEST(load_options, full_profile_is_default)
     destroy_ctx_session(ctx, session);
 }
 
+typedef struct rejecting_allocator_context {
+    size_t allocation_calls;
+} rejecting_allocator_context_t;
+
+static void *rejecting_alloc(void *user_data, size_t size, size_t alignment) {
+    rejecting_allocator_context_t *ctx =
+        (rejecting_allocator_context_t *)user_data;
+    (void)size;
+    (void)alignment;
+    ctx->allocation_calls++;
+    return NULL;
+}
+
+static void rejecting_free(void *user_data, void *ptr) {
+    (void)user_data;
+    (void)ptr;
+}
+
+TEST(load_options, diagnostics_lifecycle_is_caller_owned)
+{
+    nmo_load_diagnostics_t diagnostics;
+    nmo_load_diagnostics_init(&diagnostics);
+    ASSERT_NULL(diagnostics.issues);
+    ASSERT_EQ((size_t)0, diagnostics.count);
+    ASSERT_EQ((size_t)0, diagnostics.capacity);
+
+    nmo_load_options_t options = nmo_load_options_default();
+    options.diagnostics = &diagnostics;
+    ASSERT_EQ(&diagnostics, options.diagnostics);
+
+    nmo_load_diagnostics_reset(&diagnostics);
+    nmo_load_diagnostics_destroy(&diagnostics);
+    ASSERT_NULL(diagnostics.issues);
+    ASSERT_EQ((size_t)0, diagnostics.count);
+}
+
+TEST(load_options, diagnostics_capture_current_chunk_section)
+{
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, 0x1234u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0xDEADBEEFu));
+    nmo_chunk_close(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(chunk, 0x1234u));
+
+    nmo_object_t *object = nmo_object_create(NULL, 77u, NMO_CID_OBJECT);
+    ASSERT_NOT_NULL(object);
+    object->file_id = 88u;
+    nmo_type_descriptor_t schema = {0};
+    schema.name = "CKObject";
+
+    nmo_load_diagnostics_t diagnostics;
+    nmo_load_diagnostics_init(&diagnostics);
+    ASSERT_EQ(NMO_OK, nmo_load_diagnostics_append(
+        &diagnostics, object, &schema, chunk, 0u,
+        NMO_ERR_TRUNCATED_CHUNK, "truncated"));
+    ASSERT_EQ((size_t)1, diagnostics.count);
+    ASSERT_EQ(0x1234u, diagnostics.issues[0].section_id);
+    ASSERT_EQ((size_t)2, diagnostics.issues[0].dword_offset);
+    ASSERT_EQ(77u, diagnostics.issues[0].object_id);
+    ASSERT_EQ(88u, diagnostics.issues[0].file_id);
+
+    nmo_load_diagnostics_destroy(&diagnostics);
+    nmo_object_destroy(object);
+    nmo_arena_destroy(arena);
+}
+
+TEST(load_options, custom_allocator_controls_object_and_schema_storage)
+{
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    rejecting_allocator_context_t reject_ctx = {0};
+    nmo_allocator_t rejecting = nmo_allocator_custom(
+        rejecting_alloc, rejecting_free, &reject_ctx);
+    nmo_load_options_t options = nmo_load_options_default();
+    options.allocator = &rejecting;
+
+    ASSERT_EQ(NMO_ERR_NOMEM,
+              nmo_session_load_file(
+                  session, "data/Ballance/Gameplay.nmo", &options, NULL));
+    ASSERT_TRUE(reject_ctx.allocation_calls > 0);
+    ASSERT_EQ((size_t)0,
+              nmo_object_repository_get_count(
+                  nmo_session_get_repository(session)));
+
+    destroy_ctx_session(ctx, session);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(load_options, metadata_profile_stops_after_header_and_rejects_mutation);
     REGISTER_TEST(load_options, partial_profile_rejects_non_empty_session);
@@ -344,6 +445,9 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(load_options, two_phase_serializer_rejects_partial_session);
     REGISTER_TEST(load_options, header_only_profile_stops_after_header);
     REGISTER_TEST(load_options, full_profile_is_default);
+    REGISTER_TEST(load_options, diagnostics_lifecycle_is_caller_owned);
+    REGISTER_TEST(load_options, diagnostics_capture_current_chunk_section);
+    REGISTER_TEST(load_options, custom_allocator_controls_object_and_schema_storage);
 TEST_MAIN_END()
 
 

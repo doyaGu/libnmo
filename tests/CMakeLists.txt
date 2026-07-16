@@ -3,6 +3,13 @@ add_library(test_framework STATIC test_framework.c)
 target_include_directories(test_framework PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(test_framework PUBLIC NMO_TEST_DATA_DIR="${PROJECT_SOURCE_DIR}/data")
 
+add_test(
+    NAME test_schema_io_result_audit
+    COMMAND ${CMAKE_COMMAND}
+            -DSOURCE_DIR=${PROJECT_SOURCE_DIR}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/schema_io_result_audit.cmake
+)
+
 find_package(Python3 COMPONENTS Interpreter QUIET)
 if(Python3_Interpreter_FOUND)
     add_test(

@@ -8,6 +8,7 @@
 #include "object/nmo_object_refs.h"
 #include "object/nmo_class_ids.h"
 #include "object/builtin/nmo_group_schemas.h"
+#include "object/builtin/nmo_scene_schemas.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_ref_graph.h"
 #include "format/nmo_object.h"
@@ -34,12 +35,12 @@ static void set_group_members(
         return;
     }
 
-    nmo_object_id_t *ids = NULL;
-    ASSERT_EQ(NMO_OK, nmo_array_extend(&state->object_ids, member_count, (void **)&ids));
-    ASSERT_NOT_NULL(ids);
+    nmo_ref_t *refs = NULL;
+    ASSERT_EQ(NMO_OK, nmo_array_extend(&state->object_ids, member_count, (void **)&refs));
+    ASSERT_NOT_NULL(refs);
 
     for (size_t i = 0; i < member_count; ++i) {
-        ids[i] = member_ids[i];
+        refs[i] = nmo_ref_from_id(member_ids[i]);
     }
 }
 
@@ -208,10 +209,49 @@ TEST(ref_query, visits_edges_without_exposing_graph_handles) {
     nmo_context_release(ctx);
 }
 
+TEST(ref_query, scene_base_references_are_enumerated_once) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_document_t *document = nmo_document_create(ctx);
+    ASSERT_NOT_NULL(document);
+    nmo_session_t *session = nmo_document_internal_session(document);
+    ASSERT_NOT_NULL(session);
+
+    nmo_object_id_t target_id = 0;
+    nmo_object_id_t scene_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_BEHAVIOR, "script", (nmo_guid_t){0, 0},
+        &target_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_SCENE, "scene", (nmo_guid_t){0, 0},
+        &scene_id, NULL));
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_scene_state_t *scene = (nmo_scene_state_t *)
+        nmo_object_repository_find_by_id(repo, scene_id)->state;
+    ASSERT_NOT_NULL(scene);
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &scene->base.scripts, target_id));
+    nmo_session_invalidate_ref_graph(session);
+
+    nmo_ref_graph_t *graph = nmo_session_get_ref_graph(session);
+    ASSERT_NOT_NULL(graph);
+    nmo_ref_edge_t *edges = NULL;
+    size_t edge_count = 0;
+    ASSERT_EQ(NMO_OK, nmo_ref_graph_get_object_edges(
+        graph, scene_id, NMO_REF_DIR_OUTGOING, &edges, &edge_count));
+    ASSERT_EQ(1, (int)edge_count);
+    ASSERT_EQ(target_id, edges[0].to);
+
+    nmo_document_destroy(document);
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(ref_query, counts_session_references_without_graph_handles);
     REGISTER_TEST(ref_query, reports_broken_reference_count);
     REGISTER_TEST(ref_query, visits_edges_without_exposing_graph_handles);
+    REGISTER_TEST(ref_query, scene_base_references_are_enumerated_once);
 TEST_MAIN_END()
 
 

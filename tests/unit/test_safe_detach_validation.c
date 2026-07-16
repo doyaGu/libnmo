@@ -30,10 +30,10 @@ static void set_group_members(
     if (member_count == 0) return;
 
     nmo_array_reserve(&state->object_ids, member_count);
-    nmo_object_id_t *ids = NULL;
-    nmo_array_extend(&state->object_ids, member_count, (void **)&ids);
+    nmo_ref_t *refs = NULL;
+    nmo_array_extend(&state->object_ids, member_count, (void **)&refs);
     for (size_t i = 0; i < member_count; i++) {
-        ids[i] = member_ids[i];
+        refs[i] = nmo_ref_from_id(member_ids[i]);
     }
 }
 

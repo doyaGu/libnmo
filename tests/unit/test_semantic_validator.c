@@ -1202,10 +1202,10 @@ TEST(semantic_validator, edit_plan_reports_nested_control_endpoint_scope)
     ASSERT_NOT_NULL(root_state);
     ASSERT_NOT_NULL(child_state);
     ASSERT_NOT_NULL(grandchild_state);
-    ASSERT_EQ(NMO_OK, nmo_array_append(&root_state->sub_behaviors, &child_id));
-    ASSERT_EQ(NMO_OK, nmo_array_append(&child_state->sub_behaviors, &grandchild_id));
-    ASSERT_EQ(NMO_OK, nmo_array_append(&root_state->inputs, &root_io_id));
-    ASSERT_EQ(NMO_OK, nmo_array_append(&grandchild_state->inputs, &nested_io_id));
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(&root_state->sub_behaviors, child_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(&child_state->sub_behaviors, grandchild_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(&root_state->inputs, root_io_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(&grandchild_state->inputs, nested_io_id, NULL));
 
     nmo_edit_plan_t *plan = NULL;
     ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
@@ -1253,7 +1253,7 @@ TEST(semantic_validator, edit_plan_reports_unowned_control_endpoint)
     ASSERT_NOT_NULL(root_obj);
     nmo_behavior_state_t *root_state = (nmo_behavior_state_t *)nmo_object_get_state(root_obj);
     ASSERT_NOT_NULL(root_state);
-    ASSERT_EQ(NMO_OK, nmo_array_append(&root_state->inputs, &root_io_id));
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(&root_state->inputs, root_io_id, NULL));
 
     nmo_edit_plan_t *plan = NULL;
     ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
@@ -1321,12 +1321,12 @@ TEST(semantic_validator, edit_plan_reports_rewire_control_endpoint_scope)
     ASSERT_NOT_NULL(child_state);
     ASSERT_NOT_NULL(grandchild_state);
     ASSERT_NOT_NULL(link_state);
-    ASSERT_EQ(NMO_OK, nmo_array_append(&root_state->sub_behaviors, &child_id));
-    ASSERT_EQ(NMO_OK, nmo_array_append(&child_state->sub_behaviors, &grandchild_id));
-    ASSERT_EQ(NMO_OK, nmo_array_append(&root_state->inputs, &root_io_id));
-    ASSERT_EQ(NMO_OK, nmo_array_append(&child_state->inputs, &child_io_id));
-    ASSERT_EQ(NMO_OK, nmo_array_append(&grandchild_state->inputs, &nested_io_id));
-    ASSERT_EQ(NMO_OK, nmo_array_append(&root_state->sub_behavior_links, &link_id));
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(&root_state->sub_behaviors, child_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(&child_state->sub_behaviors, grandchild_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(&root_state->inputs, root_io_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(&child_state->inputs, child_io_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(&grandchild_state->inputs, nested_io_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(&root_state->sub_behavior_links, link_id, NULL));
     link_state->in_io_id = child_io_id;
     link_state->out_io_id = root_io_id;
 

@@ -235,7 +235,8 @@ TEST(generated_scene_roundtrip, saves_target_camera_light_bindings)
         (nmo_targetcamera_state_t *)nmo_object_get_state(camera_object);
     ASSERT_NOT_NULL(camera_state);
     ASSERT_TRUE(camera_state->has_target != 0u);
-    ASSERT_EQ(nmo_object_get_id(target_object), camera_state->target_id);
+    ASSERT_EQ(nmo_object_get_id(target_object),
+              nmo_ref_runtime_id(&camera_state->target));
 
     nmo_object_query_t light_query = {0};
     light_query.name = "TargetLight";
@@ -252,7 +253,8 @@ TEST(generated_scene_roundtrip, saves_target_camera_light_bindings)
         (nmo_targetlight_state_t *)nmo_object_get_state(light_object);
     ASSERT_NOT_NULL(light_state);
     ASSERT_TRUE(light_state->has_target != 0u);
-    ASSERT_EQ(nmo_object_get_id(target_object), light_state->target_id);
+    ASSERT_EQ(nmo_object_get_id(target_object),
+              nmo_ref_runtime_id(&light_state->target));
 
     nmo_document_destroy(document);
     nmo_context_release(ctx);

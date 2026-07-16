@@ -300,7 +300,7 @@ TEST(repl_read, object_list_fields_uses_full_session_core) {
         &repl,
         "object list-fields 2",
         "test_repl_object_fields.txt",
-        "parent_id");
+        "parent");
 
     close_repl(&repl);
 }

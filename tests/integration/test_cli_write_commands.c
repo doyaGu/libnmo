@@ -307,10 +307,10 @@ TEST(cli_write, object_data_entity_material_texture_parameter_dry_run_preserves_
         "Dry Run");
     ASSERT_FALSE(file_exists("test_cli_write_tmp/object_delete_dry.nmo"));
     assert_cli_success(
-        "object set-field --name Cam_Pos parent_id 3 --dry-run "
+        "object set-field --name Cam_Pos parent 3 --dry-run "
         "\"" NMO_TEST_DATA_FILE("Ballance/Camera.nmo") "\" "
         "-o \"test_cli_write_tmp/object_set_field_dry.nmo\"",
-        "parent_id:");
+        "parent:");
     ASSERT_FALSE(file_exists("test_cli_write_tmp/object_set_field_dry.nmo"));
 
     assert_cli_success(
@@ -1047,7 +1047,7 @@ TEST(cli_write, data_entity_material_texture_animation_save_and_validate) {
     const nmo_3dentity_state_t *parent_state =
         (const nmo_3dentity_state_t *)write_probe_state(&parent_probe, 2, CKPGUID_3DENTITY);
     ASSERT_NOT_NULL(parent_state);
-    ASSERT_EQ(3u, parent_state->parent_id);
+    ASSERT_EQ(3u, nmo_ref_runtime_id(&parent_state->parent));
     write_probe_close(&parent_probe);
 
     assert_cli_success(

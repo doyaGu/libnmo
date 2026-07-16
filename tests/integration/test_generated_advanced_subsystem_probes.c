@@ -250,7 +250,7 @@ TEST(generated_advanced_probes, wavesound_field_semantics_save_load_validate)
         {.field_name = "min_distance", .value_str = "2"},
         {.field_name = "max_distance", .value_str = "20"},
         {.field_name = "distance_behavior", .value_str = "3"},
-        {.field_name = "attached_object_id", .value_str = "3"},
+        {.field_name = "attached_object", .value_str = "3"},
         {.field_name = "position", .value_str = "(1, 2, 3)"},
         {.field_name = "direction", .value_str = "(0, 0, -1)"},
     };
@@ -330,7 +330,8 @@ TEST(generated_advanced_probes, wavesound_field_semantics_save_load_validate)
     ASSERT_FLOAT_EQ(2.0f, state->min_distance, 0.0001f);
     ASSERT_FLOAT_EQ(20.0f, state->max_distance, 0.0001f);
     ASSERT_EQ(3u, state->distance_behavior);
-    ASSERT_EQ(nmo_object_get_id(anchor_object), state->attached_object_id);
+    ASSERT_EQ(nmo_object_get_id(anchor_object),
+              nmo_ref_runtime_id(&state->attached_object));
     ASSERT_FLOAT_EQ(1.0f, state->position.x, 0.0001f);
     ASSERT_FLOAT_EQ(2.0f, state->position.y, 0.0001f);
     ASSERT_FLOAT_EQ(3.0f, state->position.z, 0.0001f);
@@ -646,7 +647,8 @@ TEST(generated_advanced_probes, manifest_wavesound_authoring_save_load_validate)
     ASSERT_FLOAT_EQ(0.8f, state->gain, 0.0001f);
     ASSERT_FLOAT_EQ(0.25f, state->pan, 0.0001f);
     ASSERT_FLOAT_EQ(1.5f, state->pitch, 0.0001f);
-    ASSERT_EQ(nmo_object_get_id(anchor_object), state->attached_object_id);
+    ASSERT_EQ(nmo_object_get_id(anchor_object),
+              nmo_ref_runtime_id(&state->attached_object));
     ASSERT_FLOAT_EQ(4.0f, state->position.x, 0.0001f);
     ASSERT_FLOAT_EQ(5.0f, state->position.y, 0.0001f);
     ASSERT_FLOAT_EQ(6.0f, state->position.z, 0.0001f);

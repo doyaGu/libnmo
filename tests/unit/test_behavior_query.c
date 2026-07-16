@@ -104,8 +104,10 @@ TEST(behavior_query, synthetic_document_exposes_owner_and_script_summary)
 
     owner_state = (nmo_beobject_state_t *)nmo_object_get_state(owner);
     ASSERT_NOT_NULL(owner_state);
-    ASSERT_EQ(NMO_OK, nmo_array_append(&owner_state->script_ids, &script_a));
-    ASSERT_EQ(NMO_OK, nmo_array_append(&owner_state->script_ids, &script_b));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &owner_state->scripts, script_a));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &owner_state->scripts, script_b));
 
     ASSERT_EQ(NMO_OK, nmo_behavior_query_count_scripts(document, &count));
     ASSERT_EQ(2u, count);

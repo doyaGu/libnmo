@@ -102,7 +102,7 @@ TEST(entity_edit, sets_parent)
     const nmo_3dentity_state_t *child =
         (const nmo_3dentity_state_t *)nmo_object_get_state(child_object);
     ASSERT_NOT_NULL(child);
-    ASSERT_EQ(parent_id, child->parent_id);
+    ASSERT_EQ(parent_id, nmo_ref_runtime_id(&child->parent));
     ASSERT_FALSE(child->has_parent_chunk);
 
     entity_edit_fixture_destroy(&fixture);

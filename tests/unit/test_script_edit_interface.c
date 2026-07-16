@@ -290,9 +290,8 @@ TEST(script_edit_interface, remove_io_canonicalize_updates_interface_data_in_mem
     ASSERT_NOT_NULL(owner_state);
     ASSERT_TRUE(owner_state->inputs.count > 1u);
     {
-        nmo_object_id_t *ids = (nmo_object_id_t *)owner_state->inputs.data;
         for (size_t i = 0; i < owner_state->inputs.count; ++i) {
-            if (ids[i] == io_id) {
+            if (nmo_behavior_ref_array_get_id(&owner_state->inputs, i) == io_id) {
                 io_index = (uint32_t)i;
                 break;
             }

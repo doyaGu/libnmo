@@ -55,7 +55,7 @@ static nmo_behavior_state_t *test_behavior_state(
 
 static void test_append_id(nmo_array_t *array, nmo_object_id_t id)
 {
-    ASSERT_EQ(NMO_OK, nmo_array_append(array, &id));
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(array, id, NULL));
 }
 
 static nmo_interface_data_t *test_attach_interface_data(

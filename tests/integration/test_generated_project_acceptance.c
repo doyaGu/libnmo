@@ -529,8 +529,9 @@ TEST(generated_project_acceptance, cli_generates_valid_cmo_from_manifest)
     const nmo_3dentity_state_t *cube_state =
         (const nmo_3dentity_state_t *)nmo_object_get_state(cube_object);
     ASSERT_NOT_NULL(cube_state);
-    ASSERT_EQ(mesh_id, cube_state->current_mesh_id);
-    ASSERT_EQ(nmo_object_get_id(parent_object), cube_state->parent_id);
+    ASSERT_EQ(mesh_id, nmo_ref_runtime_id(&cube_state->current_mesh));
+    ASSERT_EQ(nmo_object_get_id(parent_object),
+              nmo_ref_runtime_id(&cube_state->parent));
     ASSERT_FLOAT_EQ(2.0f, cube_state->world_matrix[0], 0.0001f);
     ASSERT_FLOAT_EQ(3.0f, cube_state->world_matrix[5], 0.0001f);
     ASSERT_FLOAT_EQ(4.0f, cube_state->world_matrix[10], 0.0001f);
@@ -542,7 +543,7 @@ TEST(generated_project_acceptance, cli_generates_valid_cmo_from_manifest)
         (const nmo_targetcamera_state_t *)nmo_object_get_state(camera_object);
     ASSERT_NOT_NULL(target_camera_state);
     ASSERT_TRUE(target_camera_state->has_target);
-    ASSERT_EQ(target_id, target_camera_state->target_id);
+    ASSERT_EQ(target_id, nmo_ref_runtime_id(&target_camera_state->target));
     const nmo_camera_state_t *camera_state = &target_camera_state->base;
     ASSERT_NOT_NULL(camera_state);
     ASSERT_FLOAT_EQ(0.75f, camera_state->fov, 0.0001f);
@@ -553,7 +554,7 @@ TEST(generated_project_acceptance, cli_generates_valid_cmo_from_manifest)
         (const nmo_targetlight_state_t *)nmo_object_get_state(light_object);
     ASSERT_NOT_NULL(target_light_state);
     ASSERT_TRUE(target_light_state->has_target);
-    ASSERT_EQ(target_id, target_light_state->target_id);
+    ASSERT_EQ(target_id, nmo_ref_runtime_id(&target_light_state->target));
     const nmo_light_state_t *light_state = &target_light_state->base;
     ASSERT_NOT_NULL(light_state);
     ASSERT_FLOAT_EQ(26.0f / 255.0f, light_state->light_data.diffuse.r, 0.0001f);

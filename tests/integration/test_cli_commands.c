@@ -21,9 +21,13 @@
 #include "core/nmo_array.h"
 #include "format/nmo_stb_adapter.h"
 #include "object/builtin/nmo_group_schemas.h"
+#include "object/builtin/nmo_behavior_schemas.h"
+#include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
+#include "object/builtin/nmo_targetcamera_schemas.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_statesave_ids.h"
 #include "object/nmo_object_repository.h"
 #include "format/nmo_object.h"
 #include "type/nmo_type_guids.h"
@@ -1069,11 +1073,11 @@ static bool create_dangling_reference_fixture(const char *path) {
     if (nmo_array_reserve(&group_state->object_ids, 1) != NMO_OK) {
         goto cleanup;
     }
-    nmo_object_id_t *ids = NULL;
-    if (nmo_array_extend(&group_state->object_ids, 1, (void **)&ids) != NMO_OK) {
+    nmo_ref_t *refs = NULL;
+    if (nmo_array_extend(&group_state->object_ids, 1, (void **)&refs) != NMO_OK) {
         goto cleanup;
     }
-    ids[0] = 99999u;
+    refs[0] = nmo_ref_from_raw(99999u);
 
     nmo_save_options_t save_opts = nmo_save_options_default();
     ok = (nmo_session_save_file(session, path, &save_opts, NULL) == NMO_OK);
@@ -1084,7 +1088,120 @@ cleanup:
     return ok;
 }
 
-TEST(cli, validate_references_strict_does_not_fail_during_load) {
+static bool create_typed_dangling_reference_fixture(const char *path) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    if (ctx == NULL) return false;
+    nmo_session_t *session = nmo_session_create(ctx);
+    if (session == NULL) {
+        nmo_context_release(ctx);
+        return false;
+    }
+
+    nmo_object_id_t behavior_id = 0;
+    bool ok = false;
+    if (nmo_session_create_object(
+            session, NMO_CID_BEHAVIOR, "typed-dangling-behavior",
+            (nmo_guid_t){0, 0}, &behavior_id, NULL) != NMO_OK) {
+        goto cleanup;
+    }
+    nmo_object_t *object = nmo_object_repository_find_by_id(
+        nmo_session_get_repository(session), behavior_id);
+    if (object == NULL || object->state == NULL) goto cleanup;
+
+    nmo_behavior_state_t *behavior = (nmo_behavior_state_t *)object->state;
+    nmo_behavior_ref_t unresolved = {
+        .ref = nmo_ref_from_raw(987654u),
+        .chunk = NULL
+    };
+    if (nmo_array_append(&behavior->inputs, &unresolved) != NMO_OK) {
+        goto cleanup;
+    }
+    behavior->save_flags |= CK_STATESAVE_BEHAVIORINPUTS;
+    behavior->has_save_flags = true;
+
+    nmo_save_options_t save_opts = nmo_save_options_default();
+    ok = nmo_session_save_file(session, path, &save_opts, NULL) == NMO_OK;
+
+cleanup:
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+    return ok;
+}
+
+static bool create_class_mismatch_reference_fixture(const char *path) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    if (ctx == NULL) return false;
+    nmo_session_t *session = nmo_session_create(ctx);
+    if (session == NULL) {
+        nmo_context_release(ctx);
+        return false;
+    }
+
+    nmo_object_id_t entity_id = 0;
+    nmo_object_id_t material_id = 0;
+    bool ok = false;
+    if (nmo_session_create_object(
+            session, NMO_CID_3DENTITY, "mismatched-entity",
+            (nmo_guid_t){0, 0}, &entity_id, NULL) != NMO_OK ||
+        nmo_session_create_object(
+            session, NMO_CID_MATERIAL, "not-a-mesh",
+            (nmo_guid_t){0, 0}, &material_id, NULL) != NMO_OK) {
+        goto cleanup;
+    }
+    nmo_object_t *entity = nmo_object_repository_find_by_id(
+        nmo_session_get_repository(session), entity_id);
+    if (entity == NULL || entity->state == NULL) goto cleanup;
+    ((nmo_3dentity_state_t *)entity->state)->current_mesh =
+        nmo_ref_from_id(material_id);
+
+    nmo_save_options_t save_opts = nmo_save_options_default();
+    ok = nmo_session_save_file(session, path, &save_opts, NULL) == NMO_OK;
+
+cleanup:
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+    return ok;
+}
+
+static bool create_typed_scalar_class_mismatch_fixture(const char *path) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    if (ctx == NULL) return false;
+    nmo_session_t *session = nmo_session_create(ctx);
+    if (session == NULL) {
+        nmo_context_release(ctx);
+        return false;
+    }
+
+    nmo_object_id_t material_id = 0;
+    nmo_object_id_t camera_id = 0;
+    bool ok = false;
+    if (nmo_session_create_object(
+            session, NMO_CID_MATERIAL, "not-an-entity",
+            (nmo_guid_t){0, 0}, &material_id, NULL) != NMO_OK ||
+        nmo_session_create_object(
+            session, NMO_CID_TARGETCAMERA, "mismatched-target-camera",
+            (nmo_guid_t){0, 0}, &camera_id, NULL) != NMO_OK) {
+        goto cleanup;
+    }
+
+    nmo_object_t *camera = nmo_object_repository_find_by_id(
+        nmo_session_get_repository(session), camera_id);
+    if (camera == NULL || camera->state == NULL) goto cleanup;
+    nmo_targetcamera_state_t *state =
+        (nmo_targetcamera_state_t *)camera->state;
+    state->has_target = 1;
+    state->target = nmo_ref_from_id(material_id);
+
+    nmo_save_options_t save_opts = nmo_save_options_default();
+    ok = nmo_session_save_file(session, path, &save_opts, NULL) == NMO_OK;
+
+cleanup:
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+    return ok;
+}
+
+TEST(cli, validate_references_strict_scans_before_failing) {
     const char *fixture = "test_validate_refs_dangling.nmo";
     remove(fixture);
 
@@ -1094,8 +1211,61 @@ TEST(cli, validate_references_strict_does_not_fail_during_load) {
     snprintf(args, sizeof(args), "--strict validate references \"%s\"", fixture);
     cli_run_result_t result = run_cli_capture(args);
     ASSERT_NOT_NULL(result.output);
-    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_EQ(NMO_CLI_EXIT_STRICT_FAILURE, result.exit_code);
     ASSERT_STR_CONTAINS(result.output, "Reference Validation");
+    ASSERT_STR_CONTAINS(result.output, "Broken references found");
+
+    free(result.output);
+    remove(fixture);
+}
+
+TEST(cli, validate_references_reports_typed_unresolved_refs) {
+    const char *fixture = "test_validate_refs_typed_dangling.nmo";
+    remove(fixture);
+    ASSERT_TRUE(create_typed_dangling_reference_fixture(fixture));
+
+    char args[512];
+    snprintf(args, sizeof(args), "validate references \"%s\"", fixture);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "inputs[0]");
+    ASSERT_STR_CONTAINS(result.output, "987654");
+    ASSERT_STR_CONTAINS(result.output, "unresolved");
+
+    free(result.output);
+    remove(fixture);
+}
+
+TEST(cli, validate_references_reports_raw_field_class_mismatch) {
+    const char *fixture = "test_validate_refs_class_mismatch.nmo";
+    remove(fixture);
+    ASSERT_TRUE(create_class_mismatch_reference_fixture(fixture));
+
+    char args[512];
+    snprintf(args, sizeof(args), "validate references \"%s\"", fixture);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "current_mesh");
+    ASSERT_STR_CONTAINS(result.output, "class_mismatch");
+
+    free(result.output);
+    remove(fixture);
+}
+
+TEST(cli, validate_references_reports_typed_scalar_class_mismatch) {
+    const char *fixture = "test_validate_refs_typed_scalar_mismatch.nmo";
+    remove(fixture);
+    ASSERT_TRUE(create_typed_scalar_class_mismatch_fixture(fixture));
+
+    char args[512];
+    snprintf(args, sizeof(args), "validate references \"%s\"", fixture);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "target[0]");
+    ASSERT_STR_CONTAINS(result.output, "class_mismatch");
 
     free(result.output);
     remove(fixture);
@@ -4139,7 +4309,10 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, validate_structure_fix);
     REGISTER_TEST(cli, validate_references_text);
     REGISTER_TEST(cli, validate_references_json);
-    REGISTER_TEST(cli, validate_references_strict_does_not_fail_during_load);
+    REGISTER_TEST(cli, validate_references_strict_scans_before_failing);
+    REGISTER_TEST(cli, validate_references_reports_typed_unresolved_refs);
+    REGISTER_TEST(cli, validate_references_reports_raw_field_class_mismatch);
+    REGISTER_TEST(cli, validate_references_reports_typed_scalar_class_mismatch);
 
     /* type commands */
     REGISTER_TEST(cli, type_list_text);

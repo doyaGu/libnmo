@@ -30,9 +30,9 @@ TEST(runtime_delete_scene_group_consistency, delete_multiple_objects) {
     ASSERT_NOT_NULL(group_obj->state);
     nmo_group_state_t *group_state = (nmo_group_state_t *)group_obj->state;
     ASSERT_EQ(NMO_OK, nmo_array_reserve(&group_state->object_ids, 1));
-    nmo_object_id_t *group_refs = NULL;
+    nmo_ref_t *group_refs = NULL;
     ASSERT_EQ(NMO_OK, nmo_array_extend(&group_state->object_ids, 1, (void **)&group_refs));
-    group_refs[0] = ids[0];
+    group_refs[0] = nmo_ref_from_id(ids[0]);
 
     nmo_runtime_report_t report = {0};
     ASSERT_EQ(
@@ -65,9 +65,9 @@ TEST(runtime_delete_scene_group_consistency, delete_multiple_objects) {
     ASSERT_NOT_NULL(cascade_group_obj->state);
     nmo_group_state_t *cascade_group_state = (nmo_group_state_t *)cascade_group_obj->state;
     ASSERT_EQ(NMO_OK, nmo_array_reserve(&cascade_group_state->object_ids, 1));
-    nmo_object_id_t *cascade_refs = NULL;
+    nmo_ref_t *cascade_refs = NULL;
     ASSERT_EQ(NMO_OK, nmo_array_extend(&cascade_group_state->object_ids, 1, (void **)&cascade_refs));
-    cascade_refs[0] = cascade_member;
+    cascade_refs[0] = nmo_ref_from_id(cascade_member);
 
     report = (nmo_runtime_report_t){0};
     ASSERT_EQ(

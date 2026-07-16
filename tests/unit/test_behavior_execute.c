@@ -367,7 +367,7 @@ static nmo_object_id_t script_interface_root_for_object_session(
             }
 
             state = (nmo_behavior_state_t *)nmo_object_get_state(object);
-            if (!state || nmo_array_find(&state->sub_behaviors, &behavior_id, NULL) == 0) {
+            if (!state || nmo_behavior_ref_array_find(&state->sub_behaviors, behavior_id, NULL) == 0) {
                 continue;
             }
 
@@ -1152,9 +1152,9 @@ TEST(behavior_execute, remove_io_canonicalize_roundtrips_fixture) {
     ASSERT_NOT_NULL(owner_state);
     ASSERT_TRUE(owner_state->inputs.count > 1u);
     {
-        nmo_object_id_t *ids = (nmo_object_id_t *)owner_state->inputs.data;
         for (size_t i = 0; i < owner_state->inputs.count; ++i) {
-            if (ids[i] == add_action.io_id) {
+            if (nmo_behavior_ref_array_get_id(&owner_state->inputs, i) ==
+                add_action.io_id) {
                 io_index = (uint32_t)i;
                 break;
             }
@@ -1240,7 +1240,7 @@ TEST(behavior_execute, remove_node_canonicalize_roundtrips_fixture) {
     ASSERT_NOT_NULL(session);
     root_state = find_behavior_state(session, NMO_SCRIPT_INTERFACE_TARGET_ID, NULL);
     ASSERT_NOT_NULL(root_state);
-    ASSERT_TRUE(nmo_array_find(&root_state->sub_behaviors, &add_action.node_id, NULL) != 0u);
+    ASSERT_TRUE(nmo_behavior_ref_array_find(&root_state->sub_behaviors, add_action.node_id, NULL) != 0u);
     ASSERT_NOT_NULL(find_behavior_state(session, add_action.node_id, NULL));
     nmo_session_destroy(session);
     session = NULL;
@@ -1253,7 +1253,7 @@ TEST(behavior_execute, remove_node_canonicalize_roundtrips_fixture) {
     ASSERT_NOT_NULL(session);
     root_state = find_behavior_state(session, NMO_SCRIPT_INTERFACE_TARGET_ID, NULL);
     ASSERT_NOT_NULL(root_state);
-    ASSERT_TRUE(nmo_array_find(&root_state->sub_behaviors, &add_action.node_id, NULL) != 0u);
+    ASSERT_TRUE(nmo_behavior_ref_array_find(&root_state->sub_behaviors, add_action.node_id, NULL) != 0u);
     ASSERT_NOT_NULL(find_behavior_state(session, add_action.node_id, NULL));
     nmo_session_destroy(session);
     session = NULL;

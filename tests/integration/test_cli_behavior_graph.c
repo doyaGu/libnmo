@@ -258,11 +258,11 @@ static bool create_behavior_link_fixture(
              behavior_state != NULL &&
              source_behavior_state != NULL &&
              target_behavior_state != NULL &&
-             nmo_array_append(&owner_state->script_ids, &behavior_id) == NMO_OK &&
-             nmo_array_append(&behavior_state->sub_behaviors, &source_behavior_id) == NMO_OK &&
-             nmo_array_append(&behavior_state->sub_behaviors, &target_behavior_id) == NMO_OK &&
-             nmo_array_append(&source_behavior_state->outputs, &from_id) == NMO_OK &&
-             nmo_array_append(&target_behavior_state->inputs, &to_id) == NMO_OK;
+             nmo_beobject_script_array_append(&owner_state->scripts, behavior_id) == NMO_OK &&
+             nmo_behavior_ref_array_append(&behavior_state->sub_behaviors, source_behavior_id, NULL) == NMO_OK &&
+             nmo_behavior_ref_array_append(&behavior_state->sub_behaviors, target_behavior_id, NULL) == NMO_OK &&
+             nmo_behavior_ref_array_append(&source_behavior_state->outputs, from_id, NULL) == NMO_OK &&
+             nmo_behavior_ref_array_append(&target_behavior_state->inputs, to_id, NULL) == NMO_OK;
         if (ok) {
             behavior_state->flags |= 0x00000002u;
             behavior_state->owner_id = owner_id;
@@ -1338,14 +1338,14 @@ TEST(cli, behavior_add_link_saves_output) {
         (const nmo_behavior_state_t *)write_probe_state(&probe, behavior_id, CKPGUID_BEHAVIOR);
     ASSERT_NOT_NULL(behavior);
     ASSERT_EQ(1u, behavior->sub_behavior_links.count);
-    const nmo_object_id_t *link_ids =
-        (const nmo_object_id_t *)behavior->sub_behavior_links.data;
-    ASSERT_NOT_NULL(link_ids);
-    nmo_object_t *link_obj = write_probe_object_by_id(&probe, link_ids[0]);
+    nmo_object_id_t link_id = nmo_behavior_ref_array_get_id(
+        &behavior->sub_behavior_links, 0);
+    ASSERT_TRUE(link_id != 0);
+    nmo_object_t *link_obj = write_probe_object_by_id(&probe, link_id);
     ASSERT_NOT_NULL(link_obj);
     ASSERT_EQ(NMO_CID_BEHAVIORLINK, link_obj->class_id);
     const nmo_behaviorlink_state_t *link =
-        (const nmo_behaviorlink_state_t *)write_probe_state(&probe, link_ids[0], CKPGUID_BEHAVIORLINK);
+        (const nmo_behaviorlink_state_t *)write_probe_state(&probe, link_id, CKPGUID_BEHAVIORLINK);
     ASSERT_NOT_NULL(link);
     ASSERT_EQ(from_id, link->in_io_id);
     ASSERT_EQ(to_id, link->out_io_id);

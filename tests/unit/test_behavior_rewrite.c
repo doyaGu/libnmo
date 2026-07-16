@@ -74,7 +74,15 @@ static nmo_object_id_t test_create_object(nmo_session_t *session,
 
 static void test_append_id(nmo_array_t *array, nmo_object_id_t id)
 {
-    ASSERT_EQ(NMO_OK, nmo_array_append(array, &id));
+    nmo_status_t status = NMO_ERR_INVALID_ARGUMENT;
+    if (array->element_size == sizeof(nmo_behavior_ref_t)) {
+        status = nmo_behavior_ref_array_append(array, id, NULL);
+    } else if (array->element_size == sizeof(nmo_ref_t)) {
+        status = nmo_beobject_script_array_append(array, id);
+    } else {
+        status = nmo_array_append(array, &id);
+    }
+    ASSERT_EQ(NMO_OK, status);
 }
 
 static nmo_status_t test_behavior_fold_analyze(
@@ -225,7 +233,7 @@ static bool create_control_output_fold_fixture(
         return false;
     }
 
-    test_append_id(&owner_state->script_ids, parent);
+    test_append_id(&owner_state->scripts, parent);
     test_append_id(&parent_state->sub_behaviors, anchor);
     test_append_id(&parent_state->sub_behaviors, external);
     test_append_id(&anchor_state->inputs, anchor_in);
@@ -328,7 +336,7 @@ static bool create_parameter_output_fold_fixture(
     external_in->source_id = child_out_param;
     external_in->owner_id = external;
 
-    test_append_id(&owner_state->script_ids, parent);
+    test_append_id(&owner_state->scripts, parent);
     test_append_id(&parent_state->sub_behaviors, anchor);
     test_append_id(&parent_state->sub_behaviors, external);
     test_append_id(&anchor_state->sub_behaviors, child);
@@ -423,7 +431,7 @@ static bool create_parameter_input_fold_fixture(
     child_in->source_id = external_out_param;
     child_in->owner_id = child;
 
-    test_append_id(&owner_state->script_ids, parent);
+    test_append_id(&owner_state->scripts, parent);
     test_append_id(&parent_state->sub_behaviors, anchor);
     test_append_id(&parent_state->sub_behaviors, external);
     test_append_id(&anchor_state->sub_behaviors, child);

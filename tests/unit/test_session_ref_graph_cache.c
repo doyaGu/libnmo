@@ -100,9 +100,9 @@ TEST(ref_graph_cache, invalidated_after_create) {
     nmo_group_state_t *state = (nmo_group_state_t *)group_obj->state;
     nmo_array_clear(&state->object_ids);
     nmo_array_reserve(&state->object_ids, 1);
-    nmo_object_id_t *ids = NULL;
-    nmo_array_extend(&state->object_ids, 1, (void **)&ids);
-    ids[0] = member_id;
+    nmo_ref_t *refs = NULL;
+    nmo_array_extend(&state->object_ids, 1, (void **)&refs);
+    refs[0] = nmo_ref_from_id(member_id);
 
     /* Invalidate manually since direct state mutation bypasses the kernel */
     nmo_session_invalidate_ref_graph(session);
@@ -150,9 +150,9 @@ TEST(ref_graph_cache, invalidated_after_delete) {
     nmo_group_state_t *state = (nmo_group_state_t *)group_obj->state;
     nmo_array_clear(&state->object_ids);
     nmo_array_reserve(&state->object_ids, 1);
-    nmo_object_id_t *ids = NULL;
-    nmo_array_extend(&state->object_ids, 1, (void **)&ids);
-    ids[0] = member_id;
+    nmo_ref_t *refs = NULL;
+    nmo_array_extend(&state->object_ids, 1, (void **)&refs);
+    refs[0] = nmo_ref_from_id(member_id);
 
     /* Force graph build â€?should have at least 1 edge (groupâ†’member) */
     nmo_session_invalidate_ref_graph(session);
@@ -220,9 +220,9 @@ TEST(ref_graph_cache, post_delete_event_sees_invalidated_graph) {
     nmo_group_state_t *state = (nmo_group_state_t *)group_obj->state;
     nmo_array_clear(&state->object_ids);
     nmo_array_reserve(&state->object_ids, 1);
-    nmo_object_id_t *ids = NULL;
-    nmo_array_extend(&state->object_ids, 1, (void **)&ids);
-    ids[0] = member_id;
+    nmo_ref_t *refs = NULL;
+    nmo_array_extend(&state->object_ids, 1, (void **)&refs);
+    refs[0] = nmo_ref_from_id(member_id);
 
     nmo_session_invalidate_ref_graph(session);
     nmo_ref_graph_t *before_graph = nmo_session_get_ref_graph(session);

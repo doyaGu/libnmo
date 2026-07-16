@@ -42,12 +42,11 @@ static bool find_pin_visitor(nmo_object_id_t behavior_id,
 
     nmo_document_t *document = nmo_workspace_get_document(fctx->workspace);
     nmo_object_repository_t *repo = nmo_document_get_repository(document);
-    const nmo_object_id_t *pin_ids =
-        (const nmo_object_id_t *)state->in_parameters.data;
-
     for (size_t i = 0; i < state->in_parameters.count; ++i) {
-        if (pin_ids[i] == 0) continue;
-        nmo_object_t *obj = nmo_object_repository_find_by_id(repo, pin_ids[i]);
+        nmo_object_id_t pin_id = nmo_behavior_ref_array_get_id(
+            &state->in_parameters, i);
+        if (pin_id == 0) continue;
+        nmo_object_t *obj = nmo_object_repository_find_by_id(repo, pin_id);
         if (!obj) continue;
 
         const nmo_parameterin_state_t *pin =
@@ -55,9 +54,9 @@ static bool find_pin_visitor(nmo_object_id_t behavior_id,
         if (!pin || pin->source_id == 0) continue;
 
         if (pin->is_shared && fctx->found_shared == 0)
-            fctx->found_shared = pin_ids[i];
+            fctx->found_shared = pin_id;
         if (!pin->is_shared && fctx->found_direct == 0)
-            fctx->found_direct = pin_ids[i];
+            fctx->found_direct = pin_id;
 
         if (fctx->found_shared != 0 && fctx->found_direct != 0)
             return false;

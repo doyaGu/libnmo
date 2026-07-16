@@ -191,7 +191,7 @@ TEST(sound_edit, sets_wavesound_authoring)
     ASSERT_FLOAT_EQ(0.75f, sound->gain, 0.0001f);
     ASSERT_FLOAT_EQ(-0.5f, sound->pan, 0.0001f);
     ASSERT_FLOAT_EQ(1.25f, sound->pitch, 0.0001f);
-    ASSERT_EQ(anchor_id, sound->attached_object_id);
+    ASSERT_EQ(anchor_id, nmo_ref_runtime_id(&sound->attached_object));
     ASSERT_FLOAT_EQ(1.0f, sound->position.x, 0.0001f);
     ASSERT_FLOAT_EQ(2.0f, sound->position.y, 0.0001f);
     ASSERT_FLOAT_EQ(3.0f, sound->position.z, 0.0001f);

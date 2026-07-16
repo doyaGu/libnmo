@@ -136,10 +136,10 @@ TEST(generated_visible_scene, creates_cube_mesh_and_material) {
     const nmo_3dentity_state_t *cube_state =
         (const nmo_3dentity_state_t *)nmo_object_get_state(cube_object);
     ASSERT_NOT_NULL(cube_state);
-    ASSERT_EQ(mesh_id, cube_state->current_mesh_id);
+    ASSERT_EQ(mesh_id, nmo_ref_runtime_id(&cube_state->current_mesh));
     ASSERT_EQ(1u, cube_state->mesh_count);
     ASSERT_NOT_NULL(cube_state->mesh_ids);
-    ASSERT_EQ(mesh_id, cube_state->mesh_ids[0]);
+    ASSERT_EQ(mesh_id, nmo_ref_runtime_id(&cube_state->mesh_ids[0]));
 
     const nmo_mesh_state_t *mesh_state =
         (const nmo_mesh_state_t *)nmo_object_get_state(mesh_object);
@@ -229,7 +229,7 @@ TEST(generated_visible_scene, creates_external_obj_texture_and_position) {
     const nmo_3dentity_state_t *entity_state =
         (const nmo_3dentity_state_t *)nmo_object_get_state(triangle_object);
     ASSERT_NOT_NULL(entity_state);
-    ASSERT_EQ(mesh_id, entity_state->current_mesh_id);
+    ASSERT_EQ(mesh_id, nmo_ref_runtime_id(&entity_state->current_mesh));
     ASSERT_FLOAT_EQ(4.0f, entity_state->world_matrix[12], 0.0001f);
     ASSERT_FLOAT_EQ(5.0f, entity_state->world_matrix[13], 0.0001f);
     ASSERT_FLOAT_EQ(6.0f, entity_state->world_matrix[14], 0.0001f);
@@ -432,7 +432,8 @@ TEST(generated_visible_scene, creates_transform_hierarchy) {
     const nmo_3dentity_state_t *child_state =
         (const nmo_3dentity_state_t *)nmo_object_get_state(child_object);
     ASSERT_NOT_NULL(child_state);
-    ASSERT_EQ(nmo_object_get_id(parent_object), child_state->parent_id);
+    ASSERT_EQ(nmo_object_get_id(parent_object),
+              nmo_ref_runtime_id(&child_state->parent));
     ASSERT_FLOAT_EQ(2.0f, child_state->world_matrix[0], 0.0001f);
     ASSERT_FLOAT_EQ(3.0f, child_state->world_matrix[5], 0.0001f);
     ASSERT_FLOAT_EQ(4.0f, child_state->world_matrix[10], 0.0001f);

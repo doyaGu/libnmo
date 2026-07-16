@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -28,16 +29,25 @@
 static int g_files_tested = 0;
 static int g_truncations_tested = 0;
 
-static int try_load_truncated(const char *path, size_t trunc_size) {
+static int has_composition_extension(const char *name) {
+    size_t len = name ? strlen(name) : 0;
+    if (len < 4 || name[len - 4] != '.') return 0;
+    char a = (char)tolower((unsigned char)name[len - 3]);
+    char b = (char)tolower((unsigned char)name[len - 2]);
+    char c = (char)tolower((unsigned char)name[len - 1]);
+    return (a == 'n' || a == 'c' || a == 'v') && b == 'm' && c == 'o';
+}
+
+static void try_load_truncated(const char *path, size_t trunc_size) {
     /* Read original file */
     FILE *f = fopen(path, "rb");
-    if (!f) return 0;
+    if (!f) return;
 
     fseek(f, 0, SEEK_END);
     long file_size = ftell(f);
     if (file_size <= 0) {
         fclose(f);
-        return 0;
+        return;
     }
 
     size_t actual_trunc = trunc_size;
@@ -46,20 +56,20 @@ static int try_load_truncated(const char *path, size_t trunc_size) {
     }
     if (actual_trunc == 0) {
         fclose(f);
-        return 0;
+        return;
     }
 
     fseek(f, 0, SEEK_SET);
     unsigned char *buf = (unsigned char *)malloc((size_t)file_size);
     if (!buf) {
         fclose(f);
-        return 0;
+        return;
     }
     size_t nread = fread(buf, 1, (size_t)file_size, f);
     fclose(f);
     if (nread < actual_trunc) {
         free(buf);
-        return 0;
+        return;
     }
 
     /* Write truncated copy to temp file */
@@ -69,7 +79,7 @@ static int try_load_truncated(const char *path, size_t trunc_size) {
     f = fopen(temp_path, "wb");
     if (!f) {
         free(buf);
-        return 0;
+        return;
     }
     fwrite(buf, 1, actual_trunc, f);
     fclose(f);
@@ -79,26 +89,35 @@ static int try_load_truncated(const char *path, size_t trunc_size) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     if (!ctx) {
         remove(temp_path);
-        return 0;
+        return;
     }
 
     nmo_session_t *session = nmo_session_create(ctx);
     if (!session) {
         nmo_context_release(ctx);
         remove(temp_path);
-        return 0;
+        return;
     }
 
     /* Suppress logging for expected errors */
-    (void)nmo_load_file(session, temp_path, NULL);
-    /* We don't check the return value -- errors are expected */
+    int load_result = nmo_load_file(session, temp_path, NULL);
+    if (load_result == NMO_OK) {
+        const char *saved_path = "fuzz_trunc_roundtrip.tmp";
+        remove(saved_path);
+        ASSERT_EQ(NMO_OK, nmo_session_save_file(session, saved_path, NULL, NULL));
+
+        nmo_session_t *reload = nmo_session_create(ctx);
+        ASSERT_NOT_NULL(reload);
+        ASSERT_EQ(NMO_OK, nmo_load_file(reload, saved_path, NULL));
+        nmo_session_destroy(reload);
+        remove(saved_path);
+    }
 
     nmo_session_destroy(session);
     nmo_context_release(ctx);
     remove(temp_path);
 
     g_truncations_tested++;
-    return 1;
 }
 
 static int fuzz_one_file(const char *path) {
@@ -113,16 +132,25 @@ static int fuzz_one_file(const char *path) {
 
     g_files_tested++;
 
-    /* Truncation points: 25%, 50%, 75%, 95% */
+    /* Cover header boundaries, proportional cuts, and a one-byte-short file. */
     size_t points[] = {
+        1u,
+        4u,
+        8u,
+        16u,
         (size_t)(file_size * 25 / 100),
         (size_t)(file_size * 50 / 100),
         (size_t)(file_size * 75 / 100),
         (size_t)(file_size * 95 / 100),
+        (size_t)file_size - 1u,
     };
 
-    for (size_t i = 0; i < 4; i++) {
-        if (points[i] > 0) {
+    for (size_t i = 0; i < sizeof(points) / sizeof(points[0]); i++) {
+        int duplicate = 0;
+        for (size_t j = 0; j < i; ++j) {
+            if (points[j] == points[i]) duplicate = 1;
+        }
+        if (!duplicate && points[i] > 0 && points[i] < (size_t)file_size) {
             try_load_truncated(path, points[i]);
         }
     }
@@ -132,15 +160,16 @@ static int fuzz_one_file(const char *path) {
 
 #ifdef _WIN32
 static void collect_nmo_files(const char *dir, char ***out_files, size_t *out_count) {
-    /* Collect .nmo files in this directory */
+    /* Collect all supported composition files in this directory. */
     char pattern[512];
-    snprintf(pattern, sizeof(pattern), "%s\\*.nmo", dir);
+    snprintf(pattern, sizeof(pattern), "%s\\*", dir);
 
     WIN32_FIND_DATAA fd;
     HANDLE h = FindFirstFileA(pattern, &fd);
     if (h != INVALID_HANDLE_VALUE) {
         do {
             if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+            if (!has_composition_extension(fd.cFileName)) continue;
 
             char full_path[512];
             snprintf(full_path, sizeof(full_path), "%s/%s", dir, fd.cFileName);
@@ -189,9 +218,7 @@ static void collect_nmo_files(const char *dir, char ***out_files, size_t *out_co
             continue;
         }
 
-        size_t len = strlen(entry->d_name);
-        if (len < 4) continue;
-        if (strcmp(entry->d_name + len - 4, ".nmo") != 0) continue;
+        if (!has_composition_extension(entry->d_name)) continue;
 
         *out_files = (char **)realloc(*out_files, (*out_count + 1) * sizeof(char *));
         (*out_files)[*out_count] = strdup(full_path);
@@ -208,7 +235,7 @@ TEST(truncation_fuzz, fuzz_all_nmo_files) {
     size_t file_count = 0;
     collect_nmo_files(data_dir, &files, &file_count);
 
-    printf("  Found %zu .nmo files in %s\n", file_count, data_dir);
+    printf("  Found %zu .nmo/.cmo/.vmo files in %s\n", file_count, data_dir);
     ASSERT_TRUE(file_count >= 20);
 
     for (size_t i = 0; i < file_count; i++) {
@@ -220,10 +247,10 @@ TEST(truncation_fuzz, fuzz_all_nmo_files) {
     printf("  Fuzzed %d files, %d truncation attempts, no crashes\n",
            g_files_tested, g_truncations_tested);
     ASSERT_TRUE(g_files_tested >= 20);
-    ASSERT_TRUE(g_truncations_tested >= 80); /* 20 files * 4 truncation points */
+    ASSERT_TRUE(g_truncations_tested >= 160);
 }
 
 TEST_MAIN_BEGIN()
-    REGISTER_TEST(truncation_fuzz, fuzz_all_nmo_files);
+    REGISTER_TEST_WITH_TIMEOUT(truncation_fuzz, fuzz_all_nmo_files, 60.0);
 TEST_MAIN_END()
 

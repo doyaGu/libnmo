@@ -366,7 +366,7 @@ TEST(probe_analyzer, dynamic_candidates_are_not_truncated_at_64)
             probe_behavior_state(&fixture, child_id);
         ASSERT_NOT_NULL(child);
         child->flags = CKBEHAVIOR_BUILDINGBLOCK | CKBEHAVIOR_MESSAGESENDER;
-        ASSERT_EQ(NMO_OK, nmo_array_append(&root->sub_behaviors, &child_id));
+        ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(&root->sub_behaviors, child_id, NULL));
     }
 
     nmo_probe_selector_request_t request;

@@ -6,10 +6,10 @@
 #include "object/builtin/nmo_group_schemas.h"
 #include "format/nmo_object.h"
 
-static int integration_contains_id(const nmo_object_id_t *ids, size_t count, nmo_object_id_t id)
+static int integration_contains_id(const nmo_ref_t *refs, size_t count, nmo_object_id_t id)
 {
     for (size_t i = 0; i < count; i++) {
-        if (ids[i] == id) {
+        if (nmo_ref_runtime_id(&refs[i]) == id) {
             return 1;
         }
     }
@@ -50,10 +50,10 @@ TEST(runtime_copy_behavior_graph, copy_behavior_like_object) {
     ASSERT_NOT_NULL(group_obj->state);
     nmo_group_state_t *group_state = (nmo_group_state_t *)group_obj->state;
     ASSERT_EQ(NMO_OK, nmo_array_reserve(&group_state->object_ids, 2));
-    nmo_object_id_t *refs = NULL;
+    nmo_ref_t *refs = NULL;
     ASSERT_EQ(NMO_OK, nmo_array_extend(&group_state->object_ids, 2, (void **)&refs));
-    refs[0] = source_id;
-    refs[1] = member_id;
+    refs[0] = nmo_ref_from_id(source_id);
+    refs[1] = nmo_ref_from_id(member_id);
 
     nmo_object_id_t copy_ids[3] = {group_id, source_id, member_id};
     nmo_runtime_report_t report = {0};
@@ -92,7 +92,7 @@ TEST(runtime_copy_behavior_graph, copy_behavior_like_object) {
     ASSERT_NOT_NULL(cloned_group->state);
     nmo_group_state_t *cloned_group_state = (nmo_group_state_t *)cloned_group->state;
     ASSERT_EQ(2u, cloned_group_state->object_ids.count);
-    const nmo_object_id_t *cloned_refs = NMO_ARRAY_DATA(nmo_object_id_t, &cloned_group_state->object_ids);
+    const nmo_ref_t *cloned_refs = NMO_ARRAY_DATA(nmo_ref_t, &cloned_group_state->object_ids);
     ASSERT_TRUE(integration_contains_id(cloned_refs, cloned_group_state->object_ids.count, cloned_members[0]) != 0);
     ASSERT_TRUE(integration_contains_id(cloned_refs, cloned_group_state->object_ids.count, cloned_members[1]) != 0);
     ASSERT_TRUE(integration_contains_id(cloned_refs, cloned_group_state->object_ids.count, source_id) == 0);

@@ -58,7 +58,7 @@ static int behavior_has_link(nmo_object_t *behavior_obj, nmo_object_id_t link_id
         return 0;
     }
     size_t idx = 0;
-    return nmo_array_find(&state->sub_behavior_links, &link_id, &idx) != 0;
+    return nmo_behavior_ref_array_find(&state->sub_behavior_links, link_id, &idx) != 0;
 }
 
 static void create_object_or_fail(
@@ -221,7 +221,7 @@ TEST(workspace_edit, set_reference_field_commit_invalidates_ref_graph) {
 
     char parent_text[32];
     snprintf(parent_text, sizeof(parent_text), "%u", parent_id);
-    nmo_session_field_edit_t field = {"parent_id", parent_text};
+    nmo_session_field_edit_t field = {"parent", parent_text};
     nmo_session_field_edit_result_t result = {0};
     workspace_edit_scope_t edit_scope = {0};
     nmo_workspace_edit_t *edit = NULL;
@@ -236,7 +236,7 @@ TEST(workspace_edit, set_reference_field_commit_invalidates_ref_graph) {
     nmo_3dentity_state_t *child_state =
         (nmo_3dentity_state_t *)nmo_object_get_state(child_obj);
     ASSERT_NOT_NULL(child_state);
-    ASSERT_EQ(parent_id, child_state->parent_id);
+    ASSERT_EQ(parent_id, nmo_ref_runtime_id(&child_state->parent));
     ASSERT_TRUE(ref_graph_edge_count(session) > before_edges);
 
     nmo_session_destroy(session);
@@ -261,7 +261,7 @@ TEST(workspace_edit, set_reference_field_rollback_restores_without_invalidating_
 
     char parent_text[32];
     snprintf(parent_text, sizeof(parent_text), "%u", parent_id);
-    nmo_session_field_edit_t field = {"parent_id", parent_text};
+    nmo_session_field_edit_t field = {"parent", parent_text};
     workspace_edit_scope_t edit_scope = {0};
     nmo_workspace_edit_t *edit = NULL;
     ASSERT_EQ(NMO_OK, begin_workspace_edit_for_session(ctx, session, "set parent rollback", &edit_scope, &edit));
@@ -274,7 +274,7 @@ TEST(workspace_edit, set_reference_field_rollback_restores_without_invalidating_
     nmo_3dentity_state_t *child_state =
         (nmo_3dentity_state_t *)nmo_object_get_state(child_obj);
     ASSERT_NOT_NULL(child_state);
-    ASSERT_EQ(0u, child_state->parent_id);
+    ASSERT_EQ(NMO_REF_NONE, child_state->parent.state);
     ASSERT_TRUE(before_graph == nmo_session_get_ref_graph(session));
 
     nmo_session_destroy(session);
@@ -1585,7 +1585,8 @@ TEST(workspace_edit, behavior_graph_flag_rebuilds_behavior_index) {
     nmo_beobject_state_t *owner_state =
         (nmo_beobject_state_t *)nmo_object_get_state(owner_obj);
     ASSERT_NOT_NULL(owner_state);
-    ASSERT_EQ(NMO_OK, nmo_array_append(&owner_state->script_ids, &parent_id));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &owner_state->scripts, parent_id));
 
     nmo_behavior_index_t *before_index = nmo_session_get_behavior_index(session);
     ASSERT_NOT_NULL(before_index);
@@ -1596,7 +1597,7 @@ TEST(workspace_edit, behavior_graph_flag_rebuilds_behavior_index) {
     nmo_behavior_state_t *parent_state =
         (nmo_behavior_state_t *)nmo_object_get_state(parent_obj);
     ASSERT_NOT_NULL(parent_state);
-    ASSERT_EQ(NMO_OK, nmo_array_append(&parent_state->sub_behaviors, &child_id));
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(&parent_state->sub_behaviors, child_id, NULL));
 
     ASSERT_EQ(before_count, nmo_behavior_index_count(nmo_session_get_behavior_index(session)));
     ASSERT_EQ(NMO_OK, nmo_session_borrow_document(session, &document));
