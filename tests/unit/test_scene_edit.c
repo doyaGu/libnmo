@@ -157,7 +157,7 @@ TEST(scene_edit, adds_object_to_scene_membership) {
     nmo_scene_object_desc_t *desc =
         NMO_ARRAY_GET(nmo_scene_object_desc_t, &scene_state->object_descs, 0);
     ASSERT_NOT_NULL(desc);
-    ASSERT_EQ(object_id, desc->object_id);
+    ASSERT_EQ(object_id, nmo_ref_runtime_id(&desc->ref));
     ASSERT_TRUE((desc->flags & CK_SCENEOBJECT_ACTIVE) != 0u);
     ASSERT_TRUE((desc->flags & CK_SCENEOBJECT_START_ACTIVATE) != 0u);
 
@@ -311,7 +311,7 @@ TEST(scene_edit, sets_active_camera)
     const nmo_scene_state_t *scene_state =
         (const nmo_scene_state_t *)nmo_object_get_state(scene_object);
     ASSERT_NOT_NULL(scene_state);
-    ASSERT_EQ(camera_id, scene_state->starting_camera_id);
+    ASSERT_EQ(camera_id, nmo_ref_runtime_id(&scene_state->starting_camera));
 
     scene_edit_fixture_destroy(&fixture);
 }

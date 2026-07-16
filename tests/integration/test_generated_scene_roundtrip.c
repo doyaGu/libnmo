@@ -118,12 +118,13 @@ TEST(generated_scene_roundtrip, saves_and_reloads_scene_objects)
                           &camera_object,
                           NULL));
     ASSERT_NOT_NULL(camera_object);
-    ASSERT_EQ(nmo_object_get_id(camera_object), scene_state->starting_camera_id);
+    ASSERT_EQ(nmo_object_get_id(camera_object),
+              nmo_ref_runtime_id(&scene_state->starting_camera));
 
     const nmo_scene_object_desc_t *descs =
         NMO_ARRAY_DATA(nmo_scene_object_desc_t, &scene_state->object_descs);
     for (size_t i = 0; i < 3u; ++i) {
-        ASSERT_NE(0u, descs[i].object_id);
+        ASSERT_NE(0u, nmo_ref_runtime_id(&descs[i].ref));
         ASSERT_TRUE((descs[i].flags & CK_SCENEOBJECT_ACTIVE) != 0u);
         ASSERT_TRUE((descs[i].flags & CK_SCENEOBJECT_START_ACTIVATE) != 0u);
     }

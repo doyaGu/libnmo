@@ -518,7 +518,8 @@ static nmo_status_t rollback_scene_object_desc_append(
             nmo_scene_object_desc_t,
             snapshot->object_descs,
             snapshot->previous_count);
-    if (desc == NULL || desc->object_id != snapshot->object_id) {
+    if (desc == NULL ||
+        nmo_ref_runtime_id(&desc->ref) != snapshot->object_id) {
         return NMO_ERR_INVALID_STATE;
     }
 
@@ -1344,7 +1345,7 @@ nmo_status_t nmo_scene_edit_add_object(
         NMO_ARRAY_DATA(nmo_scene_object_desc_t, &scene_state->object_descs);
     size_t existing_count = nmo_array_size(&scene_state->object_descs);
     for (size_t i = 0; i < existing_count; ++i) {
-        if (descs[i].object_id == object_id) {
+        if (nmo_ref_runtime_id(&descs[i].ref) == object_id) {
             return NMO_ERR_ALREADY_EXISTS;
         }
     }
@@ -1375,7 +1376,7 @@ nmo_status_t nmo_scene_edit_add_object(
     }
 
     nmo_scene_object_desc_t scene_desc = {0};
-    scene_desc.object_id = object_id;
+    scene_desc.ref = nmo_ref_from_id(object_id);
     scene_desc.flags = scene_flags;
     nmo_status_t append_result =
         nmo_array_append(&scene_state->object_descs, &scene_desc);
@@ -1501,7 +1502,7 @@ nmo_status_t nmo_scene_edit_set_active_camera(
         return status;
     }
 
-    scene_state->starting_camera_id = camera_id;
+    scene_state->starting_camera = nmo_ref_from_id(camera_id);
     nmo_workspace_edit_mark(
         edit,
         NMO_WORKSPACE_EDIT_OBJECT_STATE | NMO_WORKSPACE_EDIT_REFERENCES);

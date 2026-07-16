@@ -94,10 +94,12 @@ static int scene_list_json_visitor(size_t index,
         if (ss) {
             yyjson_mut_obj_add_uint(doc, item, "object_count",
                                     (uint64_t)ss->object_descs.count);
-            if (ss->starting_camera_id) {
+            const nmo_object_id_t starting_camera_id =
+                nmo_ref_runtime_id(&ss->starting_camera);
+            if (starting_camera_id) {
                 yyjson_mut_obj_add_uint(doc, item, "starting_camera_id",
-                                        ss->starting_camera_id);
-                const char *cam_name = resolve_name(c, ss->starting_camera_id);
+                                        starting_camera_id);
+                const char *cam_name = resolve_name(c, starting_camera_id);
                 if (cam_name && cam_name[0]) {
                     nmo_cli_json_add_str_safe(doc, item, "starting_camera", cam_name);
                 }
@@ -148,14 +150,16 @@ static int scene_list_table_visitor(size_t index,
         if (ss) {
             snprintf(obj_count_buf, sizeof(obj_count_buf), "%zu",
                      ss->object_descs.count);
-            if (ss->starting_camera_id) {
-                const char *cam_name = resolve_name(c, ss->starting_camera_id);
+            const nmo_object_id_t starting_camera_id =
+                nmo_ref_runtime_id(&ss->starting_camera);
+            if (starting_camera_id) {
+                const char *cam_name = resolve_name(c, starting_camera_id);
                 if (cam_name && cam_name[0]) {
                     snprintf(camera_buf, sizeof(camera_buf), "#%u (%s)",
-                             ss->starting_camera_id, cam_name);
+                             starting_camera_id, cam_name);
                 } else {
                     snprintf(camera_buf, sizeof(camera_buf), "#%u",
-                             ss->starting_camera_id);
+                             starting_camera_id);
                 }
             }
         } else {
@@ -336,9 +340,11 @@ static int scene_show_run(nmo_cmd_ctx_t *c, const scene_show_args_t *args) {
                 yyjson_mut_obj_add_real(doc, data, "fog_end", (double)ss->fog_end);
                 yyjson_mut_obj_add_real(doc, data, "fog_density", (double)ss->fog_density);
 
+                const nmo_object_id_t starting_camera_id =
+                    nmo_ref_runtime_id(&ss->starting_camera);
                 yyjson_mut_obj_add_uint(doc, data, "starting_camera_id",
-                                        ss->starting_camera_id);
-                const char *cam_name = resolve_name(c, ss->starting_camera_id);
+                                        starting_camera_id);
+                const char *cam_name = resolve_name(c, starting_camera_id);
                 if (cam_name && cam_name[0]) {
                     nmo_cli_json_add_str_safe(doc, data, "starting_camera", cam_name);
                 }
@@ -389,13 +395,15 @@ static int scene_show_run(nmo_cmd_ctx_t *c, const scene_show_args_t *args) {
             snprintf(buf, sizeof(buf), "%.6g", (double)ss->fog_density);
             nmo_cli_print_kv(c->out, "Fog Density", buf, 20, c->colorize);
 
-            if (ss->starting_camera_id) {
-                const char *cam_name = resolve_name(c, ss->starting_camera_id);
+            const nmo_object_id_t starting_camera_id =
+                nmo_ref_runtime_id(&ss->starting_camera);
+            if (starting_camera_id) {
+                const char *cam_name = resolve_name(c, starting_camera_id);
                 if (cam_name && cam_name[0]) {
                     snprintf(buf, sizeof(buf), "#%u (%s)",
-                             ss->starting_camera_id, cam_name);
+                             starting_camera_id, cam_name);
                 } else {
-                    snprintf(buf, sizeof(buf), "#%u", ss->starting_camera_id);
+                    snprintf(buf, sizeof(buf), "#%u", starting_camera_id);
                 }
             } else {
                 snprintf(buf, sizeof(buf), "(none)");
@@ -691,7 +699,7 @@ int nmo_cmd_scene_set(int argc, char **argv, const nmo_cli_global_opts_t *global
             (nmo_field_set_entry_t){"fog_color", vals[OPT_FOG].val.str};
     if (vals[OPT_CAMERA].present)
         args.entries[args.entry_count++] =
-            (nmo_field_set_entry_t){"starting_camera_id", vals[OPT_CAMERA].val.str};
+            (nmo_field_set_entry_t){"starting_camera", vals[OPT_CAMERA].val.str};
 
     if (args.entry_count == 0) {
         fprintf(stderr, "Error: No scene properties specified. Use --bg-color, --ambient, --fog-color, or --camera\n");

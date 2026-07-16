@@ -9,6 +9,7 @@
 #include "object/builtin/nmo_beobject_schemas.h"
 #include "object/builtin/nmo_grid_schemas.h"
 #include "object/builtin/nmo_patchmesh_schemas.h"
+#include "object/builtin/nmo_scene_schemas.h"
 #include "object/nmo_object_guids.h"
 #include "object/nmo_param_guids.h"
 #include "type/nmo_reflection.h"
@@ -154,6 +155,25 @@ static bool runtime_remap_ref_field(
 
 /* 鈹€鈹€ Base-instance resolution 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
+static void runtime_remap_scene_objects(
+    nmo_scene_state_t *state,
+    const nmo_id_remap_t *remap)
+{
+    if (state == NULL || state->object_descs.data == NULL ||
+        state->object_descs.element_size != sizeof(nmo_scene_object_desc_t)) {
+        return;
+    }
+    nmo_scene_object_desc_t *descs = NMO_ARRAY_DATA(
+        nmo_scene_object_desc_t, &state->object_descs);
+    for (size_t i = 0; i < state->object_descs.count; ++i) {
+        nmo_object_id_t mapped = NMO_OBJECT_ID_NONE;
+        if (descs[i].ref.state == NMO_REF_RESOLVED &&
+            runtime_lookup_mapping(remap, descs[i].ref.id, &mapped)) {
+            descs[i].ref.id = mapped;
+        }
+    }
+}
+
 static const void *runtime_get_base_instance(
     const nmo_type_registry_t *types,
     const nmo_type_descriptor_t *derived_type,
@@ -212,6 +232,11 @@ nmo_status_t nmo_runtime_remap_copy_refs(
             &remap_ctx);
         if (remap_result != NMO_OK) {
             return remap_result;
+        }
+
+        if (nmo_guid_equals(current->guid, CKPGUID_SCENE)) {
+            runtime_remap_scene_objects(
+                (nmo_scene_state_t *)current_instance, remap);
         }
 
         if (nmo_guid_is_null(current->base_type)) {
@@ -311,7 +336,8 @@ static nmo_class_id_t normalize_expected_class_for_field(const char *name)
         return NMO_CID_GRID;
     }
     if (strcmp(name, "camera_id") == 0 || strcmp(name, "camera") == 0 ||
-        strcmp(name, "starting_camera_id") == 0) return NMO_CID_CAMERA;
+        strcmp(name, "starting_camera_id") == 0 ||
+        strcmp(name, "starting_camera") == 0) return NMO_CID_CAMERA;
     if (strcmp(name, "level_id") == 0 || strcmp(name, "level") == 0) {
         return NMO_CID_LEVEL;
     }
@@ -445,6 +471,32 @@ static nmo_status_t normalize_grid_layers(
             continue;
         }
         NMO_RETURN_IF_ERROR(nmo_array_remove(&state->layers, i, NULL));
+        (*changes)++;
+    }
+    return NMO_OK;
+}
+
+static nmo_status_t normalize_scene_objects(
+    nmo_scene_state_t *state,
+    nmo_object_repository_t *repo,
+    size_t *changes)
+{
+    if (state == NULL) return NMO_OK;
+    if (state->object_descs.element_size != sizeof(nmo_scene_object_desc_t) ||
+        (state->object_descs.count > 0 && state->object_descs.data == NULL)) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    for (size_t i = 0; i < state->object_descs.count;) {
+        nmo_scene_object_desc_t *descs = NMO_ARRAY_DATA(
+            nmo_scene_object_desc_t, &state->object_descs);
+        const nmo_object_id_t id = nmo_ref_runtime_id(&descs[i].ref);
+        if (descs[i].ref.state == NMO_REF_RESOLVED &&
+            !normalize_id_is_invalid(repo, id)) {
+            ++i;
+            continue;
+        }
+        NMO_RETURN_IF_ERROR(nmo_array_remove(
+            &state->object_descs, i, NULL));
         (*changes)++;
     }
     return NMO_OK;
@@ -698,6 +750,11 @@ nmo_status_t nmo_runtime_normalize_invalid_refs(
             nmo_type_query_object_get_ancestor_state_by_guid(
                 type_rt->types, obj, CKPGUID_GRID);
         NMO_RETURN_IF_ERROR(normalize_grid_layers(grid, repo, &changed));
+        nmo_scene_state_t *scene = (nmo_scene_state_t *)
+            nmo_type_query_object_get_ancestor_state_by_guid(
+                type_rt->types, obj, CKPGUID_SCENE);
+        NMO_RETURN_IF_ERROR(normalize_scene_objects(
+            scene, repo, &changed));
         nmo_patchmesh_state_t *patchmesh = (nmo_patchmesh_state_t *)
             nmo_type_query_object_get_ancestor_state_by_guid(
                 type_rt->types, obj, CKPGUID_PATCHMESH);

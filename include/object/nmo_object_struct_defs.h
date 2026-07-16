@@ -220,8 +220,9 @@ typedef struct nmo_material_colors {
  * ============================================================================ */
 
 typedef struct nmo_scene_object_desc {
-    nmo_object_id_t object_id;
+    nmo_ref_t ref;
     nmo_chunk_t *initial_value;
+    nmo_chunk_t *reserved;
     uint32_t flags;
 } nmo_scene_object_desc_t;
 

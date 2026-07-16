@@ -517,7 +517,8 @@ TEST(generated_project_acceptance, cli_generates_valid_cmo_from_manifest)
     const nmo_scene_state_t *scene_state =
         (const nmo_scene_state_t *)nmo_object_get_state(scene_object);
     ASSERT_NOT_NULL(scene_state);
-    ASSERT_EQ(nmo_object_get_id(camera_object), scene_state->starting_camera_id);
+    ASSERT_EQ(nmo_object_get_id(camera_object),
+              nmo_ref_runtime_id(&scene_state->starting_camera));
     ASSERT_EQ(0xFF1A334Du, scene_state->background_color);
     ASSERT_EQ(0xFF668099u, scene_state->ambient_light_color);
     ASSERT_EQ(VXFOG_LINEAR, scene_state->fog_mode);

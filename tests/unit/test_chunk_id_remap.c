@@ -23,6 +23,7 @@
 #include "object/builtin/nmo_place_schemas.h"
 #include "object/builtin/nmo_group_schemas.h"
 #include "object/builtin/nmo_level_schemas.h"
+#include "object/builtin/nmo_scene_schemas.h"
 #include "object/builtin/nmo_synchro_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_defs.h"
@@ -1705,6 +1706,173 @@ TEST(chunk_id_remap, level_refs_round_trip_and_failure_is_atomic) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, scene_refs_round_trip_and_failure_is_atomic) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
+    ASSERT_NOT_NULL(arena);
+    nmo_id_remap_t *file_to_runtime = nmo_id_remap_create(arena);
+    nmo_id_remap_t *runtime_to_file = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(file_to_runtime);
+    ASSERT_NOT_NULL(runtime_to_file);
+    nmo_chunk_file_context_t read_context = {
+        .file_to_runtime = file_to_runtime,
+    };
+    nmo_chunk_file_context_t write_context = {
+        .runtime_to_file = runtime_to_file,
+    };
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+
+    nmo_scene_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_scene_vtable.create(&source, NULL, NULL));
+    source.level = nmo_ref_from_raw(941);
+    source.background_texture = nmo_ref_from_raw(942);
+    source.starting_camera = nmo_ref_from_raw(943);
+    nmo_scene_object_desc_t source_desc = {
+        .ref = {.raw_id = 944, .id = 0, .state = NMO_REF_UNRESOLVED},
+        .flags = CK_SCENEOBJECT_ACTIVE,
+    };
+    source_desc.reserved = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(source_desc.reserved);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(source_desc.reserved));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(source_desc.reserved, 0x12345678u));
+    nmo_chunk_close(source_desc.reserved);
+    ASSERT_EQ(NMO_OK, nmo_array_append(&source.object_descs, &source_desc));
+
+    nmo_chunk_t *first = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(first);
+    first->class_id = NMO_CID_SCENE;
+    first->data_version = 8;
+    first->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(first, &write_context);
+    ASSERT_EQ(NMO_OK, nmo_scene_serialize(
+        &source, first, NULL, &serialize_context));
+    nmo_chunk_close(first);
+    nmo_chunk_set_file_context(first, &read_context);
+
+    nmo_scene_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_scene_vtable.create(&loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_scene_deserialize(
+        &loaded, first, NULL, &deserialize_context));
+    ASSERT_EQ(941u, loaded.level.raw_id);
+    ASSERT_EQ(942u, loaded.background_texture.raw_id);
+    ASSERT_EQ(943u, loaded.starting_camera.raw_id);
+    ASSERT_EQ(1u, loaded.object_descs.count);
+    const nmo_scene_object_desc_t *loaded_descs = NMO_ARRAY_DATA(
+        nmo_scene_object_desc_t, &loaded.object_descs);
+    ASSERT_EQ(944u, loaded_descs[0].ref.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, loaded_descs[0].ref.state);
+    ASSERT_NOT_NULL(loaded_descs[0].reserved);
+
+    nmo_chunk_t *second = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(second);
+    second->class_id = NMO_CID_SCENE;
+    second->data_version = 8;
+    second->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(second, &write_context);
+    ASSERT_EQ(NMO_OK, nmo_scene_serialize(
+        &loaded, second, NULL, &serialize_context));
+    nmo_chunk_close(second);
+    nmo_chunk_set_file_context(second, &read_context);
+
+    nmo_scene_state_t reloaded;
+    ASSERT_EQ(NMO_OK, nmo_scene_vtable.create(&reloaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_scene_deserialize(
+        &reloaded, second, NULL, &deserialize_context));
+    const nmo_scene_object_desc_t *reloaded_descs = NMO_ARRAY_DATA(
+        nmo_scene_object_desc_t, &reloaded.object_descs);
+    ASSERT_EQ(941u, reloaded.level.raw_id);
+    ASSERT_EQ(942u, reloaded.background_texture.raw_id);
+    ASSERT_EQ(943u, reloaded.starting_camera.raw_id);
+    ASSERT_EQ(944u, reloaded_descs[0].ref.raw_id);
+    ASSERT_NOT_NULL(reloaded_descs[0].reserved);
+
+    nmo_scene_state_t copied;
+    nmo_type_descriptor_t scene_type = {
+        .size = sizeof(nmo_scene_state_t),
+    };
+    ASSERT_EQ(NMO_OK, nmo_scene_vtable.create(&copied, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_scene_vtable.copy(
+        &reloaded, &copied, &scene_type, arena));
+    ASSERT_NE(reloaded.object_descs.data, copied.object_descs.data);
+    ASSERT_TRUE(nmo_scene_vtable.equals(&reloaded, &copied));
+    ASSERT_EQ(nmo_scene_vtable.hash(&reloaded),
+              nmo_scene_vtable.hash(&copied));
+
+    nmo_chunk_t *truncated_descs = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(truncated_descs);
+    truncated_descs->class_id = NMO_CID_SCENE;
+    truncated_descs->data_version = 8;
+    truncated_descs->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(truncated_descs));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        truncated_descs, CK_STATESAVE_SCENENEWDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_id(truncated_descs, 945));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(truncated_descs, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(
+        truncated_descs, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_item(
+        truncated_descs, 946));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_sub_chunk_sequence(
+        truncated_descs, 2));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_sub_chunk_sequence(
+        truncated_descs, NULL));
+    nmo_chunk_close(truncated_descs);
+
+    nmo_scene_state_t failed_descs;
+    ASSERT_EQ(NMO_OK, nmo_scene_vtable.create(&failed_descs, NULL, NULL));
+    failed_descs.level = nmo_ref_from_raw(950);
+    nmo_scene_object_desc_t old_desc = {
+        .ref = {.raw_id = 951, .id = 0, .state = NMO_REF_UNRESOLVED},
+    };
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &failed_descs.object_descs, &old_desc));
+    ASSERT_NE(NMO_OK, nmo_scene_deserialize(
+        &failed_descs, truncated_descs, NULL, &deserialize_context));
+    ASSERT_EQ(950u, failed_descs.level.raw_id);
+    ASSERT_EQ(1u, failed_descs.object_descs.count);
+    ASSERT_EQ(951u, NMO_ARRAY_DATA(
+        nmo_scene_object_desc_t, &failed_descs.object_descs)[0].ref.raw_id);
+
+    nmo_chunk_t *truncated_render = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(truncated_render);
+    truncated_render->class_id = NMO_CID_SCENE;
+    truncated_render->data_version = 8;
+    truncated_render->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(truncated_render));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        truncated_render, CK_STATESAVE_SCENERENDERSETTINGS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(truncated_render, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(truncated_render, 2));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(truncated_render, 3));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(truncated_render, 4));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_float(truncated_render, 5.0f));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_float(truncated_render, 6.0f));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_float(truncated_render, 7.0f));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_id(truncated_render, 952));
+    nmo_chunk_close(truncated_render);
+
+    nmo_scene_state_t failed_render;
+    ASSERT_EQ(NMO_OK, nmo_scene_vtable.create(&failed_render, NULL, NULL));
+    failed_render.background_color = 0xAABBCCDDu;
+    failed_render.background_texture = nmo_ref_from_raw(953);
+    failed_render.starting_camera = nmo_ref_from_raw(954);
+    ASSERT_NE(NMO_OK, nmo_scene_deserialize(
+        &failed_render, truncated_render, NULL, &deserialize_context));
+    ASSERT_EQ(0xAABBCCDDu, failed_render.background_color);
+    ASSERT_EQ(953u, failed_render.background_texture.raw_id);
+    ASSERT_EQ(954u, failed_render.starting_camera.raw_id);
+
+    nmo_scene_vtable.destroy(&source, NULL, NULL);
+    nmo_scene_vtable.destroy(&loaded, NULL, NULL);
+    nmo_scene_vtable.destroy(&reloaded, NULL, NULL);
+    nmo_scene_vtable.destroy(&copied, NULL, NULL);
+    nmo_scene_vtable.destroy(&failed_descs, NULL, NULL);
+    nmo_scene_vtable.destroy(&failed_render, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, synchro_refs_round_trip_and_failure_is_atomic) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
     ASSERT_NOT_NULL(arena);
@@ -2072,6 +2240,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, place_refs_round_trip_and_truncation_is_atomic);
     REGISTER_TEST(chunk_id_remap, group_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, level_refs_round_trip_and_failure_is_atomic);
+    REGISTER_TEST(chunk_id_remap, scene_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, synchro_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, beobject_attribute_unresolved_ref_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, beobject_attribute_failure_keeps_previous_atomic_state);

@@ -53,7 +53,7 @@ typedef struct nmo_scene_state {
     nmo_beobject_state_t base;               /**< CKBeObject base state */
     
     /* Scene hierarchy */
-    nmo_object_id_t level_id;                  /**< Parent level ID */
+    nmo_ref_t level;                           /**< Parent level reference */
     
     /* Scene objects */
     nmo_array_t object_descs;                  /**< Scene object descriptors (nmo_scene_object_desc_t) */
@@ -73,8 +73,8 @@ typedef struct nmo_scene_state {
     float fog_density;                         /**< Fog density (for exponential modes) */
     
     /* Scene references */
-    nmo_object_id_t background_texture_id;     /**< Background texture ID */
-    nmo_object_id_t starting_camera_id;        /**< Starting camera ID */
+    nmo_ref_t background_texture;              /**< Background texture reference */
+    nmo_ref_t starting_camera;                 /**< Starting camera reference */
 } nmo_scene_state_t;
 
 /* =============================================================================

@@ -19,6 +19,7 @@
 #include "object/builtin/nmo_light_schemas.h"
 #include "object/builtin/nmo_level_schemas.h"
 #include "object/builtin/nmo_messagemanager_schemas.h"
+#include "object/builtin/nmo_scene_schemas.h"
 #include "object/builtin/nmo_sound_schemas.h"
 #include "object/builtin/nmo_synchro_schemas.h"
 #include "object/builtin/nmo_texture_schemas.h"
@@ -904,11 +905,27 @@ TEST(runtime_kernel, normalize_clears_raw_scalar_class_mismatch) {
     ASSERT_EQ(NMO_OK, nmo_array_append(&level->scene_ids, &valid_scene));
     ASSERT_EQ(NMO_OK, nmo_array_append(&level->scene_ids, &wrong_scene));
     ASSERT_EQ(NMO_OK, nmo_array_append(&level->scene_ids, &unresolved_scene));
+    nmo_scene_state_t *scene = (nmo_scene_state_t *)
+        nmo_object_repository_find_by_id(repo, scene_id)->state;
+    ASSERT_NOT_NULL(scene);
+    scene->level = nmo_ref_from_id(material_id);
+    scene->background_texture = nmo_ref_from_id(material_id);
+    scene->starting_camera = nmo_ref_from_id(material_id);
+    nmo_scene_object_desc_t valid_desc = {
+        .ref = {.raw_id = entity_id, .id = entity_id,
+                .state = NMO_REF_RESOLVED},
+    };
+    nmo_scene_object_desc_t invalid_desc = {
+        .ref = {.raw_id = 0x7FFFFFC0u, .id = 0,
+                .state = NMO_REF_UNRESOLVED},
+    };
+    ASSERT_EQ(NMO_OK, nmo_array_append(&scene->object_descs, &valid_desc));
+    ASSERT_EQ(NMO_OK, nmo_array_append(&scene->object_descs, &invalid_desc));
 
     size_t changed = 0;
     ASSERT_EQ(NMO_OK, nmo_runtime_normalize_invalid_refs(
         repo, nmo_context_get_type_runtime(ctx), &changed));
-    ASSERT_EQ((size_t)7, changed);
+    ASSERT_EQ((size_t)11, changed);
     ASSERT_EQ(NMO_REF_NONE, entity->current_mesh.state);
     ASSERT_EQ(NMO_OBJECT_ID_NONE, entity->current_mesh.raw_id);
     ASSERT_EQ(NMO_OBJECT_ID_NONE, entity->current_mesh.id);
@@ -923,6 +940,14 @@ TEST(runtime_kernel, normalize_clears_raw_scalar_class_mismatch) {
     ASSERT_EQ(1u, level->scene_ids.count);
     ASSERT_EQ(scene_id, nmo_ref_runtime_id(
                             &NMO_ARRAY_DATA(nmo_ref_t, &level->scene_ids)[0]));
+    ASSERT_EQ(NMO_REF_NONE, scene->level.state);
+    ASSERT_EQ(NMO_REF_NONE, scene->background_texture.state);
+    ASSERT_EQ(NMO_REF_NONE, scene->starting_camera.state);
+    ASSERT_EQ(1u, scene->object_descs.count);
+    ASSERT_EQ(entity_id, nmo_ref_runtime_id(
+                             &NMO_ARRAY_DATA(
+                                 nmo_scene_object_desc_t,
+                                 &scene->object_descs)[0].ref));
 
     nmo_session_destroy(session);
     nmo_context_release(ctx);
@@ -974,6 +999,64 @@ TEST(runtime_kernel, dependency_remap_preserves_invalid_references) {
     ASSERT_EQ(invalid_id, link->in_io_id);
     ASSERT_EQ(valid_id, link->out_io_id);
 
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
+TEST(runtime_kernel, copy_remap_updates_only_resolved_scene_members) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+
+    nmo_object_id_t scene_id = 0;
+    nmo_object_id_t member_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_SCENE, "scene", (nmo_guid_t){0, 0},
+        &scene_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_OBJECT, "member", (nmo_guid_t){0, 0},
+        &member_id, NULL));
+    nmo_scene_state_t *scene = (nmo_scene_state_t *)
+        nmo_object_repository_find_by_id(repo, scene_id)->state;
+    ASSERT_NOT_NULL(scene);
+    nmo_scene_object_desc_t resolved = {
+        .ref = {.raw_id = member_id, .id = member_id,
+                .state = NMO_REF_RESOLVED},
+        .flags = 1,
+    };
+    nmo_scene_object_desc_t unresolved = {
+        .ref = {.raw_id = 0x7FFFFFB0u, .id = 0,
+                .state = NMO_REF_UNRESOLVED},
+        .flags = 2,
+    };
+    ASSERT_EQ(NMO_OK, nmo_array_append(&scene->object_descs, &resolved));
+    ASSERT_EQ(NMO_OK, nmo_array_append(&scene->object_descs, &unresolved));
+
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_id_remap_t *remap = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(remap);
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, member_id, 0x12345u));
+    const nmo_type_runtime_t *type_rt = nmo_context_get_type_runtime(ctx);
+    const nmo_type_descriptor_t *scene_type =
+        nmo_type_registry_find_by_class_id(type_rt->types, NMO_CID_SCENE);
+    ASSERT_NOT_NULL(scene_type);
+    ASSERT_EQ(NMO_OK, nmo_runtime_remap_copy_refs(
+        type_rt, scene_type, scene, remap));
+
+    const nmo_scene_object_desc_t *descs = NMO_ARRAY_DATA(
+        nmo_scene_object_desc_t, &scene->object_descs);
+    ASSERT_EQ(2u, scene->object_descs.count);
+    ASSERT_EQ(0x12345u, descs[0].ref.id);
+    ASSERT_EQ(member_id, descs[0].ref.raw_id);
+    ASSERT_EQ(1u, descs[0].flags);
+    ASSERT_EQ(0x7FFFFFB0u, descs[1].ref.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, descs[1].ref.state);
+    ASSERT_EQ(2u, descs[1].flags);
+
+    nmo_arena_destroy(arena);
     nmo_session_destroy(session);
     nmo_context_release(ctx);
 }
@@ -1128,6 +1211,7 @@ REGISTER_TEST(runtime_kernel, deserialize_failure_does_not_publish_state_for_fin
 REGISTER_TEST(runtime_kernel, normalize_removes_only_invalid_reference_records);
 REGISTER_TEST(runtime_kernel, normalize_clears_raw_scalar_class_mismatch);
 REGISTER_TEST(runtime_kernel, dependency_remap_preserves_invalid_references);
+REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_scene_members);
 REGISTER_TEST(runtime_kernel, dependency_remap_preserves_nonreference_state);
 REGISTER_TEST(runtime_kernel, serializer_failure_does_not_reuse_raw_chunk);
 TEST_MAIN_END()

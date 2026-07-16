@@ -186,8 +186,9 @@ nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry) {
 
     /* CKSceneObjectDesc */
     static const nmo_struct_field_def_t cksceneobjectdesc_fields[] = {
-        NMO_STRUCT_FIELD_GUID_FLAGS("object_id", CKPGUID_ID, NMO_FIELD_REFERENCE),
+        NMO_STRUCT_FIELD_NAME("ref", "uint32[3]"),
         NMO_STRUCT_FIELD_GUID("initial_value", CKPGUID_STATECHUNK),
+        NMO_STRUCT_FIELD_GUID("reserved", CKPGUID_STATECHUNK),
         NMO_STRUCT_FIELD_GUID("flags", CKPGUID_UINT32)
     };
     static const nmo_struct_type_def_t cksceneobjectdesc_def =
