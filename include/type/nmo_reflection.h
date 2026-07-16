@@ -197,6 +197,22 @@ extern "C" {
         .default_value = NULL \
     }
 
+/** Define an nmo_array_t whose elements are lossless nmo_ref_t records. */
+#define NMO_FIELD_REF_RECORD_ARRAY(_struct, _field) \
+    { \
+        .name = #_field, \
+        .description = NULL, \
+        .type_guid = CKPGUID_ID_INIT, \
+        .offset = (uint32_t)offsetof(_struct, _field), \
+        .size = (uint32_t)sizeof(((_struct*)0)->_field), \
+        .flags = NMO_FIELD_REPEATED | NMO_FIELD_REFERENCE | NMO_FIELD_REF_RECORD, \
+        .added_version = 0, \
+        .removed_version = 0, \
+        .semantic = NMO_SEMANTIC_OBJECT_REF, \
+        .units = NMO_UNITS_NONE, \
+        .default_value = NULL \
+    }
+
 /**
  * @brief Define a raw pointer array of object references with count metadata.
  */
@@ -208,6 +224,24 @@ extern "C" {
         .offset = (uint32_t)offsetof(_struct, _ptr_field), \
         .size = (uint32_t)sizeof(((_struct*)0)->_ptr_field), \
         .flags = NMO_FIELD_REPEATED | NMO_FIELD_REFERENCE, \
+        .added_version = 0, \
+        .removed_version = 0, \
+        .semantic = NMO_SEMANTIC_OBJECT_REF, \
+        .units = NMO_UNITS_NONE, \
+        .default_value = NULL, \
+        .count_field_name = #_count_field, \
+        .count_multiplier = 1u \
+    }
+
+/** Define a counted pointer array whose elements are lossless nmo_ref_t records. */
+#define NMO_FIELD_REF_RECORD_ARRAY_COUNTED(_struct, _ptr_field, _count_field) \
+    { \
+        .name = #_ptr_field, \
+        .description = NULL, \
+        .type_guid = CKPGUID_ID_INIT, \
+        .offset = (uint32_t)offsetof(_struct, _ptr_field), \
+        .size = (uint32_t)sizeof(((_struct*)0)->_ptr_field), \
+        .flags = NMO_FIELD_REPEATED | NMO_FIELD_REFERENCE | NMO_FIELD_REF_RECORD, \
         .added_version = 0, \
         .removed_version = 0, \
         .semantic = NMO_SEMANTIC_OBJECT_REF, \
@@ -424,6 +458,11 @@ static inline bool nmo_field_is_ref(const nmo_type_field_t *field) {
  */
 static inline bool nmo_field_is_array(const nmo_type_field_t *field) {
     return field && (field->flags & NMO_FIELD_REPEATED);
+}
+
+/** Check whether a reference field stores nmo_ref_t records. */
+static inline bool nmo_field_uses_ref_records(const nmo_type_field_t *field) {
+    return field && (field->flags & NMO_FIELD_REF_RECORD);
 }
 
 /**

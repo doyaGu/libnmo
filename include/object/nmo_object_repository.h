@@ -68,6 +68,21 @@ NMO_API nmo_object_repository_t *nmo_object_repository_create(const nmo_allocato
 NMO_API void nmo_object_repository_destroy(nmo_object_repository_t *repository);
 
 /**
+ * Intern an unresolved serialized object ID as a repository-unique runtime
+ * token. Tokens never alias real repository object IDs.
+ */
+NMO_API nmo_status_t nmo_object_repository_intern_unresolved_ref(
+    nmo_object_repository_t *repository,
+    nmo_object_id_t raw_id,
+    nmo_object_id_t *out_token);
+
+/** Resolve an unresolved-reference token back to its serialized raw ID. */
+NMO_API bool nmo_object_repository_get_unresolved_ref_raw(
+    const nmo_object_repository_t *repository,
+    nmo_object_id_t token,
+    nmo_object_id_t *out_raw_id);
+
+/**
  * @brief Attach or detach an object index for incremental maintenance
  * @param repository Repository
  * @param index Object index to notify (NULL to detach)

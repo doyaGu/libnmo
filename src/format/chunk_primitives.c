@@ -5,6 +5,7 @@
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_chunk_context.h"
 #include "format/nmo_id_remap.h"
+#include "object/nmo_object_repository.h"
 #include <string.h>
 
 static inline uint32_t *get_data_u32(nmo_chunk_t *chunk) {
@@ -39,32 +40,54 @@ static nmo_status_t encode_object_id(const nmo_chunk_t *chunk,
         return NMO_OK;
     }
 
+    nmo_object_id_t unresolved_raw = NMO_OBJECT_ID_NONE;
+    if (ctx->repository != NULL &&
+        nmo_object_repository_get_unresolved_ref_raw(
+            ctx->repository, id, &unresolved_raw)) {
+        *out_value = (uint32_t)unresolved_raw;
+        return NMO_OK;
+    }
+
     nmo_object_id_t file_id = 0;
     if (nmo_id_remap_lookup_id(ctx->runtime_to_file, id, &file_id) != NMO_OK) {
-        *out_value = NMO_OBJECT_ID_INVALID;
-        return NMO_OK;
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                         "Cannot serialize unmapped runtime object ID %u",
+                         (unsigned)id);
     }
 
     *out_value = (uint32_t) file_id;
     return NMO_OK;
 }
 
-static nmo_object_id_t decode_object_id(const nmo_chunk_t *chunk, uint32_t raw_id) {
+static nmo_status_t decode_object_id(
+    const nmo_chunk_t *chunk,
+    uint32_t raw_id,
+    bool preserve_only,
+    nmo_object_id_t *out_id)
+{
     const nmo_chunk_file_context_t *ctx = get_file_context(chunk);
     if (ctx == NULL || ctx->file_to_runtime == NULL) {
-        return (nmo_object_id_t) raw_id;
+        *out_id = (nmo_object_id_t)raw_id;
+        return NMO_OK;
     }
 
     if (raw_id == NMO_OBJECT_ID_INVALID) {
-        return 0;
+        *out_id = NMO_OBJECT_ID_NONE;
+        return NMO_OK;
     }
 
     nmo_object_id_t runtime_id = 0;
     if (nmo_id_remap_lookup_id(ctx->file_to_runtime, (nmo_object_id_t) raw_id, &runtime_id) == NMO_OK) {
-        return runtime_id;
+        *out_id = runtime_id;
+        return NMO_OK;
     }
 
-    return 0;
+    if (preserve_only || ctx->repository == NULL) {
+        *out_id = NMO_OBJECT_ID_NONE;
+        return NMO_OK;
+    }
+    return nmo_object_repository_intern_unresolved_ref(
+        ctx->repository, (nmo_object_id_t)raw_id, out_id);
 }
 
 // =============================================================================
@@ -275,45 +298,42 @@ nmo_status_t nmo_chunk_write_string(nmo_chunk_t *chunk, const char *str) {
 }
 
 size_t nmo_chunk_read_string(nmo_chunk_t *chunk, char **out_str) {
-    if (!chunk || !out_str) {
-        return 0;
-    }
+    size_t length = 0;
+    return nmo_chunk_read_string_checked(chunk, out_str, &length) == NMO_OK
+        ? length : 0;
+}
 
-    NMO_CHUNK_CHECK_BOUNDS_OR(chunk, 1, {
-        *out_str = NULL;
-        return 0;
-    });
+nmo_status_t nmo_chunk_read_string_checked(
+    nmo_chunk_t *chunk,
+    char **out_str,
+    size_t *out_length)
+{
+    NMO_CHUNK_CHECK_ARGS(chunk, out_str, "Invalid string read arguments");
+    *out_str = NULL;
+    if (out_length) *out_length = 0;
+    NMO_CHUNK_CHECK_BOUNDS(chunk, 1);
 
     nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
     uint32_t *data = get_data_u32(chunk);
     size_t start_pos = state->current_pos;
     uint32_t len = data[state->current_pos++];
+    if (len == 0) return NMO_OK;
 
-    if (len == 0) {
-        *out_str = NULL;
-        return 0;
-    }
-
-    size_t dwords = ((size_t) len + 3u) / 4u;
+    size_t dwords = ((size_t)len + 3u) / 4u;
     if (!nmo_chunk_has_read_capacity(chunk, dwords)) {
         state->current_pos = start_pos;
-        *out_str = NULL;
-        return 0;
+        return NMO_ERR_TRUNCATED_CHUNK;
     }
-
-    // Allocate from arena
-    char *str = (char *) nmo_arena_alloc(chunk->arena, len, 1);
+    char *str = (char *)nmo_arena_alloc(chunk->arena, len, 1);
     if (!str) {
         state->current_pos = start_pos;
-        *out_str = NULL;
-        return 0;
+        return NMO_ERR_NOMEM;
     }
-
     memcpy(str, &data[state->current_pos], len);
     state->current_pos += dwords;
-
     *out_str = str;
-    return len - 1; // Exclude null terminator
+    if (out_length) *out_length = (size_t)len - 1u;
+    return NMO_OK;
 }
 
 // =============================================================================
@@ -430,63 +450,61 @@ nmo_status_t nmo_chunk_read_buffer(nmo_chunk_t *chunk,
 size_t nmo_chunk_read_and_fill_buffer(nmo_chunk_t *chunk,
                                       void *buffer,
                                       size_t buffer_size) {
-    if (!chunk || !buffer) {
-        return 0;
-    }
+    size_t size = 0;
+    return nmo_chunk_read_and_fill_buffer_checked(
+        chunk, buffer, buffer_size, &size) == NMO_OK ? size : 0;
+}
 
-    NMO_CHUNK_CHECK_BOUNDS_OR(chunk, 1, {
-        return 0;
-    });
-
+nmo_status_t nmo_chunk_read_and_fill_buffer_checked(
+    nmo_chunk_t *chunk,
+    void *buffer,
+    size_t buffer_size,
+    size_t *out_size)
+{
+    NMO_CHUNK_CHECK_ARGS(chunk, buffer, "Invalid buffer read arguments");
+    if (out_size) *out_size = 0;
+    NMO_CHUNK_CHECK_BOUNDS(chunk, 1);
     nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
     uint32_t *data_dwords = get_data_u32(chunk);
     size_t start_pos = state->current_pos;
     uint32_t size = data_dwords[state->current_pos++];
-
-    if (size == 0) {
-        return 0;
-    }
-
-    if (size > buffer_size) {
+    if (size == 0) return NMO_OK;
+    if ((size_t)size > buffer_size) {
         state->current_pos = start_pos;
-        return 0; // Buffer too small
+        return NMO_ERR_OUT_OF_BOUNDS;
     }
-
-    size_t dwords = ((size_t) size + 3u) / 4u;
+    size_t dwords = ((size_t)size + 3u) / 4u;
     if (!nmo_chunk_has_read_capacity(chunk, dwords)) {
         state->current_pos = start_pos;
-        return 0;
+        return NMO_ERR_TRUNCATED_CHUNK;
     }
-
     memcpy(buffer, &data_dwords[state->current_pos], size);
     state->current_pos += dwords;
-
-    return size;
+    if (out_size) *out_size = size;
+    return NMO_OK;
 }
 
 size_t nmo_chunk_read_and_fill_buffer_nosize(nmo_chunk_t *chunk,
                                              void *buffer,
                                              size_t buffer_size) {
-    if (!chunk || !buffer) {
-        return 0;
-    }
+    return nmo_chunk_read_and_fill_buffer_nosize_checked(
+        chunk, buffer, buffer_size) == NMO_OK ? buffer_size : 0;
+}
 
-    if (buffer_size == 0) {
-        return 0;
-    }
-
+nmo_status_t nmo_chunk_read_and_fill_buffer_nosize_checked(
+    nmo_chunk_t *chunk,
+    void *buffer,
+    size_t buffer_size)
+{
+    NMO_CHUNK_CHECK_ARGS(chunk, buffer, "Invalid buffer read arguments");
+    if (buffer_size == 0) return NMO_OK;
+    size_t dwords = (buffer_size + 3u) / 4u;
+    NMO_CHUNK_CHECK_BOUNDS(chunk, dwords);
     nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
     uint32_t *data_dwords = get_data_u32(chunk);
-
-    size_t dwords = (buffer_size + 3) / 4;
-    NMO_CHUNK_CHECK_BOUNDS_OR(chunk, dwords, {
-        return 0;
-    });
-
     memcpy(buffer, &data_dwords[state->current_pos], buffer_size);
     state->current_pos += dwords;
-
-    return buffer_size;
+    return NMO_OK;
 }
 
 // =============================================================================
@@ -528,6 +546,11 @@ nmo_status_t nmo_chunk_write_object_id(nmo_chunk_t *chunk, nmo_object_id_t id) {
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_chunk_write_raw_object_id(nmo_chunk_t *chunk, nmo_object_id_t raw_id) {
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
+    return nmo_chunk_write_dword(chunk, (uint32_t)raw_id);
+}
+
 nmo_status_t nmo_chunk_read_object_id(nmo_chunk_t *chunk, nmo_object_id_t *out_id) {
     NMO_CHUNK_CHECK_ARGS(chunk, out_id, "Invalid arguments");
 
@@ -536,7 +559,19 @@ nmo_status_t nmo_chunk_read_object_id(nmo_chunk_t *chunk, nmo_object_id_t *out_i
     nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
     uint32_t *data_dwords = get_data_u32(chunk);
     uint32_t raw_id = data_dwords[state->current_pos++];
-    *out_id = decode_object_id(chunk, raw_id);
+    return decode_object_id(chunk, raw_id, false, out_id);
+}
 
-    NMO_RETURN_OK();
+nmo_status_t nmo_chunk_read_object_id_preserve(nmo_chunk_t *chunk,
+                                                nmo_object_id_t *out_raw_id,
+                                                nmo_object_id_t *out_id) {
+    NMO_CHUNK_CHECK_ARGS(chunk, out_raw_id, "Invalid arguments");
+    NMO_CHUNK_CHECK_ARG(out_id, "Invalid decoded object ID output");
+    NMO_CHUNK_CHECK_BOUNDS(chunk, 1);
+
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
+    uint32_t *data_dwords = get_data_u32(chunk);
+    uint32_t raw_id = data_dwords[state->current_pos++];
+    *out_raw_id = (nmo_object_id_t)raw_id;
+    return decode_object_id(chunk, raw_id, true, out_id);
 }

@@ -15,7 +15,7 @@ extern "C" {
 
 // Version information
 #define NMO_VERSION_MAJOR 0
-#define NMO_VERSION_MINOR 1
+#define NMO_VERSION_MINOR 2
 #define NMO_VERSION_PATCH 0
 
 // Common types
@@ -28,6 +28,22 @@ typedef uint32_t nmo_manager_id_t;
 #define NMO_OBJECT_ID_NONE ((nmo_object_id_t)0)
 #define NMO_OBJECT_ID_INVALID ((nmo_object_id_t)0xFFFFFFFF)
 #define NMO_OBJECT_REFERENCE_FLAG 0x80000000u
+
+/** Resolution state for a serialized object reference. */
+typedef enum nmo_ref_state {
+    NMO_REF_NONE = 0,
+    NMO_REF_RESOLVED,
+    NMO_REF_UNRESOLVED,
+    NMO_REF_AMBIGUOUS,
+    NMO_REF_CLASS_MISMATCH
+} nmo_ref_state_t;
+
+/** Object reference retaining both serialized and runtime identities. */
+typedef struct nmo_ref {
+    nmo_object_id_t raw_id;
+    nmo_object_id_t id;
+    nmo_ref_state_t state;
+} nmo_ref_t;
 
 // Special class ID values
 #define NMO_CLASS_ID_INVALID ((nmo_class_id_t)0xFFFFFFFF)

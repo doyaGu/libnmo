@@ -497,6 +497,7 @@ NMO_API size_t nmo_field_flags_to_string(uint32_t flags, char *buffer, size_t bu
     APPEND_FLAG(NMO_FIELD_ID, "id")
     APPEND_FLAG(NMO_FIELD_REFERENCE, "ref")
     APPEND_FLAG(NMO_FIELD_POINTER, "pointer")
+    APPEND_FLAG(NMO_FIELD_REF_RECORD, "ref-record")
 
 #undef APPEND_FLAG
     

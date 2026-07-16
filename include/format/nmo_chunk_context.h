@@ -7,6 +7,8 @@
 extern "C" {
 #endif
 
+typedef struct nmo_object_repository nmo_object_repository_t;
+
 /**
  * @brief File-context parameters shared by writers and parsers.
  *
@@ -20,6 +22,7 @@ extern "C" {
 typedef struct nmo_chunk_file_context {
     const nmo_id_remap_t *runtime_to_file; /**< Runtime ID -> file object index (0-based) remap (save path) */
     const nmo_id_remap_t *file_to_runtime; /**< File object index (0-based) -> runtime ID remap (load path) */
+    nmo_object_repository_t *repository; /**< Owns lossless unresolved-reference tokens. */
 } nmo_chunk_file_context_t;
 
 #ifdef __cplusplus

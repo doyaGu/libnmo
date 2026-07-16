@@ -133,7 +133,7 @@ TEST(object_ids, file_context_roundtrip) {
     add_result = nmo_id_remap_add(runtime_to_file, (nmo_object_id_t)2002, (nmo_object_id_t)6);
     ASSERT_EQ(add_result, NMO_OK);
 
-    nmo_chunk_file_context_t ctx;
+    nmo_chunk_file_context_t ctx = {0};
     ctx.runtime_to_file = runtime_to_file;
     ctx.file_to_runtime = NULL;
     nmo_chunk_writer_set_file_context(writer, &ctx);
@@ -192,7 +192,7 @@ TEST(object_ids, chunk_api_file_context_maps_ids) {
     ASSERT_EQ(nmo_id_remap_add(file_to_runtime, (nmo_object_id_t)5, (nmo_object_id_t)1001), NMO_OK);
     ASSERT_EQ(nmo_id_remap_add(file_to_runtime, (nmo_object_id_t)6, (nmo_object_id_t)2002), NMO_OK);
 
-    nmo_chunk_file_context_t file_ctx;
+    nmo_chunk_file_context_t file_ctx = {0};
     file_ctx.runtime_to_file = runtime_to_file;
     file_ctx.file_to_runtime = file_to_runtime;
 

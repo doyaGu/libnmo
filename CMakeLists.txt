@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.15)
 
 project(libnmo
-    VERSION 0.1.0
+    VERSION 0.2.0
     DESCRIPTION "C library for reading and writing Virtools file formats (.nmo/.cmo/.vmo)"
     LANGUAGES C
 )
@@ -196,6 +196,7 @@ set(NMO_OBJECT_SOURCES
     src/object/object_iter.c
     src/object/object_repository.c
     src/object/object_refs.c
+    src/object/ref.c
     src/object/object_query.c
     src/object/object_query_index.c
     src/object/object_index.c

@@ -130,6 +130,22 @@ nmo_status_t nmo_type_set_field(
         return NMO_OK;
     }
 
+    if ((field->flags & NMO_FIELD_REFERENCE) != 0u &&
+        nmo_guid_equals(field->type_guid, CKPGUID_ID) &&
+        field->size == sizeof(nmo_ref_t)) {
+        nmo_object_id_t parsed = NMO_OBJECT_ID_NONE;
+        status = nmo_type_value_from_string(
+            &parsed, field_type, registry, value_str);
+        if (status != NMO_OK) return status;
+        nmo_ref_t *ref = (nmo_ref_t *)field_ptr;
+        ref->raw_id = parsed;
+        ref->id = parsed;
+        ref->state = (parsed == NMO_OBJECT_ID_NONE ||
+                      parsed == NMO_OBJECT_ID_INVALID)
+            ? NMO_REF_NONE : NMO_REF_RESOLVED;
+        return NMO_OK;
+    }
+
     return nmo_type_value_from_string(field_ptr, field_type, registry, value_str);
 }
 
@@ -154,6 +170,16 @@ nmo_status_t nmo_type_get_field(
         (void *)state, type, registry, field_name, &field, &field_type, &field_ptr);
     if (status != NMO_OK) {
         return status;
+    }
+
+    if ((field->flags & NMO_FIELD_REFERENCE) != 0u &&
+        nmo_guid_equals(field->type_guid, CKPGUID_ID) &&
+        field->size == sizeof(nmo_ref_t)) {
+        const nmo_ref_t *ref = (const nmo_ref_t *)field_ptr;
+        const nmo_object_id_t id = ref->state == NMO_REF_RESOLVED
+            ? ref->id : ref->raw_id;
+        return nmo_type_value_to_string(
+            &id, field_type, registry, out_buf, buf_size);
     }
 
     return nmo_type_value_to_string(field_ptr, field_type, registry, out_buf, buf_size);

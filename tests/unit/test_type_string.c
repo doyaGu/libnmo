@@ -1089,6 +1089,69 @@ TEST(type_string, object_id_roundtrip) {
     teardown();
 }
 
+TEST(type_string, reflected_ref_field_get_set_is_atomic) {
+    setup();
+    ASSERT_EQ(NMO_OK, nmo_register_builtin_types(registry));
+
+    typedef struct test_ref_holder_t {
+        nmo_ref_t target;
+    } test_ref_holder_t;
+
+    static const nmo_type_field_t fields[] = {
+        NMO_FIELD_REF(test_ref_holder_t, target),
+    };
+    nmo_type_descriptor_t desc = {
+        .guid = NMO_GUID(0xDEADBEEFu, 0x00000005u),
+        .id = NMO_TYPE_ID_INVALID,
+        .class_id = 0,
+        .category = NMO_TYPE_CATEGORY_STRUCT,
+        .name = "TestRefHolder",
+        .base_type = NMO_NULL_GUID,
+        .base_type_id = NMO_TYPE_ID_INVALID,
+        .size = (uint32_t)sizeof(test_ref_holder_t),
+        .alignment = (uint32_t)alignof(test_ref_holder_t),
+        .fields = fields,
+        .field_count = sizeof(fields) / sizeof(fields[0]),
+        .specialized_index = NMO_SPECIALIZED_INDEX_INVALID,
+        .valid = true,
+    };
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &desc));
+    const nmo_type_descriptor_t *type =
+        nmo_type_registry_find_by_guid(registry, desc.guid);
+    ASSERT_NOT_NULL(type);
+
+    test_ref_holder_t value = {
+        .target = {
+            .raw_id = 777,
+            .id = NMO_OBJECT_ID_NONE,
+            .state = NMO_REF_UNRESOLVED,
+        },
+    };
+    char buffer[64];
+    ASSERT_EQ(NMO_OK, nmo_type_get_field(
+        &value, type, registry, "target", buffer, sizeof(buffer)));
+    ASSERT_STR_EQ("#777", buffer);
+
+    ASSERT_EQ(NMO_OK, nmo_type_set_field(
+        &value, type, registry, "target", "#42"));
+    ASSERT_EQ(42u, value.target.raw_id);
+    ASSERT_EQ(42u, value.target.id);
+    ASSERT_EQ(NMO_REF_RESOLVED, value.target.state);
+
+    ASSERT_EQ(NMO_OK, nmo_type_value_to_string(
+        &value, type, registry, buffer, sizeof(buffer)));
+    ASSERT_STR_EQ("{target=#42}", buffer);
+
+    test_ref_holder_t parsed = {0};
+    ASSERT_EQ(NMO_OK, nmo_type_value_from_string(
+        &parsed, type, registry, "{target=#99}"));
+    ASSERT_EQ(99u, parsed.target.raw_id);
+    ASSERT_EQ(99u, parsed.target.id);
+    ASSERT_EQ(NMO_REF_RESOLVED, parsed.target.state);
+
+    teardown();
+}
+
 TEST(type_string, type_value_to_string_object_id) {
     setup();
 
@@ -2761,6 +2824,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(type_string, object_id_to_string);
     REGISTER_TEST(type_string, object_id_from_string);
     REGISTER_TEST(type_string, object_id_roundtrip);
+    REGISTER_TEST(type_string, reflected_ref_field_get_set_is_atomic);
     REGISTER_TEST(type_string, type_value_to_string_object_id);
     REGISTER_TEST(type_string, type_value_to_string_struct_with_object_id_field);
     REGISTER_TEST(type_string, type_value_from_string_struct_with_reflected_fields);

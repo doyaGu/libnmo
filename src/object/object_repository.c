@@ -40,6 +40,11 @@ typedef struct nmo_object_repository {
     /* File ID hash table (for original CK_ID lookup) */
     nmo_hash_table_t *file_id_table; /* nmo_object_id_t -> nmo_object_t* */
 
+    /* Lossless unresolved-reference tokens. */
+    nmo_hash_table_t *unresolved_raw_to_token; /* raw file ID -> runtime token */
+    nmo_hash_table_t *unresolved_token_to_raw; /* runtime token -> raw file ID */
+    nmo_object_id_t next_unresolved_token;
+
     /* Runtime ID allocator */
     nmo_object_id_t next_runtime_id;
 
@@ -274,11 +279,30 @@ nmo_object_repository_t *nmo_object_repository_create(const nmo_allocator_t *all
         return NULL;
     }
 
+    repo->unresolved_raw_to_token = nmo_hash_table_create(
+        &repo->allocator, sizeof(nmo_object_id_t), sizeof(nmo_object_id_t),
+        INITIAL_CAPACITY, nmo_hash_uint32, NULL);
+    repo->unresolved_token_to_raw = nmo_hash_table_create(
+        &repo->allocator, sizeof(nmo_object_id_t), sizeof(nmo_object_id_t),
+        INITIAL_CAPACITY, nmo_hash_uint32, NULL);
+    if (repo->unresolved_raw_to_token == NULL ||
+        repo->unresolved_token_to_raw == NULL) {
+        nmo_hash_table_destroy(repo->unresolved_raw_to_token);
+        nmo_hash_table_destroy(repo->unresolved_token_to_raw);
+        nmo_hash_table_destroy(repo->file_id_table);
+        nmo_hash_table_destroy(repo->name_table);
+        nmo_indexed_map_destroy(repo->id_map);
+        nmo_free(&repo->base_allocator, repo);
+        return NULL;
+    }
+
     if (nmo_array_init(
             &repo->mutation_observers,
             sizeof(nmo_object_repository_mutation_observer_t),
             0,
             &repo->allocator) != NMO_OK) {
+        nmo_hash_table_destroy(repo->unresolved_token_to_raw);
+        nmo_hash_table_destroy(repo->unresolved_raw_to_token);
         nmo_hash_table_destroy(repo->file_id_table);
         nmo_hash_table_destroy(repo->name_table);
         nmo_indexed_map_destroy(repo->id_map);
@@ -287,6 +311,7 @@ nmo_object_repository_t *nmo_object_repository_create(const nmo_allocator_t *all
     }
 
     repo->next_runtime_id = 1; /* Start from 1 (0 is invalid) */
+    repo->next_unresolved_token = NMO_OBJECT_ID_INVALID - 1u;
     return repo;
 }
 
@@ -298,11 +323,65 @@ void nmo_object_repository_destroy(nmo_object_repository_t *repo) {
         nmo_indexed_map_destroy(repo->id_map);
         nmo_hash_table_destroy(repo->name_table);
         nmo_hash_table_destroy(repo->file_id_table);
+        nmo_hash_table_destroy(repo->unresolved_raw_to_token);
+        nmo_hash_table_destroy(repo->unresolved_token_to_raw);
         nmo_free(&repo->allocator, repo->scratch_all);
         nmo_free(&repo->allocator, repo->scratch_class);
         nmo_array_dispose(&repo->mutation_observers);
         nmo_free(&repo->base_allocator, repo);
     }
+}
+
+nmo_status_t nmo_object_repository_intern_unresolved_ref(
+    nmo_object_repository_t *repo,
+    nmo_object_id_t raw_id,
+    nmo_object_id_t *out_token)
+{
+    if (repo == NULL || out_token == NULL ||
+        raw_id == NMO_OBJECT_ID_NONE || raw_id == NMO_OBJECT_ID_INVALID) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_object_id_t token = NMO_OBJECT_ID_NONE;
+    if (nmo_hash_table_get(repo->unresolved_raw_to_token, &raw_id, &token) == NMO_OK) {
+        *out_token = token;
+        return NMO_OK;
+    }
+
+    token = repo->next_unresolved_token;
+    const nmo_object_id_t start = token;
+    for (;;) {
+        if (token != NMO_OBJECT_ID_NONE && token != NMO_OBJECT_ID_INVALID &&
+            !nmo_indexed_map_contains(repo->id_map, &token) &&
+            !nmo_hash_table_contains(repo->unresolved_token_to_raw, &token)) {
+            break;
+        }
+        token--;
+        if (token == NMO_OBJECT_ID_INVALID) token--;
+        if (token == start) return NMO_ERR_NOMEM;
+    }
+
+    nmo_status_t status = nmo_hash_table_insert(
+        repo->unresolved_raw_to_token, &raw_id, &token);
+    if (status != NMO_OK) return status;
+    status = nmo_hash_table_insert(repo->unresolved_token_to_raw, &token, &raw_id);
+    if (status != NMO_OK) {
+        nmo_hash_table_remove(repo->unresolved_raw_to_token, &raw_id);
+        return status;
+    }
+    repo->next_unresolved_token = token - 1u;
+    *out_token = token;
+    return NMO_OK;
+}
+
+bool nmo_object_repository_get_unresolved_ref_raw(
+    const nmo_object_repository_t *repo,
+    nmo_object_id_t token,
+    nmo_object_id_t *out_raw_id)
+{
+    if (repo == NULL || out_raw_id == NULL) return false;
+    return nmo_hash_table_get(
+        repo->unresolved_token_to_raw, &token, out_raw_id) == NMO_OK;
 }
 
 void nmo_object_repository_set_index(
@@ -406,7 +485,8 @@ nmo_status_t nmo_object_repository_add(nmo_object_repository_t *repo, nmo_object
     }
 
     /* Check if ID already exists */
-    if (nmo_indexed_map_contains(repo->id_map, &obj->id)) {
+    if (nmo_indexed_map_contains(repo->id_map, &obj->id) ||
+        nmo_hash_table_contains(repo->unresolved_token_to_raw, &obj->id)) {
         return NMO_ERR_INVALID_STATE;
     }
 
@@ -762,7 +842,8 @@ static nmo_object_id_t nmo_object_repository_allocate_id(nmo_object_repository_t
 
     nmo_object_id_t id = start;
     for (;;) {
-        if (!nmo_indexed_map_contains(repo->id_map, &id)) {
+        if (!nmo_indexed_map_contains(repo->id_map, &id) &&
+            !nmo_hash_table_contains(repo->unresolved_token_to_raw, &id)) {
             nmo_object_id_t next = id + 1;
             if (next == NMO_OBJECT_ID_NONE) {
                 next = 1;
@@ -799,6 +880,9 @@ nmo_status_t nmo_object_repository_clear(nmo_object_repository_t *repo) {
     nmo_indexed_map_clear(repo->id_map);
     nmo_hash_table_clear(repo->name_table);
     nmo_hash_table_clear(repo->file_id_table);
+    nmo_hash_table_clear(repo->unresolved_raw_to_token);
+    nmo_hash_table_clear(repo->unresolved_token_to_raw);
+    repo->next_unresolved_token = NMO_OBJECT_ID_INVALID - 1u;
     repo->next_runtime_id = 1;
     nmo_object_repository_notify_mutation(
         repo, NMO_OBJECT_REPOSITORY_MUTATION_ALL);

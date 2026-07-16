@@ -5,6 +5,7 @@
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_context.h"
 #include "format/nmo_id_remap.h"
+#include "object/nmo_object_repository.h"
 #include <string.h>
 
 // =============================================================================
@@ -59,16 +60,32 @@ nmo_status_t nmo_chunk_write_object_sequence_item(nmo_chunk_t *chunk, nmo_object
         if (id == 0) {
             encoded_value = NMO_OBJECT_ID_INVALID;
         } else {
+            nmo_object_id_t unresolved_raw = NMO_OBJECT_ID_NONE;
+            if (ctx->repository != NULL &&
+                nmo_object_repository_get_unresolved_ref_raw(
+                    ctx->repository, id, &unresolved_raw)) {
+                encoded_value = (uint32_t)unresolved_raw;
+                return nmo_chunk_write_int(chunk, (int32_t)encoded_value);
+            }
             nmo_object_id_t file_id = 0;
             if (nmo_id_remap_lookup_id(ctx->runtime_to_file, id, &file_id) == NMO_OK) {
                 encoded_value = (uint32_t) file_id;
             } else {
-                encoded_value = NMO_OBJECT_ID_INVALID;
+                NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                                 "Cannot serialize unmapped runtime object sequence ID %u",
+                                 (unsigned)id);
             }
         }
     }
 
     return nmo_chunk_write_int(chunk, (int32_t) encoded_value);
+}
+
+nmo_status_t nmo_chunk_write_raw_object_sequence_item(
+    nmo_chunk_t *chunk,
+    nmo_object_id_t raw_id)
+{
+    return nmo_chunk_write_int(chunk, (int32_t)raw_id);
 }
 
 nmo_status_t nmo_chunk_read_object_sequence_start(nmo_chunk_t *chunk, size_t *out_count) {
@@ -81,6 +98,11 @@ nmo_status_t nmo_chunk_read_object_sequence_start(nmo_chunk_t *chunk, size_t *ou
     if (count < 0) {
         NMO_CHUNK_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                                "Object sequence count cannot be negative");
+    }
+
+    if (!nmo_chunk_has_read_capacity(chunk, (size_t)count)) {
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                               "Object sequence count exceeds remaining DWORDs");
     }
 
     *out_count = (size_t) count;

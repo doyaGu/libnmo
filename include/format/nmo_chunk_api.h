@@ -444,6 +444,13 @@ NMO_API nmo_status_t nmo_chunk_write_buffer_no_size(nmo_chunk_t *chunk,
  */
 NMO_API nmo_status_t nmo_chunk_write_object_id(nmo_chunk_t *chunk, nmo_object_id_t id);
 
+/** Write an object ID exactly as encoded, bypassing runtime/file remapping. */
+NMO_API nmo_status_t nmo_chunk_write_raw_object_id(nmo_chunk_t *chunk,
+                                                    nmo_object_id_t raw_id);
+NMO_API nmo_status_t nmo_chunk_write_raw_object_sequence_item(
+    nmo_chunk_t *chunk,
+    nmo_object_id_t raw_id);
+
 // =============================================================================
 // PRIMITIVE TYPES - READ
 // =============================================================================
@@ -513,6 +520,12 @@ NMO_API nmo_status_t nmo_chunk_read_guid(nmo_chunk_t *chunk, nmo_guid_t *out_val
  */
 NMO_API size_t nmo_chunk_read_string(nmo_chunk_t *chunk, char **out_str);
 
+/** Read a string while distinguishing an empty value from an I/O failure. */
+NMO_API nmo_status_t nmo_chunk_read_string_checked(
+    nmo_chunk_t *chunk,
+    char **out_str,
+    size_t *out_length);
+
 /**
  * @brief Read buffer (allocates from arena)
  *
@@ -537,8 +550,15 @@ NMO_API nmo_status_t nmo_chunk_read_buffer(nmo_chunk_t *chunk,
  * @return Number of bytes read, 0 on error
  */
 NMO_API size_t nmo_chunk_read_and_fill_buffer(nmo_chunk_t *chunk,
-                                              void *buffer,
-                                              size_t buffer_size);
+                                               void *buffer,
+                                               size_t buffer_size);
+
+/** Read a sized buffer and report truncation or capacity errors explicitly. */
+NMO_API nmo_status_t nmo_chunk_read_and_fill_buffer_checked(
+    nmo_chunk_t *chunk,
+    void *buffer,
+    size_t buffer_size,
+    size_t *out_size);
 
 /**
  * @brief Read buffer into existing buffer (no size prefix)
@@ -552,8 +572,14 @@ NMO_API size_t nmo_chunk_read_and_fill_buffer(nmo_chunk_t *chunk,
  * @return Number of bytes read, 0 on error
  */
 NMO_API size_t nmo_chunk_read_and_fill_buffer_nosize(nmo_chunk_t *chunk,
-                                                     void *buffer,
-                                                     size_t buffer_size);
+                                                      void *buffer,
+                                                      size_t buffer_size);
+
+/** Read an exact-size buffer without a serialized size prefix. */
+NMO_API nmo_status_t nmo_chunk_read_and_fill_buffer_nosize_checked(
+    nmo_chunk_t *chunk,
+    void *buffer,
+    size_t buffer_size);
 
 /**
  * @brief Read object ID
@@ -563,6 +589,11 @@ NMO_API size_t nmo_chunk_read_and_fill_buffer_nosize(nmo_chunk_t *chunk,
  * @return NMO_OK on success, NMO_ERR_TRUNCATED_CHUNK if no data available
  */
 NMO_API nmo_status_t nmo_chunk_read_object_id(nmo_chunk_t *chunk, nmo_object_id_t *out_id);
+
+/** Read both the encoded object ID and its decoded runtime ID. */
+NMO_API nmo_status_t nmo_chunk_read_object_id_preserve(nmo_chunk_t *chunk,
+                                                        nmo_object_id_t *out_raw_id,
+                                                        nmo_object_id_t *out_id);
 
 // =============================================================================
 // PRIMITIVE ARRAYS

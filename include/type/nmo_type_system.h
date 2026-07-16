@@ -244,6 +244,7 @@ typedef enum nmo_field_units {
 #define NMO_FIELD_ID              0x0040  /* Object/Manager ID field */
 #define NMO_FIELD_REFERENCE       0x0080  /* Reference to another object */
 #define NMO_FIELD_POINTER         0x0100  /* Field stores a pointer; dereference before formatting */
+#define NMO_FIELD_REF_RECORD      0x0200  /* Reference value uses nmo_ref_t storage */
 
 /* ============================================================================
  * Type Field Descriptor
