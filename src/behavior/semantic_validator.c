@@ -2479,9 +2479,9 @@ static nmo_status_t semantic_validate_basic_edit_op(
                 repo,
                 risks,
                 risk_count,
-                state->has_in1 ? state->in1_id : 0u));
+                state->has_in1 ? nmo_parameteroperation_in1_id(state) : 0u));
             in1_type = semantic_parameter_type_desc(
-                ctx, repo, state->has_in1 ? state->in1_id : 0u);
+                ctx, repo, state->has_in1 ? nmo_parameteroperation_in1_id(state) : 0u);
             has_in1 = state->has_in1 != 0u;
         }
 
@@ -2526,9 +2526,9 @@ static nmo_status_t semantic_validate_basic_edit_op(
                 repo,
                 risks,
                 risk_count,
-                state->has_in2 ? state->in2_id : 0u));
+                state->has_in2 ? nmo_parameteroperation_in2_id(state) : 0u));
             in2_type = semantic_parameter_type_desc(
-                ctx, repo, state->has_in2 ? state->in2_id : 0u);
+                ctx, repo, state->has_in2 ? nmo_parameteroperation_in2_id(state) : 0u);
             has_in2 = state->has_in2 != 0u;
         }
 
@@ -2573,9 +2573,9 @@ static nmo_status_t semantic_validate_basic_edit_op(
                 repo,
                 risks,
                 risk_count,
-                state->has_out ? state->out_id : 0u));
+                state->has_out ? nmo_parameteroperation_out_id(state) : 0u));
             out_type = semantic_parameter_type_desc(
-                ctx, repo, state->has_out ? state->out_id : 0u);
+                ctx, repo, state->has_out ? nmo_parameteroperation_out_id(state) : 0u);
             has_out = state->has_out != 0u;
         }
 

@@ -2160,13 +2160,13 @@ static void edit_report_set_operation_slot_before(
     impact->before_operation_guid = state->operation_guid;
     impact->before_has_in1_parameter = state->has_in1 != 0u;
     impact->before_in1_parameter_id =
-        state->has_in1 ? state->in1_id : 0u;
+        state->has_in1 ? nmo_parameteroperation_in1_id(state) : 0u;
     impact->before_has_in2_parameter = state->has_in2 != 0u;
     impact->before_in2_parameter_id =
-        state->has_in2 ? state->in2_id : 0u;
+        state->has_in2 ? nmo_parameteroperation_in2_id(state) : 0u;
     impact->before_has_out_parameter = state->has_out != 0u;
     impact->before_out_parameter_id =
-        state->has_out ? state->out_id : 0u;
+        state->has_out ? nmo_parameteroperation_out_id(state) : 0u;
 }
 
 static void edit_report_set_operation_slot_after(
@@ -2186,13 +2186,13 @@ static void edit_report_set_operation_slot_after(
     impact->after_operation_guid = state->operation_guid;
     impact->after_has_in1_parameter = state->has_in1 != 0u;
     impact->after_in1_parameter_id =
-        state->has_in1 ? state->in1_id : 0u;
+        state->has_in1 ? nmo_parameteroperation_in1_id(state) : 0u;
     impact->after_has_in2_parameter = state->has_in2 != 0u;
     impact->after_in2_parameter_id =
-        state->has_in2 ? state->in2_id : 0u;
+        state->has_in2 ? nmo_parameteroperation_in2_id(state) : 0u;
     impact->after_has_out_parameter = state->has_out != 0u;
     impact->after_out_parameter_id =
-        state->has_out ? state->out_id : 0u;
+        state->has_out ? nmo_parameteroperation_out_id(state) : 0u;
 }
 
 static void edit_plan_format_data_cell_value(
@@ -2824,13 +2824,13 @@ static void edit_plan_get_parameter_operation_slots(
         return;
     }
     if (out_in1_parameter_id != NULL && state->has_in1) {
-        *out_in1_parameter_id = state->in1_id;
+        *out_in1_parameter_id = nmo_parameteroperation_in1_id(state);
     }
     if (out_in2_parameter_id != NULL && state->has_in2) {
-        *out_in2_parameter_id = state->in2_id;
+        *out_in2_parameter_id = nmo_parameteroperation_in2_id(state);
     }
     if (out_out_parameter_id != NULL && state->has_out) {
-        *out_out_parameter_id = state->out_id;
+        *out_out_parameter_id = nmo_parameteroperation_out_id(state);
     }
 }
 
@@ -2894,9 +2894,9 @@ static nmo_status_t edit_report_note_parameter_detach_impacts(
                 continue;
             }
 
-            if ((state->has_in1 && state->in1_id == parameter_id) ||
-                (state->has_in2 && state->in2_id == parameter_id) ||
-                (state->has_out && state->out_id == parameter_id)) {
+            if ((state->has_in1 && nmo_parameteroperation_in1_id(state) == parameter_id) ||
+                (state->has_in2 && nmo_parameteroperation_in2_id(state) == parameter_id) ||
+                (state->has_out && nmo_parameteroperation_out_id(state) == parameter_id)) {
                 NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
                     report,
                     nmo_object_get_id(object),

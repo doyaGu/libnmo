@@ -364,6 +364,13 @@ static nmo_class_id_t normalize_expected_class_for_typed_field(
     const nmo_type_field_t *field)
 {
     if (type != NULL && field != NULL && field->name != NULL &&
+        nmo_guid_equals(type->guid, CKPGUID_PARAMETEROPERATION)) {
+        if (strcmp(field->name, "owner") == 0) return NMO_CID_BEHAVIOR;
+        if (strcmp(field->name, "in1") == 0 ||
+            strcmp(field->name, "in2") == 0 ||
+            strcmp(field->name, "out") == 0) return 0;
+    }
+    if (type != NULL && field != NULL && field->name != NULL &&
         strcmp(field->name, "parent") == 0) {
         if (nmo_guid_equals(type->guid, CKPGUID_2DENTITY)) {
             return NMO_CID_2DENTITY;
@@ -375,6 +382,26 @@ static nmo_class_id_t normalize_expected_class_for_typed_field(
     return normalize_expected_class_for_field(field ? field->name : NULL);
 }
 
+static bool normalize_is_parameteroperation_slot(
+    const nmo_type_descriptor_t *type,
+    const nmo_type_field_t *field)
+{
+    return type != NULL && field != NULL && field->name != NULL &&
+        nmo_guid_equals(type->guid, CKPGUID_PARAMETEROPERATION) &&
+        (strcmp(field->name, "in1") == 0 ||
+         strcmp(field->name, "in2") == 0 ||
+         strcmp(field->name, "out") == 0);
+}
+
+static bool normalize_is_parameter_reference_class(nmo_class_id_t class_id)
+{
+    return class_id == NMO_CID_PARAMETER ||
+           class_id == NMO_CID_PARAMETERIN ||
+           class_id == NMO_CID_PARAMETEROUT ||
+           class_id == NMO_CID_PARAMETERLOCAL ||
+           class_id == NMO_CID_PARAMETEROPERATION;
+}
+
 static bool normalize_id_is_invalid_for_typed_field(
     nmo_object_repository_t *repo,
     const nmo_type_registry_t *types,
@@ -382,6 +409,13 @@ static bool normalize_id_is_invalid_for_typed_field(
     const nmo_type_field_t *field,
     nmo_object_id_t id)
 {
+    if (normalize_is_parameteroperation_slot(type, field)) {
+        if (normalize_id_is_invalid(repo, id)) return true;
+        const nmo_object_t *target =
+            nmo_object_repository_find_by_id(repo, id);
+        return target != NULL && !normalize_is_parameter_reference_class(
+            nmo_object_get_class_id(target));
+    }
     return normalize_id_is_invalid(repo, id) ||
         normalize_id_has_wrong_class(
             repo, types, id,

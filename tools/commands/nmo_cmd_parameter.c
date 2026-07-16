@@ -385,20 +385,20 @@ static void parameter_add_operation_json(
     }
 
     if (op->has_owner) {
-        yyjson_mut_obj_add_uint(doc, item, "owner_id", op->owner_id);
+        yyjson_mut_obj_add_uint(doc, item, "owner_id", nmo_parameteroperation_owner_id(op));
         if (repo) {
             nmo_cli_json_add_str_safe(doc, item, "owner_name",
-                                      resolve_name(repo, op->owner_id));
+                                      resolve_name(repo, nmo_parameteroperation_owner_id(op)));
         }
     }
     if (op->has_in1) {
-        parameter_add_operation_param_json(doc, item, repo, registry, "in1", op->in1_id);
+        parameter_add_operation_param_json(doc, item, repo, registry, "in1", nmo_parameteroperation_in1_id(op));
     }
     if (op->has_in2) {
-        parameter_add_operation_param_json(doc, item, repo, registry, "in2", op->in2_id);
+        parameter_add_operation_param_json(doc, item, repo, registry, "in2", nmo_parameteroperation_in2_id(op));
     }
     if (op->has_out) {
-        parameter_add_operation_param_json(doc, item, repo, registry, "out", op->out_id);
+        parameter_add_operation_param_json(doc, item, repo, registry, "out", nmo_parameteroperation_out_id(op));
     }
 }
 
@@ -447,20 +447,20 @@ static void parameter_print_operation_text(
     fprintf(out, "\n");
 
     if (op->has_owner) {
-        fprintf(out, "Owner: #%u", op->owner_id);
+        fprintf(out, "Owner: #%u", nmo_parameteroperation_owner_id(op));
         if (repo) {
-            fprintf(out, " %s", resolve_name(repo, op->owner_id));
+            fprintf(out, " %s", resolve_name(repo, nmo_parameteroperation_owner_id(op)));
         }
         fprintf(out, "\n");
     }
     if (op->has_in1) {
-        parameter_print_operation_param(out, repo, registry, "Input 1", op->in1_id);
+        parameter_print_operation_param(out, repo, registry, "Input 1", nmo_parameteroperation_in1_id(op));
     }
     if (op->has_in2) {
-        parameter_print_operation_param(out, repo, registry, "Input 2", op->in2_id);
+        parameter_print_operation_param(out, repo, registry, "Input 2", nmo_parameteroperation_in2_id(op));
     }
     if (op->has_out) {
-        parameter_print_operation_param(out, repo, registry, "Output", op->out_id);
+        parameter_print_operation_param(out, repo, registry, "Output", nmo_parameteroperation_out_id(op));
     }
 }
 

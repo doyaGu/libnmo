@@ -555,11 +555,11 @@ static int behavior_graph_run(nmo_cmd_ctx_t *ctx,
                     nmo_cli_json_add_str_safe(doc, node, "operation_name",
                                               (op_name && op_name[0]) ? op_name : guid_buf);
                     yyjson_mut_obj_add_uint(doc, node, "in1_id",
-                                            op_state->has_in1 ? op_state->in1_id : 0);
+                                            op_state->has_in1 ? nmo_parameteroperation_in1_id(op_state) : 0);
                     yyjson_mut_obj_add_uint(doc, node, "in2_id",
-                                            op_state->has_in2 ? op_state->in2_id : 0);
+                                            op_state->has_in2 ? nmo_parameteroperation_in2_id(op_state) : 0);
                     yyjson_mut_obj_add_uint(doc, node, "out_id",
-                                            op_state->has_out ? op_state->out_id : 0);
+                                            op_state->has_out ? nmo_parameteroperation_out_id(op_state) : 0);
                 }
             }
             yyjson_mut_arr_add_val(nodes_arr, node);

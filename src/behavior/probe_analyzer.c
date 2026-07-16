@@ -431,12 +431,12 @@ static void probe_enrich_candidate_with_data_cell(
     }
     if (operation != NULL) {
         if (operation->has_in1) {
-            candidate->source_parameter_id = operation->in1_id;
+            candidate->source_parameter_id = nmo_parameteroperation_in1_id(operation);
         }
         if (operation->has_out) {
-            candidate->value_parameter_id = operation->out_id;
+            candidate->value_parameter_id = nmo_parameteroperation_out_id(operation);
         } else if (operation->has_in2) {
-            candidate->value_parameter_id = operation->in2_id;
+            candidate->value_parameter_id = nmo_parameteroperation_in2_id(operation);
         }
     }
 }
@@ -682,13 +682,14 @@ static nmo_object_id_t probe_find_operation_owner_behavior(
     if (repo == NULL || operation_id == 0u) {
         return 0u;
     }
-    if (operation != NULL && operation->has_owner &&
-        operation->owner_id != 0u) {
+    const nmo_object_id_t owner_id =
+        nmo_parameteroperation_owner_id(operation);
+    if (operation != NULL && operation->has_owner && owner_id != 0u) {
         nmo_object_t *owner =
-            nmo_object_repository_find_by_id(repo, operation->owner_id);
+            nmo_object_repository_find_by_id(repo, owner_id);
         if (owner != NULL &&
             nmo_object_get_class_id(owner) == NMO_CID_BEHAVIOR) {
-            return operation->owner_id;
+            return owner_id;
         }
     }
     size_t object_count = nmo_object_repository_get_count(repo);
@@ -827,15 +828,15 @@ static size_t probe_collect_operation_related_behaviors(
         probe_find_operation_owner_behavior(repo, operation_id, operation));
     if (operation->has_in1) {
         probe_collect_operation_parameter_behaviors(
-            repo, operation->in1_id, ids, &count, capacity);
+            repo, nmo_parameteroperation_in1_id(operation), ids, &count, capacity);
     }
     if (operation->has_in2) {
         probe_collect_operation_parameter_behaviors(
-            repo, operation->in2_id, ids, &count, capacity);
+            repo, nmo_parameteroperation_in2_id(operation), ids, &count, capacity);
     }
     if (operation->has_out) {
         probe_collect_operation_parameter_behaviors(
-            repo, operation->out_id, ids, &count, capacity);
+            repo, nmo_parameteroperation_out_id(operation), ids, &count, capacity);
     }
     return count;
 }

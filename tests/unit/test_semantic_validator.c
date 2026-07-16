@@ -1872,7 +1872,7 @@ TEST(semantic_validator, edit_plan_reports_rewire_operation_existing_slot_dangli
     ASSERT_NOT_NULL(operation_state);
     operation_state->operation_guid = NMO_OP_GUID_ADD;
     operation_state->has_in1 = 1u;
-    operation_state->in1_id = 999999u;
+    nmo_parameteroperation_set_in1_id(operation_state, 999999u);
 
     nmo_object_id_t out_id = 0u;
     semantic_create_object(&fixture, NMO_CID_PARAMETER, "Out", &out_id);

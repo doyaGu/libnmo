@@ -630,17 +630,17 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
                     if (op_state->has_in1) {
                         behavior_show_add_operation_param_json(
                             doc, item, repo, c.registry, "in1",
-                            op_state->in1_id);
+                            nmo_parameteroperation_in1_id(op_state));
                     }
                     if (op_state->has_in2) {
                         behavior_show_add_operation_param_json(
                             doc, item, repo, c.registry, "in2",
-                            op_state->in2_id);
+                            nmo_parameteroperation_in2_id(op_state));
                     }
                     if (op_state->has_out) {
                         behavior_show_add_operation_param_json(
                             doc, item, repo, c.registry, "out",
-                            op_state->out_id);
+                            nmo_parameteroperation_out_id(op_state));
                     }
                 }
                 yyjson_mut_arr_add_val(arr, item);
@@ -951,13 +951,16 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
             const char *op_name = behavior_show_operation_name(
                 c.registry, op_state->operation_guid);
             /* Resolve in1, in2, out names and types */
-            const char *n1 = op_state->has_in1 ? resolve_name(repo, op_state->in1_id) : NULL;
-            const char *n2 = op_state->has_in2 ? resolve_name(repo, op_state->in2_id) : NULL;
-            const char *no = op_state->has_out ? resolve_name(repo, op_state->out_id) : NULL;
+            const nmo_object_id_t in1_id = nmo_parameteroperation_in1_id(op_state);
+            const nmo_object_id_t in2_id = nmo_parameteroperation_in2_id(op_state);
+            const nmo_object_id_t out_id = nmo_parameteroperation_out_id(op_state);
+            const char *n1 = op_state->has_in1 ? resolve_name(repo, in1_id) : NULL;
+            const char *n2 = op_state->has_in2 ? resolve_name(repo, in2_id) : NULL;
+            const char *no = op_state->has_out ? resolve_name(repo, out_id) : NULL;
             /* Resolve result type from out parameter */
             const char *out_type = "?";
             if (op_state->has_out) {
-                nmo_object_t *out_p = nmo_object_repository_find_by_id(repo, op_state->out_id);
+                nmo_object_t *out_p = nmo_object_repository_find_by_id(repo, out_id);
                 nmo_guid_t otg = get_param_type_guid(out_p);
                 out_type = resolve_type(c.registry, otg);
             }

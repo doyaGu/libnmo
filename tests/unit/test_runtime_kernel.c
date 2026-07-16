@@ -9,6 +9,7 @@
 #include "object/builtin/nmo_behaviorio_schemas.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"
 #include "object/builtin/nmo_material_schemas.h"
+#include "object/builtin/nmo_parameteroperation_schemas.h"
 #include "object/builtin/nmo_group_schemas.h"
 #include "object/builtin/nmo_grid_schemas.h"
 #include "object/builtin/nmo_animation_schemas.h"
@@ -864,6 +865,7 @@ TEST(runtime_kernel, normalize_clears_raw_scalar_class_mismatch) {
     nmo_object_id_t behavior_link_id = 0;
     nmo_object_id_t texture_id = 0;
     nmo_object_id_t parameter_id = 0;
+    nmo_object_id_t operation_id = 0;
     ASSERT_EQ(NMO_OK, nmo_session_create_object(
         session, NMO_CID_3DENTITY, "entity", (nmo_guid_t){0, 0},
         &entity_id, NULL));
@@ -894,6 +896,9 @@ TEST(runtime_kernel, normalize_clears_raw_scalar_class_mismatch) {
     ASSERT_EQ(NMO_OK, nmo_session_create_object(
         session, NMO_CID_PARAMETER, "parameter", (nmo_guid_t){0, 0},
         &parameter_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_PARAMETEROPERATION, "operation", (nmo_guid_t){0, 0},
+        &operation_id, NULL));
 
     nmo_object_repository_t *repo = nmo_session_get_repository(session);
     nmo_3dentity_state_t *entity = (nmo_3dentity_state_t *)
@@ -951,11 +956,23 @@ TEST(runtime_kernel, normalize_clears_raw_scalar_class_mismatch) {
     material->effect_parameter = nmo_ref_from_id(camera_id);
     material->has_effect = 1;
     material->has_effect_param = 1;
+    nmo_parameteroperation_state_t *operation =
+        (nmo_parameteroperation_state_t *)
+            nmo_object_repository_find_by_id(repo, operation_id)->state;
+    ASSERT_NOT_NULL(operation);
+    operation->owner = nmo_ref_from_id(material_id);
+    operation->in1.ref = nmo_ref_from_id(texture_id);
+    operation->in2.ref = nmo_ref_from_id(parameter_id);
+    operation->out.ref = nmo_ref_from_raw(0x7FFFFFB0u);
+    operation->has_owner = 1;
+    operation->has_in1 = 1;
+    operation->has_in2 = 1;
+    operation->has_out = 1;
 
     size_t changed = 0;
     ASSERT_EQ(NMO_OK, nmo_runtime_normalize_invalid_refs(
         repo, nmo_context_get_type_runtime(ctx), &changed));
-    ASSERT_EQ((size_t)14, changed);
+    ASSERT_EQ((size_t)17, changed);
     ASSERT_EQ(NMO_REF_NONE, entity->current_mesh.state);
     ASSERT_EQ(NMO_OBJECT_ID_NONE, entity->current_mesh.raw_id);
     ASSERT_EQ(NMO_OBJECT_ID_NONE, entity->current_mesh.id);
@@ -983,6 +1000,10 @@ TEST(runtime_kernel, normalize_clears_raw_scalar_class_mismatch) {
     ASSERT_EQ(NMO_REF_NONE, material->textures[0].state);
     ASSERT_EQ(texture_id, nmo_material_texture_id(material, 1));
     ASSERT_EQ(NMO_REF_NONE, material->effect_parameter.state);
+    ASSERT_EQ(NMO_REF_NONE, operation->owner.state);
+    ASSERT_EQ(NMO_REF_NONE, operation->in1.ref.state);
+    ASSERT_EQ(parameter_id, nmo_parameteroperation_in2_id(operation));
+    ASSERT_EQ(NMO_REF_NONE, operation->out.ref.state);
 
     nmo_session_destroy(session);
     nmo_context_release(ctx);
@@ -1160,6 +1181,41 @@ TEST(runtime_kernel, copy_remap_updates_only_resolved_material_refs) {
     nmo_context_release(ctx);
 }
 
+TEST(runtime_kernel, copy_remap_updates_only_resolved_parameteroperation_refs) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    const nmo_type_runtime_t *type_rt = nmo_context_get_type_runtime(ctx);
+    const nmo_type_descriptor_t *operation_type =
+        nmo_type_registry_find_by_class_id(
+            type_rt->types, NMO_CID_PARAMETEROPERATION);
+    ASSERT_NOT_NULL(operation_type);
+
+    nmo_parameteroperation_state_t operation = {0};
+    operation.owner = nmo_ref_from_id(100);
+    operation.in1.ref = nmo_ref_from_id(101);
+    operation.in2.ref = nmo_ref_from_raw(102);
+    operation.out.ref = nmo_ref_from_id(103);
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_id_remap_t *remap = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(remap);
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, 100, 200));
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, 101, 201));
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, 102, 202));
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, 103, 203));
+
+    ASSERT_EQ(NMO_OK, nmo_runtime_remap_copy_refs(
+        type_rt, operation_type, &operation, remap));
+    ASSERT_EQ(200u, nmo_parameteroperation_owner_id(&operation));
+    ASSERT_EQ(201u, nmo_parameteroperation_in1_id(&operation));
+    ASSERT_EQ(102u, operation.in2.ref.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, operation.in2.ref.state);
+    ASSERT_EQ(203u, nmo_parameteroperation_out_id(&operation));
+
+    nmo_arena_destroy(arena);
+    nmo_context_release(ctx);
+}
+
 TEST(runtime_kernel, dependency_remap_preserves_nonreference_state) {
     nmo_animation_state_t animation = {0};
     animation.frame_rate = -3.0f;
@@ -1313,6 +1369,7 @@ REGISTER_TEST(runtime_kernel, dependency_remap_preserves_invalid_references);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_scene_members);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_behaviorlink_endpoints);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_material_refs);
+REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_parameteroperation_refs);
 REGISTER_TEST(runtime_kernel, dependency_remap_preserves_nonreference_state);
 REGISTER_TEST(runtime_kernel, serializer_failure_does_not_reuse_raw_chunk);
 TEST_MAIN_END()

@@ -1867,34 +1867,40 @@ static nmo_status_t validate_parameter_operations(
         if (!nmo_behavior_index_find(index, nmo_object_get_id(object))) {
             return NMO_ERR_VALIDATION_FAILED;
         }
-        if (state->has_in1) {
+        if (state->has_in1 && state->in1.ref.state == NMO_REF_RESOLVED) {
             nmo_object_t *param = NULL;
-            if (state->in1_id == 0u) {
+            const nmo_object_id_t parameter_id =
+                nmo_parameteroperation_in1_id(state);
+            if (parameter_id == 0u) {
                 return NMO_ERR_VALIDATION_FAILED;
             }
-            param = nmo_object_repository_find_by_id(repo, state->in1_id);
+            param = nmo_object_repository_find_by_id(repo, parameter_id);
             if (!param || !script_edit_is_parameter_reference_class(
                               nmo_object_get_class_id(param))) {
                 return NMO_ERR_VALIDATION_FAILED;
             }
         }
-        if (state->has_in2) {
+        if (state->has_in2 && state->in2.ref.state == NMO_REF_RESOLVED) {
             nmo_object_t *param = NULL;
-            if (state->in2_id == 0u) {
+            const nmo_object_id_t parameter_id =
+                nmo_parameteroperation_in2_id(state);
+            if (parameter_id == 0u) {
                 return NMO_ERR_VALIDATION_FAILED;
             }
-            param = nmo_object_repository_find_by_id(repo, state->in2_id);
+            param = nmo_object_repository_find_by_id(repo, parameter_id);
             if (!param || !script_edit_is_parameter_reference_class(
                               nmo_object_get_class_id(param))) {
                 return NMO_ERR_VALIDATION_FAILED;
             }
         }
-        if (state->has_out) {
+        if (state->has_out && state->out.ref.state == NMO_REF_RESOLVED) {
             nmo_object_t *param = NULL;
-            if (state->out_id == 0u) {
+            const nmo_object_id_t parameter_id =
+                nmo_parameteroperation_out_id(state);
+            if (parameter_id == 0u) {
                 return NMO_ERR_VALIDATION_FAILED;
             }
-            param = nmo_object_repository_find_by_id(repo, state->out_id);
+            param = nmo_object_repository_find_by_id(repo, parameter_id);
             if (!param || !script_edit_is_parameter_reference_class(
                               nmo_object_get_class_id(param))) {
                 return NMO_ERR_VALIDATION_FAILED;
@@ -3908,9 +3914,9 @@ static bool script_edit_parameter_has_live_connections(
             if (!state) {
                 continue;
             }
-            if ((state->has_in1 && state->in1_id == parameter_id) ||
-                (state->has_in2 && state->in2_id == parameter_id) ||
-                (state->has_out && state->out_id == parameter_id)) {
+            if ((state->has_in1 && nmo_parameteroperation_in1_id(state) == parameter_id) ||
+                (state->has_in2 && nmo_parameteroperation_in2_id(state) == parameter_id) ||
+                (state->has_out && nmo_parameteroperation_out_id(state) == parameter_id)) {
                 return true;
             }
         }
@@ -3992,24 +3998,24 @@ static nmo_status_t script_edit_detach_parameter_references(
             if (!state) {
                 continue;
             }
-            if ((state->has_in1 && state->in1_id == parameter_id) ||
-                (state->has_in2 && state->in2_id == parameter_id) ||
-                (state->has_out && state->out_id == parameter_id)) {
+            if ((state->has_in1 && nmo_parameteroperation_in1_id(state) == parameter_id) ||
+                (state->has_in2 && nmo_parameteroperation_in2_id(state) == parameter_id) ||
+                (state->has_out && nmo_parameteroperation_out_id(state) == parameter_id)) {
                 rc = nmo_workspace_edit_snapshot_bytes(tx->edit, state, sizeof(*state));
                 if (rc != NMO_OK) {
                     return rc;
                 }
-                if (state->has_in1 && state->in1_id == parameter_id) {
+                if (state->has_in1 && nmo_parameteroperation_in1_id(state) == parameter_id) {
                     state->has_in1 = 0u;
-                    state->in1_id = 0u;
+                    nmo_parameteroperation_set_in1_id(state, 0u);
                 }
-                if (state->has_in2 && state->in2_id == parameter_id) {
+                if (state->has_in2 && nmo_parameteroperation_in2_id(state) == parameter_id) {
                     state->has_in2 = 0u;
-                    state->in2_id = 0u;
+                    nmo_parameteroperation_set_in2_id(state, 0u);
                 }
-                if (state->has_out && state->out_id == parameter_id) {
+                if (state->has_out && nmo_parameteroperation_out_id(state) == parameter_id) {
                     state->has_out = 0u;
-                    state->out_id = 0u;
+                    nmo_parameteroperation_set_out_id(state, 0u);
                 }
             }
         }
@@ -4566,17 +4572,17 @@ NMO_API nmo_status_t nmo_script_edit_add_operation(
         return NMO_ERR_INVALID_STATE;
     }
     state->operation_guid = operation_guid;
-    state->owner_id = parent_behavior_id;
+    nmo_parameteroperation_set_owner_id(state, parent_behavior_id);
     state->has_owner = 1u;
     state->has_in1 = in1_parameter_id != 0u;
-    state->in1_id = in1_parameter_id;
+    nmo_parameteroperation_set_in1_id(state, in1_parameter_id);
     state->has_in2 = in2_parameter_id != 0u;
-    state->in2_id = in2_parameter_id;
+    nmo_parameteroperation_set_in2_id(state, in2_parameter_id);
     state->has_out = out_parameter_id != 0u;
-    state->out_id = out_parameter_id;
-    state->in1_chunk = NULL;
-    state->in2_chunk = NULL;
-    state->out_chunk = NULL;
+    nmo_parameteroperation_set_out_id(state, out_parameter_id);
+    state->in1.chunk = NULL;
+    state->in2.chunk = NULL;
+    state->out.chunk = NULL;
 
     rc = nmo_behavior_ref_array_append(&behavior->operations, operation_id, NULL);
     if (rc != NMO_OK) {
@@ -4656,15 +4662,15 @@ NMO_API nmo_status_t nmo_script_edit_rewire_operation(
     final_in1_parameter_id =
         ((slot_flags & NMO_SCRIPT_EDIT_OP_SLOT_IN1) != 0u)
             ? in1_parameter_id
-            : (state->has_in1 ? state->in1_id : 0u);
+            : (state->has_in1 ? nmo_parameteroperation_in1_id(state) : 0u);
     final_in2_parameter_id =
         ((slot_flags & NMO_SCRIPT_EDIT_OP_SLOT_IN2) != 0u)
             ? in2_parameter_id
-            : (state->has_in2 ? state->in2_id : 0u);
+            : (state->has_in2 ? nmo_parameteroperation_in2_id(state) : 0u);
     final_out_parameter_id =
         ((slot_flags & NMO_SCRIPT_EDIT_OP_SLOT_OUT) != 0u)
             ? out_parameter_id
-            : (state->has_out ? state->out_id : 0u);
+            : (state->has_out ? nmo_parameteroperation_out_id(state) : 0u);
 
     rc = script_edit_validate_operation_signature(tx, state->operation_guid,
                                                   final_in1_parameter_id,
@@ -4681,15 +4687,15 @@ NMO_API nmo_status_t nmo_script_edit_rewire_operation(
 
     if ((slot_flags & NMO_SCRIPT_EDIT_OP_SLOT_IN1) != 0u) {
         state->has_in1 = in1_parameter_id != 0u;
-        state->in1_id = in1_parameter_id;
+        nmo_parameteroperation_set_in1_id(state, in1_parameter_id);
     }
     if ((slot_flags & NMO_SCRIPT_EDIT_OP_SLOT_IN2) != 0u) {
         state->has_in2 = in2_parameter_id != 0u;
-        state->in2_id = in2_parameter_id;
+        nmo_parameteroperation_set_in2_id(state, in2_parameter_id);
     }
     if ((slot_flags & NMO_SCRIPT_EDIT_OP_SLOT_OUT) != 0u) {
         state->has_out = out_parameter_id != 0u;
-        state->out_id = out_parameter_id;
+        nmo_parameteroperation_set_out_id(state, out_parameter_id);
     }
 
     nmo_script_edit_mark(tx, NMO_WORKSPACE_EDIT_OBJECT_STATE |

@@ -364,27 +364,30 @@ static bool build_behavior_contents(graph_build_ctx_t *gc,
                 gc->registry, op_obj, CKPGUID_PARAMETEROPERATION);
         if (!op_state) continue;
 
-        if (op_state->has_in1 && op_state->in1_id != 0) {
+        const nmo_object_id_t in1_id = nmo_parameteroperation_in1_id(op_state);
+        const nmo_object_id_t in2_id = nmo_parameteroperation_in2_id(op_state);
+        const nmo_object_id_t out_id = nmo_parameteroperation_out_id(op_state);
+        if (op_state->has_in1 && in1_id != 0) {
             if (!add_parameter_edge(&gc->parameter_ids, &gc->parameter_count, &gc->parameter_cap,
                                     &gc->nodes, &gc->node_count, &gc->node_cap,
                                     &gc->edges, &gc->edge_count, &gc->edge_cap,
-                                    gc->repo, gc->ctx, op_state->in1_id, op_state->in1_id, op_id,
+                                    gc->repo, gc->ctx, in1_id, in1_id, op_id,
                                     "op_in1", "in1_id", &gc->missing_nodes, false))
                 return false;
         }
-        if (op_state->has_in2 && op_state->in2_id != 0) {
+        if (op_state->has_in2 && in2_id != 0) {
             if (!add_parameter_edge(&gc->parameter_ids, &gc->parameter_count, &gc->parameter_cap,
                                     &gc->nodes, &gc->node_count, &gc->node_cap,
                                     &gc->edges, &gc->edge_count, &gc->edge_cap,
-                                    gc->repo, gc->ctx, op_state->in2_id, op_state->in2_id, op_id,
+                                    gc->repo, gc->ctx, in2_id, in2_id, op_id,
                                     "op_in2", "in2_id", &gc->missing_nodes, false))
                 return false;
         }
-        if (op_state->has_out && op_state->out_id != 0) {
+        if (op_state->has_out && out_id != 0) {
             if (!add_parameter_edge(&gc->parameter_ids, &gc->parameter_count, &gc->parameter_cap,
                                     &gc->nodes, &gc->node_count, &gc->node_cap,
                                     &gc->edges, &gc->edge_count, &gc->edge_cap,
-                                    gc->repo, gc->ctx, op_state->out_id, op_id, op_state->out_id,
+                                    gc->repo, gc->ctx, out_id, op_id, out_id,
                                     "op_out", "out_id", &gc->missing_nodes, false))
                 return false;
         }
