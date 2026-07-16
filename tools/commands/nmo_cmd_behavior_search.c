@@ -61,9 +61,10 @@ static bool behavior_has_param_type(
     const char *type_pattern)
 {
     if (bs->in_parameters.data) {
-        const nmo_object_id_t *ids = (const nmo_object_id_t *)bs->in_parameters.data;
         for (size_t i = 0; i < bs->in_parameters.count; i++) {
-            nmo_object_t *p = nmo_object_repository_find_by_id(repo, ids[i]);
+            nmo_object_id_t id = nmo_behavior_ref_array_get_id(
+                &bs->in_parameters, i);
+            nmo_object_t *p = nmo_object_repository_find_by_id(repo, id);
             if (!p) continue;
             nmo_guid_t tg = get_param_type_guid(p);
             const char *tn = resolve_type(reg, tg);
@@ -71,9 +72,10 @@ static bool behavior_has_param_type(
         }
     }
     if (bs->out_parameters.data) {
-        const nmo_object_id_t *ids = (const nmo_object_id_t *)bs->out_parameters.data;
         for (size_t i = 0; i < bs->out_parameters.count; i++) {
-            nmo_object_t *p = nmo_object_repository_find_by_id(repo, ids[i]);
+            nmo_object_id_t id = nmo_behavior_ref_array_get_id(
+                &bs->out_parameters, i);
+            nmo_object_t *p = nmo_object_repository_find_by_id(repo, id);
             if (!p) continue;
             nmo_guid_t tg = get_param_type_guid(p);
             const char *tn = resolve_type(reg, tg);
@@ -90,9 +92,9 @@ static bool behavior_has_op_type(
     const char *op_pattern)
 {
     if (!bs->operations.data) return false;
-    const nmo_object_id_t *ops = (const nmo_object_id_t *)bs->operations.data;
     for (size_t i = 0; i < bs->operations.count; i++) {
-        nmo_object_t *op = nmo_object_repository_find_by_id(repo, ops[i]);
+        nmo_object_id_t id = nmo_behavior_ref_array_get_id(&bs->operations, i);
+        nmo_object_t *op = nmo_object_repository_find_by_id(repo, id);
         if (!op || !op->state) continue;
         const nmo_parameteroperation_state_t *os =
             (const nmo_parameteroperation_state_t *)op->state;
@@ -323,9 +325,10 @@ static bool collect_links_recursive(
 
     /* Collect links from this behavior */
     if (bs->sub_behavior_links.data) {
-        const nmo_object_id_t *link_ids = (const nmo_object_id_t *)bs->sub_behavior_links.data;
         for (size_t i = 0; i < bs->sub_behavior_links.count; i++) {
-            nmo_object_t *lo = nmo_object_repository_find_by_id(repo, link_ids[i]);
+            nmo_object_id_t id = nmo_behavior_ref_array_get_id(
+                &bs->sub_behavior_links, i);
+            nmo_object_t *lo = nmo_object_repository_find_by_id(repo, id);
             if (!lo || !lo->state) continue;
             const nmo_behaviorlink_state_t *ls = (const nmo_behaviorlink_state_t *)lo->state;
             if (*count == *cap) {
@@ -346,14 +349,15 @@ static bool collect_links_recursive(
 
     /* Recurse into graph-type sub-behaviors */
     if (depth < max_depth && bs->sub_behaviors.data) {
-        const nmo_object_id_t *subs = (const nmo_object_id_t *)bs->sub_behaviors.data;
         for (size_t i = 0; i < bs->sub_behaviors.count; i++) {
-            if (subs[i] == 0) continue;
-            nmo_object_t *sub = nmo_object_repository_find_by_id(repo, subs[i]);
+            nmo_object_id_t id = nmo_behavior_ref_array_get_id(
+                &bs->sub_behaviors, i);
+            if (id == 0) continue;
+            nmo_object_t *sub = nmo_object_repository_find_by_id(repo, id);
             if (!sub || !sub->state) continue;
             const nmo_behavior_state_t *sbs = (const nmo_behavior_state_t *)sub->state;
             if (sbs->flags & CKBEHAVIOR_BUILDINGBLOCK) continue;
-            if (!collect_links_recursive(repo, subs[i], links, count, cap,
+            if (!collect_links_recursive(repo, id, links, count, cap,
                                          depth + 1, max_depth))
                 return false;
         }
@@ -506,11 +510,11 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
     nmo_object_id_t start_io = NMO_OBJECT_ID_NONE;
     if (from_name) {
         if (bs->inputs.data) {
-            const nmo_object_id_t *ids = (const nmo_object_id_t *)bs->inputs.data;
             for (size_t i = 0; i < bs->inputs.count; i++) {
-                const char *ion = resolve_name(repo, ids[i]);
+                nmo_object_id_t id = nmo_behavior_ref_array_get_id(&bs->inputs, i);
+                const char *ion = resolve_name(repo, id);
                 if (ion && nmo_tool_match_wildcard_ci(from_name, ion)) {
-                    start_io = ids[i]; break;
+                    start_io = id; break;
                 }
             }
         }
@@ -521,7 +525,7 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
         }
     } else {
         if (bs->inputs.data && bs->inputs.count > 0) {
-            start_io = ((const nmo_object_id_t *)bs->inputs.data)[0];
+            start_io = nmo_behavior_ref_array_get_id(&bs->inputs, 0);
         } else {
             fprintf(stderr, "Error: Behavior has no input IOs\n");
             free(links);
@@ -534,11 +538,11 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
     size_t entry_count = 0;
 
     if (bs->inputs.data) {
-        const nmo_object_id_t *root_ins = (const nmo_object_id_t *)bs->inputs.data;
         for (size_t i = 0; i < bs->inputs.count && entry_count < 64; i++) {
+            nmo_object_id_t id = nmo_behavior_ref_array_get_id(&bs->inputs, i);
             for (size_t li = 0; li < link_count; li++) {
-                if (links[li].source_io == root_ins[i]) {
-                    entry_ios[entry_count++] = root_ins[i];
+                if (links[li].source_io == id) {
+                    entry_ios[entry_count++] = id;
                     break;
                 }
             }
@@ -698,12 +702,12 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
                         const nmo_behavior_state_t *tbs =
                             (const nmo_behavior_state_t *)to->state;
                         if (tbs->outputs.data) {
-                            const nmo_object_id_t *oids =
-                                (const nmo_object_id_t *)tbs->outputs.data;
                             for (size_t oi = 0; oi < tbs->outputs.count; oi++) {
+                                nmo_object_id_t output_id =
+                                    nmo_behavior_ref_array_get_id(&tbs->outputs, oi);
                                 bool seen = false;
                                 for (size_t v = 0; v < vis_count; v++) {
-                                    if (visited[v] == oids[oi]) {
+                                    if (visited[v] == output_id) {
                                         seen = true;
                                         break;
                                     }
@@ -711,7 +715,7 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
                                 if (seen) {
                                     loop_detected = true;
                                     if (loop_io == 0) {
-                                        loop_io = oids[oi];
+                                        loop_io = output_id;
                                     }
                                 } else {
                                     has_unseen_continuation = true;
@@ -840,17 +844,18 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
                     if (to && to->state) {
                         const nmo_behavior_state_t *tbs = (const nmo_behavior_state_t *)to->state;
                         if (tbs->outputs.data) {
-                            const nmo_object_id_t *oids = (const nmo_object_id_t *)tbs->outputs.data;
                             for (size_t oi = 0; oi < tbs->outputs.count && sp < stack_cap - 1; oi++) {
+                                nmo_object_id_t output_id =
+                                    nmo_behavior_ref_array_get_id(&tbs->outputs, oi);
                                 bool seen = false;
                                 for (size_t v = 0; v < vis_count; v++) {
-                                    if (visited[v] == oids[oi]) { seen = true; break; }
+                                    if (visited[v] == output_id) { seen = true; break; }
                                 }
                                 if (!seen) {
-                                    stack[sp].io = oids[oi];
+                                    stack[sp].io = output_id;
                                     stack[sp].depth = cur.depth + 1;
                                     sp++;
-                                    if (vis_count < stack_cap) visited[vis_count++] = oids[oi];
+                                    if (vis_count < stack_cap) visited[vis_count++] = output_id;
                                 }
                             }
                         }

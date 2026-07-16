@@ -290,7 +290,6 @@ static int script_run_lua_io_at(lua_State *state)
     const char *kind_text = luaL_checkstring(state, 2);
     lua_Integer lua_index = luaL_checkinteger(state, 3);
     const nmo_array_t *ports = NULL;
-    const nmo_object_id_t *ids = NULL;
     nmo_behavior_state_t *state_data = NULL;
 
     if (lua_index < 1) {
@@ -315,8 +314,10 @@ static int script_run_lua_io_at(lua_State *state)
         return 1;
     }
 
-    ids = (const nmo_object_id_t *)ports->data;
-    lua_pushinteger(state, (lua_Integer)ids[(size_t)(lua_index - 1)]);
+    lua_pushinteger(
+        state,
+        (lua_Integer)nmo_behavior_ref_array_get_id(
+            ports, (size_t)(lua_index - 1)));
     return 1;
 }
 
@@ -2779,7 +2780,8 @@ static nmo_object_id_t script_interface_root_for_object_workspace(
             }
 
             state = (nmo_behavior_state_t *)nmo_object_get_state(object);
-            if (!state || nmo_array_find(&state->sub_behaviors, &behavior_id, NULL) == 0) {
+            if (!state || !nmo_behavior_ref_array_find(
+                    &state->sub_behaviors, behavior_id, NULL)) {
                 continue;
             }
 

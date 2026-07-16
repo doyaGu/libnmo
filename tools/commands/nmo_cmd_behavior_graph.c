@@ -328,6 +328,7 @@ static int behavior_graph_run(nmo_cmd_ctx_t *ctx,
     size_t edge_count = graph.edge_count;
     size_t broken_links = graph.broken_links;
     size_t missing_nodes = graph.missing_nodes;
+    size_t cycle_count = graph.cycle_count;
 
     size_t node_behavior = 0;
     size_t node_parameter = 0;
@@ -467,6 +468,7 @@ static int behavior_graph_run(nmo_cmd_ctx_t *ctx,
         yyjson_mut_obj_add_uint(doc, counts, "edges_total", (uint64_t)edge_count);
         yyjson_mut_obj_add_uint(doc, counts, "broken_links", (uint64_t)broken_links);
         yyjson_mut_obj_add_uint(doc, counts, "missing_nodes", (uint64_t)missing_nodes);
+        yyjson_mut_obj_add_uint(doc, counts, "cycles", (uint64_t)cycle_count);
 
         yyjson_mut_val *nodes_by_kind = yyjson_mut_obj(doc);
         yyjson_mut_obj_add_uint(doc, nodes_by_kind, "behavior", (uint64_t)node_behavior);
@@ -690,6 +692,9 @@ static int behavior_graph_run(nmo_cmd_ctx_t *ctx,
         }
         if (missing_nodes > 0) {
             fprintf(c.out, "Missing objects: %zu\n", missing_nodes);
+        }
+        if (cycle_count > 0) {
+            fprintf(c.out, "Behavior cycles: %zu\n", cycle_count);
         }
         fprintf(c.out, "\n");
 
@@ -1099,10 +1104,10 @@ static size_t dump_print_decoded_value_group(
     }
 
     size_t printed = 0;
-    const nmo_object_id_t *param_ids = (const nmo_object_id_t *)ids->data;
     for (size_t i = 0; i < ids->count; i++) {
+        nmo_object_id_t id = nmo_behavior_ref_array_get_id(ids, i);
         nmo_object_t *param_obj =
-            nmo_object_repository_find_by_id(repo, param_ids[i]);
+            nmo_object_repository_find_by_id(repo, id);
         char value_buf[256];
         if (!dump_param_decoded_value(param_obj, reg, workspace,
                                       value_buf, sizeof(value_buf))) {
@@ -1136,17 +1141,17 @@ static void dump_print_decoded_values(
 
     char scratch[256];
     bool has_any = false;
-    const nmo_object_id_t *local_ids =
-        (const nmo_object_id_t *)bs->local_parameters.data;
     for (size_t i = 0; i < bs->local_parameters.count && !has_any; i++) {
-        nmo_object_t *obj = nmo_object_repository_find_by_id(repo, local_ids[i]);
+        nmo_object_id_t id = nmo_behavior_ref_array_get_id(
+            &bs->local_parameters, i);
+        nmo_object_t *obj = nmo_object_repository_find_by_id(repo, id);
         has_any = dump_param_decoded_value(obj, reg, workspace,
                                            scratch, sizeof(scratch));
     }
-    const nmo_object_id_t *out_ids =
-        (const nmo_object_id_t *)bs->out_parameters.data;
     for (size_t i = 0; i < bs->out_parameters.count && !has_any; i++) {
-        nmo_object_t *obj = nmo_object_repository_find_by_id(repo, out_ids[i]);
+        nmo_object_id_t id = nmo_behavior_ref_array_get_id(
+            &bs->out_parameters, i);
+        nmo_object_t *obj = nmo_object_repository_find_by_id(repo, id);
         has_any = dump_param_decoded_value(obj, reg, workspace,
                                            scratch, sizeof(scratch));
     }
@@ -1178,10 +1183,10 @@ static size_t dump_add_decoded_value_group_json(
     }
 
     size_t added = 0;
-    const nmo_object_id_t *param_ids = (const nmo_object_id_t *)ids->data;
     for (size_t i = 0; i < ids->count; i++) {
+        nmo_object_id_t id = nmo_behavior_ref_array_get_id(ids, i);
         nmo_object_t *param_obj =
-            nmo_object_repository_find_by_id(repo, param_ids[i]);
+            nmo_object_repository_find_by_id(repo, id);
         char value_buf[256];
         if (!dump_param_decoded_value(param_obj, reg, workspace,
                                       value_buf, sizeof(value_buf))) {
@@ -1191,7 +1196,7 @@ static size_t dump_add_decoded_value_group_json(
         yyjson_mut_val *item = yyjson_mut_obj(doc);
         nmo_cli_json_add_str_safe(doc, item, "kind", kind);
         yyjson_mut_obj_add_uint(doc, item, "index", (uint64_t)i);
-        yyjson_mut_obj_add_uint(doc, item, "id", param_ids[i]);
+        yyjson_mut_obj_add_uint(doc, item, "id", id);
         const char *name = param_obj ? nmo_object_get_name(param_obj) : NULL;
         nmo_cli_json_add_str_safe(doc, item, "name",
                                   (name && name[0]) ? name : "");
@@ -1265,11 +1270,11 @@ static void dump_print_execution_flow(
     fprintf(out, "\nExecution Flow\n");
     size_t printed = 0;
     if (bs->sub_behavior_links.data) {
-        const nmo_object_id_t *link_ids =
-            (const nmo_object_id_t *)bs->sub_behavior_links.data;
         for (size_t i = 0; i < bs->sub_behavior_links.count; i++) {
+            nmo_object_id_t link_id = nmo_behavior_ref_array_get_id(
+                &bs->sub_behavior_links, i);
             nmo_object_t *link_obj =
-                nmo_object_repository_find_by_id(repo, link_ids[i]);
+                nmo_object_repository_find_by_id(repo, link_id);
             if (!link_obj || !link_obj->state) {
                 continue;
             }
@@ -1307,11 +1312,11 @@ static void dump_add_execution_flow_json(
 {
     yyjson_mut_val *arr = yyjson_mut_arr(doc);
     if (bs && bs->sub_behavior_links.data) {
-        const nmo_object_id_t *link_ids =
-            (const nmo_object_id_t *)bs->sub_behavior_links.data;
         for (size_t i = 0; i < bs->sub_behavior_links.count; i++) {
+            nmo_object_id_t link_id = nmo_behavior_ref_array_get_id(
+                &bs->sub_behavior_links, i);
             nmo_object_t *link_obj =
-                nmo_object_repository_find_by_id(repo, link_ids[i]);
+                nmo_object_repository_find_by_id(repo, link_id);
             if (!link_obj || !link_obj->state) {
                 continue;
             }
@@ -1323,7 +1328,7 @@ static void dump_add_execution_flow_json(
                 dump_io_owner(bidx, link->out_io_id, root_id);
 
             yyjson_mut_val *item = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_uint(doc, item, "link_id", link_ids[i]);
+            yyjson_mut_obj_add_uint(doc, item, "link_id", link_id);
             yyjson_mut_obj_add_uint(doc, item, "source_io_id", link->in_io_id);
             nmo_cli_json_add_str_safe(doc, item, "source_io_name",
                                       resolve_name(repo, link->in_io_id));
@@ -1363,25 +1368,27 @@ static size_t dump_collect_data_flow_sources(
 {
     size_t source_count = 0;
     if (bs->local_parameters.data) {
-        const nmo_object_id_t *ids =
-            (const nmo_object_id_t *)bs->local_parameters.data;
         for (size_t i = 0; i < bs->local_parameters.count &&
                            source_count < source_cap; i++) {
-            sources[source_count].param_id = ids[i];
+            nmo_object_id_t id = nmo_behavior_ref_array_get_id(
+                &bs->local_parameters, i);
+            if (id == 0) continue;
+            sources[source_count].param_id = id;
             sources[source_count].owner_id = root_id;
             sources[source_count].owner_name =
                 (root_name && root_name[0]) ? root_name : "(root)";
-            sources[source_count].param_name = resolve_name(repo, ids[i]);
+            sources[source_count].param_name = resolve_name(repo, id);
             source_count++;
         }
     }
 
     if (bs->sub_behaviors.data) {
-        const nmo_object_id_t *sub_ids =
-            (const nmo_object_id_t *)bs->sub_behaviors.data;
         for (size_t si = 0; si < bs->sub_behaviors.count; si++) {
+            nmo_object_id_t sub_id = nmo_behavior_ref_array_get_id(
+                &bs->sub_behaviors, si);
+            if (sub_id == 0) continue;
             nmo_object_t *sub =
-                nmo_object_repository_find_by_id(repo, sub_ids[si]);
+                nmo_object_repository_find_by_id(repo, sub_id);
             if (!sub || !sub->state) {
                 continue;
             }
@@ -1391,14 +1398,15 @@ static size_t dump_collect_data_flow_sources(
             if (!sub_name || !sub_name[0]) {
                 sub_name = "(unnamed)";
             }
-            const nmo_object_id_t *pids =
-                (const nmo_object_id_t *)sub_bs->out_parameters.data;
             for (size_t pi = 0; pi < sub_bs->out_parameters.count &&
                                source_count < source_cap; pi++) {
-                sources[source_count].param_id = pids[pi];
-                sources[source_count].owner_id = sub_ids[si];
+                nmo_object_id_t param_id = nmo_behavior_ref_array_get_id(
+                    &sub_bs->out_parameters, pi);
+                if (param_id == 0) continue;
+                sources[source_count].param_id = param_id;
+                sources[source_count].owner_id = sub_id;
                 sources[source_count].owner_name = sub_name;
-                sources[source_count].param_name = resolve_name(repo, pids[pi]);
+                sources[source_count].param_name = resolve_name(repo, param_id);
                 source_count++;
             }
         }
@@ -1438,10 +1446,10 @@ static void dump_print_data_flow(
 
     fprintf(out, "\nData Flow\n");
     size_t printed = 0;
-    const nmo_object_id_t *sub_ids =
-        (const nmo_object_id_t *)bs->sub_behaviors.data;
     for (size_t si = 0; si < bs->sub_behaviors.count; si++) {
-        nmo_object_t *sub = nmo_object_repository_find_by_id(repo, sub_ids[si]);
+        nmo_object_id_t sub_id = nmo_behavior_ref_array_get_id(
+            &bs->sub_behaviors, si);
+        nmo_object_t *sub = nmo_object_repository_find_by_id(repo, sub_id);
         if (!sub || !sub->state) {
             continue;
         }
@@ -1451,11 +1459,11 @@ static void dump_print_data_flow(
         if (!sub_name || !sub_name[0]) {
             sub_name = "(unnamed)";
         }
-        const nmo_object_id_t *pids =
-            (const nmo_object_id_t *)sub_bs->in_parameters.data;
         for (size_t pi = 0; pi < sub_bs->in_parameters.count; pi++) {
+            nmo_object_id_t param_id = nmo_behavior_ref_array_get_id(
+                &sub_bs->in_parameters, pi);
             nmo_object_t *pin_obj =
-                nmo_object_repository_find_by_id(repo, pids[pi]);
+                nmo_object_repository_find_by_id(repo, param_id);
             if (!pin_obj || !pin_obj->state) {
                 continue;
             }
@@ -1503,11 +1511,11 @@ static void dump_add_data_flow_json(
             repo, bs, root_id, root_name, sources,
             sizeof(sources) / sizeof(sources[0]));
 
-        const nmo_object_id_t *sub_ids =
-            (const nmo_object_id_t *)bs->sub_behaviors.data;
         for (size_t si = 0; si < bs->sub_behaviors.count; si++) {
+            nmo_object_id_t sub_id = nmo_behavior_ref_array_get_id(
+                &bs->sub_behaviors, si);
             nmo_object_t *sub =
-                nmo_object_repository_find_by_id(repo, sub_ids[si]);
+                nmo_object_repository_find_by_id(repo, sub_id);
             if (!sub || !sub->state) {
                 continue;
             }
@@ -1517,11 +1525,11 @@ static void dump_add_data_flow_json(
             if (!sub_name || !sub_name[0]) {
                 sub_name = "(unnamed)";
             }
-            const nmo_object_id_t *pids =
-                (const nmo_object_id_t *)sub_bs->in_parameters.data;
             for (size_t pi = 0; pi < sub_bs->in_parameters.count; pi++) {
+                nmo_object_id_t param_id = nmo_behavior_ref_array_get_id(
+                    &sub_bs->in_parameters, pi);
                 nmo_object_t *pin_obj =
-                    nmo_object_repository_find_by_id(repo, pids[pi]);
+                    nmo_object_repository_find_by_id(repo, param_id);
                 if (!pin_obj || !pin_obj->state) {
                     continue;
                 }
@@ -1550,11 +1558,11 @@ static void dump_add_data_flow_json(
                                         src ? src->owner_id : 0);
                 nmo_cli_json_add_str_safe(doc, item, "source_owner_name",
                                           src_owner);
-                yyjson_mut_obj_add_uint(doc, item, "target_id", pids[pi]);
+                yyjson_mut_obj_add_uint(doc, item, "target_id", param_id);
                 nmo_cli_json_add_str_safe(doc, item, "target_name",
-                                          resolve_name(repo, pids[pi]));
+                                          resolve_name(repo, param_id));
                 yyjson_mut_obj_add_uint(doc, item, "target_owner_id",
-                                        sub_ids[si]);
+                                        sub_id);
                 nmo_cli_json_add_str_safe(doc, item, "target_owner_name",
                                           sub_name);
                 nmo_cli_json_add_str_safe(doc, item, "type_guid", guid_buf);
@@ -1624,10 +1632,11 @@ static void dump_behavior_tree(
         fprintf(out, "%s", (depth > 0) ? (last_child ? "    " : "\xe2\x94\x82   ") : "");
         fprintf(out, "  pIn: ");
 
-        const nmo_object_id_t *pids = (const nmo_object_id_t *)bs->in_parameters.data;
         for (size_t i = 0; i < bs->in_parameters.count && i < 6; i++) {
             if (i > 0) fprintf(out, ", ");
-            nmo_object_t *p = nmo_object_repository_find_by_id(repo, pids[i]);
+            nmo_object_id_t id = nmo_behavior_ref_array_get_id(
+                &bs->in_parameters, i);
+            nmo_object_t *p = nmo_object_repository_find_by_id(repo, id);
             const char *pn = p ? nmo_object_get_name(p) : "?";
             nmo_guid_t tg = get_param_type_guid(p);
             const char *tn = resolve_type(reg, tg);
@@ -1646,14 +1655,15 @@ static void dump_behavior_tree(
 
     /* Recurse into sub-behaviors */
     if (bs->sub_behaviors.count > 0) {
-        const nmo_object_id_t *sub_ids = (const nmo_object_id_t *)bs->sub_behaviors.data;
         uint32_t next_mask = branch_mask;
         if (depth > 0 && !last_child) {
             next_mask |= (1u << (unsigned)depth);
         }
         for (size_t i = 0; i < bs->sub_behaviors.count; i++) {
             bool is_last = (i == bs->sub_behaviors.count - 1);
-            dump_behavior_tree(out, repo, reg, workspace, sub_ids[i],
+            nmo_object_id_t sub_id = nmo_behavior_ref_array_get_id(
+                &bs->sub_behaviors, i);
+            dump_behavior_tree(out, repo, reg, workspace, sub_id,
                                depth + 1, is_last, next_mask,
                                include_values);
         }
@@ -1719,11 +1729,11 @@ static void dump_behavior_tree_json(
 
     /* Recurse into sub-behaviors */
     if (bs->sub_behaviors.count > 0) {
-        const nmo_object_id_t *sub_ids =
-            (const nmo_object_id_t *)bs->sub_behaviors.data;
         for (size_t i = 0; i < bs->sub_behaviors.count; i++) {
+            nmo_object_id_t sub_id = nmo_behavior_ref_array_get_id(
+                &bs->sub_behaviors, i);
             dump_behavior_tree_json(doc, arr, repo, reg, bb_reg,
-                                    workspace, sub_ids[i], depth + 1,
+                                    workspace, sub_id, depth + 1,
                                     include_values);
         }
     }

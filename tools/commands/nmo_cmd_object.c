@@ -492,9 +492,9 @@ int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
  * object tree - Ownership-based hierarchy
  *
  * Builds a tree by analyzing reference fields to determine object ownership:
- *   - Forward ownership: CKBeObject.script_ids, CKBehavior.sub_behaviors,
+ *   - Forward ownership: CKBeObject.scripts, CKBehavior.sub_behaviors,
  *     inputs, outputs, in_parameters, out_parameters, local_parameters, etc.
- *   - Reverse ownership: CK3dEntity.parent_id (child points to parent)
+ *   - Reverse ownership: CK3dEntity.parent (child points to parent)
  *   - All other references (mesh_ids, material, texture, etc.) are not ownership.
  * ============================================================================ */
 

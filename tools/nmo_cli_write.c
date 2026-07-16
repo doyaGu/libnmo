@@ -28,7 +28,13 @@ int nmo_cli_save_document(
 
     int save_rc = nmo_document_save_file(document, output_path, save_opts);
     if (save_rc != NMO_OK) {
-        fprintf(stderr, "Error saving file: %s\n", nmo_error_string(save_rc));
+        char detail[1024];
+        size_t detail_len = nmo_last_error_message_copy(detail, sizeof(detail));
+        fprintf(stderr, "Error saving file: %s", nmo_error_string(save_rc));
+        if (detail_len > 0u) {
+            fprintf(stderr, ": %s", detail);
+        }
+        fputc('\n', stderr);
         return NMO_CLI_EXIT_IO_ERROR;
     }
 

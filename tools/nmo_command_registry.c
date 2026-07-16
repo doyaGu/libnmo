@@ -288,10 +288,13 @@ static void validate_structure_usage(FILE *out) {
 }
 
 static void validate_references_usage(FILE *out) {
-    fprintf(out, "Usage: nmo validate references [--fix] <file>\n\n");
+    fprintf(out, "Usage: nmo validate references [--fix] <file>\n");
+    fprintf(out, "       nmo validate references --normalize -o <output> <file>\n\n");
     fprintf(out, "Validate object reference graph (broken/self references, etc).\n\n");
     fprintf(out, "Options:\n");
     fprintf(out, "  --fix               Show suggested fixes for each issue\n");
+    fprintf(out, "  --normalize         Remove invalid references before saving\n");
+    fprintf(out, "  -o, --output PATH   Write normalized data to a new file\n");
     fprintf(out, "  --strict            Exit with code 3 if errors exist\n");
     fprintf(out, "  --fail-on-warning   Exit with code 4 if warnings exist\n");
 }

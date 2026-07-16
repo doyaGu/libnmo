@@ -154,6 +154,8 @@ int nmo_cmd_ctx_init_from_source(nmo_cmd_ctx_t *c,
 
     memset(c, 0, sizeof(*c));
     c->global = global;
+    c->load_diagnostics = source->load_options
+        ? source->load_options->diagnostics : NULL;
     c->is_json = global && (global->format == NMO_CLI_FORMAT_JSON ||
                             global->format == NMO_CLI_FORMAT_JSON_PRETTY);
 

@@ -926,21 +926,21 @@ static void behavior_stats_consume_object(behavior_stats_data_t *stats,
     }
 
     if (stats->repo && bs->sub_behavior_links.data) {
-        const nmo_object_id_t *links =
-            (const nmo_object_id_t *)bs->sub_behavior_links.data;
         for (size_t i = 0; i < bs->sub_behavior_links.count; i++) {
-            if (links[i] == 0 ||
-                nmo_object_repository_find_by_id(stats->repo, links[i]) == NULL) {
+            nmo_object_id_t id = nmo_behavior_ref_array_get_id(
+                &bs->sub_behavior_links, i);
+            if (id == 0 ||
+                nmo_object_repository_find_by_id(stats->repo, id) == NULL) {
                 stats->broken_behavior_links++;
             }
         }
     }
     if (stats->repo && bs->sub_behaviors.data) {
-        const nmo_object_id_t *subs =
-            (const nmo_object_id_t *)bs->sub_behaviors.data;
         for (size_t i = 0; i < bs->sub_behaviors.count; i++) {
-            if (subs[i] == 0 ||
-                nmo_object_repository_find_by_id(stats->repo, subs[i]) == NULL) {
+            nmo_object_id_t id = nmo_behavior_ref_array_get_id(
+                &bs->sub_behaviors, i);
+            if (id == 0 ||
+                nmo_object_repository_find_by_id(stats->repo, id) == NULL) {
                 stats->broken_sub_behaviors++;
             }
         }
@@ -979,10 +979,11 @@ static uint32_t compute_tree_depth(nmo_object_repository_t *repo,
 
     uint32_t max_d = cur_depth;
     if (bs->sub_behaviors.data) {
-        const nmo_object_id_t *subs =
-            (const nmo_object_id_t *)bs->sub_behaviors.data;
         for (size_t i = 0; i < bs->sub_behaviors.count; i++) {
-            uint32_t d = compute_tree_depth(repo, registry, subs[i],
+            nmo_object_id_t id = nmo_behavior_ref_array_get_id(
+                &bs->sub_behaviors, i);
+            if (id == 0) continue;
+            uint32_t d = compute_tree_depth(repo, registry, id,
                                             cur_depth + 1);
             if (d > max_d) max_d = d;
         }

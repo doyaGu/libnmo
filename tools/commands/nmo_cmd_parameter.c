@@ -101,10 +101,10 @@ static nmo_object_t *find_behavior_parameter_by_name(
         const nmo_array_t *arr = arrays[array_index];
         if (!arr->data || arr->count == 0) continue;
 
-        const nmo_object_id_t *ids = (const nmo_object_id_t *)arr->data;
         for (size_t i = 0; i < arr->count; i++) {
+            nmo_object_id_t id = nmo_behavior_ref_array_get_id(arr, i);
             nmo_object_t *param_obj =
-                nmo_object_repository_find_by_id(repo, ids[i]);
+                nmo_object_repository_find_by_id(repo, id);
             if (!param_obj) continue;
 
             const char *param_obj_name = nmo_object_get_name(param_obj);
@@ -1540,9 +1540,9 @@ static nmo_object_t *find_param_by_owner_index(
     for (int a = 0; a < 2; a++) {
         const nmo_array_t *arr = arrays[a];
         if (!arr->data || arr->count == 0) continue;
-        const nmo_object_id_t *ids = (const nmo_object_id_t *)arr->data;
         for (size_t i = 0; i < arr->count; i++) {
-            nmo_object_t *pobj = nmo_object_repository_find_by_id(repo, ids[i]);
+            nmo_object_id_t id = nmo_behavior_ref_array_get_id(arr, i);
+            nmo_object_t *pobj = nmo_object_repository_find_by_id(repo, id);
             if (!pobj) continue;
             nmo_class_id_t pcid = nmo_object_get_class_id(pobj);
             if (!is_parameter_class(registry, pcid)) continue;
@@ -2100,4 +2100,3 @@ int nmo_cmd_parameter_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
     fprintf(stderr, "Unsupported parameter read action in session: %s\n", argv[0]);
     return NMO_CLI_EXIT_ARG_ERROR;
 }
-

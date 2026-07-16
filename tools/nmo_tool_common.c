@@ -283,13 +283,9 @@ const char *nmo_tool_find_file_arg(int argc, char **argv) {
 }
 
 const char *nmo_tool_find_file_arg_last(int argc, char **argv) {
-    const char *last = NULL;
-    for (int i = 1; i < argc; ++i) {
-        if (argv[i][0] != '-') {
-            last = argv[i];
-        }
-    }
-    return last;
+    const char *paths[256];
+    size_t count = nmo_tool_find_file_args(argc, argv, paths, 256);
+    return count > 0 ? paths[count - 1] : NULL;
 }
 
 size_t nmo_tool_find_file_args(int argc, char **argv,

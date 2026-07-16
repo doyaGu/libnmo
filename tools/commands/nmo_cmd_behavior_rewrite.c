@@ -632,13 +632,13 @@ static void fold_candidates_union_connected_children(
 
     const nmo_behavior_index_t *index =
         nmo_tool_owner_behavior_index(ctx->workspace);
-    const nmo_object_id_t *link_ids = parent
-        ? NMO_ARRAY_DATA(nmo_object_id_t, &parent->sub_behavior_links)
-        : NULL;
     nmo_object_repository_t *repo = nmo_tool_owner_repository(ctx->workspace);
-    for (size_t i = 0; link_ids && i < parent->sub_behavior_links.count; ++i) {
+    for (size_t i = 0; parent && i < parent->sub_behavior_links.count; ++i) {
+        nmo_object_id_t link_id = nmo_behavior_ref_array_get_id(
+            &parent->sub_behavior_links, i);
+        if (link_id == 0) continue;
         nmo_object_t *link_obj =
-            repo ? nmo_object_repository_find_by_id(repo, link_ids[i]) : NULL;
+            repo ? nmo_object_repository_find_by_id(repo, link_id) : NULL;
         const nmo_behaviorlink_state_t *link_state =
             link_obj && nmo_object_get_class_id(link_obj) == NMO_CID_BEHAVIORLINK
                 ? (const nmo_behaviorlink_state_t *)nmo_object_get_state(link_obj)
@@ -681,8 +681,6 @@ static int fold_candidates_emit_control_router_groups(
 
     const nmo_behavior_index_t *index =
         nmo_tool_owner_behavior_index(ctx->workspace);
-    const nmo_object_id_t *link_ids =
-        NMO_ARRAY_DATA(nmo_object_id_t, &parent->sub_behavior_links);
     nmo_object_repository_t *repo = nmo_tool_owner_repository(ctx->workspace);
 
     for (size_t i = 0; i < child_count; ++i) {
@@ -702,10 +700,13 @@ static int fold_candidates_emit_control_router_groups(
         while (changed) {
             changed = false;
             for (size_t link_idx = 0;
-                 link_ids && link_idx < parent->sub_behavior_links.count;
+                 link_idx < parent->sub_behavior_links.count;
                  ++link_idx) {
+                nmo_object_id_t link_id = nmo_behavior_ref_array_get_id(
+                    &parent->sub_behavior_links, link_idx);
+                if (link_id == 0) continue;
                 nmo_object_t *link_obj = repo
-                    ? nmo_object_repository_find_by_id(repo, link_ids[link_idx])
+                    ? nmo_object_repository_find_by_id(repo, link_id)
                     : NULL;
                 const nmo_behaviorlink_state_t *link_state =
                     link_obj &&
@@ -1229,9 +1230,6 @@ static int fold_candidates_emit(nmo_cmd_ctx_t *ctx,
                                 const nmo_behavior_boundary_t *boundary,
                                 uint32_t depth) {
     nmo_object_repository_t *repo = nmo_tool_owner_repository(ctx->workspace);
-    const nmo_object_id_t *sub_ids = parent
-        ? NMO_ARRAY_DATA(nmo_object_id_t, &parent->sub_behaviors)
-        : NULL;
     size_t child_count = parent ? parent->sub_behaviors.count : 0u;
     fold_candidate_child_t *children = child_count > 0
         ? (fold_candidate_child_t *)calloc(child_count, sizeof(*children))
@@ -1242,7 +1240,8 @@ static int fold_candidates_emit(nmo_cmd_ctx_t *ctx,
     }
 
     for (size_t i = 0; i < child_count; ++i) {
-        nmo_object_id_t child_id = sub_ids[i];
+        nmo_object_id_t child_id = nmo_behavior_ref_array_get_id(
+            &parent->sub_behaviors, i);
         const nmo_behavior_state_t *child_state =
             fold_find_behavior_state(repo, child_id);
         children[i].root_id = child_id;
@@ -1388,13 +1387,14 @@ static int fold_candidates_emit(nmo_cmd_ctx_t *ctx,
                 changed = false;
                 const nmo_behavior_index_t *index =
                     nmo_tool_owner_behavior_index(ctx->workspace);
-                const nmo_object_id_t *link_ids =
-                    NMO_ARRAY_DATA(nmo_object_id_t, &parent->sub_behavior_links);
                 for (size_t link_idx = 0;
-                     link_ids && link_idx < parent->sub_behavior_links.count;
+                     link_idx < parent->sub_behavior_links.count;
                      ++link_idx) {
+                    nmo_object_id_t link_id = nmo_behavior_ref_array_get_id(
+                        &parent->sub_behavior_links, link_idx);
+                    if (link_id == 0) continue;
                     nmo_object_t *link_obj = repo
-                        ? nmo_object_repository_find_by_id(repo, link_ids[link_idx])
+                        ? nmo_object_repository_find_by_id(repo, link_id)
                         : NULL;
                     const nmo_behaviorlink_state_t *link_state =
                         link_obj &&

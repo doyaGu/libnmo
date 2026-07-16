@@ -308,8 +308,8 @@ _nmo() {
             validate/a/) echo '' ;;
             validate/structure/) echo '--fix --strict --fail-on-warning' ;;
             validate/st/) echo '--fix --strict --fail-on-warning' ;;
-            validate/references/) echo '--fix --strict --fail-on-warning' ;;
-            validate/ref/) echo '--fix --strict --fail-on-warning' ;;
+            validate/references/) echo '--fix --normalize -o --output --strict --fail-on-warning' ;;
+            validate/ref/) echo '--fix --normalize -o --output --strict --fail-on-warning' ;;
             validate/resources/) echo '--strict --fail-on-warning' ;;
             validate/res/) echo '--strict --fail-on-warning' ;;
             validate/orphans/) echo '-c --class --strict --summary -o --strip' ;;

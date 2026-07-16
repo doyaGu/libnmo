@@ -130,9 +130,10 @@ static int entity_list_json_visitor(size_t index,
         yyjson_mut_arr_add_real(doc, pos_arr, (double)es->world_matrix[14]);
         yyjson_mut_obj_add_val(doc, item, "position", pos_arr);
 
-        if (es->current_mesh_id) {
-            yyjson_mut_obj_add_uint(doc, item, "mesh_id", es->current_mesh_id);
-            const char *mn = resolve_name(c, es->current_mesh_id);
+        nmo_object_id_t mesh_id = nmo_ref_runtime_id(&es->current_mesh);
+        if (mesh_id) {
+            yyjson_mut_obj_add_uint(doc, item, "mesh_id", mesh_id);
+            const char *mn = resolve_name(c, mesh_id);
             if (mn && mn[0]) {
                 nmo_cli_json_add_str_safe(doc, item, "mesh", mn);
             }
@@ -174,14 +175,15 @@ static int entity_list_table_visitor(size_t index,
         (const nmo_3dentity_state_t *)nmo_object_get_state(obj);
     if (es) {
         format_position(pos_buf, sizeof(pos_buf), es->world_matrix);
-        if (es->current_mesh_id) {
-            const char *mn = resolve_name(c, es->current_mesh_id);
+        nmo_object_id_t mesh_id = nmo_ref_runtime_id(&es->current_mesh);
+        if (mesh_id) {
+            const char *mn = resolve_name(c, mesh_id);
             if (mn && mn[0]) {
                 snprintf(mesh_buf, sizeof(mesh_buf), "#%u (%s)",
-                         es->current_mesh_id, mn);
+                         mesh_id, mn);
             } else {
                 snprintf(mesh_buf, sizeof(mesh_buf), "#%u",
-                         es->current_mesh_id);
+                         mesh_id);
             }
         }
     }
@@ -383,9 +385,10 @@ static int entity_show_run(nmo_cmd_ctx_t *ctx, const entity_show_args_t *args)
             yyjson_mut_obj_add_uint(doc, data, "entity_flags", es->entity_flags);
             yyjson_mut_obj_add_uint(doc, data, "moveable_flags", es->moveable_flags);
 
-            yyjson_mut_obj_add_uint(doc, data, "current_mesh_id", es->current_mesh_id);
-            if (es->current_mesh_id) {
-                const char *mn = resolve_name(&c, es->current_mesh_id);
+            nmo_object_id_t mesh_id = nmo_ref_runtime_id(&es->current_mesh);
+            yyjson_mut_obj_add_uint(doc, data, "current_mesh_id", mesh_id);
+            if (mesh_id) {
+                const char *mn = resolve_name(&c, mesh_id);
                 if (mn && mn[0]) {
                     nmo_cli_json_add_str_safe(doc, data, "current_mesh", mn);
                 }
@@ -395,7 +398,10 @@ static int entity_show_run(nmo_cmd_ctx_t *ctx, const entity_show_args_t *args)
             if (es->mesh_count > 0 && es->mesh_ids) {
                 yyjson_mut_val *mesh_arr = yyjson_mut_arr(doc);
                 for (uint32_t mi = 0; mi < es->mesh_count; ++mi) {
-                    yyjson_mut_arr_add_uint(doc, mesh_arr, es->mesh_ids[mi]);
+                    const nmo_object_id_t id = nmo_ref_runtime_id(&es->mesh_ids[mi]);
+                    if (id != NMO_OBJECT_ID_NONE) {
+                        yyjson_mut_arr_add_uint(doc, mesh_arr, id);
+                    }
                 }
                 yyjson_mut_obj_add_val(doc, data, "mesh_ids", mesh_arr);
             }
@@ -404,14 +410,18 @@ static int entity_show_run(nmo_cmd_ctx_t *ctx, const entity_show_args_t *args)
             if (es->animation_count > 0 && es->animation_ids) {
                 yyjson_mut_val *anim_arr = yyjson_mut_arr(doc);
                 for (uint32_t ai = 0; ai < es->animation_count; ++ai) {
-                    yyjson_mut_arr_add_uint(doc, anim_arr, es->animation_ids[ai]);
+                    const nmo_object_id_t id = nmo_ref_runtime_id(&es->animation_ids[ai]);
+                    if (id != NMO_OBJECT_ID_NONE) {
+                        yyjson_mut_arr_add_uint(doc, anim_arr, id);
+                    }
                 }
                 yyjson_mut_obj_add_val(doc, data, "animation_ids", anim_arr);
             }
 
-            yyjson_mut_obj_add_uint(doc, data, "parent_id", es->parent_id);
-            if (es->parent_id) {
-                const char *pn = resolve_name(&c, es->parent_id);
+            nmo_object_id_t parent_id = nmo_ref_runtime_id(&es->parent);
+            yyjson_mut_obj_add_uint(doc, data, "parent_id", parent_id);
+            if (parent_id) {
+                const char *pn = resolve_name(&c, parent_id);
                 if (pn && pn[0]) {
                     nmo_cli_json_add_str_safe(doc, data, "parent", pn);
                 }
@@ -491,12 +501,13 @@ static int entity_show_run(nmo_cmd_ctx_t *ctx, const entity_show_args_t *args)
         nmo_cli_print_kv(c.out, "Moveable Flags", buf, 20, c.colorize);
 
         /* Current mesh */
-        if (es->current_mesh_id) {
-            const char *mn = resolve_name(&c, es->current_mesh_id);
+        nmo_object_id_t mesh_id = nmo_ref_runtime_id(&es->current_mesh);
+        if (mesh_id) {
+            const char *mn = resolve_name(&c, mesh_id);
             if (mn && mn[0]) {
-                snprintf(buf, sizeof(buf), "#%u (%s)", es->current_mesh_id, mn);
+                snprintf(buf, sizeof(buf), "#%u (%s)", mesh_id, mn);
             } else {
-                snprintf(buf, sizeof(buf), "#%u", es->current_mesh_id);
+                snprintf(buf, sizeof(buf), "#%u", mesh_id);
             }
         } else {
             snprintf(buf, sizeof(buf), "(none)");
@@ -507,11 +518,13 @@ static int entity_show_run(nmo_cmd_ctx_t *ctx, const entity_show_args_t *args)
         if (es->mesh_count > 0 && es->mesh_ids) {
             fprintf(c.out, "\nMeshes (%u):\n", es->mesh_count);
             for (uint32_t mi = 0; mi < es->mesh_count; ++mi) {
-                const char *mn = resolve_name(&c, es->mesh_ids[mi]);
+                const nmo_object_id_t id = nmo_ref_runtime_id(&es->mesh_ids[mi]);
+                if (id == NMO_OBJECT_ID_NONE) continue;
+                const char *mn = resolve_name(&c, id);
                 if (mn && mn[0]) {
-                    fprintf(c.out, "  [%u] #%u (%s)\n", mi, es->mesh_ids[mi], mn);
+                    fprintf(c.out, "  [%u] #%u (%s)\n", mi, id, mn);
                 } else {
-                    fprintf(c.out, "  [%u] #%u\n", mi, es->mesh_ids[mi]);
+                    fprintf(c.out, "  [%u] #%u\n", mi, id);
                 }
             }
         }
@@ -520,22 +533,25 @@ static int entity_show_run(nmo_cmd_ctx_t *ctx, const entity_show_args_t *args)
         if (es->animation_count > 0 && es->animation_ids) {
             fprintf(c.out, "\nAnimations (%u):\n", es->animation_count);
             for (uint32_t ai = 0; ai < es->animation_count; ++ai) {
-                const char *an = resolve_name(&c, es->animation_ids[ai]);
+                const nmo_object_id_t id = nmo_ref_runtime_id(&es->animation_ids[ai]);
+                if (id == NMO_OBJECT_ID_NONE) continue;
+                const char *an = resolve_name(&c, id);
                 if (an && an[0]) {
-                    fprintf(c.out, "  [%u] #%u (%s)\n", ai, es->animation_ids[ai], an);
+                    fprintf(c.out, "  [%u] #%u (%s)\n", ai, id, an);
                 } else {
-                    fprintf(c.out, "  [%u] #%u\n", ai, es->animation_ids[ai]);
+                    fprintf(c.out, "  [%u] #%u\n", ai, id);
                 }
             }
         }
 
         /* Parent */
-        if (es->parent_id) {
-            const char *pn = resolve_name(&c, es->parent_id);
+        nmo_object_id_t parent_id = nmo_ref_runtime_id(&es->parent);
+        if (parent_id) {
+            const char *pn = resolve_name(&c, parent_id);
             if (pn && pn[0]) {
-                snprintf(buf, sizeof(buf), "#%u (%s)", es->parent_id, pn);
+                snprintf(buf, sizeof(buf), "#%u (%s)", parent_id, pn);
             } else {
-                snprintf(buf, sizeof(buf), "#%u", es->parent_id);
+                snprintf(buf, sizeof(buf), "#%u", parent_id);
             }
         } else {
             snprintf(buf, sizeof(buf), "(none)");
@@ -896,7 +912,7 @@ static int entity_set_parent_mutate(
 
     fprintf(c->out, "Entity #%u:\n", args->object_id);
 
-    nmo_field_set_entry_t entry = { "parent_id", args->parent_id_str };
+    nmo_field_set_entry_t entry = { "parent", args->parent_id_str };
     nmo_field_set_result_t result;
     return nmo_core_set_fields(c, args->object_id, &entry, 1, dry_run, &result);
 }

@@ -621,8 +621,8 @@ static bool debug_probe_behavior_has_io(const nmo_behavior_state_t *state,
                                         nmo_object_id_t io_id)
 {
     return state != NULL && io_id != 0u &&
-           (nmo_array_find(&state->inputs, &io_id, NULL) != 0 ||
-            nmo_array_find(&state->outputs, &io_id, NULL) != 0);
+           (nmo_behavior_ref_array_find(&state->inputs, io_id, NULL) ||
+            nmo_behavior_ref_array_find(&state->outputs, io_id, NULL));
 }
 
 typedef enum debug_probe_link_touch_mode {
@@ -693,11 +693,10 @@ static size_t debug_probe_collect_touching_links(
 
     size_t candidate_count = 0u;
     size_t candidate_ids_len = 0u;
-    const nmo_object_id_t *link_ids =
-        (const nmo_object_id_t *)parent->sub_behavior_links.data;
-    for (size_t i = 0; link_ids != NULL &&
-                       i < parent->sub_behavior_links.count; ++i) {
-        nmo_object_id_t link_id = link_ids[i];
+    for (size_t i = 0; i < parent->sub_behavior_links.count; ++i) {
+        nmo_object_id_t link_id = nmo_behavior_ref_array_get_id(
+            &parent->sub_behavior_links, i);
+        if (link_id == 0) continue;
         nmo_object_t *link_obj =
             nmo_object_repository_find_by_id(repo, link_id);
         const nmo_behaviorlink_state_t *link =

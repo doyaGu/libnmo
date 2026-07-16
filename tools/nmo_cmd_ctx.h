@@ -54,6 +54,7 @@ typedef struct nmo_cmd_ctx {
 
     /* Cached accessors (set by init after session open) */
     const nmo_type_registry_t *registry;
+    nmo_load_diagnostics_t *load_diagnostics; /**< Borrowed from load options. */
 } nmo_cmd_ctx_t;
 
 typedef struct nmo_cmd_in_session_result {
