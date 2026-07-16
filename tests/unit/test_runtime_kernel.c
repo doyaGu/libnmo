@@ -20,6 +20,7 @@
 #include "object/builtin/nmo_level_schemas.h"
 #include "object/builtin/nmo_messagemanager_schemas.h"
 #include "object/builtin/nmo_sound_schemas.h"
+#include "object/builtin/nmo_synchro_schemas.h"
 #include "object/builtin/nmo_texture_schemas.h"
 #include "object/builtin/nmo_targetcamera_schemas.h"
 #include "session/nmo_deserializer.h"
@@ -660,6 +661,7 @@ TEST(runtime_kernel, normalize_removes_only_invalid_reference_records) {
     nmo_object_id_t valid_animation_a = 0, valid_animation_b = 0;
     nmo_object_id_t valid_parameter = 0;
     nmo_object_id_t entity3d_id = 0, valid_mesh = 0;
+    nmo_object_id_t synchro_id = 0;
     ASSERT_EQ(NMO_OK, nmo_session_create_object(
         session, NMO_CID_OBJECT, "a", (nmo_guid_t){0, 0}, &valid_a, NULL));
     ASSERT_EQ(NMO_OK, nmo_session_create_object(
@@ -689,6 +691,9 @@ TEST(runtime_kernel, normalize_removes_only_invalid_reference_records) {
     ASSERT_EQ(NMO_OK, nmo_session_create_object(
         session, NMO_CID_MESH, "mesh", (nmo_guid_t){0, 0},
         &valid_mesh, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_SYNCHRO, "synchro", (nmo_guid_t){0, 0},
+        &synchro_id, NULL));
 
     nmo_behavior_state_t *behavior = (nmo_behavior_state_t *)
         nmo_object_repository_find_by_id(repo, behavior_id)->state;
@@ -700,11 +705,14 @@ TEST(runtime_kernel, normalize_removes_only_invalid_reference_records) {
         nmo_object_repository_find_by_id(repo, keyed_id)->state;
     nmo_3dentity_state_t *entity3d = (nmo_3dentity_state_t *)
         nmo_object_repository_find_by_id(repo, entity3d_id)->state;
+    nmo_synchro_state_t *synchro = (nmo_synchro_state_t *)
+        nmo_object_repository_find_by_id(repo, synchro_id)->state;
     ASSERT_NOT_NULL(behavior);
     ASSERT_NOT_NULL(group);
     ASSERT_NOT_NULL(grid);
     ASSERT_NOT_NULL(keyed);
     ASSERT_NOT_NULL(entity3d);
+    ASSERT_NOT_NULL(synchro);
     nmo_object_id_t invalid = 0x7FFFFFF0u;
     ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(
         &behavior->inputs, valid_a, NULL));
@@ -774,11 +782,19 @@ TEST(runtime_kernel, normalize_removes_only_invalid_reference_records) {
     };
     ASSERT_EQ(NMO_OK, nmo_array_append(&grid->layers, &valid_layer));
     ASSERT_EQ(NMO_OK, nmo_array_append(&grid->layers, &invalid_layer));
+    nmo_ref_t valid_ref_a = nmo_ref_from_id(valid_a);
+    nmo_ref_t valid_ref_b = nmo_ref_from_id(valid_b);
+    nmo_ref_t invalid_ref = nmo_ref_from_raw(invalid);
+    ASSERT_EQ(NMO_OK, nmo_array_append(&synchro->arrived_ids, &valid_ref_a));
+    ASSERT_EQ(NMO_OK, nmo_array_append(&synchro->arrived_ids, &invalid_ref));
+    ASSERT_EQ(NMO_OK, nmo_array_append(&synchro->arrived_ids, &valid_ref_b));
+    ASSERT_EQ(NMO_OK, nmo_array_append(&synchro->passed_ids, &invalid_ref));
+    ASSERT_EQ(NMO_OK, nmo_array_append(&synchro->passed_ids, &valid_ref_b));
 
     size_t changed = 0;
     ASSERT_EQ(NMO_OK, nmo_runtime_normalize_invalid_refs(
         repo, nmo_context_get_type_runtime(ctx), &changed));
-    ASSERT_EQ(8, (int)changed);
+    ASSERT_EQ(10, (int)changed);
     ASSERT_EQ(2, (int)behavior->inputs.count);
     ASSERT_EQ(valid_a, nmo_behavior_ref_array_get_id(&behavior->inputs, 0));
     ASSERT_EQ(valid_b, nmo_behavior_ref_array_get_id(&behavior->inputs, 1));
@@ -813,6 +829,17 @@ TEST(runtime_kernel, normalize_removes_only_invalid_reference_records) {
               nmo_ref_runtime_id(&entity3d->animation_ids[0]));
     ASSERT_EQ(valid_animation_b,
               nmo_ref_runtime_id(&entity3d->animation_ids[1]));
+    ASSERT_EQ(2u, synchro->arrived_ids.count);
+    ASSERT_EQ(valid_a, nmo_ref_runtime_id(
+                           &NMO_ARRAY_DATA(
+                               nmo_ref_t, &synchro->arrived_ids)[0]));
+    ASSERT_EQ(valid_b, nmo_ref_runtime_id(
+                           &NMO_ARRAY_DATA(
+                               nmo_ref_t, &synchro->arrived_ids)[1]));
+    ASSERT_EQ(1u, synchro->passed_ids.count);
+    ASSERT_EQ(valid_b, nmo_ref_runtime_id(
+                           &NMO_ARRAY_DATA(
+                               nmo_ref_t, &synchro->passed_ids)[0]));
 
     nmo_session_destroy(session);
     nmo_arena_destroy(chunk_arena);

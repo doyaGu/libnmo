@@ -23,6 +23,7 @@
 #include "object/builtin/nmo_place_schemas.h"
 #include "object/builtin/nmo_group_schemas.h"
 #include "object/builtin/nmo_level_schemas.h"
+#include "object/builtin/nmo_synchro_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_defs.h"
 #include "object/nmo_statesave_ids.h"
@@ -1704,6 +1705,127 @@ TEST(chunk_id_remap, level_refs_round_trip_and_failure_is_atomic) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, synchro_refs_round_trip_and_failure_is_atomic) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_id_remap_t *file_to_runtime = nmo_id_remap_create(arena);
+    nmo_id_remap_t *runtime_to_file = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(file_to_runtime);
+    ASSERT_NOT_NULL(runtime_to_file);
+    nmo_chunk_file_context_t read_context = {
+        .file_to_runtime = file_to_runtime,
+    };
+    nmo_chunk_file_context_t write_context = {
+        .runtime_to_file = runtime_to_file,
+    };
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+
+    nmo_synchro_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_synchro_vtable.create(&source, NULL, NULL));
+    source.max_waiters = 4;
+    nmo_ref_t arrived = nmo_ref_from_raw(921);
+    nmo_ref_t passed = nmo_ref_from_raw(922);
+    ASSERT_EQ(NMO_OK, nmo_array_append(&source.arrived_ids, &arrived));
+    ASSERT_EQ(NMO_OK, nmo_array_append(&source.passed_ids, &passed));
+
+    nmo_chunk_t *first = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(first);
+    first->class_id = NMO_CID_SYNCHRO;
+    first->data_version = 7;
+    first->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(first, &write_context);
+    ASSERT_EQ(NMO_OK, nmo_synchro_serialize(
+        &source, first, NULL, &serialize_context));
+    nmo_chunk_close(first);
+    nmo_chunk_set_file_context(first, &read_context);
+
+    nmo_synchro_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_synchro_vtable.create(&loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_synchro_deserialize(
+        &loaded, first, NULL, &deserialize_context));
+    ASSERT_EQ(4, loaded.max_waiters);
+    ASSERT_EQ(1u, loaded.arrived_ids.count);
+    ASSERT_EQ(1u, loaded.passed_ids.count);
+    ASSERT_EQ(921u, NMO_ARRAY_DATA(
+                        nmo_ref_t, &loaded.arrived_ids)[0].raw_id);
+    ASSERT_EQ(922u, NMO_ARRAY_DATA(
+                        nmo_ref_t, &loaded.passed_ids)[0].raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, NMO_ARRAY_DATA(
+                        nmo_ref_t, &loaded.arrived_ids)[0].state);
+
+    nmo_chunk_t *second = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(second);
+    second->class_id = NMO_CID_SYNCHRO;
+    second->data_version = 7;
+    second->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(second, &write_context);
+    ASSERT_EQ(NMO_OK, nmo_synchro_serialize(
+        &loaded, second, NULL, &serialize_context));
+    nmo_chunk_close(second);
+    nmo_chunk_set_file_context(second, &read_context);
+
+    nmo_synchro_state_t reloaded;
+    ASSERT_EQ(NMO_OK, nmo_synchro_vtable.create(&reloaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_synchro_deserialize(
+        &reloaded, second, NULL, &deserialize_context));
+    ASSERT_EQ(921u, NMO_ARRAY_DATA(
+                        nmo_ref_t, &reloaded.arrived_ids)[0].raw_id);
+    ASSERT_EQ(922u, NMO_ARRAY_DATA(
+                        nmo_ref_t, &reloaded.passed_ids)[0].raw_id);
+
+    nmo_synchro_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_synchro_vtable.create(&copied, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_synchro_vtable.copy(
+        &reloaded, &copied, NULL, arena));
+    ASSERT_NE(reloaded.arrived_ids.data, copied.arrived_ids.data);
+    ASSERT_NE(reloaded.passed_ids.data, copied.passed_ids.data);
+    ASSERT_TRUE(nmo_synchro_vtable.equals(&reloaded, &copied));
+    ASSERT_EQ(nmo_synchro_vtable.hash(&reloaded),
+              nmo_synchro_vtable.hash(&copied));
+
+    nmo_chunk_t *truncated = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(truncated);
+    truncated->class_id = NMO_CID_SYNCHRO;
+    truncated->data_version = 7;
+    truncated->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(truncated));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        truncated, CK_STATESAVE_SYNCHRODATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(truncated, 8));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(truncated, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_item(truncated, 923));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(truncated, 2));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_item(truncated, 924));
+    nmo_chunk_close(truncated);
+
+    nmo_synchro_state_t failed;
+    ASSERT_EQ(NMO_OK, nmo_synchro_vtable.create(&failed, NULL, NULL));
+    failed.max_waiters = 99;
+    nmo_ref_t old_arrived = nmo_ref_from_raw(930);
+    nmo_ref_t old_passed = nmo_ref_from_raw(931);
+    ASSERT_EQ(NMO_OK, nmo_array_append(&failed.arrived_ids, &old_arrived));
+    ASSERT_EQ(NMO_OK, nmo_array_append(&failed.passed_ids, &old_passed));
+    ASSERT_NE(NMO_OK, nmo_synchro_deserialize(
+        &failed, truncated, NULL, &deserialize_context));
+    ASSERT_EQ(99, failed.max_waiters);
+    ASSERT_EQ(1u, failed.arrived_ids.count);
+    ASSERT_EQ(1u, failed.passed_ids.count);
+    ASSERT_EQ(930u, NMO_ARRAY_DATA(
+                        nmo_ref_t, &failed.arrived_ids)[0].raw_id);
+    ASSERT_EQ(931u, NMO_ARRAY_DATA(
+                        nmo_ref_t, &failed.passed_ids)[0].raw_id);
+
+    nmo_synchro_vtable.destroy(&source, NULL, NULL);
+    nmo_synchro_vtable.destroy(&loaded, NULL, NULL);
+    nmo_synchro_vtable.destroy(&reloaded, NULL, NULL);
+    nmo_synchro_vtable.destroy(&copied, NULL, NULL);
+    nmo_synchro_vtable.destroy(&failed, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, beobject_attribute_unresolved_ref_round_trips_raw_id) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
     ASSERT_NOT_NULL(arena);
@@ -1950,6 +2072,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, place_refs_round_trip_and_truncation_is_atomic);
     REGISTER_TEST(chunk_id_remap, group_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, level_refs_round_trip_and_failure_is_atomic);
+    REGISTER_TEST(chunk_id_remap, synchro_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, beobject_attribute_unresolved_ref_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, beobject_attribute_failure_keeps_previous_atomic_state);
     REGISTER_TEST(chunk_id_remap, beobject_copy_preserves_content_equality);

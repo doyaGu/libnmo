@@ -21,12 +21,18 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
     synchro,
     nmo_synchro_state_t,
     do {
-        nmo_status_t result = nmo_array_init(&state->arrived_ids, sizeof(nmo_object_id_t), 0, NULL);
+        nmo_status_t result = nmo_array_init(&state->arrived_ids, sizeof(nmo_ref_t), 0, NULL);
         if (result != NMO_OK) return result;
-        result = nmo_array_init(&state->passed_ids, sizeof(nmo_object_id_t), 0, NULL);
-        if (result != NMO_OK) return result;
+        result = nmo_array_init(&state->passed_ids, sizeof(nmo_ref_t), 0, NULL);
+        if (result != NMO_OK) {
+            nmo_array_dispose(&state->arrived_ids);
+            return result;
+        }
     } while (0),
-    ((void)0))
+    do {
+        nmo_array_dispose(&state->arrived_ids);
+        nmo_array_dispose(&state->passed_ids);
+    } while (0))
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(state, nmo_state_state_t)
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(criticalsection, nmo_criticalsection_state_t)
 
@@ -39,8 +45,8 @@ static const nmo_type_field_t nmo_synchro_fields[] = {
                     sizeof(nmo_object_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_synchro_state_t, max_waiters, CKPGUID_INT),
-    NMO_FIELD_REF_ARRAY(nmo_synchro_state_t, arrived_ids),
-    NMO_FIELD_REF_ARRAY(nmo_synchro_state_t, passed_ids)
+    NMO_FIELD_REF_RECORD_ARRAY(nmo_synchro_state_t, arrived_ids),
+    NMO_FIELD_REF_RECORD_ARRAY(nmo_synchro_state_t, passed_ids)
 };
 
 static const nmo_type_field_t nmo_state_fields[] = {
@@ -93,6 +99,36 @@ static nmo_status_t serialize_ckobject_base(
     return nmo_object_serialize(base, chunk, NULL, context);
 }
 
+static nmo_status_t nmo_synchro_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+static nmo_status_t nmo_synchro_read_ref_array(
+    nmo_chunk_t *chunk,
+    nmo_array_t *out_refs,
+    const nmo_allocator_t *allocator)
+{
+    size_t count = 0;
+    nmo_status_t result = nmo_chunk_read_object_sequence_start(chunk, &count);
+    if (result != NMO_OK) return result;
+    if (count > INT32_MAX || count > SIZE_MAX / sizeof(nmo_ref_t)) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+
+    result = nmo_array_init(out_refs, sizeof(nmo_ref_t), count, allocator);
+    if (result != NMO_OK) return result;
+    nmo_ref_t *refs = NULL;
+    result = nmo_array_extend(out_refs, count, (void **)&refs);
+    for (size_t i = 0; result == NMO_OK && i < count; ++i) {
+        result = nmo_ref_read(chunk, &refs[i]);
+    }
+    if (result != NMO_OK) {
+        nmo_array_dispose(out_refs);
+    }
+    return result;
+}
+
 /* =============================================================================
  * CKSynchroObject
  * ============================================================================= */
@@ -114,54 +150,33 @@ nmo_status_t nmo_synchro_deserialize(
     if (result != NMO_OK) return result;
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SYNCHRODATA) == NMO_OK) {
-        result = nmo_chunk_read_int(chunk, &out_state->max_waiters);
+        int32_t max_waiters = 0;
+        nmo_array_t arrived_ids = {0};
+        nmo_array_t passed_ids = {0};
+        result = nmo_chunk_read_int(chunk, &max_waiters);
+        if (result != NMO_OK) return result;
+
+        const nmo_allocator_t *arrived_allocator =
+            out_state->arrived_ids.element_size != 0
+                ? &out_state->arrived_ids.allocator : NULL;
+        const nmo_allocator_t *passed_allocator =
+            out_state->passed_ids.element_size != 0
+                ? &out_state->passed_ids.allocator : NULL;
+        result = nmo_synchro_read_ref_array(
+            chunk, &arrived_ids, arrived_allocator);
+        if (result != NMO_OK) return result;
+        result = nmo_synchro_read_ref_array(
+            chunk, &passed_ids, passed_allocator);
         if (result != NMO_OK) {
+            nmo_array_dispose(&arrived_ids);
             return result;
         }
 
-        size_t count = 0;
-        result = nmo_chunk_read_object_sequence_start(chunk, &count);
-        if (result != NMO_OK) {
-            return result;
-        }
-        nmo_array_clear(&out_state->arrived_ids);
-        if (count > 0) {
-            result = nmo_array_reserve(&out_state->arrived_ids, count);
-            if (result != NMO_OK) return result;
-
-            nmo_object_id_t *arrived_ids = NULL;
-            result = nmo_array_extend(&out_state->arrived_ids, count, (void **)&arrived_ids);
-            if (result != NMO_OK) return result;
-
-            for (size_t i = 0; i < count; ++i) {
-                result = nmo_chunk_read_object_sequence_item(chunk, &arrived_ids[i]);
-                if (result != NMO_OK) {
-                    return result;
-                }
-            }
-        }
-
-        count = 0;
-        result = nmo_chunk_read_object_sequence_start(chunk, &count);
-        if (result != NMO_OK) {
-            return result;
-        }
-        nmo_array_clear(&out_state->passed_ids);
-        if (count > 0) {
-            result = nmo_array_reserve(&out_state->passed_ids, count);
-            if (result != NMO_OK) return result;
-
-            nmo_object_id_t *passed_ids = NULL;
-            result = nmo_array_extend(&out_state->passed_ids, count, (void **)&passed_ids);
-            if (result != NMO_OK) return result;
-
-            for (size_t i = 0; i < count; ++i) {
-                result = nmo_chunk_read_object_sequence_item(chunk, &passed_ids[i]);
-                if (result != NMO_OK) {
-                    return result;
-                }
-            }
-        }
+        nmo_array_dispose(&out_state->arrived_ids);
+        nmo_array_dispose(&out_state->passed_ids);
+        out_state->arrived_ids = arrived_ids;
+        out_state->passed_ids = passed_ids;
+        out_state->max_waiters = max_waiters;
     }
 
     NMO_RETURN_OK();
@@ -180,6 +195,8 @@ nmo_status_t nmo_synchro_serialize(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_synchro_serialize");
     }
 
+    NMO_RETURN_IF_ERROR(nmo_synchro_validate(in_state, type, context));
+
     nmo_status_t result = serialize_ckobject_base(&in_state->base, out_chunk, context);
     if (result != NMO_OK) return result;
 
@@ -189,27 +206,17 @@ nmo_status_t nmo_synchro_serialize(
     result = nmo_chunk_write_int(out_chunk, in_state->max_waiters);
     if (result != NMO_OK) return result;
 
-    result = nmo_chunk_write_object_sequence_start(out_chunk, (uint32_t)in_state->arrived_ids.count);
+    result = nmo_ref_write_sequence(
+        out_chunk,
+        NMO_ARRAY_DATA(nmo_ref_t, &in_state->arrived_ids),
+        in_state->arrived_ids.count);
     if (result != NMO_OK) return result;
-    if (in_state->arrived_ids.count > 0 && !in_state->arrived_ids.data) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "CKSynchroObject: arrived_ids missing");
-    }
-    const nmo_object_id_t *arrived_ids = NMO_ARRAY_DATA(nmo_object_id_t, &in_state->arrived_ids);
-    for (uint32_t i = 0; i < in_state->arrived_ids.count; ++i) {
-        result = nmo_chunk_write_object_sequence_item(out_chunk, arrived_ids[i]);
-        if (result != NMO_OK) return result;
-    }
 
-    result = nmo_chunk_write_object_sequence_start(out_chunk, (uint32_t)in_state->passed_ids.count);
+    result = nmo_ref_write_sequence(
+        out_chunk,
+        NMO_ARRAY_DATA(nmo_ref_t, &in_state->passed_ids),
+        in_state->passed_ids.count);
     if (result != NMO_OK) return result;
-    if (in_state->passed_ids.count > 0 && !in_state->passed_ids.data) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "CKSynchroObject: passed_ids missing");
-    }
-    const nmo_object_id_t *passed_ids = NMO_ARRAY_DATA(nmo_object_id_t, &in_state->passed_ids);
-    for (uint32_t i = 0; i < in_state->passed_ids.count; ++i) {
-        result = nmo_chunk_write_object_sequence_item(out_chunk, passed_ids[i]);
-        if (result != NMO_OK) return result;
-    }
 
     NMO_RETURN_OK();
 }
@@ -229,14 +236,7 @@ nmo_status_t nmo_synchro_prepare_dependencies(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "Invalid arguments to nmo_synchro_prepare_dependencies");
     }
-    nmo_synchro_state_t *state = (nmo_synchro_state_t *)instance;
-    if (state->arrived_ids.count > 0 && !state->arrived_ids.data) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "CKSynchroObject: arrived_ids missing");
-    }
-    if (state->passed_ids.count > 0 && !state->passed_ids.data) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "CKSynchroObject: passed_ids missing");
-    }
-    NMO_RETURN_OK();
+    return nmo_synchro_validate(instance, type, context);
 }
 
 nmo_status_t nmo_synchro_remap_dependencies(
@@ -498,7 +498,127 @@ static void nmo_criticalsection_post_delete(
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_STATE_OPS(synchro, nmo_synchro_state_t)
+static nmo_status_t nmo_synchro_copy(
+    const void *src,
+    void *dst,
+    const nmo_type_descriptor_t *type,
+    nmo_arena_t *arena)
+{
+    (void)type;
+    (void)arena;
+    if (src == NULL || dst == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    const nmo_synchro_state_t *s = (const nmo_synchro_state_t *)src;
+    nmo_synchro_state_t *d = (nmo_synchro_state_t *)dst;
+    NMO_RETURN_IF_ERROR(nmo_synchro_validate(s, type, NULL));
+    nmo_array_t arrived_ids = {0};
+    nmo_array_t passed_ids = {0};
+    nmo_status_t result = nmo_array_clone(
+        &s->arrived_ids, &arrived_ids, &s->arrived_ids.allocator);
+    if (result != NMO_OK) return result;
+    result = nmo_array_clone(
+        &s->passed_ids, &passed_ids, &s->passed_ids.allocator);
+    if (result != NMO_OK) {
+        nmo_array_dispose(&arrived_ids);
+        return result;
+    }
+    nmo_array_dispose(&d->arrived_ids);
+    nmo_array_dispose(&d->passed_ids);
+    d->base = s->base;
+    d->max_waiters = s->max_waiters;
+    d->arrived_ids = arrived_ids;
+    d->passed_ids = passed_ids;
+    return NMO_OK;
+}
+
+static nmo_status_t nmo_synchro_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    const nmo_synchro_state_t *state =
+        (const nmo_synchro_state_t *)instance;
+    if (state->arrived_ids.element_size != sizeof(nmo_ref_t) ||
+        state->passed_ids.element_size != sizeof(nmo_ref_t) ||
+        state->arrived_ids.count > INT32_MAX ||
+        state->passed_ids.count > INT32_MAX ||
+        (state->arrived_ids.count > 0 && state->arrived_ids.data == NULL) ||
+        (state->passed_ids.count > 0 && state->passed_ids.data == NULL)) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    return NMO_OK;
+}
+
+static bool nmo_synchro_ref_arrays_equal(
+    const nmo_array_t *a,
+    const nmo_array_t *b)
+{
+    if (a->count != b->count) return false;
+    const nmo_ref_t *refs_a = NMO_ARRAY_DATA(nmo_ref_t, a);
+    const nmo_ref_t *refs_b = NMO_ARRAY_DATA(nmo_ref_t, b);
+    for (size_t i = 0; i < a->count; ++i) {
+        if (refs_a[i].raw_id != refs_b[i].raw_id ||
+            refs_a[i].id != refs_b[i].id ||
+            refs_a[i].state != refs_b[i].state) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool nmo_synchro_equals(const void *a, const void *b)
+{
+    if (a == b) return true;
+    if (a == NULL || b == NULL) return false;
+    const nmo_synchro_state_t *sa = (const nmo_synchro_state_t *)a;
+    const nmo_synchro_state_t *sb = (const nmo_synchro_state_t *)b;
+    if (nmo_synchro_validate(sa, NULL, NULL) != NMO_OK ||
+        nmo_synchro_validate(sb, NULL, NULL) != NMO_OK) {
+        return false;
+    }
+    return sa->base.visibility_flags == sb->base.visibility_flags &&
+        sa->max_waiters == sb->max_waiters &&
+        nmo_synchro_ref_arrays_equal(&sa->arrived_ids, &sb->arrived_ids) &&
+        nmo_synchro_ref_arrays_equal(&sa->passed_ids, &sb->passed_ids);
+}
+
+static uint32_t nmo_synchro_hash_u32(uint32_t hash, uint32_t value)
+{
+    for (size_t i = 0; i < sizeof(value); ++i) {
+        hash ^= (uint8_t)(value >> (i * 8u));
+        hash *= 16777619u;
+    }
+    return hash;
+}
+
+static uint32_t nmo_synchro_hash(const void *instance)
+{
+    if (instance == NULL) return 0;
+    const nmo_synchro_state_t *state =
+        (const nmo_synchro_state_t *)instance;
+    if (nmo_synchro_validate(state, NULL, NULL) != NMO_OK) return 0;
+    uint32_t hash = 2166136261u;
+    hash = nmo_synchro_hash_u32(hash, state->base.visibility_flags);
+    hash = nmo_synchro_hash_u32(hash, (uint32_t)state->max_waiters);
+    const nmo_array_t *arrays[] = {
+        &state->arrived_ids, &state->passed_ids
+    };
+    for (size_t array_index = 0; array_index < 2; ++array_index) {
+        hash = nmo_synchro_hash_u32(
+            hash, (uint32_t)arrays[array_index]->count);
+        const nmo_ref_t *refs = NMO_ARRAY_DATA(
+            nmo_ref_t, arrays[array_index]);
+        for (size_t i = 0; i < arrays[array_index]->count; ++i) {
+            hash = nmo_synchro_hash_u32(hash, refs[i].raw_id);
+            hash = nmo_synchro_hash_u32(hash, refs[i].id);
+            hash = nmo_synchro_hash_u32(hash, (uint32_t)refs[i].state);
+        }
+    }
+    return hash;
+}
+
 NMO_DEFINE_OBJECT_STATE_OPS(state, nmo_state_state_t)
 NMO_DEFINE_OBJECT_STATE_OPS(criticalsection, nmo_criticalsection_state_t)
 

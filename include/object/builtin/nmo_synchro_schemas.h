@@ -28,8 +28,8 @@ typedef struct nmo_type_descriptor nmo_type_descriptor_t;
 typedef struct nmo_synchro_state {
     nmo_object_state_t base;
     int32_t max_waiters;
-    nmo_array_t arrived_ids;  /**< Arrived IDs (nmo_object_id_t) */
-    nmo_array_t passed_ids;   /**< Passed IDs (nmo_object_id_t) */
+    nmo_array_t arrived_ids;  /**< Arrived references (nmo_ref_t) */
+    nmo_array_t passed_ids;   /**< Passed references (nmo_ref_t) */
 } nmo_synchro_state_t;
 
 /**
