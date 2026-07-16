@@ -17,6 +17,7 @@
 #include "object/builtin/nmo_camera_schemas.h"
 #include "object/builtin/nmo_interfaceobjectmanager_schemas.h"
 #include "object/builtin/nmo_light_schemas.h"
+#include "object/builtin/nmo_level_schemas.h"
 #include "object/builtin/nmo_messagemanager_schemas.h"
 #include "object/builtin/nmo_sound_schemas.h"
 #include "object/builtin/nmo_texture_schemas.h"
@@ -828,6 +829,8 @@ TEST(runtime_kernel, normalize_clears_raw_scalar_class_mismatch) {
     nmo_object_id_t material_id = 0;
     nmo_object_id_t camera_id = 0;
     nmo_object_id_t entity2d_id = 0;
+    nmo_object_id_t level_id = 0;
+    nmo_object_id_t scene_id = 0;
     ASSERT_EQ(NMO_OK, nmo_session_create_object(
         session, NMO_CID_3DENTITY, "entity", (nmo_guid_t){0, 0},
         &entity_id, NULL));
@@ -840,6 +843,12 @@ TEST(runtime_kernel, normalize_clears_raw_scalar_class_mismatch) {
     ASSERT_EQ(NMO_OK, nmo_session_create_object(
         session, NMO_CID_2DENTITY, "entity2d", (nmo_guid_t){0, 0},
         &entity2d_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_LEVEL, "level", (nmo_guid_t){0, 0},
+        &level_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_SCENE, "scene", (nmo_guid_t){0, 0},
+        &scene_id, NULL));
 
     nmo_object_repository_t *repo = nmo_session_get_repository(session);
     nmo_3dentity_state_t *entity = (nmo_3dentity_state_t *)
@@ -857,11 +866,22 @@ TEST(runtime_kernel, normalize_clears_raw_scalar_class_mismatch) {
     ASSERT_NOT_NULL(camera);
     camera->has_target = 1;
     camera->target = nmo_ref_from_id(material_id);
+    nmo_level_state_t *level = (nmo_level_state_t *)
+        nmo_object_repository_find_by_id(repo, level_id)->state;
+    ASSERT_NOT_NULL(level);
+    level->current_scene = nmo_ref_from_id(material_id);
+    level->level_scene = nmo_ref_from_id(scene_id);
+    nmo_ref_t valid_scene = nmo_ref_from_id(scene_id);
+    nmo_ref_t wrong_scene = nmo_ref_from_id(material_id);
+    nmo_ref_t unresolved_scene = nmo_ref_from_raw(0x7FFFFFD0u);
+    ASSERT_EQ(NMO_OK, nmo_array_append(&level->scene_ids, &valid_scene));
+    ASSERT_EQ(NMO_OK, nmo_array_append(&level->scene_ids, &wrong_scene));
+    ASSERT_EQ(NMO_OK, nmo_array_append(&level->scene_ids, &unresolved_scene));
 
     size_t changed = 0;
     ASSERT_EQ(NMO_OK, nmo_runtime_normalize_invalid_refs(
         repo, nmo_context_get_type_runtime(ctx), &changed));
-    ASSERT_EQ((size_t)4, changed);
+    ASSERT_EQ((size_t)7, changed);
     ASSERT_EQ(NMO_REF_NONE, entity->current_mesh.state);
     ASSERT_EQ(NMO_OBJECT_ID_NONE, entity->current_mesh.raw_id);
     ASSERT_EQ(NMO_OBJECT_ID_NONE, entity->current_mesh.id);
@@ -870,6 +890,12 @@ TEST(runtime_kernel, normalize_clears_raw_scalar_class_mismatch) {
     ASSERT_EQ(NMO_REF_NONE, camera->target.state);
     ASSERT_EQ(NMO_OBJECT_ID_NONE, camera->target.raw_id);
     ASSERT_EQ(NMO_OBJECT_ID_NONE, camera->target.id);
+    ASSERT_EQ(NMO_REF_NONE, level->current_scene.state);
+    ASSERT_EQ(NMO_REF_RESOLVED, level->level_scene.state);
+    ASSERT_EQ(scene_id, level->level_scene.id);
+    ASSERT_EQ(1u, level->scene_ids.count);
+    ASSERT_EQ(scene_id, nmo_ref_runtime_id(
+                            &NMO_ARRAY_DATA(nmo_ref_t, &level->scene_ids)[0]));
 
     nmo_session_destroy(session);
     nmo_context_release(ctx);

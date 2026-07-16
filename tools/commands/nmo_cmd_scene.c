@@ -423,27 +423,33 @@ static int scene_show_run(nmo_cmd_ctx_t *c, const scene_show_args_t *args) {
                 yyjson_mut_obj_add_str(doc, data, "class", class_name);
 
             if (ls) {
+                const nmo_object_id_t current_scene_id =
+                    nmo_ref_runtime_id(&ls->current_scene);
                 yyjson_mut_obj_add_uint(doc, data, "current_scene_id",
-                                        ls->current_scene_id);
-                const char *cur_name = resolve_name(c, ls->current_scene_id);
+                                        current_scene_id);
+                const char *cur_name = resolve_name(c, current_scene_id);
                 if (cur_name && cur_name[0]) {
                     nmo_cli_json_add_str_safe(doc, data, "current_scene", cur_name);
                 }
 
+                const nmo_object_id_t level_scene_id =
+                    nmo_ref_runtime_id(&ls->level_scene);
                 yyjson_mut_obj_add_uint(doc, data, "level_scene_id",
-                                        ls->level_scene_id);
-                const char *lvl_name = resolve_name(c, ls->level_scene_id);
+                                        level_scene_id);
+                const char *lvl_name = resolve_name(c, level_scene_id);
                 if (lvl_name && lvl_name[0]) {
                     nmo_cli_json_add_str_safe(doc, data, "level_scene", lvl_name);
                 }
 
                 yyjson_mut_val *scene_arr = yyjson_mut_arr(doc);
-                const nmo_object_id_t *ids =
-                    (const nmo_object_id_t *)ls->scene_ids.data;
+                const nmo_ref_t *refs = NMO_ARRAY_DATA(
+                    nmo_ref_t, &ls->scene_ids);
                 for (size_t i = 0; i < ls->scene_ids.count; ++i) {
+                    const nmo_object_id_t id = nmo_ref_runtime_id(&refs[i]);
+                    if (id == NMO_OBJECT_ID_NONE) continue;
                     yyjson_mut_val *entry = yyjson_mut_obj(doc);
-                    yyjson_mut_obj_add_uint(doc, entry, "id", ids[i]);
-                    const char *sn = resolve_name(c, ids[i]);
+                    yyjson_mut_obj_add_uint(doc, entry, "id", id);
+                    const char *sn = resolve_name(c, id);
                     if (sn && sn[0]) {
                         nmo_cli_json_add_str_safe(doc, entry, "name", sn);
                     }
@@ -471,26 +477,30 @@ static int scene_show_run(nmo_cmd_ctx_t *c, const scene_show_args_t *args) {
                 return NMO_CLI_EXIT_SUCCESS;
             }
 
-            if (ls->current_scene_id) {
-                const char *sn = resolve_name(c, ls->current_scene_id);
+            const nmo_object_id_t current_scene_id =
+                nmo_ref_runtime_id(&ls->current_scene);
+            if (current_scene_id) {
+                const char *sn = resolve_name(c, current_scene_id);
                 if (sn && sn[0]) {
                     snprintf(buf, sizeof(buf), "#%u (%s)",
-                             ls->current_scene_id, sn);
+                             current_scene_id, sn);
                 } else {
-                    snprintf(buf, sizeof(buf), "#%u", ls->current_scene_id);
+                    snprintf(buf, sizeof(buf), "#%u", current_scene_id);
                 }
             } else {
                 snprintf(buf, sizeof(buf), "(none)");
             }
             nmo_cli_print_kv(c->out, "Current Scene", buf, 20, c->colorize);
 
-            if (ls->level_scene_id) {
-                const char *sn = resolve_name(c, ls->level_scene_id);
+            const nmo_object_id_t level_scene_id =
+                nmo_ref_runtime_id(&ls->level_scene);
+            if (level_scene_id) {
+                const char *sn = resolve_name(c, level_scene_id);
                 if (sn && sn[0]) {
                     snprintf(buf, sizeof(buf), "#%u (%s)",
-                             ls->level_scene_id, sn);
+                             level_scene_id, sn);
                 } else {
-                    snprintf(buf, sizeof(buf), "#%u", ls->level_scene_id);
+                    snprintf(buf, sizeof(buf), "#%u", level_scene_id);
                 }
             } else {
                 snprintf(buf, sizeof(buf), "(none)");
@@ -498,15 +508,23 @@ static int scene_show_run(nmo_cmd_ctx_t *c, const scene_show_args_t *args) {
             nmo_cli_print_kv(c->out, "Level Scene", buf, 20, c->colorize);
 
             /* Scene list */
-            fprintf(c->out, "\nScenes (%zu):\n", ls->scene_ids.count);
-            const nmo_object_id_t *ids =
-                (const nmo_object_id_t *)ls->scene_ids.data;
+            size_t valid_scene_count = 0;
+            const nmo_ref_t *refs = NMO_ARRAY_DATA(
+                nmo_ref_t, &ls->scene_ids);
             for (size_t i = 0; i < ls->scene_ids.count; ++i) {
-                const char *sn = resolve_name(c, ids[i]);
+                if (nmo_ref_runtime_id(&refs[i]) != NMO_OBJECT_ID_NONE) {
+                    valid_scene_count++;
+                }
+            }
+            fprintf(c->out, "\nScenes (%zu):\n", valid_scene_count);
+            for (size_t i = 0; i < ls->scene_ids.count; ++i) {
+                const nmo_object_id_t id = nmo_ref_runtime_id(&refs[i]);
+                if (id == NMO_OBJECT_ID_NONE) continue;
+                const char *sn = resolve_name(c, id);
                 if (sn && sn[0]) {
-                    fprintf(c->out, "  [%zu] #%u (%s)\n", i, ids[i], sn);
+                    fprintf(c->out, "  [%zu] #%u (%s)\n", i, id, sn);
                 } else {
-                    fprintf(c->out, "  [%zu] #%u\n", i, ids[i]);
+                    fprintf(c->out, "  [%zu] #%u\n", i, id);
                 }
             }
         }

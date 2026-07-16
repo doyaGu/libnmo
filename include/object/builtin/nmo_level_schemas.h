@@ -53,10 +53,10 @@ typedef struct nmo_level_state {
     nmo_beobject_state_t base;         /**< CKBeObject base state */
     
     /* Scene management */
-    nmo_array_t scene_ids;               /**< Scene object IDs (nmo_object_id_t) */
+    nmo_array_t scene_ids;               /**< Scene references (nmo_ref_t) */
     
-    nmo_object_id_t current_scene_id;    /**< Current active scene ID */
-    nmo_object_id_t level_scene_id;      /**< Default level scene ID */
+    nmo_ref_t current_scene;              /**< Current active scene */
+    nmo_ref_t level_scene;                /**< Default level scene */
     
     /* Level scene embedded chunk */
     nmo_chunk_t *level_scene_chunk;      /**< Embedded chunk for level scene */

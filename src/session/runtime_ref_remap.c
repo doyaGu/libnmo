@@ -315,6 +315,7 @@ static nmo_class_id_t normalize_expected_class_for_field(const char *name)
     if (strcmp(name, "level_id") == 0 || strcmp(name, "level") == 0) {
         return NMO_CID_LEVEL;
     }
+    if (strstr(name, "scene") != NULL) return NMO_CID_SCENE;
     if (strcmp(name, "target") == 0) return NMO_CID_3DENTITY;
     if (strcmp(name, "curve_id") == 0 || strcmp(name, "curve") == 0) {
         return NMO_CID_CURVE;
