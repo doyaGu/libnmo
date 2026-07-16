@@ -23,8 +23,12 @@
 #define DEV_SECTION_HEADER           0xB0010000u
 #define DEV_SECTION_OPERATIONS       0xB0020000u
 #define DEV_SECTION_LINKS            0xB0030000u
+#define DEV_SECTION_LOCAL_PARAMS     0xB0040000u
+#define DEV_SECTION_GRAPH_INPUTS     0xB0050000u
+#define DEV_SECTION_GRAPH_OUTPUTS    0xB0060000u
 #define DEV_SECTION_SCRIPT_HEADER    0xB0070000u
 #define DEV_SECTION_COMMENTS         0xB0080000u
+#define DEV_SECTION_SHARED_PARAMS    0xB0090000u
 #define DEV_SECTION_UNKNOWN_FLAG     0xB00A0000u
 #define DEV_SECTION_TOP_MARKER       0xB0000001u
 #define DEV_SECTION_SCRIPT_MARKER    0xB0000002u
@@ -76,9 +80,22 @@ static nmo_status_t parse_parameters(
     uint32_t version,
     nmo_interface_param_set_t *params);
 
+static nmo_status_t parse_parameter_section(
+    nmo_chunk_t *chunk,
+    nmo_arena_t *arena,
+    uint32_t version,
+    bool shared,
+    nmo_interface_param_set_t *params);
+
 static nmo_status_t parse_graph_io(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
+    nmo_interface_graph_io_t *out);
+
+static nmo_status_t parse_graph_io_section(
+    nmo_chunk_t *chunk,
+    nmo_arena_t *arena,
+    bool outputs,
     nmo_interface_graph_io_t *out);
 
 static nmo_status_t parse_links(
@@ -154,7 +171,7 @@ static uint32_t behavior_section_id(size_t behavior_index, uint32_t base)
  * Public API
  * ================================================================ */
 
-nmo_status_t nmo_interface_chunk_parse(
+static nmo_status_t nmo_interface_chunk_parse_impl(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
     const nmo_interface_parse_ctx_t *ctx,
@@ -218,7 +235,8 @@ nmo_status_t nmo_interface_chunk_parse(
         NMO_RETURN_IF_ERROR(st);
     }
     if (found) {
-        format_flags |= NMO_INTERFACE_FORMAT_SECTIONED;
+        format_flags |= NMO_INTERFACE_FORMAT_SECTIONED |
+                        NMO_INTERFACE_FORMAT_SECTION_PRESENCE;
     } else {
         st = optional_seek_identifier(chunk, DEV_SECTION_GRAPH_MARKER, &found);
         NMO_RETURN_IF_ERROR(st);
@@ -228,6 +246,7 @@ nmo_status_t nmo_interface_chunk_parse(
         }
         if (found) {
             format_flags |= NMO_INTERFACE_FORMAT_SECTIONED |
+                            NMO_INTERFACE_FORMAT_SECTION_PRESENCE |
                             NMO_INTERFACE_FORMAT_ROOT_GRAPH;
         }
     }
@@ -308,6 +327,85 @@ nmo_status_t nmo_interface_chunk_parse(
     st = parse_extra_data(chunk, arena, &out->extra);
     NMO_RETURN_IF_ERROR(st);
 
+    return NMO_OK;
+}
+
+nmo_status_t nmo_interface_chunk_parse(
+    nmo_chunk_t *chunk,
+    nmo_arena_t *arena,
+    const nmo_interface_parse_ctx_t *ctx,
+    nmo_interface_data_t *out)
+{
+    if (!out) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    nmo_interface_data_t parsed;
+    memset(&parsed, 0, sizeof(parsed));
+    nmo_status_t status = nmo_interface_chunk_parse_impl(
+        chunk, arena, ctx, &parsed);
+    if (status != NMO_OK) {
+        memset(out, 0, sizeof(*out));
+        return status;
+    }
+    *out = parsed;
+    return NMO_OK;
+}
+
+static nmo_status_t parse_parameter_section(
+    nmo_chunk_t *chunk,
+    nmo_arena_t *arena,
+    uint32_t version,
+    bool shared,
+    nmo_interface_param_set_t *params)
+{
+    int32_t count = 0;
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &count));
+    if (count < 0 || count > 100000) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "interface chunk: sectioned parameter count %d out of range", count);
+    }
+
+    nmo_interface_param_t **items = shared ? &params->shared : &params->locals;
+    size_t *item_count = shared ? &params->shared_count : &params->local_count;
+    *item_count = (size_t)count;
+    *items = NULL;
+    if (count == 0) return NMO_OK;
+
+    *items = nmo_arena_alloc(arena, (size_t)count * sizeof(**items),
+                             alignof(nmo_interface_param_t));
+    if (!*items) return NMO_ERR_NOMEM;
+    memset(*items, 0, (size_t)count * sizeof(**items));
+
+    for (int32_t i = 0; i < count; ++i) {
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &(*items)[i].h_pos));
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &(*items)[i].v_pos));
+    }
+    for (int32_t i = 0; i < count; ++i) {
+        int32_t style = 0;
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &style));
+        (*items)[i].style = (uint32_t)style;
+    }
+
+    if (shared) {
+        for (int32_t i = 0; i < count; ++i) {
+            nmo_interface_param_t *item = &(*items)[i];
+            if (version >= 0x15) {
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(
+                    chunk, &item->mapping_tag0));
+                item->source_id = item->mapping_tag0;
+                item->mapping_field_count = 1;
+            } else {
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(
+                    chunk, &item->mapping_tag0));
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(
+                    chunk, &item->mapping_tag1));
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_int(
+                    chunk, &item->mapping_value));
+                item->source_id = item->mapping_tag1;
+                item->mapping_field_count = 3;
+            }
+        }
+    }
     return NMO_OK;
 }
 
@@ -507,15 +605,17 @@ static nmo_status_t parse_body(
 
     if (use_sectioned) {
         /* ---- Sectioned layout (Dev.exe files) ----
-         * Each section is behind its own SeekIdentifier.
-         * Params and graph IO live in separate section IDs
-         * (0x04/0x05/0x06/0x09) that we don't parse yet. */
+         * Each body table is behind its own identifier. */
         bool found = false;
 
         out->has_links_section = false;
         out->has_operations_section = false;
         out->has_comments_section = false;
         out->has_unknown_flag_section = false;
+        out->has_local_params_section = false;
+        out->has_shared_params_section = false;
+        out->has_graph_inputs_section = false;
+        out->has_graph_outputs_section = false;
         out->unknown_flag = 0;
 
         st = optional_seek_identifier(chunk,
@@ -546,7 +646,59 @@ static nmo_status_t parse_body(
         }
 
         memset(&out->params, 0, sizeof(out->params));
+        out->has_params = false;
         out->graph_io = NULL;
+        out->has_graph_io = false;
+
+        st = optional_seek_identifier(chunk,
+            behavior_section_id(behavior_index, DEV_SECTION_LOCAL_PARAMS), &found);
+        NMO_RETURN_IF_ERROR(st);
+        if (found) {
+            out->has_local_params_section = true;
+            out->has_params = true;
+            st = parse_parameter_section(chunk, arena, version, false, &out->params);
+            NMO_RETURN_IF_ERROR(st);
+        }
+
+        st = optional_seek_identifier(chunk,
+            behavior_section_id(behavior_index, DEV_SECTION_SHARED_PARAMS), &found);
+        NMO_RETURN_IF_ERROR(st);
+        if (found) {
+            out->has_shared_params_section = true;
+            out->has_params = true;
+            st = parse_parameter_section(chunk, arena, version, true, &out->params);
+            NMO_RETURN_IF_ERROR(st);
+        }
+
+        st = optional_seek_identifier(chunk,
+            behavior_section_id(behavior_index, DEV_SECTION_GRAPH_INPUTS), &found);
+        NMO_RETURN_IF_ERROR(st);
+        if (found) {
+            out->has_graph_inputs_section = true;
+            out->has_graph_io = true;
+            out->graph_io = nmo_arena_alloc(arena, sizeof(*out->graph_io),
+                                            alignof(nmo_interface_graph_io_t));
+            if (!out->graph_io) return NMO_ERR_NOMEM;
+            memset(out->graph_io, 0, sizeof(*out->graph_io));
+            st = parse_graph_io_section(chunk, arena, false, out->graph_io);
+            NMO_RETURN_IF_ERROR(st);
+        }
+
+        st = optional_seek_identifier(chunk,
+            behavior_section_id(behavior_index, DEV_SECTION_GRAPH_OUTPUTS), &found);
+        NMO_RETURN_IF_ERROR(st);
+        if (found) {
+            out->has_graph_outputs_section = true;
+            out->has_graph_io = true;
+            if (!out->graph_io) {
+                out->graph_io = nmo_arena_alloc(arena, sizeof(*out->graph_io),
+                                                alignof(nmo_interface_graph_io_t));
+                if (!out->graph_io) return NMO_ERR_NOMEM;
+                memset(out->graph_io, 0, sizeof(*out->graph_io));
+            }
+            st = parse_graph_io_section(chunk, arena, true, out->graph_io);
+            NMO_RETURN_IF_ERROR(st);
+        }
 
         st = optional_seek_identifier(chunk,
             behavior_section_id(behavior_index, DEV_SECTION_UNKNOWN_FLAG),
@@ -1003,7 +1155,8 @@ static nmo_status_t parse_graph_io_array(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
     int32_t **out_array,
-    size_t *out_count)
+    size_t *out_count,
+    int32_t **out_tags)
 {
     nmo_status_t st;
     int32_t count = 0;
@@ -1015,18 +1168,27 @@ static nmo_status_t parse_graph_io_array(
                          "interface chunk: graph IO array count %d out of range", count);
     }
     *out_count = (size_t)count;
-    if (count == 0) { *out_array = NULL; return NMO_OK; }
+    if (count == 0) {
+        *out_array = NULL;
+        if (out_tags) *out_tags = NULL;
+        return NMO_OK;
+    }
 
     *out_array = nmo_arena_alloc(arena, (size_t)count * sizeof(int32_t), alignof(int32_t));
     if (!*out_array) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                          "interface chunk: cannot allocate graph IO array");
     }
+    if (out_tags) {
+        *out_tags = nmo_arena_alloc(arena, (size_t)count * sizeof(int32_t),
+                                    alignof(int32_t));
+        if (!*out_tags) return NMO_ERR_NOMEM;
+    }
     for (int32_t i = 0; i < count; i++) {
         st = nmo_chunk_read_int(chunk, &(*out_array)[i]);
         NMO_RETURN_IF_ERROR(st);
         int32_t ignored = 0;
-        st = nmo_chunk_read_int(chunk, &ignored);
+        st = nmo_chunk_read_int(chunk, out_tags ? &(*out_tags)[i] : &ignored);
         NMO_RETURN_IF_ERROR(st);
     }
     return NMO_OK;
@@ -1038,15 +1200,41 @@ static nmo_status_t parse_graph_io(
     nmo_interface_graph_io_t *out)
 {
     nmo_status_t st;
-    st = parse_graph_io_array(chunk, arena, &out->inward_inputs, &out->inward_input_count);
+    st = parse_graph_io_array(chunk, arena, &out->inward_inputs,
+                              &out->inward_input_count, &out->inward_input_tags);
     NMO_RETURN_IF_ERROR(st);
-    st = parse_graph_io_array(chunk, arena, &out->outward_inputs, &out->outward_input_count);
+    st = parse_graph_io_array(chunk, arena, &out->outward_inputs,
+                              &out->outward_input_count, &out->outward_input_tags);
     NMO_RETURN_IF_ERROR(st);
-    st = parse_graph_io_array(chunk, arena, &out->inward_outputs, &out->inward_output_count);
+    st = parse_graph_io_array(chunk, arena, &out->inward_outputs,
+                              &out->inward_output_count, &out->inward_output_tags);
     NMO_RETURN_IF_ERROR(st);
-    st = parse_graph_io_array(chunk, arena, &out->outward_outputs, &out->outward_output_count);
+    st = parse_graph_io_array(chunk, arena, &out->outward_outputs,
+                              &out->outward_output_count, &out->outward_output_tags);
     NMO_RETURN_IF_ERROR(st);
     return NMO_OK;
+}
+
+static nmo_status_t parse_graph_io_section(
+    nmo_chunk_t *chunk,
+    nmo_arena_t *arena,
+    bool outputs,
+    nmo_interface_graph_io_t *out)
+{
+    if (outputs) {
+        NMO_RETURN_IF_ERROR(parse_graph_io_array(
+            chunk, arena, &out->inward_outputs, &out->inward_output_count,
+            &out->inward_output_tags));
+        return parse_graph_io_array(
+            chunk, arena, &out->outward_outputs, &out->outward_output_count,
+            &out->outward_output_tags);
+    }
+    NMO_RETURN_IF_ERROR(parse_graph_io_array(
+        chunk, arena, &out->inward_inputs, &out->inward_input_count,
+        &out->inward_input_tags));
+    return parse_graph_io_array(
+        chunk, arena, &out->outward_inputs, &out->outward_input_count,
+        &out->outward_input_tags);
 }
 
 /* ================================================================
@@ -1416,19 +1604,65 @@ static nmo_status_t write_parameters(nmo_chunk_t *chunk,
     }
     for (size_t i = 0; i < params->shared_count; i++) {
         if (version >= 0x15) {
-            st = nmo_chunk_write_object_id(chunk, params->shared[i].source_id);
+            nmo_object_id_t tag = params->shared[i].mapping_field_count == 1
+                ? params->shared[i].mapping_tag0 : params->shared[i].source_id;
+            st = nmo_chunk_write_object_id(chunk, tag);
             NMO_RETURN_IF_ERROR(st);
         } else {
             /* Legacy 3-field format: ignored_id, source_id, ignored_int */
-            st = nmo_chunk_write_object_id(chunk, 0);
+            nmo_object_id_t tag0 = params->shared[i].mapping_field_count == 3
+                ? params->shared[i].mapping_tag0 : 0;
+            nmo_object_id_t tag1 = params->shared[i].mapping_field_count == 3
+                ? params->shared[i].mapping_tag1 : params->shared[i].source_id;
+            int32_t value = params->shared[i].mapping_field_count == 3
+                ? params->shared[i].mapping_value : 0;
+            st = nmo_chunk_write_object_id(chunk, tag0);
             NMO_RETURN_IF_ERROR(st);
-            st = nmo_chunk_write_object_id(chunk, params->shared[i].source_id);
+            st = nmo_chunk_write_object_id(chunk, tag1);
             NMO_RETURN_IF_ERROR(st);
-            st = nmo_chunk_write_int(chunk, 0);
+            st = nmo_chunk_write_int(chunk, value);
             NMO_RETURN_IF_ERROR(st);
         }
     }
 
+    return NMO_OK;
+}
+
+static nmo_status_t write_parameter_section(
+    nmo_chunk_t *chunk,
+    uint32_t version,
+    bool shared,
+    const nmo_interface_param_set_t *params)
+{
+    const nmo_interface_param_t *items = shared ? params->shared : params->locals;
+    size_t count = shared ? params->shared_count : params->local_count;
+    NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, (int32_t)count));
+    for (size_t i = 0; i < count; ++i) {
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, items[i].h_pos));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, items[i].v_pos));
+    }
+    for (size_t i = 0; i < count; ++i) {
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, (int32_t)items[i].style));
+    }
+    if (shared) {
+        for (size_t i = 0; i < count; ++i) {
+            if (version >= 0x15) {
+                nmo_object_id_t tag = items[i].mapping_field_count == 1
+                    ? items[i].mapping_tag0 : items[i].source_id;
+                NMO_RETURN_IF_ERROR(nmo_chunk_write_object_id(chunk, tag));
+            } else {
+                nmo_object_id_t tag0 = items[i].mapping_field_count == 3
+                    ? items[i].mapping_tag0 : 0;
+                nmo_object_id_t tag1 = items[i].mapping_field_count == 3
+                    ? items[i].mapping_tag1 : items[i].source_id;
+                int32_t value = items[i].mapping_field_count == 3
+                    ? items[i].mapping_value : 0;
+                NMO_RETURN_IF_ERROR(nmo_chunk_write_object_id(chunk, tag0));
+                NMO_RETURN_IF_ERROR(nmo_chunk_write_object_id(chunk, tag1));
+                NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, value));
+            }
+        }
+    }
     return NMO_OK;
 }
 
@@ -1442,12 +1676,13 @@ static nmo_status_t write_graph_io(nmo_chunk_t *chunk,
     struct {
         const int32_t *data;
         size_t count;
-        int32_t marker;
+        const int32_t *tags;
+        int32_t default_tag;
     } arrays[4] = {
-        { gio->inward_inputs,   gio->inward_input_count,   -1 },
-        { gio->outward_inputs,  gio->outward_input_count,  -1 },
-        { gio->inward_outputs,  gio->inward_output_count,   1 },
-        { gio->outward_outputs, gio->outward_output_count,  1 },
+        { gio->inward_inputs, gio->inward_input_count, gio->inward_input_tags, -1 },
+        { gio->outward_inputs, gio->outward_input_count, gio->outward_input_tags, -1 },
+        { gio->inward_outputs, gio->inward_output_count, gio->inward_output_tags, 1 },
+        { gio->outward_outputs, gio->outward_output_count, gio->outward_output_tags, 1 },
     };
 
     for (int a = 0; a < 4; a++) {
@@ -1456,11 +1691,47 @@ static nmo_status_t write_graph_io(nmo_chunk_t *chunk,
         for (size_t i = 0; i < arrays[a].count; i++) {
             st = nmo_chunk_write_int(chunk, arrays[a].data[i]);
             NMO_RETURN_IF_ERROR(st);
-            st = nmo_chunk_write_int(chunk, arrays[a].marker);
+            st = nmo_chunk_write_int(chunk, arrays[a].tags
+                ? arrays[a].tags[i] : arrays[a].default_tag);
             NMO_RETURN_IF_ERROR(st);
         }
     }
 
+    return NMO_OK;
+}
+
+static nmo_status_t write_graph_io_section(
+    nmo_chunk_t *chunk,
+    bool outputs,
+    const nmo_interface_graph_io_t *gio)
+{
+    const int32_t *values[2];
+    const int32_t *tags[2];
+    size_t counts[2];
+    int32_t default_tag = outputs ? 1 : -1;
+    if (outputs) {
+        values[0] = gio ? gio->inward_outputs : NULL;
+        values[1] = gio ? gio->outward_outputs : NULL;
+        tags[0] = gio ? gio->inward_output_tags : NULL;
+        tags[1] = gio ? gio->outward_output_tags : NULL;
+        counts[0] = gio ? gio->inward_output_count : 0;
+        counts[1] = gio ? gio->outward_output_count : 0;
+    } else {
+        values[0] = gio ? gio->inward_inputs : NULL;
+        values[1] = gio ? gio->outward_inputs : NULL;
+        tags[0] = gio ? gio->inward_input_tags : NULL;
+        tags[1] = gio ? gio->outward_input_tags : NULL;
+        counts[0] = gio ? gio->inward_input_count : 0;
+        counts[1] = gio ? gio->outward_input_count : 0;
+    }
+    for (size_t a = 0; a < 2; ++a) {
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, (int32_t)counts[a]));
+        for (size_t i = 0; i < counts[a]; ++i) {
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, values[a][i]));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_int(
+                chunk, tags[a] ? tags[a][i] : default_tag));
+        }
+    }
     return NMO_OK;
 }
 
@@ -1565,29 +1836,38 @@ static nmo_status_t write_body(
 
     if (interface_is_sectioned(data)) {
         /* ---- Sectioned layout (Dev.exe files) ---- */
-        st = nmo_chunk_write_identifier(chunk,
-            behavior_section_id(behavior_index, DEV_SECTION_LINKS));
-        NMO_RETURN_IF_ERROR(st);
-        st = write_links(chunk, body, true);
-        NMO_RETURN_IF_ERROR(st);
+        bool preserve = (data->format_flags & NMO_INTERFACE_FORMAT_SECTION_PRESENCE) != 0;
+#define WRITE_SECTION_IF(_present, _base, _call) \
+        do { \
+            if (!preserve || (_present)) { \
+                NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier( \
+                    chunk, behavior_section_id(behavior_index, (_base)))); \
+                NMO_RETURN_IF_ERROR((_call)); \
+            } \
+        } while (0)
 
-        st = nmo_chunk_write_identifier(chunk,
-            behavior_section_id(behavior_index, DEV_SECTION_OPERATIONS));
-        NMO_RETURN_IF_ERROR(st);
-        st = write_operations(chunk, body);
-        NMO_RETURN_IF_ERROR(st);
-
-        st = nmo_chunk_write_identifier(chunk,
-            behavior_section_id(behavior_index, DEV_SECTION_COMMENTS));
-        NMO_RETURN_IF_ERROR(st);
-        st = write_comments(chunk, version, body);
-        NMO_RETURN_IF_ERROR(st);
-
-        st = nmo_chunk_write_identifier(chunk,
-            behavior_section_id(behavior_index, DEV_SECTION_UNKNOWN_FLAG));
-        NMO_RETURN_IF_ERROR(st);
-        st = nmo_chunk_write_int(chunk, DEV_UNKNOWN_FLAG_VALUE);
-        NMO_RETURN_IF_ERROR(st);
+        WRITE_SECTION_IF(body->has_links_section, DEV_SECTION_LINKS,
+                         write_links(chunk, body, true));
+        WRITE_SECTION_IF(body->has_operations_section, DEV_SECTION_OPERATIONS,
+                         write_operations(chunk, body));
+        WRITE_SECTION_IF(body->has_comments_section, DEV_SECTION_COMMENTS,
+                         write_comments(chunk, version, body));
+        WRITE_SECTION_IF(body->has_local_params_section, DEV_SECTION_LOCAL_PARAMS,
+                         write_parameter_section(chunk, version, false, &body->params));
+        WRITE_SECTION_IF(body->has_shared_params_section, DEV_SECTION_SHARED_PARAMS,
+                         write_parameter_section(chunk, version, true, &body->params));
+        WRITE_SECTION_IF(body->has_graph_inputs_section, DEV_SECTION_GRAPH_INPUTS,
+                         write_graph_io_section(chunk, false, body->graph_io));
+        WRITE_SECTION_IF(body->has_graph_outputs_section, DEV_SECTION_GRAPH_OUTPUTS,
+                         write_graph_io_section(chunk, true, body->graph_io));
+        if (!preserve || body->has_unknown_flag_section) {
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(
+                chunk, behavior_section_id(behavior_index, DEV_SECTION_UNKNOWN_FLAG)));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_int(
+                chunk, body->has_unknown_flag_section
+                    ? body->unknown_flag : DEV_UNKNOWN_FLAG_VALUE));
+        }
+#undef WRITE_SECTION_IF
 
         return NMO_OK;
     }

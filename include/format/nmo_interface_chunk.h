@@ -73,6 +73,7 @@ typedef struct nmo_chunk nmo_chunk_t;
 #define NMO_INTERFACE_FORMAT_SECTIONED        0x00000001u
 #define NMO_INTERFACE_FORMAT_ROOT_GRAPH       0x00000002u
 #define NMO_INTERFACE_FORMAT_COLOR_PRESENT    0x00000004u
+#define NMO_INTERFACE_FORMAT_SECTION_PRESENCE 0x00000008u
 
 /* Extra data identifiers (searched in order: v3, v2, v1) */
 #define NMO_INTERFACE_EXTRA_ID_V1             0xA12312F5u
@@ -158,6 +159,10 @@ typedef struct nmo_interface_param {
     int32_t h_pos, v_pos;                   /* grid indices, not pixels */
     uint32_t style;                         /* NMO_INTERFACE_PARAM_STYLE_* */
     nmo_object_id_t source_id;              /* shared only; 0 for locals */
+    nmo_object_id_t mapping_tag0;            /* raw tagged-mapping field 0 */
+    nmo_object_id_t mapping_tag1;            /* raw tagged-mapping field 1 */
+    int32_t mapping_value;                   /* raw tagged-mapping integer */
+    uint8_t mapping_field_count;             /* 0, 1, or 3 serialized fields */
 } nmo_interface_param_t;
 
 typedef struct nmo_interface_param_set {
@@ -174,6 +179,10 @@ typedef struct nmo_interface_graph_io {
     int32_t *outward_inputs;       size_t outward_input_count;
     int32_t *inward_outputs;       size_t inward_output_count;
     int32_t *outward_outputs;      size_t outward_output_count;
+    int32_t *inward_input_tags;
+    int32_t *outward_input_tags;
+    int32_t *inward_output_tags;
+    int32_t *outward_output_tags;
 } nmo_interface_graph_io_t;
 
 /* --- Body (shared between script and sub-behaviors) --- */
@@ -203,6 +212,10 @@ typedef struct nmo_interface_body {
     bool has_comments_section;
     bool has_unknown_flag_section;
     int32_t unknown_flag;
+    bool has_local_params_section;           /* 0x04 + layout index */
+    bool has_graph_inputs_section;           /* 0x05 + layout index */
+    bool has_graph_outputs_section;          /* 0x06 + layout index */
+    bool has_shared_params_section;          /* 0x09 + layout index */
 } nmo_interface_body_t;
 
 /* --- Script header (root behavior, entry 0) --- */

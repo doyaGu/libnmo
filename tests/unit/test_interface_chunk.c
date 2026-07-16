@@ -1957,9 +1957,9 @@ TEST(interface_chunk, write_sectioned_links_byte_round_trip) {
     ASSERT_TRUE(chunk_has_identifier(dst, 0xB0000002u));
     ASSERT_TRUE(chunk_has_identifier(dst, 0xB0070000u));
     ASSERT_TRUE(chunk_has_identifier(dst, 0xB0030000u));
-    ASSERT_TRUE(chunk_has_identifier(dst, 0xB0020000u));
-    ASSERT_TRUE(chunk_has_identifier(dst, 0xB0080000u));
-    ASSERT_TRUE(chunk_has_identifier(dst, 0xB00A0000u));
+    ASSERT_FALSE(chunk_has_identifier(dst, 0xB0020000u));
+    ASSERT_FALSE(chunk_has_identifier(dst, 0xB0080000u));
+    ASSERT_FALSE(chunk_has_identifier(dst, 0xB00A0000u));
 
     nmo_interface_data_t rewritten;
     memset(&rewritten, 0, sizeof(rewritten));
@@ -1976,9 +1976,9 @@ TEST(interface_chunk, write_sectioned_links_byte_round_trip) {
     ASSERT_EQ(101, (int)rewritten.script.body.links[0].start.id);
     ASSERT_EQ(102, (int)rewritten.script.body.links[0].end.id);
     ASSERT_TRUE(rewritten.script.body.has_links_section);
-    ASSERT_TRUE(rewritten.script.body.has_operations_section);
-    ASSERT_TRUE(rewritten.script.body.has_comments_section);
-    ASSERT_TRUE(rewritten.script.body.has_unknown_flag_section);
+    ASSERT_FALSE(rewritten.script.body.has_operations_section);
+    ASSERT_FALSE(rewritten.script.body.has_comments_section);
+    ASSERT_FALSE(rewritten.script.body.has_unknown_flag_section);
     ASSERT_EQ(0, rewritten.script.body.unknown_flag);
 
     nmo_arena_destroy(arena);
@@ -2043,10 +2043,10 @@ TEST(interface_chunk, write_sectioned_comments_byte_round_trip) {
     ASSERT_EQ(0x16, (int)version);
     ASSERT_TRUE(chunk_has_identifier(dst, 0xB0000002u));
     ASSERT_TRUE(chunk_has_identifier(dst, 0xB0070000u));
-    ASSERT_TRUE(chunk_has_identifier(dst, 0xB0030000u));
-    ASSERT_TRUE(chunk_has_identifier(dst, 0xB0020000u));
+    ASSERT_FALSE(chunk_has_identifier(dst, 0xB0030000u));
+    ASSERT_FALSE(chunk_has_identifier(dst, 0xB0020000u));
     ASSERT_TRUE(chunk_has_identifier(dst, 0xB0080000u));
-    ASSERT_TRUE(chunk_has_identifier(dst, 0xB00A0000u));
+    ASSERT_FALSE(chunk_has_identifier(dst, 0xB00A0000u));
 
     nmo_interface_data_t rewritten;
     memset(&rewritten, 0, sizeof(rewritten));
@@ -2061,10 +2061,10 @@ TEST(interface_chunk, write_sectioned_comments_byte_round_trip) {
                         rewritten.script.body.comments[0].text));
     ASSERT_EQ((int)NMO_INTERFACE_COMMENT_COLLAPSED,
               (int)rewritten.script.body.comments[0].style_flags);
-    ASSERT_TRUE(rewritten.script.body.has_links_section);
-    ASSERT_TRUE(rewritten.script.body.has_operations_section);
+    ASSERT_FALSE(rewritten.script.body.has_links_section);
+    ASSERT_FALSE(rewritten.script.body.has_operations_section);
     ASSERT_TRUE(rewritten.script.body.has_comments_section);
-    ASSERT_TRUE(rewritten.script.body.has_unknown_flag_section);
+    ASSERT_FALSE(rewritten.script.body.has_unknown_flag_section);
     ASSERT_EQ(0, rewritten.script.body.unknown_flag);
 
     nmo_arena_destroy(arena);
@@ -2454,7 +2454,7 @@ TEST(interface_chunk, parse_file_context_chunk_falls_back_when_ids_are_raw) {
     ASSERT_NOT_NULL(file_to_runtime);
     ASSERT_EQ(NMO_OK, nmo_id_remap_add(file_to_runtime, 250, 250));
 
-    nmo_chunk_file_context_t file_ctx;
+    nmo_chunk_file_context_t file_ctx = {0};
     file_ctx.runtime_to_file = NULL;
     file_ctx.file_to_runtime = file_to_runtime;
     nmo_chunk_set_file_context(state->interface_chunk, &file_ctx);
@@ -2484,7 +2484,7 @@ TEST(interface_chunk, serialize_raw_interface_ids_requires_repository_for_file_c
     ASSERT_NOT_NULL(runtime_to_file);
     ASSERT_EQ(NMO_OK, nmo_id_remap_add(runtime_to_file, 253, 5));
 
-    nmo_chunk_file_context_t file_ctx;
+    nmo_chunk_file_context_t file_ctx = {0};
     file_ctx.runtime_to_file = runtime_to_file;
     file_ctx.file_to_runtime = NULL;
 
@@ -2540,6 +2540,13 @@ TEST(interface_chunk, behavior_copy_deep_copies_interface_data) {
     src.has_interface = true;
     src.interface_data = &idata;
     src.interface_ids_are_runtime = false;
+    nmo_chunk_t *sub_chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(sub_chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(sub_chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(sub_chunk, 0x12345678u));
+    nmo_chunk_close(sub_chunk);
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(
+        &src.sub_behaviors, 88, sub_chunk));
 
     nmo_behavior_state_t dst;
     memset(&dst, 0, sizeof(dst));
@@ -2553,11 +2560,112 @@ TEST(interface_chunk, behavior_copy_deep_copies_interface_data) {
     ASSERT_TRUE(dst.interface_data != src.interface_data);
     ASSERT_NOT_NULL(dst.interface_data->subs);
     ASSERT_TRUE(dst.interface_data->subs != src.interface_data->subs);
+    const nmo_behavior_ref_t *src_subs = NMO_ARRAY_DATA(
+        nmo_behavior_ref_t, &src.sub_behaviors);
+    const nmo_behavior_ref_t *dst_subs = NMO_ARRAY_DATA(
+        nmo_behavior_ref_t, &dst.sub_behaviors);
+    ASSERT_TRUE(src_subs[0].chunk != dst_subs[0].chunk);
     ASSERT_EQ(src.interface_data->subs[0].behavior_id,
               dst.interface_data->subs[0].behavior_id);
+    ASSERT_TRUE(nmo_behavior_vtable.equals(&src, &dst));
+    ASSERT_EQ(nmo_behavior_vtable.hash(&src), nmo_behavior_vtable.hash(&dst));
 
     src.interface_data->subs[0].behavior_id = 999;
+    ASSERT_FALSE(nmo_behavior_vtable.equals(&src, &dst));
     ASSERT_EQ((nmo_object_id_t)134, dst.interface_data->subs[0].behavior_id);
+
+    nmo_arena_destroy(arena);
+}
+
+TEST(interface_chunk, sectioned_parameter_and_graph_sections_round_trip) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_chunk_t *encoded = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(encoded);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(encoded));
+
+    /* Hand-authored wire fixture, independent of nmo_interface_chunk_write.
+       Field order mirrors the Dev section tables: coordinate pairs first,
+       then styles/mappings; graph tables contain (value, tag) pairs. */
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(encoded, 0xB0000001u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(encoded, 0x16));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(encoded, 0xB0000002u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(encoded, 0xB0070000u));
+    write_script_header_fields(encoded, 100, 0, 0, 0.0f, 0.0f);
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_float(encoded, 10.0f));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_float(encoded, 20.0f));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_float(encoded, 50.0f));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 0));
+
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(encoded, 0xB0040000u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 2));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 2));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 4));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 5));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 3));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 6));
+
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(encoded, 0xB0090000u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 7));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 8));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 9));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_id(encoded, 0x1234));
+
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(encoded, 0xB0050000u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 10));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 71));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 20));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 72));
+
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(encoded, 0xB0060000u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 30));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 73));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 40));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 74));
+    nmo_chunk_close(encoded);
+    ASSERT_TRUE(chunk_has_identifier(encoded, 0xB0040000u));
+    ASSERT_TRUE(chunk_has_identifier(encoded, 0xB0050000u));
+    ASSERT_TRUE(chunk_has_identifier(encoded, 0xB0060000u));
+    ASSERT_TRUE(chunk_has_identifier(encoded, 0xB0090000u));
+
+    nmo_interface_data_t parsed;
+    memset(&parsed, 0, sizeof(parsed));
+    ASSERT_EQ(NMO_OK, nmo_interface_chunk_parse(encoded, arena, NULL, &parsed));
+    ASSERT_EQ(2, (int)parsed.script.body.params.local_count);
+    ASSERT_EQ(1, (int)parsed.script.body.params.shared_count);
+    ASSERT_EQ(0x1234, (int)parsed.script.body.params.shared[0].mapping_tag0);
+    ASSERT_EQ(1, (int)parsed.script.body.params.shared[0].mapping_field_count);
+    ASSERT_NOT_NULL(parsed.script.body.graph_io);
+    ASSERT_EQ(10, parsed.script.body.graph_io->inward_inputs[0]);
+    ASSERT_EQ(71, parsed.script.body.graph_io->inward_input_tags[0]);
+    ASSERT_EQ(20, parsed.script.body.graph_io->outward_inputs[0]);
+    ASSERT_EQ(72, parsed.script.body.graph_io->outward_input_tags[0]);
+    ASSERT_EQ(30, parsed.script.body.graph_io->inward_outputs[0]);
+    ASSERT_EQ(73, parsed.script.body.graph_io->inward_output_tags[0]);
+    ASSERT_EQ(40, parsed.script.body.graph_io->outward_outputs[0]);
+    ASSERT_EQ(74, parsed.script.body.graph_io->outward_output_tags[0]);
+
+    nmo_chunk_t *rewritten = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(rewritten);
+    ASSERT_EQ(NMO_OK, nmo_interface_chunk_write(rewritten, &parsed, NULL));
+    assert_chunk_dwords_equal(encoded, rewritten);
+
+    nmo_chunk_t *truncated = nmo_chunk_clone(encoded, arena);
+    ASSERT_NOT_NULL(truncated);
+    ASSERT_TRUE(truncated->data.count > 0);
+    truncated->data.count--;
+    nmo_interface_data_t rejected;
+    memset(&rejected, 0, sizeof(rejected));
+    ASSERT_TRUE(nmo_interface_chunk_parse(truncated, arena, NULL, &rejected) != NMO_OK);
 
     nmo_arena_destroy(arena);
 }
@@ -2623,5 +2731,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(interface_chunk, parse_file_context_chunk_falls_back_when_ids_are_raw);
     REGISTER_TEST(interface_chunk, serialize_raw_interface_ids_requires_repository_for_file_context);
     REGISTER_TEST(interface_chunk, behavior_copy_deep_copies_interface_data);
+    REGISTER_TEST(interface_chunk, sectioned_parameter_and_graph_sections_round_trip);
 TEST_MAIN_END()
 
