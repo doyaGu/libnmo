@@ -808,7 +808,7 @@ static int parameter_show_run(nmo_cmd_ctx_t *ctx, uint32_t object_id,
         } else if (cid == NMO_CID_PARAMETERLOCAL) {
             const nmo_parameterlocal_state_t *plocal_state =
                 (const nmo_parameterlocal_state_t *)state;
-            owner_id = plocal_state->owner_id;
+            owner_id = nmo_parameterlocal_owner_id(plocal_state);
             /* ParameterLocal inherits from Parameter, so pstate is valid */
         }
     }
@@ -1086,7 +1086,7 @@ static void dump_parameter_details(nmo_object_t *obj,
         destination_count = pout_state->destination_count;
     } else if (cid == NMO_CID_PARAMETERLOCAL) {
         const nmo_parameterlocal_state_t *plocal_state = (const nmo_parameterlocal_state_t *)state;
-        owner_id = plocal_state->owner_id;
+        owner_id = nmo_parameterlocal_owner_id(plocal_state);
     }
 
     if (owner_id != 0) {
@@ -1382,7 +1382,7 @@ static int parameter_dump_run(nmo_cmd_ctx_t *ctx, const parameter_dump_args_t *a
                     const nmo_parameterlocal_state_t *ploc = (const nmo_parameterlocal_state_t *)state;
                     pstate = (const nmo_parameter_state_t *)state;
                     tg = pstate->type_guid;
-                    owner_id = ploc->owner_id;
+                    owner_id = nmo_parameterlocal_owner_id(ploc);
                 } else if (class_id != NMO_CID_PARAMETEROPERATION) {
                     pstate = (const nmo_parameter_state_t *)state;
                     tg = pstate->type_guid;

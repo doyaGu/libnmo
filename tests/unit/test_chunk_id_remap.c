@@ -28,6 +28,7 @@
 #include "object/builtin/nmo_synchro_schemas.h"
 #include "object/builtin/nmo_material_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
+#include "object/builtin/nmo_parameterlocal_schemas.h"
 #include "object/builtin/nmo_parameteroperation_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_guids.h"
@@ -643,6 +644,86 @@ TEST(chunk_id_remap, material_refs_round_trip_and_failure_is_atomic) {
     nmo_material_vtable.destroy(&loaded, NULL, NULL);
     nmo_material_vtable.destroy(&reloaded, NULL, NULL);
     nmo_material_vtable.destroy(&failed, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_id_remap, parameterlocal_owner_round_trips_raw_id) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+    nmo_id_remap_t *file_to_runtime = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(file_to_runtime);
+    nmo_chunk_file_context_t read_context = {
+        .file_to_runtime = file_to_runtime,
+    };
+    nmo_serialize_context_t serialize_context =
+        nmo_serialize_context_create_nonfile(
+            arena, NULL, CK_STATESAVE_PARAMETEROUT_OWNER);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(arena, NULL, NULL, 0);
+
+    nmo_parameterlocal_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_parameterlocal_vtable.create(
+        &source, NULL, NULL));
+    source.owner = nmo_ref_from_raw(691);
+
+    nmo_chunk_t *first = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(first);
+    first->class_id = NMO_CID_PARAMETERLOCAL;
+    first->data_version = 8;
+    ASSERT_EQ(NMO_OK, nmo_parameterlocal_serialize(
+        &source, first, NULL, &serialize_context));
+    nmo_chunk_close(first);
+    nmo_chunk_set_file_context(first, &read_context);
+
+    nmo_parameterlocal_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_parameterlocal_vtable.create(
+        &loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_parameterlocal_deserialize(
+        &loaded, first, NULL, &deserialize_context));
+    ASSERT_EQ(691u, loaded.owner.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, loaded.owner.state);
+    ASSERT_EQ(NMO_OBJECT_ID_NONE, nmo_parameterlocal_owner_id(&loaded));
+
+    nmo_chunk_t *second = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(second);
+    second->class_id = NMO_CID_PARAMETERLOCAL;
+    second->data_version = 8;
+    ASSERT_EQ(NMO_OK, nmo_parameterlocal_serialize(
+        &loaded, second, NULL, &serialize_context));
+    nmo_chunk_close(second);
+    nmo_chunk_set_file_context(second, &read_context);
+
+    nmo_parameterlocal_state_t reloaded;
+    ASSERT_EQ(NMO_OK, nmo_parameterlocal_vtable.create(
+        &reloaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_parameterlocal_deserialize(
+        &reloaded, second, NULL, &deserialize_context));
+    ASSERT_EQ(691u, reloaded.owner.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, reloaded.owner.state);
+
+    nmo_chunk_t *truncated = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(truncated);
+    truncated->class_id = NMO_CID_PARAMETERLOCAL;
+    truncated->data_version = 8;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(truncated));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        truncated, CK_STATESAVE_PARAMETEROUT_OWNER));
+    nmo_chunk_close(truncated);
+    nmo_chunk_set_file_context(truncated, &read_context);
+
+    nmo_parameterlocal_state_t failed;
+    ASSERT_EQ(NMO_OK, nmo_parameterlocal_vtable.create(
+        &failed, NULL, NULL));
+    failed.owner = nmo_ref_from_raw(692);
+    ASSERT_NE(NMO_OK, nmo_parameterlocal_deserialize(
+        &failed, truncated, NULL, &deserialize_context));
+    ASSERT_EQ(692u, failed.owner.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, failed.owner.state);
+
+    nmo_parameterlocal_vtable.destroy(&source, NULL, NULL);
+    nmo_parameterlocal_vtable.destroy(&loaded, NULL, NULL);
+    nmo_parameterlocal_vtable.destroy(&reloaded, NULL, NULL);
+    nmo_parameterlocal_vtable.destroy(&failed, NULL, NULL);
     nmo_arena_destroy(arena);
 }
 
@@ -2770,6 +2851,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, behavior_unresolved_ref_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, behaviorlink_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, material_refs_round_trip_and_failure_is_atomic);
+    REGISTER_TEST(chunk_id_remap, parameterlocal_owner_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, parameter_object_ref_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, parameteroperation_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, parameteroperation_legacy_sections_are_atomic);

@@ -1017,7 +1017,7 @@ static nmo_status_t script_edit_create_parameter_object(
     } else if (class_id == NMO_CID_PARAMETERLOCAL) {
         nmo_parameterlocal_state_t *state =
             (nmo_parameterlocal_state_t *)nmo_object_get_state(object);
-        state->owner_id = owner_id;
+        state->owner = nmo_ref_from_id(owner_id);
         state->is_myself = 0u;
         state->is_setting = 0u;
     }

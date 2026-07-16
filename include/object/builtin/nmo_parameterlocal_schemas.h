@@ -43,11 +43,26 @@ typedef struct nmo_parameterlocal_state {
     nmo_parameter_state_t base;
 
     /* Legacy owner reference (obsolete in CK2 but present in old files) */
-    nmo_object_id_t owner_id;          /**< Owner object ID (legacy formats) */
+    nmo_ref_t owner;                   /**< Owner behavior (legacy formats) */
 
     uint8_t is_myself;                 /**< TRUE if "myself" parameter */
     uint8_t is_setting;                /**< TRUE if behavior setting */
 } nmo_parameterlocal_state_t;
+
+static inline nmo_object_id_t nmo_parameterlocal_owner_id(
+    const nmo_parameterlocal_state_t *state)
+{
+    return state != NULL
+        ? nmo_ref_runtime_id(&state->owner)
+        : NMO_OBJECT_ID_NONE;
+}
+
+static inline void nmo_parameterlocal_set_owner_id(
+    nmo_parameterlocal_state_t *state,
+    nmo_object_id_t id)
+{
+    if (state != NULL) state->owner = nmo_ref_from_id(id);
+}
 
 /* =============================================================================
  * PUBLIC API

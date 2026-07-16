@@ -36,7 +36,7 @@ static const nmo_type_field_t nmo_parameterlocal_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_parameterlocal_state_t, base),
                     sizeof(nmo_parameter_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD_REF(nmo_parameterlocal_state_t, owner_id),
+    NMO_FIELD_REF(nmo_parameterlocal_state_t, owner),
     NMO_FIELD(nmo_parameterlocal_state_t, is_myself, CKPGUID_UINT8),
     NMO_FIELD(nmo_parameterlocal_state_t, is_setting, CKPGUID_UINT8)
 };
@@ -68,7 +68,15 @@ nmo_status_t nmo_parameterlocal_deserialize(
     if (result != NMO_OK) return result;
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETEROUT_OWNER) == NMO_OK) {
-        NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &out_state->owner_id));
+        nmo_ref_t owner = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+        NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &owner));
+        nmo_ref_check_class(
+            &owner,
+            (const nmo_object_repository_t *)
+                nmo_deserialize_context_get_repository(context),
+            nmo_deserialize_context_get_type_registry(context),
+            NMO_CID_BEHAVIOR);
+        out_state->owner = owner;
     }
 
     /* Check if "myself" parameter */
@@ -125,10 +133,10 @@ nmo_status_t nmo_parameterlocal_serialize(
 
     if (!is_file &&
         (save_flags & CK_STATESAVE_PARAMETEROUT_OWNER) != 0 &&
-        in_state->owner_id != 0) {
+        nmo_ref_serialized_id(&in_state->owner) != NMO_OBJECT_ID_NONE) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_PARAMETEROUT_OWNER);
         if (result != NMO_OK) return result;
-        result = nmo_chunk_write_object_id(out_chunk, in_state->owner_id);
+        result = nmo_ref_write(out_chunk, &in_state->owner);
         if (result != NMO_OK) return result;
     }
 
@@ -194,6 +202,9 @@ static nmo_status_t nmo_parameterlocal_pre_delete(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "Invalid arguments to nmo_parameterlocal_pre_delete");
     }
+    nmo_parameterlocal_state_t *state =
+        (nmo_parameterlocal_state_t *)instance;
+    state->owner = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     NMO_RETURN_OK();
 }
 
