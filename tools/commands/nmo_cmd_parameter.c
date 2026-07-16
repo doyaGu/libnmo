@@ -802,8 +802,9 @@ static int parameter_show_run(nmo_cmd_ctx_t *ctx, uint32_t object_id,
         } else if (cid == NMO_CID_PARAMETEROUT) {
             const nmo_parameterout_state_t *pout_state =
                 (const nmo_parameterout_state_t *)state;
-            owner_id = pout_state->owner_id;
-            destination_count = pout_state->destination_count;
+            owner_id = nmo_parameterout_owner_id(pout_state);
+            destination_count =
+                nmo_parameterout_valid_destination_count(pout_state);
             /* ParameterOut inherits from Parameter, so pstate is valid */
         } else if (cid == NMO_CID_PARAMETERLOCAL) {
             const nmo_parameterlocal_state_t *plocal_state =
@@ -1082,8 +1083,9 @@ static void dump_parameter_details(nmo_object_t *obj,
         is_shared = pin_state->is_shared;
     } else if (cid == NMO_CID_PARAMETEROUT) {
         const nmo_parameterout_state_t *pout_state = (const nmo_parameterout_state_t *)state;
-        owner_id = pout_state->owner_id;
-        destination_count = pout_state->destination_count;
+        owner_id = nmo_parameterout_owner_id(pout_state);
+        destination_count =
+            nmo_parameterout_valid_destination_count(pout_state);
     } else if (cid == NMO_CID_PARAMETERLOCAL) {
         const nmo_parameterlocal_state_t *plocal_state = (const nmo_parameterlocal_state_t *)state;
         owner_id = nmo_parameterlocal_owner_id(plocal_state);
@@ -1376,8 +1378,9 @@ static int parameter_dump_run(nmo_cmd_ctx_t *ctx, const parameter_dump_args_t *a
                     const nmo_parameterout_state_t *pout = (const nmo_parameterout_state_t *)state;
                     pstate = (const nmo_parameter_state_t *)state;
                     tg = pstate->type_guid;
-                    owner_id = pout->owner_id;
-                    dest_count = pout->destination_count;
+                    owner_id = nmo_parameterout_owner_id(pout);
+                    dest_count =
+                        nmo_parameterout_valid_destination_count(pout);
                 } else if (class_id == NMO_CID_PARAMETERLOCAL) {
                     const nmo_parameterlocal_state_t *ploc = (const nmo_parameterlocal_state_t *)state;
                     pstate = (const nmo_parameter_state_t *)state;

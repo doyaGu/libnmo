@@ -177,7 +177,7 @@ static void assert_behavior_owner_checks_green(nmo_object_repository_t *repo,
             }
             for (uint32_t j = 0; j < state->destination_count; ++j) {
                 nmo_object_id_t destination_id =
-                    state->destination_ids ? state->destination_ids[j] : 0;
+                    nmo_parameterout_destination_id(state, j);
                 nmo_object_t *destination = NULL;
                 if (destination_id == 0) {
                     continue;

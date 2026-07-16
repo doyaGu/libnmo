@@ -10,6 +10,8 @@
 #include "object/builtin/nmo_behaviorlink_schemas.h"
 #include "object/builtin/nmo_material_schemas.h"
 #include "object/builtin/nmo_parameteroperation_schemas.h"
+#include "object/builtin/nmo_parameterin_schemas.h"
+#include "object/builtin/nmo_parameterout_schemas.h"
 #include "object/builtin/nmo_group_schemas.h"
 #include "object/builtin/nmo_grid_schemas.h"
 #include "object/builtin/nmo_animation_schemas.h"
@@ -662,7 +664,8 @@ TEST(runtime_kernel, normalize_removes_only_invalid_reference_records) {
     nmo_object_id_t grid_id = 0;
     nmo_object_id_t keyed_id = 0;
     nmo_object_id_t valid_animation_a = 0, valid_animation_b = 0;
-    nmo_object_id_t valid_parameter = 0;
+    nmo_object_id_t valid_parameter = 0, valid_parameter_in = 0;
+    nmo_object_id_t parameter_out_id = 0;
     nmo_object_id_t entity3d_id = 0, valid_mesh = 0;
     nmo_object_id_t synchro_id = 0;
     ASSERT_EQ(NMO_OK, nmo_session_create_object(
@@ -689,6 +692,12 @@ TEST(runtime_kernel, normalize_removes_only_invalid_reference_records) {
         session, NMO_CID_PARAMETER, "parameter", (nmo_guid_t){0, 0},
         &valid_parameter, NULL));
     ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_PARAMETERIN, "parameter-in", (nmo_guid_t){0, 0},
+        &valid_parameter_in, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_PARAMETEROUT, "parameter-out", (nmo_guid_t){0, 0},
+        &parameter_out_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
         session, NMO_CID_3DENTITY, "entity", (nmo_guid_t){0, 0},
         &entity3d_id, NULL));
     ASSERT_EQ(NMO_OK, nmo_session_create_object(
@@ -710,12 +719,15 @@ TEST(runtime_kernel, normalize_removes_only_invalid_reference_records) {
         nmo_object_repository_find_by_id(repo, entity3d_id)->state;
     nmo_synchro_state_t *synchro = (nmo_synchro_state_t *)
         nmo_object_repository_find_by_id(repo, synchro_id)->state;
+    nmo_parameterout_state_t *parameter_out = (nmo_parameterout_state_t *)
+        nmo_object_repository_find_by_id(repo, parameter_out_id)->state;
     ASSERT_NOT_NULL(behavior);
     ASSERT_NOT_NULL(group);
     ASSERT_NOT_NULL(grid);
     ASSERT_NOT_NULL(keyed);
     ASSERT_NOT_NULL(entity3d);
     ASSERT_NOT_NULL(synchro);
+    ASSERT_NOT_NULL(parameter_out);
     nmo_object_id_t invalid = 0x7FFFFFF0u;
     ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(
         &behavior->inputs, valid_a, NULL));
@@ -793,11 +805,19 @@ TEST(runtime_kernel, normalize_removes_only_invalid_reference_records) {
     ASSERT_EQ(NMO_OK, nmo_array_append(&synchro->arrived_ids, &valid_ref_b));
     ASSERT_EQ(NMO_OK, nmo_array_append(&synchro->passed_ids, &invalid_ref));
     ASSERT_EQ(NMO_OK, nmo_array_append(&synchro->passed_ids, &valid_ref_b));
+    nmo_ref_t parameter_destinations[] = {
+        nmo_ref_from_id(valid_parameter_in),
+        nmo_ref_from_raw(invalid),
+        nmo_ref_from_id(valid_parameter),
+    };
+    parameter_out->owner = nmo_ref_from_id(valid_parameter);
+    parameter_out->destination_ids = parameter_destinations;
+    parameter_out->destination_count = 3;
 
     size_t changed = 0;
     ASSERT_EQ(NMO_OK, nmo_runtime_normalize_invalid_refs(
         repo, nmo_context_get_type_runtime(ctx), &changed));
-    ASSERT_EQ(10, (int)changed);
+    ASSERT_EQ(13, (int)changed);
     ASSERT_EQ(2, (int)behavior->inputs.count);
     ASSERT_EQ(valid_a, nmo_behavior_ref_array_get_id(&behavior->inputs, 0));
     ASSERT_EQ(valid_b, nmo_behavior_ref_array_get_id(&behavior->inputs, 1));
@@ -843,6 +863,10 @@ TEST(runtime_kernel, normalize_removes_only_invalid_reference_records) {
     ASSERT_EQ(valid_b, nmo_ref_runtime_id(
                            &NMO_ARRAY_DATA(
                                nmo_ref_t, &synchro->passed_ids)[0]));
+    ASSERT_EQ(NMO_REF_NONE, parameter_out->owner.state);
+    ASSERT_EQ(1u, parameter_out->destination_count);
+    ASSERT_EQ(valid_parameter_in,
+              nmo_parameterout_destination_id(parameter_out, 0));
 
     nmo_session_destroy(session);
     nmo_arena_destroy(chunk_arena);
@@ -1216,6 +1240,46 @@ TEST(runtime_kernel, copy_remap_updates_only_resolved_parameteroperation_refs) {
     nmo_context_release(ctx);
 }
 
+TEST(runtime_kernel, copy_remap_updates_only_resolved_parameterout_refs) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    const nmo_type_runtime_t *type_rt = nmo_context_get_type_runtime(ctx);
+    const nmo_type_descriptor_t *parameterout_type =
+        nmo_type_registry_find_by_class_id(
+            type_rt->types, NMO_CID_PARAMETEROUT);
+    ASSERT_NOT_NULL(parameterout_type);
+
+    nmo_ref_t destinations[3] = {
+        nmo_ref_from_id(101),
+        nmo_ref_from_raw(102),
+        nmo_ref_from_id(103)
+    };
+    nmo_parameterout_state_t parameterout = {0};
+    parameterout.owner = nmo_ref_from_id(100);
+    parameterout.destination_ids = destinations;
+    parameterout.destination_count = 3;
+
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_id_remap_t *remap = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(remap);
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, 100, 200));
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, 101, 201));
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, 102, 202));
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, 103, 203));
+
+    ASSERT_EQ(NMO_OK, nmo_runtime_remap_copy_refs(
+        type_rt, parameterout_type, &parameterout, remap));
+    ASSERT_EQ(200u, nmo_parameterout_owner_id(&parameterout));
+    ASSERT_EQ(201u, nmo_parameterout_destination_id(&parameterout, 0));
+    ASSERT_EQ(102u, parameterout.destination_ids[1].raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, parameterout.destination_ids[1].state);
+    ASSERT_EQ(203u, nmo_parameterout_destination_id(&parameterout, 2));
+
+    nmo_arena_destroy(arena);
+    nmo_context_release(ctx);
+}
+
 TEST(runtime_kernel, dependency_remap_preserves_nonreference_state) {
     nmo_animation_state_t animation = {0};
     animation.frame_rate = -3.0f;
@@ -1370,6 +1434,7 @@ REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_scene_members);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_behaviorlink_endpoints);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_material_refs);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_parameteroperation_refs);
+REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_parameterout_refs);
 REGISTER_TEST(runtime_kernel, dependency_remap_preserves_nonreference_state);
 REGISTER_TEST(runtime_kernel, serializer_failure_does_not_reuse_raw_chunk);
 TEST_MAIN_END()

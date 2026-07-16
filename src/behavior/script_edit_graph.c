@@ -811,12 +811,14 @@ static bool add_runtime_data_edges(nmo_script_edit_graph_t *graph)
                 nmo_script_edit_data_edge_t edge = {0};
                 nmo_script_edit_endpoint_t owner = {0};
 
-                if (state->destination_ids[d] == 0u) {
+                const nmo_object_id_t destination_id =
+                    nmo_parameterout_destination_id(state, d);
+                if (destination_id == 0u) {
                     continue;
                 }
 
                 edge.source_parameter_id = node->object_id;
-                edge.target_parameter_id = state->destination_ids[d];
+                edge.target_parameter_id = destination_id;
                 edge.type_guid = get_parameter_type_guid(graph->repo,
                                                          edge.target_parameter_id);
                 edge.shared = false;

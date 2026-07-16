@@ -1011,7 +1011,7 @@ static nmo_status_t script_edit_create_parameter_object(
     if (class_id == NMO_CID_PARAMETEROUT) {
         nmo_parameterout_state_t *state =
             (nmo_parameterout_state_t *)nmo_object_get_state(object);
-        state->owner_id = owner_id;
+        nmo_parameterout_set_owner_id(state, owner_id);
         state->destination_ids = NULL;
         state->destination_count = 0u;
     } else if (class_id == NMO_CID_PARAMETERLOCAL) {
@@ -1636,7 +1636,7 @@ static bool script_edit_parameterout_has_destination(
         return false;
     }
     for (uint32_t i = 0; i < state->destination_count; ++i) {
-        if (state->destination_ids && state->destination_ids[i] == destination_id) {
+        if (nmo_parameterout_destination_id(state, i) == destination_id) {
             return true;
         }
     }
@@ -1648,7 +1648,7 @@ static nmo_status_t script_edit_parameterout_append_destination(
     nmo_parameterout_state_t *state,
     nmo_object_id_t destination_id)
 {
-    nmo_object_id_t *new_ids = NULL;
+    nmo_ref_t *new_ids = NULL;
 
     if (!tx || !state || destination_id == 0u) {
         return NMO_ERR_INVALID_ARGUMENT;
@@ -1656,11 +1656,14 @@ static nmo_status_t script_edit_parameterout_append_destination(
     if (script_edit_parameterout_has_destination(state, destination_id)) {
         return NMO_OK;
     }
+    if (state->destination_count == UINT32_MAX) {
+        return NMO_ERR_INVALID_FORMAT;
+    }
 
-    new_ids = (nmo_object_id_t *)nmo_arena_alloc(
+    new_ids = (nmo_ref_t *)nmo_arena_alloc(
         nmo_workspace_internal_document_arena(tx->workspace),
         (size_t)(state->destination_count + 1u) * sizeof(*new_ids),
-        _Alignof(nmo_object_id_t));
+        _Alignof(nmo_ref_t));
     if (!new_ids) {
         return NMO_ERR_NOMEM;
     }
@@ -1669,7 +1672,7 @@ static nmo_status_t script_edit_parameterout_append_destination(
         memcpy(new_ids, state->destination_ids,
                (size_t)state->destination_count * sizeof(*new_ids));
     }
-    new_ids[state->destination_count] = destination_id;
+    new_ids[state->destination_count] = nmo_ref_from_id(destination_id);
     state->destination_ids = new_ids;
     state->destination_count += 1u;
     return NMO_OK;
@@ -1680,7 +1683,7 @@ static nmo_status_t script_edit_parameterout_remove_destination(
     nmo_parameterout_state_t *state,
     nmo_object_id_t destination_id)
 {
-    nmo_object_id_t *new_ids = NULL;
+    nmo_ref_t *new_ids = NULL;
     uint32_t kept = 0u;
 
     if (!tx || !state || destination_id == 0u) {
@@ -1691,7 +1694,7 @@ static nmo_status_t script_edit_parameterout_remove_destination(
     }
 
     for (uint32_t i = 0; i < state->destination_count; ++i) {
-        if (state->destination_ids[i] != destination_id) {
+        if (nmo_parameterout_destination_id(state, i) != destination_id) {
             kept++;
         }
     }
@@ -1700,15 +1703,15 @@ static nmo_status_t script_edit_parameterout_remove_destination(
     }
     if (kept > 0u) {
         uint32_t out_index = 0u;
-        new_ids = (nmo_object_id_t *)nmo_arena_alloc(
+        new_ids = (nmo_ref_t *)nmo_arena_alloc(
             nmo_workspace_internal_document_arena(tx->workspace),
             (size_t)kept * sizeof(*new_ids),
-            _Alignof(nmo_object_id_t));
+            _Alignof(nmo_ref_t));
         if (!new_ids) {
             return NMO_ERR_NOMEM;
         }
         for (uint32_t i = 0; i < state->destination_count; ++i) {
-            if (state->destination_ids[i] != destination_id) {
+            if (nmo_parameterout_destination_id(state, i) != destination_id) {
                 new_ids[out_index++] = state->destination_ids[i];
             }
         }
@@ -1818,9 +1821,8 @@ static nmo_status_t validate_parameter_links(
                 continue;
             }
             for (uint32_t j = 0; j < state->destination_count; ++j) {
-                nmo_object_id_t destination_id = state->destination_ids
-                    ? state->destination_ids[j]
-                    : 0;
+                nmo_object_id_t destination_id =
+                    nmo_parameterout_destination_id(state, j);
                 nmo_object_t *destination = NULL;
                 if (destination_id == 0) {
                     continue;
@@ -3906,11 +3908,11 @@ static bool script_edit_parameter_has_live_connections(
                 continue;
             }
             if (nmo_object_get_id(object) == parameter_id &&
-                state->destination_count > 0u) {
+                nmo_parameterout_valid_destination_count(state) > 0u) {
                 return true;
             }
             for (uint32_t j = 0; j < state->destination_count; ++j) {
-                if (state->destination_ids && state->destination_ids[j] == parameter_id) {
+                if (nmo_parameterout_destination_id(state, j) == parameter_id) {
                     return true;
                 }
             }

@@ -496,7 +496,8 @@ bool nmo_behavior_graph_build(nmo_workspace_t *workspace,
                     registry, param_obj, CKPGUID_PARAMETEROUT);
             if (out_state && out_state->destination_ids && out_state->destination_count > 0) {
                 for (uint32_t d = 0; d < out_state->destination_count; ++d) {
-                    nmo_object_id_t dest_id = out_state->destination_ids[d];
+                    nmo_object_id_t dest_id =
+                        nmo_parameterout_destination_id(out_state, d);
                     if (dest_id == 0) continue;
                     if (!add_parameter_edge(&gc.parameter_ids, &gc.parameter_count, &gc.parameter_cap,
                                             &gc.nodes, &gc.node_count, &gc.node_cap,

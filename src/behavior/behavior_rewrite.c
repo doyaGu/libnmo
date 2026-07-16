@@ -1070,7 +1070,7 @@ static bool rewrite_parameterout_has_destination(
         return false;
     }
     for (uint32_t i = 0; i < state->destination_count; ++i) {
-        if (state->destination_ids[i] == target_id) {
+        if (nmo_parameterout_destination_id(state, i) == target_id) {
             return true;
         }
     }
@@ -1079,21 +1079,31 @@ static bool rewrite_parameterout_has_destination(
 
 static nmo_status_t rewrite_parameterout_add_destination(
     nmo_parameterout_state_t *state,
+    nmo_arena_t *arena,
     nmo_object_id_t target_id) {
-    if (!state || target_id == 0) {
+    if (!state || !arena || target_id == 0) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
     if (rewrite_parameterout_has_destination(state, target_id)) {
         return NMO_OK;
     }
-    nmo_object_id_t *next = (nmo_object_id_t *)realloc(
-        state->destination_ids,
-        (size_t)(state->destination_count + 1u) * sizeof(*next));
+    if (state->destination_count == UINT32_MAX) {
+        return NMO_ERR_INVALID_FORMAT;
+    }
+    nmo_ref_t *next = (nmo_ref_t *)nmo_arena_alloc(
+        arena,
+        (size_t)(state->destination_count + 1u) * sizeof(*next),
+        _Alignof(nmo_ref_t));
     if (!next) {
         return NMO_ERR_NOMEM;
     }
+    if (state->destination_count > 0 && state->destination_ids != NULL) {
+        memcpy(next, state->destination_ids,
+               (size_t)state->destination_count * sizeof(*next));
+    }
+    next[state->destination_count] = nmo_ref_from_id(target_id);
     state->destination_ids = next;
-    state->destination_ids[state->destination_count++] = target_id;
+    state->destination_count++;
     return NMO_OK;
 }
 
@@ -1105,13 +1115,12 @@ static void rewrite_parameterout_remove_destination(
     }
     uint32_t kept = 0;
     for (uint32_t i = 0; i < state->destination_count; ++i) {
-        if (state->destination_ids[i] != target_id) {
+        if (nmo_parameterout_destination_id(state, i) != target_id) {
             state->destination_ids[kept++] = state->destination_ids[i];
         }
     }
     state->destination_count = kept;
     if (kept == 0) {
-        free(state->destination_ids);
         state->destination_ids = NULL;
     }
 }
@@ -1327,8 +1336,10 @@ static nmo_status_t rewrite_fold_rewire_parameter_boundary_in_edit(
                     "Failed to snapshot fold parameter source output");
                 return rc;
             }
-            rc = rewrite_parameterout_add_destination(source_out,
-                                                      new_parameter_id);
+            rc = rewrite_parameterout_add_destination(
+                source_out,
+                nmo_workspace_internal_document_arena(workspace),
+                new_parameter_id);
             if (rc != NMO_OK) {
                 rewrite_fold_report_reject(
                     report, "out_of_memory",
@@ -1396,7 +1407,9 @@ static nmo_status_t rewrite_fold_rewire_parameter_boundary_in_edit(
                 return rc;
             }
             rc = rewrite_parameterout_add_destination(
-                new_source_out, edge->target_parameter_id);
+                new_source_out,
+                nmo_workspace_internal_document_arena(workspace),
+                edge->target_parameter_id);
             if (rc != NMO_OK) {
                 rewrite_fold_report_reject(
                     report, "out_of_memory",

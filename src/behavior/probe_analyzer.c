@@ -802,11 +802,12 @@ static void probe_collect_operation_parameter_behaviors(
         const nmo_parameterout_state_t *param_out =
             (const nmo_parameterout_state_t *)nmo_object_get_state(
                 parameter_obj);
-        const nmo_object_id_t *destinations =
-            param_out != NULL ? param_out->destination_ids : NULL;
         for (uint32_t i = 0;
-             destinations != NULL && i < param_out->destination_count; ++i) {
-            owner = probe_find_parameter_owner_behavior(repo, destinations[i]);
+             param_out != NULL && i < param_out->destination_count; ++i) {
+            const nmo_object_id_t destination_id =
+                nmo_parameterout_destination_id(param_out, i);
+            owner = probe_find_parameter_owner_behavior(
+                repo, destination_id);
             probe_add_related_behavior(ids, count, capacity, owner);
         }
     }

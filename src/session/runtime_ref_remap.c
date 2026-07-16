@@ -325,10 +325,12 @@ static nmo_class_id_t normalize_expected_class_for_field(const char *name)
     }
     if (strstr(name, "material") != NULL) return NMO_CID_MATERIAL;
     if (strstr(name, "texture") != NULL) return NMO_CID_TEXTURE;
+    if (strcmp(name, "destination_ids") == 0) {
+        return NMO_CID_PARAMETERIN;
+    }
     if (strstr(name, "parameter") != NULL ||
         strcmp(name, "source_id") == 0 || strcmp(name, "in1_id") == 0 ||
-        strcmp(name, "in2_id") == 0 || strcmp(name, "out_id") == 0 ||
-        strcmp(name, "destination_ids") == 0) {
+        strcmp(name, "in2_id") == 0 || strcmp(name, "out_id") == 0) {
         return NMO_CID_PARAMETER;
     }
     if (strstr(name, "script") != NULL) return NMO_CID_BEHAVIOR;
@@ -364,6 +366,13 @@ static nmo_class_id_t normalize_expected_class_for_typed_field(
     const nmo_type_field_t *field)
 {
     if (type != NULL && field != NULL && field->name != NULL &&
+        strcmp(field->name, "owner") == 0 &&
+        (nmo_guid_equals(type->guid, CKPGUID_PARAMETERIN) ||
+         nmo_guid_equals(type->guid, CKPGUID_PARAMETEROUT) ||
+         nmo_guid_equals(type->guid, CKPGUID_PARAMETERLOCAL))) {
+        return NMO_CID_BEHAVIOR;
+    }
+    if (type != NULL && field != NULL && field->name != NULL &&
         nmo_guid_equals(type->guid, CKPGUID_PARAMETEROPERATION)) {
         if (strcmp(field->name, "owner") == 0) return NMO_CID_BEHAVIOR;
         if (strcmp(field->name, "in1") == 0 ||
@@ -382,15 +391,19 @@ static nmo_class_id_t normalize_expected_class_for_typed_field(
     return normalize_expected_class_for_field(field ? field->name : NULL);
 }
 
-static bool normalize_is_parameteroperation_slot(
+static bool normalize_is_parameter_family_slot(
     const nmo_type_descriptor_t *type,
     const nmo_type_field_t *field)
 {
-    return type != NULL && field != NULL && field->name != NULL &&
-        nmo_guid_equals(type->guid, CKPGUID_PARAMETEROPERATION) &&
-        (strcmp(field->name, "in1") == 0 ||
-         strcmp(field->name, "in2") == 0 ||
-         strcmp(field->name, "out") == 0);
+    if (type == NULL || field == NULL || field->name == NULL) return false;
+    if (nmo_guid_equals(type->guid, CKPGUID_PARAMETERIN) &&
+        strcmp(field->name, "source") == 0) {
+        return true;
+    }
+    return nmo_guid_equals(type->guid, CKPGUID_PARAMETEROPERATION) &&
+           (strcmp(field->name, "in1") == 0 ||
+            strcmp(field->name, "in2") == 0 ||
+            strcmp(field->name, "out") == 0);
 }
 
 static bool normalize_is_parameter_reference_class(nmo_class_id_t class_id)
@@ -409,7 +422,7 @@ static bool normalize_id_is_invalid_for_typed_field(
     const nmo_type_field_t *field,
     nmo_object_id_t id)
 {
-    if (normalize_is_parameteroperation_slot(type, field)) {
+    if (normalize_is_parameter_family_slot(type, field)) {
         if (normalize_id_is_invalid(repo, id)) return true;
         const nmo_object_t *target =
             nmo_object_repository_find_by_id(repo, id);

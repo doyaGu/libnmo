@@ -13,6 +13,7 @@
 
 #include "nmo_types.h"
 #include "object/builtin/nmo_parameter_schemas.h"
+#include "object/nmo_ref.h"
 #include "object/nmo_object_type_common.h"
 
 #ifdef __cplusplus
@@ -42,12 +43,51 @@ typedef struct nmo_parameterout_state {
     nmo_parameter_state_t base;
 
     /* Legacy owner reference (obsolete in CK2 but present in old files) */
-    nmo_object_id_t owner_id;          /**< Owner object ID (legacy formats) */
+    nmo_ref_t owner;                   /**< Owner behavior (legacy formats) */
 
     /* Destination parameters */
-    nmo_object_id_t *destination_ids;  /**< Array of destination parameter IDs */
+    nmo_ref_t *destination_ids;        /**< Destination parameter references */
     uint32_t destination_count;        /**< Number of destinations */
 } nmo_parameterout_state_t;
+
+static inline nmo_object_id_t nmo_parameterout_owner_id(
+    const nmo_parameterout_state_t *state)
+{
+    return state != NULL
+        ? nmo_ref_runtime_id(&state->owner)
+        : NMO_OBJECT_ID_NONE;
+}
+
+static inline void nmo_parameterout_set_owner_id(
+    nmo_parameterout_state_t *state,
+    nmo_object_id_t id)
+{
+    if (state != NULL) state->owner = nmo_ref_from_id(id);
+}
+
+static inline nmo_object_id_t nmo_parameterout_destination_id(
+    const nmo_parameterout_state_t *state,
+    uint32_t index)
+{
+    return state != NULL && state->destination_ids != NULL &&
+            index < state->destination_count
+        ? nmo_ref_runtime_id(&state->destination_ids[index])
+        : NMO_OBJECT_ID_NONE;
+}
+
+static inline uint32_t nmo_parameterout_valid_destination_count(
+    const nmo_parameterout_state_t *state)
+{
+    uint32_t count = 0;
+    if (state == NULL || state->destination_ids == NULL) return 0;
+    for (uint32_t i = 0; i < state->destination_count; ++i) {
+        if (nmo_parameterout_destination_id(state, i) !=
+            NMO_OBJECT_ID_NONE) {
+            ++count;
+        }
+    }
+    return count;
+}
 
 /* =============================================================================
  * PUBLIC API

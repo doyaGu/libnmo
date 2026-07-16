@@ -2343,7 +2343,8 @@ TEST(edit_plan, executor_detaches_removed_node_parameter_edges) {
         : NULL;
     ASSERT_NOT_NULL(source_state);
     ASSERT_EQ(1u, source_state->destination_count);
-    ASSERT_EQ(target_id, source_state->destination_ids[0]);
+    ASSERT_EQ(target_id,
+              nmo_parameterout_destination_id(source_state, 0));
 
     nmo_edit_plan_t *plan = NULL;
     nmo_edit_report_t report;

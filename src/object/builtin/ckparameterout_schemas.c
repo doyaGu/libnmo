@@ -36,9 +36,10 @@ static const nmo_type_field_t nmo_parameterout_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_parameterout_state_t, base),
                     sizeof(nmo_parameter_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD_REF(nmo_parameterout_state_t, owner_id),
+    NMO_FIELD_REF(nmo_parameterout_state_t, owner),
     NMO_FIELD(nmo_parameterout_state_t, destination_count, CKPGUID_UINT32),
-    NMO_FIELD_REF_ARRAY_COUNTED(nmo_parameterout_state_t, destination_ids, destination_count)
+    NMO_FIELD_REF_RECORD_ARRAY_COUNTED(
+        nmo_parameterout_state_t, destination_ids, destination_count)
 };
 
 /* =============================================================================
@@ -68,8 +69,19 @@ nmo_status_t nmo_parameterout_deserialize(
     nmo_status_t result = nmo_parameter_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETEROUT_OWNER) == NMO_OK) {
-        NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &out_state->owner_id));
+    nmo_ref_t owner = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+    nmo_ref_t *destination_ids = NULL;
+    uint32_t destination_count = 0;
+    const nmo_object_repository_t *repository =
+        (const nmo_object_repository_t *)
+            nmo_deserialize_context_get_repository(context);
+    const nmo_type_registry_t *types =
+        nmo_deserialize_context_get_type_registry(context);
+
+    if (nmo_chunk_seek_identifier(
+            chunk, CK_STATESAVE_PARAMETEROUT_OWNER) == NMO_OK) {
+        NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &owner));
+        nmo_ref_check_class(&owner, repository, types, NMO_CID_BEHAVIOR);
     }
 
     /* Read destinations if present */
@@ -81,18 +93,29 @@ nmo_status_t nmo_parameterout_deserialize(
         if (!nmo_chunk_has_read_capacity(chunk, (size_t)count)) {
             return NMO_ERR_TRUNCATED_CHUNK;
         }
+        if ((size_t)count > SIZE_MAX / sizeof(nmo_ref_t)) {
+            return NMO_ERR_INVALID_FORMAT;
+        }
         if (count > 0) {
-            nmo_object_id_t *dest_ids = (nmo_object_id_t *)nmo_arena_alloc(
-                arena, count * sizeof(nmo_object_id_t), _Alignof(nmo_object_id_t));
-            if (dest_ids == NULL) return NMO_ERR_NOMEM;
+            destination_ids = (nmo_ref_t *)nmo_arena_alloc(
+                arena, (size_t)count * sizeof(nmo_ref_t),
+                _Alignof(nmo_ref_t));
+            if (destination_ids == NULL) return NMO_ERR_NOMEM;
 
             for (int32_t i = 0; i < count; i++) {
-                NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &dest_ids[i]));
+                NMO_RETURN_IF_ERROR(nmo_ref_read(
+                    chunk, &destination_ids[i]));
+                nmo_ref_check_class(
+                    &destination_ids[i], repository, types,
+                    NMO_CID_PARAMETERIN);
             }
-            out_state->destination_ids = dest_ids;
-            out_state->destination_count = (uint32_t)count;
         }
+        destination_count = (uint32_t)count;
     }
+
+    out_state->owner = owner;
+    out_state->destination_ids = destination_ids;
+    out_state->destination_count = destination_count;
 
     NMO_RETURN_OK();
 }
@@ -123,6 +146,15 @@ nmo_status_t nmo_parameterout_serialize(
         ? CK_STATESAVE_PARAMETEROUT_ALL
         : nmo_serialize_context_get_save_flags(context);
     const bool want_value = is_file || ((save_flags & CK_STATESAVE_PARAMETEROUT_VAL) != 0);
+    const bool want_destinations = is_file ||
+        ((save_flags & CK_STATESAVE_PARAMETEROUT_DESTINATIONS) != 0);
+    if (want_destinations && in_state->destination_count > 0 &&
+        in_state->destination_ids == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (want_destinations && in_state->destination_count > INT32_MAX) {
+        return NMO_ERR_INVALID_FORMAT;
+    }
 
     /* Write base state (CKParameter when saving value, otherwise CKObject) */
     if (want_value) {
@@ -136,18 +168,17 @@ nmo_status_t nmo_parameterout_serialize(
         return NMO_OK;
     }
 
-    if (!is_file &&
-        (save_flags & CK_STATESAVE_PARAMETEROUT_OWNER) != 0 &&
-        in_state->owner_id != 0) {
+    if ((is_file ||
+         (save_flags & CK_STATESAVE_PARAMETEROUT_OWNER) != 0) &&
+        nmo_ref_serialized_id(&in_state->owner) != NMO_OBJECT_ID_NONE) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_PARAMETEROUT_OWNER);
         if (result != NMO_OK) return result;
-        result = nmo_chunk_write_object_id(out_chunk, in_state->owner_id);
+        result = nmo_ref_write(out_chunk, &in_state->owner);
         if (result != NMO_OK) return result;
     }
 
     /* Write destinations if any */
-    if ((is_file || ((save_flags & CK_STATESAVE_PARAMETEROUT_DESTINATIONS) != 0)) &&
-        in_state->destination_count > 0 && in_state->destination_ids) {
+    if (want_destinations && in_state->destination_count > 0) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_PARAMETEROUT_DESTINATIONS);
         if (result != NMO_OK) return result;
 
@@ -155,7 +186,8 @@ nmo_status_t nmo_parameterout_serialize(
         if (result != NMO_OK) return result;
 
         for (uint32_t i = 0; i < in_state->destination_count; i++) {
-            result = nmo_chunk_write_object_id(out_chunk, in_state->destination_ids[i]);
+            result = nmo_ref_write(
+                out_chunk, &in_state->destination_ids[i]);
             if (result != NMO_OK) return result;
         }
     }
@@ -176,7 +208,8 @@ static nmo_status_t nmo_parameterout_copy(
                                         &s->base.buffer_data.allocator));
     NMO_RETURN_IF_ERROR(nmo_object_copy_chunk(arena, &d->base.subchunk, s->base.subchunk));
     return nmo_object_copy_array(arena, (void **)&d->destination_ids,
-                                 s->destination_ids, sizeof(nmo_object_id_t), s->destination_count);
+                                 s->destination_ids, sizeof(nmo_ref_t),
+                                 s->destination_count);
 }
 
 static nmo_status_t nmo_parameterout_validate(
@@ -244,6 +277,11 @@ static nmo_status_t nmo_parameterout_pre_delete(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "Invalid arguments to nmo_parameterout_pre_delete");
     }
+    nmo_parameterout_state_t *state =
+        (nmo_parameterout_state_t *)instance;
+    state->owner = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+    state->destination_ids = NULL;
+    state->destination_count = 0;
     NMO_RETURN_OK();
 }
 
@@ -261,7 +299,46 @@ static void nmo_parameterout_post_delete(
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_STATE_OPS_CUSTOM(parameterout, nmo_parameterout_state_t)
+static bool nmo_parameterout_equals(const void *a, const void *b)
+{
+    if (a == b) return true;
+    if (a == NULL || b == NULL) return false;
+    const nmo_parameterout_state_t *lhs =
+        (const nmo_parameterout_state_t *)a;
+    const nmo_parameterout_state_t *rhs =
+        (const nmo_parameterout_state_t *)b;
+    if (lhs->destination_count != rhs->destination_count ||
+        (lhs->destination_count > 0 &&
+         (lhs->destination_ids == NULL || rhs->destination_ids == NULL))) {
+        return false;
+    }
+    nmo_parameterout_state_t lhs_value = *lhs;
+    nmo_parameterout_state_t rhs_value = *rhs;
+    lhs_value.destination_ids = NULL;
+    rhs_value.destination_ids = NULL;
+    if (memcmp(&lhs_value, &rhs_value, sizeof(lhs_value)) != 0) {
+        return false;
+    }
+    return lhs->destination_count == 0 || memcmp(
+        lhs->destination_ids, rhs->destination_ids,
+        (size_t)lhs->destination_count * sizeof(nmo_ref_t)) == 0;
+}
+
+static uint32_t nmo_parameterout_hash(const void *instance)
+{
+    if (instance == NULL) return 0;
+    const nmo_parameterout_state_t *state =
+        (const nmo_parameterout_state_t *)instance;
+    nmo_parameterout_state_t value = *state;
+    value.destination_ids = NULL;
+    uint32_t hash = (uint32_t)nmo_hash_fnv1a(&value, sizeof(value));
+    if (state->destination_ids != NULL && state->destination_count > 0) {
+        hash ^= (uint32_t)nmo_hash_fnv1a(
+            state->destination_ids,
+            (size_t)state->destination_count * sizeof(nmo_ref_t));
+    }
+    return hash;
+}
 
 nmo_type_vtable_t nmo_parameterout_vtable = {
     .prepare_dependencies = nmo_parameterout_prepare_dependencies,
