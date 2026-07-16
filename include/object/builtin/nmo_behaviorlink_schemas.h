@@ -14,6 +14,7 @@
 #include "nmo_types.h"
 #include "object/builtin/nmo_object_schemas.h"
 #include "object/nmo_object_type_common.h"
+#include "object/nmo_ref.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -63,21 +64,11 @@ typedef struct nmo_behaviorlink_state_t {
      */
     int16_t initial_activation_delay;
 
-    /**
-     * @brief Input I/O object ID
-     * 
-     * Reference to the CKBehaviorIO that serves as the input endpoint.
-     * ID = 0 means no input connected.
-     */
-    nmo_object_id_t in_io_id;
+    /** Reference to the CKBehaviorIO that serves as the input endpoint. */
+    nmo_ref_t in_io;
 
-    /**
-     * @brief Output I/O object ID
-     * 
-     * Reference to the CKBehaviorIO that serves as the output endpoint.
-     * ID = 0 means no output connected.
-     */
-    nmo_object_id_t out_io_id;
+    /** Reference to the CKBehaviorIO that serves as the output endpoint. */
+    nmo_ref_t out_io;
 
     /**
      * @brief Whether the link format was detected during load
@@ -96,6 +87,34 @@ typedef struct nmo_behaviorlink_state_t {
     bool has_legacy_ios;
     bool has_legacy_delay;
 } nmo_behaviorlink_state_t;
+
+static inline nmo_object_id_t nmo_behaviorlink_in_io_id(
+    const nmo_behaviorlink_state_t *state)
+{
+    return state != NULL ? nmo_ref_runtime_id(&state->in_io)
+                         : NMO_OBJECT_ID_NONE;
+}
+
+static inline nmo_object_id_t nmo_behaviorlink_out_io_id(
+    const nmo_behaviorlink_state_t *state)
+{
+    return state != NULL ? nmo_ref_runtime_id(&state->out_io)
+                         : NMO_OBJECT_ID_NONE;
+}
+
+static inline void nmo_behaviorlink_set_in_io_id(
+    nmo_behaviorlink_state_t *state,
+    nmo_object_id_t id)
+{
+    if (state != NULL) state->in_io = nmo_ref_from_id(id);
+}
+
+static inline void nmo_behaviorlink_set_out_io_id(
+    nmo_behaviorlink_state_t *state,
+    nmo_object_id_t id)
+{
+    if (state != NULL) state->out_io = nmo_ref_from_id(id);
+}
 
 /* =============================================================================
  * PUBLIC API

@@ -179,8 +179,8 @@ static int behavior_remove_link_mutate(
         const nmo_behaviorlink_state_t *link_state =
             (const nmo_behaviorlink_state_t *)nmo_object_get_state(link_obj);
         if (link_state != NULL) {
-            args->from_id = link_state->in_io_id;
-            args->to_id = link_state->out_io_id;
+            args->from_id = nmo_behaviorlink_in_io_id(link_state);
+            args->to_id = nmo_behaviorlink_out_io_id(link_state);
         }
     }
 

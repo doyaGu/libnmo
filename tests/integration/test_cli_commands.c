@@ -337,8 +337,8 @@ static bool read_behavior_link_delay_by_ios(const char *path,
             const nmo_behaviorlink_state_t *state =
                 (const nmo_behaviorlink_state_t *)nmo_object_get_state(obj);
             if (state != NULL &&
-                state->in_io_id == from_io_id &&
-                state->out_io_id == to_io_id) {
+                nmo_behaviorlink_in_io_id(state) == from_io_id &&
+                nmo_behaviorlink_out_io_id(state) == to_io_id) {
                 *out_delay = state->activation_delay;
                 ok = true;
                 break;

@@ -112,8 +112,8 @@ static nmo_object_id_t test_create_behavior_link(
         return 0;
     }
 
-    link->in_io_id = source_io;
-    link->out_io_id = target_io;
+    nmo_behaviorlink_set_in_io_id(link, source_io);
+    nmo_behaviorlink_set_out_io_id(link, target_io);
     link->use_new_format = true;
     link->has_format = true;
     test_append_id(&owner->sub_behavior_links, link_id);

@@ -332,6 +332,9 @@ static nmo_class_id_t normalize_expected_class_for_field(const char *name)
         return NMO_CID_PARAMETER;
     }
     if (strstr(name, "script") != NULL) return NMO_CID_BEHAVIOR;
+    if (strcmp(name, "in_io") == 0 || strcmp(name, "out_io") == 0) {
+        return NMO_CID_BEHAVIORIO;
+    }
     if (strcmp(name, "grid_id") == 0 || strcmp(name, "grid") == 0) {
         return NMO_CID_GRID;
     }

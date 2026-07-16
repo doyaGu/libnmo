@@ -4937,8 +4937,8 @@ nmo_status_t workspace_edit_add_behavior_link(
     if (link_state == NULL) {
         return workspace_edit_abort_status(edit, checkpoint, NMO_ERR_INTERNAL);
     }
-    link_state->in_io_id = to_io_id;
-    link_state->out_io_id = from_io_id;
+    nmo_behaviorlink_set_in_io_id(link_state, to_io_id);
+    nmo_behaviorlink_set_out_io_id(link_state, from_io_id);
     link_state->activation_delay = activation_delay;
     link_state->initial_activation_delay = activation_delay;
     link_state->use_new_format = true;

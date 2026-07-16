@@ -329,7 +329,8 @@ static bool dump_visitor(
 
         print_indent(dctx->out, depth);
         fprintf(dctx->out, "  link: #%u -> #%u",
-                link->in_io_id, link->out_io_id);
+                nmo_behaviorlink_in_io_id(link),
+                nmo_behaviorlink_out_io_id(link));
         if (link->activation_delay != 0) {
             fprintf(dctx->out, " (delay=%d)", (int)link->activation_delay);
         }

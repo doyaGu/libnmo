@@ -698,16 +698,20 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
                 if (!link_obj || !link_obj->state) continue;
                 const nmo_behaviorlink_state_t *ls =
                     (const nmo_behaviorlink_state_t *)link_obj->state;
+                const nmo_object_id_t in_io_id =
+                    nmo_behaviorlink_in_io_id(ls);
+                const nmo_object_id_t out_io_id =
+                    nmo_behaviorlink_out_io_id(ls);
                 yyjson_mut_val *item = yyjson_mut_obj(doc);
                 yyjson_mut_obj_add_uint(doc, item, "id", id);
-                yyjson_mut_obj_add_uint(doc, item, "in_io_id", ls->in_io_id);
+                yyjson_mut_obj_add_uint(doc, item, "in_io_id", in_io_id);
                 yyjson_mut_obj_add_uint(doc, item, "out_io_id",
-                                        ls->out_io_id);
+                                        out_io_id);
                 if (bidx) {
                     const nmo_port_owner_t *sp =
-                        nmo_behavior_index_find(bidx, ls->in_io_id);
+                        nmo_behavior_index_find(bidx, in_io_id);
                     const nmo_port_owner_t *tp =
-                        nmo_behavior_index_find(bidx, ls->out_io_id);
+                        nmo_behavior_index_find(bidx, out_io_id);
                     if (sp) {
                         yyjson_mut_obj_add_uint(doc, item, "source_owner_id",
                                                 sp->owner_id);
@@ -1016,20 +1020,24 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
             if (!link_obj || !link_obj->state) continue;
             const nmo_behaviorlink_state_t *ls =
                 (const nmo_behaviorlink_state_t *)link_obj->state;
+            const nmo_object_id_t in_io_id =
+                nmo_behaviorlink_in_io_id(ls);
+            const nmo_object_id_t out_io_id =
+                nmo_behaviorlink_out_io_id(ls);
             /* in_io_id = source (SDK naming is backwards), out_io_id = target */
             const nmo_behavior_index_t *bidx = nmo_tool_owner_behavior_index(c.workspace);
             nmo_object_id_t src_owner = 0, tgt_owner = 0;
             if (bidx) {
-                const nmo_port_owner_t *sp = nmo_behavior_index_find(bidx, ls->in_io_id);
-                const nmo_port_owner_t *tp = nmo_behavior_index_find(bidx, ls->out_io_id);
+                const nmo_port_owner_t *sp = nmo_behavior_index_find(bidx, in_io_id);
+                const nmo_port_owner_t *tp = nmo_behavior_index_find(bidx, out_io_id);
                 if (sp) src_owner = sp->owner_id;
                 if (tp) tgt_owner = tp->owner_id;
             }
             const char *so = (src_owner == 0 || src_owner == target_id) ? name : resolve_name(repo, src_owner);
             const char *to = (tgt_owner == 0 || tgt_owner == target_id) ? name : resolve_name(repo, tgt_owner);
             fprintf(c.out, "  %s.%s -> %s.%s",
-                    (so && so[0]) ? so : "?", resolve_name(repo, ls->in_io_id),
-                    (to && to[0]) ? to : "?", resolve_name(repo, ls->out_io_id));
+                    (so && so[0]) ? so : "?", resolve_name(repo, in_io_id),
+                    (to && to[0]) ? to : "?", resolve_name(repo, out_io_id));
             if (ls->activation_delay != 0) {
                 fprintf(c.out, "  (delay: %d)", ls->activation_delay);
             }

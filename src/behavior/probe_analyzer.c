@@ -193,10 +193,12 @@ static bool probe_link_touches_behavior(const nmo_behavior_state_t *behavior,
     if (behavior == NULL || link == NULL) {
         return false;
     }
-    if (probe_behavior_has_io(behavior, link->out_io_id)) {
+    if (probe_behavior_has_io(
+            behavior, nmo_behaviorlink_out_io_id(link))) {
         return true;
     }
-    return !to_io_only && probe_behavior_has_io(behavior, link->in_io_id);
+    return !to_io_only && probe_behavior_has_io(
+        behavior, nmo_behaviorlink_in_io_id(link));
 }
 
 static bool probe_text_starts_with_word_ci(const char *text,
@@ -613,16 +615,18 @@ static void probe_apply_selected_link(nmo_probe_selector_result_t *result,
         return;
     }
     result->selected_link_id = link_id;
-    result->from_io_id = link->in_io_id;
-    result->to_io_id = link->out_io_id;
+    result->from_io_id = nmo_behaviorlink_in_io_id(link);
+    result->to_io_id = nmo_behaviorlink_out_io_id(link);
     result->safe_insertion.selected = true;
     result->safe_insertion.selected_node_id = result->selected_node_id;
     result->safe_insertion.selected_operation_id =
         result->selected_operation_id;
     result->safe_insertion.selected_link_id = link_id;
     result->safe_insertion.remove_link_id = link_id;
-    result->safe_insertion.insert_from_io_id = link->in_io_id;
-    result->safe_insertion.insert_to_io_id = link->out_io_id;
+    result->safe_insertion.insert_from_io_id =
+        nmo_behaviorlink_in_io_id(link);
+    result->safe_insertion.insert_to_io_id =
+        nmo_behaviorlink_out_io_id(link);
     if (!result->has_delay && link->activation_delay > 0) {
         result->delay = (uint32_t)link->activation_delay;
         result->has_delay = true;
@@ -880,8 +884,8 @@ static bool probe_explicit_endpoints_touch_operation_flow(
                 ? (const nmo_behaviorlink_state_t *)nmo_object_get_state(
                       link_obj)
                 : NULL;
-        if (link == NULL || link->in_io_id != from_io_id ||
-            link->out_io_id != to_io_id) {
+        if (link == NULL || nmo_behaviorlink_in_io_id(link) != from_io_id ||
+            nmo_behaviorlink_out_io_id(link) != to_io_id) {
             continue;
         }
         return probe_link_touches_any_behavior(repo,

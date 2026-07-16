@@ -339,8 +339,8 @@ static bool collect_links_recursive(
                 *cap = new_cap;
             }
             (*links)[*count] = (trace_link_t){
-                .source_io = ls->in_io_id,
-                .target_io = ls->out_io_id,
+                .source_io = nmo_behaviorlink_in_io_id(ls),
+                .target_io = nmo_behaviorlink_out_io_id(ls),
                 .delay = ls->activation_delay,
             };
             (*count)++;

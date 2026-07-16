@@ -1124,7 +1124,8 @@ static bool script_edit_io_is_linked_in_repo(
         if (!link_state) {
             continue;
         }
-        if (link_state->in_io_id == io_id || link_state->out_io_id == io_id) {
+        if (nmo_behaviorlink_in_io_id(link_state) == io_id ||
+            nmo_behaviorlink_out_io_id(link_state) == io_id) {
             return true;
         }
     }
@@ -1186,7 +1187,8 @@ static nmo_status_t script_edit_remove_links_for_io(
                 ? (const nmo_behaviorlink_state_t *)nmo_object_get_state(link_obj)
                 : NULL;
             if (!link_state ||
-                (link_state->in_io_id != io_id && link_state->out_io_id != io_id)) {
+                (nmo_behaviorlink_in_io_id(link_state) != io_id &&
+                 nmo_behaviorlink_out_io_id(link_state) != io_id)) {
                 continue;
             }
             if (deleted_root_id != 0u &&
@@ -1745,8 +1747,10 @@ static nmo_status_t validate_behavior_link_owners(
             return NMO_ERR_INVALID_STATE;
         }
         if (!nmo_behavior_index_find(index, nmo_object_get_id(object)) ||
-            !nmo_behavior_index_find(index, state->in_io_id) ||
-            !nmo_behavior_index_find(index, state->out_io_id)) {
+            !nmo_behavior_index_find(
+                index, nmo_behaviorlink_in_io_id(state)) ||
+            !nmo_behavior_index_find(
+                index, nmo_behaviorlink_out_io_id(state))) {
             return NMO_ERR_VALIDATION_FAILED;
         }
     }
@@ -4859,10 +4863,10 @@ NMO_API nmo_status_t nmo_script_edit_rewire_behavior_link(
      * and link out_io_id is the target IO.
      */
     if (from_io_id != 0) {
-        link_state->in_io_id = from_io_id;
+        nmo_behaviorlink_set_in_io_id(link_state, from_io_id);
     }
     if (to_io_id != 0) {
-        link_state->out_io_id = to_io_id;
+        nmo_behaviorlink_set_out_io_id(link_state, to_io_id);
     }
 
     (void)nmo_behavior_edit_mark_interface(tx->edit, owner->owner_id);

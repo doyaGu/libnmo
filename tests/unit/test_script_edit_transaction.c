@@ -136,8 +136,10 @@ static void assert_behavior_owner_checks_green(nmo_object_repository_t *repo,
                 (const nmo_behaviorlink_state_t *)nmo_object_get_state(object);
             ASSERT_NOT_NULL(state);
             ASSERT_NOT_NULL(nmo_behavior_index_find(index, nmo_object_get_id(object)));
-            ASSERT_NOT_NULL(nmo_behavior_index_find(index, state->in_io_id));
-            ASSERT_NOT_NULL(nmo_behavior_index_find(index, state->out_io_id));
+            ASSERT_NOT_NULL(nmo_behavior_index_find(
+                index, nmo_behaviorlink_in_io_id(state)));
+            ASSERT_NOT_NULL(nmo_behavior_index_find(
+                index, nmo_behaviorlink_out_io_id(state)));
         }
 
         if (nmo_object_get_class_id(object) == NMO_CID_PARAMETERIN) {

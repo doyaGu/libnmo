@@ -1173,7 +1173,7 @@ static nmo_status_t rewrite_fold_rewire_control_boundary_in_edit(
         /* CK2/SDK naming is counterintuitive: link in_io_id is the source IO,
          * and link out_io_id is the target IO. Keep graph edge direction
          * source owner -> target owner. */
-        link_state->out_io_id = new_io_id;
+        nmo_behaviorlink_set_out_io_id(link_state, new_io_id);
     }
 
     for (size_t i = 0; i < report->boundary.control_out_count; ++i) {
@@ -1214,7 +1214,7 @@ static nmo_status_t rewrite_fold_rewire_control_boundary_in_edit(
         /* CK2/SDK naming is counterintuitive: link in_io_id is the source IO,
          * and link out_io_id is the target IO. Keep graph edge direction
          * source owner -> target owner. */
-        link_state->in_io_id = new_io_id;
+        nmo_behaviorlink_set_in_io_id(link_state, new_io_id);
     }
 
     nmo_workspace_edit_mark(edit, NMO_WORKSPACE_EDIT_BEHAVIOR_GRAPH |

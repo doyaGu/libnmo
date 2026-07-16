@@ -1347,8 +1347,8 @@ TEST(cli, behavior_add_link_saves_output) {
     const nmo_behaviorlink_state_t *link =
         (const nmo_behaviorlink_state_t *)write_probe_state(&probe, link_id, CKPGUID_BEHAVIORLINK);
     ASSERT_NOT_NULL(link);
-    ASSERT_EQ(from_id, link->in_io_id);
-    ASSERT_EQ(to_id, link->out_io_id);
+    ASSERT_EQ(from_id, nmo_behaviorlink_in_io_id(link));
+    ASSERT_EQ(to_id, nmo_behaviorlink_out_io_id(link));
     write_probe_close(&probe);
 
     remove(fixture);

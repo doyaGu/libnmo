@@ -1327,8 +1327,8 @@ TEST(semantic_validator, edit_plan_reports_rewire_control_endpoint_scope)
     ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(&child_state->inputs, child_io_id, NULL));
     ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(&grandchild_state->inputs, nested_io_id, NULL));
     ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(&root_state->sub_behavior_links, link_id, NULL));
-    link_state->in_io_id = child_io_id;
-    link_state->out_io_id = root_io_id;
+    nmo_behaviorlink_set_in_io_id(link_state, child_io_id);
+    nmo_behaviorlink_set_out_io_id(link_state, root_io_id);
 
     nmo_edit_plan_t *plan = NULL;
     ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));

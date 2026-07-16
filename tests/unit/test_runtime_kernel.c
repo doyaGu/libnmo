@@ -492,8 +492,8 @@ TEST(runtime_kernel, delete_safe_detach_prunes_behavior_links_with_deleted_io) {
     ASSERT_NOT_NULL(link_state);
     ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(
         &behavior_state->sub_behavior_links, link_id, NULL));
-    link_state->in_io_id = target_io_id;
-    link_state->out_io_id = source_io_id;
+    nmo_behaviorlink_set_in_io_id(link_state, target_io_id);
+    nmo_behaviorlink_set_out_io_id(link_state, source_io_id);
 
     nmo_runtime_report_t report = {0};
     ASSERT_EQ(
@@ -515,8 +515,8 @@ TEST(runtime_kernel, delete_safe_detach_prunes_behavior_links_with_deleted_io) {
     ASSERT_NOT_NULL(behavior_state);
     ASSERT_NOT_NULL(link_state);
     ASSERT_EQ(0u, behavior_state->sub_behavior_links.count);
-    ASSERT_EQ(0u, link_state->in_io_id);
-    ASSERT_EQ(source_io_id, link_state->out_io_id);
+    ASSERT_EQ(0u, nmo_behaviorlink_in_io_id(link_state));
+    ASSERT_EQ(source_io_id, nmo_behaviorlink_out_io_id(link_state));
 
     nmo_session_destroy(session);
     nmo_context_release(ctx);
@@ -859,6 +859,8 @@ TEST(runtime_kernel, normalize_clears_raw_scalar_class_mismatch) {
     nmo_object_id_t entity2d_id = 0;
     nmo_object_id_t level_id = 0;
     nmo_object_id_t scene_id = 0;
+    nmo_object_id_t behavior_io_id = 0;
+    nmo_object_id_t behavior_link_id = 0;
     ASSERT_EQ(NMO_OK, nmo_session_create_object(
         session, NMO_CID_3DENTITY, "entity", (nmo_guid_t){0, 0},
         &entity_id, NULL));
@@ -877,6 +879,12 @@ TEST(runtime_kernel, normalize_clears_raw_scalar_class_mismatch) {
     ASSERT_EQ(NMO_OK, nmo_session_create_object(
         session, NMO_CID_SCENE, "scene", (nmo_guid_t){0, 0},
         &scene_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_BEHAVIORIO, "io", (nmo_guid_t){0, 0},
+        &behavior_io_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_BEHAVIORLINK, "link", (nmo_guid_t){0, 0},
+        &behavior_link_id, NULL));
 
     nmo_object_repository_t *repo = nmo_session_get_repository(session);
     nmo_3dentity_state_t *entity = (nmo_3dentity_state_t *)
@@ -921,11 +929,16 @@ TEST(runtime_kernel, normalize_clears_raw_scalar_class_mismatch) {
     };
     ASSERT_EQ(NMO_OK, nmo_array_append(&scene->object_descs, &valid_desc));
     ASSERT_EQ(NMO_OK, nmo_array_append(&scene->object_descs, &invalid_desc));
+    nmo_behaviorlink_state_t *link = (nmo_behaviorlink_state_t *)
+        nmo_object_repository_find_by_id(repo, behavior_link_id)->state;
+    ASSERT_NOT_NULL(link);
+    link->in_io = nmo_ref_from_id(material_id);
+    link->out_io = nmo_ref_from_id(behavior_io_id);
 
     size_t changed = 0;
     ASSERT_EQ(NMO_OK, nmo_runtime_normalize_invalid_refs(
         repo, nmo_context_get_type_runtime(ctx), &changed));
-    ASSERT_EQ((size_t)11, changed);
+    ASSERT_EQ((size_t)12, changed);
     ASSERT_EQ(NMO_REF_NONE, entity->current_mesh.state);
     ASSERT_EQ(NMO_OBJECT_ID_NONE, entity->current_mesh.raw_id);
     ASSERT_EQ(NMO_OBJECT_ID_NONE, entity->current_mesh.id);
@@ -948,6 +961,8 @@ TEST(runtime_kernel, normalize_clears_raw_scalar_class_mismatch) {
                              &NMO_ARRAY_DATA(
                                  nmo_scene_object_desc_t,
                                  &scene->object_descs)[0].ref));
+    ASSERT_EQ(NMO_REF_NONE, link->in_io.state);
+    ASSERT_EQ(behavior_io_id, nmo_behaviorlink_out_io_id(link));
 
     nmo_session_destroy(session);
     nmo_context_release(ctx);
@@ -984,8 +999,8 @@ TEST(runtime_kernel, dependency_remap_preserves_invalid_references) {
     ASSERT_EQ(NMO_OK, nmo_array_append(&group->object_ids, &valid_ref));
     ASSERT_EQ(NMO_OK, nmo_array_append(&group->object_ids, &invalid_ref));
     ASSERT_EQ(NMO_OK, nmo_array_append(&group->object_ids, &valid_ref));
-    link->in_io_id = invalid_id;
-    link->out_io_id = valid_id;
+    link->in_io = nmo_ref_from_raw(invalid_id);
+    link->out_io = nmo_ref_from_id(valid_id);
 
     ASSERT_EQ(NMO_OK, nmo_runtime_remap_all_refs(
         repo, nmo_context_get_type_runtime(ctx), 0));
@@ -996,8 +1011,9 @@ TEST(runtime_kernel, dependency_remap_preserves_invalid_references) {
     ASSERT_EQ(invalid_id, members[1].raw_id);
     ASSERT_EQ(NMO_REF_UNRESOLVED, members[1].state);
     ASSERT_EQ(valid_id, nmo_ref_runtime_id(&members[2]));
-    ASSERT_EQ(invalid_id, link->in_io_id);
-    ASSERT_EQ(valid_id, link->out_io_id);
+    ASSERT_EQ(invalid_id, link->in_io.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, link->in_io.state);
+    ASSERT_EQ(valid_id, nmo_behaviorlink_out_io_id(link));
 
     nmo_session_destroy(session);
     nmo_context_release(ctx);
@@ -1058,6 +1074,36 @@ TEST(runtime_kernel, copy_remap_updates_only_resolved_scene_members) {
 
     nmo_arena_destroy(arena);
     nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
+TEST(runtime_kernel, copy_remap_updates_only_resolved_behaviorlink_endpoints) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    const nmo_type_runtime_t *type_rt = nmo_context_get_type_runtime(ctx);
+    const nmo_type_descriptor_t *link_type =
+        nmo_type_registry_find_by_class_id(
+            type_rt->types, NMO_CID_BEHAVIORLINK);
+    ASSERT_NOT_NULL(link_type);
+
+    nmo_behaviorlink_state_t link = {0};
+    link.in_io = nmo_ref_from_id(101);
+    link.out_io = nmo_ref_from_raw(202);
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_id_remap_t *remap = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(remap);
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, 101, 301));
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, 202, 302));
+
+    ASSERT_EQ(NMO_OK, nmo_runtime_remap_copy_refs(
+        type_rt, link_type, &link, remap));
+    ASSERT_EQ(301u, nmo_behaviorlink_in_io_id(&link));
+    ASSERT_EQ(101u, link.in_io.raw_id);
+    ASSERT_EQ(202u, link.out_io.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, link.out_io.state);
+
+    nmo_arena_destroy(arena);
     nmo_context_release(ctx);
 }
 
@@ -1212,6 +1258,7 @@ REGISTER_TEST(runtime_kernel, normalize_removes_only_invalid_reference_records);
 REGISTER_TEST(runtime_kernel, normalize_clears_raw_scalar_class_mismatch);
 REGISTER_TEST(runtime_kernel, dependency_remap_preserves_invalid_references);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_scene_members);
+REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_behaviorlink_endpoints);
 REGISTER_TEST(runtime_kernel, dependency_remap_preserves_nonreference_state);
 REGISTER_TEST(runtime_kernel, serializer_failure_does_not_reuse_raw_chunk);
 TEST_MAIN_END()

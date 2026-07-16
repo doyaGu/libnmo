@@ -467,10 +467,10 @@ static nmo_status_t debug_probe_infer_removed_link_endpoints(
         return NMO_ERR_NOT_FOUND;
     }
     if (args->from_io_id == 0u) {
-        args->from_io_id = link_state->in_io_id;
+        args->from_io_id = nmo_behaviorlink_in_io_id(link_state);
     }
     if (args->to_io_id == 0u) {
-        args->to_io_id = link_state->out_io_id;
+        args->to_io_id = nmo_behaviorlink_out_io_id(link_state);
     }
     if (!args->has_delay && link_state->activation_delay > 0) {
         args->delay = (uint32_t)link_state->activation_delay;
@@ -496,8 +496,10 @@ static nmo_object_id_t debug_probe_find_matching_link(
         const nmo_behaviorlink_state_t *state =
             (const nmo_behaviorlink_state_t *)nmo_object_get_state(object);
         if (state != NULL &&
-            state->in_io_id == wanted->in_io_id &&
-            state->out_io_id == wanted->out_io_id &&
+            nmo_behaviorlink_in_io_id(state) ==
+                nmo_behaviorlink_in_io_id(wanted) &&
+            nmo_behaviorlink_out_io_id(state) ==
+                nmo_behaviorlink_out_io_id(wanted) &&
             state->activation_delay == wanted->activation_delay &&
             state->initial_activation_delay == wanted->initial_activation_delay) {
             return nmo_object_get_id(object);
@@ -638,11 +640,13 @@ static bool debug_probe_link_touches_behavior(
     if (behavior == NULL || link == NULL) {
         return false;
     }
-    if (debug_probe_behavior_has_io(behavior, link->out_io_id)) {
+    if (debug_probe_behavior_has_io(
+            behavior, nmo_behaviorlink_out_io_id(link))) {
         return true;
     }
     return !to_io_only &&
-           debug_probe_behavior_has_io(behavior, link->in_io_id);
+           debug_probe_behavior_has_io(
+               behavior, nmo_behaviorlink_in_io_id(link));
 }
 
 static void debug_probe_append_id(char *buffer,
@@ -997,10 +1001,10 @@ static nmo_status_t debug_probe_validate_targets(
                           link_obj)
                     : NULL;
             if (link_state == NULL ||
-                (!debug_probe_behavior_has_io(message_state,
-                                              link_state->in_io_id) &&
-                 !debug_probe_behavior_has_io(message_state,
-                                              link_state->out_io_id))) {
+                (!debug_probe_behavior_has_io(
+                     message_state, nmo_behaviorlink_in_io_id(link_state)) &&
+                 !debug_probe_behavior_has_io(
+                     message_state, nmo_behaviorlink_out_io_id(link_state)))) {
                 NMO_RETURN_ERROR(
                     NMO_ERR_INVALID_ARGUMENT,
                     NMO_SEVERITY_ERROR,
@@ -1129,8 +1133,8 @@ static nmo_status_t debug_probe_select_data_write_link(
     }
 
     args->remove_link_id = selected_link_id;
-    args->from_io_id = selected_link->in_io_id;
-    args->to_io_id = selected_link->out_io_id;
+    args->from_io_id = nmo_behaviorlink_in_io_id(selected_link);
+    args->to_io_id = nmo_behaviorlink_out_io_id(selected_link);
     args->selector_selected_link_id = selected_link_id;
     if (!args->has_delay && selected_link->activation_delay > 0) {
         args->delay = (uint32_t)selected_link->activation_delay;
@@ -1204,8 +1208,8 @@ static nmo_status_t debug_probe_select_message_link(
     }
 
     args->remove_link_id = selected_link_id;
-    args->from_io_id = selected_link->in_io_id;
-    args->to_io_id = selected_link->out_io_id;
+    args->from_io_id = nmo_behaviorlink_in_io_id(selected_link);
+    args->to_io_id = nmo_behaviorlink_out_io_id(selected_link);
     args->selector_selected_link_id = selected_link_id;
     if (!args->has_delay && selected_link->activation_delay > 0) {
         args->delay = (uint32_t)selected_link->activation_delay;

@@ -273,11 +273,16 @@ static bool build_behavior_contents(graph_build_ctx_t *gc,
         }
         if (!link_state) { gc->broken_links++; continue; }
 
+        const nmo_object_id_t in_io_id =
+            nmo_behaviorlink_in_io_id(link_state);
+        const nmo_object_id_t out_io_id =
+            nmo_behaviorlink_out_io_id(link_state);
+
         /* O(1) IO owner lookup via behavior_index */
         const nmo_port_owner_t *in_owner = gc->beh_index
-            ? nmo_behavior_index_find(gc->beh_index, link_state->in_io_id) : NULL;
+            ? nmo_behavior_index_find(gc->beh_index, in_io_id) : NULL;
         const nmo_port_owner_t *out_owner = gc->beh_index
-            ? nmo_behavior_index_find(gc->beh_index, link_state->out_io_id) : NULL;
+            ? nmo_behavior_index_find(gc->beh_index, out_io_id) : NULL;
 
         /* Virtools SDK naming: in_io = SOURCE, out_io = TARGET (backwards!)
          * Edge direction: in_owner (source BB) -> out_owner (target BB) */
@@ -285,23 +290,23 @@ static bool build_behavior_contents(graph_build_ctx_t *gc,
             if (!add_graph_edge(&gc->edges, &gc->edge_count, &gc->edge_cap, link_id,
                                 in_owner->owner_id, out_owner->owner_id,
                                 "behavior_link", "sub_behavior_links",
-                                link_state->in_io_id, link_state->out_io_id,
+                                in_io_id, out_io_id,
                                 link_state->activation_delay,
                                 link_state->initial_activation_delay, false))
                 return false;
-        } else if (link_state->in_io_id != 0 && link_state->out_io_id != 0) {
+        } else if (in_io_id != 0 && out_io_id != 0) {
             if (!add_graph_node_from_object(&gc->nodes, &gc->node_count, &gc->node_cap,
-                                            gc->repo, gc->ctx, link_state->in_io_id,
+                                            gc->repo, gc->ctx, in_io_id,
                                             "io", "IO", &gc->missing_nodes))
                 return false;
             if (!add_graph_node_from_object(&gc->nodes, &gc->node_count, &gc->node_cap,
-                                            gc->repo, gc->ctx, link_state->out_io_id,
+                                            gc->repo, gc->ctx, out_io_id,
                                             "io", "IO", &gc->missing_nodes))
                 return false;
             if (!add_graph_edge(&gc->edges, &gc->edge_count, &gc->edge_cap, link_id,
-                                link_state->in_io_id, link_state->out_io_id,
+                                in_io_id, out_io_id,
                                 "io_link", "sub_behavior_links",
-                                link_state->in_io_id, link_state->out_io_id, 0, 0, false))
+                                in_io_id, out_io_id, 0, 0, false))
                 return false;
         }
     }

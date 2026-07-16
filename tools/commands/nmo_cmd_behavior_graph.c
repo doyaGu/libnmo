@@ -1281,14 +1281,16 @@ static void dump_print_execution_flow(
             const nmo_behaviorlink_state_t *link =
                 (const nmo_behaviorlink_state_t *)link_obj->state;
             nmo_object_id_t src_owner =
-                dump_io_owner(bidx, link->in_io_id, root_id);
+                dump_io_owner(
+                    bidx, nmo_behaviorlink_in_io_id(link), root_id);
             nmo_object_id_t tgt_owner =
-                dump_io_owner(bidx, link->out_io_id, root_id);
+                dump_io_owner(
+                    bidx, nmo_behaviorlink_out_io_id(link), root_id);
             fprintf(out, "  %s.%s -> %s.%s",
                     dump_owner_display_name(repo, root_id, root_name, src_owner),
-                    resolve_name(repo, link->in_io_id),
+                    resolve_name(repo, nmo_behaviorlink_in_io_id(link)),
                     dump_owner_display_name(repo, root_id, root_name, tgt_owner),
-                    resolve_name(repo, link->out_io_id));
+                    resolve_name(repo, nmo_behaviorlink_out_io_id(link)));
             if (link->activation_delay != 0) {
                 fprintf(out, "  (delay: %d)", link->activation_delay);
             }
@@ -1323,22 +1325,30 @@ static void dump_add_execution_flow_json(
             const nmo_behaviorlink_state_t *link =
                 (const nmo_behaviorlink_state_t *)link_obj->state;
             nmo_object_id_t src_owner =
-                dump_io_owner(bidx, link->in_io_id, root_id);
+                dump_io_owner(
+                    bidx, nmo_behaviorlink_in_io_id(link), root_id);
             nmo_object_id_t tgt_owner =
-                dump_io_owner(bidx, link->out_io_id, root_id);
+                dump_io_owner(
+                    bidx, nmo_behaviorlink_out_io_id(link), root_id);
 
             yyjson_mut_val *item = yyjson_mut_obj(doc);
             yyjson_mut_obj_add_uint(doc, item, "link_id", link_id);
-            yyjson_mut_obj_add_uint(doc, item, "source_io_id", link->in_io_id);
+            yyjson_mut_obj_add_uint(
+                doc, item, "source_io_id", nmo_behaviorlink_in_io_id(link));
             nmo_cli_json_add_str_safe(doc, item, "source_io_name",
-                                      resolve_name(repo, link->in_io_id));
+                                      resolve_name(
+                                          repo,
+                                          nmo_behaviorlink_in_io_id(link)));
             yyjson_mut_obj_add_uint(doc, item, "source_owner_id", src_owner);
             nmo_cli_json_add_str_safe(
                 doc, item, "source_owner_name",
                 dump_owner_display_name(repo, root_id, root_name, src_owner));
-            yyjson_mut_obj_add_uint(doc, item, "target_io_id", link->out_io_id);
+            yyjson_mut_obj_add_uint(
+                doc, item, "target_io_id", nmo_behaviorlink_out_io_id(link));
             nmo_cli_json_add_str_safe(doc, item, "target_io_name",
-                                      resolve_name(repo, link->out_io_id));
+                                      resolve_name(
+                                          repo,
+                                          nmo_behaviorlink_out_io_id(link)));
             yyjson_mut_obj_add_uint(doc, item, "target_owner_id", tgt_owner);
             nmo_cli_json_add_str_safe(
                 doc, item, "target_owner_name",

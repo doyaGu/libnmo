@@ -647,9 +647,11 @@ static void fold_candidates_union_connected_children(
             continue;
         }
         const nmo_port_owner_t *source_owner =
-            nmo_behavior_index_find(index, link_state->in_io_id);
+            nmo_behavior_index_find(
+                index, nmo_behaviorlink_in_io_id(link_state));
         const nmo_port_owner_t *target_owner =
-            nmo_behavior_index_find(index, link_state->out_io_id);
+            nmo_behavior_index_find(
+                index, nmo_behaviorlink_out_io_id(link_state));
         size_t from_index = source_owner
             ? fold_candidate_find_child_index(children, child_count,
                                               source_owner->owner_id)
@@ -719,9 +721,11 @@ static int fold_candidates_emit_control_router_groups(
                 }
 
                 const nmo_port_owner_t *source_owner =
-                    nmo_behavior_index_find(index, link_state->in_io_id);
+                    nmo_behavior_index_find(
+                        index, nmo_behaviorlink_in_io_id(link_state));
                 const nmo_port_owner_t *target_owner =
-                    nmo_behavior_index_find(index, link_state->out_io_id);
+                    nmo_behavior_index_find(
+                        index, nmo_behaviorlink_out_io_id(link_state));
                 size_t from_index = source_owner
                     ? fold_candidate_find_root_index(children, child_count,
                                                      source_owner->owner_id)
@@ -1406,9 +1410,11 @@ static int fold_candidates_emit(nmo_cmd_ctx_t *ctx,
                         continue;
                     }
                     const nmo_port_owner_t *source_owner =
-                        nmo_behavior_index_find(index, link_state->in_io_id);
+                        nmo_behavior_index_find(
+                            index, nmo_behaviorlink_in_io_id(link_state));
                     const nmo_port_owner_t *target_owner =
-                        nmo_behavior_index_find(index, link_state->out_io_id);
+                        nmo_behavior_index_find(
+                            index, nmo_behaviorlink_out_io_id(link_state));
                     size_t from_index = source_owner
                         ? fold_candidate_find_root_index(children, child_count,
                                                          source_owner->owner_id)

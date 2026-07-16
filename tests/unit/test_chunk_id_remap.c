@@ -9,6 +9,7 @@
 #include "format/nmo_chunk_context.h"
 #include "object/nmo_ref.h"
 #include "object/builtin/nmo_behavior_schemas.h"
+#include "object/builtin/nmo_behaviorlink_schemas.h"
 #include "object/builtin/nmo_beobject_schemas.h"
 #include "object/builtin/nmo_targetcamera_schemas.h"
 #include "object/builtin/nmo_targetlight_schemas.h"
@@ -416,6 +417,110 @@ TEST(chunk_id_remap, behavior_unresolved_ref_round_trips_raw_id) {
     nmo_array_dispose(&source.inputs);
     nmo_array_dispose(&loaded.inputs);
     nmo_array_dispose(&reloaded.inputs);
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_id_remap, behaviorlink_refs_round_trip_and_failure_is_atomic) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_id_remap_t *file_to_runtime = nmo_id_remap_create(arena);
+    nmo_id_remap_t *runtime_to_file = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(file_to_runtime);
+    ASSERT_NOT_NULL(runtime_to_file);
+
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+    nmo_chunk_file_context_t write_context = {
+        .runtime_to_file = runtime_to_file,
+    };
+    nmo_chunk_file_context_t read_context = {
+        .file_to_runtime = file_to_runtime,
+    };
+
+    nmo_behaviorlink_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_behaviorlink_vtable.create(&source, NULL, NULL));
+    source.activation_delay = 3;
+    source.initial_activation_delay = 7;
+    source.in_io = nmo_ref_from_raw(777);
+    source.out_io = nmo_ref_from_raw(778);
+
+    nmo_chunk_t *first = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(first);
+    first->class_id = NMO_CID_BEHAVIORLINK;
+    first->data_version = 8;
+    first->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(first, &write_context);
+    ASSERT_EQ(NMO_OK, nmo_behaviorlink_serialize(
+        &source, first, NULL, &serialize_context));
+    nmo_chunk_close(first);
+    nmo_chunk_set_file_context(first, &read_context);
+
+    nmo_behaviorlink_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_behaviorlink_vtable.create(&loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_behaviorlink_deserialize(
+        &loaded, first, NULL, &deserialize_context));
+    ASSERT_EQ(3, loaded.activation_delay);
+    ASSERT_EQ(7, loaded.initial_activation_delay);
+    ASSERT_EQ(777u, loaded.in_io.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, loaded.in_io.state);
+    ASSERT_EQ(778u, loaded.out_io.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, loaded.out_io.state);
+
+    nmo_chunk_t *second = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(second);
+    second->class_id = NMO_CID_BEHAVIORLINK;
+    second->data_version = 8;
+    second->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(second, &write_context);
+    ASSERT_EQ(NMO_OK, nmo_behaviorlink_serialize(
+        &loaded, second, NULL, &serialize_context));
+    nmo_chunk_close(second);
+    nmo_chunk_set_file_context(second, &read_context);
+
+    nmo_behaviorlink_state_t reloaded;
+    ASSERT_EQ(NMO_OK, nmo_behaviorlink_vtable.create(&reloaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_behaviorlink_deserialize(
+        &reloaded, second, NULL, &deserialize_context));
+    ASSERT_EQ(777u, reloaded.in_io.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, reloaded.in_io.state);
+    ASSERT_EQ(778u, reloaded.out_io.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, reloaded.out_io.state);
+
+    nmo_chunk_t *truncated = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(truncated);
+    truncated->class_id = NMO_CID_BEHAVIORLINK;
+    truncated->data_version = 8;
+    truncated->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(truncated));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        truncated, CK_STATESAVE_BEHAV_LINK_NEWDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(truncated, 0x00090005u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(truncated, 900));
+    nmo_chunk_close(truncated);
+    nmo_chunk_set_file_context(truncated, &read_context);
+
+    nmo_behaviorlink_state_t failed;
+    ASSERT_EQ(NMO_OK, nmo_behaviorlink_vtable.create(&failed, NULL, NULL));
+    failed.activation_delay = 11;
+    failed.initial_activation_delay = 12;
+    failed.in_io = nmo_ref_from_raw(901);
+    failed.out_io = nmo_ref_from_raw(902);
+    ASSERT_NE(NMO_OK, nmo_behaviorlink_deserialize(
+        &failed, truncated, NULL, &deserialize_context));
+    ASSERT_EQ(11, failed.activation_delay);
+    ASSERT_EQ(12, failed.initial_activation_delay);
+    ASSERT_EQ(901u, failed.in_io.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, failed.in_io.state);
+    ASSERT_EQ(902u, failed.out_io.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, failed.out_io.state);
+
+    nmo_behaviorlink_vtable.destroy(&source, NULL, NULL);
+    nmo_behaviorlink_vtable.destroy(&loaded, NULL, NULL);
+    nmo_behaviorlink_vtable.destroy(&reloaded, NULL, NULL);
+    nmo_behaviorlink_vtable.destroy(&failed, NULL, NULL);
     nmo_arena_destroy(arena);
 }
 
@@ -2226,6 +2331,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, zero_and_unchanged_ids);
     REGISTER_TEST(chunk_id_remap, unresolved_ref_preserves_raw_id);
     REGISTER_TEST(chunk_id_remap, behavior_unresolved_ref_round_trips_raw_id);
+    REGISTER_TEST(chunk_id_remap, behaviorlink_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, targetcamera_unresolved_ref_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, targetlight_unresolved_ref_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, kinematicchain_unresolved_refs_round_trip_atomically);

@@ -166,8 +166,8 @@ static nmo_object_id_t test_create_behavior_link(nmo_session_t *session,
     if (!link) {
         return 0;
     }
-    link->in_io_id = source_io;
-    link->out_io_id = target_io;
+    nmo_behaviorlink_set_in_io_id(link, source_io);
+    nmo_behaviorlink_set_out_io_id(link, target_io);
     link->use_new_format = true;
     link->has_format = true;
     test_append_id(&owner->sub_behavior_links, link_id);
@@ -548,7 +548,7 @@ TEST(beh_rewrite, fold_apply_retargets_control_out_to_anchor_output)
     nmo_behaviorlink_state_t *link =
         test_behavior_link_state(session, external_link);
     ASSERT_NOT_NULL(link);
-    ASSERT_EQ(anchor_output, link->in_io_id);
+    ASSERT_EQ(anchor_output, nmo_behaviorlink_in_io_id(link));
     ASSERT_NULL(test_find_object(session, child));
 
     nmo_behavior_edit_fold_report_free(&report);

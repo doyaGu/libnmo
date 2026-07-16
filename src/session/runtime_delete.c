@@ -795,11 +795,13 @@ static nmo_status_t runtime_detach_deleted_references(
         if (obj->class_id == NMO_CID_BEHAVIORLINK) {
             nmo_behaviorlink_state_t *link =
                 (nmo_behaviorlink_state_t *)obj->state;
-            if (runtime_id_set_contains(delete_set, link->in_io_id)) {
-                link->in_io_id = NMO_OBJECT_ID_NONE;
+            if (runtime_id_set_contains(
+                    delete_set, nmo_behaviorlink_in_io_id(link))) {
+                nmo_behaviorlink_set_in_io_id(link, NMO_OBJECT_ID_NONE);
             }
-            if (runtime_id_set_contains(delete_set, link->out_io_id)) {
-                link->out_io_id = NMO_OBJECT_ID_NONE;
+            if (runtime_id_set_contains(
+                    delete_set, nmo_behaviorlink_out_io_id(link))) {
+                nmo_behaviorlink_set_out_io_id(link, NMO_OBJECT_ID_NONE);
             }
             continue;
         }
@@ -844,8 +846,10 @@ static nmo_status_t runtime_detach_deleted_references(
             const nmo_behaviorlink_state_t *link = link_obj && link_obj->state
                 ? (const nmo_behaviorlink_state_t *)link_obj->state : NULL;
             if (runtime_id_set_contains(delete_set, link_id) ||
-                (link && (runtime_id_set_contains(delete_set, link->in_io_id) ||
-                          runtime_id_set_contains(delete_set, link->out_io_id)))) {
+                (link && (runtime_id_set_contains(
+                              delete_set, nmo_behaviorlink_in_io_id(link)) ||
+                          runtime_id_set_contains(
+                              delete_set, nmo_behaviorlink_out_io_id(link))))) {
                 NMO_RETURN_IF_ERROR(nmo_array_remove(
                     &behavior->sub_behavior_links, index, NULL));
             }

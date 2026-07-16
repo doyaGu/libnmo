@@ -2694,7 +2694,8 @@ static nmo_status_t edit_report_note_io_detach_impacts(
                 ? (const nmo_behaviorlink_state_t *)nmo_object_get_state(link_obj)
                 : NULL;
             if (link_state == NULL ||
-                (link_state->in_io_id != io_id && link_state->out_io_id != io_id)) {
+                (nmo_behaviorlink_in_io_id(link_state) != io_id &&
+                 nmo_behaviorlink_out_io_id(link_state) != io_id)) {
                 continue;
             }
             NMO_RETURN_IF_ERROR(nmo_edit_report_add_deleted_object(
@@ -2705,8 +2706,8 @@ static nmo_status_t edit_report_note_io_detach_impacts(
             NMO_RETURN_IF_ERROR(edit_report_note_control_link_endpoints(
                 report,
                 cause,
-                link_state->in_io_id,
-                link_state->out_io_id));
+                nmo_behaviorlink_in_io_id(link_state),
+                nmo_behaviorlink_out_io_id(link_state)));
         }
     }
 
@@ -2778,10 +2779,10 @@ static void edit_plan_get_behavior_link_endpoints(
         return;
     }
     if (out_from_io_id != NULL) {
-        *out_from_io_id = state->in_io_id;
+        *out_from_io_id = nmo_behaviorlink_in_io_id(state);
     }
     if (out_to_io_id != NULL) {
-        *out_to_io_id = state->out_io_id;
+        *out_to_io_id = nmo_behaviorlink_out_io_id(state);
     }
     if (out_activation_delay != NULL) {
         *out_activation_delay =
