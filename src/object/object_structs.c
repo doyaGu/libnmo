@@ -211,9 +211,18 @@ nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry) {
     static const nmo_struct_type_def_t ckpatchmeshpatch_def =
         NMO_STRUCT_DEF("CKPatchMeshPatch", NMO_GUID_STRUCT_CKPATCHMESHPATCH, ckpatchmeshpatch_fields);
 
+    /* CKPatchMeshPatchRecord */
+    static const nmo_struct_field_def_t ckpatchmeshpatchrecord_fields[] = {
+        NMO_STRUCT_FIELD_NAME("material", "uint32[3]"),
+        NMO_STRUCT_FIELD_GUID("patch", NMO_GUID_STRUCT_CKPATCHMESHPATCH)
+    };
+    static const nmo_struct_type_def_t ckpatchmeshpatchrecord_def =
+        NMO_STRUCT_DEF("CKPatchMeshPatchRecord", NMO_GUID_STRUCT_CKPATCHMESHPATCHRECORD,
+                       ckpatchmeshpatchrecord_fields);
+
     /* CKPatchMeshChannel */
     static const nmo_struct_field_def_t ckpatchmeshchannel_fields[] = {
-        NMO_STRUCT_FIELD_GUID_FLAGS("material_id", CKPGUID_ID, NMO_FIELD_REFERENCE),
+        NMO_STRUCT_FIELD_NAME("material", "uint32[3]"),
         NMO_STRUCT_FIELD_GUID("flags", CKPGUID_UINT32),
         NMO_STRUCT_FIELD_GUID("type", CKPGUID_UINT32),
         NMO_STRUCT_FIELD_GUID("subtype", CKPGUID_UINT32),
@@ -438,6 +447,7 @@ nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry) {
     NMO_RETURN_IF_ERROR(nmo_type_registry_register_struct(registry, &cksceneobjectdesc_def, NULL));
     NMO_RETURN_IF_ERROR(nmo_type_registry_register_struct(registry, &ckplaceportalentry_def, NULL));
     NMO_RETURN_IF_ERROR(nmo_type_registry_register_struct(registry, &ckpatchmeshpatch_def, NULL));
+    NMO_RETURN_IF_ERROR(nmo_type_registry_register_struct(registry, &ckpatchmeshpatchrecord_def, NULL));
     NMO_RETURN_IF_ERROR(nmo_type_registry_register_struct(registry, &ckpatchmeshchannel_def, NULL));
     NMO_RETURN_IF_ERROR(nmo_type_registry_register_struct(registry, &ckdataarraycolumnformat_def, NULL));
     NMO_RETURN_IF_ERROR(nmo_type_registry_register_union(registry, &ckdataarraycell_def, NULL));

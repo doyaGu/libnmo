@@ -244,6 +244,34 @@ static nmo_status_t runtime_remap_character_parts(
     return NMO_OK;
 }
 
+static nmo_status_t runtime_remap_patchmesh_refs(
+    nmo_patchmesh_state_t *state,
+    const nmo_id_remap_t *remap)
+{
+    if (state == NULL) return NMO_OK;
+    if ((state->patch_count > 0 && state->patches == NULL) ||
+        (state->channel_count > 0 && state->channels == NULL)) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    for (uint32_t i = 0; i < state->patch_count; ++i) {
+        nmo_ref_t *ref = &state->patches[i].material;
+        nmo_object_id_t mapped = NMO_OBJECT_ID_NONE;
+        if (ref->state == NMO_REF_RESOLVED &&
+            runtime_lookup_mapping(remap, ref->id, &mapped)) {
+            ref->id = mapped;
+        }
+    }
+    for (uint32_t i = 0; i < state->channel_count; ++i) {
+        nmo_ref_t *ref = &state->channels[i].material;
+        nmo_object_id_t mapped = NMO_OBJECT_ID_NONE;
+        if (ref->state == NMO_REF_RESOLVED &&
+            runtime_lookup_mapping(remap, ref->id, &mapped)) {
+            ref->id = mapped;
+        }
+    }
+    return NMO_OK;
+}
+
 static const void *runtime_get_base_instance(
     const nmo_type_registry_t *types,
     const nmo_type_descriptor_t *derived_type,
@@ -315,6 +343,10 @@ nmo_status_t nmo_runtime_remap_copy_refs(
         if (nmo_guid_equals(current->guid, CKPGUID_CHARACTER)) {
             NMO_RETURN_IF_ERROR(runtime_remap_character_parts(
                 (nmo_character_state_t *)current_instance, remap));
+        }
+        if (nmo_guid_equals(current->guid, CKPGUID_PATCHMESH)) {
+            NMO_RETURN_IF_ERROR(runtime_remap_patchmesh_refs(
+                (nmo_patchmesh_state_t *)current_instance, remap));
         }
 
         if (nmo_guid_is_null(current->base_type)) {
@@ -678,28 +710,40 @@ static nmo_status_t normalize_patchmesh_patches(
     size_t *changes)
 {
     if (!state) return NMO_OK;
-    if (state->patch_count > 0 &&
-        (!state->patch_material_ids || !state->patches)) {
+    if ((state->patch_count > 0 && !state->patches) ||
+        (state->channel_count > 0 && !state->channels)) {
         return NMO_ERR_VALIDATION_FAILED;
     }
     uint32_t count = state->patch_count;
     for (uint32_t i = 0; i < count;) {
-        if (!normalize_id_is_invalid(repo, state->patch_material_ids[i]) &&
+        const nmo_ref_t *ref = &state->patches[i].material;
+        const nmo_object_id_t id = nmo_ref_runtime_id(ref);
+        if (ref->state == NMO_REF_RESOLVED &&
+            !normalize_id_is_invalid(repo, id) &&
             !normalize_id_has_wrong_class(
-                repo, types, state->patch_material_ids[i],
-                NMO_CID_MATERIAL)) {
+                repo, types, id, NMO_CID_MATERIAL)) {
             ++i;
             continue;
         }
         uint32_t remaining = count - i - 1;
         if (remaining > 0) {
-            memmove(&state->patch_material_ids[i], &state->patch_material_ids[i + 1],
-                    (size_t)remaining * sizeof(*state->patch_material_ids));
             memmove(&state->patches[i], &state->patches[i + 1],
                     (size_t)remaining * sizeof(*state->patches));
         }
         state->patch_count = --count;
         (*changes)++;
+    }
+    for (uint32_t i = 0; i < state->channel_count; ++i) {
+        nmo_ref_t *ref = &state->channels[i].material;
+        const nmo_object_id_t id = nmo_ref_runtime_id(ref);
+        if (ref->state != NMO_REF_NONE &&
+            (ref->state != NMO_REF_RESOLVED ||
+             normalize_id_is_invalid(repo, id) ||
+             normalize_id_has_wrong_class(
+                 repo, types, id, NMO_CID_MATERIAL))) {
+            *ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+            (*changes)++;
+        }
     }
     return NMO_OK;
 }

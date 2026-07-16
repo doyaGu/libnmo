@@ -28,6 +28,12 @@ typedef struct nmo_type_descriptor nmo_type_descriptor_t;
  */
 typedef CK_PATCHMESH_FORMAT nmo_patchmesh_format_t;
 
+/** Patch payload and its material reference as one indivisible record. */
+typedef struct nmo_patchmesh_patch_record {
+    nmo_ref_t material;
+    nmo_patchmesh_patch_t patch;
+} nmo_patchmesh_patch_record_t;
+
 /**
  * @brief CKPatchMesh state
  */
@@ -43,8 +49,7 @@ typedef struct nmo_patchmesh_state {
     nmo_vector_t *vectors;
 
     uint32_t patch_count;
-    nmo_object_id_t *patch_material_ids;
-    nmo_patchmesh_patch_t *patches;
+    nmo_patchmesh_patch_record_t *patches;
 
     uint32_t edge_count;
     uint8_t *edge_data;
@@ -54,7 +59,7 @@ typedef struct nmo_patchmesh_state {
     nmo_patchmesh_channel_t *channels;
 
     /* Legacy DATA2 payloads */
-    nmo_object_id_t legacy_default_material_id;
+    nmo_ref_t legacy_default_material;
     uint32_t legacy_patch_count;
     uint8_t *legacy_patch_data;
     size_t legacy_patch_data_size;
@@ -69,8 +74,10 @@ typedef struct nmo_patchmesh_state {
     size_t legacy_uv_data_size;
     uint32_t legacy_smoothing_count;
     uint32_t *legacy_smoothing_groups;
+    uint8_t has_legacy_smoothing;
     uint32_t legacy_material_count;
-    nmo_object_id_t *legacy_material_ids;
+    nmo_ref_t *legacy_materials;
+    uint8_t has_legacy_materials;
 } nmo_patchmesh_state_t;
 
 NMO_API nmo_status_t nmo_patchmesh_deserialize(

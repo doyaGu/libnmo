@@ -88,7 +88,7 @@ typedef struct nmo_patchmesh_patch {
 } nmo_patchmesh_patch_t;
 
 typedef struct nmo_patchmesh_channel {
-    nmo_object_id_t material_id;
+    nmo_ref_t material;
     uint32_t flags;
     uint32_t type;
     uint32_t subtype;

@@ -326,9 +326,7 @@ static bool runtime_delete_is_atomic_ref_field(
     const nmo_type_field_t *field)
 {
     if (type == NULL || field == NULL || field->name == NULL) return false;
-    return strcmp(field->name, "patch_material_ids") == 0 ||
-           strcmp(field->name, "legacy_material_ids") == 0 ||
-           strcmp(field->name, "control_point_ids") == 0 ||
+    return strcmp(field->name, "control_point_ids") == 0 ||
            (nmo_guid_equals(type->guid, CKPGUID_KEYEDANIMATION) &&
             strcmp(field->name, "animation_ids") == 0);
 }
@@ -548,10 +546,10 @@ static nmo_status_t runtime_delete_validate_atomic_refs(
         nmo_type_query_object_get_ancestor_state_by_guid(
             type_rt->types, obj, CKPGUID_PATCHMESH);
     if (patchmesh != NULL) {
-        if ((patchmesh->patch_count > 0u &&
-             patchmesh->patch_material_ids == NULL) ||
+        if ((patchmesh->patch_count > 0u && patchmesh->patches == NULL) ||
+            (patchmesh->channel_count > 0u && patchmesh->channels == NULL) ||
             (patchmesh->legacy_material_count > 0u &&
-             patchmesh->legacy_material_ids == NULL)) {
+             patchmesh->legacy_materials == NULL)) {
             return NMO_ERR_VALIDATION_FAILED;
         }
     }
@@ -630,16 +628,27 @@ static nmo_status_t runtime_delete_detach_atomic_refs(
         nmo_type_query_object_get_ancestor_state_by_guid(
             type_rt->types, obj, CKPGUID_PATCHMESH);
     if (patchmesh != NULL) {
-        for (uint32_t i = 0u; i < patchmesh->patch_count; ++i) {
-            if (runtime_id_set_contains(
-                    delete_set, patchmesh->patch_material_ids[i])) {
-                patchmesh->patch_material_ids[i] = NMO_OBJECT_ID_NONE;
+        uint32_t count = patchmesh->patch_count;
+        for (uint32_t i = 0u; i < count;) {
+            if (!runtime_id_set_contains(
+                    delete_set,
+                    nmo_ref_runtime_id(&patchmesh->patches[i].material))) {
+                ++i;
+                continue;
             }
+            uint32_t remaining = count - i - 1u;
+            if (remaining > 0u) {
+                memmove(&patchmesh->patches[i], &patchmesh->patches[i + 1u],
+                        (size_t)remaining * sizeof(*patchmesh->patches));
+            }
+            patchmesh->patch_count = --count;
         }
-        for (uint32_t i = 0u; i < patchmesh->legacy_material_count; ++i) {
+        for (uint32_t i = 0u; i < patchmesh->channel_count; ++i) {
             if (runtime_id_set_contains(
-                    delete_set, patchmesh->legacy_material_ids[i])) {
-                patchmesh->legacy_material_ids[i] = NMO_OBJECT_ID_NONE;
+                    delete_set,
+                    nmo_ref_runtime_id(&patchmesh->channels[i].material))) {
+                patchmesh->channels[i].material =
+                    nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
             }
         }
     }
