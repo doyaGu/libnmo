@@ -109,7 +109,7 @@ TEST(param_value, mode_object) {
     memset(&p, 0, sizeof(p));
     p.has_state = true;
     p.mode = CKPARAM_MODE_OBJECT;
-    p.object_id = 42;
+    p.object_ref = nmo_ref_from_id(42);
 
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
@@ -152,7 +152,7 @@ TEST(param_value, mode_object_resolves_name_with_workspace) {
     memset(&p, 0, sizeof(p));
     p.has_state = true;
     p.mode = CKPARAM_MODE_OBJECT;
-    p.object_id = target_id;
+    p.object_ref = nmo_ref_from_id(target_id);
 
     snprintf(expected, sizeof(expected), "#%u (TargetObject)", target_id);
     ASSERT_EQ(NMO_OK,
@@ -170,7 +170,7 @@ TEST(param_value, mode_object_null_id) {
     memset(&p, 0, sizeof(p));
     p.has_state = true;
     p.mode = CKPARAM_MODE_OBJECT;
-    p.object_id = 0;
+    p.object_ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
 
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);

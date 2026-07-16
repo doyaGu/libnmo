@@ -207,7 +207,7 @@ TEST(repl_write, parameter_set_uses_cli_shape) {
     ASSERT_EQ(0, run_repl_command(&repl, "parameter set --hex --id 64 2A000000"));
     const nmo_parameter_state_t *in_memory_object_state = repl_parameter_state(&repl, 46);
     ASSERT_NOT_NULL(in_memory_object_state);
-    ASSERT_EQ(520u, in_memory_object_state->object_id);
+    ASSERT_EQ(520u, nmo_parameter_object_id(in_memory_object_state));
     ASSERT_TRUE(repl.dirty);
     ASSERT_EQ(0, run_repl_command(&repl, "save test_repl_write_tmp/parameter_out.nmo"));
     close_repl(&repl);
@@ -216,7 +216,7 @@ TEST(repl_write, parameter_set_uses_cli_shape) {
     assert_probe_open(&probe, "test_repl_write_tmp/parameter_out.nmo");
     const nmo_parameter_state_t *object_state = write_probe_parameter_state(&probe, 46);
     ASSERT_NOT_NULL(object_state);
-    ASSERT_EQ(520u, object_state->object_id);
+    ASSERT_EQ(520u, nmo_parameter_object_id(object_state));
     const nmo_parameter_state_t *hex_state = write_probe_parameter_state(&probe, 64);
     ASSERT_NOT_NULL(hex_state);
     const unsigned char expected[] = {0x2A, 0x00, 0x00, 0x00};
@@ -240,17 +240,17 @@ TEST(repl_write, parameter_set_owner_selectors_save_and_reload) {
 
     const nmo_parameter_state_t *before = repl_parameter_state(&repl, 46);
     ASSERT_NOT_NULL(before);
-    ASSERT_NE(520u, before->object_id);
+    ASSERT_NE(520u, nmo_parameter_object_id(before));
 
     ASSERT_EQ(0, run_repl_command(&repl, "parameter set --owner 84 --index 0 520"));
     const nmo_parameter_state_t *by_index = repl_parameter_state(&repl, 46);
     ASSERT_NOT_NULL(by_index);
-    ASSERT_EQ(520u, by_index->object_id);
+    ASSERT_EQ(520u, nmo_parameter_object_id(by_index));
 
     ASSERT_EQ(0, run_repl_command(&repl, "parameter set --owner 84 --name Object 521"));
     const nmo_parameter_state_t *by_name = repl_parameter_state(&repl, 46);
     ASSERT_NOT_NULL(by_name);
-    ASSERT_EQ(521u, by_name->object_id);
+    ASSERT_EQ(521u, nmo_parameter_object_id(by_name));
     ASSERT_TRUE(repl.dirty);
 
     ASSERT_EQ(0, run_repl_command(&repl, "save test_repl_write_tmp/parameter_owner_out.nmo"));
@@ -260,7 +260,7 @@ TEST(repl_write, parameter_set_owner_selectors_save_and_reload) {
     assert_probe_open(&probe, "test_repl_write_tmp/parameter_owner_out.nmo");
     const nmo_parameter_state_t *saved = write_probe_parameter_state(&probe, 46);
     ASSERT_NOT_NULL(saved);
-    ASSERT_EQ(521u, saved->object_id);
+    ASSERT_EQ(521u, nmo_parameter_object_id(saved));
     write_probe_close(&probe);
 
     nmo_repl_context_t reloaded;
@@ -269,7 +269,7 @@ TEST(repl_write, parameter_set_owner_selectors_save_and_reload) {
                                    errbuf, sizeof(errbuf)));
     const nmo_parameter_state_t *reloaded_param = repl_parameter_state(&reloaded, 46);
     ASSERT_NOT_NULL(reloaded_param);
-    ASSERT_EQ(521u, reloaded_param->object_id);
+    ASSERT_EQ(521u, nmo_parameter_object_id(reloaded_param));
     ASSERT_FALSE(reloaded.dirty);
     close_repl(&reloaded);
 }
@@ -309,7 +309,7 @@ TEST(repl_write, saved_mutation_reloads_as_mutable_session) {
     ASSERT_EQ(baseline_count + 2u, nmo_repl_object_count(&reloaded));
     const nmo_parameter_state_t *loaded_param = repl_parameter_state(&reloaded, 46);
     ASSERT_NOT_NULL(loaded_param);
-    ASSERT_EQ(520u, loaded_param->object_id);
+    ASSERT_EQ(520u, nmo_parameter_object_id(loaded_param));
 
     ASSERT_EQ(0, run_repl_command(&reloaded, "object delete --name ReplReloadGroup"));
     ASSERT_EQ(0, run_repl_command(&reloaded, "parameter set --hex --id 64 2A000000"));
@@ -323,7 +323,7 @@ TEST(repl_write, saved_mutation_reloads_as_mutable_session) {
     ASSERT_NULL(write_probe_object_by_name(&probe, "ReplReloadGroup"));
     const nmo_parameter_state_t *object_state = write_probe_parameter_state(&probe, 46);
     ASSERT_NOT_NULL(object_state);
-    ASSERT_EQ(520u, object_state->object_id);
+    ASSERT_EQ(520u, nmo_parameter_object_id(object_state));
     const nmo_parameter_state_t *hex_state = write_probe_parameter_state(&probe, 64);
     ASSERT_NOT_NULL(hex_state);
     const unsigned char expected[] = {0x2A, 0x00, 0x00, 0x00};
@@ -366,7 +366,7 @@ TEST(repl_write, dry_run_mutations_do_not_change_session_or_dirty_flag) {
     size_t before_count = nmo_repl_object_count(&repl);
     const nmo_parameter_state_t *before_param = repl_parameter_state(&repl, 46);
     ASSERT_NOT_NULL(before_param);
-    ASSERT_NE(520u, before_param->object_id);
+    ASSERT_NE(520u, nmo_parameter_object_id(before_param));
 
     ASSERT_EQ(0, run_repl_command(&repl, "object create --dry-run --class CKGroup --name DryProbe"));
     ASSERT_EQ(before_count, nmo_repl_object_count(&repl));
@@ -383,7 +383,8 @@ TEST(repl_write, dry_run_mutations_do_not_change_session_or_dirty_flag) {
     ASSERT_EQ(0, run_repl_command(&repl, "parameter set --dry-run --id 46 520"));
     const nmo_parameter_state_t *after_param = repl_parameter_state(&repl, 46);
     ASSERT_NOT_NULL(after_param);
-    ASSERT_EQ(before_param->object_id, after_param->object_id);
+    ASSERT_EQ(nmo_parameter_object_id(before_param),
+              nmo_parameter_object_id(after_param));
     ASSERT_FALSE(repl.dirty);
 
     ASSERT_NE(0, run_repl_command(&repl, "parameter set --dry-run --owner 1 --index 0 1"));

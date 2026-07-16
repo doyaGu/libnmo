@@ -985,7 +985,7 @@ static nmo_status_t script_edit_create_parameter_object(
         parameter->manager_guid = NMO_GUID_NULL;
         parameter->manager_value = 0;
         parameter->subchunk = NULL;
-        parameter->object_id = 0;
+        parameter->object_ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         nmo_array_dispose(&parameter->buffer_data);
 
         if ((type_desc->category & NMO_TYPE_CATEGORY_OBJECT_REF) != 0u) {

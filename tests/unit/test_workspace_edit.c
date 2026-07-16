@@ -763,7 +763,7 @@ TEST(workspace_edit, value_writer_writes_object_refs_and_rejects_invalid_text) {
     state->type_guid = CKPGUID_OBJECT;
     state->mode = CKPARAM_MODE_OBJECT;
     state->has_state = true;
-    state->object_id = 77u;
+    state->object_ref = nmo_ref_from_id(77u);
 
     char text[64];
     workspace_edit_scope_t bare_scope = {0};
@@ -776,7 +776,7 @@ TEST(workspace_edit, value_writer_writes_object_refs_and_rejects_invalid_text) {
               nmo_value_writer_set_parameter_value(
                   bare_edit, param_id, text, NULL));
     ASSERT_EQ(NMO_OK, commit_workspace_edit_scope(&bare_scope));
-    ASSERT_EQ(target_id, state->object_id);
+    ASSERT_EQ(target_id, nmo_parameter_object_id(state));
 
     workspace_edit_scope_t prefixed_scope = {0};
     nmo_workspace_edit_t *prefixed_edit = NULL;
@@ -788,7 +788,7 @@ TEST(workspace_edit, value_writer_writes_object_refs_and_rejects_invalid_text) {
               nmo_value_writer_set_parameter_value(
                   prefixed_edit, param_id, text, NULL));
     ASSERT_EQ(NMO_OK, commit_workspace_edit_scope(&prefixed_scope));
-    ASSERT_EQ(target_id + 1u, state->object_id);
+    ASSERT_EQ(target_id + 1u, nmo_parameter_object_id(state));
 
     workspace_edit_scope_t hash_scope = {0};
     nmo_workspace_edit_t *hash_edit = NULL;
@@ -800,7 +800,7 @@ TEST(workspace_edit, value_writer_writes_object_refs_and_rejects_invalid_text) {
               nmo_value_writer_set_parameter_value(
                   hash_edit, param_id, text, NULL));
     ASSERT_EQ(NMO_OK, commit_workspace_edit_scope(&hash_scope));
-    ASSERT_EQ(target_id, state->object_id);
+    ASSERT_EQ(target_id, nmo_parameter_object_id(state));
 
     workspace_edit_scope_t invalid_scope = {0};
     nmo_workspace_edit_t *invalid_edit = NULL;
@@ -811,7 +811,7 @@ TEST(workspace_edit, value_writer_writes_object_refs_and_rejects_invalid_text) {
               nmo_value_writer_set_parameter_value(
                   invalid_edit, param_id, "object:not-a-number", NULL));
     rollback_workspace_edit_scope(&invalid_scope);
-    ASSERT_EQ(target_id, state->object_id);
+    ASSERT_EQ(target_id, nmo_parameter_object_id(state));
 
     nmo_session_destroy(session);
     nmo_context_release(ctx);
@@ -1456,7 +1456,7 @@ TEST(workspace_edit, parameterout_object_mode_commit_sets_reference) {
     nmo_parameter_state_t *state = nmo_parameter_get_mutable_state(param_obj);
     ASSERT_NOT_NULL(state);
     state->mode = CKPARAM_MODE_OBJECT;
-    state->object_id = 0;
+    state->object_ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
 
     int before_edges = ref_graph_edge_count(session);
 
@@ -1468,7 +1468,7 @@ TEST(workspace_edit, parameterout_object_mode_commit_sets_reference) {
     ASSERT_EQ(NMO_OK,
               nmo_object_edit_set_parameter_value(edit, param_id, target_text));
     ASSERT_EQ(NMO_OK, commit_workspace_edit_scope(&edit_scope));
-    ASSERT_EQ(target_id, state->object_id);
+    ASSERT_EQ(target_id, nmo_parameter_object_id(state));
     ASSERT_TRUE(ref_graph_edge_count(session) > before_edges);
 
     nmo_session_destroy(session);

@@ -855,7 +855,8 @@ static int cmd_param(nmo_repl_context_t *repl, int argc, char **argv) {
                 printf("\n");
             }
         } else if (pstate->mode == CKPARAM_MODE_OBJECT) {
-            printf("  Referenced Object ID: %u\n", pstate->object_id);
+            printf("  Referenced Object ID: %u\n",
+                   nmo_parameter_object_id(pstate));
         }
     } else {
         printf("  State: (no state saved)\n");

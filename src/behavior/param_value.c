@@ -215,7 +215,7 @@ nmo_status_t nmo_behavior_param_value_to_string(
         return NMO_OK;
 
     case CKPARAM_MODE_OBJECT:
-        return format_object_ref(param->object_id, workspace,
+        return format_object_ref(nmo_parameter_object_id(param), workspace,
                                  buffer, buffer_size);
 
     case CKPARAM_MODE_MANAGER: {

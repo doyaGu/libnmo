@@ -1483,7 +1483,7 @@ TEST(cli_write, parameter_set_persists_typed_object_and_raw_values) {
     assert_probe_open(&object_probe, "test_cli_write_tmp/parameter_object.nmo");
     const nmo_parameter_state_t *object_state = write_probe_parameter_state(&object_probe, 46);
     ASSERT_NOT_NULL(object_state);
-    ASSERT_EQ(520u, object_state->object_id);
+    ASSERT_EQ(520u, nmo_parameter_object_id(object_state));
     write_probe_close(&object_probe);
 
     assert_cli_success(

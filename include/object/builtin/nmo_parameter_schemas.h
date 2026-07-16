@@ -18,6 +18,7 @@
 #include "core/nmo_array.h"
 #include "core/nmo_guid.h"
 #include "object/builtin/nmo_object_schemas.h"
+#include "object/nmo_ref.h"
 #include "object/nmo_object_type_common.h"
 #include "object/nmo_object_enum_defs.h"
 
@@ -74,7 +75,7 @@ typedef struct nmo_parameter_state {
     nmo_array_t buffer_data;           /**< Parameter data buffer (uint8_t) */
     
     /* Object mode (MODE_OBJECT) */
-    nmo_object_id_t object_id;         /**< Referenced object ID */
+    nmo_ref_t object_ref;              /**< Referenced object */
     
     /* Manager mode (MODE_MANAGER) */
     nmo_guid_t manager_guid;           /**< Manager GUID */
@@ -83,6 +84,21 @@ typedef struct nmo_parameter_state {
     /* Sub-chunk mode (MODE_SUBCHUNK) */
     nmo_chunk_t *subchunk;             /**< Sub-chunk payload */
 } nmo_parameter_state_t;
+
+static inline nmo_object_id_t nmo_parameter_object_id(
+    const nmo_parameter_state_t *state)
+{
+    return state != NULL
+        ? nmo_ref_runtime_id(&state->object_ref)
+        : NMO_OBJECT_ID_NONE;
+}
+
+static inline void nmo_parameter_set_object_id(
+    nmo_parameter_state_t *state,
+    nmo_object_id_t id)
+{
+    if (state != NULL) state->object_ref = nmo_ref_from_id(id);
+}
 
 /* =============================================================================
  * PUBLIC API

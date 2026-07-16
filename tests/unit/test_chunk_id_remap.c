@@ -27,8 +27,11 @@
 #include "object/builtin/nmo_scene_schemas.h"
 #include "object/builtin/nmo_synchro_schemas.h"
 #include "object/builtin/nmo_material_schemas.h"
+#include "object/builtin/nmo_parameter_schemas.h"
 #include "object/builtin/nmo_parameteroperation_schemas.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_object_guids.h"
+#include "object/nmo_param_guids.h"
 #include "object/nmo_object_enum_defs.h"
 #include "object/nmo_statesave_ids.h"
 #include "object/nmo_serialize_context.h"
@@ -640,6 +643,96 @@ TEST(chunk_id_remap, material_refs_round_trip_and_failure_is_atomic) {
     nmo_material_vtable.destroy(&loaded, NULL, NULL);
     nmo_material_vtable.destroy(&reloaded, NULL, NULL);
     nmo_material_vtable.destroy(&failed, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_id_remap, parameter_object_ref_round_trips_raw_id) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+    nmo_id_remap_t *file_to_runtime = nmo_id_remap_create(arena);
+    nmo_id_remap_t *runtime_to_file = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(file_to_runtime);
+    ASSERT_NOT_NULL(runtime_to_file);
+    nmo_chunk_file_context_t write_context = {
+        .runtime_to_file = runtime_to_file,
+    };
+    nmo_chunk_file_context_t read_context = {
+        .file_to_runtime = file_to_runtime,
+    };
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+
+    nmo_parameter_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_parameter_vtable.create(&source, NULL, NULL));
+    source.type_guid = CKPGUID_OBJECT;
+    source.mode = CKPARAM_MODE_OBJECT;
+    source.has_state = true;
+    source.object_ref = nmo_ref_from_raw(701);
+
+    nmo_chunk_t *first = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(first);
+    first->class_id = NMO_CID_PARAMETER;
+    first->data_version = 8;
+    first->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(first, &write_context);
+    ASSERT_EQ(NMO_OK, nmo_parameter_serialize(
+        &source, first, NULL, &serialize_context));
+    nmo_chunk_close(first);
+    nmo_chunk_set_file_context(first, &read_context);
+
+    nmo_parameter_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_parameter_vtable.create(&loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_parameter_deserialize(
+        &loaded, first, NULL, &deserialize_context));
+    ASSERT_EQ(701u, loaded.object_ref.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, loaded.object_ref.state);
+    ASSERT_EQ(NMO_OBJECT_ID_NONE, nmo_parameter_object_id(&loaded));
+
+    nmo_chunk_t *second = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(second);
+    second->class_id = NMO_CID_PARAMETER;
+    second->data_version = 8;
+    second->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(second, &write_context);
+    ASSERT_EQ(NMO_OK, nmo_parameter_serialize(
+        &loaded, second, NULL, &serialize_context));
+    nmo_chunk_close(second);
+    nmo_chunk_set_file_context(second, &read_context);
+
+    nmo_parameter_state_t reloaded;
+    ASSERT_EQ(NMO_OK, nmo_parameter_vtable.create(&reloaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_parameter_deserialize(
+        &reloaded, second, NULL, &deserialize_context));
+    ASSERT_EQ(701u, reloaded.object_ref.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, reloaded.object_ref.state);
+
+    nmo_chunk_t *truncated = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(truncated);
+    truncated->class_id = NMO_CID_PARAMETER;
+    truncated->data_version = 8;
+    truncated->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(truncated));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(truncated, 0x40));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_guid(truncated, CKPGUID_OBJECT));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(truncated, 2));
+    nmo_chunk_close(truncated);
+    nmo_chunk_set_file_context(truncated, &read_context);
+
+    nmo_parameter_state_t failed;
+    ASSERT_EQ(NMO_OK, nmo_parameter_vtable.create(&failed, NULL, NULL));
+    failed.object_ref = nmo_ref_from_raw(702);
+    ASSERT_NE(NMO_OK, nmo_parameter_deserialize(
+        &failed, truncated, NULL, &deserialize_context));
+    ASSERT_EQ(702u, failed.object_ref.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, failed.object_ref.state);
+
+    nmo_parameter_vtable.destroy(&source, NULL, NULL);
+    nmo_parameter_vtable.destroy(&loaded, NULL, NULL);
+    nmo_parameter_vtable.destroy(&reloaded, NULL, NULL);
+    nmo_parameter_vtable.destroy(&failed, NULL, NULL);
     nmo_arena_destroy(arena);
 }
 
@@ -2677,6 +2770,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, behavior_unresolved_ref_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, behaviorlink_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, material_refs_round_trip_and_failure_is_atomic);
+    REGISTER_TEST(chunk_id_remap, parameter_object_ref_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, parameteroperation_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, parameteroperation_legacy_sections_are_atomic);
     REGISTER_TEST(chunk_id_remap, targetcamera_unresolved_ref_round_trips_raw_id);

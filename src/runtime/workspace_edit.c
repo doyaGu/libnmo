@@ -4149,7 +4149,7 @@ nmo_status_t workspace_edit_set_parameter_value_ex(
     if (state->mode == CKPARAM_MODE_OBJECT) {
         nmo_status_t snapshot_result =
             workspace_edit_push_bytes_snapshot_or_abort(
-                edit, checkpoint, &state->object_id, sizeof(state->object_id));
+                edit, checkpoint, &state->object_ref, sizeof(state->object_ref));
         if (snapshot_result != NMO_OK) {
             return snapshot_result;
         }
@@ -4159,7 +4159,7 @@ nmo_status_t workspace_edit_set_parameter_value_ex(
         if (parse_result != NMO_OK) {
             return workspace_edit_abort_status(edit, checkpoint, parse_result);
         }
-        state->object_id = new_id;
+        state->object_ref = nmo_ref_from_id(new_id);
         nmo_workspace_edit_mark(
             edit, NMO_WORKSPACE_EDIT_OBJECT_STATE | NMO_WORKSPACE_EDIT_REFERENCES);
         return NMO_OK;

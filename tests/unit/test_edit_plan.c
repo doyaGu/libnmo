@@ -186,7 +186,7 @@ static void create_object_reference_parameter(
     state->type_guid = CKPGUID_OBJECT;
     state->mode = CKPARAM_MODE_OBJECT;
     state->has_state = true;
-    state->object_id = initial_ref;
+    state->object_ref = nmo_ref_from_id(initial_ref);
     *out_state = state;
 }
 
@@ -953,7 +953,7 @@ TEST(edit_plan, executor_writes_object_reference_display_values) {
 
     ASSERT_EQ(NMO_OK, nmo_edit_executor_execute(fixture.workspace, plan, NULL, &report));
     ASSERT_TRUE(report.ok);
-    ASSERT_EQ(target_id, state->object_id);
+    ASSERT_EQ(target_id, nmo_parameter_object_id(state));
 
     nmo_edit_report_dispose(&report);
     nmo_edit_plan_destroy(plan);
@@ -968,7 +968,7 @@ TEST(edit_plan, executor_writes_object_reference_display_values) {
 
     ASSERT_EQ(NMO_OK, nmo_edit_executor_execute(fixture.workspace, plan, NULL, &report));
     ASSERT_TRUE(report.ok);
-    ASSERT_EQ(target_id, state->object_id);
+    ASSERT_EQ(target_id, nmo_parameter_object_id(state));
 
     nmo_edit_report_dispose(&report);
     nmo_edit_plan_destroy(plan);

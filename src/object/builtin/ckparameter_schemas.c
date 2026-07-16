@@ -50,6 +50,7 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
         if (result != NMO_OK) return result; \
         state->mode = CKPARAM_MODE_NONE; \
         state->has_state = false; \
+        state->object_ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE); \
     } while (0),
     ((void)0))
 #include <stddef.h>
@@ -69,7 +70,7 @@ static const nmo_type_field_t nmo_parameter_fields[] = {
     NMO_FIELD(nmo_parameter_state_t, mode, NMO_GUID_ENUM_CK_PARAMETER_MODE),
     NMO_FIELD(nmo_parameter_state_t, has_state, CKPGUID_BOOL),
     NMO_FIELD_ARRAY(nmo_parameter_state_t, buffer_data, CKPGUID_UINT8),
-    NMO_FIELD_REF(nmo_parameter_state_t, object_id),
+    NMO_FIELD_REF(nmo_parameter_state_t, object_ref),
     NMO_FIELD(nmo_parameter_state_t, manager_guid, CKPGUID_GUID),
     NMO_FIELD(nmo_parameter_state_t, manager_value, CKPGUID_UINT32),
     NMO_FIELD_OPT(nmo_parameter_state_t, subchunk, CKPGUID_STATECHUNK)
@@ -127,6 +128,7 @@ nmo_status_t nmo_parameter_deserialize(
     if (chunk == NULL || out_state == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_parameter_deserialize");
     }
+    const nmo_ref_t previous_object_ref = out_state->object_ref;
 
     /* Read base CKObject state (merged into this chunk by AddChunkAndDelete) */
     nmo_status_t result = nmo_object_deserialize(&out_state->base, chunk, NULL, context);
@@ -135,7 +137,7 @@ nmo_status_t nmo_parameter_deserialize(
     /* Reset parameter payload state */
     out_state->mode = CKPARAM_MODE_NONE;
     out_state->has_state = false;
-    out_state->object_id = 0;
+    out_state->object_ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     out_state->manager_guid = NMO_GUID_NULL;
     out_state->manager_value = 0;
     out_state->subchunk = NULL;
@@ -189,11 +191,14 @@ nmo_status_t nmo_parameter_deserialize(
     }
 
     if (param_state == 2) {
+        nmo_ref_t object_ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         out_state->mode = CKPARAM_MODE_OBJECT;
-        result = nmo_chunk_read_object_id(chunk, &out_state->object_id);
+        result = nmo_ref_read(chunk, &object_ref);
         if (result != NMO_OK) {
+            out_state->object_ref = previous_object_ref;
             return result;
         }
+        out_state->object_ref = object_ref;
         NMO_RETURN_OK();
     }
 
@@ -291,7 +296,7 @@ nmo_status_t nmo_parameter_serialize(
         bool inferred_has_state = false;
         if (in_state->mode != CKPARAM_MODE_NONE ||
             in_state->buffer_data.count > 0 ||
-            in_state->object_id != 0 ||
+            nmo_ref_serialized_id(&in_state->object_ref) != NMO_OBJECT_ID_NONE ||
             in_state->subchunk != NULL ||
             in_state->manager_guid.d1 != 0 ||
             in_state->manager_guid.d2 != 0 ||
@@ -320,7 +325,7 @@ nmo_status_t nmo_parameter_serialize(
         case CKPARAM_MODE_OBJECT:
             result = nmo_chunk_write_dword(out_chunk, 2);
             if (result != NMO_OK) return result;
-            result = nmo_chunk_write_object_id(out_chunk, in_state->object_id);
+            result = nmo_ref_write(out_chunk, &in_state->object_ref);
             if (result != NMO_OK) return result;
             break;
 
