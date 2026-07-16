@@ -513,11 +513,13 @@ bool nmo_behavior_graph_build(nmo_workspace_t *workspace,
             const nmo_parameterin_state_t *in_state =
                 (const nmo_parameterin_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(
                     registry, param_obj, CKPGUID_PARAMETERIN);
-            if (in_state && in_state->source_id != 0) {
+            const nmo_object_id_t source_id =
+                nmo_parameterin_source_id(in_state);
+            if (source_id != 0) {
                 if (!add_parameter_edge(&gc.parameter_ids, &gc.parameter_count, &gc.parameter_cap,
                                         &gc.nodes, &gc.node_count, &gc.node_cap,
                                         &gc.edges, &gc.edge_count, &gc.edge_cap,
-                                        repo, ctx, in_state->source_id, in_state->source_id, param_id,
+                                        repo, ctx, source_id, source_id, param_id,
                                         "param_source", "source_id",
                                         &gc.missing_nodes, in_state->is_shared != 0))
                     goto fail_nomem;

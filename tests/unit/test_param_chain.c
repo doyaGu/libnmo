@@ -51,7 +51,7 @@ static bool find_pin_visitor(nmo_object_id_t behavior_id,
 
         const nmo_parameterin_state_t *pin =
             (const nmo_parameterin_state_t *)nmo_object_get_state(obj);
-        if (!pin || pin->source_id == 0) continue;
+        if (nmo_parameterin_source_id(pin) == 0) continue;
 
         if (pin->is_shared && fctx->found_shared == 0)
             fctx->found_shared = pin_id;

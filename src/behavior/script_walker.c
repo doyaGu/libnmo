@@ -174,8 +174,10 @@ nmo_status_t nmo_behavior_analyze_trace_param_chain(
                                  "Out of memory in trace_param_chain");
             }
 
-            if (!pin || pin->source_id == 0) break;
-            current_id = pin->source_id;
+            const nmo_object_id_t source_id =
+                nmo_parameterin_source_id(pin);
+            if (source_id == 0) break;
+            current_id = source_id;
         } else {
             /* Reached a non-ParameterIn (ParameterOut, ParameterLocal, etc.) */
             nmo_behavior_trace_step_t chain_step = {
@@ -255,8 +257,10 @@ static void dump_param_array(
                 const char *tname = nmo_type_registry_guid_to_name(
                     dctx->registry, pin->type_guid);
                 fprintf(dctx->out, " : %s", tname ? tname : "?");
-                if (pin->source_id) {
-                    fprintf(dctx->out, " <- #%u", pin->source_id);
+                const nmo_object_id_t source_id =
+                    nmo_parameterin_source_id(pin);
+                if (source_id) {
+                    fprintf(dctx->out, " <- #%u", source_id);
                 }
                 if (pin->is_shared) {
                     fprintf(dctx->out, " (shared)");

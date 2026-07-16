@@ -28,6 +28,7 @@
 #include "object/builtin/nmo_synchro_schemas.h"
 #include "object/builtin/nmo_material_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
+#include "object/builtin/nmo_parameterin_schemas.h"
 #include "object/builtin/nmo_parameterlocal_schemas.h"
 #include "object/builtin/nmo_parameteroperation_schemas.h"
 #include "object/nmo_class_ids.h"
@@ -724,6 +725,149 @@ TEST(chunk_id_remap, parameterlocal_owner_round_trips_raw_id) {
     nmo_parameterlocal_vtable.destroy(&loaded, NULL, NULL);
     nmo_parameterlocal_vtable.destroy(&reloaded, NULL, NULL);
     nmo_parameterlocal_vtable.destroy(&failed, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_id_remap, parameterin_refs_round_trip_and_failure_is_atomic) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_id_remap_t *file_to_runtime = nmo_id_remap_create(arena);
+    nmo_id_remap_t *runtime_to_file = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(file_to_runtime);
+    ASSERT_NOT_NULL(runtime_to_file);
+    nmo_chunk_file_context_t write_context = {
+        .runtime_to_file = runtime_to_file,
+    };
+    nmo_chunk_file_context_t read_context = {
+        .file_to_runtime = file_to_runtime,
+    };
+    nmo_serialize_context_t file_serialize_context =
+        nmo_serialize_context_create(
+            arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_serialize_context_t legacy_serialize_context =
+        nmo_serialize_context_create_nonfile(
+            arena, NULL, CK_STATESAVE_PARAMETERIN_ALL);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+
+    nmo_parameterin_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_parameterin_vtable.create(&source, NULL, NULL));
+    source.type_guid = (nmo_guid_t){0x12345678u, 0x9ABCDEF0u};
+    source.source = nmo_ref_from_raw(693);
+    source.owner = nmo_ref_from_raw(694);
+    source.is_shared = 1;
+    source.is_disabled = 1;
+
+    nmo_chunk_t *first = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(first);
+    first->class_id = NMO_CID_PARAMETERIN;
+    first->data_version = 8;
+    first->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(first, &write_context);
+    ASSERT_EQ(NMO_OK, nmo_parameterin_serialize(
+        &source, first, NULL, &file_serialize_context));
+    nmo_chunk_close(first);
+    nmo_chunk_set_file_context(first, &read_context);
+
+    nmo_parameterin_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_parameterin_vtable.create(&loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_parameterin_deserialize(
+        &loaded, first, NULL, &deserialize_context));
+    ASSERT_EQ(693u, loaded.source.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, loaded.source.state);
+    ASSERT_EQ(694u, loaded.owner.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, loaded.owner.state);
+    ASSERT_EQ(NMO_OBJECT_ID_NONE, nmo_parameterin_source_id(&loaded));
+    ASSERT_EQ(NMO_OBJECT_ID_NONE, nmo_parameterin_owner_id(&loaded));
+    ASSERT_EQ(1u, loaded.is_shared);
+    ASSERT_EQ(1u, loaded.is_disabled);
+
+    nmo_chunk_t *second = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(second);
+    second->class_id = NMO_CID_PARAMETERIN;
+    second->data_version = 8;
+    second->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(second, &write_context);
+    ASSERT_EQ(NMO_OK, nmo_parameterin_serialize(
+        &loaded, second, NULL, &file_serialize_context));
+    nmo_chunk_close(second);
+    nmo_chunk_set_file_context(second, &read_context);
+
+    nmo_parameterin_state_t reloaded;
+    ASSERT_EQ(NMO_OK, nmo_parameterin_vtable.create(&reloaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_parameterin_deserialize(
+        &reloaded, second, NULL, &deserialize_context));
+    ASSERT_EQ(693u, reloaded.source.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, reloaded.source.state);
+    ASSERT_EQ(694u, reloaded.owner.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, reloaded.owner.state);
+
+    nmo_parameterin_state_t legacy_source;
+    ASSERT_EQ(NMO_OK, nmo_parameterin_vtable.create(
+        &legacy_source, NULL, NULL));
+    legacy_source.type_guid = (nmo_guid_t){3u, 4u};
+    legacy_source.source = nmo_ref_from_raw(695);
+    legacy_source.owner = nmo_ref_from_raw(696);
+
+    nmo_chunk_t *legacy = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(legacy);
+    legacy->class_id = NMO_CID_PARAMETERIN;
+    legacy->data_version = 0;
+    ASSERT_EQ(NMO_OK, nmo_parameterin_serialize(
+        &legacy_source, legacy, NULL, &legacy_serialize_context));
+    nmo_chunk_close(legacy);
+    nmo_chunk_set_file_context(legacy, &read_context);
+
+    nmo_parameterin_state_t legacy_loaded;
+    ASSERT_EQ(NMO_OK, nmo_parameterin_vtable.create(
+        &legacy_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_parameterin_deserialize(
+        &legacy_loaded, legacy, NULL, &deserialize_context));
+    ASSERT_EQ(695u, legacy_loaded.source.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, legacy_loaded.source.state);
+    ASSERT_EQ(696u, legacy_loaded.owner.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, legacy_loaded.owner.state);
+
+    nmo_chunk_t *truncated = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(truncated);
+    truncated->class_id = NMO_CID_PARAMETERIN;
+    truncated->data_version = 8;
+    truncated->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(truncated));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        truncated, CK_STATESAVE_PARAMETERIN_DEFAULTDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_guid(
+        truncated, (nmo_guid_t){5u, 6u}));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(truncated, 801));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(truncated, 802));
+    nmo_chunk_close(truncated);
+    nmo_chunk_set_file_context(truncated, &read_context);
+
+    nmo_parameterin_state_t failed;
+    ASSERT_EQ(NMO_OK, nmo_parameterin_vtable.create(&failed, NULL, NULL));
+    failed.type_guid = (nmo_guid_t){7u, 8u};
+    failed.source = nmo_ref_from_raw(901);
+    failed.owner = nmo_ref_from_raw(902);
+    failed.is_shared = 1;
+    failed.is_disabled = 1;
+    ASSERT_NE(NMO_OK, nmo_parameterin_deserialize(
+        &failed, truncated, NULL, &deserialize_context));
+    ASSERT_EQ(7u, failed.type_guid.d1);
+    ASSERT_EQ(8u, failed.type_guid.d2);
+    ASSERT_EQ(901u, failed.source.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, failed.source.state);
+    ASSERT_EQ(902u, failed.owner.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, failed.owner.state);
+    ASSERT_EQ(1u, failed.is_shared);
+    ASSERT_EQ(1u, failed.is_disabled);
+
+    nmo_parameterin_vtable.destroy(&source, NULL, NULL);
+    nmo_parameterin_vtable.destroy(&loaded, NULL, NULL);
+    nmo_parameterin_vtable.destroy(&reloaded, NULL, NULL);
+    nmo_parameterin_vtable.destroy(&legacy_source, NULL, NULL);
+    nmo_parameterin_vtable.destroy(&legacy_loaded, NULL, NULL);
+    nmo_parameterin_vtable.destroy(&failed, NULL, NULL);
     nmo_arena_destroy(arena);
 }
 
@@ -2852,6 +2996,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, behaviorlink_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, material_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, parameterlocal_owner_round_trips_raw_id);
+    REGISTER_TEST(chunk_id_remap, parameterin_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, parameter_object_ref_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, parameteroperation_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, parameteroperation_legacy_sections_are_atomic);

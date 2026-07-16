@@ -337,13 +337,13 @@ static void assert_param_ids_match_proto(
             ASSERT_NOT_NULL(state);
             ASSERT_TRUE(nmo_guid_equals(params[i].type_guid, state->type_guid));
             if (params[i].default_value != NULL && params[i].default_value[0] != '\0') {
-                ASSERT_TRUE(state->source_id != 0u);
+                ASSERT_TRUE(nmo_parameterin_source_id(state) != 0u);
                 ASSERT_NOT_NULL(nmo_object_repository_find_by_id(
-                    fixture->repo, state->source_id));
+                    fixture->repo, nmo_parameterin_source_id(state)));
                 ASSERT_TRUE(report_contains_object_id(
                     report->created_objects,
                     report->created_object_count,
-                    state->source_id));
+                    nmo_parameterin_source_id(state)));
             }
         } else if (expected_class == NMO_CID_PARAMETEROUT) {
             nmo_parameterout_state_t *state =
@@ -411,7 +411,8 @@ static nmo_object_id_t parameter_source_id_for_object(nmo_object_t *obj)
     if (obj == NULL || nmo_object_get_class_id(obj) != NMO_CID_PARAMETERIN) {
         return 0u;
     }
-    return ((nmo_parameterin_state_t *)nmo_object_get_state(obj))->source_id;
+    return nmo_parameterin_source_id(
+        (nmo_parameterin_state_t *)nmo_object_get_state(obj));
 }
 
 static void assert_named_object_arrays_match(
@@ -1121,10 +1122,11 @@ TEST(edit_plan, executor_materializes_building_block_defaults) {
         ? (nmo_parameterin_state_t *)nmo_object_get_state(caret_obj)
         : NULL;
     ASSERT_NOT_NULL(caret_state);
-    ASSERT_TRUE(caret_state->source_id != 0u);
+    ASSERT_TRUE(nmo_parameterin_source_id(caret_state) != 0u);
 
     nmo_object_t *source_obj =
-        nmo_object_repository_find_by_id(fixture.repo, caret_state->source_id);
+        nmo_object_repository_find_by_id(
+            fixture.repo, nmo_parameterin_source_id(caret_state));
     nmo_parameter_state_t *source_state = source_obj
         ? nmo_parameter_get_mutable_state(source_obj)
         : NULL;
@@ -1138,7 +1140,8 @@ TEST(edit_plan, executor_materializes_building_block_defaults) {
 
     bool reported_created_source = false;
     for (size_t i = 0; i < report.created_object_count; ++i) {
-        if (report.created_objects[i].id == caret_state->source_id) {
+        if (report.created_objects[i].id ==
+            nmo_parameterin_source_id(caret_state)) {
             reported_created_source = true;
         }
     }
@@ -1480,10 +1483,11 @@ TEST(edit_plan, executor_resolves_symbolic_message_default_from_manager_data) {
                 ? (nmo_parameterin_state_t *)nmo_object_get_state(message_input_obj)
                 : NULL;
         ASSERT_NOT_NULL(message_input);
-        ASSERT_TRUE(message_input->source_id != 0u);
+        ASSERT_TRUE(nmo_parameterin_source_id(message_input) != 0u);
 
         nmo_object_t *source_obj =
-            nmo_object_repository_find_by_id(repo, message_input->source_id);
+            nmo_object_repository_find_by_id(
+                repo, nmo_parameterin_source_id(message_input));
         nmo_parameter_state_t *source_state = source_obj
             ? nmo_parameter_get_mutable_state(source_obj)
             : NULL;
@@ -1646,10 +1650,12 @@ TEST(edit_plan, executor_materializes_input_source_for_handle_value) {
         ? (nmo_parameterin_state_t *)nmo_object_get_state(text_in_obj)
         : NULL;
     ASSERT_NOT_NULL(text_in_state);
-    ASSERT_EQ(report.operations[1].result_id, text_in_state->source_id);
+    ASSERT_EQ(report.operations[1].result_id,
+              nmo_parameterin_source_id(text_in_state));
 
     nmo_object_t *source_obj =
-        nmo_object_repository_find_by_id(fixture.repo, text_in_state->source_id);
+        nmo_object_repository_find_by_id(
+            fixture.repo, nmo_parameterin_source_id(text_in_state));
     nmo_parameter_state_t *source_state = source_obj
         ? nmo_parameter_get_mutable_state(source_obj)
         : NULL;
@@ -1718,10 +1724,12 @@ TEST(edit_plan, executor_materializes_input_source_for_handle_bytes) {
         ? (nmo_parameterin_state_t *)nmo_object_get_state(text_in_obj)
         : NULL;
     ASSERT_NOT_NULL(text_in_state);
-    ASSERT_EQ(report.operations[1].result_id, text_in_state->source_id);
+    ASSERT_EQ(report.operations[1].result_id,
+              nmo_parameterin_source_id(text_in_state));
 
     nmo_object_t *source_obj =
-        nmo_object_repository_find_by_id(fixture.repo, text_in_state->source_id);
+        nmo_object_repository_find_by_id(
+            fixture.repo, nmo_parameterin_source_id(text_in_state));
     nmo_parameter_state_t *source_state = source_obj
         ? nmo_parameter_get_mutable_state(source_obj)
         : NULL;
@@ -1810,7 +1818,8 @@ TEST(edit_plan, executor_connects_parameter_to_prior_node_handle) {
         ? (nmo_parameterin_state_t *)nmo_object_get_state(target_obj)
         : NULL;
     ASSERT_NOT_NULL(target_state);
-    ASSERT_EQ(source_parameter_id, target_state->source_id);
+    ASSERT_EQ(source_parameter_id,
+              nmo_parameterin_source_id(target_state));
 
     bool reported_source_endpoint = false;
     for (size_t i = 0; i < report.changed_object_count; ++i) {

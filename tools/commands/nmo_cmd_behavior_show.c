@@ -322,19 +322,21 @@ static void behavior_show_add_data_flow_json(
                 if (!pin_obj || !pin_obj->state) continue;
                 const nmo_parameterin_state_t *pin =
                     (const nmo_parameterin_state_t *)pin_obj->state;
-                if (!pin || pin->source_id == 0) continue;
+                const nmo_object_id_t source_id =
+                    nmo_parameterin_source_id(pin);
+                if (source_id == 0) continue;
 
                 const behavior_show_flow_source_t *src = NULL;
                 for (size_t s = 0; s < source_count; s++) {
-                    if (sources[s].param_id == pin->source_id) {
+                    if (sources[s].param_id == source_id) {
                         src = &sources[s];
                         break;
                     }
                 }
 
                 nmo_object_t *src_obj =
-                    nmo_object_repository_find_by_id(repo, pin->source_id);
-                const char *src_name = src ? src->param_name : resolve_name(repo, pin->source_id);
+                    nmo_object_repository_find_by_id(repo, source_id);
+                const char *src_name = src ? src->param_name : resolve_name(repo, source_id);
                 const char *src_owner_name = src ? src->owner_name : "(external)";
                 nmo_object_id_t src_owner_id = src ? src->owner_id : 0;
                 nmo_guid_t type_guid = get_param_type_guid(pin_obj);
@@ -342,7 +344,7 @@ static void behavior_show_add_data_flow_json(
                 behavior_show_guid_to_string(type_guid, guid_buf, sizeof(guid_buf));
 
                 yyjson_mut_val *flow = yyjson_mut_obj(doc);
-                yyjson_mut_obj_add_uint(doc, flow, "source_id", pin->source_id);
+                yyjson_mut_obj_add_uint(doc, flow, "source_id", source_id);
                 nmo_cli_json_add_str_safe(doc, flow, "source_name",
                                           src_name ? src_name : "");
                 yyjson_mut_obj_add_uint(doc, flow, "source_owner_id", src_owner_id);
@@ -525,9 +527,11 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
                     const nmo_parameterin_state_t *pin =
                         (const nmo_parameterin_state_t *)
                             nmo_object_get_state(p);
-                    if (pin && pin->source_id != 0) {
+                    const nmo_object_id_t source_id =
+                        nmo_parameterin_source_id(pin);
+                    if (source_id != 0) {
                         yyjson_mut_obj_add_uint(doc, item, "source_id",
-                                                pin->source_id);
+                                                source_id);
                         if (pin->is_shared) {
                             yyjson_mut_obj_add_bool(doc, item, "is_shared",
                                                     true);
@@ -817,25 +821,29 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
             if (p && nmo_object_get_class_id(p) == NMO_CID_PARAMETERIN) {
                 const nmo_parameterin_state_t *pin =
                     (const nmo_parameterin_state_t *)nmo_object_get_state(p);
-                if (pin && pin->source_id != 0) {
+                const nmo_object_id_t source_id =
+                    nmo_parameterin_source_id(pin);
+                if (source_id != 0) {
                     if (pin->is_shared) {
                         /* Trace shared chain to find direct source */
                         uint32_t shared_hops = 0;
-                        nmo_object_id_t cur_id = pin->source_id;
+                        nmo_object_id_t cur_id = source_id;
                         while (shared_hops < 32) {
                             nmo_object_t *cur_obj = nmo_object_repository_find_by_id(repo, cur_id);
                             if (!cur_obj) break;
                             if (nmo_object_get_class_id(cur_obj) != NMO_CID_PARAMETERIN) break;
                             const nmo_parameterin_state_t *cur_pin =
                                 (const nmo_parameterin_state_t *)nmo_object_get_state(cur_obj);
-                            if (!cur_pin || cur_pin->source_id == 0) break;
+                            const nmo_object_id_t next_id =
+                                nmo_parameterin_source_id(cur_pin);
+                            if (next_id == 0) break;
                             if (!cur_pin->is_shared) {
                                 /* Reached direct source */
-                                cur_id = cur_pin->source_id;
+                                cur_id = next_id;
                                 shared_hops++;
                                 break;
                             }
-                            cur_id = cur_pin->source_id;
+                            cur_id = next_id;
                             shared_hops++;
                         }
                         const char *final_name = resolve_name(repo, cur_id);
@@ -848,7 +856,7 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
                                 shared_hops,
                                 shared_hops == 1 ? "" : "s");
                     } else {
-                        const char *src = resolve_name(repo, pin->source_id);
+                        const char *src = resolve_name(repo, source_id);
                         fprintf(c.out, "  <- %s", src ? src : "?");
                     }
                 }
@@ -1112,13 +1120,15 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
                 nmo_object_t *pin = nmo_object_repository_find_by_id(repo, param_id);
                 if (!pin || !pin->state) continue;
                 const nmo_parameterin_state_t *ps = (const nmo_parameterin_state_t *)pin->state;
-                if (ps->source_id == 0) continue;
+                const nmo_object_id_t source_id =
+                    nmo_parameterin_source_id(ps);
+                if (source_id == 0) continue;
 
                 /* Find source in our map */
                 const char *src_owner = NULL;
                 const char *src_name = NULL;
                 for (size_t s = 0; s < src_count; s++) {
-                    if (sources[s].param_id == ps->source_id) {
+                    if (sources[s].param_id == source_id) {
                         src_owner = sources[s].owner;
                         src_name = sources[s].param_name;
                         break;
@@ -1128,7 +1138,7 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
                 if (!src_owner) {
                     /* Source not in local scope -- might be external */
                     src_owner = "(external)";
-                    nmo_object_t *src_obj = nmo_object_repository_find_by_id(repo, ps->source_id);
+                    nmo_object_t *src_obj = nmo_object_repository_find_by_id(repo, source_id);
                     src_name = src_obj ? nmo_object_get_name(src_obj) : "?";
                 }
 

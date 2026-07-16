@@ -1479,15 +1479,17 @@ static void dump_print_data_flow(
             }
             const nmo_parameterin_state_t *pin =
                 (const nmo_parameterin_state_t *)pin_obj->state;
-            if (!pin || pin->source_id == 0) {
+            const nmo_object_id_t source_id =
+                nmo_parameterin_source_id(pin);
+            if (source_id == 0) {
                 continue;
             }
 
             const dump_flow_source_t *src =
-                dump_find_flow_source(sources, source_count, pin->source_id);
+                dump_find_flow_source(sources, source_count, source_id);
             const char *src_owner = src ? src->owner_name : "(external)";
             const char *src_name =
-                src ? src->param_name : resolve_name(repo, pin->source_id);
+                src ? src->param_name : resolve_name(repo, source_id);
             const char *pin_name = nmo_object_get_name(pin_obj);
             nmo_guid_t type_guid = get_param_type_guid(pin_obj);
             fprintf(out, "  %s.%s -> %s.%s  [%s]%s\n",
@@ -1545,23 +1547,25 @@ static void dump_add_data_flow_json(
                 }
                 const nmo_parameterin_state_t *pin =
                     (const nmo_parameterin_state_t *)pin_obj->state;
-                if (!pin || pin->source_id == 0) {
+                const nmo_object_id_t source_id =
+                    nmo_parameterin_source_id(pin);
+                if (source_id == 0) {
                     continue;
                 }
 
                 const dump_flow_source_t *src =
                     dump_find_flow_source(sources, source_count,
-                                          pin->source_id);
+                                          source_id);
                 const char *src_owner = src ? src->owner_name : "(external)";
                 const char *src_name =
-                    src ? src->param_name : resolve_name(repo, pin->source_id);
+                    src ? src->param_name : resolve_name(repo, source_id);
                 nmo_guid_t type_guid = get_param_type_guid(pin_obj);
                 char guid_buf[24];
                 dump_guid_to_string(type_guid, guid_buf, sizeof(guid_buf));
 
                 yyjson_mut_val *item = yyjson_mut_obj(doc);
                 yyjson_mut_obj_add_uint(doc, item, "source_id",
-                                        pin->source_id);
+                                        source_id);
                 nmo_cli_json_add_str_safe(doc, item, "source_name",
                                           src_name ? src_name : "");
                 yyjson_mut_obj_add_uint(doc, item, "source_owner_id",

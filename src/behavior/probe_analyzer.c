@@ -769,9 +769,11 @@ static void probe_collect_operation_parameter_behaviors(
         const nmo_parameterin_state_t *param_in =
             (const nmo_parameterin_state_t *)nmo_object_get_state(
                 parameter_obj);
-        if (param_in != NULL && param_in->source_id != 0u) {
+        const nmo_object_id_t source_id =
+            nmo_parameterin_source_id(param_in);
+        if (source_id != 0u) {
             owner = probe_find_parameter_owner_behavior(repo,
-                                                        param_in->source_id);
+                                                        source_id);
             probe_add_related_behavior(ids, count, capacity, owner);
         }
     }
@@ -787,7 +789,7 @@ static void probe_collect_operation_parameter_behaviors(
         }
         const nmo_parameterin_state_t *param_in =
             (const nmo_parameterin_state_t *)nmo_object_get_state(object);
-        if (param_in == NULL || param_in->source_id != parameter_id) {
+        if (nmo_parameterin_source_id(param_in) != parameter_id) {
             continue;
         }
         owner = probe_find_parameter_owner_behavior(

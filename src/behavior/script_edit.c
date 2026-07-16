@@ -941,8 +941,8 @@ static nmo_status_t script_edit_create_parameter_object(
             return NMO_ERR_INVALID_STATE;
         }
         input_state->type_guid = type_guid;
-        input_state->owner_id = owner_id;
-        input_state->source_id = 0u;
+        nmo_parameterin_set_owner_id(input_state, owner_id);
+        nmo_parameterin_set_source_id(input_state, NMO_OBJECT_ID_NONE);
         input_state->is_shared = 0u;
         input_state->is_disabled = 0u;
         if (default_value != NULL) {
@@ -971,7 +971,7 @@ static nmo_status_t script_edit_create_parameter_object(
                     }
                 }
             }
-            input_state->source_id = source_id;
+            nmo_parameterin_set_source_id(input_state, source_id);
             input_state->is_shared = 0u;
         }
     } else {
@@ -1792,8 +1792,10 @@ static nmo_status_t validate_parameter_links(
             if (!nmo_behavior_index_find(index, nmo_object_get_id(object))) {
                 continue;
             }
-            if (state->source_id != 0) {
-                source = nmo_object_repository_find_by_id(repo, state->source_id);
+            const nmo_object_id_t source_id =
+                nmo_parameterin_source_id(state);
+            if (source_id != 0) {
+                source = nmo_object_repository_find_by_id(repo, source_id);
                 if (!source) {
                     return NMO_ERR_VALIDATION_FAILED;
                 }
@@ -3820,14 +3822,16 @@ static nmo_status_t script_edit_disconnect_parameter_internal(
     if (!tx || !tx->edit || !target_state || target_parameter_id == 0u) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
-    if (target_state->source_id == 0u) {
+    const nmo_object_id_t source_id =
+        nmo_parameterin_source_id(target_state);
+    if (source_id == 0u) {
         return NMO_OK;
     }
 
     if (target_state->is_shared == 0u) {
         source_state = script_edit_find_parameterout_state_in_repo(
             nmo_workspace_internal_repository(tx->workspace),
-            target_state->source_id,
+            source_id,
             NULL);
         if (source_state) {
             rc = nmo_workspace_edit_snapshot_bytes(tx->edit, source_state,
@@ -3848,7 +3852,7 @@ static nmo_status_t script_edit_disconnect_parameter_internal(
     if (rc != NMO_OK) {
         return rc;
     }
-    target_state->source_id = 0u;
+    nmo_parameterin_set_source_id(target_state, NMO_OBJECT_ID_NONE);
     target_state->is_shared = 0u;
     nmo_script_edit_mark(tx, NMO_WORKSPACE_EDIT_OBJECT_STATE |
                                NMO_WORKSPACE_EDIT_REFERENCES);
@@ -3887,10 +3891,12 @@ static bool script_edit_parameter_has_live_connections(
             if (!state) {
                 continue;
             }
-            if (nmo_object_get_id(object) == parameter_id && state->source_id != 0u) {
+            const nmo_object_id_t source_id =
+                nmo_parameterin_source_id(state);
+            if (nmo_object_get_id(object) == parameter_id && source_id != 0u) {
                 return true;
             }
-            if (state->source_id == parameter_id) {
+            if (source_id == parameter_id) {
                 return true;
             }
         } else if (class_id == NMO_CID_PARAMETEROUT) {
@@ -3970,12 +3976,12 @@ static nmo_status_t script_edit_detach_parameter_references(
         if (other_class == NMO_CID_PARAMETERIN) {
             nmo_parameterin_state_t *state =
                 (nmo_parameterin_state_t *)nmo_object_get_state(other);
-            if (state && state->source_id == parameter_id) {
+            if (nmo_parameterin_source_id(state) == parameter_id) {
                 rc = nmo_workspace_edit_snapshot_bytes(tx->edit, state, sizeof(*state));
                 if (rc != NMO_OK) {
                     return rc;
                 }
-                state->source_id = 0u;
+                nmo_parameterin_set_source_id(state, NMO_OBJECT_ID_NONE);
                 state->is_shared = 0u;
             }
         } else if (other_class == NMO_CID_PARAMETEROUT) {
@@ -4233,9 +4239,11 @@ NMO_API nmo_status_t nmo_script_edit_ensure_input_parameter_source(
         return NMO_ERR_INVALID_STATE;
     }
 
-    if (input_state->source_id != 0u) {
+    const nmo_object_id_t existing_source_id =
+        nmo_parameterin_source_id(input_state);
+    if (existing_source_id != 0u) {
         if (out_source_parameter_id != NULL) {
-            *out_source_parameter_id = input_state->source_id;
+            *out_source_parameter_id = existing_source_id;
         }
         return NMO_OK;
     }
@@ -4247,7 +4255,7 @@ NMO_API nmo_status_t nmo_script_edit_ensure_input_parameter_source(
     rc = script_edit_create_parameter_object(
         tx,
         NMO_CID_PARAMETER,
-        input_state->owner_id,
+        nmo_parameterin_owner_id(input_state),
         nmo_object_get_name(input_object),
         input_state->type_guid,
         NULL,
@@ -4257,7 +4265,7 @@ NMO_API nmo_status_t nmo_script_edit_ensure_input_parameter_source(
         return rc;
     }
 
-    input_state->source_id = source_id;
+    nmo_parameterin_set_source_id(input_state, source_id);
     input_state->is_shared = 0u;
     nmo_script_edit_mark(tx, NMO_WORKSPACE_EDIT_OBJECT_STATE |
                                NMO_WORKSPACE_EDIT_REFERENCES);
@@ -4327,7 +4335,10 @@ NMO_API nmo_status_t nmo_script_edit_connect_parameter(
     if (!target_state) {
         return NMO_ERR_INVALID_STATE;
     }
-    if (target_state->source_id != 0u && target_state->source_id != source_parameter_id) {
+    const nmo_object_id_t existing_source_id =
+        nmo_parameterin_source_id(target_state);
+    if (existing_source_id != 0u &&
+        existing_source_id != source_parameter_id) {
         rc = script_edit_disconnect_parameter_internal(tx, target_state,
                                                        target_parameter_id);
         if (rc != NMO_OK) {
@@ -4339,7 +4350,7 @@ NMO_API nmo_status_t nmo_script_edit_connect_parameter(
     if (rc != NMO_OK) {
         return rc;
     }
-    target_state->source_id = source_parameter_id;
+    nmo_parameterin_set_source_id(target_state, source_parameter_id);
     target_state->is_shared =
         nmo_object_get_class_id(source_object) == NMO_CID_PARAMETERIN ? 1u : 0u;
 

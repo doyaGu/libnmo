@@ -333,8 +333,8 @@ static bool create_parameter_output_fold_fixture(
     anchor_out->base.type_guid = type_guid;
     child_out->base.type_guid = type_guid;
     external_in->type_guid = type_guid;
-    external_in->source_id = child_out_param;
-    external_in->owner_id = external;
+    nmo_parameterin_set_source_id(external_in, child_out_param);
+    nmo_parameterin_set_owner_id(external_in, external);
 
     test_append_id(&owner_state->scripts, parent);
     test_append_id(&parent_state->sub_behaviors, anchor);
@@ -428,8 +428,8 @@ static bool create_parameter_input_fold_fixture(
     anchor_in->type_guid = type_guid;
     child_in->type_guid = type_guid;
     external_out->base.type_guid = type_guid;
-    child_in->source_id = external_out_param;
-    child_in->owner_id = child;
+    nmo_parameterin_set_source_id(child_in, external_out_param);
+    nmo_parameterin_set_owner_id(child_in, child);
 
     test_append_id(&owner_state->scripts, parent);
     test_append_id(&parent_state->sub_behaviors, anchor);
@@ -590,7 +590,8 @@ TEST(beh_rewrite, fold_apply_retargets_parameter_out_to_anchor_output_parameter)
         (nmo_parameterin_state_t *)nmo_object_get_state(
             test_find_object(session, external_input_parameter));
     ASSERT_NOT_NULL(external_in);
-    ASSERT_EQ(anchor_output_parameter, external_in->source_id);
+    ASSERT_EQ(anchor_output_parameter,
+              nmo_parameterin_source_id(external_in));
     ASSERT_NULL(test_find_object(session, child));
 
     nmo_behavior_edit_fold_report_free(&report);
@@ -632,7 +633,8 @@ TEST(beh_rewrite, fold_apply_retargets_parameter_in_to_anchor_input_parameter)
         (nmo_parameterin_state_t *)nmo_object_get_state(
             test_find_object(session, anchor_input_parameter));
     ASSERT_NOT_NULL(anchor_in);
-    ASSERT_EQ(external_output_parameter, anchor_in->source_id);
+    ASSERT_EQ(external_output_parameter,
+              nmo_parameterin_source_id(anchor_in));
     ASSERT_NULL(test_find_object(session, child));
 
     nmo_behavior_edit_fold_report_free(&report);

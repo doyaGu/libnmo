@@ -1308,7 +1308,8 @@ static nmo_status_t rewrite_fold_rewire_parameter_boundary_in_edit(
                 "Failed to snapshot fold anchor input parameter");
             return rc;
         }
-        new_target_in->source_id = edge->source_parameter_id;
+        nmo_parameterin_set_source_id(new_target_in,
+                                      edge->source_parameter_id);
         new_target_in->is_shared = edge->shared ? 1u : 0u;
 
         nmo_object_t *source_obj =
@@ -1376,7 +1377,7 @@ static nmo_status_t rewrite_fold_rewire_parameter_boundary_in_edit(
                 "Failed to snapshot fold parameter input");
             return rc;
         }
-        target_in->source_id = new_parameter_id;
+        nmo_parameterin_set_source_id(target_in, new_parameter_id);
         target_in->is_shared = edge->shared ? 1u : 0u;
 
         nmo_object_t *new_source_obj =

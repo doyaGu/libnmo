@@ -51,11 +51,48 @@ static const nmo_type_field_t nmo_parameterin_fields[] = {
                     sizeof(nmo_object_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_parameterin_state_t, type_guid, CKPGUID_GUID),
-    NMO_FIELD_REF(nmo_parameterin_state_t, source_id),
-    NMO_FIELD_REF(nmo_parameterin_state_t, owner_id),
+    NMO_FIELD_REF(nmo_parameterin_state_t, source),
+    NMO_FIELD_REF(nmo_parameterin_state_t, owner),
     NMO_FIELD(nmo_parameterin_state_t, is_shared, CKPGUID_UINT8),
     NMO_FIELD(nmo_parameterin_state_t, is_disabled, CKPGUID_UINT8)
 };
+
+static int nmo_parameterin_is_parameter_class(
+    nmo_class_id_t class_id,
+    const nmo_type_registry_t *types)
+{
+    const nmo_class_id_t bases[] = {
+        NMO_CID_PARAMETER,
+        NMO_CID_PARAMETERIN,
+        NMO_CID_PARAMETEROUT,
+        NMO_CID_PARAMETERLOCAL,
+        NMO_CID_PARAMETEROPERATION,
+    };
+    for (size_t i = 0; i < sizeof(bases) / sizeof(bases[0]); ++i) {
+        if (class_id == bases[i] ||
+            (types != NULL && nmo_type_registry_is_class_derived_from(
+                types, (uint32_t)class_id, (uint32_t)bases[i]))) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void nmo_parameterin_check_source(
+    nmo_ref_t *ref,
+    const nmo_object_repository_t *repository,
+    const nmo_type_registry_t *types)
+{
+    if (ref == NULL || ref->state != NMO_REF_RESOLVED || repository == NULL) {
+        return;
+    }
+    const nmo_object_t *target =
+        nmo_object_repository_find_by_id(repository, ref->id);
+    if (target != NULL && !nmo_parameterin_is_parameter_class(
+            nmo_object_get_class_id(target), types)) {
+        ref->state = NMO_REF_CLASS_MISMATCH;
+    }
+}
 
 /* =============================================================================
  * CKParameterIn DESERIALIZATION/SERIALIZATION
@@ -83,75 +120,88 @@ nmo_status_t nmo_parameterin_deserialize(
     nmo_status_t result = nmo_object_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;
 
-    uint32_t data_version = nmo_chunk_get_data_version(chunk);
+    const uint32_t data_version = nmo_chunk_get_data_version(chunk);
+    nmo_guid_t type_guid = NMO_GUID_NULL;
+    nmo_ref_t source = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+    nmo_ref_t owner = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+    uint8_t is_shared = 0;
+    uint8_t is_disabled = 0;
 
     if (data_version >= 1) {
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETERIN_DATASHARED) == NMO_OK) {
-            NMO_RETURN_IF_ERROR(nmo_chunk_read_guid(chunk, &out_state->type_guid));
-            nmo_parameterin_convert_legacy_guid(&out_state->type_guid);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_guid(chunk, &type_guid));
+            nmo_parameterin_convert_legacy_guid(&type_guid);
             if (data_version < 5) {
-                nmo_object_id_t legacy_id = 0;
-                NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &legacy_id));
+                nmo_ref_t legacy = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+                NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &legacy));
             }
-            NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &out_state->source_id));
-            out_state->is_shared = 1;
+            NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &source));
+            is_shared = 1;
         } else if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETERIN_DATASOURCE) == NMO_OK) {
-            NMO_RETURN_IF_ERROR(nmo_chunk_read_guid(chunk, &out_state->type_guid));
-            nmo_parameterin_convert_legacy_guid(&out_state->type_guid);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_guid(chunk, &type_guid));
+            nmo_parameterin_convert_legacy_guid(&type_guid);
             if (data_version < 5) {
-                nmo_object_id_t legacy_id = 0;
-                NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &legacy_id));
+                nmo_ref_t legacy = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+                NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &legacy));
             }
-            NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &out_state->source_id));
-            out_state->is_shared = 0;
+            NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &source));
         } else if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETERIN_DEFAULTDATA) == NMO_OK) {
-            NMO_RETURN_IF_ERROR(nmo_chunk_read_guid(chunk, &out_state->type_guid));
-            nmo_parameterin_convert_legacy_guid(&out_state->type_guid);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_guid(chunk, &type_guid));
+            nmo_parameterin_convert_legacy_guid(&type_guid);
 
-            nmo_object_id_t owner_id = 0;
-            nmo_object_id_t out_source_id = 0;
-            nmo_object_id_t param_id = 0;
-            NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &owner_id));
-            NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &out_source_id));
-            NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &param_id));
+            nmo_ref_t out_source = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+            nmo_ref_t parameter = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+            NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &owner));
+            NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &out_source));
+            NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &parameter));
 
-            out_state->owner_id = owner_id;
-
-            if (out_source_id != 0) {
-                out_state->source_id = out_source_id;
-                out_state->is_shared = 0;
-            } else if (param_id != 0) {
-                out_state->source_id = param_id;
-                out_state->is_shared = 1;
+            if (nmo_ref_serialized_id(&out_source) != NMO_OBJECT_ID_NONE) {
+                source = out_source;
+            } else if (nmo_ref_serialized_id(&parameter) != NMO_OBJECT_ID_NONE) {
+                source = parameter;
+                is_shared = 1;
             }
         }
 
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETERIN_DISABLED) == NMO_OK) {
-            out_state->is_disabled = 1;
+            is_disabled = 1;
         }
     } else {
         /* Legacy path: CK2 uses DEFAULTDATA/OWNER/INSHARED/OUTSOURCE */
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETERIN_DEFAULTDATA) == NMO_OK) {
-            NMO_RETURN_IF_ERROR(nmo_chunk_read_guid(chunk, &out_state->type_guid));
-            nmo_parameterin_convert_legacy_guid(&out_state->type_guid);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_guid(chunk, &type_guid));
+            nmo_parameterin_convert_legacy_guid(&type_guid);
         }
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETERIN_OWNER) == NMO_OK) {
-            NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &out_state->owner_id));
+            NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &owner));
         }
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETERIN_INSHARED) == NMO_OK) {
-            NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &out_state->source_id));
-            out_state->is_shared = 1;
+            NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &source));
+            is_shared = 1;
         }
-        if (!out_state->is_shared &&
+        if (!is_shared &&
             nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETERIN_OUTSOURCE) == NMO_OK) {
-            NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &out_state->source_id));
+            NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &source));
         }
     }
 
     /* Check if disabled */
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARAMETERIN_DISABLED) == NMO_OK) {
-        out_state->is_disabled = 1;
+        is_disabled = 1;
     }
+
+    const nmo_object_repository_t *repository =
+        (const nmo_object_repository_t *)
+            nmo_deserialize_context_get_repository(context);
+    const nmo_type_registry_t *types =
+        nmo_deserialize_context_get_type_registry(context);
+    nmo_ref_check_class(&owner, repository, types, NMO_CID_BEHAVIOR);
+    nmo_parameterin_check_source(&source, repository, types);
+    out_state->type_guid = type_guid;
+    out_state->source = source;
+    out_state->owner = owner;
+    out_state->is_shared = is_shared;
+    out_state->is_disabled = is_disabled;
 
     NMO_RETURN_OK();
 }
@@ -189,10 +239,10 @@ nmo_status_t nmo_parameterin_serialize(
         result = nmo_chunk_write_guid(out_chunk, in_state->type_guid);
         if (result != NMO_OK) return result;
 
-        if (in_state->owner_id != 0) {
+        if (nmo_ref_serialized_id(&in_state->owner) != NMO_OBJECT_ID_NONE) {
             result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_PARAMETERIN_OWNER);
             if (result != NMO_OK) return result;
-            result = nmo_chunk_write_object_id(out_chunk, in_state->owner_id);
+            result = nmo_ref_write(out_chunk, &in_state->owner);
             if (result != NMO_OK) return result;
         }
 
@@ -204,7 +254,7 @@ nmo_status_t nmo_parameterin_serialize(
             if (result != NMO_OK) return result;
         }
 
-        result = nmo_chunk_write_object_id(out_chunk, in_state->source_id);
+        result = nmo_ref_write(out_chunk, &in_state->source);
         if (result != NMO_OK) return result;
 
         if (in_state->is_disabled) {
@@ -212,6 +262,29 @@ nmo_status_t nmo_parameterin_serialize(
             if (result != NMO_OK) return result;
         }
 
+        NMO_RETURN_OK();
+    }
+
+    if (nmo_ref_serialized_id(&in_state->owner) != NMO_OBJECT_ID_NONE) {
+        const nmo_ref_t none = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+        result = nmo_chunk_write_identifier(
+            out_chunk, CK_STATESAVE_PARAMETERIN_DEFAULTDATA);
+        if (result != NMO_OK) return result;
+        result = nmo_chunk_write_guid(out_chunk, in_state->type_guid);
+        if (result != NMO_OK) return result;
+        result = nmo_ref_write(out_chunk, &in_state->owner);
+        if (result != NMO_OK) return result;
+        result = nmo_ref_write(
+            out_chunk, in_state->is_shared ? &none : &in_state->source);
+        if (result != NMO_OK) return result;
+        result = nmo_ref_write(
+            out_chunk, in_state->is_shared ? &in_state->source : &none);
+        if (result != NMO_OK) return result;
+        if (in_state->is_disabled) {
+            result = nmo_chunk_write_identifier(
+                out_chunk, CK_STATESAVE_PARAMETERIN_DISABLED);
+            if (result != NMO_OK) return result;
+        }
         NMO_RETURN_OK();
     }
 
@@ -227,11 +300,11 @@ nmo_status_t nmo_parameterin_serialize(
     if (result != NMO_OK) return result;
 
     if (data_version < 5) {
-        result = nmo_chunk_write_object_id(out_chunk, in_state->source_id);
+        result = nmo_ref_write(out_chunk, &in_state->source);
         if (result != NMO_OK) return result;
     }
 
-    result = nmo_chunk_write_object_id(out_chunk, in_state->source_id);
+    result = nmo_ref_write(out_chunk, &in_state->source);
     if (result != NMO_OK) return result;
 
     /* Write disabled flag if needed */
@@ -289,6 +362,9 @@ static nmo_status_t nmo_parameterin_pre_delete(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "Invalid arguments to nmo_parameterin_pre_delete");
     }
+    nmo_parameterin_state_t *state = (nmo_parameterin_state_t *)instance;
+    state->source = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+    state->owner = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     NMO_RETURN_OK();
 }
 

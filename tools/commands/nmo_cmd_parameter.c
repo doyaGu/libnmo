@@ -795,8 +795,8 @@ static int parameter_show_run(nmo_cmd_ctx_t *ctx, uint32_t object_id,
         if (cid == NMO_CID_PARAMETERIN) {
             const nmo_parameterin_state_t *pin_state =
                 (const nmo_parameterin_state_t *)state;
-            owner_id = pin_state->owner_id;
-            source_id = pin_state->source_id;
+            owner_id = nmo_parameterin_owner_id(pin_state);
+            source_id = nmo_parameterin_source_id(pin_state);
             is_shared = pin_state->is_shared;
             type_guid = pin_state->type_guid;
         } else if (cid == NMO_CID_PARAMETEROUT) {
@@ -1077,8 +1077,8 @@ static void dump_parameter_details(nmo_object_t *obj,
 
     if (cid == NMO_CID_PARAMETERIN) {
         const nmo_parameterin_state_t *pin_state = (const nmo_parameterin_state_t *)state;
-        owner_id = pin_state->owner_id;
-        source_id = pin_state->source_id;
+        owner_id = nmo_parameterin_owner_id(pin_state);
+        source_id = nmo_parameterin_source_id(pin_state);
         is_shared = pin_state->is_shared;
     } else if (cid == NMO_CID_PARAMETEROUT) {
         const nmo_parameterout_state_t *pout_state = (const nmo_parameterout_state_t *)state;
@@ -1369,8 +1369,8 @@ static int parameter_dump_run(nmo_cmd_ctx_t *ctx, const parameter_dump_args_t *a
                 if (class_id == NMO_CID_PARAMETERIN) {
                     const nmo_parameterin_state_t *pin = (const nmo_parameterin_state_t *)state;
                     tg = pin->type_guid;
-                    owner_id = pin->owner_id;
-                    source_id = pin->source_id;
+                    owner_id = nmo_parameterin_owner_id(pin);
+                    source_id = nmo_parameterin_source_id(pin);
                     is_shared = pin->is_shared;
                 } else if (class_id == NMO_CID_PARAMETEROUT) {
                     const nmo_parameterout_state_t *pout = (const nmo_parameterout_state_t *)state;

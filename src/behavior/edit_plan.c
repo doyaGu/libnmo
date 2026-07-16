@@ -2744,7 +2744,7 @@ static nmo_object_id_t edit_plan_get_parameterin_source(
     nmo_parameterin_state_t *state = object
         ? (nmo_parameterin_state_t *)nmo_object_get_state(object)
         : NULL;
-    return state ? state->source_id : 0u;
+    return nmo_parameterin_source_id(state);
 }
 
 static void edit_plan_get_behavior_link_endpoints(
@@ -2880,7 +2880,7 @@ static nmo_status_t edit_report_note_parameter_detach_impacts(
         if (nmo_object_get_class_id(object) == NMO_CID_PARAMETERIN) {
             const nmo_parameterin_state_t *state =
                 (const nmo_parameterin_state_t *)nmo_object_get_state(object);
-            if (state != NULL && state->source_id == parameter_id) {
+            if (nmo_parameterin_source_id(state) == parameter_id) {
                 NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
                     report,
                     nmo_object_get_id(object),
@@ -4238,13 +4238,15 @@ static nmo_status_t edit_report_add_input_parameter_handles(
         nmo_parameterin_state_t *param_state = param_obj != NULL
             ? (nmo_parameterin_state_t *)nmo_object_get_state(param_obj)
             : NULL;
-        if (param_state != NULL && param_state->source_id != 0u) {
+        const nmo_object_id_t source_id =
+            nmo_parameterin_source_id(param_state);
+        if (source_id != 0u) {
             NMO_RETURN_IF_ERROR(edit_report_add_named_handle(
                 report,
                 operation_index,
                 "input_param_source",
                 repo,
-                param_state->source_id));
+                source_id));
         }
     }
     return NMO_OK;

@@ -765,11 +765,13 @@ static bool add_runtime_data_edges(nmo_script_edit_graph_t *graph)
             nmo_script_edit_data_edge_t edge = {0};
             nmo_script_edit_endpoint_t owner = {0};
 
-            if (!state || state->source_id == 0u) {
+            const nmo_object_id_t source_id =
+                nmo_parameterin_source_id(state);
+            if (source_id == 0u) {
                 continue;
             }
 
-            edge.source_parameter_id = state->source_id;
+            edge.source_parameter_id = source_id;
             edge.target_parameter_id = node->object_id;
             edge.shared = state->is_shared != 0u;
             edge.type_guid = state->type_guid;

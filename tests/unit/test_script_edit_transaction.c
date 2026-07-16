@@ -150,8 +150,10 @@ static void assert_behavior_owner_checks_green(nmo_object_repository_t *repo,
             if (!nmo_behavior_index_find(index, nmo_object_get_id(object))) {
                 continue;
             }
-            if (state->source_id != 0) {
-                source = nmo_object_repository_find_by_id(repo, state->source_id);
+            const nmo_object_id_t source_id =
+                nmo_parameterin_source_id(state);
+            if (source_id != 0) {
+                source = nmo_object_repository_find_by_id(repo, source_id);
                 ASSERT_NOT_NULL(source);
                 if (state->is_shared) {
                     ASSERT_EQ(NMO_CID_PARAMETERIN, nmo_object_get_class_id(source));
@@ -516,9 +518,10 @@ TEST(script_edit_transaction, add_node_keeps_ballance_script_edit_validation_gre
         float caret_value = 0.0f;
         ASSERT_TRUE(caret_id != 0u);
         ASSERT_NOT_NULL(caret_state);
-        ASSERT_TRUE(caret_state->source_id != 0u);
+        ASSERT_TRUE(nmo_parameterin_source_id(caret_state) != 0u);
         nmo_object_t *source_obj =
-            nmo_object_repository_find_by_id(repo, caret_state->source_id);
+            nmo_object_repository_find_by_id(
+                repo, nmo_parameterin_source_id(caret_state));
         nmo_parameter_state_t *source_state = source_obj
             ? nmo_parameter_get_mutable_state(source_obj)
             : NULL;
