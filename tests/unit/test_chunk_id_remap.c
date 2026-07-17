@@ -594,6 +594,29 @@ TEST(chunk_id_remap, behavior_unresolved_ref_round_trips_raw_id) {
     ASSERT_EQ(903u, NMO_ARRAY_DATA(
         nmo_behavior_ref_t, &failed.inputs)[0].ref.raw_id);
 
+    nmo_chunk_t *cross_section_subchunks = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(cross_section_subchunks);
+    cross_section_subchunks->class_id = NMO_CID_BEHAVIOR;
+    cross_section_subchunks->chunk_version = NMO_CHUNK_VERSION4;
+    cross_section_subchunks->data_version = 7;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(cross_section_subchunks));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_section_subchunks, CK_STATESAVE_BEHAVIORSUBBEHAV));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(cross_section_subchunks, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_section_subchunks, 0x7F123456u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(cross_section_subchunks, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(cross_section_subchunks, 0));
+    nmo_chunk_close(cross_section_subchunks);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_behavior_deserialize(
+        &failed, cross_section_subchunks, NULL, NULL));
+    nmo_chunk_parser_state_t *parser =
+        (nmo_chunk_parser_state_t *)cross_section_subchunks->parser_state;
+    ASSERT_NOT_NULL(parser);
+    ASSERT_EQ(parser->prev_identifier_pos + 3u, parser->current_pos);
+    ASSERT_EQ(0x12345678u, failed.flags);
+    ASSERT_EQ(1u, failed.inputs.count);
+
     nmo_array_dispose(&source.inputs);
     nmo_array_dispose(&loaded.inputs);
     nmo_array_dispose(&reloaded.inputs);
