@@ -1220,7 +1220,19 @@ nmo_status_t nmo_chunk_parser_read_subchunk(nmo_chunk_parser_t *p,
                 "Subchunk size is too small");
         }
 
-        size_t payload_consumed = (size_t)chunk_size + (size_t)id_count + (size_t)chunk_count;
+        size_t payload_consumed = 0;
+        if (!nmo_safe_add_size((size_t) chunk_size,
+                               (size_t) id_count,
+                               &payload_consumed) ||
+            !nmo_safe_add_size(payload_consumed,
+                               (size_t) chunk_count,
+                               &payload_consumed)) {
+            NMO_PARSER_RETURN_ERROR_ROLLBACK(
+                p,
+                start_pos,
+                NMO_ERR_INVALID_FORMAT,
+                "Subchunk payload size overflow");
+        }
         size_t payload_capacity = (size_t)size_dwords - (size_t)header_without_manager_dwords;
         if (payload_consumed > payload_capacity) {
             NMO_PARSER_RETURN_ERROR_ROLLBACK(
