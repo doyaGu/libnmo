@@ -29,22 +29,17 @@ nmo_status_t nmo_chunk_write_array(nmo_chunk_t *chunk,
     }
 
     if (count > (size_t) INT_MAX || elem_size > (size_t) INT_MAX) {
-        nmo_status_t result = nmo_chunk_write_dword(chunk, 0);
-        NMO_RETURN_IF_ERROR(result);
-        return nmo_chunk_write_dword(chunk, 0);
+        NMO_CHUNK_RETURN_INVALID_ARGUMENT(
+            "Array count or element size is not encodable");
     }
 
     if (count > SIZE_MAX / elem_size) {
-        nmo_status_t result = nmo_chunk_write_dword(chunk, 0);
-        NMO_RETURN_IF_ERROR(result);
-        return nmo_chunk_write_dword(chunk, 0);
+        NMO_CHUNK_RETURN_INVALID_ARGUMENT("Array byte size overflow");
     }
 
     size_t total_size = count * elem_size;
     if (total_size > (size_t) INT_MAX) {
-        nmo_status_t result = nmo_chunk_write_dword(chunk, 0);
-        NMO_RETURN_IF_ERROR(result);
-        return nmo_chunk_write_dword(chunk, 0);
+        NMO_CHUNK_RETURN_INVALID_ARGUMENT("Array byte size is not encodable");
     }
 
     nmo_status_t result = nmo_chunk_write_dword(chunk, (uint32_t) total_size);
