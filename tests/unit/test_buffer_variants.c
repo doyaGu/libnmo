@@ -154,9 +154,9 @@ TEST(buffer_variants, edge_cases) {
     int result = nmo_chunk_writer_write_buffer_nosize(writer, 0, NULL);
     ASSERT_EQ(result, NMO_OK);
 
-    // Test NULL buffer
+    // A non-zero size requires an actual source buffer.
     result = nmo_chunk_writer_write_buffer_nosize(writer, 10, NULL);
-    ASSERT_EQ(result, NMO_OK);
+    ASSERT_EQ(result, NMO_ERR_INVALID_ARGUMENT);
 
     // Write a marker
     result = nmo_chunk_writer_write_int(writer, 555);
