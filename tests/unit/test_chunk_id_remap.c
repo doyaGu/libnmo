@@ -1774,6 +1774,79 @@ TEST(chunk_id_remap, parameter_object_ref_round_trips_raw_id) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, parameter_copy_is_deep_and_atomic) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_parameter_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_parameter_vtable.create(&source, NULL, NULL));
+    source.type_guid = CKPGUID_INT;
+    source.mode = CKPARAM_MODE_BUFFER;
+    source.has_state = true;
+    uint8_t source_bytes[] = {0x11u, 0x22u};
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &source.buffer_data, &source_bytes[0]));
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &source.buffer_data, &source_bytes[1]));
+    source.subchunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(source.subchunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(source.subchunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(source.subchunk, 0xaabbccddu));
+    nmo_chunk_close(source.subchunk);
+
+    nmo_parameter_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_parameter_vtable.create(&copied, NULL, NULL));
+    uint8_t old_byte = 0xccu;
+    ASSERT_EQ(NMO_OK, nmo_array_append(&copied.buffer_data, &old_byte));
+    ASSERT_EQ(NMO_OK, nmo_parameter_vtable.copy(
+        &source, &copied, NULL, arena));
+    ASSERT_NE(source.buffer_data.data, copied.buffer_data.data);
+    ASSERT_EQ(2u, copied.buffer_data.count);
+    ASSERT_EQ(0x11u, NMO_ARRAY_DATA(uint8_t, &copied.buffer_data)[0]);
+    ASSERT_NE(source.subchunk, copied.subchunk);
+    NMO_ARRAY_DATA(uint8_t, &source.buffer_data)[0] = 0x33u;
+    ASSERT_EQ(0x11u, NMO_ARRAY_DATA(uint8_t, &copied.buffer_data)[0]);
+
+    fail_after_allocator_state_t allocator_state = {
+        .allowed_allocations = 1,
+    };
+    nmo_allocator_t failing_allocator = {
+        .alloc = fail_after_alloc,
+        .free = fail_after_free,
+        .user_data = &allocator_state,
+    };
+    nmo_parameter_state_t failing_source;
+    ASSERT_EQ(NMO_OK, nmo_parameter_vtable.create(
+        &failing_source, NULL, NULL));
+    nmo_array_dispose(&failing_source.buffer_data);
+    ASSERT_EQ(NMO_OK, nmo_array_init(
+        &failing_source.buffer_data, sizeof(uint8_t), 2,
+        &failing_allocator));
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &failing_source.buffer_data, &source_bytes[0]));
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &failing_source.buffer_data, &source_bytes[1]));
+    allocator_state.allowed_allocations = allocator_state.allocation_count;
+
+    nmo_parameter_state_t preserved;
+    ASSERT_EQ(NMO_OK, nmo_parameter_vtable.create(&preserved, NULL, NULL));
+    uint8_t preserved_byte = 0xddu;
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &preserved.buffer_data, &preserved_byte));
+    preserved.object_ref = nmo_ref_from_raw(901);
+    ASSERT_EQ(NMO_ERR_NOMEM, nmo_parameter_vtable.copy(
+        &failing_source, &preserved, NULL, arena));
+    ASSERT_EQ(1u, preserved.buffer_data.count);
+    ASSERT_EQ(0xddu, NMO_ARRAY_DATA(uint8_t, &preserved.buffer_data)[0]);
+    ASSERT_EQ(901u, preserved.object_ref.raw_id);
+
+    nmo_parameter_vtable.destroy(&source, NULL, NULL);
+    nmo_parameter_vtable.destroy(&copied, NULL, NULL);
+    nmo_parameter_vtable.destroy(&failing_source, NULL, NULL);
+    nmo_parameter_vtable.destroy(&preserved, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, parameteroperation_refs_round_trip_and_failure_is_atomic) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
     ASSERT_NOT_NULL(arena);
@@ -6901,6 +6974,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, parameterin_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, parameterout_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, parameter_object_ref_round_trips_raw_id);
+    REGISTER_TEST(chunk_id_remap, parameter_copy_is_deep_and_atomic);
     REGISTER_TEST(chunk_id_remap, parameteroperation_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, parameteroperation_legacy_sections_are_atomic);
     REGISTER_TEST(chunk_id_remap, camera_and_light_failures_keep_previous_state);
