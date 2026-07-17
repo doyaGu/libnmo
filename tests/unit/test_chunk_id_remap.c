@@ -9,6 +9,7 @@
 #include "format/nmo_chunk_context.h"
 #include "object/nmo_ref.h"
 #include "object/builtin/nmo_behavior_schemas.h"
+#include "object/builtin/nmo_behaviorio_schemas.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"
 #include "object/builtin/nmo_beobject_schemas.h"
 #include "object/builtin/nmo_character_schemas.h"
@@ -570,6 +571,34 @@ TEST(chunk_id_remap, behavior_serializer_does_not_publish_partial_chunk) {
     ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(chunk, &preserved));
     ASSERT_EQ(0x12345678u, preserved);
 
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_id_remap, behaviorio_truncation_keeps_previous_state) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    chunk->class_id = NMO_CID_BEHAVIORIO;
+    chunk->data_version = 7;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        chunk, CK_STATESAVE_BEHAV_IOFLAGS));
+    nmo_chunk_close(chunk);
+
+    nmo_behaviorio_state_t state;
+    ASSERT_EQ(NMO_OK, nmo_behaviorio_vtable.create(&state, NULL, NULL));
+    state.base.visibility_flags = 0x12345678u;
+    state.old_flags = 0xA5A5A5A5u;
+    state.has_flags = true;
+    ASSERT_NE(NMO_OK, nmo_behaviorio_deserialize(
+        &state, chunk, NULL, NULL));
+    ASSERT_EQ(0x12345678u, state.base.visibility_flags);
+    ASSERT_EQ(0xA5A5A5A5u, state.old_flags);
+    ASSERT_TRUE(state.has_flags);
+
+    nmo_behaviorio_vtable.destroy(&state, NULL, NULL);
     nmo_arena_destroy(arena);
 }
 
@@ -5433,6 +5462,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, unresolved_ref_preserves_raw_id);
     REGISTER_TEST(chunk_id_remap, behavior_unresolved_ref_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, behavior_serializer_does_not_publish_partial_chunk);
+    REGISTER_TEST(chunk_id_remap, behaviorio_truncation_keeps_previous_state);
     REGISTER_TEST(chunk_id_remap, behaviorlink_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, material_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, parameterlocal_owner_round_trips_raw_id);
