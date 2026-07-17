@@ -236,7 +236,7 @@ static nmo_status_t deserialize_file_backed(
         nmo_ref_t sprite_ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         result = nmo_ref_read(chunk, &sprite_ref);
         if (result != NMO_OK) {
-            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read sprite reference ID");
+            return result;
         }
         out_state->sprite_ref = sprite_ref;
         out_state->has_sprite_ref = sprite_ref.state != NMO_REF_NONE;
@@ -276,13 +276,13 @@ static nmo_status_t deserialize_file_backed(
         out_state->has_transparency = true;
         result = nmo_chunk_read_dword(chunk, &out_state->transparent_color);
         if (result != NMO_OK) {
-            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read transparent color");
+            return result;
         }
         /* Read transparency boolean flag */
         uint32_t transparent_flag;
         result = nmo_chunk_read_dword(chunk, &transparent_flag);
         if (result != NMO_OK) {
-            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read transparency flag");
+            return result;
         }
         out_state->is_transparent = (transparent_flag != 0);
     }
@@ -293,7 +293,7 @@ static nmo_status_t deserialize_file_backed(
         out_state->has_slot = true;
         result = nmo_chunk_read_dword(chunk, &out_state->current_slot);
         if (result != NMO_OK) {
-            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read current slot");
+            return result;
         }
     }
     
@@ -303,7 +303,7 @@ static nmo_status_t deserialize_file_backed(
         out_state->has_save_options = true;
         result = nmo_chunk_read_dword(chunk, &out_state->save_options);
         if (result != NMO_OK) {
-            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read save options");
+            return result;
         }
         
         /* Read CKBitmapProperties blob (size-prefixed buffer) */
@@ -343,12 +343,12 @@ static nmo_status_t deserialize_chunk_only(
         out_state->has_transparency = true;
         result = nmo_chunk_read_dword(chunk, &out_state->transparent_color);
         if (result != NMO_OK) {
-            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read transparent color");
+            return result;
         }
         uint32_t transparent_flag;
         result = nmo_chunk_read_dword(chunk, &transparent_flag);
         if (result != NMO_OK) {
-            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read transparency flag");
+            return result;
         }
         out_state->is_transparent = (transparent_flag != 0);
     }
@@ -359,7 +359,7 @@ static nmo_status_t deserialize_chunk_only(
         out_state->has_slot = true;
         result = nmo_chunk_read_dword(chunk, &out_state->current_slot);
         if (result != NMO_OK) {
-            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read current slot");
+            return result;
         }
     }
     
@@ -369,7 +369,7 @@ static nmo_status_t deserialize_chunk_only(
         nmo_ref_t sprite_ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         result = nmo_ref_read(chunk, &sprite_ref);
         if (result != NMO_OK) {
-            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read sprite reference ID");
+            return result;
         }
         out_state->sprite_ref = sprite_ref;
         out_state->has_sprite_ref = sprite_ref.state != NMO_REF_NONE;
@@ -567,12 +567,12 @@ static nmo_status_t nmo_sprite_serialize_internal(
             result = nmo_chunk_write_buffer(out_chunk, in_state->bitmap_properties,
                 in_state->bitmap_properties_size);
             if (result != NMO_OK) {
-                NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to write bitmap properties");
+                return result;
             }
         } else {
             result = nmo_chunk_write_buffer(out_chunk, NULL, 0);
             if (result != NMO_OK) {
-                NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to write empty bitmap properties");
+                return result;
             }
         }
     } else {
