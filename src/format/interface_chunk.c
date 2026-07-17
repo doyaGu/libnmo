@@ -8,6 +8,7 @@
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
 
+#include <limits.h>
 #include <string.h>
 
 /* ================================================================
@@ -2066,6 +2067,13 @@ static nmo_status_t nmo_interface_chunk_write_internal(
     if (!chunk || !data) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "interface_chunk_write: NULL argument");
+    }
+    if (!interface_version_is_supported(data->version)) {
+        return NMO_ERR_INVALID_FORMAT;
+    }
+    if (data->sub_count > (size_t)INT32_MAX - 1u ||
+        (data->sub_count > 0 && data->subs == NULL)) {
+        return NMO_ERR_INVALID_ARGUMENT;
     }
 
     nmo_status_t st = nmo_chunk_start_write(chunk);
