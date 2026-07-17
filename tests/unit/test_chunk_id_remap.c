@@ -12,6 +12,8 @@
 #include "object/builtin/nmo_behaviorlink_schemas.h"
 #include "object/builtin/nmo_beobject_schemas.h"
 #include "object/builtin/nmo_character_schemas.h"
+#include "object/builtin/nmo_camera_schemas.h"
+#include "object/builtin/nmo_light_schemas.h"
 #include "object/builtin/nmo_targetcamera_schemas.h"
 #include "object/builtin/nmo_targetlight_schemas.h"
 #include "object/builtin/nmo_kinematicchain_schemas.h"
@@ -1495,6 +1497,80 @@ TEST(chunk_id_remap, parameteroperation_legacy_sections_are_atomic) {
 
     nmo_parameteroperation_vtable.destroy(&source, NULL, NULL);
     nmo_parameteroperation_vtable.destroy(&loaded, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_id_remap, camera_and_light_failures_keep_previous_state) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+
+    nmo_chunk_t *camera_chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(camera_chunk);
+    camera_chunk->class_id = NMO_CID_CAMERA;
+    camera_chunk->data_version = 7;
+    camera_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(camera_chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        camera_chunk, CK_STATESAVE_CAMERAONLY));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(camera_chunk, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_float(camera_chunk, 0.75f));
+    nmo_chunk_close(camera_chunk);
+
+    nmo_camera_state_t camera;
+    ASSERT_EQ(NMO_OK, nmo_camera_vtable.create(&camera, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(
+        &camera.entity.base.base, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &camera.entity.base.base.scripts, 901));
+    camera.fov = 8.0f;
+    camera.width = 77;
+    ASSERT_NE(NMO_OK, nmo_camera_deserialize(
+        &camera, camera_chunk, NULL, &deserialize_context));
+    ASSERT_EQ(8.0f, camera.fov);
+    ASSERT_EQ(77, camera.width);
+    ASSERT_EQ(1u, camera.entity.base.base.scripts.count);
+    ASSERT_EQ(901u, nmo_beobject_script_array_get_id(
+        &camera.entity.base.base.scripts, 0));
+
+    nmo_chunk_t *light_chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(light_chunk);
+    light_chunk->class_id = NMO_CID_LIGHT;
+    light_chunk->data_version = 7;
+    light_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(light_chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        light_chunk, CK_STATESAVE_LIGHTDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(light_chunk, 0x100u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(light_chunk, 0xFFFFFFFFu));
+    nmo_chunk_close(light_chunk);
+
+    nmo_light_state_t light;
+    ASSERT_EQ(NMO_OK, nmo_light_vtable.create(&light, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(
+        &light.entity.base.base, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &light.entity.base.base.scripts, 902));
+    light.flags = 0x123400u;
+    light.light_power = 9.0f;
+    ASSERT_NE(NMO_OK, nmo_light_deserialize(
+        &light, light_chunk, NULL, &deserialize_context));
+    ASSERT_EQ(0x123400u, light.flags);
+    ASSERT_EQ(9.0f, light.light_power);
+    ASSERT_EQ(1u, light.entity.base.base.scripts.count);
+    ASSERT_EQ(902u, nmo_beobject_script_array_get_id(
+        &light.entity.base.base.scripts, 0));
+
+    nmo_array_dispose(&camera.entity.base.base.scripts);
+    nmo_array_dispose(&camera.entity.base.base.attributes);
+    nmo_array_dispose(&camera.entity.base.base.legacy_attributes);
+    nmo_camera_vtable.destroy(&camera, NULL, NULL);
+    nmo_array_dispose(&light.entity.base.base.scripts);
+    nmo_array_dispose(&light.entity.base.base.attributes);
+    nmo_array_dispose(&light.entity.base.base.legacy_attributes);
+    nmo_light_vtable.destroy(&light, NULL, NULL);
     nmo_arena_destroy(arena);
 }
 
@@ -5267,6 +5343,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, parameter_object_ref_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, parameteroperation_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, parameteroperation_legacy_sections_are_atomic);
+    REGISTER_TEST(chunk_id_remap, camera_and_light_failures_keep_previous_state);
     REGISTER_TEST(chunk_id_remap, targetcamera_unresolved_ref_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, targetlight_unresolved_ref_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, kinematicchain_unresolved_refs_round_trip_atomically);
