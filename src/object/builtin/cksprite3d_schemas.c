@@ -46,6 +46,15 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
     } while (0),
     ((void)0))
 
+static void nmo_sprite3d_dispose_base_arrays(nmo_sprite3d_state_t *state)
+{
+    if (state == NULL) return;
+    nmo_beobject_state_t *base = &state->base.base.base;
+    nmo_array_dispose(&base->scripts);
+    nmo_array_dispose(&base->attributes);
+    nmo_array_dispose(&base->legacy_attributes);
+}
+
 /* =============================================================================
  * REFLECTION FIELDS
  * ============================================================================= */
@@ -175,7 +184,32 @@ nmo_status_t nmo_sprite3d_deserialize(
 {
     (void)type;
     nmo_sprite3d_state_t *out_state = (nmo_sprite3d_state_t *)instance;
-    return nmo_sprite3d_deserialize_internal(chunk, context, out_state);
+    if (out_state == NULL || chunk == NULL) return NMO_ERR_INVALID_ARGUMENT;
+
+    nmo_sprite3d_state_t decoded = {0};
+    nmo_beobject_state_t *old_base = &out_state->base.base.base;
+    nmo_beobject_state_t *new_base = &decoded.base.base.base;
+    if (old_base->scripts.allocator.alloc != NULL) {
+        new_base->scripts.allocator = old_base->scripts.allocator;
+    }
+    if (old_base->attributes.allocator.alloc != NULL) {
+        new_base->attributes.allocator = old_base->attributes.allocator;
+    }
+    if (old_base->legacy_attributes.allocator.alloc != NULL) {
+        new_base->legacy_attributes.allocator =
+            old_base->legacy_attributes.allocator;
+    }
+
+    nmo_status_t result = nmo_sprite3d_deserialize_internal(
+        chunk, context, &decoded);
+    if (result != NMO_OK) {
+        nmo_sprite3d_dispose_base_arrays(&decoded);
+        return result;
+    }
+
+    nmo_sprite3d_dispose_base_arrays(out_state);
+    *out_state = decoded;
+    return NMO_OK;
 }
 
 nmo_status_t nmo_sprite3d_serialize(
@@ -186,7 +220,24 @@ nmo_status_t nmo_sprite3d_serialize(
 {
     (void)type;
     const nmo_sprite3d_state_t *in_state = (const nmo_sprite3d_state_t *)instance;
-    return nmo_sprite3d_serialize_internal(in_state, out_chunk, context);
+    if (in_state == NULL || out_chunk == NULL || out_chunk->arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_chunk_t *staged = nmo_chunk_create(out_chunk->arena);
+    if (staged == NULL) return NMO_ERR_NOMEM;
+    staged->class_id = out_chunk->class_id;
+    staged->data_version = out_chunk->data_version;
+    staged->chunk_version = out_chunk->chunk_version;
+    staged->chunk_class_id = out_chunk->chunk_class_id;
+    staged->chunk_options = out_chunk->chunk_options;
+    staged->file_context = out_chunk->file_context;
+
+    nmo_status_t result = nmo_sprite3d_serialize_internal(
+        in_state, staged, context);
+    if (result != NMO_OK) return result;
+    *out_chunk = *staged;
+    return NMO_OK;
 }
 
 nmo_status_t nmo_sprite3d_prepare_dependencies(
