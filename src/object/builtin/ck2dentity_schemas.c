@@ -266,7 +266,7 @@ static nmo_status_t deserialize_legacy(
         }
         out_state->flags = raw_flags;
         has_flags = true;
-    }
+    } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
     if (has_flags) {
         if ((out_state->flags & CK_2DENTITY_RESERVED3) == 0) {
             out_state->flags |= CK_2DENTITY_RESERVED3;
@@ -303,7 +303,7 @@ static nmo_status_t deserialize_legacy(
             out_state->rect.left = (float)x;
             out_state->rect.top = (float)y;
         }
-    }
+    } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
     
     /* Read size (identifier 0x2000) */
     seek_result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_2DENTITYSIZE);
@@ -334,7 +334,7 @@ static nmo_status_t deserialize_legacy(
             out_state->rect.right = out_state->rect.left + (float)w;
             out_state->rect.bottom = out_state->rect.top + (float)h;
         }
-    }
+    } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
     
     /* Read source rect (identifier 0x1000) */
     seek_result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_2DENTITYSRCSIZE);
@@ -359,7 +359,7 @@ static nmo_status_t deserialize_legacy(
 source_rect_error:
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read source rect");
 source_rect_done:;
-    }
+    } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
     
     /* Read z-order (identifier 0x100000) */
     seek_result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_2DENTITYZORDER);
@@ -369,7 +369,7 @@ source_rect_done:;
         if (result != NMO_OK) {
             NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read z-order");
         }
-    }
+    } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
     
     NMO_RETURN_OK();
 }
@@ -409,6 +409,7 @@ static nmo_status_t nmo_2dentity_deserialize_internal(
         /* Modern format: identifier 0x10F000 */
         nmo_status_t seek_result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_2DENTITYONLY);
         if (seek_result != NMO_OK) {
+            if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
             NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Missing modern CK2dEntity chunk (0x10F000)");
         }
         result = deserialize_modern(chunk, arena, out_state, context);
@@ -422,21 +423,26 @@ static nmo_status_t nmo_2dentity_deserialize_internal(
     }
     
     /* Optional material (identifier 0x200000, CKCID_2DENTITY only) */
-    if (nmo_chunk_get_class_id(chunk) == NMO_CID_2DENTITY &&
-        nmo_chunk_seek_identifier(chunk, CK_STATESAVE_2DENTITYMATERIAL) == NMO_OK) {
-        nmo_ref_t material = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
-        result = nmo_ref_read(chunk, &material);
-        if (result != NMO_OK) {
-            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read material ID");
+    if (nmo_chunk_get_class_id(chunk) == NMO_CID_2DENTITY) {
+        nmo_status_t seek_result = nmo_chunk_seek_identifier(
+            chunk, CK_STATESAVE_2DENTITYMATERIAL);
+        if (seek_result == NMO_OK) {
+            nmo_ref_t material = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+            result = nmo_ref_read(chunk, &material);
+            if (result != NMO_OK) {
+                NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read material ID");
+            }
+            nmo_ref_check_class(
+                &material,
+                (const nmo_object_repository_t *)
+                    nmo_deserialize_context_get_repository(context),
+                nmo_deserialize_context_get_type_registry(context),
+                NMO_CID_MATERIAL);
+            out_state->material = material;
+            out_state->has_material = true;
+        } else if (seek_result != NMO_ERR_NOT_FOUND) {
+            return seek_result;
         }
-        nmo_ref_check_class(
-            &material,
-            (const nmo_object_repository_t *)
-                nmo_deserialize_context_get_repository(context),
-            nmo_deserialize_context_get_type_registry(context),
-            NMO_CID_MATERIAL);
-        out_state->material = material;
-        out_state->has_material = true;
     }
 
     NMO_RETURN_OK();
