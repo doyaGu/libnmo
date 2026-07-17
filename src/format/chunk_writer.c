@@ -1133,21 +1133,22 @@ nmo_status_t nmo_chunk_writer_write_array_lendian(nmo_chunk_writer_t *w, int ele
     }
 
     // Write empty array marker if no data
-    if (src_data == NULL || element_count <= 0 || element_size <= 0) {
+    if (src_data == NULL || element_count <= 0) {
         return writer_append_empty_array_marker(w);
+    }
+    if (element_size <= 0) {
+        return NMO_ERR_INVALID_ARGUMENT;
     }
 
     // Check for integer overflow in total bytes calculation
     if (element_count > INT_MAX / element_size) {
-        // Write empty array marker on overflow
-        return writer_append_empty_array_marker(w);
+        return NMO_ERR_INVALID_ARGUMENT;
     }
 
     // Calculate total bytes
     size_t total_bytes = (size_t) element_size * (size_t) element_count;
     if (total_bytes > (size_t) INT_MAX) {
-        // Write empty array marker on overflow
-        return writer_append_empty_array_marker(w);
+        return NMO_ERR_INVALID_ARGUMENT;
     }
 
     // Calculate DWORDs needed (round up)
@@ -1165,6 +1166,7 @@ nmo_status_t nmo_chunk_writer_write_array_lendian(nmo_chunk_writer_t *w, int ele
     w->data[w->data_size++] = (uint32_t) element_count;
 
     // Copy array data
+    memset(&w->data[w->data_size], 0, dword_count * sizeof(uint32_t));
     memcpy(&w->data[w->data_size], src_data, total_bytes);
     w->data_size += dword_count;
 
