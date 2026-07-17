@@ -50,6 +50,30 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
     } while (0),
     ((void)0))
 
+static void nmo_sound_dispose_base_arrays(nmo_sound_state_t *state)
+{
+    if (state == NULL) return;
+    nmo_array_dispose(&state->base.scripts);
+    nmo_array_dispose(&state->base.attributes);
+    nmo_array_dispose(&state->base.legacy_attributes);
+}
+
+static void nmo_sound_copy_base_allocators(
+    nmo_sound_state_t *dst,
+    const nmo_sound_state_t *src)
+{
+    if (src->base.scripts.allocator.alloc != NULL) {
+        dst->base.scripts.allocator = src->base.scripts.allocator;
+    }
+    if (src->base.attributes.allocator.alloc != NULL) {
+        dst->base.attributes.allocator = src->base.attributes.allocator;
+    }
+    if (src->base.legacy_attributes.allocator.alloc != NULL) {
+        dst->base.legacy_attributes.allocator =
+            src->base.legacy_attributes.allocator;
+    }
+}
+
 NMO_DEFINE_OBJECT_LIFECYCLE(
     midisound,
     nmo_midisound_state_t,
@@ -127,7 +151,7 @@ static const char *nmo_sound_basename(const char *path)
  * CKSound
  * ============================================================================= */
 
-nmo_status_t nmo_sound_deserialize(
+static nmo_status_t nmo_sound_deserialize_internal(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -148,19 +172,44 @@ nmo_status_t nmo_sound_deserialize(
     out_state->file_name = NULL;
     out_state->save_options = CKSOUND_USEGLOBAL;
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SOUNDFILENAME) == NMO_OK) {
+    nmo_status_t seek_result = nmo_chunk_seek_identifier(
+        chunk, CK_STATESAVE_SOUNDFILENAME);
+    if (seek_result == NMO_OK) {
         nmo_status_t result = nmo_chunk_read_dword(chunk, &out_state->save_options);
         if (result != NMO_OK) {
             return result;
         }
         NMO_RETURN_IF_ERROR(
             nmo_chunk_read_string_checked(chunk, &out_state->file_name, NULL));
-    }
+    } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_sound_serialize(
+nmo_status_t nmo_sound_deserialize(
+    void *instance,
+    nmo_chunk_t *chunk,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    nmo_sound_state_t *out_state = (nmo_sound_state_t *)instance;
+    if (out_state == NULL || chunk == NULL) return NMO_ERR_INVALID_ARGUMENT;
+
+    nmo_sound_state_t decoded = {0};
+    nmo_sound_copy_base_allocators(&decoded, out_state);
+    nmo_status_t result = nmo_sound_deserialize_internal(
+        &decoded, chunk, NULL, context);
+    if (result != NMO_OK) {
+        nmo_sound_dispose_base_arrays(&decoded);
+        return result;
+    }
+    nmo_sound_dispose_base_arrays(out_state);
+    *out_state = decoded;
+    return NMO_OK;
+}
+
+static nmo_status_t nmo_sound_serialize_internal(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
@@ -188,11 +237,35 @@ nmo_status_t nmo_sound_serialize(
     return nmo_chunk_write_string(out_chunk, base_name);
 }
 
+nmo_status_t nmo_sound_serialize(
+    const void *instance,
+    nmo_chunk_t *out_chunk,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    if (instance == NULL || out_chunk == NULL || out_chunk->arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    nmo_chunk_t *staged = nmo_chunk_create(out_chunk->arena);
+    if (staged == NULL) return NMO_ERR_NOMEM;
+    staged->class_id = out_chunk->class_id;
+    staged->data_version = out_chunk->data_version;
+    staged->chunk_version = out_chunk->chunk_version;
+    staged->chunk_class_id = out_chunk->chunk_class_id;
+    staged->chunk_options = out_chunk->chunk_options;
+    staged->file_context = out_chunk->file_context;
+    nmo_status_t result = nmo_sound_serialize_internal(
+        instance, staged, type, context);
+    if (result != NMO_OK) return result;
+    *out_chunk = *staged;
+    return NMO_OK;
+}
+
 /* =============================================================================
  * CKWaveSound
  * ============================================================================= */
 
-nmo_status_t nmo_wavesound_deserialize(
+static nmo_status_t nmo_wavesound_deserialize_internal(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -230,18 +303,24 @@ nmo_status_t nmo_wavesound_deserialize(
     out_state->position = (nmo_vector_t){0.0f, 0.0f, 0.0f};
     out_state->direction = (nmo_vector_t){0.0f, 0.0f, 0.0f};
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_WAVSOUNDFILE) == NMO_OK) {
+    nmo_status_t seek_result = nmo_chunk_seek_identifier(
+        chunk, CK_STATESAVE_WAVSOUNDFILE);
+    if (seek_result == NMO_OK) {
         out_state->has_wave_file_name = 1;
         NMO_RETURN_IF_ERROR(
             nmo_chunk_read_string_checked(chunk, &out_state->wave_file_name, NULL));
-    }
+    } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_WAVSOUNDDURATION) == NMO_OK) {
+    seek_result = nmo_chunk_seek_identifier(
+        chunk, CK_STATESAVE_WAVSOUNDDURATION);
+    if (seek_result == NMO_OK) {
         out_state->has_duration = 1;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &out_state->duration));
-    }
+    } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_WAVSOUNDDATA2) == NMO_OK) {
+    seek_result = nmo_chunk_seek_identifier(
+        chunk, CK_STATESAVE_WAVSOUNDDATA2);
+    if (seek_result == NMO_OK) {
         nmo_wavesound_state_t data = *out_state;
         data.has_data2 = 1;
         uint32_t data_version = nmo_chunk_get_data_version(chunk);
@@ -336,12 +415,35 @@ nmo_status_t nmo_wavesound_deserialize(
             nmo_deserialize_context_get_type_registry(context),
             NMO_CID_3DENTITY);
         *out_state = data;
-    }
+    } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_wavesound_serialize(
+nmo_status_t nmo_wavesound_deserialize(
+    void *instance,
+    nmo_chunk_t *chunk,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    nmo_wavesound_state_t *out_state = (nmo_wavesound_state_t *)instance;
+    if (out_state == NULL || chunk == NULL) return NMO_ERR_INVALID_ARGUMENT;
+
+    nmo_wavesound_state_t decoded = {0};
+    nmo_sound_copy_base_allocators(&decoded.base, &out_state->base);
+    nmo_status_t result = nmo_wavesound_deserialize_internal(
+        &decoded, chunk, NULL, context);
+    if (result != NMO_OK) {
+        nmo_sound_dispose_base_arrays(&decoded.base);
+        return result;
+    }
+    nmo_sound_dispose_base_arrays(&out_state->base);
+    *out_state = decoded;
+    return NMO_OK;
+}
+
+static nmo_status_t nmo_wavesound_serialize_internal(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
@@ -418,11 +520,35 @@ nmo_status_t nmo_wavesound_serialize(
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_wavesound_serialize(
+    const void *instance,
+    nmo_chunk_t *out_chunk,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    if (instance == NULL || out_chunk == NULL || out_chunk->arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    nmo_chunk_t *staged = nmo_chunk_create(out_chunk->arena);
+    if (staged == NULL) return NMO_ERR_NOMEM;
+    staged->class_id = out_chunk->class_id;
+    staged->data_version = out_chunk->data_version;
+    staged->chunk_version = out_chunk->chunk_version;
+    staged->chunk_class_id = out_chunk->chunk_class_id;
+    staged->chunk_options = out_chunk->chunk_options;
+    staged->file_context = out_chunk->file_context;
+    nmo_status_t result = nmo_wavesound_serialize_internal(
+        instance, staged, type, context);
+    if (result != NMO_OK) return result;
+    *out_chunk = *staged;
+    return NMO_OK;
+}
+
 /* =============================================================================
  * CKMidiSound
  * ============================================================================= */
 
-nmo_status_t nmo_midisound_deserialize(
+static nmo_status_t nmo_midisound_deserialize_internal(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -443,16 +569,41 @@ nmo_status_t nmo_midisound_deserialize(
     out_state->has_midi_file_name = 0;
     out_state->midi_file_name = NULL;
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_MIDISOUNDFILE) == NMO_OK) {
+    nmo_status_t seek_result = nmo_chunk_seek_identifier(
+        chunk, CK_STATESAVE_MIDISOUNDFILE);
+    if (seek_result == NMO_OK) {
         out_state->has_midi_file_name = 1;
         NMO_RETURN_IF_ERROR(
             nmo_chunk_read_string_checked(chunk, &out_state->midi_file_name, NULL));
-    }
+    } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_midisound_serialize(
+nmo_status_t nmo_midisound_deserialize(
+    void *instance,
+    nmo_chunk_t *chunk,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    nmo_midisound_state_t *out_state = (nmo_midisound_state_t *)instance;
+    if (out_state == NULL || chunk == NULL) return NMO_ERR_INVALID_ARGUMENT;
+
+    nmo_midisound_state_t decoded = {0};
+    nmo_sound_copy_base_allocators(&decoded.base, &out_state->base);
+    nmo_status_t result = nmo_midisound_deserialize_internal(
+        &decoded, chunk, NULL, context);
+    if (result != NMO_OK) {
+        nmo_sound_dispose_base_arrays(&decoded.base);
+        return result;
+    }
+    nmo_sound_dispose_base_arrays(&out_state->base);
+    *out_state = decoded;
+    return NMO_OK;
+}
+
+static nmo_status_t nmo_midisound_serialize_internal(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
@@ -472,6 +623,30 @@ nmo_status_t nmo_midisound_serialize(
 
     /* CKMidiSound::Save does not emit a MIDISOUNDFILE identifier */
     NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_midisound_serialize(
+    const void *instance,
+    nmo_chunk_t *out_chunk,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    if (instance == NULL || out_chunk == NULL || out_chunk->arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    nmo_chunk_t *staged = nmo_chunk_create(out_chunk->arena);
+    if (staged == NULL) return NMO_ERR_NOMEM;
+    staged->class_id = out_chunk->class_id;
+    staged->data_version = out_chunk->data_version;
+    staged->chunk_version = out_chunk->chunk_version;
+    staged->chunk_class_id = out_chunk->chunk_class_id;
+    staged->chunk_options = out_chunk->chunk_options;
+    staged->file_context = out_chunk->file_context;
+    nmo_status_t result = nmo_midisound_serialize_internal(
+        instance, staged, type, context);
+    if (result != NMO_OK) return result;
+    *out_chunk = *staged;
+    return NMO_OK;
 }
 
 static nmo_status_t nmo_sound_copy(
