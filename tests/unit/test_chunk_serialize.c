@@ -5,6 +5,7 @@
 
 #include "../test_framework.h"
 #include "format/nmo_chunk.h"
+#include "format/nmo_chunk_context.h"
 #include "format/nmo_chunk_writer.h"
 #include "format/nmo_chunk_parser.h"
 #include "core/nmo_arena.h"
@@ -105,7 +106,48 @@ TEST(chunk_serialize, empty_chunk) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_serialize, parse_failure_preserves_chunk_state) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+
+    chunk->class_id = 0xABCDEF01u;
+    chunk->data_version = 9;
+    chunk->chunk_version = NMO_CHUNK_VERSION2;
+    ASSERT_EQ(NMO_OK, nmo_arena_array_resize(&chunk->data, 1));
+    uint32_t *original_data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    ASSERT_NOT_NULL(original_data);
+    original_data[0] = 0x12345678u;
+    const uint32_t original_raw[] = { 0xCAFEBABEu };
+    chunk->raw_data = original_raw;
+    chunk->raw_size = sizeof(original_raw);
+    nmo_chunk_file_context_t file_context = {0};
+    nmo_chunk_set_file_context(chunk, &file_context);
+
+    const uint32_t truncated[] = {
+        ((uint32_t)NMO_CHUNK_VERSION4 << 16) | (0x42u << 8),
+        1,
+    };
+    ASSERT_EQ(NMO_ERR_INVALID_STATE,
+        nmo_chunk_parse(chunk, truncated, sizeof(truncated)));
+
+    ASSERT_EQ(0xABCDEF01u, chunk->class_id);
+    ASSERT_EQ(9u, chunk->data_version);
+    ASSERT_EQ(NMO_CHUNK_VERSION2, chunk->chunk_version);
+    ASSERT_TRUE((chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0);
+    ASSERT_EQ(&file_context, nmo_chunk_get_file_context(chunk));
+    ASSERT_EQ(original_data, chunk->data.data);
+    ASSERT_EQ(1u, chunk->data.count);
+    ASSERT_EQ(0x12345678u, original_data[0]);
+    ASSERT_EQ(original_raw, chunk->raw_data);
+    ASSERT_EQ(sizeof(original_raw), chunk->raw_size);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_serialize, serialize_and_deserialize);
     REGISTER_TEST(chunk_serialize, empty_chunk);
+    REGISTER_TEST(chunk_serialize, parse_failure_preserves_chunk_state);
 TEST_MAIN_END()
