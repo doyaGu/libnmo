@@ -537,6 +537,40 @@ TEST(chunk_id_remap, behavior_unresolved_ref_round_trips_raw_id) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, behavior_serializer_does_not_publish_partial_chunk) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+
+    nmo_behavior_state_t invalid = {0};
+    invalid.compatible_class_id = NMO_CID_BEOBJECT;
+    invalid.has_save_flags = true;
+    invalid.save_flags = CK_STATESAVE_BEHAVIORINPUTS;
+    invalid.inputs.count = 1;
+    invalid.inputs.element_size = sizeof(nmo_behavior_ref_t);
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    chunk->class_id = NMO_CID_BEHAVIOR;
+    chunk->chunk_version = NMO_CHUNK_VERSION4;
+    chunk->data_version = 7;
+    chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0x12345678u));
+    nmo_chunk_close(chunk);
+
+    ASSERT_NE(NMO_OK, nmo_behavior_serialize(
+        &invalid, chunk, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(chunk));
+    uint32_t preserved = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(chunk, &preserved));
+    ASSERT_EQ(0x12345678u, preserved);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, behaviorlink_refs_round_trip_and_failure_is_atomic) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
     ASSERT_NOT_NULL(arena);
@@ -5054,6 +5088,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, null_ref_uses_file_null_encoding);
     REGISTER_TEST(chunk_id_remap, unresolved_ref_preserves_raw_id);
     REGISTER_TEST(chunk_id_remap, behavior_unresolved_ref_round_trips_raw_id);
+    REGISTER_TEST(chunk_id_remap, behavior_serializer_does_not_publish_partial_chunk);
     REGISTER_TEST(chunk_id_remap, behaviorlink_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, material_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, parameterlocal_owner_round_trips_raw_id);
