@@ -3388,6 +3388,32 @@ TEST(chunk_id_remap, texture_failures_keep_state_and_target_chunk_atomic) {
     ASSERT_EQ(901u, nmo_beobject_script_array_get_id(
         &state.base.scripts, 0));
 
+    nmo_chunk_t *cross_section_reader = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(cross_section_reader);
+    cross_section_reader->class_id = NMO_CID_TEXTURE;
+    cross_section_reader->data_version = 7;
+    cross_section_reader->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(cross_section_reader));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_section_reader, CK_STATESAVE_TEXREADER));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(cross_section_reader, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_section_reader, 0x7F123456u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(cross_section_reader, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(cross_section_reader, 0));
+    nmo_chunk_close(cross_section_reader);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_texture_deserialize(
+        &state, cross_section_reader, NULL, &deserialize_context));
+    nmo_chunk_parser_state_t *parser =
+        (nmo_chunk_parser_state_t *)cross_section_reader->parser_state;
+    ASSERT_NOT_NULL(parser);
+    ASSERT_EQ(parser->prev_identifier_pos + 3u, parser->current_pos);
+    ASSERT_TRUE(state.has_movie_filename);
+    ASSERT_STR_EQ("old.avi", state.movie_filename);
+    ASSERT_EQ(&old_slot, state.reader_slots);
+    ASSERT_EQ(901u, nmo_beobject_script_array_get_id(
+        &state.base.scripts, 0));
+
     fail_after_allocator_state_t allocator_state = {
         .allocation_count = 0,
         .allowed_allocations = 2,
