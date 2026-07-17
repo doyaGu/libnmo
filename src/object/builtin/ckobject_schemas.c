@@ -123,6 +123,7 @@ nmo_status_t nmo_object_deserialize(
         out_state->visibility_flags = 0;
         NMO_RETURN_OK();
     }
+    if (result != NMO_ERR_NOT_FOUND) return result;
 
     /* Check for OBJECTHIERAHIDDEN identifier */
     result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OBJECTHIERAHIDDEN);
@@ -131,6 +132,7 @@ nmo_status_t nmo_object_deserialize(
         out_state->visibility_flags = NMO_CKOBJECT_HIERARCHICAL;
         NMO_RETURN_OK();
     }
+    if (result != NMO_ERR_NOT_FOUND) return result;
 
     /* No special identifiers found -> object is visible (default already set) */
     out_state->visibility_flags = NMO_CKOBJECT_VISIBLE;
