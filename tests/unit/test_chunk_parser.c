@@ -7,10 +7,32 @@
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_parser.h"
 #include "core/nmo_arena.h"
+#include "core/nmo_allocator.h"
 #include <string.h>
 #include <stdio.h>
 #include <limits.h>
 #include <stdint.h>
+
+typedef struct parser_fail_allocator_state {
+    int fail_allocations;
+} parser_fail_allocator_state_t;
+
+static void *parser_fail_alloc(
+    void *user_data, size_t size, size_t alignment)
+{
+    parser_fail_allocator_state_t *state =
+        (parser_fail_allocator_state_t *)user_data;
+    if (state->fail_allocations) return NULL;
+    nmo_allocator_t allocator = nmo_allocator_default();
+    return nmo_alloc(&allocator, size, alignment);
+}
+
+static void parser_fail_free(void *user_data, void *ptr)
+{
+    (void)user_data;
+    nmo_allocator_t allocator = nmo_allocator_default();
+    nmo_free(&allocator, ptr);
+}
 
 TEST(chunk_parser, create_destroy) {
     nmo_arena_t* arena = nmo_arena_create(NULL, 4096);
@@ -640,6 +662,46 @@ TEST(chunk_parser, buffer_truncated_keeps_position) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_parser, malformed_lengths_are_checked_before_allocation) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t* chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_arena_array_resize(&chunk->data, 1u));
+    uint32_t* data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    ASSERT_NOT_NULL(data);
+    data[0] = UINT32_MAX;
+
+    nmo_chunk_parser_t* parser = nmo_chunk_parser_create(chunk);
+    ASSERT_NOT_NULL(parser);
+
+    parser_fail_allocator_state_t allocator_state = {0};
+    nmo_allocator_t allocator = nmo_allocator_custom(
+        parser_fail_alloc, parser_fail_free, &allocator_state);
+    nmo_arena_t* output_arena = nmo_arena_create(&allocator, 64);
+    ASSERT_NOT_NULL(output_arena);
+    allocator_state.fail_allocations = 1;
+
+    char* string = (char*)(uintptr_t)1;
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK,
+        nmo_chunk_parser_read_string(parser, &string, output_arena));
+    ASSERT_NULL(string);
+    ASSERT_EQ(0u, nmo_chunk_parser_tell(parser));
+
+    void* buffer = (void*)(uintptr_t)1;
+    size_t buffer_size = 123;
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK,
+        nmo_chunk_parser_read_buffer(
+            parser, &buffer, &buffer_size, output_arena));
+    ASSERT_NULL(buffer);
+    ASSERT_EQ(0u, buffer_size);
+    ASSERT_EQ(0u, nmo_chunk_parser_tell(parser));
+
+    nmo_arena_destroy(output_arena);
+    nmo_chunk_parser_destroy(parser);
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_parser, create_destroy);
     REGISTER_TEST(chunk_parser, cursor_operations);
@@ -659,4 +721,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_parser, array_lendian_truncated_keeps_position);
     REGISTER_TEST(chunk_parser, array_lendian_rejects_inconsistent_header);
     REGISTER_TEST(chunk_parser, buffer_truncated_keeps_position);
+    REGISTER_TEST(chunk_parser, malformed_lengths_are_checked_before_allocation);
 TEST_MAIN_END()
