@@ -490,9 +490,50 @@ TEST(chunk_id_remap, behavior_unresolved_ref_round_trips_raw_id) {
     ASSERT_EQ(NMO_OBJECT_ID_NONE,
               nmo_behavior_target_parameter_id(&reloaded));
 
+    nmo_chunk_t *truncated = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(truncated);
+    truncated->class_id = NMO_CID_BEHAVIOR;
+    truncated->chunk_version = NMO_CHUNK_VERSION4;
+    truncated->data_version = 7;
+    truncated->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(truncated));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        truncated, CK_STATESAVE_BEHAVIORNEWDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        truncated, CKBEHAVIOR_TARGETABLE));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(truncated, 801));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        truncated, CK_STATESAVE_BEHAVIORINPUTS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(truncated, 2));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(truncated, 802));
+    nmo_chunk_close(truncated);
+    nmo_chunk_set_file_context(truncated, &read_context);
+
+    nmo_behavior_state_t failed;
+    ASSERT_EQ(NMO_OK, nmo_behavior_vtable.create(&failed, NULL, NULL));
+    failed.flags = 0x12345678u;
+    failed.owner = nmo_ref_from_raw(901);
+    failed.target_parameter = nmo_ref_from_raw(902);
+    nmo_behavior_ref_t previous = {
+        .ref = nmo_ref_from_raw(903),
+        .chunk = NULL,
+    };
+    ASSERT_EQ(NMO_OK, nmo_array_append(&failed.inputs, &previous));
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_behavior_deserialize(
+        &failed, truncated, NULL, NULL));
+    ASSERT_EQ(0x12345678u, failed.flags);
+    ASSERT_EQ(901u, failed.owner.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, failed.owner.state);
+    ASSERT_EQ(902u, failed.target_parameter.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, failed.target_parameter.state);
+    ASSERT_EQ(1u, failed.inputs.count);
+    ASSERT_EQ(903u, NMO_ARRAY_DATA(
+        nmo_behavior_ref_t, &failed.inputs)[0].ref.raw_id);
+
     nmo_array_dispose(&source.inputs);
     nmo_array_dispose(&loaded.inputs);
     nmo_array_dispose(&reloaded.inputs);
+    nmo_array_dispose(&failed.inputs);
     nmo_arena_destroy(arena);
 }
 
