@@ -325,7 +325,7 @@ nmo_status_t nmo_synchro_remap_dependencies(
  * CKStateObject
  * ============================================================================= */
 
-nmo_status_t nmo_state_deserialize(
+static nmo_status_t nmo_state_deserialize_internal(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -341,17 +341,34 @@ nmo_status_t nmo_state_deserialize(
     nmo_status_t result = deserialize_ckobject_base(&out_state->base, chunk, context);
     if (result != NMO_OK) return result;
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SYNCHRODATA) == NMO_OK) {
+    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SYNCHRODATA);
+    if (result == NMO_OK) {
         result = nmo_chunk_read_int(chunk, &out_state->event_flag);
         if (result != NMO_OK) {
             return result;
         }
-    }
+    } else if (result != NMO_ERR_NOT_FOUND) return result;
 
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_state_serialize(
+nmo_status_t nmo_state_deserialize(
+    void *instance,
+    nmo_chunk_t *chunk,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    nmo_state_state_t *out_state = (nmo_state_state_t *)instance;
+    if (out_state == NULL || chunk == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    nmo_state_state_t decoded = *out_state;
+    nmo_status_t result = nmo_state_deserialize_internal(
+        &decoded, chunk, type, context);
+    if (result != NMO_OK) return result;
+    *out_state = decoded;
+    return NMO_OK;
+}
+
+static nmo_status_t nmo_state_serialize_internal(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
@@ -373,11 +390,35 @@ nmo_status_t nmo_state_serialize(
     return nmo_chunk_write_int(out_chunk, in_state->event_flag);
 }
 
+nmo_status_t nmo_state_serialize(
+    const void *instance,
+    nmo_chunk_t *out_chunk,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    if (instance == NULL || out_chunk == NULL || out_chunk->arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    nmo_chunk_t *staged = nmo_chunk_create(out_chunk->arena);
+    if (staged == NULL) return NMO_ERR_NOMEM;
+    staged->class_id = out_chunk->class_id;
+    staged->data_version = out_chunk->data_version;
+    staged->chunk_version = out_chunk->chunk_version;
+    staged->chunk_class_id = out_chunk->chunk_class_id;
+    staged->chunk_options = out_chunk->chunk_options;
+    staged->file_context = out_chunk->file_context;
+    nmo_status_t result = nmo_state_serialize_internal(
+        instance, staged, type, context);
+    if (result != NMO_OK) return result;
+    *out_chunk = *staged;
+    return NMO_OK;
+}
+
 /* =============================================================================
  * CKCriticalSectionObject
  * ============================================================================= */
 
-nmo_status_t nmo_criticalsection_deserialize(
+static nmo_status_t nmo_criticalsection_deserialize_internal(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -395,19 +436,37 @@ nmo_status_t nmo_criticalsection_deserialize(
 
     out_state->object_in_section = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SYNCHRODATA) == NMO_OK) {
+    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SYNCHRODATA);
+    if (result == NMO_OK) {
         nmo_ref_t object_in_section = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         result = nmo_ref_read(chunk, &object_in_section);
         if (result != NMO_OK) {
             return result;
         }
         out_state->object_in_section = object_in_section;
-    }
+    } else if (result != NMO_ERR_NOT_FOUND) return result;
 
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_criticalsection_serialize(
+nmo_status_t nmo_criticalsection_deserialize(
+    void *instance,
+    nmo_chunk_t *chunk,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    nmo_criticalsection_state_t *out_state =
+        (nmo_criticalsection_state_t *)instance;
+    if (out_state == NULL || chunk == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    nmo_criticalsection_state_t decoded = *out_state;
+    nmo_status_t result = nmo_criticalsection_deserialize_internal(
+        &decoded, chunk, type, context);
+    if (result != NMO_OK) return result;
+    *out_state = decoded;
+    return NMO_OK;
+}
+
+static nmo_status_t nmo_criticalsection_serialize_internal(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
@@ -427,6 +486,30 @@ nmo_status_t nmo_criticalsection_serialize(
     if (result != NMO_OK) return result;
 
     return nmo_ref_write(out_chunk, &in_state->object_in_section);
+}
+
+nmo_status_t nmo_criticalsection_serialize(
+    const void *instance,
+    nmo_chunk_t *out_chunk,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    if (instance == NULL || out_chunk == NULL || out_chunk->arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    nmo_chunk_t *staged = nmo_chunk_create(out_chunk->arena);
+    if (staged == NULL) return NMO_ERR_NOMEM;
+    staged->class_id = out_chunk->class_id;
+    staged->data_version = out_chunk->data_version;
+    staged->chunk_version = out_chunk->chunk_version;
+    staged->chunk_class_id = out_chunk->chunk_class_id;
+    staged->chunk_options = out_chunk->chunk_options;
+    staged->file_context = out_chunk->file_context;
+    nmo_status_t result = nmo_criticalsection_serialize_internal(
+        instance, staged, type, context);
+    if (result != NMO_OK) return result;
+    *out_chunk = *staged;
+    return NMO_OK;
 }
 
 /* =============================================================================
