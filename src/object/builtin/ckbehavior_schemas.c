@@ -698,12 +698,23 @@ nmo_status_t nmo_behavior_deserialize(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
+    nmo_behavior_state_t *out_state = (nmo_behavior_state_t *)instance;
     nmo_behavior_state_t decoded = {0};
     nmo_status_t result = nmo_behavior_create(&decoded, type, context);
     if (result != NMO_OK) {
         nmo_behavior_dispose_ref_arrays(&decoded);
         return result;
     }
+    decoded.sub_behaviors.allocator = out_state->sub_behaviors.allocator;
+    decoded.sub_behavior_links.allocator =
+        out_state->sub_behavior_links.allocator;
+    decoded.operations.allocator = out_state->operations.allocator;
+    decoded.in_parameters.allocator = out_state->in_parameters.allocator;
+    decoded.out_parameters.allocator = out_state->out_parameters.allocator;
+    decoded.local_parameters.allocator =
+        out_state->local_parameters.allocator;
+    decoded.inputs.allocator = out_state->inputs.allocator;
+    decoded.outputs.allocator = out_state->outputs.allocator;
 
     result = nmo_behavior_deserialize_internal(
         &decoded, chunk, type, context);
@@ -712,7 +723,6 @@ nmo_status_t nmo_behavior_deserialize(
         return result;
     }
 
-    nmo_behavior_state_t *out_state = (nmo_behavior_state_t *)instance;
     nmo_behavior_dispose_ref_arrays(out_state);
     *out_state = decoded;
     return NMO_OK;
