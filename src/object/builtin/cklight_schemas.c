@@ -216,7 +216,7 @@ static nmo_status_t nmo_light_deserialize_modern(
             // Default spotlight parameters for non-spotlights
             nmo_light_apply_nonspot_defaults(out_state);
         }
-    }
+    } else if (result != NMO_ERR_NOT_FOUND) return result;
 
     // Optional: light power (CK_STATESAVE_LIGHTDATA2)
     result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_LIGHTDATA2);
@@ -226,11 +226,11 @@ static nmo_status_t nmo_light_deserialize_modern(
         if (result != NMO_OK) {
             NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read light power");
         }
-    } else {
+    } else if (result == NMO_ERR_NOT_FOUND) {
         // Default to 1.0 if not present
         out_state->light_power = 1.0f;
         out_state->has_light_power_chunk = 0;
-    }
+    } else return result;
     
     NMO_RETURN_OK();
 }
@@ -353,7 +353,7 @@ static nmo_status_t nmo_light_deserialize_legacy(
         // Legacy format always has power = 1.0
         out_state->light_power = 1.0f;
         out_state->has_light_power_chunk = 0;
-    }
+    } else if (result != NMO_ERR_NOT_FOUND) return result;
     
     NMO_RETURN_OK();
 }
