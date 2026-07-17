@@ -29,8 +29,10 @@ typedef struct nmo_interfaceobjectmanager_state {
 
     int32_t chunk_count;
     nmo_chunk_t **chunks;
+    uint8_t has_chunks_chunk;
 
     nmo_guid_t guid;
+    uint8_t has_guid_chunk;
 } nmo_interfaceobjectmanager_state_t;
 
 NMO_API nmo_status_t nmo_interfaceobjectmanager_deserialize(
