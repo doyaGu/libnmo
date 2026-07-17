@@ -84,10 +84,11 @@ static nmo_status_t nmo_messagemanager_deserialize_internal(
 
     /* Seek identifier */
     nmo_status_t result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_MESSAGEMANAGER);
-    if (result != NMO_OK) {
+    if (result == NMO_ERR_NOT_FOUND) {
         /* No data to load - this is valid */
         NMO_RETURN_OK();
     }
+    if (result != NMO_OK) return result;
 
     /* Read message type count */
     int32_t type_count;
