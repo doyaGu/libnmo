@@ -5706,12 +5706,65 @@ TEST(chunk_id_remap, beobject_legacy_attributes_are_lossless_and_atomic) {
     ASSERT_EQ(NMO_OK, nmo_chunk_write_int(impossible_count, 2));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_int(impossible_count, 0));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_int(impossible_count, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        impossible_count, 0x7F123456u));
+    for (size_t i = 0; i < 12; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(impossible_count, 0));
+    }
     nmo_chunk_close(impossible_count);
     ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_beobject_deserialize(
         &allocation_failed, impossible_count, NULL, NULL));
     ASSERT_EQ(0u, allocation_failed.legacy_attributes.count);
     ASSERT_EQ(NULL, allocation_failed.legacy_attributes.data);
     ASSERT_EQ(0, allocation_failed.has_legacy_attributes);
+
+    nmo_allocator_t original_script_allocator =
+        allocation_failed.scripts.allocator;
+    allocation_failed.scripts.allocator = nmo_allocator_custom(
+        beobject_fail_alloc, beobject_fail_free, NULL);
+    nmo_chunk_t *cross_section_scripts = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(cross_section_scripts);
+    cross_section_scripts->class_id = NMO_CID_BEOBJECT;
+    cross_section_scripts->data_version = 7;
+    cross_section_scripts->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(cross_section_scripts));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_section_scripts, CK_STATESAVE_SCRIPTS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(
+        cross_section_scripts, 2));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_section_scripts, 0x7F123456u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(cross_section_scripts, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(cross_section_scripts, 0));
+    nmo_chunk_close(cross_section_scripts);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_beobject_deserialize(
+        &allocation_failed, cross_section_scripts, NULL, NULL));
+    ASSERT_EQ(0u, allocation_failed.scripts.count);
+    allocation_failed.scripts.allocator = original_script_allocator;
+
+    nmo_allocator_t original_attribute_allocator =
+        allocation_failed.attributes.allocator;
+    allocation_failed.attributes.allocator = nmo_allocator_custom(
+        beobject_fail_alloc, beobject_fail_free, NULL);
+    nmo_chunk_t *cross_section_attributes = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(cross_section_attributes);
+    cross_section_attributes->class_id = NMO_CID_BEOBJECT;
+    cross_section_attributes->data_version = 7;
+    cross_section_attributes->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(cross_section_attributes));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_section_attributes, CK_STATESAVE_NEWATTRIBUTES));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(
+        cross_section_attributes, 2));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_section_attributes, 0x7F123456u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(cross_section_attributes, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(cross_section_attributes, 0));
+    nmo_chunk_close(cross_section_attributes);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_beobject_deserialize(
+        &allocation_failed, cross_section_attributes, NULL, NULL));
+    ASSERT_EQ(0u, allocation_failed.attributes.count);
+    allocation_failed.attributes.allocator = original_attribute_allocator;
 
     ASSERT_EQ(NMO_ERR_NOMEM, nmo_beobject_deserialize(
         &allocation_failed, first, NULL, NULL));
