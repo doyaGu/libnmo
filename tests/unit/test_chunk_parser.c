@@ -702,6 +702,50 @@ TEST(chunk_parser, malformed_lengths_are_checked_before_allocation) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_parser, failed_pointer_reads_clear_outputs) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+
+    char* string = (char*)(uintptr_t)1;
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+        nmo_chunk_parser_read_string(NULL, &string, arena));
+    ASSERT_NULL(string);
+
+    void* buffer = (void*)(uintptr_t)1;
+    size_t buffer_size = 123;
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+        nmo_chunk_parser_read_buffer(NULL, &buffer, &buffer_size, arena));
+    ASSERT_NULL(buffer);
+    ASSERT_EQ(0u, buffer_size);
+
+    nmo_chunk_t* sub = (nmo_chunk_t*)(uintptr_t)1;
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+        nmo_chunk_parser_read_subchunk(NULL, arena, &sub));
+    ASSERT_NULL(sub);
+
+    nmo_chunk_t* chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_arena_array_resize(&chunk->data, 1u));
+    uint32_t* data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    ASSERT_NOT_NULL(data);
+    data[0] = 0u;
+
+    nmo_chunk_parser_t* parser = nmo_chunk_parser_create(chunk);
+    ASSERT_NOT_NULL(parser);
+    size_t count = 123;
+    ASSERT_EQ(NMO_OK,
+        nmo_chunk_parser_start_read_sequence(parser, &count));
+    ASSERT_EQ(0u, count);
+
+    sub = (nmo_chunk_t*)(uintptr_t)1;
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK,
+        nmo_chunk_parser_read_subchunk(parser, arena, &sub));
+    ASSERT_NULL(sub);
+
+    nmo_chunk_parser_destroy(parser);
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_parser, create_destroy);
     REGISTER_TEST(chunk_parser, cursor_operations);
@@ -722,4 +766,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_parser, array_lendian_rejects_inconsistent_header);
     REGISTER_TEST(chunk_parser, buffer_truncated_keeps_position);
     REGISTER_TEST(chunk_parser, malformed_lengths_are_checked_before_allocation);
+    REGISTER_TEST(chunk_parser, failed_pointer_reads_clear_outputs);
 TEST_MAIN_END()
