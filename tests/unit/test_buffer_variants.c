@@ -157,6 +157,14 @@ TEST(buffer_variants, edge_cases) {
     // A non-zero size requires an actual source buffer.
     result = nmo_chunk_writer_write_buffer_nosize(writer, 10, NULL);
     ASSERT_EQ(result, NMO_ERR_INVALID_ARGUMENT);
+    result = nmo_chunk_writer_write_buffer(writer, NULL, 10);
+    ASSERT_EQ(result, NMO_ERR_INVALID_ARGUMENT);
+#if SIZE_MAX > UINT32_MAX
+    const uint8_t byte = 0;
+    result = nmo_chunk_writer_write_buffer(
+        writer, &byte, (size_t)UINT32_MAX + 1u);
+    ASSERT_EQ(result, NMO_ERR_INVALID_ARGUMENT);
+#endif
 
     // Write a marker
     result = nmo_chunk_writer_write_int(writer, 555);
