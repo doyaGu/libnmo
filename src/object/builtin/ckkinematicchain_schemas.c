@@ -37,8 +37,9 @@ static nmo_status_t nmo_kinematicchain_deserialize_internal(
     nmo_status_t result = nmo_object_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_KINEMATICCHAINALL) == NMO_OK) {
-        out_state->has_chain_data = 1;
+    result = nmo_chunk_seek_identifier(
+        chunk, CK_STATESAVE_KINEMATICCHAINALL);
+    if (result == NMO_OK) {
         nmo_object_id_t placeholder = 0;
         result = nmo_chunk_read_object_id(chunk, &placeholder);
         if (result != NMO_OK) return result;
@@ -48,9 +49,10 @@ static nmo_status_t nmo_kinematicchain_deserialize_internal(
         if (result != NMO_OK) return result;
         result = nmo_ref_read(chunk, &end_effector);
         if (result != NMO_OK) return result;
+        out_state->has_chain_data = 1;
         out_state->start_effector = start_effector;
         out_state->end_effector = end_effector;
-    }
+    } else if (result != NMO_ERR_NOT_FOUND) return result;
 
     NMO_RETURN_OK();
 }
@@ -164,7 +166,8 @@ static nmo_status_t nmo_kinematicchain_serialize_internal(
     const bool is_file = ((out_chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
         (ser_ctx != NULL && (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
     const uint32_t save_flags = nmo_serialize_context_get_save_flags(context);
-    if (!is_file && (save_flags & CK_STATESAVE_KINEMATICCHAINALL) == 0) {
+    if (!in_state->has_chain_data ||
+        (!is_file && (save_flags & CK_STATESAVE_KINEMATICCHAINALL) == 0)) {
         NMO_RETURN_OK();
     }
 
@@ -190,7 +193,13 @@ nmo_status_t nmo_kinematicchain_deserialize(
 {
     (void)type;
     nmo_kinematicchain_state_t *out_state = (nmo_kinematicchain_state_t *)instance;
-    return nmo_kinematicchain_deserialize_internal(out_state, chunk, context);
+    if (out_state == NULL || chunk == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    nmo_kinematicchain_state_t decoded = *out_state;
+    nmo_status_t result = nmo_kinematicchain_deserialize_internal(
+        &decoded, chunk, context);
+    if (result != NMO_OK) return result;
+    *out_state = decoded;
+    return NMO_OK;
 }
 
 nmo_status_t nmo_kinematicchain_serialize(
@@ -199,7 +208,23 @@ nmo_status_t nmo_kinematicchain_serialize(
     const nmo_type_descriptor_t *type,
     void *context)
 {
-    (void)type;
     const nmo_kinematicchain_state_t *in_state = (const nmo_kinematicchain_state_t *)instance;
-    return nmo_kinematicchain_serialize_internal(in_state, out_chunk, context);
+    if (in_state == NULL || out_chunk == NULL || out_chunk->arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    NMO_RETURN_IF_ERROR(nmo_kinematicchain_validate(
+        in_state, type, context));
+    nmo_chunk_t *staged = nmo_chunk_create(out_chunk->arena);
+    if (staged == NULL) return NMO_ERR_NOMEM;
+    staged->class_id = out_chunk->class_id;
+    staged->data_version = out_chunk->data_version;
+    staged->chunk_version = out_chunk->chunk_version;
+    staged->chunk_class_id = out_chunk->chunk_class_id;
+    staged->chunk_options = out_chunk->chunk_options;
+    staged->file_context = out_chunk->file_context;
+    nmo_status_t result = nmo_kinematicchain_serialize_internal(
+        in_state, staged, context);
+    if (result != NMO_OK) return result;
+    *out_chunk = *staged;
+    return NMO_OK;
 }
