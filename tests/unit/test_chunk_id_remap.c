@@ -2162,6 +2162,7 @@ TEST(chunk_id_remap, parameteroperation_refs_round_trip_and_failure_is_atomic) {
     nmo_parameteroperation_state_t failed;
     ASSERT_EQ(NMO_OK, nmo_parameteroperation_vtable.create(
         &failed, NULL, NULL));
+    failed.base.visibility_flags = NMO_CKOBJECT_HIERARCHICAL;
     failed.operation_guid = (nmo_guid_t){3u, 4u};
     failed.in1.ref = nmo_ref_from_raw(901);
     failed.in2.ref = nmo_ref_from_raw(902);
@@ -2171,11 +2172,31 @@ TEST(chunk_id_remap, parameteroperation_refs_round_trip_and_failure_is_atomic) {
     failed.has_out = 1;
     ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_parameteroperation_deserialize(
         &failed, invalid_count, NULL, &deserialize_context));
+    ASSERT_EQ(NMO_CKOBJECT_HIERARCHICAL, failed.base.visibility_flags);
     ASSERT_EQ(3u, failed.operation_guid.d1);
     ASSERT_EQ(4u, failed.operation_guid.d2);
     ASSERT_EQ(901u, failed.in1.ref.raw_id);
     ASSERT_EQ(902u, failed.in2.ref.raw_id);
     ASSERT_EQ(903u, failed.out.ref.raw_id);
+
+    nmo_parameteroperation_state_t invalid = source;
+    invalid.out.ref = nmo_ref_from_id(999);
+    nmo_chunk_t *target = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(target);
+    target->class_id = NMO_CID_PARAMETEROPERATION;
+    target->data_version = 8;
+    target->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(target, &write_context);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(target, 0x12345678u));
+    nmo_chunk_close(target);
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_parameteroperation_serialize(
+        &invalid, target, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(target));
+    uint32_t marker = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(target, &marker));
+    ASSERT_EQ(0x12345678u, marker);
 
     nmo_parameteroperation_vtable.destroy(&source, NULL, NULL);
     nmo_parameteroperation_vtable.destroy(&loaded, NULL, NULL);
@@ -2183,6 +2204,7 @@ TEST(chunk_id_remap, parameteroperation_refs_round_trip_and_failure_is_atomic) {
     nmo_parameteroperation_vtable.destroy(&legacy_loaded, NULL, NULL);
     nmo_parameteroperation_vtable.destroy(&short_loaded, NULL, NULL);
     nmo_parameteroperation_vtable.destroy(&failed, NULL, NULL);
+    nmo_parameteroperation_vtable.destroy(&invalid, NULL, NULL);
     nmo_arena_destroy(arena);
 }
 
