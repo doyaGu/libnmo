@@ -141,25 +141,29 @@ static nmo_status_t chunk_seq_alloc(nmo_chunk_t *chunk, nmo_arena_t *arena,
                                      const char *overflow_msg,
                                      const char *alloc_msg,
                                      size_t *out_count, void **out_ptr) {
+    *out_count = 0;
+    *out_ptr = NULL;
+    size_t start_pos = nmo_chunk_get_position(chunk);
     size_t count = 0;
     nmo_status_t result = nmo_chunk_read_object_sequence_start(chunk, &count);
     NMO_RETURN_IF_ERROR(result);
 
-    *out_count = count;
     if (count == 0) {
-        *out_ptr = NULL;
         NMO_RETURN_OK();
     }
 
     if (count > (SIZE_MAX / elem_sz)) {
+        nmo_chunk_get_parser_state(chunk)->current_pos = start_pos;
         NMO_CHUNK_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, overflow_msg);
     }
 
     void *ptr = nmo_arena_alloc(arena, count * elem_sz, elem_align);
     if (!ptr) {
+        nmo_chunk_get_parser_state(chunk)->current_pos = start_pos;
         NMO_CHUNK_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, alloc_msg);
     }
 
+    *out_count = count;
     *out_ptr = ptr;
     NMO_RETURN_OK();
 }
@@ -174,22 +178,23 @@ nmo_status_t nmo_chunk_read_object_id_array(nmo_chunk_t *chunk,
                                              nmo_arena_t *arena) {
     NMO_CHUNK_CHECK_ARGS2(chunk, out_ids, out_count, "Invalid arguments");
     NMO_CHUNK_CHECK_PTR(arena, "Invalid arguments");
+    *out_ids = NULL;
+    *out_count = 0;
+    size_t start_pos = nmo_chunk_get_position(chunk);
 
     // Start sequence and get count
     size_t count = 0;
     nmo_status_t result = nmo_chunk_read_object_sequence_start(chunk, &count);
     NMO_RETURN_IF_ERROR(result);
 
-    *out_count = count;
-
     // Handle empty array
     if (count == 0) {
-        *out_ids = NULL;
         NMO_RETURN_OK();
     }
 
     // Allocate array
     if (count > (SIZE_MAX / sizeof(nmo_object_id_t))) {
+        nmo_chunk_get_parser_state(chunk)->current_pos = start_pos;
         NMO_CHUNK_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                                "ID array size overflow");
     }
@@ -197,6 +202,7 @@ nmo_status_t nmo_chunk_read_object_id_array(nmo_chunk_t *chunk,
                                                                 count * sizeof(nmo_object_id_t),
                                                                 _Alignof(nmo_object_id_t));
     if (!ids) {
+        nmo_chunk_get_parser_state(chunk)->current_pos = start_pos;
         NMO_CHUNK_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                                "Failed to allocate ID array");
     }
@@ -204,10 +210,14 @@ nmo_status_t nmo_chunk_read_object_id_array(nmo_chunk_t *chunk,
     // Read IDs
     for (size_t i = 0; i < count; i++) {
         result = nmo_chunk_read_object_id(chunk, &ids[i]);
-        NMO_RETURN_IF_ERROR(result);
+        if (result != NMO_OK) {
+            nmo_chunk_get_parser_state(chunk)->current_pos = start_pos;
+            return result;
+        }
     }
 
     *out_ids = ids;
+    *out_count = count;
     NMO_RETURN_OK();
 }
 
@@ -241,6 +251,8 @@ nmo_status_t nmo_chunk_read_int_array(nmo_chunk_t *chunk,
                                        nmo_arena_t *arena) {
     NMO_CHUNK_CHECK_ARGS2(chunk, out_array, out_count, "Invalid arguments");
     NMO_CHUNK_CHECK_PTR(arena, "Invalid arguments");
+    *out_array = NULL;
+    *out_count = 0;
 
     size_t count = 0;
     void *ptr = NULL;
@@ -297,6 +309,8 @@ nmo_status_t nmo_chunk_read_float_array(nmo_chunk_t *chunk,
                                          nmo_arena_t *arena) {
     NMO_CHUNK_CHECK_ARGS2(chunk, out_array, out_count, "Invalid arguments");
     NMO_CHUNK_CHECK_PTR(arena, "Invalid arguments");
+    *out_array = NULL;
+    *out_count = 0;
 
     size_t count = 0;
     void *ptr = NULL;
@@ -353,6 +367,8 @@ nmo_status_t nmo_chunk_read_dword_array(nmo_chunk_t *chunk,
                                          nmo_arena_t *arena) {
     NMO_CHUNK_CHECK_ARGS2(chunk, out_array, out_count, "Invalid arguments");
     NMO_CHUNK_CHECK_PTR(arena, "Invalid arguments");
+    *out_array = NULL;
+    *out_count = 0;
 
     size_t count = 0;
     void *ptr = NULL;
@@ -407,6 +423,8 @@ nmo_status_t nmo_chunk_read_byte_array(nmo_chunk_t *chunk,
                                         nmo_arena_t *arena) {
     NMO_CHUNK_CHECK_ARGS2(chunk, out_array, out_count, "Invalid arguments");
     NMO_CHUNK_CHECK_PTR(arena, "Invalid arguments");
+    *out_array = NULL;
+    *out_count = 0;
 
     size_t count = 0;
     void *ptr = NULL;
@@ -460,22 +478,23 @@ nmo_status_t nmo_chunk_read_string_array(nmo_chunk_t *chunk,
                                           nmo_arena_t *arena) {
     NMO_CHUNK_CHECK_ARGS2(chunk, out_strings, out_count, "Invalid arguments");
     NMO_CHUNK_CHECK_PTR(arena, "Invalid arguments");
+    *out_strings = NULL;
+    *out_count = 0;
+    size_t start_pos = nmo_chunk_get_position(chunk);
 
     // Start sequence and get count
     size_t count = 0;
     nmo_status_t result = nmo_chunk_read_object_sequence_start(chunk, &count);
     NMO_RETURN_IF_ERROR(result);
 
-    *out_count = count;
-
     // Handle empty array
     if (count == 0) {
-        *out_strings = NULL;
         NMO_RETURN_OK();
     }
 
     // Allocate string pointer array
     if (count > (SIZE_MAX / sizeof(char *))) {
+        nmo_chunk_get_parser_state(chunk)->current_pos = start_pos;
         NMO_CHUNK_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                                "String array size overflow");
     }
@@ -483,20 +502,24 @@ nmo_status_t nmo_chunk_read_string_array(nmo_chunk_t *chunk,
                                                 count * sizeof(char *),
                                                 _Alignof(char *));
     if (!strings) {
+        nmo_chunk_get_parser_state(chunk)->current_pos = start_pos;
         NMO_CHUNK_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                                "Failed to allocate string array");
     }
 
     // Read strings
     for (size_t i = 0; i < count; i++) {
-        size_t len = nmo_chunk_read_string(chunk, &strings[i]);
-        if (len == 0 && strings[i] == NULL) {
-            NMO_CHUNK_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                                   "Failed to read string");
+        size_t len = 0;
+        result = nmo_chunk_read_string_checked(
+            chunk, &strings[i], &len);
+        if (result != NMO_OK) {
+            nmo_chunk_get_parser_state(chunk)->current_pos = start_pos;
+            return result;
         }
     }
 
     *out_strings = strings;
+    *out_count = count;
     NMO_RETURN_OK();
 }
 
