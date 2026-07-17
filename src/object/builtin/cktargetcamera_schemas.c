@@ -57,7 +57,8 @@ static nmo_status_t nmo_targetcamera_deserialize_internal(
     out_state->has_target = 0;
     out_state->target = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_TCAMERATARGET) == NMO_OK) {
+    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_TCAMERATARGET);
+    if (result == NMO_OK) {
         nmo_ref_t target = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         result = nmo_ref_read(chunk, &target);
         if (result != NMO_OK) {
@@ -71,7 +72,7 @@ static nmo_status_t nmo_targetcamera_deserialize_internal(
             NMO_CID_3DENTITY);
         out_state->target = target;
         out_state->has_target = target.state != NMO_REF_NONE;
-    }
+    } else if (result != NMO_ERR_NOT_FOUND) return result;
 
     NMO_RETURN_OK();
 }
