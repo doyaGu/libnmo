@@ -1386,6 +1386,12 @@ static nmo_status_t parse_extra_data(
                          "interface chunk: extra entry count %d out of range",
                          entry_count);
     }
+    const size_t minimum_dwords_per_entry = extra_version >= 2 ? 2u : 1u;
+    if ((size_t)entry_count >
+        interface_identifier_remaining_dwords(chunk) /
+            minimum_dwords_per_entry) {
+        return NMO_ERR_TRUNCATED_CHUNK;
+    }
     out->entry_count = (size_t)entry_count;
 
     if (out->entry_count == 0) {
@@ -1440,6 +1446,10 @@ static nmo_status_t parse_extra_data(
                 NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                                  "interface chunk: extra sub-entry count %d out of range",
                                  sub_count);
+            }
+            if ((size_t)sub_count >
+                interface_identifier_remaining_dwords(chunk) / 4u) {
+                return NMO_ERR_TRUNCATED_CHUNK;
             }
             entry->sub_count = (size_t)sub_count;
 
