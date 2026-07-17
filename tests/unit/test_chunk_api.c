@@ -1009,6 +1009,29 @@ TEST(chunk_api, typed_array_writes_reject_unencodable_counts) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_api, generic_array_write_rejects_invalid_sizes) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 1024 * 16);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t* chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0x12345678u));
+
+    const uint8_t value = 1;
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+        nmo_chunk_write_array(
+            chunk, &value, (size_t)INT_MAX + 1u, 1));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+        nmo_chunk_write_array(
+            chunk, &value, 1, (size_t)INT_MAX + 1u));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+        nmo_chunk_write_array(chunk, &value, (size_t)INT_MAX, 2));
+    ASSERT_EQ(1u, nmo_chunk_get_position(chunk));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(chunk));
+
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_api, compression) {
     nmo_arena_t* arena = nmo_arena_create(NULL, 1024 * 16);
     ASSERT_NOT_NULL(arena);
@@ -1171,6 +1194,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_api, arrays);
     REGISTER_TEST(chunk_api, arrays_reject_inconsistent_header);
     REGISTER_TEST(chunk_api, typed_array_writes_reject_unencodable_counts);
+    REGISTER_TEST(chunk_api, generic_array_write_rejects_invalid_sizes);
     REGISTER_TEST(chunk_api, compression);
     REGISTER_TEST(chunk_api, compression_new_api);
     REGISTER_TEST(chunk_api, crc);
