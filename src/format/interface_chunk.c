@@ -1995,7 +1995,7 @@ static nmo_status_t write_extra_data(nmo_chunk_t *chunk,
  * Public writer
  * ================================================================ */
 
-nmo_status_t nmo_interface_chunk_write(
+static nmo_status_t nmo_interface_chunk_write_internal(
     nmo_chunk_t *chunk,
     const nmo_interface_data_t *data,
     const nmo_interface_parse_ctx_t *ctx)
@@ -2074,5 +2074,30 @@ nmo_status_t nmo_interface_chunk_write(
     NMO_RETURN_IF_ERROR(st);
 
     nmo_chunk_close(chunk);
+    return NMO_OK;
+}
+
+nmo_status_t nmo_interface_chunk_write(
+    nmo_chunk_t *chunk,
+    const nmo_interface_data_t *data,
+    const nmo_interface_parse_ctx_t *ctx)
+{
+    if (!chunk || !data || !chunk->arena) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_chunk_t *staged = nmo_chunk_create(chunk->arena);
+    if (!staged) return NMO_ERR_NOMEM;
+    staged->class_id = chunk->class_id;
+    staged->data_version = chunk->data_version;
+    staged->chunk_version = chunk->chunk_version;
+    staged->chunk_class_id = chunk->chunk_class_id;
+    staged->chunk_options = chunk->chunk_options;
+    staged->file_context = chunk->file_context;
+
+    nmo_status_t result = nmo_interface_chunk_write_internal(
+        staged, data, ctx);
+    if (result != NMO_OK) return result;
+    *chunk = *staged;
     return NMO_OK;
 }
