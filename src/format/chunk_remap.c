@@ -433,8 +433,6 @@ nmo_status_t nmo_chunk_remap_object_ids_ex(nmo_chunk_t *chunk,
         if (mgrs_backup != NULL && chunk->managers.data != NULL) {
             memcpy(chunk->managers.data, mgrs_backup, mgrs_bytes);
         }
-        nmo_last_error_clear();
-        result = NMO_OK;
     }
 
     return result;
