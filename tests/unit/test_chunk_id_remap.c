@@ -5542,6 +5542,34 @@ TEST(chunk_id_remap, synchro_refs_round_trip_and_failure_is_atomic) {
                         nmo_ref_t, &failed.passed_ids)[0].raw_id);
     ASSERT_EQ(NMO_CKOBJECT_HIERARCHICAL, failed.base.visibility_flags);
 
+    nmo_chunk_t *cross_section_waiters = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(cross_section_waiters);
+    cross_section_waiters->class_id = NMO_CID_SYNCHRO;
+    cross_section_waiters->data_version = 7;
+    cross_section_waiters->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(cross_section_waiters));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_section_waiters, CK_STATESAVE_SYNCHRODATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(cross_section_waiters, 8));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(
+        cross_section_waiters, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_section_waiters, 0x7F123456u));
+    nmo_chunk_close(cross_section_waiters);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_synchro_deserialize(
+        &failed, cross_section_waiters, NULL, &deserialize_context));
+    nmo_chunk_parser_state_t *parser =
+        (nmo_chunk_parser_state_t *)cross_section_waiters->parser_state;
+    ASSERT_NOT_NULL(parser);
+    ASSERT_EQ(parser->prev_identifier_pos + 4u, parser->current_pos);
+    ASSERT_EQ(99, failed.max_waiters);
+    ASSERT_EQ(1u, failed.arrived_ids.count);
+    ASSERT_EQ(1u, failed.passed_ids.count);
+    ASSERT_EQ(930u, NMO_ARRAY_DATA(
+        nmo_ref_t, &failed.arrived_ids)[0].raw_id);
+    ASSERT_EQ(931u, NMO_ARRAY_DATA(
+        nmo_ref_t, &failed.passed_ids)[0].raw_id);
+
     nmo_synchro_state_t invalid;
     ASSERT_EQ(NMO_OK, nmo_synchro_vtable.create(&invalid, NULL, NULL));
     nmo_ref_t valid_waiter = nmo_ref_from_raw(932);
