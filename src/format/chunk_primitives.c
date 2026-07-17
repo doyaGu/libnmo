@@ -417,6 +417,8 @@ nmo_status_t nmo_chunk_read_buffer(nmo_chunk_t *chunk,
                                    void **out_data,
                                    size_t *out_size) {
     NMO_CHUNK_CHECK_ARGS2(chunk, out_data, out_size, "Invalid arguments");
+    *out_data = NULL;
+    *out_size = 0;
 
     NMO_CHUNK_CHECK_BOUNDS(chunk, 1);
 
@@ -425,10 +427,7 @@ nmo_status_t nmo_chunk_read_buffer(nmo_chunk_t *chunk,
     size_t start_pos = state->current_pos;
     uint32_t size = data_dwords[state->current_pos++];
 
-    *out_size = size;
-
     if (size == 0) {
-        *out_data = NULL;
         NMO_RETURN_OK();
     }
 
@@ -451,6 +450,7 @@ nmo_status_t nmo_chunk_read_buffer(nmo_chunk_t *chunk,
     state->current_pos += dwords;
 
     *out_data = data;
+    *out_size = size;
     NMO_RETURN_OK();
 }
 
