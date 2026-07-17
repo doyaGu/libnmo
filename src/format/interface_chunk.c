@@ -167,6 +167,26 @@ static uint32_t behavior_section_id(size_t behavior_index, uint32_t base)
     return (uint32_t)behavior_index + base;
 }
 
+static size_t interface_identifier_remaining_dwords(
+    const nmo_chunk_t *chunk)
+{
+    if (!chunk || !chunk->parser_state) return 0;
+
+    const nmo_chunk_parser_state_t *state =
+        (const nmo_chunk_parser_state_t *)chunk->parser_state;
+    const uint32_t *data =
+        NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    size_t next_pos = chunk->data.count;
+    if (state->prev_identifier_pos + 1u < chunk->data.count) {
+        const uint32_t candidate = data[state->prev_identifier_pos + 1u];
+        if (candidate != 0 && candidate <= chunk->data.count) {
+            next_pos = candidate;
+        }
+    }
+    if (next_pos < state->current_pos) return 0;
+    return next_pos - state->current_pos;
+}
+
 /* ================================================================
  * Public API
  * ================================================================ */
@@ -363,6 +383,14 @@ static nmo_status_t parse_parameter_section(
     if (count < 0 || count > 100000) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                          "interface chunk: sectioned parameter count %d out of range", count);
+    }
+    const size_t mapping_dwords = shared
+        ? (version >= 0x15 ? 1u : 3u) : 0u;
+    const size_t minimum_dwords_per_item = 3u + mapping_dwords;
+    if ((size_t)count >
+        interface_identifier_remaining_dwords(chunk) /
+            minimum_dwords_per_item) {
+        return NMO_ERR_TRUNCATED_CHUNK;
     }
 
     nmo_interface_param_t **items = shared ? &params->shared : &params->locals;
@@ -1166,6 +1194,9 @@ static nmo_status_t parse_graph_io_array(
     if (count < 0 || count > 100000) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                          "interface chunk: graph IO array count %d out of range", count);
+    }
+    if ((size_t)count > interface_identifier_remaining_dwords(chunk) / 2u) {
+        return NMO_ERR_TRUNCATED_CHUNK;
     }
     *out_count = (size_t)count;
     if (count == 0) {
