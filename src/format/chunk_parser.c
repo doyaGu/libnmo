@@ -223,7 +223,12 @@ static nmo_status_t parser_read_array_lendian_impl(nmo_chunk_parser_t *p,
         "Cannot read array metadata");
     NMO_PARSER_RETURN_IF_ERROR_ROLLBACK(result, p, start_pos);
 
-    if (data_size_bytes == 0 || element_count == 0) {
+    if ((data_size_bytes == 0u) != (element_count == 0u)) {
+        NMO_PARSER_RETURN_ERROR_ROLLBACK(
+            p, start_pos, NMO_ERR_INVALID_FORMAT,
+            "Array metadata has inconsistent size and count");
+    }
+    if (data_size_bytes == 0) {
         NMO_RETURN_OK();
     }
 
