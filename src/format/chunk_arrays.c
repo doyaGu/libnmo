@@ -63,17 +63,23 @@ nmo_status_t nmo_chunk_read_array(nmo_chunk_t *chunk,
                                   size_t *out_count,
                                   size_t *out_elem_size) {
     NMO_CHUNK_CHECK_ARGS3(chunk, out_array, out_count, out_elem_size, "Invalid arguments");
+    *out_array = NULL;
+    *out_count = 0;
+    *out_elem_size = 0;
 
-    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
-    size_t start_pos = state->current_pos;
+    size_t start_pos = nmo_chunk_get_position(chunk);
 
     uint32_t total_size = 0;
     nmo_status_t result = nmo_chunk_read_dword(chunk, &total_size);
     NMO_RETURN_IF_ERROR(result);
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
 
     uint32_t count = 0;
     result = nmo_chunk_read_dword(chunk, &count);
-    NMO_RETURN_IF_ERROR(result);
+    if (result != NMO_OK) {
+        state->current_pos = start_pos;
+        return result;
+    }
 
     if ((total_size == 0u) != (count == 0u)) {
         state->current_pos = start_pos;
@@ -82,9 +88,6 @@ nmo_status_t nmo_chunk_read_array(nmo_chunk_t *chunk,
     }
 
     if (total_size == 0 || count == 0) {
-        *out_array = NULL;
-        *out_count = 0;
-        *out_elem_size = 0;
         NMO_RETURN_OK();
     }
 
