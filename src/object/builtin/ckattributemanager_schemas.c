@@ -25,6 +25,7 @@
 #include "nmo_types.h"
 #include <stdalign.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <string.h>
 
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(attributemanager, nmo_attributemanager_state_t)
@@ -64,7 +65,14 @@ static const nmo_type_field_t nmo_attributemanager_fields[] = {
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-nmo_status_t nmo_attributemanager_deserialize(
+static bool nmo_attributemanager_size_mul_overflows(
+    size_t count,
+    size_t element_size)
+{
+    return count != 0 && element_size > SIZE_MAX / count;
+}
+
+static nmo_status_t nmo_attributemanager_deserialize_internal(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -77,11 +85,6 @@ nmo_status_t nmo_attributemanager_deserialize(
     if (chunk == NULL || out_state == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_attributemanager_deserialize");
     }
-
-    out_state->category_count = 0;
-    out_state->attribute_count = 0;
-    out_state->categories = NULL;
-    out_state->attributes = NULL;
 
     /* Seek identifier */
     nmo_status_t result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_ATTRIBUTEMANAGER);
@@ -110,6 +113,17 @@ nmo_status_t nmo_attributemanager_deserialize(
     if (!nmo_chunk_has_read_capacity(chunk, minimum_entry_dwords)) {
         NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                          "Attribute manager counts exceed remaining DWORDs");
+    }
+    if (minimum_entry_dwords > 0 && arena == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Attribute manager deserialization requires an arena");
+    }
+    if (nmo_attributemanager_size_mul_overflows(
+            (size_t)category_count, sizeof(nmo_attribute_category_t)) ||
+        nmo_attributemanager_size_mul_overflows(
+            (size_t)attribute_count, sizeof(nmo_attribute_descriptor_t))) {
+        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                         "Attribute manager allocation size overflows");
     }
 
     nmo_attribute_category_t *categories = NULL;
@@ -192,6 +206,24 @@ nmo_status_t nmo_attributemanager_deserialize(
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_attributemanager_deserialize(
+    void *instance,
+    nmo_chunk_t *chunk,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    nmo_attributemanager_state_t *out_state =
+        (nmo_attributemanager_state_t *)instance;
+    if (out_state == NULL || chunk == NULL) return NMO_ERR_INVALID_ARGUMENT;
+
+    nmo_attributemanager_state_t decoded = {0};
+    nmo_status_t result = nmo_attributemanager_deserialize_internal(
+        &decoded, chunk, type, context);
+    if (result != NMO_OK) return result;
+    *out_state = decoded;
+    return NMO_OK;
+}
+
 /* =============================================================================
  * CKAttributeManager SERIALIZATION
  * ============================================================================= */
@@ -208,7 +240,7 @@ nmo_status_t nmo_attributemanager_deserialize(
  * @param state Input state structure
  * @return Result indicating success or error
  */
-nmo_status_t nmo_attributemanager_serialize(
+static nmo_status_t nmo_attributemanager_serialize_internal(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
@@ -221,6 +253,17 @@ nmo_status_t nmo_attributemanager_serialize(
 
     if (in_state == NULL || out_chunk == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_attributemanager_serialize");
+    }
+    if (in_state->category_count > 10000 ||
+        in_state->attribute_count > 100000) {
+        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                         "Attribute manager counts exceed format limits");
+    }
+    if (in_state->category_count > 0 && in_state->categories == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Attribute categories missing");
+    }
+    if (in_state->attribute_count > 0 && in_state->attributes == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Attribute descriptors missing");
     }
 
     nmo_status_t result;
@@ -235,13 +278,6 @@ nmo_status_t nmo_attributemanager_serialize(
 
     result = nmo_chunk_write_int(out_chunk, (int32_t)in_state->attribute_count);
     if (result != NMO_OK) return result;
-
-    if (in_state->category_count > 0 && in_state->categories == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Attribute categories missing");
-    }
-    if (in_state->attribute_count > 0 && in_state->attributes == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Attribute descriptors missing");
-    }
 
     /* Write categories */
     for (uint32_t i = 0; i < in_state->category_count; i++) {
@@ -285,6 +321,32 @@ nmo_status_t nmo_attributemanager_serialize(
     }
 
     NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_attributemanager_serialize(
+    const void *instance,
+    nmo_chunk_t *out_chunk,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    if (instance == NULL || out_chunk == NULL || out_chunk->arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_chunk_t *staged = nmo_chunk_create(out_chunk->arena);
+    if (staged == NULL) return NMO_ERR_NOMEM;
+    staged->class_id = out_chunk->class_id;
+    staged->data_version = out_chunk->data_version;
+    staged->chunk_version = out_chunk->chunk_version;
+    staged->chunk_class_id = out_chunk->chunk_class_id;
+    staged->chunk_options = out_chunk->chunk_options;
+    staged->file_context = out_chunk->file_context;
+
+    nmo_status_t result = nmo_attributemanager_serialize_internal(
+        instance, staged, type, context);
+    if (result != NMO_OK) return result;
+    *out_chunk = *staged;
+    return NMO_OK;
 }
 
 /* =============================================================================
