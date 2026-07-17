@@ -346,6 +346,46 @@ TEST(chunk_16bit, error_handling) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_16bit, dword_word_arrays_fail_atomically) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_writer_t *writer = nmo_chunk_writer_create(arena);
+    ASSERT_NOT_NULL(writer);
+    nmo_chunk_writer_start(writer, 0, NMO_CHUNK_VERSION4);
+
+    const uint32_t value = 0x12345678u;
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+        nmo_chunk_writer_write_array_dword_as_words(
+            writer, &value, SIZE_MAX));
+    ASSERT_EQ(NMO_OK, nmo_chunk_writer_write_dword(writer, 0xAABBCCDDu));
+
+    nmo_chunk_t *written = nmo_chunk_writer_finalize(writer);
+    ASSERT_NOT_NULL(written);
+    ASSERT_EQ(1u, written->data.count);
+    ASSERT_EQ(0xAABBCCDDu,
+        NMO_ARENA_ARRAY_DATA(uint32_t, &written->data)[0]);
+
+    nmo_chunk_t *truncated = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(truncated);
+    ASSERT_EQ(NMO_OK, nmo_arena_array_resize(&truncated->data, 2));
+    uint32_t *words = NMO_ARENA_ARRAY_DATA(uint32_t, &truncated->data);
+    words[0] = 0x5678u;
+    words[1] = 0x1234u;
+
+    nmo_chunk_parser_t *parser = nmo_chunk_parser_create(truncated);
+    ASSERT_NOT_NULL(parser);
+    uint32_t output[2] = {0x11111111u, 0x22222222u};
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK,
+        nmo_chunk_parser_read_dword_array_as_words(parser, output, 2));
+    ASSERT_EQ(0u, nmo_chunk_parser_tell(parser));
+    ASSERT_EQ(0x11111111u, output[0]);
+    ASSERT_EQ(0x22222222u, output[1]);
+
+    nmo_chunk_parser_destroy(parser);
+    nmo_chunk_writer_destroy(writer);
+    nmo_arena_destroy(arena);
+}
+
 /**
  * Test: Virtools compatibility - compressed animation data format
  */
@@ -404,5 +444,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_16bit, buffer_nosize_lendian16_large);
     REGISTER_TEST(chunk_16bit, mixed_operations);
     REGISTER_TEST(chunk_16bit, error_handling);
+    REGISTER_TEST(chunk_16bit, dword_word_arrays_fail_atomically);
     REGISTER_TEST(chunk_16bit, virtools_compatibility);
 TEST_MAIN_END()
