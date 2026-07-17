@@ -242,10 +242,65 @@ TEST(chunk_serialization, bit_pattern_integrity) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_serialization, rejects_invalid_public_array_state) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+
+#if SIZE_MAX > UINT32_MAX
+    nmo_arena_array_t *arrays[] = {
+        &chunk->data,
+        &chunk->ids,
+        &chunk->chunk_refs,
+        &chunk->managers,
+    };
+    for (size_t i = 0; i < sizeof(arrays) / sizeof(arrays[0]); ++i) {
+        arrays[i]->count = (size_t)UINT32_MAX + 1u;
+        arrays[i]->data = (void *)(uintptr_t)1;
+
+        void *output = (void *)(uintptr_t)1;
+        size_t output_size = 123;
+        ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+            nmo_chunk_serialize(chunk, &output, &output_size, arena));
+        ASSERT_NULL(output);
+        ASSERT_EQ(0u, output_size);
+
+        output = (void *)(uintptr_t)1;
+        output_size = 123;
+        ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+            nmo_chunk_serialize_version1(
+                chunk, &output, &output_size, arena));
+        ASSERT_NULL(output);
+        ASSERT_EQ(0u, output_size);
+
+        arrays[i]->count = 0;
+        arrays[i]->data = NULL;
+    }
+#endif
+
+    chunk->data.count = 1;
+    void *output = (void *)(uintptr_t)1;
+    size_t output_size = 123;
+    ASSERT_EQ(NMO_ERR_INVALID_STATE,
+        nmo_chunk_serialize(chunk, &output, &output_size, arena));
+    ASSERT_NULL(output);
+    ASSERT_EQ(0u, output_size);
+
+    output = (void *)(uintptr_t)1;
+    output_size = 123;
+    ASSERT_EQ(NMO_ERR_INVALID_STATE,
+        nmo_chunk_serialize_version1(chunk, &output, &output_size, arena));
+    ASSERT_NULL(output);
+    ASSERT_EQ(0u, output_size);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_serialization, version_info_packing);
     REGISTER_TEST(chunk_serialization, full_serialization);
     REGISTER_TEST(chunk_serialization, empty_chunk);
     REGISTER_TEST(chunk_serialization, bit_pattern_integrity);
+    REGISTER_TEST(chunk_serialization, rejects_invalid_public_array_state);
 TEST_MAIN_END()
-
