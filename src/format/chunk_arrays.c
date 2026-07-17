@@ -265,6 +265,9 @@ nmo_status_t nmo_chunk_write_int_array(nmo_chunk_t *chunk,
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
     NMO_CHUNK_CHECK_COUNT_ARRAY(count, array, "Non-zero count with NULL array");
+    if (count > (size_t)INT32_MAX) {
+        NMO_CHUNK_RETURN_INVALID_ARGUMENT("Int array count is not encodable");
+    }
 
     // Write count
     nmo_status_t result = nmo_chunk_write_dword(chunk, (uint32_t) count);
@@ -318,6 +321,9 @@ nmo_status_t nmo_chunk_write_float_array(nmo_chunk_t *chunk,
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
     NMO_CHUNK_CHECK_COUNT_ARRAY(count, array, "Non-zero count with NULL array");
+    if (count > (size_t)INT32_MAX) {
+        NMO_CHUNK_RETURN_INVALID_ARGUMENT("Float array count is not encodable");
+    }
 
     // Write count
     nmo_status_t result = nmo_chunk_write_dword(chunk, (uint32_t) count);
@@ -369,6 +375,9 @@ nmo_status_t nmo_chunk_write_dword_array(nmo_chunk_t *chunk,
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
     NMO_CHUNK_CHECK_COUNT_ARRAY(count, array, "Non-zero count with NULL array");
+    if (count > (size_t)INT32_MAX) {
+        NMO_CHUNK_RETURN_INVALID_ARGUMENT("Dword array count is not encodable");
+    }
 
     // Write count
     nmo_status_t result = nmo_chunk_write_dword(chunk, (uint32_t) count);
@@ -419,6 +428,9 @@ nmo_status_t nmo_chunk_write_byte_array(nmo_chunk_t *chunk,
                                          size_t count) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
     NMO_CHUNK_CHECK_COUNT_ARRAY(count, array, "Non-zero count with NULL array");
+    if (count > (size_t)INT32_MAX) {
+        NMO_CHUNK_RETURN_INVALID_ARGUMENT("Byte array count is not encodable");
+    }
 
     // Write count
     nmo_status_t result = nmo_chunk_write_dword(chunk, (uint32_t) count);
@@ -489,6 +501,9 @@ nmo_status_t nmo_chunk_write_string_array(nmo_chunk_t *chunk,
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
     NMO_CHUNK_CHECK_COUNT_ARRAY(count, strings, "Non-zero count with NULL array");
+    if (count > (size_t)INT32_MAX) {
+        NMO_CHUNK_RETURN_INVALID_ARGUMENT("String array count is not encodable");
+    }
 
     // Write count
     nmo_status_t result = nmo_chunk_write_dword(chunk, (uint32_t) count);
