@@ -23,6 +23,7 @@
 #include "nmo_types.h"
 #include <stdalign.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <string.h>
 
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(messagemanager, nmo_messagemanager_state_t)
@@ -60,7 +61,14 @@ static const nmo_type_field_t nmo_messagemanager_fields[] = {
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-nmo_status_t nmo_messagemanager_deserialize(
+static bool nmo_messagemanager_size_mul_overflows(
+    size_t count,
+    size_t element_size)
+{
+    return count != 0 && element_size > SIZE_MAX / count;
+}
+
+static nmo_status_t nmo_messagemanager_deserialize_internal(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -73,9 +81,6 @@ nmo_status_t nmo_messagemanager_deserialize(
     if (chunk == NULL || out_state == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_messagemanager_deserialize");
     }
-
-    out_state->message_type_count = 0;
-    out_state->message_type_names = NULL;
 
     /* Seek identifier */
     nmo_status_t result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_MESSAGEMANAGER);
@@ -104,6 +109,15 @@ nmo_status_t nmo_messagemanager_deserialize(
         NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                          "Message type count exceeds remaining DWORDs");
     }
+    if (arena == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Message manager deserialization requires an arena");
+    }
+    if (nmo_messagemanager_size_mul_overflows(
+            (size_t)type_count, sizeof(char *))) {
+        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                         "Message type name allocation size overflows");
+    }
 
     const char **names = (const char **)nmo_arena_alloc(
         arena, type_count * sizeof(char *), _Alignof(char *));
@@ -124,6 +138,24 @@ nmo_status_t nmo_messagemanager_deserialize(
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_messagemanager_deserialize(
+    void *instance,
+    nmo_chunk_t *chunk,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    nmo_messagemanager_state_t *out_state =
+        (nmo_messagemanager_state_t *)instance;
+    if (out_state == NULL || chunk == NULL) return NMO_ERR_INVALID_ARGUMENT;
+
+    nmo_messagemanager_state_t decoded = {0};
+    nmo_status_t result = nmo_messagemanager_deserialize_internal(
+        &decoded, chunk, type, context);
+    if (result != NMO_OK) return result;
+    *out_state = decoded;
+    return NMO_OK;
+}
+
 /* =============================================================================
  * CKMessageManager SERIALIZATION
  * ============================================================================= */
@@ -140,7 +172,7 @@ nmo_status_t nmo_messagemanager_deserialize(
  * @param state Input state structure
  * @return Result indicating success or error
  */
-nmo_status_t nmo_messagemanager_serialize(
+static nmo_status_t nmo_messagemanager_serialize_internal(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
@@ -153,6 +185,10 @@ nmo_status_t nmo_messagemanager_serialize(
 
     if (in_state == NULL || out_chunk == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_messagemanager_serialize");
+    }
+    if (in_state->message_type_count > 10000) {
+        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                         "Message type count exceeds format limits");
     }
 
     if (in_state->message_type_count > 0 && in_state->message_type_names == NULL) {
@@ -181,6 +217,32 @@ nmo_status_t nmo_messagemanager_serialize(
     }
 
     NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_messagemanager_serialize(
+    const void *instance,
+    nmo_chunk_t *out_chunk,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    if (instance == NULL || out_chunk == NULL || out_chunk->arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_chunk_t *staged = nmo_chunk_create(out_chunk->arena);
+    if (staged == NULL) return NMO_ERR_NOMEM;
+    staged->class_id = out_chunk->class_id;
+    staged->data_version = out_chunk->data_version;
+    staged->chunk_version = out_chunk->chunk_version;
+    staged->chunk_class_id = out_chunk->chunk_class_id;
+    staged->chunk_options = out_chunk->chunk_options;
+    staged->file_context = out_chunk->file_context;
+
+    nmo_status_t result = nmo_messagemanager_serialize_internal(
+        instance, staged, type, context);
+    if (result != NMO_OK) return result;
+    *out_chunk = *staged;
+    return NMO_OK;
 }
 
 /* =============================================================================
