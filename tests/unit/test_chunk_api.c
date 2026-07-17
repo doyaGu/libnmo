@@ -256,6 +256,30 @@ TEST(chunk_api, buffer_no_size_rejects_null_data_with_size) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_api, buffer_writes_reject_size_overflow_atomically) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_chunk_t* chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0x12345678u));
+
+    const uint8_t byte = 0xAA;
+#if SIZE_MAX > UINT32_MAX
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+        nmo_chunk_write_buffer(chunk, &byte, SIZE_MAX));
+    ASSERT_EQ(1u, nmo_chunk_get_position(chunk));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(chunk));
+#endif
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+        nmo_chunk_write_buffer_no_size(chunk, &byte, SIZE_MAX));
+    ASSERT_EQ(1u, nmo_chunk_get_position(chunk));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(chunk));
+
+    nmo_arena_destroy(arena);
+}
+
 // Test: GUID write/read
 TEST(chunk_api, guid) {
     nmo_arena_t* arena = nmo_arena_create(NULL, 8192);
@@ -1054,6 +1078,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_api, buffer_fill_errors_keep_position);
     REGISTER_TEST(chunk_api, buffer_null_data_writes_zero_size);
     REGISTER_TEST(chunk_api, buffer_no_size_rejects_null_data_with_size);
+    REGISTER_TEST(chunk_api, buffer_writes_reject_size_overflow_atomically);
     REGISTER_TEST(chunk_api, guid);
     REGISTER_TEST(chunk_api, object_id);
     REGISTER_TEST(chunk_api, sequence);
