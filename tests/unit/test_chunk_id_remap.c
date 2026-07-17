@@ -25,6 +25,7 @@
 #include "object/builtin/nmo_layer_schemas.h"
 #include "object/builtin/nmo_sprite_schemas.h"
 #include "object/builtin/nmo_spritetext_schemas.h"
+#include "object/builtin/nmo_texture_schemas.h"
 #include "object/builtin/nmo_curve_schemas.h"
 #include "object/builtin/nmo_sprite3d_schemas.h"
 #include "object/builtin/nmo_sound_schemas.h"
@@ -2696,6 +2697,125 @@ TEST(chunk_id_remap, spritetext_failures_keep_state_and_target_chunk_atomic) {
     nmo_array_dispose(&state.base.entity.base.base.legacy_attributes);
     nmo_spritetext_vtable.destroy(&state, NULL, NULL);
     nmo_spritetext_vtable.destroy(&source, NULL, NULL);
+    nmo_arena_destroy(failing_arena);
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_id_remap, texture_failures_keep_state_and_target_chunk_atomic) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+
+    nmo_chunk_t *truncated = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(truncated);
+    truncated->class_id = NMO_CID_TEXTURE;
+    truncated->data_version = 7;
+    truncated->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(truncated));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        truncated, CK_STATESAVE_TEXREADER));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(truncated, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(truncated, 64));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(truncated, 32));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(truncated, 24));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(truncated, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(truncated, 0x504E47u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_guid(truncated, NMO_GUID_NULL));
+    nmo_chunk_close(truncated);
+
+    uint8_t old_data[] = {1, 2, 3, 4};
+    nmo_texture_reader_slot_t old_slot = {
+        .format_type = 1,
+        .extension = 0x4F4C44u,
+        .reader_guid = NMO_GUID_NULL,
+        .data_size = sizeof(old_data),
+        .data = old_data,
+    };
+    nmo_texture_state_t state;
+    ASSERT_EQ(NMO_OK, nmo_texture_vtable.create(&state, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(
+        &state.base, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &state.base.scripts, 901));
+    state.has_movie_filename = 1;
+    state.movie_filename = "old.avi";
+    state.slot_count = 1;
+    state.reader_width = 8;
+    state.reader_height = 4;
+    state.reader_bpp = 16;
+    state.bitmap_kind = CKTEXTURE_BITMAP_READER;
+    state.reader_slots = &old_slot;
+    state.has_pick_threshold = 1;
+    state.pick_threshold = 33;
+
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_texture_deserialize(
+        &state, truncated, NULL, &deserialize_context));
+    ASSERT_TRUE(state.has_movie_filename);
+    ASSERT_STR_EQ("old.avi", state.movie_filename);
+    ASSERT_EQ(1u, state.slot_count);
+    ASSERT_EQ(8, state.reader_width);
+    ASSERT_EQ(4, state.reader_height);
+    ASSERT_EQ(16, state.reader_bpp);
+    ASSERT_EQ(CKTEXTURE_BITMAP_READER, state.bitmap_kind);
+    ASSERT_EQ(&old_slot, state.reader_slots);
+    ASSERT_TRUE(state.has_pick_threshold);
+    ASSERT_EQ(33, state.pick_threshold);
+    ASSERT_EQ(901u, nmo_beobject_script_array_get_id(
+        &state.base.scripts, 0));
+
+    fail_after_allocator_state_t allocator_state = {
+        .allocation_count = 0,
+        .allowed_allocations = 2,
+    };
+    nmo_allocator_t failing_allocator = nmo_allocator_custom(
+        fail_after_alloc, fail_after_free, &allocator_state);
+    nmo_arena_t *failing_arena = nmo_arena_create(
+        &failing_allocator, 4096);
+    ASSERT_NOT_NULL(failing_arena);
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        failing_arena, NULL, 0, 0);
+
+    uint8_t large_data[16384];
+    memset(large_data, 0x5A, sizeof(large_data));
+    nmo_texture_reader_slot_t source_slot = {
+        .format_type = 1,
+        .extension = 0x504E47u,
+        .reader_guid = NMO_GUID_NULL,
+        .data_size = sizeof(large_data),
+        .data = large_data,
+    };
+    nmo_texture_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_texture_vtable.create(&source, NULL, NULL));
+    source.slot_count = 1;
+    source.reader_width = 64;
+    source.reader_height = 32;
+    source.reader_bpp = 24;
+    source.bitmap_kind = CKTEXTURE_BITMAP_READER;
+    source.reader_slots = &source_slot;
+
+    nmo_chunk_t *target = nmo_chunk_create(failing_arena);
+    ASSERT_NOT_NULL(target);
+    target->class_id = NMO_CID_TEXTURE;
+    target->data_version = 7;
+    target->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(target, 0x12345678u));
+    nmo_chunk_close(target);
+    ASSERT_EQ(NMO_ERR_NOMEM, nmo_texture_serialize(
+        &source, target, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(target));
+    uint32_t marker = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(target, &marker));
+    ASSERT_EQ(0x12345678u, marker);
+
+    nmo_array_dispose(&state.base.scripts);
+    nmo_array_dispose(&state.base.attributes);
+    nmo_array_dispose(&state.base.legacy_attributes);
+    nmo_texture_vtable.destroy(&state, NULL, NULL);
+    nmo_texture_vtable.destroy(&source, NULL, NULL);
     nmo_arena_destroy(failing_arena);
     nmo_arena_destroy(arena);
 }
@@ -6176,6 +6296,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, sprite_shared_ref_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, sprite_failures_keep_state_and_target_chunk_atomic);
     REGISTER_TEST(chunk_id_remap, spritetext_failures_keep_state_and_target_chunk_atomic);
+    REGISTER_TEST(chunk_id_remap, texture_failures_keep_state_and_target_chunk_atomic);
     REGISTER_TEST(chunk_id_remap, curvepoint_unresolved_curve_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, sprite3d_unresolved_material_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, wavesound_unresolved_attachment_round_trips_raw_id);
