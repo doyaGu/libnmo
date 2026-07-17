@@ -512,7 +512,8 @@ static nmo_status_t nmo_mesh_deserialize_material_groups(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                          "Invalid mesh material group count %d", group_count);
     }
-    if (!nmo_chunk_has_read_capacity(chunk, (size_t)group_count * 2u)) {
+    if ((size_t)group_count * 2u >
+        nmo_mesh_identifier_remaining_dwords(chunk)) {
         NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                          "CKMesh material groups exceed remaining DWORDs");
     }
