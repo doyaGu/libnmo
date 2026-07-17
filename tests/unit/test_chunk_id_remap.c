@@ -6563,6 +6563,30 @@ TEST(chunk_id_remap, mesh_material_sections_and_failures_are_atomic) {
     ASSERT_EQ(901u, failed.material_groups[0].material.raw_id);
     ASSERT_EQ(91, failed.material_groups[0].padding);
 
+    nmo_chunk_t *cross_section_groups = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(cross_section_groups);
+    cross_section_groups->class_id = NMO_CID_MESH;
+    cross_section_groups->chunk_version = NMO_CHUNK_VERSION4;
+    cross_section_groups->data_version = 9;
+    cross_section_groups->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(cross_section_groups));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_section_groups, CK_STATESAVE_MESHMATERIALS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(cross_section_groups, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_section_groups, 0x7F123456u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(cross_section_groups, 0));
+    nmo_chunk_close(cross_section_groups);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_mesh_deserialize(
+        &failed, cross_section_groups, NULL, &deserialize_context));
+    nmo_chunk_parser_state_t *parser =
+        (nmo_chunk_parser_state_t *)cross_section_groups->parser_state;
+    ASSERT_NOT_NULL(parser);
+    ASSERT_EQ(parser->prev_identifier_pos + 3u, parser->current_pos);
+    ASSERT_EQ(0xCAFEBABEu, failed.flags);
+    ASSERT_EQ(&previous_group, failed.material_groups);
+    ASSERT_EQ(1u, failed.material_group_count);
+
     nmo_chunk_t *truncated_flags = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(truncated_flags);
     truncated_flags->class_id = NMO_CID_MESH;
