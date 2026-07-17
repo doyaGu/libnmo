@@ -568,12 +568,17 @@ nmo_status_t nmo_chunk_serialize(const nmo_chunk_t *chunk,
                                  void **out_data,
                                  size_t *out_size,
                                  nmo_arena_t *arena) {
+    if (out_data != NULL) {
+        *out_data = NULL;
+    }
+    if (out_size != NULL) {
+        *out_size = 0;
+    }
+
     /* Validate arguments */
     if (!chunk || !out_data || !out_size || !arena) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to chunk_serialize");
     }
-    *out_data = NULL;
-    *out_size = 0;
 
     const uint32_t option_flags = chunk_compute_option_flags(chunk);
     nmo_status_t result = chunk_validate_serializable(chunk, option_flags);
@@ -702,12 +707,17 @@ nmo_status_t nmo_chunk_serialize_version1(const nmo_chunk_t *chunk,
                                           void **out_data,
                                           size_t *out_size,
                                           nmo_arena_t *arena) {
+    if (out_data != NULL) {
+        *out_data = NULL;
+    }
+    if (out_size != NULL) {
+        *out_size = 0;
+    }
+
     /* Validate arguments */
     if (!chunk || !out_data || !out_size || !arena) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to chunk_serialize_version1");
     }
-    *out_data = NULL;
-    *out_size = 0;
 
     const uint32_t serialized_options = chunk_compute_option_flags(chunk);
     nmo_status_t result = chunk_validate_serializable(
@@ -891,11 +901,14 @@ nmo_status_t nmo_chunk_deserialize(const void *data,
                                    size_t size,
                                    nmo_arena_t *arena,
                                    nmo_chunk_t **out_chunk) {
+    if (out_chunk != NULL) {
+        *out_chunk = NULL;
+    }
+
     /* Validate arguments */
     if (!data || !arena || !out_chunk) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to chunk_deserialize");
     }
-    *out_chunk = NULL;
 
     if (size < 8) {
         /* Minimum size: version info + chunk size */
