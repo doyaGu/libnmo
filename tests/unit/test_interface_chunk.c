@@ -2534,6 +2534,47 @@ TEST(interface_chunk, extra_count_stays_in_section) {
     nmo_arena_destroy(arena);
 }
 
+TEST(interface_chunk, extra_buffer_stays_in_section) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0x14));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 1));
+    write_script_header_fields(
+        chunk, 100, NMO_INTERFACE_FLAG_HEADER_ONLY, 0, 0.0f, 0.0f);
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_float(chunk, 10.0f));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_float(chunk, 20.0f));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_float(chunk, 50.0f));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0));
+
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        chunk, NMO_INTERFACE_EXTRA_ID_V3));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 7));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_id(chunk, 200));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 8));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0xAABBCCDDu));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, 0x7F123456u));
+    nmo_chunk_close(chunk);
+
+    nmo_interface_data_t rejected;
+    memset(&rejected, 0xA5, sizeof(rejected));
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK,
+        nmo_interface_chunk_parse(chunk, arena, NULL, &rejected));
+    ASSERT_EQ(0u, rejected.version);
+    ASSERT_FALSE(rejected.extra.present);
+
+    nmo_arena_destroy(arena);
+}
+
 /* ============================================================================
  * Serialize integration: structured writer is used by save path
  * ============================================================================ */
@@ -3022,6 +3063,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(interface_chunk, parse_extra_data_v1_no_subs);
     REGISTER_TEST(interface_chunk, no_extra_data);
     REGISTER_TEST(interface_chunk, extra_count_stays_in_section);
+    REGISTER_TEST(interface_chunk, extra_buffer_stays_in_section);
     REGISTER_TEST(interface_chunk, parse_extra_sub_with_id2_values);
     /* Task 9: Integration */
     REGISTER_TEST(interface_chunk, integration_real_file);
