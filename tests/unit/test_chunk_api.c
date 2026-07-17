@@ -1365,6 +1365,44 @@ TEST(chunk_api, generic_array_allocation_failure_is_atomic) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_api, typed_array_write_allocation_failure_is_atomic) {
+    chunk_api_fail_allocator_state_t allocator_state = {
+        .allowed_allocations = (size_t)-1,
+    };
+    nmo_allocator_t allocator = nmo_allocator_custom(
+        chunk_api_fail_alloc, chunk_api_fail_free, &allocator_state);
+    nmo_arena_t* arena = nmo_arena_create(&allocator, 256);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t* chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0x12345678u));
+
+    enum { VALUE_COUNT = 3000 };
+    int32_t ints[VALUE_COUNT] = {0};
+    float floats[VALUE_COUNT] = {0};
+    uint32_t dwords[VALUE_COUNT] = {0};
+    uint8_t bytes[VALUE_COUNT] = {0};
+    const char* strings[VALUE_COUNT];
+    for (size_t i = 0; i < VALUE_COUNT; ++i) strings[i] = "x";
+
+    allocator_state.allowed_allocations = allocator_state.allocation_count;
+    ASSERT_EQ(NMO_ERR_NOMEM,
+        nmo_chunk_write_int_array(chunk, ints, VALUE_COUNT));
+    ASSERT_EQ(NMO_ERR_NOMEM,
+        nmo_chunk_write_float_array(chunk, floats, VALUE_COUNT));
+    ASSERT_EQ(NMO_ERR_NOMEM,
+        nmo_chunk_write_dword_array(chunk, dwords, VALUE_COUNT));
+    ASSERT_EQ(NMO_ERR_NOMEM,
+        nmo_chunk_write_byte_array(chunk, bytes, VALUE_COUNT));
+    ASSERT_EQ(NMO_ERR_NOMEM,
+        nmo_chunk_write_string_array(chunk, strings, VALUE_COUNT));
+    ASSERT_EQ(1u, nmo_chunk_get_position(chunk));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(chunk));
+
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_api, typed_array_allocation_failure_is_atomic) {
     chunk_api_fail_allocator_state_t allocator_state = {
         .allowed_allocations = (size_t)-1,
@@ -1591,6 +1629,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_api, typed_array_writes_reject_unencodable_counts);
     REGISTER_TEST(chunk_api, generic_array_write_rejects_invalid_sizes);
     REGISTER_TEST(chunk_api, generic_array_allocation_failure_is_atomic);
+    REGISTER_TEST(chunk_api, typed_array_write_allocation_failure_is_atomic);
     REGISTER_TEST(chunk_api, typed_array_allocation_failure_is_atomic);
     REGISTER_TEST(chunk_api, string_array_truncation_is_atomic);
     REGISTER_TEST(chunk_api, compression);
