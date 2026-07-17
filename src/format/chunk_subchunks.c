@@ -4,36 +4,48 @@
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_context.h"
+#include "core/nmo_utils.h"
 #include <string.h>
 
 // =============================================================================
 // Sub-chunks
 // =============================================================================
 
+static nmo_status_t validate_sub_chunk_array(const nmo_arena_array_t *array) {
+    if (array == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (array->count > UINT32_MAX ||
+        array->count > SIZE_MAX / sizeof(uint32_t)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (array->count > 0 &&
+        (array->data == NULL || array->count > array->capacity ||
+         array->element_size != sizeof(uint32_t))) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    return NMO_OK;
+}
+
 static nmo_status_t validate_sub_chunk_payload(const nmo_chunk_t *sub) {
-    if (!sub || sub->data.count > UINT32_MAX ||
-        sub->ids.count > UINT32_MAX ||
-        sub->chunk_refs.count > UINT32_MAX ||
-        sub->managers.count > UINT32_MAX) {
+    if (!sub) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    const size_t counts[] = {
-        sub->data.count, sub->ids.count,
-        sub->chunk_refs.count, sub->managers.count,
+    const nmo_arena_array_t *arrays[] = {
+        &sub->data, &sub->ids, &sub->chunk_refs, &sub->managers,
     };
-    size_t payload_dwords = 0;
-    for (size_t i = 0; i < sizeof(counts) / sizeof(counts[0]); ++i) {
-        if (counts[i] > (size_t)UINT32_MAX - 7u - payload_dwords) {
+    size_t payload_dwords = 7u;
+    for (size_t i = 0; i < sizeof(arrays) / sizeof(arrays[0]); ++i) {
+        nmo_status_t result = validate_sub_chunk_array(arrays[i]);
+        if (result != NMO_OK) {
+            return result;
+        }
+        if (!nmo_safe_add_size(payload_dwords, arrays[i]->count,
+                               &payload_dwords) ||
+            payload_dwords > UINT32_MAX) {
             return NMO_ERR_INVALID_ARGUMENT;
         }
-        payload_dwords += counts[i];
-    }
-    if ((sub->data.count > 0 && sub->data.data == NULL) ||
-        (sub->ids.count > 0 && sub->ids.data == NULL) ||
-        (sub->chunk_refs.count > 0 && sub->chunk_refs.data == NULL) ||
-        (sub->managers.count > 0 && sub->managers.data == NULL)) {
-        return NMO_ERR_INVALID_ARGUMENT;
     }
     return NMO_OK;
 }
@@ -44,10 +56,15 @@ static nmo_status_t prepare_sub_chunk_payload(
     nmo_status_t result = validate_sub_chunk_payload(sub);
     NMO_RETURN_IF_ERROR(result);
 
-    const size_t total_dwords = 8u + sub->data.count + sub->ids.count +
-        sub->chunk_refs.count + sub->managers.count;
-    if (total_dwords > SIZE_MAX / sizeof(uint32_t)) {
-        return NMO_ERR_INVALID_ARGUMENT;
+    size_t total_dwords = 8u;
+    const size_t counts[] = {
+        sub->data.count, sub->ids.count,
+        sub->chunk_refs.count, sub->managers.count,
+    };
+    for (size_t i = 0; i < sizeof(counts) / sizeof(counts[0]); ++i) {
+        if (!nmo_safe_add_size(total_dwords, counts[i], &total_dwords)) {
+            return NMO_ERR_INVALID_ARGUMENT;
+        }
     }
     return nmo_chunk_check_size(
         chunk, total_dwords * sizeof(uint32_t));
