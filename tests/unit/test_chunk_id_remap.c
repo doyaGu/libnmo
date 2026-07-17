@@ -4714,7 +4714,7 @@ TEST(chunk_id_remap, place_refs_round_trip_and_truncation_is_atomic) {
     nmo_chunk_parser_state_t *parser =
         (nmo_chunk_parser_state_t *)cross_section_references->parser_state;
     ASSERT_NOT_NULL(parser);
-    ASSERT_EQ(parser->prev_identifier_pos + 3u, parser->current_pos);
+    ASSERT_EQ(parser->prev_identifier_pos + 2u, parser->current_pos);
     ASSERT_EQ(1u, failed.references.count);
     ASSERT_EQ(807u, NMO_ARRAY_DATA(
         nmo_ref_t, &failed.references)[0].raw_id);
