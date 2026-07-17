@@ -273,15 +273,37 @@ static nmo_status_t nmo_parameterout_copy(
     const nmo_type_descriptor_t *type,
     nmo_arena_t *arena)
 {
+    (void)type;
+    if (src == NULL || dst == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    if (src == dst) return NMO_OK;
     const nmo_parameterout_state_t *s = src;
     nmo_parameterout_state_t *d = dst;
-    NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
-    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->base.buffer_data, &d->base.buffer_data,
-                                        &s->base.buffer_data.allocator));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_chunk(arena, &d->base.subchunk, s->base.subchunk));
-    return nmo_object_copy_array(arena, (void **)&d->destination_ids,
-                                 s->destination_ids, sizeof(nmo_ref_t),
-                                 s->destination_count);
+    NMO_RETURN_IF_ERROR(nmo_parameterout_validate(s, type, NULL));
+    nmo_array_t buffer_data = {0};
+    nmo_status_t result = nmo_array_clone(
+        &s->base.buffer_data, &buffer_data,
+        &s->base.buffer_data.allocator);
+    if (result != NMO_OK) return result;
+    nmo_chunk_t *subchunk = NULL;
+    result = nmo_object_copy_chunk(arena, &subchunk, s->base.subchunk);
+    if (result != NMO_OK) {
+        nmo_array_dispose(&buffer_data);
+        return result;
+    }
+    nmo_ref_t *destination_ids = NULL;
+    result = nmo_object_copy_array(
+        arena, (void **)&destination_ids, s->destination_ids,
+        sizeof(nmo_ref_t), s->destination_count);
+    if (result != NMO_OK) {
+        nmo_array_dispose(&buffer_data);
+        return result;
+    }
+    nmo_array_dispose(&d->base.buffer_data);
+    *d = *s;
+    d->base.buffer_data = buffer_data;
+    d->base.subchunk = subchunk;
+    d->destination_ids = destination_ids;
+    return NMO_OK;
 }
 
 static nmo_status_t nmo_parameterout_validate(
@@ -379,21 +401,59 @@ static bool nmo_parameterout_equals(const void *a, const void *b)
         (const nmo_parameterout_state_t *)a;
     const nmo_parameterout_state_t *rhs =
         (const nmo_parameterout_state_t *)b;
-    if (lhs->destination_count != rhs->destination_count ||
+    if (lhs->base.base.visibility_flags != rhs->base.base.visibility_flags ||
+        !nmo_guid_equals(lhs->base.type_guid, rhs->base.type_guid) ||
+        lhs->base.mode != rhs->base.mode ||
+        lhs->base.has_state != rhs->base.has_state ||
+        memcmp(&lhs->base.object_ref, &rhs->base.object_ref,
+               sizeof(nmo_ref_t)) != 0 ||
+        !nmo_guid_equals(lhs->base.manager_guid, rhs->base.manager_guid) ||
+        lhs->base.manager_value != rhs->base.manager_value ||
+        lhs->base.buffer_data.count != rhs->base.buffer_data.count ||
+        (lhs->base.buffer_data.count > 0 &&
+         (lhs->base.buffer_data.data == NULL ||
+          rhs->base.buffer_data.data == NULL ||
+          memcmp(lhs->base.buffer_data.data, rhs->base.buffer_data.data,
+                 lhs->base.buffer_data.count) != 0)) ||
+        memcmp(&lhs->owner, &rhs->owner, sizeof(nmo_ref_t)) != 0 ||
+        lhs->destination_count != rhs->destination_count ||
         (lhs->destination_count > 0 &&
          (lhs->destination_ids == NULL || rhs->destination_ids == NULL))) {
         return false;
     }
-    nmo_parameterout_state_t lhs_value = *lhs;
-    nmo_parameterout_state_t rhs_value = *rhs;
-    lhs_value.destination_ids = NULL;
-    rhs_value.destination_ids = NULL;
-    if (memcmp(&lhs_value, &rhs_value, sizeof(lhs_value)) != 0) {
+    if ((lhs->base.subchunk == NULL) != (rhs->base.subchunk == NULL)) {
         return false;
+    }
+    if (lhs->base.subchunk != NULL) {
+        size_t lhs_size = 0;
+        size_t rhs_size = 0;
+        const void *lhs_data = nmo_chunk_get_data(
+            lhs->base.subchunk, &lhs_size);
+        const void *rhs_data = nmo_chunk_get_data(
+            rhs->base.subchunk, &rhs_size);
+        if (lhs_size != rhs_size ||
+            (lhs_size > 0 &&
+             (lhs_data == NULL || rhs_data == NULL ||
+              memcmp(lhs_data, rhs_data, lhs_size) != 0))) {
+            return false;
+        }
     }
     return lhs->destination_count == 0 || memcmp(
         lhs->destination_ids, rhs->destination_ids,
         (size_t)lhs->destination_count * sizeof(nmo_ref_t)) == 0;
+}
+
+static uint32_t nmo_parameterout_hash_bytes(
+    uint32_t hash,
+    const void *data,
+    size_t size)
+{
+    const uint8_t *bytes = (const uint8_t *)data;
+    for (size_t i = 0; i < size; ++i) {
+        hash ^= bytes[i];
+        hash *= 16777619u;
+    }
+    return hash;
 }
 
 static uint32_t nmo_parameterout_hash(const void *instance)
@@ -401,12 +461,50 @@ static uint32_t nmo_parameterout_hash(const void *instance)
     if (instance == NULL) return 0;
     const nmo_parameterout_state_t *state =
         (const nmo_parameterout_state_t *)instance;
-    nmo_parameterout_state_t value = *state;
-    value.destination_ids = NULL;
-    uint32_t hash = (uint32_t)nmo_hash_fnv1a(&value, sizeof(value));
+    uint32_t hash = 2166136261u;
+    hash = nmo_parameterout_hash_bytes(
+        hash, &state->base.base.visibility_flags,
+        sizeof(state->base.base.visibility_flags));
+    hash = nmo_parameterout_hash_bytes(
+        hash, &state->base.type_guid, sizeof(state->base.type_guid));
+    hash = nmo_parameterout_hash_bytes(
+        hash, &state->base.mode, sizeof(state->base.mode));
+    hash = nmo_parameterout_hash_bytes(
+        hash, &state->base.has_state, sizeof(state->base.has_state));
+    hash = nmo_parameterout_hash_bytes(
+        hash, &state->base.object_ref, sizeof(state->base.object_ref));
+    hash = nmo_parameterout_hash_bytes(
+        hash, &state->base.manager_guid, sizeof(state->base.manager_guid));
+    hash = nmo_parameterout_hash_bytes(
+        hash, &state->base.manager_value, sizeof(state->base.manager_value));
+    hash = nmo_parameterout_hash_bytes(
+        hash, &state->base.buffer_data.count,
+        sizeof(state->base.buffer_data.count));
+    if (state->base.buffer_data.data != NULL &&
+        state->base.buffer_data.count > 0) {
+        hash = nmo_parameterout_hash_bytes(
+            hash, state->base.buffer_data.data,
+            state->base.buffer_data.count);
+    }
+    if (state->base.subchunk != NULL) {
+        size_t chunk_size = 0;
+        const void *chunk_data = nmo_chunk_get_data(
+            state->base.subchunk, &chunk_size);
+        hash = nmo_parameterout_hash_bytes(
+            hash, &chunk_size, sizeof(chunk_size));
+        if (chunk_data != NULL && chunk_size > 0) {
+            hash = nmo_parameterout_hash_bytes(
+                hash, chunk_data, chunk_size);
+        }
+    }
+    hash = nmo_parameterout_hash_bytes(
+        hash, &state->owner, sizeof(state->owner));
+    hash = nmo_parameterout_hash_bytes(
+        hash, &state->destination_count,
+        sizeof(state->destination_count));
     if (state->destination_ids != NULL && state->destination_count > 0) {
-        hash ^= (uint32_t)nmo_hash_fnv1a(
-            state->destination_ids,
+        hash = nmo_parameterout_hash_bytes(
+            hash, state->destination_ids,
             (size_t)state->destination_count * sizeof(nmo_ref_t));
     }
     return hash;
