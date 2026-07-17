@@ -94,6 +94,9 @@ nmo_status_t nmo_chunk_start_manager_read_sequence(nmo_chunk_t *chunk,
                                                    nmo_guid_t *out_manager_guid,
                                                    size_t *out_count) {
     NMO_CHUNK_CHECK_ARGS2(chunk, out_manager_guid, out_count, "Invalid arguments");
+    out_manager_guid->d1 = 0;
+    out_manager_guid->d2 = 0;
+    *out_count = 0;
 
     nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
     if (!state) {
@@ -103,13 +106,14 @@ nmo_status_t nmo_chunk_start_manager_read_sequence(nmo_chunk_t *chunk,
 
     // Read count then manager GUID
     uint32_t count_u32 = 0;
+    nmo_guid_t manager_guid = {0, 0};
     nmo_status_t result = nmo_chunk_read_dword(chunk, &count_u32);
     if (result != NMO_OK) {
         state->current_pos = start_pos;
         return result;
     }
 
-    result = nmo_chunk_read_guid(chunk, out_manager_guid);
+    result = nmo_chunk_read_guid(chunk, &manager_guid);
     if (result != NMO_OK) {
         state->current_pos = start_pos;
         return result;
@@ -121,6 +125,7 @@ nmo_status_t nmo_chunk_start_manager_read_sequence(nmo_chunk_t *chunk,
                          "Manager sequence count exceeds remaining DWORDs");
     }
 
+    *out_manager_guid = manager_guid;
     *out_count = (size_t)count_u32;
     NMO_RETURN_OK();
 }
