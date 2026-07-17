@@ -1954,6 +1954,45 @@ TEST(chunk_id_remap, layer_unresolved_grid_round_trips_raw_id) {
     ASSERT_EQ(NMO_OBJECT_ID_NONE, loaded.grid.id);
     ASSERT_EQ(NMO_REF_UNRESOLVED, loaded.grid.state);
 
+    nmo_chunk_t *truncated = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(truncated);
+    truncated->class_id = NMO_CID_LAYER;
+    truncated->data_version = 7;
+    truncated->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(truncated));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        truncated, CK_STATESAVE_LAYERDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(truncated, 999));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(truncated, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(truncated, 3));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(truncated, 0xAABBCCDDu));
+    nmo_chunk_close(truncated);
+    loaded.format = 77;
+    loaded.version = 88;
+    ASSERT_NE(NMO_OK, nmo_layer_deserialize(
+        &loaded, truncated, NULL, &deserialize_context));
+    ASSERT_EQ(444u, loaded.grid.raw_id);
+    ASSERT_EQ(77, loaded.format);
+    ASSERT_EQ(88, loaded.version);
+
+    source.grid = nmo_ref_from_id(123);
+    nmo_chunk_t *target = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(target);
+    target->class_id = NMO_CID_LAYER;
+    target->data_version = 7;
+    target->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(target, &write_context);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(target, 0x12345678u));
+    nmo_chunk_close(target);
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_layer_serialize(
+        &source, target, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(target));
+    uint32_t preserved = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(target, &preserved));
+    ASSERT_EQ(0x12345678u, preserved);
+
     nmo_layer_vtable.destroy(&source, NULL, NULL);
     nmo_layer_vtable.destroy(&loaded, NULL, NULL);
     nmo_arena_destroy(arena);
