@@ -261,6 +261,9 @@ static nmo_status_t nmo_beobject_read_object_sequence(
     if (count > UINT32_MAX) {
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Invalid object sequence count");
     }
+    if (count > nmo_beobject_identifier_remaining_dwords(chunk)) {
+        return NMO_ERR_TRUNCATED_CHUNK;
+    }
 
     nmo_array_t decoded;
     result = nmo_array_init(
@@ -384,9 +387,8 @@ static nmo_status_t nmo_beobject_read_legacy_attributes(
     const size_t minimum_dwords_per_attribute = old_version ? 5u : 6u;
     if ((size_t)attr_count >
             SIZE_MAX / minimum_dwords_per_attribute ||
-        !nmo_chunk_has_read_capacity(
-            chunk,
-            (size_t)attr_count * minimum_dwords_per_attribute)) {
+        (size_t)attr_count * minimum_dwords_per_attribute >
+            nmo_beobject_identifier_remaining_dwords(chunk)) {
         return NMO_ERR_TRUNCATED_CHUNK;
     }
 
@@ -542,6 +544,9 @@ static nmo_status_t nmo_beobject_deserialize_internal(
         if (attr_count > 100000u) {
             NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
                              "CKBeObject: attribute count exceeds limit");
+        }
+        if (attr_count > nmo_beobject_identifier_remaining_dwords(chunk)) {
+            return NMO_ERR_TRUNCATED_CHUNK;
         }
 
         nmo_array_t decoded;
