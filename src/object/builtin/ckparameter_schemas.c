@@ -52,7 +52,7 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
         state->has_state = false; \
         state->object_ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE); \
     } while (0),
-    ((void)0))
+    nmo_array_dispose(&state->buffer_data))
 #include <stddef.h>
 #include <stdalign.h>
 #include <stdlib.h>
@@ -117,7 +117,7 @@ static void nmo_parameter_convert_legacy_guid(nmo_guid_t *guid)
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-nmo_status_t nmo_parameter_deserialize(
+static nmo_status_t nmo_parameter_deserialize_internal(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -128,8 +128,6 @@ nmo_status_t nmo_parameter_deserialize(
     if (chunk == NULL || out_state == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_parameter_deserialize");
     }
-    const nmo_ref_t previous_object_ref = out_state->object_ref;
-
     /* Read base CKObject state (merged into this chunk by AddChunkAndDelete) */
     nmo_status_t result = nmo_object_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;
@@ -147,7 +145,7 @@ nmo_status_t nmo_parameter_deserialize(
     result = nmo_chunk_seek_identifier(chunk, CK_PARAM_IDENTIFIER);
     if (result != NMO_OK) {
         /* No parameter data - valid for reference-only objects */
-        NMO_RETURN_OK();
+        return result == NMO_ERR_NOT_FOUND ? NMO_OK : result;
     }
 
     /* Read parameter type GUID */
@@ -194,10 +192,7 @@ nmo_status_t nmo_parameter_deserialize(
         nmo_ref_t object_ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         out_state->mode = CKPARAM_MODE_OBJECT;
         result = nmo_ref_read(chunk, &object_ref);
-        if (result != NMO_OK) {
-            out_state->object_ref = previous_object_ref;
-            return result;
-        }
+        if (result != NMO_OK) return result;
         out_state->object_ref = object_ref;
         NMO_RETURN_OK();
     }
@@ -210,7 +205,8 @@ nmo_status_t nmo_parameter_deserialize(
             if (result != NMO_OK) {
                 return result;
             }
-            result = nmo_array_alloc(&out_state->buffer_data, sizeof(uint8_t), sizeof(nmo_guid_t), NULL);
+            result = nmo_array_resize(
+                &out_state->buffer_data, sizeof(nmo_guid_t));
             if (result != NMO_OK) {
                 return result;
             }
@@ -225,7 +221,7 @@ nmo_status_t nmo_parameter_deserialize(
             return result;
         }
         if (buffer_size > 0) {
-            result = nmo_array_alloc(&out_state->buffer_data, sizeof(uint8_t), buffer_size, NULL);
+            result = nmo_array_resize(&out_state->buffer_data, buffer_size);
             if (result != NMO_OK) {
                 return result;
             }
@@ -249,6 +245,32 @@ nmo_status_t nmo_parameter_deserialize(
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_parameter_deserialize(
+    void *instance,
+    nmo_chunk_t *chunk,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    nmo_parameter_state_t *out_state = (nmo_parameter_state_t *)instance;
+    if (out_state == NULL || chunk == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    nmo_parameter_state_t decoded = {0};
+    const nmo_allocator_t *allocator =
+        out_state->buffer_data.allocator.alloc != NULL
+            ? &out_state->buffer_data.allocator : NULL;
+    nmo_status_t result = nmo_array_init(
+        &decoded.buffer_data, sizeof(uint8_t), 0, allocator);
+    if (result != NMO_OK) return result;
+    result = nmo_parameter_deserialize_internal(
+        &decoded, chunk, type, context);
+    if (result != NMO_OK) {
+        nmo_array_dispose(&decoded.buffer_data);
+        return result;
+    }
+    nmo_array_dispose(&out_state->buffer_data);
+    *out_state = decoded;
+    return NMO_OK;
+}
+
 /* =============================================================================
  * CKParameter SERIALIZATION
  * ============================================================================= */
@@ -265,7 +287,7 @@ nmo_status_t nmo_parameter_deserialize(
  * @param state Input state structure
  * @return Result indicating success or error
  */
-nmo_status_t nmo_parameter_serialize(
+static nmo_status_t nmo_parameter_serialize_internal(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
@@ -366,6 +388,38 @@ nmo_status_t nmo_parameter_serialize(
     }
 
     NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_parameter_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+nmo_status_t nmo_parameter_serialize(
+    const void *instance,
+    nmo_chunk_t *out_chunk,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    const nmo_parameter_state_t *in_state =
+        (const nmo_parameter_state_t *)instance;
+    if (in_state == NULL || out_chunk == NULL || out_chunk->arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    NMO_RETURN_IF_ERROR(nmo_parameter_validate(in_state, type, context));
+    nmo_chunk_t *staged = nmo_chunk_create(out_chunk->arena);
+    if (staged == NULL) return NMO_ERR_NOMEM;
+    staged->class_id = out_chunk->class_id;
+    staged->data_version = out_chunk->data_version;
+    staged->chunk_version = out_chunk->chunk_version;
+    staged->chunk_class_id = out_chunk->chunk_class_id;
+    staged->chunk_options = out_chunk->chunk_options;
+    staged->file_context = out_chunk->file_context;
+    nmo_status_t result = nmo_parameter_serialize_internal(
+        in_state, staged, type, context);
+    if (result != NMO_OK) return result;
+    *out_chunk = *staged;
+    return NMO_OK;
 }
 
 static nmo_status_t nmo_parameter_copy(
