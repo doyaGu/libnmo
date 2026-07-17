@@ -1005,7 +1005,7 @@ static nmo_status_t read_interface_string(
     }
 
     size_t payload_dwords = ((size_t)size + 3u) / 4u;
-    if (!nmo_chunk_has_read_capacity(chunk, payload_dwords)) {
+    if (payload_dwords > interface_identifier_remaining_dwords(chunk)) {
         (void)nmo_chunk_goto(chunk, start_pos);
         NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                          "interface chunk: truncated string payload");
