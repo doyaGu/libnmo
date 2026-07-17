@@ -23,7 +23,10 @@ nmo_status_t nmo_chunk_write_array(nmo_chunk_t *chunk,
     }
 
     if (count == 0 || elem_size == 0) {
-        nmo_status_t result = nmo_chunk_write_dword(chunk, 0);
+        nmo_status_t result = nmo_chunk_check_size(
+            chunk, 2u * sizeof(uint32_t));
+        NMO_RETURN_IF_ERROR(result);
+        result = nmo_chunk_write_dword(chunk, 0);
         NMO_RETURN_IF_ERROR(result);
         return nmo_chunk_write_dword(chunk, 0);
     }
@@ -42,7 +45,11 @@ nmo_status_t nmo_chunk_write_array(nmo_chunk_t *chunk,
         NMO_CHUNK_RETURN_INVALID_ARGUMENT("Array byte size is not encodable");
     }
 
-    nmo_status_t result = nmo_chunk_write_dword(chunk, (uint32_t) total_size);
+    const size_t payload_dwords = nmo_bytes_to_dwords(total_size);
+    nmo_status_t result = nmo_chunk_check_size(
+        chunk, (2u + payload_dwords) * sizeof(uint32_t));
+    NMO_RETURN_IF_ERROR(result);
+    result = nmo_chunk_write_dword(chunk, (uint32_t) total_size);
     NMO_RETURN_IF_ERROR(result);
 
     result = nmo_chunk_write_dword(chunk, (uint32_t) count);
