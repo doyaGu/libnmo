@@ -136,6 +136,35 @@ TEST(chunk, clone_null_params) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk, header_rejects_unencodable_public_state) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t* chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+
+    nmo_chunk_header_t header;
+    memset(&header, 0xFF, sizeof(header));
+    chunk->data.count = (size_t)(UINT32_MAX / sizeof(uint32_t)) + 1u;
+    chunk->data.data = (void *)(uintptr_t)1;
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+        nmo_chunk_get_header(chunk, &header));
+    nmo_chunk_header_t empty_header = {0};
+    ASSERT_EQ(0, memcmp(&header, &empty_header, sizeof(header)));
+
+    chunk->data.count = 1;
+    chunk->data.data = NULL;
+    memset(&header, 0xFF, sizeof(header));
+    ASSERT_EQ(NMO_ERR_INVALID_STATE,
+        nmo_chunk_get_header(chunk, &header));
+    ASSERT_EQ(0, memcmp(&header, &empty_header, sizeof(header)));
+
+    size_t data_size = 123;
+    ASSERT_NULL(nmo_chunk_get_data(chunk, &data_size));
+    ASSERT_EQ(0u, data_size);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk, create);
     REGISTER_TEST(chunk, get_id);
@@ -145,4 +174,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk, get_operations_null);
     REGISTER_TEST(chunk, add_subchunk_null);
     REGISTER_TEST(chunk, clone_null_params);
+    REGISTER_TEST(chunk, header_rejects_unencodable_public_state);
 TEST_MAIN_END()
