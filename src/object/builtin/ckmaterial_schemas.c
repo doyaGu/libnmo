@@ -30,6 +30,14 @@
 
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(material, nmo_material_state_t)
 
+static void nmo_material_dispose_base_arrays(nmo_material_state_t *state)
+{
+    if (state == NULL) return;
+    nmo_array_dispose(&state->base.scripts);
+    nmo_array_dispose(&state->base.attributes);
+    nmo_array_dispose(&state->base.legacy_attributes);
+}
+
 /* =============================================================================
  * REFLECTION FIELDS
  * ============================================================================= */
@@ -80,7 +88,7 @@ static uint32_t nmo_material_normalize_packed_flags(uint32_t packed_flags)
            (packed_flags & 0xFF000000u);
 }
 
-nmo_status_t nmo_material_deserialize(
+static nmo_status_t nmo_material_deserialize_internal(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -308,6 +316,39 @@ nmo_status_t nmo_material_deserialize(
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_material_deserialize(
+    void *instance,
+    nmo_chunk_t *chunk,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    nmo_material_state_t *out_state = (nmo_material_state_t *)instance;
+    if (out_state == NULL || chunk == NULL) return NMO_ERR_INVALID_ARGUMENT;
+
+    nmo_material_state_t decoded = {0};
+    if (out_state->base.scripts.allocator.alloc != NULL) {
+        decoded.base.scripts.allocator = out_state->base.scripts.allocator;
+    }
+    if (out_state->base.attributes.allocator.alloc != NULL) {
+        decoded.base.attributes.allocator = out_state->base.attributes.allocator;
+    }
+    if (out_state->base.legacy_attributes.allocator.alloc != NULL) {
+        decoded.base.legacy_attributes.allocator =
+            out_state->base.legacy_attributes.allocator;
+    }
+
+    nmo_status_t result = nmo_material_deserialize_internal(
+        &decoded, chunk, type, context);
+    if (result != NMO_OK) {
+        nmo_material_dispose_base_arrays(&decoded);
+        return result;
+    }
+
+    nmo_material_dispose_base_arrays(out_state);
+    *out_state = decoded;
+    return NMO_OK;
+}
+
 nmo_status_t nmo_material_prepare_dependencies(
     void *instance,
     const nmo_type_descriptor_t *type,
@@ -393,7 +434,7 @@ NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
     &nmo_material_vtable,
     nmo_material_fields)
 
-nmo_status_t nmo_material_serialize(
+static nmo_status_t nmo_material_serialize_internal(
     const void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -459,4 +500,30 @@ nmo_status_t nmo_material_serialize(
     }
 
     NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_material_serialize(
+    const void *instance,
+    nmo_chunk_t *out_chunk,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    if (instance == NULL || out_chunk == NULL || out_chunk->arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_chunk_t *staged = nmo_chunk_create(out_chunk->arena);
+    if (staged == NULL) return NMO_ERR_NOMEM;
+    staged->class_id = out_chunk->class_id;
+    staged->data_version = out_chunk->data_version;
+    staged->chunk_version = out_chunk->chunk_version;
+    staged->chunk_class_id = out_chunk->chunk_class_id;
+    staged->chunk_options = out_chunk->chunk_options;
+    staged->file_context = out_chunk->file_context;
+
+    nmo_status_t result = nmo_material_serialize_internal(
+        instance, staged, type, context);
+    if (result != NMO_OK) return result;
+    *out_chunk = *staged;
+    return NMO_OK;
 }
