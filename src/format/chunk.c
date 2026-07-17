@@ -69,6 +69,10 @@ static nmo_status_t read_u32(nmo_read_ctx_t *ctx, uint32_t *value) {
     return read_bytes(ctx, value, sizeof(uint32_t));
 }
 
+static int dword_range_fits(size_t start, size_t count, size_t total) {
+    return start <= total && count <= total - start;
+}
+
 /**
  * @brief Compute option flags for serialization
  *
@@ -419,7 +423,11 @@ static nmo_status_t chunk_deserialize_internal(nmo_read_ctx_t *ctx, nmo_arena_t 
     NMO_RETURN_IF_ERROR(result);
 
     /* Read data buffer */
-    const size_t data_size = (size_t)chunk_size_dwords * sizeof(uint32_t);
+    size_t data_size = 0;
+    if (!nmo_safe_mul_size((size_t) chunk_size_dwords,
+                           sizeof(uint32_t), &data_size)) {
+        return NMO_ERR_BUFFER_OVERRUN;
+    }
     if (ctx->pos > ctx->size || data_size > ctx->size - ctx->pos) {
         return NMO_ERR_BUFFER_OVERRUN;
     }
@@ -438,7 +446,11 @@ static nmo_status_t chunk_deserialize_internal(nmo_read_ctx_t *ctx, nmo_arena_t 
         result = read_u32(ctx, &id_count);
         NMO_RETURN_IF_ERROR(result);
 
-        const size_t ids_size = (size_t)id_count * sizeof(uint32_t);
+        size_t ids_size = 0;
+        if (!nmo_safe_mul_size((size_t) id_count,
+                               sizeof(uint32_t), &ids_size)) {
+            return NMO_ERR_BUFFER_OVERRUN;
+        }
         if (ctx->pos > ctx->size || ids_size > ctx->size - ctx->pos) {
             return NMO_ERR_BUFFER_OVERRUN;
         }
@@ -458,7 +470,11 @@ static nmo_status_t chunk_deserialize_internal(nmo_read_ctx_t *ctx, nmo_arena_t 
         result = read_u32(ctx, &ref_count);
         NMO_RETURN_IF_ERROR(result);
 
-        const size_t refs_size = (size_t)ref_count * sizeof(uint32_t);
+        size_t refs_size = 0;
+        if (!nmo_safe_mul_size((size_t) ref_count,
+                               sizeof(uint32_t), &refs_size)) {
+            return NMO_ERR_BUFFER_OVERRUN;
+        }
         if (ctx->pos > ctx->size || refs_size > ctx->size - ctx->pos) {
             return NMO_ERR_BUFFER_OVERRUN;
         }
@@ -478,8 +494,11 @@ static nmo_status_t chunk_deserialize_internal(nmo_read_ctx_t *ctx, nmo_arena_t 
         result = read_u32(ctx, &manager_count);
         NMO_RETURN_IF_ERROR(result);
 
-        const size_t managers_size =
-            (size_t)manager_count * sizeof(uint32_t);
+        size_t managers_size = 0;
+        if (!nmo_safe_mul_size((size_t) manager_count,
+                               sizeof(uint32_t), &managers_size)) {
+            return NMO_ERR_BUFFER_OVERRUN;
+        }
         if (ctx->pos > ctx->size || managers_size > ctx->size - ctx->pos) {
             return NMO_ERR_BUFFER_OVERRUN;
         }
@@ -1028,7 +1047,7 @@ static nmo_status_t chunk_parse_into(nmo_chunk_t *chunk,
     /* Parse based on chunk version */
     if (chunk_version < NMO_CHUNK_VERSION2) {
         /* CHUNK_VERSION1 format */
-        if (pos + 5 > size_dwords) {
+        if (!dword_range_fits(pos, 5u, size_dwords)) {
             NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Buffer too small for VERSION1 header");
         }
 
@@ -1042,7 +1061,7 @@ static nmo_status_t chunk_parse_into(nmo_chunk_t *chunk,
 
         /* Allocate and read data buffer */
         if (chunk_size > 0) {
-            if (pos + chunk_size > size_dwords) {
+            if (!dword_range_fits(pos, (size_t) chunk_size, size_dwords)) {
                 NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Buffer too small for chunk data");
             }
 
@@ -1055,7 +1074,7 @@ static nmo_status_t chunk_parse_into(nmo_chunk_t *chunk,
 
         /* Allocate and read IDs */
         if (id_count > 0) {
-            if (pos + id_count > size_dwords) {
+            if (!dword_range_fits(pos, (size_t) id_count, size_dwords)) {
                 NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Buffer too small for ID array");
             }
 
@@ -1069,7 +1088,7 @@ static nmo_status_t chunk_parse_into(nmo_chunk_t *chunk,
 
         /* Read sub-chunk positions */
         if (chunk_count > 0) {
-            if (pos + chunk_count > size_dwords) {
+            if (!dword_range_fits(pos, (size_t) chunk_count, size_dwords)) {
                 NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Buffer too small for chunk array");
             }
 
@@ -1082,7 +1101,7 @@ static nmo_status_t chunk_parse_into(nmo_chunk_t *chunk,
         }
     } else if (chunk_version == NMO_CHUNK_VERSION2) {
         /* CHUNK_VERSION2 format (adds manager data) */
-        if (pos + 5 > size_dwords) {
+        if (!dword_range_fits(pos, 5u, size_dwords)) {
             NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Buffer too small for VERSION2 header");
         }
 
@@ -1096,7 +1115,7 @@ static nmo_status_t chunk_parse_into(nmo_chunk_t *chunk,
 
         /* Allocate and read data buffer */
         if (chunk_size > 0) {
-            if (pos + chunk_size > size_dwords) {
+            if (!dword_range_fits(pos, (size_t) chunk_size, size_dwords)) {
                 NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Buffer too small for chunk data");
             }
 
@@ -1109,7 +1128,7 @@ static nmo_status_t chunk_parse_into(nmo_chunk_t *chunk,
 
         /* Read IDs, chunks, and managers same as VERSION1 */
         if (id_count > 0) {
-            if (pos + id_count > size_dwords) {
+            if (!dword_range_fits(pos, (size_t) id_count, size_dwords)) {
                 NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Buffer too small for ID array");
             }
 
@@ -1122,7 +1141,7 @@ static nmo_status_t chunk_parse_into(nmo_chunk_t *chunk,
         }
 
         if (chunk_count > 0) {
-            if (pos + chunk_count > size_dwords) {
+            if (!dword_range_fits(pos, (size_t) chunk_count, size_dwords)) {
                 NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Buffer too small for chunk array");
             }
 
@@ -1135,7 +1154,7 @@ static nmo_status_t chunk_parse_into(nmo_chunk_t *chunk,
         }
 
         if (manager_count > 0) {
-            if (pos + manager_count > size_dwords) {
+            if (!dword_range_fits(pos, (size_t) manager_count, size_dwords)) {
                 NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Buffer too small for manager array");
             }
 
@@ -1169,7 +1188,7 @@ static nmo_status_t chunk_parse_into(nmo_chunk_t *chunk,
 
         /* Allocate and read data buffer */
         if (chunk_size > 0) {
-            if (pos + chunk_size > size_dwords) {
+            if (!dword_range_fits(pos, (size_t) chunk_size, size_dwords)) {
                 NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Buffer too small for chunk data");
             }
 
@@ -1188,7 +1207,7 @@ static nmo_status_t chunk_parse_into(nmo_chunk_t *chunk,
             uint32_t id_count = buf[pos++];
 
             if (id_count > 0) {
-                if (pos + id_count > size_dwords) {
+                if (!dword_range_fits(pos, (size_t) id_count, size_dwords)) {
                     NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Buffer too small for ID array");
                 }
 
@@ -1207,7 +1226,7 @@ static nmo_status_t chunk_parse_into(nmo_chunk_t *chunk,
             uint32_t chunk_count = buf[pos++];
 
             if (chunk_count > 0) {
-                if (pos + chunk_count > size_dwords) {
+                if (!dword_range_fits(pos, (size_t) chunk_count, size_dwords)) {
                     NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Buffer too small for chunk array");
                 }
                 nmo_status_t result = nmo_arena_array_resize(&chunk->chunk_refs, chunk_count);
@@ -1225,7 +1244,7 @@ static nmo_status_t chunk_parse_into(nmo_chunk_t *chunk,
             uint32_t manager_count = buf[pos++];
 
             if (manager_count > 0) {
-                if (pos + manager_count > size_dwords) {
+                if (!dword_range_fits(pos, (size_t) manager_count, size_dwords)) {
                     NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Buffer too small for manager array");
                 }
 
