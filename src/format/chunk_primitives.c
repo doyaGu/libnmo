@@ -344,6 +344,11 @@ nmo_status_t nmo_chunk_read_string_checked(
     }
     memcpy(str, &data[state->current_pos], len);
     state->current_pos += dwords;
+    if (str[len - 1u] != '\0') {
+        state->current_pos = start_pos;
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                               "String payload is not null-terminated");
+    }
     *out_str = str;
     if (out_length) *out_length = (size_t)len - 1u;
     return NMO_OK;

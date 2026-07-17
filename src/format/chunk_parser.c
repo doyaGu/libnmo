@@ -652,8 +652,11 @@ nmo_status_t nmo_chunk_parser_read_string(nmo_chunk_parser_t *p, char **out, nmo
     result = nmo_chunk_parser_read_bytes(p, str, size);
     NMO_PARSER_RETURN_IF_ERROR_ROLLBACK(result, p, start_pos);
 
-    // Ensure null termination (in case file data is corrupted)
-    str[size - 1] = '\0';
+    if (str[size - 1u] != '\0') {
+        NMO_PARSER_RETURN_ERROR_ROLLBACK(
+            p, start_pos, NMO_ERR_INVALID_FORMAT,
+            "String payload is not null-terminated");
+    }
     *out = str;
 
     NMO_RETURN_OK();
