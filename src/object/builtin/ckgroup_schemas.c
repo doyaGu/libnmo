@@ -49,6 +49,26 @@ static void nmo_group_dispose_state_arrays(nmo_group_state_t *state)
     nmo_array_dispose(&state->object_ids);
 }
 
+static size_t nmo_group_identifier_remaining_dwords(
+    const nmo_chunk_t *chunk)
+{
+    if (!chunk || !chunk->parser_state) return 0;
+
+    const nmo_chunk_parser_state_t *state =
+        (const nmo_chunk_parser_state_t *)chunk->parser_state;
+    const uint32_t *data =
+        NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    size_t next_pos = chunk->data.count;
+    if (state->prev_identifier_pos + 1u < chunk->data.count) {
+        const uint32_t candidate = data[state->prev_identifier_pos + 1u];
+        if (candidate != 0 && candidate <= chunk->data.count) {
+            next_pos = candidate;
+        }
+    }
+    if (next_pos < state->current_pos) return 0;
+    return next_pos - state->current_pos;
+}
+
 /* =============================================================================
  * REFLECTION FIELDS
  * ============================================================================= */
@@ -131,10 +151,7 @@ static nmo_status_t nmo_group_deserialize_internal(
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Group object count exceeds maximum");
     }
 
-    const nmo_chunk_parser_state_t *parser =
-        (const nmo_chunk_parser_state_t *)chunk->parser_state;
-    if (parser == NULL || parser->current_pos > chunk->data.count ||
-        (size_t)count > chunk->data.count - parser->current_pos) {
+    if ((size_t)count > nmo_group_identifier_remaining_dwords(chunk)) {
         return NMO_ERR_TRUNCATED_CHUNK;
     }
 
