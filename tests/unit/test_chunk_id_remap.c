@@ -4199,6 +4199,46 @@ TEST(chunk_id_remap, entity_skin_rejects_negative_vertex_bone_count_atomically) 
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, entity_skin_propagates_truncated_bone_indices_atomically) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    chunk->class_id = NMO_CID_3DENTITY;
+    chunk->data_version = 7;
+    chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        chunk, CK_STATESAVE_3DENTITYSKINDATA));
+    nmo_matrix_t identity = {
+        {{1, 0, 0, 0},
+         {0, 1, 0, 0},
+         {0, 0, 1, 0},
+         {0, 0, 0, 1}}
+    };
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_matrix(chunk, &identity));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(chunk, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 1));
+    nmo_vector_t initial_pos = {0};
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_vector3(chunk, &initial_pos));
+    nmo_chunk_close(chunk);
+
+    nmo_3dentity_state_t state;
+    ASSERT_EQ(NMO_OK, nmo_3dentity_vtable.create(&state, NULL, NULL));
+    state.entity_flags = 0x12345678u;
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_3dentity_deserialize(
+        &state, chunk, NULL, &deserialize_context));
+    ASSERT_EQ(0x12345678u, state.entity_flags);
+    ASSERT_NULL(state.skin);
+    nmo_3dentity_vtable.destroy(&state, NULL, NULL);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, entity_serializer_does_not_publish_partial_chunk) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
     ASSERT_NOT_NULL(arena);
@@ -7327,6 +7367,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, entity_scalar_refs_round_trip_unresolved_raw_ids);
     REGISTER_TEST(chunk_id_remap, entity_scalar_ref_sections_reject_truncation_atomically);
     REGISTER_TEST(chunk_id_remap, entity_skin_rejects_negative_vertex_bone_count_atomically);
+    REGISTER_TEST(chunk_id_remap, entity_skin_propagates_truncated_bone_indices_atomically);
     REGISTER_TEST(chunk_id_remap, entity_serializer_does_not_publish_partial_chunk);
     REGISTER_TEST(chunk_id_remap, entity2d_serializer_does_not_publish_partial_chunk);
     REGISTER_TEST(chunk_id_remap, place_refs_round_trip_and_truncation_is_atomic);
