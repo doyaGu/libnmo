@@ -1058,6 +1058,43 @@ TEST(chunk_api, sub_chunk_write_rejects_unencodable_payload) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_api, sub_chunk_tracking_failure_is_atomic) {
+    chunk_api_fail_allocator_state_t allocator_state = {
+        .allowed_allocations = (size_t)-1,
+    };
+    nmo_allocator_t allocator = nmo_allocator_custom(
+        chunk_api_fail_alloc, chunk_api_fail_free, &allocator_state);
+    nmo_arena_t* arena = nmo_arena_create(&allocator, 256);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t* sub = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(sub);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(sub));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(sub, 0xAABBCCDDu));
+    nmo_chunk_close(sub);
+
+    nmo_chunk_t* parent = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(parent);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(parent));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(parent, 0x12345678u));
+    const uint32_t parent_options_before = parent->chunk_options;
+    const uint32_t sub_options_before = sub->chunk_options;
+    const nmo_chunk_file_context_t* sub_context_before = sub->file_context;
+
+    ASSERT_NOT_NULL(nmo_arena_alloc(arena, 100000, 16));
+    allocator_state.allowed_allocations = allocator_state.allocation_count;
+    ASSERT_EQ(NMO_ERR_NOMEM,
+        nmo_chunk_write_sub_chunk(parent, sub));
+    ASSERT_EQ(1u, nmo_chunk_get_position(parent));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(parent));
+    ASSERT_EQ(0u, parent->chunks.count);
+    ASSERT_EQ(0u, parent->chunk_refs.count);
+    ASSERT_EQ(parent_options_before, parent->chunk_options);
+    ASSERT_EQ(sub_options_before, sub->chunk_options);
+    ASSERT_TRUE(sub_context_before == sub->file_context);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_api, manager_sequence_write_failure_is_atomic) {
     chunk_api_fail_allocator_state_t allocator_state = {
         .allowed_allocations = (size_t)-1,
@@ -1410,6 +1447,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_api, manager_sequence_write_failure_is_atomic);
     REGISTER_TEST(chunk_api, sub_chunks);
     REGISTER_TEST(chunk_api, sub_chunk_write_rejects_unencodable_payload);
+    REGISTER_TEST(chunk_api, sub_chunk_tracking_failure_is_atomic);
     REGISTER_TEST(chunk_api, sub_chunk_truncated_header);
     REGISTER_TEST(chunk_api, sub_chunk_invalid_manager_count_keeps_position);
     REGISTER_TEST(chunk_api, sub_chunk_reads_manager_count_independent_of_parent_version);
