@@ -642,6 +642,12 @@ nmo_status_t nmo_chunk_parser_read_string(nmo_chunk_parser_t *p, char **out, nmo
         NMO_RETURN_OK();
     }
 
+    size_t payload_dwords = nmo_bytes_to_dwords((size_t)size);
+    if (!check_bounds(p, payload_dwords)) {
+        NMO_PARSER_RETURN_TRUNCATED_ROLLBACK(
+            p, start_pos, "Cannot read string data");
+    }
+
     // Allocate buffer for string (size already includes null terminator)
     char *str = (char *) nmo_arena_alloc(arena, size, 1);
     if (str == NULL) {
@@ -686,6 +692,12 @@ nmo_status_t nmo_chunk_parser_read_buffer(nmo_chunk_parser_t *p,
 
     if (buf_size == 0) {
         NMO_RETURN_OK();
+    }
+
+    size_t payload_dwords = nmo_bytes_to_dwords((size_t)buf_size);
+    if (!check_bounds(p, payload_dwords)) {
+        NMO_PARSER_RETURN_TRUNCATED_ROLLBACK(
+            p, start_pos, "Cannot read buffer data");
     }
 
     // Allocate buffer
