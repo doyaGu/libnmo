@@ -84,17 +84,25 @@ static int ensure_data_capacity(nmo_chunk_writer_t *w, size_t needed_dwords) {
     if (!nmo_safe_add_size(w->data_size, needed_dwords, &required)) {
         return NMO_ERR_CORRUPT;
     }
+    if (required > UINT32_MAX) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
 
     if (required <= w->data_capacity) {
         return NMO_OK;
     }
 
     // Grow by WRITER_GROWTH_INCREMENT
-    size_t new_capacity = w->data_capacity;
-    while (new_capacity < required) {
-        if (!nmo_safe_add_size(new_capacity, WRITER_GROWTH_INCREMENT, &new_capacity)) {
-            return NMO_ERR_CORRUPT;
-        }
+    size_t missing = required - w->data_capacity;
+    size_t growth_steps = missing / WRITER_GROWTH_INCREMENT;
+    if (missing % WRITER_GROWTH_INCREMENT != 0) {
+        growth_steps++;
+    }
+    size_t growth = 0;
+    size_t new_capacity = 0;
+    if (!nmo_safe_mul_size(growth_steps, WRITER_GROWTH_INCREMENT, &growth) ||
+        !nmo_safe_add_size(w->data_capacity, growth, &new_capacity)) {
+        return NMO_ERR_CORRUPT;
     }
 
     size_t alloc_bytes = 0;
