@@ -560,13 +560,22 @@ nmo_status_t nmo_chunk_write_raw_object_id(nmo_chunk_t *chunk, nmo_object_id_t r
 
 nmo_status_t nmo_chunk_read_object_id(nmo_chunk_t *chunk, nmo_object_id_t *out_id) {
     NMO_CHUNK_CHECK_ARGS(chunk, out_id, "Invalid arguments");
+    *out_id = NMO_OBJECT_ID_NONE;
 
     NMO_CHUNK_CHECK_BOUNDS(chunk, 1);
 
     nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
     uint32_t *data_dwords = get_data_u32(chunk);
-    uint32_t raw_id = data_dwords[state->current_pos++];
-    return decode_object_id(chunk, raw_id, false, out_id);
+    const size_t start_pos = state->current_pos;
+    const uint32_t raw_id = data_dwords[state->current_pos++];
+    nmo_object_id_t id = NMO_OBJECT_ID_NONE;
+    nmo_status_t result = decode_object_id(chunk, raw_id, false, &id);
+    if (result != NMO_OK) {
+        state->current_pos = start_pos;
+        return result;
+    }
+    *out_id = id;
+    return NMO_OK;
 }
 
 nmo_status_t nmo_chunk_read_object_id_preserve(nmo_chunk_t *chunk,
@@ -574,11 +583,21 @@ nmo_status_t nmo_chunk_read_object_id_preserve(nmo_chunk_t *chunk,
                                                 nmo_object_id_t *out_id) {
     NMO_CHUNK_CHECK_ARGS(chunk, out_raw_id, "Invalid arguments");
     NMO_CHUNK_CHECK_ARG(out_id, "Invalid decoded object ID output");
+    *out_raw_id = NMO_OBJECT_ID_NONE;
+    *out_id = NMO_OBJECT_ID_NONE;
     NMO_CHUNK_CHECK_BOUNDS(chunk, 1);
 
     nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
     uint32_t *data_dwords = get_data_u32(chunk);
-    uint32_t raw_id = data_dwords[state->current_pos++];
+    const size_t start_pos = state->current_pos;
+    const uint32_t raw_id = data_dwords[state->current_pos++];
+    nmo_object_id_t id = NMO_OBJECT_ID_NONE;
+    nmo_status_t result = decode_object_id(chunk, raw_id, true, &id);
+    if (result != NMO_OK) {
+        state->current_pos = start_pos;
+        return result;
+    }
     *out_raw_id = (nmo_object_id_t)raw_id;
-    return decode_object_id(chunk, raw_id, true, out_id);
+    *out_id = id;
+    return NMO_OK;
 }
