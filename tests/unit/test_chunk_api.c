@@ -473,6 +473,27 @@ TEST(chunk_api, navigation_read_bounds) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_api, check_size_rounds_and_rejects_overflow) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_chunk_t* chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+
+    nmo_chunk_parser_state_t* state = nmo_chunk_get_parser_state(chunk);
+    ASSERT_NOT_NULL(state);
+    ASSERT_EQ(NMO_OK, nmo_chunk_check_size(chunk, 1));
+    ASSERT_TRUE(state->data_size >= 1u);
+
+    state->current_pos = SIZE_MAX - 1u;
+    ASSERT_EQ(NMO_ERR_INVALID_OFFSET,
+        nmo_chunk_check_size(chunk, 8));
+    ASSERT_EQ(SIZE_MAX - 1u, state->current_pos);
+
+    nmo_arena_destroy(arena);
+}
+
 // Test: Auto-expansion
 TEST(chunk_api, auto_expand) {
     nmo_arena_t* arena = nmo_arena_create(NULL, 8192);
@@ -1085,6 +1106,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_api, sequence_rejects_negative_count);
     REGISTER_TEST(chunk_api, navigation);
     REGISTER_TEST(chunk_api, navigation_read_bounds);
+    REGISTER_TEST(chunk_api, check_size_rounds_and_rejects_overflow);
     REGISTER_TEST(chunk_api, auto_expand);
     REGISTER_TEST(chunk_api, identifiers);
     REGISTER_TEST(chunk_api, read_identifier_eof);
