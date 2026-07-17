@@ -4706,6 +4706,31 @@ TEST(chunk_id_remap, place_refs_round_trip_and_truncation_is_atomic) {
     ASSERT_EQ(809u, NMO_ARRAY_DATA(
         nmo_place_portal_entry_t, &failed_portal.portals)[0].place_id);
 
+    nmo_chunk_t *cross_section_portal = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(cross_section_portal);
+    cross_section_portal->class_id = NMO_CID_PLACE;
+    cross_section_portal->data_version = 7;
+    cross_section_portal->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(cross_section_portal));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_section_portal, CK_STATESAVE_PLACEPORTALS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(cross_section_portal, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_section_portal, 0x7F123456u));
+    nmo_chunk_close(cross_section_portal);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_place_deserialize(
+        &failed_portal, cross_section_portal, NULL, &deserialize_context));
+    nmo_chunk_parser_state_t *portal_parser =
+        (nmo_chunk_parser_state_t *)cross_section_portal->parser_state;
+    ASSERT_NOT_NULL(portal_parser);
+    ASSERT_EQ(portal_parser->prev_identifier_pos + 3u,
+              portal_parser->current_pos);
+    ASSERT_EQ(1u, failed_portal.portals.count);
+    ASSERT_EQ(809u, NMO_ARRAY_DATA(
+        nmo_place_portal_entry_t, &failed_portal.portals)[0].place_id);
+    ASSERT_EQ(810u, NMO_ARRAY_DATA(
+        nmo_place_portal_entry_t, &failed_portal.portals)[0].portal_id);
+
     nmo_place_state_t invalid;
     ASSERT_EQ(NMO_OK, nmo_place_vtable.create(&invalid, NULL, NULL));
     nmo_ref_t valid_reference = nmo_ref_from_raw(811);
