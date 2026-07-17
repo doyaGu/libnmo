@@ -451,6 +451,19 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
             NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                              "Bone array size exceeds limits");
         }
+        const size_t bone_dwords = data_version < 6 ? 19u : 18u;
+        if (bone_count > (SIZE_MAX - 1u) / bone_dwords) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Bone payload size exceeds limits");
+        }
+        size_t remaining_bytes = 0;
+        NMO_RETURN_IF_ERROR(nmo_3dentity_identifier_payload_size_bytes(
+            chunk, &remaining_bytes));
+        if (bone_count * bone_dwords + 1u >
+            remaining_bytes / sizeof(uint32_t)) {
+            NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                             "Skin bones exceed remaining DWORDs");
+        }
 
         out_state->skin->bone_count = (uint32_t)bone_count;
         if (bone_count > 0) {
@@ -482,6 +495,20 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
             NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                              "Invalid vertex count in skin data");
         }
+        const size_t min_vertex_dwords = data_version < 6 ? 7u : 4u;
+        if ((size_t)vertex_count > SIZE_MAX / min_vertex_dwords ||
+            (size_t)vertex_count >
+                SIZE_MAX / sizeof(nmo_3dentity_skin_vertex_t)) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Skin vertex payload size exceeds limits");
+        }
+        NMO_RETURN_IF_ERROR(nmo_3dentity_identifier_payload_size_bytes(
+            chunk, &remaining_bytes));
+        if ((size_t)vertex_count * min_vertex_dwords >
+            remaining_bytes / sizeof(uint32_t)) {
+            NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                             "Skin vertices exceed remaining DWORDs");
+        }
 
         if (vertex_count > 0) {
             out_state->skin->vertex_count = (uint32_t)vertex_count;
@@ -503,6 +530,19 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
             if (bone_count_i < 0) {
                 NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                                  "Invalid per-vertex bone count");
+            }
+            const size_t fixed_vertex_dwords = data_version < 6 ? 6u : 3u;
+            if ((size_t)bone_count_i >
+                (SIZE_MAX - fixed_vertex_dwords) / 2u) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                 "Per-vertex bone payload size exceeds limits");
+            }
+            NMO_RETURN_IF_ERROR(nmo_3dentity_identifier_payload_size_bytes(
+                chunk, &remaining_bytes));
+            if (fixed_vertex_dwords + (size_t)bone_count_i * 2u >
+                remaining_bytes / sizeof(uint32_t)) {
+                NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                                 "Per-vertex bone data exceeds remaining DWORDs");
             }
             vertex->bone_count = (uint32_t)bone_count_i;
 
@@ -556,6 +596,12 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
             if (result != NMO_OK) return result;
 
             const uint32_t vertex_count_u = out_state->skin->vertex_count;
+#if SIZE_MAX <= UINT32_MAX
+            if ((size_t)vertex_count_u > SIZE_MAX / sizeof(nmo_vector_t)) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                 "Skin normals size exceeds limits");
+            }
+#endif
             const size_t expected_bytes = (size_t)vertex_count_u * sizeof(nmo_vector_t);
             uint32_t normal_count = vertex_count_u;
 
