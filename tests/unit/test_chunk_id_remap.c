@@ -4562,6 +4562,7 @@ TEST(chunk_id_remap, synchro_refs_round_trip_and_failure_is_atomic) {
 
     nmo_synchro_state_t failed;
     ASSERT_EQ(NMO_OK, nmo_synchro_vtable.create(&failed, NULL, NULL));
+    failed.base.visibility_flags = NMO_CKOBJECT_HIERARCHICAL;
     failed.max_waiters = 99;
     nmo_ref_t old_arrived = nmo_ref_from_raw(930);
     nmo_ref_t old_passed = nmo_ref_from_raw(931);
@@ -4576,12 +4577,39 @@ TEST(chunk_id_remap, synchro_refs_round_trip_and_failure_is_atomic) {
                         nmo_ref_t, &failed.arrived_ids)[0].raw_id);
     ASSERT_EQ(931u, NMO_ARRAY_DATA(
                         nmo_ref_t, &failed.passed_ids)[0].raw_id);
+    ASSERT_EQ(NMO_CKOBJECT_HIERARCHICAL, failed.base.visibility_flags);
+
+    nmo_synchro_state_t invalid;
+    ASSERT_EQ(NMO_OK, nmo_synchro_vtable.create(&invalid, NULL, NULL));
+    nmo_ref_t valid_waiter = nmo_ref_from_raw(932);
+    nmo_ref_t invalid_waiter = nmo_ref_from_id(999);
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &invalid.arrived_ids, &valid_waiter));
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &invalid.passed_ids, &invalid_waiter));
+    nmo_chunk_t *target = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(target);
+    target->class_id = NMO_CID_SYNCHRO;
+    target->data_version = 7;
+    target->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(target, &write_context);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(target, 0x12345678u));
+    nmo_chunk_close(target);
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_synchro_serialize(
+        &invalid, target, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(target));
+    uint32_t marker = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(target, &marker));
+    ASSERT_EQ(0x12345678u, marker);
 
     nmo_synchro_vtable.destroy(&source, NULL, NULL);
     nmo_synchro_vtable.destroy(&loaded, NULL, NULL);
     nmo_synchro_vtable.destroy(&reloaded, NULL, NULL);
     nmo_synchro_vtable.destroy(&copied, NULL, NULL);
     nmo_synchro_vtable.destroy(&failed, NULL, NULL);
+    nmo_synchro_vtable.destroy(&invalid, NULL, NULL);
     nmo_arena_destroy(arena);
 }
 
