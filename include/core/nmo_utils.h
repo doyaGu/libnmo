@@ -52,7 +52,7 @@ static inline size_t nmo_align(size_t size, size_t alignment) {
  * @return Number of 4-byte DWORDs needed (rounded up)
  */
 static inline size_t nmo_bytes_to_dwords(size_t bytes) {
-    return (bytes + 3u) / 4u;
+    return bytes / 4u + (bytes % 4u != 0u);
 }
 
 /**
