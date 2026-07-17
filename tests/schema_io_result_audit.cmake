@@ -44,11 +44,12 @@ foreach(schema_file IN LISTS schema_files)
                 "${schema_file}:${line_number}: dependency remap must not normalize object state: ${line}\n")
         endif()
 
-        if((line MATCHES "\\(void\\)[ \t]*nmo_chunk_(read|write|skip)" OR
-            line MATCHES "^[ \t]*nmo_chunk_(read|write|skip)[A-Za-z0-9_]*[ \t]*\\(" OR
+        if((line MATCHES "\\(void\\)[ \t]*nmo_chunk_(read|write|skip|seek_identifier)" OR
+            line MATCHES "^[ \t]*nmo_chunk_(read|write|skip|seek_identifier)[A-Za-z0-9_]*[ \t]*\\(" OR
             line MATCHES "nmo_chunk_read_string[ \t]*\\(" OR
             line MATCHES "nmo_chunk_read_and_fill_buffer(_nosize)?[ \t]*\\(" OR
             line MATCHES "if[ \t]*\\(.*nmo_chunk_(read|write|skip)" OR
+            line MATCHES "if[ \t]*\\(.*nmo_chunk_seek_identifier" OR
             line MATCHES "if[ \t]*\\(result[ \t]*==[ \t]*NMO_OK[ \t]*&&" OR
             line MATCHES "if[ \t]*\\(result[ \t]*!=[ \t]*NMO_OK\\)[ \t]*break") AND
            NOT line MATCHES "_checked")
@@ -74,6 +75,11 @@ foreach(schema_file IN LISTS schema_files)
        "if[ \t]*\\(result[ \t]*!=[ \t]*NMO_OK\\)[ \t\\r\\n]*\\{[^\\}]*break[ \t]*;")
         string(APPEND failures
             "${schema_file}: suppresses a chunk I/O failure with break\n")
+    endif()
+    if(contents MATCHES
+       "if[ \t\r\n]*\\([^\\)]*nmo_chunk_seek_identifier[ \t\r\n]*\\(")
+        string(APPEND failures
+            "${schema_file}: branches directly on a chunk seek result\n")
     endif()
 endforeach()
 
