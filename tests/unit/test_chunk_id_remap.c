@@ -4830,6 +4830,30 @@ TEST(chunk_id_remap, group_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(899u, nmo_beobject_script_array_get_id(
         &failed.base.scripts, 0));
 
+    nmo_chunk_t *cross_section_count = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(cross_section_count);
+    cross_section_count->class_id = NMO_CID_GROUP;
+    cross_section_count->data_version = 7;
+    cross_section_count->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(cross_section_count));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_section_count, CK_STATESAVE_GROUPALL));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(cross_section_count, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_section_count, 0x7F123456u));
+    nmo_chunk_close(cross_section_count);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_group_deserialize(
+        &failed, cross_section_count, NULL, &deserialize_context));
+    nmo_chunk_parser_state_t *parser =
+        (nmo_chunk_parser_state_t *)cross_section_count->parser_state;
+    ASSERT_NOT_NULL(parser);
+    ASSERT_EQ(parser->prev_identifier_pos + 3u, parser->current_pos);
+    ASSERT_EQ(1u, failed.object_ids.count);
+    ASSERT_EQ(904u, NMO_ARRAY_DATA(
+        nmo_ref_t, &failed.object_ids)[0].raw_id);
+    ASSERT_EQ(899u, nmo_beobject_script_array_get_id(
+        &failed.base.scripts, 0));
+
     nmo_chunk_t *negative = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(negative);
     negative->class_id = NMO_CID_GROUP;
