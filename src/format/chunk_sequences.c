@@ -94,17 +94,22 @@ nmo_status_t nmo_chunk_write_raw_object_sequence_item(
 
 nmo_status_t nmo_chunk_read_object_sequence_start(nmo_chunk_t *chunk, size_t *out_count) {
     NMO_CHUNK_CHECK_ARGS(chunk, out_count, "Invalid arguments");
+    *out_count = 0;
+    size_t start_pos = nmo_chunk_get_position(chunk);
 
     int32_t count;
     nmo_status_t result = nmo_chunk_read_int(chunk, &count);
     NMO_RETURN_IF_ERROR(result);
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
 
     if (count < 0) {
+        state->current_pos = start_pos;
         NMO_CHUNK_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                                "Object sequence count cannot be negative");
     }
 
     if (!nmo_chunk_has_read_capacity(chunk, (size_t)count)) {
+        state->current_pos = start_pos;
         NMO_CHUNK_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                                "Object sequence count exceeds remaining DWORDs");
     }
