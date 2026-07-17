@@ -896,6 +896,18 @@ static nmo_status_t nmo_animation_seek_optional(
     return result == NMO_ERR_NOT_FOUND ? NMO_OK : result;
 }
 
+static nmo_status_t nmo_animation_validate_payload_size(
+    nmo_chunk_t *chunk,
+    uint32_t size_bytes)
+{
+    const size_t required_dwords = ((size_t)size_bytes + 3u) / 4u;
+    if (required_dwords > nmo_animation_identifier_remaining_dwords(chunk)) {
+        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                         "Animation payload exceeds identifier section");
+    }
+    return NMO_OK;
+}
+
 static nmo_status_t read_controllers_loop(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
@@ -913,6 +925,12 @@ static nmo_status_t read_controllers_loop(
 
         uint32_t size_dwords = 0;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &size_dwords));
+        if (size_dwords > UINT32_MAX / 4u ||
+            (size_t)size_dwords >
+                nmo_animation_identifier_remaining_dwords(chunk)) {
+            NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                             "Controller payload exceeds identifier section");
+        }
         uint32_t data_size = size_dwords * 4;
 
         void *data = NULL;
@@ -989,6 +1007,8 @@ static nmo_status_t read_newdata_controllers(
             uint32_t size_bytes = 0;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &size_bytes));
             morph_keys[i].data_size = size_bytes;
+            NMO_RETURN_IF_ERROR(nmo_animation_validate_payload_size(
+                chunk, size_bytes));
 
             if (size_bytes > 0) {
                 void *data = nmo_arena_alloc(arena, size_bytes, 4);
@@ -1021,6 +1041,8 @@ static nmo_status_t read_newdata_controllers(
         uint32_t key_count = 0;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &buf_size));
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &key_count));
+        NMO_RETURN_IF_ERROR(nmo_animation_validate_payload_size(
+            chunk, buf_size));
 
         if (key_count > 0 && buf_size > 0) {
             void *data = nmo_arena_alloc(arena, buf_size, 4);
@@ -1059,6 +1081,8 @@ static nmo_status_t read_newdata_controllers(
             uint32_t size_bytes = 0;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &size_bytes));
             sizes[i] = size_bytes;
+            NMO_RETURN_IF_ERROR(nmo_animation_validate_payload_size(
+                chunk, size_bytes));
 
             if (size_bytes > 0) {
                 void *data = nmo_arena_alloc(arena, size_bytes, 4);
@@ -1096,6 +1120,8 @@ static nmo_status_t read_newdata_controllers(
             uint32_t size_bytes = 0;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &size_bytes));
             sizes[i] = size_bytes;
+            NMO_RETURN_IF_ERROR(nmo_animation_validate_payload_size(
+                chunk, size_bytes));
 
             if (size_bytes > 0) {
                 void *data = nmo_arena_alloc(arena, size_bytes, 4);
@@ -1192,6 +1218,8 @@ static nmo_status_t read_legacy_controllers(
                 uint32_t size_bytes = 0;
                 NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &size_bytes));
                 morph_keys[i].data_size = size_bytes;
+                NMO_RETURN_IF_ERROR(nmo_animation_validate_payload_size(
+                    chunk, size_bytes));
 
                 if (size_bytes > 0) {
                     void *data = nmo_arena_alloc(arena, size_bytes, 4);
@@ -1220,6 +1248,8 @@ static nmo_status_t read_legacy_controllers(
         uint32_t key_count = 0;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &buf_size));
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &key_count));
+        NMO_RETURN_IF_ERROR(nmo_animation_validate_payload_size(
+            chunk, buf_size));
 
         if (key_count > 0 && buf_size > 0) {
             void *data = nmo_arena_alloc(arena, buf_size, 4);
@@ -1246,6 +1276,8 @@ static nmo_status_t read_legacy_controllers(
         uint32_t rot_key_count = 0;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &rot_buf_size));
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &rot_key_count));
+        NMO_RETURN_IF_ERROR(nmo_animation_validate_payload_size(
+            chunk, rot_buf_size));
 
         if (rot_key_count > 0 && rot_buf_size > 0) {
             void *data = nmo_arena_alloc(arena, rot_buf_size, 4);
@@ -1267,6 +1299,8 @@ static nmo_status_t read_legacy_controllers(
         uint32_t axis_key_count = 0;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &axis_buf_size));
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &axis_key_count));
+        NMO_RETURN_IF_ERROR(nmo_animation_validate_payload_size(
+            chunk, axis_buf_size));
 
         if (axis_key_count > 0 && axis_buf_size > 0) {
             void *data = nmo_arena_alloc(arena, axis_buf_size, 4);
@@ -1293,6 +1327,8 @@ static nmo_status_t read_legacy_controllers(
         uint32_t key_count = 0;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &buf_size));
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &key_count));
+        NMO_RETURN_IF_ERROR(nmo_animation_validate_payload_size(
+            chunk, buf_size));
 
         if (key_count > 0 && buf_size > 0) {
             void *data = nmo_arena_alloc(arena, buf_size, 4);
