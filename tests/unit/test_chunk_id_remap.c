@@ -2500,6 +2500,89 @@ TEST(chunk_id_remap, sprite_shared_ref_round_trips_raw_id) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, sprite_failures_keep_state_and_target_chunk_atomic) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+
+    nmo_chunk_t *truncated = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(truncated);
+    truncated->class_id = NMO_CID_SPRITE;
+    truncated->data_version = 7;
+    truncated->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(truncated));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        truncated, CK_STATESAVE_SPRITETRANSPARENT));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(truncated, 0xAABBCCDDu));
+    nmo_chunk_close(truncated);
+
+    nmo_sprite_state_t state;
+    ASSERT_EQ(NMO_OK, nmo_sprite_vtable.create(&state, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(
+        &state.entity.base.base, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &state.entity.base.base.scripts, 901));
+    state.has_sprite_ref = true;
+    state.sprite_ref = nmo_ref_from_raw(902);
+    state.has_bitmap_data = false;
+    state.has_transparency = true;
+    state.transparent_color = 0x11223344u;
+    state.is_transparent = true;
+    state.has_slot = true;
+    state.current_slot = 7;
+
+    ASSERT_NE(NMO_OK, nmo_sprite_deserialize(
+        &state, truncated, NULL, &deserialize_context));
+    ASSERT_TRUE(state.has_sprite_ref);
+    ASSERT_EQ(902u, state.sprite_ref.raw_id);
+    ASSERT_FALSE(state.has_bitmap_data);
+    ASSERT_TRUE(state.has_transparency);
+    ASSERT_EQ(0x11223344u, state.transparent_color);
+    ASSERT_TRUE(state.is_transparent);
+    ASSERT_TRUE(state.has_slot);
+    ASSERT_EQ(7u, state.current_slot);
+    ASSERT_EQ(901u, nmo_beobject_script_array_get_id(
+        &state.entity.base.base.scripts, 0));
+
+    nmo_id_remap_t *runtime_to_file = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(runtime_to_file);
+    nmo_chunk_file_context_t file_context = {
+        .runtime_to_file = runtime_to_file,
+    };
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_sprite_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_sprite_vtable.create(&source, NULL, NULL));
+    source.has_sprite_ref = true;
+    source.sprite_ref = nmo_ref_from_id(123);
+
+    nmo_chunk_t *target = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(target);
+    target->class_id = NMO_CID_SPRITE;
+    target->data_version = 7;
+    target->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(target, &file_context);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(target, 0x12345678u));
+    nmo_chunk_close(target);
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_sprite_serialize(
+        &source, target, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(target));
+    uint32_t marker = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(target, &marker));
+    ASSERT_EQ(0x12345678u, marker);
+
+    nmo_array_dispose(&state.entity.base.base.scripts);
+    nmo_array_dispose(&state.entity.base.base.attributes);
+    nmo_array_dispose(&state.entity.base.base.legacy_attributes);
+    nmo_sprite_vtable.destroy(&state, NULL, NULL);
+    nmo_sprite_vtable.destroy(&source, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, curvepoint_unresolved_curve_round_trips_raw_id) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
     ASSERT_NOT_NULL(arena);
@@ -5974,6 +6057,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, layer_unresolved_grid_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, grid_failures_keep_state_and_target_chunk_atomic);
     REGISTER_TEST(chunk_id_remap, sprite_shared_ref_round_trips_raw_id);
+    REGISTER_TEST(chunk_id_remap, sprite_failures_keep_state_and_target_chunk_atomic);
     REGISTER_TEST(chunk_id_remap, curvepoint_unresolved_curve_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, sprite3d_unresolved_material_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, wavesound_unresolved_attachment_round_trips_raw_id);
