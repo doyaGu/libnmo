@@ -1537,6 +1537,17 @@ static nmo_status_t write_links(nmo_chunk_t *chunk,
                                 const nmo_interface_body_t *body,
                                 bool split_type_and_highlight)
 {
+    if (body->link_count > (size_t)INT32_MAX ||
+        (body->link_count > 0 && body->links == NULL)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    for (size_t i = 0; i < body->link_count; ++i) {
+        if (body->links[i].point_count > (size_t)INT32_MAX ||
+            (body->links[i].point_count > 0 &&
+             body->links[i].points == NULL)) {
+            return NMO_ERR_INVALID_ARGUMENT;
+        }
+    }
     nmo_status_t st;
     st = nmo_chunk_write_int(chunk, (int32_t)body->link_count);
     NMO_RETURN_IF_ERROR(st);
@@ -1584,6 +1595,10 @@ static nmo_status_t write_links(nmo_chunk_t *chunk,
 static nmo_status_t write_operations(nmo_chunk_t *chunk,
                                      const nmo_interface_body_t *body)
 {
+    if (body->operation_count > (size_t)INT32_MAX ||
+        (body->operation_count > 0 && body->operations == NULL)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
     nmo_status_t st;
     st = nmo_chunk_write_int(chunk, (int32_t)body->operation_count);
     NMO_RETURN_IF_ERROR(st);
@@ -1604,6 +1619,10 @@ static nmo_status_t write_comments(nmo_chunk_t *chunk,
                                    uint32_t version,
                                    const nmo_interface_body_t *body)
 {
+    if (body->comment_count > (size_t)INT32_MAX ||
+        (body->comment_count > 0 && body->comments == NULL)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
     nmo_status_t st;
     st = nmo_chunk_write_int(chunk, (int32_t)body->comment_count);
     NMO_RETURN_IF_ERROR(st);
@@ -1635,6 +1654,12 @@ static nmo_status_t write_parameters(nmo_chunk_t *chunk,
                                      uint32_t version,
                                      const nmo_interface_param_set_t *params)
 {
+    if (params->local_count > (size_t)INT32_MAX ||
+        params->shared_count > (size_t)INT32_MAX ||
+        (params->local_count > 0 && params->locals == NULL) ||
+        (params->shared_count > 0 && params->shared == NULL)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
     nmo_status_t st;
 
     /* Local parameters */
@@ -1700,6 +1725,9 @@ static nmo_status_t write_parameter_section(
 {
     const nmo_interface_param_t *items = shared ? params->shared : params->locals;
     size_t count = shared ? params->shared_count : params->local_count;
+    if (count > (size_t)INT32_MAX || (count > 0 && items == NULL)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
     NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, (int32_t)count));
     for (size_t i = 0; i < count; ++i) {
         NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, items[i].h_pos));
@@ -1750,6 +1778,10 @@ static nmo_status_t write_graph_io(nmo_chunk_t *chunk,
     };
 
     for (int a = 0; a < 4; a++) {
+        if (arrays[a].count > (size_t)INT32_MAX ||
+            (arrays[a].count > 0 && arrays[a].data == NULL)) {
+            return NMO_ERR_INVALID_ARGUMENT;
+        }
         st = nmo_chunk_write_int(chunk, (int32_t)arrays[a].count);
         NMO_RETURN_IF_ERROR(st);
         for (size_t i = 0; i < arrays[a].count; i++) {
@@ -1789,6 +1821,10 @@ static nmo_status_t write_graph_io_section(
         counts[1] = gio ? gio->outward_input_count : 0;
     }
     for (size_t a = 0; a < 2; ++a) {
+        if (counts[a] > (size_t)INT32_MAX ||
+            (counts[a] > 0 && values[a] == NULL)) {
+            return NMO_ERR_INVALID_ARGUMENT;
+        }
         NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, (int32_t)counts[a]));
         for (size_t i = 0; i < counts[a]; ++i) {
             NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, values[a][i]));
