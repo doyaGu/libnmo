@@ -35,7 +35,7 @@ typedef struct nmo_read_ctx {
  * @brief Write bytes to buffer
  */
 static nmo_status_t write_bytes(nmo_write_ctx_t *ctx, const void *data, size_t len) {
-    if (ctx->pos + len > ctx->size) {
+    if (ctx->pos > ctx->size || len > ctx->size - ctx->pos) {
         NMO_RETURN_ERROR(NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR, "Write buffer overrun");
     }
     memcpy(ctx->buffer + ctx->pos, data, len);
@@ -54,7 +54,7 @@ static nmo_status_t write_u32(nmo_write_ctx_t *ctx, uint32_t value) {
  * @brief Read bytes from buffer
  */
 static nmo_status_t read_bytes(nmo_read_ctx_t *ctx, void *data, size_t len) {
-    if (ctx->pos + len > ctx->size) {
+    if (ctx->pos > ctx->size || len > ctx->size - ctx->pos) {
         NMO_RETURN_ERROR(NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR, "Read buffer overrun");
     }
     memcpy(data, ctx->buffer + ctx->pos, len);
@@ -413,12 +413,16 @@ static nmo_status_t chunk_deserialize_internal(nmo_read_ctx_t *ctx, nmo_arena_t 
     NMO_RETURN_IF_ERROR(result);
 
     /* Read data buffer */
+    const size_t data_size = (size_t)chunk_size_dwords * sizeof(uint32_t);
+    if (ctx->pos > ctx->size || data_size > ctx->size - ctx->pos) {
+        return NMO_ERR_BUFFER_OVERRUN;
+    }
     result = nmo_arena_array_resize(&chunk->data, chunk_size_dwords);
     NMO_RETURN_IF_ERROR(result);
 
     if (chunk_size_dwords > 0) {
         uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
-        result = read_bytes(ctx, data, chunk_size_dwords * 4);
+        result = read_bytes(ctx, data, data_size);
         NMO_RETURN_IF_ERROR(result);
     }
 
@@ -428,12 +432,16 @@ static nmo_status_t chunk_deserialize_internal(nmo_read_ctx_t *ctx, nmo_arena_t 
         result = read_u32(ctx, &id_count);
         NMO_RETURN_IF_ERROR(result);
 
+        const size_t ids_size = (size_t)id_count * sizeof(uint32_t);
+        if (ctx->pos > ctx->size || ids_size > ctx->size - ctx->pos) {
+            return NMO_ERR_BUFFER_OVERRUN;
+        }
         result = nmo_arena_array_resize(&chunk->ids, id_count);
         NMO_RETURN_IF_ERROR(result);
 
         if (id_count > 0) {
             uint32_t *ids = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->ids);
-            result = read_bytes(ctx, ids, id_count * 4);
+            result = read_bytes(ctx, ids, ids_size);
             NMO_RETURN_IF_ERROR(result);
         }
     }
@@ -444,12 +452,16 @@ static nmo_status_t chunk_deserialize_internal(nmo_read_ctx_t *ctx, nmo_arena_t 
         result = read_u32(ctx, &ref_count);
         NMO_RETURN_IF_ERROR(result);
 
+        const size_t refs_size = (size_t)ref_count * sizeof(uint32_t);
+        if (ctx->pos > ctx->size || refs_size > ctx->size - ctx->pos) {
+            return NMO_ERR_BUFFER_OVERRUN;
+        }
         result = nmo_arena_array_resize(&chunk->chunk_refs, ref_count);
         NMO_RETURN_IF_ERROR(result);
 
         if (ref_count > 0) {
             uint32_t *refs = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->chunk_refs);
-            result = read_bytes(ctx, refs, ref_count * 4);
+            result = read_bytes(ctx, refs, refs_size);
             NMO_RETURN_IF_ERROR(result);
         }
     }
@@ -460,12 +472,17 @@ static nmo_status_t chunk_deserialize_internal(nmo_read_ctx_t *ctx, nmo_arena_t 
         result = read_u32(ctx, &manager_count);
         NMO_RETURN_IF_ERROR(result);
 
+        const size_t managers_size =
+            (size_t)manager_count * sizeof(uint32_t);
+        if (ctx->pos > ctx->size || managers_size > ctx->size - ctx->pos) {
+            return NMO_ERR_BUFFER_OVERRUN;
+        }
         result = nmo_arena_array_resize(&chunk->managers, manager_count);
         NMO_RETURN_IF_ERROR(result);
 
         if (manager_count > 0) {
             uint32_t *managers = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->managers);
-            result = read_bytes(ctx, managers, manager_count * 4);
+            result = read_bytes(ctx, managers, managers_size);
             NMO_RETURN_IF_ERROR(result);
         }
     }
@@ -840,6 +857,7 @@ nmo_status_t nmo_chunk_deserialize(const void *data,
     if (!data || !arena || !out_chunk) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to chunk_deserialize");
     }
+    *out_chunk = NULL;
 
     if (size < 8) {
         /* Minimum size: version info + chunk size */
