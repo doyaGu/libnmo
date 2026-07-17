@@ -41,6 +41,15 @@
 
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(3dentity, nmo_3dentity_state_t)
 
+static void nmo_3dentity_dispose_base_arrays(nmo_3dentity_state_t *state)
+{
+    if (state == NULL) return;
+    nmo_beobject_state_t *beobject = &state->base.base;
+    nmo_array_dispose(&beobject->scripts);
+    nmo_array_dispose(&beobject->attributes);
+    nmo_array_dispose(&beobject->legacy_attributes);
+}
+
 /* =============================================================================
  * REFLECTION FIELDS
  * ============================================================================= */
@@ -163,7 +172,7 @@ static nmo_status_t nmo_3dentity_identifier_payload_size_bytes(nmo_chunk_t *chun
  *   [if PARENTVALID] object_id  parent
  *   [if ZORDERVALID] int32      z_order
  */
-nmo_status_t nmo_3dentity_deserialize(
+static nmo_status_t nmo_3dentity_deserialize_internal(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -563,6 +572,28 @@ nmo_status_t nmo_3dentity_deserialize(
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_3dentity_deserialize(
+    void *instance,
+    nmo_chunk_t *chunk,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    nmo_3dentity_state_t *out_state = (nmo_3dentity_state_t *)instance;
+    if (out_state == NULL || chunk == NULL) return NMO_ERR_INVALID_ARGUMENT;
+
+    nmo_3dentity_state_t decoded = {0};
+    nmo_status_t result = nmo_3dentity_deserialize_internal(
+        &decoded, chunk, type, context);
+    if (result != NMO_OK) {
+        nmo_3dentity_dispose_base_arrays(&decoded);
+        return result;
+    }
+
+    nmo_3dentity_dispose_base_arrays(out_state);
+    *out_state = decoded;
+    return NMO_OK;
+}
+
 /* =============================================================================
  * CK3dEntity SERIALIZATION
  * ============================================================================= */
@@ -577,7 +608,7 @@ nmo_status_t nmo_3dentity_deserialize(
  * @param arena Arena for temporary allocations
  * @return Result indicating success or error
  */
-nmo_status_t nmo_3dentity_serialize(
+static nmo_status_t nmo_3dentity_serialize_internal(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
@@ -842,6 +873,32 @@ nmo_status_t nmo_3dentity_serialize(
     }
 
     NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_3dentity_serialize(
+    const void *instance,
+    nmo_chunk_t *out_chunk,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    if (instance == NULL || out_chunk == NULL || out_chunk->arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_chunk_t *staged = nmo_chunk_create(out_chunk->arena);
+    if (staged == NULL) return NMO_ERR_NOMEM;
+    staged->class_id = out_chunk->class_id;
+    staged->data_version = out_chunk->data_version;
+    staged->chunk_version = out_chunk->chunk_version;
+    staged->chunk_class_id = out_chunk->chunk_class_id;
+    staged->chunk_options = out_chunk->chunk_options;
+    staged->file_context = out_chunk->file_context;
+
+    nmo_status_t result = nmo_3dentity_serialize_internal(
+        instance, staged, type, context);
+    if (result != NMO_OK) return result;
+    *out_chunk = *staged;
+    return NMO_OK;
 }
 
 nmo_status_t nmo_3dentity_prepare_dependencies(
