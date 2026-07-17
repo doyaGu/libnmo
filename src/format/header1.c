@@ -458,6 +458,8 @@ nmo_status_t nmo_header1_plan(
     }
     NMO_RETURN_IF_ERROR(validate_header1_for_write(header));
 
+    nmo_header1_layout_t staged = {0};
+
     /* NOTE: Object count is NOT in buffer - it's in file header */
 
     /* Object descriptors */
@@ -467,18 +469,18 @@ nmo_status_t nmo_header1_plan(
             NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                              "Object name length does not fit the file format");
         }
-        if (!nmo_safe_add_size(out_layout->object_table_size,
+        if (!nmo_safe_add_size(staged.object_table_size,
                                sizeof(uint32_t) * 4u,
-                               &out_layout->object_table_size)) {
+                               &staged.object_table_size)) {
             NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR, "Header1 size overflow (object fields)");
         }
-        if (!nmo_safe_add_size(out_layout->object_table_size, name_len, &out_layout->object_table_size)) {
+        if (!nmo_safe_add_size(staged.object_table_size, name_len, &staged.object_table_size)) {
             NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR, "Header1 size overflow (object name)");
         }
     }
 
     /* Plugin dependencies */
-    out_layout->plugin_dep_size = sizeof(uint32_t);
+    staged.plugin_dep_size = sizeof(uint32_t);
 
     if (header->plugin_dep_count > 0) {
         size_t ordering_bytes = 0;
@@ -486,57 +488,58 @@ nmo_status_t nmo_header1_plan(
             NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR, "Header1 size overflow (category ordering)");
         }
 
-        out_layout->plugin_categories = (uint32_t *)nmo_arena_alloc(arena, ordering_bytes, _Alignof(uint32_t));
-        if (out_layout->plugin_categories == NULL) {
+        staged.plugin_categories = (uint32_t *)nmo_arena_alloc(arena, ordering_bytes, _Alignof(uint32_t));
+        if (staged.plugin_categories == NULL) {
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate plugin category order");
         }
 
         for (uint32_t i = 0; i < header->plugin_dep_count; i++) {
             uint32_t cat = header->plugin_deps[i].category;
             int found = 0;
-            for (size_t j = 0; j < out_layout->plugin_category_count; j++) {
-                if (out_layout->plugin_categories[j] == cat) {
+            for (size_t j = 0; j < staged.plugin_category_count; j++) {
+                if (staged.plugin_categories[j] == cat) {
                     found = 1;
                     break;
                 }
             }
             if (!found) {
-                out_layout->plugin_categories[out_layout->plugin_category_count++] = cat;
+                staged.plugin_categories[staged.plugin_category_count++] = cat;
             }
         }
 
-        for (size_t c = 0; c < out_layout->plugin_category_count; c++) {
-            uint32_t cat = out_layout->plugin_categories[c];
+        for (size_t c = 0; c < staged.plugin_category_count; c++) {
+            uint32_t cat = staged.plugin_categories[c];
             uint32_t cat_count = 0;
             for (uint32_t i = 0; i < header->plugin_dep_count; i++) {
                 if (header->plugin_deps[i].category == cat) {
                     cat_count++;
                 }
             }
-            if (!nmo_safe_add_size(out_layout->plugin_dep_size,
+            if (!nmo_safe_add_size(staged.plugin_dep_size,
                                    sizeof(uint32_t) * 2u,
-                                   &out_layout->plugin_dep_size)) {
+                                   &staged.plugin_dep_size)) {
                 NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR, "Header1 size overflow (category header)");
             }
             size_t guid_bytes = 0;
             if (!nmo_safe_mul_size(cat_count, sizeof(nmo_guid_t), &guid_bytes) ||
-                !nmo_safe_add_size(out_layout->plugin_dep_size, guid_bytes, &out_layout->plugin_dep_size)) {
+                !nmo_safe_add_size(staged.plugin_dep_size, guid_bytes, &staged.plugin_dep_size)) {
                 NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR, "Header1 size overflow (category GUIDs)");
             }
         }
     }
 
-    out_layout->included_metadata_size = sizeof(uint32_t) * 2u;
+    staged.included_metadata_size = sizeof(uint32_t) * 2u;
 
-    if (!nmo_safe_add_size(out_layout->object_table_size,
-                           out_layout->plugin_dep_size,
-                           &out_layout->total_size) ||
-        !nmo_safe_add_size(out_layout->total_size,
-                           out_layout->included_metadata_size,
-                           &out_layout->total_size)) {
+    if (!nmo_safe_add_size(staged.object_table_size,
+                           staged.plugin_dep_size,
+                           &staged.total_size) ||
+        !nmo_safe_add_size(staged.total_size,
+                           staged.included_metadata_size,
+                           &staged.total_size)) {
         NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR, "Header1 size overflow");
     }
 
+    *out_layout = staged;
     NMO_RETURN_OK();
 }
 
