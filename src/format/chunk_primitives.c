@@ -6,6 +6,7 @@
 #include "format/nmo_chunk_context.h"
 #include "format/nmo_id_remap.h"
 #include "object/nmo_object_repository.h"
+#include "core/nmo_utils.h"
 #include <string.h>
 
 static inline uint32_t *get_data_u32(nmo_chunk_t *chunk) {
@@ -345,18 +346,24 @@ nmo_status_t nmo_chunk_write_buffer(nmo_chunk_t *chunk,
                                     size_t size) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
-    if (data == NULL) {
-        size = 0;
+    if (size > 0 && data == NULL) {
+        NMO_CHUNK_RETURN_INVALID_ARGUMENT("Non-zero size with NULL buffer");
     }
     if (size > UINT32_MAX) {
         NMO_CHUNK_RETURN_INVALID_ARGUMENT(
             "Buffer size does not fit the 32-bit length prefix");
     }
 
-    size_t dwords = (size + 3u) / 4u;
+    const size_t dwords = nmo_bytes_to_dwords(size);
+    size_t total_dwords = 0;
+    size_t total_bytes = 0;
+    if (!nmo_safe_add_size(dwords, 1u, &total_dwords) ||
+        !nmo_safe_mul_size(total_dwords, sizeof(uint32_t), &total_bytes)) {
+        NMO_CHUNK_RETURN_INVALID_ARGUMENT("Buffer size overflow");
+    }
 
     // Write size
-    nmo_status_t result = nmo_chunk_check_size(chunk, (1 + dwords) * sizeof(uint32_t));
+    nmo_status_t result = nmo_chunk_check_size(chunk, total_bytes);
     NMO_RETURN_IF_ERROR(result);
 
     nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);

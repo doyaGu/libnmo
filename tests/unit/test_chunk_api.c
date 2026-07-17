@@ -240,7 +240,7 @@ TEST(chunk_api, buffer_fill_errors_keep_position) {
     nmo_arena_destroy(arena);
 }
 
-TEST(chunk_api, buffer_null_data_writes_zero_size) {
+TEST(chunk_api, buffer_null_data_with_size_is_rejected_atomically) {
     nmo_arena_t* arena = nmo_arena_create(NULL, 8192);
     ASSERT_NOT_NULL(arena);
 
@@ -249,19 +249,12 @@ TEST(chunk_api, buffer_null_data_writes_zero_size) {
 
     nmo_status_t result = nmo_chunk_start_write(chunk);
     ASSERT_EQ(result, NMO_OK);
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0x12345678u));
 
     result = nmo_chunk_write_buffer(chunk, NULL, 16);
-    ASSERT_EQ(result, NMO_OK);
-
-    result = nmo_chunk_start_read(chunk);
-    ASSERT_EQ(result, NMO_OK);
-
-    void* out_data = (void*)1;
-    size_t out_size = 123;
-    result = nmo_chunk_read_buffer(chunk, &out_data, &out_size);
-    ASSERT_EQ(result, NMO_OK);
-    ASSERT_EQ(out_size, 0);
-    ASSERT_NULL(out_data);
+    ASSERT_EQ(result, NMO_ERR_INVALID_ARGUMENT);
+    ASSERT_EQ(1u, nmo_chunk_get_position(chunk));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(chunk));
 
     nmo_arena_destroy(arena);
 }
@@ -1564,7 +1557,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_api, buffer);
     REGISTER_TEST(chunk_api, buffer_truncated_payload);
     REGISTER_TEST(chunk_api, buffer_fill_errors_keep_position);
-    REGISTER_TEST(chunk_api, buffer_null_data_writes_zero_size);
+    REGISTER_TEST(chunk_api, buffer_null_data_with_size_is_rejected_atomically);
     REGISTER_TEST(chunk_api, buffer_no_size_rejects_null_data_with_size);
     REGISTER_TEST(chunk_api, buffer_writes_reject_size_overflow_atomically);
     REGISTER_TEST(chunk_api, guid);
