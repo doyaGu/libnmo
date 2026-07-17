@@ -113,6 +113,8 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
     nmo_behavior_state_t,
     do { \
         state->compatible_class_id = NMO_CID_BEOBJECT; \
+        state->owner = nmo_ref_from_raw(NMO_OBJECT_ID_NONE); \
+        state->target_parameter = nmo_ref_from_raw(NMO_OBJECT_ID_NONE); \
         nmo_status_t result = nmo_array_init(&state->sub_behaviors, sizeof(nmo_behavior_ref_t), 0, NULL); \
         if (result != NMO_OK) return result; \
         nmo_behavior_ref_array_set_lifecycle(&state->sub_behaviors); \
@@ -171,14 +173,14 @@ static const nmo_type_field_t nmo_behavior_fields[] = {
     NMO_FIELD(nmo_behavior_state_t, flags, NMO_GUID_ENUM_CK_BEHAVIOR_FLAGS),
     NMO_FIELD(nmo_behavior_state_t, priority, CKPGUID_INT),
     NMO_FIELD(nmo_behavior_state_t, compatible_class_id, CKPGUID_INT),
-    NMO_FIELD_REF(nmo_behavior_state_t, owner_id),
+    NMO_FIELD_REF(nmo_behavior_state_t, owner),
     NMO_FIELD(nmo_behavior_state_t, behavior_type, NMO_GUID_ENUM_CK_BEHAVIOR_TYPE),
     NMO_FIELD(nmo_behavior_state_t, save_flags, CKPGUID_UINT32),
     NMO_FIELD(nmo_behavior_state_t, has_save_flags, CKPGUID_BOOL),
     NMO_FIELD(nmo_behavior_state_t, use_legacy_identifiers, CKPGUID_BOOL),
     NMO_FIELD(nmo_behavior_state_t, block_guid, CKPGUID_GUID),
     NMO_FIELD(nmo_behavior_state_t, block_version, CKPGUID_UINT32),
-    NMO_FIELD_REF(nmo_behavior_state_t, target_parameter_id),
+    NMO_FIELD_REF(nmo_behavior_state_t, target_parameter),
     NMO_FIELD_ARRAY(nmo_behavior_state_t, sub_behaviors, CKPGUID_NONE),
     NMO_FIELD_ARRAY(nmo_behavior_state_t, sub_behavior_links, CKPGUID_NONE),
     NMO_FIELD_ARRAY(nmo_behavior_state_t, operations, CKPGUID_NONE),
@@ -326,6 +328,23 @@ static void behavior_check_ref_classes(
     nmo_behavior_state_t *state,
     void *context)
 {
+    if (state != NULL) {
+        const nmo_object_repository_t *repository =
+            (const nmo_object_repository_t *)
+                nmo_deserialize_context_get_repository(context);
+        const nmo_type_registry_t *types =
+            nmo_deserialize_context_get_type_registry(context);
+        nmo_ref_check_class(
+            &state->owner,
+            repository,
+            types,
+            NMO_CID_SCENEOBJECT);
+        nmo_ref_check_class(
+            &state->target_parameter,
+            repository,
+            types,
+            NMO_CID_PARAMETERIN);
+    }
     behavior_check_ref_array_class(
         &state->sub_behaviors, NMO_CID_BEHAVIOR, context);
     behavior_check_ref_array_class(
@@ -455,7 +474,7 @@ nmo_status_t nmo_behavior_deserialize(
             }
 
             if (flags & CKBEHAVIOR_TARGETABLE) {
-                result = nmo_chunk_read_object_id(chunk, &out_state->target_parameter_id);
+                result = nmo_ref_read(chunk, &out_state->target_parameter);
                 if (result != NMO_OK) return result;
             }
 
@@ -539,7 +558,7 @@ nmo_status_t nmo_behavior_deserialize(
             result = nmo_chunk_read_int(chunk, &out_state->priority);
             if (result != NMO_OK) return result;
 
-            result = nmo_chunk_read_object_id(chunk, &out_state->owner_id);
+            result = nmo_ref_read(chunk, &out_state->owner);
             if (result != NMO_OK) return result;
 
             if (out_state->flags & CKBEHAVIOR_BUILDINGBLOCK) {
@@ -573,13 +592,14 @@ nmo_status_t nmo_behavior_deserialize(
             }
         }
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAVIOROWNER) == NMO_OK) {
-            NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &out_state->owner_id));
+            NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &out_state->owner));
         }
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAVIORPRIORITY) == NMO_OK) {
             NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &out_state->priority));
         }
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAVIORTARGET) == NMO_OK) {
-            NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &out_state->target_parameter_id));
+            NMO_RETURN_IF_ERROR(nmo_ref_read(
+                chunk, &out_state->target_parameter));
         }
     }
 
@@ -902,7 +922,7 @@ nmo_status_t nmo_behavior_serialize(
 
     /* Write target parameter */
     if (behavior_flags & CKBEHAVIOR_TARGETABLE) {
-        result = nmo_chunk_write_object_id(out_chunk, in_state->target_parameter_id);
+        result = nmo_ref_write(out_chunk, &in_state->target_parameter);
         if (result != NMO_OK) return result;
     }
 
@@ -1406,13 +1426,20 @@ nmo_status_t nmo_behavior_normalize_references(
 {
     if (!state || !repository) return NMO_ERR_INVALID_ARGUMENT;
     size_t changed = 0;
-    if (state->owner_id && !nmo_object_repository_find_by_id(repository, state->owner_id)) {
-        state->owner_id = 0;
+    const nmo_object_id_t owner_id = nmo_behavior_owner_id(state);
+    if (state->owner.state != NMO_REF_NONE &&
+        (owner_id == NMO_OBJECT_ID_NONE ||
+         !nmo_object_repository_find_by_id(repository, owner_id))) {
+        state->owner = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         changed++;
     }
-    if (state->target_parameter_id &&
-        !nmo_object_repository_find_by_id(repository, state->target_parameter_id)) {
-        state->target_parameter_id = 0;
+    const nmo_object_id_t target_parameter_id =
+        nmo_behavior_target_parameter_id(state);
+    if (state->target_parameter.state != NMO_REF_NONE &&
+        (target_parameter_id == NMO_OBJECT_ID_NONE ||
+         !nmo_object_repository_find_by_id(
+             repository, target_parameter_id))) {
+        state->target_parameter = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         changed++;
     }
     NMO_RETURN_IF_ERROR(normalize_behavior_array(
@@ -1444,8 +1471,8 @@ static nmo_status_t nmo_behavior_pre_delete(
     }
 
     nmo_behavior_state_t *state = (nmo_behavior_state_t *)instance;
-    state->owner_id = 0;
-    state->target_parameter_id = 0;
+    state->owner = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+    state->target_parameter = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     nmo_array_clear(&state->sub_behaviors);
     nmo_array_clear(&state->sub_behavior_links);
     nmo_array_clear(&state->operations);
@@ -1498,11 +1525,14 @@ static nmo_status_t nmo_behavior_enumerate_refs(
     (void)type;
     const nmo_behavior_state_t *state = instance;
     if (state == NULL || visitor == NULL) return NMO_OK;
-    if (state->owner_id != NMO_OBJECT_ID_NONE &&
-        !visitor(user_data, state->owner_id, NMO_REF_KIND_OWNER,
+    const nmo_object_id_t owner_id = nmo_behavior_owner_id(state);
+    if (owner_id != NMO_OBJECT_ID_NONE &&
+        !visitor(user_data, owner_id, NMO_REF_KIND_OWNER,
                  "owner_id", 0)) return NMO_OK;
-    if (state->target_parameter_id != NMO_OBJECT_ID_NONE &&
-        !visitor(user_data, state->target_parameter_id, NMO_REF_KIND_TARGET,
+    const nmo_object_id_t target_parameter_id =
+        nmo_behavior_target_parameter_id(state);
+    if (target_parameter_id != NMO_OBJECT_ID_NONE &&
+        !visitor(user_data, target_parameter_id, NMO_REF_KIND_TARGET,
                  "target_parameter_id", 0)) return NMO_OK;
     if (!nmo_behavior_enumerate_array(
             &state->sub_behaviors, NMO_REF_KIND_SCRIPT, "sub_behaviors",

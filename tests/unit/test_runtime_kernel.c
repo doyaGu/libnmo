@@ -739,7 +739,7 @@ TEST(runtime_kernel, normalize_removes_only_invalid_reference_records) {
         &behavior->inputs, invalid, NULL));
     ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(
         &behavior->inputs, valid_b, NULL));
-    behavior->target_parameter_id = valid_parameter;
+    nmo_behavior_set_target_parameter_id(behavior, valid_parameter_in);
 
     nmo_arena_t *chunk_arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(chunk_arena);
@@ -860,7 +860,7 @@ TEST(runtime_kernel, normalize_removes_only_invalid_reference_records) {
     ASSERT_EQ(2, (int)behavior->inputs.count);
     ASSERT_EQ(valid_a, nmo_behavior_ref_array_get_id(&behavior->inputs, 0));
     ASSERT_EQ(valid_b, nmo_behavior_ref_array_get_id(&behavior->inputs, 1));
-    ASSERT_EQ(valid_parameter, behavior->target_parameter_id);
+    ASSERT_EQ(valid_parameter_in, nmo_behavior_target_parameter_id(behavior));
     ASSERT_EQ(2, (int)behavior->sub_behaviors.count);
     nmo_behavior_ref_t *sub_refs = NMO_ARRAY_DATA(
         nmo_behavior_ref_t, &behavior->sub_behaviors);

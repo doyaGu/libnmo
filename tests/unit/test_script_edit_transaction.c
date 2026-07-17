@@ -303,17 +303,17 @@ static void setup_script_control_fixture(nmo_session_t *session,
                   &target_state->inputs, fixture->target_input_id, NULL));
 
     root_state->flags |= 0x00000002u;
-    root_state->owner_id = owner_id;
+    nmo_behavior_set_owner_id(root_state, owner_id);
     root_state->has_save_flags = true;
     root_state->save_flags |= CK_STATESAVE_BEHAVIORSUBBEHAV |
                               CK_STATESAVE_BEHAVIORINPUTS |
                               CK_STATESAVE_BEHAVIOROUTPUTS;
 
-    source_state->owner_id = fixture->root_behavior_id;
+    nmo_behavior_set_owner_id(source_state, fixture->root_behavior_id);
     source_state->has_save_flags = true;
     source_state->save_flags |= CK_STATESAVE_BEHAVIOROUTPUTS;
 
-    target_state->owner_id = fixture->root_behavior_id;
+    nmo_behavior_set_owner_id(target_state, fixture->root_behavior_id);
     target_state->has_save_flags = true;
     target_state->save_flags |= CK_STATESAVE_BEHAVIORINPUTS;
 
@@ -476,11 +476,12 @@ TEST(script_edit_transaction, add_node_keeps_ballance_script_edit_validation_gre
     node_state = (nmo_behavior_state_t *)nmo_object_get_state(node_obj);
     ASSERT_NOT_NULL(node_state);
     ASSERT_EQ(NMO_CID_2DENTITY, node_state->compatible_class_id);
-    ASSERT_TRUE(node_state->target_parameter_id != 0u);
+    ASSERT_TRUE(nmo_behavior_target_parameter_id(node_state) != 0u);
 
     {
         nmo_object_t *target_param_obj =
-            nmo_object_repository_find_by_id(repo, node_state->target_parameter_id);
+            nmo_object_repository_find_by_id(
+                repo, nmo_behavior_target_parameter_id(node_state));
         nmo_parameterin_state_t *target_param_state = target_param_obj
             ? (nmo_parameterin_state_t *)nmo_object_get_state(target_param_obj)
             : NULL;
@@ -701,10 +702,11 @@ TEST(script_edit_transaction, add_node_materializes_targetable_beobject_target)
         : NULL;
     ASSERT_NOT_NULL(node_state);
     ASSERT_TRUE((node_state->flags & CKBEHAVIOR_TARGETABLE) != 0u);
-    ASSERT_TRUE(node_state->target_parameter_id != 0u);
+    ASSERT_TRUE(nmo_behavior_target_parameter_id(node_state) != 0u);
 
     nmo_object_t *target_obj =
-        nmo_object_repository_find_by_id(repo, node_state->target_parameter_id);
+        nmo_object_repository_find_by_id(
+            repo, nmo_behavior_target_parameter_id(node_state));
     nmo_parameterin_state_t *target_state = target_obj
         ? (nmo_parameterin_state_t *)nmo_object_get_state(target_obj)
         : NULL;

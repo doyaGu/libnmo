@@ -1583,7 +1583,7 @@ nmo_status_t workspace_edit_bind_script(
     behavior_state->flags |= CKBEHAVIOR_SCRIPT;
     behavior_state->flags &= ~(uint32_t)CKBEHAVIOR_BUILDINGBLOCK;
     behavior_state->compatible_class_id = (int32_t)nmo_object_get_class_id(owner_object);
-    behavior_state->owner_id = object_id;
+    nmo_behavior_set_owner_id(behavior_state, object_id);
 
     nmo_workspace_edit_mark(
         edit,

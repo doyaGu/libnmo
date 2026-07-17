@@ -565,6 +565,15 @@ static nmo_class_id_t normalize_expected_class_for_typed_field(
     const nmo_type_field_t *field)
 {
     if (type != NULL && field != NULL && field->name != NULL &&
+        nmo_guid_equals(type->guid, CKPGUID_BEHAVIOR)) {
+        if (strcmp(field->name, "owner") == 0) {
+            return NMO_CID_SCENEOBJECT;
+        }
+        if (strcmp(field->name, "target_parameter") == 0) {
+            return NMO_CID_PARAMETERIN;
+        }
+    }
+    if (type != NULL && field != NULL && field->name != NULL &&
         strcmp(field->name, "owner") == 0 &&
         (nmo_guid_equals(type->guid, CKPGUID_PARAMETERIN) ||
          nmo_guid_equals(type->guid, CKPGUID_PARAMETEROUT) ||

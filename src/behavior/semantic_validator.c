@@ -409,7 +409,9 @@ static nmo_status_t semantic_add_behavior_target_consistency_risk(
     if (state == NULL || (state->flags & CKBEHAVIOR_TARGETABLE) == 0u) {
         return NMO_OK;
     }
-    if (state->target_parameter_id == 0u) {
+    const nmo_object_id_t target_parameter_id =
+        nmo_behavior_target_parameter_id(state);
+    if (target_parameter_id == 0u) {
         return semantic_add_risk(
             risks,
             risk_count,
@@ -419,7 +421,7 @@ static nmo_status_t semantic_add_behavior_target_consistency_risk(
             behavior_id);
     }
     nmo_object_t *target = nmo_object_repository_find_by_id(
-        repo, state->target_parameter_id);
+        repo, target_parameter_id);
     if (target == NULL) {
         return semantic_add_risk(
             risks,
@@ -427,7 +429,7 @@ static nmo_status_t semantic_add_behavior_target_consistency_risk(
             NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
             "target_parameter_dangling_reference",
             "Targetable behavior references a missing target parameter",
-            state->target_parameter_id);
+            target_parameter_id);
     }
     if (nmo_object_get_class_id(target) != NMO_CID_PARAMETERIN) {
         return semantic_add_risk(
@@ -436,7 +438,7 @@ static nmo_status_t semantic_add_behavior_target_consistency_risk(
             NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
             "target_parameter_type_mismatch",
             "Targetable behavior target must be a behavior input parameter",
-            state->target_parameter_id);
+            target_parameter_id);
     }
     uint32_t target_class_id = state->compatible_class_id > 0
         ? (uint32_t)state->compatible_class_id
@@ -449,7 +451,7 @@ static nmo_status_t semantic_add_behavior_target_consistency_risk(
         nmo_type_registry_class_id_to_guid(
             type_registry, target_class_id, &expected_guid) == NMO_OK &&
         semantic_parameter_type_guid(
-            repo, state->target_parameter_id, &actual_guid) &&
+            repo, target_parameter_id, &actual_guid) &&
         !nmo_guid_is_null(expected_guid) &&
         !nmo_guid_is_null(actual_guid) &&
         !nmo_guid_equals(expected_guid, actual_guid)) {
@@ -459,7 +461,7 @@ static nmo_status_t semantic_add_behavior_target_consistency_risk(
             NMO_BEHAVIOR_SEMANTIC_RISK_REJECT,
             "target_parameter_class_mismatch",
             "Targetable behavior target parameter type does not match its compatible class",
-            state->target_parameter_id);
+            target_parameter_id);
     }
     return NMO_OK;
 }

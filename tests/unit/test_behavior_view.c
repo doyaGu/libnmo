@@ -172,7 +172,7 @@ TEST(behavior_view, summarizes_behavior_without_exposing_state_layout) {
 
     nmo_behavior_state_t *state = test_behavior_state(session, behavior_id);
     ASSERT_NOT_NULL(state);
-    state->target_parameter_id = out_param_id;
+    nmo_behavior_set_target_parameter_id(state, out_param_id);
     test_append_id(&state->sub_behaviors, child_id);
     test_append_id(&state->inputs, in_io_id);
     test_append_id(&state->outputs, out_io_id);

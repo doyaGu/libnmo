@@ -1014,11 +1014,12 @@ TEST(edit_plan, executor_adds_node_with_created_object_report) {
     ASSERT_NOT_NULL(node_obj);
     ASSERT_NOT_NULL(node_state);
     ASSERT_EQ(NMO_CID_2DENTITY, node_state->compatible_class_id);
-    ASSERT_TRUE(node_state->target_parameter_id != 0u);
+    ASSERT_TRUE(nmo_behavior_target_parameter_id(node_state) != 0u);
     {
         bool found_target = false;
         for (size_t i = 0; i < report.created_object_count; ++i) {
-            if (report.created_objects[i].id == node_state->target_parameter_id) {
+            if (report.created_objects[i].id ==
+                nmo_behavior_target_parameter_id(node_state)) {
                 found_target = true;
             }
         }
@@ -1030,7 +1031,8 @@ TEST(edit_plan, executor_adds_node_with_created_object_report) {
         bool found_output_handle = false;
         for (size_t i = 0; i < report.operations[0].handle_count; ++i) {
             if (strcmp(report.operations[0].handles[i].name, "target") == 0 &&
-                report.operations[0].handles[i].id == node_state->target_parameter_id) {
+                report.operations[0].handles[i].id ==
+                    nmo_behavior_target_parameter_id(node_state)) {
                 found_target_handle = true;
             }
             if (strcmp(report.operations[0].handles[i].name, "input:On") == 0) {
@@ -1045,7 +1047,8 @@ TEST(edit_plan, executor_adds_node_with_created_object_report) {
         ASSERT_TRUE(found_output_handle);
     }
 
-    const nmo_object_id_t target_parameter_id = node_state->target_parameter_id;
+    const nmo_object_id_t target_parameter_id =
+        nmo_behavior_target_parameter_id(node_state);
     const nmo_object_id_t first_input_id =
         node_state->inputs.count > 0u
             ? nmo_behavior_ref_array_get_id(&node_state->inputs, 0)
@@ -1181,10 +1184,11 @@ TEST(edit_plan, executor_materializes_targetable_beobject_target) {
     ASSERT_NOT_NULL(node_state);
     ASSERT_EQ(NMO_CID_BEOBJECT, node_state->compatible_class_id);
     ASSERT_TRUE((node_state->flags & CKBEHAVIOR_TARGETABLE) != 0u);
-    ASSERT_TRUE(node_state->target_parameter_id != 0u);
+    ASSERT_TRUE(nmo_behavior_target_parameter_id(node_state) != 0u);
 
     nmo_object_t *target_obj =
-        nmo_object_repository_find_by_id(fixture.repo, node_state->target_parameter_id);
+        nmo_object_repository_find_by_id(
+            fixture.repo, nmo_behavior_target_parameter_id(node_state));
     nmo_parameterin_state_t *target_state = target_obj
         ? (nmo_parameterin_state_t *)nmo_object_get_state(target_obj)
         : NULL;
@@ -1194,13 +1198,15 @@ TEST(edit_plan, executor_materializes_targetable_beobject_target) {
     bool reported_target = false;
     bool handle_target = false;
     for (size_t i = 0; i < report.created_object_count; ++i) {
-        if (report.created_objects[i].id == node_state->target_parameter_id) {
+        if (report.created_objects[i].id ==
+            nmo_behavior_target_parameter_id(node_state)) {
             reported_target = true;
         }
     }
     for (size_t i = 0; i < report.operations[0].handle_count; ++i) {
         if (strcmp(report.operations[0].handles[i].name, "target") == 0 &&
-            report.operations[0].handles[i].id == node_state->target_parameter_id) {
+            report.operations[0].handles[i].id ==
+                nmo_behavior_target_parameter_id(node_state)) {
             handle_target = true;
         }
     }
@@ -1331,13 +1337,13 @@ TEST(edit_plan, executor_materializes_common_building_block_prototypes) {
         }
 
         if ((proto->behavior_flags & CKBEHAVIOR_TARGETABLE) != 0u) {
-            ASSERT_TRUE(node_state->target_parameter_id != 0u);
+            ASSERT_TRUE(nmo_behavior_target_parameter_id(node_state) != 0u);
             ASSERT_TRUE(report_contains_object_id(
                 report.created_objects,
                 report.created_object_count,
-                node_state->target_parameter_id));
+                nmo_behavior_target_parameter_id(node_state)));
         } else {
-            ASSERT_EQ(0u, node_state->target_parameter_id);
+            ASSERT_EQ(0u, nmo_behavior_target_parameter_id(node_state));
         }
 
         nmo_edit_report_dispose(&report);
@@ -1398,8 +1404,8 @@ TEST(edit_plan, executor_matches_authored_2d_text_golden_shape) {
     ASSERT_EQ(golden_state->block_version, actual_state->block_version);
     ASSERT_EQ(golden_state->compatible_class_id,
               actual_state->compatible_class_id);
-    ASSERT_EQ(golden_state->target_parameter_id != 0u ? 1u : 0u,
-              actual_state->target_parameter_id != 0u ? 1u : 0u);
+    ASSERT_EQ(nmo_behavior_target_parameter_id(golden_state) != 0u ? 1u : 0u,
+              nmo_behavior_target_parameter_id(actual_state) != 0u ? 1u : 0u);
 
     assert_named_object_arrays_match(
         golden_repo, &golden_state->inputs,
@@ -1770,7 +1776,7 @@ TEST(edit_plan, executor_connects_parameter_to_prior_node_handle) {
     ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
         &owner_state->scripts, root_id));
     root_state->flags |= 0x00000002u;
-    root_state->owner_id = owner_id;
+    nmo_behavior_set_owner_id(root_state, owner_id);
 
     nmo_script_edit_tx_t *seed_tx = NULL;
     ASSERT_EQ(NMO_OK, nmo_script_edit_begin(fixture.workspace, "seed source", &seed_tx));
@@ -1894,8 +1900,8 @@ TEST(edit_plan, executor_resolves_behavior_link_io_handles) {
         &owner_state->scripts, root_id));
     ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(&root_state->sub_behaviors, child_id, NULL));
     root_state->flags |= 0x00000002u;
-    root_state->owner_id = owner_id;
-    child_state->owner_id = root_id;
+    nmo_behavior_set_owner_id(root_state, owner_id);
+    nmo_behavior_set_owner_id(child_state, root_id);
     nmo_workspace_destroy(fixture.workspace);
     fixture.workspace = NULL;
     ASSERT_EQ(NMO_OK,
@@ -2109,8 +2115,8 @@ TEST(edit_plan, executor_reports_remove_node_detached_link_impact) {
         &owner_state->scripts, root_id));
     ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(&root_state->sub_behaviors, child_id, NULL));
     root_state->flags |= 0x00000002u;
-    root_state->owner_id = owner_id;
-    child_state->owner_id = root_id;
+    nmo_behavior_set_owner_id(root_state, owner_id);
+    nmo_behavior_set_owner_id(child_state, root_id);
     nmo_workspace_destroy(fixture.workspace);
     fixture.workspace = NULL;
     ASSERT_EQ(NMO_OK,
@@ -2219,8 +2225,8 @@ TEST(edit_plan, executor_reports_remove_node_parameter_edge_impact) {
         &owner_state->scripts, root_id));
     ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(&root_state->sub_behaviors, child_id, NULL));
     root_state->flags |= 0x00000002u;
-    root_state->owner_id = owner_id;
-    child_state->owner_id = root_id;
+    nmo_behavior_set_owner_id(root_state, owner_id);
+    nmo_behavior_set_owner_id(child_state, root_id);
     nmo_workspace_destroy(fixture.workspace);
     fixture.workspace = NULL;
     ASSERT_EQ(NMO_OK,
@@ -2313,8 +2319,8 @@ TEST(edit_plan, executor_detaches_removed_node_parameter_edges) {
         &owner_state->scripts, root_id));
     ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(&root_state->sub_behaviors, child_id, NULL));
     root_state->flags |= 0x00000002u;
-    root_state->owner_id = owner_id;
-    child_state->owner_id = root_id;
+    nmo_behavior_set_owner_id(root_state, owner_id);
+    nmo_behavior_set_owner_id(child_state, root_id);
     nmo_workspace_destroy(fixture.workspace);
     fixture.workspace = NULL;
     ASSERT_EQ(NMO_OK,
@@ -2416,9 +2422,9 @@ TEST(edit_plan, executor_reports_nested_removed_node_impact) {
     ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(&child_state->sub_behaviors, grandchild_id, NULL));
     root_state->flags |= 0x00000002u;
     child_state->flags |= 0x00000002u;
-    root_state->owner_id = owner_id;
-    child_state->owner_id = root_id;
-    grandchild_state->owner_id = child_id;
+    nmo_behavior_set_owner_id(root_state, owner_id);
+    nmo_behavior_set_owner_id(child_state, root_id);
+    nmo_behavior_set_owner_id(grandchild_state, child_id);
     nmo_workspace_destroy(fixture.workspace);
     fixture.workspace = NULL;
     ASSERT_EQ(NMO_OK,
@@ -2508,9 +2514,9 @@ TEST(edit_plan, executor_reports_nested_removed_node_parameter_impact) {
     ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(&child_state->sub_behaviors, grandchild_id, NULL));
     root_state->flags |= 0x00000002u;
     child_state->flags |= 0x00000002u;
-    root_state->owner_id = owner_id;
-    child_state->owner_id = root_id;
-    grandchild_state->owner_id = child_id;
+    nmo_behavior_set_owner_id(root_state, owner_id);
+    nmo_behavior_set_owner_id(child_state, root_id);
+    nmo_behavior_set_owner_id(grandchild_state, child_id);
     nmo_workspace_destroy(fixture.workspace);
     fixture.workspace = NULL;
     ASSERT_EQ(NMO_OK,
@@ -2594,8 +2600,8 @@ TEST(edit_plan, executor_reports_removed_node_operation_impact) {
         &owner_state->scripts, root_id));
     ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(&root_state->sub_behaviors, child_id, NULL));
     root_state->flags |= 0x00000002u;
-    root_state->owner_id = owner_id;
-    child_state->owner_id = root_id;
+    nmo_behavior_set_owner_id(root_state, owner_id);
+    nmo_behavior_set_owner_id(child_state, root_id);
     nmo_workspace_destroy(fixture.workspace);
     fixture.workspace = NULL;
     ASSERT_EQ(NMO_OK,
@@ -2703,9 +2709,9 @@ TEST(edit_plan, executor_reports_removed_node_control_link_impact) {
     ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(&child_state->sub_behaviors, grandchild_id, NULL));
     root_state->flags |= 0x00000002u;
     child_state->flags |= 0x00000002u;
-    root_state->owner_id = owner_id;
-    child_state->owner_id = root_id;
-    grandchild_state->owner_id = child_id;
+    nmo_behavior_set_owner_id(root_state, owner_id);
+    nmo_behavior_set_owner_id(child_state, root_id);
+    nmo_behavior_set_owner_id(grandchild_state, child_id);
     nmo_workspace_destroy(fixture.workspace);
     fixture.workspace = NULL;
     ASSERT_EQ(NMO_OK,
@@ -2800,9 +2806,9 @@ TEST(edit_plan, executor_deletes_nested_removed_node_operations) {
     ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(&child_state->sub_behaviors, grandchild_id, NULL));
     root_state->flags |= 0x00000002u;
     child_state->flags |= 0x00000002u;
-    root_state->owner_id = owner_id;
-    child_state->owner_id = root_id;
-    grandchild_state->owner_id = child_id;
+    nmo_behavior_set_owner_id(root_state, owner_id);
+    nmo_behavior_set_owner_id(child_state, root_id);
+    nmo_behavior_set_owner_id(grandchild_state, child_id);
     nmo_workspace_destroy(fixture.workspace);
     fixture.workspace = NULL;
     ASSERT_EQ(NMO_OK,
@@ -2910,9 +2916,9 @@ TEST(edit_plan, executor_detaches_nested_removed_node_control_links) {
     ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(&child_state->sub_behaviors, grandchild_id, NULL));
     root_state->flags |= 0x00000002u;
     child_state->flags |= 0x00000002u;
-    root_state->owner_id = owner_id;
-    child_state->owner_id = root_id;
-    grandchild_state->owner_id = child_id;
+    nmo_behavior_set_owner_id(root_state, owner_id);
+    nmo_behavior_set_owner_id(child_state, root_id);
+    nmo_behavior_set_owner_id(grandchild_state, child_id);
     nmo_workspace_destroy(fixture.workspace);
     fixture.workspace = NULL;
     ASSERT_EQ(NMO_OK,
@@ -3039,7 +3045,7 @@ TEST(edit_plan, executor_reports_rewire_operation_slot_parameter_impact) {
     ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
         &owner_state->scripts, root_id));
     root_state->flags |= 0x00000002u;
-    root_state->owner_id = owner_id;
+    nmo_behavior_set_owner_id(root_state, owner_id);
     nmo_workspace_destroy(fixture.workspace);
     fixture.workspace = NULL;
     ASSERT_EQ(NMO_OK,
@@ -3143,7 +3149,7 @@ TEST(edit_plan, executor_reports_add_operation_slot_parameter_impact) {
     ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
         &owner_state->scripts, root_id));
     root_state->flags |= 0x00000002u;
-    root_state->owner_id = owner_id;
+    nmo_behavior_set_owner_id(root_state, owner_id);
     nmo_workspace_destroy(fixture.workspace);
     fixture.workspace = NULL;
     ASSERT_EQ(NMO_OK,
@@ -3272,7 +3278,7 @@ TEST(edit_plan, executor_reports_remove_parameter_operation_slot_impact) {
     ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
         &owner_state->scripts, root_id));
     root_state->flags |= 0x00000002u;
-    root_state->owner_id = owner_id;
+    nmo_behavior_set_owner_id(root_state, owner_id);
     nmo_workspace_destroy(fixture.workspace);
     fixture.workspace = NULL;
     ASSERT_EQ(NMO_OK,
@@ -3357,7 +3363,7 @@ TEST(edit_plan, executor_reports_remove_parameter_edge_impact) {
     ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
         &owner_state->scripts, root_id));
     root_state->flags |= 0x00000002u;
-    root_state->owner_id = owner_id;
+    nmo_behavior_set_owner_id(root_state, owner_id);
     nmo_workspace_destroy(fixture.workspace);
     fixture.workspace = NULL;
     ASSERT_EQ(NMO_OK,

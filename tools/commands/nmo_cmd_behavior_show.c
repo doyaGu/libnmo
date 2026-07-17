@@ -471,9 +471,11 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
             }
         }
 
-        if (bs->target_parameter_id != 0) {
+        const nmo_object_id_t target_parameter_id =
+            nmo_behavior_target_parameter_id(bs);
+        if (target_parameter_id != 0) {
             yyjson_mut_obj_add_uint(doc, data, "target_parameter_id",
-                                    bs->target_parameter_id);
+                                    target_parameter_id);
         }
 
         /* IO Ports: inputs */

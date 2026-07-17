@@ -2931,10 +2931,12 @@ static nmo_status_t edit_report_note_behavior_owned_deleted_objects(
         return NMO_OK;
     }
 
-    if (state->target_parameter_id != 0u) {
+    const nmo_object_id_t target_parameter_id =
+        nmo_behavior_target_parameter_id(state);
+    if (target_parameter_id != 0u) {
         NMO_RETURN_IF_ERROR(nmo_edit_report_add_deleted_object(
             report,
-            state->target_parameter_id,
+            target_parameter_id,
             cause,
             "target_parameter"));
     }
@@ -3064,13 +3066,15 @@ static nmo_status_t edit_report_note_behavior_parameter_detach_impacts(
         }
     }
 
-    if (state->target_parameter_id != 0u) {
+    const nmo_object_id_t target_parameter_id =
+        nmo_behavior_target_parameter_id(state);
+    if (target_parameter_id != 0u) {
         nmo_object_id_t source_id =
-            edit_plan_get_parameterin_source(tx, state->target_parameter_id);
+            edit_plan_get_parameterin_source(tx, target_parameter_id);
         NMO_RETURN_IF_ERROR(edit_report_note_parameter_edge_source(
             report, cause, source_id));
         NMO_RETURN_IF_ERROR(edit_report_note_parameter_detach_impacts(
-            tx, report, cause, state->target_parameter_id));
+            tx, report, cause, target_parameter_id));
     }
 
     return NMO_OK;
@@ -4275,9 +4279,11 @@ static nmo_status_t edit_report_add_node_child_handles(
         return NMO_ERR_INVALID_STATE;
     }
 
-    if (state->target_parameter_id != 0u) {
+    const nmo_object_id_t target_parameter_id =
+        nmo_behavior_target_parameter_id(state);
+    if (target_parameter_id != 0u) {
         NMO_RETURN_IF_ERROR(nmo_edit_report_add_operation_handle(
-            report, operation_index, "target", state->target_parameter_id));
+            report, operation_index, "target", target_parameter_id));
     }
     NMO_RETURN_IF_ERROR(edit_report_add_array_handles(
         report, operation_index, "input", repo, &state->inputs));

@@ -183,7 +183,7 @@ static bool probe_behavior_has_parameter(const nmo_behavior_state_t *state,
                 &state->out_parameters, parameter_id, NULL) ||
             nmo_behavior_ref_array_find(
                 &state->local_parameters, parameter_id, NULL) ||
-            state->target_parameter_id == parameter_id);
+            nmo_behavior_target_parameter_id(state) == parameter_id);
 }
 
 static bool probe_link_touches_behavior(const nmo_behavior_state_t *behavior,

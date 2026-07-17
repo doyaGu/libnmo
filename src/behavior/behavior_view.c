@@ -93,8 +93,8 @@ nmo_status_t nmo_behavior_view_from_behavior(
     out_view->flags = state->flags;
     out_view->is_building_block =
         (state->flags & NMO_BEHAVIOR_FLAG_BUILDINGBLOCK) != 0u;
-    out_view->has_target_parameter = state->target_parameter_id != 0u;
-    out_view->target_parameter_id = state->target_parameter_id;
+    out_view->target_parameter_id = nmo_behavior_target_parameter_id(state);
+    out_view->has_target_parameter = out_view->target_parameter_id != 0u;
     out_view->sub_behavior_count = state->sub_behaviors.count;
     out_view->link_count = state->sub_behavior_links.count;
     out_view->operation_count = state->operations.count;

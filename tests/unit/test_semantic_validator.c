@@ -2201,7 +2201,7 @@ TEST(semantic_validator, edit_plan_reports_targetable_behavior_missing_target)
         (nmo_behavior_state_t *)nmo_object_get_state(behavior_obj);
     ASSERT_NOT_NULL(behavior_state);
     behavior_state->flags |= CKBEHAVIOR_TARGETABLE;
-    behavior_state->target_parameter_id = 0u;
+    nmo_behavior_set_target_parameter_id(behavior_state, 0u);
 
     nmo_behavior_replace_bb_desc_t replace = {
         .behavior_id = behavior_id,
@@ -2264,7 +2264,7 @@ TEST(semantic_validator, edit_plan_reports_target_parameter_class_mismatch)
 
     behavior_state->flags |= CKBEHAVIOR_TARGETABLE;
     behavior_state->compatible_class_id = NMO_CID_2DENTITY;
-    behavior_state->target_parameter_id = target_id;
+    nmo_behavior_set_target_parameter_id(behavior_state, target_id);
     target_state->type_guid = CKPGUID_STRING;
 
     nmo_behavior_replace_bb_desc_t replace = {

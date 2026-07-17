@@ -880,11 +880,15 @@ static nmo_status_t runtime_detach_deleted_references(
         }
 
         nmo_behavior_state_t *behavior = (nmo_behavior_state_t *)obj->state;
-        if (runtime_id_set_contains(delete_set, behavior->owner_id)) {
-            behavior->owner_id = NMO_OBJECT_ID_NONE;
+        if (runtime_id_set_contains(
+                delete_set, nmo_behavior_owner_id(behavior))) {
+            behavior->owner = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         }
-        if (runtime_id_set_contains(delete_set, behavior->target_parameter_id)) {
-            behavior->target_parameter_id = NMO_OBJECT_ID_NONE;
+        if (runtime_id_set_contains(
+                delete_set,
+                nmo_behavior_target_parameter_id(behavior))) {
+            behavior->target_parameter =
+                nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         }
 
         NMO_RETURN_IF_ERROR(runtime_remove_deleted_behavior_refs(

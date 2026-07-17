@@ -129,7 +129,7 @@ typedef struct nmo_behavior_state {
     uint32_t flags;                        /**< Behavior flags (type, locked, etc.) */
     int32_t priority;                      /**< Execution priority (default 0) */
     int32_t compatible_class_id;           /**< Compatible object class ID */
-    nmo_object_id_t owner_id;              /**< Owner object ID (legacy formats) */
+    nmo_ref_t owner;                       /**< Owner object (legacy formats) */
     uint32_t behavior_type;                /**< Legacy behavior type value */
     uint32_t save_flags;                   /**< Raw save flags from file (preserve unknown bits) */
     bool has_save_flags;                   /**< Whether save_flags was loaded from file */
@@ -140,7 +140,7 @@ typedef struct nmo_behavior_state {
     uint32_t block_version;                /**< Building block version */
     
     /* Target parameter (only if CKBEHAVIOR_TARGETABLE flag set) */
-    nmo_object_id_t target_parameter_id;   /**< Target parameter ID */
+    nmo_ref_t target_parameter;            /**< Target input parameter */
     
     /* Graph data arrays (only if not building block) */
     nmo_array_t sub_behaviors;             /**< Sub-behaviors (nmo_behavior_ref_t) */
@@ -171,6 +171,36 @@ typedef struct nmo_behavior_state {
     nmo_interface_data_t *interface_data;  /**< Structured InterfaceChunk data used for save after successful parse */
     bool interface_ids_are_runtime;        /**< Interface object IDs are runtime IDs rather than raw CK/file IDs */
 } nmo_behavior_state_t;
+
+static inline nmo_object_id_t nmo_behavior_owner_id(
+    const nmo_behavior_state_t *state)
+{
+    return state != NULL
+        ? nmo_ref_runtime_id(&state->owner)
+        : NMO_OBJECT_ID_NONE;
+}
+
+static inline nmo_object_id_t nmo_behavior_target_parameter_id(
+    const nmo_behavior_state_t *state)
+{
+    return state != NULL
+        ? nmo_ref_runtime_id(&state->target_parameter)
+        : NMO_OBJECT_ID_NONE;
+}
+
+static inline void nmo_behavior_set_owner_id(
+    nmo_behavior_state_t *state,
+    nmo_object_id_t id)
+{
+    if (state != NULL) state->owner = nmo_ref_from_id(id);
+}
+
+static inline void nmo_behavior_set_target_parameter_id(
+    nmo_behavior_state_t *state,
+    nmo_object_id_t id)
+{
+    if (state != NULL) state->target_parameter = nmo_ref_from_id(id);
+}
 
 /* =============================================================================
  * PUBLIC API

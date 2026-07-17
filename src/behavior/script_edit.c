@@ -3207,7 +3207,7 @@ NMO_API nmo_status_t nmo_script_edit_add_node_ex(
     node_state->block_version = proto->version != 0u ? proto->version : 65536u;
     node_state->block_guid = bb_guid;
     node_state->priority = 0;
-    node_state->owner_id = parent_behavior_id;
+    nmo_behavior_set_owner_id(node_state, parent_behavior_id);
 
     {
         for (uint32_t i = 0; i < proto->input_count; ++i) {
@@ -3297,7 +3297,8 @@ NMO_API nmo_status_t nmo_script_edit_add_node_ex(
             if (rc != NMO_OK) {
                 return rc;
             }
-            node_state->target_parameter_id = target_parameter_id;
+            nmo_behavior_set_target_parameter_id(
+                node_state, target_parameter_id);
         }
         for (uint32_t i = 0; i < proto->local_param_count; ++i) {
             nmo_object_id_t parameter_id = 0;

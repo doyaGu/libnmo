@@ -265,13 +265,13 @@ static bool create_behavior_link_fixture(
              nmo_behavior_ref_array_append(&target_behavior_state->inputs, to_id, NULL) == NMO_OK;
         if (ok) {
             behavior_state->flags |= 0x00000002u;
-            behavior_state->owner_id = owner_id;
+            nmo_behavior_set_owner_id(behavior_state, owner_id);
             behavior_state->has_save_flags = true;
             behavior_state->save_flags |= CK_STATESAVE_BEHAVIORSUBBEHAV;
-            source_behavior_state->owner_id = behavior_id;
+            nmo_behavior_set_owner_id(source_behavior_state, behavior_id);
             source_behavior_state->has_save_flags = true;
             source_behavior_state->save_flags |= CK_STATESAVE_BEHAVIOROUTPUTS;
-            target_behavior_state->owner_id = behavior_id;
+            nmo_behavior_set_owner_id(target_behavior_state, behavior_id);
             target_behavior_state->has_save_flags = true;
             target_behavior_state->save_flags |= CK_STATESAVE_BEHAVIORINPUTS;
         }

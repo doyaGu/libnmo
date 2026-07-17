@@ -165,9 +165,11 @@ static bool build_visitor(
     }
 
     /* Target parameter */
-    if (state->target_parameter_id != 0) {
+    const nmo_object_id_t target_parameter_id =
+        nmo_behavior_target_parameter_id(state);
+    if (target_parameter_id != 0) {
         nmo_port_owner_t owner = {behavior_id, -1, NMO_PORT_PARAM_TARGET};
-        if (!index_insert(idx, state->target_parameter_id, &owner))
+        if (!index_insert(idx, target_parameter_id, &owner))
             goto oom;
     }
 
