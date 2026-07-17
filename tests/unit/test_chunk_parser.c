@@ -151,7 +151,7 @@ TEST(chunk_parser, string_read) {
     nmo_chunk_parser_t* parser = nmo_chunk_parser_create(chunk);
     ASSERT_NOT_NULL(parser);
 
-    char* read_str = NULL;
+    char* read_str = (char*)(uintptr_t)1;
     nmo_status_t parse_result = nmo_chunk_parser_read_string(parser, &read_str, arena);
     ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_NOT_NULL(read_str);
@@ -605,12 +605,12 @@ TEST(chunk_parser, buffer_truncated_keeps_position) {
     ASSERT_NOT_NULL(parser);
     ASSERT_EQ(nmo_chunk_parser_tell(parser), 0u);
 
-    void *buffer = NULL;
-    size_t size = 0;
+    void *buffer = (void*)(uintptr_t)1;
+    size_t size = 123;
     nmo_status_t parse_result = nmo_chunk_parser_read_buffer(parser, &buffer, &size, arena);
     ASSERT_EQ(parse_result, NMO_ERR_TRUNCATED_CHUNK);
     ASSERT_NULL(buffer);
-    ASSERT_EQ(size, 8u);
+    ASSERT_EQ(size, 0u);
     ASSERT_EQ(nmo_chunk_parser_tell(parser), 0u);
 
     nmo_chunk_parser_destroy(parser);
