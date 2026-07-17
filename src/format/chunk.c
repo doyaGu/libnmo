@@ -1285,11 +1285,22 @@ nmo_status_t nmo_chunk_get_header(const nmo_chunk_t *chunk, nmo_chunk_header_t *
     if (!chunk || !out_header) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments");
     }
+    memset(out_header, 0, sizeof(*out_header));
+    if (chunk->data.count > UINT32_MAX / sizeof(uint32_t) ||
+        chunk->chunk_refs.count > UINT32_MAX) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Chunk header fields do not fit the 32-bit format");
+    }
+    if (chunk->data.count > 0 && chunk->data.data == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                         "Chunk has data size but no data");
+    }
 
     uint32_t option_flags = chunk_compute_option_flags(chunk);
 
     out_header->chunk_id = chunk->class_id;
-    out_header->chunk_size = (uint32_t) (chunk->data.count * sizeof(uint32_t));
+    out_header->chunk_size =
+        (uint32_t)chunk->data.count * (uint32_t)sizeof(uint32_t);
     out_header->sub_chunk_count = (uint32_t) chunk->chunk_refs.count;
     out_header->flags = option_flags;
 
@@ -1307,8 +1318,13 @@ const void *nmo_chunk_get_data(const nmo_chunk_t *chunk, size_t *out_size) {
         return NULL;
     }
 
+    if (chunk->data.count > SIZE_MAX / sizeof(uint32_t) ||
+        (chunk->data.count > 0 && chunk->data.data == NULL)) {
+        if (out_size) *out_size = 0;
+        return NULL;
+    }
     if (out_size) {
-        *out_size = chunk->data.count * 4; /* Convert to bytes */
+        *out_size = chunk->data.count * sizeof(uint32_t);
     }
     return chunk->data.data;
 }
