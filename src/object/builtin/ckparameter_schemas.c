@@ -428,11 +428,27 @@ static nmo_status_t nmo_parameter_copy(
     const nmo_type_descriptor_t *type,
     nmo_arena_t *arena)
 {
+    (void)type;
+    if (src == NULL || dst == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    if (src == dst) return NMO_OK;
     const nmo_parameter_state_t *s = src;
     nmo_parameter_state_t *d = dst;
-    NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
-    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->buffer_data, &d->buffer_data, &s->buffer_data.allocator));
-    return nmo_object_copy_chunk(arena, &d->subchunk, s->subchunk);
+    NMO_RETURN_IF_ERROR(nmo_parameter_validate(s, type, NULL));
+    nmo_array_t buffer_data = {0};
+    nmo_status_t result = nmo_array_clone(
+        &s->buffer_data, &buffer_data, &s->buffer_data.allocator);
+    if (result != NMO_OK) return result;
+    nmo_chunk_t *subchunk = NULL;
+    result = nmo_object_copy_chunk(arena, &subchunk, s->subchunk);
+    if (result != NMO_OK) {
+        nmo_array_dispose(&buffer_data);
+        return result;
+    }
+    nmo_array_dispose(&d->buffer_data);
+    *d = *s;
+    d->buffer_data = buffer_data;
+    d->subchunk = subchunk;
+    return NMO_OK;
 }
 
 static nmo_status_t nmo_parameter_validate(
