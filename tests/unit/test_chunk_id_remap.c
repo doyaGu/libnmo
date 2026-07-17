@@ -3165,6 +3165,10 @@ TEST(chunk_id_remap, beobject_attribute_failure_keeps_previous_atomic_state) {
     ASSERT_NOT_NULL(arena);
     nmo_beobject_state_t state;
     ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(&state, NULL, NULL));
+    state.base.base.visibility_flags = NMO_CKOBJECT_VISIBLE;
+    state.priority = 55;
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &state.scripts, 456));
     ASSERT_EQ(NMO_OK, nmo_beobject_attribute_array_append(
         &state.attributes, 123, 7, NULL));
 
@@ -3175,6 +3179,17 @@ TEST(chunk_id_remap, beobject_attribute_failure_keeps_previous_atomic_state) {
     truncated->chunk_options |= NMO_CHUNK_OPTION_FILE;
     ASSERT_EQ(NMO_OK, nmo_chunk_start_write(truncated));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        truncated, CK_STATESAVE_OBJECTHIDDEN));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        truncated, CK_STATESAVE_SCRIPTS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(truncated, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_sequence_item(
+        truncated, 888));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        truncated, CK_STATESAVE_DATAS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(truncated, 0x10000000u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(truncated, 99));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
         truncated, CK_STATESAVE_NEWATTRIBUTES));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(truncated, 1));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_sequence_item(truncated, 777));
@@ -3182,6 +3197,10 @@ TEST(chunk_id_remap, beobject_attribute_failure_keeps_previous_atomic_state) {
 
     ASSERT_NE(NMO_OK, nmo_beobject_deserialize(
         &state, truncated, NULL, NULL));
+    ASSERT_EQ(NMO_CKOBJECT_VISIBLE, state.base.base.visibility_flags);
+    ASSERT_EQ(55, state.priority);
+    ASSERT_EQ(1u, state.scripts.count);
+    ASSERT_EQ(456u, nmo_beobject_script_array_get_id(&state.scripts, 0));
     ASSERT_EQ(1u, state.attributes.count);
     const nmo_beobject_attribute_t *attributes = NMO_ARRAY_DATA(
         nmo_beobject_attribute_t, &state.attributes);
@@ -3190,6 +3209,46 @@ TEST(chunk_id_remap, beobject_attribute_failure_keeps_previous_atomic_state) {
 
     nmo_array_dispose(&state.scripts);
     nmo_array_dispose(&state.attributes);
+    nmo_array_dispose(&state.legacy_attributes);
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_id_remap, beobject_serializer_does_not_publish_partial_chunk) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+    nmo_id_remap_t *runtime_to_file = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(runtime_to_file);
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_chunk_file_context_t file_context = {
+        .runtime_to_file = runtime_to_file,
+    };
+
+    nmo_beobject_state_t state;
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(&state, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &state.scripts, 123));
+
+    nmo_chunk_t *target = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(target);
+    target->class_id = NMO_CID_BEOBJECT;
+    target->data_version = 7;
+    nmo_chunk_set_file_context(target, &file_context);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(target, 0x12345678u));
+    nmo_chunk_close(target);
+
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_beobject_serialize(
+        &state, target, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(target));
+    uint32_t preserved = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(target, &preserved));
+    ASSERT_EQ(0x12345678u, preserved);
+
+    nmo_array_dispose(&state.scripts);
+    nmo_array_dispose(&state.attributes);
+    nmo_array_dispose(&state.legacy_attributes);
     nmo_arena_destroy(arena);
 }
 
@@ -5122,6 +5181,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, synchro_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, beobject_attribute_unresolved_ref_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, beobject_attribute_failure_keeps_previous_atomic_state);
+    REGISTER_TEST(chunk_id_remap, beobject_serializer_does_not_publish_partial_chunk);
     REGISTER_TEST(chunk_id_remap, beobject_legacy_attributes_are_lossless_and_atomic);
     REGISTER_TEST(chunk_id_remap, beobject_copy_preserves_content_equality);
     REGISTER_TEST(chunk_id_remap, character_refs_round_trip_and_failure_is_atomic);
