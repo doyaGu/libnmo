@@ -50,6 +50,61 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
         nmo_array_dispose(&state->duplicate_manager_names);
     } while (0))
 
+static void nmo_level_dispose_state_arrays(nmo_level_state_t *state)
+{
+    if (state == NULL) return;
+    nmo_array_dispose(&state->base.scripts);
+    nmo_array_dispose(&state->base.attributes);
+    nmo_array_dispose(&state->base.legacy_attributes);
+    nmo_array_dispose(&state->scene_ids);
+    nmo_array_dispose(&state->inactive_manager_guids);
+    nmo_array_dispose(&state->duplicate_manager_names);
+}
+
+static const nmo_allocator_t *nmo_level_array_allocator(
+    const nmo_array_t *array)
+{
+    return array->allocator.alloc != NULL ? &array->allocator : NULL;
+}
+
+static nmo_status_t nmo_level_init_staged_state(
+    nmo_level_state_t *staged,
+    const nmo_level_state_t *current)
+{
+    memset(staged, 0, sizeof(*staged));
+    if (current->base.scripts.allocator.alloc != NULL) {
+        staged->base.scripts.allocator = current->base.scripts.allocator;
+    }
+    if (current->base.attributes.allocator.alloc != NULL) {
+        staged->base.attributes.allocator = current->base.attributes.allocator;
+    }
+    if (current->base.legacy_attributes.allocator.alloc != NULL) {
+        staged->base.legacy_attributes.allocator =
+            current->base.legacy_attributes.allocator;
+    }
+    nmo_status_t result = nmo_array_init(
+        &staged->scene_ids, sizeof(nmo_ref_t), 0,
+        nmo_level_array_allocator(&current->scene_ids));
+    if (result != NMO_OK) return result;
+    result = nmo_array_init(
+        &staged->inactive_manager_guids, sizeof(nmo_guid_t), 0,
+        nmo_level_array_allocator(&current->inactive_manager_guids));
+    if (result != NMO_OK) {
+        nmo_level_dispose_state_arrays(staged);
+        return result;
+    }
+    result = nmo_array_init(
+        &staged->duplicate_manager_names, sizeof(char *), 0,
+        nmo_level_array_allocator(&current->duplicate_manager_names));
+    if (result != NMO_OK) {
+        nmo_level_dispose_state_arrays(staged);
+        return result;
+    }
+    nmo_object_array_set_string_lifecycle(
+        &staged->duplicate_manager_names);
+    return NMO_OK;
+}
+
 static nmo_status_t nmo_chunk_identifier_payload_size_bytes(nmo_chunk_t *chunk, size_t *out_size) {
     if (chunk == NULL || out_size == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
@@ -69,7 +124,10 @@ static nmo_status_t nmo_chunk_identifier_payload_size_bytes(nmo_chunk_t *chunk, 
 
     if (state->prev_identifier_pos + 1 < data_count) {
         const uint32_t next_pos = data[state->prev_identifier_pos + 1];
-        if (next_pos != 0 && next_pos < data_count) {
+        if (next_pos != 0) {
+            if (next_pos > data_count || next_pos < start_pos) {
+                return NMO_ERR_INVALID_FORMAT;
+            }
             end_pos = next_pos;
         }
     }
@@ -121,7 +179,7 @@ static nmo_status_t nmo_level_validate(
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-nmo_status_t nmo_level_deserialize(
+static nmo_status_t nmo_level_deserialize_internal(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -206,7 +264,7 @@ nmo_status_t nmo_level_deserialize(
         }
         NMO_RETURN_IF_ERROR(nmo_array_swap(&out_state->scene_ids, &scene_ids));
         nmo_array_dispose(&scene_ids);
-    }
+    } else if (result != NMO_ERR_NOT_FOUND) return result;
 
     /* Section 2: LEVELSCENE - Current scene + level scene */
     result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_LEVELSCENE);
@@ -242,7 +300,7 @@ nmo_status_t nmo_level_deserialize(
         out_state->current_scene = current_scene;
         out_state->level_scene = level_scene;
         out_state->level_scene_chunk = level_scene_chunk;
-    }
+    } else if (result != NMO_ERR_NOT_FOUND) return result;
 
     /* Section 3: LEVELINACTIVEMAN (optional) - Inactive manager GUIDs */
     result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_LEVELINACTIVEMAN);
@@ -321,14 +379,39 @@ nmo_status_t nmo_level_deserialize(
                 nmo_array_dispose(&inactive_guids);
                 return result;
             }
+        } else if (result != NMO_ERR_NOT_FOUND) {
+            nmo_array_dispose(&inactive_guids);
+            return result;
         }
         NMO_RETURN_IF_ERROR(nmo_array_swap(
             &out_state->inactive_manager_guids, &inactive_guids));
         nmo_array_dispose(&inactive_guids);
         out_state->has_inactive_manager_section = 1;
-    }
+    } else if (result != NMO_ERR_NOT_FOUND) return result;
 
     NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_level_deserialize(
+    void *instance,
+    nmo_chunk_t *chunk,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    nmo_level_state_t *out_state = (nmo_level_state_t *)instance;
+    if (out_state == NULL || chunk == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    nmo_level_state_t decoded;
+    nmo_status_t result = nmo_level_init_staged_state(&decoded, out_state);
+    if (result != NMO_OK) return result;
+    result = nmo_level_deserialize_internal(
+        &decoded, chunk, type, context);
+    if (result != NMO_OK) {
+        nmo_level_dispose_state_arrays(&decoded);
+        return result;
+    }
+    nmo_level_dispose_state_arrays(out_state);
+    *out_state = decoded;
+    return NMO_OK;
 }
 
 /* =============================================================================
@@ -347,7 +430,7 @@ nmo_status_t nmo_level_deserialize(
  * @param state Input state structure
  * @return Result indicating success or error
  */
-nmo_status_t nmo_level_serialize(
+static nmo_status_t nmo_level_serialize_internal(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
@@ -492,6 +575,30 @@ static nmo_status_t nmo_level_copy(
         arena, &d->duplicate_manager_names, &s->duplicate_manager_names));
     nmo_object_array_set_string_lifecycle(&d->duplicate_manager_names);
     NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_level_serialize(
+    const void *instance,
+    nmo_chunk_t *out_chunk,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    if (instance == NULL || out_chunk == NULL || out_chunk->arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    nmo_chunk_t *staged = nmo_chunk_create(out_chunk->arena);
+    if (staged == NULL) return NMO_ERR_NOMEM;
+    staged->class_id = out_chunk->class_id;
+    staged->data_version = out_chunk->data_version;
+    staged->chunk_version = out_chunk->chunk_version;
+    staged->chunk_class_id = out_chunk->chunk_class_id;
+    staged->chunk_options = out_chunk->chunk_options;
+    staged->file_context = out_chunk->file_context;
+    nmo_status_t result = nmo_level_serialize_internal(
+        instance, staged, type, context);
+    if (result != NMO_OK) return result;
+    *out_chunk = *staged;
+    return NMO_OK;
 }
 
 static nmo_status_t nmo_level_validate(
