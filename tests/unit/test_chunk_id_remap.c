@@ -416,6 +416,8 @@ TEST(chunk_id_remap, behavior_unresolved_ref_round_trips_raw_id) {
 
     nmo_behavior_state_t source;
     ASSERT_EQ(NMO_OK, nmo_behavior_vtable.create(&source, NULL, NULL));
+    source.flags |= CKBEHAVIOR_TARGETABLE;
+    source.target_parameter = nmo_ref_from_raw(778);
     nmo_behavior_ref_t unresolved = {
         .ref = {
             .raw_id = 777,
@@ -455,6 +457,11 @@ TEST(chunk_id_remap, behavior_unresolved_ref_round_trips_raw_id) {
     ASSERT_EQ(777u, loaded_refs[0].ref.raw_id);
     ASSERT_EQ(NMO_OBJECT_ID_NONE, loaded_refs[0].ref.id);
     ASSERT_EQ(NMO_REF_UNRESOLVED, loaded_refs[0].ref.state);
+    ASSERT_EQ(778u, loaded.target_parameter.raw_id);
+    ASSERT_EQ(NMO_OBJECT_ID_NONE, loaded.target_parameter.id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, loaded.target_parameter.state);
+    ASSERT_EQ(NMO_OBJECT_ID_NONE,
+              nmo_behavior_target_parameter_id(&loaded));
 
     nmo_chunk_t *second = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(second);
@@ -477,6 +484,11 @@ TEST(chunk_id_remap, behavior_unresolved_ref_round_trips_raw_id) {
     ASSERT_EQ(777u, reloaded_refs[0].ref.raw_id);
     ASSERT_EQ(NMO_OBJECT_ID_NONE, reloaded_refs[0].ref.id);
     ASSERT_EQ(NMO_REF_UNRESOLVED, reloaded_refs[0].ref.state);
+    ASSERT_EQ(778u, reloaded.target_parameter.raw_id);
+    ASSERT_EQ(NMO_OBJECT_ID_NONE, reloaded.target_parameter.id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, reloaded.target_parameter.state);
+    ASSERT_EQ(NMO_OBJECT_ID_NONE,
+              nmo_behavior_target_parameter_id(&reloaded));
 
     nmo_array_dispose(&source.inputs);
     nmo_array_dispose(&loaded.inputs);
