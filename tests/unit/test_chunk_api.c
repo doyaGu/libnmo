@@ -552,6 +552,16 @@ TEST(chunk_api, check_size_rounds_and_rejects_overflow) {
     ASSERT_EQ(NMO_OK, nmo_chunk_check_size(chunk, 1));
     ASSERT_TRUE(state->data_size >= 1u);
 
+#if SIZE_MAX > UINT32_MAX
+    const size_t original_data_size = state->data_size;
+    state->current_pos = UINT32_MAX;
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+        nmo_chunk_check_size(chunk, sizeof(uint32_t)));
+    ASSERT_EQ((size_t)UINT32_MAX, state->current_pos);
+    ASSERT_EQ(original_data_size, state->data_size);
+    ASSERT_EQ(0u, chunk->data.count);
+#endif
+
     state->current_pos = SIZE_MAX - 1u;
     ASSERT_EQ(NMO_ERR_INVALID_OFFSET,
         nmo_chunk_check_size(chunk, 8));
