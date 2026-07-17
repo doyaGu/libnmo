@@ -53,6 +53,50 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
     ((void)0))
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(bodypart, nmo_bodypart_state_t)
 
+static nmo_status_t character_staged_base_create(
+    nmo_3dentity_state_t *state,
+    void *context)
+{
+    if (state == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    nmo_beobject_state_t *beobject = &state->base.base;
+    nmo_status_t result = nmo_beobject_vtable.create(
+        beobject, NULL, context);
+    if (result != NMO_OK) {
+        nmo_array_dispose(&beobject->scripts);
+        nmo_array_dispose(&beobject->attributes);
+        nmo_array_dispose(&beobject->legacy_attributes);
+    }
+    return result;
+}
+
+static void character_staged_base_destroy(nmo_3dentity_state_t *state)
+{
+    if (state == NULL) return;
+    nmo_beobject_state_t *beobject = &state->base.base;
+    nmo_array_dispose(&beobject->scripts);
+    nmo_array_dispose(&beobject->attributes);
+    nmo_array_dispose(&beobject->legacy_attributes);
+}
+
+static void character_dispose_arrays(nmo_character_state_t *state)
+{
+    if (state == NULL) return;
+    nmo_array_dispose(&state->body_parts);
+    nmo_array_dispose(&state->animations);
+}
+
+static void character_copy_base_allocators(
+    nmo_3dentity_state_t *destination,
+    const nmo_3dentity_state_t *source)
+{
+    nmo_beobject_state_t *destination_base = &destination->base.base;
+    const nmo_beobject_state_t *source_base = &source->base.base;
+    destination_base->scripts.allocator = source_base->scripts.allocator;
+    destination_base->attributes.allocator = source_base->attributes.allocator;
+    destination_base->legacy_attributes.allocator =
+        source_base->legacy_attributes.allocator;
+}
+
 static nmo_status_t read_exact_sized_buffer(
     nmo_chunk_t *chunk,
     void *buffer,
@@ -1022,9 +1066,31 @@ nmo_status_t nmo_character_deserialize(
     const nmo_type_descriptor_t *type,
     void *context)
 {
-    (void)type;
     nmo_character_state_t *out_state = (nmo_character_state_t *)instance;
-    return nmo_character_deserialize_internal(chunk, context, out_state);
+    if (out_state == NULL || chunk == NULL) return NMO_ERR_INVALID_ARGUMENT;
+
+    nmo_character_state_t decoded;
+    nmo_status_t result = nmo_character_create(&decoded, type, context);
+    if (result != NMO_OK) return result;
+    decoded.body_parts.allocator = out_state->body_parts.allocator;
+    decoded.animations.allocator = out_state->animations.allocator;
+    result = character_staged_base_create(&decoded.base, context);
+    if (result != NMO_OK) {
+        character_dispose_arrays(&decoded);
+        return result;
+    }
+    character_copy_base_allocators(&decoded.base, &out_state->base);
+    result = nmo_character_deserialize_internal(chunk, context, &decoded);
+    if (result != NMO_OK) {
+        character_staged_base_destroy(&decoded.base);
+        character_dispose_arrays(&decoded);
+        return result;
+    }
+
+    character_staged_base_destroy(&out_state->base);
+    character_dispose_arrays(out_state);
+    *out_state = decoded;
+    return NMO_OK;
 }
 
 nmo_status_t nmo_character_serialize(
@@ -1033,9 +1099,24 @@ nmo_status_t nmo_character_serialize(
     const nmo_type_descriptor_t *type,
     void *context)
 {
-    (void)type;
     const nmo_character_state_t *in_state = (const nmo_character_state_t *)instance;
-    return nmo_character_serialize_internal(in_state, out_chunk, context);
+    if (in_state == NULL || out_chunk == NULL || out_chunk->arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    nmo_chunk_t *staged = nmo_chunk_create(out_chunk->arena);
+    if (staged == NULL) return NMO_ERR_NOMEM;
+    staged->class_id = out_chunk->class_id;
+    staged->data_version = out_chunk->data_version;
+    staged->chunk_version = out_chunk->chunk_version;
+    staged->chunk_class_id = out_chunk->chunk_class_id;
+    staged->chunk_options = out_chunk->chunk_options;
+    staged->file_context = out_chunk->file_context;
+    nmo_status_t result = nmo_character_serialize_internal(
+        in_state, staged, context);
+    if (result != NMO_OK) return result;
+    *out_chunk = *staged;
+    (void)type;
+    return NMO_OK;
 }
 
 nmo_status_t nmo_bodypart_deserialize(
@@ -1044,9 +1125,25 @@ nmo_status_t nmo_bodypart_deserialize(
     const nmo_type_descriptor_t *type,
     void *context)
 {
-    (void)type;
     nmo_bodypart_state_t *out_state = (nmo_bodypart_state_t *)instance;
-    return nmo_bodypart_deserialize_internal(chunk, context, out_state);
+    if (out_state == NULL || chunk == NULL) return NMO_ERR_INVALID_ARGUMENT;
+
+    nmo_bodypart_state_t decoded;
+    nmo_status_t result = nmo_bodypart_create(&decoded, type, context);
+    if (result != NMO_OK) return result;
+    result = character_staged_base_create(&decoded.base.entity, context);
+    if (result != NMO_OK) return result;
+    character_copy_base_allocators(
+        &decoded.base.entity, &out_state->base.entity);
+    result = nmo_bodypart_deserialize_internal(chunk, context, &decoded);
+    if (result != NMO_OK) {
+        character_staged_base_destroy(&decoded.base.entity);
+        return result;
+    }
+
+    character_staged_base_destroy(&out_state->base.entity);
+    *out_state = decoded;
+    return NMO_OK;
 }
 
 nmo_status_t nmo_bodypart_serialize(
@@ -1055,7 +1152,22 @@ nmo_status_t nmo_bodypart_serialize(
     const nmo_type_descriptor_t *type,
     void *context)
 {
-    (void)type;
     const nmo_bodypart_state_t *in_state = (const nmo_bodypart_state_t *)instance;
-    return nmo_bodypart_serialize_internal(in_state, out_chunk, context);
+    if (in_state == NULL || out_chunk == NULL || out_chunk->arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    nmo_chunk_t *staged = nmo_chunk_create(out_chunk->arena);
+    if (staged == NULL) return NMO_ERR_NOMEM;
+    staged->class_id = out_chunk->class_id;
+    staged->data_version = out_chunk->data_version;
+    staged->chunk_version = out_chunk->chunk_version;
+    staged->chunk_class_id = out_chunk->chunk_class_id;
+    staged->chunk_options = out_chunk->chunk_options;
+    staged->file_context = out_chunk->file_context;
+    nmo_status_t result = nmo_bodypart_serialize_internal(
+        in_state, staged, context);
+    if (result != NMO_OK) return result;
+    *out_chunk = *staged;
+    (void)type;
+    return NMO_OK;
 }
