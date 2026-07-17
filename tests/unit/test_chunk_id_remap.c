@@ -1575,6 +1575,20 @@ TEST(chunk_id_remap, parameterout_refs_round_trip_and_failure_is_atomic) {
     nmo_parameterout_state_t source;
     ASSERT_EQ(NMO_OK, nmo_parameterout_vtable.create(
         &source, NULL, NULL));
+    source.base.type_guid = CKPGUID_INT;
+    source.base.mode = CKPARAM_MODE_BUFFER;
+    source.base.has_state = true;
+    uint8_t source_bytes[] = {0x11u, 0x22u};
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &source.base.buffer_data, &source_bytes[0]));
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &source.base.buffer_data, &source_bytes[1]));
+    source.base.subchunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(source.base.subchunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(source.base.subchunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        source.base.subchunk, 0xaabbccddu));
+    nmo_chunk_close(source.base.subchunk);
     source.owner = nmo_ref_from_raw(730);
     source.destination_ids = source_destinations;
     source.destination_count = 3;
@@ -1587,10 +1601,48 @@ TEST(chunk_id_remap, parameterout_refs_round_trip_and_failure_is_atomic) {
     };
     ASSERT_EQ(NMO_OK, nmo_parameterout_vtable.copy(
         &source, &copied, &parameterout_type, arena));
+    ASSERT_NE(source.base.buffer_data.data, copied.base.buffer_data.data);
+    ASSERT_NE(source.base.subchunk, copied.base.subchunk);
     ASSERT_TRUE(copied.destination_ids != source.destination_ids);
     ASSERT_TRUE(nmo_parameterout_vtable.equals(&source, &copied));
     ASSERT_EQ(nmo_parameterout_vtable.hash(&source),
               nmo_parameterout_vtable.hash(&copied));
+
+    fail_after_allocator_state_t copy_allocator_state = {
+        .allowed_allocations = 1,
+    };
+    nmo_allocator_t copy_allocator = {
+        .alloc = fail_after_alloc,
+        .free = fail_after_free,
+        .user_data = &copy_allocator_state,
+    };
+    nmo_parameterout_state_t failing_copy_source;
+    ASSERT_EQ(NMO_OK, nmo_parameterout_vtable.create(
+        &failing_copy_source, NULL, NULL));
+    nmo_array_dispose(&failing_copy_source.base.buffer_data);
+    ASSERT_EQ(NMO_OK, nmo_array_init(
+        &failing_copy_source.base.buffer_data, sizeof(uint8_t), 2,
+        &copy_allocator));
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &failing_copy_source.base.buffer_data, &source_bytes[0]));
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &failing_copy_source.base.buffer_data, &source_bytes[1]));
+    copy_allocator_state.allowed_allocations =
+        copy_allocator_state.allocation_count;
+    nmo_parameterout_state_t preserved_copy;
+    ASSERT_EQ(NMO_OK, nmo_parameterout_vtable.create(
+        &preserved_copy, NULL, NULL));
+    uint8_t preserved_copy_byte = 0xddu;
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &preserved_copy.base.buffer_data, &preserved_copy_byte));
+    preserved_copy.owner = nmo_ref_from_raw(799);
+    ASSERT_EQ(NMO_ERR_NOMEM, nmo_parameterout_vtable.copy(
+        &failing_copy_source, &preserved_copy,
+        &parameterout_type, arena));
+    ASSERT_EQ(1u, preserved_copy.base.buffer_data.count);
+    ASSERT_EQ(0xddu, NMO_ARRAY_DATA(
+        uint8_t, &preserved_copy.base.buffer_data)[0]);
+    ASSERT_EQ(799u, preserved_copy.owner.raw_id);
 
     nmo_chunk_t *first = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(first);
@@ -1747,6 +1799,8 @@ TEST(chunk_id_remap, parameterout_refs_round_trip_and_failure_is_atomic) {
     nmo_parameterout_vtable.destroy(&reloaded, NULL, NULL);
     nmo_parameterout_vtable.destroy(&failed, NULL, NULL);
     nmo_parameterout_vtable.destroy(&invalid_ref, NULL, NULL);
+    nmo_parameterout_vtable.destroy(&failing_copy_source, NULL, NULL);
+    nmo_parameterout_vtable.destroy(&preserved_copy, NULL, NULL);
     nmo_arena_destroy(arena);
 }
 
