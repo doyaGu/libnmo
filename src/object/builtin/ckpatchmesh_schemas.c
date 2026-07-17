@@ -578,6 +578,11 @@ static nmo_status_t nmo_patchmesh_decode_payload(
                 NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                                  "CKPatchMesh legacy material count exceeds limits");
             }
+            if (!nmo_chunk_has_read_capacity(chunk, seq_count)) {
+                NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK,
+                                 NMO_SEVERITY_ERROR,
+                                 "CKPatchMesh legacy materials exceed remaining DWORDs");
+            }
             if (seq_count > 0) {
                 decoded.legacy_material_count = (uint32_t)seq_count;
                 decoded.legacy_materials = (nmo_ref_t *)nmo_arena_alloc(
