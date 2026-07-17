@@ -450,10 +450,12 @@ nmo_status_t nmo_header1_plan(
     const nmo_header1_t *header,
     nmo_arena_t *arena,
     nmo_header1_layout_t *out_layout) {
+    if (out_layout != NULL) {
+        memset(out_layout, 0, sizeof(*out_layout));
+    }
     if (header == NULL || arena == NULL || out_layout == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid Header1 plan arguments");
     }
-    memset(out_layout, 0, sizeof(*out_layout));
     NMO_RETURN_IF_ERROR(validate_header1_for_write(header));
 
     /* NOTE: Object count is NOT in buffer - it's in file header */
@@ -547,11 +549,15 @@ nmo_status_t nmo_header1_write_planned(
     nmo_arena_t *arena,
     uint8_t **out_buffer,
     size_t *out_size) {
+    if (out_buffer != NULL) {
+        *out_buffer = NULL;
+    }
+    if (out_size != NULL) {
+        *out_size = 0;
+    }
     if (header == NULL || layout == NULL || arena == NULL || out_buffer == NULL || out_size == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid Header1 planned write arguments");
     }
-    *out_buffer = NULL;
-    *out_size = 0;
     NMO_RETURN_IF_ERROR(validate_header1_for_write(header));
 
     size_t expected_total = 0;
@@ -611,11 +617,15 @@ nmo_status_t nmo_header1_serialize(
     void **out_data,
     size_t *out_size,
     nmo_arena_t *arena) {
+    if (out_data != NULL) {
+        *out_data = NULL;
+    }
+    if (out_size != NULL) {
+        *out_size = 0;
+    }
     if (header == NULL || out_data == NULL || out_size == NULL || arena == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL pointer passed to nmo_header1_serialize");
     }
-    *out_data = NULL;
-    *out_size = 0;
 
     nmo_header1_layout_t layout = {0};
     NMO_RETURN_IF_ERROR(nmo_header1_plan(header, arena, &layout));
