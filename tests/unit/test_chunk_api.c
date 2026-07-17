@@ -1027,6 +1027,46 @@ TEST(chunk_api, arrays_reject_inconsistent_header) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_api, manager_sequence_write_failure_is_atomic) {
+    chunk_api_fail_allocator_state_t allocator_state = {
+        .allowed_allocations = (size_t)-1,
+    };
+    nmo_allocator_t allocator = nmo_allocator_custom(
+        chunk_api_fail_alloc, chunk_api_fail_free, &allocator_state);
+    nmo_arena_t* arena = nmo_arena_create(&allocator, 256);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t* chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0x12345678u));
+
+    const nmo_guid_t manager_guid = {0x11111111u, 0x22222222u};
+#if SIZE_MAX > UINT32_MAX
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+        nmo_chunk_start_manager_sequence(chunk, manager_guid, SIZE_MAX));
+#endif
+    ASSERT_EQ(NMO_OK,
+        nmo_chunk_start_manager_sequence(chunk, manager_guid, 1));
+    while (chunk->managers.count < chunk->managers.capacity) {
+        ASSERT_EQ(NMO_OK,
+            nmo_chunk_start_manager_sequence(chunk, manager_guid, 1));
+    }
+    const size_t position_before = nmo_chunk_get_position(chunk);
+    const size_t data_size_before = nmo_chunk_get_data_size(chunk);
+    const size_t managers_count_before = chunk->managers.count;
+    const uint32_t options_before = chunk->chunk_options;
+    ASSERT_NOT_NULL(nmo_arena_alloc(arena, 100000, 16));
+    allocator_state.allowed_allocations = allocator_state.allocation_count;
+    ASSERT_EQ(NMO_ERR_NOMEM,
+        nmo_chunk_start_manager_sequence(chunk, manager_guid, 1));
+    ASSERT_EQ(position_before, nmo_chunk_get_position(chunk));
+    ASSERT_EQ(data_size_before, nmo_chunk_get_data_size(chunk));
+    ASSERT_EQ(managers_count_before, chunk->managers.count);
+    ASSERT_EQ(options_before, chunk->chunk_options);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_api, array_truncated_header_clears_outputs) {
     nmo_arena_t* arena = nmo_arena_create(NULL, 1024 * 16);
     ASSERT_NOT_NULL(arena);
@@ -1336,6 +1376,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_api, read_identifier_eof);
     REGISTER_TEST(chunk_api, manager_sequence);
     REGISTER_TEST(chunk_api, manager_sequence_truncated_guid_keeps_position);
+    REGISTER_TEST(chunk_api, manager_sequence_write_failure_is_atomic);
     REGISTER_TEST(chunk_api, sub_chunks);
     REGISTER_TEST(chunk_api, sub_chunk_truncated_header);
     REGISTER_TEST(chunk_api, sub_chunk_invalid_manager_count_keeps_position);
