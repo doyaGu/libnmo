@@ -201,6 +201,33 @@ TEST(chunk_id_remap, single_id_remap) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, malformed_subchunk_remap_reports_and_rolls_back) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t* chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_id(chunk, 10));
+    nmo_chunk_close(chunk);
+
+    const uint32_t sequence_marker = UINT32_MAX;
+    ASSERT_EQ(NMO_OK, nmo_arena_array_append(
+        &chunk->chunk_refs, &sequence_marker));
+
+    nmo_id_remap_t* remap = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(remap);
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, 10, 20));
+
+    ASSERT_EQ(NMO_ERR_INVALID_STATE,
+        nmo_chunk_remap_object_ids(chunk, remap));
+    ASSERT_EQ(1u, chunk->data.count);
+    ASSERT_EQ(10u, NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data)[0]);
+    ASSERT_EQ(1u, chunk->ids.count);
+    ASSERT_EQ(0u, NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->ids)[0]);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, sequence_id_remap) {
     nmo_arena_t* arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
@@ -8040,6 +8067,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, id_remap_basic);
     REGISTER_TEST(chunk_id_remap, object_visibility_seek_errors_propagate_atomically);
     REGISTER_TEST(chunk_id_remap, single_id_remap);
+    REGISTER_TEST(chunk_id_remap, malformed_subchunk_remap_reports_and_rolls_back);
     REGISTER_TEST(chunk_id_remap, sequence_id_remap);
     REGISTER_TEST(chunk_id_remap, subchunk_id_remap);
     REGISTER_TEST(chunk_id_remap, zero_and_unchanged_ids);
