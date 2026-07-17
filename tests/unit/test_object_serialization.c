@@ -485,12 +485,121 @@ TEST(object_serialization, manager_truncation_does_not_publish_partial_arrays) {
     ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 1));
     nmo_chunk_close(chunk);
     ASSERT_EQ(NMO_OK, nmo_chunk_start_read(chunk));
-    nmo_interfaceobjectmanager_state_t interface_state = {0};
+    nmo_chunk_t *preserved_chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(preserved_chunk);
+    nmo_chunk_t *preserved_chunks[] = {preserved_chunk};
+    nmo_interfaceobjectmanager_state_t interface_state = {
+        .base.visibility_flags = 0,
+        .chunk_count = 1,
+        .chunks = preserved_chunks,
+        .has_chunks_chunk = 1,
+        .guid = {0x11223344u, 0x55667788u},
+        .has_guid_chunk = 1,
+    };
     ASSERT_NE(NMO_OK, nmo_interfaceobjectmanager_deserialize(
         &interface_state, chunk, NULL, &context));
-    ASSERT_EQ(0, interface_state.chunk_count);
-    ASSERT_EQ(NULL, interface_state.chunks);
+    ASSERT_EQ(0u, interface_state.base.visibility_flags);
+    ASSERT_EQ(1, interface_state.chunk_count);
+    ASSERT_EQ(preserved_chunks, interface_state.chunks);
+    ASSERT_EQ(preserved_chunk, interface_state.chunks[0]);
+    ASSERT_TRUE(interface_state.has_chunks_chunk);
+    ASSERT_EQ(0x11223344u, interface_state.guid.d1);
+    ASSERT_EQ(0x55667788u, interface_state.guid.d2);
+    ASSERT_TRUE(interface_state.has_guid_chunk);
 
+    nmo_arena_destroy(arena);
+}
+
+TEST(object_serialization, interface_manager_round_trip_is_atomic) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
+    ASSERT_NOT_NULL(arena);
+    nmo_serialize_context_t serialize_context =
+        nmo_serialize_context_create_nonfile(arena, NULL, 0);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(arena, NULL, NULL, 0);
+
+    nmo_chunk_t *subchunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(subchunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(subchunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(subchunk, 0x1234ABCDu));
+    nmo_chunk_close(subchunk);
+    nmo_chunk_t *chunks[] = {subchunk};
+
+    nmo_interfaceobjectmanager_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_interfaceobjectmanager_vtable.create(
+        &source, NULL, NULL));
+    source.base.visibility_flags = 0;
+    source.chunk_count = 1;
+    source.chunks = chunks;
+    source.has_chunks_chunk = 1;
+    source.has_guid_chunk = 0;
+
+    nmo_chunk_t *serialized = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(serialized);
+    serialized->class_id = NMO_CID_INTERFACEOBJECTMANAGER;
+    serialized->chunk_version = NMO_CHUNK_VERSION4;
+    serialized->data_version = 7;
+    ASSERT_EQ(NMO_OK, nmo_interfaceobjectmanager_serialize(
+        &source, serialized, NULL, &serialize_context));
+    nmo_chunk_close(serialized);
+    ASSERT_NE(NMO_OK, nmo_chunk_seek_identifier(
+        serialized, 0x87654321u));
+
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(serialized));
+    nmo_interfaceobjectmanager_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_interfaceobjectmanager_vtable.create(
+        &loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_interfaceobjectmanager_deserialize(
+        &loaded, serialized, NULL, &deserialize_context));
+    ASSERT_EQ(0u, loaded.base.visibility_flags);
+    ASSERT_TRUE(loaded.has_chunks_chunk);
+    ASSERT_FALSE(loaded.has_guid_chunk);
+    ASSERT_EQ(1, loaded.chunk_count);
+    ASSERT_NOT_NULL(loaded.chunks);
+    ASSERT_NOT_NULL(loaded.chunks[0]);
+    ASSERT_TRUE(nmo_interfaceobjectmanager_vtable.equals(&source, &loaded));
+    ASSERT_EQ(nmo_interfaceobjectmanager_vtable.hash(&source),
+              nmo_interfaceobjectmanager_vtable.hash(&loaded));
+
+    nmo_interfaceobjectmanager_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_interfaceobjectmanager_vtable.create(
+        &copied, NULL, NULL));
+    const nmo_type_descriptor_t type = {
+        .size = sizeof(nmo_interfaceobjectmanager_state_t),
+    };
+    ASSERT_EQ(NMO_OK, nmo_interfaceobjectmanager_vtable.copy(
+        &loaded, &copied, &type, arena));
+    ASSERT_TRUE(copied.chunks != loaded.chunks);
+    ASSERT_TRUE(copied.chunks[0] != loaded.chunks[0]);
+    ASSERT_TRUE(nmo_interfaceobjectmanager_vtable.equals(&loaded, &copied));
+    copied.has_guid_chunk = 1;
+    copied.guid = (nmo_guid_t){0xAABBCCDDu, 0xEEFF0011u};
+    ASSERT_FALSE(nmo_interfaceobjectmanager_vtable.equals(&loaded, &copied));
+
+    nmo_chunk_t *preserved = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(preserved);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(preserved));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(preserved, 0xCAFEBABEu));
+    nmo_chunk_close(preserved);
+    nmo_interfaceobjectmanager_state_t invalid = source;
+    invalid.chunks = NULL;
+    ASSERT_NE(NMO_OK, nmo_interfaceobjectmanager_serialize(
+        &invalid, preserved, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(preserved));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(preserved));
+    uint32_t marker = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(preserved, &marker));
+    ASSERT_EQ(0xCAFEBABEu, marker);
+
+    invalid = source;
+    invalid.chunk_count = -1;
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,
+              nmo_interfaceobjectmanager_vtable.validate(
+                  &invalid, NULL, NULL));
+
+    nmo_interfaceobjectmanager_vtable.destroy(&source, NULL, NULL);
+    nmo_interfaceobjectmanager_vtable.destroy(&loaded, NULL, NULL);
+    nmo_interfaceobjectmanager_vtable.destroy(&copied, NULL, NULL);
     nmo_arena_destroy(arena);
 }
 
@@ -650,6 +759,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_serialization, ckmaterial_uses_four_bit_compare_functions);
     REGISTER_TEST(object_serialization, cktexture_rejects_invalid_counts_before_allocation);
     REGISTER_TEST(object_serialization, manager_truncation_does_not_publish_partial_arrays);
+    REGISTER_TEST(object_serialization, interface_manager_round_trip_is_atomic);
     REGISTER_TEST(object_serialization, failed_schema_releases_object_state);
     REGISTER_TEST(object_serialization, schema_allocation_failure_is_transactional);
     REGISTER_TEST(object_serialization, object_system_propagates_allocation_failure);
