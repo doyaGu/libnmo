@@ -2009,13 +2009,37 @@ static nmo_status_t write_extra_data(nmo_chunk_t *chunk,
     if (!extra->present) {
         return NMO_OK;
     }
+    if (extra->version < 1 || extra->version > 3 ||
+        extra->entry_count > (size_t)INT32_MAX ||
+        (extra->entry_count > 0 && extra->entries == NULL)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (extra->version >= 2) {
+        for (size_t i = 0; i < extra->entry_count; ++i) {
+            const nmo_interface_extra_entry_t *entry = &extra->entries[i];
+            if (entry->sub_count > (size_t)INT32_MAX ||
+                (entry->sub_count > 0 && entry->sub_entries == NULL)) {
+                return NMO_ERR_INVALID_ARGUMENT;
+            }
+            for (size_t j = 0; j < entry->sub_count; ++j) {
+                const nmo_interface_extra_sub_t *sub =
+                    &entry->sub_entries[j];
+                if (!extra_sub_has_id2(sub->value1) &&
+                    (sub->data_size > UINT32_MAX ||
+                     (sub->data_size > 0 && sub->data == NULL))) {
+                    return NMO_ERR_INVALID_ARGUMENT;
+                }
+            }
+        }
+    }
 
     /* Write identifier */
     uint32_t id;
     switch (extra->version) {
     case 3: id = NMO_INTERFACE_EXTRA_ID_V3; break;
     case 2: id = NMO_INTERFACE_EXTRA_ID_V2; break;
-    default: id = NMO_INTERFACE_EXTRA_ID_V1; break;
+    case 1: id = NMO_INTERFACE_EXTRA_ID_V1; break;
+    default: return NMO_ERR_INVALID_ARGUMENT;
     }
 
     /* Write as raw DWORDs (identifier value + next-pointer=0) to avoid
