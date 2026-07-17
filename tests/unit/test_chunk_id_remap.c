@@ -5916,6 +5916,85 @@ TEST(chunk_id_remap, beobject_copy_preserves_content_equality) {
     nmo_arena_destroy(source_arena);
 }
 
+TEST(chunk_id_remap, character_rejects_cross_section_counts_before_allocation) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_deserialize_context_t file_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+    nmo_deserialize_context_t runtime_context =
+        nmo_deserialize_context_create(arena, NULL, NULL, 0);
+
+    nmo_character_state_t state;
+    ASSERT_EQ(NMO_OK, nmo_character_vtable.create(&state, NULL, NULL));
+    nmo_allocator_t body_allocator = state.body_parts.allocator;
+    nmo_allocator_t animation_allocator = state.animations.allocator;
+
+    state.body_parts.allocator = nmo_allocator_custom(
+        beobject_fail_alloc, beobject_fail_free, NULL);
+    nmo_chunk_t *body_parts = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(body_parts);
+    body_parts->class_id = NMO_CID_CHARACTER;
+    body_parts->data_version = 5;
+    body_parts->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(body_parts));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        body_parts, CK_STATESAVE_CHARACTERBODYPARTS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(body_parts, 2));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(body_parts, 0x7F123456u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(body_parts, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(body_parts, 0));
+    nmo_chunk_close(body_parts);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_character_deserialize(
+        &state, body_parts, NULL, &file_context));
+    ASSERT_EQ(0u, state.body_parts.count);
+    state.body_parts.allocator = body_allocator;
+
+    state.animations.allocator = nmo_allocator_custom(
+        beobject_fail_alloc, beobject_fail_free, NULL);
+    nmo_chunk_t *animations = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(animations);
+    animations->class_id = NMO_CID_CHARACTER;
+    animations->data_version = 5;
+    animations->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(animations));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        animations, CK_STATESAVE_CHARACTERONLY));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(animations, 2));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(animations, 0x7F123456u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(animations, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(animations, 0));
+    nmo_chunk_close(animations);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_character_deserialize(
+        &state, animations, NULL, &file_context));
+    ASSERT_EQ(0u, state.animations.count);
+    state.animations.allocator = animation_allocator;
+
+    state.body_parts.allocator = nmo_allocator_custom(
+        beobject_fail_alloc, beobject_fail_free, NULL);
+    nmo_chunk_t *runtime_parts = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(runtime_parts);
+    runtime_parts->class_id = NMO_CID_CHARACTER;
+    runtime_parts->data_version = 4;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(runtime_parts));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        runtime_parts, CK_STATESAVE_CHARACTERSAVEPARTS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(runtime_parts, 2));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        runtime_parts, 0x7F123456u));
+    for (size_t i = 0; i < 4; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(runtime_parts, 0));
+    }
+    nmo_chunk_close(runtime_parts);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_character_deserialize(
+        &state, runtime_parts, NULL, &runtime_context));
+    ASSERT_EQ(0u, state.body_parts.count);
+    state.body_parts.allocator = body_allocator;
+
+    nmo_character_vtable.destroy(&state, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, character_refs_round_trip_and_failure_is_atomic) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
     ASSERT_NOT_NULL(arena);
@@ -7648,6 +7727,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, beobject_legacy_attributes_are_lossless_and_atomic);
     REGISTER_TEST(chunk_id_remap, beobject_copy_preserves_content_equality);
     REGISTER_TEST(chunk_id_remap, character_refs_round_trip_and_failure_is_atomic);
+    REGISTER_TEST(chunk_id_remap, character_rejects_cross_section_counts_before_allocation);
     REGISTER_TEST(chunk_id_remap, mesh_material_refs_round_trip_without_compaction);
     REGISTER_TEST(chunk_id_remap, mesh_material_sections_and_failures_are_atomic);
     REGISTER_TEST(chunk_id_remap, mesh_copy_preserves_material_records);
