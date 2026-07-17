@@ -279,6 +279,47 @@ TEST(chunk_serialization, rejects_invalid_public_array_state) {
     }
 #endif
 
+    nmo_arena_array_t *invalid_arrays[] = {
+        &chunk->data,
+        &chunk->ids,
+        &chunk->chunk_refs,
+        &chunk->managers,
+    };
+    for (size_t i = 0;
+         i < sizeof(invalid_arrays) / sizeof(invalid_arrays[0]); ++i) {
+        invalid_arrays[i]->count = 1;
+        invalid_arrays[i]->data = (void *)(uintptr_t)1;
+
+        void *invalid_output = (void *)(uintptr_t)1;
+        size_t invalid_size = 123;
+        ASSERT_EQ(NMO_ERR_INVALID_STATE,
+            nmo_chunk_serialize(chunk, &invalid_output, &invalid_size, arena));
+        ASSERT_NULL(invalid_output);
+        ASSERT_EQ(0u, invalid_size);
+
+        invalid_output = (void *)(uintptr_t)1;
+        invalid_size = 123;
+        ASSERT_EQ(NMO_ERR_INVALID_STATE,
+            nmo_chunk_serialize_version1(
+                chunk, &invalid_output, &invalid_size, arena));
+        ASSERT_NULL(invalid_output);
+        ASSERT_EQ(0u, invalid_size);
+
+        invalid_arrays[i]->capacity = 1;
+        invalid_arrays[i]->element_size = sizeof(uint64_t);
+        invalid_output = (void *)(uintptr_t)1;
+        invalid_size = 123;
+        ASSERT_EQ(NMO_ERR_INVALID_STATE,
+            nmo_chunk_serialize(chunk, &invalid_output, &invalid_size, arena));
+        ASSERT_NULL(invalid_output);
+        ASSERT_EQ(0u, invalid_size);
+
+        invalid_arrays[i]->count = 0;
+        invalid_arrays[i]->capacity = 0;
+        invalid_arrays[i]->element_size = sizeof(uint32_t);
+        invalid_arrays[i]->data = NULL;
+    }
+
     chunk->data.count = 1;
     void *output = (void *)(uintptr_t)1;
     size_t output_size = 123;
