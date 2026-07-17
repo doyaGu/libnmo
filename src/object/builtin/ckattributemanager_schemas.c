@@ -72,6 +72,26 @@ static bool nmo_attributemanager_size_mul_overflows(
     return count != 0 && element_size > SIZE_MAX / count;
 }
 
+static size_t nmo_attributemanager_identifier_remaining_dwords(
+    const nmo_chunk_t *chunk)
+{
+    if (!chunk || !chunk->parser_state) return 0;
+
+    const nmo_chunk_parser_state_t *state =
+        (const nmo_chunk_parser_state_t *)chunk->parser_state;
+    const uint32_t *data =
+        NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    size_t next_pos = chunk->data.count;
+    if (state->prev_identifier_pos + 1u < chunk->data.count) {
+        const uint32_t candidate = data[state->prev_identifier_pos + 1u];
+        if (candidate != 0 && candidate <= chunk->data.count) {
+            next_pos = candidate;
+        }
+    }
+    if (next_pos < state->current_pos) return 0;
+    return next_pos - state->current_pos;
+}
+
 static nmo_status_t nmo_attributemanager_deserialize_internal(
     void *instance,
     nmo_chunk_t *chunk,
@@ -111,7 +131,8 @@ static nmo_status_t nmo_attributemanager_deserialize_internal(
     }
     const size_t minimum_entry_dwords =
         (size_t)category_count + (size_t)attribute_count;
-    if (!nmo_chunk_has_read_capacity(chunk, minimum_entry_dwords)) {
+    if (minimum_entry_dwords >
+        nmo_attributemanager_identifier_remaining_dwords(chunk)) {
         NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                          "Attribute manager counts exceed remaining DWORDs");
     }
