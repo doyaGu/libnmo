@@ -64,6 +64,30 @@ TEST(arrays, write_read_int_array) {
     nmo_arena_destroy(arena);
 }
 
+TEST(arrays, rejects_invalid_sizes_without_writing_marker) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_writer_t* writer = nmo_chunk_writer_create(arena);
+    ASSERT_NOT_NULL(writer);
+    nmo_chunk_writer_start(writer, 0x12345678, 7);
+
+    const uint8_t value = 1;
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+        nmo_chunk_writer_write_array_lendian(writer, 1, 0, &value));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+        nmo_chunk_writer_write_array_lendian(writer, INT_MAX, 2, &value));
+    ASSERT_EQ(NMO_OK, nmo_chunk_writer_write_dword(writer, 0xAABBCCDDu));
+
+    nmo_chunk_t* chunk = nmo_chunk_writer_finalize(writer);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(1u, chunk->data.count);
+    ASSERT_EQ(0xAABBCCDDu,
+        NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data)[0]);
+
+    nmo_chunk_writer_destroy(writer);
+    nmo_arena_destroy(arena);
+}
+
 TEST(arrays, write_read_float_array) {
     // Create arena
     nmo_arena_t* arena = nmo_arena_create(NULL, 4096);
@@ -131,6 +155,10 @@ TEST(arrays, write_read_byte_array) {
     // Finalize chunk
     nmo_chunk_t* chunk = nmo_chunk_writer_finalize(writer);
     ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(4u, chunk->data.count);
+    const uint8_t* stored_bytes =
+        (const uint8_t*)NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    ASSERT_EQ(0u, stored_bytes[2u * sizeof(uint32_t) + sizeof(byte_array)]);
 
     // Create parser
     nmo_chunk_parser_t* parser = nmo_chunk_parser_create(chunk);
@@ -251,4 +279,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(arrays, write_read_byte_array);
     REGISTER_TEST(arrays, write_read_null_array);
     REGISTER_TEST(arrays, write_read_zero_count_array);
+    REGISTER_TEST(arrays, rejects_invalid_sizes_without_writing_marker);
 TEST_MAIN_END()
