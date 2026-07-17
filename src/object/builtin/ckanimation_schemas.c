@@ -882,6 +882,20 @@ static nmo_status_t read_raw_tail(nmo_chunk_t *chunk, nmo_arena_t *arena,
 }
 
 /* Read controllers in CONTROLLERS format: loop of {type(DWORD), size_dwords(DWORD), data[]} until type==0 */
+static nmo_status_t nmo_animation_seek_optional(
+    nmo_chunk_t *chunk,
+    uint32_t identifier,
+    bool *out_found)
+{
+    nmo_status_t result = nmo_chunk_seek_identifier(chunk, identifier);
+    if (result == NMO_OK) {
+        *out_found = true;
+        return NMO_OK;
+    }
+    *out_found = false;
+    return result == NMO_ERR_NOT_FOUND ? NMO_OK : result;
+}
+
 static nmo_status_t read_controllers_loop(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
@@ -943,6 +957,7 @@ static nmo_status_t read_newdata_controllers(
 {
     nmo_objanim_controller_t local_controllers[8];
     uint32_t count = 0;
+    bool section_found = false;
 
     /* 1. Read morph keys if present */
     if (out_state->morph_key_count > 0) {
@@ -1018,8 +1033,9 @@ static nmo_status_t read_newdata_controllers(
     }
 
     /* 3. Check for optional morph normals */
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OBJANIMMORPHCOMP) == NMO_OK &&
-        out_state->morph_key_parsed_count > 0) {
+    NMO_RETURN_IF_ERROR(nmo_animation_seek_optional(
+        chunk, CK_STATESAVE_OBJANIMMORPHCOMP, &section_found));
+    if (section_found && out_state->morph_key_parsed_count > 0) {
         out_state->morph_normals_id = CK_STATESAVE_OBJANIMMORPHCOMP;
         out_state->morph_normals_count = out_state->morph_key_parsed_count;
 
@@ -1053,8 +1069,10 @@ static nmo_status_t read_newdata_controllers(
 
         out_state->morph_normals_sizes = sizes;
         out_state->morph_normals_data = data_ptrs;
-    } else if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OBJANIMMORPHNORMALS) == NMO_OK &&
-               out_state->morph_key_parsed_count > 0) {
+    } else {
+        NMO_RETURN_IF_ERROR(nmo_animation_seek_optional(
+            chunk, CK_STATESAVE_OBJANIMMORPHNORMALS, &section_found));
+        if (section_found && out_state->morph_key_parsed_count > 0) {
         out_state->morph_normals_id = CK_STATESAVE_OBJANIMMORPHNORMALS;
         out_state->morph_normals_count = out_state->morph_key_parsed_count;
 
@@ -1088,6 +1106,7 @@ static nmo_status_t read_newdata_controllers(
 
         out_state->morph_normals_sizes = sizes;
         out_state->morph_normals_data = data_ptrs;
+        }
     }
 
     /* Copy controllers to arena-allocated array */
@@ -1115,12 +1134,16 @@ static nmo_status_t read_legacy_controllers(
 {
     nmo_objanim_controller_t local_controllers[8];
     uint32_t count = 0;
+    bool section_found = false;
 
     /* Skip old morphkeys identifier if present */
-    (void)nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OBJANIMMORPHKEYS);
+    NMO_RETURN_IF_ERROR(nmo_animation_seek_optional(
+        chunk, CK_STATESAVE_OBJANIMMORPHKEYS, &section_found));
 
     /* Read morph keys (legacy format) */
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OBJANIMMORPHKEYS2) == NMO_OK) {
+    NMO_RETURN_IF_ERROR(nmo_animation_seek_optional(
+        chunk, CK_STATESAVE_OBJANIMMORPHKEYS2, &section_found));
+    if (section_found) {
         int32_t morph_key_count = 0;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &morph_key_count));
         if (morph_key_count > 0) {
@@ -1168,7 +1191,9 @@ static nmo_status_t read_legacy_controllers(
     }
 
     /* Read position controller */
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OBJANIMPOSKEYS) == NMO_OK) {
+    NMO_RETURN_IF_ERROR(nmo_animation_seek_optional(
+        chunk, CK_STATESAVE_OBJANIMPOSKEYS, &section_found));
+    if (section_found) {
         uint32_t buf_size = 0;
         uint32_t key_count = 0;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &buf_size));
@@ -1192,7 +1217,9 @@ static nmo_status_t read_legacy_controllers(
     }
 
     /* Read rotation controller + scale axis controller */
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OBJANIMROTKEYS) == NMO_OK) {
+    NMO_RETURN_IF_ERROR(nmo_animation_seek_optional(
+        chunk, CK_STATESAVE_OBJANIMROTKEYS, &section_found));
+    if (section_found) {
         uint32_t rot_buf_size = 0;
         uint32_t rot_key_count = 0;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &rot_buf_size));
@@ -1237,7 +1264,9 @@ static nmo_status_t read_legacy_controllers(
     }
 
     /* Read scale controller */
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OBJANIMSCLKEYS) == NMO_OK) {
+    NMO_RETURN_IF_ERROR(nmo_animation_seek_optional(
+        chunk, CK_STATESAVE_OBJANIMSCLKEYS, &section_found));
+    if (section_found) {
         uint32_t buf_size = 0;
         uint32_t key_count = 0;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &buf_size));
@@ -1261,20 +1290,28 @@ static nmo_status_t read_legacy_controllers(
     }
 
     /* Read legacy header fields */
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OBJANIMFLAGS) == NMO_OK) {
+    NMO_RETURN_IF_ERROR(nmo_animation_seek_optional(
+        chunk, CK_STATESAVE_OBJANIMFLAGS, &section_found));
+    if (section_found) {
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->flags));
     }
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OBJANIMENTITY) == NMO_OK) {
+    NMO_RETURN_IF_ERROR(nmo_animation_seek_optional(
+        chunk, CK_STATESAVE_OBJANIMENTITY, &section_found));
+    if (section_found) {
         NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &out_state->entity));
     }
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OBJANIMLENGTH) == NMO_OK) {
+    NMO_RETURN_IF_ERROR(nmo_animation_seek_optional(
+        chunk, CK_STATESAVE_OBJANIMLENGTH, &section_found));
+    if (section_found) {
         out_state->has_length = 1;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->length));
     }
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OBJANIMMERGE) == NMO_OK) {
+    NMO_RETURN_IF_ERROR(nmo_animation_seek_optional(
+        chunk, CK_STATESAVE_OBJANIMMERGE, &section_found));
+    if (section_found) {
         NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->merge_factor));
         int32_t merged = 0;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &merged));
@@ -1289,7 +1326,9 @@ static nmo_status_t read_legacy_controllers(
         NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &out_state->anim2));
     }
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OBJANIMNEWDATA) == NMO_OK) {
+    NMO_RETURN_IF_ERROR(nmo_animation_seek_optional(
+        chunk, CK_STATESAVE_OBJANIMNEWDATA, &section_found));
+    if (section_found) {
         out_state->has_root_pos = 1;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_vector3(chunk, &out_state->root_pos));
     }
@@ -1336,8 +1375,11 @@ static nmo_status_t nmo_animation_deserialize_internal(
     out_state->character = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     out_state->has_current_step = 0;
     out_state->current_step = 0.0f;
+    bool section_found = false;
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_ANIMATIONDATA) == NMO_OK) {
+    NMO_RETURN_IF_ERROR(nmo_animation_seek_optional(
+        chunk, CK_STATESAVE_ANIMATIONDATA, &section_found));
+    if (section_found) {
         out_state->has_data = 1;
 
         size_t remaining_dwords = nmo_animation_identifier_remaining_dwords(chunk);
@@ -1382,13 +1424,17 @@ static nmo_status_t nmo_animation_deserialize_internal(
         }
     }
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_ANIMATIONLENGTH) == NMO_OK) {
+    NMO_RETURN_IF_ERROR(nmo_animation_seek_optional(
+        chunk, CK_STATESAVE_ANIMATIONLENGTH, &section_found));
+    if (section_found) {
         out_state->has_length = 1;
         nmo_status_t result = nmo_chunk_read_float(chunk, &out_state->length);
         if (result != NMO_OK) return result;
     }
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_ANIMATIONBODYPARTS) == NMO_OK) {
+    NMO_RETURN_IF_ERROR(nmo_animation_seek_optional(
+        chunk, CK_STATESAVE_ANIMATIONBODYPARTS, &section_found));
+    if (section_found) {
         out_state->has_root_entity = 1;
         /* Legacy list of body parts (ignored) */
         int32_t count = 0;
@@ -1421,7 +1467,9 @@ static nmo_status_t nmo_animation_deserialize_internal(
         out_state->root_entity = root_entity;
     }
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_ANIMATIONCHARACTER) == NMO_OK) {
+    NMO_RETURN_IF_ERROR(nmo_animation_seek_optional(
+        chunk, CK_STATESAVE_ANIMATIONCHARACTER, &section_found));
+    if (section_found) {
         out_state->has_character = 1;
         nmo_ref_t character = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         nmo_status_t result = nmo_ref_read(chunk, &character);
@@ -1435,7 +1483,9 @@ static nmo_status_t nmo_animation_deserialize_internal(
         out_state->character = character;
     }
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_ANIMATIONCURRENTSTEP) == NMO_OK) {
+    NMO_RETURN_IF_ERROR(nmo_animation_seek_optional(
+        chunk, CK_STATESAVE_ANIMATIONCURRENTSTEP, &section_found));
+    if (section_found) {
         out_state->has_current_step = 1;
         nmo_status_t result = nmo_chunk_read_float(chunk, &out_state->current_step);
         if (result != NMO_OK) return result;
@@ -1520,8 +1570,11 @@ static nmo_status_t nmo_keyedanimation_deserialize_internal(
 
     nmo_status_t result = nmo_animation_deserialize_internal(chunk, context, &out_state->base);
     if (result != NMO_OK) return result;
+    bool section_found = false;
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_KEYEDANIMANIMLIST) == NMO_OK) {
+    NMO_RETURN_IF_ERROR(nmo_animation_seek_optional(
+        chunk, CK_STATESAVE_KEYEDANIMANIMLIST, &section_found));
+    if (section_found) {
         nmo_ref_t *animation_ids = NULL;
         uint32_t animation_count = 0;
         result = read_ref_array(chunk, arena, &animation_ids, &animation_count);
@@ -1539,7 +1592,9 @@ static nmo_status_t nmo_keyedanimation_deserialize_internal(
         out_state->animation_count = animation_count;
     }
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_KEYEDANIMMERGE) == NMO_OK) {
+    NMO_RETURN_IF_ERROR(nmo_animation_seek_optional(
+        chunk, CK_STATESAVE_KEYEDANIMMERGE, &section_found));
+    if (section_found) {
         out_state->has_merge = 1;
         result = nmo_chunk_read_int(chunk, &out_state->merged);
         if (result != NMO_OK) return result;
@@ -1548,7 +1603,11 @@ static nmo_status_t nmo_keyedanimation_deserialize_internal(
     }
 
     const bool is_file = nmo_animation_is_file_mode_deser(chunk, context);
-    if (!is_file && nmo_chunk_seek_identifier(chunk, CK_STATESAVE_KEYEDANIMSUBANIMS) == NMO_OK) {
+    if (!is_file) {
+        NMO_RETURN_IF_ERROR(nmo_animation_seek_optional(
+            chunk, CK_STATESAVE_KEYEDANIMSUBANIMS, &section_found));
+    }
+    if (!is_file && section_found) {
         uint32_t count = 0;
         result = nmo_chunk_read_dword(chunk, &count);
         if (result != NMO_OK) return result;
@@ -1690,8 +1749,11 @@ static nmo_status_t nmo_objectanimation_deserialize_internal(
     out_state->raw_tail_size = 0;
 
     uint32_t data_version = nmo_chunk_get_data_version(chunk);
+    bool section_found = false;
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OBJANIMSHARED) == NMO_OK) {
+    NMO_RETURN_IF_ERROR(nmo_animation_seek_optional(
+        chunk, CK_STATESAVE_OBJANIMSHARED, &section_found));
+    if (section_found) {
         out_state->format = CKOBJANIM_FORMAT_SHARED;
         out_state->has_shared_anim = 1;
         nmo_status_t result = nmo_ref_read(chunk, &out_state->shared_anim);
@@ -1724,7 +1786,9 @@ static nmo_status_t nmo_objectanimation_deserialize_internal(
         NMO_RETURN_OK();
     }
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OBJANIMCONTROLLERS) == NMO_OK) {
+    NMO_RETURN_IF_ERROR(nmo_animation_seek_optional(
+        chunk, CK_STATESAVE_OBJANIMCONTROLLERS, &section_found));
+    if (section_found) {
         out_state->format = CKOBJANIM_FORMAT_CONTROLLERS;
         out_state->has_root_pos = 1;
         nmo_status_t result = nmo_chunk_read_vector3(chunk, &out_state->root_pos);
@@ -1757,7 +1821,9 @@ static nmo_status_t nmo_objectanimation_deserialize_internal(
         NMO_RETURN_OK();
     }
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OBJANIMNEWDATA) == NMO_OK) {
+    NMO_RETURN_IF_ERROR(nmo_animation_seek_optional(
+        chunk, CK_STATESAVE_OBJANIMNEWDATA, &section_found));
+    if (section_found) {
         out_state->format = CKOBJANIM_FORMAT_NEWDATA;
         out_state->has_root_pos = 1;
         nmo_status_t result = nmo_chunk_read_vector3(chunk, &out_state->root_pos);
