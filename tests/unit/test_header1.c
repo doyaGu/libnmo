@@ -12,6 +12,27 @@
 #include <limits.h>
 #include <stdint.h>
 
+typedef struct header1_fail_allocator_state {
+    int fail_allocations;
+} header1_fail_allocator_state_t;
+
+static void *header1_fail_alloc(
+    void *user_data, size_t size, size_t alignment)
+{
+    header1_fail_allocator_state_t *state =
+        (header1_fail_allocator_state_t *)user_data;
+    if (state->fail_allocations) return NULL;
+    nmo_allocator_t allocator = nmo_allocator_default();
+    return nmo_alloc(&allocator, size, alignment);
+}
+
+static void header1_fail_free(void *user_data, void *ptr)
+{
+    (void)user_data;
+    nmo_allocator_t allocator = nmo_allocator_default();
+    nmo_free(&allocator, ptr);
+}
+
 TEST(header1, serialization) {
     nmo_arena_t* arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
@@ -232,6 +253,30 @@ TEST(header1, write_failures_clear_outputs) {
             &header, &layout, arena, &planned_data, &planned_size));
     ASSERT_NULL(planned_data);
     ASSERT_EQ(0u, planned_size);
+
+    nmo_plugin_dep_t plugin_dep;
+    memset(&plugin_dep, 0, sizeof(plugin_dep));
+    header.object_count = 0;
+    header.plugin_dep_count = 1;
+    header.plugin_deps = &plugin_dep;
+
+    header1_fail_allocator_state_t allocator_state = {0};
+    nmo_allocator_t allocator = nmo_allocator_custom(
+        header1_fail_alloc, header1_fail_free, &allocator_state);
+    nmo_arena_t* fail_arena = nmo_arena_create(&allocator, 1);
+    ASSERT_NOT_NULL(fail_arena);
+    allocator_state.fail_allocations = 1;
+
+    memset(&layout, 0x7f, sizeof(layout));
+    ASSERT_EQ(NMO_ERR_NOMEM,
+        nmo_header1_plan(&header, fail_arena, &layout));
+    ASSERT_EQ(0u, layout.total_size);
+    ASSERT_EQ(0u, layout.object_table_size);
+    ASSERT_EQ(0u, layout.plugin_dep_size);
+    ASSERT_EQ(0u, layout.plugin_category_count);
+    ASSERT_NULL(layout.plugin_categories);
+
+    nmo_arena_destroy(fail_arena);
 
     memset(&layout, 0x7f, sizeof(layout));
     ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
