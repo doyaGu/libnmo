@@ -27,12 +27,26 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
         nmo_status_t result = nmo_array_init(&state->portals, sizeof(nmo_place_portal_entry_t), 0, NULL);
         if (result != NMO_OK) return result;
         result = nmo_array_init(&state->references, sizeof(nmo_ref_t), 0, NULL);
-        if (result != NMO_OK) return result;
+        if (result != NMO_OK) {
+            nmo_array_dispose(&state->portals);
+            return result;
+        }
     } while (0),
     do {
         nmo_array_dispose(&state->portals);
         nmo_array_dispose(&state->references);
     } while (0))
+
+static void nmo_place_dispose_state_arrays(nmo_place_state_t *state)
+{
+    if (state == NULL) return;
+    nmo_beobject_state_t *base = &state->base.base.base;
+    nmo_array_dispose(&base->scripts);
+    nmo_array_dispose(&base->attributes);
+    nmo_array_dispose(&base->legacy_attributes);
+    nmo_array_dispose(&state->portals);
+    nmo_array_dispose(&state->references);
+}
 
 static nmo_status_t nmo_place_deserialize_internal(
     nmo_place_state_t *out_state,
@@ -54,7 +68,8 @@ static nmo_status_t nmo_place_deserialize_internal(
         NMO_RETURN_OK();
     }
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PLACECAMERA) == NMO_OK) {
+    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PLACECAMERA);
+    if (result == NMO_OK) {
         nmo_ref_t camera = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &camera));
         nmo_ref_check_class(
@@ -65,9 +80,10 @@ static nmo_status_t nmo_place_deserialize_internal(
             NMO_CID_CAMERA);
         out_state->camera = camera;
         out_state->has_camera = 1;
-    }
+    } else if (result != NMO_ERR_NOT_FOUND) return result;
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PLACELEVEL) == NMO_OK) {
+    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PLACELEVEL);
+    if (result == NMO_OK) {
         nmo_ref_t level = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &level));
         nmo_ref_check_class(
@@ -78,9 +94,10 @@ static nmo_status_t nmo_place_deserialize_internal(
             NMO_CID_LEVEL);
         out_state->level = level;
         out_state->has_level = 1;
-    }
+    } else if (result != NMO_ERR_NOT_FOUND) return result;
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PLACEPORTALS) == NMO_OK) {
+    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PLACEPORTALS);
+    if (result == NMO_OK) {
         int32_t count = 0;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &count));
         if (count < 0) return NMO_ERR_INVALID_FORMAT;
@@ -91,8 +108,11 @@ static nmo_status_t nmo_place_deserialize_internal(
             return NMO_ERR_TRUNCATED_CHUNK;
         }
         nmo_array_t portals = {0};
+        const nmo_allocator_t *allocator =
+            out_state->portals.allocator.alloc != NULL
+                ? &out_state->portals.allocator : NULL;
         result = nmo_array_init(
-            &portals, sizeof(nmo_place_portal_entry_t), (size_t)count, NULL);
+            &portals, sizeof(nmo_place_portal_entry_t), (size_t)count, allocator);
         if (result != NMO_OK) return result;
         nmo_place_portal_entry_t *entries = NULL;
         result = nmo_array_extend(&portals, (size_t)count, (void **)&entries);
@@ -108,16 +128,21 @@ static nmo_status_t nmo_place_deserialize_internal(
         }
         NMO_RETURN_IF_ERROR(nmo_array_swap(&out_state->portals, &portals));
         nmo_array_dispose(&portals);
-    }
+    } else if (result != NMO_ERR_NOT_FOUND) return result;
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PLACEREFERENCES) == NMO_OK) {
+    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PLACEREFERENCES);
+    if (result == NMO_OK) {
         nmo_ref_t *refs = NULL;
         size_t count = 0;
         nmo_status_t result = nmo_ref_read_sequence(
             chunk, &refs, &count, arena);
         if (result != NMO_OK) return result;
         nmo_array_t references = {0};
-        result = nmo_array_init(&references, sizeof(nmo_ref_t), count, NULL);
+        const nmo_allocator_t *allocator =
+            out_state->references.allocator.alloc != NULL
+                ? &out_state->references.allocator : NULL;
+        result = nmo_array_init(
+            &references, sizeof(nmo_ref_t), count, allocator);
         if (result != NMO_OK) return result;
         nmo_ref_t *dest = NULL;
         result = nmo_array_extend(&references, count, (void **)&dest);
@@ -128,7 +153,7 @@ static nmo_status_t nmo_place_deserialize_internal(
         if (count > 0) memcpy(dest, refs, sizeof(nmo_ref_t) * count);
         NMO_RETURN_IF_ERROR(nmo_array_swap(&out_state->references, &references));
         nmo_array_dispose(&references);
-    }
+    } else if (result != NMO_ERR_NOT_FOUND) return result;
 
     NMO_RETURN_OK();
 }
@@ -461,7 +486,44 @@ nmo_status_t nmo_place_deserialize(
 {
     (void)type;
     nmo_place_state_t *out_state = (nmo_place_state_t *)instance;
-    return nmo_place_deserialize_internal(out_state, chunk, context);
+    if (out_state == NULL || chunk == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    nmo_place_state_t decoded = {0};
+    nmo_beobject_state_t *old_base = &out_state->base.base.base;
+    nmo_beobject_state_t *new_base = &decoded.base.base.base;
+    if (old_base->scripts.allocator.alloc != NULL) {
+        new_base->scripts.allocator = old_base->scripts.allocator;
+    }
+    if (old_base->attributes.allocator.alloc != NULL) {
+        new_base->attributes.allocator = old_base->attributes.allocator;
+    }
+    if (old_base->legacy_attributes.allocator.alloc != NULL) {
+        new_base->legacy_attributes.allocator =
+            old_base->legacy_attributes.allocator;
+    }
+    const nmo_allocator_t *portal_allocator =
+        out_state->portals.allocator.alloc != NULL
+            ? &out_state->portals.allocator : NULL;
+    const nmo_allocator_t *reference_allocator =
+        out_state->references.allocator.alloc != NULL
+            ? &out_state->references.allocator : NULL;
+    nmo_status_t result = nmo_array_init(
+        &decoded.portals, sizeof(nmo_place_portal_entry_t), 0,
+        portal_allocator);
+    if (result != NMO_OK) return result;
+    result = nmo_array_init(
+        &decoded.references, sizeof(nmo_ref_t), 0, reference_allocator);
+    if (result != NMO_OK) {
+        nmo_place_dispose_state_arrays(&decoded);
+        return result;
+    }
+    result = nmo_place_deserialize_internal(&decoded, chunk, context);
+    if (result != NMO_OK) {
+        nmo_place_dispose_state_arrays(&decoded);
+        return result;
+    }
+    nmo_place_dispose_state_arrays(out_state);
+    *out_state = decoded;
+    return NMO_OK;
 }
 
 nmo_status_t nmo_place_serialize(
@@ -470,9 +532,24 @@ nmo_status_t nmo_place_serialize(
     const nmo_type_descriptor_t *type,
     void *context)
 {
-    (void)type;
     const nmo_place_state_t *in_state = (const nmo_place_state_t *)instance;
-    return nmo_place_serialize_internal(in_state, out_chunk, context);
+    if (in_state == NULL || out_chunk == NULL || out_chunk->arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    NMO_RETURN_IF_ERROR(nmo_place_validate(in_state, type, context));
+    nmo_chunk_t *staged = nmo_chunk_create(out_chunk->arena);
+    if (staged == NULL) return NMO_ERR_NOMEM;
+    staged->class_id = out_chunk->class_id;
+    staged->data_version = out_chunk->data_version;
+    staged->chunk_version = out_chunk->chunk_version;
+    staged->chunk_class_id = out_chunk->chunk_class_id;
+    staged->chunk_options = out_chunk->chunk_options;
+    staged->file_context = out_chunk->file_context;
+    nmo_status_t result = nmo_place_serialize_internal(
+        in_state, staged, context);
+    if (result != NMO_OK) return result;
+    *out_chunk = *staged;
+    return NMO_OK;
 }
 
 
