@@ -3867,11 +3867,22 @@ TEST(chunk_id_remap, place_refs_round_trip_and_truncation_is_atomic) {
 
     nmo_place_state_t failed;
     ASSERT_EQ(NMO_OK, nmo_place_vtable.create(&failed, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(
+        &failed.base.base.base, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &failed.base.base.base.scripts, 899));
+    nmo_ref_t old_reference = nmo_ref_from_raw(807);
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &failed.references, &old_reference));
     ASSERT_NE(NMO_OK, nmo_place_deserialize(
         &failed, truncated, NULL, &deserialize_context));
-    ASSERT_EQ(0u, failed.references.count);
+    ASSERT_EQ(1u, failed.references.count);
+    ASSERT_EQ(807u, NMO_ARRAY_DATA(
+        nmo_ref_t, &failed.references)[0].raw_id);
     ASSERT_EQ(NMO_REF_NONE, failed.camera.state);
     ASSERT_EQ(NMO_REF_NONE, failed.level.state);
+    ASSERT_EQ(899u, nmo_beobject_script_array_get_id(
+        &failed.base.base.base.scripts, 0));
 
     nmo_chunk_t *truncated_camera = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(truncated_camera);
@@ -3885,10 +3896,12 @@ TEST(chunk_id_remap, place_refs_round_trip_and_truncation_is_atomic) {
 
     nmo_place_state_t failed_camera;
     ASSERT_EQ(NMO_OK, nmo_place_vtable.create(&failed_camera, NULL, NULL));
+    failed_camera.has_camera = 1;
+    failed_camera.camera = nmo_ref_from_raw(808);
     ASSERT_NE(NMO_OK, nmo_place_deserialize(
         &failed_camera, truncated_camera, NULL, &deserialize_context));
-    ASSERT_FALSE(failed_camera.has_camera);
-    ASSERT_EQ(NMO_REF_NONE, failed_camera.camera.state);
+    ASSERT_TRUE(failed_camera.has_camera);
+    ASSERT_EQ(808u, failed_camera.camera.raw_id);
 
     nmo_chunk_t *truncated_portal = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(truncated_portal);
@@ -3904,17 +3917,54 @@ TEST(chunk_id_remap, place_refs_round_trip_and_truncation_is_atomic) {
 
     nmo_place_state_t failed_portal;
     ASSERT_EQ(NMO_OK, nmo_place_vtable.create(&failed_portal, NULL, NULL));
+    nmo_place_portal_entry_t old_portal = {
+        .place_id = 809,
+        .portal_id = 810,
+    };
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &failed_portal.portals, &old_portal));
     ASSERT_NE(NMO_OK, nmo_place_deserialize(
         &failed_portal, truncated_portal, NULL, &deserialize_context));
-    ASSERT_EQ(0u, failed_portal.portals.count);
+    ASSERT_EQ(1u, failed_portal.portals.count);
+    ASSERT_EQ(809u, NMO_ARRAY_DATA(
+        nmo_place_portal_entry_t, &failed_portal.portals)[0].place_id);
+
+    nmo_place_state_t invalid;
+    ASSERT_EQ(NMO_OK, nmo_place_vtable.create(&invalid, NULL, NULL));
+    nmo_ref_t valid_reference = nmo_ref_from_raw(811);
+    nmo_ref_t invalid_reference = nmo_ref_from_id(999);
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &invalid.references, &valid_reference));
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &invalid.references, &invalid_reference));
+    nmo_chunk_t *target = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(target);
+    target->class_id = NMO_CID_PLACE;
+    target->data_version = 7;
+    target->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(target, &write_context);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(target, 0x12345678u));
+    nmo_chunk_close(target);
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_place_serialize(
+        &invalid, target, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(target));
+    uint32_t marker = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(target, &marker));
+    ASSERT_EQ(0x12345678u, marker);
 
     nmo_place_vtable.destroy(&source, NULL, NULL);
     nmo_place_vtable.destroy(&loaded, NULL, NULL);
     nmo_place_vtable.destroy(&reloaded, NULL, NULL);
     nmo_place_vtable.destroy(&copied, NULL, NULL);
+    nmo_array_dispose(&failed.base.base.base.scripts);
+    nmo_array_dispose(&failed.base.base.base.attributes);
+    nmo_array_dispose(&failed.base.base.base.legacy_attributes);
     nmo_place_vtable.destroy(&failed, NULL, NULL);
     nmo_place_vtable.destroy(&failed_camera, NULL, NULL);
     nmo_place_vtable.destroy(&failed_portal, NULL, NULL);
+    nmo_place_vtable.destroy(&invalid, NULL, NULL);
     nmo_arena_destroy(arena);
 }
 
