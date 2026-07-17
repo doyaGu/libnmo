@@ -160,7 +160,7 @@ static nmo_status_t deserialize_modern(
     uint32_t raw_flags;
     result = nmo_chunk_read_dword(chunk, &raw_flags);
     if (result != NMO_OK) {
-        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read CK2dEntity flags");
+        return result;
     }
     
     /* Sanitize flags (mask applied by RCK2dEntity::Load) */
@@ -177,7 +177,7 @@ static nmo_status_t deserialize_modern(
         out_state->has_homogeneous_rect = true;
         result = read_rect(chunk, &out_state->homogeneous_rect);
         if (result != NMO_OK) {
-            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read homogeneous rect");
+            return result;
         }
         /* Note: runtime would compute m_Rect from m_HomogeneousRect via
          * GetHomogeneousRelativeRect, but schema layer preserves serialized form */
@@ -185,7 +185,7 @@ static nmo_status_t deserialize_modern(
         out_state->has_homogeneous_rect = false;
         result = read_rect(chunk, &out_state->rect);
         if (result != NMO_OK) {
-            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read rect");
+            return result;
         }
     }
     
@@ -194,7 +194,7 @@ static nmo_status_t deserialize_modern(
         out_state->has_source_rect = true;
         result = read_rect(chunk, &out_state->source_rect);
         if (result != NMO_OK) {
-            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read source rect");
+            return result;
         }
     }
     
@@ -203,7 +203,7 @@ static nmo_status_t deserialize_modern(
         out_state->has_z_order = true;
         result = nmo_chunk_read_int(chunk, (int32_t *)&out_state->z_order);
         if (result != NMO_OK) {
-            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read z-order");
+            return result;
         }
     }
     
@@ -212,7 +212,7 @@ static nmo_status_t deserialize_modern(
         nmo_ref_t parent = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         result = nmo_ref_read(chunk, &parent);
         if (result != NMO_OK) {
-            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read parent ID");
+            return result;
         }
         nmo_ref_check_class(
             &parent,
@@ -262,7 +262,7 @@ static nmo_status_t deserialize_legacy(
         uint32_t raw_flags;
         result = nmo_chunk_read_dword(chunk, &raw_flags);
         if (result != NMO_OK) {
-            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read legacy flags");
+            return result;
         }
         out_state->flags = raw_flags;
         has_flags = true;
@@ -283,21 +283,21 @@ static nmo_status_t deserialize_legacy(
             out_state->has_homogeneous_rect = true;
             result = nmo_chunk_read_float(chunk, &out_state->homogeneous_rect.left);
             if (result != NMO_OK) {
-                NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read homogeneous origin x");
+                return result;
             }
             result = nmo_chunk_read_float(chunk, &out_state->homogeneous_rect.top);
             if (result != NMO_OK) {
-                NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read homogeneous origin y");
+                return result;
             }
         } else {
             int32_t x, y;
             result = nmo_chunk_read_int(chunk, &x);
             if (result != NMO_OK) {
-                NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read origin x");
+                return result;
             }
             result = nmo_chunk_read_int(chunk, &y);
             if (result != NMO_OK) {
-                NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read origin y");
+                return result;
             }
             /* Convert int to float (fixed-point conversion, SDK uses helpers) */
             out_state->rect.left = (float)x;
@@ -313,11 +313,11 @@ static nmo_status_t deserialize_legacy(
             out_state->has_homogeneous_rect = true;
             result = nmo_chunk_read_float(chunk, &w);
             if (result != NMO_OK) {
-                NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read homogeneous width");
+                return result;
             }
             result = nmo_chunk_read_float(chunk, &h);
             if (result != NMO_OK) {
-                NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read homogeneous height");
+                return result;
             }
             out_state->homogeneous_rect.right = out_state->homogeneous_rect.left + w;
             out_state->homogeneous_rect.bottom = out_state->homogeneous_rect.top + h;
@@ -325,11 +325,11 @@ static nmo_status_t deserialize_legacy(
             int32_t w, h;
             result = nmo_chunk_read_int(chunk, &w);
             if (result != NMO_OK) {
-                NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read size width");
+                return result;
             }
             result = nmo_chunk_read_int(chunk, &h);
             if (result != NMO_OK) {
-                NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read size height");
+                return result;
             }
             out_state->rect.right = out_state->rect.left + (float)w;
             out_state->rect.bottom = out_state->rect.top + (float)h;
@@ -341,24 +341,19 @@ static nmo_status_t deserialize_legacy(
     if (seek_result == NMO_OK) {
         int32_t x, y, w, h;
         result = nmo_chunk_read_int(chunk, &x);
-        if (result != NMO_OK) goto source_rect_error;
+        if (result != NMO_OK) return result;
         result = nmo_chunk_read_int(chunk, &y);
-        if (result != NMO_OK) goto source_rect_error;
+        if (result != NMO_OK) return result;
         result = nmo_chunk_read_int(chunk, &w);
-        if (result != NMO_OK) goto source_rect_error;
+        if (result != NMO_OK) return result;
         result = nmo_chunk_read_int(chunk, &h);
-        if (result != NMO_OK) goto source_rect_error;
+        if (result != NMO_OK) return result;
         
         out_state->has_source_rect = true;
         out_state->source_rect.right = (float)x;
         out_state->source_rect.left = (float)y;
         out_state->source_rect.top = (float)w;
         out_state->source_rect.bottom = (float)h;
-        goto source_rect_done;
-        
-source_rect_error:
-        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read source rect");
-source_rect_done:;
     } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
     
     /* Read z-order (identifier 0x100000) */
@@ -367,7 +362,7 @@ source_rect_done:;
         out_state->has_z_order = true;
         result = nmo_chunk_read_int(chunk, (int32_t *)&out_state->z_order);
         if (result != NMO_OK) {
-            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read z-order");
+            return result;
         }
     } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
     
@@ -430,7 +425,7 @@ static nmo_status_t nmo_2dentity_deserialize_internal(
             nmo_ref_t material = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
             result = nmo_ref_read(chunk, &material);
             if (result != NMO_OK) {
-                NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read material ID");
+                return result;
             }
             nmo_ref_check_class(
                 &material,
