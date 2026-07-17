@@ -32,9 +32,19 @@
 #include "nmo_types.h"
 #include <stddef.h>
 #include <stdalign.h>
+#include <stdint.h>
 #include <string.h>
 
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(sprite, nmo_sprite_state_t)
+
+static void nmo_sprite_dispose_base_arrays(nmo_sprite_state_t *state)
+{
+    if (state == NULL) return;
+    nmo_beobject_state_t *beobject = &state->entity.base.base;
+    nmo_array_dispose(&beobject->scripts);
+    nmo_array_dispose(&beobject->attributes);
+    nmo_array_dispose(&beobject->legacy_attributes);
+}
 
 /* =============================================================================
  * REFLECTION FIELDS
@@ -89,9 +99,9 @@ static nmo_status_t nmo_sprite_copy_identifier_payload(
 
     uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
     size_t pos = 0;
-    while (pos < chunk->data.count && data[pos] != identifier) {
+    while (pos + 1 < chunk->data.count && data[pos] != identifier) {
         size_t next_pos = data[pos + 1];
-        if (next_pos == 0 || next_pos == pos) {
+        if (next_pos == 0 || next_pos <= pos || next_pos > chunk->data.count) {
             break;
         }
         pos = next_pos;
@@ -99,6 +109,10 @@ static nmo_status_t nmo_sprite_copy_identifier_payload(
 
     if (pos >= chunk->data.count || data[pos] != identifier) {
         NMO_RETURN_OK();
+    }
+    if (pos + 1 >= chunk->data.count) {
+        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                         "Sprite bitmap identifier header is truncated");
     }
 
     size_t next = data[pos + 1];
@@ -111,7 +125,15 @@ static nmo_status_t nmo_sprite_copy_identifier_payload(
     }
 
     size_t dwords = next - (pos + 2);
+    if (dwords > SIZE_MAX / sizeof(uint32_t)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Sprite bitmap payload size overflows");
+    }
     size_t bytes = dwords * sizeof(uint32_t);
+    if (arena == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Sprite bitmap payload requires an arena");
+    }
     uint8_t *payload = (uint8_t *)nmo_arena_alloc(arena, bytes, 1);
     if (!payload) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate sprite bitmap payload");
@@ -226,16 +248,26 @@ static nmo_status_t deserialize_file_backed(
         out_state->has_sprite_ref = false;
         out_state->has_bitmap_data = true;
 
-        (void)nmo_sprite_copy_identifier_payload(chunk, NMO_CKSPRITE_BITMAP_PALETTE,
-            arena, &out_state->bitmap_data.palette_data, &out_state->bitmap_data.palette_size);
-        (void)nmo_sprite_copy_identifier_payload(chunk, NMO_CKSPRITE_BITMAP_SYSTEM_COPY,
-            arena, &out_state->bitmap_data.system_copy_data, &out_state->bitmap_data.system_copy_size);
-        (void)nmo_sprite_copy_identifier_payload(chunk, NMO_CKSPRITE_BITMAP_VIDEO_BACKUP,
-            arena, &out_state->bitmap_data.video_backup_data, &out_state->bitmap_data.video_backup_size);
-        (void)nmo_sprite_copy_identifier_payload(chunk, NMO_CKSPRITE_BITMAP_PIXELS,
-            arena, &out_state->bitmap_data.pixels_data, &out_state->bitmap_data.pixels_size);
-        (void)nmo_sprite_copy_identifier_payload(chunk, NMO_CKSPRITE_BITMAP_RAW,
-            arena, &out_state->bitmap_data.raw_chunk_data, &out_state->bitmap_data.raw_chunk_size);
+        NMO_RETURN_IF_ERROR(nmo_sprite_copy_identifier_payload(
+            chunk, NMO_CKSPRITE_BITMAP_PALETTE, arena,
+            &out_state->bitmap_data.palette_data,
+            &out_state->bitmap_data.palette_size));
+        NMO_RETURN_IF_ERROR(nmo_sprite_copy_identifier_payload(
+            chunk, NMO_CKSPRITE_BITMAP_SYSTEM_COPY, arena,
+            &out_state->bitmap_data.system_copy_data,
+            &out_state->bitmap_data.system_copy_size));
+        NMO_RETURN_IF_ERROR(nmo_sprite_copy_identifier_payload(
+            chunk, NMO_CKSPRITE_BITMAP_VIDEO_BACKUP, arena,
+            &out_state->bitmap_data.video_backup_data,
+            &out_state->bitmap_data.video_backup_size));
+        NMO_RETURN_IF_ERROR(nmo_sprite_copy_identifier_payload(
+            chunk, NMO_CKSPRITE_BITMAP_PIXELS, arena,
+            &out_state->bitmap_data.pixels_data,
+            &out_state->bitmap_data.pixels_size));
+        NMO_RETURN_IF_ERROR(nmo_sprite_copy_identifier_payload(
+            chunk, NMO_CKSPRITE_BITMAP_RAW, arena,
+            &out_state->bitmap_data.raw_chunk_data,
+            &out_state->bitmap_data.raw_chunk_size));
     }
     
     /* Read transparency (identifier 0x20000) */
@@ -352,7 +384,7 @@ static nmo_status_t deserialize_chunk_only(
  * Dispatches to file-backed or chunk-only deserializer.
  * Detection heuristic: if bitmap payload identifiers are present, use file-backed path.
  */
-nmo_status_t nmo_sprite_deserialize(
+static nmo_status_t nmo_sprite_deserialize_internal(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -397,6 +429,41 @@ nmo_status_t nmo_sprite_deserialize(
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_sprite_deserialize(
+    void *instance,
+    nmo_chunk_t *chunk,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    nmo_sprite_state_t *out_state = (nmo_sprite_state_t *)instance;
+    if (out_state == NULL || chunk == NULL) return NMO_ERR_INVALID_ARGUMENT;
+
+    nmo_sprite_state_t decoded = {0};
+    nmo_beobject_state_t *decoded_beobject = &decoded.entity.base.base;
+    const nmo_beobject_state_t *old_beobject = &out_state->entity.base.base;
+    if (old_beobject->scripts.allocator.alloc != NULL) {
+        decoded_beobject->scripts.allocator = old_beobject->scripts.allocator;
+    }
+    if (old_beobject->attributes.allocator.alloc != NULL) {
+        decoded_beobject->attributes.allocator = old_beobject->attributes.allocator;
+    }
+    if (old_beobject->legacy_attributes.allocator.alloc != NULL) {
+        decoded_beobject->legacy_attributes.allocator =
+            old_beobject->legacy_attributes.allocator;
+    }
+
+    nmo_status_t result = nmo_sprite_deserialize_internal(
+        &decoded, chunk, type, context);
+    if (result != NMO_OK) {
+        nmo_sprite_dispose_base_arrays(&decoded);
+        return result;
+    }
+
+    nmo_sprite_dispose_base_arrays(out_state);
+    *out_state = decoded;
+    return NMO_OK;
+}
+
 /* =============================================================================
  * CKSprite SERIALIZATION
  * ============================================================================= */
@@ -406,7 +473,7 @@ nmo_status_t nmo_sprite_deserialize(
  * 
  * Writes sprite data in original format (matches RCKSprite::Save behavior).
  */
-nmo_status_t nmo_sprite_serialize(
+static nmo_status_t nmo_sprite_serialize_internal(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
@@ -430,6 +497,7 @@ nmo_status_t nmo_sprite_serialize(
     if (result != NMO_OK) {
         return result;
     }
+    NMO_RETURN_IF_ERROR(nmo_sprite_validate(in_state, type, context));
 
     if (in_state->has_sprite_ref) {
         if (is_file || (save_flags & CK_STATESAVE_SPRITESHARED) != 0u) {
@@ -525,6 +593,32 @@ nmo_status_t nmo_sprite_serialize(
     }
     
     NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_sprite_serialize(
+    const void *instance,
+    nmo_chunk_t *out_chunk,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    if (instance == NULL || out_chunk == NULL || out_chunk->arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_chunk_t *staged = nmo_chunk_create(out_chunk->arena);
+    if (staged == NULL) return NMO_ERR_NOMEM;
+    staged->class_id = out_chunk->class_id;
+    staged->data_version = out_chunk->data_version;
+    staged->chunk_version = out_chunk->chunk_version;
+    staged->chunk_class_id = out_chunk->chunk_class_id;
+    staged->chunk_options = out_chunk->chunk_options;
+    staged->file_context = out_chunk->file_context;
+
+    nmo_status_t result = nmo_sprite_serialize_internal(
+        instance, staged, type, context);
+    if (result != NMO_OK) return result;
+    *out_chunk = *staged;
+    return NMO_OK;
 }
 
 static nmo_status_t nmo_sprite_copy_bitmapdata(
