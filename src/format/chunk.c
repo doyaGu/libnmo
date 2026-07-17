@@ -982,7 +982,9 @@ const struct nmo_chunk_file_context *nmo_chunk_get_file_context(const nmo_chunk_
  * - VERSION1/VERSION2: [Version][ClassID][Size][Reserved][IDCount][ChunkCount][...Data...]
  * - VERSION4: [PackedVersion][Size][...Data...] where PackedVersion contains class ID and options
  */
-nmo_status_t nmo_chunk_parse(nmo_chunk_t *chunk, const void *data, size_t size) {
+static nmo_status_t chunk_parse_into(nmo_chunk_t *chunk,
+                                     const void *data,
+                                     size_t size) {
     if (chunk == NULL || data == NULL || size == 0) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_chunk_parse");
     }
@@ -1143,7 +1145,8 @@ nmo_status_t nmo_chunk_parse(nmo_chunk_t *chunk, const void *data, size_t size) 
         /* Extract chunk options and class ID from packed version field */
         uint8_t chunk_options = (uint8_t) ((packed_chunk_version & 0xFF00) >> 8);
         chunk->chunk_class_id = (uint8_t) ((packed_data_version & 0xFF00) >> 8);
-        chunk->chunk_options = chunk_options;
+        chunk->chunk_options = chunk_options |
+            (chunk->chunk_options & NMO_CHUNK_OPTION_FILE);
 
         /* Use 8-bit class ID as the best available class_id in VERSION3/4 */
         chunk->class_id = (uint32_t) chunk->chunk_class_id;
@@ -1246,6 +1249,33 @@ nmo_status_t nmo_chunk_parse(nmo_chunk_t *chunk, const void *data, size_t size) 
     }
 
     NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_chunk_parse(nmo_chunk_t *chunk, const void *data, size_t size) {
+    if (chunk == NULL || chunk->arena == NULL || data == NULL || size == 0) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_chunk_parse");
+    }
+    if ((size % sizeof(uint32_t)) != 0 ||
+        ((uintptr_t)data % sizeof(uint32_t)) != 0) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Chunk buffer must be DWORD aligned");
+    }
+
+    nmo_chunk_t *staged = nmo_chunk_create(chunk->arena);
+    if (staged == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    staged->file_context = chunk->file_context;
+    staged->chunk_options = chunk->chunk_options & NMO_CHUNK_OPTION_FILE;
+
+    nmo_status_t result = chunk_parse_into(staged, data, size);
+    if (result != NMO_OK) {
+        return result;
+    }
+
+    *chunk = *staged;
+    return NMO_OK;
 }
 
 /**
