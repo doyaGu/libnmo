@@ -667,7 +667,9 @@ static nmo_status_t nmo_curve_deserialize_internal(
     uint32_t data_version = nmo_chunk_get_data_version(chunk);
 
     if (data_version < 5) {
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVECONTROLPOINT) == NMO_OK) {
+        result = nmo_chunk_seek_identifier(
+            chunk, CK_STATESAVE_CURVECONTROLPOINT);
+        if (result == NMO_OK) {
             nmo_ref_t *control_points = NULL;
             uint32_t control_point_count = 0;
             result = read_object_sequence(
@@ -679,24 +681,28 @@ static nmo_status_t nmo_curve_deserialize_internal(
             out_state->has_controlpoints_chunk = 1;
             out_state->control_point_ids = control_points;
             out_state->control_point_count = control_point_count;
-        }
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEFITCOEFF) == NMO_OK) {
+        } else if (result != NMO_ERR_NOT_FOUND) return result;
+        result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEFITCOEFF);
+        if (result == NMO_OK) {
             out_state->has_curve_data = 1;
             out_state->has_fitting_chunk = 1;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->fitting_coeff));
-        }
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVESTEPS) == NMO_OK) {
+        } else if (result != NMO_ERR_NOT_FOUND) return result;
+        result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVESTEPS);
+        if (result == NMO_OK) {
             out_state->has_curve_data = 1;
             out_state->has_steps_chunk = 1;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->step_count));
-        }
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEOPEN) == NMO_OK) {
+        } else if (result != NMO_ERR_NOT_FOUND) return result;
+        result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEOPEN);
+        if (result == NMO_OK) {
             out_state->has_curve_data = 1;
             out_state->has_open_chunk = 1;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->opened));
-        }
+        } else if (result != NMO_ERR_NOT_FOUND) return result;
     } else {
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEONLY) == NMO_OK) {
+        result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEONLY);
+        if (result == NMO_OK) {
             nmo_ref_t *control_points = NULL;
             uint32_t control_point_count = 0;
             result = read_object_sequence(
@@ -711,10 +717,11 @@ static nmo_status_t nmo_curve_deserialize_internal(
             NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->fitting_coeff));
             NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->step_count));
             NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->opened));
-        }
+        } else if (result != NMO_ERR_NOT_FOUND) return result;
     }
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVESAVEPOINTS) == NMO_OK) {
+    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVESAVEPOINTS);
+    if (result == NMO_OK) {
         out_state->has_savepoints_chunk = 1;
         if (chunk->chunk_options & NMO_CHUNK_OPTION_FILE) {
             out_state->savepoints_in_file = 1;
@@ -751,7 +758,7 @@ static nmo_status_t nmo_curve_deserialize_internal(
             out_state->sub_points = sub_points;
             out_state->sub_point_count = count;
         }
-    }
+    } else if (result != NMO_ERR_NOT_FOUND) return result;
 
     NMO_RETURN_OK();
 }
@@ -889,7 +896,9 @@ static nmo_status_t nmo_curvepoint_deserialize_internal(
     out_state->legacy_position = (nmo_vector_t){0.0f, 0.0f, 0.0f};
 
     if (data_version < 5) {
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEPOINTDEFAULTDATA) == NMO_OK) {
+        result = nmo_chunk_seek_identifier(
+            chunk, CK_STATESAVE_CURVEPOINTDEFAULTDATA);
+        if (result == NMO_OK) {
             nmo_ref_t curve = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
             int32_t use_tcb = 0;
             int32_t linear = 0;
@@ -915,27 +924,34 @@ static nmo_status_t nmo_curvepoint_deserialize_internal(
             out_state->linear = linear;
             out_state->legacy_position = legacy_position;
             out_state->has_legacy_position = 1;
-        }
+        } else if (result != NMO_ERR_NOT_FOUND) return result;
 
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEPOINTTCB) == NMO_OK) {
+        result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEPOINTTCB);
+        if (result == NMO_OK) {
             out_state->has_tcb_chunk = 1;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->tension));
             NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->continuity));
             NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->bias));
-        }
+        } else if (result != NMO_ERR_NOT_FOUND) return result;
 
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEPOINTCURVEPOS) == NMO_OK) {
+        result = nmo_chunk_seek_identifier(
+            chunk, CK_STATESAVE_CURVEPOINTCURVEPOS);
+        if (result == NMO_OK) {
             out_state->has_reserved_vector = 1;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_vector3(chunk, &out_state->reserved_vector));
-        }
+        } else if (result != NMO_ERR_NOT_FOUND) return result;
 
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEPOINTTANGENTS) == NMO_OK) {
+        result = nmo_chunk_seek_identifier(
+            chunk, CK_STATESAVE_CURVEPOINTTANGENTS);
+        if (result == NMO_OK) {
             out_state->has_tangents_chunk = 1;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_vector3(chunk, &out_state->tangent_in));
             NMO_RETURN_IF_ERROR(nmo_chunk_read_vector3(chunk, &out_state->tangent_out));
-        }
+        } else if (result != NMO_ERR_NOT_FOUND) return result;
     } else {
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEPOINTDEFAULTDATA) == NMO_OK) {
+        result = nmo_chunk_seek_identifier(
+            chunk, CK_STATESAVE_CURVEPOINTDEFAULTDATA);
+        if (result == NMO_OK) {
             nmo_ref_t curve = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
             int32_t use_tcb = 0;
             int32_t linear = 0;
@@ -968,25 +984,30 @@ static nmo_status_t nmo_curvepoint_deserialize_internal(
             out_state->bias = bias;
             out_state->tangent_in = tangent_in;
             out_state->tangent_out = tangent_out;
-        }
+        } else if (result != NMO_ERR_NOT_FOUND) return result;
 
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEPOINTTCB) == NMO_OK) {
+        result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEPOINTTCB);
+        if (result == NMO_OK) {
             out_state->has_tcb_chunk = 1;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->tension));
             NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->continuity));
             NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->bias));
-        }
+        } else if (result != NMO_ERR_NOT_FOUND) return result;
 
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEPOINTCURVEPOS) == NMO_OK) {
+        result = nmo_chunk_seek_identifier(
+            chunk, CK_STATESAVE_CURVEPOINTCURVEPOS);
+        if (result == NMO_OK) {
             out_state->has_reserved_vector = 1;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_vector3(chunk, &out_state->reserved_vector));
-        }
+        } else if (result != NMO_ERR_NOT_FOUND) return result;
 
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEPOINTTANGENTS) == NMO_OK) {
+        result = nmo_chunk_seek_identifier(
+            chunk, CK_STATESAVE_CURVEPOINTTANGENTS);
+        if (result == NMO_OK) {
             out_state->has_tangents_chunk = 1;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_vector3(chunk, &out_state->tangent_in));
             NMO_RETURN_IF_ERROR(nmo_chunk_read_vector3(chunk, &out_state->tangent_out));
-        }
+        } else if (result != NMO_ERR_NOT_FOUND) return result;
     }
 
     NMO_RETURN_OK();
