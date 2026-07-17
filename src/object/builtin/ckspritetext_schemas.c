@@ -29,6 +29,15 @@
 
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(spritetext, nmo_spritetext_state_t)
 
+static void nmo_spritetext_dispose_base_arrays(nmo_spritetext_state_t *state)
+{
+    if (state == NULL) return;
+    nmo_beobject_state_t *beobject = &state->base.entity.base.base;
+    nmo_array_dispose(&beobject->scripts);
+    nmo_array_dispose(&beobject->attributes);
+    nmo_array_dispose(&beobject->legacy_attributes);
+}
+
 /* =============================================================================
  * REFLECTION FIELDS
  * ============================================================================= */
@@ -108,29 +117,25 @@ static nmo_status_t deserialize_font_properties(
     /* Read font size */
     result = nmo_chunk_read_int(chunk, &state->font.size);
     if (result != NMO_OK) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-            "Failed to read font size (identifier 0x02000000)");
+        return result;
     }
     
     /* Read font weight */
     result = nmo_chunk_read_int(chunk, &state->font.weight);
     if (result != NMO_OK) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-            "Failed to read font weight (identifier 0x02000000)");
+        return result;
     }
     
     /* Read italic flag */
     result = nmo_chunk_read_int(chunk, &state->font.italic);
     if (result != NMO_OK) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-            "Failed to read italic flag (identifier 0x02000000)");
+        return result;
     }
 
     /* Read underline flag */
     result = nmo_chunk_read_int(chunk, &state->font.underline);
     if (result != NMO_OK) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-            "Failed to read underline flag (identifier 0x02000000)");
+        return result;
     }
     
     NMO_RETURN_OK();
@@ -150,15 +155,13 @@ static nmo_status_t deserialize_colors(
     /* Read font color */
     result = nmo_chunk_read_dword(chunk, &state->font_color);
     if (result != NMO_OK) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-            "Failed to read font color (identifier 0x04000000)");
+        return result;
     }
     
     /* Read background color */
     result = nmo_chunk_read_dword(chunk, &state->background_color);
     if (result != NMO_OK) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-            "Failed to read background color (identifier 0x04000000)");
+        return result;
     }
     
     NMO_RETURN_OK();
@@ -238,8 +241,7 @@ static nmo_status_t ckspritetext_serialize_modern(
     
     result = nmo_chunk_write_string(chunk, state->text_content ? state->text_content : "");
     if (result != NMO_OK) {
-        NMO_RETURN_ERROR(NMO_ERR_CANT_WRITE_FILE, NMO_SEVERITY_ERROR,
-            "Failed to write text string (identifier 0x01000000)");
+        return result;
     }
     
     /* Write identifier 0x02000000: Font properties */
@@ -248,8 +250,7 @@ static nmo_status_t ckspritetext_serialize_modern(
     
     result = nmo_chunk_write_string(chunk, state->font.font_name);
     if (result != NMO_OK) {
-        NMO_RETURN_ERROR(NMO_ERR_CANT_WRITE_FILE, NMO_SEVERITY_ERROR,
-            "Failed to write font name (identifier 0x02000000)");
+        return result;
     }
     
     result = nmo_chunk_write_int(chunk, state->font.size);
@@ -367,7 +368,7 @@ static void nmo_spritetext_post_delete(
  * CKSpriteText Deserialization / Serialization
  * ======================================================================== */
 
-nmo_status_t nmo_spritetext_deserialize(
+static nmo_status_t nmo_spritetext_deserialize_internal(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -395,7 +396,45 @@ nmo_status_t nmo_spritetext_deserialize(
     return ckspritetext_normalize_state(out_state, NULL, arena);
 }
 
-nmo_status_t nmo_spritetext_serialize(
+nmo_status_t nmo_spritetext_deserialize(
+    void *instance,
+    nmo_chunk_t *chunk,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    nmo_spritetext_state_t *out_state =
+        (nmo_spritetext_state_t *)instance;
+    if (out_state == NULL || chunk == NULL) return NMO_ERR_INVALID_ARGUMENT;
+
+    nmo_spritetext_state_t decoded = {0};
+    nmo_beobject_state_t *decoded_beobject =
+        &decoded.base.entity.base.base;
+    const nmo_beobject_state_t *old_beobject =
+        &out_state->base.entity.base.base;
+    if (old_beobject->scripts.allocator.alloc != NULL) {
+        decoded_beobject->scripts.allocator = old_beobject->scripts.allocator;
+    }
+    if (old_beobject->attributes.allocator.alloc != NULL) {
+        decoded_beobject->attributes.allocator = old_beobject->attributes.allocator;
+    }
+    if (old_beobject->legacy_attributes.allocator.alloc != NULL) {
+        decoded_beobject->legacy_attributes.allocator =
+            old_beobject->legacy_attributes.allocator;
+    }
+
+    nmo_status_t result = nmo_spritetext_deserialize_internal(
+        &decoded, chunk, type, context);
+    if (result != NMO_OK) {
+        nmo_spritetext_dispose_base_arrays(&decoded);
+        return result;
+    }
+
+    nmo_spritetext_dispose_base_arrays(out_state);
+    *out_state = decoded;
+    return NMO_OK;
+}
+
+static nmo_status_t nmo_spritetext_serialize_internal(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
@@ -416,6 +455,32 @@ nmo_status_t nmo_spritetext_serialize(
     }
 
     return ckspritetext_serialize_modern(in_state, out_chunk, arena);
+}
+
+nmo_status_t nmo_spritetext_serialize(
+    const void *instance,
+    nmo_chunk_t *out_chunk,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    if (instance == NULL || out_chunk == NULL || out_chunk->arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_chunk_t *staged = nmo_chunk_create(out_chunk->arena);
+    if (staged == NULL) return NMO_ERR_NOMEM;
+    staged->class_id = out_chunk->class_id;
+    staged->data_version = out_chunk->data_version;
+    staged->chunk_version = out_chunk->chunk_version;
+    staged->chunk_class_id = out_chunk->chunk_class_id;
+    staged->chunk_options = out_chunk->chunk_options;
+    staged->file_context = out_chunk->file_context;
+
+    nmo_status_t result = nmo_spritetext_serialize_internal(
+        instance, staged, type, context);
+    if (result != NMO_OK) return result;
+    *out_chunk = *staged;
+    return NMO_OK;
 }
 
 /* ============================================================================
