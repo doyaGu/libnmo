@@ -230,7 +230,7 @@ static nmo_status_t nmo_dataarray_deserialize_internal(
                 }
             }
         }
-    }
+    } else if (result != NMO_ERR_NOT_FOUND) return result;
 
     /* Read data matrix */
     result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_DATAARRAYDATA);
@@ -350,7 +350,7 @@ static nmo_status_t nmo_dataarray_deserialize_internal(
                 }
             }
         }
-    }
+    } else if (result != NMO_ERR_NOT_FOUND) return result;
 
     /* Read metadata members */
     result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_DATAARRAYMEMBERS);
@@ -367,7 +367,7 @@ static nmo_status_t nmo_dataarray_deserialize_internal(
             result = nmo_chunk_read_int(chunk, &out_state->key_column);
             if (result != NMO_OK) return result;
         }
-    }
+    } else if (result != NMO_ERR_NOT_FOUND) return result;
 
     NMO_RETURN_OK();
 }
