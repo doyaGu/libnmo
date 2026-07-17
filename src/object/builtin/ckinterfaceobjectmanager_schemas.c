@@ -76,8 +76,12 @@ static nmo_status_t nmo_interfaceobjectmanager_deserialize_internal(
     int32_t parsed_count = 0;
     nmo_chunk_t **parsed_chunks = NULL;
     nmo_guid_t parsed_guid = NMO_GUID_NULL;
+    uint8_t parsed_has_chunks = 0;
+    uint8_t parsed_has_guid = 0;
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_IOM_CHUNKS) == NMO_OK) {
+    nmo_status_t seek_result = nmo_chunk_seek_identifier(
+        chunk, CK_STATESAVE_IOM_CHUNKS);
+    if (seek_result == NMO_OK) {
         int32_t count = 0;
         nmo_status_t result = nmo_chunk_read_int(chunk, &count);
         if (result != NMO_OK) {
@@ -114,20 +118,23 @@ static nmo_status_t nmo_interfaceobjectmanager_deserialize_internal(
         }
         parsed_count = count;
         parsed_chunks = chunks;
-        out_state->has_chunks_chunk = 1;
-    }
+        parsed_has_chunks = 1;
+    } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_IOM_GUID) == NMO_OK) {
+    seek_result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_IOM_GUID);
+    if (seek_result == NMO_OK) {
         nmo_status_t result = nmo_chunk_read_guid(chunk, &parsed_guid);
         if (result != NMO_OK) {
             return result;
         }
-        out_state->has_guid_chunk = 1;
-    }
+        parsed_has_guid = 1;
+    } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
     out_state->chunk_count = parsed_count;
     out_state->chunks = parsed_chunks;
+    out_state->has_chunks_chunk = parsed_has_chunks;
     out_state->guid = parsed_guid;
+    out_state->has_guid_chunk = parsed_has_guid;
 
     NMO_RETURN_OK();
 }
