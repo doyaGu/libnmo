@@ -491,14 +491,14 @@ static nmo_status_t nmo_beobject_deserialize_internal(
         if (result == NMO_OK) {
             result = nmo_beobject_read_object_sequence(chunk, &out_state->scripts);
             if (result != NMO_OK) return result;
-        }
+        } else if (result != NMO_ERR_NOT_FOUND) return result;
     }
 
     result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SCRIPTS);
     if (result == NMO_OK) {
         result = nmo_beobject_read_object_sequence(chunk, &out_state->scripts);
         if (result != NMO_OK) return result;
-    }
+    } else if (result != NMO_ERR_NOT_FOUND) return result;
 
     /* Load priority data - optional section */
     result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_DATAS);
@@ -526,7 +526,7 @@ static nmo_status_t nmo_beobject_deserialize_internal(
                 out_state->priority = 0;
             }
         }
-    }
+    } else if (result != NMO_ERR_NOT_FOUND) return result;
 
     /* Load attributes - optional section */
     result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_NEWATTRIBUTES);
@@ -605,16 +605,22 @@ static nmo_status_t nmo_beobject_deserialize_internal(
 
         NMO_RETURN_IF_ERROR(nmo_array_swap(&out_state->attributes, &decoded));
         nmo_array_dispose(&decoded);
-    } else if (nmo_chunk_seek_identifier(
-                   chunk, CK_STATESAVE_ATTRIBUTES) == NMO_OK) {
-        result = nmo_beobject_read_legacy_attributes(chunk, out_state);
-        if (result != NMO_OK) return result;
-    }
+    } else if (result == NMO_ERR_NOT_FOUND) {
+        result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_ATTRIBUTES);
+        if (result == NMO_OK) {
+            result = nmo_beobject_read_legacy_attributes(chunk, out_state);
+            if (result != NMO_OK) return result;
+        } else if (result != NMO_ERR_NOT_FOUND) return result;
+    } else return result;
     /* If identifier not found, attributes section is optional - continue */
 
-    if (is_file && nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SINGLEACTIVITY) == NMO_OK) {
-        out_state->has_single_activity = 1;
-        NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->single_activity_flags));
+    if (is_file) {
+        result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SINGLEACTIVITY);
+        if (result == NMO_OK) {
+            out_state->has_single_activity = 1;
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(
+                chunk, &out_state->single_activity_flags));
+        } else if (result != NMO_ERR_NOT_FOUND) return result;
     }
 
     nmo_beobject_check_ref_classes(out_state, context);
