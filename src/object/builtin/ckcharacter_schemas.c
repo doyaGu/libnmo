@@ -719,6 +719,20 @@ static void nmo_character_check_ref_classes(
         &state->floor_ref, repository, types, NMO_CID_3DENTITY);
 }
 
+static nmo_status_t nmo_character_seek_optional(
+    nmo_chunk_t *chunk,
+    uint32_t identifier,
+    bool *out_found)
+{
+    nmo_status_t result = nmo_chunk_seek_identifier(chunk, identifier);
+    if (result == NMO_OK) {
+        *out_found = true;
+        return NMO_OK;
+    }
+    *out_found = false;
+    return result == NMO_ERR_NOT_FOUND ? NMO_OK : result;
+}
+
 static nmo_status_t nmo_character_deserialize_internal(
     nmo_chunk_t *chunk,
     void *context,
@@ -747,15 +761,20 @@ static nmo_status_t nmo_character_deserialize_internal(
 
     const uint32_t data_version = nmo_chunk_get_data_version(chunk);
     const bool is_file = nmo_character_is_file_mode_deser(chunk, context);
+    bool section_found = false;
     if (data_version < 5) {
         if (is_file) {
-            if (nmo_chunk_seek_identifier(
-                    chunk, CK_STATESAVE_CHARACTERBODYPARTS) == NMO_OK) {
+            result = nmo_character_seek_optional(
+                chunk, CK_STATESAVE_CHARACTERBODYPARTS, &section_found);
+            if (result != NMO_OK) goto fail;
+            if (section_found) {
                 result = read_part_sequence(chunk, &decoded.body_parts);
                 if (result != NMO_OK) goto fail;
             }
-            if (nmo_chunk_seek_identifier(
-                    chunk, CK_STATESAVE_CHARACTERANIMATIONS) == NMO_OK) {
+            result = nmo_character_seek_optional(
+                chunk, CK_STATESAVE_CHARACTERANIMATIONS, &section_found);
+            if (result != NMO_OK) goto fail;
+            if (section_found) {
                 result = read_ref_sequence(chunk, &decoded.animations);
                 if (result != NMO_OK) goto fail;
                 result = nmo_ref_read(chunk, &decoded.active_animation);
@@ -764,8 +783,10 @@ static nmo_status_t nmo_character_deserialize_internal(
                 if (result != NMO_OK) goto fail;
             }
         } else {
-            if (nmo_chunk_seek_identifier(
-                    chunk, CK_STATESAVE_CHARACTERSAVEANIMS) == NMO_OK) {
+            result = nmo_character_seek_optional(
+                chunk, CK_STATESAVE_CHARACTERSAVEANIMS, &section_found);
+            if (result != NMO_OK) goto fail;
+            if (section_found) {
                 uint32_t unused = 0;
                 result = nmo_chunk_read_dword(chunk, &unused);
                 if (result != NMO_OK) goto fail;
@@ -774,8 +795,10 @@ static nmo_status_t nmo_character_deserialize_internal(
                 result = nmo_ref_read(chunk, &decoded.anim_dest);
                 if (result != NMO_OK) goto fail;
             }
-            if (nmo_chunk_seek_identifier(
-                    chunk, CK_STATESAVE_CHARACTERSAVEPARTS) == NMO_OK) {
+            result = nmo_character_seek_optional(
+                chunk, CK_STATESAVE_CHARACTERSAVEPARTS, &section_found);
+            if (result != NMO_OK) goto fail;
+            if (section_found) {
                 uint32_t count = 0;
                 result = nmo_chunk_read_dword(chunk, &count);
                 if (result != NMO_OK) goto fail;
@@ -799,24 +822,32 @@ static nmo_status_t nmo_character_deserialize_internal(
                 }
             }
         }
-        if (nmo_chunk_seek_identifier(
-                chunk, CK_STATESAVE_CHARACTERROOT) == NMO_OK) {
+        result = nmo_character_seek_optional(
+            chunk, CK_STATESAVE_CHARACTERROOT, &section_found);
+        if (result != NMO_OK) goto fail;
+        if (section_found) {
             result = nmo_ref_read(chunk, &decoded.root_body_part);
             if (result != NMO_OK) goto fail;
         }
-        if (nmo_chunk_seek_identifier(
-                chunk, CK_STATESAVE_CHARACTERFLOORREF) == NMO_OK) {
+        result = nmo_character_seek_optional(
+            chunk, CK_STATESAVE_CHARACTERFLOORREF, &section_found);
+        if (result != NMO_OK) goto fail;
+        if (section_found) {
             result = nmo_ref_read(chunk, &decoded.floor_ref);
             if (result != NMO_OK) goto fail;
         }
     } else {
-        if (nmo_chunk_seek_identifier(
-                chunk, CK_STATESAVE_CHARACTERBODYPARTS) == NMO_OK) {
+        result = nmo_character_seek_optional(
+            chunk, CK_STATESAVE_CHARACTERBODYPARTS, &section_found);
+        if (result != NMO_OK) goto fail;
+        if (section_found) {
             result = read_part_sequence(chunk, &decoded.body_parts);
             if (result != NMO_OK) goto fail;
         }
-        if (nmo_chunk_seek_identifier(
-                chunk, CK_STATESAVE_CHARACTERSAVEPARTS) == NMO_OK) {
+        result = nmo_character_seek_optional(
+            chunk, CK_STATESAVE_CHARACTERSAVEPARTS, &section_found);
+        if (result != NMO_OK) goto fail;
+        if (section_found) {
             size_t count = 0;
             result = nmo_chunk_start_read_sub_chunk_sequence(chunk, &count);
             if (result != NMO_OK) goto fail;
@@ -831,8 +862,10 @@ static nmo_status_t nmo_character_deserialize_internal(
                 if (result != NMO_OK) goto fail;
             }
         }
-        if (nmo_chunk_seek_identifier(
-                chunk, CK_STATESAVE_CHARACTERONLY) == NMO_OK) {
+        result = nmo_character_seek_optional(
+            chunk, CK_STATESAVE_CHARACTERONLY, &section_found);
+        if (result != NMO_OK) goto fail;
+        if (section_found) {
             if (is_file) {
                 result = read_ref_sequence(chunk, &decoded.animations);
                 if (result != NMO_OK) goto fail;
@@ -966,10 +999,15 @@ static nmo_status_t nmo_bodypart_deserialize_internal(
     uint8_t has_rotation_joint = 0;
     nmo_ref_t character = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     nmo_ik_joint_t rotation_joint = {0};
+    bool section_found = false;
+    nmo_status_t result = NMO_OK;
 
     if (data_version >= 5) {
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BODYPARTCHARACTER) == NMO_OK) {
-            nmo_status_t result = nmo_ref_read(chunk, &character);
+        result = nmo_character_seek_optional(
+            chunk, CK_STATESAVE_BODYPARTCHARACTER, &section_found);
+        if (result != NMO_OK) return result;
+        if (section_found) {
+            result = nmo_ref_read(chunk, &character);
             if (result != NMO_OK) return result;
             has_character = 1;
 
@@ -981,10 +1019,13 @@ static nmo_status_t nmo_bodypart_deserialize_internal(
             }
         }
     } else {
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BODYPARTROTJOINT) == NMO_OK) {
+        result = nmo_character_seek_optional(
+            chunk, CK_STATESAVE_BODYPARTROTJOINT, &section_found);
+        if (result != NMO_OK) return result;
+        if (section_found) {
             nmo_vector_t vectors[6];
             memset(vectors, 0, sizeof(vectors));
-            nmo_status_t result = read_exact_sized_buffer(chunk, vectors, sizeof(vectors));
+            result = read_exact_sized_buffer(chunk, vectors, sizeof(vectors));
             if (result != NMO_OK) return result;
 
             has_rotation_joint = 1;
@@ -1003,8 +1044,11 @@ static nmo_status_t nmo_bodypart_deserialize_internal(
             }
         }
 
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BODYPARTCHARACTER) == NMO_OK) {
-            nmo_status_t result = nmo_ref_read(chunk, &character);
+        result = nmo_character_seek_optional(
+            chunk, CK_STATESAVE_BODYPARTCHARACTER, &section_found);
+        if (result != NMO_OK) return result;
+        if (section_found) {
+            result = nmo_ref_read(chunk, &character);
             if (result != NMO_OK) return result;
             has_character = 1;
         }
