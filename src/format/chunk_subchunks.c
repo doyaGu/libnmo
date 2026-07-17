@@ -38,6 +38,21 @@ static nmo_status_t validate_sub_chunk_payload(const nmo_chunk_t *sub) {
     return NMO_OK;
 }
 
+static nmo_status_t prepare_sub_chunk_payload(
+    nmo_chunk_t *chunk, const nmo_chunk_t *sub)
+{
+    nmo_status_t result = validate_sub_chunk_payload(sub);
+    NMO_RETURN_IF_ERROR(result);
+
+    const size_t total_dwords = 8u + sub->data.count + sub->ids.count +
+        sub->chunk_refs.count + sub->managers.count;
+    if (total_dwords > SIZE_MAX / sizeof(uint32_t)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    return nmo_chunk_check_size(
+        chunk, total_dwords * sizeof(uint32_t));
+}
+
 static nmo_status_t write_sub_chunk_payload(nmo_chunk_t *chunk, const nmo_chunk_t *sub) {
     nmo_status_t result;
 
@@ -48,11 +63,10 @@ static nmo_status_t write_sub_chunk_payload(nmo_chunk_t *chunk, const nmo_chunk_
     const uint32_t chunk_count = (uint32_t) sub->chunk_refs.count;
     const uint32_t manager_count = (uint32_t) sub->managers.count;
 
-    const uint32_t header_dwords = 8u;
-    const uint32_t total_dwords = header_dwords + data_count + id_count +
-                                  chunk_count + manager_count;
+    const uint32_t total_size = 7u + data_count + id_count +
+                                chunk_count + manager_count;
 
-    result = nmo_chunk_write_dword(chunk, total_dwords - 1u);
+    result = nmo_chunk_write_dword(chunk, total_size);
     NMO_RETURN_IF_ERROR(result);
 
     result = nmo_chunk_write_dword(chunk, (uint32_t) sub->class_id);
@@ -113,41 +127,51 @@ nmo_status_t nmo_chunk_write_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t *sub) {
     if (sub == NULL) {
         return nmo_chunk_write_dword(chunk, 0u);
     }
-    nmo_status_t validation = validate_sub_chunk_payload(sub);
-    NMO_RETURN_IF_ERROR(validation);
-
-    if (chunk->file_context != NULL && sub->file_context == NULL) {
-        sub->file_context = chunk->file_context;
-        sub->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_status_t result = prepare_sub_chunk_payload(chunk, sub);
+    NMO_RETURN_IF_ERROR(result);
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
+    if (state->current_pos > UINT32_MAX) {
+        return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    /* Set CHN flag and track sub-chunk */
-    chunk->chunk_options |= NMO_CHUNK_OPTION_CHN;
+    const size_t chunks_count_before = chunk->chunks.count;
+    const size_t refs_count_before = chunk->chunk_refs.count;
+    const uint32_t options_before = chunk->chunk_options;
     nmo_status_t list_result = nmo_arena_array_append(&chunk->chunks, &sub);
-    NMO_RETURN_IF_ERROR(list_result);
-
-    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
-    if (!state) {
-        NMO_CHUNK_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR,
-                               "Failed to get parser state");
+    if (list_result != NMO_OK) {
+        chunk->chunks.count = chunks_count_before;
+        return list_result;
     }
 
     size_t size_header_offset = state->current_pos;
 
     /* Track sub-chunk position before writing (CK2 AddEntry uses CurrentPos-1). */
-    size_t refs_count_before = chunk->chunk_refs.count;
-    nmo_status_t result;
     {
         uint32_t header_pos = (uint32_t) size_header_offset;
         result = nmo_arena_array_append(&chunk->chunk_refs, &header_pos);
     }
-    NMO_RETURN_IF_ERROR(result);
+    if (result != NMO_OK) {
+        chunk->chunks.count = chunks_count_before;
+        chunk->chunk_refs.count = refs_count_before;
+        return result;
+    }
+
+    const nmo_chunk_file_context_t *sub_file_context_before = sub->file_context;
+    const uint32_t sub_options_before = sub->chunk_options;
+    if (chunk->file_context != NULL && sub->file_context == NULL) {
+        sub->file_context = chunk->file_context;
+        sub->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    }
+    chunk->chunk_options |= NMO_CHUNK_OPTION_CHN;
 
     /* Write payload */
     result = write_sub_chunk_payload(chunk, sub);
     if (result != NMO_OK) {
-        /* Roll back the appended entry to preserve consistency. */
+        chunk->chunks.count = chunks_count_before;
         chunk->chunk_refs.count = refs_count_before;
+        chunk->chunk_options = options_before;
+        sub->file_context = sub_file_context_before;
+        sub->chunk_options = sub_options_before;
         return result;
     }
 
@@ -160,9 +184,19 @@ nmo_status_t nmo_chunk_write_sub_chunk_sequence(nmo_chunk_t *chunk, nmo_chunk_t 
     if (sub == NULL) {
         return nmo_chunk_write_dword(chunk, 0u);
     }
-    nmo_status_t validation = validate_sub_chunk_payload(sub);
-    NMO_RETURN_IF_ERROR(validation);
+    nmo_status_t result = prepare_sub_chunk_payload(chunk, sub);
+    NMO_RETURN_IF_ERROR(result);
 
+    const size_t chunks_count_before = chunk->chunks.count;
+    const uint32_t options_before = chunk->chunk_options;
+    nmo_status_t list_result = nmo_arena_array_append(&chunk->chunks, &sub);
+    if (list_result != NMO_OK) {
+        chunk->chunks.count = chunks_count_before;
+        return list_result;
+    }
+
+    const nmo_chunk_file_context_t *sub_file_context_before = sub->file_context;
+    const uint32_t sub_options_before = sub->chunk_options;
     if (chunk->file_context != NULL && sub->file_context == NULL) {
         sub->file_context = chunk->file_context;
         sub->chunk_options |= NMO_CHUNK_OPTION_FILE;
@@ -171,10 +205,15 @@ nmo_status_t nmo_chunk_write_sub_chunk_sequence(nmo_chunk_t *chunk, nmo_chunk_t 
     /* In CK2, WriteSubChunkSequence does not add entries to the chunk refs list.
        The sequence marker added by StartSubChunkSequence tracks the sequence. */
     chunk->chunk_options |= NMO_CHUNK_OPTION_CHN;
-    nmo_status_t list_result = nmo_arena_array_append(&chunk->chunks, &sub);
-    NMO_RETURN_IF_ERROR(list_result);
 
-    return write_sub_chunk_payload(chunk, sub);
+    result = write_sub_chunk_payload(chunk, sub);
+    if (result != NMO_OK) {
+        chunk->chunks.count = chunks_count_before;
+        chunk->chunk_options = options_before;
+        sub->file_context = sub_file_context_before;
+        sub->chunk_options = sub_options_before;
+    }
+    return result;
 }
 
 nmo_status_t nmo_chunk_start_read_sub_chunk_sequence(nmo_chunk_t *chunk, size_t *out_count) {
