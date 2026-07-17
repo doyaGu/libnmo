@@ -276,6 +276,37 @@ TEST(objanim_controllers, negative_morph_counts_are_rejected_atomically) {
     nmo_arena_destroy(arena);
 }
 
+TEST(objanim_controllers, oversized_morph_payload_is_rejected_before_allocation) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NE(NULL, arena);
+    nmo_deserialize_context_t des_ctx = nmo_deserialize_context_create(
+        arena, NULL, NULL, 0);
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NE(NULL, chunk);
+    chunk->class_id = NMO_CID_OBJECTANIMATION;
+    chunk->data_version = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        chunk, CK_STATESAVE_OBJANIMMORPHKEYS2));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_float(chunk, 0.0f));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, UINT32_MAX));
+    nmo_chunk_close(chunk);
+
+    nmo_objectanimation_state_t state;
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_vtable.create(
+        &state, NULL, NULL));
+    state.format = CKOBJANIM_FORMAT_SHARED;
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_objectanimation_deserialize(
+        &state, chunk, NULL, &des_ctx));
+    ASSERT_EQ(CKOBJANIM_FORMAT_SHARED, state.format);
+
+    nmo_objectanimation_vtable.destroy(&state, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 /* ========================================================================
  * Test: deep copy preserves controller data
  * ======================================================================== */
@@ -350,5 +381,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(objanim_controllers, shared_no_controllers);
     REGISTER_TEST(objanim_controllers, key_size_helper);
     REGISTER_TEST(objanim_controllers, negative_morph_counts_are_rejected_atomically);
+    REGISTER_TEST(objanim_controllers, oversized_morph_payload_is_rejected_before_allocation);
     REGISTER_TEST(objanim_controllers, copy_controllers);
 TEST_MAIN_END()
