@@ -218,11 +218,17 @@ nmo_status_t nmo_chunk_write_sub_chunk_sequence(nmo_chunk_t *chunk, nmo_chunk_t 
 
 nmo_status_t nmo_chunk_start_read_sub_chunk_sequence(nmo_chunk_t *chunk, size_t *out_count) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
+    if (out_count) *out_count = 0;
+    size_t start_pos = nmo_chunk_get_position(chunk);
 
     // Read sequence count (stored as single DWORD)
     uint32_t count;
     nmo_status_t result = nmo_chunk_read_dword(chunk, &count);
     NMO_RETURN_IF_ERROR(result);
+    if (!nmo_chunk_has_read_capacity(chunk, (size_t)count)) {
+        nmo_chunk_get_parser_state(chunk)->current_pos = start_pos;
+        return NMO_ERR_TRUNCATED_CHUNK;
+    }
 
     // Store count if requested
     if (out_count) {
@@ -452,25 +458,49 @@ nmo_status_t nmo_chunk_read_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t **out_sub)
 
 nmo_status_t nmo_chunk_start_sub_chunk_sequence(nmo_chunk_t *chunk, size_t count) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
+    if (count > UINT32_MAX) {
+        NMO_CHUNK_RETURN_INVALID_ARGUMENT(
+            "Subchunk sequence count does not fit the 32-bit format");
+    }
 
-    chunk->chunk_options |= NMO_CHUNK_OPTION_CHN;
     nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
     if (!state) {
         NMO_CHUNK_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR,
                                "Failed to get parser state");
     }
+    if (state->current_pos > UINT32_MAX) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    nmo_status_t result = nmo_chunk_check_size(
+        chunk, sizeof(uint32_t));
+    NMO_RETURN_IF_ERROR(result);
+
+    const size_t refs_count_before = chunk->chunk_refs.count;
+    const uint32_t options_before = chunk->chunk_options;
 
     // Track sequence start (CK2 AddEntries)
     uint32_t sentinel = 0xFFFFFFFFu;
-    nmo_status_t result = nmo_arena_array_append(&chunk->chunk_refs, &sentinel);
-    NMO_RETURN_IF_ERROR(result);
+    result = nmo_arena_array_append(&chunk->chunk_refs, &sentinel);
+    if (result != NMO_OK) {
+        chunk->chunk_refs.count = refs_count_before;
+        return result;
+    }
     {
         uint32_t pos = (uint32_t) state->current_pos;
         result = nmo_arena_array_append(&chunk->chunk_refs, &pos);
     }
-    NMO_RETURN_IF_ERROR(result);
+    if (result != NMO_OK) {
+        chunk->chunk_refs.count = refs_count_before;
+        return result;
+    }
 
-    return nmo_chunk_write_dword(chunk, (uint32_t) count);
+    chunk->chunk_options |= NMO_CHUNK_OPTION_CHN;
+    result = nmo_chunk_write_dword(chunk, (uint32_t) count);
+    if (result != NMO_OK) {
+        chunk->chunk_refs.count = refs_count_before;
+        chunk->chunk_options = options_before;
+    }
+    return result;
 }
 
 // =============================================================================
