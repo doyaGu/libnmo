@@ -2719,6 +2719,43 @@ TEST(interface_chunk, sectioned_graph_count_stays_in_section) {
     nmo_arena_destroy(arena);
 }
 
+TEST(interface_chunk, sectioned_body_count_stays_in_section) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, 0xB0000001u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0x16));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, 0xB0000002u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, 0xB0070000u));
+    write_script_header_fields(chunk, 100, 0, 0, 0.0f, 0.0f);
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_float(chunk, 10.0f));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_float(chunk, 20.0f));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_float(chunk, 50.0f));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, 0xB0020000u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, 0x7F123456u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0));
+    nmo_chunk_close(chunk);
+
+    nmo_interface_data_t rejected;
+    memset(&rejected, 0xA5, sizeof(rejected));
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK,
+        nmo_interface_chunk_parse(chunk, arena, NULL, &rejected));
+    nmo_chunk_parser_state_t *parser =
+        (nmo_chunk_parser_state_t *)chunk->parser_state;
+    ASSERT_NOT_NULL(parser);
+    ASSERT_EQ(parser->prev_identifier_pos + 3u, parser->current_pos);
+    ASSERT_EQ(0u, rejected.version);
+    ASSERT_NULL(rejected.subs);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST(interface_chunk, sectioned_parameter_and_graph_sections_round_trip) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
     ASSERT_NOT_NULL(arena);
@@ -2876,6 +2913,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(interface_chunk, behavior_copy_deep_copies_interface_data);
     REGISTER_TEST(interface_chunk, sectioned_parameter_count_stays_in_section);
     REGISTER_TEST(interface_chunk, sectioned_graph_count_stays_in_section);
+    REGISTER_TEST(interface_chunk, sectioned_body_count_stays_in_section);
     REGISTER_TEST(interface_chunk, sectioned_parameter_and_graph_sections_round_trip);
 TEST_MAIN_END()
 
