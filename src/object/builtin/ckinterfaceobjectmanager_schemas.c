@@ -54,6 +54,26 @@ static const nmo_type_field_t nmo_interfaceobjectmanager_fields[] = {
 #define CK_STATESAVE_IOM_CHUNKS 0x01234567u
 #define CK_STATESAVE_IOM_GUID   0x87654321u
 
+static size_t nmo_interfaceobjectmanager_identifier_remaining_dwords(
+    const nmo_chunk_t *chunk)
+{
+    if (!chunk || !chunk->parser_state) return 0;
+
+    const nmo_chunk_parser_state_t *state =
+        (const nmo_chunk_parser_state_t *)chunk->parser_state;
+    const uint32_t *data =
+        NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    size_t next_pos = chunk->data.count;
+    if (state->prev_identifier_pos + 1u < chunk->data.count) {
+        const uint32_t candidate = data[state->prev_identifier_pos + 1u];
+        if (candidate != 0 && candidate <= chunk->data.count) {
+            next_pos = candidate;
+        }
+    }
+    if (next_pos < state->current_pos) return 0;
+    return next_pos - state->current_pos;
+}
+
 static nmo_status_t nmo_interfaceobjectmanager_deserialize_internal(
     nmo_interfaceobjectmanager_state_t *out_state,
     nmo_chunk_t *chunk,
@@ -95,7 +115,8 @@ static nmo_status_t nmo_interfaceobjectmanager_deserialize_internal(
             NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                              "CKInterfaceObjectManager chunk allocation size overflow");
         }
-        if (!nmo_chunk_has_read_capacity(chunk, (size_t)count)) {
+        if ((size_t)count >
+            nmo_interfaceobjectmanager_identifier_remaining_dwords(chunk)) {
             NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                              "CKInterfaceObjectManager chunk count exceeds remaining DWORDs");
         }
