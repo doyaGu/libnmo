@@ -136,6 +136,54 @@ TEST(chunk, clone_null_params) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk, clone_rejects_malformed_public_state) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t* chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+
+    nmo_arena_array_t* arrays[] = {
+        &chunk->data,
+        &chunk->ids,
+        &chunk->chunk_refs,
+        &chunk->managers,
+        &chunk->chunks,
+    };
+    const size_t element_sizes[] = {
+        sizeof(uint32_t),
+        sizeof(uint32_t),
+        sizeof(uint32_t),
+        sizeof(uint32_t),
+        sizeof(nmo_chunk_t*),
+    };
+
+    for (size_t i = 0; i < sizeof(arrays) / sizeof(arrays[0]); ++i) {
+        arrays[i]->count = 1;
+        arrays[i]->capacity = 1;
+        ASSERT_NULL(nmo_chunk_clone(chunk, arena));
+        ASSERT_EQ(NMO_ERR_INVALID_STATE, nmo_last_error_code());
+
+        arrays[i]->data = (void*)(uintptr_t)1;
+        arrays[i]->count = 2;
+        ASSERT_NULL(nmo_chunk_clone(chunk, arena));
+
+        arrays[i]->count = 1;
+        arrays[i]->element_size = element_sizes[i] + 1u;
+        ASSERT_NULL(nmo_chunk_clone(chunk, arena));
+
+        arrays[i]->data = NULL;
+        arrays[i]->count = 0;
+        arrays[i]->capacity = 0;
+        arrays[i]->element_size = element_sizes[i];
+    }
+
+    chunk->raw_size = 4;
+    ASSERT_NULL(nmo_chunk_clone(chunk, arena));
+    ASSERT_EQ(NMO_ERR_INVALID_STATE, nmo_last_error_code());
+
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk, header_rejects_unencodable_public_state) {
     nmo_arena_t* arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
@@ -174,5 +222,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk, get_operations_null);
     REGISTER_TEST(chunk, add_subchunk_null);
     REGISTER_TEST(chunk, clone_null_params);
+    REGISTER_TEST(chunk, clone_rejects_malformed_public_state);
     REGISTER_TEST(chunk, header_rejects_unencodable_public_state);
 TEST_MAIN_END()
