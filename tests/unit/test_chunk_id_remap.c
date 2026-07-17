@@ -128,6 +128,24 @@ TEST(chunk_id_remap, id_remap_basic) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, object_visibility_seek_errors_propagate_atomically) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t *malformed = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(malformed);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(malformed));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(malformed, 0x12345678u));
+    nmo_chunk_close(malformed);
+
+    nmo_object_state_t state = {
+        .visibility_flags = NMO_CKOBJECT_HIERARCHICAL,
+    };
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_object_deserialize(
+        &state, malformed, NULL, NULL));
+    ASSERT_EQ(NMO_CKOBJECT_HIERARCHICAL, state.visibility_flags);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, single_id_remap) {
     nmo_arena_t* arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
@@ -7212,6 +7230,7 @@ TEST(chunk_id_remap, legacy_unresolved_id_preserves_raw_id) {
 
 TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, id_remap_basic);
+    REGISTER_TEST(chunk_id_remap, object_visibility_seek_errors_propagate_atomically);
     REGISTER_TEST(chunk_id_remap, single_id_remap);
     REGISTER_TEST(chunk_id_remap, sequence_id_remap);
     REGISTER_TEST(chunk_id_remap, subchunk_id_remap);
