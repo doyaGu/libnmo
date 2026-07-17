@@ -14,6 +14,10 @@
 
 nmo_status_t nmo_chunk_write_object_sequence_start(nmo_chunk_t *chunk, size_t count) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
+    if (count > (size_t)INT32_MAX) {
+        NMO_CHUNK_RETURN_INVALID_ARGUMENT(
+            "Object sequence count does not fit the signed 32-bit format");
+    }
 
     nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
     if (!state) {
