@@ -191,10 +191,43 @@ TEST(chunk_writer, rejects_unencodable_byte_counts) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_writer, rejects_unencodable_sequence_counts_atomically) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_writer_t* writer = nmo_chunk_writer_create(arena);
+    ASSERT_NOT_NULL(writer);
+    nmo_chunk_writer_start(writer, 401, NMO_CHUNK_VERSION4);
+
+#if SIZE_MAX > UINT32_MAX
+    const size_t oversized_count = (size_t)UINT32_MAX + 1u;
+    const nmo_guid_t manager = {0x11111111u, 0x22222222u};
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+        nmo_chunk_writer_start_object_sequence(writer, oversized_count));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+        nmo_chunk_writer_start_manager_sequence(writer, manager, oversized_count));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+        nmo_chunk_writer_start_subchunk_sequence(writer, oversized_count));
+#endif
+
+    ASSERT_EQ(NMO_OK, nmo_chunk_writer_write_dword(writer, 0x12345678u));
+    nmo_chunk_t* chunk = nmo_chunk_writer_finalize(writer);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(1u, chunk->data.count);
+    ASSERT_EQ(0u, chunk->ids.count);
+    ASSERT_EQ(0u, chunk->managers.count);
+    ASSERT_EQ(0u, chunk->chunk_refs.count);
+    ASSERT_EQ(0u, chunk->chunk_options &
+        (NMO_CHUNK_OPTION_IDS | NMO_CHUNK_OPTION_MAN | NMO_CHUNK_OPTION_CHN));
+
+    nmo_chunk_writer_destroy(writer);
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_writer, primitives);
     REGISTER_TEST(chunk_writer, roundtrip);
     REGISTER_TEST(chunk_writer, object_ids);
     REGISTER_TEST(chunk_writer, growth);
     REGISTER_TEST(chunk_writer, rejects_unencodable_byte_counts);
+    REGISTER_TEST(chunk_writer, rejects_unencodable_sequence_counts_atomically);
 TEST_MAIN_END()
