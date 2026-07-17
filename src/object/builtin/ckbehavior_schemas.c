@@ -142,6 +142,19 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
     } while (0),
     ((void)0))
 
+static void nmo_behavior_dispose_ref_arrays(nmo_behavior_state_t *state)
+{
+    if (state == NULL) return;
+    nmo_array_dispose(&state->sub_behaviors);
+    nmo_array_dispose(&state->sub_behavior_links);
+    nmo_array_dispose(&state->operations);
+    nmo_array_dispose(&state->in_parameters);
+    nmo_array_dispose(&state->out_parameters);
+    nmo_array_dispose(&state->local_parameters);
+    nmo_array_dispose(&state->inputs);
+    nmo_array_dispose(&state->outputs);
+}
+
 /* Legacy identifier values (older CK2 builds) */
 #define CK_STATESAVE_BEHAVIORINTERFACE_LEGACY      0x00000001u
 #define CK_STATESAVE_BEHAVIORNEWDATA_LEGACY        0x00000002u
@@ -380,7 +393,7 @@ static void behavior_check_ref_classes(
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-nmo_status_t nmo_behavior_deserialize(
+static nmo_status_t nmo_behavior_deserialize_internal(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -673,6 +686,36 @@ nmo_status_t nmo_behavior_deserialize(
 
     behavior_check_ref_classes(out_state, context);
     NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_behavior_deserialize(
+    void *instance,
+    nmo_chunk_t *chunk,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    if (instance == NULL || chunk == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_behavior_state_t decoded = {0};
+    nmo_status_t result = nmo_behavior_create(&decoded, type, context);
+    if (result != NMO_OK) {
+        nmo_behavior_dispose_ref_arrays(&decoded);
+        return result;
+    }
+
+    result = nmo_behavior_deserialize_internal(
+        &decoded, chunk, type, context);
+    if (result != NMO_OK) {
+        nmo_behavior_dispose_ref_arrays(&decoded);
+        return result;
+    }
+
+    nmo_behavior_state_t *out_state = (nmo_behavior_state_t *)instance;
+    nmo_behavior_dispose_ref_arrays(out_state);
+    *out_state = decoded;
+    return NMO_OK;
 }
 
 static nmo_status_t build_interface_file_index_remap(
