@@ -1728,11 +1728,44 @@ TEST(chunk_id_remap, parameter_object_ref_round_trips_raw_id) {
 
     nmo_parameter_state_t failed;
     ASSERT_EQ(NMO_OK, nmo_parameter_vtable.create(&failed, NULL, NULL));
+    failed.type_guid = CKPGUID_INT;
+    failed.mode = CKPARAM_MODE_BUFFER;
+    failed.has_state = true;
     failed.object_ref = nmo_ref_from_raw(702);
+    failed.manager_guid.d1 = 0x11223344u;
+    failed.manager_value = 55;
+    uint8_t old_byte = 0xabu;
+    ASSERT_EQ(NMO_OK, nmo_array_append(&failed.buffer_data, &old_byte));
     ASSERT_NE(NMO_OK, nmo_parameter_deserialize(
         &failed, truncated, NULL, &deserialize_context));
+    ASSERT_TRUE(nmo_guid_equals(CKPGUID_INT, failed.type_guid));
+    ASSERT_EQ(CKPARAM_MODE_BUFFER, failed.mode);
+    ASSERT_TRUE(failed.has_state);
     ASSERT_EQ(702u, failed.object_ref.raw_id);
     ASSERT_EQ(NMO_REF_UNRESOLVED, failed.object_ref.state);
+    ASSERT_EQ(0x11223344u, failed.manager_guid.d1);
+    ASSERT_EQ(55u, failed.manager_value);
+    ASSERT_EQ(1u, failed.buffer_data.count);
+    ASSERT_EQ(0xabu, NMO_ARRAY_DATA(uint8_t, &failed.buffer_data)[0]);
+
+    nmo_parameter_state_t invalid = source;
+    invalid.object_ref = nmo_ref_from_id(999);
+    nmo_chunk_t *target = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(target);
+    target->class_id = NMO_CID_PARAMETER;
+    target->data_version = 8;
+    target->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(target, &write_context);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(target, 0x12345678u));
+    nmo_chunk_close(target);
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_parameter_serialize(
+        &invalid, target, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(target));
+    uint32_t marker = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(target, &marker));
+    ASSERT_EQ(0x12345678u, marker);
 
     nmo_parameter_vtable.destroy(&source, NULL, NULL);
     nmo_parameter_vtable.destroy(&loaded, NULL, NULL);
