@@ -614,10 +614,12 @@ nmo_status_t nmo_chunk_parser_read_bytes(nmo_chunk_parser_t *p, void *dest, size
 }
 
 nmo_status_t nmo_chunk_parser_read_string(nmo_chunk_parser_t *p, char **out, nmo_arena_t *arena) {
+    if (out != NULL) {
+        *out = NULL;
+    }
     if (p == NULL || out == NULL || arena == NULL) {
         NMO_PARSER_RETURN_INVALID_ARGUMENT("Invalid parser or output");
     }
-    *out = NULL;
 
     size_t start_pos = p->cursor;
 
@@ -672,12 +674,15 @@ nmo_status_t nmo_chunk_parser_read_buffer(nmo_chunk_parser_t *p,
                                          void **out,
                                          size_t *size,
                                          nmo_arena_t *arena) {
+    if (out != NULL) {
+        *out = NULL;
+    }
+    if (size != NULL) {
+        *size = 0;
+    }
     if (p == NULL || out == NULL || size == NULL || arena == NULL) {
         NMO_PARSER_RETURN_INVALID_ARGUMENT("Invalid parser or output");
     }
-
-    *out = NULL;
-    *size = 0;
 
     size_t start_pos = p->cursor;
 
@@ -1130,6 +1135,9 @@ nmo_status_t nmo_chunk_parser_start_read_sequence(nmo_chunk_parser_t *p, size_t 
 nmo_status_t nmo_chunk_parser_read_subchunk(nmo_chunk_parser_t *p,
                                             nmo_arena_t *arena,
                                             nmo_chunk_t **out_chunk) {
+    if (out_chunk != NULL) {
+        *out_chunk = NULL;
+    }
     if (p == NULL || arena == NULL || out_chunk == NULL) {
         NMO_PARSER_RETURN_INVALID_ARGUMENT("Invalid parser or output");
     }
@@ -1139,8 +1147,6 @@ nmo_status_t nmo_chunk_parser_read_subchunk(nmo_chunk_parser_t *p,
     }
 
     size_t start_pos = p->cursor;
-
-    *out_chunk = NULL;
 
     // Read size (in DWORDs, includes the size field itself - so actual data is size-1)
     uint32_t size_dwords = 0;
