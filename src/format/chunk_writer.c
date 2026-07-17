@@ -197,6 +197,39 @@ static nmo_status_t writer_append_aligned_bytes(nmo_chunk_writer_t *w,
     return NMO_OK;
 }
 
+static nmo_status_t writer_append_sized_bytes(nmo_chunk_writer_t *w,
+                                              const void *data,
+                                              size_t bytes) {
+    if (w == NULL || w->finalized || bytes > UINT32_MAX ||
+        (bytes > 0 && data == NULL)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    size_t rounded_bytes = 0;
+    if (!nmo_safe_add_size(bytes, sizeof(uint32_t) - 1u, &rounded_bytes)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    const size_t payload_dwords = rounded_bytes / sizeof(uint32_t);
+    size_t needed_dwords = 0;
+    if (!nmo_safe_add_size(payload_dwords, 1u, &needed_dwords)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    int result = ensure_data_capacity(w, needed_dwords);
+    if (result != NMO_OK) {
+        return result;
+    }
+
+    w->data[w->data_size++] = (uint32_t)bytes;
+    if (payload_dwords > 0) {
+        memset(&w->data[w->data_size], 0,
+               payload_dwords * sizeof(uint32_t));
+        memcpy(&w->data[w->data_size], data, bytes);
+        w->data_size += payload_dwords;
+    }
+    return NMO_OK;
+}
+
 static nmo_status_t writer_append_float_span(nmo_chunk_writer_t *w,
                                              const float *values,
                                              size_t count) {
@@ -769,54 +802,18 @@ nmo_status_t nmo_chunk_writer_write_string(nmo_chunk_writer_t *w, const char *st
     // CK2 WriteString writes size = strlen + 1 (includes null terminator)
     // Reference: CKStateChunk::WriteString() (CKStateChunk.cpp:1204-1214)
     if (str == NULL) {
-        // Write size = 0 for NULL string
-        return nmo_chunk_writer_write_dword(w, 0);
+        return writer_append_sized_bytes(w, NULL, 0);
     }
 
-    uint32_t len = (uint32_t) strlen(str);
-    uint32_t size = len + 1;  // Include null terminator in size
-
-    // Write size (includes null terminator)
-    int result = nmo_chunk_writer_write_dword(w, size);
-    if (result != NMO_OK) {
-        return result;
+    const size_t len = strlen(str);
+    if (len >= UINT32_MAX) {
+        return NMO_ERR_INVALID_ARGUMENT;
     }
-
-    // Write string data including null terminator
-    if (size > 0) {
-        result = nmo_chunk_writer_write_bytes(w, str, size);
-        if (result != NMO_OK) {
-            return result;
-        }
-    }
-
-    return NMO_OK;
+    return writer_append_sized_bytes(w, str, len + 1u);
 }
 
 nmo_status_t nmo_chunk_writer_write_buffer(nmo_chunk_writer_t *w, const void *data, size_t size) {
-    if (w == NULL || w->finalized) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    // Write size
-    int result = nmo_chunk_writer_write_dword(w, (uint32_t) size);
-    if (result != NMO_OK) {
-        return result;
-    }
-
-    // Write buffer data (if not empty)
-    if (size > 0) {
-        if (data == NULL) {
-            return NMO_ERR_INVALID_ARGUMENT;
-        }
-
-        result = nmo_chunk_writer_write_bytes(w, data, size);
-        if (result != NMO_OK) {
-            return result;
-        }
-    }
-
-    return NMO_OK;
+    return writer_append_sized_bytes(w, data, size);
 }
 
 /**
