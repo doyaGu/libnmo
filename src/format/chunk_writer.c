@@ -333,6 +333,64 @@ static int ensure_u32_list_capacity(nmo_chunk_writer_t *w,
     return NMO_OK;
 }
 
+static int ensure_chunk_list_capacity(nmo_chunk_writer_t *w, size_t needed_entries) {
+    size_t required = 0;
+    if (!nmo_safe_add_size(w->chunk_count, needed_entries, &required)) {
+        return NMO_ERR_CORRUPT;
+    }
+    if (required <= w->chunk_capacity) {
+        return NMO_OK;
+    }
+
+    size_t new_capacity = (w->chunk_capacity == 0) ? 16 : w->chunk_capacity;
+    while (new_capacity < required) {
+        if (new_capacity > SIZE_MAX / 2u) {
+            return NMO_ERR_CORRUPT;
+        }
+        new_capacity *= 2u;
+    }
+
+    size_t alloc_bytes = 0;
+    if (!nmo_safe_mul_size(new_capacity, sizeof(nmo_chunk_t *), &alloc_bytes)) {
+        return NMO_ERR_CORRUPT;
+    }
+    nmo_chunk_t **new_list = (nmo_chunk_t **)nmo_arena_alloc(
+        w->arena, alloc_bytes, sizeof(void *));
+    if (new_list == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+
+    if (w->chunk_count > 0) {
+        if (w->chunk_list == NULL) {
+            return NMO_ERR_INVALID_STATE;
+        }
+        size_t copy_bytes = 0;
+        if (!nmo_safe_mul_size(w->chunk_count, sizeof(nmo_chunk_t *), &copy_bytes)) {
+            return NMO_ERR_CORRUPT;
+        }
+        memcpy(new_list, w->chunk_list, copy_bytes);
+    }
+    w->chunk_list = new_list;
+    w->chunk_capacity = new_capacity;
+    return NMO_OK;
+}
+
+static nmo_status_t writer_validate_dword_array(const nmo_arena_array_t *array) {
+    if (array == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (array->count > UINT32_MAX ||
+        array->count > SIZE_MAX / sizeof(uint32_t)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (array->count > 0 &&
+        (array->data == NULL || array->count > array->capacity ||
+         array->element_size != sizeof(uint32_t))) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    return NMO_OK;
+}
+
 static int writer_track_u32_position(nmo_chunk_writer_t *w,
                                      uint32_t **list,
                                      size_t *count,
@@ -444,14 +502,6 @@ static nmo_status_t writer_reserve_tracked_dword_span(nmo_chunk_writer_t *w,
     *out = &w->data[w->data_size];
     w->data_size += count;
     return NMO_OK;
-}
-
-static int track_chunk_position(nmo_chunk_writer_t *w, uint32_t position) {
-    return writer_track_u32_position(w,
-                                     &w->chunk_ref_list,
-                                     &w->chunk_ref_count,
-                                     &w->chunk_ref_capacity,
-                                     position);
 }
 
 static inline int writer_has_file_context(const nmo_chunk_writer_t *w) {
@@ -943,104 +993,74 @@ nmo_status_t nmo_chunk_writer_write_subchunk(nmo_chunk_writer_t *w, const nmo_ch
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    if (w->chunk != NULL) {
-        w->chunk->chunk_options |= NMO_CHUNK_OPTION_CHN;
-    }
-
-    // Add sub-chunk to chunk list for tracking
-    if (sub != NULL) {
-        // Grow chunk list if needed
-        if (w->chunk_count >= w->chunk_capacity) {
-            size_t new_capacity = (w->chunk_capacity == 0) ? 16 : w->chunk_capacity;
-            size_t required_entries = 0;
-            if (!nmo_safe_add_size(w->chunk_count, 1u, &required_entries)) {
-                return NMO_ERR_CORRUPT;
-            }
-            if (new_capacity < required_entries) {
-                while (new_capacity < required_entries) {
-                    if (new_capacity > (SIZE_MAX / 2u)) {
-                        return NMO_ERR_CORRUPT;
-                    }
-                    new_capacity *= 2u;
-                }
-            }
-
-            size_t alloc_bytes = 0;
-            if (!nmo_safe_mul_size(new_capacity, sizeof(nmo_chunk_t *), &alloc_bytes)) {
-                return NMO_ERR_CORRUPT;
-            }
-
-            nmo_chunk_t **new_list = (nmo_chunk_t **) nmo_arena_alloc(w->arena,
-                                                                      alloc_bytes,
-                                                                      sizeof(void *));
-            if (new_list == NULL) {
-                return NMO_ERR_NOMEM;
-            }
-
-            // Copy existing entries
-            if (w->chunk_count > 0 && w->chunk_list != NULL) {
-                size_t copy_bytes = 0;
-                if (!nmo_safe_mul_size(w->chunk_count, sizeof(nmo_chunk_t *), &copy_bytes)) {
-                    return NMO_ERR_CORRUPT;
-                }
-                memcpy(new_list, w->chunk_list, copy_bytes);
-            }
-
-            w->chunk_list = new_list;
-            w->chunk_capacity = new_capacity;
-        }
-
-        // Add sub-chunk to list
-        w->chunk_list[w->chunk_count++] = (nmo_chunk_t *)sub;
-    }
-
     uint32_t manager_count_field = 0;
     size_t payload_dwords = 0;
     const int has_subchunk = (sub != NULL);
 
     if (has_subchunk) {
         const int include_manager_field = (sub->chunk_version > 4); /* literal 4 */
-        manager_count_field = include_manager_field ? (uint32_t) sub->managers.count : 0u;
-
-        size_t header_fields = 6; /* class_id, version, chunk_size, has_file, id_count, chunk_count */
+        nmo_status_t result = writer_validate_dword_array(&sub->data);
+        if (result != NMO_OK) return result;
+        result = writer_validate_dword_array(&sub->ids);
+        if (result != NMO_OK) return result;
+        result = writer_validate_dword_array(&sub->chunk_refs);
+        if (result != NMO_OK) return result;
         if (include_manager_field) {
-            header_fields += 1; /* manager_count */
+            result = writer_validate_dword_array(&sub->managers);
+            if (result != NMO_OK) return result;
         }
 
-        payload_dwords = header_fields;
-        payload_dwords += sub->data.count;
-        if (sub->ids.count > 0) {
-            payload_dwords += sub->ids.count;
+        manager_count_field = include_manager_field ? (uint32_t)sub->managers.count : 0u;
+        payload_dwords = include_manager_field ? 7u : 6u;
+        const size_t counts[] = {
+            sub->data.count,
+            sub->ids.count,
+            sub->chunk_refs.count,
+            manager_count_field,
+        };
+        for (size_t i = 0; i < sizeof(counts) / sizeof(counts[0]); ++i) {
+            if (!nmo_safe_add_size(payload_dwords, counts[i], &payload_dwords) ||
+                payload_dwords > UINT32_MAX) {
+                return NMO_ERR_INVALID_ARGUMENT;
+            }
         }
-        if (sub->chunk_refs.count > 0) {
-            payload_dwords += sub->chunk_refs.count;
-        }
-        if (manager_count_field > 0) {
-            payload_dwords += manager_count_field;
+        if (w->data_size > UINT32_MAX) {
+            return NMO_ERR_INVALID_ARGUMENT;
         }
     }
 
     /* Size field stores number of DWORDs following it */
-    size_t total_needed = 1 + payload_dwords;
+    size_t total_needed = 0;
+    if (!nmo_safe_add_size(payload_dwords, 1u, &total_needed)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
 
-    // Ensure capacity
     int result = ensure_data_capacity(w, total_needed);
     if (result != NMO_OK) {
         return result;
     }
-
-    // Write size (number of DWORDs after this field)
-    w->data[w->data_size++] = (uint32_t) payload_dwords;
-
-    // Track this sub-chunk entry position (points to size field)
     if (has_subchunk) {
-        result = track_chunk_position(w, (uint32_t) (w->data_size - 1));
+        result = ensure_chunk_list_capacity(w, 1u);
+        if (result != NMO_OK) {
+            return result;
+        }
+        result = ensure_u32_list_capacity(w,
+                                          &w->chunk_ref_list,
+                                          w->chunk_ref_count,
+                                          &w->chunk_ref_capacity,
+                                          1u);
         if (result != NMO_OK) {
             return result;
         }
     }
 
+    const uint32_t size_field_position = (uint32_t)w->data_size;
+    w->data[w->data_size++] = (uint32_t)payload_dwords;
+
     if (has_subchunk) {
+        w->chunk_list[w->chunk_count++] = (nmo_chunk_t *)sub;
+        w->chunk_ref_list[w->chunk_ref_count++] = size_field_position;
+
         /* Class ID (full 32-bit) */
         w->data[w->data_size++] = sub->class_id;
 
@@ -1087,6 +1107,10 @@ nmo_status_t nmo_chunk_writer_write_subchunk(nmo_chunk_writer_t *w, const nmo_ch
             const uint32_t *managers = NMO_ARENA_ARRAY_DATA(uint32_t, &sub->managers);
             writer_append_reserved_dwords(w, managers, manager_count_field);
         }
+    }
+
+    if (w->chunk != NULL) {
+        w->chunk->chunk_options |= NMO_CHUNK_OPTION_CHN;
     }
 
     return NMO_OK;
