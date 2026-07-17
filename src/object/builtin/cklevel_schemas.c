@@ -61,6 +61,26 @@ static void nmo_level_dispose_state_arrays(nmo_level_state_t *state)
     nmo_array_dispose(&state->duplicate_manager_names);
 }
 
+static size_t nmo_level_identifier_remaining_dwords(
+    const nmo_chunk_t *chunk)
+{
+    if (!chunk || !chunk->parser_state) return 0;
+
+    const nmo_chunk_parser_state_t *state =
+        (const nmo_chunk_parser_state_t *)chunk->parser_state;
+    const uint32_t *data =
+        NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    size_t next_pos = chunk->data.count;
+    if (state->prev_identifier_pos + 1u < chunk->data.count) {
+        const uint32_t candidate = data[state->prev_identifier_pos + 1u];
+        if (candidate != 0 && candidate <= chunk->data.count) {
+            next_pos = candidate;
+        }
+    }
+    if (next_pos < state->current_pos) return 0;
+    return next_pos - state->current_pos;
+}
+
 static const nmo_allocator_t *nmo_level_array_allocator(
     const nmo_array_t *array)
 {
@@ -211,6 +231,9 @@ static nmo_status_t nmo_level_deserialize_internal(
         size_t legacy_count = 0;
         result = nmo_chunk_read_object_sequence_start(chunk, &legacy_count);
         if (result != NMO_OK) return result;
+        if (legacy_count > nmo_level_identifier_remaining_dwords(chunk)) {
+            return NMO_ERR_TRUNCATED_CHUNK;
+        }
         for (size_t i = 0; i < legacy_count; ++i) {
             nmo_object_id_t ignored_id = 0;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_object_sequence_item(chunk, &ignored_id));
@@ -219,6 +242,9 @@ static nmo_status_t nmo_level_deserialize_internal(
         /* 2) Legacy XObjectPointerArray (empty in modern files) */
         result = nmo_chunk_read_object_sequence_start(chunk, &legacy_count);
         if (result != NMO_OK) return result;
+        if (legacy_count > nmo_level_identifier_remaining_dwords(chunk)) {
+            return NMO_ERR_TRUNCATED_CHUNK;
+        }
         for (size_t i = 0; i < legacy_count; ++i) {
             nmo_object_id_t ignored_id = 0;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_object_sequence_item(chunk, &ignored_id));
@@ -229,18 +255,21 @@ static nmo_status_t nmo_level_deserialize_internal(
         result = nmo_chunk_read_object_sequence_start(chunk, &scene_count);
         if (result != NMO_OK) return result;
 
+        const uint32_t MAX_SCENES = 10000;
+        if (scene_count > MAX_SCENES ||
+            scene_count > SIZE_MAX / sizeof(nmo_ref_t)) {
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                             "Scene count exceeds maximum");
+        }
+        if (scene_count > nmo_level_identifier_remaining_dwords(chunk)) {
+            return NMO_ERR_TRUNCATED_CHUNK;
+        }
+
         nmo_array_t scene_ids;
         result = nmo_array_init(&scene_ids, sizeof(nmo_ref_t),
                                 scene_count, &out_state->scene_ids.allocator);
         if (result != NMO_OK) return result;
         if (scene_count > 0) {
-            const uint32_t MAX_SCENES = 10000;
-            if (scene_count > MAX_SCENES) {
-                nmo_array_dispose(&scene_ids);
-                NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
-                                 "Scene count exceeds maximum");
-            }
-
             nmo_ref_t *refs = NULL;
             result = nmo_array_extend(&scene_ids, scene_count, (void **)&refs);
             if (result != NMO_OK) {
