@@ -674,7 +674,7 @@ TEST(generated_advanced_probes, objectanimation_field_semantics_save_load_valida
         {.field_name = "format", .value_str = "2"},
         {.field_name = "root_pos", .value_str = "(1, 2, 3)"},
         {.field_name = "flags", .value_str = "1"},
-        {.field_name = "entity_id", .value_str = "3"},
+        {.field_name = "entity", .value_str = "3"},
         {.field_name = "has_length", .value_str = "1"},
         {.field_name = "length", .value_str = "12.5"},
     };
@@ -741,7 +741,7 @@ TEST(generated_advanced_probes, objectanimation_field_semantics_save_load_valida
     ASSERT_FLOAT_EQ(2.0f, state->root_pos.y, 0.0001f);
     ASSERT_FLOAT_EQ(3.0f, state->root_pos.z, 0.0001f);
     ASSERT_EQ(1u, state->flags);
-    ASSERT_EQ(nmo_object_get_id(entity_object), state->entity_id);
+    ASSERT_EQ(nmo_object_get_id(entity_object), nmo_ref_runtime_id(&state->entity));
     ASSERT_TRUE(state->has_length);
     ASSERT_FLOAT_EQ(12.5f, state->length, 0.0001f);
     ASSERT_EQ(0u, state->controller_count);
@@ -813,7 +813,7 @@ TEST(generated_advanced_probes, manifest_objectanimation_authoring_save_load_val
     ASSERT_FLOAT_EQ(2.0f, state->root_pos.y, 0.0001f);
     ASSERT_FLOAT_EQ(3.0f, state->root_pos.z, 0.0001f);
     ASSERT_EQ(1u, state->flags);
-    ASSERT_EQ(nmo_object_get_id(entity_object), state->entity_id);
+    ASSERT_EQ(nmo_object_get_id(entity_object), nmo_ref_runtime_id(&state->entity));
     ASSERT_TRUE(state->has_length);
     ASSERT_FLOAT_EQ(12.5f, state->length, 0.0001f);
     ASSERT_EQ(2u, state->controller_count);
@@ -896,7 +896,7 @@ TEST(generated_advanced_probes, manifest_objectanimation_newdata_morph_keys_save
         (const nmo_objectanimation_state_t *)nmo_object_get_state(animation_object);
     ASSERT_NOT_NULL(state);
     ASSERT_EQ(CKOBJANIM_FORMAT_NEWDATA, state->format);
-    ASSERT_EQ(nmo_object_get_id(entity_object), state->entity_id);
+    ASSERT_EQ(nmo_object_get_id(entity_object), nmo_ref_runtime_id(&state->entity));
     ASSERT_TRUE(state->has_morph_counts);
     ASSERT_EQ(2, state->morph_vertex_count);
     ASSERT_EQ(2, state->morph_key_count);

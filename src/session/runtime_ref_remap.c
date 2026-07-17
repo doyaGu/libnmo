@@ -301,6 +301,26 @@ static nmo_status_t runtime_remap_mesh_refs(
     return NMO_OK;
 }
 
+static nmo_status_t runtime_remap_keyedanimation_refs(
+    nmo_keyedanimation_state_t *state,
+    const nmo_id_remap_t *remap)
+{
+    if (!state) return NMO_OK;
+    if ((state->animation_count > 0 && !state->animation_ids) ||
+        (state->subanim_count > 0 && !state->subanims)) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    for (uint32_t i = 0; i < state->subanim_count; ++i) {
+        nmo_ref_t *ref = &state->subanims[i].ref;
+        nmo_object_id_t mapped = NMO_OBJECT_ID_NONE;
+        if (ref->state == NMO_REF_RESOLVED &&
+            runtime_lookup_mapping(remap, ref->id, &mapped)) {
+            ref->id = mapped;
+        }
+    }
+    return NMO_OK;
+}
+
 static const void *runtime_get_base_instance(
     const nmo_type_registry_t *types,
     const nmo_type_descriptor_t *derived_type,
@@ -380,6 +400,10 @@ nmo_status_t nmo_runtime_remap_copy_refs(
         if (nmo_guid_equals(current->guid, CKPGUID_MESH)) {
             NMO_RETURN_IF_ERROR(runtime_remap_mesh_refs(
                 (nmo_mesh_state_t *)current_instance, remap));
+        }
+        if (nmo_guid_equals(current->guid, CKPGUID_KEYEDANIMATION)) {
+            NMO_RETURN_IF_ERROR(runtime_remap_keyedanimation_refs(
+                (nmo_keyedanimation_state_t *)current_instance, remap));
         }
 
         if (nmo_guid_is_null(current->base_type)) {
@@ -491,6 +515,9 @@ static nmo_class_id_t normalize_expected_class_for_field(const char *name)
     }
     if (strstr(name, "scene") != NULL) return NMO_CID_SCENE;
     if (strcmp(name, "target") == 0) return NMO_CID_3DENTITY;
+    if (strcmp(name, "entity") == 0) return NMO_CID_3DENTITY;
+    if (strcmp(name, "root_entity") == 0) return NMO_CID_3DENTITY;
+    if (strcmp(name, "character") == 0) return NMO_CID_CHARACTER;
     if (strcmp(name, "curve_id") == 0 || strcmp(name, "curve") == 0) {
         return NMO_CID_CURVE;
     }
@@ -848,41 +875,52 @@ static nmo_status_t normalize_keyed_animation(
     if (state->animation_count > 0 && !state->animation_ids) {
         return NMO_ERR_VALIDATION_FAILED;
     }
-    if (state->subanim_count != 0 &&
-        (state->subanim_count != state->animation_count || !state->subanims)) {
+    if (state->subanim_count > 0 && !state->subanims) {
         return NMO_ERR_VALIDATION_FAILED;
     }
 
     uint32_t count = state->animation_count;
     for (uint32_t i = 0; i < count;) {
-        if (!normalize_id_is_invalid(repo, state->animation_ids[i]) &&
+        const nmo_ref_t *ref = &state->animation_ids[i];
+        const nmo_object_id_t id = nmo_ref_runtime_id(ref);
+        if (ref->state == NMO_REF_RESOLVED &&
+            !normalize_id_is_invalid(repo, id) &&
             !normalize_id_has_wrong_class(
-                repo, types, state->animation_ids[i],
-                NMO_CID_OBJECTANIMATION)) {
+                repo, types, id, NMO_CID_OBJECTANIMATION)) {
             ++i;
             continue;
-        }
-        if (state->subanim_count != 0 && state->subanims[i].chunk != NULL) {
-            nmo_chunk_destroy(state->subanims[i].chunk);
-            state->subanims[i].chunk = NULL;
         }
         uint32_t remaining = count - i - 1;
         if (remaining > 0) {
             memmove(&state->animation_ids[i], &state->animation_ids[i + 1],
                     (size_t)remaining * sizeof(*state->animation_ids));
-            if (state->subanim_count != 0) {
-                memmove(&state->subanims[i], &state->subanims[i + 1],
-                        (size_t)remaining * sizeof(*state->subanims));
-            }
         }
-        --count;
-        state->animation_count = count;
-        if (state->subanim_count != 0) {
-            state->subanim_count = count;
-            if (state->subanims != NULL) {
-                state->subanims[count].chunk = NULL;
-            }
+        state->animation_count = --count;
+        (*changes)++;
+    }
+
+    count = state->subanim_count;
+    for (uint32_t i = 0; i < count;) {
+        const nmo_ref_t *ref = &state->subanims[i].ref;
+        const nmo_object_id_t id = nmo_ref_runtime_id(ref);
+        if (ref->state == NMO_REF_RESOLVED &&
+            !normalize_id_is_invalid(repo, id) &&
+            !normalize_id_has_wrong_class(
+                repo, types, id, NMO_CID_OBJECTANIMATION)) {
+            ++i;
+            continue;
         }
+        if (state->subanims[i].chunk != NULL) {
+            nmo_chunk_destroy(state->subanims[i].chunk);
+            state->subanims[i].chunk = NULL;
+        }
+        const uint32_t remaining = count - i - 1;
+        if (remaining > 0) {
+            memmove(&state->subanims[i], &state->subanims[i + 1],
+                    (size_t)remaining * sizeof(*state->subanims));
+        }
+        state->subanim_count = --count;
+        state->subanims[count].chunk = NULL;
         (*changes)++;
     }
     return NMO_OK;

@@ -135,7 +135,7 @@ TEST(animation_edit, sets_object_animation_metadata)
         (const nmo_objectanimation_state_t *)nmo_object_get_state(animation_object);
     ASSERT_NOT_NULL(animation);
     ASSERT_EQ(CKOBJANIM_FORMAT_CONTROLLERS, animation->format);
-    ASSERT_EQ(entity_id, animation->entity_id);
+    ASSERT_EQ(entity_id, nmo_ref_runtime_id(&animation->entity));
     ASSERT_TRUE(animation->has_root_pos);
     ASSERT_FLOAT_EQ(1.0f, animation->root_pos.x, 0.0001f);
     ASSERT_FLOAT_EQ(2.0f, animation->root_pos.y, 0.0001f);

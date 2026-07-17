@@ -293,7 +293,7 @@ typedef struct nmo_attribute_descriptor {
 } nmo_attribute_descriptor_t;
 
 typedef struct nmo_keyedanimation_subanim {
-    nmo_object_id_t object_id;
+    nmo_ref_t ref;
     nmo_chunk_t *chunk;
 } nmo_keyedanimation_subanim_t;
 

@@ -891,7 +891,7 @@ TEST(script_edit_transaction,
 }
 
 TEST(script_edit_transaction,
-     reference_validation_allows_preexisting_broken_refs_for_value_only_parameter_edit)
+     reference_validation_allows_value_only_parameter_edit)
 {
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
@@ -907,9 +907,9 @@ TEST(script_edit_transaction,
 
     ref_graph = nmo_session_get_ref_graph(session);
     ASSERT_NOT_NULL(ref_graph);
-    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,
+    ASSERT_EQ(NMO_OK,
               nmo_ref_graph_validate(ref_graph, &broken_edges, &broken_count));
-    ASSERT_EQ(2u, broken_count);
+    ASSERT_EQ(0u, broken_count);
 
     ASSERT_EQ(NMO_OK, begin_test_script_edit(ctx, session, "param-edit", &tx));
     ASSERT_NOT_NULL(tx);
@@ -991,7 +991,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(script_edit_transaction,
                   remove_io_detaches_behavior_links);
     REGISTER_TEST(script_edit_transaction,
-                  reference_validation_allows_preexisting_broken_refs_for_value_only_parameter_edit);
+                  reference_validation_allows_value_only_parameter_edit);
     REGISTER_TEST(script_edit_transaction,
                   reference_validation_rejects_new_broken_ref_beyond_preexisting_baseline);
     REGISTER_TEST(script_edit_transaction,

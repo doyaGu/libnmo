@@ -189,7 +189,7 @@ TEST(objanim_controllers, shared_no_controllers) {
     state_out.base.base.visibility_flags = 1;
     state_out.format = CKOBJANIM_FORMAT_SHARED;
     state_out.has_shared_anim = 1;
-    state_out.shared_anim_id = 42;
+    state_out.shared_anim = nmo_ref_from_id(42);
     state_out.flags = 0x01;
 
     nmo_chunk_t *chunk = nmo_chunk_create(arena);
@@ -286,6 +286,8 @@ TEST(objanim_controllers, copy_controllers) {
     ASSERT_NE(src.controllers[0].data, dst.controllers[0].data); /* different buffers */
     ASSERT_EQ(0, memcmp(src.controllers[0].data, dst.controllers[0].data,
                         src.controllers[0].data_size));
+    ASSERT_TRUE(type->vtable->equals(&src, &dst));
+    ASSERT_EQ(type->vtable->hash(&src), type->vtable->hash(&dst));
 
     nmo_arena_destroy(arena);
 }

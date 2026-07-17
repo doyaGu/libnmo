@@ -3397,7 +3397,7 @@ nmo_status_t nmo_animation_edit_set_object_animation(
     }
 
     state->format = settings->format;
-    state->entity_id = settings->entity_id;
+    state->entity = nmo_ref_from_id(settings->entity_id);
     if (settings->has_root_position) {
         state->has_root_pos = 1u;
         state->root_pos.x = settings->root_position[0];

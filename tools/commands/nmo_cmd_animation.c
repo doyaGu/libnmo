@@ -85,6 +85,16 @@ static const char *animation_format_name(nmo_objectanimation_format_t fmt) {
     }
 }
 
+static const nmo_class_id_t animation_class_ids[] = {
+    NMO_CID_ANIMATION,
+    NMO_CID_KEYEDANIMATION,
+    NMO_CID_OBJECTANIMATION,
+};
+
+static const nmo_class_id_t object_animation_class_ids[] = {
+    NMO_CID_OBJECTANIMATION,
+};
+
 /** Check if an object is an animation-related class */
 static bool is_animation_class(const nmo_cmd_ctx_t *c, nmo_class_id_t cid) {
     if (cid == NMO_CID_OBJECTANIMATION || cid == NMO_CID_KEYEDANIMATION)
@@ -144,7 +154,9 @@ static int animation_list_json_visitor(size_t index,
         if (st) {
             yyjson_mut_obj_add_real(doc, item, "length",
                 st->has_length ? (double)st->length : 0.0);
-            yyjson_mut_obj_add_uint(doc, item, "entity_id", st->entity_id);
+            const nmo_object_id_t entity_id = nmo_ref_runtime_id(&st->entity);
+            if (entity_id != NMO_OBJECT_ID_NONE)
+                yyjson_mut_obj_add_uint(doc, item, "entity_id", entity_id);
         }
     } else {
         nmo_animation_state_t *st =
@@ -191,7 +203,9 @@ static int animation_list_table_visitor(size_t index,
         if (st) {
             if (st->has_length)
                 snprintf(len_buf, sizeof(len_buf), "%.1f", (double)st->length);
-            snprintf(target_buf, sizeof(target_buf), "%u", st->entity_id);
+            const nmo_object_id_t entity_id = nmo_ref_runtime_id(&st->entity);
+            if (entity_id != NMO_OBJECT_ID_NONE)
+                snprintf(target_buf, sizeof(target_buf), "%u", entity_id);
         }
     } else {
         nmo_animation_state_t *st =
@@ -201,8 +215,10 @@ static int animation_list_table_visitor(size_t index,
                 snprintf(len_buf, sizeof(len_buf), "%.1f", (double)st->length);
             if (st->has_data)
                 snprintf(fps_buf, sizeof(fps_buf), "%.1f", (double)st->frame_rate);
-            if (st->has_root_entity)
-                snprintf(target_buf, sizeof(target_buf), "%u", st->root_entity_id);
+            if (st->has_root_entity &&
+                st->root_entity.state == NMO_REF_RESOLVED)
+                snprintf(target_buf, sizeof(target_buf), "%u",
+                         st->root_entity.id);
         }
     }
 
@@ -291,7 +307,9 @@ int nmo_cmd_animation_show(int argc, char **argv, const nmo_cli_global_opts_t *g
         .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
         .positional_id = positional_id,
         .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
-        .required_base_class = NMO_CID_ANIMATION,
+        .allowed_class_ids = animation_class_ids,
+        .allowed_class_count = sizeof(animation_class_ids) /
+                               sizeof(animation_class_ids[0]),
         .selector_label = "Animation",
         .type_label = "animation class",
     };
@@ -329,7 +347,9 @@ int nmo_cmd_animation_show(int argc, char **argv, const nmo_cli_global_opts_t *g
                 yyjson_mut_obj_add_str(doc, data, "format",
                                        animation_format_name(st->format));
                 yyjson_mut_obj_add_uint(doc, data, "flags", st->flags);
-                yyjson_mut_obj_add_uint(doc, data, "entity_id", st->entity_id);
+                const nmo_object_id_t entity_id = nmo_ref_runtime_id(&st->entity);
+                if (entity_id != NMO_OBJECT_ID_NONE)
+                    yyjson_mut_obj_add_uint(doc, data, "entity_id", entity_id);
                 if (st->has_length)
                     yyjson_mut_obj_add_real(doc, data, "length", (double)st->length);
                 yyjson_mut_obj_add_uint(doc, data, "controller_count", st->controller_count);
@@ -339,8 +359,12 @@ int nmo_cmd_animation_show(int argc, char **argv, const nmo_cli_global_opts_t *g
                 }
                 if (st->has_merge) {
                     yyjson_mut_obj_add_real(doc, data, "merge_factor", (double)st->merge_factor);
-                    yyjson_mut_obj_add_uint(doc, data, "anim1_id", st->anim1_id);
-                    yyjson_mut_obj_add_uint(doc, data, "anim2_id", st->anim2_id);
+                    const nmo_object_id_t anim1_id = nmo_ref_runtime_id(&st->anim1);
+                    const nmo_object_id_t anim2_id = nmo_ref_runtime_id(&st->anim2);
+                    if (anim1_id != NMO_OBJECT_ID_NONE)
+                        yyjson_mut_obj_add_uint(doc, data, "anim1_id", anim1_id);
+                    if (anim2_id != NMO_OBJECT_ID_NONE)
+                        yyjson_mut_obj_add_uint(doc, data, "anim2_id", anim2_id);
                 }
             }
         } else if (cid == NMO_CID_KEYEDANIMATION) {
@@ -358,9 +382,12 @@ int nmo_cmd_animation_show(int argc, char **argv, const nmo_cli_global_opts_t *g
                 yyjson_mut_obj_add_uint(doc, data, "animation_count", st->animation_count);
                 yyjson_mut_val *anim_arr = yyjson_mut_arr(doc);
                 for (uint32_t ai = 0; ai < st->animation_count; ++ai) {
+                    const nmo_object_id_t animation_id =
+                        nmo_ref_runtime_id(&st->animation_ids[ai]);
+                    if (animation_id == NMO_OBJECT_ID_NONE) continue;
                     yyjson_mut_val *entry = yyjson_mut_obj(doc);
-                    yyjson_mut_obj_add_uint(doc, entry, "id", st->animation_ids[ai]);
-                    nmo_object_t *aobj = nmo_core_find_by_id(&c, st->animation_ids[ai]);
+                    yyjson_mut_obj_add_uint(doc, entry, "id", animation_id);
+                    nmo_object_t *aobj = nmo_core_find_by_id(&c, animation_id);
                     if (aobj) {
                         const char *aname = nmo_object_get_name(aobj);
                         nmo_cli_json_add_str_safe(doc, entry, "name",
@@ -387,10 +414,14 @@ int nmo_cmd_animation_show(int argc, char **argv, const nmo_cli_global_opts_t *g
                 }
                 if (st->has_length)
                     yyjson_mut_obj_add_real(doc, data, "length", (double)st->length);
-                if (st->has_root_entity)
-                    yyjson_mut_obj_add_uint(doc, data, "root_entity_id", st->root_entity_id);
-                if (st->has_character)
-                    yyjson_mut_obj_add_uint(doc, data, "character_id", st->character_id);
+                if (st->has_root_entity &&
+                    st->root_entity.state == NMO_REF_RESOLVED)
+                    yyjson_mut_obj_add_uint(doc, data, "root_entity_id",
+                                            st->root_entity.id);
+                if (st->has_character &&
+                    st->character.state == NMO_REF_RESOLVED)
+                    yyjson_mut_obj_add_uint(doc, data, "character_id",
+                                            st->character.id);
                 if (st->has_current_step)
                     yyjson_mut_obj_add_real(doc, data, "current_step", (double)st->current_step);
             }
@@ -418,9 +449,12 @@ int nmo_cmd_animation_show(int argc, char **argv, const nmo_cli_global_opts_t *g
                 snprintf(flags_buf, sizeof(flags_buf), "0x%08x", st->flags);
                 nmo_cli_print_kv(c.out, "Flags", flags_buf, 18, c.colorize);
 
-                char eid_buf[16];
-                snprintf(eid_buf, sizeof(eid_buf), "%u", st->entity_id);
-                nmo_cli_print_kv(c.out, "Entity ID", eid_buf, 18, c.colorize);
+                const nmo_object_id_t entity_id = nmo_ref_runtime_id(&st->entity);
+                if (entity_id != NMO_OBJECT_ID_NONE) {
+                    char eid_buf[16];
+                    snprintf(eid_buf, sizeof(eid_buf), "%u", entity_id);
+                    nmo_cli_print_kv(c.out, "Entity ID", eid_buf, 18, c.colorize);
+                }
 
                 if (st->has_length) {
                     char len_buf[16];
@@ -456,7 +490,9 @@ int nmo_cmd_animation_show(int argc, char **argv, const nmo_cli_global_opts_t *g
                     char merge_buf[64];
                     snprintf(merge_buf, sizeof(merge_buf),
                              "factor=%.2f, anim1=%u, anim2=%u",
-                             (double)st->merge_factor, st->anim1_id, st->anim2_id);
+                             (double)st->merge_factor,
+                             nmo_ref_runtime_id(&st->anim1),
+                             nmo_ref_runtime_id(&st->anim2));
                     nmo_cli_print_kv(c.out, "Merge", merge_buf, 18, c.colorize);
                 }
             }
@@ -485,13 +521,16 @@ int nmo_cmd_animation_show(int argc, char **argv, const nmo_cli_global_opts_t *g
                 nmo_cli_print_kv(c.out, "Animations", ac_buf, 18, c.colorize);
 
                 for (uint32_t ai = 0; ai < st->animation_count; ++ai) {
-                    nmo_object_t *aobj = nmo_core_find_by_id(&c, st->animation_ids[ai]);
+                    const nmo_object_id_t animation_id =
+                        nmo_ref_runtime_id(&st->animation_ids[ai]);
+                    if (animation_id == NMO_OBJECT_ID_NONE) continue;
+                    nmo_object_t *aobj = nmo_core_find_by_id(&c, animation_id);
                     const char *aname = aobj ? nmo_object_get_name(aobj) : NULL;
                     char line[128];
                     if (aname && aname[0])
-                        snprintf(line, sizeof(line), "#%u (%s)", st->animation_ids[ai], aname);
+                        snprintf(line, sizeof(line), "#%u (%s)", animation_id, aname);
                     else
-                        snprintf(line, sizeof(line), "#%u", st->animation_ids[ai]);
+                        snprintf(line, sizeof(line), "#%u", animation_id);
                     char label[16];
                     snprintf(label, sizeof(label), "  [%u]", ai);
                     nmo_cli_print_kv(c.out, label, line, 18, c.colorize);
@@ -528,14 +567,16 @@ int nmo_cmd_animation_show(int argc, char **argv, const nmo_cli_global_opts_t *g
                     snprintf(len_buf, sizeof(len_buf), "%.2f", (double)st->length);
                     nmo_cli_print_kv(c.out, "Length", len_buf, 18, c.colorize);
                 }
-                if (st->has_root_entity) {
+                if (st->has_root_entity &&
+                    st->root_entity.state == NMO_REF_RESOLVED) {
                     char re_buf[16];
-                    snprintf(re_buf, sizeof(re_buf), "%u", st->root_entity_id);
+                    snprintf(re_buf, sizeof(re_buf), "%u", st->root_entity.id);
                     nmo_cli_print_kv(c.out, "Root Entity", re_buf, 18, c.colorize);
                 }
-                if (st->has_character) {
+                if (st->has_character &&
+                    st->character.state == NMO_REF_RESOLVED) {
                     char ch_buf[16];
-                    snprintf(ch_buf, sizeof(ch_buf), "%u", st->character_id);
+                    snprintf(ch_buf, sizeof(ch_buf), "%u", st->character.id);
                     nmo_cli_print_kv(c.out, "Character", ch_buf, 18, c.colorize);
                 }
                 if (st->has_current_step) {
@@ -679,7 +720,9 @@ int nmo_cmd_animation_keys(int argc, char **argv, const nmo_cli_global_opts_t *g
         .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
         .positional_id = positional_id,
         .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
-        .required_base_class = NMO_CID_OBJECTANIMATION,
+        .allowed_class_ids = object_animation_class_ids,
+        .allowed_class_count = sizeof(object_animation_class_ids) /
+                               sizeof(object_animation_class_ids[0]),
         .selector_label = "Animation",
         .type_label = "CKObjectAnimation",
     };
@@ -819,7 +862,9 @@ static int export_one_animation(nmo_objectanimation_state_t *st,
     yyjson_mut_obj_add_uint(doc, root, "id", obj_id);
     yyjson_mut_obj_add_str(doc, root, "class", "CKObjectAnimation");
     yyjson_mut_obj_add_str(doc, root, "format", animation_format_name(st->format));
-    yyjson_mut_obj_add_uint(doc, root, "entity_id", st->entity_id);
+    const nmo_object_id_t entity_id = nmo_ref_runtime_id(&st->entity);
+    if (entity_id != NMO_OBJECT_ID_NONE)
+        yyjson_mut_obj_add_uint(doc, root, "entity_id", entity_id);
     yyjson_mut_obj_add_real(doc, root, "length",
         st->has_length ? (double)st->length : 0.0);
 
@@ -1004,7 +1049,9 @@ static int animation_export_run(nmo_cmd_ctx_t *ctx,
             .id = args->id,
             .positional_id = args->positional_id,
             .name = args->name,
-            .required_base_class = NMO_CID_OBJECTANIMATION,
+            .allowed_class_ids = object_animation_class_ids,
+            .allowed_class_count = sizeof(object_animation_class_ids) /
+                                   sizeof(object_animation_class_ids[0]),
             .selector_label = "Animation",
             .type_label = "CKObjectAnimation",
         };
@@ -1391,7 +1438,9 @@ int nmo_cmd_animation_import(int argc, char **argv, const nmo_cli_global_opts_t 
         nmo_core_object_selector_t selector = {
             .positional_id = replace_str,
             .name = replace_name,
-            .required_base_class = NMO_CID_OBJECTANIMATION,
+            .allowed_class_ids = object_animation_class_ids,
+            .allowed_class_count = sizeof(object_animation_class_ids) /
+                                   sizeof(object_animation_class_ids[0]),
             .selector_label = "Animation",
             .type_label = "CKObjectAnimation",
         };
@@ -1469,7 +1518,7 @@ int nmo_cmd_animation_import(int argc, char **argv, const nmo_cli_global_opts_t 
     }
 
     st->format = format;
-    st->entity_id = entity_id;
+    st->entity = nmo_ref_from_id(entity_id);
     st->flags = flags_val;
     st->has_length = 1;
     st->length = (float)length_val;

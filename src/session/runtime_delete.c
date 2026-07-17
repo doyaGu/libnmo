@@ -571,9 +571,7 @@ static nmo_status_t runtime_delete_validate_atomic_refs(
             type_rt->types, obj, CKPGUID_KEYEDANIMATION);
     if (keyed != NULL &&
         ((keyed->animation_count > 0u && keyed->animation_ids == NULL) ||
-         (keyed->subanim_count != 0u &&
-          (keyed->subanim_count != keyed->animation_count ||
-           keyed->subanims == NULL)))) {
+         (keyed->subanim_count > 0u && keyed->subanims == NULL))) {
         return NMO_ERR_VALIDATION_FAILED;
     }
 
@@ -709,26 +707,39 @@ static nmo_status_t runtime_delete_detach_atomic_refs(
     if (keyed != NULL) {
         uint32_t count = keyed->animation_count;
         for (uint32_t i = 0u; i < count;) {
-            if (!runtime_id_set_contains(delete_set, keyed->animation_ids[i])) {
+            if (!runtime_id_set_contains(
+                    delete_set,
+                    nmo_ref_runtime_id(&keyed->animation_ids[i]))) {
                 ++i;
                 continue;
-            }
-            if (keyed->subanim_count != 0u && keyed->subanims[i].chunk != NULL) {
-                nmo_chunk_destroy(keyed->subanims[i].chunk);
-                keyed->subanims[i].chunk = NULL;
             }
             uint32_t remaining = count - i - 1u;
             if (remaining > 0u) {
                 memmove(&keyed->animation_ids[i], &keyed->animation_ids[i + 1u],
                         (size_t)remaining * sizeof(*keyed->animation_ids));
-                if (keyed->subanim_count != 0u) {
-                    memmove(&keyed->subanims[i], &keyed->subanims[i + 1u],
-                            (size_t)remaining * sizeof(*keyed->subanims));
-                }
             }
-            --count;
-            keyed->animation_count = count;
-            if (keyed->subanim_count != 0u) keyed->subanim_count = count;
+            keyed->animation_count = --count;
+        }
+
+        count = keyed->subanim_count;
+        for (uint32_t i = 0u; i < count;) {
+            if (!runtime_id_set_contains(
+                    delete_set,
+                    nmo_ref_runtime_id(&keyed->subanims[i].ref))) {
+                ++i;
+                continue;
+            }
+            if (keyed->subanims[i].chunk != NULL) {
+                nmo_chunk_destroy(keyed->subanims[i].chunk);
+                keyed->subanims[i].chunk = NULL;
+            }
+            const uint32_t remaining = count - i - 1u;
+            if (remaining > 0u) {
+                memmove(&keyed->subanims[i], &keyed->subanims[i + 1u],
+                        (size_t)remaining * sizeof(*keyed->subanims));
+            }
+            keyed->subanim_count = --count;
+            keyed->subanims[count].chunk = NULL;
         }
     }
 

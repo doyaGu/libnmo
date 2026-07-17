@@ -10,6 +10,7 @@
 #include "object/nmo_object_enum_defs.h"
 #include "object/nmo_object_struct_defs.h"
 #include "object/nmo_object_type_common.h"
+#include "object/nmo_ref.h"
 #include "core/nmo_math.h"
 #include "nmo_types.h"
 
@@ -37,10 +38,10 @@ typedef struct nmo_animation_state {
     float length;
 
     uint8_t has_root_entity;
-    nmo_object_id_t root_entity_id;
+    nmo_ref_t root_entity;
 
     uint8_t has_character;
-    nmo_object_id_t character_id;
+    nmo_ref_t character;
 
     uint8_t has_current_step;
     float current_step;
@@ -53,7 +54,7 @@ typedef struct nmo_keyedanimation_state {
     nmo_animation_state_t base;
 
     uint32_t animation_count;
-    nmo_object_id_t *animation_ids;
+    nmo_ref_t *animation_ids;
 
     uint8_t has_merge;
     int32_t merged;
@@ -103,18 +104,18 @@ typedef struct nmo_objectanimation_state {
     uint8_t has_root_pos;
 
     uint32_t flags;
-    nmo_object_id_t entity_id;
+    nmo_ref_t entity;
 
     uint8_t has_length;
     float length;
 
     uint8_t has_merge;
     float merge_factor;
-    nmo_object_id_t anim1_id;
-    nmo_object_id_t anim2_id;
+    nmo_ref_t anim1;
+    nmo_ref_t anim2;
 
     uint8_t has_shared_anim;
-    nmo_object_id_t shared_anim_id;
+    nmo_ref_t shared_anim;
 
     uint8_t has_morph_counts;
     int32_t morph_vertex_count;

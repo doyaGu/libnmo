@@ -1411,7 +1411,7 @@ TEST(cli_write, data_entity_material_texture_animation_save_and_validate) {
     ASSERT_EQ(CKOBJANIM_FORMAT_NEWDATA, anim_state->format);
     ASSERT_TRUE(anim_state->has_length);
     ASSERT_FLOAT_EQ(12.5f, anim_state->length, 0.0001f);
-    ASSERT_EQ(520u, anim_state->entity_id);
+    ASSERT_EQ(520u, nmo_ref_runtime_id(&anim_state->entity));
     ASSERT_EQ(1u, anim_state->flags);
     ASSERT_TRUE(anim_state->has_morph_counts);
     ASSERT_EQ(1, anim_state->morph_vertex_count);
