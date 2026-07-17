@@ -359,9 +359,75 @@ TEST(subchunks, mixed_version_subchunk_preserves_manager_header) {
     nmo_arena_destroy(sub_arena);
 }
 
+TEST(subchunks, malformed_subchunk_is_rejected_atomically) {
+    nmo_arena_t* parent_arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(parent_arena);
+    nmo_arena_t* sub_arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(sub_arena);
+
+    nmo_chunk_writer_t* sub_writer = nmo_chunk_writer_create(sub_arena);
+    ASSERT_NOT_NULL(sub_writer);
+    nmo_chunk_writer_start(sub_writer, 0xABCDEF01u, 7u);
+    ASSERT_EQ(NMO_OK, nmo_chunk_writer_write_object_id(sub_writer, 42u));
+    const nmo_guid_t manager = {0x11111111u, 0x22222222u};
+    ASSERT_EQ(NMO_OK, nmo_chunk_writer_write_manager_int(sub_writer, manager, 7));
+    nmo_chunk_t* sub = nmo_chunk_writer_finalize(sub_writer);
+    ASSERT_NOT_NULL(sub);
+
+    nmo_chunk_writer_t* parent_writer = nmo_chunk_writer_create(parent_arena);
+    ASSERT_NOT_NULL(parent_writer);
+    nmo_chunk_writer_start(parent_writer, 0x12345678u, 7u);
+
+    void* saved_data = sub->data.data;
+    sub->data.data = NULL;
+    ASSERT_EQ(NMO_ERR_INVALID_STATE,
+        nmo_chunk_writer_write_subchunk(parent_writer, sub));
+    sub->data.data = saved_data;
+
+    void* saved_ids = sub->ids.data;
+    sub->ids.data = NULL;
+    ASSERT_EQ(NMO_ERR_INVALID_STATE,
+        nmo_chunk_writer_write_subchunk(parent_writer, sub));
+    sub->ids.data = saved_ids;
+
+    const size_t saved_ref_count = sub->chunk_refs.count;
+    sub->chunk_refs.count = 1u;
+    ASSERT_EQ(NMO_ERR_INVALID_STATE,
+        nmo_chunk_writer_write_subchunk(parent_writer, sub));
+    sub->chunk_refs.count = saved_ref_count;
+
+    void* saved_managers = sub->managers.data;
+    sub->managers.data = NULL;
+    ASSERT_EQ(NMO_ERR_INVALID_STATE,
+        nmo_chunk_writer_write_subchunk(parent_writer, sub));
+    sub->managers.data = saved_managers;
+
+#if SIZE_MAX > UINT32_MAX
+    const size_t saved_data_count = sub->data.count;
+    sub->data.count = (size_t)UINT32_MAX + 1u;
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+        nmo_chunk_writer_write_subchunk(parent_writer, sub));
+    sub->data.count = saved_data_count;
+#endif
+
+    ASSERT_EQ(NMO_OK, nmo_chunk_writer_write_dword(parent_writer, 0xCAFEBABEu));
+    nmo_chunk_t* parent = nmo_chunk_writer_finalize(parent_writer);
+    ASSERT_NOT_NULL(parent);
+    ASSERT_EQ(1u, parent->data.count);
+    ASSERT_EQ(0u, parent->chunks.count);
+    ASSERT_EQ(0u, parent->chunk_refs.count);
+    ASSERT_EQ(0u, parent->chunk_options & NMO_CHUNK_OPTION_CHN);
+
+    nmo_chunk_writer_destroy(parent_writer);
+    nmo_chunk_writer_destroy(sub_writer);
+    nmo_arena_destroy(parent_arena);
+    nmo_arena_destroy(sub_arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(subchunks, create_and_write_subchunks);
     REGISTER_TEST(subchunks, read_subchunks);
     REGISTER_TEST(subchunks, standalone_subchunk_refs);
     REGISTER_TEST(subchunks, mixed_version_subchunk_preserves_manager_header);
+    REGISTER_TEST(subchunks, malformed_subchunk_is_rejected_atomically);
 TEST_MAIN_END()
