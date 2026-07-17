@@ -335,7 +335,8 @@ int nmo_cmd_mesh_show(int argc, char **argv, const nmo_cli_global_opts_t *global
                 yyjson_mut_val *mats = yyjson_mut_arr(doc);
                 for (uint32_t gi = 0; gi < ms->material_group_count; ++gi) {
                     yyjson_mut_val *mg = yyjson_mut_obj(doc);
-                    nmo_object_id_t mid = ms->material_groups[gi].material_id;
+                    nmo_object_id_t mid =
+                        nmo_ref_runtime_id(&ms->material_groups[gi].material);
                     yyjson_mut_obj_add_uint(doc, mg, "material_id", mid);
                     const char *mname = resolve_name(&c, mid);
                     if (mname && mname[0]) {
@@ -406,7 +407,8 @@ int nmo_cmd_mesh_show(int argc, char **argv, const nmo_cli_global_opts_t *global
         if (ms->material_group_count > 0 && ms->material_groups) {
             fprintf(c.out, "\nMaterial Groups:\n");
             for (uint32_t gi = 0; gi < ms->material_group_count; ++gi) {
-                nmo_object_id_t mid = ms->material_groups[gi].material_id;
+                nmo_object_id_t mid =
+                    nmo_ref_runtime_id(&ms->material_groups[gi].material);
                 const char *mname = resolve_name(&c, mid);
                 if (mid && mname && mname[0]) {
                     fprintf(c.out, "  [%u] #%u (%s)\n", gi, mid, mname);
@@ -439,7 +441,8 @@ static int write_mtl_file(const nmo_cmd_ctx_t *c,
     fprintf(f, "# Exported by nmo\n\n");
 
     for (uint32_t gi = 0; gi < ms->material_group_count; ++gi) {
-        nmo_object_id_t mid = ms->material_groups[gi].material_id;
+        nmo_object_id_t mid =
+            nmo_ref_runtime_id(&ms->material_groups[gi].material);
         const char *mat_name = NULL;
         const nmo_material_state_t *mat = NULL;
 
@@ -538,7 +541,8 @@ static int write_obj_file(const nmo_cmd_ctx_t *c,
         for (uint32_t gi = 0; gi < num_groups; ++gi) {
             /* Emit material name */
             if (ms->material_group_count > 0 && ms->material_groups) {
-                nmo_object_id_t mid = ms->material_groups[gi].material_id;
+                nmo_object_id_t mid =
+                    nmo_ref_runtime_id(&ms->material_groups[gi].material);
                 const char *mname = resolve_name(c, mid);
                 if (mname && mname[0]) {
                     fprintf(f, "usemtl %s\n", mname);

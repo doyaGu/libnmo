@@ -65,7 +65,7 @@ typedef struct nmo_face {
 } nmo_face_t;
 
 typedef struct nmo_material_channel {
-    nmo_object_id_t material_id;
+    nmo_ref_t material;
     uint32_t flags;
     uint32_t source_blend;
     uint32_t dest_blend;
@@ -74,7 +74,8 @@ typedef struct nmo_material_channel {
 } nmo_material_channel_t;
 
 typedef struct nmo_material_group {
-    nmo_object_id_t material_id;
+    nmo_ref_t material;
+    int32_t padding;
 } nmo_material_group_t;
 
 /* ============================================================================

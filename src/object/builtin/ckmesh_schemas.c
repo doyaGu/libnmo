@@ -68,7 +68,9 @@
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "core/nmo_utils.h"
 #include "object/nmo_object_repository.h"
+#include "object/nmo_ref.h"
 #include "type/nmo_reflection.h"
 #include "object/nmo_object_struct_guids.h"
 #include "nmo_types.h"
@@ -86,14 +88,38 @@
 #include <string.h>
 #include <math.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(mesh, nmo_mesh_state_t)
+static nmo_status_t nmo_mesh_create(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (!instance) return NMO_ERR_INVALID_ARGUMENT;
+    nmo_mesh_state_t *state = instance;
+    memset(state, 0, sizeof(*state));
+    return nmo_beobject_vtable.create(&state->beobject, NULL, NULL);
+}
 
-/* Mesh flags are persisted with a restricted bitmask in CK2_3D.dll.
- * Keep this local to the schema to avoid leaking format quirks into headers.
- */
-#ifndef NMO_MESH_ALLOWED_FLAGS_MASK
-#define NMO_MESH_ALLOWED_FLAGS_MASK 0x007FE39Au
-#endif
+static void nmo_mesh_destroy(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    nmo_mesh_state_t *state = instance;
+    if (!state) return;
+    nmo_array_dispose(&state->beobject.scripts);
+    nmo_array_dispose(&state->beobject.attributes);
+    nmo_array_dispose(&state->beobject.legacy_attributes);
+    memset(state, 0, sizeof(*state));
+}
+
+static nmo_status_t nmo_mesh_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 /* =============================================================================
  * REFLECTION FIELDS
@@ -134,8 +160,10 @@ static const nmo_type_field_t nmo_mesh_fields[] = {
     /* Materials */
     NMO_FIELD(nmo_mesh_state_t, material_group_count, CKPGUID_UINT32),
     NMO_FIELD_ARRAY_COUNTED(nmo_mesh_state_t, material_groups, material_group_count, 1, NMO_GUID_STRUCT_CKMATERIALGROUP),
+    NMO_FIELD(nmo_mesh_state_t, has_material_groups, CKPGUID_BOOL),
     NMO_FIELD(nmo_mesh_state_t, material_channel_count, CKPGUID_UINT32),
-    NMO_FIELD_ARRAY_COUNTED(nmo_mesh_state_t, material_channels, material_channel_count, 1, NMO_GUID_STRUCT_CKMATERIALCHANNEL)
+    NMO_FIELD_ARRAY_COUNTED(nmo_mesh_state_t, material_channels, material_channel_count, 1, NMO_GUID_STRUCT_CKMATERIALCHANNEL),
+    NMO_FIELD(nmo_mesh_state_t, has_material_channels, CKPGUID_BOOL)
 };
 
 /* =============================================================================
@@ -307,7 +335,39 @@ static nmo_status_t nmo_mesh_deserialize_vertices(
     if (result != NMO_OK) {
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read save flags");
     }
-    
+
+    // Read and validate the complete serialized payload before allocating.
+    uint32_t buffer_dwords = 0;
+    result = nmo_chunk_read_dword(chunk, &buffer_dwords);
+    if (result != NMO_OK) return result;
+    if (buffer_dwords == 0) {
+        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                         "Vertex buffer size is zero");
+    }
+    size_t buffer_payload_dwords = (size_t)buffer_dwords - 1u;
+    size_t expected_dwords = 0;
+    if (!(save_flags & NMO_VERTEX_POS_EXTERNAL)) {
+        expected_dwords += 3u * (size_t)vertex_count;
+    }
+    expected_dwords += (save_flags & NMO_VERTEX_COLOR1_UNIFORM)
+        ? 1u : (size_t)vertex_count;
+    expected_dwords += (save_flags & NMO_VERTEX_SPECULAR_UNIFORM)
+        ? 1u : (size_t)vertex_count;
+    if (!(save_flags & NMO_VERTEX_NORMALS_MISSING)) {
+        expected_dwords += 3u * (size_t)vertex_count;
+    }
+    expected_dwords += (save_flags & NMO_VERTEX_UV_UNIFORM)
+        ? 2u : 2u * (size_t)vertex_count;
+    if (buffer_payload_dwords < expected_dwords) {
+        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                         "Vertex buffer shorter than expected");
+    }
+    if (!nmo_chunk_has_read_capacity(chunk, buffer_payload_dwords) ||
+        buffer_payload_dwords > nmo_mesh_identifier_remaining_dwords(chunk)) {
+        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                         "Vertex buffer exceeds remaining DWORDs");
+    }
+
     // Allocate vertex array
     out_state->vertices = (nmo_vertex_t *)nmo_arena_alloc(
         arena, sizeof(nmo_vertex_t) * vertex_count, alignof(nmo_vertex_t));
@@ -326,17 +386,6 @@ static nmo_status_t nmo_mesh_deserialize_vertices(
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate color arrays");
     }
     
-    // Read buffer size in DWORDs (CKStateChunk-style vertex buffer, includes size dword)
-    uint32_t buffer_dwords = 0;
-    result = nmo_chunk_read_dword(chunk, &buffer_dwords);
-    if (result != NMO_OK) {
-        return result;
-    }
-    if (buffer_dwords == 0) {
-        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Vertex buffer size is zero");
-    }
-    size_t buffer_payload_dwords = (buffer_dwords > 0u) ? (size_t)(buffer_dwords - 1u) : 0u;
-
     // Read positions (if not external)
     if (!(save_flags & NMO_VERTEX_POS_EXTERNAL)) {
         for (uint32_t i = 0; i < out_state->vertex_count; i++) {
@@ -417,21 +466,6 @@ static nmo_status_t nmo_mesh_deserialize_vertices(
     }
     
     // Validate and skip any padding within the vertex buffer
-    size_t expected_dwords = 0;
-    if (!(save_flags & NMO_VERTEX_POS_EXTERNAL)) {
-        expected_dwords += 3u * out_state->vertex_count;
-    }
-    expected_dwords += (save_flags & NMO_VERTEX_COLOR1_UNIFORM) ? 1u : out_state->vertex_count;
-    expected_dwords += (save_flags & NMO_VERTEX_SPECULAR_UNIFORM) ? 1u : out_state->vertex_count;
-    if (!(save_flags & NMO_VERTEX_NORMALS_MISSING)) {
-        expected_dwords += 3u * out_state->vertex_count;
-    }
-    expected_dwords += (save_flags & NMO_VERTEX_UV_UNIFORM) ? 2u : (2u * out_state->vertex_count);
-
-    if (buffer_payload_dwords < expected_dwords) {
-        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Vertex buffer shorter than expected");
-    }
-
     if (buffer_payload_dwords > expected_dwords) {
         result = nmo_chunk_skip(chunk, buffer_payload_dwords - expected_dwords);
         if (result != NMO_OK) {
@@ -440,6 +474,46 @@ static nmo_status_t nmo_mesh_deserialize_vertices(
     }
 
     NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_mesh_deserialize_material_groups(
+    nmo_chunk_t *chunk,
+    nmo_arena_t *arena,
+    nmo_mesh_state_t *out_state)
+{
+    nmo_status_t result = nmo_chunk_seek_identifier(
+        chunk, CK_STATESAVE_MESHMATERIALS);
+    if (result == NMO_ERR_NOT_FOUND) return NMO_OK;
+    if (result != NMO_OK) return result;
+
+    out_state->has_material_groups = 1;
+    int32_t group_count = 0;
+    NMO_MESH_READ(nmo_chunk_read_int(chunk, &group_count),
+                  "material group count");
+    if (group_count < 0 || group_count >= 10000) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Invalid mesh material group count %d", group_count);
+    }
+    if (!nmo_chunk_has_read_capacity(chunk, (size_t)group_count * 2u)) {
+        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                         "CKMesh material groups exceed remaining DWORDs");
+    }
+    if (group_count == 0) return NMO_OK;
+
+    nmo_material_group_t *groups = nmo_arena_alloc(
+        arena, (size_t)group_count * sizeof(*groups),
+        alignof(nmo_material_group_t));
+    if (!groups) return NMO_ERR_NOMEM;
+    memset(groups, 0, (size_t)group_count * sizeof(*groups));
+    for (int32_t i = 0; i < group_count; ++i) {
+        NMO_MESH_READ(nmo_ref_read(chunk, &groups[i].material),
+                      "material group reference");
+        NMO_MESH_READ(nmo_chunk_read_int(chunk, &groups[i].padding),
+                      "material group padding");
+    }
+    out_state->material_groups = groups;
+    out_state->material_group_count = (uint32_t)group_count;
+    return NMO_OK;
 }
 
 /**
@@ -451,8 +525,6 @@ static nmo_status_t nmo_mesh_deserialize_modern(
     nmo_mesh_state_t *out_state)
 {
     nmo_status_t result;
-    uint32_t *group_map = NULL;
-    uint32_t group_map_count = 0;
 
     // Load parent CKBeObject
     result = nmo_beobject_deserialize(&out_state->beobject, chunk, NULL, arena);
@@ -468,60 +540,11 @@ static nmo_status_t nmo_mesh_deserialize_modern(
         if (result != NMO_OK) {
             NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read mesh flags");
         }
-            flags &= NMO_MESH_ALLOWED_FLAGS_MASK;
         out_state->flags = flags;
     }
     
-    // Read material groups (identifier CK_STATESAVE_MESHMATERIALS)
-    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_MESHMATERIALS);
-    if (result == NMO_OK) {
-        int32_t group_count;
-        result = nmo_chunk_read_int(chunk, &group_count);
-        if (result != NMO_OK) {
-            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read material group count");
-        }
-        
-        if (group_count < 0 || group_count >= 10000) {
-            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                             "Invalid modern mesh material group count %d",
-                             group_count);
-        }
-        if (group_count > 0) {
-            out_state->material_groups = (nmo_material_group_t *)nmo_arena_alloc(
-                arena, sizeof(nmo_material_group_t) * (uint32_t)group_count,
-                alignof(nmo_material_group_t));
-            group_map = (uint32_t *)nmo_arena_alloc(
-                arena, sizeof(uint32_t) * (uint32_t)group_count, alignof(uint32_t));
-            
-            if (!out_state->material_groups || !group_map) {
-                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate material groups");
-            }
-
-            uint32_t kept = 0;
-            for (uint32_t i = 0; i < (uint32_t)group_count; i++) {
-                nmo_object_id_t material_id = NMO_OBJECT_ID_NONE;
-                result = nmo_chunk_read_object_id(chunk, &material_id);
-                if (result != NMO_OK) return result;
-                
-                // Skip padding
-                int32_t padding;
-                result = nmo_chunk_read_int(chunk, &padding);
-                if (result != NMO_OK) return result;
-
-                if (i > 0 && material_id == NMO_OBJECT_ID_NONE) {
-                    group_map[i] = 0;
-                    continue;
-                }
-
-                out_state->material_groups[kept].material_id = material_id;
-                group_map[i] = kept;
-                kept++;
-            }
-
-            out_state->material_group_count = kept;
-            group_map_count = (uint32_t)group_count;
-        }
-    }
+    NMO_RETURN_IF_ERROR(nmo_mesh_deserialize_material_groups(
+        chunk, arena, out_state));
     
     // Read vertices (identifier CK_STATESAVE_MESHVERTICES)
     result = nmo_mesh_deserialize_vertices(chunk, arena, out_state);
@@ -543,6 +566,12 @@ static nmo_status_t nmo_mesh_deserialize_modern(
                              "Invalid modern mesh face count %d", face_count);
         }
         if (face_count > 0) {
+            if ((size_t)face_count * 2u >
+                nmo_mesh_identifier_remaining_dwords(chunk)) {
+                NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK,
+                                 NMO_SEVERITY_ERROR,
+                                 "Modern mesh faces exceed remaining DWORDs");
+            }
             out_state->face_count = (uint32_t)face_count;
             out_state->faces = (nmo_face_t *)nmo_arena_alloc(
                 arena, sizeof(nmo_face_t) * face_count, alignof(nmo_face_t));
@@ -572,11 +601,7 @@ static nmo_status_t nmo_mesh_deserialize_modern(
                 uint16_t mat_idx;
                 nmo_unpack_dword_to_words(packed2mat, &idx2, &mat_idx);
                 out_state->face_vertex_indices[i * 3 + 2] = idx2;
-                if (group_map && mat_idx < group_map_count) {
-                    out_state->faces[i].material_group_idx = (uint16_t)group_map[mat_idx];
-                } else {
-                    out_state->faces[i].material_group_idx = mat_idx;
-                }
+                out_state->faces[i].material_group_idx = mat_idx;
             }
         }
     }
@@ -616,6 +641,7 @@ static nmo_status_t nmo_mesh_deserialize_modern(
     // Read material channels (identifier CK_STATESAVE_MESHCHANNELS, optional)
     result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_MESHCHANNELS);
     if (result == NMO_OK) {
+        out_state->has_material_channels = 1;
         int32_t channel_count;
         result = nmo_chunk_read_int(chunk, &channel_count);
         if (result != NMO_OK) {
@@ -627,6 +653,12 @@ static nmo_status_t nmo_mesh_deserialize_modern(
                              "Invalid mesh material channel count");
         }
         if (channel_count > 0) {
+            if ((size_t)channel_count * 5u >
+                nmo_mesh_identifier_remaining_dwords(chunk)) {
+                NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK,
+                                 NMO_SEVERITY_ERROR,
+                                 "Modern mesh channels exceed remaining DWORDs");
+            }
             out_state->material_channel_count = (uint32_t)channel_count;
             out_state->material_channels = (nmo_material_channel_t *)nmo_arena_alloc(
                 arena, sizeof(nmo_material_channel_t) * channel_count,
@@ -636,7 +668,7 @@ static nmo_status_t nmo_mesh_deserialize_modern(
                    sizeof(nmo_material_channel_t) * out_state->material_channel_count);
             for (uint32_t i = 0; i < out_state->material_channel_count; i++) {
                     nmo_material_channel_t *ch = &out_state->material_channels[i];
-                    NMO_MESH_READ(nmo_chunk_read_object_id(chunk, &ch->material_id),
+                    NMO_MESH_READ(nmo_ref_read(chunk, &ch->material),
                                   "modern channel material ID");
                     NMO_MESH_READ(nmo_chunk_read_dword(chunk, &ch->flags),
                                   "modern channel flags");
@@ -656,15 +688,16 @@ static nmo_status_t nmo_mesh_deserialize_modern(
                                          uv_count);
                     }
                     if (uv_count > 0) {
-                        uint32_t alloc_uv_count = (out_state->vertex_count > 0)
-                            ? out_state->vertex_count
-                            : (uint32_t)uv_count;
-                        if (alloc_uv_count < (uint32_t)uv_count) {
-                            alloc_uv_count = (uint32_t)uv_count;
+                        if ((size_t)uv_count * 2u >
+                            nmo_mesh_identifier_remaining_dwords(chunk)) {
+                            NMO_RETURN_ERROR(
+                                NMO_ERR_TRUNCATED_CHUNK,
+                                NMO_SEVERITY_ERROR,
+                                "Modern mesh channel UVs exceed remaining DWORDs");
                         }
-                        ch->uv_count = alloc_uv_count;
+                        ch->uv_count = (uint32_t)uv_count;
                         ch->uv_coords = (nmo_vector2_t *)nmo_arena_alloc(
-                            arena, sizeof(nmo_vector2_t) * alloc_uv_count,
+                            arena, sizeof(nmo_vector2_t) * (uint32_t)uv_count,
                             alignof(nmo_vector2_t));
                         
                         if (!ch->uv_coords) return NMO_ERR_NOMEM;
@@ -675,10 +708,6 @@ static nmo_status_t nmo_mesh_deserialize_modern(
                             NMO_MESH_READ(nmo_chunk_read_float(
                                 chunk, &ch->uv_coords[j].y),
                                 "modern channel UV y");
-                        }
-                        for (uint32_t j = (uint32_t)uv_count; j < alloc_uv_count; j++) {
-                            ch->uv_coords[j].x = 0.0f;
-                            ch->uv_coords[j].y = 0.0f;
                         }
                     } else {
                         ch->uv_coords = NULL;
@@ -874,9 +903,11 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
         uint32_t flags;
         result = nmo_chunk_read_dword(chunk, &flags);
         if (result != NMO_OK) return result;
-        flags &= NMO_MESH_ALLOWED_FLAGS_MASK;
         out_state->flags = flags;
     }
+
+    NMO_RETURN_IF_ERROR(nmo_mesh_deserialize_material_groups(
+        chunk, arena, out_state));
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_MESHVERTICES) == NMO_OK) {
         int32_t vertex_count;
@@ -892,6 +923,19 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
                              "Invalid legacy mesh vertex count %d", vertex_count);
         }
         if (vertex_count > 0) {
+            size_t vertex_dwords = 3u * (size_t)vertex_count;
+            if (save_flags & 0x02u) {
+                vertex_dwords += 3u * (size_t)vertex_count;
+            }
+            if (save_flags & 0x04u) {
+                vertex_dwords += (size_t)vertex_count;
+            }
+            if (vertex_dwords >
+                nmo_mesh_identifier_remaining_dwords(chunk)) {
+                NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK,
+                                 NMO_SEVERITY_ERROR,
+                                 "Legacy mesh vertices exceed remaining DWORDs");
+            }
             out_state->vertex_count = (uint32_t)vertex_count;
             out_state->vertices = (nmo_vertex_t *)nmo_arena_alloc(
                 arena, sizeof(nmo_vertex_t) * out_state->vertex_count,
@@ -951,6 +995,12 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
                              "Invalid legacy mesh face count %d", face_count);
         }
         if (face_count > 0) {
+            size_t face_dwords = ((size_t)face_count * 5u + 1u) / 2u;
+            if (face_dwords > nmo_mesh_identifier_remaining_dwords(chunk)) {
+                NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK,
+                                 NMO_SEVERITY_ERROR,
+                                 "Legacy mesh faces exceed remaining DWORDs");
+            }
             out_state->face_count = (uint32_t)face_count;
             out_state->faces = (nmo_face_t *)nmo_arena_alloc(
                 arena, sizeof(nmo_face_t) * out_state->face_count,
@@ -994,6 +1044,12 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
                              "Invalid legacy mesh line count %d", line_count);
         }
         if (line_count > 0) {
+            if ((size_t)line_count >
+                nmo_mesh_identifier_remaining_dwords(chunk)) {
+                NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK,
+                                 NMO_SEVERITY_ERROR,
+                                 "Legacy mesh lines exceed remaining DWORDs");
+            }
             out_state->line_count = (uint32_t)line_count;
             out_state->line_indices = (uint16_t *)nmo_arena_alloc(
                 arena, sizeof(uint16_t) * out_state->line_count * 2,
@@ -1015,6 +1071,7 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
     }
 
     if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_MESHCHANNELS) == NMO_OK) {
+        out_state->has_material_channels = 1;
         int32_t channel_count;
         result = nmo_chunk_read_int(chunk, &channel_count);
         if (result != NMO_OK) return result;
@@ -1023,6 +1080,12 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
                              "Invalid legacy mesh channel count %d", channel_count);
         }
         if (channel_count > 0) {
+            if ((size_t)channel_count * 5u >
+                nmo_mesh_identifier_remaining_dwords(chunk)) {
+                NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK,
+                                 NMO_SEVERITY_ERROR,
+                                 "Legacy mesh channels exceed remaining DWORDs");
+            }
             out_state->material_channel_count = (uint32_t)channel_count;
             out_state->material_channels = (nmo_material_channel_t *)nmo_arena_alloc(
                 arena, sizeof(nmo_material_channel_t) * out_state->material_channel_count,
@@ -1034,7 +1097,7 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
             for (uint32_t i = 0; i < out_state->material_channel_count; i++) {
                     nmo_material_channel_t *ch = &out_state->material_channels[i];
 
-                    NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &ch->material_id));
+                    NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &ch->material));
                     NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &ch->flags));
                     NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &ch->source_blend));
                     NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &ch->dest_blend));
@@ -1047,25 +1110,22 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
                     }
 
                     if (uv_count > 0) {
-                        uint32_t alloc_uv_count = (out_state->vertex_count > 0)
-                            ? out_state->vertex_count
-                            : (uint32_t)uv_count;
-                        if (alloc_uv_count < (uint32_t)uv_count) {
-                            alloc_uv_count = (uint32_t)uv_count;
+                        if ((size_t)uv_count * 2u >
+                            nmo_mesh_identifier_remaining_dwords(chunk)) {
+                            NMO_RETURN_ERROR(
+                                NMO_ERR_TRUNCATED_CHUNK,
+                                NMO_SEVERITY_ERROR,
+                                "Legacy mesh channel UVs exceed remaining DWORDs");
                         }
-                        ch->uv_count = alloc_uv_count;
+                        ch->uv_count = (uint32_t)uv_count;
                         ch->uv_coords = (nmo_vector2_t *)nmo_arena_alloc(
-                            arena, sizeof(nmo_vector2_t) * alloc_uv_count,
+                            arena, sizeof(nmo_vector2_t) * (uint32_t)uv_count,
                             alignof(nmo_vector2_t));
 
                         if (!ch->uv_coords) return NMO_ERR_NOMEM;
                         for (uint32_t j = 0; j < (uint32_t)uv_count; j++) {
                             NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &ch->uv_coords[j].x));
                             NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &ch->uv_coords[j].y));
-                        }
-                        for (uint32_t j = (uint32_t)uv_count; j < alloc_uv_count; j++) {
-                            ch->uv_coords[j].x = 0.0f;
-                            ch->uv_coords[j].y = 0.0f;
                         }
                     } else {
                         ch->uv_coords = NULL;
@@ -1217,19 +1277,24 @@ nmo_status_t nmo_mesh_deserialize(
     nmo_mesh_state_t *out_state = (nmo_mesh_state_t *)instance;
     nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
 
-    if (!chunk || !out_state) {
+    if (!chunk || !out_state || !arena) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to deserialize");
     }
+
+    nmo_mesh_state_t decoded;
+    nmo_status_t result = nmo_mesh_create(&decoded, NULL, NULL);
+    if (result != NMO_OK) return result;
     
     // Get chunk data version
     uint32_t data_version = nmo_chunk_get_data_version(chunk);
     
-    nmo_status_t result = (data_version >= 9)
-        ? nmo_mesh_deserialize_modern(chunk, arena, out_state)
-        : nmo_mesh_deserialize_legacy(chunk, arena, out_state);
+    result = (data_version >= 9)
+        ? nmo_mesh_deserialize_modern(chunk, arena, &decoded)
+        : nmo_mesh_deserialize_legacy(chunk, arena, &decoded);
     if (result != NMO_OK) {
         char detail[256];
         size_t detail_len = nmo_last_error_message_copy(detail, sizeof(detail));
+        nmo_mesh_destroy(&decoded, NULL, NULL);
         NMO_RETURN_ERROR(result, NMO_SEVERITY_ERROR,
                          "CKMesh data version %u deserialization failed%s%s",
                          data_version,
@@ -1237,7 +1302,22 @@ nmo_status_t nmo_mesh_deserialize(
                          detail_len > 0u ? detail : "");
     }
 
-    nmo_mesh_recompute_bounds(out_state);
+    const nmo_object_repository_t *repository =
+        nmo_deserialize_context_get_repository(context);
+    const nmo_type_registry_t *types =
+        nmo_deserialize_context_get_type_registry(context);
+    for (uint32_t i = 0; i < decoded.material_group_count; ++i) {
+        nmo_ref_check_class(&decoded.material_groups[i].material,
+                            repository, types, NMO_CID_MATERIAL);
+    }
+    for (uint32_t i = 0; i < decoded.material_channel_count; ++i) {
+        nmo_ref_check_class(&decoded.material_channels[i].material,
+                            repository, types, NMO_CID_MATERIAL);
+    }
+
+    nmo_mesh_recompute_bounds(&decoded);
+    nmo_mesh_destroy(out_state, NULL, NULL);
+    *out_state = decoded;
     return NMO_OK;
 }
 
@@ -1386,7 +1466,7 @@ static uint32_t nmo_mesh_compute_save_flags(
  * @param arena     Arena for temporary allocations (must not be NULL)
  * @return Result indicating success or error
  */
-nmo_status_t nmo_mesh_serialize_ex(
+static nmo_status_t nmo_mesh_serialize_internal(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
@@ -1404,6 +1484,8 @@ nmo_status_t nmo_mesh_serialize_ex(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to serialize");
     }
 
+    NMO_RETURN_IF_ERROR(nmo_mesh_validate(in_state, NULL, NULL));
+
     nmo_status_t result = nmo_beobject_serialize(&in_state->beobject, out_chunk, NULL, context);
     if (result != NMO_OK) {
         return result;
@@ -1415,10 +1497,11 @@ nmo_status_t nmo_mesh_serialize_ex(
 
     result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_MESHFLAGS);
     if (result != NMO_OK) return result;
-    result = nmo_chunk_write_dword(out_chunk, in_state->flags & NMO_MESH_ALLOWED_FLAGS_MASK);
+    result = nmo_chunk_write_dword(out_chunk, in_state->flags);
     if (result != NMO_OK) return result;
 
-    if (!skip_geometry && in_state->material_group_count > 0 && in_state->material_groups) {
+    if (!skip_geometry &&
+        (in_state->has_material_groups || in_state->material_group_count > 0)) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_MESHMATERIALS);
         if (result != NMO_OK) return result;
 
@@ -1426,9 +1509,11 @@ nmo_status_t nmo_mesh_serialize_ex(
         if (result != NMO_OK) return result;
 
         for (uint32_t i = 0; i < in_state->material_group_count; ++i) {
-            result = nmo_chunk_write_object_id(out_chunk, in_state->material_groups[i].material_id);
+            result = nmo_ref_write(
+                out_chunk, &in_state->material_groups[i].material);
             if (result != NMO_OK) return result;
-            result = nmo_chunk_write_int(out_chunk, 0);
+            result = nmo_chunk_write_int(
+                out_chunk, in_state->material_groups[i].padding);
             if (result != NMO_OK) return result;
         }
     }
@@ -1548,7 +1633,9 @@ nmo_status_t nmo_mesh_serialize_ex(
         if (result != NMO_OK) return result;
     }
 
-    if (!skip_geometry && in_state->material_channel_count > 0 && in_state->material_channels) {
+    if (!skip_geometry &&
+        (in_state->has_material_channels ||
+         in_state->material_channel_count > 0)) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_MESHCHANNELS);
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_int(out_chunk, (int32_t)in_state->material_channel_count);
@@ -1556,7 +1643,7 @@ nmo_status_t nmo_mesh_serialize_ex(
 
         for (uint32_t i = 0; i < in_state->material_channel_count; ++i) {
             const nmo_material_channel_t *channel = &in_state->material_channels[i];
-            result = nmo_chunk_write_object_id(out_chunk, channel->material_id);
+            result = nmo_ref_write(out_chunk, &channel->material);
             if (result != NMO_OK) return result;
             result = nmo_chunk_write_dword(out_chunk, channel->flags);
             if (result != NMO_OK) return result;
@@ -1565,14 +1652,8 @@ nmo_status_t nmo_mesh_serialize_ex(
             result = nmo_chunk_write_dword(out_chunk, channel->dest_blend);
             if (result != NMO_OK) return result;
 
-            if (channel->uv_coords && channel->uv_count > 0 &&
-                channel->uv_count < in_state->vertex_count) {
-                NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
-                                 "Material channel UV count less than vertex count");
-            }
-
-            uint32_t uv_count = (channel->uv_coords && in_state->vertex_count > 0)
-                ? in_state->vertex_count
+            uint32_t uv_count = channel->uv_coords
+                ? channel->uv_count
                 : 0u;
             result = nmo_chunk_write_int(out_chunk, (int32_t)uv_count);
             if (result != NMO_OK) return result;
@@ -1665,6 +1746,32 @@ nmo_status_t nmo_mesh_serialize_ex(
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_mesh_serialize_ex(
+    const void *instance,
+    nmo_chunk_t *out_chunk,
+    const nmo_type_descriptor_t *type,
+    void *context,
+    bool skip_geometry)
+{
+    if (!instance || !out_chunk || !out_chunk->arena) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    nmo_chunk_t *staged = nmo_chunk_create(out_chunk->arena);
+    if (!staged) return NMO_ERR_NOMEM;
+    staged->class_id = out_chunk->class_id;
+    staged->data_version = out_chunk->data_version;
+    staged->chunk_version = out_chunk->chunk_version;
+    staged->chunk_class_id = out_chunk->chunk_class_id;
+    staged->chunk_options = out_chunk->chunk_options;
+    staged->file_context = out_chunk->file_context;
+
+    nmo_status_t result = nmo_mesh_serialize_internal(
+        instance, staged, type, context, skip_geometry);
+    if (result != NMO_OK) return result;
+    *out_chunk = *staged;
+    return NMO_OK;
+}
+
 nmo_status_t nmo_mesh_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
@@ -1683,10 +1790,11 @@ static nmo_status_t nmo_mesh_copy(
     const nmo_mesh_state_t *s = src;
     nmo_mesh_state_t *d = dst;
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
-    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->beobject.scripts, &d->beobject.scripts,
-                                        &s->beobject.scripts.allocator));
-    NMO_RETURN_IF_ERROR(nmo_beobject_clone_attributes(
-        arena, &d->beobject.attributes, &s->beobject.attributes));
+    const nmo_type_descriptor_t beobject_type = {
+        .size = sizeof(nmo_beobject_state_t),
+    };
+    NMO_RETURN_IF_ERROR(nmo_beobject_vtable.copy(
+        &s->beobject, &d->beobject, &beobject_type, arena));
 
     NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->faces,
                                               s->faces, sizeof(nmo_face_t), s->face_count));
@@ -1729,6 +1837,16 @@ static nmo_status_t nmo_mesh_validate(
     (void)type;
     (void)context;
     const nmo_mesh_state_t *s = instance;
+    if (!s) return NMO_ERR_INVALID_ARGUMENT;
+    if (s->face_count > UINT32_MAX / 3u ||
+        s->line_count > UINT32_MAX / 2u ||
+        s->face_count > INT32_MAX || s->line_count > INT32_MAX ||
+        s->vertex_count > INT32_MAX || s->vertex_weight_count > INT32_MAX ||
+        s->material_group_count >= 10000u ||
+        s->material_channel_count >= 100u) {
+        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                         "CKMesh count exceeds serialized limits");
+    }
     NMO_VALIDATE_COUNT(s->faces, s->face_count, "faces");
     if (s->face_count > 0) {
         NMO_VALIDATE_COUNT(s->face_vertex_indices, (uint32_t)(s->face_count * 3u),
@@ -1745,15 +1863,15 @@ static nmo_status_t nmo_mesh_validate(
     NMO_VALIDATE_COUNT(s->material_channels, s->material_channel_count, "material_channels");
     if (s->material_channels) {
         for (uint32_t i = 0; i < s->material_channel_count; ++i) {
+            if (s->material_channels[i].uv_count >= 1000000u) {
+                NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED,
+                                 NMO_SEVERITY_ERROR,
+                                 "CKMesh channel UV count exceeds limit");
+            }
             if (s->material_channels[i].uv_count > 0) {
                 NMO_VALIDATE_COUNT(s->material_channels[i].uv_coords,
                                    s->material_channels[i].uv_count,
                                    "material_channels.uv_coords");
-                if (s->vertex_count > 0 &&
-                    s->material_channels[i].uv_count < s->vertex_count) {
-                    NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
-                                     "material channel UV count less than vertex count");
-                }
             }
         }
     }
@@ -1798,6 +1916,35 @@ nmo_status_t nmo_mesh_remap_dependencies(
     return nmo_mesh_validate(mesh_state, NULL, NULL);
 }
 
+static nmo_status_t nmo_mesh_enumerate_refs(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    nmo_type_ref_visitor_fn visitor,
+    void *user_data)
+{
+    (void)type;
+    const nmo_mesh_state_t *state = instance;
+    if (!state || !visitor) return NMO_OK;
+    NMO_RETURN_IF_ERROR(nmo_mesh_validate(state, NULL, NULL));
+    for (uint32_t i = 0; i < state->material_group_count; ++i) {
+        nmo_object_id_t id = nmo_ref_runtime_id(
+            &state->material_groups[i].material);
+        if (id != NMO_OBJECT_ID_NONE &&
+            !visitor(user_data, id, 0, "material_groups.material", i)) {
+            return NMO_OK;
+        }
+    }
+    for (uint32_t i = 0; i < state->material_channel_count; ++i) {
+        nmo_object_id_t id = nmo_ref_runtime_id(
+            &state->material_channels[i].material);
+        if (id != NMO_OBJECT_ID_NONE &&
+            !visitor(user_data, id, 0, "material_channels.material", i)) {
+            return NMO_OK;
+        }
+    }
+    return NMO_OK;
+}
+
 static nmo_status_t nmo_mesh_pre_delete(
     void *instance,
     const nmo_type_descriptor_t *type,
@@ -1822,14 +1969,132 @@ static void nmo_mesh_post_delete(
     (void)context;
 }
 
-NMO_DEFINE_OBJECT_STATE_OPS_CUSTOM(mesh, nmo_mesh_state_t)
+static nmo_status_t nmo_mesh_canonical_bytes(
+    const nmo_mesh_state_t *state,
+    nmo_arena_t **out_arena,
+    void **out_data,
+    size_t *out_size)
+{
+    if (!state || !out_arena || !out_data || !out_size) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    *out_arena = NULL;
+    *out_data = NULL;
+    *out_size = 0;
+
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    if (!arena) return NMO_ERR_NOMEM;
+    nmo_chunk_t *legacy = nmo_chunk_create(arena);
+    nmo_chunk_t *modern = nmo_chunk_create(arena);
+    if (!legacy || !modern) {
+        nmo_arena_destroy(arena);
+        return NMO_ERR_NOMEM;
+    }
+    legacy->class_id = NMO_CID_MESH;
+    legacy->chunk_version = NMO_CHUNK_VERSION4;
+    legacy->data_version = 7;
+    legacy->chunk_options = NMO_CHUNK_OPTION_FILE;
+    modern->class_id = NMO_CID_MESH;
+    modern->chunk_version = NMO_CHUNK_VERSION4;
+    modern->data_version = 9;
+    modern->chunk_options = NMO_CHUNK_OPTION_FILE;
+
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_status_t result = nmo_mesh_serialize(
+        state, legacy, NULL, &serialize_context);
+    if (result == NMO_OK) {
+        nmo_chunk_close(legacy);
+        result = nmo_mesh_serialize(
+            state, modern, NULL, &serialize_context);
+    }
+
+    void *legacy_data = NULL;
+    void *modern_data = NULL;
+    size_t legacy_size = 0;
+    size_t modern_size = 0;
+    if (result == NMO_OK) {
+        nmo_chunk_close(modern);
+        result = nmo_chunk_serialize_version1(
+            legacy, &legacy_data, &legacy_size, arena);
+    }
+    if (result == NMO_OK) {
+        result = nmo_chunk_serialize_version1(
+            modern, &modern_data, &modern_size, arena);
+    }
+    if (result == NMO_OK) {
+        const size_t header_size = 2u * sizeof(size_t);
+        if (legacy_size > SIZE_MAX - header_size ||
+            modern_size > SIZE_MAX - header_size - legacy_size) {
+            result = NMO_ERR_NOMEM;
+        } else {
+            *out_size = header_size + legacy_size + modern_size;
+            uint8_t *combined = nmo_arena_alloc(
+                arena, *out_size, _Alignof(size_t));
+            if (!combined) {
+                result = NMO_ERR_NOMEM;
+            } else {
+                memcpy(combined, &legacy_size, sizeof(legacy_size));
+                memcpy(combined + sizeof(legacy_size),
+                       &modern_size, sizeof(modern_size));
+                memcpy(combined + header_size, legacy_data, legacy_size);
+                memcpy(combined + header_size + legacy_size,
+                       modern_data, modern_size);
+                *out_data = combined;
+            }
+        }
+    }
+    if (result != NMO_OK) {
+        nmo_arena_destroy(arena);
+        return result;
+    }
+    *out_arena = arena;
+    return NMO_OK;
+}
+
+static bool nmo_mesh_equals(const void *a, const void *b)
+{
+    if (a == b) return true;
+    if (!a || !b) return false;
+    nmo_arena_t *arena_a = NULL;
+    nmo_arena_t *arena_b = NULL;
+    void *data_a = NULL;
+    void *data_b = NULL;
+    size_t size_a = 0;
+    size_t size_b = 0;
+    const nmo_status_t result_a = nmo_mesh_canonical_bytes(
+        a, &arena_a, &data_a, &size_a);
+    const nmo_status_t result_b = nmo_mesh_canonical_bytes(
+        b, &arena_b, &data_b, &size_b);
+    const bool equal = result_a == NMO_OK && result_b == NMO_OK &&
+        size_a == size_b &&
+        (size_a == 0 || memcmp(data_a, data_b, size_a) == 0);
+    nmo_arena_destroy(arena_a);
+    nmo_arena_destroy(arena_b);
+    return equal;
+}
+
+static uint32_t nmo_mesh_hash(const void *instance)
+{
+    if (!instance) return 0;
+    nmo_arena_t *arena = NULL;
+    void *data = NULL;
+    size_t size = 0;
+    if (nmo_mesh_canonical_bytes(
+            instance, &arena, &data, &size) != NMO_OK) {
+        return 0;
+    }
+    const uint32_t hash = (uint32_t)nmo_hash_fnv1a(data, size);
+    nmo_arena_destroy(arena);
+    return hash;
+}
 
 nmo_type_vtable_t nmo_mesh_vtable = {
     .prepare_dependencies = nmo_mesh_prepare_dependencies,
     .remap_dependencies = nmo_mesh_remap_dependencies,
     .pre_delete = nmo_mesh_pre_delete,
     .post_delete = nmo_mesh_post_delete,
-    NMO_OBJECT_VTABLE(
+    NMO_OBJECT_VTABLE_EX(
         nmo_mesh_create,
         nmo_mesh_destroy,
         nmo_mesh_serialize,
@@ -1837,7 +2102,8 @@ nmo_type_vtable_t nmo_mesh_vtable = {
         nmo_mesh_copy,
         nmo_mesh_validate,
         nmo_mesh_equals,
-        nmo_mesh_hash)
+        nmo_mesh_hash,
+        nmo_mesh_enumerate_refs)
 };
 
 NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(

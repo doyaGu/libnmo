@@ -51,6 +51,9 @@ nmo_status_t nmo_ref_write(nmo_chunk_t *chunk, const nmo_ref_t *ref)
     if (ref->state == NMO_REF_RESOLVED) {
         return nmo_chunk_write_object_id(chunk, ref->id);
     }
+    if (ref->state == NMO_REF_NONE) {
+        return nmo_chunk_write_object_id(chunk, NMO_OBJECT_ID_NONE);
+    }
     return nmo_chunk_write_raw_object_id(chunk, ref->raw_id);
 }
 
@@ -61,6 +64,10 @@ nmo_status_t nmo_ref_write_sequence_item(nmo_chunk_t *chunk, const nmo_ref_t *re
     }
     if (ref->state == NMO_REF_RESOLVED) {
         return nmo_chunk_write_object_sequence_item(chunk, ref->id);
+    }
+    if (ref->state == NMO_REF_NONE) {
+        return nmo_chunk_write_object_sequence_item(
+            chunk, NMO_OBJECT_ID_NONE);
     }
     return nmo_chunk_write_raw_object_sequence_item(chunk, ref->raw_id);
 }

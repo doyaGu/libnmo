@@ -2500,18 +2500,19 @@ static nmo_status_t workspace_obj_mesh_build(
         }
         memset(material_groups, 0, material_group_count * sizeof(*material_groups));
         for (uint32_t i = 0; i < material_group_count; ++i) {
-            material_groups[i].material_id =
-                options != NULL ? options->default_material_id : NMO_OBJECT_ID_NONE;
+            material_groups[i].material = nmo_ref_from_id(
+                options != NULL ? options->default_material_id :
+                                  NMO_OBJECT_ID_NONE);
         }
         for (size_t i = 0; i < obj_data->material_name_count; ++i) {
             uint32_t group_index = (uint32_t)i + material_offset;
             if (group_index < material_group_count) {
-                material_groups[group_index].material_id =
+                material_groups[group_index].material = nmo_ref_from_id(
                     workspace_obj_mesh_material_for_name(
                         options,
                         obj_data->material_names != NULL
                             ? obj_data->material_names[i]
-                            : NULL);
+                            : NULL));
             }
         }
     }
@@ -2894,7 +2895,7 @@ nmo_status_t nmo_asset_edit_set_primitive_mesh(
     if (status != NMO_OK) {
         return status;
     }
-    groups[0].material_id = material_id;
+    groups[0].material = nmo_ref_from_id(material_id);
 
     status = nmo_workspace_edit_snapshot_bytes(edit, state, sizeof(*state));
     if (status != NMO_OK) {

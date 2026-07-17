@@ -309,7 +309,7 @@ nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry) {
 
     /* CKMaterialChannel */
     static const nmo_struct_field_def_t ckmaterialchannel_fields[] = {
-        NMO_STRUCT_FIELD_GUID_FLAGS("material_id", CKPGUID_ID, NMO_FIELD_REFERENCE),
+        NMO_STRUCT_FIELD_NAME("material", "uint32[3]"),
         NMO_STRUCT_FIELD_GUID("flags", CKPGUID_UINT32),
         NMO_STRUCT_FIELD_GUID("source_blend", CKPGUID_UINT32),
         NMO_STRUCT_FIELD_GUID("dest_blend", CKPGUID_UINT32),
@@ -321,7 +321,8 @@ nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry) {
 
     /* CKMaterialGroup */
     static const nmo_struct_field_def_t ckmaterialgroup_fields[] = {
-        NMO_STRUCT_FIELD_GUID_FLAGS("material_id", CKPGUID_ID, NMO_FIELD_REFERENCE)
+        NMO_STRUCT_FIELD_NAME("material", "uint32[3]"),
+        NMO_STRUCT_FIELD_GUID("padding", CKPGUID_INT)
     };
     static const nmo_struct_type_def_t ckmaterialgroup_def =
         NMO_STRUCT_DEF("CKMaterialGroup", NMO_GUID_STRUCT_CKMATERIALGROUP, ckmaterialgroup_fields);

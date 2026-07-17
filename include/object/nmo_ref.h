@@ -86,6 +86,9 @@ static inline nmo_object_id_t nmo_ref_serialized_id(const nmo_ref_t *ref)
     if (ref == NULL) {
         return NMO_OBJECT_ID_NONE;
     }
+    if (ref->state == NMO_REF_NONE) {
+        return NMO_OBJECT_ID_NONE;
+    }
     return ref->state == NMO_REF_RESOLVED ? ref->id : ref->raw_id;
 }
 

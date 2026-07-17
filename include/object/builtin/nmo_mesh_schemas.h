@@ -38,7 +38,7 @@ typedef struct nmo_mesh_state {
     nmo_beobject_state_t beobject;     ///< Parent CKBeObject state (80 bytes)
     
     // === Mesh flags (4 bytes at 0x50) ===
-    uint32_t flags;                       ///< Mesh flags (mask 0x7FE39A)
+    uint32_t flags;                       ///< Raw serialized mesh flags
     
     // === Geometry attributes (40 bytes at 0x54-0x7B) ===
     nmo_vector_t bary_center;         ///< Geometric center
@@ -65,9 +65,11 @@ typedef struct nmo_mesh_state {
     // === Material system ===
     uint32_t material_group_count;        ///< Material group count
     nmo_material_group_t *material_groups;  ///< Material groups
+    uint8_t has_material_groups;          ///< Material group section was present
     
     uint32_t material_channel_count;      ///< Material channel count
     nmo_material_channel_t *material_channels;  ///< Material channels
+    uint8_t has_material_channels;        ///< Material channel section was present
     
     // === Rendering optimization ===
     bool is_valid;                        ///< Mesh validity flag

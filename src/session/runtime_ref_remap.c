@@ -9,6 +9,7 @@
 #include "object/builtin/nmo_beobject_schemas.h"
 #include "object/builtin/nmo_character_schemas.h"
 #include "object/builtin/nmo_grid_schemas.h"
+#include "object/builtin/nmo_mesh_schemas.h"
 #include "object/builtin/nmo_patchmesh_schemas.h"
 #include "object/builtin/nmo_scene_schemas.h"
 #include "object/nmo_object_guids.h"
@@ -272,6 +273,34 @@ static nmo_status_t runtime_remap_patchmesh_refs(
     return NMO_OK;
 }
 
+static nmo_status_t runtime_remap_mesh_refs(
+    nmo_mesh_state_t *state,
+    const nmo_id_remap_t *remap)
+{
+    if (!state) return NMO_OK;
+    if ((state->material_group_count > 0 && !state->material_groups) ||
+        (state->material_channel_count > 0 && !state->material_channels)) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    for (uint32_t i = 0; i < state->material_group_count; ++i) {
+        nmo_ref_t *ref = &state->material_groups[i].material;
+        nmo_object_id_t mapped = NMO_OBJECT_ID_NONE;
+        if (ref->state == NMO_REF_RESOLVED &&
+            runtime_lookup_mapping(remap, ref->id, &mapped)) {
+            ref->id = mapped;
+        }
+    }
+    for (uint32_t i = 0; i < state->material_channel_count; ++i) {
+        nmo_ref_t *ref = &state->material_channels[i].material;
+        nmo_object_id_t mapped = NMO_OBJECT_ID_NONE;
+        if (ref->state == NMO_REF_RESOLVED &&
+            runtime_lookup_mapping(remap, ref->id, &mapped)) {
+            ref->id = mapped;
+        }
+    }
+    return NMO_OK;
+}
+
 static const void *runtime_get_base_instance(
     const nmo_type_registry_t *types,
     const nmo_type_descriptor_t *derived_type,
@@ -347,6 +376,10 @@ nmo_status_t nmo_runtime_remap_copy_refs(
         if (nmo_guid_equals(current->guid, CKPGUID_PATCHMESH)) {
             NMO_RETURN_IF_ERROR(runtime_remap_patchmesh_refs(
                 (nmo_patchmesh_state_t *)current_instance, remap));
+        }
+        if (nmo_guid_equals(current->guid, CKPGUID_MESH)) {
+            NMO_RETURN_IF_ERROR(runtime_remap_mesh_refs(
+                (nmo_mesh_state_t *)current_instance, remap));
         }
 
         if (nmo_guid_is_null(current->base_type)) {
@@ -748,6 +781,63 @@ static nmo_status_t normalize_patchmesh_patches(
     return NMO_OK;
 }
 
+static nmo_status_t normalize_mesh_materials(
+    nmo_mesh_state_t *state,
+    nmo_object_repository_t *repo,
+    const nmo_type_registry_t *types,
+    size_t *changes)
+{
+    if (!state) return NMO_OK;
+    if ((state->material_group_count > 0 && !state->material_groups) ||
+        (state->material_channel_count > 0 && !state->material_channels) ||
+        (state->face_count > 0 && !state->faces)) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+
+    uint32_t count = state->material_group_count;
+    for (uint32_t i = 0; i < count;) {
+        const nmo_ref_t *ref = &state->material_groups[i].material;
+        const nmo_object_id_t id = nmo_ref_runtime_id(ref);
+        if (ref->state == NMO_REF_RESOLVED &&
+            !normalize_id_is_invalid(repo, id) &&
+            !normalize_id_has_wrong_class(
+                repo, types, id, NMO_CID_MATERIAL)) {
+            ++i;
+            continue;
+        }
+        uint32_t remaining = count - i - 1u;
+        if (remaining > 0) {
+            memmove(&state->material_groups[i],
+                    &state->material_groups[i + 1u],
+                    (size_t)remaining * sizeof(*state->material_groups));
+        }
+        state->material_group_count = --count;
+        for (uint32_t face = 0; face < state->face_count; ++face) {
+            uint16_t *index = &state->faces[face].material_group_idx;
+            if (*index == i) {
+                *index = 0;
+            } else if (*index > i) {
+                --*index;
+            }
+        }
+        (*changes)++;
+    }
+
+    for (uint32_t i = 0; i < state->material_channel_count; ++i) {
+        nmo_ref_t *ref = &state->material_channels[i].material;
+        const nmo_object_id_t id = nmo_ref_runtime_id(ref);
+        if (ref->state != NMO_REF_NONE &&
+            (ref->state != NMO_REF_RESOLVED ||
+             normalize_id_is_invalid(repo, id) ||
+             normalize_id_has_wrong_class(
+                 repo, types, id, NMO_CID_MATERIAL))) {
+            *ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+            (*changes)++;
+        }
+    }
+    return NMO_OK;
+}
+
 static nmo_status_t normalize_keyed_animation(
     nmo_keyedanimation_state_t *state,
     nmo_object_repository_t *repo,
@@ -978,6 +1068,11 @@ nmo_status_t nmo_runtime_normalize_invalid_refs(
                 type_rt->types, obj, CKPGUID_PATCHMESH);
         NMO_RETURN_IF_ERROR(normalize_patchmesh_patches(
             patchmesh, repo, type_rt->types, &changed));
+        nmo_mesh_state_t *mesh = (nmo_mesh_state_t *)
+            nmo_type_query_object_get_ancestor_state_by_guid(
+                type_rt->types, obj, CKPGUID_MESH);
+        NMO_RETURN_IF_ERROR(normalize_mesh_materials(
+            mesh, repo, type_rt->types, &changed));
         nmo_keyedanimation_state_t *keyed = (nmo_keyedanimation_state_t *)
             nmo_type_query_object_get_ancestor_state_by_guid(
                 type_rt->types, obj, CKPGUID_KEYEDANIMATION);
