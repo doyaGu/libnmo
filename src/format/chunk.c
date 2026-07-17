@@ -275,6 +275,10 @@ static nmo_status_t chunk_validate_offset_list(const nmo_chunk_t *chunk,
     if (chunk->data.count == 0) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Offset list present but chunk has no data");
     }
+    if (list->data == NULL || chunk->data.data == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                         "Offset list or chunk data is missing");
+    }
 
     const uint32_t *entries = NMO_ARENA_ARRAY_DATA(uint32_t, list);
     const uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
@@ -294,7 +298,9 @@ static nmo_status_t chunk_validate_offset_list(const nmo_chunk_t *chunk,
             }
 
             uint32_t seq_count = data[seq_pos];
-            if (seq_pos + 1u + seq_count > chunk->data.count) {
+            const size_t sequence_data_pos = (size_t)seq_pos + 1u;
+            if (sequence_data_pos > chunk->data.count ||
+                (size_t)seq_count > chunk->data.count - sequence_data_pos) {
                 NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Sequence count exceeds chunk data bounds");
             }
 
