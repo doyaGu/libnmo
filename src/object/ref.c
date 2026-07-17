@@ -11,6 +11,26 @@
 #include <limits.h>
 #include <stdint.h>
 
+static size_t nmo_ref_identifier_remaining_dwords(
+    const nmo_chunk_t *chunk)
+{
+    if (!chunk || !chunk->parser_state) return 0;
+
+    const nmo_chunk_parser_state_t *state =
+        (const nmo_chunk_parser_state_t *)chunk->parser_state;
+    const uint32_t *data =
+        NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    size_t next_pos = chunk->data.count;
+    if (state->prev_identifier_pos + 1u < chunk->data.count) {
+        const uint32_t candidate = data[state->prev_identifier_pos + 1u];
+        if (candidate != 0 && candidate <= chunk->data.count) {
+            next_pos = candidate;
+        }
+    }
+    if (next_pos < state->current_pos) return 0;
+    return next_pos - state->current_pos;
+}
+
 nmo_status_t nmo_ref_read(nmo_chunk_t *chunk, nmo_ref_t *out_ref)
 {
     if (!chunk || !out_ref) {
@@ -85,10 +105,7 @@ nmo_status_t nmo_ref_read_sequence(
     nmo_status_t result = nmo_chunk_read_object_sequence_start(chunk, &count);
     if (result != NMO_OK) return result;
     if (count > SIZE_MAX / sizeof(nmo_ref_t)) return NMO_ERR_INVALID_FORMAT;
-    const nmo_chunk_parser_state_t *parser =
-        (const nmo_chunk_parser_state_t *)chunk->parser_state;
-    if (parser == NULL || parser->current_pos > chunk->data.count ||
-        count > chunk->data.count - parser->current_pos) {
+    if (count > nmo_ref_identifier_remaining_dwords(chunk)) {
         return NMO_ERR_TRUNCATED_CHUNK;
     }
     nmo_ref_t *refs = NULL;
