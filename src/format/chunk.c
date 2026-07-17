@@ -104,8 +104,13 @@ static uint32_t chunk_compute_option_flags(const nmo_chunk_t *chunk) {
 static nmo_status_t chunk_validate_serialized_array(
     const nmo_arena_array_t *array)
 {
+    if (array == NULL) return NMO_ERR_INVALID_ARGUMENT;
     if (array->count > UINT32_MAX) return NMO_ERR_INVALID_ARGUMENT;
-    if (array->count > 0 && array->data == NULL) return NMO_ERR_INVALID_STATE;
+    if (array->count > 0 &&
+        (array->data == NULL || array->count > array->capacity ||
+         array->element_size != sizeof(uint32_t))) {
+        return NMO_ERR_INVALID_STATE;
+    }
     return NMO_OK;
 }
 
