@@ -1024,6 +1024,29 @@ TEST(chunk_api, arrays_reject_inconsistent_header) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_api, array_truncated_header_clears_outputs) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 1024 * 16);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t* chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 8u));
+    nmo_chunk_close(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(chunk));
+
+    void* read_array = (void*)1;
+    size_t count = 123;
+    size_t elem_size = 456;
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK,
+        nmo_chunk_read_array(chunk, &read_array, &count, &elem_size));
+    ASSERT_EQ(0u, nmo_chunk_get_position(chunk));
+    ASSERT_NULL(read_array);
+    ASSERT_EQ(0u, count);
+    ASSERT_EQ(0u, elem_size);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_api, typed_array_writes_reject_unencodable_counts) {
     nmo_arena_t* arena = nmo_arena_create(NULL, 1024 * 16);
     ASSERT_NOT_NULL(arena);
@@ -1263,6 +1286,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_api, sub_chunk_reads_manager_count_independent_of_parent_version);
     REGISTER_TEST(chunk_api, arrays);
     REGISTER_TEST(chunk_api, arrays_reject_inconsistent_header);
+    REGISTER_TEST(chunk_api, array_truncated_header_clears_outputs);
     REGISTER_TEST(chunk_api, typed_array_writes_reject_unencodable_counts);
     REGISTER_TEST(chunk_api, generic_array_write_rejects_invalid_sizes);
     REGISTER_TEST(chunk_api, generic_array_allocation_failure_is_atomic);
