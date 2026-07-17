@@ -1095,6 +1095,56 @@ TEST(chunk_api, sub_chunk_tracking_failure_is_atomic) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_api, sub_chunk_sequence_header_truncation_is_atomic) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t* chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 2));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0));
+    nmo_chunk_close(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(chunk));
+
+    size_t count = 123;
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK,
+        nmo_chunk_start_read_sub_chunk_sequence(chunk, &count));
+    ASSERT_EQ(0u, count);
+    ASSERT_EQ(0u, nmo_chunk_get_position(chunk));
+
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_api, sub_chunk_sequence_write_failure_is_atomic) {
+    chunk_api_fail_allocator_state_t allocator_state = {
+        .allowed_allocations = (size_t)-1,
+    };
+    nmo_allocator_t allocator = nmo_allocator_custom(
+        chunk_api_fail_alloc, chunk_api_fail_free, &allocator_state);
+    nmo_arena_t* arena = nmo_arena_create(&allocator, 256);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t* chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0x12345678u));
+    const uint32_t options_before = chunk->chunk_options;
+
+#if SIZE_MAX > UINT32_MAX
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+        nmo_chunk_start_sub_chunk_sequence(chunk, SIZE_MAX));
+#endif
+    ASSERT_NOT_NULL(nmo_arena_alloc(arena, 100000, 16));
+    allocator_state.allowed_allocations = allocator_state.allocation_count;
+    ASSERT_EQ(NMO_ERR_NOMEM,
+        nmo_chunk_start_sub_chunk_sequence(chunk, 1));
+    ASSERT_EQ(1u, nmo_chunk_get_position(chunk));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(chunk));
+    ASSERT_EQ(0u, chunk->chunk_refs.count);
+    ASSERT_EQ(options_before, chunk->chunk_options);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_api, manager_sequence_write_failure_is_atomic) {
     chunk_api_fail_allocator_state_t allocator_state = {
         .allowed_allocations = (size_t)-1,
@@ -1448,6 +1498,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_api, sub_chunks);
     REGISTER_TEST(chunk_api, sub_chunk_write_rejects_unencodable_payload);
     REGISTER_TEST(chunk_api, sub_chunk_tracking_failure_is_atomic);
+    REGISTER_TEST(chunk_api, sub_chunk_sequence_header_truncation_is_atomic);
+    REGISTER_TEST(chunk_api, sub_chunk_sequence_write_failure_is_atomic);
     REGISTER_TEST(chunk_api, sub_chunk_truncated_header);
     REGISTER_TEST(chunk_api, sub_chunk_invalid_manager_count_keeps_position);
     REGISTER_TEST(chunk_api, sub_chunk_reads_manager_count_independent_of_parent_version);
