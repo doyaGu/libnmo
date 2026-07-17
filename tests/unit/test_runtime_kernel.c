@@ -20,6 +20,7 @@
 #include "object/builtin/nmo_attributemanager_schemas.h"
 #include "object/builtin/nmo_camera_schemas.h"
 #include "object/builtin/nmo_character_schemas.h"
+#include "object/builtin/nmo_curve_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "object/builtin/nmo_patchmesh_schemas.h"
 #include "object/builtin/nmo_interfaceobjectmanager_schemas.h"
@@ -2091,6 +2092,132 @@ TEST(runtime_kernel, normalize_and_safe_detach_keep_patchmesh_records_atomic) {
     nmo_context_release(ctx);
 }
 
+TEST(runtime_kernel, copy_remap_updates_only_resolved_curve_refs) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    const nmo_type_runtime_t *type_rt = nmo_context_get_type_runtime(ctx);
+    const nmo_type_descriptor_t *curve_type =
+        nmo_type_registry_find_by_class_id(type_rt->types, NMO_CID_CURVE);
+    ASSERT_NOT_NULL(curve_type);
+
+    nmo_ref_t control_points[] = {
+        nmo_ref_from_id(101), nmo_ref_from_raw(102),
+    };
+    nmo_curve_point_subchunk_t sub_points[] = {
+        {.ref = nmo_ref_from_id(103), .chunk = NULL},
+        {.ref = nmo_ref_from_raw(104), .chunk = NULL},
+    };
+    nmo_curve_state_t state = {0};
+    state.control_point_count = 2;
+    state.control_point_ids = control_points;
+    state.sub_point_count = 2;
+    state.sub_points = sub_points;
+
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_id_remap_t *remap = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(remap);
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, 101, 201));
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, 102, 202));
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, 103, 203));
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, 104, 204));
+
+    ASSERT_EQ(NMO_OK, nmo_runtime_remap_copy_refs(
+        type_rt, curve_type, &state, remap));
+    ASSERT_EQ(201u, nmo_ref_runtime_id(&control_points[0]));
+    ASSERT_EQ(101u, control_points[0].raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, control_points[1].state);
+    ASSERT_EQ(102u, control_points[1].raw_id);
+    ASSERT_EQ(203u, nmo_ref_runtime_id(&sub_points[0].ref));
+    ASSERT_EQ(103u, sub_points[0].ref.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, sub_points[1].ref.state);
+    ASSERT_EQ(104u, sub_points[1].ref.raw_id);
+
+    nmo_arena_destroy(arena);
+    nmo_context_release(ctx);
+}
+
+TEST(runtime_kernel, normalize_and_safe_detach_keep_curve_sections_independent) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_id_t curve_id = 0;
+    nmo_object_id_t point_a = 0;
+    nmo_object_id_t point_b = 0;
+    nmo_object_id_t wrong_class = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_CURVE, "curve", (nmo_guid_t){0, 0},
+        &curve_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_CURVEPOINT, "point-a", (nmo_guid_t){0, 0},
+        &point_a, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_CURVEPOINT, "point-b", (nmo_guid_t){0, 0},
+        &point_b, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_OBJECT, "wrong", (nmo_guid_t){0, 0},
+        &wrong_class, NULL));
+
+    nmo_curve_state_t *curve = (nmo_curve_state_t *)
+        nmo_object_repository_find_by_id(repo, curve_id)->state;
+    ASSERT_NOT_NULL(curve);
+    nmo_arena_t *chunk_arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(chunk_arena);
+    nmo_chunk_t *valid_chunk = nmo_chunk_create(chunk_arena);
+    nmo_chunk_t *unresolved_chunk = nmo_chunk_create(chunk_arena);
+    nmo_chunk_t *wrong_chunk = nmo_chunk_create(chunk_arena);
+    ASSERT_NOT_NULL(valid_chunk);
+    ASSERT_NOT_NULL(unresolved_chunk);
+    ASSERT_NOT_NULL(wrong_chunk);
+
+    nmo_ref_t control_points[] = {
+        nmo_ref_from_id(point_a),
+        nmo_ref_from_raw(0x7FFFFF21u),
+        nmo_ref_from_id(wrong_class),
+    };
+    nmo_curve_point_subchunk_t sub_points[] = {
+        {.ref = nmo_ref_from_id(point_b), .chunk = valid_chunk},
+        {.ref = nmo_ref_from_raw(0x7FFFFF22u), .chunk = unresolved_chunk},
+        {.ref = nmo_ref_from_id(wrong_class), .chunk = wrong_chunk},
+    };
+    curve->control_point_count = 3;
+    curve->control_point_ids = control_points;
+    curve->sub_point_count = 3;
+    curve->sub_points = sub_points;
+
+    size_t changed = 0;
+    ASSERT_EQ(NMO_OK, nmo_runtime_normalize_invalid_refs(
+        repo, nmo_context_get_type_runtime(ctx), &changed));
+    ASSERT_EQ(4u, changed);
+    ASSERT_EQ(1u, curve->control_point_count);
+    ASSERT_EQ(point_a,
+              nmo_ref_runtime_id(&curve->control_point_ids[0]));
+    ASSERT_EQ(1u, curve->sub_point_count);
+    ASSERT_EQ(point_b, nmo_ref_runtime_id(&curve->sub_points[0].ref));
+    ASSERT_EQ(valid_chunk, curve->sub_points[0].chunk);
+
+    nmo_runtime_report_t report = {0};
+    ASSERT_EQ(NMO_OK, nmo_session_destroy_objects(
+        session, &point_a, 1,
+        NMO_RUNTIME_REQUEST_STRICT | NMO_RUNTIME_REQUEST_SAFE_DETACH,
+        &report));
+    ASSERT_EQ(1u, report.deleted_objects);
+    curve = (nmo_curve_state_t *)
+        nmo_object_repository_find_by_id(repo, curve_id)->state;
+    ASSERT_EQ(0u, curve->control_point_count);
+    ASSERT_EQ(1u, curve->sub_point_count);
+    ASSERT_EQ(point_b, nmo_ref_runtime_id(&curve->sub_points[0].ref));
+    ASSERT_EQ(valid_chunk, curve->sub_points[0].chunk);
+
+    nmo_session_destroy(session);
+    nmo_arena_destroy(chunk_arena);
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(runtime_kernel, execute_create_and_delete);
 REGISTER_TEST(runtime_kernel, invalid_execute_arguments);
@@ -2122,5 +2249,7 @@ REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_mesh_refs);
 REGISTER_TEST(runtime_kernel, normalize_and_safe_detach_keep_mesh_records_atomic);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_patchmesh_refs);
 REGISTER_TEST(runtime_kernel, normalize_and_safe_detach_keep_patchmesh_records_atomic);
+REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_curve_refs);
+REGISTER_TEST(runtime_kernel, normalize_and_safe_detach_keep_curve_sections_independent);
 TEST_MAIN_END()
 

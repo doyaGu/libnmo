@@ -4553,6 +4553,265 @@ TEST(chunk_id_remap, keyedanimation_sections_round_trip_independently) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, curve_staging_initializes_inherited_arrays) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+
+    nmo_chunk_t *curve_chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(curve_chunk);
+    curve_chunk->class_id = NMO_CID_CURVE;
+    curve_chunk->chunk_version = NMO_CHUNK_VERSION4;
+    curve_chunk->data_version = 7;
+    curve_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(curve_chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        curve_chunk, CK_STATESAVE_SCRIPTS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(curve_chunk, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_item(curve_chunk, 951));
+    nmo_chunk_close(curve_chunk);
+
+    nmo_curve_state_t curve;
+    ASSERT_EQ(NMO_OK, nmo_curve_vtable.create(&curve, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(
+        &curve.base.base.base, NULL, NULL));
+    nmo_ref_t old_curve_script = nmo_ref_from_raw(952);
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &curve.base.base.base.scripts, &old_curve_script));
+    ASSERT_EQ(NMO_OK, nmo_curve_deserialize(
+        &curve, curve_chunk, NULL, &deserialize_context));
+    ASSERT_EQ(1u, curve.base.base.base.scripts.count);
+    ASSERT_EQ(sizeof(nmo_ref_t), curve.base.base.base.scripts.element_size);
+    const nmo_ref_t *curve_scripts = NMO_ARRAY_DATA(
+        nmo_ref_t, &curve.base.base.base.scripts);
+    ASSERT_NOT_NULL(curve_scripts);
+    ASSERT_EQ(951u, curve_scripts[0].raw_id);
+
+    nmo_chunk_t *point_chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(point_chunk);
+    point_chunk->class_id = NMO_CID_CURVEPOINT;
+    point_chunk->chunk_version = NMO_CHUNK_VERSION4;
+    point_chunk->data_version = 7;
+    point_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(point_chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        point_chunk, CK_STATESAVE_SCRIPTS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(point_chunk, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_item(point_chunk, 953));
+    nmo_chunk_close(point_chunk);
+
+    nmo_curvepoint_state_t point;
+    ASSERT_EQ(NMO_OK, nmo_curvepoint_vtable.create(&point, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(
+        &point.base.base.base, NULL, NULL));
+    nmo_ref_t old_point_script = nmo_ref_from_raw(954);
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &point.base.base.base.scripts, &old_point_script));
+    ASSERT_EQ(NMO_OK, nmo_curvepoint_deserialize(
+        &point, point_chunk, NULL, &deserialize_context));
+    ASSERT_EQ(1u, point.base.base.base.scripts.count);
+    ASSERT_EQ(sizeof(nmo_ref_t), point.base.base.base.scripts.element_size);
+    const nmo_ref_t *point_scripts = NMO_ARRAY_DATA(
+        nmo_ref_t, &point.base.base.base.scripts);
+    ASSERT_NOT_NULL(point_scripts);
+    ASSERT_EQ(953u, point_scripts[0].raw_id);
+
+    nmo_array_dispose(&curve.base.base.base.scripts);
+    nmo_array_dispose(&curve.base.base.base.attributes);
+    nmo_array_dispose(&curve.base.base.base.legacy_attributes);
+    nmo_array_dispose(&point.base.base.base.scripts);
+    nmo_array_dispose(&point.base.base.base.attributes);
+    nmo_array_dispose(&point.base.base.base.legacy_attributes);
+    nmo_curve_vtable.destroy(&curve, NULL, NULL);
+    nmo_curvepoint_vtable.destroy(&point, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_id_remap, curve_refs_round_trip_and_failure_is_atomic) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+    ASSERT_NOT_NULL(arena);
+    nmo_id_remap_t *file_to_runtime = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(file_to_runtime);
+    nmo_chunk_file_context_t read_context = {
+        .file_to_runtime = file_to_runtime,
+    };
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, UINT32_MAX);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+
+    nmo_chunk_t *subchunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(subchunk);
+    subchunk->chunk_version = NMO_CHUNK_VERSION4;
+    subchunk->data_version = 7;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(subchunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(subchunk, 0x13572468u));
+    nmo_chunk_close(subchunk);
+
+    nmo_ref_t control_points[] = {
+        nmo_ref_from_raw(961), nmo_ref_from_raw(962),
+    };
+    nmo_curve_point_subchunk_t saved_point = {
+        .ref = nmo_ref_from_raw(971),
+        .chunk = subchunk,
+    };
+    nmo_curve_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_curve_vtable.create(&source, NULL, NULL));
+    source.control_point_count = 2;
+    source.control_point_ids = control_points;
+    source.has_savepoints_chunk = 1;
+    source.savepoints_in_file = 1;
+    source.sub_point_count = 1;
+    source.sub_points = &saved_point;
+
+    nmo_chunk_t *first = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(first);
+    first->class_id = NMO_CID_CURVE;
+    first->chunk_version = NMO_CHUNK_VERSION4;
+    first->data_version = 7;
+    first->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_curve_serialize(
+        &source, first, NULL, &serialize_context));
+    nmo_chunk_close(first);
+    nmo_chunk_set_file_context(first, &read_context);
+
+    nmo_curve_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_curve_vtable.create(&loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_curve_deserialize(
+        &loaded, first, NULL, &deserialize_context));
+    ASSERT_EQ(2u, loaded.control_point_count);
+    ASSERT_EQ(961u, loaded.control_point_ids[0].raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, loaded.control_point_ids[0].state);
+    ASSERT_EQ(962u, loaded.control_point_ids[1].raw_id);
+    ASSERT_EQ(1u, loaded.sub_point_count);
+    ASSERT_EQ(971u, loaded.sub_points[0].ref.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, loaded.sub_points[0].ref.state);
+    ASSERT_NOT_NULL(loaded.sub_points[0].chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(loaded.sub_points[0].chunk));
+    uint32_t marker = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(
+        loaded.sub_points[0].chunk, &marker));
+    ASSERT_EQ(0x13572468u, marker);
+    nmo_ref_t inherited_script = nmo_ref_from_raw(972);
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &loaded.base.base.base.scripts, &inherited_script));
+
+    nmo_curve_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_curve_vtable.create(&copied, NULL, NULL));
+    const nmo_type_descriptor_t curve_type = {
+        .size = sizeof(nmo_curve_state_t),
+    };
+    ASSERT_EQ(NMO_OK, nmo_curve_vtable.copy(
+        &loaded, &copied, &curve_type, arena));
+    ASSERT_TRUE(copied.control_point_ids != loaded.control_point_ids);
+    ASSERT_TRUE(copied.sub_points != loaded.sub_points);
+    ASSERT_TRUE(copied.sub_points[0].chunk != loaded.sub_points[0].chunk);
+    ASSERT_TRUE(copied.base.base.base.scripts.data !=
+                loaded.base.base.base.scripts.data);
+    ASSERT_EQ(1u, copied.base.base.base.scripts.count);
+    const nmo_ref_t *copied_scripts = NMO_ARRAY_DATA(
+        nmo_ref_t, &copied.base.base.base.scripts);
+    ASSERT_EQ(972u, copied_scripts[0].raw_id);
+    ASSERT_TRUE(nmo_curve_vtable.equals(&loaded, &copied));
+    ASSERT_EQ(nmo_curve_vtable.hash(&loaded),
+              nmo_curve_vtable.hash(&copied));
+
+    nmo_chunk_t *second = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(second);
+    second->class_id = NMO_CID_CURVE;
+    second->chunk_version = NMO_CHUNK_VERSION4;
+    second->data_version = 7;
+    second->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_curve_serialize(
+        &loaded, second, NULL, &serialize_context));
+    nmo_chunk_close(second);
+    nmo_chunk_set_file_context(second, &read_context);
+
+    nmo_curve_state_t reloaded;
+    ASSERT_EQ(NMO_OK, nmo_curve_vtable.create(&reloaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_curve_deserialize(
+        &reloaded, second, NULL, &deserialize_context));
+    ASSERT_EQ(2u, reloaded.control_point_count);
+    ASSERT_EQ(961u, reloaded.control_point_ids[0].raw_id);
+    ASSERT_EQ(962u, reloaded.control_point_ids[1].raw_id);
+    ASSERT_EQ(1u, reloaded.sub_point_count);
+    ASSERT_EQ(971u, reloaded.sub_points[0].ref.raw_id);
+    ASSERT_EQ(1u, reloaded.base.base.base.scripts.count);
+    const nmo_ref_t *reloaded_scripts = NMO_ARRAY_DATA(
+        nmo_ref_t, &reloaded.base.base.base.scripts);
+    ASSERT_EQ(972u, reloaded_scripts[0].raw_id);
+
+    nmo_chunk_t *truncated = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(truncated);
+    truncated->class_id = NMO_CID_CURVE;
+    truncated->chunk_version = NMO_CHUNK_VERSION4;
+    truncated->data_version = 7;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(truncated));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        truncated, CK_STATESAVE_CURVEONLY));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(truncated, 2));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_item(truncated, 981));
+    nmo_chunk_close(truncated);
+
+    nmo_ref_t previous_control = nmo_ref_from_raw(991);
+    nmo_curve_point_subchunk_t previous_saved = {
+        .ref = nmo_ref_from_raw(992),
+        .chunk = subchunk,
+    };
+    nmo_curve_state_t failed;
+    ASSERT_EQ(NMO_OK, nmo_curve_vtable.create(&failed, NULL, NULL));
+    failed.control_point_count = 1;
+    failed.control_point_ids = &previous_control;
+    failed.has_savepoints_chunk = 1;
+    failed.sub_point_count = 1;
+    failed.sub_points = &previous_saved;
+    ASSERT_NE(NMO_OK, nmo_curve_deserialize(
+        &failed, truncated, NULL, &deserialize_context));
+    ASSERT_EQ(1u, failed.control_point_count);
+    ASSERT_EQ(&previous_control, failed.control_point_ids);
+    ASSERT_EQ(991u, failed.control_point_ids[0].raw_id);
+    ASSERT_EQ(1u, failed.sub_point_count);
+    ASSERT_EQ(&previous_saved, failed.sub_points);
+    ASSERT_EQ(992u, failed.sub_points[0].ref.raw_id);
+    ASSERT_EQ(subchunk, failed.sub_points[0].chunk);
+
+    nmo_curve_state_t invalid;
+    ASSERT_EQ(NMO_OK, nmo_curve_vtable.create(&invalid, NULL, NULL));
+    invalid.control_point_count = 1;
+    nmo_chunk_t *preserved = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(preserved);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(preserved));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(preserved, 0xCAFEBABEu));
+    nmo_chunk_close(preserved);
+    ASSERT_NE(NMO_OK, nmo_curve_serialize(
+        &invalid, preserved, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(preserved));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(preserved));
+    marker = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(preserved, &marker));
+    ASSERT_EQ(0xCAFEBABEu, marker);
+
+    nmo_curve_vtable.destroy(&source, NULL, NULL);
+    nmo_array_dispose(&loaded.base.base.base.scripts);
+    nmo_array_dispose(&loaded.base.base.base.attributes);
+    nmo_array_dispose(&loaded.base.base.base.legacy_attributes);
+    nmo_curve_vtable.destroy(&loaded, NULL, NULL);
+    nmo_array_dispose(&copied.base.base.base.scripts);
+    nmo_array_dispose(&copied.base.base.base.attributes);
+    nmo_array_dispose(&copied.base.base.base.legacy_attributes);
+    nmo_curve_vtable.destroy(&copied, NULL, NULL);
+    nmo_array_dispose(&reloaded.base.base.base.scripts);
+    nmo_array_dispose(&reloaded.base.base.base.attributes);
+    nmo_array_dispose(&reloaded.base.base.base.legacy_attributes);
+    nmo_curve_vtable.destroy(&reloaded, NULL, NULL);
+    nmo_curve_vtable.destroy(&failed, NULL, NULL);
+    nmo_curve_vtable.destroy(&invalid, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, objectanimation_refs_round_trip_and_failure_is_atomic) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
     ASSERT_NOT_NULL(arena);
@@ -4780,6 +5039,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, patchmesh_copy_preserves_atomic_records);
     REGISTER_TEST(chunk_id_remap, animation_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, keyedanimation_sections_round_trip_independently);
+    REGISTER_TEST(chunk_id_remap, curve_staging_initializes_inherited_arrays);
+    REGISTER_TEST(chunk_id_remap, curve_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, objectanimation_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, legacy_unresolved_id_preserves_raw_id);
 TEST_MAIN_END()
