@@ -97,38 +97,67 @@ static uint32_t chunk_compute_option_flags(const nmo_chunk_t *chunk) {
     return option_flags;
 }
 
+static nmo_status_t chunk_validate_serialized_array(
+    const nmo_arena_array_t *array)
+{
+    if (array->count > UINT32_MAX) return NMO_ERR_INVALID_ARGUMENT;
+    if (array->count > 0 && array->data == NULL) return NMO_ERR_INVALID_STATE;
+    return NMO_OK;
+}
+
+static nmo_status_t chunk_validate_serializable(const nmo_chunk_t *chunk,
+                                                uint32_t option_flags) {
+    nmo_status_t result = chunk_validate_serialized_array(&chunk->data);
+    if (result != NMO_OK) return result;
+    if ((option_flags & NMO_CHUNK_OPTION_IDS) != 0) {
+        result = chunk_validate_serialized_array(&chunk->ids);
+        if (result != NMO_OK) return result;
+    }
+    if ((option_flags & NMO_CHUNK_OPTION_CHN) != 0) {
+        result = chunk_validate_serialized_array(&chunk->chunk_refs);
+        if (result != NMO_OK) return result;
+    }
+    if ((option_flags & NMO_CHUNK_OPTION_MAN) != 0) {
+        result = chunk_validate_serialized_array(&chunk->managers);
+        if (result != NMO_OK) return result;
+    }
+    return NMO_OK;
+}
+
+static int chunk_add_dwords(size_t *total_dwords, size_t count) {
+    return nmo_safe_add_size(*total_dwords, count, total_dwords);
+}
+
 /**
  * @brief Calculate serialized size of a chunk
  */
-static size_t chunk_calc_size(const nmo_chunk_t *chunk) {
-    size_t size = 0;
-    uint32_t option_flags = chunk_compute_option_flags(chunk);
+static nmo_status_t chunk_calc_size(const nmo_chunk_t *chunk,
+                                    size_t *out_size) {
+    const uint32_t option_flags = chunk_compute_option_flags(chunk);
+    size_t total_dwords = 2; /* Version info + chunk size. */
 
-    /* Version info + chunk size */
-    size += 4 + 4;
-
-    /* Data buffer */
-    size += chunk->data.count * 4; /* count is in DWORDs */
-
-    /* Optional IDs list */
-    if (option_flags & NMO_CHUNK_OPTION_IDS) {
-        size += 4; /* count */
-        size += chunk->ids.count * 4;
+    if (!chunk_add_dwords(&total_dwords, chunk->data.count)) {
+        return NMO_ERR_INVALID_ARGUMENT;
     }
-
-    /* Optional sub-chunk reference list */
-    if (option_flags & NMO_CHUNK_OPTION_CHN) {
-        size += 4; /* count */
-        size += chunk->chunk_refs.count * 4;
+    if ((option_flags & NMO_CHUNK_OPTION_IDS) != 0 &&
+        (!chunk_add_dwords(&total_dwords, 1) ||
+         !chunk_add_dwords(&total_dwords, chunk->ids.count))) {
+        return NMO_ERR_INVALID_ARGUMENT;
     }
-
-    /* Optional managers list */
-    if (option_flags & NMO_CHUNK_OPTION_MAN) {
-        size += 4; /* count */
-        size += chunk->managers.count * 4;
+    if ((option_flags & NMO_CHUNK_OPTION_CHN) != 0 &&
+        (!chunk_add_dwords(&total_dwords, 1) ||
+         !chunk_add_dwords(&total_dwords, chunk->chunk_refs.count))) {
+        return NMO_ERR_INVALID_ARGUMENT;
     }
-
-    return size;
+    if ((option_flags & NMO_CHUNK_OPTION_MAN) != 0 &&
+        (!chunk_add_dwords(&total_dwords, 1) ||
+         !chunk_add_dwords(&total_dwords, chunk->managers.count))) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (!nmo_safe_mul_size(total_dwords, sizeof(uint32_t), out_size)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    return NMO_OK;
 }
 
 static nmo_status_t chunk_build_subchunks_from_refs(nmo_chunk_t *chunk, nmo_arena_t *arena) {
@@ -488,9 +517,17 @@ nmo_status_t nmo_chunk_serialize(const nmo_chunk_t *chunk,
     if (!chunk || !out_data || !out_size || !arena) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to chunk_serialize");
     }
+    *out_data = NULL;
+    *out_size = 0;
+
+    const uint32_t option_flags = chunk_compute_option_flags(chunk);
+    nmo_status_t result = chunk_validate_serializable(chunk, option_flags);
+    NMO_RETURN_IF_ERROR(result);
 
     /* Calculate total size */
-    size_t total_size = chunk_calc_size(chunk);
+    size_t total_size = 0;
+    result = chunk_calc_size(chunk, &total_size);
+    NMO_RETURN_IF_ERROR(result);
 
     /* Allocate output buffer */
     uint8_t *buffer = nmo_arena_alloc(arena, total_size, 4);
@@ -506,7 +543,7 @@ nmo_status_t nmo_chunk_serialize(const nmo_chunk_t *chunk,
     };
 
     /* Serialize chunk */
-    nmo_status_t result = chunk_serialize_internal(chunk, &ctx);
+    result = chunk_serialize_internal(chunk, &ctx);
     NMO_RETURN_IF_ERROR(result);
 
     *out_data = buffer;
@@ -518,8 +555,9 @@ nmo_status_t nmo_chunk_serialize(const nmo_chunk_t *chunk,
 /**
  * @brief Calculate serialized size for VERSION1 format
  */
-static size_t chunk_calc_size_version1(const nmo_chunk_t *chunk) {
-    size_t size = 0;
+static nmo_status_t chunk_calc_size_version1(const nmo_chunk_t *chunk,
+                                             size_t *out_size) {
+    size_t total_dwords = 0;
     uint32_t chunk_version = chunk->chunk_version;
     const size_t data_count = chunk->data.count;
     const uint32_t option_flags = chunk_compute_option_flags(chunk);
@@ -529,21 +567,25 @@ static size_t chunk_calc_size_version1(const nmo_chunk_t *chunk) {
 
     if (chunk_version < NMO_CHUNK_VERSION2) {
         /* VERSION1 header: version_info, class_id, chunk_size, reserved, id_count, chunk_count */
-        size += 6 * sizeof(uint32_t);
-        size += data_count * sizeof(uint32_t);
-        size += id_count * sizeof(uint32_t);
-        size += chunk_ref_count * sizeof(uint32_t);
-        return size;
+        total_dwords = 6;
+        if (!chunk_add_dwords(&total_dwords, data_count) ||
+            !chunk_add_dwords(&total_dwords, id_count) ||
+            !chunk_add_dwords(&total_dwords, chunk_ref_count)) {
+            return NMO_ERR_INVALID_ARGUMENT;
+        }
+        goto finish;
     }
 
     if (chunk_version == NMO_CHUNK_VERSION2) {
         /* VERSION2 header adds manager_count */
-        size += 7 * sizeof(uint32_t);
-        size += data_count * sizeof(uint32_t);
-        size += id_count * sizeof(uint32_t);
-        size += chunk_ref_count * sizeof(uint32_t);
-        size += manager_count * sizeof(uint32_t);
-        return size;
+        total_dwords = 7;
+        if (!chunk_add_dwords(&total_dwords, data_count) ||
+            !chunk_add_dwords(&total_dwords, id_count) ||
+            !chunk_add_dwords(&total_dwords, chunk_ref_count) ||
+            !chunk_add_dwords(&total_dwords, manager_count)) {
+            return NMO_ERR_INVALID_ARGUMENT;
+        }
+        goto finish;
     }
 
     /* VERSION3/VERSION4 compact header */
@@ -551,25 +593,38 @@ static size_t chunk_calc_size_version1(const nmo_chunk_t *chunk) {
     const int has_chunks = (chunk->chunk_options & NMO_CHUNK_OPTION_CHN) || chunk_ref_count > 0;
     const int has_managers = (chunk->chunk_options & NMO_CHUNK_OPTION_MAN) || manager_count > 0;
 
-    size += 2 * sizeof(uint32_t); /* version_info + chunk_size */
-    size += data_count * sizeof(uint32_t);
+    total_dwords = 2; /* version_info + chunk_size */
+    if (!chunk_add_dwords(&total_dwords, data_count)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
 
     if (has_ids) {
-        size += sizeof(uint32_t); /* count */
-        size += id_count * sizeof(uint32_t);
+        if (!chunk_add_dwords(&total_dwords, 1) ||
+            !chunk_add_dwords(&total_dwords, id_count)) {
+            return NMO_ERR_INVALID_ARGUMENT;
+        }
     }
 
     if (has_chunks) {
-        size += sizeof(uint32_t);
-        size += chunk_ref_count * sizeof(uint32_t);
+        if (!chunk_add_dwords(&total_dwords, 1) ||
+            !chunk_add_dwords(&total_dwords, chunk_ref_count)) {
+            return NMO_ERR_INVALID_ARGUMENT;
+        }
     }
 
     if (has_managers) {
-        size += sizeof(uint32_t);
-        size += manager_count * sizeof(uint32_t);
+        if (!chunk_add_dwords(&total_dwords, 1) ||
+            !chunk_add_dwords(&total_dwords, manager_count)) {
+            return NMO_ERR_INVALID_ARGUMENT;
+        }
     }
 
-    return size;
+finish:
+    if (!nmo_safe_mul_size(
+            total_dwords, sizeof(uint32_t), out_size)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    return NMO_OK;
 }
 
 /**
@@ -596,9 +651,18 @@ nmo_status_t nmo_chunk_serialize_version1(const nmo_chunk_t *chunk,
     if (!chunk || !out_data || !out_size || !arena) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to chunk_serialize_version1");
     }
+    *out_data = NULL;
+    *out_size = 0;
+
+    const uint32_t serialized_options = chunk_compute_option_flags(chunk);
+    nmo_status_t result = chunk_validate_serializable(
+        chunk, serialized_options);
+    NMO_RETURN_IF_ERROR(result);
 
     /* Calculate total size */
-    size_t total_size = chunk_calc_size_version1(chunk);
+    size_t total_size = 0;
+    result = chunk_calc_size_version1(chunk, &total_size);
+    NMO_RETURN_IF_ERROR(result);
 
     /* Allocate output buffer */
     uint32_t *buffer = (uint32_t *) nmo_arena_alloc(arena, total_size, sizeof(uint32_t));
