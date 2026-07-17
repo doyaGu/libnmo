@@ -146,8 +146,32 @@ TEST(chunk_serialize, parse_failure_preserves_chunk_state) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_serialize, parse_rejects_overflowing_sequence_count) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+
+    const uint32_t malformed[] = {
+        ((uint32_t)NMO_CHUNK_VERSION4 << 16) |
+            ((uint32_t)NMO_CHUNK_OPTION_CHN << 24),
+        1,
+        UINT32_MAX,
+        2,
+        UINT32_MAX,
+        0,
+    };
+    ASSERT_EQ(NMO_ERR_INVALID_STATE,
+        nmo_chunk_parse(chunk, malformed, sizeof(malformed)));
+    ASSERT_EQ(0u, chunk->data.count);
+    ASSERT_EQ(0u, chunk->chunk_refs.count);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_serialize, serialize_and_deserialize);
     REGISTER_TEST(chunk_serialize, empty_chunk);
     REGISTER_TEST(chunk_serialize, parse_failure_preserves_chunk_state);
+    REGISTER_TEST(chunk_serialize, parse_rejects_overflowing_sequence_count);
 TEST_MAIN_END()
