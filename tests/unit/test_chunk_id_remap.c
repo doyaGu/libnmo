@@ -24,6 +24,7 @@
 #include "object/builtin/nmo_grid_schemas.h"
 #include "object/builtin/nmo_layer_schemas.h"
 #include "object/builtin/nmo_sprite_schemas.h"
+#include "object/builtin/nmo_spritetext_schemas.h"
 #include "object/builtin/nmo_curve_schemas.h"
 #include "object/builtin/nmo_sprite3d_schemas.h"
 #include "object/builtin/nmo_sound_schemas.h"
@@ -71,6 +72,26 @@ static void *beobject_fail_alloc(void *user_data, size_t size,
 static void beobject_fail_free(void *user_data, void *ptr) {
     (void)user_data;
     (void)ptr;
+}
+
+typedef struct fail_after_allocator_state {
+    size_t allocation_count;
+    size_t allowed_allocations;
+} fail_after_allocator_state_t;
+
+static void *fail_after_alloc(void *user_data, size_t size, size_t alignment) {
+    fail_after_allocator_state_t *state =
+        (fail_after_allocator_state_t *)user_data;
+    if (state->allocation_count >= state->allowed_allocations) return NULL;
+    state->allocation_count++;
+    nmo_allocator_t allocator = nmo_allocator_default();
+    return nmo_alloc(&allocator, size, alignment);
+}
+
+static void fail_after_free(void *user_data, void *ptr) {
+    (void)user_data;
+    nmo_allocator_t allocator = nmo_allocator_default();
+    nmo_free(&allocator, ptr);
 }
 
 TEST(chunk_id_remap, id_remap_basic) {
@@ -2580,6 +2601,102 @@ TEST(chunk_id_remap, sprite_failures_keep_state_and_target_chunk_atomic) {
     nmo_array_dispose(&state.entity.base.base.legacy_attributes);
     nmo_sprite_vtable.destroy(&state, NULL, NULL);
     nmo_sprite_vtable.destroy(&source, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_id_remap, spritetext_failures_keep_state_and_target_chunk_atomic) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(arena, NULL, NULL, 0);
+
+    nmo_chunk_t *truncated = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(truncated);
+    truncated->class_id = NMO_CID_SPRITETEXT;
+    truncated->data_version = 4;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(truncated));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        truncated, CK_STATESAVE_SPRITEFONT));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_string(truncated, "Arial"));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(truncated, 12));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(truncated, 400));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(truncated, 0));
+    nmo_chunk_close(truncated);
+
+    nmo_spritetext_state_t state;
+    ASSERT_EQ(NMO_OK, nmo_spritetext_vtable.create(&state, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(
+        &state.base.entity.base.base, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &state.base.entity.base.base.scripts, 901));
+    state.text_content = "Old text";
+    state.font.font_name = "Old font";
+    state.font.size = 21;
+    state.font.weight = 700;
+    state.font.italic = 1;
+    state.font.underline = 1;
+    state.font_color = 0x11223344u;
+    state.background_color = 0x55667788u;
+    state.needs_redraw = true;
+
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_spritetext_deserialize(
+        &state, truncated, NULL, &deserialize_context));
+    ASSERT_STR_EQ("Old text", state.text_content);
+    ASSERT_STR_EQ("Old font", state.font.font_name);
+    ASSERT_EQ(21, state.font.size);
+    ASSERT_EQ(700, state.font.weight);
+    ASSERT_EQ(1, state.font.italic);
+    ASSERT_EQ(1, state.font.underline);
+    ASSERT_EQ(0x11223344u, state.font_color);
+    ASSERT_EQ(0x55667788u, state.background_color);
+    ASSERT_TRUE(state.needs_redraw);
+    ASSERT_EQ(901u, nmo_beobject_script_array_get_id(
+        &state.base.entity.base.base.scripts, 0));
+
+    fail_after_allocator_state_t allocator_state = {
+        .allocation_count = 0,
+        .allowed_allocations = 2,
+    };
+    nmo_allocator_t failing_allocator = nmo_allocator_custom(
+        fail_after_alloc, fail_after_free, &allocator_state);
+    nmo_arena_t *failing_arena = nmo_arena_create(
+        &failing_allocator, 4096);
+    ASSERT_NOT_NULL(failing_arena);
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        failing_arena, NULL, 0, 0);
+
+    char large_text[16385];
+    memset(large_text, 'A', sizeof(large_text) - 1);
+    large_text[sizeof(large_text) - 1] = '\0';
+    nmo_spritetext_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_spritetext_vtable.create(&source, NULL, NULL));
+    source.text_content = large_text;
+    source.font.font_name = "Arial";
+    source.font.size = 12;
+    source.font.weight = 400;
+    source.font_color = 0xFFFFFFFFu;
+
+    nmo_chunk_t *target = nmo_chunk_create(failing_arena);
+    ASSERT_NOT_NULL(target);
+    target->class_id = NMO_CID_SPRITETEXT;
+    target->data_version = 7;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(target, 0x12345678u));
+    nmo_chunk_close(target);
+    ASSERT_EQ(NMO_ERR_NOMEM, nmo_spritetext_serialize(
+        &source, target, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(target));
+    uint32_t marker = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(target, &marker));
+    ASSERT_EQ(0x12345678u, marker);
+
+    nmo_array_dispose(&state.base.entity.base.base.scripts);
+    nmo_array_dispose(&state.base.entity.base.base.attributes);
+    nmo_array_dispose(&state.base.entity.base.base.legacy_attributes);
+    nmo_spritetext_vtable.destroy(&state, NULL, NULL);
+    nmo_spritetext_vtable.destroy(&source, NULL, NULL);
+    nmo_arena_destroy(failing_arena);
     nmo_arena_destroy(arena);
 }
 
@@ -6058,6 +6175,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, grid_failures_keep_state_and_target_chunk_atomic);
     REGISTER_TEST(chunk_id_remap, sprite_shared_ref_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, sprite_failures_keep_state_and_target_chunk_atomic);
+    REGISTER_TEST(chunk_id_remap, spritetext_failures_keep_state_and_target_chunk_atomic);
     REGISTER_TEST(chunk_id_remap, curvepoint_unresolved_curve_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, sprite3d_unresolved_material_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, wavesound_unresolved_attachment_round_trips_raw_id);
