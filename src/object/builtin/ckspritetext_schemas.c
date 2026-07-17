@@ -192,23 +192,23 @@ static nmo_status_t ckspritetext_deserialize_modern(
     if (result == NMO_OK) {
         result = deserialize_text_content(chunk, arena, out_state);
         NMO_RETURN_IF_ERROR(result);
-    }
+    } else if (result != NMO_ERR_NOT_FOUND) return result;
     
     /* Process identifier 0x02000000: Font properties */
     result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SPRITEFONT);
     if (result == NMO_OK) {
         result = deserialize_font_properties(chunk, arena, out_state);
         NMO_RETURN_IF_ERROR(result);
-    }
+    } else if (result != NMO_ERR_NOT_FOUND) return result;
     
     /* Process identifier 0x04000000: Colors */
     result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SPRITETEXTCOLOR);
     if (result == NMO_OK) {
         result = deserialize_colors(chunk, arena, out_state);
         NMO_RETURN_IF_ERROR(result);
-    } else {
+    } else if (result == NMO_ERR_NOT_FOUND) {
         /* Already initialized to defaults (white on transparent) */
-    }
+    } else return result;
     
     NMO_RETURN_OK();
 }
