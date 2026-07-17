@@ -81,7 +81,7 @@ static nmo_status_t nmo_behaviorio_deserialize_internal(
         result = nmo_chunk_read_dword(chunk, &out_state->old_flags);
         if (result != NMO_OK) return result;
         out_state->has_flags = true;
-    }
+    } else if (result != NMO_ERR_NOT_FOUND) return result;
     /* Note: If identifier not found, old_flags remains 0 (valid for older versions) */
 
     NMO_RETURN_OK();
