@@ -18,6 +18,15 @@
 
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(targetlight, nmo_targetlight_state_t)
 
+static void nmo_targetlight_dispose_base_arrays(nmo_targetlight_state_t *state)
+{
+    if (state == NULL) return;
+    nmo_beobject_state_t *beobject = &state->base.entity.base.base;
+    nmo_array_dispose(&beobject->scripts);
+    nmo_array_dispose(&beobject->attributes);
+    nmo_array_dispose(&beobject->legacy_attributes);
+}
+
 /* =============================================================================
  * REFLECTION FIELDS
  * ============================================================================= */
@@ -188,9 +197,22 @@ nmo_status_t nmo_targetlight_deserialize(
     const nmo_type_descriptor_t *type,
     void *context)
 {
-    (void)type;
     nmo_targetlight_state_t *out_state = (nmo_targetlight_state_t *)instance;
-    return nmo_targetlight_deserialize_internal(out_state, chunk, context);
+    if (out_state == NULL || chunk == NULL) return NMO_ERR_INVALID_ARGUMENT;
+
+    nmo_targetlight_state_t decoded;
+    nmo_status_t result = nmo_targetlight_create(&decoded, type, context);
+    if (result != NMO_OK) return result;
+
+    result = nmo_targetlight_deserialize_internal(&decoded, chunk, context);
+    if (result != NMO_OK) {
+        nmo_targetlight_dispose_base_arrays(&decoded);
+        return result;
+    }
+
+    nmo_targetlight_dispose_base_arrays(out_state);
+    *out_state = decoded;
+    return NMO_OK;
 }
 
 nmo_status_t nmo_targetlight_serialize(
@@ -200,6 +222,22 @@ nmo_status_t nmo_targetlight_serialize(
     void *context)
 {
     (void)type;
-    const nmo_targetlight_state_t *in_state = (const nmo_targetlight_state_t *)instance;
-    return nmo_targetlight_serialize_internal(in_state, out_chunk, context);
+    if (instance == NULL || out_chunk == NULL || out_chunk->arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_chunk_t *staged = nmo_chunk_create(out_chunk->arena);
+    if (staged == NULL) return NMO_ERR_NOMEM;
+    staged->class_id = out_chunk->class_id;
+    staged->data_version = out_chunk->data_version;
+    staged->chunk_version = out_chunk->chunk_version;
+    staged->chunk_class_id = out_chunk->chunk_class_id;
+    staged->chunk_options = out_chunk->chunk_options;
+    staged->file_context = out_chunk->file_context;
+
+    nmo_status_t result = nmo_targetlight_serialize_internal(
+        (const nmo_targetlight_state_t *)instance, staged, context);
+    if (result != NMO_OK) return result;
+    *out_chunk = *staged;
+    return NMO_OK;
 }
