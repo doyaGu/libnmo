@@ -91,6 +91,10 @@ nmo_status_t nmo_chunk_check_size(nmo_chunk_t *chunk, size_t needed_bytes) {
                          "Chunk capacity request overflow");
     }
     size_t required_size = state->current_pos + needed_dwords;
+    if (required_size > UINT32_MAX) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Chunk data size does not fit the 32-bit format");
+    }
 
     if (required_size > state->data_size) {
         size_t grow = needed_dwords;
