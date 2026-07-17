@@ -288,6 +288,10 @@ static nmo_status_t read_object_subchunk_list(
     if ((uint32_t)count > MAX_ARRAY_SIZE) {
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Array count exceeds maximum");
     }
+    if (!nmo_chunk_has_read_capacity(chunk, (size_t)count * 2u)) {
+        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                         "Object sub-chunk count exceeds remaining DWORDs");
+    }
 
     nmo_array_t decoded;
     result = nmo_array_init(&decoded, sizeof(nmo_behavior_ref_t), count,
