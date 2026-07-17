@@ -6221,6 +6221,24 @@ TEST(chunk_id_remap, mesh_material_sections_and_failures_are_atomic) {
     ASSERT_EQ(901u, failed.material_groups[0].material.raw_id);
     ASSERT_EQ(91, failed.material_groups[0].padding);
 
+    nmo_chunk_t *truncated_flags = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(truncated_flags);
+    truncated_flags->class_id = NMO_CID_MESH;
+    truncated_flags->chunk_version = NMO_CHUNK_VERSION4;
+    truncated_flags->data_version = 9;
+    truncated_flags->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(truncated_flags));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        truncated_flags, CK_STATESAVE_MESHFLAGS));
+    nmo_chunk_close(truncated_flags);
+
+    nmo_mesh_state_t failed_flags;
+    ASSERT_EQ(NMO_OK, nmo_mesh_vtable.create(&failed_flags, NULL, NULL));
+    failed_flags.flags = 0x12345678u;
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_mesh_deserialize(
+        &failed_flags, truncated_flags, NULL, &deserialize_context));
+    ASSERT_EQ(0x12345678u, failed_flags.flags);
+
     nmo_mesh_state_t invalid;
     ASSERT_EQ(NMO_OK, nmo_mesh_vtable.create(&invalid, NULL, NULL));
     invalid.material_group_count = 1;
@@ -6243,6 +6261,7 @@ TEST(chunk_id_remap, mesh_material_sections_and_failures_are_atomic) {
 
     nmo_mesh_vtable.destroy(&empty, NULL, NULL);
     nmo_mesh_vtable.destroy(&empty_loaded, NULL, NULL);
+    nmo_mesh_vtable.destroy(&failed_flags, NULL, NULL);
     nmo_mesh_vtable.destroy(&failed, NULL, NULL);
     nmo_mesh_vtable.destroy(&invalid, NULL, NULL);
     nmo_arena_destroy(arena);
