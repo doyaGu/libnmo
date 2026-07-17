@@ -18,6 +18,7 @@
 #include "object/builtin/nmo_targetcamera_schemas.h"
 #include "object/builtin/nmo_targetlight_schemas.h"
 #include "object/builtin/nmo_kinematicchain_schemas.h"
+#include "object/builtin/nmo_grid_schemas.h"
 #include "object/builtin/nmo_layer_schemas.h"
 #include "object/builtin/nmo_sprite_schemas.h"
 #include "object/builtin/nmo_curve_schemas.h"
@@ -1955,6 +1956,97 @@ TEST(chunk_id_remap, layer_unresolved_grid_round_trips_raw_id) {
 
     nmo_layer_vtable.destroy(&source, NULL, NULL);
     nmo_layer_vtable.destroy(&loaded, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_id_remap, grid_failures_keep_state_and_target_chunk_atomic) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+
+    nmo_chunk_t *truncated = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(truncated);
+    truncated->class_id = NMO_CID_GRID;
+    truncated->data_version = 7;
+    truncated->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(truncated));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        truncated, CK_STATESAVE_GRIDDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(truncated, 10));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(truncated, 20));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(truncated, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(truncated, 30));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(truncated, 40));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(truncated, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(truncated, 1));
+    nmo_chunk_close(truncated);
+
+    nmo_grid_state_t state;
+    ASSERT_EQ(NMO_OK, nmo_grid_vtable.create(&state, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(
+        &state.base.base.base, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &state.base.base.base.scripts, 901));
+    state.width = 77;
+    state.length = 88;
+    nmo_grid_layer_t old_layer = {
+        .ref = nmo_ref_from_raw(902),
+        .chunk = NULL,
+    };
+    ASSERT_EQ(NMO_OK, nmo_array_append(&state.layers, &old_layer));
+    void *old_layers = state.layers.data;
+    ASSERT_NE(NMO_OK, nmo_grid_deserialize(
+        &state, truncated, NULL, &deserialize_context));
+    ASSERT_EQ(77, state.width);
+    ASSERT_EQ(88, state.length);
+    ASSERT_EQ(old_layers, state.layers.data);
+    ASSERT_EQ(1u, state.layers.count);
+    ASSERT_EQ(902u, NMO_ARRAY_DATA(
+        nmo_grid_layer_t, &state.layers)[0].ref.raw_id);
+    ASSERT_EQ(901u, nmo_beobject_script_array_get_id(
+        &state.base.base.base.scripts, 0));
+
+    nmo_id_remap_t *runtime_to_file = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(runtime_to_file);
+    nmo_chunk_file_context_t file_context = {
+        .runtime_to_file = runtime_to_file,
+    };
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_grid_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_grid_vtable.create(&source, NULL, NULL));
+    nmo_grid_layer_t missing_layer = {
+        .ref = nmo_ref_from_id(123),
+        .chunk = NULL,
+    };
+    ASSERT_EQ(NMO_OK, nmo_array_append(&source.layers, &missing_layer));
+
+    nmo_chunk_t *target = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(target);
+    target->class_id = NMO_CID_GRID;
+    target->data_version = 7;
+    target->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(target, &file_context);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(target, 0x12345678u));
+    nmo_chunk_close(target);
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_grid_serialize(
+        &source, target, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(target));
+    uint32_t preserved = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(target, &preserved));
+    ASSERT_EQ(0x12345678u, preserved);
+
+    nmo_array_dispose(&state.base.base.base.scripts);
+    nmo_array_dispose(&state.base.base.base.attributes);
+    nmo_array_dispose(&state.base.base.base.legacy_attributes);
+    nmo_array_dispose(&state.layers);
+    nmo_grid_vtable.destroy(&state, NULL, NULL);
+    nmo_array_dispose(&source.layers);
+    nmo_grid_vtable.destroy(&source, NULL, NULL);
     nmo_arena_destroy(arena);
 }
 
@@ -5477,6 +5569,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, targetlight_unresolved_ref_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, kinematicchain_unresolved_refs_round_trip_atomically);
     REGISTER_TEST(chunk_id_remap, layer_unresolved_grid_round_trips_raw_id);
+    REGISTER_TEST(chunk_id_remap, grid_failures_keep_state_and_target_chunk_atomic);
     REGISTER_TEST(chunk_id_remap, sprite_shared_ref_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, curvepoint_unresolved_curve_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, sprite3d_unresolved_material_round_trips_raw_id);
