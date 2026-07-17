@@ -257,36 +257,32 @@ nmo_status_t nmo_header1_parse(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL pointer passed to nmo_header1_parse");
     }
 
-    /* Save object_count which must be set by caller (from file header) */
-    uint32_t object_count = header->object_count;
-
-    /* Initialize header */
-    memset(header, 0, sizeof(nmo_header1_t));
-
-    /* Restore object_count */
-    header->object_count = object_count;
+    nmo_header1_t staged;
+    memset(&staged, 0, sizeof(staged));
+    staged.object_count = header->object_count;
 
     const uint8_t *buffer = (const uint8_t *) data;
     size_t pos = 0;
 
     /* Parse object descriptors */
-    nmo_status_t result = parse_objects(buffer, size, &pos, header, arena);
+    nmo_status_t result = parse_objects(buffer, size, &pos, &staged, arena);
     NMO_RETURN_IF_ERROR(result);
 
     /* Parse plugin dependencies (if data remains) */
     if (pos < size) {
-        result = parse_plugin_deps(buffer, size, &pos, header, arena);
+        result = parse_plugin_deps(buffer, size, &pos, &staged, arena);
         NMO_RETURN_IF_ERROR(result);
     }
 
-    header->included_file_count = 0;
-    header->included_files = NULL;
+    staged.included_file_count = 0;
+    staged.included_files = NULL;
 
     if (pos < size) {
-        result = parse_included_files(buffer, size, &pos, header, arena);
+        result = parse_included_files(buffer, size, &pos, &staged, arena);
         NMO_RETURN_IF_ERROR(result);
     }
 
+    *header = staged;
     NMO_RETURN_OK();
 }
 
