@@ -83,6 +83,13 @@ nmo_status_t nmo_chunk_check_size(nmo_chunk_t *chunk, size_t needed_bytes) {
     }
 
     size_t needed_dwords = needed_bytes / sizeof(uint32_t);
+    if (needed_bytes % sizeof(uint32_t) != 0) {
+        needed_dwords++;
+    }
+    if (needed_dwords > SIZE_MAX - state->current_pos) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_OFFSET, NMO_SEVERITY_ERROR,
+                         "Chunk capacity request overflow");
+    }
     size_t required_size = state->current_pos + needed_dwords;
 
     if (required_size > state->data_size) {
@@ -91,7 +98,10 @@ nmo_status_t nmo_chunk_check_size(nmo_chunk_t *chunk, size_t needed_bytes) {
             grow = 500;
         }
 
-        size_t new_size = state->current_pos + grow;
+        size_t new_size = required_size;
+        if (grow <= SIZE_MAX - state->current_pos) {
+            new_size = state->current_pos + grow;
+        }
 
         /* Ensure reserve preserves everything up to the current cursor. */
         if (chunk->data.count < state->current_pos) {
