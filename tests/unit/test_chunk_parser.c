@@ -190,6 +190,29 @@ TEST(chunk_parser, string_truncated_keeps_position) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_parser, unterminated_string_keeps_position) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t* chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_arena_array_resize(&chunk->data, 2u));
+    uint32_t* data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    ASSERT_NOT_NULL(data);
+    data[0] = 4u;
+    data[1] = 0x44434241u;
+
+    nmo_chunk_parser_t* parser = nmo_chunk_parser_create(chunk);
+    ASSERT_NOT_NULL(parser);
+    char* out = (char*)1;
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT,
+        nmo_chunk_parser_read_string(parser, &out, arena));
+    ASSERT_NULL(out);
+    ASSERT_EQ(0u, nmo_chunk_parser_tell(parser));
+
+    nmo_chunk_parser_destroy(parser);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_parser, object_sequence_state) {
     nmo_arena_t* arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
@@ -623,6 +646,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_parser, primitive_reads);
     REGISTER_TEST(chunk_parser, string_read);
     REGISTER_TEST(chunk_parser, string_truncated_keeps_position);
+    REGISTER_TEST(chunk_parser, unterminated_string_keeps_position);
     REGISTER_TEST(chunk_parser, object_sequence_state);
     REGISTER_TEST(chunk_parser, legacy_object_id_truncated_keeps_position);
     REGISTER_TEST(chunk_parser, manager_sequence_state);

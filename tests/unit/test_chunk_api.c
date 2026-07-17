@@ -275,6 +275,27 @@ TEST(chunk_api, buffer_no_size_rejects_null_data_with_size) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_api, unterminated_string_is_rejected_atomically) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t* chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 4u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0x44434241u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(chunk));
+
+    char* out = (char*)1;
+    size_t length = 123u;
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT,
+        nmo_chunk_read_string_checked(chunk, &out, &length));
+    ASSERT_NULL(out);
+    ASSERT_EQ(0u, length);
+    ASSERT_EQ(0u, nmo_chunk_get_position(chunk));
+
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_api, buffer_writes_reject_size_overflow_atomically) {
     nmo_arena_t* arena = nmo_arena_create(NULL, 8192);
     ASSERT_NOT_NULL(arena);
@@ -1631,6 +1652,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_api, primitives);
     REGISTER_TEST(chunk_api, string);
     REGISTER_TEST(chunk_api, string_truncated_payload_keeps_position);
+    REGISTER_TEST(chunk_api, unterminated_string_is_rejected_atomically);
     REGISTER_TEST(chunk_api, buffer);
     REGISTER_TEST(chunk_api, buffer_truncated_payload);
     REGISTER_TEST(chunk_api, buffer_fill_errors_keep_position);
