@@ -1187,6 +1187,10 @@ TEST(chunk_id_remap, material_refs_round_trip_and_failure_is_atomic) {
 
     nmo_material_state_t failed;
     ASSERT_EQ(NMO_OK, nmo_material_vtable.create(&failed, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(
+        &failed.base, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &failed.base.scripts, 899));
     failed.diffuse_color = 0xCAFEBABEu;
     for (size_t i = 0; i < 4; ++i) {
         failed.textures[i] = nmo_ref_from_raw((nmo_object_id_t)(900 + i));
@@ -1198,11 +1202,37 @@ TEST(chunk_id_remap, material_refs_round_trip_and_failure_is_atomic) {
         ASSERT_EQ((nmo_object_id_t)(900 + i), failed.textures[i].raw_id);
         ASSERT_EQ(NMO_REF_UNRESOLVED, failed.textures[i].state);
     }
+    ASSERT_EQ(899u, nmo_beobject_script_array_get_id(
+        &failed.base.scripts, 0));
+
+    nmo_material_state_t invalid;
+    ASSERT_EQ(NMO_OK, nmo_material_vtable.create(&invalid, NULL, NULL));
+    invalid.textures[0] = nmo_ref_from_id(999);
+    nmo_chunk_t *target = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(target);
+    target->class_id = NMO_CID_MATERIAL;
+    target->data_version = 8;
+    target->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(target, &write_context);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(target, 0x12345678u));
+    nmo_chunk_close(target);
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_material_serialize(
+        &invalid, target, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(target));
+    uint32_t marker = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(target, &marker));
+    ASSERT_EQ(0x12345678u, marker);
 
     nmo_material_vtable.destroy(&source, NULL, NULL);
     nmo_material_vtable.destroy(&loaded, NULL, NULL);
     nmo_material_vtable.destroy(&reloaded, NULL, NULL);
+    nmo_array_dispose(&failed.base.scripts);
+    nmo_array_dispose(&failed.base.attributes);
+    nmo_array_dispose(&failed.base.legacy_attributes);
     nmo_material_vtable.destroy(&failed, NULL, NULL);
+    nmo_material_vtable.destroy(&invalid, NULL, NULL);
     nmo_arena_destroy(arena);
 }
 
