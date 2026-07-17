@@ -4375,6 +4375,10 @@ TEST(chunk_id_remap, scene_refs_round_trip_and_failure_is_atomic) {
 
     nmo_scene_state_t failed_descs;
     ASSERT_EQ(NMO_OK, nmo_scene_vtable.create(&failed_descs, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(
+        &failed_descs.base, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &failed_descs.base.scripts, 899));
     failed_descs.level = nmo_ref_from_raw(950);
     nmo_scene_object_desc_t old_desc = {
         .ref = {.raw_id = 951, .id = 0, .state = NMO_REF_UNRESOLVED},
@@ -4387,6 +4391,8 @@ TEST(chunk_id_remap, scene_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(1u, failed_descs.object_descs.count);
     ASSERT_EQ(951u, NMO_ARRAY_DATA(
         nmo_scene_object_desc_t, &failed_descs.object_descs)[0].ref.raw_id);
+    ASSERT_EQ(899u, nmo_beobject_script_array_get_id(
+        &failed_descs.base.scripts, 0));
 
     nmo_chunk_t *truncated_render = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(truncated_render);
@@ -4417,12 +4423,44 @@ TEST(chunk_id_remap, scene_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(953u, failed_render.background_texture.raw_id);
     ASSERT_EQ(954u, failed_render.starting_camera.raw_id);
 
+    nmo_scene_state_t invalid;
+    ASSERT_EQ(NMO_OK, nmo_scene_vtable.create(&invalid, NULL, NULL));
+    invalid.level = nmo_ref_from_raw(955);
+    nmo_scene_object_desc_t valid_desc = {
+        .ref = {.raw_id = 956, .id = 0, .state = NMO_REF_UNRESOLVED},
+    };
+    nmo_scene_object_desc_t invalid_desc = {
+        .ref = {.raw_id = 999, .id = 999, .state = NMO_REF_RESOLVED},
+    };
+    ASSERT_EQ(NMO_OK, nmo_array_append(&invalid.object_descs, &valid_desc));
+    ASSERT_EQ(NMO_OK, nmo_array_append(&invalid.object_descs, &invalid_desc));
+    nmo_chunk_t *target = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(target);
+    target->class_id = NMO_CID_SCENE;
+    target->data_version = 8;
+    target->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(target, &write_context);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(target, 0x12345678u));
+    nmo_chunk_close(target);
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_scene_serialize(
+        &invalid, target, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(target));
+    uint32_t marker = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(target, &marker));
+    ASSERT_EQ(0x12345678u, marker);
+
     nmo_scene_vtable.destroy(&source, NULL, NULL);
     nmo_scene_vtable.destroy(&loaded, NULL, NULL);
     nmo_scene_vtable.destroy(&reloaded, NULL, NULL);
     nmo_scene_vtable.destroy(&copied, NULL, NULL);
+    nmo_array_dispose(&failed_descs.base.scripts);
+    nmo_array_dispose(&failed_descs.base.attributes);
+    nmo_array_dispose(&failed_descs.base.legacy_attributes);
     nmo_scene_vtable.destroy(&failed_descs, NULL, NULL);
     nmo_scene_vtable.destroy(&failed_render, NULL, NULL);
+    nmo_scene_vtable.destroy(&invalid, NULL, NULL);
     nmo_arena_destroy(arena);
 }
 
