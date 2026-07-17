@@ -964,6 +964,26 @@ TEST(chunk_id_remap, attributemanager_failures_keep_state_and_target_chunk_atomi
     ASSERT_EQ(&old_category, state.categories);
     ASSERT_EQ(&old_attribute, state.attributes);
 
+    nmo_chunk_t *cross_section_count = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(cross_section_count);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(cross_section_count));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_section_count, 0x52u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(cross_section_count, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(cross_section_count, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_section_count, 0x7F123456u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(cross_section_count, 0));
+    nmo_chunk_close(cross_section_count);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_attributemanager_deserialize(
+        &state, cross_section_count, NULL, &deserialize_context));
+    nmo_chunk_parser_state_t *parser =
+        (nmo_chunk_parser_state_t *)cross_section_count->parser_state;
+    ASSERT_NOT_NULL(parser);
+    ASSERT_EQ(parser->prev_identifier_pos + 4u, parser->current_pos);
+    ASSERT_EQ(&old_category, state.categories);
+    ASSERT_EQ(&old_attribute, state.attributes);
+
     nmo_attributemanager_state_t invalid = {
         .category_count = 1,
         .categories = &old_category,
