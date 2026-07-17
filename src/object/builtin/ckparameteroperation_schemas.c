@@ -69,6 +69,26 @@ static int nmo_parameteroperation_is_parameter_class(nmo_class_id_t class_id)
            class_id == NMO_CID_PARAMETEROPERATION;
 }
 
+static size_t nmo_parameteroperation_identifier_remaining_dwords(
+    const nmo_chunk_t *chunk)
+{
+    if (!chunk || !chunk->parser_state) return 0;
+
+    const nmo_chunk_parser_state_t *state =
+        (const nmo_chunk_parser_state_t *)chunk->parser_state;
+    const uint32_t *data =
+        NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    size_t next_pos = chunk->data.count;
+    if (state->prev_identifier_pos + 1u < chunk->data.count) {
+        const uint32_t candidate = data[state->prev_identifier_pos + 1u];
+        if (candidate != 0 && candidate <= chunk->data.count) {
+            next_pos = candidate;
+        }
+    }
+    if (next_pos < state->current_pos) return 0;
+    return next_pos - state->current_pos;
+}
+
 static void nmo_parameteroperation_check_parameter_ref(
     nmo_ref_t *ref,
     const nmo_object_repository_t *repository)
@@ -129,6 +149,10 @@ static nmo_status_t nmo_parameteroperation_deserialize_internal(
             size_t count = 0;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_object_sequence_start(
                 chunk, &count));
+            if (count >
+                nmo_parameteroperation_identifier_remaining_dwords(chunk)) {
+                return NMO_ERR_TRUNCATED_CHUNK;
+            }
             if (nmo_chunk_get_data_version(chunk) < 5) {
                 if (count == 0) return NMO_ERR_INVALID_FORMAT;
                 nmo_ref_t dummy = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
