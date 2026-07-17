@@ -960,11 +960,18 @@ static nmo_status_t read_newdata_controllers(
     bool section_found = false;
 
     /* 1. Read morph keys if present */
+    if (out_state->morph_key_count < 0 || out_state->morph_vertex_count < 0) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Invalid morph key counts");
+    }
     if (out_state->morph_key_count > 0) {
         int32_t morph_key_count = out_state->morph_key_count;
-        if (morph_key_count < 0) {
-            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
-                             "Invalid morph key count");
+        if ((size_t)morph_key_count >
+                SIZE_MAX / sizeof(nmo_objanim_morph_key_t) ||
+            (size_t)morph_key_count >
+                nmo_animation_identifier_remaining_dwords(chunk) / 2u) {
+            NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                             "Morph key count exceeds identifier payload");
         }
         nmo_objanim_morph_key_t *morph_keys = nmo_arena_alloc(
             arena, sizeof(nmo_objanim_morph_key_t) * (uint32_t)morph_key_count,
@@ -1146,9 +1153,24 @@ static nmo_status_t read_legacy_controllers(
     if (section_found) {
         int32_t morph_key_count = 0;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &morph_key_count));
+        if (morph_key_count < 0) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Invalid morph key count");
+        }
         if (morph_key_count > 0) {
             int32_t morph_vertex_count = 0;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &morph_vertex_count));
+            if (morph_vertex_count < 0) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                 "Invalid morph vertex count");
+            }
+            if ((size_t)morph_key_count >
+                    SIZE_MAX / sizeof(nmo_objanim_morph_key_t) ||
+                (size_t)morph_key_count >
+                    nmo_animation_identifier_remaining_dwords(chunk) / 2u) {
+                NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                                 "Morph key count exceeds identifier payload");
+            }
 
             out_state->has_morph_counts = 1;
             out_state->morph_key_count = morph_key_count;
