@@ -335,7 +335,7 @@ static nmo_status_t nmo_mesh_deserialize_vertices(
     int32_t vertex_count;
     result = nmo_chunk_read_int(chunk, &vertex_count);
     if (result != NMO_OK) {
-        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read vertex count");
+        return result;
     }
     
     if (vertex_count < 0 || vertex_count > 1000000) {
@@ -351,7 +351,7 @@ static nmo_status_t nmo_mesh_deserialize_vertices(
     uint32_t save_flags;
     result = nmo_chunk_read_dword(chunk, &save_flags);
     if (result != NMO_OK) {
-        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read save flags");
+        return result;
     }
 
     // Read and validate the complete serialized payload before allocating.
@@ -558,7 +558,7 @@ static nmo_status_t nmo_mesh_deserialize_modern(
         uint32_t flags;
         result = nmo_chunk_read_dword(chunk, &flags);
         if (result != NMO_OK) {
-            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read mesh flags");
+            return result;
         }
         out_state->flags = flags;
     }
@@ -579,7 +579,7 @@ static nmo_status_t nmo_mesh_deserialize_modern(
         int32_t face_count;
         result = nmo_chunk_read_int(chunk, &face_count);
         if (result != NMO_OK) {
-            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read face count");
+            return result;
         }
         
         if (face_count < 0 || face_count >= 10000000) {
