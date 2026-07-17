@@ -54,11 +54,21 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
     } while (0),
     ((void)0))
 
+static void nmo_grid_dispose_state_arrays(nmo_grid_state_t *state)
+{
+    if (state == NULL) return;
+    nmo_beobject_state_t *beobject = &state->base.base.base;
+    nmo_array_dispose(&beobject->scripts);
+    nmo_array_dispose(&beobject->attributes);
+    nmo_array_dispose(&beobject->legacy_attributes);
+    nmo_array_dispose(&state->layers);
+}
+
 static int nmo_chunk_is_file_mode(const nmo_chunk_t *chunk) {
     return chunk && (chunk->chunk_options & NMO_CHUNK_OPTION_FILE);
 }
 
-nmo_status_t nmo_grid_deserialize(
+static nmo_status_t nmo_grid_deserialize_internal(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -139,7 +149,47 @@ nmo_status_t nmo_grid_deserialize(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_grid_serialize(
+nmo_status_t nmo_grid_deserialize(
+    void *instance,
+    nmo_chunk_t *chunk,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    nmo_grid_state_t *out_state = (nmo_grid_state_t *)instance;
+    if (out_state == NULL || chunk == NULL) return NMO_ERR_INVALID_ARGUMENT;
+
+    nmo_grid_state_t decoded;
+    nmo_status_t result = nmo_grid_create(&decoded, type, context);
+    if (result != NMO_OK) return result;
+
+    nmo_beobject_state_t *decoded_base = &decoded.base.base.base;
+    const nmo_beobject_state_t *old_base = &out_state->base.base.base;
+    if (old_base->scripts.allocator.alloc != NULL) {
+        decoded_base->scripts.allocator = old_base->scripts.allocator;
+    }
+    if (old_base->attributes.allocator.alloc != NULL) {
+        decoded_base->attributes.allocator = old_base->attributes.allocator;
+    }
+    if (old_base->legacy_attributes.allocator.alloc != NULL) {
+        decoded_base->legacy_attributes.allocator =
+            old_base->legacy_attributes.allocator;
+    }
+    if (out_state->layers.allocator.alloc != NULL) {
+        decoded.layers.allocator = out_state->layers.allocator;
+    }
+
+    result = nmo_grid_deserialize_internal(&decoded, chunk, type, context);
+    if (result != NMO_OK) {
+        nmo_grid_dispose_state_arrays(&decoded);
+        return result;
+    }
+
+    nmo_grid_dispose_state_arrays(out_state);
+    *out_state = decoded;
+    return NMO_OK;
+}
+
+static nmo_status_t nmo_grid_serialize_internal(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
@@ -197,6 +247,32 @@ nmo_status_t nmo_grid_serialize(
     }
 
     NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_grid_serialize(
+    const void *instance,
+    nmo_chunk_t *out_chunk,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    if (instance == NULL || out_chunk == NULL || out_chunk->arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_chunk_t *staged = nmo_chunk_create(out_chunk->arena);
+    if (staged == NULL) return NMO_ERR_NOMEM;
+    staged->class_id = out_chunk->class_id;
+    staged->data_version = out_chunk->data_version;
+    staged->chunk_version = out_chunk->chunk_version;
+    staged->chunk_class_id = out_chunk->chunk_class_id;
+    staged->chunk_options = out_chunk->chunk_options;
+    staged->file_context = out_chunk->file_context;
+
+    nmo_status_t result = nmo_grid_serialize_internal(
+        instance, staged, type, context);
+    if (result != NMO_OK) return result;
+    *out_chunk = *staged;
+    return NMO_OK;
 }
 
 static const nmo_type_field_t nmo_grid_fields[] = {
