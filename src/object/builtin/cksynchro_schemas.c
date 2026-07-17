@@ -36,6 +36,13 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(state, nmo_state_state_t)
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(criticalsection, nmo_criticalsection_state_t)
 
+static void nmo_synchro_dispose_arrays(nmo_synchro_state_t *state)
+{
+    if (state == NULL) return;
+    nmo_array_dispose(&state->arrived_ids);
+    nmo_array_dispose(&state->passed_ids);
+}
+
 /* =============================================================================
  * REFLECTION FIELDS
  * ============================================================================= */
@@ -133,7 +140,7 @@ static nmo_status_t nmo_synchro_read_ref_array(
  * CKSynchroObject
  * ============================================================================= */
 
-nmo_status_t nmo_synchro_deserialize(
+static nmo_status_t nmo_synchro_deserialize_internal(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -149,7 +156,8 @@ nmo_status_t nmo_synchro_deserialize(
     nmo_status_t result = deserialize_ckobject_base(&out_state->base, chunk, context);
     if (result != NMO_OK) return result;
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SYNCHRODATA) == NMO_OK) {
+    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SYNCHRODATA);
+    if (result == NMO_OK) {
         int32_t max_waiters = 0;
         nmo_array_t arrived_ids = {0};
         nmo_array_t passed_ids = {0};
@@ -177,12 +185,47 @@ nmo_status_t nmo_synchro_deserialize(
         out_state->arrived_ids = arrived_ids;
         out_state->passed_ids = passed_ids;
         out_state->max_waiters = max_waiters;
-    }
+    } else if (result != NMO_ERR_NOT_FOUND) return result;
 
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_synchro_serialize(
+nmo_status_t nmo_synchro_deserialize(
+    void *instance,
+    nmo_chunk_t *chunk,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    nmo_synchro_state_t *out_state = (nmo_synchro_state_t *)instance;
+    if (out_state == NULL || chunk == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    nmo_synchro_state_t decoded = {0};
+    const nmo_allocator_t *arrived_allocator =
+        out_state->arrived_ids.allocator.alloc != NULL
+            ? &out_state->arrived_ids.allocator : NULL;
+    const nmo_allocator_t *passed_allocator =
+        out_state->passed_ids.allocator.alloc != NULL
+            ? &out_state->passed_ids.allocator : NULL;
+    nmo_status_t result = nmo_array_init(
+        &decoded.arrived_ids, sizeof(nmo_ref_t), 0, arrived_allocator);
+    if (result != NMO_OK) return result;
+    result = nmo_array_init(
+        &decoded.passed_ids, sizeof(nmo_ref_t), 0, passed_allocator);
+    if (result != NMO_OK) {
+        nmo_synchro_dispose_arrays(&decoded);
+        return result;
+    }
+    result = nmo_synchro_deserialize_internal(
+        &decoded, chunk, type, context);
+    if (result != NMO_OK) {
+        nmo_synchro_dispose_arrays(&decoded);
+        return result;
+    }
+    nmo_synchro_dispose_arrays(out_state);
+    *out_state = decoded;
+    return NMO_OK;
+}
+
+static nmo_status_t nmo_synchro_serialize_internal(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
@@ -219,6 +262,30 @@ nmo_status_t nmo_synchro_serialize(
     if (result != NMO_OK) return result;
 
     NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_synchro_serialize(
+    const void *instance,
+    nmo_chunk_t *out_chunk,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    if (instance == NULL || out_chunk == NULL || out_chunk->arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    nmo_chunk_t *staged = nmo_chunk_create(out_chunk->arena);
+    if (staged == NULL) return NMO_ERR_NOMEM;
+    staged->class_id = out_chunk->class_id;
+    staged->data_version = out_chunk->data_version;
+    staged->chunk_version = out_chunk->chunk_version;
+    staged->chunk_class_id = out_chunk->chunk_class_id;
+    staged->chunk_options = out_chunk->chunk_options;
+    staged->file_context = out_chunk->file_context;
+    nmo_status_t result = nmo_synchro_serialize_internal(
+        instance, staged, type, context);
+    if (result != NMO_OK) return result;
+    *out_chunk = *staged;
+    return NMO_OK;
 }
 
 /* =============================================================================
