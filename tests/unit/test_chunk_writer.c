@@ -175,6 +175,10 @@ TEST(chunk_writer, rejects_unencodable_byte_counts) {
 
     const uint8_t value = 0x7f;
     ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+        nmo_chunk_writer_write_bytes(writer, NULL, 1));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+        nmo_chunk_writer_write_buffer_nosize(writer, 1, NULL));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
         nmo_chunk_writer_write_bytes(writer, &value, SIZE_MAX));
     ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
         nmo_chunk_writer_write_buffer_nosize(writer, SIZE_MAX, &value));
