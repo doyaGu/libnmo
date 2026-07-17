@@ -4,6 +4,7 @@
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_id_remap.h"
+#include "core/nmo_utils.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -13,6 +14,33 @@
 // =============================================================================
 // Internal Helpers
 // =============================================================================
+
+static nmo_status_t validate_remap_array(const nmo_arena_array_t *array,
+                                         const char *name,
+                                         size_t *out_bytes) {
+    if (!array || !name || !out_bytes) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments");
+    }
+
+    *out_bytes = 0;
+    if (array->count == 0) {
+        NMO_RETURN_OK();
+    }
+    if (array->data == NULL || array->count > array->capacity) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                         "Malformed chunk %s array", name);
+    }
+    if (array->element_size != sizeof(uint32_t)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                         "Invalid chunk %s element size", name);
+    }
+    if (!nmo_safe_mul_size(array->count, array->element_size, out_bytes)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                         "Chunk %s array size overflow", name);
+    }
+
+    NMO_RETURN_OK();
+}
 
 static int remap_single_id(nmo_object_id_t *id_ref, const nmo_id_remap_t *remap) {
     if (!id_ref) return 0;
@@ -382,8 +410,16 @@ nmo_status_t nmo_chunk_remap_object_ids_ex(nmo_chunk_t *chunk,
     size_t refs_bytes = 0;
     size_t mgrs_bytes = 0;
 
-    if (chunk->data.count > 0 && chunk->data.data != NULL) {
-        data_bytes = chunk->data.count * chunk->data.element_size;
+    nmo_status_t result = validate_remap_array(&chunk->data, "data", &data_bytes);
+    NMO_RETURN_IF_ERROR(result);
+    result = validate_remap_array(&chunk->ids, "ids", &ids_bytes);
+    NMO_RETURN_IF_ERROR(result);
+    result = validate_remap_array(&chunk->chunk_refs, "references", &refs_bytes);
+    NMO_RETURN_IF_ERROR(result);
+    result = validate_remap_array(&chunk->managers, "managers", &mgrs_bytes);
+    NMO_RETURN_IF_ERROR(result);
+
+    if (data_bytes > 0) {
         data_backup = nmo_arena_alloc(backup_arena, data_bytes, 8);
         if (data_backup == NULL) {
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate chunk data backup");
@@ -391,8 +427,7 @@ nmo_status_t nmo_chunk_remap_object_ids_ex(nmo_chunk_t *chunk,
         memcpy(data_backup, chunk->data.data, data_bytes);
     }
 
-    if (chunk->ids.count > 0 && chunk->ids.data != NULL) {
-        ids_bytes = chunk->ids.count * chunk->ids.element_size;
+    if (ids_bytes > 0) {
         ids_backup = nmo_arena_alloc(backup_arena, ids_bytes, 8);
         if (ids_backup == NULL) {
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate chunk ids backup");
@@ -400,8 +435,7 @@ nmo_status_t nmo_chunk_remap_object_ids_ex(nmo_chunk_t *chunk,
         memcpy(ids_backup, chunk->ids.data, ids_bytes);
     }
 
-    if (chunk->chunk_refs.count > 0 && chunk->chunk_refs.data != NULL) {
-        refs_bytes = chunk->chunk_refs.count * chunk->chunk_refs.element_size;
+    if (refs_bytes > 0) {
         refs_backup = nmo_arena_alloc(backup_arena, refs_bytes, 8);
         if (refs_backup == NULL) {
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate chunk refs backup");
@@ -409,8 +443,7 @@ nmo_status_t nmo_chunk_remap_object_ids_ex(nmo_chunk_t *chunk,
         memcpy(refs_backup, chunk->chunk_refs.data, refs_bytes);
     }
 
-    if (chunk->managers.count > 0 && chunk->managers.data != NULL) {
-        mgrs_bytes = chunk->managers.count * chunk->managers.element_size;
+    if (mgrs_bytes > 0) {
         mgrs_backup = nmo_arena_alloc(backup_arena, mgrs_bytes, 8);
         if (mgrs_backup == NULL) {
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate chunk managers backup");
@@ -419,7 +452,7 @@ nmo_status_t nmo_chunk_remap_object_ids_ex(nmo_chunk_t *chunk,
     }
 
     int remapped_count = 0;
-    nmo_status_t result = remap_object_ids_recursive(chunk, remap, &remapped_count);
+    result = remap_object_ids_recursive(chunk, remap, &remapped_count);
     if (result != NMO_OK) {
         if (data_backup != NULL && chunk->data.data != NULL) {
             memcpy(chunk->data.data, data_backup, data_bytes);
