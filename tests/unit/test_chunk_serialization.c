@@ -297,10 +297,48 @@ TEST(chunk_serialization, rejects_invalid_public_array_state) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_serialization, rejects_truncated_counts_before_allocation) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+
+    const uint32_t data_payload[] = {
+        (uint32_t)NMO_CHUNK_VERSION4 << 16,
+        UINT32_MAX,
+    };
+    nmo_chunk_t *chunk = (nmo_chunk_t *)(uintptr_t)1;
+    ASSERT_EQ(NMO_ERR_BUFFER_OVERRUN,
+        nmo_chunk_deserialize(
+            data_payload, sizeof(data_payload), arena, &chunk));
+    ASSERT_NULL(chunk);
+
+    const uint32_t option_flags[] = {
+        NMO_CHUNK_OPTION_IDS,
+        NMO_CHUNK_OPTION_CHN,
+        NMO_CHUNK_OPTION_MAN,
+    };
+    for (size_t i = 0;
+         i < sizeof(option_flags) / sizeof(option_flags[0]); ++i) {
+        const uint32_t optional_payload[] = {
+            ((uint32_t)NMO_CHUNK_VERSION4 << 16) |
+                (option_flags[i] << 24),
+            0,
+            UINT32_MAX,
+        };
+        chunk = (nmo_chunk_t *)(uintptr_t)1;
+        ASSERT_EQ(NMO_ERR_BUFFER_OVERRUN,
+            nmo_chunk_deserialize(
+                optional_payload, sizeof(optional_payload), arena, &chunk));
+        ASSERT_NULL(chunk);
+    }
+
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_serialization, version_info_packing);
     REGISTER_TEST(chunk_serialization, full_serialization);
     REGISTER_TEST(chunk_serialization, empty_chunk);
     REGISTER_TEST(chunk_serialization, bit_pattern_integrity);
     REGISTER_TEST(chunk_serialization, rejects_invalid_public_array_state);
+    REGISTER_TEST(chunk_serialization, rejects_truncated_counts_before_allocation);
 TEST_MAIN_END()
