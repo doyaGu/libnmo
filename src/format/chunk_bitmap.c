@@ -21,9 +21,9 @@ static nmo_status_t nmo_chunk_bitmap_map_bytes(nmo_chunk_t *chunk,
     if (!chunk || !out_ptr) {
         return make_error(NMO_ERR_INVALID_ARGUMENT, "Invalid chunk or output pointer");
     }
+    *out_ptr = NULL;
 
     if (size == 0) {
-        *out_ptr = NULL;
         NMO_RETURN_OK();
     }
 
@@ -245,14 +245,21 @@ static nmo_status_t nmo_chunk_bitmap_write_legacy_payload(nmo_chunk_t *chunk,
     if (!chunk || !signature) {
         return make_error(NMO_ERR_INVALID_ARGUMENT, "Invalid legacy payload arguments");
     }
+    if (encoded_size > 0 && encoded_data == NULL) {
+        return make_error(NMO_ERR_INVALID_ARGUMENT, "Legacy bitmap payload is missing");
+    }
 
-    size_t total_size = encoded_size + 5u;
-    if (total_size == 0) {
-        NMO_RETURN_OK();
+    size_t total_size = 0;
+    if (!nmo_safe_add_size(encoded_size, 5u, &total_size)) {
+        return make_error(NMO_ERR_INVALID_ARGUMENT, "Legacy bitmap payload size overflow");
     }
 
     size_t dwords = nmo_bytes_to_dwords(total_size);
-    nmo_status_t result = nmo_chunk_check_size(chunk, dwords * sizeof(uint32_t));
+    size_t dword_bytes = 0;
+    if (!nmo_safe_mul_size(dwords, sizeof(uint32_t), &dword_bytes)) {
+        return make_error(NMO_ERR_INVALID_ARGUMENT, "Legacy bitmap payload size overflow");
+    }
+    nmo_status_t result = nmo_chunk_check_size(chunk, dword_bytes);
     NMO_RETURN_IF_ERROR(result);
 
     nmo_chunk_parser_state_t *state = nmo_chunk_bitmap_get_state(chunk);
@@ -260,28 +267,28 @@ static nmo_status_t nmo_chunk_bitmap_write_legacy_payload(nmo_chunk_t *chunk,
         return make_error(NMO_ERR_INVALID_STATE, "Chunk parser state missing");
     }
 
-    if (state->current_pos + dwords > chunk->data.count) {
-        result = nmo_arena_array_resize(&chunk->data, state->current_pos + dwords);
+    size_t end_pos = 0;
+    if (!nmo_safe_add_size(state->current_pos, dwords, &end_pos)) {
+        return make_error(NMO_ERR_INVALID_OFFSET, "Legacy bitmap position overflow");
+    }
+    if (end_pos > chunk->data.count) {
+        result = nmo_arena_array_resize(&chunk->data, end_pos);
         NMO_RETURN_IF_ERROR(result);
     }
 
     uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
     uint8_t *dest = (uint8_t *)&data[state->current_pos];
     memcpy(dest, signature, 5);
-    if (encoded_size > 0 && encoded_data) {
+    if (encoded_size > 0) {
         memcpy(dest + 5, encoded_data, encoded_size);
     }
 
-    size_t padding = dwords * 4u - total_size;
+    size_t padding = dword_bytes - total_size;
     if (padding > 0u) {
         memset(dest + total_size, 0, padding);
     }
 
-    state->current_pos += dwords;
-    if (state->current_pos > chunk->data.count) {
-        result = nmo_arena_array_resize(&chunk->data, state->current_pos);
-        NMO_RETURN_IF_ERROR(result);
-    }
+    state->current_pos = end_pos;
 
     NMO_RETURN_OK();
 }
