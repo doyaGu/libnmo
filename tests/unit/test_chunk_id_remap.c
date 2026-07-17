@@ -3046,6 +3046,38 @@ TEST(chunk_id_remap, grid_failures_keep_state_and_target_chunk_atomic) {
     ASSERT_EQ(901u, nmo_beobject_script_array_get_id(
         &state.base.base.base.scripts, 0));
 
+    nmo_chunk_t *cross_section_layers = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(cross_section_layers);
+    cross_section_layers->class_id = NMO_CID_GRID;
+    cross_section_layers->data_version = 7;
+    cross_section_layers->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(cross_section_layers));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_section_layers, CK_STATESAVE_GRIDDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(cross_section_layers, 10));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(cross_section_layers, 20));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(cross_section_layers, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(cross_section_layers, 30));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(cross_section_layers, 40));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(cross_section_layers, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(
+        cross_section_layers, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_section_layers, 0x7F123456u));
+    nmo_chunk_close(cross_section_layers);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_grid_deserialize(
+        &state, cross_section_layers, NULL, &deserialize_context));
+    nmo_chunk_parser_state_t *parser =
+        (nmo_chunk_parser_state_t *)cross_section_layers->parser_state;
+    ASSERT_NOT_NULL(parser);
+    ASSERT_EQ(parser->prev_identifier_pos + 9u, parser->current_pos);
+    ASSERT_EQ(77, state.width);
+    ASSERT_EQ(88, state.length);
+    ASSERT_EQ(old_layers, state.layers.data);
+    ASSERT_EQ(1u, state.layers.count);
+    ASSERT_EQ(902u, NMO_ARRAY_DATA(
+        nmo_grid_layer_t, &state.layers)[0].ref.raw_id);
+
     nmo_id_remap_t *runtime_to_file = nmo_id_remap_create(arena);
     ASSERT_NOT_NULL(runtime_to_file);
     nmo_chunk_file_context_t file_context = {
