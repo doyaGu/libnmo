@@ -10,6 +10,34 @@
 // Sub-chunks
 // =============================================================================
 
+static nmo_status_t validate_sub_chunk_payload(const nmo_chunk_t *sub) {
+    if (!sub || sub->data.count > UINT32_MAX ||
+        sub->ids.count > UINT32_MAX ||
+        sub->chunk_refs.count > UINT32_MAX ||
+        sub->managers.count > UINT32_MAX) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    const size_t counts[] = {
+        sub->data.count, sub->ids.count,
+        sub->chunk_refs.count, sub->managers.count,
+    };
+    size_t payload_dwords = 0;
+    for (size_t i = 0; i < sizeof(counts) / sizeof(counts[0]); ++i) {
+        if (counts[i] > (size_t)UINT32_MAX - 7u - payload_dwords) {
+            return NMO_ERR_INVALID_ARGUMENT;
+        }
+        payload_dwords += counts[i];
+    }
+    if ((sub->data.count > 0 && sub->data.data == NULL) ||
+        (sub->ids.count > 0 && sub->ids.data == NULL) ||
+        (sub->chunk_refs.count > 0 && sub->chunk_refs.data == NULL) ||
+        (sub->managers.count > 0 && sub->managers.data == NULL)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    return NMO_OK;
+}
+
 static nmo_status_t write_sub_chunk_payload(nmo_chunk_t *chunk, const nmo_chunk_t *sub) {
     nmo_status_t result;
 
@@ -85,6 +113,8 @@ nmo_status_t nmo_chunk_write_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t *sub) {
     if (sub == NULL) {
         return nmo_chunk_write_dword(chunk, 0u);
     }
+    nmo_status_t validation = validate_sub_chunk_payload(sub);
+    NMO_RETURN_IF_ERROR(validation);
 
     if (chunk->file_context != NULL && sub->file_context == NULL) {
         sub->file_context = chunk->file_context;
@@ -130,6 +160,8 @@ nmo_status_t nmo_chunk_write_sub_chunk_sequence(nmo_chunk_t *chunk, nmo_chunk_t 
     if (sub == NULL) {
         return nmo_chunk_write_dword(chunk, 0u);
     }
+    nmo_status_t validation = validate_sub_chunk_payload(sub);
+    NMO_RETURN_IF_ERROR(validation);
 
     if (chunk->file_context != NULL && sub->file_context == NULL) {
         sub->file_context = chunk->file_context;
