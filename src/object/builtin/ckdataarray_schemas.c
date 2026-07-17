@@ -29,6 +29,7 @@
 #include "nmo_types.h"
 #include <stddef.h>
 #include <stdalign.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -39,6 +40,42 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
         state->key_column = -1; \
     } while (0),
     ((void)0))
+
+static void nmo_dataarray_dispose_base_arrays(nmo_dataarray_state_t *state)
+{
+    if (state == NULL) return;
+    nmo_array_dispose(&state->base.scripts);
+    nmo_array_dispose(&state->base.attributes);
+    nmo_array_dispose(&state->base.legacy_attributes);
+}
+
+static size_t nmo_dataarray_identifier_remaining_dwords(nmo_chunk_t *chunk)
+{
+    if (chunk == NULL || chunk->parser_state == NULL) return 0;
+
+    nmo_chunk_parser_state_t *state =
+        (nmo_chunk_parser_state_t *)chunk->parser_state;
+    const uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    size_t next_pos = 0;
+    if (state->prev_identifier_pos + 1 < chunk->data.count) {
+        next_pos = data[state->prev_identifier_pos + 1];
+    }
+    if (next_pos == 0 || next_pos > chunk->data.count) {
+        next_pos = chunk->data.count;
+    }
+    if (next_pos < state->current_pos) return 0;
+    return next_pos - state->current_pos;
+}
+
+static bool nmo_dataarray_size_mul_overflows(size_t count, size_t element_size)
+{
+    return count != 0 && element_size > SIZE_MAX / count;
+}
+
+static nmo_status_t nmo_dataarray_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 /* =============================================================================
  * REFLECTION FIELDS
@@ -106,7 +143,7 @@ static void nmo_dataarray_check_parameter_ref(
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-nmo_status_t nmo_dataarray_deserialize(
+static nmo_status_t nmo_dataarray_deserialize_internal(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -116,7 +153,7 @@ nmo_status_t nmo_dataarray_deserialize(
     nmo_dataarray_state_t *out_state = (nmo_dataarray_state_t *)instance;
     nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
 
-    if (chunk == NULL || out_state == NULL) {
+    if (chunk == NULL || arena == NULL || out_state == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_dataarray_deserialize");
     }
 
@@ -138,6 +175,17 @@ nmo_status_t nmo_dataarray_deserialize(
 
         if (column_count < 0 || column_count > 10000) {
             NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Invalid column count");
+        }
+        if (nmo_dataarray_size_mul_overflows(
+                (size_t)column_count,
+                sizeof(nmo_dataarray_column_format_t))) {
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                             "Column format allocation size overflows");
+        }
+        if ((size_t)column_count >
+            nmo_dataarray_identifier_remaining_dwords(chunk) / 2u) {
+            NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                             "Column count exceeds format section payload");
         }
 
         out_state->column_count = (uint32_t)column_count;
@@ -193,6 +241,32 @@ nmo_status_t nmo_dataarray_deserialize(
 
         if (row_count < 0 || row_count > 1000000) {
             NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Invalid row count");
+        }
+        if (nmo_dataarray_size_mul_overflows(
+                (size_t)row_count, sizeof(nmo_dataarray_row_t))) {
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                             "Row allocation size overflows");
+        }
+        if (out_state->column_count > 0 &&
+            out_state->column_formats == NULL) {
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                             "Data section has no column formats");
+        }
+        if (nmo_dataarray_size_mul_overflows(
+                out_state->column_count, sizeof(nmo_dataarray_cell_t))) {
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                             "Row cell allocation size overflows");
+        }
+        if (nmo_dataarray_size_mul_overflows(
+                (size_t)row_count, out_state->column_count)) {
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                             "Data array cell count overflows");
+        }
+        const size_t total_cells =
+            (size_t)row_count * out_state->column_count;
+        if (total_cells > nmo_dataarray_identifier_remaining_dwords(chunk)) {
+            NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                             "Cell count exceeds data section payload");
         }
 
         out_state->row_count = (uint32_t)row_count;
@@ -298,6 +372,41 @@ nmo_status_t nmo_dataarray_deserialize(
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_dataarray_deserialize(
+    void *instance,
+    nmo_chunk_t *chunk,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    nmo_dataarray_state_t *out_state = (nmo_dataarray_state_t *)instance;
+    if (out_state == NULL || chunk == NULL) return NMO_ERR_INVALID_ARGUMENT;
+
+    nmo_dataarray_state_t decoded;
+    nmo_status_t result = nmo_dataarray_create(&decoded, type, context);
+    if (result != NMO_OK) return result;
+    if (out_state->base.scripts.allocator.alloc != NULL) {
+        decoded.base.scripts.allocator = out_state->base.scripts.allocator;
+    }
+    if (out_state->base.attributes.allocator.alloc != NULL) {
+        decoded.base.attributes.allocator = out_state->base.attributes.allocator;
+    }
+    if (out_state->base.legacy_attributes.allocator.alloc != NULL) {
+        decoded.base.legacy_attributes.allocator =
+            out_state->base.legacy_attributes.allocator;
+    }
+
+    result = nmo_dataarray_deserialize_internal(
+        &decoded, chunk, type, context);
+    if (result != NMO_OK) {
+        nmo_dataarray_dispose_base_arrays(&decoded);
+        return result;
+    }
+
+    nmo_dataarray_dispose_base_arrays(out_state);
+    *out_state = decoded;
+    return NMO_OK;
+}
+
 /* =============================================================================
  * CKDataArray SERIALIZATION
  * ============================================================================= */
@@ -314,7 +423,7 @@ nmo_status_t nmo_dataarray_deserialize(
  * @param state Input state structure
  * @return Result indicating success or error
  */
-nmo_status_t nmo_dataarray_serialize(
+static nmo_status_t nmo_dataarray_serialize_internal(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
@@ -326,6 +435,7 @@ nmo_status_t nmo_dataarray_serialize(
     if (in_state == NULL || out_chunk == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_dataarray_serialize");
     }
+    NMO_RETURN_IF_ERROR(nmo_dataarray_validate(in_state, type, context));
 
     /* Write base class (CKBeObject) data */
     nmo_status_t result = nmo_beobject_serialize(&in_state->base, out_chunk, NULL, context);
@@ -428,6 +538,32 @@ nmo_status_t nmo_dataarray_serialize(
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_dataarray_serialize(
+    const void *instance,
+    nmo_chunk_t *out_chunk,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    if (instance == NULL || out_chunk == NULL || out_chunk->arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_chunk_t *staged = nmo_chunk_create(out_chunk->arena);
+    if (staged == NULL) return NMO_ERR_NOMEM;
+    staged->class_id = out_chunk->class_id;
+    staged->data_version = out_chunk->data_version;
+    staged->chunk_version = out_chunk->chunk_version;
+    staged->chunk_class_id = out_chunk->chunk_class_id;
+    staged->chunk_options = out_chunk->chunk_options;
+    staged->file_context = out_chunk->file_context;
+
+    nmo_status_t result = nmo_dataarray_serialize_internal(
+        instance, staged, type, context);
+    if (result != NMO_OK) return result;
+    *out_chunk = *staged;
+    return NMO_OK;
+}
+
 static nmo_status_t nmo_dataarray_copy(
     const void *src,
     void *dst,
@@ -487,8 +623,21 @@ static nmo_status_t nmo_dataarray_validate(
     (void)type;
     (void)context;
     const nmo_dataarray_state_t *s = instance;
+    if (s == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    if (s->column_count > 10000 || s->row_count > 1000000) {
+        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                         "DataArray dimensions exceed format limits");
+    }
     NMO_VALIDATE_COUNT(s->column_formats, s->column_count, "column_formats");
     NMO_VALIDATE_COUNT(s->rows, s->row_count, "rows");
+    for (uint32_t row_index = 0; row_index < s->row_count; ++row_index) {
+        const nmo_dataarray_row_t *row = &s->rows[row_index];
+        if (row->column_count != s->column_count) {
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                             "DataArray row column count mismatch");
+        }
+        NMO_VALIDATE_COUNT(row->cells, row->column_count, "row.cells");
+    }
     NMO_RETURN_OK();
 }
 
