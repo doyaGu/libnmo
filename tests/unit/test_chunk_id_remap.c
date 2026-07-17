@@ -1264,7 +1264,12 @@ TEST(chunk_id_remap, parameterlocal_owner_round_trips_raw_id) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
     ASSERT_NOT_NULL(arena);
     nmo_id_remap_t *file_to_runtime = nmo_id_remap_create(arena);
+    nmo_id_remap_t *runtime_to_file = nmo_id_remap_create(arena);
     ASSERT_NOT_NULL(file_to_runtime);
+    ASSERT_NOT_NULL(runtime_to_file);
+    nmo_chunk_file_context_t write_context = {
+        .runtime_to_file = runtime_to_file,
+    };
     nmo_chunk_file_context_t read_context = {
         .file_to_runtime = file_to_runtime,
     };
@@ -1273,11 +1278,32 @@ TEST(chunk_id_remap, parameterlocal_owner_round_trips_raw_id) {
             arena, NULL, CK_STATESAVE_PARAMETEROUT_OWNER);
     nmo_deserialize_context_t deserialize_context =
         nmo_deserialize_context_create(arena, NULL, NULL, 0);
+    nmo_serialize_context_t file_serialize_context =
+        nmo_serialize_context_create(
+            arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
 
     nmo_parameterlocal_state_t source;
     ASSERT_EQ(NMO_OK, nmo_parameterlocal_vtable.create(
         &source, NULL, NULL));
     source.owner = nmo_ref_from_raw(691);
+
+    nmo_chunk_t *file_chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(file_chunk);
+    file_chunk->class_id = NMO_CID_PARAMETERLOCAL;
+    file_chunk->data_version = 8;
+    file_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(file_chunk, &write_context);
+    ASSERT_EQ(NMO_OK, nmo_parameterlocal_serialize(
+        &source, file_chunk, NULL, &file_serialize_context));
+    nmo_chunk_close(file_chunk);
+    nmo_chunk_set_file_context(file_chunk, &read_context);
+    nmo_parameterlocal_state_t file_loaded;
+    ASSERT_EQ(NMO_OK, nmo_parameterlocal_vtable.create(
+        &file_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_parameterlocal_deserialize(
+        &file_loaded, file_chunk, NULL, &deserialize_context));
+    ASSERT_EQ(691u, file_loaded.owner.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, file_loaded.owner.state);
 
     nmo_chunk_t *first = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(first);
@@ -1327,16 +1353,54 @@ TEST(chunk_id_remap, parameterlocal_owner_round_trips_raw_id) {
     nmo_parameterlocal_state_t failed;
     ASSERT_EQ(NMO_OK, nmo_parameterlocal_vtable.create(
         &failed, NULL, NULL));
+    failed.base.type_guid = CKPGUID_INT;
+    failed.base.mode = CKPARAM_MODE_BUFFER;
+    failed.base.has_state = true;
+    uint8_t old_byte = 0xabu;
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &failed.base.buffer_data, &old_byte));
     failed.owner = nmo_ref_from_raw(692);
+    failed.is_myself = 1;
+    failed.is_setting = 1;
     ASSERT_NE(NMO_OK, nmo_parameterlocal_deserialize(
         &failed, truncated, NULL, &deserialize_context));
+    ASSERT_TRUE(nmo_guid_equals(CKPGUID_INT, failed.base.type_guid));
+    ASSERT_EQ(CKPARAM_MODE_BUFFER, failed.base.mode);
+    ASSERT_EQ(1u, failed.base.buffer_data.count);
+    ASSERT_EQ(0xabu, NMO_ARRAY_DATA(
+        uint8_t, &failed.base.buffer_data)[0]);
     ASSERT_EQ(692u, failed.owner.raw_id);
     ASSERT_EQ(NMO_REF_UNRESOLVED, failed.owner.state);
+    ASSERT_TRUE(failed.is_myself);
+    ASSERT_TRUE(failed.is_setting);
+
+    nmo_parameterlocal_state_t invalid;
+    ASSERT_EQ(NMO_OK, nmo_parameterlocal_vtable.create(
+        &invalid, NULL, NULL));
+    invalid.owner = nmo_ref_from_id(999);
+    nmo_chunk_t *target = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(target);
+    target->class_id = NMO_CID_PARAMETERLOCAL;
+    target->data_version = 8;
+    target->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(target, &write_context);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(target, 0x12345678u));
+    nmo_chunk_close(target);
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_parameterlocal_serialize(
+        &invalid, target, NULL, &file_serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(target));
+    uint32_t marker = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(target, &marker));
+    ASSERT_EQ(0x12345678u, marker);
 
     nmo_parameterlocal_vtable.destroy(&source, NULL, NULL);
+    nmo_parameterlocal_vtable.destroy(&file_loaded, NULL, NULL);
     nmo_parameterlocal_vtable.destroy(&loaded, NULL, NULL);
     nmo_parameterlocal_vtable.destroy(&reloaded, NULL, NULL);
     nmo_parameterlocal_vtable.destroy(&failed, NULL, NULL);
+    nmo_parameterlocal_vtable.destroy(&invalid, NULL, NULL);
     nmo_arena_destroy(arena);
 }
 
