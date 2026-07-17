@@ -639,10 +639,16 @@ nmo_status_t nmo_beobject_deserialize(
         nmo_beobject_dispose_arrays(&decoded);
         return result;
     }
-    decoded.scripts.allocator = out_state->scripts.allocator;
-    decoded.attributes.allocator = out_state->attributes.allocator;
-    decoded.legacy_attributes.allocator =
-        out_state->legacy_attributes.allocator;
+    if (out_state->scripts.allocator.alloc != NULL) {
+        decoded.scripts.allocator = out_state->scripts.allocator;
+    }
+    if (out_state->attributes.allocator.alloc != NULL) {
+        decoded.attributes.allocator = out_state->attributes.allocator;
+    }
+    if (out_state->legacy_attributes.allocator.alloc != NULL) {
+        decoded.legacy_attributes.allocator =
+            out_state->legacy_attributes.allocator;
+    }
 
     result = nmo_beobject_deserialize_internal(
         &decoded, chunk, type, context);
