@@ -79,9 +79,11 @@ static nmo_status_t nmo_layer_deserialize_internal(
     out_state->square_data_size = 0;
     out_state->grid = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_LAYERDATA) != NMO_OK) {
+    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_LAYERDATA);
+    if (result == NMO_ERR_NOT_FOUND) {
         NMO_RETURN_OK();
     }
+    if (result != NMO_OK) return result;
     out_state->has_layer_data = 1;
 
     nmo_ref_t grid = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);

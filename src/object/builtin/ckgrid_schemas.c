@@ -87,9 +87,11 @@ static nmo_status_t nmo_grid_deserialize_internal(
     out_state->has_file_flag = 0;
     out_state->file_flag = 0;
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_GRIDDATA) != NMO_OK) {
+    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_GRIDDATA);
+    if (result == NMO_ERR_NOT_FOUND) {
         NMO_RETURN_OK();
     }
+    if (result != NMO_OK) return result;
     out_state->has_grid_data = 1;
 
     NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &out_state->width));
