@@ -202,10 +202,45 @@ TEST(header1, size_overflow) {
     nmo_arena_destroy(arena);
 }
 
+TEST(header1, write_failures_clear_outputs) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 1024);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_header1_t header;
+    memset(&header, 0, sizeof(header));
+    header.object_count = 1;
+
+    nmo_header1_layout_t layout;
+    memset(&layout, 0x7f, sizeof(layout));
+    ASSERT_EQ(NMO_ERR_INVALID_STATE,
+        nmo_header1_plan(&header, arena, &layout));
+    ASSERT_EQ(0u, layout.total_size);
+    ASSERT_EQ(0u, layout.object_table_size);
+    ASSERT_NULL(layout.plugin_categories);
+
+    void* out_data = (void*)(uintptr_t)1;
+    size_t out_size = 123;
+    ASSERT_EQ(NMO_ERR_INVALID_STATE,
+        nmo_header1_serialize(&header, &out_data, &out_size, arena));
+    ASSERT_NULL(out_data);
+    ASSERT_EQ(0u, out_size);
+
+    uint8_t* planned_data = (uint8_t*)(uintptr_t)1;
+    size_t planned_size = 123;
+    ASSERT_EQ(NMO_ERR_INVALID_STATE,
+        nmo_header1_write_planned(
+            &header, &layout, arena, &planned_data, &planned_size));
+    ASSERT_NULL(planned_data);
+    ASSERT_EQ(0u, planned_size);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(header1, serialization);
     REGISTER_TEST(header1, round_trip);
     REGISTER_TEST(header1, planned_write_matches_serialize);
     REGISTER_TEST(header1, included_metadata_only);
     REGISTER_TEST(header1, size_overflow);
+    REGISTER_TEST(header1, write_failures_clear_outputs);
 TEST_MAIN_END()
