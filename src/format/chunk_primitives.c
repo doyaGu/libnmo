@@ -271,12 +271,24 @@ nmo_status_t nmo_chunk_read_guid(nmo_chunk_t *chunk, nmo_guid_t *out_value) {
 nmo_status_t nmo_chunk_write_string(nmo_chunk_t *chunk, const char *str) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
-    // Calculate size
-    size_t len = str ? strlen(str) + 1 : 0; // Include null terminator
-    size_t dwords = (len + 3) / 4;          // Round up to DWORDs
+    size_t len = 0;
+    if (str != NULL) {
+        const size_t string_length = strlen(str);
+        if (string_length >= UINT32_MAX) {
+            NMO_CHUNK_RETURN_INVALID_ARGUMENT("String length is not encodable");
+        }
+        len = string_length + 1u;
+    }
+    const size_t dwords = nmo_bytes_to_dwords(len);
+    size_t total_dwords = 0;
+    size_t total_bytes = 0;
+    if (!nmo_safe_add_size(dwords, 1u, &total_dwords) ||
+        !nmo_safe_mul_size(total_dwords, sizeof(uint32_t), &total_bytes)) {
+        NMO_CHUNK_RETURN_INVALID_ARGUMENT("String size overflow");
+    }
 
     // Write length
-    nmo_status_t result = nmo_chunk_check_size(chunk, (1 + dwords) * sizeof(uint32_t));
+    nmo_status_t result = nmo_chunk_check_size(chunk, total_bytes);
     NMO_RETURN_IF_ERROR(result);
 
     nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);

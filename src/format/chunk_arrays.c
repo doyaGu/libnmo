@@ -8,6 +8,17 @@
 #include <limits.h>
 #include <stdint.h>
 
+static nmo_status_t preflight_dword_sequence(nmo_chunk_t *chunk,
+                                             size_t payload_dwords) {
+    size_t total_dwords = 0;
+    size_t total_bytes = 0;
+    if (!nmo_safe_add_size(payload_dwords, 1u, &total_dwords) ||
+        !nmo_safe_mul_size(total_dwords, sizeof(uint32_t), &total_bytes)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    return nmo_chunk_check_size(chunk, total_bytes);
+}
+
 // =============================================================================
 // Generic Arrays
 // =============================================================================
@@ -285,9 +296,11 @@ nmo_status_t nmo_chunk_write_int_array(nmo_chunk_t *chunk,
     if (count > (size_t)INT32_MAX) {
         NMO_CHUNK_RETURN_INVALID_ARGUMENT("Int array count is not encodable");
     }
+    nmo_status_t result = preflight_dword_sequence(chunk, count);
+    NMO_RETURN_IF_ERROR(result);
 
     // Write count
-    nmo_status_t result = nmo_chunk_write_dword(chunk, (uint32_t) count);
+    result = nmo_chunk_write_dword(chunk, (uint32_t) count);
     NMO_RETURN_IF_ERROR(result);
 
     // Write ints
@@ -343,9 +356,11 @@ nmo_status_t nmo_chunk_write_float_array(nmo_chunk_t *chunk,
     if (count > (size_t)INT32_MAX) {
         NMO_CHUNK_RETURN_INVALID_ARGUMENT("Float array count is not encodable");
     }
+    nmo_status_t result = preflight_dword_sequence(chunk, count);
+    NMO_RETURN_IF_ERROR(result);
 
     // Write count
-    nmo_status_t result = nmo_chunk_write_dword(chunk, (uint32_t) count);
+    result = nmo_chunk_write_dword(chunk, (uint32_t) count);
     NMO_RETURN_IF_ERROR(result);
 
     // Write floats
@@ -399,9 +414,11 @@ nmo_status_t nmo_chunk_write_dword_array(nmo_chunk_t *chunk,
     if (count > (size_t)INT32_MAX) {
         NMO_CHUNK_RETURN_INVALID_ARGUMENT("Dword array count is not encodable");
     }
+    nmo_status_t result = preflight_dword_sequence(chunk, count);
+    NMO_RETURN_IF_ERROR(result);
 
     // Write count
-    nmo_status_t result = nmo_chunk_write_dword(chunk, (uint32_t) count);
+    result = nmo_chunk_write_dword(chunk, (uint32_t) count);
     NMO_RETURN_IF_ERROR(result);
 
     // Write dwords
@@ -454,9 +471,11 @@ nmo_status_t nmo_chunk_write_byte_array(nmo_chunk_t *chunk,
     if (count > (size_t)INT32_MAX) {
         NMO_CHUNK_RETURN_INVALID_ARGUMENT("Byte array count is not encodable");
     }
+    nmo_status_t result = preflight_dword_sequence(chunk, count);
+    NMO_RETURN_IF_ERROR(result);
 
     // Write count
-    nmo_status_t result = nmo_chunk_write_dword(chunk, (uint32_t) count);
+    result = nmo_chunk_write_dword(chunk, (uint32_t) count);
     NMO_RETURN_IF_ERROR(result);
 
     // Write bytes
@@ -533,8 +552,31 @@ nmo_status_t nmo_chunk_write_string_array(nmo_chunk_t *chunk,
         NMO_CHUNK_RETURN_INVALID_ARGUMENT("String array count is not encodable");
     }
 
+    size_t total_dwords = 1u;
+    for (size_t i = 0; i < count; i++) {
+        size_t string_bytes = 0;
+        if (strings[i] != NULL) {
+            const size_t length = strlen(strings[i]);
+            if (length >= UINT32_MAX) {
+                NMO_CHUNK_RETURN_INVALID_ARGUMENT("String array item is too long");
+            }
+            string_bytes = length + 1u;
+        }
+        const size_t item_dwords = nmo_bytes_to_dwords(string_bytes);
+        if (!nmo_safe_add_size(total_dwords, 1u, &total_dwords) ||
+            !nmo_safe_add_size(total_dwords, item_dwords, &total_dwords)) {
+            NMO_CHUNK_RETURN_INVALID_ARGUMENT("String array size overflow");
+        }
+    }
+    size_t total_bytes = 0;
+    if (!nmo_safe_mul_size(total_dwords, sizeof(uint32_t), &total_bytes)) {
+        NMO_CHUNK_RETURN_INVALID_ARGUMENT("String array size overflow");
+    }
+    nmo_status_t result = nmo_chunk_check_size(chunk, total_bytes);
+    NMO_RETURN_IF_ERROR(result);
+
     // Write count
-    nmo_status_t result = nmo_chunk_write_dword(chunk, (uint32_t) count);
+    result = nmo_chunk_write_dword(chunk, (uint32_t) count);
     NMO_RETURN_IF_ERROR(result);
 
     // Write strings
