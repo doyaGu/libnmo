@@ -226,8 +226,39 @@ TEST(object_ids, chunk_api_file_context_maps_ids) {
     nmo_arena_destroy(arena);
 }
 
+TEST(object_ids, chunk_api_id_array_mapping_failure_is_atomic) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_id_remap_t* runtime_to_file = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(runtime_to_file);
+    ASSERT_EQ(NMO_OK,
+        nmo_id_remap_add(runtime_to_file, (nmo_object_id_t)1001,
+                         (nmo_object_id_t)5));
+
+    nmo_chunk_file_context_t file_ctx = {0};
+    file_ctx.runtime_to_file = runtime_to_file;
+    nmo_chunk_t* chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(chunk, &file_ctx);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0x12345678u));
+    const uint32_t options_before = chunk->chunk_options;
+
+    const nmo_object_id_t ids[] = {1001u, 9999u};
+    ASSERT_EQ(NMO_ERR_NOT_FOUND,
+        nmo_chunk_write_object_id_array(chunk, ids, 2u));
+    ASSERT_EQ(1u, nmo_chunk_get_position(chunk));
+    ASSERT_EQ(1u, chunk->data.count);
+    ASSERT_EQ(0u, chunk->ids.count);
+    ASSERT_EQ(options_before, chunk->chunk_options);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(object_ids, write_and_read_object_ids);
     REGISTER_TEST(object_ids, file_context_roundtrip);
     REGISTER_TEST(object_ids, chunk_api_file_context_maps_ids);
+    REGISTER_TEST(object_ids, chunk_api_id_array_mapping_failure_is_atomic);
 TEST_MAIN_END()
