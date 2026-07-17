@@ -1285,7 +1285,30 @@ TEST(chunk_id_remap, parameterlocal_owner_round_trips_raw_id) {
     nmo_parameterlocal_state_t source;
     ASSERT_EQ(NMO_OK, nmo_parameterlocal_vtable.create(
         &source, NULL, NULL));
+    source.base.type_guid = CKPGUID_INT;
+    source.base.mode = CKPARAM_MODE_BUFFER;
+    source.base.has_state = true;
+    uint8_t source_byte = 0x42u;
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &source.base.buffer_data, &source_byte));
+    source.base.subchunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(source.base.subchunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(source.base.subchunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        source.base.subchunk, 0xaabbccddu));
+    nmo_chunk_close(source.base.subchunk);
     source.owner = nmo_ref_from_raw(691);
+
+    nmo_parameterlocal_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_parameterlocal_vtable.create(
+        &copied, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_parameterlocal_vtable.copy(
+        &source, &copied, NULL, arena));
+    ASSERT_NE(source.base.buffer_data.data, copied.base.buffer_data.data);
+    ASSERT_NE(source.base.subchunk, copied.base.subchunk);
+    ASSERT_TRUE(nmo_parameterlocal_vtable.equals(&source, &copied));
+    ASSERT_EQ(nmo_parameterlocal_vtable.hash(&source),
+              nmo_parameterlocal_vtable.hash(&copied));
 
     nmo_chunk_t *file_chunk = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(file_chunk);
@@ -1396,6 +1419,7 @@ TEST(chunk_id_remap, parameterlocal_owner_round_trips_raw_id) {
     ASSERT_EQ(0x12345678u, marker);
 
     nmo_parameterlocal_vtable.destroy(&source, NULL, NULL);
+    nmo_parameterlocal_vtable.destroy(&copied, NULL, NULL);
     nmo_parameterlocal_vtable.destroy(&file_loaded, NULL, NULL);
     nmo_parameterlocal_vtable.destroy(&loaded, NULL, NULL);
     nmo_parameterlocal_vtable.destroy(&reloaded, NULL, NULL);
