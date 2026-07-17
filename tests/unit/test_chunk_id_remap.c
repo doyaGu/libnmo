@@ -6580,6 +6580,51 @@ TEST(chunk_id_remap, patchmesh_data3_refs_round_trip_and_failure_is_atomic) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, patchmesh_rejects_oversized_legacy_materials_before_allocation) {
+    fail_after_allocator_state_t allocator_state = {
+        .allocation_count = 0,
+        .allowed_allocations = 2,
+    };
+    nmo_allocator_t failing_allocator = nmo_allocator_custom(
+        fail_after_alloc, fail_after_free, &allocator_state);
+    nmo_arena_t *arena = nmo_arena_create(&failing_allocator, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    chunk->class_id = NMO_CID_PATCHMESH;
+    chunk->chunk_version = NMO_CHUNK_VERSION4;
+    chunk->data_version = 7;
+    chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        chunk, CK_STATESAVE_PATCHMESHDATA2));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_id(chunk, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 0));
+    for (size_t i = 0; i < 10; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0));
+    }
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        chunk, CK_STATESAVE_PATCHMESHMATERIALS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(chunk, 100000));
+    nmo_chunk_close(chunk);
+
+    nmo_patchmesh_state_t state;
+    ASSERT_EQ(NMO_OK, nmo_patchmesh_vtable.create(&state, NULL, NULL));
+    state.patch_flags = 0x12345678u;
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_patchmesh_deserialize(
+        &state, chunk, NULL, &deserialize_context));
+    ASSERT_EQ(0x12345678u, state.patch_flags);
+    ASSERT_EQ(2u, allocator_state.allocation_count);
+
+    nmo_patchmesh_vtable.destroy(&state, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, patchmesh_data2_layout_and_empty_sections_round_trip) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
     ASSERT_NOT_NULL(arena);
@@ -7528,6 +7573,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, mesh_copy_preserves_material_records);
     REGISTER_TEST(chunk_id_remap, mesh_rejects_oversized_lines_before_allocation);
     REGISTER_TEST(chunk_id_remap, patchmesh_data3_refs_round_trip_and_failure_is_atomic);
+    REGISTER_TEST(chunk_id_remap, patchmesh_rejects_oversized_legacy_materials_before_allocation);
     REGISTER_TEST(chunk_id_remap, patchmesh_data2_layout_and_empty_sections_round_trip);
     REGISTER_TEST(chunk_id_remap, patchmesh_serializer_rejects_partial_state);
     REGISTER_TEST(chunk_id_remap, patchmesh_copy_preserves_atomic_records);
