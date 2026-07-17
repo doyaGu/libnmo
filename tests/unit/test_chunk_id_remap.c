@@ -277,6 +277,51 @@ TEST(chunk_id_remap, malformed_chunk_arrays_are_rejected_before_remap) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, malformed_id_metadata_reports_and_rolls_back) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t* chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_id(chunk, 10));
+    nmo_chunk_close(chunk);
+
+    nmo_id_remap_t* remap = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(remap);
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, 10, 20));
+
+    const uint32_t invalid_offset = 99;
+    ASSERT_EQ(NMO_OK, nmo_arena_array_append(&chunk->ids, &invalid_offset));
+    ASSERT_EQ(NMO_ERR_INVALID_STATE,
+        nmo_chunk_remap_object_ids(chunk, remap));
+    ASSERT_EQ(10u, NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data)[0]);
+
+    nmo_arena_array_clear(&chunk->ids);
+    const uint32_t sequence_marker = UINT32_MAX;
+    ASSERT_EQ(NMO_OK, nmo_arena_array_append(&chunk->ids, &sequence_marker));
+    ASSERT_EQ(NMO_ERR_INVALID_STATE,
+        nmo_chunk_remap_object_ids(chunk, remap));
+    ASSERT_EQ(10u, NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data)[0]);
+
+    const uint32_t sequence_offset = 0;
+    ASSERT_EQ(NMO_OK, nmo_arena_array_append(&chunk->ids, &sequence_offset));
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK,
+        nmo_chunk_remap_object_ids(chunk, remap));
+    ASSERT_EQ(10u, NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data)[0]);
+
+    nmo_chunk_t* empty = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(empty);
+    ASSERT_EQ(NMO_OK, nmo_arena_array_append(&empty->ids, &sequence_offset));
+    ASSERT_EQ(NMO_ERR_INVALID_STATE,
+        nmo_chunk_remap_object_ids(empty, remap));
+    nmo_arena_array_clear(&empty->ids);
+    ASSERT_EQ(NMO_OK, nmo_arena_array_append(&empty->chunk_refs, &sequence_offset));
+    ASSERT_EQ(NMO_ERR_INVALID_STATE,
+        nmo_chunk_remap_object_ids(empty, remap));
+
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, sequence_id_remap) {
     nmo_arena_t* arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
@@ -8118,6 +8163,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, single_id_remap);
     REGISTER_TEST(chunk_id_remap, malformed_subchunk_remap_reports_and_rolls_back);
     REGISTER_TEST(chunk_id_remap, malformed_chunk_arrays_are_rejected_before_remap);
+    REGISTER_TEST(chunk_id_remap, malformed_id_metadata_reports_and_rolls_back);
     REGISTER_TEST(chunk_id_remap, sequence_id_remap);
     REGISTER_TEST(chunk_id_remap, subchunk_id_remap);
     REGISTER_TEST(chunk_id_remap, zero_and_unchanged_ids);
