@@ -331,7 +331,12 @@ static nmo_status_t serialize_objects(
         *pos += sizeof(uint32_t);
 
         /* Calculate name length (does NOT include null terminator) */
-        uint32_t name_len = obj->name ? (uint32_t) strlen(obj->name) : 0;
+        size_t name_size = obj->name ? strlen(obj->name) : 0;
+        if (name_size > UINT32_MAX) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                             "Object name length does not fit the file format");
+        }
+        uint32_t name_len = (uint32_t) name_size;
 
         /* Write name length */
         if (*pos + sizeof(uint32_t) > buffer_size) {
@@ -455,15 +460,18 @@ nmo_status_t nmo_header1_plan(
     if (header == NULL || arena == NULL || out_layout == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid Header1 plan arguments");
     }
-    NMO_RETURN_IF_ERROR(validate_header1_for_write(header));
-
     memset(out_layout, 0, sizeof(*out_layout));
+    NMO_RETURN_IF_ERROR(validate_header1_for_write(header));
 
     /* NOTE: Object count is NOT in buffer - it's in file header */
 
     /* Object descriptors */
     for (uint32_t i = 0; i < header->object_count; i++) {
         size_t name_len = header->objects[i].name ? strlen(header->objects[i].name) : 0;
+        if (name_len > UINT32_MAX) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                             "Object name length does not fit the file format");
+        }
         if (!nmo_safe_add_size(out_layout->object_table_size,
                                sizeof(uint32_t) * 4u,
                                &out_layout->object_table_size)) {
@@ -549,6 +557,8 @@ nmo_status_t nmo_header1_write_planned(
     if (header == NULL || layout == NULL || arena == NULL || out_buffer == NULL || out_size == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid Header1 planned write arguments");
     }
+    *out_buffer = NULL;
+    *out_size = 0;
     NMO_RETURN_IF_ERROR(validate_header1_for_write(header));
 
     size_t expected_total = 0;
@@ -611,6 +621,8 @@ nmo_status_t nmo_header1_serialize(
     if (header == NULL || out_data == NULL || out_size == NULL || arena == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "NULL pointer passed to nmo_header1_serialize");
     }
+    *out_data = NULL;
+    *out_size = 0;
 
     nmo_header1_layout_t layout = {0};
     NMO_RETURN_IF_ERROR(nmo_header1_plan(header, arena, &layout));
