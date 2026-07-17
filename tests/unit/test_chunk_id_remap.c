@@ -2976,9 +2976,69 @@ TEST(chunk_id_remap, sprite3d_unresolved_material_round_trips_raw_id) {
     ASSERT_EQ(622u, reloaded.material.raw_id);
     ASSERT_EQ(NMO_REF_UNRESOLVED, reloaded.material.state);
 
+    nmo_chunk_t *truncated = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(truncated);
+    truncated->class_id = NMO_CID_SPRITE3D;
+    truncated->chunk_version = NMO_CHUNK_VERSION4;
+    truncated->data_version = 7;
+    truncated->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(truncated));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        truncated, CK_STATESAVE_SPRITE3DDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        truncated, VXSPRITE3D_BILLBOARD));
+    for (int i = 0; i < 8; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_float(
+            truncated, (float)(i + 1)));
+    }
+    nmo_chunk_close(truncated);
+    nmo_chunk_set_file_context(truncated, &read_context);
+
+    nmo_sprite3d_state_t failed;
+    ASSERT_EQ(NMO_OK, nmo_sprite3d_vtable.create(&failed, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(
+        &failed.base.base.base, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &failed.base.base.base.scripts, 899));
+    failed.half_width = 9.0f;
+    failed.material = nmo_ref_from_raw(623);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_sprite3d_deserialize(
+        &failed, truncated, NULL, &deserialize_context));
+    ASSERT_EQ(9.0f, failed.half_width);
+    ASSERT_EQ(623u, failed.material.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, failed.material.state);
+    ASSERT_EQ(899u, nmo_beobject_script_array_get_id(
+        &failed.base.base.base.scripts, 0));
+
+    nmo_sprite3d_state_t invalid;
+    ASSERT_EQ(NMO_OK, nmo_sprite3d_vtable.create(&invalid, NULL, NULL));
+    invalid.material = nmo_ref_from_id(999);
+    nmo_chunk_t *target = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(target);
+    target->class_id = NMO_CID_SPRITE3D;
+    target->chunk_version = NMO_CHUNK_VERSION4;
+    target->data_version = 7;
+    target->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(target, &write_context);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(target, 0x12345678u));
+    nmo_chunk_close(target);
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_sprite3d_serialize(
+        &invalid, target, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(target));
+    uint32_t marker = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(target, &marker));
+    ASSERT_EQ(0x12345678u, marker);
+
     nmo_sprite3d_vtable.destroy(&source, NULL, NULL);
     nmo_sprite3d_vtable.destroy(&loaded, NULL, NULL);
     nmo_sprite3d_vtable.destroy(&reloaded, NULL, NULL);
+    nmo_array_dispose(&failed.base.base.base.scripts);
+    nmo_array_dispose(&failed.base.base.base.attributes);
+    nmo_array_dispose(&failed.base.base.base.legacy_attributes);
+    nmo_sprite3d_vtable.destroy(&failed, NULL, NULL);
+    nmo_sprite3d_vtable.destroy(&invalid, NULL, NULL);
     nmo_arena_destroy(arena);
 }
 
@@ -3086,7 +3146,9 @@ TEST(chunk_id_remap, scalar_ref_sections_do_not_publish_truncated_state) {
     ASSERT_EQ(NMO_OK, nmo_sprite3d_vtable.create(&sprite, NULL, NULL));
     ASSERT_NE(NMO_OK, nmo_sprite3d_deserialize(
         &sprite, sprite_chunk, NULL, &deserialize_context));
-    ASSERT_FALSE(sprite.has_data);
+    ASSERT_TRUE(sprite.has_data);
+    ASSERT_EQ(1.0f, sprite.half_width);
+    ASSERT_EQ(1.0f, sprite.half_height);
     ASSERT_EQ(NMO_REF_NONE, sprite.material.state);
     ASSERT_EQ(NMO_OBJECT_ID_NONE, sprite.material.raw_id);
     nmo_sprite3d_vtable.destroy(&sprite, NULL, NULL);
