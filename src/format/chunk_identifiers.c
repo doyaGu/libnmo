@@ -17,10 +17,19 @@ nmo_status_t nmo_chunk_write_identifier(nmo_chunk_t *chunk, uint32_t id) {
         NMO_RETURN_IF_ERROR(start_result);
     }
 
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
+    if (state->current_pos > (size_t)UINT32_MAX - 2u) {
+        NMO_CHUNK_RETURN_INVALID_ARGUMENT(
+            "Identifier entry does not fit the 32-bit chunk format");
+    }
+    if (state->prev_identifier_pos < state->current_pos &&
+        state->prev_identifier_pos + 1u >= chunk->data.count) {
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                               "Previous identifier position is out of bounds");
+    }
+
     nmo_status_t result = nmo_chunk_check_size(chunk, 2 * sizeof(uint32_t));
     NMO_RETURN_IF_ERROR(result);
-
-    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
 
     uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
 
