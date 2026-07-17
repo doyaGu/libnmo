@@ -642,11 +642,21 @@ static nmo_status_t nmo_mesh_deserialize_modern(
                              "Invalid mesh line count");
         }
         if (line_count > 0) {
+            size_t expected_bytes =
+                (size_t)line_count * 2u * sizeof(uint16_t);
+            size_t required_dwords =
+                1u + (expected_bytes + sizeof(uint32_t) - 1u) /
+                    sizeof(uint32_t);
+            if (required_dwords >
+                nmo_mesh_identifier_remaining_dwords(chunk)) {
+                NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK,
+                                 NMO_SEVERITY_ERROR,
+                                 "Modern mesh lines exceed remaining DWORDs");
+            }
             out_state->line_count = (uint32_t)line_count;
             out_state->line_indices = (uint16_t *)nmo_arena_alloc(
                 arena, sizeof(uint16_t) * line_count * 2, alignof(uint16_t));
             if (!out_state->line_indices) return NMO_ERR_NOMEM;
-            size_t expected_bytes = (size_t)line_count * 2u * sizeof(uint16_t);
             size_t bytes_read = 0;
             result = nmo_chunk_read_and_fill_buffer_checked(
                 chunk, out_state->line_indices, expected_bytes, &bytes_read);
