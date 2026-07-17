@@ -703,6 +703,8 @@ TEST(interface_chunk, dev_layout_rejects_truncated_comment_string) {
     nmo_chunk_write_float(chunk, 3.0f);
     nmo_chunk_write_float(chunk, 4.0f);
     nmo_chunk_write_dword(chunk, 5); /* needs two payload DWORDs */
+    nmo_chunk_write_dword(chunk, 0x41414141u); /* only one in this section */
+    nmo_chunk_write_identifier(chunk, 0x7F123456u);
 
     nmo_chunk_close(chunk);
 
