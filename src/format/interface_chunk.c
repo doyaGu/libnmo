@@ -821,6 +821,13 @@ static nmo_status_t parse_links(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                          "interface chunk: link count %d out of range", count);
     }
+    const size_t minimum_dwords_per_link =
+        split_type_and_highlight ? 10u : 9u;
+    if ((size_t)count >
+        interface_identifier_remaining_dwords(chunk) /
+            minimum_dwords_per_link) {
+        return NMO_ERR_TRUNCATED_CHUNK;
+    }
     body->link_count = (size_t)count;
 
     if (body->link_count == 0) {
@@ -880,6 +887,12 @@ static nmo_status_t parse_links(
             NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                              "interface chunk: point count %d out of range", point_count);
         }
+        const size_t remaining_dwords =
+            interface_identifier_remaining_dwords(chunk);
+        if (remaining_dwords < 3u ||
+            (size_t)point_count > (remaining_dwords - 3u) / 2u) {
+            return NMO_ERR_TRUNCATED_CHUNK;
+        }
         link->point_count = (size_t)point_count;
 
         if (link->point_count > 0) {
@@ -931,6 +944,9 @@ static nmo_status_t parse_operations(
     if (count < 0 || count > 100000) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                          "interface chunk: operation count %d out of range", count);
+    }
+    if ((size_t)count > interface_identifier_remaining_dwords(chunk) / 3u) {
+        return NMO_ERR_TRUNCATED_CHUNK;
     }
     body->operation_count = (size_t)count;
 
@@ -1027,6 +1043,12 @@ static nmo_status_t parse_comments(
     if (count < 0 || count > 100000) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                          "interface chunk: comment count %d out of range", count);
+    }
+    const size_t minimum_dwords_per_comment = version >= 0x16 ? 6u : 5u;
+    if ((size_t)count >
+        interface_identifier_remaining_dwords(chunk) /
+            minimum_dwords_per_comment) {
+        return NMO_ERR_TRUNCATED_CHUNK;
     }
     body->comment_count = (size_t)count;
 
