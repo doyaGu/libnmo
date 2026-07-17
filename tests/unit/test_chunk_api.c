@@ -8,6 +8,30 @@
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_chunk.h"
 #include "core/nmo_arena.h"
+#include "core/nmo_allocator.h"
+
+typedef struct chunk_api_fail_allocator_state {
+    size_t allocation_count;
+    size_t allowed_allocations;
+} chunk_api_fail_allocator_state_t;
+
+static void *chunk_api_fail_alloc(
+    void *user_data, size_t size, size_t alignment)
+{
+    chunk_api_fail_allocator_state_t *state =
+        (chunk_api_fail_allocator_state_t *)user_data;
+    if (state->allocation_count >= state->allowed_allocations) return NULL;
+    state->allocation_count++;
+    nmo_allocator_t allocator = nmo_allocator_default();
+    return nmo_alloc(&allocator, size, alignment);
+}
+
+static void chunk_api_fail_free(void *user_data, void *ptr)
+{
+    (void)user_data;
+    nmo_allocator_t allocator = nmo_allocator_default();
+    nmo_free(&allocator, ptr);
+}
 
 // Test: Basic write/read primitives
 TEST(chunk_api, primitives) {
@@ -1032,6 +1056,30 @@ TEST(chunk_api, generic_array_write_rejects_invalid_sizes) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_api, generic_array_allocation_failure_is_atomic) {
+    chunk_api_fail_allocator_state_t allocator_state = {
+        .allowed_allocations = (size_t)-1,
+    };
+    nmo_allocator_t allocator = nmo_allocator_custom(
+        chunk_api_fail_alloc, chunk_api_fail_free, &allocator_state);
+    nmo_arena_t* arena = nmo_arena_create(&allocator, 256);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t* chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0x12345678u));
+
+    uint8_t values[3000];
+    memset(values, 0xA5, sizeof(values));
+    allocator_state.allowed_allocations = allocator_state.allocation_count;
+    ASSERT_EQ(NMO_ERR_NOMEM,
+        nmo_chunk_write_array(chunk, values, sizeof(values), 1));
+    ASSERT_EQ(1u, nmo_chunk_get_position(chunk));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(chunk));
+
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_api, compression) {
     nmo_arena_t* arena = nmo_arena_create(NULL, 1024 * 16);
     ASSERT_NOT_NULL(arena);
@@ -1195,6 +1243,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_api, arrays_reject_inconsistent_header);
     REGISTER_TEST(chunk_api, typed_array_writes_reject_unencodable_counts);
     REGISTER_TEST(chunk_api, generic_array_write_rejects_invalid_sizes);
+    REGISTER_TEST(chunk_api, generic_array_allocation_failure_is_atomic);
     REGISTER_TEST(chunk_api, compression);
     REGISTER_TEST(chunk_api, compression_new_api);
     REGISTER_TEST(chunk_api, crc);
