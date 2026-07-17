@@ -439,6 +439,33 @@ TEST(chunk_api, sequence_rejects_negative_count) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_api, object_id_truncation_clears_outputs) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_chunk_t* chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    nmo_chunk_close(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(chunk));
+
+    nmo_object_id_t id = 123;
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK,
+        nmo_chunk_read_object_id(chunk, &id));
+    ASSERT_EQ(NMO_OBJECT_ID_NONE, id);
+    ASSERT_EQ(0u, nmo_chunk_get_position(chunk));
+
+    nmo_object_id_t raw_id = 456;
+    id = 789;
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK,
+        nmo_chunk_read_object_id_preserve(chunk, &raw_id, &id));
+    ASSERT_EQ(NMO_OBJECT_ID_NONE, raw_id);
+    ASSERT_EQ(NMO_OBJECT_ID_NONE, id);
+    ASSERT_EQ(0u, nmo_chunk_get_position(chunk));
+
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_api, sequence_rejects_truncated_items) {
     nmo_arena_t* arena = nmo_arena_create(NULL, 8192);
     ASSERT_NOT_NULL(arena);
@@ -1529,6 +1556,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_api, buffer_writes_reject_size_overflow_atomically);
     REGISTER_TEST(chunk_api, guid);
     REGISTER_TEST(chunk_api, object_id);
+    REGISTER_TEST(chunk_api, object_id_truncation_clears_outputs);
     REGISTER_TEST(chunk_api, sequence);
     REGISTER_TEST(chunk_api, sequence_rejects_negative_count);
     REGISTER_TEST(chunk_api, sequence_rejects_truncated_items);
