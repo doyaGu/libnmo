@@ -12,6 +12,7 @@
 #include "format/nmo_object.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_arena_array.h"
+#include "core/nmo_allocator.h"
 #include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "object/nmo_object_repository.h"
@@ -23,6 +24,31 @@
 #include "document/nmo_document_save.h"
 
 #include <string.h>
+
+typedef struct interface_fail_allocator_state {
+    size_t allocation_count;
+    size_t allowed_allocations;
+} interface_fail_allocator_state_t;
+
+static void *interface_fail_alloc(
+    void *user_data,
+    size_t size,
+    size_t alignment)
+{
+    interface_fail_allocator_state_t *state =
+        (interface_fail_allocator_state_t *)user_data;
+    if (state->allocation_count >= state->allowed_allocations) return NULL;
+    state->allocation_count++;
+    nmo_allocator_t allocator = nmo_allocator_default();
+    return nmo_alloc(&allocator, size, alignment);
+}
+
+static void interface_fail_free(void *user_data, void *ptr)
+{
+    (void)user_data;
+    nmo_allocator_t allocator = nmo_allocator_default();
+    nmo_free(&allocator, ptr);
+}
 
 /* ============================================================================
  * Helper: build a minimal v0x14 interface chunk
@@ -2331,6 +2357,47 @@ TEST(interface_chunk, reflection_data_to_string) {
     nmo_context_release(ctx);
 }
 
+TEST(interface_chunk, write_failure_preserves_target_chunk) {
+    interface_fail_allocator_state_t allocator_state = {
+        .allowed_allocations = (size_t)-1,
+    };
+    nmo_allocator_t allocator = nmo_allocator_custom(
+        interface_fail_alloc, interface_fail_free, &allocator_state);
+    nmo_arena_t *arena = nmo_arena_create(&allocator, 256);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_chunk_t *target = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(target);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(target, 0x12345678u));
+    nmo_chunk_close(target);
+
+    nmo_interface_behavior_t subs[96];
+    memset(subs, 0, sizeof(subs));
+    for (size_t i = 0; i < 96; ++i) {
+        subs[i].behavior_id = (nmo_object_id_t)(1000u + i);
+        subs[i].flags = NMO_INTERFACE_FLAG_HEADER_ONLY;
+    }
+    nmo_interface_data_t data;
+    memset(&data, 0, sizeof(data));
+    data.version = 0x14;
+    data.script.behavior_id = 999;
+    data.script.flags = NMO_INTERFACE_FLAG_HEADER_ONLY;
+    data.sub_count = 96;
+    data.subs = subs;
+
+    allocator_state.allowed_allocations = allocator_state.allocation_count;
+    ASSERT_EQ(NMO_ERR_NOMEM,
+        nmo_interface_chunk_write(target, &data, NULL));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(target));
+    uint32_t marker = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(target, &marker));
+    ASSERT_EQ(0x12345678u, marker);
+
+    nmo_arena_destroy(arena);
+}
+
 /* ============================================================================
  * Serialize integration: structured writer is used by save path
  * ============================================================================ */
@@ -2726,6 +2793,7 @@ TEST_MAIN_BEGIN()
     /* Reflection tests */
     REGISTER_TEST(interface_chunk, reflection_types_registered);
     REGISTER_TEST(interface_chunk, reflection_data_to_string);
+    REGISTER_TEST(interface_chunk, write_failure_preserves_target_chunk);
     /* Serialize integration */
     REGISTER_TEST(interface_chunk, serialize_structured_write_round_trip);
     REGISTER_TEST(interface_chunk, parse_file_context_chunk_falls_back_when_ids_are_raw);
