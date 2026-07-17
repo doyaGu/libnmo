@@ -2426,6 +2426,32 @@ TEST(interface_chunk, write_rejects_missing_subs_atomically) {
     nmo_arena_destroy(arena);
 }
 
+TEST(interface_chunk, write_rejects_missing_body_arrays_atomically) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t *target = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(target);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(target, 0x12345678u));
+    nmo_chunk_close(target);
+
+    nmo_interface_data_t data;
+    memset(&data, 0, sizeof(data));
+    data.version = 0x14;
+    data.script.body.has_body = true;
+    data.script.body.link_count = 1;
+    data.script.body.links = NULL;
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+        nmo_interface_chunk_write(target, &data, NULL));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(target));
+    uint32_t marker = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(target, &marker));
+    ASSERT_EQ(0x12345678u, marker);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST(interface_chunk, extra_count_stays_in_section) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
     ASSERT_NOT_NULL(arena);
@@ -2973,6 +2999,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(interface_chunk, reflection_data_to_string);
     REGISTER_TEST(interface_chunk, write_failure_preserves_target_chunk);
     REGISTER_TEST(interface_chunk, write_rejects_missing_subs_atomically);
+    REGISTER_TEST(interface_chunk, write_rejects_missing_body_arrays_atomically);
     /* Serialize integration */
     REGISTER_TEST(interface_chunk, serialize_structured_write_round_trip);
     REGISTER_TEST(interface_chunk, parse_file_context_chunk_falls_back_when_ids_are_raw);
