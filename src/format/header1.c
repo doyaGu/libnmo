@@ -6,7 +6,6 @@
 #include "format/nmo_header1.h"
 #include "core/nmo_utils.h"
 #include <string.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <limits.h>
 
@@ -14,8 +13,6 @@
 #define CHECK_BUFFER_SIZE(pos, needed, size) \
     do { \
         if (!nmo_check_buffer_bounds((pos), (needed), (size))) { \
-            fprintf(stderr, "[ERROR] Buffer overrun: pos=%zu, needed=%zu, size=%zu, total=%zu\n", \
-                    (size_t)(pos), (size_t)(needed), (size_t)(size), (size_t)((pos)+(needed))); \
             NMO_RETURN_ERROR(NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR, "Buffer overrun while reading Header1"); \
         } \
     } while (0)
