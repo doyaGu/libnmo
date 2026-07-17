@@ -2347,10 +2347,26 @@ TEST(chunk_id_remap, entity_scalar_ref_sections_reject_truncation_atomically) {
 
     nmo_2dentity_state_t state2d;
     ASSERT_EQ(NMO_OK, nmo_2dentity_vtable.create(&state2d, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(
+        &state2d.base.base, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &state2d.base.base.scripts, 911));
+    state2d.flags = 0xCAFEBABEu;
+    state2d.rect.left = 12.5f;
+    state2d.has_material = true;
+    state2d.material = nmo_ref_from_raw(912);
     ASSERT_NE(NMO_OK, nmo_2dentity_deserialize(
         &state2d, chunk2d, NULL, &deserialize_context));
-    ASSERT_FALSE(state2d.has_material);
-    ASSERT_EQ(NMO_REF_NONE, state2d.material.state);
+    ASSERT_EQ(0xCAFEBABEu, state2d.flags);
+    ASSERT_EQ(12.5f, state2d.rect.left);
+    ASSERT_TRUE(state2d.has_material);
+    ASSERT_EQ(912u, state2d.material.raw_id);
+    ASSERT_EQ(1u, state2d.base.base.scripts.count);
+    ASSERT_EQ(911u, nmo_beobject_script_array_get_id(
+        &state2d.base.base.scripts, 0));
+    nmo_array_dispose(&state2d.base.base.scripts);
+    nmo_array_dispose(&state2d.base.base.attributes);
+    nmo_array_dispose(&state2d.base.base.legacy_attributes);
     nmo_2dentity_vtable.destroy(&state2d, NULL, NULL);
 
     nmo_chunk_t *parent2d_chunk = nmo_chunk_create(arena);
@@ -2375,6 +2391,41 @@ TEST(chunk_id_remap, entity_scalar_ref_sections_reject_truncation_atomically) {
     ASSERT_FALSE(parent2d_state.has_parent);
     ASSERT_EQ(NMO_REF_NONE, parent2d_state.parent.state);
     nmo_2dentity_vtable.destroy(&parent2d_state, NULL, NULL);
+
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_id_remap, entity2d_serializer_does_not_publish_partial_chunk) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+    nmo_id_remap_t *runtime_to_file = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(runtime_to_file);
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_chunk_file_context_t file_context = {
+        .runtime_to_file = runtime_to_file,
+    };
+
+    nmo_2dentity_state_t state = {0};
+    state.has_parent = true;
+    state.parent = nmo_ref_from_id(123);
+
+    nmo_chunk_t *target = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(target);
+    target->class_id = NMO_CID_2DENTITY;
+    target->data_version = 7;
+    nmo_chunk_set_file_context(target, &file_context);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(target, 0x12345678u));
+    nmo_chunk_close(target);
+
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_2dentity_serialize(
+        &state, target, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(target));
+    uint32_t preserved = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(target, &preserved));
+    ASSERT_EQ(0x12345678u, preserved);
 
     nmo_arena_destroy(arena);
 }
@@ -5228,6 +5279,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, entity_scalar_refs_round_trip_unresolved_raw_ids);
     REGISTER_TEST(chunk_id_remap, entity_scalar_ref_sections_reject_truncation_atomically);
     REGISTER_TEST(chunk_id_remap, entity_serializer_does_not_publish_partial_chunk);
+    REGISTER_TEST(chunk_id_remap, entity2d_serializer_does_not_publish_partial_chunk);
     REGISTER_TEST(chunk_id_remap, place_refs_round_trip_and_truncation_is_atomic);
     REGISTER_TEST(chunk_id_remap, group_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, level_refs_round_trip_and_failure_is_atomic);
