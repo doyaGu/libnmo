@@ -33,6 +33,19 @@
 
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(texture, nmo_texture_state_t)
 
+static void nmo_texture_dispose_base_arrays(nmo_texture_state_t *state)
+{
+    if (state == NULL) return;
+    nmo_array_dispose(&state->base.scripts);
+    nmo_array_dispose(&state->base.attributes);
+    nmo_array_dispose(&state->base.legacy_attributes);
+}
+
+static nmo_status_t nmo_texture_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
+
 static nmo_status_t nmo_texture_validate_array_count(
     const nmo_chunk_t *chunk,
     int32_t count,
@@ -130,7 +143,9 @@ static size_t nmo_texture_identifier_payload_size(nmo_chunk_t *chunk) {
 
     uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
     uint32_t next_pos = data[id_pos + 1];
-    size_t end_pos = next_pos ? (size_t)next_pos : chunk->data.count;
+    size_t end_pos =
+        next_pos != 0 && next_pos <= chunk->data.count
+            ? (size_t)next_pos : chunk->data.count;
     if (end_pos < id_pos + 2) {
         return 0;
     }
@@ -376,6 +391,10 @@ static nmo_status_t nmo_texture_read_slot_filenames(
     if (count == 0) {
         NMO_RETURN_OK();
     }
+    if (state->slot_count != 0 && state->slot_count != (uint32_t)count) {
+        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                         "Texture filename count does not match bitmap slots");
+    }
 
     char **names = (char **)nmo_arena_alloc(arena, sizeof(char *) * (size_t)count, _Alignof(char *));
     if (!names) {
@@ -467,15 +486,20 @@ static uint32_t nmo_texture_pixel_format_from_desc(const nmo_image_desc_t *desc)
     return UNKNOWN_PF;
 }
 
-static size_t nmo_texture_apply_legacy_format(nmo_texture_state_t *state, nmo_chunk_t *chunk, size_t payload) {
-    if (!state || !chunk || payload <= sizeof(uint32_t)) {
-        return 0;
+static nmo_status_t nmo_texture_apply_legacy_format(
+    nmo_texture_state_t *state,
+    nmo_chunk_t *chunk,
+    size_t payload,
+    size_t *out_consumed)
+{
+    if (state == NULL || chunk == NULL || out_consumed == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
     }
+    *out_consumed = 0;
+    if (payload <= sizeof(uint32_t)) return NMO_OK;
 
     size_t buffer_size = payload - sizeof(uint32_t);
-    if (buffer_size < 40u) {
-        return 0;
-    }
+    if (buffer_size < 40u) return NMO_OK;
 
     nmo_image_desc_t desc = {0};
     int32_t width = 0;
@@ -511,10 +535,11 @@ static size_t nmo_texture_apply_legacy_format(nmo_texture_state_t *state, nmo_ch
 
     state->desired_video_format = nmo_texture_pixel_format_from_desc(&desc);
     state->has_desired_video_format = (state->desired_video_format != UNKNOWN_PF);
-    return 40u;
+    *out_consumed = 40u;
+    return NMO_OK;
 }
 
-nmo_status_t nmo_texture_deserialize(
+static nmo_status_t nmo_texture_deserialize_internal(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -524,7 +549,7 @@ nmo_status_t nmo_texture_deserialize(
     nmo_texture_state_t *out_state = (nmo_texture_state_t *)instance;
     nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
 
-    if (!chunk || !out_state) {
+    if (!chunk || !arena || !out_state) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_texture_deserialize");
     }
 
@@ -651,7 +676,9 @@ nmo_status_t nmo_texture_deserialize(
             int32_t use_mipmap = 0;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &use_mipmap));
             if (payload > sizeof(int32_t)) {
-                size_t consumed = nmo_texture_apply_legacy_format(out_state, chunk, payload);
+                size_t consumed = 0;
+                NMO_RETURN_IF_ERROR(nmo_texture_apply_legacy_format(
+                    out_state, chunk, payload, &consumed));
                 size_t remaining = payload - sizeof(int32_t);
                 if (remaining > consumed) {
                     NMO_RETURN_IF_ERROR(nmo_chunk_skip(chunk, (remaining - consumed + 3) / 4));
@@ -754,6 +781,39 @@ nmo_status_t nmo_texture_deserialize(
     }
 
     NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_texture_deserialize(
+    void *instance,
+    nmo_chunk_t *chunk,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    nmo_texture_state_t *out_state = (nmo_texture_state_t *)instance;
+    if (out_state == NULL || chunk == NULL) return NMO_ERR_INVALID_ARGUMENT;
+
+    nmo_texture_state_t decoded = {0};
+    if (out_state->base.scripts.allocator.alloc != NULL) {
+        decoded.base.scripts.allocator = out_state->base.scripts.allocator;
+    }
+    if (out_state->base.attributes.allocator.alloc != NULL) {
+        decoded.base.attributes.allocator = out_state->base.attributes.allocator;
+    }
+    if (out_state->base.legacy_attributes.allocator.alloc != NULL) {
+        decoded.base.legacy_attributes.allocator =
+            out_state->base.legacy_attributes.allocator;
+    }
+
+    nmo_status_t result = nmo_texture_deserialize_internal(
+        &decoded, chunk, type, context);
+    if (result != NMO_OK) {
+        nmo_texture_dispose_base_arrays(&decoded);
+        return result;
+    }
+
+    nmo_texture_dispose_base_arrays(out_state);
+    *out_state = decoded;
+    return NMO_OK;
 }
 
 static nmo_status_t nmo_texture_copy_reader_slots(
@@ -862,13 +922,71 @@ static nmo_status_t nmo_texture_validate(
     (void)type;
     (void)context;
     const nmo_texture_state_t *s = instance;
-    NMO_VALIDATE_COUNT(s->slot_filenames, s->slot_count, "slot_filenames");
+    if (s == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    if (s->slot_count > INT32_MAX || s->user_mipmap_count > INT32_MAX) {
+        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                         "Texture slot count exceeds serialized range");
+    }
+    if (s->has_slot_filenames) {
+        NMO_VALIDATE_COUNT(s->slot_filenames, s->slot_count, "slot_filenames");
+    }
+    if (s->bitmap_kind == CKTEXTURE_BITMAP_READER) {
+        NMO_VALIDATE_COUNT(s->reader_slots, s->slot_count, "reader_slots");
+        for (uint32_t i = 0; i < s->slot_count; ++i) {
+            NMO_VALIDATE_BYTES(s->reader_slots[i].data,
+                               s->reader_slots[i].data_size,
+                               "reader_slots.data");
+            NMO_VALIDATE_BYTES(s->reader_slots[i].alpha_plane,
+                               s->reader_slots[i].alpha_plane_size,
+                               "reader_slots.alpha_plane");
+        }
+    } else if (s->bitmap_kind == CKTEXTURE_BITMAP_RAW) {
+        NMO_VALIDATE_COUNT(s->raw_slots, s->slot_count, "raw_slots");
+        for (uint32_t i = 0; i < s->slot_count; ++i) {
+            NMO_VALIDATE_BYTES(s->raw_slots[i].blue_data,
+                               s->raw_slots[i].blue_size,
+                               "raw_slots.blue_data");
+            NMO_VALIDATE_BYTES(s->raw_slots[i].green_data,
+                               s->raw_slots[i].green_size,
+                               "raw_slots.green_data");
+            NMO_VALIDATE_BYTES(s->raw_slots[i].red_data,
+                               s->raw_slots[i].red_size,
+                               "raw_slots.red_data");
+            NMO_VALIDATE_BYTES(s->raw_slots[i].alpha_data,
+                               s->raw_slots[i].alpha_size,
+                               "raw_slots.alpha_data");
+        }
+    } else if (s->bitmap_kind == CKTEXTURE_BITMAP_BITMAP2) {
+        NMO_VALIDATE_COUNT(s->bitmap2_slots, s->slot_count, "bitmap2_slots");
+        for (uint32_t i = 0; i < s->slot_count; ++i) {
+            NMO_VALIDATE_BYTES(s->bitmap2_slots[i].buffer,
+                               s->bitmap2_slots[i].buffer_size,
+                               "bitmap2_slots.buffer");
+        }
+    } else if (s->bitmap_kind != CKTEXTURE_BITMAP_NONE) {
+        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                         "Unknown texture bitmap kind");
+    }
     NMO_VALIDATE_BYTES(s->save_format_data, s->save_format_size, "save_format_data");
     NMO_VALIDATE_COUNT(s->user_mipmaps, s->user_mipmap_count, "user_mipmaps");
+    for (uint32_t i = 0; i < s->user_mipmap_count; ++i) {
+        NMO_VALIDATE_BYTES(s->user_mipmaps[i].blue_data,
+                           s->user_mipmaps[i].blue_size,
+                           "user_mipmaps.blue_data");
+        NMO_VALIDATE_BYTES(s->user_mipmaps[i].green_data,
+                           s->user_mipmaps[i].green_size,
+                           "user_mipmaps.green_data");
+        NMO_VALIDATE_BYTES(s->user_mipmaps[i].red_data,
+                           s->user_mipmaps[i].red_size,
+                           "user_mipmaps.red_data");
+        NMO_VALIDATE_BYTES(s->user_mipmaps[i].alpha_data,
+                           s->user_mipmaps[i].alpha_size,
+                           "user_mipmaps.alpha_data");
+    }
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_texture_serialize(
+static nmo_status_t nmo_texture_serialize_internal(
     const void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -877,12 +995,14 @@ nmo_status_t nmo_texture_serialize(
     (void)type;
     const nmo_texture_state_t *state = (const nmo_texture_state_t *)instance;
     const nmo_serialize_context_t *ser_ctx = nmo_serialize_context_try(context);
-    const bool is_file = (ser_ctx != NULL && (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
+    const bool is_file = (chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0 ||
+        (ser_ctx != NULL && (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
     const uint32_t save_flags = ser_ctx ? ser_ctx->save_flags : 0;
 
     if (!state || !chunk) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_texture_serialize");
     }
+    NMO_RETURN_IF_ERROR(nmo_texture_validate(state, type, context));
 
     {
         nmo_status_t result = nmo_beobject_serialize(&state->base, chunk, NULL, context);
@@ -1020,8 +1140,7 @@ nmo_status_t nmo_texture_remap_dependencies(
             NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Missing bitmap2 slots");
         }
     }
-
-    return nmo_texture_validate(state, NULL, NULL);
+    return nmo_texture_validate(state, type, context);
 }
 
 static nmo_status_t nmo_texture_pre_delete(
@@ -1036,6 +1155,32 @@ static nmo_status_t nmo_texture_pre_delete(
                          "Invalid arguments to nmo_texture_pre_delete");
     }
     NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_texture_serialize(
+    const void *instance,
+    nmo_chunk_t *out_chunk,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    if (instance == NULL || out_chunk == NULL || out_chunk->arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_chunk_t *staged = nmo_chunk_create(out_chunk->arena);
+    if (staged == NULL) return NMO_ERR_NOMEM;
+    staged->class_id = out_chunk->class_id;
+    staged->data_version = out_chunk->data_version;
+    staged->chunk_version = out_chunk->chunk_version;
+    staged->chunk_class_id = out_chunk->chunk_class_id;
+    staged->chunk_options = out_chunk->chunk_options;
+    staged->file_context = out_chunk->file_context;
+
+    nmo_status_t result = nmo_texture_serialize_internal(
+        instance, staged, type, context);
+    if (result != NMO_OK) return result;
+    *out_chunk = *staged;
+    return NMO_OK;
 }
 
 static void nmo_texture_post_delete(
