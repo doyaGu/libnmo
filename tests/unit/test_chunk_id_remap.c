@@ -14,6 +14,7 @@
 #include "object/builtin/nmo_beobject_schemas.h"
 #include "object/builtin/nmo_character_schemas.h"
 #include "object/builtin/nmo_dataarray_schemas.h"
+#include "object/builtin/nmo_attributemanager_schemas.h"
 #include "object/builtin/nmo_camera_schemas.h"
 #include "object/builtin/nmo_light_schemas.h"
 #include "object/builtin/nmo_targetcamera_schemas.h"
@@ -819,6 +820,88 @@ TEST(chunk_id_remap, dataarray_failures_keep_state_and_target_chunk_atomic) {
     nmo_array_dispose(&state.base.legacy_attributes);
     nmo_dataarray_vtable.destroy(&state, NULL, NULL);
     nmo_dataarray_vtable.destroy(&source, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_id_remap, attributemanager_failures_keep_state_and_target_chunk_atomic) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(arena, NULL, NULL, 0);
+
+    nmo_chunk_t *truncated = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(truncated);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(truncated));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(truncated, 0x52u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(truncated, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(truncated, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(truncated, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_string(truncated, "Category"));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(truncated, 17));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(truncated, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_string(truncated, "Attribute"));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(truncated, 0x11111111u));
+    nmo_chunk_close(truncated);
+
+    nmo_attributemanager_state_t state = {0};
+    nmo_attribute_category_t old_category = {
+        .present = true,
+        .name = "Old category",
+        .flags = 71,
+    };
+    nmo_attribute_descriptor_t old_attribute = {
+        .present = true,
+        .name = "Old attribute",
+        .category_index = 0,
+        .compatible_class_id = NMO_CID_BEOBJECT,
+        .flags = 72,
+    };
+    state.category_count = 1;
+    state.categories = &old_category;
+    state.attribute_count = 1;
+    state.attributes = &old_attribute;
+
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_attributemanager_deserialize(
+        &state, truncated, NULL, &deserialize_context));
+    ASSERT_EQ(&old_category, state.categories);
+    ASSERT_EQ(&old_attribute, state.attributes);
+    ASSERT_EQ(1u, state.category_count);
+    ASSERT_EQ(1u, state.attribute_count);
+    ASSERT_EQ(71u, state.categories[0].flags);
+    ASSERT_EQ(72u, state.attributes[0].flags);
+
+    nmo_chunk_t *impossible_count = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(impossible_count);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(impossible_count));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        impossible_count, 0x52u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(impossible_count, 10000));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(impossible_count, 100000));
+    nmo_chunk_close(impossible_count);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_attributemanager_deserialize(
+        &state, impossible_count, NULL, &deserialize_context));
+    ASSERT_EQ(&old_category, state.categories);
+    ASSERT_EQ(&old_attribute, state.attributes);
+
+    nmo_attributemanager_state_t invalid = {
+        .category_count = 1,
+        .categories = &old_category,
+        .attribute_count = 1,
+        .attributes = NULL,
+    };
+    nmo_chunk_t *target = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(target);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(target, 0x12345678u));
+    nmo_chunk_close(target);
+    ASSERT_NE(NMO_OK, nmo_attributemanager_serialize(
+        &invalid, target, NULL, NULL));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(target));
+    uint32_t marker = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(target, &marker));
+    ASSERT_EQ(0x12345678u, marker);
+
     nmo_arena_destroy(arena);
 }
 
@@ -5815,6 +5898,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, behaviorio_truncation_keeps_previous_state);
     REGISTER_TEST(chunk_id_remap, dataarray_cell_refs_round_trip_raw_ids);
     REGISTER_TEST(chunk_id_remap, dataarray_failures_keep_state_and_target_chunk_atomic);
+    REGISTER_TEST(chunk_id_remap, attributemanager_failures_keep_state_and_target_chunk_atomic);
     REGISTER_TEST(chunk_id_remap, behaviorlink_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, material_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, parameterlocal_owner_round_trips_raw_id);
