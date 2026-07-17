@@ -77,13 +77,33 @@ static nmo_status_t nmo_patchmesh_check_buffer_layout(
     NMO_RETURN_OK();
 }
 
+static size_t nmo_patchmesh_identifier_remaining_dwords(
+    const nmo_chunk_t *chunk)
+{
+    if (!chunk || !chunk->parser_state) return 0;
+
+    const nmo_chunk_parser_state_t *state =
+        (const nmo_chunk_parser_state_t *)chunk->parser_state;
+    const uint32_t *data =
+        NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    size_t next_pos = chunk->data.count;
+    if (state->prev_identifier_pos + 1u < chunk->data.count) {
+        const uint32_t candidate = data[state->prev_identifier_pos + 1u];
+        if (candidate != 0 && candidate <= chunk->data.count) {
+            next_pos = candidate;
+        }
+    }
+    if (next_pos < state->current_pos) return 0;
+    return next_pos - state->current_pos;
+}
+
 static nmo_status_t nmo_patchmesh_check_buffer_available(
     nmo_chunk_t *chunk,
     uint32_t byte_count,
     const char *label)
 {
     const size_t dword_count = ((size_t)byte_count + 3u) / 4u;
-    if (!nmo_chunk_has_read_capacity(chunk, dword_count)) {
+    if (dword_count > nmo_patchmesh_identifier_remaining_dwords(chunk)) {
         NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                          "CKPatchMesh %s exceeds remaining DWORDs", label);
     }
@@ -254,7 +274,8 @@ static nmo_status_t nmo_patchmesh_decode_payload(
                              "CKPatchMesh patch count exceeds limits");
         }
         if (patch_count > SIZE_MAX / 13u ||
-            !nmo_chunk_has_read_capacity(chunk, patch_count * 13u)) {
+            patch_count * 13u >
+                nmo_patchmesh_identifier_remaining_dwords(chunk)) {
             NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                              "CKPatchMesh patches exceed remaining DWORDs");
         }
@@ -319,7 +340,8 @@ static nmo_status_t nmo_patchmesh_decode_payload(
                              "CKPatchMesh channel count exceeds limits");
         }
         if (channel_count > SIZE_MAX / 8u ||
-            !nmo_chunk_has_read_capacity(chunk, channel_count * 8u)) {
+            channel_count * 8u >
+                nmo_patchmesh_identifier_remaining_dwords(chunk)) {
             NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                              "CKPatchMesh channels exceed remaining DWORDs");
         }
@@ -578,7 +600,8 @@ static nmo_status_t nmo_patchmesh_decode_payload(
                 NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                                  "CKPatchMesh legacy material count exceeds limits");
             }
-            if (!nmo_chunk_has_read_capacity(chunk, seq_count)) {
+            if (seq_count >
+                nmo_patchmesh_identifier_remaining_dwords(chunk)) {
                 NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK,
                                  NMO_SEVERITY_ERROR,
                                  "CKPatchMesh legacy materials exceed remaining DWORDs");
