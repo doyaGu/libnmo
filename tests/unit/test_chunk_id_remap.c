@@ -228,6 +228,55 @@ TEST(chunk_id_remap, malformed_subchunk_remap_reports_and_rolls_back) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, malformed_chunk_arrays_are_rejected_before_remap) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t* chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    nmo_id_remap_t* remap = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(remap);
+
+    nmo_arena_array_t* arrays[] = {
+        &chunk->data,
+        &chunk->ids,
+        &chunk->chunk_refs,
+        &chunk->managers,
+    };
+    for (size_t i = 0; i < sizeof(arrays) / sizeof(arrays[0]); ++i) {
+        arrays[i]->count = 1;
+        arrays[i]->capacity = 1;
+        ASSERT_EQ(NMO_ERR_INVALID_STATE,
+            nmo_chunk_remap_object_ids(chunk, remap));
+        arrays[i]->count = 0;
+        arrays[i]->capacity = 0;
+    }
+
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0x12345678u));
+    nmo_chunk_close(chunk);
+    void* original_data = chunk->data.data;
+    size_t original_count = chunk->data.count;
+    size_t original_capacity = chunk->data.capacity;
+
+    chunk->data.element_size = sizeof(uint64_t);
+    ASSERT_EQ(NMO_ERR_INVALID_STATE,
+        nmo_chunk_remap_object_ids(chunk, remap));
+    chunk->data.element_size = sizeof(uint32_t);
+
+    chunk->data.count = SIZE_MAX / sizeof(uint32_t) + 1u;
+    chunk->data.capacity = chunk->data.count;
+    ASSERT_EQ(NMO_ERR_INVALID_STATE,
+        nmo_chunk_remap_object_ids(chunk, remap));
+
+    chunk->data.data = original_data;
+    chunk->data.count = original_count;
+    chunk->data.capacity = original_capacity;
+    ASSERT_EQ(0x12345678u,
+        NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data)[0]);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, sequence_id_remap) {
     nmo_arena_t* arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
@@ -8068,6 +8117,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, object_visibility_seek_errors_propagate_atomically);
     REGISTER_TEST(chunk_id_remap, single_id_remap);
     REGISTER_TEST(chunk_id_remap, malformed_subchunk_remap_reports_and_rolls_back);
+    REGISTER_TEST(chunk_id_remap, malformed_chunk_arrays_are_rejected_before_remap);
     REGISTER_TEST(chunk_id_remap, sequence_id_remap);
     REGISTER_TEST(chunk_id_remap, subchunk_id_remap);
     REGISTER_TEST(chunk_id_remap, zero_and_unchanged_ids);
