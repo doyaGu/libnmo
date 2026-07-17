@@ -3,7 +3,10 @@
 
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
+#include "format/nmo_chunk_context.h"
+#include "format/nmo_id_remap.h"
 #include "core/nmo_utils.h"
+#include "object/nmo_object_repository.h"
 #include <string.h>
 #include <limits.h>
 #include <stdint.h>
@@ -238,9 +241,40 @@ nmo_status_t nmo_chunk_write_object_id_array(nmo_chunk_t *chunk,
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
     NMO_CHUNK_CHECK_COUNT_ARRAY(count, ids, "Non-zero count with NULL array");
+    if (count > (size_t)INT32_MAX) {
+        NMO_CHUNK_RETURN_INVALID_ARGUMENT("ID array count is not encodable");
+    }
+
+    const nmo_chunk_file_context_t *ctx = NULL;
+    if ((chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) {
+        ctx = chunk->file_context;
+    }
+    if (ctx != NULL && ctx->runtime_to_file != NULL) {
+        for (size_t i = 0; i < count; i++) {
+            if (ids[i] == NMO_OBJECT_ID_NONE) {
+                continue;
+            }
+            nmo_object_id_t unresolved_raw = NMO_OBJECT_ID_NONE;
+            if (ctx->repository != NULL &&
+                nmo_object_repository_get_unresolved_ref_raw(
+                    ctx->repository, ids[i], &unresolved_raw)) {
+                continue;
+            }
+            nmo_object_id_t file_id = NMO_OBJECT_ID_NONE;
+            if (nmo_id_remap_lookup_id(ctx->runtime_to_file,
+                                       ids[i], &file_id) != NMO_OK) {
+                NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                                 "Cannot serialize unmapped runtime object ID %u",
+                                 (unsigned)ids[i]);
+            }
+        }
+    }
+
+    nmo_status_t result = preflight_dword_sequence(chunk, count);
+    NMO_RETURN_IF_ERROR(result);
 
     // Write count with sequence marker
-    nmo_status_t result = nmo_chunk_write_object_sequence_start(chunk, count);
+    result = nmo_chunk_write_object_sequence_start(chunk, count);
     NMO_RETURN_IF_ERROR(result);
 
     // Write IDs
