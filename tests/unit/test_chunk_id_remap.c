@@ -3028,6 +3028,12 @@ TEST(chunk_id_remap, sprite_failures_keep_state_and_target_chunk_atomic) {
     truncated->chunk_options |= NMO_CHUNK_OPTION_FILE;
     ASSERT_EQ(NMO_OK, nmo_chunk_start_write(truncated));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        truncated, CK_STATESAVE_2DENTITYONLY));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(truncated, 0));
+    for (size_t i = 0; i < 4; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_float(truncated, 0.0f));
+    }
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
         truncated, CK_STATESAVE_SPRITETRANSPARENT));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(truncated, 0xAABBCCDDu));
     nmo_chunk_close(truncated);
@@ -3047,7 +3053,7 @@ TEST(chunk_id_remap, sprite_failures_keep_state_and_target_chunk_atomic) {
     state.has_slot = true;
     state.current_slot = 7;
 
-    ASSERT_NE(NMO_OK, nmo_sprite_deserialize(
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_sprite_deserialize(
         &state, truncated, NULL, &deserialize_context));
     ASSERT_TRUE(state.has_sprite_ref);
     ASSERT_EQ(902u, state.sprite_ref.raw_id);
