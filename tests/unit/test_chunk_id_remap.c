@@ -3057,6 +3057,9 @@ TEST(chunk_id_remap, wavesound_unresolved_attachment_round_trips_raw_id) {
     };
     nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
         arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
 
     nmo_wavesound_state_t source;
     ASSERT_EQ(NMO_OK, nmo_wavesound_vtable.create(&source, NULL, NULL));
@@ -3099,9 +3102,169 @@ TEST(chunk_id_remap, wavesound_unresolved_attachment_round_trips_raw_id) {
     ASSERT_EQ(633u, reloaded.attached_object.raw_id);
     ASSERT_EQ(NMO_REF_UNRESOLVED, reloaded.attached_object.state);
 
+    nmo_chunk_t *truncated = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(truncated);
+    truncated->class_id = NMO_CID_WAVESOUND;
+    truncated->chunk_version = NMO_CHUNK_VERSION4;
+    truncated->data_version = 7;
+    truncated->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(truncated));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        truncated, CK_STATESAVE_WAVSOUNDDATA2));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(truncated, 0x55u));
+    nmo_chunk_close(truncated);
+    nmo_chunk_set_file_context(truncated, &read_context);
+
+    nmo_wavesound_state_t failed;
+    ASSERT_EQ(NMO_OK, nmo_wavesound_vtable.create(&failed, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(
+        &failed.base.base, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &failed.base.base.scripts, 899));
+    failed.has_data2 = 1;
+    failed.priority = 9.0f;
+    failed.attached_object = nmo_ref_from_raw(634);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_wavesound_deserialize(
+        &failed, truncated, NULL, &deserialize_context));
+    ASSERT_TRUE(failed.has_data2);
+    ASSERT_EQ(9.0f, failed.priority);
+    ASSERT_EQ(634u, failed.attached_object.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, failed.attached_object.state);
+    ASSERT_EQ(899u, nmo_beobject_script_array_get_id(
+        &failed.base.base.scripts, 0));
+
+    nmo_wavesound_state_t invalid;
+    ASSERT_EQ(NMO_OK, nmo_wavesound_vtable.create(&invalid, NULL, NULL));
+    invalid.has_data2 = 1;
+    invalid.attached_object = nmo_ref_from_id(999);
+    nmo_chunk_t *target = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(target);
+    target->class_id = NMO_CID_WAVESOUND;
+    target->chunk_version = NMO_CHUNK_VERSION4;
+    target->data_version = 7;
+    target->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(target, &write_context);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(target, 0x12345678u));
+    nmo_chunk_close(target);
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_wavesound_serialize(
+        &invalid, target, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(target));
+    uint32_t marker = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(target, &marker));
+    ASSERT_EQ(0x12345678u, marker);
+
     nmo_wavesound_vtable.destroy(&source, NULL, NULL);
     nmo_wavesound_vtable.destroy(&loaded, NULL, NULL);
     nmo_wavesound_vtable.destroy(&reloaded, NULL, NULL);
+    nmo_array_dispose(&failed.base.base.scripts);
+    nmo_array_dispose(&failed.base.base.attributes);
+    nmo_array_dispose(&failed.base.base.legacy_attributes);
+    nmo_wavesound_vtable.destroy(&failed, NULL, NULL);
+    nmo_wavesound_vtable.destroy(&invalid, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_id_remap, sound_family_failures_keep_state_and_target_chunk_atomic) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(arena, NULL, NULL, 0);
+
+    nmo_chunk_t *truncated = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(truncated);
+    truncated->class_id = NMO_CID_SOUND;
+    truncated->data_version = 7;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(truncated));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        truncated, CK_STATESAVE_SOUNDFILENAME));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(truncated, CKSOUND_EXTERNAL));
+    nmo_chunk_close(truncated);
+
+    nmo_sound_state_t sound;
+    ASSERT_EQ(NMO_OK, nmo_sound_vtable.create(&sound, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(&sound.base, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &sound.base.scripts, 899));
+    sound.save_options = CKSOUND_INCLUDEORIGINALFILE;
+    sound.file_name = "old.wav";
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_sound_deserialize(
+        &sound, truncated, NULL, &deserialize_context));
+    ASSERT_EQ(CKSOUND_INCLUDEORIGINALFILE, sound.save_options);
+    ASSERT_STR_EQ("old.wav", sound.file_name);
+    ASSERT_EQ(899u, nmo_beobject_script_array_get_id(
+        &sound.base.scripts, 0));
+
+    nmo_chunk_t *midi_truncated = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(midi_truncated);
+    midi_truncated->class_id = NMO_CID_MIDISOUND;
+    midi_truncated->data_version = 7;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(midi_truncated));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        midi_truncated, CK_STATESAVE_MIDISOUNDFILE));
+    nmo_chunk_close(midi_truncated);
+
+    nmo_midisound_state_t midi;
+    ASSERT_EQ(NMO_OK, nmo_midisound_vtable.create(&midi, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(
+        &midi.base.base, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &midi.base.base.scripts, 898));
+    midi.base.file_name = "old.mid";
+    midi.has_midi_file_name = 1;
+    midi.midi_file_name = "derived.mid";
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_midisound_deserialize(
+        &midi, midi_truncated, NULL, &deserialize_context));
+    ASSERT_STR_EQ("old.mid", midi.base.file_name);
+    ASSERT_TRUE(midi.has_midi_file_name);
+    ASSERT_STR_EQ("derived.mid", midi.midi_file_name);
+    ASSERT_EQ(898u, nmo_beobject_script_array_get_id(
+        &midi.base.base.scripts, 0));
+
+    fail_after_allocator_state_t allocator_state = {
+        .allocation_count = 0,
+        .allowed_allocations = 2,
+    };
+    nmo_allocator_t failing_allocator = nmo_allocator_custom(
+        fail_after_alloc, fail_after_free, &allocator_state);
+    nmo_arena_t *failing_arena = nmo_arena_create(
+        &failing_allocator, 4096);
+    ASSERT_NOT_NULL(failing_arena);
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        failing_arena, NULL, 0, 0);
+    char large_name[16385];
+    memset(large_name, 'A', sizeof(large_name) - 1);
+    large_name[sizeof(large_name) - 1] = '\0';
+    nmo_sound_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_sound_vtable.create(&source, NULL, NULL));
+    source.file_name = large_name;
+
+    nmo_chunk_t *target = nmo_chunk_create(failing_arena);
+    ASSERT_NOT_NULL(target);
+    target->class_id = NMO_CID_SOUND;
+    target->data_version = 7;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(target, 0x12345678u));
+    nmo_chunk_close(target);
+    ASSERT_EQ(NMO_ERR_NOMEM, nmo_sound_serialize(
+        &source, target, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(target));
+    uint32_t marker = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(target, &marker));
+    ASSERT_EQ(0x12345678u, marker);
+
+    nmo_array_dispose(&sound.base.scripts);
+    nmo_array_dispose(&sound.base.attributes);
+    nmo_array_dispose(&sound.base.legacy_attributes);
+    nmo_array_dispose(&midi.base.base.scripts);
+    nmo_array_dispose(&midi.base.base.attributes);
+    nmo_array_dispose(&midi.base.base.legacy_attributes);
+    nmo_sound_vtable.destroy(&sound, NULL, NULL);
+    nmo_midisound_vtable.destroy(&midi, NULL, NULL);
+    nmo_sound_vtable.destroy(&source, NULL, NULL);
+    nmo_arena_destroy(failing_arena);
     nmo_arena_destroy(arena);
 }
 
@@ -6392,6 +6555,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, curvepoint_unresolved_curve_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, sprite3d_unresolved_material_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, wavesound_unresolved_attachment_round_trips_raw_id);
+    REGISTER_TEST(chunk_id_remap, sound_family_failures_keep_state_and_target_chunk_atomic);
     REGISTER_TEST(chunk_id_remap, scalar_ref_sections_do_not_publish_truncated_state);
     REGISTER_TEST(chunk_id_remap, entity_scalar_refs_round_trip_unresolved_raw_ids);
     REGISTER_TEST(chunk_id_remap, entity_scalar_ref_sections_reject_truncation_atomically);
