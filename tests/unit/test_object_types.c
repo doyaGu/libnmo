@@ -144,6 +144,21 @@ TEST(object_types, inheritance_check) {
     is_derived = nmo_type_is_derived_from(registry, mesh->id, entity3d->id);
     ASSERT_FALSE(is_derived);
 
+    /* CKObjectAnimation and CKAnimation are sibling CKSceneObject classes. */
+    const nmo_type_descriptor_t *object_animation =
+        nmo_type_registry_find_by_class_id(registry, NMO_CID_OBJECTANIMATION);
+    const nmo_type_descriptor_t *animation =
+        nmo_type_registry_find_by_class_id(registry, NMO_CID_ANIMATION);
+    const nmo_type_descriptor_t *scene_object =
+        nmo_type_registry_find_by_class_id(registry, NMO_CID_SCENEOBJECT);
+    ASSERT_NE(NULL, object_animation);
+    ASSERT_NE(NULL, animation);
+    ASSERT_NE(NULL, scene_object);
+    ASSERT_TRUE(nmo_type_is_derived_from(
+        registry, object_animation->id, scene_object->id));
+    ASSERT_FALSE(nmo_type_is_derived_from(
+        registry, object_animation->id, animation->id));
+
     nmo_arena_destroy(arena);
 }
 

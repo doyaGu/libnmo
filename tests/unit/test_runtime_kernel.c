@@ -755,11 +755,21 @@ TEST(runtime_kernel, normalize_removes_only_invalid_reference_records) {
     ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(
         &behavior->sub_behaviors, valid_b, chunk_b));
 
-    nmo_object_id_t keyed_ids[] = {
-        valid_animation_a, invalid, valid_animation_b
+    nmo_ref_t keyed_ids[] = {
+        nmo_ref_from_id(valid_animation_a),
+        nmo_ref_from_raw(invalid),
+        nmo_ref_from_id(valid_animation_b),
     };
     nmo_keyedanimation_subanim_t subanims[3] = {
-        {.object_id = 101}, {.object_id = 202}, {.object_id = 303},
+        {.ref = {.raw_id = valid_animation_a,
+                 .id = valid_animation_a,
+                 .state = NMO_REF_RESOLVED}},
+        {.ref = {.raw_id = invalid,
+                 .id = NMO_OBJECT_ID_NONE,
+                 .state = NMO_REF_UNRESOLVED}},
+        {.ref = {.raw_id = valid_animation_b,
+                 .id = valid_animation_b,
+                 .state = NMO_REF_RESOLVED}},
     };
     keyed->animation_ids = keyed_ids;
     keyed->animation_count = 3;
@@ -845,7 +855,7 @@ TEST(runtime_kernel, normalize_removes_only_invalid_reference_records) {
     size_t changed = 0;
     ASSERT_EQ(NMO_OK, nmo_runtime_normalize_invalid_refs(
         repo, nmo_context_get_type_runtime(ctx), &changed));
-    ASSERT_EQ(15, (int)changed);
+    ASSERT_EQ(16, (int)changed);
     ASSERT_EQ(2, (int)behavior->inputs.count);
     ASSERT_EQ(valid_a, nmo_behavior_ref_array_get_id(&behavior->inputs, 0));
     ASSERT_EQ(valid_b, nmo_behavior_ref_array_get_id(&behavior->inputs, 1));
@@ -881,10 +891,14 @@ TEST(runtime_kernel, normalize_removes_only_invalid_reference_records) {
     ASSERT_EQ(valid_a, layers[0].ref.id);
     ASSERT_EQ(2, (int)keyed->animation_count);
     ASSERT_EQ(2, (int)keyed->subanim_count);
-    ASSERT_EQ(valid_animation_a, keyed->animation_ids[0]);
-    ASSERT_EQ(valid_animation_b, keyed->animation_ids[1]);
-    ASSERT_EQ(101, keyed->subanims[0].object_id);
-    ASSERT_EQ(303, keyed->subanims[1].object_id);
+    ASSERT_EQ(valid_animation_a,
+              nmo_ref_runtime_id(&keyed->animation_ids[0]));
+    ASSERT_EQ(valid_animation_b,
+              nmo_ref_runtime_id(&keyed->animation_ids[1]));
+    ASSERT_EQ(valid_animation_a,
+              nmo_ref_runtime_id(&keyed->subanims[0].ref));
+    ASSERT_EQ(valid_animation_b,
+              nmo_ref_runtime_id(&keyed->subanims[1].ref));
     ASSERT_EQ(1u, entity3d->mesh_count);
     ASSERT_EQ(valid_mesh, nmo_ref_runtime_id(&entity3d->mesh_ids[0]));
     ASSERT_EQ(2u, entity3d->animation_count);
@@ -1243,6 +1257,163 @@ TEST(runtime_kernel, copy_remap_updates_only_resolved_material_refs) {
 
     nmo_arena_destroy(arena);
     nmo_context_release(ctx);
+}
+
+TEST(runtime_kernel, copy_remap_updates_only_resolved_keyedanimation_refs) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    const nmo_type_runtime_t *type_rt = nmo_context_get_type_runtime(ctx);
+    const nmo_type_descriptor_t *keyed_type =
+        nmo_type_registry_find_by_class_id(
+            type_rt->types, NMO_CID_KEYEDANIMATION);
+    ASSERT_NOT_NULL(keyed_type);
+
+    nmo_ref_t animation_ids[] = {
+        nmo_ref_from_id(101), nmo_ref_from_raw(102),
+    };
+    nmo_keyedanimation_subanim_t subanims[] = {
+        {.ref = {.raw_id = 103, .id = 103,
+                 .state = NMO_REF_RESOLVED}},
+        {.ref = {.raw_id = 104, .id = NMO_OBJECT_ID_NONE,
+                 .state = NMO_REF_UNRESOLVED}},
+    };
+    nmo_keyedanimation_state_t state = {0};
+    state.base.root_entity = nmo_ref_from_id(105);
+    state.base.character = nmo_ref_from_raw(106);
+    state.animation_count = 2;
+    state.animation_ids = animation_ids;
+    state.subanim_count = 2;
+    state.subanims = subanims;
+
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_id_remap_t *remap = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(remap);
+    for (nmo_object_id_t old_id = 101; old_id <= 106; ++old_id) {
+        ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, old_id, old_id + 100));
+    }
+
+    ASSERT_EQ(NMO_OK, nmo_runtime_remap_copy_refs(
+        type_rt, keyed_type, &state, remap));
+    ASSERT_EQ(201u, nmo_ref_runtime_id(&animation_ids[0]));
+    ASSERT_EQ(101u, animation_ids[0].raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, animation_ids[1].state);
+    ASSERT_EQ(102u, animation_ids[1].raw_id);
+    ASSERT_EQ(203u, nmo_ref_runtime_id(&subanims[0].ref));
+    ASSERT_EQ(103u, subanims[0].ref.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, subanims[1].ref.state);
+    ASSERT_EQ(104u, subanims[1].ref.raw_id);
+    ASSERT_EQ(205u, nmo_ref_runtime_id(&state.base.root_entity));
+    ASSERT_EQ(105u, state.base.root_entity.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, state.base.character.state);
+    ASSERT_EQ(106u, state.base.character.raw_id);
+
+    nmo_arena_destroy(arena);
+    nmo_context_release(ctx);
+}
+
+TEST(runtime_kernel, copy_remap_updates_only_resolved_objectanimation_refs) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    const nmo_type_runtime_t *type_rt = nmo_context_get_type_runtime(ctx);
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_class_id(
+        type_rt->types, NMO_CID_OBJECTANIMATION);
+    ASSERT_NOT_NULL(type);
+
+    nmo_objectanimation_state_t state = {0};
+    state.entity = nmo_ref_from_id(101);
+    state.anim1 = nmo_ref_from_raw(102);
+    state.anim2 = nmo_ref_from_id(103);
+    state.shared_anim = nmo_ref_from_raw(104);
+
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_id_remap_t *remap = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(remap);
+    for (nmo_object_id_t old_id = 101; old_id <= 104; ++old_id) {
+        ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, old_id, old_id + 100));
+    }
+
+    ASSERT_EQ(NMO_OK, nmo_runtime_remap_copy_refs(
+        type_rt, type, &state, remap));
+    ASSERT_EQ(201u, nmo_ref_runtime_id(&state.entity));
+    ASSERT_EQ(101u, state.entity.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, state.anim1.state);
+    ASSERT_EQ(102u, state.anim1.raw_id);
+    ASSERT_EQ(203u, nmo_ref_runtime_id(&state.anim2));
+    ASSERT_EQ(103u, state.anim2.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, state.shared_anim.state);
+    ASSERT_EQ(104u, state.shared_anim.raw_id);
+
+    nmo_arena_destroy(arena);
+    nmo_context_release(ctx);
+}
+
+TEST(runtime_kernel, safe_detach_keeps_keyedanimation_sections_independent) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_id_t keyed_id = 0;
+    nmo_object_id_t animation_a = 0;
+    nmo_object_id_t animation_b = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_KEYEDANIMATION, "keyed", (nmo_guid_t){0, 0},
+        &keyed_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_OBJECTANIMATION, "a", (nmo_guid_t){0, 0},
+        &animation_a, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_OBJECTANIMATION, "b", (nmo_guid_t){0, 0},
+        &animation_b, NULL));
+
+    nmo_arena_t *chunk_arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(chunk_arena);
+    nmo_chunk_t *chunk_a = nmo_chunk_create(chunk_arena);
+    nmo_chunk_t *chunk_b = nmo_chunk_create(chunk_arena);
+    ASSERT_NOT_NULL(chunk_a);
+    ASSERT_NOT_NULL(chunk_b);
+    nmo_ref_t animation_ids[] = {
+        nmo_ref_from_id(animation_a), nmo_ref_from_id(animation_b),
+    };
+    nmo_keyedanimation_subanim_t subanims[] = {
+        {.ref = {.raw_id = animation_b, .id = animation_b,
+                 .state = NMO_REF_RESOLVED},
+         .chunk = chunk_b},
+        {.ref = {.raw_id = animation_a, .id = animation_a,
+                 .state = NMO_REF_RESOLVED},
+         .chunk = chunk_a},
+    };
+    nmo_keyedanimation_state_t *keyed = (nmo_keyedanimation_state_t *)
+        nmo_object_repository_find_by_id(repo, keyed_id)->state;
+    ASSERT_NOT_NULL(keyed);
+    keyed->animation_count = 2;
+    keyed->animation_ids = animation_ids;
+    keyed->subanim_count = 2;
+    keyed->subanims = subanims;
+
+    nmo_runtime_report_t report = {0};
+    ASSERT_EQ(NMO_OK, nmo_session_destroy_objects(
+        session, &animation_a, 1,
+        NMO_RUNTIME_REQUEST_STRICT | NMO_RUNTIME_REQUEST_SAFE_DETACH,
+        &report));
+    ASSERT_EQ(1u, report.deleted_objects);
+    keyed = (nmo_keyedanimation_state_t *)
+        nmo_object_repository_find_by_id(repo, keyed_id)->state;
+    ASSERT_EQ(1u, keyed->animation_count);
+    ASSERT_EQ(animation_b,
+              nmo_ref_runtime_id(&keyed->animation_ids[0]));
+    ASSERT_EQ(1u, keyed->subanim_count);
+    ASSERT_EQ(animation_b,
+              nmo_ref_runtime_id(&keyed->subanims[0].ref));
+    ASSERT_EQ(chunk_b, keyed->subanims[0].chunk);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+    nmo_arena_destroy(chunk_arena);
 }
 
 TEST(runtime_kernel, copy_remap_updates_only_resolved_beobject_attributes) {
@@ -1937,6 +2108,9 @@ REGISTER_TEST(runtime_kernel, dependency_remap_preserves_invalid_references);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_scene_members);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_behaviorlink_endpoints);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_material_refs);
+REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_keyedanimation_refs);
+REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_objectanimation_refs);
+REGISTER_TEST(runtime_kernel, safe_detach_keeps_keyedanimation_sections_independent);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_beobject_attributes);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_parameteroperation_refs);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_parameterout_refs);

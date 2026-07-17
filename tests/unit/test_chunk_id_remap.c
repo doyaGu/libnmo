@@ -35,6 +35,7 @@
 #include "object/builtin/nmo_parameteroperation_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "object/builtin/nmo_patchmesh_schemas.h"
+#include "object/builtin/nmo_animation_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_guids.h"
 #include "object/nmo_param_guids.h"
@@ -4309,6 +4310,368 @@ TEST(chunk_id_remap, patchmesh_copy_preserves_atomic_records) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, animation_refs_round_trip_and_failure_is_atomic) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
+    ASSERT_NOT_NULL(arena);
+    nmo_id_remap_t *file_to_runtime = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(file_to_runtime);
+    nmo_chunk_file_context_t read_context = {
+        .file_to_runtime = file_to_runtime,
+    };
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+
+    nmo_animation_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_animation_vtable.create(&source, NULL, NULL));
+    source.has_root_entity = 1;
+    source.root_entity = nmo_ref_from_raw(901);
+    source.has_character = 1;
+    source.character = nmo_ref_from_raw(902);
+
+    nmo_chunk_t *first = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(first);
+    first->class_id = NMO_CID_ANIMATION;
+    first->chunk_version = NMO_CHUNK_VERSION4;
+    first->data_version = 7;
+    first->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_animation_serialize(
+        &source, first, NULL, &serialize_context));
+    nmo_chunk_close(first);
+    nmo_chunk_set_file_context(first, &read_context);
+
+    nmo_animation_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_animation_vtable.create(&loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_animation_deserialize(
+        &loaded, first, NULL, &deserialize_context));
+    ASSERT_TRUE(loaded.has_root_entity);
+    ASSERT_EQ(901u, loaded.root_entity.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, loaded.root_entity.state);
+    ASSERT_TRUE(loaded.has_character);
+    ASSERT_EQ(902u, loaded.character.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, loaded.character.state);
+
+    nmo_chunk_t *second = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(second);
+    second->class_id = NMO_CID_ANIMATION;
+    second->chunk_version = NMO_CHUNK_VERSION4;
+    second->data_version = 7;
+    second->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_animation_serialize(
+        &loaded, second, NULL, &serialize_context));
+    nmo_chunk_close(second);
+    nmo_chunk_set_file_context(second, &read_context);
+
+    nmo_animation_state_t reloaded;
+    ASSERT_EQ(NMO_OK, nmo_animation_vtable.create(&reloaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_animation_deserialize(
+        &reloaded, second, NULL, &deserialize_context));
+    ASSERT_EQ(901u, reloaded.root_entity.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, reloaded.root_entity.state);
+    ASSERT_EQ(902u, reloaded.character.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, reloaded.character.state);
+
+    nmo_chunk_t *truncated = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(truncated);
+    truncated->class_id = NMO_CID_ANIMATION;
+    truncated->chunk_version = NMO_CHUNK_VERSION4;
+    truncated->data_version = 7;
+    truncated->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(truncated));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        truncated, CK_STATESAVE_ANIMATIONBODYPARTS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(truncated, 0));
+    nmo_chunk_close(truncated);
+
+    nmo_animation_state_t failed;
+    ASSERT_EQ(NMO_OK, nmo_animation_vtable.create(&failed, NULL, NULL));
+    failed.has_root_entity = 1;
+    failed.root_entity = nmo_ref_from_raw(999);
+    ASSERT_NE(NMO_OK, nmo_animation_deserialize(
+        &failed, truncated, NULL, &deserialize_context));
+    ASSERT_TRUE(failed.has_root_entity);
+    ASSERT_EQ(999u, failed.root_entity.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, failed.root_entity.state);
+
+    nmo_animation_vtable.destroy(&source, NULL, NULL);
+    nmo_animation_vtable.destroy(&loaded, NULL, NULL);
+    nmo_animation_vtable.destroy(&reloaded, NULL, NULL);
+    nmo_animation_vtable.destroy(&failed, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_id_remap, keyedanimation_sections_round_trip_independently) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+    ASSERT_NOT_NULL(arena);
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, 0, UINT32_MAX);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(arena, NULL, NULL, 0);
+
+    nmo_chunk_t *subchunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(subchunk);
+    subchunk->class_id = NMO_CID_OBJECTANIMATION;
+    subchunk->chunk_version = NMO_CHUNK_VERSION4;
+    subchunk->data_version = 7;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(subchunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(subchunk, 0x12345678u));
+    nmo_chunk_close(subchunk);
+
+    nmo_ref_t animation_ids[] = {
+        nmo_ref_from_raw(911), nmo_ref_from_raw(912),
+    };
+    nmo_keyedanimation_subanim_t subanim = {
+        .ref = nmo_ref_from_raw(921),
+        .chunk = subchunk,
+    };
+    nmo_keyedanimation_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_keyedanimation_vtable.create(
+        &source, NULL, NULL));
+    source.animation_count = 2;
+    source.animation_ids = animation_ids;
+    source.subanim_count = 1;
+    source.subanims = &subanim;
+
+    nmo_chunk_t *first = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(first);
+    first->class_id = NMO_CID_KEYEDANIMATION;
+    first->chunk_version = NMO_CHUNK_VERSION4;
+    first->data_version = 7;
+    ASSERT_EQ(NMO_OK, nmo_keyedanimation_serialize(
+        &source, first, NULL, &serialize_context));
+    nmo_chunk_close(first);
+
+    nmo_keyedanimation_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_keyedanimation_vtable.create(
+        &loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_keyedanimation_deserialize(
+        &loaded, first, NULL, &deserialize_context));
+    ASSERT_EQ(2u, loaded.animation_count);
+    ASSERT_EQ(911u, loaded.animation_ids[0].raw_id);
+    ASSERT_EQ(912u, loaded.animation_ids[1].raw_id);
+    ASSERT_EQ(1u, loaded.subanim_count);
+    ASSERT_EQ(921u, loaded.subanims[0].ref.raw_id);
+    ASSERT_NOT_NULL(loaded.subanims[0].chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(loaded.subanims[0].chunk));
+    uint32_t marker = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(
+        loaded.subanims[0].chunk, &marker));
+    ASSERT_EQ(0x12345678u, marker);
+
+    nmo_chunk_t *second = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(second);
+    second->class_id = NMO_CID_KEYEDANIMATION;
+    second->chunk_version = NMO_CHUNK_VERSION4;
+    second->data_version = 7;
+    ASSERT_EQ(NMO_OK, nmo_keyedanimation_serialize(
+        &loaded, second, NULL, &serialize_context));
+    nmo_chunk_close(second);
+
+    nmo_keyedanimation_state_t reloaded;
+    ASSERT_EQ(NMO_OK, nmo_keyedanimation_vtable.create(
+        &reloaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_keyedanimation_deserialize(
+        &reloaded, second, NULL, &deserialize_context));
+    ASSERT_EQ(2u, reloaded.animation_count);
+    ASSERT_EQ(911u, reloaded.animation_ids[0].raw_id);
+    ASSERT_EQ(912u, reloaded.animation_ids[1].raw_id);
+    ASSERT_EQ(1u, reloaded.subanim_count);
+    ASSERT_EQ(921u, reloaded.subanims[0].ref.raw_id);
+
+    nmo_keyedanimation_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_keyedanimation_vtable.create(
+        &copied, NULL, NULL));
+    const nmo_type_descriptor_t keyed_type = {
+        .size = sizeof(nmo_keyedanimation_state_t),
+    };
+    ASSERT_EQ(NMO_OK, nmo_keyedanimation_vtable.copy(
+        &reloaded, &copied, &keyed_type, arena));
+    ASSERT_TRUE(copied.animation_ids != reloaded.animation_ids);
+    ASSERT_TRUE(copied.subanims != reloaded.subanims);
+    ASSERT_TRUE(copied.subanims[0].chunk != reloaded.subanims[0].chunk);
+    ASSERT_TRUE(nmo_keyedanimation_vtable.equals(&reloaded, &copied));
+    ASSERT_EQ(nmo_keyedanimation_vtable.hash(&reloaded),
+              nmo_keyedanimation_vtable.hash(&copied));
+
+    nmo_chunk_t *truncated = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(truncated);
+    truncated->class_id = NMO_CID_KEYEDANIMATION;
+    truncated->chunk_version = NMO_CHUNK_VERSION4;
+    truncated->data_version = 7;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(truncated));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        truncated, CK_STATESAVE_KEYEDANIMANIMLIST));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(truncated, 2));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_item(truncated, 931));
+    nmo_chunk_close(truncated);
+
+    nmo_ref_t previous_animation = nmo_ref_from_raw(941);
+    nmo_keyedanimation_subanim_t previous_subanim = {
+        .ref = nmo_ref_from_raw(942),
+        .chunk = subchunk,
+    };
+    nmo_keyedanimation_state_t failed;
+    ASSERT_EQ(NMO_OK, nmo_keyedanimation_vtable.create(&failed, NULL, NULL));
+    failed.animation_count = 1;
+    failed.animation_ids = &previous_animation;
+    failed.subanim_count = 1;
+    failed.subanims = &previous_subanim;
+    ASSERT_NE(NMO_OK, nmo_keyedanimation_deserialize(
+        &failed, truncated, NULL, &deserialize_context));
+    ASSERT_EQ(1u, failed.animation_count);
+    ASSERT_EQ(&previous_animation, failed.animation_ids);
+    ASSERT_EQ(941u, failed.animation_ids[0].raw_id);
+    ASSERT_EQ(1u, failed.subanim_count);
+    ASSERT_EQ(&previous_subanim, failed.subanims);
+    ASSERT_EQ(942u, failed.subanims[0].ref.raw_id);
+    ASSERT_EQ(subchunk, failed.subanims[0].chunk);
+
+    nmo_keyedanimation_state_t invalid;
+    ASSERT_EQ(NMO_OK, nmo_keyedanimation_vtable.create(&invalid, NULL, NULL));
+    invalid.animation_count = 1;
+    nmo_chunk_t *preserved = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(preserved);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(preserved));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(preserved, 0xCAFEBABEu));
+    nmo_chunk_close(preserved);
+    ASSERT_NE(NMO_OK, nmo_keyedanimation_serialize(
+        &invalid, preserved, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(preserved));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(preserved));
+    marker = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(preserved, &marker));
+    ASSERT_EQ(0xCAFEBABEu, marker);
+
+    nmo_keyedanimation_vtable.destroy(&source, NULL, NULL);
+    nmo_keyedanimation_vtable.destroy(&loaded, NULL, NULL);
+    nmo_keyedanimation_vtable.destroy(&reloaded, NULL, NULL);
+    nmo_keyedanimation_vtable.destroy(&copied, NULL, NULL);
+    nmo_keyedanimation_vtable.destroy(&failed, NULL, NULL);
+    nmo_keyedanimation_vtable.destroy(&invalid, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_id_remap, objectanimation_refs_round_trip_and_failure_is_atomic) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
+    ASSERT_NOT_NULL(arena);
+    nmo_id_remap_t *file_to_runtime = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(file_to_runtime);
+    nmo_chunk_file_context_t read_context = {
+        .file_to_runtime = file_to_runtime,
+    };
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+
+    nmo_objectanimation_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_vtable.create(
+        &source, NULL, NULL));
+    source.format = CKOBJANIM_FORMAT_SHARED;
+    source.has_shared_anim = 1;
+    source.shared_anim = nmo_ref_from_raw(951);
+    source.has_root_pos = 1;
+    source.flags = CK_OBJECTANIMATION_MERGED;
+    source.entity = nmo_ref_from_raw(952);
+    source.has_merge = 1;
+    source.anim1 = nmo_ref_from_raw(953);
+    source.anim2 = nmo_ref_from_raw(954);
+
+    nmo_chunk_t *first = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(first);
+    first->class_id = NMO_CID_OBJECTANIMATION;
+    first->chunk_version = NMO_CHUNK_VERSION4;
+    first->data_version = 7;
+    first->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_serialize(
+        &source, first, NULL, &serialize_context));
+    nmo_chunk_close(first);
+    nmo_chunk_set_file_context(first, &read_context);
+
+    nmo_objectanimation_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_vtable.create(
+        &loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_deserialize(
+        &loaded, first, NULL, &deserialize_context));
+    ASSERT_EQ(951u, loaded.shared_anim.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, loaded.shared_anim.state);
+    ASSERT_EQ(952u, loaded.entity.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, loaded.entity.state);
+    ASSERT_EQ(953u, loaded.anim1.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, loaded.anim1.state);
+    ASSERT_EQ(954u, loaded.anim2.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, loaded.anim2.state);
+
+    nmo_chunk_t *second = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(second);
+    second->class_id = NMO_CID_OBJECTANIMATION;
+    second->chunk_version = NMO_CHUNK_VERSION4;
+    second->data_version = 7;
+    second->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_serialize(
+        &loaded, second, NULL, &serialize_context));
+    nmo_chunk_close(second);
+    nmo_chunk_set_file_context(second, &read_context);
+
+    nmo_objectanimation_state_t reloaded;
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_vtable.create(
+        &reloaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_deserialize(
+        &reloaded, second, NULL, &deserialize_context));
+    ASSERT_EQ(951u, reloaded.shared_anim.raw_id);
+    ASSERT_EQ(952u, reloaded.entity.raw_id);
+    ASSERT_EQ(953u, reloaded.anim1.raw_id);
+    ASSERT_EQ(954u, reloaded.anim2.raw_id);
+
+    nmo_chunk_t *truncated = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(truncated);
+    truncated->class_id = NMO_CID_OBJECTANIMATION;
+    truncated->chunk_version = NMO_CHUNK_VERSION4;
+    truncated->data_version = 7;
+    truncated->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(truncated));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        truncated, CK_STATESAVE_OBJANIMSHARED));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(truncated, 961));
+    nmo_chunk_close(truncated);
+
+    nmo_objectanimation_state_t failed;
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_vtable.create(
+        &failed, NULL, NULL));
+    failed.entity = nmo_ref_from_raw(999);
+    ASSERT_NE(NMO_OK, nmo_objectanimation_deserialize(
+        &failed, truncated, NULL, &deserialize_context));
+    ASSERT_EQ(999u, failed.entity.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, failed.entity.state);
+
+    nmo_objectanimation_state_t invalid;
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_vtable.create(
+        &invalid, NULL, NULL));
+    invalid.controller_count = 1;
+    nmo_chunk_t *preserved = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(preserved);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(preserved));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(preserved, 0xABCDEF01u));
+    nmo_chunk_close(preserved);
+    ASSERT_NE(NMO_OK, nmo_objectanimation_serialize(
+        &invalid, preserved, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(preserved));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(preserved));
+    uint32_t marker = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(preserved, &marker));
+    ASSERT_EQ(0xABCDEF01u, marker);
+
+    nmo_objectanimation_vtable.destroy(&source, NULL, NULL);
+    nmo_objectanimation_vtable.destroy(&loaded, NULL, NULL);
+    nmo_objectanimation_vtable.destroy(&reloaded, NULL, NULL);
+    nmo_objectanimation_vtable.destroy(&failed, NULL, NULL);
+    nmo_objectanimation_vtable.destroy(&invalid, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, legacy_unresolved_id_preserves_raw_id) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
@@ -4415,5 +4778,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, patchmesh_data2_layout_and_empty_sections_round_trip);
     REGISTER_TEST(chunk_id_remap, patchmesh_serializer_rejects_partial_state);
     REGISTER_TEST(chunk_id_remap, patchmesh_copy_preserves_atomic_records);
+    REGISTER_TEST(chunk_id_remap, animation_refs_round_trip_and_failure_is_atomic);
+    REGISTER_TEST(chunk_id_remap, keyedanimation_sections_round_trip_independently);
+    REGISTER_TEST(chunk_id_remap, objectanimation_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, legacy_unresolved_id_preserves_raw_id);
 TEST_MAIN_END()
