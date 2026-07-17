@@ -15,6 +15,7 @@
 #include "object/builtin/nmo_character_schemas.h"
 #include "object/builtin/nmo_dataarray_schemas.h"
 #include "object/builtin/nmo_attributemanager_schemas.h"
+#include "object/builtin/nmo_messagemanager_schemas.h"
 #include "object/builtin/nmo_camera_schemas.h"
 #include "object/builtin/nmo_light_schemas.h"
 #include "object/builtin/nmo_targetcamera_schemas.h"
@@ -895,6 +896,63 @@ TEST(chunk_id_remap, attributemanager_failures_keep_state_and_target_chunk_atomi
     ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(target, 0x12345678u));
     nmo_chunk_close(target);
     ASSERT_NE(NMO_OK, nmo_attributemanager_serialize(
+        &invalid, target, NULL, NULL));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(target));
+    uint32_t marker = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(target, &marker));
+    ASSERT_EQ(0x12345678u, marker);
+
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_id_remap, messagemanager_failures_keep_state_and_target_chunk_atomic) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(arena, NULL, NULL, 0);
+
+    nmo_chunk_t *truncated = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(truncated);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(truncated));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(truncated, 0x53u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(truncated, 2));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_string(truncated, "First"));
+    nmo_chunk_close(truncated);
+
+    const char *old_names[] = {"Old"};
+    nmo_messagemanager_state_t state = {
+        .message_type_count = 1,
+        .message_type_names = old_names,
+    };
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_messagemanager_deserialize(
+        &state, truncated, NULL, &deserialize_context));
+    ASSERT_EQ(old_names, state.message_type_names);
+    ASSERT_EQ(1u, state.message_type_count);
+    ASSERT_STR_EQ("Old", state.message_type_names[0]);
+
+    nmo_chunk_t *impossible_count = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(impossible_count);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(impossible_count));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        impossible_count, 0x53u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(impossible_count, 10000));
+    nmo_chunk_close(impossible_count);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_messagemanager_deserialize(
+        &state, impossible_count, NULL, &deserialize_context));
+    ASSERT_EQ(old_names, state.message_type_names);
+    ASSERT_EQ(1u, state.message_type_count);
+
+    nmo_messagemanager_state_t invalid = {
+        .message_type_count = 1,
+        .message_type_names = NULL,
+    };
+    nmo_chunk_t *target = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(target);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(target, 0x12345678u));
+    nmo_chunk_close(target);
+    ASSERT_NE(NMO_OK, nmo_messagemanager_serialize(
         &invalid, target, NULL, NULL));
     ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
     ASSERT_EQ(NMO_OK, nmo_chunk_start_read(target));
@@ -5899,6 +5957,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, dataarray_cell_refs_round_trip_raw_ids);
     REGISTER_TEST(chunk_id_remap, dataarray_failures_keep_state_and_target_chunk_atomic);
     REGISTER_TEST(chunk_id_remap, attributemanager_failures_keep_state_and_target_chunk_atomic);
+    REGISTER_TEST(chunk_id_remap, messagemanager_failures_keep_state_and_target_chunk_atomic);
     REGISTER_TEST(chunk_id_remap, behaviorlink_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, material_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, parameterlocal_owner_round_trips_raw_id);
