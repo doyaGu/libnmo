@@ -1027,6 +1027,37 @@ TEST(chunk_api, arrays_reject_inconsistent_header) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_api, sub_chunk_write_rejects_unencodable_payload) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 1024 * 16);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t* sub = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(sub);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(sub));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(sub, 0xAABBCCDDu));
+    nmo_chunk_close(sub);
+
+    nmo_chunk_t* parent = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(parent);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(parent));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(parent, 0x12345678u));
+    const uint32_t options_before = parent->chunk_options;
+
+#if SIZE_MAX > UINT32_MAX
+    const size_t data_count = sub->data.count;
+    sub->data.count = (size_t)UINT32_MAX + 1u;
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+        nmo_chunk_write_sub_chunk(parent, sub));
+    sub->data.count = data_count;
+    ASSERT_EQ(1u, nmo_chunk_get_position(parent));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(parent));
+    ASSERT_EQ(0u, parent->chunks.count);
+    ASSERT_EQ(0u, parent->chunk_refs.count);
+    ASSERT_EQ(options_before, parent->chunk_options);
+#endif
+
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_api, manager_sequence_write_failure_is_atomic) {
     chunk_api_fail_allocator_state_t allocator_state = {
         .allowed_allocations = (size_t)-1,
@@ -1378,6 +1409,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_api, manager_sequence_truncated_guid_keeps_position);
     REGISTER_TEST(chunk_api, manager_sequence_write_failure_is_atomic);
     REGISTER_TEST(chunk_api, sub_chunks);
+    REGISTER_TEST(chunk_api, sub_chunk_write_rejects_unencodable_payload);
     REGISTER_TEST(chunk_api, sub_chunk_truncated_header);
     REGISTER_TEST(chunk_api, sub_chunk_invalid_manager_count_keeps_position);
     REGISTER_TEST(chunk_api, sub_chunk_reads_manager_count_independent_of_parent_version);
