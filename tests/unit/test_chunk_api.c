@@ -721,11 +721,14 @@ TEST(chunk_api, manager_sequence_truncated_guid_keeps_position) {
     ASSERT_EQ(result, NMO_OK);
     ASSERT_EQ(nmo_chunk_get_position(chunk), 0u);
 
-    nmo_guid_t manager_guid = {0u, 0u};
-    size_t count = 0;
+    nmo_guid_t manager_guid = {0xAAAAAAAAu, 0xBBBBBBBBu};
+    size_t count = 123;
     result = nmo_chunk_start_manager_read_sequence(chunk, &manager_guid, &count);
     ASSERT_EQ(result, NMO_ERR_TRUNCATED_CHUNK);
     ASSERT_EQ(nmo_chunk_get_position(chunk), 0u);
+    ASSERT_EQ(0u, manager_guid.d1);
+    ASSERT_EQ(0u, manager_guid.d2);
+    ASSERT_EQ(0u, count);
 
     nmo_arena_destroy(arena);
 }
