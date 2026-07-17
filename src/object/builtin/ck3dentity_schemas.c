@@ -215,7 +215,9 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
     }
 
     // Load object animations (identifier CK_STATESAVE_ANIMATION)
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_ANIMATION) == NMO_OK) {
+    nmo_status_t seek_result = nmo_chunk_seek_identifier(
+        chunk, CK_STATESAVE_ANIMATION);
+    if (seek_result == NMO_OK) {
         size_t anim_count = 0;
         result = nmo_chunk_read_object_sequence_start(chunk, &anim_count);
         if (result != NMO_OK) return result;
@@ -252,10 +254,11 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
         out_state->animation_count = (uint32_t)anim_count;
         out_state->animation_ids = animation_ids;
         out_state->has_animation_chunk = 1;
-    }
+    } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
     // Load meshes (identifier CK_STATESAVE_MESHS)
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_MESHS) == NMO_OK) {
+    seek_result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_MESHS);
+    if (seek_result == NMO_OK) {
         nmo_ref_t current_mesh = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         result = nmo_ref_read(chunk, &current_mesh);
         if (result != NMO_OK) {
@@ -305,10 +308,12 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
         out_state->mesh_count = (uint32_t)mesh_count;
         out_state->mesh_ids = mesh_ids;
         out_state->has_mesh_chunk = 1;
-    }
+    } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
     // Load new-format entity data (identifier CK_STATESAVE_3DENTITYNDATA)
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_3DENTITYNDATA) == NMO_OK) {
+    seek_result = nmo_chunk_seek_identifier(
+        chunk, CK_STATESAVE_3DENTITYNDATA);
+    if (seek_result == NMO_OK) {
         nmo_3dentity_state_t data = *out_state;
         data.has_entityndata_chunk = 1;
         result = nmo_chunk_read_dword(chunk, &data.entity_flags);
@@ -374,10 +379,11 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
             nmo_deserialize_context_get_type_registry(context),
             NMO_CID_3DENTITY);
         *out_state = data;
-    }
+    } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
     // Legacy parent chunk
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARENT) == NMO_OK) {
+    seek_result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARENT);
+    if (seek_result == NMO_OK) {
         nmo_ref_t parent = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &parent));
         nmo_ref_check_class(
@@ -388,32 +394,37 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
             NMO_CID_3DENTITY);
         out_state->parent = parent;
         out_state->has_parent_chunk = 1;
-    }
+    } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
     // Legacy flags chunk
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_3DENTITYFLAGS) == NMO_OK) {
+    seek_result = nmo_chunk_seek_identifier(
+        chunk, CK_STATESAVE_3DENTITYFLAGS);
+    if (seek_result == NMO_OK) {
         out_state->has_flags_chunk = 1;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->entity_flags));
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->moveable_flags));
-    }
+    } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
     // Legacy matrix chunk
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_3DENTITYMATRIX) == NMO_OK) {
+    seek_result = nmo_chunk_seek_identifier(
+        chunk, CK_STATESAVE_3DENTITYMATRIX);
+    if (seek_result == NMO_OK) {
         out_state->has_matrix_chunk = 1;
         NMO_RETURN_IF_ERROR(nmo_chunk_skip(chunk, 1));
         nmo_matrix_t mat;
         result = nmo_chunk_read_matrix(chunk, &mat);
-        if (result == NMO_OK) {
-            for (int r = 0; r < 4; ++r) {
-                for (int c = 0; c < 4; ++c) {
-                    out_state->world_matrix[r * 4 + c] = mat.m[r][c];
-                }
+        if (result != NMO_OK) return result;
+        for (int r = 0; r < 4; ++r) {
+            for (int c = 0; c < 4; ++c) {
+                out_state->world_matrix[r * 4 + c] = mat.m[r][c];
             }
         }
-    }
+    } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
     // Skin data (identifier CK_STATESAVE_3DENTITYSKINDATA)
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_3DENTITYSKINDATA) == NMO_OK) {
+    seek_result = nmo_chunk_seek_identifier(
+        chunk, CK_STATESAVE_3DENTITYSKINDATA);
+    if (seek_result == NMO_OK) {
         uint32_t data_version = nmo_chunk_get_data_version(chunk);
         out_state->skin = (nmo_3dentity_skin_t *)nmo_arena_alloc(
             arena, sizeof(nmo_3dentity_skin_t), _Alignof(nmo_3dentity_skin_t));
@@ -435,6 +446,10 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
         if (bone_count > UINT32_MAX) {
             NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                              "Bone count exceeds limits");
+        }
+        if (bone_count > SIZE_MAX / sizeof(nmo_3dentity_skin_bone_t)) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Bone array size exceeds limits");
         }
 
         out_state->skin->bone_count = (uint32_t)bone_count;
@@ -485,6 +500,10 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
             int32_t bone_count_i = 0;
             result = nmo_chunk_read_int(chunk, &bone_count_i);
             if (result != NMO_OK) return result;
+            if (bone_count_i < 0) {
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                 "Invalid per-vertex bone count");
+            }
             vertex->bone_count = (uint32_t)bone_count_i;
 
             if (data_version < 6) {
@@ -528,7 +547,9 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
             }
         }
 
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_3DENTITYSKINDATANORMALS) == NMO_OK) {
+        seek_result = nmo_chunk_seek_identifier(
+            chunk, CK_STATESAVE_3DENTITYSKINDATANORMALS);
+        if (seek_result == NMO_OK) {
             out_state->skin->normals_present = 1;
             size_t payload_bytes = 0;
             result = nmo_3dentity_identifier_payload_size_bytes(chunk, &payload_bytes);
@@ -566,8 +587,8 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
                     NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read skin normals");
                 }
             }
-        }
-    }
+        } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
+    } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
     NMO_RETURN_OK();
 }
