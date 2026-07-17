@@ -641,9 +641,11 @@ nmo_status_t nmo_chunk_writer_write_buffer_nosize(nmo_chunk_writer_t *w, size_t 
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    if (bytes == 0 || data == NULL) {
-        // Nothing to write if NULL or zero size
+    if (bytes == 0) {
         return NMO_OK;
+    }
+    if (data == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
     }
 
     return writer_append_aligned_bytes(w, data, bytes);
