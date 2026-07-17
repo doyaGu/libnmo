@@ -121,6 +121,26 @@ static int nmo_character_is_file_mode_ser(const nmo_chunk_t *chunk, void *contex
         (ser_ctx != NULL && (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
 }
 
+static size_t nmo_character_identifier_remaining_dwords(
+    const nmo_chunk_t *chunk)
+{
+    if (!chunk || !chunk->parser_state) return 0;
+
+    const nmo_chunk_parser_state_t *state =
+        (const nmo_chunk_parser_state_t *)chunk->parser_state;
+    const uint32_t *data =
+        NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    size_t next_pos = chunk->data.count;
+    if (state->prev_identifier_pos + 1u < chunk->data.count) {
+        const uint32_t candidate = data[state->prev_identifier_pos + 1u];
+        if (candidate != 0 && candidate <= chunk->data.count) {
+            next_pos = candidate;
+        }
+    }
+    if (next_pos < state->current_pos) return 0;
+    return next_pos - state->current_pos;
+}
+
 static nmo_status_t read_ref_sequence(
     nmo_chunk_t *chunk,
     nmo_array_t *out_refs)
@@ -131,7 +151,7 @@ static nmo_status_t read_ref_sequence(
     if (count > UINT32_MAX) {
         return NMO_ERR_INVALID_FORMAT;
     }
-    if (!nmo_chunk_has_read_capacity(chunk, count)) {
+    if (count > nmo_character_identifier_remaining_dwords(chunk)) {
         return NMO_ERR_TRUNCATED_CHUNK;
     }
     nmo_array_t decoded;
@@ -632,7 +652,7 @@ static nmo_status_t read_part_sequence(
     if (count > UINT32_MAX) {
         return NMO_ERR_INVALID_FORMAT;
     }
-    if (!nmo_chunk_has_read_capacity(chunk, count)) {
+    if (count > nmo_character_identifier_remaining_dwords(chunk)) {
         return NMO_ERR_TRUNCATED_CHUNK;
     }
     nmo_array_t decoded;
@@ -806,7 +826,8 @@ static nmo_status_t nmo_character_deserialize_internal(
                     result = NMO_ERR_INVALID_FORMAT;
                     goto fail;
                 }
-                if (!nmo_chunk_has_read_capacity(chunk, (size_t)count * 2u)) {
+                if ((size_t)count * 2u >
+                    nmo_character_identifier_remaining_dwords(chunk)) {
                     result = NMO_ERR_TRUNCATED_CHUNK;
                     goto fail;
                 }
