@@ -84,7 +84,7 @@ static void nmo_parameteroperation_check_parameter_ref(
     }
 }
 
-nmo_status_t nmo_parameteroperation_deserialize(
+static nmo_status_t nmo_parameteroperation_deserialize_internal(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -220,6 +220,23 @@ commit:
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_parameteroperation_deserialize(
+    void *instance,
+    nmo_chunk_t *chunk,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    nmo_parameteroperation_state_t *out_state =
+        (nmo_parameteroperation_state_t *)instance;
+    if (out_state == NULL || chunk == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    nmo_parameteroperation_state_t decoded = *out_state;
+    nmo_status_t result = nmo_parameteroperation_deserialize_internal(
+        &decoded, chunk, type, context);
+    if (result != NMO_OK) return result;
+    *out_state = decoded;
+    return NMO_OK;
+}
+
 static nmo_status_t nmo_parameteroperation_copy(
     const void *src,
     void *dst,
@@ -314,7 +331,7 @@ static void nmo_parameteroperation_post_delete(
     (void)context;
 }
 
-nmo_status_t nmo_parameteroperation_serialize(
+static nmo_status_t nmo_parameteroperation_serialize_internal(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
@@ -416,6 +433,32 @@ nmo_status_t nmo_parameteroperation_serialize(
     }
 
     NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_parameteroperation_serialize(
+    const void *instance,
+    nmo_chunk_t *out_chunk,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    if (instance == NULL || out_chunk == NULL || out_chunk->arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    NMO_RETURN_IF_ERROR(nmo_parameteroperation_validate(
+        instance, type, context));
+    nmo_chunk_t *staged = nmo_chunk_create(out_chunk->arena);
+    if (staged == NULL) return NMO_ERR_NOMEM;
+    staged->class_id = out_chunk->class_id;
+    staged->data_version = out_chunk->data_version;
+    staged->chunk_version = out_chunk->chunk_version;
+    staged->chunk_class_id = out_chunk->chunk_class_id;
+    staged->chunk_options = out_chunk->chunk_options;
+    staged->file_context = out_chunk->file_context;
+    nmo_status_t result = nmo_parameteroperation_serialize_internal(
+        instance, staged, type, context);
+    if (result != NMO_OK) return result;
+    *out_chunk = *staged;
+    return NMO_OK;
 }
 
 /* ============================================================================
