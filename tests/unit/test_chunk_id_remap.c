@@ -2419,7 +2419,7 @@ TEST(chunk_id_remap, camera_and_light_failures_keep_previous_state) {
         &light.entity.base.base.scripts, 902));
     light.flags = 0x123400u;
     light.light_power = 9.0f;
-    ASSERT_NE(NMO_OK, nmo_light_deserialize(
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_light_deserialize(
         &light, light_chunk, NULL, &deserialize_context));
     ASSERT_EQ(0x123400u, light.flags);
     ASSERT_EQ(9.0f, light.light_power);
