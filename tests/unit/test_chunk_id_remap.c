@@ -2394,6 +2394,34 @@ TEST(chunk_id_remap, parameteroperation_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(902u, failed.in2.ref.raw_id);
     ASSERT_EQ(903u, failed.out.ref.raw_id);
 
+    nmo_chunk_t *cross_section_refs = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(cross_section_refs);
+    cross_section_refs->class_id = NMO_CID_PARAMETEROPERATION;
+    cross_section_refs->data_version = 8;
+    cross_section_refs->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(cross_section_refs));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_section_refs, CK_STATESAVE_OPERATIONNEWDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_guid(
+        cross_section_refs, (nmo_guid_t){1u, 2u}));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(
+        cross_section_refs, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_section_refs, 0x7F123456u));
+    nmo_chunk_close(cross_section_refs);
+    nmo_chunk_set_file_context(cross_section_refs, &read_context);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_parameteroperation_deserialize(
+        &failed, cross_section_refs, NULL, &deserialize_context));
+    nmo_chunk_parser_state_t *parser =
+        (nmo_chunk_parser_state_t *)cross_section_refs->parser_state;
+    ASSERT_NOT_NULL(parser);
+    ASSERT_EQ(parser->prev_identifier_pos + 5u, parser->current_pos);
+    ASSERT_EQ(3u, failed.operation_guid.d1);
+    ASSERT_EQ(4u, failed.operation_guid.d2);
+    ASSERT_EQ(901u, failed.in1.ref.raw_id);
+    ASSERT_EQ(902u, failed.in2.ref.raw_id);
+    ASSERT_EQ(903u, failed.out.ref.raw_id);
+
     nmo_parameteroperation_state_t invalid = source;
     invalid.out.ref = nmo_ref_from_id(999);
     nmo_chunk_t *target = nmo_chunk_create(arena);
