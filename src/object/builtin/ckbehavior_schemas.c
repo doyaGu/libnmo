@@ -393,6 +393,20 @@ static void behavior_check_ref_classes(
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
+static nmo_status_t nmo_behavior_seek_optional(
+    nmo_chunk_t *chunk,
+    uint32_t identifier,
+    bool *out_found)
+{
+    nmo_status_t result = nmo_chunk_seek_identifier(chunk, identifier);
+    if (result == NMO_OK) {
+        *out_found = true;
+        return NMO_OK;
+    }
+    *out_found = false;
+    return result == NMO_ERR_NOT_FOUND ? NMO_OK : result;
+}
+
 static nmo_status_t nmo_behavior_deserialize_internal(
     void *instance,
     nmo_chunk_t *chunk,
@@ -425,12 +439,15 @@ static nmo_status_t nmo_behavior_deserialize_internal(
 
     uint32_t newdata_id = CK_STATESAVE_BEHAVIORNEWDATA;
     nmo_status_t newdata_seek = nmo_chunk_seek_identifier(chunk, newdata_id);
-    if (newdata_seek != NMO_OK) {
+    if (newdata_seek == NMO_ERR_NOT_FOUND) {
         newdata_id = CK_STATESAVE_BEHAVIORNEWDATA_LEGACY;
         newdata_seek = nmo_chunk_seek_identifier(chunk, newdata_id);
         if (newdata_seek == NMO_OK) {
             out_state->use_legacy_identifiers = true;
         }
+    } else if (newdata_seek != NMO_OK) return newdata_seek;
+    if (newdata_seek != NMO_OK && newdata_seek != NMO_ERR_NOT_FOUND) {
+        return newdata_seek;
     }
 
     if (is_file && data_version >= 5 && newdata_seek != NMO_OK) {
@@ -438,12 +455,17 @@ static nmo_status_t nmo_behavior_deserialize_internal(
     }
 
     if (!is_file && newdata_seek != NMO_OK) {
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAVIORSUBBEHAV) == NMO_OK) {
+        bool section_found = false;
+        NMO_RETURN_IF_ERROR(nmo_behavior_seek_optional(
+            chunk, CK_STATESAVE_BEHAVIORSUBBEHAV, &section_found));
+        if (section_found) {
             NMO_RETURN_IF_ERROR(read_object_subchunk_list(
                 chunk, &out_state->sub_behaviors));
         }
 
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAVIORLOCALPARAMS) == NMO_OK) {
+        NMO_RETURN_IF_ERROR(nmo_behavior_seek_optional(
+            chunk, CK_STATESAVE_BEHAVIORLOCALPARAMS, &section_found));
+        if (section_found) {
             NMO_RETURN_IF_ERROR(read_object_subchunk_list(
                 chunk, &out_state->local_parameters));
         }
@@ -583,34 +605,49 @@ static nmo_status_t nmo_behavior_deserialize_internal(
             }
         }
     } else {
+        bool section_found = false;
         nmo_guid_t guid = {0};
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAVIORPROTOGUID) == NMO_OK) {
+        NMO_RETURN_IF_ERROR(nmo_behavior_seek_optional(
+            chunk, CK_STATESAVE_BEHAVIORPROTOGUID, &section_found));
+        if (section_found) {
             NMO_RETURN_IF_ERROR(nmo_chunk_read_guid(chunk, &guid));
             out_state->block_guid = guid;
         }
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAVIORFLAGS) == NMO_OK) {
+        NMO_RETURN_IF_ERROR(nmo_behavior_seek_optional(
+            chunk, CK_STATESAVE_BEHAVIORFLAGS, &section_found));
+        if (section_found) {
             NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, (int32_t *)&out_state->flags));
             if (out_state->flags & CKBEHAVIOR_USEFUNCTION) {
                 out_state->flags |= CKBEHAVIOR_BUILDINGBLOCK;
                 out_state->block_guid = guid;
             }
         }
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAVIORCOMPATIBLECID) == NMO_OK) {
+        NMO_RETURN_IF_ERROR(nmo_behavior_seek_optional(
+            chunk, CK_STATESAVE_BEHAVIORCOMPATIBLECID, &section_found));
+        if (section_found) {
             NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, (uint32_t *)&out_state->compatible_class_id));
         }
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAVIORTYPE) == NMO_OK) {
+        NMO_RETURN_IF_ERROR(nmo_behavior_seek_optional(
+            chunk, CK_STATESAVE_BEHAVIORTYPE, &section_found));
+        if (section_found) {
             NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->behavior_type));
             if (out_state->behavior_type == 1) {
                 out_state->flags |= CKBEHAVIOR_SCRIPT;
             }
         }
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAVIOROWNER) == NMO_OK) {
+        NMO_RETURN_IF_ERROR(nmo_behavior_seek_optional(
+            chunk, CK_STATESAVE_BEHAVIOROWNER, &section_found));
+        if (section_found) {
             NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &out_state->owner));
         }
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAVIORPRIORITY) == NMO_OK) {
+        NMO_RETURN_IF_ERROR(nmo_behavior_seek_optional(
+            chunk, CK_STATESAVE_BEHAVIORPRIORITY, &section_found));
+        if (section_found) {
             NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &out_state->priority));
         }
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAVIORTARGET) == NMO_OK) {
+        NMO_RETURN_IF_ERROR(nmo_behavior_seek_optional(
+            chunk, CK_STATESAVE_BEHAVIORTARGET, &section_found));
+        if (section_found) {
             NMO_RETURN_IF_ERROR(nmo_ref_read(
                 chunk, &out_state->target_parameter));
         }
@@ -619,13 +656,14 @@ static nmo_status_t nmo_behavior_deserialize_internal(
     /* Optional: Interface chunk (for editing mode) */
     uint32_t interface_id = CK_STATESAVE_BEHAVIORINTERFACE;
     result = nmo_chunk_seek_identifier(chunk, interface_id);
-    if (result != NMO_OK) {
+    if (result == NMO_ERR_NOT_FOUND) {
         interface_id = CK_STATESAVE_BEHAVIORINTERFACE_LEGACY;
         result = nmo_chunk_seek_identifier(chunk, interface_id);
         if (result == NMO_OK) {
             out_state->use_legacy_identifiers = true;
         }
-    }
+    } else if (result != NMO_OK) return result;
+    if (result != NMO_OK && result != NMO_ERR_NOT_FOUND) return result;
     if (result == NMO_OK) {
         out_state->has_interface = true;
         nmo_chunk_t *interface_chunk = NULL;
@@ -651,35 +689,52 @@ static nmo_status_t nmo_behavior_deserialize_internal(
     if (result == NMO_OK) {
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->single_activity_flags));
         out_state->has_single_activity = true;
-    }
+    } else if (result != NMO_ERR_NOT_FOUND) return result;
 
     if (nmo_chunk_get_data_version(chunk) < 5) {
         if (out_state->flags & CKBEHAVIOR_BUILDINGBLOCK) {
             NMO_RETURN_OK();
         }
 
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAVIORSUBBEHAV) == NMO_OK) {
+        bool section_found = false;
+        NMO_RETURN_IF_ERROR(nmo_behavior_seek_optional(
+            chunk, CK_STATESAVE_BEHAVIORSUBBEHAV, &section_found));
+        if (section_found) {
             NMO_RETURN_IF_ERROR(read_object_sequence(chunk, &out_state->sub_behaviors));
         }
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAVIORSUBLINKS) == NMO_OK) {
+        NMO_RETURN_IF_ERROR(nmo_behavior_seek_optional(
+            chunk, CK_STATESAVE_BEHAVIORSUBLINKS, &section_found));
+        if (section_found) {
             NMO_RETURN_IF_ERROR(read_object_sequence(chunk, &out_state->sub_behavior_links));
         }
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAVIOROPERATIONS) == NMO_OK) {
+        NMO_RETURN_IF_ERROR(nmo_behavior_seek_optional(
+            chunk, CK_STATESAVE_BEHAVIOROPERATIONS, &section_found));
+        if (section_found) {
             NMO_RETURN_IF_ERROR(read_object_sequence(chunk, &out_state->operations));
         }
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAVIORINPARAMS) == NMO_OK) {
+        NMO_RETURN_IF_ERROR(nmo_behavior_seek_optional(
+            chunk, CK_STATESAVE_BEHAVIORINPARAMS, &section_found));
+        if (section_found) {
             NMO_RETURN_IF_ERROR(read_object_sequence(chunk, &out_state->in_parameters));
         }
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAVIORLOCALPARAMS) == NMO_OK) {
+        NMO_RETURN_IF_ERROR(nmo_behavior_seek_optional(
+            chunk, CK_STATESAVE_BEHAVIORLOCALPARAMS, &section_found));
+        if (section_found) {
             NMO_RETURN_IF_ERROR(read_object_sequence(chunk, &out_state->local_parameters));
         }
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAVIOROUTPARAMS) == NMO_OK) {
+        NMO_RETURN_IF_ERROR(nmo_behavior_seek_optional(
+            chunk, CK_STATESAVE_BEHAVIOROUTPARAMS, &section_found));
+        if (section_found) {
             NMO_RETURN_IF_ERROR(read_object_sequence(chunk, &out_state->out_parameters));
         }
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAVIORINPUTS) == NMO_OK) {
+        NMO_RETURN_IF_ERROR(nmo_behavior_seek_optional(
+            chunk, CK_STATESAVE_BEHAVIORINPUTS, &section_found));
+        if (section_found) {
             NMO_RETURN_IF_ERROR(read_object_sequence(chunk, &out_state->inputs));
         }
-        if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAVIOROUTPUTS) == NMO_OK) {
+        NMO_RETURN_IF_ERROR(nmo_behavior_seek_optional(
+            chunk, CK_STATESAVE_BEHAVIOROUTPUTS, &section_found));
+        if (section_found) {
             NMO_RETURN_IF_ERROR(read_object_sequence(chunk, &out_state->outputs));
         }
     }
