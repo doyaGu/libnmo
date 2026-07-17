@@ -4086,7 +4086,7 @@ TEST(chunk_id_remap, entity_scalar_ref_sections_reject_truncation_atomically) {
     state2d.rect.left = 12.5f;
     state2d.has_material = true;
     state2d.material = nmo_ref_from_raw(912);
-    ASSERT_NE(NMO_OK, nmo_2dentity_deserialize(
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_2dentity_deserialize(
         &state2d, chunk2d, NULL, &deserialize_context));
     ASSERT_EQ(0xCAFEBABEu, state2d.flags);
     ASSERT_EQ(12.5f, state2d.rect.left);
@@ -4117,7 +4117,7 @@ TEST(chunk_id_remap, entity_scalar_ref_sections_reject_truncation_atomically) {
 
     nmo_2dentity_state_t parent2d_state;
     ASSERT_EQ(NMO_OK, nmo_2dentity_vtable.create(&parent2d_state, NULL, NULL));
-    ASSERT_NE(NMO_OK, nmo_2dentity_deserialize(
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_2dentity_deserialize(
         &parent2d_state, parent2d_chunk, NULL, &deserialize_context));
     ASSERT_FALSE(parent2d_state.has_parent);
     ASSERT_EQ(NMO_REF_NONE, parent2d_state.parent.state);
