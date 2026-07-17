@@ -36,6 +36,8 @@ nmo_status_t nmo_ref_read(nmo_chunk_t *chunk, nmo_ref_t *out_ref)
     if (!chunk || !out_ref) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
+    *out_ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+    const size_t start_pos = nmo_chunk_get_position(chunk);
 
     nmo_object_id_t raw_id = NMO_OBJECT_ID_NONE;
     nmo_object_id_t id = NMO_OBJECT_ID_NONE;
@@ -55,6 +57,9 @@ nmo_status_t nmo_ref_read(nmo_chunk_t *chunk, nmo_ref_t *out_ref)
             result = nmo_object_repository_intern_unresolved_ref(
                 file_context->repository, raw_id, &ref.id);
             if (result != NMO_OK) {
+                if (start_pos != (size_t)-1) {
+                    (void)nmo_chunk_goto(chunk, start_pos);
+                }
                 return result;
             }
         }
@@ -101,21 +106,34 @@ nmo_status_t nmo_ref_read_sequence(
     if (!chunk || !out_refs || !out_count || !arena) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
+    *out_refs = NULL;
+    *out_count = 0;
+    const size_t start_pos = nmo_chunk_get_position(chunk);
     size_t count = 0;
     nmo_status_t result = nmo_chunk_read_object_sequence_start(chunk, &count);
     if (result != NMO_OK) return result;
-    if (count > SIZE_MAX / sizeof(nmo_ref_t)) return NMO_ERR_INVALID_FORMAT;
+    if (count > SIZE_MAX / sizeof(nmo_ref_t)) {
+        (void)nmo_chunk_goto(chunk, start_pos);
+        return NMO_ERR_INVALID_FORMAT;
+    }
     if (count > nmo_ref_identifier_remaining_dwords(chunk)) {
+        (void)nmo_chunk_goto(chunk, start_pos);
         return NMO_ERR_TRUNCATED_CHUNK;
     }
     nmo_ref_t *refs = NULL;
     if (count > 0) {
         refs = (nmo_ref_t *)nmo_arena_alloc(
             arena, count * sizeof(nmo_ref_t), _Alignof(nmo_ref_t));
-        if (!refs) return NMO_ERR_NOMEM;
+        if (!refs) {
+            (void)nmo_chunk_goto(chunk, start_pos);
+            return NMO_ERR_NOMEM;
+        }
         for (size_t i = 0; i < count; ++i) {
             result = nmo_ref_read(chunk, &refs[i]);
-            if (result != NMO_OK) return result;
+            if (result != NMO_OK) {
+                (void)nmo_chunk_goto(chunk, start_pos);
+                return result;
+            }
         }
     }
     *out_refs = refs;
