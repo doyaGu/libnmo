@@ -1983,7 +1983,11 @@ TEST(chunk_id_remap, parameter_copy_is_deep_and_atomic) {
     ASSERT_EQ(2u, copied.buffer_data.count);
     ASSERT_EQ(0x11u, NMO_ARRAY_DATA(uint8_t, &copied.buffer_data)[0]);
     ASSERT_NE(source.subchunk, copied.subchunk);
+    ASSERT_TRUE(nmo_parameter_vtable.equals(&source, &copied));
+    ASSERT_EQ(nmo_parameter_vtable.hash(&source),
+              nmo_parameter_vtable.hash(&copied));
     NMO_ARRAY_DATA(uint8_t, &source.buffer_data)[0] = 0x33u;
+    ASSERT_FALSE(nmo_parameter_vtable.equals(&source, &copied));
     ASSERT_EQ(0x11u, NMO_ARRAY_DATA(uint8_t, &copied.buffer_data)[0]);
 
     fail_after_allocator_state_t allocator_state = {
