@@ -101,14 +101,22 @@ static uint32_t chunk_compute_option_flags(const nmo_chunk_t *chunk) {
     return option_flags;
 }
 
+static int chunk_array_state_is_valid(const nmo_arena_array_t *array,
+                                      size_t element_size) {
+    if (array == NULL) return 0;
+    if (array->count == 0) return 1;
+    return array->data != NULL &&
+           array->count <= array->capacity &&
+           array->element_size == element_size &&
+           array->count <= SIZE_MAX / element_size;
+}
+
 static nmo_status_t chunk_validate_serialized_array(
     const nmo_arena_array_t *array)
 {
     if (array == NULL) return NMO_ERR_INVALID_ARGUMENT;
     if (array->count > UINT32_MAX) return NMO_ERR_INVALID_ARGUMENT;
-    if (array->count > 0 &&
-        (array->data == NULL || array->count > array->capacity ||
-         array->element_size != sizeof(uint32_t))) {
+    if (!chunk_array_state_is_valid(array, sizeof(uint32_t))) {
         return NMO_ERR_INVALID_STATE;
     }
     return NMO_OK;
@@ -918,6 +926,17 @@ void nmo_chunk_destroy(nmo_chunk_t *chunk) {
 
 nmo_chunk_t *nmo_chunk_clone(const nmo_chunk_t *src, nmo_arena_t *arena) {
     if (src == NULL || arena == NULL) {
+        return NULL;
+    }
+    if (!chunk_array_state_is_valid(&src->data, sizeof(uint32_t)) ||
+        !chunk_array_state_is_valid(&src->ids, sizeof(uint32_t)) ||
+        !chunk_array_state_is_valid(&src->chunk_refs, sizeof(uint32_t)) ||
+        !chunk_array_state_is_valid(&src->managers, sizeof(uint32_t)) ||
+        !chunk_array_state_is_valid(&src->chunks, sizeof(nmo_chunk_t *)) ||
+        (src->raw_size > 0 && src->raw_data == NULL)) {
+        nmo_last_error_setf(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                            __FILE__, __LINE__,
+                            "Cannot clone malformed chunk state");
         return NULL;
     }
 
