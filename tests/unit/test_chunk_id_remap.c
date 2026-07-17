@@ -4613,6 +4613,78 @@ TEST(chunk_id_remap, synchro_refs_round_trip_and_failure_is_atomic) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, synchro_scalar_failures_keep_state_and_target_chunk_atomic) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(arena, NULL, NULL, 0);
+
+    nmo_chunk_t *state_chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(state_chunk);
+    state_chunk->class_id = NMO_CID_STATE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(state_chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        state_chunk, CK_STATESAVE_SYNCHRODATA));
+    nmo_chunk_close(state_chunk);
+    nmo_state_state_t state;
+    ASSERT_EQ(NMO_OK, nmo_state_vtable.create(&state, NULL, NULL));
+    state.base.visibility_flags = NMO_CKOBJECT_HIERARCHICAL;
+    state.event_flag = 42;
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_state_deserialize(
+        &state, state_chunk, NULL, &deserialize_context));
+    ASSERT_EQ(NMO_CKOBJECT_HIERARCHICAL, state.base.visibility_flags);
+    ASSERT_EQ(42, state.event_flag);
+
+    nmo_chunk_t *critical_chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(critical_chunk);
+    critical_chunk->class_id = NMO_CID_CRITICALSECTION;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(critical_chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        critical_chunk, CK_STATESAVE_SYNCHRODATA));
+    nmo_chunk_close(critical_chunk);
+    nmo_criticalsection_state_t critical;
+    ASSERT_EQ(NMO_OK, nmo_criticalsection_vtable.create(
+        &critical, NULL, NULL));
+    critical.base.visibility_flags = NMO_CKOBJECT_HIERARCHICAL;
+    critical.object_in_section = nmo_ref_from_raw(933);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_criticalsection_deserialize(
+        &critical, critical_chunk, NULL, &deserialize_context));
+    ASSERT_EQ(NMO_CKOBJECT_HIERARCHICAL, critical.base.visibility_flags);
+    ASSERT_EQ(933u, critical.object_in_section.raw_id);
+
+    nmo_id_remap_t *runtime_to_file = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(runtime_to_file);
+    nmo_chunk_file_context_t write_context = {
+        .runtime_to_file = runtime_to_file,
+    };
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_criticalsection_state_t invalid;
+    ASSERT_EQ(NMO_OK, nmo_criticalsection_vtable.create(
+        &invalid, NULL, NULL));
+    invalid.object_in_section = nmo_ref_from_id(999);
+    nmo_chunk_t *target = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(target);
+    target->class_id = NMO_CID_CRITICALSECTION;
+    target->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(target, &write_context);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(target, 0x12345678u));
+    nmo_chunk_close(target);
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_criticalsection_serialize(
+        &invalid, target, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(target));
+    uint32_t marker = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(target, &marker));
+    ASSERT_EQ(0x12345678u, marker);
+
+    nmo_state_vtable.destroy(&state, NULL, NULL);
+    nmo_criticalsection_vtable.destroy(&critical, NULL, NULL);
+    nmo_criticalsection_vtable.destroy(&invalid, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, beobject_attribute_unresolved_ref_round_trips_raw_id) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
     ASSERT_NOT_NULL(arena);
@@ -6733,6 +6805,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, level_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, scene_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, synchro_refs_round_trip_and_failure_is_atomic);
+    REGISTER_TEST(chunk_id_remap, synchro_scalar_failures_keep_state_and_target_chunk_atomic);
     REGISTER_TEST(chunk_id_remap, beobject_attribute_unresolved_ref_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, beobject_attribute_failure_keeps_previous_atomic_state);
     REGISTER_TEST(chunk_id_remap, beobject_serializer_does_not_publish_partial_chunk);
