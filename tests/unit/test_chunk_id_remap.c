@@ -1043,6 +1043,25 @@ TEST(chunk_id_remap, messagemanager_failures_keep_state_and_target_chunk_atomic)
     ASSERT_EQ(old_names, state.message_type_names);
     ASSERT_EQ(1u, state.message_type_count);
 
+    nmo_chunk_t *cross_section_count = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(cross_section_count);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(cross_section_count));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_section_count, 0x53u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(cross_section_count, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_section_count, 0x7F123456u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(cross_section_count, 0));
+    nmo_chunk_close(cross_section_count);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_messagemanager_deserialize(
+        &state, cross_section_count, NULL, &deserialize_context));
+    nmo_chunk_parser_state_t *parser =
+        (nmo_chunk_parser_state_t *)cross_section_count->parser_state;
+    ASSERT_NOT_NULL(parser);
+    ASSERT_EQ(parser->prev_identifier_pos + 3u, parser->current_pos);
+    ASSERT_EQ(old_names, state.message_type_names);
+    ASSERT_EQ(1u, state.message_type_count);
+
     nmo_messagemanager_state_t invalid = {
         .message_type_count = 1,
         .message_type_names = NULL,
