@@ -89,7 +89,8 @@ static nmo_status_t nmo_sprite3d_deserialize_internal(
     nmo_sprite3d_set_defaults(out_state);
     out_state->has_data = 0;
 
-    if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SPRITE3DDATA) == NMO_OK) {
+    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SPRITE3DDATA);
+    if (result == NMO_OK) {
         uint32_t mode = 0;
         float half_width = 0.0f;
         float half_height = 0.0f;
@@ -119,7 +120,7 @@ static nmo_status_t nmo_sprite3d_deserialize_internal(
         out_state->offset = offset;
         out_state->uv_rect = uv_rect;
         out_state->material = material;
-    }
+    } else if (result != NMO_ERR_NOT_FOUND) return result;
 
     NMO_RETURN_OK();
 }
