@@ -629,6 +629,43 @@ TEST(chunk_api, identifiers) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_api, identifier_write_validation_is_atomic) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_chunk_t* chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(nmo_chunk_start_write(chunk), NMO_OK);
+    ASSERT_EQ(nmo_chunk_write_identifier(chunk, 0xAAAA), NMO_OK);
+    ASSERT_EQ(nmo_chunk_write_int(chunk, 1234), NMO_OK);
+
+    nmo_chunk_parser_state_t* state = nmo_chunk_get_parser_state(chunk);
+    ASSERT_NOT_NULL(state);
+    uint32_t* data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    ASSERT_NOT_NULL(data);
+    ASSERT_EQ(chunk->data.count, 3);
+    ASSERT_EQ(data[1], 0);
+
+    const size_t valid_pos = state->current_pos;
+    const size_t valid_prev_identifier_pos = state->prev_identifier_pos;
+    state->current_pos = (size_t)UINT32_MAX - 1u;
+    ASSERT_EQ(nmo_chunk_write_identifier(chunk, 0xBBBB), NMO_ERR_INVALID_ARGUMENT);
+    ASSERT_EQ(state->current_pos, (size_t)UINT32_MAX - 1u);
+    ASSERT_EQ(state->prev_identifier_pos, valid_prev_identifier_pos);
+    ASSERT_EQ(chunk->data.count, 3);
+    ASSERT_EQ(data[1], 0);
+
+    state->current_pos = valid_pos;
+    state->prev_identifier_pos = chunk->data.count - 1u;
+    ASSERT_EQ(nmo_chunk_write_identifier(chunk, 0xBBBB), NMO_ERR_INVALID_STATE);
+    ASSERT_EQ(state->current_pos, valid_pos);
+    ASSERT_EQ(state->prev_identifier_pos, chunk->data.count - 1u);
+    ASSERT_EQ(chunk->data.count, 3);
+    ASSERT_EQ(data[1], 0);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_api, read_identifier_eof) {
     nmo_arena_t* arena = nmo_arena_create(NULL, 8192);
     ASSERT_NOT_NULL(arena);
@@ -1491,6 +1528,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_api, check_size_rounds_and_rejects_overflow);
     REGISTER_TEST(chunk_api, auto_expand);
     REGISTER_TEST(chunk_api, identifiers);
+    REGISTER_TEST(chunk_api, identifier_write_validation_is_atomic);
     REGISTER_TEST(chunk_api, read_identifier_eof);
     REGISTER_TEST(chunk_api, manager_sequence);
     REGISTER_TEST(chunk_api, manager_sequence_truncated_guid_keeps_position);
