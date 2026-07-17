@@ -525,7 +525,7 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
                 result = nmo_3dentity_read_raw_bytes(chunk,
                     vertex->bone_indices, sizeof(uint32_t) * vertex->bone_count);
                 if (result != NMO_OK) {
-                    NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read bone indices");
+                    return result;
                 }
             }
 
@@ -542,7 +542,7 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
                 result = nmo_3dentity_read_raw_bytes(chunk,
                     vertex->bone_weights, sizeof(float) * vertex->bone_count);
                 if (result != NMO_OK) {
-                    NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read bone weights");
+                    return result;
                 }
             }
         }
@@ -584,7 +584,7 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
                 result = nmo_3dentity_read_raw_bytes(chunk,
                     out_state->skin->normals, expected_bytes);
                 if (result != NMO_OK) {
-                    NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read skin normals");
+                    return result;
                 }
             }
         } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
