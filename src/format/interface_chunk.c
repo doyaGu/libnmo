@@ -1029,6 +1029,38 @@ static nmo_status_t read_interface_string(
     return NMO_OK;
 }
 
+static nmo_status_t read_interface_buffer(
+    nmo_chunk_t *chunk,
+    void **out_data,
+    size_t *out_size)
+{
+    if (!chunk || !out_data || !out_size || !chunk->parser_state) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    const size_t remaining = interface_identifier_remaining_dwords(chunk);
+    if (remaining < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+
+    const nmo_chunk_parser_state_t *state =
+        (const nmo_chunk_parser_state_t *)chunk->parser_state;
+    const uint32_t *data =
+        NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    const uint32_t size = data[state->current_pos];
+    const size_t payload_dwords = ((size_t)size + 3u) / 4u;
+    if (payload_dwords > remaining - 1u) {
+        return NMO_ERR_TRUNCATED_CHUNK;
+    }
+
+    void *parsed_data = NULL;
+    size_t parsed_size = 0;
+    nmo_status_t st = nmo_chunk_read_buffer(
+        chunk, &parsed_data, &parsed_size);
+    NMO_RETURN_IF_ERROR(st);
+    *out_data = parsed_data;
+    *out_size = parsed_size;
+    return NMO_OK;
+}
+
 static nmo_status_t parse_comments(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
@@ -1489,7 +1521,7 @@ static nmo_status_t parse_extra_data(
                         sub->data_size = 0;
                     } else {
                         sub->id2 = 0;
-                        st = nmo_chunk_read_buffer(chunk,
+                        st = read_interface_buffer(chunk,
                             &sub->data, &sub->data_size);
                         NMO_RETURN_IF_ERROR(st);
                     }
