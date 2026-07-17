@@ -1522,6 +1522,7 @@ TEST(chunk_id_remap, parameterin_refs_round_trip_and_failure_is_atomic) {
 
     nmo_parameterin_state_t failed;
     ASSERT_EQ(NMO_OK, nmo_parameterin_vtable.create(&failed, NULL, NULL));
+    failed.base.visibility_flags = NMO_CKOBJECT_HIERARCHICAL;
     failed.type_guid = (nmo_guid_t){7u, 8u};
     failed.source = nmo_ref_from_raw(901);
     failed.owner = nmo_ref_from_raw(902);
@@ -1529,6 +1530,7 @@ TEST(chunk_id_remap, parameterin_refs_round_trip_and_failure_is_atomic) {
     failed.is_disabled = 1;
     ASSERT_NE(NMO_OK, nmo_parameterin_deserialize(
         &failed, truncated, NULL, &deserialize_context));
+    ASSERT_EQ(NMO_CKOBJECT_HIERARCHICAL, failed.base.visibility_flags);
     ASSERT_EQ(7u, failed.type_guid.d1);
     ASSERT_EQ(8u, failed.type_guid.d2);
     ASSERT_EQ(901u, failed.source.raw_id);
@@ -1538,12 +1540,36 @@ TEST(chunk_id_remap, parameterin_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(1u, failed.is_shared);
     ASSERT_EQ(1u, failed.is_disabled);
 
+    nmo_parameterin_state_t invalid;
+    ASSERT_EQ(NMO_OK, nmo_parameterin_vtable.create(&invalid, NULL, NULL));
+    invalid.type_guid = (nmo_guid_t){9u, 10u};
+    invalid.owner = nmo_ref_from_raw(903);
+    invalid.source = nmo_ref_from_id(999);
+    invalid.is_shared = 1;
+    nmo_chunk_t *target = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(target);
+    target->class_id = NMO_CID_PARAMETERIN;
+    target->data_version = 8;
+    target->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(target, &write_context);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(target, 0x12345678u));
+    nmo_chunk_close(target);
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_parameterin_serialize(
+        &invalid, target, NULL, &file_serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(target));
+    uint32_t marker = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(target, &marker));
+    ASSERT_EQ(0x12345678u, marker);
+
     nmo_parameterin_vtable.destroy(&source, NULL, NULL);
     nmo_parameterin_vtable.destroy(&loaded, NULL, NULL);
     nmo_parameterin_vtable.destroy(&reloaded, NULL, NULL);
     nmo_parameterin_vtable.destroy(&legacy_source, NULL, NULL);
     nmo_parameterin_vtable.destroy(&legacy_loaded, NULL, NULL);
     nmo_parameterin_vtable.destroy(&failed, NULL, NULL);
+    nmo_parameterin_vtable.destroy(&invalid, NULL, NULL);
     nmo_arena_destroy(arena);
 }
 
