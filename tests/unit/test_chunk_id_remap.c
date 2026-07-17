@@ -2083,6 +2083,33 @@ TEST(chunk_id_remap, parameteroperation_refs_round_trip_and_failure_is_atomic) {
     source.has_in1 = 1;
     source.has_in2 = 1;
     source.has_out = 1;
+    source.in1.chunk = nmo_chunk_create(arena);
+    source.in2.chunk = nmo_chunk_create(arena);
+    source.out.chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(source.in1.chunk);
+    ASSERT_NOT_NULL(source.in2.chunk);
+    ASSERT_NOT_NULL(source.out.chunk);
+    nmo_chunk_t *operation_chunks[] = {
+        source.in1.chunk, source.in2.chunk, source.out.chunk,
+    };
+    for (uint32_t i = 0; i < 3; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_start_write(operation_chunks[i]));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+            operation_chunks[i], 0x100u + i));
+        nmo_chunk_close(operation_chunks[i]);
+    }
+
+    nmo_parameteroperation_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_parameteroperation_vtable.create(
+        &copied, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_parameteroperation_vtable.copy(
+        &source, &copied, NULL, arena));
+    ASSERT_NE(source.in1.chunk, copied.in1.chunk);
+    ASSERT_NE(source.in2.chunk, copied.in2.chunk);
+    ASSERT_NE(source.out.chunk, copied.out.chunk);
+    ASSERT_TRUE(nmo_parameteroperation_vtable.equals(&source, &copied));
+    ASSERT_EQ(nmo_parameteroperation_vtable.hash(&source),
+              nmo_parameteroperation_vtable.hash(&copied));
 
     nmo_chunk_t *first = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(first);
@@ -2227,6 +2254,7 @@ TEST(chunk_id_remap, parameteroperation_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(0x12345678u, marker);
 
     nmo_parameteroperation_vtable.destroy(&source, NULL, NULL);
+    nmo_parameteroperation_vtable.destroy(&copied, NULL, NULL);
     nmo_parameteroperation_vtable.destroy(&loaded, NULL, NULL);
     nmo_parameteroperation_vtable.destroy(&reloaded, NULL, NULL);
     nmo_parameteroperation_vtable.destroy(&legacy_loaded, NULL, NULL);
