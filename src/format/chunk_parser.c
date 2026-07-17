@@ -617,6 +617,7 @@ nmo_status_t nmo_chunk_parser_read_string(nmo_chunk_parser_t *p, char **out, nmo
     if (p == NULL || out == NULL || arena == NULL) {
         NMO_PARSER_RETURN_INVALID_ARGUMENT("Invalid parser or output");
     }
+    *out = NULL;
 
     size_t start_pos = p->cursor;
 
@@ -680,10 +681,7 @@ nmo_status_t nmo_chunk_parser_read_buffer(nmo_chunk_parser_t *p,
         "Cannot read buffer size");
     NMO_PARSER_RETURN_IF_ERROR_ROLLBACK(result, p, start_pos);
 
-    *size = buf_size;
-
     if (buf_size == 0) {
-        *out = NULL;
         NMO_RETURN_OK();
     }
 
@@ -698,6 +696,7 @@ nmo_status_t nmo_chunk_parser_read_buffer(nmo_chunk_parser_t *p,
     NMO_PARSER_RETURN_IF_ERROR_ROLLBACK(result, p, start_pos);
 
     *out = buffer;
+    *size = buf_size;
     NMO_RETURN_OK();
 }
 
