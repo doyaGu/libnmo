@@ -81,6 +81,16 @@ foreach(schema_file IN LISTS schema_files)
         string(APPEND failures
             "${schema_file}: branches directly on a chunk seek result\n")
     endif()
+    if(contents MATCHES
+       "if[ \t\r\n]*\\([A-Za-z_][A-Za-z0-9_]*[ \t]*!=[ \t]*NMO_OK[ \t]*\\)[ \t\r\n]*\\{[ \t\r\n]*NMO_RETURN_ERROR\\([ \t]*NMO_ERR_")
+        string(APPEND failures
+            "${schema_file}: replaces a checked operation error with a fixed status\n")
+    endif()
+    if(contents MATCHES
+       "if[ \t\r\n]*\\([A-Za-z_][A-Za-z0-9_]*[ \t]*!=[ \t]*NMO_OK[ \t]*\\)[ \t\r\n]*(return[ \t]+NMO_ERR_|NMO_RETURN_ERROR\\([ \t]*NMO_ERR_)")
+        string(APPEND failures
+            "${schema_file}: replaces a checked operation error with a fixed status\n")
+    endif()
 endforeach()
 
 if(NOT failures STREQUAL "")
