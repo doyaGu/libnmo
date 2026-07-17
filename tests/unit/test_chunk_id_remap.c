@@ -6580,7 +6580,7 @@ TEST(chunk_id_remap, patchmesh_data3_refs_round_trip_and_failure_is_atomic) {
     nmo_arena_destroy(arena);
 }
 
-TEST(chunk_id_remap, patchmesh_rejects_oversized_legacy_materials_before_allocation) {
+TEST(chunk_id_remap, patchmesh_rejects_cross_section_legacy_materials) {
     fail_after_allocator_state_t allocator_state = {
         .allocation_count = 0,
         .allowed_allocations = 2,
@@ -6610,7 +6610,11 @@ TEST(chunk_id_remap, patchmesh_rejects_oversized_legacy_materials_before_allocat
     }
     ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
         chunk, CK_STATESAVE_PATCHMESHMATERIALS));
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(chunk, 100000));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(chunk, 4));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, 0x7F123456u));
+    for (size_t i = 0; i < 4; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0));
+    }
     nmo_chunk_close(chunk);
 
     nmo_patchmesh_state_t state;
@@ -7573,7 +7577,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, mesh_copy_preserves_material_records);
     REGISTER_TEST(chunk_id_remap, mesh_rejects_oversized_lines_before_allocation);
     REGISTER_TEST(chunk_id_remap, patchmesh_data3_refs_round_trip_and_failure_is_atomic);
-    REGISTER_TEST(chunk_id_remap, patchmesh_rejects_oversized_legacy_materials_before_allocation);
+    REGISTER_TEST(chunk_id_remap, patchmesh_rejects_cross_section_legacy_materials);
     REGISTER_TEST(chunk_id_remap, patchmesh_data2_layout_and_empty_sections_round_trip);
     REGISTER_TEST(chunk_id_remap, patchmesh_serializer_rejects_partial_state);
     REGISTER_TEST(chunk_id_remap, patchmesh_copy_preserves_atomic_records);
