@@ -1116,18 +1116,31 @@ TEST(chunk_api, sub_chunk_write_rejects_unencodable_payload) {
     ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(parent, 0x12345678u));
     const uint32_t options_before = parent->chunk_options;
 
+    const size_t data_capacity = sub->data.capacity;
+    sub->data.capacity = 0u;
+    ASSERT_EQ(NMO_ERR_INVALID_STATE,
+        nmo_chunk_write_sub_chunk(parent, sub));
+    sub->data.capacity = data_capacity;
+
+    const size_t data_element_size = sub->data.element_size;
+    sub->data.element_size = 1u;
+    ASSERT_EQ(NMO_ERR_INVALID_STATE,
+        nmo_chunk_write_sub_chunk(parent, sub));
+    sub->data.element_size = data_element_size;
+
 #if SIZE_MAX > UINT32_MAX
     const size_t data_count = sub->data.count;
     sub->data.count = (size_t)UINT32_MAX + 1u;
     ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
         nmo_chunk_write_sub_chunk(parent, sub));
     sub->data.count = data_count;
+#endif
+
     ASSERT_EQ(1u, nmo_chunk_get_position(parent));
     ASSERT_EQ(4u, nmo_chunk_get_data_size(parent));
     ASSERT_EQ(0u, parent->chunks.count);
     ASSERT_EQ(0u, parent->chunk_refs.count);
     ASSERT_EQ(options_before, parent->chunk_options);
-#endif
 
     nmo_arena_destroy(arena);
 }
