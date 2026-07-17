@@ -3750,9 +3750,16 @@ TEST(chunk_id_remap, character_refs_round_trip_and_failure_is_atomic) {
     partial->class_id = NMO_CID_CHARACTER;
     partial->data_version = 5;
     partial->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(partial));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(partial, 0x12345678u));
+    nmo_chunk_close(partial);
     ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, nmo_character_serialize(
         &invalid, partial, NULL, &file_serialize_context));
-    ASSERT_EQ(0u, nmo_chunk_get_data_size(partial));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(partial));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(partial));
+    uint32_t preserved = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(partial, &preserved));
+    ASSERT_EQ(0x12345678u, preserved);
 
     nmo_bodypart_state_t bodypart = {0};
     bodypart.has_character = 1;
