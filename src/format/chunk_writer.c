@@ -1226,12 +1226,22 @@ nmo_status_t nmo_chunk_writer_write_array_dword_as_words(nmo_chunk_writer_t *w,
     if (values == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
+    if (count > SIZE_MAX / 2u) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    size_t dword_count = count * 2u;
+    int result = ensure_data_capacity(w, dword_count);
+    if (result != NMO_OK) {
+        return result;
+    }
 
     for (size_t i = 0; i < count; i++) {
-        int result = nmo_chunk_writer_write_dword_as_words(w, values[i]);
-        if (result != NMO_OK) {
-            return result;
-        }
+        uint32_t value = values[i];
+        w->data[w->data_size++] =
+            writer_pack_lendian16_word((uint16_t)(value & 0xFFFFu));
+        w->data[w->data_size++] =
+            writer_pack_lendian16_word((uint16_t)((value >> 16) & 0xFFFFu));
     }
 
     return NMO_OK;

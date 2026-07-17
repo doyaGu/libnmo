@@ -784,6 +784,9 @@ nmo_status_t nmo_chunk_parser_read_dword_array_as_words(nmo_chunk_parser_t *p,
     if (count == 0) {
         NMO_RETURN_OK();
     }
+    if (count > SIZE_MAX / 2u || !check_bounds(p, count * 2u)) {
+        NMO_PARSER_RETURN_TRUNCATED("Cannot read dword array as words");
+    }
 
     for (size_t i = 0; i < count; i++) {
         nmo_status_t result = nmo_chunk_parser_read_dword_as_words(p, &out[i]);
