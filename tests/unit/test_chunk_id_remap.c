@@ -5270,6 +5270,32 @@ TEST(chunk_id_remap, scene_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(899u, nmo_beobject_script_array_get_id(
         &failed_descs.base.scripts, 0));
 
+    nmo_chunk_t *cross_section_descs = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(cross_section_descs);
+    cross_section_descs->class_id = NMO_CID_SCENE;
+    cross_section_descs->data_version = 8;
+    cross_section_descs->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(cross_section_descs));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_section_descs, CK_STATESAVE_SCENENEWDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_id(cross_section_descs, 945));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(cross_section_descs, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_section_descs, 0x7F123456u));
+    nmo_chunk_close(cross_section_descs);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_scene_deserialize(
+        &failed_descs, cross_section_descs, NULL, &deserialize_context));
+    nmo_chunk_parser_state_t *parser =
+        (nmo_chunk_parser_state_t *)cross_section_descs->parser_state;
+    ASSERT_NOT_NULL(parser);
+    ASSERT_EQ(parser->prev_identifier_pos + 4u, parser->current_pos);
+    ASSERT_EQ(950u, failed_descs.level.raw_id);
+    ASSERT_EQ(1u, failed_descs.object_descs.count);
+    ASSERT_EQ(951u, NMO_ARRAY_DATA(
+        nmo_scene_object_desc_t, &failed_descs.object_descs)[0].ref.raw_id);
+    ASSERT_EQ(899u, nmo_beobject_script_array_get_id(
+        &failed_descs.base.scripts, 0));
+
     nmo_chunk_t *truncated_render = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(truncated_render);
     truncated_render->class_id = NMO_CID_SCENE;
