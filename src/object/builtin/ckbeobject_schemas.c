@@ -56,6 +56,14 @@ static void nmo_beobject_attribute_array_set_lifecycle(nmo_array_t *attributes)
     nmo_array_set_lifecycle(attributes, &lifecycle);
 }
 
+static void nmo_beobject_dispose_arrays(nmo_beobject_state_t *state)
+{
+    if (state == NULL) return;
+    nmo_array_dispose(&state->scripts);
+    nmo_array_dispose(&state->attributes);
+    nmo_array_dispose(&state->legacy_attributes);
+}
+
 nmo_status_t nmo_beobject_script_array_append(
     nmo_array_t *scripts,
     nmo_object_id_t script_id)
@@ -455,7 +463,7 @@ static nmo_status_t nmo_beobject_read_legacy_attributes(
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-nmo_status_t nmo_beobject_deserialize(
+static nmo_status_t nmo_beobject_deserialize_internal(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -614,6 +622,40 @@ nmo_status_t nmo_beobject_deserialize(
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_beobject_deserialize(
+    void *instance,
+    nmo_chunk_t *chunk,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    nmo_beobject_state_t *out_state = (nmo_beobject_state_t *)instance;
+    if (out_state == NULL || chunk == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_beobject_state_t decoded;
+    nmo_status_t result = nmo_beobject_create(&decoded, type, context);
+    if (result != NMO_OK) {
+        nmo_beobject_dispose_arrays(&decoded);
+        return result;
+    }
+    decoded.scripts.allocator = out_state->scripts.allocator;
+    decoded.attributes.allocator = out_state->attributes.allocator;
+    decoded.legacy_attributes.allocator =
+        out_state->legacy_attributes.allocator;
+
+    result = nmo_beobject_deserialize_internal(
+        &decoded, chunk, type, context);
+    if (result != NMO_OK) {
+        nmo_beobject_dispose_arrays(&decoded);
+        return result;
+    }
+
+    nmo_beobject_dispose_arrays(out_state);
+    *out_state = decoded;
+    return NMO_OK;
+}
+
 /* =============================================================================
  * CKBeObject SERIALIZATION
  * ============================================================================= */
@@ -630,7 +672,7 @@ nmo_status_t nmo_beobject_deserialize(
  * @param state Input state structure
  * @return Result indicating success or error
  */
-nmo_status_t nmo_beobject_serialize(
+static nmo_status_t nmo_beobject_serialize_internal(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
@@ -807,6 +849,32 @@ nmo_status_t nmo_beobject_serialize(
     }
 
     NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_beobject_serialize(
+    const void *instance,
+    nmo_chunk_t *out_chunk,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    if (instance == NULL || out_chunk == NULL || out_chunk->arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_chunk_t *staged = nmo_chunk_create(out_chunk->arena);
+    if (staged == NULL) return NMO_ERR_NOMEM;
+    staged->class_id = out_chunk->class_id;
+    staged->data_version = out_chunk->data_version;
+    staged->chunk_version = out_chunk->chunk_version;
+    staged->chunk_class_id = out_chunk->chunk_class_id;
+    staged->chunk_options = out_chunk->chunk_options;
+    staged->file_context = out_chunk->file_context;
+
+    nmo_status_t result = nmo_beobject_serialize_internal(
+        instance, staged, type, context);
+    if (result != NMO_OK) return result;
+    *out_chunk = *staged;
+    return NMO_OK;
 }
 
 static nmo_status_t nmo_beobject_clone_legacy_attributes(
