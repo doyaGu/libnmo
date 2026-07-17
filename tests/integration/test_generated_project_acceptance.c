@@ -578,8 +578,10 @@ TEST(generated_project_acceptance, cli_generates_valid_cmo_from_manifest)
     ASSERT_EQ(2u, mesh_state->face_count);
     ASSERT_EQ(2u, mesh_state->material_group_count);
     ASSERT_NOT_NULL(mesh_state->material_groups);
-    ASSERT_EQ(red_material_id, mesh_state->material_groups[0].material_id);
-    ASSERT_EQ(blue_material_id, mesh_state->material_groups[1].material_id);
+    ASSERT_EQ(red_material_id, nmo_ref_runtime_id(
+        &mesh_state->material_groups[0].material));
+    ASSERT_EQ(blue_material_id, nmo_ref_runtime_id(
+        &mesh_state->material_groups[1].material));
     ASSERT_EQ(0u, mesh_state->faces[0].material_group_idx);
     ASSERT_EQ(1u, mesh_state->faces[1].material_group_idx);
 

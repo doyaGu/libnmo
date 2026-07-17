@@ -148,7 +148,8 @@ TEST(generated_visible_scene, creates_cube_mesh_and_material) {
     ASSERT_EQ(12u, mesh_state->face_count);
     ASSERT_EQ(1u, mesh_state->material_group_count);
     ASSERT_NOT_NULL(mesh_state->material_groups);
-    ASSERT_EQ(material_id, mesh_state->material_groups[0].material_id);
+    ASSERT_EQ(material_id, nmo_ref_runtime_id(
+        &mesh_state->material_groups[0].material));
 
     const nmo_material_state_t *material_state =
         (const nmo_material_state_t *)nmo_object_get_state(material_object);
@@ -241,7 +242,8 @@ TEST(generated_visible_scene, creates_external_obj_texture_and_position) {
     ASSERT_EQ(1u, mesh_state->face_count);
     ASSERT_EQ(1u, mesh_state->material_group_count);
     ASSERT_NOT_NULL(mesh_state->material_groups);
-    ASSERT_EQ(material_id, mesh_state->material_groups[0].material_id);
+    ASSERT_EQ(material_id, nmo_ref_runtime_id(
+        &mesh_state->material_groups[0].material));
 
     const nmo_material_state_t *material_state =
         (const nmo_material_state_t *)nmo_object_get_state(material_object);
@@ -354,8 +356,10 @@ TEST(generated_visible_scene, creates_external_obj_named_materials) {
     ASSERT_EQ(2u, mesh_state->face_count);
     ASSERT_EQ(2u, mesh_state->material_group_count);
     ASSERT_NOT_NULL(mesh_state->material_groups);
-    ASSERT_EQ(nmo_object_get_id(red_object), mesh_state->material_groups[0].material_id);
-    ASSERT_EQ(nmo_object_get_id(blue_object), mesh_state->material_groups[1].material_id);
+    ASSERT_EQ(nmo_object_get_id(red_object), nmo_ref_runtime_id(
+        &mesh_state->material_groups[0].material));
+    ASSERT_EQ(nmo_object_get_id(blue_object), nmo_ref_runtime_id(
+        &mesh_state->material_groups[1].material));
     ASSERT_EQ(0u, mesh_state->faces[0].material_group_idx);
     ASSERT_EQ(1u, mesh_state->faces[1].material_group_idx);
 

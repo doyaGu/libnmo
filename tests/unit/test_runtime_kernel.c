@@ -20,6 +20,7 @@
 #include "object/builtin/nmo_attributemanager_schemas.h"
 #include "object/builtin/nmo_camera_schemas.h"
 #include "object/builtin/nmo_character_schemas.h"
+#include "object/builtin/nmo_mesh_schemas.h"
 #include "object/builtin/nmo_patchmesh_schemas.h"
 #include "object/builtin/nmo_interfaceobjectmanager_schemas.h"
 #include "object/builtin/nmo_light_schemas.h"
@@ -1650,6 +1651,143 @@ TEST(runtime_kernel, normalize_and_safe_detach_keep_character_parts_atomic) {
     nmo_context_release(ctx);
 }
 
+TEST(runtime_kernel, copy_remap_updates_only_resolved_mesh_refs) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    const nmo_type_runtime_t *type_rt = nmo_context_get_type_runtime(ctx);
+    const nmo_type_descriptor_t *mesh_type =
+        nmo_type_registry_find_by_class_id(type_rt->types, NMO_CID_MESH);
+    ASSERT_NOT_NULL(mesh_type);
+
+    nmo_material_group_t groups[] = {
+        {.material = nmo_ref_from_id(101), .padding = 11},
+        {.material = nmo_ref_from_raw(102), .padding = 22},
+    };
+    nmo_material_channel_t channels[] = {
+        {.material = nmo_ref_from_id(103), .flags = 33},
+        {.material = nmo_ref_from_raw(104), .flags = 44},
+    };
+    nmo_mesh_state_t state = {
+        .material_group_count = 2,
+        .material_groups = groups,
+        .material_channel_count = 2,
+        .material_channels = channels,
+    };
+
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_id_remap_t *remap = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(remap);
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, 101, 201));
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, 102, 202));
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, 103, 203));
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, 104, 204));
+
+    ASSERT_EQ(NMO_OK, nmo_runtime_remap_copy_refs(
+        type_rt, mesh_type, &state, remap));
+    ASSERT_EQ(201u, nmo_ref_runtime_id(&groups[0].material));
+    ASSERT_EQ(101u, groups[0].material.raw_id);
+    ASSERT_EQ(11, groups[0].padding);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, groups[1].material.state);
+    ASSERT_EQ(102u, groups[1].material.raw_id);
+    ASSERT_EQ(22, groups[1].padding);
+    ASSERT_EQ(203u, nmo_ref_runtime_id(&channels[0].material));
+    ASSERT_EQ(33u, channels[0].flags);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, channels[1].material.state);
+    ASSERT_EQ(104u, channels[1].material.raw_id);
+    ASSERT_EQ(44u, channels[1].flags);
+
+    nmo_arena_destroy(arena);
+    nmo_context_release(ctx);
+}
+
+TEST(runtime_kernel, normalize_and_safe_detach_keep_mesh_records_atomic) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_id_t mesh_id = 0;
+    nmo_object_id_t material_id = 0;
+    nmo_object_id_t wrong_class_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_MESH, "mesh", (nmo_guid_t){0, 0},
+        &mesh_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_MATERIAL, "material", (nmo_guid_t){0, 0},
+        &material_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_OBJECT, "wrong-class", (nmo_guid_t){0, 0},
+        &wrong_class_id, NULL));
+
+    nmo_mesh_state_t *mesh = (nmo_mesh_state_t *)
+        nmo_object_repository_find_by_id(repo, mesh_id)->state;
+    ASSERT_NOT_NULL(mesh);
+    nmo_material_group_t groups[] = {
+        {.material = nmo_ref_from_id(material_id), .padding = 11},
+        {.material = nmo_ref_from_raw(0x7FFFFF11u), .padding = 22},
+        {.material = nmo_ref_from_id(wrong_class_id), .padding = 33},
+    };
+    nmo_material_channel_t channels[] = {
+        {.material = nmo_ref_from_id(material_id), .flags = 44},
+        {.material = nmo_ref_from_raw(0x7FFFFF12u), .flags = 55},
+        {.material = nmo_ref_from_id(wrong_class_id), .flags = 66},
+    };
+    nmo_face_t faces[] = {
+        {.material_group_idx = 0},
+        {.material_group_idx = 1},
+        {.material_group_idx = 2},
+    };
+    uint16_t face_indices[9] = {0};
+    mesh->material_group_count = 3;
+    mesh->material_groups = groups;
+    mesh->material_channel_count = 3;
+    mesh->material_channels = channels;
+    mesh->face_count = 3;
+    mesh->faces = faces;
+    mesh->face_vertex_indices = face_indices;
+
+    size_t changed = 0;
+    ASSERT_EQ(NMO_OK, nmo_runtime_normalize_invalid_refs(
+        repo, nmo_context_get_type_runtime(ctx), &changed));
+    ASSERT_EQ(4u, changed);
+    ASSERT_EQ(1u, mesh->material_group_count);
+    ASSERT_EQ(material_id,
+              nmo_ref_runtime_id(&mesh->material_groups[0].material));
+    ASSERT_EQ(11, mesh->material_groups[0].padding);
+    ASSERT_EQ(0u, mesh->faces[0].material_group_idx);
+    ASSERT_EQ(0u, mesh->faces[1].material_group_idx);
+    ASSERT_EQ(0u, mesh->faces[2].material_group_idx);
+    ASSERT_EQ(NMO_REF_RESOLVED, mesh->material_channels[0].material.state);
+    ASSERT_EQ(44u, mesh->material_channels[0].flags);
+    ASSERT_EQ(NMO_REF_NONE, mesh->material_channels[1].material.state);
+    ASSERT_EQ(55u, mesh->material_channels[1].flags);
+    ASSERT_EQ(NMO_REF_NONE, mesh->material_channels[2].material.state);
+    ASSERT_EQ(66u, mesh->material_channels[2].flags);
+    nmo_object_t *material_object =
+        nmo_object_repository_find_by_id(repo, material_id);
+    ASSERT_NOT_NULL(material_object);
+    const nmo_object_id_t delete_id = material_object->id;
+
+    nmo_runtime_report_t report = {0};
+    nmo_status_t delete_status = nmo_session_destroy_objects(
+        session, &delete_id, 1,
+        NMO_RUNTIME_REQUEST_STRICT | NMO_RUNTIME_REQUEST_SAFE_DETACH,
+        &report);
+    ASSERT_EQ(NMO_OK, delete_status);
+    ASSERT_EQ(1u, report.deleted_objects);
+    mesh = (nmo_mesh_state_t *)
+        nmo_object_repository_find_by_id(repo, mesh_id)->state;
+    ASSERT_EQ(0u, mesh->material_group_count);
+    ASSERT_EQ(NMO_REF_NONE, mesh->material_channels[0].material.state);
+    ASSERT_EQ(44u, mesh->material_channels[0].flags);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(runtime_kernel, copy_remap_updates_only_resolved_patchmesh_refs) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
@@ -1806,6 +1944,8 @@ REGISTER_TEST(runtime_kernel, dependency_remap_preserves_nonreference_state);
 REGISTER_TEST(runtime_kernel, serializer_failure_does_not_reuse_raw_chunk);
 REGISTER_TEST(runtime_kernel, copy_remap_preserves_invalid_character_references);
 REGISTER_TEST(runtime_kernel, normalize_and_safe_detach_keep_character_parts_atomic);
+REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_mesh_refs);
+REGISTER_TEST(runtime_kernel, normalize_and_safe_detach_keep_mesh_records_atomic);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_patchmesh_refs);
 REGISTER_TEST(runtime_kernel, normalize_and_safe_detach_keep_patchmesh_records_atomic);
 TEST_MAIN_END()

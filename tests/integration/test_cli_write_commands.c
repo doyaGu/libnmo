@@ -1276,8 +1276,9 @@ TEST(cli_write, data_entity_material_texture_animation_save_and_validate) {
     ASSERT_NOT_NULL(semantic_mesh->material_groups);
     ASSERT_EQ(0u, semantic_mesh->faces[0].material_group_idx);
     ASSERT_EQ(1u, semantic_mesh->faces[1].material_group_idx);
-    ASSERT_EQ(NMO_OBJECT_ID_NONE, semantic_mesh->material_groups[0].material_id);
-    ASSERT_EQ(8u, semantic_mesh->material_groups[1].material_id);
+    ASSERT_EQ(NMO_REF_NONE, semantic_mesh->material_groups[0].material.state);
+    ASSERT_EQ(8u, nmo_ref_runtime_id(
+        &semantic_mesh->material_groups[1].material));
     ASSERT_EQ(0u, semantic_mesh->face_vertex_indices[0]);
     ASSERT_EQ(1u, semantic_mesh->face_vertex_indices[1]);
     ASSERT_EQ(2u, semantic_mesh->face_vertex_indices[2]);

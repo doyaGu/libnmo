@@ -33,6 +33,7 @@
 #include "object/builtin/nmo_parameterlocal_schemas.h"
 #include "object/builtin/nmo_parameterout_schemas.h"
 #include "object/builtin/nmo_parameteroperation_schemas.h"
+#include "object/builtin/nmo_mesh_schemas.h"
 #include "object/builtin/nmo_patchmesh_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_guids.h"
@@ -319,6 +320,44 @@ TEST(chunk_id_remap, zero_and_unchanged_ids) {
     nmo_chunk_read_object_id(chunk, &id);
     ASSERT_EQ(id, 201); // Remapped
     
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_id_remap, null_ref_uses_file_null_encoding) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_id_remap_t *file_to_runtime = nmo_id_remap_create(arena);
+    nmo_id_remap_t *runtime_to_file = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(file_to_runtime);
+    ASSERT_NOT_NULL(runtime_to_file);
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(file_to_runtime, 0, 321));
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    nmo_chunk_file_context_t write_context = {
+        .runtime_to_file = runtime_to_file,
+    };
+    nmo_chunk_set_file_context(chunk, &write_context);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    nmo_ref_t null_ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+    ASSERT_EQ(NMO_OK, nmo_ref_write(chunk, &null_ref));
+    nmo_chunk_close(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(chunk));
+    uint32_t encoded = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(chunk, &encoded));
+    ASSERT_EQ(NMO_OBJECT_ID_INVALID, encoded);
+
+    nmo_chunk_file_context_t file_context = {
+        .file_to_runtime = file_to_runtime,
+    };
+    nmo_chunk_set_file_context(chunk, &file_context);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(chunk));
+
+    nmo_ref_t ref = nmo_ref_from_id(999);
+    ASSERT_EQ(NMO_OK, nmo_ref_read(chunk, &ref));
+    ASSERT_EQ(NMO_OBJECT_ID_INVALID, ref.raw_id);
+    ASSERT_EQ(NMO_OBJECT_ID_NONE, ref.id);
+    ASSERT_EQ(NMO_REF_NONE, ref.state);
     nmo_arena_destroy(arena);
 }
 
@@ -3664,6 +3703,284 @@ TEST(chunk_id_remap, character_refs_round_trip_and_failure_is_atomic) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, mesh_material_refs_round_trip_without_compaction) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+    ASSERT_NOT_NULL(arena);
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+    nmo_id_remap_t *file_to_runtime = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(file_to_runtime);
+    nmo_chunk_file_context_t read_context = {
+        .file_to_runtime = file_to_runtime,
+    };
+
+    nmo_mesh_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_mesh_vtable.create(&source, NULL, NULL));
+    source.flags = 0xF1234567u;
+    source.has_material_groups = 1;
+    nmo_material_group_t groups[] = {
+        {.material = nmo_ref_from_raw(701), .padding = 11},
+        {.material = nmo_ref_from_raw(NMO_OBJECT_ID_NONE), .padding = -12},
+        {.material = nmo_ref_from_raw(703), .padding = 13},
+    };
+    source.material_group_count = 3;
+    source.material_groups = groups;
+
+    nmo_vertex_t vertices[3] = {0};
+    vertices[1].position.x = 1.0f;
+    vertices[2].position.y = 1.0f;
+    uint32_t colors[] = {1, 2, 3};
+    uint32_t specular[] = {4, 5, 6};
+    source.vertex_count = 3;
+    source.vertices = vertices;
+    source.vertex_colors = colors;
+    source.vertex_specular = specular;
+    nmo_face_t face = {.material_group_idx = 2, .channel_mask = 0xFFFFu};
+    uint16_t face_indices[] = {0, 1, 2};
+    source.face_count = 1;
+    source.faces = &face;
+    source.face_vertex_indices = face_indices;
+
+    nmo_vector2_t channel_uv = {.x = 0.25f, .y = 0.75f};
+    nmo_material_channel_t channel = {
+        .material = nmo_ref_from_raw(704),
+        .flags = 0xAABBCCDDu,
+        .source_blend = 3,
+        .dest_blend = 5,
+        .uv_count = 1,
+        .uv_coords = &channel_uv,
+    };
+    source.has_material_channels = 1;
+    source.material_channel_count = 1;
+    source.material_channels = &channel;
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    chunk->class_id = NMO_CID_MESH;
+    chunk->chunk_version = NMO_CHUNK_VERSION4;
+    chunk->data_version = 9;
+    chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_mesh_serialize(
+        &source, chunk, NULL, &serialize_context));
+    nmo_chunk_close(chunk);
+    nmo_chunk_set_file_context(chunk, &read_context);
+
+    nmo_mesh_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_mesh_vtable.create(&loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_mesh_deserialize(
+        &loaded, chunk, NULL, &deserialize_context));
+    ASSERT_EQ(0xF1234567u, loaded.flags);
+    ASSERT_TRUE(loaded.has_material_groups);
+    ASSERT_EQ(3u, loaded.material_group_count);
+    ASSERT_EQ(701u, loaded.material_groups[0].material.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED,
+              loaded.material_groups[0].material.state);
+    ASSERT_EQ(11, loaded.material_groups[0].padding);
+    ASSERT_EQ(NMO_REF_NONE, loaded.material_groups[1].material.state);
+    ASSERT_EQ(-12, loaded.material_groups[1].padding);
+    ASSERT_EQ(703u, loaded.material_groups[2].material.raw_id);
+    ASSERT_EQ(13, loaded.material_groups[2].padding);
+    ASSERT_EQ(2u, loaded.faces[0].material_group_idx);
+    ASSERT_TRUE(loaded.has_material_channels);
+    ASSERT_EQ(704u, loaded.material_channels[0].material.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED,
+              loaded.material_channels[0].material.state);
+    ASSERT_EQ(1u, loaded.material_channels[0].uv_count);
+    ASSERT_EQ(0.25f, loaded.material_channels[0].uv_coords[0].x);
+    ASSERT_EQ(0.75f, loaded.material_channels[0].uv_coords[0].y);
+
+    nmo_chunk_t *roundtrip = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(roundtrip);
+    roundtrip->class_id = NMO_CID_MESH;
+    roundtrip->chunk_version = NMO_CHUNK_VERSION4;
+    roundtrip->data_version = 9;
+    roundtrip->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_mesh_serialize(
+        &loaded, roundtrip, NULL, &serialize_context));
+    nmo_chunk_close(roundtrip);
+    nmo_chunk_set_file_context(roundtrip, &read_context);
+
+    nmo_mesh_state_t reloaded;
+    ASSERT_EQ(NMO_OK, nmo_mesh_vtable.create(&reloaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_mesh_deserialize(
+        &reloaded, roundtrip, NULL, &deserialize_context));
+    ASSERT_EQ(3u, reloaded.material_group_count);
+    ASSERT_EQ(701u, reloaded.material_groups[0].material.raw_id);
+    ASSERT_EQ(NMO_REF_NONE, reloaded.material_groups[1].material.state);
+    ASSERT_EQ(-12, reloaded.material_groups[1].padding);
+    ASSERT_EQ(703u, reloaded.material_groups[2].material.raw_id);
+    ASSERT_EQ(2u, reloaded.faces[0].material_group_idx);
+    ASSERT_EQ(704u, reloaded.material_channels[0].material.raw_id);
+    ASSERT_EQ(1u, reloaded.material_channels[0].uv_count);
+
+    nmo_mesh_vtable.destroy(&source, NULL, NULL);
+    nmo_mesh_vtable.destroy(&loaded, NULL, NULL);
+    nmo_mesh_vtable.destroy(&reloaded, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_id_remap, mesh_material_sections_and_failures_are_atomic) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
+    ASSERT_NOT_NULL(arena);
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+
+    nmo_mesh_state_t empty;
+    ASSERT_EQ(NMO_OK, nmo_mesh_vtable.create(&empty, NULL, NULL));
+    empty.has_material_groups = 1;
+    empty.has_material_channels = 1;
+    nmo_chunk_t *empty_chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(empty_chunk);
+    empty_chunk->class_id = NMO_CID_MESH;
+    empty_chunk->chunk_version = NMO_CHUNK_VERSION4;
+    empty_chunk->data_version = 7;
+    empty_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_mesh_serialize(
+        &empty, empty_chunk, NULL, &serialize_context));
+    nmo_chunk_close(empty_chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
+        empty_chunk, CK_STATESAVE_MESHMATERIALS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
+        empty_chunk, CK_STATESAVE_MESHCHANNELS));
+
+    nmo_mesh_state_t empty_loaded;
+    ASSERT_EQ(NMO_OK, nmo_mesh_vtable.create(&empty_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_mesh_deserialize(
+        &empty_loaded, empty_chunk, NULL, &deserialize_context));
+    ASSERT_TRUE(empty_loaded.has_material_groups);
+    ASSERT_TRUE(empty_loaded.has_material_channels);
+    ASSERT_EQ(0u, empty_loaded.material_group_count);
+    ASSERT_EQ(0u, empty_loaded.material_channel_count);
+
+    nmo_chunk_t *truncated = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(truncated);
+    truncated->class_id = NMO_CID_MESH;
+    truncated->chunk_version = NMO_CHUNK_VERSION4;
+    truncated->data_version = 9;
+    truncated->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(truncated));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        truncated, CK_STATESAVE_MESHMATERIALS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(truncated, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_id(truncated, 801));
+    nmo_chunk_close(truncated);
+
+    nmo_material_group_t previous_group = {
+        .material = nmo_ref_from_raw(901),
+        .padding = 91,
+    };
+    nmo_mesh_state_t failed;
+    ASSERT_EQ(NMO_OK, nmo_mesh_vtable.create(&failed, NULL, NULL));
+    failed.flags = 0xCAFEBABEu;
+    failed.has_material_groups = 1;
+    failed.material_group_count = 1;
+    failed.material_groups = &previous_group;
+    ASSERT_NE(NMO_OK, nmo_mesh_deserialize(
+        &failed, truncated, NULL, &deserialize_context));
+    ASSERT_EQ(0xCAFEBABEu, failed.flags);
+    ASSERT_EQ(&previous_group, failed.material_groups);
+    ASSERT_EQ(1u, failed.material_group_count);
+    ASSERT_EQ(901u, failed.material_groups[0].material.raw_id);
+    ASSERT_EQ(91, failed.material_groups[0].padding);
+
+    nmo_mesh_state_t invalid;
+    ASSERT_EQ(NMO_OK, nmo_mesh_vtable.create(&invalid, NULL, NULL));
+    invalid.material_group_count = 1;
+    nmo_chunk_t *preserved = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(preserved);
+    preserved->class_id = NMO_CID_MESH;
+    preserved->chunk_version = NMO_CHUNK_VERSION4;
+    preserved->data_version = 9;
+    preserved->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(preserved));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(preserved, 0x12345678u));
+    nmo_chunk_close(preserved);
+    ASSERT_NE(NMO_OK, nmo_mesh_serialize(
+        &invalid, preserved, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(preserved));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(preserved));
+    uint32_t value = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(preserved, &value));
+    ASSERT_EQ(0x12345678u, value);
+
+    nmo_mesh_vtable.destroy(&empty, NULL, NULL);
+    nmo_mesh_vtable.destroy(&empty_loaded, NULL, NULL);
+    nmo_mesh_vtable.destroy(&failed, NULL, NULL);
+    nmo_mesh_vtable.destroy(&invalid, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_id_remap, mesh_copy_preserves_material_records) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
+    ASSERT_NOT_NULL(arena);
+    nmo_mesh_state_t source;
+    nmo_mesh_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_mesh_vtable.create(&source, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_mesh_vtable.create(&copied, NULL, NULL));
+
+    nmo_material_group_t group = {
+        .material = nmo_ref_from_raw(811),
+        .padding = -17,
+    };
+    nmo_vector2_t uv = {.x = 1.25f, .y = 2.5f};
+    nmo_material_channel_t channel = {
+        .material = nmo_ref_from_raw(812),
+        .flags = 19,
+        .source_blend = 23,
+        .dest_blend = 29,
+        .uv_count = 1,
+        .uv_coords = &uv,
+    };
+    source.has_material_groups = 1;
+    source.material_group_count = 1;
+    source.material_groups = &group;
+    source.has_material_channels = 1;
+    source.material_channel_count = 1;
+    source.material_channels = &channel;
+
+    nmo_beobject_legacy_attribute_t legacy_attribute = {
+        .name = "LegacyName",
+        .category = "LegacyCategory",
+        .parameter_guid = {3u, 5u},
+        .compatible_class_id = NMO_CID_OBJECT,
+        .parameter = nmo_ref_from_raw(813),
+    };
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &source.beobject.legacy_attributes, &legacy_attribute));
+    source.beobject.has_legacy_attributes = 1;
+
+    const nmo_type_descriptor_t mesh_type = {
+        .size = sizeof(nmo_mesh_state_t),
+    };
+    ASSERT_EQ(NMO_OK, nmo_mesh_vtable.copy(
+        &source, &copied, &mesh_type, arena));
+    ASSERT_TRUE(copied.material_groups != source.material_groups);
+    ASSERT_TRUE(copied.material_channels != source.material_channels);
+    ASSERT_TRUE(copied.material_channels[0].uv_coords !=
+                source.material_channels[0].uv_coords);
+    ASSERT_EQ(811u, copied.material_groups[0].material.raw_id);
+    ASSERT_EQ(-17, copied.material_groups[0].padding);
+    ASSERT_EQ(812u, copied.material_channels[0].material.raw_id);
+    ASSERT_EQ(1u, copied.beobject.legacy_attributes.count);
+    ASSERT_TRUE(copied.beobject.legacy_attributes.data !=
+                source.beobject.legacy_attributes.data);
+    ASSERT_TRUE(nmo_mesh_vtable.equals(&source, &copied));
+    ASSERT_EQ(nmo_mesh_vtable.hash(&source), nmo_mesh_vtable.hash(&copied));
+
+    copied.material_groups[0].padding = 99;
+    ASSERT_FALSE(nmo_mesh_vtable.equals(&source, &copied));
+
+    nmo_mesh_vtable.destroy(&source, NULL, NULL);
+    nmo_mesh_vtable.destroy(&copied, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, patchmesh_data3_refs_round_trip_and_failure_is_atomic) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
     ASSERT_NOT_NULL(arena);
@@ -4059,6 +4376,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, sequence_id_remap);
     REGISTER_TEST(chunk_id_remap, subchunk_id_remap);
     REGISTER_TEST(chunk_id_remap, zero_and_unchanged_ids);
+    REGISTER_TEST(chunk_id_remap, null_ref_uses_file_null_encoding);
     REGISTER_TEST(chunk_id_remap, unresolved_ref_preserves_raw_id);
     REGISTER_TEST(chunk_id_remap, behavior_unresolved_ref_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, behaviorlink_refs_round_trip_and_failure_is_atomic);
@@ -4090,6 +4408,9 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, beobject_legacy_attributes_are_lossless_and_atomic);
     REGISTER_TEST(chunk_id_remap, beobject_copy_preserves_content_equality);
     REGISTER_TEST(chunk_id_remap, character_refs_round_trip_and_failure_is_atomic);
+    REGISTER_TEST(chunk_id_remap, mesh_material_refs_round_trip_without_compaction);
+    REGISTER_TEST(chunk_id_remap, mesh_material_sections_and_failures_are_atomic);
+    REGISTER_TEST(chunk_id_remap, mesh_copy_preserves_material_records);
     REGISTER_TEST(chunk_id_remap, patchmesh_data3_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, patchmesh_data2_layout_and_empty_sections_round_trip);
     REGISTER_TEST(chunk_id_remap, patchmesh_serializer_rejects_partial_state);

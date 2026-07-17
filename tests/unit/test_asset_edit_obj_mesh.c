@@ -187,7 +187,8 @@ TEST(asset_edit_obj_mesh, binds_named_obj_materials)
     ASSERT_NOT_NULL(mesh);
     ASSERT_EQ(1u, mesh->material_group_count);
     ASSERT_NOT_NULL(mesh->material_groups);
-    ASSERT_EQ(material_id, mesh->material_groups[0].material_id);
+    ASSERT_EQ(material_id, nmo_ref_runtime_id(
+        &mesh->material_groups[0].material));
 
     nmo_arena_destroy(parse_arena);
     destroy_workspace(ctx, doc, workspace);
