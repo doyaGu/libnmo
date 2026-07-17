@@ -44,6 +44,15 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
     } while (0),
     nmo_array_dispose(&state->object_descs))
 
+static void nmo_scene_dispose_state_arrays(nmo_scene_state_t *state)
+{
+    if (state == NULL) return;
+    nmo_array_dispose(&state->base.scripts);
+    nmo_array_dispose(&state->base.attributes);
+    nmo_array_dispose(&state->base.legacy_attributes);
+    nmo_array_dispose(&state->object_descs);
+}
+
 /* =============================================================================
  * REFLECTION FIELDS
  * ============================================================================= */
@@ -249,7 +258,7 @@ static nmo_status_t nmo_scene_read_render_settings(
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-nmo_status_t nmo_scene_deserialize(
+static nmo_status_t nmo_scene_deserialize_internal(
     void *instance,
     nmo_chunk_t *chunk,
     const nmo_type_descriptor_t *type,
@@ -276,7 +285,7 @@ nmo_status_t nmo_scene_deserialize(
     if (result == NMO_OK) {
         NMO_RETURN_IF_ERROR(nmo_scene_read_new_data(
             out_state, chunk, context, data_version));
-    }
+    } else if (result != NMO_ERR_NOT_FOUND) return result;
 
     /* Section 2: SCENELAUNCHED - Environment settings */
     result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SCENELAUNCHED);
@@ -285,16 +294,53 @@ nmo_status_t nmo_scene_deserialize(
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(
             chunk, &environment_settings));
         out_state->environment_settings = environment_settings;
-    }
+    } else if (result != NMO_ERR_NOT_FOUND) return result;
 
     /* Section 3: SCENERENDERSETTINGS - Rendering configuration */
     result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SCENERENDERSETTINGS);
     if (result == NMO_OK) {
         NMO_RETURN_IF_ERROR(nmo_scene_read_render_settings(
             out_state, chunk, context));
-    }
+    } else if (result != NMO_ERR_NOT_FOUND) return result;
 
     NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_scene_deserialize(
+    void *instance,
+    nmo_chunk_t *chunk,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    nmo_scene_state_t *out_state = (nmo_scene_state_t *)instance;
+    if (out_state == NULL || chunk == NULL) return NMO_ERR_INVALID_ARGUMENT;
+
+    nmo_scene_state_t decoded = {0};
+    if (out_state->base.scripts.allocator.alloc != NULL) {
+        decoded.base.scripts.allocator = out_state->base.scripts.allocator;
+    }
+    if (out_state->base.attributes.allocator.alloc != NULL) {
+        decoded.base.attributes.allocator = out_state->base.attributes.allocator;
+    }
+    if (out_state->base.legacy_attributes.allocator.alloc != NULL) {
+        decoded.base.legacy_attributes.allocator =
+            out_state->base.legacy_attributes.allocator;
+    }
+    const nmo_allocator_t *allocator =
+        out_state->object_descs.allocator.alloc != NULL
+            ? &out_state->object_descs.allocator : NULL;
+    nmo_status_t result = nmo_array_init(
+        &decoded.object_descs, sizeof(nmo_scene_object_desc_t), 0, allocator);
+    if (result != NMO_OK) return result;
+    result = nmo_scene_deserialize_internal(
+        &decoded, chunk, type, context);
+    if (result != NMO_OK) {
+        nmo_scene_dispose_state_arrays(&decoded);
+        return result;
+    }
+    nmo_scene_dispose_state_arrays(out_state);
+    *out_state = decoded;
+    return NMO_OK;
 }
 
 /* =============================================================================
@@ -313,7 +359,7 @@ nmo_status_t nmo_scene_deserialize(
  * @param state Input state structure
  * @return Result indicating success or error
  */
-nmo_status_t nmo_scene_serialize(
+static nmo_status_t nmo_scene_serialize_internal(
     const void *instance,
     nmo_chunk_t *out_chunk,
     const nmo_type_descriptor_t *type,
@@ -430,6 +476,30 @@ nmo_status_t nmo_scene_serialize(
     if (result != NMO_OK) return result;
 
     NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_scene_serialize(
+    const void *instance,
+    nmo_chunk_t *out_chunk,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    if (instance == NULL || out_chunk == NULL || out_chunk->arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    nmo_chunk_t *staged = nmo_chunk_create(out_chunk->arena);
+    if (staged == NULL) return NMO_ERR_NOMEM;
+    staged->class_id = out_chunk->class_id;
+    staged->data_version = out_chunk->data_version;
+    staged->chunk_version = out_chunk->chunk_version;
+    staged->chunk_class_id = out_chunk->chunk_class_id;
+    staged->chunk_options = out_chunk->chunk_options;
+    staged->file_context = out_chunk->file_context;
+    nmo_status_t result = nmo_scene_serialize_internal(
+        instance, staged, type, context);
+    if (result != NMO_OK) return result;
+    *out_chunk = *staged;
+    return NMO_OK;
 }
 
 static nmo_status_t nmo_scene_copy(
