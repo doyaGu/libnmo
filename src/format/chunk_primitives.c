@@ -547,8 +547,16 @@ nmo_status_t nmo_chunk_write_object_id(nmo_chunk_t *chunk, nmo_object_id_t id) {
     const nmo_chunk_file_context_t *ctx = get_file_context(chunk);
     const int in_file_context = (ctx != NULL && ctx->runtime_to_file != NULL);
 
+    uint32_t encoded_value = 0;
+    result = encode_object_id(chunk, id, &encoded_value);
+    NMO_RETURN_IF_ERROR(result);
+
     // Track position if ID is non-zero (internal remap list)
     if (id != 0 && !in_file_context) {
+        if (state->current_pos > UINT32_MAX) {
+            NMO_CHUNK_RETURN_INVALID_ARGUMENT(
+                "Object ID position does not fit the 32-bit format");
+        }
         uint32_t pos = (uint32_t) state->current_pos;
         nmo_status_t list_result = nmo_arena_array_append(&chunk->ids, &pos);
         NMO_RETURN_IF_ERROR(list_result);
@@ -559,9 +567,6 @@ nmo_status_t nmo_chunk_write_object_id(nmo_chunk_t *chunk, nmo_object_id_t id) {
     }
 
     uint32_t *data_dwords = get_data_u32(chunk);
-    uint32_t encoded_value = 0;
-    result = encode_object_id(chunk, id, &encoded_value);
-    NMO_RETURN_IF_ERROR(result);
     data_dwords[state->current_pos++] = encoded_value;
 
     // Update data_size to track written data

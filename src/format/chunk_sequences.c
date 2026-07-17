@@ -32,7 +32,17 @@ nmo_status_t nmo_chunk_write_object_sequence_start(nmo_chunk_t *chunk, size_t co
     }
     const int in_file_context = (ctx != NULL && ctx->runtime_to_file != NULL);
 
+    nmo_status_t result = nmo_chunk_check_size(chunk, sizeof(uint32_t));
+    NMO_RETURN_IF_ERROR(result);
+
     if (count > 0 && !in_file_context) {
+        if (state->current_pos > UINT32_MAX) {
+            NMO_CHUNK_RETURN_INVALID_ARGUMENT(
+                "Object sequence position does not fit the 32-bit format");
+        }
+        result = nmo_arena_array_ensure_space(&chunk->ids, 2u);
+        NMO_RETURN_IF_ERROR(result);
+
         /* CK2: AddEntries adds -1 marker followed by position */
         uint32_t sentinel = 0xFFFFFFFFu;
         nmo_status_t list_result = nmo_arena_array_append(&chunk->ids, &sentinel);
