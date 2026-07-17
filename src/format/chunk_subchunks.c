@@ -318,15 +318,21 @@ nmo_status_t nmo_chunk_read_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t **out_sub)
                              "Sub-chunk size is too small");
         }
 
-        size_t payload_consumed = (size_t)data_size + (size_t)id_count + (size_t)chunk_count;
         size_t payload_capacity = (size_t)total_size - (size_t)header_without_manager_dwords;
-        if (payload_consumed > payload_capacity) {
-            state->current_pos = start_pos;
-            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                             "Sub-chunk payload exceeds declared size");
+        const uint32_t payload_counts[] = {
+            data_size, id_count, chunk_count,
+        };
+        for (size_t i = 0;
+             i < sizeof(payload_counts) / sizeof(payload_counts[0]); ++i) {
+            if ((size_t)payload_counts[i] > payload_capacity) {
+                state->current_pos = start_pos;
+                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                 "Sub-chunk payload exceeds declared size");
+            }
+            payload_capacity -= (size_t)payload_counts[i];
         }
 
-        size_t payload_remaining = payload_capacity - payload_consumed;
+        size_t payload_remaining = payload_capacity;
         if (payload_remaining > 0) {
             result = nmo_chunk_read_dword(chunk, &manager_count);
             if (result != NMO_OK) {
