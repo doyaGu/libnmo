@@ -176,12 +176,14 @@ TEST(chunk_api, buffer_truncated_payload) {
     result = nmo_chunk_start_read(chunk);
     ASSERT_EQ(result, NMO_OK);
 
-    void* out_data = NULL;
-    size_t out_size = 0;
+    void* out_data = (void*)1;
+    size_t out_size = 123;
     ASSERT_EQ(nmo_chunk_get_position(chunk), 0u);
     result = nmo_chunk_read_buffer(chunk, &out_data, &out_size);
     ASSERT_EQ(result, NMO_ERR_TRUNCATED_CHUNK);
     ASSERT_EQ(nmo_chunk_get_position(chunk), 0u);
+    ASSERT_NULL(out_data);
+    ASSERT_EQ(0u, out_size);
 
     nmo_arena_destroy(arena);
 }
