@@ -233,6 +233,28 @@ TEST(header1, write_failures_clear_outputs) {
     ASSERT_NULL(planned_data);
     ASSERT_EQ(0u, planned_size);
 
+    memset(&layout, 0x7f, sizeof(layout));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+        nmo_header1_plan(NULL, arena, &layout));
+    ASSERT_EQ(0u, layout.total_size);
+    ASSERT_EQ(0u, layout.object_table_size);
+    ASSERT_NULL(layout.plugin_categories);
+
+    out_data = (void*)(uintptr_t)1;
+    out_size = 123;
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+        nmo_header1_serialize(NULL, &out_data, &out_size, arena));
+    ASSERT_NULL(out_data);
+    ASSERT_EQ(0u, out_size);
+
+    planned_data = (uint8_t*)(uintptr_t)1;
+    planned_size = 123;
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+        nmo_header1_write_planned(
+            &header, NULL, arena, &planned_data, &planned_size));
+    ASSERT_NULL(planned_data);
+    ASSERT_EQ(0u, planned_size);
+
     nmo_arena_destroy(arena);
 }
 
