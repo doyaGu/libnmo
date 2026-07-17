@@ -1124,6 +1124,59 @@ TEST(chunk_api, generic_array_allocation_failure_is_atomic) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_api, typed_array_allocation_failure_is_atomic) {
+    chunk_api_fail_allocator_state_t allocator_state = {
+        .allowed_allocations = (size_t)-1,
+    };
+    nmo_allocator_t allocator = nmo_allocator_custom(
+        chunk_api_fail_alloc, chunk_api_fail_free, &allocator_state);
+    nmo_arena_t* arena = nmo_arena_create(&allocator, 256);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t* chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 600));
+    for (int32_t i = 0; i < 600; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, i));
+    }
+    nmo_chunk_close(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(chunk));
+
+    allocator_state.allowed_allocations = allocator_state.allocation_count;
+    int32_t* array = (int32_t*)1;
+    size_t count = 123;
+    ASSERT_EQ(NMO_ERR_NOMEM,
+        nmo_chunk_read_int_array(chunk, &array, &count, arena));
+    ASSERT_EQ(0u, nmo_chunk_get_position(chunk));
+    ASSERT_NULL(array);
+    ASSERT_EQ(0u, count);
+
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_api, string_array_truncation_is_atomic) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t* chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 8));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0xAABBCCDDu));
+    nmo_chunk_close(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(chunk));
+
+    char** strings = (char**)1;
+    size_t count = 123;
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK,
+        nmo_chunk_read_string_array(chunk, &strings, &count, arena));
+    ASSERT_EQ(0u, nmo_chunk_get_position(chunk));
+    ASSERT_NULL(strings);
+    ASSERT_EQ(0u, count);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_api, compression) {
     nmo_arena_t* arena = nmo_arena_create(NULL, 1024 * 16);
     ASSERT_NOT_NULL(arena);
@@ -1290,6 +1343,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_api, typed_array_writes_reject_unencodable_counts);
     REGISTER_TEST(chunk_api, generic_array_write_rejects_invalid_sizes);
     REGISTER_TEST(chunk_api, generic_array_allocation_failure_is_atomic);
+    REGISTER_TEST(chunk_api, typed_array_allocation_failure_is_atomic);
+    REGISTER_TEST(chunk_api, string_array_truncation_is_atomic);
     REGISTER_TEST(chunk_api, compression);
     REGISTER_TEST(chunk_api, compression_new_api);
     REGISTER_TEST(chunk_api, crc);
