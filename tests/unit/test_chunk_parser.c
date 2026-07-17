@@ -554,6 +554,38 @@ TEST(chunk_parser, array_lendian_truncated_keeps_position) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_parser, array_lendian_rejects_inconsistent_header) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t* chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_arena_array_resize(&chunk->data, 2));
+    uint32_t* data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    ASSERT_NOT_NULL(data);
+    nmo_chunk_parser_t* parser = nmo_chunk_parser_create(chunk);
+    ASSERT_NOT_NULL(parser);
+
+    const uint32_t headers[][2] = {
+        {0u, 5u},
+        {16u, 0u},
+    };
+    for (size_t i = 0; i < sizeof(headers) / sizeof(headers[0]); ++i) {
+        data[0] = headers[i][0];
+        data[1] = headers[i][1];
+        void* array = (void*)(uintptr_t)1;
+        size_t count = 123;
+        ASSERT_EQ(NMO_ERR_INVALID_FORMAT,
+            nmo_chunk_parser_read_array_lendian(
+                parser, &array, &count, arena));
+        ASSERT_NULL(array);
+        ASSERT_EQ(0u, count);
+        ASSERT_EQ(0u, nmo_chunk_parser_tell(parser));
+    }
+
+    nmo_chunk_parser_destroy(parser);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_parser, buffer_truncated_keeps_position) {
     nmo_arena_t* arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
@@ -601,5 +633,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_parser, bounds_checking);
     REGISTER_TEST(chunk_parser, array_lendian_overflow);
     REGISTER_TEST(chunk_parser, array_lendian_truncated_keeps_position);
+    REGISTER_TEST(chunk_parser, array_lendian_rejects_inconsistent_header);
     REGISTER_TEST(chunk_parser, buffer_truncated_keeps_position);
 TEST_MAIN_END()
