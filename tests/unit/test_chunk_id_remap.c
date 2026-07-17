@@ -4014,9 +4014,19 @@ TEST(chunk_id_remap, group_refs_round_trip_and_failure_is_atomic) {
 
     nmo_group_state_t failed;
     ASSERT_EQ(NMO_OK, nmo_group_vtable.create(&failed, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(
+        &failed.base, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &failed.base.scripts, 899));
+    nmo_ref_t old_ref = nmo_ref_from_raw(904);
+    ASSERT_EQ(NMO_OK, nmo_array_append(&failed.object_ids, &old_ref));
     ASSERT_NE(NMO_OK, nmo_group_deserialize(
         &failed, truncated, NULL, &deserialize_context));
-    ASSERT_EQ(0u, failed.object_ids.count);
+    ASSERT_EQ(1u, failed.object_ids.count);
+    ASSERT_EQ(904u, NMO_ARRAY_DATA(
+        nmo_ref_t, &failed.object_ids)[0].raw_id);
+    ASSERT_EQ(899u, nmo_beobject_script_array_get_id(
+        &failed.base.scripts, 0));
 
     nmo_chunk_t *negative = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(negative);
@@ -4035,12 +4045,39 @@ TEST(chunk_id_remap, group_refs_round_trip_and_failure_is_atomic) {
         &failed_negative, negative, NULL, &deserialize_context));
     ASSERT_EQ(0u, failed_negative.object_ids.count);
 
+    nmo_group_state_t invalid;
+    ASSERT_EQ(NMO_OK, nmo_group_vtable.create(&invalid, NULL, NULL));
+    nmo_ref_t valid_ref = nmo_ref_from_raw(905);
+    nmo_ref_t invalid_ref = nmo_ref_from_id(999);
+    ASSERT_EQ(NMO_OK, nmo_array_append(&invalid.object_ids, &valid_ref));
+    ASSERT_EQ(NMO_OK, nmo_array_append(&invalid.object_ids, &invalid_ref));
+    nmo_chunk_t *target = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(target);
+    target->class_id = NMO_CID_GROUP;
+    target->data_version = 7;
+    target->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(target, &write_context);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(target, 0x12345678u));
+    nmo_chunk_close(target);
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_group_serialize(
+        &invalid, target, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(target));
+    uint32_t marker = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(target, &marker));
+    ASSERT_EQ(0x12345678u, marker);
+
     nmo_group_vtable.destroy(&source, NULL, NULL);
     nmo_group_vtable.destroy(&loaded, NULL, NULL);
     nmo_group_vtable.destroy(&reloaded, NULL, NULL);
     nmo_group_vtable.destroy(&copied, NULL, NULL);
+    nmo_array_dispose(&failed.base.scripts);
+    nmo_array_dispose(&failed.base.attributes);
+    nmo_array_dispose(&failed.base.legacy_attributes);
     nmo_group_vtable.destroy(&failed, NULL, NULL);
     nmo_group_vtable.destroy(&failed_negative, NULL, NULL);
+    nmo_group_vtable.destroy(&invalid, NULL, NULL);
     nmo_arena_destroy(arena);
 }
 
