@@ -348,8 +348,12 @@ nmo_status_t nmo_chunk_write_buffer(nmo_chunk_t *chunk,
     if (data == NULL) {
         size = 0;
     }
+    if (size > UINT32_MAX) {
+        NMO_CHUNK_RETURN_INVALID_ARGUMENT(
+            "Buffer size does not fit the 32-bit length prefix");
+    }
 
-    size_t dwords = ((size_t) size + 3u) / 4u;
+    size_t dwords = (size + 3u) / 4u;
 
     // Write size
     nmo_status_t result = nmo_chunk_check_size(chunk, (1 + dwords) * sizeof(uint32_t));
@@ -386,8 +390,11 @@ nmo_status_t nmo_chunk_write_buffer_no_size(nmo_chunk_t *chunk,
     if (size == 0) {
         NMO_RETURN_OK();
     }
+    if (size > SIZE_MAX - 3u) {
+        NMO_CHUNK_RETURN_INVALID_ARGUMENT("Buffer size overflow");
+    }
 
-    size_t dwords = ((size_t) size + 3u) / 4u;
+    size_t dwords = (size + 3u) / 4u;
 
     nmo_status_t result = nmo_chunk_check_size(chunk, dwords * sizeof(uint32_t));
     NMO_RETURN_IF_ERROR(result);
