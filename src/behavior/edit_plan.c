@@ -2220,10 +2220,12 @@ static void edit_plan_format_data_cell_value(
                  cell->string_value ? cell->string_value : "");
         break;
     case CKARRAYTYPE_OBJECT:
-        snprintf(buffer, buffer_size, "%u", cell->object_id);
+        snprintf(buffer, buffer_size, "%u",
+                 nmo_ref_serialized_id(&cell->object_ref));
         break;
     case CKARRAYTYPE_PARAMETER:
-        snprintf(buffer, buffer_size, "%u", cell->parameter_id);
+        snprintf(buffer, buffer_size, "%u",
+                 nmo_ref_serialized_id(&cell->parameter.ref));
         break;
     default:
         break;

@@ -777,9 +777,9 @@ static nmo_status_t parse_dataarray_cell(
             return NMO_ERR_INVALID_ARGUMENT;
         }
         if (col_type == CKARRAYTYPE_OBJECT) {
-            new_cell.object_id = value;
+            new_cell.object_ref = nmo_ref_from_id(value);
         } else {
-            new_cell.parameter_id = value;
+            new_cell.parameter.ref = nmo_ref_from_id(value);
         }
         *out_is_ref = true;
         break;
@@ -4828,7 +4828,9 @@ nmo_status_t workspace_edit_set_dataarray_cell(
     if (is_ref) {
         CK_ARRAYTYPE col_type = state->column_formats[col].type;
         nmo_object_id_t ref_id =
-            col_type == CKARRAYTYPE_OBJECT ? new_cell.object_id : new_cell.parameter_id;
+            col_type == CKARRAYTYPE_OBJECT
+                ? nmo_ref_runtime_id(&new_cell.object_ref)
+                : nmo_ref_runtime_id(&new_cell.parameter.ref);
         if (ref_id != 0) {
             nmo_object_t *ref = nmo_object_repository_find_by_id(repo, ref_id);
             if (ref == NULL) {

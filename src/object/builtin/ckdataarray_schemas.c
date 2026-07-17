@@ -65,6 +65,30 @@ static int nmo_dataarray_is_file_mode(const nmo_chunk_t *chunk, void *context) {
         (ser_ctx != NULL && (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
 }
 
+static bool nmo_dataarray_is_parameter_class(nmo_class_id_t class_id)
+{
+    return class_id == NMO_CID_PARAMETER ||
+           class_id == NMO_CID_PARAMETERIN ||
+           class_id == NMO_CID_PARAMETEROUT ||
+           class_id == NMO_CID_PARAMETERLOCAL ||
+           class_id == NMO_CID_PARAMETEROPERATION;
+}
+
+static void nmo_dataarray_check_parameter_ref(
+    nmo_ref_t *ref,
+    const nmo_object_repository_t *repository)
+{
+    if (ref == NULL || ref->state != NMO_REF_RESOLVED || repository == NULL) {
+        return;
+    }
+    const nmo_object_t *target =
+        nmo_object_repository_find_by_id(repository, ref->id);
+    if (target != NULL && !nmo_dataarray_is_parameter_class(
+            nmo_object_get_class_id(target))) {
+        ref->state = NMO_REF_CLASS_MISMATCH;
+    }
+}
+
 /* =============================================================================
  * CKDataArray DESERIALIZATION
  * ============================================================================= */
@@ -124,6 +148,8 @@ nmo_status_t nmo_dataarray_deserialize(
             if (!out_state->column_formats) {
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate column formats");
             }
+            memset(out_state->column_formats, 0,
+                   (size_t)column_count * sizeof(nmo_dataarray_column_format_t));
 
             /* Read each column format */
             for (int32_t i = 0; i < column_count; i++) {
@@ -177,6 +203,8 @@ nmo_status_t nmo_dataarray_deserialize(
             if (!out_state->rows) {
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate rows");
             }
+            memset(out_state->rows, 0,
+                   (size_t)row_count * sizeof(nmo_dataarray_row_t));
 
             /* Read each row */
             for (uint32_t row_idx = 0; row_idx < out_state->row_count; row_idx++) {
@@ -190,6 +218,8 @@ nmo_status_t nmo_dataarray_deserialize(
                     if (!row->cells) {
                         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate row cells");
                     }
+                    memset(row->cells, 0,
+                           (size_t)out_state->column_count * sizeof(nmo_dataarray_cell_t));
 
                     /* Read each cell */
                     for (uint32_t col_idx = 0; col_idx < out_state->column_count; col_idx++) {
@@ -216,16 +246,23 @@ nmo_status_t nmo_dataarray_deserialize(
                         }
 
                         case CKARRAYTYPE_OBJECT:
-                            result = nmo_chunk_read_object_id(chunk, &cell->object_id);
+                            result = nmo_ref_read(chunk, &cell->object_ref);
                             if (result != NMO_OK) return result;
                             break;
 
                         case CKARRAYTYPE_PARAMETER:
                             if (is_file) {
-                                result = nmo_chunk_read_object_id(chunk, &cell->parameter_id);
+                                result = nmo_ref_read(chunk, &cell->parameter.ref);
                                 if (result != NMO_OK) return result;
+                                nmo_dataarray_check_parameter_ref(
+                                    &cell->parameter.ref,
+                                    (const nmo_object_repository_t *)
+                                        nmo_deserialize_context_get_repository(context));
                             } else {
-                                result = nmo_chunk_read_sub_chunk(chunk, &cell->parameter_chunk);
+                                cell->parameter.ref =
+                                    nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+                                result = nmo_chunk_read_sub_chunk(
+                                    chunk, &cell->parameter.chunk);
                                 if (result != NMO_OK) return result;
                             }
                             break;
@@ -354,16 +391,17 @@ nmo_status_t nmo_dataarray_serialize(
                 break;
 
             case CKARRAYTYPE_OBJECT:
-                result = nmo_chunk_write_object_id(out_chunk, cell->object_id);
+                result = nmo_ref_write(out_chunk, &cell->object_ref);
                 if (result != NMO_OK) return result;
                 break;
 
             case CKARRAYTYPE_PARAMETER:
                 if (is_file) {
-                    result = nmo_chunk_write_object_id(out_chunk, cell->parameter_id);
+                    result = nmo_ref_write(out_chunk, &cell->parameter.ref);
                     if (result != NMO_OK) return result;
                 } else {
-                    result = nmo_chunk_write_sub_chunk(out_chunk, cell->parameter_chunk);
+                    result = nmo_chunk_write_sub_chunk(
+                        out_chunk, cell->parameter.chunk);
                     if (result != NMO_OK) return result;
                 }
                 break;
@@ -427,8 +465,10 @@ static nmo_status_t nmo_dataarray_copy(
                         nmo_arraytype_t type_id = d->column_formats[c].type;
                         if (type_id == CKARRAYTYPE_STRING && sr->cells[c].string_value) {
                             cell->string_value = nmo_arena_strdup(arena, sr->cells[c].string_value);
-                        } else if (type_id == CKARRAYTYPE_PARAMETER && sr->cells[c].parameter_chunk) {
-                            cell->parameter_chunk = nmo_chunk_clone(sr->cells[c].parameter_chunk, arena);
+                        } else if (type_id == CKARRAYTYPE_PARAMETER &&
+                                   sr->cells[c].parameter.chunk) {
+                            cell->parameter.chunk = nmo_chunk_clone(
+                                sr->cells[c].parameter.chunk, arena);
                         }
                     }
                 }
@@ -556,9 +596,11 @@ static nmo_status_t nmo_dataarray_enumerate_refs(
             nmo_ref_kind_t kind = NMO_REF_KIND_DATA_ARRAY;
 
             if (col_type == CKARRAYTYPE_OBJECT) {
-                target_id = row_data->cells[col].object_id;
+                target_id = nmo_ref_runtime_id(
+                    &row_data->cells[col].object_ref);
             } else if (col_type == CKARRAYTYPE_PARAMETER) {
-                target_id = row_data->cells[col].parameter_id;
+                target_id = nmo_ref_runtime_id(
+                    &row_data->cells[col].parameter.ref);
                 kind = NMO_REF_KIND_PARAMETER;
             }
 

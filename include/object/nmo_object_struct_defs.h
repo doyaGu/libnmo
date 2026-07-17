@@ -11,6 +11,7 @@
 #include "core/nmo_guid.h"
 #include "core/nmo_math.h"
 #include "object/nmo_object_enum_defs.h"
+#include "object/nmo_ref.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -242,13 +243,17 @@ typedef struct nmo_dataarray_column_format {
     nmo_guid_t parameter_type_guid;
 } nmo_dataarray_column_format_t;
 
+typedef struct nmo_dataarray_parameter {
+    nmo_ref_t ref;
+    nmo_chunk_t *chunk;
+} nmo_dataarray_parameter_t;
+
 typedef union nmo_dataarray_cell {
     int32_t int_value;
     float float_value;
     const char *string_value;
-    nmo_object_id_t object_id;
-    nmo_object_id_t parameter_id;
-    nmo_chunk_t *parameter_chunk;
+    nmo_ref_t object_ref;
+    nmo_dataarray_parameter_t parameter;
 } nmo_dataarray_cell_t;
 
 typedef struct nmo_dataarray_row {

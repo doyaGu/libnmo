@@ -973,8 +973,10 @@ TEST(cli_write, data_entity_material_texture_animation_save_and_validate) {
     ASSERT_EQ(CKARRAYTYPE_PARAMETER, data_object_state->column_formats[3].type);
     ASSERT_STR_EQ("ActiveBall", data_object_state->column_formats[1].name);
     ASSERT_STR_EQ("CurrentResetpoint", data_object_state->column_formats[3].name);
-    ASSERT_EQ(520u, data_object_state->rows[0].cells[1].object_id);
-    ASSERT_EQ(10701u, data_object_state->rows[0].cells[3].parameter_id);
+    ASSERT_EQ(520u, nmo_ref_runtime_id(
+        &data_object_state->rows[0].cells[1].object_ref));
+    ASSERT_EQ(10701u, nmo_ref_runtime_id(
+        &data_object_state->rows[0].cells[3].parameter.ref));
     write_probe_close(&data_object_probe);
 
     assert_cli_success(
@@ -992,8 +994,10 @@ TEST(cli_write, data_entity_material_texture_animation_save_and_validate) {
     ASSERT_TRUE(data_parameter_state->rows[0].column_count > 3u);
     ASSERT_EQ(CKARRAYTYPE_OBJECT, data_parameter_state->column_formats[1].type);
     ASSERT_EQ(CKARRAYTYPE_PARAMETER, data_parameter_state->column_formats[3].type);
-    ASSERT_EQ(0u, data_parameter_state->rows[0].cells[1].object_id);
-    ASSERT_EQ(520u, data_parameter_state->rows[0].cells[3].parameter_id);
+    ASSERT_EQ(0u, nmo_ref_runtime_id(
+        &data_parameter_state->rows[0].cells[1].object_ref));
+    ASSERT_EQ(520u, nmo_ref_runtime_id(
+        &data_parameter_state->rows[0].cells[3].parameter.ref));
     write_probe_close(&data_parameter_probe);
 
     remove("test_cli_write_tmp/data_invalid_object_out.nmo");

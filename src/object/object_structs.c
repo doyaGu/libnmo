@@ -243,14 +243,22 @@ nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry) {
     static const nmo_struct_type_def_t ckdataarraycolumnformat_def =
         NMO_STRUCT_DEF("CKDataArrayColumnFormat", NMO_GUID_STRUCT_CKDATAARRAYCOLUMNFORMAT, ckdataarraycolumnformat_fields);
 
+    /* CKDataArrayParameter */
+    static const nmo_struct_field_def_t ckdataarrayparameter_fields[] = {
+        NMO_STRUCT_FIELD_NAME("ref", "uint32[3]"),
+        NMO_STRUCT_FIELD_GUID("chunk", CKPGUID_STATECHUNK)
+    };
+    static const nmo_struct_type_def_t ckdataarrayparameter_def =
+        NMO_STRUCT_DEF("CKDataArrayParameter", NMO_GUID_STRUCT_CKDATAARRAYPARAMETER,
+                       ckdataarrayparameter_fields);
+
     /* CKDataArrayCell (union) */
     static const nmo_struct_field_def_t ckdataarraycell_fields[] = {
         NMO_STRUCT_FIELD_GUID("int_value", CKPGUID_INT),
         NMO_STRUCT_FIELD_GUID("float_value", CKPGUID_FLOAT),
         NMO_STRUCT_FIELD_GUID("string_value", CKPGUID_STRING),
-        NMO_STRUCT_FIELD_GUID_FLAGS("object_id", CKPGUID_ID, NMO_FIELD_REFERENCE),
-        NMO_STRUCT_FIELD_GUID_FLAGS("parameter_id", CKPGUID_ID, NMO_FIELD_REFERENCE),
-        NMO_STRUCT_FIELD_GUID("parameter_chunk", CKPGUID_STATECHUNK)
+        NMO_STRUCT_FIELD_NAME("object_ref", "uint32[3]"),
+        NMO_STRUCT_FIELD_GUID("parameter", NMO_GUID_STRUCT_CKDATAARRAYPARAMETER)
     };
     static const nmo_union_type_def_t ckdataarraycell_def =
         NMO_UNION_DEF("CKDataArrayCell", NMO_GUID_STRUCT_CKDATAARRAYCELL, ckdataarraycell_fields);
@@ -451,6 +459,7 @@ nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry) {
     NMO_RETURN_IF_ERROR(nmo_type_registry_register_struct(registry, &ckpatchmeshpatchrecord_def, NULL));
     NMO_RETURN_IF_ERROR(nmo_type_registry_register_struct(registry, &ckpatchmeshchannel_def, NULL));
     NMO_RETURN_IF_ERROR(nmo_type_registry_register_struct(registry, &ckdataarraycolumnformat_def, NULL));
+    NMO_RETURN_IF_ERROR(nmo_type_registry_register_struct(registry, &ckdataarrayparameter_def, NULL));
     NMO_RETURN_IF_ERROR(nmo_type_registry_register_union(registry, &ckdataarraycell_def, NULL));
     NMO_RETURN_IF_ERROR(nmo_type_registry_register_struct(registry, &ckdataarrayrow_def, NULL));
     NMO_RETURN_IF_ERROR(nmo_type_registry_register_struct(registry, &ckcurvepointsubchunk_def, NULL));

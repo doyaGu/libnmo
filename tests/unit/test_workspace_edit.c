@@ -1547,7 +1547,8 @@ TEST(workspace_edit, dataarray_object_cell_commit_and_rollback) {
     ASSERT_EQ(NMO_OK,
               nmo_object_edit_set_dataarray_cell(commit_edit, dataarray_id, 0, 0, target_text));
     ASSERT_EQ(NMO_OK, commit_workspace_edit_scope(&commit_edit_scope));
-    ASSERT_EQ(target_id, state->rows[0].cells[0].object_id);
+    ASSERT_EQ(target_id, nmo_ref_runtime_id(
+        &state->rows[0].cells[0].object_ref));
     ASSERT_TRUE(ref_graph_edge_count(session) > before_edges);
 
     workspace_edit_scope_t rollback_edit_scope = {0};
@@ -1557,7 +1558,8 @@ TEST(workspace_edit, dataarray_object_cell_commit_and_rollback) {
     ASSERT_EQ(NMO_OK,
               nmo_object_edit_set_dataarray_cell(rollback_edit, dataarray_id, 0, 0, "#0"));
     rollback_workspace_edit_scope(&rollback_edit_scope);
-    ASSERT_EQ(target_id, state->rows[0].cells[0].object_id);
+    ASSERT_EQ(target_id, nmo_ref_runtime_id(
+        &state->rows[0].cells[0].object_ref));
 
     nmo_session_destroy(session);
     nmo_context_release(ctx);

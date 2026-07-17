@@ -13,6 +13,7 @@
 #include "object/builtin/nmo_behaviorlink_schemas.h"
 #include "object/builtin/nmo_beobject_schemas.h"
 #include "object/builtin/nmo_character_schemas.h"
+#include "object/builtin/nmo_dataarray_schemas.h"
 #include "object/builtin/nmo_camera_schemas.h"
 #include "object/builtin/nmo_light_schemas.h"
 #include "object/builtin/nmo_targetcamera_schemas.h"
@@ -600,6 +601,100 @@ TEST(chunk_id_remap, behaviorio_truncation_keeps_previous_state) {
     ASSERT_TRUE(state.has_flags);
 
     nmo_behaviorio_vtable.destroy(&state, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_id_remap, dataarray_cell_refs_round_trip_raw_ids) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_id_remap_t *file_to_runtime = nmo_id_remap_create(arena);
+    nmo_id_remap_t *runtime_to_file = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(file_to_runtime);
+    ASSERT_NOT_NULL(runtime_to_file);
+    nmo_chunk_file_context_t write_context = {
+        .runtime_to_file = runtime_to_file,
+    };
+    nmo_chunk_file_context_t read_context = {
+        .file_to_runtime = file_to_runtime,
+    };
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+
+    nmo_dataarray_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_dataarray_vtable.create(&source, NULL, NULL));
+    source.column_count = 2;
+    source.column_formats = (nmo_dataarray_column_format_t *)nmo_arena_alloc(
+        arena, 2 * sizeof(*source.column_formats),
+        _Alignof(nmo_dataarray_column_format_t));
+    ASSERT_NOT_NULL(source.column_formats);
+    memset(source.column_formats, 0, 2 * sizeof(*source.column_formats));
+    source.column_formats[0].name = "Object";
+    source.column_formats[0].type = CKARRAYTYPE_OBJECT;
+    source.column_formats[1].name = "Parameter";
+    source.column_formats[1].type = CKARRAYTYPE_PARAMETER;
+    source.row_count = 1;
+    source.rows = (nmo_dataarray_row_t *)nmo_arena_alloc(
+        arena, sizeof(*source.rows), _Alignof(nmo_dataarray_row_t));
+    ASSERT_NOT_NULL(source.rows);
+    memset(source.rows, 0, sizeof(*source.rows));
+    source.rows[0].column_count = 2;
+    source.rows[0].cells = (nmo_dataarray_cell_t *)nmo_arena_alloc(
+        arena, 2 * sizeof(*source.rows[0].cells),
+        _Alignof(nmo_dataarray_cell_t));
+    ASSERT_NOT_NULL(source.rows[0].cells);
+    memset(source.rows[0].cells, 0, 2 * sizeof(*source.rows[0].cells));
+    source.rows[0].cells[0].object_ref = nmo_ref_from_raw(777);
+    source.rows[0].cells[1].parameter.ref = nmo_ref_from_raw(778);
+
+    nmo_chunk_t *first = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(first);
+    first->class_id = NMO_CID_DATAARRAY;
+    first->data_version = 7;
+    first->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(first, &write_context);
+    ASSERT_EQ(NMO_OK, nmo_dataarray_serialize(
+        &source, first, NULL, &serialize_context));
+    nmo_chunk_close(first);
+    nmo_chunk_set_file_context(first, &read_context);
+
+    nmo_dataarray_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_dataarray_vtable.create(&loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_dataarray_deserialize(
+        &loaded, first, NULL, &deserialize_context));
+    ASSERT_EQ(777u, loaded.rows[0].cells[0].object_ref.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED,
+              loaded.rows[0].cells[0].object_ref.state);
+    ASSERT_EQ(778u, loaded.rows[0].cells[1].parameter.ref.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED,
+              loaded.rows[0].cells[1].parameter.ref.state);
+
+    nmo_chunk_t *second = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(second);
+    second->class_id = NMO_CID_DATAARRAY;
+    second->data_version = 7;
+    second->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(second, &write_context);
+    ASSERT_EQ(NMO_OK, nmo_dataarray_serialize(
+        &loaded, second, NULL, &serialize_context));
+    nmo_chunk_close(second);
+    nmo_chunk_set_file_context(second, &read_context);
+
+    nmo_dataarray_state_t reloaded;
+    ASSERT_EQ(NMO_OK, nmo_dataarray_vtable.create(&reloaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_dataarray_deserialize(
+        &reloaded, second, NULL, &deserialize_context));
+    ASSERT_EQ(777u, reloaded.rows[0].cells[0].object_ref.raw_id);
+    ASSERT_EQ(778u, reloaded.rows[0].cells[1].parameter.ref.raw_id);
+
+    nmo_array_dispose(&loaded.base.scripts);
+    nmo_array_dispose(&loaded.base.attributes);
+    nmo_array_dispose(&loaded.base.legacy_attributes);
+    nmo_array_dispose(&reloaded.base.scripts);
+    nmo_array_dispose(&reloaded.base.attributes);
+    nmo_array_dispose(&reloaded.base.legacy_attributes);
     nmo_arena_destroy(arena);
 }
 
@@ -5594,6 +5689,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, behavior_unresolved_ref_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, behavior_serializer_does_not_publish_partial_chunk);
     REGISTER_TEST(chunk_id_remap, behaviorio_truncation_keeps_previous_state);
+    REGISTER_TEST(chunk_id_remap, dataarray_cell_refs_round_trip_raw_ids);
     REGISTER_TEST(chunk_id_remap, behaviorlink_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, material_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, parameterlocal_owner_round_trips_raw_id);

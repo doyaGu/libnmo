@@ -90,21 +90,26 @@ static void format_cell(char *buf, size_t buf_size,
             }
             break;
         case CKARRAYTYPE_OBJECT: {
-            nmo_object_t *obj = nmo_core_find_by_id(c, cell->object_id);
+            const nmo_object_id_t runtime_id =
+                nmo_ref_runtime_id(&cell->object_ref);
+            const nmo_object_id_t display_id =
+                nmo_ref_serialized_id(&cell->object_ref);
+            nmo_object_t *obj = nmo_core_find_by_id(c, runtime_id);
             if (obj) {
                 const char *name = nmo_object_get_name(obj);
                 if (name && name[0]) {
-                    snprintf(buf, buf_size, "#%u (%s)", cell->object_id, name);
+                    snprintf(buf, buf_size, "#%u (%s)", display_id, name);
                 } else {
-                    snprintf(buf, buf_size, "#%u", cell->object_id);
+                    snprintf(buf, buf_size, "#%u", display_id);
                 }
             } else {
-                snprintf(buf, buf_size, "#%u", cell->object_id);
+                snprintf(buf, buf_size, "#%u", display_id);
             }
             break;
         }
         case CKARRAYTYPE_PARAMETER:
-            snprintf(buf, buf_size, "#%u", cell->parameter_id);
+            snprintf(buf, buf_size, "#%u",
+                     nmo_ref_serialized_id(&cell->parameter.ref));
             break;
         default:
             snprintf(buf, buf_size, "?");
@@ -164,10 +169,12 @@ static void add_cell_json(yyjson_mut_doc *doc, yyjson_mut_val *arr,
             }
             break;
         case CKARRAYTYPE_OBJECT:
-            yyjson_mut_arr_add_uint(doc, arr, cell->object_id);
+            yyjson_mut_arr_add_uint(
+                doc, arr, nmo_ref_serialized_id(&cell->object_ref));
             break;
         case CKARRAYTYPE_PARAMETER:
-            yyjson_mut_arr_add_uint(doc, arr, cell->parameter_id);
+            yyjson_mut_arr_add_uint(
+                doc, arr, nmo_ref_serialized_id(&cell->parameter.ref));
             break;
         default:
             yyjson_mut_arr_add_null(doc, arr);
