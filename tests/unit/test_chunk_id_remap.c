@@ -1574,6 +1574,104 @@ TEST(chunk_id_remap, camera_and_light_failures_keep_previous_state) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, target_camera_and_light_failures_are_atomic) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_id_remap_t *runtime_to_file = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(runtime_to_file);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_chunk_file_context_t write_context = {
+        .runtime_to_file = runtime_to_file,
+    };
+
+    nmo_chunk_t *truncated_camera = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(truncated_camera);
+    truncated_camera->class_id = NMO_CID_TARGETCAMERA;
+    truncated_camera->data_version = 7;
+    truncated_camera->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(truncated_camera));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        truncated_camera, CK_STATESAVE_TCAMERATARGET));
+    nmo_chunk_close(truncated_camera);
+
+    nmo_targetcamera_state_t camera;
+    ASSERT_EQ(NMO_OK, nmo_targetcamera_vtable.create(&camera, NULL, NULL));
+    camera.base.fov = 8.0f;
+    camera.has_target = 1;
+    camera.target = nmo_ref_from_raw(901);
+    ASSERT_NE(NMO_OK, nmo_targetcamera_deserialize(
+        &camera, truncated_camera, NULL, &deserialize_context));
+    ASSERT_EQ(8.0f, camera.base.fov);
+    ASSERT_EQ(1u, camera.has_target);
+    ASSERT_EQ(901u, camera.target.raw_id);
+
+    nmo_chunk_t *truncated_light = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(truncated_light);
+    truncated_light->class_id = NMO_CID_TARGETLIGHT;
+    truncated_light->data_version = 7;
+    truncated_light->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(truncated_light));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        truncated_light, CK_STATESAVE_TLIGHTTARGET));
+    nmo_chunk_close(truncated_light);
+
+    nmo_targetlight_state_t light;
+    ASSERT_EQ(NMO_OK, nmo_targetlight_vtable.create(&light, NULL, NULL));
+    light.base.flags = 0x123400u;
+    light.base.light_power = 9.0f;
+    light.has_target = 1;
+    light.target = nmo_ref_from_raw(902);
+    ASSERT_NE(NMO_OK, nmo_targetlight_deserialize(
+        &light, truncated_light, NULL, &deserialize_context));
+    ASSERT_EQ(0x123400u, light.base.flags);
+    ASSERT_EQ(9.0f, light.base.light_power);
+    ASSERT_EQ(1u, light.has_target);
+    ASSERT_EQ(902u, light.target.raw_id);
+
+    camera.target = nmo_ref_from_id(123);
+    nmo_chunk_t *camera_target = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(camera_target);
+    camera_target->class_id = NMO_CID_TARGETCAMERA;
+    camera_target->data_version = 7;
+    camera_target->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(camera_target, &write_context);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(camera_target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(camera_target, 0x12345678u));
+    nmo_chunk_close(camera_target);
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_targetcamera_serialize(
+        &camera, camera_target, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(camera_target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(camera_target));
+    uint32_t preserved = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(camera_target, &preserved));
+    ASSERT_EQ(0x12345678u, preserved);
+
+    light.target = nmo_ref_from_id(124);
+    nmo_chunk_t *light_target = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(light_target);
+    light_target->class_id = NMO_CID_TARGETLIGHT;
+    light_target->data_version = 7;
+    light_target->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(light_target, &write_context);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(light_target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(light_target, 0x87654321u));
+    nmo_chunk_close(light_target);
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_targetlight_serialize(
+        &light, light_target, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(light_target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(light_target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(light_target, &preserved));
+    ASSERT_EQ(0x87654321u, preserved);
+
+    nmo_targetcamera_vtable.destroy(&camera, NULL, NULL);
+    nmo_targetlight_vtable.destroy(&light, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, targetcamera_unresolved_ref_round_trips_raw_id) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
     ASSERT_NOT_NULL(arena);
@@ -5344,6 +5442,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, parameteroperation_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, parameteroperation_legacy_sections_are_atomic);
     REGISTER_TEST(chunk_id_remap, camera_and_light_failures_keep_previous_state);
+    REGISTER_TEST(chunk_id_remap, target_camera_and_light_failures_are_atomic);
     REGISTER_TEST(chunk_id_remap, targetcamera_unresolved_ref_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, targetlight_unresolved_ref_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, kinematicchain_unresolved_refs_round_trip_atomically);
