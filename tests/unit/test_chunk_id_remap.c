@@ -1935,7 +1935,7 @@ TEST(chunk_id_remap, scalar_ref_sections_do_not_publish_truncated_state) {
     ASSERT_EQ(NMO_OK, nmo_curvepoint_vtable.create(&curve, NULL, NULL));
     ASSERT_NE(NMO_OK, nmo_curvepoint_deserialize(
         &curve, curve_chunk, NULL, &deserialize_context));
-    ASSERT_FALSE(curve.has_default_data);
+    ASSERT_TRUE(curve.has_default_data);
     ASSERT_EQ(NMO_REF_NONE, curve.curve.state);
     ASSERT_EQ(NMO_OBJECT_ID_NONE, curve.curve.raw_id);
     nmo_curvepoint_vtable.destroy(&curve, NULL, NULL);

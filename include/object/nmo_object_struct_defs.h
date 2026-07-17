@@ -261,7 +261,7 @@ typedef struct nmo_dataarray_row {
  * ============================================================================ */
 
 typedef struct nmo_curve_point_subchunk {
-    nmo_object_id_t point_id;
+    nmo_ref_t ref;
     nmo_chunk_t *chunk;
 } nmo_curve_point_subchunk_t;
 

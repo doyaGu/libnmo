@@ -19,6 +19,26 @@
 #include "object/nmo_object_repository.h"
 #include <string.h>
 
+static size_t nmo_curve_identifier_remaining_dwords(nmo_chunk_t *chunk)
+{
+    if (!chunk || !chunk->parser_state) return 0;
+    nmo_chunk_parser_state_t *state =
+        (nmo_chunk_parser_state_t *)chunk->parser_state;
+    uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    if (!data || state->current_pos > chunk->data.count) return 0;
+
+    size_t next_pos = 0;
+    if (state->prev_identifier_pos + 1u < chunk->data.count) {
+        next_pos = data[state->prev_identifier_pos + 1u];
+    }
+    if (next_pos == 0 || next_pos > chunk->data.count) {
+        next_pos = chunk->data.count;
+    }
+    return state->current_pos <= next_pos
+        ? next_pos - state->current_pos
+        : 0;
+}
+
 static void nmo_curve_set_defaults(nmo_curve_state_t *state) {
     if (state == NULL) {
         return;
@@ -81,10 +101,35 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
     } while (0),
     ((void)0))
 
+static nmo_status_t nmo_curve_staged_base_create(
+    nmo_3dentity_state_t *state,
+    void *context)
+{
+    if (!state) return NMO_ERR_INVALID_ARGUMENT;
+    nmo_beobject_state_t *beobject = &state->base.base;
+    nmo_status_t result = nmo_beobject_vtable.create(
+        beobject, NULL, context);
+    if (result != NMO_OK) {
+        nmo_array_dispose(&beobject->scripts);
+        nmo_array_dispose(&beobject->attributes);
+        nmo_array_dispose(&beobject->legacy_attributes);
+    }
+    return result;
+}
+
+static void nmo_curve_staged_base_destroy(nmo_3dentity_state_t *state)
+{
+    if (!state) return;
+    nmo_beobject_state_t *beobject = &state->base.base;
+    nmo_array_dispose(&beobject->scripts);
+    nmo_array_dispose(&beobject->attributes);
+    nmo_array_dispose(&beobject->legacy_attributes);
+}
+
 static nmo_status_t read_object_sequence(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
-    nmo_object_id_t **out_ids,
+    nmo_ref_t **out_ids,
     uint32_t *out_count)
 {
     size_t count = 0;
@@ -96,19 +141,24 @@ static nmo_status_t read_object_sequence(
         *out_count = 0;
         NMO_RETURN_OK();
     }
-    if (count > UINT32_MAX || count > SIZE_MAX / sizeof(nmo_object_id_t)) {
+    if (count > UINT32_MAX || count > SIZE_MAX / sizeof(nmo_ref_t)) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                         "Object ID array count overflow");
+                         "Curve control point count overflow");
+    }
+    if (count > nmo_curve_identifier_remaining_dwords(chunk)) {
+        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                         "Curve control point count exceeds identifier payload");
     }
 
-    nmo_object_id_t *ids = (nmo_object_id_t *)nmo_arena_alloc(
-        arena, sizeof(nmo_object_id_t) * count, _Alignof(nmo_object_id_t));
+    nmo_ref_t *ids = (nmo_ref_t *)nmo_arena_alloc(
+        arena, sizeof(nmo_ref_t) * count, _Alignof(nmo_ref_t));
     if (!ids) {
-        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate object ID array");
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "Failed to allocate curve control point array");
     }
 
     for (size_t i = 0; i < count; ++i) {
-        result = nmo_chunk_read_object_sequence_item(chunk, &ids[i]);
+        result = nmo_ref_read(chunk, &ids[i]);
         if (result != NMO_OK) {
             return result;
         }
@@ -120,13 +170,28 @@ static nmo_status_t read_object_sequence(
     NMO_RETURN_OK();
 }
 
+static void nmo_curve_check_point_refs(
+    nmo_ref_t *refs,
+    uint32_t count,
+    void *context)
+{
+    const nmo_object_repository_t *repository =
+        nmo_deserialize_context_get_repository(context);
+    const nmo_type_registry_t *types =
+        nmo_deserialize_context_get_type_registry(context);
+    for (uint32_t i = 0; i < count; ++i) {
+        nmo_ref_check_class(&refs[i], repository, types, NMO_CID_CURVEPOINT);
+    }
+}
+
 static const nmo_type_field_t nmo_curve_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_curve_state_t, base),
                     sizeof(nmo_3dentity_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_curve_state_t, has_curve_data, CKPGUID_UINT8),
     NMO_FIELD(nmo_curve_state_t, control_point_count, CKPGUID_UINT32),
-    NMO_FIELD_REF_ARRAY_COUNTED(nmo_curve_state_t, control_point_ids, control_point_count),
+    NMO_FIELD_REF_RECORD_ARRAY_COUNTED(
+        nmo_curve_state_t, control_point_ids, control_point_count),
     NMO_FIELD(nmo_curve_state_t, fitting_coeff, CKPGUID_FLOAT),
     NMO_FIELD(nmo_curve_state_t, step_count, CKPGUID_UINT32),
     NMO_FIELD(nmo_curve_state_t, opened, CKPGUID_UINT32),
@@ -151,6 +216,23 @@ static const nmo_type_field_t nmo_curvepoint_fields[] = {
     NMO_FIELD(nmo_curvepoint_state_t, reserved_vector, CKPGUID_VECTOR)
 };
 
+static nmo_status_t nmo_curve_copy_3d_base(
+    const nmo_3dentity_state_t *src,
+    nmo_3dentity_state_t *dst,
+    nmo_arena_t *arena)
+{
+    const nmo_type_descriptor_t entity_type = {
+        .size = sizeof(nmo_3dentity_state_t),
+    };
+    const nmo_type_descriptor_t beobject_type = {
+        .size = sizeof(nmo_beobject_state_t),
+    };
+    NMO_RETURN_IF_ERROR(nmo_3dentity_vtable.copy(
+        src, dst, &entity_type, arena));
+    return nmo_beobject_vtable.copy(
+        &src->base.base, &dst->base.base, &beobject_type, arena);
+}
+
 static nmo_status_t nmo_curve_copy(
     const void *src,
     void *dst,
@@ -160,8 +242,9 @@ static nmo_status_t nmo_curve_copy(
     const nmo_curve_state_t *s = src;
     nmo_curve_state_t *d = dst;
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
+    NMO_RETURN_IF_ERROR(nmo_curve_copy_3d_base(&s->base, &d->base, arena));
     NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->control_point_ids,
-                                              s->control_point_ids, sizeof(nmo_object_id_t), s->control_point_count));
+                                              s->control_point_ids, sizeof(nmo_ref_t), s->control_point_count));
     if (s->sub_point_count > 0) {
         NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->sub_points,
                                                   s->sub_points, sizeof(nmo_curve_point_subchunk_t),
@@ -194,7 +277,10 @@ static nmo_status_t nmo_curvepoint_copy(
     const nmo_type_descriptor_t *type,
     nmo_arena_t *arena)
 {
-    return nmo_object_default_copy(src, dst, type, arena);
+    const nmo_curvepoint_state_t *s = src;
+    nmo_curvepoint_state_t *d = dst;
+    NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
+    return nmo_curve_copy_3d_base(&s->base, &d->base, arena);
 }
 
 static nmo_status_t nmo_curvepoint_validate(
@@ -206,6 +292,36 @@ static nmo_status_t nmo_curvepoint_validate(
     (void)type;
     (void)context;
     NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_curve_enumerate_refs(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    nmo_type_ref_visitor_fn visitor,
+    void *user_data)
+{
+    (void)type;
+    const nmo_curve_state_t *state = instance;
+    if (!state || !visitor) return NMO_OK;
+    NMO_RETURN_IF_ERROR(nmo_curve_validate(state, NULL, NULL));
+
+    for (uint32_t i = 0; i < state->control_point_count; ++i) {
+        const nmo_object_id_t id = nmo_ref_runtime_id(
+            &state->control_point_ids[i]);
+        if (id != NMO_OBJECT_ID_NONE &&
+            !visitor(user_data, id, 0, "control_point_ids", i)) {
+            return NMO_OK;
+        }
+    }
+    for (uint32_t i = 0; i < state->sub_point_count; ++i) {
+        const nmo_object_id_t id = nmo_ref_runtime_id(
+            &state->sub_points[i].ref);
+        if (id != NMO_OBJECT_ID_NONE &&
+            !visitor(user_data, id, 0, "sub_points.ref", i)) {
+            return NMO_OK;
+        }
+    }
+    return NMO_OK;
 }
 
 /* ============================================================================
@@ -326,15 +442,136 @@ static void nmo_curvepoint_post_delete(
     (void)context;
 }
 
-NMO_DEFINE_OBJECT_STATE_OPS_CUSTOM(curve, nmo_curve_state_t)
-NMO_DEFINE_OBJECT_STATE_OPS_CUSTOM(curvepoint, nmo_curvepoint_state_t)
+typedef nmo_status_t (*nmo_curve_serializer_fn)(
+    const void *, nmo_chunk_t *, const nmo_type_descriptor_t *, void *);
+
+static nmo_status_t nmo_curve_canonical_bytes(
+    const void *state,
+    nmo_curve_serializer_fn serializer,
+    nmo_class_id_t class_id,
+    nmo_arena_t **out_arena,
+    void **out_data,
+    size_t *out_size)
+{
+    if (!state || !serializer || !out_arena || !out_data || !out_size) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    *out_arena = NULL;
+    *out_data = NULL;
+    *out_size = 0;
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    if (!arena) return NMO_ERR_NOMEM;
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    if (!chunk) {
+        nmo_arena_destroy(arena);
+        return NMO_ERR_NOMEM;
+    }
+    chunk->class_id = class_id;
+    chunk->chunk_version = NMO_CHUNK_VERSION4;
+    chunk->data_version = 7;
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, UINT32_MAX);
+    nmo_status_t result = serializer(
+        state, chunk, NULL, &serialize_context);
+    if (result == NMO_OK) {
+        nmo_chunk_close(chunk);
+        result = nmo_chunk_serialize_version1(
+            chunk, out_data, out_size, arena);
+    }
+    if (result != NMO_OK) {
+        nmo_arena_destroy(arena);
+        return result;
+    }
+    *out_arena = arena;
+    return NMO_OK;
+}
+
+static bool nmo_curve_equals(const void *a, const void *b)
+{
+    if (a == b) return true;
+    if (!a || !b) return false;
+    nmo_arena_t *arena_a = NULL;
+    nmo_arena_t *arena_b = NULL;
+    void *data_a = NULL;
+    void *data_b = NULL;
+    size_t size_a = 0;
+    size_t size_b = 0;
+    const nmo_status_t result_a = nmo_curve_canonical_bytes(
+        a, nmo_curve_serialize, NMO_CID_CURVE,
+        &arena_a, &data_a, &size_a);
+    const nmo_status_t result_b = nmo_curve_canonical_bytes(
+        b, nmo_curve_serialize, NMO_CID_CURVE,
+        &arena_b, &data_b, &size_b);
+    const bool equal = result_a == NMO_OK && result_b == NMO_OK &&
+        size_a == size_b &&
+        (size_a == 0 || memcmp(data_a, data_b, size_a) == 0);
+    nmo_arena_destroy(arena_a);
+    nmo_arena_destroy(arena_b);
+    return equal;
+}
+
+static uint32_t nmo_curve_hash(const void *instance)
+{
+    if (!instance) return 0;
+    nmo_arena_t *arena = NULL;
+    void *data = NULL;
+    size_t size = 0;
+    if (nmo_curve_canonical_bytes(
+            instance, nmo_curve_serialize, NMO_CID_CURVE,
+            &arena, &data, &size) != NMO_OK) {
+        return 0;
+    }
+    const uint32_t hash = (uint32_t)nmo_hash_fnv1a(data, size);
+    nmo_arena_destroy(arena);
+    return hash;
+}
+
+static bool nmo_curvepoint_equals(const void *a, const void *b)
+{
+    if (a == b) return true;
+    if (!a || !b) return false;
+    nmo_arena_t *arena_a = NULL;
+    nmo_arena_t *arena_b = NULL;
+    void *data_a = NULL;
+    void *data_b = NULL;
+    size_t size_a = 0;
+    size_t size_b = 0;
+    const nmo_status_t result_a = nmo_curve_canonical_bytes(
+        a, nmo_curvepoint_serialize, NMO_CID_CURVEPOINT,
+        &arena_a, &data_a, &size_a);
+    const nmo_status_t result_b = nmo_curve_canonical_bytes(
+        b, nmo_curvepoint_serialize, NMO_CID_CURVEPOINT,
+        &arena_b, &data_b, &size_b);
+    const bool equal = result_a == NMO_OK && result_b == NMO_OK &&
+        size_a == size_b &&
+        (size_a == 0 || memcmp(data_a, data_b, size_a) == 0);
+    nmo_arena_destroy(arena_a);
+    nmo_arena_destroy(arena_b);
+    return equal;
+}
+
+static uint32_t nmo_curvepoint_hash(const void *instance)
+{
+    if (!instance) return 0;
+    nmo_arena_t *arena = NULL;
+    void *data = NULL;
+    size_t size = 0;
+    if (nmo_curve_canonical_bytes(
+            instance, nmo_curvepoint_serialize, NMO_CID_CURVEPOINT,
+            &arena, &data, &size) != NMO_OK) {
+        return 0;
+    }
+    const uint32_t hash = (uint32_t)nmo_hash_fnv1a(data, size);
+    nmo_arena_destroy(arena);
+    return hash;
+}
 
 nmo_type_vtable_t nmo_curve_vtable = {
     .prepare_dependencies = nmo_curve_prepare_dependencies,
     .remap_dependencies = nmo_curve_remap_dependencies,
     .pre_delete = nmo_curve_pre_delete,
     .post_delete = nmo_curve_post_delete,
-    NMO_OBJECT_VTABLE(
+    NMO_OBJECT_VTABLE_EX(
         nmo_curve_create,
         nmo_curve_destroy,
         nmo_curve_serialize,
@@ -342,7 +579,8 @@ nmo_type_vtable_t nmo_curve_vtable = {
         nmo_curve_copy,
         nmo_curve_validate,
         nmo_curve_equals,
-        nmo_curve_hash)
+        nmo_curve_hash,
+        nmo_curve_enumerate_refs)
 };
 
 nmo_type_vtable_t nmo_curvepoint_vtable = {
@@ -383,14 +621,14 @@ NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
 
 static nmo_status_t write_object_sequence(
     nmo_chunk_t *chunk,
-    const nmo_object_id_t *ids,
+    const nmo_ref_t *ids,
     uint32_t count)
 {
     nmo_status_t result = nmo_chunk_write_object_sequence_start(chunk, count);
     if (result != NMO_OK) return result;
 
     for (uint32_t i = 0; i < count; ++i) {
-        result = nmo_chunk_write_object_sequence_item(chunk, ids[i]);
+        result = nmo_ref_write_sequence_item(chunk, &ids[i]);
         if (result != NMO_OK) return result;
     }
 
@@ -430,11 +668,17 @@ static nmo_status_t nmo_curve_deserialize_internal(
 
     if (data_version < 5) {
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVECONTROLPOINT) == NMO_OK) {
+            nmo_ref_t *control_points = NULL;
+            uint32_t control_point_count = 0;
+            result = read_object_sequence(
+                chunk, arena, &control_points, &control_point_count);
+            if (result != NMO_OK) return result;
+            nmo_curve_check_point_refs(
+                control_points, control_point_count, context);
             out_state->has_curve_data = 1;
             out_state->has_controlpoints_chunk = 1;
-            (void)read_object_sequence(chunk, arena,
-                                       &out_state->control_point_ids,
-                                       &out_state->control_point_count);
+            out_state->control_point_ids = control_points;
+            out_state->control_point_count = control_point_count;
         }
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEFITCOEFF) == NMO_OK) {
             out_state->has_curve_data = 1;
@@ -453,11 +697,17 @@ static nmo_status_t nmo_curve_deserialize_internal(
         }
     } else {
         if (nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEONLY) == NMO_OK) {
+            nmo_ref_t *control_points = NULL;
+            uint32_t control_point_count = 0;
+            result = read_object_sequence(
+                chunk, arena, &control_points, &control_point_count);
+            if (result != NMO_OK) return result;
+            nmo_curve_check_point_refs(
+                control_points, control_point_count, context);
             out_state->has_curve_data = 1;
             out_state->has_curveonly_chunk = 1;
-            (void)read_object_sequence(chunk, arena,
-                                       &out_state->control_point_ids,
-                                       &out_state->control_point_count);
+            out_state->control_point_ids = control_points;
+            out_state->control_point_count = control_point_count;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->fitting_coeff));
             NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->step_count));
             NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->opened));
@@ -471,19 +721,35 @@ static nmo_status_t nmo_curve_deserialize_internal(
         }
         uint32_t count = 0;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &count));
+#if SIZE_MAX < UINT64_MAX
+        if ((size_t)count > SIZE_MAX / sizeof(nmo_curve_point_subchunk_t)) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Curve saved point count overflow");
+        }
+#endif
+        if ((size_t)count > nmo_curve_identifier_remaining_dwords(chunk) / 2u) {
+            NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                             "Curve saved point count exceeds identifier payload");
+        }
         if (count > 0) {
-            out_state->sub_point_count = count;
-            out_state->sub_points = (nmo_curve_point_subchunk_t *)nmo_arena_alloc(
+            nmo_curve_point_subchunk_t *sub_points =
+                (nmo_curve_point_subchunk_t *)nmo_arena_alloc(
                 arena, sizeof(nmo_curve_point_subchunk_t) * count,
                 _Alignof(nmo_curve_point_subchunk_t));
-            if (!out_state->sub_points) {
+            if (!sub_points) {
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate curve subchunk array");
             }
 
             for (uint32_t i = 0; i < count; ++i) {
-                NMO_RETURN_IF_ERROR(nmo_chunk_read_object_id(chunk, &out_state->sub_points[i].point_id));
-                NMO_RETURN_IF_ERROR(nmo_chunk_read_sub_chunk(chunk, &out_state->sub_points[i].chunk));
+                sub_points[i].ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+                sub_points[i].chunk = NULL;
+                NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &sub_points[i].ref));
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_sub_chunk(
+                    chunk, &sub_points[i].chunk));
+                nmo_curve_check_point_refs(&sub_points[i].ref, 1, context);
             }
+            out_state->sub_points = sub_points;
+            out_state->sub_point_count = count;
         }
     }
 
@@ -581,7 +847,7 @@ static nmo_status_t nmo_curve_serialize_internal(
             if (!sub) {
                 sub = nmo_chunk_create(arena);
             }
-            result = nmo_chunk_write_object_id(out_chunk, in_state->sub_points[i].point_id);
+            result = nmo_ref_write(out_chunk, &in_state->sub_points[i].ref);
             if (result != NMO_OK) return result;
             result = nmo_chunk_write_sub_chunk(out_chunk, sub);
             if (result != NMO_OK) return result;
@@ -816,7 +1082,25 @@ nmo_status_t nmo_curve_deserialize(
 {
     (void)type;
     nmo_curve_state_t *out_state = (nmo_curve_state_t *)instance;
-    return nmo_curve_deserialize_internal(chunk, context, out_state);
+    if (!out_state || !chunk) return NMO_ERR_INVALID_ARGUMENT;
+    nmo_curve_state_t decoded;
+    nmo_status_t result = nmo_curve_create(&decoded, NULL, context);
+    if (result != NMO_OK) return result;
+    result = nmo_curve_staged_base_create(&decoded.base, context);
+    if (result != NMO_OK) {
+        nmo_curve_destroy(&decoded, NULL, context);
+        return result;
+    }
+    result = nmo_curve_deserialize_internal(chunk, context, &decoded);
+    if (result != NMO_OK) {
+        nmo_curve_staged_base_destroy(&decoded.base);
+        nmo_curve_destroy(&decoded, NULL, context);
+        return result;
+    }
+    nmo_curve_staged_base_destroy(&out_state->base);
+    nmo_curve_destroy(out_state, NULL, context);
+    *out_state = decoded;
+    return NMO_OK;
 }
 
 nmo_status_t nmo_curve_serialize(
@@ -827,7 +1111,23 @@ nmo_status_t nmo_curve_serialize(
 {
     (void)type;
     const nmo_curve_state_t *in_state = (const nmo_curve_state_t *)instance;
-    return nmo_curve_serialize_internal(in_state, out_chunk, context);
+    if (!in_state || !out_chunk || !out_chunk->arena) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    nmo_status_t result = nmo_curve_validate(in_state, NULL, NULL);
+    if (result != NMO_OK) return result;
+    nmo_chunk_t *staged = nmo_chunk_create(out_chunk->arena);
+    if (!staged) return NMO_ERR_NOMEM;
+    staged->class_id = out_chunk->class_id;
+    staged->data_version = out_chunk->data_version;
+    staged->chunk_version = out_chunk->chunk_version;
+    staged->chunk_class_id = out_chunk->chunk_class_id;
+    staged->chunk_options = out_chunk->chunk_options;
+    staged->file_context = out_chunk->file_context;
+    result = nmo_curve_serialize_internal(in_state, staged, context);
+    if (result != NMO_OK) return result;
+    *out_chunk = *staged;
+    return NMO_OK;
 }
 
 nmo_status_t nmo_curvepoint_deserialize(
@@ -838,7 +1138,25 @@ nmo_status_t nmo_curvepoint_deserialize(
 {
     (void)type;
     nmo_curvepoint_state_t *out_state = (nmo_curvepoint_state_t *)instance;
-    return nmo_curvepoint_deserialize_internal(chunk, context, out_state);
+    if (!out_state || !chunk) return NMO_ERR_INVALID_ARGUMENT;
+    nmo_curvepoint_state_t decoded;
+    nmo_status_t result = nmo_curvepoint_create(&decoded, NULL, context);
+    if (result != NMO_OK) return result;
+    result = nmo_curve_staged_base_create(&decoded.base, context);
+    if (result != NMO_OK) {
+        nmo_curvepoint_destroy(&decoded, NULL, context);
+        return result;
+    }
+    result = nmo_curvepoint_deserialize_internal(chunk, context, &decoded);
+    if (result != NMO_OK) {
+        nmo_curve_staged_base_destroy(&decoded.base);
+        nmo_curvepoint_destroy(&decoded, NULL, context);
+        return result;
+    }
+    nmo_curve_staged_base_destroy(&out_state->base);
+    nmo_curvepoint_destroy(out_state, NULL, context);
+    *out_state = decoded;
+    return NMO_OK;
 }
 
 nmo_status_t nmo_curvepoint_serialize(
@@ -849,5 +1167,21 @@ nmo_status_t nmo_curvepoint_serialize(
 {
     (void)type;
     const nmo_curvepoint_state_t *in_state = (const nmo_curvepoint_state_t *)instance;
-    return nmo_curvepoint_serialize_internal(in_state, out_chunk, context);
+    if (!in_state || !out_chunk || !out_chunk->arena) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    nmo_status_t result = nmo_curvepoint_validate(in_state, NULL, NULL);
+    if (result != NMO_OK) return result;
+    nmo_chunk_t *staged = nmo_chunk_create(out_chunk->arena);
+    if (!staged) return NMO_ERR_NOMEM;
+    staged->class_id = out_chunk->class_id;
+    staged->data_version = out_chunk->data_version;
+    staged->chunk_version = out_chunk->chunk_version;
+    staged->chunk_class_id = out_chunk->chunk_class_id;
+    staged->chunk_options = out_chunk->chunk_options;
+    staged->file_context = out_chunk->file_context;
+    result = nmo_curvepoint_serialize_internal(in_state, staged, context);
+    if (result != NMO_OK) return result;
+    *out_chunk = *staged;
+    return NMO_OK;
 }

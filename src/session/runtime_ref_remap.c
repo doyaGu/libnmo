@@ -8,6 +8,7 @@
 #include "object/builtin/nmo_animation_schemas.h"
 #include "object/builtin/nmo_beobject_schemas.h"
 #include "object/builtin/nmo_character_schemas.h"
+#include "object/builtin/nmo_curve_schemas.h"
 #include "object/builtin/nmo_grid_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "object/builtin/nmo_patchmesh_schemas.h"
@@ -321,6 +322,26 @@ static nmo_status_t runtime_remap_keyedanimation_refs(
     return NMO_OK;
 }
 
+static nmo_status_t runtime_remap_curve_refs(
+    nmo_curve_state_t *state,
+    const nmo_id_remap_t *remap)
+{
+    if (!state) return NMO_OK;
+    if ((state->control_point_count > 0 && !state->control_point_ids) ||
+        (state->sub_point_count > 0 && !state->sub_points)) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    for (uint32_t i = 0; i < state->sub_point_count; ++i) {
+        nmo_ref_t *ref = &state->sub_points[i].ref;
+        nmo_object_id_t mapped = NMO_OBJECT_ID_NONE;
+        if (ref->state == NMO_REF_RESOLVED &&
+            runtime_lookup_mapping(remap, ref->id, &mapped)) {
+            ref->id = mapped;
+        }
+    }
+    return NMO_OK;
+}
+
 static const void *runtime_get_base_instance(
     const nmo_type_registry_t *types,
     const nmo_type_descriptor_t *derived_type,
@@ -404,6 +425,10 @@ nmo_status_t nmo_runtime_remap_copy_refs(
         if (nmo_guid_equals(current->guid, CKPGUID_KEYEDANIMATION)) {
             NMO_RETURN_IF_ERROR(runtime_remap_keyedanimation_refs(
                 (nmo_keyedanimation_state_t *)current_instance, remap));
+        }
+        if (nmo_guid_equals(current->guid, CKPGUID_CURVE)) {
+            NMO_RETURN_IF_ERROR(runtime_remap_curve_refs(
+                (nmo_curve_state_t *)current_instance, remap));
         }
 
         if (nmo_guid_is_null(current->base_type)) {
@@ -520,6 +545,10 @@ static nmo_class_id_t normalize_expected_class_for_field(const char *name)
     if (strcmp(name, "character") == 0) return NMO_CID_CHARACTER;
     if (strcmp(name, "curve_id") == 0 || strcmp(name, "curve") == 0) {
         return NMO_CID_CURVE;
+    }
+    if (strcmp(name, "control_point_ids") == 0 ||
+        strcmp(name, "sub_points.ref") == 0) {
+        return NMO_CID_CURVEPOINT;
     }
     if (strcmp(name, "place_id") == 0 || strcmp(name, "place") == 0) {
         return NMO_CID_PLACE;
@@ -926,6 +955,44 @@ static nmo_status_t normalize_keyed_animation(
     return NMO_OK;
 }
 
+static nmo_status_t normalize_curve_sub_points(
+    nmo_curve_state_t *state,
+    nmo_object_repository_t *repo,
+    const nmo_type_registry_t *types,
+    size_t *changes)
+{
+    if (!state) return NMO_OK;
+    if ((state->control_point_count > 0 && !state->control_point_ids) ||
+        (state->sub_point_count > 0 && !state->sub_points)) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    uint32_t count = state->sub_point_count;
+    for (uint32_t i = 0; i < count;) {
+        const nmo_ref_t *ref = &state->sub_points[i].ref;
+        const nmo_object_id_t id = nmo_ref_runtime_id(ref);
+        if (ref->state == NMO_REF_RESOLVED &&
+            !normalize_id_is_invalid(repo, id) &&
+            !normalize_id_has_wrong_class(
+                repo, types, id, NMO_CID_CURVEPOINT)) {
+            ++i;
+            continue;
+        }
+        if (state->sub_points[i].chunk != NULL) {
+            nmo_chunk_destroy(state->sub_points[i].chunk);
+            state->sub_points[i].chunk = NULL;
+        }
+        const uint32_t remaining = count - i - 1u;
+        if (remaining > 0) {
+            memmove(&state->sub_points[i], &state->sub_points[i + 1u],
+                    (size_t)remaining * sizeof(*state->sub_points));
+        }
+        state->sub_point_count = --count;
+        state->sub_points[count].chunk = NULL;
+        (*changes)++;
+    }
+    return NMO_OK;
+}
+
 typedef struct normalize_ref_ctx {
     nmo_object_repository_t *repo;
     const nmo_type_registry_t *types;
@@ -1116,6 +1183,11 @@ nmo_status_t nmo_runtime_normalize_invalid_refs(
                 type_rt->types, obj, CKPGUID_KEYEDANIMATION);
         NMO_RETURN_IF_ERROR(normalize_keyed_animation(
             keyed, repo, type_rt->types, &changed));
+        nmo_curve_state_t *curve = (nmo_curve_state_t *)
+            nmo_type_query_object_get_ancestor_state_by_guid(
+                type_rt->types, obj, CKPGUID_CURVE);
+        NMO_RETURN_IF_ERROR(normalize_curve_sub_points(
+            curve, repo, type_rt->types, &changed));
 
         const nmo_type_descriptor_t *derived = runtime_find_type_for_object(type_rt, obj);
         const nmo_type_descriptor_t *current = derived;

@@ -265,7 +265,7 @@ nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry) {
 
     /* CKCurvePointSubchunk */
     static const nmo_struct_field_def_t ckcurvepointsubchunk_fields[] = {
-        NMO_STRUCT_FIELD_GUID_FLAGS("point_id", CKPGUID_ID, NMO_FIELD_REFERENCE),
+        NMO_STRUCT_FIELD_NAME("ref", "uint32[3]"),
         NMO_STRUCT_FIELD_GUID("chunk", CKPGUID_STATECHUNK)
     };
     static const nmo_struct_type_def_t ckcurvepointsubchunk_def =

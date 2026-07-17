@@ -593,9 +593,7 @@ static nmo_status_t runtime_delete_validate_atomic_refs(
             type_rt->types, obj, CKPGUID_CURVE);
     if (curve != NULL &&
         ((curve->control_point_count > 0u && curve->control_point_ids == NULL) ||
-         (curve->sub_point_count != 0u &&
-          (curve->sub_point_count != curve->control_point_count ||
-           curve->sub_points == NULL)))) {
+         (curve->sub_point_count > 0u && curve->sub_points == NULL))) {
         return NMO_ERR_VALIDATION_FAILED;
     }
     return NMO_OK;
@@ -766,27 +764,40 @@ static nmo_status_t runtime_delete_detach_atomic_refs(
     if (curve != NULL) {
         uint32_t count = curve->control_point_count;
         for (uint32_t i = 0u; i < count;) {
-            if (!runtime_id_set_contains(delete_set, curve->control_point_ids[i])) {
+            if (!runtime_id_set_contains(
+                    delete_set,
+                    nmo_ref_runtime_id(&curve->control_point_ids[i]))) {
                 ++i;
                 continue;
-            }
-            if (curve->sub_point_count != 0u && curve->sub_points[i].chunk != NULL) {
-                nmo_chunk_destroy(curve->sub_points[i].chunk);
-                curve->sub_points[i].chunk = NULL;
             }
             uint32_t remaining = count - i - 1u;
             if (remaining > 0u) {
                 memmove(&curve->control_point_ids[i],
                         &curve->control_point_ids[i + 1u],
                         (size_t)remaining * sizeof(*curve->control_point_ids));
-                if (curve->sub_point_count != 0u) {
-                    memmove(&curve->sub_points[i], &curve->sub_points[i + 1u],
-                            (size_t)remaining * sizeof(*curve->sub_points));
-                }
             }
-            --count;
-            curve->control_point_count = count;
-            if (curve->sub_point_count != 0u) curve->sub_point_count = count;
+            curve->control_point_count = --count;
+        }
+
+        count = curve->sub_point_count;
+        for (uint32_t i = 0u; i < count;) {
+            if (!runtime_id_set_contains(
+                    delete_set,
+                    nmo_ref_runtime_id(&curve->sub_points[i].ref))) {
+                ++i;
+                continue;
+            }
+            if (curve->sub_points[i].chunk != NULL) {
+                nmo_chunk_destroy(curve->sub_points[i].chunk);
+                curve->sub_points[i].chunk = NULL;
+            }
+            const uint32_t remaining = count - i - 1u;
+            if (remaining > 0u) {
+                memmove(&curve->sub_points[i], &curve->sub_points[i + 1u],
+                        (size_t)remaining * sizeof(*curve->sub_points));
+            }
+            curve->sub_point_count = --count;
+            curve->sub_points[count].chunk = NULL;
         }
     }
     return NMO_OK;

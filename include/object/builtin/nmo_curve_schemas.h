@@ -31,7 +31,7 @@ typedef struct nmo_curve_state {
 
     uint8_t has_curve_data;
     uint32_t control_point_count;
-    nmo_object_id_t *control_point_ids;
+    nmo_ref_t *control_point_ids;
 
     float fitting_coeff;
     uint32_t step_count;
