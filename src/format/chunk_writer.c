@@ -398,6 +398,10 @@ static nmo_status_t writer_append_sequence_count(nmo_chunk_writer_t *w,
                                                  size_t count,
                                                  writer_track_position_fn track,
                                                  int should_track) {
+    if (count > UINT32_MAX || (should_track && w->data_size > UINT32_MAX)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
     int result = ensure_data_capacity(w, 1);
     if (result != NMO_OK) {
         return result;
@@ -419,6 +423,9 @@ static nmo_status_t writer_reserve_tracked_dword_span(nmo_chunk_writer_t *w,
                                                       writer_track_position_fn track,
                                                       uint32_t **out) {
     if (out == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (track != NULL && w->data_size > UINT32_MAX) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
@@ -778,12 +785,10 @@ nmo_status_t nmo_chunk_writer_write_object_id(nmo_chunk_writer_t *w, nmo_object_
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-#ifndef NDEBUG
-    /* Increment audit counter if active */
-    if (w->intlist_audit.active) {
-        w->intlist_audit.written_count++;
+    int in_file_context = writer_has_file_context(w);
+    if (id != 0 && !in_file_context && w->data_size > UINT32_MAX) {
+        return NMO_ERR_INVALID_ARGUMENT;
     }
-#endif
 
     // Ensure capacity for the ID (1 DWORD)
     int result = ensure_data_capacity(w, 1);
@@ -791,11 +796,11 @@ nmo_status_t nmo_chunk_writer_write_object_id(nmo_chunk_writer_t *w, nmo_object_
         return result;
     }
 
-    if (w->chunk != NULL) {
-        w->chunk->chunk_options |= NMO_CHUNK_OPTION_IDS;
+    uint32_t encoded_value = 0;
+    result = encode_object_id(w, id, &encoded_value);
+    if (result != NMO_OK) {
+        return result;
     }
-
-    int in_file_context = writer_has_file_context(w);
 
     // If ID is non-zero and we don't have file context, track the position
     if (id != 0 && !in_file_context) {
@@ -805,13 +810,17 @@ nmo_status_t nmo_chunk_writer_write_object_id(nmo_chunk_writer_t *w, nmo_object_
         }
     }
 
-    uint32_t encoded_value = 0;
-    result = encode_object_id(w, id, &encoded_value);
-    if (result != NMO_OK) {
-        return result;
+    w->data[w->data_size++] = encoded_value;
+
+    if (w->chunk != NULL) {
+        w->chunk->chunk_options |= NMO_CHUNK_OPTION_IDS;
     }
 
-    w->data[w->data_size++] = encoded_value;
+#ifndef NDEBUG
+    if (w->intlist_audit.active) {
+        w->intlist_audit.written_count++;
+    }
+#endif
 
     if (w->version_stack_top >= 0) {
         nmo_chunk_version_context_t *ctx = &w->version_stack[w->version_stack_top];
@@ -828,20 +837,22 @@ nmo_status_t nmo_chunk_writer_start_object_sequence(nmo_chunk_writer_t *w, size_
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
+    int in_file_context = writer_has_file_context(w);
+    nmo_status_t result = writer_append_sequence_count(w,
+                                                       count,
+                                                       track_id_sequence_start,
+                                                       count > 0 && !in_file_context);
+    if (result != NMO_OK) {
+        return result;
+    }
+
     if (w->version_stack_top >= 0 && count <= (size_t)INT_MAX) {
         nmo_chunk_writer_set_expected_ids(w, (int)count);
     }
-
-    // Set the IDS option flag
     if (w->chunk != NULL) {
         w->chunk->chunk_options |= NMO_CHUNK_OPTION_IDS;
     }
-
-    int in_file_context = writer_has_file_context(w);
-    return writer_append_sequence_count(w,
-                                        count,
-                                        track_id_sequence_start,
-                                        count > 0 && !in_file_context);
+    return NMO_OK;
 }
 
 nmo_status_t nmo_chunk_writer_start_manager_sequence(nmo_chunk_writer_t *w,
@@ -851,9 +862,8 @@ nmo_status_t nmo_chunk_writer_start_manager_sequence(nmo_chunk_writer_t *w,
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    // Set the MAN option flag
-    if (w->chunk != NULL) {
-        w->chunk->chunk_options |= NMO_CHUNK_OPTION_MAN;
+    if (count > UINT32_MAX) {
+        return NMO_ERR_INVALID_ARGUMENT;
     }
 
     uint32_t *span = NULL;
@@ -868,6 +878,9 @@ nmo_status_t nmo_chunk_writer_start_manager_sequence(nmo_chunk_writer_t *w,
     span[0] = (uint32_t) count;
     span[1] = manager.d1;
     span[2] = manager.d2;
+    if (w->chunk != NULL) {
+        w->chunk->chunk_options |= NMO_CHUNK_OPTION_MAN;
+    }
     return NMO_OK;
 }
 
@@ -887,15 +900,17 @@ nmo_status_t nmo_chunk_writer_start_subchunk_sequence(nmo_chunk_writer_t *w, siz
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    // Set the CHN option flag
+    nmo_status_t result = writer_append_sequence_count(w,
+                                                       count,
+                                                       track_chunk_sequence_start,
+                                                       1);
+    if (result != NMO_OK) {
+        return result;
+    }
     if (w->chunk != NULL) {
         w->chunk->chunk_options |= NMO_CHUNK_OPTION_CHN;
     }
-
-    return writer_append_sequence_count(w,
-                                        count,
-                                        track_chunk_sequence_start,
-                                        1);
+    return NMO_OK;
 }
 
 /**
@@ -1093,10 +1108,6 @@ nmo_status_t nmo_chunk_writer_write_manager_int(nmo_chunk_writer_t *w, nmo_guid_
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    if (w->chunk != NULL) {
-        w->chunk->chunk_options |= NMO_CHUNK_OPTION_MAN;
-    }
-
     uint32_t *span = NULL;
     int result = writer_reserve_tracked_dword_span(w,
                                                    3,
@@ -1109,6 +1120,10 @@ nmo_status_t nmo_chunk_writer_write_manager_int(nmo_chunk_writer_t *w, nmo_guid_
     span[0] = manager.d1;
     span[1] = manager.d2;
     span[2] = (uint32_t) value;
+
+    if (w->chunk != NULL) {
+        w->chunk->chunk_options |= NMO_CHUNK_OPTION_MAN;
+    }
 
     return NMO_OK;
 }
