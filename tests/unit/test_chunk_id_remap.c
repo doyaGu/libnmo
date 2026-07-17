@@ -2337,11 +2337,51 @@ TEST(chunk_id_remap, kinematicchain_unresolved_refs_round_trip_atomically) {
     nmo_chunk_close(truncated);
     ASSERT_NE(NMO_OK, nmo_kinematicchain_deserialize(
         &loaded, truncated, NULL, NULL));
-    ASSERT_EQ(NMO_REF_NONE, loaded.start_effector.state);
-    ASSERT_EQ(NMO_REF_NONE, loaded.end_effector.state);
+    ASSERT_TRUE(loaded.has_chain_data);
+    ASSERT_EQ(111u, loaded.start_effector.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, loaded.start_effector.state);
+    ASSERT_EQ(222u, loaded.end_effector.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, loaded.end_effector.state);
+
+    nmo_kinematicchain_state_t absent;
+    ASSERT_EQ(NMO_OK, nmo_kinematicchain_vtable.create(
+        &absent, NULL, NULL));
+    nmo_chunk_t *absent_chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(absent_chunk);
+    absent_chunk->class_id = NMO_CID_KINEMATICCHAIN;
+    absent_chunk->chunk_version = NMO_CHUNK_VERSION4;
+    absent_chunk->data_version = 7;
+    absent_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(absent_chunk, &write_context);
+    ASSERT_EQ(NMO_OK, nmo_kinematicchain_serialize(
+        &absent, absent_chunk, NULL, &serialize_context));
+    nmo_chunk_close(absent_chunk);
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_chunk_seek_identifier(
+        absent_chunk, CK_STATESAVE_KINEMATICCHAINALL));
+
+    nmo_kinematicchain_state_t invalid = source;
+    invalid.end_effector = nmo_ref_from_id(999);
+    nmo_chunk_t *target = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(target);
+    target->class_id = NMO_CID_KINEMATICCHAIN;
+    target->chunk_version = NMO_CHUNK_VERSION4;
+    target->data_version = 7;
+    target->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(target, &write_context);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(target, 0x12345678u));
+    nmo_chunk_close(target);
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_kinematicchain_serialize(
+        &invalid, target, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(target));
+    uint32_t marker = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(target, &marker));
+    ASSERT_EQ(0x12345678u, marker);
 
     nmo_kinematicchain_vtable.destroy(&source, NULL, NULL);
     nmo_kinematicchain_vtable.destroy(&loaded, NULL, NULL);
+    nmo_kinematicchain_vtable.destroy(&absent, NULL, NULL);
     nmo_arena_destroy(arena);
 }
 
