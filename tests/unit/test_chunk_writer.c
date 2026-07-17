@@ -166,9 +166,31 @@ TEST(chunk_writer, growth) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_writer, rejects_unencodable_byte_counts) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_writer_t* writer = nmo_chunk_writer_create(arena);
+    ASSERT_NOT_NULL(writer);
+    nmo_chunk_writer_start(writer, 400, NMO_CHUNK_VERSION4);
+
+    const uint8_t value = 0x7f;
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+        nmo_chunk_writer_write_bytes(writer, &value, SIZE_MAX));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+        nmo_chunk_writer_write_buffer_nosize(writer, SIZE_MAX, &value));
+
+    nmo_chunk_t* chunk = nmo_chunk_writer_finalize(writer);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(0u, chunk->data.count);
+
+    nmo_chunk_writer_destroy(writer);
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_writer, primitives);
     REGISTER_TEST(chunk_writer, roundtrip);
     REGISTER_TEST(chunk_writer, object_ids);
     REGISTER_TEST(chunk_writer, growth);
+    REGISTER_TEST(chunk_writer, rejects_unencodable_byte_counts);
 TEST_MAIN_END()
