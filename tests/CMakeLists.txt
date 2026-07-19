@@ -41,6 +41,11 @@ add_subdirectory(stress)
 # Batch oracle tool (not a CTest target — run manually)
 add_executable(batch_interface_oracle batch_interface_oracle.c)
 target_link_libraries(batch_interface_oracle PRIVATE nmo)
+target_include_directories(batch_interface_oracle PRIVATE ${PROJECT_SOURCE_DIR}/src)
+add_test(
+    NAME test_interface_chunk_batch_oracle
+    COMMAND batch_interface_oracle "${PROJECT_SOURCE_DIR}/data/BBSamples"
+)
 
 # Fuzz tests (optional)
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/fuzz/CMakeLists.txt)

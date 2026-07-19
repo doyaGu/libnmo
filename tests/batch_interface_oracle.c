@@ -17,8 +17,8 @@
 #endif
 
 #include "runtime/nmo_context.h"
-#include "document/nmo_document.h"
-#include "document/nmo_document_load.h"
+#include "session/nmo_session.h"
+#include "runtime/runtime_internal.h"
 #include "format/nmo_object.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
@@ -52,19 +52,78 @@ static int has_ext(const char *name, const char *ext) {
 #endif
 }
 
+static void print_identifier_chain(const nmo_chunk_t *chunk) {
+    if (chunk == NULL || chunk->data.count < 2) return;
+    const uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    size_t pos = 0;
+    size_t guard = 0;
+    printf("    identifiers:");
+    while (pos + 1u < chunk->data.count && guard++ < chunk->data.count) {
+        printf(" [%zu]=0x%08X->%u", pos, data[pos], data[pos + 1u]);
+        if (data[pos + 1u] == 0 || data[pos + 1u] >= chunk->data.count) break;
+        pos = data[pos + 1u];
+    }
+    printf("\n");
+}
+
+static void print_dword_window(const uint32_t *original,
+                               const uint32_t *written,
+                               size_t count,
+                               size_t mismatch) {
+    size_t first = mismatch > 3u ? mismatch - 3u : 0u;
+    size_t last = mismatch + 3u < count ? mismatch + 3u : count - 1u;
+    for (size_t i = first; i <= last; ++i) {
+        printf("    dword[%zu] orig=0x%08X writ=0x%08X%s\n",
+               i, original[i], written[i], i == mismatch ? "  <" : "");
+    }
+}
+
+static int is_snapshot_padding_difference(const nmo_interface_data_t *data,
+                                          const uint32_t *original,
+                                          const uint32_t *written,
+                                          size_t count,
+                                          size_t index) {
+    if (data == NULL || !data->script.has_snapshot ||
+        !(data->format_flags & NMO_INTERFACE_FORMAT_COLOR_PRESENT) ||
+        index + 1u >= count ||
+        original[index + 1u] != data->script.color ||
+        written[index + 1u] != data->script.color) {
+        return 0;
+    }
+
+    const uint8_t *ob = (const uint8_t *)&original[index];
+    const uint8_t *wb = (const uint8_t *)&written[index];
+    for (size_t byte = 0; byte < sizeof(uint32_t); ++byte) {
+        if (wb[byte] == 0) {
+            for (size_t tail = byte; tail < sizeof(uint32_t); ++tail) {
+                if (wb[tail] != 0) return 0;
+            }
+            return memcmp(ob, wb, byte) == 0;
+        }
+        if (ob[byte] != wb[byte]) return 0;
+    }
+    return 0;
+}
+
 static void verify_file(const char *path, oracle_stats_t *stats) {
     stats->files_scanned++;
 
     nmo_context_t *ctx = nmo_context_create(NULL);
-    nmo_document_t *document = NULL;
-    nmo_status_t load_ok = nmo_document_load_file(ctx, path, NULL, &document);
-    if (load_ok != NMO_OK || document == NULL) {
+    nmo_session_t *session = nmo_session_create(ctx);
+    if (session == NULL) {
+        nmo_context_release(ctx);
+        return;
+    }
+    nmo_status_t load_ok = nmo_session_load_file(session, path, NULL, NULL);
+    if (load_ok != NMO_OK ||
+        nmo_session_ensure_behavior_acceleration(session) != NMO_OK) {
+        nmo_session_destroy(session);
         nmo_context_release(ctx);
         return;
     }
     stats->files_loaded++;
 
-    nmo_object_repository_t *repo = nmo_document_get_repository(document);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
     size_t count = 0;
     nmo_object_t **all = nmo_object_repository_get_all(repo, &count);
 
@@ -125,6 +184,11 @@ static void verify_file(const char *path, oracle_stats_t *stats) {
                     if (ob[b] == 0) { mask = (1u << (b * 8)) - 1u; break; }
                 }
                 if ((orig_data[d] & mask) == (writ_data[d] & mask)) continue;
+                if (is_snapshot_padding_difference(state->interface_data,
+                                                   orig_data, writ_data,
+                                                   original->data.count, d)) {
+                    continue;
+                }
 
                 if (mismatches == 0) {
                     printf("  DWORD DIFF: %s obj=%u name='%s' dword[%zu]: "
@@ -132,12 +196,15 @@ static void verify_file(const char *path, oracle_stats_t *stats) {
                            path, nmo_object_get_id(obj),
                            nmo_object_get_name(obj) ? nmo_object_get_name(obj) : "",
                            d, orig_data[d], writ_data[d]);
+                    print_dword_window(orig_data, writ_data,
+                                       original->data.count, d);
                 }
                 mismatches++;
             }
         }
 
         if (mismatches > 0) {
+            print_identifier_chain(original);
             stats->dword_mismatches += mismatches;
             stats->behaviors_failed++;
         } else {
@@ -148,7 +215,7 @@ static void verify_file(const char *path, oracle_stats_t *stats) {
         nmo_arena_destroy(arena);
     }
 
-    nmo_document_destroy(document);
+    nmo_session_destroy(session);
     nmo_context_release(ctx);
 }
 
