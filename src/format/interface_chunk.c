@@ -2074,11 +2074,7 @@ static nmo_status_t write_extra_data(nmo_chunk_t *chunk,
     default: return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    /* Write as raw DWORDs (identifier value + next-pointer=0) to avoid
-     * corrupting the identifier chain that write_identifier back-patches. */
-    st = nmo_chunk_write_dword(chunk, id);
-    NMO_RETURN_IF_ERROR(st);
-    st = nmo_chunk_write_dword(chunk, 0);
+    st = nmo_chunk_write_identifier(chunk, id);
     NMO_RETURN_IF_ERROR(st);
 
     /* Entry count */

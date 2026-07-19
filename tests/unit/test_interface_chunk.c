@@ -2497,6 +2497,49 @@ TEST(interface_chunk, write_rejects_invalid_extra_arrays_atomically) {
     nmo_arena_destroy(arena);
 }
 
+TEST(interface_chunk, write_links_extra_data_into_identifier_chain) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_interface_extra_entry_t entry;
+    memset(&entry, 0, sizeof(entry));
+    entry.type = 1;
+    entry.id1 = 900;
+
+    nmo_interface_data_t data;
+    memset(&data, 0, sizeof(data));
+    data.version = 0x15;
+    data.script.behavior_id = 100;
+    data.script.flags = NMO_INTERFACE_FLAG_HEADER_ONLY;
+    data.extra.present = true;
+    data.extra.version = 3;
+    data.extra.entry_count = 1;
+    data.extra.entries = &entry;
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_interface_chunk_write(chunk, &data, NULL));
+
+    const uint32_t *dwords = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    ASSERT_TRUE(chunk->data.count > 2);
+    ASSERT_EQ(1u, dwords[0]);
+    ASSERT_TRUE(dwords[1] > 0);
+    ASSERT_TRUE(dwords[1] + 1u < chunk->data.count);
+    ASSERT_EQ(NMO_INTERFACE_EXTRA_ID_V3, dwords[dwords[1]]);
+    ASSERT_EQ(0u, dwords[dwords[1] + 1u]);
+    ASSERT_TRUE(chunk_has_identifier(chunk, NMO_INTERFACE_EXTRA_ID_V3));
+
+    nmo_interface_data_t parsed;
+    memset(&parsed, 0, sizeof(parsed));
+    ASSERT_EQ(NMO_OK, nmo_interface_chunk_parse(chunk, arena, NULL, &parsed));
+    ASSERT_TRUE(parsed.extra.present);
+    ASSERT_EQ(3u, parsed.extra.version);
+    ASSERT_EQ(1, (int)parsed.extra.entry_count);
+    ASSERT_EQ(900u, parsed.extra.entries[0].id1);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST(interface_chunk, extra_count_stays_in_section) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
     ASSERT_NOT_NULL(arena);
@@ -3088,6 +3131,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(interface_chunk, write_rejects_missing_subs_atomically);
     REGISTER_TEST(interface_chunk, write_rejects_missing_body_arrays_atomically);
     REGISTER_TEST(interface_chunk, write_rejects_invalid_extra_arrays_atomically);
+    REGISTER_TEST(interface_chunk, write_links_extra_data_into_identifier_chain);
     /* Serialize integration */
     REGISTER_TEST(interface_chunk, serialize_structured_write_round_trip);
     REGISTER_TEST(interface_chunk, parse_file_context_chunk_falls_back_when_ids_are_raw);
