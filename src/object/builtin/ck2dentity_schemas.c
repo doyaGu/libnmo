@@ -486,9 +486,7 @@ static nmo_status_t serialize_modern(
     
     /* Build flags with optional block indicators */
     uint32_t flags = state->flags;
-    const bool write_source = state->has_source_rect ||
-        state->source_rect.left != 0.0f || state->source_rect.top != 0.0f ||
-        state->source_rect.right != 0.0f || state->source_rect.bottom != 0.0f;
+    const bool write_source = state->has_source_rect;
     if (write_source) {
         flags |= NMO_CK2DENTITY_FLAG_SOURCE_RECT;
     }

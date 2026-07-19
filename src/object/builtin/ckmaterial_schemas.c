@@ -28,7 +28,35 @@
 #include <stddef.h>
 #include <stdalign.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(material, nmo_material_state_t)
+static void nmo_material_set_defaults(nmo_material_state_t *state)
+{
+    if (state == NULL) return;
+
+    state->diffuse_color = nmo_color_to_argb32(
+        &(nmo_color_t){0.7f, 0.7f, 0.7f, 1.0f});
+    state->ambient_color = nmo_color_to_argb32(
+        &(nmo_color_t){0.3f, 0.3f, 0.3f, 1.0f});
+    state->specular_color = 0xFF000000u;
+    state->emissive_color = 0xFF000000u;
+    state->specular_power = 0.0f;
+    for (size_t i = 0; i < 4; ++i) {
+        state->textures[i] = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+    }
+    state->packed_modes =
+        ((uint32_t)VXTEXTUREBLEND_MODULATEALPHA) |
+        ((uint32_t)VXTEXTUREFILTER_LINEAR << 4) |
+        ((uint32_t)VXTEXTUREFILTER_LINEAR << 8) |
+        ((uint32_t)VXBLEND_ONE << 12) |
+        ((uint32_t)VXBLEND_ZERO << 16) |
+        ((uint32_t)VXSHADE_GOURAUD << 20) |
+        ((uint32_t)VXFILL_SOLID << 24) |
+        ((uint32_t)VXTEXTURE_ADDRESSWRAP << 28);
+    state->packed_flags =
+        0x06u |
+        ((uint32_t)VXCMP_LESSEQUAL << 8) |
+        ((uint32_t)VXCMP_ALWAYS << 16);
+    state->effect_parameter = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+}
 
 static void nmo_material_dispose_base_arrays(nmo_material_state_t *state)
 {
@@ -37,6 +65,17 @@ static void nmo_material_dispose_base_arrays(nmo_material_state_t *state)
     nmo_array_dispose(&state->base.attributes);
     nmo_array_dispose(&state->base.legacy_attributes);
 }
+
+NMO_DEFINE_OBJECT_LIFECYCLE(
+    material,
+    nmo_material_state_t,
+    do {
+        nmo_status_t result = nmo_beobject_vtable.create(
+            &state->base, NULL, context);
+        if (result != NMO_OK) return result;
+        nmo_material_set_defaults(state);
+    } while (0),
+    nmo_material_dispose_base_arrays(state))
 
 /* =============================================================================
  * REFLECTION FIELDS
@@ -325,7 +364,9 @@ nmo_status_t nmo_material_deserialize(
     nmo_material_state_t *out_state = (nmo_material_state_t *)instance;
     if (out_state == NULL || chunk == NULL) return NMO_ERR_INVALID_ARGUMENT;
 
-    nmo_material_state_t decoded = {0};
+    nmo_material_state_t decoded;
+    nmo_status_t result = nmo_material_create(&decoded, type, context);
+    if (result != NMO_OK) return result;
     if (out_state->base.scripts.allocator.alloc != NULL) {
         decoded.base.scripts.allocator = out_state->base.scripts.allocator;
     }
@@ -337,7 +378,7 @@ nmo_status_t nmo_material_deserialize(
             out_state->base.legacy_attributes.allocator;
     }
 
-    nmo_status_t result = nmo_material_deserialize_internal(
+    result = nmo_material_deserialize_internal(
         &decoded, chunk, type, context);
     if (result != NMO_OK) {
         nmo_material_dispose_base_arrays(&decoded);

@@ -16,7 +16,16 @@
 #include "type/nmo_reflection.h"
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(targetlight, nmo_targetlight_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE(
+    targetlight,
+    nmo_targetlight_state_t,
+    do {
+        nmo_status_t result = nmo_light_vtable.create(
+            &state->base, NULL, context);
+        if (result != NMO_OK) return result;
+        state->target = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+    } while (0),
+    ((void)0))
 
 static void nmo_targetlight_dispose_base_arrays(nmo_targetlight_state_t *state)
 {
