@@ -35,14 +35,23 @@
 #include <stdalign.h>
 #include <string.h>
 
+static void nmo_scene_dispose_state_arrays(nmo_scene_state_t *state);
+
 NMO_DEFINE_OBJECT_LIFECYCLE(
     scene,
     nmo_scene_state_t,
     do {
-        nmo_status_t result = nmo_array_init(&state->object_descs, sizeof(nmo_scene_object_desc_t), 0, NULL);
+        nmo_status_t result = nmo_beobject_vtable.create(
+            &state->base, NULL, context);
         if (result != NMO_OK) return result;
+        result = nmo_array_init(
+            &state->object_descs, sizeof(nmo_scene_object_desc_t), 0, NULL);
+        if (result != NMO_OK) {
+            nmo_scene_dispose_state_arrays(state);
+            return result;
+        }
     } while (0),
-    nmo_array_dispose(&state->object_descs))
+    nmo_scene_dispose_state_arrays(state))
 
 static void nmo_scene_dispose_state_arrays(nmo_scene_state_t *state)
 {
@@ -543,6 +552,8 @@ static nmo_status_t nmo_scene_copy(
     }
     NMO_RETURN_IF_ERROR(nmo_beobject_clone_attributes(
         arena, &d->base.attributes, &s->base.attributes));
+    NMO_RETURN_IF_ERROR(nmo_beobject_clone_legacy_attributes(
+        arena, &d->base.legacy_attributes, &s->base.legacy_attributes));
 
     if (d->object_descs.data == s->object_descs.data) {
         memset(&d->object_descs, 0, sizeof(d->object_descs));

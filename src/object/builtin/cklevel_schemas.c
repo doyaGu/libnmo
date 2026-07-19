@@ -31,24 +31,34 @@
 #include <stdalign.h>
 #include <string.h>
 
+static void nmo_level_dispose_state_arrays(nmo_level_state_t *state);
+
 NMO_DEFINE_OBJECT_LIFECYCLE(
     level,
     nmo_level_state_t,
     do {
         state->has_inactive_manager_section = 0;
-        nmo_status_t result = nmo_array_init(&state->scene_ids, sizeof(nmo_ref_t), 0, NULL);
+        nmo_status_t result = nmo_beobject_vtable.create(
+            &state->base, NULL, context);
         if (result != NMO_OK) return result;
+        result = nmo_array_init(&state->scene_ids, sizeof(nmo_ref_t), 0, NULL);
+        if (result != NMO_OK) {
+            nmo_level_dispose_state_arrays(state);
+            return result;
+        }
         result = nmo_array_init(&state->inactive_manager_guids, sizeof(nmo_guid_t), 0, NULL);
-        if (result != NMO_OK) return result;
+        if (result != NMO_OK) {
+            nmo_level_dispose_state_arrays(state);
+            return result;
+        }
         result = nmo_array_init(&state->duplicate_manager_names, sizeof(char *), 0, NULL);
-        if (result != NMO_OK) return result;
+        if (result != NMO_OK) {
+            nmo_level_dispose_state_arrays(state);
+            return result;
+        }
         nmo_object_array_set_string_lifecycle(&state->duplicate_manager_names);
     } while (0),
-    do {
-        nmo_array_dispose(&state->scene_ids);
-        nmo_array_dispose(&state->inactive_manager_guids);
-        nmo_array_dispose(&state->duplicate_manager_names);
-    } while (0))
+    nmo_level_dispose_state_arrays(state))
 
 static void nmo_level_dispose_state_arrays(nmo_level_state_t *state)
 {
@@ -580,6 +590,8 @@ static nmo_status_t nmo_level_copy(
     }
     NMO_RETURN_IF_ERROR(nmo_beobject_clone_attributes(
         arena, &d->base.attributes, &s->base.attributes));
+    NMO_RETURN_IF_ERROR(nmo_beobject_clone_legacy_attributes(
+        arena, &d->base.legacy_attributes, &s->base.legacy_attributes));
 
     if (d->scene_ids.data == s->scene_ids.data) {
         memset(&d->scene_ids, 0, sizeof(d->scene_ids));

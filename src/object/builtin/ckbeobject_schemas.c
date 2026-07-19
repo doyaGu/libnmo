@@ -894,7 +894,7 @@ nmo_status_t nmo_beobject_serialize(
     return NMO_OK;
 }
 
-static nmo_status_t nmo_beobject_clone_legacy_attributes(
+nmo_status_t nmo_beobject_clone_legacy_attributes(
     nmo_arena_t *arena,
     nmo_array_t *destination,
     const nmo_array_t *source)

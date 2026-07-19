@@ -147,7 +147,8 @@ static nmo_status_t nmo_renderobject_copy(
                                         &s->base.scripts.allocator));
     NMO_RETURN_IF_ERROR(nmo_beobject_clone_attributes(
         arena, &d->base.attributes, &s->base.attributes));
-    NMO_RETURN_OK();
+    return nmo_beobject_clone_legacy_attributes(
+        arena, &d->base.legacy_attributes, &s->base.legacy_attributes);
 }
 
 static nmo_status_t nmo_renderobject_validate(

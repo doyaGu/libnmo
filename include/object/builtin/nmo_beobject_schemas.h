@@ -131,6 +131,11 @@ NMO_API nmo_status_t nmo_beobject_clone_attributes(
     nmo_array_t *destination,
     const nmo_array_t *source);
 
+NMO_API nmo_status_t nmo_beobject_clone_legacy_attributes(
+    nmo_arena_t *arena,
+    nmo_array_t *destination,
+    const nmo_array_t *source);
+
 NMO_DECLARE_OBJECT_SCHEMA(nmo_beobject_vtable, nmo_register_beobject_type)
 
 #ifdef __cplusplus
