@@ -6417,6 +6417,49 @@ TEST(chunk_id_remap, beobject_legacy_attributes_are_lossless_and_atomic) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, derived_beobject_copy_clones_legacy_attributes) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_group_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_group_vtable.create(&source, NULL, NULL));
+    source.base.has_legacy_attributes = 1;
+    nmo_beobject_legacy_attribute_t attribute = {
+        .compatible_class_id = 12,
+        .name = "LegacyName",
+        .category = "LegacyCategory",
+        .parameter_guid = {0x12345678u, 0x9abcdef0u},
+        .parameter = nmo_ref_from_raw(777),
+    };
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &source.base.legacy_attributes, &attribute));
+
+    nmo_group_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_group_vtable.create(&copied, NULL, NULL));
+    nmo_type_descriptor_t group_type = {
+        .size = sizeof(nmo_group_state_t),
+    };
+    ASSERT_EQ(NMO_OK, nmo_group_vtable.copy(
+        &source, &copied, &group_type, arena));
+
+    ASSERT_NE(source.base.legacy_attributes.data,
+              copied.base.legacy_attributes.data);
+    const nmo_beobject_legacy_attribute_t *copied_attributes =
+        NMO_ARRAY_DATA(
+            nmo_beobject_legacy_attribute_t,
+            &copied.base.legacy_attributes);
+    ASSERT_NE(attribute.name, copied_attributes[0].name);
+    ASSERT_NE(attribute.category, copied_attributes[0].category);
+    ASSERT_STR_EQ(attribute.name, copied_attributes[0].name);
+    ASSERT_STR_EQ(attribute.category, copied_attributes[0].category);
+    ASSERT_EQ(attribute.parameter.raw_id,
+              copied_attributes[0].parameter.raw_id);
+
+    nmo_group_vtable.destroy(&copied, NULL, NULL);
+    nmo_group_vtable.destroy(&source, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, beobject_copy_preserves_content_equality) {
     nmo_arena_t *source_arena = nmo_arena_create(NULL, 8192);
     nmo_arena_t *copy_arena = nmo_arena_create(NULL, 8192);
@@ -8299,6 +8342,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, beobject_attribute_failure_keeps_previous_atomic_state);
     REGISTER_TEST(chunk_id_remap, beobject_serializer_does_not_publish_partial_chunk);
     REGISTER_TEST(chunk_id_remap, beobject_legacy_attributes_are_lossless_and_atomic);
+    REGISTER_TEST(chunk_id_remap, derived_beobject_copy_clones_legacy_attributes);
     REGISTER_TEST(chunk_id_remap, beobject_copy_preserves_content_equality);
     REGISTER_TEST(chunk_id_remap, character_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, character_rejects_cross_section_counts_before_allocation);
