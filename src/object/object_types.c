@@ -65,6 +65,8 @@
 #include "object/builtin/nmo_interfaceobjectmanager_schemas.h"
 #include "object/builtin/nmo_grid_schemas.h"
 #include "object/builtin/nmo_layer_schemas.h"
+#include "object/builtin/nmo_attributemanager_schemas.h"
+#include "object/builtin/nmo_messagemanager_schemas.h"
 
 #include <stddef.h>
 #include <stdalign.h>
@@ -301,6 +303,10 @@ nmo_status_t nmo_register_object_types(nmo_type_registry_t *registry) {
     NMO_RETURN_IF_ERROR(nmo_register_3d_entity_types(registry));
     NMO_RETURN_IF_ERROR(nmo_register_extended_3d_types(registry));
     NMO_RETURN_IF_ERROR(nmo_register_mesh_types(registry));
+
+    /* File-manager schemas use manager GUIDs rather than CK class IDs. */
+    NMO_RETURN_IF_ERROR(nmo_register_attributemanager_type(registry));
+    NMO_RETURN_IF_ERROR(nmo_register_messagemanager_type(registry));
 
     NMO_RETURN_OK();
 }

@@ -12,6 +12,7 @@
 #define NMO_CKMESSAGEMANAGER_SCHEMAS_H
 
 #include "nmo_types.h"
+#include "object/nmo_object_type_common.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -81,6 +82,9 @@ NMO_API nmo_status_t nmo_messagemanager_remap_dependencies(
     void *instance,
     const nmo_type_descriptor_t *type,
     void *context);
+
+NMO_DECLARE_OBJECT_SCHEMA(
+    nmo_messagemanager_vtable, nmo_register_messagemanager_type)
 
 #ifdef __cplusplus
 }

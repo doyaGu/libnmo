@@ -18,6 +18,7 @@
 #include "nmo_types.h"
 #include "core/nmo_guid.h"
 #include "object/nmo_object_struct_defs.h"
+#include "object/nmo_object_type_common.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -95,6 +96,9 @@ NMO_API nmo_status_t nmo_attributemanager_remap_dependencies(
     void *instance,
     const nmo_type_descriptor_t *type,
     void *context);
+
+NMO_DECLARE_OBJECT_SCHEMA(
+    nmo_attributemanager_vtable, nmo_register_attributemanager_type)
 
 #ifdef __cplusplus
 }
