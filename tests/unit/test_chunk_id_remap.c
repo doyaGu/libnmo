@@ -795,6 +795,7 @@ TEST(chunk_id_remap, behaviorio_truncation_keeps_previous_state) {
 
     nmo_behaviorio_state_t state;
     ASSERT_EQ(NMO_OK, nmo_behaviorio_vtable.create(&state, NULL, NULL));
+    ASSERT_TRUE(state.has_flags);
     state.base.visibility_flags = 0x12345678u;
     state.old_flags = 0xA5A5A5A5u;
     state.has_flags = true;
@@ -805,6 +806,43 @@ TEST(chunk_id_remap, behaviorio_truncation_keeps_previous_state) {
     ASSERT_TRUE(state.has_flags);
 
     nmo_behaviorio_vtable.destroy(&state, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_id_remap, behavior_layout_defaults_preserve_legacy_absence) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_chunk_t *legacy_io = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(legacy_io);
+    legacy_io->class_id = NMO_CID_BEHAVIORIO;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(legacy_io));
+    nmo_chunk_close(legacy_io);
+
+    nmo_behaviorio_state_t io;
+    ASSERT_EQ(NMO_OK, nmo_behaviorio_vtable.create(&io, NULL, NULL));
+    ASSERT_TRUE(io.has_flags);
+    ASSERT_EQ(NMO_OK, nmo_behaviorio_deserialize(
+        &io, legacy_io, NULL, NULL));
+    ASSERT_FALSE(io.has_flags);
+
+    nmo_chunk_t *legacy_link = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(legacy_link);
+    legacy_link->class_id = NMO_CID_BEHAVIORLINK;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(legacy_link));
+    nmo_chunk_close(legacy_link);
+
+    nmo_behaviorlink_state_t link;
+    ASSERT_EQ(NMO_OK, nmo_behaviorlink_vtable.create(&link, NULL, NULL));
+    ASSERT_TRUE(link.has_format);
+    ASSERT_TRUE(link.use_new_format);
+    ASSERT_EQ(NMO_OK, nmo_behaviorlink_deserialize(
+        &link, legacy_link, NULL, NULL));
+    ASSERT_FALSE(link.has_format);
+    ASSERT_FALSE(link.use_new_format);
+
+    nmo_behaviorlink_vtable.destroy(&link, NULL, NULL);
+    nmo_behaviorio_vtable.destroy(&io, NULL, NULL);
     nmo_arena_destroy(arena);
 }
 
@@ -8212,6 +8250,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, behavior_unresolved_ref_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, behavior_serializer_does_not_publish_partial_chunk);
     REGISTER_TEST(chunk_id_remap, behaviorio_truncation_keeps_previous_state);
+    REGISTER_TEST(chunk_id_remap, behavior_layout_defaults_preserve_legacy_absence);
     REGISTER_TEST(chunk_id_remap, dataarray_cell_refs_round_trip_raw_ids);
     REGISTER_TEST(chunk_id_remap, dataarray_failures_keep_state_and_target_chunk_atomic);
     REGISTER_TEST(chunk_id_remap, attributemanager_failures_keep_state_and_target_chunk_atomic);
