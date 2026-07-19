@@ -164,18 +164,23 @@ TEST(type_runtime_hook_coverage, builtin_schemas_round_trip_default_state) {
         ASSERT_NOT_NULL(type->vtable);
         ASSERT_NOT_NULL(type->vtable->create);
         ASSERT_NOT_NULL(type->vtable->destroy);
+        ASSERT_NOT_NULL(type->vtable->copy);
         ASSERT_NOT_NULL(type->vtable->serialize);
         ASSERT_NOT_NULL(type->vtable->deserialize);
         ASSERT_NOT_NULL(type->vtable->equals);
+        ASSERT_NOT_NULL(type->vtable->hash);
 
         nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
         ASSERT_NOT_NULL(arena);
         void *source = calloc(1u, type->size);
         void *loaded = calloc(1u, type->size);
+        void *copied = calloc(1u, type->size);
         ASSERT_NOT_NULL(source);
         ASSERT_NOT_NULL(loaded);
+        ASSERT_NOT_NULL(copied);
         ASSERT_EQ(NMO_OK, type->vtable->create(source, type, NULL));
         ASSERT_EQ(NMO_OK, type->vtable->create(loaded, type, NULL));
+        ASSERT_EQ(NMO_OK, type->vtable->create(copied, type, NULL));
 
         nmo_chunk_t *chunk = nmo_chunk_create(arena);
         ASSERT_NOT_NULL(chunk);
@@ -194,6 +199,16 @@ TEST(type_runtime_hook_coverage, builtin_schemas_round_trip_default_state) {
         }
         ASSERT_EQ(NMO_OK, status);
         nmo_chunk_close(chunk);
+
+        status = type->vtable->copy(source, copied, type, arena);
+        if (status != NMO_OK) {
+            fprintf(stderr, "schema %s (%u) copy failed: %d\n",
+                    type->name, cid, status);
+        }
+        ASSERT_EQ(NMO_OK, status);
+        ASSERT_EQ(NMO_OK, type->vtable->validate(copied, type, NULL));
+        ASSERT_TRUE(type->vtable->equals(source, copied));
+        ASSERT_EQ(type->vtable->hash(source), type->vtable->hash(copied));
 
         nmo_deserialize_context_t deserialize_context =
             nmo_deserialize_context_create(
@@ -292,8 +307,10 @@ TEST(type_runtime_hook_coverage, builtin_schemas_round_trip_default_state) {
             free(failed);
         }
 
+        type->vtable->destroy(copied, type, NULL);
         type->vtable->destroy(loaded, type, NULL);
         type->vtable->destroy(source, type, NULL);
+        free(copied);
         free(loaded);
         free(source);
         nmo_arena_destroy(arena);
