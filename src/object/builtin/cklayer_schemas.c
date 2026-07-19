@@ -228,10 +228,14 @@ static nmo_status_t nmo_layer_serialize_internal(
         NMO_RETURN_IF_ERROR(nmo_chunk_write_int(out_chunk, (int32_t)(in_state->has_flags ? in_state->flags : 1)));
     }
 
-    if (in_state->format == 0 && in_state->has_square_data) {
-        /* State holds host-endian DWORDs; convert to LE for serialization.
-           On LE platforms nmo_htole32 is a no-op so the buffer is unchanged. */
-        return nmo_chunk_write_buffer(out_chunk, in_state->square_data, in_state->square_data_size);
+    if (in_state->format == 0) {
+        /* The format-0 payload always contains a sized buffer, including
+           the empty case. The reader cannot distinguish omission from a
+           truncated buffer header. */
+        return nmo_chunk_write_buffer(
+            out_chunk,
+            in_state->has_square_data ? in_state->square_data : NULL,
+            in_state->has_square_data ? in_state->square_data_size : 0u);
     }
 
     NMO_RETURN_OK();

@@ -3146,6 +3146,46 @@ TEST(chunk_id_remap, layer_unresolved_grid_round_trips_raw_id) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, layer_default_format_writes_empty_square_buffer) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_layer_state_t source;
+    nmo_layer_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_layer_vtable.create(&source, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_layer_vtable.create(&loaded, NULL, NULL));
+    ASSERT_EQ(0, source.format);
+    ASSERT_FALSE(source.has_square_data);
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    chunk->class_id = NMO_CID_LAYER;
+    chunk->chunk_version = NMO_CHUNK_VERSION4;
+    chunk->data_version = 7;
+    chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    ASSERT_EQ(NMO_OK, nmo_layer_serialize(
+        &source, chunk, NULL, &serialize_context));
+    nmo_chunk_close(chunk);
+
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(chunk));
+    ASSERT_EQ(NMO_OK, nmo_layer_deserialize(
+        &loaded, chunk, NULL, &deserialize_context));
+    ASSERT_EQ(0, loaded.format);
+    ASSERT_TRUE(loaded.has_square_data);
+    ASSERT_EQ(0u, loaded.square_data_size);
+    ASSERT_NULL(loaded.square_data);
+
+    nmo_layer_vtable.destroy(&source, NULL, NULL);
+    nmo_layer_vtable.destroy(&loaded, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, grid_failures_keep_state_and_target_chunk_atomic) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
     ASSERT_NOT_NULL(arena);
@@ -8192,6 +8232,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, targetlight_unresolved_ref_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, kinematicchain_unresolved_refs_round_trip_atomically);
     REGISTER_TEST(chunk_id_remap, layer_unresolved_grid_round_trips_raw_id);
+    REGISTER_TEST(chunk_id_remap, layer_default_format_writes_empty_square_buffer);
     REGISTER_TEST(chunk_id_remap, grid_failures_keep_state_and_target_chunk_atomic);
     REGISTER_TEST(chunk_id_remap, sprite_shared_ref_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, sprite_failures_keep_state_and_target_chunk_atomic);
