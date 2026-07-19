@@ -1237,6 +1237,68 @@ TEST(cli, validate_references_reports_typed_unresolved_refs) {
     remove(fixture);
 }
 
+TEST(cli, validate_references_normalize_saves_distinct_clean_output) {
+    const char *fixture = "test_validate_refs_normalize_input.nmo";
+    const char *output = "test_validate_refs_normalize_output.nmo";
+    remove(fixture);
+    remove(output);
+    ASSERT_TRUE(create_typed_dangling_reference_fixture(fixture));
+
+    char args[768];
+    snprintf(args, sizeof(args),
+             "validate references --normalize -o \"%s\" \"%s\"",
+             output, fixture);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "Normalized references: 1");
+    ASSERT_TRUE(file_exists(output));
+    free(result.output);
+
+    snprintf(args, sizeof(args), "validate references \"%s\"", output);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "All references valid");
+    free(result.output);
+
+    snprintf(args, sizeof(args), "validate references \"%s\"", fixture);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "987654");
+    ASSERT_STR_CONTAINS(result.output, "unresolved");
+    free(result.output);
+
+    remove(fixture);
+    remove(output);
+}
+
+TEST(cli, validate_references_normalize_rejects_input_overwrite) {
+    const char *fixture = "test_validate_refs_normalize_same_file.nmo";
+    remove(fixture);
+    ASSERT_TRUE(create_typed_dangling_reference_fixture(fixture));
+
+    char args[768];
+    snprintf(args, sizeof(args),
+             "validate references --normalize -o \"%s\" \"%s\"",
+             fixture, fixture);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_ARG_ERROR, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "must write to a different file");
+    free(result.output);
+
+    snprintf(args, sizeof(args), "validate references \"%s\"", fixture);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "987654");
+    free(result.output);
+
+    remove(fixture);
+}
+
 TEST(cli, validate_references_reports_raw_field_class_mismatch) {
     const char *fixture = "test_validate_refs_class_mismatch.nmo";
     remove(fixture);
@@ -4311,6 +4373,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, validate_references_json);
     REGISTER_TEST(cli, validate_references_strict_scans_before_failing);
     REGISTER_TEST(cli, validate_references_reports_typed_unresolved_refs);
+    REGISTER_TEST(cli, validate_references_normalize_saves_distinct_clean_output);
+    REGISTER_TEST(cli, validate_references_normalize_rejects_input_overwrite);
     REGISTER_TEST(cli, validate_references_reports_raw_field_class_mismatch);
     REGISTER_TEST(cli, validate_references_reports_typed_scalar_class_mismatch);
 
