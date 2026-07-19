@@ -31,8 +31,6 @@
 #include <stdint.h>
 #include <stdalign.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(texture, nmo_texture_state_t)
-
 static void nmo_texture_dispose_base_arrays(nmo_texture_state_t *state)
 {
     if (state == NULL) return;
@@ -40,6 +38,16 @@ static void nmo_texture_dispose_base_arrays(nmo_texture_state_t *state)
     nmo_array_dispose(&state->base.attributes);
     nmo_array_dispose(&state->base.legacy_attributes);
 }
+
+NMO_DEFINE_OBJECT_LIFECYCLE(
+    texture,
+    nmo_texture_state_t,
+    do {
+        nmo_status_t result = nmo_beobject_vtable.create(
+            &state->base, NULL, context);
+        if (result != NMO_OK) return result;
+    } while (0),
+    nmo_texture_dispose_base_arrays(state))
 
 static nmo_status_t nmo_texture_validate(
     const void *instance,

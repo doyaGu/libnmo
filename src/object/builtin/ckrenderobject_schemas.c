@@ -27,7 +27,24 @@
 #include <stdalign.h>
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(renderobject, nmo_renderobject_state_t)
+static void nmo_renderobject_dispose_base_arrays(
+    nmo_renderobject_state_t *state)
+{
+    if (state == NULL) return;
+    nmo_array_dispose(&state->base.scripts);
+    nmo_array_dispose(&state->base.attributes);
+    nmo_array_dispose(&state->base.legacy_attributes);
+}
+
+NMO_DEFINE_OBJECT_LIFECYCLE(
+    renderobject,
+    nmo_renderobject_state_t,
+    do {
+        nmo_status_t result = nmo_beobject_vtable.create(
+            &state->base, NULL, context);
+        if (result != NMO_OK) return result;
+    } while (0),
+    nmo_renderobject_dispose_base_arrays(state))
 
 /* =============================================================================
  * REFLECTION FIELDS

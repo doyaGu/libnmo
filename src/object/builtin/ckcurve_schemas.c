@@ -85,21 +85,32 @@ static void nmo_curvepoint_set_defaults(nmo_curvepoint_state_t *state) {
     state->legacy_position = (nmo_vector_t){0.0f, 0.0f, 0.0f};
 }
 
+static nmo_status_t nmo_curve_staged_base_create(
+    nmo_3dentity_state_t *state,
+    void *context);
+static void nmo_curve_staged_base_destroy(nmo_3dentity_state_t *state);
+
 NMO_DEFINE_OBJECT_LIFECYCLE(
     curve,
     nmo_curve_state_t,
     do { \
+        nmo_status_t result = nmo_curve_staged_base_create( \
+            &state->base, context); \
+        if (result != NMO_OK) return result; \
         nmo_curve_set_defaults(state); \
     } while (0),
-    ((void)0))
+    nmo_curve_staged_base_destroy(&state->base))
 
 NMO_DEFINE_OBJECT_LIFECYCLE(
     curvepoint,
     nmo_curvepoint_state_t,
     do { \
+        nmo_status_t result = nmo_curve_staged_base_create( \
+            &state->base, context); \
+        if (result != NMO_OK) return result; \
         nmo_curvepoint_set_defaults(state); \
     } while (0),
-    ((void)0))
+    nmo_curve_staged_base_destroy(&state->base))
 
 static nmo_status_t nmo_curve_staged_base_create(
     nmo_3dentity_state_t *state,

@@ -35,8 +35,6 @@
 #include <stdint.h>
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(sprite, nmo_sprite_state_t)
-
 static void nmo_sprite_dispose_base_arrays(nmo_sprite_state_t *state)
 {
     if (state == NULL) return;
@@ -45,6 +43,17 @@ static void nmo_sprite_dispose_base_arrays(nmo_sprite_state_t *state)
     nmo_array_dispose(&beobject->attributes);
     nmo_array_dispose(&beobject->legacy_attributes);
 }
+
+NMO_DEFINE_OBJECT_LIFECYCLE(
+    sprite,
+    nmo_sprite_state_t,
+    do {
+        nmo_status_t result = nmo_renderobject_vtable.create(
+            &state->entity.base, NULL, context);
+        if (result != NMO_OK) return result;
+        state->sprite_ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+    } while (0),
+    nmo_sprite_dispose_base_arrays(state))
 
 /* =============================================================================
  * REFLECTION FIELDS
