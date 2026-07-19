@@ -27,7 +27,11 @@
 #include <stdalign.h>
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(behaviorio, nmo_behaviorio_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE(
+    behaviorio,
+    nmo_behaviorio_state_t,
+    state->has_flags = true,
+    ((void)0))
 
 /* =============================================================================
  * REFLECTION FIELDS
@@ -75,7 +79,9 @@ static nmo_status_t nmo_behaviorio_deserialize_internal(
     nmo_status_t result = nmo_object_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;
 
-    /* Read I/O flags */
+    /* Read I/O flags.  Newly-created states persist this section, while a
+     * loaded legacy chunk must retain its absence. */
+    out_state->has_flags = false;
     result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAV_IOFLAGS);
     if (result == NMO_OK) {
         result = nmo_chunk_read_dword(chunk, &out_state->old_flags);

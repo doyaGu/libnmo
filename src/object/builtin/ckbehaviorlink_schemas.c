@@ -33,6 +33,8 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
     do { \
         state->activation_delay = 1; \
         state->initial_activation_delay = 1; \
+        state->has_format = true; \
+        state->use_new_format = true; \
     } while (0),
     ((void)0))
 
