@@ -428,15 +428,35 @@ nmo_status_t nmo_operation_registry_register(
                                 "Failed to create P2 layer");
     }
 
+    /* Descriptors outlive their callers.  Keep their user data and function
+     * pointers borrowed, but own the human-readable strings in the registry
+     * arena as promised by the public "descriptor is copied" contract. */
+    nmo_operation_desc_t stored_desc = *desc;
+    if (desc->name) {
+        stored_desc.name = nmo_arena_strdup(registry->arena, desc->name);
+        if (!stored_desc.name) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "Failed to copy operation name");
+        }
+    }
+    if (desc->description) {
+        stored_desc.description = nmo_arena_strdup(
+            registry->arena, desc->description);
+        if (!stored_desc.description) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "Failed to copy operation description");
+        }
+    }
+
     /* Insert operation cell */
     nmo_status_t result = insert_operation_cell(
-        registry, p2_layer, desc, p1_type, p2_type, result_type
+        registry, p2_layer, &stored_desc, p1_type, p2_type, result_type
     );
 
     if (result == NMO_OK) {
         if (!family->name) {
-            family->name = desc->name;
-            family->description = desc->description;
+            family->name = stored_desc.name;
+            family->description = stored_desc.description;
         }
         family->total_operations++; /* registration events, may count overrides */
         registry->registry_version++;
