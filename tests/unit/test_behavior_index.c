@@ -95,6 +95,7 @@ TEST(beh_idx, build_from_file)
      * verify that at least some lookups succeed from the file's behaviors) */
 
     nmo_workspace_destroy(workspace);
+    nmo_document_destroy(document);
     nmo_behavior_index_destroy(idx);
     nmo_arena_destroy(arena);
     nmo_session_destroy(session);
@@ -134,6 +135,7 @@ TEST(beh_idx, build_reports_index_insert_oom)
     ASSERT_EQ(NMO_ERR_NOMEM, st);
 
     nmo_workspace_destroy(workspace);
+    nmo_document_destroy(document);
     nmo_behavior_index_destroy(idx);
     nmo_arena_destroy(arena);
     nmo_session_destroy(session);

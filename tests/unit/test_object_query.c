@@ -368,6 +368,7 @@ TEST(object_query, owner_find_first_filters_by_guid)
               nmo_object_query_find_first(document, &missing, &found, &found_index));
     ASSERT_NULL(found);
 
+    nmo_document_destroy(document);
     nmo_session_destroy(session);
     nmo_context_release(ctx);
 }

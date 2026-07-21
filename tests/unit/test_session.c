@@ -55,7 +55,9 @@ static size_t count_session_objects_by_class(
     if (nmo_session_borrow_document(session, &document) != NMO_OK) {
         return (size_t)-1;
     }
-    if (nmo_object_query_count(document, &query, &count) != NMO_OK) {
+    nmo_status_t status = nmo_object_query_count(document, &query, &count);
+    nmo_document_destroy(document);
+    if (status != NMO_OK) {
         return (size_t)-1;
     }
     return count;
@@ -123,6 +125,7 @@ TEST(session, index_incremental_updates) {
     ASSERT_EQ(NMO_OK, nmo_object_query_find_first(document, &gamma_query, &found, NULL));
     ASSERT_NOT_NULL(found);
     ASSERT_EQ(12, found->id);
+    nmo_document_destroy(document);
 
     ASSERT_EQ(NMO_OK, nmo_object_repository_remove(
         nmo_session_get_repository(session), obj1->id));
@@ -182,6 +185,7 @@ TEST(session, borrowed_document_query_facade) {
     ASSERT_NOT_NULL(found);
     ASSERT_EQ(22, found->id);
 
+    nmo_document_destroy(document);
     nmo_session_destroy(session);
     nmo_context_release(ctx);
 }

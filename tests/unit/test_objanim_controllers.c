@@ -121,6 +121,7 @@ TEST(objanim_controllers, controllers_roundtrip) {
     /* No raw_tail should remain */
     ASSERT_EQ(0, state_in.raw_tail_size);
 
+    nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
 }
 
@@ -165,6 +166,7 @@ TEST(objanim_controllers, controllers_empty) {
     ASSERT_EQ(0, state_in.controller_count);
     ASSERT_EQ(0, state_in.raw_tail_size);
 
+    nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
 }
 
@@ -209,6 +211,7 @@ TEST(objanim_controllers, shared_no_controllers) {
     ASSERT_EQ(0, state_in.controller_count);
     ASSERT_EQ(0, state_in.morph_key_parsed_count);
 
+    nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
 }
 
@@ -372,6 +375,7 @@ TEST(objanim_controllers, copy_controllers) {
     ASSERT_TRUE(type->vtable->equals(&src, &dst));
     ASSERT_EQ(type->vtable->hash(&src), type->vtable->hash(&dst));
 
+    nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
 }
 

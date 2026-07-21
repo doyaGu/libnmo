@@ -1427,7 +1427,6 @@ TEST(edit_plan, executor_matches_authored_2d_text_golden_shape) {
     nmo_edit_plan_destroy(plan);
     edit_plan_fixture_dispose(&fixture);
     nmo_session_close_with_context(golden_ctx, golden_session);
-    nmo_context_release(golden_ctx);
 }
 
 TEST(edit_plan, executor_resolves_symbolic_message_default_from_manager_data) {
