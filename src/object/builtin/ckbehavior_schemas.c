@@ -257,6 +257,13 @@ static nmo_status_t read_object_sequence(nmo_chunk_t *chunk, nmo_array_t *out_re
  * @brief Write object ID array using XObjectPointerArray format
  */
 static nmo_status_t write_object_sequence(nmo_chunk_t *chunk, const nmo_array_t *refs) {
+    if (!chunk || !refs || refs->count > UINT32_MAX ||
+        (refs->count > 0u &&
+         (refs->data == NULL || refs->element_size != sizeof(nmo_behavior_ref_t)))) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid behavior object sequence");
+    }
+
     nmo_status_t result = nmo_chunk_write_object_sequence_start(
         chunk, (uint32_t)refs->count);
     if (result != NMO_OK) return result;
