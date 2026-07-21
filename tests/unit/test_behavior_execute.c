@@ -987,7 +987,7 @@ TEST(behavior_execute, failure_report_has_no_output_path)
 TEST(behavior_execute, save_failure_report_is_not_successful)
 {
     const char *input_path = NMO_TEST_DATA_FILE("Nop.cmo");
-    const char *output_path = "missing_behavior_execute_dir\\out.cmo";
+    const char *output_path = "missing_behavior_execute_dir/out.cmo";
     nmo_context_t *ctx =
         nmo_context_create(&(nmo_context_desc_t){ .data_dir = NMO_TEST_DATA_DIR });
     nmo_behavior_execute_options_t options = nmo_behavior_execute_options_default();

@@ -3,6 +3,7 @@
 #include "lua/nmo_lua_bindings.h"
 #include "../runtime/runtime_internal.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -16,6 +17,14 @@ struct nmo_behavior_execution {
     nmo_edit_report_t edit_report;
     bool edit_report_ready;
 };
+
+typedef struct behavior_execute_error_snapshot {
+    nmo_error_code_t code;
+    nmo_severity_t severity;
+    const char *file;
+    int line;
+    char message[1024];
+} behavior_execute_error_snapshot_t;
 
 static nmo_status_t nmo_behavior_execute_internal(
     nmo_context_t *ctx,
@@ -158,6 +167,58 @@ static void behavior_execute_destroy(nmo_behavior_execution_t *execution)
     }
 
     free(execution);
+}
+
+static behavior_execute_error_snapshot_t behavior_execute_capture_error(
+    nmo_status_t status)
+{
+    behavior_execute_error_snapshot_t snapshot;
+    memset(&snapshot, 0, sizeof(snapshot));
+    snapshot.code = nmo_last_error_code();
+    snapshot.severity = nmo_last_error_severity();
+    snapshot.file = nmo_last_error_file();
+    snapshot.line = nmo_last_error_line();
+    (void)nmo_last_error_message_copy(
+        snapshot.message, sizeof(snapshot.message));
+
+    if (snapshot.code == NMO_OK) {
+        snapshot.code = (nmo_error_code_t)status;
+        snapshot.severity = NMO_SEVERITY_ERROR;
+    }
+    if (snapshot.message[0] == '\0') {
+        const char *fallback = nmo_error_string(status);
+        if (fallback != NULL) {
+            (void)snprintf(
+                snapshot.message, sizeof(snapshot.message), "%s", fallback);
+        }
+    }
+    return snapshot;
+}
+
+static void behavior_execute_restore_error(
+    const behavior_execute_error_snapshot_t *snapshot)
+{
+    if (snapshot == NULL) {
+        return;
+    }
+    nmo_last_error_setf(
+        snapshot->code,
+        snapshot->severity,
+        snapshot->file,
+        snapshot->line,
+        "%s",
+        snapshot->message);
+}
+
+static nmo_status_t behavior_execute_destroy_preserving_error(
+    nmo_behavior_execution_t *execution,
+    nmo_status_t status)
+{
+    behavior_execute_error_snapshot_t snapshot =
+        behavior_execute_capture_error(status);
+    behavior_execute_destroy(execution);
+    behavior_execute_restore_error(&snapshot);
+    return status;
 }
 
 static nmo_status_t behavior_execute_validate(
@@ -332,88 +393,92 @@ static nmo_status_t nmo_behavior_execute_internal(
 
     execution->document = nmo_document_create(ctx);
     if (execution->document == NULL) {
-        behavior_execute_destroy(execution);
-        return NMO_ERR_NOMEM;
+        return behavior_execute_destroy_preserving_error(
+            execution, NMO_ERR_NOMEM);
     }
 
     status = nmo_document_internal_load_file(
         execution->document, input_path, resolved_options.load_options);
     if (status != NMO_OK) {
-        behavior_execute_destroy(execution);
-        return status;
+        return behavior_execute_destroy_preserving_error(execution, status);
     }
 
     status = nmo_workspace_create(ctx, execution->document, &execution->workspace);
     if (status != NMO_OK) {
-        behavior_execute_destroy(execution);
-        return status;
+        return behavior_execute_destroy_preserving_error(execution, status);
     }
 
     status = nmo_workspace_internal_ensure_behavior_acceleration(execution->workspace);
     if (status != NMO_OK) {
-        behavior_execute_destroy(execution);
-        return status;
+        return behavior_execute_destroy_preserving_error(execution, status);
     }
 
     execution->runtime = nmo_lua_runtime_create();
     if (execution->runtime == NULL) {
-        behavior_execute_destroy(execution);
-        return NMO_ERR_NOMEM;
+        return behavior_execute_destroy_preserving_error(
+            execution, NMO_ERR_NOMEM);
     }
 
     status = nmo_lua_register_platform_bindings(execution->runtime);
     if (status != NMO_OK) {
-        behavior_execute_destroy(execution);
-        return status;
+        return behavior_execute_destroy_preserving_error(execution, status);
     }
 
     status = nmo_script_edit_begin(
         execution->workspace, resolved_options.label, &execution->tx);
     if (status != NMO_OK) {
-        behavior_execute_destroy(execution);
-        return status;
+        return behavior_execute_destroy_preserving_error(execution, status);
     }
 
     status = action(execution, user_data);
     if (status != NMO_OK) {
+        behavior_execute_error_snapshot_t error =
+            behavior_execute_capture_error(status);
         (void)behavior_execute_copy_report(
             execution, output_path, status, out_report);
         behavior_execute_destroy(execution);
+        behavior_execute_restore_error(&error);
         return status;
     }
 
     status = behavior_execute_validate(execution, resolved_options.validation_flags);
     if (status != NMO_OK) {
+        behavior_execute_error_snapshot_t error =
+            behavior_execute_capture_error(status);
         (void)behavior_execute_copy_report(
             execution, output_path, status, out_report);
         behavior_execute_destroy(execution);
+        behavior_execute_restore_error(&error);
         return status;
     }
 
     status = behavior_execute_copy_report(
         execution, output_path, NMO_OK, out_report);
     if (status != NMO_OK) {
-        behavior_execute_destroy(execution);
-        return status;
+        return behavior_execute_destroy_preserving_error(execution, status);
     }
 
     if (resolved_options.dry_run) {
         nmo_script_edit_rollback(execution->tx);
         execution->tx = NULL;
         behavior_execute_destroy(execution);
+        nmo_last_error_clear();
         return NMO_OK;
     }
 
     status = nmo_script_edit_commit(execution->tx);
     execution->tx = NULL;
     if (status != NMO_OK) {
-        behavior_execute_destroy(execution);
-        return status;
+        return behavior_execute_destroy_preserving_error(execution, status);
     }
 
     status = nmo_document_save_file(
         execution->document, output_path, resolved_options.save_options);
     behavior_execute_set_final_status(out_report, status);
+    if (status != NMO_OK) {
+        return behavior_execute_destroy_preserving_error(execution, status);
+    }
     behavior_execute_destroy(execution);
+    nmo_last_error_clear();
     return status;
 }
