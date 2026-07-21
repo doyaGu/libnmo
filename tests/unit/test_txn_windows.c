@@ -169,12 +169,30 @@ TEST(txn_windows, implicit_rollback) {
     ASSERT_FALSE(exists);
 }
 
+TEST(txn_windows, malformed_utf8_path_is_scanned_safely) {
+    const char malformed_path[] = {
+        't', 'e', 's', 't', '_', (char)0xF0, '\0'
+    };
+    nmo_txn_desc_t desc = {
+        .path = malformed_path,
+        .durability = NMO_TXN_NONE,
+        .staging_dir = NULL
+    };
+
+    nmo_txn_handle_t *txn = nmo_txn_open(&desc);
+    if (txn != NULL) {
+        ASSERT_EQ(NMO_OK, nmo_txn_rollback(txn));
+        nmo_txn_close(txn);
+    }
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(txn_windows, basic_commit);
     REGISTER_TEST(txn_windows, rollback);
     REGISTER_TEST(txn_windows, replace_existing);
     REGISTER_TEST(txn_windows, multiple_writes);
     REGISTER_TEST(txn_windows, implicit_rollback);
+    REGISTER_TEST(txn_windows, malformed_utf8_path_is_scanned_safely);
 TEST_MAIN_END()
 
 #else

@@ -87,25 +87,15 @@ static int get_dir_path(const char *path, char *dir_buf, size_t dir_size) {
         return -1;
     }
 
-    // Find last backslash or forward slash (safe for UTF-8 multi-byte chars)
+    // UTF-8 continuation bytes cannot contain ASCII path separators, so a
+    // byte-wise scan is both sufficient and safe for malformed input.
     char *last_sep = NULL;
     char *p = path_copy;
     while (*p) {
         if (*p == '\\' || *p == '/') {
             last_sep = p;
         }
-        // Skip UTF-8 continuation bytes
-        if ((*p & 0x80) == 0) {
-            p++;
-        } else if ((*p & 0xE0) == 0xC0) {
-            p += 2;
-        } else if ((*p & 0xF0) == 0xE0) {
-            p += 3;
-        } else if ((*p & 0xF8) == 0xF0) {
-            p += 4;
-        } else {
-            p++;
-        }
+        p++;
     }
 
     if (last_sep) {
@@ -137,25 +127,14 @@ static int get_dir_path(const char *path, char *dir_buf, size_t dir_size) {
  * @return 0 on success, -1 on error
  */
 static int get_base_name(const char *path, char *base_buf, size_t base_size) {
-    // Find last backslash or forward slash (safe for UTF-8 multi-byte chars)
+    // See get_dir_path(): byte-wise separator scanning is UTF-8 safe.
     const char *last_sep = NULL;
     const char *p = path;
     while (*p) {
         if (*p == '\\' || *p == '/') {
             last_sep = p;
         }
-        // Skip UTF-8 continuation bytes
-        if ((*p & 0x80) == 0) {
-            p++;
-        } else if ((*p & 0xE0) == 0xC0) {
-            p += 2;
-        } else if ((*p & 0xF0) == 0xE0) {
-            p += 3;
-        } else if ((*p & 0xF8) == 0xF0) {
-            p += 4;
-        } else {
-            p++;
-        }
+        p++;
     }
 
     const char *base = last_sep ? last_sep + 1 : path;

@@ -98,6 +98,33 @@ static int get_base_name(const char *path, char *base_buf, size_t base_size) {
     return 0;
 }
 
+static int sync_parent_directory(const char *path) {
+    char dir_path[PATH_MAX];
+    if (get_dir_path(path, dir_path, sizeof(dir_path)) != 0) {
+        return -1;
+    }
+
+    int open_flags = O_RDONLY;
+#ifdef O_DIRECTORY
+    open_flags |= O_DIRECTORY;
+#endif
+    int dir_fd = open(dir_path, open_flags);
+    if (dir_fd < 0) {
+        return -1;
+    }
+
+    int sync_result;
+    do {
+        sync_result = fsync(dir_fd);
+    } while (sync_result != 0 && errno == EINTR);
+    int saved_errno = errno;
+    if (close(dir_fd) != 0 && sync_result == 0) {
+        return -1;
+    }
+    errno = saved_errno;
+    return sync_result;
+}
+
 /**
  * @brief Create temporary file with secure naming
  *
@@ -371,6 +398,11 @@ nmo_status_t nmo_txn_commit(nmo_txn_handle_t *txn) {
     }
 
     txn->state = NMO_TXN_STATE_COMMITTED;
+    if (txn->durability == NMO_TXN_FSYNC &&
+        sync_parent_directory(txn->final_path) != 0) {
+        NMO_RETURN_ERROR(NMO_ERR_CANT_WRITE_FILE, NMO_SEVERITY_ERROR,
+                         "Failed to sync destination directory");
+    }
     NMO_RETURN_OK();
 }
 
