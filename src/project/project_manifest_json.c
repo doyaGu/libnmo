@@ -1520,15 +1520,17 @@ static nmo_status_t manifest_register_object(
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                              "failed to allocate manifest object map");
         }
-        memcpy(new_ids,
-               ctx->object_ids,
-               ctx->object_count * sizeof(*new_ids));
-        memcpy(new_names,
-               ctx->object_names,
-               ctx->object_count * sizeof(*new_names));
-        memcpy(new_handles,
-               ctx->object_handles,
-               ctx->object_count * sizeof(*new_handles));
+        if (ctx->object_count > 0u) {
+            memcpy(new_ids,
+                   ctx->object_ids,
+                   ctx->object_count * sizeof(*new_ids));
+            memcpy(new_names,
+                   ctx->object_names,
+                   ctx->object_count * sizeof(*new_names));
+            memcpy(new_handles,
+                   ctx->object_handles,
+                   ctx->object_count * sizeof(*new_handles));
+        }
         free(ctx->object_ids);
         free(ctx->object_names);
         free(ctx->object_handles);
