@@ -1820,7 +1820,8 @@ nmo_status_t nmo_diff_objects(
         .repo = nmo_document_get_repository(document2),
     };
 
-    graph_side_t g1, g2;
+    graph_side_t g1 = {0};
+    graph_side_t g2 = {0};
     if (!build_graph_side(&s1, allocator, &g1) || !build_graph_side(&s2, allocator, &g2)) {
         graph_side_destroy(&g1);
         graph_side_destroy(&g2);
@@ -1830,8 +1831,9 @@ nmo_status_t nmo_diff_objects(
     result->total_objects1 = g1.count;
     result->total_objects2 = g2.count;
 
-    class_bucket_array_t buckets;
+    class_bucket_array_t buckets = {0};
     if (!build_buckets(&g1, &g2, &buckets)) {
+        buckets_destroy(&buckets);
         graph_side_destroy(&g1);
         graph_side_destroy(&g2);
         nmo_diff_result_destroy(result);
