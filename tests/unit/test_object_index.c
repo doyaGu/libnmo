@@ -23,6 +23,28 @@ typedef struct test_fixture {
     nmo_object_index_t *index;
 } test_fixture_t;
 
+typedef struct fail_at_allocator_state {
+    size_t allocation_count;
+    size_t fail_at;
+} fail_at_allocator_state_t;
+
+static void *fail_at_alloc(void *user_data, size_t size, size_t alignment) {
+    fail_at_allocator_state_t *state =
+        (fail_at_allocator_state_t *)user_data;
+    size_t allocation_index = state->allocation_count++;
+    if (allocation_index == state->fail_at) {
+        return NULL;
+    }
+    nmo_allocator_t allocator = nmo_allocator_default();
+    return allocator.alloc(allocator.user_data, size, alignment);
+}
+
+static void fail_at_free(void *user_data, void *ptr) {
+    (void)user_data;
+    nmo_allocator_t allocator = nmo_allocator_default();
+    allocator.free(allocator.user_data, ptr);
+}
+
 static test_fixture_t *setup_fixture(void) {
     test_fixture_t *fixture = (test_fixture_t *)malloc(sizeof(test_fixture_t));
     if (!fixture) return NULL;
@@ -404,6 +426,54 @@ TEST(object_index, active_flags) {
     teardown_fixture(f);
 }
 
+TEST(object_index, repository_add_rolls_back_partial_index_update) {
+    nmo_allocator_t allocator = nmo_allocator_default();
+    nmo_object_repository_t *repo = nmo_object_repository_create(&allocator);
+    ASSERT_NOT_NULL(repo);
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+
+    fail_at_allocator_state_t fail_state = {0, SIZE_MAX};
+    nmo_allocator_t index_allocator = nmo_allocator_custom(
+        fail_at_alloc, fail_at_free, &fail_state);
+    nmo_object_index_t *index = nmo_object_index_create(
+        repo, arena, &index_allocator);
+    ASSERT_NOT_NULL(index);
+    ASSERT_EQ(NMO_OK, nmo_object_index_build(index, NMO_INDEX_BUILD_ALL));
+    nmo_object_repository_set_index(repo, index);
+
+    nmo_object_t *object = nmo_object_create(&allocator, 77, 700);
+    ASSERT_NOT_NULL(object);
+    ASSERT_EQ(NMO_OK, nmo_object_set_name(object, "rollback-me"));
+    object->file_id = 177;
+    object->type_guid = (nmo_guid_t){0x12345678u, 0xabcdef01u};
+
+    /* Class entry allocation succeeds; name entry allocation then fails. */
+    fail_state.fail_at = fail_state.allocation_count + 2u;
+    ASSERT_EQ(NMO_ERR_NOMEM, nmo_object_repository_add(repo, &object));
+    ASSERT_NOT_NULL(object);
+    ASSERT_EQ(0u, nmo_object_repository_get_count(repo));
+    ASSERT_NULL(nmo_object_repository_find_by_id(repo, 77));
+    ASSERT_NULL(nmo_object_repository_find_by_name(repo, "rollback-me"));
+    ASSERT_NULL(nmo_object_repository_find_by_file_id(repo, 177));
+
+    size_t count = 0;
+    ASSERT_NULL(nmo_object_index_get_by_class(index, 700, &count));
+    ASSERT_EQ(0u, count);
+    ASSERT_NULL(nmo_object_index_get_by_name_all(
+        index, "rollback-me", 0, &count));
+    ASSERT_EQ(0u, count);
+    ASSERT_NULL(nmo_object_index_get_by_guid_all(
+        index, object->type_guid, &count));
+    ASSERT_EQ(0u, count);
+
+    nmo_object_destroy(object);
+    nmo_object_repository_set_index(repo, NULL);
+    nmo_object_index_destroy(index);
+    nmo_object_repository_destroy(repo);
+    nmo_arena_destroy(arena);
+}
+
 /**
  * Test: Rebuild indexes
  */
@@ -450,5 +520,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_index, repository_type_guid_update_refreshes_guid_index);
     REGISTER_TEST(object_index, statistics);
     REGISTER_TEST(object_index, active_flags);
+    REGISTER_TEST(object_index, repository_add_rolls_back_partial_index_update);
     REGISTER_TEST(object_index, rebuild);
 TEST_MAIN_END()

@@ -270,6 +270,7 @@ static nmo_status_t object_index_add_to_table(
     nmo_allocator_t *allocator)
 {
     object_array_t *arr = NULL;
+    bool created_entry = false;
     nmo_status_t lookup_result = nmo_hash_table_get(table, key, &arr);
     if (lookup_result == NMO_ERR_NOT_FOUND) {
         arr = object_array_create(initial_capacity, allocator);
@@ -281,11 +282,58 @@ static nmo_status_t object_index_add_to_table(
             object_array_dispose(&arr, allocator);
             return insert_result;
         }
+        created_entry = true;
     } else if (lookup_result != NMO_OK) {
         return lookup_result;
     }
 
-    return object_array_add(arr, object, allocator);
+    nmo_status_t add_result = object_array_add(arr, object, allocator);
+    if (add_result != NMO_OK && created_entry) {
+        (void)nmo_hash_table_remove(table, key);
+    }
+    return add_result;
+}
+
+static void object_index_remove_object_from_tables(
+    nmo_object_index_t *index,
+    nmo_object_t *object,
+    uint32_t flags)
+{
+    if ((flags & NMO_INDEX_BUILD_CLASS) != 0u && index->class_index != NULL) {
+        object_array_t *arr = NULL;
+        if (nmo_hash_table_get(
+                index->class_index, &object->class_id, &arr) == NMO_OK) {
+            (void)object_array_remove(arr, object->id);
+            if (arr != NULL && arr->count == 0) {
+                (void)nmo_hash_table_remove(index->class_index, &object->class_id);
+            }
+        }
+    }
+
+    if ((flags & NMO_INDEX_BUILD_NAME) != 0u && index->name_index != NULL) {
+        const char *name = nmo_object_get_name(object);
+        if (name != NULL && name[0] != '\0') {
+            object_array_t *arr = NULL;
+            if (nmo_hash_table_get(index->name_index, &name, &arr) == NMO_OK) {
+                (void)object_array_remove(arr, object->id);
+                if (arr != NULL && arr->count == 0) {
+                    (void)nmo_hash_table_remove(index->name_index, &name);
+                }
+            }
+        }
+    }
+
+    if ((flags & NMO_INDEX_BUILD_GUID) != 0u && index->guid_index != NULL &&
+        !nmo_guid_is_null(object->type_guid)) {
+        object_array_t *arr = NULL;
+        if (nmo_hash_table_get(
+                index->guid_index, &object->type_guid, &arr) == NMO_OK) {
+            (void)object_array_remove(arr, object->id);
+            if (arr != NULL && arr->count == 0) {
+                (void)nmo_hash_table_remove(index->guid_index, &object->type_guid);
+            }
+        }
+    }
 }
 
 static nmo_status_t object_index_add_object_to_tables(
@@ -293,6 +341,7 @@ static nmo_status_t object_index_add_object_to_tables(
     nmo_object_t *object,
     uint32_t flags)
 {
+    uint32_t added_flags = 0;
     if ((flags & NMO_INDEX_BUILD_CLASS) != 0u && index->class_index != NULL) {
         nmo_status_t status = object_index_add_to_table(
             index->class_index,
@@ -303,6 +352,7 @@ static nmo_status_t object_index_add_object_to_tables(
         if (status != NMO_OK) {
             return status;
         }
+        added_flags |= NMO_INDEX_BUILD_CLASS;
     }
 
     if ((flags & NMO_INDEX_BUILD_NAME) != 0u && index->name_index != NULL) {
@@ -315,8 +365,11 @@ static nmo_status_t object_index_add_object_to_tables(
                 4,
                 &index->allocator);
             if (status != NMO_OK) {
+                object_index_remove_object_from_tables(
+                    index, object, added_flags);
                 return status;
             }
+            added_flags |= NMO_INDEX_BUILD_NAME;
         }
     }
 
@@ -329,8 +382,10 @@ static nmo_status_t object_index_add_object_to_tables(
             4,
             &index->allocator);
         if (status != NMO_OK) {
+            object_index_remove_object_from_tables(index, object, added_flags);
             return status;
         }
+        added_flags |= NMO_INDEX_BUILD_GUID;
     }
 
     return NMO_OK;
@@ -499,43 +554,7 @@ nmo_status_t nmo_object_index_remove_object(
         return NMO_ERR_NOT_FOUND;
     }
 
-    /* Remove from class index */
-    if ((flags & NMO_INDEX_BUILD_CLASS) && index->class_index != NULL) {
-        object_array_t *arr = NULL;
-        if (nmo_hash_table_get(index->class_index, &object->class_id, &arr) == NMO_OK) {
-            object_array_remove(arr, object_id);
-            if (arr != NULL && arr->count == 0) {
-                nmo_hash_table_remove(index->class_index, &object->class_id);
-            }
-        }
-    }
-
-    /* Remove from name index */
-    if ((flags & NMO_INDEX_BUILD_NAME) && index->name_index != NULL) {
-        const char *name = nmo_object_get_name(object);
-        if (name != NULL && name[0] != '\0') {
-            object_array_t *arr = NULL;
-            if (nmo_hash_table_get(index->name_index, &name, &arr) == NMO_OK) {
-                object_array_remove(arr, object_id);
-                if (arr != NULL && arr->count == 0) {
-                    nmo_hash_table_remove(index->name_index, &name);
-                }
-            }
-        }
-    }
-
-    /* Remove from GUID index */
-    if ((flags & NMO_INDEX_BUILD_GUID) && index->guid_index != NULL) {
-        if (!nmo_guid_is_null(object->type_guid)) {
-            object_array_t *arr = NULL;
-            if (nmo_hash_table_get(index->guid_index, &object->type_guid, &arr) == NMO_OK) {
-                object_array_remove(arr, object_id);
-                if (arr != NULL && arr->count == 0) {
-                    nmo_hash_table_remove(index->guid_index, &object->type_guid);
-                }
-            }
-        }
-    }
+    object_index_remove_object_from_tables(index, object, flags);
 
     return NMO_OK;
 }
