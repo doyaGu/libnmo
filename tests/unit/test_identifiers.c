@@ -99,8 +99,7 @@ TEST(identifiers, write_and_read_identifiers) {
     // Cleanup
     nmo_chunk_parser_destroy(parser);
     nmo_chunk_writer_destroy(writer);
-    // Note: Arena destruction has a known issue - skipping for now
-    // nmo_arena_destroy(arena);
+    nmo_arena_destroy(arena);
 }
 
 TEST(identifiers, seek_nonexistent_identifier) {
@@ -137,8 +136,7 @@ TEST(identifiers, seek_nonexistent_identifier) {
     // Cleanup
     nmo_chunk_parser_destroy(parser);
     nmo_chunk_writer_destroy(writer);
-    // Note: Arena destruction has a known issue - skipping for now
-    // nmo_arena_destroy(arena);
+    nmo_arena_destroy(arena);
 }
 
 TEST_MAIN_BEGIN()

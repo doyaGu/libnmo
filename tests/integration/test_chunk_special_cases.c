@@ -67,6 +67,7 @@ TEST(chunk_special_cases, array_helpers_round_trip) {
     }
 
     ASSERT_TRUE(nmo_chunk_parser_at_end(parser));
+    nmo_chunk_parser_destroy(parser);
     nmo_arena_destroy(arena);
 }
 
@@ -153,6 +154,7 @@ TEST(chunk_special_cases, identifier_navigation_with_clone) {
     ASSERT_EQ(-42, sentinel);
 
     ASSERT_TRUE(nmo_chunk_parser_at_end(parser));
+    nmo_chunk_parser_destroy(parser);
     nmo_arena_destroy(arena);
 }
 

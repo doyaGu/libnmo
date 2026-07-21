@@ -45,6 +45,7 @@ TEST(chunk_16bit, dword_as_words_basic) {
     }
 
     ASSERT_TRUE(nmo_chunk_parser_at_end(parser));
+    nmo_chunk_parser_destroy(parser);
     nmo_arena_destroy(arena);
 }
 
@@ -82,6 +83,7 @@ TEST(chunk_16bit, dword_as_words_boundary) {
         ASSERT_EQ(boundary_values[i], value);
     }
 
+    nmo_chunk_parser_destroy(parser);
     nmo_arena_destroy(arena);
 }
 
@@ -135,6 +137,7 @@ TEST(chunk_16bit, dword_as_words_array_helper) {
     }
 
     ASSERT_TRUE(nmo_chunk_parser_at_end(parser));
+    nmo_chunk_parser_destroy(parser);
     nmo_arena_destroy(arena);
 }
 
@@ -175,6 +178,7 @@ TEST(chunk_16bit, buffer_nosize_lendian16_basic) {
         ASSERT_EQ(test_data[i], read_data[i]);
     }
 
+    nmo_chunk_parser_destroy(parser);
     nmo_arena_destroy(arena);
 }
 
@@ -206,6 +210,7 @@ TEST(chunk_16bit, buffer_nosize_lendian16_single) {
     ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(single_value, read_value);
 
+    nmo_chunk_parser_destroy(parser);
     nmo_arena_destroy(arena);
 }
 
@@ -249,6 +254,7 @@ TEST(chunk_16bit, buffer_nosize_lendian16_large) {
         ASSERT_EQ(test_data[i], read_data[i]);
     }
 
+    nmo_chunk_parser_destroy(parser);
     nmo_arena_destroy(arena);
 }
 
@@ -306,6 +312,7 @@ TEST(chunk_16bit, mixed_operations) {
     ASSERT_EQ(0x44445555, dword_as_words_val);
 
     ASSERT_TRUE(nmo_chunk_parser_at_end(parser));
+    nmo_chunk_parser_destroy(parser);
     nmo_arena_destroy(arena);
 }
 
@@ -343,6 +350,7 @@ TEST(chunk_16bit, error_handling) {
     parse_result = nmo_chunk_parser_read_dword_as_words(parser, NULL);
     ASSERT_EQ(parse_result, NMO_ERR_INVALID_ARGUMENT);
 
+    nmo_chunk_parser_destroy(parser);
     nmo_arena_destroy(arena);
 }
 
@@ -432,6 +440,7 @@ TEST(chunk_16bit, virtools_compatibility) {
     }
 
     ASSERT_TRUE(nmo_chunk_parser_at_end(parser));
+    nmo_chunk_parser_destroy(parser);
     nmo_arena_destroy(arena);
 }
 
