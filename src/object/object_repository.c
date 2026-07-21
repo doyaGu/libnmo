@@ -171,6 +171,35 @@ static int nmo_object_repository_notify_remove(
     return nmo_object_index_remove_object(repo->attached_index, id, flags);
 }
 
+static nmo_status_t nmo_object_repository_link_name(
+    nmo_object_repository_t *repo,
+    nmo_object_t *obj
+) {
+    if (repo == NULL || obj == NULL || obj->name == NULL || obj->name[0] == '\0') {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_object_t *previous = NULL;
+    bool replaced =
+        nmo_hash_table_get(repo->name_table, &obj->name, &previous) == NMO_OK;
+    if (replaced) {
+        nmo_status_t remove_result =
+            nmo_hash_table_remove(repo->name_table, &obj->name);
+        if (remove_result != NMO_OK) {
+            return remove_result;
+        }
+    }
+
+    nmo_status_t insert_result =
+        nmo_hash_table_insert(repo->name_table, &obj->name, &obj);
+    if (insert_result != NMO_OK && replaced && previous != NULL &&
+        previous->name != NULL && previous->name[0] != '\0') {
+        (void)nmo_hash_table_insert(
+            repo->name_table, &previous->name, &previous);
+    }
+    return insert_result;
+}
+
 static void nmo_object_repository_unlink_name(
     nmo_object_repository_t *repo,
     nmo_object_t *obj
@@ -198,10 +227,11 @@ static void nmo_object_repository_unlink_name(
         }
     }
 
+    if (nmo_hash_table_remove(repo->name_table, &obj->name) != NMO_OK) {
+        return;
+    }
     if (replacement != NULL) {
-        nmo_hash_table_insert(repo->name_table, &replacement->name, &replacement);
-    } else {
-        nmo_hash_table_remove(repo->name_table, &obj->name);
+        (void)nmo_object_repository_link_name(repo, replacement);
     }
 }
 
@@ -313,6 +343,40 @@ nmo_object_repository_t *nmo_object_repository_create(const nmo_allocator_t *all
     repo->next_runtime_id = 1; /* Start from 1 (0 is invalid) */
     repo->next_unresolved_token = NMO_OBJECT_ID_INVALID - 1u;
     return repo;
+}
+
+static void nmo_object_repository_unlink_file_id(
+    nmo_object_repository_t *repo,
+    nmo_object_t *obj)
+{
+    if (repo == NULL || obj == NULL || obj->file_id == 0) {
+        return;
+    }
+
+    nmo_object_t *mapped = NULL;
+    if (nmo_hash_table_get(
+            repo->file_id_table, &obj->file_id, &mapped) != NMO_OK ||
+        mapped != obj) {
+        return;
+    }
+
+    nmo_object_t *replacement = NULL;
+    size_t total_count = nmo_indexed_map_get_count(repo->id_map);
+    for (size_t i = 0; i < total_count; ++i) {
+        nmo_object_t *candidate = NULL;
+        if (nmo_indexed_map_get_value_at(repo->id_map, i, &candidate) &&
+            candidate != obj && candidate->file_id == obj->file_id) {
+            replacement = candidate;
+            break;
+        }
+    }
+
+    if (replacement != NULL) {
+        (void)nmo_hash_table_insert(
+            repo->file_id_table, &replacement->file_id, &replacement);
+    } else {
+        (void)nmo_hash_table_remove(repo->file_id_table, &obj->file_id);
+    }
 }
 
 /**
@@ -498,7 +562,7 @@ nmo_status_t nmo_object_repository_add(nmo_object_repository_t *repo, nmo_object
 
     /* Add to name table if object has a name */
     if (obj->name != NULL && obj->name[0] != '\0') {
-        nmo_status_t name_result = nmo_hash_table_insert(repo->name_table, &obj->name, &obj);
+        nmo_status_t name_result = nmo_object_repository_link_name(repo, obj);
         if (name_result != NMO_OK) {
             /* Rollback ID insertion */
             nmo_status_t rollback_result = nmo_object_repository_remove_without_dispose(repo, obj->id);
@@ -511,15 +575,23 @@ nmo_status_t nmo_object_repository_add(nmo_object_repository_t *repo, nmo_object
 
     /* Add to file ID table if object has a file ID */
     if (obj->file_id != 0) {
-        nmo_hash_table_insert(repo->file_id_table, &obj->file_id, &obj);
+        nmo_status_t file_id_result = nmo_hash_table_insert(
+            repo->file_id_table, &obj->file_id, &obj);
+        if (file_id_result != NMO_OK) {
+            nmo_object_repository_unlink_name(repo, obj);
+            nmo_status_t rollback_result =
+                nmo_object_repository_remove_without_dispose(repo, obj->id);
+            return rollback_result != NMO_OK
+                ? rollback_result
+                : file_id_result;
+        }
     }
 
     int result = nmo_object_repository_notify_add(repo, obj);
     if (result != NMO_OK) {
         /* Keep structures consistent if index update fails */
-        if (obj->name != NULL && obj->name[0] != '\0') {
-            nmo_hash_table_remove(repo->name_table, &obj->name);
-        }
+        nmo_object_repository_unlink_file_id(repo, obj);
+        nmo_object_repository_unlink_name(repo, obj);
         nmo_status_t rollback_result = nmo_object_repository_remove_without_dispose(repo, obj->id);
         if (rollback_result != NMO_OK) {
             return rollback_result;
@@ -611,10 +683,7 @@ nmo_status_t nmo_object_repository_take(
 
     nmo_object_repository_unlink_name(repo, obj);
 
-    /* Remove from file ID table */
-    if (obj->file_id != 0) {
-        nmo_hash_table_remove(repo->file_id_table, &obj->file_id);
-    }
+    nmo_object_repository_unlink_file_id(repo, obj);
 
     result = nmo_object_repository_remove_without_dispose(repo, id);
     if (result != NMO_OK) {
@@ -665,11 +734,7 @@ nmo_status_t nmo_object_repository_rename(nmo_object_repository_t *repo,
 
     /* 1. Remove old name from table (key still valid at this point) */
     if (obj->name != NULL && obj->name[0] != '\0') {
-        nmo_object_t *mapped = NULL;
-        if (nmo_hash_table_get(repo->name_table, &obj->name, &mapped) == NMO_OK
-            && mapped == obj) {
-            nmo_hash_table_remove(repo->name_table, &obj->name);
-        }
+        nmo_object_repository_unlink_name(repo, obj);
     }
 
     /* 2. Update the object's name (frees old, allocates new) */
@@ -679,9 +744,11 @@ nmo_status_t nmo_object_repository_rename(nmo_object_repository_t *repo,
         return set_result;
     }
 
-    /* 3. Re-insert with new name if non-empty */
+    /* 3. Re-insert with new name if non-empty. Rebind an equal borrowed key
+     * to this object so a later rename of the previous duplicate cannot leave
+     * the table pointing at freed name storage. */
     if (new_name != NULL && new_name[0] != '\0') {
-        nmo_status_t ins = nmo_hash_table_insert(repo->name_table, &obj->name, &obj);
+        nmo_status_t ins = nmo_object_repository_link_name(repo, obj);
         if (ins != NMO_OK) {
             nmo_object_repository_notify_add(repo, obj);
             return ins;

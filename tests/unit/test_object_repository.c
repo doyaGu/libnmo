@@ -373,6 +373,30 @@ TEST(object_repository, duplicate_name_handling) {
     nmo_object_repository_destroy(repo);
 }
 
+TEST(object_repository, renaming_older_duplicate_keeps_name_index_valid) {
+    nmo_allocator_t allocator = nmo_allocator_default();
+    nmo_object_repository_t *repo = nmo_object_repository_create(&allocator);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_t *older = create_test_object(&allocator, 10, "SameName", 1000);
+    nmo_object_t *newer = create_test_object(&allocator, 20, "SameName", 1000);
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &older));
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &newer));
+
+    ASSERT_EQ(NMO_OK, nmo_object_repository_rename(repo, 10, "Renamed"));
+    nmo_object_t *same_name =
+        nmo_object_repository_find_by_name(repo, "SameName");
+    ASSERT_NOT_NULL(same_name);
+    ASSERT_EQ(20, same_name->id);
+
+    ASSERT_EQ(NMO_OK, nmo_object_repository_rename(repo, 10, "SameName"));
+    same_name = nmo_object_repository_find_by_name(repo, "SameName");
+    ASSERT_NOT_NULL(same_name);
+    ASSERT_EQ(10, same_name->id);
+
+    nmo_object_repository_destroy(repo);
+}
+
 TEST(object_repository, duplicate_id_handling) {
     nmo_allocator_t allocator = nmo_allocator_default();
     nmo_object_repository_t *repo = nmo_object_repository_create(&allocator);
@@ -459,6 +483,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_repository, get_all_objects);
     REGISTER_TEST(object_repository, auto_assign_skips_existing_ids);
     REGISTER_TEST(object_repository, duplicate_name_handling);
+    REGISTER_TEST(object_repository, renaming_older_duplicate_keeps_name_index_valid);
     REGISTER_TEST(object_repository, duplicate_id_handling);
     REGISTER_TEST(object_repository, add_failure_keeps_caller_ownership);
 TEST_MAIN_END()
