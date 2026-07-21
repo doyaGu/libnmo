@@ -115,6 +115,7 @@ TEST(type_registry, register_simple_type) {
     ASSERT_EQ(0, found->id);
     ASSERT_TRUE(found->valid);
     
+    nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
 }
 
@@ -156,6 +157,7 @@ TEST(type_registry, register_multiple_types) {
     ASSERT_NE(NULL, nmo_type_registry_find_by_guid(registry, GUID_FLOAT));
     ASSERT_NE(NULL, nmo_type_registry_find_by_guid(registry, GUID_VECTOR3));
     
+    nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
 }
 
@@ -181,6 +183,7 @@ TEST(type_registry, register_invalid_field_bounds_fails) {
     nmo_status_t result = nmo_type_registry_register(registry, &type);
     ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result);
 
+    nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
 }
 
@@ -199,6 +202,7 @@ TEST(type_registry, register_object_without_vtable_fails) {
     nmo_status_t result = nmo_type_registry_register(registry, &type);
     ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result);
 
+    nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
 }
 
@@ -233,6 +237,7 @@ TEST(type_registry, finalize_blocks_mutation) {
     result = nmo_type_registry_register(registry, &float_type);
     ASSERT_EQ(NMO_OK, result);
 
+    nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
 }
 
@@ -284,6 +289,7 @@ TEST(type_registry, register_copies_name_and_fields) {
     ASSERT_STR_EQ("FieldDesc", found->fields[0].description);
     ASSERT_EQ(42, *(const int *)found->fields[0].default_value);
 
+    nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
 }
 
@@ -315,6 +321,7 @@ TEST(type_registry, register_duplicate_guid_fails) {
     ASSERT_NE(NULL, found);
     ASSERT_STR_EQ("int", found->name);
     
+    nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
 }
 
@@ -376,6 +383,7 @@ TEST(type_registry, find_by_guid) {
     const nmo_type_descriptor_t *not_found = nmo_type_registry_find_by_guid(registry, GUID_FLOAT);
     ASSERT_EQ(NULL, not_found);
     
+    nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
 }
 
@@ -399,6 +407,7 @@ TEST(type_registry, find_by_name) {
     const nmo_type_descriptor_t *not_found = nmo_type_registry_find_by_name(registry, "float");
     ASSERT_EQ(NULL, not_found);
     
+    nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
 }
 
@@ -422,6 +431,7 @@ TEST(type_registry, get_by_id) {
     ASSERT_EQ(NULL, nmo_type_registry_get_by_id(registry, 999));
     ASSERT_EQ(NULL, nmo_type_registry_get_by_id(registry, -1));
     
+    nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
 }
 
@@ -589,6 +599,7 @@ TEST(type_registry, slot_recycling) {
     /* Type count should be 2 (not 3) */
     ASSERT_EQ(2, registry->types.count);
     
+    nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
 }
 
@@ -690,6 +701,7 @@ TEST(type_registry, compatibility_same_type) {
     /* Same type is always compatible */
     ASSERT_TRUE(nmo_type_is_compatible(registry, 0, 0));
     
+    nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
 }
 
@@ -726,6 +738,7 @@ TEST(type_registry, compatibility_inheritance) {
     /* Entity IS compatible with Character (symmetric check in Virtools) */
     ASSERT_TRUE(nmo_type_is_compatible(registry, entity->id, character->id));
     
+    nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
 }
 
@@ -758,6 +771,7 @@ TEST(type_registry, derivation_depth) {
     depth = nmo_type_get_derivation_depth(registry, entity->id, character->id);
     ASSERT_EQ(-1, depth);
     
+    nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
 }
 
@@ -825,6 +839,7 @@ TEST(type_registry, statistics) {
     ASSERT_EQ(2, builtin);
     ASSERT_EQ(0, plugin);
     
+    nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
 }
 

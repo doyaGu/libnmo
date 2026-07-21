@@ -17,11 +17,12 @@
  * ============================================================================ */
 
 static nmo_type_registry_t *g_type_registry = NULL;
+static nmo_arena_t *g_type_arena = NULL;
 
 static void setup(void) {
-    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
-    ASSERT_NE(NULL, arena);
-    g_type_registry = nmo_type_registry_create(arena);
+    g_type_arena = nmo_arena_create(NULL, 65536);
+    ASSERT_NE(NULL, g_type_arena);
+    g_type_registry = nmo_type_registry_create(g_type_arena);
     ASSERT_NE(NULL, g_type_registry);
 }
 
@@ -29,6 +30,10 @@ static void teardown(void) {
     if (g_type_registry) {
         nmo_type_registry_destroy(g_type_registry);
         g_type_registry = NULL;
+    }
+    if (g_type_arena) {
+        nmo_arena_destroy(g_type_arena);
+        g_type_arena = NULL;
     }
 }
 

@@ -16,12 +16,17 @@
 #include "core/nmo_allocator.h"
 #include "core/nmo_arena_array.h"
 #include "core/nmo_debug.h"
+#include <stdint.h>
 #include <string.h>
 #include <assert.h>
 
 /* ============================================================================
  * Metadata Deep Copy Helpers
  * ============================================================================ */
+
+static void nmo_free_metadata(
+    nmo_type_registry_t *registry,
+    nmo_specialized_metadata_t *metadata);
 
 static const char *nmo_strdup_optional(nmo_allocator_t *allocator, const char *src) {
     if (!src) {
@@ -44,6 +49,9 @@ static nmo_status_t nmo_copy_enum_metadata(
     if (!metadata->enum_meta.values || metadata->enum_meta.value_count == 0) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Enum metadata must include values");
     }
+    if (metadata->enum_meta.value_count > SIZE_MAX / sizeof(nmo_enum_descriptor_t)) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Enum metadata is too large");
+    }
 
     nmo_enum_descriptor_t *values_copy = (nmo_enum_descriptor_t *)nmo_alloc(
         &registry->type_allocator,
@@ -52,6 +60,10 @@ static nmo_status_t nmo_copy_enum_metadata(
     if (!values_copy) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate enum metadata values");
     }
+    memset(values_copy, 0,
+           metadata->enum_meta.value_count * sizeof(nmo_enum_descriptor_t));
+    out_copy->enum_meta.values = values_copy;
+    out_copy->enum_meta.value_count = metadata->enum_meta.value_count;
 
     for (size_t i = 0; i < metadata->enum_meta.value_count; i++) {
         const nmo_enum_descriptor_t *src = &metadata->enum_meta.values[i];
@@ -68,8 +80,6 @@ static nmo_status_t nmo_copy_enum_metadata(
         dst->flags = src->flags;
     }
 
-    out_copy->enum_meta.values = values_copy;
-    out_copy->enum_meta.value_count = metadata->enum_meta.value_count;
     NMO_RETURN_OK();
 }
 
@@ -81,6 +91,9 @@ static nmo_status_t nmo_copy_flags_metadata(
     if (!metadata->flags_meta.bits || metadata->flags_meta.bit_count == 0) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Flags metadata must include bits");
     }
+    if (metadata->flags_meta.bit_count > SIZE_MAX / sizeof(nmo_flags_descriptor_t)) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Flags metadata is too large");
+    }
 
     nmo_flags_descriptor_t *bits_copy = (nmo_flags_descriptor_t *)nmo_alloc(
         &registry->type_allocator,
@@ -89,6 +102,10 @@ static nmo_status_t nmo_copy_flags_metadata(
     if (!bits_copy) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate flags metadata bits");
     }
+    memset(bits_copy, 0,
+           metadata->flags_meta.bit_count * sizeof(nmo_flags_descriptor_t));
+    out_copy->flags_meta.bits = bits_copy;
+    out_copy->flags_meta.bit_count = metadata->flags_meta.bit_count;
 
     for (size_t i = 0; i < metadata->flags_meta.bit_count; i++) {
         const nmo_flags_descriptor_t *src = &metadata->flags_meta.bits[i];
@@ -105,8 +122,6 @@ static nmo_status_t nmo_copy_flags_metadata(
         dst->flags = src->flags;
     }
 
-    out_copy->flags_meta.bits = bits_copy;
-    out_copy->flags_meta.bit_count = metadata->flags_meta.bit_count;
     NMO_RETURN_OK();
 }
 
@@ -118,6 +133,9 @@ static nmo_status_t nmo_copy_struct_metadata(
     if (!metadata->struct_meta.fields || metadata->struct_meta.field_count == 0) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Struct metadata must include fields");
     }
+    if (metadata->struct_meta.field_count > SIZE_MAX / sizeof(nmo_struct_descriptor_t)) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Struct metadata is too large");
+    }
 
     nmo_struct_descriptor_t *fields_copy = (nmo_struct_descriptor_t *)nmo_alloc(
         &registry->type_allocator,
@@ -126,6 +144,10 @@ static nmo_status_t nmo_copy_struct_metadata(
     if (!fields_copy) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate struct metadata fields");
     }
+    memset(fields_copy, 0,
+           metadata->struct_meta.field_count * sizeof(nmo_struct_descriptor_t));
+    out_copy->struct_meta.fields = fields_copy;
+    out_copy->struct_meta.field_count = metadata->struct_meta.field_count;
 
     for (size_t i = 0; i < metadata->struct_meta.field_count; i++) {
         const nmo_struct_descriptor_t *src = &metadata->struct_meta.fields[i];
@@ -147,8 +169,6 @@ static nmo_status_t nmo_copy_struct_metadata(
         dst->pointer_depth = src->pointer_depth;
     }
 
-    out_copy->struct_meta.fields = fields_copy;
-    out_copy->struct_meta.field_count = metadata->struct_meta.field_count;
     NMO_RETURN_OK();
 }
 
@@ -166,6 +186,9 @@ static nmo_status_t nmo_copy_union_metadata(
         out_copy->union_meta.field_count = 0;
         NMO_RETURN_OK();
     }
+    if (metadata->union_meta.field_count > SIZE_MAX / sizeof(nmo_struct_descriptor_t)) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Union metadata is too large");
+    }
 
     nmo_struct_descriptor_t *fields_copy = (nmo_struct_descriptor_t *)nmo_alloc(
         &registry->type_allocator,
@@ -174,12 +197,15 @@ static nmo_status_t nmo_copy_union_metadata(
     if (!fields_copy) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate union field copy");
     }
+    memset(fields_copy, 0,
+           metadata->union_meta.field_count * sizeof(nmo_struct_descriptor_t));
+    out_copy->union_meta.fields = fields_copy;
+    out_copy->union_meta.field_count = metadata->union_meta.field_count;
 
     for (size_t i = 0; i < metadata->union_meta.field_count; i++) {
         const nmo_struct_descriptor_t *src = &metadata->union_meta.fields[i];
         nmo_struct_descriptor_t *dst = &fields_copy[i];
 
-        memset(dst, 0, sizeof(*dst));
         if (src->name) {
             dst->name = nmo_strdup_optional(&registry->type_allocator, src->name);
             if (!dst->name) {
@@ -202,8 +228,6 @@ static nmo_status_t nmo_copy_union_metadata(
         dst->pointer_depth = src->pointer_depth;
     }
 
-    out_copy->union_meta.fields = fields_copy;
-    out_copy->union_meta.field_count = metadata->union_meta.field_count;
     NMO_RETURN_OK();
 }
 
@@ -254,6 +278,7 @@ static nmo_status_t nmo_deep_copy_metadata(
     }
 
     if (result != NMO_OK) {
+        nmo_free_metadata(registry, copy);
         return result;
     }
 
@@ -334,6 +359,29 @@ static void nmo_free_metadata(
     }
 
     nmo_free(&registry->type_allocator, metadata);
+}
+
+void nmo_type_registry_release_all_metadata(
+    nmo_type_registry_t *registry)
+{
+    if (!registry || !registry->metadata.data) {
+        return;
+    }
+
+    for (size_t i = 0; i < registry->metadata.count; i++) {
+        nmo_specialized_metadata_t **entry =
+            (nmo_specialized_metadata_t **)nmo_arena_array_get(
+                &registry->metadata, i);
+        if (!entry || !*entry) {
+            continue;
+        }
+
+        NMO_OWNERSHIP_ASSERT_VALID((*entry)->ownership);
+        if ((*entry)->ownership == NMO_OWNERSHIP_HEAP) {
+            nmo_free_metadata(registry, *entry);
+        }
+        *entry = NULL;
+    }
 }
 
 /* ============================================================================

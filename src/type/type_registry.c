@@ -1347,15 +1347,7 @@ fail:
 void nmo_type_registry_destroy(nmo_type_registry_t *registry) {
     if (!registry) return;
 
-    if (registry->metadata.data && registry->metadata.count > 0) {
-        for (size_t i = 0; i < registry->metadata.count; i++) {
-            nmo_specialized_metadata_t *entry =
-                *(nmo_specialized_metadata_t **)nmo_arena_array_get(&registry->metadata, i);
-            if (entry) {
-                nmo_type_registry_unregister_metadata(registry, entry->type_id);
-            }
-        }
-    }
+    nmo_type_registry_release_all_metadata(registry);
 
     if (registry->types.data && registry->types.count > 0) {
         for (size_t i = 0; i < registry->types.count; i++) {

@@ -60,6 +60,7 @@ TEST(object_types, register_base_types) {
     ASSERT_EQ(0, strcmp(ckobject->name, "CKObject"));
     ASSERT_EQ(1, ckobject->class_id);  /* NMO_CID_OBJECT */
 
+    nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
 }
 
@@ -92,6 +93,7 @@ TEST(object_types, register_all_types) {
     ASSERT_NE(NULL, nmo_type_registry_find_by_guid(registry, CKPGUID_3DENTITY));
     ASSERT_NE(NULL, nmo_type_registry_find_by_guid(registry, CKPGUID_BEHAVIOR));
 
+    nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
 }
 
@@ -111,6 +113,7 @@ TEST(object_types, lookup_by_class_id) {
     /* Verify GUID matches canonical CKPGUID_* constant */
     ASSERT_TRUE(nmo_guid_equals(mesh->guid, CKPGUID_MESH));
 
+    nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
 }
 
@@ -159,6 +162,7 @@ TEST(object_types, inheritance_check) {
     ASSERT_FALSE(nmo_type_is_derived_from(
         registry, object_animation->id, animation->id));
 
+    nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
 }
 
@@ -182,6 +186,7 @@ TEST(object_types, is_object_type) {
     group_result = nmo_is_object_type(registry, fake_guid);
     ASSERT_EQ(0, group_result);
 
+    nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
 }
 
@@ -204,6 +209,7 @@ TEST(object_types, class_group_checks) {
     ASSERT_EQ(0, mesh_is_behavior);
     ASSERT_EQ(0, mesh_is_parameter);
 
+    nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
 }
 
@@ -233,6 +239,7 @@ TEST(object_types, 3d_entity_hierarchy) {
     ASSERT_TRUE(nmo_type_is_derived_from(registry, renderobject->id, beobject->id));
     ASSERT_TRUE(nmo_type_is_derived_from(registry, camera->id, ckobject->id));
 
+    nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
 }
 
@@ -259,6 +266,7 @@ TEST(object_types, resource_types) {
     ASSERT_TRUE(nmo_type_is_derived_from(registry, texture->id, beobject->id));
     ASSERT_TRUE(nmo_type_is_derived_from(registry, mesh->id, beobject->id));
 
+    nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
 }
 

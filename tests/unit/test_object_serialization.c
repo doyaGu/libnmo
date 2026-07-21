@@ -101,6 +101,7 @@ TEST(object_serialization, ckobject_roundtrip) {
     ASSERT_EQ(state_out.visibility_flags, state_in.visibility_flags);
     ASSERT_TRUE(state_in.visibility_flags & NMO_CKOBJECT_VISIBLE);
 
+    nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
 }
 
@@ -142,6 +143,7 @@ TEST(object_serialization, ckobject_hidden) {
     ASSERT_EQ(0, state_in.visibility_flags);
     ASSERT_FALSE(state_in.visibility_flags & NMO_CKOBJECT_VISIBLE);
 
+    nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
 }
 
@@ -184,6 +186,7 @@ TEST(object_serialization, ckobject_hierarchical_hidden) {
     ASSERT_FALSE(state_in.visibility_flags & NMO_CKOBJECT_VISIBLE);
     ASSERT_TRUE(state_in.visibility_flags & NMO_CKOBJECT_HIERARCHICAL);
 
+    nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
 }
 
@@ -221,6 +224,7 @@ TEST(object_serialization, null_checks) {
     result = ckobject_type->vtable->deserialize(&state, NULL, ckobject_type, &des_ctx);
     ASSERT_NE(NMO_OK, result);
 
+    nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
 }
 
@@ -281,6 +285,7 @@ TEST(object_serialization, ck3dentity_roundtrip) {
         ASSERT_EQ(state_out.world_matrix[i], state_in.world_matrix[i]);
     }
 
+    nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
 }
 
@@ -331,6 +336,7 @@ TEST(object_serialization, ck3dentity_transform) {
     ASSERT_EQ(20.0f, state_in.world_matrix[13]);
     ASSERT_EQ(30.0f, state_in.world_matrix[14]);
 
+    nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
 }
 

@@ -26,6 +26,7 @@
 #include "core/nmo_guid.h"
 #include "core/nmo_allocator.h"
 #include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -35,6 +36,38 @@
 
 static nmo_arena_t *arena = NULL;
 static nmo_type_registry_t *registry = NULL;
+
+typedef struct metadata_fail_allocator_state {
+    nmo_allocator_t base;
+    size_t alloc_calls;
+    size_t successful_allocations;
+    size_t frees;
+    size_t fail_on_call;
+} metadata_fail_allocator_state_t;
+
+static void *metadata_fail_alloc(void *user_data, size_t size, size_t alignment) {
+    metadata_fail_allocator_state_t *state =
+        (metadata_fail_allocator_state_t *)user_data;
+    size_t call = state->alloc_calls++;
+    if (call == state->fail_on_call) {
+        return NULL;
+    }
+
+    void *ptr = nmo_alloc(&state->base, size, alignment);
+    if (ptr) {
+        state->successful_allocations++;
+    }
+    return ptr;
+}
+
+static void metadata_fail_free(void *user_data, void *ptr) {
+    metadata_fail_allocator_state_t *state =
+        (metadata_fail_allocator_state_t *)user_data;
+    if (ptr) {
+        state->frees++;
+    }
+    nmo_free(&state->base, ptr);
+}
 
 static void setup(void) {
     arena = nmo_arena_create(NULL, 65536);
@@ -2608,6 +2641,112 @@ TEST(type_string, metadata_unregister_is_noop_after_finalize) {
     teardown();
 }
 
+TEST(type_string, finalized_registry_destroy_releases_metadata) {
+    nmo_allocator_stats_t stats = {0};
+    nmo_allocator_tracking_t tracking;
+    nmo_allocator_t tracking_allocator =
+        nmo_allocator_tracking_init(&tracking, nmo_allocator_default(), &stats);
+
+    nmo_arena_t *tracked_arena = nmo_arena_create(NULL, 65536);
+    ASSERT_NE(NULL, tracked_arena);
+    nmo_type_registry_t *tracked_registry =
+        nmo_type_registry_create_ex(tracked_arena, tracking_allocator);
+    ASSERT_NE(NULL, tracked_registry);
+
+    nmo_type_descriptor_t desc = {
+        .guid = NMO_GUID(0xDEADBEEFu, 0x0000003Eu),
+        .id = NMO_TYPE_ID_INVALID,
+        .category = NMO_TYPE_CATEGORY_ENUM,
+        .name = "FinalizedDestroyMetadataEnum",
+        .size = (uint32_t)sizeof(int32_t),
+        .alignment = (uint32_t)alignof(int32_t),
+        .base_type = NMO_NULL_GUID,
+        .base_type_id = NMO_TYPE_ID_INVALID,
+        .specialized_index = NMO_SPECIALIZED_INDEX_INVALID,
+        .creator_plugin_guid = NMO_NULL_GUID,
+        .valid = true,
+    };
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(tracked_registry, &desc));
+
+    const nmo_type_descriptor_t *registered =
+        nmo_type_registry_find_by_guid(tracked_registry, desc.guid);
+    ASSERT_NE(NULL, registered);
+
+    nmo_enum_descriptor_t values[] = {
+        { .name = "Named", .value = 7, .description = "Named value", .flags = 0 },
+    };
+    nmo_specialized_metadata_t metadata = {0};
+    metadata.type_id = registered->id;
+    metadata.metadata_type = NMO_METADATA_TYPE_ENUM;
+    metadata.enum_meta.values = values;
+    metadata.enum_meta.value_count = 1;
+    ASSERT_EQ(NMO_OK,
+              nmo_type_registry_register_metadata(tracked_registry, &metadata));
+    ASSERT_EQ(NMO_OK, nmo_type_registry_finalize(tracked_registry));
+
+    nmo_type_registry_destroy(tracked_registry);
+    nmo_arena_destroy(tracked_arena);
+
+    ASSERT_EQ((size_t)0, stats.current_bytes);
+    ASSERT_EQ(stats.total_allocations, stats.total_frees);
+}
+
+TEST(type_string, metadata_copy_failure_releases_partial_copy) {
+    metadata_fail_allocator_state_t state = {
+        .base = nmo_allocator_default(),
+        .fail_on_call = SIZE_MAX,
+    };
+    nmo_allocator_t failing_allocator = nmo_allocator_custom(
+        metadata_fail_alloc, metadata_fail_free, &state);
+
+    nmo_arena_t *tracked_arena = nmo_arena_create(NULL, 65536);
+    ASSERT_NE(NULL, tracked_arena);
+    nmo_type_registry_t *tracked_registry =
+        nmo_type_registry_create_ex(tracked_arena, failing_allocator);
+    ASSERT_NE(NULL, tracked_registry);
+
+    nmo_type_descriptor_t desc = {
+        .guid = NMO_GUID(0xDEADBEEFu, 0x0000003Fu),
+        .id = NMO_TYPE_ID_INVALID,
+        .category = NMO_TYPE_CATEGORY_ENUM,
+        .name = "FailingMetadataEnum",
+        .size = (uint32_t)sizeof(int32_t),
+        .alignment = (uint32_t)alignof(int32_t),
+        .base_type = NMO_NULL_GUID,
+        .base_type_id = NMO_TYPE_ID_INVALID,
+        .specialized_index = NMO_SPECIALIZED_INDEX_INVALID,
+        .creator_plugin_guid = NMO_NULL_GUID,
+        .valid = true,
+    };
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(tracked_registry, &desc));
+
+    const nmo_type_descriptor_t *registered =
+        nmo_type_registry_find_by_guid(tracked_registry, desc.guid);
+    ASSERT_NE(NULL, registered);
+
+    nmo_enum_descriptor_t values[] = {
+        { .name = "First", .value = 1, .description = "First value", .flags = 0 },
+        { .name = "Second", .value = 2, .description = "Second value", .flags = 0 },
+    };
+    nmo_specialized_metadata_t metadata = {0};
+    metadata.type_id = registered->id;
+    metadata.metadata_type = NMO_METADATA_TYPE_ENUM;
+    metadata.enum_meta.values = values;
+    metadata.enum_meta.value_count = 2;
+
+    state.fail_on_call = state.alloc_calls + 4u;
+    ASSERT_EQ(NMO_ERR_NOMEM,
+              nmo_type_registry_register_metadata(tracked_registry, &metadata));
+    state.fail_on_call = SIZE_MAX;
+    ASSERT_EQ(NULL,
+              nmo_type_registry_get_metadata(tracked_registry, registered->id));
+
+    nmo_type_registry_destroy(tracked_registry);
+    nmo_arena_destroy(tracked_arena);
+
+    ASSERT_EQ(state.successful_allocations, state.frees);
+}
+
 TEST(type_string, base_default_inheritance_only_fills_string_slots) {
     setup();
 
@@ -2855,6 +2994,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(type_string, merged_default_vtable_is_released_with_registry);
     REGISTER_TEST(type_string, metadata_register_rejects_finalized_registry);
     REGISTER_TEST(type_string, metadata_unregister_is_noop_after_finalize);
+    REGISTER_TEST(type_string, finalized_registry_destroy_releases_metadata);
+    REGISTER_TEST(type_string, metadata_copy_failure_releases_partial_copy);
     REGISTER_TEST(type_string, base_default_inheritance_only_fills_string_slots);
     REGISTER_TEST(type_string, merged_category_default_only_fills_string_slots);
     REGISTER_TEST(type_string, type_value_from_string_rejects_scalar_without_vtable);

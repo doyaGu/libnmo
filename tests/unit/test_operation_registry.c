@@ -42,6 +42,7 @@ static test_context_t *setup_context(void) {
     
     ctx->operation_registry = nmo_operation_registry_create(ctx->arena);
     if (!ctx->operation_registry) {
+        nmo_type_registry_destroy(ctx->type_registry);
         nmo_arena_destroy(ctx->arena);
         free(ctx);
         return NULL;
@@ -54,6 +55,7 @@ static void teardown_context(test_context_t *ctx) {
     if (!ctx) return;
     
     nmo_operation_registry_destroy(ctx->operation_registry);
+    nmo_type_registry_destroy(ctx->type_registry);
     nmo_arena_destroy(ctx->arena);
     free(ctx);
 }

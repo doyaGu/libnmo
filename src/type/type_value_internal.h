@@ -221,6 +221,9 @@ void nmo_type_refresh_default_vtable_subtree(
     nmo_type_registry_t *registry,
     nmo_type_id_t root_type_id);
 
+void nmo_type_registry_release_all_metadata(
+    nmo_type_registry_t *registry);
+
 nmo_status_t nmo_type_value_to_string_depth_internal(
     const void *value,
     const nmo_type_descriptor_t *type,

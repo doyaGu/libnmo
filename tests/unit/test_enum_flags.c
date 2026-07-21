@@ -27,11 +27,14 @@ static void setup(void) {
 }
 
 static void teardown(void) {
+    if (g_type_registry) {
+        nmo_type_registry_destroy(g_type_registry);
+        g_type_registry = NULL;
+    }
     if (g_arena) {
         nmo_arena_destroy(g_arena);
         g_arena = NULL;
     }
-    g_type_registry = NULL;
 }
 
 /* ============================================================================
