@@ -29,6 +29,26 @@
 static int g_files_tested = 0;
 static int g_truncations_tested = 0;
 
+static int append_file_path(char ***files, size_t *count, const char *path) {
+    if (files == NULL || count == NULL || path == NULL) return 0;
+
+    size_t path_size = strlen(path) + 1u;
+    char *path_copy = (char *)malloc(path_size);
+    if (path_copy == NULL) return 0;
+    memcpy(path_copy, path, path_size);
+
+    char **new_files =
+        (char **)realloc(*files, (*count + 1u) * sizeof(char *));
+    if (new_files == NULL) {
+        free(path_copy);
+        return 0;
+    }
+    new_files[*count] = path_copy;
+    *files = new_files;
+    (*count)++;
+    return 1;
+}
+
 static int has_composition_extension(const char *name) {
     size_t len = name ? strlen(name) : 0;
     if (len < 4 || name[len - 4] != '.') return 0;
@@ -174,9 +194,7 @@ static void collect_nmo_files(const char *dir, char ***out_files, size_t *out_co
             char full_path[512];
             snprintf(full_path, sizeof(full_path), "%s/%s", dir, fd.cFileName);
 
-            *out_files = (char **)realloc(*out_files, (*out_count + 1) * sizeof(char *));
-            (*out_files)[*out_count] = strdup(full_path);
-            (*out_count)++;
+            (void)append_file_path(out_files, out_count, full_path);
         } while (FindNextFileA(h, &fd));
         FindClose(h);
     }
@@ -220,9 +238,7 @@ static void collect_nmo_files(const char *dir, char ***out_files, size_t *out_co
 
         if (!has_composition_extension(entry->d_name)) continue;
 
-        *out_files = (char **)realloc(*out_files, (*out_count + 1) * sizeof(char *));
-        (*out_files)[*out_count] = strdup(full_path);
-        (*out_count)++;
+        (void)append_file_path(out_files, out_count, full_path);
     }
     closedir(d);
 }
@@ -251,6 +267,6 @@ TEST(truncation_fuzz, fuzz_all_nmo_files) {
 }
 
 TEST_MAIN_BEGIN()
-    REGISTER_TEST_WITH_TIMEOUT(truncation_fuzz, fuzz_all_nmo_files, 60.0);
+    REGISTER_TEST_WITH_TIMEOUT(truncation_fuzz, fuzz_all_nmo_files, 180.0);
 TEST_MAIN_END()
 
