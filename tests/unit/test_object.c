@@ -9,6 +9,26 @@
 #include <stdio.h>
 #include <string.h>
 
+typedef struct object_fail_allocator_state {
+    int fail_allocations;
+} object_fail_allocator_state_t;
+
+static void *object_test_alloc(void *user_data, size_t size, size_t alignment) {
+    object_fail_allocator_state_t *state =
+        (object_fail_allocator_state_t *)user_data;
+    if (state->fail_allocations) {
+        return NULL;
+    }
+    nmo_allocator_t allocator = nmo_allocator_default();
+    return allocator.alloc(allocator.user_data, size, alignment);
+}
+
+static void object_test_free(void *user_data, void *ptr) {
+    (void)user_data;
+    nmo_allocator_t allocator = nmo_allocator_default();
+    allocator.free(allocator.user_data, ptr);
+}
+
 // Test: Create and destroy object
 TEST(object, create_destroy) {
     nmo_object_t* obj = nmo_object_create(NULL, (nmo_object_id_t)100, (nmo_class_id_t)200);
@@ -34,6 +54,26 @@ TEST(object, set_name) {
 
     // Verify name was copied, not just pointed to
     ASSERT_NE(obj->name, name);
+
+    nmo_object_destroy(obj);
+}
+
+TEST(object, set_name_is_alias_safe_and_failure_atomic) {
+    object_fail_allocator_state_t state = {0};
+    nmo_allocator_t allocator = nmo_allocator_custom(
+        object_test_alloc, object_test_free, &state);
+    nmo_object_t *obj = nmo_object_create(&allocator, 100, 200);
+    ASSERT_NOT_NULL(obj);
+
+    ASSERT_EQ(NMO_OK, nmo_object_set_name(obj, "Original"));
+    const char *aliased_name = obj->name;
+    ASSERT_EQ(NMO_OK, nmo_object_set_name(obj, aliased_name));
+    ASSERT_STR_EQ("Original", obj->name);
+    ASSERT_NE(aliased_name, obj->name);
+
+    state.fail_allocations = 1;
+    ASSERT_EQ(NMO_ERR_NOMEM, nmo_object_set_name(obj, "Replacement"));
+    ASSERT_STR_EQ("Original", obj->name);
 
     nmo_object_destroy(obj);
 }
@@ -130,6 +170,7 @@ TEST(object, set_chunk) {
 TEST_MAIN_BEGIN()
     REGISTER_TEST(object, create_destroy);
     REGISTER_TEST(object, set_name);
+    REGISTER_TEST(object, set_name_is_alias_safe_and_failure_atomic);
     REGISTER_TEST(object, hierarchy);
     REGISTER_TEST(object, child_growth);
     REGISTER_TEST(object, set_chunk);

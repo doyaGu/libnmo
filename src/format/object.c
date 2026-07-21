@@ -69,12 +69,11 @@ nmo_status_t nmo_object_set_name(nmo_object_t *object, const char *name) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    if (object->name != NULL) {
-        nmo_free(&object->allocator, (void *)object->name);
-        object->name = NULL;
-    }
-
     if (name == NULL) {
+        if (object->name != NULL) {
+            nmo_free(&object->allocator, (void *)object->name);
+            object->name = NULL;
+        }
         return NMO_OK;
     }
 
@@ -85,7 +84,11 @@ nmo_status_t nmo_object_set_name(nmo_object_t *object, const char *name) {
     }
 
     memcpy(name_copy, name, name_len + 1);
+    const char *old_name = object->name;
     object->name = name_copy;
+    if (old_name != NULL) {
+        nmo_free(&object->allocator, (void *)old_name);
+    }
     return NMO_OK;
 }
 
