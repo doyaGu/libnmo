@@ -1,7 +1,12 @@
+#if defined(__linux__) && !defined(_POSIX_C_SOURCE)
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #include "nmo_tool_session.h"
 
 #include "core/nmo_error.h"
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,6 +15,10 @@
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#elif defined(__APPLE__)
+#include <mach-o/dyld.h>
+#elif defined(__linux__)
+#include <unistd.h>
 #endif
 
 static bool nmo_tool_dir_exists(const char *path) {
@@ -20,7 +29,11 @@ static bool nmo_tool_dir_exists(const char *path) {
     if (stat(path, &st) != 0) {
         return false;
     }
-    return (st.st_mode & S_IFDIR) != 0;
+#ifdef _WIN32
+    return (st.st_mode & _S_IFDIR) != 0;
+#else
+    return S_ISDIR(st.st_mode);
+#endif
 }
 
 static const char *nmo_tool_try_buffer_path(char *buffer,
@@ -32,11 +45,74 @@ static const char *nmo_tool_try_buffer_path(char *buffer,
         return NULL;
     }
 
-    snprintf(buffer, buffer_size, fmt, base);
+    int written = snprintf(buffer, buffer_size, fmt, base);
+    if (written < 0 || (size_t)written >= buffer_size) {
+        buffer[0] = '\0';
+        return NULL;
+    }
     if (nmo_tool_dir_exists(buffer)) {
         return buffer;
     }
     return NULL;
+}
+
+static bool nmo_tool_get_executable_path(char *buffer, size_t buffer_size)
+{
+    if (buffer == NULL || buffer_size < 2u) {
+        return false;
+    }
+
+#ifdef _WIN32
+    DWORD len = GetModuleFileNameA(NULL, buffer, (DWORD)buffer_size);
+    return len > 0u && (size_t)len < buffer_size;
+#elif defined(__APPLE__)
+    uint32_t size = buffer_size > UINT32_MAX
+        ? UINT32_MAX
+        : (uint32_t)buffer_size;
+    return _NSGetExecutablePath(buffer, &size) == 0;
+#elif defined(__linux__)
+    ssize_t len = readlink("/proc/self/exe", buffer, buffer_size - 1u);
+    if (len <= 0 || (size_t)len >= buffer_size) {
+        return false;
+    }
+    buffer[len] = '\0';
+    return true;
+#else
+    (void)buffer;
+    (void)buffer_size;
+    return false;
+#endif
+}
+
+static const char *nmo_tool_resolve_executable_data_dir(char *buffer,
+                                                         size_t buffer_size)
+{
+    char exe_path[4096];
+    if (!nmo_tool_get_executable_path(exe_path, sizeof(exe_path))) {
+        return NULL;
+    }
+
+    char *slash = strrchr(exe_path, '/');
+    char *backslash = strrchr(exe_path, '\\');
+    if (backslash != NULL && (slash == NULL || backslash > slash)) {
+        slash = backslash;
+    }
+    if (slash == NULL) {
+        return NULL;
+    }
+    *slash = '\0';
+
+    if (nmo_tool_try_buffer_path(buffer, buffer_size,
+                                 "%s/../share/libnmo/data",
+                                 exe_path) != NULL) {
+        return buffer;
+    }
+    if (nmo_tool_try_buffer_path(buffer, buffer_size,
+                                 "%s/../data", exe_path) != NULL) {
+        return buffer;
+    }
+    return nmo_tool_try_buffer_path(buffer, buffer_size,
+                                    "%s/../../data", exe_path);
 }
 
 static const char *nmo_tool_resolve_data_dir(char *buffer, size_t buffer_size) {
@@ -49,35 +125,11 @@ static const char *nmo_tool_resolve_data_dir(char *buffer, size_t buffer_size) {
         return "data";
     }
 
-#ifdef _WIN32
-    char exe_path[MAX_PATH];
-    DWORD len = GetModuleFileNameA(NULL, exe_path, (DWORD)sizeof(exe_path));
-    if (len > 0 && len < sizeof(exe_path)) {
-        char *slash = strrchr(exe_path, '\\');
-        char *alt_slash = strrchr(exe_path, '/');
-        if (alt_slash != NULL && (slash == NULL || alt_slash > slash)) {
-            slash = alt_slash;
-        }
-        if (slash != NULL) {
-            *slash = '\0';
-            if (nmo_tool_try_buffer_path(buffer, buffer_size,
-                                         "%s\\..\\share\\libnmo\\data",
-                                         exe_path) != NULL) {
-                return buffer;
-            }
-            if (nmo_tool_try_buffer_path(buffer, buffer_size,
-                                         "%s\\..\\data",
-                                         exe_path) != NULL) {
-                return buffer;
-            }
-            if (nmo_tool_try_buffer_path(buffer, buffer_size,
-                                         "%s\\..\\..\\data",
-                                         exe_path) != NULL) {
-                return buffer;
-            }
-        }
+    const char *executable_data_dir =
+        nmo_tool_resolve_executable_data_dir(buffer, buffer_size);
+    if (executable_data_dir != NULL) {
+        return executable_data_dir;
     }
-#endif
 
     return "data";
 }

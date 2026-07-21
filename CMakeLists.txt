@@ -492,12 +492,29 @@ install(DIRECTORY include/
     PATTERN "session/nmo_ref_enumerate.h" EXCLUDE
 )
 
-install(FILES
+set(NMO_RUNTIME_DATA_FILES
     data/virtools_building_blocks.json
     data/virtools_building_blocks_ext.json
     data/virtools_operation_types.json
     data/virtools_parameter_types.json
     data/virtools_plugins.json
+)
+
+# Keep the build-tree CLI relocatable in the same way as an installed CLI.
+# nmo resolves runtime metadata relative to its executable, so stage the data
+# directory beside the build outputs instead of relying on the caller's CWD.
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/data")
+foreach(_nmo_data_file IN LISTS NMO_RUNTIME_DATA_FILES)
+    get_filename_component(_nmo_data_name "${_nmo_data_file}" NAME)
+    configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/${_nmo_data_file}"
+        "${CMAKE_CURRENT_BINARY_DIR}/data/${_nmo_data_name}"
+        COPYONLY
+    )
+endforeach()
+
+install(FILES
+    ${NMO_RUNTIME_DATA_FILES}
     DESTINATION ${CMAKE_INSTALL_DATADIR}/libnmo/data
 )
 
