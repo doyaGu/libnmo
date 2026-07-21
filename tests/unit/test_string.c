@@ -244,6 +244,39 @@ TEST(nmo_string, overflow_guards) {
     nmo_string_dispose(&str);
 }
 
+TEST(nmo_string, mutations_accept_aliased_inputs) {
+    nmo_string_t str;
+    assert_ok(nmo_string_init_cstr(&str, "abcdef", NULL));
+
+    nmo_string_view_t suffix = {str.data + 2, 4};
+    assert_ok(nmo_string_assign_view(&str, suffix));
+    ASSERT_STR_EQ("cdef", nmo_string_c_str(&str));
+
+    assert_ok(nmo_string_assign(&str, "0123456789abcdef"));
+    nmo_string_view_t middle = {str.data + 4, 8};
+    assert_ok(nmo_string_append_view(&str, middle));
+    ASSERT_STR_EQ("0123456789abcdef456789ab", nmo_string_c_str(&str));
+
+    assert_ok(nmo_string_assign(&str, "abcdef"));
+    assert_ok(nmo_string_reserve(&str, 64));
+    assert_ok(nmo_string_insert(&str, 1, str.data + 2, 3));
+    ASSERT_STR_EQ("acdebcdef", nmo_string_c_str(&str));
+
+    assert_ok(nmo_string_assign(&str, "abcdef"));
+    assert_ok(nmo_string_replace(&str, 1, 2, str.data + 3, 3));
+    ASSERT_STR_EQ("adefdef", nmo_string_c_str(&str));
+
+    assert_ok(nmo_string_assign(&str, "abcabcX"));
+    nmo_string_view_t needle = {str.data, 3};
+    nmo_string_view_t replacement = {str.data + 6, 1};
+    size_t replaced = 0;
+    assert_ok(nmo_string_replace_all(&str, needle, replacement, &replaced));
+    ASSERT_EQ(2u, replaced);
+    ASSERT_STR_EQ("XXX", nmo_string_c_str(&str));
+
+    nmo_string_dispose(&str);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(nmo_string, init_and_assign);
     REGISTER_TEST(nmo_string, append_insert_erase);
@@ -255,4 +288,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(nmo_string, pop_back_and_capacity);
     REGISTER_TEST(nmo_string, numeric_failures);
     REGISTER_TEST(nmo_string, overflow_guards);
+    REGISTER_TEST(nmo_string, mutations_accept_aliased_inputs);
 TEST_MAIN_END()
