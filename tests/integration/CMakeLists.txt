@@ -59,6 +59,9 @@ add_integration_test(test_runtime_copy_behavior_graph)
 add_integration_test(test_runtime_delete_scene_group_consistency)
 add_integration_test(test_extension_abi_v3)
 add_integration_test(test_reference_alignment_matrix)
+target_compile_definitions(test_reference_alignment_matrix PRIVATE
+    NMO_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
+)
 add_integration_test(test_manager_lane_runtime_events)
 
 # CLI tests

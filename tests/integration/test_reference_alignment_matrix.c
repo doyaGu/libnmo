@@ -5,6 +5,10 @@
 #include <stdio.h>
 #include <string.h>
 
+#ifndef NMO_SOURCE_DIR
+#define NMO_SOURCE_DIR "."
+#endif
+
 typedef struct reference_sample {
     const char *batch;
     const char *type_name;
@@ -45,28 +49,22 @@ static const reference_sample_t k_samples[] = {
     {"B9", "CKMessageManager", 0, "reference/CK2/src/CKMessageManager.cpp", "src/object/builtin/ckmessagemanager_schemas.c"},
 };
 
-static const char *k_probe_prefixes[] = {
-    "",
-    "..\\",
-    "..\\..\\",
-    "..\\..\\..\\",
-    "..\\..\\..\\..\\"
-};
+static nmo_context_t *g_context = NULL;
 
-static FILE *open_with_probe_prefixes(const char *relative_path, char *resolved, size_t resolved_size) {
-    for (size_t i = 0; i < sizeof(k_probe_prefixes) / sizeof(k_probe_prefixes[0]); i++) {
-        snprintf(resolved, resolved_size, "%s%s", k_probe_prefixes[i], relative_path);
-        FILE *fp = fopen(resolved, "rb");
-        if (fp != NULL) {
-            return fp;
-        }
-    }
-    return NULL;
+static void setup_reference_alignment_matrix(void) {
+    nmo_context_desc_t desc = {0};
+    g_context = nmo_context_create(&desc);
+}
+
+static void teardown_reference_alignment_matrix(void) {
+    nmo_context_release(g_context);
+    g_context = NULL;
 }
 
 static int file_contains_text(const char *relative_path, const char *needle) {
     char path[512];
-    FILE *fp = open_with_probe_prefixes(relative_path, path, sizeof(path));
+    snprintf(path, sizeof(path), "%s/%s", NMO_SOURCE_DIR, relative_path);
+    FILE *fp = fopen(path, "rb");
     if (fp == NULL) {
         return 0;
     }
@@ -84,11 +82,9 @@ static int file_contains_text(const char *relative_path, const char *needle) {
 }
 
 TEST(reference_alignment_matrix, batch_samples_have_reference_and_runtime_remap_hooks) {
-    nmo_context_desc_t desc = {0};
-    nmo_context_t *ctx = nmo_context_create(&desc);
-    ASSERT_NOT_NULL(ctx);
+    ASSERT_NOT_NULL(g_context);
 
-    nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
+    nmo_type_registry_t *registry = nmo_context_get_type_registry(g_context);
     ASSERT_NOT_NULL(registry);
 
     size_t batch_counts[10] = {0};
@@ -116,11 +112,13 @@ TEST(reference_alignment_matrix, batch_samples_have_reference_and_runtime_remap_
     for (size_t i = 0; i < 10; i++) {
         ASSERT_TRUE(batch_counts[i] >= 2);
     }
-
-    nmo_context_release(ctx);
 }
 
 TEST_MAIN_BEGIN()
-REGISTER_TEST(reference_alignment_matrix, batch_samples_have_reference_and_runtime_remap_hooks);
+REGISTER_TEST_WITH_FIXTURE(
+    reference_alignment_matrix,
+    batch_samples_have_reference_and_runtime_remap_hooks,
+    setup_reference_alignment_matrix,
+    teardown_reference_alignment_matrix);
 TEST_MAIN_END()
 
