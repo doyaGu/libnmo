@@ -1,3 +1,7 @@
+if(UNIX)
+    add_compile_definitions(_POSIX_C_SOURCE=200809L)
+endif()
+
 # Integration test macro
 macro(add_integration_test name)
     add_executable(${name} ${name}.c)

@@ -1,3 +1,7 @@
+#if !defined(_WIN32) && !defined(_XOPEN_SOURCE)
+#define _XOPEN_SOURCE 700
+#endif
+
 /**
  * @file nmo_cmd_validate.c
  * @brief CLI validate command group implementation
@@ -32,6 +36,7 @@
 #include "type/nmo_reflection.h"
 #include "type/nmo_type_query.h"
 
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -92,9 +97,9 @@ typedef struct validate_all_data {
 static void print_load_issue(FILE *out, const nmo_load_issue_t *issue)
 {
     fprintf(out,
-            "Parse error: object=%u file=%u class=%d schema=%s section=0x%08X "
+            "Parse error: object=%u file=%u class=%" PRIu32 " schema=%s section=0x%08X "
             "dword=%zu status=%d: %s\n",
-            issue->object_id, issue->file_id, issue->class_id,
+            issue->object_id, issue->file_id, (uint32_t)issue->class_id,
             issue->schema_name[0] ? issue->schema_name : "unknown",
             issue->section_id, issue->dword_offset, issue->status,
             issue->message[0] ? issue->message : nmo_error_string(issue->status));

@@ -19,6 +19,7 @@
 #include "yyjson.h"
 #include <string.h>
 #include <ctype.h>
+#include <inttypes.h>
 #include <stdarg.h>
 
 void nmo_inspector_init_options(nmo_inspector_options_t *options) {
@@ -332,8 +333,8 @@ nmo_status_t nmo_inspector_print_summary(
     size_t id_count = nmo_chunk_get_id_count(chunk);
     uint32_t sub_count = nmo_chunk_get_sub_chunk_count(chunk);
 
-    fprintf(stream, "Class=%d IDs=[%zu] Data=%zu bytes Sub=[%u]",
-           class_id, id_count, data_size, sub_count);
+    fprintf(stream, "Class=%" PRIu32 " IDs=[%zu] Data=%zu bytes Sub=[%u]",
+           (uint32_t)class_id, id_count, data_size, sub_count);
 
     if (nmo_chunk_is_compressed(chunk)) {
         fprintf(stream, " [COMPRESSED]");

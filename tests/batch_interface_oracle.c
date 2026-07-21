@@ -13,6 +13,7 @@
 #include <windows.h>
 #else
 #include <dirent.h>
+#include <strings.h>
 #include <sys/stat.h>
 #endif
 

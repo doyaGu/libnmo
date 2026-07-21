@@ -51,6 +51,7 @@
 #include "nmo_cli_output.h"
 
 #include <ctype.h>
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -483,8 +484,8 @@ static int cmd_list(nmo_repl_context_t *repl, int argc, char **argv) {
         char class_buf[64];
         const char *class_name = nmo_core_class_name_or(&c, query.class_id,
                                                          class_buf, sizeof(class_buf));
-        printf("\n%zu/%zu objects shown (class %d, %s)\n",
-               ld.displayed, result.total, (int)query.class_id, class_name);
+        printf("\n%zu/%zu objects shown (class %" PRIu32 ", %s)\n",
+               ld.displayed, result.total, (uint32_t)query.class_id, class_name);
     } else {
         printf("\n%zu/%zu objects shown\n", ld.displayed, result.total);
     }
@@ -546,7 +547,7 @@ static int cmd_show(nmo_repl_context_t *repl, int argc, char **argv) {
 
     printf("\nObject Details:\n");
     printf("  Index: %zu\n", index);
-    printf("  Class: %d (%s)\n", class_id, class_name);
+    printf("  Class: %" PRIu32 " (%s)\n", (uint32_t)class_id, class_name);
     printf("  ID/Name: %u %s\n", obj_id, (name && name[0]) ? name : "(unnamed)");
     if (chunk) {
         printf("  Chunk Size: %zu bytes\n", nmo_chunk_get_data_size(chunk));
@@ -786,7 +787,8 @@ static int cmd_param(nmo_repl_context_t *repl, int argc, char **argv) {
     }
 
     if (!nmo_type_registry_is_class_derived_from(registry, (uint32_t)class_id, (uint32_t)NMO_CID_PARAMETER)) {
-        fprintf(stderr, "Error: Object is not a parameter (class %d)\n", class_id);
+        fprintf(stderr, "Error: Object is not a parameter (class %" PRIu32 ")\n",
+                (uint32_t)class_id);
         return -1;
     }
 
@@ -807,7 +809,8 @@ static int cmd_param(nmo_repl_context_t *repl, int argc, char **argv) {
         const nmo_parameterout_state_t *pout = (const nmo_parameterout_state_t *)state;
         pstate = &pout->base;
     } else {
-        fprintf(stderr, "Error: Unsupported parameter class %d\n", class_id);
+        fprintf(stderr, "Error: Unsupported parameter class %" PRIu32 "\n",
+                (uint32_t)class_id);
         return -1;
     }
 
@@ -975,10 +978,10 @@ static int cmd_verify(nmo_repl_context_t *repl, int argc, char **argv) {
         nmo_chunk_validation_t result;
         if (nmo_inspector_validate_chunk(chunk, &result) != NMO_OK || !result.is_valid) {
             errors++;
-                 printf("  [%zu] ID=%u Class=%d: verify result %zu\n",
+                 printf("  [%zu] ID=%u Class=%" PRIu32 ": verify result %zu\n",
                    i,
                    nmo_object_get_id(obj),
-                   nmo_object_get_class_id(obj),
+                   (uint32_t)nmo_object_get_class_id(obj),
                      result.error_count);
         }
 
@@ -1048,7 +1051,8 @@ static int cmd_meta(nmo_repl_context_t *repl, int argc, char **argv) {
 
     printf("\nChunk Metadata:\n");
     printf("  Object ID: %u\n", nmo_object_get_id(obj));
-    printf("  Class ID: %d\n", nmo_object_get_class_id(obj));
+    printf("  Class ID: %" PRIu32 "\n",
+           (uint32_t)nmo_object_get_class_id(obj));
     printf("  Chunk Class: %u\n", chunk->class_id);
     printf("  Data Size: %zu bytes\n", nmo_chunk_get_data_size(chunk));
     printf("  Compressed: %s\n",

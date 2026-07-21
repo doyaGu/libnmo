@@ -9,6 +9,7 @@
 #include "object/nmo_object_repository.h"
 
 #include <ctype.h>
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -111,10 +112,10 @@ void nmo_repl_print_object_summary(const nmo_repl_context_t *repl, size_t index,
     char class_buf[64];
     const char *class_name = nmo_core_class_name_or(&c, class_id, class_buf, sizeof(class_buf));
 
-    printf("  [%3zu] ID=%-5u Class=%-3d %-24s %s\n",
+    printf("  [%3zu] ID=%-5u Class=%-3" PRIu32 " %-24s %s\n",
            index,
            obj_id,
-           class_id,
+           (uint32_t)class_id,
            class_name,
            name ? name : "(unnamed)");
 }
@@ -134,11 +135,11 @@ void nmo_repl_print_object_summary_marked(const nmo_repl_context_t *repl,
     char class_buf[64];
     const char *class_name = nmo_core_class_name_or(&c, class_id, class_buf, sizeof(class_buf));
 
-    printf("%c [%3zu] ID=%-5u Class=%-3d %-24s %s\n",
+    printf("%c [%3zu] ID=%-5u Class=%-3" PRIu32 " %-24s %s\n",
            selected ? '>' : ' ',
            index,
            obj_id,
-           class_id,
+           (uint32_t)class_id,
            class_name,
            name ? name : "(unnamed)");
 }
