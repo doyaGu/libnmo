@@ -146,8 +146,7 @@ static int runtime_collect_delete_set(
      * add them to the delete set. Total work: O(E) vs O(rounds * N * E). */
     nmo_ref_graph_t *cascade_graph = nmo_ref_graph_create(repo, type_rt->types, arena);
     if (cascade_graph == NULL) {
-        /* Fallback: no cascade if graph creation fails */
-        return NMO_OK;
+        return NMO_ERR_NOMEM;
     }
 
     /* Worklist: index into the id set's array. New IDs appended
@@ -159,8 +158,13 @@ static int runtime_collect_delete_set(
 
         nmo_ref_edge_t *in_edges = NULL;
         size_t in_count = 0;
-        nmo_ref_graph_get_object_edges(cascade_graph, target_id,
-                                       NMO_REF_DIR_INCOMING, &in_edges, &in_count);
+        nmo_status_t edge_result = nmo_ref_graph_get_object_edges(
+            cascade_graph, target_id, NMO_REF_DIR_INCOMING,
+            &in_edges, &in_count);
+        if (edge_result != NMO_OK) {
+            nmo_ref_graph_destroy(cascade_graph);
+            return edge_result;
+        }
 
         for (size_t e = 0; e < in_count; e++) {
             nmo_object_id_t referrer_id = in_edges[e].from;
@@ -1090,6 +1094,7 @@ nmo_status_t nmo_runtime_execute_delete(
             detached->state != NULL) {
             type->vtable->post_delete(detached->state, type, repo);
         }
+        nmo_runtime_destroy_object_state(session, detached);
         nmo_object_destroy(detached);
 
         if (report != NULL) {

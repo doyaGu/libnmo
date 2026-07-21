@@ -3,6 +3,7 @@
 #include "session/nmo_runtime_kernel.h"
 #include "session/nmo_session.h"
 #include "object/nmo_object_repository.h"
+#include "object/nmo_ref_graph.h"
 #include "object/nmo_object_system.h"
 #include "object/nmo_class_ids.h"
 #include "object/builtin/nmo_behavior_schemas.h"
@@ -55,6 +56,43 @@ static nmo_object_id_t g_runtime_scene_probe_id = 0;
 static int g_runtime_scene_post_delete_called = 0;
 static int g_runtime_scene_post_delete_after_remove = 0;
 static int g_runtime_finalize_prepare_calls = 0;
+
+typedef struct runtime_ref_graph_fail_allocator_state {
+    int fail_allocations;
+} runtime_ref_graph_fail_allocator_state_t;
+
+static void *runtime_ref_graph_fail_alloc(
+    void *user_data,
+    size_t size,
+    size_t alignment)
+{
+    runtime_ref_graph_fail_allocator_state_t *state =
+        (runtime_ref_graph_fail_allocator_state_t *)user_data;
+    if (state->fail_allocations) {
+        return NULL;
+    }
+    nmo_allocator_t allocator = nmo_allocator_default();
+    return allocator.alloc(allocator.user_data, size, alignment);
+}
+
+static void runtime_ref_graph_fail_free(void *user_data, void *ptr) {
+    (void)user_data;
+    nmo_allocator_t allocator = nmo_allocator_default();
+    allocator.free(allocator.user_data, ptr);
+}
+
+static nmo_status_t runtime_ref_graph_fail_enumeration(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    nmo_type_ref_visitor_fn visitor,
+    void *user_data)
+{
+    (void)instance;
+    (void)type;
+    (void)visitor;
+    (void)user_data;
+    return NMO_ERR_INVALID_STATE;
+}
 
 static int runtime_contains_id(const nmo_object_id_t *ids, size_t count, nmo_object_id_t id)
 {
@@ -463,6 +501,157 @@ TEST(runtime_kernel, delete_safe_detach_prunes_group_references) {
     nmo_context_release(ctx);
 }
 
+TEST(runtime_kernel, copy_rejects_ambiguous_or_missing_sources_atomically) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_id_t source_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_OBJECT, "copy-source", (nmo_guid_t){0, 0},
+        &source_id, NULL));
+    ASSERT_EQ(1u, nmo_object_repository_get_count(repo));
+
+    nmo_object_id_t duplicate_ids[] = {source_id, source_id};
+    nmo_runtime_report_t report = {0};
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, nmo_session_copy_objects(
+        session, duplicate_ids, 2, NMO_RUNTIME_REQUEST_STRICT, &report));
+    ASSERT_EQ(1u, nmo_object_repository_get_count(repo));
+    ASSERT_EQ(0u, report.copied_objects);
+    ASSERT_EQ(0u, report.affected_objects);
+
+    nmo_object_id_t missing_ids[] = {source_id, 0x7fffff01u};
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_session_copy_objects(
+        session, missing_ids, 2, NMO_RUNTIME_REQUEST_STRICT, &report));
+    ASSERT_EQ(1u, nmo_object_repository_get_count(repo));
+    ASSERT_EQ(0u, report.copied_objects);
+    ASSERT_EQ(0u, report.affected_objects);
+    ASSERT_NOT_NULL(nmo_object_repository_find_by_id(repo, source_id));
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
+TEST(runtime_kernel, copy_hook_failure_rolls_back_all_clones) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_id_t source_ids[2] = {0, 0};
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_OBJECT, "copy-source-a", (nmo_guid_t){0, 0},
+        &source_ids[0], NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_OBJECT, "copy-source-b", (nmo_guid_t){0, 0},
+        &source_ids[1], NULL));
+
+    nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
+    ASSERT_NOT_NULL(registry);
+    const nmo_type_descriptor_t *object_type =
+        nmo_type_registry_find_by_class_id_inherited(registry, NMO_CID_OBJECT);
+    ASSERT_NOT_NULL(object_type);
+    ASSERT_NOT_NULL(object_type->vtable);
+    nmo_type_vtable_t *mutable_vtable =
+        (nmo_type_vtable_t *)(void *)object_type->vtable;
+    nmo_type_prepare_dependencies_fn old_prepare =
+        mutable_vtable->prepare_dependencies;
+    mutable_vtable->prepare_dependencies = runtime_create_fail_hook;
+
+    nmo_runtime_report_t report = {0};
+    nmo_status_t copy_result = nmo_session_copy_objects(
+        session, source_ids, 2, NMO_RUNTIME_REQUEST_STRICT, &report);
+    mutable_vtable->prepare_dependencies = old_prepare;
+
+    ASSERT_EQ(NMO_ERR_INVALID_STATE, copy_result);
+    ASSERT_EQ(2u, nmo_object_repository_get_count(repo));
+    ASSERT_EQ(0u, report.copied_objects);
+    ASSERT_EQ(0u, report.affected_objects);
+    ASSERT_EQ(1u, report.object_hook_errors);
+    ASSERT_NOT_NULL(nmo_object_repository_find_by_id(repo, source_ids[0]));
+    ASSERT_NOT_NULL(nmo_object_repository_find_by_id(repo, source_ids[1]));
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
+TEST(runtime_kernel, ref_graph_creation_fails_on_edge_allocation_error) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_id_t member_id = 0, group_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_OBJECT, "member", (nmo_guid_t){0, 0},
+        &member_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_GROUP, "group", (nmo_guid_t){0, 0},
+        &group_id, NULL));
+    nmo_object_t *group = nmo_object_repository_find_by_id(repo, group_id);
+    ASSERT_NOT_NULL(group);
+    runtime_group_set_members(group, &member_id, 1);
+
+    runtime_ref_graph_fail_allocator_state_t fail_state = {0};
+    nmo_allocator_t fail_allocator = nmo_allocator_custom(
+        runtime_ref_graph_fail_alloc,
+        runtime_ref_graph_fail_free,
+        &fail_state);
+    nmo_arena_t *arena = nmo_arena_create(&fail_allocator, 1024);
+    ASSERT_NOT_NULL(arena);
+    fail_state.fail_allocations = 1;
+
+    ASSERT_NULL(nmo_ref_graph_create(
+        repo, nmo_context_get_type_registry(ctx), arena));
+
+    fail_state.fail_allocations = 0;
+    nmo_arena_destroy(arena);
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
+TEST(runtime_kernel, ref_graph_creation_propagates_enumerator_error) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_id_t group_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_GROUP, "group", (nmo_guid_t){0, 0},
+        &group_id, NULL));
+
+    nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
+    ASSERT_NOT_NULL(registry);
+    const nmo_type_descriptor_t *group_type =
+        nmo_type_registry_find_by_class_id_inherited(registry, NMO_CID_GROUP);
+    ASSERT_NOT_NULL(group_type);
+    ASSERT_NOT_NULL(group_type->vtable);
+    nmo_type_vtable_t *mutable_vtable =
+        (nmo_type_vtable_t *)(void *)group_type->vtable;
+    nmo_type_enumerate_refs_fn old_enumerator = mutable_vtable->enumerate_refs;
+    mutable_vtable->enumerate_refs = runtime_ref_graph_fail_enumeration;
+
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_ref_graph_t *graph = nmo_ref_graph_create(repo, registry, arena);
+    mutable_vtable->enumerate_refs = old_enumerator;
+
+    ASSERT_NULL(graph);
+    nmo_arena_destroy(arena);
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(runtime_kernel, delete_safe_detach_prunes_behavior_links_with_deleted_io) {
     nmo_context_desc_t desc = {0};
     nmo_context_t *ctx = nmo_context_create(&desc);
@@ -531,6 +720,11 @@ TEST(runtime_kernel, delete_safe_detach_prunes_behavior_links_with_deleted_io) {
 }
 
 TEST(runtime_kernel, delete_cascade_removes_referencing_group) {
+    nmo_allocator_stats_t state_stats = {0};
+    nmo_allocator_tracking_t state_tracking = {0};
+    nmo_allocator_t state_allocator = nmo_allocator_tracking_init(
+        &state_tracking, nmo_allocator_default(), &state_stats);
+
     nmo_context_desc_t desc = {0};
     nmo_context_t *ctx = nmo_context_create(&desc);
     ASSERT_NOT_NULL(ctx);
@@ -552,6 +746,11 @@ TEST(runtime_kernel, delete_cascade_removes_referencing_group) {
 
     nmo_object_t *group_obj = nmo_object_repository_find_by_id(repo, group_id);
     ASSERT_NOT_NULL(group_obj);
+    nmo_group_state_t *group_state = (nmo_group_state_t *)group_obj->state;
+    ASSERT_NOT_NULL(group_state);
+    nmo_array_dispose(&group_state->object_ids);
+    ASSERT_EQ(NMO_OK, nmo_array_init(
+        &group_state->object_ids, sizeof(nmo_ref_t), 0, &state_allocator));
     runtime_group_set_members(group_obj, &member_id, 1);
 
     nmo_runtime_report_t report = {0};
@@ -566,6 +765,8 @@ TEST(runtime_kernel, delete_cascade_removes_referencing_group) {
     ASSERT_EQ(2u, report.deleted_objects);
     ASSERT_NULL(nmo_object_repository_find_by_id(repo, member_id));
     ASSERT_NULL(nmo_object_repository_find_by_id(repo, group_id));
+    ASSERT_EQ((size_t)0, state_stats.current_bytes);
+    ASSERT_EQ(state_stats.total_allocations, state_stats.total_frees);
 
     nmo_session_destroy(session);
     nmo_context_release(ctx);
@@ -2225,6 +2426,10 @@ REGISTER_TEST(runtime_kernel, post_delete_runs_after_remove);
 REGISTER_TEST(runtime_kernel, post_delete_runs_after_remove_non_object_type);
 REGISTER_TEST(runtime_kernel, create_hook_failure_does_not_publish_object);
 REGISTER_TEST(runtime_kernel, copy_preserves_internal_group_references);
+REGISTER_TEST(runtime_kernel, copy_rejects_ambiguous_or_missing_sources_atomically);
+REGISTER_TEST(runtime_kernel, copy_hook_failure_rolls_back_all_clones);
+REGISTER_TEST(runtime_kernel, ref_graph_creation_fails_on_edge_allocation_error);
+REGISTER_TEST(runtime_kernel, ref_graph_creation_propagates_enumerator_error);
 REGISTER_TEST(runtime_kernel, delete_safe_detach_prunes_group_references);
 REGISTER_TEST(runtime_kernel, delete_safe_detach_prunes_behavior_links_with_deleted_io);
 REGISTER_TEST(runtime_kernel, delete_cascade_removes_referencing_group);

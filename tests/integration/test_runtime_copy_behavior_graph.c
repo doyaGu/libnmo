@@ -5,6 +5,7 @@
 #include "object/nmo_object_repository.h"
 #include "object/builtin/nmo_group_schemas.h"
 #include "format/nmo_object.h"
+#include "core/nmo_allocator.h"
 
 static int integration_contains_id(const nmo_ref_t *refs, size_t count, nmo_object_id_t id)
 {
@@ -17,6 +18,11 @@ static int integration_contains_id(const nmo_ref_t *refs, size_t count, nmo_obje
 }
 
 TEST(runtime_copy_behavior_graph, copy_behavior_like_object) {
+    nmo_allocator_stats_t state_stats = {0};
+    nmo_allocator_tracking_t state_tracking = {0};
+    nmo_allocator_t state_allocator = nmo_allocator_tracking_init(
+        &state_tracking, nmo_allocator_default(), &state_stats);
+
     nmo_context_desc_t desc = {0};
     nmo_context_t *ctx = nmo_context_create(&desc);
     ASSERT_NOT_NULL(ctx);
@@ -49,6 +55,9 @@ TEST(runtime_copy_behavior_graph, copy_behavior_like_object) {
     ASSERT_NOT_NULL(group_obj);
     ASSERT_NOT_NULL(group_obj->state);
     nmo_group_state_t *group_state = (nmo_group_state_t *)group_obj->state;
+    nmo_array_dispose(&group_state->object_ids);
+    ASSERT_EQ(NMO_OK, nmo_array_init(
+        &group_state->object_ids, sizeof(nmo_ref_t), 0, &state_allocator));
     ASSERT_EQ(NMO_OK, nmo_array_reserve(&group_state->object_ids, 2));
     nmo_ref_t *refs = NULL;
     ASSERT_EQ(NMO_OK, nmo_array_extend(&group_state->object_ids, 2, (void **)&refs));
@@ -100,6 +109,8 @@ TEST(runtime_copy_behavior_graph, copy_behavior_like_object) {
 
     nmo_session_destroy(session);
     nmo_context_release(ctx);
+    ASSERT_EQ((size_t)0, state_stats.current_bytes);
+    ASSERT_EQ(state_stats.total_allocations, state_stats.total_frees);
 }
 
 TEST_MAIN_BEGIN()

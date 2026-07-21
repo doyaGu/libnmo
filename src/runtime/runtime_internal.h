@@ -40,6 +40,7 @@ typedef struct nmo_object_repository nmo_object_repository_t;
 typedef struct nmo_type_registry nmo_type_registry_t;
 typedef struct nmo_ref_graph nmo_ref_graph_t;
 typedef struct nmo_behavior_index nmo_behavior_index_t;
+struct nmo_behavior_state;
 
 nmo_session_t *nmo_document_internal_session(nmo_document_t *document);
 const nmo_session_t *nmo_document_internal_session_const(
@@ -357,6 +358,13 @@ nmo_status_t nmo_workspace_internal_execute_runtime_request(
     nmo_workspace_t *workspace,
     const nmo_runtime_request_t *request,
     nmo_runtime_report_t *out_report);
+
+void nmo_runtime_destroy_object_state(
+    nmo_session_t *session,
+    nmo_object_t *object);
+nmo_status_t nmo_workspace_edit_snapshot_behavior_state(
+    nmo_workspace_edit_t *edit,
+    struct nmo_behavior_state *state);
 
 /**
  * @brief Find type descriptor for an object by its class ID (inherited lookup).

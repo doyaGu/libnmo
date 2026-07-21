@@ -74,6 +74,7 @@ struct nmo_ref_graph {
     
     /* Current object being enumerated (for visitor context) */
     nmo_object_id_t current_object_id;
+    nmo_status_t build_status;
     
     /* Statistics */
     nmo_ref_graph_stats_t stats;
@@ -96,7 +97,13 @@ static bool grow_edges(nmo_ref_graph_t *graph) {
         return true;
     }
     
+    if (graph->edge_capacity > SIZE_MAX / 2u) {
+        return false;
+    }
     size_t new_cap = graph->edge_capacity == 0 ? 256 : graph->edge_capacity * 2;
+    if (new_cap > SIZE_MAX / sizeof(nmo_ref_edge_t)) {
+        return false;
+    }
     nmo_ref_edge_t *new_edges = nmo_arena_alloc(graph->arena, 
                                                  new_cap * sizeof(nmo_ref_edge_t),
                                                  _Alignof(nmo_ref_edge_t));
@@ -357,8 +364,15 @@ static bool ref_graph_visitor(
     uint32_t index)
 {
     nmo_ref_graph_t *graph = (nmo_ref_graph_t *)user_data;
-    add_edge(graph, graph->current_object_id, target_id, kind, field_path, index);
-    return true; /* Continue enumeration */
+    if (graph == NULL || graph->build_status != NMO_OK) {
+        return false;
+    }
+    if (!add_edge(
+            graph, graph->current_object_id, target_id, kind, field_path, index)) {
+        graph->build_status = NMO_ERR_NOMEM;
+        return false;
+    }
+    return true;
 }
 
 static nmo_status_t ref_graph_build_object(
@@ -368,10 +382,17 @@ static nmo_status_t ref_graph_build_object(
 {
     (void)object_index;
     nmo_ref_graph_t *graph = (nmo_ref_graph_t *)user_data;
+    if (graph->build_status != NMO_OK) {
+        return graph->build_status;
+    }
     graph->current_object_id = nmo_object_get_id(object);
-    (void)nmo_ref_enumerate_object(
+    nmo_status_t status = nmo_ref_enumerate_object(
         graph->type_registry, object, ref_graph_visitor, graph);
-    return NMO_OK;
+    if (status != NMO_OK) {
+        graph->build_status = status;
+        return status;
+    }
+    return graph->build_status;
 }
 
 /* ============================================================================
@@ -397,10 +418,18 @@ nmo_ref_graph_t *nmo_ref_graph_create(
     graph->arena = arena;
     graph->repo = repo;
     graph->type_registry = type_registry;
+    graph->build_status = NMO_OK;
     
     /* Enumerate all repository objects using the registry. */
-    (void)nmo_object_scan_repository(repo, ref_graph_build_object, graph, NULL);
-    (void)ref_graph_build_adjacency(graph);
+    nmo_status_t build_result = nmo_object_scan_repository(
+        repo, ref_graph_build_object, graph, NULL);
+    if (build_result != NMO_OK || graph->build_status != NMO_OK) {
+        return NULL;
+    }
+    if (!ref_graph_build_adjacency(graph)) {
+        graph->build_status = NMO_ERR_NOMEM;
+        return NULL;
+    }
     
     return graph;
 }

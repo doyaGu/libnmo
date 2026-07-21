@@ -245,6 +245,30 @@ static void runtime_destroy_state_layers(
 
 /* ── Create operation ──────────────────────────────────────────── */
 
+void nmo_runtime_destroy_object_state(
+    nmo_session_t *session,
+    nmo_object_t *object)
+{
+    if (session == NULL || object == NULL || object->state == NULL) {
+        return;
+    }
+
+    nmo_context_t *ctx = nmo_session_get_context(session);
+    const nmo_type_runtime_t *type_rt =
+        (ctx != NULL) ? nmo_context_get_type_runtime(ctx) : NULL;
+    const nmo_type_descriptor_t *type =
+        runtime_find_type_for_object(type_rt, object);
+    if (type == NULL) {
+        return;
+    }
+
+    runtime_created_layer_t destroy_plan[RUNTIME_MAX_HIERARCHY_DEPTH];
+    size_t destroy_count = runtime_build_create_plan(
+        type_rt->types, type, destroy_plan, RUNTIME_MAX_HIERARCHY_DEPTH);
+    runtime_destroy_state_layers(
+        object->state, session, destroy_plan, destroy_count);
+}
+
 static int runtime_execute_create(
     nmo_session_t *session,
     const nmo_runtime_request_t *request,
@@ -271,10 +295,19 @@ static int runtime_execute_create(
     }
 
     if (request->payload.create.name != NULL) {
-        (void)nmo_object_set_name(object, request->payload.create.name);
+        int name_result = nmo_object_set_name(object, request->payload.create.name);
+        if (name_result != NMO_OK) {
+            nmo_object_destroy(object);
+            return name_result;
+        }
     }
     if (!nmo_guid_is_null(request->payload.create.type_guid)) {
-        (void)nmo_object_set_type_guid(object, request->payload.create.type_guid);
+        int guid_result = nmo_object_set_type_guid(
+            object, request->payload.create.type_guid);
+        if (guid_result != NMO_OK) {
+            nmo_object_destroy(object);
+            return guid_result;
+        }
     }
 
     const nmo_type_runtime_t *type_rt = nmo_context_get_type_runtime(ctx);
@@ -316,6 +349,7 @@ static int runtime_execute_create(
     nmo_object_t *owned = object;
     int add_result = nmo_object_repository_add(repo, &owned);
     if (add_result != NMO_OK) {
+        nmo_runtime_destroy_object_state(session, object);
         nmo_object_destroy(object);
         return add_result;
     }
@@ -357,7 +391,11 @@ static int runtime_clone_object(
     }
 
     if (source->name != NULL) {
-        (void)nmo_object_set_name(clone, source->name);
+        int name_result = nmo_object_set_name(clone, source->name);
+        if (name_result != NMO_OK) {
+            nmo_object_destroy(clone);
+            return name_result;
+        }
     }
     clone->flags = source->flags;
     clone->creation_flags = source->creation_flags;
@@ -366,6 +404,10 @@ static int runtime_clone_object(
 
     if (source->chunk != NULL) {
         nmo_chunk_t *cloned_chunk = nmo_chunk_clone(source->chunk, arena);
+        if (cloned_chunk == NULL) {
+            nmo_object_destroy(clone);
+            return NMO_ERR_NOMEM;
+        }
         clone->chunk = cloned_chunk;
     }
 
@@ -388,6 +430,46 @@ static int runtime_clone_object(
 
     *out_clone = clone;
     return NMO_OK;
+}
+
+static int runtime_rollback_copies(
+    nmo_session_t *session,
+    nmo_object_repository_t *repo,
+    nmo_object_t **clones,
+    size_t clone_count)
+{
+    int rollback_result = NMO_OK;
+    for (size_t i = clone_count; i > 0; --i) {
+        nmo_object_t *clone = clones[i - 1];
+        if (clone == NULL ||
+            nmo_object_repository_find_by_id(repo, clone->id) != clone) {
+            continue;
+        }
+
+        nmo_object_t *detached = NULL;
+        int take_result = nmo_object_repository_take(repo, clone->id, &detached);
+        if (take_result == NMO_OK && detached != NULL) {
+            nmo_runtime_destroy_object_state(session, detached);
+            nmo_object_destroy(detached);
+        } else if (rollback_result == NMO_OK) {
+            rollback_result = take_result != NMO_OK
+                ? take_result
+                : NMO_ERR_INVALID_STATE;
+        }
+    }
+    return rollback_result;
+}
+
+static int runtime_abort_copy(
+    nmo_session_t *session,
+    nmo_object_repository_t *repo,
+    nmo_object_t **clones,
+    size_t clone_count,
+    int operation_result)
+{
+    int rollback_result = runtime_rollback_copies(
+        session, repo, clones, clone_count);
+    return rollback_result != NMO_OK ? rollback_result : operation_result;
 }
 
 static int runtime_execute_copy(
@@ -417,6 +499,19 @@ static int runtime_execute_copy(
         return NMO_ERR_INVALID_STATE;
     }
 
+    if (count > SIZE_MAX / sizeof(nmo_object_t *) ||
+        count > SIZE_MAX / sizeof(nmo_type_descriptor_t *)) {
+        return NMO_ERR_NOMEM;
+    }
+
+    for (size_t i = 0; i < count; ++i) {
+        for (size_t j = 0; j < i; ++j) {
+            if (ids[i] == ids[j]) {
+                return NMO_ERR_INVALID_ARGUMENT;
+            }
+        }
+    }
+
     nmo_object_t **sources = (nmo_object_t **)nmo_arena_alloc(
         arena,
         sizeof(nmo_object_t *) * count,
@@ -433,7 +528,7 @@ static int runtime_execute_copy(
         return NMO_ERR_NOMEM;
     }
 
-    size_t copied_count = 0;
+    size_t source_count = 0;
     for (size_t i = 0; i < count; i++) {
         nmo_object_t *src = nmo_object_repository_find_by_id(repo, ids[i]);
         if (src == NULL) {
@@ -443,44 +538,50 @@ static int runtime_execute_copy(
             continue;
         }
 
-        const nmo_type_descriptor_t *type = runtime_find_type_for_object(type_rt, src);
+        sources[source_count] = src;
+        types[source_count] = runtime_find_type_for_object(type_rt, src);
+        source_count++;
+    }
+
+    if (source_count == 0) {
+        return NMO_OK;
+    }
+
+    size_t copied_count = 0;
+    for (size_t i = 0; i < source_count; ++i) {
+        nmo_object_t *src = sources[i];
+        const nmo_type_descriptor_t *type = types[i];
         nmo_object_t *clone = NULL;
         int clone_result = runtime_clone_object(session, src, type, &clone);
         if (clone_result != NMO_OK) {
-            return clone_result;
+            return runtime_abort_copy(
+                session, repo, clones, copied_count, clone_result);
         }
 
         nmo_object_t *owned = clone;
         int add_result = nmo_object_repository_add(repo, &owned);
         if (add_result != NMO_OK) {
+            nmo_runtime_destroy_object_state(session, clone);
             nmo_object_destroy(clone);
-            return add_result;
+            return runtime_abort_copy(
+                session, repo, clones, copied_count, add_result);
         }
 
-        sources[copied_count] = src;
         clones[copied_count] = clone;
-        types[copied_count] = type;
         copied_count++;
-
-        if (report != NULL) {
-            report->copied_objects++;
-            report->affected_objects++;
-        }
-    }
-
-    if (copied_count == 0) {
-        return NMO_OK;
     }
 
     nmo_id_remap_t *copy_remap = nmo_id_remap_create(arena);
     if (copy_remap == NULL) {
-        return NMO_ERR_NOMEM;
+        return runtime_abort_copy(
+            session, repo, clones, copied_count, NMO_ERR_NOMEM);
     }
 
     for (size_t i = 0; i < copied_count; i++) {
         nmo_status_t add_st = nmo_id_remap_add(copy_remap, sources[i]->id, clones[i]->id);
         if (add_st != NMO_OK) {
-            return add_st;
+            return runtime_abort_copy(
+                session, repo, clones, copied_count, add_st);
         }
     }
 
@@ -491,19 +592,47 @@ static int runtime_execute_copy(
             continue;
         }
 
-        (void)nmo_runtime_remap_copy_refs(
+        nmo_status_t hook_result = nmo_runtime_remap_copy_refs(
             type_rt,
             type,
             clone->state,
             copy_remap);
+        if (hook_result != NMO_OK) {
+            if (report != NULL) {
+                report->object_hook_errors++;
+            }
+            return runtime_abort_copy(
+                session, repo, clones, copied_count, hook_result);
+        }
 
         if (type->vtable != NULL && type->vtable->prepare_dependencies != NULL) {
-            (void)type->vtable->prepare_dependencies(clone->state, type, repo);
+            hook_result = type->vtable->prepare_dependencies(
+                clone->state, type, repo);
+            if (hook_result != NMO_OK) {
+                if (report != NULL) {
+                    report->object_hook_errors++;
+                }
+                return runtime_abort_copy(
+                    session, repo, clones, copied_count, hook_result);
+            }
         }
 
         if (type->vtable != NULL && type->vtable->remap_dependencies != NULL) {
-            (void)type->vtable->remap_dependencies(clone->state, type, repo);
+            hook_result = type->vtable->remap_dependencies(
+                clone->state, type, repo);
+            if (hook_result != NMO_OK) {
+                if (report != NULL) {
+                    report->object_hook_errors++;
+                }
+                return runtime_abort_copy(
+                    session, repo, clones, copied_count, hook_result);
+            }
         }
+    }
+
+    if (report != NULL) {
+        report->copied_objects += copied_count;
+        report->affected_objects += copied_count;
     }
 
     return NMO_OK;

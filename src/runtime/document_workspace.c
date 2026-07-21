@@ -884,6 +884,13 @@ void nmo_session_destroy(nmo_session_t *session) {
 
         /* Destroy owned resources */
         if (session->repository != NULL) {
+            size_t object_count =
+                nmo_object_repository_get_count(session->repository);
+            for (size_t i = 0; i < object_count; ++i) {
+                nmo_runtime_destroy_object_state(
+                    session,
+                    nmo_object_repository_get_by_index(session->repository, i));
+            }
             nmo_object_repository_destroy(session->repository);
         }
 
