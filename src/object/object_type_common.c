@@ -163,7 +163,9 @@ nmo_status_t nmo_object_copy_array(
                                 "NULL source array for count %u", count);
     }
     size_t size = (size_t)count * elem_size;
-    void *mem = nmo_arena_alloc(arena, size, alignof(uint8_t));
+    /* The element type is not available here, so use the platform's maximum
+     * fundamental alignment instead of returning byte-aligned typed arrays. */
+    void *mem = nmo_arena_alloc(arena, size, alignof(max_align_t));
     if (!mem) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                                 "Out of memory copying array (%zu bytes)", size);

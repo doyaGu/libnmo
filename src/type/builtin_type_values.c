@@ -22,6 +22,16 @@
 #include <string.h>
 #include <stdio.h>
 
+#define NMO_LOAD_SCALAR(type, name, source) \
+    type name; \
+    memcpy(&(name), (source), sizeof(name))
+
+#define NMO_STORE_SCALAR(type, destination, expression) \
+    do { \
+        const type nmo_stored_value = (expression); \
+        memcpy((destination), &nmo_stored_value, sizeof(nmo_stored_value)); \
+    } while (0)
+
 
 /* ============================================================================
  * Builtin Type VTables
@@ -561,7 +571,8 @@ nmo_status_t nmo_type_float_to_string(
         return status;
     }
 
-    nmo_format_real_text((double)*(const float*)value, buffer, buffer_size);
+    NMO_LOAD_SCALAR(float, decoded, value);
+    nmo_format_real_text((double)decoded, buffer, buffer_size);
     NMO_RETURN_OK();
 }
 
@@ -575,15 +586,15 @@ nmo_status_t nmo_type_float_from_string(
 
     // Handle special cases
     if (strcmp(string, "NaN") == 0) {
-        *(float*)value = NAN;
+        NMO_STORE_SCALAR(float, value, NAN);
         NMO_RETURN_OK();
     }
     if (strcmp(string, "Infinity") == 0 || strcmp(string, "+Infinity") == 0) {
-        *(float*)value = INFINITY;
+        NMO_STORE_SCALAR(float, value, INFINITY);
         NMO_RETURN_OK();
     }
     if (strcmp(string, "-Infinity") == 0) {
-        *(float*)value = -INFINITY;
+        NMO_STORE_SCALAR(float, value, -INFINITY);
         NMO_RETURN_OK();
     }
 
@@ -592,7 +603,7 @@ nmo_status_t nmo_type_float_from_string(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Invalid float format");
     }
 
-    *(float*)value = result;
+    NMO_STORE_SCALAR(float, value, result);
     NMO_RETURN_OK();
 }
 
@@ -612,7 +623,7 @@ nmo_status_t nmo_type_int_to_string(
         return status;
     }
 
-    int32_t i = *(const int32_t*)value;
+    NMO_LOAD_SCALAR(int32_t, i, value);
 
     if (use_hex) {
         snprintf(buffer, buffer_size, "0x%X", (unsigned int)i);
@@ -636,7 +647,7 @@ nmo_status_t nmo_type_int_from_string(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Invalid int format");
     }
 
-    *(int32_t*)value = result;
+    NMO_STORE_SCALAR(int32_t, value, result);
     NMO_RETURN_OK();
 }
 
@@ -655,7 +666,7 @@ nmo_status_t nmo_type_bool_to_string(
         return status;
     }
 
-    bool b = *(const bool*)value;
+    NMO_LOAD_SCALAR(bool, b, value);
     snprintf(buffer, buffer_size, b ? "true" : "false");
 
     NMO_RETURN_OK();
@@ -674,10 +685,10 @@ nmo_status_t nmo_type_bool_from_string(
 
     if (strcmp(string, "true") == 0 || strcmp(string, "1") == 0 ||
         strcmp(string, "TRUE") == 0 || strcmp(string, "True") == 0) {
-        *(bool*)value = true;
+        NMO_STORE_SCALAR(bool, value, true);
     } else if (strcmp(string, "false") == 0 || strcmp(string, "0") == 0 ||
                strcmp(string, "FALSE") == 0 || strcmp(string, "False") == 0) {
-        *(bool*)value = false;
+        NMO_STORE_SCALAR(bool, value, false);
     } else {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Invalid bool format (expected true/false/1/0)");
     }
@@ -1013,7 +1024,7 @@ nmo_status_t nmo_type_string_to_string(
         return status;
     }
 
-    const char *str = *(const char**)value;
+    NMO_LOAD_SCALAR(const char *, str, value);
     if (!str) {
         snprintf(buffer, buffer_size, "\"\"");
         NMO_RETURN_OK();
@@ -1049,7 +1060,7 @@ nmo_status_t nmo_type_string_from_string(
     }
 
     memcpy(result, temp, actual_len);
-    *(char**)value = result;
+    NMO_STORE_SCALAR(char *, value, result);
 
     NMO_RETURN_OK();
 }
@@ -1067,7 +1078,7 @@ nmo_status_t nmo_type_object_id_to_string(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments for object_id_to_string");
     }
 
-    nmo_object_id_t id = *(const nmo_object_id_t*)value;
+    NMO_LOAD_SCALAR(nmo_object_id_t, id, value);
     int written = snprintf(buffer, buffer_size, "#%u", id);
     if (written < 0 || (size_t)written >= buffer_size) {
         NMO_RETURN_ERROR(NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR, "Buffer too small for object id");
@@ -1087,7 +1098,7 @@ nmo_status_t nmo_type_object_id_from_string(
     if (*string == '#') {
         nmo_object_id_t id = 0;
         if (nmo_parse_object_id(string, &id) == NMO_OK) {
-            *(nmo_object_id_t*)value = id;
+            NMO_STORE_SCALAR(nmo_object_id_t, value, id);
             NMO_RETURN_OK();
         }
     }
@@ -1107,7 +1118,7 @@ nmo_status_t nmo_vt_to_string_angle(
     char *buffer, size_t buffer_size, int depth)
 {
     (void)type; (void)registry; (void)depth;
-    float rad = *(const float *)value;
+    NMO_LOAD_SCALAR(float, rad, value);
     double deg = (double)rad * (180.0 / M_PI);
     snprintf(buffer, buffer_size, "%.6g\xC2\xB0", deg);
     NMO_RETURN_OK();
@@ -1119,7 +1130,7 @@ nmo_status_t nmo_vt_to_string_percentage(
     char *buffer, size_t buffer_size, int depth)
 {
     (void)type; (void)registry; (void)depth;
-    float f = *(const float *)value;
+    NMO_LOAD_SCALAR(float, f, value);
     snprintf(buffer, buffer_size, "%.6g%%", (double)f * 100.0);
     NMO_RETURN_OK();
 }
@@ -1167,7 +1178,7 @@ nmo_status_t nmo_vt_from_string_percentage(
         if (st != NMO_OK) {
             return st;
         }
-        *(float *)value = parsed / 100.0f;
+        NMO_STORE_SCALAR(float, value, parsed / 100.0f);
         NMO_RETURN_OK();
     }
 
@@ -1180,7 +1191,7 @@ nmo_status_t nmo_vt_to_string_time(
     char *buffer, size_t buffer_size, int depth)
 {
     (void)type; (void)registry; (void)depth;
-    float f = *(const float *)value;
+    NMO_LOAD_SCALAR(float, f, value);
     snprintf(buffer, buffer_size, "%.1f ms", (double)f);
     NMO_RETURN_OK();
 }
@@ -1200,7 +1211,7 @@ nmo_status_t nmo_vt_from_string_time(
 
     float numeric = 0.0f;
     if (nmo_type_float_from_string(&numeric, string) == NMO_OK) {
-        *(float *)value = numeric;
+        NMO_STORE_SCALAR(float, value, numeric);
         NMO_RETURN_OK();
     }
 
@@ -1289,7 +1300,7 @@ nmo_status_t nmo_vt_from_string_time(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                          "Invalid time value");
     }
-    *(float *)value = total_ms;
+    NMO_STORE_SCALAR(float, value, total_ms);
     NMO_RETURN_OK();
 }
 
@@ -1299,7 +1310,7 @@ nmo_status_t nmo_vt_to_string_classid(
     char *buffer, size_t buffer_size, int depth)
 {
     (void)type; (void)registry; (void)depth;
-    int32_t cid = *(const int32_t *)value;
+    NMO_LOAD_SCALAR(int32_t, cid, value);
     snprintf(buffer, buffer_size, "ClassID(%d)", cid);
     NMO_RETURN_OK();
 }
@@ -1445,7 +1456,7 @@ static nmo_status_t nmo_parse_int8(
     nmo_status_t st = parse_i64_checked(
         string, INT8_MIN, INT8_MAX, "INT8 out of range", &parsed);
     if (st != NMO_OK) return st;
-    *(int8_t *)value = (int8_t)parsed;
+    NMO_STORE_SCALAR(int8_t, value, (int8_t)parsed);
     NMO_RETURN_OK();
 }
 
@@ -1459,7 +1470,7 @@ static nmo_status_t nmo_parse_int16(
     nmo_status_t st = parse_i64_checked(
         string, INT16_MIN, INT16_MAX, "INT16 out of range", &parsed);
     if (st != NMO_OK) return st;
-    *(int16_t *)value = (int16_t)parsed;
+    NMO_STORE_SCALAR(int16_t, value, (int16_t)parsed);
     NMO_RETURN_OK();
 }
 
@@ -1481,7 +1492,7 @@ static nmo_status_t nmo_parse_int64(
     int64_t parsed = 0;
     nmo_status_t st = parse_i64(string, &parsed);
     if (st != NMO_OK) return st;
-    *(int64_t *)value = parsed;
+    NMO_STORE_SCALAR(int64_t, value, parsed);
     NMO_RETURN_OK();
 }
 
@@ -1495,7 +1506,7 @@ static nmo_status_t nmo_parse_uint8(
     nmo_status_t st = parse_u64_checked(
         string, UINT8_MAX, "UINT8 out of range", &parsed);
     if (st != NMO_OK) return st;
-    *(uint8_t *)value = (uint8_t)parsed;
+    NMO_STORE_SCALAR(uint8_t, value, (uint8_t)parsed);
     NMO_RETURN_OK();
 }
 
@@ -1509,7 +1520,7 @@ static nmo_status_t nmo_parse_uint16(
     nmo_status_t st = parse_u64_checked(
         string, UINT16_MAX, "UINT16 out of range", &parsed);
     if (st != NMO_OK) return st;
-    *(uint16_t *)value = (uint16_t)parsed;
+    NMO_STORE_SCALAR(uint16_t, value, (uint16_t)parsed);
     NMO_RETURN_OK();
 }
 
@@ -1523,7 +1534,7 @@ static nmo_status_t nmo_parse_uint32(
     nmo_status_t st = parse_u64_checked(
         string, UINT32_MAX, "UINT32 out of range", &parsed);
     if (st != NMO_OK) return st;
-    *(uint32_t *)value = (uint32_t)parsed;
+    NMO_STORE_SCALAR(uint32_t, value, (uint32_t)parsed);
     NMO_RETURN_OK();
 }
 
@@ -1536,7 +1547,7 @@ static nmo_status_t nmo_parse_uint64(
     uint64_t parsed = 0;
     nmo_status_t st = parse_u64(string, &parsed);
     if (st != NMO_OK) return st;
-    *(uint64_t *)value = parsed;
+    NMO_STORE_SCALAR(uint64_t, value, parsed);
     NMO_RETURN_OK();
 }
 
@@ -1562,7 +1573,7 @@ static nmo_status_t nmo_parse_double(
     double parsed = 0.0;
     nmo_status_t st = parse_f64(string, &parsed);
     if (st != NMO_OK) return st;
-    *(double *)value = parsed;
+    NMO_STORE_SCALAR(double, value, parsed);
     NMO_RETURN_OK();
 }
 
@@ -1606,7 +1617,7 @@ static nmo_status_t nmo_parse_guid(
         }
     }
 
-    *(nmo_guid_t *)value = g;
+    NMO_STORE_SCALAR(nmo_guid_t, value, g);
     NMO_RETURN_OK();
 }
 
@@ -1622,7 +1633,7 @@ static nmo_status_t nmo_parse_pointer(
 
     while (*string && isspace((unsigned char)*string)) string++;
     if (strcmp(string, "null") == 0 || strcmp(string, "NULL") == 0) {
-        *(void **)value = NULL;
+        NMO_STORE_SCALAR(void *, value, NULL);
         NMO_RETURN_OK();
     }
 
@@ -1637,7 +1648,7 @@ static nmo_status_t nmo_parse_pointer(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR, "Invalid pointer format");
     }
 
-    *(void **)value = (void *)(uintptr_t)parsed;
+    NMO_STORE_SCALAR(void *, value, (void *)(uintptr_t)parsed);
     NMO_RETURN_OK();
 }
 
@@ -1869,14 +1880,14 @@ nmo_status_t nmo_builtin_copy_string(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid args for string copy");
     }
 
-    const char *s = *(const char *const *)src;
+    NMO_LOAD_SCALAR(const char *, s, src);
     if (!s) {
-        *(char **)dst = NULL;
+        NMO_STORE_SCALAR(char *, dst, NULL);
         NMO_RETURN_OK();
     }
 
     if (!arena) {
-        *(char **)dst = (char *)s;
+        NMO_STORE_SCALAR(char *, dst, (char *)s);
         NMO_RETURN_OK();
     }
 
@@ -1884,7 +1895,7 @@ nmo_status_t nmo_builtin_copy_string(
     if (!copy) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to copy string");
     }
-    *(const char **)dst = copy;
+    NMO_STORE_SCALAR(const char *, dst, copy);
     NMO_RETURN_OK();
 }
 
@@ -1928,8 +1939,8 @@ uint32_t nmo_hash_double_bits(const void *instance)
 
 bool nmo_equals_string_value(const void *a, const void *b)
 {
-    const char *sa = *(const char *const *)a;
-    const char *sb = *(const char *const *)b;
+    NMO_LOAD_SCALAR(const char *, sa, a);
+    NMO_LOAD_SCALAR(const char *, sb, b);
     if (sa == sb) {
         return true;
     }
@@ -1941,7 +1952,7 @@ bool nmo_equals_string_value(const void *a, const void *b)
 
 uint32_t nmo_hash_string_value(const void *instance)
 {
-    const char *s = *(const char *const *)instance;
+    NMO_LOAD_SCALAR(const char *, s, instance);
     if (!s) {
         return 0;
     }
@@ -1950,18 +1961,24 @@ uint32_t nmo_hash_string_value(const void *instance)
 
 #define NMO_DEFINE_EQ_HASH_U32(tag, c_type) \
     bool nmo_vt_equals_##tag(const void *a, const void *b) { \
-        return *(const c_type *)a == *(const c_type *)b; \
+        NMO_LOAD_SCALAR(c_type, av, a); \
+        NMO_LOAD_SCALAR(c_type, bv, b); \
+        return av == bv; \
     } \
     uint32_t nmo_vt_hash_##tag(const void *instance) { \
-        return (uint32_t)nmo_hash_int32((uint32_t)(*(const c_type *)instance)); \
+        NMO_LOAD_SCALAR(c_type, value, instance); \
+        return (uint32_t)nmo_hash_int32((uint32_t)value); \
     }
 
 #define NMO_DEFINE_EQ_HASH_U64(tag, c_type) \
     bool nmo_vt_equals_##tag(const void *a, const void *b) { \
-        return *(const c_type *)a == *(const c_type *)b; \
+        NMO_LOAD_SCALAR(c_type, av, a); \
+        NMO_LOAD_SCALAR(c_type, bv, b); \
+        return av == bv; \
     } \
     uint32_t nmo_vt_hash_##tag(const void *instance) { \
-        return nmo_hash_u64_fold((uint64_t)(*(const c_type *)instance)); \
+        NMO_LOAD_SCALAR(c_type, value, instance); \
+        return nmo_hash_u64_fold((uint64_t)value); \
     }
 
 #define NMO_DEFINE_EQ_HASH_BYTES(tag, c_type) \
@@ -1983,38 +2000,49 @@ NMO_DEFINE_EQ_HASH_U64(uint64, uint64_t)
 
 bool nmo_equals_bool(const void *a, const void *b)
 {
-    return *(const bool *)a == *(const bool *)b;
+    NMO_LOAD_SCALAR(bool, av, a);
+    NMO_LOAD_SCALAR(bool, bv, b);
+    return av == bv;
 }
 
 uint32_t nmo_hash_bool(const void *instance)
 {
-    return nmo_hash_int32(*(const bool *)instance ? 1u : 0u);
+    NMO_LOAD_SCALAR(bool, value, instance);
+    return nmo_hash_int32(value ? 1u : 0u);
 }
 
 bool nmo_equals_bool32(const void *a, const void *b)
 {
-    return (*(const uint32_t *)a != 0u) == (*(const uint32_t *)b != 0u);
+    NMO_LOAD_SCALAR(uint32_t, av, a);
+    NMO_LOAD_SCALAR(uint32_t, bv, b);
+    return (av != 0u) == (bv != 0u);
 }
 
 uint32_t nmo_hash_bool32(const void *instance)
 {
-    return nmo_hash_int32(*(const uint32_t *)instance != 0u ? 1u : 0u);
+    NMO_LOAD_SCALAR(uint32_t, value, instance);
+    return nmo_hash_int32(value != 0u ? 1u : 0u);
 }
 
 bool nmo_equals_pointer(const void *a, const void *b)
 {
-    return *(const void *const *)a == *(const void *const *)b;
+    NMO_LOAD_SCALAR(const void *, av, a);
+    NMO_LOAD_SCALAR(const void *, bv, b);
+    return av == bv;
 }
 
 uint32_t nmo_hash_pointer(const void *instance)
 {
-    uintptr_t v = (uintptr_t)(*(const void *const *)instance);
+    NMO_LOAD_SCALAR(const void *, pointer, instance);
+    uintptr_t v = (uintptr_t)pointer;
     return nmo_hash_u64_fold((uint64_t)v);
 }
 
 bool nmo_equals_guid(const void *a, const void *b)
 {
-    return nmo_guid_equals(*(const nmo_guid_t *)a, *(const nmo_guid_t *)b);
+    NMO_LOAD_SCALAR(nmo_guid_t, av, a);
+    NMO_LOAD_SCALAR(nmo_guid_t, bv, b);
+    return nmo_guid_equals(av, bv);
 }
 
 uint32_t nmo_hash_guid(const void *instance)
@@ -2024,12 +2052,15 @@ uint32_t nmo_hash_guid(const void *instance)
 
 bool nmo_equals_object_id(const void *a, const void *b)
 {
-    return *(const nmo_object_id_t *)a == *(const nmo_object_id_t *)b;
+    NMO_LOAD_SCALAR(nmo_object_id_t, av, a);
+    NMO_LOAD_SCALAR(nmo_object_id_t, bv, b);
+    return av == bv;
 }
 
 uint32_t nmo_hash_object_id(const void *instance)
 {
-    return nmo_hash_int32((uint32_t)(*(const nmo_object_id_t *)instance));
+    NMO_LOAD_SCALAR(nmo_object_id_t, value, instance);
+    return nmo_hash_int32((uint32_t)value);
 }
 
 NMO_DEFINE_EQ_HASH_BYTES(vector2, nmo_vector2_t)
@@ -2074,8 +2105,8 @@ NMO_DEFINE_EQ_HASH_BYTES(box, nmo_box_t)
         (void)type; \
         (void)registry; \
         (void)depth; \
-        return nmo_format_i64_text( \
-            *(const c_type *)value, buffer, buffer_size); \
+        NMO_LOAD_SCALAR(c_type, decoded, value); \
+        return nmo_format_i64_text(decoded, buffer, buffer_size); \
     }
 
 #define NMO_DEFINE_UNSIGNED_VT_TO_STRING(name, c_type) \
@@ -2087,8 +2118,8 @@ NMO_DEFINE_EQ_HASH_BYTES(box, nmo_box_t)
         (void)type; \
         (void)registry; \
         (void)depth; \
-        return nmo_format_u64_text( \
-            *(const c_type *)value, buffer, buffer_size); \
+        NMO_LOAD_SCALAR(c_type, decoded, value); \
+        return nmo_format_u64_text(decoded, buffer, buffer_size); \
     }
 
 nmo_status_t nmo_vt_to_string_int32(
@@ -2131,7 +2162,8 @@ nmo_status_t nmo_vt_to_string_double(
     char *buffer, size_t buffer_size, int depth)
 {
     (void)type; (void)registry; (void)depth;
-    nmo_format_real_text(*(const double *)value, buffer, buffer_size);
+    NMO_LOAD_SCALAR(double, decoded, value);
+    nmo_format_real_text(decoded, buffer, buffer_size);
     NMO_RETURN_OK();
 }
 NMO_DEFINE_VT_FROM_STRING(double, nmo_parse_double)
@@ -2151,7 +2183,8 @@ nmo_status_t nmo_vt_to_string_bool32(
         return status;
     }
 
-    snprintf(buffer, buffer_size, *(const uint32_t *)value != 0u ? "true" : "false");
+    NMO_LOAD_SCALAR(uint32_t, decoded, value);
+    snprintf(buffer, buffer_size, decoded != 0u ? "true" : "false");
     NMO_RETURN_OK();
 }
 
@@ -2170,7 +2203,7 @@ nmo_status_t nmo_vt_from_string_bool32(
         return status;
     }
 
-    *(uint32_t *)value = parsed ? 1u : 0u;
+    NMO_STORE_SCALAR(uint32_t, value, parsed ? 1u : 0u);
     NMO_RETURN_OK();
 }
 
@@ -2183,7 +2216,7 @@ nmo_status_t nmo_vt_to_string_pointer(
     char *buffer, size_t buffer_size, int depth)
 {
     (void)type; (void)registry; (void)depth;
-    const void *ptr = *(const void *const *)value;
+    NMO_LOAD_SCALAR(const void *, ptr, value);
     if (!ptr) {
         snprintf(buffer, buffer_size, "null");
     } else {
@@ -2200,7 +2233,8 @@ nmo_status_t nmo_vt_to_string_guid(
     char *buffer, size_t buffer_size, int depth)
 {
     (void)type; (void)registry; (void)depth;
-    int wrote = nmo_guid_format(*(const nmo_guid_t *)value, buffer, buffer_size);
+    NMO_LOAD_SCALAR(nmo_guid_t, decoded, value);
+    int wrote = nmo_guid_format(decoded, buffer, buffer_size);
     if (wrote < 0) {
         NMO_RETURN_ERROR(NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR, "Buffer too small");
     }
