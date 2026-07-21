@@ -171,7 +171,7 @@ static int patch_apply_plan(patch_plan_t *plan,
             int json_rc = nmo_cmd_ctx_json_end(&ctx, doc, data,
                                                "patch.diff");
             nmo_edit_report_dispose(&edit_report);
-            return json_rc;
+            return nmo_cmd_ctx_done(&ctx, json_rc);
         }
 
         for (size_t i = 0; i < edit_report.operation_count; ++i) {
@@ -270,7 +270,7 @@ static int patch_apply_plan(patch_plan_t *plan,
         patch_add_edit_report_json(doc, data, plan, &edit_report, dry_run);
         int json_rc = nmo_cmd_ctx_json_end(&ctx, doc, data, "patch.apply");
         nmo_edit_report_dispose(&edit_report);
-        return json_rc;
+        return nmo_cmd_ctx_done(&ctx, json_rc);
     }
 
     if (dry_run) {
