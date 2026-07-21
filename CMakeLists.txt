@@ -72,7 +72,7 @@ else()
             include(CheckCSourceCompiles)
 
             set(CMAKE_REQUIRED_FLAGS "-fsanitize=address -fsanitize=undefined")
-            set(CMAKE_REQUIRED_LINK_OPTIONS "-fsanitize=address -fsanitize=undefined")
+            set(CMAKE_REQUIRED_LINK_OPTIONS -fsanitize=address -fsanitize=undefined)
             check_c_source_compiles("int main(void) { return 0; }" NMO_SANITIZERS_AVAILABLE)
             unset(CMAKE_REQUIRED_FLAGS)
             unset(CMAKE_REQUIRED_LINK_OPTIONS)
