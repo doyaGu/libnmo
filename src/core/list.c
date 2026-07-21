@@ -279,7 +279,8 @@ nmo_status_t nmo_list_pop_back(nmo_list_t *list, void *out_element) {
 
     nmo_list_node_t *node = list->tail;
     if (out_element) {
-        memcpy(out_element, node->data, list->element_size);
+        nmo_container_copy_element(
+            &list->lifecycle, out_element, node->data, list->element_size);
     }
     nmo_list_run_dispose(list, node);
     nmo_list_detach(list, node);
@@ -297,7 +298,8 @@ nmo_status_t nmo_list_pop_front(nmo_list_t *list, void *out_element) {
 
     nmo_list_node_t *node = list->head;
     if (out_element) {
-        memcpy(out_element, node->data, list->element_size);
+        nmo_container_copy_element(
+            &list->lifecycle, out_element, node->data, list->element_size);
     }
     nmo_list_run_dispose(list, node);
     nmo_list_detach(list, node);
@@ -311,7 +313,8 @@ void nmo_list_remove(nmo_list_t *list, nmo_list_node_t *node, void *out_element)
     }
 
     if (out_element) {
-        memcpy(out_element, node->data, list->element_size);
+        nmo_container_copy_element(
+            &list->lifecycle, out_element, node->data, list->element_size);
     }
     nmo_list_run_dispose(list, node);
     nmo_list_detach(list, node);

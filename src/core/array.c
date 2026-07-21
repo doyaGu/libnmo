@@ -411,7 +411,8 @@ nmo_status_t nmo_array_remove(nmo_array_t *array,
     uint8_t *target = base + (index * array->element_size);
 
     if (out_element) {
-        memcpy(out_element, target, array->element_size);
+        nmo_container_copy_element(
+            &array->lifecycle, out_element, target, array->element_size);
     }
 
     nmo_array_dispose_range(array, index, 1);
@@ -438,7 +439,8 @@ nmo_status_t nmo_array_pop(nmo_array_t *array, void *out_element) {
     uint8_t *target = base + ((array->count - 1) * array->element_size);
 
     if (out_element) {
-        memcpy(out_element, target, array->element_size);
+        nmo_container_copy_element(
+            &array->lifecycle, out_element, target, array->element_size);
     }
 
     nmo_array_dispose_range(array, array->count - 1, 1);

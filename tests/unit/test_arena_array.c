@@ -24,6 +24,21 @@ typedef struct tracked_value {
     uint32_t id;
 } tracked_value_t;
 
+typedef struct tracked_lifecycle_counts {
+    uint32_t copies;
+    uint32_t disposals;
+} tracked_lifecycle_counts_t;
+
+static void tracked_lifecycle_copy(void *dest, const void *src, void *user_data) {
+    memcpy(dest, src, sizeof(tracked_value_t));
+    ((tracked_lifecycle_counts_t *)user_data)->copies++;
+}
+
+static void tracked_lifecycle_dispose(void *element, void *user_data) {
+    (void)element;
+    ((tracked_lifecycle_counts_t *)user_data)->disposals++;
+}
+
 static void tracked_value_copy(void *dest, const void *src, void *user_data) {
     if (dest == NULL || src == NULL) {
         return;
@@ -607,6 +622,38 @@ TEST(buffer, lifecycle_dispose_callbacks) {
     ASSERT_EQ(18u, disposed_total);
 
     nmo_arena_array_reset(&buffer);
+    nmo_arena_destroy(arena);
+}
+
+TEST(buffer, removal_copies_output_before_dispose) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_arena_array_t buffer;
+    ASSERT_EQ(NMO_OK, nmo_arena_array_init(
+        &buffer, sizeof(tracked_value_t), 2, arena));
+    tracked_lifecycle_counts_t counts = {0};
+    nmo_container_lifecycle_t lifecycle = {
+        .copy = tracked_lifecycle_copy,
+        .dispose = tracked_lifecycle_dispose,
+        .user_data = &counts
+    };
+    nmo_arena_array_set_lifecycle(&buffer, &lifecycle);
+
+    tracked_value_t first = {11}, second = {22}, out = {0};
+    ASSERT_EQ(NMO_OK, nmo_arena_array_append(&buffer, &first));
+    ASSERT_EQ(NMO_OK, nmo_arena_array_append(&buffer, &second));
+    ASSERT_EQ(2u, counts.copies);
+
+    ASSERT_EQ(NMO_OK, nmo_arena_array_remove(&buffer, 0, &out));
+    ASSERT_EQ(11u, out.id);
+    ASSERT_EQ(3u, counts.copies);
+    ASSERT_EQ(1u, counts.disposals);
+
+    ASSERT_EQ(NMO_OK, nmo_arena_array_pop(&buffer, &out));
+    ASSERT_EQ(22u, out.id);
+    ASSERT_EQ(4u, counts.copies);
+    ASSERT_EQ(2u, counts.disposals);
     nmo_arena_destroy(arena);
 }
 
@@ -1360,6 +1407,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(buffer, clear_empty_buffer);
     REGISTER_TEST(buffer, clear_and_reuse);
     REGISTER_TEST(buffer, lifecycle_dispose_callbacks);
+    REGISTER_TEST(buffer, removal_copies_output_before_dispose);
 
     /* Set Data Operation Tests */
     REGISTER_TEST(buffer, set_data_basic);

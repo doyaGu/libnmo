@@ -13,6 +13,21 @@ typedef struct tracked_value {
     uint32_t id;
 } tracked_value_t;
 
+typedef struct tracked_lifecycle_counts {
+    uint32_t copies;
+    uint32_t disposals;
+} tracked_lifecycle_counts_t;
+
+static void tracked_lifecycle_copy(void *dest, const void *src, void *user_data) {
+    memcpy(dest, src, sizeof(tracked_value_t));
+    ((tracked_lifecycle_counts_t *)user_data)->copies++;
+}
+
+static void tracked_lifecycle_dispose(void *element, void *user_data) {
+    (void)element;
+    ((tracked_lifecycle_counts_t *)user_data)->disposals++;
+}
+
 static void tracked_value_copy(void *dest, const void *src, void *user_data) {
     if (dest == NULL || src == NULL) {
         return;
@@ -188,6 +203,35 @@ TEST(nmo_array, lifecycle_callbacks) {
     nmo_array_dispose(&array);
 }
 
+TEST(nmo_array, removal_copies_output_before_dispose) {
+    nmo_array_t array;
+    ASSERT_EQ(NMO_OK, nmo_array_init(&array, sizeof(tracked_value_t), 2, NULL));
+
+    tracked_lifecycle_counts_t counts = {0};
+    nmo_container_lifecycle_t lifecycle = {
+        .copy = tracked_lifecycle_copy,
+        .dispose = tracked_lifecycle_dispose,
+        .user_data = &counts
+    };
+    nmo_array_set_lifecycle(&array, &lifecycle);
+
+    tracked_value_t first = {11}, second = {22}, out = {0};
+    ASSERT_EQ(NMO_OK, nmo_array_append(&array, &first));
+    ASSERT_EQ(NMO_OK, nmo_array_append(&array, &second));
+    ASSERT_EQ(2u, counts.copies);
+
+    ASSERT_EQ(NMO_OK, nmo_array_remove(&array, 0, &out));
+    ASSERT_EQ(11u, out.id);
+    ASSERT_EQ(3u, counts.copies);
+    ASSERT_EQ(1u, counts.disposals);
+
+    ASSERT_EQ(NMO_OK, nmo_array_pop(&array, &out));
+    ASSERT_EQ(22u, out.id);
+    ASSERT_EQ(4u, counts.copies);
+    ASSERT_EQ(2u, counts.disposals);
+    nmo_array_dispose(&array);
+}
+
 TEST(nmo_array, set_data_and_clone) {
     nmo_array_t array;
     nmo_array_init(&array, sizeof(uint32_t), 0, NULL);
@@ -303,6 +347,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(nmo_array, append_array_and_extend);
     REGISTER_TEST(nmo_array, reserve_and_ensure_space);
     REGISTER_TEST(nmo_array, lifecycle_callbacks);
+    REGISTER_TEST(nmo_array, removal_copies_output_before_dispose);
     REGISTER_TEST(nmo_array, set_data_and_clone);
     REGISTER_TEST(nmo_array, clone_preserves_lifecycle_copy);
     REGISTER_TEST(nmo_array, swap_resize_and_shrink);
