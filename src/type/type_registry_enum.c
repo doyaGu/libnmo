@@ -978,12 +978,13 @@ nmo_status_t nmo_type_registry_change_enum_string(
             if (strcmp(old_name, parsed_values[j].name) == 0) {
                 found = true;
                 if (parsed_values[j].value != old_value) {
+                    int64_t new_value = parsed_values[j].value;
                     nmo_arena_destroy(temp_arena);
                     NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                                             "Enum value '%s' cannot change (old=%lld new=%lld)",
                                             old_name,
                                             (long long)old_value,
-                                            (long long)parsed_values[j].value);
+                                            (long long)new_value);
                 }
                 break;
             }
@@ -1178,12 +1179,13 @@ nmo_status_t nmo_type_registry_change_flags_string(
             if (strcmp(old_name, parsed_bits[j].name) == 0) {
                 found = true;
                 if (parsed_bits[j].mask != old_mask) {
+                    uint64_t new_mask = parsed_bits[j].mask;
                     nmo_arena_destroy(temp_arena);
                     NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                                             "Flags bit '%s' cannot change (old=0x%llx new=0x%llx)",
                                             old_name,
                                             (unsigned long long)old_mask,
-                                            (unsigned long long)parsed_bits[j].mask);
+                                            (unsigned long long)new_mask);
                 }
                 break;
             }
