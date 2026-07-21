@@ -855,7 +855,7 @@ static nmo_status_t rewrite_fold_transform_anchor_in_edit(
     }
 
     nmo_status_t rc = NMO_OK;
-    rc = nmo_workspace_edit_snapshot_bytes(edit, state, sizeof(*state));
+    rc = nmo_workspace_edit_snapshot_behavior_state(edit, state);
     if (rc != NMO_OK) {
         rewrite_fold_report_reject(report, "snapshot_failed",
                                    "Failed to snapshot fold anchor");
@@ -1728,8 +1728,7 @@ static nmo_status_t rewrite_fold_apply_workspace(
             return edit_rc;
         }
         edit = scope.edit;
-        edit_rc = nmo_workspace_edit_snapshot_bytes(edit, state,
-                                                    sizeof(*state));
+        edit_rc = nmo_workspace_edit_snapshot_behavior_state(edit, state);
         if (edit_rc != NMO_OK) {
             rewrite_fold_report_reject(report, "snapshot_failed",
                                        "Failed to snapshot fold anchor");
@@ -2075,7 +2074,7 @@ static nmo_status_t rewrite_replace_bb_in_edit(
         }
     }
 
-    rc = nmo_workspace_edit_snapshot_bytes(edit, state, sizeof(*state));
+    rc = nmo_workspace_edit_snapshot_behavior_state(edit, state);
     if (rc != NMO_OK) {
         rewrite_report_reject(report, "snapshot_failed",
                               "Failed to snapshot behavior state");

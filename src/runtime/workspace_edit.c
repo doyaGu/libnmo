@@ -89,6 +89,9 @@ struct nmo_workspace_edit {
     nmo_workspace_edit_action_t *commit_actions;
     size_t commit_count;
     size_t commit_capacity;
+    nmo_workspace_edit_action_t *cleanup_actions;
+    size_t cleanup_count;
+    size_t cleanup_capacity;
     uint32_t flags;
     bool finished;
 };
@@ -147,6 +150,12 @@ typedef struct manager_data_snapshot {
     nmo_manager_data_t *manager_data;
     uint32_t manager_data_count;
 } manager_data_snapshot_t;
+
+typedef struct behavior_state_snapshot {
+    nmo_behavior_state_t *target;
+    nmo_behavior_state_t state;
+    bool owns_state;
+} behavior_state_snapshot_t;
 
 nmo_status_t workspace_edit_set_object_fields(
     nmo_workspace_edit_t *edit,
@@ -228,6 +237,7 @@ static void workspace_edit_free(nmo_workspace_edit_t *edit)
     }
     free(edit->rollback_actions);
     free(edit->commit_actions);
+    free(edit->cleanup_actions);
     free(edit->label);
     if (edit->arena != NULL) {
         nmo_arena_destroy(edit->arena);
@@ -285,6 +295,19 @@ static nmo_status_t workspace_edit_push_commit(
         &edit->commit_actions,
         &edit->commit_count,
         &edit->commit_capacity,
+        fn,
+        payload);
+}
+
+static nmo_status_t workspace_edit_push_cleanup(
+    nmo_workspace_edit_t *edit,
+    nmo_workspace_edit_action_fn fn,
+    void *payload)
+{
+    return workspace_edit_push_action(
+        &edit->cleanup_actions,
+        &edit->cleanup_count,
+        &edit->cleanup_capacity,
         fn,
         payload);
 }
@@ -364,6 +387,12 @@ static void workspace_edit_finish(nmo_workspace_edit_t *edit)
         return;
     }
     edit->finished = true;
+    while (edit->cleanup_count > 0u) {
+        edit->cleanup_count--;
+        nmo_workspace_edit_action_t action =
+            edit->cleanup_actions[edit->cleanup_count];
+        (void)action.fn(edit, action.payload);
+    }
     workspace_edit_free(edit);
 }
 
@@ -442,6 +471,170 @@ static nmo_status_t workspace_edit_push_bytes_snapshot_or_abort(
     nmo_status_t status = workspace_edit_push_bytes_snapshot(edit, target, size);
     if (status != NMO_OK) {
         return workspace_edit_abort_status(edit, checkpoint, status);
+    }
+    return NMO_OK;
+}
+
+static void workspace_edit_zero_behavior_arrays(nmo_behavior_state_t *state)
+{
+    if (state == NULL) {
+        return;
+    }
+    memset(&state->sub_behaviors, 0, sizeof(state->sub_behaviors));
+    memset(&state->sub_behavior_links, 0, sizeof(state->sub_behavior_links));
+    memset(&state->operations, 0, sizeof(state->operations));
+    memset(&state->in_parameters, 0, sizeof(state->in_parameters));
+    memset(&state->out_parameters, 0, sizeof(state->out_parameters));
+    memset(&state->local_parameters, 0, sizeof(state->local_parameters));
+    memset(&state->inputs, 0, sizeof(state->inputs));
+    memset(&state->outputs, 0, sizeof(state->outputs));
+}
+
+static void workspace_edit_dispose_behavior_arrays(nmo_behavior_state_t *state)
+{
+    if (state == NULL) {
+        return;
+    }
+    nmo_array_dispose(&state->sub_behaviors);
+    nmo_array_dispose(&state->sub_behavior_links);
+    nmo_array_dispose(&state->operations);
+    nmo_array_dispose(&state->in_parameters);
+    nmo_array_dispose(&state->out_parameters);
+    nmo_array_dispose(&state->local_parameters);
+    nmo_array_dispose(&state->inputs);
+    nmo_array_dispose(&state->outputs);
+}
+
+static nmo_status_t workspace_edit_clone_behavior_ref_array(
+    nmo_workspace_edit_t *edit,
+    const nmo_array_t *source,
+    nmo_array_t *destination)
+{
+    if (edit == NULL || source == NULL || destination == NULL ||
+        source->element_size != sizeof(nmo_behavior_ref_t) ||
+        source->count > source->capacity ||
+        (source->count > 0u && source->data == NULL)) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    nmo_status_t status = nmo_array_init(
+        destination,
+        sizeof(nmo_behavior_ref_t),
+        source->count,
+        &source->allocator);
+    if (status != NMO_OK) {
+        return status;
+    }
+    nmo_array_set_lifecycle(destination, &source->lifecycle);
+
+    nmo_behavior_ref_t *destination_refs = NULL;
+    status = nmo_array_extend(
+        destination, source->count, (void **)&destination_refs);
+    if (status != NMO_OK) {
+        nmo_array_dispose(destination);
+        return status;
+    }
+
+    const nmo_behavior_ref_t *source_refs =
+        NMO_ARRAY_DATA(nmo_behavior_ref_t, source);
+    nmo_arena_t *arena =
+        nmo_workspace_internal_document_arena(edit->workspace);
+    if (arena == NULL) {
+        nmo_array_dispose(destination);
+        return NMO_ERR_INVALID_STATE;
+    }
+    for (size_t i = 0u; i < source->count; ++i) {
+        destination_refs[i].ref = source_refs[i].ref;
+        if (source_refs[i].chunk != NULL) {
+            destination_refs[i].chunk =
+                nmo_chunk_clone(source_refs[i].chunk, arena);
+            if (destination_refs[i].chunk == NULL) {
+                nmo_array_dispose(destination);
+                return NMO_ERR_NOMEM;
+            }
+        }
+    }
+    return NMO_OK;
+}
+
+static nmo_status_t workspace_edit_clone_behavior_state(
+    nmo_workspace_edit_t *edit,
+    const nmo_behavior_state_t *source,
+    nmo_behavior_state_t *destination)
+{
+    if (edit == NULL || source == NULL || destination == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    *destination = *source;
+    workspace_edit_zero_behavior_arrays(destination);
+
+    const nmo_array_t *source_arrays[] = {
+        &source->sub_behaviors,
+        &source->sub_behavior_links,
+        &source->operations,
+        &source->in_parameters,
+        &source->out_parameters,
+        &source->local_parameters,
+        &source->inputs,
+        &source->outputs,
+    };
+    nmo_array_t *destination_arrays[] = {
+        &destination->sub_behaviors,
+        &destination->sub_behavior_links,
+        &destination->operations,
+        &destination->in_parameters,
+        &destination->out_parameters,
+        &destination->local_parameters,
+        &destination->inputs,
+        &destination->outputs,
+    };
+
+    for (size_t i = 0u;
+         i < sizeof(source_arrays) / sizeof(source_arrays[0]);
+         ++i) {
+        nmo_status_t status = workspace_edit_clone_behavior_ref_array(
+            edit, source_arrays[i], destination_arrays[i]);
+        if (status != NMO_OK) {
+            workspace_edit_dispose_behavior_arrays(destination);
+            return status;
+        }
+    }
+    return NMO_OK;
+}
+
+static nmo_status_t rollback_behavior_state(
+    nmo_workspace_edit_t *edit,
+    void *payload)
+{
+    (void)edit;
+    behavior_state_snapshot_t *snapshot =
+        (behavior_state_snapshot_t *)payload;
+    if (snapshot == NULL || snapshot->target == NULL ||
+        !snapshot->owns_state) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    workspace_edit_dispose_behavior_arrays(snapshot->target);
+    *snapshot->target = snapshot->state;
+    memset(&snapshot->state, 0, sizeof(snapshot->state));
+    snapshot->owns_state = false;
+    return NMO_OK;
+}
+
+static nmo_status_t cleanup_behavior_state_snapshot(
+    nmo_workspace_edit_t *edit,
+    void *payload)
+{
+    (void)edit;
+    behavior_state_snapshot_t *snapshot =
+        (behavior_state_snapshot_t *)payload;
+    if (snapshot == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (snapshot->owns_state) {
+        workspace_edit_dispose_behavior_arrays(&snapshot->state);
+        snapshot->owns_state = false;
     }
     return NMO_OK;
 }
@@ -590,7 +783,17 @@ static nmo_status_t action_remove_object(nmo_workspace_edit_t *edit, void *paylo
     if (nmo_object_repository_find_by_id(repo, action->id) == NULL) {
         return NMO_OK;
     }
-    return nmo_object_repository_remove(repo, action->id);
+
+    nmo_object_t *object = NULL;
+    nmo_status_t status =
+        nmo_object_repository_take(repo, action->id, &object);
+    if (status != NMO_OK) {
+        return status;
+    }
+    nmo_runtime_destroy_object_state(
+        nmo_workspace_internal_session(edit->workspace), object);
+    nmo_object_destroy(object);
+    return NMO_OK;
 }
 
 static nmo_status_t commit_destroy_object(nmo_workspace_edit_t *edit, void *payload)
@@ -1549,7 +1752,7 @@ nmo_status_t workspace_edit_bind_script(
     }
 
     nmo_status_t status =
-        nmo_workspace_edit_snapshot_bytes(edit, behavior_state, sizeof(*behavior_state));
+        nmo_workspace_edit_snapshot_behavior_state(edit, behavior_state);
     if (status != NMO_OK) {
         return status;
     }
@@ -3770,6 +3973,49 @@ nmo_status_t nmo_workspace_edit_snapshot_bytes(
     return workspace_edit_push_bytes_snapshot(edit, target, size);
 }
 
+nmo_status_t nmo_workspace_edit_snapshot_behavior_state(
+    nmo_workspace_edit_t *edit,
+    nmo_behavior_state_t *state)
+{
+    if (edit == NULL || edit->finished || state == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    behavior_state_snapshot_t *snapshot =
+        (behavior_state_snapshot_t *)nmo_workspace_edit_alloc(
+            edit,
+            sizeof(*snapshot),
+            _Alignof(behavior_state_snapshot_t));
+    if (snapshot == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    memset(snapshot, 0, sizeof(*snapshot));
+    snapshot->target = state;
+
+    nmo_status_t status = workspace_edit_clone_behavior_state(
+        edit, state, &snapshot->state);
+    if (status != NMO_OK) {
+        return status;
+    }
+    snapshot->owns_state = true;
+
+    status = workspace_edit_push_cleanup(
+        edit, cleanup_behavior_state_snapshot, snapshot);
+    if (status != NMO_OK) {
+        (void)cleanup_behavior_state_snapshot(edit, snapshot);
+        return status;
+    }
+
+    status = workspace_edit_push_rollback(
+        edit, rollback_behavior_state, snapshot);
+    if (status != NMO_OK) {
+        edit->cleanup_count--;
+        (void)cleanup_behavior_state_snapshot(edit, snapshot);
+        return status;
+    }
+    return NMO_OK;
+}
+
 nmo_status_t nmo_workspace_edit_track_created_object(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t object_id)
@@ -4298,6 +4544,9 @@ static nmo_status_t workspace_edit_read_message_manager_names(
     if (count == 0) {
         return NMO_OK;
     }
+    if ((size_t)count > SIZE_MAX / sizeof(const char *)) {
+        return NMO_ERR_NOMEM;
+    }
 
     const char **names = (const char **)nmo_arena_alloc(
         arena, (size_t)count * sizeof(*names), _Alignof(const char *));
@@ -4307,7 +4556,10 @@ static nmo_status_t workspace_edit_read_message_manager_names(
     memset(names, 0, (size_t)count * sizeof(*names));
     for (int32_t i = 0; i < count; ++i) {
         char *entry_name = NULL;
-        (void)nmo_chunk_read_string(chunk, &entry_name);
+        size_t entry_length = 0;
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_string_checked(
+            chunk, &entry_name, &entry_length));
+        (void)entry_length;
         names[i] = nmo_arena_strdup(arena, entry_name ? entry_name : "");
         if (names[i] == NULL) {
             return NMO_ERR_NOMEM;
@@ -4395,10 +4647,10 @@ static nmo_status_t workspace_edit_read_attribute_manager_state(
         out_state->categories[i].present = present != 0;
         if (present != 0) {
             char *name = NULL;
-            (void)nmo_chunk_read_string(chunk, &name);
-            if (name == NULL) {
-                return NMO_ERR_INVALID_STATE;
-            }
+            size_t name_length = 0;
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_string_checked(
+                chunk, &name, &name_length));
+            (void)name_length;
             out_state->categories[i].name =
                 nmo_arena_strdup(arena, name != NULL ? name : "");
             if (out_state->categories[i].name == NULL) {
@@ -4427,10 +4679,10 @@ static nmo_status_t workspace_edit_read_attribute_manager_state(
         out_state->attributes[i].present = present != 0;
         if (present != 0) {
             char *name = NULL;
-            (void)nmo_chunk_read_string(chunk, &name);
-            if (name == NULL) {
-                return NMO_ERR_INVALID_STATE;
-            }
+            size_t name_length = 0;
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_string_checked(
+                chunk, &name, &name_length));
+            (void)name_length;
             out_state->attributes[i].name =
                 nmo_arena_strdup(arena, name != NULL ? name : "");
             if (out_state->attributes[i].name == NULL) {

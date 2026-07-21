@@ -25,6 +25,7 @@
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "object/builtin/nmo_parameterout_schemas.h"
 #include "format/nmo_interface_chunk.h"
+#include "format/nmo_data.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_object.h"
@@ -34,6 +35,7 @@
 #include "core/nmo_math.h"
 #include "type/nmo_type_system.h"
 #include "type/nmo_type_guids.h"
+#include "../../src/runtime/runtime_internal.h"
 
 #include <string.h>
 
@@ -82,13 +84,13 @@ static nmo_object_t *find_object_by_name_or_null(
     if (nmo_session_borrow_document(session, &document) != NMO_OK) {
         return NULL;
     }
-    return nmo_object_query_resolve_one(
-               document,
-               &(nmo_object_selector_t){.name = name},
-               &object,
-               NULL) == NMO_OK
-        ? object
-        : NULL;
+    nmo_status_t result = nmo_object_query_resolve_one(
+        document,
+        &(nmo_object_selector_t){.name = name},
+        &object,
+        NULL);
+    nmo_document_destroy(document);
+    return result == NMO_OK ? object : NULL;
 }
 
 typedef struct workspace_edit_scope {
@@ -945,6 +947,43 @@ TEST(workspace_edit, value_writer_resolves_message_manager_names_with_policy) {
     nmo_context_release(ctx);
 }
 
+TEST(workspace_edit, message_manager_edit_rejects_truncated_name) {
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    nmo_chunk_t *chunk = nmo_chunk_create(nmo_session_get_arena(session));
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, 0x53u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 8u));
+    nmo_chunk_close(chunk);
+
+    nmo_manager_data_t manager = {
+        .guid = NMO_MANAGER_GUID_MESSAGE,
+        .data_size = (uint32_t)nmo_chunk_get_size(chunk),
+        .chunk = chunk,
+        .flags = 0u
+    };
+    nmo_session_set_manager_data(session, &manager, 1u);
+
+    workspace_edit_scope_t scope = {0};
+    nmo_workspace_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK, begin_workspace_edit_for_session(
+        ctx, session, "truncated message manager", &scope, &edit));
+    uint32_t value = UINT32_MAX;
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK,
+              nmo_object_edit_ensure_message_manager_entry(
+                  edit, "new-message", &value));
+    ASSERT_EQ(UINT32_MAX, value);
+    rollback_workspace_edit_scope(&scope);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(workspace_edit, value_writer_uses_manager_entry_key_for_lookup) {
     nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
     ASSERT_NOT_NULL(ctx);
@@ -1611,6 +1650,7 @@ TEST(workspace_edit, behavior_graph_flag_rebuilds_behavior_index) {
     ASSERT_TRUE(nmo_behavior_index_count(after_index) > before_count);
 
     nmo_workspace_destroy(workspace);
+    nmo_document_destroy(document);
     nmo_session_destroy(session);
     nmo_context_release(ctx);
 }
@@ -1646,6 +1686,7 @@ TEST(workspace_edit, apply_edit_flags_accepts_known_flags_and_rejects_unknown) {
     ASSERT_NOT_NULL(after_reference_graph);
 
     nmo_workspace_destroy(workspace);
+    nmo_document_destroy(document);
     nmo_session_destroy(session);
     nmo_context_release(ctx);
 }
@@ -1814,6 +1855,7 @@ REGISTER_TEST(workspace_edit, value_writer_resize_rollback_restores_buffer_size)
 REGISTER_TEST(workspace_edit, value_writer_writes_object_refs_and_rejects_invalid_text);
 REGISTER_TEST(workspace_edit, value_writer_writes_manager_refs_and_rejects_invalid_text);
 REGISTER_TEST(workspace_edit, value_writer_resolves_message_manager_names_with_policy);
+REGISTER_TEST(workspace_edit, message_manager_edit_rejects_truncated_name);
 REGISTER_TEST(workspace_edit, value_writer_uses_manager_entry_key_for_lookup);
 REGISTER_TEST(workspace_edit, value_writer_rejects_unsupported_manager_entry_kind);
 REGISTER_TEST(workspace_edit, value_writer_accepts_message_manager_guid_option);

@@ -3047,7 +3047,7 @@ NMO_API nmo_status_t nmo_script_edit_apply_interface_policy(
         return NMO_ERR_NOT_FOUND;
     }
 
-    rc = nmo_workspace_edit_snapshot_bytes(tx->edit, behavior, sizeof(*behavior));
+    rc = nmo_workspace_edit_snapshot_behavior_state(tx->edit, behavior);
     if (rc != NMO_OK) {
         return rc;
     }
@@ -3176,8 +3176,7 @@ NMO_API nmo_status_t nmo_script_edit_add_node_ex(
         return NMO_ERR_NOT_FOUND;
     }
 
-    rc = nmo_workspace_edit_snapshot_bytes(tx->edit, parent_state,
-                                         sizeof(*parent_state));
+    rc = nmo_workspace_edit_snapshot_behavior_state(tx->edit, parent_state);
     if (rc != NMO_OK) {
         return rc;
     }
@@ -3427,8 +3426,7 @@ NMO_API nmo_status_t nmo_script_edit_remove_node(
         return rc;
     }
 
-    rc = nmo_workspace_edit_snapshot_bytes(tx->edit, parent_state,
-                                         sizeof(*parent_state));
+    rc = nmo_workspace_edit_snapshot_behavior_state(tx->edit, parent_state);
     if (rc != NMO_OK) {
         return rc;
     }
@@ -3478,7 +3476,7 @@ NMO_API nmo_status_t nmo_script_edit_add_io(
         return NMO_ERR_NOT_FOUND;
     }
 
-    rc = nmo_workspace_edit_snapshot_bytes(tx->edit, behavior, sizeof(*behavior));
+    rc = nmo_workspace_edit_snapshot_behavior_state(tx->edit, behavior);
     if (rc != NMO_OK) {
         return rc;
     }
@@ -3590,7 +3588,7 @@ NMO_API nmo_status_t nmo_script_edit_remove_io(
         return NMO_ERR_INVALID_STATE;
     }
 
-    rc = nmo_workspace_edit_snapshot_bytes(tx->edit, behavior, sizeof(*behavior));
+    rc = nmo_workspace_edit_snapshot_behavior_state(tx->edit, behavior);
     if (rc != NMO_OK) {
         return rc;
     }
@@ -4083,7 +4081,7 @@ NMO_API nmo_status_t nmo_script_edit_add_parameter(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    rc = nmo_workspace_edit_snapshot_bytes(tx->edit, behavior, sizeof(*behavior));
+    rc = nmo_workspace_edit_snapshot_behavior_state(tx->edit, behavior);
     if (rc != NMO_OK) {
         return rc;
     }
@@ -4458,7 +4456,7 @@ NMO_API nmo_status_t nmo_script_edit_remove_parameter(
         return NMO_ERR_INVALID_STATE;
     }
 
-    rc = nmo_workspace_edit_snapshot_bytes(tx->edit, behavior, sizeof(*behavior));
+    rc = nmo_workspace_edit_snapshot_behavior_state(tx->edit, behavior);
     if (rc != NMO_OK) {
         return rc;
     }
@@ -4566,7 +4564,7 @@ NMO_API nmo_status_t nmo_script_edit_add_operation(
         }
     }
 
-    rc = nmo_workspace_edit_snapshot_bytes(tx->edit, behavior, sizeof(*behavior));
+    rc = nmo_workspace_edit_snapshot_behavior_state(tx->edit, behavior);
     if (rc != NMO_OK) {
         return rc;
     }
@@ -4748,7 +4746,7 @@ NMO_API nmo_status_t nmo_script_edit_remove_operation(
         return NMO_ERR_INVALID_STATE;
     }
 
-    rc = nmo_workspace_edit_snapshot_bytes(tx->edit, behavior, sizeof(*behavior));
+    rc = nmo_workspace_edit_snapshot_behavior_state(tx->edit, behavior);
     if (rc != NMO_OK) {
         return rc;
     }
@@ -4960,7 +4958,7 @@ NMO_API nmo_status_t nmo_script_edit_remove_behavior_link(
         return NMO_ERR_NOT_FOUND;
     }
 
-    rc = nmo_workspace_edit_snapshot_bytes(tx->edit, parent, sizeof(*parent));
+    rc = nmo_workspace_edit_snapshot_behavior_state(tx->edit, parent);
     if (rc != NMO_OK) {
         return rc;
     }

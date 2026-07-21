@@ -638,6 +638,7 @@ TEST(script_edit_transaction, add_node_keeps_ballance_script_edit_validation_gre
 
     nmo_script_edit_rollback(tx);
     nmo_workspace_destroy(workspace);
+    nmo_document_destroy(document);
     nmo_session_close_with_context(ctx, session);
 }
 
