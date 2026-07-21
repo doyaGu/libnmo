@@ -107,6 +107,23 @@ TEST(arena, large_allocation) {
     nmo_arena_destroy(arena);
 }
 
+TEST(arena, large_aligned_allocation_reserves_padding) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 64);
+    ASSERT_NOT_NULL(arena);
+
+    const size_t allocation_size = (64 * 1024) + 1;
+    uint8_t *ptr = (uint8_t *)nmo_arena_alloc(arena, allocation_size, 16);
+    ASSERT_NOT_NULL(ptr);
+    ASSERT_EQ(((uintptr_t)ptr) % 16, 0);
+
+    ptr[0] = 0x5a;
+    ptr[allocation_size - 1] = 0xa5;
+    ASSERT_EQ(ptr[0], 0x5a);
+    ASSERT_EQ(ptr[allocation_size - 1], 0xa5);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST(arena, many_small_allocations) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
@@ -223,6 +240,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(arena, alignment_16_bytes);
     REGISTER_TEST(arena, reset);
     REGISTER_TEST(arena, large_allocation);
+    REGISTER_TEST(arena, large_aligned_allocation_reserves_padding);
     REGISTER_TEST(arena, many_small_allocations);
     REGISTER_TEST(arena, zero_size_allocation);
     REGISTER_TEST(arena, allocation_data_integrity);

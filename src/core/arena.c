@@ -219,14 +219,17 @@ void *nmo_arena_alloc(nmo_arena_t *arena, size_t size, size_t alignment) {
                 arena->max_chunk_size
             );
 
-            // If requested size is larger than calculated chunk size, use larger chunk
-            if (size > new_chunk_size) {
-                // Check for overflow before alignment calculation
-                if (size > SIZE_MAX - (alignment - 1)) {
-                    new_chunk_size = SIZE_MAX & ~(alignment - 1);
-                } else {
-                    new_chunk_size = (size + alignment - 1) & ~(alignment - 1);
-                }
+            /* A fresh chunk's flexible-array payload is not necessarily aligned
+             * to the caller's requested boundary. Reserve enough room for the
+             * leading alignment padding as well as the allocation itself. */
+            if (size > SIZE_MAX - (alignment - 1)) {
+                return NULL;
+            }
+            size_t required_chunk_size = size + alignment - 1;
+
+            // If requested size plus alignment padding is larger, use it.
+            if (required_chunk_size > new_chunk_size) {
+                new_chunk_size = required_chunk_size;
             }
 
             nmo_arena_chunk_t *new_chunk = arena_create_chunk(&arena->allocator, new_chunk_size);
@@ -243,7 +246,9 @@ void *nmo_arena_alloc(nmo_arena_t *arena, size_t size, size_t alignment) {
 
             chunk = new_chunk;
             aligned_used = nmo_arena_align_used(chunk, alignment);
-            if (aligned_used == SIZE_MAX) {
+            if (aligned_used == SIZE_MAX ||
+                aligned_used > chunk->size ||
+                size > chunk->size - aligned_used) {
                 return NULL;
             }
         }
