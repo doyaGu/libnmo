@@ -11,6 +11,7 @@
 #include "format/nmo_chunk_parser.h"
 #include "format/nmo_chunk.h"
 #include "core/nmo_arena.h"
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

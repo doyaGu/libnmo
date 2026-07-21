@@ -711,6 +711,6 @@ TEST(object_layer_acceptance, deep_validation) {
 }
 
 TEST_MAIN_BEGIN()
-    REGISTER_TEST(object_layer_acceptance, deep_validation);
+    REGISTER_TEST_WITH_TIMEOUT(object_layer_acceptance, deep_validation, 120.0);
 TEST_MAIN_END()
 

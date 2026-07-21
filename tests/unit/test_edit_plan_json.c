@@ -802,8 +802,9 @@ TEST(edit_plan_json, reads_manifest_from_file) {
     fp = fopen(path, "wb");
     ASSERT_NOT_NULL(fp);
     ASSERT_EQ(strlen(json), fwrite(json, 1u, strlen(json), fp));
-    ASSERT_EQ(0, fclose(fp));
+    int close_result = fclose(fp);
     fp = NULL;
+    ASSERT_EQ(0, close_result);
 
     ASSERT_EQ(NMO_OK,
               nmo_edit_plan_manifest_json_read_file(path, &manifest));

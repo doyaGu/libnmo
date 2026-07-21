@@ -8,6 +8,7 @@
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_chunk.h"
 #include "core/nmo_arena.h"
+#include <limits.h>
 #include "core/nmo_allocator.h"
 
 typedef struct chunk_api_fail_allocator_state {

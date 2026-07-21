@@ -127,7 +127,7 @@ TEST(vt, signature_only_not_executable) {
     nmo_operation_registry_t *op_reg = nmo_context_get_operation_registry(ctx);
     nmo_type_registry_t *reg = nmo_context_get_type_registry(ctx);
 
-    /* "Get Position" (0x4BC87AEA, 0x6B5B643E) â€?Virtools-only, no C impl.
+    /* "Get Position" (0x4BC87AEA, 0x6B5B643E) â€”Virtools-only, no C impl.
      * Lookup with 3DEntityâ†’Vector should find signature but execute should
      * return NOT_IMPLEMENTED. First find the types. */
     nmo_guid_t op_guid = nmo_guid_create(0x4BC87AEA, 0x6B5B643E);
@@ -138,7 +138,7 @@ TEST(vt, signature_only_not_executable) {
     const nmo_type_descriptor_t *vector_type = nmo_type_registry_find_by_guid(reg, vector_guid);
 
     if (!entity_type || !vector_type) {
-        /* Types not registered â€?skip */
+        /* Types not registered â€”skip */
         nmo_context_release(ctx);
         return;
     }
@@ -303,7 +303,8 @@ TEST(vt, raw_json_loader_marks_object_refs_and_parses_ids) {
         "\"derived_from\":[0,0],"
         "\"category\":\"object_ref\"}]",
         file) >= 0);
-    ASSERT_EQ(0, fclose(file));
+    int close_result = fclose(file);
+    ASSERT_EQ(0, close_result);
 
     nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
     ASSERT_TRUE(arena != NULL);

@@ -23,6 +23,8 @@ static nmo_data_section_t make_mixed_data_section(nmo_arena_t *arena) {
     section.object_count = 1;
     section.managers = nmo_arena_alloc(arena, sizeof(nmo_manager_data_t), 8);
     section.objects = nmo_arena_alloc(arena, sizeof(nmo_object_data_t), 8);
+    memset(section.managers, 0, sizeof(nmo_manager_data_t));
+    memset(section.objects, 0, sizeof(nmo_object_data_t));
 
     section.managers[0].guid = (nmo_guid_t){0x11223344u, 0x55667788u};
     section.managers[0].data_size = (uint32_t)sizeof(raw_manager_data);
