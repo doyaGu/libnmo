@@ -10,7 +10,6 @@
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_array.h"
-#include "core/nmo_string.h"
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
@@ -316,14 +315,18 @@ static nmo_status_t op_not_equal_object_id(
     NMO_RETURN_OK();
 }
 
+static int compare_string_values(const void *p1_data, const void *p2_data) {
+    const char *a = *(const char *const *)p1_data;
+    const char *b = *(const char *const *)p2_data;
+    return strcmp(a ? a : "", b ? b : "");
+}
+
 static nmo_status_t op_equal_string(
     const void *p1_data, const nmo_type_descriptor_t *p1_type, const void *p2_data, const nmo_type_descriptor_t *p2_type,
     void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
-    const nmo_string_t *a = (const nmo_string_t *)p1_data;
-    const nmo_string_t *b = (const nmo_string_t *)p2_data;
-    *(bool *)result_data = (nmo_string_equals(a, b) != 0);
+    *(bool *)result_data = (compare_string_values(p1_data, p2_data) == 0);
     NMO_RETURN_OK();
 }
 
@@ -332,9 +335,7 @@ static nmo_status_t op_not_equal_string(
     void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
-    const nmo_string_t *a = (const nmo_string_t *)p1_data;
-    const nmo_string_t *b = (const nmo_string_t *)p2_data;
-    *(bool *)result_data = (nmo_string_equals(a, b) == 0);
+    *(bool *)result_data = (compare_string_values(p1_data, p2_data) != 0);
     NMO_RETURN_OK();
 }
 
@@ -343,9 +344,7 @@ static nmo_status_t op_less_string(
     void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
-    const nmo_string_t *a = (const nmo_string_t *)p1_data;
-    const nmo_string_t *b = (const nmo_string_t *)p2_data;
-    *(bool *)result_data = (nmo_string_compare(a, b) < 0);
+    *(bool *)result_data = (compare_string_values(p1_data, p2_data) < 0);
     NMO_RETURN_OK();
 }
 
@@ -354,9 +353,7 @@ static nmo_status_t op_less_equal_string(
     void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
-    const nmo_string_t *a = (const nmo_string_t *)p1_data;
-    const nmo_string_t *b = (const nmo_string_t *)p2_data;
-    *(bool *)result_data = (nmo_string_compare(a, b) <= 0);
+    *(bool *)result_data = (compare_string_values(p1_data, p2_data) <= 0);
     NMO_RETURN_OK();
 }
 
@@ -365,9 +362,7 @@ static nmo_status_t op_greater_string(
     void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
-    const nmo_string_t *a = (const nmo_string_t *)p1_data;
-    const nmo_string_t *b = (const nmo_string_t *)p2_data;
-    *(bool *)result_data = (nmo_string_compare(a, b) > 0);
+    *(bool *)result_data = (compare_string_values(p1_data, p2_data) > 0);
     NMO_RETURN_OK();
 }
 
@@ -376,9 +371,7 @@ static nmo_status_t op_greater_equal_string(
     void *result_data, const nmo_type_descriptor_t *result_type, void *user_data
 ) {
     (void)p1_type; (void)p2_type; (void)result_type; (void)user_data;
-    const nmo_string_t *a = (const nmo_string_t *)p1_data;
-    const nmo_string_t *b = (const nmo_string_t *)p2_data;
-    *(bool *)result_data = (nmo_string_compare(a, b) >= 0);
+    *(bool *)result_data = (compare_string_values(p1_data, p2_data) >= 0);
     NMO_RETURN_OK();
 }
 

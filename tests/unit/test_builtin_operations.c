@@ -411,6 +411,56 @@ TEST(builtin_operations, comparison_equal_int) {
     teardown_registries();
 }
 
+TEST(builtin_operations, comparison_string_uses_pointer_representation) {
+    setup_registries();
+
+    const nmo_type_descriptor_t *string_type = get_type(CKPGUID_STRING);
+    const nmo_type_descriptor_t *bool_type = get_type(CKPGUID_BOOL);
+    ASSERT_NE(NULL, string_type);
+    ASSERT_NE(NULL, bool_type);
+    ASSERT_EQ(sizeof(char *), string_type->size);
+
+    const char first_storage[] = "alpha";
+    const char equal_storage[] = "alpha";
+    const char later_storage[] = "beta";
+    const char *first = first_storage;
+    const char *equal = equal_storage;
+    const char *later = later_storage;
+    bool result = false;
+    const nmo_operation_tree_cell_t *cell = NULL;
+
+    nmo_guid_t op_guid = NMO_OP_GUID_EQUAL;
+    ASSERT_EQ(NMO_OK, nmo_operation_registry_find(
+        operation_registry,
+        &op_guid,
+        string_type,
+        string_type,
+        type_registry,
+        &cell));
+    ASSERT_NE(NULL, cell);
+    ASSERT_EQ(NMO_OK, cell->desc.function(
+        &first, string_type, &equal, string_type,
+        &result, bool_type, NULL));
+    ASSERT_TRUE(result);
+
+    op_guid = NMO_OP_GUID_LESS;
+    cell = NULL;
+    ASSERT_EQ(NMO_OK, nmo_operation_registry_find(
+        operation_registry,
+        &op_guid,
+        string_type,
+        string_type,
+        type_registry,
+        &cell));
+    ASSERT_NE(NULL, cell);
+    ASSERT_EQ(NMO_OK, cell->desc.function(
+        &first, string_type, &later, string_type,
+        &result, bool_type, NULL));
+    ASSERT_TRUE(result);
+
+    teardown_registries();
+}
+
 TEST(builtin_operations, comparison_less_float) {
     setup_registries();
 
@@ -833,6 +883,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(builtin_operations, logic_not_bool);
 
     REGISTER_TEST(builtin_operations, comparison_equal_int);
+    REGISTER_TEST(builtin_operations, comparison_string_uses_pointer_representation);
     REGISTER_TEST(builtin_operations, comparison_equal_array);
     REGISTER_TEST(builtin_operations, comparison_less_float);
     REGISTER_TEST(builtin_operations, comparison_min_int);
@@ -853,4 +904,3 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(builtin_operations, check_total_operations_count);
     REGISTER_TEST(builtin_operations, finalize_keeps_lookup_stable);
 TEST_MAIN_END()
-
