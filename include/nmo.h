@@ -175,7 +175,6 @@
 #include "lua/nmo_lua_runtime.h"
 #include "lua/nmo_lua_bindings.h"
 #include "lua/nmo_lua_handles.h"
-#include "lua/nmo_lua_value.h"
 
 #ifdef __cplusplus
 extern "C" {

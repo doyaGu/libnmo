@@ -377,7 +377,6 @@ set(NMO_LUA_SOURCES
     src/lua/lua_handles.c
     src/lua/lua_module.c
     src/lua/lua_runtime.c
-    src/lua/lua_value.c
 )
 
 # Combine all sources (yyjson compiled directly into nmo)
