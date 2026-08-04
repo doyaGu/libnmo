@@ -157,46 +157,6 @@ typedef struct behavior_state_snapshot {
     bool owns_state;
 } behavior_state_snapshot_t;
 
-nmo_status_t workspace_edit_set_object_fields(
-    nmo_workspace_edit_t *edit,
-    nmo_object_id_t object_id,
-    const nmo_session_field_edit_t *fields,
-    size_t field_count,
-    nmo_session_field_edit_result_t *out_result);
-nmo_status_t workspace_edit_rename_object(
-    nmo_workspace_edit_t *edit,
-    nmo_object_id_t object_id,
-    const char *new_name);
-nmo_status_t workspace_edit_bind_script(
-    nmo_workspace_edit_t *edit,
-    nmo_object_id_t object_id,
-    nmo_object_id_t behavior_id);
-nmo_status_t workspace_edit_set_parameter_value(
-    nmo_workspace_edit_t *edit,
-    nmo_object_id_t parameter_id,
-    const char *value_str);
-nmo_status_t workspace_edit_set_parameter_value_ex(
-    nmo_workspace_edit_t *edit,
-    nmo_object_id_t parameter_id,
-    const char *value_str,
-    const nmo_parameter_write_options_t *options);
-nmo_status_t workspace_edit_set_parameter_bytes(
-    nmo_workspace_edit_t *edit,
-    nmo_object_id_t parameter_id,
-    const uint8_t *bytes,
-    size_t byte_count);
-nmo_status_t workspace_edit_set_parameter_bytes_ex(
-    nmo_workspace_edit_t *edit,
-    nmo_object_id_t parameter_id,
-    const uint8_t *bytes,
-    size_t byte_count,
-    const nmo_parameter_write_options_t *options);
-nmo_status_t workspace_edit_set_dataarray_cell(
-    nmo_workspace_edit_t *edit,
-    nmo_object_id_t dataarray_id,
-    uint32_t row,
-    uint32_t col,
-    const char *value_str);
 static uint32_t workspace_edit_pack_argb(float r, float g, float b, float a);
 static nmo_status_t parse_object_id_text(
     const char *value_str,
@@ -215,21 +175,6 @@ static nmo_status_t workspace_edit_read_message_manager_names(
     uint32_t *out_count);
 static nmo_status_t workspace_edit_seek_message_manager_identifier(
     nmo_chunk_t *chunk);
-nmo_status_t workspace_edit_add_behavior_link(
-    nmo_workspace_edit_t *edit,
-    nmo_object_id_t parent_behavior_id,
-    nmo_object_id_t from_io_id,
-    nmo_object_id_t to_io_id,
-    int16_t activation_delay,
-    nmo_object_id_t *out_link_id);
-nmo_status_t workspace_edit_remove_behavior_link(
-    nmo_workspace_edit_t *edit,
-    nmo_object_id_t parent_behavior_id,
-    nmo_object_id_t link_id);
-nmo_status_t workspace_edit_mark_behavior_interface(
-    nmo_workspace_edit_t *edit,
-    nmo_object_id_t behavior_id);
-
 static void workspace_edit_free(nmo_workspace_edit_t *edit)
 {
     if (edit == NULL) {
@@ -1712,7 +1657,7 @@ nmo_status_t nmo_scene_edit_set_active_camera(
     return NMO_OK;
 }
 
-nmo_status_t workspace_edit_bind_script(
+nmo_status_t nmo_object_edit_bind_script(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t object_id,
     nmo_object_id_t behavior_id)
@@ -3150,43 +3095,6 @@ nmo_status_t nmo_asset_edit_set_primitive_mesh(
     return NMO_OK;
 }
 
-nmo_status_t nmo_object_edit_set_fields(
-    nmo_workspace_edit_t *edit,
-    nmo_object_id_t object_id,
-    const nmo_session_field_edit_t *fields,
-    size_t field_count,
-    nmo_session_field_edit_result_t *out_result)
-{
-    return workspace_edit_set_object_fields(
-        (nmo_workspace_edit_t *)edit,
-        object_id,
-        fields,
-        field_count,
-        out_result);
-}
-
-nmo_status_t nmo_object_edit_rename(
-    nmo_workspace_edit_t *edit,
-    nmo_object_id_t object_id,
-    const char *new_name)
-{
-    return workspace_edit_rename_object(
-        (nmo_workspace_edit_t *)edit,
-        object_id,
-        new_name);
-}
-
-nmo_status_t nmo_object_edit_bind_script(
-    nmo_workspace_edit_t *edit,
-    nmo_object_id_t object_id,
-    nmo_object_id_t behavior_id)
-{
-    return workspace_edit_bind_script(
-        (nmo_workspace_edit_t *)edit,
-        object_id,
-        behavior_id);
-}
-
 nmo_status_t nmo_entity_edit_set_camera_settings(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t object_id,
@@ -3834,20 +3742,8 @@ nmo_status_t nmo_object_edit_set_parameter_value(
     nmo_object_id_t parameter_id,
     const char *value_str)
 {
-    return workspace_edit_set_parameter_value_ex(edit, parameter_id, value_str, NULL);
-}
-
-nmo_status_t nmo_object_edit_set_parameter_value_ex(
-    nmo_workspace_edit_t *edit,
-    nmo_object_id_t parameter_id,
-    const char *value_str,
-    const nmo_parameter_write_options_t *options)
-{
-    return workspace_edit_set_parameter_value_ex(
-        (nmo_workspace_edit_t *)edit,
-        parameter_id,
-        value_str,
-        options);
+    return nmo_object_edit_set_parameter_value_ex(
+        edit, parameter_id, value_str, NULL);
 }
 
 nmo_status_t nmo_object_edit_set_parameter_bytes(
@@ -3856,74 +3752,8 @@ nmo_status_t nmo_object_edit_set_parameter_bytes(
     const uint8_t *bytes,
     size_t byte_count)
 {
-    return workspace_edit_set_parameter_bytes_ex(edit, parameter_id, bytes, byte_count, NULL);
-}
-
-nmo_status_t nmo_object_edit_set_parameter_bytes_ex(
-    nmo_workspace_edit_t *edit,
-    nmo_object_id_t parameter_id,
-    const uint8_t *bytes,
-    size_t byte_count,
-    const nmo_parameter_write_options_t *options)
-{
-    return workspace_edit_set_parameter_bytes_ex(
-        (nmo_workspace_edit_t *)edit,
-        parameter_id,
-        bytes,
-        byte_count,
-        options);
-}
-
-nmo_status_t nmo_object_edit_set_dataarray_cell(
-    nmo_workspace_edit_t *edit,
-    nmo_object_id_t dataarray_id,
-    uint32_t row,
-    uint32_t col,
-    const char *value_str)
-{
-    return workspace_edit_set_dataarray_cell(
-        (nmo_workspace_edit_t *)edit,
-        dataarray_id,
-        row,
-        col,
-        value_str);
-}
-
-nmo_status_t nmo_behavior_edit_add_link(
-    nmo_workspace_edit_t *edit,
-    nmo_object_id_t parent_behavior_id,
-    nmo_object_id_t from_io_id,
-    nmo_object_id_t to_io_id,
-    int16_t activation_delay,
-    nmo_object_id_t *out_link_id)
-{
-    return workspace_edit_add_behavior_link(
-        (nmo_workspace_edit_t *)edit,
-        parent_behavior_id,
-        from_io_id,
-        to_io_id,
-        activation_delay,
-        out_link_id);
-}
-
-nmo_status_t nmo_behavior_edit_remove_link(
-    nmo_workspace_edit_t *edit,
-    nmo_object_id_t parent_behavior_id,
-    nmo_object_id_t link_id)
-{
-    return workspace_edit_remove_behavior_link(
-        (nmo_workspace_edit_t *)edit,
-        parent_behavior_id,
-        link_id);
-}
-
-nmo_status_t nmo_behavior_edit_mark_interface(
-    nmo_workspace_edit_t *edit,
-    nmo_object_id_t behavior_id)
-{
-    return workspace_edit_mark_behavior_interface(
-        (nmo_workspace_edit_t *)edit,
-        behavior_id);
+    return nmo_object_edit_set_parameter_bytes_ex(
+        edit, parameter_id, bytes, byte_count, NULL);
 }
 
 nmo_status_t nmo_workspace_edit_commit(nmo_workspace_edit_t *edit)
@@ -4147,7 +3977,7 @@ nmo_status_t nmo_runtime_apply_edit_flags(nmo_session_t *session, uint32_t flags
     return NMO_OK;
 }
 
-nmo_status_t workspace_edit_set_object_fields(
+nmo_status_t nmo_object_edit_set_fields(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t object_id,
     const nmo_session_field_edit_t *fields,
@@ -4246,7 +4076,7 @@ nmo_status_t workspace_edit_set_object_fields(
     return NMO_OK;
 }
 
-nmo_status_t workspace_edit_rename_object(
+nmo_status_t nmo_object_edit_rename(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t object_id,
     const char *new_name)
@@ -4304,14 +4134,6 @@ nmo_status_t workspace_edit_rename_object(
     return NMO_OK;
 }
 
-nmo_status_t workspace_edit_set_parameter_value(
-    nmo_workspace_edit_t *edit,
-    nmo_object_id_t parameter_id,
-    const char *value_str)
-{
-    return workspace_edit_set_parameter_value_ex(edit, parameter_id, value_str, NULL);
-}
-
 static nmo_status_t workspace_edit_snapshot_parameter_buffer(
     nmo_workspace_edit_t *edit,
     nmo_parameter_state_t *state,
@@ -4367,7 +4189,7 @@ static nmo_status_t workspace_edit_prepare_parameter_buffer_write(
     return NMO_OK;
 }
 
-nmo_status_t workspace_edit_set_parameter_value_ex(
+nmo_status_t nmo_object_edit_set_parameter_value_ex(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t parameter_id,
     const char *value_str,
@@ -4978,16 +4800,7 @@ nmo_status_t nmo_object_edit_ensure_attribute_manager_entry(
     return NMO_OK;
 }
 
-nmo_status_t workspace_edit_set_parameter_bytes(
-    nmo_workspace_edit_t *edit,
-    nmo_object_id_t parameter_id,
-    const uint8_t *bytes,
-    size_t byte_count)
-{
-    return workspace_edit_set_parameter_bytes_ex(edit, parameter_id, bytes, byte_count, NULL);
-}
-
-nmo_status_t workspace_edit_set_parameter_bytes_ex(
+nmo_status_t nmo_object_edit_set_parameter_bytes_ex(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t parameter_id,
     const uint8_t *bytes,
@@ -5039,7 +4852,7 @@ nmo_status_t workspace_edit_set_parameter_bytes_ex(
     return NMO_OK;
 }
 
-nmo_status_t workspace_edit_set_dataarray_cell(
+nmo_status_t nmo_object_edit_set_dataarray_cell(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t dataarray_id,
     uint32_t row,
@@ -5121,7 +4934,7 @@ nmo_status_t workspace_edit_set_dataarray_cell(
     return NMO_OK;
 }
 
-nmo_status_t workspace_edit_add_behavior_link(
+nmo_status_t nmo_behavior_edit_add_link(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t parent_behavior_id,
     nmo_object_id_t from_io_id,
@@ -5249,7 +5062,7 @@ nmo_status_t nmo_workspace_apply_edit_flags(nmo_workspace_t *workspace, uint32_t
         : NMO_ERR_INVALID_STATE;
 }
 
-nmo_status_t workspace_edit_remove_behavior_link(
+nmo_status_t nmo_behavior_edit_remove_link(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t parent_behavior_id,
     nmo_object_id_t link_id)
@@ -5340,7 +5153,7 @@ nmo_status_t workspace_edit_remove_behavior_link(
     return NMO_OK;
 }
 
-nmo_status_t workspace_edit_mark_behavior_interface(
+nmo_status_t nmo_behavior_edit_mark_interface(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t behavior_id)
 {
