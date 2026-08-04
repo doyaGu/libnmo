@@ -9,7 +9,7 @@
  * (.nmo/.cmo/.vmo) with full compatibility with the original Virtools runtime.
  *
  * Architecture:
- * - Core Layer: allocator, arena, error, logger, GUID, math, color, pool, refcount, containers
+ * - Core Layer: allocator, arena, error, logger, GUID, math, color, refcount, containers
  * - IO Layer: file, memory, compressed, checksum, mmap, transactional IO
  * - Format Layer: headers, chunks, objects, managers, data, chunk pool, image
  * - Canonical Model: context -> document -> workspace -> object/behavior/chunk -> export
@@ -66,16 +66,13 @@
 #include "core/nmo_string.h"
 #include "core/nmo_hash.h"
 #include "core/nmo_hash_table.h"
-#include "core/nmo_hash_set.h"
 #include "core/nmo_indexed_map.h"
-#include "core/nmo_list.h"
 #include "core/nmo_utils.h"
 #include "core/nmo_hex.h"
 #include "core/nmo_path.h"
 #include "core/nmo_shared_library.h"
 #include "core/nmo_math.h"
 #include "core/nmo_color.h"
-#include "core/nmo_pool.h"
 #include "core/nmo_refcount.h"
 
 // IO layer
