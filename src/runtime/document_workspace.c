@@ -639,15 +639,6 @@ nmo_status_t nmo_workspace_internal_interface_view_from_behavior(
         : NMO_ERR_INVALID_STATE;
 }
 
-nmo_status_t nmo_workspace_internal_apply_edit_flags(
-    nmo_workspace_t *workspace,
-    uint32_t flags)
-{
-    return workspace != NULL
-        ? nmo_document_internal_apply_edit_flags(workspace->document, flags)
-        : NMO_ERR_INVALID_STATE;
-}
-
 nmo_status_t nmo_workspace_internal_create_object(
     nmo_workspace_t *workspace,
     nmo_class_id_t class_id,

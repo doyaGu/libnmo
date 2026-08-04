@@ -3938,7 +3938,7 @@ nmo_status_t nmo_workspace_edit_commit(nmo_workspace_edit_t *edit)
     }
 
     nmo_status_t apply_result =
-        nmo_workspace_internal_apply_edit_flags(edit->workspace, edit->flags);
+        nmo_workspace_apply_edit_flags(edit->workspace, edit->flags);
     return workspace_edit_finish_status(edit, apply_result);
 }
 
@@ -5243,7 +5243,10 @@ nmo_status_t nmo_workspace_apply_edit_flags(nmo_workspace_t *workspace, uint32_t
     if (workspace == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
-    return nmo_workspace_internal_apply_edit_flags(workspace, flags);
+    nmo_document_t *document = nmo_workspace_get_document(workspace);
+    return document != NULL
+        ? nmo_document_internal_apply_edit_flags(document, flags)
+        : NMO_ERR_INVALID_STATE;
 }
 
 nmo_status_t workspace_edit_remove_behavior_link(
