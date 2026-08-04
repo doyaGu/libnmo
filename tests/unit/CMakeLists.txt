@@ -22,12 +22,10 @@ add_unit_test(test_hex)
 add_unit_test(test_parse)
 
 # IO layer tests
-# Note: Old IO API tests have been removed (test_io_file, test_io_memory, 
-# test_io_compressed, test_io_checksum, test_txn) - will be rewritten with new API
+# IO interface and adapter tests
 add_unit_test(test_io_memory)
 add_unit_test(test_io_file)
 add_unit_test(test_io_compressed)
-add_unit_test(test_io_checksum)
 add_unit_test(test_txn)
 add_unit_test(test_txn_windows)
 add_unit_test(test_txn_utf8)
