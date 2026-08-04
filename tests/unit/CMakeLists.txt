@@ -25,7 +25,6 @@ add_unit_test(test_parse)
 # IO interface and adapter tests
 add_unit_test(test_io_memory)
 add_unit_test(test_io_file)
-add_unit_test(test_io_compressed)
 add_unit_test(test_txn)
 add_unit_test(test_txn_windows)
 add_unit_test(test_txn_utf8)

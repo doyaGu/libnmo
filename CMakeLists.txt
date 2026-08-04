@@ -135,7 +135,6 @@ set(NMO_IO_SOURCES
     src/io/io.c
     src/io/io_file.c
     src/io/io_memory.c
-    src/io/io_compressed.c
     src/io/io_mmap.c
 )
 

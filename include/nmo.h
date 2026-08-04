@@ -10,7 +10,7 @@
  *
  * Architecture:
  * - Core Layer: allocator, arena, error, logger, GUID, math, color, refcount, containers
- * - IO Layer: file, memory, compressed, mmap, transactional IO
+ * - IO Layer: file, memory, mmap, transactional IO
  * - Format Layer: headers, chunks, objects, managers, data, chunk pool, image
  * - Canonical Model: context -> document -> workspace -> object/behavior/chunk -> export
  * - Type/Extension/Lua Layers: type system, plugins, scripting bindings
@@ -79,7 +79,6 @@
 #include "io/nmo_io.h"
 #include "io/nmo_io_file.h"
 #include "io/nmo_io_memory.h"
-#include "io/nmo_io_compressed.h"
 #include "io/nmo_io_mmap.h"
 #include "io/nmo_txn.h"
 

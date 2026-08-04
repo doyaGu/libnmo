@@ -12,7 +12,6 @@
 #include "format/nmo_header1.h"
 #include "format/nmo_data.h"
 #include "io/nmo_io_file.h"
-#include "io/nmo_io_compressed.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
 #include <stdio.h>
