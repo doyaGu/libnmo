@@ -204,7 +204,6 @@ set(NMO_OBJECT_SOURCES
     src/object/object_diff.c
     src/object/object_summary.c
     src/object/object_import.c
-    src/object/value_writer.c
     src/object/object_system.c
     src/object/shadow_storage.c
     src/object/deserialize_context.c

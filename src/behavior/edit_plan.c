@@ -20,7 +20,6 @@
 #include "object/nmo_class_ids.h"
 #include "object/nmo_manager_guids.h"
 #include "object/nmo_object_repository.h"
-#include "object/nmo_value_writer.h"
 
 #include "../runtime/runtime_internal.h"
 
@@ -3372,7 +3371,7 @@ static nmo_status_t edit_executor_apply_op(
         if (out_result_id != NULL) {
             *out_result_id = parameter_id;
         }
-        nmo_status_t write_rc = nmo_value_writer_set_parameter_value(
+        nmo_status_t write_rc = nmo_object_edit_set_parameter_value_ex(
             edit,
             parameter_id,
             op->data.set_value.value,
@@ -3405,7 +3404,7 @@ static nmo_status_t edit_executor_apply_op(
         if (out_result_id != NULL) {
             *out_result_id = parameter_id;
         }
-        return nmo_value_writer_set_parameter_bytes(
+        return nmo_object_edit_set_parameter_bytes_ex(
             edit,
             parameter_id,
             op->data.set_bytes.bytes,

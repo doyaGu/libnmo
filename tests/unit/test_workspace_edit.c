@@ -6,7 +6,6 @@
 #include "session/nmo_session.h"
 #include "runtime/nmo_workspace.h"
 #include "object/nmo_object_edit.h"
-#include "object/nmo_value_writer.h"
 #include "behavior/nmo_behavior_edit.h"
 #include "behavior/nmo_behavior_analyze.h"
 #include "object/nmo_class_ids.h"
@@ -624,7 +623,7 @@ TEST(workspace_edit, parameter_edit_rollback_restores_buffer) {
     nmo_context_release(ctx);
 }
 
-TEST(workspace_edit, value_writer_resizes_string_parameter_and_nul_terminates) {
+TEST(workspace_edit, parameter_write_resizes_string_parameter_and_nul_terminates) {
     nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
     ASSERT_NOT_NULL(ctx);
     nmo_session_t *session = nmo_session_create(ctx);
@@ -650,7 +649,7 @@ TEST(workspace_edit, value_writer_resizes_string_parameter_and_nul_terminates) {
     nmo_workspace_edit_t *edit = NULL;
     ASSERT_EQ(NMO_OK, begin_workspace_edit_for_session(ctx, session, "string resize", &edit_scope, &edit));
     ASSERT_EQ(NMO_OK,
-              nmo_value_writer_set_parameter_value(edit, param_id, text, NULL));
+              nmo_object_edit_set_parameter_value_ex(edit, param_id, text, NULL));
     ASSERT_EQ(NMO_OK, commit_workspace_edit_scope(&edit_scope));
 
     ASSERT_EQ(strlen(text) + 1u, state->buffer_data.count);
@@ -661,7 +660,7 @@ TEST(workspace_edit, value_writer_resizes_string_parameter_and_nul_terminates) {
     nmo_context_release(ctx);
 }
 
-TEST(workspace_edit, value_writer_raw_bytes_requires_explicit_resize) {
+TEST(workspace_edit, parameter_write_raw_bytes_requires_explicit_resize) {
     nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
     ASSERT_NOT_NULL(ctx);
     nmo_session_t *session = nmo_session_create(ctx);
@@ -683,13 +682,13 @@ TEST(workspace_edit, value_writer_raw_bytes_requires_explicit_resize) {
     memcpy(state->buffer_data.data, initial, sizeof(initial));
 
     uint8_t bytes[4] = {1, 2, 3, 4};
-    nmo_value_write_options_t options = nmo_value_write_options_default();
+    nmo_parameter_write_options_t options = {0};
 
     workspace_edit_scope_t rejected_scope = {0};
     nmo_workspace_edit_t *rejected_edit = NULL;
     ASSERT_EQ(NMO_OK, begin_workspace_edit_for_session(ctx, session, "raw no resize", &rejected_scope, &rejected_edit));
     ASSERT_EQ(NMO_ERR_OUT_OF_BOUNDS,
-              nmo_value_writer_set_parameter_bytes(
+              nmo_object_edit_set_parameter_bytes_ex(
                   rejected_edit, param_id, bytes, sizeof(bytes), &options));
     rollback_workspace_edit_scope(&rejected_scope);
     ASSERT_EQ(2u, state->buffer_data.count);
@@ -700,7 +699,7 @@ TEST(workspace_edit, value_writer_raw_bytes_requires_explicit_resize) {
     nmo_workspace_edit_t *resized_edit = NULL;
     ASSERT_EQ(NMO_OK, begin_workspace_edit_for_session(ctx, session, "raw resize", &resized_scope, &resized_edit));
     ASSERT_EQ(NMO_OK,
-              nmo_value_writer_set_parameter_bytes(
+              nmo_object_edit_set_parameter_bytes_ex(
                   resized_edit, param_id, bytes, sizeof(bytes), &options));
     ASSERT_EQ(NMO_OK, commit_workspace_edit_scope(&resized_scope));
     ASSERT_EQ(sizeof(bytes), state->buffer_data.count);
@@ -710,7 +709,7 @@ TEST(workspace_edit, value_writer_raw_bytes_requires_explicit_resize) {
     nmo_context_release(ctx);
 }
 
-TEST(workspace_edit, value_writer_resize_rollback_restores_buffer_size) {
+TEST(workspace_edit, parameter_write_resize_rollback_restores_buffer_size) {
     nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
     ASSERT_NOT_NULL(ctx);
     nmo_session_t *session = nmo_session_create(ctx);
@@ -734,7 +733,7 @@ TEST(workspace_edit, value_writer_resize_rollback_restores_buffer_size) {
     nmo_workspace_edit_t *edit = NULL;
     ASSERT_EQ(NMO_OK, begin_workspace_edit_for_session(ctx, session, "string resize rollback", &edit_scope, &edit));
     ASSERT_EQ(NMO_OK,
-              nmo_value_writer_set_parameter_value(
+              nmo_object_edit_set_parameter_value_ex(
                   edit, param_id, "much longer text", NULL));
     rollback_workspace_edit_scope(&edit_scope);
 
@@ -745,7 +744,7 @@ TEST(workspace_edit, value_writer_resize_rollback_restores_buffer_size) {
     nmo_context_release(ctx);
 }
 
-TEST(workspace_edit, value_writer_writes_object_refs_and_rejects_invalid_text) {
+TEST(workspace_edit, parameter_write_writes_object_refs_and_rejects_invalid_text) {
     nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
     ASSERT_NOT_NULL(ctx);
     nmo_session_t *session = nmo_session_create(ctx);
@@ -775,7 +774,7 @@ TEST(workspace_edit, value_writer_writes_object_refs_and_rejects_invalid_text) {
                   ctx, session, "object ref bare", &bare_scope, &bare_edit));
     snprintf(text, sizeof(text), "%u", target_id);
     ASSERT_EQ(NMO_OK,
-              nmo_value_writer_set_parameter_value(
+              nmo_object_edit_set_parameter_value_ex(
                   bare_edit, param_id, text, NULL));
     ASSERT_EQ(NMO_OK, commit_workspace_edit_scope(&bare_scope));
     ASSERT_EQ(target_id, nmo_parameter_object_id(state));
@@ -787,7 +786,7 @@ TEST(workspace_edit, value_writer_writes_object_refs_and_rejects_invalid_text) {
                   ctx, session, "object ref prefix", &prefixed_scope, &prefixed_edit));
     snprintf(text, sizeof(text), "object:%u", target_id + 1u);
     ASSERT_EQ(NMO_OK,
-              nmo_value_writer_set_parameter_value(
+              nmo_object_edit_set_parameter_value_ex(
                   prefixed_edit, param_id, text, NULL));
     ASSERT_EQ(NMO_OK, commit_workspace_edit_scope(&prefixed_scope));
     ASSERT_EQ(target_id + 1u, nmo_parameter_object_id(state));
@@ -799,7 +798,7 @@ TEST(workspace_edit, value_writer_writes_object_refs_and_rejects_invalid_text) {
                   ctx, session, "object ref hash", &hash_scope, &hash_edit));
     snprintf(text, sizeof(text), "#%u", target_id);
     ASSERT_EQ(NMO_OK,
-              nmo_value_writer_set_parameter_value(
+              nmo_object_edit_set_parameter_value_ex(
                   hash_edit, param_id, text, NULL));
     ASSERT_EQ(NMO_OK, commit_workspace_edit_scope(&hash_scope));
     ASSERT_EQ(target_id, nmo_parameter_object_id(state));
@@ -810,7 +809,7 @@ TEST(workspace_edit, value_writer_writes_object_refs_and_rejects_invalid_text) {
               begin_workspace_edit_for_session(
                   ctx, session, "object ref invalid", &invalid_scope, &invalid_edit));
     ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
-              nmo_value_writer_set_parameter_value(
+              nmo_object_edit_set_parameter_value_ex(
                   invalid_edit, param_id, "object:not-a-number", NULL));
     rollback_workspace_edit_scope(&invalid_scope);
     ASSERT_EQ(target_id, nmo_parameter_object_id(state));
@@ -819,7 +818,7 @@ TEST(workspace_edit, value_writer_writes_object_refs_and_rejects_invalid_text) {
     nmo_context_release(ctx);
 }
 
-TEST(workspace_edit, value_writer_writes_manager_refs_and_rejects_invalid_text) {
+TEST(workspace_edit, parameter_write_writes_manager_refs_and_rejects_invalid_text) {
     nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
     ASSERT_NOT_NULL(ctx);
     nmo_session_t *session = nmo_session_create(ctx);
@@ -846,7 +845,7 @@ TEST(workspace_edit, value_writer_writes_manager_refs_and_rejects_invalid_text) 
               begin_workspace_edit_for_session(
                   ctx, session, "manager ref", &manager_scope, &manager_edit));
     ASSERT_EQ(NMO_OK,
-              nmo_value_writer_set_parameter_value(
+              nmo_object_edit_set_parameter_value_ex(
                   manager_edit,
                   param_id,
                   "manager{33333333-44444444}:99",
@@ -862,7 +861,7 @@ TEST(workspace_edit, value_writer_writes_manager_refs_and_rejects_invalid_text) 
               begin_workspace_edit_for_session(
                   ctx, session, "manager ref equals", &equals_scope, &equals_edit));
     ASSERT_EQ(NMO_OK,
-              nmo_value_writer_set_parameter_value(
+              nmo_object_edit_set_parameter_value_ex(
                   equals_edit,
                   param_id,
                   "{55555555-66666666}=123",
@@ -878,7 +877,7 @@ TEST(workspace_edit, value_writer_writes_manager_refs_and_rejects_invalid_text) 
               begin_workspace_edit_for_session(
                   ctx, session, "manager ref invalid", &invalid_scope, &invalid_edit));
     ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
-              nmo_value_writer_set_parameter_value(
+              nmo_object_edit_set_parameter_value_ex(
                   invalid_edit,
                   param_id,
                   "{55555555-66666666}=not-a-number",
@@ -892,7 +891,7 @@ TEST(workspace_edit, value_writer_writes_manager_refs_and_rejects_invalid_text) 
     nmo_context_release(ctx);
 }
 
-TEST(workspace_edit, value_writer_resolves_message_manager_names_with_policy) {
+TEST(workspace_edit, parameter_write_resolves_message_manager_names_with_policy) {
     nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
     ASSERT_NOT_NULL(ctx);
     nmo_session_t *session = nmo_session_create(ctx);
@@ -918,7 +917,7 @@ TEST(workspace_edit, value_writer_resolves_message_manager_names_with_policy) {
                   ctx, session, "message manager missing", &missing_scope,
                   &missing_edit));
     ASSERT_EQ(NMO_ERR_NOT_FOUND,
-              nmo_value_writer_set_parameter_value(
+              nmo_object_edit_set_parameter_value_ex(
                   missing_edit, param_id, "CreatedByPolicy", NULL));
     rollback_workspace_edit_scope(&missing_scope);
     ASSERT_EQ(1u, state->manager_value);
@@ -933,12 +932,12 @@ TEST(workspace_edit, value_writer_resolves_message_manager_names_with_policy) {
                   ctx, session, "message manager create", &create_scope,
                   &create_edit));
     ASSERT_EQ(NMO_OK,
-              nmo_value_writer_set_parameter_value(
+              nmo_object_edit_set_parameter_value_ex(
                   create_edit, param_id, "CreatedByPolicy", &options));
     ASSERT_TRUE(nmo_guid_equals(NMO_MANAGER_GUID_MESSAGE, state->manager_guid));
     ASSERT_EQ(0u, state->manager_value);
     ASSERT_EQ(NMO_OK,
-              nmo_value_writer_set_parameter_value(
+              nmo_object_edit_set_parameter_value_ex(
                   create_edit, param_id, "CreatedByPolicy", NULL));
     ASSERT_EQ(NMO_OK, commit_workspace_edit_scope(&create_scope));
     ASSERT_EQ(0u, state->manager_value);
@@ -984,7 +983,7 @@ TEST(workspace_edit, message_manager_edit_rejects_truncated_name) {
     nmo_context_release(ctx);
 }
 
-TEST(workspace_edit, value_writer_uses_manager_entry_key_for_lookup) {
+TEST(workspace_edit, parameter_write_uses_manager_entry_key_for_lookup) {
     nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
     ASSERT_NOT_NULL(ctx);
     nmo_session_t *session = nmo_session_create(ctx);
@@ -1017,15 +1016,15 @@ TEST(workspace_edit, value_writer_uses_manager_entry_key_for_lookup) {
                   ctx, session, "message manager create by key", &create_scope,
                   &create_edit));
     ASSERT_EQ(NMO_OK,
-              nmo_value_writer_set_parameter_value(
+              nmo_object_edit_set_parameter_value_ex(
                   create_edit, param_id, "ValueText", &create_options));
     ASSERT_TRUE(nmo_guid_equals(NMO_MANAGER_GUID_MESSAGE, state->manager_guid));
     ASSERT_EQ(0u, state->manager_value);
     ASSERT_EQ(NMO_OK,
-              nmo_value_writer_set_parameter_value(
+              nmo_object_edit_set_parameter_value_ex(
                   create_edit, param_id, "EntryKey", NULL));
     ASSERT_EQ(NMO_ERR_NOT_FOUND,
-              nmo_value_writer_set_parameter_value(
+              nmo_object_edit_set_parameter_value_ex(
                   create_edit, param_id, "ValueText", NULL));
     ASSERT_EQ(NMO_OK, commit_workspace_edit_scope(&create_scope));
 
@@ -1033,7 +1032,7 @@ TEST(workspace_edit, value_writer_uses_manager_entry_key_for_lookup) {
     nmo_context_release(ctx);
 }
 
-TEST(workspace_edit, value_writer_rejects_unsupported_manager_entry_kind) {
+TEST(workspace_edit, parameter_write_rejects_unsupported_manager_entry_kind) {
     nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
     ASSERT_NOT_NULL(ctx);
     nmo_session_t *session = nmo_session_create(ctx);
@@ -1064,7 +1063,7 @@ TEST(workspace_edit, value_writer_rejects_unsupported_manager_entry_kind) {
               begin_workspace_edit_for_session(
                   ctx, session, "unsupported manager", &scope, &edit));
     ASSERT_EQ(NMO_ERR_NOT_SUPPORTED,
-              nmo_value_writer_set_parameter_value(
+              nmo_object_edit_set_parameter_value_ex(
                   edit, param_id, "AttributeName", &options));
     rollback_workspace_edit_scope(&scope);
     ASSERT_EQ(1u, state->manager_value);
@@ -1073,7 +1072,7 @@ TEST(workspace_edit, value_writer_rejects_unsupported_manager_entry_kind) {
     nmo_context_release(ctx);
 }
 
-TEST(workspace_edit, value_writer_accepts_message_manager_guid_option) {
+TEST(workspace_edit, parameter_write_accepts_message_manager_guid_option) {
     nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
     ASSERT_NOT_NULL(ctx);
     nmo_session_t *session = nmo_session_create(ctx);
@@ -1106,7 +1105,7 @@ TEST(workspace_edit, value_writer_accepts_message_manager_guid_option) {
               begin_workspace_edit_for_session(
                   ctx, session, "message manager guid", &scope, &edit));
     ASSERT_EQ(NMO_OK,
-              nmo_value_writer_set_parameter_value(
+              nmo_object_edit_set_parameter_value_ex(
                   edit, param_id, "IgnoredValue", &options));
     ASSERT_TRUE(nmo_guid_equals(NMO_MANAGER_GUID_MESSAGE, state->manager_guid));
     ASSERT_EQ(0u, state->manager_value);
@@ -1116,7 +1115,7 @@ TEST(workspace_edit, value_writer_accepts_message_manager_guid_option) {
     nmo_context_release(ctx);
 }
 
-TEST(workspace_edit, value_writer_creates_attribute_manager_entry_transactionally) {
+TEST(workspace_edit, parameter_write_creates_attribute_manager_entry_transactionally) {
     nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
     ASSERT_NOT_NULL(ctx);
     nmo_session_t *session = nmo_session_create(ctx);
@@ -1160,7 +1159,7 @@ TEST(workspace_edit, value_writer_creates_attribute_manager_entry_transactionall
                   ctx, session, "attribute manager create", &create_scope,
                   &create_edit));
     ASSERT_EQ(NMO_OK,
-              nmo_value_writer_set_parameter_value(
+              nmo_object_edit_set_parameter_value_ex(
                   create_edit, param_id, "IgnoredValue", &options));
     ASSERT_TRUE(nmo_guid_equals(NMO_MANAGER_GUID_ATTRIBUTE, state->manager_guid));
     ASSERT_EQ(0u, state->manager_value);
@@ -1182,7 +1181,7 @@ TEST(workspace_edit, value_writer_creates_attribute_manager_entry_transactionall
                   &lookup_edit));
     state->manager_value = 77u;
     ASSERT_EQ(NMO_OK,
-              nmo_value_writer_set_parameter_value(
+              nmo_object_edit_set_parameter_value_ex(
                   lookup_edit, param_id, "IgnoredAgain", &lookup_options));
     ASSERT_EQ(0u, state->manager_value);
     rollback_workspace_edit_scope(&lookup_scope);
@@ -1192,7 +1191,7 @@ TEST(workspace_edit, value_writer_creates_attribute_manager_entry_transactionall
     nmo_context_release(ctx);
 }
 
-TEST(workspace_edit, value_writer_writes_structured_parameter_values) {
+TEST(workspace_edit, parameter_write_writes_structured_parameter_values) {
     nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
     ASSERT_NOT_NULL(ctx);
     nmo_session_t *session = nmo_session_create(ctx);
@@ -1329,7 +1328,7 @@ TEST(workspace_edit, value_writer_writes_structured_parameter_values) {
     nmo_context_release(ctx);
 }
 
-TEST(workspace_edit, value_writer_writes_enum_and_flag_parameter_values) {
+TEST(workspace_edit, parameter_write_writes_enum_and_flag_parameter_values) {
     nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
     ASSERT_NOT_NULL(ctx);
     nmo_session_t *session = nmo_session_create(ctx);
@@ -1849,19 +1848,19 @@ REGISTER_TEST(workspace_edit, mark_behavior_interface_requires_interface_data);
 REGISTER_TEST(workspace_edit, rename_object_commit_rebuilds_name_index);
 REGISTER_TEST(workspace_edit, rename_object_rollback_restores_name_without_rebuilding_index);
 REGISTER_TEST(workspace_edit, parameter_edit_rollback_restores_buffer);
-REGISTER_TEST(workspace_edit, value_writer_resizes_string_parameter_and_nul_terminates);
-REGISTER_TEST(workspace_edit, value_writer_raw_bytes_requires_explicit_resize);
-REGISTER_TEST(workspace_edit, value_writer_resize_rollback_restores_buffer_size);
-REGISTER_TEST(workspace_edit, value_writer_writes_object_refs_and_rejects_invalid_text);
-REGISTER_TEST(workspace_edit, value_writer_writes_manager_refs_and_rejects_invalid_text);
-REGISTER_TEST(workspace_edit, value_writer_resolves_message_manager_names_with_policy);
+REGISTER_TEST(workspace_edit, parameter_write_resizes_string_parameter_and_nul_terminates);
+REGISTER_TEST(workspace_edit, parameter_write_raw_bytes_requires_explicit_resize);
+REGISTER_TEST(workspace_edit, parameter_write_resize_rollback_restores_buffer_size);
+REGISTER_TEST(workspace_edit, parameter_write_writes_object_refs_and_rejects_invalid_text);
+REGISTER_TEST(workspace_edit, parameter_write_writes_manager_refs_and_rejects_invalid_text);
+REGISTER_TEST(workspace_edit, parameter_write_resolves_message_manager_names_with_policy);
 REGISTER_TEST(workspace_edit, message_manager_edit_rejects_truncated_name);
-REGISTER_TEST(workspace_edit, value_writer_uses_manager_entry_key_for_lookup);
-REGISTER_TEST(workspace_edit, value_writer_rejects_unsupported_manager_entry_kind);
-REGISTER_TEST(workspace_edit, value_writer_accepts_message_manager_guid_option);
-REGISTER_TEST(workspace_edit, value_writer_creates_attribute_manager_entry_transactionally);
-REGISTER_TEST(workspace_edit, value_writer_writes_structured_parameter_values);
-REGISTER_TEST(workspace_edit, value_writer_writes_enum_and_flag_parameter_values);
+REGISTER_TEST(workspace_edit, parameter_write_uses_manager_entry_key_for_lookup);
+REGISTER_TEST(workspace_edit, parameter_write_rejects_unsupported_manager_entry_kind);
+REGISTER_TEST(workspace_edit, parameter_write_accepts_message_manager_guid_option);
+REGISTER_TEST(workspace_edit, parameter_write_creates_attribute_manager_entry_transactionally);
+REGISTER_TEST(workspace_edit, parameter_write_writes_structured_parameter_values);
+REGISTER_TEST(workspace_edit, parameter_write_writes_enum_and_flag_parameter_values);
 REGISTER_TEST(workspace_edit, parameter_bytes_commit_zero_fills_and_rollback_restores);
 REGISTER_TEST(workspace_edit, parameterout_object_mode_commit_sets_reference);
 REGISTER_TEST(workspace_edit, dataarray_object_cell_commit_and_rollback);

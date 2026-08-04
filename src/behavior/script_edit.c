@@ -5,7 +5,6 @@
 #include "../runtime/runtime_internal.h"
 #include "runtime/nmo_workspace.h"
 #include "object/nmo_object_edit.h"
-#include "object/nmo_value_writer.h"
 #include "object/nmo_manager_guids.h"
 #include "object/nmo_param_guids.h"
 #include "behavior/nmo_behavior_edit.h"
@@ -955,7 +954,7 @@ static nmo_status_t script_edit_create_parameter_object(
                 return rc;
             }
             if (default_value[0] != '\0') {
-                rc = nmo_value_writer_set_parameter_value(
+                rc = nmo_object_edit_set_parameter_value_ex(
                     tx->edit, source_id, default_value, NULL);
                 if (rc != NMO_OK) {
                     if (!script_edit_is_symbolic_manager_default_type(type_guid)) {
@@ -1024,7 +1023,7 @@ static nmo_status_t script_edit_create_parameter_object(
 
     if (class_id != NMO_CID_PARAMETERIN &&
         default_value && default_value[0] != '\0') {
-        rc = nmo_value_writer_set_parameter_value(
+        rc = nmo_object_edit_set_parameter_value_ex(
             tx->edit, *out_parameter_id, default_value, NULL);
         if (rc != NMO_OK) {
             if (!script_edit_is_symbolic_manager_default_type(type_guid)) {
