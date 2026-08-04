@@ -216,24 +216,6 @@ static inline nmo_object_t *nmo_deserialize_context_get_object(
     return ctx != NULL ? ctx->object : NULL;
 }
 
-/* ============================================================================
- * Helper Functions
- * ============================================================================ */
-
-/**
- * @brief Store unconsumed chunk bytes
- * 
- * Called at end of deserialize if chunk has remaining bytes.
- * These are stored in shadow storage for round-trip preservation.
- * 
- * @param ctx Deserialize context
- * @param chunk Chunk being deserialized (to get remaining bytes)
- * @return NMO_OK on success
- */
-NMO_API nmo_status_t nmo_deserialize_store_remaining(
-    nmo_deserialize_context_t *ctx,
-    nmo_chunk_t *chunk);
-
 #ifdef __cplusplus
 }
 #endif

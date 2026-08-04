@@ -202,7 +202,6 @@ set(NMO_OBJECT_SOURCES
     src/object/object_import.c
     src/object/object_system.c
     src/object/shadow_storage.c
-    src/object/deserialize_context.c
     src/object/builtin/object_vtables.c
     src/object/builtin/ckobject_schemas.c
     src/object/builtin/ckbeobject_schemas.c
