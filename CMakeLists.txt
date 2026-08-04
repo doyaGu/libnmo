@@ -339,10 +339,6 @@ set(NMO_EXPORT_SOURCES
     src/export/export_json_util.c
 )
 
-# Remaining app/support sources
-set(NMO_APP_SOURCES
-)
-
 # Project authoring layer sources
 set(NMO_PROJECT_SOURCES
     src/project/project_executor.c
@@ -396,11 +392,6 @@ set(NMO_LUA_SOURCES
     src/lua/lua_value.c
 )
 
-set(NMO_JSON_SOURCES
-    src/object/object_summary.c
-    src/object/object_import.c
-)
-
 # Combine all sources (yyjson compiled directly into nmo)
 set(NMO_SOURCES
     ${NMO_CORE_SOURCES}
@@ -415,9 +406,7 @@ set(NMO_SOURCES
     ${NMO_BEHAVIOR_SOURCES}
     ${NMO_LUA_SOURCES}
     ${NMO_EXTENSION_SOURCES}
-    ${NMO_APP_SOURCES}
     ${NMO_PROJECT_SOURCES}
-    ${NMO_JSON_SOURCES}
     ${NMO_YYJSON_DIR}/src/yyjson.c
 )
 
