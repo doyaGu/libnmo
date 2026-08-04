@@ -48,6 +48,7 @@
 #else
 #include <dirent.h>
 #include <sys/stat.h>
+#include <unistd.h>
 #endif
 
 /* Class name lookup table */
@@ -592,9 +593,11 @@ TEST(object_layer_acceptance, deep_validation) {
         /* Round-trip test */
         char temp_path[512];
 #ifdef _WIN32
-        snprintf(temp_path, sizeof(temp_path), "%s\\temp_rt_%zu.nmo", data_dir, i);
+        snprintf(temp_path, sizeof(temp_path), "nmo_object_layer_%lu_%zu.nmo",
+                 (unsigned long)GetCurrentProcessId(), i);
 #else
-        snprintf(temp_path, sizeof(temp_path), "%s/temp_rt_%zu.nmo", data_dir, i);
+        snprintf(temp_path, sizeof(temp_path), "nmo_object_layer_%lu_%zu.nmo",
+                 (unsigned long)getpid(), i);
 #endif
 
         int save_result = nmo_session_save_file(session1, temp_path, NULL, NULL);
