@@ -8,7 +8,6 @@
 #include "chunk/nmo_chunk_inspect.h"
 #include "export/nmo_ansi.h"
 #include "export/nmo_hexdump.h"
-#include "chunk/nmo_chunk_inspect.h"
 #include "export/nmo_export_json.h"
 #include "export/nmo_export_text.h"
 #include "core/nmo_error.h"
@@ -273,13 +272,6 @@ nmo_status_t nmo_inspector_validate_chunk(
     }
 
     return NMO_OK;
-}
-
-nmo_status_t nmo_chunk_inspect_validate(
-    const nmo_chunk_t *chunk,
-    nmo_chunk_validation_t *result
-) {
-    return nmo_inspector_validate_chunk(chunk, result);
 }
 
 int nmo_inspector_hex_dump(

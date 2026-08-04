@@ -71,10 +71,6 @@ nmo_status_t nmo_inspector_export_json(
     FILE *stream,
     bool include_data);
 
-NMO_API nmo_status_t nmo_chunk_inspect_validate(
-    const nmo_chunk_t *chunk,
-    nmo_chunk_validation_t *result);
-
 #ifdef __cplusplus
 }
 #endif
