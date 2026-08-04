@@ -6,7 +6,7 @@
  * Based on CKFile::m_IndexByClassId and related indexing structures.
  *
  * This header is an advanced index/cache surface. Ordinary consumers should
- * prefer stable query facades such as nmo_object_iter_*(),
+ * prefer nmo_object_query_*() or repository index traversal,
  * nmo_object_query_iterate()/collect(), and the document-owned
  * nmo_object_query_count()/find_first() helpers when they do not need to
  * manage index lifetimes directly.
@@ -177,7 +177,7 @@ NMO_API uint32_t nmo_object_index_get_active_flags(const nmo_object_index_t *ind
  * @note Returned array is index-owned; do not free.
  * The returned pointer becomes invalid after any rebuild/clear/add/remove that
  * touches the class index. Ordinary consumers should prefer
- * nmo_object_iter_count_class() / nmo_object_iter_at_class().
+ * nmo_object_query_*() or repository index traversal.
  * @ownership borrowed
  *
  * Time complexity: O(1) average case with index, O(n) without index

@@ -1,7 +1,7 @@
 #include "lua_bindings_internal.h"
 
 #include "document/nmo_document.h"
-#include "object/nmo_object_iter.h"
+#include "object/nmo_object_repository.h"
 #include "object/nmo_object_query.h"
 #include "object/nmo_object_refs.h"
 #include "object/nmo_ref_graph.h"
@@ -252,7 +252,8 @@ static int nmo_lua_object_count(lua_State *state)
     }
 
     repository = nmo_document_get_repository(document);
-    lua_pushinteger(state, (lua_Integer)nmo_object_iter_count(repository));
+    lua_pushinteger(
+        state, (lua_Integer)nmo_object_repository_get_count(repository));
     return 1;
 }
 
@@ -275,7 +276,8 @@ static int nmo_lua_object_at(lua_State *state)
     }
 
     repository = nmo_document_get_repository(document);
-    object = nmo_object_iter_at(repository, (size_t)(lua_index - 1));
+    object = nmo_object_repository_get_by_index(
+        repository, (size_t)(lua_index - 1));
     if (object == NULL) {
         lua_pushnil(state);
         return 1;
@@ -304,8 +306,16 @@ static int nmo_lua_object_count_class(lua_State *state)
 
     class_id = (nmo_class_id_t)luaL_checkinteger(state, 2);
     repository = nmo_document_get_repository(document);
-    lua_pushinteger(state,
-                    (lua_Integer)nmo_object_iter_count_class(repository, class_id));
+    size_t count = 0u;
+    size_t total = nmo_object_repository_get_count(repository);
+    for (size_t i = 0u; i < total; ++i) {
+        nmo_object_t *object =
+            nmo_object_repository_get_by_index(repository, i);
+        if (object != NULL && nmo_object_get_class_id(object) == class_id) {
+            count++;
+        }
+    }
+    lua_pushinteger(state, (lua_Integer)count);
     return 1;
 }
 
@@ -330,7 +340,22 @@ static int nmo_lua_object_at_class(lua_State *state)
     }
 
     repository = nmo_document_get_repository(document);
-    object = nmo_object_iter_at_class(repository, class_id, (size_t)(lua_index - 1));
+    size_t match_index = (size_t)(lua_index - 1);
+    size_t matched = 0u;
+    size_t total = nmo_object_repository_get_count(repository);
+    for (size_t i = 0u; i < total; ++i) {
+        nmo_object_t *candidate =
+            nmo_object_repository_get_by_index(repository, i);
+        if (candidate == NULL ||
+            nmo_object_get_class_id(candidate) != class_id) {
+            continue;
+        }
+        if (matched == match_index) {
+            object = candidate;
+            break;
+        }
+        matched++;
+    }
     if (object == NULL) {
         lua_pushnil(state);
         return 1;

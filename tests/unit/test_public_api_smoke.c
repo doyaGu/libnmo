@@ -41,7 +41,6 @@
 #include "format/nmo_object.h"
 #include "object/nmo_object_index.h"
 #include "object/nmo_object_query.h"
-#include "object/nmo_object_iter.h"
 #include "object/nmo_ref_graph.h"
 #include "object/nmo_object_refs.h"
 #include "object/nmo_object_type_common.h"
@@ -398,8 +397,6 @@ TEST(public_api_smoke, public_api_tier_signals_are_declared) {
     ASSERT_EQ(NMO_PUBLIC_HEADER_KIND_SINGLE_TIER, NMO_HEXDUMP_PUBLIC_HEADER_KIND);
     ASSERT_EQ(NMO_API_TIER_ADVANCED_C, NMO_HEXDUMP_API_TIER);
 
-    ASSERT_EQ(NMO_PUBLIC_HEADER_KIND_SINGLE_TIER, NMO_OBJECT_ITER_PUBLIC_HEADER_KIND);
-    ASSERT_EQ(NMO_API_TIER_STABLE_CONSUMER, NMO_OBJECT_ITER_READ_API_TIER);
 
     ASSERT_EQ(NMO_PUBLIC_HEADER_KIND_SINGLE_TIER, NMO_EXTENSION_REGISTRY_PUBLIC_HEADER_KIND);
     ASSERT_EQ(NMO_API_TIER_ADVANCED_C, NMO_EXTENSION_REGISTRY_API_TIER);

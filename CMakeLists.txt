@@ -190,7 +190,6 @@ set(NMO_OBJECT_SOURCES
     src/object/object_enums.c
     src/object/object_structs.c
     src/object/object_types.c
-    src/object/object_iter.c
     src/object/object_repository.c
     src/object/object_refs.c
     src/object/ref.c

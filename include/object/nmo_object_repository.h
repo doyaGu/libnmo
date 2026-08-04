@@ -159,8 +159,8 @@ NMO_API nmo_object_t *nmo_object_repository_find_by_file_id(const nmo_object_rep
  *         The returned array is owned by the repository and is valid until the
  *         next call to nmo_object_repository_find_by_class(), any repository
  *         membership mutation, or repository destruction.
- *         Ordinary consumers should prefer nmo_object_iter_count_class() /
- *         nmo_object_iter_at_class() instead of depending on this scratch array.
+ *         Callers that only need one pass should consume the result before the
+ *         next class query or repository mutation.
  * @note Returned array is repository-owned; do not free.
  * @ownership borrowed (repository scratch storage; invalidated after next class query or mutation)
  */
@@ -191,8 +191,8 @@ NMO_API size_t nmo_object_repository_get_count(const nmo_object_repository_t *re
  *         next call to nmo_object_repository_get_all(), any repository
  *         membership mutation, or repository destruction.
  *         Returns NULL on error or if repository is empty.
- *         Ordinary consumers should prefer nmo_object_iter_count() /
- *         nmo_object_iter_at() instead of depending on this scratch array.
+ *         Use nmo_object_repository_get_count() and
+ *         nmo_object_repository_get_by_index() for index-based traversal.
  * @note Returned array is repository-owned; do not free.
  * @ownership borrowed (repository scratch storage; invalidated after next get_all or mutation)
  */

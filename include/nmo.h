@@ -105,7 +105,6 @@
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_ref.h"
-#include "object/nmo_object_iter.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_object_query.h"
 #include "object/nmo_object_summary.h"

@@ -6,7 +6,6 @@
 #include "test_framework.h"
 #include "document/nmo_document.h"
 #include "object/nmo_object_query.h"
-#include "object/nmo_object_iter.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
 #include "format/nmo_object.h"
@@ -891,73 +890,6 @@ TEST(object_query, query_index_detach_preserves_other_repository_observers)
     teardown_objects();
 }
 
-TEST(object_query, stable_object_iterator_facade)
-{
-    setup_objects();
-
-    ASSERT_EQ(4u, nmo_object_iter_count(g_repo));
-
-    nmo_object_t *first = nmo_object_iter_at(g_repo, 0);
-    ASSERT_NOT_NULL(first);
-    ASSERT_EQ(g_base, first);
-
-    nmo_object_t *third = nmo_object_iter_at(g_repo, 2);
-    ASSERT_NOT_NULL(third);
-    ASSERT_EQ(g_camera, third);
-
-    ASSERT_NULL(nmo_object_iter_at(g_repo, 99));
-
-    teardown_objects();
-}
-
-TEST(object_query, stable_object_iterator_exact_class_facade)
-{
-    setup_objects();
-
-    ASSERT_EQ(1u, nmo_object_iter_count_class(g_repo, NMO_CID_CAMERA));
-    ASSERT_EQ(1u, nmo_object_iter_count_class(g_repo, NMO_CID_MESH));
-    ASSERT_EQ(0u, nmo_object_iter_count_class(g_repo, 999999u));
-
-    nmo_object_t *camera = nmo_object_iter_at_class(g_repo, NMO_CID_CAMERA, 0);
-    ASSERT_NOT_NULL(camera);
-    ASSERT_EQ(g_camera, camera);
-
-    nmo_object_t *mesh = nmo_object_iter_at_class(g_repo, NMO_CID_MESH, 0);
-    ASSERT_NOT_NULL(mesh);
-    ASSERT_EQ(g_mesh, mesh);
-
-    ASSERT_NULL(nmo_object_iter_at_class(g_repo, NMO_CID_CAMERA, 1));
-    ASSERT_NULL(nmo_object_iter_at_class(g_repo, 999999u, 0));
-
-    teardown_objects();
-}
-
-TEST(object_query, stable_object_iterator_tracks_repository_mutation)
-{
-    setup_objects();
-
-    ASSERT_EQ(4u, nmo_object_iter_count(g_repo));
-    ASSERT_EQ(1u, nmo_object_iter_count_class(g_repo, NMO_CID_CAMERA));
-
-    nmo_allocator_t allocator = nmo_allocator_default();
-    nmo_object_t *added = make_object(&allocator, 6, NMO_CID_CAMERA, "SecondaryCamera");
-    ASSERT_NOT_NULL(added);
-    ASSERT_EQ(NMO_OK, nmo_object_repository_add(g_repo, &added));
-    nmo_object_t *added_in_repo = nmo_object_repository_find_by_id(g_repo, 6);
-    ASSERT_NOT_NULL(added_in_repo);
-
-    ASSERT_EQ(5u, nmo_object_iter_count(g_repo));
-    ASSERT_EQ(2u, nmo_object_iter_count_class(g_repo, NMO_CID_CAMERA));
-    ASSERT_EQ(added_in_repo, nmo_object_iter_at_class(g_repo, NMO_CID_CAMERA, 1));
-
-    ASSERT_EQ(NMO_OK, nmo_object_repository_remove(g_repo, 6));
-    ASSERT_EQ(4u, nmo_object_iter_count(g_repo));
-    ASSERT_EQ(1u, nmo_object_iter_count_class(g_repo, NMO_CID_CAMERA));
-    ASSERT_EQ(g_camera, nmo_object_iter_at_class(g_repo, NMO_CID_CAMERA, 0));
-
-    teardown_objects();
-}
-
 TEST_MAIN_BEGIN()
 REGISTER_TEST(object_query, filters_by_object_id);
 REGISTER_TEST(object_query, exact_and_derived_class_matching);
@@ -981,9 +913,6 @@ REGISTER_TEST(object_query, stable_owner_resolve_one_matches_selector);
 REGISTER_TEST(object_query, attached_query_index_tracks_repository_mutation);
 REGISTER_TEST(object_query, attached_query_index_tracks_type_guid_mutation);
 REGISTER_TEST(object_query, query_index_detach_preserves_other_repository_observers);
-REGISTER_TEST(object_query, stable_object_iterator_facade);
-REGISTER_TEST(object_query, stable_object_iterator_exact_class_facade);
-REGISTER_TEST(object_query, stable_object_iterator_tracks_repository_mutation);
 TEST_MAIN_END()
 
 
