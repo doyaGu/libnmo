@@ -118,7 +118,6 @@ static bool rewrite_array_ids_equal(const nmo_array_t *a,
 }
 
 typedef struct rewrite_workspace_edit_scope {
-    nmo_document_t *document;
     nmo_workspace_t *workspace;
     nmo_workspace_edit_t *edit;
 } rewrite_workspace_edit_scope_t;
@@ -127,12 +126,6 @@ static void rewrite_workspace_edit_scope_reset(
     rewrite_workspace_edit_scope_t *scope) {
     if (!scope) {
         return;
-    }
-    if (scope->workspace) {
-        nmo_workspace_destroy(scope->workspace);
-    }
-    if (scope->document) {
-        nmo_document_destroy(scope->document);
     }
     memset(scope, 0, sizeof(*scope));
 }
@@ -149,16 +142,7 @@ static nmo_status_t rewrite_begin_workspace_edit(
     }
 
     memset(scope, 0, sizeof(*scope));
-    rc = nmo_workspace_internal_borrow_document(workspace, &scope->document);
-    if (rc != NMO_OK) {
-        rewrite_workspace_edit_scope_reset(scope);
-        return rc;
-    }
-    rc = nmo_workspace_create(ctx, scope->document, &scope->workspace);
-    if (rc != NMO_OK) {
-        rewrite_workspace_edit_scope_reset(scope);
-        return rc;
-    }
+    scope->workspace = workspace;
     rc = nmo_workspace_edit_begin(scope->workspace, label, &scope->edit);
     if (rc != NMO_OK) {
         rewrite_workspace_edit_scope_reset(scope);

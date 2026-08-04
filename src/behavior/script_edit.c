@@ -1941,16 +1941,15 @@ NMO_API nmo_status_t nmo_script_edit_begin(nmo_workspace_t *workspace,
     }
 
     tx->ctx = ctx;
-    tx->session = seed_session;
-    rc = nmo_workspace_internal_borrow_document(workspace, &tx->document);
-    if (rc != NMO_OK) {
-        script_edit_tx_destroy(tx);
-        return rc;
-    }
-    seed_session = nmo_document_internal_session(tx->document);
+    seed_session = nmo_workspace_internal_session(workspace);
     if (!seed_session) {
         script_edit_tx_destroy(tx);
         return NMO_ERR_INVALID_STATE;
+    }
+    rc = nmo_session_borrow_document(seed_session, &tx->document);
+    if (rc != NMO_OK) {
+        script_edit_tx_destroy(tx);
+        return rc;
     }
     tx->session = seed_session;
     rc = nmo_workspace_create(ctx, tx->document, &tx->workspace);

@@ -39,16 +39,12 @@
 
 struct nmo_document {
     nmo_allocator_t allocator;
-    nmo_context_t *context;
-    nmo_arena_t *arena;
-    nmo_object_repository_t *repository;
     nmo_session_t *session;
     bool owns_session;
 };
 
 struct nmo_workspace {
     nmo_allocator_t allocator;
-    nmo_context_t *context;
     nmo_document_t *document;
 };
 
@@ -158,9 +154,6 @@ nmo_document_t *nmo_document_create(nmo_context_t *ctx)
         nmo_free(&allocator, document);
         return NULL;
     }
-    document->context = document->session->context;
-    document->arena = document->session->arena;
-    document->repository = document->session->repository;
     document->owns_session = true;
 
     return document;
@@ -194,9 +187,6 @@ nmo_status_t nmo_session_borrow_document(
     memset(document, 0, sizeof(*document));
     document->allocator = allocator;
     document->session = session;
-    document->context = session->context;
-    document->arena = session->arena;
-    document->repository = session->repository;
     document->owns_session = false;
     *out_document = document;
     return NMO_OK;
@@ -217,12 +207,12 @@ void nmo_document_destroy(nmo_document_t *document)
 
 nmo_context_t *nmo_document_get_context(const nmo_document_t *document)
 {
-    return document != NULL ? document->context : NULL;
+    return document != NULL ? nmo_session_get_context(document->session) : NULL;
 }
 
 nmo_object_repository_t *nmo_document_get_repository(const nmo_document_t *document)
 {
-    return document != NULL ? document->repository : NULL;
+    return document != NULL ? nmo_session_get_repository(document->session) : NULL;
 }
 
 nmo_session_t *nmo_document_internal_session(nmo_document_t *document)
@@ -263,7 +253,6 @@ nmo_status_t nmo_workspace_create(
 
     memset(workspace, 0, sizeof(*workspace));
     workspace->allocator = allocator;
-    workspace->context = ctx;
     workspace->document = document;
     *out_workspace = workspace;
     return NMO_OK;
@@ -308,7 +297,8 @@ const nmo_type_runtime_t *nmo_document_internal_type_runtime(
 
 nmo_arena_t *nmo_document_internal_arena(const nmo_document_t *document)
 {
-    return document != NULL ? document->arena : NULL;
+    const nmo_session_t *session = nmo_document_internal_session_const(document);
+    return session != NULL ? nmo_session_get_arena(session) : NULL;
 }
 
 nmo_chunk_pool_t *nmo_document_internal_ensure_chunk_pool(
@@ -559,7 +549,7 @@ nmo_status_t nmo_document_internal_execute_runtime_request(
 
 nmo_context_t *nmo_workspace_internal_context(const nmo_workspace_t *workspace)
 {
-    return workspace != NULL ? workspace->context : NULL;
+    return workspace != NULL ? nmo_document_get_context(workspace->document) : NULL;
 }
 
 nmo_object_repository_t *nmo_workspace_internal_repository(const nmo_workspace_t *workspace)
@@ -649,33 +639,12 @@ nmo_status_t nmo_workspace_internal_interface_view_from_behavior(
         : NMO_ERR_INVALID_STATE;
 }
 
-nmo_status_t nmo_workspace_internal_script_edit_graph_build(
-    nmo_workspace_t *workspace,
-    nmo_object_id_t root_behavior_id,
-    uint32_t max_depth,
-    nmo_script_edit_graph_t **out_graph)
-{
-    return workspace != NULL
-        ? nmo_script_edit_graph_build(workspace, root_behavior_id, max_depth, out_graph)
-        : NMO_ERR_INVALID_STATE;
-}
-
 nmo_status_t nmo_workspace_internal_apply_edit_flags(
     nmo_workspace_t *workspace,
     uint32_t flags)
 {
     return workspace != NULL
         ? nmo_document_internal_apply_edit_flags(workspace->document, flags)
-        : NMO_ERR_INVALID_STATE;
-}
-
-nmo_status_t nmo_workspace_internal_borrow_document(
-    nmo_workspace_t *workspace,
-    nmo_document_t **out_document)
-{
-    nmo_session_t *session = nmo_workspace_internal_session(workspace);
-    return session != NULL
-        ? nmo_session_borrow_document(session, out_document)
         : NMO_ERR_INVALID_STATE;
 }
 

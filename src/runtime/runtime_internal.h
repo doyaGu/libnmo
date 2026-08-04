@@ -23,7 +23,6 @@
 #include "format/nmo_object.h"
 #include "format/nmo_interface_view.h"
 #include "object/nmo_object_index.h"
-#include "behavior/nmo_script_edit_graph.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -324,17 +323,9 @@ nmo_status_t nmo_workspace_internal_interface_view_from_behavior(
     nmo_workspace_t *workspace,
     nmo_object_id_t owner_behavior_id,
     nmo_interface_view_t *out_view);
-nmo_status_t nmo_workspace_internal_script_edit_graph_build(
-    nmo_workspace_t *workspace,
-    nmo_object_id_t root_behavior_id,
-    uint32_t max_depth,
-    nmo_script_edit_graph_t **out_graph);
 nmo_status_t nmo_workspace_internal_apply_edit_flags(
     nmo_workspace_t *workspace,
     uint32_t flags);
-nmo_status_t nmo_workspace_internal_borrow_document(
-    nmo_workspace_t *workspace,
-    nmo_document_t **out_document);
 nmo_status_t nmo_workspace_internal_create_object(
     nmo_workspace_t *workspace,
     nmo_class_id_t class_id,

@@ -104,7 +104,7 @@ nmo_status_t nmo_behavior_view_from_behavior(
     out_view->out_parameter_count = state->out_parameters.count;
     out_view->local_parameter_count = state->local_parameters.count;
 
-    status = nmo_workspace_internal_script_edit_graph_build(
+    status = nmo_script_edit_graph_build(
         workspace, behavior_id, UINT32_MAX, &edit_graph);
     out_view->edit_graph_status = status;
     if (status == NMO_OK && edit_graph != NULL) {
