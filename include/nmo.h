@@ -122,7 +122,6 @@
 #include "extension/nmo_extension_registry.h"
 #include "extension/nmo_extension_loader.h"
 #include "extension/nmo_extension_host.h"
-#include "extension/nmo_extension_diagnostics.h"
 
 // Reorganization owner headers
 #include "runtime/nmo_context.h"

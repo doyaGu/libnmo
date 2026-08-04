@@ -50,10 +50,13 @@ static int g_ext_manager_preload_hits = 0;
 static bool g_shutdown_context_seen = false;
 static nmo_guid_t g_shutdown_expected_guid = {0, 0};
 
-static int ext_manager_pre_load(void *session, void *user_data) {
+static int ext_manager_on_event(void *session,
+                                const nmo_runtime_event_ctx_t *ctx,
+                                void *user_data) {
     (void)session;
     int *hits = (int *)user_data;
-    if (hits != NULL) {
+    if (hits != NULL && ctx != NULL &&
+        ctx->event == NMO_RUNTIME_EVENT_PRE_LOAD) {
         (*hits)++;
     }
     return NMO_OK;
@@ -69,7 +72,7 @@ static nmo_status_t register_manager_init(const nmo_extension_host_t *host, void
     manager_desc.guid = NMO_GUID(0x70170170, 0x17017017);
     manager_desc.name = "ExtRegisteredManager";
     manager_desc.category = NMO_PLUGIN_MANAGER_DLL;
-    manager_desc.pre_load = ext_manager_pre_load;
+    manager_desc.on_event = ext_manager_on_event;
     manager_desc.user_data = &g_ext_manager_preload_hits;
 
     nmo_guid_t plugin_guid = NMO_GUID(0xABCDEF10, 0x00000001);
@@ -286,7 +289,10 @@ TEST(extension, host_register_manager_callbacks) {
     nmo_manager_t *manager = (nmo_manager_t *)nmo_manager_registry_get(g_manager_registry, 701);
     ASSERT_NOT_NULL(manager);
 
-    status = nmo_manager_invoke_pre_load(manager, NULL);
+    nmo_runtime_event_ctx_t event_ctx = {
+        .event = NMO_RUNTIME_EVENT_PRE_LOAD
+    };
+    status = nmo_manager_invoke_event(manager, NULL, &event_ctx);
     ASSERT_EQ(NMO_OK, status);
     ASSERT_EQ(1, g_ext_manager_preload_hits);
 

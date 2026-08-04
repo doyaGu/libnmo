@@ -114,9 +114,7 @@ add_unit_test(test_object_serialization)
 add_unit_test(test_objanim_controllers)
 
 # Extension layer tests
-# Extension registry tests still target ABI v1/v2 callback layout.
-# add_unit_test(test_extension_registry)
-add_unit_test(test_extension_diagnostics)
+add_unit_test(test_extension_registry)
 
 # Session layer tests
 add_unit_test(test_id_sanitizer)  # Phase 1.1: ID sanitization pipeline

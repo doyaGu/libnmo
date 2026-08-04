@@ -277,7 +277,6 @@ set(NMO_EXTENSION_SOURCES
     src/extension/extension_registry.c
     src/extension/extension_loader.c
     src/extension/extension_host.c
-    src/extension/extension_diagnostics.c
     src/extension/virtools_data_plugin.c
     src/extension/virtools_loader.c
 )
