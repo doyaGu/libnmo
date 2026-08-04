@@ -5,9 +5,8 @@
 
 #include "../test_framework.h"
 #include "format/nmo_chunk.h"
+#include "format/nmo_chunk_api.h"
 #include "format/nmo_chunk_context.h"
-#include "format/nmo_chunk_writer.h"
-#include "format/nmo_chunk_parser.h"
 #include "core/nmo_arena.h"
 
 /**
@@ -18,23 +17,19 @@ TEST(chunk_serialize, serialize_and_deserialize) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 1024*1024);
     ASSERT_NOT_NULL(arena);
 
-    /* Create writer */
-    nmo_chunk_writer_t *writer = nmo_chunk_writer_create(arena);
-    ASSERT_NOT_NULL(writer);
-
-    /* Start chunk with class ID and legacy format version for VERSION1 layout */
-    nmo_chunk_writer_start(writer, 0x12345678, NMO_CHUNK_VERSION1);
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    chunk->class_id = 0x12345678;
+    chunk->chunk_version = NMO_CHUNK_VERSION1;
 
     /* Write some test data */
-    int result = nmo_chunk_writer_write_int(writer, 42);
+    int result = nmo_chunk_write_int(chunk, 42);
     ASSERT_EQ(result, NMO_OK);
 
-    result = nmo_chunk_writer_write_float(writer, 3.14f);
+    result = nmo_chunk_write_float(chunk, 3.14f);
     ASSERT_EQ(result, NMO_OK);
-
-    /* Finalize writer to get chunk */
-    nmo_chunk_t *chunk = nmo_chunk_writer_finalize(writer);
-    ASSERT_NOT_NULL(chunk);
+    nmo_chunk_close(chunk);
 
     /* Serialize chunk */
     void *data = NULL;
@@ -60,23 +55,20 @@ TEST(chunk_serialize, serialize_and_deserialize) {
     /* Verify metadata */
     ASSERT_EQ(read_chunk->class_id, 0x12345678);
 
-    /* Create parser to read data */
-    nmo_chunk_parser_t *parser = nmo_chunk_parser_create(read_chunk);
-    ASSERT_NOT_NULL(parser);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(read_chunk));
 
     /* Read and verify data */
     int32_t int_val = 0;
-    nmo_status_t parse_result = nmo_chunk_parser_read_int(parser, &int_val);
+    nmo_status_t parse_result = nmo_chunk_read_int(read_chunk, &int_val);
     ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_EQ(int_val, 42);
 
     float float_val = 0.0f;
-    parse_result = nmo_chunk_parser_read_float(parser, &float_val);
+    parse_result = nmo_chunk_read_float(read_chunk, &float_val);
     ASSERT_EQ(parse_result, NMO_OK);
     ASSERT_FLOAT_EQ(float_val, 3.14f, 0.001f);
 
     /* Cleanup */
-    nmo_chunk_parser_destroy(parser);
     nmo_arena_destroy(arena);
 }
 
@@ -88,16 +80,12 @@ TEST(chunk_serialize, empty_chunk) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 1024*1024);
     ASSERT_NOT_NULL(arena);
 
-    /* Create writer */
-    nmo_chunk_writer_t *writer = nmo_chunk_writer_create(arena);
-    ASSERT_NOT_NULL(writer);
-
-    /* Start empty chunk */
-    nmo_chunk_writer_start(writer, 0x00000001, NMO_CHUNK_VERSION1);
-
-    /* Finalize to get chunk */
-    nmo_chunk_t *chunk = nmo_chunk_writer_finalize(writer);
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    chunk->class_id = 0x00000001;
+    chunk->chunk_version = NMO_CHUNK_VERSION1;
+    nmo_chunk_close(chunk);
 
     /* Verify empty */
     ASSERT_EQ(chunk->data.count, 0);

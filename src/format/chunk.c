@@ -4,7 +4,6 @@
  */
 
 #include "format/nmo_chunk.h"
-#include "format/nmo_chunk_parser.h"
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_chunk_context.h"
 #include "format/nmo_id_remap.h"
@@ -180,8 +179,8 @@ static nmo_status_t chunk_calc_size(const nmo_chunk_t *chunk,
     return NMO_OK;
 }
 
-static nmo_status_t chunk_build_subchunks_from_refs(nmo_chunk_t *chunk, nmo_arena_t *arena) {
-    if (chunk == NULL || arena == NULL) {
+static nmo_status_t chunk_build_subchunks_from_refs(nmo_chunk_t *chunk) {
+    if (chunk == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to subchunk builder");
     }
 
@@ -189,10 +188,7 @@ static nmo_status_t chunk_build_subchunks_from_refs(nmo_chunk_t *chunk, nmo_aren
         NMO_RETURN_OK();
     }
 
-    nmo_chunk_parser_t *parser = nmo_chunk_parser_create(chunk);
-    if (parser == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate chunk parser");
-    }
+    NMO_RETURN_IF_ERROR(nmo_chunk_start_read(chunk));
 
     const uint32_t *refs = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->chunk_refs);
     size_t ref_count = chunk->chunk_refs.count;
@@ -202,7 +198,6 @@ static nmo_status_t chunk_build_subchunks_from_refs(nmo_chunk_t *chunk, nmo_aren
 
         if (ref == 0xFFFFFFFFu) {
             if (i + 1 >= ref_count) {
-                nmo_chunk_parser_destroy(parser);
                 NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Malformed sub-chunk sequence markers");
             }
 
@@ -211,35 +206,34 @@ static nmo_status_t chunk_build_subchunks_from_refs(nmo_chunk_t *chunk, nmo_aren
                 continue;
             }
 
-            nmo_status_t seek_result = nmo_chunk_parser_seek(parser, seq_pos);
+            nmo_status_t seek_result = nmo_chunk_goto(chunk, seq_pos);
             if (seek_result != NMO_OK) {
                 continue;
             }
 
             size_t seq_count = 0;
-            nmo_status_t seq_result = nmo_chunk_parser_start_read_sequence(parser, &seq_count);
+            nmo_status_t seq_result =
+                nmo_chunk_start_read_sub_chunk_sequence(chunk, &seq_count);
             if (seq_result != NMO_OK) {
-                nmo_chunk_parser_destroy(parser);
                 NMO_RETURN_ERROR(seq_result, NMO_SEVERITY_ERROR,
-                                        "Failed to start sub-chunk sequence");
+                                 "Failed to start sub-chunk sequence");
             }
 
             for (size_t s = 0; s < seq_count; s++) {
                 nmo_chunk_t *sub = NULL;
-                nmo_status_t read_result = nmo_chunk_parser_read_subchunk(parser, arena, &sub);
+                nmo_status_t read_result = nmo_chunk_read_sub_chunk(chunk, &sub);
                 if (read_result != NMO_OK) {
-                    nmo_chunk_parser_destroy(parser);
                     NMO_RETURN_ERROR(read_result, NMO_SEVERITY_ERROR,
-                                            "Failed to read sub-chunk");
+                                     "Failed to read sub-chunk");
                 }
 
                 if (sub != NULL) {
                     nmo_status_t append_result = nmo_arena_array_append(&chunk->chunks, &sub);
-                    NMO_RETURN_IF_ERROR_DO(append_result, nmo_chunk_parser_destroy(parser));
+                    NMO_RETURN_IF_ERROR(append_result);
 
                     if (sub->chunk_refs.count > 0) {
-                        nmo_status_t nested = chunk_build_subchunks_from_refs(sub, arena);
-                        NMO_RETURN_IF_ERROR_DO(nested, nmo_chunk_parser_destroy(parser));
+                        nmo_status_t nested = chunk_build_subchunks_from_refs(sub);
+                        NMO_RETURN_IF_ERROR(nested);
                     }
                 }
             }
@@ -251,32 +245,30 @@ static nmo_status_t chunk_build_subchunks_from_refs(nmo_chunk_t *chunk, nmo_aren
             continue;
         }
 
-        nmo_status_t seek_result = nmo_chunk_parser_seek(parser, ref);
+        nmo_status_t seek_result = nmo_chunk_goto(chunk, ref);
         if (seek_result != NMO_OK) {
             continue;
         }
 
         nmo_chunk_t *sub = NULL;
-        nmo_status_t read_result = nmo_chunk_parser_read_subchunk(parser, arena, &sub);
+        nmo_status_t read_result = nmo_chunk_read_sub_chunk(chunk, &sub);
         if (read_result != NMO_OK) {
-            nmo_chunk_parser_destroy(parser);
             NMO_RETURN_ERROR(read_result, NMO_SEVERITY_ERROR,
-                                    "Failed to read sub-chunk");
+                             "Failed to read sub-chunk");
         }
 
         if (sub != NULL) {
             nmo_status_t append_result = nmo_arena_array_append(&chunk->chunks, &sub);
-            NMO_RETURN_IF_ERROR_DO(append_result, nmo_chunk_parser_destroy(parser));
+            NMO_RETURN_IF_ERROR(append_result);
 
             if (sub->chunk_refs.count > 0) {
-                nmo_status_t nested = chunk_build_subchunks_from_refs(sub, arena);
-                NMO_RETURN_IF_ERROR_DO(nested, nmo_chunk_parser_destroy(parser));
+                nmo_status_t nested = chunk_build_subchunks_from_refs(sub);
+                NMO_RETURN_IF_ERROR(nested);
             }
         }
     }
 
-    nmo_chunk_parser_destroy(parser);
-    NMO_RETURN_OK();
+    return nmo_chunk_start_read(chunk);
 }
 
 static nmo_status_t chunk_validate_offset_list(const nmo_chunk_t *chunk,
@@ -1304,7 +1296,7 @@ static nmo_status_t chunk_parse_into(nmo_chunk_t *chunk,
                                                                 "chunk_refs");
         NMO_RETURN_IF_ERROR(validate_refs);
 
-        nmo_status_t sub_result = chunk_build_subchunks_from_refs(chunk, chunk->arena);
+        nmo_status_t sub_result = chunk_build_subchunks_from_refs(chunk);
         NMO_RETURN_IF_ERROR(sub_result);
     }
 

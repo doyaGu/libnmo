@@ -14,7 +14,6 @@
 #include "core/nmo_hex.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
-#include "format/nmo_chunk_parser.h"
 #include "yyjson.h"
 #include <string.h>
 #include <ctype.h>

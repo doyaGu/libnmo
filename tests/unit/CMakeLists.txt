@@ -35,16 +35,8 @@ add_unit_test(test_header1)
 add_unit_test(test_object)
 # Legacy hook-based manager API removed in runtime clean-break.
 # add_unit_test(test_manager)
-add_unit_test(test_manager_ints)
 add_unit_test(test_object_ids)
-add_unit_test(test_arrays)  # Array support tests
-add_unit_test(test_buffer_variants)  # Buffer operation variants tests
 add_unit_test(test_chunk)
-add_unit_test(test_chunk_parser)
-add_unit_test(test_chunk_writer)
-add_unit_test(test_chunk_writer_context)  # Phase 1.3: Version context stack
-add_unit_test(test_chunk_writer_reserve)  # Phase 2.2: Reserve-and-patch API
-add_unit_test(test_chunk_writer_intlist_audit)  # Phase 2.3: IntList auditor
 add_unit_test(test_chunk_serialize)
 add_unit_test(test_data_section_plan)
 # Add new chunk API test
@@ -52,11 +44,7 @@ add_unit_test(test_chunk_api)
 add_unit_test(test_chunk_helpers)
 add_unit_test(test_chunk_id_remap)
 add_unit_test(test_chunk_serialization)
-add_unit_test(test_identifier_search)  # Phase 3: Identifier search tests
-add_unit_test(test_identifiers)  # Identifier system tests
-add_unit_test(test_subchunks)  # Sub-chunk support tests
 add_unit_test(test_chunk_truncation)  # Phase 3: Truncated chunk safety tests
-add_unit_test(test_chunk_16bit)  # Phase 6: 16-bit special format operations
 add_unit_test(test_chunk_raw_bitmap)
 add_unit_test(test_chunk_encoded_bitmap)
 add_unit_test(test_chunk_legacy_bitmap)
@@ -124,7 +112,6 @@ add_unit_test(test_object_repository)
 add_unit_test(test_object_query)
 add_unit_test(test_ref_query)
 add_unit_test(test_object_index)  # Phase 5: Object indexing tests
-add_unit_test(test_chunk_advanced)  # Phase 6: Advanced chunk features tests
 add_unit_test(test_manager_registry)
 add_unit_test(test_nmo_baseline)
 # Set working directory to project root so data/ can be found

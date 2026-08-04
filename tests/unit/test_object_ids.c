@@ -1,243 +1,74 @@
-/**
- * @file test_object_ids.c
- * @brief Test for object ID system implementation
- *
- * Tests WriteObjectID and ReadObjectID functions
- * to ensure proper behavior matching CKStateChunk.
- */
-
-#include "format/nmo_chunk_writer.h"
-#include "format/nmo_chunk_parser.h"
-#include "format/nmo_chunk_context.h"
-#include "format/nmo_chunk.h"
-#include "format/nmo_id_remap.h"
-#include "format/nmo_chunk_api.h"
-#include "core/nmo_arena.h"
 #include "test_framework.h"
-#include <stdio.h>
-#include <stdlib.h>
 
-TEST(object_ids, write_and_read_object_ids) {
-    // Create arena
-    nmo_arena_t* arena = nmo_arena_create(NULL, 4096);
-    ASSERT_NOT_NULL(arena);
-
-    // Create writer
-    nmo_chunk_writer_t* writer = nmo_chunk_writer_create(arena);
-    ASSERT_NOT_NULL(writer);
-
-    // Start chunk
-    nmo_chunk_writer_start(writer, 0x12345678, 7);
-
-    // Write object ID 1 (non-zero, should be tracked)
-    int result = nmo_chunk_writer_write_object_id(writer, (nmo_object_id_t)1001);
-    ASSERT_EQ(result, NMO_OK);
-
-    // Write separator
-    result = nmo_chunk_writer_write_dword(writer, 0xABCDEF00);
-    ASSERT_EQ(result, NMO_OK);
-
-    // Write object ID 2 (non-zero, should be tracked)
-    result = nmo_chunk_writer_write_object_id(writer, (nmo_object_id_t)2002);
-    ASSERT_EQ(result, NMO_OK);
-
-    // Write separator
-    result = nmo_chunk_writer_write_dword(writer, 0x12345678);
-    ASSERT_EQ(result, NMO_OK);
-
-    // Write object ID 0 (zero, should not be tracked)
-    result = nmo_chunk_writer_write_object_id(writer, (nmo_object_id_t)0);
-    ASSERT_EQ(result, NMO_OK);
-
-    // Write separator
-    result = nmo_chunk_writer_write_dword(writer, 0xDEADBEEF);
-    ASSERT_EQ(result, NMO_OK);
-
-    // Write object ID 3 (non-zero, should be tracked)
-    result = nmo_chunk_writer_write_object_id(writer, (nmo_object_id_t)3003);
-    ASSERT_EQ(result, NMO_OK);
-
-    // Finalize chunk
-    nmo_chunk_t* chunk = nmo_chunk_writer_finalize(writer);
-    ASSERT_NOT_NULL(chunk);
-
-    // Verify ID tracking: should have 3 positions (for IDs 1001, 2002, 3003)
-    // but not for ID 0
-    ASSERT_EQ(chunk->ids.count, 3);
-
-    // Verify tracked positions
-    uint32_t *ids = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->ids);
-    ASSERT_EQ(ids[0], 0);
-    ASSERT_EQ(ids[1], 2);
-    ASSERT_EQ(ids[2], 6);
-
-    // Create parser
-    nmo_chunk_parser_t* parser = nmo_chunk_parser_create(chunk);
-    ASSERT_NOT_NULL(parser);
-
-    // Read object ID 1
-    nmo_object_id_t read_id = 0;
-    nmo_status_t parse_result = nmo_chunk_parser_read_object_id(parser, &read_id);
-    ASSERT_EQ(parse_result, NMO_OK);
-    ASSERT_EQ(read_id, (nmo_object_id_t)1001);
-
-    // Read separator 1
-    uint32_t data = 0;
-    parse_result = nmo_chunk_parser_read_dword(parser, &data);
-    ASSERT_EQ(parse_result, NMO_OK);
-    ASSERT_EQ(data, 0xABCDEF00);
-
-    // Read object ID 2
-    parse_result = nmo_chunk_parser_read_object_id(parser, &read_id);
-    ASSERT_EQ(parse_result, NMO_OK);
-    ASSERT_EQ(read_id, (nmo_object_id_t)2002);
-
-    // Read separator 2
-    parse_result = nmo_chunk_parser_read_dword(parser, &data);
-    ASSERT_EQ(parse_result, NMO_OK);
-    ASSERT_EQ(data, 0x12345678);
-
-    // Read object ID 0
-    parse_result = nmo_chunk_parser_read_object_id(parser, &read_id);
-    ASSERT_EQ(parse_result, NMO_OK);
-    ASSERT_EQ(read_id, (nmo_object_id_t)0);
-
-    // Read separator 3
-    parse_result = nmo_chunk_parser_read_dword(parser, &data);
-    ASSERT_EQ(parse_result, NMO_OK);
-    ASSERT_EQ(data, 0xDEADBEEF);
-
-    // Read object ID 3
-    parse_result = nmo_chunk_parser_read_object_id(parser, &read_id);
-    ASSERT_EQ(parse_result, NMO_OK);
-    ASSERT_EQ(read_id, (nmo_object_id_t)3003);
-
-    // Cleanup
-    nmo_chunk_parser_destroy(parser);
-    nmo_chunk_writer_destroy(writer);
-    nmo_arena_destroy(arena);
-}
-
-TEST(object_ids, file_context_roundtrip) {
-    nmo_arena_t* arena = nmo_arena_create(NULL, 4096);
-    ASSERT_NOT_NULL(arena);
-
-    nmo_chunk_writer_t* writer = nmo_chunk_writer_create(arena);
-    ASSERT_NOT_NULL(writer);
-
-    nmo_id_remap_t* runtime_to_file = nmo_id_remap_create(arena);
-    ASSERT_NOT_NULL(runtime_to_file);
-
-    nmo_status_t add_result = nmo_id_remap_add(runtime_to_file, (nmo_object_id_t)1001, (nmo_object_id_t)5);
-    ASSERT_EQ(add_result, NMO_OK);
-    add_result = nmo_id_remap_add(runtime_to_file, (nmo_object_id_t)2002, (nmo_object_id_t)6);
-    ASSERT_EQ(add_result, NMO_OK);
-
-    nmo_chunk_file_context_t ctx = {0};
-    ctx.runtime_to_file = runtime_to_file;
-    ctx.file_to_runtime = NULL;
-    nmo_chunk_writer_set_file_context(writer, &ctx);
-
-    nmo_chunk_writer_start(writer, 0x22222222, 7);
-
-    ASSERT_EQ(nmo_chunk_writer_write_object_id(writer, (nmo_object_id_t)1001), NMO_OK);
-    ASSERT_EQ(nmo_chunk_writer_write_object_id(writer, (nmo_object_id_t)2002), NMO_OK);
-
-    nmo_chunk_t* chunk = nmo_chunk_writer_finalize(writer);
-    ASSERT_NOT_NULL(chunk);
-    ASSERT_NE(0u, chunk->chunk_options & NMO_CHUNK_OPTION_FILE);
-    ASSERT_EQ(0u, chunk->ids.count);
-    ASSERT_EQ(2u, chunk->data.count);
-    uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
-    ASSERT_EQ(5u, data[0]);
-    ASSERT_EQ(6u, data[1]);
-
-    nmo_id_remap_t* file_to_runtime = nmo_id_remap_create(arena);
-    ASSERT_NOT_NULL(file_to_runtime);
-    add_result = nmo_id_remap_add(file_to_runtime, (nmo_object_id_t)5, (nmo_object_id_t)1001);
-    ASSERT_EQ(add_result, NMO_OK);
-    add_result = nmo_id_remap_add(file_to_runtime, (nmo_object_id_t)6, (nmo_object_id_t)2002);
-    ASSERT_EQ(add_result, NMO_OK);
-
-    ctx.file_to_runtime = file_to_runtime;
-
-    nmo_chunk_parser_t* parser = nmo_chunk_parser_create(chunk);
-    ASSERT_NOT_NULL(parser);
-    nmo_chunk_parser_set_file_context(parser, &ctx);
-
-    nmo_object_id_t read_id = 0;
-    nmo_status_t parse_result = nmo_chunk_parser_read_object_id(parser, &read_id);
-    ASSERT_EQ(parse_result, NMO_OK);
-    ASSERT_EQ(read_id, (nmo_object_id_t)1001);
-    parse_result = nmo_chunk_parser_read_object_id(parser, &read_id);
-    ASSERT_EQ(parse_result, NMO_OK);
-    ASSERT_EQ(read_id, (nmo_object_id_t)2002);
-
-    nmo_chunk_parser_destroy(parser);
-    nmo_chunk_writer_destroy(writer);
-    nmo_arena_destroy(arena);
-}
+#include "core/nmo_arena.h"
+#include "format/nmo_chunk.h"
+#include "format/nmo_chunk_api.h"
+#include "format/nmo_chunk_context.h"
+#include "format/nmo_id_remap.h"
 
 TEST(object_ids, chunk_api_file_context_maps_ids) {
-    nmo_arena_t* arena = nmo_arena_create(NULL, 4096);
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
 
-    nmo_id_remap_t* runtime_to_file = nmo_id_remap_create(arena);
+    nmo_id_remap_t *runtime_to_file = nmo_id_remap_create(arena);
+    nmo_id_remap_t *file_to_runtime = nmo_id_remap_create(arena);
     ASSERT_NOT_NULL(runtime_to_file);
-    nmo_id_remap_t* file_to_runtime = nmo_id_remap_create(arena);
     ASSERT_NOT_NULL(file_to_runtime);
 
-    ASSERT_EQ(nmo_id_remap_add(runtime_to_file, (nmo_object_id_t)1001, (nmo_object_id_t)5), NMO_OK);
-    ASSERT_EQ(nmo_id_remap_add(runtime_to_file, (nmo_object_id_t)2002, (nmo_object_id_t)6), NMO_OK);
-    ASSERT_EQ(nmo_id_remap_add(file_to_runtime, (nmo_object_id_t)5, (nmo_object_id_t)1001), NMO_OK);
-    ASSERT_EQ(nmo_id_remap_add(file_to_runtime, (nmo_object_id_t)6, (nmo_object_id_t)2002), NMO_OK);
+    ASSERT_EQ(NMO_OK,
+              nmo_id_remap_add(runtime_to_file, 1001, 5));
+    ASSERT_EQ(NMO_OK,
+              nmo_id_remap_add(runtime_to_file, 2002, 6));
+    ASSERT_EQ(NMO_OK,
+              nmo_id_remap_add(file_to_runtime, 5, 1001));
+    ASSERT_EQ(NMO_OK,
+              nmo_id_remap_add(file_to_runtime, 6, 2002));
 
-    nmo_chunk_file_context_t file_ctx = {0};
-    file_ctx.runtime_to_file = runtime_to_file;
-    file_ctx.file_to_runtime = file_to_runtime;
-
-    nmo_chunk_t* chunk = nmo_chunk_create(arena);
+    nmo_chunk_file_context_t file_ctx = {
+        .runtime_to_file = runtime_to_file,
+        .file_to_runtime = file_to_runtime
+    };
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(chunk);
     chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
     nmo_chunk_set_file_context(chunk, &file_ctx);
 
-    ASSERT_EQ(nmo_chunk_start_write(chunk), NMO_OK);
-    ASSERT_EQ(nmo_chunk_write_object_id(chunk, (nmo_object_id_t)1001), NMO_OK);
-    ASSERT_EQ(nmo_chunk_write_object_id(chunk, (nmo_object_id_t)0), NMO_OK);
-    ASSERT_EQ(nmo_chunk_write_object_id(chunk, (nmo_object_id_t)2002), NMO_OK);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_id(chunk, 1001));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_id(chunk, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_id(chunk, 2002));
     nmo_chunk_close(chunk);
 
-    ASSERT_EQ(chunk->ids.count, 0u);
-    ASSERT_EQ(chunk->data.count, 3u);
+    ASSERT_EQ(0u, chunk->ids.count);
+    ASSERT_EQ(3u, chunk->data.count);
     uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
-    ASSERT_EQ(data[0], 5u);
-    ASSERT_EQ(data[1], (uint32_t)NMO_OBJECT_ID_INVALID);
-    ASSERT_EQ(data[2], 6u);
+    ASSERT_EQ(5u, data[0]);
+    ASSERT_EQ((uint32_t)NMO_OBJECT_ID_INVALID, data[1]);
+    ASSERT_EQ(6u, data[2]);
 
-    ASSERT_EQ(nmo_chunk_start_read(chunk), NMO_OK);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(chunk));
     nmo_object_id_t read_id = 0;
-    ASSERT_EQ(nmo_chunk_read_object_id(chunk, &read_id), NMO_OK);
-    ASSERT_EQ(read_id, (nmo_object_id_t)1001);
-    ASSERT_EQ(nmo_chunk_read_object_id(chunk, &read_id), NMO_OK);
-    ASSERT_EQ(read_id, (nmo_object_id_t)0);
-    ASSERT_EQ(nmo_chunk_read_object_id(chunk, &read_id), NMO_OK);
-    ASSERT_EQ(read_id, (nmo_object_id_t)2002);
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_object_id(chunk, &read_id));
+    ASSERT_EQ(1001u, read_id);
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_object_id(chunk, &read_id));
+    ASSERT_EQ(0u, read_id);
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_object_id(chunk, &read_id));
+    ASSERT_EQ(2002u, read_id);
 
     nmo_arena_destroy(arena);
 }
 
 TEST(object_ids, chunk_api_id_array_mapping_failure_is_atomic) {
-    nmo_arena_t* arena = nmo_arena_create(NULL, 4096);
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
-    nmo_id_remap_t* runtime_to_file = nmo_id_remap_create(arena);
+    nmo_id_remap_t *runtime_to_file = nmo_id_remap_create(arena);
     ASSERT_NOT_NULL(runtime_to_file);
-    ASSERT_EQ(NMO_OK,
-        nmo_id_remap_add(runtime_to_file, (nmo_object_id_t)1001,
-                         (nmo_object_id_t)5));
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(runtime_to_file, 1001, 5));
 
-    nmo_chunk_file_context_t file_ctx = {0};
-    file_ctx.runtime_to_file = runtime_to_file;
-    nmo_chunk_t* chunk = nmo_chunk_create(arena);
+    nmo_chunk_file_context_t file_ctx = {
+        .runtime_to_file = runtime_to_file
+    };
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(chunk);
     chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
     nmo_chunk_set_file_context(chunk, &file_ctx);
@@ -247,7 +78,7 @@ TEST(object_ids, chunk_api_id_array_mapping_failure_is_atomic) {
 
     const nmo_object_id_t ids[] = {1001u, 9999u};
     ASSERT_EQ(NMO_ERR_NOT_FOUND,
-        nmo_chunk_write_object_id_array(chunk, ids, 2u));
+              nmo_chunk_write_object_id_array(chunk, ids, 2u));
     ASSERT_EQ(1u, nmo_chunk_get_position(chunk));
     ASSERT_EQ(1u, chunk->data.count);
     ASSERT_EQ(0u, chunk->ids.count);
@@ -257,8 +88,6 @@ TEST(object_ids, chunk_api_id_array_mapping_failure_is_atomic) {
 }
 
 TEST_MAIN_BEGIN()
-    REGISTER_TEST(object_ids, write_and_read_object_ids);
-    REGISTER_TEST(object_ids, file_context_roundtrip);
     REGISTER_TEST(object_ids, chunk_api_file_context_maps_ids);
     REGISTER_TEST(object_ids, chunk_api_id_array_mapping_failure_is_atomic);
 TEST_MAIN_END()

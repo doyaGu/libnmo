@@ -153,8 +153,6 @@ set(NMO_FORMAT_SOURCES
     src/format/object.c
     src/format/manager.c
     src/format/chunk.c
-    src/format/chunk_parser.c
-    src/format/chunk_writer.c
     src/format/chunk_primitives.c
     src/format/chunk_arrays.c
     src/format/chunk_subchunks.c
