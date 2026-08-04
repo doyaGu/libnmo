@@ -110,19 +110,6 @@ typedef struct nmo_comparison_result_stats {
     uint32_t shadow_data_diffs;
 } nmo_comparison_result_stats_t;
 
-typedef struct nmo_comparison_diff_view {
-    uint32_t type_code;
-    const char *type_name;
-    nmo_object_id_t object_id;
-    const char *context;
-} nmo_comparison_diff_view_t;
-
-typedef struct nmo_comparison_view {
-    nmo_comparison_result_stats_t stats;
-    nmo_comparison_diff_view_t *diffs;
-    size_t diff_count;
-} nmo_comparison_view_t;
-
 NMO_API void nmo_comparison_result_init(nmo_comparison_result_t *result);
 
 NMO_API nmo_status_t nmo_document_compare(const nmo_document_t *document1,
@@ -149,15 +136,6 @@ NMO_API void nmo_comparison_add_diff(nmo_comparison_result_t *result,
 NMO_API nmo_status_t nmo_comparison_result_collect_stats(
     const nmo_comparison_result_t *result,
     nmo_comparison_result_stats_t *out_stats);
-
-NMO_API nmo_status_t nmo_comparison_build_view(
-    const nmo_document_t *document1,
-    const nmo_document_t *document2,
-    uint32_t flags,
-    nmo_comparison_view_t *out_view);
-
-NMO_API void nmo_comparison_view_destroy(
-    nmo_comparison_view_t *view);
 
 #ifdef __cplusplus
 }

@@ -181,8 +181,6 @@ add_unit_test(test_object_summary_api)
 target_link_libraries(test_object_summary_api PRIVATE yyjson)
 add_unit_test(test_object_import_api)
 add_unit_test(test_report_result)
-add_unit_test(test_report_view)
-target_link_libraries(test_report_view PRIVATE yyjson)
 
 # Batch rename helpers (wildcard capture + template substitution)
 # Compiles tool common sources directly; needs CLI support files for linkage.

@@ -79,58 +79,6 @@ typedef struct nmo_diff_result {
     nmo_arena_t *arena_;
 } nmo_diff_result_t;
 
-typedef struct nmo_diff_result_stats {
-    size_t changed_count;
-    size_t renamed_count;
-    size_t removed_count;
-    size_t added_count;
-    size_t identical_count;
-    size_t total_objects1;
-    size_t total_objects2;
-    size_t reported_field_diffs;
-    size_t total_field_diffs;
-} nmo_diff_result_stats_t;
-
-typedef struct nmo_diff_field_view {
-    const char *field_name;
-    const char *before;
-    const char *after;
-} nmo_diff_field_view_t;
-
-typedef struct nmo_diff_object_view {
-    nmo_object_id_t before_id;
-    nmo_object_id_t after_id;
-    nmo_class_id_t before_class_id;
-    nmo_class_id_t after_class_id;
-    const char *before_name;
-    const char *after_name;
-    const char *before_path;
-    const char *after_path;
-    float similarity;
-    nmo_diff_field_view_t *field_diffs;
-    size_t field_diff_count;
-    size_t field_diff_total;
-} nmo_diff_object_view_t;
-
-typedef struct nmo_diff_identity_view {
-    nmo_object_id_t id;
-    nmo_class_id_t class_id;
-    const char *name;
-    const char *path;
-} nmo_diff_identity_view_t;
-
-typedef struct nmo_diff_view {
-    nmo_diff_result_stats_t stats;
-    nmo_diff_object_view_t *changed;
-    size_t changed_count;
-    nmo_diff_object_view_t *renamed;
-    size_t renamed_count;
-    nmo_diff_identity_view_t *removed;
-    size_t removed_count;
-    nmo_diff_identity_view_t *added;
-    size_t added_count;
-} nmo_diff_view_t;
-
 NMO_API nmo_status_t nmo_diff_objects(
     const nmo_document_t *document1,
     const nmo_document_t *document2,
@@ -159,18 +107,6 @@ NMO_API float nmo_object_similarity(
     const nmo_object_t *obj1, const nmo_object_t *obj2,
     const nmo_type_registry_t *reg1, const nmo_type_registry_t *reg2,
     const nmo_object_repository_t *repo1, const nmo_object_repository_t *repo2);
-
-NMO_API nmo_status_t nmo_diff_result_collect_stats(
-    const nmo_diff_result_t *result,
-    nmo_diff_result_stats_t *out_stats);
-
-NMO_API nmo_status_t nmo_diff_build_view(
-    const nmo_document_t *document1,
-    const nmo_document_t *document2,
-    nmo_diff_view_t *out_view);
-
-NMO_API void nmo_diff_view_destroy(
-    nmo_diff_view_t *view);
 
 #ifdef __cplusplus
 }

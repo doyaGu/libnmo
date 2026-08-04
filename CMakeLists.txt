@@ -202,11 +202,7 @@ set(NMO_OBJECT_SOURCES
     src/object/object_index.c
     src/object/object_hierarchy.c
     src/object/object_diff.c
-    src/object/object_diff_result.c
-    src/object/object_diff_view.c
     src/object/object_summary.c
-    src/object/object_summary_result.c
-    src/object/object_summary_view.c
     src/object/object_import.c
     src/object/value_writer.c
     src/object/object_system.c
@@ -321,7 +317,6 @@ set(NMO_DOCUMENT_SOURCES
     src/document/save_buffer.c
     src/document/document_compare.c
     src/document/document_compare_result.c
-    src/document/document_compare_view.c
     src/document/document_stats.c
 )
 

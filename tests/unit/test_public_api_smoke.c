@@ -183,18 +183,12 @@ TEST(public_api_smoke, reorg_owner_headers_are_directly_usable) {
 
 TEST(public_api_smoke, report_owner_headers_are_directly_usable) {
     nmo_comparison_result_stats_t comparison_stats = {0};
-    nmo_diff_result_stats_t diff_stats = {0};
-    nmo_object_summary_stats_t summary_stats = {0};
-    nmo_comparison_view_t comparison_view = {0};
-    nmo_diff_view_t diff_view = {0};
-    nmo_object_summary_view_t summary_view = {0};
+    nmo_diff_result_t diff_result = {0};
+    nmo_summary_config_t summary_config = nmo_summary_config_default();
 
     ASSERT_FALSE(comparison_stats.match);
-    ASSERT_EQ(0u, diff_stats.total_field_diffs);
-    ASSERT_FALSE(summary_stats.has_reflection);
-    ASSERT_EQ(0u, comparison_view.diff_count);
-    ASSERT_EQ(0u, diff_view.changed_count);
-    ASSERT_EQ(0u, summary_view.field_count);
+    ASSERT_EQ(0u, diff_result.changed_count);
+    ASSERT_TRUE(summary_config.array_preview_max > 0u);
 }
 
 TEST(public_api_smoke, json_stream_is_not_part_of_public_api_surface) {
