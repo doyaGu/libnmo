@@ -296,7 +296,6 @@ set(NMO_RUNTIME_SOURCES
     src/runtime/session_util.c
     src/runtime/workspace_edit.c
     src/session/object_system.c
-    src/session/builder.c
     src/session/deserializer.c
     src/session/id_mapping.c
     src/session/save_id_remap.c
