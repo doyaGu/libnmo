@@ -5,8 +5,11 @@
 
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_parser.h"
+#include "format/nmo_chunk_api.h"
+#include "format/nmo_chunk_context.h"
 #include "format/nmo_id_remap.h"
 #include "core/nmo_utils.h"
+#include "object/nmo_object_repository.h"
 #include <string.h>
 #include <stdint.h>
 
@@ -1389,4 +1392,738 @@ const void *nmo_chunk_get_data(const nmo_chunk_t *chunk, size_t *out_size) {
         *out_size = chunk->data.count * sizeof(uint32_t);
     }
     return chunk->data.data;
+}
+
+// =============================================================================
+// Internal Helpers
+// =============================================================================
+
+static nmo_chunk_parser_state_t *get_parser_state(nmo_chunk_t *chunk) {
+    if (!chunk) return NULL;
+
+    if (!chunk->parser_state) {
+        if (!chunk->arena) {
+            return NULL;
+        }
+
+        chunk->parser_state = nmo_arena_alloc(chunk->arena,
+                                              sizeof(nmo_chunk_parser_state_t),
+                                              _Alignof(nmo_chunk_parser_state_t));
+        if (!chunk->parser_state) return NULL;
+        memset(chunk->parser_state, 0, sizeof(nmo_chunk_parser_state_t));
+    }
+
+    return (nmo_chunk_parser_state_t *) chunk->parser_state;
+}
+
+// =============================================================================
+// Lifecycle Management
+// =============================================================================
+
+nmo_status_t nmo_chunk_start_read(nmo_chunk_t *chunk) {
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
+
+    nmo_chunk_parser_state_t *state = get_parser_state(chunk);
+    if (!state) {
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                               "Failed to allocate parser state");
+    }
+
+    state->current_pos = 0;
+    state->prev_identifier_pos = 0; // Reset to beginning
+    state->data_size = chunk->data.count;
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_chunk_start_write(nmo_chunk_t *chunk) {
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
+
+    nmo_chunk_parser_state_t *state = get_parser_state(chunk);
+    if (!state) {
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                               "Failed to allocate parser state");
+    }
+
+    state->current_pos = 0;
+    state->prev_identifier_pos = 0;
+    state->data_size = 0;
+
+    /* Reset logical size; keep capacity */
+    chunk->data.count = 0;
+
+    /* CK2 behavior: StartWrite() sets m_ChunkVersion = CHUNK_VERSION4 (7) */
+    chunk->chunk_version = NMO_CHUNK_VERSION4;
+
+    NMO_RETURN_OK();
+}
+
+void nmo_chunk_close(nmo_chunk_t *chunk) {
+    if (chunk) {
+        nmo_chunk_update_data_size(chunk);
+    }
+}
+
+void nmo_chunk_clear(nmo_chunk_t *chunk) {
+    if (chunk) {
+        chunk->class_id = 0;
+        chunk->chunk_class_id = 0;
+        chunk->data_version = 0;
+        chunk->chunk_version = NMO_CHUNK_VERSION4;
+        chunk->chunk_options = 0;
+
+        chunk->data.count = 0;
+        chunk->ids.count = 0;
+        chunk->chunks.count = 0;
+        chunk->chunk_refs.count = 0;
+        chunk->managers.count = 0;
+
+        chunk->uncompressed_size = 0;
+        chunk->compressed_size = 0;
+        chunk->is_compressed = 0;
+        chunk->unpack_size = 0;
+
+        chunk->raw_data = NULL;
+        chunk->raw_size = 0;
+        chunk->file_context = NULL;
+
+        if (chunk->parser_state) {
+            nmo_chunk_parser_state_t *state = (nmo_chunk_parser_state_t *)chunk->parser_state;
+            state->current_pos = 0;
+            state->prev_identifier_pos = 0;
+            state->data_size = 0;
+        }
+    }
+}
+
+// =============================================================================
+// Metadata Access
+// =============================================================================
+
+uint32_t nmo_chunk_get_class_id(const nmo_chunk_t *chunk) {
+    return chunk ? chunk->class_id : 0;
+}
+
+uint32_t nmo_chunk_get_data_version(const nmo_chunk_t *chunk) {
+    return chunk ? chunk->data_version : 0;
+}
+
+void nmo_chunk_set_data_version(nmo_chunk_t *chunk, uint32_t version) {
+    if (chunk) {
+        chunk->data_version = version;
+    }
+}
+
+uint32_t nmo_chunk_get_chunk_version(const nmo_chunk_t *chunk) {
+    return chunk ? chunk->chunk_version : 0;
+}
+
+size_t nmo_chunk_get_data_size(const nmo_chunk_t *chunk) {
+    return chunk ? (chunk->data.count * sizeof(uint32_t)) : 0;
+}
+
+uint32_t nmo_chunk_get_size(const nmo_chunk_t *chunk) {
+    return (uint32_t)nmo_chunk_get_data_size(chunk);
+}
+
+void nmo_chunk_update_data_size(nmo_chunk_t *chunk) {
+    if (!chunk) return;
+
+    nmo_chunk_parser_state_t *state = get_parser_state(chunk);
+    if (state && state->current_pos > chunk->data.count) {
+        chunk->data.count = state->current_pos;
+        state->data_size = chunk->data.count;
+    }
+}
+
+/**
+ * Check if chunk is compressed
+ */
+int nmo_chunk_is_compressed(const nmo_chunk_t *chunk) {
+    if (!chunk) {
+        return 0;
+    }
+    return (chunk->chunk_options & NMO_CHUNK_OPTION_PACKED) != 0;
+}
+
+// =============================================================================
+// Navigation
+// =============================================================================
+
+size_t nmo_chunk_get_position(const nmo_chunk_t *chunk) {
+    if (!chunk) return (size_t)-1;
+
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state((nmo_chunk_t *) chunk);
+    return state ? state->current_pos : (size_t)-1;
+}
+
+nmo_status_t nmo_chunk_goto(nmo_chunk_t *chunk, size_t pos) {
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
+
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
+    if (!state) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "No parser state");
+    }
+
+    if (pos > state->data_size) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_OFFSET, NMO_SEVERITY_ERROR,
+                         "Cannot seek beyond chunk bounds");
+    }
+
+    state->current_pos = pos;
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_chunk_skip(nmo_chunk_t *chunk, size_t dwords) {
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
+
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
+    if (!state) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "No parser state");
+    }
+
+    if (dwords > SIZE_MAX - state->current_pos) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_OFFSET, NMO_SEVERITY_ERROR,
+                         "Skip overflow");
+    }
+
+    size_t new_pos = state->current_pos + dwords;
+
+    if (state->data_size == chunk->data.count) {
+        if (new_pos > chunk->data.count) {
+            NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                             "Cannot skip beyond readable data");
+        }
+        state->current_pos = new_pos;
+        NMO_RETURN_OK();
+    }
+
+    if (dwords > SIZE_MAX / sizeof(uint32_t)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_OFFSET, NMO_SEVERITY_ERROR,
+                         "Skip size overflow");
+    }
+
+    /* CK2 behavior: Skip calls CheckSize to ensure capacity for writes. */
+    nmo_status_t result = nmo_chunk_check_size(chunk, dwords * sizeof(uint32_t));
+    NMO_RETURN_IF_ERROR(result);
+
+    state->current_pos = new_pos;
+    NMO_RETURN_OK();
+}
+
+// =============================================================================
+// Memory Management
+// =============================================================================
+
+nmo_status_t nmo_chunk_check_size(nmo_chunk_t *chunk, size_t needed_bytes) {
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
+
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
+    if (!state) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Chunk not in write mode");
+    }
+
+    size_t needed_dwords = needed_bytes / sizeof(uint32_t);
+    if (needed_bytes % sizeof(uint32_t) != 0) {
+        needed_dwords++;
+    }
+    if (needed_dwords > SIZE_MAX - state->current_pos) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_OFFSET, NMO_SEVERITY_ERROR,
+                         "Chunk capacity request overflow");
+    }
+    size_t required_size = state->current_pos + needed_dwords;
+    if (required_size > UINT32_MAX) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Chunk data size does not fit the 32-bit format");
+    }
+
+    if (required_size > state->data_size) {
+        size_t grow = needed_dwords;
+        if (grow < 500) {
+            grow = 500;
+        }
+
+        size_t new_size = required_size;
+        if (grow <= SIZE_MAX - state->current_pos) {
+            new_size = state->current_pos + grow;
+        }
+
+        /* Ensure reserve preserves everything up to the current cursor. */
+        if (chunk->data.count < state->current_pos) {
+            chunk->data.count = state->current_pos;
+        }
+
+        if (new_size > chunk->data.capacity) {
+            nmo_status_t reserve_result = nmo_arena_array_reserve(&chunk->data, new_size);
+            NMO_RETURN_IF_ERROR(reserve_result);
+        }
+
+        state->data_size = new_size;
+    }
+
+    NMO_RETURN_OK();
+}
+
+// =============================================================================
+// Identifiers
+// =============================================================================
+
+nmo_status_t nmo_chunk_write_identifier(nmo_chunk_t *chunk, uint32_t id) {
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
+
+    /* CK2 behavior: Calls StartWrite() if no parser state */
+    if (!chunk->parser_state) {
+        nmo_status_t start_result = nmo_chunk_start_write(chunk);
+        NMO_RETURN_IF_ERROR(start_result);
+    }
+
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
+    if (state->current_pos > (size_t)UINT32_MAX - 2u) {
+        NMO_CHUNK_RETURN_INVALID_ARGUMENT(
+            "Identifier entry does not fit the 32-bit chunk format");
+    }
+    if (state->prev_identifier_pos < state->current_pos &&
+        state->prev_identifier_pos + 1u >= chunk->data.count) {
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                               "Previous identifier position is out of bounds");
+    }
+
+    nmo_status_t result = nmo_chunk_check_size(chunk, 2 * sizeof(uint32_t));
+    NMO_RETURN_IF_ERROR(result);
+
+    uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+
+    if (state->prev_identifier_pos < state->current_pos) {
+        data[state->prev_identifier_pos + 1] = (uint32_t) state->current_pos;
+    }
+
+    data[state->current_pos++] = id;
+    data[state->current_pos++] = 0;
+    state->prev_identifier_pos = state->current_pos - 2;
+
+    if (state->current_pos > chunk->data.count) {
+        chunk->data.count = state->current_pos;
+    }
+
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_chunk_read_identifier(nmo_chunk_t *chunk, uint32_t *out_id) {
+    NMO_CHUNK_CHECK_ARGS(chunk, out_id, "Invalid arguments");
+
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
+    if (!state || state->current_pos >= chunk->data.count) {
+        *out_id = 0;
+        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_INFO,
+                         "No identifier available at current position");
+    }
+
+    if (state->current_pos + 1 >= chunk->data.count) {
+        *out_id = 0;
+        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                         "Truncated identifier entry");
+    }
+
+    uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    *out_id = data[state->current_pos];
+
+    state->prev_identifier_pos = state->current_pos;
+    state->current_pos += 2;
+
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_chunk_seek_identifier(nmo_chunk_t *chunk, uint32_t id) {
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
+
+    // Empty chunk cannot have identifiers
+    if (chunk->data.count == 0 || chunk->data.data == NULL) {
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_INFO,
+                               "Identifier not found in empty chunk");
+    }
+
+    /* CK2 behavior: Creates parser if NULL */
+    if (!chunk->parser_state) {
+        chunk->parser_state = nmo_arena_alloc(chunk->arena,
+                                               sizeof(nmo_chunk_parser_state_t),
+                                               _Alignof(nmo_chunk_parser_state_t));
+        if (!chunk->parser_state) {
+            NMO_CHUNK_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                   "Failed to allocate parser state");
+        }
+        memset(chunk->parser_state, 0, sizeof(nmo_chunk_parser_state_t));
+        ((nmo_chunk_parser_state_t *)chunk->parser_state)->data_size = chunk->data.count;
+    }
+
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
+
+    uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+
+    size_t start_pos = 0;
+    if (state->prev_identifier_pos + 1 < chunk->data.count) {
+        start_pos = data[state->prev_identifier_pos + 1];
+    }
+
+    size_t current_pos = start_pos;
+    if (current_pos != 0) {
+        size_t guard = 0;
+        while (current_pos < chunk->data.count && data[current_pos] != id) {
+            if (current_pos + 1 >= chunk->data.count) {
+                NMO_CHUNK_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                                       "Corrupt identifier chain");
+            }
+            current_pos = data[current_pos + 1];
+            if (current_pos == 0) {
+                break;
+            }
+            if (++guard > chunk->data.count) {
+                NMO_CHUNK_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                                       "Identifier chain cycle detected");
+            }
+        }
+
+        if (current_pos != 0 && current_pos < chunk->data.count) {
+            if (current_pos + 1 >= chunk->data.count) {
+                NMO_CHUNK_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                                       "Truncated identifier entry");
+            }
+            state->prev_identifier_pos = current_pos;
+            state->current_pos = current_pos + 2;
+            NMO_RETURN_OK();
+        }
+    }
+
+    current_pos = 0;
+    size_t guard = 0;
+    while (current_pos < chunk->data.count && data[current_pos] != id) {
+        if (current_pos + 1 >= chunk->data.count) {
+            NMO_CHUNK_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                                   "Corrupt identifier chain");
+        }
+        current_pos = data[current_pos + 1];
+        if (current_pos == start_pos) {
+            NMO_CHUNK_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_INFO,
+                                   "Identifier not found");
+        }
+        if (++guard > chunk->data.count) {
+            NMO_CHUNK_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                                   "Identifier chain cycle detected");
+        }
+    }
+
+    if (current_pos >= chunk->data.count) {
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_INFO,
+                               "Identifier not found");
+    }
+
+    if (current_pos + 1 >= chunk->data.count) {
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                               "Truncated identifier entry");
+    }
+
+    state->prev_identifier_pos = current_pos;
+    state->current_pos = current_pos + 2;
+    NMO_RETURN_OK();
+}
+
+// =============================================================================
+// Object Sequences
+// =============================================================================
+
+nmo_status_t nmo_chunk_write_object_sequence_start(nmo_chunk_t *chunk, size_t count) {
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
+    if (count > (size_t)INT32_MAX) {
+        NMO_CHUNK_RETURN_INVALID_ARGUMENT(
+            "Object sequence count does not fit the signed 32-bit format");
+    }
+
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
+    if (!state) {
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR,
+                               "Parser state not initialized");
+    }
+
+    /* CK2 behavior: Only track when count > 0 AND not in file mode */
+    const nmo_chunk_file_context_t *ctx = NULL;
+    if (chunk != NULL && (chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) {
+        ctx = chunk->file_context;
+    }
+    const int in_file_context = (ctx != NULL && ctx->runtime_to_file != NULL);
+
+    nmo_status_t result = nmo_chunk_check_size(chunk, sizeof(uint32_t));
+    NMO_RETURN_IF_ERROR(result);
+
+    if (count > 0 && !in_file_context) {
+        if (state->current_pos > UINT32_MAX) {
+            NMO_CHUNK_RETURN_INVALID_ARGUMENT(
+                "Object sequence position does not fit the 32-bit format");
+        }
+        result = nmo_arena_array_ensure_space(&chunk->ids, 2u);
+        NMO_RETURN_IF_ERROR(result);
+
+        /* CK2: AddEntries adds -1 marker followed by position */
+        uint32_t sentinel = 0xFFFFFFFFu;
+        nmo_status_t list_result = nmo_arena_array_append(&chunk->ids, &sentinel);
+        NMO_RETURN_IF_ERROR(list_result);
+
+        uint32_t pos = (uint32_t) state->current_pos;
+        list_result = nmo_arena_array_append(&chunk->ids, &pos);
+        NMO_RETURN_IF_ERROR(list_result);
+
+        /* Set IDS option since we added tracking entries */
+        chunk->chunk_options |= NMO_CHUNK_OPTION_IDS;
+    }
+
+    /* Write count */
+    return nmo_chunk_write_int(chunk, (int32_t) count);
+}
+
+nmo_status_t nmo_chunk_write_object_sequence_item(nmo_chunk_t *chunk, nmo_object_id_t id) {
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
+
+    // Sequence items should not add entries to the IDs list (CK2 behavior)
+    const nmo_chunk_file_context_t *ctx = NULL;
+    if (chunk != NULL && (chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) {
+        ctx = chunk->file_context;
+    }
+
+    uint32_t encoded_value = (uint32_t) id;
+    if (ctx != NULL && ctx->runtime_to_file != NULL) {
+        if (id == 0) {
+            encoded_value = NMO_OBJECT_ID_INVALID;
+        } else {
+            nmo_object_id_t unresolved_raw = NMO_OBJECT_ID_NONE;
+            if (ctx->repository != NULL &&
+                nmo_object_repository_get_unresolved_ref_raw(
+                    ctx->repository, id, &unresolved_raw)) {
+                encoded_value = (uint32_t)unresolved_raw;
+                return nmo_chunk_write_int(chunk, (int32_t)encoded_value);
+            }
+            nmo_object_id_t file_id = 0;
+            if (nmo_id_remap_lookup_id(ctx->runtime_to_file, id, &file_id) == NMO_OK) {
+                encoded_value = (uint32_t) file_id;
+            } else {
+                NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                                 "Cannot serialize unmapped runtime object sequence ID %u",
+                                 (unsigned)id);
+            }
+        }
+    }
+
+    return nmo_chunk_write_int(chunk, (int32_t) encoded_value);
+}
+
+nmo_status_t nmo_chunk_write_raw_object_sequence_item(
+    nmo_chunk_t *chunk,
+    nmo_object_id_t raw_id)
+{
+    return nmo_chunk_write_int(chunk, (int32_t)raw_id);
+}
+
+nmo_status_t nmo_chunk_read_object_sequence_start(nmo_chunk_t *chunk, size_t *out_count) {
+    NMO_CHUNK_CHECK_ARGS(chunk, out_count, "Invalid arguments");
+    *out_count = 0;
+    size_t start_pos = nmo_chunk_get_position(chunk);
+
+    int32_t count;
+    nmo_status_t result = nmo_chunk_read_int(chunk, &count);
+    NMO_RETURN_IF_ERROR(result);
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
+
+    if (count < 0) {
+        state->current_pos = start_pos;
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                               "Object sequence count cannot be negative");
+    }
+
+    if (!nmo_chunk_has_read_capacity(chunk, (size_t)count)) {
+        state->current_pos = start_pos;
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                               "Object sequence count exceeds remaining DWORDs");
+    }
+
+    *out_count = (size_t) count;
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_chunk_read_object_sequence_item(nmo_chunk_t *chunk, nmo_object_id_t *out_id) {
+    return nmo_chunk_read_object_id(chunk, out_id);
+}
+
+size_t nmo_chunk_get_id_count(const nmo_chunk_t *chunk) {
+    return chunk ? chunk->ids.count : 0;
+}
+
+uint32_t nmo_chunk_get_object_id(const nmo_chunk_t *chunk, size_t index) {
+    if (!chunk || index >= chunk->ids.count || chunk->ids.data == NULL) {
+        return 0;
+    }
+    // ids array contains positions in data buffer, not the IDs themselves
+    const uint32_t *ids = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->ids);
+    uint32_t pos = ids[index];
+    if (pos == 0xFFFFFFFFu) {
+        return 0;
+    }
+    if (pos < chunk->data.count) {
+        const uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+        return data[pos];
+    }
+    return 0;
+}
+
+// =============================================================================
+// Manager Sequences
+// =============================================================================
+
+nmo_status_t nmo_chunk_start_manager_sequence(nmo_chunk_t *chunk,
+                                              nmo_guid_t manager_guid,
+                                              size_t count) {
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
+    if (count > UINT32_MAX) {
+        NMO_CHUNK_RETURN_INVALID_ARGUMENT(
+            "Manager sequence count does not fit the 32-bit format");
+    }
+
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
+    if (!state) {
+        NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR, "Failed to get parser state");
+    }
+    if (state->current_pos > UINT32_MAX) {
+        NMO_CHUNK_RETURN_INVALID_ARGUMENT(
+            "Manager sequence position does not fit the 32-bit format");
+    }
+    nmo_status_t result = nmo_chunk_check_size(
+        chunk, 3u * sizeof(uint32_t));
+    NMO_RETURN_IF_ERROR(result);
+
+    const size_t managers_count_before = chunk->managers.count;
+    const uint32_t options_before = chunk->chunk_options;
+    chunk->chunk_options |= NMO_CHUNK_OPTION_MAN;
+
+    // Track sequence start in manager list (CK2 AddEntries)
+    uint32_t sentinel = 0xFFFFFFFFu;
+    nmo_status_t list_result = nmo_arena_array_append(&chunk->managers, &sentinel);
+    if (list_result != NMO_OK) {
+        chunk->managers.count = managers_count_before;
+        chunk->chunk_options = options_before;
+        return list_result;
+    }
+
+    uint32_t pos = (uint32_t) state->current_pos;
+    list_result = nmo_arena_array_append(&chunk->managers, &pos);
+    if (list_result != NMO_OK) {
+        chunk->managers.count = managers_count_before;
+        chunk->chunk_options = options_before;
+        return list_result;
+    }
+
+    // Write count then manager GUID
+    result = nmo_chunk_write_dword(chunk, (uint32_t) count);
+    if (result == NMO_OK) {
+        result = nmo_chunk_write_guid(chunk, manager_guid);
+    }
+    if (result != NMO_OK) {
+        chunk->managers.count = managers_count_before;
+        chunk->chunk_options = options_before;
+    }
+    return result;
+}
+
+nmo_status_t nmo_chunk_write_manager_int(nmo_chunk_t *chunk,
+                                         nmo_guid_t manager_guid,
+                                         uint32_t value) {
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
+
+    /* CK2 behavior: CheckSize(12) BEFORE checking/creating m_Managers */
+    nmo_status_t result = nmo_chunk_check_size(chunk, 3 * sizeof(uint32_t));
+    NMO_RETURN_IF_ERROR(result);
+
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
+    if (!state) {
+        NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR, "Failed to get parser state");
+    }
+    if (state->current_pos > UINT32_MAX) {
+        NMO_CHUNK_RETURN_INVALID_ARGUMENT(
+            "Manager entry position does not fit the 32-bit format");
+    }
+
+    /* CK2 behavior: AddEntry(CurrentPos) - track position of GUID start */
+    const size_t managers_count_before = chunk->managers.count;
+    const uint32_t options_before = chunk->chunk_options;
+    chunk->chunk_options |= NMO_CHUNK_OPTION_MAN;
+    uint32_t pos = (uint32_t) state->current_pos;
+    nmo_status_t list_result = nmo_arena_array_append(&chunk->managers, &pos);
+    if (list_result != NMO_OK) {
+        chunk->managers.count = managers_count_before;
+        chunk->chunk_options = options_before;
+        return list_result;
+    }
+
+    /* Write manager GUID and value (CK2 order: d1, d2, value) */
+    uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    data[state->current_pos++] = manager_guid.d1;
+    data[state->current_pos++] = manager_guid.d2;
+    data[state->current_pos++] = value;
+
+    /* Update data_size */
+    if (state->current_pos > chunk->data.count) {
+        chunk->data.count = state->current_pos;
+    }
+
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_chunk_read_manager_int(nmo_chunk_t *chunk,
+                                        nmo_guid_t *out_manager_guid,
+                                        uint32_t *out_value) {
+    NMO_CHUNK_CHECK_ARGS2(chunk, out_manager_guid, out_value, "Invalid arguments");
+
+    NMO_CHUNK_CHECK_BOUNDS_MSG(chunk, 3, "Insufficient data for manager int");
+
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
+    uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    out_manager_guid->d1 = data[state->current_pos++];
+    out_manager_guid->d2 = data[state->current_pos++];
+    *out_value = data[state->current_pos++];
+
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_chunk_start_manager_read_sequence(nmo_chunk_t *chunk,
+                                                   nmo_guid_t *out_manager_guid,
+                                                   size_t *out_count) {
+    NMO_CHUNK_CHECK_ARGS2(chunk, out_manager_guid, out_count, "Invalid arguments");
+    out_manager_guid->d1 = 0;
+    out_manager_guid->d2 = 0;
+    *out_count = 0;
+
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
+    if (!state) {
+        NMO_RETURN_ERROR(NMO_ERR_INTERNAL, NMO_SEVERITY_ERROR, "Failed to get parser state");
+    }
+    size_t start_pos = state->current_pos;
+
+    // Read count then manager GUID
+    uint32_t count_u32 = 0;
+    nmo_guid_t manager_guid = {0, 0};
+    nmo_status_t result = nmo_chunk_read_dword(chunk, &count_u32);
+    if (result != NMO_OK) {
+        state->current_pos = start_pos;
+        return result;
+    }
+
+    result = nmo_chunk_read_guid(chunk, &manager_guid);
+    if (result != NMO_OK) {
+        state->current_pos = start_pos;
+        return result;
+    }
+
+    if (!nmo_chunk_has_read_capacity(chunk, (size_t)count_u32)) {
+        state->current_pos = start_pos;
+        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                         "Manager sequence count exceeds remaining DWORDs");
+    }
+
+    *out_manager_guid = manager_guid;
+    *out_count = (size_t)count_u32;
+    NMO_RETURN_OK();
 }
