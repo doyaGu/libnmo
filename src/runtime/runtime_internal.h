@@ -45,8 +45,6 @@ nmo_session_t *nmo_document_internal_session(nmo_document_t *document);
 const nmo_session_t *nmo_document_internal_session_const(
     const nmo_document_t *document);
 nmo_session_t *nmo_workspace_internal_session(nmo_workspace_t *workspace);
-const nmo_session_t *nmo_workspace_internal_session_const(
-    const nmo_workspace_t *workspace);
 
 bool nmo_session_open_file_with_context(
     const char *path,
@@ -218,14 +216,7 @@ nmo_object_repository_t *nmo_document_internal_repository(
     const nmo_document_t *document);
 const nmo_type_registry_t *nmo_document_internal_type_registry(
     const nmo_document_t *document);
-const nmo_type_runtime_t *nmo_document_internal_type_runtime(
-    const nmo_document_t *document);
 nmo_arena_t *nmo_document_internal_arena(const nmo_document_t *document);
-nmo_chunk_pool_t *nmo_document_internal_ensure_chunk_pool(
-    nmo_document_t *document,
-    size_t initial_capacity_hint);
-nmo_id_sanitizer_t *nmo_document_internal_get_id_sanitizer(
-    const nmo_document_t *document);
 nmo_shadow_storage_t *nmo_document_internal_get_shadow_storage(
     const nmo_document_t *document);
 const nmo_file_state_t *nmo_document_internal_file_state(
@@ -236,12 +227,6 @@ nmo_status_t nmo_document_internal_get_objects(
     nmo_document_t *document,
     nmo_object_t ***out_objects,
     size_t *out_count);
-nmo_status_t nmo_document_internal_rebuild_indexes(
-    nmo_document_t *document,
-    uint32_t flags);
-void nmo_document_internal_invalidate_object_query(
-    nmo_document_t *document,
-    uint32_t flags);
 nmo_status_t nmo_document_internal_get_runtime_load_stats(
     const nmo_document_t *document,
     nmo_runtime_load_stats_t *out_stats);
@@ -304,15 +289,10 @@ nmo_object_repository_t *nmo_workspace_internal_repository(
     const nmo_workspace_t *workspace);
 const nmo_type_registry_t *nmo_workspace_internal_type_registry(
     const nmo_workspace_t *workspace);
-const nmo_type_runtime_t *nmo_workspace_internal_type_runtime(
-    const nmo_workspace_t *workspace);
 nmo_arena_t *nmo_workspace_internal_document_arena(
     const nmo_workspace_t *workspace);
 nmo_ref_graph_t *nmo_workspace_internal_ref_graph(nmo_workspace_t *workspace);
-void nmo_workspace_internal_invalidate_ref_graph(nmo_workspace_t *workspace);
 nmo_behavior_index_t *nmo_workspace_internal_behavior_index(
-    nmo_workspace_t *workspace);
-void nmo_workspace_internal_invalidate_behavior_index(
     nmo_workspace_t *workspace);
 nmo_status_t nmo_workspace_internal_ensure_behavior_acceleration(
     nmo_workspace_t *workspace);

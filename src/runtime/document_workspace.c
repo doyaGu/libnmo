@@ -288,34 +288,10 @@ const nmo_type_registry_t *nmo_document_internal_type_registry(
     return ctx != NULL ? nmo_context_get_type_registry(ctx) : NULL;
 }
 
-const nmo_type_runtime_t *nmo_document_internal_type_runtime(
-    const nmo_document_t *document)
-{
-    nmo_context_t *ctx = nmo_document_get_context(document);
-    return ctx != NULL ? nmo_context_get_type_runtime(ctx) : NULL;
-}
-
 nmo_arena_t *nmo_document_internal_arena(const nmo_document_t *document)
 {
     const nmo_session_t *session = nmo_document_internal_session_const(document);
     return session != NULL ? nmo_session_get_arena(session) : NULL;
-}
-
-nmo_chunk_pool_t *nmo_document_internal_ensure_chunk_pool(
-    nmo_document_t *document,
-    size_t initial_capacity_hint)
-{
-    nmo_session_t *session = nmo_document_internal_session(document);
-    return session != NULL
-        ? nmo_session_ensure_chunk_pool(session, initial_capacity_hint)
-        : NULL;
-}
-
-nmo_id_sanitizer_t *nmo_document_internal_get_id_sanitizer(
-    const nmo_document_t *document)
-{
-    nmo_session_t *session = nmo_document_internal_session((nmo_document_t *)document);
-    return session != NULL ? nmo_session_get_id_sanitizer(session) : NULL;
 }
 
 nmo_shadow_storage_t *nmo_document_internal_get_shadow_storage(
@@ -348,26 +324,6 @@ nmo_status_t nmo_document_internal_get_objects(
     return session != NULL
         ? nmo_session_get_objects(session, out_objects, out_count)
         : NMO_ERR_INVALID_STATE;
-}
-
-nmo_status_t nmo_document_internal_rebuild_indexes(
-    nmo_document_t *document,
-    uint32_t flags)
-{
-    nmo_session_t *session = nmo_document_internal_session(document);
-    return session != NULL
-        ? nmo_session_rebuild_indexes(session, flags)
-        : NMO_ERR_INVALID_STATE;
-}
-
-void nmo_document_internal_invalidate_object_query(
-    nmo_document_t *document,
-    uint32_t flags)
-{
-    nmo_session_t *session = nmo_document_internal_session(document);
-    if (session != NULL) {
-        nmo_session_invalidate_object_query(session, flags);
-    }
 }
 
 nmo_status_t nmo_document_internal_get_runtime_load_stats(
@@ -564,13 +520,6 @@ const nmo_type_registry_t *nmo_workspace_internal_type_registry(
     return ctx != NULL ? nmo_context_get_type_registry(ctx) : NULL;
 }
 
-const nmo_type_runtime_t *nmo_workspace_internal_type_runtime(
-    const nmo_workspace_t *workspace)
-{
-    nmo_context_t *ctx = nmo_workspace_internal_context(workspace);
-    return ctx != NULL ? nmo_context_get_type_runtime(ctx) : NULL;
-}
-
 nmo_arena_t *nmo_workspace_internal_document_arena(const nmo_workspace_t *workspace)
 {
     return workspace != NULL ? nmo_document_internal_arena(workspace->document) : NULL;
@@ -583,26 +532,12 @@ nmo_ref_graph_t *nmo_workspace_internal_ref_graph(nmo_workspace_t *workspace)
         : NULL;
 }
 
-void nmo_workspace_internal_invalidate_ref_graph(nmo_workspace_t *workspace)
-{
-    if (workspace != NULL) {
-        nmo_document_internal_invalidate_ref_graph(workspace->document);
-    }
-}
-
 nmo_behavior_index_t *nmo_workspace_internal_behavior_index(
     nmo_workspace_t *workspace)
 {
     return workspace != NULL
         ? nmo_document_internal_behavior_index(workspace->document)
         : NULL;
-}
-
-void nmo_workspace_internal_invalidate_behavior_index(nmo_workspace_t *workspace)
-{
-    if (workspace != NULL) {
-        nmo_document_internal_invalidate_behavior_index(workspace->document);
-    }
 }
 
 nmo_status_t nmo_workspace_internal_ensure_behavior_acceleration(
@@ -708,11 +643,6 @@ nmo_status_t nmo_workspace_internal_execute_runtime_request(
 nmo_session_t *nmo_workspace_internal_session(nmo_workspace_t *workspace)
 {
     return workspace != NULL ? nmo_document_internal_session(workspace->document) : NULL;
-}
-
-const nmo_session_t *nmo_workspace_internal_session_const(const nmo_workspace_t *workspace)
-{
-    return workspace != NULL ? nmo_document_internal_session_const(workspace->document) : NULL;
 }
 
 nmo_session_t *nmo_session_create(nmo_context_t *ctx) {
