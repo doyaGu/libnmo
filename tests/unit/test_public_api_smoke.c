@@ -52,7 +52,6 @@
 #include "session/nmo_id_mapping.h"
 #include "session/nmo_session_pipeline.h"
 #include "session/nmo_runtime_kernel.h"
-#include "session/nmo_runtime_result.h"
 #include "session/nmo_serializer.h"
 #include "session/nmo_session.h"
 #include "type/nmo_operation_system.h"

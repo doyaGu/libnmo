@@ -6,7 +6,6 @@
 #include "object/nmo_object_refs.h"
 #include "object/nmo_ref_graph.h"
 #include "session/nmo_runtime_kernel.h"
-#include "session/nmo_runtime_result.h"
 #include "session/nmo_session_pipeline.h"
 
 #include "lauxlib.h"
@@ -94,13 +93,13 @@ static nmo_status_t nmo_lua_push_query_objects(lua_State *state,
 }
 
 static void nmo_lua_push_copy_result(lua_State *state,
-                                     const nmo_copy_result_t *result)
+                                     const nmo_runtime_report_t *result)
 {
     lua_createtable(state, 0, 4);
     nmo_lua_set_integer_field(
-        state, "copied_count", (lua_Integer)result->copied_count);
+        state, "copied_count", (lua_Integer)result->copied_objects);
     nmo_lua_set_integer_field(
-        state, "affected_count", (lua_Integer)result->affected_count);
+        state, "affected_count", (lua_Integer)result->affected_objects);
     nmo_lua_set_integer_field(
         state,
         "manager_event_errors",
@@ -110,13 +109,13 @@ static void nmo_lua_push_copy_result(lua_State *state,
 }
 
 static void nmo_lua_push_destroy_result(lua_State *state,
-                                        const nmo_destroy_result_t *result)
+                                        const nmo_runtime_report_t *result)
 {
     lua_createtable(state, 0, 4);
     nmo_lua_set_integer_field(
-        state, "deleted_count", (lua_Integer)result->deleted_count);
+        state, "deleted_count", (lua_Integer)result->deleted_objects);
     nmo_lua_set_integer_field(
-        state, "affected_count", (lua_Integer)result->affected_count);
+        state, "affected_count", (lua_Integer)result->affected_objects);
     nmo_lua_set_integer_field(
         state,
         "manager_event_errors",
@@ -802,7 +801,7 @@ static int nmo_lua_object_copy_objects_info(lua_State *state)
     nmo_object_id_t *ids = NULL;
     size_t count = 0u;
     uint32_t flags = 0u;
-    nmo_copy_result_t result = {0};
+    nmo_runtime_report_t result = {0};
     nmo_status_t status =
         nmo_lua_check_workspace_handle(state, 1, &workspace, NULL, NULL);
     if (status != NMO_OK) {
@@ -823,7 +822,7 @@ static int nmo_lua_object_copy_objects_info(lua_State *state)
         status = nmo_lua_check_optional_flags_arg(state, 3, 0u, &flags);
     }
     if (status == NMO_OK) {
-        status = nmo_session_copy_objects_result(session, ids, count, flags, &result);
+        status = nmo_session_copy_objects(session, ids, count, flags, &result);
     }
     nmo_arena_destroy(arena);
     if (status != NMO_OK) {
@@ -882,7 +881,7 @@ static int nmo_lua_object_destroy_objects_info(lua_State *state)
     nmo_object_id_t *ids = NULL;
     size_t count = 0u;
     uint32_t flags = 0u;
-    nmo_destroy_result_t result = {0};
+    nmo_runtime_report_t result = {0};
     nmo_status_t status =
         nmo_lua_check_workspace_handle(state, 1, &workspace, NULL, NULL);
     if (status != NMO_OK) {
@@ -903,7 +902,7 @@ static int nmo_lua_object_destroy_objects_info(lua_State *state)
         status = nmo_lua_check_optional_flags_arg(state, 3, 0u, &flags);
     }
     if (status == NMO_OK) {
-        status = nmo_session_destroy_objects_result(session, ids, count, flags, &result);
+        status = nmo_session_destroy_objects(session, ids, count, flags, &result);
     }
     nmo_arena_destroy(arena);
     if (status != NMO_OK) {

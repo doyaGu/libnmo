@@ -8,7 +8,6 @@
 #include "object/nmo_object_index.h"
 #include "object/nmo_object_query.h"
 #include "session/nmo_runtime_kernel.h"
-#include "session/nmo_runtime_result.h"
 #include "session/nmo_session_pipeline.h"
 
 #include <stdlib.h>

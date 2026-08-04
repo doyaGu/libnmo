@@ -2,7 +2,6 @@
 
 #include "core/nmo_arena.h"
 #include "session/nmo_runtime_kernel.h"
-#include "session/nmo_runtime_result.h"
 
 #include "lauxlib.h"
 
@@ -64,12 +63,14 @@ static int nmo_lua_runtime_push_id_table(lua_State *state,
     return 1;
 }
 
-static void nmo_lua_runtime_push_preview_result(lua_State *state,
-                                                const nmo_preview_destroy_result_t *result)
+static void nmo_lua_runtime_push_preview_result(
+    lua_State *state,
+    const nmo_object_id_t *ids,
+    size_t count)
 {
     lua_createtable(state, 0, 2);
-    nmo_lua_set_integer_field(state, "count", (lua_Integer)result->count);
-    nmo_lua_runtime_push_id_table(state, result->ids, result->count);
+    nmo_lua_set_integer_field(state, "count", (lua_Integer)count);
+    nmo_lua_runtime_push_id_table(state, ids, count);
     lua_setfield(state, -2, "ids");
 }
 
@@ -178,8 +179,9 @@ static int nmo_lua_runtime_preview_destroy_info(lua_State *state)
     nmo_arena_t *arena = NULL;
     nmo_object_id_t *input_ids = NULL;
     size_t input_count = 0u;
+    nmo_object_id_t *expanded_ids = NULL;
+    size_t expanded_count = 0u;
     uint32_t flags = 0u;
-    nmo_preview_destroy_result_t result = {0};
     nmo_status_t status =
         nmo_lua_check_session_handle(state, 1, &session, NULL);
     if (status != NMO_OK) {
@@ -203,20 +205,22 @@ static int nmo_lua_runtime_preview_destroy_info(lua_State *state)
         status = nmo_lua_check_optional_flags_arg(state, 3, 0u, &flags);
     }
     if (status == NMO_OK) {
-        status = nmo_session_preview_destroy_result(session,
-                                                    input_ids,
-                                                    input_count,
-                                                    flags,
-                                                    &result);
+        status = nmo_session_preview_destroy(
+            session,
+            input_ids,
+            input_count,
+            flags,
+            arena,
+            &expanded_ids,
+            &expanded_count);
     }
-    nmo_arena_destroy(arena);
     if (status != NMO_OK) {
-        nmo_preview_destroy_result_destroy(&result);
+        nmo_arena_destroy(arena);
         return nmo_lua_raise_last_error(state, status, "Preview destroy failed");
     }
 
-    nmo_lua_runtime_push_preview_result(state, &result);
-    nmo_preview_destroy_result_destroy(&result);
+    nmo_lua_runtime_push_preview_result(state, expanded_ids, expanded_count);
+    nmo_arena_destroy(arena);
     return 1;
 }
 

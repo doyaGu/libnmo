@@ -308,7 +308,6 @@ set(NMO_RUNTIME_SOURCES
     src/session/id_sanitizer.c
     src/session/reference_resolver.c
     src/session/runtime_kernel.c
-    src/session/runtime_result.c
     src/session/runtime_ref_remap.c
     src/session/runtime_delete.c
 )
