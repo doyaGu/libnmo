@@ -2022,6 +2022,49 @@ nmo_status_t nmo_chunk_seek_identifier(nmo_chunk_t *chunk, uint32_t id) {
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_chunk_seek_identifier_with_size(
+    nmo_chunk_t *chunk,
+    uint32_t id,
+    size_t *out_size)
+{
+    if (out_size != NULL) {
+        *out_size = 0u;
+    }
+    NMO_CHUNK_CHECK_ARGS(chunk, out_size, "Invalid identifier size arguments");
+
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
+    if (state == NULL || state->writing) {
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                               "Chunk is not in read mode");
+    }
+
+    const size_t saved_pos = state->current_pos;
+    const size_t saved_prev = state->prev_identifier_pos;
+    nmo_status_t result = nmo_chunk_seek_identifier(chunk, id);
+    if (result != NMO_OK) {
+        state->current_pos = saved_pos;
+        state->prev_identifier_pos = saved_prev;
+        return result;
+    }
+
+    const size_t identifier_pos = state->prev_identifier_pos;
+    const size_t payload_pos = state->current_pos;
+    const uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    const size_t next_pos = data[identifier_pos + 1u];
+    if (next_pos != 0u &&
+        (next_pos < payload_pos || next_pos > chunk->data.count - 2u)) {
+        state->current_pos = saved_pos;
+        state->prev_identifier_pos = saved_prev;
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                               "Invalid next identifier position");
+    }
+
+    *out_size = next_pos == 0u
+        ? chunk->data.count - payload_pos
+        : next_pos - payload_pos;
+    NMO_RETURN_OK();
+}
+
 // =============================================================================
 // Object Sequences
 // =============================================================================

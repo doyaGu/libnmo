@@ -726,6 +726,115 @@ TEST(chunk_api, direct_write_allocation_failure_is_atomic) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_api, special_16bit_formats_round_trip) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+
+    const uint32_t dwords[] = {
+        0x00010002u, 0xDEADBEEFu, 0xF00DFACEu
+    };
+    const uint16_t words[] = {0u, 10u, 0xABCDu, 0xFFFFu};
+    const uint8_t odd_buffer[] = {0x34u, 0x12u, 0x78u, 0x56u, 0x9Au};
+    const uint16_t array[] = {0x1234u, 0x5678u, 0xABCDu, 0xEF01u};
+
+    ASSERT_EQ(NMO_OK,
+              nmo_chunk_write_dword_array_as_words(
+                  chunk, dwords, sizeof(dwords) / sizeof(dwords[0])));
+    ASSERT_EQ(NMO_OK,
+              nmo_chunk_write_buffer_no_size_lendian16(
+                  chunk, words, sizeof(words) / sizeof(words[0])));
+    ASSERT_EQ(NMO_OK,
+              nmo_chunk_write_buffer_lendian16(
+                  chunk, odd_buffer, sizeof(odd_buffer)));
+    ASSERT_EQ(NMO_OK,
+              nmo_chunk_write_array_lendian16(
+                  chunk, array, sizeof(array) / sizeof(array[0]),
+                  sizeof(array[0])));
+    ASSERT_EQ(16u, nmo_chunk_get_position(chunk));
+
+    const uint32_t *encoded = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    ASSERT_EQ(0x0002u, encoded[0]);
+    ASSERT_EQ(0x0001u, encoded[1]);
+    ASSERT_EQ(0xBEEFu, encoded[2]);
+    ASSERT_EQ(0xDEADu, encoded[3]);
+
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(chunk));
+    uint32_t decoded_dwords[3] = {0};
+    ASSERT_EQ(NMO_OK,
+              nmo_chunk_read_dword_array_as_words(
+                  chunk, decoded_dwords,
+                  sizeof(decoded_dwords) / sizeof(decoded_dwords[0])));
+    ASSERT_MEM_EQ(dwords, decoded_dwords, sizeof(dwords));
+
+    uint16_t decoded_words[4] = {0};
+    ASSERT_EQ(NMO_OK,
+              nmo_chunk_read_buffer_no_size_lendian16(
+                  chunk, decoded_words,
+                  sizeof(decoded_words) / sizeof(decoded_words[0])));
+    ASSERT_MEM_EQ(words, decoded_words, sizeof(words));
+
+    uint8_t decoded_buffer[sizeof(odd_buffer)] = {0};
+    ASSERT_EQ(NMO_OK,
+              nmo_chunk_read_buffer_lendian16(
+                  chunk, decoded_buffer, sizeof(decoded_buffer)));
+    ASSERT_MEM_EQ(odd_buffer, decoded_buffer, sizeof(odd_buffer));
+
+    void *decoded_array = NULL;
+    size_t decoded_count = 0;
+    size_t decoded_elem_size = 0;
+    ASSERT_EQ(NMO_OK,
+              nmo_chunk_read_array_lendian16(
+                  chunk, &decoded_array, &decoded_count,
+                  &decoded_elem_size));
+    ASSERT_EQ(sizeof(array) / sizeof(array[0]), decoded_count);
+    ASSERT_EQ(sizeof(array[0]), decoded_elem_size);
+    ASSERT_MEM_EQ(array, decoded_array, sizeof(array));
+    ASSERT_TRUE(nmo_chunk_is_at_end(chunk));
+
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_api, special_16bit_failures_are_atomic) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword_as_words(chunk, 0x12345678u));
+    const size_t write_pos = nmo_chunk_get_position(chunk);
+
+    const uint32_t value = 0u;
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_chunk_write_dword_array_as_words(
+                  chunk, &value, SIZE_MAX));
+    ASSERT_EQ(write_pos, nmo_chunk_get_position(chunk));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_chunk_write_buffer_lendian16(
+                  chunk, &value, SIZE_MAX));
+    ASSERT_EQ(write_pos, nmo_chunk_get_position(chunk));
+
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(chunk));
+    uint32_t output[2] = {0x11111111u, 0x22222222u};
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK,
+              nmo_chunk_read_dword_array_as_words(chunk, output, 2u));
+    ASSERT_EQ(0u, nmo_chunk_get_position(chunk));
+    ASSERT_EQ(0x11111111u, output[0]);
+    ASSERT_EQ(0x22222222u, output[1]);
+
+    uint16_t words[3] = {1u, 2u, 3u};
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK,
+              nmo_chunk_read_buffer_no_size_lendian16(chunk, words, 3u));
+    ASSERT_EQ(0u, nmo_chunk_get_position(chunk));
+    ASSERT_EQ(1u, words[0]);
+    ASSERT_EQ(2u, words[1]);
+    ASSERT_EQ(3u, words[2]);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_api, sequence_write_rejects_unencodable_count) {
     nmo_arena_t* arena = nmo_arena_create(NULL, 8192);
     ASSERT_NOT_NULL(arena);
@@ -881,6 +990,63 @@ TEST(chunk_api, identifiers) {
     result = nmo_chunk_seek_identifier(chunk, 0xCCCC);
     ASSERT_NE(result, NMO_OK);
     
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_api, identifier_seek_reports_payload_size_atomically) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, 0x1000u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 100u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 200u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, 0x2000u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 300u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, 0x3000u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 400u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 500u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 600u));
+
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(chunk));
+    size_t section_size = 99u;
+    ASSERT_EQ(NMO_OK,
+              nmo_chunk_seek_identifier_with_size(
+                  chunk, 0x1000u, &section_size));
+    ASSERT_EQ(2u, section_size);
+    ASSERT_EQ(NMO_OK,
+              nmo_chunk_seek_identifier_with_size(
+                  chunk, 0x2000u, &section_size));
+    ASSERT_EQ(1u, section_size);
+    ASSERT_EQ(NMO_OK,
+              nmo_chunk_seek_identifier_with_size(
+                  chunk, 0x3000u, &section_size));
+    ASSERT_EQ(3u, section_size);
+
+    const size_t position_before = nmo_chunk_get_position(chunk);
+    const size_t previous_before =
+        nmo_chunk_get_parser_state(chunk)->prev_identifier_pos;
+    section_size = 99u;
+    ASSERT_EQ(NMO_ERR_NOT_FOUND,
+              nmo_chunk_seek_identifier_with_size(
+                  chunk, 0x4000u, &section_size));
+    ASSERT_EQ(0u, section_size);
+    ASSERT_EQ(position_before, nmo_chunk_get_position(chunk));
+    ASSERT_EQ(previous_before,
+              nmo_chunk_get_parser_state(chunk)->prev_identifier_pos);
+
+    uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    data[1] = 1u;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(chunk));
+    section_size = 99u;
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT,
+              nmo_chunk_seek_identifier_with_size(
+                  chunk, 0x1000u, &section_size));
+    ASSERT_EQ(0u, section_size);
+    ASSERT_EQ(0u, nmo_chunk_get_position(chunk));
+    ASSERT_EQ(0u, nmo_chunk_get_parser_state(chunk)->prev_identifier_pos);
+
     nmo_arena_destroy(arena);
 }
 
@@ -1838,9 +2004,12 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_api, reserve_and_patch_is_chunk_bound);
     REGISTER_TEST(chunk_api, direct_buffer_access_is_bounded);
     REGISTER_TEST(chunk_api, direct_write_allocation_failure_is_atomic);
+    REGISTER_TEST(chunk_api, special_16bit_formats_round_trip);
+    REGISTER_TEST(chunk_api, special_16bit_failures_are_atomic);
     REGISTER_TEST(chunk_api, check_size_rounds_and_rejects_overflow);
     REGISTER_TEST(chunk_api, auto_expand);
     REGISTER_TEST(chunk_api, identifiers);
+    REGISTER_TEST(chunk_api, identifier_seek_reports_payload_size_atomically);
     REGISTER_TEST(chunk_api, identifier_write_validation_is_atomic);
     REGISTER_TEST(chunk_api, read_identifier_eof);
     REGISTER_TEST(chunk_api, manager_sequence);

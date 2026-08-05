@@ -655,6 +655,82 @@ nmo_status_t nmo_chunk_write_buffer_no_size(nmo_chunk_t *chunk,
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_chunk_write_buffer_no_size_lendian16(
+    nmo_chunk_t *chunk,
+    const uint16_t *values,
+    size_t value_count)
+{
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
+    if (value_count == 0u) {
+        NMO_RETURN_OK();
+    }
+    NMO_CHUNK_CHECK_PTR(values, "Invalid LEndian16 word buffer");
+
+    uint32_t *data = NULL;
+    nmo_status_t result = nmo_chunk_lock_write_buffer(
+        chunk, value_count, &data);
+    NMO_RETURN_IF_ERROR(result);
+    for (size_t i = 0; i < value_count; ++i) {
+        data[i] = (uint32_t)nmo_htole16(values[i]);
+    }
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_chunk_write_dword_as_words(
+    nmo_chunk_t *chunk,
+    uint32_t value)
+{
+    return nmo_chunk_write_dword_array_as_words(chunk, &value, 1u);
+}
+
+nmo_status_t nmo_chunk_write_dword_array_as_words(
+    nmo_chunk_t *chunk,
+    const uint32_t *values,
+    size_t count)
+{
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
+    if (count == 0u) {
+        NMO_RETURN_OK();
+    }
+    NMO_CHUNK_CHECK_PTR(values, "Invalid DWORD word array");
+    if (count > SIZE_MAX / 2u) {
+        NMO_CHUNK_RETURN_INVALID_ARGUMENT("DWORD word array size overflow");
+    }
+
+    uint32_t *data = NULL;
+    nmo_status_t result = nmo_chunk_lock_write_buffer(
+        chunk, count * 2u, &data);
+    NMO_RETURN_IF_ERROR(result);
+    for (size_t i = 0; i < count; ++i) {
+        data[i * 2u] = (uint32_t)nmo_htole16(
+            (uint16_t)(values[i] & UINT32_C(0xFFFF)));
+        data[i * 2u + 1u] = (uint32_t)nmo_htole16(
+            (uint16_t)(values[i] >> 16));
+    }
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_chunk_write_buffer_lendian16(
+    nmo_chunk_t *chunk,
+    const void *data,
+    size_t size)
+{
+    const size_t start_pos = nmo_chunk_get_position(chunk);
+    nmo_status_t result = nmo_chunk_write_buffer_no_size(chunk, data, size);
+    NMO_RETURN_IF_ERROR(result);
+
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    if (size > 1u) {
+        uint32_t *chunk_data = get_data_u32(chunk);
+        nmo_swap_16bit_words(&chunk_data[start_pos], size / 2u);
+    }
+#else
+    (void)start_pos;
+#endif
+
+    NMO_RETURN_OK();
+}
+
 nmo_status_t nmo_chunk_read_buffer(nmo_chunk_t *chunk,
                                    void **out_data,
                                    size_t *out_size) {
@@ -754,6 +830,94 @@ nmo_status_t nmo_chunk_read_and_fill_buffer_nosize_checked(
     memcpy(buffer, &data_dwords[state->current_pos], buffer_size);
     state->current_pos += dwords;
     return NMO_OK;
+}
+
+nmo_status_t nmo_chunk_read_buffer_no_size_lendian16(
+    nmo_chunk_t *chunk,
+    uint16_t *values,
+    size_t value_count)
+{
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
+    if (value_count == 0u) {
+        NMO_RETURN_OK();
+    }
+    NMO_CHUNK_CHECK_PTR(values, "Invalid LEndian16 word buffer");
+
+    const uint32_t *data = NULL;
+    nmo_status_t result = nmo_chunk_lock_read_buffer(
+        chunk, value_count, &data);
+    NMO_RETURN_IF_ERROR(result);
+    for (size_t i = 0; i < value_count; ++i) {
+        values[i] = nmo_le16toh((uint16_t)(data[i] & UINT32_C(0xFFFF)));
+    }
+    nmo_chunk_get_parser_state(chunk)->current_pos += value_count;
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_chunk_read_dword_as_words(
+    nmo_chunk_t *chunk,
+    uint32_t *out_value)
+{
+    return nmo_chunk_read_dword_array_as_words(chunk, out_value, 1u);
+}
+
+nmo_status_t nmo_chunk_read_dword_array_as_words(
+    nmo_chunk_t *chunk,
+    uint32_t *out_values,
+    size_t count)
+{
+    NMO_CHUNK_CHECK_ARGS(chunk, out_values, "Invalid DWORD word array output");
+    if (count == 0u) {
+        NMO_RETURN_OK();
+    }
+    if (count > SIZE_MAX / 2u) {
+        NMO_CHUNK_RETURN_INVALID_ARGUMENT("DWORD word array size overflow");
+    }
+
+    const uint32_t *data = NULL;
+    nmo_status_t result = nmo_chunk_lock_read_buffer(
+        chunk, count * 2u, &data);
+    NMO_RETURN_IF_ERROR(result);
+    for (size_t i = 0; i < count; ++i) {
+        const uint16_t low = nmo_le16toh(
+            (uint16_t)(data[i * 2u] & UINT32_C(0xFFFF)));
+        const uint16_t high = nmo_le16toh(
+            (uint16_t)(data[i * 2u + 1u] & UINT32_C(0xFFFF)));
+        out_values[i] = (uint32_t)low | ((uint32_t)high << 16);
+    }
+    nmo_chunk_get_parser_state(chunk)->current_pos += count * 2u;
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_chunk_read_buffer_lendian16(
+    nmo_chunk_t *chunk,
+    void *buffer,
+    size_t size)
+{
+    NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
+    if (size == 0u) {
+        NMO_RETURN_OK();
+    }
+    NMO_CHUNK_CHECK_PTR(buffer, "Invalid LEndian16 byte buffer");
+    if (size > SIZE_MAX - 3u) {
+        NMO_CHUNK_RETURN_INVALID_ARGUMENT("LEndian16 buffer size overflow");
+    }
+
+    const size_t dword_count = nmo_bytes_to_dwords(size);
+    const uint32_t *data = NULL;
+    nmo_status_t result = nmo_chunk_lock_read_buffer(
+        chunk, dword_count, &data);
+    NMO_RETURN_IF_ERROR(result);
+    memcpy(buffer, data, size);
+
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    if (size > 1u) {
+        nmo_swap_16bit_words(buffer, size / 2u);
+    }
+#endif
+
+    nmo_chunk_get_parser_state(chunk)->current_pos += dword_count;
+    NMO_RETURN_OK();
 }
 
 // =============================================================================

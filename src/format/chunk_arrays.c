@@ -140,6 +140,50 @@ nmo_status_t nmo_chunk_read_array(nmo_chunk_t *chunk,
     NMO_RETURN_OK();
 }
 
+nmo_status_t nmo_chunk_write_array_lendian16(
+    nmo_chunk_t *chunk,
+    const void *array,
+    size_t count,
+    size_t elem_size)
+{
+    const size_t start_pos = nmo_chunk_get_position(chunk);
+    nmo_status_t result = nmo_chunk_write_array(
+        chunk, array, count, elem_size);
+    NMO_RETURN_IF_ERROR(result);
+
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    if (count > 0u && elem_size > 0u) {
+        const size_t total_size = count * elem_size;
+        uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+        nmo_swap_16bit_words(&data[start_pos + 2u], total_size / 2u);
+    }
+#else
+    (void)start_pos;
+#endif
+
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_chunk_read_array_lendian16(
+    nmo_chunk_t *chunk,
+    void **out_array,
+    size_t *out_count,
+    size_t *out_elem_size)
+{
+    nmo_status_t result = nmo_chunk_read_array(
+        chunk, out_array, out_count, out_elem_size);
+    NMO_RETURN_IF_ERROR(result);
+
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    if (*out_array != NULL && *out_count > 0u && *out_elem_size > 0u) {
+        nmo_swap_16bit_words(
+            *out_array, (*out_count * *out_elem_size) / 2u);
+    }
+#endif
+
+    NMO_RETURN_OK();
+}
+
 // =============================================================================
 // Typed Array Sequence Helper
 // =============================================================================

@@ -528,6 +528,38 @@ NMO_API nmo_status_t nmo_chunk_write_buffer_no_size(nmo_chunk_t *chunk,
                                                     size_t size);
 
 /**
+ * @brief Write 16-bit values without a size prefix, one value per DWORD.
+ *
+ * This is the Virtools LEndian16 word-buffer representation, not a packed
+ * byte buffer.
+ */
+NMO_API nmo_status_t nmo_chunk_write_buffer_no_size_lendian16(
+    nmo_chunk_t *chunk,
+    const uint16_t *values,
+    size_t value_count);
+
+/** @brief Write a DWORD as low and high 16-bit values in separate DWORDs. */
+NMO_API nmo_status_t nmo_chunk_write_dword_as_words(
+    nmo_chunk_t *chunk,
+    uint32_t value);
+
+/** @brief Write DWORDs using the two-DWORD word representation. */
+NMO_API nmo_status_t nmo_chunk_write_dword_array_as_words(
+    nmo_chunk_t *chunk,
+    const uint32_t *values,
+    size_t count);
+
+/**
+ * @brief Write an aligned byte buffer with little-endian 16-bit fields.
+ *
+ * No size prefix is serialized. An odd trailing byte is copied unchanged.
+ */
+NMO_API nmo_status_t nmo_chunk_write_buffer_lendian16(
+    nmo_chunk_t *chunk,
+    const void *data,
+    size_t size);
+
+/**
  * @brief Write object ID
  *
  * Tracks position in ids[] list for later remapping.
@@ -675,6 +707,33 @@ NMO_API nmo_status_t nmo_chunk_read_and_fill_buffer_nosize_checked(
     void *buffer,
     size_t buffer_size);
 
+/** @brief Read Virtools LEndian16 values stored one per DWORD. */
+NMO_API nmo_status_t nmo_chunk_read_buffer_no_size_lendian16(
+    nmo_chunk_t *chunk,
+    uint16_t *values,
+    size_t value_count);
+
+/** @brief Read a DWORD stored as low and high words in separate DWORDs. */
+NMO_API nmo_status_t nmo_chunk_read_dword_as_words(
+    nmo_chunk_t *chunk,
+    uint32_t *out_value);
+
+/** @brief Read DWORDs stored in the two-DWORD word representation. */
+NMO_API nmo_status_t nmo_chunk_read_dword_array_as_words(
+    nmo_chunk_t *chunk,
+    uint32_t *out_values,
+    size_t count);
+
+/**
+ * @brief Read an aligned byte buffer containing little-endian 16-bit fields.
+ *
+ * No size prefix is consumed. An odd trailing byte is copied unchanged.
+ */
+NMO_API nmo_status_t nmo_chunk_read_buffer_lendian16(
+    nmo_chunk_t *chunk,
+    void *buffer,
+    size_t size);
+
 /**
  * @brief Read object ID
  *
@@ -772,6 +831,20 @@ NMO_API nmo_status_t nmo_chunk_read_dword_array(nmo_chunk_t *chunk,
                                                  uint32_t **out_array,
                                                  size_t *out_count,
                                                  nmo_arena_t *arena);
+
+/** @brief Write a generic array whose payload consists of 16-bit LE fields. */
+NMO_API nmo_status_t nmo_chunk_write_array_lendian16(
+    nmo_chunk_t *chunk,
+    const void *array,
+    size_t count,
+    size_t elem_size);
+
+/** @brief Read a generic array whose payload consists of 16-bit LE fields. */
+NMO_API nmo_status_t nmo_chunk_read_array_lendian16(
+    nmo_chunk_t *chunk,
+    void **out_array,
+    size_t *out_count,
+    size_t *out_elem_size);
 
 /**
  * @brief Write byte array
@@ -1248,6 +1321,17 @@ NMO_API nmo_status_t nmo_chunk_read_identifier(nmo_chunk_t *chunk, uint32_t *out
  * @return NMO_OK if found, NMO_ERR_NOT_FOUND if not found
  */
 NMO_API nmo_status_t nmo_chunk_seek_identifier(nmo_chunk_t *chunk, uint32_t id);
+
+/**
+ * @brief Seek to an identifier and report its payload length in DWORDs.
+ *
+ * On failure the cursor and previous-identifier state are restored, and
+ * @p out_size is set to zero.
+ */
+NMO_API nmo_status_t nmo_chunk_seek_identifier_with_size(
+    nmo_chunk_t *chunk,
+    uint32_t id,
+    size_t *out_size);
 
 // =============================================================================
 // COMPRESSION
