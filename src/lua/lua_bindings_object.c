@@ -54,18 +54,8 @@ static nmo_status_t nmo_lua_object_make_query_context(
     nmo_document_t *document,
     nmo_object_query_context_t *out_query_ctx)
 {
-    nmo_context_t *context = NULL;
-
-    if (document == NULL || out_query_ctx == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    memset(out_query_ctx, 0, sizeof(*out_query_ctx));
-    context = nmo_document_get_context(document);
-    out_query_ctx->repository = nmo_document_get_repository(document);
-    out_query_ctx->registry =
-        context != NULL ? nmo_context_get_type_registry(context) : NULL;
-    return NMO_OK;
+    return nmo_document_internal_init_object_query_context(
+        document, out_query_ctx);
 }
 
 static nmo_status_t nmo_lua_push_query_objects(lua_State *state,

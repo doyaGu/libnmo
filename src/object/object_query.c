@@ -8,6 +8,7 @@
 #include "core/nmo_arena.h"
 #include "format/nmo_object.h"
 #include "object/nmo_object_repository.h"
+#include "../runtime/runtime_internal.h"
 #include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "type/nmo_type_system.h"
@@ -802,15 +803,14 @@ nmo_status_t nmo_object_query_count(
         return NMO_OK;
     }
 
-    nmo_object_query_context_t query_ctx = {
-        .repository = nmo_document_get_repository(document),
-        .index = NULL,
-        .registry = nmo_document_get_context(document) != NULL
-            ? nmo_context_get_type_registry(nmo_document_get_context(document))
-            : NULL
-    };
+    nmo_object_query_context_t query_ctx = {0};
+    nmo_status_t rc =
+        nmo_document_internal_init_object_query_context(document, &query_ctx);
+    if (rc != NMO_OK) {
+        return rc;
+    }
     nmo_object_query_result_t result = {0};
-    nmo_status_t rc = nmo_object_query_iterate(&query_ctx, query, NULL, NULL, &result);
+    rc = nmo_object_query_iterate(&query_ctx, query, NULL, NULL, &result);
     if (rc != NMO_OK) {
         return rc;
     }
@@ -833,16 +833,15 @@ nmo_status_t nmo_object_query_find_first(
         *out_index = 0;
     }
 
-    nmo_object_query_context_t query_ctx = {
-        .repository = nmo_document_get_repository(document),
-        .index = NULL,
-        .registry = nmo_document_get_context(document) != NULL
-            ? nmo_context_get_type_registry(nmo_document_get_context(document))
-            : NULL
-    };
+    nmo_object_query_context_t query_ctx = {0};
+    nmo_status_t status =
+        nmo_document_internal_init_object_query_context(document, &query_ctx);
+    if (status != NMO_OK) {
+        return status;
+    }
     query_first_ctx_t first = {0};
     nmo_object_query_result_t result = {0};
-    nmo_status_t status = nmo_object_query_iterate(
+    status = nmo_object_query_iterate(
         &query_ctx,
         query,
         query_first_visitor,

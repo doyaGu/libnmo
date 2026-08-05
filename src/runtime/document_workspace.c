@@ -225,6 +225,45 @@ const nmo_session_t *nmo_document_internal_session_const(const nmo_document_t *d
     return document != NULL ? document->session : NULL;
 }
 
+nmo_status_t nmo_document_internal_init_object_query_context(
+    nmo_document_t *document,
+    nmo_object_query_context_t *out_query_ctx)
+{
+    if (document == NULL || out_query_ctx == NULL || document->session == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    nmo_session_t *session = document->session;
+    if (session->repository == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    if (session->object_query_index == NULL) {
+        const nmo_type_registry_t *registry =
+            session->context != NULL
+                ? nmo_context_get_type_registry(session->context)
+                : NULL;
+        nmo_object_query_index_t *index = nmo_object_query_index_create(
+            session->repository,
+            registry,
+            &session->allocator);
+        if (index != NULL) {
+            if (nmo_object_query_index_attach_repository_observer(index) == NMO_OK) {
+                session->object_query_index = index;
+            } else {
+                nmo_object_query_index_destroy(index);
+            }
+        }
+    }
+
+    out_query_ctx->repository = session->repository;
+    out_query_ctx->index = session->object_query_index;
+    out_query_ctx->registry = session->context != NULL
+        ? nmo_context_get_type_registry(session->context)
+        : NULL;
+    return NMO_OK;
+}
+
 nmo_status_t nmo_workspace_create(
     nmo_context_t *ctx,
     nmo_document_t *document,

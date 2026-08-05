@@ -639,6 +639,19 @@ TEST(object_query, owner_query_api_tracks_direct_repository_mutation)
     ASSERT_EQ(NMO_OK, nmo_object_query_count(document, &query, &count));
     ASSERT_EQ(1u, count);
 
+    nmo_object_query_context_t first_query_ctx = {0};
+    nmo_object_query_context_t second_query_ctx = {0};
+    ASSERT_EQ(
+        NMO_OK,
+        nmo_document_internal_init_object_query_context(
+            document, &first_query_ctx));
+    ASSERT_EQ(
+        NMO_OK,
+        nmo_document_internal_init_object_query_context(
+            document, &second_query_ctx));
+    ASSERT_NOT_NULL(first_query_ctx.index);
+    ASSERT_EQ(first_query_ctx.index, second_query_ctx.index);
+
     nmo_object_t *added = make_object(&allocator, 11, NMO_CID_OBJECT, "AddedObject");
     ASSERT_NOT_NULL(added);
     ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &added));

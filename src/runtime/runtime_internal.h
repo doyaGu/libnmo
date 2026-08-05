@@ -23,6 +23,7 @@
 #include "format/nmo_object.h"
 #include "format/nmo_interface_view.h"
 #include "object/nmo_object_index.h"
+#include "object/nmo_object_query.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -44,6 +45,9 @@ struct nmo_behavior_state;
 nmo_session_t *nmo_document_internal_session(nmo_document_t *document);
 const nmo_session_t *nmo_document_internal_session_const(
     const nmo_document_t *document);
+nmo_status_t nmo_document_internal_init_object_query_context(
+    nmo_document_t *document,
+    nmo_object_query_context_t *out_query_ctx);
 nmo_session_t *nmo_workspace_internal_session(nmo_workspace_t *workspace);
 
 bool nmo_session_open_file_with_context(
