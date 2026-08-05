@@ -8,6 +8,7 @@
 #include "object/builtin/nmo_parameterin_schemas.h"
 #include "object/builtin/nmo_parameterout_schemas.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_object_guids.h"
 #include "object/nmo_object_enum_defs.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_statesave_ids.h"
@@ -16,21 +17,29 @@
 #include "runtime/nmo_context.h"
 #include "object/nmo_object_edit.h"
 #include "behavior/nmo_behavior_edit.h"
-#include "type/nmo_type_system.h"
+#include "type/nmo_type_query.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-static bool rewrite_is_behavior_class(nmo_context_t *ctx,
-                                      nmo_class_id_t class_id) {
+static bool rewrite_is_behavior_object(
+    nmo_context_t *ctx,
+    const nmo_object_t *object) {
     const nmo_type_registry_t *registry =
         ctx ? nmo_context_get_type_registry(ctx) : NULL;
-    if (!registry) {
-        return class_id == NMO_CID_BEHAVIOR;
-    }
-    return nmo_type_registry_is_class_derived_from(
-        registry, (uint32_t)class_id, (uint32_t)NMO_CID_BEHAVIOR);
+    return nmo_type_query_object_is_derived_from_class(
+        registry, object, NMO_CID_BEHAVIOR);
+}
+
+static nmo_behavior_state_t *rewrite_behavior_state(
+    nmo_context_t *ctx,
+    nmo_object_t *object) {
+    const nmo_type_registry_t *registry =
+        ctx ? nmo_context_get_type_registry(ctx) : NULL;
+    return (nmo_behavior_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, object, CKPGUID_BEHAVIOR);
 }
 
 static bool rewrite_control_edges_equal(
@@ -601,12 +610,11 @@ static bool rewrite_fold_report_supports_single_anchor_write(
     nmo_object_t *anchor =
         repo ? nmo_object_repository_find_by_id(repo, report->anchor_id)
              : NULL;
-    if (!anchor ||
-        !rewrite_is_behavior_class(ctx, nmo_object_get_class_id(anchor))) {
+    if (!anchor || !rewrite_is_behavior_object(ctx, anchor)) {
         return false;
     }
     return rewrite_behavior_state_is_leaf_bb(
-        (const nmo_behavior_state_t *)nmo_object_get_state(anchor));
+        (const nmo_behavior_state_t *)rewrite_behavior_state(ctx, anchor));
 }
 
 static bool rewrite_fold_report_supports_closed_graph_write(
@@ -619,12 +627,10 @@ static bool rewrite_fold_report_supports_closed_graph_write(
     nmo_object_t *anchor =
         repo ? nmo_object_repository_find_by_id(repo, report->anchor_id)
              : NULL;
-    if (!anchor ||
-        !rewrite_is_behavior_class(ctx, nmo_object_get_class_id(anchor))) {
+    if (!anchor || !rewrite_is_behavior_object(ctx, anchor)) {
         return false;
     }
-    const nmo_behavior_state_t *state =
-        (const nmo_behavior_state_t *)nmo_object_get_state(anchor);
+    const nmo_behavior_state_t *state = rewrite_behavior_state(ctx, anchor);
     if (!state ||
         (state->sub_behaviors.count == 0 &&
          !rewrite_behavior_state_is_leaf_bb(state))) {
@@ -677,12 +683,11 @@ static bool rewrite_selected_behavior_has_unselected_child(
         nmo_object_t *child =
             repo ? nmo_object_repository_find_by_id(repo, child_id)
                  : NULL;
-        if (!child ||
-            !rewrite_is_behavior_class(ctx, nmo_object_get_class_id(child))) {
+        if (!child || !rewrite_is_behavior_object(ctx, child)) {
             continue;
         }
         const nmo_behavior_state_t *child_state =
-            (const nmo_behavior_state_t *)nmo_object_get_state(child);
+            rewrite_behavior_state(ctx, child);
         if (rewrite_selected_behavior_has_unselected_child(
                 ctx, repo, child_state, selected_ids, selected_count,
                 out_missing_id)) {
@@ -704,12 +709,11 @@ static bool rewrite_fold_selection_has_unselected_child(
         nmo_object_t *object = repo
             ? nmo_object_repository_find_by_id(repo, report->selected_nodes[i])
             : NULL;
-        if (!object ||
-            !rewrite_is_behavior_class(ctx, nmo_object_get_class_id(object))) {
+        if (!object || !rewrite_is_behavior_object(ctx, object)) {
             continue;
         }
         const nmo_behavior_state_t *state =
-            (const nmo_behavior_state_t *)nmo_object_get_state(object);
+            rewrite_behavior_state(ctx, object);
         if (rewrite_selected_behavior_has_unselected_child(
                 ctx, repo, state, report->selected_nodes,
                 report->selected_node_count, out_missing_id)) {
@@ -720,11 +724,12 @@ static bool rewrite_fold_selection_has_unselected_child(
 }
 
 static nmo_status_t rewrite_fold_collect_delete_ids(
+    nmo_context_t *ctx,
     nmo_object_repository_t *repo,
     const nmo_behavior_fold_report_t *report,
     nmo_object_id_t **out_ids,
     size_t *out_count) {
-    if (!repo || !report || !out_ids || !out_count) {
+    if (!ctx || !repo || !report || !out_ids || !out_count) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
     *out_ids = NULL;
@@ -756,11 +761,11 @@ static nmo_status_t rewrite_fold_collect_delete_ids(
         nmo_object_id_t behavior_id = report->selected_nodes[i];
         nmo_object_t *object =
             nmo_object_repository_find_by_id(repo, behavior_id);
-        if (!object || nmo_object_get_class_id(object) != NMO_CID_BEHAVIOR) {
+        if (!object || !rewrite_is_behavior_object(ctx, object)) {
             continue;
         }
         const nmo_behavior_state_t *state =
-            (const nmo_behavior_state_t *)nmo_object_get_state(object);
+            rewrite_behavior_state(ctx, object);
         if (!state) {
             continue;
         }
@@ -824,14 +829,12 @@ static nmo_status_t rewrite_fold_transform_anchor_in_edit(
     nmo_object_t *anchor =
         repo ? nmo_object_repository_find_by_id(repo, report->anchor_id)
              : NULL;
-    if (!anchor ||
-        !rewrite_is_behavior_class(ctx, nmo_object_get_class_id(anchor))) {
+    if (!anchor || !rewrite_is_behavior_object(ctx, anchor)) {
         rewrite_fold_report_reject(report, "anchor_not_found",
                                    "Fold anchor behavior was not found");
         return NMO_ERR_NOT_FOUND;
     }
-    nmo_behavior_state_t *state =
-        (nmo_behavior_state_t *)nmo_object_get_state(anchor);
+    nmo_behavior_state_t *state = rewrite_behavior_state(ctx, anchor);
     if (!state) {
         rewrite_fold_report_reject(report, "anchor_invalid",
                                    "Fold anchor behavior state is unavailable");
@@ -939,12 +942,10 @@ static nmo_status_t rewrite_fold_anchor_io_at(
     *out_io_id = 0;
     nmo_object_t *anchor =
         repo ? nmo_object_repository_find_by_id(repo, anchor_id) : NULL;
-    if (!anchor ||
-        !rewrite_is_behavior_class(ctx, nmo_object_get_class_id(anchor))) {
+    if (!anchor || !rewrite_is_behavior_object(ctx, anchor)) {
         return NMO_ERR_NOT_FOUND;
     }
-    const nmo_behavior_state_t *state =
-        (const nmo_behavior_state_t *)nmo_object_get_state(anchor);
+    const nmo_behavior_state_t *state = rewrite_behavior_state(ctx, anchor);
     if (!state) {
         return NMO_ERR_INVALID_STATE;
     }
@@ -970,12 +971,10 @@ static nmo_status_t rewrite_fold_anchor_parameter_at(
     *out_parameter_id = 0;
     nmo_object_t *anchor =
         repo ? nmo_object_repository_find_by_id(repo, anchor_id) : NULL;
-    if (!anchor ||
-        !rewrite_is_behavior_class(ctx, nmo_object_get_class_id(anchor))) {
+    if (!anchor || !rewrite_is_behavior_object(ctx, anchor)) {
         return NMO_ERR_NOT_FOUND;
     }
-    const nmo_behavior_state_t *state =
-        (const nmo_behavior_state_t *)nmo_object_get_state(anchor);
+    const nmo_behavior_state_t *state = rewrite_behavior_state(ctx, anchor);
     if (!state) {
         return NMO_ERR_INVALID_STATE;
     }
@@ -1687,14 +1686,12 @@ static nmo_status_t rewrite_fold_apply_workspace(
         nmo_object_t *anchor =
             repo ? nmo_object_repository_find_by_id(repo, report->anchor_id)
                  : NULL;
-        if (!anchor ||
-            !rewrite_is_behavior_class(ctx, nmo_object_get_class_id(anchor))) {
+        if (!anchor || !rewrite_is_behavior_object(ctx, anchor)) {
             rewrite_fold_report_reject(report, "anchor_not_found",
                                        "Fold anchor behavior was not found");
             return NMO_ERR_NOT_FOUND;
         }
-        nmo_behavior_state_t *state =
-            (nmo_behavior_state_t *)nmo_object_get_state(anchor);
+        nmo_behavior_state_t *state = rewrite_behavior_state(ctx, anchor);
         if (!rewrite_behavior_state_is_leaf_bb(state)) {
             rewrite_fold_report_reject(
                 report, "anchor_not_leaf",
@@ -1767,7 +1764,7 @@ static nmo_status_t rewrite_fold_apply_workspace(
         nmo_object_id_t *delete_ids = NULL;
         size_t delete_count = 0;
         nmo_status_t delete_rc = rewrite_fold_collect_delete_ids(
-            nmo_workspace_internal_repository(workspace), report,
+            ctx, nmo_workspace_internal_repository(workspace), report,
             &delete_ids, &delete_count);
         if (delete_rc != NMO_OK) {
             rewrite_fold_report_reject(report, "delete_plan_failed",
@@ -1850,14 +1847,12 @@ static nmo_status_t rewrite_fold_apply_script_tx(
         nmo_object_t *anchor =
             repo ? nmo_object_repository_find_by_id(repo, report->anchor_id)
                  : NULL;
-        if (!anchor ||
-            !rewrite_is_behavior_class(ctx, nmo_object_get_class_id(anchor))) {
+        if (!anchor || !rewrite_is_behavior_object(ctx, anchor)) {
             rewrite_fold_report_reject(report, "anchor_not_found",
                                        "Fold anchor behavior was not found");
             return NMO_ERR_NOT_FOUND;
         }
-        nmo_behavior_state_t *state =
-            (nmo_behavior_state_t *)nmo_object_get_state(anchor);
+        nmo_behavior_state_t *state = rewrite_behavior_state(ctx, anchor);
         if (!rewrite_behavior_state_is_leaf_bb(state)) {
             rewrite_fold_report_reject(
                 report, "anchor_not_leaf",
@@ -1890,7 +1885,7 @@ static nmo_status_t rewrite_fold_apply_script_tx(
         nmo_object_id_t *delete_ids = NULL;
         size_t delete_count = 0;
         rc = rewrite_fold_collect_delete_ids(
-            nmo_workspace_internal_repository(workspace), report,
+            ctx, nmo_workspace_internal_repository(workspace), report,
             &delete_ids, &delete_count);
         if (rc != NMO_OK) {
             rewrite_fold_report_reject(report, "delete_plan_failed",
@@ -1989,14 +1984,13 @@ static nmo_status_t rewrite_replace_bb_in_edit(
                               "Behavior object was not found");
         return NMO_ERR_NOT_FOUND;
     }
-    if (!rewrite_is_behavior_class(ctx, nmo_object_get_class_id(object))) {
+    if (!rewrite_is_behavior_object(ctx, object)) {
         rewrite_report_reject(report, "not_behavior",
                               "Object is not a CKBehavior");
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    nmo_behavior_state_t *state =
-        (nmo_behavior_state_t *)nmo_object_get_state(object);
+    nmo_behavior_state_t *state = rewrite_behavior_state(ctx, object);
     if (!state) {
         rewrite_report_reject(report, "invalid_state",
                               "Behavior state is unavailable");
