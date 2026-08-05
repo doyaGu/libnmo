@@ -11,7 +11,7 @@
 #include "object/nmo_object_repository.h"
 #include "object_scan_internal.h"
 #include "object/nmo_class_ids.h"
-#include "type/nmo_type_system.h"
+#include "type/nmo_type_query.h"
 #include "format/nmo_object.h"
 
 #include <stdint.h>
@@ -791,10 +791,10 @@ nmo_status_t nmo_ref_graph_find_orphans(
         if (object == NULL) {
             continue;
         }
-        nmo_class_id_t cid = nmo_object_get_class_id(object);
-        if (cid == NMO_CID_LEVEL || cid == NMO_CID_SCENE ||
-            nmo_type_registry_is_class_derived_from(registry, cid, NMO_CID_LEVEL) ||
-            nmo_type_registry_is_class_derived_from(registry, cid, NMO_CID_SCENE)) {
+        if (nmo_type_query_object_is_derived_from_class(
+                registry, object, NMO_CID_LEVEL) ||
+            nmo_type_query_object_is_derived_from_class(
+                registry, object, NMO_CID_SCENE)) {
             root_ids[root_count++] = nmo_object_get_id(object);
         }
     }
@@ -806,9 +806,8 @@ nmo_status_t nmo_ref_graph_find_orphans(
             if (object == NULL) {
                 continue;
             }
-            nmo_class_id_t cid = nmo_object_get_class_id(object);
-            if (cid == NMO_CID_GROUP ||
-                nmo_type_registry_is_class_derived_from(registry, cid, NMO_CID_GROUP)) {
+            if (nmo_type_query_object_is_derived_from_class(
+                    registry, object, NMO_CID_GROUP)) {
                 root_ids[root_count++] = nmo_object_get_id(object);
             }
         }
@@ -821,9 +820,8 @@ nmo_status_t nmo_ref_graph_find_orphans(
             if (object == NULL) {
                 continue;
             }
-            nmo_class_id_t cid = nmo_object_get_class_id(object);
-            if (cid == NMO_CID_3DENTITY || cid == NMO_CID_3DOBJECT ||
-                nmo_type_registry_is_class_derived_from(registry, cid, NMO_CID_3DENTITY)) {
+            if (nmo_type_query_object_is_derived_from_class(
+                    registry, object, NMO_CID_3DENTITY)) {
                 root_ids[root_count++] = nmo_object_get_id(object);
             }
         }

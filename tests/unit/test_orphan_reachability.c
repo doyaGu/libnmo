@@ -10,6 +10,7 @@
 #include "object/nmo_ref_graph.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_object_guids.h"
 #include "format/nmo_object.h"
 #include "type/nmo_type_system.h"
 #include "core/nmo_arena.h"
@@ -278,10 +279,49 @@ TEST(orphan_reach, reachable_superset_of_zero_incoming) {
     nmo_context_release(ctx);
 }
 
+TEST(orphan_reach, explicit_group_type_is_a_root) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_t *group = nmo_object_create(NULL, 1u, 0);
+    ASSERT_NOT_NULL(group);
+    ASSERT_EQ(NMO_OK, nmo_object_set_type_guid(group, CKPGUID_GROUP));
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &group));
+    ASSERT_NULL(group);
+    nmo_object_t *unrelated = nmo_object_create(NULL, 2u, NMO_CID_OBJECT);
+    ASSERT_NOT_NULL(unrelated);
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &unrelated));
+    ASSERT_NULL(unrelated);
+
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    const nmo_type_registry_t *registry =
+        nmo_context_get_type_registry(ctx);
+    nmo_ref_graph_t *graph = nmo_ref_graph_create(repo, registry, arena);
+    ASSERT_NOT_NULL(graph);
+
+    nmo_object_id_t *orphans = NULL;
+    size_t orphan_count = 0;
+    ASSERT_EQ(NMO_OK, nmo_ref_graph_find_orphans(
+        graph, repo, registry, arena, &orphans, &orphan_count));
+    ASSERT_EQ(1u, orphan_count);
+    ASSERT_EQ(2u, orphans[0]);
+
+    nmo_ref_graph_destroy(graph);
+    nmo_arena_destroy(arena);
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(orphan_reach, invalid_args);
 REGISTER_TEST(orphan_reach, empty_root_set);
 REGISTER_TEST(orphan_reach, all_reachable_from_root);
 REGISTER_TEST(orphan_reach, reachable_superset_of_zero_incoming);
+REGISTER_TEST(orphan_reach, explicit_group_type_is_a_root);
 TEST_MAIN_END()
 
