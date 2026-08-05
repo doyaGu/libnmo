@@ -1751,6 +1751,13 @@ void nmo_session_set_plugin_diagnostics(
     session->plugin_diag_valid = 1;
 }
 
+static bool nmo_session_plugin_category_matches(
+    nmo_plugin_category_t required,
+    nmo_plugin_category_t registered)
+{
+    return required == NMO_PLUGIN_CUSTOM_DLL || required == registered;
+}
+
 const nmo_session_plugin_diagnostics_t *nmo_session_get_plugin_diagnostics(
     const nmo_session_t *session
 ) {
@@ -1817,8 +1824,18 @@ static int nmo_session_build_plugin_diagnostics(
             const nmo_behavior_proto_t *bb_proto = bb_registry
                 ? nmo_behavior_registry_find(bb_registry, dep->guid)
                 : NULL;
+            bool registered_matches =
+                registered != NULL &&
+                nmo_session_plugin_category_matches(
+                    (nmo_plugin_category_t)dep->category,
+                    registered->category);
+            bool behavior_matches =
+                bb_proto != NULL &&
+                nmo_session_plugin_category_matches(
+                    (nmo_plugin_category_t)dep->category,
+                    NMO_PLUGIN_BEHAVIOR_DLL);
 
-            if (registered == NULL && bb_proto == NULL) {
+            if (!registered_matches && !behavior_matches) {
                 missing++;
                 if (entry != NULL) {
                     entry->status_flags |= NMO_SESSION_PLUGIN_DEP_STATUS_MISSING;
@@ -1830,19 +1847,19 @@ static int nmo_session_build_plugin_diagnostics(
             }
 
             if (entry != NULL) {
-                entry->resolved_version = registered != NULL
+                entry->resolved_version = registered_matches
                     ? registered->version
-                    : (bb_proto != NULL ? bb_proto->version : dep->version);
-                if (registered != NULL && registered->name != NULL) {
+                    : bb_proto->version;
+                if (registered_matches && registered->name != NULL) {
                     entry->resolved_name = (char *)nmo_arena_strdup(arena, registered->name);
-                } else if (bb_proto != NULL && bb_proto->name != NULL) {
+                } else if (bb_proto->name != NULL) {
                     entry->resolved_name = (char *)nmo_arena_strdup(arena, bb_proto->name);
                 }
             }
 
-            uint32_t resolved_version = registered != NULL
+            uint32_t resolved_version = registered_matches
                 ? registered->version
-                : (bb_proto != NULL ? bb_proto->version : dep->version);
+                : bb_proto->version;
             if (resolved_version < dep->version) {
                 outdated++;
                 if (entry != NULL) {

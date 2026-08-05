@@ -126,8 +126,90 @@ TEST(plugin_diagnostics, outdated_plugin_marks_version) {
     nmo_context_release(ctx);
 }
 
+TEST(plugin_diagnostics, mismatched_category_is_unsatisfied) {
+    nmo_context_desc_t desc = {0};
+    nmo_context_t *ctx = nmo_context_create(&desc);
+    ASSERT_NOT_NULL(ctx);
+
+    nmo_extension_registry_t *registry =
+        nmo_context_get_extension_registry(ctx);
+    ASSERT_NOT_NULL(registry);
+
+    nmo_extension_plugin_t plugin = make_plugin(
+        "WrongCategory",
+        TEST_GUID_B,
+        7,
+        NMO_PLUGIN_MANAGER_DLL);
+    ASSERT_EQ(
+        NMO_OK,
+        nmo_extension_registry_register_static(registry, &plugin, 1));
+
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    nmo_plugin_dep_t dep = {
+        .guid = TEST_GUID_B,
+        .category = NMO_PLUGIN_BEHAVIOR_DLL,
+        .version = 1
+    };
+    ASSERT_EQ(NMO_OK, nmo_session_set_plugin_dependencies(session, &dep, 1));
+
+    const nmo_session_plugin_diagnostics_t *diag =
+        nmo_session_get_plugin_diagnostics(session);
+    ASSERT_NOT_NULL(diag);
+    ASSERT_EQ(1u, diag->missing_count);
+    ASSERT_EQ(0u, diag->outdated_count);
+    ASSERT_TRUE(
+        (diag->entries[0].status_flags &
+         NMO_SESSION_PLUGIN_DEP_STATUS_MISSING) != 0);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
+TEST(plugin_diagnostics, custom_category_accepts_registered_plugin) {
+    nmo_context_desc_t desc = {0};
+    nmo_context_t *ctx = nmo_context_create(&desc);
+    ASSERT_NOT_NULL(ctx);
+
+    nmo_extension_registry_t *registry =
+        nmo_context_get_extension_registry(ctx);
+    ASSERT_NOT_NULL(registry);
+
+    nmo_extension_plugin_t plugin = make_plugin(
+        "WildcardCategory",
+        TEST_GUID_B,
+        7,
+        NMO_PLUGIN_MANAGER_DLL);
+    ASSERT_EQ(
+        NMO_OK,
+        nmo_extension_registry_register_static(registry, &plugin, 1));
+
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    nmo_plugin_dep_t dep = {
+        .guid = TEST_GUID_B,
+        .category = NMO_PLUGIN_CUSTOM_DLL,
+        .version = 1
+    };
+    ASSERT_EQ(NMO_OK, nmo_session_set_plugin_dependencies(session, &dep, 1));
+
+    const nmo_session_plugin_diagnostics_t *diag =
+        nmo_session_get_plugin_diagnostics(session);
+    ASSERT_NOT_NULL(diag);
+    ASSERT_EQ(0u, diag->missing_count);
+    ASSERT_EQ(0u, diag->outdated_count);
+    ASSERT_EQ(0u, diag->entries[0].status_flags);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(plugin_diagnostics, missing_plugin_sets_status_flags);
     REGISTER_TEST(plugin_diagnostics, outdated_plugin_marks_version);
+    REGISTER_TEST(plugin_diagnostics, mismatched_category_is_unsatisfied);
+    REGISTER_TEST(plugin_diagnostics, custom_category_accepts_registered_plugin);
 TEST_MAIN_END()
 
