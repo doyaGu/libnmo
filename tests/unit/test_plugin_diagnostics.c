@@ -3,11 +3,11 @@
  * @brief Unit tests for plugin dependency diagnostics.
  */
 
-#include "../test_framework.h"
+#include "test_framework.h"
 #include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
-#include "session/nmo_session_pipeline.h"
-#include "app/nmo_plugin.h"
+#include "extension/nmo_extension_abi.h"
+#include "extension/nmo_extension_registry.h"
 #include "format/nmo_header1.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_arena.h"
@@ -16,15 +16,21 @@
 static const nmo_guid_t TEST_GUID_A = {0x12345678u, 0x9ABCDEF0u};
 static const nmo_guid_t TEST_GUID_B = {0xCAFEBABEu, 0x0BADF00Du};
 
-static nmo_plugin_t make_plugin(const char *name, nmo_guid_t guid, uint32_t version) {
-    nmo_plugin_t plugin = {
+static nmo_extension_plugin_t make_plugin(
+    const char *name,
+    nmo_guid_t guid,
+    uint32_t version,
+    nmo_plugin_category_t category)
+{
+    nmo_extension_plugin_t plugin = {
+        .abi_version = NMO_EXTENSION_ABI_VERSION,
+        .struct_size = sizeof(nmo_extension_plugin_t),
         .name = name,
         .version = version,
         .guid = guid,
-        .category = NMO_PLUGIN_MANAGER_DLL,
+        .category = category,
         .init = NULL,
-        .shutdown = NULL,
-        .register_managers = NULL
+        .shutdown = NULL
     };
     return plugin;
 }
@@ -73,16 +79,19 @@ TEST(plugin_diagnostics, outdated_plugin_marks_version) {
     nmo_context_t *ctx = nmo_context_create(&desc);
     ASSERT_NOT_NULL(ctx);
 
-    nmo_plugin_manager_t *plugin_manager = nmo_context_get_plugin_manager(ctx);
-    ASSERT_NOT_NULL(plugin_manager);
+    nmo_extension_registry_t *registry =
+        nmo_context_get_extension_registry(ctx);
+    ASSERT_NOT_NULL(registry);
 
     const uint32_t registered_version = 2;
-    nmo_plugin_t plugin = make_plugin("DiagTestPlugin", TEST_GUID_B, registered_version);
-    nmo_plugin_registration_desc_t reg_desc = {
-        .plugins = &plugin,
-        .plugin_count = 1
-    };
-    ASSERT_EQ(NMO_OK, nmo_plugin_manager_register(plugin_manager, &reg_desc));
+    nmo_extension_plugin_t plugin = make_plugin(
+        "DiagTestPlugin",
+        TEST_GUID_B,
+        registered_version,
+        NMO_PLUGIN_MANAGER_DLL);
+    ASSERT_EQ(
+        NMO_OK,
+        nmo_extension_registry_register_static(registry, &plugin, 1));
 
     nmo_session_t *session = nmo_session_create(ctx);
     ASSERT_NOT_NULL(session);

@@ -103,6 +103,7 @@ add_unit_test(test_objanim_controllers)
 
 # Extension layer tests
 add_unit_test(test_extension_registry)
+add_unit_test(test_plugin_diagnostics)
 
 # Session layer tests
 add_unit_test(test_id_sanitizer)  # Phase 1.1: ID sanitization pipeline
