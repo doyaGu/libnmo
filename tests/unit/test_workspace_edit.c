@@ -34,6 +34,7 @@
 #include "core/nmo_color.h"
 #include "core/nmo_math.h"
 #include "type/nmo_type_system.h"
+#include "type/nmo_type_query.h"
 #include "type/nmo_type_guids.h"
 #include "../../src/runtime/runtime_internal.h"
 
@@ -1684,6 +1685,53 @@ TEST(workspace_edit, behavior_graph_flag_rebuilds_behavior_index) {
     nmo_context_release(ctx);
 }
 
+TEST(workspace_edit, bind_script_uses_explicit_object_types) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    nmo_object_id_t owner_id = 0;
+    nmo_object_id_t behavior_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, 0, "Typed owner", CKPGUID_GROUP, &owner_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, 0, "Typed behavior", CKPGUID_BEHAVIOR,
+        &behavior_id, NULL));
+
+    workspace_edit_scope_t edit_scope = {0};
+    nmo_workspace_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK, begin_workspace_edit_for_session(
+        ctx, session, "bind typed script", &edit_scope, &edit));
+    ASSERT_EQ(NMO_OK, nmo_object_edit_bind_script(
+        edit, owner_id, behavior_id));
+    ASSERT_EQ(NMO_OK, commit_workspace_edit_scope(&edit_scope));
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    const nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
+    nmo_object_t *owner = nmo_object_repository_find_by_id(repo, owner_id);
+    nmo_object_t *behavior =
+        nmo_object_repository_find_by_id(repo, behavior_id);
+    ASSERT_NOT_NULL(owner);
+    ASSERT_NOT_NULL(behavior);
+    nmo_beobject_state_t *owner_state = (nmo_beobject_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, owner, CKPGUID_BEOBJECT);
+    nmo_behavior_state_t *behavior_state = (nmo_behavior_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, behavior, CKPGUID_BEHAVIOR);
+    ASSERT_NOT_NULL(owner_state);
+    ASSERT_NOT_NULL(behavior_state);
+    ASSERT_EQ(1u, owner_state->scripts.count);
+    ASSERT_EQ(behavior_id, nmo_beobject_script_array_get_id(
+        &owner_state->scripts, 0));
+    ASSERT_EQ(owner_id, nmo_behavior_owner_id(behavior_state));
+    ASSERT_EQ(NMO_CID_GROUP, behavior_state->compatible_class_id);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(workspace_edit, apply_edit_flags_accepts_known_flags_and_rejects_unknown) {
     nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
     ASSERT_NOT_NULL(ctx);
@@ -1897,6 +1945,7 @@ REGISTER_TEST(workspace_edit, parameterout_object_mode_commit_sets_reference);
 REGISTER_TEST(workspace_edit, dataarray_object_cell_commit_and_rollback);
 REGISTER_TEST(workspace_edit, dataarray_ref_graph_handles_missing_row_metadata);
 REGISTER_TEST(workspace_edit, behavior_graph_flag_rebuilds_behavior_index);
+REGISTER_TEST(workspace_edit, bind_script_uses_explicit_object_types);
 REGISTER_TEST(workspace_edit, apply_edit_flags_accepts_known_flags_and_rejects_unknown);
 REGISTER_TEST(workspace_edit, snapshot_bytes_rollback_restores_direct_state);
 REGISTER_TEST(workspace_edit, track_created_object_rollback_removes_and_commit_keeps);

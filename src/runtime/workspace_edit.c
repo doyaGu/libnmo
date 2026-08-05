@@ -55,6 +55,7 @@
 #include "core/nmo_parse.h"
 #include "type/nmo_reflection.h"
 #include "type/nmo_type_guids.h"
+#include "type/nmo_type_query.h"
 #include "type/nmo_type_string.h"
 #include "type/nmo_type_system.h"
 
@@ -844,23 +845,30 @@ static const nmo_type_registry_t *workspace_edit_type_registry(
         : NULL;
 }
 
-static bool session_class_derives(
+static bool session_object_derives(
     const nmo_type_registry_t *registry,
-    nmo_class_id_t class_id,
+    const nmo_object_t *object,
     nmo_class_id_t base_class_id)
 {
-    return registry != NULL &&
-           nmo_type_registry_is_class_derived_from(
-               registry, (uint32_t)class_id, (uint32_t)base_class_id);
+    return nmo_type_query_object_is_derived_from_class(
+        registry, object, base_class_id);
 }
 
-static bool session_is_parameter_reference_class(nmo_class_id_t class_id)
+static bool session_is_parameter_reference_object(
+    const nmo_type_registry_t *registry,
+    const nmo_object_t *object)
 {
-    return class_id == NMO_CID_PARAMETER ||
-           class_id == NMO_CID_PARAMETERIN ||
-           class_id == NMO_CID_PARAMETEROUT ||
-           class_id == NMO_CID_PARAMETERLOCAL ||
-           class_id == NMO_CID_PARAMETEROPERATION;
+    const nmo_class_id_t classes[] = {
+        NMO_CID_PARAMETER,
+        NMO_CID_PARAMETERIN,
+        NMO_CID_PARAMETEROUT,
+        NMO_CID_PARAMETERLOCAL,
+        NMO_CID_PARAMETEROPERATION,
+    };
+    for (size_t i = 0; i < sizeof(classes) / sizeof(classes[0]); ++i) {
+        if (session_object_derives(registry, object, classes[i])) return true;
+    }
+    return false;
 }
 
 static nmo_status_t parse_dataarray_cell(
@@ -1680,18 +1688,17 @@ nmo_status_t nmo_object_edit_bind_script(
     if (owner_object == NULL || behavior_object == NULL) {
         return NMO_ERR_NOT_FOUND;
     }
-    if (!nmo_type_registry_is_class_derived_from(
-            registry,
-            nmo_object_get_class_id(owner_object),
-            NMO_CID_BEOBJECT) ||
-        nmo_object_get_class_id(behavior_object) != NMO_CID_BEHAVIOR) {
+    if (!session_object_derives(registry, owner_object, NMO_CID_BEOBJECT) ||
+        !session_object_derives(registry, behavior_object, NMO_CID_BEHAVIOR)) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
     nmo_beobject_state_t *owner_state =
-        (nmo_beobject_state_t *)nmo_object_get_state(owner_object);
+        (nmo_beobject_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, owner_object, CKPGUID_BEOBJECT);
     nmo_behavior_state_t *behavior_state =
-        (nmo_behavior_state_t *)nmo_object_get_state(behavior_object);
+        (nmo_behavior_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, behavior_object, CKPGUID_BEHAVIOR);
     if (owner_state == NULL || behavior_state == NULL) {
         return NMO_ERR_INVALID_STATE;
     }
@@ -1730,7 +1737,11 @@ nmo_status_t nmo_object_edit_bind_script(
 
     behavior_state->flags |= CKBEHAVIOR_SCRIPT;
     behavior_state->flags &= ~(uint32_t)CKBEHAVIOR_BUILDINGBLOCK;
-    behavior_state->compatible_class_id = (int32_t)nmo_object_get_class_id(owner_object);
+    const nmo_type_descriptor_t *owner_type =
+        nmo_type_query_find_for_object(registry, owner_object);
+    behavior_state->compatible_class_id = owner_type != NULL
+        ? (int32_t)owner_type->class_id
+        : (int32_t)nmo_object_get_class_id(owner_object);
     nmo_behavior_set_owner_id(behavior_state, object_id);
 
     nmo_workspace_edit_mark(
@@ -4872,10 +4883,13 @@ nmo_status_t nmo_object_edit_set_dataarray_cell(
     if (object == NULL) {
         return NMO_ERR_NOT_FOUND;
     }
-    if (nmo_object_get_class_id(object) != NMO_CID_DATAARRAY) {
+    const nmo_type_registry_t *registry = workspace_edit_type_registry(edit);
+    if (!session_object_derives(registry, object, NMO_CID_DATAARRAY)) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
-    nmo_dataarray_state_t *state = (nmo_dataarray_state_t *)nmo_object_get_state(object);
+    nmo_dataarray_state_t *state = (nmo_dataarray_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, object, CKPGUID_DATAARRAY);
     if (state == NULL) {
         return NMO_ERR_INVALID_STATE;
     }
@@ -4901,7 +4915,7 @@ nmo_status_t nmo_object_edit_set_dataarray_cell(
                 return NMO_ERR_NOT_FOUND;
             }
             if (col_type == CKARRAYTYPE_PARAMETER) {
-                if (!session_is_parameter_reference_class(nmo_object_get_class_id(ref))) {
+                if (!session_is_parameter_reference_object(registry, ref)) {
                     return NMO_ERR_NOT_FOUND;
                 }
             }
@@ -4959,7 +4973,7 @@ nmo_status_t nmo_behavior_edit_add_link(
     if (parent_obj == NULL) {
         return NMO_ERR_NOT_FOUND;
     }
-    if (!session_class_derives(registry, nmo_object_get_class_id(parent_obj), NMO_CID_BEHAVIOR)) {
+    if (!session_object_derives(registry, parent_obj, NMO_CID_BEHAVIOR)) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
     if (nmo_object_repository_find_by_id(repo, from_io_id) == NULL ||
@@ -5012,7 +5026,8 @@ nmo_status_t nmo_behavior_edit_add_link(
     link_state->has_format = true;
 
     nmo_behavior_state_t *parent_state =
-        (nmo_behavior_state_t *)nmo_object_get_state(parent_obj);
+        (nmo_behavior_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, parent_obj, CKPGUID_BEHAVIOR);
     if (parent_state == NULL) {
         return workspace_edit_abort_status(edit, checkpoint, NMO_ERR_INTERNAL);
     }
@@ -5081,7 +5096,7 @@ nmo_status_t nmo_behavior_edit_remove_link(
     if (link_obj == NULL) {
         return NMO_ERR_NOT_FOUND;
     }
-    if (nmo_object_get_class_id(link_obj) != NMO_CID_BEHAVIORLINK) {
+    if (!session_object_derives(registry, link_obj, NMO_CID_BEHAVIORLINK)) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
@@ -5089,12 +5104,13 @@ nmo_status_t nmo_behavior_edit_remove_link(
     if (parent_obj == NULL) {
         return NMO_ERR_NOT_FOUND;
     }
-    if (!session_class_derives(registry, nmo_object_get_class_id(parent_obj), NMO_CID_BEHAVIOR)) {
+    if (!session_object_derives(registry, parent_obj, NMO_CID_BEHAVIOR)) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
     nmo_behavior_state_t *parent_state =
-        (nmo_behavior_state_t *)nmo_object_get_state(parent_obj);
+        (nmo_behavior_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, parent_obj, CKPGUID_BEHAVIOR);
     if (parent_state == NULL) {
         return NMO_ERR_INTERNAL;
     }
@@ -5170,12 +5186,14 @@ nmo_status_t nmo_behavior_edit_mark_interface(
     if (behavior_obj == NULL) {
         return NMO_ERR_NOT_FOUND;
     }
-    if (!session_class_derives(registry, nmo_object_get_class_id(behavior_obj), NMO_CID_BEHAVIOR)) {
+    if (!session_object_derives(registry, behavior_obj, NMO_CID_BEHAVIOR)) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
     const nmo_behavior_state_t *state =
-        (const nmo_behavior_state_t *)nmo_object_get_state(behavior_obj);
+        (const nmo_behavior_state_t *)
+            nmo_type_query_object_get_ancestor_state_by_guid(
+                registry, behavior_obj, CKPGUID_BEHAVIOR);
     if (state == NULL || state->interface_data == NULL) {
         return NMO_ERR_INVALID_STATE;
     }
