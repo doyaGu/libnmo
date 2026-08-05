@@ -3,14 +3,17 @@
 #include "session/nmo_session.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_object_guids.h"
 #include "format/nmo_object.h"
 #include "format/nmo_interface_chunk.h"
 #include "format/nmo_interface_view.h"
 #include "object/builtin/nmo_behavior_schemas.h"
+#include "type/nmo_type_query.h"
 #include "core/nmo_arena.h"
 #include <string.h>
 
 static nmo_interface_data_t *attach_interface_data(
+    nmo_context_t *ctx,
     nmo_session_t *session,
     nmo_object_id_t behavior_id)
 {
@@ -24,8 +27,11 @@ static nmo_interface_data_t *attach_interface_data(
         return NULL;
     }
 
-    nmo_behavior_state_t *state =
-        (nmo_behavior_state_t *)nmo_object_get_state(object);
+    nmo_behavior_state_t *state = (nmo_behavior_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            nmo_context_get_type_registry(ctx),
+            object,
+            CKPGUID_BEHAVIOR);
     if (state == NULL) {
         return NULL;
     }
@@ -62,7 +68,8 @@ TEST(interface_view, summarizes_root_and_nested_behaviors_without_layout_access)
     ASSERT_EQ(NMO_OK, nmo_session_create_object(
         session, NMO_CID_BEHAVIOR, "Child", (nmo_guid_t){0, 0}, &child_behavior_id, NULL));
 
-    nmo_interface_data_t *data = attach_interface_data(session, root_behavior_id);
+    nmo_interface_data_t *data = attach_interface_data(
+        ctx, session, root_behavior_id);
     ASSERT_NOT_NULL(data);
     data->version = NMO_INTERFACE_VERSION_MAX;
     data->format_flags = NMO_INTERFACE_FORMAT_SECTIONED | NMO_INTERFACE_FORMAT_ROOT_GRAPH;
@@ -183,8 +190,40 @@ TEST(interface_view, missing_interface_returns_not_found_and_clears_view) {
     nmo_context_release(ctx);
 }
 
+TEST(interface_view, accepts_explicit_behavior_type) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    nmo_object_id_t behavior_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, 0, "Typed behavior", CKPGUID_BEHAVIOR,
+        &behavior_id, NULL));
+
+    nmo_interface_data_t *data = attach_interface_data(
+        ctx, session, behavior_id);
+    ASSERT_NOT_NULL(data);
+    data->version = NMO_INTERFACE_VERSION_MAX;
+    data->script.behavior_id = behavior_id;
+    data->script.body.has_body = true;
+    data->script.body.comment_count = 2;
+
+    nmo_interface_view_t view = {0};
+    ASSERT_EQ(NMO_OK, nmo_interface_view_from_behavior(
+        session, behavior_id, &view));
+    ASSERT_EQ(behavior_id, view.owner_behavior_id);
+    ASSERT_EQ(behavior_id, view.behavior_id);
+    ASSERT_EQ(2u, view.body.comment_count);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(interface_view, summarizes_root_and_nested_behaviors_without_layout_access);
     REGISTER_TEST(interface_view, missing_interface_returns_not_found_and_clears_view);
+    REGISTER_TEST(interface_view, accepts_explicit_behavior_type);
 TEST_MAIN_END()
 

@@ -8,6 +8,7 @@
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_object_guids.h"
 #include "object/nmo_object_repository.h"
 #include "runtime/nmo_workspace.h"
 #include "runtime/nmo_context.h"
@@ -291,8 +292,41 @@ TEST(behavior_view, summarizes_boundary_counts_without_exposing_graph_arrays) {
     nmo_context_release(ctx);
 }
 
+TEST(behavior_view, accepts_explicit_behavior_type) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    nmo_object_id_t behavior_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, 0, "Typed behavior", CKPGUID_BEHAVIOR,
+        &behavior_id, NULL));
+
+    nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = NULL;
+    ASSERT_EQ(NMO_OK, test_create_workspace_from_session(
+        session, &document, &workspace));
+
+    nmo_behavior_view_t view = {0};
+    ASSERT_EQ(NMO_OK, nmo_behavior_view_from_behavior(
+        workspace, behavior_id, &view));
+    ASSERT_EQ(behavior_id, view.behavior_id);
+    ASSERT_EQ(0, view.class_id);
+    ASSERT_STR_EQ("Typed behavior", view.name);
+    ASSERT_EQ(0u, view.sub_behavior_count);
+    ASSERT_EQ(NMO_OK, view.edit_graph_status);
+
+    nmo_workspace_destroy(workspace);
+    nmo_document_destroy(document);
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(behavior_view, summarizes_behavior_without_exposing_state_layout);
     REGISTER_TEST(behavior_view, summarizes_boundary_counts_without_exposing_graph_arrays);
+    REGISTER_TEST(behavior_view, accepts_explicit_behavior_type);
 TEST_MAIN_END()
 

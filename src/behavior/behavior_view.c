@@ -4,7 +4,9 @@
 #include "format/nmo_object.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_object_guids.h"
 #include "object/nmo_object_repository.h"
+#include "type/nmo_type_query.h"
 #include "../runtime/runtime_internal.h"
 
 #include <string.h>
@@ -37,6 +39,7 @@ static nmo_status_t nmo_behavior_view_lookup(
     nmo_object_t **out_object,
     nmo_behavior_state_t **out_state)
 {
+    const nmo_type_registry_t *registry = NULL;
     nmo_object_repository_t *repo = NULL;
     nmo_object_t *object = NULL;
 
@@ -48,7 +51,8 @@ static nmo_status_t nmo_behavior_view_lookup(
     *out_state = NULL;
 
     repo = nmo_workspace_internal_repository(workspace);
-    if (repo == NULL) {
+    registry = nmo_workspace_internal_type_registry(workspace);
+    if (repo == NULL || registry == NULL) {
         return NMO_ERR_INVALID_STATE;
     }
 
@@ -56,11 +60,14 @@ static nmo_status_t nmo_behavior_view_lookup(
     if (object == NULL) {
         return NMO_ERR_NOT_FOUND;
     }
-    if (nmo_object_get_class_id(object) != NMO_CID_BEHAVIOR) {
+    if (!nmo_type_query_object_is_derived_from_class(
+            registry, object, NMO_CID_BEHAVIOR)) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    *out_state = (nmo_behavior_state_t *)nmo_object_get_state(object);
+    *out_state = (nmo_behavior_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, object, CKPGUID_BEHAVIOR);
     if (*out_state == NULL) {
         return NMO_ERR_INVALID_STATE;
     }
