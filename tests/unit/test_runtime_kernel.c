@@ -6,6 +6,7 @@
 #include "object/nmo_ref_graph.h"
 #include "object/nmo_object_system.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_object_guids.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_behaviorio_schemas.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"
@@ -496,6 +497,43 @@ TEST(runtime_kernel, delete_safe_detach_prunes_group_references) {
     ASSERT_NOT_NULL(remaining_group->state);
     nmo_group_state_t *group_state = (nmo_group_state_t *)remaining_group->state;
     ASSERT_EQ(0u, group_state->object_ids.count);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
+TEST(runtime_kernel, delete_safe_detach_uses_explicit_object_type) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_id_t member_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_OBJECT, "member", NMO_NULL_GUID,
+        &member_id, NULL));
+
+    nmo_object_id_t group_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, 0, "typed-group", CKPGUID_GROUP, &group_id, NULL));
+    nmo_object_t *group_obj =
+        nmo_object_repository_find_by_id(repo, group_id);
+    ASSERT_NOT_NULL(group_obj);
+    ASSERT_EQ(0u, nmo_object_get_class_id(group_obj));
+    runtime_group_set_members(group_obj, &member_id, 1);
+
+    nmo_runtime_report_t report = {0};
+    ASSERT_EQ(NMO_OK, nmo_session_destroy_objects(
+        session, &member_id, 1,
+        NMO_RUNTIME_REQUEST_STRICT | NMO_RUNTIME_REQUEST_SAFE_DETACH,
+        &report));
+    ASSERT_EQ(1u, report.deleted_objects);
+
+    group_obj = nmo_object_repository_find_by_id(repo, group_id);
+    ASSERT_NOT_NULL(group_obj);
+    ASSERT_EQ(0u, ((nmo_group_state_t *)group_obj->state)->object_ids.count);
 
     nmo_session_destroy(session);
     nmo_context_release(ctx);
@@ -2431,6 +2469,7 @@ REGISTER_TEST(runtime_kernel, copy_hook_failure_rolls_back_all_clones);
 REGISTER_TEST(runtime_kernel, ref_graph_creation_fails_on_edge_allocation_error);
 REGISTER_TEST(runtime_kernel, ref_graph_creation_propagates_enumerator_error);
 REGISTER_TEST(runtime_kernel, delete_safe_detach_prunes_group_references);
+REGISTER_TEST(runtime_kernel, delete_safe_detach_uses_explicit_object_type);
 REGISTER_TEST(runtime_kernel, delete_safe_detach_prunes_behavior_links_with_deleted_io);
 REGISTER_TEST(runtime_kernel, delete_cascade_removes_referencing_group);
 REGISTER_TEST(runtime_kernel, deserialize_failure_does_not_publish_state_for_finalize);

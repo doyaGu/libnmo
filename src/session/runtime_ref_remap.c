@@ -342,29 +342,6 @@ static nmo_status_t runtime_remap_curve_refs(
     return NMO_OK;
 }
 
-static const void *runtime_get_base_instance(
-    const nmo_type_registry_t *types,
-    const nmo_type_descriptor_t *derived_type,
-    const void *derived_instance,
-    const nmo_type_descriptor_t *current_type,
-    const void *current_instance,
-    const nmo_type_descriptor_t *base_type)
-{
-    const nmo_type_field_t *base_field = nmo_type_get_field_by_name(current_type, "base");
-    if (base_field != NULL && nmo_guid_equals(base_field->type_guid, base_type->guid)) {
-        return nmo_field_get_ptr_const(current_instance, base_field);
-    }
-
-    if (derived_type != NULL && derived_type->ext != NULL && derived_type->ext->state_offsets != NULL) {
-        uint32_t offset = nmo_type_get_state_offset(types, derived_type, base_type);
-        if (offset != (uint32_t)-1) {
-            return (const char *)derived_instance + offset;
-        }
-    }
-
-    return NULL;
-}
-
 /* 鈹€鈹€ Public API 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 nmo_status_t nmo_runtime_remap_copy_refs(
@@ -381,12 +358,20 @@ nmo_status_t nmo_runtime_remap_copy_refs(
         return NMO_OK;
     }
 
-    const nmo_type_descriptor_t *current = type;
-    void *current_instance = instance;
-    const nmo_type_descriptor_t *derived_type = type;
-    const void *derived_instance = instance;
+    const nmo_type_descriptor_ext_t *layout = type->ext;
+    const bool has_layout = layout != NULL && layout->hierarchy != NULL &&
+                            layout->hierarchy_depth > 0;
+    const size_t level_count = has_layout ? layout->hierarchy_depth : 1u;
 
-    for (size_t depth = 0; current != NULL && current_instance != NULL && depth < 64; ++depth) {
+    for (size_t level = level_count; level > 0; --level) {
+        const size_t index = level - 1u;
+        const nmo_type_descriptor_t *current =
+            has_layout ? layout->hierarchy[index] : type;
+        const uint32_t offset = has_layout && layout->state_offsets != NULL
+            ? layout->state_offsets[index]
+            : 0u;
+        void *current_instance = (uint8_t *)instance + offset;
+        if (current == NULL) continue;
         runtime_ref_remap_ctx_t remap_ctx = {
             .remap = remap,
             .type = current,
@@ -431,24 +416,6 @@ nmo_status_t nmo_runtime_remap_copy_refs(
                 (nmo_curve_state_t *)current_instance, remap));
         }
 
-        if (nmo_guid_is_null(current->base_type)) {
-            break;
-        }
-
-        const nmo_type_descriptor_t *base =
-            nmo_type_registry_find_by_guid(type_rt->types, current->base_type);
-        if (base == NULL) {
-            break;
-        }
-
-        void *base_instance = (void *)runtime_get_base_instance(
-            type_rt->types, derived_type, derived_instance, current, current_instance, base);
-        if (base_instance == NULL) {
-            break;
-        }
-
-        current = base;
-        current_instance = base_instance;
     }
 
     return NMO_OK;
@@ -1198,10 +1165,22 @@ nmo_status_t nmo_runtime_normalize_invalid_refs(
         NMO_RETURN_IF_ERROR(normalize_curve_sub_points(
             curve, repo, type_rt->types, &changed));
 
-        const nmo_type_descriptor_t *derived = runtime_find_type_for_object(type_rt, obj);
-        const nmo_type_descriptor_t *current = derived;
-        void *current_instance = obj->state;
-        for (size_t depth = 0; current && current_instance && depth < 64; ++depth) {
+        const nmo_type_descriptor_t *derived =
+            runtime_find_type_for_object(type_rt, obj);
+        if (derived == NULL) continue;
+        const nmo_type_descriptor_ext_t *layout = derived->ext;
+        const bool has_layout = layout != NULL && layout->hierarchy != NULL &&
+                                layout->hierarchy_depth > 0;
+        const size_t level_count = has_layout ? layout->hierarchy_depth : 1u;
+        for (size_t level = level_count; level > 0; --level) {
+            const size_t index = level - 1u;
+            const nmo_type_descriptor_t *current =
+                has_layout ? layout->hierarchy[index] : derived;
+            const uint32_t offset = has_layout && layout->state_offsets != NULL
+                ? layout->state_offsets[index]
+                : 0u;
+            void *current_instance = (uint8_t *)obj->state + offset;
+            if (current == NULL) continue;
             normalize_ref_ctx_t normalize_ctx = {
                 .repo = repo, .types = type_rt->types,
                 .type = current, .instance = current_instance,
@@ -1209,13 +1188,6 @@ nmo_status_t nmo_runtime_normalize_invalid_refs(
             };
             NMO_RETURN_IF_ERROR(nmo_type_foreach_ref_field(
                 current, current_instance, normalize_ref_field, &normalize_ctx));
-            if (nmo_guid_is_null(current->base_type)) break;
-            const nmo_type_descriptor_t *base = nmo_type_registry_find_by_guid(
-                type_rt->types, current->base_type);
-            if (!base) break;
-            current_instance = (void *)runtime_get_base_instance(
-                type_rt->types, derived, obj->state, current, current_instance, base);
-            current = base;
         }
     }
     if (out_change_count) *out_change_count = changed;
