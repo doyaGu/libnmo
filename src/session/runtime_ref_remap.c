@@ -470,9 +470,8 @@ static bool normalize_id_has_wrong_class(
         return false;
     }
     const nmo_object_t *target = nmo_object_repository_find_by_id(repo, id);
-    return target != NULL && !nmo_type_registry_is_class_derived_from(
-        types, (uint32_t)nmo_object_get_class_id(target),
-        (uint32_t)expected_class_id);
+    return target != NULL && !nmo_type_query_object_is_derived_from_class(
+        types, target, expected_class_id);
 }
 
 static nmo_class_id_t normalize_expected_class_for_field(const char *name)
@@ -581,31 +580,38 @@ static bool normalize_is_parameter_family_slot(
             strcmp(field->name, "out") == 0);
 }
 
-static bool normalize_is_parameter_reference_class(nmo_class_id_t class_id)
+static bool normalize_is_parameter_object(
+    const nmo_type_registry_t *types,
+    const nmo_object_t *object,
+    bool allow_operation)
 {
-    return class_id == NMO_CID_PARAMETER ||
-           class_id == NMO_CID_PARAMETERIN ||
-           class_id == NMO_CID_PARAMETEROUT ||
-           class_id == NMO_CID_PARAMETERLOCAL ||
-           class_id == NMO_CID_PARAMETEROPERATION;
-}
-
-static bool normalize_is_attribute_parameter_class(nmo_class_id_t class_id)
-{
-    return class_id == NMO_CID_PARAMETER ||
-           class_id == NMO_CID_PARAMETERIN ||
-           class_id == NMO_CID_PARAMETEROUT ||
-           class_id == NMO_CID_PARAMETERLOCAL;
+    const nmo_class_id_t classes[] = {
+        NMO_CID_PARAMETER,
+        NMO_CID_PARAMETERIN,
+        NMO_CID_PARAMETEROUT,
+        NMO_CID_PARAMETERLOCAL,
+        NMO_CID_PARAMETEROPERATION,
+    };
+    size_t count = sizeof(classes) / sizeof(classes[0]);
+    if (!allow_operation) --count;
+    for (size_t i = 0; i < count; ++i) {
+        if (nmo_type_query_object_is_derived_from_class(
+                types, object, classes[i])) {
+            return true;
+        }
+    }
+    return false;
 }
 
 static bool normalize_id_is_invalid_attribute_parameter(
     nmo_object_repository_t *repo,
+    const nmo_type_registry_t *types,
     nmo_object_id_t id)
 {
     if (normalize_id_is_invalid(repo, id)) return true;
     const nmo_object_t *target = nmo_object_repository_find_by_id(repo, id);
-    return target != NULL && !normalize_is_attribute_parameter_class(
-        nmo_object_get_class_id(target));
+    return target != NULL &&
+           !normalize_is_parameter_object(types, target, false);
 }
 
 static bool normalize_id_is_invalid_for_typed_field(
@@ -619,8 +625,8 @@ static bool normalize_id_is_invalid_for_typed_field(
         if (normalize_id_is_invalid(repo, id)) return true;
         const nmo_object_t *target =
             nmo_object_repository_find_by_id(repo, id);
-        return target != NULL && !normalize_is_parameter_reference_class(
-            nmo_object_get_class_id(target));
+        return target != NULL &&
+               !normalize_is_parameter_object(types, target, true);
     }
     return normalize_id_is_invalid(repo, id) ||
         normalize_id_has_wrong_class(
@@ -631,6 +637,7 @@ static bool normalize_id_is_invalid_for_typed_field(
 static nmo_status_t normalize_beobject_attributes(
     nmo_beobject_state_t *state,
     nmo_object_repository_t *repo,
+    const nmo_type_registry_t *types,
     size_t *changes)
 {
     if (!state) return NMO_OK;
@@ -649,7 +656,7 @@ static nmo_status_t normalize_beobject_attributes(
         const nmo_object_id_t id = nmo_ref_runtime_id(
             &attributes[i].parameter);
         if (id != NMO_OBJECT_ID_NONE &&
-            !normalize_id_is_invalid_attribute_parameter(repo, id)) {
+            !normalize_id_is_invalid_attribute_parameter(repo, types, id)) {
             ++i;
             continue;
         }
@@ -674,7 +681,7 @@ static nmo_status_t normalize_beobject_attributes(
         const nmo_object_id_t id = nmo_ref_runtime_id(
             &legacy_attributes[i].parameter);
         if (id != NMO_OBJECT_ID_NONE &&
-            !normalize_id_is_invalid_attribute_parameter(repo, id)) {
+            !normalize_id_is_invalid_attribute_parameter(repo, types, id)) {
             ++i;
             continue;
         }
@@ -1129,7 +1136,7 @@ nmo_status_t nmo_runtime_normalize_invalid_refs(
             nmo_type_query_object_get_ancestor_state_by_guid(
                 type_rt->types, obj, CKPGUID_BEOBJECT);
         NMO_RETURN_IF_ERROR(normalize_beobject_attributes(
-            beobject, repo, &changed));
+            beobject, repo, type_rt->types, &changed));
         nmo_character_state_t *character = (nmo_character_state_t *)
             nmo_type_query_object_get_ancestor_state_by_guid(
                 type_rt->types, obj, CKPGUID_CHARACTER);

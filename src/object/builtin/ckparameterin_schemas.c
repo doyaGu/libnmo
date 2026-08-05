@@ -21,6 +21,7 @@
 #include "core/nmo_arena.h"
 #include "format/nmo_object.h"
 #include "object/nmo_object_repository.h"
+#include "type/nmo_type_query.h"
 #include "type/nmo_type_system.h"
 #include "type/nmo_reflection.h"
 #include "nmo_types.h"
@@ -57,8 +58,8 @@ static const nmo_type_field_t nmo_parameterin_fields[] = {
     NMO_FIELD(nmo_parameterin_state_t, is_disabled, CKPGUID_UINT8)
 };
 
-static int nmo_parameterin_is_parameter_class(
-    nmo_class_id_t class_id,
+static int nmo_parameterin_is_parameter_object(
+    const nmo_object_t *object,
     const nmo_type_registry_t *types)
 {
     const nmo_class_id_t bases[] = {
@@ -69,9 +70,8 @@ static int nmo_parameterin_is_parameter_class(
         NMO_CID_PARAMETEROPERATION,
     };
     for (size_t i = 0; i < sizeof(bases) / sizeof(bases[0]); ++i) {
-        if (class_id == bases[i] ||
-            (types != NULL && nmo_type_registry_is_class_derived_from(
-                types, (uint32_t)class_id, (uint32_t)bases[i]))) {
+        if (nmo_type_query_object_is_derived_from_class(
+                types, object, bases[i])) {
             return 1;
         }
     }
@@ -88,8 +88,8 @@ static void nmo_parameterin_check_source(
     }
     const nmo_object_t *target =
         nmo_object_repository_find_by_id(repository, ref->id);
-    if (target != NULL && !nmo_parameterin_is_parameter_class(
-            nmo_object_get_class_id(target), types)) {
+    if (target != NULL && !nmo_parameterin_is_parameter_object(
+            target, types)) {
         ref->state = NMO_REF_CLASS_MISMATCH;
     }
 }

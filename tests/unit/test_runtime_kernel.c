@@ -1339,6 +1339,69 @@ TEST(runtime_kernel, normalize_clears_raw_scalar_class_mismatch) {
     nmo_context_release(ctx);
 }
 
+TEST(runtime_kernel, normalize_preserves_explicitly_typed_reference_targets) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    nmo_object_id_t entity_id = 0;
+    nmo_object_id_t mesh_id = 0;
+    nmo_object_id_t group_id = 0;
+    nmo_object_id_t parameter_id = 0;
+    nmo_object_id_t operation_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_3DENTITY, "entity", NMO_NULL_GUID,
+        &entity_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, 0, "typed-mesh", CKPGUID_MESH, &mesh_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_GROUP, "group", NMO_NULL_GUID,
+        &group_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, 0, "typed-parameter", CKPGUID_PARAMETERIN,
+        &parameter_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_PARAMETEROPERATION, "operation", NMO_NULL_GUID,
+        &operation_id, NULL));
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_object_t *entity_object =
+        nmo_object_repository_find_by_id(repo, entity_id);
+    ASSERT_NOT_NULL(entity_object);
+    nmo_3dentity_state_t *entity =
+        (nmo_3dentity_state_t *)entity_object->state;
+    ASSERT_NOT_NULL(entity);
+    entity->current_mesh = nmo_ref_from_id(mesh_id);
+    nmo_group_state_t *group = (nmo_group_state_t *)
+        nmo_object_repository_find_by_id(repo, group_id)->state;
+    ASSERT_NOT_NULL(group);
+    ASSERT_EQ(NMO_OK, nmo_beobject_attribute_array_append(
+        &group->base.attributes, parameter_id, 1u, NULL));
+    nmo_parameteroperation_state_t *operation =
+        (nmo_parameteroperation_state_t *)
+            nmo_object_repository_find_by_id(repo, operation_id)->state;
+    ASSERT_NOT_NULL(operation);
+    operation->in1.ref = nmo_ref_from_id(parameter_id);
+    operation->has_in1 = 1;
+
+    size_t changed = 0;
+    ASSERT_EQ(NMO_OK, nmo_runtime_normalize_invalid_refs(
+        repo, nmo_context_get_type_runtime(ctx), &changed));
+    ASSERT_EQ(0u, changed);
+    ASSERT_EQ(NMO_REF_RESOLVED, entity->current_mesh.state);
+    ASSERT_EQ(mesh_id, entity->current_mesh.id);
+    ASSERT_EQ(1u, group->base.attributes.count);
+    ASSERT_EQ(parameter_id, nmo_ref_runtime_id(
+        &NMO_ARRAY_DATA(
+            nmo_beobject_attribute_t, &group->base.attributes)[0].parameter));
+    ASSERT_EQ(NMO_REF_RESOLVED, operation->in1.ref.state);
+    ASSERT_EQ(parameter_id, operation->in1.ref.id);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(runtime_kernel, dependency_remap_preserves_invalid_references) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
@@ -2487,6 +2550,7 @@ REGISTER_TEST(runtime_kernel, delete_cascade_removes_referencing_group);
 REGISTER_TEST(runtime_kernel, deserialize_failure_does_not_publish_state_for_finalize);
 REGISTER_TEST(runtime_kernel, normalize_removes_only_invalid_reference_records);
 REGISTER_TEST(runtime_kernel, normalize_clears_raw_scalar_class_mismatch);
+REGISTER_TEST(runtime_kernel, normalize_preserves_explicitly_typed_reference_targets);
 REGISTER_TEST(runtime_kernel, dependency_remap_preserves_invalid_references);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_scene_members);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_behaviorlink_endpoints);

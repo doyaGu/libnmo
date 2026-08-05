@@ -31,6 +31,7 @@
 #include "object/nmo_object_repository.h"
 #include "object/nmo_ref_graph.h"
 #include "type/nmo_reflection.h"
+#include "type/nmo_type_query.h"
 #include "nmo_types.h"
 #include <stddef.h>
 #include <stdbool.h>
@@ -290,17 +291,29 @@ static nmo_status_t nmo_beobject_read_object_sequence(
     NMO_RETURN_OK();
 }
 
-static bool nmo_beobject_is_parameter_class(nmo_class_id_t class_id)
+static bool nmo_beobject_is_parameter_object(
+    const nmo_object_t *object,
+    const nmo_type_registry_t *types)
 {
-    return class_id == NMO_CID_PARAMETER ||
-           class_id == NMO_CID_PARAMETERIN ||
-           class_id == NMO_CID_PARAMETEROUT ||
-           class_id == NMO_CID_PARAMETERLOCAL;
+    const nmo_class_id_t classes[] = {
+        NMO_CID_PARAMETER,
+        NMO_CID_PARAMETERIN,
+        NMO_CID_PARAMETEROUT,
+        NMO_CID_PARAMETERLOCAL,
+    };
+    for (size_t i = 0; i < sizeof(classes) / sizeof(classes[0]); ++i) {
+        if (nmo_type_query_object_is_derived_from_class(
+                types, object, classes[i])) {
+            return true;
+        }
+    }
+    return false;
 }
 
 static void nmo_beobject_check_parameter_ref(
     nmo_ref_t *ref,
-    const nmo_object_repository_t *repository)
+    const nmo_object_repository_t *repository,
+    const nmo_type_registry_t *types)
 {
     if (ref == NULL || ref->state != NMO_REF_RESOLVED ||
         repository == NULL) {
@@ -308,8 +321,7 @@ static void nmo_beobject_check_parameter_ref(
     }
     const nmo_object_t *target = nmo_object_repository_find_by_id(
         repository, ref->id);
-    if (target != NULL && !nmo_beobject_is_parameter_class(
-            nmo_object_get_class_id(target))) {
+    if (target != NULL && !nmo_beobject_is_parameter_object(target, types)) {
         ref->state = NMO_REF_CLASS_MISMATCH;
     }
 }
@@ -338,7 +350,7 @@ static void nmo_beobject_check_ref_classes(
             nmo_beobject_attribute_t, &state->attributes);
         for (size_t i = 0; i < state->attributes.count; ++i) {
             nmo_beobject_check_parameter_ref(
-                &attributes[i].parameter, repo);
+                &attributes[i].parameter, repo, deser->type_registry);
         }
     }
     if (state->legacy_attributes.data != NULL &&
@@ -348,7 +360,7 @@ static void nmo_beobject_check_ref_classes(
             nmo_beobject_legacy_attribute_t, &state->legacy_attributes);
         for (size_t i = 0; i < state->legacy_attributes.count; ++i) {
             nmo_beobject_check_parameter_ref(
-                &attributes[i].parameter, repo);
+                &attributes[i].parameter, repo, deser->type_registry);
         }
     }
 }

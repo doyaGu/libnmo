@@ -16,6 +16,7 @@
 #include "core/nmo_arena.h"
 #include "object/nmo_object_repository.h"
 #include "type/nmo_reflection.h"
+#include "type/nmo_type_query.h"
 #include <string.h>
 
 NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(parameteroperation, nmo_parameteroperation_state_t)
@@ -60,13 +61,24 @@ static const nmo_type_field_t nmo_parameteroperation_fields[] = {
                     NMO_FIELD_OPTIONAL, NMO_SEMANTIC_NONE)
 };
 
-static int nmo_parameteroperation_is_parameter_class(nmo_class_id_t class_id)
+static bool nmo_parameteroperation_is_parameter_object(
+    const nmo_object_t *object,
+    const nmo_type_registry_t *types)
 {
-    return class_id == NMO_CID_PARAMETER ||
-           class_id == NMO_CID_PARAMETERIN ||
-           class_id == NMO_CID_PARAMETEROUT ||
-           class_id == NMO_CID_PARAMETERLOCAL ||
-           class_id == NMO_CID_PARAMETEROPERATION;
+    const nmo_class_id_t classes[] = {
+        NMO_CID_PARAMETER,
+        NMO_CID_PARAMETERIN,
+        NMO_CID_PARAMETEROUT,
+        NMO_CID_PARAMETERLOCAL,
+        NMO_CID_PARAMETEROPERATION,
+    };
+    for (size_t i = 0; i < sizeof(classes) / sizeof(classes[0]); ++i) {
+        if (nmo_type_query_object_is_derived_from_class(
+                types, object, classes[i])) {
+            return true;
+        }
+    }
+    return false;
 }
 
 static size_t nmo_parameteroperation_identifier_remaining_dwords(
@@ -91,15 +103,16 @@ static size_t nmo_parameteroperation_identifier_remaining_dwords(
 
 static void nmo_parameteroperation_check_parameter_ref(
     nmo_ref_t *ref,
-    const nmo_object_repository_t *repository)
+    const nmo_object_repository_t *repository,
+    const nmo_type_registry_t *types)
 {
     if (ref == NULL || ref->state != NMO_REF_RESOLVED || repository == NULL) {
         return;
     }
     const nmo_object_t *target =
         nmo_object_repository_find_by_id(repository, ref->id);
-    if (target != NULL && !nmo_parameteroperation_is_parameter_class(
-            nmo_object_get_class_id(target))) {
+    if (target != NULL &&
+        !nmo_parameteroperation_is_parameter_object(target, types)) {
         ref->state = NMO_REF_CLASS_MISMATCH;
     }
 }
@@ -236,9 +249,12 @@ commit:
         const nmo_type_registry_t *types =
             nmo_deserialize_context_get_type_registry(context);
         nmo_ref_check_class(&decoded.owner, repository, types, NMO_CID_BEHAVIOR);
-        nmo_parameteroperation_check_parameter_ref(&decoded.in1.ref, repository);
-        nmo_parameteroperation_check_parameter_ref(&decoded.in2.ref, repository);
-        nmo_parameteroperation_check_parameter_ref(&decoded.out.ref, repository);
+        nmo_parameteroperation_check_parameter_ref(
+            &decoded.in1.ref, repository, types);
+        nmo_parameteroperation_check_parameter_ref(
+            &decoded.in2.ref, repository, types);
+        nmo_parameteroperation_check_parameter_ref(
+            &decoded.out.ref, repository, types);
     }
     *out_state = decoded;
     NMO_RETURN_OK();
