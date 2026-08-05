@@ -82,6 +82,22 @@ const nmo_type_descriptor_t *nmo_type_query_find_for_object(
         registry, (uint32_t)nmo_object_get_class_id(obj));
 }
 
+bool nmo_type_query_object_is_derived_from_class(
+    const nmo_type_registry_t *registry,
+    const nmo_object_t *obj,
+    nmo_class_id_t base_class_id)
+{
+    if (!registry || !obj || base_class_id == 0) return false;
+    const nmo_type_descriptor_t *base =
+        nmo_type_registry_find_by_class_id_inherited(
+            registry, (uint32_t)base_class_id);
+    const nmo_type_descriptor_t *derived =
+        nmo_type_query_find_for_object(registry, obj);
+    if (!base || !derived) return false;
+    return nmo_type_is_derived_from(
+        (nmo_type_registry_t *)registry, derived->id, base->id);
+}
+
 bool nmo_type_query_object_is_derived_from_guid(
     const nmo_type_registry_t *registry,
     const nmo_object_t *obj, nmo_guid_t base_guid)

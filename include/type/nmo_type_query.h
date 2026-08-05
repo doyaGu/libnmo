@@ -92,6 +92,14 @@ NMO_API const nmo_type_descriptor_t *nmo_type_query_find_for_object(
     const nmo_object_t *obj);
 
 /**
+ * @brief Check whether an object's effective type derives from a base class.
+ */
+NMO_API bool nmo_type_query_object_is_derived_from_class(
+    const nmo_type_registry_t *registry,
+    const nmo_object_t *obj,
+    nmo_class_id_t base_class_id);
+
+/**
  * @brief Check whether an object derives from a base type GUID.
  */
 NMO_API bool nmo_type_query_object_is_derived_from_guid(

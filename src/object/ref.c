@@ -5,7 +5,7 @@
 #include "format/nmo_chunk_context.h"
 #include "object/nmo_object_repository.h"
 #include "format/nmo_object.h"
-#include "type/nmo_type_system.h"
+#include "type/nmo_type_query.h"
 #include "core/nmo_arena.h"
 
 #include <limits.h>
@@ -169,9 +169,8 @@ void nmo_ref_check_class(
     }
     const nmo_object_t *target = nmo_object_repository_find_by_id(
         repository, ref->id);
-    if (target != NULL && !nmo_type_registry_is_class_derived_from(
-            types, (uint32_t)nmo_object_get_class_id(target),
-            (uint32_t)expected_class_id)) {
+    if (target != NULL && !nmo_type_query_object_is_derived_from_class(
+            types, target, expected_class_id)) {
         ref->state = NMO_REF_CLASS_MISMATCH;
     }
 }

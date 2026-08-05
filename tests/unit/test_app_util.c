@@ -94,11 +94,43 @@ TEST(app_util, type_query_prefers_explicit_object_type) {
     ASSERT_TRUE(nmo_guid_equals(CKPGUID_CAMERA, type->guid));
     ASSERT_TRUE(nmo_type_query_object_is_derived_from_guid(
         registry, obj, CKPGUID_OBJECT));
+    ASSERT_TRUE(nmo_type_query_object_is_derived_from_class(
+        registry, obj, NMO_CID_3DENTITY));
+    ASSERT_FALSE(nmo_type_query_object_is_derived_from_class(
+        registry, obj, NMO_CID_MESH));
     ASSERT_EQ(nmo_object_get_state(obj),
               nmo_type_query_object_get_ancestor_state_by_guid(
                   registry, obj, CKPGUID_OBJECT));
 
     nmo_object_destroy(obj);
+    nmo_context_release(ctx);
+}
+
+TEST(app_util, ref_class_check_uses_explicit_object_type) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_allocator_t allocator = nmo_allocator_default();
+    nmo_object_repository_t *repository =
+        nmo_object_repository_create(&allocator);
+    ASSERT_NOT_NULL(repository);
+
+    nmo_object_t *target = nmo_object_create(&allocator, 7u, 0);
+    ASSERT_NOT_NULL(target);
+    ASSERT_EQ(NMO_OK, nmo_object_set_type_guid(target, CKPGUID_CAMERA));
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repository, &target));
+    ASSERT_NULL(target);
+
+    nmo_ref_t ref = nmo_ref_from_id(7u);
+    nmo_ref_check_class(
+        &ref, repository, nmo_context_get_type_registry(ctx),
+        NMO_CID_3DENTITY);
+    ASSERT_EQ(NMO_REF_RESOLVED, ref.state);
+
+    nmo_ref_check_class(
+        &ref, repository, nmo_context_get_type_registry(ctx), NMO_CID_MESH);
+    ASSERT_EQ(NMO_REF_CLASS_MISMATCH, ref.state);
+
+    nmo_object_repository_destroy(repository);
     nmo_context_release(ctx);
 }
 
@@ -182,6 +214,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(app_util, session_open_invalid_args);
     REGISTER_TEST(app_util, type_query_roundtrip);
     REGISTER_TEST(app_util, type_query_prefers_explicit_object_type);
+    REGISTER_TEST(app_util, ref_class_check_uses_explicit_object_type);
     REGISTER_TEST(app_util, type_query_falls_back_from_unknown_explicit_type);
     REGISTER_TEST(app_util, json_util_sanitizes_invalid_utf8);
     REGISTER_TEST(app_util, hex_util_roundtrip);
