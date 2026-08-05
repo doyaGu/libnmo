@@ -244,24 +244,6 @@ static const nmo_type_descriptor_t *resolve_object_type(
     return nmo_type_registry_find_by_class_id_inherited(registry, nmo_object_get_class_id(obj));
 }
 
-static bool is_base_embedding(const nmo_type_descriptor_t *owner,
-                              const nmo_type_field_t *field)
-{
-    if (!owner || !field) return false;
-    if (field->flags & NMO_FIELD_REPEATED) return false;
-    if (nmo_guid_is_null(owner->base_type)) return false;
-    if (nmo_guid_equals(field->type_guid, owner->base_type)) return true;
-    if (nmo_guid_equals(field->type_guid, CKPGUID_NONE)) {
-        if (strcmp(field->name, "base") == 0 ||
-            strcmp(field->name, "entity") == 0 ||
-            strcmp(field->name, "beobject") == 0 ||
-            strcmp(field->name, "object") == 0) {
-            return true;
-        }
-    }
-    return false;
-}
-
 static bool is_object_ref(const nmo_type_field_t *field)
 {
     if (!field) return false;
@@ -496,7 +478,7 @@ static float similarity_core(const nmo_object_t *obj1, const nmo_object_t *obj2,
         size_t field_count = nmo_type_get_field_count(t1);
         for (size_t i = 0; i < field_count; i++) {
             const nmo_type_field_t *f1 = nmo_type_get_field_by_index(t1, i);
-            if (!f1 || !f1->name || is_base_embedding(t1, f1)) continue;
+            if (!f1 || !f1->name || nmo_field_is_base_embedding(t1, f1)) continue;
             const nmo_type_field_t *f2 = nmo_type_get_field_by_name(t2, f1->name);
             total++;
             if (!f2) continue;
@@ -687,7 +669,7 @@ static uint32_t hash_instance_for_diff(const nmo_type_descriptor_t *type,
         size_t fields = nmo_type_get_field_count(type);
         for (size_t i = 0; i < fields; i++) {
             const nmo_type_field_t *f = nmo_type_get_field_by_index(type, i);
-            if (!f || !f->name || is_base_embedding(type, f)) continue;
+            if (!f || !f->name || nmo_field_is_base_embedding(type, f)) continue;
 
             h = hash_bytes32(f->name, strlen(f->name), h);
             const void *p = nmo_field_get_ptr_const(value, f);
@@ -726,7 +708,7 @@ static uint64_t compute_signature(const nmo_object_t *obj, const nmo_type_regist
         size_t touched = 0;
         for (size_t i = 0; i < fields; i++) {
             const nmo_type_field_t *f = nmo_type_get_field_by_index(t, i);
-            if (!f || !f->name || is_base_embedding(t, f)) continue;
+            if (!f || !f->name || nmo_field_is_base_embedding(t, f)) continue;
             touched++;
             sig = hash_bytes32(f->name, strlen(f->name), sig);
             const void *p = nmo_field_get_ptr_const(state, f);
@@ -1612,7 +1594,7 @@ static bool build_field_diffs(const nmo_object_t *obj1,
         size_t fields = nmo_type_get_field_count(t1);
         for (size_t i = 0; i < fields; i++) {
             const nmo_type_field_t *f1 = nmo_type_get_field_by_index(t1, i);
-            if (!f1 || !f1->name || is_base_embedding(t1, f1)) continue;
+            if (!f1 || !f1->name || nmo_field_is_base_embedding(t1, f1)) continue;
             const nmo_type_field_t *f2 = nmo_type_get_field_by_name(t2, f1->name);
             const void *p1 = nmo_field_get_ptr_const(st1, f1);
             const void *p2 = f2 ? nmo_field_get_ptr_const(st2, f2) : NULL;
@@ -1648,7 +1630,7 @@ static bool build_field_diffs(const nmo_object_t *obj1,
         size_t wi = 0;
         for (size_t i = 0; i < fields && wi < emit; i++) {
             const nmo_type_field_t *f1 = nmo_type_get_field_by_index(t1, i);
-            if (!f1 || !f1->name || is_base_embedding(t1, f1)) continue;
+            if (!f1 || !f1->name || nmo_field_is_base_embedding(t1, f1)) continue;
             const nmo_type_field_t *f2 = nmo_type_get_field_by_name(t2, f1->name);
             const void *p1 = nmo_field_get_ptr_const(st1, f1);
             const void *p2 = f2 ? nmo_field_get_ptr_const(st2, f2) : NULL;
