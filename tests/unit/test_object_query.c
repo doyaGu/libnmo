@@ -7,6 +7,7 @@
 #include "document/nmo_document.h"
 #include "object/nmo_object_query.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_object_guids.h"
 #include "object/nmo_object_repository.h"
 #include "format/nmo_object.h"
 #include "runtime/nmo_context.h"
@@ -196,6 +197,51 @@ TEST(object_query, exact_and_derived_class_matching)
     ASSERT_EQ(2, result.matched);
 
     teardown_objects();
+}
+
+TEST(object_query, derived_class_matching_uses_explicit_object_type)
+{
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_allocator_t allocator = nmo_allocator_default();
+    nmo_object_repository_t *repo = nmo_object_repository_create(&allocator);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_t *object = make_object(&allocator, 1u, 0, "typed-camera");
+    ASSERT_NOT_NULL(object);
+    ASSERT_EQ(NMO_OK, nmo_object_set_type_guid(object, CKPGUID_CAMERA));
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &object));
+    ASSERT_NULL(object);
+    object = nmo_object_repository_find_by_id(repo, 1u);
+    ASSERT_NOT_NULL(object);
+
+    const nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
+    nmo_object_query_t query = {
+        .class_id = NMO_CID_3DENTITY,
+        .include_derived_classes = true,
+    };
+    bool matches = false;
+    ASSERT_EQ(NMO_OK, nmo_object_query_matches(
+        object, &query, registry, &matches));
+    ASSERT_TRUE(matches);
+
+    nmo_object_query_index_t *index = nmo_object_query_index_create(
+        repo, registry, &allocator);
+    ASSERT_NOT_NULL(index);
+    ASSERT_EQ(NMO_OK, nmo_object_query_index_rebuild(index));
+    nmo_object_query_context_t query_context = {
+        .repository = repo,
+        .index = index,
+        .registry = registry,
+    };
+    nmo_object_query_result_t result = {0};
+    ASSERT_EQ(NMO_OK, nmo_object_query_iterate(
+        &query_context, &query, NULL, NULL, &result));
+    ASSERT_EQ(1u, result.matched);
+
+    nmo_object_query_index_destroy(index);
+    nmo_object_repository_destroy(repo);
+    nmo_context_release(ctx);
 }
 
 TEST(object_query, derived_class_query_without_registry_reports_error)
@@ -906,6 +952,7 @@ TEST(object_query, query_index_detach_preserves_other_repository_observers)
 TEST_MAIN_BEGIN()
 REGISTER_TEST(object_query, filters_by_object_id);
 REGISTER_TEST(object_query, exact_and_derived_class_matching);
+REGISTER_TEST(object_query, derived_class_matching_uses_explicit_object_type);
 REGISTER_TEST(object_query, derived_class_query_without_registry_reports_error);
 REGISTER_TEST(object_query, name_modes_share_case_rules);
 REGISTER_TEST(object_query, guid_matching_filters_exact_type_guid);

@@ -7,6 +7,7 @@
 
 #include "core/nmo_hash.h"
 #include "format/nmo_object.h"
+#include "type/nmo_type_query.h"
 #include "type/nmo_type_system.h"
 
 #include <stdlib.h>
@@ -372,26 +373,33 @@ static uint32_t query_make_trigram(const char *s)
 
 static nmo_status_t query_index_add_derived_chain(
     nmo_object_query_index_t *index,
-    nmo_class_id_t class_id,
+    const nmo_object_t *object,
     size_t meta_index)
 {
-    nmo_class_id_t current = class_id;
-    for (size_t depth = 0; current != 0 && depth < 64; depth++) {
-        nmo_status_t status = query_append_id_entry(
-            &index->derived_entries,
-            current,
-            meta_index);
-        if (status != NMO_OK) {
-            return status;
+    if (index == NULL || object == NULL) return NMO_ERR_INVALID_ARGUMENT;
+
+    const nmo_type_descriptor_t *current =
+        nmo_type_query_find_for_object(index->registry, object);
+    if (current == NULL) {
+        nmo_class_id_t class_id = nmo_object_get_class_id(object);
+        if (class_id == 0) return NMO_OK;
+        return query_append_id_entry(
+            &index->derived_entries, class_id, meta_index);
+    }
+
+    while (current != NULL) {
+        nmo_class_id_t class_id = (nmo_class_id_t)current->class_id;
+        if (class_id != 0) {
+            nmo_status_t status = query_append_id_entry(
+                &index->derived_entries, class_id, meta_index);
+            if (status != NMO_OK) return status;
         }
-        if (index->registry == NULL) {
+        if (index->registry == NULL || nmo_guid_is_null(current->base_type)) {
             break;
         }
-        nmo_class_id_t parent = (nmo_class_id_t)nmo_type_registry_get_class_parent(
-            index->registry, current);
-        if (parent == 0 || parent == current) {
-            break;
-        }
+        const nmo_type_descriptor_t *parent =
+            nmo_type_registry_find_by_guid(index->registry, current->base_type);
+        if (parent == NULL || parent == current) break;
         current = parent;
     }
     return NMO_OK;
@@ -514,7 +522,7 @@ nmo_status_t nmo_object_query_index_rebuild(nmo_object_query_index_t *index)
             return status;
         }
 
-        status = query_index_add_derived_chain(index, meta->class_id, meta_index);
+        status = query_index_add_derived_chain(index, object, meta_index);
         if (status != NMO_OK) {
             query_index_clear_storage(index);
             return status;

@@ -36,6 +36,22 @@ static bool query_selector_class_allowed(
     return false;
 }
 
+static bool query_object_is_derived_from_class(
+    const nmo_type_registry_t *registry,
+    const nmo_object_t *object,
+    nmo_class_id_t base_class_id)
+{
+    if (registry == NULL || object == NULL || base_class_id == 0) return false;
+    const nmo_type_descriptor_t *type =
+        nmo_type_query_find_for_object(registry, object);
+    const nmo_type_descriptor_t *base =
+        nmo_type_registry_find_by_class_id_inherited(
+            registry, (uint32_t)base_class_id);
+    return type != NULL && base != NULL &&
+           nmo_type_is_derived_from(
+               (nmo_type_registry_t *)registry, type->id, base->id);
+}
+
 
 static char query_fold_char(char c, bool icase)
 {
@@ -370,8 +386,8 @@ nmo_status_t nmo_object_query_matches(
             if (registry == NULL) {
                 return NMO_ERR_INVALID_ARGUMENT;
             }
-            if (!nmo_type_registry_is_class_derived_from(
-                    registry, object_class, query->class_id)) {
+            if (!query_object_is_derived_from_class(
+                    registry, object, query->class_id)) {
                 return NMO_OK;
             }
         } else if (object_class != query->class_id) {
@@ -908,9 +924,8 @@ nmo_status_t nmo_object_query_resolve_one(
         nmo_context_t *ctx = nmo_document_get_context(document);
         const nmo_type_registry_t *registry =
             ctx != NULL ? nmo_context_get_type_registry(ctx) : NULL;
-        if (registry == NULL ||
-            !nmo_type_registry_is_class_derived_from(
-                registry, class_id, selector->required_base_class)) {
+        if (!query_object_is_derived_from_class(
+                registry, object, selector->required_base_class)) {
             return NMO_ERR_INVALID_ARGUMENT;
         }
     }
