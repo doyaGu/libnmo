@@ -216,29 +216,6 @@ static nmo_status_t nmo_ref_enumerate_fields(
     return nmo_type_foreach_ref_field(type, instance, nmo_ref_field_visitor, &ctx);
 }
 
-static const void *nmo_ref_get_base_instance(
-    const nmo_type_registry_t *types,
-    const nmo_type_descriptor_t *derived_type,
-    const void *derived_instance,
-    const nmo_type_descriptor_t *current_type,
-    const void *current_instance,
-    const nmo_type_descriptor_t *base_type)
-{
-    const nmo_type_field_t *base_field = nmo_type_get_field_by_name(current_type, "base");
-    if (base_field && nmo_guid_equals(base_field->type_guid, base_type->guid)) {
-        return nmo_field_get_ptr_const(current_instance, base_field);
-    }
-
-    if (derived_type && derived_type->ext && derived_type->ext->state_offsets) {
-        uint32_t offset = nmo_type_get_state_offset(types, derived_type, base_type);
-        if (offset != (uint32_t)-1) {
-            return (const char *)derived_instance + offset;
-        }
-    }
-
-    return NULL;
-}
-
 /**
  * Enumerate references inside struct array fields.
  *
@@ -291,7 +268,7 @@ static nmo_status_t nmo_ref_enumerate_struct_arrays(
         /* nmo_array_t: inline dynamic array */
         if (field->size == sizeof(nmo_array_t)) {
             const nmo_array_t *arr = (const nmo_array_t *)field_ptr;
-            if (!arr->data || arr->count == 0) continue;
+            if (!arr->data || arr->count == 0 || arr->element_size == 0) continue;
 
             for (size_t k = 0; k < arr->count; ++k) {
                 const void *elem =
@@ -310,10 +287,15 @@ static nmo_status_t nmo_ref_enumerate_struct_arrays(
             if (nmo_field_resolve_count(type, field, instance, &count) != NMO_OK) {
                 continue;
             }
+            size_t element_size =
+                nmo_field_resolve_element_size(field, elem_type);
+            if (element_size == 0) {
+                continue;
+            }
 
             for (uint32_t k = 0; k < count; ++k) {
                 const void *elem =
-                    (const char *)ptr + (size_t)k * elem_type->size;
+                    (const char *)ptr + (size_t)k * element_size;
                 nmo_status_t st = nmo_ref_enumerate_fields(
                     elem_type, elem, visitor, user_data);
                 if (st != NMO_OK) return st;
@@ -331,12 +313,24 @@ static nmo_status_t nmo_ref_enumerate_type_chain(
     nmo_ref_visitor_fn visitor,
     void *user_data)
 {
-    const nmo_type_descriptor_t *current = type;
-    const void *current_instance = instance;
-    const nmo_type_descriptor_t *derived_type = type;
-    const void *derived_instance = instance;
+    const nmo_type_descriptor_ext_t *layout = type->ext;
+    bool has_layout = layout && layout->hierarchy &&
+                      layout->hierarchy_depth > 0;
+    size_t level_count = has_layout ? layout->hierarchy_depth : 1u;
 
-    for (size_t depth = 0; current && current_instance && depth < 64; ++depth) {
+    for (size_t level = level_count; level > 0; --level) {
+        size_t index = level - 1u;
+        const nmo_type_descriptor_t *current =
+            has_layout ? layout->hierarchy[index] : type;
+        uint32_t state_offset =
+            has_layout && layout->state_offsets
+                ? layout->state_offsets[index]
+                : 0u;
+        const void *current_instance =
+            (const uint8_t *)instance + state_offset;
+        if (!current || !current_instance) {
+            continue;
+        }
         nmo_status_t status = NMO_OK;
         if (current->vtable && current->vtable->enumerate_refs) {
             nmo_ref_bridge_ctx_t bridge = {
@@ -361,24 +355,6 @@ static nmo_status_t nmo_ref_enumerate_type_chain(
             }
         }
 
-        if (nmo_guid_is_null(current->base_type)) {
-            break;
-        }
-
-        const nmo_type_descriptor_t *base =
-            nmo_type_registry_find_by_guid(types, current->base_type);
-        if (!base) {
-            break;
-        }
-
-        const void *base_instance = nmo_ref_get_base_instance(
-            types, derived_type, derived_instance, current, current_instance, base);
-        if (!base_instance) {
-            break;
-        }
-
-        current = base;
-        current_instance = base_instance;
     }
 
     NMO_RETURN_OK();
@@ -402,8 +378,15 @@ NMO_API nmo_status_t nmo_ref_enumerate_object(
         NMO_RETURN_OK();
     }
 
-    nmo_class_id_t class_id = nmo_object_get_class_id(obj);
-    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_class_id(types, class_id);
+    const nmo_type_descriptor_t *type = NULL;
+    nmo_guid_t type_guid = nmo_object_get_type_guid(obj);
+    if (!nmo_guid_is_null(type_guid)) {
+        type = nmo_type_registry_find_by_guid(types, type_guid);
+    }
+    if (!type) {
+        type = nmo_type_registry_find_by_class_id_inherited(
+            types, nmo_object_get_class_id(obj));
+    }
     if (!type) {
         NMO_RETURN_OK();
     }

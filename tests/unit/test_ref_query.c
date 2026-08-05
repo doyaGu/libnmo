@@ -12,8 +12,71 @@
 #include "object/builtin/nmo_character_schemas.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_ref_graph.h"
+#include "object/nmo_ref_enumerate.h"
 #include "format/nmo_object.h"
 #include "core/nmo_array.h"
+#include "type/nmo_reflection.h"
+
+#include <stdalign.h>
+
+typedef struct explicit_ref_state {
+    nmo_object_id_t target;
+} explicit_ref_state_t;
+
+typedef struct strided_ref_element {
+    nmo_object_id_t target;
+    uint32_t padding[3];
+} strided_ref_element_t;
+
+typedef struct strided_ref_state {
+    uint32_t element_count;
+    strided_ref_element_t *elements;
+} strided_ref_state_t;
+
+static const nmo_guid_t explicit_ref_type_guid =
+    NMO_GUID_INIT(0xB4A50A10u, 0x00000001u);
+static const nmo_guid_t strided_ref_element_guid =
+    NMO_GUID_INIT(0xB4A50A11u, 0x00000001u);
+static const nmo_guid_t strided_ref_type_guid =
+    NMO_GUID_INIT(0xB4A50A12u, 0x00000001u);
+
+static const nmo_type_field_t explicit_ref_fields[] = {
+    NMO_FIELD_REF(explicit_ref_state_t, target),
+};
+
+#define STRIDED_REF_ELEMENT_GUID_INIT NMO_GUID_INIT(0xB4A50A11u, 0x00000001u)
+static const nmo_type_field_t strided_ref_element_fields[] = {
+    NMO_FIELD_REF(strided_ref_element_t, target),
+};
+static const nmo_type_field_t strided_ref_fields[] = {
+    NMO_FIELD(strided_ref_state_t, element_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY_COUNTED(
+        strided_ref_state_t, elements, element_count, 1,
+        STRIDED_REF_ELEMENT_GUID),
+};
+
+typedef struct direct_ref_capture {
+    size_t count;
+    nmo_object_id_t targets[4];
+} direct_ref_capture_t;
+
+static bool capture_direct_ref(
+    void *user_data,
+    uint32_t target_id,
+    nmo_ref_kind_t kind,
+    const char *field_name,
+    uint32_t index)
+{
+    (void)kind;
+    (void)field_name;
+    (void)index;
+    direct_ref_capture_t *capture = (direct_ref_capture_t *)user_data;
+    if (capture->count < sizeof(capture->targets) / sizeof(capture->targets[0])) {
+        capture->targets[capture->count] = target_id;
+    }
+    capture->count++;
+    return true;
+}
 
 static void set_group_members(
     nmo_session_t *session,
@@ -210,6 +273,119 @@ TEST(ref_query, visits_edges_without_exposing_graph_handles) {
     nmo_context_release(ctx);
 }
 
+TEST(ref_query, explicit_type_guid_drives_reference_enumeration) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
+    ASSERT_NOT_NULL(registry);
+    ASSERT_EQ(NMO_OK, nmo_type_registry_begin_update(registry));
+
+    nmo_type_descriptor_t descriptor = {
+        .guid = explicit_ref_type_guid,
+        .id = NMO_TYPE_ID_INVALID,
+        .class_id = 0,
+        .category = NMO_TYPE_CATEGORY_STRUCT,
+        .name = "ExplicitRefState",
+        .size = (uint32_t)sizeof(explicit_ref_state_t),
+        .alignment = (uint32_t)alignof(explicit_ref_state_t),
+        .fields = explicit_ref_fields,
+        .field_count = sizeof(explicit_ref_fields) / sizeof(explicit_ref_fields[0]),
+        .base_type = NMO_NULL_GUID,
+        .base_type_id = NMO_TYPE_ID_INVALID,
+        .creator_plugin_guid = NMO_NULL_GUID,
+        .specialized_index = NMO_SPECIALIZED_INDEX_INVALID,
+        .valid = true,
+    };
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &descriptor));
+
+    nmo_object_t *obj = nmo_object_create(NULL, 1u, 0);
+    ASSERT_NOT_NULL(obj);
+    ASSERT_EQ(NMO_OK, nmo_object_set_type_guid(obj, explicit_ref_type_guid));
+    ASSERT_EQ(NMO_OK, nmo_object_alloc_state(obj, sizeof(explicit_ref_state_t)));
+    explicit_ref_state_t *state =
+        (explicit_ref_state_t *)nmo_object_get_state(obj);
+    ASSERT_NOT_NULL(state);
+    state->target = 42u;
+
+    direct_ref_capture_t capture = {0};
+    ASSERT_EQ(NMO_OK, nmo_ref_enumerate_object(
+                          registry, obj, capture_direct_ref, &capture));
+    ASSERT_EQ(1u, capture.count);
+    ASSERT_EQ(42u, capture.targets[0]);
+
+    nmo_object_destroy(obj);
+    nmo_context_release(ctx);
+}
+
+TEST(ref_query, struct_array_uses_reflected_storage_stride) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
+    ASSERT_NOT_NULL(registry);
+    ASSERT_EQ(NMO_OK, nmo_type_registry_begin_update(registry));
+
+    nmo_type_descriptor_t element_descriptor = {
+        .guid = strided_ref_element_guid,
+        .id = NMO_TYPE_ID_INVALID,
+        .class_id = 0,
+        .category = NMO_TYPE_CATEGORY_STRUCT,
+        .name = "StridedRefElement",
+        .size = sizeof(nmo_object_id_t),
+        .alignment = (uint32_t)alignof(nmo_object_id_t),
+        .fields = strided_ref_element_fields,
+        .field_count = sizeof(strided_ref_element_fields) /
+                       sizeof(strided_ref_element_fields[0]),
+        .base_type = NMO_NULL_GUID,
+        .base_type_id = NMO_TYPE_ID_INVALID,
+        .creator_plugin_guid = NMO_NULL_GUID,
+        .specialized_index = NMO_SPECIALIZED_INDEX_INVALID,
+        .valid = true,
+    };
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &element_descriptor));
+
+    nmo_type_descriptor_t owner_descriptor = {
+        .guid = strided_ref_type_guid,
+        .id = NMO_TYPE_ID_INVALID,
+        .class_id = 0,
+        .category = NMO_TYPE_CATEGORY_STRUCT,
+        .name = "StridedRefState",
+        .size = (uint32_t)sizeof(strided_ref_state_t),
+        .alignment = (uint32_t)alignof(strided_ref_state_t),
+        .fields = strided_ref_fields,
+        .field_count = sizeof(strided_ref_fields) / sizeof(strided_ref_fields[0]),
+        .base_type = NMO_NULL_GUID,
+        .base_type_id = NMO_TYPE_ID_INVALID,
+        .creator_plugin_guid = NMO_NULL_GUID,
+        .specialized_index = NMO_SPECIALIZED_INDEX_INVALID,
+        .valid = true,
+    };
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &owner_descriptor));
+
+    strided_ref_element_t elements[2] = {
+        {.target = 11u, .padding = {101u, 102u, 103u}},
+        {.target = 22u, .padding = {201u, 202u, 203u}},
+    };
+    nmo_object_t *obj = nmo_object_create(NULL, 1u, 0);
+    ASSERT_NOT_NULL(obj);
+    ASSERT_EQ(NMO_OK, nmo_object_set_type_guid(obj, strided_ref_type_guid));
+    ASSERT_EQ(NMO_OK, nmo_object_alloc_state(obj, sizeof(strided_ref_state_t)));
+    strided_ref_state_t *state =
+        (strided_ref_state_t *)nmo_object_get_state(obj);
+    ASSERT_NOT_NULL(state);
+    state->element_count = 2u;
+    state->elements = elements;
+
+    direct_ref_capture_t capture = {0};
+    ASSERT_EQ(NMO_OK, nmo_ref_enumerate_object(
+                          registry, obj, capture_direct_ref, &capture));
+    ASSERT_EQ(2u, capture.count);
+    ASSERT_EQ(11u, capture.targets[0]);
+    ASSERT_EQ(22u, capture.targets[1]);
+
+    nmo_object_destroy(obj);
+    nmo_context_release(ctx);
+}
+
 TEST(ref_query, scene_base_references_are_enumerated_once) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
@@ -331,6 +507,8 @@ TEST(ref_query, character_part_reference_is_enumerated) {
 }
 
 TEST_MAIN_BEGIN()
+    REGISTER_TEST(ref_query, explicit_type_guid_drives_reference_enumeration);
+    REGISTER_TEST(ref_query, struct_array_uses_reflected_storage_stride);
     REGISTER_TEST(ref_query, counts_session_references_without_graph_handles);
     REGISTER_TEST(ref_query, reports_broken_reference_count);
     REGISTER_TEST(ref_query, visits_edges_without_exposing_graph_handles);
