@@ -1122,7 +1122,9 @@ static nmo_status_t rewrite_fold_rewire_control_boundary_in_edit(
     }
 
     nmo_object_repository_t *repo = nmo_workspace_internal_repository(workspace);
-    if (!repo) {
+    const nmo_type_registry_t *registry =
+        nmo_workspace_internal_type_registry(workspace);
+    if (!repo || !registry) {
         return NMO_ERR_INVALID_STATE;
     }
 
@@ -1145,7 +1147,9 @@ static nmo_status_t rewrite_fold_rewire_control_boundary_in_edit(
         nmo_object_t *link_obj =
             nmo_object_repository_find_by_id(repo, edge->link_id);
         nmo_behaviorlink_state_t *link_state = link_obj
-            ? (nmo_behaviorlink_state_t *)nmo_object_get_state(link_obj)
+            ? (nmo_behaviorlink_state_t *)
+                nmo_type_query_object_get_ancestor_state_by_guid(
+                    registry, link_obj, CKPGUID_BEHAVIORLINK)
             : NULL;
         if (!link_state) {
             rewrite_fold_report_reject(
@@ -1186,7 +1190,9 @@ static nmo_status_t rewrite_fold_rewire_control_boundary_in_edit(
         nmo_object_t *link_obj =
             nmo_object_repository_find_by_id(repo, edge->link_id);
         nmo_behaviorlink_state_t *link_state = link_obj
-            ? (nmo_behaviorlink_state_t *)nmo_object_get_state(link_obj)
+            ? (nmo_behaviorlink_state_t *)
+                nmo_type_query_object_get_ancestor_state_by_guid(
+                    registry, link_obj, CKPGUID_BEHAVIORLINK)
             : NULL;
         if (!link_state) {
             rewrite_fold_report_reject(
@@ -1258,7 +1264,9 @@ static nmo_status_t rewrite_fold_rewire_parameter_boundary_in_edit(
     }
 
     nmo_object_repository_t *repo = nmo_workspace_internal_repository(workspace);
-    if (!repo) {
+    const nmo_type_registry_t *registry =
+        nmo_workspace_internal_type_registry(workspace);
+    if (!repo || !registry) {
         return NMO_ERR_INVALID_STATE;
     }
 
@@ -1282,9 +1290,10 @@ static nmo_status_t rewrite_fold_rewire_parameter_boundary_in_edit(
 
         nmo_object_t *new_target_obj =
             nmo_object_repository_find_by_id(repo, new_parameter_id);
-        nmo_parameterin_state_t *new_target_in = new_target_obj &&
-            nmo_object_get_class_id(new_target_obj) == NMO_CID_PARAMETERIN
-            ? (nmo_parameterin_state_t *)nmo_object_get_state(new_target_obj)
+        nmo_parameterin_state_t *new_target_in = new_target_obj
+            ? (nmo_parameterin_state_t *)
+                nmo_type_query_object_get_ancestor_state_by_guid(
+                    registry, new_target_obj, CKPGUID_PARAMETERIN)
             : NULL;
         if (!new_target_in) {
             rewrite_fold_report_reject(
@@ -1306,9 +1315,10 @@ static nmo_status_t rewrite_fold_rewire_parameter_boundary_in_edit(
 
         nmo_object_t *source_obj =
             nmo_object_repository_find_by_id(repo, edge->source_parameter_id);
-        nmo_parameterout_state_t *source_out = source_obj &&
-            nmo_object_get_class_id(source_obj) == NMO_CID_PARAMETEROUT
-            ? (nmo_parameterout_state_t *)nmo_object_get_state(source_obj)
+        nmo_parameterout_state_t *source_out = source_obj
+            ? (nmo_parameterout_state_t *)
+                nmo_type_query_object_get_ancestor_state_by_guid(
+                    registry, source_obj, CKPGUID_PARAMETEROUT)
             : NULL;
         if (source_out) {
             rc = nmo_workspace_edit_snapshot_bytes(edit, source_out,
@@ -1353,9 +1363,10 @@ static nmo_status_t rewrite_fold_rewire_parameter_boundary_in_edit(
 
         nmo_object_t *target_obj =
             nmo_object_repository_find_by_id(repo, edge->target_parameter_id);
-        nmo_parameterin_state_t *target_in = target_obj &&
-            nmo_object_get_class_id(target_obj) == NMO_CID_PARAMETERIN
-            ? (nmo_parameterin_state_t *)nmo_object_get_state(target_obj)
+        nmo_parameterin_state_t *target_in = target_obj
+            ? (nmo_parameterin_state_t *)
+                nmo_type_query_object_get_ancestor_state_by_guid(
+                    registry, target_obj, CKPGUID_PARAMETERIN)
             : NULL;
         if (!target_in) {
             rewrite_fold_report_reject(
@@ -1376,9 +1387,10 @@ static nmo_status_t rewrite_fold_rewire_parameter_boundary_in_edit(
 
         nmo_object_t *new_source_obj =
             nmo_object_repository_find_by_id(repo, new_parameter_id);
-        nmo_parameterout_state_t *new_source_out = new_source_obj &&
-            nmo_object_get_class_id(new_source_obj) == NMO_CID_PARAMETEROUT
-            ? (nmo_parameterout_state_t *)nmo_object_get_state(new_source_obj)
+        nmo_parameterout_state_t *new_source_out = new_source_obj
+            ? (nmo_parameterout_state_t *)
+                nmo_type_query_object_get_ancestor_state_by_guid(
+                    registry, new_source_obj, CKPGUID_PARAMETEROUT)
             : NULL;
         if (new_source_out) {
             rc = nmo_workspace_edit_snapshot_bytes(edit, new_source_out,
@@ -1403,9 +1415,10 @@ static nmo_status_t rewrite_fold_rewire_parameter_boundary_in_edit(
 
         nmo_object_t *old_source_obj =
             nmo_object_repository_find_by_id(repo, edge->source_parameter_id);
-        nmo_parameterout_state_t *old_source_out = old_source_obj &&
-            nmo_object_get_class_id(old_source_obj) == NMO_CID_PARAMETEROUT
-            ? (nmo_parameterout_state_t *)nmo_object_get_state(old_source_obj)
+        nmo_parameterout_state_t *old_source_out = old_source_obj
+            ? (nmo_parameterout_state_t *)
+                nmo_type_query_object_get_ancestor_state_by_guid(
+                    registry, old_source_obj, CKPGUID_PARAMETEROUT)
             : NULL;
         if (old_source_out && edge->source_parameter_id != new_parameter_id) {
             rc = nmo_workspace_edit_snapshot_bytes(edit, old_source_out,

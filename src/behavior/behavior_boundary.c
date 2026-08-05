@@ -4,7 +4,9 @@
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "object/builtin/nmo_parameterin_schemas.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_object_guids.h"
 #include "object/nmo_object_repository.h"
+#include "type/nmo_type_query.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -133,28 +135,39 @@ static bool boundary_add_parameter_edge(
     return true;
 }
 
-static nmo_guid_t boundary_parameter_type_guid(nmo_object_repository_t *repo,
-                                               nmo_object_id_t parameter_id) {
-    if (!repo || parameter_id == 0) {
+static nmo_guid_t boundary_parameter_type_guid(
+    const nmo_type_registry_t *registry,
+    nmo_object_repository_t *repo,
+    nmo_object_id_t parameter_id) {
+    if (!registry || !repo || parameter_id == 0) {
         return (nmo_guid_t){0, 0};
     }
 
     nmo_object_t *obj = nmo_object_repository_find_by_id(repo, parameter_id);
-    if (!obj || !obj->state) {
+    if (!obj) {
         return (nmo_guid_t){0, 0};
     }
 
-    nmo_class_id_t class_id = nmo_object_get_class_id(obj);
-    if (class_id == NMO_CID_PARAMETERIN) {
+    if (nmo_type_query_object_is_derived_from_class(
+            registry, obj, NMO_CID_PARAMETERIN)) {
         const nmo_parameterin_state_t *state =
-            (const nmo_parameterin_state_t *)obj->state;
+            (const nmo_parameterin_state_t *)
+                nmo_type_query_object_get_ancestor_state_by_guid(
+                    registry, obj, CKPGUID_PARAMETERIN);
+        if (!state) {
+            return (nmo_guid_t){0, 0};
+        }
         return state->type_guid;
     }
-    if (class_id == NMO_CID_PARAMETEROUT ||
-        class_id == NMO_CID_PARAMETERLOCAL ||
-        class_id == NMO_CID_PARAMETER) {
+    if (nmo_type_query_object_is_derived_from_class(
+            registry, obj, NMO_CID_PARAMETER)) {
         const nmo_parameter_state_t *state =
-            (const nmo_parameter_state_t *)obj->state;
+            (const nmo_parameter_state_t *)
+                nmo_type_query_object_get_ancestor_state_by_guid(
+                    registry, obj, CKPGUID_PARAMETER);
+        if (!state) {
+            return (nmo_guid_t){0, 0};
+        }
         return state->type_guid;
     }
 
@@ -209,6 +222,7 @@ static bool boundary_classify_control_edge(
 
 static bool boundary_classify_parameter_edge(
     nmo_behavior_boundary_t *boundary,
+    const nmo_type_registry_t *registry,
     nmo_object_repository_t *repo,
     const nmo_behavior_index_t *index,
     const nmo_behavior_graph_edge_t *edge) {
@@ -231,9 +245,11 @@ static bool boundary_classify_parameter_edge(
         return true;
     }
 
-    nmo_guid_t type_guid = boundary_parameter_type_guid(repo, edge->to_id);
+    nmo_guid_t type_guid = boundary_parameter_type_guid(
+        registry, repo, edge->to_id);
     if (nmo_guid_is_null(type_guid)) {
-        type_guid = boundary_parameter_type_guid(repo, edge->from_id);
+        type_guid = boundary_parameter_type_guid(
+            registry, repo, edge->from_id);
     }
 
     nmo_behavior_boundary_parameter_edge_t out = {
@@ -260,6 +276,8 @@ static bool boundary_classify_graph_edges(
     const nmo_behavior_graph_t *graph,
     nmo_behavior_boundary_t *boundary) {
     nmo_object_repository_t *repo = nmo_workspace_internal_repository(workspace);
+    const nmo_type_registry_t *registry =
+        nmo_workspace_internal_type_registry(workspace);
     const nmo_behavior_index_t *index = nmo_workspace_internal_behavior_index(workspace);
 
     for (size_t i = 0; i < graph->edge_count; ++i) {
@@ -271,7 +289,7 @@ static bool boundary_classify_graph_edges(
         } else if (edge->kind &&
                    (strcmp(edge->kind, "param_source") == 0 ||
                     strcmp(edge->kind, "param_dest") == 0)) {
-            ok = boundary_classify_parameter_edge(boundary, repo,
+            ok = boundary_classify_parameter_edge(boundary, registry, repo,
                                                   index, edge);
         }
 

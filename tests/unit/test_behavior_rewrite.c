@@ -74,6 +74,19 @@ static nmo_object_id_t test_create_object(nmo_session_t *session,
     return id;
 }
 
+static nmo_object_id_t test_create_typed_object(
+    nmo_session_t *session,
+    const char *name,
+    nmo_guid_t type_guid)
+{
+    nmo_object_id_t id = 0;
+    if (nmo_session_create_object(
+            session, 0, name, type_guid, &id, NULL) != NMO_OK) {
+        return 0;
+    }
+    return id;
+}
+
 static void test_append_id(nmo_array_t *array, nmo_object_id_t id)
 {
     nmo_status_t status = NMO_ERR_INVALID_ARGUMENT;
@@ -176,6 +189,31 @@ static nmo_object_id_t test_create_behavior_link(nmo_session_t *session,
     return link_id;
 }
 
+static nmo_object_id_t test_create_typed_behavior_link(
+    nmo_context_t *ctx,
+    nmo_session_t *session,
+    nmo_behavior_state_t *owner,
+    nmo_object_id_t source_io,
+    nmo_object_id_t target_io)
+{
+    nmo_object_id_t link_id = test_create_typed_object(
+        session, "Typed Link", CKPGUID_BEHAVIORLINK);
+    nmo_behaviorlink_state_t *link = (nmo_behaviorlink_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            nmo_context_get_type_registry(ctx),
+            test_find_object(session, link_id),
+            CKPGUID_BEHAVIORLINK);
+    if (!link) {
+        return 0;
+    }
+    nmo_behaviorlink_set_in_io_id(link, source_io);
+    nmo_behaviorlink_set_out_io_id(link, target_io);
+    link->use_new_format = true;
+    link->has_format = true;
+    test_append_id(&owner->sub_behavior_links, link_id);
+    return link_id;
+}
+
 static bool create_control_output_fold_fixture(
     nmo_context_t **out_ctx,
     nmo_session_t **out_session,
@@ -247,8 +285,8 @@ static bool create_control_output_fold_fixture(
 
     (void)test_create_behavior_link(session, anchor_state, anchor_in,
                                     child_in);
-    nmo_object_id_t external_link = test_create_behavior_link(
-        session, parent_state, child_out, external_in);
+    nmo_object_id_t external_link = test_create_typed_behavior_link(
+        ctx, session, parent_state, child_out, external_in);
 
     if (external_link == 0 ||
         nmo_session_ensure_behavior_acceleration(session) != NMO_OK) {
@@ -297,12 +335,12 @@ static bool create_parameter_output_fold_fixture(
         session, NMO_CID_BEHAVIOR, "Internal Child");
     nmo_object_id_t external = test_create_object(
         session, NMO_CID_BEHAVIOR, "External Target");
-    nmo_object_id_t anchor_out_param = test_create_object(
-        session, NMO_CID_PARAMETEROUT, "Anchor Out Param");
-    nmo_object_id_t child_out_param = test_create_object(
-        session, NMO_CID_PARAMETEROUT, "Child Out Param");
-    nmo_object_id_t external_in_param = test_create_object(
-        session, NMO_CID_PARAMETERIN, "External In Param");
+    nmo_object_id_t anchor_out_param = test_create_typed_object(
+        session, "Anchor Out Param", CKPGUID_PARAMETEROUT);
+    nmo_object_id_t child_out_param = test_create_typed_object(
+        session, "Child Out Param", CKPGUID_PARAMETEROUT);
+    nmo_object_id_t external_in_param = test_create_typed_object(
+        session, "External In Param", CKPGUID_PARAMETERIN);
 
     nmo_behavior_state_t *parent_state =
         test_behavior_state(session, parent);
@@ -315,15 +353,19 @@ static bool create_parameter_output_fold_fixture(
         test_behavior_state(session, child);
     nmo_behavior_state_t *external_state =
         test_behavior_state(session, external);
-    nmo_parameterout_state_t *anchor_out =
-        (nmo_parameterout_state_t *)nmo_object_get_state(
-            test_find_object(session, anchor_out_param));
-    nmo_parameterout_state_t *child_out =
-        (nmo_parameterout_state_t *)nmo_object_get_state(
-            test_find_object(session, child_out_param));
-    nmo_parameterin_state_t *external_in =
-        (nmo_parameterin_state_t *)nmo_object_get_state(
-            test_find_object(session, external_in_param));
+    const nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
+    nmo_parameterout_state_t *anchor_out = (nmo_parameterout_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, test_find_object(session, anchor_out_param),
+            CKPGUID_PARAMETEROUT);
+    nmo_parameterout_state_t *child_out = (nmo_parameterout_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, test_find_object(session, child_out_param),
+            CKPGUID_PARAMETEROUT);
+    nmo_parameterin_state_t *external_in = (nmo_parameterin_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, test_find_object(session, external_in_param),
+            CKPGUID_PARAMETERIN);
     if (!parent_state || !owner_state || !anchor_state || !child_state ||
         !external_state || !anchor_out || !child_out || !external_in) {
         nmo_session_destroy(session);
@@ -392,12 +434,12 @@ static bool create_parameter_input_fold_fixture(
         session, NMO_CID_BEHAVIOR, "Internal Child");
     nmo_object_id_t external = test_create_object(
         session, NMO_CID_BEHAVIOR, "External Source");
-    nmo_object_id_t anchor_in_param = test_create_object(
-        session, NMO_CID_PARAMETERIN, "Anchor In Param");
-    nmo_object_id_t child_in_param = test_create_object(
-        session, NMO_CID_PARAMETERIN, "Child In Param");
-    nmo_object_id_t external_out_param = test_create_object(
-        session, NMO_CID_PARAMETEROUT, "External Out Param");
+    nmo_object_id_t anchor_in_param = test_create_typed_object(
+        session, "Anchor In Param", CKPGUID_PARAMETERIN);
+    nmo_object_id_t child_in_param = test_create_typed_object(
+        session, "Child In Param", CKPGUID_PARAMETERIN);
+    nmo_object_id_t external_out_param = test_create_typed_object(
+        session, "External Out Param", CKPGUID_PARAMETEROUT);
 
     nmo_behavior_state_t *parent_state =
         test_behavior_state(session, parent);
@@ -410,15 +452,19 @@ static bool create_parameter_input_fold_fixture(
         test_behavior_state(session, child);
     nmo_behavior_state_t *external_state =
         test_behavior_state(session, external);
-    nmo_parameterin_state_t *anchor_in =
-        (nmo_parameterin_state_t *)nmo_object_get_state(
-            test_find_object(session, anchor_in_param));
-    nmo_parameterin_state_t *child_in =
-        (nmo_parameterin_state_t *)nmo_object_get_state(
-            test_find_object(session, child_in_param));
-    nmo_parameterout_state_t *external_out =
-        (nmo_parameterout_state_t *)nmo_object_get_state(
-            test_find_object(session, external_out_param));
+    const nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
+    nmo_parameterin_state_t *anchor_in = (nmo_parameterin_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, test_find_object(session, anchor_in_param),
+            CKPGUID_PARAMETERIN);
+    nmo_parameterin_state_t *child_in = (nmo_parameterin_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, test_find_object(session, child_in_param),
+            CKPGUID_PARAMETERIN);
+    nmo_parameterout_state_t *external_out = (nmo_parameterout_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, test_find_object(session, external_out_param),
+            CKPGUID_PARAMETEROUT);
     if (!parent_state || !owner_state || !anchor_state || !child_state ||
         !external_state || !anchor_in || !child_in || !external_out) {
         nmo_session_destroy(session);
@@ -547,8 +593,11 @@ TEST(beh_rewrite, fold_apply_retargets_control_out_to_anchor_output)
     ASSERT_EQ(NMO_OK, rc);
     ASSERT_EQ(1u, report.boundary.control_out_count);
 
-    nmo_behaviorlink_state_t *link =
-        test_behavior_link_state(session, external_link);
+    nmo_behaviorlink_state_t *link = (nmo_behaviorlink_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            nmo_context_get_type_registry(ctx),
+            test_find_object(session, external_link),
+            CKPGUID_BEHAVIORLINK);
     ASSERT_NOT_NULL(link);
     ASSERT_EQ(anchor_output, nmo_behaviorlink_in_io_id(link));
     ASSERT_NULL(test_find_object(session, child));
@@ -587,10 +636,15 @@ TEST(beh_rewrite, fold_apply_retargets_parameter_out_to_anchor_output_parameter)
                                               &report);
     ASSERT_EQ(NMO_OK, rc);
     ASSERT_EQ(1u, report.boundary.parameter_out_count);
+    const nmo_guid_t expected_type = {0x5A5716FDu, 0x44E276D7u};
+    ASSERT_TRUE(nmo_guid_equals(
+        expected_type, report.boundary.parameter_out[0].type_guid));
 
-    nmo_parameterin_state_t *external_in =
-        (nmo_parameterin_state_t *)nmo_object_get_state(
-            test_find_object(session, external_input_parameter));
+    nmo_parameterin_state_t *external_in = (nmo_parameterin_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            nmo_context_get_type_registry(ctx),
+            test_find_object(session, external_input_parameter),
+            CKPGUID_PARAMETERIN);
     ASSERT_NOT_NULL(external_in);
     ASSERT_EQ(anchor_output_parameter,
               nmo_parameterin_source_id(external_in));
@@ -630,10 +684,15 @@ TEST(beh_rewrite, fold_apply_retargets_parameter_in_to_anchor_input_parameter)
                                               &report);
     ASSERT_EQ(NMO_OK, rc);
     ASSERT_EQ(1u, report.boundary.parameter_in_count);
+    const nmo_guid_t expected_type = {0x5A5716FDu, 0x44E276D7u};
+    ASSERT_TRUE(nmo_guid_equals(
+        expected_type, report.boundary.parameter_in[0].type_guid));
 
-    nmo_parameterin_state_t *anchor_in =
-        (nmo_parameterin_state_t *)nmo_object_get_state(
-            test_find_object(session, anchor_input_parameter));
+    nmo_parameterin_state_t *anchor_in = (nmo_parameterin_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            nmo_context_get_type_registry(ctx),
+            test_find_object(session, anchor_input_parameter),
+            CKPGUID_PARAMETERIN);
     ASSERT_NOT_NULL(anchor_in);
     ASSERT_EQ(external_output_parameter,
               nmo_parameterin_source_id(anchor_in));
