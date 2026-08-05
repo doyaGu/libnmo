@@ -1432,6 +1432,7 @@ nmo_status_t nmo_chunk_start_read(nmo_chunk_t *chunk) {
     state->current_pos = 0;
     state->prev_identifier_pos = 0; // Reset to beginning
     state->data_size = chunk->data.count;
+    state->writing = 0;
     NMO_RETURN_OK();
 }
 
@@ -1447,6 +1448,7 @@ nmo_status_t nmo_chunk_start_write(nmo_chunk_t *chunk) {
     state->current_pos = 0;
     state->prev_identifier_pos = 0;
     state->data_size = 0;
+    state->writing = 1;
 
     /* Reset logical size; keep capacity */
     chunk->data.count = 0;
@@ -1491,6 +1493,7 @@ void nmo_chunk_clear(nmo_chunk_t *chunk) {
             state->current_pos = 0;
             state->prev_identifier_pos = 0;
             state->data_size = 0;
+            state->writing = 0;
         }
     }
 }
@@ -1556,6 +1559,31 @@ size_t nmo_chunk_get_position(const nmo_chunk_t *chunk) {
     return state ? state->current_pos : (size_t)-1;
 }
 
+size_t nmo_chunk_get_remaining(const nmo_chunk_t *chunk) {
+    if (chunk == NULL || chunk->parser_state == NULL) {
+        return 0;
+    }
+
+    const nmo_chunk_parser_state_t *state =
+        (const nmo_chunk_parser_state_t *)chunk->parser_state;
+    if (state->writing) {
+        return 0;
+    }
+
+    size_t readable_dwords = chunk->data.count;
+    if (state->data_size < readable_dwords) {
+        readable_dwords = state->data_size;
+    }
+    if (state->current_pos >= readable_dwords) {
+        return 0;
+    }
+    return readable_dwords - state->current_pos;
+}
+
+int nmo_chunk_is_at_end(const nmo_chunk_t *chunk) {
+    return nmo_chunk_get_remaining(chunk) == 0u;
+}
+
 nmo_status_t nmo_chunk_goto(nmo_chunk_t *chunk, size_t pos) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
@@ -1564,7 +1592,11 @@ nmo_status_t nmo_chunk_goto(nmo_chunk_t *chunk, size_t pos) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "No parser state");
     }
 
-    if (pos > state->data_size) {
+    size_t limit = chunk->data.count;
+    if (!state->writing && state->data_size < limit) {
+        limit = state->data_size;
+    }
+    if (pos > limit) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_OFFSET, NMO_SEVERITY_ERROR,
                          "Cannot seek beyond chunk bounds");
     }
@@ -1586,10 +1618,14 @@ nmo_status_t nmo_chunk_skip(nmo_chunk_t *chunk, size_t dwords) {
                          "Skip overflow");
     }
 
+    if (dwords == 0u) {
+        NMO_RETURN_OK();
+    }
+
     size_t new_pos = state->current_pos + dwords;
 
-    if (state->data_size == chunk->data.count) {
-        if (new_pos > chunk->data.count) {
+    if (!state->writing) {
+        if (!nmo_chunk_has_read_capacity(chunk, dwords)) {
             NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                              "Cannot skip beyond readable data");
         }
@@ -1606,7 +1642,12 @@ nmo_status_t nmo_chunk_skip(nmo_chunk_t *chunk, size_t dwords) {
     nmo_status_t result = nmo_chunk_check_size(chunk, dwords * sizeof(uint32_t));
     NMO_RETURN_IF_ERROR(result);
 
+    uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    memset(&data[state->current_pos], 0, dwords * sizeof(uint32_t));
     state->current_pos = new_pos;
+    if (state->current_pos > chunk->data.count) {
+        chunk->data.count = state->current_pos;
+    }
     NMO_RETURN_OK();
 }
 
@@ -1620,6 +1661,10 @@ nmo_status_t nmo_chunk_check_size(nmo_chunk_t *chunk, size_t needed_bytes) {
     nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
     if (!state) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR, "Chunk not in write mode");
+    }
+    if (!state->writing) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                         "Chunk is not in write mode");
     }
 
     size_t needed_dwords = needed_bytes / sizeof(uint32_t);
@@ -1661,6 +1706,158 @@ nmo_status_t nmo_chunk_check_size(nmo_chunk_t *chunk, size_t needed_bytes) {
     }
 
     NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_chunk_lock_write_buffer(
+    nmo_chunk_t *chunk,
+    size_t dword_count,
+    uint32_t **out_data)
+{
+    if (out_data != NULL) {
+        *out_data = NULL;
+    }
+    NMO_CHUNK_CHECK_ARGS(chunk, out_data, "Invalid direct write buffer arguments");
+
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
+    if (state == NULL || !state->writing) {
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                               "Chunk is not in write mode");
+    }
+    if (dword_count == 0u) {
+        NMO_RETURN_OK();
+    }
+    if (dword_count > SIZE_MAX / sizeof(uint32_t)) {
+        NMO_CHUNK_RETURN_INVALID_ARGUMENT("Direct write buffer size overflow");
+    }
+
+    const size_t start_pos = state->current_pos;
+    nmo_status_t status = nmo_chunk_check_size(
+        chunk, dword_count * sizeof(uint32_t));
+    NMO_RETURN_IF_ERROR(status);
+
+    uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    memset(&data[start_pos], 0, dword_count * sizeof(uint32_t));
+    state->current_pos = start_pos + dword_count;
+    if (state->current_pos > chunk->data.count) {
+        chunk->data.count = state->current_pos;
+    }
+    *out_data = &data[start_pos];
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_chunk_lock_read_buffer(
+    nmo_chunk_t *chunk,
+    size_t dword_count,
+    const uint32_t **out_data)
+{
+    if (out_data != NULL) {
+        *out_data = NULL;
+    }
+    NMO_CHUNK_CHECK_ARGS(chunk, out_data, "Invalid direct read buffer arguments");
+
+    const nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
+    if (state == NULL || state->writing) {
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                               "Chunk is not in read mode");
+    }
+    if (dword_count == 0u) {
+        NMO_RETURN_OK();
+    }
+    if (!nmo_chunk_has_read_capacity(chunk, dword_count)) {
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                               "Cannot lock beyond readable data");
+    }
+
+    const uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    *out_data = &data[state->current_pos];
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_chunk_reserve_dwords(
+    nmo_chunk_t *chunk,
+    size_t dword_count,
+    nmo_chunk_patch_token_t *out_token)
+{
+    if (out_token != NULL) {
+        *out_token = NMO_CHUNK_PATCH_TOKEN_INVALID;
+    }
+    NMO_CHUNK_CHECK_ARGS(chunk, out_token, "Invalid chunk reservation arguments");
+    if (dword_count == 0u) {
+        NMO_CHUNK_RETURN_INVALID_ARGUMENT("Cannot reserve an empty DWORD span");
+    }
+
+    const size_t offset = nmo_chunk_get_position(chunk);
+    uint32_t *reserved = NULL;
+    nmo_status_t status = nmo_chunk_lock_write_buffer(
+        chunk, dword_count, &reserved);
+    NMO_RETURN_IF_ERROR(status);
+
+    out_token->chunk = chunk;
+    out_token->offset = offset;
+    out_token->dword_count = dword_count;
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_chunk_reserve_u32(
+    nmo_chunk_t *chunk,
+    nmo_chunk_patch_token_t *out_token)
+{
+    return nmo_chunk_reserve_dwords(chunk, 1u, out_token);
+}
+
+nmo_status_t nmo_chunk_reserve_u64(
+    nmo_chunk_t *chunk,
+    nmo_chunk_patch_token_t *out_token)
+{
+    return nmo_chunk_reserve_dwords(chunk, 2u, out_token);
+}
+
+nmo_status_t nmo_chunk_patch_dwords(
+    nmo_chunk_t *chunk,
+    nmo_chunk_patch_token_t token,
+    const uint32_t *values,
+    size_t dword_count)
+{
+    if (chunk == NULL || values == NULL || dword_count == 0u) {
+        NMO_CHUNK_RETURN_INVALID_ARGUMENT("Invalid chunk patch arguments");
+    }
+    if (dword_count > SIZE_MAX / sizeof(uint32_t)) {
+        NMO_CHUNK_RETURN_INVALID_ARGUMENT("Chunk patch size overflow");
+    }
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
+    if (state == NULL || !state->writing) {
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
+                               "Chunk is not in write mode");
+    }
+    if (!nmo_chunk_patch_token_is_valid(token) || token.chunk != chunk ||
+        token.dword_count != dword_count || token.offset > chunk->data.count ||
+        dword_count > chunk->data.count - token.offset) {
+        NMO_CHUNK_RETURN_INVALID_ARGUMENT("Invalid chunk patch token");
+    }
+
+    uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    memcpy(&data[token.offset], values, dword_count * sizeof(uint32_t));
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_chunk_patch_u32(
+    nmo_chunk_t *chunk,
+    nmo_chunk_patch_token_t token,
+    uint32_t value)
+{
+    return nmo_chunk_patch_dwords(chunk, token, &value, 1u);
+}
+
+nmo_status_t nmo_chunk_patch_u64(
+    nmo_chunk_t *chunk,
+    nmo_chunk_patch_token_t token,
+    uint64_t value)
+{
+    const uint32_t dwords[2] = {
+        (uint32_t)(value & UINT64_C(0xFFFFFFFF)),
+        (uint32_t)(value >> 32)
+    };
+    return nmo_chunk_patch_dwords(chunk, token, dwords, 2u);
 }
 
 // =============================================================================

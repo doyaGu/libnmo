@@ -59,7 +59,29 @@ typedef struct nmo_chunk_parser_state {
     size_t current_pos;         /**< Current position in DWORDs */
     size_t prev_identifier_pos; /**< Previous identifier position */
     size_t data_size;           /**< Total data size in DWORDs */
+    int writing;                /**< Non-zero while operating in write mode */
 } nmo_chunk_parser_state_t;
+
+/**
+ * @brief Token identifying a reserved DWORD span in one chunk.
+ *
+ * Tokens are tied to the chunk that created them. Patching with a token from
+ * another chunk is rejected.
+ */
+typedef struct nmo_chunk_patch_token {
+    const nmo_chunk_t *chunk;
+    size_t offset;
+    size_t dword_count;
+} nmo_chunk_patch_token_t;
+
+#define NMO_CHUNK_PATCH_TOKEN_INVALID \
+    ((nmo_chunk_patch_token_t){NULL, 0u, 0u})
+
+static inline int nmo_chunk_patch_token_is_valid(
+    nmo_chunk_patch_token_t token)
+{
+    return token.chunk != NULL && token.dword_count != 0u;
+}
 
 static inline int nmo_chunk_has_read_capacity(const nmo_chunk_t *chunk, size_t dwords) {
     if (chunk == NULL || chunk->parser_state == NULL) {
@@ -301,6 +323,16 @@ NMO_API int nmo_chunk_is_compressed(const nmo_chunk_t *chunk);
 NMO_API size_t nmo_chunk_get_position(const nmo_chunk_t *chunk);
 
 /**
+ * @brief Get the number of readable DWORDs after the current position.
+ *
+ * Returns zero when the chunk has no active read state.
+ */
+NMO_API size_t nmo_chunk_get_remaining(const nmo_chunk_t *chunk);
+
+/** @brief Return non-zero when the active read cursor is at end of data. */
+NMO_API int nmo_chunk_is_at_end(const nmo_chunk_t *chunk);
+
+/**
  * @brief Seek to absolute position
  *
  * @param chunk Chunk (required)
@@ -333,6 +365,68 @@ NMO_API nmo_status_t nmo_chunk_skip(nmo_chunk_t *chunk, size_t dwords);
  * @return NMO_OK on success, NMO_ERR_NOMEM on allocation failure
  */
 NMO_API nmo_status_t nmo_chunk_check_size(nmo_chunk_t *chunk, size_t needed_bytes);
+
+/**
+ * @brief Reserve and zero a DWORD span for later patching.
+ *
+ * The write cursor advances by @p dword_count only after the whole operation
+ * succeeds.
+ */
+NMO_API nmo_status_t nmo_chunk_reserve_dwords(
+    nmo_chunk_t *chunk,
+    size_t dword_count,
+    nmo_chunk_patch_token_t *out_token);
+
+/** @brief Reserve one DWORD for a later nmo_chunk_patch_u32() call. */
+NMO_API nmo_status_t nmo_chunk_reserve_u32(
+    nmo_chunk_t *chunk,
+    nmo_chunk_patch_token_t *out_token);
+
+/** @brief Reserve two DWORDs for a later nmo_chunk_patch_u64() call. */
+NMO_API nmo_status_t nmo_chunk_reserve_u64(
+    nmo_chunk_t *chunk,
+    nmo_chunk_patch_token_t *out_token);
+
+/** @brief Patch a reserved span without changing the write cursor. */
+NMO_API nmo_status_t nmo_chunk_patch_dwords(
+    nmo_chunk_t *chunk,
+    nmo_chunk_patch_token_t token,
+    const uint32_t *values,
+    size_t dword_count);
+
+/** @brief Patch a one-DWORD reservation. */
+NMO_API nmo_status_t nmo_chunk_patch_u32(
+    nmo_chunk_t *chunk,
+    nmo_chunk_patch_token_t token,
+    uint32_t value);
+
+/** @brief Patch a two-DWORD reservation in little-endian DWORD order. */
+NMO_API nmo_status_t nmo_chunk_patch_u64(
+    nmo_chunk_t *chunk,
+    nmo_chunk_patch_token_t token,
+    uint64_t value);
+
+/**
+ * @brief Reserve writable DWORDs and return direct temporary access.
+ *
+ * The returned pointer is invalidated by any later operation that grows the
+ * chunk data buffer.
+ */
+NMO_API nmo_status_t nmo_chunk_lock_write_buffer(
+    nmo_chunk_t *chunk,
+    size_t dword_count,
+    uint32_t **out_data);
+
+/**
+ * @brief Return bounded direct access at the current read cursor.
+ *
+ * This operation does not advance the cursor. Use nmo_chunk_skip() after the
+ * caller has consumed the view. The pointer remains chunk-owned.
+ */
+NMO_API nmo_status_t nmo_chunk_lock_read_buffer(
+    nmo_chunk_t *chunk,
+    size_t dword_count,
+    const uint32_t **out_data);
 
 // =============================================================================
 // PRIMITIVE TYPES - WRITE
