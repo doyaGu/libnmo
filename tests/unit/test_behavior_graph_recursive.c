@@ -6,10 +6,14 @@
 #include "../test_framework.h"
 #include "behavior/nmo_behavior_analyze.h"
 #include "behavior/nmo_behavior_query.h"
+#include "document/nmo_document.h"
+#include "object/nmo_class_ids.h"
+#include "object/nmo_object_guids.h"
 #include "runtime/nmo_context.h"
 #include "runtime/nmo_workspace.h"
 #include "session/nmo_session.h"
 #include "core/nmo_array.h"
+#include "../../src/runtime/runtime_internal.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -209,10 +213,43 @@ TEST(graph_rec, unlimited_depth_no_crash)
     nmo_session_close_with_context(ctx, session);
 }
 
+TEST(graph_rec, explicit_behavior_type_builds_graph)
+{
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    nmo_object_id_t behavior_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, 0, "Typed behavior", CKPGUID_BEHAVIOR,
+        &behavior_id, NULL));
+    nmo_document_t *document = NULL;
+    ASSERT_EQ(NMO_OK, nmo_session_borrow_document(session, &document));
+    ASSERT_NOT_NULL(document);
+    nmo_workspace_t *workspace = NULL;
+    ASSERT_EQ(NMO_OK, nmo_workspace_create(ctx, document, &workspace));
+    ASSERT_NOT_NULL(workspace);
+
+    nmo_behavior_graph_t graph = {0};
+    ASSERT_TRUE(nmo_behavior_graph_build(
+        workspace, behavior_id, 0, &graph));
+    ASSERT_EQ(behavior_id, graph.behavior_id);
+    ASSERT_EQ(0u, graph.behavior_class_id);
+    ASSERT_TRUE(graph.node_count > 0);
+
+    nmo_behavior_graph_free(&graph);
+    nmo_workspace_destroy(workspace);
+    nmo_document_destroy(document);
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(graph_rec, depth0_root_only);
     REGISTER_TEST(graph_rec, depth1_has_more_nodes);
     REGISTER_TEST(graph_rec, depth_field_set);
     REGISTER_TEST(graph_rec, unlimited_depth_no_crash);
+    REGISTER_TEST(graph_rec, explicit_behavior_type_builds_graph);
 TEST_MAIN_END()
 

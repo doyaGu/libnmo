@@ -57,12 +57,6 @@ typedef struct graph_build_ctx {
  * Helpers
  * ============================================================================ */
 
-static bool is_behavior_class(nmo_type_registry_t *registry, nmo_class_id_t class_id) {
-    if (!registry) return false;
-    return nmo_type_registry_is_class_derived_from(
-        registry, (uint32_t)class_id, (uint32_t)NMO_CID_BEHAVIOR) ? true : false;
-}
-
 static bool has_id(const nmo_object_id_t *ids, size_t count, nmo_object_id_t id) {
     for (size_t i = 0; i < count; ++i) {
         if (ids[i] == id) return true;
@@ -453,7 +447,8 @@ bool nmo_behavior_graph_build(nmo_workspace_t *workspace,
                            "Behavior %u not found", behavior_id);
         return false;
     }
-    if (!is_behavior_class(registry, nmo_object_get_class_id(behavior))) {
+    if (!nmo_type_query_object_is_derived_from_class(
+            registry, behavior, NMO_CID_BEHAVIOR)) {
         NMO_SET_LAST_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                            "Object %u is not a behavior", behavior_id);
         return false;
