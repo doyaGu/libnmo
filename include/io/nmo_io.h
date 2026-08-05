@@ -15,12 +15,8 @@ extern "C" {
  * Provides a unified interface for different IO backends:
  * - File IO (POSIX/Windows)
  * - Memory IO (in-memory buffers)
- * - Compressed IO (zlib wrapper)
- * - Checksummed IO (Adler-32 wrapper)
- * - Transactional IO (atomic writes)
- *
- * IO interfaces can be composed in layers:
- * File -> Checksum -> Compression -> Parser
+ * - Read-only memory-mapped IO
+ * - Caller-defined backends through the function table below
  */
 
 /**
@@ -87,10 +83,7 @@ typedef int64_t (*nmo_io_tell_fn)(void *handle);
 /**
  * @brief Flush function type
  *
- * Flush any buffered data to the underlying stream.
- * For compression: finalizes compression without closing the stream.
- * For checksums: writes checksum footer without closing.
- * For transactions: commits pending writes without closing.
+ * Flush buffered backend data without closing the stream.
  *
  * @param handle IO handle
  * @return NMO_OK on success, error code otherwise
@@ -162,14 +155,9 @@ NMO_API int64_t nmo_io_tell(nmo_io_interface_t *io);
 /**
  * @brief Flush buffered data in IO interface
  *
- * Flushes any buffered data to the underlying stream without closing.
- * For compression wrappers, this finalizes the compression stream.
- * For checksum wrappers, this writes the checksum footer.
- * For transactional wrappers, this commits the transaction.
- *
- * After flush, the underlying stream remains open and accessible.
- * This is useful when you need to get data from a memory stream
- * before closing the compression wrapper.
+ * Invokes the backend flush hook without closing the stream. File backends
+ * flush their stream, memory-mapped reads use a no-op hook, and memory buffers
+ * do not require one.
  *
  * @param io IO interface
  * @return NMO_OK on success, NMO_ERR_NOT_SUPPORTED if flush not supported, error code otherwise
