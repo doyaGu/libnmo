@@ -18,6 +18,8 @@
 #include "object/builtin/nmo_parameterin_schemas.h"
 #include "object/builtin/nmo_parameterout_schemas.h"
 #include "format/nmo_object.h"
+#include "object/nmo_object_guids.h"
+#include "type/nmo_type_query.h"
 #include "type/nmo_type_system.h"
 #include "core/nmo_guid.h"
 #include "behavior/nmo_behavior_registry.h"
@@ -34,7 +36,7 @@
  * ============================================================================ */
 
 static nmo_status_t walk_recursive(
-    nmo_workspace_t *workspace,
+    const nmo_type_registry_t *registry,
     nmo_object_repository_t *repo,
     nmo_object_id_t behavior_id,
     uint32_t depth,
@@ -57,10 +59,12 @@ static nmo_status_t walk_recursive(
 
     nmo_object_t *obj = nmo_object_repository_find_by_id(repo, behavior_id);
     if (!obj) return NMO_OK;
-    if (nmo_object_get_class_id(obj) != NMO_CID_BEHAVIOR) return NMO_OK;
+    if (!nmo_type_query_object_is_derived_from_class(
+            registry, obj, NMO_CID_BEHAVIOR)) return NMO_OK;
 
-    const nmo_behavior_state_t *state =
-        (const nmo_behavior_state_t *)nmo_object_get_state(obj);
+    const nmo_behavior_state_t *state = (const nmo_behavior_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, obj, CKPGUID_BEHAVIOR);
 
     bool is_bb = state && (state->flags & CKBEHAVIOR_BUILDINGBLOCK);
 
@@ -77,7 +81,7 @@ static nmo_status_t walk_recursive(
                 &state->sub_behaviors, i);
             if (sub_id == 0) continue;
             nmo_status_t st = walk_recursive(
-                workspace, repo, sub_id,
+                registry, repo, sub_id,
                 depth + 1, visitor, user_data, visited);
             if (st != NMO_OK) return st;
         }
@@ -98,16 +102,18 @@ nmo_status_t nmo_behavior_walk(
     }
 
     nmo_object_repository_t *repo = nmo_workspace_internal_repository(workspace);
-    if (!repo) {
+    const nmo_type_registry_t *registry =
+        nmo_workspace_internal_type_registry(workspace);
+    if (!repo || !registry) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
-                         "No object repository in workspace");
+                         "No object repository or type registry in workspace");
     }
 
     nmo_array_t visited;
     NMO_RETURN_IF_ERROR(nmo_array_init(
         &visited, sizeof(nmo_object_id_t), 32, NULL));
     nmo_status_t status = walk_recursive(
-        workspace, repo, root_behavior_id, 0, visitor, user_data, &visited);
+        registry, repo, root_behavior_id, 0, visitor, user_data, &visited);
     nmo_array_dispose(&visited);
     return status;
 }
@@ -130,9 +136,11 @@ nmo_status_t nmo_behavior_analyze_trace_param_chain(
     if (max_depth == 0) max_depth = 32;
 
     nmo_object_repository_t *repo = nmo_workspace_internal_repository(workspace);
-    if (!repo) {
+    const nmo_type_registry_t *registry =
+        nmo_workspace_internal_type_registry(workspace);
+    if (!repo || !registry) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
-                         "No object repository in workspace");
+                         "No object repository or type registry in workspace");
     }
 
     const nmo_behavior_index_t *beh_index =
@@ -153,9 +161,12 @@ nmo_status_t nmo_behavior_analyze_trace_param_chain(
             if (owner) owner_id = owner->owner_id;
         }
 
-        if (cid == NMO_CID_PARAMETERIN) {
+        if (nmo_type_query_object_is_derived_from_class(
+                registry, obj, NMO_CID_PARAMETERIN)) {
             const nmo_parameterin_state_t *pin =
-                (const nmo_parameterin_state_t *)nmo_object_get_state(obj);
+                (const nmo_parameterin_state_t *)
+                    nmo_type_query_object_get_ancestor_state_by_guid(
+                        registry, obj, CKPGUID_PARAMETERIN);
 
             nmo_behavior_trace_step_type_t step_type;
             if (step == 0) {
@@ -230,17 +241,17 @@ static void dump_param_array(
         }
 
         const char *pname = nmo_object_get_name(pobj);
-        nmo_class_id_t pcid = nmo_object_get_class_id(pobj);
 
         print_indent(dctx->out, depth);
         fprintf(dctx->out, "%s[%zu]: #%u", label, i, id);
         if (pname && pname[0]) fprintf(dctx->out, " \"%s\"", pname);
 
         /* Decode parameter value if it's a CKParameter-derived object */
-        if (pcid == NMO_CID_PARAMETEROUT || pcid == NMO_CID_PARAMETERLOCAL) {
-            /* ParameterOut/Local extend CKParameter; state starts with nmo_parameter_state_t */
-            const nmo_parameter_state_t *pstate =
-                (const nmo_parameter_state_t *)nmo_object_get_state(pobj);
+        if (nmo_type_query_object_is_derived_from_class(
+                dctx->registry, pobj, NMO_CID_PARAMETER)) {
+            const nmo_parameter_state_t *pstate = (const nmo_parameter_state_t *)
+                nmo_type_query_object_get_ancestor_state_by_guid(
+                    dctx->registry, pobj, CKPGUID_PARAMETER);
             if (pstate && dctx->registry) {
                 char val_buf[256];
                 if (nmo_behavior_param_value_to_string(pstate, dctx->registry,
@@ -250,9 +261,12 @@ static void dump_param_array(
                             tname ? tname : "?", val_buf);
                 }
             }
-        } else if (pcid == NMO_CID_PARAMETERIN) {
+        } else if (nmo_type_query_object_is_derived_from_class(
+                       dctx->registry, pobj, NMO_CID_PARAMETERIN)) {
             const nmo_parameterin_state_t *pin =
-                (const nmo_parameterin_state_t *)nmo_object_get_state(pobj);
+                (const nmo_parameterin_state_t *)
+                    nmo_type_query_object_get_ancestor_state_by_guid(
+                        dctx->registry, pobj, CKPGUID_PARAMETERIN);
             if (pin) {
                 const char *tname = nmo_type_registry_guid_to_name(
                     dctx->registry, pin->type_guid);
@@ -326,9 +340,13 @@ static bool dump_visitor(
         if (link_id == 0) continue;
         nmo_object_t *lobj = nmo_object_repository_find_by_id(dctx->repo, link_id);
         if (!lobj) continue;
+        if (!nmo_type_query_object_is_derived_from_class(
+                dctx->registry, lobj, NMO_CID_BEHAVIORLINK)) continue;
 
         const nmo_behaviorlink_state_t *link =
-            (const nmo_behaviorlink_state_t *)nmo_object_get_state(lobj);
+            (const nmo_behaviorlink_state_t *)
+                nmo_type_query_object_get_ancestor_state_by_guid(
+                    dctx->registry, lobj, CKPGUID_BEHAVIORLINK);
         if (!link) continue;
 
         print_indent(dctx->out, depth);

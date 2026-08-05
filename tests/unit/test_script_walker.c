@@ -15,7 +15,13 @@
 #include "session/nmo_session.h"
 #include "core/nmo_allocator.h"
 #include "core/nmo_array.h"
+#include "format/nmo_object.h"
+#include "object/builtin/nmo_behavior_schemas.h"
+#include "object/builtin/nmo_parameterin_schemas.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_object_guids.h"
+#include "object/nmo_object_repository.h"
+#include "type/nmo_type_query.h"
 
 #include <string.h>
 
@@ -70,6 +76,28 @@ static nmo_status_t open_workspace_from_session(
         *out_document = NULL;
     }
     return st;
+}
+
+typedef struct walk_capture {
+    nmo_object_id_t id;
+    const nmo_behavior_state_t *state;
+    size_t count;
+} walk_capture_t;
+
+static bool capture_behavior(
+    nmo_object_id_t behavior_id,
+    const nmo_behavior_state_t *state,
+    uint32_t depth,
+    bool is_building_block,
+    void *user_data)
+{
+    walk_capture_t *capture = (walk_capture_t *)user_data;
+    (void)depth;
+    (void)is_building_block;
+    capture->id = behavior_id;
+    capture->state = state;
+    capture->count++;
+    return true;
 }
 
 /* ============================================================================
@@ -250,6 +278,84 @@ TEST(script_walker, dump_text_with_file) {
     nmo_session_close_with_context(ctx, session);
 }
 
+TEST(script_walker, walks_explicit_behavior_type) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    nmo_object_id_t behavior_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, 0, "Typed behavior", CKPGUID_BEHAVIOR,
+        &behavior_id, NULL));
+
+    nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = NULL;
+    ASSERT_EQ(NMO_OK, open_workspace_from_session(
+        ctx, session, &document, &workspace));
+
+    walk_capture_t capture = {0};
+    ASSERT_EQ(NMO_OK, nmo_behavior_walk(
+        workspace, behavior_id, capture_behavior, &capture));
+    ASSERT_EQ(1u, capture.count);
+    ASSERT_EQ(behavior_id, capture.id);
+    ASSERT_NOT_NULL(capture.state);
+
+    nmo_workspace_destroy(workspace);
+    nmo_document_destroy(document);
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
+TEST(script_walker, traces_explicit_parameter_input_type) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    nmo_object_id_t input_id = 0;
+    nmo_object_id_t source_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, 0, "Typed input", CKPGUID_PARAMETERIN,
+        &input_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, 0, "Typed source", CKPGUID_PARAMETEROUT,
+        &source_id, NULL));
+
+    nmo_document_t *document = NULL;
+    nmo_workspace_t *workspace = NULL;
+    ASSERT_EQ(NMO_OK, open_workspace_from_session(
+        ctx, session, &document, &workspace));
+
+    nmo_object_t *input = nmo_object_repository_find_by_id(
+        nmo_document_get_repository(document), input_id);
+    ASSERT_NOT_NULL(input);
+    nmo_parameterin_state_t *input_state = (nmo_parameterin_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            nmo_context_get_type_registry(ctx), input, CKPGUID_PARAMETERIN);
+    ASSERT_NOT_NULL(input_state);
+    nmo_parameterin_set_source_id(input_state, source_id);
+
+    nmo_array_t chain;
+    ASSERT_EQ(NMO_OK, nmo_array_init(
+        &chain, sizeof(nmo_behavior_trace_step_t), 2, NULL));
+    ASSERT_EQ(NMO_OK, nmo_behavior_analyze_trace_param_chain(
+        workspace, input_id, &chain, 8));
+    ASSERT_EQ(2u, chain.count);
+    const nmo_behavior_trace_step_t *steps =
+        (const nmo_behavior_trace_step_t *)chain.data;
+    ASSERT_EQ(input_id, steps[0].id);
+    ASSERT_EQ(NMO_BEHAVIOR_TRACE_STEP_START, steps[0].type);
+    ASSERT_EQ(source_id, steps[1].id);
+    ASSERT_EQ(NMO_BEHAVIOR_TRACE_STEP_DIRECT_SOURCE, steps[1].type);
+
+    nmo_array_dispose(&chain);
+    nmo_workspace_destroy(workspace);
+    nmo_document_destroy(document);
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 /* ============================================================================
  * Main
  * ============================================================================ */
@@ -263,5 +369,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(script_walker, find_scripts_reports_append_oom);
     REGISTER_TEST(script_walker, walk_with_file);
     REGISTER_TEST(script_walker, dump_text_with_file);
+    REGISTER_TEST(script_walker, walks_explicit_behavior_type);
+    REGISTER_TEST(script_walker, traces_explicit_parameter_input_type);
 TEST_MAIN_END()
 
