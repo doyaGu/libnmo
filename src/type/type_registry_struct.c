@@ -147,6 +147,27 @@ static uint32_t struct_field_storage_size(
     return array_count > 0 ? field_type->size * array_count : field_type->size;
 }
 
+static uint32_t struct_field_element_size(
+    const nmo_type_registry_t *type_registry,
+    const nmo_struct_field_def_t *field_def,
+    const parsed_struct_field_type_t *parsed_type,
+    const nmo_type_descriptor_t *field_type)
+{
+    if (field_def->element_size != 0) {
+        return field_def->element_size;
+    }
+    if (parsed_type->array_count > 0) {
+        return field_type->size;
+    }
+    if (parsed_type->pointer_depth > 0) {
+        const nmo_type_descriptor_t *pointee_type =
+            nmo_type_registry_find_by_guid(
+                type_registry, parsed_type->pointee_guid);
+        return pointee_type ? pointee_type->size : 0;
+    }
+    return 0;
+}
+
 static nmo_status_t validate_struct_field_consistency(
     const nmo_struct_descriptor_t *struct_fields,
     const nmo_type_field_t *type_fields,
@@ -494,6 +515,8 @@ nmo_status_t nmo_type_registry_register_struct(
         type_fields[i].default_value = field_def->default_value;
         type_fields[i].count_field_name = field_def->count_field_name;
         type_fields[i].count_multiplier = field_def->count_multiplier;
+        type_fields[i].element_size = struct_field_element_size(
+            type_registry, field_def, &parsed_type, field_type);
 
         offset += total_field_size;
     }
@@ -926,6 +949,8 @@ nmo_status_t nmo_type_registry_finalize_struct(
         type_fields[i].units = NMO_UNITS_NONE;
         type_fields[i].count_field_name = field_def->count_field_name;
         type_fields[i].count_multiplier = field_def->count_multiplier;
+        type_fields[i].element_size = struct_field_element_size(
+            type_registry, field_def, &parsed_type, field_type);
         if (field_def->default_value && total_field_size > 0) {
             void *default_copy = nmo_alloc(
                 &type_registry->type_allocator,
@@ -1242,6 +1267,10 @@ nmo_status_t nmo_type_registry_register_union(
         type_fields[i].semantic = NMO_SEMANTIC_NONE;
         type_fields[i].units = NMO_UNITS_NONE;
         type_fields[i].default_value = field_def->default_value;
+        type_fields[i].count_field_name = field_def->count_field_name;
+        type_fields[i].count_multiplier = field_def->count_multiplier;
+        type_fields[i].element_size = struct_field_element_size(
+            type_registry, field_def, &parsed_type, field_type);
     }
 
     nmo_status_t consistency_res = validate_struct_field_consistency(

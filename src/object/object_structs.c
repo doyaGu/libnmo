@@ -52,16 +52,17 @@
         .default_value = NULL \
     }
 
-#define NMO_STRUCT_FIELD_PTR_COUNTED(_name, _count_field, _count_multiplier) \
+#define NMO_STRUCT_FIELD_PTR_COUNTED(_struct, _field, _count_field, _count_multiplier) \
     { \
-        .name = (_name), \
+        .name = #_field, \
         .type_name = NULL, \
         .type_guid = CKPGUID_POINTER_INIT, \
         .description = NULL, \
         .flags = NMO_FIELD_REPEATED, \
         .default_value = NULL, \
-        .count_field_name = (_count_field), \
-        .count_multiplier = (_count_multiplier) \
+        .count_field_name = #_count_field, \
+        .count_multiplier = (_count_multiplier), \
+        .element_size = (uint32_t)sizeof(*((_struct *)0)->_field) \
     }
 
 #define NMO_STRUCT_DEF(_name, _guid, _fields) \
@@ -104,17 +105,17 @@ nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry) {
     static const nmo_struct_field_def_t ckbitmapdata_fields[] = {
         NMO_STRUCT_FIELD_GUID("width", CKPGUID_UINT32),
         NMO_STRUCT_FIELD_GUID("height", CKPGUID_UINT32),
-        NMO_STRUCT_FIELD_PTR_COUNTED("pixel_data", "pixel_data_size", 1),
+        NMO_STRUCT_FIELD_PTR_COUNTED(nmo_bitmapdata_t, pixel_data, pixel_data_size, 1),
         NMO_STRUCT_FIELD_GUID("pixel_data_size", CKPGUID_UINT64),
-        NMO_STRUCT_FIELD_PTR_COUNTED("palette_data", "palette_size", 1),
+        NMO_STRUCT_FIELD_PTR_COUNTED(nmo_bitmapdata_t, palette_data, palette_size, 1),
         NMO_STRUCT_FIELD_GUID("palette_size", CKPGUID_UINT64),
-        NMO_STRUCT_FIELD_PTR_COUNTED("system_copy_data", "system_copy_size", 1),
+        NMO_STRUCT_FIELD_PTR_COUNTED(nmo_bitmapdata_t, system_copy_data, system_copy_size, 1),
         NMO_STRUCT_FIELD_GUID("system_copy_size", CKPGUID_UINT64),
-        NMO_STRUCT_FIELD_PTR_COUNTED("video_backup_data", "video_backup_size", 1),
+        NMO_STRUCT_FIELD_PTR_COUNTED(nmo_bitmapdata_t, video_backup_data, video_backup_size, 1),
         NMO_STRUCT_FIELD_GUID("video_backup_size", CKPGUID_UINT64),
-        NMO_STRUCT_FIELD_PTR_COUNTED("pixels_data", "pixels_size", 1),
+        NMO_STRUCT_FIELD_PTR_COUNTED(nmo_bitmapdata_t, pixels_data, pixels_size, 1),
         NMO_STRUCT_FIELD_GUID("pixels_size", CKPGUID_UINT64),
-        NMO_STRUCT_FIELD_PTR_COUNTED("raw_chunk_data", "raw_chunk_size", 1),
+        NMO_STRUCT_FIELD_PTR_COUNTED(nmo_bitmapdata_t, raw_chunk_data, raw_chunk_size, 1),
         NMO_STRUCT_FIELD_GUID("raw_chunk_size", CKPGUID_UINT64)
     };
     static const nmo_struct_type_def_t ckbitmapdata_def =
@@ -154,8 +155,8 @@ nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry) {
     static const nmo_struct_field_def_t ck3dentityskinvertex_fields[] = {
         NMO_STRUCT_FIELD_GUID("bone_count", CKPGUID_UINT32),
         NMO_STRUCT_FIELD_GUID("initial_pos", CKPGUID_VECTOR),
-        NMO_STRUCT_FIELD_PTR_COUNTED("bone_indices", "bone_count", 1),
-        NMO_STRUCT_FIELD_PTR_COUNTED("bone_weights", "bone_count", 1)
+        NMO_STRUCT_FIELD_PTR_COUNTED(nmo_3dentity_skin_vertex_t, bone_indices, bone_count, 1),
+        NMO_STRUCT_FIELD_PTR_COUNTED(nmo_3dentity_skin_vertex_t, bone_weights, bone_count, 1)
     };
     static const nmo_struct_type_def_t ck3dentityskinvertex_def =
         NMO_STRUCT_DEF("CK3dEntitySkinVertex", CKPGUID_CK3DENTITYSKINVERTEX,
@@ -175,11 +176,11 @@ nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry) {
     static const nmo_struct_field_def_t ck3dentityskin_fields[] = {
         NMO_STRUCT_FIELD_GUID("object_init_matrix", CKPGUID_MATRIX),
         NMO_STRUCT_FIELD_GUID("bone_count", CKPGUID_UINT32),
-        NMO_STRUCT_FIELD_PTR_COUNTED("bones", "bone_count", 1),
+        NMO_STRUCT_FIELD_PTR_COUNTED(nmo_3dentity_skin_t, bones, bone_count, 1),
         NMO_STRUCT_FIELD_GUID("vertex_count", CKPGUID_UINT32),
-        NMO_STRUCT_FIELD_PTR_COUNTED("vertices", "vertex_count", 1),
+        NMO_STRUCT_FIELD_PTR_COUNTED(nmo_3dentity_skin_t, vertices, vertex_count, 1),
         NMO_STRUCT_FIELD_GUID("normal_count", CKPGUID_UINT32),
-        NMO_STRUCT_FIELD_PTR_COUNTED("normals", "normal_count", 1)
+        NMO_STRUCT_FIELD_PTR_COUNTED(nmo_3dentity_skin_t, normals, normal_count, 1)
     };
     static const nmo_struct_type_def_t ck3dentityskin_def =
         NMO_STRUCT_DEF("CK3dEntitySkin", CKPGUID_CK3DENTITYSKIN, ck3dentityskin_fields);
@@ -227,9 +228,9 @@ nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry) {
         NMO_STRUCT_FIELD_GUID("type", CKPGUID_UINT32),
         NMO_STRUCT_FIELD_GUID("subtype", CKPGUID_UINT32),
         NMO_STRUCT_FIELD_GUID("patch_count", CKPGUID_UINT32),
-        NMO_STRUCT_FIELD_PTR_COUNTED("patches_raw", "patch_count", 1),
+        NMO_STRUCT_FIELD_PTR_COUNTED(nmo_patchmesh_channel_t, patches_raw, patch_count, 1),
         NMO_STRUCT_FIELD_GUID("uv_count", CKPGUID_UINT32),
-        NMO_STRUCT_FIELD_PTR_COUNTED("uvs", "uv_count", 1)
+        NMO_STRUCT_FIELD_PTR_COUNTED(nmo_patchmesh_channel_t, uvs, uv_count, 1)
     };
     static const nmo_struct_type_def_t ckpatchmeshchannel_def =
         NMO_STRUCT_DEF("CKPatchMeshChannel", NMO_GUID_STRUCT_CKPATCHMESHCHANNEL, ckpatchmeshchannel_fields);
@@ -266,7 +267,7 @@ nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry) {
     /* CKDataArrayRow */
     static const nmo_struct_field_def_t ckdataarrayrow_fields[] = {
         NMO_STRUCT_FIELD_GUID("column_count", CKPGUID_UINT32),
-        NMO_STRUCT_FIELD_PTR_COUNTED("cells", "column_count", 1)
+        NMO_STRUCT_FIELD_PTR_COUNTED(nmo_dataarray_row_t, cells, column_count, 1)
     };
     static const nmo_struct_type_def_t ckdataarrayrow_def =
         NMO_STRUCT_DEF("CKDataArrayRow", NMO_GUID_STRUCT_CKDATAARRAYROW, ckdataarrayrow_fields);
@@ -322,7 +323,7 @@ nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry) {
         NMO_STRUCT_FIELD_GUID("source_blend", CKPGUID_UINT32),
         NMO_STRUCT_FIELD_GUID("dest_blend", CKPGUID_UINT32),
         NMO_STRUCT_FIELD_GUID("uv_count", CKPGUID_UINT32),
-        NMO_STRUCT_FIELD_PTR_COUNTED("uv_coords", "uv_count", 1)
+        NMO_STRUCT_FIELD_PTR_COUNTED(nmo_material_channel_t, uv_coords, uv_count, 1)
     };
     static const nmo_struct_type_def_t ckmaterialchannel_def =
         NMO_STRUCT_DEF("CKMaterialChannel", NMO_GUID_STRUCT_CKMATERIALCHANNEL, ckmaterialchannel_fields);
@@ -355,7 +356,7 @@ nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry) {
         NMO_STRUCT_FIELD_GUID("width", CKPGUID_UINT32),
         NMO_STRUCT_FIELD_GUID("height", CKPGUID_UINT32),
         NMO_STRUCT_FIELD_GUID("size", CKPGUID_UINT32),
-        NMO_STRUCT_FIELD_PTR_COUNTED("data", "size", 1)
+        NMO_STRUCT_FIELD_PTR_COUNTED(nmo_mipmap_level_t, data, size, 1)
     };
     static const nmo_struct_type_def_t mipmaplevel_def =
         NMO_STRUCT_DEF("MipmapLevel", NMO_GUID_STRUCT_MIPMAPLEVEL, mipmaplevel_fields);
@@ -366,11 +367,11 @@ nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry) {
         NMO_STRUCT_FIELD_GUID("extension", CKPGUID_UINT32),
         NMO_STRUCT_FIELD_GUID("reader_guid", CKPGUID_GUID),
         NMO_STRUCT_FIELD_GUID("data_size", CKPGUID_UINT32),
-        NMO_STRUCT_FIELD_PTR_COUNTED("data", "data_size", 1),
+        NMO_STRUCT_FIELD_PTR_COUNTED(nmo_texture_reader_slot_t, data, data_size, 1),
         NMO_STRUCT_FIELD_GUID("alpha_count", CKPGUID_UINT32),
         NMO_STRUCT_FIELD_GUID("alpha_value", CKPGUID_UINT32),
         NMO_STRUCT_FIELD_GUID("alpha_plane_size", CKPGUID_UINT32),
-        NMO_STRUCT_FIELD_PTR_COUNTED("alpha_plane", "alpha_plane_size", 1)
+        NMO_STRUCT_FIELD_PTR_COUNTED(nmo_texture_reader_slot_t, alpha_plane, alpha_plane_size, 1)
     };
     static const nmo_struct_type_def_t cktexturereaderslot_def =
         NMO_STRUCT_DEF("CKTextureReaderSlot", NMO_GUID_STRUCT_CKTEXTUREREADERSLOT, cktexturereaderslot_fields);
@@ -386,13 +387,13 @@ nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry) {
         NMO_STRUCT_FIELD_GUID("blue_mask", CKPGUID_UINT32),
         NMO_STRUCT_FIELD_GUID("compression", CKPGUID_UINT32),
         NMO_STRUCT_FIELD_GUID("blue_size", CKPGUID_UINT32),
-        NMO_STRUCT_FIELD_PTR_COUNTED("blue_data", "blue_size", 1),
+        NMO_STRUCT_FIELD_PTR_COUNTED(nmo_texture_raw_slot_t, blue_data, blue_size, 1),
         NMO_STRUCT_FIELD_GUID("green_size", CKPGUID_UINT32),
-        NMO_STRUCT_FIELD_PTR_COUNTED("green_data", "green_size", 1),
+        NMO_STRUCT_FIELD_PTR_COUNTED(nmo_texture_raw_slot_t, green_data, green_size, 1),
         NMO_STRUCT_FIELD_GUID("red_size", CKPGUID_UINT32),
-        NMO_STRUCT_FIELD_PTR_COUNTED("red_data", "red_size", 1),
+        NMO_STRUCT_FIELD_PTR_COUNTED(nmo_texture_raw_slot_t, red_data, red_size, 1),
         NMO_STRUCT_FIELD_GUID("alpha_size", CKPGUID_UINT32),
-        NMO_STRUCT_FIELD_PTR_COUNTED("alpha_data", "alpha_size", 1)
+        NMO_STRUCT_FIELD_PTR_COUNTED(nmo_texture_raw_slot_t, alpha_data, alpha_size, 1)
     };
     static const nmo_struct_type_def_t cktexturerawslot_def =
         NMO_STRUCT_DEF("CKTextureRawSlot", NMO_GUID_STRUCT_CKTEXTURERAWSLOT, cktexturerawslot_fields);
@@ -401,7 +402,7 @@ nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry) {
     static const nmo_struct_field_def_t cktexturebitmap2slot_fields[] = {
         NMO_STRUCT_FIELD_GUID("header_size", CKPGUID_INT),
         NMO_STRUCT_FIELD_GUID("buffer_size", CKPGUID_UINT32),
-        NMO_STRUCT_FIELD_PTR_COUNTED("buffer", "buffer_size", 1)
+        NMO_STRUCT_FIELD_PTR_COUNTED(nmo_texture_bitmap2_slot_t, buffer, buffer_size, 1)
     };
     static const nmo_struct_type_def_t cktexturebitmap2slot_def =
         NMO_STRUCT_DEF("CKTextureBitmap2Slot", NMO_GUID_STRUCT_CKTEXTUREBITMAP2SLOT, cktexturebitmap2slot_fields);

@@ -218,6 +218,7 @@ typedef struct nmo_struct_field_def_t {
     const void *default_value;          /**< Optional default value */
     const char *count_field_name;       /**< Required count field for repeated pointer storage */
     uint32_t count_multiplier;          /**< Element count multiplier for pointer arrays (0 means 1) */
+    uint32_t element_size;              /**< Repeated element storage size (0 = derive from type) */
 } nmo_struct_field_def_t;
 
 /**

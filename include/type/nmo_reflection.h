@@ -123,7 +123,8 @@ extern "C" {
         .units = NMO_UNITS_NONE, \
         .default_value = NULL, \
         .count_field_name = #_count_field, \
-        .count_multiplier = (uint32_t)(_count_multiplier) \
+        .count_multiplier = (uint32_t)(_count_multiplier), \
+        .element_size = (uint32_t)sizeof(*((_struct*)0)->_ptr_field) \
     }
 
 #define NMO_FIELD_ARRAY_COUNTED_FLAGS(_struct, _ptr_field, _count_field, _count_multiplier, _elem_type_guid, _flags, _semantic) \
@@ -140,7 +141,8 @@ extern "C" {
         .units = NMO_UNITS_NONE, \
         .default_value = NULL, \
         .count_field_name = #_count_field, \
-        .count_multiplier = (uint32_t)(_count_multiplier) \
+        .count_multiplier = (uint32_t)(_count_multiplier), \
+        .element_size = (uint32_t)sizeof(*((_struct*)0)->_ptr_field) \
     }
 
 /**
@@ -230,7 +232,8 @@ extern "C" {
         .units = NMO_UNITS_NONE, \
         .default_value = NULL, \
         .count_field_name = #_count_field, \
-        .count_multiplier = 1u \
+        .count_multiplier = 1u, \
+        .element_size = (uint32_t)sizeof(*((_struct*)0)->_ptr_field) \
     }
 
 /** Define a counted pointer array whose elements are lossless nmo_ref_t records. */
@@ -248,7 +251,8 @@ extern "C" {
         .units = NMO_UNITS_NONE, \
         .default_value = NULL, \
         .count_field_name = #_count_field, \
-        .count_multiplier = 1u \
+        .count_multiplier = 1u, \
+        .element_size = (uint32_t)sizeof(*((_struct*)0)->_ptr_field) \
     }
 
 /**
@@ -519,6 +523,19 @@ static inline uint32_t nmo_field_get_count_multiplier(
 {
     return field && field->count_multiplier != 0u ? field->count_multiplier : 1u;
 }
+
+/**
+ * @brief Resolve the storage size of one repeated field element.
+ *
+ * Explicit field metadata takes precedence over the logical type size. This
+ * matters when the in-memory representation is packed (for example, a 32-bit
+ * ARGB value exposed through the logical color type).
+ *
+ * @return Element size in bytes, or 0 when it cannot be determined safely.
+ */
+NMO_API size_t nmo_field_resolve_element_size(
+    const nmo_type_field_t *field,
+    const nmo_type_descriptor_t *element_type);
 
 /**
  * @brief Resolve the companion count field for an array field.

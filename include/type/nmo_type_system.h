@@ -268,6 +268,7 @@ typedef struct nmo_type_field {
     const void *default_value;          /* Registry-owned default (type_allocator) */
     const char *count_field_name;       /* Required for repeated pointer storage: count field name */
     uint32_t count_multiplier;          /* Element count = count field * multiplier (0 means 1) */
+    uint32_t element_size;              /* Repeated element storage size (0 = derive from type) */
 } nmo_type_field_t;
 
 /* ============================================================================

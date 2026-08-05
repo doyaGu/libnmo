@@ -1838,7 +1838,8 @@ static nmo_status_t nmo_objectanimation_deserialize_internal(
             if (result != NMO_OK) return result;
         }
         /* SHARED format has no controller data, keep raw_tail for any remainder */
-        result = read_raw_tail(chunk, arena, &out_state->raw_tail, &out_state->raw_tail_size);
+        result = read_raw_tail(
+            chunk, arena, (void **)&out_state->raw_tail, &out_state->raw_tail_size);
         if (result != NMO_OK) return result;
         nmo_objectanimation_check_refs(out_state, context);
         NMO_RETURN_OK();
@@ -1927,7 +1928,8 @@ static nmo_status_t nmo_objectanimation_deserialize_internal(
             if (result != NMO_OK) return result;
         } else {
             /* Unknown format or empty, use raw_tail as fallback */
-            nmo_status_t result = read_raw_tail(chunk, arena, &out_state->raw_tail, &out_state->raw_tail_size);
+            nmo_status_t result = read_raw_tail(
+                chunk, arena, (void **)&out_state->raw_tail, &out_state->raw_tail_size);
             if (result != NMO_OK) return result;
         }
     }

@@ -136,7 +136,7 @@ typedef struct nmo_objectanimation_state {
     void   **morph_normals_data;    /**< Per-key arena-allocated buffers */
 
     /* Fallback for unparseable remainder */
-    void *raw_tail;
+    uint8_t *raw_tail;
     size_t raw_tail_size;
 } nmo_objectanimation_state_t;
 

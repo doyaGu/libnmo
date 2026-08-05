@@ -1,4 +1,5 @@
 #include "test_framework.h"
+#include "nmo.h"
 #include "type/nmo_type_system.h"
 #include "type/nmo_reflection.h"
 #include "type/nmo_operations.h"
@@ -7,6 +8,7 @@
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "object/builtin/nmo_animation_schemas.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_object_struct_guids.h"
 
 #include <stdalign.h>
 #include <string.h>
@@ -94,6 +96,28 @@ TEST(count_field_meta, resolve_count_applies_multiplier) {
     ASSERT_EQ(NMO_OK, nmo_field_resolve_count(
                           &type, &multiplied_fields[1], &instance, &count));
     ASSERT_EQ(21u, count);
+}
+
+TEST(count_field_meta, counted_array_records_storage_element_size) {
+    ASSERT_EQ(sizeof(uint16_t), multiplied_fields[1].element_size);
+
+    nmo_type_descriptor_t uint16_type = {
+        .size = sizeof(uint16_t),
+    };
+    ASSERT_EQ(sizeof(uint16_t),
+              nmo_field_resolve_element_size(
+                  &multiplied_fields[1], &uint16_type));
+}
+
+TEST(count_field_meta, unresolved_element_size_does_not_guess) {
+    ASSERT_EQ(0u, test_fields[1].element_size);
+    ASSERT_EQ(0u, nmo_field_resolve_element_size(&test_fields[1], NULL));
+
+    nmo_type_descriptor_t element_type = {
+        .size = 12u,
+    };
+    ASSERT_EQ(12u, nmo_field_resolve_element_size(
+                       &test_fields[1], &element_type));
 }
 
 TEST(count_field_meta, resolve_count_field_returns_metadata_field) {
@@ -207,6 +231,16 @@ TEST(count_field_meta, ckmesh_raw_pointer_arrays_declare_count_metadata) {
     ASSERT_EQ(0, strcmp(vertices->count_field_name, "vertex_count"));
     ASSERT_EQ(1u, vertices->count_multiplier);
 
+    const nmo_type_field_t *colors =
+        nmo_type_get_field_by_name(mesh, "vertex_colors");
+    ASSERT_NOT_NULL(colors);
+    ASSERT_EQ(sizeof(uint32_t), colors->element_size);
+
+    const nmo_type_field_t *specular =
+        nmo_type_get_field_by_name(mesh, "vertex_specular");
+    ASSERT_NOT_NULL(specular);
+    ASSERT_EQ(sizeof(uint32_t), specular->element_size);
+
     const nmo_type_field_t *groups = nmo_type_get_field_by_name(mesh, "material_groups");
     ASSERT_NOT_NULL(groups);
     ASSERT_NOT_NULL(groups->count_field_name);
@@ -215,6 +249,33 @@ TEST(count_field_meta, ckmesh_raw_pointer_arrays_declare_count_metadata) {
 
     nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
+}
+
+TEST(count_field_meta, dynamic_struct_pointer_arrays_record_storage_size) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    const nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
+    ASSERT_NOT_NULL(registry);
+
+    const nmo_type_descriptor_t *bitmap =
+        nmo_type_registry_find_by_guid(
+            registry, NMO_GUID_STRUCT_CKBITMAPDATA);
+    ASSERT_NOT_NULL(bitmap);
+    const nmo_type_field_t *pixels =
+        nmo_type_get_field_by_name(bitmap, "pixel_data");
+    ASSERT_NOT_NULL(pixels);
+    ASSERT_EQ(sizeof(uint8_t), pixels->element_size);
+
+    const nmo_type_descriptor_t *skin_vertex =
+        nmo_type_registry_find_by_guid(
+            registry, CKPGUID_CK3DENTITYSKINVERTEX);
+    ASSERT_NOT_NULL(skin_vertex);
+    const nmo_type_field_t *bone_indices =
+        nmo_type_get_field_by_name(skin_vertex, "bone_indices");
+    ASSERT_NOT_NULL(bone_indices);
+    ASSERT_EQ(sizeof(uint32_t), bone_indices->element_size);
+
+    nmo_context_release(ctx);
 }
 
 TEST(count_field_meta, keyedanimation_raw_pointer_arrays_declare_count_metadata) {
@@ -255,9 +316,12 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(count_field_meta, get_count_field_null_for_null_type);
     REGISTER_TEST(count_field_meta, resolve_count_uses_metadata_value);
     REGISTER_TEST(count_field_meta, resolve_count_applies_multiplier);
+    REGISTER_TEST(count_field_meta, counted_array_records_storage_element_size);
+    REGISTER_TEST(count_field_meta, unresolved_element_size_does_not_guess);
     REGISTER_TEST(count_field_meta, resolve_count_field_returns_metadata_field);
     REGISTER_TEST(count_field_meta, resolve_count_reports_missing_count_field);
     REGISTER_TEST(count_field_meta, registry_rejects_raw_pointer_array_without_count_metadata);
     REGISTER_TEST(count_field_meta, ckmesh_raw_pointer_arrays_declare_count_metadata);
+    REGISTER_TEST(count_field_meta, dynamic_struct_pointer_arrays_record_storage_size);
     REGISTER_TEST(count_field_meta, keyedanimation_raw_pointer_arrays_declare_count_metadata);
 TEST_MAIN_END()

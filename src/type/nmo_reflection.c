@@ -149,6 +149,21 @@ NMO_API nmo_status_t nmo_field_resolve_count(
     return NMO_OK;
 }
 
+NMO_API size_t nmo_field_resolve_element_size(
+    const nmo_type_field_t *field,
+    const nmo_type_descriptor_t *element_type)
+{
+    if (!field || !(field->flags & NMO_FIELD_REPEATED)) {
+        return 0;
+    }
+    if (field->element_size != 0) {
+        return field->element_size;
+    }
+    return element_type && element_type->size != 0
+               ? (size_t)element_type->size
+               : 0;
+}
+
 /* ============================================================================
  * Field Iteration
  * ============================================================================ */
