@@ -603,6 +603,46 @@ TEST(object_import_api, snapshot_inline_array_imports_all_items) {
     import_api_fixture_destroy(&fixture);
 }
 
+TEST(object_import_api, existing_object_import_uses_explicit_type) {
+    import_api_fixture_t fixture;
+    ASSERT_TRUE(import_api_fixture_init(&fixture));
+    ASSERT_EQ(NMO_OK, nmo_type_registry_begin_update(fixture.registry));
+    ASSERT_TRUE(register_import_raw_array_type(fixture.registry));
+
+    nmo_object_t *object = nmo_object_create(NULL, 9302u, 0);
+    ASSERT_NOT_NULL(object);
+    const nmo_guid_t type_guid = IMPORT_RAW_ARRAY_GUID_INIT;
+    ASSERT_EQ(NMO_OK, nmo_object_set_type_guid(object, type_guid));
+    ASSERT_EQ(NMO_OK, nmo_object_alloc_state(
+        object, sizeof(import_raw_array_state_t)));
+    nmo_object_t *owned = object;
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(
+        nmo_session_get_repository(fixture.session), &owned));
+    ASSERT_NULL(owned);
+
+    const char json[] =
+        "{\"objects\":[{\"id\":9302,\"fields\":["
+        "{\"name\":\"items\",\"kind\":\"array\","
+        "\"type_guid\":\"{4E4D4F03-00200000}\","
+        "\"count\":2,\"value\":[41,42],\"items\":[41,42]}]}]}";
+    nmo_import_result_t result = {0};
+    ASSERT_EQ(NMO_OK, nmo_object_edit_import_json(
+        fixture.workspace, json, 0, 0, &result));
+    ASSERT_EQ(1u, result.objects_updated);
+    ASSERT_EQ(1u, result.fields_written);
+    ASSERT_EQ(0u, result.errors);
+
+    import_raw_array_state_t *state = (import_raw_array_state_t *)
+        nmo_object_get_state(object);
+    ASSERT_NOT_NULL(state);
+    ASSERT_EQ(2u, state->item_count);
+    ASSERT_NOT_NULL(state->items);
+    ASSERT_EQ(41u, state->items[0]);
+    ASSERT_EQ(42u, state->items[1]);
+
+    import_api_fixture_destroy(&fixture);
+}
+
 TEST(object_import_api, packed_color_array_import_uses_storage_element_size) {
     import_api_fixture_t fixture;
     ASSERT_TRUE(import_api_fixture_init(&fixture));
@@ -869,6 +909,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_import_api, old_flat_map_schema_is_rejected);
     REGISTER_TEST(object_import_api, old_value_str_bridge_schema_is_rejected);
     REGISTER_TEST(object_import_api, snapshot_raw_pointer_array_imports_all_items);
+    REGISTER_TEST(object_import_api, existing_object_import_uses_explicit_type);
     REGISTER_TEST(object_import_api, counted_raw_pointer_array_imports_items_over_raw_hex);
     REGISTER_TEST(object_import_api, packed_color_array_import_uses_storage_element_size);
     REGISTER_TEST(object_import_api, counted_array_rejects_partial_group_without_mutation);

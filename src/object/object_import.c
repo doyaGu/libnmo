@@ -1256,8 +1256,7 @@ static nmo_status_t object_edit_import_json_impl(
 
         /* Resolve type descriptor */
         if (obj != NULL) {
-            nmo_class_id_t cid = nmo_object_get_class_id(obj);
-            type = nmo_type_registry_find_by_class_id_inherited(registry, cid);
+            type = nmo_type_query_find_for_object(registry, obj);
         }
         if (!type || !nmo_type_has_reflection(type)) {
             if (edit != NULL) {

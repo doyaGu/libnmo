@@ -4009,8 +4009,7 @@ nmo_status_t nmo_object_edit_set_fields(
     }
 
     const nmo_type_descriptor_t *type =
-        nmo_type_registry_find_by_class_id_inherited(
-            registry, nmo_object_get_class_id(object));
+        nmo_type_query_find_for_object(registry, object);
     if (type == NULL) {
         return NMO_ERR_NOT_FOUND;
     }

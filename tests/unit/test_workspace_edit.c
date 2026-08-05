@@ -16,6 +16,7 @@
 #include "object/nmo_object_index.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_ref_graph.h"
+#include "object/builtin/nmo_object_schemas.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"
@@ -946,6 +947,35 @@ TEST(workspace_edit, parameter_write_resolves_message_manager_names_with_policy)
     nmo_context_release(ctx);
 }
 
+TEST(workspace_edit, set_fields_uses_explicit_object_type) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    nmo_object_id_t object_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, 0, "typed-object", CKPGUID_OBJECT, &object_id, NULL));
+
+    nmo_session_field_edit_t field = {"visibility_flags", "123"};
+    workspace_edit_scope_t edit_scope = {0};
+    nmo_workspace_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK, begin_workspace_edit_for_session(
+        ctx, session, "set typed field", &edit_scope, &edit));
+    ASSERT_EQ(NMO_OK, nmo_object_edit_set_fields(
+        edit, object_id, &field, 1, NULL));
+    ASSERT_EQ(NMO_OK, commit_workspace_edit_scope(&edit_scope));
+
+    nmo_object_t *object = nmo_object_repository_find_by_id(
+        nmo_session_get_repository(session), object_id);
+    ASSERT_NOT_NULL(object);
+    ASSERT_EQ(123u,
+              ((nmo_object_state_t *)nmo_object_get_state(object))->visibility_flags);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(workspace_edit, message_manager_edit_rejects_truncated_name) {
     nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
     ASSERT_NOT_NULL(ctx);
@@ -1838,6 +1868,7 @@ TEST(workspace_edit, snapshot_object_chunk_rollback_restores_null_chunk) {
 TEST_MAIN_BEGIN()
 REGISTER_TEST(workspace_edit, begin_commit_roundtrip);
 REGISTER_TEST(workspace_edit, set_reference_field_commit_invalidates_ref_graph);
+REGISTER_TEST(workspace_edit, set_fields_uses_explicit_object_type);
 REGISTER_TEST(workspace_edit, set_reference_field_rollback_restores_without_invalidating_cache);
 REGISTER_TEST(workspace_edit, add_behavior_link_rollback_removes_created_link);
 REGISTER_TEST(workspace_edit, add_behavior_link_commit_invalidates_ref_graph);
