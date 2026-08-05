@@ -10,6 +10,7 @@
 #include "object/builtin/nmo_parameterout_schemas.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_object_guids.h"
 #include "runtime/nmo_workspace.h"
 #include "type/nmo_type_query.h"
 
@@ -27,6 +28,7 @@ struct nmo_script_edit_graph {
     size_t broken_reference_count;
 
     nmo_object_repository_t *repo;
+    const nmo_type_registry_t *type_registry;
     const nmo_behavior_index_t *behavior_index;
 
     nmo_script_edit_node_t *nodes;
@@ -324,46 +326,57 @@ static void apply_owner_to_node(nmo_script_edit_graph_t *graph,
     node->owner_slot_kind = owner->kind;
 }
 
-static const nmo_behavior_state_t *get_behavior_state(nmo_object_repository_t *repo,
-                                                      nmo_object_id_t behavior_id)
+static const nmo_behavior_state_t *get_behavior_state(
+    const nmo_script_edit_graph_t *graph,
+    nmo_object_id_t behavior_id)
 {
     nmo_object_t *object = NULL;
 
-    if (!repo || behavior_id == 0u) {
+    if (!graph || !graph->repo || !graph->type_registry || behavior_id == 0u) {
         return NULL;
     }
 
-    object = nmo_object_repository_find_by_id(repo, behavior_id);
+    object = nmo_object_repository_find_by_id(graph->repo, behavior_id);
     if (!object) {
         return NULL;
     }
-    return (const nmo_behavior_state_t *)nmo_object_get_state(object);
+    return (const nmo_behavior_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            graph->type_registry, object, CKPGUID_BEHAVIOR);
 }
 
-static nmo_guid_t get_parameter_type_guid(nmo_object_repository_t *repo,
-                                          nmo_object_id_t parameter_id)
+static nmo_guid_t get_parameter_type_guid(
+    const nmo_script_edit_graph_t *graph,
+    nmo_object_id_t parameter_id)
 {
     nmo_object_t *object = NULL;
 
-    if (!repo || parameter_id == 0u) {
+    if (!graph || !graph->repo || !graph->type_registry || parameter_id == 0u) {
         return (nmo_guid_t){0u, 0u};
     }
 
-    object = nmo_object_repository_find_by_id(repo, parameter_id);
+    object = nmo_object_repository_find_by_id(graph->repo, parameter_id);
     if (!object) {
         return (nmo_guid_t){0u, 0u};
     }
 
-    switch (nmo_object_get_class_id(object)) {
-    case NMO_CID_PARAMETERIN:
-        return ((const nmo_parameterin_state_t *)nmo_object_get_state(object))->type_guid;
-    case NMO_CID_PARAMETEROUT:
-    case NMO_CID_PARAMETERLOCAL:
-    case NMO_CID_PARAMETER:
-        return ((const nmo_parameter_state_t *)nmo_object_get_state(object))->type_guid;
-    default:
-        return (nmo_guid_t){0u, 0u};
+    if (nmo_type_query_object_is_derived_from_class(
+            graph->type_registry, object, NMO_CID_PARAMETERIN)) {
+        const nmo_parameterin_state_t *state =
+            (const nmo_parameterin_state_t *)
+                nmo_type_query_object_get_ancestor_state_by_guid(
+                    graph->type_registry, object, CKPGUID_PARAMETERIN);
+        return state ? state->type_guid : (nmo_guid_t){0u, 0u};
     }
+    if (nmo_type_query_object_is_derived_from_class(
+            graph->type_registry, object, NMO_CID_PARAMETER)) {
+        const nmo_parameter_state_t *state =
+            (const nmo_parameter_state_t *)
+                nmo_type_query_object_get_ancestor_state_by_guid(
+                    graph->type_registry, object, CKPGUID_PARAMETER);
+        return state ? state->type_guid : (nmo_guid_t){0u, 0u};
+    }
+    return (nmo_guid_t){0u, 0u};
 }
 
 static bool add_owned_io_nodes(nmo_script_edit_graph_t *graph,
@@ -383,7 +396,7 @@ static bool add_owned_io_nodes(nmo_script_edit_graph_t *graph,
             continue;
         }
 
-        state = get_behavior_state(graph->repo, behavior_node->id);
+        state = get_behavior_state(graph, behavior_node->id);
         if (!state) {
             continue;
         }
@@ -461,7 +474,7 @@ static bool add_owned_parameter_nodes(nmo_script_edit_graph_t *graph,
             continue;
         }
 
-        state = get_behavior_state(graph->repo, behavior_node->id);
+        state = get_behavior_state(graph, behavior_node->id);
         if (!state) {
             continue;
         }
@@ -698,7 +711,7 @@ static bool copy_data_edges(nmo_script_edit_graph_t *graph,
         edge.source_parameter_id = src->from_id;
         edge.target_parameter_id = src->to_id;
         edge.shared = src->is_shared;
-        edge.type_guid = get_parameter_type_guid(graph->repo, src->to_id);
+        edge.type_guid = get_parameter_type_guid(graph, src->to_id);
 
         if (populate_owner_from_index(graph->behavior_index,
                                       edge.source_parameter_id, &owner)) {
@@ -747,7 +760,6 @@ static bool add_runtime_data_edges(nmo_script_edit_graph_t *graph)
     for (i = 0; i < graph->node_count; ++i) {
         const nmo_script_edit_node_t *node = &graph->nodes[i];
         nmo_object_t *object = NULL;
-        nmo_class_id_t class_id = 0;
 
         if (node->kind != NMO_SCRIPT_EDIT_NODE_PARAMETER || node->object_id == 0u) {
             continue;
@@ -758,13 +770,18 @@ static bool add_runtime_data_edges(nmo_script_edit_graph_t *graph)
             continue;
         }
 
-        class_id = nmo_object_get_class_id(object);
-        if (class_id == NMO_CID_PARAMETERIN) {
+        if (nmo_type_query_object_is_derived_from_class(
+                graph->type_registry, object, NMO_CID_PARAMETERIN)) {
             const nmo_parameterin_state_t *state =
-                (const nmo_parameterin_state_t *)nmo_object_get_state(object);
+                (const nmo_parameterin_state_t *)
+                    nmo_type_query_object_get_ancestor_state_by_guid(
+                        graph->type_registry, object, CKPGUID_PARAMETERIN);
             nmo_script_edit_data_edge_t edge = {0};
             nmo_script_edit_endpoint_t owner = {0};
 
+            if (!state) {
+                continue;
+            }
             const nmo_object_id_t source_id =
                 nmo_parameterin_source_id(state);
             if (source_id == 0u) {
@@ -799,9 +816,12 @@ static bool add_runtime_data_edges(nmo_script_edit_graph_t *graph)
             if (!add_or_merge_data_edge(graph, &edge)) {
                 return false;
             }
-        } else if (class_id == NMO_CID_PARAMETEROUT) {
+        } else if (nmo_type_query_object_is_derived_from_class(
+                       graph->type_registry, object, NMO_CID_PARAMETEROUT)) {
             const nmo_parameterout_state_t *state =
-                (const nmo_parameterout_state_t *)nmo_object_get_state(object);
+                (const nmo_parameterout_state_t *)
+                    nmo_type_query_object_get_ancestor_state_by_guid(
+                        graph->type_registry, object, CKPGUID_PARAMETEROUT);
 
             if (!state || !state->destination_ids) {
                 continue;
@@ -819,8 +839,8 @@ static bool add_runtime_data_edges(nmo_script_edit_graph_t *graph)
 
                 edge.source_parameter_id = node->object_id;
                 edge.target_parameter_id = destination_id;
-                edge.type_guid = get_parameter_type_guid(graph->repo,
-                                                         edge.target_parameter_id);
+                edge.type_guid = get_parameter_type_guid(
+                    graph, edge.target_parameter_id);
                 edge.shared = false;
 
                 if (populate_owner_from_index(graph->behavior_index,
@@ -1009,6 +1029,7 @@ NMO_API nmo_status_t nmo_script_edit_graph_build(nmo_workspace_t *workspace,
 
     graph->root_behavior_id = root_behavior_id;
     graph->repo = repo;
+    graph->type_registry = type_registry;
     graph->behavior_index = nmo_workspace_internal_behavior_index(workspace);
     graph->owner_index_available = graph->behavior_index != NULL;
     graph->edit_ready = graph->owner_index_available;
@@ -1326,7 +1347,7 @@ NMO_API nmo_status_t nmo_script_edit_graph_resolve_handle(
                          "unknown handle kind");
     }
 
-    behavior = get_behavior_state(graph->repo, handle->owner_id);
+    behavior = get_behavior_state(graph, handle->owner_id);
     if (!behavior) {
         NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
                          "owner behavior %u not found", handle->owner_id);

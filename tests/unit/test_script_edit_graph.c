@@ -6,6 +6,15 @@
 #include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_pipeline.h"
+#include "format/nmo_object.h"
+#include "object/builtin/nmo_behavior_schemas.h"
+#include "object/builtin/nmo_beobject_schemas.h"
+#include "object/builtin/nmo_parameterin_schemas.h"
+#include "object/builtin/nmo_parameterout_schemas.h"
+#include "object/nmo_class_ids.h"
+#include "object/nmo_object_guids.h"
+#include "object/nmo_object_repository.h"
+#include "type/nmo_type_query.h"
 
 #include <stdint.h>
 
@@ -79,7 +88,105 @@ TEST(script_edit_graph, build_reports_edit_ready_graph_for_ballance_root)
     nmo_session_close_with_context(ctx, session);
 }
 
+TEST(script_edit_graph, preserves_explicit_parameter_types)
+{
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    nmo_object_id_t owner_id = 0;
+    nmo_object_id_t behavior_id = 0;
+    nmo_object_id_t input_id = 0;
+    nmo_object_id_t output_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_BEOBJECT, "Owner", (nmo_guid_t){0, 0},
+        &owner_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, 0, "Typed behavior", CKPGUID_BEHAVIOR,
+        &behavior_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, 0, "Typed input", CKPGUID_PARAMETERIN,
+        &input_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, 0, "Typed output", CKPGUID_PARAMETEROUT,
+        &output_id, NULL));
+
+    nmo_document_t *document = NULL;
+    ASSERT_EQ(NMO_OK, nmo_session_borrow_document(session, &document));
+    nmo_object_repository_t *repo = nmo_document_get_repository(document);
+    const nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
+    ASSERT_NOT_NULL(repo);
+    ASSERT_NOT_NULL(registry);
+
+    nmo_beobject_state_t *owner = (nmo_beobject_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, nmo_object_repository_find_by_id(repo, owner_id),
+            CKPGUID_BEOBJECT);
+    nmo_behavior_state_t *behavior = (nmo_behavior_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, nmo_object_repository_find_by_id(repo, behavior_id),
+            CKPGUID_BEHAVIOR);
+    nmo_parameterin_state_t *input = (nmo_parameterin_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, nmo_object_repository_find_by_id(repo, input_id),
+            CKPGUID_PARAMETERIN);
+    nmo_parameterout_state_t *output = (nmo_parameterout_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, nmo_object_repository_find_by_id(repo, output_id),
+            CKPGUID_PARAMETEROUT);
+    ASSERT_NOT_NULL(owner);
+    ASSERT_NOT_NULL(behavior);
+    ASSERT_NOT_NULL(input);
+    ASSERT_NOT_NULL(output);
+
+    const nmo_guid_t value_type = {0x5A5716FDu, 0x44E276D7u};
+    input->type_guid = value_type;
+    output->base.type_guid = value_type;
+    nmo_parameterin_set_source_id(input, output_id);
+    nmo_parameterin_set_owner_id(input, behavior_id);
+    nmo_parameterout_set_owner_id(output, behavior_id);
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &owner->scripts, behavior_id));
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(
+        &behavior->in_parameters, input_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(
+        &behavior->out_parameters, output_id, NULL));
+
+    nmo_workspace_t *workspace = NULL;
+    ASSERT_EQ(NMO_OK, nmo_workspace_create(ctx, document, &workspace));
+    nmo_script_edit_graph_t *graph = NULL;
+    ASSERT_EQ(NMO_OK, nmo_script_edit_graph_build(
+        workspace, behavior_id, UINT32_MAX, &graph));
+    ASSERT_NOT_NULL(graph);
+
+    size_t edge_count = 0;
+    const nmo_script_edit_data_edge_t *edges =
+        nmo_script_edit_graph_data_edges(graph, &edge_count);
+    ASSERT_NOT_NULL(edges);
+    ASSERT_GT(edge_count, 0u);
+    bool found = false;
+    for (size_t i = 0; i < edge_count; ++i) {
+        if (edges[i].source_parameter_id == output_id &&
+            edges[i].target_parameter_id == input_id) {
+            ASSERT_TRUE(nmo_guid_equals(value_type, edges[i].type_guid));
+            ASSERT_EQ(behavior_id, edges[i].source_owner_id);
+            ASSERT_EQ(behavior_id, edges[i].target_owner_id);
+            found = true;
+            break;
+        }
+    }
+    ASSERT_TRUE(found);
+
+    nmo_script_edit_graph_destroy(graph);
+    nmo_workspace_destroy(workspace);
+    nmo_document_destroy(document);
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(script_edit_graph, build_reports_edit_ready_graph_for_ballance_root);
+    REGISTER_TEST(script_edit_graph, preserves_explicit_parameter_types);
 TEST_MAIN_END()
 
