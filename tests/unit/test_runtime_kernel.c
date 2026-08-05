@@ -535,7 +535,19 @@ TEST(runtime_kernel, delete_safe_detach_uses_explicit_object_type) {
     ASSERT_NOT_NULL(group_obj);
     ASSERT_EQ(0u, ((nmo_group_state_t *)group_obj->state)->object_ids.count);
 
+    nmo_arena_t *chunk_arena = nmo_arena_create(NULL, 4096);
+    nmo_arena_t *scratch_arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(chunk_arena);
+    ASSERT_NOT_NULL(scratch_arena);
+    nmo_status_t serialize_status = NMO_ERR_INTERNAL;
+    ASSERT_NOT_NULL(nmo_object_system_serialize_object_chunk(
+        group_obj, nmo_context_get_type_runtime(ctx), chunk_arena,
+        scratch_arena, repo, NULL, NULL, NULL, &serialize_status));
+    ASSERT_EQ(NMO_OK, serialize_status);
+
     nmo_session_destroy(session);
+    nmo_arena_destroy(scratch_arena);
+    nmo_arena_destroy(chunk_arena);
     nmo_context_release(ctx);
 }
 

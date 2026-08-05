@@ -662,6 +662,44 @@ TEST(object_serialization, failed_schema_releases_object_state) {
     nmo_arena_destroy(registry_arena);
 }
 
+TEST(object_serialization, repository_deserialize_uses_explicit_object_type) {
+    nmo_arena_t *registry_arena = nmo_arena_create(NULL, 131072);
+    nmo_arena_t *chunk_arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(registry_arena);
+    ASSERT_NOT_NULL(chunk_arena);
+
+    nmo_type_registry_t *registry = nmo_type_registry_create(registry_arena);
+    ASSERT_NOT_NULL(registry);
+    ASSERT_EQ(NMO_OK, register_test_object_types(registry));
+    nmo_type_registry_compute_state_layouts(registry);
+    nmo_type_runtime_t type_runtime = {.types = registry, .ops = NULL};
+
+    nmo_object_repository_t *repo = nmo_object_repository_create(NULL);
+    ASSERT_NOT_NULL(repo);
+    nmo_object_t *object = nmo_object_create(NULL, 1u, 0);
+    ASSERT_NOT_NULL(object);
+    ASSERT_EQ(NMO_OK, nmo_object_set_type_guid(object, CKPGUID_OBJECT));
+    object->chunk = nmo_chunk_create(chunk_arena);
+    ASSERT_NOT_NULL(object->chunk);
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &object));
+    ASSERT_NULL(object);
+
+    nmo_object_system_deserialize_stats_t stats = {0};
+    ASSERT_EQ(NMO_OK, nmo_object_system_deserialize_repository(
+        repo, &type_runtime, registry_arena, NULL, NULL, 0, &stats));
+    ASSERT_EQ(1u, stats.deserialized);
+    ASSERT_EQ(0u, stats.no_schema);
+    nmo_object_t *loaded = nmo_object_repository_get_by_index(repo, 0);
+    ASSERT_NOT_NULL(loaded);
+    ASSERT_NOT_NULL(loaded->state);
+    ASSERT_EQ(sizeof(nmo_object_state_t), loaded->state_size);
+
+    nmo_object_repository_destroy(repo);
+    nmo_type_registry_destroy(registry);
+    nmo_arena_destroy(chunk_arena);
+    nmo_arena_destroy(registry_arena);
+}
+
 TEST(object_serialization, schema_allocation_failure_is_transactional) {
     nmo_arena_t *chunk_arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(chunk_arena);
@@ -767,6 +805,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_serialization, manager_truncation_does_not_publish_partial_arrays);
     REGISTER_TEST(object_serialization, interface_manager_round_trip_is_atomic);
     REGISTER_TEST(object_serialization, failed_schema_releases_object_state);
+    REGISTER_TEST(object_serialization, repository_deserialize_uses_explicit_object_type);
     REGISTER_TEST(object_serialization, schema_allocation_failure_is_transactional);
     REGISTER_TEST(object_serialization, object_system_propagates_allocation_failure);
 TEST_MAIN_END()

@@ -24,6 +24,7 @@
 #include "object/nmo_serialize_context.h"
 
 #include "type/nmo_type_system.h"
+#include "type/nmo_type_query.h"
 #include "type/nmo_type_runtime.h"
 
 #include "core/nmo_allocator.h"
@@ -701,7 +702,7 @@ nmo_status_t nmo_object_system_deserialize_loaded_objects(
         }
 
         const nmo_type_descriptor_t *schema_type =
-            nmo_type_registry_find_by_class_id_inherited(type_rt->types, obj->class_id);
+            nmo_type_query_find_for_object(type_rt->types, obj);
 
         if (schema_type == NULL || schema_type->vtable == NULL ||
             schema_type->vtable->deserialize == NULL) {
