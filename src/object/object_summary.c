@@ -1754,6 +1754,7 @@ static yyjson_mut_val *nmo_snapshot_field(
 
     yyjson_mut_val *item = yyjson_mut_obj(out->json_doc);
     nmo_cli_json_add_str_safe(out->json_doc, item, "name", field->name);
+    nmo_snapshot_add_guid(out->json_doc, item, "owner_type_guid", owner_type->guid);
     nmo_snapshot_add_guid(out->json_doc, item, "type_guid", field->type_guid);
 
     if ((field->flags & NMO_FIELD_REPEATED) && (field->flags & NMO_FIELD_POINTER)) {

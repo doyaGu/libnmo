@@ -205,6 +205,9 @@ TEST(object_summary_api, snapshot_raw_pointer_array_emits_full_items) {
     ASSERT_TRUE(yyjson_mut_is_arr(fields));
     yyjson_mut_val *items = find_summary_field(fields, "items");
     ASSERT_NOT_NULL(items);
+    yyjson_mut_val *owner_type_guid = yyjson_mut_obj_get(items, "owner_type_guid");
+    ASSERT_NOT_NULL(owner_type_guid);
+    ASSERT_STR_EQ(guid_buf, yyjson_mut_get_str(owner_type_guid));
     yyjson_mut_val *kind = yyjson_mut_obj_get(items, "kind");
     ASSERT_NOT_NULL(kind);
     ASSERT_STR_EQ("array", yyjson_mut_get_str(kind));

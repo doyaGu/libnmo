@@ -9,6 +9,7 @@
 #include "document/nmo_document.h"
 #include "object/nmo_object_edit.h"
 #include "object/nmo_object_repository.h"
+#include "object/builtin/nmo_sound_schemas.h"
 #include "runtime/nmo_workspace.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_pipeline.h"
@@ -16,6 +17,7 @@
 #include "type/nmo_reflection.h"
 
 #include <stdalign.h>
+#include <stdio.h>
 #include <string.h>
 
 #define IMPORT_RAW_ARRAY_GUID_INIT NMO_GUID_INIT(0x51A4E002u, 0x00000001u)
@@ -349,7 +351,7 @@ TEST(object_import_api, raw_pointer_array_missing_count_metadata_does_not_mutate
 
     const char json[] =
         "{\"objects\":[{\"id\":9001,\"fields\":["
-        "{\"name\":\"items\",\"kind\":\"array\",\"type_guid\":\"{0000000D-00000000}\","
+        "{\"name\":\"items\",\"kind\":\"array\",\"type_guid\":\"{4E4D4F03-00200000}\","
         "\"count\":2,\"value\":[1,2],\"items\":[1,2]}]}]}";
     nmo_import_result_t result;
     status = nmo_object_edit_import_json(fixture.workspace, json, 0, 0, &result);
@@ -424,7 +426,7 @@ TEST(object_import_api, snapshot_raw_pointer_array_imports_all_items) {
 
     const char json[] =
         "{\"objects\":[{\"id\":9001,\"fields\":["
-        "{\"name\":\"items\",\"kind\":\"array\",\"type_guid\":\"{0000000D-00000000}\","
+        "{\"name\":\"items\",\"kind\":\"array\",\"type_guid\":\"{4E4D4F03-00200000}\","
         "\"count\":3,\"value\":[11,22,33],\"items\":[11,22,33]}]}]}";
     nmo_import_result_t result;
     status = nmo_object_edit_import_json(fixture.workspace, json, 0, 0, &result);
@@ -460,7 +462,7 @@ TEST(object_import_api, counted_raw_pointer_array_imports_items_over_raw_hex) {
 
     const char json[] =
         "{\"objects\":[{\"id\":9201,\"fields\":["
-        "{\"name\":\"indices\",\"kind\":\"array\",\"type_guid\":\"{0000000C-00000000}\","
+        "{\"name\":\"indices\",\"kind\":\"array\",\"type_guid\":\"{4E4D4F03-00100000}\","
         "\"count\":6,\"value\":null,\"items\":[1,2,3,4,5,6],"
         "\"raw_hex\":\"090009000900090009000900\"}]}]}";
     nmo_import_result_t result;
@@ -501,7 +503,7 @@ TEST(object_import_api, raw_pointer_array_parse_failure_does_not_mutate) {
 
     const char json[] =
         "{\"objects\":[{\"id\":9001,\"fields\":["
-        "{\"name\":\"items\",\"kind\":\"array\",\"type_guid\":\"{0000000D-00000000}\","
+        "{\"name\":\"items\",\"kind\":\"array\",\"type_guid\":\"{4E4D4F03-00200000}\","
         "\"count\":2,\"value\":[1,\"bad\"],\"items\":[1,\"bad\"]}]}]}";
     nmo_import_result_t result;
     status = nmo_object_edit_import_json(fixture.workspace, json, 0, 0, &result);
@@ -537,7 +539,7 @@ TEST(object_import_api, inline_array_parse_failure_does_not_mutate) {
 
     const char json[] =
         "{\"objects\":[{\"id\":9101,\"fields\":["
-        "{\"name\":\"values\",\"kind\":\"array\",\"type_guid\":\"{0000000D-00000000}\","
+        "{\"name\":\"values\",\"kind\":\"array\",\"type_guid\":\"{4E4D4F03-00200000}\","
         "\"count\":2,\"value\":[1,\"bad\"],\"items\":[1,\"bad\"]}]}]}";
     nmo_import_result_t result;
     status = nmo_object_edit_import_json(fixture.workspace, json, 0, 0, &result);
@@ -572,7 +574,7 @@ TEST(object_import_api, snapshot_inline_array_imports_all_items) {
 
     const char json[] =
         "{\"objects\":[{\"id\":9101,\"fields\":["
-        "{\"name\":\"values\",\"kind\":\"array\",\"type_guid\":\"{0000000D-00000000}\","
+        "{\"name\":\"values\",\"kind\":\"array\",\"type_guid\":\"{4E4D4F03-00200000}\","
         "\"count\":3,\"value\":[3,4,5],\"items\":[3,4,5]}]}]}";
     nmo_import_result_t result;
     status = nmo_object_edit_import_json(fixture.workspace, json, 0, 0, &result);
@@ -596,6 +598,52 @@ TEST(object_import_api, snapshot_inline_array_imports_all_items) {
     import_api_fixture_destroy(&fixture);
 }
 
+TEST(object_import_api, snapshot_disambiguates_inherited_fields) {
+    import_api_fixture_t fixture;
+    ASSERT_TRUE(import_api_fixture_init(&fixture));
+
+    nmo_object_id_t object_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        fixture.session,
+        NMO_CID_WAVESOUND,
+        "duplicate priority",
+        NMO_GUID_NULL,
+        &object_id,
+        NULL));
+
+    nmo_object_t *obj = nmo_object_repository_find_by_id(
+        nmo_session_get_repository(fixture.session), object_id);
+    ASSERT_NOT_NULL(obj);
+    nmo_wavesound_state_t *state =
+        (nmo_wavesound_state_t *)nmo_object_get_state(obj);
+    ASSERT_NOT_NULL(state);
+
+    char json[1024];
+    int written = snprintf(
+        json,
+        sizeof(json),
+        "{\"objects\":[{\"id\":%u,\"fields\":["
+        "{\"name\":\"priority\",\"owner_type_guid\":\"{71D80779-402F42F3}\","
+        "\"kind\":\"scalar\",\"type_guid\":\"{5A5716FD-44E276D7}\",\"value\":7},"
+        "{\"name\":\"priority\",\"owner_type_guid\":\"{4BF74E5E-45F409EF}\","
+        "\"kind\":\"scalar\",\"type_guid\":\"{47884C3F-432C2C20}\",\"value\":0.75}]}]}",
+        object_id);
+    ASSERT_TRUE(written > 0 && (size_t)written < sizeof(json));
+
+    nmo_import_result_t result;
+    nmo_status_t status = nmo_object_edit_import_json(
+        fixture.workspace, json, (size_t)written, 0, &result);
+
+    ASSERT_EQ(NMO_OK, status);
+    ASSERT_EQ(1u, result.objects_updated);
+    ASSERT_EQ(2u, result.fields_written);
+    ASSERT_EQ(0u, result.errors);
+    ASSERT_EQ(7, state->base.base.priority);
+    ASSERT_FLOAT_EQ(0.75f, state->priority, 0.0001f);
+
+    import_api_fixture_destroy(&fixture);
+}
+
 TEST(object_import_api, object_owner_import_wrapper_imports_snapshot) {
     import_api_fixture_t fixture;
     ASSERT_TRUE(import_api_fixture_init(&fixture));
@@ -613,7 +661,7 @@ TEST(object_import_api, object_owner_import_wrapper_imports_snapshot) {
 
     const char json[] =
         "{\"objects\":[{\"id\":9101,\"fields\":["
-        "{\"name\":\"values\",\"kind\":\"array\",\"type_guid\":\"{0000000D-00000000}\","
+        "{\"name\":\"values\",\"kind\":\"array\",\"type_guid\":\"{4E4D4F03-00200000}\","
         "\"count\":2,\"value\":[8,9],\"items\":[8,9]}]}]}";
     nmo_import_result_t result;
     status = nmo_object_edit_import_json(fixture.workspace, json, 0, 0, &result);
@@ -647,7 +695,7 @@ TEST(object_import_api, dry_run_create_missing_does_not_create_object_or_use_ses
 
     const char json[] =
         "{\"objects\":[{\"id\":9301,\"class_name\":\"ImportRawArrayState\",\"name\":\"dry_run_new\","
-        "\"fields\":[{\"name\":\"items\",\"kind\":\"array\",\"type_guid\":\"{0000000D-00000000}\","
+        "\"fields\":[{\"name\":\"items\",\"kind\":\"array\",\"type_guid\":\"{4E4D4F03-00200000}\","
         "\"count\":3,\"value\":[1,2,3],\"items\":[1,2,3]}]}]}";
     nmo_import_result_t result;
     status = nmo_object_edit_import_json(
@@ -686,7 +734,7 @@ TEST(object_import_api, failed_create_missing_import_does_not_leave_object_or_us
 
     const char json[] =
         "{\"objects\":[{\"id\":9302,\"class_name\":\"ImportRawArrayState\",\"name\":\"bad_new\","
-        "\"fields\":[{\"name\":\"items\",\"kind\":\"array\",\"type_guid\":\"{0000000D-00000000}\","
+        "\"fields\":[{\"name\":\"items\",\"kind\":\"array\",\"type_guid\":\"{4E4D4F03-00200000}\","
         "\"count\":2,\"value\":[1,\"bad\"],\"items\":[1,\"bad\"]}]}]}";
     nmo_import_result_t result;
     status = nmo_object_edit_import_json(
@@ -728,7 +776,7 @@ TEST(object_import_api, dry_run_existing_pointer_array_does_not_use_session_aren
     size_t before_arena = nmo_arena_bytes_used(nmo_session_get_arena(session));
     const char json[] =
         "{\"objects\":[{\"id\":9001,\"fields\":["
-        "{\"name\":\"items\",\"kind\":\"array\",\"type_guid\":\"{0000000D-00000000}\","
+        "{\"name\":\"items\",\"kind\":\"array\",\"type_guid\":\"{4E4D4F03-00200000}\","
         "\"count\":3,\"value\":[11,22,33],\"items\":[11,22,33]}]}]}";
     nmo_import_result_t result;
     status = nmo_object_edit_import_json(
@@ -755,6 +803,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_import_api, raw_pointer_array_parse_failure_does_not_mutate);
     REGISTER_TEST(object_import_api, inline_array_parse_failure_does_not_mutate);
     REGISTER_TEST(object_import_api, snapshot_inline_array_imports_all_items);
+    REGISTER_TEST(object_import_api, snapshot_disambiguates_inherited_fields);
     REGISTER_TEST(object_import_api, object_owner_import_wrapper_imports_snapshot);
     REGISTER_TEST(object_import_api, dry_run_create_missing_does_not_create_object_or_use_session_arena);
     REGISTER_TEST(object_import_api, failed_create_missing_import_does_not_leave_object_or_use_session_arena);

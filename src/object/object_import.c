@@ -1079,12 +1079,37 @@ static nmo_status_t import_snapshot_fields(void *state,
             return NMO_ERR_INVALID_FORMAT;
         }
 
+        nmo_guid_t parsed_type_guid = nmo_guid_parse(type_guid);
+        if (nmo_guid_is_null(parsed_type_guid)) {
+            return NMO_ERR_INVALID_FORMAT;
+        }
+
+        yyjson_val *owner_type_guid_val = yyjson_obj_get(item, "owner_type_guid");
+        bool has_owner_type_guid = owner_type_guid_val != NULL;
+        nmo_guid_t owner_type_guid = NMO_GUID_NULL;
+        if (has_owner_type_guid) {
+            const char *owner_type_guid_text = yyjson_get_str(owner_type_guid_val);
+            if (!owner_type_guid_text) {
+                return NMO_ERR_INVALID_FORMAT;
+            }
+            owner_type_guid = nmo_guid_parse(owner_type_guid_text);
+            if (nmo_guid_is_null(owner_type_guid)) {
+                return NMO_ERR_INVALID_FORMAT;
+            }
+        }
+
         bool found = false;
         for (size_t lvl = 0; lvl < level_count; ++lvl) {
             const nmo_type_descriptor_t *lvl_type = levels[lvl].type;
             void *lvl_state = levels[lvl].state;
+            if (has_owner_type_guid &&
+                !nmo_guid_equals(lvl_type->guid, owner_type_guid)) {
+                continue;
+            }
             const nmo_type_field_t *field = nmo_type_get_field_by_name(lvl_type, name);
-            if (!field || is_base_embedding(lvl_type, field)) {
+            if (!field ||
+                !nmo_guid_equals(field->type_guid, parsed_type_guid) ||
+                is_base_embedding(lvl_type, field)) {
                 continue;
             }
             found = true;
