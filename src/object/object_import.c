@@ -22,6 +22,7 @@
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_parse.h"
+#include "core/nmo_utils.h"
 
 #include "../runtime/runtime_internal.h"
 
@@ -81,7 +82,10 @@ static const char *json_val_to_str(yyjson_val *val, char *buf, size_t buf_size)
 /**
  * @brief Write an integer count value into a field of variable size.
  */
-static void write_count_field(void *state, const nmo_type_field_t *count_field, uint64_t count)
+static void write_count_field(
+    void *state,
+    const nmo_type_field_t *count_field,
+    uint64_t count)
 {
     void *ptr = nmo_field_get_ptr(state, count_field);
     if (!ptr) return;
@@ -95,14 +99,14 @@ static void write_count_field(void *state, const nmo_type_field_t *count_field, 
     }
 }
 
-static nmo_status_t write_array_count_field(
-    void *state,
+static nmo_status_t prepare_array_count_field(
     const nmo_type_field_t *array_field,
     const nmo_type_field_t *count_field,
-    uint64_t element_count)
+    uint64_t element_count,
+    uint64_t *out_stored_count)
 {
-    if (!count_field) {
-        return NMO_ERR_NOT_FOUND;
+    if (!count_field || !out_stored_count) {
+        return NMO_ERR_INVALID_ARGUMENT;
     }
     uint32_t multiplier = nmo_field_get_count_multiplier(array_field);
     if (multiplier == 0u) {
@@ -111,22 +115,24 @@ static nmo_status_t write_array_count_field(
     if (element_count % (uint64_t)multiplier != 0u) {
         return NMO_ERR_INVALID_FORMAT;
     }
-    write_count_field(state, count_field, element_count / (uint64_t)multiplier);
-    return NMO_OK;
-}
-
-/**
- * @brief Determine element size for a field type GUID (same heuristic as summary).
- */
-static size_t guess_element_size(nmo_guid_t field_guid,
-                                 const nmo_type_descriptor_t *field_type)
-{
-    if (field_type && field_type->size > 0) {
-        return (size_t)field_type->size;
+    uint64_t stored_count = element_count / (uint64_t)multiplier;
+    switch (count_field->size) {
+    case 1:
+        if (stored_count > UINT8_MAX) return NMO_ERR_INVALID_FORMAT;
+        break;
+    case 2:
+        if (stored_count > UINT16_MAX) return NMO_ERR_INVALID_FORMAT;
+        break;
+    case 4:
+        if (stored_count > UINT32_MAX) return NMO_ERR_INVALID_FORMAT;
+        break;
+    case 8:
+        break;
+    default:
+        return NMO_ERR_INVALID_FORMAT;
     }
-    if (nmo_guid_equals(field_guid, CKPGUID_ID)) return 4;
-    /* Conservative default */
-    return sizeof(uint32_t);
+    *out_stored_count = stored_count;
+    return NMO_OK;
 }
 
 static size_t import_element_size_for_field(
@@ -134,12 +140,7 @@ static size_t import_element_size_for_field(
     const nmo_type_descriptor_t *field_type)
 {
     if (nmo_field_uses_ref_records(field)) return sizeof(nmo_ref_t);
-    if (field && field->name &&
-        (strcmp(field->name, "vertex_colors") == 0 ||
-         strcmp(field->name, "vertex_specular") == 0)) {
-        return sizeof(uint32_t);
-    }
-    return guess_element_size(field ? field->type_guid : (nmo_guid_t){0}, field_type);
+    return nmo_field_resolve_element_size(field, field_type);
 }
 
 /* ============================================================================
@@ -338,34 +339,43 @@ static nmo_status_t import_field_value(void *state,
             return NMO_ERR_INVALID_ARGUMENT;
         }
 
-        size_t elem_size = import_element_size_for_field(field, field_type);
         size_t arr_count = yyjson_arr_size(json_val);
+        size_t elem_size = import_element_size_for_field(field, field_type);
+        size_t byte_count = 0;
+        if ((arr_count != 0 && elem_size == 0) ||
+            !nmo_safe_mul_size(arr_count, elem_size, &byte_count)) {
+            result->errors++;
+            return NMO_ERR_INVALID_FORMAT;
+        }
         const nmo_type_field_t *count_field =
             nmo_field_resolve_count_field(owner_type, field);
         if (!count_field) {
             result->errors++;
             return NMO_ERR_INVALID_ARGUMENT;
         }
+        uint64_t stored_count = 0;
+        nmo_status_t count_status = prepare_array_count_field(
+            field, count_field, arr_count, &stored_count);
+        if (count_status != NMO_OK) {
+            result->errors++;
+            return count_status;
+        }
 
         if (arr_count == 0) {
             if (!dry_run) {
                 *(void **)fptr = NULL;
-                nmo_status_t st = write_array_count_field(state, field, count_field, 0);
-                if (st != NMO_OK) {
-                    result->errors++;
-                    return st;
-                }
+                write_count_field(state, count_field, stored_count);
             }
             result->fields_written++;
             return NMO_OK;
         }
 
-        void *buf = nmo_arena_alloc(scratch_arena, arr_count * elem_size, 8);
+        void *buf = nmo_arena_alloc(scratch_arena, byte_count, 8);
         if (!buf) {
             result->errors++;
             return NMO_ERR_NOMEM;
         }
-        memset(buf, 0, arr_count * elem_size);
+        memset(buf, 0, byte_count);
 
         size_t idx = 0;
         yyjson_val *elem;
@@ -387,18 +397,14 @@ static nmo_status_t import_field_value(void *state,
         }
 
         if (!dry_run) {
-            void *persistent = nmo_arena_alloc(storage_arena, arr_count * elem_size, 8);
+            void *persistent = nmo_arena_alloc(storage_arena, byte_count, 8);
             if (!persistent) {
                 result->errors++;
                 return NMO_ERR_NOMEM;
             }
-            memcpy(persistent, buf, arr_count * elem_size);
+            memcpy(persistent, buf, byte_count);
             *(void **)fptr = persistent;
-            nmo_status_t st = write_array_count_field(state, field, count_field, arr_count);
-            if (st != NMO_OK) {
-                result->errors++;
-                return st;
-            }
+            write_count_field(state, count_field, stored_count);
         }
         result->fields_written++;
         return NMO_OK;
@@ -411,7 +417,6 @@ static nmo_status_t import_field_value(void *state,
             return NMO_OK;
         }
 
-        size_t elem_size = import_element_size_for_field(field, field_type);
         size_t arr_count = yyjson_arr_size(json_val);
 
         /* Only operate on nmo_array_t sized fields */
@@ -421,6 +426,13 @@ static nmo_status_t import_field_value(void *state,
         }
 
         nmo_array_t *arr = (nmo_array_t *)fptr;
+        size_t elem_size = arr->element_size != 0
+                               ? arr->element_size
+                               : import_element_size_for_field(field, field_type);
+        if (arr_count != 0 && elem_size == 0) {
+            result->errors++;
+            return NMO_ERR_INVALID_FORMAT;
+        }
         if (arr_count == 0) {
             if (!dry_run) {
                 nmo_array_clear(arr);
@@ -722,17 +734,39 @@ static nmo_status_t import_array_raw_hex(
     bool dry_run,
     nmo_import_result_t *result)
 {
-    size_t elem_size = import_element_size_for_field(field, field_type);
-    size_t expected_size = (size_t)count * elem_size;
     void *fptr = nmo_field_get_ptr(state, field);
     if (!fptr) {
         result->errors++;
         return NMO_ERR_INVALID_STATE;
     }
 
+    size_t elem_size = import_element_size_for_field(field, field_type);
+    if (field->size == sizeof(nmo_array_t)) {
+        const nmo_array_t *arr = (const nmo_array_t *)fptr;
+        if (arr->element_size != 0) {
+            elem_size = arr->element_size;
+        }
+    }
+    if (count > SIZE_MAX || (count != 0 && elem_size == 0)) {
+        result->errors++;
+        return NMO_ERR_INVALID_FORMAT;
+    }
+    size_t expected_size = 0;
+    if (!nmo_safe_mul_size((size_t)count, elem_size, &expected_size)) {
+        result->errors++;
+        return NMO_ERR_INVALID_FORMAT;
+    }
+
     if (field->size != sizeof(nmo_array_t)) {
         const nmo_type_field_t *count_field =
             nmo_field_resolve_count_field(owner_type, field);
+        uint64_t stored_count = 0;
+        nmo_status_t count_status = prepare_array_count_field(
+            field, count_field, count, &stored_count);
+        if (count_status != NMO_OK) {
+            result->errors++;
+            return count_status;
+        }
         void *buf = NULL;
         if (expected_size > 0) {
             buf = nmo_arena_alloc(scratch_arena, expected_size, 8);
@@ -757,20 +791,9 @@ static nmo_status_t import_array_raw_hex(
                 memcpy(persistent, buf, expected_size);
             }
             *(void **)fptr = persistent;
-            if (count_field) {
-                nmo_status_t st = write_array_count_field(state, field, count_field, count);
-                if (st != NMO_OK) {
-                    result->errors++;
-                    return st;
-                }
-            }
+            write_count_field(state, count_field, stored_count);
         }
         result->fields_written++;
-        return NMO_OK;
-    }
-
-    if (field->size != sizeof(nmo_array_t)) {
-        result->fields_skipped++;
         return NMO_OK;
     }
 

@@ -16,11 +16,16 @@
 typedef struct summary_raw_array_state {
     uint32_t item_count;
     uint32_t *items;
+    uint32_t swatch_count;
+    uint32_t *swatches;
 } summary_raw_array_state_t;
 
 static const nmo_type_field_t summary_raw_array_fields[] = {
     NMO_FIELD(summary_raw_array_state_t, item_count, CKPGUID_UINT32),
     NMO_FIELD_PTR_ARRAY(summary_raw_array_state_t, items, item_count, CKPGUID_UINT32),
+    NMO_FIELD(summary_raw_array_state_t, swatch_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY_COUNTED(
+        summary_raw_array_state_t, swatches, swatch_count, 1, CKPGUID_COLOR),
 };
 
 static const nmo_guid_t summary_raw_array_guid = NMO_GUID_INIT(0x51A4E001u, 0x00000001u);
@@ -156,9 +161,12 @@ TEST(object_summary_api, snapshot_raw_pointer_array_emits_full_items) {
     ASSERT_EQ(NMO_OK, status);
 
     uint32_t item_values[] = {10u, 20u};
+    uint32_t swatch_values[] = {0xFFFF0000u, 0xFF00FF00u};
     summary_raw_array_state_t state = {
         .item_count = 2u,
         .items = item_values,
+        .swatch_count = 2u,
+        .swatches = swatch_values,
     };
 
     nmo_object_t *obj = nmo_object_create(NULL, 100u, 0);
@@ -223,6 +231,17 @@ TEST(object_summary_api, snapshot_raw_pointer_array_emits_full_items) {
     ASSERT_NULL(yyjson_mut_obj_get(items, "preview"));
     ASSERT_NULL(yyjson_mut_obj_get(items, "is_array"));
     ASSERT_NULL(yyjson_mut_obj_get(items, "value_str"));
+
+    yyjson_mut_val *swatches = find_summary_field(fields, "swatches");
+    ASSERT_NOT_NULL(swatches);
+    yyjson_mut_val *swatch_items = yyjson_mut_obj_get(swatches, "items");
+    ASSERT_NOT_NULL(swatch_items);
+    ASSERT_EQ(2u, yyjson_mut_arr_size(swatch_items));
+    ASSERT_TRUE(yyjson_mut_is_str(yyjson_mut_arr_get(swatch_items, 0)));
+    ASSERT_TRUE(yyjson_mut_is_str(yyjson_mut_arr_get(swatch_items, 1)));
+    yyjson_mut_val *swatch_raw = yyjson_mut_obj_get(swatches, "raw_hex");
+    ASSERT_NOT_NULL(swatch_raw);
+    ASSERT_EQ(16u, strlen(yyjson_mut_get_str(swatch_raw)));
 
     yyjson_mut_doc_free(doc);
     nmo_object_destroy(obj);

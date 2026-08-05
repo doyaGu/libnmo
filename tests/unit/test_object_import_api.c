@@ -39,6 +39,8 @@ typedef struct import_inline_array_state {
 typedef struct import_counted_array_state {
     uint32_t face_count;
     uint16_t *indices;
+    uint32_t swatch_count;
+    uint32_t *swatches;
 } import_counted_array_state_t;
 
 typedef struct import_api_fixture {
@@ -61,6 +63,9 @@ static const nmo_type_field_t import_inline_array_fields[] = {
 static const nmo_type_field_t import_counted_array_fields[] = {
     NMO_FIELD(import_counted_array_state_t, face_count, CKPGUID_UINT32),
     NMO_FIELD_ARRAY_COUNTED(import_counted_array_state_t, indices, face_count, 3, CKPGUID_UINT16),
+    NMO_FIELD(import_counted_array_state_t, swatch_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY_COUNTED(
+        import_counted_array_state_t, swatches, swatch_count, 1, CKPGUID_COLOR),
 };
 
 static bool import_api_fixture_init(import_api_fixture_t *fixture)
@@ -598,6 +603,71 @@ TEST(object_import_api, snapshot_inline_array_imports_all_items) {
     import_api_fixture_destroy(&fixture);
 }
 
+TEST(object_import_api, packed_color_array_import_uses_storage_element_size) {
+    import_api_fixture_t fixture;
+    ASSERT_TRUE(import_api_fixture_init(&fixture));
+
+    nmo_status_t status = nmo_type_registry_begin_update(fixture.registry);
+    ASSERT_EQ(NMO_OK, status);
+    ASSERT_TRUE(register_import_counted_array_type(fixture.registry));
+
+    nmo_object_t *obj = create_import_counted_array_object(fixture.session);
+    ASSERT_NOT_NULL(obj);
+    import_counted_array_state_t *state =
+        (import_counted_array_state_t *)nmo_object_get_state(obj);
+    ASSERT_NOT_NULL(state);
+
+    const char json[] =
+        "{\"objects\":[{\"id\":9201,\"fields\":["
+        "{\"name\":\"swatches\",\"kind\":\"array\","
+        "\"type_guid\":\"{57D42FEE-7CBB3B91}\",\"count\":2,\"value\":null,"
+        "\"items\":[\"(1, 0, 0, 1)\",\"(0, 1, 0, 1)\"]}]}]}";
+    nmo_import_result_t result;
+    status = nmo_object_edit_import_json(
+        fixture.workspace, json, 0, 0, &result);
+
+    ASSERT_EQ(NMO_OK, status);
+    ASSERT_EQ(1u, result.objects_updated);
+    ASSERT_EQ(1u, result.fields_written);
+    ASSERT_EQ(0u, result.errors);
+    ASSERT_EQ(2u, state->swatch_count);
+    ASSERT_NOT_NULL(state->swatches);
+    ASSERT_EQ(0xFFFF0000u, state->swatches[0]);
+    ASSERT_EQ(0xFF00FF00u, state->swatches[1]);
+
+    import_api_fixture_destroy(&fixture);
+}
+
+TEST(object_import_api, counted_array_rejects_partial_group_without_mutation) {
+    import_api_fixture_t fixture;
+    ASSERT_TRUE(import_api_fixture_init(&fixture));
+
+    nmo_status_t status = nmo_type_registry_begin_update(fixture.registry);
+    ASSERT_EQ(NMO_OK, status);
+    ASSERT_TRUE(register_import_counted_array_type(fixture.registry));
+
+    nmo_object_t *obj = create_import_counted_array_object(fixture.session);
+    ASSERT_NOT_NULL(obj);
+    import_counted_array_state_t *state =
+        (import_counted_array_state_t *)nmo_object_get_state(obj);
+    ASSERT_NOT_NULL(state);
+
+    const char json[] =
+        "{\"objects\":[{\"id\":9201,\"fields\":["
+        "{\"name\":\"indices\",\"kind\":\"array\","
+        "\"type_guid\":\"{4E4D4F03-00100000}\",\"count\":4,\"value\":null,"
+        "\"items\":[1,2,3,4]}]}]}";
+    nmo_import_result_t result;
+    status = nmo_object_edit_import_json(
+        fixture.workspace, json, 0, 0, &result);
+
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, status);
+    ASSERT_EQ(0u, state->face_count);
+    ASSERT_NULL(state->indices);
+
+    import_api_fixture_destroy(&fixture);
+}
+
 TEST(object_import_api, snapshot_disambiguates_inherited_fields) {
     import_api_fixture_t fixture;
     ASSERT_TRUE(import_api_fixture_init(&fixture));
@@ -800,6 +870,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_import_api, old_value_str_bridge_schema_is_rejected);
     REGISTER_TEST(object_import_api, snapshot_raw_pointer_array_imports_all_items);
     REGISTER_TEST(object_import_api, counted_raw_pointer_array_imports_items_over_raw_hex);
+    REGISTER_TEST(object_import_api, packed_color_array_import_uses_storage_element_size);
+    REGISTER_TEST(object_import_api, counted_array_rejects_partial_group_without_mutation);
     REGISTER_TEST(object_import_api, raw_pointer_array_parse_failure_does_not_mutate);
     REGISTER_TEST(object_import_api, inline_array_parse_failure_does_not_mutate);
     REGISTER_TEST(object_import_api, snapshot_inline_array_imports_all_items);
