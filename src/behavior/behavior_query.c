@@ -3,9 +3,10 @@
 #include "format/nmo_object.h"
 #include "object/builtin/nmo_beobject_schemas.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_object_guids.h"
 #include "object/nmo_object_repository.h"
 #include "../runtime/runtime_internal.h"
-#include "type/nmo_type_system.h"
+#include "type/nmo_type_query.h"
 
 #include <string.h>
 
@@ -20,14 +21,14 @@ static void nmo_behavior_script_view_clear(nmo_behavior_script_view_t *view)
 
 static bool nmo_behavior_query_is_script_owner(
     const nmo_type_registry_t *registry,
-    nmo_class_id_t class_id)
+    const nmo_object_t *object)
 {
     if (registry == NULL) {
         return false;
     }
 
-    return nmo_type_registry_is_class_derived_from(
-        registry, (uint32_t)class_id, (uint32_t)NMO_CID_BEOBJECT);
+    return nmo_type_query_object_is_derived_from_class(
+        registry, object, NMO_CID_BEOBJECT);
 }
 
 static nmo_status_t nmo_behavior_query_lookup(
@@ -81,11 +82,13 @@ static nmo_status_t nmo_behavior_query_lookup(
             continue;
         }
         if (!nmo_behavior_query_is_script_owner(
-                registry, nmo_object_get_class_id(owner))) {
+                registry, owner)) {
             continue;
         }
 
-        be_state = (const nmo_beobject_state_t *)nmo_object_get_state(owner);
+        be_state = (const nmo_beobject_state_t *)
+            nmo_type_query_object_get_ancestor_state_by_guid(
+                registry, owner, CKPGUID_BEOBJECT);
         if (be_state == NULL) {
             continue;
         }

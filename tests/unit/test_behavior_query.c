@@ -10,9 +10,11 @@
 #include "runtime/nmo_context.h"
 #include "object/builtin/nmo_beobject_schemas.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_object_guids.h"
 #include "object/nmo_object_repository.h"
 #include "format/nmo_object.h"
 #include "core/nmo_array.h"
+#include "type/nmo_type_query.h"
 
 static nmo_object_id_t create_object_or_zero(
     nmo_session_t *session,
@@ -164,11 +166,52 @@ TEST(behavior_query, missing_script_returns_not_found_and_clears_view)
     nmo_context_release(ctx);
 }
 
+TEST(behavior_query, explicit_owner_type_exposes_scripts)
+{
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_document_t *document = nmo_document_create(ctx);
+    ASSERT_NOT_NULL(document);
+    nmo_session_t *session = nmo_document_internal_session(document);
+    ASSERT_NOT_NULL(session);
+
+    nmo_object_id_t owner_id = 0;
+    nmo_object_id_t script_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, 0, "Typed owner", CKPGUID_GROUP, &owner_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_BEHAVIOR, "Script", NMO_NULL_GUID,
+        &script_id, NULL));
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_object_t *owner = nmo_object_repository_find_by_id(repo, owner_id);
+    ASSERT_NOT_NULL(owner);
+    nmo_beobject_state_t *owner_state = (nmo_beobject_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            nmo_context_get_type_registry(ctx), owner, CKPGUID_BEOBJECT);
+    ASSERT_NOT_NULL(owner_state);
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &owner_state->scripts, script_id));
+
+    size_t count = 0;
+    nmo_behavior_script_view_t view = {0};
+    ASSERT_EQ(NMO_OK, nmo_behavior_query_count_scripts(document, &count));
+    ASSERT_EQ(1u, count);
+    ASSERT_EQ(NMO_OK, nmo_behavior_query_script_at(document, 0, &view));
+    ASSERT_EQ(owner_id, view.owner_id);
+    ASSERT_EQ(0u, view.owner_class_id);
+    ASSERT_EQ(script_id, view.script_id);
+
+    nmo_document_destroy(document);
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(behavior_query, count_scripts_through_owner_api);
     REGISTER_TEST(behavior_query, script_at_uses_owner_view_type);
     REGISTER_TEST(behavior_query, synthetic_document_exposes_owner_and_script_summary);
     REGISTER_TEST(behavior_query, missing_script_returns_not_found_and_clears_view);
+    REGISTER_TEST(behavior_query, explicit_owner_type_exposes_scripts);
 TEST_MAIN_END()
 
 
