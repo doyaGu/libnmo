@@ -125,14 +125,7 @@ static nmo_status_t nmo_lua_type_resolve_object_state_view(
                              "Object does not expose the requested ancestor state");
         }
     } else {
-        nmo_guid_t explicit_guid = nmo_object_get_type_guid(object);
-        if (!nmo_guid_is_null(explicit_guid)) {
-            type = nmo_type_query_find_by_guid(registry, explicit_guid);
-        }
-        if (type == NULL) {
-            type = nmo_type_registry_find_by_class_id_inherited(
-                registry, nmo_object_get_class_id(object));
-        }
+        type = nmo_type_query_find_for_object(registry, object);
         if (type == NULL) {
             NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
                              "Object type is not registered");

@@ -2,6 +2,7 @@
 
 #include "format/nmo_object.h"
 #include "type/nmo_reflection.h"
+#include "type/nmo_type_query.h"
 #include "type/nmo_type_system.h"
 
 #include <string.h>
@@ -105,22 +106,15 @@ nmo_status_t nmo_type_view_from_object(
     const nmo_object_t *object,
     nmo_type_view_t *out_view)
 {
-    nmo_guid_t explicit_guid;
-
     if (registry == NULL || object == NULL || out_view == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    explicit_guid = nmo_object_get_type_guid(object);
-    if (!nmo_guid_is_null(explicit_guid)) {
-        nmo_status_t status = nmo_type_view_from_guid(registry, explicit_guid, out_view);
-        if (status == NMO_OK) {
-            return NMO_OK;
-        }
+    const nmo_type_descriptor_t *type =
+        nmo_type_query_find_for_object(registry, object);
+    if (type == NULL) {
+        nmo_type_view_clear(out_view);
+        return NMO_ERR_NOT_FOUND;
     }
-
-    return nmo_type_view_from_class_id(
-        registry,
-        nmo_object_get_class_id(object),
-        out_view);
+    return nmo_type_view_fill(registry, type, out_view);
 }

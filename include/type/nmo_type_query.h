@@ -80,6 +80,18 @@ NMO_API const nmo_type_descriptor_t *nmo_type_query_find_by_class_id(
     nmo_class_id_t class_id);
 
 /**
+ * @brief Lookup the effective type descriptor for an object.
+ *
+ * An explicit object type GUID takes precedence. If it is absent or is not
+ * registered, the object's class ID is resolved through the inherited class
+ * lookup used by built-in schemas.
+ * @ownership borrowed
+ */
+NMO_API const nmo_type_descriptor_t *nmo_type_query_find_for_object(
+    const nmo_type_registry_t *registry,
+    const nmo_object_t *obj);
+
+/**
  * @brief Check whether an object derives from a base type GUID.
  */
 NMO_API bool nmo_type_query_object_is_derived_from_guid(

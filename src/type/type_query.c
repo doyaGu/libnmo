@@ -65,6 +65,23 @@ const nmo_type_descriptor_t *nmo_type_query_find_by_class_id(
     return registry ? nmo_type_registry_find_by_class_id(registry, class_id) : NULL;
 }
 
+const nmo_type_descriptor_t *nmo_type_query_find_for_object(
+    const nmo_type_registry_t *registry,
+    const nmo_object_t *obj)
+{
+    if (!registry || !obj) return NULL;
+
+    nmo_guid_t explicit_guid = nmo_object_get_type_guid(obj);
+    if (!nmo_guid_is_null(explicit_guid)) {
+        const nmo_type_descriptor_t *type =
+            nmo_type_registry_find_by_guid(registry, explicit_guid);
+        if (type != NULL) return type;
+    }
+
+    return nmo_type_registry_find_by_class_id_inherited(
+        registry, (uint32_t)nmo_object_get_class_id(obj));
+}
+
 bool nmo_type_query_object_is_derived_from_guid(
     const nmo_type_registry_t *registry,
     const nmo_object_t *obj, nmo_guid_t base_guid)
@@ -72,7 +89,7 @@ bool nmo_type_query_object_is_derived_from_guid(
     if (!registry || !obj) return false;
     const nmo_type_descriptor_t *base = nmo_type_query_find_by_guid(registry, base_guid);
     const nmo_type_descriptor_t *derived =
-        nmo_type_query_find_by_class_id(registry, nmo_object_get_class_id(obj));
+        nmo_type_query_find_for_object(registry, obj);
     if (!base || !derived) return false;
     return nmo_type_is_derived_from((nmo_type_registry_t *)registry, derived->id, base->id);
 }
@@ -84,7 +101,7 @@ void *nmo_type_query_object_get_ancestor_state_by_guid(
     if (!registry || !obj) return NULL;
     const nmo_type_descriptor_t *base = nmo_type_query_find_by_guid(registry, base_guid);
     const nmo_type_descriptor_t *derived =
-        nmo_type_query_find_by_class_id(registry, nmo_object_get_class_id(obj));
+        nmo_type_query_find_for_object(registry, obj);
     if (!base || !derived) return NULL;
     return nmo_object_get_ancestor_state(obj, base, derived);
 }

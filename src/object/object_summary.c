@@ -165,12 +165,7 @@ static const char *nmo_summary_resolve_object_name(const nmo_summary_output_t *o
 static const nmo_type_descriptor_t *nmo_summary_get_type_for_object(
     const nmo_type_registry_t *registry, nmo_object_t *obj)
 {
-    if (!registry || !obj) return NULL;
-    nmo_guid_t type_guid = nmo_object_get_type_guid(obj);
-    if (!nmo_guid_is_null(type_guid)) {
-        return nmo_type_registry_find_by_guid(registry, type_guid);
-    }
-    return nmo_type_registry_find_by_class_id_inherited(registry, nmo_object_get_class_id(obj));
+    return nmo_type_query_find_for_object(registry, obj);
 }
 
 static bool nmo_summary_is_object_ref_field(const nmo_type_field_t *field) {

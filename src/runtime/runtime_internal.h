@@ -19,6 +19,7 @@
 #include "session/nmo_serializer.h"
 #include "session/nmo_session.h"
 #include "type/nmo_type_runtime.h"
+#include "type/nmo_type_query.h"
 #include "type/nmo_type_system.h"
 #include "format/nmo_object.h"
 #include "format/nmo_interface_view.h"
@@ -339,7 +340,7 @@ nmo_status_t nmo_workspace_edit_snapshot_behavior_state(
     struct nmo_behavior_state *state);
 
 /**
- * @brief Find type descriptor for an object by its class ID (inherited lookup).
+ * @brief Find the effective registered type descriptor for an object.
  */
 static inline const nmo_type_descriptor_t *runtime_find_type_for_object(
     const nmo_type_runtime_t *type_rt,
@@ -348,7 +349,7 @@ static inline const nmo_type_descriptor_t *runtime_find_type_for_object(
     if (type_rt == NULL || type_rt->types == NULL || object == NULL) {
         return NULL;
     }
-    return nmo_type_registry_find_by_class_id_inherited(type_rt->types, object->class_id);
+    return nmo_type_query_find_for_object(type_rt->types, object);
 }
 
 #endif /* NMO_SESSION_RUNTIME_INTERNAL_H */

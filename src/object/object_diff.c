@@ -235,13 +235,7 @@ static const nmo_type_descriptor_t *resolve_object_type(
     const nmo_type_registry_t *registry,
     const nmo_object_t *obj)
 {
-    if (!registry || !obj) return NULL;
-    nmo_guid_t type_guid = nmo_object_get_type_guid(obj);
-    if (!nmo_guid_is_null(type_guid)) {
-        const nmo_type_descriptor_t *t = nmo_type_registry_find_by_guid(registry, type_guid);
-        if (t) return t;
-    }
-    return nmo_type_registry_find_by_class_id_inherited(registry, nmo_object_get_class_id(obj));
+    return nmo_type_query_find_for_object(registry, obj);
 }
 
 static bool is_object_ref(const nmo_type_field_t *field)

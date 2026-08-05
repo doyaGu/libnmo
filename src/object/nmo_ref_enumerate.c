@@ -10,6 +10,7 @@
 #include "object/nmo_ref.h"
 #include "format/nmo_object.h"
 #include "type/nmo_reflection.h"
+#include "type/nmo_type_query.h"
 #include "type/nmo_type_system.h"
 #include "core/nmo_array.h"
 #include "core/nmo_error.h"
@@ -378,15 +379,8 @@ NMO_API nmo_status_t nmo_ref_enumerate_object(
         NMO_RETURN_OK();
     }
 
-    const nmo_type_descriptor_t *type = NULL;
-    nmo_guid_t type_guid = nmo_object_get_type_guid(obj);
-    if (!nmo_guid_is_null(type_guid)) {
-        type = nmo_type_registry_find_by_guid(types, type_guid);
-    }
-    if (!type) {
-        type = nmo_type_registry_find_by_class_id_inherited(
-            types, nmo_object_get_class_id(obj));
-    }
+    const nmo_type_descriptor_t *type =
+        nmo_type_query_find_for_object(types, obj);
     if (!type) {
         NMO_RETURN_OK();
     }

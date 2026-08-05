@@ -77,6 +77,51 @@ TEST(app_util, type_query_roundtrip) {
     nmo_context_release(ctx);
 }
 
+TEST(app_util, type_query_prefers_explicit_object_type) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
+    ASSERT_NOT_NULL(registry);
+
+    nmo_object_t *obj = nmo_object_create(NULL, 1u, 0);
+    ASSERT_NOT_NULL(obj);
+    ASSERT_EQ(NMO_OK, nmo_object_set_type_guid(obj, CKPGUID_CAMERA));
+    ASSERT_EQ(NMO_OK, nmo_object_alloc_state(obj, 1u));
+
+    const nmo_type_descriptor_t *type =
+        nmo_type_query_find_for_object(registry, obj);
+    ASSERT_NOT_NULL(type);
+    ASSERT_TRUE(nmo_guid_equals(CKPGUID_CAMERA, type->guid));
+    ASSERT_TRUE(nmo_type_query_object_is_derived_from_guid(
+        registry, obj, CKPGUID_OBJECT));
+    ASSERT_EQ(nmo_object_get_state(obj),
+              nmo_type_query_object_get_ancestor_state_by_guid(
+                  registry, obj, CKPGUID_OBJECT));
+
+    nmo_object_destroy(obj);
+    nmo_context_release(ctx);
+}
+
+TEST(app_util, type_query_falls_back_from_unknown_explicit_type) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
+    ASSERT_NOT_NULL(registry);
+
+    nmo_object_t *obj = nmo_object_create(NULL, 1u, NMO_CID_OBJECT);
+    ASSERT_NOT_NULL(obj);
+    const nmo_guid_t unknown_guid = NMO_GUID_INIT(0xF00DBAAAu, 0x13572468u);
+    ASSERT_EQ(NMO_OK, nmo_object_set_type_guid(obj, unknown_guid));
+
+    const nmo_type_descriptor_t *type =
+        nmo_type_query_find_for_object(registry, obj);
+    ASSERT_NOT_NULL(type);
+    ASSERT_TRUE(nmo_guid_equals(CKPGUID_OBJECT, type->guid));
+
+    nmo_object_destroy(obj);
+    nmo_context_release(ctx);
+}
+
 TEST(app_util, json_util_sanitizes_invalid_utf8) {
     yyjson_mut_doc *doc = yyjson_mut_doc_new(NULL);
     ASSERT_NOT_NULL(doc);
@@ -136,6 +181,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(app_util, session_open_close);
     REGISTER_TEST(app_util, session_open_invalid_args);
     REGISTER_TEST(app_util, type_query_roundtrip);
+    REGISTER_TEST(app_util, type_query_prefers_explicit_object_type);
+    REGISTER_TEST(app_util, type_query_falls_back_from_unknown_explicit_type);
     REGISTER_TEST(app_util, json_util_sanitizes_invalid_utf8);
     REGISTER_TEST(app_util, hex_util_roundtrip);
     REGISTER_TEST(app_util, text_escape_bytes);
