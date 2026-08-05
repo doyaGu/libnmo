@@ -54,6 +54,28 @@ NMO_API bool nmo_type_has_reflection(const nmo_type_descriptor_t *type)
     return type && type->fields && type->field_count > 0;
 }
 
+NMO_API bool nmo_field_is_base_embedding(
+    const nmo_type_descriptor_t *owner_type,
+    const nmo_type_field_t *field)
+{
+    if (!owner_type || !field ||
+        (field->flags & NMO_FIELD_REPEATED) ||
+        nmo_guid_is_null(owner_type->base_type)) {
+        return false;
+    }
+
+    if (nmo_guid_equals(field->type_guid, owner_type->base_type)) {
+        return true;
+    }
+
+    return field->name &&
+           nmo_guid_equals(field->type_guid, CKPGUID_NONE) &&
+           (strcmp(field->name, "base") == 0 ||
+            strcmp(field->name, "entity") == 0 ||
+            strcmp(field->name, "beobject") == 0 ||
+            strcmp(field->name, "object") == 0);
+}
+
 NMO_API const nmo_type_field_t *nmo_field_resolve_count_field(
     const nmo_type_descriptor_t *type,
     const nmo_type_field_t *array_field)

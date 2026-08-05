@@ -489,6 +489,16 @@ static inline bool nmo_field_is_optional(const nmo_type_field_t *field) {
 }
 
 /**
+ * @brief Check whether a field embeds its owner type's direct base state.
+ *
+ * Schemas may identify the embedding by the base type GUID. Legacy built-in
+ * descriptors use CKPGUID_NONE with a conventional base-field name.
+ */
+NMO_API bool nmo_field_is_base_embedding(
+    const nmo_type_descriptor_t *owner_type,
+    const nmo_type_field_t *field);
+
+/**
  * @brief Get the count field for a pointer-array field.
  *
  * Uses explicit count_field_name metadata only.

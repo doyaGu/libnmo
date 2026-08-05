@@ -35,13 +35,7 @@
  * Internal Helpers
  * ============================================================================ */
 
-#define IMPORT_MAX_HIERARCHY_DEPTH 16
 #define IMPORT_VALUE_BUF_SIZE      512
-
-typedef struct {
-    const nmo_type_descriptor_t *type;
-    void *state;
-} import_hierarchy_level_t;
 
 static nmo_status_t import_snapshot_fields(void *state,
                                            const nmo_type_descriptor_t *type,
@@ -51,94 +45,6 @@ static nmo_status_t import_snapshot_fields(void *state,
                                            yyjson_val *fields_arr,
                                            nmo_import_result_t *result,
                                            uint32_t flags);
-
-/**
- * @brief Check if a field is a base-class embedding that should be skipped.
- *
- * Mirrors the logic in object_summary.c nmo_summary_is_base_embedding().
- */
-static bool is_base_embedding(const nmo_type_descriptor_t *owner_type,
-                              const nmo_type_field_t *field)
-{
-    if (!owner_type || !field) return false;
-    if (field->flags & NMO_FIELD_REPEATED) return false;
-    if (nmo_guid_is_null(owner_type->base_type)) return false;
-
-    if (nmo_guid_equals(field->type_guid, owner_type->base_type)) {
-        return true;
-    }
-
-    if (nmo_guid_equals(field->type_guid, CKPGUID_NONE)) {
-        if (strcmp(field->name, "base") == 0 ||
-            strcmp(field->name, "entity") == 0 ||
-            strcmp(field->name, "beobject") == 0 ||
-            strcmp(field->name, "object") == 0) {
-            return true;
-        }
-    }
-    return false;
-}
-
-/**
- * @brief Build flattened class hierarchy (base-first) from a type and its state.
- *
- * Mirrors nmo_summary_build_hierarchy() in object_summary.c, but uses mutable
- * state pointers for write access.
- */
-static size_t build_hierarchy(const nmo_type_registry_t *registry,
-                              const nmo_type_descriptor_t *root_type,
-                              void *root_state,
-                              import_hierarchy_level_t *levels,
-                              size_t max_levels)
-{
-    if (!registry || !root_type || !root_state || !levels || max_levels == 0) {
-        return 0;
-    }
-
-    import_hierarchy_level_t stack[IMPORT_MAX_HIERARCHY_DEPTH];
-    size_t depth = 0;
-
-    const nmo_type_descriptor_t *cur_type = root_type;
-    void *cur_state = root_state;
-
-    while (cur_type && depth < IMPORT_MAX_HIERARCHY_DEPTH) {
-        stack[depth].type = cur_type;
-        stack[depth].state = cur_state;
-        depth++;
-
-        bool found_base = false;
-        for (size_t i = 0; i < cur_type->field_count; ++i) {
-            const nmo_type_field_t *field = &cur_type->fields[i];
-            if (is_base_embedding(cur_type, field)) {
-                void *base_ptr = (uint8_t *)cur_state + field->offset;
-
-                const nmo_type_descriptor_t *parent_type = NULL;
-                if (!nmo_guid_equals(field->type_guid, CKPGUID_NONE)) {
-                    parent_type = nmo_type_registry_find_by_guid(registry, field->type_guid);
-                }
-                if (!parent_type && !nmo_guid_is_null(cur_type->base_type)) {
-                    parent_type = nmo_type_registry_find_by_guid(registry, cur_type->base_type);
-                }
-
-                if (parent_type && nmo_type_has_reflection(parent_type)) {
-                    cur_type = parent_type;
-                    cur_state = base_ptr;
-                    found_base = true;
-                    break;
-                }
-            }
-        }
-
-        if (!found_base) break;
-    }
-
-    /* Reverse so index 0 is deepest base */
-    size_t count = depth < max_levels ? depth : max_levels;
-    for (size_t i = 0; i < count; ++i) {
-        levels[i] = stack[depth - 1 - i];
-    }
-    return count;
-}
 
 /**
  * @brief Convert a yyjson value to a string suitable for from_string parsing.
@@ -1059,11 +965,9 @@ static nmo_status_t import_snapshot_fields(void *state,
         return NMO_ERR_INVALID_FORMAT;
     }
 
-    import_hierarchy_level_t levels[IMPORT_MAX_HIERARCHY_DEPTH];
-    size_t level_count = build_hierarchy(registry, type, state, levels, IMPORT_MAX_HIERARCHY_DEPTH);
-    if (level_count == 0) {
-        return NMO_ERR_INVALID_STATE;
-    }
+    const nmo_type_descriptor_ext_t *layout = type->ext;
+    bool has_layout = layout && layout->hierarchy && layout->hierarchy_depth > 0;
+    size_t level_count = has_layout ? layout->hierarchy_depth : 1u;
 
     yyjson_arr_iter iter;
     yyjson_arr_iter_init(fields_arr, &iter);
@@ -1100,8 +1004,14 @@ static nmo_status_t import_snapshot_fields(void *state,
 
         bool found = false;
         for (size_t lvl = 0; lvl < level_count; ++lvl) {
-            const nmo_type_descriptor_t *lvl_type = levels[lvl].type;
-            void *lvl_state = levels[lvl].state;
+            const nmo_type_descriptor_t *lvl_type =
+                has_layout ? layout->hierarchy[lvl] : type;
+            if (!lvl_type) {
+                continue;
+            }
+            uint32_t state_offset =
+                has_layout && layout->state_offsets ? layout->state_offsets[lvl] : 0u;
+            void *lvl_state = (uint8_t *)state + state_offset;
             if (has_owner_type_guid &&
                 !nmo_guid_equals(lvl_type->guid, owner_type_guid)) {
                 continue;
@@ -1109,7 +1019,7 @@ static nmo_status_t import_snapshot_fields(void *state,
             const nmo_type_field_t *field = nmo_type_get_field_by_name(lvl_type, name);
             if (!field ||
                 !nmo_guid_equals(field->type_guid, parsed_type_guid) ||
-                is_base_embedding(lvl_type, field)) {
+                nmo_field_is_base_embedding(lvl_type, field)) {
                 continue;
             }
             found = true;

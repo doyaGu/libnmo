@@ -103,9 +103,6 @@ static const char *nmo_summary_resolve_object_name(const nmo_summary_output_t *o
 static const nmo_type_descriptor_t *nmo_summary_get_type_for_object(
     const nmo_type_registry_t *registry, nmo_object_t *obj);
 static bool nmo_summary_is_object_ref_field(const nmo_type_field_t *field);
-static bool nmo_summary_is_base_embedding(
-    const nmo_type_descriptor_t *owner_type,
-    const nmo_type_field_t *field);
 static void nmo_summary_emit_stable_object_metadata(
     nmo_object_t *obj,
     nmo_summary_output_t *out);
@@ -1096,9 +1093,8 @@ static bool nmo_summary_render_field(void *user_data, const nmo_type_field_t *fi
         return true;
     }
 
-    /* Skip base class embedding fields -- these are handled by the flattening
-     * walker in nmo_summary_emit_reflection_fields_recursive(). */
-    if (nmo_summary_is_base_embedding(ctx->owner_type, field)) {
+    /* Skip base class embeddings; the hierarchy loop renders each level. */
+    if (nmo_field_is_base_embedding(ctx->owner_type, field)) {
         return true;
     }
 
@@ -1461,120 +1457,6 @@ static bool nmo_summary_render_field(void *user_data, const nmo_type_field_t *fi
 }
 
 /* ============================================================================
- * Summary Sections: Recursive Base-Class Flattening
- * ============================================================================ */
-
-/**
- * @brief Check if a field is a base-class embedding that should be flattened.
- *
- * Detection: The field's type_guid matches the type's parent GUID, or the
- * field uses CKPGUID_NONE and has a well-known embedding name
- * ("base", "entity", "beobject", "object").
- */
-static bool nmo_summary_is_base_embedding(
-    const nmo_type_descriptor_t *owner_type,
-    const nmo_type_field_t *field)
-{
-    if (!owner_type || !field) return false;
-    if (field->flags & NMO_FIELD_REPEATED) return false;
-    if (nmo_guid_is_null(owner_type->base_type)) return false;
-
-    /* Check if type_guid matches the parent */
-    if (nmo_guid_equals(field->type_guid, owner_type->base_type)) {
-        return true;
-    }
-
-    /* Check well-known embedding names when type_guid is CKPGUID_NONE.
-     * No size threshold: CKObject base is only 4 bytes. */
-    if (nmo_guid_equals(field->type_guid, CKPGUID_NONE)) {
-        if (strcmp(field->name, "base") == 0 ||
-            strcmp(field->name, "entity") == 0 ||
-            strcmp(field->name, "beobject") == 0 ||
-            strcmp(field->name, "object") == 0) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-/**
- * @brief Build the class hierarchy chain (deepest-first) for flattened rendering.
- *
- * Walks from the leaf type up through base embeddings, collecting each level's
- * (type, state_ptr) pair. Returns the number of levels found.
- *
- * The output is stored BOTTOM-UP: index 0 is the deepest base class (e.g. CKObject),
- * and the last index is the leaf class (e.g. CK3dObject).
- */
-#define NMO_MAX_HIERARCHY_DEPTH 16
-
-typedef struct {
-    const nmo_type_descriptor_t *type;
-    const void *state;
-} nmo_hierarchy_level_t;
-
-static size_t nmo_summary_build_hierarchy(
-    const nmo_type_registry_t *registry,
-    const nmo_type_descriptor_t *root_type,
-    const void *root_state,
-    nmo_hierarchy_level_t *levels,
-    size_t max_levels)
-{
-    if (!registry || !root_type || !root_state || !levels || max_levels == 0) {
-        return 0;
-    }
-
-    /* First, collect top-down (leaf first), then reverse */
-    nmo_hierarchy_level_t stack[NMO_MAX_HIERARCHY_DEPTH];
-    size_t depth = 0;
-
-    const nmo_type_descriptor_t *cur_type = root_type;
-    const void *cur_state = root_state;
-
-    while (cur_type && depth < NMO_MAX_HIERARCHY_DEPTH) {
-        stack[depth].type = cur_type;
-        stack[depth].state = cur_state;
-        depth++;
-
-        /* Find the base embedding field */
-        bool found_base = false;
-        for (size_t i = 0; i < cur_type->field_count; ++i) {
-            const nmo_type_field_t *field = &cur_type->fields[i];
-            if (nmo_summary_is_base_embedding(cur_type, field)) {
-                const void *base_ptr = (const uint8_t *)cur_state + field->offset;
-
-                /* Resolve the parent type descriptor */
-                const nmo_type_descriptor_t *parent_type = NULL;
-                if (!nmo_guid_equals(field->type_guid, CKPGUID_NONE)) {
-                    parent_type = nmo_type_registry_find_by_guid(registry, field->type_guid);
-                }
-                if (!parent_type && !nmo_guid_is_null(cur_type->base_type)) {
-                    parent_type = nmo_type_registry_find_by_guid(registry, cur_type->base_type);
-                }
-
-                if (parent_type && nmo_type_has_reflection(parent_type)) {
-                    cur_type = parent_type;
-                    cur_state = base_ptr;
-                    found_base = true;
-                    break;
-                }
-            }
-        }
-
-        if (!found_base) break;
-    }
-
-    /* Reverse into levels[] so index 0 is the deepest base */
-    size_t count = depth < max_levels ? depth : max_levels;
-    for (size_t i = 0; i < count; ++i) {
-        levels[i] = stack[depth - 1 - i];
-    }
-
-    return count;
-}
-
-/* ============================================================================
  * JSON Snapshot Emission
  * ============================================================================ */
 
@@ -1853,7 +1735,7 @@ static yyjson_mut_val *nmo_snapshot_build_fields(
         if (!field || !field->name) {
             continue;
         }
-        if (nmo_summary_is_base_embedding(owner_type, field)) {
+        if (nmo_field_is_base_embedding(owner_type, field)) {
             continue;
         }
         if (field->flags & (NMO_FIELD_DEPRECATED | NMO_FIELD_RUNTIME_ONLY | NMO_FIELD_ID)) {
@@ -1881,13 +1763,21 @@ static bool nmo_summary_emit_snapshot_fields(
         return false;
     }
 
-    nmo_hierarchy_level_t levels[NMO_MAX_HIERARCHY_DEPTH];
-    size_t level_count = nmo_summary_build_hierarchy(
-        registry, type, state, levels, NMO_MAX_HIERARCHY_DEPTH);
+    const nmo_type_descriptor_ext_t *layout = type->ext;
+    bool has_layout = layout && layout->hierarchy && layout->hierarchy_depth > 0;
+    size_t level_count = has_layout ? layout->hierarchy_depth : 1u;
     yyjson_mut_val *fields = yyjson_mut_arr(out->json_doc);
     for (size_t lvl = 0; lvl < level_count; ++lvl) {
+        const nmo_type_descriptor_t *level_type =
+            has_layout ? layout->hierarchy[lvl] : type;
+        if (!level_type) {
+            continue;
+        }
+        uint32_t state_offset =
+            has_layout && layout->state_offsets ? layout->state_offsets[lvl] : 0u;
+        const void *level_state = (const uint8_t *)state + state_offset;
         yyjson_mut_val *level_fields = nmo_snapshot_build_fields(
-            out, registry, levels[lvl].type, levels[lvl].state, config);
+            out, registry, level_type, level_state, config);
         yyjson_mut_arr_iter iter;
         yyjson_mut_arr_iter_init(level_fields, &iter);
         yyjson_mut_val *field = NULL;
@@ -1920,7 +1810,7 @@ static bool count_visible_fields_visitor(void *user_data,
     nmo_field_count_ctx_t *ctx = (nmo_field_count_ctx_t *)user_data;
     if (!ctx || !field || !field->name) return true;
 
-    if (nmo_summary_is_base_embedding(ctx->owner_type, field)) {
+    if (nmo_field_is_base_embedding(ctx->owner_type, field)) {
         return true;
     }
 
@@ -1960,13 +1850,9 @@ static bool nmo_summary_emit_reflection_fields(
         return false;
     }
 
-    /* Build the flattened class hierarchy */
-    nmo_hierarchy_level_t levels[NMO_MAX_HIERARCHY_DEPTH];
-    size_t level_count = nmo_summary_build_hierarchy(registry, type, state, levels, NMO_MAX_HIERARCHY_DEPTH);
-
-    if (level_count == 0) {
-        return false;
-    }
+    const nmo_type_descriptor_ext_t *layout = type->ext;
+    bool has_layout = layout && layout->hierarchy && layout->hierarchy_depth > 0;
+    size_t level_count = has_layout ? layout->hierarchy_depth : 1u;
 
     /* Shared render context for stats accumulation */
     nmo_field_render_ctx_t ctx = {
@@ -1984,8 +1870,14 @@ static bool nmo_summary_emit_reflection_fields(
      * Emit each level's own (non-base-embedding) fields with a section header.
      * Skip levels that have zero visible fields (e.g. CKRenderObject). */
     for (size_t lvl = 0; lvl < level_count; ++lvl) {
-        const nmo_type_descriptor_t *lvl_type = levels[lvl].type;
-        const void *lvl_state = levels[lvl].state;
+        const nmo_type_descriptor_t *lvl_type =
+            has_layout ? layout->hierarchy[lvl] : type;
+        if (!lvl_type) {
+            continue;
+        }
+        uint32_t state_offset =
+            has_layout && layout->state_offsets ? layout->state_offsets[lvl] : 0u;
+        const void *lvl_state = (const uint8_t *)state + state_offset;
 
         /* Pre-count visible fields to suppress empty sections */
         nmo_field_count_ctx_t count_ctx = { .owner_type = lvl_type, .count = 0 };
