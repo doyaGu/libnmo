@@ -62,10 +62,13 @@ static void nmo_camera_set_defaults(nmo_camera_state_t *state) {
 NMO_DEFINE_OBJECT_LIFECYCLE(
     camera,
     nmo_camera_state_t,
-    do { \
-        nmo_camera_set_defaults(state); \
+    do {
+        nmo_status_t result = nmo_3dentity_vtable.create(
+            &state->entity, NULL, context);
+        if (result != NMO_OK) return result;
+        nmo_camera_set_defaults(state);
     } while (0),
-    ((void)0))
+    nmo_3dentity_vtable.destroy(&state->entity, NULL, context))
 
 static void nmo_camera_dispose_base_arrays(nmo_camera_state_t *state)
 {
@@ -380,7 +383,112 @@ static void nmo_camera_post_delete(
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_STATE_OPS(camera, nmo_camera_state_t)
+static nmo_status_t nmo_camera_copy(
+    const void *src,
+    void *dst,
+    const nmo_type_descriptor_t *type,
+    nmo_arena_t *arena)
+{
+    (void)type;
+    if (src == NULL || dst == NULL || arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    const nmo_camera_state_t *source = src;
+    nmo_camera_state_t *target = dst;
+    nmo_type_descriptor_t base_type = {
+        .size = sizeof(nmo_3dentity_state_t),
+    };
+    NMO_RETURN_IF_ERROR(nmo_3dentity_vtable.copy(
+        &source->entity, &target->entity, &base_type, arena));
+    target->projection_type = source->projection_type;
+    target->fov = source->fov;
+    target->orthographic_zoom = source->orthographic_zoom;
+    target->width = source->width;
+    target->height = source->height;
+    target->near_plane = source->near_plane;
+    target->far_plane = source->far_plane;
+    target->has_cameraonly_chunk = source->has_cameraonly_chunk;
+    target->has_fov_chunk = source->has_fov_chunk;
+    target->has_proj_chunk = source->has_proj_chunk;
+    target->has_ortho_chunk = source->has_ortho_chunk;
+    target->has_aspect_chunk = source->has_aspect_chunk;
+    target->has_planes_chunk = source->has_planes_chunk;
+    return NMO_OK;
+}
+
+static nmo_status_t nmo_camera_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    const nmo_camera_state_t *state = instance;
+    return nmo_3dentity_vtable.validate(&state->entity, NULL, context);
+}
+
+static bool nmo_camera_equals(const void *a, const void *b)
+{
+    if (a == b) return true;
+    if (a == NULL || b == NULL) return false;
+    const nmo_camera_state_t *lhs = a;
+    const nmo_camera_state_t *rhs = b;
+    return nmo_3dentity_vtable.equals(&lhs->entity, &rhs->entity) &&
+        lhs->projection_type == rhs->projection_type &&
+        memcmp(&lhs->fov, &rhs->fov, sizeof(lhs->fov)) == 0 &&
+        memcmp(&lhs->orthographic_zoom, &rhs->orthographic_zoom,
+               sizeof(lhs->orthographic_zoom)) == 0 &&
+        lhs->width == rhs->width &&
+        lhs->height == rhs->height &&
+        memcmp(&lhs->near_plane, &rhs->near_plane,
+               sizeof(lhs->near_plane)) == 0 &&
+        memcmp(&lhs->far_plane, &rhs->far_plane,
+               sizeof(lhs->far_plane)) == 0 &&
+        lhs->has_cameraonly_chunk == rhs->has_cameraonly_chunk &&
+        lhs->has_fov_chunk == rhs->has_fov_chunk &&
+        lhs->has_proj_chunk == rhs->has_proj_chunk &&
+        lhs->has_ortho_chunk == rhs->has_ortho_chunk &&
+        lhs->has_aspect_chunk == rhs->has_aspect_chunk &&
+        lhs->has_planes_chunk == rhs->has_planes_chunk;
+}
+
+static uint32_t nmo_camera_hash_bytes(
+    uint32_t hash,
+    const void *data,
+    size_t size)
+{
+    const uint8_t *bytes = data;
+    for (size_t i = 0; i < size; ++i) {
+        hash ^= bytes[i];
+        hash *= 16777619u;
+    }
+    return hash;
+}
+
+static uint32_t nmo_camera_hash(const void *instance)
+{
+    if (instance == NULL) return 0;
+    const nmo_camera_state_t *state = instance;
+    uint32_t hash = nmo_3dentity_vtable.hash(&state->entity);
+#define NMO_CAMERA_HASH_FIELD(field) \
+    hash = nmo_camera_hash_bytes( \
+        hash, &state->field, sizeof(state->field))
+    NMO_CAMERA_HASH_FIELD(projection_type);
+    NMO_CAMERA_HASH_FIELD(fov);
+    NMO_CAMERA_HASH_FIELD(orthographic_zoom);
+    NMO_CAMERA_HASH_FIELD(width);
+    NMO_CAMERA_HASH_FIELD(height);
+    NMO_CAMERA_HASH_FIELD(near_plane);
+    NMO_CAMERA_HASH_FIELD(far_plane);
+    NMO_CAMERA_HASH_FIELD(has_cameraonly_chunk);
+    NMO_CAMERA_HASH_FIELD(has_fov_chunk);
+    NMO_CAMERA_HASH_FIELD(has_proj_chunk);
+    NMO_CAMERA_HASH_FIELD(has_ortho_chunk);
+    NMO_CAMERA_HASH_FIELD(has_aspect_chunk);
+    NMO_CAMERA_HASH_FIELD(has_planes_chunk);
+#undef NMO_CAMERA_HASH_FIELD
+    return hash;
+}
 
 nmo_type_vtable_t nmo_camera_vtable = {
     .prepare_dependencies = nmo_camera_prepare_dependencies,
