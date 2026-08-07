@@ -1665,6 +1665,35 @@ static bool script_edit_is_parameter_reference_class(nmo_class_id_t class_id)
            class_id == NMO_CID_PARAMETEROPERATION;
 }
 
+static bool script_edit_is_parameter_reference_object(
+    const nmo_type_registry_t *registry,
+    nmo_object_t *object)
+{
+    if (!registry || !object) {
+        return false;
+    }
+    if (nmo_guid_is_null(nmo_object_get_type_guid(object)) &&
+        script_edit_is_parameter_reference_class(
+            nmo_object_get_class_id(object))) {
+        return true;
+    }
+    return script_edit_get_object_state(
+               registry,
+               object,
+               NMO_CID_PARAMETERIN,
+               CKPGUID_PARAMETERIN) != NULL ||
+           script_edit_get_object_state(
+               registry,
+               object,
+               NMO_CID_PARAMETER,
+               CKPGUID_PARAMETER) != NULL ||
+           script_edit_get_object_state(
+               registry,
+               object,
+               NMO_CID_PARAMETEROPERATION,
+               CKPGUID_PARAMETEROPERATION) != NULL;
+}
+
 static bool script_edit_parameter_class_holds_value(nmo_class_id_t class_id)
 {
     return class_id == NMO_CID_PARAMETER ||
@@ -3675,21 +3704,29 @@ NMO_API nmo_status_t nmo_script_edit_remove_io(
 }
 
 static nmo_guid_t script_edit_parameter_type_guid_from_object(
-    const nmo_object_t *object)
+    const nmo_type_registry_t *registry,
+    nmo_object_t *object)
 {
-    if (!object) {
+    if (!registry || !object) {
         return NMO_GUID_NULL;
     }
-    if (nmo_object_get_class_id(object) == NMO_CID_PARAMETERIN) {
-        const nmo_parameterin_state_t *state =
-            (const nmo_parameterin_state_t *)nmo_object_get_state(object);
-        return state ? state->type_guid : NMO_GUID_NULL;
+    const nmo_parameterin_state_t *input_state =
+        (const nmo_parameterin_state_t *)script_edit_get_object_state(
+            registry,
+            object,
+            NMO_CID_PARAMETERIN,
+            CKPGUID_PARAMETERIN);
+    if (input_state) {
+        return input_state->type_guid;
     }
 
-    {
-        const nmo_parameter_state_t *state = nmo_parameter_get_state(object);
-        return state ? state->type_guid : NMO_GUID_NULL;
-    }
+    const nmo_parameter_state_t *state =
+        (const nmo_parameter_state_t *)script_edit_get_object_state(
+            registry,
+            object,
+            NMO_CID_PARAMETER,
+            CKPGUID_PARAMETER);
+    return state ? state->type_guid : NMO_GUID_NULL;
 }
 
 static const nmo_type_descriptor_t *script_edit_resolve_parameter_type_desc(
@@ -3711,13 +3748,16 @@ static const nmo_type_descriptor_t *script_edit_resolve_parameter_type_desc(
         return NULL;
     }
 
-    type_guid = script_edit_parameter_type_guid_from_object(object);
+    registry = nmo_context_get_type_registry(tx->ctx);
+    if (!registry) {
+        return NULL;
+    }
+    type_guid = script_edit_parameter_type_guid_from_object(registry, object);
     if (nmo_guid_is_null(type_guid)) {
         return NULL;
     }
 
-    registry = nmo_context_get_type_registry(tx->ctx);
-    return registry ? nmo_type_registry_find_by_guid(registry, type_guid) : NULL;
+    return nmo_type_registry_find_by_guid(registry, type_guid);
 }
 
 static bool script_edit_type_matches_operation_guid(
@@ -4294,6 +4334,7 @@ NMO_API nmo_status_t nmo_script_edit_ensure_input_parameter_source(
     nmo_object_id_t *out_source_parameter_id)
 {
     nmo_object_repository_t *repo = NULL;
+    const nmo_type_registry_t *registry = NULL;
     nmo_object_t *input_object = NULL;
     nmo_parameterin_state_t *input_state = NULL;
     nmo_object_id_t source_id = 0u;
@@ -4307,16 +4348,18 @@ NMO_API nmo_status_t nmo_script_edit_ensure_input_parameter_source(
     }
 
     repo = nmo_workspace_internal_repository(tx->workspace);
+    registry = nmo_workspace_internal_type_registry(tx->workspace);
     input_object = repo ? nmo_object_repository_find_by_id(repo, parameter_in_id) : NULL;
     if (input_object == NULL) {
         return NMO_ERR_NOT_FOUND;
     }
-    if (nmo_object_get_class_id(input_object) != NMO_CID_PARAMETERIN) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    input_state = (nmo_parameterin_state_t *)nmo_object_get_state(input_object);
+    input_state = (nmo_parameterin_state_t *)script_edit_get_object_state(
+        registry,
+        input_object,
+        NMO_CID_PARAMETERIN,
+        CKPGUID_PARAMETERIN);
     if (input_state == NULL) {
-        return NMO_ERR_INVALID_STATE;
+        return NMO_ERR_INVALID_ARGUMENT;
     }
 
     const nmo_object_id_t existing_source_id =
@@ -4365,6 +4408,7 @@ NMO_API nmo_status_t nmo_script_edit_connect_parameter(
     const nmo_port_owner_t *source_owner = NULL;
     const nmo_port_owner_t *target_owner = NULL;
     nmo_object_repository_t *repo = NULL;
+    const nmo_type_registry_t *registry = NULL;
     nmo_object_t *source_object = NULL;
     nmo_object_t *target_object = NULL;
     nmo_parameterin_state_t *target_state = NULL;
@@ -4394,27 +4438,33 @@ NMO_API nmo_status_t nmo_script_edit_connect_parameter(
     }
 
     repo = nmo_workspace_internal_repository(tx->workspace);
+    registry = nmo_workspace_internal_type_registry(tx->workspace);
     source_object = repo ? nmo_object_repository_find_by_id(repo, source_parameter_id) : NULL;
     target_object = repo ? nmo_object_repository_find_by_id(repo, target_parameter_id) : NULL;
     if (!source_object || !target_object) {
         return NMO_ERR_NOT_FOUND;
     }
-    if (!script_edit_is_parameter_reference_class(
-            nmo_object_get_class_id(source_object)) ||
-        nmo_object_get_class_id(target_object) != NMO_CID_PARAMETERIN) {
+    if (!script_edit_is_parameter_reference_object(
+            registry, source_object)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    target_state = (nmo_parameterin_state_t *)script_edit_get_object_state(
+        registry,
+        target_object,
+        NMO_CID_PARAMETERIN,
+        CKPGUID_PARAMETERIN);
+    if (!target_state) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    source_type = script_edit_parameter_type_guid_from_object(source_object);
-    target_type = script_edit_parameter_type_guid_from_object(target_object);
+    source_type = script_edit_parameter_type_guid_from_object(
+        registry, source_object);
+    target_type = script_edit_parameter_type_guid_from_object(
+        registry, target_object);
     if (!nmo_guid_equals(source_type, target_type)) {
         return NMO_ERR_VALIDATION_FAILED;
     }
 
-    target_state = (nmo_parameterin_state_t *)nmo_object_get_state(target_object);
-    if (!target_state) {
-        return NMO_ERR_INVALID_STATE;
-    }
     const nmo_object_id_t existing_source_id =
         nmo_parameterin_source_id(target_state);
     if (existing_source_id != 0u &&
@@ -4431,8 +4481,11 @@ NMO_API nmo_status_t nmo_script_edit_connect_parameter(
         return rc;
     }
     nmo_parameterin_set_source_id(target_state, source_parameter_id);
-    target_state->is_shared =
-        nmo_object_get_class_id(source_object) == NMO_CID_PARAMETERIN ? 1u : 0u;
+    target_state->is_shared = script_edit_get_object_state(
+        registry,
+        source_object,
+        NMO_CID_PARAMETERIN,
+        CKPGUID_PARAMETERIN) != NULL ? 1u : 0u;
 
     source_state = script_edit_find_parameterout_state_in_repo(
         nmo_workspace_internal_type_registry(tx->workspace),

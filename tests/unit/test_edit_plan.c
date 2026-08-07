@@ -3870,16 +3870,8 @@ TEST(edit_plan, executor_detaches_explicit_parameter_connections) {
     nmo_behavior_set_owner_id(behavior_state, owner_id);
     source_state->base.type_guid = CKPGUID_INT;
     nmo_parameterout_set_owner_id(source_state, behavior_id);
-    source_state->destination_ids = (nmo_ref_t *)nmo_arena_alloc(
-        nmo_session_get_arena(fixture.session),
-        sizeof(*source_state->destination_ids),
-        _Alignof(nmo_ref_t));
-    ASSERT_NOT_NULL(source_state->destination_ids);
-    source_state->destination_ids[0] = nmo_ref_from_id(target_id);
-    source_state->destination_count = 1u;
     target_state->type_guid = CKPGUID_INT;
     nmo_parameterin_set_owner_id(target_state, behavior_id);
-    nmo_parameterin_set_source_id(target_state, source_id);
     operation_state->operation_guid =
         nmo_guid_parse("33CC6B49-3589282B");
     nmo_parameteroperation_set_owner_id(operation_state, behavior_id);
@@ -3897,6 +3889,24 @@ TEST(edit_plan, executor_detaches_explicit_parameter_connections) {
 
     nmo_edit_plan_t *plan = NULL;
     nmo_edit_report_t report;
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_connect_parameter(
+                  plan, source_id, target_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_edit_executor_execute(
+        fixture.workspace,
+        plan,
+        &(nmo_edit_executor_options_t){0},
+        &report));
+    ASSERT_TRUE(report.ok);
+    ASSERT_EQ(source_id, nmo_parameterin_source_id(target_state));
+    ASSERT_EQ(1u, source_state->destination_count);
+    ASSERT_EQ(target_id, nmo_parameterout_destination_id(source_state, 0u));
+    nmo_edit_report_dispose(&report);
+    nmo_edit_plan_destroy(plan);
+
+    plan = NULL;
     ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
     ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
     ASSERT_EQ(NMO_OK,

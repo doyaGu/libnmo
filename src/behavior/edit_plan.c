@@ -3306,13 +3306,11 @@ static nmo_status_t edit_executor_resolve_input_parameter_source(
     if (tx == NULL || parameter_id == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
-    nmo_object_repository_t *repo =
-        nmo_workspace_internal_repository(nmo_script_edit_workspace(tx));
-    nmo_object_t *parameter_obj = repo != NULL
-        ? nmo_object_repository_find_by_id(repo, *parameter_id)
-        : NULL;
-    if (parameter_obj != NULL &&
-        nmo_object_get_class_id(parameter_obj) == NMO_CID_PARAMETERIN) {
+    if (edit_plan_get_object_state(
+            tx,
+            *parameter_id,
+            NMO_CID_PARAMETERIN,
+            CKPGUID_PARAMETERIN) != NULL) {
         return nmo_script_edit_ensure_input_parameter_source(
             tx, *parameter_id, parameter_id);
     }
