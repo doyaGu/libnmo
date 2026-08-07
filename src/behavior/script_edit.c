@@ -13,6 +13,7 @@
 #include "object/nmo_object_repository.h"
 #include "object/nmo_ref_graph.h"
 #include "object/nmo_class_ids.h"
+#include "object/nmo_object_guids.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_behaviorio_schemas.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"
@@ -27,6 +28,7 @@
 #include "format/nmo_interface_chunk.h"
 #include "format/nmo_object.h"
 #include "type/nmo_operation_system.h"
+#include "type/nmo_type_query.h"
 #include "type/nmo_type_guids.h"
 #include "type/nmo_type_system.h"
 #include "core/nmo_arena.h"
@@ -404,6 +406,7 @@ static nmo_status_t script_edit_track_created(
 }
 
 static nmo_behavior_state_t *script_edit_find_behavior_state_in_repo(
+    const nmo_type_registry_t *registry,
     nmo_object_repository_t *repo,
     nmo_object_id_t behavior_id,
     nmo_object_t **out_object)
@@ -413,18 +416,24 @@ static nmo_behavior_state_t *script_edit_find_behavior_state_in_repo(
     if (out_object) {
         *out_object = NULL;
     }
-    if (!repo || behavior_id == 0) {
+    if (!registry || !repo || behavior_id == 0) {
         return NULL;
     }
 
     object = repo ? nmo_object_repository_find_by_id(repo, behavior_id) : NULL;
-    if (!object || nmo_object_get_class_id(object) != NMO_CID_BEHAVIOR) {
+    if (!object) {
+        return NULL;
+    }
+    nmo_behavior_state_t *state = (nmo_behavior_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, object, CKPGUID_BEHAVIOR);
+    if (!state) {
         return NULL;
     }
     if (out_object) {
         *out_object = object;
     }
-    return (nmo_behavior_state_t *)nmo_object_get_state(object);
+    return state;
 }
 
 static nmo_behavior_state_t *script_edit_find_behavior_state(
@@ -432,7 +441,9 @@ static nmo_behavior_state_t *script_edit_find_behavior_state(
     nmo_object_id_t behavior_id,
     nmo_object_t **out_object)
 {
+    nmo_context_t *ctx = session ? nmo_session_get_context(session) : NULL;
     return script_edit_find_behavior_state_in_repo(
+        ctx ? nmo_context_get_type_registry(ctx) : NULL,
         session ? nmo_session_get_repository(session) : NULL,
         behavior_id,
         out_object);
@@ -1100,13 +1111,15 @@ static bool script_edit_is_pending_destroy(
 }
 
 static bool script_edit_io_is_linked_in_repo(
+    const nmo_type_registry_t *registry,
     nmo_object_repository_t *repo,
     nmo_object_id_t behavior_id,
     nmo_object_id_t io_id)
 {
     nmo_behavior_state_t *state = NULL;
 
-    state = script_edit_find_behavior_state_in_repo(repo, behavior_id, NULL);
+    state = script_edit_find_behavior_state_in_repo(
+        registry, repo, behavior_id, NULL);
     if (!state || !state->sub_behavior_links.data) {
         return false;
     }
@@ -1263,6 +1276,7 @@ static nmo_status_t script_edit_remove_links_for_behavior_ios(
             &behavior->sub_behaviors, i);
         if (sub_id == 0) continue;
         nmo_behavior_state_t *sub_state = script_edit_find_behavior_state_in_repo(
+            nmo_workspace_internal_type_registry(tx->workspace),
             nmo_workspace_internal_repository(tx->workspace),
             sub_id,
             NULL);
@@ -1312,6 +1326,7 @@ static nmo_status_t script_edit_append_behavior_owned_destroy_objects(
             &state->sub_behaviors, i);
         if (sub_id == 0) continue;
         nmo_behavior_state_t *sub_state = script_edit_find_behavior_state_in_repo(
+            nmo_workspace_internal_type_registry(tx->workspace),
             nmo_workspace_internal_repository(tx->workspace),
             sub_id,
             NULL);
@@ -2566,6 +2581,7 @@ NMO_API nmo_status_t nmo_script_edit_validate_interface_refs(
     }
 
     behavior = script_edit_find_behavior_state_in_repo(
+        nmo_workspace_internal_type_registry(tx->workspace),
         nmo_workspace_internal_repository(tx->workspace),
         behavior_id,
         NULL);
@@ -3038,6 +3054,7 @@ NMO_API nmo_status_t nmo_script_edit_apply_interface_policy(
     }
 
     behavior = script_edit_find_behavior_state_in_repo(
+        nmo_workspace_internal_type_registry(tx->workspace),
         nmo_workspace_internal_repository(tx->workspace),
         behavior_id,
         NULL);
@@ -3162,6 +3179,7 @@ NMO_API nmo_status_t nmo_script_edit_add_node_ex(
     }
 
     parent_state = script_edit_find_behavior_state_in_repo(
+        nmo_workspace_internal_type_registry(tx->workspace),
         nmo_workspace_internal_repository(tx->workspace),
         parent_behavior_id,
         NULL);
@@ -3190,6 +3208,7 @@ NMO_API nmo_status_t nmo_script_edit_add_node_ex(
     }
 
     node_state = script_edit_find_behavior_state_in_repo(
+        nmo_workspace_internal_type_registry(tx->workspace),
         nmo_workspace_internal_repository(tx->workspace),
         node_id,
         NULL);
@@ -3386,10 +3405,12 @@ NMO_API nmo_status_t nmo_script_edit_remove_node(
     }
 
     parent_state = script_edit_find_behavior_state_in_repo(
+        nmo_workspace_internal_type_registry(tx->workspace),
         nmo_workspace_internal_repository(tx->workspace),
         parent_behavior_id,
         NULL);
     node_state = script_edit_find_behavior_state_in_repo(
+        nmo_workspace_internal_type_registry(tx->workspace),
         nmo_workspace_internal_repository(tx->workspace),
         node_id,
         NULL);
@@ -3467,6 +3488,7 @@ NMO_API nmo_status_t nmo_script_edit_add_io(
     }
 
     behavior = script_edit_find_behavior_state_in_repo(
+        nmo_workspace_internal_type_registry(tx->workspace),
         nmo_workspace_internal_repository(tx->workspace),
         behavior_id,
         NULL);
@@ -3566,6 +3588,7 @@ NMO_API nmo_status_t nmo_script_edit_remove_io(
     }
     if (!detach_links &&
         script_edit_io_is_linked_in_repo(
+            nmo_workspace_internal_type_registry(tx->workspace),
             nmo_workspace_internal_repository(tx->workspace),
             owner->owner_id,
             io_id)) {
@@ -3579,6 +3602,7 @@ NMO_API nmo_status_t nmo_script_edit_remove_io(
     }
 
     behavior = script_edit_find_behavior_state_in_repo(
+        nmo_workspace_internal_type_registry(tx->workspace),
         nmo_workspace_internal_repository(tx->workspace),
         owner->owner_id,
         NULL);
@@ -4054,6 +4078,7 @@ NMO_API nmo_status_t nmo_script_edit_add_parameter(
     }
 
     behavior = script_edit_find_behavior_state_in_repo(
+        nmo_workspace_internal_type_registry(tx->workspace),
         nmo_workspace_internal_repository(tx->workspace),
         owner_behavior_id,
         NULL);
@@ -4447,6 +4472,7 @@ NMO_API nmo_status_t nmo_script_edit_remove_parameter(
     }
 
     behavior = script_edit_find_behavior_state_in_repo(
+        nmo_workspace_internal_type_registry(tx->workspace),
         nmo_workspace_internal_repository(tx->workspace),
         owner->owner_id,
         NULL);
@@ -4517,6 +4543,7 @@ NMO_API nmo_status_t nmo_script_edit_add_operation(
     }
 
     behavior = script_edit_find_behavior_state_in_repo(
+        nmo_workspace_internal_type_registry(tx->workspace),
         nmo_workspace_internal_repository(tx->workspace),
         parent_behavior_id,
         NULL);
@@ -4737,6 +4764,7 @@ NMO_API nmo_status_t nmo_script_edit_remove_operation(
     }
 
     behavior = script_edit_find_behavior_state_in_repo(
+        nmo_workspace_internal_type_registry(tx->workspace),
         nmo_workspace_internal_repository(tx->workspace),
         owner->owner_id,
         NULL);
@@ -4788,6 +4816,7 @@ NMO_API nmo_status_t nmo_script_edit_add_behavior_link(
         return NMO_ERR_INVALID_ARGUMENT;
     }
     if (!script_edit_find_behavior_state_in_repo(
+            nmo_workspace_internal_type_registry(tx->workspace),
             nmo_workspace_internal_repository(tx->workspace),
             parent_behavior_id,
             NULL)) {
@@ -4945,6 +4974,7 @@ NMO_API nmo_status_t nmo_script_edit_remove_behavior_link(
     }
 
     parent = script_edit_find_behavior_state_in_repo(
+        nmo_workspace_internal_type_registry(tx->workspace),
         nmo_workspace_internal_repository(tx->workspace),
         parent_behavior_id,
         NULL);

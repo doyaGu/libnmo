@@ -4,11 +4,13 @@
 #include "behavior/nmo_script_edit.h"
 #include "object/nmo_object_repository.h"
 #include "object/builtin/nmo_behavior_schemas.h"
+#include "object/nmo_object_guids.h"
 #include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "runtime/nmo_workspace.h"
 #include "format/nmo_interface_chunk.h"
 #include "format/nmo_object.h"
+#include "type/nmo_type_query.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -471,6 +473,44 @@ TEST(script_edit_interface, canonicalize_converts_raw_interface_ids_to_runtime_i
     nmo_context_release(ctx);
 }
 
+TEST(script_edit_interface, removes_interface_from_explicit_behavior_type)
+{
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    nmo_object_id_t behavior_id = 0u;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session,
+        0,
+        "Typed behavior",
+        CKPGUID_BEHAVIOR,
+        &behavior_id,
+        NULL));
+    nmo_object_t *object = nmo_object_repository_find_by_id(
+        nmo_session_get_repository(session), behavior_id);
+    nmo_behavior_state_t *state = (nmo_behavior_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            nmo_context_get_type_registry(ctx),
+            object,
+            CKPGUID_BEHAVIOR);
+    ASSERT_NOT_NULL(state);
+    state->has_interface = true;
+
+    nmo_script_edit_tx_t *tx = NULL;
+    ASSERT_EQ(NMO_OK, begin_test_script_edit(
+        ctx, session, "remove typed interface", &tx));
+    ASSERT_EQ(NMO_OK, nmo_script_edit_apply_interface_policy(
+        tx, behavior_id, NMO_SCRIPT_EDIT_INTERFACE_REMOVE));
+    ASSERT_FALSE(state->has_interface);
+    ASSERT_EQ(NMO_OK, nmo_script_edit_commit(tx));
+    ASSERT_EQ(0, nmo_object_get_class_id(object));
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(script_edit_interface,
                   remove_io_canonicalize_updates_interface_data_in_memory);
@@ -478,6 +518,8 @@ TEST_MAIN_BEGIN()
                   remove_node_canonicalize_roundtrips_after_save);
     REGISTER_TEST(script_edit_interface,
                   canonicalize_converts_raw_interface_ids_to_runtime_ids);
+    REGISTER_TEST(script_edit_interface,
+                  removes_interface_from_explicit_behavior_type);
 TEST_MAIN_END()
 
 
