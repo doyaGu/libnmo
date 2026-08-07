@@ -751,19 +751,32 @@ static nmo_status_t script_edit_find_message_manager_value(
         if (!chunk) {
             return NMO_ERR_NOMEM;
         }
-        if (nmo_chunk_start_read(chunk) != NMO_OK ||
-            nmo_chunk_seek_identifier(chunk, 0x53u) != NMO_OK) {
+        nmo_status_t status = nmo_chunk_start_read(chunk);
+        if (status != NMO_OK) {
+            return status;
+        }
+        status = nmo_chunk_seek_identifier(chunk, 0x53u);
+        if (status == NMO_ERR_NOT_FOUND) {
             continue;
+        }
+        if (status != NMO_OK) {
+            return status;
         }
 
         int32_t count = 0;
-        if (nmo_chunk_read_int(chunk, &count) != NMO_OK || count < 0) {
-            continue;
+        status = nmo_chunk_read_int(chunk, &count);
+        if (status != NMO_OK) {
+            return status;
+        }
+        if (count < 0 || count > 10000) {
+            return NMO_ERR_VALIDATION_FAILED;
+        }
+        if ((size_t)count > nmo_chunk_get_remaining(chunk)) {
+            return NMO_ERR_TRUNCATED_CHUNK;
         }
         for (int32_t index = 0; index < count; ++index) {
             char *entry_name = NULL;
-            nmo_status_t status =
-                nmo_chunk_read_string_checked(chunk, &entry_name, NULL);
+            status = nmo_chunk_read_string_checked(chunk, &entry_name, NULL);
             if (status != NMO_OK) {
                 return status;
             }
@@ -804,28 +817,47 @@ static nmo_status_t script_edit_find_attribute_manager_value(
         if (!chunk) {
             return NMO_ERR_NOMEM;
         }
-        if (nmo_chunk_start_read(chunk) != NMO_OK ||
-            nmo_chunk_seek_identifier(chunk, 0x52u) != NMO_OK) {
+        nmo_status_t status = nmo_chunk_start_read(chunk);
+        if (status != NMO_OK) {
+            return status;
+        }
+        status = nmo_chunk_seek_identifier(chunk, 0x52u);
+        if (status == NMO_ERR_NOT_FOUND) {
             continue;
+        }
+        if (status != NMO_OK) {
+            return status;
         }
 
         int32_t category_count = 0;
         int32_t attribute_count = 0;
-        if (nmo_chunk_read_int(chunk, &category_count) != NMO_OK ||
-            nmo_chunk_read_int(chunk, &attribute_count) != NMO_OK ||
-            category_count < 0 || attribute_count < 0) {
-            continue;
+        status = nmo_chunk_read_int(chunk, &category_count);
+        if (status == NMO_OK) {
+            status = nmo_chunk_read_int(chunk, &attribute_count);
+        }
+        if (status != NMO_OK) {
+            return status;
+        }
+        if (category_count < 0 || category_count > 10000 ||
+            attribute_count < 0 || attribute_count > 100000) {
+            return NMO_ERR_VALIDATION_FAILED;
+        }
+        const size_t minimum_entry_dwords =
+            (size_t)category_count + (size_t)attribute_count;
+        if (minimum_entry_dwords > nmo_chunk_get_remaining(chunk)) {
+            return NMO_ERR_TRUNCATED_CHUNK;
         }
 
         for (int32_t category = 0; category < category_count; ++category) {
             int32_t present = 0;
-            if (nmo_chunk_read_int(chunk, &present) != NMO_OK) {
-                return NMO_ERR_INVALID_STATE;
+            status = nmo_chunk_read_int(chunk, &present);
+            if (status != NMO_OK) {
+                return status;
             }
             if (present) {
                 char *category_name = NULL;
                 uint32_t flags = 0;
-                nmo_status_t status = nmo_chunk_read_string_checked(
+                status = nmo_chunk_read_string_checked(
                     chunk, &category_name, NULL);
                 if (status == NMO_OK) {
                     status = nmo_chunk_read_dword(chunk, &flags);
@@ -838,8 +870,9 @@ static nmo_status_t script_edit_find_attribute_manager_value(
 
         for (int32_t attr = 0; attr < attribute_count; ++attr) {
             int32_t present = 0;
-            if (nmo_chunk_read_int(chunk, &present) != NMO_OK) {
-                return NMO_ERR_INVALID_STATE;
+            status = nmo_chunk_read_int(chunk, &present);
+            if (status != NMO_OK) {
+                return status;
             }
             if (!present) {
                 continue;
@@ -850,7 +883,7 @@ static nmo_status_t script_edit_find_attribute_manager_value(
             int32_t category_index = 0;
             int32_t compatible_class_id = 0;
             uint32_t flags = 0;
-            nmo_status_t status = nmo_chunk_read_string_checked(
+            status = nmo_chunk_read_string_checked(
                 chunk, &attr_name, NULL);
             if (status == NMO_OK) {
                 status = nmo_chunk_read_guid(chunk, &parameter_type_guid);

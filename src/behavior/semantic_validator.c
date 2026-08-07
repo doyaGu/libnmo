@@ -1540,7 +1540,9 @@ static bool semantic_message_manager_has_name(nmo_workspace_t *workspace,
         }
 
         int32_t count = 0;
-        if (nmo_chunk_read_int(chunk, &count) != NMO_OK || count < 0) {
+        if (nmo_chunk_read_int(chunk, &count) != NMO_OK ||
+            count < 0 || count > 10000 ||
+            (size_t)count > nmo_chunk_get_remaining(chunk)) {
             continue;
         }
         for (int32_t index = 0; index < count; ++index) {
@@ -1591,8 +1593,13 @@ static bool semantic_attribute_manager_has_name(nmo_workspace_t *workspace,
         int32_t attribute_count = 0;
         if (nmo_chunk_read_int(chunk, &category_count) != NMO_OK ||
             nmo_chunk_read_int(chunk, &attribute_count) != NMO_OK ||
-            category_count < 0 ||
-            attribute_count < 0) {
+            category_count < 0 || category_count > 10000 ||
+            attribute_count < 0 || attribute_count > 100000) {
+            continue;
+        }
+        const size_t minimum_entry_dwords =
+            (size_t)category_count + (size_t)attribute_count;
+        if (minimum_entry_dwords > nmo_chunk_get_remaining(chunk)) {
             continue;
         }
         bool malformed = false;

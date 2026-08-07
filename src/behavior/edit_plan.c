@@ -212,14 +212,36 @@ static nmo_status_t edit_plan_read_manager_snapshot(
         snapshot->has_message_manager = true;
         nmo_chunk_t *chunk =
             nmo_chunk_clone(manager->chunk, nmo_session_get_arena(session));
-        if (chunk == NULL ||
-            nmo_chunk_start_read(chunk) != NMO_OK ||
-            nmo_chunk_seek_identifier(chunk, 0x53u) != NMO_OK) {
+        if (chunk == NULL) {
+            edit_plan_manager_snapshot_dispose(snapshot);
+            return NMO_ERR_NOMEM;
+        }
+        nmo_status_t status = nmo_chunk_start_read(chunk);
+        if (status != NMO_OK) {
+            edit_plan_manager_snapshot_dispose(snapshot);
+            return status;
+        }
+        status = nmo_chunk_seek_identifier(chunk, 0x53u);
+        if (status == NMO_ERR_NOT_FOUND) {
             return NMO_OK;
         }
+        if (status != NMO_OK) {
+            edit_plan_manager_snapshot_dispose(snapshot);
+            return status;
+        }
         int32_t count = 0;
-        if (nmo_chunk_read_int(chunk, &count) != NMO_OK || count < 0) {
-            return NMO_OK;
+        status = nmo_chunk_read_int(chunk, &count);
+        if (status != NMO_OK) {
+            edit_plan_manager_snapshot_dispose(snapshot);
+            return status;
+        }
+        if (count < 0 || count > 10000) {
+            edit_plan_manager_snapshot_dispose(snapshot);
+            return NMO_ERR_VALIDATION_FAILED;
+        }
+        if ((size_t)count > nmo_chunk_get_remaining(chunk)) {
+            edit_plan_manager_snapshot_dispose(snapshot);
+            return NMO_ERR_TRUNCATED_CHUNK;
         }
         snapshot->message_names =
             (const char **)calloc((size_t)count, sizeof(char *));
@@ -272,10 +294,25 @@ static nmo_status_t edit_plan_read_manager_snapshot(
         }
         int32_t category_count = 0;
         int32_t attribute_count = 0;
-        if (nmo_chunk_read_int(chunk, &category_count) != NMO_OK ||
-            nmo_chunk_read_int(chunk, &attribute_count) != NMO_OK ||
-            category_count < 0 || attribute_count < 0) {
-            return NMO_OK;
+        nmo_status_t attribute_status =
+            nmo_chunk_read_int(chunk, &category_count);
+        if (attribute_status == NMO_OK) {
+            attribute_status = nmo_chunk_read_int(chunk, &attribute_count);
+        }
+        if (attribute_status != NMO_OK) {
+            edit_plan_manager_snapshot_dispose(snapshot);
+            return attribute_status;
+        }
+        if (category_count < 0 || category_count > 10000 ||
+            attribute_count < 0 || attribute_count > 100000) {
+            edit_plan_manager_snapshot_dispose(snapshot);
+            return NMO_ERR_VALIDATION_FAILED;
+        }
+        const size_t minimum_entry_dwords =
+            (size_t)category_count + (size_t)attribute_count;
+        if (minimum_entry_dwords > nmo_chunk_get_remaining(chunk)) {
+            edit_plan_manager_snapshot_dispose(snapshot);
+            return NMO_ERR_TRUNCATED_CHUNK;
         }
         const char **categories =
             (const char **)calloc((size_t)category_count, sizeof(char *));
@@ -283,7 +320,7 @@ static nmo_status_t edit_plan_read_manager_snapshot(
             edit_plan_manager_snapshot_dispose(snapshot);
             return NMO_ERR_NOMEM;
         }
-        nmo_status_t attribute_status = NMO_OK;
+        attribute_status = NMO_OK;
         for (int32_t cat = 0; cat < category_count; ++cat) {
             int32_t present = 0;
             attribute_status = nmo_chunk_read_int(chunk, &present);
