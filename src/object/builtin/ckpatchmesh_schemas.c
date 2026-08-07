@@ -921,124 +921,41 @@ static void nmo_patchmesh_post_delete(
     (void)context;
 }
 
-static nmo_status_t nmo_patchmesh_canonical_bytes(
-    const nmo_patchmesh_state_t *state,
-    nmo_arena_t **out_arena,
-    void **out_data,
-    size_t *out_size)
-{
-    if (!state || !out_arena || !out_data || !out_size) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    *out_arena = NULL;
-    *out_data = NULL;
-    *out_size = 0;
-
-    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
-    if (!arena) return NMO_ERR_NOMEM;
-    nmo_chunk_t *legacy = nmo_chunk_create(arena);
-    nmo_chunk_t *modern = nmo_chunk_create(arena);
-    if (!legacy || !modern) {
-        nmo_arena_destroy(arena);
-        return NMO_ERR_NOMEM;
-    }
-    legacy->class_id = NMO_CID_PATCHMESH;
-    legacy->chunk_version = NMO_CHUNK_VERSION4;
-    legacy->data_version = 7;
-    legacy->chunk_options = NMO_CHUNK_OPTION_FILE;
-    modern->class_id = NMO_CID_PATCHMESH;
-    modern->chunk_version = NMO_CHUNK_VERSION4;
-    modern->data_version = 9;
-    modern->chunk_options = NMO_CHUNK_OPTION_FILE;
-
-    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
-        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
-    nmo_status_t result = nmo_patchmesh_serialize(
-        state, legacy, NULL, &serialize_context);
-    if (result == NMO_OK) {
-        nmo_chunk_close(legacy);
-        result = nmo_patchmesh_serialize(
-            state, modern, NULL, &serialize_context);
-    }
-
-    void *legacy_data = NULL;
-    void *modern_data = NULL;
-    size_t legacy_size = 0;
-    size_t modern_size = 0;
-    if (result == NMO_OK) {
-        nmo_chunk_close(modern);
-        result = nmo_chunk_serialize_version1(
-            legacy, &legacy_data, &legacy_size, arena);
-    }
-    if (result == NMO_OK) {
-        result = nmo_chunk_serialize_version1(
-            modern, &modern_data, &modern_size, arena);
-    }
-    if (result == NMO_OK) {
-        const size_t header_size = 2u * sizeof(size_t);
-        if (legacy_size > SIZE_MAX - header_size ||
-            modern_size > SIZE_MAX - header_size - legacy_size) {
-            result = NMO_ERR_NOMEM;
-        } else {
-            *out_size = header_size + legacy_size + modern_size;
-            uint8_t *combined = nmo_arena_alloc(
-                arena, *out_size, _Alignof(size_t));
-            if (!combined) {
-                result = NMO_ERR_NOMEM;
-            } else {
-                memcpy(combined, &legacy_size, sizeof(legacy_size));
-                memcpy(combined + sizeof(legacy_size),
-                       &modern_size, sizeof(modern_size));
-                memcpy(combined + header_size, legacy_data, legacy_size);
-                memcpy(combined + header_size + legacy_size,
-                       modern_data, modern_size);
-                *out_data = combined;
-            }
-        }
-    }
-    if (result != NMO_OK) {
-        nmo_arena_destroy(arena);
-        return result;
-    }
-    *out_arena = arena;
-    return NMO_OK;
-}
+static const nmo_object_serialize_pass_t nmo_patchmesh_compare_passes[] = {
+    {
+        .class_id = NMO_CID_PATCHMESH,
+        .data_version = 7,
+        .chunk_options = NMO_CHUNK_OPTION_FILE,
+        .serialize_flags = NMO_SERIALIZE_FLAG_FILE_MODE,
+        .use_context = 1,
+    },
+    {
+        .class_id = NMO_CID_PATCHMESH,
+        .data_version = 9,
+        .chunk_options = NMO_CHUNK_OPTION_FILE,
+        .serialize_flags = NMO_SERIALIZE_FLAG_FILE_MODE,
+        .use_context = 1,
+    },
+};
 
 static bool nmo_patchmesh_equals(const void *a, const void *b)
 {
-    if (a == b) return true;
-    if (!a || !b) return false;
-    nmo_arena_t *arena_a = NULL;
-    nmo_arena_t *arena_b = NULL;
-    void *data_a = NULL;
-    void *data_b = NULL;
-    size_t size_a = 0;
-    size_t size_b = 0;
-    const nmo_status_t result_a = nmo_patchmesh_canonical_bytes(
-        a, &arena_a, &data_a, &size_a);
-    const nmo_status_t result_b = nmo_patchmesh_canonical_bytes(
-        b, &arena_b, &data_b, &size_b);
-    const bool equal = result_a == NMO_OK && result_b == NMO_OK &&
-        size_a == size_b &&
-        (size_a == 0 || memcmp(data_a, data_b, size_a) == 0);
-    nmo_arena_destroy(arena_a);
-    nmo_arena_destroy(arena_b);
-    return equal;
+    return nmo_object_serialized_state_equals(
+        a, b, nmo_patchmesh_serialize,
+        nmo_patchmesh_compare_passes,
+        sizeof(nmo_patchmesh_compare_passes) /
+            sizeof(nmo_patchmesh_compare_passes[0]),
+        16384);
 }
 
 static uint32_t nmo_patchmesh_hash(const void *instance)
 {
-    if (!instance) return 0;
-    nmo_arena_t *arena = NULL;
-    void *data = NULL;
-    size_t size = 0;
-    if (nmo_patchmesh_canonical_bytes(
-            instance, &arena, &data, &size) != NMO_OK) {
-        return 0;
-    }
-    const uint32_t hash = (uint32_t)nmo_hash_fnv1a(data, size);
-    nmo_arena_destroy(arena);
-    return hash;
+    return nmo_object_serialized_state_hash(
+        instance, nmo_patchmesh_serialize,
+        nmo_patchmesh_compare_passes,
+        sizeof(nmo_patchmesh_compare_passes) /
+            sizeof(nmo_patchmesh_compare_passes[0]),
+        16384);
 }
 
 /* ============================================================================
