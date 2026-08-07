@@ -3145,6 +3145,31 @@ nmo_status_t nmo_asset_edit_set_primitive_mesh(
     return NMO_OK;
 }
 
+static nmo_camera_state_t *workspace_edit_camera_state_for_object(
+    const nmo_type_registry_t *registry,
+    nmo_object_t *object)
+{
+    if (object == NULL) {
+        return NULL;
+    }
+    if (nmo_guid_is_null(nmo_object_get_type_guid(object))) {
+        void *state = nmo_object_get_state(object);
+        switch (nmo_object_get_class_id(object)) {
+        case NMO_CID_CAMERA:
+            return (nmo_camera_state_t *)state;
+        case NMO_CID_TARGETCAMERA:
+            return state != NULL
+                ? &((nmo_targetcamera_state_t *)state)->base
+                : NULL;
+        default:
+            return NULL;
+        }
+    }
+    return (nmo_camera_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, object, CKPGUID_CAMERA);
+}
+
 nmo_status_t nmo_entity_edit_set_camera_settings(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t object_id,
@@ -3163,19 +3188,14 @@ nmo_status_t nmo_entity_edit_set_camera_settings(
         return NMO_ERR_NOT_FOUND;
     }
 
-    nmo_class_id_t class_id = nmo_object_get_class_id(object);
-    void *state = nmo_object_get_state(object);
-    if (state == NULL) {
-        return NMO_ERR_INVALID_STATE;
-    }
-    if (class_id != NMO_CID_CAMERA && class_id != NMO_CID_TARGETCAMERA) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
+    const nmo_type_registry_t *registry = workspace_edit_type_registry(edit);
     nmo_camera_state_t *camera =
-        (class_id == NMO_CID_TARGETCAMERA)
-            ? &((nmo_targetcamera_state_t *)state)->base
-            : (nmo_camera_state_t *)state;
+        workspace_edit_camera_state_for_object(registry, object);
+    if (camera == NULL) {
+        return session_object_derives(registry, object, NMO_CID_CAMERA)
+            ? NMO_ERR_INVALID_STATE
+            : NMO_ERR_INVALID_ARGUMENT;
+    }
     nmo_status_t status =
         nmo_workspace_edit_snapshot_bytes(edit, camera, sizeof(*camera));
     if (status != NMO_OK) {
@@ -3209,43 +3229,62 @@ static bool workspace_edit_class_is_entity_target(nmo_class_id_t class_id)
     }
 }
 
+static bool workspace_edit_object_is_entity_target(
+    const nmo_type_registry_t *registry,
+    const nmo_object_t *object)
+{
+    if (object == NULL) {
+        return false;
+    }
+    if (nmo_guid_is_null(nmo_object_get_type_guid(object))) {
+        return workspace_edit_class_is_entity_target(
+            nmo_object_get_class_id(object));
+    }
+    return session_object_derives(registry, object, NMO_CID_3DENTITY);
+}
+
 static nmo_3dentity_state_t *workspace_edit_entity_state_for_object(
+    const nmo_type_registry_t *registry,
     nmo_object_t *object)
 {
     if (object == NULL) {
         return NULL;
     }
-    void *state = nmo_object_get_state(object);
-    if (state == NULL) {
-        return NULL;
+    if (nmo_guid_is_null(nmo_object_get_type_guid(object))) {
+        void *state = nmo_object_get_state(object);
+        if (state == NULL) {
+            return NULL;
+        }
+        switch (nmo_object_get_class_id(object)) {
+        case NMO_CID_3DENTITY:
+            return (nmo_3dentity_state_t *)state;
+        case NMO_CID_3DOBJECT:
+            return &((nmo_3dobject_state_t *)state)->entity;
+        case NMO_CID_CAMERA:
+            return &((nmo_camera_state_t *)state)->entity;
+        case NMO_CID_TARGETCAMERA:
+            return &((nmo_targetcamera_state_t *)state)->base.entity;
+        case NMO_CID_LIGHT:
+            return &((nmo_light_state_t *)state)->entity;
+        case NMO_CID_TARGETLIGHT:
+            return &((nmo_targetlight_state_t *)state)->base.entity;
+        case NMO_CID_CHARACTER:
+            return &((nmo_character_state_t *)state)->base;
+        case NMO_CID_SPRITE3D:
+            return &((nmo_sprite3d_state_t *)state)->base;
+        case NMO_CID_CURVE:
+            return &((nmo_curve_state_t *)state)->base;
+        case NMO_CID_CURVEPOINT:
+            return &((nmo_curvepoint_state_t *)state)->base;
+        case NMO_CID_BODYPART:
+            return &((nmo_bodypart_state_t *)state)->base.entity;
+        default:
+            return NULL;
+        }
     }
-
-    switch (nmo_object_get_class_id(object)) {
-    case NMO_CID_3DENTITY:
-        return (nmo_3dentity_state_t *)state;
-    case NMO_CID_3DOBJECT:
-        return &((nmo_3dobject_state_t *)state)->entity;
-    case NMO_CID_CAMERA:
-        return &((nmo_camera_state_t *)state)->entity;
-    case NMO_CID_TARGETCAMERA:
-        return &((nmo_targetcamera_state_t *)state)->base.entity;
-    case NMO_CID_LIGHT:
-        return &((nmo_light_state_t *)state)->entity;
-    case NMO_CID_TARGETLIGHT:
-        return &((nmo_targetlight_state_t *)state)->base.entity;
-    case NMO_CID_CHARACTER:
-        return &((nmo_character_state_t *)state)->base;
-    case NMO_CID_SPRITE3D:
-        return &((nmo_sprite3d_state_t *)state)->base;
-    case NMO_CID_CURVE:
-        return &((nmo_curve_state_t *)state)->base;
-    case NMO_CID_CURVEPOINT:
-        return &((nmo_curvepoint_state_t *)state)->base;
-    case NMO_CID_BODYPART:
-        return &((nmo_bodypart_state_t *)state)->base.entity;
-    default:
-        return NULL;
-    }
+    return (nmo_3dentity_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, object, CKPGUID_3DENTITY);
 }
 
 nmo_status_t nmo_entity_edit_set_parent(
@@ -3268,13 +3307,14 @@ nmo_status_t nmo_entity_edit_set_parent(
     if (object == NULL || parent == NULL) {
         return NMO_ERR_NOT_FOUND;
     }
-    if (!workspace_edit_class_is_entity_target(nmo_object_get_class_id(object)) ||
-        !workspace_edit_class_is_entity_target(nmo_object_get_class_id(parent))) {
+    const nmo_type_registry_t *registry = workspace_edit_type_registry(edit);
+    if (!workspace_edit_object_is_entity_target(registry, object) ||
+        !workspace_edit_object_is_entity_target(registry, parent)) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
     nmo_3dentity_state_t *state =
-        workspace_edit_entity_state_for_object(object);
+        workspace_edit_entity_state_for_object(registry, object);
     if (state == NULL) {
         return NMO_ERR_INVALID_STATE;
     }
@@ -3311,12 +3351,13 @@ nmo_status_t nmo_entity_edit_set_world_matrix(
     if (object == NULL) {
         return NMO_ERR_NOT_FOUND;
     }
-    if (!workspace_edit_class_is_entity_target(nmo_object_get_class_id(object))) {
+    const nmo_type_registry_t *registry = workspace_edit_type_registry(edit);
+    if (!workspace_edit_object_is_entity_target(registry, object)) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
     nmo_3dentity_state_t *state =
-        workspace_edit_entity_state_for_object(object);
+        workspace_edit_entity_state_for_object(registry, object);
     if (state == NULL) {
         return NMO_ERR_INVALID_STATE;
     }
@@ -3350,16 +3391,20 @@ nmo_status_t nmo_entity_edit_set_camera_target(
     if (object == NULL || target == NULL) {
         return NMO_ERR_NOT_FOUND;
     }
-    if (!workspace_edit_class_is_entity_target(nmo_object_get_class_id(target))) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    if (nmo_object_get_class_id(object) != NMO_CID_TARGETCAMERA) {
+    const nmo_type_registry_t *registry = workspace_edit_type_registry(edit);
+    if (!workspace_edit_object_is_entity_target(registry, target)) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
     nmo_targetcamera_state_t *state =
-        (nmo_targetcamera_state_t *)nmo_object_get_state(object);
+        (nmo_targetcamera_state_t *)workspace_edit_object_state(
+            registry,
+            object,
+            NMO_CID_TARGETCAMERA,
+            CKPGUID_TARGETCAMERA);
     if (state == NULL) {
-        return NMO_ERR_INVALID_STATE;
+        return session_object_derives(registry, object, NMO_CID_TARGETCAMERA)
+            ? NMO_ERR_INVALID_STATE
+            : NMO_ERR_INVALID_ARGUMENT;
     }
     nmo_status_t status =
         nmo_workspace_edit_snapshot_bytes(edit, state, sizeof(*state));
@@ -3372,6 +3417,31 @@ nmo_status_t nmo_entity_edit_set_camera_target(
         edit,
         NMO_WORKSPACE_EDIT_OBJECT_STATE | NMO_WORKSPACE_EDIT_REFERENCES);
     return NMO_OK;
+}
+
+static nmo_light_state_t *workspace_edit_light_state_for_object(
+    const nmo_type_registry_t *registry,
+    nmo_object_t *object)
+{
+    if (object == NULL) {
+        return NULL;
+    }
+    if (nmo_guid_is_null(nmo_object_get_type_guid(object))) {
+        void *state = nmo_object_get_state(object);
+        switch (nmo_object_get_class_id(object)) {
+        case NMO_CID_LIGHT:
+            return (nmo_light_state_t *)state;
+        case NMO_CID_TARGETLIGHT:
+            return state != NULL
+                ? &((nmo_targetlight_state_t *)state)->base
+                : NULL;
+        default:
+            return NULL;
+        }
+    }
+    return (nmo_light_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, object, CKPGUID_LIGHT);
 }
 
 nmo_status_t nmo_entity_edit_set_light_settings(
@@ -3395,19 +3465,14 @@ nmo_status_t nmo_entity_edit_set_light_settings(
         return NMO_ERR_NOT_FOUND;
     }
 
-    nmo_class_id_t class_id = nmo_object_get_class_id(object);
-    void *state = nmo_object_get_state(object);
-    if (state == NULL) {
-        return NMO_ERR_INVALID_STATE;
-    }
-    if (class_id != NMO_CID_LIGHT && class_id != NMO_CID_TARGETLIGHT) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
+    const nmo_type_registry_t *registry = workspace_edit_type_registry(edit);
     nmo_light_state_t *light =
-        (class_id == NMO_CID_TARGETLIGHT)
-            ? &((nmo_targetlight_state_t *)state)->base
-            : (nmo_light_state_t *)state;
+        workspace_edit_light_state_for_object(registry, object);
+    if (light == NULL) {
+        return session_object_derives(registry, object, NMO_CID_LIGHT)
+            ? NMO_ERR_INVALID_STATE
+            : NMO_ERR_INVALID_ARGUMENT;
+    }
     nmo_status_t status =
         nmo_workspace_edit_snapshot_bytes(edit, light, sizeof(*light));
     if (status != NMO_OK) {
@@ -3442,16 +3507,20 @@ nmo_status_t nmo_entity_edit_set_light_target(
     if (object == NULL || target == NULL) {
         return NMO_ERR_NOT_FOUND;
     }
-    if (!workspace_edit_class_is_entity_target(nmo_object_get_class_id(target))) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    if (nmo_object_get_class_id(object) != NMO_CID_TARGETLIGHT) {
+    const nmo_type_registry_t *registry = workspace_edit_type_registry(edit);
+    if (!workspace_edit_object_is_entity_target(registry, target)) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
     nmo_targetlight_state_t *state =
-        (nmo_targetlight_state_t *)nmo_object_get_state(object);
+        (nmo_targetlight_state_t *)workspace_edit_object_state(
+            registry,
+            object,
+            NMO_CID_TARGETLIGHT,
+            CKPGUID_TARGETLIGHT);
     if (state == NULL) {
-        return NMO_ERR_INVALID_STATE;
+        return session_object_derives(registry, object, NMO_CID_TARGETLIGHT)
+            ? NMO_ERR_INVALID_STATE
+            : NMO_ERR_INVALID_ARGUMENT;
     }
     nmo_status_t status =
         nmo_workspace_edit_snapshot_bytes(edit, state, sizeof(*state));
