@@ -5,10 +5,12 @@
 #include "object/builtin/nmo_sound_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_edit.h"
+#include "object/nmo_object_guids.h"
 #include "object/nmo_object_query.h"
 #include "object/nmo_sound_edit.h"
 #include "runtime/nmo_context.h"
 #include "runtime/nmo_workspace.h"
+#include "type/nmo_type_query.h"
 
 static void create_workspace(
     nmo_context_t **out_ctx,
@@ -202,7 +204,95 @@ TEST(sound_edit, sets_wavesound_authoring)
     destroy_workspace(ctx, doc, workspace);
 }
 
+TEST(sound_edit, edits_explicit_sound_types)
+{
+    nmo_context_t *ctx = NULL;
+    nmo_document_t *doc = NULL;
+    nmo_workspace_t *workspace = NULL;
+    create_workspace(&ctx, &doc, &workspace);
+
+    nmo_workspace_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_begin(workspace, "typed sound", &edit));
+    nmo_object_id_t sound_id = 0u;
+    nmo_object_id_t wave_id = 0u;
+    nmo_object_id_t anchor_id = 0u;
+    nmo_object_id_t conflicting_id = 0u;
+    ASSERT_EQ(NMO_OK, nmo_object_edit_create(
+        edit,
+        &(nmo_object_create_desc_t){
+            .class_id = NMO_CID_OBJECT,
+            .name = "Typed sound",
+            .type_guid = CKPGUID_SOUND,
+        },
+        &sound_id));
+    ASSERT_EQ(NMO_OK, nmo_object_edit_create(
+        edit,
+        &(nmo_object_create_desc_t){
+            .class_id = NMO_CID_OBJECT,
+            .name = "Typed wave",
+            .type_guid = CKPGUID_WAVESOUND,
+        },
+        &wave_id));
+    ASSERT_EQ(NMO_OK, nmo_object_edit_create(
+        edit,
+        &(nmo_object_create_desc_t){
+            .class_id = NMO_CID_OBJECT,
+            .name = "Typed anchor",
+            .type_guid = CKPGUID_3DENTITY,
+        },
+        &anchor_id));
+    ASSERT_EQ(NMO_OK, nmo_object_edit_create(
+        edit,
+        &(nmo_object_create_desc_t){
+            .class_id = NMO_CID_WAVESOUND,
+            .name = "Conflicting wave",
+            .type_guid = CKPGUID_MATERIAL,
+        },
+        &conflicting_id));
+
+    ASSERT_EQ(NMO_OK, nmo_sound_edit_set_sound(
+        edit,
+        sound_id,
+        &(nmo_sound_edit_settings_t){.file_path = "typed-sound.wav"}));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, nmo_sound_edit_set_sound(
+        edit,
+        sound_id,
+        &(nmo_sound_edit_settings_t){.has_gain = true, .gain = 0.5f}));
+    ASSERT_EQ(NMO_OK, nmo_sound_edit_set_sound(
+        edit,
+        wave_id,
+        &(nmo_sound_edit_settings_t){
+            .file_path = "typed-wave.wav",
+            .has_gain = true,
+            .gain = 0.5f,
+            .has_attached_object = true,
+            .attached_object_id = anchor_id,
+        }));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, nmo_sound_edit_set_sound(
+        edit,
+        conflicting_id,
+        &(nmo_sound_edit_settings_t){.file_path = "wrong.wav"}));
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_commit(edit));
+
+    const nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
+    nmo_sound_state_t *sound = (nmo_sound_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, find_object(doc, sound_id), CKPGUID_SOUND);
+    nmo_wavesound_state_t *wave = (nmo_wavesound_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, find_object(doc, wave_id), CKPGUID_WAVESOUND);
+    ASSERT_NOT_NULL(sound);
+    ASSERT_NOT_NULL(wave);
+    ASSERT_STR_EQ("typed-sound.wav", sound->file_name);
+    ASSERT_STR_EQ("typed-wave.wav", wave->wave_file_name);
+    ASSERT_FLOAT_EQ(0.5f, wave->gain, 0.0001f);
+    ASSERT_EQ(anchor_id, nmo_ref_runtime_id(&wave->attached_object));
+
+    destroy_workspace(ctx, doc, workspace);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(sound_edit, sets_sound_file);
 REGISTER_TEST(sound_edit, sets_wavesound_authoring);
+REGISTER_TEST(sound_edit, edits_explicit_sound_types);
 TEST_MAIN_END()

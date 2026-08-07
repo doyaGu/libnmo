@@ -3766,9 +3766,37 @@ nmo_status_t nmo_sound_edit_set_sound(
     if (sound == NULL) {
         return NMO_ERR_NOT_FOUND;
     }
-    nmo_class_id_t class_id = nmo_object_get_class_id(sound);
-    if (class_id != NMO_CID_SOUND && class_id != NMO_CID_WAVESOUND) {
+
+    const nmo_type_registry_t *registry = workspace_edit_type_registry(edit);
+    nmo_sound_state_t *sound_state = NULL;
+    nmo_wavesound_state_t *wave_state = NULL;
+    if (nmo_guid_is_null(nmo_object_get_type_guid(sound))) {
+        void *state = nmo_object_get_state(sound);
+        switch (nmo_object_get_class_id(sound)) {
+        case NMO_CID_SOUND:
+            sound_state = (nmo_sound_state_t *)state;
+            break;
+        case NMO_CID_WAVESOUND:
+            wave_state = (nmo_wavesound_state_t *)state;
+            sound_state = wave_state != NULL ? &wave_state->base : NULL;
+            break;
+        default:
+            return NMO_ERR_INVALID_ARGUMENT;
+        }
+    } else if (session_object_derives(registry, sound, NMO_CID_WAVESOUND)) {
+        wave_state = (nmo_wavesound_state_t *)
+            nmo_type_query_object_get_ancestor_state_by_guid(
+                registry, sound, CKPGUID_WAVESOUND);
+        sound_state = wave_state != NULL ? &wave_state->base : NULL;
+    } else if (session_object_derives(registry, sound, NMO_CID_SOUND)) {
+        sound_state = (nmo_sound_state_t *)
+            nmo_type_query_object_get_ancestor_state_by_guid(
+                registry, sound, CKPGUID_SOUND);
+    } else {
         return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (sound_state == NULL) {
+        return NMO_ERR_INVALID_STATE;
     }
 
     if (settings->has_attached_object) {
@@ -3780,24 +3808,18 @@ nmo_status_t nmo_sound_edit_set_sound(
         if (attached == NULL) {
             return NMO_ERR_NOT_FOUND;
         }
-        if (!workspace_edit_class_is_entity_target(nmo_object_get_class_id(attached))) {
+        if (!workspace_edit_object_is_entity_target(registry, attached)) {
             return NMO_ERR_INVALID_ARGUMENT;
         }
     }
 
-    void *state = nmo_object_get_state(sound);
-    if (state == NULL) {
-        return NMO_ERR_INVALID_STATE;
-    }
-
     nmo_status_t status;
-    if (class_id == NMO_CID_SOUND) {
+    if (wave_state == NULL) {
         if (settings->has_gain || settings->has_pan || settings->has_pitch ||
             settings->has_attached_object || settings->has_position ||
             settings->has_direction) {
             return NMO_ERR_INVALID_ARGUMENT;
         }
-        nmo_sound_state_t *sound_state = (nmo_sound_state_t *)state;
         status = nmo_workspace_edit_snapshot_bytes(
             edit,
             sound_state,
@@ -3819,7 +3841,6 @@ nmo_status_t nmo_sound_edit_set_sound(
         return NMO_OK;
     }
 
-    nmo_wavesound_state_t *wave_state = (nmo_wavesound_state_t *)state;
     status = nmo_workspace_edit_snapshot_bytes(edit, wave_state, sizeof(*wave_state));
     if (status != NMO_OK) {
         return status;
