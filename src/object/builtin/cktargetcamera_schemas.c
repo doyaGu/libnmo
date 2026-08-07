@@ -17,7 +17,15 @@
 #include "type/nmo_reflection.h"
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(targetcamera, nmo_targetcamera_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE(
+    targetcamera,
+    nmo_targetcamera_state_t,
+    do {
+        nmo_status_t result = nmo_camera_vtable.create(
+            &state->base, NULL, context);
+        if (result != NMO_OK) return result;
+    } while (0),
+    nmo_camera_vtable.destroy(&state->base, NULL, context))
 
 static void nmo_targetcamera_dispose_base_arrays(nmo_targetcamera_state_t *state)
 {
@@ -133,7 +141,79 @@ static void nmo_targetcamera_post_delete(
     (void)context;
 }
 
-NMO_DEFINE_OBJECT_STATE_OPS(targetcamera, nmo_targetcamera_state_t)
+static nmo_status_t nmo_targetcamera_copy(
+    const void *src,
+    void *dst,
+    const nmo_type_descriptor_t *type,
+    nmo_arena_t *arena)
+{
+    (void)type;
+    if (src == NULL || dst == NULL || arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    const nmo_targetcamera_state_t *source = src;
+    nmo_targetcamera_state_t *target = dst;
+    nmo_type_descriptor_t base_type = {
+        .size = sizeof(nmo_camera_state_t),
+    };
+    NMO_RETURN_IF_ERROR(nmo_camera_vtable.copy(
+        &source->base, &target->base, &base_type, arena));
+    target->has_target = source->has_target;
+    target->target = source->target;
+    return NMO_OK;
+}
+
+static nmo_status_t nmo_targetcamera_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    const nmo_targetcamera_state_t *state = instance;
+    return nmo_camera_vtable.validate(&state->base, NULL, context);
+}
+
+static bool nmo_targetcamera_equals(const void *a, const void *b)
+{
+    if (a == b) return true;
+    if (a == NULL || b == NULL) return false;
+    const nmo_targetcamera_state_t *lhs = a;
+    const nmo_targetcamera_state_t *rhs = b;
+    return nmo_camera_vtable.equals(&lhs->base, &rhs->base) &&
+        lhs->has_target == rhs->has_target &&
+        lhs->target.raw_id == rhs->target.raw_id &&
+        lhs->target.id == rhs->target.id &&
+        lhs->target.state == rhs->target.state;
+}
+
+static uint32_t nmo_targetcamera_hash_bytes(
+    uint32_t hash,
+    const void *data,
+    size_t size)
+{
+    const uint8_t *bytes = data;
+    for (size_t i = 0; i < size; ++i) {
+        hash ^= bytes[i];
+        hash *= 16777619u;
+    }
+    return hash;
+}
+
+static uint32_t nmo_targetcamera_hash(const void *instance)
+{
+    if (instance == NULL) return 0;
+    const nmo_targetcamera_state_t *state = instance;
+    uint32_t hash = nmo_camera_vtable.hash(&state->base);
+    hash = nmo_targetcamera_hash_bytes(
+        hash, &state->has_target, sizeof(state->has_target));
+    hash = nmo_targetcamera_hash_bytes(
+        hash, &state->target.raw_id, sizeof(state->target.raw_id));
+    hash = nmo_targetcamera_hash_bytes(
+        hash, &state->target.id, sizeof(state->target.id));
+    return nmo_targetcamera_hash_bytes(
+        hash, &state->target.state, sizeof(state->target.state));
+}
 
 nmo_type_vtable_t nmo_targetcamera_vtable = {
     .prepare_dependencies = nmo_targetcamera_prepare_dependencies,
