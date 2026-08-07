@@ -4859,6 +4859,51 @@ TEST(chunk_id_remap, targetcamera_copy_preserves_base_and_target) {
     nmo_arena_destroy(copy_arena);
 }
 
+TEST(chunk_id_remap, light_copy_preserves_inherited_and_own_state) {
+    nmo_arena_t *source_arena = nmo_arena_create(NULL, 8192);
+    nmo_arena_t *copy_arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(source_arena);
+    ASSERT_NOT_NULL(copy_arena);
+
+    nmo_light_state_t source;
+    nmo_light_state_t copy;
+    ASSERT_EQ(NMO_OK, nmo_light_vtable.create(&source, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_light_vtable.create(&copy, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &source.entity.base.base.scripts, 101));
+    source.entity.mesh_count = 1;
+    source.entity.mesh_ids = nmo_arena_alloc(
+        source_arena, sizeof(*source.entity.mesh_ids),
+        _Alignof(nmo_ref_t));
+    ASSERT_NOT_NULL(source.entity.mesh_ids);
+    source.entity.mesh_ids[0] = nmo_ref_from_raw(201);
+    source.light_data.type = VX_LIGHTSPOT;
+    source.light_data.diffuse.r = 0.5f;
+    source.light_power = 2.0f;
+    source.has_light_power_chunk = 1;
+
+    nmo_type_descriptor_t light_type = {
+        .size = sizeof(nmo_light_state_t),
+    };
+    ASSERT_EQ(NMO_OK, nmo_light_vtable.copy(
+        &source, &copy, &light_type, copy_arena));
+    ASSERT_NE(source.entity.base.base.scripts.data,
+              copy.entity.base.base.scripts.data);
+    ASSERT_NE(source.entity.mesh_ids, copy.entity.mesh_ids);
+    ASSERT_TRUE(nmo_light_vtable.equals(&source, &copy));
+    ASSERT_EQ(nmo_light_vtable.hash(&source),
+              nmo_light_vtable.hash(&copy));
+
+    copy.light_data.diffuse.r = 0.75f;
+    ASSERT_EQ(0.5f, source.light_data.diffuse.r);
+    ASSERT_FALSE(nmo_light_vtable.equals(&source, &copy));
+
+    nmo_light_vtable.destroy(&copy, NULL, NULL);
+    nmo_light_vtable.destroy(&source, NULL, NULL);
+    nmo_arena_destroy(copy_arena);
+    nmo_arena_destroy(source_arena);
+}
+
 TEST(chunk_id_remap, entity_scalar_ref_sections_reject_truncation_atomically) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
     ASSERT_NOT_NULL(arena);
@@ -8844,6 +8889,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, entity2d_copy_preserves_inherited_and_own_state);
     REGISTER_TEST(chunk_id_remap, camera_copy_preserves_inherited_and_own_state);
     REGISTER_TEST(chunk_id_remap, targetcamera_copy_preserves_base_and_target);
+    REGISTER_TEST(chunk_id_remap, light_copy_preserves_inherited_and_own_state);
     REGISTER_TEST(chunk_id_remap, entity_scalar_ref_sections_reject_truncation_atomically);
     REGISTER_TEST(chunk_id_remap, entity_skin_rejects_negative_vertex_bone_count_atomically);
     REGISTER_TEST(chunk_id_remap, entity_skin_rejects_oversized_counts_before_allocation);
