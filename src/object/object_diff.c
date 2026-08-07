@@ -345,6 +345,99 @@ static bool ref_equal_lookup(nmo_object_id_t id1, nmo_object_id_t id2,
     return nmo_object_ref_equal(id1, id2, repo1, repo2);
 }
 
+static bool ref_record_equal(const nmo_ref_t *ref1,
+                             const nmo_ref_t *ref2,
+                             const nmo_object_repository_t *repo1,
+                             const nmo_object_repository_t *repo2,
+                             const match_lookup_t *lookup)
+{
+    if (!ref1 || !ref2) return ref1 == ref2;
+    if (ref1->state == NMO_REF_RESOLVED &&
+        ref2->state == NMO_REF_RESOLVED) {
+        return ref_equal_lookup(ref1->id, ref2->id, repo1, repo2, lookup);
+    }
+    if (ref1->state == NMO_REF_RESOLVED ||
+        ref2->state == NMO_REF_RESOLVED) {
+        return false;
+    }
+    return ref1->state == ref2->state && ref1->raw_id == ref2->raw_id;
+}
+
+typedef struct {
+    const void *data;
+    size_t count;
+    size_t element_size;
+} diff_repeated_view_t;
+
+static bool diff_get_repeated_view(
+    const nmo_type_descriptor_t *owner_type,
+    const void *owner_instance,
+    const nmo_type_field_t *field,
+    const nmo_type_registry_t *registry,
+    diff_repeated_view_t *out)
+{
+    if (!owner_type || !owner_instance || !field || !out ||
+        !(field->flags & NMO_FIELD_REPEATED)) {
+        return false;
+    }
+    memset(out, 0, sizeof(*out));
+    const void *field_ptr = nmo_field_get_ptr_const(owner_instance, field);
+    if (!field_ptr) return false;
+
+    if (field->size == sizeof(nmo_array_t)) {
+        const nmo_array_t *array = (const nmo_array_t *)field_ptr;
+        out->data = array->data;
+        out->count = array->count;
+        out->element_size = array->element_size;
+    } else if (field->size == sizeof(void *) &&
+               field->count_field_name != NULL) {
+        uint32_t count = 0;
+        if (nmo_field_resolve_count(
+                owner_type, field, owner_instance, &count) != NMO_OK) {
+            return false;
+        }
+        const nmo_type_descriptor_t *element_type =
+            registry && !nmo_guid_is_null(field->type_guid)
+                ? nmo_type_registry_find_by_guid(registry, field->type_guid)
+                : NULL;
+        out->data = *(const void *const *)field_ptr;
+        out->count = count;
+        out->element_size =
+            nmo_field_resolve_element_size(field, element_type);
+    } else {
+        return false;
+    }
+
+    size_t byte_count = 0;
+    if (out->count > 0 &&
+        (out->data == NULL || out->element_size == 0 ||
+         !diff_mul_size(out->count, out->element_size, &byte_count))) {
+        return false;
+    }
+    return true;
+}
+
+static bool diff_chunk_value_equal(
+    const nmo_chunk_t *chunk1,
+    const nmo_chunk_t *chunk2)
+{
+    if (!chunk1 || !chunk2) return chunk1 == chunk2;
+    if (chunk1->class_id != chunk2->class_id ||
+        chunk1->chunk_version != chunk2->chunk_version ||
+        chunk1->data_version != chunk2->data_version ||
+        chunk1->chunk_options != chunk2->chunk_options) {
+        return false;
+    }
+    size_t size1 = 0;
+    size_t size2 = 0;
+    const void *data1 = nmo_chunk_get_data(chunk1, &size1);
+    const void *data2 = nmo_chunk_get_data(chunk2, &size2);
+    if (size1 != size2) return false;
+    if (size1 == 0) return true;
+    if (!data1 || !data2) return data1 == data2;
+    return memcmp(data1, data2, size1) == 0;
+}
+
 static bool scalar_equal(const nmo_type_field_t *f,
                          const void *p1, const void *p2,
                          const nmo_object_repository_t *repo1,
@@ -368,7 +461,13 @@ static bool scalar_equal(const nmo_type_field_t *f,
         return memcmp(a_ptr, b_ptr, cmp_size) == 0;
     }
 
-    if (is_object_ref(f) && f->size >= sizeof(uint32_t) && !(f->flags & NMO_FIELD_REPEATED)) {
+    if (is_object_ref(f) && f->size >= sizeof(uint32_t) &&
+        !(f->flags & NMO_FIELD_REPEATED)) {
+        if (nmo_field_uses_ref_records(f) && f->size == sizeof(nmo_ref_t)) {
+            return ref_record_equal(
+                (const nmo_ref_t *)p1, (const nmo_ref_t *)p2,
+                repo1, repo2, lookup);
+        }
         nmo_object_id_t id1 = object_ref_field_runtime_id(f, p1);
         nmo_object_id_t id2 = object_ref_field_runtime_id(f, p2);
         return ref_equal_lookup(id1, id2, repo1, repo2, lookup);
@@ -382,31 +481,95 @@ static bool scalar_equal(const nmo_type_field_t *f,
     return memcmp(p1, p2, f->size) == 0;
 }
 
-static bool repeated_equal(const nmo_type_field_t *f1,
+static bool repeated_equal(const nmo_type_descriptor_t *t1,
+                           const void *instance1,
+                           const nmo_type_field_t *f1,
+                           const nmo_type_registry_t *registry1,
+                           const nmo_type_descriptor_t *t2,
+                           const void *instance2,
                            const nmo_type_field_t *f2,
-                           const void *p1, const void *p2,
+                           const nmo_type_registry_t *registry2,
                            const nmo_object_repository_t *repo1,
                            const nmo_object_repository_t *repo2,
-                           const match_lookup_t *lookup)
+                           const match_lookup_t *lookup,
+                           bool use_refs)
 {
     if (!f1 || !f2) return false;
-    if (f1->size != sizeof(nmo_array_t) || f2->size != sizeof(nmo_array_t) || !p1 || !p2) return true;
+    const bool ref1 = is_object_ref(f1);
+    const bool ref2 = is_object_ref(f2);
+    if (!use_refs && (ref1 || ref2)) return true;
+    if (ref1 != ref2) return false;
 
-    const nmo_array_t *a1 = (const nmo_array_t *)p1;
-    const nmo_array_t *a2 = (const nmo_array_t *)p2;
-    if (a1->count != a2->count || a1->element_size != a2->element_size) return false;
-    if (!a1->count || !a1->element_size) return true;
-    if (!a1->data || !a2->data) return a1->data == a2->data;
+    diff_repeated_view_t view1;
+    diff_repeated_view_t view2;
+    if (!diff_get_repeated_view(
+            t1, instance1, f1, registry1, &view1) ||
+        !diff_get_repeated_view(
+            t2, instance2, f2, registry2, &view2)) {
+        return false;
+    }
+    if (view1.count != view2.count ||
+        view1.element_size != view2.element_size) {
+        return false;
+    }
+    if (view1.count == 0) return true;
 
-    if (is_object_ref(f1) && a1->element_size == sizeof(nmo_object_id_t)) {
-        const nmo_object_id_t *ids1 = (const nmo_object_id_t *)a1->data;
-        const nmo_object_id_t *ids2 = (const nmo_object_id_t *)a2->data;
-        for (size_t i = 0; i < a1->count; i++) {
-            if (!ref_equal_lookup(ids1[i], ids2[i], repo1, repo2, lookup)) return false;
+    if (ref1) {
+        const bool records1 = nmo_field_uses_ref_records(f1);
+        const bool records2 = nmo_field_uses_ref_records(f2);
+        if (records1 != records2) return false;
+        if (records1) {
+            if (view1.element_size < sizeof(nmo_ref_t)) return false;
+            for (size_t i = 0; i < view1.count; ++i) {
+                const nmo_ref_t *item1 = (const nmo_ref_t *)(
+                    (const uint8_t *)view1.data + i * view1.element_size);
+                const nmo_ref_t *item2 = (const nmo_ref_t *)(
+                    (const uint8_t *)view2.data + i * view2.element_size);
+                if (!ref_record_equal(
+                        item1, item2, repo1, repo2, lookup)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        if (view1.element_size != sizeof(nmo_object_id_t)) return false;
+        const nmo_object_id_t *ids1 = view1.data;
+        const nmo_object_id_t *ids2 = view2.data;
+        for (size_t i = 0; i < view1.count; ++i) {
+            if (!ref_equal_lookup(
+                    ids1[i], ids2[i], repo1, repo2, lookup)) {
+                return false;
+            }
         }
         return true;
     }
-    return memcmp(a1->data, a2->data, a1->count * a1->element_size) == 0;
+
+    if (!nmo_guid_equals(f1->type_guid, f2->type_guid)) return false;
+    if (nmo_guid_equals(f1->type_guid, CKPGUID_STRING) &&
+        view1.element_size == sizeof(char *)) {
+        const char *const *strings1 = view1.data;
+        const char *const *strings2 = view2.data;
+        for (size_t i = 0; i < view1.count; ++i) {
+            if (!strings1[i] || !strings2[i]) {
+                if (strings1[i] != strings2[i]) return false;
+            } else if (strcmp(strings1[i], strings2[i]) != 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+    if (nmo_guid_equals(f1->type_guid, CKPGUID_STATECHUNK) &&
+        view1.element_size == sizeof(nmo_chunk_t *)) {
+        nmo_chunk_t *const *chunks1 = view1.data;
+        nmo_chunk_t *const *chunks2 = view2.data;
+        for (size_t i = 0; i < view1.count; ++i) {
+            if (!diff_chunk_value_equal(chunks1[i], chunks2[i])) return false;
+        }
+        return true;
+    }
+    size_t byte_count = 0;
+    return diff_mul_size(view1.count, view1.element_size, &byte_count) &&
+           memcmp(view1.data, view2.data, byte_count) == 0;
 }
 
 static bool scalar_equal_noref(const nmo_type_field_t *f, const void *p1, const void *p2,
@@ -433,22 +596,6 @@ static bool scalar_equal_noref(const nmo_type_field_t *f, const void *p1, const 
         return strcmp(s1, s2) == 0;
     }
     return memcmp(p1, p2, f->size) == 0;
-}
-
-static bool repeated_equal_noref(const nmo_type_field_t *f1,
-                                 const nmo_type_field_t *f2,
-                                 const void *p1, const void *p2)
-{
-    if (!f1 || !f2) return false;
-    if (is_object_ref(f1) || is_object_ref(f2)) return true;
-    if (f1->size != sizeof(nmo_array_t) || f2->size != sizeof(nmo_array_t) || !p1 || !p2) return true;
-
-    const nmo_array_t *a1 = (const nmo_array_t *)p1;
-    const nmo_array_t *a2 = (const nmo_array_t *)p2;
-    if (a1->count != a2->count || a1->element_size != a2->element_size) return false;
-    if (!a1->count || !a1->element_size) return true;
-    if (!a1->data || !a2->data) return a1->data == a2->data;
-    return memcmp(a1->data, a2->data, a1->count * a1->element_size) == 0;
 }
 
 static float similarity_core(const nmo_object_t *obj1, const nmo_object_t *obj2,
@@ -480,8 +627,9 @@ static float similarity_core(const nmo_object_t *obj1, const nmo_object_t *obj2,
             const void *p2 = nmo_field_get_ptr_const(s2, f2);
             bool same;
             if ((f1->flags & NMO_FIELD_REPEATED) || (f2->flags & NMO_FIELD_REPEATED)) {
-                same = use_refs ? repeated_equal(f1, f2, p1, p2, repo1, repo2, lookup)
-                                : repeated_equal_noref(f1, f2, p1, p2);
+                same = repeated_equal(
+                    t1, s1, f1, reg1, t2, s2, f2, reg2,
+                    repo1, repo2, lookup, use_refs);
             } else if (f1->size != f2->size) {
                 same = false;
             } else {
@@ -564,39 +712,76 @@ static uint32_t hash_instance_for_diff(const nmo_type_descriptor_t *type,
                                        uint32_t seed,
                                        int depth);
 
-static uint32_t hash_array_for_diff(const nmo_array_t *arr,
-                                    const nmo_type_descriptor_t *elem_type,
-                                    const nmo_type_registry_t *reg,
-                                    uint32_t seed,
-                                    int depth)
+static uint32_t hash_repeated_for_diff(
+    const nmo_type_descriptor_t *owner_type,
+    const void *owner_instance,
+    const nmo_type_field_t *field,
+    const nmo_type_registry_t *reg,
+    uint32_t seed,
+    int depth)
 {
     uint32_t h = seed;
-    if (!arr) return h;
+    diff_repeated_view_t view;
+    if (!diff_get_repeated_view(
+            owner_type, owner_instance, field, reg, &view)) {
+        return h;
+    }
 
-    h = hash_bytes32(&arr->count, sizeof(arr->count), h);
-    h = hash_bytes32(&arr->element_size, sizeof(arr->element_size), h);
-    if (arr->count == 0 || arr->element_size == 0 || !arr->data) return h;
+    h = hash_bytes32(&view.count, sizeof(view.count), h);
+    h = hash_bytes32(&view.element_size, sizeof(view.element_size), h);
+    if (view.count == 0) return h;
 
-    if (elem_type && elem_type->size > 0 && (size_t)elem_type->size == arr->element_size) {
-        const uint8_t *base = (const uint8_t *)arr->data;
-        for (size_t i = 0; i < arr->count; i++) {
-            const void *ep = base + i * arr->element_size;
+    const nmo_type_descriptor_t *element_type =
+        reg && !nmo_guid_is_null(field->type_guid)
+            ? nmo_type_registry_find_by_guid(reg, field->type_guid)
+            : NULL;
+    if (nmo_guid_equals(field->type_guid, CKPGUID_STATECHUNK) &&
+        view.element_size == sizeof(nmo_chunk_t *)) {
+        nmo_chunk_t *const *chunks = view.data;
+        for (size_t i = 0; i < view.count; ++i) {
+            const nmo_chunk_t *chunk = chunks[i];
+            const uint8_t present = chunk != NULL;
+            h = hash_bytes32(&present, sizeof(present), h);
+            if (!chunk) continue;
+            h = hash_bytes32(&chunk->class_id, sizeof(chunk->class_id), h);
+            h = hash_bytes32(
+                &chunk->chunk_version, sizeof(chunk->chunk_version), h);
+            h = hash_bytes32(
+                &chunk->data_version, sizeof(chunk->data_version), h);
+            h = hash_bytes32(
+                &chunk->chunk_options, sizeof(chunk->chunk_options), h);
+            size_t size = 0;
+            const void *data = nmo_chunk_get_data(chunk, &size);
+            h = hash_bytes32(&size, sizeof(size), h);
+            if (data && size > 0) h = hash_bytes32(data, size, h);
+        }
+        return h;
+    }
+
+    if (element_type && element_type->size > 0 &&
+        (size_t)element_type->size == view.element_size) {
+        const uint8_t *base = (const uint8_t *)view.data;
+        for (size_t i = 0; i < view.count; i++) {
+            const void *ep = base + i * view.element_size;
             uint32_t eh = hash_instance_for_diff(
-                elem_type, ep, arr->element_size, reg, 0x9e3779b9u, depth + 1);
+                element_type, ep, view.element_size, reg,
+                0x9e3779b9u, depth + 1);
             h = hash_bytes32(&eh, sizeof(eh), h);
         }
         return h;
     }
 
     size_t bytes = 0;
-    if (diff_mul_size(arr->count, arr->element_size, &bytes) && bytes > 0) {
-        h = hash_bytes32(arr->data, bytes, h);
+    if (diff_mul_size(view.count, view.element_size, &bytes) && bytes > 0) {
+        h = hash_bytes32(view.data, bytes, h);
     }
     return h;
 }
 
 static uint32_t hash_field_value_for_diff(const nmo_type_field_t *field,
                                           const void *value,
+                                          const nmo_type_descriptor_t *owner_type,
+                                          const void *owner_instance,
                                           const nmo_type_registry_t *reg,
                                           uint32_t seed,
                                           int depth)
@@ -609,6 +794,12 @@ static uint32_t hash_field_value_for_diff(const nmo_type_field_t *field,
             ? nmo_type_registry_find_by_guid(reg, field->type_guid)
             : NULL;
 
+    if (field->flags & NMO_FIELD_REPEATED) {
+        return hash_repeated_for_diff(
+            owner_type, owner_instance, field, reg,
+            0x7f4a7c15u, depth + 1);
+    }
+
     if (field->flags & NMO_FIELD_POINTER) {
         if (field->size < sizeof(void *)) {
             return hash_bytes32(value, field->size, seed);
@@ -619,29 +810,12 @@ static uint32_t hash_field_value_for_diff(const nmo_type_field_t *field,
         uint32_t h = hash_bytes32(&present, sizeof(present), seed);
         if (!pointed) return h;
 
-        /* Raw pointer arrays need count metadata and element ownership rules.
-         * The diff equality path also avoids dereferencing them blindly, so the
-         * signature records presence without walking potentially invalid memory.
-         */
-        if (field->flags & NMO_FIELD_REPEATED) {
-            return h;
-        }
-
         if (field_type && field_type->size > 0) {
             uint32_t ph = hash_instance_for_diff(
                 field_type, pointed, field_type->size, reg, 0x9747b28cu, depth + 1);
             return hash_bytes32(&ph, sizeof(ph), h);
         }
         return h;
-    }
-
-    if ((field->flags & NMO_FIELD_REPEATED) && field->size == sizeof(nmo_array_t)) {
-        return hash_array_for_diff((const nmo_array_t *)value, field_type,
-                                   reg, 0x7f4a7c15u, depth + 1);
-    }
-
-    if (field->flags & NMO_FIELD_REPEATED) {
-        return hash_bytes32(value, field->size, seed);
     }
 
     return hash_instance_for_diff(field_type, value, field->size,
@@ -670,7 +844,8 @@ static uint32_t hash_instance_for_diff(const nmo_type_descriptor_t *type,
             if (!p) continue;
             if (is_object_ref(f)) continue;
 
-            uint32_t fh = hash_field_value_for_diff(f, p, reg, 0x9747b28cu, depth);
+            uint32_t fh = hash_field_value_for_diff(
+                f, p, type, value, reg, 0x9747b28cu, depth);
             h = hash_bytes32(&fh, sizeof(fh), h);
         }
         return h;
@@ -709,7 +884,8 @@ static uint64_t compute_signature(const nmo_object_t *obj, const nmo_type_regist
             if (!p) continue;
             if (is_object_ref(f)) continue;
 
-            uint32_t field_sig = hash_field_value_for_diff(f, p, reg, 0x9747b28cu, 0);
+            uint32_t field_sig = hash_field_value_for_diff(
+                f, p, t, state, reg, 0x9747b28cu, 0);
             sig = hash_bytes32(&field_sig, sizeof(field_sig), sig);
         }
         if (touched) return ((uint64_t)nmo_object_get_class_id(obj) << 32) | (uint64_t)sig;
@@ -1596,7 +1772,10 @@ static bool build_field_diffs(const nmo_object_t *obj1,
             if (!f2) {
                 same = false;
             } else if ((f1->flags & NMO_FIELD_REPEATED) || (f2->flags & NMO_FIELD_REPEATED)) {
-                same = repeated_equal(f1, f2, p1, p2, s1->repo, s2->repo, lookup);
+                same = repeated_equal(
+                    t1, st1, f1, s1->registry,
+                    t2, st2, f2, s2->registry,
+                    s1->repo, s2->repo, lookup, true);
             } else if (f1->size != f2->size) {
                 same = false;
             } else {
@@ -1608,7 +1787,6 @@ static bool build_field_diffs(const nmo_object_t *obj1,
             format_field_value(before, sizeof(before), f1, p1, s1->repo, s1->ctx);
             if (f2) format_field_value(after, sizeof(after), f2, p2, s2->repo, s2->ctx);
             else snprintf(after, sizeof(after), "(missing)");
-            if (strcmp(before, after) == 0) continue;
             total++;
         }
         *out_total = total;
@@ -1632,7 +1810,10 @@ static bool build_field_diffs(const nmo_object_t *obj1,
             if (!f2) {
                 same = false;
             } else if ((f1->flags & NMO_FIELD_REPEATED) || (f2->flags & NMO_FIELD_REPEATED)) {
-                same = repeated_equal(f1, f2, p1, p2, s1->repo, s2->repo, lookup);
+                same = repeated_equal(
+                    t1, st1, f1, s1->registry,
+                    t2, st2, f2, s2->registry,
+                    s1->repo, s2->repo, lookup, true);
             } else if (f1->size != f2->size) {
                 same = false;
             } else {
@@ -1643,7 +1824,6 @@ static bool build_field_diffs(const nmo_object_t *obj1,
             format_field_value(fds[wi].before, sizeof(fds[wi].before), f1, p1, s1->repo, s1->ctx);
             if (f2) format_field_value(fds[wi].after, sizeof(fds[wi].after), f2, p2, s2->repo, s2->ctx);
             else snprintf(fds[wi].after, sizeof(fds[wi].after), "(missing)");
-            if (strcmp(fds[wi].before, fds[wi].after) == 0) continue;
             fds[wi].field_name = nmo_arena_strdup(arena, f1->name);
             if (!fds[wi].field_name) return false;
             wi++;

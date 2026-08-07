@@ -5,9 +5,11 @@
 #include "object/nmo_object_diff.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_pipeline.h"
+#include "core/nmo_array.h"
 #include "core/nmo_guid.h"
 #include "format/nmo_object.h"
 #include "object/nmo_object_repository.h"
+#include "object/nmo_ref.h"
 #include "type/nmo_reflection.h"
 #include "type/nmo_type_system.h"
 
@@ -18,6 +20,8 @@
 #define CID_NODE        0x7F010003u
 #define CID_REFHOLDER   0x7F010004u
 #define CID_TRAP        0x7F010005u
+#define CID_COUNTED     0x7F010006u
+#define CID_REFARRAY    0x7F010007u
 
 #define GUID_PAIR       NMO_GUID(0xA0010001u, 0xB0010001u)
 #define GUID_OWNER      NMO_GUID(0xA0010002u, 0xB0010002u)
@@ -25,6 +29,8 @@
 #define GUID_REFHOLDER  NMO_GUID(0xA0010004u, 0xB0010004u)
 #define GUID_TRAP       NMO_GUID(0xA0010005u, 0xB0010005u)
 #define GUID_PAIR_ALIAS NMO_GUID(0xA0010006u, 0xB0010006u)
+#define GUID_COUNTED    NMO_GUID(0xA0010007u, 0xB0010007u)
+#define GUID_REFARRAY   NMO_GUID(0xA0010008u, 0xB0010008u)
 
 typedef struct {
     int32_t a;
@@ -52,6 +58,15 @@ typedef struct {
     int32_t f3;
     int32_t f4;
 } trap_state_t;
+
+typedef struct {
+    uint32_t value_count;
+    int32_t *values;
+} counted_state_t;
+
+typedef struct {
+    nmo_array_t targets;
+} ref_array_state_t;
 
 typedef struct {
     nmo_context_t *ctx;
@@ -116,6 +131,14 @@ static bool register_test_types(nmo_context_t *ctx) {
         NMO_FIELD(trap_state_t, f2, CKPGUID_INT),
         NMO_FIELD(trap_state_t, f3, CKPGUID_INT),
         NMO_FIELD(trap_state_t, f4, CKPGUID_INT),
+    };
+    static const nmo_type_field_t counted_fields[] = {
+        NMO_FIELD(counted_state_t, value_count, CKPGUID_UINT32),
+        NMO_FIELD_ARRAY_COUNTED(
+            counted_state_t, values, value_count, 1, CKPGUID_INT),
+    };
+    static const nmo_type_field_t ref_array_fields[] = {
+        NMO_FIELD_REF_RECORD_ARRAY(ref_array_state_t, targets),
     };
 
     nmo_type_descriptor_t pair_desc = {
@@ -214,6 +237,38 @@ static bool register_test_types(nmo_context_t *ctx) {
         .field_count = NMO_FIELD_COUNT(pair_fields),
         .vtable = NULL,
     };
+    nmo_type_descriptor_t counted_desc = {
+        .guid = GUID_COUNTED,
+        .id = 0,
+        .class_id = CID_COUNTED,
+        .category = NMO_TYPE_CATEGORY_STRUCT,
+        .flags = NMO_TYPE_FLAG_COPYABLE,
+        .name = "DiffCounted",
+        .description = NULL,
+        .base_type = NMO_GUID_NULL,
+        .base_type_id = 0,
+        .size = sizeof(counted_state_t),
+        .alignment = (uint32_t)_Alignof(counted_state_t),
+        .fields = counted_fields,
+        .field_count = NMO_FIELD_COUNT(counted_fields),
+        .vtable = &k_dummy_object_vtable,
+    };
+    nmo_type_descriptor_t ref_array_desc = {
+        .guid = GUID_REFARRAY,
+        .id = 0,
+        .class_id = CID_REFARRAY,
+        .category = NMO_TYPE_CATEGORY_STRUCT,
+        .flags = NMO_TYPE_FLAG_COPYABLE,
+        .name = "DiffRefArray",
+        .description = NULL,
+        .base_type = NMO_GUID_NULL,
+        .base_type_id = 0,
+        .size = sizeof(ref_array_state_t),
+        .alignment = (uint32_t)_Alignof(ref_array_state_t),
+        .fields = ref_array_fields,
+        .field_count = NMO_FIELD_COUNT(ref_array_fields),
+        .vtable = &k_dummy_object_vtable,
+    };
 
     if (nmo_type_registry_register(registry, &pair_desc) != NMO_OK) return false;
     if (nmo_type_registry_register(registry, &owner_desc) != NMO_OK) return false;
@@ -221,6 +276,8 @@ static bool register_test_types(nmo_context_t *ctx) {
     if (nmo_type_registry_register(registry, &ref_desc) != NMO_OK) return false;
     if (nmo_type_registry_register(registry, &trap_desc) != NMO_OK) return false;
     if (nmo_type_registry_register(registry, &pair_alias_desc) != NMO_OK) return false;
+    if (nmo_type_registry_register(registry, &counted_desc) != NMO_OK) return false;
+    if (nmo_type_registry_register(registry, &ref_array_desc) != NMO_OK) return false;
     if (nmo_type_registry_finalize(registry) != NMO_OK) return false;
     return true;
 }
@@ -450,6 +507,96 @@ TEST(object_diff, reference_target_rename_compares_equal) {
     fixture_destroy(&fx);
 }
 
+TEST(object_diff, counted_pointer_array_changes_are_reported) {
+    diff_fixture_t fx;
+    ASSERT_TRUE(fixture_init(&fx));
+
+    nmo_object_t *o1 = add_object(
+        fx.ctx, fx.ses1, 1, CID_COUNTED, "Array", sizeof(counted_state_t));
+    nmo_object_t *o2 = add_object(
+        fx.ctx, fx.ses2, 101, CID_COUNTED, "Array", sizeof(counted_state_t));
+    ASSERT_NOT_NULL(o1);
+    ASSERT_NOT_NULL(o2);
+
+    int32_t values1[] = {10, 20, 30};
+    int32_t values2[] = {10, 20, 30};
+    counted_state_t *state1 = nmo_object_get_state(o1);
+    counted_state_t *state2 = nmo_object_get_state(o2);
+    state1->value_count = 3u;
+    state1->values = values1;
+    state2->value_count = 3u;
+    state2->values = values2;
+
+    nmo_diff_result_t diff;
+    ASSERT_EQ(NMO_OK, run_diff(&fx, NULL, &diff));
+    ASSERT_EQ(0u, diff.changed_count);
+    ASSERT_EQ(1u, diff.identical_count);
+    nmo_diff_result_destroy(&diff);
+
+    values2[1] = 21;
+    ASSERT_EQ(NMO_OK, run_diff(&fx, NULL, &diff));
+    ASSERT_EQ(1u, diff.changed_count);
+    ASSERT_EQ(1u, diff.changed[0].field_diff_total);
+    ASSERT_EQ(1u, diff.changed[0].field_diff_count);
+    ASSERT_STR_EQ("values", diff.changed[0].field_diffs[0].field_name);
+    ASSERT_EQ(0u, diff.identical_count);
+    nmo_diff_result_destroy(&diff);
+
+    fixture_destroy(&fx);
+}
+
+TEST(object_diff, ref_record_arrays_use_matches_and_preserve_invalid_raw_ids) {
+    diff_fixture_t fx;
+    ASSERT_TRUE(fixture_init(&fx));
+
+    nmo_object_t *target1 = add_object(
+        fx.ctx, fx.ses1, 10, CID_PAIR, "Target", sizeof(pair_state_t));
+    nmo_object_t *holder1 = add_object(
+        fx.ctx, fx.ses1, 20, CID_REFARRAY, "Holder", sizeof(ref_array_state_t));
+    nmo_object_t *target2 = add_object(
+        fx.ctx, fx.ses2, 110, CID_PAIR, "Target", sizeof(pair_state_t));
+    nmo_object_t *holder2 = add_object(
+        fx.ctx, fx.ses2, 120, CID_REFARRAY, "Holder", sizeof(ref_array_state_t));
+    ASSERT_NOT_NULL(target1);
+    ASSERT_NOT_NULL(holder1);
+    ASSERT_NOT_NULL(target2);
+    ASSERT_NOT_NULL(holder2);
+
+    nmo_ref_t refs1[] = {nmo_ref_from_id(10)};
+    nmo_ref_t refs2[] = {nmo_ref_from_id(110)};
+    ref_array_state_t *state1 = nmo_object_get_state(holder1);
+    ref_array_state_t *state2 = nmo_object_get_state(holder2);
+    state1->targets = (nmo_array_t){
+        .data = refs1,
+        .count = 1u,
+        .capacity = 1u,
+        .element_size = sizeof(nmo_ref_t),
+    };
+    state2->targets = (nmo_array_t){
+        .data = refs2,
+        .count = 1u,
+        .capacity = 1u,
+        .element_size = sizeof(nmo_ref_t),
+    };
+
+    nmo_diff_result_t diff;
+    ASSERT_EQ(NMO_OK, run_diff(&fx, NULL, &diff));
+    ASSERT_EQ(0u, diff.changed_count);
+    ASSERT_EQ(2u, diff.identical_count);
+    nmo_diff_result_destroy(&diff);
+
+    refs1[0] = nmo_ref_from_raw(700u);
+    refs2[0] = nmo_ref_from_raw(701u);
+    ASSERT_EQ(NMO_OK, run_diff(&fx, NULL, &diff));
+    ASSERT_EQ(1u, diff.changed_count);
+    ASSERT_EQ(1u, diff.changed[0].field_diff_total);
+    ASSERT_STR_EQ("targets", diff.changed[0].field_diffs[0].field_name);
+    ASSERT_EQ(1u, diff.identical_count);
+    nmo_diff_result_destroy(&diff);
+
+    fixture_destroy(&fx);
+}
+
 TEST(object_diff, min_similarity_rejects_low_pairs) {
     diff_fixture_t fx;
     ASSERT_TRUE(fixture_init(&fx));
@@ -532,6 +679,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_diff, topology_disambiguates_unnamed_nodes);
     REGISTER_TEST(object_diff, hungarian_beats_greedy_trap);
     REGISTER_TEST(object_diff, reference_target_rename_compares_equal);
+    REGISTER_TEST(object_diff, counted_pointer_array_changes_are_reported);
+    REGISTER_TEST(object_diff, ref_record_arrays_use_matches_and_preserve_invalid_raw_ids);
     REGISTER_TEST(object_diff, min_similarity_rejects_low_pairs);
     REGISTER_TEST(object_diff, result_stable_across_repeated_runs);
     REGISTER_TEST(object_diff, format_path_prefers_explicit_type_view_name);
