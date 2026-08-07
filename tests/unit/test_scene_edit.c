@@ -7,10 +7,12 @@
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_edit.h"
 #include "object/nmo_object_enum_defs.h"
+#include "object/nmo_object_guids.h"
 #include "object/nmo_object_query.h"
 #include "object/nmo_scene_edit.h"
 #include "runtime/nmo_context.h"
 #include "runtime/nmo_workspace.h"
+#include "type/nmo_type_query.h"
 
 typedef struct scene_edit_fixture {
     nmo_context_t *ctx;
@@ -316,10 +318,94 @@ TEST(scene_edit, sets_active_camera)
     scene_edit_fixture_destroy(&fixture);
 }
 
+TEST(scene_edit, edits_explicit_scene_types)
+{
+    scene_edit_fixture_t fixture = {0};
+    scene_edit_fixture_create(&fixture);
+
+    nmo_object_id_t scene_id = 0u;
+    nmo_object_id_t camera_id = 0u;
+    nmo_object_id_t object_id = 0u;
+    nmo_object_id_t conflicting_scene_id = 0u;
+    nmo_workspace_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK,
+              nmo_workspace_edit_begin(
+                  fixture.workspace, "create typed scene", &edit));
+    ASSERT_EQ(NMO_OK, nmo_object_edit_create(
+        edit,
+        &(nmo_object_create_desc_t){
+            .class_id = NMO_CID_OBJECT,
+            .name = "Typed scene",
+            .type_guid = CKPGUID_SCENE,
+        },
+        &scene_id));
+    ASSERT_EQ(NMO_OK, nmo_object_edit_create(
+        edit,
+        &(nmo_object_create_desc_t){
+            .class_id = NMO_CID_OBJECT,
+            .name = "Typed camera",
+            .type_guid = CKPGUID_CAMERA,
+        },
+        &camera_id));
+    ASSERT_EQ(NMO_OK, nmo_object_edit_create(
+        edit,
+        &(nmo_object_create_desc_t){
+            .class_id = NMO_CID_3DENTITY,
+            .name = "Object",
+        },
+        &object_id));
+    ASSERT_EQ(NMO_OK, nmo_object_edit_create(
+        edit,
+        &(nmo_object_create_desc_t){
+            .class_id = NMO_CID_SCENE,
+            .name = "Conflicting raw scene",
+            .type_guid = CKPGUID_DATAARRAY,
+        },
+        &conflicting_scene_id));
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_commit(edit));
+
+    ASSERT_EQ(NMO_OK,
+              nmo_workspace_edit_begin(
+                  fixture.workspace, "edit typed scene", &edit));
+    ASSERT_EQ(NMO_OK, nmo_scene_edit_add_object(
+        edit, scene_id, object_id, NMO_SCENE_MEMBERSHIP_ACTIVE));
+    ASSERT_EQ(NMO_OK, nmo_scene_edit_set_environment(
+        edit,
+        scene_id,
+        &(nmo_scene_environment_settings_t){
+            .has_background_color = true,
+            .background_color = {0.25f, 0.5f, 0.75f, 1.0f},
+        }));
+    ASSERT_EQ(NMO_OK, nmo_scene_edit_set_active_camera(
+        edit, scene_id, camera_id));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, nmo_scene_edit_set_environment(
+        edit,
+        conflicting_scene_id,
+        &(nmo_scene_environment_settings_t){
+            .has_background_color = true,
+        }));
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_commit(edit));
+
+    const nmo_type_registry_t *registry =
+        nmo_context_get_type_registry(fixture.ctx);
+    nmo_scene_state_t *scene = (nmo_scene_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry,
+            find_one_or_null(fixture.document, scene_id),
+            CKPGUID_SCENE);
+    ASSERT_NOT_NULL(scene);
+    ASSERT_EQ(1u, nmo_array_size(&scene->object_descs));
+    ASSERT_EQ(0xFF4080BFu, scene->background_color);
+    ASSERT_EQ(camera_id, nmo_ref_runtime_id(&scene->starting_camera));
+
+    scene_edit_fixture_destroy(&fixture);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(scene_edit, adds_object_to_scene_membership);
 REGISTER_TEST(scene_edit, rollback_removes_scene_membership);
 REGISTER_TEST(scene_edit, rejects_invalid_membership);
 REGISTER_TEST(scene_edit, sets_environment_preserving_unset_fields);
 REGISTER_TEST(scene_edit, sets_active_camera);
+REGISTER_TEST(scene_edit, edits_explicit_scene_types);
 TEST_MAIN_END()

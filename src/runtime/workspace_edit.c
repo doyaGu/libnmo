@@ -850,8 +850,32 @@ static bool session_object_derives(
     const nmo_object_t *object,
     nmo_class_id_t base_class_id)
 {
+    if (object == NULL) {
+        return false;
+    }
+    if (nmo_guid_is_null(nmo_object_get_type_guid(object)) &&
+        nmo_object_get_class_id(object) == base_class_id) {
+        return true;
+    }
     return nmo_type_query_object_is_derived_from_class(
         registry, object, base_class_id);
+}
+
+static void *workspace_edit_object_state(
+    const nmo_type_registry_t *registry,
+    nmo_object_t *object,
+    nmo_class_id_t class_id,
+    nmo_guid_t type_guid)
+{
+    if (object == NULL) {
+        return NULL;
+    }
+    if (nmo_guid_is_null(nmo_object_get_type_guid(object)) &&
+        nmo_object_get_class_id(object) == class_id) {
+        return nmo_object_get_state(object);
+    }
+    return nmo_type_query_object_get_ancestor_state_by_guid(
+        registry, object, type_guid);
 }
 
 static bool session_is_parameter_reference_object(
@@ -1499,18 +1523,18 @@ nmo_status_t nmo_scene_edit_add_object(
     if (scene_object == NULL) {
         return NMO_ERR_NOT_FOUND;
     }
-    if (nmo_object_get_class_id(scene_object) != NMO_CID_SCENE) {
-        return NMO_ERR_INVALID_ARGUMENT;
+    const nmo_type_registry_t *registry = workspace_edit_type_registry(edit);
+    nmo_scene_state_t *scene_state =
+        (nmo_scene_state_t *)workspace_edit_object_state(
+            registry, scene_object, NMO_CID_SCENE, CKPGUID_SCENE);
+    if (scene_state == NULL) {
+        return session_object_derives(registry, scene_object, NMO_CID_SCENE)
+            ? NMO_ERR_INVALID_STATE
+            : NMO_ERR_INVALID_ARGUMENT;
     }
     nmo_object_t *target_object = nmo_object_repository_find_by_id(repo, object_id);
     if (target_object == NULL) {
         return NMO_ERR_NOT_FOUND;
-    }
-
-    nmo_scene_state_t *scene_state =
-        (nmo_scene_state_t *)nmo_object_get_state(scene_object);
-    if (scene_state == NULL) {
-        return NMO_ERR_INVALID_STATE;
     }
 
     const nmo_scene_object_desc_t *descs =
@@ -1582,14 +1606,15 @@ nmo_status_t nmo_scene_edit_set_environment(
     if (scene_object == NULL) {
         return NMO_ERR_NOT_FOUND;
     }
-    if (nmo_object_get_class_id(scene_object) != NMO_CID_SCENE) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
 
+    const nmo_type_registry_t *registry = workspace_edit_type_registry(edit);
     nmo_scene_state_t *scene_state =
-        (nmo_scene_state_t *)nmo_object_get_state(scene_object);
+        (nmo_scene_state_t *)workspace_edit_object_state(
+            registry, scene_object, NMO_CID_SCENE, CKPGUID_SCENE);
     if (scene_state == NULL) {
-        return NMO_ERR_INVALID_STATE;
+        return session_object_derives(registry, scene_object, NMO_CID_SCENE)
+            ? NMO_ERR_INVALID_STATE
+            : NMO_ERR_INVALID_ARGUMENT;
     }
 
     nmo_status_t status =
@@ -1648,24 +1673,22 @@ nmo_status_t nmo_scene_edit_set_active_camera(
     if (scene_object == NULL) {
         return NMO_ERR_NOT_FOUND;
     }
-    if (nmo_object_get_class_id(scene_object) != NMO_CID_SCENE) {
-        return NMO_ERR_INVALID_ARGUMENT;
+    const nmo_type_registry_t *registry = workspace_edit_type_registry(edit);
+    nmo_scene_state_t *scene_state =
+        (nmo_scene_state_t *)workspace_edit_object_state(
+            registry, scene_object, NMO_CID_SCENE, CKPGUID_SCENE);
+    if (scene_state == NULL) {
+        return session_object_derives(registry, scene_object, NMO_CID_SCENE)
+            ? NMO_ERR_INVALID_STATE
+            : NMO_ERR_INVALID_ARGUMENT;
     }
     nmo_object_t *camera_object =
         nmo_object_repository_find_by_id(repo, camera_id);
     if (camera_object == NULL) {
         return NMO_ERR_NOT_FOUND;
     }
-    nmo_class_id_t camera_class = nmo_object_get_class_id(camera_object);
-    if (camera_class != NMO_CID_CAMERA &&
-        camera_class != NMO_CID_TARGETCAMERA) {
+    if (!session_object_derives(registry, camera_object, NMO_CID_CAMERA)) {
         return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    nmo_scene_state_t *scene_state =
-        (nmo_scene_state_t *)nmo_object_get_state(scene_object);
-    if (scene_state == NULL) {
-        return NMO_ERR_INVALID_STATE;
     }
 
     nmo_status_t status =
