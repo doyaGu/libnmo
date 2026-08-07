@@ -6,9 +6,11 @@
 #include "object/nmo_animation_edit.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_edit.h"
+#include "object/nmo_object_guids.h"
 #include "object/nmo_object_query.h"
 #include "runtime/nmo_context.h"
 #include "runtime/nmo_workspace.h"
+#include "type/nmo_type_query.h"
 
 static void create_workspace(
     nmo_context_t **out_ctx,
@@ -330,8 +332,75 @@ TEST(animation_edit, sets_object_animation_morph_keys)
     destroy_workspace(ctx, doc, workspace);
 }
 
+TEST(animation_edit, edits_explicit_animation_types)
+{
+    nmo_context_t *ctx = NULL;
+    nmo_document_t *doc = NULL;
+    nmo_workspace_t *workspace = NULL;
+    create_workspace(&ctx, &doc, &workspace);
+
+    nmo_workspace_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK,
+              nmo_workspace_edit_begin(
+                  workspace, "typed animation", &edit));
+    nmo_object_id_t animation_id = 0u;
+    nmo_object_id_t entity_id = 0u;
+    nmo_object_id_t conflicting_animation_id = 0u;
+    ASSERT_EQ(NMO_OK, nmo_object_edit_create(
+        edit,
+        &(nmo_object_create_desc_t){
+            .class_id = NMO_CID_OBJECT,
+            .name = "Typed animation",
+            .type_guid = CKPGUID_OBJECTANIMATION,
+        },
+        &animation_id));
+    ASSERT_EQ(NMO_OK, nmo_object_edit_create(
+        edit,
+        &(nmo_object_create_desc_t){
+            .class_id = NMO_CID_OBJECT,
+            .name = "Typed entity",
+            .type_guid = CKPGUID_3DENTITY,
+        },
+        &entity_id));
+    ASSERT_EQ(NMO_OK, nmo_object_edit_create(
+        edit,
+        &(nmo_object_create_desc_t){
+            .class_id = NMO_CID_OBJECTANIMATION,
+            .name = "Conflicting animation",
+            .type_guid = CKPGUID_MATERIAL,
+        },
+        &conflicting_animation_id));
+
+    const nmo_object_animation_settings_t settings = {
+        .format = CKOBJANIM_FORMAT_CONTROLLERS,
+        .entity_id = entity_id,
+        .has_length = true,
+        .length = 8.0f,
+    };
+    ASSERT_EQ(NMO_OK, nmo_animation_edit_set_object_animation(
+        edit, animation_id, &settings));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_animation_edit_set_object_animation(
+                  edit, conflicting_animation_id, &settings));
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_commit(edit));
+
+    nmo_objectanimation_state_t *animation =
+        (nmo_objectanimation_state_t *)
+            nmo_type_query_object_get_ancestor_state_by_guid(
+                nmo_context_get_type_registry(ctx),
+                find_object(doc, animation_id),
+                CKPGUID_OBJECTANIMATION);
+    ASSERT_NOT_NULL(animation);
+    ASSERT_EQ(entity_id, nmo_ref_runtime_id(&animation->entity));
+    ASSERT_TRUE(animation->has_length);
+    ASSERT_FLOAT_EQ(8.0f, animation->length, 0.0001f);
+
+    destroy_workspace(ctx, doc, workspace);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(animation_edit, sets_object_animation_metadata);
 REGISTER_TEST(animation_edit, sets_object_animation_controllers);
 REGISTER_TEST(animation_edit, sets_object_animation_morph_keys);
+REGISTER_TEST(animation_edit, edits_explicit_animation_types);
 TEST_MAIN_END()

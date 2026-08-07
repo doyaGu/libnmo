@@ -3557,8 +3557,20 @@ nmo_status_t nmo_animation_edit_set_object_animation(
     if (animation == NULL || entity == NULL) {
         return NMO_ERR_NOT_FOUND;
     }
-    if (nmo_object_get_class_id(animation) != NMO_CID_OBJECTANIMATION ||
-        !workspace_edit_class_is_entity_target(nmo_object_get_class_id(entity))) {
+    const nmo_type_registry_t *registry = workspace_edit_type_registry(edit);
+    nmo_objectanimation_state_t *state =
+        (nmo_objectanimation_state_t *)workspace_edit_object_state(
+            registry,
+            animation,
+            NMO_CID_OBJECTANIMATION,
+            CKPGUID_OBJECTANIMATION);
+    if (state == NULL) {
+        return session_object_derives(
+                   registry, animation, NMO_CID_OBJECTANIMATION)
+            ? NMO_ERR_INVALID_STATE
+            : NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (!workspace_edit_object_is_entity_target(registry, entity)) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
     if (settings->controller_count > 0u) {
@@ -3615,11 +3627,6 @@ nmo_status_t nmo_animation_edit_set_object_animation(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    nmo_objectanimation_state_t *state =
-        (nmo_objectanimation_state_t *)nmo_object_get_state(animation);
-    if (state == NULL) {
-        return NMO_ERR_INVALID_STATE;
-    }
     nmo_status_t status =
         nmo_workspace_edit_snapshot_bytes(edit, state, sizeof(*state));
     if (status != NMO_OK) {
