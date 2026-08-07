@@ -4904,6 +4904,42 @@ TEST(chunk_id_remap, light_copy_preserves_inherited_and_own_state) {
     nmo_arena_destroy(source_arena);
 }
 
+TEST(chunk_id_remap, targetlight_copy_preserves_base_and_target) {
+    nmo_arena_t *copy_arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(copy_arena);
+
+    nmo_targetlight_state_t source;
+    nmo_targetlight_state_t copy;
+    ASSERT_EQ(NMO_OK, nmo_targetlight_vtable.create(
+        &source, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_targetlight_vtable.create(
+        &copy, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &source.base.entity.base.base.scripts, 101));
+    source.base.light_power = 2.0f;
+    source.has_target = 1;
+    source.target = nmo_ref_from_raw(201);
+
+    nmo_type_descriptor_t light_type = {
+        .size = sizeof(nmo_targetlight_state_t),
+    };
+    ASSERT_EQ(NMO_OK, nmo_targetlight_vtable.copy(
+        &source, &copy, &light_type, copy_arena));
+    ASSERT_NE(source.base.entity.base.base.scripts.data,
+              copy.base.entity.base.base.scripts.data);
+    ASSERT_TRUE(nmo_targetlight_vtable.equals(&source, &copy));
+    ASSERT_EQ(nmo_targetlight_vtable.hash(&source),
+              nmo_targetlight_vtable.hash(&copy));
+
+    copy.target = nmo_ref_from_raw(202);
+    ASSERT_EQ(201u, source.target.raw_id);
+    ASSERT_FALSE(nmo_targetlight_vtable.equals(&source, &copy));
+
+    nmo_targetlight_vtable.destroy(&copy, NULL, NULL);
+    nmo_targetlight_vtable.destroy(&source, NULL, NULL);
+    nmo_arena_destroy(copy_arena);
+}
+
 TEST(chunk_id_remap, entity_scalar_ref_sections_reject_truncation_atomically) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
     ASSERT_NOT_NULL(arena);
@@ -8890,6 +8926,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, camera_copy_preserves_inherited_and_own_state);
     REGISTER_TEST(chunk_id_remap, targetcamera_copy_preserves_base_and_target);
     REGISTER_TEST(chunk_id_remap, light_copy_preserves_inherited_and_own_state);
+    REGISTER_TEST(chunk_id_remap, targetlight_copy_preserves_base_and_target);
     REGISTER_TEST(chunk_id_remap, entity_scalar_ref_sections_reject_truncation_atomically);
     REGISTER_TEST(chunk_id_remap, entity_skin_rejects_negative_vertex_bone_count_atomically);
     REGISTER_TEST(chunk_id_remap, entity_skin_rejects_oversized_counts_before_allocation);
