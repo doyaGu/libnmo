@@ -18,8 +18,10 @@
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "object/builtin/nmo_parameterin_schemas.h"
 #include "object/builtin/nmo_parameteroperation_schemas.h"
+#include "object/builtin/nmo_parameterout_schemas.h"
 #include "object/nmo_object_repository.h"
 #include "type/nmo_operations.h"
+#include "type/nmo_type_query.h"
 #include "type/nmo_type_guids.h"
 #include "runtime/nmo_context.h"
 #include "runtime/nmo_workspace.h"
@@ -1382,6 +1384,96 @@ TEST(semantic_validator, edit_plan_reports_parameter_type_mismatch)
     semantic_fixture_dispose(&fixture);
 }
 
+TEST(semantic_validator, edit_plan_accepts_explicit_parameter_types)
+{
+    semantic_fixture_t fixture;
+    semantic_fixture_init_empty(&fixture);
+
+    nmo_object_id_t source_id = 0u;
+    nmo_object_id_t target_id = 0u;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        fixture.session, 0, "Typed source", CKPGUID_PARAMETEROUT,
+        &source_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        fixture.session, 0, "Typed target", CKPGUID_PARAMETERIN,
+        &target_id, NULL));
+
+    nmo_object_repository_t *repo =
+        nmo_session_get_repository(fixture.session);
+    const nmo_type_registry_t *registry =
+        nmo_context_get_type_registry(fixture.ctx);
+    nmo_object_t *source_object =
+        nmo_object_repository_find_by_id(repo, source_id);
+    nmo_object_t *target_object =
+        nmo_object_repository_find_by_id(repo, target_id);
+    nmo_parameterout_state_t *source_state = (nmo_parameterout_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, source_object, CKPGUID_PARAMETEROUT);
+    nmo_parameterin_state_t *target_state = (nmo_parameterin_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, target_object, CKPGUID_PARAMETERIN);
+    ASSERT_NOT_NULL(source_state);
+    ASSERT_NOT_NULL(target_state);
+    source_state->base.type_guid = CKPGUID_INT;
+    target_state->type_guid = CKPGUID_INT;
+
+    nmo_edit_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_connect_parameter(
+                  plan, source_id, target_id, NULL));
+
+    nmo_behavior_semantic_risk_t *risks = NULL;
+    size_t risk_count = 0u;
+    ASSERT_EQ(NMO_OK,
+              nmo_semantic_validate_edit_plan(
+                  fixture.workspace, plan, &risks, &risk_count));
+    ASSERT_NULL(find_risk(
+        risks, risk_count, "parameter_object_type_mismatch"));
+    ASSERT_NULL(find_risk(
+        risks, risk_count, "parameter_target_type_mismatch"));
+    ASSERT_NULL(find_risk(
+        risks, risk_count, "parameter_type_mismatch"));
+
+    nmo_semantic_risks_free(risks);
+    nmo_edit_plan_destroy(plan);
+    semantic_fixture_dispose(&fixture);
+}
+
+TEST(semantic_validator, edit_plan_honors_explicit_parameter_type_precedence)
+{
+    semantic_fixture_t fixture;
+    semantic_fixture_init_empty(&fixture);
+
+    nmo_object_id_t object_id = 0u;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        fixture.session,
+        NMO_CID_PARAMETER,
+        "Conflicting parameter type",
+        CKPGUID_BEHAVIORIO,
+        &object_id,
+        NULL));
+
+    nmo_edit_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_disconnect_parameter(plan, object_id));
+
+    nmo_behavior_semantic_risk_t *risks = NULL;
+    size_t risk_count = 0u;
+    ASSERT_EQ(NMO_OK,
+              nmo_semantic_validate_edit_plan(
+                  fixture.workspace, plan, &risks, &risk_count));
+    const nmo_behavior_semantic_risk_t *mismatch =
+        find_risk(risks, risk_count, "parameter_object_type_mismatch");
+    ASSERT_NOT_NULL(mismatch);
+    ASSERT_EQ(object_id, mismatch->object_id);
+
+    nmo_semantic_risks_free(risks);
+    nmo_edit_plan_destroy(plan);
+    semantic_fixture_dispose(&fixture);
+}
+
 TEST(semantic_validator, edit_plan_reports_parameter_type_mismatch_with_target_handle)
 {
     semantic_fixture_t fixture;
@@ -1627,6 +1719,69 @@ TEST(semantic_validator, edit_plan_reports_operation_type_mismatch)
     ASSERT_NOT_NULL(signature);
     ASSERT_EQ(NMO_BEHAVIOR_SEMANTIC_RISK_REJECT, signature->severity);
     ASSERT_EQ(6u, signature->object_id);
+
+    nmo_semantic_risks_free(risks);
+    nmo_edit_plan_destroy(plan);
+    semantic_fixture_dispose(&fixture);
+}
+
+TEST(semantic_validator, edit_plan_validates_explicit_operation_state)
+{
+    semantic_fixture_t fixture;
+    semantic_fixture_init_empty(&fixture);
+
+    nmo_object_id_t parameter_id = 0u;
+    nmo_object_id_t operation_id = 0u;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        fixture.session, 0, "Typed string", CKPGUID_PARAMETER,
+        &parameter_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        fixture.session, 0, "Typed operation", CKPGUID_PARAMETEROPERATION,
+        &operation_id, NULL));
+
+    nmo_object_repository_t *repo =
+        nmo_session_get_repository(fixture.session);
+    const nmo_type_registry_t *registry =
+        nmo_context_get_type_registry(fixture.ctx);
+    nmo_object_t *parameter_object =
+        nmo_object_repository_find_by_id(repo, parameter_id);
+    nmo_object_t *operation_object =
+        nmo_object_repository_find_by_id(repo, operation_id);
+    nmo_parameter_state_t *parameter_state = (nmo_parameter_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, parameter_object, CKPGUID_PARAMETER);
+    nmo_parameteroperation_state_t *operation_state =
+        (nmo_parameteroperation_state_t *)
+            nmo_type_query_object_get_ancestor_state_by_guid(
+                registry, operation_object, CKPGUID_PARAMETEROPERATION);
+    ASSERT_NOT_NULL(parameter_state);
+    ASSERT_NOT_NULL(operation_state);
+    parameter_state->type_guid = CKPGUID_STRING;
+    operation_state->operation_guid = NMO_OP_GUID_ADD;
+
+    nmo_edit_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_rewire_operation(
+                  plan,
+                  operation_id,
+                  NMO_SCRIPT_EDIT_OP_SLOT_IN1,
+                  parameter_id,
+                  NULL,
+                  0u,
+                  NULL,
+                  0u,
+                  NULL));
+
+    nmo_behavior_semantic_risk_t *risks = NULL;
+    size_t risk_count = 0u;
+    ASSERT_EQ(NMO_OK,
+              nmo_semantic_validate_edit_plan(
+                  fixture.workspace, plan, &risks, &risk_count));
+    ASSERT_NULL(find_risk(
+        risks, risk_count, "operation_object_type_mismatch"));
+    ASSERT_NOT_NULL(find_risk(
+        risks, risk_count, "operation_type_mismatch"));
 
     nmo_semantic_risks_free(risks);
     nmo_edit_plan_destroy(plan);
@@ -2567,6 +2722,8 @@ REGISTER_TEST(semantic_validator, detects_missing_symbolic_message_handle_value)
     REGISTER_TEST(semantic_validator, edit_plan_reports_unowned_control_endpoint);
     REGISTER_TEST(semantic_validator, edit_plan_reports_rewire_control_endpoint_scope);
     REGISTER_TEST(semantic_validator, edit_plan_reports_parameter_type_mismatch);
+    REGISTER_TEST(semantic_validator, edit_plan_accepts_explicit_parameter_types);
+    REGISTER_TEST(semantic_validator, edit_plan_honors_explicit_parameter_type_precedence);
     REGISTER_TEST(semantic_validator, edit_plan_reports_parameter_type_mismatch_with_target_handle);
     REGISTER_TEST(semantic_validator, edit_plan_reports_parameter_object_type_mismatch);
     REGISTER_TEST(semantic_validator, edit_plan_reports_parameter_target_type_mismatch);
@@ -2574,6 +2731,7 @@ REGISTER_TEST(semantic_validator, detects_missing_symbolic_message_handle_value)
     REGISTER_TEST(semantic_validator, edit_plan_reports_value_parameter_type_mismatch);
     REGISTER_TEST(semantic_validator, edit_plan_reports_scene_sensitive_parameter_ref);
     REGISTER_TEST(semantic_validator, edit_plan_reports_operation_type_mismatch);
+    REGISTER_TEST(semantic_validator, edit_plan_validates_explicit_operation_state);
     REGISTER_TEST(semantic_validator, edit_plan_reports_operation_type_mismatch_with_handle_refs);
     REGISTER_TEST(semantic_validator, edit_plan_reports_operation_type_mismatch_with_node_param_handle);
     REGISTER_TEST(semantic_validator, edit_plan_reports_operation_parent_type_mismatch);

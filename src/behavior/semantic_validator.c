@@ -64,7 +64,25 @@ static nmo_status_t semantic_add_risk(
     return NMO_OK;
 }
 
+static void *semantic_get_object_state(
+    const nmo_type_registry_t *registry,
+    nmo_object_t *object,
+    nmo_class_id_t class_id,
+    nmo_guid_t type_guid)
+{
+    if (registry == NULL || object == NULL) {
+        return NULL;
+    }
+    if (nmo_guid_is_null(nmo_object_get_type_guid(object)) &&
+        nmo_object_get_class_id(object) == class_id) {
+        return nmo_object_get_state(object);
+    }
+    return nmo_type_query_object_get_ancestor_state_by_guid(
+        registry, object, type_guid);
+}
+
 static bool semantic_parameter_type_guid(
+    const nmo_type_registry_t *registry,
     nmo_object_repository_t *repo,
     nmo_object_id_t parameter_id,
     nmo_guid_t *out_guid);
@@ -407,14 +425,14 @@ static nmo_status_t semantic_add_behavior_target_consistency_risk(
     size_t *risk_count,
     nmo_object_id_t behavior_id)
 {
+    const nmo_type_registry_t *type_registry =
+        ctx != NULL ? nmo_context_get_type_registry(ctx) : NULL;
     nmo_object_t *object = repo != NULL
         ? nmo_object_repository_find_by_id(repo, behavior_id)
         : NULL;
-    if (object == NULL || nmo_object_get_class_id(object) != NMO_CID_BEHAVIOR) {
-        return NMO_OK;
-    }
     const nmo_behavior_state_t *state =
-        (const nmo_behavior_state_t *)nmo_object_get_state(object);
+        (const nmo_behavior_state_t *)semantic_get_object_state(
+            type_registry, object, NMO_CID_BEHAVIOR, CKPGUID_BEHAVIOR);
     if (state == NULL || (state->flags & CKBEHAVIOR_TARGETABLE) == 0u) {
         return NMO_OK;
     }
@@ -440,7 +458,9 @@ static nmo_status_t semantic_add_behavior_target_consistency_risk(
             "Targetable behavior references a missing target parameter",
             target_parameter_id);
     }
-    if (nmo_object_get_class_id(target) != NMO_CID_PARAMETERIN) {
+    if (semantic_get_object_state(
+            type_registry, target, NMO_CID_PARAMETERIN,
+            CKPGUID_PARAMETERIN) == NULL) {
         return semantic_add_risk(
             risks,
             risk_count,
@@ -452,15 +472,13 @@ static nmo_status_t semantic_add_behavior_target_consistency_risk(
     uint32_t target_class_id = state->compatible_class_id > 0
         ? (uint32_t)state->compatible_class_id
         : (uint32_t)NMO_CID_BEOBJECT;
-    nmo_type_registry_t *type_registry =
-        ctx != NULL ? nmo_context_get_type_registry(ctx) : NULL;
     nmo_guid_t expected_guid = NMO_GUID_NULL;
     nmo_guid_t actual_guid = NMO_GUID_NULL;
     if (type_registry != NULL &&
         nmo_type_registry_class_id_to_guid(
             type_registry, target_class_id, &expected_guid) == NMO_OK &&
         semantic_parameter_type_guid(
-            repo, target_parameter_id, &actual_guid) &&
+            type_registry, repo, target_parameter_id, &actual_guid) &&
         !nmo_guid_is_null(expected_guid) &&
         !nmo_guid_is_null(actual_guid) &&
         !nmo_guid_equals(expected_guid, actual_guid)) {
@@ -585,7 +603,30 @@ static bool semantic_is_parameter_object_class(nmo_class_id_t class_id)
            class_id == NMO_CID_PARAMETEROPERATION;
 }
 
+static bool semantic_is_parameter_object(
+    const nmo_type_registry_t *registry,
+    nmo_object_t *object)
+{
+    if (registry == NULL || object == NULL) {
+        return false;
+    }
+    if (nmo_guid_is_null(nmo_object_get_type_guid(object)) &&
+        semantic_is_parameter_object_class(nmo_object_get_class_id(object))) {
+        return true;
+    }
+    return semantic_get_object_state(
+               registry, object, NMO_CID_PARAMETERIN,
+               CKPGUID_PARAMETERIN) != NULL ||
+           semantic_get_object_state(
+               registry, object, NMO_CID_PARAMETER,
+               CKPGUID_PARAMETER) != NULL ||
+           semantic_get_object_state(
+               registry, object, NMO_CID_PARAMETEROPERATION,
+               CKPGUID_PARAMETEROPERATION) != NULL;
+}
+
 static nmo_status_t semantic_add_parameter_object_ref_risk(
+    const nmo_type_registry_t *registry,
     nmo_object_repository_t *repo,
     nmo_behavior_semantic_risk_t **risks,
     size_t *risk_count,
@@ -598,7 +639,7 @@ static nmo_status_t semantic_add_parameter_object_ref_risk(
     if (object == NULL) {
         return NMO_OK;
     }
-    if (!semantic_is_parameter_object_class(nmo_object_get_class_id(object))) {
+    if (!semantic_is_parameter_object(registry, object)) {
         return semantic_add_risk(
             risks,
             risk_count,
@@ -608,7 +649,8 @@ static nmo_status_t semantic_add_parameter_object_ref_risk(
             object_id);
     }
     nmo_guid_t type_guid = NMO_GUID_NULL;
-    if (semantic_parameter_type_guid(repo, object_id, &type_guid) &&
+    if (semantic_parameter_type_guid(
+            registry, repo, object_id, &type_guid) &&
         (nmo_guid_equals(type_guid, CKPGUID_SCENE) ||
          nmo_guid_equals(type_guid, CKPGUID_SCENEOBJECT))) {
         return semantic_add_risk(
@@ -623,6 +665,7 @@ static nmo_status_t semantic_add_parameter_object_ref_risk(
 }
 
 static nmo_status_t semantic_add_parameterin_ref_risk(
+    const nmo_type_registry_t *registry,
     nmo_object_repository_t *repo,
     nmo_behavior_semantic_risk_t **risks,
     size_t *risk_count,
@@ -635,7 +678,9 @@ static nmo_status_t semantic_add_parameterin_ref_risk(
     if (object == NULL) {
         return NMO_OK;
     }
-    if (nmo_object_get_class_id(object) == NMO_CID_PARAMETERIN) {
+    if (semantic_get_object_state(
+            registry, object, NMO_CID_PARAMETERIN,
+            CKPGUID_PARAMETERIN) != NULL) {
         return NMO_OK;
     }
     return semantic_add_risk(
@@ -945,6 +990,7 @@ static nmo_status_t semantic_validate_handle_ref(
 }
 
 static bool semantic_parameter_type_guid(
+    const nmo_type_registry_t *registry,
     nmo_object_repository_t *repo,
     nmo_object_id_t parameter_id,
     nmo_guid_t *out_guid)
@@ -959,49 +1005,54 @@ static bool semantic_parameter_type_guid(
     if (object == NULL) {
         return false;
     }
-    switch (nmo_object_get_class_id(object)) {
-    case NMO_CID_PARAMETERIN: {
-        const nmo_parameterin_state_t *state =
-            (const nmo_parameterin_state_t *)nmo_object_get_state(object);
-        if (state == NULL) {
-            return false;
+    if (nmo_guid_is_null(nmo_object_get_type_guid(object))) {
+        switch (nmo_object_get_class_id(object)) {
+        case NMO_CID_PARAMETERIN: {
+            const nmo_parameterin_state_t *state =
+                (const nmo_parameterin_state_t *)nmo_object_get_state(object);
+            if (state == NULL) {
+                return false;
+            }
+            *out_guid = state->type_guid;
+            return true;
         }
-        *out_guid = state->type_guid;
+        case NMO_CID_PARAMETEROUT:
+        case NMO_CID_PARAMETERLOCAL:
+        case NMO_CID_PARAMETER: {
+            const nmo_parameter_state_t *state =
+                nmo_parameter_get_state(object);
+            if (state == NULL) {
+                return false;
+            }
+            *out_guid = state->type_guid;
+            return true;
+        }
+        default:
+            break;
+        }
+    }
+
+    const nmo_parameterin_state_t *input =
+        (const nmo_parameterin_state_t *)semantic_get_object_state(
+            registry, object, NMO_CID_PARAMETERIN,
+            CKPGUID_PARAMETERIN);
+    if (input != NULL) {
+        *out_guid = input->type_guid;
         return true;
     }
-    case NMO_CID_PARAMETEROUT: {
-        const nmo_parameterout_state_t *state =
-            (const nmo_parameterout_state_t *)nmo_object_get_state(object);
-        if (state == NULL) {
-            return false;
-        }
-        *out_guid = state->base.type_guid;
+    const nmo_parameter_state_t *value =
+        (const nmo_parameter_state_t *)semantic_get_object_state(
+            registry, object, NMO_CID_PARAMETER,
+            CKPGUID_PARAMETER);
+    if (value != NULL) {
+        *out_guid = value->type_guid;
         return true;
     }
-    case NMO_CID_PARAMETERLOCAL: {
-        const nmo_parameterlocal_state_t *state =
-            (const nmo_parameterlocal_state_t *)nmo_object_get_state(object);
-        if (state == NULL) {
-            return false;
-        }
-        *out_guid = state->base.type_guid;
-        return true;
-    }
-    case NMO_CID_PARAMETER: {
-        const nmo_parameter_state_t *state =
-            (const nmo_parameter_state_t *)nmo_object_get_state(object);
-        if (state == NULL) {
-            return false;
-        }
-        *out_guid = state->type_guid;
-        return true;
-    }
-    default:
-        return false;
-    }
+    return false;
 }
 
 static nmo_status_t semantic_add_parameter_type_mismatch_risk(
+    const nmo_type_registry_t *registry,
     nmo_object_repository_t *repo,
     nmo_behavior_semantic_risk_t **risks,
     size_t *risk_count,
@@ -1010,8 +1061,10 @@ static nmo_status_t semantic_add_parameter_type_mismatch_risk(
 {
     nmo_guid_t source_guid = NMO_GUID_NULL;
     nmo_guid_t target_guid = NMO_GUID_NULL;
-    if (!semantic_parameter_type_guid(repo, source_parameter_id, &source_guid) ||
-        !semantic_parameter_type_guid(repo, target_parameter_id, &target_guid)) {
+    if (!semantic_parameter_type_guid(
+            registry, repo, source_parameter_id, &source_guid) ||
+        !semantic_parameter_type_guid(
+            registry, repo, target_parameter_id, &target_guid)) {
         return NMO_OK;
     }
     if (nmo_guid_is_null(source_guid) || nmo_guid_is_null(target_guid) ||
@@ -1053,8 +1106,11 @@ static const nmo_type_descriptor_t *semantic_parameter_type_desc(
     nmo_object_id_t parameter_id)
 {
     nmo_guid_t type_guid = NMO_GUID_NULL;
+    const nmo_type_registry_t *registry =
+        ctx != NULL ? nmo_context_get_type_registry(ctx) : NULL;
     if (ctx == NULL ||
-        !semantic_parameter_type_guid(repo, parameter_id, &type_guid) ||
+        !semantic_parameter_type_guid(
+            registry, repo, parameter_id, &type_guid) ||
         nmo_guid_is_null(type_guid)) {
         return NULL;
     }
@@ -1213,20 +1269,20 @@ static nmo_status_t semantic_add_operation_signature_type_risk(
 }
 
 static const nmo_parameteroperation_state_t *semantic_parameteroperation_state(
+    const nmo_type_registry_t *registry,
     nmo_object_repository_t *repo,
     nmo_object_id_t operation_id)
 {
     nmo_object_t *object = repo != NULL
         ? nmo_object_repository_find_by_id(repo, operation_id)
         : NULL;
-    if (object == NULL ||
-        nmo_object_get_class_id(object) != NMO_CID_PARAMETEROPERATION) {
-        return NULL;
-    }
-    return (const nmo_parameteroperation_state_t *)nmo_object_get_state(object);
+    return (const nmo_parameteroperation_state_t *)semantic_get_object_state(
+        registry, object, NMO_CID_PARAMETEROPERATION,
+        CKPGUID_PARAMETEROPERATION);
 }
 
 static nmo_status_t semantic_add_operation_slot_ref_risk(
+    const nmo_type_registry_t *registry,
     nmo_object_repository_t *repo,
     nmo_behavior_semantic_risk_t **risks,
     size_t *risk_count,
@@ -1245,7 +1301,7 @@ static nmo_status_t semantic_add_operation_slot_ref_risk(
             "Parameter operation slot references a missing parameter",
             parameter_id);
     }
-    if (!semantic_is_parameter_object_class(nmo_object_get_class_id(object))) {
+    if (!semantic_is_parameter_object(registry, object)) {
         return semantic_add_risk(
             risks,
             risk_count,
@@ -1379,8 +1435,7 @@ static nmo_status_t semantic_add_data_cell_risk(
                         dataarray_id);
                 }
                 if (col_type == CKARRAYTYPE_PARAMETER &&
-                    !semantic_is_parameter_object_class(
-                        nmo_object_get_class_id(referenced))) {
+                    !semantic_is_parameter_object(registry, referenced)) {
                     return semantic_add_risk(
                         risks,
                         risk_count,
@@ -1583,6 +1638,7 @@ typedef struct semantic_manager_target {
 } semantic_manager_target_t;
 
 static semantic_manager_target_t semantic_manager_target_for_parameter(
+    const nmo_type_registry_t *registry,
     nmo_object_repository_t *repo,
     nmo_object_id_t parameter_id)
 {
@@ -1590,12 +1646,9 @@ static semantic_manager_target_t semantic_manager_target_for_parameter(
     nmo_object_t *object = repo != NULL
         ? nmo_object_repository_find_by_id(repo, parameter_id)
         : NULL;
-    if (object == NULL ||
-        nmo_object_get_class_id(object) != NMO_CID_PARAMETER) {
-        return target;
-    }
     const nmo_parameter_state_t *state =
-        (const nmo_parameter_state_t *)nmo_object_get_state(object);
+        (const nmo_parameter_state_t *)semantic_get_object_state(
+            registry, object, NMO_CID_PARAMETER, CKPGUID_PARAMETER);
     if (state == NULL || !state->has_state) {
         return target;
     }
@@ -1999,12 +2052,13 @@ static nmo_status_t semantic_validate_basic_edit_op(
                 op->primary_id,
                 op->data.set_value.value,
                 manager_entry,
-                semantic_manager_target_for_parameter(repo, op->primary_id)));
+                semantic_manager_target_for_parameter(
+                    registry, repo, op->primary_id)));
         }
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
             repo, risks, risk_count, op->primary_id));
         return semantic_add_parameter_object_ref_risk(
-            repo, risks, risk_count, op->primary_id);
+            registry, repo, risks, risk_count, op->primary_id);
     case NMO_EDIT_OP_ADD_NODE:
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
             repo, risks, risk_count,
@@ -2246,7 +2300,7 @@ static nmo_status_t semantic_validate_basic_edit_op(
             repo, risks, risk_count,
             op->data.connect_parameter.source_parameter_id));
         NMO_RETURN_IF_ERROR(semantic_add_parameter_object_ref_risk(
-            repo, risks, risk_count,
+            registry, repo, risks, risk_count,
             op->data.connect_parameter.source_parameter_id));
         if (op->data.connect_parameter.target_parameter_ref.has_ref) {
             NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
@@ -2283,12 +2337,13 @@ static nmo_status_t semantic_validate_basic_edit_op(
             repo, risks, risk_count,
             op->data.connect_parameter.target_parameter_id));
         NMO_RETURN_IF_ERROR(semantic_add_parameter_object_ref_risk(
-            repo, risks, risk_count,
+            registry, repo, risks, risk_count,
             op->data.connect_parameter.target_parameter_id));
         NMO_RETURN_IF_ERROR(semantic_add_parameterin_ref_risk(
-            repo, risks, risk_count,
+            registry, repo, risks, risk_count,
             op->data.connect_parameter.target_parameter_id));
         return semantic_add_parameter_type_mismatch_risk(
+            registry,
             repo,
             risks,
             risk_count,
@@ -2299,17 +2354,17 @@ static nmo_status_t semantic_validate_basic_edit_op(
             repo, risks, risk_count,
             op->data.disconnect_parameter.target_parameter_id));
         NMO_RETURN_IF_ERROR(semantic_add_parameter_object_ref_risk(
-            repo, risks, risk_count,
+            registry, repo, risks, risk_count,
             op->data.disconnect_parameter.target_parameter_id));
         return semantic_add_parameterin_ref_risk(
-            repo, risks, risk_count,
+            registry, repo, risks, risk_count,
             op->data.disconnect_parameter.target_parameter_id);
     case NMO_EDIT_OP_REMOVE_PARAMETER:
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
             repo, risks, risk_count,
             op->data.remove_parameter.parameter_id));
         return semantic_add_parameter_object_ref_risk(
-            repo, risks, risk_count,
+            registry, repo, risks, risk_count,
             op->data.remove_parameter.parameter_id);
     case NMO_EDIT_OP_ADD_OPERATION: {
         const nmo_type_descriptor_t *in1_type = NULL;
@@ -2356,7 +2411,7 @@ static nmo_status_t semantic_validate_basic_edit_op(
                 repo, risks, risk_count,
                 op->data.add_operation.in1_parameter_id));
             NMO_RETURN_IF_ERROR(semantic_add_parameter_object_ref_risk(
-                repo, risks, risk_count,
+                registry, repo, risks, risk_count,
                 op->data.add_operation.in1_parameter_id));
             in1_type = semantic_parameter_type_desc(
                 ctx, repo, op->data.add_operation.in1_parameter_id);
@@ -2390,7 +2445,7 @@ static nmo_status_t semantic_validate_basic_edit_op(
                 repo, risks, risk_count,
                 op->data.add_operation.in2_parameter_id));
             NMO_RETURN_IF_ERROR(semantic_add_parameter_object_ref_risk(
-                repo, risks, risk_count,
+                registry, repo, risks, risk_count,
                 op->data.add_operation.in2_parameter_id));
             in2_type = semantic_parameter_type_desc(
                 ctx, repo, op->data.add_operation.in2_parameter_id);
@@ -2424,7 +2479,7 @@ static nmo_status_t semantic_validate_basic_edit_op(
                 repo, risks, risk_count,
                 op->data.add_operation.out_parameter_id));
             NMO_RETURN_IF_ERROR(semantic_add_parameter_object_ref_risk(
-                repo, risks, risk_count,
+                registry, repo, risks, risk_count,
                 op->data.add_operation.out_parameter_id));
             out_type = semantic_parameter_type_desc(
                 ctx, repo, op->data.add_operation.out_parameter_id);
@@ -2465,7 +2520,7 @@ static nmo_status_t semantic_validate_basic_edit_op(
             "operation_object_type_mismatch",
             "Edit operation expects a parameter operation"));
         state = semantic_parameteroperation_state(
-            repo, op->data.rewire_operation.operation_id);
+            registry, repo, op->data.rewire_operation.operation_id);
         if (state == NULL) {
             return NMO_OK;
         }
@@ -2500,7 +2555,7 @@ static nmo_status_t semantic_validate_basic_edit_op(
                     repo, risks, risk_count,
                     op->data.rewire_operation.in1_parameter_id));
                 NMO_RETURN_IF_ERROR(semantic_add_parameter_object_ref_risk(
-                    repo, risks, risk_count,
+                    registry, repo, risks, risk_count,
                     op->data.rewire_operation.in1_parameter_id));
                 in1_type = semantic_parameter_type_desc(
                     ctx, repo, op->data.rewire_operation.in1_parameter_id);
@@ -2508,6 +2563,7 @@ static nmo_status_t semantic_validate_basic_edit_op(
             }
         } else {
             NMO_RETURN_IF_ERROR(semantic_add_operation_slot_ref_risk(
+                registry,
                 repo,
                 risks,
                 risk_count,
@@ -2547,7 +2603,7 @@ static nmo_status_t semantic_validate_basic_edit_op(
                     repo, risks, risk_count,
                     op->data.rewire_operation.in2_parameter_id));
                 NMO_RETURN_IF_ERROR(semantic_add_parameter_object_ref_risk(
-                    repo, risks, risk_count,
+                    registry, repo, risks, risk_count,
                     op->data.rewire_operation.in2_parameter_id));
                 in2_type = semantic_parameter_type_desc(
                     ctx, repo, op->data.rewire_operation.in2_parameter_id);
@@ -2555,6 +2611,7 @@ static nmo_status_t semantic_validate_basic_edit_op(
             }
         } else {
             NMO_RETURN_IF_ERROR(semantic_add_operation_slot_ref_risk(
+                registry,
                 repo,
                 risks,
                 risk_count,
@@ -2594,7 +2651,7 @@ static nmo_status_t semantic_validate_basic_edit_op(
                     repo, risks, risk_count,
                     op->data.rewire_operation.out_parameter_id));
                 NMO_RETURN_IF_ERROR(semantic_add_parameter_object_ref_risk(
-                    repo, risks, risk_count,
+                    registry, repo, risks, risk_count,
                     op->data.rewire_operation.out_parameter_id));
                 out_type = semantic_parameter_type_desc(
                     ctx, repo, op->data.rewire_operation.out_parameter_id);
@@ -2602,6 +2659,7 @@ static nmo_status_t semantic_validate_basic_edit_op(
             }
         } else {
             NMO_RETURN_IF_ERROR(semantic_add_operation_slot_ref_risk(
+                registry,
                 repo,
                 risks,
                 risk_count,
