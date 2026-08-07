@@ -1870,9 +1870,12 @@ static nmo_status_t validate_behavior_link_owners(
             NMO_CID_BEHAVIORLINK,
             CKPGUID_BEHAVIORLINK);
         if (!state) {
-            if (nmo_object_get_class_id(object) == NMO_CID_BEHAVIORLINK ||
-                nmo_guid_equals(
-                    nmo_object_get_type_guid(object), CKPGUID_BEHAVIORLINK)) {
+            nmo_guid_t type_guid = nmo_object_get_type_guid(object);
+            if ((nmo_guid_is_null(type_guid) &&
+                 nmo_object_get_class_id(object) == NMO_CID_BEHAVIORLINK) ||
+                (!nmo_guid_is_null(type_guid) &&
+                 nmo_type_query_object_is_derived_from_guid(
+                     registry, object, CKPGUID_BEHAVIORLINK))) {
                 return NMO_ERR_INVALID_STATE;
             }
             continue;

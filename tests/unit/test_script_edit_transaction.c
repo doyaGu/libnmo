@@ -1316,6 +1316,43 @@ TEST(script_edit_transaction, validates_explicit_parameter_connections)
     nmo_context_release(ctx);
 }
 
+TEST(script_edit_transaction, ignores_conflicting_raw_behavior_link)
+{
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    nmo_session_t *session = NULL;
+    nmo_script_edit_tx_t *tx = NULL;
+    nmo_object_id_t object_id = 0u;
+
+    ASSERT_NOT_NULL(ctx);
+    session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    ASSERT_EQ(NMO_OK,
+              nmo_session_create_object(
+                  session,
+                  NMO_CID_BEHAVIORLINK,
+                  "Conflicting raw link",
+                  CKPGUID_MATERIAL,
+                  &object_id,
+                  NULL));
+    nmo_object_t *object = nmo_object_repository_find_by_id(
+        nmo_session_get_repository(session), object_id);
+    ASSERT_NOT_NULL(object);
+    ASSERT_EQ(NMO_CID_BEHAVIORLINK, nmo_object_get_class_id(object));
+    ASSERT_TRUE(nmo_guid_equals(
+        CKPGUID_MATERIAL, nmo_object_get_type_guid(object)));
+
+    ASSERT_EQ(NMO_OK,
+              begin_test_script_edit(
+                  ctx, session, "ignore raw link conflict", &tx));
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_validate(
+                  tx, NMO_SCRIPT_EDIT_VALIDATE_BEHAVIOR_INDEX));
+
+    nmo_script_edit_rollback(tx);
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(script_edit_transaction,
                   behavior_edit_add_link_through_workspace_owner);
@@ -1347,6 +1384,8 @@ TEST_MAIN_BEGIN()
                   writes_explicit_parameter_values);
     REGISTER_TEST(script_edit_transaction,
                   validates_explicit_parameter_connections);
+    REGISTER_TEST(script_edit_transaction,
+                  ignores_conflicting_raw_behavior_link);
 TEST_MAIN_END()
 
 
