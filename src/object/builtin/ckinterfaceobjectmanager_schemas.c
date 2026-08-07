@@ -255,82 +255,27 @@ static void nmo_interfaceobjectmanager_post_delete(
  * Vtable + registration
  * ============================================================================ */
 
-static nmo_status_t nmo_interfaceobjectmanager_canonical_bytes(
-    const nmo_interfaceobjectmanager_state_t *state,
-    nmo_arena_t **out_arena,
-    void **out_data,
-    size_t *out_size)
-{
-    if (!state || !out_arena || !out_data || !out_size) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    *out_arena = NULL;
-    *out_data = NULL;
-    *out_size = 0;
-    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
-    if (!arena) return NMO_ERR_NOMEM;
-    nmo_chunk_t *chunk = nmo_chunk_create(arena);
-    if (!chunk) {
-        nmo_arena_destroy(arena);
-        return NMO_ERR_NOMEM;
-    }
-    chunk->class_id = NMO_CID_INTERFACEOBJECTMANAGER;
-    chunk->chunk_version = NMO_CHUNK_VERSION4;
-    chunk->data_version = 7;
-    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
-        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, UINT32_MAX);
-    nmo_status_t result = nmo_interfaceobjectmanager_serialize(
-        state, chunk, NULL, &serialize_context);
-    if (result == NMO_OK) {
-        nmo_chunk_close(chunk);
-        result = nmo_chunk_serialize_version1(
-            chunk, out_data, out_size, arena);
-    }
-    if (result != NMO_OK) {
-        nmo_arena_destroy(arena);
-        return result;
-    }
-    *out_arena = arena;
-    return NMO_OK;
-}
+static const nmo_object_serialize_pass_t
+    nmo_interfaceobjectmanager_compare_pass = {
+    .class_id = NMO_CID_INTERFACEOBJECTMANAGER,
+    .data_version = 7,
+    .serialize_flags = NMO_SERIALIZE_FLAG_FILE_MODE,
+    .save_flags = UINT32_MAX,
+    .use_context = 1,
+};
 
 static bool nmo_interfaceobjectmanager_equals(const void *a, const void *b)
 {
-    if (a == b) return true;
-    if (!a || !b) return false;
-    nmo_arena_t *arena_a = NULL;
-    nmo_arena_t *arena_b = NULL;
-    void *data_a = NULL;
-    void *data_b = NULL;
-    size_t size_a = 0;
-    size_t size_b = 0;
-    const nmo_status_t result_a =
-        nmo_interfaceobjectmanager_canonical_bytes(
-            a, &arena_a, &data_a, &size_a);
-    const nmo_status_t result_b =
-        nmo_interfaceobjectmanager_canonical_bytes(
-            b, &arena_b, &data_b, &size_b);
-    const bool equal = result_a == NMO_OK && result_b == NMO_OK &&
-        size_a == size_b &&
-        (size_a == 0 || memcmp(data_a, data_b, size_a) == 0);
-    nmo_arena_destroy(arena_a);
-    nmo_arena_destroy(arena_b);
-    return equal;
+    return nmo_object_serialized_state_equals(
+        a, b, nmo_interfaceobjectmanager_serialize,
+        &nmo_interfaceobjectmanager_compare_pass, 1, 4096);
 }
 
 static uint32_t nmo_interfaceobjectmanager_hash(const void *instance)
 {
-    if (!instance) return 0;
-    nmo_arena_t *arena = NULL;
-    void *data = NULL;
-    size_t size = 0;
-    if (nmo_interfaceobjectmanager_canonical_bytes(
-            instance, &arena, &data, &size) != NMO_OK) {
-        return 0;
-    }
-    const uint32_t hash = (uint32_t)nmo_hash_fnv1a(data, size);
-    nmo_arena_destroy(arena);
-    return hash;
+    return nmo_object_serialized_state_hash(
+        instance, nmo_interfaceobjectmanager_serialize,
+        &nmo_interfaceobjectmanager_compare_pass, 1, 4096);
 }
 
 nmo_type_vtable_t nmo_interfaceobjectmanager_vtable = {
