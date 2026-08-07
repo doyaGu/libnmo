@@ -1954,140 +1954,39 @@ nmo_status_t nmo_behavior_parse_all_interfaces(
  * Vtable + registration
  * ============================================================================ */
 
-static nmo_status_t nmo_behavior_canonical_bytes(
-    const nmo_behavior_state_t *state,
-    nmo_arena_t **out_arena,
-    void **out_data,
-    size_t *out_size)
-{
-    if (state == NULL || out_arena == NULL || out_data == NULL ||
-        out_size == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    *out_arena = NULL;
-    *out_data = NULL;
-    *out_size = 0;
-
-    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
-    if (arena == NULL) return NMO_ERR_NOMEM;
-
-    nmo_chunk_t *file_chunk = nmo_chunk_create(arena);
-    nmo_chunk_t *runtime_chunk = nmo_chunk_create(arena);
-    if (file_chunk == NULL || runtime_chunk == NULL) {
-        nmo_arena_destroy(arena);
-        return NMO_ERR_NOMEM;
-    }
-    file_chunk->class_id = NMO_CID_BEHAVIOR;
-    file_chunk->data_version = 7;
-    file_chunk->chunk_options = NMO_CHUNK_OPTION_FILE;
-    runtime_chunk->class_id = NMO_CID_BEHAVIOR;
-    runtime_chunk->data_version = 7;
-
-    nmo_status_t result = nmo_behavior_serialize(
-        state, file_chunk, NULL, NULL);
-    if (result == NMO_OK) {
-        nmo_chunk_close(file_chunk);
-        nmo_serialize_context_t runtime_context = nmo_serialize_context_create(
-            arena,
-            NULL,
-            0,
-            CK_STATESAVE_BEHAVIORSUBBEHAV |
-                CK_STATESAVE_BEHAVIORLOCALPARAMS);
-        result = nmo_behavior_serialize(
-            state, runtime_chunk, NULL, &runtime_context);
-    }
-
-    void *file_data = NULL;
-    void *runtime_data = NULL;
-    size_t file_size = 0;
-    size_t runtime_size = 0;
-    if (result == NMO_OK) {
-        nmo_chunk_close(runtime_chunk);
-        result = nmo_chunk_serialize_version1(
-            file_chunk, &file_data, &file_size, arena);
-    }
-    if (result == NMO_OK) {
-        result = nmo_chunk_serialize_version1(
-            runtime_chunk, &runtime_data, &runtime_size, arena);
-    }
-    if (result == NMO_OK) {
-        if (file_size > SIZE_MAX - runtime_size - 2u * sizeof(size_t)) {
-            result = NMO_ERR_NOMEM;
-        } else {
-            *out_size = 2u * sizeof(size_t) + file_size + runtime_size;
-            uint8_t *combined = (uint8_t *)nmo_arena_alloc(
-                arena, *out_size, alignof(size_t));
-            if (combined == NULL) {
-                result = NMO_ERR_NOMEM;
-            } else {
-                memcpy(combined, &file_size, sizeof(file_size));
-                memcpy(combined + sizeof(file_size),
-                       &runtime_size, sizeof(runtime_size));
-                memcpy(combined + 2u * sizeof(size_t), file_data, file_size);
-                memcpy(combined + 2u * sizeof(size_t) + file_size,
-                       runtime_data, runtime_size);
-                *out_data = combined;
-            }
-        }
-    }
-    if (result != NMO_OK) {
-        nmo_arena_destroy(arena);
-        return result;
-    }
-
-    *out_arena = arena;
-    return NMO_OK;
-}
+static const nmo_object_serialize_pass_t nmo_behavior_compare_passes[] = {
+    {
+        .class_id = NMO_CID_BEHAVIOR,
+        .data_version = 7,
+        .chunk_options = NMO_CHUNK_OPTION_FILE,
+    },
+    {
+        .class_id = NMO_CID_BEHAVIOR,
+        .data_version = 7,
+        .save_flags = CK_STATESAVE_BEHAVIORSUBBEHAV |
+            CK_STATESAVE_BEHAVIORLOCALPARAMS,
+        .use_context = 1,
+    },
+};
 
 static bool nmo_behavior_equals(const void *a, const void *b)
 {
-    if (a == b) return true;
-    if (a == NULL || b == NULL) return false;
-
-    nmo_arena_t *arena_a = NULL;
-    nmo_arena_t *arena_b = NULL;
-    void *data_a = NULL;
-    void *data_b = NULL;
-    size_t size_a = 0;
-    size_t size_b = 0;
-    const nmo_status_t result_a = nmo_behavior_canonical_bytes(
-        (const nmo_behavior_state_t *)a,
-        &arena_a,
-        &data_a,
-        &size_a);
-    const nmo_status_t result_b = nmo_behavior_canonical_bytes(
-        (const nmo_behavior_state_t *)b,
-        &arena_b,
-        &data_b,
-        &size_b);
-
-    const bool equal = result_a == NMO_OK && result_b == NMO_OK &&
-        size_a == size_b &&
-        (size_a == 0 || memcmp(data_a, data_b, size_a) == 0);
-    nmo_arena_destroy(arena_a);
-    nmo_arena_destroy(arena_b);
-    return equal;
+    return nmo_object_serialized_state_equals(
+        a, b, nmo_behavior_serialize,
+        nmo_behavior_compare_passes,
+        sizeof(nmo_behavior_compare_passes) /
+            sizeof(nmo_behavior_compare_passes[0]),
+        4096);
 }
 
 static uint32_t nmo_behavior_hash(const void *instance)
 {
-    if (instance == NULL) return 0;
-
-    nmo_arena_t *arena = NULL;
-    void *data = NULL;
-    size_t size = 0;
-    if (nmo_behavior_canonical_bytes(
-            (const nmo_behavior_state_t *)instance,
-            &arena,
-            &data,
-            &size) != NMO_OK) {
-        return 0;
-    }
-
-    const uint32_t hash = (uint32_t)nmo_hash_fnv1a(data, size);
-    nmo_arena_destroy(arena);
-    return hash;
+    return nmo_object_serialized_state_hash(
+        instance, nmo_behavior_serialize,
+        nmo_behavior_compare_passes,
+        sizeof(nmo_behavior_compare_passes) /
+            sizeof(nmo_behavior_compare_passes[0]),
+        4096);
 }
 
 nmo_type_vtable_t nmo_behavior_vtable = {

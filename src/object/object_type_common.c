@@ -8,6 +8,7 @@
 #include "core/nmo_array.h"
 #include "core/nmo_error.h"
 #include "format/nmo_chunk.h"
+#include "format/nmo_chunk_api.h"
 #include "type/nmo_reflection.h"
 #include <string.h>
 
@@ -120,6 +121,138 @@ nmo_status_t nmo_object_default_validate(
                                 "NULL instance in validate");
     }
     NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_object_serialized_state_bytes(
+    const void *instance,
+    nmo_object_serialize_fn serializer,
+    const nmo_object_serialize_pass_t *passes,
+    size_t pass_count,
+    nmo_arena_t *arena,
+    void **out_data,
+    size_t *out_size)
+{
+    if (instance == NULL || serializer == NULL || passes == NULL ||
+        pass_count == 0 || arena == NULL || out_data == NULL ||
+        out_size == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    *out_data = NULL;
+    *out_size = 0;
+
+    if (pass_count > SIZE_MAX / sizeof(void *) ||
+        pass_count > SIZE_MAX / sizeof(size_t)) {
+        return NMO_ERR_NOMEM;
+    }
+    void **pass_data = nmo_arena_alloc(
+        arena, pass_count * sizeof(void *), alignof(void *));
+    size_t *pass_sizes = nmo_arena_alloc(
+        arena, pass_count * sizeof(size_t), alignof(size_t));
+    if (pass_data == NULL || pass_sizes == NULL) return NMO_ERR_NOMEM;
+
+    size_t payload_size = 0;
+    for (size_t i = 0; i < pass_count; ++i) {
+        nmo_chunk_t *chunk = nmo_chunk_create(arena);
+        if (chunk == NULL) return NMO_ERR_NOMEM;
+        chunk->class_id = passes[i].class_id;
+        chunk->chunk_version = NMO_CHUNK_VERSION4;
+        chunk->data_version = passes[i].data_version;
+        chunk->chunk_options = passes[i].chunk_options;
+
+        void *context = NULL;
+        nmo_serialize_context_t serialize_context;
+        if (passes[i].use_context) {
+            serialize_context = nmo_serialize_context_create(
+                arena, NULL, passes[i].serialize_flags,
+                passes[i].save_flags);
+            context = &serialize_context;
+        }
+        nmo_status_t result = serializer(
+            instance, chunk, NULL, context);
+        if (result != NMO_OK) return result;
+        nmo_chunk_close(chunk);
+        result = nmo_chunk_serialize_version1(
+            chunk, &pass_data[i], &pass_sizes[i], arena);
+        if (result != NMO_OK) return result;
+        if (pass_sizes[i] > SIZE_MAX - payload_size) {
+            return NMO_ERR_NOMEM;
+        }
+        payload_size += pass_sizes[i];
+    }
+
+    if (pass_count == 1) {
+        *out_data = pass_data[0];
+        *out_size = pass_sizes[0];
+        return NMO_OK;
+    }
+
+    const size_t header_size = pass_count * sizeof(size_t);
+    if (payload_size > SIZE_MAX - header_size) return NMO_ERR_NOMEM;
+    const size_t combined_size = header_size + payload_size;
+    uint8_t *combined = nmo_arena_alloc(
+        arena, combined_size, alignof(size_t));
+    if (combined == NULL) return NMO_ERR_NOMEM;
+    memcpy(combined, pass_sizes, header_size);
+    size_t offset = header_size;
+    for (size_t i = 0; i < pass_count; ++i) {
+        if (pass_sizes[i] > 0) {
+            memcpy(combined + offset, pass_data[i], pass_sizes[i]);
+            offset += pass_sizes[i];
+        }
+    }
+    *out_data = combined;
+    *out_size = combined_size;
+    return NMO_OK;
+}
+
+bool nmo_object_serialized_state_equals(
+    const void *a,
+    const void *b,
+    nmo_object_serialize_fn serializer,
+    const nmo_object_serialize_pass_t *passes,
+    size_t pass_count,
+    size_t arena_block_size)
+{
+    if (a == b) return true;
+    if (a == NULL || b == NULL) return false;
+    nmo_arena_t *arena = nmo_arena_create(
+        NULL, arena_block_size != 0 ? arena_block_size : 4096);
+    if (arena == NULL) return false;
+    void *data_a = NULL;
+    void *data_b = NULL;
+    size_t size_a = 0;
+    size_t size_b = 0;
+    const nmo_status_t result_a = nmo_object_serialized_state_bytes(
+        a, serializer, passes, pass_count, arena, &data_a, &size_a);
+    const nmo_status_t result_b = nmo_object_serialized_state_bytes(
+        b, serializer, passes, pass_count, arena, &data_b, &size_b);
+    const bool equal = result_a == NMO_OK && result_b == NMO_OK &&
+        size_a == size_b &&
+        (size_a == 0 || memcmp(data_a, data_b, size_a) == 0);
+    nmo_arena_destroy(arena);
+    return equal;
+}
+
+uint32_t nmo_object_serialized_state_hash(
+    const void *instance,
+    nmo_object_serialize_fn serializer,
+    const nmo_object_serialize_pass_t *passes,
+    size_t pass_count,
+    size_t arena_block_size)
+{
+    if (instance == NULL) return 0;
+    nmo_arena_t *arena = nmo_arena_create(
+        NULL, arena_block_size != 0 ? arena_block_size : 4096);
+    if (arena == NULL) return 0;
+    void *data = NULL;
+    size_t size = 0;
+    const nmo_status_t result = nmo_object_serialized_state_bytes(
+        instance, serializer, passes, pass_count, arena, &data, &size);
+    const uint32_t hash = result == NMO_OK
+        ? (uint32_t)nmo_hash_fnv1a(data, size)
+        : 0;
+    nmo_arena_destroy(arena);
+    return hash;
 }
 
 

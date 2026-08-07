@@ -13,6 +13,7 @@
 #include "core/nmo_hash.h"
 
 #include "object/nmo_deserialize_context.h"
+#include "object/nmo_serialize_context.h"
 
 #include "format/nmo_chunk.h"
 #include "type/nmo_type_system.h"
@@ -65,6 +66,33 @@ NMO_API nmo_status_t nmo_object_default_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
     void *context);
+
+/* ============================================================================
+ * Serialized State Comparison
+ * ============================================================================ */
+typedef struct nmo_object_serialize_pass {
+    nmo_class_id_t class_id;
+    uint32_t data_version;
+    uint32_t chunk_options;
+    uint32_t serialize_flags;
+    uint32_t save_flags;
+    uint8_t use_context;
+} nmo_object_serialize_pass_t;
+
+NMO_API bool nmo_object_serialized_state_equals(
+    const void *a,
+    const void *b,
+    nmo_object_serialize_fn serializer,
+    const nmo_object_serialize_pass_t *passes,
+    size_t pass_count,
+    size_t arena_block_size);
+
+NMO_API uint32_t nmo_object_serialized_state_hash(
+    const void *instance,
+    nmo_object_serialize_fn serializer,
+    const nmo_object_serialize_pass_t *passes,
+    size_t pass_count,
+    size_t arena_block_size);
 
 
 /* ============================================================================
