@@ -39,7 +39,15 @@
 #include <string.h>
 #include <stdint.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(3dentity, nmo_3dentity_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE(
+    3dentity,
+    nmo_3dentity_state_t,
+    do {
+        nmo_status_t result = nmo_renderobject_vtable.create(
+            &state->base, NULL, context);
+        if (result != NMO_OK) return result;
+    } while (0),
+    nmo_renderobject_vtable.destroy(&state->base, NULL, context))
 
 static void nmo_3dentity_dispose_base_arrays(nmo_3dentity_state_t *state)
 {
@@ -1257,6 +1265,60 @@ static uint32_t nmo_3dentity_hash(const void *instance)
         hash, &state->has_matrix_chunk, sizeof(state->has_matrix_chunk));
 }
 
+static nmo_status_t nmo_3dentity_copy_skin(
+    nmo_arena_t *arena,
+    const nmo_3dentity_skin_t *source,
+    nmo_3dentity_skin_t **out_skin)
+{
+    if (arena == NULL || out_skin == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    *out_skin = NULL;
+    if (source == NULL) return NMO_OK;
+    if ((source->bone_count > 0 && source->bones == NULL) ||
+        (source->vertex_count > 0 && source->vertices == NULL) ||
+        (source->normal_count > 0 && source->normals == NULL)) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    for (uint32_t i = 0; i < source->vertex_count; ++i) {
+        if (source->vertices[i].bone_count > 0 &&
+            (source->vertices[i].bone_indices == NULL ||
+             source->vertices[i].bone_weights == NULL)) {
+            return NMO_ERR_VALIDATION_FAILED;
+        }
+    }
+
+    nmo_3dentity_skin_t *copy = nmo_arena_alloc(
+        arena, sizeof(*copy), _Alignof(nmo_3dentity_skin_t));
+    if (copy == NULL) return NMO_ERR_NOMEM;
+    *copy = *source;
+    copy->bones = NULL;
+    copy->vertices = NULL;
+    copy->normals = NULL;
+
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(
+        arena, (void **)&copy->bones, source->bones,
+        sizeof(*copy->bones), source->bone_count));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(
+        arena, (void **)&copy->vertices, source->vertices,
+        sizeof(*copy->vertices), source->vertex_count));
+    for (uint32_t i = 0; i < source->vertex_count; ++i) {
+        copy->vertices[i].bone_indices = NULL;
+        copy->vertices[i].bone_weights = NULL;
+        NMO_RETURN_IF_ERROR(nmo_object_copy_array(
+            arena, (void **)&copy->vertices[i].bone_indices,
+            source->vertices[i].bone_indices, sizeof(uint32_t),
+            source->vertices[i].bone_count));
+        NMO_RETURN_IF_ERROR(nmo_object_copy_array(
+            arena, (void **)&copy->vertices[i].bone_weights,
+            source->vertices[i].bone_weights, sizeof(float),
+            source->vertices[i].bone_count));
+    }
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(
+        arena, (void **)&copy->normals, source->normals,
+        sizeof(*copy->normals), source->normal_count));
+    *out_skin = copy;
+    return NMO_OK;
+}
+
 static nmo_status_t nmo_3dentity_copy(
     const void *src,
     void *dst,
@@ -1265,13 +1327,25 @@ static nmo_status_t nmo_3dentity_copy(
 {
     const nmo_3dentity_state_t *source = (const nmo_3dentity_state_t *)src;
     nmo_3dentity_state_t *target = (nmo_3dentity_state_t *)dst;
+    if (source == NULL || target == NULL || type == NULL || arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
     NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
+    nmo_type_descriptor_t base_type = {
+        .size = sizeof(nmo_renderobject_state_t),
+    };
+    NMO_RETURN_IF_ERROR(nmo_renderobject_vtable.copy(
+        &source->base, &target->base, &base_type, arena));
+    target->mesh_ids = NULL;
+    target->animation_ids = NULL;
+    target->skin = NULL;
     NMO_RETURN_IF_ERROR(nmo_object_copy_array(
         arena, (void **)&target->mesh_ids, source->mesh_ids,
         sizeof(nmo_ref_t), source->mesh_count));
-    return nmo_object_copy_array(
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(
         arena, (void **)&target->animation_ids, source->animation_ids,
-        sizeof(nmo_ref_t), source->animation_count);
+        sizeof(nmo_ref_t), source->animation_count));
+    return nmo_3dentity_copy_skin(arena, source->skin, &target->skin);
 }
 
 static nmo_status_t nmo_3dentity_validate(

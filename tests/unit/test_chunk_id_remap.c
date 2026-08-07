@@ -4513,8 +4513,6 @@ TEST(chunk_id_remap, entity_content_equality_ignores_storage_addresses) {
     for (size_t i = 0; i < 2; ++i) {
         ASSERT_EQ(NMO_OK, nmo_3dentity_vtable.create(
             &states[i], NULL, NULL));
-        ASSERT_EQ(NMO_OK, nmo_renderobject_vtable.create(
-            &states[i].base, NULL, NULL));
         ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
             &states[i].base.base.scripts, 101));
 
@@ -4584,9 +4582,70 @@ TEST(chunk_id_remap, entity_content_equality_ignores_storage_addresses) {
     ASSERT_FALSE(nmo_3dentity_vtable.equals(&states[0], &states[1]));
 
     for (size_t i = 0; i < 2; ++i) {
-        nmo_renderobject_vtable.destroy(&states[i].base, NULL, NULL);
+        nmo_3dentity_vtable.destroy(&states[i], NULL, NULL);
         nmo_arena_destroy(arenas[i]);
     }
+}
+
+TEST(chunk_id_remap, entity_copy_clones_inherited_and_skin_state) {
+    nmo_arena_t *source_arena = nmo_arena_create(NULL, 8192);
+    nmo_arena_t *copy_arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(source_arena);
+    ASSERT_NOT_NULL(copy_arena);
+
+    nmo_3dentity_state_t source;
+    nmo_3dentity_state_t copy;
+    ASSERT_EQ(NMO_OK, nmo_3dentity_vtable.create(&source, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_3dentity_vtable.create(&copy, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &source.base.base.scripts, 101));
+
+    source.skin = nmo_arena_alloc(
+        source_arena, sizeof(*source.skin),
+        _Alignof(nmo_3dentity_skin_t));
+    ASSERT_NOT_NULL(source.skin);
+    memset(source.skin, 0, sizeof(*source.skin));
+    source.skin->vertex_count = 1;
+    source.skin->vertices = nmo_arena_alloc(
+        source_arena, sizeof(*source.skin->vertices),
+        _Alignof(nmo_3dentity_skin_vertex_t));
+    ASSERT_NOT_NULL(source.skin->vertices);
+    memset(source.skin->vertices, 0, sizeof(*source.skin->vertices));
+    source.skin->vertices[0].bone_count = 1;
+    source.skin->vertices[0].bone_indices = nmo_arena_alloc(
+        source_arena, sizeof(uint32_t), _Alignof(uint32_t));
+    source.skin->vertices[0].bone_weights = nmo_arena_alloc(
+        source_arena, sizeof(float), _Alignof(float));
+    ASSERT_NOT_NULL(source.skin->vertices[0].bone_indices);
+    ASSERT_NOT_NULL(source.skin->vertices[0].bone_weights);
+    source.skin->vertices[0].bone_indices[0] = 0;
+    source.skin->vertices[0].bone_weights[0] = 0.5f;
+
+    nmo_type_descriptor_t entity_type = {
+        .size = sizeof(nmo_3dentity_state_t),
+    };
+    ASSERT_EQ(NMO_OK, nmo_3dentity_vtable.copy(
+        &source, &copy, &entity_type, copy_arena));
+    ASSERT_NE(source.base.base.scripts.data,
+              copy.base.base.scripts.data);
+    ASSERT_NE(source.skin, copy.skin);
+    ASSERT_NE(source.skin->vertices, copy.skin->vertices);
+    ASSERT_NE(source.skin->vertices[0].bone_indices,
+              copy.skin->vertices[0].bone_indices);
+    ASSERT_NE(source.skin->vertices[0].bone_weights,
+              copy.skin->vertices[0].bone_weights);
+    ASSERT_TRUE(nmo_3dentity_vtable.equals(&source, &copy));
+    ASSERT_EQ(nmo_3dentity_vtable.hash(&source),
+              nmo_3dentity_vtable.hash(&copy));
+
+    copy.skin->vertices[0].bone_weights[0] = 0.75f;
+    ASSERT_EQ(0.5f, source.skin->vertices[0].bone_weights[0]);
+    ASSERT_FALSE(nmo_3dentity_vtable.equals(&source, &copy));
+
+    nmo_3dentity_vtable.destroy(&copy, NULL, NULL);
+    nmo_3dentity_vtable.destroy(&source, NULL, NULL);
+    nmo_arena_destroy(copy_arena);
+    nmo_arena_destroy(source_arena);
 }
 
 TEST(chunk_id_remap, entity_scalar_ref_sections_reject_truncation_atomically) {
@@ -8568,6 +8627,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, scalar_ref_sections_do_not_publish_truncated_state);
     REGISTER_TEST(chunk_id_remap, entity_scalar_refs_round_trip_unresolved_raw_ids);
     REGISTER_TEST(chunk_id_remap, entity_content_equality_ignores_storage_addresses);
+    REGISTER_TEST(chunk_id_remap, entity_copy_clones_inherited_and_skin_state);
     REGISTER_TEST(chunk_id_remap, entity_scalar_ref_sections_reject_truncation_atomically);
     REGISTER_TEST(chunk_id_remap, entity_skin_rejects_negative_vertex_bone_count_atomically);
     REGISTER_TEST(chunk_id_remap, entity_skin_rejects_oversized_counts_before_allocation);
