@@ -16,6 +16,7 @@
 #include "object/nmo_object_repository.h"
 #include "runtime/nmo_context.h"
 #include "type/nmo_type_guids.h"
+#include "type/nmo_type_query.h"
 #include "../runtime/runtime_internal.h"
 
 #include <stdarg.h>
@@ -145,16 +146,41 @@ static nmo_status_t probe_reject(nmo_probe_selector_result_t *result,
     return NMO_ERR_INVALID_ARGUMENT;
 }
 
+static void *probe_get_object_state(
+    const nmo_type_registry_t *registry,
+    nmo_object_t *object,
+    nmo_class_id_t class_id,
+    nmo_guid_t type_guid)
+{
+    if (registry == NULL || object == NULL) {
+        return NULL;
+    }
+    if (nmo_guid_is_null(nmo_object_get_type_guid(object)) &&
+        nmo_object_get_class_id(object) == class_id) {
+        return nmo_object_get_state(object);
+    }
+    return nmo_type_query_object_get_ancestor_state_by_guid(
+        registry, object, type_guid);
+}
+
 static const nmo_behavior_state_t *probe_behavior_state_by_id(
+    const nmo_type_registry_t *registry,
     nmo_object_repository_t *repo,
     nmo_object_id_t behavior_id)
 {
     nmo_object_t *object = repo != NULL
         ? nmo_object_repository_find_by_id(repo, behavior_id)
         : NULL;
-    return object != NULL && nmo_object_get_class_id(object) == NMO_CID_BEHAVIOR
-        ? (const nmo_behavior_state_t *)nmo_object_get_state(object)
-        : NULL;
+    return (const nmo_behavior_state_t *)probe_get_object_state(
+        registry, object, NMO_CID_BEHAVIOR, CKPGUID_BEHAVIOR);
+}
+
+static const nmo_behaviorlink_state_t *probe_behaviorlink_state(
+    const nmo_type_registry_t *registry,
+    nmo_object_t *object)
+{
+    return (const nmo_behaviorlink_state_t *)probe_get_object_state(
+        registry, object, NMO_CID_BEHAVIORLINK, CKPGUID_BEHAVIORLINK);
 }
 
 static bool probe_behavior_has_io(const nmo_behavior_state_t *state,
@@ -520,6 +546,7 @@ static void probe_append_id(char *buffer,
 }
 
 static size_t probe_collect_touching_links(
+    const nmo_type_registry_t *registry,
     nmo_object_repository_t *repo,
     const nmo_behavior_state_t *parent,
     const nmo_behavior_state_t *target,
@@ -551,11 +578,7 @@ static size_t probe_collect_touching_links(
         nmo_object_t *link_obj =
             nmo_object_repository_find_by_id(repo, link_id);
         const nmo_behaviorlink_state_t *link =
-            link_obj != NULL &&
-                    nmo_object_get_class_id(link_obj) == NMO_CID_BEHAVIORLINK
-                ? (const nmo_behaviorlink_state_t *)nmo_object_get_state(
-                      link_obj)
-                : NULL;
+            probe_behaviorlink_state(registry, link_obj);
         if (!probe_link_touches_behavior(target, link, to_io_only)) {
             continue;
         }
@@ -576,6 +599,7 @@ static size_t probe_collect_touching_links(
 }
 
 static size_t probe_select_touching_links(
+    const nmo_type_registry_t *registry,
     nmo_object_repository_t *repo,
     const nmo_behavior_state_t *parent,
     const nmo_behavior_state_t *target,
@@ -586,6 +610,7 @@ static size_t probe_select_touching_links(
     size_t candidate_ids_size)
 {
     size_t count = probe_collect_touching_links(
+        registry,
         repo,
         parent,
         target,
@@ -595,7 +620,8 @@ static size_t probe_select_touching_links(
         candidate_ids,
         candidate_ids_size);
     if (count == 0u && mode == PROBE_LINK_TOUCH_TO_IO_FIRST) {
-        count = probe_collect_touching_links(repo,
+        count = probe_collect_touching_links(registry,
+                                             repo,
                                              parent,
                                              target,
                                              false,
@@ -638,6 +664,7 @@ static void probe_apply_selected_link(nmo_probe_selector_result_t *result,
 }
 
 static nmo_status_t probe_select_safe_link(
+    const nmo_type_registry_t *registry,
     nmo_object_repository_t *repo,
     const nmo_behavior_state_t *parent,
     const nmo_behavior_state_t *target,
@@ -649,7 +676,8 @@ static nmo_status_t probe_select_safe_link(
     char candidate_ids[256];
     nmo_object_id_t selected_link_id = 0u;
     const nmo_behaviorlink_state_t *selected_link = NULL;
-    size_t candidate_count = probe_select_touching_links(repo,
+    size_t candidate_count = probe_select_touching_links(registry,
+                                                         repo,
                                                          parent,
                                                          target,
                                                          mode,
@@ -675,6 +703,7 @@ static nmo_status_t probe_select_safe_link(
 }
 
 static nmo_object_id_t probe_find_operation_owner_behavior(
+    const nmo_type_registry_t *registry,
     nmo_object_repository_t *repo,
     nmo_object_id_t operation_id,
     const nmo_parameteroperation_state_t *operation)
@@ -687,20 +716,18 @@ static nmo_object_id_t probe_find_operation_owner_behavior(
     if (operation != NULL && operation->has_owner && owner_id != 0u) {
         nmo_object_t *owner =
             nmo_object_repository_find_by_id(repo, owner_id);
-        if (owner != NULL &&
-            nmo_object_get_class_id(owner) == NMO_CID_BEHAVIOR) {
+        if (probe_get_object_state(
+                registry, owner, NMO_CID_BEHAVIOR,
+                CKPGUID_BEHAVIOR) != NULL) {
             return owner_id;
         }
     }
     size_t object_count = nmo_object_repository_get_count(repo);
     for (size_t i = 0; i < object_count; ++i) {
         nmo_object_t *object = nmo_object_repository_get_by_index(repo, i);
-        if (object == NULL ||
-            nmo_object_get_class_id(object) != NMO_CID_BEHAVIOR) {
-            continue;
-        }
         const nmo_behavior_state_t *behavior =
-            (const nmo_behavior_state_t *)nmo_object_get_state(object);
+            (const nmo_behavior_state_t *)probe_get_object_state(
+                registry, object, NMO_CID_BEHAVIOR, CKPGUID_BEHAVIOR);
         if (behavior != NULL &&
             nmo_behavior_ref_array_find(
                 &behavior->operations, operation_id, NULL)) {
@@ -711,6 +738,7 @@ static nmo_object_id_t probe_find_operation_owner_behavior(
 }
 
 static nmo_object_id_t probe_find_parameter_owner_behavior(
+    const nmo_type_registry_t *registry,
     nmo_object_repository_t *repo,
     nmo_object_id_t parameter_id)
 {
@@ -721,12 +749,9 @@ static nmo_object_id_t probe_find_parameter_owner_behavior(
     nmo_object_t **objects = nmo_object_repository_get_all(repo, &object_count);
     for (size_t i = 0; objects != NULL && i < object_count; ++i) {
         nmo_object_t *object = objects[i];
-        if (object == NULL ||
-            nmo_object_get_class_id(object) != NMO_CID_BEHAVIOR) {
-            continue;
-        }
         const nmo_behavior_state_t *behavior =
-            (const nmo_behavior_state_t *)nmo_object_get_state(object);
+            (const nmo_behavior_state_t *)probe_get_object_state(
+                registry, object, NMO_CID_BEHAVIOR, CKPGUID_BEHAVIOR);
         if (probe_behavior_has_parameter(behavior, parameter_id)) {
             return nmo_object_get_id(object);
         }
@@ -751,6 +776,7 @@ static void probe_add_related_behavior(nmo_object_id_t *ids,
 }
 
 static void probe_collect_operation_parameter_behaviors(
+    const nmo_type_registry_t *registry,
     nmo_object_repository_t *repo,
     nmo_object_id_t parameter_id,
     nmo_object_id_t *ids,
@@ -758,7 +784,7 @@ static void probe_collect_operation_parameter_behaviors(
     size_t capacity)
 {
     nmo_object_id_t owner =
-        probe_find_parameter_owner_behavior(repo, parameter_id);
+        probe_find_parameter_owner_behavior(registry, repo, parameter_id);
     probe_add_related_behavior(ids, count, capacity, owner);
 
     nmo_object_t *parameter_obj = repo != NULL
@@ -772,8 +798,9 @@ static void probe_collect_operation_parameter_behaviors(
         const nmo_object_id_t source_id =
             nmo_parameterin_source_id(param_in);
         if (source_id != 0u) {
-            owner = probe_find_parameter_owner_behavior(repo,
-                                                        source_id);
+            owner = probe_find_parameter_owner_behavior(registry,
+                                                         repo,
+                                                         source_id);
             probe_add_related_behavior(ids, count, capacity, owner);
         }
     }
@@ -793,7 +820,7 @@ static void probe_collect_operation_parameter_behaviors(
             continue;
         }
         owner = probe_find_parameter_owner_behavior(
-            repo, nmo_object_get_id(object));
+            registry, repo, nmo_object_get_id(object));
         probe_add_related_behavior(ids, count, capacity, owner);
     }
 
@@ -807,13 +834,14 @@ static void probe_collect_operation_parameter_behaviors(
             const nmo_object_id_t destination_id =
                 nmo_parameterout_destination_id(param_out, i);
             owner = probe_find_parameter_owner_behavior(
-                repo, destination_id);
+                registry, repo, destination_id);
             probe_add_related_behavior(ids, count, capacity, owner);
         }
     }
 }
 
 static size_t probe_collect_operation_related_behaviors(
+    const nmo_type_registry_t *registry,
     nmo_object_repository_t *repo,
     nmo_object_id_t operation_id,
     const nmo_parameteroperation_state_t *operation,
@@ -828,23 +856,28 @@ static size_t probe_collect_operation_related_behaviors(
         ids,
         &count,
         capacity,
-        probe_find_operation_owner_behavior(repo, operation_id, operation));
+        probe_find_operation_owner_behavior(
+            registry, repo, operation_id, operation));
     if (operation->has_in1) {
         probe_collect_operation_parameter_behaviors(
-            repo, nmo_parameteroperation_in1_id(operation), ids, &count, capacity);
+            registry, repo, nmo_parameteroperation_in1_id(operation),
+            ids, &count, capacity);
     }
     if (operation->has_in2) {
         probe_collect_operation_parameter_behaviors(
-            repo, nmo_parameteroperation_in2_id(operation), ids, &count, capacity);
+            registry, repo, nmo_parameteroperation_in2_id(operation),
+            ids, &count, capacity);
     }
     if (operation->has_out) {
         probe_collect_operation_parameter_behaviors(
-            repo, nmo_parameteroperation_out_id(operation), ids, &count, capacity);
+            registry, repo, nmo_parameteroperation_out_id(operation),
+            ids, &count, capacity);
     }
     return count;
 }
 
 static bool probe_link_touches_any_behavior(
+    const nmo_type_registry_t *registry,
     nmo_object_repository_t *repo,
     const nmo_behaviorlink_state_t *link,
     const nmo_object_id_t *behavior_ids,
@@ -855,7 +888,7 @@ static bool probe_link_touches_any_behavior(
     }
     for (size_t i = 0; i < behavior_count; ++i) {
         const nmo_behavior_state_t *behavior =
-            probe_behavior_state_by_id(repo, behavior_ids[i]);
+            probe_behavior_state_by_id(registry, repo, behavior_ids[i]);
         if (probe_link_touches_behavior(behavior, link, false)) {
             return true;
         }
@@ -864,6 +897,7 @@ static bool probe_link_touches_any_behavior(
 }
 
 static bool probe_explicit_endpoints_touch_operation_flow(
+    const nmo_type_registry_t *registry,
     nmo_object_repository_t *repo,
     const nmo_behavior_state_t *parent,
     nmo_object_id_t from_io_id,
@@ -883,16 +917,13 @@ static bool probe_explicit_endpoints_touch_operation_flow(
         nmo_object_t *link_obj =
             nmo_object_repository_find_by_id(repo, link_id);
         const nmo_behaviorlink_state_t *link =
-            link_obj != NULL &&
-                    nmo_object_get_class_id(link_obj) == NMO_CID_BEHAVIORLINK
-                ? (const nmo_behaviorlink_state_t *)nmo_object_get_state(
-                      link_obj)
-                : NULL;
+            probe_behaviorlink_state(registry, link_obj);
         if (link == NULL || nmo_behaviorlink_in_io_id(link) != from_io_id ||
             nmo_behaviorlink_out_io_id(link) != to_io_id) {
             continue;
         }
-        return probe_link_touches_any_behavior(repo,
+        return probe_link_touches_any_behavior(registry,
+                                               repo,
                                                link,
                                                related_behaviors,
                                                related_count);
@@ -901,6 +932,7 @@ static bool probe_explicit_endpoints_touch_operation_flow(
 }
 
 static size_t probe_collect_operation_touching_links(
+    const nmo_type_registry_t *registry,
     nmo_object_repository_t *repo,
     const nmo_behavior_state_t *parent,
     nmo_object_id_t operation_id,
@@ -920,6 +952,7 @@ static size_t probe_collect_operation_touching_links(
 
     nmo_object_id_t related_behaviors[32];
     size_t related_count = probe_collect_operation_related_behaviors(
+        registry,
         repo,
         operation_id,
         operation,
@@ -937,13 +970,9 @@ static size_t probe_collect_operation_touching_links(
         nmo_object_t *link_obj =
             nmo_object_repository_find_by_id(repo, link_id);
         const nmo_behaviorlink_state_t *link =
-            link_obj != NULL &&
-                    nmo_object_get_class_id(link_obj) == NMO_CID_BEHAVIORLINK
-                ? (const nmo_behaviorlink_state_t *)nmo_object_get_state(
-                      link_obj)
-                : NULL;
+            probe_behaviorlink_state(registry, link_obj);
         if (!probe_link_touches_any_behavior(
-                repo, link, related_behaviors, related_count)) {
+                registry, repo, link, related_behaviors, related_count)) {
             continue;
         }
         if (out_selected_link_id != NULL) {
@@ -963,13 +992,15 @@ static nmo_status_t probe_analyze_message(nmo_context_t *ctx,
                                           const nmo_probe_selector_request_t *request,
                                           nmo_probe_selector_result_t *result)
 {
+    const nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
     if (request->message_node_id != 0u) {
         nmo_probe_selector_mode_t mode =
             request->remove_link_id != 0u
                 ? NMO_PROBE_SELECTOR_MODE_EXPLICIT_LINK
                 : NMO_PROBE_SELECTOR_MODE_EXPLICIT_NODE;
         const nmo_behavior_state_t *message =
-            probe_behavior_state_by_id(repo, request->message_node_id);
+            probe_behavior_state_by_id(
+                registry, repo, request->message_node_id);
         if (message == NULL) {
             return probe_reject(result,
                                 mode,
@@ -999,12 +1030,7 @@ static nmo_status_t probe_analyze_message(nmo_context_t *ctx,
             nmo_object_t *link_obj =
                 nmo_object_repository_find_by_id(repo, request->remove_link_id);
             const nmo_behaviorlink_state_t *link =
-                link_obj != NULL &&
-                        nmo_object_get_class_id(link_obj) ==
-                            NMO_CID_BEHAVIORLINK
-                    ? (const nmo_behaviorlink_state_t *)nmo_object_get_state(
-                          link_obj)
-                    : NULL;
+                probe_behaviorlink_state(registry, link_obj);
             if (link == NULL ||
                 !probe_link_touches_behavior(message, link, false)) {
                 return probe_reject(
@@ -1051,6 +1077,7 @@ static nmo_status_t probe_analyze_message(nmo_context_t *ctx,
             return NMO_OK;
         }
         return probe_select_safe_link(
+            registry,
             repo,
             parent,
             message,
@@ -1074,7 +1101,7 @@ static nmo_status_t probe_analyze_message(nmo_context_t *ctx,
             &parent->sub_behaviors, i);
         if (child_id == 0) continue;
         const nmo_behavior_state_t *child =
-            probe_behavior_state_by_id(repo, child_id);
+            probe_behavior_state_by_id(registry, repo, child_id);
         if (!probe_is_message_behavior(ctx, child)) {
             continue;
         }
@@ -1112,10 +1139,11 @@ static nmo_status_t probe_analyze_message(nmo_context_t *ctx,
             candidate_ids);
     }
     const nmo_behavior_state_t *message =
-        probe_behavior_state_by_id(repo, selected_id);
+        probe_behavior_state_by_id(registry, repo, selected_id);
     result->selected_node_id = selected_id;
     result->safe_insertion.selected_node_id = selected_id;
-    return probe_select_safe_link(repo,
+    return probe_select_safe_link(registry,
+                                  repo,
                                   parent,
                                   message,
                                   PROBE_LINK_TOUCH_TO_IO_FIRST,
@@ -1131,6 +1159,7 @@ static nmo_status_t probe_analyze_data_cell(
     const nmo_probe_selector_request_t *request,
     nmo_probe_selector_result_t *result)
 {
+    const nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
     unsigned explicit_count = 0u;
     explicit_count += request->write_node_id != 0u ? 1u : 0u;
     explicit_count += request->write_operation_id != 0u ? 1u : 0u;
@@ -1146,7 +1175,8 @@ static nmo_status_t probe_analyze_data_cell(
 
     if (request->write_node_id != 0u) {
         const nmo_behavior_state_t *node =
-            probe_behavior_state_by_id(repo, request->write_node_id);
+            probe_behavior_state_by_id(
+                registry, repo, request->write_node_id);
         if (node == NULL) {
             return probe_reject(result,
                                 NMO_PROBE_SELECTOR_MODE_EXPLICIT_NODE,
@@ -1182,12 +1212,7 @@ static nmo_status_t probe_analyze_data_cell(
             nmo_object_t *link_obj =
                 nmo_object_repository_find_by_id(repo, request->remove_link_id);
             const nmo_behaviorlink_state_t *link =
-                link_obj != NULL &&
-                        nmo_object_get_class_id(link_obj) ==
-                            NMO_CID_BEHAVIORLINK
-                    ? (const nmo_behaviorlink_state_t *)nmo_object_get_state(
-                          link_obj)
-                    : NULL;
+                probe_behaviorlink_state(registry, link_obj);
             if (link == NULL ||
                 !probe_link_touches_behavior(node, link, false)) {
                 return probe_reject(
@@ -1205,6 +1230,7 @@ static nmo_status_t probe_analyze_data_cell(
             return NMO_OK;
         }
         return probe_select_safe_link(
+            registry,
             repo,
             parent,
             node,
@@ -1245,7 +1271,8 @@ static nmo_status_t probe_analyze_data_cell(
                 "debug probe write-operation requires --remove-link or explicit IO endpoints");
         }
         nmo_object_id_t operation_owner_id =
-            probe_find_operation_owner_behavior(repo,
+            probe_find_operation_owner_behavior(registry,
+                                                repo,
                                                 request->write_operation_id,
                                                 operation);
         if (operation_owner_id == 0u ||
@@ -1263,12 +1290,7 @@ static nmo_status_t probe_analyze_data_cell(
             nmo_object_t *link_obj =
                 nmo_object_repository_find_by_id(repo, request->remove_link_id);
             const nmo_behaviorlink_state_t *link =
-                link_obj != NULL &&
-                        nmo_object_get_class_id(link_obj) ==
-                            NMO_CID_BEHAVIORLINK
-                    ? (const nmo_behaviorlink_state_t *)nmo_object_get_state(
-                          link_obj)
-                    : NULL;
+                probe_behaviorlink_state(registry, link_obj);
             if (link == NULL || parent == NULL ||
                 !nmo_behavior_ref_array_find(&parent->sub_behavior_links,
                                              request->remove_link_id,
@@ -1283,13 +1305,14 @@ static nmo_status_t probe_analyze_data_cell(
             nmo_object_id_t related_behaviors[32];
             size_t related_count =
                 probe_collect_operation_related_behaviors(
+                    registry,
                     repo,
                     request->write_operation_id,
                     operation,
                     related_behaviors,
                     sizeof(related_behaviors) / sizeof(related_behaviors[0]));
             if (!probe_link_touches_any_behavior(
-                    repo, link, related_behaviors, related_count)) {
+                    registry, repo, link, related_behaviors, related_count)) {
                 return probe_reject(
                     result,
                     NMO_PROBE_SELECTOR_MODE_EXPLICIT_OPERATION,
@@ -1319,12 +1342,14 @@ static nmo_status_t probe_analyze_data_cell(
             nmo_object_id_t related_behaviors[32];
             size_t related_count =
                 probe_collect_operation_related_behaviors(
+                    registry,
                     repo,
                     request->write_operation_id,
                     operation,
                     related_behaviors,
                     sizeof(related_behaviors) / sizeof(related_behaviors[0]));
             if (!probe_explicit_endpoints_touch_operation_flow(
+                    registry,
                     repo,
                     parent,
                     request->from_io_id,
@@ -1385,11 +1410,7 @@ static nmo_status_t probe_analyze_data_cell(
         nmo_object_t *link_obj =
             nmo_object_repository_find_by_id(repo, request->write_link_id);
         const nmo_behaviorlink_state_t *link =
-            link_obj != NULL &&
-                    nmo_object_get_class_id(link_obj) == NMO_CID_BEHAVIORLINK
-                ? (const nmo_behaviorlink_state_t *)nmo_object_get_state(
-                      link_obj)
-                : NULL;
+            probe_behaviorlink_state(registry, link_obj);
         if (link_obj == NULL) {
             return probe_reject(result,
                                 NMO_PROBE_SELECTOR_MODE_EXPLICIT_LINK,
@@ -1437,7 +1458,7 @@ static nmo_status_t probe_analyze_data_cell(
             &parent->sub_behaviors, i);
         if (child_id == 0) continue;
         const nmo_behavior_state_t *child =
-            probe_behavior_state_by_id(repo, child_id);
+            probe_behavior_state_by_id(registry, repo, child_id);
         if (!probe_is_data_write_behavior(ctx, child)) {
             continue;
         }
@@ -1477,6 +1498,7 @@ static nmo_status_t probe_analyze_data_cell(
         nmo_object_id_t operation_link_id = 0u;
         const nmo_behaviorlink_state_t *operation_link = NULL;
         size_t touching_count = probe_collect_operation_touching_links(
+            registry,
             repo,
             parent,
             operation_id,
@@ -1538,7 +1560,7 @@ static nmo_status_t probe_analyze_data_cell(
             return NMO_OK;
         }
         const nmo_behavior_state_t *writer =
-            probe_behavior_state_by_id(repo, selected_id);
+            probe_behavior_state_by_id(registry, repo, selected_id);
         nmo_probe_selector_candidate_t *candidate =
             result->candidate_count > 0u
                 ? &result->candidates[result->candidate_count - 1u]
@@ -1550,6 +1572,7 @@ static nmo_status_t probe_analyze_data_cell(
         result->selected_node_id = selected_id;
         result->safe_insertion.selected_node_id = selected_id;
         return probe_select_safe_link(
+            registry,
             repo,
             parent,
             writer,
@@ -1584,8 +1607,9 @@ nmo_status_t nmo_probe_analyze_selector(
     nmo_context_t *ctx = nmo_workspace_internal_context(workspace);
     nmo_object_repository_t *repo =
         nmo_workspace_internal_repository(workspace);
+    const nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
     const nmo_behavior_state_t *parent =
-        probe_behavior_state_by_id(repo, request->behavior_id);
+        probe_behavior_state_by_id(registry, repo, request->behavior_id);
     if (parent == NULL) {
         return probe_reject(result,
                             NMO_PROBE_SELECTOR_MODE_UNSPECIFIED,

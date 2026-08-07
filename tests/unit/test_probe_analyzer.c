@@ -7,12 +7,14 @@
 #include "runtime/nmo_workspace.h"
 #include "format/nmo_object.h"
 #include "object/builtin/nmo_behavior_schemas.h"
+#include "object/builtin/nmo_behaviorlink_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_defs.h"
 #include "object/nmo_object_guids.h"
 #include "object/nmo_object_repository.h"
 #include "session/nmo_session.h"
 #include "type/nmo_type_guids.h"
+#include "type/nmo_type_query.h"
 
 #include <string.h>
 
@@ -136,6 +138,116 @@ TEST(probe_analyzer, selects_unique_message_candidate_and_link)
                   nmo_probe_candidate_role_name(result.candidates[0].role));
     ASSERT_TRUE(result.from_io_id != 0u);
     ASSERT_TRUE(result.to_io_id != 0u);
+
+    nmo_probe_analysis_dispose(&result);
+    probe_fixture_dispose(&fixture);
+}
+
+TEST(probe_analyzer, selects_explicit_message_graph_types)
+{
+    probe_fixture_t fixture;
+    probe_fixture_init_empty(&fixture);
+
+    nmo_object_id_t root_id = 0u;
+    nmo_object_id_t child_id = 0u;
+    nmo_object_id_t root_io_id = 0u;
+    nmo_object_id_t child_io_id = 0u;
+    nmo_object_id_t link_id = 0u;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        fixture.session, 0, "Typed root", CKPGUID_BEHAVIOR,
+        &root_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        fixture.session, 0, "Typed sender", CKPGUID_BEHAVIOR,
+        &child_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        fixture.session, NMO_CID_BEHAVIORIO, "Root IO", NMO_GUID_NULL,
+        &root_io_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        fixture.session, NMO_CID_BEHAVIORIO, "Child IO", NMO_GUID_NULL,
+        &child_io_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        fixture.session, 0, "Typed link", CKPGUID_BEHAVIORLINK,
+        &link_id, NULL));
+
+    nmo_object_repository_t *repo =
+        nmo_session_get_repository(fixture.session);
+    const nmo_type_registry_t *registry =
+        nmo_context_get_type_registry(fixture.ctx);
+    nmo_behavior_state_t *root = (nmo_behavior_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry,
+            nmo_object_repository_find_by_id(repo, root_id),
+            CKPGUID_BEHAVIOR);
+    nmo_behavior_state_t *child = (nmo_behavior_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry,
+            nmo_object_repository_find_by_id(repo, child_id),
+            CKPGUID_BEHAVIOR);
+    nmo_behaviorlink_state_t *link = (nmo_behaviorlink_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry,
+            nmo_object_repository_find_by_id(repo, link_id),
+            CKPGUID_BEHAVIORLINK);
+    ASSERT_NOT_NULL(root);
+    ASSERT_NOT_NULL(child);
+    ASSERT_NOT_NULL(link);
+
+    child->flags = CKBEHAVIOR_BUILDINGBLOCK | CKBEHAVIOR_MESSAGESENDER;
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(
+        &root->sub_behaviors, child_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(
+        &root->sub_behavior_links, link_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(
+        &child->outputs, child_io_id, NULL));
+    nmo_behaviorlink_set_in_io_id(link, root_io_id);
+    nmo_behaviorlink_set_out_io_id(link, child_io_id);
+
+    nmo_probe_selector_request_t request;
+    nmo_probe_selector_request_init(&request);
+    request.kind = NMO_PROBE_SELECTOR_MESSAGE;
+    request.behavior_id = root_id;
+
+    nmo_probe_selector_result_t result;
+    nmo_probe_selector_result_init(&result);
+    ASSERT_EQ(NMO_OK,
+              nmo_probe_analyze_selector(
+                  fixture.workspace, &request, &result));
+    ASSERT_EQ(NMO_PROBE_SELECTOR_MODE_AUTO, result.mode);
+    ASSERT_EQ(NMO_PROBE_SELECTOR_STATUS_SELECTED, result.status);
+    ASSERT_EQ(child_id, result.selected_node_id);
+    ASSERT_EQ(link_id, result.selected_link_id);
+    ASSERT_EQ(1u, result.candidate_count);
+
+    nmo_probe_analysis_dispose(&result);
+    probe_fixture_dispose(&fixture);
+}
+
+TEST(probe_analyzer, honors_explicit_behavior_type_precedence)
+{
+    probe_fixture_t fixture;
+    probe_fixture_init_empty(&fixture);
+
+    nmo_object_id_t object_id = 0u;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        fixture.session,
+        NMO_CID_BEHAVIOR,
+        "Not a behavior",
+        CKPGUID_DATAARRAY,
+        &object_id,
+        NULL));
+
+    nmo_probe_selector_request_t request;
+    nmo_probe_selector_request_init(&request);
+    request.kind = NMO_PROBE_SELECTOR_MESSAGE;
+    request.behavior_id = object_id;
+
+    nmo_probe_selector_result_t result;
+    nmo_probe_selector_result_init(&result);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_probe_analyze_selector(
+                  fixture.workspace, &request, &result));
+    ASSERT_EQ(NMO_PROBE_SELECTOR_STATUS_NONE, result.status);
+    ASSERT_STR_EQ("behavior_not_found", result.rejection_code);
 
     nmo_probe_analysis_dispose(&result);
     probe_fixture_dispose(&fixture);
@@ -392,6 +504,8 @@ TEST(probe_analyzer, dynamic_candidates_are_not_truncated_at_64)
 
 TEST_MAIN_BEGIN()
     REGISTER_TEST(probe_analyzer, selects_unique_message_candidate_and_link);
+    REGISTER_TEST(probe_analyzer, selects_explicit_message_graph_types);
+    REGISTER_TEST(probe_analyzer, honors_explicit_behavior_type_precedence);
     REGISTER_TEST(probe_analyzer, resolves_explicit_operation_write_site);
     REGISTER_TEST(probe_analyzer, reports_operation_write_site_candidates);
     REGISTER_TEST(probe_analyzer, infers_auto_data_writer_cell_metadata);
