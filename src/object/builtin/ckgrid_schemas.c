@@ -454,7 +454,129 @@ static void nmo_grid_post_delete(
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_STATE_OPS_CUSTOM(grid, nmo_grid_state_t)
+static nmo_status_t nmo_grid_canonical_bytes(
+    const nmo_grid_state_t *state,
+    nmo_arena_t **out_arena,
+    void **out_data,
+    size_t *out_size)
+{
+    if (state == NULL || out_arena == NULL || out_data == NULL ||
+        out_size == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    *out_arena = NULL;
+    *out_data = NULL;
+    *out_size = 0;
+
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    if (arena == NULL) return NMO_ERR_NOMEM;
+    nmo_chunk_t *file_chunk = nmo_chunk_create(arena);
+    nmo_chunk_t *runtime_chunk = nmo_chunk_create(arena);
+    if (file_chunk == NULL || runtime_chunk == NULL) {
+        nmo_arena_destroy(arena);
+        return NMO_ERR_NOMEM;
+    }
+    file_chunk->class_id = NMO_CID_GRID;
+    file_chunk->data_version = 7;
+    file_chunk->chunk_options = NMO_CHUNK_OPTION_FILE;
+    runtime_chunk->class_id = NMO_CID_GRID;
+    runtime_chunk->data_version = 7;
+
+    nmo_serialize_context_t file_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_status_t result = nmo_grid_serialize(
+        state, file_chunk, NULL, &file_context);
+    if (result == NMO_OK) {
+        nmo_chunk_close(file_chunk);
+        nmo_serialize_context_t runtime_context =
+            nmo_serialize_context_create(
+                arena, NULL, 0, CK_STATESAVE_GRIDONLY);
+        result = nmo_grid_serialize(
+            state, runtime_chunk, NULL, &runtime_context);
+    }
+
+    void *file_data = NULL;
+    void *runtime_data = NULL;
+    size_t file_size = 0;
+    size_t runtime_size = 0;
+    if (result == NMO_OK) {
+        nmo_chunk_close(runtime_chunk);
+        result = nmo_chunk_serialize_version1(
+            file_chunk, &file_data, &file_size, arena);
+    }
+    if (result == NMO_OK) {
+        result = nmo_chunk_serialize_version1(
+            runtime_chunk, &runtime_data, &runtime_size, arena);
+    }
+    if (result == NMO_OK) {
+        const size_t header_size = 2u * sizeof(size_t);
+        if (runtime_size > SIZE_MAX - header_size ||
+            file_size > SIZE_MAX - header_size - runtime_size) {
+            result = NMO_ERR_NOMEM;
+        } else {
+            *out_size = header_size + file_size + runtime_size;
+            uint8_t *combined = (uint8_t *)nmo_arena_alloc(
+                arena, *out_size, alignof(size_t));
+            if (combined == NULL) {
+                result = NMO_ERR_NOMEM;
+            } else {
+                memcpy(combined, &file_size, sizeof(file_size));
+                memcpy(combined + sizeof(file_size),
+                       &runtime_size, sizeof(runtime_size));
+                memcpy(combined + header_size, file_data, file_size);
+                memcpy(combined + header_size + file_size,
+                       runtime_data, runtime_size);
+                *out_data = combined;
+            }
+        }
+    }
+    if (result != NMO_OK) {
+        nmo_arena_destroy(arena);
+        return result;
+    }
+    *out_arena = arena;
+    return NMO_OK;
+}
+
+static bool nmo_grid_equals(const void *a, const void *b)
+{
+    if (a == b) return true;
+    if (a == NULL || b == NULL) return false;
+    nmo_arena_t *arena_a = NULL;
+    nmo_arena_t *arena_b = NULL;
+    void *data_a = NULL;
+    void *data_b = NULL;
+    size_t size_a = 0;
+    size_t size_b = 0;
+    const nmo_status_t result_a = nmo_grid_canonical_bytes(
+        (const nmo_grid_state_t *)a,
+        &arena_a, &data_a, &size_a);
+    const nmo_status_t result_b = nmo_grid_canonical_bytes(
+        (const nmo_grid_state_t *)b,
+        &arena_b, &data_b, &size_b);
+    const bool equal = result_a == NMO_OK && result_b == NMO_OK &&
+        size_a == size_b &&
+        (size_a == 0 || memcmp(data_a, data_b, size_a) == 0);
+    nmo_arena_destroy(arena_a);
+    nmo_arena_destroy(arena_b);
+    return equal;
+}
+
+static uint32_t nmo_grid_hash(const void *instance)
+{
+    if (instance == NULL) return 0;
+    nmo_arena_t *arena = NULL;
+    void *data = NULL;
+    size_t size = 0;
+    if (nmo_grid_canonical_bytes(
+            (const nmo_grid_state_t *)instance,
+            &arena, &data, &size) != NMO_OK) {
+        return 0;
+    }
+    const uint32_t hash = (uint32_t)nmo_hash_fnv1a(data, size);
+    nmo_arena_destroy(arena);
+    return hash;
+}
 
 nmo_type_vtable_t nmo_grid_vtable = {
     .prepare_dependencies = nmo_grid_prepare_dependencies,

@@ -3347,6 +3347,65 @@ TEST(chunk_id_remap, grid_failures_keep_state_and_target_chunk_atomic) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, grid_copy_preserves_content_equality) {
+    nmo_arena_t *source_arena = nmo_arena_create(NULL, 8192);
+    nmo_arena_t *copy_arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(source_arena);
+    ASSERT_NOT_NULL(copy_arena);
+
+    nmo_grid_state_t source;
+    nmo_grid_state_t copy;
+    ASSERT_EQ(NMO_OK, nmo_grid_vtable.create(&source, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_grid_vtable.create(&copy, NULL, NULL));
+    source.width = 12;
+    source.length = 34;
+    source.priority = 5;
+    source.orientation_mode = 6;
+
+    nmo_chunk_t *layer_chunk = nmo_chunk_create(source_arena);
+    ASSERT_NOT_NULL(layer_chunk);
+    layer_chunk->class_id = NMO_CID_LAYER;
+    layer_chunk->data_version = 7;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(layer_chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(layer_chunk, 0x11223344u));
+    nmo_chunk_close(layer_chunk);
+    nmo_grid_layer_t layer = {
+        .ref = nmo_ref_from_raw(501),
+        .chunk = layer_chunk,
+    };
+    ASSERT_EQ(NMO_OK, nmo_array_append(&source.layers, &layer));
+
+    const nmo_type_field_t grid_copy_fields[] = {
+        NMO_FIELD_ARRAY(nmo_grid_state_t, layers, CKPGUID_NONE),
+    };
+    nmo_type_descriptor_t grid_type = {
+        .size = sizeof(nmo_grid_state_t),
+        .fields = grid_copy_fields,
+        .field_count = sizeof(grid_copy_fields) /
+            sizeof(grid_copy_fields[0]),
+    };
+    ASSERT_EQ(NMO_OK, nmo_grid_vtable.copy(
+        &source, &copy, &grid_type, copy_arena));
+    const nmo_grid_layer_t *source_layers = NMO_ARRAY_DATA(
+        nmo_grid_layer_t, &source.layers);
+    nmo_grid_layer_t *copy_layers = NMO_ARRAY_DATA(
+        nmo_grid_layer_t, &copy.layers);
+    ASSERT_TRUE(source_layers[0].chunk != copy_layers[0].chunk);
+    ASSERT_TRUE(nmo_grid_vtable.equals(&source, &copy));
+    ASSERT_EQ(nmo_grid_vtable.hash(&source), nmo_grid_vtable.hash(&copy));
+
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(copy_layers[0].chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        copy_layers[0].chunk, 0x55667788u));
+    nmo_chunk_close(copy_layers[0].chunk);
+    ASSERT_FALSE(nmo_grid_vtable.equals(&source, &copy));
+
+    nmo_array_dispose(&copy.layers);
+    nmo_array_dispose(&source.layers);
+    nmo_arena_destroy(copy_arena);
+    nmo_arena_destroy(source_arena);
+}
+
 TEST(chunk_id_remap, sprite_shared_ref_round_trips_raw_id) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
     ASSERT_NOT_NULL(arena);
@@ -8316,6 +8375,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, layer_unresolved_grid_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, layer_default_format_writes_empty_square_buffer);
     REGISTER_TEST(chunk_id_remap, grid_failures_keep_state_and_target_chunk_atomic);
+    REGISTER_TEST(chunk_id_remap, grid_copy_preserves_content_equality);
     REGISTER_TEST(chunk_id_remap, sprite_shared_ref_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, sprite_failures_keep_state_and_target_chunk_atomic);
     REGISTER_TEST(chunk_id_remap, spritetext_failures_keep_state_and_target_chunk_atomic);
