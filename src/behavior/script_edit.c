@@ -1727,6 +1727,21 @@ static bool script_edit_parameter_class_holds_value(nmo_class_id_t class_id)
            class_id == NMO_CID_PARAMETERLOCAL;
 }
 
+static nmo_parameter_state_t *script_edit_get_value_parameter_state(
+    const nmo_type_registry_t *registry,
+    nmo_object_t *object)
+{
+    if (nmo_guid_is_null(nmo_object_get_type_guid(object))) {
+        nmo_parameter_state_t *state =
+            nmo_parameter_get_mutable_state(object);
+        if (state != NULL) {
+            return state;
+        }
+    }
+    return (nmo_parameter_state_t *)script_edit_get_object_state(
+        registry, object, NMO_CID_PARAMETER, CKPGUID_PARAMETER);
+}
+
 static bool script_edit_parameterout_has_destination(
     const nmo_parameterout_state_t *state,
     nmo_object_id_t destination_id)
@@ -4318,6 +4333,7 @@ NMO_API nmo_status_t nmo_script_edit_set_parameter_value(
     const char *value_str)
 {
     const nmo_behavior_index_t *index = NULL;
+    const nmo_type_registry_t *registry = NULL;
     nmo_object_t *object = NULL;
     nmo_parameter_state_t *state = NULL;
     nmo_status_t rc = NMO_OK;
@@ -4334,18 +4350,22 @@ NMO_API nmo_status_t nmo_script_edit_set_parameter_value(
         return NMO_ERR_NOT_FOUND;
     }
 
+    registry = nmo_workspace_internal_type_registry(tx->workspace);
+    if (!registry) {
+        return NMO_ERR_INVALID_STATE;
+    }
     object = nmo_object_repository_find_by_id(nmo_workspace_internal_repository(tx->workspace),
                                               parameter_id);
     if (!object) {
         return NMO_ERR_NOT_FOUND;
     }
-    if (!script_edit_parameter_class_holds_value(nmo_object_get_class_id(object))) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    state = nmo_parameter_get_mutable_state(object);
+    state = script_edit_get_value_parameter_state(registry, object);
     if (!state) {
-        return NMO_ERR_INVALID_STATE;
+        return nmo_guid_is_null(nmo_object_get_type_guid(object)) &&
+               script_edit_parameter_class_holds_value(
+                   nmo_object_get_class_id(object))
+            ? NMO_ERR_INVALID_STATE
+            : NMO_ERR_INVALID_ARGUMENT;
     }
 
     rc = nmo_object_edit_set_parameter_value(tx->edit, parameter_id, value_str);
@@ -4364,7 +4384,9 @@ NMO_API nmo_status_t nmo_script_edit_set_parameter_bytes(
     size_t byte_count)
 {
     const nmo_behavior_index_t *index = NULL;
+    const nmo_type_registry_t *registry = NULL;
     nmo_object_t *object = NULL;
+    nmo_parameter_state_t *state = NULL;
     nmo_status_t rc = NMO_OK;
 
     if (!tx || !tx->edit || parameter_id == 0u ||
@@ -4380,13 +4402,22 @@ NMO_API nmo_status_t nmo_script_edit_set_parameter_bytes(
         return NMO_ERR_NOT_FOUND;
     }
 
+    registry = nmo_workspace_internal_type_registry(tx->workspace);
+    if (!registry) {
+        return NMO_ERR_INVALID_STATE;
+    }
     object = nmo_object_repository_find_by_id(nmo_workspace_internal_repository(tx->workspace),
                                               parameter_id);
     if (!object) {
         return NMO_ERR_NOT_FOUND;
     }
-    if (!script_edit_parameter_class_holds_value(nmo_object_get_class_id(object))) {
-        return NMO_ERR_INVALID_ARGUMENT;
+    state = script_edit_get_value_parameter_state(registry, object);
+    if (!state) {
+        return nmo_guid_is_null(nmo_object_get_type_guid(object)) &&
+               script_edit_parameter_class_holds_value(
+                   nmo_object_get_class_id(object))
+            ? NMO_ERR_INVALID_STATE
+            : NMO_ERR_INVALID_ARGUMENT;
     }
 
     rc = nmo_object_edit_set_parameter_bytes(tx->edit, parameter_id, bytes,

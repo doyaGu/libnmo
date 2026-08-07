@@ -1094,6 +1094,121 @@ TEST(script_edit_transaction, connects_parameters_across_explicit_parent_graph)
     nmo_context_release(ctx);
 }
 
+TEST(script_edit_transaction, writes_explicit_parameter_values)
+{
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    nmo_session_t *session = NULL;
+    nmo_script_edit_tx_t *tx = NULL;
+    nmo_object_repository_t *repo = NULL;
+    const nmo_type_registry_t *registry = NULL;
+    nmo_behavior_state_t *root_state = NULL;
+    nmo_parameterlocal_state_t *local_state = NULL;
+    nmo_parameterout_state_t *output_state = NULL;
+    script_control_fixture_t fixture;
+    nmo_object_id_t local_id = 0u;
+    nmo_object_id_t output_id = 0u;
+    nmo_object_id_t conflicting_id = 0u;
+    const uint8_t output_bytes[] = {1u, 2u, 3u, 4u};
+    const uint8_t zero_bytes[sizeof(output_bytes)] = {0};
+    int32_t local_value = 0;
+
+    ASSERT_NOT_NULL(ctx);
+    session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    setup_script_control_fixture(session, &fixture);
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, 0, "Typed local", CKPGUID_PARAMETERLOCAL, &local_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, 0, "Typed output", CKPGUID_PARAMETEROUT, &output_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_PARAMETER, "Conflicting type", CKPGUID_BEHAVIORIO,
+        &conflicting_id, NULL));
+
+    repo = nmo_session_get_repository(session);
+    registry = nmo_context_get_type_registry(ctx);
+    ASSERT_NOT_NULL(repo);
+    ASSERT_NOT_NULL(registry);
+
+    nmo_object_t *root_object = nmo_object_repository_find_by_id(
+        repo, fixture.root_behavior_id);
+    nmo_object_t *local_object =
+        nmo_object_repository_find_by_id(repo, local_id);
+    nmo_object_t *output_object =
+        nmo_object_repository_find_by_id(repo, output_id);
+    ASSERT_NOT_NULL(root_object);
+    ASSERT_NOT_NULL(local_object);
+    ASSERT_NOT_NULL(output_object);
+
+    root_state = (nmo_behavior_state_t *)nmo_object_get_state(root_object);
+    local_state = (nmo_parameterlocal_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, local_object, CKPGUID_PARAMETERLOCAL);
+    output_state = (nmo_parameterout_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, output_object, CKPGUID_PARAMETEROUT);
+    ASSERT_NOT_NULL(root_state);
+    ASSERT_NOT_NULL(local_state);
+    ASSERT_NOT_NULL(output_state);
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(
+        &root_state->local_parameters, local_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(
+        &root_state->out_parameters, output_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(
+        &root_state->local_parameters, conflicting_id, NULL));
+    root_state->save_flags |= CK_STATESAVE_BEHAVIORLOCALPARAMS |
+                              CK_STATESAVE_BEHAVIOROUTPARAMS;
+
+    local_state->base.type_guid = CKPGUID_INT;
+    local_state->base.mode = CKPARAM_MODE_BUFFER;
+    local_state->base.has_state = true;
+    nmo_parameterlocal_set_owner_id(local_state, fixture.root_behavior_id);
+    ASSERT_EQ(NMO_OK, nmo_array_alloc(
+        &local_state->base.buffer_data, sizeof(uint8_t),
+        sizeof(local_value), NULL));
+    memset(local_state->base.buffer_data.data, 0,
+           local_state->base.buffer_data.count);
+
+    output_state->base.type_guid = CKPGUID_VOIDBUF;
+    output_state->base.mode = CKPARAM_MODE_BUFFER;
+    output_state->base.has_state = true;
+    nmo_parameterout_set_owner_id(output_state, fixture.root_behavior_id);
+    ASSERT_EQ(NMO_OK, nmo_array_alloc(
+        &output_state->base.buffer_data, sizeof(uint8_t),
+        sizeof(output_bytes), NULL));
+    memset(output_state->base.buffer_data.data, 0,
+           output_state->base.buffer_data.count);
+
+    ASSERT_EQ(NMO_OK,
+              begin_test_script_edit(
+                  ctx, session, "write typed parameter values", &tx));
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_set_parameter_value(tx, local_id, "42"));
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_set_parameter_bytes(
+                  tx, output_id, output_bytes, sizeof(output_bytes)));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_script_edit_set_parameter_value(
+                  tx, conflicting_id, "13"));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_script_edit_set_parameter_bytes(
+                  tx, conflicting_id, output_bytes, sizeof(output_bytes)));
+    memcpy(&local_value, local_state->base.buffer_data.data,
+           sizeof(local_value));
+    ASSERT_EQ(42, local_value);
+    ASSERT_EQ(0, memcmp(output_state->base.buffer_data.data,
+                        output_bytes, sizeof(output_bytes)));
+
+    nmo_script_edit_rollback(tx);
+    memcpy(&local_value, local_state->base.buffer_data.data,
+           sizeof(local_value));
+    ASSERT_EQ(0, local_value);
+    ASSERT_EQ(0, memcmp(output_state->base.buffer_data.data,
+                        zero_bytes, sizeof(zero_bytes)));
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(script_edit_transaction, validates_explicit_parameter_connections)
 {
     nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
@@ -1228,6 +1343,8 @@ TEST_MAIN_BEGIN()
                   interface_validation_allows_preexisting_diagnostics_for_value_only_parameter_edit);
     REGISTER_TEST(script_edit_transaction,
                   connects_parameters_across_explicit_parent_graph);
+    REGISTER_TEST(script_edit_transaction,
+                  writes_explicit_parameter_values);
     REGISTER_TEST(script_edit_transaction,
                   validates_explicit_parameter_connections);
 TEST_MAIN_END()

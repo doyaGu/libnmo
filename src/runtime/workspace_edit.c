@@ -871,6 +871,22 @@ static bool session_is_parameter_reference_object(
     return false;
 }
 
+static nmo_parameter_state_t *workspace_edit_parameter_state(
+    const nmo_type_registry_t *registry,
+    nmo_object_t *object)
+{
+    if (nmo_guid_is_null(nmo_object_get_type_guid(object))) {
+        nmo_parameter_state_t *state =
+            nmo_parameter_get_mutable_state(object);
+        if (state != NULL) {
+            return state;
+        }
+    }
+    return (nmo_parameter_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, object, CKPGUID_PARAMETER);
+}
+
 static nmo_status_t parse_dataarray_cell(
     nmo_dataarray_state_t *state,
     nmo_arena_t *arena,
@@ -4220,7 +4236,8 @@ nmo_status_t nmo_object_edit_set_parameter_value_ex(
     if (object == NULL) {
         return NMO_ERR_NOT_FOUND;
     }
-    nmo_parameter_state_t *state = nmo_parameter_get_mutable_state(object);
+    nmo_parameter_state_t *state = workspace_edit_parameter_state(
+        registry, object);
     if (state == NULL) {
         return NMO_ERR_INVALID_STATE;
     }
@@ -4823,7 +4840,8 @@ nmo_status_t nmo_object_edit_set_parameter_bytes_ex(
 
     workspace_edit_checkpoint_t checkpoint = workspace_edit_checkpoint(edit);
     nmo_object_repository_t *repo = nmo_workspace_internal_repository(edit->workspace);
-    if (repo == NULL) {
+    const nmo_type_registry_t *registry = workspace_edit_type_registry(edit);
+    if (repo == NULL || registry == NULL) {
         return NMO_ERR_INVALID_STATE;
     }
 
@@ -4831,7 +4849,8 @@ nmo_status_t nmo_object_edit_set_parameter_bytes_ex(
     if (object == NULL) {
         return NMO_ERR_NOT_FOUND;
     }
-    nmo_parameter_state_t *state = nmo_parameter_get_mutable_state(object);
+    nmo_parameter_state_t *state = workspace_edit_parameter_state(
+        registry, object);
     if (state == NULL || state->mode != CKPARAM_MODE_BUFFER) {
         return NMO_ERR_INVALID_STATE;
     }
