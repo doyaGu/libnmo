@@ -2240,15 +2240,20 @@ static const nmo_behavior_state_t *edit_plan_get_behavior_state(
     if (tx == NULL || behavior_id == 0u) {
         return NULL;
     }
+    nmo_workspace_t *workspace = nmo_script_edit_workspace(tx);
     nmo_object_repository_t *repo =
-        nmo_workspace_internal_repository(nmo_script_edit_workspace(tx));
+        nmo_workspace_internal_repository(workspace);
+    const nmo_type_registry_t *registry =
+        nmo_workspace_internal_type_registry(workspace);
     nmo_object_t *object = repo
         ? nmo_object_repository_find_by_id(repo, behavior_id)
         : NULL;
-    if (object == NULL || nmo_object_get_class_id(object) != NMO_CID_BEHAVIOR) {
+    if (object == NULL || registry == NULL) {
         return NULL;
     }
-    return (const nmo_behavior_state_t *)nmo_object_get_state(object);
+    return (const nmo_behavior_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, object, CKPGUID_BEHAVIOR);
 }
 
 static const nmo_dataarray_cell_t *edit_plan_get_data_cell(

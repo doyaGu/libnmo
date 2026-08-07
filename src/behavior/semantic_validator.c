@@ -200,6 +200,7 @@ static nmo_status_t semantic_add_missing_ref_risk(
 }
 
 static nmo_status_t semantic_add_class_ref_risk(
+    const nmo_type_registry_t *registry,
     nmo_object_repository_t *repo,
     nmo_behavior_semantic_risk_t **risks,
     size_t *risk_count,
@@ -215,7 +216,8 @@ static nmo_status_t semantic_add_class_ref_risk(
     if (object == NULL) {
         return NMO_OK;
     }
-    if (nmo_object_get_class_id(object) == expected_class_id) {
+    if (nmo_type_query_object_is_derived_from_class(
+            registry, object, expected_class_id)) {
         return NMO_OK;
     }
     return semantic_add_risk(
@@ -228,12 +230,14 @@ static nmo_status_t semantic_add_class_ref_risk(
 }
 
 static nmo_status_t semantic_add_behavior_owner_ref_risk(
+    const nmo_type_registry_t *registry,
     nmo_object_repository_t *repo,
     nmo_behavior_semantic_risk_t **risks,
     size_t *risk_count,
     nmo_object_id_t object_id)
 {
     return semantic_add_class_ref_risk(
+        registry,
         repo,
         risks,
         risk_count,
@@ -244,12 +248,14 @@ static nmo_status_t semantic_add_behavior_owner_ref_risk(
 }
 
 static nmo_status_t semantic_add_behavior_io_ref_risk(
+    const nmo_type_registry_t *registry,
     nmo_object_repository_t *repo,
     nmo_behavior_semantic_risk_t **risks,
     size_t *risk_count,
     nmo_object_id_t object_id)
 {
     return semantic_add_class_ref_risk(
+        registry,
         repo,
         risks,
         risk_count,
@@ -377,12 +383,14 @@ static nmo_status_t semantic_add_control_endpoint_scope_risk(
 }
 
 static nmo_status_t semantic_add_behavior_node_ref_risk(
+    const nmo_type_registry_t *registry,
     nmo_object_repository_t *repo,
     nmo_behavior_semantic_risk_t **risks,
     size_t *risk_count,
     nmo_object_id_t object_id)
 {
     return semantic_add_class_ref_risk(
+        registry,
         repo,
         risks,
         risk_count,
@@ -519,6 +527,7 @@ static nmo_status_t semantic_add_behavior_prototype_consistency_risk(
 }
 
 static nmo_status_t semantic_add_interface_policy_risks(
+    const nmo_type_registry_t *registry,
     nmo_object_repository_t *repo,
     nmo_behavior_semantic_risk_t **risks,
     size_t *risk_count,
@@ -528,9 +537,10 @@ static nmo_status_t semantic_add_interface_policy_risks(
     nmo_object_t *object = repo != NULL
         ? nmo_object_repository_find_by_id(repo, behavior_id)
         : NULL;
-    const nmo_behavior_state_t *state = object != NULL &&
-            nmo_object_get_class_id(object) == NMO_CID_BEHAVIOR
-        ? (const nmo_behavior_state_t *)nmo_object_get_state(object)
+    const nmo_behavior_state_t *state = object != NULL
+        ? (const nmo_behavior_state_t *)
+            nmo_type_query_object_get_ancestor_state_by_guid(
+                registry, object, CKPGUID_BEHAVIOR)
         : NULL;
     if (state == NULL) {
         return NMO_OK;
@@ -1915,6 +1925,8 @@ static nmo_status_t semantic_validate_basic_edit_op(
     if (op == NULL) {
         return NMO_OK;
     }
+    const nmo_type_registry_t *registry =
+        nmo_workspace_internal_type_registry(workspace);
 
     switch (op->kind) {
     case NMO_EDIT_OP_SET_PARAMETER_VALUE:
@@ -1998,6 +2010,7 @@ static nmo_status_t semantic_validate_basic_edit_op(
             repo, risks, risk_count,
             op->data.add_node.parent_behavior_id));
         NMO_RETURN_IF_ERROR(semantic_add_behavior_owner_ref_risk(
+            registry,
             repo,
             risks,
             risk_count,
@@ -2023,6 +2036,7 @@ static nmo_status_t semantic_validate_basic_edit_op(
             repo, risks, risk_count,
             op->data.remove_node.parent_behavior_id));
         NMO_RETURN_IF_ERROR(semantic_add_behavior_owner_ref_risk(
+            registry,
             repo,
             risks,
             risk_count,
@@ -2030,26 +2044,27 @@ static nmo_status_t semantic_validate_basic_edit_op(
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
             repo, risks, risk_count, op->data.remove_node.node_id));
         return semantic_add_behavior_node_ref_risk(
-            repo, risks, risk_count, op->data.remove_node.node_id);
+            registry, repo, risks, risk_count, op->data.remove_node.node_id);
     case NMO_EDIT_OP_ADD_IO:
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
             repo, risks, risk_count, op->data.add_io.behavior_id));
         return semantic_add_behavior_owner_ref_risk(
-            repo, risks, risk_count, op->data.add_io.behavior_id);
+            registry, repo, risks, risk_count, op->data.add_io.behavior_id);
     case NMO_EDIT_OP_RENAME_IO:
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
             repo, risks, risk_count, op->data.rename_io.io_id));
         return semantic_add_behavior_io_ref_risk(
-            repo, risks, risk_count, op->data.rename_io.io_id);
+            registry, repo, risks, risk_count, op->data.rename_io.io_id);
     case NMO_EDIT_OP_REMOVE_IO:
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
             repo, risks, risk_count, op->data.remove_io.io_id));
         return semantic_add_behavior_io_ref_risk(
-            repo, risks, risk_count, op->data.remove_io.io_id);
+            registry, repo, risks, risk_count, op->data.remove_io.io_id);
     case NMO_EDIT_OP_ADD_BEHAVIOR_LINK:
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
             repo, risks, risk_count, op->data.add_link.parent_behavior_id));
         NMO_RETURN_IF_ERROR(semantic_add_behavior_owner_ref_risk(
+            registry,
             repo,
             risks,
             risk_count,
@@ -2058,6 +2073,7 @@ static nmo_status_t semantic_validate_basic_edit_op(
             NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
                 repo, risks, risk_count, op->data.add_link.from_io_id));
             NMO_RETURN_IF_ERROR(semantic_add_class_ref_risk(
+                registry,
                 repo,
                 risks,
                 risk_count,
@@ -2093,6 +2109,7 @@ static nmo_status_t semantic_validate_basic_edit_op(
             NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
                 repo, risks, risk_count, op->data.add_link.to_io_id));
             NMO_RETURN_IF_ERROR(semantic_add_class_ref_risk(
+                registry,
                 repo,
                 risks,
                 risk_count,
@@ -2135,6 +2152,7 @@ static nmo_status_t semantic_validate_basic_edit_op(
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
             repo, risks, risk_count, op->data.rewire_link.link_id));
         NMO_RETURN_IF_ERROR(semantic_add_class_ref_risk(
+            registry,
             repo,
             risks,
             risk_count,
@@ -2147,6 +2165,7 @@ static nmo_status_t semantic_validate_basic_edit_op(
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
             repo, risks, risk_count, op->data.rewire_link.from_io_id));
         NMO_RETURN_IF_ERROR(semantic_add_class_ref_risk(
+            registry,
             repo,
             risks,
             risk_count,
@@ -2163,6 +2182,7 @@ static nmo_status_t semantic_validate_basic_edit_op(
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
             repo, risks, risk_count, op->data.rewire_link.to_io_id));
         NMO_RETURN_IF_ERROR(semantic_add_class_ref_risk(
+            registry,
             repo,
             risks,
             risk_count,
@@ -2181,6 +2201,7 @@ static nmo_status_t semantic_validate_basic_edit_op(
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
             repo, risks, risk_count, op->data.set_link_delay.link_id));
         NMO_RETURN_IF_ERROR(semantic_add_class_ref_risk(
+            registry,
             repo,
             risks,
             risk_count,
@@ -2197,6 +2218,7 @@ static nmo_status_t semantic_validate_basic_edit_op(
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
             repo, risks, risk_count, op->data.remove_link.parent_behavior_id));
         NMO_RETURN_IF_ERROR(semantic_add_behavior_owner_ref_risk(
+            registry,
             repo,
             risks,
             risk_count,
@@ -2204,6 +2226,7 @@ static nmo_status_t semantic_validate_basic_edit_op(
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
             repo, risks, risk_count, op->data.remove_link.link_id));
         return semantic_add_class_ref_risk(
+            registry,
             repo,
             risks,
             risk_count,
@@ -2216,7 +2239,7 @@ static nmo_status_t semantic_validate_basic_edit_op(
             repo, risks, risk_count,
             op->data.add_parameter.owner_behavior_id));
         return semantic_add_behavior_owner_ref_risk(
-            repo, risks, risk_count,
+            registry, repo, risks, risk_count,
             op->data.add_parameter.owner_behavior_id);
     case NMO_EDIT_OP_CONNECT_PARAMETER:
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
@@ -2300,6 +2323,7 @@ static nmo_status_t semantic_validate_basic_edit_op(
             repo, risks, risk_count,
             op->data.add_operation.parent_behavior_id));
         NMO_RETURN_IF_ERROR(semantic_add_behavior_owner_ref_risk(
+            registry,
             repo,
             risks,
             risk_count,
@@ -2432,6 +2456,7 @@ static nmo_status_t semantic_validate_basic_edit_op(
             repo, risks, risk_count,
             op->data.rewire_operation.operation_id));
         NMO_RETURN_IF_ERROR(semantic_add_class_ref_risk(
+            registry,
             repo,
             risks,
             risk_count,
@@ -2604,6 +2629,7 @@ static nmo_status_t semantic_validate_basic_edit_op(
             repo, risks, risk_count,
             op->data.remove_operation.operation_id));
         return semantic_add_class_ref_risk(
+            registry,
             repo,
             risks,
             risk_count,
@@ -2615,8 +2641,10 @@ static nmo_status_t semantic_validate_basic_edit_op(
         NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
             repo, risks, risk_count, op->data.interface_policy.behavior_id));
         NMO_RETURN_IF_ERROR(semantic_add_behavior_owner_ref_risk(
-            repo, risks, risk_count, op->data.interface_policy.behavior_id));
+            registry, repo, risks, risk_count,
+            op->data.interface_policy.behavior_id));
         return semantic_add_interface_policy_risks(
+            registry,
             repo,
             risks,
             risk_count,
@@ -2639,6 +2667,7 @@ static nmo_status_t semantic_validate_basic_edit_op(
             repo, risks, risk_count,
             op->data.replace_bb.desc.behavior_id));
         NMO_RETURN_IF_ERROR(semantic_add_behavior_owner_ref_risk(
+            registry,
             repo,
             risks,
             risk_count,

@@ -3572,6 +3572,63 @@ TEST(edit_plan, executor_reports_explicit_dataarray_cell_values) {
     edit_plan_fixture_dispose(&fixture);
 }
 
+TEST(edit_plan, executor_reports_explicit_behavior_interface_policy) {
+    edit_plan_fixture_t fixture;
+    edit_plan_fixture_init(&fixture);
+
+    nmo_object_id_t behavior_id = 0u;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        fixture.session,
+        0,
+        "Typed behavior",
+        CKPGUID_BEHAVIOR,
+        &behavior_id,
+        NULL));
+    nmo_object_t *object =
+        nmo_object_repository_find_by_id(fixture.repo, behavior_id);
+    nmo_behavior_state_t *state = (nmo_behavior_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            nmo_context_get_type_registry(fixture.ctx),
+            object,
+            CKPGUID_BEHAVIOR);
+    ASSERT_NOT_NULL(state);
+    state->has_interface = true;
+
+    nmo_edit_plan_t *plan = NULL;
+    nmo_edit_report_t report;
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_interface_policy(
+        plan, behavior_id, NMO_SCRIPT_EDIT_INTERFACE_REMOVE));
+    ASSERT_EQ(NMO_OK, nmo_edit_executor_execute(
+        fixture.workspace,
+        plan,
+        &(nmo_edit_executor_options_t){0},
+        &report));
+    ASSERT_TRUE(report.ok);
+    ASSERT_FALSE(state->has_interface);
+
+    const nmo_edit_object_impact_t *impact = NULL;
+    for (size_t i = 0u; i < report.changed_object_count; ++i) {
+        if (report.changed_objects[i].id == behavior_id &&
+            report.changed_objects[i].role != NULL &&
+            strcmp(report.changed_objects[i].role, "primary") == 0) {
+            impact = &report.changed_objects[i];
+            break;
+        }
+    }
+    ASSERT_NOT_NULL(impact);
+    ASSERT_TRUE(impact->has_interface_before);
+    ASSERT_TRUE(impact->before_has_interface);
+    ASSERT_TRUE(impact->has_interface_after);
+    ASSERT_FALSE(impact->after_has_interface);
+    ASSERT_EQ(0, nmo_object_get_class_id(object));
+
+    nmo_edit_report_dispose(&report);
+    nmo_edit_plan_destroy(plan);
+    edit_plan_fixture_dispose(&fixture);
+}
+
 TEST(edit_plan, executor_replaces_leaf_bb_in_transaction) {
     nmo_context_t *ctx = nmo_context_create(
         &(nmo_context_desc_t){.data_dir = NMO_TEST_DATA_DIR});
@@ -4138,6 +4195,7 @@ REGISTER_TEST(edit_plan, executor_reports_remove_parameter_operation_slot_impact
 REGISTER_TEST(edit_plan, executor_reports_remove_parameter_edge_impact);
 REGISTER_TEST(edit_plan, executor_runs_script_ops_and_records_validation);
 REGISTER_TEST(edit_plan, executor_reports_explicit_dataarray_cell_values);
+REGISTER_TEST(edit_plan, executor_reports_explicit_behavior_interface_policy);
 REGISTER_TEST(edit_plan, executor_replaces_leaf_bb_in_transaction);
 REGISTER_TEST(edit_plan, executor_replace_bb_dry_run_rolls_back);
 REGISTER_TEST(edit_plan, executor_folds_closed_graph_in_transaction);
