@@ -476,19 +476,41 @@ static const nmo_manager_entry_options_t *edit_plan_op_manager_entry(
     }
 }
 
+static void *edit_plan_get_object_state(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t object_id,
+    nmo_class_id_t class_id,
+    nmo_guid_t type_guid)
+{
+    if (tx == NULL || object_id == 0u) {
+        return NULL;
+    }
+    nmo_workspace_t *workspace = nmo_script_edit_workspace(tx);
+    nmo_object_repository_t *repo =
+        nmo_workspace_internal_repository(workspace);
+    const nmo_type_registry_t *registry =
+        nmo_workspace_internal_type_registry(workspace);
+    nmo_object_t *object = repo != NULL
+        ? nmo_object_repository_find_by_id(repo, object_id)
+        : NULL;
+    if (object == NULL || registry == NULL) {
+        return NULL;
+    }
+    if (nmo_guid_is_null(nmo_object_get_type_guid(object)) &&
+        nmo_object_get_class_id(object) == class_id) {
+        return nmo_object_get_state(object);
+    }
+    return nmo_type_query_object_get_ancestor_state_by_guid(
+        registry, object, type_guid);
+}
+
 static uint32_t edit_plan_get_parameter_manager_value(
     nmo_script_edit_tx_t *tx,
     nmo_object_id_t parameter_id)
 {
-    nmo_workspace_t *workspace = nmo_script_edit_workspace(tx);
-    nmo_object_repository_t *repo =
-        workspace != NULL ? nmo_workspace_internal_repository(workspace) : NULL;
-    nmo_object_t *object =
-        repo != NULL ? nmo_object_repository_find_by_id(repo, parameter_id)
-                     : NULL;
     const nmo_parameter_state_t *state =
-        object != NULL ? (const nmo_parameter_state_t *)nmo_object_get_state(object)
-                       : NULL;
+        (const nmo_parameter_state_t *)edit_plan_get_object_state(
+            tx, parameter_id, NMO_CID_PARAMETER, CKPGUID_PARAMETER);
     return state != NULL ? state->manager_value : 0u;
 }
 
@@ -2240,20 +2262,8 @@ static const nmo_behavior_state_t *edit_plan_get_behavior_state(
     if (tx == NULL || behavior_id == 0u) {
         return NULL;
     }
-    nmo_workspace_t *workspace = nmo_script_edit_workspace(tx);
-    nmo_object_repository_t *repo =
-        nmo_workspace_internal_repository(workspace);
-    const nmo_type_registry_t *registry =
-        nmo_workspace_internal_type_registry(workspace);
-    nmo_object_t *object = repo
-        ? nmo_object_repository_find_by_id(repo, behavior_id)
-        : NULL;
-    if (object == NULL || registry == NULL) {
-        return NULL;
-    }
-    return (const nmo_behavior_state_t *)
-        nmo_type_query_object_get_ancestor_state_by_guid(
-            registry, object, CKPGUID_BEHAVIOR);
+    return (const nmo_behavior_state_t *)edit_plan_get_object_state(
+        tx, behavior_id, NMO_CID_BEHAVIOR, CKPGUID_BEHAVIOR);
 }
 
 static const nmo_dataarray_cell_t *edit_plan_get_data_cell(
@@ -2269,21 +2279,9 @@ static const nmo_dataarray_cell_t *edit_plan_get_data_cell(
     if (tx == NULL || dataarray_id == 0u) {
         return NULL;
     }
-    nmo_workspace_t *workspace = nmo_script_edit_workspace(tx);
-    nmo_object_repository_t *repo =
-        nmo_workspace_internal_repository(workspace);
-    const nmo_type_registry_t *registry =
-        nmo_workspace_internal_type_registry(workspace);
-    nmo_object_t *object = repo
-        ? nmo_object_repository_find_by_id(repo, dataarray_id)
-        : NULL;
-    if (object == NULL || registry == NULL) {
-        return NULL;
-    }
     const nmo_dataarray_state_t *state =
-        (const nmo_dataarray_state_t *)
-            nmo_type_query_object_get_ancestor_state_by_guid(
-                registry, object, CKPGUID_DATAARRAY);
+        (const nmo_dataarray_state_t *)edit_plan_get_object_state(
+            tx, dataarray_id, NMO_CID_DATAARRAY, CKPGUID_DATAARRAY);
     if (state == NULL || row >= state->row_count ||
         col >= state->column_count || state->rows == NULL ||
         state->rows[row].cells == NULL || state->column_formats == NULL) {
@@ -2748,14 +2746,12 @@ static nmo_object_id_t edit_plan_get_parameterin_source(
     if (tx == NULL || target_parameter_id == 0u) {
         return 0u;
     }
-    nmo_object_repository_t *repo =
-        nmo_workspace_internal_repository(nmo_script_edit_workspace(tx));
-    nmo_object_t *object = repo
-        ? nmo_object_repository_find_by_id(repo, target_parameter_id)
-        : NULL;
-    nmo_parameterin_state_t *state = object
-        ? (nmo_parameterin_state_t *)nmo_object_get_state(object)
-        : NULL;
+    nmo_parameterin_state_t *state = (nmo_parameterin_state_t *)
+        edit_plan_get_object_state(
+            tx,
+            target_parameter_id,
+            NMO_CID_PARAMETERIN,
+            CKPGUID_PARAMETERIN);
     return nmo_parameterin_source_id(state);
 }
 
@@ -2779,19 +2775,9 @@ static void edit_plan_get_behavior_link_endpoints(
         return;
     }
 
-    nmo_workspace_t *workspace = nmo_script_edit_workspace(tx);
-    nmo_object_repository_t *repo =
-        nmo_workspace_internal_repository(workspace);
-    const nmo_type_registry_t *registry =
-        nmo_workspace_internal_type_registry(workspace);
-    nmo_object_t *object = repo
-        ? nmo_object_repository_find_by_id(repo, link_id)
-        : NULL;
-    nmo_behaviorlink_state_t *state = object && registry
-        ? (nmo_behaviorlink_state_t *)
-            nmo_type_query_object_get_ancestor_state_by_guid(
-                registry, object, CKPGUID_BEHAVIORLINK)
-        : NULL;
+    nmo_behaviorlink_state_t *state = (nmo_behaviorlink_state_t *)
+        edit_plan_get_object_state(
+            tx, link_id, NMO_CID_BEHAVIORLINK, CKPGUID_BEHAVIORLINK);
     if (state == NULL) {
         return;
     }
@@ -2829,14 +2815,12 @@ static void edit_plan_get_parameter_operation_slots(
         return;
     }
 
-    nmo_object_repository_t *repo =
-        nmo_workspace_internal_repository(nmo_script_edit_workspace(tx));
-    nmo_object_t *object = repo
-        ? nmo_object_repository_find_by_id(repo, operation_id)
-        : NULL;
-    nmo_parameteroperation_state_t *state = object
-        ? (nmo_parameteroperation_state_t *)nmo_object_get_state(object)
-        : NULL;
+    nmo_parameteroperation_state_t *state =
+        (nmo_parameteroperation_state_t *)edit_plan_get_object_state(
+            tx,
+            operation_id,
+            NMO_CID_PARAMETEROPERATION,
+            CKPGUID_PARAMETEROPERATION);
     if (state == NULL) {
         return;
     }
@@ -2859,16 +2843,12 @@ static const nmo_parameteroperation_state_t *edit_plan_get_operation_state(
         return NULL;
     }
 
-    nmo_object_repository_t *repo =
-        nmo_workspace_internal_repository(nmo_script_edit_workspace(tx));
-    nmo_object_t *object = repo
-        ? nmo_object_repository_find_by_id(repo, operation_id)
-        : NULL;
-    if (object == NULL ||
-        nmo_object_get_class_id(object) != NMO_CID_PARAMETEROPERATION) {
-        return NULL;
-    }
-    return (const nmo_parameteroperation_state_t *)nmo_object_get_state(object);
+    return (const nmo_parameteroperation_state_t *)
+        edit_plan_get_object_state(
+            tx,
+            operation_id,
+            NMO_CID_PARAMETEROPERATION,
+            CKPGUID_PARAMETEROPERATION);
 }
 
 static nmo_status_t edit_report_note_parameter_detach_impacts(

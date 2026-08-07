@@ -15,6 +15,7 @@
 #include "object/builtin/nmo_parameterlocal_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "object/builtin/nmo_parameterin_schemas.h"
+#include "object/builtin/nmo_parameteroperation_schemas.h"
 #include "object/builtin/nmo_parameterout_schemas.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"
@@ -3689,6 +3690,105 @@ TEST(edit_plan, executor_reports_explicit_behavior_link_delay) {
     edit_plan_fixture_dispose(&fixture);
 }
 
+TEST(edit_plan, executor_reports_explicit_parameter_operation_removal) {
+    edit_plan_fixture_t fixture;
+    edit_plan_fixture_init(&fixture);
+
+    nmo_object_id_t owner_id = 0u;
+    nmo_object_id_t behavior_id = 0u;
+    nmo_object_id_t operation_id = 0u;
+    create_object_or_fail(
+        fixture.session, NMO_CID_3DENTITY, "Owner", &owner_id);
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        fixture.session,
+        0,
+        "Typed behavior",
+        CKPGUID_BEHAVIOR,
+        &behavior_id,
+        NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        fixture.session,
+        0,
+        "Typed parameter operation",
+        CKPGUID_PARAMETEROPERATION,
+        &operation_id,
+        NULL));
+
+    const nmo_type_registry_t *registry =
+        nmo_context_get_type_registry(fixture.ctx);
+    nmo_object_t *owner_object =
+        nmo_object_repository_find_by_id(fixture.repo, owner_id);
+    nmo_object_t *behavior_object =
+        nmo_object_repository_find_by_id(fixture.repo, behavior_id);
+    nmo_object_t *operation_object =
+        nmo_object_repository_find_by_id(fixture.repo, operation_id);
+    nmo_behavior_state_t *behavior_state = (nmo_behavior_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, behavior_object, CKPGUID_BEHAVIOR);
+    nmo_parameteroperation_state_t *operation_state =
+        (nmo_parameteroperation_state_t *)
+            nmo_type_query_object_get_ancestor_state_by_guid(
+                registry, operation_object, CKPGUID_PARAMETEROPERATION);
+    nmo_beobject_state_t *owner_state = owner_object
+        ? (nmo_beobject_state_t *)nmo_object_get_state(owner_object)
+        : NULL;
+    ASSERT_NOT_NULL(owner_state);
+    ASSERT_NOT_NULL(behavior_state);
+    ASSERT_NOT_NULL(operation_state);
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &owner_state->scripts, behavior_id));
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(
+        &behavior_state->operations, operation_id, NULL));
+    const nmo_guid_t operation_guid =
+        nmo_guid_parse("33CC6B49-3589282B");
+    operation_state->operation_guid = operation_guid;
+    behavior_state->flags |= 0x00000002u;
+    nmo_behavior_set_owner_id(behavior_state, owner_id);
+    nmo_parameteroperation_set_owner_id(operation_state, behavior_id);
+    operation_state->has_owner = 1u;
+    ASSERT_EQ(0, nmo_object_get_class_id(behavior_object));
+    ASSERT_EQ(0, nmo_object_get_class_id(operation_object));
+    nmo_workspace_destroy(fixture.workspace);
+    fixture.workspace = NULL;
+    ASSERT_EQ(NMO_OK, nmo_workspace_create(
+        fixture.ctx, fixture.document, &fixture.workspace));
+
+    nmo_edit_plan_t *plan = NULL;
+    nmo_edit_report_t report;
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_remove_operation(plan, operation_id));
+    ASSERT_EQ(NMO_OK, nmo_edit_executor_execute(
+        fixture.workspace,
+        plan,
+        &(nmo_edit_executor_options_t){0},
+        &report));
+    ASSERT_TRUE(report.ok);
+    ASSERT_EQ(NULL,
+              nmo_object_repository_find_by_id(fixture.repo, operation_id));
+
+    const nmo_edit_object_impact_t *impact = NULL;
+    for (size_t i = 0u; i < report.deleted_object_count; ++i) {
+        if (report.deleted_objects[i].id == operation_id &&
+            report.deleted_objects[i].role != NULL &&
+            strcmp(report.deleted_objects[i].role, "primary") == 0) {
+            impact = &report.deleted_objects[i];
+            break;
+        }
+    }
+    ASSERT_NOT_NULL(impact);
+    ASSERT_TRUE(impact->has_operation_slot_before);
+    ASSERT_TRUE(nmo_guid_equals(
+        operation_guid, impact->before_operation_guid));
+    ASSERT_FALSE(impact->before_has_in1_parameter);
+    ASSERT_FALSE(impact->before_has_in2_parameter);
+    ASSERT_FALSE(impact->before_has_out_parameter);
+
+    nmo_edit_report_dispose(&report);
+    nmo_edit_plan_destroy(plan);
+    edit_plan_fixture_dispose(&fixture);
+}
+
 TEST(edit_plan, executor_replaces_leaf_bb_in_transaction) {
     nmo_context_t *ctx = nmo_context_create(
         &(nmo_context_desc_t){.data_dir = NMO_TEST_DATA_DIR});
@@ -4257,6 +4357,7 @@ REGISTER_TEST(edit_plan, executor_runs_script_ops_and_records_validation);
 REGISTER_TEST(edit_plan, executor_reports_explicit_dataarray_cell_values);
 REGISTER_TEST(edit_plan, executor_reports_explicit_behavior_interface_policy);
 REGISTER_TEST(edit_plan, executor_reports_explicit_behavior_link_delay);
+REGISTER_TEST(edit_plan, executor_reports_explicit_parameter_operation_removal);
 REGISTER_TEST(edit_plan, executor_replaces_leaf_bb_in_transaction);
 REGISTER_TEST(edit_plan, executor_replace_bb_dry_run_rolls_back);
 REGISTER_TEST(edit_plan, executor_folds_closed_graph_in_transaction);
