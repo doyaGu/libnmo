@@ -1384,6 +1384,78 @@ TEST(semantic_validator, edit_plan_reports_parameter_type_mismatch)
     semantic_fixture_dispose(&fixture);
 }
 
+TEST(semantic_validator, edit_plan_accepts_explicit_behavior_control_scope)
+{
+    semantic_fixture_t fixture;
+    semantic_fixture_init_empty(&fixture);
+
+    nmo_object_id_t root_id = 0u;
+    nmo_object_id_t child_id = 0u;
+    nmo_object_id_t root_io_id = 0u;
+    nmo_object_id_t child_io_id = 0u;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        fixture.session, 0, "Typed root", CKPGUID_BEHAVIOR,
+        &root_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        fixture.session, 0, "Typed child", CKPGUID_BEHAVIOR,
+        &child_id, NULL));
+    semantic_create_object(
+        &fixture, NMO_CID_BEHAVIORIO, "Root IO", &root_io_id);
+    semantic_create_object(
+        &fixture, NMO_CID_BEHAVIORIO, "Child IO", &child_io_id);
+
+    nmo_object_repository_t *repo =
+        nmo_session_get_repository(fixture.session);
+    const nmo_type_registry_t *registry =
+        nmo_context_get_type_registry(fixture.ctx);
+    nmo_object_t *root_object =
+        nmo_object_repository_find_by_id(repo, root_id);
+    nmo_object_t *child_object =
+        nmo_object_repository_find_by_id(repo, child_id);
+    nmo_behavior_state_t *root_state = (nmo_behavior_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, root_object, CKPGUID_BEHAVIOR);
+    nmo_behavior_state_t *child_state = (nmo_behavior_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, child_object, CKPGUID_BEHAVIOR);
+    ASSERT_NOT_NULL(root_state);
+    ASSERT_NOT_NULL(child_state);
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(
+        &root_state->sub_behaviors, child_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(
+        &root_state->inputs, root_io_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(
+        &child_state->outputs, child_io_id, NULL));
+
+    nmo_edit_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK,
+              nmo_edit_plan_add_behavior_link(
+                  plan,
+                  root_id,
+                  child_io_id,
+                  NULL,
+                  root_io_id,
+                  NULL,
+                  0u));
+
+    nmo_behavior_semantic_risk_t *risks = NULL;
+    size_t risk_count = 0u;
+    ASSERT_EQ(NMO_OK,
+              nmo_semantic_validate_edit_plan(
+                  fixture.workspace, plan, &risks, &risk_count));
+    ASSERT_NULL(find_risk(
+        risks, risk_count, "dangling_control_link"));
+    ASSERT_NULL(find_risk(
+        risks, risk_count, "control_endpoint_scope_mismatch"));
+    ASSERT_NULL(find_risk(
+        risks, risk_count, "behavior_owner_type_mismatch"));
+
+    nmo_semantic_risks_free(risks);
+    nmo_edit_plan_destroy(plan);
+    semantic_fixture_dispose(&fixture);
+}
+
 TEST(semantic_validator, edit_plan_accepts_explicit_parameter_types)
 {
     semantic_fixture_t fixture;
@@ -2502,6 +2574,56 @@ TEST(semantic_validator, edit_plan_reports_prototype_save_flags_mismatch)
     semantic_fixture_dispose(&fixture);
 }
 
+TEST(semantic_validator, edit_plan_checks_explicit_behavior_prototype)
+{
+    semantic_fixture_t fixture;
+    semantic_fixture_init_empty(&fixture);
+
+    nmo_object_id_t behavior_id = 0u;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        fixture.session, 0, "Typed BB", CKPGUID_BEHAVIOR,
+        &behavior_id, NULL));
+
+    nmo_object_repository_t *repo =
+        nmo_session_get_repository(fixture.session);
+    const nmo_type_registry_t *registry =
+        nmo_context_get_type_registry(fixture.ctx);
+    nmo_object_t *behavior_object =
+        nmo_object_repository_find_by_id(repo, behavior_id);
+    nmo_behavior_state_t *behavior_state = (nmo_behavior_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, behavior_object, CKPGUID_BEHAVIOR);
+    ASSERT_NOT_NULL(behavior_state);
+    behavior_state->flags |= CKBEHAVIOR_BUILDINGBLOCK;
+    behavior_state->block_guid = nmo_guid_parse("055B29FE-662D5CA0");
+    behavior_state->has_save_flags = true;
+    behavior_state->save_flags = CK_STATESAVE_BEHAVIORFLAGS;
+
+    nmo_behavior_replace_bb_desc_t replace = {
+        .behavior_id = behavior_id,
+        .block_guid = nmo_guid_parse("055B29FE-662D5CA0"),
+        .name = "Typed replacement",
+        .block_version = 65536u,
+    };
+    nmo_edit_plan_t *plan = NULL;
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_replace_bb(plan, &replace));
+
+    nmo_behavior_semantic_risk_t *risks = NULL;
+    size_t risk_count = 0u;
+    ASSERT_EQ(NMO_OK,
+              nmo_semantic_validate_edit_plan(
+                  fixture.workspace, plan, &risks, &risk_count));
+    const nmo_behavior_semantic_risk_t *mismatch =
+        find_risk(risks, risk_count, "prototype_save_flags_mismatch");
+    ASSERT_NOT_NULL(mismatch);
+    ASSERT_EQ(behavior_id, mismatch->object_id);
+
+    nmo_semantic_risks_free(risks);
+    nmo_edit_plan_destroy(plan);
+    semantic_fixture_dispose(&fixture);
+}
+
 TEST(semantic_validator, edit_plan_reports_replace_target_type_mismatch)
 {
     semantic_fixture_t fixture;
@@ -2719,6 +2841,7 @@ REGISTER_TEST(semantic_validator, detects_missing_symbolic_message_handle_value)
     REGISTER_TEST(semantic_validator, edit_plan_reports_control_endpoint_type_mismatch);
     REGISTER_TEST(semantic_validator, edit_plan_reports_control_link_type_mismatch);
     REGISTER_TEST(semantic_validator, edit_plan_reports_nested_control_endpoint_scope);
+    REGISTER_TEST(semantic_validator, edit_plan_accepts_explicit_behavior_control_scope);
     REGISTER_TEST(semantic_validator, edit_plan_reports_unowned_control_endpoint);
     REGISTER_TEST(semantic_validator, edit_plan_reports_rewire_control_endpoint_scope);
     REGISTER_TEST(semantic_validator, edit_plan_reports_parameter_type_mismatch);
@@ -2748,6 +2871,7 @@ REGISTER_TEST(semantic_validator, detects_missing_symbolic_message_handle_value)
     REGISTER_TEST(semantic_validator, edit_plan_reports_targetable_behavior_missing_target);
     REGISTER_TEST(semantic_validator, edit_plan_reports_target_parameter_class_mismatch);
     REGISTER_TEST(semantic_validator, edit_plan_reports_prototype_save_flags_mismatch);
+    REGISTER_TEST(semantic_validator, edit_plan_checks_explicit_behavior_prototype);
     REGISTER_TEST(semantic_validator, edit_plan_reports_replace_target_type_mismatch);
     REGISTER_TEST(semantic_validator, edit_plan_reports_interface_policy_risk);
     REGISTER_TEST(semantic_validator, edit_plan_reports_probe_analysis_safety_risk);
