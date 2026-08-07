@@ -2341,47 +2341,55 @@ static bool script_edit_behavior_array_contains(
     return nmo_behavior_ref_array_find(array, object_id, NULL);
 }
 
-typedef bool (*script_edit_interface_object_match_fn)(const nmo_object_t *object);
+typedef enum script_edit_interface_object_kind {
+    SCRIPT_EDIT_INTERFACE_OBJECT_ANY = 0,
+    SCRIPT_EDIT_INTERFACE_OBJECT_BEHAVIOR,
+    SCRIPT_EDIT_INTERFACE_OBJECT_LINK,
+    SCRIPT_EDIT_INTERFACE_OBJECT_OPERATION,
+    SCRIPT_EDIT_INTERFACE_OBJECT_PARAMETER,
+} script_edit_interface_object_kind_t;
 
-static bool script_edit_interface_object_matches_any(
-    const nmo_object_t *object)
+static bool script_edit_interface_object_matches(
+    const nmo_type_registry_t *registry,
+    nmo_object_t *object,
+    script_edit_interface_object_kind_t kind)
 {
-    return object != NULL;
-}
-
-static bool script_edit_interface_object_matches_behavior(
-    const nmo_object_t *object)
-{
-    return object != NULL && nmo_object_get_class_id(object) == NMO_CID_BEHAVIOR;
-}
-
-static bool script_edit_interface_object_matches_link(
-    const nmo_object_t *object)
-{
-    return object != NULL &&
-           nmo_object_get_class_id(object) == NMO_CID_BEHAVIORLINK;
-}
-
-static bool script_edit_interface_object_matches_operation(
-    const nmo_object_t *object)
-{
-    return object != NULL &&
-           nmo_object_get_class_id(object) == NMO_CID_PARAMETEROPERATION;
-}
-
-static bool script_edit_interface_object_matches_parameter(
-    const nmo_object_t *object)
-{
-    return object != NULL && nmo_parameter_get_state((nmo_object_t *)object) != NULL;
+    if (!object) {
+        return false;
+    }
+    switch (kind) {
+        case SCRIPT_EDIT_INTERFACE_OBJECT_ANY:
+            return true;
+        case SCRIPT_EDIT_INTERFACE_OBJECT_BEHAVIOR:
+            return script_edit_get_object_state(
+                registry, object, NMO_CID_BEHAVIOR, CKPGUID_BEHAVIOR) != NULL;
+        case SCRIPT_EDIT_INTERFACE_OBJECT_LINK:
+            return script_edit_get_object_state(
+                registry,
+                object,
+                NMO_CID_BEHAVIORLINK,
+                CKPGUID_BEHAVIORLINK) != NULL;
+        case SCRIPT_EDIT_INTERFACE_OBJECT_OPERATION:
+            return script_edit_get_object_state(
+                registry,
+                object,
+                NMO_CID_PARAMETEROPERATION,
+                CKPGUID_PARAMETEROPERATION) != NULL;
+        case SCRIPT_EDIT_INTERFACE_OBJECT_PARAMETER:
+            return script_edit_get_object_state(
+                registry, object, NMO_CID_PARAMETER, CKPGUID_PARAMETER) != NULL;
+    }
+    return false;
 }
 
 static nmo_object_t *script_edit_find_interface_object(
     nmo_session_t *session,
     nmo_object_id_t interface_id,
     bool interface_ids_are_runtime,
-    script_edit_interface_object_match_fn matches)
+    script_edit_interface_object_kind_t kind)
 {
     nmo_object_repository_t *repo = NULL;
+    const nmo_type_registry_t *registry = NULL;
     nmo_object_t *object = NULL;
 
     if (!session || interface_id == 0u) {
@@ -2389,26 +2397,27 @@ static nmo_object_t *script_edit_find_interface_object(
     }
 
     repo = nmo_session_get_repository(session);
-    if (!repo) {
+    registry = nmo_context_get_type_registry(nmo_session_get_context(session));
+    if (!repo || !registry) {
         return NULL;
     }
 
     if (interface_ids_are_runtime) {
         object = nmo_object_repository_find_by_id(repo, interface_id);
-        if (matches(object)) {
+        if (script_edit_interface_object_matches(registry, object, kind)) {
             return object;
         }
         object = nmo_object_repository_find_by_file_id(repo, interface_id);
-        if (matches(object)) {
+        if (script_edit_interface_object_matches(registry, object, kind)) {
             return object;
         }
     } else {
         object = nmo_object_repository_find_by_file_id(repo, interface_id);
-        if (matches(object)) {
+        if (script_edit_interface_object_matches(registry, object, kind)) {
             return object;
         }
         object = nmo_object_repository_find_by_id(repo, interface_id);
-        if (matches(object)) {
+        if (script_edit_interface_object_matches(registry, object, kind)) {
             return object;
         }
     }
@@ -2420,13 +2429,13 @@ static nmo_object_id_t script_edit_resolve_interface_object_id(
     nmo_session_t *session,
     nmo_object_id_t interface_id,
     bool interface_ids_are_runtime,
-    script_edit_interface_object_match_fn matches,
+    script_edit_interface_object_kind_t kind,
     nmo_object_t **out_object)
 {
     nmo_object_t *object = script_edit_find_interface_object(session,
                                                              interface_id,
                                                              interface_ids_are_runtime,
-                                                             matches);
+                                                             kind);
     if (out_object) {
         *out_object = object;
     }
@@ -2444,13 +2453,17 @@ static nmo_behavior_state_t *script_edit_resolve_interface_behavior_state(
         session,
         interface_behavior_id,
         interface_ids_are_runtime,
-        script_edit_interface_object_matches_behavior,
+        SCRIPT_EDIT_INTERFACE_OBJECT_BEHAVIOR,
         &object);
 
     if (out_runtime_behavior_id) {
         *out_runtime_behavior_id = runtime_behavior_id;
     }
-    return object != NULL ? (nmo_behavior_state_t *)nmo_object_get_state(object) : NULL;
+    return (nmo_behavior_state_t *)script_edit_get_object_state(
+        nmo_context_get_type_registry(nmo_session_get_context(session)),
+        object,
+        NMO_CID_BEHAVIOR,
+        CKPGUID_BEHAVIOR);
 }
 
 static bool script_edit_interface_endpoint_exists(
@@ -2462,7 +2475,7 @@ static bool script_edit_interface_endpoint_exists(
            script_edit_find_interface_object(session,
                                              object_id,
                                              interface_ids_are_runtime,
-                                             script_edit_interface_object_matches_any) != NULL;
+                                             SCRIPT_EDIT_INTERFACE_OBJECT_ANY) != NULL;
 }
 
 static bool script_edit_interface_link_is_valid(
@@ -2489,7 +2502,7 @@ static bool script_edit_interface_link_is_valid(
     link_id = script_edit_resolve_interface_object_id(session,
                                                       link->link_id,
                                                       interface_ids_are_runtime,
-                                                      script_edit_interface_object_matches_link,
+                                                      SCRIPT_EDIT_INTERFACE_OBJECT_LINK,
                                                       NULL);
     owner = index ? nmo_behavior_index_find(index, link_id) : NULL;
     if (!script_edit_interface_owner_matches(owner, owner_id, NMO_PORT_SUB_LINK)) {
@@ -2525,7 +2538,7 @@ static bool script_edit_interface_operation_is_valid(
         session,
         op->id,
         interface_ids_are_runtime,
-        script_edit_interface_object_matches_operation,
+        SCRIPT_EDIT_INTERFACE_OBJECT_OPERATION,
         NULL);
     owner = index ? nmo_behavior_index_find(index, operation_id) : NULL;
     if (!script_edit_interface_owner_matches(owner, owner_id, NMO_PORT_OPERATION)) {
@@ -2553,13 +2566,13 @@ static bool script_edit_interface_shared_param_is_valid(
         session,
         param->source_id,
         interface_ids_are_runtime,
-        script_edit_interface_object_matches_parameter,
+        SCRIPT_EDIT_INTERFACE_OBJECT_PARAMETER,
         &object);
     owner = index ? nmo_behavior_index_find(index, source_id) : NULL;
     if (!owner || owner->owner_id != owner_id) {
         return false;
     }
-    return object != NULL && nmo_parameter_get_state(object) != NULL;
+    return object != NULL;
 }
 
 static bool script_edit_interface_graph_io_is_valid(
@@ -2928,7 +2941,7 @@ static bool script_edit_rewrite_interface_endpoint_to_runtime(
         session,
         endpoint->id,
         interface_ids_are_runtime,
-        script_edit_interface_object_matches_any,
+        SCRIPT_EDIT_INTERFACE_OBJECT_ANY,
         NULL);
     if (runtime_id == 0u || runtime_id == endpoint->id) {
         return false;
@@ -2954,7 +2967,7 @@ static bool script_edit_rewrite_interface_body_to_runtime(
             session,
             body->links[i].link_id,
             interface_ids_are_runtime,
-            script_edit_interface_object_matches_link,
+            SCRIPT_EDIT_INTERFACE_OBJECT_LINK,
             NULL);
         if (runtime_link_id != 0u && runtime_link_id != body->links[i].link_id) {
             body->links[i].link_id = runtime_link_id;
@@ -2975,7 +2988,7 @@ static bool script_edit_rewrite_interface_body_to_runtime(
             session,
             body->operations[i].id,
             interface_ids_are_runtime,
-            script_edit_interface_object_matches_operation,
+            SCRIPT_EDIT_INTERFACE_OBJECT_OPERATION,
             NULL);
         if (runtime_operation_id != 0u &&
             runtime_operation_id != body->operations[i].id) {
@@ -2990,7 +3003,7 @@ static bool script_edit_rewrite_interface_body_to_runtime(
                 session,
                 body->params.shared[i].source_id,
                 interface_ids_are_runtime,
-                script_edit_interface_object_matches_parameter,
+                SCRIPT_EDIT_INTERFACE_OBJECT_PARAMETER,
                 NULL);
             if (runtime_source_id != 0u &&
                 runtime_source_id != body->params.shared[i].source_id) {
@@ -3019,7 +3032,7 @@ static bool script_edit_rewrite_interface_data_to_runtime(
             session,
             idata->script.behavior_id,
             interface_ids_are_runtime,
-            script_edit_interface_object_matches_behavior,
+            SCRIPT_EDIT_INTERFACE_OBJECT_BEHAVIOR,
             NULL);
         if (runtime_script_id != 0u && runtime_script_id != idata->script.behavior_id) {
             idata->script.behavior_id = runtime_script_id;
@@ -3035,7 +3048,7 @@ static bool script_edit_rewrite_interface_data_to_runtime(
             session,
             idata->subs[i].behavior_id,
             interface_ids_are_runtime,
-            script_edit_interface_object_matches_behavior,
+            SCRIPT_EDIT_INTERFACE_OBJECT_BEHAVIOR,
             NULL);
         if (runtime_behavior_id != 0u &&
             runtime_behavior_id != idata->subs[i].behavior_id) {

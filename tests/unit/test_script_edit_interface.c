@@ -2,8 +2,10 @@
 
 #include "document/nmo_document_save.h"
 #include "behavior/nmo_script_edit.h"
+#include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
 #include "object/builtin/nmo_behavior_schemas.h"
+#include "object/builtin/nmo_parameteroperation_schemas.h"
 #include "object/nmo_object_guids.h"
 #include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
@@ -431,12 +433,23 @@ TEST(script_edit_interface, remove_node_canonicalize_roundtrips_after_save)
     nmo_context_release(ctx);
 }
 
-TEST(script_edit_interface, canonicalize_converts_raw_interface_ids_to_runtime_ids)
+TEST(script_edit_interface, canonicalize_resolves_explicit_interface_objects)
 {
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
     nmo_script_edit_tx_t *tx = NULL;
+    nmo_object_repository_t *repo = NULL;
+    nmo_object_t *root_object = NULL;
+    nmo_object_t *link_object = NULL;
+    nmo_object_t *parameter_object = NULL;
+    nmo_object_t *operation_object = NULL;
     nmo_behavior_state_t *root_state = NULL;
+    nmo_parameteroperation_state_t *operation_state = NULL;
+    nmo_interface_body_t *script_body = NULL;
+    nmo_interface_param_t *shared_param = NULL;
+    nmo_interface_operation_t *interface_operation = NULL;
+    nmo_object_id_t local_parameter_id = 0u;
+    nmo_object_id_t operation_id = 0u;
 
     ctx = nmo_context_create(&(nmo_context_desc_t){ .data_dir = NMO_TEST_DATA_DIR });
     ASSERT_NOT_NULL(ctx);
@@ -445,11 +458,84 @@ TEST(script_edit_interface, canonicalize_converts_raw_interface_ids_to_runtime_i
     ASSERT_EQ(NMO_OK, nmo_session_load_file(session, NMO_SCRIPT_INTERFACE_FIXTURE, NULL, NULL));
     ASSERT_EQ(NMO_OK, nmo_session_ensure_behavior_acceleration(session));
 
-    root_state = find_behavior_state(session, NMO_SCRIPT_INTERFACE_TARGET_ID, NULL);
+    repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+    root_state = find_behavior_state(
+        session, NMO_SCRIPT_INTERFACE_TARGET_ID, &root_object);
     ASSERT_NOT_NULL(root_state);
+    ASSERT_NOT_NULL(root_object);
     ASSERT_NOT_NULL(root_state->interface_data);
     ASSERT_FALSE(root_state->interface_ids_are_runtime);
     ASSERT_EQ((nmo_object_id_t)250u, root_state->interface_data->script.behavior_id);
+    script_body = &root_state->interface_data->script.body;
+    ASSERT_TRUE(script_body->link_count > 0u);
+    ASSERT_EQ(NMO_INTERFACE_LINK_BEHAVIOR, script_body->links[0].type);
+    link_object = nmo_object_repository_find_by_file_id(
+        repo, script_body->links[0].link_id);
+    ASSERT_NOT_NULL(link_object);
+    ASSERT_TRUE(root_state->local_parameters.count > 0u);
+    local_parameter_id = nmo_behavior_ref_array_get_id(
+        &root_state->local_parameters, 0u);
+    parameter_object = nmo_object_repository_find_by_id(repo, local_parameter_id);
+    ASSERT_NOT_NULL(parameter_object);
+    ASSERT_EQ(NMO_CID_PARAMETERLOCAL,
+              nmo_object_get_class_id(parameter_object));
+
+    shared_param = (nmo_interface_param_t *)nmo_arena_alloc(
+        nmo_object_get_storage_arena(root_object),
+        sizeof(*shared_param),
+        alignof(nmo_interface_param_t));
+    ASSERT_NOT_NULL(shared_param);
+    memset(shared_param, 0, sizeof(*shared_param));
+    shared_param->source_id = parameter_object->file_id;
+    ASSERT_TRUE(shared_param->source_id != 0u);
+    script_body->has_params = true;
+    script_body->params.shared = shared_param;
+    script_body->params.shared_count = 1u;
+
+    ASSERT_EQ(NMO_OK,
+              nmo_session_create_object(
+                  session,
+                  0,
+                  "Typed interface operation",
+                  CKPGUID_PARAMETEROPERATION,
+                  &operation_id,
+                  NULL));
+    operation_object = nmo_object_repository_find_by_id(repo, operation_id);
+    operation_state = (nmo_parameteroperation_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            nmo_context_get_type_registry(ctx),
+            operation_object,
+            CKPGUID_PARAMETEROPERATION);
+    ASSERT_NOT_NULL(operation_object);
+    ASSERT_NOT_NULL(operation_state);
+    nmo_parameteroperation_set_owner_id(
+        operation_state, NMO_SCRIPT_INTERFACE_TARGET_ID);
+    operation_state->has_owner = 1u;
+    ASSERT_EQ(NMO_OK,
+              nmo_behavior_ref_array_append(
+                  &root_state->operations, operation_id, NULL));
+    interface_operation = (nmo_interface_operation_t *)nmo_arena_alloc(
+        nmo_object_get_storage_arena(root_object),
+        sizeof(*interface_operation),
+        alignof(nmo_interface_operation_t));
+    ASSERT_NOT_NULL(interface_operation);
+    *interface_operation = (nmo_interface_operation_t){ .id = operation_id };
+    script_body->operations = interface_operation;
+    script_body->operation_count = 1u;
+
+    ASSERT_EQ(NMO_OK,
+              nmo_object_repository_set_type_guid(
+                  repo, NMO_SCRIPT_INTERFACE_TARGET_ID, CKPGUID_BEHAVIOR));
+    root_object->class_id = 0;
+    ASSERT_EQ(NMO_OK,
+              nmo_object_repository_set_type_guid(
+                  repo, nmo_object_get_id(link_object), CKPGUID_BEHAVIORLINK));
+    link_object->class_id = 0;
+    ASSERT_EQ(NMO_OK,
+              nmo_object_repository_set_type_guid(
+                  repo, local_parameter_id, CKPGUID_PARAMETERLOCAL));
+    parameter_object->class_id = 0;
 
     ASSERT_EQ(NMO_OK, begin_test_script_edit(ctx, session, "raw interface ids", &tx));
     ASSERT_EQ(NMO_OK,
@@ -465,6 +551,11 @@ TEST(script_edit_interface, canonicalize_converts_raw_interface_ids_to_runtime_i
     ASSERT_TRUE(root_state->interface_ids_are_runtime);
     ASSERT_EQ(NMO_SCRIPT_INTERFACE_TARGET_ID,
               root_state->interface_data->script.behavior_id);
+    ASSERT_EQ(0, nmo_object_get_class_id(root_object));
+    ASSERT_EQ(0, nmo_object_get_class_id(link_object));
+    ASSERT_EQ(0, nmo_object_get_class_id(parameter_object));
+    ASSERT_EQ(0, nmo_object_get_class_id(operation_object));
+    ASSERT_EQ(local_parameter_id, shared_param->source_id);
     ASSERT_EQ(NMO_OK,
               nmo_script_edit_validate_interface_refs(tx, NMO_SCRIPT_INTERFACE_TARGET_ID));
 
@@ -517,7 +608,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(script_edit_interface,
                   remove_node_canonicalize_roundtrips_after_save);
     REGISTER_TEST(script_edit_interface,
-                  canonicalize_converts_raw_interface_ids_to_runtime_ids);
+                  canonicalize_resolves_explicit_interface_objects);
     REGISTER_TEST(script_edit_interface,
                   removes_interface_from_explicit_behavior_type);
 TEST_MAIN_END()
