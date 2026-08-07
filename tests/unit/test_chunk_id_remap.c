@@ -4501,6 +4501,94 @@ TEST(chunk_id_remap, entity_scalar_refs_round_trip_unresolved_raw_ids) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, entity_content_equality_ignores_storage_addresses) {
+    nmo_arena_t *arenas[2] = {
+        nmo_arena_create(NULL, 8192),
+        nmo_arena_create(NULL, 8192),
+    };
+    ASSERT_NOT_NULL(arenas[0]);
+    ASSERT_NOT_NULL(arenas[1]);
+
+    nmo_3dentity_state_t states[2];
+    for (size_t i = 0; i < 2; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_3dentity_vtable.create(
+            &states[i], NULL, NULL));
+        ASSERT_EQ(NMO_OK, nmo_renderobject_vtable.create(
+            &states[i].base, NULL, NULL));
+        ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+            &states[i].base.base.scripts, 101));
+
+        states[i].current_mesh = nmo_ref_from_raw(201);
+        states[i].mesh_count = 1;
+        states[i].mesh_ids = nmo_arena_alloc(
+            arenas[i], sizeof(*states[i].mesh_ids), _Alignof(nmo_ref_t));
+        ASSERT_NOT_NULL(states[i].mesh_ids);
+        states[i].mesh_ids[0] = nmo_ref_from_raw(202);
+        states[i].has_mesh_chunk = 1;
+
+        states[i].skin = nmo_arena_alloc(
+            arenas[i], sizeof(*states[i].skin),
+            _Alignof(nmo_3dentity_skin_t));
+        ASSERT_NOT_NULL(states[i].skin);
+        memset(states[i].skin, 0, sizeof(*states[i].skin));
+        states[i].skin->object_init_matrix.m[0][0] = 1.0f;
+        states[i].skin->bone_count = 1;
+        states[i].skin->bones = nmo_arena_alloc(
+            arenas[i], sizeof(*states[i].skin->bones),
+            _Alignof(nmo_3dentity_skin_bone_t));
+        ASSERT_NOT_NULL(states[i].skin->bones);
+        memset(states[i].skin->bones, 0, sizeof(*states[i].skin->bones));
+        states[i].skin->bones[0].bone_id = 301;
+        states[i].skin->bones[0].bone_flags = 3;
+        states[i].skin->bones[0].inverse_bind_matrix.m[1][1] = 1.0f;
+
+        states[i].skin->vertex_count = 1;
+        states[i].skin->vertices = nmo_arena_alloc(
+            arenas[i], sizeof(*states[i].skin->vertices),
+            _Alignof(nmo_3dentity_skin_vertex_t));
+        ASSERT_NOT_NULL(states[i].skin->vertices);
+        memset(states[i].skin->vertices, 0,
+               sizeof(*states[i].skin->vertices));
+        states[i].skin->vertices[0].bone_count = 1;
+        states[i].skin->vertices[0].initial_pos.x = 2.0f;
+        states[i].skin->vertices[0].bone_indices = nmo_arena_alloc(
+            arenas[i], sizeof(uint32_t), _Alignof(uint32_t));
+        states[i].skin->vertices[0].bone_weights = nmo_arena_alloc(
+            arenas[i], sizeof(float), _Alignof(float));
+        ASSERT_NOT_NULL(states[i].skin->vertices[0].bone_indices);
+        ASSERT_NOT_NULL(states[i].skin->vertices[0].bone_weights);
+        states[i].skin->vertices[0].bone_indices[0] = 0;
+        states[i].skin->vertices[0].bone_weights[0] = 0.5f;
+
+        states[i].skin->normal_count = 1;
+        states[i].skin->normals = nmo_arena_alloc(
+            arenas[i], sizeof(*states[i].skin->normals),
+            _Alignof(nmo_vector_t));
+        ASSERT_NOT_NULL(states[i].skin->normals);
+        states[i].skin->normals[0] = (nmo_vector_t){0.0f, 1.0f, 0.0f};
+        states[i].skin->normals_present = 1;
+        states[i].skin->normals_have_count = 1;
+    }
+
+    ASSERT_NE(states[0].base.base.scripts.data,
+              states[1].base.base.scripts.data);
+    ASSERT_NE(states[0].mesh_ids, states[1].mesh_ids);
+    ASSERT_NE(states[0].skin, states[1].skin);
+    ASSERT_NE(states[0].skin->vertices[0].bone_weights,
+              states[1].skin->vertices[0].bone_weights);
+    ASSERT_TRUE(nmo_3dentity_vtable.equals(&states[0], &states[1]));
+    ASSERT_EQ(nmo_3dentity_vtable.hash(&states[0]),
+              nmo_3dentity_vtable.hash(&states[1]));
+
+    states[1].skin->vertices[0].bone_weights[0] = 0.75f;
+    ASSERT_FALSE(nmo_3dentity_vtable.equals(&states[0], &states[1]));
+
+    for (size_t i = 0; i < 2; ++i) {
+        nmo_renderobject_vtable.destroy(&states[i].base, NULL, NULL);
+        nmo_arena_destroy(arenas[i]);
+    }
+}
+
 TEST(chunk_id_remap, entity_scalar_ref_sections_reject_truncation_atomically) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
     ASSERT_NOT_NULL(arena);
@@ -8479,6 +8567,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, sound_family_failures_keep_state_and_target_chunk_atomic);
     REGISTER_TEST(chunk_id_remap, scalar_ref_sections_do_not_publish_truncated_state);
     REGISTER_TEST(chunk_id_remap, entity_scalar_refs_round_trip_unresolved_raw_ids);
+    REGISTER_TEST(chunk_id_remap, entity_content_equality_ignores_storage_addresses);
     REGISTER_TEST(chunk_id_remap, entity_scalar_ref_sections_reject_truncation_atomically);
     REGISTER_TEST(chunk_id_remap, entity_skin_rejects_negative_vertex_bone_count_atomically);
     REGISTER_TEST(chunk_id_remap, entity_skin_rejects_oversized_counts_before_allocation);

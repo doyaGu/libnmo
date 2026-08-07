@@ -1030,56 +1030,231 @@ static void nmo_3dentity_post_delete(
     (void)context;
 }
 
+static bool nmo_3dentity_ref_equals(
+    const nmo_ref_t *lhs,
+    const nmo_ref_t *rhs)
+{
+    return lhs->raw_id == rhs->raw_id &&
+        lhs->id == rhs->id &&
+        lhs->state == rhs->state;
+}
+
+static bool nmo_3dentity_ref_array_equals(
+    const nmo_ref_t *lhs,
+    const nmo_ref_t *rhs,
+    uint32_t count)
+{
+    if (count > 0 && (lhs == NULL || rhs == NULL)) return false;
+    for (uint32_t i = 0; i < count; ++i) {
+        if (!nmo_3dentity_ref_equals(&lhs[i], &rhs[i])) return false;
+    }
+    return true;
+}
+
+static bool nmo_3dentity_skin_equals(
+    const nmo_3dentity_skin_t *lhs,
+    const nmo_3dentity_skin_t *rhs)
+{
+    if (lhs == rhs) return true;
+    if (lhs == NULL || rhs == NULL ||
+        lhs->bone_count != rhs->bone_count ||
+        lhs->vertex_count != rhs->vertex_count ||
+        lhs->normal_count != rhs->normal_count ||
+        lhs->normals_present != rhs->normals_present ||
+        lhs->normals_have_count != rhs->normals_have_count ||
+        memcmp(&lhs->object_init_matrix, &rhs->object_init_matrix,
+               sizeof(lhs->object_init_matrix)) != 0 ||
+        (lhs->bone_count > 0 && (!lhs->bones || !rhs->bones)) ||
+        (lhs->vertex_count > 0 && (!lhs->vertices || !rhs->vertices)) ||
+        (lhs->normal_count > 0 && (!lhs->normals || !rhs->normals))) {
+        return false;
+    }
+
+    for (uint32_t i = 0; i < lhs->bone_count; ++i) {
+        if (lhs->bones[i].bone_id != rhs->bones[i].bone_id ||
+            lhs->bones[i].bone_flags != rhs->bones[i].bone_flags ||
+            memcmp(&lhs->bones[i].inverse_bind_matrix,
+                   &rhs->bones[i].inverse_bind_matrix,
+                   sizeof(lhs->bones[i].inverse_bind_matrix)) != 0) {
+            return false;
+        }
+    }
+    for (uint32_t i = 0; i < lhs->vertex_count; ++i) {
+        const nmo_3dentity_skin_vertex_t *lhs_vertex = &lhs->vertices[i];
+        const nmo_3dentity_skin_vertex_t *rhs_vertex = &rhs->vertices[i];
+        if (lhs_vertex->bone_count != rhs_vertex->bone_count ||
+            memcmp(&lhs_vertex->initial_pos, &rhs_vertex->initial_pos,
+                   sizeof(lhs_vertex->initial_pos)) != 0 ||
+            (lhs_vertex->bone_count > 0 &&
+             (!lhs_vertex->bone_indices || !rhs_vertex->bone_indices ||
+              !lhs_vertex->bone_weights || !rhs_vertex->bone_weights)) ||
+            (lhs_vertex->bone_count > 0 &&
+             (memcmp(lhs_vertex->bone_indices, rhs_vertex->bone_indices,
+                     (size_t)lhs_vertex->bone_count * sizeof(uint32_t)) != 0 ||
+              memcmp(lhs_vertex->bone_weights, rhs_vertex->bone_weights,
+                     (size_t)lhs_vertex->bone_count * sizeof(float)) != 0))) {
+            return false;
+        }
+    }
+    return lhs->normal_count == 0 ||
+        memcmp(lhs->normals, rhs->normals,
+               (size_t)lhs->normal_count * sizeof(nmo_vector_t)) == 0;
+}
+
 static bool nmo_3dentity_equals(const void *a, const void *b)
 {
     if (a == b) return true;
     if (a == NULL || b == NULL) return false;
     const nmo_3dentity_state_t *lhs = (const nmo_3dentity_state_t *)a;
     const nmo_3dentity_state_t *rhs = (const nmo_3dentity_state_t *)b;
-    if (lhs->mesh_count != rhs->mesh_count ||
-        lhs->animation_count != rhs->animation_count) {
-        return false;
+
+    return nmo_renderobject_vtable.equals(&lhs->base, &rhs->base) &&
+        memcmp(lhs->world_matrix, rhs->world_matrix,
+               sizeof(lhs->world_matrix)) == 0 &&
+        lhs->entity_flags == rhs->entity_flags &&
+        lhs->moveable_flags == rhs->moveable_flags &&
+        nmo_3dentity_ref_equals(&lhs->parent, &rhs->parent) &&
+        nmo_3dentity_ref_equals(&lhs->place, &rhs->place) &&
+        lhs->z_order == rhs->z_order &&
+        nmo_3dentity_ref_equals(&lhs->current_mesh, &rhs->current_mesh) &&
+        lhs->mesh_count == rhs->mesh_count &&
+        nmo_3dentity_ref_array_equals(
+            lhs->mesh_ids, rhs->mesh_ids, lhs->mesh_count) &&
+        lhs->animation_count == rhs->animation_count &&
+        nmo_3dentity_ref_array_equals(
+            lhs->animation_ids, rhs->animation_ids, lhs->animation_count) &&
+        nmo_3dentity_skin_equals(lhs->skin, rhs->skin) &&
+        lhs->has_mesh_chunk == rhs->has_mesh_chunk &&
+        lhs->has_animation_chunk == rhs->has_animation_chunk &&
+        lhs->has_entityndata_chunk == rhs->has_entityndata_chunk &&
+        lhs->has_parent_chunk == rhs->has_parent_chunk &&
+        lhs->has_flags_chunk == rhs->has_flags_chunk &&
+        lhs->has_matrix_chunk == rhs->has_matrix_chunk;
+}
+
+static uint32_t nmo_3dentity_hash_bytes(
+    uint32_t hash,
+    const void *data,
+    size_t size)
+{
+    const uint8_t *bytes = (const uint8_t *)data;
+    for (size_t i = 0; i < size; ++i) {
+        hash ^= bytes[i];
+        hash *= 16777619u;
     }
-    if ((lhs->mesh_count > 0 && (!lhs->mesh_ids || !rhs->mesh_ids)) ||
-        (lhs->animation_count > 0 &&
-         (!lhs->animation_ids || !rhs->animation_ids))) {
-        return false;
+    return hash;
+}
+
+static uint32_t nmo_3dentity_hash_ref(uint32_t hash, const nmo_ref_t *ref)
+{
+    hash = nmo_3dentity_hash_bytes(hash, &ref->raw_id, sizeof(ref->raw_id));
+    hash = nmo_3dentity_hash_bytes(hash, &ref->id, sizeof(ref->id));
+    return nmo_3dentity_hash_bytes(hash, &ref->state, sizeof(ref->state));
+}
+
+static uint32_t nmo_3dentity_hash_skin(
+    uint32_t hash,
+    const nmo_3dentity_skin_t *skin)
+{
+    const uint8_t present = skin != NULL;
+    hash = nmo_3dentity_hash_bytes(hash, &present, sizeof(present));
+    if (skin == NULL) return hash;
+
+    hash = nmo_3dentity_hash_bytes(
+        hash, &skin->object_init_matrix, sizeof(skin->object_init_matrix));
+    hash = nmo_3dentity_hash_bytes(
+        hash, &skin->bone_count, sizeof(skin->bone_count));
+    for (uint32_t i = 0; i < skin->bone_count && skin->bones != NULL; ++i) {
+        hash = nmo_3dentity_hash_bytes(
+            hash, &skin->bones[i].bone_id, sizeof(skin->bones[i].bone_id));
+        hash = nmo_3dentity_hash_bytes(
+            hash, &skin->bones[i].bone_flags,
+            sizeof(skin->bones[i].bone_flags));
+        hash = nmo_3dentity_hash_bytes(
+            hash, &skin->bones[i].inverse_bind_matrix,
+            sizeof(skin->bones[i].inverse_bind_matrix));
     }
-    nmo_3dentity_state_t lhs_value = *lhs;
-    nmo_3dentity_state_t rhs_value = *rhs;
-    lhs_value.mesh_ids = NULL;
-    rhs_value.mesh_ids = NULL;
-    lhs_value.animation_ids = NULL;
-    rhs_value.animation_ids = NULL;
-    if (memcmp(&lhs_value, &rhs_value, sizeof(lhs_value)) != 0) return false;
-    if (lhs->mesh_count > 0 && memcmp(
-            lhs->mesh_ids, rhs->mesh_ids,
-            (size_t)lhs->mesh_count * sizeof(nmo_ref_t)) != 0) {
-        return false;
+    hash = nmo_3dentity_hash_bytes(
+        hash, &skin->vertex_count, sizeof(skin->vertex_count));
+    for (uint32_t i = 0;
+         i < skin->vertex_count && skin->vertices != NULL;
+         ++i) {
+        const nmo_3dentity_skin_vertex_t *vertex = &skin->vertices[i];
+        hash = nmo_3dentity_hash_bytes(
+            hash, &vertex->bone_count, sizeof(vertex->bone_count));
+        hash = nmo_3dentity_hash_bytes(
+            hash, &vertex->initial_pos, sizeof(vertex->initial_pos));
+        if (vertex->bone_count > 0 && vertex->bone_indices != NULL) {
+            hash = nmo_3dentity_hash_bytes(
+                hash, vertex->bone_indices,
+                (size_t)vertex->bone_count * sizeof(uint32_t));
+        }
+        if (vertex->bone_count > 0 && vertex->bone_weights != NULL) {
+            hash = nmo_3dentity_hash_bytes(
+                hash, vertex->bone_weights,
+                (size_t)vertex->bone_count * sizeof(float));
+        }
     }
-    return lhs->animation_count == 0 || memcmp(
-        lhs->animation_ids, rhs->animation_ids,
-        (size_t)lhs->animation_count * sizeof(nmo_ref_t)) == 0;
+    hash = nmo_3dentity_hash_bytes(
+        hash, &skin->normal_count, sizeof(skin->normal_count));
+    if (skin->normal_count > 0 && skin->normals != NULL) {
+        hash = nmo_3dentity_hash_bytes(
+            hash, skin->normals,
+            (size_t)skin->normal_count * sizeof(nmo_vector_t));
+    }
+    hash = nmo_3dentity_hash_bytes(
+        hash, &skin->normals_present, sizeof(skin->normals_present));
+    return nmo_3dentity_hash_bytes(
+        hash, &skin->normals_have_count, sizeof(skin->normals_have_count));
 }
 
 static uint32_t nmo_3dentity_hash(const void *instance)
 {
     if (instance == NULL) return 0;
     const nmo_3dentity_state_t *state = (const nmo_3dentity_state_t *)instance;
-    nmo_3dentity_state_t value = *state;
-    value.mesh_ids = NULL;
-    value.animation_ids = NULL;
-    uint32_t hash = (uint32_t)nmo_hash_fnv1a(&value, sizeof(value));
-    if (state->mesh_ids != NULL && state->mesh_count > 0) {
-        hash ^= (uint32_t)nmo_hash_fnv1a(
-            state->mesh_ids, (size_t)state->mesh_count * sizeof(nmo_ref_t));
+    uint32_t hash = 2166136261u;
+    const uint32_t base_hash = nmo_renderobject_vtable.hash(&state->base);
+    hash = nmo_3dentity_hash_bytes(hash, &base_hash, sizeof(base_hash));
+    hash = nmo_3dentity_hash_bytes(
+        hash, state->world_matrix, sizeof(state->world_matrix));
+    hash = nmo_3dentity_hash_bytes(
+        hash, &state->entity_flags, sizeof(state->entity_flags));
+    hash = nmo_3dentity_hash_bytes(
+        hash, &state->moveable_flags, sizeof(state->moveable_flags));
+    hash = nmo_3dentity_hash_ref(hash, &state->parent);
+    hash = nmo_3dentity_hash_ref(hash, &state->place);
+    hash = nmo_3dentity_hash_bytes(
+        hash, &state->z_order, sizeof(state->z_order));
+    hash = nmo_3dentity_hash_ref(hash, &state->current_mesh);
+    hash = nmo_3dentity_hash_bytes(
+        hash, &state->mesh_count, sizeof(state->mesh_count));
+    for (uint32_t i = 0;
+         i < state->mesh_count && state->mesh_ids != NULL;
+         ++i) {
+        hash = nmo_3dentity_hash_ref(hash, &state->mesh_ids[i]);
     }
-    if (state->animation_ids != NULL && state->animation_count > 0) {
-        hash ^= (uint32_t)nmo_hash_fnv1a(
-            state->animation_ids,
-            (size_t)state->animation_count * sizeof(nmo_ref_t));
+    hash = nmo_3dentity_hash_bytes(
+        hash, &state->animation_count, sizeof(state->animation_count));
+    for (uint32_t i = 0;
+         i < state->animation_count && state->animation_ids != NULL;
+         ++i) {
+        hash = nmo_3dentity_hash_ref(hash, &state->animation_ids[i]);
     }
-    return hash;
+    hash = nmo_3dentity_hash_skin(hash, state->skin);
+    hash = nmo_3dentity_hash_bytes(
+        hash, &state->has_mesh_chunk, sizeof(state->has_mesh_chunk));
+    hash = nmo_3dentity_hash_bytes(
+        hash, &state->has_animation_chunk,
+        sizeof(state->has_animation_chunk));
+    hash = nmo_3dentity_hash_bytes(
+        hash, &state->has_entityndata_chunk,
+        sizeof(state->has_entityndata_chunk));
+    hash = nmo_3dentity_hash_bytes(
+        hash, &state->has_parent_chunk, sizeof(state->has_parent_chunk));
+    hash = nmo_3dentity_hash_bytes(
+        hash, &state->has_flags_chunk, sizeof(state->has_flags_chunk));
+    return nmo_3dentity_hash_bytes(
+        hash, &state->has_matrix_chunk, sizeof(state->has_matrix_chunk));
 }
 
 static nmo_status_t nmo_3dentity_copy(
