@@ -64,6 +64,20 @@ foreach(schema_file IN LISTS schema_files)
     endforeach()
 endforeach()
 
+file(GLOB behavior_files "${SOURCE_DIR}/src/behavior/*.c")
+foreach(behavior_file IN LISTS behavior_files)
+    file(STRINGS "${behavior_file}" lines)
+    set(line_number 0)
+    foreach(line IN LISTS lines)
+        math(EXPR line_number "${line_number} + 1")
+        if(line MATCHES "\\(void\\)[ \t]*nmo_chunk_(read|write|skip)" OR
+           line MATCHES "nmo_chunk_read_string[ \t]*\\(")
+            string(APPEND failures
+                "${behavior_file}:${line_number}: unchecked chunk I/O: ${line}\n")
+        endif()
+    endforeach()
+endforeach()
+
 foreach(schema_file IN LISTS schema_files)
     file(READ "${schema_file}" contents)
     if(contents MATCHES

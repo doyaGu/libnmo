@@ -1545,7 +1545,9 @@ static bool semantic_message_manager_has_name(nmo_workspace_t *workspace,
         }
         for (int32_t index = 0; index < count; ++index) {
             char *name = NULL;
-            (void)nmo_chunk_read_string(chunk, &name);
+            if (nmo_chunk_read_string_checked(chunk, &name, NULL) != NMO_OK) {
+                break;
+            }
             if (name != NULL && strcmp(name, message_name) == 0) {
                 return true;
             }
@@ -1593,19 +1595,25 @@ static bool semantic_attribute_manager_has_name(nmo_workspace_t *workspace,
             attribute_count < 0) {
             continue;
         }
+        bool malformed = false;
         for (int32_t category = 0; category < category_count; ++category) {
             int32_t present = 0;
             if (nmo_chunk_read_int(chunk, &present) != NMO_OK) {
+                malformed = true;
                 break;
             }
             if (present != 0) {
                 char *name = NULL;
-                (void)nmo_chunk_read_string(chunk, &name);
                 uint32_t flags = 0u;
-                if (nmo_chunk_read_dword(chunk, &flags) != NMO_OK) {
+                if (nmo_chunk_read_string_checked(chunk, &name, NULL) != NMO_OK ||
+                    nmo_chunk_read_dword(chunk, &flags) != NMO_OK) {
+                    malformed = true;
                     break;
                 }
             }
+        }
+        if (malformed) {
+            continue;
         }
         for (int32_t attribute = 0; attribute < attribute_count; ++attribute) {
             int32_t present = 0;
@@ -1616,12 +1624,12 @@ static bool semantic_attribute_manager_has_name(nmo_workspace_t *workspace,
                 continue;
             }
             char *name = NULL;
-            (void)nmo_chunk_read_string(chunk, &name);
             nmo_guid_t type_guid = NMO_GUID_NULL;
             int32_t category_index = 0;
             int32_t compatible_class_id = 0;
             uint32_t flags = 0u;
-            if (nmo_chunk_read_guid(chunk, &type_guid) != NMO_OK ||
+            if (nmo_chunk_read_string_checked(chunk, &name, NULL) != NMO_OK ||
+                nmo_chunk_read_guid(chunk, &type_guid) != NMO_OK ||
                 nmo_chunk_read_int(chunk, &category_index) != NMO_OK ||
                 nmo_chunk_read_int(chunk, &compatible_class_id) != NMO_OK ||
                 nmo_chunk_read_dword(chunk, &flags) != NMO_OK) {

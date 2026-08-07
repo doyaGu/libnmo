@@ -762,7 +762,11 @@ static nmo_status_t script_edit_find_message_manager_value(
         }
         for (int32_t index = 0; index < count; ++index) {
             char *entry_name = NULL;
-            (void)nmo_chunk_read_string(chunk, &entry_name);
+            nmo_status_t status =
+                nmo_chunk_read_string_checked(chunk, &entry_name, NULL);
+            if (status != NMO_OK) {
+                return status;
+            }
             if (entry_name && strcmp(entry_name, name) == 0) {
                 *out_value = (uint32_t)index;
                 return NMO_OK;
@@ -821,9 +825,13 @@ static nmo_status_t script_edit_find_attribute_manager_value(
             if (present) {
                 char *category_name = NULL;
                 uint32_t flags = 0;
-                (void)nmo_chunk_read_string(chunk, &category_name);
-                if (nmo_chunk_read_dword(chunk, &flags) != NMO_OK) {
-                    return NMO_ERR_INVALID_STATE;
+                nmo_status_t status = nmo_chunk_read_string_checked(
+                    chunk, &category_name, NULL);
+                if (status == NMO_OK) {
+                    status = nmo_chunk_read_dword(chunk, &flags);
+                }
+                if (status != NMO_OK) {
+                    return status;
                 }
             }
         }
@@ -842,12 +850,22 @@ static nmo_status_t script_edit_find_attribute_manager_value(
             int32_t category_index = 0;
             int32_t compatible_class_id = 0;
             uint32_t flags = 0;
-            (void)nmo_chunk_read_string(chunk, &attr_name);
-            if (nmo_chunk_read_guid(chunk, &parameter_type_guid) != NMO_OK ||
-                nmo_chunk_read_int(chunk, &category_index) != NMO_OK ||
-                nmo_chunk_read_int(chunk, &compatible_class_id) != NMO_OK ||
-                nmo_chunk_read_dword(chunk, &flags) != NMO_OK) {
-                return NMO_ERR_INVALID_STATE;
+            nmo_status_t status = nmo_chunk_read_string_checked(
+                chunk, &attr_name, NULL);
+            if (status == NMO_OK) {
+                status = nmo_chunk_read_guid(chunk, &parameter_type_guid);
+            }
+            if (status == NMO_OK) {
+                status = nmo_chunk_read_int(chunk, &category_index);
+            }
+            if (status == NMO_OK) {
+                status = nmo_chunk_read_int(chunk, &compatible_class_id);
+            }
+            if (status == NMO_OK) {
+                status = nmo_chunk_read_dword(chunk, &flags);
+            }
+            if (status != NMO_OK) {
+                return status;
             }
             if (attr_name && strcmp(attr_name, name) == 0) {
                 *out_value = (uint32_t)attr;

@@ -224,14 +224,17 @@ static nmo_status_t edit_plan_read_manager_snapshot(
         snapshot->message_names =
             (const char **)calloc((size_t)count, sizeof(char *));
         if (count > 0 && snapshot->message_names == NULL) {
+            edit_plan_manager_snapshot_dispose(snapshot);
             return NMO_ERR_NOMEM;
         }
         snapshot->message_name_count = (uint32_t)count;
         for (int32_t index = 0; index < count; ++index) {
             char *name = NULL;
-            if (nmo_chunk_read_string(chunk, &name) == 0u) {
+            nmo_status_t status =
+                nmo_chunk_read_string_checked(chunk, &name, NULL);
+            if (status != NMO_OK) {
                 edit_plan_manager_snapshot_dispose(snapshot);
-                return NMO_OK;
+                return status;
             }
             snapshot->message_names[index] = edit_plan_strdup(name ? name : "");
             if (snapshot->message_names[index] == NULL) {
@@ -251,6 +254,7 @@ static nmo_status_t edit_plan_read_manager_snapshot(
         nmo_chunk_t *chunk =
             nmo_chunk_clone(manager->chunk, nmo_session_get_arena(session));
         if (chunk == NULL) {
+            edit_plan_manager_snapshot_dispose(snapshot);
             return NMO_ERR_NOMEM;
         }
         if (nmo_chunk_start_read(chunk) != NMO_OK) {
@@ -276,22 +280,32 @@ static nmo_status_t edit_plan_read_manager_snapshot(
         const char **categories =
             (const char **)calloc((size_t)category_count, sizeof(char *));
         if (category_count > 0 && categories == NULL) {
+            edit_plan_manager_snapshot_dispose(snapshot);
             return NMO_ERR_NOMEM;
         }
+        nmo_status_t attribute_status = NMO_OK;
         for (int32_t cat = 0; cat < category_count; ++cat) {
             int32_t present = 0;
-            if (nmo_chunk_read_int(chunk, &present) != NMO_OK) {
+            attribute_status = nmo_chunk_read_int(chunk, &present);
+            if (attribute_status != NMO_OK) {
                 goto attribute_snapshot_cleanup;
             }
             if (present != 0) {
                 char *name = NULL;
                 uint32_t flags = 0u;
-                (void)nmo_chunk_read_string(chunk, &name);
-                (void)nmo_chunk_read_dword(chunk, &flags);
+                attribute_status =
+                    nmo_chunk_read_string_checked(chunk, &name, NULL);
+                if (attribute_status != NMO_OK) {
+                    goto attribute_snapshot_cleanup;
+                }
+                attribute_status = nmo_chunk_read_dword(chunk, &flags);
+                if (attribute_status != NMO_OK) {
+                    goto attribute_snapshot_cleanup;
+                }
                 categories[cat] = edit_plan_strdup(name ? name : "");
                 if (categories[cat] == NULL) {
-                    free(categories);
-                    return NMO_ERR_NOMEM;
+                    attribute_status = NMO_ERR_NOMEM;
+                    goto attribute_snapshot_cleanup;
                 }
             }
         }
@@ -299,17 +313,15 @@ static nmo_status_t edit_plan_read_manager_snapshot(
             (struct edit_plan_attribute_entry *)calloc(
                 (size_t)attribute_count, sizeof(*snapshot->attribute_entries));
         if (attribute_count > 0 && snapshot->attribute_entries == NULL) {
-            for (int32_t cat = 0; cat < category_count; ++cat) {
-                free((void *)categories[cat]);
-            }
-            free(categories);
-            return NMO_ERR_NOMEM;
+            attribute_status = NMO_ERR_NOMEM;
+            goto attribute_snapshot_cleanup;
         }
         snapshot->attribute_entry_count = (uint32_t)attribute_count;
         for (int32_t attr_index = 0; attr_index < attribute_count; ++attr_index) {
             int32_t present = 0;
-            if (nmo_chunk_read_int(chunk, &present) != NMO_OK) {
-                break;
+            attribute_status = nmo_chunk_read_int(chunk, &present);
+            if (attribute_status != NMO_OK) {
+                goto attribute_snapshot_cleanup;
             }
             if (present == 0) {
                 continue;
@@ -319,32 +331,37 @@ static nmo_status_t edit_plan_read_manager_snapshot(
             int32_t category_index = -1;
             int32_t compatible_class_id = 0;
             uint32_t flags = 0u;
-            (void)nmo_chunk_read_string(chunk, &name);
-            if (nmo_chunk_read_guid(chunk, &type_guid) != NMO_OK ||
-                nmo_chunk_read_int(chunk, &category_index) != NMO_OK ||
-                nmo_chunk_read_int(chunk, &compatible_class_id) != NMO_OK ||
-                nmo_chunk_read_dword(chunk, &flags) != NMO_OK) {
-                break;
+            attribute_status =
+                nmo_chunk_read_string_checked(chunk, &name, NULL);
+            if (attribute_status == NMO_OK) {
+                attribute_status = nmo_chunk_read_guid(chunk, &type_guid);
+            }
+            if (attribute_status == NMO_OK) {
+                attribute_status = nmo_chunk_read_int(chunk, &category_index);
+            }
+            if (attribute_status == NMO_OK) {
+                attribute_status =
+                    nmo_chunk_read_int(chunk, &compatible_class_id);
+            }
+            if (attribute_status == NMO_OK) {
+                attribute_status = nmo_chunk_read_dword(chunk, &flags);
+            }
+            if (attribute_status != NMO_OK) {
+                goto attribute_snapshot_cleanup;
             }
             snapshot->attribute_entries[attr_index].name =
                 edit_plan_strdup(name ? name : "");
             if (snapshot->attribute_entries[attr_index].name == NULL) {
-                for (int32_t cat = 0; cat < category_count; ++cat) {
-                    free((void *)categories[cat]);
-                }
-                free(categories);
-                return NMO_ERR_NOMEM;
+                attribute_status = NMO_ERR_NOMEM;
+                goto attribute_snapshot_cleanup;
             }
             if (category_index >= 0 && category_index < category_count &&
                 categories[category_index] != NULL) {
                 snapshot->attribute_entries[attr_index].category =
                     edit_plan_strdup(categories[category_index]);
                 if (snapshot->attribute_entries[attr_index].category == NULL) {
-                    for (int32_t cat = 0; cat < category_count; ++cat) {
-                        free((void *)categories[cat]);
-                    }
-                    free(categories);
-                    return NMO_ERR_NOMEM;
+                    attribute_status = NMO_ERR_NOMEM;
+                    goto attribute_snapshot_cleanup;
                 }
             }
             snapshot->attribute_entries[attr_index].type_guid = type_guid;
@@ -357,6 +374,10 @@ attribute_snapshot_cleanup:
             free((void *)categories[cat]);
         }
         free(categories);
+        if (attribute_status != NMO_OK) {
+            edit_plan_manager_snapshot_dispose(snapshot);
+            return attribute_status;
+        }
         break;
     }
 
