@@ -367,7 +367,41 @@ static void nmo_layer_post_delete(
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_STATE_OPS_CUSTOM(layer, nmo_layer_state_t)
+static const nmo_object_serialize_pass_t nmo_layer_compare_passes[] = {
+    {
+        .class_id = NMO_CID_LAYER,
+        .data_version = 7,
+        .chunk_options = NMO_CHUNK_OPTION_FILE,
+        .serialize_flags = NMO_SERIALIZE_FLAG_FILE_MODE,
+        .use_context = 1,
+    },
+    {
+        .class_id = NMO_CID_LAYER,
+        .data_version = 7,
+        .save_flags = CK_STATESAVE_LAYERDATA,
+        .use_context = 1,
+    },
+};
+
+static bool nmo_layer_equals(const void *a, const void *b)
+{
+    return nmo_object_serialized_state_equals(
+        a, b, nmo_layer_serialize,
+        nmo_layer_compare_passes,
+        sizeof(nmo_layer_compare_passes) /
+            sizeof(nmo_layer_compare_passes[0]),
+        4096);
+}
+
+static uint32_t nmo_layer_hash(const void *instance)
+{
+    return nmo_object_serialized_state_hash(
+        instance, nmo_layer_serialize,
+        nmo_layer_compare_passes,
+        sizeof(nmo_layer_compare_passes) /
+            sizeof(nmo_layer_compare_passes[0]),
+        4096);
+}
 
 nmo_type_vtable_t nmo_layer_vtable = {
     .prepare_dependencies = nmo_layer_prepare_dependencies,

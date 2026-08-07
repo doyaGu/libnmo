@@ -3224,6 +3224,56 @@ TEST(chunk_id_remap, layer_default_format_writes_empty_square_buffer) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, layer_copy_preserves_content_equality) {
+    nmo_arena_t *source_arena = nmo_arena_create(NULL, 8192);
+    nmo_arena_t *copy_arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(source_arena);
+    ASSERT_NOT_NULL(copy_arena);
+
+    nmo_layer_state_t source;
+    nmo_layer_state_t copy;
+    ASSERT_EQ(NMO_OK, nmo_layer_vtable.create(&source, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_layer_vtable.create(&copy, NULL, NULL));
+    source.grid = nmo_ref_from_raw(501);
+    source.type = 2;
+    source.version = 3;
+    source.color_rgba = 0x11223344u;
+    source.param_guid = (nmo_guid_t){0x55667788u, 0x99AABBCCu};
+    source.flags = 7;
+    source.has_version = 1;
+    source.has_color = 1;
+    source.has_param_guid = 1;
+    source.has_square_data = 1;
+    source.square_data_size = 4;
+    source.square_data = nmo_arena_alloc(source_arena, 4, _Alignof(uint32_t));
+    ASSERT_NOT_NULL(source.square_data);
+    memcpy(source.square_data, "\x11\x22\x33\x44", 4);
+
+    nmo_type_descriptor_t layer_type = {
+        .size = sizeof(nmo_layer_state_t),
+    };
+    ASSERT_EQ(NMO_OK, nmo_layer_vtable.copy(
+        &source, &copy, &layer_type, copy_arena));
+    ASSERT_NE(source.square_data, copy.square_data);
+    ASSERT_TRUE(nmo_layer_vtable.equals(&source, &copy));
+    ASSERT_EQ(nmo_layer_vtable.hash(&source),
+              nmo_layer_vtable.hash(&copy));
+
+    copy.type++;
+    ASSERT_FALSE(nmo_layer_vtable.equals(&source, &copy));
+    copy.type = source.type;
+    copy.color_rgba ^= 0xFFFFFFFFu;
+    ASSERT_FALSE(nmo_layer_vtable.equals(&source, &copy));
+    copy.color_rgba = source.color_rgba;
+    ((uint8_t *)copy.square_data)[0] ^= 0xFFu;
+    ASSERT_FALSE(nmo_layer_vtable.equals(&source, &copy));
+
+    nmo_layer_vtable.destroy(&copy, NULL, NULL);
+    nmo_layer_vtable.destroy(&source, NULL, NULL);
+    nmo_arena_destroy(copy_arena);
+    nmo_arena_destroy(source_arena);
+}
+
 TEST(chunk_id_remap, grid_failures_keep_state_and_target_chunk_atomic) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
     ASSERT_NOT_NULL(arena);
@@ -8416,6 +8466,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, kinematicchain_unresolved_refs_round_trip_atomically);
     REGISTER_TEST(chunk_id_remap, layer_unresolved_grid_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, layer_default_format_writes_empty_square_buffer);
+    REGISTER_TEST(chunk_id_remap, layer_copy_preserves_content_equality);
     REGISTER_TEST(chunk_id_remap, grid_failures_keep_state_and_target_chunk_atomic);
     REGISTER_TEST(chunk_id_remap, grid_copy_preserves_content_equality);
     REGISTER_TEST(chunk_id_remap, sprite_shared_ref_round_trips_raw_id);
