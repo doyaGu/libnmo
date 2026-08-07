@@ -25,6 +25,7 @@
 #include "../runtime/runtime_internal.h"
 #include "runtime/nmo_context.h"
 #include "type/nmo_operation_system.h"
+#include "type/nmo_type_query.h"
 #include "type/nmo_type_system.h"
 
 #include <ctype.h>
@@ -1247,6 +1248,7 @@ static nmo_status_t semantic_add_operation_slot_ref_risk(
 }
 
 static nmo_status_t semantic_add_data_cell_risk(
+    const nmo_type_registry_t *registry,
     nmo_object_repository_t *repo,
     nmo_behavior_semantic_risk_t **risks,
     size_t *risk_count,
@@ -1264,7 +1266,8 @@ static nmo_status_t semantic_add_data_cell_risk(
     if (object == NULL) {
         return NMO_OK;
     }
-    if (nmo_object_get_class_id(object) != NMO_CID_DATAARRAY) {
+    if (!nmo_type_query_object_is_derived_from_class(
+            registry, object, NMO_CID_DATAARRAY)) {
         NMO_RETURN_IF_ERROR(semantic_add_risk(
             risks,
             risk_count,
@@ -1282,7 +1285,9 @@ static nmo_status_t semantic_add_data_cell_risk(
     }
 
     const nmo_dataarray_state_t *state =
-        (const nmo_dataarray_state_t *)nmo_object_get_state(object);
+        (const nmo_dataarray_state_t *)
+            nmo_type_query_object_get_ancestor_state_by_guid(
+                registry, object, CKPGUID_DATAARRAY);
     if (state == NULL) {
         return NMO_ERR_INVALID_STATE;
     }
@@ -2619,6 +2624,7 @@ static nmo_status_t semantic_validate_basic_edit_op(
             op->data.interface_policy.mode);
     case NMO_EDIT_OP_SET_DATA_CELL:
         return semantic_add_data_cell_risk(
+            nmo_workspace_internal_type_registry(workspace),
             repo,
             risks,
             risk_count,

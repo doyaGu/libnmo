@@ -17,6 +17,7 @@
 #include "object/builtin/nmo_parameterin_schemas.h"
 #include "object/builtin/nmo_parameterout_schemas.h"
 #include "object/builtin/nmo_behavior_schemas.h"
+#include "object/builtin/nmo_dataarray_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_manager_guids.h"
 #include "object/nmo_object_guids.h"
@@ -26,6 +27,7 @@
 #include "runtime/nmo_workspace.h"
 #include "session/nmo_session.h"
 #include "type/nmo_type_guids.h"
+#include "type/nmo_type_query.h"
 
 #include <math.h>
 #include <string.h>
@@ -3489,6 +3491,87 @@ TEST(edit_plan, executor_runs_script_ops_and_records_validation) {
     edit_plan_fixture_dispose(&fixture);
 }
 
+TEST(edit_plan, executor_reports_explicit_dataarray_cell_values) {
+    edit_plan_fixture_t fixture;
+    edit_plan_fixture_init(&fixture);
+
+    nmo_object_id_t dataarray_id = 0u;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        fixture.session,
+        0,
+        "Typed data array",
+        CKPGUID_DATAARRAY,
+        &dataarray_id,
+        NULL));
+
+    nmo_object_t *object =
+        nmo_object_repository_find_by_id(fixture.repo, dataarray_id);
+    const nmo_type_registry_t *registry =
+        nmo_context_get_type_registry(fixture.ctx);
+    nmo_dataarray_state_t *state = (nmo_dataarray_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, object, CKPGUID_DATAARRAY);
+    nmo_arena_t *arena = nmo_session_get_arena(fixture.session);
+    ASSERT_NOT_NULL(state);
+    ASSERT_NOT_NULL(arena);
+
+    state->column_count = 1u;
+    state->row_count = 1u;
+    state->column_formats = (nmo_dataarray_column_format_t *)nmo_arena_alloc(
+        arena,
+        sizeof(*state->column_formats),
+        _Alignof(nmo_dataarray_column_format_t));
+    state->rows = (nmo_dataarray_row_t *)nmo_arena_alloc(
+        arena, sizeof(*state->rows), _Alignof(nmo_dataarray_row_t));
+    ASSERT_NOT_NULL(state->column_formats);
+    ASSERT_NOT_NULL(state->rows);
+    memset(state->column_formats, 0, sizeof(*state->column_formats));
+    memset(state->rows, 0, sizeof(*state->rows));
+    state->column_formats[0].type = CKARRAYTYPE_INT;
+    state->rows[0].column_count = 1u;
+    state->rows[0].cells = (nmo_dataarray_cell_t *)nmo_arena_alloc(
+        arena, sizeof(*state->rows[0].cells), _Alignof(nmo_dataarray_cell_t));
+    ASSERT_NOT_NULL(state->rows[0].cells);
+    memset(state->rows[0].cells, 0, sizeof(*state->rows[0].cells));
+    state->rows[0].cells[0].int_value = 7;
+
+    nmo_edit_plan_t *plan = NULL;
+    nmo_edit_report_t report;
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+    ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_add_data_cell(
+        plan, dataarray_id, 0u, 0u, "11"));
+    ASSERT_EQ(NMO_OK, nmo_edit_executor_execute(
+        fixture.workspace,
+        plan,
+        &(nmo_edit_executor_options_t){0},
+        &report));
+    ASSERT_TRUE(report.ok);
+    ASSERT_EQ(11, state->rows[0].cells[0].int_value);
+
+    const nmo_edit_object_impact_t *impact = NULL;
+    for (size_t i = 0u; i < report.changed_object_count; ++i) {
+        if (report.changed_objects[i].id == dataarray_id &&
+            report.changed_objects[i].role != NULL &&
+            strcmp(report.changed_objects[i].role, "data_cell") == 0) {
+            impact = &report.changed_objects[i];
+            break;
+        }
+    }
+    ASSERT_NOT_NULL(impact);
+    ASSERT_TRUE(impact->has_data_cell_before);
+    ASSERT_EQ(CKARRAYTYPE_INT, impact->before_data_cell_type);
+    ASSERT_STR_EQ("7", impact->before_data_cell_value);
+    ASSERT_TRUE(impact->has_data_cell_after);
+    ASSERT_EQ(CKARRAYTYPE_INT, impact->after_data_cell_type);
+    ASSERT_STR_EQ("11", impact->after_data_cell_value);
+    ASSERT_EQ(0, nmo_object_get_class_id(object));
+
+    nmo_edit_report_dispose(&report);
+    nmo_edit_plan_destroy(plan);
+    edit_plan_fixture_dispose(&fixture);
+}
+
 TEST(edit_plan, executor_replaces_leaf_bb_in_transaction) {
     nmo_context_t *ctx = nmo_context_create(
         &(nmo_context_desc_t){.data_dir = NMO_TEST_DATA_DIR});
@@ -4054,6 +4137,7 @@ REGISTER_TEST(edit_plan, executor_reports_rewire_operation_slot_parameter_impact
 REGISTER_TEST(edit_plan, executor_reports_remove_parameter_operation_slot_impact);
 REGISTER_TEST(edit_plan, executor_reports_remove_parameter_edge_impact);
 REGISTER_TEST(edit_plan, executor_runs_script_ops_and_records_validation);
+REGISTER_TEST(edit_plan, executor_reports_explicit_dataarray_cell_values);
 REGISTER_TEST(edit_plan, executor_replaces_leaf_bb_in_transaction);
 REGISTER_TEST(edit_plan, executor_replace_bb_dry_run_rolls_back);
 REGISTER_TEST(edit_plan, executor_folds_closed_graph_in_transaction);

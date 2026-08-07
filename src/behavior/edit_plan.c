@@ -19,7 +19,9 @@
 #include "object/builtin/nmo_parameteroperation_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_manager_guids.h"
+#include "object/nmo_object_guids.h"
 #include "object/nmo_object_repository.h"
+#include "type/nmo_type_query.h"
 
 #include "../runtime/runtime_internal.h"
 
@@ -2262,17 +2264,21 @@ static const nmo_dataarray_cell_t *edit_plan_get_data_cell(
     if (tx == NULL || dataarray_id == 0u) {
         return NULL;
     }
+    nmo_workspace_t *workspace = nmo_script_edit_workspace(tx);
     nmo_object_repository_t *repo =
-        nmo_workspace_internal_repository(nmo_script_edit_workspace(tx));
+        nmo_workspace_internal_repository(workspace);
+    const nmo_type_registry_t *registry =
+        nmo_workspace_internal_type_registry(workspace);
     nmo_object_t *object = repo
         ? nmo_object_repository_find_by_id(repo, dataarray_id)
         : NULL;
-    if (object == NULL ||
-        nmo_object_get_class_id(object) != NMO_CID_DATAARRAY) {
+    if (object == NULL || registry == NULL) {
         return NULL;
     }
     const nmo_dataarray_state_t *state =
-        (const nmo_dataarray_state_t *)nmo_object_get_state(object);
+        (const nmo_dataarray_state_t *)
+            nmo_type_query_object_get_ancestor_state_by_guid(
+                registry, object, CKPGUID_DATAARRAY);
     if (state == NULL || row >= state->row_count ||
         col >= state->column_count || state->rows == NULL ||
         state->rows[row].cells == NULL || state->column_formats == NULL) {
