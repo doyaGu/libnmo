@@ -8,6 +8,10 @@
 #include "format/nmo_object.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"
+#include "object/builtin/nmo_dataarray_schemas.h"
+#include "object/builtin/nmo_parameterin_schemas.h"
+#include "object/builtin/nmo_parameteroperation_schemas.h"
+#include "object/builtin/nmo_parameterout_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_defs.h"
 #include "object/nmo_object_guids.h"
@@ -16,6 +20,7 @@
 #include "type/nmo_type_guids.h"
 #include "type/nmo_type_query.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 typedef struct probe_fixture {
@@ -406,6 +411,145 @@ TEST(probe_analyzer, rejects_operation_data_writer_column_type_mismatch)
     probe_fixture_dispose(&fixture);
 }
 
+TEST(probe_analyzer, analyzes_explicit_operation_value_flow)
+{
+    probe_fixture_t fixture;
+    probe_fixture_init_empty(&fixture);
+
+    nmo_object_id_t root_id = 0u;
+    nmo_object_id_t in_io_id = 0u;
+    nmo_object_id_t out_io_id = 0u;
+    nmo_object_id_t link_id = 0u;
+    nmo_object_id_t input_id = 0u;
+    nmo_object_id_t output_id = 0u;
+    nmo_object_id_t operation_id = 0u;
+    nmo_object_id_t dataarray_id = 0u;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        fixture.session, 0, "Typed root", CKPGUID_BEHAVIOR,
+        &root_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        fixture.session, NMO_CID_BEHAVIORIO, "Input IO", NMO_GUID_NULL,
+        &in_io_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        fixture.session, NMO_CID_BEHAVIORIO, "Output IO", NMO_GUID_NULL,
+        &out_io_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        fixture.session, 0, "Typed link", CKPGUID_BEHAVIORLINK,
+        &link_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        fixture.session, 0, "Typed input", CKPGUID_PARAMETERIN,
+        &input_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        fixture.session, 0, "Typed output", CKPGUID_PARAMETEROUT,
+        &output_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        fixture.session, 0, "Typed operation", CKPGUID_PARAMETEROPERATION,
+        &operation_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        fixture.session, 0, "Typed array", CKPGUID_DATAARRAY,
+        &dataarray_id, NULL));
+
+    nmo_object_repository_t *repo =
+        nmo_session_get_repository(fixture.session);
+    const nmo_type_registry_t *registry =
+        nmo_context_get_type_registry(fixture.ctx);
+    nmo_behavior_state_t *root = (nmo_behavior_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry,
+            nmo_object_repository_find_by_id(repo, root_id),
+            CKPGUID_BEHAVIOR);
+    nmo_behaviorlink_state_t *link = (nmo_behaviorlink_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry,
+            nmo_object_repository_find_by_id(repo, link_id),
+            CKPGUID_BEHAVIORLINK);
+    nmo_parameterin_state_t *input = (nmo_parameterin_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry,
+            nmo_object_repository_find_by_id(repo, input_id),
+            CKPGUID_PARAMETERIN);
+    nmo_parameterout_state_t *output = (nmo_parameterout_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry,
+            nmo_object_repository_find_by_id(repo, output_id),
+            CKPGUID_PARAMETEROUT);
+    nmo_parameteroperation_state_t *operation =
+        (nmo_parameteroperation_state_t *)
+            nmo_type_query_object_get_ancestor_state_by_guid(
+                registry,
+                nmo_object_repository_find_by_id(repo, operation_id),
+                CKPGUID_PARAMETEROPERATION);
+    nmo_dataarray_state_t *dataarray = (nmo_dataarray_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry,
+            nmo_object_repository_find_by_id(repo, dataarray_id),
+            CKPGUID_DATAARRAY);
+    ASSERT_NOT_NULL(root);
+    ASSERT_NOT_NULL(link);
+    ASSERT_NOT_NULL(input);
+    ASSERT_NOT_NULL(output);
+    ASSERT_NOT_NULL(operation);
+    ASSERT_NOT_NULL(dataarray);
+
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(
+        &root->inputs, in_io_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(
+        &root->outputs, out_io_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(
+        &root->sub_behavior_links, link_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(
+        &root->in_parameters, input_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(
+        &root->out_parameters, output_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(
+        &root->operations, operation_id, NULL));
+    nmo_behaviorlink_set_in_io_id(link, in_io_id);
+    nmo_behaviorlink_set_out_io_id(link, out_io_id);
+
+    input->type_guid = CKPGUID_INT;
+    input->source = nmo_ref_from_id(output_id);
+    output->base.type_guid = CKPGUID_INT;
+    operation->has_owner = 1u;
+    operation->has_in1 = 1u;
+    operation->has_out = 1u;
+    nmo_parameteroperation_set_owner_id(operation, root_id);
+    nmo_parameteroperation_set_in1_id(operation, input_id);
+    nmo_parameteroperation_set_out_id(operation, output_id);
+
+    dataarray->column_count = 1u;
+    dataarray->column_formats = (nmo_dataarray_column_format_t *)calloc(
+        1u, sizeof(*dataarray->column_formats));
+    ASSERT_NOT_NULL(dataarray->column_formats);
+    dataarray->column_formats[0].type = CKARRAYTYPE_FLOAT;
+
+    nmo_probe_selector_request_t request;
+    nmo_probe_selector_request_init(&request);
+    request.kind = NMO_PROBE_SELECTOR_DATA_CELL_WRITE;
+    request.behavior_id = root_id;
+    request.dataarray_id = dataarray_id;
+    request.col = 0u;
+    request.has_data_cell = true;
+    request.write_operation_id = operation_id;
+    request.remove_link_id = link_id;
+
+    nmo_probe_selector_result_t result;
+    nmo_probe_selector_result_init(&result);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_probe_analyze_selector(
+                  fixture.workspace, &request, &result));
+    ASSERT_EQ(NMO_PROBE_SELECTOR_MODE_EXPLICIT_OPERATION, result.mode);
+    ASSERT_EQ(NMO_PROBE_SELECTOR_STATUS_UNSAFE, result.status);
+    ASSERT_STR_EQ("type_mismatch", result.rejection_code);
+    ASSERT_EQ(1u, result.candidate_count);
+    ASSERT_EQ(input_id, result.candidates[0].source_parameter_id);
+    ASSERT_EQ(output_id, result.candidates[0].value_parameter_id);
+    ASSERT_TRUE(nmo_guid_equals(
+        CKPGUID_FLOAT, result.candidates[0].column_type_guid));
+
+    nmo_probe_analysis_dispose(&result);
+    probe_fixture_dispose(&fixture);
+}
+
 TEST(probe_analyzer, rejects_operation_write_site_outside_boundary)
 {
     probe_fixture_t fixture;
@@ -511,6 +655,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(probe_analyzer, infers_auto_data_writer_cell_metadata);
     REGISTER_TEST(probe_analyzer,
                   rejects_operation_data_writer_column_type_mismatch);
+    REGISTER_TEST(probe_analyzer, analyzes_explicit_operation_value_flow);
     REGISTER_TEST(probe_analyzer, rejects_operation_write_site_outside_boundary);
     REGISTER_TEST(probe_analyzer,
                   rejects_operation_write_site_unrelated_io_endpoints);
