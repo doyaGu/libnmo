@@ -405,28 +405,33 @@ static nmo_status_t script_edit_track_created(
     return rc;
 }
 
-static nmo_behavior_state_t *script_edit_find_behavior_state_in_repo(
+static void *script_edit_find_state_in_repo(
     const nmo_type_registry_t *registry,
     nmo_object_repository_t *repo,
-    nmo_object_id_t behavior_id,
+    nmo_object_id_t object_id,
+    nmo_class_id_t class_id,
+    nmo_guid_t type_guid,
     nmo_object_t **out_object)
 {
     nmo_object_t *object = NULL;
+    void *state = NULL;
 
     if (out_object) {
         *out_object = NULL;
     }
-    if (!registry || !repo || behavior_id == 0) {
+    if (!registry || !repo || object_id == 0) {
         return NULL;
     }
 
-    object = repo ? nmo_object_repository_find_by_id(repo, behavior_id) : NULL;
+    object = nmo_object_repository_find_by_id(repo, object_id);
     if (!object) {
         return NULL;
     }
-    nmo_behavior_state_t *state = (nmo_behavior_state_t *)
-        nmo_type_query_object_get_ancestor_state_by_guid(
-            registry, object, CKPGUID_BEHAVIOR);
+    state = nmo_guid_is_null(nmo_object_get_type_guid(object)) &&
+            nmo_object_get_class_id(object) == class_id
+        ? nmo_object_get_state(object)
+        : nmo_type_query_object_get_ancestor_state_by_guid(
+              registry, object, type_guid);
     if (!state) {
         return NULL;
     }
@@ -434,6 +439,21 @@ static nmo_behavior_state_t *script_edit_find_behavior_state_in_repo(
         *out_object = object;
     }
     return state;
+}
+
+static nmo_behavior_state_t *script_edit_find_behavior_state_in_repo(
+    const nmo_type_registry_t *registry,
+    nmo_object_repository_t *repo,
+    nmo_object_id_t behavior_id,
+    nmo_object_t **out_object)
+{
+    return (nmo_behavior_state_t *)script_edit_find_state_in_repo(
+        registry,
+        repo,
+        behavior_id,
+        NMO_CID_BEHAVIOR,
+        CKPGUID_BEHAVIOR,
+        out_object);
 }
 
 static nmo_behavior_state_t *script_edit_find_behavior_state(
@@ -450,123 +470,78 @@ static nmo_behavior_state_t *script_edit_find_behavior_state(
 }
 
 static nmo_behaviorio_state_t *script_edit_find_io_state_in_repo(
+    const nmo_type_registry_t *registry,
     nmo_object_repository_t *repo,
     nmo_object_id_t io_id,
     nmo_object_t **out_object)
 {
-    nmo_object_t *object = NULL;
-
-    if (out_object) {
-        *out_object = NULL;
-    }
-    if (!repo || io_id == 0) {
-        return NULL;
-    }
-
-    object = repo ? nmo_object_repository_find_by_id(repo, io_id) : NULL;
-    if (!object || nmo_object_get_class_id(object) != NMO_CID_BEHAVIORIO) {
-        return NULL;
-    }
-    if (out_object) {
-        *out_object = object;
-    }
-    return (nmo_behaviorio_state_t *)nmo_object_get_state(object);
+    return (nmo_behaviorio_state_t *)script_edit_find_state_in_repo(
+        registry,
+        repo,
+        io_id,
+        NMO_CID_BEHAVIORIO,
+        CKPGUID_BEHAVIORIO,
+        out_object);
 }
 
 static nmo_behaviorlink_state_t *script_edit_find_link_state_in_repo(
+    const nmo_type_registry_t *registry,
     nmo_object_repository_t *repo,
     nmo_object_id_t link_id,
     nmo_object_t **out_object)
 {
-    nmo_object_t *object = NULL;
-
-    if (out_object) {
-        *out_object = NULL;
-    }
-    if (!repo || link_id == 0) {
-        return NULL;
-    }
-
-    object = repo ? nmo_object_repository_find_by_id(repo, link_id) : NULL;
-    if (!object || nmo_object_get_class_id(object) != NMO_CID_BEHAVIORLINK) {
-        return NULL;
-    }
-    if (out_object) {
-        *out_object = object;
-    }
-    return (nmo_behaviorlink_state_t *)nmo_object_get_state(object);
+    return (nmo_behaviorlink_state_t *)script_edit_find_state_in_repo(
+        registry,
+        repo,
+        link_id,
+        NMO_CID_BEHAVIORLINK,
+        CKPGUID_BEHAVIORLINK,
+        out_object);
 }
 
 static nmo_parameterin_state_t *script_edit_find_parameterin_state_in_repo(
+    const nmo_type_registry_t *registry,
     nmo_object_repository_t *repo,
     nmo_object_id_t parameter_id,
     nmo_object_t **out_object)
 {
-    nmo_object_t *object = NULL;
-
-    if (out_object) {
-        *out_object = NULL;
-    }
-    if (!repo || parameter_id == 0) {
-        return NULL;
-    }
-
-    object = repo ? nmo_object_repository_find_by_id(repo, parameter_id) : NULL;
-    if (!object || nmo_object_get_class_id(object) != NMO_CID_PARAMETERIN) {
-        return NULL;
-    }
-    if (out_object) {
-        *out_object = object;
-    }
-    return (nmo_parameterin_state_t *)nmo_object_get_state(object);
+    return (nmo_parameterin_state_t *)script_edit_find_state_in_repo(
+        registry,
+        repo,
+        parameter_id,
+        NMO_CID_PARAMETERIN,
+        CKPGUID_PARAMETERIN,
+        out_object);
 }
 
 static nmo_parameterout_state_t *script_edit_find_parameterout_state_in_repo(
+    const nmo_type_registry_t *registry,
     nmo_object_repository_t *repo,
     nmo_object_id_t parameter_id,
     nmo_object_t **out_object)
 {
-    nmo_object_t *object = NULL;
-
-    if (out_object) {
-        *out_object = NULL;
-    }
-    if (!repo || parameter_id == 0) {
-        return NULL;
-    }
-
-    object = repo ? nmo_object_repository_find_by_id(repo, parameter_id) : NULL;
-    if (!object || nmo_object_get_class_id(object) != NMO_CID_PARAMETEROUT) {
-        return NULL;
-    }
-    if (out_object) {
-        *out_object = object;
-    }
-    return (nmo_parameterout_state_t *)nmo_object_get_state(object);
+    return (nmo_parameterout_state_t *)script_edit_find_state_in_repo(
+        registry,
+        repo,
+        parameter_id,
+        NMO_CID_PARAMETEROUT,
+        CKPGUID_PARAMETEROUT,
+        out_object);
 }
 
 static nmo_parameteroperation_state_t *script_edit_find_operation_state_in_repo(
+    const nmo_type_registry_t *registry,
     nmo_object_repository_t *repo,
     nmo_object_id_t operation_id,
     nmo_object_t **out_object)
 {
-    nmo_object_t *object = NULL;
-
-    if (out_object) {
-        *out_object = NULL;
-    }
-    if (!repo || operation_id == 0) {
-        return NULL;
-    }
-
-    object = repo ? nmo_object_repository_find_by_id(repo, operation_id) : NULL;
-    if (!object || nmo_object_get_class_id(object) != NMO_CID_PARAMETEROPERATION) {
-        return NULL;
-    }
-    if (out_object) {
-        *out_object = object;
-    }
-    return (nmo_parameteroperation_state_t *)nmo_object_get_state(object);
+    return (nmo_parameteroperation_state_t *)script_edit_find_state_in_repo(
+        registry,
+        repo,
+        operation_id,
+        NMO_CID_PARAMETEROPERATION,
+        CKPGUID_PARAMETEROPERATION,
+        out_object);
 }
 
 static void script_edit_update_behavior_save_flags(
@@ -674,6 +649,7 @@ static nmo_status_t script_edit_create_io_object(
     }
 
     state = script_edit_find_io_state_in_repo(
+        nmo_workspace_internal_type_registry(tx->workspace),
         nmo_workspace_internal_repository(tx->workspace),
         *out_io_id,
         NULL);
@@ -3853,6 +3829,7 @@ static nmo_status_t script_edit_disconnect_parameter_internal(
 
     if (target_state->is_shared == 0u) {
         source_state = script_edit_find_parameterout_state_in_repo(
+            nmo_workspace_internal_type_registry(tx->workspace),
             nmo_workspace_internal_repository(tx->workspace),
             source_id,
             NULL);
@@ -4119,6 +4096,7 @@ NMO_API nmo_status_t nmo_script_edit_add_parameter(
     if (kind == NMO_SCRIPT_EDIT_PARAM_SHARED) {
         nmo_parameterin_state_t *state =
             script_edit_find_parameterin_state_in_repo(
+                nmo_workspace_internal_type_registry(tx->workspace),
                 nmo_workspace_internal_repository(tx->workspace),
                 parameter_id,
                 NULL);
@@ -4379,6 +4357,7 @@ NMO_API nmo_status_t nmo_script_edit_connect_parameter(
         nmo_object_get_class_id(source_object) == NMO_CID_PARAMETERIN ? 1u : 0u;
 
     source_state = script_edit_find_parameterout_state_in_repo(
+        nmo_workspace_internal_type_registry(tx->workspace),
         nmo_workspace_internal_repository(tx->workspace),
         source_parameter_id,
         NULL);
@@ -4423,6 +4402,7 @@ NMO_API nmo_status_t nmo_script_edit_disconnect_parameter(
     }
 
     target_state = script_edit_find_parameterin_state_in_repo(
+        nmo_workspace_internal_type_registry(tx->workspace),
         nmo_workspace_internal_repository(tx->workspace),
         target_parameter_id,
         NULL);
@@ -4602,6 +4582,7 @@ NMO_API nmo_status_t nmo_script_edit_add_operation(
     }
 
     state = script_edit_find_operation_state_in_repo(
+        nmo_workspace_internal_type_registry(tx->workspace),
         nmo_workspace_internal_repository(tx->workspace),
         operation_id,
         NULL);
@@ -4689,6 +4670,7 @@ NMO_API nmo_status_t nmo_script_edit_rewire_operation(
     }
 
     state = script_edit_find_operation_state_in_repo(
+        nmo_workspace_internal_type_registry(tx->workspace),
         nmo_workspace_internal_repository(tx->workspace),
         operation_id,
         NULL);
@@ -4891,6 +4873,7 @@ NMO_API nmo_status_t nmo_script_edit_rewire_behavior_link(
     }
 
     link_state = script_edit_find_link_state_in_repo(
+        nmo_workspace_internal_type_registry(tx->workspace),
         nmo_workspace_internal_repository(tx->workspace),
         link_id,
         NULL);
@@ -4938,6 +4921,7 @@ NMO_API nmo_status_t nmo_script_edit_set_behavior_link_delay(
     }
 
     link_state = script_edit_find_link_state_in_repo(
+        nmo_workspace_internal_type_registry(tx->workspace),
         nmo_workspace_internal_repository(tx->workspace),
         link_id,
         NULL);

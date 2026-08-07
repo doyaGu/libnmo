@@ -2779,13 +2779,18 @@ static void edit_plan_get_behavior_link_endpoints(
         return;
     }
 
+    nmo_workspace_t *workspace = nmo_script_edit_workspace(tx);
     nmo_object_repository_t *repo =
-        nmo_workspace_internal_repository(nmo_script_edit_workspace(tx));
+        nmo_workspace_internal_repository(workspace);
+    const nmo_type_registry_t *registry =
+        nmo_workspace_internal_type_registry(workspace);
     nmo_object_t *object = repo
         ? nmo_object_repository_find_by_id(repo, link_id)
         : NULL;
-    nmo_behaviorlink_state_t *state = object
-        ? (nmo_behaviorlink_state_t *)nmo_object_get_state(object)
+    nmo_behaviorlink_state_t *state = object && registry
+        ? (nmo_behaviorlink_state_t *)
+            nmo_type_query_object_get_ancestor_state_by_guid(
+                registry, object, CKPGUID_BEHAVIORLINK)
         : NULL;
     if (state == NULL) {
         return;
