@@ -1009,6 +1009,91 @@ TEST(script_edit_transaction,
     nmo_session_close_with_context(ctx, session);
 }
 
+TEST(script_edit_transaction, connects_parameters_across_explicit_parent_graph)
+{
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    nmo_session_t *session = NULL;
+    nmo_script_edit_tx_t *tx = NULL;
+    nmo_object_repository_t *repo = NULL;
+    nmo_object_t *root_object = NULL;
+    nmo_object_t *source_behavior_object = NULL;
+    nmo_object_t *target_behavior_object = NULL;
+    nmo_object_t *source_object = NULL;
+    nmo_object_t *target_object = NULL;
+    nmo_behavior_state_t *source_behavior = NULL;
+    nmo_behavior_state_t *target_behavior = NULL;
+    nmo_parameterout_state_t *source = NULL;
+    nmo_parameterin_state_t *target = NULL;
+    script_control_fixture_t fixture;
+    nmo_object_id_t source_id = 0u;
+    nmo_object_id_t target_id = 0u;
+
+    ASSERT_NOT_NULL(ctx);
+    session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    setup_script_control_fixture(session, &fixture);
+    create_object_or_fail(
+        session, NMO_CID_PARAMETEROUT, "Source value", &source_id);
+    create_object_or_fail(
+        session, NMO_CID_PARAMETERIN, "Target value", &target_id);
+
+    repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+    root_object = nmo_object_repository_find_by_id(
+        repo, fixture.root_behavior_id);
+    source_behavior_object = nmo_object_repository_find_by_id(
+        repo, fixture.source_behavior_id);
+    target_behavior_object = nmo_object_repository_find_by_id(
+        repo, fixture.target_behavior_id);
+    source_object = nmo_object_repository_find_by_id(repo, source_id);
+    target_object = nmo_object_repository_find_by_id(repo, target_id);
+    ASSERT_NOT_NULL(root_object);
+    ASSERT_NOT_NULL(source_behavior_object);
+    ASSERT_NOT_NULL(target_behavior_object);
+    ASSERT_NOT_NULL(source_object);
+    ASSERT_NOT_NULL(target_object);
+
+    source_behavior = (nmo_behavior_state_t *)
+        nmo_object_get_state(source_behavior_object);
+    target_behavior = (nmo_behavior_state_t *)
+        nmo_object_get_state(target_behavior_object);
+    source = (nmo_parameterout_state_t *)nmo_object_get_state(source_object);
+    target = (nmo_parameterin_state_t *)nmo_object_get_state(target_object);
+    ASSERT_NOT_NULL(source_behavior);
+    ASSERT_NOT_NULL(target_behavior);
+    ASSERT_NOT_NULL(source);
+    ASSERT_NOT_NULL(target);
+
+    ASSERT_EQ(NMO_OK,
+              nmo_object_repository_set_type_guid(
+                  repo, fixture.root_behavior_id, CKPGUID_BEHAVIOR));
+    root_object->class_id = 0;
+    ASSERT_EQ(NMO_OK,
+              nmo_behavior_ref_array_append(
+                  &source_behavior->out_parameters, source_id, NULL));
+    ASSERT_EQ(NMO_OK,
+              nmo_behavior_ref_array_append(
+                  &target_behavior->in_parameters, target_id, NULL));
+    source->base.type_guid = CKPGUID_INT;
+    nmo_parameterout_set_owner_id(source, fixture.source_behavior_id);
+    target->type_guid = CKPGUID_INT;
+    nmo_parameterin_set_owner_id(target, fixture.target_behavior_id);
+    nmo_parameterin_set_source_id(target, 0u);
+
+    ASSERT_EQ(NMO_OK,
+              begin_test_script_edit(
+                  ctx, session, "connect across typed parent", &tx));
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_connect_parameter(tx, source_id, target_id));
+    ASSERT_EQ(source_id, nmo_parameterin_source_id(target));
+    ASSERT_EQ(1u, source->destination_count);
+    ASSERT_EQ(target_id, nmo_parameterout_destination_id(source, 0u));
+
+    nmo_script_edit_rollback(tx);
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(script_edit_transaction, validates_explicit_parameter_connections)
 {
     nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
@@ -1141,6 +1226,8 @@ TEST_MAIN_BEGIN()
                   reference_validation_rejects_new_broken_ref_beyond_preexisting_baseline);
     REGISTER_TEST(script_edit_transaction,
                   interface_validation_allows_preexisting_diagnostics_for_value_only_parameter_edit);
+    REGISTER_TEST(script_edit_transaction,
+                  connects_parameters_across_explicit_parent_graph);
     REGISTER_TEST(script_edit_transaction,
                   validates_explicit_parameter_connections);
 TEST_MAIN_END()

@@ -1449,17 +1449,24 @@ static bool script_edit_behavior_is_graph_member(
     return false;
 }
 
-static bool script_edit_find_direct_parent_behavior_in_repo(
-    nmo_object_repository_t *repo,
+static bool script_edit_find_direct_parent_behavior(
+    nmo_session_t *session,
     nmo_object_id_t behavior_id,
     nmo_object_id_t *out_parent_behavior_id)
 {
+    nmo_object_repository_t *repo = NULL;
+    const nmo_type_registry_t *registry = NULL;
     size_t object_count = 0;
 
     if (out_parent_behavior_id) {
         *out_parent_behavior_id = 0u;
     }
-    if (!repo || behavior_id == 0u) {
+    if (!session || behavior_id == 0u) {
+        return false;
+    }
+    repo = nmo_session_get_repository(session);
+    registry = nmo_context_get_type_registry(nmo_session_get_context(session));
+    if (!repo || !registry) {
         return false;
     }
 
@@ -1469,11 +1476,11 @@ static bool script_edit_find_direct_parent_behavior_in_repo(
         nmo_behavior_state_t *state = NULL;
         nmo_object_id_t parent_id = 0u;
 
-        if (!object || nmo_object_get_class_id(object) != NMO_CID_BEHAVIOR) {
-            continue;
-        }
-
-        state = (nmo_behavior_state_t *)nmo_object_get_state(object);
+        state = (nmo_behavior_state_t *)script_edit_get_object_state(
+            registry,
+            object,
+            NMO_CID_BEHAVIOR,
+            CKPGUID_BEHAVIOR);
         if (!state || state->sub_behaviors.count == 0u) {
             continue;
         }
@@ -1625,7 +1632,6 @@ static bool script_edit_resolve_common_parent_graph(
     nmo_object_id_t right_owner_id,
     nmo_object_id_t *out_parent_behavior_id)
 {
-    nmo_object_repository_t *repo = session ? nmo_session_get_repository(session) : NULL;
     nmo_object_id_t left_parent_id = 0u;
     nmo_object_id_t right_parent_id = 0u;
 
@@ -1660,10 +1666,10 @@ static bool script_edit_resolve_common_parent_graph(
         return true;
     }
 
-    if (!script_edit_find_direct_parent_behavior_in_repo(repo, left_owner_id,
-                                                         &left_parent_id) ||
-        !script_edit_find_direct_parent_behavior_in_repo(repo, right_owner_id,
-                                                         &right_parent_id)) {
+    if (!script_edit_find_direct_parent_behavior(
+            session, left_owner_id, &left_parent_id) ||
+        !script_edit_find_direct_parent_behavior(
+            session, right_owner_id, &right_parent_id)) {
         return false;
     }
 
