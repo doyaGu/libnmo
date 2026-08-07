@@ -41,10 +41,13 @@ static void nmo_sprite3d_set_defaults(nmo_sprite3d_state_t *state) {
 NMO_DEFINE_OBJECT_LIFECYCLE(
     sprite3d,
     nmo_sprite3d_state_t,
-    do { \
-        nmo_sprite3d_set_defaults(state); \
+    do {
+        nmo_status_t result = nmo_3dentity_vtable.create(
+            &state->base, NULL, context);
+        if (result != NMO_OK) return result;
+        nmo_sprite3d_set_defaults(state);
     } while (0),
-    ((void)0))
+    nmo_3dentity_vtable.destroy(&state->base, NULL, context))
 
 static void nmo_sprite3d_dispose_base_arrays(nmo_sprite3d_state_t *state)
 {
@@ -297,7 +300,97 @@ static void nmo_sprite3d_post_delete(
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_STATE_OPS(sprite3d, nmo_sprite3d_state_t)
+static nmo_status_t nmo_sprite3d_copy(
+    const void *src,
+    void *dst,
+    const nmo_type_descriptor_t *type,
+    nmo_arena_t *arena)
+{
+    (void)type;
+    if (src == NULL || dst == NULL || arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    const nmo_sprite3d_state_t *source = src;
+    nmo_sprite3d_state_t *target = dst;
+    nmo_type_descriptor_t base_type = {
+        .size = sizeof(nmo_3dentity_state_t),
+    };
+    NMO_RETURN_IF_ERROR(nmo_3dentity_vtable.copy(
+        &source->base, &target->base, &base_type, arena));
+    target->has_data = source->has_data;
+    target->mode = source->mode;
+    target->half_width = source->half_width;
+    target->half_height = source->half_height;
+    target->offset = source->offset;
+    target->uv_rect = source->uv_rect;
+    target->material = source->material;
+    return NMO_OK;
+}
+
+static nmo_status_t nmo_sprite3d_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    const nmo_sprite3d_state_t *state = instance;
+    return nmo_3dentity_vtable.validate(&state->base, NULL, context);
+}
+
+static bool nmo_sprite3d_equals(const void *a, const void *b)
+{
+    if (a == b) return true;
+    if (a == NULL || b == NULL) return false;
+    const nmo_sprite3d_state_t *lhs = a;
+    const nmo_sprite3d_state_t *rhs = b;
+    return nmo_3dentity_vtable.equals(&lhs->base, &rhs->base) &&
+        lhs->has_data == rhs->has_data &&
+        lhs->mode == rhs->mode &&
+        memcmp(&lhs->half_width, &rhs->half_width,
+               sizeof(lhs->half_width)) == 0 &&
+        memcmp(&lhs->half_height, &rhs->half_height,
+               sizeof(lhs->half_height)) == 0 &&
+        memcmp(&lhs->offset, &rhs->offset, sizeof(lhs->offset)) == 0 &&
+        memcmp(&lhs->uv_rect, &rhs->uv_rect, sizeof(lhs->uv_rect)) == 0 &&
+        lhs->material.raw_id == rhs->material.raw_id &&
+        lhs->material.id == rhs->material.id &&
+        lhs->material.state == rhs->material.state;
+}
+
+static uint32_t nmo_sprite3d_hash_bytes(
+    uint32_t hash,
+    const void *data,
+    size_t size)
+{
+    const uint8_t *bytes = data;
+    for (size_t i = 0; i < size; ++i) {
+        hash ^= bytes[i];
+        hash *= 16777619u;
+    }
+    return hash;
+}
+
+static uint32_t nmo_sprite3d_hash(const void *instance)
+{
+    if (instance == NULL) return 0;
+    const nmo_sprite3d_state_t *state = instance;
+    uint32_t hash = nmo_3dentity_vtable.hash(&state->base);
+#define NMO_SPRITE3D_HASH_FIELD(field) \
+    hash = nmo_sprite3d_hash_bytes( \
+        hash, &state->field, sizeof(state->field))
+    NMO_SPRITE3D_HASH_FIELD(has_data);
+    NMO_SPRITE3D_HASH_FIELD(mode);
+    NMO_SPRITE3D_HASH_FIELD(half_width);
+    NMO_SPRITE3D_HASH_FIELD(half_height);
+    NMO_SPRITE3D_HASH_FIELD(offset);
+    NMO_SPRITE3D_HASH_FIELD(uv_rect);
+    NMO_SPRITE3D_HASH_FIELD(material.raw_id);
+    NMO_SPRITE3D_HASH_FIELD(material.id);
+    NMO_SPRITE3D_HASH_FIELD(material.state);
+#undef NMO_SPRITE3D_HASH_FIELD
+    return hash;
+}
 
 nmo_type_vtable_t nmo_sprite3d_vtable = {
     .prepare_dependencies = nmo_sprite3d_prepare_dependencies,
