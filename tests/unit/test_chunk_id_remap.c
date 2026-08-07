@@ -6562,6 +6562,48 @@ TEST(chunk_id_remap, beobject_copy_preserves_content_equality) {
     nmo_arena_destroy(source_arena);
 }
 
+TEST(chunk_id_remap, renderobject_copy_preserves_content_equality) {
+    nmo_arena_t *source_arena = nmo_arena_create(NULL, 8192);
+    nmo_arena_t *copy_arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(source_arena);
+    ASSERT_NOT_NULL(copy_arena);
+
+    nmo_renderobject_state_t source;
+    nmo_renderobject_state_t copy;
+    ASSERT_EQ(NMO_OK, nmo_renderobject_vtable.create(&source, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_renderobject_vtable.create(&copy, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &source.base.scripts, 101));
+    nmo_chunk_t *attribute_chunk = nmo_chunk_create(source_arena);
+    ASSERT_NOT_NULL(attribute_chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(attribute_chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(attribute_chunk, 0xAABBCCDDu));
+    nmo_chunk_close(attribute_chunk);
+    ASSERT_EQ(NMO_OK, nmo_beobject_attribute_array_append(
+        &source.base.attributes, 202, 303, attribute_chunk));
+
+    nmo_type_descriptor_t type = {0};
+    type.size = sizeof(nmo_renderobject_state_t);
+    ASSERT_EQ(NMO_OK, nmo_renderobject_vtable.copy(
+        &source, &copy, &type, copy_arena));
+    ASSERT_TRUE(nmo_renderobject_vtable.equals(&source, &copy));
+    ASSERT_EQ(nmo_renderobject_vtable.hash(&source),
+              nmo_renderobject_vtable.hash(&copy));
+    const nmo_beobject_attribute_t *source_attributes = NMO_ARRAY_DATA(
+        nmo_beobject_attribute_t, &source.base.attributes);
+    nmo_beobject_attribute_t *copy_attributes = NMO_ARRAY_DATA(
+        nmo_beobject_attribute_t, &copy.base.attributes);
+    ASSERT_TRUE(source_attributes[0].chunk != copy_attributes[0].chunk);
+
+    copy_attributes[0].type_id = 304;
+    ASSERT_FALSE(nmo_renderobject_vtable.equals(&source, &copy));
+
+    nmo_renderobject_vtable.destroy(&copy, NULL, NULL);
+    nmo_renderobject_vtable.destroy(&source, NULL, NULL);
+    nmo_arena_destroy(copy_arena);
+    nmo_arena_destroy(source_arena);
+}
+
 TEST(chunk_id_remap, character_rejects_cross_section_counts_before_allocation) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
     ASSERT_NOT_NULL(arena);
@@ -8404,6 +8446,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, beobject_legacy_attributes_are_lossless_and_atomic);
     REGISTER_TEST(chunk_id_remap, derived_beobject_copy_clones_legacy_attributes);
     REGISTER_TEST(chunk_id_remap, beobject_copy_preserves_content_equality);
+    REGISTER_TEST(chunk_id_remap, renderobject_copy_preserves_content_equality);
     REGISTER_TEST(chunk_id_remap, character_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, character_rejects_cross_section_counts_before_allocation);
     REGISTER_TEST(chunk_id_remap, mesh_material_refs_round_trip_without_compaction);

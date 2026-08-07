@@ -227,7 +227,21 @@ static void nmo_renderobject_post_delete(
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_STATE_OPS_CUSTOM(renderobject, nmo_renderobject_state_t)
+static bool nmo_renderobject_equals(const void *a, const void *b)
+{
+    if (a == b) return true;
+    if (a == NULL || b == NULL) return false;
+    const nmo_renderobject_state_t *lhs = a;
+    const nmo_renderobject_state_t *rhs = b;
+    return nmo_beobject_vtable.equals(&lhs->base, &rhs->base);
+}
+
+static uint32_t nmo_renderobject_hash(const void *instance)
+{
+    if (instance == NULL) return 0;
+    const nmo_renderobject_state_t *state = instance;
+    return nmo_beobject_vtable.hash(&state->base);
+}
 
 nmo_type_vtable_t nmo_renderobject_vtable = {
     .prepare_dependencies = nmo_renderobject_prepare_dependencies,
