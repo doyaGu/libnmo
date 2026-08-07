@@ -20,10 +20,14 @@
 #include "object/builtin/nmo_behaviorlink_schemas.h"
 #include "object/builtin/nmo_parameterin_schemas.h"
 #include "object/builtin/nmo_parameterlocal_schemas.h"
+#include "object/builtin/nmo_parameteroperation_schemas.h"
 #include "object/builtin/nmo_parameterout_schemas.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "format/nmo_object.h"
 #include "core/nmo_array.h"
+#include "core/nmo_arena.h"
+#include "type/nmo_type_guids.h"
+#include "type/nmo_type_query.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -974,6 +978,113 @@ TEST(script_edit_transaction,
     nmo_session_close_with_context(ctx, session);
 }
 
+TEST(script_edit_transaction, validates_explicit_parameter_connections)
+{
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    nmo_session_t *session = NULL;
+    nmo_script_edit_tx_t *tx = NULL;
+    script_control_fixture_t fixture;
+    nmo_object_id_t input_id = 0u;
+    nmo_object_id_t output_id = 0u;
+    nmo_object_id_t operation_id = 0u;
+
+    ASSERT_NOT_NULL(ctx);
+    session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    setup_script_control_fixture(session, &fixture);
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, 0, "Typed input", CKPGUID_PARAMETERIN, &input_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, 0, "Typed output", CKPGUID_PARAMETEROUT, &output_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session,
+        0,
+        "Typed operation",
+        CKPGUID_PARAMETEROPERATION,
+        &operation_id,
+        NULL));
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    const nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
+    nmo_object_t *root_object = nmo_object_repository_find_by_id(
+        repo, fixture.root_behavior_id);
+    nmo_object_t *input_object =
+        nmo_object_repository_find_by_id(repo, input_id);
+    nmo_object_t *output_object =
+        nmo_object_repository_find_by_id(repo, output_id);
+    nmo_object_t *operation_object =
+        nmo_object_repository_find_by_id(repo, operation_id);
+    nmo_behavior_state_t *root_state = root_object
+        ? (nmo_behavior_state_t *)nmo_object_get_state(root_object)
+        : NULL;
+    nmo_parameterin_state_t *input_state = (nmo_parameterin_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, input_object, CKPGUID_PARAMETERIN);
+    nmo_parameterout_state_t *output_state = (nmo_parameterout_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, output_object, CKPGUID_PARAMETEROUT);
+    nmo_parameteroperation_state_t *operation_state =
+        (nmo_parameteroperation_state_t *)
+            nmo_type_query_object_get_ancestor_state_by_guid(
+                registry, operation_object, CKPGUID_PARAMETEROPERATION);
+    ASSERT_NOT_NULL(root_state);
+    ASSERT_NOT_NULL(input_state);
+    ASSERT_NOT_NULL(output_state);
+    ASSERT_NOT_NULL(operation_state);
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(
+        &root_state->in_parameters, input_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(
+        &root_state->out_parameters, output_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(
+        &root_state->operations, operation_id, NULL));
+
+    input_state->type_guid = CKPGUID_INT;
+    nmo_parameterin_set_owner_id(input_state, fixture.root_behavior_id);
+    nmo_parameterin_set_source_id(input_state, fixture.root_input_id);
+    output_state->base.type_guid = CKPGUID_INT;
+    nmo_parameterout_set_owner_id(output_state, fixture.root_behavior_id);
+    output_state->destination_ids = (nmo_ref_t *)nmo_arena_alloc(
+        nmo_session_get_arena(session),
+        sizeof(*output_state->destination_ids),
+        _Alignof(nmo_ref_t));
+    ASSERT_NOT_NULL(output_state->destination_ids);
+    output_state->destination_ids[0] =
+        nmo_ref_from_id(fixture.root_output_id);
+    output_state->destination_count = 1u;
+    nmo_parameteroperation_set_owner_id(
+        operation_state, fixture.root_behavior_id);
+    operation_state->has_owner = 1u;
+    nmo_parameteroperation_set_in1_id(
+        operation_state, fixture.root_input_id);
+    operation_state->has_in1 = 1u;
+
+    ASSERT_EQ(NMO_OK,
+              begin_test_script_edit(ctx, session, "validate typed params", &tx));
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,
+              nmo_script_edit_validate(
+                  tx, NMO_SCRIPT_EDIT_VALIDATE_BEHAVIOR_INDEX));
+
+    nmo_parameterin_set_source_id(input_state, 0u);
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,
+              nmo_script_edit_validate(
+                  tx, NMO_SCRIPT_EDIT_VALIDATE_BEHAVIOR_INDEX));
+
+    output_state->destination_ids = NULL;
+    output_state->destination_count = 0u;
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,
+              nmo_script_edit_validate(
+                  tx, NMO_SCRIPT_EDIT_VALIDATE_BEHAVIOR_INDEX));
+
+    nmo_parameteroperation_set_in1_id(operation_state, input_id);
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_validate(
+                  tx, NMO_SCRIPT_EDIT_VALIDATE_BEHAVIOR_INDEX));
+
+    nmo_script_edit_rollback(tx);
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(script_edit_transaction,
                   behavior_edit_add_link_through_workspace_owner);
@@ -999,6 +1110,8 @@ TEST_MAIN_BEGIN()
                   reference_validation_rejects_new_broken_ref_beyond_preexisting_baseline);
     REGISTER_TEST(script_edit_transaction,
                   interface_validation_allows_preexisting_diagnostics_for_value_only_parameter_edit);
+    REGISTER_TEST(script_edit_transaction,
+                  validates_explicit_parameter_connections);
 TEST_MAIN_END()
 
 

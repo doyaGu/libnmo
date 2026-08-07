@@ -1839,32 +1839,35 @@ static nmo_status_t validate_parameter_links(
     nmo_object_repository_t *repo,
     const nmo_behavior_index_t *index)
 {
+    const nmo_type_registry_t *registry = NULL;
     size_t object_count = 0;
 
-    if (!repo || !index) {
+    if (!tx || !repo || !index) {
         return NMO_ERR_INVALID_ARGUMENT;
+    }
+    registry = nmo_workspace_internal_type_registry(tx->workspace);
+    if (!registry) {
+        return NMO_ERR_INVALID_STATE;
     }
 
     object_count = nmo_object_repository_get_count(repo);
     for (size_t i = 0; i < object_count; ++i) {
         nmo_object_t *object = nmo_object_repository_get_by_index(repo, i);
-        nmo_class_id_t class_id = 0;
+        void *connection_state = NULL;
 
         if (!object) {
             continue;
         }
 
-        class_id = nmo_object_get_class_id(object);
         if (script_edit_is_pending_destroy(tx, nmo_object_get_id(object))) {
             continue;
         }
-        if (class_id == NMO_CID_PARAMETERIN) {
+        switch (script_edit_get_parameter_connection_state(
+            registry, object, &connection_state)) {
+        case NMO_CID_PARAMETERIN: {
             const nmo_parameterin_state_t *state =
-                (const nmo_parameterin_state_t *)nmo_object_get_state(object);
+                (const nmo_parameterin_state_t *)connection_state;
             nmo_object_t *source = NULL;
-            if (!state) {
-                return NMO_ERR_INVALID_STATE;
-            }
             if (!nmo_behavior_index_find(index, nmo_object_get_id(object))) {
                 continue;
             }
@@ -1876,20 +1879,23 @@ static nmo_status_t validate_parameter_links(
                     return NMO_ERR_VALIDATION_FAILED;
                 }
                 if (state->is_shared) {
-                    if (nmo_object_get_class_id(source) != NMO_CID_PARAMETERIN) {
+                    if (!script_edit_get_object_state(
+                            registry,
+                            source,
+                            NMO_CID_PARAMETERIN,
+                            CKPGUID_PARAMETERIN)) {
                         return NMO_ERR_VALIDATION_FAILED;
                     }
-                } else if (!script_edit_is_parameter_reference_class(
-                               nmo_object_get_class_id(source))) {
+                } else if (!script_edit_is_parameter_reference_object(
+                               registry, source)) {
                     return NMO_ERR_VALIDATION_FAILED;
                 }
             }
-        } else if (class_id == NMO_CID_PARAMETEROUT) {
+            break;
+        }
+        case NMO_CID_PARAMETEROUT: {
             const nmo_parameterout_state_t *state =
-                (const nmo_parameterout_state_t *)nmo_object_get_state(object);
-            if (!state) {
-                return NMO_ERR_INVALID_STATE;
-            }
+                (const nmo_parameterout_state_t *)connection_state;
             if (!nmo_behavior_index_find(index, nmo_object_get_id(object))) {
                 continue;
             }
@@ -1902,11 +1908,15 @@ static nmo_status_t validate_parameter_links(
                 }
                 destination = nmo_object_repository_find_by_id(repo, destination_id);
                 if (!destination ||
-                    !script_edit_is_parameter_reference_class(
-                        nmo_object_get_class_id(destination))) {
+                    !script_edit_is_parameter_reference_object(
+                        registry, destination)) {
                     return NMO_ERR_VALIDATION_FAILED;
                 }
             }
+            break;
+        }
+        default:
+            break;
         }
     }
 
@@ -1918,10 +1928,15 @@ static nmo_status_t validate_parameter_operations(
     nmo_object_repository_t *repo,
     const nmo_behavior_index_t *index)
 {
+    const nmo_type_registry_t *registry = NULL;
     size_t object_count = 0;
 
-    if (!repo || !index) {
+    if (!tx || !repo || !index) {
         return NMO_ERR_INVALID_ARGUMENT;
+    }
+    registry = nmo_workspace_internal_type_registry(tx->workspace);
+    if (!registry) {
+        return NMO_ERR_INVALID_STATE;
     }
 
     object_count = nmo_object_repository_get_count(repo);
@@ -1929,17 +1944,21 @@ static nmo_status_t validate_parameter_operations(
         nmo_object_t *object = nmo_object_repository_get_by_index(repo, i);
         const nmo_parameteroperation_state_t *state = NULL;
 
-        if (!object ||
-            nmo_object_get_class_id(object) != NMO_CID_PARAMETEROPERATION) {
+        if (!object) {
             continue;
         }
         if (script_edit_is_pending_destroy(tx, nmo_object_get_id(object))) {
             continue;
         }
 
-        state = (const nmo_parameteroperation_state_t *)nmo_object_get_state(object);
+        state = (const nmo_parameteroperation_state_t *)
+            script_edit_get_object_state(
+                registry,
+                object,
+                NMO_CID_PARAMETEROPERATION,
+                CKPGUID_PARAMETEROPERATION);
         if (!state) {
-            return NMO_ERR_INVALID_STATE;
+            continue;
         }
         if (!nmo_behavior_index_find(index, nmo_object_get_id(object))) {
             return NMO_ERR_VALIDATION_FAILED;
@@ -1952,8 +1971,8 @@ static nmo_status_t validate_parameter_operations(
                 return NMO_ERR_VALIDATION_FAILED;
             }
             param = nmo_object_repository_find_by_id(repo, parameter_id);
-            if (!param || !script_edit_is_parameter_reference_class(
-                              nmo_object_get_class_id(param))) {
+            if (!param || !script_edit_is_parameter_reference_object(
+                              registry, param)) {
                 return NMO_ERR_VALIDATION_FAILED;
             }
         }
@@ -1965,8 +1984,8 @@ static nmo_status_t validate_parameter_operations(
                 return NMO_ERR_VALIDATION_FAILED;
             }
             param = nmo_object_repository_find_by_id(repo, parameter_id);
-            if (!param || !script_edit_is_parameter_reference_class(
-                              nmo_object_get_class_id(param))) {
+            if (!param || !script_edit_is_parameter_reference_object(
+                              registry, param)) {
                 return NMO_ERR_VALIDATION_FAILED;
             }
         }
@@ -1978,8 +1997,8 @@ static nmo_status_t validate_parameter_operations(
                 return NMO_ERR_VALIDATION_FAILED;
             }
             param = nmo_object_repository_find_by_id(repo, parameter_id);
-            if (!param || !script_edit_is_parameter_reference_class(
-                              nmo_object_get_class_id(param))) {
+            if (!param || !script_edit_is_parameter_reference_object(
+                              registry, param)) {
                 return NMO_ERR_VALIDATION_FAILED;
             }
         }
