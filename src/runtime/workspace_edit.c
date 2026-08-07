@@ -1817,11 +1817,24 @@ static nmo_status_t workspace_edit_find_typed_object(
     if (object == NULL) {
         return NMO_ERR_NOT_FOUND;
     }
-    if (nmo_object_get_class_id(object) != class_id) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
 
-    void *state = nmo_object_get_state(object);
+    void *state = NULL;
+    if (nmo_guid_is_null(nmo_object_get_type_guid(object)) &&
+        nmo_object_get_class_id(object) == class_id) {
+        state = nmo_object_get_state(object);
+    } else {
+        const nmo_type_registry_t *registry = workspace_edit_type_registry(edit);
+        if (!session_object_derives(registry, object, class_id)) {
+            return NMO_ERR_INVALID_ARGUMENT;
+        }
+        const nmo_type_descriptor_t *base_type =
+            nmo_type_query_find_by_class_id(registry, class_id);
+        if (base_type == NULL) {
+            return NMO_ERR_INVALID_STATE;
+        }
+        state = nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, object, base_type->guid);
+    }
     if (state == NULL) {
         return NMO_ERR_INVALID_STATE;
     }

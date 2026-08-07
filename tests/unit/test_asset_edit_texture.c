@@ -9,9 +9,11 @@
 #include "object/nmo_asset_edit.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_edit.h"
+#include "object/nmo_object_guids.h"
 #include "object/nmo_object_query.h"
 #include "runtime/nmo_context.h"
 #include "runtime/nmo_workspace.h"
+#include "type/nmo_type_query.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -384,6 +386,75 @@ TEST(asset_edit_texture, sets_material_channels_preserving_unset_channels)
     destroy_workspace(ctx, doc, workspace);
 }
 
+TEST(asset_edit_texture, edits_explicit_asset_types)
+{
+    nmo_context_t *ctx = NULL;
+    nmo_document_t *doc = NULL;
+    nmo_workspace_t *workspace = NULL;
+    create_workspace(&ctx, &doc, &workspace);
+
+    nmo_workspace_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_begin(workspace, "typed assets", &edit));
+    nmo_object_id_t material_id = 0u;
+    nmo_object_id_t texture_id = 0u;
+    nmo_object_id_t conflicting_id = 0u;
+    ASSERT_EQ(NMO_OK, nmo_object_edit_create(
+        edit,
+        &(nmo_object_create_desc_t){
+            .class_id = NMO_CID_OBJECT,
+            .name = "Typed material",
+            .type_guid = CKPGUID_MATERIAL,
+        },
+        &material_id));
+    ASSERT_EQ(NMO_OK, nmo_object_edit_create(
+        edit,
+        &(nmo_object_create_desc_t){
+            .class_id = NMO_CID_OBJECT,
+            .name = "Typed texture",
+            .type_guid = CKPGUID_TEXTURE,
+        },
+        &texture_id));
+    ASSERT_EQ(NMO_OK, nmo_object_edit_create(
+        edit,
+        &(nmo_object_create_desc_t){
+            .class_id = NMO_CID_MATERIAL,
+            .name = "Conflicting material",
+            .type_guid = CKPGUID_CAMERA,
+        },
+        &conflicting_id));
+
+    const uint8_t pixels[] = {32u, 64u, 128u, 255u};
+    ASSERT_EQ(NMO_OK,
+              nmo_asset_edit_set_texture_rgba(
+                  edit, texture_id, pixels, 1u, 1u));
+    ASSERT_EQ(NMO_OK,
+              nmo_asset_edit_set_material_color(
+                  edit, material_id, 0.25f, 0.5f, 0.75f, 1.0f));
+    ASSERT_EQ(NMO_OK,
+              nmo_asset_edit_bind_material_texture(
+                  edit, material_id, texture_id, 0u));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_asset_edit_set_material_color(
+                  edit, conflicting_id, 1.0f, 1.0f, 1.0f, 1.0f));
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_commit(edit));
+
+    const nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
+    nmo_material_state_t *material = (nmo_material_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, find_object(doc, material_id), CKPGUID_MATERIAL);
+    nmo_texture_state_t *texture = (nmo_texture_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, find_object(doc, texture_id), CKPGUID_TEXTURE);
+    ASSERT_NOT_NULL(material);
+    ASSERT_NOT_NULL(texture);
+    ASSERT_EQ(0xFF4080BFu, material->diffuse_color);
+    ASSERT_EQ(texture_id, nmo_material_texture_id(material, 0u));
+    ASSERT_EQ(1, texture->reader_width);
+    ASSERT_EQ(1, texture->reader_height);
+
+    destroy_workspace(ctx, doc, workspace);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(asset_edit_texture, replaces_rgba_texture_and_binds_material_slot_zero);
 REGISTER_TEST(asset_edit_texture, binds_material_texture_slot_one);
@@ -391,4 +462,5 @@ REGISTER_TEST(asset_edit_texture, replaces_texture_from_file);
 REGISTER_TEST(asset_edit_texture, rejects_invalid_material_texture_binding);
 REGISTER_TEST(asset_edit_texture, sets_material_render_flags_preserving_unset_bits);
 REGISTER_TEST(asset_edit_texture, sets_material_channels_preserving_unset_channels);
+REGISTER_TEST(asset_edit_texture, edits_explicit_asset_types);
 TEST_MAIN_END()

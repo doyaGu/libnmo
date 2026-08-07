@@ -4,13 +4,16 @@
 #include "document/nmo_document.h"
 #include "format/nmo_obj_parser.h"
 #include "format/nmo_object.h"
+#include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "object/nmo_asset_edit.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_edit.h"
+#include "object/nmo_object_guids.h"
 #include "object/nmo_object_query.h"
 #include "runtime/nmo_context.h"
 #include "runtime/nmo_workspace.h"
+#include "type/nmo_type_query.h"
 
 #include <stdio.h>
 #include <stdint.h>
@@ -412,6 +415,62 @@ TEST(asset_edit_obj_mesh, imports_obj_from_file)
     remove(path);
 }
 
+TEST(asset_edit_obj_mesh, binds_derived_entity_to_explicit_mesh)
+{
+    nmo_context_t *ctx = NULL;
+    nmo_document_t *doc = NULL;
+    nmo_workspace_t *workspace = NULL;
+    create_workspace(&ctx, &doc, &workspace);
+
+    nmo_workspace_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_begin(workspace, "typed mesh", &edit));
+    nmo_object_id_t camera_id = 0u;
+    nmo_object_id_t mesh_id = 0u;
+    nmo_object_id_t conflicting_id = 0u;
+    ASSERT_EQ(NMO_OK, nmo_object_edit_create(
+        edit,
+        &(nmo_object_create_desc_t){
+            .class_id = NMO_CID_CAMERA,
+            .name = "Camera",
+        },
+        &camera_id));
+    ASSERT_EQ(NMO_OK, nmo_object_edit_create(
+        edit,
+        &(nmo_object_create_desc_t){
+            .class_id = NMO_CID_OBJECT,
+            .name = "Typed mesh",
+            .type_guid = CKPGUID_MESH,
+        },
+        &mesh_id));
+    ASSERT_EQ(NMO_OK, nmo_object_edit_create(
+        edit,
+        &(nmo_object_create_desc_t){
+            .class_id = NMO_CID_MESH,
+            .name = "Conflicting mesh",
+            .type_guid = CKPGUID_MATERIAL,
+        },
+        &conflicting_id));
+
+    ASSERT_EQ(NMO_OK,
+              nmo_asset_edit_bind_entity_mesh(edit, camera_id, mesh_id));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_asset_edit_bind_entity_mesh(
+                  edit, camera_id, conflicting_id));
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_commit(edit));
+
+    nmo_3dentity_state_t *entity = (nmo_3dentity_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            nmo_context_get_type_registry(ctx),
+            find_object(doc, camera_id),
+            CKPGUID_3DENTITY);
+    ASSERT_NOT_NULL(entity);
+    ASSERT_EQ(mesh_id, nmo_ref_runtime_id(&entity->current_mesh));
+    ASSERT_EQ(1u, entity->mesh_count);
+    ASSERT_EQ(mesh_id, nmo_ref_runtime_id(&entity->mesh_ids[0]));
+
+    destroy_workspace(ctx, doc, workspace);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(asset_edit_obj_mesh, imports_triangle_from_parsed_obj);
 REGISTER_TEST(asset_edit_obj_mesh, binds_named_obj_materials);
@@ -422,4 +481,5 @@ REGISTER_TEST(asset_edit_obj_mesh, rejects_overflowing_line_count);
 REGISTER_TEST(asset_edit_obj_mesh, rejects_overflowing_face_count);
 REGISTER_TEST(asset_edit_obj_mesh, rejects_overflowing_combined_vertex_count);
 REGISTER_TEST(asset_edit_obj_mesh, imports_obj_from_file);
+REGISTER_TEST(asset_edit_obj_mesh, binds_derived_entity_to_explicit_mesh);
 TEST_MAIN_END()
