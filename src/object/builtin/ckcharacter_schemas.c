@@ -51,7 +51,15 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
         }
     } while (0),
     ((void)0))
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(bodypart, nmo_bodypart_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE(
+    bodypart,
+    nmo_bodypart_state_t,
+    do {
+        nmo_status_t result = nmo_3dobject_vtable.create(
+            &state->base, NULL, context);
+        if (result != NMO_OK) return result;
+    } while (0),
+    nmo_3dobject_vtable.destroy(&state->base, NULL, context))
 
 static nmo_status_t character_staged_base_create(
     nmo_3dentity_state_t *state,
@@ -280,7 +288,20 @@ static nmo_status_t nmo_bodypart_copy(
     const nmo_type_descriptor_t *type,
     nmo_arena_t *arena)
 {
-    return nmo_object_default_copy(src, dst, type, arena);
+    (void)type;
+    if (src == NULL || dst == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    const nmo_bodypart_state_t *source = src;
+    nmo_bodypart_state_t *target = dst;
+    nmo_type_descriptor_t base_type = {
+        .size = sizeof(nmo_3dobject_state_t),
+    };
+    NMO_RETURN_IF_ERROR(nmo_3dobject_vtable.copy(
+        &source->base, &target->base, &base_type, arena));
+    target->has_character = source->has_character;
+    target->character = source->character;
+    target->has_rotation_joint = source->has_rotation_joint;
+    target->rotation_joint = source->rotation_joint;
+    return NMO_OK;
 }
 
 static nmo_status_t nmo_bodypart_validate(
@@ -288,10 +309,10 @@ static nmo_status_t nmo_bodypart_validate(
     const nmo_type_descriptor_t *type,
     void *context)
 {
-    (void)instance;
     (void)type;
-    (void)context;
-    NMO_RETURN_OK();
+    if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    const nmo_bodypart_state_t *state = instance;
+    return nmo_3dobject_vtable.validate(&state->base, NULL, context);
 }
 
 nmo_status_t nmo_character_prepare_dependencies(
@@ -502,7 +523,69 @@ static uint32_t nmo_character_hash(const void *instance)
         4096);
 }
 
-NMO_DEFINE_OBJECT_STATE_OPS_CUSTOM(bodypart, nmo_bodypart_state_t)
+static bool nmo_bodypart_equals(const void *a, const void *b)
+{
+    if (a == b) return true;
+    if (a == NULL || b == NULL) return false;
+    const nmo_bodypart_state_t *lhs = a;
+    const nmo_bodypart_state_t *rhs = b;
+    return nmo_3dobject_vtable.equals(&lhs->base, &rhs->base) &&
+        lhs->has_character == rhs->has_character &&
+        lhs->character.raw_id == rhs->character.raw_id &&
+        lhs->character.id == rhs->character.id &&
+        lhs->character.state == rhs->character.state &&
+        lhs->has_rotation_joint == rhs->has_rotation_joint &&
+        lhs->rotation_joint.flags == rhs->rotation_joint.flags &&
+        memcmp(&lhs->rotation_joint.min, &rhs->rotation_joint.min,
+               sizeof(lhs->rotation_joint.min)) == 0 &&
+        memcmp(&lhs->rotation_joint.max, &rhs->rotation_joint.max,
+               sizeof(lhs->rotation_joint.max)) == 0 &&
+        memcmp(&lhs->rotation_joint.damping, &rhs->rotation_joint.damping,
+               sizeof(lhs->rotation_joint.damping)) == 0;
+}
+
+static uint32_t nmo_bodypart_hash_bytes(
+    uint32_t hash,
+    const void *data,
+    size_t size)
+{
+    const uint8_t *bytes = data;
+    for (size_t i = 0; i < size; ++i) {
+        hash ^= bytes[i];
+        hash *= 16777619u;
+    }
+    return hash;
+}
+
+static uint32_t nmo_bodypart_hash(const void *instance)
+{
+    if (instance == NULL) return 0;
+    const nmo_bodypart_state_t *state = instance;
+    uint32_t hash = nmo_3dobject_vtable.hash(&state->base);
+    hash = nmo_bodypart_hash_bytes(
+        hash, &state->has_character, sizeof(state->has_character));
+    hash = nmo_bodypart_hash_bytes(
+        hash, &state->character.raw_id, sizeof(state->character.raw_id));
+    hash = nmo_bodypart_hash_bytes(
+        hash, &state->character.id, sizeof(state->character.id));
+    hash = nmo_bodypart_hash_bytes(
+        hash, &state->character.state, sizeof(state->character.state));
+    hash = nmo_bodypart_hash_bytes(
+        hash, &state->has_rotation_joint,
+        sizeof(state->has_rotation_joint));
+    hash = nmo_bodypart_hash_bytes(
+        hash, &state->rotation_joint.flags,
+        sizeof(state->rotation_joint.flags));
+    hash = nmo_bodypart_hash_bytes(
+        hash, &state->rotation_joint.min,
+        sizeof(state->rotation_joint.min));
+    hash = nmo_bodypart_hash_bytes(
+        hash, &state->rotation_joint.max,
+        sizeof(state->rotation_joint.max));
+    return nmo_bodypart_hash_bytes(
+        hash, &state->rotation_joint.damping,
+        sizeof(state->rotation_joint.damping));
+}
 
 nmo_type_vtable_t nmo_character_vtable = {
     .prepare_dependencies = nmo_character_prepare_dependencies,
