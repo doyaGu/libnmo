@@ -23,7 +23,15 @@
 #include <stdalign.h>
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(3dobject, nmo_3dobject_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE(
+    3dobject,
+    nmo_3dobject_state_t,
+    do {
+        nmo_status_t result = nmo_3dentity_vtable.create(
+            &state->entity, NULL, context);
+        if (result != NMO_OK) return result;
+    } while (0),
+    nmo_3dentity_vtable.destroy(&state->entity, NULL, context))
 
 /* =============================================================================
  * REFLECTION FIELDS
@@ -147,7 +155,49 @@ static void nmo_3dobject_post_delete(
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_STATE_OPS(3dobject, nmo_3dobject_state_t)
+static nmo_status_t nmo_3dobject_copy(
+    const void *src,
+    void *dst,
+    const nmo_type_descriptor_t *type,
+    nmo_arena_t *arena)
+{
+    (void)type;
+    if (src == NULL || dst == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    const nmo_3dobject_state_t *source = src;
+    nmo_3dobject_state_t *target = dst;
+    nmo_type_descriptor_t entity_type = {
+        .size = sizeof(nmo_3dentity_state_t),
+    };
+    return nmo_3dentity_vtable.copy(
+        &source->entity, &target->entity, &entity_type, arena);
+}
+
+static nmo_status_t nmo_3dobject_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    const nmo_3dobject_state_t *state = instance;
+    return nmo_3dentity_vtable.validate(&state->entity, NULL, context);
+}
+
+static bool nmo_3dobject_equals(const void *a, const void *b)
+{
+    if (a == b) return true;
+    if (a == NULL || b == NULL) return false;
+    const nmo_3dobject_state_t *lhs = a;
+    const nmo_3dobject_state_t *rhs = b;
+    return nmo_3dentity_vtable.equals(&lhs->entity, &rhs->entity);
+}
+
+static uint32_t nmo_3dobject_hash(const void *instance)
+{
+    if (instance == NULL) return 0;
+    const nmo_3dobject_state_t *state = instance;
+    return nmo_3dentity_vtable.hash(&state->entity);
+}
 
 nmo_type_vtable_t nmo_3dobject_vtable = {
     .prepare_dependencies = nmo_3dobject_prepare_dependencies,

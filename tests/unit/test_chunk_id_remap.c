@@ -4648,6 +4648,47 @@ TEST(chunk_id_remap, entity_copy_clones_inherited_and_skin_state) {
     nmo_arena_destroy(source_arena);
 }
 
+TEST(chunk_id_remap, object3d_delegates_state_operations) {
+    nmo_arena_t *source_arena = nmo_arena_create(NULL, 8192);
+    nmo_arena_t *copy_arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(source_arena);
+    ASSERT_NOT_NULL(copy_arena);
+
+    nmo_3dobject_state_t source;
+    nmo_3dobject_state_t copy;
+    ASSERT_EQ(NMO_OK, nmo_3dobject_vtable.create(&source, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_3dobject_vtable.create(&copy, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &source.entity.base.base.scripts, 101));
+    source.entity.mesh_count = 1;
+    source.entity.mesh_ids = nmo_arena_alloc(
+        source_arena, sizeof(*source.entity.mesh_ids),
+        _Alignof(nmo_ref_t));
+    ASSERT_NOT_NULL(source.entity.mesh_ids);
+    source.entity.mesh_ids[0] = nmo_ref_from_raw(201);
+
+    nmo_type_descriptor_t object_type = {
+        .size = sizeof(nmo_3dobject_state_t),
+    };
+    ASSERT_EQ(NMO_OK, nmo_3dobject_vtable.copy(
+        &source, &copy, &object_type, copy_arena));
+    ASSERT_NE(source.entity.base.base.scripts.data,
+              copy.entity.base.base.scripts.data);
+    ASSERT_NE(source.entity.mesh_ids, copy.entity.mesh_ids);
+    ASSERT_TRUE(nmo_3dobject_vtable.equals(&source, &copy));
+    ASSERT_EQ(nmo_3dobject_vtable.hash(&source),
+              nmo_3dobject_vtable.hash(&copy));
+
+    copy.entity.mesh_ids[0] = nmo_ref_from_raw(202);
+    ASSERT_EQ(201u, source.entity.mesh_ids[0].raw_id);
+    ASSERT_FALSE(nmo_3dobject_vtable.equals(&source, &copy));
+
+    nmo_3dobject_vtable.destroy(&copy, NULL, NULL);
+    nmo_3dobject_vtable.destroy(&source, NULL, NULL);
+    nmo_arena_destroy(copy_arena);
+    nmo_arena_destroy(source_arena);
+}
+
 TEST(chunk_id_remap, entity_scalar_ref_sections_reject_truncation_atomically) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
     ASSERT_NOT_NULL(arena);
@@ -8628,6 +8669,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, entity_scalar_refs_round_trip_unresolved_raw_ids);
     REGISTER_TEST(chunk_id_remap, entity_content_equality_ignores_storage_addresses);
     REGISTER_TEST(chunk_id_remap, entity_copy_clones_inherited_and_skin_state);
+    REGISTER_TEST(chunk_id_remap, object3d_delegates_state_operations);
     REGISTER_TEST(chunk_id_remap, entity_scalar_ref_sections_reject_truncation_atomically);
     REGISTER_TEST(chunk_id_remap, entity_skin_rejects_negative_vertex_bone_count_atomically);
     REGISTER_TEST(chunk_id_remap, entity_skin_rejects_oversized_counts_before_allocation);
