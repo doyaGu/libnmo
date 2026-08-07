@@ -1143,32 +1143,42 @@ static bool script_edit_is_pending_destroy(
 static bool script_edit_io_is_linked_in_repo(
     const nmo_type_registry_t *registry,
     nmo_object_repository_t *repo,
-    nmo_object_id_t behavior_id,
     nmo_object_id_t io_id)
 {
-    nmo_behavior_state_t *state = NULL;
-
-    state = script_edit_find_behavior_state_in_repo(
-        registry, repo, behavior_id, NULL);
-    if (!state || !state->sub_behavior_links.data) {
+    if (!registry || !repo || io_id == 0u) {
         return false;
     }
 
-    for (size_t i = 0; i < state->sub_behavior_links.count; ++i) {
-        nmo_object_id_t link_id = nmo_behavior_ref_array_get_id(
-            &state->sub_behavior_links, i);
-        if (link_id == 0) continue;
-        nmo_object_t *link_obj =
-            repo ? nmo_object_repository_find_by_id(repo, link_id) : NULL;
-        const nmo_behaviorlink_state_t *link_state =
-            link_obj ? (const nmo_behaviorlink_state_t *)nmo_object_get_state(link_obj)
-                     : NULL;
-        if (!link_state) {
+    size_t object_count = nmo_object_repository_get_count(repo);
+    for (size_t i = 0; i < object_count; ++i) {
+        nmo_object_t *behavior_obj = nmo_object_repository_get_by_index(repo, i);
+        const nmo_behavior_state_t *behavior_state =
+            (const nmo_behavior_state_t *)script_edit_get_object_state(
+                registry,
+                behavior_obj,
+                NMO_CID_BEHAVIOR,
+                CKPGUID_BEHAVIOR);
+        if (!behavior_state || !behavior_state->sub_behavior_links.data) {
             continue;
         }
-        if (nmo_behaviorlink_in_io_id(link_state) == io_id ||
-            nmo_behaviorlink_out_io_id(link_state) == io_id) {
-            return true;
+
+        for (size_t j = 0; j < behavior_state->sub_behavior_links.count; ++j) {
+            nmo_object_id_t link_id = nmo_behavior_ref_array_get_id(
+                &behavior_state->sub_behavior_links, j);
+            nmo_object_t *link_obj = link_id != 0u
+                ? nmo_object_repository_find_by_id(repo, link_id)
+                : NULL;
+            const nmo_behaviorlink_state_t *link_state =
+                (const nmo_behaviorlink_state_t *)script_edit_get_object_state(
+                    registry,
+                    link_obj,
+                    NMO_CID_BEHAVIORLINK,
+                    CKPGUID_BEHAVIORLINK);
+            if (link_state &&
+                (nmo_behaviorlink_in_io_id(link_state) == io_id ||
+                 nmo_behaviorlink_out_io_id(link_state) == io_id)) {
+                return true;
+            }
         }
     }
     return false;
@@ -1186,6 +1196,7 @@ static nmo_status_t script_edit_remove_links_for_io(
     nmo_object_id_t io_id)
 {
     nmo_object_repository_t *repo = NULL;
+    const nmo_type_registry_t *registry = NULL;
     typedef struct matched_link {
         nmo_object_id_t parent_behavior_id;
         nmo_object_id_t link_id;
@@ -1203,17 +1214,23 @@ static nmo_status_t script_edit_remove_links_for_io(
     (void)behavior_id;
 
     repo = nmo_workspace_internal_repository(tx->workspace);
+    registry = nmo_workspace_internal_type_registry(tx->workspace);
     if (repo == NULL) {
         return NMO_OK;
+    }
+    if (registry == NULL) {
+        return NMO_ERR_INVALID_STATE;
     }
 
     object_count = nmo_object_repository_get_count(repo);
     for (size_t i = 0; i < object_count; ++i) {
         nmo_object_t *behavior_obj = nmo_object_repository_get_by_index(repo, i);
-        nmo_behavior_state_t *behavior_state = behavior_obj &&
-                nmo_object_get_class_id(behavior_obj) == NMO_CID_BEHAVIOR
-            ? (nmo_behavior_state_t *)nmo_object_get_state(behavior_obj)
-            : NULL;
+        nmo_behavior_state_t *behavior_state =
+            (nmo_behavior_state_t *)script_edit_get_object_state(
+                registry,
+                behavior_obj,
+                NMO_CID_BEHAVIOR,
+                CKPGUID_BEHAVIOR);
         if (behavior_state == NULL ||
             behavior_state->sub_behavior_links.data == NULL) {
             continue;
@@ -1225,9 +1242,12 @@ static nmo_status_t script_edit_remove_links_for_io(
             if (link_id == 0) continue;
             nmo_object_t *link_obj =
                 nmo_object_repository_find_by_id(repo, link_id);
-            const nmo_behaviorlink_state_t *link_state = link_obj
-                ? (const nmo_behaviorlink_state_t *)nmo_object_get_state(link_obj)
-                : NULL;
+            const nmo_behaviorlink_state_t *link_state =
+                (const nmo_behaviorlink_state_t *)script_edit_get_object_state(
+                    registry,
+                    link_obj,
+                    NMO_CID_BEHAVIORLINK,
+                    CKPGUID_BEHAVIORLINK);
             if (!link_state ||
                 (nmo_behaviorlink_in_io_id(link_state) != io_id &&
                  nmo_behaviorlink_out_io_id(link_state) != io_id)) {
@@ -1800,10 +1820,15 @@ static nmo_status_t validate_behavior_link_owners(
     nmo_object_repository_t *repo,
     const nmo_behavior_index_t *index)
 {
+    const nmo_type_registry_t *registry = NULL;
     size_t object_count = 0;
 
-    if (!repo || !index) {
+    if (!tx || !repo || !index) {
         return NMO_ERR_INVALID_ARGUMENT;
+    }
+    registry = nmo_workspace_internal_type_registry(tx->workspace);
+    if (!registry) {
+        return NMO_ERR_INVALID_STATE;
     }
 
     object_count = nmo_object_repository_get_count(repo);
@@ -1811,16 +1836,25 @@ static nmo_status_t validate_behavior_link_owners(
         nmo_object_t *object = nmo_object_repository_get_by_index(repo, i);
         const nmo_behaviorlink_state_t *state = NULL;
 
-        if (!object || nmo_object_get_class_id(object) != NMO_CID_BEHAVIORLINK) {
+        if (!object) {
             continue;
         }
         if (script_edit_is_pending_destroy(tx, nmo_object_get_id(object))) {
             continue;
         }
 
-        state = (const nmo_behaviorlink_state_t *)nmo_object_get_state(object);
+        state = (const nmo_behaviorlink_state_t *)script_edit_get_object_state(
+            registry,
+            object,
+            NMO_CID_BEHAVIORLINK,
+            CKPGUID_BEHAVIORLINK);
         if (!state) {
-            return NMO_ERR_INVALID_STATE;
+            if (nmo_object_get_class_id(object) == NMO_CID_BEHAVIORLINK ||
+                nmo_guid_equals(
+                    nmo_object_get_type_guid(object), CKPGUID_BEHAVIORLINK)) {
+                return NMO_ERR_INVALID_STATE;
+            }
+            continue;
         }
         if (!nmo_behavior_index_find(index, nmo_object_get_id(object)) ||
             !nmo_behavior_index_find(
@@ -3668,7 +3702,6 @@ NMO_API nmo_status_t nmo_script_edit_remove_io(
         script_edit_io_is_linked_in_repo(
             nmo_workspace_internal_type_registry(tx->workspace),
             nmo_workspace_internal_repository(tx->workspace),
-            owner->owner_id,
             io_id)) {
         return NMO_ERR_VALIDATION_FAILED;
     }

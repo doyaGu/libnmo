@@ -855,9 +855,14 @@ TEST(script_edit_transaction,
 {
     nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
     nmo_session_t *session = NULL;
+    nmo_object_repository_t *repo = NULL;
+    const nmo_type_registry_t *registry = NULL;
     nmo_script_edit_tx_t *tx = NULL;
+    nmo_object_t *root_object = NULL;
+    nmo_object_t *link_object = NULL;
+    nmo_behavior_state_t *root_state = NULL;
+    nmo_behaviorlink_state_t *link_state = NULL;
     script_control_fixture_t fixture;
-    test_workspace_seed_scope_t seed_scope = {0};
     nmo_object_id_t link_id = 0;
 
     ASSERT_NOT_NULL(ctx);
@@ -867,21 +872,47 @@ TEST(script_edit_transaction,
     setup_script_control_fixture(session, &fixture);
 
     ASSERT_EQ(NMO_OK,
-              begin_test_workspace_seed_edit(
-                  ctx, session, "seed-link", &seed_scope));
-    ASSERT_EQ(NMO_OK,
-              nmo_behavior_edit_add_link(seed_scope.edit,
-                                         fixture.root_behavior_id,
-                                         fixture.source_output_id,
-                                         fixture.target_input_id,
-                                         0,
-                                         &link_id));
+              nmo_session_create_object(session,
+                                        0,
+                                        "Typed behavior link",
+                                        CKPGUID_BEHAVIORLINK,
+                                        &link_id,
+                                        NULL));
     ASSERT_TRUE(link_id != 0u);
-    ASSERT_EQ(NMO_OK, nmo_workspace_edit_commit(seed_scope.edit));
-    destroy_test_workspace_seed_scope(&seed_scope);
+    repo = nmo_session_get_repository(session);
+    registry = nmo_context_get_type_registry(ctx);
+    ASSERT_NOT_NULL(repo);
+    ASSERT_NOT_NULL(registry);
+    root_object = nmo_object_repository_find_by_id(
+        repo, fixture.root_behavior_id);
+    link_object = nmo_object_repository_find_by_id(repo, link_id);
+    ASSERT_NOT_NULL(root_object);
+    ASSERT_NOT_NULL(link_object);
+    root_state = (nmo_behavior_state_t *)nmo_object_get_state(root_object);
+    link_state = (nmo_behaviorlink_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, link_object, CKPGUID_BEHAVIORLINK);
+    ASSERT_NOT_NULL(root_state);
+    ASSERT_NOT_NULL(link_state);
+    ASSERT_EQ(NMO_OK,
+              nmo_behavior_ref_array_append(
+                  &root_state->sub_behavior_links, link_id, NULL));
+    nmo_behaviorlink_set_in_io_id(link_state, fixture.source_output_id);
+    nmo_behaviorlink_set_out_io_id(link_state, fixture.target_input_id);
+    ASSERT_EQ(0, nmo_object_get_class_id(link_object));
 
     ASSERT_EQ(NMO_OK,
               begin_test_script_edit(ctx, session, "remove-linked-io", &tx));
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_BEHAVIOR_INDEX));
+    nmo_behaviorlink_set_out_io_id(link_state, fixture.root_behavior_id);
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,
+              nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_BEHAVIOR_INDEX));
+    nmo_behaviorlink_set_out_io_id(link_state, fixture.target_input_id);
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_BEHAVIOR_INDEX));
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,
+              nmo_script_edit_remove_io(tx, fixture.source_output_id, false));
     ASSERT_EQ(NMO_OK,
               nmo_script_edit_remove_io(tx, fixture.source_output_id, true));
     ASSERT_EQ(NMO_OK,
@@ -889,7 +920,7 @@ TEST(script_edit_transaction,
     ASSERT_EQ(NMO_OK,
               nmo_script_edit_validate(tx, NMO_SCRIPT_EDIT_VALIDATE_BEHAVIOR_INDEX));
 
-    nmo_script_edit_commit(tx);
+    ASSERT_EQ(NMO_OK, nmo_script_edit_commit(tx));
     ASSERT_NULL(nmo_object_repository_find_by_id(
         nmo_session_get_repository(session), link_id));
 
