@@ -4984,6 +4984,64 @@ TEST(chunk_id_remap, sprite3d_copy_preserves_inherited_and_own_state) {
     nmo_arena_destroy(source_arena);
 }
 
+TEST(chunk_id_remap, sprite_copy_preserves_bitmap_content) {
+    nmo_arena_t *source_arena = nmo_arena_create(NULL, 8192);
+    nmo_arena_t *copy_arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(source_arena);
+    ASSERT_NOT_NULL(copy_arena);
+
+    nmo_sprite_state_t source;
+    nmo_sprite_state_t copy;
+    ASSERT_EQ(NMO_OK, nmo_sprite_vtable.create(&source, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_sprite_vtable.create(&copy, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &source.entity.base.base.scripts, 101));
+    source.has_bitmap_data = true;
+    source.bitmap_data.width = 2;
+    source.bitmap_data.height = 1;
+    source.bitmap_data.pixel_data_size = 2;
+    source.bitmap_data.pixel_data = nmo_arena_alloc(
+        source_arena, 2, 1);
+    source.bitmap_data.palette_size = 2;
+    source.bitmap_data.palette_data = nmo_arena_alloc(
+        source_arena, 2, 1);
+    ASSERT_NOT_NULL(source.bitmap_data.pixel_data);
+    ASSERT_NOT_NULL(source.bitmap_data.palette_data);
+    source.bitmap_data.pixel_data[0] = 0x11;
+    source.bitmap_data.pixel_data[1] = 0x22;
+    source.bitmap_data.palette_data[0] = 0x33;
+    source.bitmap_data.palette_data[1] = 0x44;
+    source.has_save_options = true;
+    source.bitmap_properties_size = 2;
+    source.bitmap_properties = nmo_arena_alloc(source_arena, 2, 1);
+    ASSERT_NOT_NULL(source.bitmap_properties);
+    source.bitmap_properties[0] = 0x55;
+    source.bitmap_properties[1] = 0x66;
+
+    nmo_type_descriptor_t sprite_type = {
+        .size = sizeof(nmo_sprite_state_t),
+    };
+    ASSERT_EQ(NMO_OK, nmo_sprite_vtable.copy(
+        &source, &copy, &sprite_type, copy_arena));
+    ASSERT_NE(source.entity.base.base.scripts.data,
+              copy.entity.base.base.scripts.data);
+    ASSERT_NE(source.bitmap_data.pixel_data, copy.bitmap_data.pixel_data);
+    ASSERT_NE(source.bitmap_data.palette_data, copy.bitmap_data.palette_data);
+    ASSERT_NE(source.bitmap_properties, copy.bitmap_properties);
+    ASSERT_TRUE(nmo_sprite_vtable.equals(&source, &copy));
+    ASSERT_EQ(nmo_sprite_vtable.hash(&source),
+              nmo_sprite_vtable.hash(&copy));
+
+    copy.bitmap_data.pixel_data[0] = 0x77;
+    ASSERT_EQ(0x11, source.bitmap_data.pixel_data[0]);
+    ASSERT_FALSE(nmo_sprite_vtable.equals(&source, &copy));
+
+    nmo_sprite_vtable.destroy(&copy, NULL, NULL);
+    nmo_sprite_vtable.destroy(&source, NULL, NULL);
+    nmo_arena_destroy(copy_arena);
+    nmo_arena_destroy(source_arena);
+}
+
 TEST(chunk_id_remap, entity_scalar_ref_sections_reject_truncation_atomically) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
     ASSERT_NOT_NULL(arena);
@@ -8972,6 +9030,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, light_copy_preserves_inherited_and_own_state);
     REGISTER_TEST(chunk_id_remap, targetlight_copy_preserves_base_and_target);
     REGISTER_TEST(chunk_id_remap, sprite3d_copy_preserves_inherited_and_own_state);
+    REGISTER_TEST(chunk_id_remap, sprite_copy_preserves_bitmap_content);
     REGISTER_TEST(chunk_id_remap, entity_scalar_ref_sections_reject_truncation_atomically);
     REGISTER_TEST(chunk_id_remap, entity_skin_rejects_negative_vertex_bone_count_atomically);
     REGISTER_TEST(chunk_id_remap, entity_skin_rejects_oversized_counts_before_allocation);
