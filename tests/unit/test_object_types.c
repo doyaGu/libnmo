@@ -13,6 +13,7 @@
 #include "core/nmo_arena.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
+#include <stdint.h>
 #include <string.h>
 
 static nmo_status_t register_test_object_types(nmo_type_registry_t *registry) {
@@ -281,6 +282,44 @@ TEST(object_types, default_validate_rejects_null_instance) {
     ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, result);
 }
 
+TEST(object_types, copy_helpers_reject_invalid_sizes_atomically) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 1024);
+    ASSERT_NOT_NULL(arena);
+    uint32_t source[2] = {1, 2};
+    void *sentinel = source;
+    void *destination = sentinel;
+
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, nmo_object_copy_bytes(
+        NULL, &destination, source, sizeof(source)));
+    ASSERT_EQ(sentinel, destination);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, nmo_object_copy_bytes(
+        arena, NULL, source, sizeof(source)));
+
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, nmo_object_copy_array(
+        arena, &destination, source, SIZE_MAX, 2));
+    ASSERT_EQ(sentinel, destination);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, nmo_object_copy_array(
+        arena, &destination, source, 0, 2));
+    ASSERT_EQ(sentinel, destination);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, nmo_object_copy_array(
+        NULL, &destination, source, sizeof(source[0]), 2));
+    ASSERT_EQ(sentinel, destination);
+
+    ASSERT_EQ(NMO_OK, nmo_object_copy_array(
+        arena, &destination, source, sizeof(source[0]), 2));
+    ASSERT_NE(source, destination);
+    ASSERT_EQ(0, memcmp(source, destination, sizeof(source)));
+
+    destination = sentinel;
+    ASSERT_EQ(NMO_OK, nmo_object_copy_bytes(NULL, &destination, NULL, 0));
+    ASSERT_NULL(destination);
+    ASSERT_EQ(NMO_OK, nmo_object_copy_array(
+        NULL, &destination, NULL, 0, 0));
+    ASSERT_NULL(destination);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(object_types, register_base_types);
     REGISTER_TEST(object_types, register_all_types);
@@ -292,4 +331,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_types, resource_types);
     REGISTER_TEST(object_types, default_validate_allows_null_type);
     REGISTER_TEST(object_types, default_validate_rejects_null_instance);
+    REGISTER_TEST(object_types, copy_helpers_reject_invalid_sizes_atomically);
 TEST_MAIN_END()

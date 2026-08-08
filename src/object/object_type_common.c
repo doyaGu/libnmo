@@ -262,9 +262,17 @@ nmo_status_t nmo_object_copy_bytes(
     const void *src,
     size_t size)
 {
+    if (dst == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "NULL destination for byte copy");
+    }
     if (!size) {
         *dst = NULL;
         NMO_RETURN_OK();
+    }
+    if (arena == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "NULL arena for byte copy");
     }
     if (!src) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
@@ -287,13 +295,25 @@ nmo_status_t nmo_object_copy_array(
     size_t elem_size,
     uint32_t count)
 {
+    if (dst == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "NULL destination for array copy");
+    }
     if (!count) {
         *dst = NULL;
         NMO_RETURN_OK();
     }
+    if (arena == NULL || elem_size == 0) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arena or element size for array copy");
+    }
     if (!src) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                                 "NULL source array for count %u", count);
+    }
+    if (elem_size > SIZE_MAX / count) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Array copy size overflows for count %u", count);
     }
     size_t size = (size_t)count * elem_size;
     /* The element type is not available here, so use the platform's maximum
