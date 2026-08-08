@@ -27,7 +27,20 @@
 #include <stddef.h>
 #include <stdalign.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(spritetext, nmo_spritetext_state_t)
+static void ckspritetext_init_defaults(
+    nmo_spritetext_state_t *state,
+    nmo_arena_t *arena);
+
+NMO_DEFINE_OBJECT_LIFECYCLE(
+    spritetext,
+    nmo_spritetext_state_t,
+    do {
+        nmo_status_t result = nmo_sprite_vtable.create(
+            &state->base, NULL, context);
+        if (result != NMO_OK) return result;
+        ckspritetext_init_defaults(state, NULL);
+    } while (0),
+    nmo_sprite_vtable.destroy(&state->base, NULL, context))
 
 static void nmo_spritetext_dispose_base_arrays(nmo_spritetext_state_t *state)
 {
@@ -487,7 +500,122 @@ nmo_status_t nmo_spritetext_serialize(
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_STATE_OPS(spritetext, nmo_spritetext_state_t)
+static nmo_status_t nmo_spritetext_copy(
+    const void *src,
+    void *dst,
+    const nmo_type_descriptor_t *type,
+    nmo_arena_t *arena)
+{
+    (void)type;
+    if (src == NULL || dst == NULL || arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    const nmo_spritetext_state_t *source = src;
+    nmo_spritetext_state_t *target = dst;
+    nmo_type_descriptor_t base_type = {
+        .size = sizeof(nmo_sprite_state_t),
+    };
+    NMO_RETURN_IF_ERROR(nmo_sprite_vtable.copy(
+        &source->base, &target->base, &base_type, arena));
+    target->text_content = NULL;
+    target->font.font_name = NULL;
+    NMO_RETURN_IF_ERROR(nmo_object_copy_string(
+        arena, (char **)&target->text_content, source->text_content));
+    NMO_RETURN_IF_ERROR(nmo_object_copy_string(
+        arena, (char **)&target->font.font_name, source->font.font_name));
+    target->font.size = source->font.size;
+    target->font.weight = source->font.weight;
+    target->font.italic = source->font.italic;
+    target->font.underline = source->font.underline;
+    target->font_color = source->font_color;
+    target->background_color = source->background_color;
+    target->needs_redraw = source->needs_redraw;
+    return NMO_OK;
+}
+
+static nmo_status_t nmo_spritetext_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    const nmo_spritetext_state_t *state = instance;
+    return nmo_sprite_vtable.validate(&state->base, NULL, context);
+}
+
+static bool nmo_spritetext_string_equals(
+    const char *lhs,
+    const char *rhs)
+{
+    if (lhs == rhs) return true;
+    return lhs != NULL && rhs != NULL && strcmp(lhs, rhs) == 0;
+}
+
+static bool nmo_spritetext_equals(const void *a, const void *b)
+{
+    if (a == b) return true;
+    if (a == NULL || b == NULL) return false;
+    const nmo_spritetext_state_t *lhs = a;
+    const nmo_spritetext_state_t *rhs = b;
+    return nmo_sprite_vtable.equals(&lhs->base, &rhs->base) &&
+        nmo_spritetext_string_equals(
+            lhs->text_content, rhs->text_content) &&
+        nmo_spritetext_string_equals(
+            lhs->font.font_name, rhs->font.font_name) &&
+        lhs->font.size == rhs->font.size &&
+        lhs->font.weight == rhs->font.weight &&
+        lhs->font.italic == rhs->font.italic &&
+        lhs->font.underline == rhs->font.underline &&
+        lhs->font_color == rhs->font_color &&
+        lhs->background_color == rhs->background_color &&
+        lhs->needs_redraw == rhs->needs_redraw;
+}
+
+static uint32_t nmo_spritetext_hash_bytes(
+    uint32_t hash,
+    const void *data,
+    size_t size)
+{
+    const uint8_t *bytes = data;
+    for (size_t i = 0; i < size; ++i) {
+        hash ^= bytes[i];
+        hash *= 16777619u;
+    }
+    return hash;
+}
+
+static uint32_t nmo_spritetext_hash_string(
+    uint32_t hash,
+    const char *string)
+{
+    const uint8_t present = string != NULL;
+    hash = nmo_spritetext_hash_bytes(hash, &present, sizeof(present));
+    return present
+        ? nmo_spritetext_hash_bytes(hash, string, strlen(string))
+        : hash;
+}
+
+static uint32_t nmo_spritetext_hash(const void *instance)
+{
+    if (instance == NULL) return 0;
+    const nmo_spritetext_state_t *state = instance;
+    uint32_t hash = nmo_sprite_vtable.hash(&state->base);
+    hash = nmo_spritetext_hash_string(hash, state->text_content);
+    hash = nmo_spritetext_hash_string(hash, state->font.font_name);
+#define NMO_SPRITETEXT_HASH_FIELD(field) \
+    hash = nmo_spritetext_hash_bytes( \
+        hash, &state->field, sizeof(state->field))
+    NMO_SPRITETEXT_HASH_FIELD(font.size);
+    NMO_SPRITETEXT_HASH_FIELD(font.weight);
+    NMO_SPRITETEXT_HASH_FIELD(font.italic);
+    NMO_SPRITETEXT_HASH_FIELD(font.underline);
+    NMO_SPRITETEXT_HASH_FIELD(font_color);
+    NMO_SPRITETEXT_HASH_FIELD(background_color);
+    NMO_SPRITETEXT_HASH_FIELD(needs_redraw);
+#undef NMO_SPRITETEXT_HASH_FIELD
+    return hash;
+}
 
 nmo_type_vtable_t nmo_spritetext_vtable = {
     .prepare_dependencies = nmo_spritetext_prepare_dependencies,

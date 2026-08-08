@@ -5042,6 +5042,59 @@ TEST(chunk_id_remap, sprite_copy_preserves_bitmap_content) {
     nmo_arena_destroy(source_arena);
 }
 
+TEST(chunk_id_remap, spritetext_copy_preserves_base_and_strings) {
+    nmo_arena_t *source_arena = nmo_arena_create(NULL, 8192);
+    nmo_arena_t *copy_arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(source_arena);
+    ASSERT_NOT_NULL(copy_arena);
+
+    nmo_spritetext_state_t source;
+    nmo_spritetext_state_t copy;
+    ASSERT_EQ(NMO_OK, nmo_spritetext_vtable.create(
+        &source, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_spritetext_vtable.create(
+        &copy, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &source.base.entity.base.base.scripts, 101));
+    source.base.has_bitmap_data = true;
+    source.base.bitmap_data.pixel_data_size = 1;
+    source.base.bitmap_data.pixel_data = nmo_arena_alloc(
+        source_arena, 1, 1);
+    ASSERT_NOT_NULL(source.base.bitmap_data.pixel_data);
+    source.base.bitmap_data.pixel_data[0] = 0x11;
+    source.text_content = "Hello";
+    source.font.font_name = "Arial";
+    source.font.size = 16;
+    source.font.weight = 700;
+    source.font_color = 0xAABBCCDDu;
+    source.background_color = 0x11223344u;
+    source.needs_redraw = true;
+
+    nmo_type_descriptor_t text_type = {
+        .size = sizeof(nmo_spritetext_state_t),
+    };
+    ASSERT_EQ(NMO_OK, nmo_spritetext_vtable.copy(
+        &source, &copy, &text_type, copy_arena));
+    ASSERT_NE(source.base.entity.base.base.scripts.data,
+              copy.base.entity.base.base.scripts.data);
+    ASSERT_NE(source.base.bitmap_data.pixel_data,
+              copy.base.bitmap_data.pixel_data);
+    ASSERT_NE(source.text_content, copy.text_content);
+    ASSERT_NE(source.font.font_name, copy.font.font_name);
+    ASSERT_TRUE(nmo_spritetext_vtable.equals(&source, &copy));
+    ASSERT_EQ(nmo_spritetext_vtable.hash(&source),
+              nmo_spritetext_vtable.hash(&copy));
+
+    copy.font.size = 18;
+    ASSERT_EQ(16, source.font.size);
+    ASSERT_FALSE(nmo_spritetext_vtable.equals(&source, &copy));
+
+    nmo_spritetext_vtable.destroy(&copy, NULL, NULL);
+    nmo_spritetext_vtable.destroy(&source, NULL, NULL);
+    nmo_arena_destroy(copy_arena);
+    nmo_arena_destroy(source_arena);
+}
+
 TEST(chunk_id_remap, entity_scalar_ref_sections_reject_truncation_atomically) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
     ASSERT_NOT_NULL(arena);
@@ -9031,6 +9084,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, targetlight_copy_preserves_base_and_target);
     REGISTER_TEST(chunk_id_remap, sprite3d_copy_preserves_inherited_and_own_state);
     REGISTER_TEST(chunk_id_remap, sprite_copy_preserves_bitmap_content);
+    REGISTER_TEST(chunk_id_remap, spritetext_copy_preserves_base_and_strings);
     REGISTER_TEST(chunk_id_remap, entity_scalar_ref_sections_reject_truncation_atomically);
     REGISTER_TEST(chunk_id_remap, entity_skin_rejects_negative_vertex_bone_count_atomically);
     REGISTER_TEST(chunk_id_remap, entity_skin_rejects_oversized_counts_before_allocation);
