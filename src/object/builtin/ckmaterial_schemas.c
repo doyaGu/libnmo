@@ -75,7 +75,7 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
         if (result != NMO_OK) return result;
         nmo_material_set_defaults(state);
     } while (0),
-    nmo_material_dispose_base_arrays(state))
+    nmo_beobject_vtable.destroy(&state->base, NULL, context))
 
 /* =============================================================================
  * REFLECTION FIELDS
@@ -410,8 +410,10 @@ nmo_status_t nmo_material_remap_dependencies(
                          "Invalid arguments to nmo_material_remap_dependencies");
     }
 
-    (void)context;
-    return nmo_object_default_validate(instance, NULL, NULL);
+    nmo_material_state_t *state = instance;
+    NMO_RETURN_IF_ERROR(nmo_beobject_remap_dependencies(
+        &state->base, NULL, context));
+    return nmo_object_default_validate(state, NULL, NULL);
 }
 
 static nmo_status_t nmo_material_pre_delete(
@@ -447,7 +449,140 @@ static void nmo_material_post_delete(
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_STATE_OPS(material, nmo_material_state_t)
+static nmo_status_t nmo_material_copy(
+    const void *src,
+    void *dst,
+    const nmo_type_descriptor_t *type,
+    nmo_arena_t *arena)
+{
+    (void)type;
+    if (src == NULL || dst == NULL || arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    const nmo_material_state_t *source = src;
+    nmo_material_state_t *target = dst;
+    nmo_type_descriptor_t base_type = {
+        .size = sizeof(nmo_beobject_state_t),
+    };
+    NMO_RETURN_IF_ERROR(nmo_beobject_vtable.copy(
+        &source->base, &target->base, &base_type, arena));
+    target->diffuse_color = source->diffuse_color;
+    target->ambient_color = source->ambient_color;
+    target->specular_color = source->specular_color;
+    target->emissive_color = source->emissive_color;
+    target->specular_power = source->specular_power;
+    memcpy(target->textures, source->textures, sizeof(target->textures));
+    target->texture_border_color = source->texture_border_color;
+    target->packed_modes = source->packed_modes;
+    target->packed_flags = source->packed_flags;
+    target->effect = source->effect;
+    target->effect_parameter = source->effect_parameter;
+    target->has_effect = source->has_effect;
+    target->has_effect_param = source->has_effect_param;
+    target->has_additional_textures = source->has_additional_textures;
+    return NMO_OK;
+}
+
+static nmo_status_t nmo_material_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    const nmo_material_state_t *state = instance;
+    return nmo_beobject_vtable.validate(&state->base, NULL, context);
+}
+
+static bool nmo_material_ref_equals(
+    const nmo_ref_t *lhs,
+    const nmo_ref_t *rhs)
+{
+    return lhs->raw_id == rhs->raw_id &&
+        lhs->id == rhs->id &&
+        lhs->state == rhs->state;
+}
+
+static bool nmo_material_equals(const void *a, const void *b)
+{
+    if (a == b) return true;
+    if (a == NULL || b == NULL) return false;
+    const nmo_material_state_t *lhs = a;
+    const nmo_material_state_t *rhs = b;
+    if (!nmo_beobject_vtable.equals(&lhs->base, &rhs->base) ||
+        lhs->diffuse_color != rhs->diffuse_color ||
+        lhs->ambient_color != rhs->ambient_color ||
+        lhs->specular_color != rhs->specular_color ||
+        lhs->emissive_color != rhs->emissive_color ||
+        memcmp(&lhs->specular_power, &rhs->specular_power,
+               sizeof(lhs->specular_power)) != 0) {
+        return false;
+    }
+    for (size_t i = 0; i < 4; ++i) {
+        if (!nmo_material_ref_equals(
+                &lhs->textures[i], &rhs->textures[i])) {
+            return false;
+        }
+    }
+    return lhs->texture_border_color == rhs->texture_border_color &&
+        lhs->packed_modes == rhs->packed_modes &&
+        lhs->packed_flags == rhs->packed_flags &&
+        lhs->effect == rhs->effect &&
+        nmo_material_ref_equals(
+            &lhs->effect_parameter, &rhs->effect_parameter) &&
+        lhs->has_effect == rhs->has_effect &&
+        lhs->has_effect_param == rhs->has_effect_param &&
+        lhs->has_additional_textures == rhs->has_additional_textures;
+}
+
+static uint32_t nmo_material_hash_bytes(
+    uint32_t hash,
+    const void *data,
+    size_t size)
+{
+    const uint8_t *bytes = data;
+    for (size_t i = 0; i < size; ++i) {
+        hash ^= bytes[i];
+        hash *= 16777619u;
+    }
+    return hash;
+}
+
+static uint32_t nmo_material_hash_ref(
+    uint32_t hash,
+    const nmo_ref_t *ref)
+{
+    hash = nmo_material_hash_bytes(hash, &ref->raw_id, sizeof(ref->raw_id));
+    hash = nmo_material_hash_bytes(hash, &ref->id, sizeof(ref->id));
+    return nmo_material_hash_bytes(hash, &ref->state, sizeof(ref->state));
+}
+
+static uint32_t nmo_material_hash(const void *instance)
+{
+    if (instance == NULL) return 0;
+    const nmo_material_state_t *state = instance;
+    uint32_t hash = nmo_beobject_vtable.hash(&state->base);
+#define NMO_MATERIAL_HASH_FIELD(field) \
+    hash = nmo_material_hash_bytes(hash, &state->field, sizeof(state->field))
+    NMO_MATERIAL_HASH_FIELD(diffuse_color);
+    NMO_MATERIAL_HASH_FIELD(ambient_color);
+    NMO_MATERIAL_HASH_FIELD(specular_color);
+    NMO_MATERIAL_HASH_FIELD(emissive_color);
+    NMO_MATERIAL_HASH_FIELD(specular_power);
+    for (size_t i = 0; i < 4; ++i) {
+        hash = nmo_material_hash_ref(hash, &state->textures[i]);
+    }
+    NMO_MATERIAL_HASH_FIELD(texture_border_color);
+    NMO_MATERIAL_HASH_FIELD(packed_modes);
+    NMO_MATERIAL_HASH_FIELD(packed_flags);
+    NMO_MATERIAL_HASH_FIELD(effect);
+    hash = nmo_material_hash_ref(hash, &state->effect_parameter);
+    NMO_MATERIAL_HASH_FIELD(has_effect);
+    NMO_MATERIAL_HASH_FIELD(has_effect_param);
+    NMO_MATERIAL_HASH_FIELD(has_additional_textures);
+#undef NMO_MATERIAL_HASH_FIELD
+    return hash;
+}
 
 nmo_type_vtable_t nmo_material_vtable = {
     .prepare_dependencies = nmo_material_prepare_dependencies,
