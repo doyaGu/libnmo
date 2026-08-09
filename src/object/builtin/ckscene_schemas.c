@@ -239,12 +239,16 @@ static nmo_status_t nmo_scene_read_new_data(
         goto fail;
     }
 
-    nmo_ref_check_class(
-        &level,
+    const nmo_object_repository_t *repository =
         (const nmo_object_repository_t *)
-            nmo_deserialize_context_get_repository(context),
-        nmo_deserialize_context_get_type_registry(context),
-        NMO_CID_LEVEL);
+            nmo_deserialize_context_get_repository(context);
+    const nmo_type_registry_t *types =
+        nmo_deserialize_context_get_type_registry(context);
+    nmo_ref_check_class(&level, repository, types, NMO_CID_LEVEL);
+    for (int32_t i = 0; i < desc_count; ++i) {
+        nmo_ref_check_class(
+            &descs[i].ref, repository, types, NMO_CID_SCENEOBJECT);
+    }
     nmo_array_dispose(&out_state->object_descs);
     out_state->object_descs = decoded;
     out_state->level = level;
