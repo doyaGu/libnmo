@@ -248,6 +248,7 @@ static const nmo_type_field_t nmo_beobject_fields[] = {
                     sizeof(uint32_t), CKPGUID_INT, 0, 0),
     /* Attributes */
     NMO_FIELD_ARRAY(nmo_beobject_state_t, attributes, CKPGUID_NONE),
+    NMO_FIELD(nmo_beobject_state_t, has_attributes_section, CKPGUID_BOOL),
     /* Legacy attributes */
     NMO_FIELD_ARRAY(nmo_beobject_state_t, legacy_attributes, CKPGUID_NONE),
     NMO_FIELD(nmo_beobject_state_t, has_legacy_attributes, CKPGUID_BOOL),
@@ -493,6 +494,10 @@ static nmo_status_t nmo_beobject_read_legacy_attributes(
             return result;
         }
     }
+    if (nmo_beobject_identifier_remaining_dwords(chunk) != 0u) {
+        nmo_array_dispose(&decoded);
+        return NMO_ERR_INVALID_FORMAT;
+    }
 
     result = nmo_array_swap(&out_state->legacy_attributes, &decoded);
     nmo_array_dispose(&decoded);
@@ -610,6 +615,7 @@ static nmo_status_t nmo_beobject_deserialize_internal(
     } else if (result != NMO_ERR_NOT_FOUND) return result;
 
     /* Load attributes - optional section */
+    bool found_modern_attributes = false;
     result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_NEWATTRIBUTES);
     if (result == NMO_OK) {
         /* Read attribute object sequence using proper sequence API
@@ -648,7 +654,7 @@ static nmo_status_t nmo_beobject_deserialize_internal(
             }
         }
 
-        if (attr_count > 0 && !is_file) {
+        if (!is_file) {
             size_t sub_count = 0;
             result = nmo_chunk_start_read_sub_chunk_sequence(chunk, &sub_count);
             if (result != NMO_OK || sub_count != attr_count) {
@@ -664,34 +670,43 @@ static nmo_status_t nmo_beobject_deserialize_internal(
             }
         }
 
-        if (attr_count > 0) {
-            nmo_guid_t manager_guid;
-            size_t seq_count = 0;
-            result = nmo_chunk_start_manager_read_sequence(
-                chunk, &manager_guid, &seq_count);
-            if (result != NMO_OK || seq_count != attr_count ||
-                !nmo_guid_equals(manager_guid, NMO_MANAGER_GUID_ATTRIBUTE)) {
+        nmo_guid_t manager_guid;
+        size_t seq_count = 0;
+        result = nmo_chunk_start_manager_read_sequence(
+            chunk, &manager_guid, &seq_count);
+        if (result != NMO_OK || seq_count != attr_count ||
+            !nmo_guid_equals(manager_guid, NMO_MANAGER_GUID_ATTRIBUTE)) {
+            nmo_array_dispose(&decoded);
+            return result != NMO_OK ? result : NMO_ERR_VALIDATION_FAILED;
+        }
+        for (size_t i = 0; i < attr_count; ++i) {
+            result = nmo_chunk_read_dword(chunk, &attributes[i].type_id);
+            if (result != NMO_OK) {
                 nmo_array_dispose(&decoded);
-                return result != NMO_OK ? result : NMO_ERR_VALIDATION_FAILED;
+                return result;
             }
-            for (size_t i = 0; i < attr_count; ++i) {
-                result = nmo_chunk_read_dword(chunk, &attributes[i].type_id);
-                if (result != NMO_OK) {
-                    nmo_array_dispose(&decoded);
-                    return result;
-                }
-            }
+        }
+        if (nmo_beobject_identifier_remaining_dwords(chunk) != 0u) {
+            nmo_array_dispose(&decoded);
+            return NMO_ERR_INVALID_FORMAT;
         }
 
         NMO_RETURN_IF_ERROR(nmo_array_swap(&out_state->attributes, &decoded));
         nmo_array_dispose(&decoded);
-    } else if (result == NMO_ERR_NOT_FOUND) {
-        result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_ATTRIBUTES);
-        if (result == NMO_OK) {
-            result = nmo_beobject_read_legacy_attributes(chunk, out_state);
-            if (result != NMO_OK) return result;
-        } else if (result != NMO_ERR_NOT_FOUND) return result;
-    } else return result;
+        out_state->has_attributes_section = 1;
+        found_modern_attributes = true;
+    } else if (result != NMO_ERR_NOT_FOUND) return result;
+
+    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_ATTRIBUTES);
+    if (result == NMO_OK) {
+        if (found_modern_attributes) {
+            NMO_RETURN_ERROR(
+                NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                "CKBeObject contains both modern and legacy attribute sections");
+        }
+        result = nmo_beobject_read_legacy_attributes(chunk, out_state);
+        if (result != NMO_OK) return result;
+    } else if (result != NMO_ERR_NOT_FOUND) return result;
     /* If identifier not found, attributes section is optional - continue */
 
     if (is_file) {
@@ -793,10 +808,18 @@ static nmo_status_t nmo_beobject_serialize_internal(
         out_chunk->data_version = 7u;
     }
     const uint32_t data_version = nmo_chunk_get_data_version(out_chunk);
+    const bool write_modern_attributes =
+        in_state->has_attributes_section || in_state->attributes.count > 0u;
+    const bool has_legacy_attribute_state =
+        in_state->has_legacy_attributes ||
+        in_state->legacy_attributes.count > 0u;
     const bool write_legacy_attributes =
-        in_state->attributes.count == 0 &&
-        (in_state->has_legacy_attributes ||
-         in_state->legacy_attributes.count > 0);
+        !write_modern_attributes && has_legacy_attribute_state;
+    if (write_modern_attributes && has_legacy_attribute_state) {
+        NMO_RETURN_ERROR(
+            NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+            "BeObject cannot serialize modern and legacy attributes together");
+    }
     if (is_file && in_state->scripts.count > 0 &&
         (in_state->scripts.data == NULL ||
          in_state->scripts.element_size != sizeof(nmo_ref_t) ||
@@ -936,8 +959,8 @@ static nmo_status_t nmo_beobject_serialize_internal(
         }
     }
 
-    /* Write attributes if present */
-    if (in_state->attributes.count > 0) {
+    /* Write attributes if present, including a preserved empty section. */
+    if (write_modern_attributes) {
         nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_NEWATTRIBUTES);
         if (result != NMO_OK) return result;
 
@@ -1107,6 +1130,7 @@ static nmo_status_t nmo_beobject_copy(
            sizeof(copied.legacy_data_words));
     copied.has_single_activity = s->has_single_activity;
     copied.single_activity_flags = s->single_activity_flags;
+    copied.has_attributes_section = s->has_attributes_section;
     copied.has_legacy_attributes = s->has_legacy_attributes;
     copied.legacy_attr_old_version = s->legacy_attr_old_version;
 
@@ -1196,6 +1220,13 @@ static nmo_status_t nmo_beobject_validate(
     }
     if (s->attributes.count > 0 &&
         s->attributes.element_size != sizeof(nmo_beobject_attribute_t)) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    if (s->has_attributes_section > 1u) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    if ((s->has_attributes_section || s->attributes.count > 0u) &&
+        (s->has_legacy_attributes || s->legacy_attributes.count > 0u)) {
         return NMO_ERR_VALIDATION_FAILED;
     }
 
@@ -1296,6 +1327,7 @@ static nmo_status_t nmo_beobject_pre_delete(
     nmo_array_clear(&state->scripts);
     nmo_array_clear(&state->attributes);
     nmo_array_clear(&state->legacy_attributes);
+    state->has_attributes_section = 0;
     state->has_legacy_attributes = 0;
     state->legacy_attr_old_version = 0;
     NMO_RETURN_OK();

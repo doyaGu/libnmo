@@ -76,6 +76,7 @@ typedef struct nmo_beobject_state {
     
     /* Attributes */
     nmo_array_t attributes;                    /**< Modern attributes (nmo_beobject_attribute_t) */
+    uint8_t has_attributes_section;            /**< Preserve an empty modern section */
 
     /* Single activity flags (file save only) */
     uint8_t has_single_activity;               /**< True if single activity flags exist */
