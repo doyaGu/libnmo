@@ -1578,6 +1578,54 @@ TEST(runtime_kernel, behavior_normalize_enforces_reference_classes) {
     nmo_context_release(ctx);
 }
 
+TEST(runtime_kernel, normalize_single_object_reports_local_changes) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    nmo_object_id_t first_id = 0;
+    nmo_object_id_t second_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_GROUP, "first", (nmo_guid_t){0, 0},
+        &first_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_GROUP, "second", (nmo_guid_t){0, 0},
+        &second_id, NULL));
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_object_t *first = nmo_object_repository_find_by_id(repo, first_id);
+    nmo_object_t *second = nmo_object_repository_find_by_id(repo, second_id);
+    ASSERT_NOT_NULL(first);
+    ASSERT_NOT_NULL(second);
+    nmo_group_state_t *first_state = (nmo_group_state_t *)first->state;
+    nmo_group_state_t *second_state = (nmo_group_state_t *)second->state;
+    ASSERT_NOT_NULL(first_state);
+    ASSERT_NOT_NULL(second_state);
+
+    nmo_ref_t first_ref = nmo_ref_from_raw(0x7FFFFF31u);
+    nmo_ref_t second_ref = nmo_ref_from_raw(0x7FFFFF32u);
+    ASSERT_EQ(NMO_OK, nmo_array_append(&first_state->object_ids, &first_ref));
+    ASSERT_EQ(NMO_OK, nmo_array_append(&second_state->object_ids, &second_ref));
+
+    const nmo_type_runtime_t *type_rt = nmo_context_get_type_runtime(ctx);
+    size_t changed = 0;
+    ASSERT_EQ(NMO_OK, nmo_runtime_normalize_object_invalid_refs(
+        repo, type_rt, first, &changed));
+    ASSERT_EQ(1u, changed);
+    ASSERT_EQ(0u, first_state->object_ids.count);
+    ASSERT_EQ(1u, second_state->object_ids.count);
+
+    changed = 0;
+    ASSERT_EQ(NMO_OK, nmo_runtime_normalize_invalid_refs(
+        repo, type_rt, &changed));
+    ASSERT_EQ(1u, changed);
+    ASSERT_EQ(0u, second_state->object_ids.count);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(runtime_kernel, deserialize_propagates_chunk_reader_oom) {
     runtime_ref_graph_fail_allocator_state_t fail_state = {0};
     nmo_allocator_t fail_allocator = nmo_allocator_custom(
@@ -4763,6 +4811,7 @@ REGISTER_TEST(runtime_kernel, deserialize_propagates_reference_registration_oom)
 REGISTER_TEST(runtime_kernel, deserialize_propagates_chunk_reader_oom);
 REGISTER_TEST(runtime_kernel, deserialize_propagates_shadow_tail_oom);
 REGISTER_TEST(runtime_kernel, deserialize_failure_does_not_publish_state_for_finalize);
+REGISTER_TEST(runtime_kernel, normalize_single_object_reports_local_changes);
 REGISTER_TEST(runtime_kernel, normalize_removes_only_invalid_reference_records);
 REGISTER_TEST(runtime_kernel, behavior_normalize_validates_lanes_before_mutation);
 REGISTER_TEST(runtime_kernel, behavior_normalize_enforces_reference_classes);

@@ -1538,6 +1538,100 @@ static nmo_status_t normalize_object_ref_fields(
     return NMO_OK;
 }
 
+nmo_status_t nmo_runtime_normalize_object_invalid_refs(
+    nmo_object_repository_t *repo,
+    const nmo_type_runtime_t *type_rt,
+    nmo_object_t *obj,
+    size_t *out_change_count)
+{
+    if (!repo || !type_rt || !type_rt->types || !obj) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    size_t changed = 0;
+    if (!obj->state) {
+        if (out_change_count) *out_change_count = 0;
+        return NMO_OK;
+    }
+    const nmo_type_descriptor_t *derived =
+        runtime_find_type_for_object(type_rt, obj);
+    if (derived != NULL) {
+        NMO_RETURN_IF_ERROR(normalize_object_ref_fields(
+            repo, type_rt, obj, derived, &changed, true));
+    }
+    nmo_behavior_state_t *state = (nmo_behavior_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            type_rt->types, obj, CKPGUID_BEHAVIOR);
+    if (state) {
+        size_t object_changes = 0;
+        NMO_RETURN_IF_ERROR(nmo_behavior_normalize_references(
+            state, repo, type_rt->types, &object_changes));
+        changed += object_changes;
+    }
+
+    nmo_beobject_state_t *beobject = (nmo_beobject_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            type_rt->types, obj, CKPGUID_BEOBJECT);
+    NMO_RETURN_IF_ERROR(normalize_beobject_attributes(
+        beobject, repo, type_rt->types, &changed));
+    nmo_character_state_t *character = (nmo_character_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            type_rt->types, obj, CKPGUID_CHARACTER);
+    NMO_RETURN_IF_ERROR(normalize_character_parts(
+        character, repo, type_rt->types, &changed));
+    nmo_grid_state_t *grid = (nmo_grid_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            type_rt->types, obj, CKPGUID_GRID);
+    NMO_RETURN_IF_ERROR(normalize_grid_layers(
+        grid, repo, type_rt->types, &changed));
+    nmo_scene_state_t *scene = (nmo_scene_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            type_rt->types, obj, CKPGUID_SCENE);
+    NMO_RETURN_IF_ERROR(normalize_scene_objects(
+        scene, repo, type_rt->types, &changed));
+    nmo_patchmesh_state_t *patchmesh = (nmo_patchmesh_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            type_rt->types, obj, CKPGUID_PATCHMESH);
+    NMO_RETURN_IF_ERROR(normalize_patchmesh_patches(
+        patchmesh, repo, type_rt->types, &changed));
+    nmo_mesh_state_t *mesh = (nmo_mesh_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            type_rt->types, obj, CKPGUID_MESH);
+    NMO_RETURN_IF_ERROR(normalize_mesh_materials(
+        mesh, repo, type_rt->types, &changed));
+    nmo_keyedanimation_state_t *keyed = (nmo_keyedanimation_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            type_rt->types, obj, CKPGUID_KEYEDANIMATION);
+    NMO_RETURN_IF_ERROR(normalize_keyed_animation(
+        keyed, repo, type_rt->types, &changed));
+    nmo_curve_state_t *curve = (nmo_curve_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            type_rt->types, obj, CKPGUID_CURVE);
+    NMO_RETURN_IF_ERROR(normalize_curve_sub_points(
+        curve, repo, type_rt->types, &changed));
+    nmo_place_state_t *place = (nmo_place_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            type_rt->types, obj, CKPGUID_PLACE);
+    NMO_RETURN_IF_ERROR(normalize_place_portals(
+        place, repo, type_rt->types, &changed));
+    nmo_3dentity_state_t *entity3d = (nmo_3dentity_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            type_rt->types, obj, CKPGUID_3DENTITY);
+    NMO_RETURN_IF_ERROR(normalize_3dentity_skin_bones(
+        entity3d, repo, type_rt->types, &changed));
+    nmo_dataarray_state_t *dataarray = (nmo_dataarray_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            type_rt->types, obj, CKPGUID_DATAARRAY);
+    NMO_RETURN_IF_ERROR(normalize_dataarray_cells(
+        dataarray, repo, type_rt->types, &changed));
+
+    if (derived != NULL) {
+        NMO_RETURN_IF_ERROR(normalize_object_ref_fields(
+            repo, type_rt, obj, derived, &changed, false));
+    }
+    if (out_change_count) *out_change_count = changed;
+    return NMO_OK;
+}
+
 nmo_status_t nmo_runtime_normalize_invalid_refs(
     nmo_object_repository_t *repo,
     const nmo_type_runtime_t *type_rt,
@@ -1548,82 +1642,11 @@ nmo_status_t nmo_runtime_normalize_invalid_refs(
     size_t count = nmo_object_repository_get_count(repo);
     for (size_t i = 0; i < count; ++i) {
         nmo_object_t *obj = nmo_object_repository_get_by_index(repo, i);
-        if (!obj || !obj->state) continue;
-        const nmo_type_descriptor_t *derived =
-            runtime_find_type_for_object(type_rt, obj);
-        if (derived != NULL) {
-            NMO_RETURN_IF_ERROR(normalize_object_ref_fields(
-                repo, type_rt, obj, derived, &changed, true));
-        }
-        nmo_behavior_state_t *state = (nmo_behavior_state_t *)
-            nmo_type_query_object_get_ancestor_state_by_guid(
-                type_rt->types, obj, CKPGUID_BEHAVIOR);
-        if (state) {
-            size_t object_changes = 0;
-            NMO_RETURN_IF_ERROR(nmo_behavior_normalize_references(
-                state, repo, type_rt->types, &object_changes));
-            changed += object_changes;
-        }
-
-        nmo_beobject_state_t *beobject = (nmo_beobject_state_t *)
-            nmo_type_query_object_get_ancestor_state_by_guid(
-                type_rt->types, obj, CKPGUID_BEOBJECT);
-        NMO_RETURN_IF_ERROR(normalize_beobject_attributes(
-            beobject, repo, type_rt->types, &changed));
-        nmo_character_state_t *character = (nmo_character_state_t *)
-            nmo_type_query_object_get_ancestor_state_by_guid(
-                type_rt->types, obj, CKPGUID_CHARACTER);
-        NMO_RETURN_IF_ERROR(normalize_character_parts(
-            character, repo, type_rt->types, &changed));
-        nmo_grid_state_t *grid = (nmo_grid_state_t *)
-            nmo_type_query_object_get_ancestor_state_by_guid(
-                type_rt->types, obj, CKPGUID_GRID);
-        NMO_RETURN_IF_ERROR(normalize_grid_layers(
-            grid, repo, type_rt->types, &changed));
-        nmo_scene_state_t *scene = (nmo_scene_state_t *)
-            nmo_type_query_object_get_ancestor_state_by_guid(
-                type_rt->types, obj, CKPGUID_SCENE);
-        NMO_RETURN_IF_ERROR(normalize_scene_objects(
-            scene, repo, type_rt->types, &changed));
-        nmo_patchmesh_state_t *patchmesh = (nmo_patchmesh_state_t *)
-            nmo_type_query_object_get_ancestor_state_by_guid(
-                type_rt->types, obj, CKPGUID_PATCHMESH);
-        NMO_RETURN_IF_ERROR(normalize_patchmesh_patches(
-            patchmesh, repo, type_rt->types, &changed));
-        nmo_mesh_state_t *mesh = (nmo_mesh_state_t *)
-            nmo_type_query_object_get_ancestor_state_by_guid(
-                type_rt->types, obj, CKPGUID_MESH);
-        NMO_RETURN_IF_ERROR(normalize_mesh_materials(
-            mesh, repo, type_rt->types, &changed));
-        nmo_keyedanimation_state_t *keyed = (nmo_keyedanimation_state_t *)
-            nmo_type_query_object_get_ancestor_state_by_guid(
-                type_rt->types, obj, CKPGUID_KEYEDANIMATION);
-        NMO_RETURN_IF_ERROR(normalize_keyed_animation(
-            keyed, repo, type_rt->types, &changed));
-        nmo_curve_state_t *curve = (nmo_curve_state_t *)
-            nmo_type_query_object_get_ancestor_state_by_guid(
-                type_rt->types, obj, CKPGUID_CURVE);
-        NMO_RETURN_IF_ERROR(normalize_curve_sub_points(
-            curve, repo, type_rt->types, &changed));
-        nmo_place_state_t *place = (nmo_place_state_t *)
-            nmo_type_query_object_get_ancestor_state_by_guid(
-                type_rt->types, obj, CKPGUID_PLACE);
-        NMO_RETURN_IF_ERROR(normalize_place_portals(
-            place, repo, type_rt->types, &changed));
-        nmo_3dentity_state_t *entity3d = (nmo_3dentity_state_t *)
-            nmo_type_query_object_get_ancestor_state_by_guid(
-                type_rt->types, obj, CKPGUID_3DENTITY);
-        NMO_RETURN_IF_ERROR(normalize_3dentity_skin_bones(
-            entity3d, repo, type_rt->types, &changed));
-        nmo_dataarray_state_t *dataarray = (nmo_dataarray_state_t *)
-            nmo_type_query_object_get_ancestor_state_by_guid(
-                type_rt->types, obj, CKPGUID_DATAARRAY);
-        NMO_RETURN_IF_ERROR(normalize_dataarray_cells(
-            dataarray, repo, type_rt->types, &changed));
-
-        if (derived == NULL) continue;
-        NMO_RETURN_IF_ERROR(normalize_object_ref_fields(
-            repo, type_rt, obj, derived, &changed, false));
+        if (!obj) continue;
+        size_t object_changes = 0;
+        NMO_RETURN_IF_ERROR(nmo_runtime_normalize_object_invalid_refs(
+            repo, type_rt, obj, &object_changes));
+        changed += object_changes;
     }
     if (out_change_count) *out_change_count = changed;
     return NMO_OK;

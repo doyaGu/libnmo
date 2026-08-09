@@ -13,6 +13,7 @@ extern "C" {
 typedef struct nmo_load_options nmo_load_options_t;
 typedef struct nmo_save_options nmo_save_options_t;
 typedef struct nmo_object_repository nmo_object_repository_t;
+typedef struct nmo_object nmo_object_t;
 typedef struct nmo_type_runtime nmo_type_runtime_t;
 typedef struct nmo_type_descriptor nmo_type_descriptor_t;
 typedef struct nmo_id_remap nmo_id_remap_t;
@@ -157,6 +158,11 @@ NMO_API nmo_status_t nmo_runtime_remap_all_refs(
 NMO_API nmo_status_t nmo_runtime_normalize_invalid_refs(
     nmo_object_repository_t *repo,
     const nmo_type_runtime_t *type_rt,
+    size_t *out_change_count);
+NMO_API nmo_status_t nmo_runtime_normalize_object_invalid_refs(
+    nmo_object_repository_t *repo,
+    const nmo_type_runtime_t *type_rt,
+    nmo_object_t *object,
     size_t *out_change_count);
 
 #ifdef __cplusplus
