@@ -3475,6 +3475,39 @@ TEST(chunk_id_remap, parameterlocal_owner_round_trips_raw_id) {
     ASSERT_EQ(691u, reloaded.owner.raw_id);
     ASSERT_EQ(NMO_REF_UNRESOLVED, reloaded.owner.state);
 
+    nmo_chunk_t *null_owner = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(null_owner);
+    null_owner->class_id = NMO_CID_PARAMETERLOCAL;
+    null_owner->data_version = 8;
+    null_owner->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(null_owner));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        null_owner, CK_STATESAVE_PARAMETEROUT_OWNER));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(
+        null_owner, NMO_OBJECT_ID_NONE));
+    nmo_chunk_close(null_owner);
+    nmo_parameterlocal_state_t null_owner_loaded;
+    ASSERT_EQ(NMO_OK, nmo_parameterlocal_vtable.create(
+        &null_owner_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_parameterlocal_deserialize(
+        &null_owner_loaded, null_owner, NULL, &deserialize_context));
+    ASSERT_TRUE(null_owner_loaded.has_owner);
+    ASSERT_EQ(NMO_OBJECT_ID_NONE, null_owner_loaded.owner.raw_id);
+    nmo_chunk_t *null_owner_saved = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(null_owner_saved);
+    null_owner_saved->class_id = NMO_CID_PARAMETERLOCAL;
+    null_owner_saved->data_version = 8;
+    null_owner_saved->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_parameterlocal_serialize(
+        &null_owner_loaded, null_owner_saved, NULL,
+        &file_serialize_context));
+    nmo_chunk_close(null_owner_saved);
+    size_t null_owner_dwords = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        null_owner_saved, CK_STATESAVE_PARAMETEROUT_OWNER,
+        &null_owner_dwords));
+    ASSERT_EQ(1u, null_owner_dwords);
+
     nmo_chunk_t *truncated = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(truncated);
     truncated->class_id = NMO_CID_PARAMETERLOCAL;
@@ -3593,6 +3626,7 @@ TEST(chunk_id_remap, parameterlocal_owner_round_trips_raw_id) {
     nmo_parameterlocal_vtable.destroy(&file_loaded, NULL, NULL);
     nmo_parameterlocal_vtable.destroy(&loaded, NULL, NULL);
     nmo_parameterlocal_vtable.destroy(&reloaded, NULL, NULL);
+    nmo_parameterlocal_vtable.destroy(&null_owner_loaded, NULL, NULL);
     nmo_parameterlocal_vtable.destroy(&failed, NULL, NULL);
     nmo_parameterlocal_vtable.destroy(&invalid, NULL, NULL);
     nmo_arena_destroy(arena);
