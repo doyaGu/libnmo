@@ -66,6 +66,18 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
 #define CKANIMATION_CANBEBREAK            0x00000004u
 #define CKANIMATION_ALIGNORIENTATION      0x00000010u
 
+/* Animation controller type constants */
+#define CKANIMATION_LINPOS_CONTROL      0x637c4301u
+#define CKANIMATION_LINROT_CONTROL      0x49ed4002u
+#define CKANIMATION_LINSCL_CONTROL      0x654a3a04u
+#define CKANIMATION_LINSCLAXIS_CONTROL  0x2f200b08u
+#define CKANIMATION_TCBPOS_CONTROL      0x347e4a01u
+#define CKANIMATION_TCBROT_CONTROL      0x45b52a02u
+#define CKANIMATION_TCBSCL_CONTROL      0x1b545904u
+#define CKANIMATION_TCBSCLAXIS_CONTROL  0x32595908u
+#define CKANIMATION_BEZIERPOS_CONTROL   0x921ab801u
+#define CKANIMATION_BEZIERSCL_CONTROL   0x18ab4404u
+
 /* =============================================================================
  * REFLECTION FIELDS
  * ============================================================================= */
@@ -447,6 +459,26 @@ static nmo_status_t nmo_objectanimation_validate(
             s->morph_normals_count, sizeof(void *), &allocation_size)) {
         return NMO_ERR_VALIDATION_FAILED;
     }
+    if (s->format == CKOBJANIM_FORMAT_NEWDATA) {
+        if (s->morph_vertex_count < 0 || s->morph_key_count < 0 ||
+            (uint32_t)s->morph_key_count != s->morph_key_parsed_count) {
+            return NMO_ERR_VALIDATION_FAILED;
+        }
+        if (s->morph_normals_id == 0u) {
+            if (s->morph_normals_count != 0u) {
+                return NMO_ERR_VALIDATION_FAILED;
+            }
+        } else if ((s->morph_normals_id !=
+                        CK_STATESAVE_OBJANIMMORPHCOMP &&
+                    s->morph_normals_id !=
+                        CK_STATESAVE_OBJANIMMORPHNORMALS) ||
+                   s->morph_normals_count == 0u ||
+                   s->morph_normals_count !=
+                       s->morph_key_parsed_count) {
+            return NMO_ERR_VALIDATION_FAILED;
+        }
+    }
+    uint32_t newdata_controller_slots = 0u;
     for (uint32_t i = 0; i < s->controller_count; ++i) {
         NMO_VALIDATE_BYTES(
             s->controllers[i].data,
@@ -456,6 +488,22 @@ static nmo_status_t nmo_objectanimation_validate(
             (s->controllers[i].type == 0u ||
              (s->controllers[i].data_size & 3u) != 0u)) {
             return NMO_ERR_VALIDATION_FAILED;
+        }
+        if (s->format == CKOBJANIM_FORMAT_NEWDATA) {
+            uint32_t slot = 0u;
+            switch (s->controllers[i].type) {
+            case CKANIMATION_LINPOS_CONTROL: slot = 1u << 0; break;
+            case CKANIMATION_LINSCL_CONTROL: slot = 1u << 1; break;
+            case CKANIMATION_LINROT_CONTROL: slot = 1u << 2; break;
+            case CKANIMATION_LINSCLAXIS_CONTROL: slot = 1u << 3; break;
+            default: return NMO_ERR_VALIDATION_FAILED;
+            }
+            if ((newdata_controller_slots & slot) != 0u ||
+                s->controllers[i].key_count == 0u ||
+                s->controllers[i].data_size == 0u) {
+                return NMO_ERR_VALIDATION_FAILED;
+            }
+            newdata_controller_slots |= slot;
         }
     }
     for (uint32_t i = 0; i < s->morph_key_parsed_count; ++i) {
@@ -1089,18 +1137,6 @@ static nmo_status_t write_ref_array(
     return nmo_ref_write_sequence(chunk, refs, count);
 }
 
-/* Animation controller type constants */
-#define CKANIMATION_LINPOS_CONTROL      0x637c4301u
-#define CKANIMATION_LINROT_CONTROL      0x49ed4002u
-#define CKANIMATION_LINSCL_CONTROL      0x654a3a04u
-#define CKANIMATION_LINSCLAXIS_CONTROL  0x2f200b08u
-#define CKANIMATION_TCBPOS_CONTROL      0x347e4a01u
-#define CKANIMATION_TCBROT_CONTROL      0x45b52a02u
-#define CKANIMATION_TCBSCL_CONTROL      0x1b545904u
-#define CKANIMATION_TCBSCLAXIS_CONTROL  0x32595908u
-#define CKANIMATION_BEZIERPOS_CONTROL   0x921ab801u
-#define CKANIMATION_BEZIERSCL_CONTROL   0x18ab4404u
-
 uint32_t nmo_objanim_controller_key_size(uint32_t type)
 {
     switch (type) {
@@ -1376,6 +1412,11 @@ static nmo_status_t read_newdata_controllers(
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &key_count));
         NMO_RETURN_IF_ERROR(nmo_animation_validate_payload_size(
             chunk, buf_size));
+
+        if ((key_count == 0u) != (buf_size == 0u)) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Inconsistent NEWDATA controller payload");
+        }
 
         if (key_count > 0 && buf_size > 0) {
             void *data = nmo_arena_alloc(arena, buf_size, 4);
