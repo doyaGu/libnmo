@@ -6,6 +6,7 @@
 #include "object/builtin/nmo_place_schemas.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
+#include "object/nmo_deserialize_context.h"
 #include "type/nmo_reflection.h"
 #include "object/nmo_object_struct_guids.h"
 #include "object/nmo_serialize_context.h"
@@ -90,7 +91,12 @@ static nmo_status_t nmo_place_deserialize_internal(
         return result;
     }
 
-    const int file_mode = (chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0;
+    const nmo_deserialize_context_t *deser_ctx =
+        nmo_deserialize_context_get(context);
+    const int file_mode =
+        ((chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
+        (deser_ctx != NULL &&
+         (deser_ctx->flags & NMO_DESER_FLAG_FILE_MODE) != 0);
     if (!file_mode) {
         NMO_RETURN_OK();
     }

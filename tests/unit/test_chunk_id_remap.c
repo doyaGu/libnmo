@@ -12076,6 +12076,7 @@ TEST(chunk_id_remap, place_refs_round_trip_and_truncation_is_atomic) {
     ASSERT_EQ(NMO_OK, nmo_place_serialize(
         &source, first, NULL, &serialize_context));
     nmo_chunk_close(first);
+    first->chunk_options &= ~NMO_CHUNK_OPTION_FILE;
     nmo_chunk_set_file_context(first, &read_context);
 
     nmo_place_state_t loaded;
