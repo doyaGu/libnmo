@@ -216,8 +216,12 @@ static nmo_status_t nmo_dataarray_deserialize_internal(
     result = NMO_OK;
 
     /* Read column formats */
-    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_DATAARRAYFORMAT);
+    size_t format_dwords = 0;
+    result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_DATAARRAYFORMAT, &format_dwords);
     if (result == NMO_OK) {
+        const size_t format_end =
+            nmo_chunk_get_position(chunk) + format_dwords;
         int32_t column_count;
         result = nmo_chunk_read_int(chunk, &column_count);
         if (result != NMO_OK) return result;
@@ -279,11 +283,18 @@ static nmo_status_t nmo_dataarray_deserialize_internal(
                 }
             }
         }
+        if (nmo_chunk_get_position(chunk) > format_end) {
+            return NMO_ERR_TRUNCATED_CHUNK;
+        }
     } else if (result != NMO_ERR_NOT_FOUND) return result;
 
     /* Read data matrix */
-    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_DATAARRAYDATA);
+    size_t data_dwords = 0;
+    result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_DATAARRAYDATA, &data_dwords);
     if (result == NMO_OK) {
+        const size_t data_end =
+            nmo_chunk_get_position(chunk) + data_dwords;
         int32_t row_count;
         result = nmo_chunk_read_int(chunk, &row_count);
         if (result != NMO_OK) return result;
@@ -400,11 +411,18 @@ static nmo_status_t nmo_dataarray_deserialize_internal(
                 }
             }
         }
+        if (nmo_chunk_get_position(chunk) > data_end) {
+            return NMO_ERR_TRUNCATED_CHUNK;
+        }
     } else if (result != NMO_ERR_NOT_FOUND) return result;
 
     /* Read metadata members */
-    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_DATAARRAYMEMBERS);
+    size_t members_dwords = 0;
+    result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_DATAARRAYMEMBERS, &members_dwords);
     if (result == NMO_OK) {
+        const size_t members_end =
+            nmo_chunk_get_position(chunk) + members_dwords;
         result = nmo_chunk_read_int(chunk, &out_state->order);
         if (result != NMO_OK) return result;
 
@@ -416,6 +434,9 @@ static nmo_status_t nmo_dataarray_deserialize_internal(
         if (is_file || nmo_chunk_get_data_version(chunk) >= 5) {
             result = nmo_chunk_read_int(chunk, &out_state->key_column);
             if (result != NMO_OK) return result;
+        }
+        if (nmo_chunk_get_position(chunk) > members_end) {
+            return NMO_ERR_TRUNCATED_CHUNK;
         }
     } else if (result != NMO_ERR_NOT_FOUND) return result;
 

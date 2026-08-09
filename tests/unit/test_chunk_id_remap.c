@@ -1453,6 +1453,72 @@ TEST(chunk_id_remap, dataarray_failures_keep_state_and_target_chunk_atomic) {
     ASSERT_EQ(901u, nmo_beobject_script_array_get_id(
         &state.base.scripts, 0));
 
+    nmo_chunk_t *format_cross_section = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(format_cross_section);
+    format_cross_section->class_id = NMO_CID_DATAARRAY;
+    format_cross_section->data_version = 7;
+    format_cross_section->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(format_cross_section));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        format_cross_section, CK_STATESAVE_DATAARRAYFORMAT));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(format_cross_section, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(format_cross_section, 8));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        format_cross_section, 0x41414141u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        format_cross_section, 0x00000042u));
+    nmo_chunk_close(format_cross_section);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_dataarray_deserialize(
+        &state, format_cross_section, NULL, &deserialize_context));
+    ASSERT_EQ(&old_format, state.column_formats);
+    ASSERT_EQ(&old_row, state.rows);
+
+    nmo_chunk_t *data_cross_section = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(data_cross_section);
+    data_cross_section->class_id = NMO_CID_DATAARRAY;
+    data_cross_section->data_version = 7;
+    data_cross_section->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(data_cross_section));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        data_cross_section, CK_STATESAVE_DATAARRAYFORMAT));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(data_cross_section, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_string(data_cross_section, "Text"));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(
+        data_cross_section, CKARRAYTYPE_STRING));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        data_cross_section, CK_STATESAVE_DATAARRAYDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(data_cross_section, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(data_cross_section, 8));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        data_cross_section, 0x42424242u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        data_cross_section, 0x00000043u));
+    nmo_chunk_close(data_cross_section);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_dataarray_deserialize(
+        &state, data_cross_section, NULL, &deserialize_context));
+    ASSERT_EQ(&old_format, state.column_formats);
+    ASSERT_EQ(&old_row, state.rows);
+
+    nmo_chunk_t *members_cross_section = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(members_cross_section);
+    members_cross_section->class_id = NMO_CID_DATAARRAY;
+    members_cross_section->data_version = 7;
+    members_cross_section->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(members_cross_section));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        members_cross_section, CK_STATESAVE_DATAARRAYMEMBERS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(members_cross_section, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        members_cross_section, 0xC1D2E3F4u));
+    nmo_chunk_close(members_cross_section);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_dataarray_deserialize(
+        &state, members_cross_section, NULL, &deserialize_context));
+    ASSERT_EQ(&old_format, state.column_formats);
+    ASSERT_EQ(&old_row, state.rows);
+    ASSERT_EQ(71, state.order);
+    ASSERT_EQ(72u, state.column_index);
+    ASSERT_EQ(0, state.key_column);
+
     nmo_id_remap_t *runtime_to_file = nmo_id_remap_create(arena);
     ASSERT_NOT_NULL(runtime_to_file);
     nmo_chunk_file_context_t file_context = {
