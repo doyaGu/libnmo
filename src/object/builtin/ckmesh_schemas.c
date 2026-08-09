@@ -94,11 +94,10 @@ static nmo_status_t nmo_mesh_create(
     void *context)
 {
     (void)type;
-    (void)context;
     if (!instance) return NMO_ERR_INVALID_ARGUMENT;
     nmo_mesh_state_t *state = instance;
     memset(state, 0, sizeof(*state));
-    return nmo_beobject_vtable.create(&state->beobject, NULL, NULL);
+    return nmo_beobject_vtable.create(&state->beobject, NULL, context);
 }
 
 static void nmo_mesh_destroy(
@@ -107,12 +106,9 @@ static void nmo_mesh_destroy(
     void *context)
 {
     (void)type;
-    (void)context;
     nmo_mesh_state_t *state = instance;
     if (!state) return;
-    nmo_array_dispose(&state->beobject.scripts);
-    nmo_array_dispose(&state->beobject.attributes);
-    nmo_array_dispose(&state->beobject.legacy_attributes);
+    nmo_beobject_vtable.destroy(&state->beobject, NULL, context);
     memset(state, 0, sizeof(*state));
 }
 
@@ -1839,46 +1835,105 @@ static nmo_status_t nmo_mesh_copy(
     const nmo_type_descriptor_t *type,
     nmo_arena_t *arena)
 {
+    (void)type;
     const nmo_mesh_state_t *s = src;
     nmo_mesh_state_t *d = dst;
-    NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
-    const nmo_type_descriptor_t beobject_type = {
-        .size = sizeof(nmo_beobject_state_t),
-    };
-    NMO_RETURN_IF_ERROR(nmo_beobject_vtable.copy(
-        &s->beobject, &d->beobject, &beobject_type, arena));
-
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->faces,
-                                              s->faces, sizeof(nmo_face_t), s->face_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->face_vertex_indices,
-                                              s->face_vertex_indices, sizeof(uint16_t),
-                                              (uint32_t)(s->face_count * 3u)));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->line_indices,
-                                              s->line_indices, sizeof(uint16_t),
-                                              (uint32_t)(s->line_count * 2u)));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->vertices,
-                                              s->vertices, sizeof(nmo_vertex_t), s->vertex_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->vertex_colors,
-                                              s->vertex_colors, sizeof(uint32_t), s->vertex_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->vertex_specular,
-                                              s->vertex_specular, sizeof(uint32_t), s->vertex_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->vertex_weights,
-                                              s->vertex_weights, sizeof(float), s->vertex_weight_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->material_groups,
-                                              s->material_groups, sizeof(nmo_material_group_t),
-                                              s->material_group_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->material_channels,
-                                              s->material_channels, sizeof(nmo_material_channel_t),
-                                              s->material_channel_count));
-    for (uint32_t i = 0; i < s->material_channel_count; ++i) {
-        NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena,
-                                                  (void **)&d->material_channels[i].uv_coords,
-                                                  s->material_channels[i].uv_coords,
-                                                  sizeof(nmo_vector2_t),
-                                                  s->material_channels[i].uv_count));
+    if (s == NULL || d == NULL || arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
     }
-    NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, &d->pm_data, s->pm_data, s->pm_data_size));
-    NMO_RETURN_OK();
+    NMO_RETURN_IF_ERROR(nmo_mesh_validate(s, NULL, NULL));
+
+    nmo_mesh_state_t copied;
+    nmo_status_t result = nmo_mesh_create(&copied, NULL, NULL);
+    if (result != NMO_OK) return result;
+    result = nmo_beobject_vtable.copy(
+        &s->beobject, &copied.beobject, NULL, arena);
+    if (result != NMO_OK) goto fail;
+
+    copied.flags = s->flags;
+    copied.bary_center = s->bary_center;
+    copied.radius = s->radius;
+    copied.local_box_min = s->local_box_min;
+    copied.local_box_max = s->local_box_max;
+    copied.face_count = s->face_count;
+    copied.line_count = s->line_count;
+    copied.vertex_count = s->vertex_count;
+    copied.vertex_weight_count = s->vertex_weight_count;
+    copied.material_group_count = s->material_group_count;
+    copied.has_material_groups = s->has_material_groups;
+    copied.material_channel_count = s->material_channel_count;
+    copied.has_material_channels = s->has_material_channels;
+    copied.is_valid = s->is_valid;
+    copied.vertex_buffer_handle = s->vertex_buffer_handle;
+    copied.index_buffer_handle = s->index_buffer_handle;
+    copied.has_progressive_mesh = s->has_progressive_mesh;
+    copied.pm_field_0 = s->pm_field_0;
+    copied.pm_morph_enabled = s->pm_morph_enabled;
+    copied.pm_morph_step = s->pm_morph_step;
+    copied.pm_data_size = s->pm_data_size;
+
+    result = nmo_object_copy_array(arena, (void **)&copied.faces,
+        s->faces, sizeof(nmo_face_t), s->face_count);
+    if (result != NMO_OK) goto fail;
+    result = nmo_object_copy_array(
+        arena, (void **)&copied.face_vertex_indices,
+        s->face_vertex_indices, sizeof(uint16_t),
+        (uint32_t)(s->face_count * 3u));
+    if (result != NMO_OK) goto fail;
+    result = nmo_object_copy_array(arena, (void **)&copied.line_indices,
+        s->line_indices, sizeof(uint16_t),
+        (uint32_t)(s->line_count * 2u));
+    if (result != NMO_OK) goto fail;
+    result = nmo_object_copy_array(arena, (void **)&copied.vertices,
+        s->vertices, sizeof(nmo_vertex_t), s->vertex_count);
+    if (result != NMO_OK) goto fail;
+    result = nmo_object_copy_array(arena, (void **)&copied.vertex_colors,
+        s->vertex_colors, sizeof(uint32_t), s->vertex_count);
+    if (result != NMO_OK) goto fail;
+    result = nmo_object_copy_array(arena, (void **)&copied.vertex_specular,
+        s->vertex_specular, sizeof(uint32_t), s->vertex_count);
+    if (result != NMO_OK) goto fail;
+    result = nmo_object_copy_array(arena, (void **)&copied.vertex_weights,
+        s->vertex_weights, sizeof(float), s->vertex_weight_count);
+    if (result != NMO_OK) goto fail;
+    result = nmo_object_copy_array(arena, (void **)&copied.material_groups,
+        s->material_groups, sizeof(nmo_material_group_t),
+        s->material_group_count);
+    if (result != NMO_OK) goto fail;
+    result = nmo_object_copy_array(
+        arena, (void **)&copied.material_channels,
+        s->material_channels, sizeof(nmo_material_channel_t),
+        s->material_channel_count);
+    if (result != NMO_OK) goto fail;
+    for (uint32_t i = 0; i < s->material_channel_count; ++i) {
+        result = nmo_object_copy_array(
+            arena, (void **)&copied.material_channels[i].uv_coords,
+            s->material_channels[i].uv_coords, sizeof(nmo_vector2_t),
+            s->material_channels[i].uv_count);
+        if (result != NMO_OK) goto fail;
+    }
+    result = nmo_object_copy_bytes(
+        arena, &copied.pm_data, s->pm_data, s->pm_data_size);
+    if (result != NMO_OK) goto fail;
+
+    if (d->beobject.scripts.data == s->beobject.scripts.data) {
+        memset(&d->beobject.scripts, 0, sizeof(d->beobject.scripts));
+    }
+    if (d->beobject.attributes.data == s->beobject.attributes.data) {
+        memset(&d->beobject.attributes, 0, sizeof(d->beobject.attributes));
+    }
+    if (d->beobject.legacy_attributes.data ==
+        s->beobject.legacy_attributes.data) {
+        memset(&d->beobject.legacy_attributes, 0,
+               sizeof(d->beobject.legacy_attributes));
+    }
+    nmo_mesh_destroy(d, NULL, NULL);
+    *d = copied;
+    return NMO_OK;
+
+fail:
+    nmo_mesh_destroy(&copied, NULL, NULL);
+    return result;
 }
 
 static nmo_status_t nmo_mesh_validate(

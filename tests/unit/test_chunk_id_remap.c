@@ -9065,9 +9065,36 @@ TEST(chunk_id_remap, mesh_copy_preserves_material_records) {
     ASSERT_TRUE(nmo_mesh_vtable.equals(&source, &copied));
     ASSERT_EQ(nmo_mesh_vtable.hash(&source), nmo_mesh_vtable.hash(&copied));
 
+    fail_after_allocator_state_t allocator_state = {
+        .allocation_count = 0,
+        .allowed_allocations = 2,
+    };
+    nmo_allocator_t failing_allocator = nmo_allocator_custom(
+        fail_after_alloc, fail_after_free, &allocator_state);
+    nmo_arena_t *copy_arena = nmo_arena_create(&failing_allocator, 1);
+    ASSERT_NOT_NULL(copy_arena);
+    nmo_material_group_t preserved_group = {
+        .material = nmo_ref_from_raw(814),
+        .padding = 47,
+    };
+    nmo_mesh_state_t failed_copy;
+    ASSERT_EQ(NMO_OK, nmo_mesh_vtable.create(
+        &failed_copy, NULL, NULL));
+    failed_copy.flags = 0x12345678u;
+    failed_copy.material_group_count = 1;
+    failed_copy.material_groups = &preserved_group;
+    ASSERT_EQ(NMO_ERR_NOMEM, nmo_mesh_vtable.copy(
+        &source, &failed_copy, NULL, copy_arena));
+    ASSERT_EQ(0x12345678u, failed_copy.flags);
+    ASSERT_EQ(1u, failed_copy.material_group_count);
+    ASSERT_EQ(&preserved_group, failed_copy.material_groups);
+    ASSERT_EQ(814u, failed_copy.material_groups[0].material.raw_id);
+
     copied.material_groups[0].padding = 99;
     ASSERT_FALSE(nmo_mesh_vtable.equals(&source, &copied));
 
+    nmo_mesh_vtable.destroy(&failed_copy, NULL, NULL);
+    nmo_arena_destroy(copy_arena);
     nmo_mesh_vtable.destroy(&source, NULL, NULL);
     nmo_mesh_vtable.destroy(&copied, NULL, NULL);
     nmo_arena_destroy(arena);
