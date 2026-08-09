@@ -34,20 +34,56 @@
 #include <stdlib.h>
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE(
-    dataarray,
-    nmo_dataarray_state_t,
-    do { \
-        state->key_column = -1; \
-    } while (0),
-    ((void)0))
-
 static void nmo_dataarray_dispose_base_arrays(nmo_dataarray_state_t *state)
 {
     if (state == NULL) return;
     nmo_array_dispose(&state->base.scripts);
     nmo_array_dispose(&state->base.attributes);
     nmo_array_dispose(&state->base.legacy_attributes);
+}
+
+static void nmo_dataarray_dispose_copied_base_arrays(
+    nmo_beobject_state_t *copied,
+    const nmo_beobject_state_t *source)
+{
+#define NMO_DATAARRAY_DISPOSE_COPIED_ARRAY(field) \
+    do { \
+        if (copied->field.data == source->field.data) { \
+            memset(&copied->field, 0, sizeof(copied->field)); \
+        } else { \
+            nmo_array_dispose(&copied->field); \
+        } \
+    } while (0)
+    NMO_DATAARRAY_DISPOSE_COPIED_ARRAY(scripts);
+    NMO_DATAARRAY_DISPOSE_COPIED_ARRAY(attributes);
+    NMO_DATAARRAY_DISPOSE_COPIED_ARRAY(legacy_attributes);
+#undef NMO_DATAARRAY_DISPOSE_COPIED_ARRAY
+}
+
+static nmo_status_t nmo_dataarray_create(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    nmo_dataarray_state_t *state = instance;
+    memset(state, 0, sizeof(*state));
+    state->key_column = -1;
+    return nmo_beobject_vtable.create(&state->base, NULL, context);
+}
+
+static void nmo_dataarray_destroy(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (instance == NULL) return;
+    nmo_dataarray_state_t *state = instance;
+    nmo_dataarray_dispose_base_arrays(state);
+    memset(state, 0, sizeof(*state));
 }
 
 static size_t nmo_dataarray_identifier_remaining_dwords(nmo_chunk_t *chunk)
@@ -584,49 +620,89 @@ static nmo_status_t nmo_dataarray_copy(
     const nmo_type_descriptor_t *type,
     nmo_arena_t *arena)
 {
-    const nmo_dataarray_state_t *s = src;
-    nmo_dataarray_state_t *d = dst;
-    NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
+    if (src == NULL || dst == NULL || arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (src == dst) return NMO_OK;
+    NMO_RETURN_IF_ERROR(nmo_dataarray_validate(src, type, NULL));
 
-    if (s->column_count > 0) {
-        NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->column_formats,
-                                                  s->column_formats, sizeof(nmo_dataarray_column_format_t),
-                                                  s->column_count));
-        for (uint32_t i = 0; i < s->column_count; ++i) {
-            if (s->column_formats[i].name) {
-                d->column_formats[i].name = nmo_arena_strdup(arena, s->column_formats[i].name);
+    const nmo_dataarray_state_t *source = src;
+    nmo_dataarray_state_t copied;
+    nmo_status_t result = nmo_dataarray_create(&copied, type, NULL);
+    if (result != NMO_OK) return result;
+
+    nmo_type_descriptor_t base_type = {
+        .size = sizeof(nmo_beobject_state_t),
+    };
+    result = nmo_beobject_vtable.copy(
+        &source->base, &copied.base, &base_type, arena);
+    if (result != NMO_OK) goto fail;
+
+    copied.column_count = source->column_count;
+    copied.row_count = source->row_count;
+    copied.order = source->order;
+    copied.column_index = source->column_index;
+    copied.key_column = source->key_column;
+
+    result = nmo_object_copy_array(
+        arena, (void **)&copied.column_formats, source->column_formats,
+        sizeof(*copied.column_formats), copied.column_count);
+    if (result != NMO_OK) goto fail;
+    for (uint32_t i = 0; i < copied.column_count; ++i) {
+        copied.column_formats[i].name = NULL;
+        result = nmo_object_copy_string(
+            arena, (char **)&copied.column_formats[i].name,
+            source->column_formats[i].name);
+        if (result != NMO_OK) goto fail;
+    }
+
+    result = nmo_object_copy_array(
+        arena, (void **)&copied.rows, source->rows,
+        sizeof(*copied.rows), copied.row_count);
+    if (result != NMO_OK) goto fail;
+    for (uint32_t row_index = 0; row_index < copied.row_count; ++row_index) {
+        const nmo_dataarray_row_t *source_row = &source->rows[row_index];
+        nmo_dataarray_row_t *copied_row = &copied.rows[row_index];
+        copied_row->cells = NULL;
+        result = nmo_object_copy_array(
+            arena, (void **)&copied_row->cells, source_row->cells,
+            sizeof(*copied_row->cells), source_row->column_count);
+        if (result != NMO_OK) goto fail;
+
+        for (uint32_t column_index = 0;
+             column_index < source_row->column_count;
+             ++column_index) {
+            const nmo_dataarray_cell_t *source_cell =
+                &source_row->cells[column_index];
+            nmo_dataarray_cell_t *copied_cell =
+                &copied_row->cells[column_index];
+            const nmo_arraytype_t cell_type =
+                source->column_formats[column_index].type;
+            if (cell_type == CKARRAYTYPE_STRING) {
+                copied_cell->string_value = NULL;
+                result = nmo_object_copy_string(
+                    arena, (char **)&copied_cell->string_value,
+                    source_cell->string_value);
+                if (result != NMO_OK) goto fail;
+            } else if (cell_type == CKARRAYTYPE_PARAMETER) {
+                copied_cell->parameter.chunk = NULL;
+                result = nmo_object_copy_chunk(
+                    arena, &copied_cell->parameter.chunk,
+                    source_cell->parameter.chunk);
+                if (result != NMO_OK) goto fail;
             }
         }
     }
 
-    if (s->row_count > 0) {
-        NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->rows,
-                                                  s->rows, sizeof(nmo_dataarray_row_t), s->row_count));
-        for (uint32_t r = 0; r < s->row_count; ++r) {
-            const nmo_dataarray_row_t *sr = &s->rows[r];
-            nmo_dataarray_row_t *dr = &d->rows[r];
-            if (sr->column_count > 0) {
-                NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&dr->cells,
-                                                          sr->cells, sizeof(nmo_dataarray_cell_t),
-                                                          sr->column_count));
-                for (uint32_t c = 0; c < sr->column_count; ++c) {
-                    nmo_dataarray_cell_t *cell = &dr->cells[c];
-                    if (d->column_formats && c < d->column_count) {
-                        nmo_arraytype_t type_id = d->column_formats[c].type;
-                        if (type_id == CKARRAYTYPE_STRING && sr->cells[c].string_value) {
-                            cell->string_value = nmo_arena_strdup(arena, sr->cells[c].string_value);
-                        } else if (type_id == CKARRAYTYPE_PARAMETER &&
-                                   sr->cells[c].parameter.chunk) {
-                            cell->parameter.chunk = nmo_chunk_clone(
-                                sr->cells[c].parameter.chunk, arena);
-                        }
-                    }
-                }
-            }
-        }
-    }
+    nmo_dataarray_state_t *target = dst;
+    nmo_dataarray_dispose_base_arrays(target);
+    *target = copied;
+    return NMO_OK;
 
-    NMO_RETURN_OK();
+fail:
+    nmo_dataarray_dispose_copied_base_arrays(
+        &copied.base, &source->base);
+    return result;
 }
 
 static nmo_status_t nmo_dataarray_validate(
@@ -638,12 +714,35 @@ static nmo_status_t nmo_dataarray_validate(
     (void)context;
     const nmo_dataarray_state_t *s = instance;
     if (s == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    NMO_RETURN_IF_ERROR(nmo_beobject_vtable.validate(
+        &s->base, NULL, context));
     if (s->column_count > 10000 || s->row_count > 1000000) {
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
                          "DataArray dimensions exceed format limits");
     }
     NMO_VALIDATE_COUNT(s->column_formats, s->column_count, "column_formats");
     NMO_VALIDATE_COUNT(s->rows, s->row_count, "rows");
+    if (nmo_dataarray_size_mul_overflows(
+            s->row_count, s->column_count)) {
+        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                         "DataArray cell count overflows");
+    }
+    for (uint32_t column_index = 0;
+         column_index < s->column_count;
+         ++column_index) {
+        switch (s->column_formats[column_index].type) {
+        case CKARRAYTYPE_INT:
+        case CKARRAYTYPE_FLOAT:
+        case CKARRAYTYPE_STRING:
+        case CKARRAYTYPE_OBJECT:
+        case CKARRAYTYPE_PARAMETER:
+            break;
+        default:
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED,
+                             NMO_SEVERITY_ERROR,
+                             "DataArray column type is invalid");
+        }
+    }
     for (uint32_t row_index = 0; row_index < s->row_count; ++row_index) {
         const nmo_dataarray_row_t *row = &s->rows[row_index];
         if (row->column_count != s->column_count) {
@@ -783,7 +882,234 @@ static nmo_status_t nmo_dataarray_enumerate_refs(
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_STATE_OPS_CUSTOM(dataarray, nmo_dataarray_state_t)
+static bool nmo_dataarray_string_equals(const char *lhs, const char *rhs)
+{
+    if (lhs == rhs) return true;
+    return lhs != NULL && rhs != NULL && strcmp(lhs, rhs) == 0;
+}
+
+static bool nmo_dataarray_ref_equals(const nmo_ref_t *lhs, const nmo_ref_t *rhs)
+{
+    return lhs->raw_id == rhs->raw_id &&
+        lhs->id == rhs->id &&
+        lhs->state == rhs->state;
+}
+
+static bool nmo_dataarray_chunk_equals(
+    const nmo_chunk_t *lhs,
+    const nmo_chunk_t *rhs)
+{
+    if (lhs == rhs) return true;
+    if (lhs == NULL || rhs == NULL) return false;
+    size_t lhs_size = 0;
+    size_t rhs_size = 0;
+    const void *lhs_data = nmo_chunk_get_data(lhs, &lhs_size);
+    const void *rhs_data = nmo_chunk_get_data(rhs, &rhs_size);
+    return lhs_size == rhs_size &&
+        (lhs_size == 0 ||
+         (lhs_data != NULL && rhs_data != NULL &&
+          memcmp(lhs_data, rhs_data, lhs_size) == 0));
+}
+
+static bool nmo_dataarray_cell_equals(
+    const nmo_dataarray_cell_t *lhs,
+    const nmo_dataarray_cell_t *rhs,
+    nmo_arraytype_t type)
+{
+    switch (type) {
+    case CKARRAYTYPE_INT:
+        return lhs->int_value == rhs->int_value;
+    case CKARRAYTYPE_FLOAT:
+        return memcmp(
+            &lhs->float_value, &rhs->float_value,
+            sizeof(lhs->float_value)) == 0;
+    case CKARRAYTYPE_STRING:
+        return nmo_dataarray_string_equals(
+            lhs->string_value, rhs->string_value);
+    case CKARRAYTYPE_OBJECT:
+        return nmo_dataarray_ref_equals(
+            &lhs->object_ref, &rhs->object_ref);
+    case CKARRAYTYPE_PARAMETER:
+        return nmo_dataarray_ref_equals(
+                &lhs->parameter.ref, &rhs->parameter.ref) &&
+            nmo_dataarray_chunk_equals(
+                lhs->parameter.chunk, rhs->parameter.chunk);
+    default:
+        return false;
+    }
+}
+
+static bool nmo_dataarray_equals(const void *a, const void *b)
+{
+    if (a == b) return true;
+    if (a == NULL || b == NULL) return false;
+    const nmo_dataarray_state_t *lhs = a;
+    const nmo_dataarray_state_t *rhs = b;
+    if (!nmo_beobject_vtable.equals(&lhs->base, &rhs->base) ||
+        lhs->column_count != rhs->column_count ||
+        lhs->row_count != rhs->row_count ||
+        lhs->order != rhs->order ||
+        lhs->column_index != rhs->column_index ||
+        lhs->key_column != rhs->key_column ||
+        (lhs->column_count > 0 &&
+         (lhs->column_formats == NULL || rhs->column_formats == NULL)) ||
+        (lhs->row_count > 0 &&
+         (lhs->rows == NULL || rhs->rows == NULL))) {
+        return false;
+    }
+
+    for (uint32_t column_index = 0;
+         column_index < lhs->column_count;
+         ++column_index) {
+        const nmo_dataarray_column_format_t *lhs_format =
+            &lhs->column_formats[column_index];
+        const nmo_dataarray_column_format_t *rhs_format =
+            &rhs->column_formats[column_index];
+        if (!nmo_dataarray_string_equals(lhs_format->name, rhs_format->name) ||
+            lhs_format->type != rhs_format->type ||
+            !nmo_guid_equals(lhs_format->parameter_type_guid,
+                             rhs_format->parameter_type_guid)) {
+            return false;
+        }
+    }
+
+    for (uint32_t row_index = 0; row_index < lhs->row_count; ++row_index) {
+        const nmo_dataarray_row_t *lhs_row = &lhs->rows[row_index];
+        const nmo_dataarray_row_t *rhs_row = &rhs->rows[row_index];
+        if (lhs_row->column_count != rhs_row->column_count ||
+            lhs_row->column_count != lhs->column_count ||
+            (lhs_row->column_count > 0 &&
+             (lhs_row->cells == NULL || rhs_row->cells == NULL))) {
+            return false;
+        }
+        for (uint32_t column_index = 0;
+             column_index < lhs_row->column_count;
+             ++column_index) {
+            if (!nmo_dataarray_cell_equals(
+                    &lhs_row->cells[column_index],
+                    &rhs_row->cells[column_index],
+                    lhs->column_formats[column_index].type)) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+static uint32_t nmo_dataarray_hash_bytes(
+    uint32_t hash,
+    const void *data,
+    size_t size)
+{
+    const uint8_t *bytes = data;
+    for (size_t i = 0; i < size; ++i) {
+        hash ^= bytes[i];
+        hash *= 16777619u;
+    }
+    return hash;
+}
+
+static uint32_t nmo_dataarray_hash_string(
+    uint32_t hash,
+    const char *string)
+{
+    const uint8_t present = string != NULL;
+    hash = nmo_dataarray_hash_bytes(hash, &present, sizeof(present));
+    return present
+        ? nmo_dataarray_hash_bytes(hash, string, strlen(string) + 1u)
+        : hash;
+}
+
+static uint32_t nmo_dataarray_hash_ref(
+    uint32_t hash,
+    const nmo_ref_t *ref)
+{
+    hash = nmo_dataarray_hash_bytes(hash, &ref->raw_id, sizeof(ref->raw_id));
+    hash = nmo_dataarray_hash_bytes(hash, &ref->id, sizeof(ref->id));
+    return nmo_dataarray_hash_bytes(hash, &ref->state, sizeof(ref->state));
+}
+
+static uint32_t nmo_dataarray_hash_chunk(
+    uint32_t hash,
+    const nmo_chunk_t *chunk)
+{
+    const uint8_t present = chunk != NULL;
+    hash = nmo_dataarray_hash_bytes(hash, &present, sizeof(present));
+    if (chunk == NULL) return hash;
+    size_t size = 0;
+    const void *data = nmo_chunk_get_data(chunk, &size);
+    hash = nmo_dataarray_hash_bytes(hash, &size, sizeof(size));
+    return data != NULL && size > 0
+        ? nmo_dataarray_hash_bytes(hash, data, size)
+        : hash;
+}
+
+static uint32_t nmo_dataarray_hash_cell(
+    uint32_t hash,
+    const nmo_dataarray_cell_t *cell,
+    nmo_arraytype_t type)
+{
+    switch (type) {
+    case CKARRAYTYPE_INT:
+        return nmo_dataarray_hash_bytes(
+            hash, &cell->int_value, sizeof(cell->int_value));
+    case CKARRAYTYPE_FLOAT:
+        return nmo_dataarray_hash_bytes(
+            hash, &cell->float_value, sizeof(cell->float_value));
+    case CKARRAYTYPE_STRING:
+        return nmo_dataarray_hash_string(hash, cell->string_value);
+    case CKARRAYTYPE_OBJECT:
+        return nmo_dataarray_hash_ref(hash, &cell->object_ref);
+    case CKARRAYTYPE_PARAMETER:
+        hash = nmo_dataarray_hash_ref(hash, &cell->parameter.ref);
+        return nmo_dataarray_hash_chunk(hash, cell->parameter.chunk);
+    default:
+        return hash;
+    }
+}
+
+static uint32_t nmo_dataarray_hash(const void *instance)
+{
+    if (instance == NULL) return 0;
+    const nmo_dataarray_state_t *state = instance;
+    uint32_t hash = nmo_beobject_vtable.hash(&state->base);
+#define NMO_DATAARRAY_HASH_FIELD(field) \
+    hash = nmo_dataarray_hash_bytes(hash, &(field), sizeof(field))
+    NMO_DATAARRAY_HASH_FIELD(state->column_count);
+    if (state->column_count > 0 && state->column_formats == NULL) return hash;
+    for (uint32_t column_index = 0;
+         column_index < state->column_count;
+         ++column_index) {
+        const nmo_dataarray_column_format_t *format =
+            &state->column_formats[column_index];
+        hash = nmo_dataarray_hash_string(hash, format->name);
+        NMO_DATAARRAY_HASH_FIELD(format->type);
+        NMO_DATAARRAY_HASH_FIELD(format->parameter_type_guid.d1);
+        NMO_DATAARRAY_HASH_FIELD(format->parameter_type_guid.d2);
+    }
+    NMO_DATAARRAY_HASH_FIELD(state->row_count);
+    if (state->row_count > 0 && state->rows == NULL) return hash;
+    for (uint32_t row_index = 0; row_index < state->row_count; ++row_index) {
+        const nmo_dataarray_row_t *row = &state->rows[row_index];
+        NMO_DATAARRAY_HASH_FIELD(row->column_count);
+        if (row->column_count > 0 && row->cells == NULL) return hash;
+        const uint32_t cell_count = row->column_count < state->column_count
+            ? row->column_count
+            : state->column_count;
+        for (uint32_t column_index = 0;
+             column_index < cell_count;
+             ++column_index) {
+            hash = nmo_dataarray_hash_cell(
+                hash, &row->cells[column_index],
+                state->column_formats[column_index].type);
+        }
+    }
+    NMO_DATAARRAY_HASH_FIELD(state->order);
+    NMO_DATAARRAY_HASH_FIELD(state->column_index);
+    NMO_DATAARRAY_HASH_FIELD(state->key_column);
+#undef NMO_DATAARRAY_HASH_FIELD
+    return hash;
+}
 
 nmo_type_vtable_t nmo_dataarray_vtable = {
     .prepare_dependencies = nmo_dataarray_prepare_dependencies,

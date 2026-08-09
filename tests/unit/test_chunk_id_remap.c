@@ -1064,6 +1064,131 @@ TEST(chunk_id_remap, dataarray_failures_keep_state_and_target_chunk_atomic) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, dataarray_copy_preserves_typed_cell_content) {
+    nmo_arena_t *source_arena = nmo_arena_create(NULL, 8192);
+    nmo_arena_t *copy_arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(source_arena);
+    ASSERT_NOT_NULL(copy_arena);
+
+    nmo_dataarray_column_format_t formats[] = {
+        {.name = "Integer", .type = CKARRAYTYPE_INT},
+        {.name = "Float", .type = CKARRAYTYPE_FLOAT},
+        {.name = "String", .type = CKARRAYTYPE_STRING},
+        {.name = "Object", .type = CKARRAYTYPE_OBJECT},
+        {
+            .name = "Parameter",
+            .type = CKARRAYTYPE_PARAMETER,
+            .parameter_type_guid = CKPGUID_INT,
+        },
+    };
+    nmo_dataarray_cell_t cells[5] = {0};
+    cells[0].int_value = 17;
+    cells[1].float_value = 2.5f;
+    cells[2].string_value = "Value";
+    cells[3].object_ref = nmo_ref_from_raw(301);
+    cells[4].parameter.ref = nmo_ref_from_raw(302);
+    cells[4].parameter.chunk = nmo_chunk_create(source_arena);
+    ASSERT_NOT_NULL(cells[4].parameter.chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(cells[4].parameter.chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        cells[4].parameter.chunk, 0xaabbccddu));
+    nmo_chunk_close(cells[4].parameter.chunk);
+    nmo_dataarray_row_t row = {
+        .column_count = 5,
+        .cells = cells,
+    };
+
+    nmo_dataarray_state_t source;
+    nmo_dataarray_state_t copy;
+    ASSERT_EQ(NMO_OK, nmo_dataarray_vtable.create(&source, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_dataarray_vtable.create(&copy, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &source.base.scripts, 101));
+    ASSERT_EQ(NMO_OK, nmo_beobject_attribute_array_append(
+        &source.base.attributes, 201, 7, NULL));
+    source.column_count = 5;
+    source.column_formats = formats;
+    source.row_count = 1;
+    source.rows = &row;
+    source.order = 1;
+    source.column_index = 2;
+    source.key_column = 0;
+
+    nmo_type_descriptor_t type = {
+        .size = sizeof(nmo_dataarray_state_t),
+    };
+    ASSERT_EQ(NMO_OK, nmo_dataarray_vtable.copy(
+        &source, &copy, &type, copy_arena));
+    ASSERT_NE(source.base.scripts.data, copy.base.scripts.data);
+    ASSERT_NE(source.base.attributes.data, copy.base.attributes.data);
+    ASSERT_NE(source.column_formats, copy.column_formats);
+    ASSERT_NE(source.rows, copy.rows);
+    ASSERT_NE(source.rows[0].cells, copy.rows[0].cells);
+    ASSERT_NE(source.column_formats[2].name,
+              copy.column_formats[2].name);
+    ASSERT_NE(source.rows[0].cells[2].string_value,
+              copy.rows[0].cells[2].string_value);
+    ASSERT_NE(source.rows[0].cells[4].parameter.chunk,
+              copy.rows[0].cells[4].parameter.chunk);
+    ASSERT_TRUE(nmo_dataarray_vtable.equals(&source, &copy));
+    ASSERT_EQ(nmo_dataarray_vtable.hash(&source),
+              nmo_dataarray_vtable.hash(&copy));
+
+    fail_after_allocator_state_t allocator_state = {
+        .allowed_allocations = 1,
+    };
+    nmo_allocator_t failing_allocator = {
+        .alloc = fail_after_alloc,
+        .free = fail_after_free,
+        .user_data = &allocator_state,
+    };
+    nmo_dataarray_state_t failing_source;
+    ASSERT_EQ(NMO_OK, nmo_dataarray_vtable.create(
+        &failing_source, NULL, NULL));
+    nmo_array_dispose(&failing_source.base.scripts);
+    ASSERT_EQ(NMO_OK, nmo_array_init(
+        &failing_source.base.scripts, sizeof(nmo_ref_t), 1,
+        &failing_allocator));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &failing_source.base.scripts, 401));
+    ASSERT_EQ(NMO_OK, nmo_beobject_attribute_array_append(
+        &failing_source.base.attributes, 402, 9, NULL));
+    failing_source.column_count = 5;
+    failing_source.column_formats = formats;
+    failing_source.row_count = 1;
+    failing_source.rows = &row;
+    allocator_state.allowed_allocations = allocator_state.allocation_count;
+    nmo_dataarray_column_format_t *published_formats = copy.column_formats;
+    nmo_dataarray_row_t *published_rows = copy.rows;
+    ASSERT_EQ(NMO_ERR_NOMEM, nmo_dataarray_vtable.copy(
+        &failing_source, &copy, &type, copy_arena));
+    ASSERT_EQ(published_formats, copy.column_formats);
+    ASSERT_EQ(published_rows, copy.rows);
+    ASSERT_EQ(1u, failing_source.base.attributes.count);
+    ASSERT_NOT_NULL(failing_source.base.attributes.data);
+
+    ((char *)copy.rows[0].cells[2].string_value)[0] = 'X';
+    ASSERT_STR_EQ("Value", source.rows[0].cells[2].string_value);
+    ASSERT_FALSE(nmo_dataarray_vtable.equals(&source, &copy));
+
+    nmo_dataarray_row_t invalid_row = row;
+    invalid_row.column_count = 4;
+    nmo_dataarray_state_t invalid = source;
+    invalid.rows = &invalid_row;
+    published_formats = copy.column_formats;
+    published_rows = copy.rows;
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_dataarray_vtable.copy(
+        &invalid, &copy, &type, copy_arena));
+    ASSERT_EQ(published_formats, copy.column_formats);
+    ASSERT_EQ(published_rows, copy.rows);
+
+    nmo_dataarray_vtable.destroy(&failing_source, NULL, NULL);
+    nmo_dataarray_vtable.destroy(&source, NULL, NULL);
+    nmo_dataarray_vtable.destroy(&copy, NULL, NULL);
+    nmo_arena_destroy(copy_arena);
+    nmo_arena_destroy(source_arena);
+}
+
 TEST(chunk_id_remap, attributemanager_failures_keep_state_and_target_chunk_atomic) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
     ASSERT_NOT_NULL(arena);
@@ -9218,6 +9343,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, behavior_layout_defaults_preserve_legacy_absence);
     REGISTER_TEST(chunk_id_remap, dataarray_cell_refs_round_trip_raw_ids);
     REGISTER_TEST(chunk_id_remap, dataarray_failures_keep_state_and_target_chunk_atomic);
+    REGISTER_TEST(chunk_id_remap, dataarray_copy_preserves_typed_cell_content);
     REGISTER_TEST(chunk_id_remap, attributemanager_failures_keep_state_and_target_chunk_atomic);
     REGISTER_TEST(chunk_id_remap, attributemanager_copy_preserves_record_content);
     REGISTER_TEST(chunk_id_remap, messagemanager_failures_keep_state_and_target_chunk_atomic);
