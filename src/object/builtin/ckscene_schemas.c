@@ -419,6 +419,37 @@ nmo_status_t nmo_scene_deserialize(
  * CKScene SERIALIZATION
  * ============================================================================= */
 
+static nmo_status_t nmo_scene_encode_object_flags(
+    uint32_t flags,
+    uint32_t data_version,
+    uint32_t *out_flags)
+{
+    if (out_flags == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    if (data_version >= 8u) {
+        *out_flags = flags;
+        return NMO_OK;
+    }
+
+    const uint32_t supported = CK_SCENEOBJECT_ACTIVE |
+        CK_SCENEOBJECT_START_RESET |
+        CK_SCENEOBJECT_START_ACTIVATE |
+        CK_SCENEOBJECT_START_DEACTIVATE;
+    const uint32_t start_state = flags &
+        (CK_SCENEOBJECT_START_ACTIVATE |
+         CK_SCENEOBJECT_START_DEACTIVATE);
+    if ((flags & ~supported) != 0u ||
+        (start_state != CK_SCENEOBJECT_START_ACTIVATE &&
+         start_state != CK_SCENEOBJECT_START_DEACTIVATE)) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+
+    uint32_t encoded = flags & CK_SCENEOBJECT_ACTIVE;
+    if ((flags & CK_SCENEOBJECT_START_RESET) != 0u) encoded |= 2u;
+    if ((flags & CK_SCENEOBJECT_START_ACTIVATE) != 0u) encoded |= 1u;
+    *out_flags = encoded;
+    return NMO_OK;
+}
+
 /**
  * @brief Serialize CKScene state to chunk
  * 
@@ -444,6 +475,10 @@ static nmo_status_t nmo_scene_serialize_internal(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_scene_serialize");
     }
     NMO_RETURN_IF_ERROR(nmo_scene_validate(in_state, type, context));
+    const uint32_t data_version = nmo_chunk_get_data_version(out_chunk);
+    if (data_version < 1u) {
+        return NMO_ERR_UNSUPPORTED_VERSION;
+    }
 
     /* Write base class (CKBeObject) data */
     nmo_status_t result = nmo_beobject_serialize(&in_state->base, out_chunk, NULL, context);
@@ -501,7 +536,11 @@ static nmo_status_t nmo_scene_serialize_internal(
 
         /* Write object flags */
         for (uint32_t i = 0; i < in_state->object_descs.count; i++) {
-            result = nmo_chunk_write_dword(out_chunk, descs[i].flags);
+            uint32_t encoded_flags = 0u;
+            result = nmo_scene_encode_object_flags(
+                descs[i].flags, data_version, &encoded_flags);
+            if (result != NMO_OK) return result;
+            result = nmo_chunk_write_dword(out_chunk, encoded_flags);
             if (result != NMO_OK) return result;
         }
     }
