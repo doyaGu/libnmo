@@ -430,10 +430,15 @@ nmo_status_t nmo_object_system_create_objects_from_header1(
 
         if (id_sanitizer != NULL && sanitized_id != 0) {
             int sanitize_result = nmo_id_sanitizer_register(id_sanitizer, sanitized_id, obj->id);
-            if (sanitize_result != NMO_OK && logger) {
-                nmo_log(logger, NMO_LOG_WARN,
-                        "  Failed to register ID sanitizer mapping (file_id=%u, runtime_id=%u)",
-                        sanitized_id, obj->id);
+            if (sanitize_result != NMO_OK) {
+                if (logger) {
+                    nmo_log(logger, NMO_LOG_ERROR,
+                            "  Failed to register ID sanitizer mapping (file_id=%u, runtime_id=%u)",
+                            sanitized_id, obj->id);
+                }
+                object_system_rollback_created(repo, created, desc_count);
+                nmo_id_sanitizer_reset(id_sanitizer);
+                return sanitize_result;
             }
         }
 
