@@ -2165,6 +2165,20 @@ TEST(chunk_id_remap, messagemanager_failures_keep_state_and_target_chunk_atomic)
     ASSERT_EQ(old_names, state.message_type_names);
     ASSERT_EQ(1u, state.message_type_count);
 
+    nmo_chunk_t *trailing_payload = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(trailing_payload);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(trailing_payload));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        trailing_payload, 0x53u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(trailing_payload, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        trailing_payload, 0x12345678u));
+    nmo_chunk_close(trailing_payload);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_messagemanager_deserialize(
+        &state, trailing_payload, NULL, &deserialize_context));
+    ASSERT_EQ(old_names, state.message_type_names);
+    ASSERT_EQ(1u, state.message_type_count);
+
     nmo_chunk_t *cross_section_count = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(cross_section_count);
     ASSERT_EQ(NMO_OK, nmo_chunk_start_write(cross_section_count));

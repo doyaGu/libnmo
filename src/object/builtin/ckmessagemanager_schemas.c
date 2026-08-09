@@ -107,6 +107,9 @@ static nmo_status_t nmo_messagemanager_deserialize_internal(
     }
 
     if (type_count == 0) {
+        if (nmo_chunk_get_position(chunk) != section_end) {
+            return NMO_ERR_INVALID_FORMAT;
+        }
         NMO_RETURN_OK();
     }
 
@@ -143,6 +146,10 @@ static nmo_status_t nmo_messagemanager_deserialize_internal(
                              "Message type name is missing");
         }
         names[i] = name; /* Chunk manages the buffer */
+    }
+
+    if (nmo_chunk_get_position(chunk) != section_end) {
+        return NMO_ERR_INVALID_FORMAT;
     }
 
     out_state->message_type_count = (uint32_t)type_count;
