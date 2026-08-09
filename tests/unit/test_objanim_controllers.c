@@ -170,6 +170,105 @@ TEST(objanim_controllers, controllers_empty) {
     nmo_arena_destroy(arena);
 }
 
+TEST(objanim_controllers, controllers_preserve_terminator_delimited_count) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+    ASSERT_NE(NULL, arena);
+    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_deserialize_context_t des_ctx = nmo_deserialize_context_create(
+        arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+
+    uint32_t payloads[9];
+    nmo_objanim_controller_t controllers[9];
+    for (uint32_t i = 0; i < 9u; ++i) {
+        payloads[i] = 0xabc00000u + i;
+        controllers[i].type = 0x100u + i;
+        controllers[i].key_count = 0u;
+        controllers[i].data_size = sizeof(payloads[i]);
+        controllers[i].data = &payloads[i];
+    }
+
+    nmo_objectanimation_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_vtable.create(
+        &source, NULL, NULL));
+    source.format = CKOBJANIM_FORMAT_CONTROLLERS;
+    source.has_length = 1;
+    source.controller_count = 9u;
+    source.controllers = controllers;
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NE(NULL, chunk);
+    chunk->class_id = NMO_CID_OBJECTANIMATION;
+    chunk->data_version = 7;
+    chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_serialize(
+        &source, chunk, NULL, &ser_ctx));
+    nmo_chunk_close(chunk);
+
+    nmo_objectanimation_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_vtable.create(
+        &loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_deserialize(
+        &loaded, chunk, NULL, &des_ctx));
+    ASSERT_EQ(9u, loaded.controller_count);
+    ASSERT_EQ(0x108u, loaded.controllers[8].type);
+    ASSERT_EQ(payloads[8], *(uint32_t *)loaded.controllers[8].data);
+
+    ASSERT_TRUE(chunk->data.count > 0u);
+    chunk->data.count--;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(chunk));
+    nmo_objectanimation_state_t failed;
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_vtable.create(
+        &failed, NULL, NULL));
+    failed.flags = 0x12345678u;
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_objectanimation_deserialize(
+        &failed, chunk, NULL, &des_ctx));
+    ASSERT_EQ(0x12345678u, failed.flags);
+
+    nmo_objectanimation_vtable.destroy(&source, NULL, NULL);
+    nmo_objectanimation_vtable.destroy(&loaded, NULL, NULL);
+    nmo_objectanimation_vtable.destroy(&failed, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
+TEST(objanim_controllers, controllers_reject_unaligned_payload) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NE(NULL, arena);
+    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+
+    uint8_t payload[3] = {1u, 2u, 3u};
+    nmo_objanim_controller_t controller = {
+        .type = 0x100u,
+        .key_count = 0u,
+        .data_size = sizeof(payload),
+        .data = payload,
+    };
+    nmo_objectanimation_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_vtable.create(
+        &source, NULL, NULL));
+    source.format = CKOBJANIM_FORMAT_CONTROLLERS;
+    source.controller_count = 1u;
+    source.controllers = &controller;
+
+    nmo_chunk_t *preserved = nmo_chunk_create(arena);
+    ASSERT_NE(NULL, preserved);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(preserved));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        preserved, 0xabcdef01u));
+    nmo_chunk_close(preserved);
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_objectanimation_serialize(
+        &source, preserved, NULL, &ser_ctx));
+    ASSERT_EQ(sizeof(uint32_t), nmo_chunk_get_data_size(preserved));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(preserved));
+    uint32_t marker = 0u;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(preserved, &marker));
+    ASSERT_EQ(0xabcdef01u, marker);
+
+    nmo_objectanimation_vtable.destroy(&source, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 /* ========================================================================
  * Test: SHARED format -- no controllers
  * ======================================================================== */
@@ -382,6 +481,8 @@ TEST(objanim_controllers, copy_controllers) {
 TEST_MAIN_BEGIN()
     REGISTER_TEST(objanim_controllers, controllers_roundtrip);
     REGISTER_TEST(objanim_controllers, controllers_empty);
+    REGISTER_TEST(objanim_controllers, controllers_preserve_terminator_delimited_count);
+    REGISTER_TEST(objanim_controllers, controllers_reject_unaligned_payload);
     REGISTER_TEST(objanim_controllers, shared_no_controllers);
     REGISTER_TEST(objanim_controllers, key_size_helper);
     REGISTER_TEST(objanim_controllers, negative_morph_counts_are_rejected_atomically);

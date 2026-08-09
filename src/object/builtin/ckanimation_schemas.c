@@ -15,6 +15,7 @@
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "core/nmo_arena_array.h"
 #include "core/nmo_utils.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_ref.h"
@@ -451,6 +452,11 @@ static nmo_status_t nmo_objectanimation_validate(
             s->controllers[i].data,
             s->controllers[i].data_size,
             "controller data");
+        if (s->format == CKOBJANIM_FORMAT_CONTROLLERS &&
+            (s->controllers[i].type == 0u ||
+             (s->controllers[i].data_size & 3u) != 0u)) {
+            return NMO_ERR_VALIDATION_FAILED;
+        }
     }
     for (uint32_t i = 0; i < s->morph_key_parsed_count; ++i) {
         NMO_VALIDATE_BYTES(
@@ -1229,21 +1235,33 @@ static nmo_status_t read_controllers_loop(
     nmo_arena_t *arena,
     nmo_objectanimation_state_t *out_state)
 {
-    nmo_objanim_controller_t local_controllers[8];
-    uint32_t count = 0;
+    nmo_arena_array_t controllers;
+    NMO_RETURN_IF_ERROR(nmo_arena_array_init(
+        &controllers, sizeof(nmo_objanim_controller_t), 0u, arena));
 
-    while (count < 8) {
+    for (;;) {
+        if (nmo_animation_identifier_remaining_dwords(chunk) < 1u) {
+            NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                             "Controller sequence has no terminator");
+        }
         uint32_t type = 0;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &type));
         if (type == 0) {
             break;
         }
 
+        if (nmo_animation_identifier_remaining_dwords(chunk) < 1u) {
+            NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                             "Controller size is truncated");
+        }
         uint32_t size_dwords = 0;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &size_dwords));
-        if (size_dwords > UINT32_MAX / 4u ||
-            (size_t)size_dwords >
-                nmo_animation_identifier_remaining_dwords(chunk)) {
+        if (size_dwords > UINT32_MAX / 4u) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Controller byte size overflows");
+        }
+        if ((size_t)size_dwords >
+            nmo_animation_identifier_remaining_dwords(chunk)) {
             NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                              "Controller payload exceeds identifier section");
         }
@@ -1260,24 +1278,23 @@ static nmo_status_t read_controllers_loop(
                 nmo_chunk_read_and_fill_buffer_nosize_checked(chunk, data, data_size));
         }
 
-        local_controllers[count].type = type;
-        local_controllers[count].key_count = 0;
-        local_controllers[count].data_size = data_size;
-        local_controllers[count].data = data;
-        count++;
+        if (controllers.count >= UINT32_MAX) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Controller count exceeds state limits");
+        }
+        const nmo_objanim_controller_t controller = {
+            .type = type,
+            .key_count = 0u,
+            .data_size = data_size,
+            .data = data,
+        };
+        NMO_RETURN_IF_ERROR(nmo_arena_array_append(
+            &controllers, &controller));
     }
 
-    if (count > 0) {
-        nmo_objanim_controller_t *controllers = nmo_arena_alloc(
-            arena, sizeof(nmo_objanim_controller_t) * count,
-            _Alignof(nmo_objanim_controller_t));
-        if (!controllers) {
-            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                             "Failed to allocate controllers array");
-        }
-        memcpy(controllers, local_controllers, sizeof(nmo_objanim_controller_t) * count);
-        out_state->controllers = controllers;
-        out_state->controller_count = count;
+    if (controllers.count > 0u) {
+        out_state->controllers = controllers.data;
+        out_state->controller_count = (uint32_t)controllers.count;
     }
 
     NMO_RETURN_OK();
