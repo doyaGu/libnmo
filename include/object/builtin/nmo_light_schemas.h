@@ -49,6 +49,7 @@ typedef struct nmo_light_state {
     float light_power;               ///< Intensity multiplier (default 1.0)
 
     /* Chunk presence tracking */
+    uint8_t has_light_data_chunk;
     uint8_t has_light_power_chunk;
 } nmo_light_state_t;
 

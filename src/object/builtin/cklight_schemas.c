@@ -86,6 +86,7 @@ static void nmo_light_set_defaults(nmo_light_state_t *state) {
 
     state->light_data.inner_spot_cone = 0.69813174f;
     state->light_data.outer_spot_cone = 0.78539819f;
+    state->has_light_data_chunk = 1;
     state->has_light_power_chunk = 0;
 }
 
@@ -109,6 +110,11 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
         nmo_light_set_defaults(state);
     } while (0),
     nmo_3dentity_vtable.destroy(&state->entity, NULL, context))
+
+static nmo_status_t nmo_light_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 static void nmo_light_dispose_base_arrays(nmo_light_state_t *state)
 {
@@ -152,6 +158,7 @@ static nmo_status_t nmo_light_deserialize_modern(
     // Seek to light data identifier (CK_STATESAVE_LIGHTDATA)
     result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_LIGHTDATA);
     if (result == NMO_OK) {
+        out_state->has_light_data_chunk = 1;
         // Read Type|Flags packed DWORD
         uint32_t packed_type_flags;
         result = nmo_chunk_read_dword(chunk, &packed_type_flags);
@@ -252,6 +259,7 @@ static nmo_status_t nmo_light_deserialize_legacy(
     // Seek to light data identifier (CK_STATESAVE_LIGHTDATA)
     result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_LIGHTDATA);
     if (result == NMO_OK) {
+        out_state->has_light_data_chunk = 1;
         // Read Type
         uint32_t type;
         result = nmo_chunk_read_dword(chunk, &type);
@@ -384,6 +392,7 @@ static nmo_status_t nmo_light_deserialize_internal(
         return result;
     }
 
+    out_state->has_light_data_chunk = 0;
     out_state->has_light_power_chunk = 0;
 
     // Check data version to dispatch to modern or legacy deserializer
@@ -425,7 +434,7 @@ nmo_status_t nmo_light_deserialize(
  * ============================================================================= */
 
 /**
- * @brief Serialize CKLight state to chunk (always uses modern format)
+ * @brief Serialize CKLight state to chunk
  */
 static nmo_status_t nmo_light_serialize_internal(
     const void *instance,
@@ -441,21 +450,103 @@ static nmo_status_t nmo_light_serialize_internal(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to CKLight serialize");
     }
 
+    NMO_RETURN_IF_ERROR(nmo_light_validate(state, type, context));
+
+    const nmo_serialize_context_t *ser_ctx = nmo_serialize_context_try(context);
+    const bool is_file = ((chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
+        (ser_ctx != NULL && (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
+    const bool write_light = is_file ||
+        (nmo_serialize_context_get_save_flags(context) &
+         CK_STATESAVE_LIGHTONLY) != 0;
+    const bool write_legacy = is_file &&
+        nmo_chunk_get_data_version(chunk) < 5u;
+    const bool has_default_data =
+        state->light_data.type == VX_LIGHTPOINT &&
+        state->flags == 0x100u &&
+        state->light_data.diffuse.r == 1.0f &&
+        state->light_data.diffuse.g == 1.0f &&
+        state->light_data.diffuse.b == 1.0f &&
+        state->light_data.attenuation0 == 1.0f &&
+        state->light_data.attenuation1 == 0.0f &&
+        state->light_data.attenuation2 == 0.0f &&
+        state->light_data.range == 5000.0f &&
+        state->light_data.outer_spot_cone == 0.78539819f &&
+        state->light_data.inner_spot_cone == 0.69813174f &&
+        state->light_data.falloff == 1.0f;
+
+    if (write_legacy &&
+        (state->has_light_power_chunk || state->light_power != 1.0f)) {
+        NMO_RETURN_ERROR(
+            NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+            "Legacy light layout cannot store a light power section");
+    }
+    if (write_light &&
+        ((state->flags & 0xFFu) != 0u ||
+         state->light_data.diffuse.a != 1.0f)) {
+        NMO_RETURN_ERROR(
+            NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+            "Light data cannot be serialized losslessly");
+    }
+    if (write_light && (!is_file || !write_legacy) &&
+        state->light_data.type != VX_LIGHTSPOT &&
+        (state->light_data.outer_spot_cone != 0.78539819f ||
+         state->light_data.inner_spot_cone != 0.69813174f ||
+         state->light_data.falloff != 1.0f)) {
+        NMO_RETURN_ERROR(
+            NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+            "Modern non-spot light layout cannot store spot parameters");
+    }
+    if (write_legacy && (state->flags & ~(0x100u | 0x200u)) != 0u) {
+        NMO_RETURN_ERROR(
+            NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+            "Legacy light layout cannot store the requested flags");
+    }
+
     // First serialize parent CK3dEntity data
     nmo_status_t result = nmo_3dentity_serialize(&state->entity, chunk, NULL, context);
     if (result != NMO_OK) {
         return result;
     }
 
-    const nmo_serialize_context_t *ser_ctx = nmo_serialize_context_try(context);
-    const bool is_file = ((chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
-        (ser_ctx != NULL && (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
-    if (!is_file) {
-        uint32_t save_flags = nmo_serialize_context_get_save_flags(context);
-        if ((save_flags & CK_STATESAVE_LIGHTONLY) == 0) {
-            return NMO_OK;
-        }
+    if (!write_light) return NMO_OK;
+
+    const bool write_data = !is_file || state->has_light_data_chunk ||
+        !has_default_data;
+    if (write_data && write_legacy) {
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(
+            chunk, CK_STATESAVE_LIGHTDATA));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
+            chunk, (uint32_t)state->light_data.type));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
+            chunk, state->light_data.diffuse.r));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
+            chunk, state->light_data.diffuse.g));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
+            chunk, state->light_data.diffuse.b));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
+            chunk, state->light_data.diffuse.a));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_int(
+            chunk, (state->flags & 0x100u) != 0u));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_int(
+            chunk, (state->flags & 0x200u) != 0u));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
+            chunk, state->light_data.attenuation0));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
+            chunk, state->light_data.attenuation1));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
+            chunk, state->light_data.attenuation2));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
+            chunk, state->light_data.range));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
+            chunk, state->light_data.outer_spot_cone));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
+            chunk, state->light_data.inner_spot_cone));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
+            chunk, state->light_data.falloff));
+        NMO_RETURN_OK();
     }
+
+    if (!write_data) goto write_power;
 
     // Write identifier (CK_STATESAVE_LIGHTDATA)
     result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_LIGHTDATA);
@@ -517,8 +608,10 @@ static nmo_status_t nmo_light_serialize_internal(
         }
     }
 
+write_power:
     // Optional: light power
-    if (state->light_power != 1.0f) {
+    if ((!write_legacy && state->light_power != 1.0f) ||
+        (is_file && state->has_light_power_chunk)) {
         result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_LIGHTDATA2);
         if (result != NMO_OK) {
             return result;
@@ -636,6 +729,7 @@ static nmo_status_t nmo_light_copy(
     target->light_data = source->light_data;
     target->flags = source->flags;
     target->light_power = source->light_power;
+    target->has_light_data_chunk = source->has_light_data_chunk;
     target->has_light_power_chunk = source->has_light_power_chunk;
     return NMO_OK;
 }
@@ -648,7 +742,15 @@ static nmo_status_t nmo_light_validate(
     (void)type;
     if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
     const nmo_light_state_t *state = instance;
-    return nmo_3dentity_vtable.validate(&state->entity, NULL, context);
+    NMO_RETURN_IF_ERROR(nmo_3dentity_vtable.validate(
+        &state->entity, NULL, context));
+    if (state->light_data.type < VX_LIGHTPOINT ||
+        state->light_data.type > VX_LIGHTDIREC) {
+        NMO_RETURN_ERROR(
+            NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+            "Light data cannot be serialized losslessly");
+    }
+    NMO_RETURN_OK();
 }
 
 static bool nmo_light_equals(const void *a, const void *b)
@@ -663,6 +765,7 @@ static bool nmo_light_equals(const void *a, const void *b)
         lhs->flags == rhs->flags &&
         memcmp(&lhs->light_power, &rhs->light_power,
                sizeof(lhs->light_power)) == 0 &&
+        lhs->has_light_data_chunk == rhs->has_light_data_chunk &&
         lhs->has_light_power_chunk == rhs->has_light_power_chunk;
 }
 
@@ -689,6 +792,9 @@ static uint32_t nmo_light_hash(const void *instance)
     hash = nmo_light_hash_bytes(hash, &state->flags, sizeof(state->flags));
     hash = nmo_light_hash_bytes(
         hash, &state->light_power, sizeof(state->light_power));
+    hash = nmo_light_hash_bytes(
+        hash, &state->has_light_data_chunk,
+        sizeof(state->has_light_data_chunk));
     return nmo_light_hash_bytes(
         hash, &state->has_light_power_chunk,
         sizeof(state->has_light_power_chunk));
