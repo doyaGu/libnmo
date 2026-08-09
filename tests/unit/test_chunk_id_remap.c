@@ -4774,6 +4774,85 @@ TEST(chunk_id_remap, parameter_object_ref_round_trips_raw_id) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, parameter_legacy_guid_payloads_stay_paired) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+    const uint8_t old_message[] = "LegacyMessage";
+    const uint8_t old_attribute[] = "LegacyAttribute";
+    const uint8_t old_time[] = {0x00u, 0x00u, 0x48u, 0x42u};
+    const uint8_t old_id[] = {0x78u, 0x56u, 0x34u, 0x12u};
+    const struct {
+        nmo_guid_t guid;
+        const uint8_t *payload;
+        size_t payload_size;
+    } cases[] = {
+        {CKPGUID_OLDMESSAGE, old_message, sizeof(old_message)},
+        {CKPGUID_OLDATTRIBUTE, old_attribute, sizeof(old_attribute)},
+        {CKPGUID_OLDTIME, old_time, sizeof(old_time)},
+        {CKPGUID_ID, old_id, sizeof(old_id)},
+    };
+    nmo_serialize_context_t serialize_context =
+        nmo_serialize_context_create(
+            arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+        nmo_chunk_t *chunk = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(chunk);
+        chunk->class_id = NMO_CID_PARAMETER;
+        chunk->data_version = 8;
+        chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+        ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, 0x40u));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_guid(chunk, cases[i].guid));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 1u));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_buffer(
+            chunk, cases[i].payload, cases[i].payload_size));
+        nmo_chunk_close(chunk);
+
+        nmo_parameter_state_t loaded;
+        ASSERT_EQ(NMO_OK, nmo_parameter_vtable.create(
+            &loaded, NULL, NULL));
+        ASSERT_EQ(NMO_OK, nmo_parameter_deserialize(
+            &loaded, chunk, NULL, NULL));
+        ASSERT_TRUE(nmo_guid_equals(cases[i].guid, loaded.type_guid));
+        ASSERT_EQ(CKPARAM_MODE_BUFFER, loaded.mode);
+        ASSERT_EQ(cases[i].payload_size, loaded.buffer_data.count);
+        ASSERT_EQ(0, memcmp(
+            cases[i].payload, loaded.buffer_data.data,
+            cases[i].payload_size));
+
+        nmo_chunk_t *saved = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(saved);
+        saved->class_id = NMO_CID_PARAMETER;
+        saved->data_version = 8;
+        saved->chunk_options |= NMO_CHUNK_OPTION_FILE;
+        ASSERT_EQ(NMO_OK, nmo_parameter_serialize(
+            &loaded, saved, NULL, &serialize_context));
+        nmo_chunk_close(saved);
+        size_t section_dwords = 0;
+        ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+            saved, 0x40u, &section_dwords));
+        nmo_guid_t saved_guid = NMO_GUID_NULL;
+        ASSERT_EQ(NMO_OK, nmo_chunk_read_guid(saved, &saved_guid));
+        ASSERT_TRUE(nmo_guid_equals(cases[i].guid, saved_guid));
+
+        nmo_parameter_state_t reloaded;
+        ASSERT_EQ(NMO_OK, nmo_parameter_vtable.create(
+            &reloaded, NULL, NULL));
+        ASSERT_EQ(NMO_OK, nmo_parameter_deserialize(
+            &reloaded, saved, NULL, NULL));
+        ASSERT_TRUE(nmo_guid_equals(cases[i].guid, reloaded.type_guid));
+        ASSERT_EQ(cases[i].payload_size, reloaded.buffer_data.count);
+        ASSERT_EQ(0, memcmp(
+            cases[i].payload, reloaded.buffer_data.data,
+            cases[i].payload_size));
+        nmo_parameter_vtable.destroy(&loaded, NULL, NULL);
+        nmo_parameter_vtable.destroy(&reloaded, NULL, NULL);
+    }
+
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, parameter_copy_is_deep_and_atomic) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
     ASSERT_NOT_NULL(arena);
@@ -19636,6 +19715,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, parameterin_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, parameterout_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, parameter_object_ref_round_trips_raw_id);
+    REGISTER_TEST(chunk_id_remap, parameter_legacy_guid_payloads_stay_paired);
     REGISTER_TEST(chunk_id_remap, parameter_copy_is_deep_and_atomic);
     REGISTER_TEST(chunk_id_remap, parameteroperation_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, parameter_refs_require_layout_classes);

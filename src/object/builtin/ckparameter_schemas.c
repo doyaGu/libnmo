@@ -9,7 +9,7 @@
  * - CKParameter::Save writes: identifier(0x40), GUID, mode, data
  * - CKParameter::Load reads: GUID (with migration), mode, data
  * - Supports 5 storage modes: buffer, object reference, manager int, sub-chunk, none
- * - Handles GUID migrations: OLDMESSAGE->MESSAGE, OLDATTRIBUTE->ATTRIBUTE, ID->OBJECT, OLDTIME->TIME
+ * - Preserves legacy GUID/payload pairs when runtime manager conversion is unavailable
  * 
  * Key design decisions:
  * - Store raw buffer data for round-trip safety
@@ -91,23 +91,6 @@ static const nmo_type_field_t nmo_parameter_fields[] = {
 /* From CKParameter.cpp */
 #define CK_PARAM_IDENTIFIER  0x00000040
 
-static void nmo_parameter_convert_legacy_guid(nmo_guid_t *guid)
-{
-    if (guid == NULL) {
-        return;
-    }
-
-    if (nmo_guid_equals(*guid, CKPGUID_OLDMESSAGE)) {
-        *guid = CKPGUID_MESSAGE;
-    } else if (nmo_guid_equals(*guid, CKPGUID_OLDATTRIBUTE)) {
-        *guid = CKPGUID_ATTRIBUTE;
-    } else if (nmo_guid_equals(*guid, CKPGUID_ID)) {
-        *guid = CKPGUID_OBJECT;
-    } else if (nmo_guid_equals(*guid, CKPGUID_OLDTIME)) {
-        *guid = CKPGUID_TIME;
-    }
-}
-
 /* =============================================================================
  * CKParameter DESERIALIZATION
  * ============================================================================= */
@@ -166,8 +149,6 @@ static nmo_status_t nmo_parameter_deserialize_internal(
     if (result != NMO_OK) {
         return result;
     }
-    nmo_parameter_convert_legacy_guid(&out_state->type_guid);
-
     /* If no more data in this section after GUID, preserve header-only state. */
     if (nmo_chunk_get_position(chunk) == section_end) {
         out_state->has_state = false;
