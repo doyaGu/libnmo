@@ -153,9 +153,39 @@ TEST(data_section_plan, build_failure_does_not_publish_prefix) {
     nmo_arena_destroy(arena);
 }
 
+TEST(data_section_plan, calculate_size_uses_serialized_chunks) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 1024 * 1024);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_data_section_t section = make_mixed_data_section(arena);
+    section.managers[0].data_size = 1;
+    section.objects[0].data_size = UINT32_MAX;
+
+    nmo_data_section_plan_t plan = {0};
+    ASSERT_EQ(NMO_OK, nmo_data_section_plan_build(&section, 8, arena, &plan));
+
+    size_t calculated = nmo_data_section_calculate_size(&section, 8, arena);
+    ASSERT_EQ(plan.total_size, calculated);
+
+    uint8_t *output = nmo_arena_alloc(arena, calculated, 16);
+    ASSERT_NOT_NULL(output);
+    size_t bytes_written = 0;
+    ASSERT_EQ(NMO_OK,
+              nmo_data_section_serialize(
+                  &section, 8, output, calculated, &bytes_written, arena));
+    ASSERT_EQ(calculated, bytes_written);
+
+    section.managers[0].chunk = NULL;
+    section.objects[0].chunk = NULL;
+    ASSERT_EQ(16u, nmo_data_section_calculate_size(&section, 8, arena));
+
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(data_section_plan, matches_legacy_serialization);
     REGISTER_TEST(data_section_plan, rejects_short_output_buffer);
     REGISTER_TEST(data_section_plan, rejects_missing_storage);
     REGISTER_TEST(data_section_plan, build_failure_does_not_publish_prefix);
+    REGISTER_TEST(data_section_plan, calculate_size_uses_serialized_chunks);
 TEST_MAIN_END()

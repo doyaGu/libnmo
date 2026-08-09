@@ -656,78 +656,53 @@ size_t nmo_data_section_calculate_size(
     if (data_section == NULL || arena == NULL) {
         return 0;
     }
+    if (data_section_validate_storage(data_section) != NMO_OK) {
+        return 0;
+    }
 
     size_t total_size = 0;
 
     /* Manager data */
-    if (data_section->managers != NULL) {
-        for (uint32_t i = 0; i < data_section->manager_count; i++) {
-            const nmo_manager_data_t *mgr = &data_section->managers[i];
-            if (!nmo_safe_add_size(total_size, 8u, &total_size) ||
-                !nmo_safe_add_size(total_size, 4u, &total_size)) {
-                return 0;
-            }
+    for (uint32_t i = 0; i < data_section->manager_count; i++) {
+        const nmo_manager_data_t *mgr = &data_section->managers[i];
+        if (!nmo_safe_add_size(total_size, 8u, &total_size) ||
+            !nmo_safe_add_size(total_size, 4u, &total_size)) {
+            return 0;
+        }
 
-            /* Use data_size if set, otherwise serialize to get size */
-            size_t chunk_size = 0;
-            if (mgr->data_size > 0) {
-                chunk_size = mgr->data_size;
-            } else if (mgr->chunk != NULL) {
-                if (mgr->chunk->raw_data != NULL) {
-                    chunk_size = mgr->chunk->raw_size;
-                } else {
-                    void *chunk_data = NULL;
-                    chunk_size = 0;
-                    // This is inefficient, but necessary to get the size.
-                    nmo_status_t status = nmo_chunk_serialize_version1(mgr->chunk, &chunk_data, &chunk_size, arena);
-                    if (status != NMO_OK) {
-                        return 0;
-                    }
-                }
-            }
+        nmo_data_chunk_slice_t slice;
+        if (data_section_make_slice(mgr->chunk, arena, &slice) != NMO_OK) {
+            return 0;
+        }
 
-            if (chunk_size > (size_t)UINT32_MAX || !nmo_safe_add_size(total_size, chunk_size, &total_size)) {
-                return 0;
-            }
+        if (slice.size > (size_t)UINT32_MAX ||
+            !nmo_safe_add_size(total_size, slice.size, &total_size)) {
+            return 0;
         }
     }
 
     /* Object data */
-    if (data_section->objects != NULL) {
-        for (uint32_t i = 0; i < data_section->object_count; i++) {
-            const nmo_object_data_t *obj = &data_section->objects[i];
+    for (uint32_t i = 0; i < data_section->object_count; i++) {
+        const nmo_object_data_t *obj = &data_section->objects[i];
 
-            if (file_version < 7) {
-                if (!nmo_safe_add_size(total_size, 4u, &total_size)) {
-                    return 0;
-                }
-            }
-
+        if (file_version < 7) {
             if (!nmo_safe_add_size(total_size, 4u, &total_size)) {
                 return 0;
             }
+        }
 
-            /* Use data_size if set, otherwise serialize to get size */
-            size_t chunk_size = 0;
-            if (obj->data_size > 0) {
-                chunk_size = obj->data_size;
-            } else if (obj->chunk != NULL) {
-                if (obj->chunk->raw_data != NULL) {
-                    chunk_size = obj->chunk->raw_size;
-                } else {
-                    void *chunk_data = NULL;
-                    chunk_size = 0;
-                    // This is inefficient, but necessary to get the size.
-                    nmo_status_t status = nmo_chunk_serialize_version1(obj->chunk, &chunk_data, &chunk_size, arena);
-                    if (status != NMO_OK) {
-                        return 0;
-                    }
-                }
-            }
+        if (!nmo_safe_add_size(total_size, 4u, &total_size)) {
+            return 0;
+        }
 
-            if (chunk_size > (size_t)UINT32_MAX || !nmo_safe_add_size(total_size, chunk_size, &total_size)) {
-                return 0;
-            }
+        nmo_data_chunk_slice_t slice;
+        if (data_section_make_slice(obj->chunk, arena, &slice) != NMO_OK) {
+            return 0;
+        }
+
+        if (slice.size > (size_t)UINT32_MAX ||
+            !nmo_safe_add_size(total_size, slice.size, &total_size)) {
+            return 0;
         }
     }
 
