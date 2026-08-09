@@ -1242,9 +1242,10 @@ TEST(chunk_id_remap, behavior_sections_do_not_borrow_following_identifiers) {
         null_interface, CK_STATESAVE_BEHAVIORINTERFACE));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(null_interface, 0u));
     nmo_chunk_close(null_interface);
-    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_behavior_deserialize(
+    ASSERT_EQ(NMO_OK, nmo_behavior_deserialize(
         &state, null_interface, NULL, NULL));
-    ASSERT_EQ(42, state.priority);
+    ASSERT_TRUE(state.has_interface);
+    ASSERT_NULL(state.interface_chunk);
 
     nmo_behavior_vtable.destroy(&state, NULL, NULL);
     nmo_arena_destroy(arena);

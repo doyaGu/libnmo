@@ -934,11 +934,13 @@ static nmo_status_t nmo_behavior_deserialize_internal(
                 nmo_chunk_set_file_context(interface_chunk, NULL);
             }
             out_state->interface_chunk = interface_chunk;
-        } else {
+        } else if (sub_result != NMO_OK) {
             out_state->interface_chunk = NULL;
-            return sub_result == NMO_OK
-                ? NMO_ERR_INVALID_FORMAT
-                : sub_result;
+            return sub_result;
+        } else {
+            /* CKBehavior::Load accepts a present interface section whose
+             * serialized CKStateChunk pointer is null. */
+            out_state->interface_chunk = NULL;
         }
         NMO_RETURN_IF_ERROR(nmo_behavior_require_section_end(
             chunk, section_end));
