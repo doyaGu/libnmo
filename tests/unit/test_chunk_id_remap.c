@@ -17469,7 +17469,7 @@ TEST(chunk_id_remap, patchmesh_data3_refs_round_trip_and_failure_is_atomic) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
     ASSERT_NOT_NULL(arena);
     nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
-        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+        arena, NULL, 0, 0);
     nmo_deserialize_context_t deserialize_context =
         nmo_deserialize_context_create(
             arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);

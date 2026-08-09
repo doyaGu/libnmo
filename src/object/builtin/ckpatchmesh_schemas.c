@@ -1085,7 +1085,10 @@ static nmo_status_t nmo_patchmesh_serialize_internal(
 {
     nmo_status_t result;
     const nmo_serialize_context_t *ser_ctx = nmo_serialize_context_try(context);
-    const bool is_file = (ser_ctx != NULL && (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
+    const bool is_file =
+        ((out_chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
+        (ser_ctx != NULL &&
+         (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
     const uint32_t save_flags = ser_ctx ? ser_ctx->save_flags : 0;
 
     if (!in_state || !out_chunk) {
