@@ -8769,6 +8769,99 @@ TEST(chunk_id_remap, entity_scalar_ref_sections_reject_truncation_atomically) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, entity_sections_do_not_borrow_following_identifiers) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+    nmo_3dentity_state_t state;
+    ASSERT_EQ(NMO_OK, nmo_3dentity_vtable.create(&state, NULL, NULL));
+    state.entity_flags = 0xCAFEBABEu;
+
+    nmo_chunk_t *animation = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(animation);
+    animation->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(animation));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        animation, CK_STATESAVE_ANIMATION));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(animation, 0));
+    nmo_chunk_close(animation);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_3dentity_deserialize(
+        &state, animation, NULL, &deserialize_context));
+    ASSERT_EQ(0xCAFEBABEu, state.entity_flags);
+
+    nmo_chunk_t *meshes = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(meshes);
+    meshes->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(meshes));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        meshes, CK_STATESAVE_MESHS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_id(meshes, 744));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(meshes, 0));
+    nmo_chunk_close(meshes);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_3dentity_deserialize(
+        &state, meshes, NULL, &deserialize_context));
+    ASSERT_EQ(0xCAFEBABEu, state.entity_flags);
+
+    nmo_chunk_t *entity_data = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(entity_data);
+    entity_data->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(entity_data));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        entity_data, CK_STATESAVE_3DENTITYNDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(entity_data, 0));
+    for (size_t i = 0; i < 12; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(entity_data, 0));
+    }
+    nmo_chunk_close(entity_data);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_3dentity_deserialize(
+        &state, entity_data, NULL, &deserialize_context));
+    ASSERT_EQ(0xCAFEBABEu, state.entity_flags);
+
+    nmo_chunk_t *parent = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(parent);
+    parent->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(parent));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        parent, CK_STATESAVE_PARENT));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(parent, 0));
+    nmo_chunk_close(parent);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_3dentity_deserialize(
+        &state, parent, NULL, &deserialize_context));
+    ASSERT_EQ(0xCAFEBABEu, state.entity_flags);
+
+    nmo_chunk_t *flags = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(flags);
+    flags->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(flags));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        flags, CK_STATESAVE_3DENTITYFLAGS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(flags, 0));
+    nmo_chunk_close(flags);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_3dentity_deserialize(
+        &state, flags, NULL, &deserialize_context));
+    ASSERT_EQ(0xCAFEBABEu, state.entity_flags);
+
+    nmo_chunk_t *matrix = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(matrix);
+    matrix->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(matrix));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        matrix, CK_STATESAVE_3DENTITYMATRIX));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(matrix, 0));
+    for (size_t i = 0; i < 15; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(matrix, 0));
+    }
+    nmo_chunk_close(matrix);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_3dentity_deserialize(
+        &state, matrix, NULL, &deserialize_context));
+    ASSERT_EQ(0xCAFEBABEu, state.entity_flags);
+
+    nmo_3dentity_vtable.destroy(&state, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, entity2d_serializer_does_not_publish_partial_chunk) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
     ASSERT_NOT_NULL(arena);
@@ -14630,6 +14723,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, spritetext_copy_preserves_base_and_strings);
     REGISTER_TEST(chunk_id_remap, material_copy_preserves_base_and_references);
     REGISTER_TEST(chunk_id_remap, entity_scalar_ref_sections_reject_truncation_atomically);
+    REGISTER_TEST(chunk_id_remap, entity_sections_do_not_borrow_following_identifiers);
     REGISTER_TEST(chunk_id_remap, entity_skin_rejects_negative_vertex_bone_count_atomically);
     REGISTER_TEST(chunk_id_remap, entity_skin_rejects_oversized_counts_before_allocation);
     REGISTER_TEST(chunk_id_remap, entity_skin_propagates_truncated_bone_indices_atomically);

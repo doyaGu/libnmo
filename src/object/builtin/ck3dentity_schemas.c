@@ -229,9 +229,13 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
     }
 
     // Load object animations (identifier CK_STATESAVE_ANIMATION)
-    nmo_status_t seek_result = nmo_chunk_seek_identifier(
-        chunk, CK_STATESAVE_ANIMATION);
+    size_t animation_section_dwords = 0;
+    nmo_status_t seek_result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_ANIMATION, &animation_section_dwords);
     if (seek_result == NMO_OK) {
+        if (animation_section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+        const size_t animation_section_end =
+            nmo_chunk_get_position(chunk) + animation_section_dwords;
         size_t anim_count = 0;
         result = nmo_chunk_read_object_sequence_start(chunk, &anim_count);
         if (result != NMO_OK) return result;
@@ -265,14 +269,22 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
                     NMO_CID_OBJECTANIMATION);
             }
         }
+        if (nmo_chunk_get_position(chunk) > animation_section_end) {
+            return NMO_ERR_TRUNCATED_CHUNK;
+        }
         out_state->animation_count = (uint32_t)anim_count;
         out_state->animation_ids = animation_ids;
         out_state->has_animation_chunk = 1;
     } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
     // Load meshes (identifier CK_STATESAVE_MESHS)
-    seek_result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_MESHS);
+    size_t mesh_section_dwords = 0;
+    seek_result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_MESHS, &mesh_section_dwords);
     if (seek_result == NMO_OK) {
+        if (mesh_section_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
+        const size_t mesh_section_end =
+            nmo_chunk_get_position(chunk) + mesh_section_dwords;
         nmo_ref_t current_mesh = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         result = nmo_ref_read(chunk, &current_mesh);
         if (result != NMO_OK) {
@@ -312,6 +324,9 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
                     NMO_CID_MESH);
             }
         }
+        if (nmo_chunk_get_position(chunk) > mesh_section_end) {
+            return NMO_ERR_TRUNCATED_CHUNK;
+        }
         nmo_ref_check_class(
             &current_mesh,
             (const nmo_object_repository_t *)
@@ -325,13 +340,31 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
     } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
     // Load new-format entity data (identifier CK_STATESAVE_3DENTITYNDATA)
-    seek_result = nmo_chunk_seek_identifier(
-        chunk, CK_STATESAVE_3DENTITYNDATA);
+    size_t entity_data_section_dwords = 0;
+    seek_result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_3DENTITYNDATA, &entity_data_section_dwords);
     if (seek_result == NMO_OK) {
+        if (entity_data_section_dwords < 14u) {
+            return NMO_ERR_TRUNCATED_CHUNK;
+        }
         nmo_3dentity_state_t data = *out_state;
         data.has_entityndata_chunk = 1;
         result = nmo_chunk_read_dword(chunk, &data.entity_flags);
         if (result != NMO_OK) return result;
+
+        size_t required_entity_data_dwords = 14u;
+        if (data.entity_flags & CK_3DENTITY_PLACEVALID) {
+            required_entity_data_dwords++;
+        }
+        if (data.entity_flags & CK_3DENTITY_PARENTVALID) {
+            required_entity_data_dwords++;
+        }
+        if (data.entity_flags & CK_3DENTITY_ZORDERVALID) {
+            required_entity_data_dwords++;
+        }
+        if (entity_data_section_dwords < required_entity_data_dwords) {
+            return NMO_ERR_TRUNCATED_CHUNK;
+        }
 
         result = nmo_chunk_read_dword(chunk, &data.moveable_flags);
         if (result != NMO_OK) return result;
@@ -396,8 +429,11 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
     } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
     // Legacy parent chunk
-    seek_result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PARENT);
+    size_t parent_section_dwords = 0;
+    seek_result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_PARENT, &parent_section_dwords);
     if (seek_result == NMO_OK) {
+        if (parent_section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
         nmo_ref_t parent = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &parent));
         nmo_ref_check_class(
@@ -411,18 +447,22 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
     } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
     // Legacy flags chunk
-    seek_result = nmo_chunk_seek_identifier(
-        chunk, CK_STATESAVE_3DENTITYFLAGS);
+    size_t flags_section_dwords = 0;
+    seek_result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_3DENTITYFLAGS, &flags_section_dwords);
     if (seek_result == NMO_OK) {
+        if (flags_section_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
         out_state->has_flags_chunk = 1;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->entity_flags));
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->moveable_flags));
     } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
     // Legacy matrix chunk
-    seek_result = nmo_chunk_seek_identifier(
-        chunk, CK_STATESAVE_3DENTITYMATRIX);
+    size_t matrix_section_dwords = 0;
+    seek_result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_3DENTITYMATRIX, &matrix_section_dwords);
     if (seek_result == NMO_OK) {
+        if (matrix_section_dwords < 17u) return NMO_ERR_TRUNCATED_CHUNK;
         out_state->has_matrix_chunk = 1;
         NMO_RETURN_IF_ERROR(nmo_chunk_skip(chunk, 1));
         nmo_matrix_t mat;
