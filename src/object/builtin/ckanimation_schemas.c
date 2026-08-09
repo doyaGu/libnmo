@@ -1922,12 +1922,16 @@ static nmo_status_t nmo_animation_deserialize_internal(
     if (section_found) {
         out_state->has_data = 1;
 
-        size_t remaining_dwords = section_dwords;
-        if (remaining_dwords == 0) {
+        const size_t remaining_dwords = section_dwords;
+        if (remaining_dwords == 0u) {
             NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                              "Animation data section is empty");
         }
-        if (remaining_dwords == 3) {
+        if (remaining_dwords != 2u && remaining_dwords != 3u) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Unsupported animation data layout");
+        }
+        if (remaining_dwords == 3u) {
             int32_t can_interrupt = 0;
             int32_t linked_to_framerate = 0;
             float frame_rate = 0.0f;
@@ -1947,19 +1951,10 @@ static nmo_status_t nmo_animation_deserialize_internal(
                 out_state->flags |= CKANIMATION_CANBEBREAK;
             }
             out_state->frame_rate = frame_rate;
-        } else if (remaining_dwords >= 2) {
+        } else {
             nmo_status_t result = nmo_chunk_read_dword(chunk, &out_state->flags);
             if (result != NMO_OK) return result;
             result = nmo_chunk_read_float(chunk, &out_state->frame_rate);
-            if (result != NMO_OK) return result;
-
-            for (size_t i = 2; i < remaining_dwords; ++i) {
-                uint32_t tmp = 0;
-                result = nmo_chunk_read_dword(chunk, &tmp);
-                if (result != NMO_OK) return result;
-            }
-        } else if (remaining_dwords == 1) {
-            nmo_status_t result = nmo_chunk_read_dword(chunk, &out_state->flags);
             if (result != NMO_OK) return result;
         }
     }

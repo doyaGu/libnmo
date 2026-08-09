@@ -15911,6 +15911,49 @@ TEST(chunk_id_remap, animation_sections_do_not_borrow_following_identifiers) {
         ASSERT_EQ(0x12345678u, animation.flags);
     }
 
+    const size_t unsupported_data_sizes[] = {1u, 4u};
+    for (size_t i = 0;
+         i < sizeof(unsupported_data_sizes) /
+             sizeof(unsupported_data_sizes[0]);
+         ++i) {
+        nmo_chunk_t *chunk = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(chunk);
+        chunk->class_id = NMO_CID_ANIMATION;
+        chunk->data_version = 7;
+        chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+        ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+            chunk, CK_STATESAVE_ANIMATIONDATA));
+        for (size_t j = 0; j < unsupported_data_sizes[i]; ++j) {
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0));
+        }
+        nmo_chunk_close(chunk);
+        ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_animation_deserialize(
+            &animation, chunk, NULL, &file_context));
+        ASSERT_EQ(0x12345678u, animation.flags);
+    }
+
+    nmo_chunk_t *old_data = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(old_data);
+    old_data->class_id = NMO_CID_ANIMATION;
+    old_data->data_version = 7;
+    old_data->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(old_data));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        old_data, CK_STATESAVE_ANIMATIONDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(old_data, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(old_data, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_float(old_data, 24.0f));
+    nmo_chunk_close(old_data);
+    nmo_animation_state_t old_animation;
+    ASSERT_EQ(NMO_OK, nmo_animation_vtable.create(
+        &old_animation, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_animation_deserialize(
+        &old_animation, old_data, NULL, &file_context));
+    ASSERT_EQ(CKANIMATION_CANBEBREAK, old_animation.flags);
+    ASSERT_FLOAT_EQ(24.0f, old_animation.frame_rate, 0.0001f);
+    nmo_animation_vtable.destroy(&old_animation, NULL, NULL);
+
     nmo_chunk_t *missing_root = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(missing_root);
     missing_root->class_id = NMO_CID_ANIMATION;
