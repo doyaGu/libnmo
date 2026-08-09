@@ -558,6 +558,14 @@ static nmo_status_t nmo_parameter_validate(
          s->buffer_data.element_size != sizeof(uint8_t))) {
         return NMO_ERR_VALIDATION_FAILED;
     }
+    if (s->mode < CKPARAM_MODE_SUBCHUNK ||
+        s->mode > CKPARAM_MODE_MANAGER) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    if (s->mode == CKPARAM_MODE_MANAGER &&
+        s->manager_guid.d1 <= CKPARAM_MODE_NONE) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
     NMO_RETURN_OK();
 }
 

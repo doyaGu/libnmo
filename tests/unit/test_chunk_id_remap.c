@@ -4766,6 +4766,23 @@ TEST(chunk_id_remap, parameter_object_ref_round_trips_raw_id) {
     ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(target, &marker));
     ASSERT_EQ(0x12345678u, marker);
 
+    invalid = source;
+    invalid.mode = (nmo_parameter_mode_t)99;
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_parameter_serialize(
+        &invalid, target, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
+
+    invalid = source;
+    invalid.mode = CKPARAM_MODE_MANAGER;
+    invalid.manager_guid = (nmo_guid_t){2u, 0x11223344u};
+    invalid.manager_value = 7u;
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_parameter_serialize(
+        &invalid, target, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(target, &marker));
+    ASSERT_EQ(0x12345678u, marker);
+
     nmo_parameter_vtable.destroy(&source, NULL, NULL);
     nmo_parameter_vtable.destroy(&loaded, NULL, NULL);
     nmo_parameter_vtable.destroy(&reloaded, NULL, NULL);
