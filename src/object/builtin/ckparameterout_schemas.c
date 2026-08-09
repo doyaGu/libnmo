@@ -332,11 +332,10 @@ static nmo_status_t nmo_parameterout_validate(
     void *context)
 {
     (void)type;
-    (void)context;
     const nmo_parameterout_state_t *s = instance;
-    size_t buffer_bytes = nmo_array_size(&s->base.buffer_data) *
-                          nmo_array_element_size(&s->base.buffer_data);
-    NMO_VALIDATE_BYTES(nmo_array_data(&s->base.buffer_data), buffer_bytes, "buffer_data");
+    if (s == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    NMO_RETURN_IF_ERROR(nmo_parameter_vtable.validate(
+        &s->base, NULL, context));
     NMO_VALIDATE_COUNT(s->destination_ids, s->destination_count, "destination_ids");
     NMO_RETURN_OK();
 }

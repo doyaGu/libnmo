@@ -340,12 +340,7 @@ static nmo_status_t nmo_parameterlocal_validate(
     if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
     const nmo_parameterlocal_state_t *state =
         (const nmo_parameterlocal_state_t *)instance;
-    (void)context;
-    NMO_VALIDATE_BYTES(
-        state->base.buffer_data.data,
-        state->base.buffer_data.count,
-        "buffer_data");
-    return NMO_OK;
+    return nmo_parameter_vtable.validate(&state->base, NULL, context);
 }
 
 static bool nmo_parameterlocal_base_equals(

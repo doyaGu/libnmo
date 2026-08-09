@@ -488,7 +488,14 @@ static nmo_status_t nmo_parameter_validate(
     (void)type;
     (void)context;
     const nmo_parameter_state_t *s = instance;
+    if (s == NULL) return NMO_ERR_INVALID_ARGUMENT;
     NMO_VALIDATE_BYTES(s->buffer_data.data, s->buffer_data.count, "buffer_data");
+    if ((s->buffer_data.element_size != 0 &&
+         s->buffer_data.element_size != sizeof(uint8_t)) ||
+        (s->buffer_data.count > 0 &&
+         s->buffer_data.element_size != sizeof(uint8_t))) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
     NMO_RETURN_OK();
 }
 

@@ -2833,9 +2833,19 @@ TEST(chunk_id_remap, parameter_object_ref_round_trips_raw_id) {
 TEST(chunk_id_remap, parameter_copy_is_deep_and_atomic) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
     ASSERT_NOT_NULL(arena);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_parameter_vtable.validate(NULL, NULL, NULL));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_parameterlocal_vtable.validate(NULL, NULL, NULL));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_parameterout_vtable.validate(NULL, NULL, NULL));
 
     nmo_parameter_state_t source;
     ASSERT_EQ(NMO_OK, nmo_parameter_vtable.create(&source, NULL, NULL));
+    source.buffer_data.element_size = sizeof(uint16_t);
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,
+              nmo_parameter_vtable.validate(&source, NULL, NULL));
+    source.buffer_data.element_size = sizeof(uint8_t);
     source.type_guid = CKPGUID_INT;
     source.mode = CKPARAM_MODE_BUFFER;
     source.has_state = true;
