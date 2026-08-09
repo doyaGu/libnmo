@@ -2586,6 +2586,18 @@ static nmo_status_t nmo_objectanimation_serialize_internal(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_objectanimation_serialize");
     }
 
+    const uint32_t data_version = nmo_chunk_get_data_version(out_chunk);
+    if (in_state->format == CKOBJANIM_FORMAT_LEGACY) {
+        if (data_version >= 1u) {
+            NMO_RETURN_ERROR(
+                NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                "Legacy object animation requires data version 0");
+        }
+    } else if (data_version == 0u) {
+        out_chunk->data_version = NMO_CHUNK_DATA_VERSION_CURRENT;
+    }
+    NMO_RETURN_IF_ERROR(nmo_chunk_start_write(out_chunk));
+
     {
         nmo_status_t result = nmo_sceneobject_serialize(&in_state->base, out_chunk, NULL, context);
         if (result != NMO_OK) return result;

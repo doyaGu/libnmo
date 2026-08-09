@@ -738,6 +738,63 @@ TEST(objanim_controllers, legacy_scale_axis_roundtrips_without_rotation) {
     nmo_arena_destroy(arena);
 }
 
+TEST(objanim_controllers, objectanimation_enforces_format_version) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NE(NULL, arena);
+    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_deserialize_context_t des_ctx = nmo_deserialize_context_create(
+        arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+
+    nmo_objectanimation_state_t legacy;
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_vtable.create(
+        &legacy, NULL, NULL));
+    legacy.format = CKOBJANIM_FORMAT_LEGACY;
+
+    nmo_chunk_t *preserved = nmo_chunk_create(arena);
+    ASSERT_NE(NULL, preserved);
+    preserved->class_id = NMO_CID_OBJECTANIMATION;
+    preserved->data_version = 7;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(preserved));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        preserved, 0xabcdef01u));
+    nmo_chunk_close(preserved);
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_objectanimation_serialize(
+        &legacy, preserved, NULL, &ser_ctx));
+    ASSERT_EQ(7u, preserved->data_version);
+    ASSERT_EQ(sizeof(uint32_t), nmo_chunk_get_data_size(preserved));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(preserved));
+    uint32_t marker = 0u;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(preserved, &marker));
+    ASSERT_EQ(0xabcdef01u, marker);
+
+    nmo_objectanimation_state_t modern;
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_vtable.create(
+        &modern, NULL, NULL));
+
+    nmo_chunk_t *default_version = nmo_chunk_create(arena);
+    ASSERT_NE(NULL, default_version);
+    default_version->class_id = NMO_CID_OBJECTANIMATION;
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_serialize(
+        &modern, default_version, NULL, &ser_ctx));
+    nmo_chunk_close(default_version);
+    ASSERT_EQ(NMO_CHUNK_DATA_VERSION_CURRENT,
+              default_version->data_version);
+
+    nmo_objectanimation_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_vtable.create(
+        &loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_deserialize(
+        &loaded, default_version, NULL, &des_ctx));
+    ASSERT_EQ(CKOBJANIM_FORMAT_NONE, loaded.format);
+    ASSERT_EQ(0u, loaded.raw_tail_size);
+
+    nmo_objectanimation_vtable.destroy(&legacy, NULL, NULL);
+    nmo_objectanimation_vtable.destroy(&modern, NULL, NULL);
+    nmo_objectanimation_vtable.destroy(&loaded, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(objanim_controllers, legacy_rejects_inconsistent_controller_header) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NE(NULL, arena);
@@ -907,6 +964,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(objanim_controllers, legacy_inactive_merge_section_roundtrips);
     REGISTER_TEST(objanim_controllers, legacy_old_morphkeys_payload_roundtrips);
     REGISTER_TEST(objanim_controllers, legacy_scale_axis_roundtrips_without_rotation);
+    REGISTER_TEST(objanim_controllers, objectanimation_enforces_format_version);
     REGISTER_TEST(objanim_controllers, legacy_rejects_inconsistent_controller_header);
     REGISTER_TEST(objanim_controllers, legacy_rejects_lossy_controller_state);
     REGISTER_TEST(objanim_controllers, copy_controllers);
