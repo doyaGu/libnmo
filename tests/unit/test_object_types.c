@@ -136,6 +136,16 @@ TEST(object_types, register_all_types) {
     ASSERT_TRUE(nmo_guid_equals(skin->type_guid, CKPGUID_CK3DENTITYSKIN));
     ASSERT_TRUE((skin->flags & NMO_FIELD_POINTER) != 0u);
 
+    const nmo_type_descriptor_t *beobject =
+        nmo_type_registry_find_by_guid(registry, CKPGUID_BEOBJECT);
+    ASSERT_NOT_NULL(beobject);
+    const nmo_type_field_t *scripts = nmo_type_get_field_by_name(
+        beobject, "scripts");
+    ASSERT_NOT_NULL(scripts);
+    ASSERT_TRUE(nmo_field_is_array(scripts));
+    ASSERT_TRUE(nmo_field_is_ref(scripts));
+    ASSERT_TRUE(nmo_field_uses_ref_records(scripts));
+
     const nmo_type_descriptor_t *character_subpart =
         nmo_type_registry_find_by_guid(
             registry, NMO_GUID_STRUCT_CKCHARACTERSUBPART);

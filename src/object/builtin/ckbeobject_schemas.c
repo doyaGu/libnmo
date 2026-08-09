@@ -228,7 +228,7 @@ static const nmo_type_field_t nmo_beobject_fields[] = {
                     sizeof(nmo_sceneobject_state_t), CKPGUID_SCENEOBJECT,
                     NMO_FIELD_REQUIRED, 0),
     /* Scripts */
-    NMO_FIELD_ARRAY(nmo_beobject_state_t, scripts, CKPGUID_NONE),
+    NMO_FIELD_REF_RECORD_ARRAY(nmo_beobject_state_t, scripts),
     NMO_FIELD(nmo_beobject_state_t, has_scripts_section, CKPGUID_BOOL),
     NMO_FIELD(nmo_beobject_state_t, scripts_use_legacy_identifier,
               CKPGUID_BOOL),
