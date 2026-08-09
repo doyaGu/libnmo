@@ -17,6 +17,7 @@
 #include "object/builtin/nmo_character_schemas.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_curve_schemas.h"
+#include "object/builtin/nmo_dataarray_schemas.h"
 #include "object/builtin/nmo_grid_schemas.h"
 #include "object/builtin/nmo_group_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
@@ -595,6 +596,39 @@ static nmo_status_t runtime_delete_validate_atomic_refs(
         entity3d->skin->bones == NULL) {
         return NMO_ERR_VALIDATION_FAILED;
     }
+
+    nmo_dataarray_state_t *dataarray = (nmo_dataarray_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            type_rt->types, obj, CKPGUID_DATAARRAY);
+    if (dataarray != NULL) {
+        if ((dataarray->column_count > 0u &&
+             dataarray->column_formats == NULL) ||
+            (dataarray->row_count > 0u && dataarray->rows == NULL)) {
+            return NMO_ERR_VALIDATION_FAILED;
+        }
+        for (uint32_t column = 0u;
+             column < dataarray->column_count;
+             ++column) {
+            switch (dataarray->column_formats[column].type) {
+            case CKARRAYTYPE_INT:
+            case CKARRAYTYPE_FLOAT:
+            case CKARRAYTYPE_STRING:
+            case CKARRAYTYPE_OBJECT:
+            case CKARRAYTYPE_PARAMETER:
+                break;
+            default:
+                return NMO_ERR_VALIDATION_FAILED;
+            }
+        }
+        for (uint32_t row = 0u; row < dataarray->row_count; ++row) {
+            if (dataarray->rows[row].column_count !=
+                    dataarray->column_count ||
+                (dataarray->rows[row].column_count > 0u &&
+                 dataarray->rows[row].cells == NULL)) {
+                return NMO_ERR_VALIDATION_FAILED;
+            }
+        }
+    }
     return NMO_OK;
 }
 
@@ -830,6 +864,30 @@ static nmo_status_t runtime_delete_detach_atomic_refs(
                     nmo_ref_runtime_id(&skin->bones[i].bone))) {
                 skin->bones[i].bone =
                     nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+            }
+        }
+    }
+
+    nmo_dataarray_state_t *dataarray = (nmo_dataarray_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            type_rt->types, obj, CKPGUID_DATAARRAY);
+    if (dataarray != NULL) {
+        for (uint32_t row = 0u; row < dataarray->row_count; ++row) {
+            for (uint32_t column = 0u;
+                 column < dataarray->column_count;
+                 ++column) {
+                nmo_ref_t *ref = NULL;
+                if (dataarray->column_formats[column].type ==
+                        CKARRAYTYPE_OBJECT) {
+                    ref = &dataarray->rows[row].cells[column].object_ref;
+                } else if (dataarray->column_formats[column].type ==
+                               CKARRAYTYPE_PARAMETER) {
+                    ref = &dataarray->rows[row].cells[column].parameter.ref;
+                }
+                if (ref != NULL && runtime_id_set_contains(
+                        delete_set, nmo_ref_runtime_id(ref))) {
+                    *ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+                }
             }
         }
     }

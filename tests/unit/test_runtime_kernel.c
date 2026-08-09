@@ -2787,6 +2787,86 @@ TEST(runtime_kernel, normalize_clears_invalid_dataarray_cells) {
     nmo_context_release(ctx);
 }
 
+TEST(runtime_kernel, safe_detach_clears_dataarray_cells_in_place) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+
+    nmo_object_id_t dataarray_id = 0;
+    nmo_object_id_t deleted_object_id = 0;
+    nmo_object_id_t kept_object_id = 0;
+    nmo_object_id_t deleted_parameter_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_DATAARRAY, "array", NMO_NULL_GUID,
+        &dataarray_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_OBJECT, "deleted-object", NMO_NULL_GUID,
+        &deleted_object_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_OBJECT, "kept-object", NMO_NULL_GUID,
+        &kept_object_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_PARAMETER, "deleted-parameter", NMO_NULL_GUID,
+        &deleted_parameter_id, NULL));
+
+    nmo_dataarray_column_format_t formats[] = {
+        {.type = CKARRAYTYPE_OBJECT},
+        {.type = CKARRAYTYPE_OBJECT},
+        {.type = CKARRAYTYPE_PARAMETER},
+        {.type = CKARRAYTYPE_OBJECT},
+        {.type = CKARRAYTYPE_INT},
+    };
+    nmo_arena_t *chunk_arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(chunk_arena);
+    nmo_chunk_t *parameter_chunk = nmo_chunk_create(chunk_arena);
+    ASSERT_NOT_NULL(parameter_chunk);
+    nmo_dataarray_cell_t cells[5] = {0};
+    cells[0].object_ref = nmo_ref_from_id(deleted_object_id);
+    cells[1].object_ref = nmo_ref_from_id(kept_object_id);
+    cells[2].parameter.ref = nmo_ref_from_id(deleted_parameter_id);
+    cells[2].parameter.chunk = parameter_chunk;
+    cells[3].object_ref = nmo_ref_from_raw(0x7FFFFF43u);
+    cells[4].int_value = 42;
+    nmo_dataarray_row_t row = {
+        .column_count = 5,
+        .cells = cells,
+    };
+    nmo_dataarray_state_t *state = (nmo_dataarray_state_t *)
+        nmo_object_repository_find_by_id(repo, dataarray_id)->state;
+    state->column_count = 5;
+    state->column_formats = formats;
+    state->row_count = 1;
+    state->rows = &row;
+
+    nmo_object_id_t deleted_ids[] = {
+        deleted_object_id,
+        deleted_parameter_id,
+    };
+    nmo_runtime_report_t report = {0};
+    ASSERT_EQ(NMO_OK, nmo_session_destroy_objects(
+        session, deleted_ids, 2,
+        NMO_RUNTIME_REQUEST_STRICT | NMO_RUNTIME_REQUEST_SAFE_DETACH,
+        &report));
+    ASSERT_EQ(2u, report.deleted_objects);
+    ASSERT_EQ(NMO_REF_NONE, cells[0].object_ref.state);
+    ASSERT_EQ(kept_object_id, nmo_ref_runtime_id(&cells[1].object_ref));
+    ASSERT_EQ(NMO_REF_NONE, cells[2].parameter.ref.state);
+    ASSERT_EQ(parameter_chunk, cells[2].parameter.chunk);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, cells[3].object_ref.state);
+    ASSERT_EQ(0x7FFFFF43u, cells[3].object_ref.raw_id);
+    ASSERT_EQ(42, cells[4].int_value);
+    ASSERT_EQ(5u, state->column_count);
+    ASSERT_EQ(1u, state->row_count);
+    ASSERT_EQ(5u, row.column_count);
+
+    nmo_session_destroy(session);
+    nmo_chunk_destroy(parameter_chunk);
+    nmo_arena_destroy(chunk_arena);
+    nmo_context_release(ctx);
+}
+
 TEST(runtime_kernel, normalize_and_safe_detach_keep_place_portals_atomic) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
@@ -2993,6 +3073,7 @@ REGISTER_TEST(runtime_kernel, copy_remap_and_graph_include_skin_bones);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_dataarray_refs);
 REGISTER_TEST(runtime_kernel, normalize_and_safe_detach_preserve_skin_indices);
 REGISTER_TEST(runtime_kernel, normalize_clears_invalid_dataarray_cells);
+REGISTER_TEST(runtime_kernel, safe_detach_clears_dataarray_cells_in_place);
 REGISTER_TEST(runtime_kernel, normalize_and_safe_detach_keep_place_portals_atomic);
 REGISTER_TEST(runtime_kernel, normalize_and_safe_detach_keep_curve_sections_independent);
 TEST_MAIN_END()
