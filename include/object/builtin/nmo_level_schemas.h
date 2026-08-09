@@ -69,6 +69,8 @@ typedef struct nmo_level_state {
 
     uint8_t has_duplicate_manager_section; /**< Presence of LEVELDUPLICATEMAN section */
     nmo_array_t duplicate_manager_names; /**< Duplicate manager names (char *) */
+    uint8_t *duplicate_manager_tail;      /**< Uninterpreted data after the first terminator */
+    size_t duplicate_manager_tail_size;   /**< Size of duplicate_manager_tail in bytes */
 } nmo_level_state_t;
 
 /* =============================================================================

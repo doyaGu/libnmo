@@ -221,7 +221,12 @@ static const nmo_type_field_t nmo_level_fields[] = {
     NMO_FIELD(nmo_level_state_t, has_inactive_manager_section, CKPGUID_UINT8),
     NMO_FIELD_ARRAY(nmo_level_state_t, inactive_manager_guids, CKPGUID_GUID),
     NMO_FIELD(nmo_level_state_t, has_duplicate_manager_section, CKPGUID_UINT8),
-    NMO_FIELD_ARRAY(nmo_level_state_t, duplicate_manager_names, CKPGUID_STRING)
+    NMO_FIELD_ARRAY(nmo_level_state_t, duplicate_manager_names, CKPGUID_STRING),
+    NMO_FIELD_ARRAY_COUNTED_FLAGS(
+        nmo_level_state_t, duplicate_manager_tail,
+        duplicate_manager_tail_size, 1, CKPGUID_UINT8,
+        NMO_FIELD_OPTIONAL, 0),
+    NMO_FIELD(nmo_level_state_t, duplicate_manager_tail_size, CKPGUID_UINT64)
 };
 
 static nmo_status_t nmo_level_validate(
@@ -445,8 +450,6 @@ default_data_done:;
                 nmo_array_dispose(&inactive_guids);
                 return result;
             }
-            out_state->has_duplicate_manager_section = 1;
-
             for (uint32_t i = 0; i < guid_count; i++) {
                 result = nmo_chunk_read_guid(chunk, &guids[i]);
                 if (result != NMO_OK) {
@@ -462,8 +465,15 @@ default_data_done:;
             chunk, CK_STATESAVE_LEVELDUPLICATEMAN,
             &duplicate_section_dwords);
         if (result == NMO_OK) {
+            const size_t duplicate_section_start =
+                nmo_chunk_get_position(chunk);
+            if (duplicate_section_dwords >
+                SIZE_MAX - duplicate_section_start) {
+                nmo_array_dispose(&inactive_guids);
+                return NMO_ERR_INVALID_FORMAT;
+            }
             const size_t duplicate_section_end =
-                nmo_chunk_get_position(chunk) + duplicate_section_dwords;
+                duplicate_section_start + duplicate_section_dwords;
             nmo_array_t duplicate_names;
             result = nmo_array_init(
                 &duplicate_names, sizeof(char *), 0,
@@ -506,10 +516,31 @@ default_data_done:;
                 }
                 *slot = name;
             }
-            if (nmo_chunk_get_position(chunk) < duplicate_section_end) {
+
+            const size_t tail_dwords = duplicate_section_end -
+                nmo_chunk_get_position(chunk);
+            if (tail_dwords > SIZE_MAX / sizeof(uint32_t)) {
                 nmo_array_dispose(&duplicate_names);
                 nmo_array_dispose(&inactive_guids);
-                return NMO_ERR_INVALID_FORMAT;
+                return NMO_ERR_NOMEM;
+            }
+            const size_t tail_size = tail_dwords * sizeof(uint32_t);
+            uint8_t *tail = NULL;
+            if (tail_size > 0u) {
+                tail = nmo_arena_alloc(
+                    chunk->arena, tail_size, alignof(uint32_t));
+                if (tail == NULL) {
+                    nmo_array_dispose(&duplicate_names);
+                    nmo_array_dispose(&inactive_guids);
+                    return NMO_ERR_NOMEM;
+                }
+                result = nmo_chunk_read_and_fill_buffer_nosize_checked(
+                    chunk, tail, tail_size);
+                if (result != NMO_OK) {
+                    nmo_array_dispose(&duplicate_names);
+                    nmo_array_dispose(&inactive_guids);
+                    return result;
+                }
             }
             result = nmo_array_swap(
                 &out_state->duplicate_manager_names, &duplicate_names);
@@ -518,6 +549,9 @@ default_data_done:;
                 nmo_array_dispose(&inactive_guids);
                 return result;
             }
+            out_state->duplicate_manager_tail = tail;
+            out_state->duplicate_manager_tail_size = tail_size;
+            out_state->has_duplicate_manager_section = 1;
         } else if (result != NMO_ERR_NOT_FOUND) {
             nmo_array_dispose(&inactive_guids);
             return result;
@@ -648,13 +682,8 @@ static nmo_status_t nmo_level_serialize_internal(
     const bool write_inactive_manager_section =
         (in_state->has_inactive_manager_section != 0) ||
         (in_state->inactive_manager_guids.count > 0 && in_state->inactive_manager_guids.data) ||
-        (in_state->duplicate_manager_names.count > 0 && in_state->duplicate_manager_names.data);
-    const bool inferred_manager_sections =
-        !in_state->has_inactive_manager_section &&
-        ((in_state->inactive_manager_guids.count > 0 &&
-          in_state->inactive_manager_guids.data) ||
-         (in_state->duplicate_manager_names.count > 0 &&
-          in_state->duplicate_manager_names.data));
+        (in_state->duplicate_manager_names.count > 0 && in_state->duplicate_manager_names.data) ||
+        in_state->duplicate_manager_tail_size > 0u;
 
     if (write_inactive_manager_section) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_LEVELINACTIVEMAN);
@@ -668,7 +697,9 @@ static nmo_status_t nmo_level_serialize_internal(
 
         const bool write_duplicate_manager_section =
             in_state->has_duplicate_manager_section ||
-            inferred_manager_sections;
+            (in_state->duplicate_manager_names.count > 0 &&
+             in_state->duplicate_manager_names.data) ||
+            in_state->duplicate_manager_tail_size > 0u;
         if (write_duplicate_manager_section) {
             /* Section 4: LEVELDUPLICATEMAN (optional) */
             result = nmo_chunk_write_identifier(
@@ -687,6 +718,11 @@ static nmo_status_t nmo_level_serialize_internal(
 
             /* Write NULL terminator */
             result = nmo_chunk_write_string(out_chunk, NULL);
+            if (result != NMO_OK) return result;
+
+            result = nmo_chunk_write_buffer_no_size(
+                out_chunk, in_state->duplicate_manager_tail,
+                in_state->duplicate_manager_tail_size);
             if (result != NMO_OK) return result;
         }
     }
@@ -748,6 +784,11 @@ static nmo_status_t nmo_level_copy(
         &s->duplicate_manager_names);
     if (result != NMO_OK) goto fail;
     nmo_object_array_set_string_lifecycle(&copied.duplicate_manager_names);
+    result = nmo_object_copy_bytes(
+        arena, (void **)&copied.duplicate_manager_tail,
+        s->duplicate_manager_tail, s->duplicate_manager_tail_size);
+    if (result != NMO_OK) goto fail;
+    copied.duplicate_manager_tail_size = s->duplicate_manager_tail_size;
 
 #define NMO_LEVEL_DETACH_SHARED_ARRAY(field) \
     do { \
@@ -852,6 +893,12 @@ static nmo_status_t nmo_level_validate(
             return NMO_ERR_VALIDATION_FAILED;
         }
     }
+    NMO_VALIDATE_BYTES(
+        s->duplicate_manager_tail, s->duplicate_manager_tail_size,
+        "duplicate_manager_tail");
+    if ((s->duplicate_manager_tail_size & 3u) != 0u) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
     NMO_RETURN_OK();
 }
 
@@ -906,6 +953,8 @@ static nmo_status_t nmo_level_pre_delete(
     state->level_scene_chunk = NULL;
     state->inactive_manager_guids.count = 0;
     state->duplicate_manager_names.count = 0;
+    state->duplicate_manager_tail = NULL;
+    state->duplicate_manager_tail_size = 0;
     state->has_inactive_manager_section = 0;
     state->has_duplicate_manager_section = 0;
     NMO_RETURN_OK();

@@ -13210,14 +13210,67 @@ TEST(chunk_id_remap, level_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
         trailing_manager_names, 0x12345678u));
     nmo_chunk_close(trailing_manager_names);
-    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_level_deserialize(
+    ASSERT_EQ(NMO_OK, nmo_level_deserialize(
         &failed_scenes, trailing_manager_names, NULL, &deserialize_context));
-    ASSERT_EQ(old_inactive_guids, failed_scenes.inactive_manager_guids.data);
-    ASSERT_EQ(old_duplicate_names, failed_scenes.duplicate_manager_names.data);
-    ASSERT_EQ(1u, failed_scenes.inactive_manager_guids.count);
+    ASSERT_EQ(1u, failed_scenes.has_inactive_manager_section);
+    ASSERT_EQ(1u, failed_scenes.has_duplicate_manager_section);
+    ASSERT_EQ(0u, failed_scenes.inactive_manager_guids.count);
     ASSERT_EQ(1u, failed_scenes.duplicate_manager_names.count);
-    ASSERT_STR_EQ("old-manager", NMO_ARRAY_DATA(
+    ASSERT_STR_EQ("duplicate-manager", NMO_ARRAY_DATA(
         const char *, &failed_scenes.duplicate_manager_names)[0]);
+    ASSERT_EQ(sizeof(uint32_t), failed_scenes.duplicate_manager_tail_size);
+    uint32_t manager_tail = 0;
+    memcpy(&manager_tail, failed_scenes.duplicate_manager_tail,
+           sizeof(manager_tail));
+    ASSERT_EQ(0x12345678u, manager_tail);
+
+    nmo_chunk_t *trailing_manager_names_saved = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(trailing_manager_names_saved);
+    trailing_manager_names_saved->class_id = NMO_CID_LEVEL;
+    trailing_manager_names_saved->data_version = 7;
+    trailing_manager_names_saved->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_level_serialize(
+        &failed_scenes, trailing_manager_names_saved, NULL,
+        &serialize_context));
+    nmo_chunk_close(trailing_manager_names_saved);
+
+    nmo_level_state_t trailing_manager_names_reloaded;
+    ASSERT_EQ(NMO_OK, nmo_level_vtable.create(
+        &trailing_manager_names_reloaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_level_deserialize(
+        &trailing_manager_names_reloaded, trailing_manager_names_saved,
+        NULL, &deserialize_context));
+    ASSERT_EQ(1u,
+              trailing_manager_names_reloaded.duplicate_manager_names.count);
+    ASSERT_STR_EQ("duplicate-manager", NMO_ARRAY_DATA(
+        const char *,
+        &trailing_manager_names_reloaded.duplicate_manager_names)[0]);
+    ASSERT_EQ(sizeof(uint32_t),
+              trailing_manager_names_reloaded.duplicate_manager_tail_size);
+    manager_tail = 0;
+    memcpy(&manager_tail,
+           trailing_manager_names_reloaded.duplicate_manager_tail,
+           sizeof(manager_tail));
+    ASSERT_EQ(0x12345678u, manager_tail);
+
+    nmo_level_state_t trailing_manager_names_copy;
+    ASSERT_EQ(NMO_OK, nmo_level_vtable.create(
+        &trailing_manager_names_copy, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_level_vtable.copy(
+        &trailing_manager_names_reloaded, &trailing_manager_names_copy,
+        &level_type, arena));
+    ASSERT_NE(trailing_manager_names_reloaded.duplicate_manager_tail,
+              trailing_manager_names_copy.duplicate_manager_tail);
+    ASSERT_EQ(sizeof(uint32_t),
+              trailing_manager_names_copy.duplicate_manager_tail_size);
+    manager_tail = 0;
+    memcpy(&manager_tail, trailing_manager_names_copy.duplicate_manager_tail,
+           sizeof(manager_tail));
+    ASSERT_EQ(0x12345678u, manager_tail);
+    ASSERT_TRUE(nmo_level_vtable.equals(
+        &trailing_manager_names_reloaded, &trailing_manager_names_copy));
+    ASSERT_EQ(nmo_level_vtable.hash(&trailing_manager_names_reloaded),
+              nmo_level_vtable.hash(&trailing_manager_names_copy));
 
     nmo_chunk_t *truncated_scalars = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(truncated_scalars);
@@ -13361,6 +13414,9 @@ TEST(chunk_id_remap, level_refs_round_trip_and_failure_is_atomic) {
     nmo_level_vtable.destroy(&copied, NULL, NULL);
     nmo_level_vtable.destroy(&copy_failed, NULL, NULL);
     nmo_level_vtable.destroy(&failed_scenes, NULL, NULL);
+    nmo_level_vtable.destroy(
+        &trailing_manager_names_reloaded, NULL, NULL);
+    nmo_level_vtable.destroy(&trailing_manager_names_copy, NULL, NULL);
     nmo_level_vtable.destroy(&failed_legacy_alloc, NULL, NULL);
     nmo_level_vtable.destroy(&failed_scalars, NULL, NULL);
     nmo_level_vtable.destroy(&invalid, NULL, NULL);
