@@ -872,6 +872,19 @@ TEST(chunk_id_remap, behavior_layout_defaults_preserve_legacy_absence) {
     ASSERT_EQ(NMO_OK, nmo_behaviorio_deserialize(
         &io, legacy_io, NULL, NULL));
     ASSERT_FALSE(io.has_flags);
+    ASSERT_EQ(NMO_CKOBJECT_VISIBLE, io.base.visibility_flags);
+
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_chunk_t *saved_io = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(saved_io);
+    saved_io->class_id = NMO_CID_BEHAVIORIO;
+    saved_io->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_behaviorio_serialize(
+        &io, saved_io, NULL, &serialize_context));
+    nmo_chunk_close(saved_io);
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_chunk_seek_identifier(
+        saved_io, CK_STATESAVE_BEHAV_IOFLAGS));
 
     nmo_chunk_t *legacy_link = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(legacy_link);
@@ -887,7 +900,86 @@ TEST(chunk_id_remap, behavior_layout_defaults_preserve_legacy_absence) {
         &link, legacy_link, NULL, NULL));
     ASSERT_FALSE(link.has_format);
     ASSERT_FALSE(link.use_new_format);
+    ASSERT_EQ(NMO_CKOBJECT_VISIBLE, link.base.visibility_flags);
 
+    nmo_chunk_t *saved_empty_link = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(saved_empty_link);
+    saved_empty_link->class_id = NMO_CID_BEHAVIORLINK;
+    saved_empty_link->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_behaviorlink_serialize(
+        &link, saved_empty_link, NULL, &serialize_context));
+    nmo_chunk_close(saved_empty_link);
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_chunk_seek_identifier(
+        saved_empty_link, CK_STATESAVE_BEHAV_LINK_NEWDATA));
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_chunk_seek_identifier(
+        saved_empty_link, CK_STATESAVE_BEHAV_LINK_CURDELAY));
+
+    nmo_chunk_t *legacy_sections = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(legacy_sections);
+    legacy_sections->class_id = NMO_CID_BEHAVIORLINK;
+    legacy_sections->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(legacy_sections));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        legacy_sections, CK_STATESAVE_BEHAV_LINK_CURDELAY));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(legacy_sections, 4));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        legacy_sections, CK_STATESAVE_BEHAV_LINK_IOS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(
+        legacy_sections, 501));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(
+        legacy_sections, 502));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        legacy_sections, CK_STATESAVE_BEHAV_LINK_DELAY));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(legacy_sections, 9));
+    nmo_chunk_close(legacy_sections);
+
+    nmo_behaviorlink_state_t legacy_state;
+    ASSERT_EQ(NMO_OK, nmo_behaviorlink_vtable.create(
+        &legacy_state, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_behaviorlink_deserialize(
+        &legacy_state, legacy_sections, NULL, NULL));
+    ASSERT_TRUE(legacy_state.has_format);
+    ASSERT_FALSE(legacy_state.use_new_format);
+    ASSERT_TRUE(legacy_state.has_legacy_curdelay);
+    ASSERT_TRUE(legacy_state.has_legacy_ios);
+    ASSERT_TRUE(legacy_state.has_legacy_delay);
+
+    nmo_chunk_t *saved_legacy_link = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(saved_legacy_link);
+    saved_legacy_link->class_id = NMO_CID_BEHAVIORLINK;
+    saved_legacy_link->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_behaviorlink_serialize(
+        &legacy_state, saved_legacy_link, NULL, &serialize_context));
+    nmo_chunk_close(saved_legacy_link);
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_chunk_seek_identifier(
+        saved_legacy_link, CK_STATESAVE_BEHAV_LINK_NEWDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
+        saved_legacy_link, CK_STATESAVE_BEHAV_LINK_CURDELAY));
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
+        saved_legacy_link, CK_STATESAVE_BEHAV_LINK_IOS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
+        saved_legacy_link, CK_STATESAVE_BEHAV_LINK_DELAY));
+
+    nmo_behaviorio_state_t io_copy;
+    nmo_behaviorlink_state_t link_copy;
+    ASSERT_EQ(NMO_OK, nmo_behaviorio_vtable.create(
+        &io_copy, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_behaviorlink_vtable.create(
+        &link_copy, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_behaviorio_vtable.copy(
+        &io, &io_copy, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_behaviorlink_vtable.copy(
+        &legacy_state, &link_copy, NULL, NULL));
+    ASSERT_TRUE(nmo_behaviorio_vtable.equals(&io, &io_copy));
+    ASSERT_TRUE(nmo_behaviorlink_vtable.equals(&legacy_state, &link_copy));
+    ASSERT_EQ(nmo_behaviorio_vtable.hash(&io),
+              nmo_behaviorio_vtable.hash(&io_copy));
+    ASSERT_EQ(nmo_behaviorlink_vtable.hash(&legacy_state),
+              nmo_behaviorlink_vtable.hash(&link_copy));
+
+    nmo_behaviorlink_vtable.destroy(&link_copy, NULL, NULL);
+    nmo_behaviorio_vtable.destroy(&io_copy, NULL, NULL);
+    nmo_behaviorlink_vtable.destroy(&legacy_state, NULL, NULL);
     nmo_behaviorlink_vtable.destroy(&link, NULL, NULL);
     nmo_behaviorio_vtable.destroy(&io, NULL, NULL);
     nmo_arena_destroy(arena);

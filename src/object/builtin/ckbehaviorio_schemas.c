@@ -30,8 +30,13 @@
 NMO_DEFINE_OBJECT_LIFECYCLE(
     behaviorio,
     nmo_behaviorio_state_t,
-    state->has_flags = true,
-    ((void)0))
+    do {
+        nmo_status_t result = nmo_object_vtable.create(
+            &state->base, NULL, context);
+        if (result != NMO_OK) return result;
+        state->has_flags = true;
+    } while (0),
+    nmo_object_vtable.destroy(&state->base, NULL, context))
 
 /* =============================================================================
  * REFLECTION FIELDS
@@ -39,7 +44,7 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
 
 static const nmo_type_field_t nmo_behaviorio_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_behaviorio_state_t, base),
-                    sizeof(nmo_object_state_t), CKPGUID_NONE,
+                    sizeof(nmo_object_state_t), CKPGUID_OBJECT,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_behaviorio_state_t, old_flags, CKPGUID_UINT32),
     NMO_FIELD(nmo_behaviorio_state_t, has_flags, CKPGUID_BOOL)
@@ -159,7 +164,8 @@ static nmo_status_t nmo_behaviorio_serialize_internal(
         }
     }
 
-    /* CKBehaviorIO::Save always writes IOFLAGS in file context */
+    if (!in_state->has_flags) return NMO_OK;
+
     result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_BEHAV_IOFLAGS);
     if (result != NMO_OK) return result;
 
@@ -260,7 +266,54 @@ static void nmo_behaviorio_post_delete(
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_STATE_OPS(behaviorio, nmo_behaviorio_state_t)
+static nmo_status_t nmo_behaviorio_copy(
+    const void *src,
+    void *dst,
+    const nmo_type_descriptor_t *type,
+    nmo_arena_t *arena)
+{
+    (void)type;
+    (void)arena;
+    if (src == NULL || dst == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    if (src != dst) *(nmo_behaviorio_state_t *)dst =
+        *(const nmo_behaviorio_state_t *)src;
+    return NMO_OK;
+}
+
+static nmo_status_t nmo_behaviorio_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    const nmo_behaviorio_state_t *state = instance;
+    return nmo_object_vtable.validate(&state->base, NULL, context);
+}
+
+static bool nmo_behaviorio_equals(const void *a, const void *b)
+{
+    if (a == b) return true;
+    if (a == NULL || b == NULL) return false;
+    const nmo_behaviorio_state_t *lhs = a;
+    const nmo_behaviorio_state_t *rhs = b;
+    return nmo_object_vtable.equals(&lhs->base, &rhs->base) &&
+        lhs->old_flags == rhs->old_flags &&
+        lhs->has_flags == rhs->has_flags;
+}
+
+static uint32_t nmo_behaviorio_hash(const void *instance)
+{
+    if (instance == NULL) return 0;
+    const nmo_behaviorio_state_t *state = instance;
+    uint32_t hash = nmo_object_vtable.hash(&state->base);
+    hash ^= (uint32_t)nmo_hash_fnv1a(
+        &state->old_flags, sizeof(state->old_flags));
+    hash *= 16777619u;
+    hash ^= (uint32_t)nmo_hash_fnv1a(
+        &state->has_flags, sizeof(state->has_flags));
+    return hash;
+}
 
 nmo_type_vtable_t nmo_behaviorio_vtable = {
     .prepare_dependencies = nmo_behaviorio_prepare_dependencies,

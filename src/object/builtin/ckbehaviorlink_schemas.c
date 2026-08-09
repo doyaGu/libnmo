@@ -30,13 +30,16 @@
 NMO_DEFINE_OBJECT_LIFECYCLE(
     behaviorlink,
     nmo_behaviorlink_state_t,
-    do { \
-        state->activation_delay = 1; \
-        state->initial_activation_delay = 1; \
-        state->has_format = true; \
-        state->use_new_format = true; \
+    do {
+        nmo_status_t result = nmo_object_vtable.create(
+            &state->base, NULL, context);
+        if (result != NMO_OK) return result;
+        state->activation_delay = 1;
+        state->initial_activation_delay = 1;
+        state->has_format = true;
+        state->use_new_format = true;
     } while (0),
-    ((void)0))
+    nmo_object_vtable.destroy(&state->base, NULL, context))
 
 /* =============================================================================
  * REFLECTION FIELDS
@@ -44,7 +47,7 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
 
 static const nmo_type_field_t nmo_behaviorlink_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_behaviorlink_state_t, base),
-                    sizeof(nmo_object_state_t), CKPGUID_NONE,
+                    sizeof(nmo_object_state_t), CKPGUID_OBJECT,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_behaviorlink_state_t, activation_delay, CKPGUID_INT16),
     NMO_FIELD(nmo_behaviorlink_state_t, initial_activation_delay, CKPGUID_INT16),
@@ -242,9 +245,9 @@ static nmo_status_t nmo_behaviorlink_serialize_internal(
         }
     }
 
-    const bool use_new_format = true;
+    if (!in_state->has_format) return NMO_OK;
 
-    if (use_new_format) {
+    if (in_state->use_new_format) {
         /* Write new format identifier */
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_BEHAV_LINK_NEWDATA);
         if (result != NMO_OK) return result;
@@ -380,7 +383,85 @@ static void nmo_behaviorlink_post_delete(
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_STATE_OPS(behaviorlink, nmo_behaviorlink_state_t)
+static nmo_status_t nmo_behaviorlink_copy(
+    const void *src,
+    void *dst,
+    const nmo_type_descriptor_t *type,
+    nmo_arena_t *arena)
+{
+    (void)type;
+    (void)arena;
+    if (src == NULL || dst == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    if (src != dst) *(nmo_behaviorlink_state_t *)dst =
+        *(const nmo_behaviorlink_state_t *)src;
+    return NMO_OK;
+}
+
+static nmo_status_t nmo_behaviorlink_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    const nmo_behaviorlink_state_t *state = instance;
+    return nmo_object_vtable.validate(&state->base, NULL, context);
+}
+
+static bool nmo_behaviorlink_ref_equals(
+    const nmo_ref_t *lhs,
+    const nmo_ref_t *rhs)
+{
+    return lhs->raw_id == rhs->raw_id &&
+        lhs->id == rhs->id &&
+        lhs->state == rhs->state;
+}
+
+static bool nmo_behaviorlink_equals(const void *a, const void *b)
+{
+    if (a == b) return true;
+    if (a == NULL || b == NULL) return false;
+    const nmo_behaviorlink_state_t *lhs = a;
+    const nmo_behaviorlink_state_t *rhs = b;
+    return nmo_object_vtable.equals(&lhs->base, &rhs->base) &&
+        lhs->activation_delay == rhs->activation_delay &&
+        lhs->initial_activation_delay == rhs->initial_activation_delay &&
+        nmo_behaviorlink_ref_equals(&lhs->in_io, &rhs->in_io) &&
+        nmo_behaviorlink_ref_equals(&lhs->out_io, &rhs->out_io) &&
+        lhs->has_format == rhs->has_format &&
+        lhs->use_new_format == rhs->use_new_format &&
+        lhs->has_legacy_curdelay == rhs->has_legacy_curdelay &&
+        lhs->has_legacy_ios == rhs->has_legacy_ios &&
+        lhs->has_legacy_delay == rhs->has_legacy_delay;
+}
+
+static uint32_t nmo_behaviorlink_hash(const void *instance)
+{
+    if (instance == NULL) return 0;
+    const nmo_behaviorlink_state_t *state = instance;
+    uint32_t hash = nmo_object_vtable.hash(&state->base);
+#define NMO_BEHAVIORLINK_HASH_FIELD(field) \
+    do { \
+        hash ^= (uint32_t)nmo_hash_fnv1a( \
+            &state->field, sizeof(state->field)); \
+        hash *= 16777619u; \
+    } while (0)
+    NMO_BEHAVIORLINK_HASH_FIELD(activation_delay);
+    NMO_BEHAVIORLINK_HASH_FIELD(initial_activation_delay);
+    NMO_BEHAVIORLINK_HASH_FIELD(in_io.raw_id);
+    NMO_BEHAVIORLINK_HASH_FIELD(in_io.id);
+    NMO_BEHAVIORLINK_HASH_FIELD(in_io.state);
+    NMO_BEHAVIORLINK_HASH_FIELD(out_io.raw_id);
+    NMO_BEHAVIORLINK_HASH_FIELD(out_io.id);
+    NMO_BEHAVIORLINK_HASH_FIELD(out_io.state);
+    NMO_BEHAVIORLINK_HASH_FIELD(has_format);
+    NMO_BEHAVIORLINK_HASH_FIELD(use_new_format);
+    NMO_BEHAVIORLINK_HASH_FIELD(has_legacy_curdelay);
+    NMO_BEHAVIORLINK_HASH_FIELD(has_legacy_ios);
+    NMO_BEHAVIORLINK_HASH_FIELD(has_legacy_delay);
+#undef NMO_BEHAVIORLINK_HASH_FIELD
+    return hash;
+}
 
 nmo_type_vtable_t nmo_behaviorlink_vtable = {
     .prepare_dependencies = nmo_behaviorlink_prepare_dependencies,
