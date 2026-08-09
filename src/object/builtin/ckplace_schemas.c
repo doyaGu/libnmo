@@ -76,12 +76,20 @@ static size_t nmo_place_identifier_remaining_dwords(
     return next_pos - state->current_pos;
 }
 
+static nmo_status_t nmo_place_restore_read_position(
+    nmo_chunk_t *chunk,
+    size_t position,
+    nmo_status_t error)
+{
+    nmo_status_t result = nmo_chunk_goto(chunk, position);
+    return result == NMO_OK ? error : result;
+}
+
 static nmo_status_t nmo_place_deserialize_internal(
     nmo_place_state_t *out_state,
     nmo_chunk_t *chunk,
     void *context)
 {
-    nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
     if (!chunk || !out_state) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_place_deserialize");
     }
@@ -195,13 +203,18 @@ static nmo_status_t nmo_place_deserialize_internal(
         if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
         const size_t section_end =
             nmo_chunk_get_position(chunk) + section_dwords;
-        nmo_ref_t *refs = NULL;
+        const size_t sequence_start = nmo_chunk_get_position(chunk);
         size_t count = 0;
-        nmo_status_t result = nmo_ref_read_sequence(
-            chunk, &refs, &count, arena);
-        if (result != NMO_OK) return result;
-        if (nmo_chunk_get_position(chunk) != section_end) {
-            return NMO_ERR_INVALID_FORMAT;
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_object_sequence_start(
+            chunk, &count));
+        if (count > (size_t)INT32_MAX ||
+            count > SIZE_MAX / sizeof(nmo_ref_t)) {
+            return nmo_place_restore_read_position(
+                chunk, sequence_start, NMO_ERR_INVALID_FORMAT);
+        }
+        if (count > nmo_place_identifier_remaining_dwords(chunk)) {
+            return nmo_place_restore_read_position(
+                chunk, sequence_start, NMO_ERR_TRUNCATED_CHUNK);
         }
         nmo_array_t references = {0};
         const nmo_allocator_t *allocator =
@@ -209,14 +222,29 @@ static nmo_status_t nmo_place_deserialize_internal(
                 ? &out_state->references.allocator : NULL;
         result = nmo_array_init(
             &references, sizeof(nmo_ref_t), count, allocator);
-        if (result != NMO_OK) return result;
+        if (result != NMO_OK) {
+            return nmo_place_restore_read_position(
+                chunk, sequence_start, result);
+        }
         nmo_ref_t *dest = NULL;
         result = nmo_array_extend(&references, count, (void **)&dest);
         if (result != NMO_OK) {
             nmo_array_dispose(&references);
-            return result;
+            return nmo_place_restore_read_position(
+                chunk, sequence_start, result);
         }
-        if (count > 0) memcpy(dest, refs, sizeof(nmo_ref_t) * count);
+        for (size_t i = 0; result == NMO_OK && i < count; ++i) {
+            result = nmo_ref_read(chunk, &dest[i]);
+        }
+        if (result != NMO_OK) {
+            nmo_array_dispose(&references);
+            return nmo_place_restore_read_position(
+                chunk, sequence_start, result);
+        }
+        if (nmo_chunk_get_position(chunk) != section_end) {
+            nmo_array_dispose(&references);
+            return NMO_ERR_INVALID_FORMAT;
+        }
         NMO_RETURN_IF_ERROR(nmo_array_swap(&out_state->references, &references));
         nmo_array_dispose(&references);
     } else if (result != NMO_ERR_NOT_FOUND) return result;
