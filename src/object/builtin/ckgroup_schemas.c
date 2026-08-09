@@ -32,6 +32,10 @@
 #include <string.h>
 
 static void nmo_group_dispose_state_arrays(nmo_group_state_t *state);
+static nmo_status_t nmo_group_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 NMO_DEFINE_OBJECT_LIFECYCLE(
     group,
@@ -52,10 +56,8 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
 static void nmo_group_dispose_state_arrays(nmo_group_state_t *state)
 {
     if (state == NULL) return;
-    nmo_array_dispose(&state->base.scripts);
-    nmo_array_dispose(&state->base.attributes);
-    nmo_array_dispose(&state->base.legacy_attributes);
     nmo_array_dispose(&state->object_ids);
+    nmo_beobject_vtable.destroy(&state->base, NULL, NULL);
 }
 
 static size_t nmo_group_identifier_remaining_dwords(
@@ -334,30 +336,43 @@ static nmo_status_t nmo_group_copy(
 {
     const nmo_group_state_t *s = src;
     nmo_group_state_t *d = dst;
-    NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
+    (void)type;
+    if (s == NULL || d == NULL || arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    NMO_RETURN_IF_ERROR(nmo_group_validate(s, NULL, NULL));
+
+    nmo_group_state_t copied;
+    nmo_status_t result = nmo_group_create(&copied, NULL, NULL);
+    if (result != NMO_OK) return result;
+    result = nmo_beobject_vtable.copy(
+        &s->base, &copied.base, NULL, arena);
+    if (result != NMO_OK) goto fail;
+    nmo_array_dispose(&copied.object_ids);
+    result = nmo_array_clone(
+        &s->object_ids, &copied.object_ids, &s->object_ids.allocator);
+    if (result != NMO_OK) goto fail;
+
     if (d->base.scripts.data == s->base.scripts.data) {
         memset(&d->base.scripts, 0, sizeof(d->base.scripts));
-    } else {
-        nmo_array_dispose(&d->base.scripts);
     }
-    if (s->base.scripts.element_size == 0) {
-        NMO_RETURN_IF_ERROR(nmo_array_init(
-            &d->base.scripts, sizeof(nmo_ref_t), 0, NULL));
-    } else {
-        NMO_RETURN_IF_ERROR(nmo_array_clone(
-            &s->base.scripts, &d->base.scripts,
-            &s->base.scripts.allocator));
+    if (d->base.attributes.data == s->base.attributes.data) {
+        memset(&d->base.attributes, 0, sizeof(d->base.attributes));
     }
-    NMO_RETURN_IF_ERROR(nmo_beobject_clone_attributes(
-        arena, &d->base.attributes, &s->base.attributes));
-    NMO_RETURN_IF_ERROR(nmo_beobject_clone_legacy_attributes(
-        arena, &d->base.legacy_attributes, &s->base.legacy_attributes));
+    if (d->base.legacy_attributes.data == s->base.legacy_attributes.data) {
+        memset(&d->base.legacy_attributes, 0,
+               sizeof(d->base.legacy_attributes));
+    }
     if (d->object_ids.data == s->object_ids.data) {
         memset(&d->object_ids, 0, sizeof(d->object_ids));
-    } else {
-        nmo_array_dispose(&d->object_ids);
     }
-    return nmo_array_clone(&s->object_ids, &d->object_ids, &s->object_ids.allocator);
+    nmo_group_destroy(d, NULL, NULL);
+    *d = copied;
+    return NMO_OK;
+
+fail:
+    nmo_group_destroy(&copied, NULL, NULL);
+    return result;
 }
 
 static bool nmo_group_equals(const void *a, const void *b)

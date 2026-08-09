@@ -6621,6 +6621,26 @@ TEST(chunk_id_remap, group_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(nmo_group_vtable.hash(&reloaded),
               nmo_group_vtable.hash(&copied));
 
+    nmo_group_state_t copy_failed;
+    ASSERT_EQ(NMO_OK, nmo_group_vtable.create(
+        &copy_failed, NULL, NULL));
+    copy_failed.base.priority = 77;
+    nmo_ref_t copy_old_ref = nmo_ref_from_raw(906);
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &copy_failed.object_ids, &copy_old_ref));
+    void *copy_old_data = copy_failed.object_ids.data;
+    nmo_allocator_t source_allocator = reloaded.object_ids.allocator;
+    reloaded.object_ids.allocator = nmo_allocator_custom(
+        beobject_fail_alloc, beobject_fail_free, NULL);
+    ASSERT_EQ(NMO_ERR_NOMEM, nmo_group_vtable.copy(
+        &reloaded, &copy_failed, &group_type, arena));
+    reloaded.object_ids.allocator = source_allocator;
+    ASSERT_EQ(77, copy_failed.base.priority);
+    ASSERT_EQ(copy_old_data, copy_failed.object_ids.data);
+    ASSERT_EQ(1u, copy_failed.object_ids.count);
+    ASSERT_EQ(906u, NMO_ARRAY_DATA(
+        nmo_ref_t, &copy_failed.object_ids)[0].raw_id);
+
     nmo_chunk_t *truncated = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(truncated);
     truncated->class_id = NMO_CID_GROUP;
@@ -6635,8 +6655,6 @@ TEST(chunk_id_remap, group_refs_round_trip_and_failure_is_atomic) {
 
     nmo_group_state_t failed;
     ASSERT_EQ(NMO_OK, nmo_group_vtable.create(&failed, NULL, NULL));
-    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(
-        &failed.base, NULL, NULL));
     ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
         &failed.base.scripts, 899));
     nmo_ref_t old_ref = nmo_ref_from_raw(904);
@@ -6717,9 +6735,7 @@ TEST(chunk_id_remap, group_refs_round_trip_and_failure_is_atomic) {
     nmo_group_vtable.destroy(&loaded, NULL, NULL);
     nmo_group_vtable.destroy(&reloaded, NULL, NULL);
     nmo_group_vtable.destroy(&copied, NULL, NULL);
-    nmo_array_dispose(&failed.base.scripts);
-    nmo_array_dispose(&failed.base.attributes);
-    nmo_array_dispose(&failed.base.legacy_attributes);
+    nmo_group_vtable.destroy(&copy_failed, NULL, NULL);
     nmo_group_vtable.destroy(&failed, NULL, NULL);
     nmo_group_vtable.destroy(&failed_negative, NULL, NULL);
     nmo_group_vtable.destroy(&invalid, NULL, NULL);
