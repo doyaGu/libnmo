@@ -44,6 +44,7 @@ typedef struct nmo_parameterin_state {
     nmo_object_state_t base;
 
     nmo_guid_t type_guid;              /**< Parameter type GUID */
+    nmo_ref_t legacy_prefix_ref;        /**< Preserved v1-v4 prefix reference */
     nmo_ref_t source;                  /**< Source parameter (direct or shared) */
     nmo_ref_t owner;                   /**< Owner behavior (legacy/default data) */
     uint8_t is_shared;                 /**< TRUE if shared input, FALSE if direct source */

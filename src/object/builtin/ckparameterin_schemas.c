@@ -60,6 +60,7 @@ static const nmo_type_field_t nmo_parameterin_fields[] = {
                     sizeof(nmo_object_state_t), CKPGUID_OBJECT,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_parameterin_state_t, type_guid, CKPGUID_GUID),
+    NMO_FIELD_REF(nmo_parameterin_state_t, legacy_prefix_ref),
     NMO_FIELD_REF(nmo_parameterin_state_t, source),
     NMO_FIELD_REF(nmo_parameterin_state_t, owner),
     NMO_FIELD(nmo_parameterin_state_t, is_shared, CKPGUID_UINT8),
@@ -130,6 +131,8 @@ static nmo_status_t nmo_parameterin_deserialize_internal(
 
     const uint32_t data_version = nmo_chunk_get_data_version(chunk);
     nmo_guid_t type_guid = NMO_GUID_NULL;
+    nmo_ref_t legacy_prefix_ref =
+        nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     nmo_ref_t source = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     nmo_ref_t owner = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     uint8_t is_shared = 0;
@@ -142,8 +145,8 @@ static nmo_status_t nmo_parameterin_deserialize_internal(
             NMO_RETURN_IF_ERROR(nmo_chunk_read_guid(chunk, &type_guid));
             nmo_parameterin_convert_legacy_guid(&type_guid);
             if (data_version < 5) {
-                nmo_ref_t legacy = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
-                NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &legacy));
+                NMO_RETURN_IF_ERROR(nmo_ref_read(
+                    chunk, &legacy_prefix_ref));
             }
             NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &source));
             is_shared = 1;
@@ -154,8 +157,8 @@ static nmo_status_t nmo_parameterin_deserialize_internal(
                 NMO_RETURN_IF_ERROR(nmo_chunk_read_guid(chunk, &type_guid));
                 nmo_parameterin_convert_legacy_guid(&type_guid);
                 if (data_version < 5) {
-                    nmo_ref_t legacy = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
-                    NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &legacy));
+                    NMO_RETURN_IF_ERROR(nmo_ref_read(
+                        chunk, &legacy_prefix_ref));
                 }
                 NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &source));
             } else if (result == NMO_ERR_NOT_FOUND) {
@@ -228,6 +231,7 @@ static nmo_status_t nmo_parameterin_deserialize_internal(
     nmo_ref_check_class(&owner, repository, types, NMO_CID_BEHAVIOR);
     nmo_parameterin_check_source(&source, repository, types);
     out_state->type_guid = type_guid;
+    out_state->legacy_prefix_ref = legacy_prefix_ref;
     out_state->source = source;
     out_state->owner = owner;
     out_state->is_shared = is_shared;
@@ -273,12 +277,19 @@ static nmo_status_t nmo_parameterin_serialize_internal(
     }
 
     /* Write base CKObject state (merged into this chunk by AddChunkAndDelete) */
+    const uint32_t data_version = nmo_chunk_get_data_version(out_chunk);
+    if ((data_version < 1u || data_version >= 5u) &&
+        nmo_ref_serialized_id(&in_state->legacy_prefix_ref) !=
+            NMO_OBJECT_ID_NONE) {
+        NMO_RETURN_ERROR(
+            NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+            "ParameterIn layout cannot store the legacy prefix reference");
+    }
+
     result = nmo_object_serialize(&in_state->base, out_chunk, NULL, context);
     if (result != NMO_OK) return result;
 
     /* Write identifier based on shared/direct source */
-    const uint32_t data_version = nmo_chunk_get_data_version(out_chunk);
-
     if (data_version < 1) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_PARAMETERIN_DEFAULTDATA);
         if (result != NMO_OK) return result;
@@ -347,7 +358,7 @@ static nmo_status_t nmo_parameterin_serialize_internal(
     if (result != NMO_OK) return result;
 
     if (data_version < 5) {
-        result = nmo_ref_write(out_chunk, &in_state->source);
+        result = nmo_ref_write(out_chunk, &in_state->legacy_prefix_ref);
         if (result != NMO_OK) return result;
     }
 
@@ -440,6 +451,7 @@ static nmo_status_t nmo_parameterin_pre_delete(
     nmo_parameterin_state_t *state = (nmo_parameterin_state_t *)instance;
     state->source = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     state->owner = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+    state->legacy_prefix_ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     NMO_RETURN_OK();
 }
 
@@ -499,6 +511,8 @@ static bool nmo_parameterin_equals(const void *a, const void *b)
     const nmo_parameterin_state_t *rhs = b;
     return nmo_object_vtable.equals(&lhs->base, &rhs->base) &&
         nmo_guid_equals(lhs->type_guid, rhs->type_guid) &&
+        nmo_parameterin_ref_equals(
+            &lhs->legacy_prefix_ref, &rhs->legacy_prefix_ref) &&
         nmo_parameterin_ref_equals(&lhs->source, &rhs->source) &&
         nmo_parameterin_ref_equals(&lhs->owner, &rhs->owner) &&
         lhs->is_shared == rhs->is_shared &&
@@ -518,6 +532,9 @@ static uint32_t nmo_parameterin_hash(const void *instance)
     } while (0)
     NMO_PARAMETERIN_HASH_FIELD(type_guid.d1);
     NMO_PARAMETERIN_HASH_FIELD(type_guid.d2);
+    NMO_PARAMETERIN_HASH_FIELD(legacy_prefix_ref.raw_id);
+    NMO_PARAMETERIN_HASH_FIELD(legacy_prefix_ref.id);
+    NMO_PARAMETERIN_HASH_FIELD(legacy_prefix_ref.state);
     NMO_PARAMETERIN_HASH_FIELD(source.raw_id);
     NMO_PARAMETERIN_HASH_FIELD(source.id);
     NMO_PARAMETERIN_HASH_FIELD(source.state);

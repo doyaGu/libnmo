@@ -2676,6 +2676,73 @@ TEST(chunk_id_remap, parameterin_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(694u, reloaded.owner.raw_id);
     ASSERT_EQ(NMO_REF_UNRESOLVED, reloaded.owner.state);
 
+    nmo_parameterin_state_t legacy_prefix_source;
+    ASSERT_EQ(NMO_OK, nmo_parameterin_vtable.create(
+        &legacy_prefix_source, NULL, NULL));
+    legacy_prefix_source.type_guid = (nmo_guid_t){11u, 12u};
+    legacy_prefix_source.legacy_prefix_ref = nmo_ref_from_raw(697);
+    legacy_prefix_source.source = nmo_ref_from_raw(698);
+    nmo_chunk_t *legacy_prefix = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(legacy_prefix);
+    legacy_prefix->class_id = NMO_CID_PARAMETERIN;
+    legacy_prefix->data_version = 4;
+    legacy_prefix->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(legacy_prefix, &write_context);
+    ASSERT_EQ(NMO_OK, nmo_parameterin_serialize(
+        &legacy_prefix_source, legacy_prefix, NULL,
+        &file_serialize_context));
+    nmo_chunk_close(legacy_prefix);
+    size_t legacy_prefix_dwords = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        legacy_prefix, CK_STATESAVE_PARAMETERIN_DATASOURCE,
+        &legacy_prefix_dwords));
+    ASSERT_EQ(4u, legacy_prefix_dwords);
+    nmo_chunk_set_file_context(legacy_prefix, &read_context);
+    nmo_parameterin_state_t legacy_prefix_loaded;
+    ASSERT_EQ(NMO_OK, nmo_parameterin_vtable.create(
+        &legacy_prefix_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_parameterin_deserialize(
+        &legacy_prefix_loaded, legacy_prefix, NULL,
+        &deserialize_context));
+    ASSERT_EQ(697u, legacy_prefix_loaded.legacy_prefix_ref.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED,
+              legacy_prefix_loaded.legacy_prefix_ref.state);
+    ASSERT_EQ(698u, legacy_prefix_loaded.source.raw_id);
+
+    nmo_chunk_t *legacy_prefix_saved = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(legacy_prefix_saved);
+    legacy_prefix_saved->class_id = NMO_CID_PARAMETERIN;
+    legacy_prefix_saved->data_version = 4;
+    legacy_prefix_saved->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(legacy_prefix_saved, &write_context);
+    ASSERT_EQ(NMO_OK, nmo_parameterin_serialize(
+        &legacy_prefix_loaded, legacy_prefix_saved, NULL,
+        &file_serialize_context));
+    nmo_chunk_close(legacy_prefix_saved);
+    nmo_chunk_set_file_context(legacy_prefix_saved, &read_context);
+    nmo_parameterin_state_t legacy_prefix_reloaded;
+    ASSERT_EQ(NMO_OK, nmo_parameterin_vtable.create(
+        &legacy_prefix_reloaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_parameterin_deserialize(
+        &legacy_prefix_reloaded, legacy_prefix_saved, NULL,
+        &deserialize_context));
+    ASSERT_EQ(697u, legacy_prefix_reloaded.legacy_prefix_ref.raw_id);
+    ASSERT_EQ(698u, legacy_prefix_reloaded.source.raw_id);
+
+    nmo_chunk_t *lossy_prefix_target = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(lossy_prefix_target);
+    lossy_prefix_target->class_id = NMO_CID_PARAMETERIN;
+    lossy_prefix_target->data_version = 8;
+    lossy_prefix_target->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(lossy_prefix_target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        lossy_prefix_target, 0x12345678u));
+    nmo_chunk_close(lossy_prefix_target);
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_parameterin_serialize(
+        &legacy_prefix_loaded, lossy_prefix_target, NULL,
+        &file_serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(lossy_prefix_target));
+
     nmo_parameterin_state_t legacy_source;
     ASSERT_EQ(NMO_OK, nmo_parameterin_vtable.create(
         &legacy_source, NULL, NULL));
@@ -2765,6 +2832,9 @@ TEST(chunk_id_remap, parameterin_refs_round_trip_and_failure_is_atomic) {
     nmo_parameterin_vtable.destroy(&remapped, NULL, NULL);
     nmo_parameterin_vtable.destroy(&loaded, NULL, NULL);
     nmo_parameterin_vtable.destroy(&reloaded, NULL, NULL);
+    nmo_parameterin_vtable.destroy(&legacy_prefix_source, NULL, NULL);
+    nmo_parameterin_vtable.destroy(&legacy_prefix_loaded, NULL, NULL);
+    nmo_parameterin_vtable.destroy(&legacy_prefix_reloaded, NULL, NULL);
     nmo_parameterin_vtable.destroy(&legacy_source, NULL, NULL);
     nmo_parameterin_vtable.destroy(&legacy_loaded, NULL, NULL);
     nmo_parameterin_vtable.destroy(&failed, NULL, NULL);
