@@ -32,7 +32,7 @@ typedef struct nmo_3dentity_skin_vertex {
 } nmo_3dentity_skin_vertex_t;
 
 typedef struct nmo_3dentity_skin_bone {
-    nmo_object_id_t bone_id;
+    nmo_ref_t bone;
     uint32_t bone_flags;
     nmo_matrix_t inverse_bind_matrix;
 } nmo_3dentity_skin_bone_t;

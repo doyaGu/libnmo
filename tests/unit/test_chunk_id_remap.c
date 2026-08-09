@@ -6568,6 +6568,15 @@ TEST(chunk_id_remap, entity_scalar_refs_round_trip_unresolved_raw_ids) {
     source3d.has_entityndata_chunk = 1;
     source3d.place = nmo_ref_from_raw(722);
     source3d.parent = nmo_ref_from_raw(723);
+    nmo_3dentity_skin_bone_t source_bone = {
+        .bone = nmo_ref_from_raw(724),
+        .bone_flags = 3,
+    };
+    nmo_3dentity_skin_t source_skin = {
+        .bone_count = 1,
+        .bones = &source_bone,
+    };
+    source3d.skin = &source_skin;
 
     nmo_chunk_t *first3d = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(first3d);
@@ -6599,6 +6608,10 @@ TEST(chunk_id_remap, entity_scalar_refs_round_trip_unresolved_raw_ids) {
     ASSERT_EQ(NMO_REF_UNRESOLVED, loaded3d.place.state);
     ASSERT_EQ(723u, loaded3d.parent.raw_id);
     ASSERT_EQ(NMO_REF_UNRESOLVED, loaded3d.parent.state);
+    ASSERT_NOT_NULL(loaded3d.skin);
+    ASSERT_EQ(1u, loaded3d.skin->bone_count);
+    ASSERT_EQ(724u, loaded3d.skin->bones[0].bone.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, loaded3d.skin->bones[0].bone.state);
 
     nmo_chunk_t *second3d = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(second3d);
@@ -6630,6 +6643,10 @@ TEST(chunk_id_remap, entity_scalar_refs_round_trip_unresolved_raw_ids) {
     ASSERT_EQ(NMO_REF_UNRESOLVED, reloaded3d.place.state);
     ASSERT_EQ(723u, reloaded3d.parent.raw_id);
     ASSERT_EQ(NMO_REF_UNRESOLVED, reloaded3d.parent.state);
+    ASSERT_NOT_NULL(reloaded3d.skin);
+    ASSERT_EQ(1u, reloaded3d.skin->bone_count);
+    ASSERT_EQ(724u, reloaded3d.skin->bones[0].bone.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, reloaded3d.skin->bones[0].bone.state);
 
     nmo_3dentity_state_t copied3d;
     nmo_type_descriptor_t entity_type = {
@@ -6640,6 +6657,8 @@ TEST(chunk_id_remap, entity_scalar_refs_round_trip_unresolved_raw_ids) {
         &reloaded3d, &copied3d, &entity_type, arena));
     ASSERT_NE(reloaded3d.mesh_ids, copied3d.mesh_ids);
     ASSERT_NE(reloaded3d.animation_ids, copied3d.animation_ids);
+    ASSERT_NE(reloaded3d.skin, copied3d.skin);
+    ASSERT_NE(reloaded3d.skin->bones, copied3d.skin->bones);
     ASSERT_TRUE(nmo_3dentity_vtable.equals(&reloaded3d, &copied3d));
     ASSERT_EQ(nmo_3dentity_vtable.hash(&reloaded3d),
               nmo_3dentity_vtable.hash(&copied3d));
@@ -6742,7 +6761,7 @@ TEST(chunk_id_remap, entity_content_equality_ignores_storage_addresses) {
             _Alignof(nmo_3dentity_skin_bone_t));
         ASSERT_NOT_NULL(states[i].skin->bones);
         memset(states[i].skin->bones, 0, sizeof(*states[i].skin->bones));
-        states[i].skin->bones[0].bone_id = 301;
+        states[i].skin->bones[0].bone = nmo_ref_from_raw(301);
         states[i].skin->bones[0].bone_flags = 3;
         states[i].skin->bones[0].inverse_bind_matrix.m[1][1] = 1.0f;
 
@@ -7763,6 +7782,16 @@ TEST(chunk_id_remap, entity_serializer_does_not_publish_partial_chunk) {
     invalid_vertex.bone_count = 1;
     invalid_skin.vertices = &invalid_vertex;
     ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_3dentity_serialize(
+        &state, target, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
+
+    nmo_3dentity_skin_bone_t unmapped_bone = {
+        .bone = nmo_ref_from_id(124),
+    };
+    invalid_skin.bone_count = 1;
+    invalid_skin.bones = &unmapped_bone;
+    invalid_skin.vertex_count = 0;
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_3dentity_serialize(
         &state, target, NULL, &serialize_context));
     ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
 

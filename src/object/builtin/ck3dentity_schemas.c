@@ -490,7 +490,14 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
         }
 
         for (uint32_t i = 0; i < out_state->skin->bone_count; ++i) {
-            NMO_RETURN_IF_ERROR(nmo_chunk_read_object_sequence_item(chunk, &out_state->skin->bones[i].bone_id));
+            NMO_RETURN_IF_ERROR(nmo_ref_read(
+                chunk, &out_state->skin->bones[i].bone));
+            nmo_ref_check_class(
+                &out_state->skin->bones[i].bone,
+                (const nmo_object_repository_t *)
+                    nmo_deserialize_context_get_repository(context),
+                nmo_deserialize_context_get_type_registry(context),
+                NMO_CID_3DENTITY);
         }
 
         for (uint32_t i = 0; i < out_state->skin->bone_count; ++i) {
@@ -865,7 +872,8 @@ static nmo_status_t nmo_3dentity_serialize_internal(
         result = nmo_chunk_write_object_sequence_start(out_chunk, skin->bone_count);
         if (result != NMO_OK) return result;
         for (uint32_t i = 0; i < skin->bone_count; ++i) {
-            result = nmo_chunk_write_object_sequence_item(out_chunk, skin->bones[i].bone_id);
+            result = nmo_ref_write_sequence_item(
+                out_chunk, &skin->bones[i].bone);
             if (result != NMO_OK) return result;
         }
 
@@ -1085,7 +1093,8 @@ static bool nmo_3dentity_skin_equals(
     }
 
     for (uint32_t i = 0; i < lhs->bone_count; ++i) {
-        if (lhs->bones[i].bone_id != rhs->bones[i].bone_id ||
+        if (!nmo_3dentity_ref_equals(
+                &lhs->bones[i].bone, &rhs->bones[i].bone) ||
             lhs->bones[i].bone_flags != rhs->bones[i].bone_flags ||
             memcmp(&lhs->bones[i].inverse_bind_matrix,
                    &rhs->bones[i].inverse_bind_matrix,
@@ -1179,8 +1188,7 @@ static uint32_t nmo_3dentity_hash_skin(
     hash = nmo_3dentity_hash_bytes(
         hash, &skin->bone_count, sizeof(skin->bone_count));
     for (uint32_t i = 0; i < skin->bone_count && skin->bones != NULL; ++i) {
-        hash = nmo_3dentity_hash_bytes(
-            hash, &skin->bones[i].bone_id, sizeof(skin->bones[i].bone_id));
+        hash = nmo_3dentity_hash_ref(hash, &skin->bones[i].bone);
         hash = nmo_3dentity_hash_bytes(
             hash, &skin->bones[i].bone_flags,
             sizeof(skin->bones[i].bone_flags));

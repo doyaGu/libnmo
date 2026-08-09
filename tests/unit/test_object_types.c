@@ -112,6 +112,17 @@ TEST(object_types, register_all_types) {
     ASSERT_TRUE(nmo_field_uses_ref_records(&portal_entry->fields[1]));
     ASSERT_FALSE(nmo_field_is_array(&portal_entry->fields[1]));
 
+    const nmo_type_descriptor_t *skin_bone =
+        nmo_type_registry_find_by_guid(
+            registry, CKPGUID_CK3DENTITYSKINBONE);
+    ASSERT_NOT_NULL(skin_bone);
+    ASSERT_EQ(sizeof(nmo_3dentity_skin_bone_t), skin_bone->size);
+    ASSERT_EQ(3u, skin_bone->field_count);
+    ASSERT_EQ(sizeof(nmo_ref_t), skin_bone->fields[0].size);
+    ASSERT_TRUE(nmo_field_is_ref(&skin_bone->fields[0]));
+    ASSERT_TRUE(nmo_field_uses_ref_records(&skin_bone->fields[0]));
+    ASSERT_FALSE(nmo_field_is_array(&skin_bone->fields[0]));
+
     nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
 }

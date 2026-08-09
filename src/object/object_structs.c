@@ -174,7 +174,7 @@ nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry) {
 
     /* CK3dEntitySkinBone */
     static const nmo_struct_field_def_t ck3dentityskinbone_fields[] = {
-        NMO_STRUCT_FIELD_GUID_FLAGS("bone_id", CKPGUID_ID, NMO_FIELD_REFERENCE),
+        NMO_STRUCT_FIELD_REF_RECORD("bone"),
         NMO_STRUCT_FIELD_GUID("bone_flags", CKPGUID_UINT32),
         NMO_STRUCT_FIELD_GUID("inverse_bind_matrix", CKPGUID_MATRIX)
     };
