@@ -2158,6 +2158,24 @@ TEST(chunk_id_remap, parameterin_refs_round_trip_and_failure_is_atomic) {
     source.owner = nmo_ref_from_raw(694);
     source.is_shared = 1;
     source.is_disabled = 1;
+    ASSERT_EQ(NMO_CKOBJECT_VISIBLE, source.base.visibility_flags);
+
+    nmo_parameterin_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_parameterin_vtable.create(
+        &copied, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_parameterin_vtable.copy(
+        &source, &copied, NULL, NULL));
+    ASSERT_TRUE(nmo_parameterin_vtable.equals(&source, &copied));
+    ASSERT_EQ(nmo_parameterin_vtable.hash(&source),
+              nmo_parameterin_vtable.hash(&copied));
+    copied.source.raw_id++;
+    ASSERT_FALSE(nmo_parameterin_vtable.equals(&source, &copied));
+
+    nmo_parameterin_state_t remapped = source;
+    remapped.type_guid = CKPGUID_OLDMESSAGE;
+    ASSERT_EQ(NMO_OK, nmo_parameterin_remap_dependencies(
+        &remapped, NULL, NULL));
+    ASSERT_TRUE(nmo_guid_equals(CKPGUID_OLDMESSAGE, remapped.type_guid));
 
     nmo_chunk_t *first = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(first);
@@ -2288,6 +2306,8 @@ TEST(chunk_id_remap, parameterin_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(0x12345678u, marker);
 
     nmo_parameterin_vtable.destroy(&source, NULL, NULL);
+    nmo_parameterin_vtable.destroy(&copied, NULL, NULL);
+    nmo_parameterin_vtable.destroy(&remapped, NULL, NULL);
     nmo_parameterin_vtable.destroy(&loaded, NULL, NULL);
     nmo_parameterin_vtable.destroy(&reloaded, NULL, NULL);
     nmo_parameterin_vtable.destroy(&legacy_source, NULL, NULL);
@@ -3406,6 +3426,18 @@ TEST(chunk_id_remap, kinematicchain_unresolved_refs_round_trip_atomically) {
     source.has_chain_data = 1;
     source.start_effector = nmo_ref_from_raw(111);
     source.end_effector = nmo_ref_from_raw(222);
+    ASSERT_EQ(NMO_CKOBJECT_VISIBLE, source.base.visibility_flags);
+
+    nmo_kinematicchain_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_kinematicchain_vtable.create(
+        &copied, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_kinematicchain_vtable.copy(
+        &source, &copied, NULL, NULL));
+    ASSERT_TRUE(nmo_kinematicchain_vtable.equals(&source, &copied));
+    ASSERT_EQ(nmo_kinematicchain_vtable.hash(&source),
+              nmo_kinematicchain_vtable.hash(&copied));
+    copied.end_effector.raw_id++;
+    ASSERT_FALSE(nmo_kinematicchain_vtable.equals(&source, &copied));
 
     nmo_chunk_file_context_t write_context = {
         .runtime_to_file = runtime_to_file,
@@ -3493,6 +3525,7 @@ TEST(chunk_id_remap, kinematicchain_unresolved_refs_round_trip_atomically) {
     ASSERT_EQ(0x12345678u, marker);
 
     nmo_kinematicchain_vtable.destroy(&source, NULL, NULL);
+    nmo_kinematicchain_vtable.destroy(&copied, NULL, NULL);
     nmo_kinematicchain_vtable.destroy(&loaded, NULL, NULL);
     nmo_kinematicchain_vtable.destroy(&absent, NULL, NULL);
     nmo_arena_destroy(arena);

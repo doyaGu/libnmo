@@ -27,7 +27,15 @@
 #include "nmo_types.h"
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(parameterin, nmo_parameterin_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE(
+    parameterin,
+    nmo_parameterin_state_t,
+    do {
+        nmo_status_t result = nmo_object_vtable.create(
+            &state->base, NULL, context);
+        if (result != NMO_OK) return result;
+    } while (0),
+    nmo_object_vtable.destroy(&state->base, NULL, context))
 
 static void nmo_parameterin_convert_legacy_guid(nmo_guid_t *guid) {
     if (guid == NULL) {
@@ -49,7 +57,7 @@ static void nmo_parameterin_convert_legacy_guid(nmo_guid_t *guid) {
 
 static const nmo_type_field_t nmo_parameterin_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_parameterin_state_t, base),
-                    sizeof(nmo_object_state_t), CKPGUID_NONE,
+                    sizeof(nmo_object_state_t), CKPGUID_OBJECT,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_parameterin_state_t, type_guid, CKPGUID_GUID),
     NMO_FIELD_REF(nmo_parameterin_state_t, source),
@@ -414,8 +422,6 @@ nmo_status_t nmo_parameterin_remap_dependencies(
 
     NMO_RETURN_IF_ERROR(nmo_object_remap_dependencies(&state->base, NULL, context));
 
-    nmo_parameterin_convert_legacy_guid(&state->type_guid);
-
     /* Preserve unresolved source/owner references and authored flags. */
     return nmo_object_default_validate(state, NULL, NULL);
 }
@@ -451,7 +457,78 @@ static void nmo_parameterin_post_delete(
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_STATE_OPS(parameterin, nmo_parameterin_state_t)
+static nmo_status_t nmo_parameterin_copy(
+    const void *src,
+    void *dst,
+    const nmo_type_descriptor_t *type,
+    nmo_arena_t *arena)
+{
+    (void)type;
+    (void)arena;
+    if (src == NULL || dst == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    if (src != dst) *(nmo_parameterin_state_t *)dst =
+        *(const nmo_parameterin_state_t *)src;
+    return NMO_OK;
+}
+
+static nmo_status_t nmo_parameterin_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    const nmo_parameterin_state_t *state = instance;
+    return nmo_object_vtable.validate(&state->base, NULL, context);
+}
+
+static bool nmo_parameterin_ref_equals(
+    const nmo_ref_t *lhs,
+    const nmo_ref_t *rhs)
+{
+    return lhs->raw_id == rhs->raw_id &&
+        lhs->id == rhs->id &&
+        lhs->state == rhs->state;
+}
+
+static bool nmo_parameterin_equals(const void *a, const void *b)
+{
+    if (a == b) return true;
+    if (a == NULL || b == NULL) return false;
+    const nmo_parameterin_state_t *lhs = a;
+    const nmo_parameterin_state_t *rhs = b;
+    return nmo_object_vtable.equals(&lhs->base, &rhs->base) &&
+        nmo_guid_equals(lhs->type_guid, rhs->type_guid) &&
+        nmo_parameterin_ref_equals(&lhs->source, &rhs->source) &&
+        nmo_parameterin_ref_equals(&lhs->owner, &rhs->owner) &&
+        lhs->is_shared == rhs->is_shared &&
+        lhs->is_disabled == rhs->is_disabled;
+}
+
+static uint32_t nmo_parameterin_hash(const void *instance)
+{
+    if (instance == NULL) return 0;
+    const nmo_parameterin_state_t *state = instance;
+    uint32_t hash = nmo_object_vtable.hash(&state->base);
+#define NMO_PARAMETERIN_HASH_FIELD(field) \
+    do { \
+        hash ^= (uint32_t)nmo_hash_fnv1a( \
+            &state->field, sizeof(state->field)); \
+        hash *= 16777619u; \
+    } while (0)
+    NMO_PARAMETERIN_HASH_FIELD(type_guid.d1);
+    NMO_PARAMETERIN_HASH_FIELD(type_guid.d2);
+    NMO_PARAMETERIN_HASH_FIELD(source.raw_id);
+    NMO_PARAMETERIN_HASH_FIELD(source.id);
+    NMO_PARAMETERIN_HASH_FIELD(source.state);
+    NMO_PARAMETERIN_HASH_FIELD(owner.raw_id);
+    NMO_PARAMETERIN_HASH_FIELD(owner.id);
+    NMO_PARAMETERIN_HASH_FIELD(owner.state);
+    NMO_PARAMETERIN_HASH_FIELD(is_shared);
+    NMO_PARAMETERIN_HASH_FIELD(is_disabled);
+#undef NMO_PARAMETERIN_HASH_FIELD
+    return hash;
+}
 
 nmo_type_vtable_t nmo_parameterin_vtable = {
     .prepare_dependencies = nmo_parameterin_prepare_dependencies,
