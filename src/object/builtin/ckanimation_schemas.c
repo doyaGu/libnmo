@@ -1927,20 +1927,24 @@ static nmo_status_t nmo_keyedanimation_deserialize_internal(
         uint32_t count = 0;
         result = nmo_chunk_read_dword(chunk, &count);
         if (result != NMO_OK) return result;
-        if (count > 10000u) {
-            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
-                             "Subanim count exceeds maximum");
-        }
         const size_t remaining_dwords =
             nmo_animation_identifier_remaining_dwords(chunk);
         if ((size_t)count > remaining_dwords / 2u) {
             NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                              "Subanim count exceeds identifier payload");
         }
+        size_t allocation_size = 0;
+        if (!nmo_safe_mul_size(
+                (size_t)count,
+                sizeof(nmo_keyedanimation_subanim_t),
+                &allocation_size)) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Subanim array size exceeds platform limits");
+        }
         if (count > 0) {
             nmo_keyedanimation_subanim_t *subanims =
                 (nmo_keyedanimation_subanim_t *)nmo_arena_alloc(
-                arena, sizeof(nmo_keyedanimation_subanim_t) * count,
+                arena, allocation_size,
                 _Alignof(nmo_keyedanimation_subanim_t));
             if (!subanims) {
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate subanim array");

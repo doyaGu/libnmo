@@ -10213,6 +10213,40 @@ TEST(chunk_id_remap, keyedanimation_sections_round_trip_independently) {
     ASSERT_EQ(1u, reloaded.subanim_count);
     ASSERT_EQ(921u, reloaded.subanims[0].ref.raw_id);
 
+    const uint32_t large_count = 10001u;
+    nmo_keyedanimation_subanim_t *large_subanims = nmo_arena_alloc(
+        arena, sizeof(*large_subanims) * large_count,
+        _Alignof(nmo_keyedanimation_subanim_t));
+    ASSERT_NOT_NULL(large_subanims);
+    memset(large_subanims, 0, sizeof(*large_subanims) * large_count);
+    for (uint32_t i = 0; i < large_count; ++i) {
+        large_subanims[i].ref = nmo_ref_from_raw(
+            (nmo_object_id_t)(i + 1u));
+    }
+    nmo_keyedanimation_state_t large;
+    ASSERT_EQ(NMO_OK, nmo_keyedanimation_vtable.create(
+        &large, NULL, NULL));
+    large.subanim_count = large_count;
+    large.subanims = large_subanims;
+    nmo_chunk_t *large_chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(large_chunk);
+    large_chunk->class_id = NMO_CID_KEYEDANIMATION;
+    large_chunk->chunk_version = NMO_CHUNK_VERSION4;
+    large_chunk->data_version = 7;
+    ASSERT_EQ(NMO_OK, nmo_keyedanimation_serialize(
+        &large, large_chunk, NULL, &serialize_context));
+    nmo_chunk_close(large_chunk);
+    nmo_keyedanimation_state_t large_loaded;
+    ASSERT_EQ(NMO_OK, nmo_keyedanimation_vtable.create(
+        &large_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_keyedanimation_deserialize(
+        &large_loaded, large_chunk, NULL, &deserialize_context));
+    ASSERT_EQ(large_count, large_loaded.subanim_count);
+    ASSERT_EQ(1u, large_loaded.subanims[0].ref.raw_id);
+    ASSERT_EQ(large_count,
+              large_loaded.subanims[large_count - 1u].ref.raw_id);
+    ASSERT_NULL(large_loaded.subanims[large_count - 1u].chunk);
+
     nmo_keyedanimation_state_t copied;
     ASSERT_EQ(NMO_OK, nmo_keyedanimation_vtable.create(
         &copied, NULL, NULL));
@@ -10302,6 +10336,8 @@ TEST(chunk_id_remap, keyedanimation_sections_round_trip_independently) {
     nmo_keyedanimation_vtable.destroy(&source, NULL, NULL);
     nmo_keyedanimation_vtable.destroy(&loaded, NULL, NULL);
     nmo_keyedanimation_vtable.destroy(&reloaded, NULL, NULL);
+    nmo_keyedanimation_vtable.destroy(&large, NULL, NULL);
+    nmo_keyedanimation_vtable.destroy(&large_loaded, NULL, NULL);
     nmo_keyedanimation_vtable.destroy(&copied, NULL, NULL);
     nmo_keyedanimation_vtable.destroy(&failed_copy, NULL, NULL);
     nmo_keyedanimation_vtable.destroy(&failed, NULL, NULL);
