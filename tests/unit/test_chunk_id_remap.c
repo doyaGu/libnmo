@@ -12068,6 +12068,45 @@ TEST(chunk_id_remap, place_refs_round_trip_and_truncation_is_atomic) {
     ASSERT_EQ(800u, NMO_ARRAY_DATA(
         nmo_ref_t, &no_context_state.references)[0].raw_id);
 
+    nmo_chunk_t *empty_array_sections = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(empty_array_sections);
+    empty_array_sections->class_id = NMO_CID_PLACE;
+    empty_array_sections->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(empty_array_sections));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        empty_array_sections, CK_STATESAVE_PLACEPORTALS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(empty_array_sections, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        empty_array_sections, CK_STATESAVE_PLACEREFERENCES));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(
+        empty_array_sections, 0));
+    nmo_chunk_close(empty_array_sections);
+    nmo_place_state_t empty_array_state;
+    ASSERT_EQ(NMO_OK, nmo_place_vtable.create(
+        &empty_array_state, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_place_deserialize(
+        &empty_array_state, empty_array_sections, NULL,
+        &deserialize_context));
+    ASSERT_EQ(1u, empty_array_state.has_portals);
+    ASSERT_EQ(1u, empty_array_state.has_references);
+    nmo_chunk_t *empty_array_saved = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(empty_array_saved);
+    empty_array_saved->class_id = NMO_CID_PLACE;
+    empty_array_saved->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_place_serialize(
+        &empty_array_state, empty_array_saved, NULL,
+        &serialize_context));
+    nmo_chunk_close(empty_array_saved);
+    size_t empty_section_dwords = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        empty_array_saved, CK_STATESAVE_PLACEPORTALS,
+        &empty_section_dwords));
+    ASSERT_EQ(1u, empty_section_dwords);
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        empty_array_saved, CK_STATESAVE_PLACEREFERENCES,
+        &empty_section_dwords));
+    ASSERT_EQ(1u, empty_section_dwords);
+
     source.has_camera = 1;
     source.camera = nmo_ref_from_raw(801);
     source.has_level = 1;
@@ -12511,6 +12550,7 @@ TEST(chunk_id_remap, place_refs_round_trip_and_truncation_is_atomic) {
 
     nmo_place_vtable.destroy(&source, NULL, NULL);
     nmo_place_vtable.destroy(&no_context_state, NULL, NULL);
+    nmo_place_vtable.destroy(&empty_array_state, NULL, NULL);
     nmo_place_vtable.destroy(&loaded, NULL, NULL);
     nmo_place_vtable.destroy(&reloaded, NULL, NULL);
     nmo_place_vtable.destroy(&copied, NULL, NULL);

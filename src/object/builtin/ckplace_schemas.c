@@ -195,6 +195,7 @@ static nmo_status_t nmo_place_deserialize_internal(
         }
         NMO_RETURN_IF_ERROR(nmo_array_swap(&out_state->portals, &portals));
         nmo_array_dispose(&portals);
+        out_state->has_portals = 1;
     } else if (result != NMO_ERR_NOT_FOUND) return result;
 
     result = nmo_chunk_seek_identifier_with_size(
@@ -247,6 +248,7 @@ static nmo_status_t nmo_place_deserialize_internal(
         }
         NMO_RETURN_IF_ERROR(nmo_array_swap(&out_state->references, &references));
         nmo_array_dispose(&references);
+        out_state->has_references = 1;
     } else if (result != NMO_ERR_NOT_FOUND) return result;
 
     NMO_RETURN_OK();
@@ -260,7 +262,9 @@ static const nmo_type_field_t nmo_place_fields[] = {
     NMO_FIELD_REF_VALUE(nmo_place_state_t, camera),
     NMO_FIELD(nmo_place_state_t, has_level, CKPGUID_UINT8),
     NMO_FIELD_REF_VALUE(nmo_place_state_t, level),
+    NMO_FIELD(nmo_place_state_t, has_portals, CKPGUID_UINT8),
     NMO_FIELD_ARRAY(nmo_place_state_t, portals, NMO_GUID_STRUCT_CKPLACEPORTALENTRY),
+    NMO_FIELD(nmo_place_state_t, has_references, CKPGUID_UINT8),
     NMO_FIELD_REF_RECORD_ARRAY(nmo_place_state_t, references)
 };
 
@@ -288,6 +292,8 @@ static nmo_status_t nmo_place_copy(
     copied.camera = s->camera;
     copied.has_level = s->has_level;
     copied.level = s->level;
+    copied.has_portals = s->has_portals;
+    copied.has_references = s->has_references;
 
     nmo_array_dispose(&copied.portals);
     result = nmo_array_clone(
@@ -352,7 +358,9 @@ static bool nmo_place_equals(const void *a, const void *b)
         nmo_place_ref_equals(&lhs->camera, &rhs->camera) &&
         lhs->has_level == rhs->has_level &&
         nmo_place_ref_equals(&lhs->level, &rhs->level) &&
+        lhs->has_portals == rhs->has_portals &&
         nmo_place_array_equals(&lhs->portals, &rhs->portals) &&
+        lhs->has_references == rhs->has_references &&
         nmo_place_array_equals(&lhs->references, &rhs->references);
 }
 
@@ -393,6 +401,8 @@ static uint32_t nmo_place_hash(const void *instance)
     hash = nmo_place_hash_bytes(
         hash, &state->level.state, sizeof(state->level.state));
     hash = nmo_place_hash_bytes(
+        hash, &state->has_portals, sizeof(state->has_portals));
+    hash = nmo_place_hash_bytes(
         hash, &state->portals.count, sizeof(state->portals.count));
     hash = nmo_place_hash_bytes(
         hash, &state->portals.element_size,
@@ -405,6 +415,8 @@ static uint32_t nmo_place_hash(const void *instance)
             state->portals.data,
             state->portals.count * state->portals.element_size);
     }
+    hash = nmo_place_hash_bytes(
+        hash, &state->has_references, sizeof(state->has_references));
     hash = nmo_place_hash_bytes(
         hash, &state->references.count, sizeof(state->references.count));
     hash = nmo_place_hash_bytes(
@@ -431,6 +443,10 @@ static nmo_status_t nmo_place_validate(
     if (s == NULL) return NMO_ERR_INVALID_ARGUMENT;
     NMO_RETURN_IF_ERROR(nmo_3dentity_vtable.validate(
         &s->base, NULL, context));
+    if (s->has_camera > 1u || s->has_level > 1u ||
+        s->has_portals > 1u || s->has_references > 1u) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
     NMO_VALIDATE_COUNT(s->portals.data, s->portals.count, "portals");
     NMO_VALIDATE_COUNT(s->references.data, s->references.count, "references");
     if (s->portals.element_size != sizeof(nmo_place_portal_entry_t) ||
@@ -497,7 +513,9 @@ static nmo_status_t nmo_place_pre_delete(
     state->camera = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     state->has_level = 0;
     state->level = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+    state->has_portals = 0;
     state->portals.count = 0;
+    state->has_references = 0;
     state->references.count = 0;
     NMO_RETURN_OK();
 }
@@ -586,8 +604,10 @@ static nmo_status_t nmo_place_serialize_internal(
         if (result != NMO_OK) return result;
     }
 
-    if (write_portals && in_state->portals.count > 0) {
-        if (in_state->portals.data == NULL ||
+    if (write_portals &&
+        (in_state->has_portals || in_state->portals.count > 0)) {
+        if ((in_state->portals.count > 0 &&
+             in_state->portals.data == NULL) ||
             in_state->portals.element_size != sizeof(nmo_place_portal_entry_t) ||
             in_state->portals.count > INT32_MAX) {
             return NMO_ERR_VALIDATION_FAILED;
@@ -609,8 +629,10 @@ static nmo_status_t nmo_place_serialize_internal(
 
     const bool write_references = use_flags
         ? ((save_flags & CK_STATESAVE_PLACEREFERENCES) != 0) : true;
-    if (write_references && in_state->references.count > 0) {
-        if (in_state->references.data == NULL ||
+    if (write_references &&
+        (in_state->has_references || in_state->references.count > 0)) {
+        if ((in_state->references.count > 0 &&
+             in_state->references.data == NULL) ||
             in_state->references.element_size != sizeof(nmo_ref_t) ||
             in_state->references.count > INT32_MAX) {
             return NMO_ERR_VALIDATION_FAILED;

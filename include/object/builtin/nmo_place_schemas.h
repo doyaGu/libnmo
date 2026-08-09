@@ -34,7 +34,9 @@ typedef struct nmo_place_state {
     uint8_t has_level;
     nmo_ref_t level;
 
+    uint8_t has_portals;
     nmo_array_t portals;       /**< Portal entries (nmo_place_portal_entry_t) */
+    uint8_t has_references;
     nmo_array_t references;    /**< Reference records (nmo_ref_t) */
 } nmo_place_state_t;
 
