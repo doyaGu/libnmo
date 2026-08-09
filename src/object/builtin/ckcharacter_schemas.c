@@ -770,12 +770,13 @@ static void nmo_character_check_ref_classes(
     nmo_ref_t *animations = NMO_ARRAY_DATA(nmo_ref_t, &state->animations);
     for (size_t i = 0; i < state->animations.count; ++i) {
         nmo_ref_check_class(
-            &animations[i], repository, types, NMO_CID_OBJECTANIMATION);
+            &animations[i], repository, types, NMO_CID_ANIMATION);
     }
     nmo_ref_check_class(
-        &state->active_animation, repository, types, NMO_CID_OBJECTANIMATION);
+        &state->active_animation, repository, types,
+        NMO_CID_KEYEDANIMATION);
     nmo_ref_check_class(
-        &state->anim_dest, repository, types, NMO_CID_OBJECTANIMATION);
+        &state->anim_dest, repository, types, NMO_CID_ANIMATION);
     nmo_ref_check_class(
         &state->root_body_part, repository, types, NMO_CID_BODYPART);
     nmo_ref_check_class(

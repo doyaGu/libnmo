@@ -16436,6 +16436,103 @@ TEST(chunk_id_remap, character_refs_round_trip_and_failure_is_atomic) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, character_refs_use_animation_hierarchy) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
+    ASSERT_NOT_NULL(arena);
+    nmo_type_registry_t *types = nmo_type_registry_create(arena);
+    ASSERT_NOT_NULL(types);
+    ASSERT_EQ(NMO_OK, nmo_register_builtin_types(types));
+    ASSERT_EQ(NMO_OK, nmo_register_object_types(types));
+    nmo_object_repository_t *repository =
+        nmo_object_repository_create(NULL);
+    ASSERT_NOT_NULL(repository);
+
+    nmo_object_t *animation = nmo_object_create(
+        NULL, 1730u, NMO_CID_ANIMATION);
+    nmo_object_t *keyed = nmo_object_create(
+        NULL, 1731u, NMO_CID_KEYEDANIMATION);
+    nmo_object_t *object_animation = nmo_object_create(
+        NULL, 1732u, NMO_CID_OBJECTANIMATION);
+    ASSERT_NOT_NULL(animation);
+    ASSERT_NOT_NULL(keyed);
+    ASSERT_NOT_NULL(object_animation);
+    ASSERT_EQ(NMO_OK, nmo_object_set_type_guid(
+        animation, CKPGUID_ANIMATION));
+    ASSERT_EQ(NMO_OK, nmo_object_set_type_guid(
+        keyed, CKPGUID_KEYEDANIMATION));
+    ASSERT_EQ(NMO_OK, nmo_object_set_type_guid(
+        object_animation, CKPGUID_OBJECTANIMATION));
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repository, &animation));
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repository, &keyed));
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(
+        repository, &object_animation));
+
+    nmo_id_remap_t *file_to_runtime = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(file_to_runtime);
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(file_to_runtime, 721u, 1730u));
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(file_to_runtime, 722u, 1731u));
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(file_to_runtime, 723u, 1732u));
+    nmo_chunk_file_context_t file_context = {
+        .file_to_runtime = file_to_runtime,
+        .repository = repository,
+    };
+    nmo_type_runtime_t type_runtime = {.types = types, .ops = NULL};
+    nmo_deserialize_context_t context = nmo_deserialize_context_create(
+        arena, repository, &type_runtime, NMO_DESER_FLAG_FILE_MODE);
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    chunk->class_id = NMO_CID_CHARACTER;
+    chunk->data_version = 5;
+    chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        chunk, CK_STATESAVE_CHARACTERONLY));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(chunk, 3u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_sequence_item(
+        chunk, 721u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_sequence_item(
+        chunk, 722u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_sequence_item(
+        chunk, 723u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(chunk, 4u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_sequence_item(
+        chunk, 722u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_sequence_item(
+        chunk, 721u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_sequence_item(
+        chunk, NMO_OBJECT_ID_NONE));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_sequence_item(
+        chunk, NMO_OBJECT_ID_NONE));
+    nmo_chunk_close(chunk);
+    nmo_chunk_set_file_context(chunk, &file_context);
+
+    nmo_character_state_t character;
+    ASSERT_EQ(NMO_OK, nmo_character_vtable.create(
+        &character, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_character_deserialize(
+        &character, chunk, NULL, &context));
+    ASSERT_EQ(3u, character.animations.count);
+    const nmo_ref_t *animations = NMO_ARRAY_DATA(
+        nmo_ref_t, &character.animations);
+    ASSERT_EQ(NMO_REF_RESOLVED, animations[0].state);
+    ASSERT_EQ(1730u, animations[0].id);
+    ASSERT_EQ(NMO_REF_RESOLVED, animations[1].state);
+    ASSERT_EQ(1731u, animations[1].id);
+    ASSERT_EQ(NMO_REF_CLASS_MISMATCH, animations[2].state);
+    ASSERT_EQ(723u, animations[2].raw_id);
+    ASSERT_EQ(1732u, animations[2].id);
+    ASSERT_EQ(NMO_REF_RESOLVED, character.active_animation.state);
+    ASSERT_EQ(1731u, character.active_animation.id);
+    ASSERT_EQ(NMO_REF_RESOLVED, character.anim_dest.state);
+    ASSERT_EQ(1730u, character.anim_dest.id);
+
+    nmo_character_vtable.destroy(&character, NULL, NULL);
+    nmo_object_repository_destroy(repository);
+    nmo_type_registry_destroy(types);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, character_legacy_layouts_round_trip) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
     ASSERT_NOT_NULL(arena);
@@ -20127,6 +20224,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, beobject_copy_preserves_content_equality);
     REGISTER_TEST(chunk_id_remap, renderobject_copy_preserves_content_equality);
     REGISTER_TEST(chunk_id_remap, character_refs_round_trip_and_failure_is_atomic);
+    REGISTER_TEST(chunk_id_remap, character_refs_use_animation_hierarchy);
     REGISTER_TEST(chunk_id_remap, character_legacy_layouts_round_trip);
     REGISTER_TEST(chunk_id_remap, character_rejects_cross_section_counts_before_allocation);
     REGISTER_TEST(chunk_id_remap, bodypart_rotation_joint_round_trips_without_size_prefix);
