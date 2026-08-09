@@ -3754,6 +3754,13 @@ TEST(chunk_id_remap, parameterin_refs_round_trip_and_failure_is_atomic) {
         &legacy_prefix_loaded, lossy_prefix_target, NULL,
         &file_serialize_context));
     ASSERT_EQ(4u, nmo_chunk_get_data_size(lossy_prefix_target));
+    lossy_prefix_target->data_version = 4;
+    legacy_prefix_loaded.owner = nmo_ref_from_raw(699);
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_parameterin_serialize(
+        &legacy_prefix_loaded, lossy_prefix_target, NULL,
+        &file_serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(lossy_prefix_target));
+    legacy_prefix_loaded.owner = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
 
     nmo_parameterin_state_t legacy_source;
     ASSERT_EQ(NMO_OK, nmo_parameterin_vtable.create(

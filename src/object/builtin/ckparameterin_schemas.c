@@ -314,7 +314,12 @@ static nmo_status_t nmo_parameterin_serialize_internal(
 
     /* Write base CKObject state (merged into this chunk by AddChunkAndDelete) */
     const uint32_t data_version = nmo_chunk_get_data_version(out_chunk);
-    if ((data_version < 1u || data_version >= 5u) &&
+    const bool writes_owner_layout =
+        data_version >= 1u &&
+        nmo_ref_serialized_id(&in_state->owner) != NMO_OBJECT_ID_NONE;
+    const bool stores_legacy_prefix =
+        data_version >= 1u && data_version < 5u && !writes_owner_layout;
+    if (!stores_legacy_prefix &&
         nmo_ref_serialized_id(&in_state->legacy_prefix_ref) !=
             NMO_OBJECT_ID_NONE) {
         NMO_RETURN_ERROR(
