@@ -1242,6 +1242,56 @@ TEST(chunk_id_remap, messagemanager_failures_keep_state_and_target_chunk_atomic)
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, messagemanager_copy_preserves_string_content) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+
+    const char *names[] = {"OnClick", "", "CustomMessage"};
+    nmo_messagemanager_state_t source = {
+        .message_type_count = 3,
+        .message_type_names = names,
+    };
+    const char *old_copy_names[] = {"Old"};
+    nmo_messagemanager_state_t copy = {
+        .message_type_count = 1,
+        .message_type_names = old_copy_names,
+    };
+    nmo_type_descriptor_t type = {
+        .size = sizeof(nmo_messagemanager_state_t),
+    };
+
+    ASSERT_EQ(NMO_OK, nmo_messagemanager_vtable.copy(
+        &source, &copy, &type, arena));
+    ASSERT_NE(source.message_type_names, copy.message_type_names);
+    ASSERT_NE(source.message_type_names[0], copy.message_type_names[0]);
+    ASSERT_NE(source.message_type_names[2], copy.message_type_names[2]);
+    ASSERT_TRUE(nmo_messagemanager_vtable.equals(&source, &copy));
+    ASSERT_EQ(nmo_messagemanager_vtable.hash(&source),
+              nmo_messagemanager_vtable.hash(&copy));
+    ASSERT_EQ(NMO_OK, nmo_messagemanager_vtable.validate(
+        &copy, &type, NULL));
+
+    ((char *)copy.message_type_names[0])[0] = 'X';
+    ASSERT_STR_EQ("OnClick", source.message_type_names[0]);
+    ASSERT_FALSE(nmo_messagemanager_vtable.equals(&source, &copy));
+
+    const char *invalid_names[] = {NULL};
+    nmo_messagemanager_state_t invalid = {
+        .message_type_count = 1,
+        .message_type_names = invalid_names,
+    };
+    const char **published_names = copy.message_type_names;
+    const uint32_t published_count = copy.message_type_count;
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_messagemanager_vtable.copy(
+        &invalid, &copy, &type, arena));
+    ASSERT_EQ(published_names, copy.message_type_names);
+    ASSERT_EQ(published_count, copy.message_type_count);
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_messagemanager_vtable.validate(
+        &invalid, &type, NULL));
+
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, interfaceobjectmanager_chunk_count_stays_in_section) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
     ASSERT_NOT_NULL(arena);
@@ -9081,6 +9131,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, dataarray_failures_keep_state_and_target_chunk_atomic);
     REGISTER_TEST(chunk_id_remap, attributemanager_failures_keep_state_and_target_chunk_atomic);
     REGISTER_TEST(chunk_id_remap, messagemanager_failures_keep_state_and_target_chunk_atomic);
+    REGISTER_TEST(chunk_id_remap, messagemanager_copy_preserves_string_content);
     REGISTER_TEST(chunk_id_remap, interfaceobjectmanager_chunk_count_stays_in_section);
     REGISTER_TEST(chunk_id_remap, behaviorlink_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, material_refs_round_trip_and_failure_is_atomic);

@@ -151,6 +151,10 @@ static nmo_status_t nmo_messagemanager_deserialize_internal(
     for (int32_t i = 0; i < type_count; i++) {
         char *name = NULL;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_string_checked(chunk, &name, NULL));
+        if (name == NULL) {
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                             "Message type name is missing");
+        }
         names[i] = name; /* Chunk manages the buffer */
     }
 
@@ -234,6 +238,10 @@ static nmo_status_t nmo_messagemanager_serialize_internal(
     /* Write each message type name */
     for (uint32_t i = 0; i < in_state->message_type_count; i++) {
         const char *name = in_state->message_type_names[i];
+        if (name == NULL) {
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                             "Message type name is missing");
+        }
         result = nmo_chunk_write_string(out_chunk, name);
         if (result != NMO_OK) return result;
     }
@@ -271,12 +279,17 @@ nmo_status_t nmo_messagemanager_serialize(
  * Vtable + registration
  * ============================================================================= */
 
+static nmo_status_t nmo_messagemanager_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
+
 nmo_status_t nmo_messagemanager_prepare_dependencies(
     void *instance,
     const nmo_type_descriptor_t *type,
     void *context)
 {
-    return nmo_object_default_validate(instance, type, context);
+    return nmo_messagemanager_validate(instance, type, context);
 }
 
 nmo_status_t nmo_messagemanager_remap_dependencies(
@@ -294,12 +307,7 @@ nmo_status_t nmo_messagemanager_remap_dependencies(
 
     nmo_messagemanager_state_t *state = (nmo_messagemanager_state_t *)instance;
 
-    if (state->message_type_count > 0 && state->message_type_names == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Message type names missing");
-    }
-
-    return nmo_object_default_validate(state, NULL, NULL);
+    return nmo_messagemanager_validate(state, NULL, NULL);
 }
 
 static nmo_status_t nmo_messagemanager_pre_delete(
@@ -326,7 +334,133 @@ static void nmo_messagemanager_post_delete(
     (void)context;
 }
 
-NMO_DEFINE_OBJECT_STATE_OPS(messagemanager, nmo_messagemanager_state_t)
+static nmo_status_t nmo_messagemanager_copy(
+    const void *src,
+    void *dst,
+    const nmo_type_descriptor_t *type,
+    nmo_arena_t *arena)
+{
+    (void)type;
+    if (src == NULL || dst == NULL || arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    const nmo_messagemanager_state_t *source = src;
+    if (source->message_type_count > 10000) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    if (source->message_type_count > 0 &&
+        source->message_type_names == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    const char **names = NULL;
+    if (source->message_type_count > 0) {
+        names = nmo_arena_alloc(
+            arena,
+            (size_t)source->message_type_count * sizeof(*names),
+            _Alignof(char *));
+        if (names == NULL) return NMO_ERR_NOMEM;
+
+        for (uint32_t i = 0; i < source->message_type_count; ++i) {
+            if (source->message_type_names[i] == NULL) {
+                return NMO_ERR_VALIDATION_FAILED;
+            }
+            names[i] = nmo_arena_strdup(
+                arena, source->message_type_names[i]);
+            if (names[i] == NULL) return NMO_ERR_NOMEM;
+        }
+    }
+
+    nmo_messagemanager_state_t *target = dst;
+    target->message_type_count = source->message_type_count;
+    target->message_type_names = names;
+    return NMO_OK;
+}
+
+static nmo_status_t nmo_messagemanager_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
+
+    const nmo_messagemanager_state_t *state = instance;
+    if (state->message_type_count > 10000) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    if (state->message_type_count > 0 &&
+        state->message_type_names == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    for (uint32_t i = 0; i < state->message_type_count; ++i) {
+        if (state->message_type_names[i] == NULL) {
+            return NMO_ERR_VALIDATION_FAILED;
+        }
+    }
+    return NMO_OK;
+}
+
+static bool nmo_messagemanager_equals(const void *a, const void *b)
+{
+    if (a == b) return true;
+    if (a == NULL || b == NULL) return false;
+
+    const nmo_messagemanager_state_t *lhs = a;
+    const nmo_messagemanager_state_t *rhs = b;
+    if (lhs->message_type_count != rhs->message_type_count) return false;
+    if (lhs->message_type_count > 0 &&
+        (lhs->message_type_names == NULL || rhs->message_type_names == NULL)) {
+        return false;
+    }
+    for (uint32_t i = 0; i < lhs->message_type_count; ++i) {
+        const char *lhs_name = lhs->message_type_names[i];
+        const char *rhs_name = rhs->message_type_names[i];
+        if (lhs_name == rhs_name) continue;
+        if (lhs_name == NULL || rhs_name == NULL ||
+            strcmp(lhs_name, rhs_name) != 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static uint32_t nmo_messagemanager_hash_bytes(
+    uint32_t hash,
+    const void *data,
+    size_t size)
+{
+    const uint8_t *bytes = data;
+    for (size_t i = 0; i < size; ++i) {
+        hash ^= bytes[i];
+        hash *= 16777619u;
+    }
+    return hash;
+}
+
+static uint32_t nmo_messagemanager_hash(const void *instance)
+{
+    if (instance == NULL) return 0;
+    const nmo_messagemanager_state_t *state = instance;
+    uint32_t hash = nmo_messagemanager_hash_bytes(
+        2166136261u, &state->message_type_count,
+        sizeof(state->message_type_count));
+    if (state->message_type_names == NULL) return hash;
+
+    for (uint32_t i = 0; i < state->message_type_count; ++i) {
+        const char *name = state->message_type_names[i];
+        const uint8_t present = name != NULL;
+        hash = nmo_messagemanager_hash_bytes(
+            hash, &present, sizeof(present));
+        if (present) {
+            hash = nmo_messagemanager_hash_bytes(
+                hash, name, strlen(name));
+        }
+    }
+    return hash;
+}
 
 nmo_type_vtable_t nmo_messagemanager_vtable = {
     .prepare_dependencies = nmo_messagemanager_prepare_dependencies,
