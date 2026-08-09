@@ -8353,6 +8353,99 @@ TEST(chunk_id_remap, wavesound_data_stays_in_identifier_section) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, wavesound_legacy_data2_round_trips_unknown_words) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+
+    uint32_t words[20];
+    for (size_t i = 0; i < 20u; ++i) {
+        words[i] = 0x10000000u + (uint32_t)i;
+    }
+    words[8] = 7u;
+
+    nmo_chunk_t *truncated = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(truncated);
+    truncated->class_id = NMO_CID_WAVESOUND;
+    truncated->data_version = 1;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(truncated));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        truncated, CK_STATESAVE_WAVSOUNDDATA2));
+    for (size_t i = 0; i < 19u; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(truncated, words[i]));
+    }
+    nmo_chunk_close(truncated);
+
+    nmo_wavesound_state_t failed;
+    ASSERT_EQ(NMO_OK, nmo_wavesound_vtable.create(&failed, NULL, NULL));
+    failed.state_flags = 0x12345678u;
+    failed.legacy_data2_words[0] = 0x87654321u;
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_wavesound_deserialize(
+        &failed, truncated, NULL, NULL));
+    ASSERT_EQ(0x12345678u, failed.state_flags);
+    ASSERT_EQ(0x87654321u, failed.legacy_data2_words[0]);
+
+    nmo_chunk_t *legacy = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(legacy);
+    legacy->class_id = NMO_CID_WAVESOUND;
+    legacy->data_version = 1;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(legacy));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        legacy, CK_STATESAVE_WAVSOUNDDATA2));
+    for (size_t i = 0; i < 20u; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(legacy, words[i]));
+    }
+    nmo_chunk_close(legacy);
+
+    nmo_wavesound_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_wavesound_vtable.create(&loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_wavesound_deserialize(
+        &loaded, legacy, NULL, NULL));
+    ASSERT_TRUE(loaded.has_data2);
+    ASSERT_TRUE((loaded.state_flags & CK_WAVESOUND_LOOPED) != 0u);
+    ASSERT_EQ(0, memcmp(words, loaded.legacy_data2_words, sizeof(words)));
+
+    nmo_chunk_t *saved = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(saved);
+    saved->class_id = NMO_CID_WAVESOUND;
+    saved->data_version = 1;
+    saved->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_wavesound_serialize(
+        &loaded, saved, NULL, NULL));
+    nmo_chunk_close(saved);
+
+    size_t section_dwords = 0u;
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        saved, CK_STATESAVE_WAVSOUNDDATA2, &section_dwords));
+    ASSERT_EQ(20u, section_dwords);
+    for (size_t i = 0; i < 20u; ++i) {
+        uint32_t word = 0u;
+        ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(saved, &word));
+        ASSERT_EQ(i == 8u ? 1u : words[i], word);
+    }
+
+    loaded.state_flags &= ~CK_WAVESOUND_LOOPED;
+    nmo_chunk_t *normalized = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(normalized);
+    normalized->class_id = NMO_CID_WAVESOUND;
+    normalized->data_version = 1;
+    normalized->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_wavesound_serialize(
+        &loaded, normalized, NULL, NULL));
+    nmo_chunk_close(normalized);
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        normalized, CK_STATESAVE_WAVSOUNDDATA2, &section_dwords));
+    ASSERT_EQ(20u, section_dwords);
+    for (size_t i = 0; i < 20u; ++i) {
+        uint32_t word = 0u;
+        ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(normalized, &word));
+        ASSERT_EQ(i == 8u ? 0u : words[i], word);
+    }
+
+    nmo_wavesound_vtable.destroy(&failed, NULL, NULL);
+    nmo_wavesound_vtable.destroy(&loaded, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, sound_family_failures_keep_state_and_target_chunk_atomic) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
     ASSERT_NOT_NULL(arena);
@@ -8558,6 +8651,7 @@ TEST(chunk_id_remap, sound_family_failures_keep_state_and_target_chunk_atomic) {
         {3u, CK_WAVESOUND_POINT, 24u, 15u, 19u},
         {2u, CK_WAVESOUND_BACKGROUND, 8u, SIZE_MAX, SIZE_MAX},
         {2u, CK_WAVESOUND_POINT, 26u, 17u, 21u},
+        {1u, 0u, 20u, SIZE_MAX, SIZE_MAX},
     };
     for (size_t i = 0; i < sizeof(data2_cases) / sizeof(data2_cases[0]);
          ++i) {
@@ -8667,6 +8761,9 @@ TEST(chunk_id_remap, sound_family_copy_preserves_inherited_and_string_state) {
     wave.attached_object = nmo_ref_from_raw(301);
     wave.position = (nmo_vector_t){1.0f, 2.0f, 3.0f};
     wave.direction = (nmo_vector_t){0.0f, 1.0f, 0.0f};
+    wave.legacy_data2_words[0] = 0x12345678u;
+    wave.legacy_data2_words[8] = 7u;
+    wave.legacy_data2_words[19] = 0x87654321u;
     nmo_type_descriptor_t wave_type = {
         .size = sizeof(nmo_wavesound_state_t),
     };
@@ -8680,6 +8777,12 @@ TEST(chunk_id_remap, sound_family_copy_preserves_inherited_and_string_state) {
     ASSERT_TRUE(nmo_wavesound_vtable.equals(&wave, &wave_copy));
     ASSERT_EQ(nmo_wavesound_vtable.hash(&wave),
               nmo_wavesound_vtable.hash(&wave_copy));
+    ASSERT_EQ(0x12345678u, wave_copy.legacy_data2_words[0]);
+    ASSERT_EQ(7u, wave_copy.legacy_data2_words[8]);
+    ASSERT_EQ(0x87654321u, wave_copy.legacy_data2_words[19]);
+    wave_copy.legacy_data2_words[19] ^= 1u;
+    ASSERT_FALSE(nmo_wavesound_vtable.equals(&wave, &wave_copy));
+    wave_copy.legacy_data2_words[19] ^= 1u;
     ((char *)wave_copy.wave_file_name)[0] = 'X';
     ASSERT_STR_EQ("audio/wave.wav", wave.wave_file_name);
     ASSERT_FALSE(nmo_wavesound_vtable.equals(&wave, &wave_copy));
@@ -17150,6 +17253,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, sprite3d_unresolved_material_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, wavesound_unresolved_attachment_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, wavesound_data_stays_in_identifier_section);
+    REGISTER_TEST(chunk_id_remap, wavesound_legacy_data2_round_trips_unknown_words);
     REGISTER_TEST(chunk_id_remap, sound_family_failures_keep_state_and_target_chunk_atomic);
     REGISTER_TEST(chunk_id_remap, sound_family_copy_preserves_inherited_and_string_state);
     REGISTER_TEST(chunk_id_remap, scalar_ref_sections_do_not_publish_truncated_state);

@@ -130,7 +130,11 @@ static const nmo_type_field_t nmo_wavesound_fields[] = {
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD_NAMED("direction", offsetof(nmo_wavesound_state_t, direction),
                     sizeof(nmo_vector_t), CKPGUID_VECTOR,
-                    NMO_FIELD_REQUIRED, 0)
+                    NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD_NAMED("legacy_data2_words",
+                    offsetof(nmo_wavesound_state_t, legacy_data2_words),
+                    sizeof(((nmo_wavesound_state_t *)0)->legacy_data2_words),
+                    CKPGUID_VOIDBUF, 0, 0)
 };
 
 static const nmo_type_field_t nmo_midisound_fields[] = {
@@ -324,6 +328,8 @@ static nmo_status_t nmo_wavesound_deserialize_internal(
     out_state->attached_object = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     out_state->position = (nmo_vector_t){0.0f, 0.0f, 0.0f};
     out_state->direction = (nmo_vector_t){0.0f, 0.0f, 0.0f};
+    memset(out_state->legacy_data2_words, 0,
+           sizeof(out_state->legacy_data2_words));
 
     size_t section_dwords = 0u;
     nmo_status_t seek_result = nmo_chunk_seek_identifier_with_size(
@@ -459,6 +465,19 @@ static nmo_status_t nmo_wavesound_deserialize_internal(
                     NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &reserved_int));
                 }
             }
+        } else {
+            if (section_dwords < 20u) {
+                return NMO_ERR_TRUNCATED_CHUNK;
+            }
+            for (size_t i = 0; i < 20u; ++i) {
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(
+                    chunk, &data.legacy_data2_words[i]));
+            }
+            if (data.legacy_data2_words[8] != 0u) {
+                data.state_flags |= CK_WAVESOUND_LOOPED;
+            } else {
+                data.state_flags &= ~CK_WAVESOUND_LOOPED;
+            }
         }
         if (nmo_chunk_get_position(chunk) > section_end) {
             return NMO_ERR_TRUNCATED_CHUNK;
@@ -550,29 +569,38 @@ static nmo_status_t nmo_wavesound_serialize_internal(
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_WAVSOUNDDATA2);
         if (result != NMO_OK) return result;
 
-        NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(out_chunk, in_state->state_flags));
-        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, in_state->priority));
-        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, in_state->gain));
-        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, in_state->pan));
-        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, in_state->pitch));
+        if (nmo_chunk_get_data_version(out_chunk) < 2u) {
+            for (size_t i = 0; i < 20u; ++i) {
+                const uint32_t word = i == 8u
+                    ? ((in_state->state_flags & CK_WAVESOUND_LOOPED) != 0u)
+                    : in_state->legacy_data2_words[i];
+                NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(out_chunk, word));
+            }
+        } else {
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(out_chunk, in_state->state_flags));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, in_state->priority));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, in_state->gain));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, in_state->pan));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, in_state->pitch));
 
-        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, 0.0f));
-        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, 0.0f));
-        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, 0.0f));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, 0.0f));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, 0.0f));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, 0.0f));
 
-        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, in_state->cone_in_angle));
-        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, in_state->cone_out_angle));
-        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, in_state->cone_out_gain));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, in_state->cone_in_angle));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, in_state->cone_out_angle));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, in_state->cone_out_gain));
 
-        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, in_state->min_distance));
-        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, in_state->max_distance));
-        NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(out_chunk, in_state->distance_behavior));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, in_state->min_distance));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, in_state->max_distance));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(out_chunk, in_state->distance_behavior));
 
-        NMO_RETURN_IF_ERROR(nmo_ref_write(out_chunk, &in_state->attached_object));
-        NMO_RETURN_IF_ERROR(nmo_chunk_write_buffer(out_chunk, &in_state->position, sizeof(in_state->position)));
-        NMO_RETURN_IF_ERROR(nmo_chunk_write_buffer(out_chunk, &in_state->direction, sizeof(in_state->direction)));
+            NMO_RETURN_IF_ERROR(nmo_ref_write(out_chunk, &in_state->attached_object));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_buffer(out_chunk, &in_state->position, sizeof(in_state->position)));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_buffer(out_chunk, &in_state->direction, sizeof(in_state->direction)));
 
-        NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(out_chunk, 0));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(out_chunk, 0));
+        }
     }
 
     NMO_RETURN_OK();
@@ -1116,7 +1144,11 @@ static bool nmo_wavesound_equals(const void *a, const void *b)
         lhs->distance_behavior == rhs->distance_behavior &&
         nmo_sound_ref_equals(&lhs->attached_object, &rhs->attached_object) &&
         memcmp(&lhs->position, &rhs->position, sizeof(lhs->position)) == 0 &&
-        memcmp(&lhs->direction, &rhs->direction, sizeof(lhs->direction)) == 0;
+        memcmp(&lhs->direction, &rhs->direction, sizeof(lhs->direction)) == 0 &&
+        memcmp(lhs->legacy_data2_words, rhs->legacy_data2_words,
+               8u * sizeof(uint32_t)) == 0 &&
+        memcmp(&lhs->legacy_data2_words[9], &rhs->legacy_data2_words[9],
+               11u * sizeof(uint32_t)) == 0;
 }
 
 static bool nmo_midisound_equals(const void *a, const void *b)
@@ -1195,6 +1227,10 @@ static uint32_t nmo_wavesound_hash(const void *instance)
     NMO_WAVESOUND_HASH_FIELD(state->direction.x);
     NMO_WAVESOUND_HASH_FIELD(state->direction.y);
     NMO_WAVESOUND_HASH_FIELD(state->direction.z);
+    hash = nmo_sound_hash_bytes(
+        hash, state->legacy_data2_words, 8u * sizeof(uint32_t));
+    hash = nmo_sound_hash_bytes(
+        hash, &state->legacy_data2_words[9], 11u * sizeof(uint32_t));
 #undef NMO_WAVESOUND_HASH_FIELD
     return hash;
 }
