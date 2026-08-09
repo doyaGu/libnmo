@@ -229,6 +229,28 @@ static bool nmo_mesh_size_mul_overflows(size_t count, size_t element_size) {
     return count != 0u && element_size > SIZE_MAX / count;
 }
 
+static bool nmo_mesh_vertex_payload_dwords(
+    uint32_t vertex_count,
+    uint32_t save_flags,
+    size_t *out_dwords)
+{
+    size_t per_vertex = 0u;
+    size_t fixed = 0u;
+    if (!(save_flags & NMO_VERTEX_POS_EXTERNAL)) per_vertex += 3u;
+    if (save_flags & NMO_VERTEX_COLOR1_UNIFORM) fixed += 1u;
+    else per_vertex += 1u;
+    if (save_flags & NMO_VERTEX_SPECULAR_UNIFORM) fixed += 1u;
+    else per_vertex += 1u;
+    if (!(save_flags & NMO_VERTEX_NORMALS_MISSING)) per_vertex += 3u;
+    if (save_flags & NMO_VERTEX_UV_UNIFORM) fixed += 2u;
+    else per_vertex += 2u;
+
+    size_t variable = 0u;
+    return nmo_safe_mul_size(
+               (size_t)vertex_count, per_vertex, &variable) &&
+        nmo_safe_add_size(variable, fixed, out_dwords);
+}
+
 static nmo_status_t nmo_mesh_seek_optional(
     nmo_chunk_t *chunk,
     uint32_t identifier,
@@ -338,7 +360,7 @@ static nmo_status_t nmo_mesh_deserialize_vertices(
         return result;
     }
     
-    if (vertex_count < 0 || vertex_count > 1000000) {
+    if (vertex_count < 0) {
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Invalid vertex count");
     }
     
@@ -364,18 +386,11 @@ static nmo_status_t nmo_mesh_deserialize_vertices(
     }
     size_t buffer_payload_dwords = (size_t)buffer_dwords - 1u;
     size_t expected_dwords = 0;
-    if (!(save_flags & NMO_VERTEX_POS_EXTERNAL)) {
-        expected_dwords += 3u * (size_t)vertex_count;
+    if (!nmo_mesh_vertex_payload_dwords(
+            (uint32_t)vertex_count, save_flags, &expected_dwords)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Vertex payload size overflows");
     }
-    expected_dwords += (save_flags & NMO_VERTEX_COLOR1_UNIFORM)
-        ? 1u : (size_t)vertex_count;
-    expected_dwords += (save_flags & NMO_VERTEX_SPECULAR_UNIFORM)
-        ? 1u : (size_t)vertex_count;
-    if (!(save_flags & NMO_VERTEX_NORMALS_MISSING)) {
-        expected_dwords += 3u * (size_t)vertex_count;
-    }
-    expected_dwords += (save_flags & NMO_VERTEX_UV_UNIFORM)
-        ? 2u : 2u * (size_t)vertex_count;
     if (buffer_payload_dwords < expected_dwords) {
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
                          "Vertex buffer shorter than expected");
@@ -384,6 +399,13 @@ static nmo_status_t nmo_mesh_deserialize_vertices(
         buffer_payload_dwords > nmo_mesh_identifier_remaining_dwords(chunk)) {
         NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                          "Vertex buffer exceeds remaining DWORDs");
+    }
+    if (nmo_mesh_size_mul_overflows(
+            (size_t)vertex_count, sizeof(nmo_vertex_t)) ||
+        nmo_mesh_size_mul_overflows(
+            (size_t)vertex_count, sizeof(uint32_t))) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Vertex allocation size overflows");
     }
 
     // Allocate vertex array
@@ -537,6 +559,90 @@ static nmo_status_t nmo_mesh_deserialize_material_groups(
     }
     out_state->material_groups = groups;
     out_state->material_group_count = (uint32_t)group_count;
+    return NMO_OK;
+}
+
+static nmo_status_t nmo_mesh_deserialize_weights(
+    nmo_chunk_t *chunk,
+    nmo_arena_t *arena,
+    nmo_mesh_state_t *out_state,
+    const char *layout)
+{
+    int32_t weight_count = 0;
+    nmo_status_t result = nmo_chunk_read_int(chunk, &weight_count);
+    if (result != NMO_OK) {
+        NMO_RETURN_ERROR(result, NMO_SEVERITY_ERROR,
+                         "CKMesh %s weight count is truncated", layout);
+    }
+    if (weight_count < 0) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Invalid %s mesh weight count %d",
+                         layout, weight_count);
+    }
+    if (weight_count == 0) return NMO_OK;
+
+    size_t allocation_size = 0u;
+    if (!nmo_safe_mul_size(
+            (size_t)weight_count, sizeof(float), &allocation_size)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "CKMesh %s weight allocation size overflows",
+                         layout);
+    }
+
+    const size_t remaining_dwords =
+        nmo_mesh_identifier_remaining_dwords(chunk);
+    if (remaining_dwords < 1u) {
+        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                         "CKMesh %s weight payload is truncated", layout);
+    }
+
+    bool buffered = false;
+    if (allocation_size <= UINT32_MAX && remaining_dwords >= 2u) {
+        uint32_t first_dword = 0u;
+        result = nmo_mesh_peek_dword(chunk, &first_dword);
+        if (result != NMO_OK) return result;
+        buffered = first_dword == (uint32_t)allocation_size;
+    }
+    if (buffered &&
+        (size_t)weight_count > remaining_dwords - 1u) {
+        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                         "CKMesh %s weight buffer is truncated", layout);
+    }
+
+    float *weights = nmo_arena_alloc(
+        arena, allocation_size, alignof(float));
+    if (weights == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "Failed to allocate %s vertex weights", layout);
+    }
+
+    if (buffered) {
+        uint32_t buffer_size = 0u;
+        result = nmo_chunk_read_dword(chunk, &buffer_size);
+        if (result != NMO_OK) return result;
+        if (buffer_size != (uint32_t)allocation_size) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "CKMesh %s weight buffer size is invalid",
+                             layout);
+        }
+        result = nmo_mesh_read_raw_bytes(chunk, weights, allocation_size);
+        if (result != NMO_OK) return result;
+        if (remaining_dwords >= (size_t)weight_count + 2u) {
+            float tail_weight = 0.0f;
+            result = nmo_chunk_read_float(chunk, &tail_weight);
+            if (result != NMO_OK) return result;
+        }
+    } else {
+        float uniform_weight = 0.0f;
+        result = nmo_chunk_read_float(chunk, &uniform_weight);
+        if (result != NMO_OK) return result;
+        for (int32_t i = 0; i < weight_count; ++i) {
+            weights[i] = uniform_weight;
+        }
+    }
+
+    out_state->vertex_weights = weights;
+    out_state->vertex_weight_count = (uint32_t)weight_count;
     return NMO_OK;
 }
 
@@ -788,86 +894,8 @@ static nmo_status_t nmo_mesh_deserialize_modern(
     NMO_RETURN_IF_ERROR(nmo_mesh_seek_optional(
         chunk, CK_STATESAVE_MESHWEIGHTS, &section_found));
     if (section_found) {
-        size_t weights_bytes_total = nmo_mesh_identifier_remaining_dwords(chunk) * 4u;
-        int32_t weight_count;
-        result = nmo_chunk_read_int(chunk, &weight_count);
-        if (result != NMO_OK) {
-            NMO_RETURN_ERROR(result, NMO_SEVERITY_ERROR,
-                             "CKMesh modern weight count is truncated");
-        }
-        if (weight_count < 0 || weight_count >= 10000000) {
-            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                             "Invalid modern mesh weight count %d", weight_count);
-        }
-        if (weight_count > 0) {
-            out_state->vertex_weight_count = (uint32_t)weight_count;
-
-            size_t remaining_bytes = (weights_bytes_total > sizeof(uint32_t))
-                ? (weights_bytes_total - sizeof(uint32_t))
-                : 0u;
-
-            out_state->vertex_weights = (float *)nmo_arena_alloc(
-                arena, sizeof(float) * weight_count, alignof(float));
-
-            if (!out_state->vertex_weights) {
-                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate vertex weights");
-            }
-
-            if (remaining_bytes == sizeof(float)) {
-                float uniform_weight = 0.0f;
-                result = nmo_chunk_read_float(chunk, &uniform_weight);
-                if (result != NMO_OK) {
-                    NMO_RETURN_ERROR(result, NMO_SEVERITY_ERROR,
-                                     "CKMesh modern uniform weight is truncated");
-                }
-                for (int32_t i = 0; i < weight_count; ++i) {
-                    out_state->vertex_weights[i] = uniform_weight;
-                }
-            } else if (remaining_bytes >= (sizeof(uint32_t) + sizeof(float))) {
-                uint32_t peek = 0;
-                result = nmo_mesh_peek_dword(chunk, &peek);
-                if (result != NMO_OK) {
-                    NMO_RETURN_ERROR(result, NMO_SEVERITY_ERROR,
-                                     "CKMesh modern weight payload is truncated");
-                }
-
-                if (peek == (uint32_t)(weight_count * sizeof(float))) {
-                    uint32_t buffer_size = 0;
-                    result = nmo_chunk_read_dword(chunk, &buffer_size);
-                    if (result != NMO_OK) {
-                        NMO_RETURN_ERROR(result, NMO_SEVERITY_ERROR,
-                                         "CKMesh modern weight buffer size is truncated");
-                    }
-
-                    if (buffer_size > 0) {
-                        result = nmo_mesh_read_raw_bytes(chunk, out_state->vertex_weights, buffer_size);
-                        if (result != NMO_OK) {
-                            NMO_RETURN_ERROR(result, NMO_SEVERITY_ERROR,
-                                             "CKMesh modern weight buffer is truncated");
-                        }
-                    }
-
-                    if (remaining_bytes >= (size_t)sizeof(uint32_t) + buffer_size + sizeof(float)) {
-                        float tail_weight = 0.0f;
-                        result = nmo_chunk_read_float(chunk, &tail_weight);
-                        if (result != NMO_OK) {
-                            NMO_RETURN_ERROR(result, NMO_SEVERITY_ERROR,
-                                             "CKMesh modern tail weight is truncated");
-                        }
-                    }
-                } else {
-                    float uniform_weight = 0.0f;
-                    result = nmo_chunk_read_float(chunk, &uniform_weight);
-                    if (result != NMO_OK) {
-                        NMO_RETURN_ERROR(result, NMO_SEVERITY_ERROR,
-                                         "CKMesh modern uniform weight is truncated");
-                    }
-                    for (int32_t i = 0; i < weight_count; ++i) {
-                        out_state->vertex_weights[i] = uniform_weight;
-                    }
-                }
-            }
-        }
+        NMO_RETURN_IF_ERROR(nmo_mesh_deserialize_weights(
+            chunk, arena, out_state, "modern"));
     }
     
     // Read face channel masks (identifier CK_STATESAVE_MESHFACECHANMASK, optional)
@@ -993,17 +1021,25 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
         result = nmo_chunk_read_dword(chunk, &save_flags);
         if (result != NMO_OK) return result;
 
-        if (vertex_count < 0 || vertex_count >= 1000000) {
+        if (vertex_count < 0) {
             NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                              "Invalid legacy mesh vertex count %d", vertex_count);
         }
         if (vertex_count > 0) {
-            size_t vertex_dwords = 3u * (size_t)vertex_count;
-            if (save_flags & 0x02u) {
-                vertex_dwords += 3u * (size_t)vertex_count;
-            }
-            if (save_flags & 0x04u) {
-                vertex_dwords += (size_t)vertex_count;
+            size_t dwords_per_vertex = 3u;
+            if (save_flags & 0x02u) dwords_per_vertex += 3u;
+            if (save_flags & 0x04u) dwords_per_vertex += 1u;
+            size_t vertex_dwords = 0u;
+            if (!nmo_safe_mul_size(
+                    (size_t)vertex_count, dwords_per_vertex,
+                    &vertex_dwords) ||
+                nmo_mesh_size_mul_overflows(
+                    (size_t)vertex_count, sizeof(nmo_vertex_t)) ||
+                nmo_mesh_size_mul_overflows(
+                    (size_t)vertex_count, sizeof(uint32_t))) {
+                NMO_RETURN_ERROR(
+                    NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                    "Legacy mesh vertex allocation size overflows");
             }
             if (vertex_dwords >
                 nmo_mesh_identifier_remaining_dwords(chunk)) {
@@ -1251,63 +1287,8 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
     NMO_RETURN_IF_ERROR(nmo_mesh_seek_optional(
         chunk, CK_STATESAVE_MESHWEIGHTS, &section_found));
     if (section_found) {
-        size_t weights_bytes_total = nmo_mesh_identifier_remaining_dwords(chunk) * 4u;
-        int32_t weight_count;
-        result = nmo_chunk_read_int(chunk, &weight_count);
-        if (result != NMO_OK) return result;
-        if (weight_count < 0 || weight_count >= 10000000) {
-            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                             "Invalid legacy mesh weight count %d", weight_count);
-        }
-        if (weight_count > 0) {
-            out_state->vertex_weight_count = (uint32_t)weight_count;
-            size_t remaining_bytes = (weights_bytes_total > sizeof(uint32_t))
-                ? (weights_bytes_total - sizeof(uint32_t))
-                : 0u;
-
-            out_state->vertex_weights = (float *)nmo_arena_alloc(
-                arena, sizeof(float) * weight_count, alignof(float));
-            if (!out_state->vertex_weights) {
-                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate legacy vertex weights");
-            }
-
-            if (remaining_bytes == sizeof(float)) {
-                float uniform_weight = 0.0f;
-                result = nmo_chunk_read_float(chunk, &uniform_weight);
-                if (result != NMO_OK) return result;
-                for (int32_t i = 0; i < weight_count; ++i) {
-                    out_state->vertex_weights[i] = uniform_weight;
-                }
-            } else if (remaining_bytes >= (sizeof(uint32_t) + sizeof(float))) {
-                uint32_t peek = 0;
-                result = nmo_mesh_peek_dword(chunk, &peek);
-                if (result != NMO_OK) return result;
-
-                if (peek == (uint32_t)(weight_count * sizeof(float))) {
-                    uint32_t buffer_size = 0;
-                    result = nmo_chunk_read_dword(chunk, &buffer_size);
-                    if (result != NMO_OK) return result;
-
-                    if (buffer_size > 0) {
-                        result = nmo_mesh_read_raw_bytes(chunk, out_state->vertex_weights, buffer_size);
-                        if (result != NMO_OK) return result;
-                    }
-
-                    if (remaining_bytes >= (size_t)sizeof(uint32_t) + buffer_size + sizeof(float)) {
-                        float tail_weight = 0.0f;
-                        result = nmo_chunk_read_float(chunk, &tail_weight);
-                        if (result != NMO_OK) return result;
-                    }
-                } else {
-                    float uniform_weight = 0.0f;
-                    result = nmo_chunk_read_float(chunk, &uniform_weight);
-                    if (result != NMO_OK) return result;
-                    for (int32_t i = 0; i < weight_count; ++i) {
-                        out_state->vertex_weights[i] = uniform_weight;
-                    }
-                }
-            }
-        }
+        NMO_RETURN_IF_ERROR(nmo_mesh_deserialize_weights(
+            chunk, arena, out_state, "legacy"));
     }
 
     NMO_RETURN_IF_ERROR(nmo_mesh_seek_optional(
@@ -1678,15 +1659,15 @@ static nmo_status_t nmo_mesh_serialize_internal(
         if (result != NMO_OK) return result;
 
         size_t buffer_dwords = 0;
-        if (!(vertex_save_flags & NMO_VERTEX_POS_EXTERNAL)) {
-            buffer_dwords += 3u * in_state->vertex_count;
+        if (!nmo_mesh_vertex_payload_dwords(
+                in_state->vertex_count, vertex_save_flags,
+                &buffer_dwords) ||
+            buffer_dwords > UINT32_MAX - 1u ||
+            nmo_mesh_size_mul_overflows(
+                buffer_dwords, sizeof(uint32_t))) {
+            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                             "Vertex buffer exceeds serialized limits");
         }
-        buffer_dwords += (vertex_save_flags & NMO_VERTEX_COLOR1_UNIFORM) ? 1u : in_state->vertex_count;
-        buffer_dwords += (vertex_save_flags & NMO_VERTEX_SPECULAR_UNIFORM) ? 1u : in_state->vertex_count;
-        if (!(vertex_save_flags & NMO_VERTEX_NORMALS_MISSING)) {
-            buffer_dwords += 3u * in_state->vertex_count;
-        }
-        buffer_dwords += (vertex_save_flags & NMO_VERTEX_UV_UNIFORM) ? 2u : (2u * in_state->vertex_count);
 
         uint32_t *buffer = (uint32_t *)nmo_arena_alloc(
             arena, buffer_dwords * sizeof(uint32_t), alignof(uint32_t));
@@ -1804,7 +1785,16 @@ static nmo_status_t nmo_mesh_serialize_internal(
             }
 
             if (!uniform) {
-                uint32_t buffer_size = weight_count * (uint32_t)sizeof(float);
+                size_t weight_bytes = 0u;
+                if (!nmo_safe_mul_size(
+                        (size_t)weight_count, sizeof(float),
+                        &weight_bytes) ||
+                    weight_bytes > UINT32_MAX) {
+                    NMO_RETURN_ERROR(
+                        NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                        "Vertex weight buffer exceeds serialized limits");
+                }
+                uint32_t buffer_size = (uint32_t)weight_bytes;
                 result = nmo_chunk_write_dword(out_chunk, buffer_size);
                 if (result != NMO_OK) return result;
                 result = nmo_chunk_write_buffer_no_size(out_chunk,
@@ -1940,6 +1930,9 @@ static nmo_status_t nmo_mesh_copy(
     copied.pm_morph_enabled = s->pm_morph_enabled;
     copied.pm_morph_step = s->pm_morph_step;
     copied.pm_data_size = s->pm_data_size;
+    const uint32_t copied_weight_count = s->vertex_weight_count > 0u
+        ? s->vertex_weight_count
+        : (s->vertex_weights != NULL ? s->vertex_count : 0u);
 
     result = nmo_object_copy_array(arena, (void **)&copied.faces,
         s->faces, sizeof(nmo_face_t), s->face_count);
@@ -1963,7 +1956,7 @@ static nmo_status_t nmo_mesh_copy(
         s->vertex_specular, sizeof(uint32_t), s->vertex_count);
     if (result != NMO_OK) goto fail;
     result = nmo_object_copy_array(arena, (void **)&copied.vertex_weights,
-        s->vertex_weights, sizeof(float), s->vertex_weight_count);
+        s->vertex_weights, sizeof(float), copied_weight_count);
     if (result != NMO_OK) goto fail;
     result = nmo_object_copy_array(arena, (void **)&copied.material_groups,
         s->material_groups, sizeof(nmo_material_group_t),
@@ -2013,6 +2006,9 @@ static nmo_status_t nmo_mesh_validate(
     (void)type;
     const nmo_mesh_state_t *s = instance;
     if (!s) return NMO_ERR_INVALID_ARGUMENT;
+    const uint32_t effective_weight_count = s->vertex_weight_count > 0u
+        ? s->vertex_weight_count
+        : (s->vertex_weights != NULL ? s->vertex_count : 0u);
     NMO_RETURN_IF_ERROR(nmo_beobject_vtable.validate(
         &s->beobject, NULL, context));
     if (s->face_count > UINT32_MAX / 3u ||
@@ -2031,11 +2027,17 @@ static nmo_status_t nmo_mesh_validate(
         nmo_mesh_size_mul_overflows(
             s->line_count, 2u * sizeof(*s->line_indices)) ||
         nmo_mesh_size_mul_overflows(
+            s->vertex_count, sizeof(*s->vertices)) ||
+        nmo_mesh_size_mul_overflows(
+            s->vertex_count, sizeof(*s->vertex_colors)) ||
+        nmo_mesh_size_mul_overflows(
+            effective_weight_count, sizeof(*s->vertex_weights)) ||
+        nmo_mesh_size_mul_overflows(
             s->material_group_count, sizeof(*s->material_groups)) ||
         nmo_mesh_size_mul_overflows(
             s->material_channel_count, sizeof(*s->material_channels))) {
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
-                         "CKMesh material allocation size overflows");
+                         "CKMesh allocation size overflows");
     }
     NMO_VALIDATE_COUNT(s->faces, s->face_count, "faces");
     if (s->face_count > 0) {
@@ -2048,7 +2050,7 @@ static nmo_status_t nmo_mesh_validate(
     NMO_VALIDATE_COUNT(s->vertices, s->vertex_count, "vertices");
     NMO_VALIDATE_COUNT(s->vertex_colors, s->vertex_count, "vertex_colors");
     NMO_VALIDATE_COUNT(s->vertex_specular, s->vertex_count, "vertex_specular");
-    NMO_VALIDATE_COUNT(s->vertex_weights, s->vertex_weight_count, "vertex_weights");
+    NMO_VALIDATE_COUNT(s->vertex_weights, effective_weight_count, "vertex_weights");
     NMO_VALIDATE_COUNT(s->material_groups, s->material_group_count, "material_groups");
     NMO_VALIDATE_COUNT(s->material_channels, s->material_channel_count, "material_channels");
     if (s->material_channels) {

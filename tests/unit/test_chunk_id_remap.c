@@ -9767,6 +9767,206 @@ TEST(chunk_id_remap, mesh_preserves_large_geometry_counts) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, mesh_preserves_large_vertex_counts) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+    ASSERT_NOT_NULL(arena);
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+
+    const uint32_t vertex_count = 1000001u;
+    nmo_mesh_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_mesh_vtable.create(&source, NULL, NULL));
+    source.flags = VXMESH_PROCEDURALPOS;
+    source.vertex_count = vertex_count;
+    source.vertices = nmo_arena_alloc(
+        arena, sizeof(*source.vertices) * vertex_count,
+        _Alignof(nmo_vertex_t));
+    source.vertex_colors = nmo_arena_alloc(
+        arena, sizeof(*source.vertex_colors) * vertex_count,
+        _Alignof(uint32_t));
+    source.vertex_specular = nmo_arena_alloc(
+        arena, sizeof(*source.vertex_specular) * vertex_count,
+        _Alignof(uint32_t));
+    ASSERT_NOT_NULL(source.vertices);
+    ASSERT_NOT_NULL(source.vertex_colors);
+    ASSERT_NOT_NULL(source.vertex_specular);
+    memset(source.vertices, 0, sizeof(*source.vertices) * vertex_count);
+    memset(source.vertex_colors, 0,
+           sizeof(*source.vertex_colors) * vertex_count);
+    memset(source.vertex_specular, 0,
+           sizeof(*source.vertex_specular) * vertex_count);
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    chunk->class_id = NMO_CID_MESH;
+    chunk->chunk_version = NMO_CHUNK_VERSION4;
+    chunk->data_version = 9;
+    chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_mesh_serialize(
+        &source, chunk, NULL, &serialize_context));
+    nmo_chunk_close(chunk);
+    nmo_mesh_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_mesh_vtable.create(&loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_mesh_deserialize(
+        &loaded, chunk, NULL, &deserialize_context));
+    ASSERT_EQ(vertex_count, loaded.vertex_count);
+    ASSERT_EQ(0u, loaded.vertex_colors[vertex_count - 1u]);
+    ASSERT_EQ(0.0f, loaded.vertices[vertex_count - 1u].uv.x);
+
+    nmo_chunk_t *legacy_truncated = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(legacy_truncated);
+    legacy_truncated->class_id = NMO_CID_MESH;
+    legacy_truncated->chunk_version = NMO_CHUNK_VERSION4;
+    legacy_truncated->data_version = 8;
+    legacy_truncated->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(legacy_truncated));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        legacy_truncated, CK_STATESAVE_MESHVERTICES));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(legacy_truncated, 1000000));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(legacy_truncated, 0u));
+    nmo_chunk_close(legacy_truncated);
+    nmo_mesh_state_t failed;
+    ASSERT_EQ(NMO_OK, nmo_mesh_vtable.create(&failed, NULL, NULL));
+    failed.flags = 0x12345678u;
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_mesh_deserialize(
+        &failed, legacy_truncated, NULL, &deserialize_context));
+    ASSERT_EQ(0x12345678u, failed.flags);
+
+    nmo_mesh_vtable.destroy(&source, NULL, NULL);
+    nmo_mesh_vtable.destroy(&loaded, NULL, NULL);
+    nmo_mesh_vtable.destroy(&failed, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_id_remap, mesh_preserves_large_weight_counts) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+    ASSERT_NOT_NULL(arena);
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+
+    const uint32_t weight_count = 10000000u;
+    nmo_mesh_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_mesh_vtable.create(&source, NULL, NULL));
+    source.vertex_weight_count = weight_count;
+    source.vertex_weights = nmo_arena_alloc(
+        arena, sizeof(*source.vertex_weights) * weight_count,
+        _Alignof(float));
+    ASSERT_NOT_NULL(source.vertex_weights);
+    memset(source.vertex_weights, 0,
+           sizeof(*source.vertex_weights) * weight_count);
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    chunk->class_id = NMO_CID_MESH;
+    chunk->chunk_version = NMO_CHUNK_VERSION4;
+    chunk->data_version = 9;
+    chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_mesh_serialize(
+        &source, chunk, NULL, &serialize_context));
+    nmo_chunk_close(chunk);
+    nmo_mesh_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_mesh_vtable.create(&loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_mesh_deserialize(
+        &loaded, chunk, NULL, &deserialize_context));
+    ASSERT_EQ(weight_count, loaded.vertex_weight_count);
+    ASSERT_EQ(0.0f, loaded.vertex_weights[weight_count - 1u]);
+
+    float nonuniform_weights[3] = {0.125f, 0.5f, 0.875f};
+    nmo_mesh_state_t nonuniform;
+    ASSERT_EQ(NMO_OK, nmo_mesh_vtable.create(&nonuniform, NULL, NULL));
+    nonuniform.vertex_weight_count = 3u;
+    nonuniform.vertex_weights = nonuniform_weights;
+    nmo_chunk_t *nonuniform_chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(nonuniform_chunk);
+    nonuniform_chunk->class_id = NMO_CID_MESH;
+    nonuniform_chunk->chunk_version = NMO_CHUNK_VERSION4;
+    nonuniform_chunk->data_version = 9;
+    nonuniform_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_mesh_serialize(
+        &nonuniform, nonuniform_chunk, NULL, &serialize_context));
+    nmo_chunk_close(nonuniform_chunk);
+    nmo_mesh_state_t nonuniform_loaded;
+    ASSERT_EQ(NMO_OK, nmo_mesh_vtable.create(
+        &nonuniform_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_mesh_deserialize(
+        &nonuniform_loaded, nonuniform_chunk, NULL,
+        &deserialize_context));
+    ASSERT_EQ(3u, nonuniform_loaded.vertex_weight_count);
+    ASSERT_EQ(0.125f, nonuniform_loaded.vertex_weights[0]);
+    ASSERT_EQ(0.5f, nonuniform_loaded.vertex_weights[1]);
+    ASSERT_EQ(0.875f, nonuniform_loaded.vertex_weights[2]);
+
+    nmo_vertex_t fallback_vertices[2] = {0};
+    uint32_t fallback_colors[2] = {0};
+    uint32_t fallback_specular[2] = {0};
+    float fallback_weights[2] = {0.25f, 0.75f};
+    nmo_mesh_state_t fallback;
+    nmo_mesh_state_t fallback_copy;
+    ASSERT_EQ(NMO_OK, nmo_mesh_vtable.create(&fallback, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_mesh_vtable.create(
+        &fallback_copy, NULL, NULL));
+    fallback.vertex_count = 2u;
+    fallback.vertices = fallback_vertices;
+    fallback.vertex_colors = fallback_colors;
+    fallback.vertex_specular = fallback_specular;
+    fallback.vertex_weights = fallback_weights;
+    ASSERT_EQ(NMO_OK, nmo_mesh_vtable.copy(
+        &fallback, &fallback_copy, NULL, arena));
+    ASSERT_NOT_NULL(fallback_copy.vertex_weights);
+    ASSERT_TRUE(fallback_copy.vertex_weights != fallback_weights);
+    ASSERT_EQ(0.25f, fallback_copy.vertex_weights[0]);
+    ASSERT_EQ(0.75f, fallback_copy.vertex_weights[1]);
+
+    nmo_mesh_vtable.destroy(&source, NULL, NULL);
+    nmo_mesh_vtable.destroy(&loaded, NULL, NULL);
+    nmo_mesh_vtable.destroy(&nonuniform, NULL, NULL);
+    nmo_mesh_vtable.destroy(&nonuniform_loaded, NULL, NULL);
+    nmo_mesh_vtable.destroy(&fallback, NULL, NULL);
+    nmo_mesh_vtable.destroy(&fallback_copy, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_id_remap, mesh_rejects_truncated_large_weights_before_allocation) {
+    fail_after_allocator_state_t allocator_state = {
+        .allocation_count = 0,
+        .allowed_allocations = 2,
+    };
+    nmo_allocator_t failing_allocator = nmo_allocator_custom(
+        fail_after_alloc, fail_after_free, &allocator_state);
+    nmo_arena_t *arena = nmo_arena_create(&failing_allocator, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    chunk->class_id = NMO_CID_MESH;
+    chunk->chunk_version = NMO_CHUNK_VERSION4;
+    chunk->data_version = 9;
+    chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        chunk, CK_STATESAVE_MESHWEIGHTS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 10000000));
+    nmo_chunk_close(chunk);
+
+    nmo_mesh_state_t state;
+    ASSERT_EQ(NMO_OK, nmo_mesh_vtable.create(&state, NULL, NULL));
+    state.flags = 0x12345678u;
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_mesh_deserialize(
+        &state, chunk, NULL, &deserialize_context));
+    ASSERT_EQ(0x12345678u, state.flags);
+    ASSERT_EQ(2u, allocator_state.allocation_count);
+
+    nmo_mesh_vtable.destroy(&state, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, mesh_copy_preserves_material_records) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
     ASSERT_NOT_NULL(arena);
@@ -11228,6 +11428,9 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, mesh_copy_preserves_material_records);
     REGISTER_TEST(chunk_id_remap, mesh_rejects_truncated_large_lines_before_allocation);
     REGISTER_TEST(chunk_id_remap, mesh_preserves_large_geometry_counts);
+    REGISTER_TEST(chunk_id_remap, mesh_preserves_large_vertex_counts);
+    REGISTER_TEST(chunk_id_remap, mesh_preserves_large_weight_counts);
+    REGISTER_TEST(chunk_id_remap, mesh_rejects_truncated_large_weights_before_allocation);
     REGISTER_TEST(chunk_id_remap, patchmesh_data3_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, patchmesh_rejects_cross_section_legacy_materials);
     REGISTER_TEST(chunk_id_remap, patchmesh_data2_layout_and_empty_sections_round_trip);
