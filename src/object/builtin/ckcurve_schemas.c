@@ -691,6 +691,12 @@ static nmo_status_t nmo_curve_deserialize_internal(
     out_state->savepoints_in_file = 0;
 
     uint32_t data_version = nmo_chunk_get_data_version(chunk);
+    const nmo_deserialize_context_t *deserialize_context =
+        nmo_deserialize_context_get(context);
+    const int is_file =
+        ((chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
+        (deserialize_context != NULL &&
+         (deserialize_context->flags & NMO_DESER_FLAG_FILE_MODE) != 0);
 
     if (data_version < 5) {
         size_t control_points_section_dwords = 0;
@@ -793,7 +799,7 @@ static nmo_status_t nmo_curve_deserialize_internal(
         const size_t savepoints_section_end =
             nmo_chunk_get_position(chunk) + savepoints_section_dwords;
         out_state->has_savepoints_chunk = 1;
-        if (chunk->chunk_options & NMO_CHUNK_OPTION_FILE) {
+        if (is_file) {
             out_state->savepoints_in_file = 1;
         }
         uint32_t count = 0;

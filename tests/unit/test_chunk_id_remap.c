@@ -18754,7 +18754,6 @@ TEST(chunk_id_remap, curve_refs_round_trip_and_failure_is_atomic) {
     first->class_id = NMO_CID_CURVE;
     first->chunk_version = NMO_CHUNK_VERSION4;
     first->data_version = 7;
-    first->chunk_options |= NMO_CHUNK_OPTION_FILE;
     ASSERT_EQ(NMO_OK, nmo_curve_serialize(
         &source, first, NULL, &serialize_context));
     nmo_chunk_close(first);
@@ -18768,6 +18767,7 @@ TEST(chunk_id_remap, curve_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(961u, loaded.control_point_ids[0].raw_id);
     ASSERT_EQ(NMO_REF_UNRESOLVED, loaded.control_point_ids[0].state);
     ASSERT_EQ(962u, loaded.control_point_ids[1].raw_id);
+    ASSERT_TRUE(loaded.savepoints_in_file);
     ASSERT_EQ(1u, loaded.sub_point_count);
     ASSERT_EQ(971u, loaded.sub_points[0].ref.raw_id);
     ASSERT_EQ(NMO_REF_UNRESOLVED, loaded.sub_points[0].ref.state);
@@ -18836,7 +18836,6 @@ TEST(chunk_id_remap, curve_refs_round_trip_and_failure_is_atomic) {
     second->class_id = NMO_CID_CURVE;
     second->chunk_version = NMO_CHUNK_VERSION4;
     second->data_version = 7;
-    second->chunk_options |= NMO_CHUNK_OPTION_FILE;
     ASSERT_EQ(NMO_OK, nmo_curve_serialize(
         &loaded, second, NULL, &serialize_context));
     nmo_chunk_close(second);
@@ -18849,6 +18848,7 @@ TEST(chunk_id_remap, curve_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(2u, reloaded.control_point_count);
     ASSERT_EQ(961u, reloaded.control_point_ids[0].raw_id);
     ASSERT_EQ(962u, reloaded.control_point_ids[1].raw_id);
+    ASSERT_TRUE(reloaded.savepoints_in_file);
     ASSERT_EQ(1u, reloaded.sub_point_count);
     ASSERT_EQ(971u, reloaded.sub_points[0].ref.raw_id);
     ASSERT_EQ(1u, reloaded.base.base.base.scripts.count);
