@@ -30,7 +30,15 @@
 #include <string.h>
 #include <stdalign.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(sceneobject, nmo_sceneobject_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE(
+    sceneobject,
+    nmo_sceneobject_state_t,
+    do {
+        nmo_status_t result = nmo_object_vtable.create(
+            &state->base, NULL, context);
+        if (result != NMO_OK) return result;
+    } while (0),
+    nmo_object_vtable.destroy(&state->base, NULL, context))
 
 /* =============================================================================
  * REFLECTION FIELDS
@@ -125,8 +133,11 @@ static nmo_status_t nmo_sceneobject_copy(
     const nmo_type_descriptor_t *type,
     nmo_arena_t *arena)
 {
-    (void)arena;
-    return nmo_object_default_copy(src, dst, type, arena);
+    (void)type;
+    nmo_type_descriptor_t base_type = {
+        .size = sizeof(nmo_object_state_t),
+    };
+    return nmo_object_vtable.copy(src, dst, &base_type, arena);
 }
 
 static nmo_status_t nmo_sceneobject_validate(
@@ -135,9 +146,7 @@ static nmo_status_t nmo_sceneobject_validate(
     void *context)
 {
     (void)type;
-    (void)context;
-    (void)instance;
-    NMO_RETURN_OK();
+    return nmo_object_vtable.validate(instance, NULL, context);
 }
 
 nmo_status_t nmo_sceneobject_prepare_dependencies(
@@ -198,7 +207,15 @@ static void nmo_sceneobject_post_delete(
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_STATE_OPS_CUSTOM(sceneobject, nmo_sceneobject_state_t)
+static bool nmo_sceneobject_equals(const void *a, const void *b)
+{
+    return nmo_object_vtable.equals(a, b);
+}
+
+static uint32_t nmo_sceneobject_hash(const void *instance)
+{
+    return nmo_object_vtable.hash(instance);
+}
 
 nmo_type_vtable_t nmo_sceneobject_vtable = {
     .prepare_dependencies = nmo_sceneobject_prepare_dependencies,

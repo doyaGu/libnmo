@@ -46,6 +46,8 @@
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "object/builtin/nmo_patchmesh_schemas.h"
 #include "object/builtin/nmo_animation_schemas.h"
+#include "object/builtin/nmo_sceneobject_schemas.h"
+#include "object/builtin/nmo_rendercontext_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_guids.h"
 #include "object/nmo_param_guids.h"
@@ -145,6 +147,51 @@ TEST(chunk_id_remap, object_visibility_seek_errors_propagate_atomically) {
         &state, malformed, NULL, NULL));
     ASSERT_EQ(NMO_CKOBJECT_HIERARCHICAL, state.visibility_flags);
     nmo_arena_destroy(arena);
+}
+
+TEST(chunk_id_remap, object_only_types_delegate_state_operations) {
+    nmo_sceneobject_state_t scene;
+    nmo_sceneobject_state_t scene_copy;
+    nmo_rendercontext_state_t render;
+    nmo_rendercontext_state_t render_copy;
+    ASSERT_EQ(NMO_OK, nmo_sceneobject_vtable.create(&scene, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_sceneobject_vtable.create(
+        &scene_copy, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_rendercontext_vtable.create(
+        &render, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_rendercontext_vtable.create(
+        &render_copy, NULL, NULL));
+    ASSERT_EQ(NMO_CKOBJECT_VISIBLE, scene.base.visibility_flags);
+    ASSERT_EQ(NMO_CKOBJECT_VISIBLE, render.base.visibility_flags);
+
+    scene.base.visibility_flags = NMO_CKOBJECT_HIERARCHICAL;
+    nmo_type_descriptor_t scene_type = {
+        .size = sizeof(nmo_sceneobject_state_t),
+    };
+    ASSERT_EQ(NMO_OK, nmo_sceneobject_vtable.copy(
+        &scene, &scene_copy, &scene_type, NULL));
+    ASSERT_TRUE(nmo_sceneobject_vtable.equals(&scene, &scene_copy));
+    ASSERT_EQ(nmo_sceneobject_vtable.hash(&scene),
+              nmo_sceneobject_vtable.hash(&scene_copy));
+
+    render.base.visibility_flags = 0;
+    nmo_type_descriptor_t render_type = {
+        .size = sizeof(nmo_rendercontext_state_t),
+    };
+    ASSERT_EQ(NMO_OK, nmo_rendercontext_vtable.copy(
+        &render, &render_copy, &render_type, NULL));
+    ASSERT_TRUE(nmo_rendercontext_vtable.equals(&render, &render_copy));
+    ASSERT_EQ(nmo_rendercontext_vtable.hash(&render),
+              nmo_rendercontext_vtable.hash(&render_copy));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_sceneobject_vtable.validate(NULL, NULL, NULL));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_rendercontext_vtable.validate(NULL, NULL, NULL));
+
+    nmo_sceneobject_vtable.destroy(&scene, NULL, NULL);
+    nmo_sceneobject_vtable.destroy(&scene_copy, NULL, NULL);
+    nmo_rendercontext_vtable.destroy(&render, NULL, NULL);
+    nmo_rendercontext_vtable.destroy(&render_copy, NULL, NULL);
 }
 
 TEST(chunk_id_remap, single_id_remap) {
@@ -9615,6 +9662,7 @@ TEST(chunk_id_remap, legacy_unresolved_id_preserves_raw_id) {
 TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, id_remap_basic);
     REGISTER_TEST(chunk_id_remap, object_visibility_seek_errors_propagate_atomically);
+    REGISTER_TEST(chunk_id_remap, object_only_types_delegate_state_operations);
     REGISTER_TEST(chunk_id_remap, single_id_remap);
     REGISTER_TEST(chunk_id_remap, malformed_subchunk_remap_reports_and_rolls_back);
     REGISTER_TEST(chunk_id_remap, malformed_chunk_arrays_are_rejected_before_remap);
