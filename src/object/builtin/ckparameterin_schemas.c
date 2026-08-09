@@ -137,11 +137,16 @@ static nmo_status_t nmo_parameterin_deserialize_internal(
     nmo_ref_t owner = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     uint8_t is_shared = 0;
     uint8_t is_disabled = 0;
+    size_t section_dwords = 0;
 
     if (data_version >= 1) {
-        result = nmo_chunk_seek_identifier(
-            chunk, CK_STATESAVE_PARAMETERIN_DATASHARED);
+        result = nmo_chunk_seek_identifier_with_size(
+            chunk, CK_STATESAVE_PARAMETERIN_DATASHARED,
+            &section_dwords);
         if (result == NMO_OK) {
+            if (section_dwords < (data_version < 5 ? 4u : 3u)) {
+                return NMO_ERR_TRUNCATED_CHUNK;
+            }
             NMO_RETURN_IF_ERROR(nmo_chunk_read_guid(chunk, &type_guid));
             nmo_parameterin_convert_legacy_guid(&type_guid);
             if (data_version < 5) {
@@ -151,9 +156,13 @@ static nmo_status_t nmo_parameterin_deserialize_internal(
             NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &source));
             is_shared = 1;
         } else if (result == NMO_ERR_NOT_FOUND) {
-            result = nmo_chunk_seek_identifier(
-                chunk, CK_STATESAVE_PARAMETERIN_DATASOURCE);
+            result = nmo_chunk_seek_identifier_with_size(
+                chunk, CK_STATESAVE_PARAMETERIN_DATASOURCE,
+                &section_dwords);
             if (result == NMO_OK) {
+                if (section_dwords < (data_version < 5 ? 4u : 3u)) {
+                    return NMO_ERR_TRUNCATED_CHUNK;
+                }
                 NMO_RETURN_IF_ERROR(nmo_chunk_read_guid(chunk, &type_guid));
                 nmo_parameterin_convert_legacy_guid(&type_guid);
                 if (data_version < 5) {
@@ -162,9 +171,13 @@ static nmo_status_t nmo_parameterin_deserialize_internal(
                 }
                 NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &source));
             } else if (result == NMO_ERR_NOT_FOUND) {
-                result = nmo_chunk_seek_identifier(
-                    chunk, CK_STATESAVE_PARAMETERIN_DEFAULTDATA);
+                result = nmo_chunk_seek_identifier_with_size(
+                    chunk, CK_STATESAVE_PARAMETERIN_DEFAULTDATA,
+                    &section_dwords);
                 if (result == NMO_OK) {
+                    if (section_dwords < 5u) {
+                        return NMO_ERR_TRUNCATED_CHUNK;
+                    }
                     NMO_RETURN_IF_ERROR(nmo_chunk_read_guid(
                         chunk, &type_guid));
                     nmo_parameterin_convert_legacy_guid(&type_guid);
@@ -190,27 +203,34 @@ static nmo_status_t nmo_parameterin_deserialize_internal(
         } else return result;
     } else {
         /* Legacy path: CK2 uses DEFAULTDATA/OWNER/INSHARED/OUTSOURCE */
-        result = nmo_chunk_seek_identifier(
-            chunk, CK_STATESAVE_PARAMETERIN_DEFAULTDATA);
+        result = nmo_chunk_seek_identifier_with_size(
+            chunk, CK_STATESAVE_PARAMETERIN_DEFAULTDATA,
+            &section_dwords);
         if (result == NMO_OK) {
+            if (section_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_guid(chunk, &type_guid));
             nmo_parameterin_convert_legacy_guid(&type_guid);
         } else if (result != NMO_ERR_NOT_FOUND) return result;
-        result = nmo_chunk_seek_identifier(
-            chunk, CK_STATESAVE_PARAMETERIN_OWNER);
+        result = nmo_chunk_seek_identifier_with_size(
+            chunk, CK_STATESAVE_PARAMETERIN_OWNER, &section_dwords);
         if (result == NMO_OK) {
+            if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
             NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &owner));
         } else if (result != NMO_ERR_NOT_FOUND) return result;
-        result = nmo_chunk_seek_identifier(
-            chunk, CK_STATESAVE_PARAMETERIN_INSHARED);
+        result = nmo_chunk_seek_identifier_with_size(
+            chunk, CK_STATESAVE_PARAMETERIN_INSHARED,
+            &section_dwords);
         if (result == NMO_OK) {
+            if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
             NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &source));
             is_shared = 1;
         } else if (result != NMO_ERR_NOT_FOUND) return result;
         if (!is_shared) {
-            result = nmo_chunk_seek_identifier(
-                chunk, CK_STATESAVE_PARAMETERIN_OUTSOURCE);
+            result = nmo_chunk_seek_identifier_with_size(
+                chunk, CK_STATESAVE_PARAMETERIN_OUTSOURCE,
+                &section_dwords);
             if (result == NMO_OK) {
+                if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
                 NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &source));
             } else if (result != NMO_ERR_NOT_FOUND) return result;
         }

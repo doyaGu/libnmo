@@ -3116,6 +3116,91 @@ TEST(chunk_id_remap, parameterin_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(1u, failed.is_shared);
     ASSERT_EQ(1u, failed.is_disabled);
 
+    nmo_chunk_t *default_cross_section = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(default_cross_section);
+    default_cross_section->class_id = NMO_CID_PARAMETERIN;
+    default_cross_section->data_version = 8;
+    default_cross_section->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(default_cross_section));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        default_cross_section, CK_STATESAVE_PARAMETERIN_DEFAULTDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_guid(
+        default_cross_section, (nmo_guid_t){5u, 6u}));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(
+        default_cross_section, 801));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(
+        default_cross_section, 802));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        default_cross_section, 0x01020304u));
+    nmo_chunk_close(default_cross_section);
+    nmo_chunk_set_file_context(default_cross_section, &read_context);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_parameterin_deserialize(
+        &failed, default_cross_section, NULL, &deserialize_context));
+    ASSERT_EQ(7u, failed.type_guid.d1);
+    ASSERT_EQ(901u, failed.source.raw_id);
+    ASSERT_EQ(902u, failed.owner.raw_id);
+
+    nmo_chunk_t *source_cross_section = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(source_cross_section);
+    source_cross_section->class_id = NMO_CID_PARAMETERIN;
+    source_cross_section->data_version = 8;
+    source_cross_section->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(source_cross_section));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        source_cross_section, CK_STATESAVE_PARAMETERIN_DATASOURCE));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_guid(
+        source_cross_section, (nmo_guid_t){5u, 6u}));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        source_cross_section, 0x01020304u));
+    nmo_chunk_close(source_cross_section);
+    nmo_chunk_set_file_context(source_cross_section, &read_context);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_parameterin_deserialize(
+        &failed, source_cross_section, NULL, &deserialize_context));
+    ASSERT_EQ(7u, failed.type_guid.d1);
+    ASSERT_EQ(901u, failed.source.raw_id);
+    ASSERT_EQ(902u, failed.owner.raw_id);
+
+    nmo_chunk_t *prefix_cross_section = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(prefix_cross_section);
+    prefix_cross_section->class_id = NMO_CID_PARAMETERIN;
+    prefix_cross_section->data_version = 4;
+    prefix_cross_section->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(prefix_cross_section));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        prefix_cross_section, CK_STATESAVE_PARAMETERIN_DATASOURCE));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_guid(
+        prefix_cross_section, (nmo_guid_t){5u, 6u}));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(
+        prefix_cross_section, 801));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        prefix_cross_section, 0x01020304u));
+    nmo_chunk_close(prefix_cross_section);
+    nmo_chunk_set_file_context(prefix_cross_section, &read_context);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_parameterin_deserialize(
+        &failed, prefix_cross_section, NULL, &deserialize_context));
+    ASSERT_EQ(7u, failed.type_guid.d1);
+    ASSERT_EQ(901u, failed.source.raw_id);
+    ASSERT_EQ(902u, failed.owner.raw_id);
+
+    nmo_chunk_t *legacy_owner_cross_section = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(legacy_owner_cross_section);
+    legacy_owner_cross_section->class_id = NMO_CID_PARAMETERIN;
+    legacy_owner_cross_section->data_version = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(legacy_owner_cross_section));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        legacy_owner_cross_section, CK_STATESAVE_PARAMETERIN_OWNER));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        legacy_owner_cross_section, 0x01020304u));
+    nmo_chunk_close(legacy_owner_cross_section);
+    nmo_chunk_set_file_context(legacy_owner_cross_section, &read_context);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_parameterin_deserialize(
+        &failed, legacy_owner_cross_section, NULL, &deserialize_context));
+    ASSERT_EQ(7u, failed.type_guid.d1);
+    ASSERT_EQ(901u, failed.source.raw_id);
+    ASSERT_EQ(902u, failed.owner.raw_id);
+    ASSERT_EQ(1u, failed.is_shared);
+    ASSERT_EQ(1u, failed.is_disabled);
+
     nmo_parameterin_state_t invalid;
     ASSERT_EQ(NMO_OK, nmo_parameterin_vtable.create(&invalid, NULL, NULL));
     invalid.type_guid = (nmo_guid_t){9u, 10u};
