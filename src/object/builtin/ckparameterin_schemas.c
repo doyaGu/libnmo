@@ -333,6 +333,12 @@ static nmo_status_t nmo_parameterin_serialize_internal(
     }
 
     /* Write base CKObject state (merged into this chunk by AddChunkAndDelete) */
+    const nmo_serialize_context_t *ser_ctx =
+        nmo_serialize_context_try(context);
+    const bool is_file =
+        ((out_chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
+        (ser_ctx != NULL &&
+         (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
     uint32_t data_version = nmo_chunk_get_data_version(out_chunk);
     const bool legacy_layout =
         data_version == 0u && in_state->has_legacy_layout;
@@ -344,9 +350,9 @@ static nmo_status_t nmo_parameterin_serialize_internal(
         nmo_ref_serialized_id(&in_state->owner) != NMO_OBJECT_ID_NONE;
     const bool has_source = in_state->has_source ||
         nmo_ref_serialized_id(&in_state->source) != NMO_OBJECT_ID_NONE;
-    const bool has_data = in_state->has_data || has_owner || has_source;
+    const bool has_data = is_file || in_state->has_data || has_owner || has_source;
     const bool writes_owner_layout =
-        data_version >= 1u && has_owner;
+        !is_file && data_version >= 1u && has_owner;
     const bool stores_legacy_prefix =
         data_version >= 1u && data_version < 5u &&
         !writes_owner_layout && has_data;

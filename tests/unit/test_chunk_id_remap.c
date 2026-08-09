@@ -3702,8 +3702,8 @@ TEST(chunk_id_remap, parameterin_refs_round_trip_and_failure_is_atomic) {
         &loaded, first, NULL, &deserialize_context));
     ASSERT_EQ(693u, loaded.source.raw_id);
     ASSERT_EQ(NMO_REF_UNRESOLVED, loaded.source.state);
-    ASSERT_EQ(694u, loaded.owner.raw_id);
-    ASSERT_EQ(NMO_REF_UNRESOLVED, loaded.owner.state);
+    ASSERT_EQ(NMO_OBJECT_ID_NONE, loaded.owner.raw_id);
+    ASSERT_EQ(NMO_REF_NONE, loaded.owner.state);
     ASSERT_EQ(NMO_OBJECT_ID_NONE, nmo_parameterin_source_id(&loaded));
     ASSERT_EQ(NMO_OBJECT_ID_NONE, nmo_parameterin_owner_id(&loaded));
     ASSERT_EQ(1u, loaded.is_shared);
@@ -3726,8 +3726,8 @@ TEST(chunk_id_remap, parameterin_refs_round_trip_and_failure_is_atomic) {
         &reloaded, second, NULL, &deserialize_context));
     ASSERT_EQ(693u, reloaded.source.raw_id);
     ASSERT_EQ(NMO_REF_UNRESOLVED, reloaded.source.state);
-    ASSERT_EQ(694u, reloaded.owner.raw_id);
-    ASSERT_EQ(NMO_REF_UNRESOLVED, reloaded.owner.state);
+    ASSERT_EQ(NMO_OBJECT_ID_NONE, reloaded.owner.raw_id);
+    ASSERT_EQ(NMO_REF_NONE, reloaded.owner.state);
 
     nmo_parameterin_state_t legacy_prefix_source;
     ASSERT_EQ(NMO_OK, nmo_parameterin_vtable.create(
@@ -3797,10 +3797,14 @@ TEST(chunk_id_remap, parameterin_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(4u, nmo_chunk_get_data_size(lossy_prefix_target));
     lossy_prefix_target->data_version = 4;
     legacy_prefix_loaded.owner = nmo_ref_from_raw(699);
-    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_parameterin_serialize(
+    ASSERT_EQ(NMO_OK, nmo_parameterin_serialize(
         &legacy_prefix_loaded, lossy_prefix_target, NULL,
         &file_serialize_context));
-    ASSERT_EQ(4u, nmo_chunk_get_data_size(lossy_prefix_target));
+    nmo_chunk_close(lossy_prefix_target);
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
+        lossy_prefix_target, CK_STATESAVE_PARAMETERIN_DATASOURCE));
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_chunk_seek_identifier(
+        lossy_prefix_target, CK_STATESAVE_PARAMETERIN_DEFAULTDATA));
     legacy_prefix_loaded.owner = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
 
     nmo_parameterin_state_t legacy_source;
@@ -3891,7 +3895,11 @@ TEST(chunk_id_remap, parameterin_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(NMO_OK, nmo_parameterin_serialize(
         &empty_loaded, empty_saved, NULL, &file_serialize_context));
     nmo_chunk_close(empty_saved);
-    ASSERT_EQ(0u, nmo_chunk_get_data_size(empty_saved));
+    size_t empty_data_dwords = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        empty_saved, CK_STATESAVE_PARAMETERIN_DATASOURCE,
+        &empty_data_dwords));
+    ASSERT_EQ(3u, empty_data_dwords);
 
     nmo_chunk_t *null_owner = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(null_owner);
@@ -3925,9 +3933,9 @@ TEST(chunk_id_remap, parameterin_refs_round_trip_and_failure_is_atomic) {
         &null_owner_loaded, null_owner_saved, NULL,
         &file_serialize_context));
     nmo_chunk_close(null_owner_saved);
-    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
-        null_owner_saved, CK_STATESAVE_PARAMETERIN_DEFAULTDATA));
     ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_chunk_seek_identifier(
+        null_owner_saved, CK_STATESAVE_PARAMETERIN_DEFAULTDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
         null_owner_saved, CK_STATESAVE_PARAMETERIN_DATASOURCE));
 
     nmo_chunk_t *legacy_data_only = nmo_chunk_create(arena);
