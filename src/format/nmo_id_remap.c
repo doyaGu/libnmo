@@ -94,7 +94,8 @@ nmo_status_t nmo_id_remap_lookup_id(const nmo_id_remap_t *remap, nmo_object_id_t
             *out_new_id = stored - 1;
             NMO_RETURN_OK();
         }
-        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_WARNING, "ID not found in remap table");
+        /* A mapped UINT32_MAX target also encodes as zero after the +1
+         * direct-table transform. Fall back to the authoritative entries. */
     }
 
     /* Fallback: linear scan if lookup table not available */
