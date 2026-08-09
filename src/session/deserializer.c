@@ -553,25 +553,6 @@ nmo_status_t nmo_deserializer_parse_header(nmo_deserializer_t *ds)
         return result;
     }
 
-    /* Set file info in session */
-    nmo_file_info_t file_info;
-    memset(&file_info, 0, sizeof(file_info));
-    file_info.file_version = ds->header.file_version;
-    file_info.file_version2 = ds->header.file_version2;
-    file_info.ck_version = ds->header.ck_version;
-    file_info.product_version = ds->header.product_version;
-    file_info.product_build = ds->header.product_build;
-    file_info.file_size = (size_t)((ds->header.file_version >= 5u) ? 64u : 32u) +
-                          (size_t)ds->header.hdr1_pack_size +
-                          (size_t)ds->header.data_pack_size;
-    file_info.object_count = ds->header.object_count;
-    file_info.manager_count = ds->header.manager_count;
-    file_info.write_mode = ds->header.file_write_mode;
-    nmo_session_set_file_info(session, &file_info);
-
-    /* Store file header in session */
-    nmo_session_set_file_header(session, &ds->header, sizeof(nmo_file_header_t));
-
     /* Phase 3: Read and Decompress Header1 */
     nmo_log(logger, NMO_LOG_INFO, "Phase 3: Reading header1 (size: %u bytes)",
             ds->header.hdr1_pack_size);
@@ -674,6 +655,27 @@ nmo_status_t nmo_deserializer_parse_header(nmo_deserializer_t *ds)
                 "Failed to store plugin dependencies (code=%d)", dep_store_result);
         return dep_store_result;
     }
+
+    /* Publish file metadata only after the complete Header1 has parsed. */
+    nmo_file_info_t file_info;
+    memset(&file_info, 0, sizeof(file_info));
+    file_info.file_version = ds->header.file_version;
+    file_info.file_version2 = ds->header.file_version2;
+    file_info.ck_version = ds->header.ck_version;
+    file_info.product_version = ds->header.product_version;
+    file_info.product_build = ds->header.product_build;
+    file_info.file_size = (size_t)((ds->header.file_version >= 5u) ? 64u : 32u) +
+                          (size_t)ds->header.hdr1_pack_size +
+                          (size_t)ds->header.data_pack_size;
+    file_info.object_count = ds->header.object_count;
+    file_info.manager_count = ds->header.manager_count;
+    file_info.write_mode = ds->header.file_write_mode;
+    int info_result = nmo_session_set_file_info(session, &file_info);
+    if (info_result != NMO_OK) {
+        return info_result;
+    }
+
+    nmo_session_set_file_header(session, &ds->header, sizeof(nmo_file_header_t));
 
     nmo_log(logger, NMO_LOG_INFO, "Found %u objects, %u managers, %u plugins",
             ds->hdr1.object_count, ds->header.manager_count, ds->hdr1.plugin_dep_count);

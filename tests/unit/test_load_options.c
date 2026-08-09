@@ -343,7 +343,9 @@ TEST(load_options, full_profile_is_default)
     destroy_ctx_session(ctx, session);
 }
 
-static nmo_status_t parse_memory_header(const void *data, size_t size)
+static nmo_status_t parse_memory_header(const void *data,
+                                        size_t size,
+                                        int *out_materialized)
 {
     nmo_context_t *ctx = nmo_context_create(NULL);
     if (ctx == NULL) {
@@ -367,6 +369,9 @@ static nmo_status_t parse_memory_header(const void *data, size_t size)
     }
 
     nmo_status_t result = nmo_deserializer_parse_header(ds);
+    if (out_materialized != NULL) {
+        *out_materialized = nmo_session_has_materialized_load_state(session);
+    }
     nmo_deserializer_destroy(ds);
     destroy_ctx_session(ctx, session);
     return result;
@@ -375,7 +380,8 @@ static nmo_status_t parse_memory_header(const void *data, size_t size)
 static nmo_status_t parse_header1_payload(const void *payload,
                                           size_t payload_size,
                                           uint32_t packed_size,
-                                          uint32_t unpacked_size)
+                                          uint32_t unpacked_size,
+                                          int *out_materialized)
 {
     nmo_file_header_t header = {0};
     memcpy(header.signature, "Nemo Fi\0", sizeof(header.signature));
@@ -395,7 +401,7 @@ static nmo_status_t parse_header1_payload(const void *payload,
         size_t size = 0;
         const void *data = nmo_memory_io_get_data(write_io, &size);
         result = data != NULL
-            ? parse_memory_header(data, size)
+            ? parse_memory_header(data, size, out_materialized)
             : NMO_ERR_INTERNAL;
     }
     nmo_io_close(write_io);
@@ -628,24 +634,29 @@ TEST(load_options, phased_header_parse_preserves_format_errors)
 {
     static const uint8_t truncated[] = { 'N', 'e', 'm', 'o' };
     ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK,
-              parse_memory_header(truncated, sizeof(truncated)));
+              parse_memory_header(truncated, sizeof(truncated), NULL));
 
     static const uint8_t invalid_signature[8] = {
         'N', 'o', 't', ' ', 'N', 'M', 'O', '\0'
     };
     ASSERT_EQ(NMO_ERR_INVALID_SIGNATURE,
-              parse_memory_header(invalid_signature, sizeof(invalid_signature)));
+              parse_memory_header(invalid_signature,
+                                  sizeof(invalid_signature),
+                                  NULL));
 
     const uint8_t incomplete_header1 = 0;
+    int materialized = 1;
     ASSERT_EQ(NMO_ERR_BUFFER_OVERRUN,
-              parse_header1_payload(&incomplete_header1, 1, 1, 1));
+              parse_header1_payload(&incomplete_header1, 1, 1, 1,
+                                    &materialized));
+    ASSERT_FALSE(materialized);
 }
 
 TEST(load_options, phased_header1_classifies_payload_failures)
 {
     const uint8_t short_payload = 0;
     ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK,
-              parse_header1_payload(&short_payload, 1, 4, 4));
+              parse_header1_payload(&short_payload, 1, 4, 4, NULL));
 
     static const uint8_t corrupt_compressed_payload[4] = {
         0xDE, 0xAD, 0xBE, 0xEF
@@ -654,7 +665,8 @@ TEST(load_options, phased_header1_classifies_payload_failures)
               parse_header1_payload(corrupt_compressed_payload,
                                     sizeof(corrupt_compressed_payload),
                                     sizeof(corrupt_compressed_payload),
-                                    8));
+                                    8,
+                                    NULL));
 }
 
 TEST(load_options, load_file_preserves_header_errors)
