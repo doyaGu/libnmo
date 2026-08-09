@@ -268,8 +268,8 @@ static nmo_status_t nmo_parameterout_serialize_internal(
 
     const bool has_owner = in_state->has_owner ||
         nmo_ref_serialized_id(&in_state->owner) != NMO_OBJECT_ID_NONE;
-    if ((is_file ||
-         (save_flags & CK_STATESAVE_PARAMETEROUT_OWNER) != 0) &&
+    if (!is_file &&
+        (save_flags & CK_STATESAVE_PARAMETEROUT_OWNER) != 0 &&
         has_owner) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_PARAMETEROUT_OWNER);
         if (result != NMO_OK) return result;

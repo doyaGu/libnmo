@@ -4279,6 +4279,22 @@ TEST(chunk_id_remap, parameterout_refs_round_trip_and_failure_is_atomic) {
         uint8_t, &preserved_copy.base.buffer_data)[0]);
     ASSERT_EQ(799u, preserved_copy.owner.raw_id);
 
+    nmo_serialize_context_t owner_serialize_context =
+        nmo_serialize_context_create(
+            arena, NULL, 0, CK_STATESAVE_PARAMETEROUT_OWNER);
+    nmo_chunk_t *owner_only = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(owner_only);
+    owner_only->class_id = NMO_CID_PARAMETEROUT;
+    owner_only->data_version = 8;
+    ASSERT_EQ(NMO_OK, nmo_parameterout_serialize(
+        &source, owner_only, NULL, &owner_serialize_context));
+    nmo_chunk_close(owner_only);
+    size_t owner_only_dwords = 0u;
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        owner_only, CK_STATESAVE_PARAMETEROUT_OWNER,
+        &owner_only_dwords));
+    ASSERT_EQ(1u, owner_only_dwords);
+
     nmo_chunk_t *first = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(first);
     first->class_id = NMO_CID_PARAMETEROUT;
@@ -4295,8 +4311,9 @@ TEST(chunk_id_remap, parameterout_refs_round_trip_and_failure_is_atomic) {
         &loaded, NULL, NULL));
     ASSERT_EQ(NMO_OK, nmo_parameterout_deserialize(
         &loaded, first, NULL, &deserialize_context));
-    ASSERT_EQ(730u, loaded.owner.raw_id);
-    ASSERT_EQ(NMO_REF_UNRESOLVED, loaded.owner.state);
+    ASSERT_FALSE(loaded.has_owner);
+    ASSERT_EQ(NMO_OBJECT_ID_NONE, loaded.owner.raw_id);
+    ASSERT_EQ(NMO_REF_NONE, loaded.owner.state);
     ASSERT_EQ(NMO_OBJECT_ID_NONE, nmo_parameterout_owner_id(&loaded));
     ASSERT_EQ(3u, loaded.destination_count);
     for (uint32_t i = 0; i < loaded.destination_count; ++i) {
@@ -4325,7 +4342,8 @@ TEST(chunk_id_remap, parameterout_refs_round_trip_and_failure_is_atomic) {
         &reloaded, NULL, NULL));
     ASSERT_EQ(NMO_OK, nmo_parameterout_deserialize(
         &reloaded, second, NULL, &deserialize_context));
-    ASSERT_EQ(730u, reloaded.owner.raw_id);
+    ASSERT_FALSE(reloaded.has_owner);
+    ASSERT_EQ(NMO_OBJECT_ID_NONE, reloaded.owner.raw_id);
     ASSERT_EQ(3u, reloaded.destination_count);
     for (uint32_t i = 0; i < reloaded.destination_count; ++i) {
         ASSERT_EQ((nmo_object_id_t)(731 + i),
@@ -4372,10 +4390,9 @@ TEST(chunk_id_remap, parameterout_refs_round_trip_and_failure_is_atomic) {
     nmo_chunk_close(empty_sections_saved);
     size_t owner_dwords = 0;
     size_t destination_dwords = 0;
-    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_chunk_seek_identifier_with_size(
         empty_sections_saved, CK_STATESAVE_PARAMETEROUT_OWNER,
         &owner_dwords));
-    ASSERT_EQ(1u, owner_dwords);
     ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
         empty_sections_saved, CK_STATESAVE_PARAMETEROUT_DESTINATIONS,
         &destination_dwords));
