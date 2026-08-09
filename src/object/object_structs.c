@@ -197,7 +197,7 @@ nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry) {
 
     /* CKSceneObjectDesc */
     static const nmo_struct_field_def_t cksceneobjectdesc_fields[] = {
-        NMO_STRUCT_FIELD_NAME("ref", "uint32[3]"),
+        NMO_STRUCT_FIELD_REF_RECORD("ref"),
         NMO_STRUCT_FIELD_GUID("initial_value", CKPGUID_STATECHUNK),
         NMO_STRUCT_FIELD_GUID("reserved", CKPGUID_STATECHUNK),
         NMO_STRUCT_FIELD_GUID("flags", CKPGUID_UINT32)
@@ -224,7 +224,7 @@ nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry) {
 
     /* CKPatchMeshPatchRecord */
     static const nmo_struct_field_def_t ckpatchmeshpatchrecord_fields[] = {
-        NMO_STRUCT_FIELD_NAME("material", "uint32[3]"),
+        NMO_STRUCT_FIELD_REF_RECORD("material"),
         NMO_STRUCT_FIELD_GUID("patch", NMO_GUID_STRUCT_CKPATCHMESHPATCH)
     };
     static const nmo_struct_type_def_t ckpatchmeshpatchrecord_def =
@@ -233,7 +233,7 @@ nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry) {
 
     /* CKPatchMeshChannel */
     static const nmo_struct_field_def_t ckpatchmeshchannel_fields[] = {
-        NMO_STRUCT_FIELD_NAME("material", "uint32[3]"),
+        NMO_STRUCT_FIELD_REF_RECORD("material"),
         NMO_STRUCT_FIELD_GUID("flags", CKPGUID_UINT32),
         NMO_STRUCT_FIELD_GUID("type", CKPGUID_UINT32),
         NMO_STRUCT_FIELD_GUID("subtype", CKPGUID_UINT32),
@@ -256,7 +256,7 @@ nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry) {
 
     /* CKDataArrayParameter */
     static const nmo_struct_field_def_t ckdataarrayparameter_fields[] = {
-        NMO_STRUCT_FIELD_NAME("ref", "uint32[3]"),
+        NMO_STRUCT_FIELD_REF_RECORD("ref"),
         NMO_STRUCT_FIELD_GUID("chunk", CKPGUID_STATECHUNK)
     };
     static const nmo_struct_type_def_t ckdataarrayparameter_def =
@@ -268,7 +268,7 @@ nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry) {
         NMO_STRUCT_FIELD_GUID("int_value", CKPGUID_INT),
         NMO_STRUCT_FIELD_GUID("float_value", CKPGUID_FLOAT),
         NMO_STRUCT_FIELD_GUID("string_value", CKPGUID_STRING),
-        NMO_STRUCT_FIELD_NAME("object_ref", "uint32[3]"),
+        NMO_STRUCT_FIELD_REF_RECORD("object_ref"),
         NMO_STRUCT_FIELD_GUID("parameter", NMO_GUID_STRUCT_CKDATAARRAYPARAMETER)
     };
     static const nmo_union_type_def_t ckdataarraycell_def =
@@ -284,7 +284,7 @@ nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry) {
 
     /* CKCurvePointSubchunk */
     static const nmo_struct_field_def_t ckcurvepointsubchunk_fields[] = {
-        NMO_STRUCT_FIELD_NAME("ref", "uint32[3]"),
+        NMO_STRUCT_FIELD_REF_RECORD("ref"),
         NMO_STRUCT_FIELD_GUID("chunk", CKPGUID_STATECHUNK)
     };
     static const nmo_struct_type_def_t ckcurvepointsubchunk_def =
@@ -328,7 +328,7 @@ nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry) {
 
     /* CKMaterialChannel */
     static const nmo_struct_field_def_t ckmaterialchannel_fields[] = {
-        NMO_STRUCT_FIELD_NAME("material", "uint32[3]"),
+        NMO_STRUCT_FIELD_REF_RECORD("material"),
         NMO_STRUCT_FIELD_GUID("flags", CKPGUID_UINT32),
         NMO_STRUCT_FIELD_GUID("source_blend", CKPGUID_UINT32),
         NMO_STRUCT_FIELD_GUID("dest_blend", CKPGUID_UINT32),
@@ -340,7 +340,7 @@ nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry) {
 
     /* CKMaterialGroup */
     static const nmo_struct_field_def_t ckmaterialgroup_fields[] = {
-        NMO_STRUCT_FIELD_NAME("material", "uint32[3]"),
+        NMO_STRUCT_FIELD_REF_RECORD("material"),
         NMO_STRUCT_FIELD_GUID("padding", CKPGUID_INT)
     };
     static const nmo_struct_type_def_t ckmaterialgroup_def =
@@ -450,7 +450,7 @@ nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry) {
 
     /* CKKeyedAnimationSubanim */
     static const nmo_struct_field_def_t ckkeyedanimationsubanim_fields[] = {
-        NMO_STRUCT_FIELD_NAME("ref", "uint32[3]"),
+        NMO_STRUCT_FIELD_REF_RECORD("ref"),
         NMO_STRUCT_FIELD_GUID("chunk", CKPGUID_STATECHUNK)
     };
     static const nmo_struct_type_def_t ckkeyedanimationsubanim_def =

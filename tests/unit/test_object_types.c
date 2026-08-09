@@ -145,6 +145,36 @@ TEST(object_types, register_all_types) {
     ASSERT_TRUE(nmo_field_uses_ref_records(
         &character_subpart->fields[0]));
 
+    const struct {
+        nmo_guid_t type_guid;
+        const char *field_name;
+    } nested_ref_fields[] = {
+        {NMO_GUID_STRUCT_CKSCENEOBJECTDESC, "ref"},
+        {NMO_GUID_STRUCT_CKPATCHMESHPATCHRECORD, "material"},
+        {NMO_GUID_STRUCT_CKPATCHMESHCHANNEL, "material"},
+        {NMO_GUID_STRUCT_CKDATAARRAYPARAMETER, "ref"},
+        {NMO_GUID_STRUCT_CKDATAARRAYCELL, "object_ref"},
+        {NMO_GUID_STRUCT_CKCURVEPOINTSUBCHUNK, "ref"},
+        {NMO_GUID_STRUCT_CKMATERIALCHANNEL, "material"},
+        {NMO_GUID_STRUCT_CKMATERIALGROUP, "material"},
+        {NMO_GUID_STRUCT_CKKEYEDANIMATIONSUBANIM, "ref"},
+    };
+    for (size_t i = 0;
+         i < sizeof(nested_ref_fields) / sizeof(nested_ref_fields[0]);
+         ++i) {
+        const nmo_type_descriptor_t *nested_type =
+            nmo_type_registry_find_by_guid(
+                registry, nested_ref_fields[i].type_guid);
+        ASSERT_NOT_NULL(nested_type);
+        const nmo_type_field_t *ref_field = nmo_type_get_field_by_name(
+            nested_type, nested_ref_fields[i].field_name);
+        ASSERT_NOT_NULL(ref_field);
+        ASSERT_EQ(sizeof(nmo_ref_t), ref_field->size);
+        ASSERT_TRUE(nmo_field_is_ref(ref_field));
+        ASSERT_TRUE(nmo_field_uses_ref_records(ref_field));
+        ASSERT_FALSE(nmo_field_is_array(ref_field));
+    }
+
     nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
 }
