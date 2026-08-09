@@ -631,7 +631,12 @@ static bool nmo_texture_seek_found(
     uint32_t identifier,
     nmo_status_t *out_result)
 {
-    *out_result = nmo_chunk_seek_identifier(chunk, identifier);
+    size_t section_dwords = 0u;
+    *out_result = nmo_chunk_seek_identifier_with_size(
+        chunk, identifier, &section_dwords);
+    if (*out_result == NMO_OK && section_dwords == 0u) {
+        *out_result = NMO_ERR_TRUNCATED_CHUNK;
+    }
     return *out_result == NMO_OK;
 }
 

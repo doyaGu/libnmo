@@ -6309,6 +6309,35 @@ TEST(chunk_id_remap, texture_failures_keep_state_and_target_chunk_atomic) {
     ASSERT_EQ(901u, nmo_beobject_script_array_get_id(
         &state.base.scripts, 0));
 
+    const uint32_t empty_section_ids[] = {
+        CK_STATESAVE_TEXCOMPRESSED,
+        CK_STATESAVE_TEXBITMAPS,
+        CK_STATESAVE_TEXFILENAMES,
+        CK_STATESAVE_TEXAVIFILENAME,
+        CK_STATESAVE_USERMIPMAP,
+    };
+    for (size_t i = 0;
+         i < sizeof(empty_section_ids) / sizeof(empty_section_ids[0]); ++i) {
+        nmo_chunk_t *empty_section = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(empty_section);
+        empty_section->class_id = NMO_CID_TEXTURE;
+        empty_section->data_version = 7;
+        empty_section->chunk_options |= NMO_CHUNK_OPTION_FILE;
+        ASSERT_EQ(NMO_OK, nmo_chunk_start_write(empty_section));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+            empty_section, empty_section_ids[i]));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(empty_section, 0));
+        nmo_chunk_close(empty_section);
+
+        ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_texture_deserialize(
+            &state, empty_section, NULL, &deserialize_context));
+        ASSERT_TRUE(state.has_movie_filename);
+        ASSERT_STR_EQ("old.avi", state.movie_filename);
+        ASSERT_EQ(&old_slot, state.reader_slots);
+        ASSERT_EQ(901u, nmo_beobject_script_array_get_id(
+            &state.base.scripts, 0));
+    }
+
     fail_after_allocator_state_t allocator_state = {
         .allocation_count = 0,
         .allowed_allocations = 2,
