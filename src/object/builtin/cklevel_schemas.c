@@ -398,6 +398,9 @@ default_data_done:;
         if (nmo_chunk_get_position(chunk) > scene_section_end) {
             return NMO_ERR_TRUNCATED_CHUNK;
         }
+        if (nmo_chunk_get_position(chunk) < scene_section_end) {
+            return NMO_ERR_INVALID_FORMAT;
+        }
 
         nmo_ref_check_class(
             &current_scene,
@@ -500,6 +503,11 @@ default_data_done:;
                     return result;
                 }
                 *slot = name;
+            }
+            if (nmo_chunk_get_position(chunk) < duplicate_section_end) {
+                nmo_array_dispose(&duplicate_names);
+                nmo_array_dispose(&inactive_guids);
+                return NMO_ERR_INVALID_FORMAT;
             }
             result = nmo_array_swap(
                 &out_state->duplicate_manager_names, &duplicate_names);

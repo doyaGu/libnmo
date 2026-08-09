@@ -10727,6 +10727,31 @@ TEST(chunk_id_remap, level_refs_round_trip_and_failure_is_atomic) {
     ASSERT_STR_EQ("old-manager", NMO_ARRAY_DATA(
         const char *, &failed_scenes.duplicate_manager_names)[0]);
 
+    nmo_chunk_t *trailing_manager_names = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(trailing_manager_names);
+    trailing_manager_names->class_id = NMO_CID_LEVEL;
+    trailing_manager_names->data_version = 7;
+    trailing_manager_names->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(trailing_manager_names));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        trailing_manager_names, CK_STATESAVE_LEVELINACTIVEMAN));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        trailing_manager_names, CK_STATESAVE_LEVELDUPLICATEMAN));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_string(
+        trailing_manager_names, "duplicate-manager"));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_string(trailing_manager_names, NULL));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        trailing_manager_names, 0x12345678u));
+    nmo_chunk_close(trailing_manager_names);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_level_deserialize(
+        &failed_scenes, trailing_manager_names, NULL, &deserialize_context));
+    ASSERT_EQ(old_inactive_guids, failed_scenes.inactive_manager_guids.data);
+    ASSERT_EQ(old_duplicate_names, failed_scenes.duplicate_manager_names.data);
+    ASSERT_EQ(1u, failed_scenes.inactive_manager_guids.count);
+    ASSERT_EQ(1u, failed_scenes.duplicate_manager_names.count);
+    ASSERT_STR_EQ("old-manager", NMO_ARRAY_DATA(
+        const char *, &failed_scenes.duplicate_manager_names)[0]);
+
     nmo_chunk_t *truncated_scalars = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(truncated_scalars);
     truncated_scalars->class_id = NMO_CID_LEVEL;
@@ -10766,6 +10791,26 @@ TEST(chunk_id_remap, level_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_level_deserialize(
         &failed_scalars, missing_level_scene_chunk, NULL,
         &deserialize_context));
+    ASSERT_EQ(918u, failed_scalars.current_scene.raw_id);
+    ASSERT_EQ(919u, failed_scalars.level_scene.raw_id);
+    ASSERT_NULL(failed_scalars.level_scene_chunk);
+
+    nmo_chunk_t *trailing_level_scene = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(trailing_level_scene);
+    trailing_level_scene->class_id = NMO_CID_LEVEL;
+    trailing_level_scene->data_version = 7;
+    trailing_level_scene->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(trailing_level_scene));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        trailing_level_scene, CK_STATESAVE_LEVELSCENE));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_id(trailing_level_scene, 916));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_id(trailing_level_scene, 917));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_sub_chunk(trailing_level_scene, NULL));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        trailing_level_scene, 0x12345678u));
+    nmo_chunk_close(trailing_level_scene);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_level_deserialize(
+        &failed_scalars, trailing_level_scene, NULL, &deserialize_context));
     ASSERT_EQ(918u, failed_scalars.current_scene.raw_id);
     ASSERT_EQ(919u, failed_scalars.level_scene.raw_id);
     ASSERT_NULL(failed_scalars.level_scene_chunk);
