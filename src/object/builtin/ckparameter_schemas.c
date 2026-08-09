@@ -150,11 +150,16 @@ static nmo_status_t nmo_parameter_deserialize_internal(
     nmo_array_clear(&out_state->buffer_data);
 
     /* Seek parameter identifier - optional section */
-    result = nmo_chunk_seek_identifier(chunk, CK_PARAM_IDENTIFIER);
+    size_t section_dwords = 0u;
+    result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_PARAM_IDENTIFIER, &section_dwords);
     if (result != NMO_OK) {
         /* No parameter data - valid for reference-only objects */
         return result == NMO_ERR_NOT_FOUND ? NMO_OK : result;
     }
+    const size_t section_end =
+        nmo_chunk_get_position(chunk) + section_dwords;
+    if (section_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
 
     /* Read parameter type GUID */
     result = nmo_chunk_read_guid(chunk, &out_state->type_guid);
@@ -163,15 +168,13 @@ static nmo_status_t nmo_parameter_deserialize_internal(
     }
     nmo_parameter_convert_legacy_guid(&out_state->type_guid);
 
-    /* If no more data after GUID, preserve header-only state */
-    {
-        size_t data_size = nmo_chunk_get_data_size(chunk);
-        size_t pos_dwords = nmo_chunk_get_position(chunk);
-        size_t pos_bytes = pos_dwords * sizeof(uint32_t);
-        if (pos_bytes >= data_size) {
-            out_state->has_state = false;
-            NMO_RETURN_OK();
-        }
+    /* If no more data in this section after GUID, preserve header-only state. */
+    if (nmo_chunk_get_position(chunk) == section_end) {
+        out_state->has_state = false;
+        NMO_RETURN_OK();
+    }
+    if (nmo_chunk_get_position(chunk) > section_end) {
+        return NMO_ERR_TRUNCATED_CHUNK;
     }
 
     /* Read parameter state */
@@ -179,6 +182,9 @@ static nmo_status_t nmo_parameter_deserialize_internal(
     result = nmo_chunk_read_dword(chunk, &param_state);
     if (result != NMO_OK) {
         return result;
+    }
+    if (nmo_chunk_get_position(chunk) > section_end) {
+        return NMO_ERR_TRUNCATED_CHUNK;
     }
     out_state->has_state = true;
 
@@ -188,26 +194,43 @@ static nmo_status_t nmo_parameter_deserialize_internal(
     }
 
     if (param_state == 0) {
-        out_state->mode = CKPARAM_MODE_SUBCHUNK;
-        result = nmo_chunk_read_sub_chunk(chunk, &out_state->subchunk);
+        if (nmo_chunk_get_position(chunk) >= section_end) {
+            return NMO_ERR_TRUNCATED_CHUNK;
+        }
+        nmo_chunk_t *subchunk = NULL;
+        result = nmo_chunk_read_sub_chunk(chunk, &subchunk);
         if (result != NMO_OK) {
             return result;
         }
+        if (nmo_chunk_get_position(chunk) > section_end) {
+            if (subchunk != NULL) nmo_chunk_destroy(subchunk);
+            return NMO_ERR_TRUNCATED_CHUNK;
+        }
+        out_state->mode = CKPARAM_MODE_SUBCHUNK;
+        out_state->subchunk = subchunk;
         return NMO_OK;
     }
 
     if (param_state == 2) {
+        if (nmo_chunk_get_position(chunk) >= section_end) {
+            return NMO_ERR_TRUNCATED_CHUNK;
+        }
         nmo_ref_t object_ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
-        out_state->mode = CKPARAM_MODE_OBJECT;
         result = nmo_ref_read(chunk, &object_ref);
         if (result != NMO_OK) return result;
+        if (nmo_chunk_get_position(chunk) > section_end) {
+            return NMO_ERR_TRUNCATED_CHUNK;
+        }
+        out_state->mode = CKPARAM_MODE_OBJECT;
         out_state->object_ref = object_ref;
         NMO_RETURN_OK();
     }
 
     if (param_state == 1) {
-        out_state->mode = CKPARAM_MODE_BUFFER;
         if (nmo_guid_equals(out_state->type_guid, CKPGUID_PARAMETERTYPE)) {
+            if (section_end - nmo_chunk_get_position(chunk) < 2u) {
+                return NMO_ERR_TRUNCATED_CHUNK;
+            }
             nmo_guid_t type_guid = NMO_GUID_NULL;
             result = nmo_chunk_read_guid(chunk, &type_guid);
             if (result != NMO_OK) {
@@ -219,14 +242,21 @@ static nmo_status_t nmo_parameter_deserialize_internal(
                 return result;
             }
             memcpy(out_state->buffer_data.data, &type_guid, sizeof(nmo_guid_t));
+            out_state->mode = CKPARAM_MODE_BUFFER;
             return NMO_OK;
         }
 
+        if (nmo_chunk_get_position(chunk) >= section_end) {
+            return NMO_ERR_TRUNCATED_CHUNK;
+        }
         void *buffer_ptr = NULL;
         size_t buffer_size = 0;
         result = nmo_chunk_read_buffer(chunk, &buffer_ptr, &buffer_size);
         if (result != NMO_OK) {
             return result;
+        }
+        if (nmo_chunk_get_position(chunk) > section_end) {
+            return NMO_ERR_TRUNCATED_CHUNK;
         }
         if (buffer_size > 0) {
             result = nmo_array_resize(&out_state->buffer_data, buffer_size);
@@ -235,20 +265,28 @@ static nmo_status_t nmo_parameter_deserialize_internal(
             }
             memcpy(out_state->buffer_data.data, buffer_ptr, buffer_size);
         }
+        out_state->mode = CKPARAM_MODE_BUFFER;
         return NMO_OK;
     }
 
     /* Manager-specific int mode: param_state is manager_guid.d1 */
+    if (section_end - nmo_chunk_get_position(chunk) < 2u) {
+        return NMO_ERR_TRUNCATED_CHUNK;
+    }
+    uint32_t manager_guid_d2 = 0u;
+    uint32_t manager_value = 0u;
+    result = nmo_chunk_read_dword(chunk, &manager_guid_d2);
+    if (result != NMO_OK) {
+        return result;
+    }
+    result = nmo_chunk_read_dword(chunk, &manager_value);
+    if (result != NMO_OK) {
+        return result;
+    }
     out_state->mode = CKPARAM_MODE_MANAGER;
     out_state->manager_guid.d1 = param_state;
-    result = nmo_chunk_read_dword(chunk, &out_state->manager_guid.d2);
-    if (result != NMO_OK) {
-        return result;
-    }
-    result = nmo_chunk_read_dword(chunk, &out_state->manager_value);
-    if (result != NMO_OK) {
-        return result;
-    }
+    out_state->manager_guid.d2 = manager_guid_d2;
+    out_state->manager_value = manager_value;
 
     NMO_RETURN_OK();
 }

@@ -3371,6 +3371,63 @@ TEST(chunk_id_remap, parameter_object_ref_round_trips_raw_id) {
     ASSERT_EQ(1u, failed.buffer_data.count);
     ASSERT_EQ(0xabu, NMO_ARRAY_DATA(uint8_t, &failed.buffer_data)[0]);
 
+    nmo_chunk_t *header_only = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(header_only);
+    header_only->class_id = NMO_CID_PARAMETER;
+    header_only->data_version = 8;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(header_only));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(header_only, 0x40));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_guid(header_only, CKPGUID_INT));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(header_only, 3u));
+    nmo_chunk_close(header_only);
+    nmo_parameter_state_t header_loaded;
+    ASSERT_EQ(NMO_OK, nmo_parameter_vtable.create(
+        &header_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_parameter_deserialize(
+        &header_loaded, header_only, NULL, &deserialize_context));
+    ASSERT_TRUE(nmo_guid_equals(CKPGUID_INT, header_loaded.type_guid));
+    ASSERT_FALSE(header_loaded.has_state);
+    ASSERT_EQ(CKPARAM_MODE_NONE, header_loaded.mode);
+
+    nmo_chunk_t *cross_section_object = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(cross_section_object);
+    cross_section_object->class_id = NMO_CID_PARAMETER;
+    cross_section_object->data_version = 8;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(cross_section_object));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(cross_section_object, 0x40));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_guid(
+        cross_section_object, CKPGUID_OBJECT));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(cross_section_object, 2u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_section_object, 704u));
+    nmo_chunk_close(cross_section_object);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_parameter_deserialize(
+        &failed, cross_section_object, NULL, &deserialize_context));
+    ASSERT_TRUE(nmo_guid_equals(CKPGUID_INT, failed.type_guid));
+    ASSERT_EQ(CKPARAM_MODE_BUFFER, failed.mode);
+    ASSERT_EQ(702u, failed.object_ref.raw_id);
+    ASSERT_EQ(1u, failed.buffer_data.count);
+
+    nmo_chunk_t *cross_section_buffer = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(cross_section_buffer);
+    cross_section_buffer->class_id = NMO_CID_PARAMETER;
+    cross_section_buffer->data_version = 8;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(cross_section_buffer));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(cross_section_buffer, 0x40));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_guid(
+        cross_section_buffer, CKPGUID_INT));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(cross_section_buffer, 1u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(cross_section_buffer, 4u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_section_buffer, 0x44332211u));
+    nmo_chunk_close(cross_section_buffer);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_parameter_deserialize(
+        &failed, cross_section_buffer, NULL, &deserialize_context));
+    ASSERT_TRUE(nmo_guid_equals(CKPGUID_INT, failed.type_guid));
+    ASSERT_EQ(CKPARAM_MODE_BUFFER, failed.mode);
+    ASSERT_EQ(1u, failed.buffer_data.count);
+    ASSERT_EQ(0xabu, NMO_ARRAY_DATA(uint8_t, &failed.buffer_data)[0]);
+
     nmo_parameter_state_t invalid = source;
     invalid.object_ref = nmo_ref_from_id(999);
     nmo_chunk_t *target = nmo_chunk_create(arena);
@@ -3394,6 +3451,7 @@ TEST(chunk_id_remap, parameter_object_ref_round_trips_raw_id) {
     nmo_parameter_vtable.destroy(&loaded, NULL, NULL);
     nmo_parameter_vtable.destroy(&reloaded, NULL, NULL);
     nmo_parameter_vtable.destroy(&failed, NULL, NULL);
+    nmo_parameter_vtable.destroy(&header_loaded, NULL, NULL);
     nmo_arena_destroy(arena);
 }
 
