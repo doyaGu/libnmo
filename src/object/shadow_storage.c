@@ -95,6 +95,11 @@ nmo_shadow_storage_t *nmo_shadow_storage_create(nmo_arena_t *arena) {
         return NULL;
     }
 
+    nmo_allocator_t backing_allocator;
+    if (nmo_arena_get_allocator(arena, &backing_allocator) != NMO_OK) {
+        return NULL;
+    }
+
     nmo_shadow_storage_t *storage = (nmo_shadow_storage_t *)nmo_arena_alloc(
         arena, sizeof(nmo_shadow_storage_t), alignof(nmo_shadow_storage_t));
     if (storage == NULL) {
@@ -109,7 +114,7 @@ nmo_shadow_storage_t *nmo_shadow_storage_create(nmo_arena_t *arena) {
     storage->tail_ownership = NMO_OWNERSHIP_HEAP;
     storage->tail_allocator = nmo_allocator_debug_init(
         &storage->tail_allocator_debug,
-        nmo_allocator_default(),
+        backing_allocator,
         "shadow_storage",
         "chunk_tail");
 

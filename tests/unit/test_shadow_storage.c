@@ -4,9 +4,28 @@
  */
 
 #include "object/nmo_shadow_storage.h"
+#include "core/nmo_allocator.h"
 #include "core/nmo_arena.h"
 #include "test_framework.h"
 #include <string.h>
+
+typedef struct shadow_fail_allocator {
+    nmo_allocator_t base;
+    bool fail_allocations;
+} shadow_fail_allocator_t;
+
+static void *shadow_fail_alloc(void *user_data, size_t size, size_t alignment) {
+    shadow_fail_allocator_t *ctx = (shadow_fail_allocator_t *)user_data;
+    if (ctx->fail_allocations) {
+        return NULL;
+    }
+    return nmo_alloc(&ctx->base, size, alignment);
+}
+
+static void shadow_fail_free(void *user_data, void *ptr) {
+    shadow_fail_allocator_t *ctx = (shadow_fail_allocator_t *)user_data;
+    nmo_free(&ctx->base, ptr);
+}
 
 TEST(shadow_storage, create_and_destroy) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
@@ -84,6 +103,30 @@ TEST(shadow_storage, capture_chunk_tail) {
     ASSERT_NULL(data_none);
     ASSERT_EQ(size_none, 0u);
 
+    nmo_shadow_storage_destroy(storage);
+    nmo_arena_destroy(arena);
+}
+
+TEST(shadow_storage, chunk_tail_uses_arena_backing_allocator) {
+    shadow_fail_allocator_t fail_ctx = {
+        .base = nmo_allocator_default(),
+        .fail_allocations = false,
+    };
+    nmo_allocator_t allocator = nmo_allocator_custom(
+        shadow_fail_alloc, shadow_fail_free, &fail_ctx);
+    nmo_arena_t *arena = nmo_arena_create(&allocator, 4096);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_shadow_storage_t *storage = nmo_shadow_storage_create(arena);
+    ASSERT_NOT_NULL(storage);
+
+    const uint8_t tail[] = {0xAA, 0xBB, 0xCC, 0xDD};
+    fail_ctx.fail_allocations = true;
+    ASSERT_EQ(NMO_ERR_NOMEM,
+              nmo_shadow_capture_chunk_tail(storage, 100, tail, sizeof(tail)));
+    ASSERT_EQ(0u, nmo_shadow_chunk_tail_count(storage));
+
+    fail_ctx.fail_allocations = false;
     nmo_shadow_storage_destroy(storage);
     nmo_arena_destroy(arena);
 }
@@ -379,6 +422,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(shadow_storage, create_and_destroy);
     REGISTER_TEST(shadow_storage, capture_included_files);
     REGISTER_TEST(shadow_storage, capture_chunk_tail);
+    REGISTER_TEST(shadow_storage, chunk_tail_uses_arena_backing_allocator);
     REGISTER_TEST(shadow_storage, overwrite_included_files);
     REGISTER_TEST(shadow_storage, overwrite_included_files_reclaims_scope);
     REGISTER_TEST(shadow_storage, overwrite_chunk_tail);
