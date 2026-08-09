@@ -7548,6 +7548,28 @@ TEST(chunk_id_remap, scene_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(target, &marker));
     ASSERT_EQ(0x12345678u, marker);
 
+    nmo_scene_state_t large_valid;
+    ASSERT_EQ(NMO_OK, nmo_scene_vtable.create(
+        &large_valid, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_array_extend(
+        &large_valid.object_descs, 100001u, NULL));
+    ASSERT_EQ(NMO_OK, nmo_scene_vtable.validate(
+        &large_valid, &scene_type, NULL));
+
+    nmo_scene_state_t oversized;
+    ASSERT_EQ(NMO_OK, nmo_scene_vtable.create(
+        &oversized, NULL, NULL));
+    nmo_scene_object_desc_t oversized_desc = {0};
+    oversized.object_descs.data = &oversized_desc;
+    oversized.object_descs.count = (size_t)INT32_MAX / 2u + 1u;
+    oversized.object_descs.capacity = oversized.object_descs.count;
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_scene_serialize(
+        &oversized, target, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
+    oversized.object_descs.data = NULL;
+    oversized.object_descs.count = 0;
+    oversized.object_descs.capacity = 0;
+
     nmo_scene_vtable.destroy(&source, NULL, NULL);
     nmo_scene_vtable.destroy(&loaded, NULL, NULL);
     nmo_scene_vtable.destroy(&reloaded, NULL, NULL);
@@ -7556,6 +7578,8 @@ TEST(chunk_id_remap, scene_refs_round_trip_and_failure_is_atomic) {
     nmo_scene_vtable.destroy(&failed_descs, NULL, NULL);
     nmo_scene_vtable.destroy(&failed_render, NULL, NULL);
     nmo_scene_vtable.destroy(&invalid, NULL, NULL);
+    nmo_scene_vtable.destroy(&large_valid, NULL, NULL);
+    nmo_scene_vtable.destroy(&oversized, NULL, NULL);
     nmo_arena_destroy(arena);
 }
 

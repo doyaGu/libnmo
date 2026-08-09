@@ -157,7 +157,9 @@ static nmo_status_t nmo_scene_read_new_data(
             NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
             "Scene object count is negative");
     }
-    if ((uint32_t)desc_count > 100000u) return NMO_ERR_VALIDATION_FAILED;
+    if ((uint32_t)desc_count > (uint32_t)INT32_MAX / 2u) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
     if ((size_t)desc_count >
         nmo_scene_identifier_remaining_dwords(chunk) / 2u) {
         return NMO_ERR_TRUNCATED_CHUNK;
@@ -633,12 +635,12 @@ static nmo_status_t nmo_scene_validate(
     void *context)
 {
     (void)type;
-    (void)context;
     const nmo_scene_state_t *s = instance;
     if (s == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    NMO_RETURN_IF_ERROR(nmo_beobject_vtable.validate(
+        &s->base, NULL, context));
     NMO_VALIDATE_COUNT(s->object_descs.data, s->object_descs.count, "object_descs");
     if (s->object_descs.element_size != sizeof(nmo_scene_object_desc_t) ||
-        s->object_descs.count > 100000u ||
         s->object_descs.count > INT32_MAX / 2u) {
         return NMO_ERR_VALIDATION_FAILED;
     }
