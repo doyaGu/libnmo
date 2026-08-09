@@ -461,8 +461,8 @@ nmo_chunk_t *nmo_object_system_serialize_object_chunk(
             nmo_chunk_t *empty_chunk = nmo_chunk_create(arena);
             if (empty_chunk != NULL) {
                 empty_chunk->class_id = obj->class_id;
-                empty_chunk->chunk_version = 7;
-                empty_chunk->data_version = 7;
+                empty_chunk->chunk_version = NMO_CHUNK_VERSION4;
+                empty_chunk->data_version = NMO_CHUNK_DATA_VERSION_CURRENT;
                 empty_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
                 if (file_ctx != NULL) {
                     nmo_chunk_set_file_context(empty_chunk, file_ctx);
@@ -505,8 +505,8 @@ nmo_chunk_t *nmo_object_system_serialize_object_chunk(
         new_chunk->data_version = old_chunk->data_version;
         new_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
     } else {
-        new_chunk->chunk_version = 7;
-        new_chunk->data_version = 7;
+        new_chunk->chunk_version = NMO_CHUNK_VERSION4;
+        new_chunk->data_version = NMO_CHUNK_DATA_VERSION_CURRENT;
         new_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
     }
     if (file_ctx != NULL) {

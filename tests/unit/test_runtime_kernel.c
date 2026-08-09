@@ -656,10 +656,13 @@ TEST(runtime_kernel, delete_safe_detach_uses_explicit_object_type) {
     ASSERT_NOT_NULL(chunk_arena);
     ASSERT_NOT_NULL(scratch_arena);
     nmo_status_t serialize_status = NMO_ERR_INTERNAL;
-    ASSERT_NOT_NULL(nmo_object_system_serialize_object_chunk(
+    nmo_chunk_t *serialized = nmo_object_system_serialize_object_chunk(
         group_obj, nmo_context_get_type_runtime(ctx), chunk_arena,
-        scratch_arena, repo, NULL, NULL, NULL, &serialize_status));
+        scratch_arena, repo, NULL, NULL, NULL, &serialize_status);
+    ASSERT_NOT_NULL(serialized);
     ASSERT_EQ(NMO_OK, serialize_status);
+    ASSERT_EQ(NMO_CHUNK_VERSION4, serialized->chunk_version);
+    ASSERT_EQ(NMO_CHUNK_DATA_VERSION_CURRENT, serialized->data_version);
 
     nmo_session_destroy(session);
     nmo_arena_destroy(scratch_arena);

@@ -74,6 +74,9 @@ typedef enum nmo_file_write_mode {
 #define NMO_CHUNK_VERSION3 6  // New ConvertToBuffer / ReadFromBuffer
 #define NMO_CHUNK_VERSION4 7  // New WriteObjectID when saving to a file (Current version)
 
+// CKStateChunk data version written by Virtools 2.1.
+#define NMO_CHUNK_DATA_VERSION_CURRENT 10
+
 // Compression levels
 typedef enum nmo_compression_level {
     NMO_COMPRESS_NONE    = 0,
