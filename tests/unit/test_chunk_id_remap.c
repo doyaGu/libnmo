@@ -188,10 +188,22 @@ TEST(chunk_id_remap, object_only_types_delegate_state_operations) {
     ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
               nmo_rendercontext_vtable.validate(NULL, NULL, NULL));
 
+    nmo_object_state_t dependency_state;
+    ASSERT_EQ(NMO_OK, nmo_object_vtable.create(
+        &dependency_state, NULL, NULL));
+    dependency_state.visibility_flags = 0xA5A50003u;
+    ASSERT_EQ(NMO_OK, nmo_object_vtable.remap_dependencies(
+        &dependency_state, NULL, NULL));
+    ASSERT_EQ(0xA5A50003u, dependency_state.visibility_flags);
+    ASSERT_EQ(NMO_OK, nmo_object_vtable.pre_delete(
+        &dependency_state, NULL, NULL));
+    ASSERT_EQ(0xA5A50003u, dependency_state.visibility_flags);
+
     nmo_sceneobject_vtable.destroy(&scene, NULL, NULL);
     nmo_sceneobject_vtable.destroy(&scene_copy, NULL, NULL);
     nmo_rendercontext_vtable.destroy(&render, NULL, NULL);
     nmo_rendercontext_vtable.destroy(&render_copy, NULL, NULL);
+    nmo_object_vtable.destroy(&dependency_state, NULL, NULL);
 }
 
 TEST(chunk_id_remap, single_id_remap) {

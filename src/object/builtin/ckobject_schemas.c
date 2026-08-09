@@ -209,8 +209,6 @@ nmo_status_t nmo_object_remap_dependencies(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "Invalid arguments to nmo_object_remap_dependencies");
     }
-    nmo_object_state_t *state = (nmo_object_state_t *)instance;
-    state->visibility_flags &= (NMO_CKOBJECT_VISIBLE | NMO_CKOBJECT_HIERARCHICAL);
     NMO_RETURN_OK();
 }
 
@@ -225,8 +223,6 @@ static nmo_status_t nmo_object_pre_delete(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "Invalid arguments to nmo_object_pre_delete");
     }
-    nmo_object_state_t *state = (nmo_object_state_t *)instance;
-    state->visibility_flags &= (NMO_CKOBJECT_VISIBLE | NMO_CKOBJECT_HIERARCHICAL);
     NMO_RETURN_OK();
 }
 
