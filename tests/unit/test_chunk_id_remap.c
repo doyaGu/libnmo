@@ -9662,6 +9662,7 @@ TEST(chunk_id_remap, entity2d_copy_preserves_inherited_and_own_state) {
     ASSERT_EQ(NMO_OK, nmo_2dentity_vtable.create(&copy, NULL, NULL));
     ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
         &source.base.base.scripts, 101));
+    source.data_is_legacy = 1;
     source.rect.left = 1.0f;
     source.rect.top = 2.0f;
     source.rect.right = 3.0f;
@@ -9690,6 +9691,162 @@ TEST(chunk_id_remap, entity2d_copy_preserves_inherited_and_own_state) {
     nmo_2dentity_vtable.destroy(&copy, NULL, NULL);
     nmo_2dentity_vtable.destroy(&source, NULL, NULL);
     nmo_arena_destroy(copy_arena);
+}
+
+TEST(chunk_id_remap, entity2d_legacy_layout_round_trips) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
+    ASSERT_NOT_NULL(arena);
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+    const uint32_t legacy_flags =
+        CK_2DENTITY_RESERVED3 |
+        CK_2DENTITY_STICKTOP |
+        CK_2DENTITY_STICKLEFT;
+
+    nmo_2dentity_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_2dentity_vtable.create(&source, NULL, NULL));
+    source.flags = legacy_flags;
+    source.rect = (nmo_rect_t){10.0f, 20.0f, 30.0f, 50.0f};
+    source.has_source_rect = true;
+    source.source_rect = (nmo_rect_t){2.0f, 3.0f, 1.0f, 4.0f};
+    source.has_z_order = true;
+    source.z_order = 9;
+
+    nmo_chunk_t *first = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(first);
+    first->class_id = NMO_CID_2DENTITY;
+    first->data_version = 4;
+    first->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_2dentity_serialize(
+        &source, first, NULL, &serialize_context));
+    nmo_chunk_close(first);
+    size_t section_dwords = 0u;
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_chunk_seek_identifier_with_size(
+        first, CK_STATESAVE_2DENTITYONLY, &section_dwords));
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        first, CK_STATESAVE_2DENTITYFLAGS, &section_dwords));
+    ASSERT_EQ(1u, section_dwords);
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        first, CK_STATESAVE_2DENTITYPOS, &section_dwords));
+    ASSERT_EQ(2u, section_dwords);
+
+    nmo_2dentity_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_2dentity_vtable.create(&loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_2dentity_deserialize(
+        &loaded, first, NULL, &deserialize_context));
+    ASSERT_TRUE(loaded.data_is_legacy);
+    ASSERT_EQ(source.flags, loaded.flags);
+    ASSERT_EQ(source.rect.left, loaded.rect.left);
+    ASSERT_EQ(source.rect.top, loaded.rect.top);
+    ASSERT_EQ(source.rect.right, loaded.rect.right);
+    ASSERT_EQ(source.rect.bottom, loaded.rect.bottom);
+    ASSERT_TRUE(loaded.has_source_rect);
+    ASSERT_EQ(source.source_rect.left, loaded.source_rect.left);
+    ASSERT_EQ(source.source_rect.top, loaded.source_rect.top);
+    ASSERT_EQ(source.source_rect.right, loaded.source_rect.right);
+    ASSERT_EQ(source.source_rect.bottom, loaded.source_rect.bottom);
+    ASSERT_TRUE(loaded.has_z_order);
+    ASSERT_EQ(source.z_order, loaded.z_order);
+
+    nmo_chunk_t *second = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(second);
+    second->class_id = NMO_CID_2DENTITY;
+    second->data_version = 4;
+    second->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_2dentity_serialize(
+        &loaded, second, NULL, &serialize_context));
+    nmo_chunk_close(second);
+    nmo_2dentity_state_t reloaded;
+    ASSERT_EQ(NMO_OK, nmo_2dentity_vtable.create(&reloaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_2dentity_deserialize(
+        &reloaded, second, NULL, &deserialize_context));
+    ASSERT_EQ(loaded.flags, reloaded.flags);
+    ASSERT_EQ(loaded.rect.right, reloaded.rect.right);
+    ASSERT_EQ(loaded.source_rect.bottom, reloaded.source_rect.bottom);
+    ASSERT_EQ(loaded.z_order, reloaded.z_order);
+
+    nmo_2dentity_state_t homogeneous;
+    ASSERT_EQ(NMO_OK, nmo_2dentity_vtable.create(
+        &homogeneous, NULL, NULL));
+    homogeneous.flags = legacy_flags | CK_2DENTITY_USEHOMOGENEOUSCOORD;
+    homogeneous.has_homogeneous_rect = true;
+    homogeneous.homogeneous_rect =
+        (nmo_rect_t){0.25f, 0.5f, 0.75f, 1.0f};
+    nmo_chunk_t *homogeneous_chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(homogeneous_chunk);
+    homogeneous_chunk->class_id = NMO_CID_2DENTITY;
+    homogeneous_chunk->data_version = 4;
+    homogeneous_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_2dentity_serialize(
+        &homogeneous, homogeneous_chunk, NULL, &serialize_context));
+    nmo_chunk_close(homogeneous_chunk);
+    nmo_2dentity_state_t homogeneous_loaded;
+    ASSERT_EQ(NMO_OK, nmo_2dentity_vtable.create(
+        &homogeneous_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_2dentity_deserialize(
+        &homogeneous_loaded, homogeneous_chunk, NULL,
+        &deserialize_context));
+    ASSERT_TRUE(homogeneous_loaded.has_homogeneous_rect);
+    ASSERT_EQ(homogeneous.homogeneous_rect.left,
+              homogeneous_loaded.homogeneous_rect.left);
+    ASSERT_EQ(homogeneous.homogeneous_rect.bottom,
+              homogeneous_loaded.homogeneous_rect.bottom);
+
+    nmo_2dentity_state_t default_state;
+    ASSERT_EQ(NMO_OK, nmo_2dentity_vtable.create(
+        &default_state, NULL, NULL));
+    nmo_chunk_t *default_chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(default_chunk);
+    default_chunk->class_id = NMO_CID_2DENTITY;
+    default_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_2dentity_serialize(
+        &default_state, default_chunk, NULL, &serialize_context));
+    ASSERT_EQ(NMO_CHUNK_DATA_VERSION_CURRENT,
+              nmo_chunk_get_data_version(default_chunk));
+    nmo_chunk_close(default_chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        default_chunk, CK_STATESAVE_2DENTITYONLY, &section_dwords));
+
+    nmo_chunk_t *preserved = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(preserved);
+    preserved->class_id = NMO_CID_2DENTITY;
+    preserved->data_version = 4;
+    preserved->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(preserved));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(preserved, 0xABCD1234u));
+    nmo_chunk_close(preserved);
+
+    loaded.has_parent = true;
+    loaded.parent = nmo_ref_from_raw(901);
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_2dentity_serialize(
+        &loaded, preserved, NULL, &serialize_context));
+    loaded.has_parent = false;
+    loaded.parent = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+    loaded.has_material = true;
+    loaded.material = nmo_ref_from_raw(902);
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_2dentity_serialize(
+        &loaded, preserved, NULL, &serialize_context));
+    loaded.has_material = false;
+    loaded.material = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+    loaded.rect.left = 10.5f;
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_2dentity_serialize(
+        &loaded, preserved, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(preserved));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(preserved));
+    uint32_t marker = 0u;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(preserved, &marker));
+    ASSERT_EQ(0xABCD1234u, marker);
+
+    nmo_2dentity_vtable.destroy(&source, NULL, NULL);
+    nmo_2dentity_vtable.destroy(&loaded, NULL, NULL);
+    nmo_2dentity_vtable.destroy(&reloaded, NULL, NULL);
+    nmo_2dentity_vtable.destroy(&homogeneous, NULL, NULL);
+    nmo_2dentity_vtable.destroy(&homogeneous_loaded, NULL, NULL);
+    nmo_2dentity_vtable.destroy(&default_state, NULL, NULL);
+    nmo_arena_destroy(arena);
 }
 
 TEST(chunk_id_remap, entity2d_fields_stay_in_identifier_sections) {
@@ -17691,6 +17848,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, object3d_delegates_state_operations);
     REGISTER_TEST(chunk_id_remap, bodypart_copy_preserves_inherited_and_own_state);
     REGISTER_TEST(chunk_id_remap, entity2d_copy_preserves_inherited_and_own_state);
+    REGISTER_TEST(chunk_id_remap, entity2d_legacy_layout_round_trips);
     REGISTER_TEST(chunk_id_remap, entity2d_fields_stay_in_identifier_sections);
     REGISTER_TEST(chunk_id_remap, camera_copy_preserves_inherited_and_own_state);
     REGISTER_TEST(chunk_id_remap, targetcamera_copy_preserves_base_and_target);

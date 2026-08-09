@@ -53,6 +53,7 @@ typedef struct nmo_type_descriptor nmo_type_descriptor_t;
  */
 typedef struct nmo_2dentity_state {
     nmo_renderobject_state_t base; /**< Parent CKRenderObject state */
+    uint8_t data_is_legacy;        /**< Loaded from the pre-v5 layout */
     
     /* Core rectangle fields */
     nmo_rect_t rect;                    /**< Screen-space rectangle */

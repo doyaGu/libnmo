@@ -29,6 +29,8 @@
 #include "object/nmo_object_repository.h"
 #include "type/nmo_reflection.h"
 #include "nmo_types.h"
+#include <limits.h>
+#include <math.h>
 #include <stddef.h>
 #include <string.h>
 
@@ -59,6 +61,7 @@ static const nmo_type_field_t nmo_2dentity_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_2dentity_state_t, base),
                     sizeof(nmo_renderobject_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD(nmo_2dentity_state_t, data_is_legacy, CKPGUID_UINT8),
     NMO_FIELD(nmo_2dentity_state_t, rect, CKPGUID_RECT),
     NMO_FIELD(nmo_2dentity_state_t, has_homogeneous_rect, CKPGUID_BOOL),
     NMO_FIELD(nmo_2dentity_state_t, homogeneous_rect, CKPGUID_RECT),
@@ -423,6 +426,7 @@ static nmo_status_t nmo_2dentity_deserialize_internal(
     
     /* Check chunk version to choose format */
     uint32_t data_version = nmo_chunk_get_data_version(chunk);
+    out_state->data_is_legacy = data_version < 5u;
     
     if (data_version >= 5) {
         /* Modern format: identifier 0x10F000 */
@@ -569,10 +573,113 @@ static nmo_status_t serialize_modern(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t nmo_2dentity_float_to_legacy_int(
+    float value,
+    int32_t *out_value)
+{
+    if (out_value == NULL || !isfinite(value) ||
+        (double)value < (double)INT32_MIN ||
+        (double)value > (double)INT32_MAX) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    const int32_t converted = (int32_t)value;
+    if ((float)converted != value) return NMO_ERR_VALIDATION_FAILED;
+    *out_value = converted;
+    return NMO_OK;
+}
+
+static nmo_status_t serialize_legacy(
+    const nmo_2dentity_state_t *state,
+    nmo_chunk_t *chunk)
+{
+    const uint32_t required_flags =
+        CK_2DENTITY_RESERVED3 |
+        CK_2DENTITY_STICKTOP |
+        CK_2DENTITY_STICKLEFT;
+    if ((state->flags & required_flags) != required_flags ||
+        (state->flags & CK_2DENTITY_UPDATEHOMOGENEOUSCOORD) != 0u ||
+        state->has_parent ||
+        nmo_ref_serialized_id(&state->parent) != NMO_OBJECT_ID_NONE ||
+        state->has_material ||
+        nmo_ref_serialized_id(&state->material) != NMO_OBJECT_ID_NONE) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+
+    NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(
+        chunk, CK_STATESAVE_2DENTITYFLAGS));
+    NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(chunk, state->flags));
+
+    NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(
+        chunk, CK_STATESAVE_2DENTITYPOS));
+    if ((state->flags & NMO_CK2DENTITY_FLAG_HOMOGENEOUS) != 0u) {
+        if (!state->has_homogeneous_rect) {
+            return NMO_ERR_VALIDATION_FAILED;
+        }
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
+            chunk, state->homogeneous_rect.left));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
+            chunk, state->homogeneous_rect.top));
+
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(
+            chunk, CK_STATESAVE_2DENTITYSIZE));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
+            chunk,
+            state->homogeneous_rect.right - state->homogeneous_rect.left));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
+            chunk,
+            state->homogeneous_rect.bottom - state->homogeneous_rect.top));
+    } else {
+        int32_t left = 0;
+        int32_t top = 0;
+        int32_t width = 0;
+        int32_t height = 0;
+        NMO_RETURN_IF_ERROR(nmo_2dentity_float_to_legacy_int(
+            state->rect.left, &left));
+        NMO_RETURN_IF_ERROR(nmo_2dentity_float_to_legacy_int(
+            state->rect.top, &top));
+        NMO_RETURN_IF_ERROR(nmo_2dentity_float_to_legacy_int(
+            state->rect.right - state->rect.left, &width));
+        NMO_RETURN_IF_ERROR(nmo_2dentity_float_to_legacy_int(
+            state->rect.bottom - state->rect.top, &height));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, left));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, top));
+
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(
+            chunk, CK_STATESAVE_2DENTITYSIZE));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, width));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, height));
+    }
+
+    if (state->has_source_rect) {
+        int32_t values[4] = {0};
+        NMO_RETURN_IF_ERROR(nmo_2dentity_float_to_legacy_int(
+            state->source_rect.right, &values[0]));
+        NMO_RETURN_IF_ERROR(nmo_2dentity_float_to_legacy_int(
+            state->source_rect.left, &values[1]));
+        NMO_RETURN_IF_ERROR(nmo_2dentity_float_to_legacy_int(
+            state->source_rect.top, &values[2]));
+        NMO_RETURN_IF_ERROR(nmo_2dentity_float_to_legacy_int(
+            state->source_rect.bottom, &values[3]));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(
+            chunk, CK_STATESAVE_2DENTITYSRCSIZE));
+        for (size_t i = 0; i < 4u; ++i) {
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, values[i]));
+        }
+    }
+
+    if (state->has_z_order || state->z_order != 0) {
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(
+            chunk, CK_STATESAVE_2DENTITYZORDER));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, state->z_order));
+    }
+
+    return NMO_OK;
+}
+
 /**
  * @brief Serialize CK2dEntity state to chunk
  * 
- * Always uses modern format (v5+) for simplicity.
+ * Uses the layout selected by the output chunk's data version.
  */
 static nmo_status_t nmo_2dentity_serialize_internal(
     const void *instance,
@@ -587,6 +694,14 @@ static nmo_status_t nmo_2dentity_serialize_internal(
     if (!in_state || !out_chunk || !arena) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_2dentity_serialize");
     }
+
+    const uint32_t requested_data_version =
+        nmo_chunk_get_data_version(out_chunk);
+    const bool legacy_layout = requested_data_version < 5u &&
+        (requested_data_version != 0u || in_state->data_is_legacy);
+    if (requested_data_version == 0u && !legacy_layout) {
+        out_chunk->data_version = NMO_CHUNK_DATA_VERSION_CURRENT;
+    }
     
     /* Serialize parent CKRenderObject data */
     nmo_status_t result = nmo_renderobject_serialize(&in_state->base, out_chunk, NULL, context);
@@ -594,14 +709,17 @@ static nmo_status_t nmo_2dentity_serialize_internal(
         return result;
     }
     
-    /* Serialize CK2dEntity data (always use modern format) */
-    result = serialize_modern(in_state, out_chunk);
+    const bool modern_layout = !legacy_layout;
+    result = modern_layout
+        ? serialize_modern(in_state, out_chunk)
+        : serialize_legacy(in_state, out_chunk);
     if (result != NMO_OK) {
         return result;
     }
     
     /* Write material identifier if present */
-    if (in_state->has_material && in_state->material.state != NMO_REF_NONE) {
+    if (modern_layout && in_state->has_material &&
+        in_state->material.state != NMO_REF_NONE) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_2DENTITYMATERIAL);
         if (result != NMO_OK) return result;
         result = nmo_ref_write(out_chunk, &in_state->material);
@@ -715,6 +833,7 @@ static nmo_status_t nmo_2dentity_copy(
     };
     NMO_RETURN_IF_ERROR(nmo_renderobject_vtable.copy(
         &source->base, &target->base, &base_type, arena));
+    target->data_is_legacy = source->data_is_legacy;
     target->rect = source->rect;
     target->has_homogeneous_rect = source->has_homogeneous_rect;
     target->homogeneous_rect = source->homogeneous_rect;
@@ -757,6 +876,7 @@ static bool nmo_2dentity_equals(const void *a, const void *b)
     const nmo_2dentity_state_t *lhs = a;
     const nmo_2dentity_state_t *rhs = b;
     return nmo_renderobject_vtable.equals(&lhs->base, &rhs->base) &&
+        lhs->data_is_legacy == rhs->data_is_legacy &&
         memcmp(&lhs->rect, &rhs->rect, sizeof(lhs->rect)) == 0 &&
         lhs->has_homogeneous_rect == rhs->has_homogeneous_rect &&
         memcmp(&lhs->homogeneous_rect, &rhs->homogeneous_rect,
@@ -800,6 +920,8 @@ static uint32_t nmo_2dentity_hash(const void *instance)
     if (instance == NULL) return 0;
     const nmo_2dentity_state_t *state = instance;
     uint32_t hash = nmo_renderobject_vtable.hash(&state->base);
+    hash = nmo_2dentity_hash_bytes(
+        hash, &state->data_is_legacy, sizeof(state->data_is_legacy));
     hash = nmo_2dentity_hash_bytes(hash, &state->rect, sizeof(state->rect));
     hash = nmo_2dentity_hash_bytes(
         hash, &state->has_homogeneous_rect,
