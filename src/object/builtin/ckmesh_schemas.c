@@ -588,16 +588,25 @@ static nmo_status_t nmo_mesh_deserialize_modern(
             return result;
         }
         
-        if (face_count < 0 || face_count >= 10000000) {
+        if (face_count < 0 ||
+            (uint32_t)face_count > UINT32_MAX / 3u) {
             NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                              "Invalid modern mesh face count %d", face_count);
         }
         if (face_count > 0) {
-            if ((size_t)face_count * 2u >
-                nmo_mesh_identifier_remaining_dwords(chunk)) {
+            if ((size_t)face_count >
+                nmo_mesh_identifier_remaining_dwords(chunk) / 2u) {
                 NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK,
                                  NMO_SEVERITY_ERROR,
                                  "Modern mesh faces exceed remaining DWORDs");
+            }
+            if (nmo_mesh_size_mul_overflows(
+                    (size_t)face_count, sizeof(nmo_face_t)) ||
+                nmo_mesh_size_mul_overflows(
+                    (size_t)face_count, 3u * sizeof(uint16_t))) {
+                NMO_RETURN_ERROR(
+                    NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                    "Modern mesh face allocation size overflows");
             }
             out_state->face_count = (uint32_t)face_count;
             out_state->faces = (nmo_face_t *)nmo_arena_alloc(
@@ -643,16 +652,21 @@ static nmo_status_t nmo_mesh_deserialize_modern(
             NMO_RETURN_ERROR(result, NMO_SEVERITY_ERROR,
                              "CKMesh modern line count is truncated");
         }
-        if (line_count < 0 || line_count >= 1000000) {
+        if (line_count < 0) {
             NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                              "Invalid mesh line count");
         }
         if (line_count > 0) {
-            size_t expected_bytes =
-                (size_t)line_count * 2u * sizeof(uint16_t);
+            size_t expected_bytes = 0;
+            if (!nmo_safe_mul_size(
+                    (size_t)line_count, 2u * sizeof(uint16_t),
+                    &expected_bytes)) {
+                NMO_RETURN_ERROR(
+                    NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                    "Modern mesh line allocation size overflows");
+            }
             size_t required_dwords =
-                1u + (expected_bytes + sizeof(uint32_t) - 1u) /
-                    sizeof(uint32_t);
+                1u + expected_bytes / sizeof(uint32_t);
             if (required_dwords >
                 nmo_mesh_identifier_remaining_dwords(chunk)) {
                 NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK,
@@ -1053,12 +1067,24 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
         result = nmo_chunk_read_int(chunk, &face_count);
         if (result != NMO_OK) return result;
 
-        if (face_count < 0 || face_count >= 10000000) {
+        if (face_count < 0 ||
+            (uint32_t)face_count > UINT32_MAX / 3u) {
             NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                              "Invalid legacy mesh face count %d", face_count);
         }
         if (face_count > 0) {
-            size_t face_dwords = ((size_t)face_count * 5u + 1u) / 2u;
+            size_t face_words = 0;
+            if (!nmo_safe_mul_size(
+                    (size_t)face_count, 5u, &face_words) ||
+                nmo_mesh_size_mul_overflows(
+                    (size_t)face_count, sizeof(nmo_face_t)) ||
+                nmo_mesh_size_mul_overflows(
+                    (size_t)face_count, 3u * sizeof(uint16_t))) {
+                NMO_RETURN_ERROR(
+                    NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                    "Legacy mesh face allocation size overflows");
+            }
+            size_t face_dwords = face_words / 2u + face_words % 2u;
             if (face_dwords > nmo_mesh_identifier_remaining_dwords(chunk)) {
                 NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK,
                                  NMO_SEVERITY_ERROR,
@@ -1104,7 +1130,7 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
         result = nmo_chunk_read_int(chunk, &line_count);
         if (result != NMO_OK) return result;
 
-        if (line_count < 0 || line_count >= 1000000) {
+        if (line_count < 0) {
             NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                              "Invalid legacy mesh line count %d", line_count);
         }
@@ -1114,6 +1140,12 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
                 NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK,
                                  NMO_SEVERITY_ERROR,
                                  "Legacy mesh lines exceed remaining DWORDs");
+            }
+            if (nmo_mesh_size_mul_overflows(
+                    (size_t)line_count, 2u * sizeof(uint16_t))) {
+                NMO_RETURN_ERROR(
+                    NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                    "Legacy mesh line allocation size overflows");
             }
             out_state->line_count = (uint32_t)line_count;
             out_state->line_indices = (uint16_t *)nmo_arena_alloc(
@@ -1993,6 +2025,12 @@ static nmo_status_t nmo_mesh_validate(
                          "CKMesh count exceeds serialized limits");
     }
     if (nmo_mesh_size_mul_overflows(
+            s->face_count, sizeof(*s->faces)) ||
+        nmo_mesh_size_mul_overflows(
+            s->face_count, 3u * sizeof(*s->face_vertex_indices)) ||
+        nmo_mesh_size_mul_overflows(
+            s->line_count, 2u * sizeof(*s->line_indices)) ||
+        nmo_mesh_size_mul_overflows(
             s->material_group_count, sizeof(*s->material_groups)) ||
         nmo_mesh_size_mul_overflows(
             s->material_channel_count, sizeof(*s->material_channels))) {
