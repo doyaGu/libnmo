@@ -62,9 +62,11 @@ typedef enum nmo_file_version {
 
 // File write modes
 typedef enum nmo_file_write_mode {
-    NMO_FILE_WRITE_NORMAL             = 0,
-    NMO_FILE_WRITE_INCLUDE_REFERENCES = 1,
-    NMO_FILE_WRITE_EXCLUDE_REFERENCES = 2,
+    NMO_FILE_WRITE_UNCOMPRESSED          = 0,
+    NMO_FILE_WRITE_CHUNK_COMPRESSED_OLD  = 1,
+    NMO_FILE_WRITE_EXTERNAL_TEXTURES_OLD = 2,
+    NMO_FILE_WRITE_FOR_VIEWER            = 4,
+    NMO_FILE_WRITE_WHOLE_COMPRESSED      = 8,
 } nmo_file_write_mode_t;
 
 // Chunk versions (matching CKStateChunk CHUNK_VERSION constants exactly)

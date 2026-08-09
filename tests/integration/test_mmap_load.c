@@ -26,7 +26,9 @@ static int file_is_compressed(const char *path) {
         return -1;
     }
 
-    const uint32_t compression_mask = NMO_FILE_WRITE_COMPRESS_HEADER | NMO_FILE_WRITE_COMPRESS_DATA;
+    const uint32_t compression_mask =
+        NMO_FILE_WRITE_CHUNK_COMPRESSED_OLD |
+        NMO_FILE_WRITE_WHOLE_COMPRESSED;
     int is_compressed = (header.file_write_mode & compression_mask) != 0;
 
     if (header.hdr1_pack_size != header.hdr1_unpack_size) {

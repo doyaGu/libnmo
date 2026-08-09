@@ -73,7 +73,9 @@ static nmo_status_t nmo_detect_file_compression(const char *path,
     }
 
     /* Check if any compression is enabled */
-    const uint32_t compression_mask = NMO_FILE_WRITE_COMPRESS_HEADER | NMO_FILE_WRITE_COMPRESS_DATA;
+    const uint32_t compression_mask =
+        NMO_FILE_WRITE_CHUNK_COMPRESSED_OLD |
+        NMO_FILE_WRITE_WHOLE_COMPRESSED;
     int is_compressed = (header.file_write_mode & compression_mask) != 0;
 
     /* Also check if header1 is compressed (pack_size != unpack_size) */

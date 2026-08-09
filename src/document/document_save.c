@@ -636,8 +636,12 @@ nmo_status_t nmo_save_file(
 
         /* Inherit compression from the session's original file */
         nmo_file_info_t fi = nmo_session_get_file_info(session);
-        resolved.compress_header = (fi.write_mode & NMO_FILE_WRITE_COMPRESS_HEADER) != 0;
-        resolved.compress_data   = (fi.write_mode & NMO_FILE_WRITE_COMPRESS_DATA)   != 0;
+        const uint32_t compression_mask =
+            NMO_FILE_WRITE_CHUNK_COMPRESSED_OLD |
+            NMO_FILE_WRITE_WHOLE_COMPRESSED;
+        const bool compressed = (fi.write_mode & compression_mask) != 0u;
+        resolved.compress_header = compressed;
+        resolved.compress_data = compressed;
     } else {
         resolved = *options;
         if (resolved.flags & NMO_SAVE_COMPRESSED) {
@@ -1496,15 +1500,10 @@ static nmo_status_t save_write_file(nmo_serializer_t *ctx, const char *path) {
 
     /* Write mode flags */
     uint32_t write_mode = ctx->file_info.write_mode;
-    if (ctx->stats.header_compressed) {
-        write_mode |= NMO_FILE_WRITE_COMPRESS_HEADER;
-    } else {
-        write_mode &= ~NMO_FILE_WRITE_COMPRESS_HEADER;
-    }
+    write_mode &= ~(NMO_FILE_WRITE_CHUNK_COMPRESSED_OLD |
+                    NMO_FILE_WRITE_WHOLE_COMPRESSED);
     if (ctx->stats.data_compressed) {
-        write_mode |= NMO_FILE_WRITE_COMPRESS_DATA;
-    } else {
-        write_mode &= ~NMO_FILE_WRITE_COMPRESS_DATA;
+        write_mode |= NMO_FILE_WRITE_WHOLE_COMPRESSED;
     }
     header.file_write_mode = write_mode;
 

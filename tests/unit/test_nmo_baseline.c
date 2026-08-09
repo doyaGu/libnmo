@@ -77,16 +77,14 @@ static void test_parse_file(const char* filepath, const char* expected_signature
         printf("  HDR1 Unpack Size: %u bytes\n", header.hdr1_unpack_size);
     }
 
-    // Check compression flags
-    if (header.file_write_mode & NMO_FILE_WRITE_COMPRESS_HEADER) {
-        printf("  Compression: Header1 is compressed\n");
-    }
-    if (header.file_write_mode & NMO_FILE_WRITE_COMPRESS_DATA) {
-        printf("  Compression: Data section is compressed\n");
-    }
-    if (!(header.file_write_mode & NMO_FILE_WRITE_COMPRESS_BOTH)) {
-        printf("  Compression: None\n");
-    }
+    // Check CK_FILE_WRITEMODE compression flags.
+    const uint32_t compression_mask =
+        NMO_FILE_WRITE_CHUNK_COMPRESSED_OLD |
+        NMO_FILE_WRITE_WHOLE_COMPRESSED;
+    printf("  Compression: %s\n",
+           (header.file_write_mode & compression_mask) != 0u
+               ? "enabled"
+               : "none");
 
     // Validate file version range
     ASSERT_TRUE(header.file_version >= 2 && header.file_version <= 9);

@@ -20,15 +20,6 @@ extern "C" {
 typedef struct nmo_header nmo_header_t;
 
 /**
- * @brief File write mode flags
- */
-typedef enum nmo_file_write_mode_flags {
-    NMO_FILE_WRITE_COMPRESS_HEADER = 1, /**< Compress header1 */
-    NMO_FILE_WRITE_COMPRESS_DATA   = 2, /**< Compress data section */
-    NMO_FILE_WRITE_COMPRESS_BOTH   = 3, /**< Compress both header and data */
-} nmo_file_write_mode_flags_t;
-
-/**
  * @brief Virtools file header structure
  *
  * This structure represents the header of a Virtools/Nemo file.
