@@ -2495,6 +2495,86 @@ TEST(runtime_kernel, copy_remap_updates_only_resolved_place_portals) {
     nmo_context_release(ctx);
 }
 
+TEST(runtime_kernel, copy_remap_and_graph_include_skin_bones) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    const nmo_type_runtime_t *type_rt = nmo_context_get_type_runtime(ctx);
+    const nmo_type_descriptor_t *entity_type =
+        nmo_type_registry_find_by_class_id(
+            type_rt->types, NMO_CID_3DENTITY);
+    ASSERT_NOT_NULL(entity_type);
+
+    nmo_3dentity_skin_bone_t bones[] = {
+        {.bone = nmo_ref_from_id(101)},
+        {.bone = nmo_ref_from_raw(102)},
+    };
+    nmo_3dentity_skin_t skin = {
+        .bone_count = 2,
+        .bones = bones,
+    };
+    nmo_3dentity_state_t state = {0};
+    state.skin = &skin;
+
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_id_remap_t *remap = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(remap);
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, 101, 201));
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, 102, 202));
+    ASSERT_EQ(NMO_OK, nmo_runtime_remap_copy_refs(
+        type_rt, entity_type, &state, remap));
+    ASSERT_EQ(201u, nmo_ref_runtime_id(&bones[0].bone));
+    ASSERT_EQ(101u, bones[0].bone.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, bones[1].bone.state);
+    ASSERT_EQ(102u, bones[1].bone.raw_id);
+    nmo_arena_destroy(arena);
+
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_object_id_t owner_id = 0;
+    nmo_object_id_t bone_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_3DENTITY, "owner", NMO_NULL_GUID,
+        &owner_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_3DENTITY, "bone", NMO_NULL_GUID,
+        &bone_id, NULL));
+    nmo_3dentity_state_t *owner = (nmo_3dentity_state_t *)
+        nmo_object_repository_find_by_id(repo, owner_id)->state;
+    nmo_3dentity_skin_bone_t graph_bones[] = {
+        {.bone = nmo_ref_from_id(bone_id)},
+        {.bone = nmo_ref_from_raw(0x7FFFFF32u)},
+    };
+    nmo_3dentity_skin_t graph_skin = {
+        .bone_count = 2,
+        .bones = graph_bones,
+    };
+    owner->skin = &graph_skin;
+
+    nmo_arena_t *graph_arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(graph_arena);
+    nmo_ref_graph_t *graph = nmo_ref_graph_create(
+        repo, type_rt->types, graph_arena);
+    ASSERT_NOT_NULL(graph);
+    nmo_ref_edge_t *outgoing = NULL;
+    size_t outgoing_count = 0;
+    ASSERT_EQ(NMO_OK, nmo_ref_graph_get_object_edges(
+        graph, owner_id, NMO_REF_DIR_OUTGOING,
+        &outgoing, &outgoing_count));
+    ASSERT_EQ(1u, outgoing_count);
+    ASSERT_EQ(bone_id, outgoing[0].to);
+    ASSERT_EQ(NMO_REF_KIND_SKIN_BONE, outgoing[0].kind);
+    ASSERT_STR_EQ("skin.bones", outgoing[0].field_path);
+    ASSERT_EQ(0u, outgoing[0].index);
+
+    nmo_ref_graph_destroy(graph);
+    nmo_arena_destroy(graph_arena);
+    owner->skin = NULL;
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(runtime_kernel, normalize_and_safe_detach_keep_place_portals_atomic) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
@@ -2697,6 +2777,7 @@ REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_patchmesh_refs);
 REGISTER_TEST(runtime_kernel, normalize_and_safe_detach_keep_patchmesh_records_atomic);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_curve_refs);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_place_portals);
+REGISTER_TEST(runtime_kernel, copy_remap_and_graph_include_skin_bones);
 REGISTER_TEST(runtime_kernel, normalize_and_safe_detach_keep_place_portals_atomic);
 REGISTER_TEST(runtime_kernel, normalize_and_safe_detach_keep_curve_sections_independent);
 TEST_MAIN_END()

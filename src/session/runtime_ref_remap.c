@@ -9,6 +9,7 @@
 #include "object/builtin/nmo_beobject_schemas.h"
 #include "object/builtin/nmo_character_schemas.h"
 #include "object/builtin/nmo_curve_schemas.h"
+#include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_grid_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "object/builtin/nmo_patchmesh_schemas.h"
@@ -367,6 +368,26 @@ static nmo_status_t runtime_remap_place_refs(
     return NMO_OK;
 }
 
+static nmo_status_t runtime_remap_3dentity_skin_refs(
+    nmo_3dentity_state_t *state,
+    const nmo_id_remap_t *remap)
+{
+    if (state == NULL || state->skin == NULL) return NMO_OK;
+    nmo_3dentity_skin_t *skin = state->skin;
+    if (skin->bone_count > 0 && skin->bones == NULL) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    for (uint32_t i = 0; i < skin->bone_count; ++i) {
+        nmo_ref_t *ref = &skin->bones[i].bone;
+        nmo_object_id_t mapped = NMO_OBJECT_ID_NONE;
+        if (ref->state == NMO_REF_RESOLVED &&
+            runtime_lookup_mapping(remap, ref->id, &mapped)) {
+            ref->id = mapped;
+        }
+    }
+    return NMO_OK;
+}
+
 /* 鈹€鈹€ Public API 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 nmo_status_t nmo_runtime_remap_copy_refs(
@@ -443,6 +464,10 @@ nmo_status_t nmo_runtime_remap_copy_refs(
         if (nmo_guid_equals(current->guid, CKPGUID_PLACE)) {
             NMO_RETURN_IF_ERROR(runtime_remap_place_refs(
                 (nmo_place_state_t *)current_instance, remap));
+        }
+        if (nmo_guid_equals(current->guid, CKPGUID_3DENTITY)) {
+            NMO_RETURN_IF_ERROR(runtime_remap_3dentity_skin_refs(
+                (nmo_3dentity_state_t *)current_instance, remap));
         }
 
     }

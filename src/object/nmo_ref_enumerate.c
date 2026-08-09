@@ -8,6 +8,8 @@
 
 #include "object/nmo_ref_enumerate.h"
 #include "object/nmo_ref.h"
+#include "object/builtin/nmo_3dentity_schemas.h"
+#include "object/nmo_object_guids.h"
 #include "format/nmo_object.h"
 #include "type/nmo_reflection.h"
 #include "type/nmo_type_query.h"
@@ -307,6 +309,28 @@ static nmo_status_t nmo_ref_enumerate_struct_arrays(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t nmo_ref_enumerate_3dentity_skin(
+    const nmo_3dentity_state_t *state,
+    nmo_ref_visitor_fn visitor,
+    void *user_data)
+{
+    if (state == NULL || state->skin == NULL) return NMO_OK;
+    const nmo_3dentity_skin_t *skin = state->skin;
+    if (skin->bone_count > 0 && skin->bones == NULL) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    for (uint32_t i = 0; i < skin->bone_count; ++i) {
+        const nmo_object_id_t id = nmo_ref_runtime_id(
+            &skin->bones[i].bone);
+        if (id != NMO_OBJECT_ID_NONE && !visitor(
+                user_data, id, NMO_REF_KIND_SKIN_BONE,
+                "skin.bones", i)) {
+            break;
+        }
+    }
+    return NMO_OK;
+}
+
 static nmo_status_t nmo_ref_enumerate_type_chain(
     const nmo_type_registry_t *types,
     const nmo_type_descriptor_t *type,
@@ -354,6 +378,13 @@ static nmo_status_t nmo_ref_enumerate_type_chain(
             if (status != NMO_OK) {
                 return status;
             }
+        }
+
+        if (nmo_guid_equals(current->guid, CKPGUID_3DENTITY)) {
+            status = nmo_ref_enumerate_3dentity_skin(
+                (const nmo_3dentity_state_t *)current_instance,
+                visitor, user_data);
+            if (status != NMO_OK) return status;
         }
 
     }

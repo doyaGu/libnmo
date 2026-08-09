@@ -32,6 +32,7 @@
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
 #include "object/nmo_object_repository.h"
+#include "object/nmo_object_struct_guids.h"
 #include "type/nmo_reflection.h"
 #include "nmo_types.h"
 #include <stddef.h>
@@ -90,7 +91,7 @@ static const nmo_type_field_t nmo_3dentity_fields[] = {
     NMO_FIELD(nmo_3dentity_state_t, animation_count, CKPGUID_UINT32),
     NMO_FIELD_REF_RECORD_ARRAY_COUNTED(nmo_3dentity_state_t, animation_ids, animation_count),
     /* Skin (optional) */
-    NMO_FIELD_OPT(nmo_3dentity_state_t, skin, CKPGUID_POINTER)
+    NMO_FIELD_PTR(nmo_3dentity_state_t, skin, CKPGUID_CK3DENTITYSKIN)
 };
 
 /* =============================================================================

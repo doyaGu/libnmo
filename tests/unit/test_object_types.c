@@ -123,6 +123,15 @@ TEST(object_types, register_all_types) {
     ASSERT_TRUE(nmo_field_uses_ref_records(&skin_bone->fields[0]));
     ASSERT_FALSE(nmo_field_is_array(&skin_bone->fields[0]));
 
+    const nmo_type_descriptor_t *entity3d =
+        nmo_type_registry_find_by_guid(registry, CKPGUID_3DENTITY);
+    ASSERT_NOT_NULL(entity3d);
+    const nmo_type_field_t *skin = nmo_type_get_field_by_name(
+        entity3d, "skin");
+    ASSERT_NOT_NULL(skin);
+    ASSERT_TRUE(nmo_guid_equals(skin->type_guid, CKPGUID_CK3DENTITYSKIN));
+    ASSERT_TRUE((skin->flags & NMO_FIELD_POINTER) != 0u);
+
     nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
 }
