@@ -5356,6 +5356,58 @@ TEST(chunk_id_remap, spritetext_failures_keep_state_and_target_chunk_atomic) {
     ASSERT_EQ(901u, nmo_beobject_script_array_get_id(
         &state.base.entity.base.base.scripts, 0));
 
+    nmo_chunk_t *text_cross_section = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(text_cross_section);
+    text_cross_section->class_id = NMO_CID_SPRITETEXT;
+    text_cross_section->data_version = 4;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(text_cross_section));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        text_cross_section, CK_STATESAVE_SPRITETEXT));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(text_cross_section, 8u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        text_cross_section, 0x44434241u));
+    nmo_chunk_close(text_cross_section);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_spritetext_deserialize(
+        &state, text_cross_section, NULL, &deserialize_context));
+    ASSERT_STR_EQ("Old text", state.text_content);
+    ASSERT_STR_EQ("Old font", state.font.font_name);
+
+    nmo_chunk_t *font_cross_section = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(font_cross_section);
+    font_cross_section->class_id = NMO_CID_SPRITETEXT;
+    font_cross_section->data_version = 4;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(font_cross_section));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        font_cross_section, CK_STATESAVE_SPRITEFONT));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_string(font_cross_section, "Arial"));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(font_cross_section, 12));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(font_cross_section, 400));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(font_cross_section, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(font_cross_section, 1u));
+    nmo_chunk_close(font_cross_section);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_spritetext_deserialize(
+        &state, font_cross_section, NULL, &deserialize_context));
+    ASSERT_STR_EQ("Old font", state.font.font_name);
+    ASSERT_EQ(21, state.font.size);
+    ASSERT_EQ(1, state.font.underline);
+
+    nmo_chunk_t *colors_cross_section = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(colors_cross_section);
+    colors_cross_section->class_id = NMO_CID_SPRITETEXT;
+    colors_cross_section->data_version = 4;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(colors_cross_section));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        colors_cross_section, CK_STATESAVE_SPRITETEXTCOLOR));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        colors_cross_section, 0xAABBCCDDu));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        colors_cross_section, 0x01020304u));
+    nmo_chunk_close(colors_cross_section);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_spritetext_deserialize(
+        &state, colors_cross_section, NULL, &deserialize_context));
+    ASSERT_EQ(0x11223344u, state.font_color);
+    ASSERT_EQ(0x55667788u, state.background_color);
+
     fail_after_allocator_state_t allocator_state = {
         .allocation_count = 0,
         .allowed_allocations = 2,

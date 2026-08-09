@@ -205,22 +205,39 @@ static nmo_status_t ckspritetext_deserialize_modern(
     ckspritetext_init_defaults(out_state, arena);
     
     /* Process identifier 0x01000000: Text string */
-    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SPRITETEXT);
+    size_t section_dwords = 0u;
+    result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_SPRITETEXT, &section_dwords);
     if (result == NMO_OK) {
+        const size_t section_end =
+            nmo_chunk_get_position(chunk) + section_dwords;
+        if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
         result = deserialize_text_content(chunk, arena, out_state);
         NMO_RETURN_IF_ERROR(result);
+        if (nmo_chunk_get_position(chunk) > section_end) {
+            return NMO_ERR_TRUNCATED_CHUNK;
+        }
     } else if (result != NMO_ERR_NOT_FOUND) return result;
     
     /* Process identifier 0x02000000: Font properties */
-    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SPRITEFONT);
+    result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_SPRITEFONT, &section_dwords);
     if (result == NMO_OK) {
+        const size_t section_end =
+            nmo_chunk_get_position(chunk) + section_dwords;
+        if (section_dwords < 5u) return NMO_ERR_TRUNCATED_CHUNK;
         result = deserialize_font_properties(chunk, arena, out_state);
         NMO_RETURN_IF_ERROR(result);
+        if (nmo_chunk_get_position(chunk) > section_end) {
+            return NMO_ERR_TRUNCATED_CHUNK;
+        }
     } else if (result != NMO_ERR_NOT_FOUND) return result;
     
     /* Process identifier 0x04000000: Colors */
-    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SPRITETEXTCOLOR);
+    result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_SPRITETEXTCOLOR, &section_dwords);
     if (result == NMO_OK) {
+        if (section_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
         result = deserialize_colors(chunk, arena, out_state);
         NMO_RETURN_IF_ERROR(result);
     } else if (result == NMO_ERR_NOT_FOUND) {
