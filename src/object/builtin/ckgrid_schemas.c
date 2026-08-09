@@ -299,6 +299,7 @@ nmo_status_t nmo_grid_serialize(
     if (instance == NULL || out_chunk == NULL || out_chunk->arena == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
+    NMO_RETURN_IF_ERROR(nmo_grid_validate(instance, type, context));
 
     nmo_chunk_t *staged = nmo_chunk_create(out_chunk->arena);
     if (staged == NULL) return NMO_ERR_NOMEM;
@@ -406,7 +407,12 @@ static nmo_status_t nmo_grid_validate(
     (void)context;
     const nmo_grid_state_t *s = instance;
     if (s == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    NMO_RETURN_IF_ERROR(nmo_3dentity_vtable.validate(
+        &s->base, NULL, context));
     NMO_VALIDATE_COUNT(s->layers.data, s->layers.count, "layers");
+    if (s->layers.count > (size_t)INT32_MAX) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
     if (s->layers.element_size != sizeof(nmo_grid_layer_t)) {
         return NMO_ERR_VALIDATION_FAILED;
     }

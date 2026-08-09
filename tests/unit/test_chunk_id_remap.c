@@ -3996,6 +3996,20 @@ TEST(chunk_id_remap, grid_failures_keep_state_and_target_chunk_atomic) {
     ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(target, &preserved));
     ASSERT_EQ(0x12345678u, preserved);
 
+    size_t valid_element_size = source.layers.element_size;
+    source.layers.element_size = sizeof(nmo_ref_t);
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_grid_serialize(
+        &source, target, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
+    source.layers.element_size = valid_element_size;
+
+    size_t valid_count = source.layers.count;
+    source.layers.count = (size_t)INT32_MAX + 1u;
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_grid_serialize(
+        &source, target, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
+    source.layers.count = valid_count;
+
     nmo_grid_vtable.destroy(&state, NULL, NULL);
     nmo_grid_vtable.destroy(&source, NULL, NULL);
     nmo_arena_destroy(arena);
