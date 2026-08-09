@@ -902,10 +902,17 @@ nmo_status_t nmo_object_system_deserialize_loaded_objects(
                     if (data != NULL && pos_bytes + tail_size <= buffer_size) {
                         int tail_result = nmo_shadow_capture_chunk_tail(
                             shadow_storage, obj->id, data + pos_bytes, tail_size);
-                        if (tail_result != NMO_OK && logger) {
-                            nmo_log(logger, NMO_LOG_WARN,
-                                    "  Object file_index=%zu (ID=%u, file_id=%u, class=0x%08X, name='%s'): failed to capture chunk tail in shadow (code=%d)",
-                                    file_index, obj->id, obj->file_id, obj->class_id, object_system_name_or_default(obj), tail_result);
+                        if (tail_result != NMO_OK) {
+                            if (logger) {
+                                nmo_log(logger, NMO_LOG_ERROR,
+                                        "  Object file_index=%zu (ID=%u, file_id=%u, class=0x%08X, name='%s'): failed to capture chunk tail in shadow (code=%d)",
+                                        file_index, obj->id, obj->file_id, obj->class_id, object_system_name_or_default(obj), tail_result);
+                            }
+                            nmo_chunk_close(obj->chunk);
+                            if (out_stats != NULL) {
+                                *out_stats = stats;
+                            }
+                            return tail_result;
                         }
                     }
                 }

@@ -5,6 +5,7 @@
 #include "object/nmo_object_repository.h"
 #include "object/nmo_ref_graph.h"
 #include "object/nmo_object_system.h"
+#include "object/nmo_shadow_storage.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_guids.h"
 #include "object/builtin/nmo_behavior_schemas.h"
@@ -1429,6 +1430,75 @@ TEST(runtime_kernel, deserialize_propagates_chunk_reader_oom) {
 
     fail_state.fail_allocations = 0;
     nmo_load_diagnostics_destroy(&diagnostics);
+    nmo_id_mapping_destroy(load_session);
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
+TEST(runtime_kernel, deserialize_propagates_shadow_tail_oom) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_arena_t *arena = nmo_session_get_arena(session);
+    const nmo_type_runtime_t *type_rt = nmo_context_get_type_runtime(ctx);
+    ASSERT_NOT_NULL(repo);
+    ASSERT_NOT_NULL(arena);
+    ASSERT_NOT_NULL(type_rt);
+
+    nmo_object_t *obj = nmo_object_create(
+        NULL, NMO_OBJECT_ID_NONE, NMO_CID_OBJECT);
+    ASSERT_NOT_NULL(obj);
+    nmo_object_t *repo_obj = obj;
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &obj));
+    obj = repo_obj;
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, 0x7FFFFFF0u));
+    nmo_chunk_close(chunk);
+    obj->chunk = chunk;
+
+    nmo_id_mapping_t *load_session = nmo_id_mapping_create(repo, 1);
+    ASSERT_NOT_NULL(load_session);
+    ASSERT_EQ(NMO_OK, nmo_id_mapping_register(load_session, obj, 0));
+
+    runtime_ref_graph_fail_allocator_state_t fail_state = {0};
+    nmo_allocator_t fail_allocator = nmo_allocator_custom(
+        runtime_ref_graph_fail_alloc,
+        runtime_ref_graph_fail_free,
+        &fail_state);
+    nmo_arena_t *shadow_arena = nmo_arena_create(&fail_allocator, 4096);
+    ASSERT_NOT_NULL(shadow_arena);
+    nmo_shadow_storage_t *shadow = nmo_shadow_storage_create(shadow_arena);
+    ASSERT_NOT_NULL(shadow);
+    fail_state.fail_allocations = 1;
+
+    nmo_object_system_deserialize_stats_t stats = {0};
+    ASSERT_EQ(
+        NMO_ERR_NOMEM,
+        nmo_object_system_deserialize_loaded_objects(
+            repo,
+            type_rt,
+            arena,
+            NULL,
+            shadow,
+            NMO_DESER_FLAG_PRESERVE_RAW,
+            NULL,
+            test_id_lookup,
+            load_session,
+            1,
+            NULL,
+            &stats));
+    ASSERT_EQ(1u, stats.deserialized);
+    ASSERT_EQ(0u, nmo_shadow_chunk_tail_count(shadow));
+
+    fail_state.fail_allocations = 0;
+    nmo_shadow_storage_destroy(shadow);
+    nmo_arena_destroy(shadow_arena);
     nmo_id_mapping_destroy(load_session);
     nmo_session_destroy(session);
     nmo_context_release(ctx);
@@ -4015,6 +4085,7 @@ REGISTER_TEST(runtime_kernel, delete_cascade_removes_referencing_group);
 REGISTER_TEST(runtime_kernel, prepare_loaded_objects_propagates_remap_growth_oom);
 REGISTER_TEST(runtime_kernel, deserialize_propagates_reference_registration_oom);
 REGISTER_TEST(runtime_kernel, deserialize_propagates_chunk_reader_oom);
+REGISTER_TEST(runtime_kernel, deserialize_propagates_shadow_tail_oom);
 REGISTER_TEST(runtime_kernel, deserialize_failure_does_not_publish_state_for_finalize);
 REGISTER_TEST(runtime_kernel, normalize_removes_only_invalid_reference_records);
 REGISTER_TEST(runtime_kernel, behavior_normalize_validates_lanes_before_mutation);

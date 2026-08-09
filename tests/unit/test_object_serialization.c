@@ -7,6 +7,7 @@
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_object_system.h"
+#include "object/nmo_shadow_storage.h"
 #include "object/nmo_object_guids.h"
 #include "object/builtin/nmo_object_schemas.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
@@ -850,6 +851,63 @@ TEST(object_serialization, repository_deserialize_propagates_chunk_reader_oom) {
     nmo_arena_destroy(registry_arena);
 }
 
+TEST(object_serialization, repository_deserialize_propagates_shadow_tail_oom) {
+    nmo_arena_t *registry_arena = nmo_arena_create(NULL, 131072);
+    nmo_arena_t *chunk_arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(registry_arena);
+    ASSERT_NOT_NULL(chunk_arena);
+
+    nmo_type_registry_t *registry = nmo_type_registry_create(registry_arena);
+    ASSERT_NOT_NULL(registry);
+    ASSERT_EQ(NMO_OK, register_test_object_types(registry));
+    nmo_type_runtime_t type_runtime = { .types = registry, .ops = NULL };
+
+    nmo_object_repository_t *repo = nmo_object_repository_create(NULL);
+    ASSERT_NOT_NULL(repo);
+    nmo_object_t *object = nmo_object_create(NULL, 1, NMO_CID_OBJECT);
+    ASSERT_NOT_NULL(object);
+    nmo_chunk_t *chunk = nmo_chunk_create(chunk_arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, 0x7FFFFFF0u));
+    nmo_chunk_close(chunk);
+    object->chunk = chunk;
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &object));
+    ASSERT_NULL(object);
+
+    schema_fail_allocator_t fail_ctx = {
+        .base = nmo_allocator_default(),
+        .fail_allocations = false,
+    };
+    nmo_allocator_t allocator = nmo_allocator_custom(
+        schema_fail_alloc, schema_fail_free, &fail_ctx);
+    nmo_arena_t *shadow_arena = nmo_arena_create(&allocator, 4096);
+    ASSERT_NOT_NULL(shadow_arena);
+    nmo_shadow_storage_t *shadow = nmo_shadow_storage_create(shadow_arena);
+    ASSERT_NOT_NULL(shadow);
+    fail_ctx.fail_allocations = true;
+
+    nmo_object_system_deserialize_stats_t stats = {0};
+    ASSERT_EQ(NMO_ERR_NOMEM, nmo_object_system_deserialize_repository(
+        repo,
+        &type_runtime,
+        registry_arena,
+        NULL,
+        shadow,
+        NMO_DESER_FLAG_PRESERVE_RAW,
+        &stats));
+    ASSERT_EQ(1u, stats.deserialized);
+    ASSERT_EQ(0u, nmo_shadow_chunk_tail_count(shadow));
+
+    fail_ctx.fail_allocations = false;
+    nmo_shadow_storage_destroy(shadow);
+    nmo_arena_destroy(shadow_arena);
+    nmo_object_repository_destroy(repo);
+    nmo_type_registry_destroy(registry);
+    nmo_arena_destroy(chunk_arena);
+    nmo_arena_destroy(registry_arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(object_serialization, ckobject_roundtrip);
     REGISTER_TEST(object_serialization, ckobject_hidden);
@@ -866,4 +924,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_serialization, schema_allocation_failure_is_transactional);
     REGISTER_TEST(object_serialization, object_system_propagates_allocation_failure);
     REGISTER_TEST(object_serialization, repository_deserialize_propagates_chunk_reader_oom);
+    REGISTER_TEST(object_serialization, repository_deserialize_propagates_shadow_tail_oom);
 TEST_MAIN_END()
