@@ -7737,6 +7737,9 @@ TEST(chunk_id_remap, curvepoint_fields_stay_in_identifier_sections) {
         {CK_STATESAVE_CURVEPOINTTCB, 4, 3},
         {CK_STATESAVE_CURVEPOINTCURVEPOS, 4, 3},
         {CK_STATESAVE_CURVEPOINTTANGENTS, 4, 6},
+        {CK_STATESAVE_CURVEPOINTTCB, 7, 3},
+        {CK_STATESAVE_CURVEPOINTCURVEPOS, 7, 3},
+        {CK_STATESAVE_CURVEPOINTTANGENTS, 7, 6},
     };
     for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
         nmo_chunk_t *chunk = nmo_chunk_create(arena);
@@ -7752,6 +7755,22 @@ TEST(chunk_id_remap, curvepoint_fields_stay_in_identifier_sections) {
         nmo_chunk_close(chunk);
         ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_curvepoint_deserialize(
             &state, chunk, NULL, &deserialize_context));
+        ASSERT_EQ(613u, state.curve.raw_id);
+        ASSERT_EQ(12.5f, state.tension);
+
+        nmo_chunk_t *trailing = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(trailing);
+        trailing->data_version = cases[i].data_version;
+        ASSERT_EQ(NMO_OK, nmo_chunk_start_write(trailing));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+            trailing, cases[i].identifier));
+        for (size_t j = 0; j < cases[i].required_dwords; ++j) {
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing, 0u));
+        }
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing, 0x12345678u));
+        nmo_chunk_close(trailing);
+        ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_curvepoint_deserialize(
+            &state, trailing, NULL, &deserialize_context));
         ASSERT_EQ(613u, state.curve.raw_id);
         ASSERT_EQ(12.5f, state.tension);
     }
@@ -16037,6 +16056,37 @@ TEST(chunk_id_remap, curve_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_curve_deserialize(
         &bounded, missing_legacy_point_count, NULL, &deserialize_context));
     ASSERT_EQ(12.5f, bounded.fitting_coeff);
+
+    static const struct {
+        uint32_t identifier;
+        uint32_t data_version;
+        size_t payload_dwords;
+    } trailing_sections[] = {
+        {CK_STATESAVE_CURVECONTROLPOINT, 4u, 1u},
+        {CK_STATESAVE_CURVEFITCOEFF, 4u, 1u},
+        {CK_STATESAVE_CURVESTEPS, 4u, 1u},
+        {CK_STATESAVE_CURVEOPEN, 4u, 1u},
+        {CK_STATESAVE_CURVEONLY, 7u, 4u},
+        {CK_STATESAVE_CURVESAVEPOINTS, 7u, 1u},
+    };
+    for (size_t i = 0;
+         i < sizeof(trailing_sections) / sizeof(trailing_sections[0]);
+         ++i) {
+        nmo_chunk_t *trailing = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(trailing);
+        trailing->data_version = trailing_sections[i].data_version;
+        ASSERT_EQ(NMO_OK, nmo_chunk_start_write(trailing));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+            trailing, trailing_sections[i].identifier));
+        for (size_t j = 0; j < trailing_sections[i].payload_dwords; ++j) {
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing, 0u));
+        }
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing, 0x12345678u));
+        nmo_chunk_close(trailing);
+        ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_curve_deserialize(
+            &bounded, trailing, NULL, &deserialize_context));
+        ASSERT_EQ(12.5f, bounded.fitting_coeff);
+    }
 
     nmo_curve_state_t invalid;
     ASSERT_EQ(NMO_OK, nmo_curve_vtable.create(&invalid, NULL, NULL));
