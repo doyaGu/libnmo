@@ -845,21 +845,14 @@ static nmo_status_t nmo_dataarray_enumerate_refs(
 {
     (void)type;
     const nmo_dataarray_state_t *state = (const nmo_dataarray_state_t *)instance;
-    if (state == NULL || visitor == NULL ||
-        state->rows == NULL || state->column_formats == NULL) {
+    if (state == NULL || visitor == NULL) {
         NMO_RETURN_OK();
     }
+    NMO_RETURN_IF_ERROR(nmo_dataarray_validate(state, NULL, NULL));
 
     for (uint32_t row = 0; row < state->row_count; row++) {
         const nmo_dataarray_row_t *row_data = &state->rows[row];
-        if (row_data->cells == NULL) {
-            continue;
-        }
-        uint32_t col_count =
-            row_data->column_count < state->column_count
-                ? row_data->column_count
-                : state->column_count;
-        for (uint32_t col = 0; col < col_count; col++) {
+        for (uint32_t col = 0; col < state->column_count; col++) {
             CK_ARRAYTYPE col_type = state->column_formats[col].type;
             nmo_object_id_t target_id = 0;
             nmo_ref_kind_t kind = NMO_REF_KIND_DATA_ARRAY;
