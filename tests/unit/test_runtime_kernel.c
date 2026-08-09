@@ -38,6 +38,7 @@
 #include "object/builtin/nmo_targetcamera_schemas.h"
 #include "session/nmo_deserializer.h"
 #include "session/nmo_id_mapping.h"
+#include "session/nmo_reference_resolver.h"
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_chunk_context.h"
 #include "format/nmo_id_remap.h"
@@ -700,6 +701,44 @@ TEST(runtime_kernel, ref_graph_creation_propagates_enumerator_error) {
 
     ASSERT_NULL(graph);
     nmo_arena_destroy(arena);
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
+TEST(runtime_kernel, finalize_load_propagates_reference_resolver_oom) {
+    runtime_ref_graph_fail_allocator_state_t fail_state = {0};
+    nmo_allocator_t fail_allocator = nmo_allocator_custom(
+        runtime_ref_graph_fail_alloc,
+        runtime_ref_graph_fail_free,
+        &fail_state);
+    nmo_context_desc_t desc = {
+        .allocator = &fail_allocator,
+    };
+    nmo_context_t *ctx = nmo_context_create(&desc);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    nmo_reference_resolver_t *resolver =
+        nmo_session_ensure_reference_resolver(session);
+    ASSERT_NOT_NULL(resolver);
+    nmo_object_ref_t ref = {
+        .id = 0x7FFFFF65u,
+        .file_index = -1,
+    };
+    char long_name[8192];
+    memset(long_name, 'x', sizeof(long_name) - 1);
+    long_name[sizeof(long_name) - 1] = '\0';
+    ref.name = long_name;
+    ASSERT_NOT_NULL(nmo_reference_resolver_register_reference(
+        resolver, &ref));
+    fail_state.fail_allocations = 1;
+
+    nmo_runtime_report_t report = {0};
+    ASSERT_EQ(NMO_ERR_NOMEM,
+              nmo_runtime_kernel_finalize_load(session, NULL, &report));
+
+    fail_state.fail_allocations = 0;
     nmo_session_destroy(session);
     nmo_context_release(ctx);
 }
@@ -3652,6 +3691,7 @@ REGISTER_TEST(runtime_kernel, copy_rejects_ambiguous_or_missing_sources_atomical
 REGISTER_TEST(runtime_kernel, copy_hook_failure_rolls_back_all_clones);
 REGISTER_TEST(runtime_kernel, ref_graph_creation_fails_on_edge_allocation_error);
 REGISTER_TEST(runtime_kernel, ref_graph_creation_propagates_enumerator_error);
+REGISTER_TEST(runtime_kernel, finalize_load_propagates_reference_resolver_oom);
 REGISTER_TEST(runtime_kernel, delete_safe_detach_prunes_group_references);
 REGISTER_TEST(runtime_kernel, delete_safe_detach_uses_explicit_object_type);
 REGISTER_TEST(runtime_kernel, delete_safe_detach_prunes_behavior_links_with_deleted_io);

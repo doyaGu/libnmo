@@ -671,7 +671,14 @@ nmo_status_t nmo_runtime_kernel_finalize_load(
     nmo_reference_resolver_t *resolver = nmo_session_get_reference_resolver(session);
     if (resolver != NULL) {
         uint64_t reference_start = runtime_load_perf_begin(perf_stats);
-        (void)nmo_reference_resolver_resolve_all(resolver);
+        nmo_status_t resolve_result =
+            nmo_reference_resolver_resolve_all(resolver);
+        if (resolve_result != NMO_OK) {
+            runtime_load_perf_end(
+                perf_stats, NMO_LOAD_PERF_REFERENCE_RESOLVE,
+                reference_start);
+            return resolve_result;
+        }
 
         nmo_reference_stats_t resolver_stats;
         if (nmo_reference_resolver_get_stats(resolver, &resolver_stats) == NMO_OK) {
