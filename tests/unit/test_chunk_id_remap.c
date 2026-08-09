@@ -7426,6 +7426,33 @@ TEST(chunk_id_remap, sprite3d_unresolved_material_round_trips_raw_id) {
     ASSERT_EQ(899u, nmo_beobject_script_array_get_id(
         &failed.base.base.base.scripts, 0));
 
+    nmo_chunk_t *trailing = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(trailing);
+    trailing->class_id = NMO_CID_SPRITE3D;
+    trailing->chunk_version = NMO_CHUNK_VERSION4;
+    trailing->data_version = 7;
+    trailing->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(trailing));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        trailing, CK_STATESAVE_SPRITE3DDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        trailing, VXSPRITE3D_BILLBOARD));
+    for (int i = 0; i < 8; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_float(
+            trailing, (float)(i + 1)));
+    }
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_id(trailing, 622));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing, 0x12345678u));
+    nmo_chunk_close(trailing);
+    nmo_chunk_set_file_context(trailing, &read_context);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_sprite3d_deserialize(
+        &failed, trailing, NULL, &deserialize_context));
+    ASSERT_EQ(9.0f, failed.half_width);
+    ASSERT_EQ(623u, failed.material.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, failed.material.state);
+    ASSERT_EQ(899u, nmo_beobject_script_array_get_id(
+        &failed.base.base.base.scripts, 0));
+
     nmo_sprite3d_state_t invalid;
     ASSERT_EQ(NMO_OK, nmo_sprite3d_vtable.create(&invalid, NULL, NULL));
     invalid.material = nmo_ref_from_id(999);

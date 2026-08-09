@@ -97,6 +97,7 @@ static nmo_status_t nmo_sprite3d_deserialize_internal(
         chunk, CK_STATESAVE_SPRITE3DDATA, &section_dwords);
     if (result == NMO_OK) {
         if (section_dwords < 10u) return NMO_ERR_TRUNCATED_CHUNK;
+        if (section_dwords > 10u) return NMO_ERR_INVALID_FORMAT;
         uint32_t mode = 0;
         float half_width = 0.0f;
         float half_height = 0.0f;
