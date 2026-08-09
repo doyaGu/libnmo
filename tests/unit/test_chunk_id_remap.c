@@ -1717,6 +1717,39 @@ TEST(chunk_id_remap, dataarray_failures_keep_state_and_target_chunk_atomic) {
     ASSERT_EQ(72u, state.column_index);
     ASSERT_EQ(0, state.key_column);
 
+    const struct {
+        uint32_t identifier;
+        size_t payload_dwords;
+    } trailing_sections[] = {
+        {CK_STATESAVE_DATAARRAYFORMAT, 1u},
+        {CK_STATESAVE_DATAARRAYDATA, 1u},
+        {CK_STATESAVE_DATAARRAYMEMBERS, 3u},
+    };
+    for (size_t i = 0;
+         i < sizeof(trailing_sections) / sizeof(trailing_sections[0]);
+         ++i) {
+        nmo_chunk_t *trailing = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(trailing);
+        trailing->class_id = NMO_CID_DATAARRAY;
+        trailing->data_version = 7;
+        trailing->chunk_options |= NMO_CHUNK_OPTION_FILE;
+        ASSERT_EQ(NMO_OK, nmo_chunk_start_write(trailing));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+            trailing, trailing_sections[i].identifier));
+        for (size_t j = 0; j < trailing_sections[i].payload_dwords; ++j) {
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing, 0));
+        }
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing, 0x12345678u));
+        nmo_chunk_close(trailing);
+        ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_dataarray_deserialize(
+            &state, trailing, NULL, &deserialize_context));
+        ASSERT_EQ(&old_format, state.column_formats);
+        ASSERT_EQ(&old_row, state.rows);
+        ASSERT_EQ(71, state.order);
+        ASSERT_EQ(72u, state.column_index);
+        ASSERT_EQ(0, state.key_column);
+    }
+
     nmo_id_remap_t *runtime_to_file = nmo_id_remap_create(arena);
     ASSERT_NOT_NULL(runtime_to_file);
     nmo_chunk_file_context_t file_context = {

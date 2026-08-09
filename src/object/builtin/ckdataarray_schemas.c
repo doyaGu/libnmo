@@ -283,8 +283,11 @@ static nmo_status_t nmo_dataarray_deserialize_internal(
                 }
             }
         }
-        if (nmo_chunk_get_position(chunk) > format_end) {
-            return NMO_ERR_TRUNCATED_CHUNK;
+        const size_t position = nmo_chunk_get_position(chunk);
+        if (position != format_end) {
+            return position > format_end
+                ? NMO_ERR_TRUNCATED_CHUNK
+                : NMO_ERR_INVALID_FORMAT;
         }
     } else if (result != NMO_ERR_NOT_FOUND) return result;
 
@@ -411,8 +414,11 @@ static nmo_status_t nmo_dataarray_deserialize_internal(
                 }
             }
         }
-        if (nmo_chunk_get_position(chunk) > data_end) {
-            return NMO_ERR_TRUNCATED_CHUNK;
+        const size_t position = nmo_chunk_get_position(chunk);
+        if (position != data_end) {
+            return position > data_end
+                ? NMO_ERR_TRUNCATED_CHUNK
+                : NMO_ERR_INVALID_FORMAT;
         }
     } else if (result != NMO_ERR_NOT_FOUND) return result;
 
@@ -435,8 +441,11 @@ static nmo_status_t nmo_dataarray_deserialize_internal(
             result = nmo_chunk_read_int(chunk, &out_state->key_column);
             if (result != NMO_OK) return result;
         }
-        if (nmo_chunk_get_position(chunk) > members_end) {
-            return NMO_ERR_TRUNCATED_CHUNK;
+        const size_t position = nmo_chunk_get_position(chunk);
+        if (position != members_end) {
+            return position > members_end
+                ? NMO_ERR_TRUNCATED_CHUNK
+                : NMO_ERR_INVALID_FORMAT;
         }
     } else if (result != NMO_ERR_NOT_FOUND) return result;
 
