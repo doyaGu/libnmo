@@ -8112,12 +8112,36 @@ TEST(chunk_id_remap, beobject_attribute_unresolved_ref_round_trips_raw_id) {
     ASSERT_EQ(NMO_REF_UNRESOLVED, reloaded_attributes[0].parameter.state);
     ASSERT_EQ(42u, reloaded_attributes[0].type_id);
 
+    nmo_beobject_state_t large;
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(&large, NULL, NULL));
+    const size_t large_count = 100001u;
+    ASSERT_EQ(NMO_OK, nmo_array_extend(
+        &large.attributes, large_count, NULL));
+    nmo_chunk_t *large_chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(large_chunk);
+    large_chunk->class_id = NMO_CID_BEOBJECT;
+    large_chunk->data_version = 7;
+    large_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(large_chunk, &write_context);
+    ASSERT_EQ(NMO_OK, nmo_beobject_serialize(
+        &large, large_chunk, NULL, NULL));
+    nmo_chunk_close(large_chunk);
+    nmo_chunk_set_file_context(large_chunk, &read_context);
+    nmo_beobject_state_t large_loaded;
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(
+        &large_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_deserialize(
+        &large_loaded, large_chunk, NULL, NULL));
+    ASSERT_EQ(large_count, large_loaded.attributes.count);
+
     nmo_array_dispose(&source.scripts);
     nmo_array_dispose(&source.attributes);
     nmo_array_dispose(&loaded.scripts);
     nmo_array_dispose(&loaded.attributes);
     nmo_array_dispose(&reloaded.scripts);
     nmo_array_dispose(&reloaded.attributes);
+    nmo_beobject_vtable.destroy(&large, NULL, NULL);
+    nmo_beobject_vtable.destroy(&large_loaded, NULL, NULL);
     nmo_arena_destroy(arena);
 }
 

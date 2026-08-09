@@ -577,10 +577,6 @@ static nmo_status_t nmo_beobject_deserialize_internal(
             return result;
         }
 
-        if (attr_count > 100000u) {
-            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
-                             "CKBeObject: attribute count exceeds limit");
-        }
         if (attr_count > nmo_beobject_identifier_remaining_dwords(chunk)) {
             return NMO_ERR_TRUNCATED_CHUNK;
         }
