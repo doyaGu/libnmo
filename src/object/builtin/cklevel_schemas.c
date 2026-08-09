@@ -547,7 +547,7 @@ static nmo_status_t nmo_level_serialize_internal(
         if (result != NMO_OK) return result;
 
         const nmo_guid_t *inactive_guids = NMO_ARRAY_DATA(nmo_guid_t, &in_state->inactive_manager_guids);
-        for (uint32_t i = 0; i < in_state->inactive_manager_guids.count; i++) {
+        for (size_t i = 0; i < in_state->inactive_manager_guids.count; ++i) {
             result = nmo_chunk_write_guid(out_chunk, inactive_guids[i]);
             if (result != NMO_OK) return result;
         }
@@ -558,7 +558,9 @@ static nmo_status_t nmo_level_serialize_internal(
 
         if (in_state->duplicate_manager_names.count > 0 && in_state->duplicate_manager_names.data) {
             const char *const *dup_names = NMO_ARRAY_DATA(const char *, &in_state->duplicate_manager_names);
-            for (uint32_t i = 0; i < in_state->duplicate_manager_names.count; i++) {
+            for (size_t i = 0;
+                 i < in_state->duplicate_manager_names.count;
+                 ++i) {
                 result = nmo_chunk_write_string(out_chunk, dup_names[i]);
                 if (result != NMO_OK) return result;
             }
@@ -670,8 +672,10 @@ static nmo_status_t nmo_level_validate(
     void *context)
 {
     (void)type;
-    (void)context;
     const nmo_level_state_t *s = instance;
+    if (s == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    NMO_RETURN_IF_ERROR(nmo_beobject_vtable.validate(
+        &s->base, NULL, context));
     NMO_VALIDATE_COUNT(s->scene_ids.data, s->scene_ids.count, "scene_ids");
     if (s->scene_ids.element_size != sizeof(nmo_ref_t) ||
         s->scene_ids.count > 10000u) {
@@ -686,6 +690,13 @@ static nmo_status_t nmo_level_validate(
                        "duplicate_manager_names");
     if (s->duplicate_manager_names.element_size != sizeof(char *)) {
         return NMO_ERR_VALIDATION_FAILED;
+    }
+    const char *const *duplicate_names = NMO_ARRAY_DATA(
+        const char *, &s->duplicate_manager_names);
+    for (size_t i = 0; i < s->duplicate_manager_names.count; ++i) {
+        if (duplicate_names[i] == NULL) {
+            return NMO_ERR_VALIDATION_FAILED;
+        }
     }
     NMO_RETURN_OK();
 }

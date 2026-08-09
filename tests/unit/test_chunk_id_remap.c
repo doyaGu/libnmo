@@ -7257,6 +7257,15 @@ TEST(chunk_id_remap, level_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(target, &marker));
     ASSERT_EQ(0x12345678u, marker);
 
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, nmo_level_vtable.validate(
+        NULL, NULL, NULL));
+    const char *missing_manager_name = NULL;
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &invalid.duplicate_manager_names, &missing_manager_name));
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_level_serialize(
+        &invalid, target, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
+
     nmo_level_vtable.destroy(&source, NULL, NULL);
     nmo_level_vtable.destroy(&loaded, NULL, NULL);
     nmo_level_vtable.destroy(&reloaded, NULL, NULL);
