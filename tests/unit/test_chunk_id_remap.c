@@ -8880,6 +8880,9 @@ TEST(chunk_id_remap, wavesound_serializer_matches_version_two_layouts) {
     source.pan = -0.75f;
     source.pitch = 1.25f;
     source.attached_object = nmo_ref_from_id(999u);
+    source.version2_reserved_words[0] = 0x11111111u;
+    source.version2_reserved_words[1] = 0x22222222u;
+    source.version2_reserved_words[2] = 0x33333333u;
 
     nmo_chunk_t *background = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(background);
@@ -8907,6 +8910,12 @@ TEST(chunk_id_remap, wavesound_serializer_matches_version_two_layouts) {
     ASSERT_EQ(0.5f, background_loaded.gain);
     ASSERT_EQ(-0.75f, background_loaded.pan);
     ASSERT_EQ(1.25f, background_loaded.pitch);
+    ASSERT_EQ(0x11111111u,
+              background_loaded.version2_reserved_words[0]);
+    ASSERT_EQ(0x22222222u,
+              background_loaded.version2_reserved_words[1]);
+    ASSERT_EQ(0x33333333u,
+              background_loaded.version2_reserved_words[2]);
     ASSERT_EQ(NMO_OBJECT_ID_NONE,
               background_loaded.attached_object.raw_id);
 
@@ -8920,6 +8929,9 @@ TEST(chunk_id_remap, wavesound_serializer_matches_version_two_layouts) {
     source.attached_object = nmo_ref_from_raw(701u);
     source.position = (nmo_vector_t){1.0f, 2.0f, 3.0f};
     source.direction = (nmo_vector_t){0.0f, 1.0f, 0.0f};
+    source.version2_reserved_words[3] = 0x44444444u;
+    source.version2_reserved_words[4] = 0x55555555u;
+    source.version2_reserved_words[5] = 0x66666666u;
 
     nmo_chunk_t *point = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(point);
@@ -8955,10 +8967,102 @@ TEST(chunk_id_remap, wavesound_serializer_matches_version_two_layouts) {
     ASSERT_EQ(0.0f, point_loaded.direction.x);
     ASSERT_EQ(1.0f, point_loaded.direction.y);
     ASSERT_EQ(0.0f, point_loaded.direction.z);
+    ASSERT_EQ(0, memcmp(source.version2_reserved_words,
+                        point_loaded.version2_reserved_words,
+                        sizeof(source.version2_reserved_words)));
+
+    nmo_chunk_t *point_roundtrip = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(point_roundtrip);
+    point_roundtrip->class_id = NMO_CID_WAVESOUND;
+    point_roundtrip->data_version = 2;
+    point_roundtrip->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_wavesound_serialize(
+        &point_loaded, point_roundtrip, NULL, NULL));
+    nmo_chunk_close(point_roundtrip);
+    nmo_wavesound_state_t point_reloaded;
+    ASSERT_EQ(NMO_OK, nmo_wavesound_vtable.create(
+        &point_reloaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_wavesound_deserialize(
+        &point_reloaded, point_roundtrip, NULL, NULL));
+    ASSERT_EQ(0, memcmp(point_loaded.version2_reserved_words,
+                        point_reloaded.version2_reserved_words,
+                        sizeof(point_loaded.version2_reserved_words)));
+
+    nmo_wavesound_state_t point_copy;
+    ASSERT_EQ(NMO_OK, nmo_wavesound_vtable.create(
+        &point_copy, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_wavesound_vtable.copy(
+        &point_loaded, &point_copy, NULL, arena));
+    ASSERT_TRUE(nmo_wavesound_vtable.equals(
+        &point_loaded, &point_copy));
+    ASSERT_EQ(nmo_wavesound_vtable.hash(&point_loaded),
+              nmo_wavesound_vtable.hash(&point_copy));
+    point_copy.version2_reserved_words[5] ^= 1u;
+    ASSERT_FALSE(nmo_wavesound_vtable.equals(
+        &point_loaded, &point_copy));
+
+    nmo_chunk_t *modern_target = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(modern_target);
+    modern_target->class_id = NMO_CID_WAVESOUND;
+    modern_target->data_version = 3;
+    modern_target->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(modern_target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        modern_target, 0xABCD1234u));
+    nmo_chunk_close(modern_target);
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_wavesound_serialize(
+        &point_loaded, modern_target, NULL, NULL));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(modern_target));
+
+    memset(source.version2_reserved_words, 0,
+           sizeof(source.version2_reserved_words));
+    source.modern_reserved_words[0] = 0x77777777u;
+    source.modern_reserved_words[1] = 0x88888888u;
+    source.modern_reserved_words[2] = 0x99999999u;
+    source.modern_reserved_words[3] = 0xAAAAAAAAu;
+    ASSERT_EQ(NMO_OK, nmo_wavesound_serialize(
+        &source, modern_target, NULL, NULL));
+    nmo_chunk_close(modern_target);
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        modern_target, CK_STATESAVE_WAVSOUNDDATA2, &section_dwords));
+    ASSERT_EQ(24u, section_dwords);
+    nmo_wavesound_state_t modern_loaded;
+    ASSERT_EQ(NMO_OK, nmo_wavesound_vtable.create(
+        &modern_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_wavesound_deserialize(
+        &modern_loaded, modern_target, NULL, NULL));
+    ASSERT_EQ(0, memcmp(source.modern_reserved_words,
+                        modern_loaded.modern_reserved_words,
+                        sizeof(source.modern_reserved_words)));
+
+    nmo_chunk_t *legacy_target = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(legacy_target);
+    legacy_target->class_id = NMO_CID_WAVESOUND;
+    legacy_target->data_version = 2;
+    legacy_target->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(legacy_target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        legacy_target, 0x1234ABCDu));
+    nmo_chunk_close(legacy_target);
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_wavesound_serialize(
+        &modern_loaded, legacy_target, NULL, NULL));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(legacy_target));
+
+    nmo_chunk_t *default_target = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(default_target);
+    default_target->class_id = NMO_CID_WAVESOUND;
+    default_target->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_wavesound_serialize(
+        &modern_loaded, default_target, NULL, NULL));
+    ASSERT_EQ(NMO_CHUNK_DATA_VERSION_CURRENT,
+              nmo_chunk_get_data_version(default_target));
 
     nmo_wavesound_vtable.destroy(&source, NULL, NULL);
     nmo_wavesound_vtable.destroy(&background_loaded, NULL, NULL);
     nmo_wavesound_vtable.destroy(&point_loaded, NULL, NULL);
+    nmo_wavesound_vtable.destroy(&point_reloaded, NULL, NULL);
+    nmo_wavesound_vtable.destroy(&point_copy, NULL, NULL);
+    nmo_wavesound_vtable.destroy(&modern_loaded, NULL, NULL);
     nmo_arena_destroy(arena);
 }
 

@@ -67,6 +67,10 @@ typedef struct nmo_wavesound_state {
     nmo_vector_t position;
     nmo_vector_t direction;
 
+    /** Uninterpreted DATA2 words in the data-version-2 layout. */
+    uint32_t version2_reserved_words[6];
+    /** Uninterpreted DATA2 words in the data-version-3+ layout. */
+    uint32_t modern_reserved_words[4];
     /** Uninterpreted pre-v2 DATA2 words; word 8 stores loop mode. */
     uint32_t legacy_data2_words[20];
 } nmo_wavesound_state_t;

@@ -131,6 +131,14 @@ static const nmo_type_field_t nmo_wavesound_fields[] = {
     NMO_FIELD_NAMED("direction", offsetof(nmo_wavesound_state_t, direction),
                     sizeof(nmo_vector_t), CKPGUID_VECTOR,
                     NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD_NAMED("version2_reserved_words",
+                    offsetof(nmo_wavesound_state_t, version2_reserved_words),
+                    sizeof(((nmo_wavesound_state_t *)0)->version2_reserved_words),
+                    CKPGUID_VOIDBUF, 0, 0),
+    NMO_FIELD_NAMED("modern_reserved_words",
+                    offsetof(nmo_wavesound_state_t, modern_reserved_words),
+                    sizeof(((nmo_wavesound_state_t *)0)->modern_reserved_words),
+                    CKPGUID_VOIDBUF, 0, 0),
     NMO_FIELD_NAMED("legacy_data2_words",
                     offsetof(nmo_wavesound_state_t, legacy_data2_words),
                     sizeof(((nmo_wavesound_state_t *)0)->legacy_data2_words),
@@ -385,12 +393,9 @@ static nmo_status_t nmo_wavesound_deserialize_internal(
             NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &data.pan));
             NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &data.pitch));
 
-            /* Reserved floats */
-            {
-                float reserved = 0.0f;
-                NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &reserved));
-                NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &reserved));
-                NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &reserved));
+            for (size_t i = 0; i < 3u; ++i) {
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(
+                    chunk, &data.modern_reserved_words[i]));
             }
 
             /* Cone fields */
@@ -408,11 +413,8 @@ static nmo_status_t nmo_wavesound_deserialize_internal(
             NMO_RETURN_IF_ERROR(read_exact_sized_buffer(
                 chunk, &data.direction, sizeof(data.direction)));
 
-            /* Reserved */
-            {
-                uint32_t reserved = 0;
-                NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &reserved));
-            }
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(
+                chunk, &data.modern_reserved_words[3]));
         } else if (data_version >= 2) {
             /* Legacy layout (CK2 data version 2) */
             if (section_dwords < 8u) {
@@ -421,20 +423,17 @@ static nmo_status_t nmo_wavesound_deserialize_internal(
             NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &data.state_flags));
             NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &data.priority));
 
-            {
-                uint32_t reserved = 0;
-                NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &reserved));
-                NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &reserved));
-            }
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(
+                chunk, &data.version2_reserved_words[0]));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(
+                chunk, &data.version2_reserved_words[1]));
 
             NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &data.gain));
             NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &data.pan));
             NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &data.pitch));
 
-            {
-                float reserved = 0.0f;
-                NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &reserved));
-            }
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(
+                chunk, &data.version2_reserved_words[2]));
 
             /* Optional 3D block (not present for background sounds) */
             if ((data.state_flags & CK_WAVESOUND_ALLTYPE) !=
@@ -442,9 +441,10 @@ static nmo_status_t nmo_wavesound_deserialize_internal(
                 if (section_dwords < 26u) {
                     return NMO_ERR_TRUNCATED_CHUNK;
                 }
-                float reserved = 0.0f;
-                NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &reserved));
-                NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &reserved));
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(
+                    chunk, &data.version2_reserved_words[3]));
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(
+                    chunk, &data.version2_reserved_words[4]));
 
                 NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &data.cone_in_angle));
                 NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &data.cone_out_angle));
@@ -460,10 +460,8 @@ static nmo_status_t nmo_wavesound_deserialize_internal(
                 NMO_RETURN_IF_ERROR(read_exact_sized_buffer(
                     chunk, &data.direction, sizeof(data.direction)));
 
-                {
-                    int32_t reserved_int = 0;
-                    NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &reserved_int));
-                }
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(
+                    chunk, &data.version2_reserved_words[5]));
             }
         } else {
             if (section_dwords < 20u) {
@@ -520,6 +518,16 @@ nmo_status_t nmo_wavesound_deserialize(
     return NMO_OK;
 }
 
+static bool nmo_wavesound_has_nonzero_words(
+    const uint32_t *words,
+    size_t count)
+{
+    for (size_t i = 0; i < count; ++i) {
+        if (words[i] != 0u) return true;
+    }
+    return false;
+}
+
 static nmo_status_t nmo_wavesound_serialize_internal(
     const void *instance,
     nmo_chunk_t *out_chunk,
@@ -531,6 +539,32 @@ static nmo_status_t nmo_wavesound_serialize_internal(
 
     if (!in_state || !out_chunk) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_wavesound_serialize");
+    }
+
+    if (nmo_chunk_get_data_version(out_chunk) == 0u &&
+        out_chunk->class_id == NMO_CID_WAVESOUND) {
+        out_chunk->data_version = NMO_CHUNK_DATA_VERSION_CURRENT;
+    }
+    const uint32_t data_version =
+        nmo_chunk_get_data_version(out_chunk);
+    const bool has_version2_reserved = nmo_wavesound_has_nonzero_words(
+        in_state->version2_reserved_words, 6u);
+    const bool has_modern_reserved = nmo_wavesound_has_nonzero_words(
+        in_state->modern_reserved_words, 4u);
+    if ((!in_state->has_data2 &&
+         (has_version2_reserved || has_modern_reserved)) ||
+        (data_version < 2u &&
+         (has_version2_reserved || has_modern_reserved)) ||
+        (data_version == 2u && has_modern_reserved) ||
+        (data_version >= 3u && has_version2_reserved) ||
+        (data_version == 2u &&
+         (in_state->state_flags & CK_WAVESOUND_ALLTYPE) ==
+             CK_WAVESOUND_BACKGROUND &&
+         nmo_wavesound_has_nonzero_words(
+             &in_state->version2_reserved_words[3], 3u))) {
+        NMO_RETURN_ERROR(
+            NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+            "WaveSound DATA2 reserved words do not fit the requested layout");
     }
 
     nmo_status_t result = nmo_sound_serialize(&in_state->base, out_chunk, NULL, context);
@@ -569,7 +603,7 @@ static nmo_status_t nmo_wavesound_serialize_internal(
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_WAVSOUNDDATA2);
         if (result != NMO_OK) return result;
 
-        if (nmo_chunk_get_data_version(out_chunk) < 2u) {
+        if (data_version < 2u) {
             for (size_t i = 0; i < 20u; ++i) {
                 const uint32_t word = i == 8u
                     ? ((in_state->state_flags & CK_WAVESOUND_LOOPED) != 0u)
@@ -577,16 +611,17 @@ static nmo_status_t nmo_wavesound_serialize_internal(
                 NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(out_chunk, word));
             }
         } else {
-            const bool modern_layout =
-                nmo_chunk_get_data_version(out_chunk) >= 3u;
+            const bool modern_layout = data_version >= 3u;
             const bool write_3d_data = modern_layout ||
                 (in_state->state_flags & CK_WAVESOUND_ALLTYPE) !=
                     CK_WAVESOUND_BACKGROUND;
             NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(out_chunk, in_state->state_flags));
             NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, in_state->priority));
             if (!modern_layout) {
-                NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(out_chunk, 0u));
-                NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(out_chunk, 0u));
+                NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
+                    out_chunk, in_state->version2_reserved_words[0]));
+                NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
+                    out_chunk, in_state->version2_reserved_words[1]));
             }
             NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
                 out_chunk, in_state->gain));
@@ -595,18 +630,23 @@ static nmo_status_t nmo_wavesound_serialize_internal(
             NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
                 out_chunk, in_state->pitch));
 
-            NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, 0.0f));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
+                out_chunk, modern_layout
+                    ? in_state->modern_reserved_words[0]
+                    : in_state->version2_reserved_words[2]));
             if (modern_layout) {
-                NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, 0.0f));
-                NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, 0.0f));
+                NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
+                    out_chunk, in_state->modern_reserved_words[1]));
+                NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
+                    out_chunk, in_state->modern_reserved_words[2]));
             }
 
             if (write_3d_data) {
                 if (!modern_layout) {
-                    NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
-                        out_chunk, 0.0f));
-                    NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
-                        out_chunk, 0.0f));
+                    NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
+                        out_chunk, in_state->version2_reserved_words[3]));
+                    NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
+                        out_chunk, in_state->version2_reserved_words[4]));
                 }
                 NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
                     out_chunk, in_state->cone_in_angle));
@@ -631,7 +671,10 @@ static nmo_status_t nmo_wavesound_serialize_internal(
                     out_chunk, &in_state->direction,
                     sizeof(in_state->direction)));
 
-                NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(out_chunk, 0u));
+                NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
+                    out_chunk, modern_layout
+                        ? in_state->modern_reserved_words[3]
+                        : in_state->version2_reserved_words[5]));
             }
         }
     }
@@ -1178,6 +1221,12 @@ static bool nmo_wavesound_equals(const void *a, const void *b)
         nmo_sound_ref_equals(&lhs->attached_object, &rhs->attached_object) &&
         memcmp(&lhs->position, &rhs->position, sizeof(lhs->position)) == 0 &&
         memcmp(&lhs->direction, &rhs->direction, sizeof(lhs->direction)) == 0 &&
+        memcmp(lhs->version2_reserved_words,
+               rhs->version2_reserved_words,
+               sizeof(lhs->version2_reserved_words)) == 0 &&
+        memcmp(lhs->modern_reserved_words,
+               rhs->modern_reserved_words,
+               sizeof(lhs->modern_reserved_words)) == 0 &&
         memcmp(lhs->legacy_data2_words, rhs->legacy_data2_words,
                8u * sizeof(uint32_t)) == 0 &&
         memcmp(&lhs->legacy_data2_words[9], &rhs->legacy_data2_words[9],
@@ -1260,6 +1309,12 @@ static uint32_t nmo_wavesound_hash(const void *instance)
     NMO_WAVESOUND_HASH_FIELD(state->direction.x);
     NMO_WAVESOUND_HASH_FIELD(state->direction.y);
     NMO_WAVESOUND_HASH_FIELD(state->direction.z);
+    hash = nmo_sound_hash_bytes(
+        hash, state->version2_reserved_words,
+        sizeof(state->version2_reserved_words));
+    hash = nmo_sound_hash_bytes(
+        hash, state->modern_reserved_words,
+        sizeof(state->modern_reserved_words));
     hash = nmo_sound_hash_bytes(
         hash, state->legacy_data2_words, 8u * sizeof(uint32_t));
     hash = nmo_sound_hash_bytes(
