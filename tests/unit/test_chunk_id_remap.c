@@ -982,6 +982,130 @@ TEST(chunk_id_remap, behavior_unresolved_ref_round_trips_raw_id) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, behavior_sections_do_not_borrow_following_identifiers) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_chunk_t *modern_header = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(modern_header);
+    modern_header->class_id = NMO_CID_BEHAVIOR;
+    modern_header->data_version = 7;
+    modern_header->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(modern_header));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        modern_header, CK_STATESAVE_BEHAVIORNEWDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(modern_header, 0u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(modern_header, 0));
+    nmo_chunk_close(modern_header);
+
+    nmo_behavior_state_t state;
+    ASSERT_EQ(NMO_OK, nmo_behavior_vtable.create(&state, NULL, NULL));
+    state.priority = 42;
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_behavior_deserialize(
+        &state, modern_header, NULL, NULL));
+    ASSERT_EQ(42, state.priority);
+
+    nmo_chunk_t *modern_sequences = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(modern_sequences);
+    modern_sequences->class_id = NMO_CID_BEHAVIOR;
+    modern_sequences->data_version = 7;
+    modern_sequences->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(modern_sequences));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        modern_sequences, CK_STATESAVE_BEHAVIORNEWDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(modern_sequences, 0u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        modern_sequences,
+        CK_STATESAVE_BEHAVIORINPUTS | CK_STATESAVE_BEHAVIOROUTPUTS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(
+        modern_sequences, 1u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(
+        modern_sequences, 701u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(modern_sequences, 0));
+    nmo_chunk_close(modern_sequences);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_behavior_deserialize(
+        &state, modern_sequences, NULL, NULL));
+    ASSERT_EQ(42, state.priority);
+
+    nmo_chunk_t *legacy_header = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(legacy_header);
+    legacy_header->class_id = NMO_CID_BEHAVIOR;
+    legacy_header->data_version = 4;
+    legacy_header->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(legacy_header));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        legacy_header, CK_STATESAVE_BEHAVIORNEWDATA));
+    for (size_t i = 0; i < 7u; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(legacy_header, 0u));
+    }
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(legacy_header, 0));
+    nmo_chunk_close(legacy_header);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_behavior_deserialize(
+        &state, legacy_header, NULL, NULL));
+    ASSERT_EQ(42, state.priority);
+
+    nmo_chunk_t *legacy_scalar = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(legacy_scalar);
+    legacy_scalar->class_id = NMO_CID_BEHAVIOR;
+    legacy_scalar->data_version = 4;
+    legacy_scalar->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(legacy_scalar));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        legacy_scalar, CK_STATESAVE_BEHAVIORFLAGS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(legacy_scalar, 0));
+    nmo_chunk_close(legacy_scalar);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_behavior_deserialize(
+        &state, legacy_scalar, NULL, NULL));
+    ASSERT_EQ(42, state.priority);
+
+    const uint32_t optional_ids[] = {
+        CK_STATESAVE_BEHAVIORINTERFACE,
+        CK_STATESAVE_BEHAVIORSINGLEACTIVITY,
+    };
+    for (size_t case_index = 0;
+         case_index < sizeof(optional_ids) / sizeof(optional_ids[0]);
+         ++case_index) {
+        nmo_chunk_t *chunk = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(chunk);
+        chunk->class_id = NMO_CID_BEHAVIOR;
+        chunk->data_version = 7;
+        chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+        ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+            chunk, CK_STATESAVE_BEHAVIORNEWDATA));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0u));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0u));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+            chunk, optional_ids[case_index]));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, 0));
+        nmo_chunk_close(chunk);
+        ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_behavior_deserialize(
+            &state, chunk, NULL, NULL));
+        ASSERT_EQ(42, state.priority);
+    }
+
+    nmo_chunk_t *null_interface = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(null_interface);
+    null_interface->class_id = NMO_CID_BEHAVIOR;
+    null_interface->data_version = 7;
+    null_interface->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(null_interface));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        null_interface, CK_STATESAVE_BEHAVIORNEWDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(null_interface, 0u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(null_interface, 0u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        null_interface, CK_STATESAVE_BEHAVIORINTERFACE));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(null_interface, 0u));
+    nmo_chunk_close(null_interface);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_behavior_deserialize(
+        &state, null_interface, NULL, NULL));
+    ASSERT_EQ(42, state.priority);
+
+    nmo_behavior_vtable.destroy(&state, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, behavior_serializer_does_not_publish_partial_chunk) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
@@ -15424,6 +15548,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, ref_sequence_rejects_invalid_identifier_end);
     REGISTER_TEST(chunk_id_remap, unresolved_ref_preserves_raw_id);
     REGISTER_TEST(chunk_id_remap, behavior_unresolved_ref_round_trips_raw_id);
+    REGISTER_TEST(chunk_id_remap, behavior_sections_do_not_borrow_following_identifiers);
     REGISTER_TEST(chunk_id_remap, behavior_serializer_does_not_publish_partial_chunk);
     REGISTER_TEST(chunk_id_remap, behaviorio_truncation_keeps_previous_state);
     REGISTER_TEST(chunk_id_remap, behavior_layout_defaults_preserve_legacy_absence);

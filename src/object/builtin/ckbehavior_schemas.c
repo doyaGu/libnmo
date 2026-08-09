@@ -245,12 +245,24 @@ static size_t nmo_behavior_identifier_remaining_dwords(
 /**
  * @brief Read object ID array using XObjectPointerArray format
  */
-static nmo_status_t read_object_sequence(nmo_chunk_t *chunk, nmo_array_t *out_refs) {
+static nmo_status_t read_object_sequence(
+    nmo_chunk_t *chunk,
+    nmo_array_t *out_refs,
+    size_t trailing_dwords)
+{
+    const size_t section_dwords =
+        nmo_behavior_identifier_remaining_dwords(chunk);
+    if (trailing_dwords >= section_dwords) {
+        return NMO_ERR_TRUNCATED_CHUNK;
+    }
     size_t count = 0;
     nmo_status_t result = nmo_chunk_read_object_sequence_start(chunk, &count);
     if (result != NMO_OK) return result;
 
-    if (count > nmo_behavior_identifier_remaining_dwords(chunk)) {
+    const size_t remaining_dwords =
+        nmo_behavior_identifier_remaining_dwords(chunk);
+    if (trailing_dwords > remaining_dwords ||
+        count > remaining_dwords - trailing_dwords) {
         return NMO_ERR_TRUNCATED_CHUNK;
     }
 
@@ -325,6 +337,49 @@ static size_t nmo_behavior_identifier_remaining_dwords(
     return next_pos - state->current_pos;
 }
 
+static nmo_status_t nmo_behavior_require_section_end(
+    const nmo_chunk_t *chunk,
+    size_t section_end)
+{
+    const size_t position = nmo_chunk_get_position(chunk);
+    if (position > section_end) return NMO_ERR_TRUNCATED_CHUNK;
+    if (position < section_end) return NMO_ERR_INVALID_FORMAT;
+    return NMO_OK;
+}
+
+static nmo_status_t nmo_behavior_require_dwords(
+    const nmo_chunk_t *chunk,
+    size_t required_dwords)
+{
+    return required_dwords <=
+               nmo_behavior_identifier_remaining_dwords(chunk)
+        ? NMO_OK
+        : NMO_ERR_TRUNCATED_CHUNK;
+}
+
+static nmo_status_t nmo_behavior_require_subchunk(
+    const nmo_chunk_t *chunk,
+    size_t trailing_dwords)
+{
+    const size_t remaining_dwords =
+        nmo_behavior_identifier_remaining_dwords(chunk);
+    if (trailing_dwords >= remaining_dwords ||
+        chunk->parser_state == NULL || chunk->data.data == NULL) {
+        return NMO_ERR_TRUNCATED_CHUNK;
+    }
+
+    const nmo_chunk_parser_state_t *state =
+        (const nmo_chunk_parser_state_t *)chunk->parser_state;
+    const uint32_t *data =
+        NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    const size_t total_size = data[state->current_pos];
+    if (total_size > SIZE_MAX - 1u ||
+        total_size + 1u > remaining_dwords - trailing_dwords) {
+        return NMO_ERR_TRUNCATED_CHUNK;
+    }
+    return NMO_OK;
+}
+
 static nmo_status_t read_object_subchunk_list(
     nmo_chunk_t *chunk,
     nmo_array_t *out_refs)
@@ -356,6 +411,9 @@ static nmo_status_t read_object_subchunk_list(
 
     for (uint32_t i = 0; i < (uint32_t)count; i++) {
         result = nmo_ref_read(chunk, &refs[i].ref);
+        if (result != NMO_OK) goto fail;
+        result = nmo_behavior_require_subchunk(
+            chunk, (size_t)(count - i - 1) * 2u);
         if (result != NMO_OK) goto fail;
         result = nmo_chunk_read_sub_chunk(chunk, &refs[i].chunk);
         if (result != NMO_OK) goto fail;
@@ -451,15 +509,36 @@ static void behavior_check_ref_classes(
 static nmo_status_t nmo_behavior_seek_optional(
     nmo_chunk_t *chunk,
     uint32_t identifier,
-    bool *out_found)
+    bool *out_found,
+    size_t *out_dwords)
 {
-    nmo_status_t result = nmo_chunk_seek_identifier(chunk, identifier);
+    nmo_status_t result = nmo_chunk_seek_identifier_with_size(
+        chunk, identifier, out_dwords);
     if (result == NMO_OK) {
         *out_found = true;
         return NMO_OK;
     }
     *out_found = false;
+    *out_dwords = 0u;
     return result == NMO_ERR_NOT_FOUND ? NMO_OK : result;
+}
+
+static nmo_status_t nmo_behavior_read_ref_section(
+    nmo_chunk_t *chunk,
+    uint32_t identifier,
+    nmo_array_t *out_refs)
+{
+    bool section_found = false;
+    size_t section_dwords = 0u;
+    NMO_RETURN_IF_ERROR(nmo_behavior_seek_optional(
+        chunk, identifier, &section_found, &section_dwords));
+    if (!section_found) return NMO_OK;
+    if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+
+    const size_t section_end =
+        nmo_chunk_get_position(chunk) + section_dwords;
+    NMO_RETURN_IF_ERROR(read_object_sequence(chunk, out_refs, 0u));
+    return nmo_behavior_require_section_end(chunk, section_end);
 }
 
 static nmo_status_t nmo_behavior_deserialize_internal(
@@ -493,10 +572,13 @@ static nmo_status_t nmo_behavior_deserialize_internal(
     const uint32_t data_version = nmo_chunk_get_data_version(chunk);
 
     uint32_t newdata_id = CK_STATESAVE_BEHAVIORNEWDATA;
-    nmo_status_t newdata_seek = nmo_chunk_seek_identifier(chunk, newdata_id);
+    size_t newdata_dwords = 0u;
+    nmo_status_t newdata_seek = nmo_chunk_seek_identifier_with_size(
+        chunk, newdata_id, &newdata_dwords);
     if (newdata_seek == NMO_ERR_NOT_FOUND) {
         newdata_id = CK_STATESAVE_BEHAVIORNEWDATA_LEGACY;
-        newdata_seek = nmo_chunk_seek_identifier(chunk, newdata_id);
+        newdata_seek = nmo_chunk_seek_identifier_with_size(
+            chunk, newdata_id, &newdata_dwords);
         if (newdata_seek == NMO_OK) {
             out_state->use_legacy_identifiers = true;
         }
@@ -511,18 +593,31 @@ static nmo_status_t nmo_behavior_deserialize_internal(
 
     if (!is_file && newdata_seek != NMO_OK) {
         bool section_found = false;
+        size_t section_dwords = 0u;
         NMO_RETURN_IF_ERROR(nmo_behavior_seek_optional(
-            chunk, CK_STATESAVE_BEHAVIORSUBBEHAV, &section_found));
+            chunk, CK_STATESAVE_BEHAVIORSUBBEHAV, &section_found,
+            &section_dwords));
         if (section_found) {
+            const size_t section_end =
+                nmo_chunk_get_position(chunk) + section_dwords;
+            NMO_RETURN_IF_ERROR(nmo_behavior_require_dwords(chunk, 1u));
             NMO_RETURN_IF_ERROR(read_object_subchunk_list(
                 chunk, &out_state->sub_behaviors));
+            NMO_RETURN_IF_ERROR(nmo_behavior_require_section_end(
+                chunk, section_end));
         }
 
         NMO_RETURN_IF_ERROR(nmo_behavior_seek_optional(
-            chunk, CK_STATESAVE_BEHAVIORLOCALPARAMS, &section_found));
+            chunk, CK_STATESAVE_BEHAVIORLOCALPARAMS, &section_found,
+            &section_dwords));
         if (section_found) {
+            const size_t section_end =
+                nmo_chunk_get_position(chunk) + section_dwords;
+            NMO_RETURN_IF_ERROR(nmo_behavior_require_dwords(chunk, 1u));
             NMO_RETURN_IF_ERROR(read_object_subchunk_list(
                 chunk, &out_state->local_parameters));
+            NMO_RETURN_IF_ERROR(nmo_behavior_require_section_end(
+                chunk, section_end));
         }
 
         behavior_check_ref_classes(out_state, context);
@@ -532,10 +627,21 @@ static nmo_status_t nmo_behavior_deserialize_internal(
     /* Main behavior data */
     nmo_status_t result = newdata_seek;
     if (result == NMO_OK) {
+        const size_t section_end =
+            nmo_chunk_get_position(chunk) + newdata_dwords;
         uint32_t flags = 0;
         if (data_version >= 5) {
+            NMO_RETURN_IF_ERROR(nmo_behavior_require_dwords(chunk, 1u));
             result = nmo_chunk_read_dword(chunk, &flags);
             if (result != NMO_OK) return result;
+
+            size_t fixed_dwords = 1u;
+            if (flags & CKBEHAVIOR_BUILDINGBLOCK) fixed_dwords += 3u;
+            if (flags & CKBEHAVIOR_PRIORITY) fixed_dwords++;
+            if (flags & CKBEHAVIOR_COMPATIBLECLASSID) fixed_dwords++;
+            if (flags & CKBEHAVIOR_TARGETABLE) fixed_dwords++;
+            NMO_RETURN_IF_ERROR(nmo_behavior_require_dwords(
+                chunk, fixed_dwords));
 
             out_state->flags = flags & ~(CKBEHAVIOR_ACTIVE |
                                          CKBEHAVIOR_PRIORITY |
@@ -582,46 +688,73 @@ static nmo_status_t nmo_behavior_deserialize_internal(
                                       CK_STATESAVE_BEHAVIOROPERATIONS);
             }
 
+            size_t remaining_sequences = 0u;
+            if (graph_save_flags & CK_STATESAVE_BEHAVIORSUBBEHAV) remaining_sequences++;
+            if (graph_save_flags & CK_STATESAVE_BEHAVIORSUBLINKS) remaining_sequences++;
+            if (graph_save_flags & CK_STATESAVE_BEHAVIOROPERATIONS) remaining_sequences++;
+            if (save_flags & CK_STATESAVE_BEHAVIORINPARAMS) remaining_sequences++;
+            if (save_flags & CK_STATESAVE_BEHAVIOROUTPARAMS) remaining_sequences++;
+            if (save_flags & CK_STATESAVE_BEHAVIORLOCALPARAMS) remaining_sequences++;
+            if (save_flags & CK_STATESAVE_BEHAVIORINPUTS) remaining_sequences++;
+            if (save_flags & CK_STATESAVE_BEHAVIOROUTPUTS) remaining_sequences++;
+
             if (graph_save_flags & CK_STATESAVE_BEHAVIORSUBBEHAV) {
-                result = read_object_sequence(chunk, &out_state->sub_behaviors);
+                result = read_object_sequence(
+                    chunk, &out_state->sub_behaviors,
+                    --remaining_sequences);
                 if (result != NMO_OK) return result;
             }
 
             if (graph_save_flags & CK_STATESAVE_BEHAVIORSUBLINKS) {
-                result = read_object_sequence(chunk, &out_state->sub_behavior_links);
+                result = read_object_sequence(
+                    chunk, &out_state->sub_behavior_links,
+                    --remaining_sequences);
                 if (result != NMO_OK) return result;
             }
 
             if (graph_save_flags & CK_STATESAVE_BEHAVIOROPERATIONS) {
-                result = read_object_sequence(chunk, &out_state->operations);
+                result = read_object_sequence(
+                    chunk, &out_state->operations,
+                    --remaining_sequences);
                 if (result != NMO_OK) return result;
             }
 
             if (save_flags & CK_STATESAVE_BEHAVIORINPARAMS) {
-                result = read_object_sequence(chunk, &out_state->in_parameters);
+                result = read_object_sequence(
+                    chunk, &out_state->in_parameters,
+                    --remaining_sequences);
                 if (result != NMO_OK) return result;
             }
 
             if (save_flags & CK_STATESAVE_BEHAVIOROUTPARAMS) {
-                result = read_object_sequence(chunk, &out_state->out_parameters);
+                result = read_object_sequence(
+                    chunk, &out_state->out_parameters,
+                    --remaining_sequences);
                 if (result != NMO_OK) return result;
             }
 
             if (save_flags & CK_STATESAVE_BEHAVIORLOCALPARAMS) {
-                result = read_object_sequence(chunk, &out_state->local_parameters);
+                result = read_object_sequence(
+                    chunk, &out_state->local_parameters,
+                    --remaining_sequences);
                 if (result != NMO_OK) return result;
             }
 
             if (save_flags & CK_STATESAVE_BEHAVIORINPUTS) {
-                result = read_object_sequence(chunk, &out_state->inputs);
+                result = read_object_sequence(
+                    chunk, &out_state->inputs,
+                    --remaining_sequences);
                 if (result != NMO_OK) return result;
             }
 
             if (save_flags & CK_STATESAVE_BEHAVIOROUTPUTS) {
-                result = read_object_sequence(chunk, &out_state->outputs);
+                result = read_object_sequence(
+                    chunk, &out_state->outputs,
+                    --remaining_sequences);
                 if (result != NMO_OK) return result;
             }
         } else {
+            NMO_RETURN_IF_ERROR(nmo_behavior_require_dwords(chunk, 8u));
             result = nmo_chunk_read_guid(chunk, &out_state->block_guid);
             if (result != NMO_OK) return result;
 
@@ -659,18 +792,27 @@ static nmo_status_t nmo_behavior_deserialize_internal(
                 NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &tmp));
             }
         }
+        NMO_RETURN_IF_ERROR(nmo_behavior_require_section_end(
+            chunk, section_end));
     } else {
         bool section_found = false;
+        size_t section_dwords = 0u;
         nmo_guid_t guid = {0};
         NMO_RETURN_IF_ERROR(nmo_behavior_seek_optional(
-            chunk, CK_STATESAVE_BEHAVIORPROTOGUID, &section_found));
+            chunk, CK_STATESAVE_BEHAVIORPROTOGUID, &section_found,
+            &section_dwords));
         if (section_found) {
+            if (section_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
+            if (section_dwords > 2u) return NMO_ERR_INVALID_FORMAT;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_guid(chunk, &guid));
             out_state->block_guid = guid;
         }
         NMO_RETURN_IF_ERROR(nmo_behavior_seek_optional(
-            chunk, CK_STATESAVE_BEHAVIORFLAGS, &section_found));
+            chunk, CK_STATESAVE_BEHAVIORFLAGS, &section_found,
+            &section_dwords));
         if (section_found) {
+            if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+            if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, (int32_t *)&out_state->flags));
             if (out_state->flags & CKBEHAVIOR_USEFUNCTION) {
                 out_state->flags |= CKBEHAVIOR_BUILDINGBLOCK;
@@ -678,31 +820,46 @@ static nmo_status_t nmo_behavior_deserialize_internal(
             }
         }
         NMO_RETURN_IF_ERROR(nmo_behavior_seek_optional(
-            chunk, CK_STATESAVE_BEHAVIORCOMPATIBLECID, &section_found));
+            chunk, CK_STATESAVE_BEHAVIORCOMPATIBLECID, &section_found,
+            &section_dwords));
         if (section_found) {
+            if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+            if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, (uint32_t *)&out_state->compatible_class_id));
         }
         NMO_RETURN_IF_ERROR(nmo_behavior_seek_optional(
-            chunk, CK_STATESAVE_BEHAVIORTYPE, &section_found));
+            chunk, CK_STATESAVE_BEHAVIORTYPE, &section_found,
+            &section_dwords));
         if (section_found) {
+            if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+            if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->behavior_type));
             if (out_state->behavior_type == 1) {
                 out_state->flags |= CKBEHAVIOR_SCRIPT;
             }
         }
         NMO_RETURN_IF_ERROR(nmo_behavior_seek_optional(
-            chunk, CK_STATESAVE_BEHAVIOROWNER, &section_found));
+            chunk, CK_STATESAVE_BEHAVIOROWNER, &section_found,
+            &section_dwords));
         if (section_found) {
+            if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+            if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
             NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &out_state->owner));
         }
         NMO_RETURN_IF_ERROR(nmo_behavior_seek_optional(
-            chunk, CK_STATESAVE_BEHAVIORPRIORITY, &section_found));
+            chunk, CK_STATESAVE_BEHAVIORPRIORITY, &section_found,
+            &section_dwords));
         if (section_found) {
+            if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+            if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &out_state->priority));
         }
         NMO_RETURN_IF_ERROR(nmo_behavior_seek_optional(
-            chunk, CK_STATESAVE_BEHAVIORTARGET, &section_found));
+            chunk, CK_STATESAVE_BEHAVIORTARGET, &section_found,
+            &section_dwords));
         if (section_found) {
+            if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+            if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
             NMO_RETURN_IF_ERROR(nmo_ref_read(
                 chunk, &out_state->target_parameter));
         }
@@ -710,20 +867,26 @@ static nmo_status_t nmo_behavior_deserialize_internal(
 
     /* Optional: Interface chunk (for editing mode) */
     uint32_t interface_id = CK_STATESAVE_BEHAVIORINTERFACE;
-    result = nmo_chunk_seek_identifier(chunk, interface_id);
+    size_t interface_dwords = 0u;
+    result = nmo_chunk_seek_identifier_with_size(
+        chunk, interface_id, &interface_dwords);
     if (result == NMO_ERR_NOT_FOUND) {
         interface_id = CK_STATESAVE_BEHAVIORINTERFACE_LEGACY;
-        result = nmo_chunk_seek_identifier(chunk, interface_id);
+        result = nmo_chunk_seek_identifier_with_size(
+            chunk, interface_id, &interface_dwords);
         if (result == NMO_OK) {
             out_state->use_legacy_identifiers = true;
         }
     } else if (result != NMO_OK) return result;
     if (result != NMO_OK && result != NMO_ERR_NOT_FOUND) return result;
     if (result == NMO_OK) {
+        const size_t section_end =
+            nmo_chunk_get_position(chunk) + interface_dwords;
+        NMO_RETURN_IF_ERROR(nmo_behavior_require_subchunk(chunk, 0u));
         out_state->has_interface = true;
         nmo_chunk_t *interface_chunk = NULL;
         nmo_status_t sub_result = nmo_chunk_read_sub_chunk(chunk, &interface_chunk);
-        if (sub_result == NMO_OK && interface_chunk) {
+        if (sub_result == NMO_OK && interface_chunk != NULL) {
             /* Legacy file-authored interface chunks can set file_flag while
              * still storing raw CK_IDs and a separate object-ID table. */
             if (interface_chunk->ids.count > 0) {
@@ -732,16 +895,24 @@ static nmo_status_t nmo_behavior_deserialize_internal(
             out_state->interface_chunk = interface_chunk;
         } else {
             out_state->interface_chunk = NULL;
-            return sub_result;
+            return sub_result == NMO_OK
+                ? NMO_ERR_INVALID_FORMAT
+                : sub_result;
         }
+        NMO_RETURN_IF_ERROR(nmo_behavior_require_section_end(
+            chunk, section_end));
     }
 
     /* Optional: Single activity flags */
     uint32_t single_activity_id = out_state->use_legacy_identifiers
         ? CK_STATESAVE_BEHAVIORSINGLEACTIVITY_LEGACY
         : CK_STATESAVE_BEHAVIORSINGLEACTIVITY;
-    result = nmo_chunk_seek_identifier(chunk, single_activity_id);
+    size_t single_activity_dwords = 0u;
+    result = nmo_chunk_seek_identifier_with_size(
+        chunk, single_activity_id, &single_activity_dwords);
     if (result == NMO_OK) {
+        if (single_activity_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+        if (single_activity_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->single_activity_flags));
         out_state->has_single_activity = true;
     } else if (result != NMO_ERR_NOT_FOUND) return result;
@@ -751,47 +922,30 @@ static nmo_status_t nmo_behavior_deserialize_internal(
             NMO_RETURN_OK();
         }
 
-        bool section_found = false;
-        NMO_RETURN_IF_ERROR(nmo_behavior_seek_optional(
-            chunk, CK_STATESAVE_BEHAVIORSUBBEHAV, &section_found));
-        if (section_found) {
-            NMO_RETURN_IF_ERROR(read_object_sequence(chunk, &out_state->sub_behaviors));
-        }
-        NMO_RETURN_IF_ERROR(nmo_behavior_seek_optional(
-            chunk, CK_STATESAVE_BEHAVIORSUBLINKS, &section_found));
-        if (section_found) {
-            NMO_RETURN_IF_ERROR(read_object_sequence(chunk, &out_state->sub_behavior_links));
-        }
-        NMO_RETURN_IF_ERROR(nmo_behavior_seek_optional(
-            chunk, CK_STATESAVE_BEHAVIOROPERATIONS, &section_found));
-        if (section_found) {
-            NMO_RETURN_IF_ERROR(read_object_sequence(chunk, &out_state->operations));
-        }
-        NMO_RETURN_IF_ERROR(nmo_behavior_seek_optional(
-            chunk, CK_STATESAVE_BEHAVIORINPARAMS, &section_found));
-        if (section_found) {
-            NMO_RETURN_IF_ERROR(read_object_sequence(chunk, &out_state->in_parameters));
-        }
-        NMO_RETURN_IF_ERROR(nmo_behavior_seek_optional(
-            chunk, CK_STATESAVE_BEHAVIORLOCALPARAMS, &section_found));
-        if (section_found) {
-            NMO_RETURN_IF_ERROR(read_object_sequence(chunk, &out_state->local_parameters));
-        }
-        NMO_RETURN_IF_ERROR(nmo_behavior_seek_optional(
-            chunk, CK_STATESAVE_BEHAVIOROUTPARAMS, &section_found));
-        if (section_found) {
-            NMO_RETURN_IF_ERROR(read_object_sequence(chunk, &out_state->out_parameters));
-        }
-        NMO_RETURN_IF_ERROR(nmo_behavior_seek_optional(
-            chunk, CK_STATESAVE_BEHAVIORINPUTS, &section_found));
-        if (section_found) {
-            NMO_RETURN_IF_ERROR(read_object_sequence(chunk, &out_state->inputs));
-        }
-        NMO_RETURN_IF_ERROR(nmo_behavior_seek_optional(
-            chunk, CK_STATESAVE_BEHAVIOROUTPUTS, &section_found));
-        if (section_found) {
-            NMO_RETURN_IF_ERROR(read_object_sequence(chunk, &out_state->outputs));
-        }
+        NMO_RETURN_IF_ERROR(nmo_behavior_read_ref_section(
+            chunk, CK_STATESAVE_BEHAVIORSUBBEHAV,
+            &out_state->sub_behaviors));
+        NMO_RETURN_IF_ERROR(nmo_behavior_read_ref_section(
+            chunk, CK_STATESAVE_BEHAVIORSUBLINKS,
+            &out_state->sub_behavior_links));
+        NMO_RETURN_IF_ERROR(nmo_behavior_read_ref_section(
+            chunk, CK_STATESAVE_BEHAVIOROPERATIONS,
+            &out_state->operations));
+        NMO_RETURN_IF_ERROR(nmo_behavior_read_ref_section(
+            chunk, CK_STATESAVE_BEHAVIORINPARAMS,
+            &out_state->in_parameters));
+        NMO_RETURN_IF_ERROR(nmo_behavior_read_ref_section(
+            chunk, CK_STATESAVE_BEHAVIORLOCALPARAMS,
+            &out_state->local_parameters));
+        NMO_RETURN_IF_ERROR(nmo_behavior_read_ref_section(
+            chunk, CK_STATESAVE_BEHAVIOROUTPARAMS,
+            &out_state->out_parameters));
+        NMO_RETURN_IF_ERROR(nmo_behavior_read_ref_section(
+            chunk, CK_STATESAVE_BEHAVIORINPUTS,
+            &out_state->inputs));
+        NMO_RETURN_IF_ERROR(nmo_behavior_read_ref_section(
+            chunk, CK_STATESAVE_BEHAVIOROUTPUTS,
+            &out_state->outputs));
     }
 
     behavior_check_ref_classes(out_state, context);
