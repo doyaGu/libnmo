@@ -47,6 +47,7 @@ typedef struct nmo_group_state {
     
     /* Object array */
     nmo_array_t object_ids;           /**< Grouped object references (nmo_ref_t) */
+    uint8_t has_group_data;            /**< GROUPALL section was present */
 } nmo_group_state_t;
 
 /* =============================================================================

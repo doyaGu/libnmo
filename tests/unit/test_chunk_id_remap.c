@@ -12520,6 +12520,46 @@ TEST(chunk_id_remap, group_refs_round_trip_and_failure_is_atomic) {
 
     nmo_group_state_t source;
     ASSERT_EQ(NMO_OK, nmo_group_vtable.create(&source, NULL, NULL));
+
+    nmo_chunk_t *absent_empty = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(absent_empty);
+    absent_empty->class_id = NMO_CID_GROUP;
+    absent_empty->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_group_serialize(
+        &source, absent_empty, NULL, &serialize_context));
+    nmo_chunk_close(absent_empty);
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_chunk_seek_identifier(
+        absent_empty, CK_STATESAVE_GROUPALL));
+
+    nmo_chunk_t *explicit_empty = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(explicit_empty);
+    explicit_empty->class_id = NMO_CID_GROUP;
+    explicit_empty->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(explicit_empty));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        explicit_empty, CK_STATESAVE_GROUPALL));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(explicit_empty, 0));
+    nmo_chunk_close(explicit_empty);
+    nmo_group_state_t explicit_empty_state;
+    ASSERT_EQ(NMO_OK, nmo_group_vtable.create(
+        &explicit_empty_state, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_group_deserialize(
+        &explicit_empty_state, explicit_empty, NULL, &deserialize_context));
+    ASSERT_EQ(1u, explicit_empty_state.has_group_data);
+    nmo_chunk_t *explicit_empty_saved = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(explicit_empty_saved);
+    explicit_empty_saved->class_id = NMO_CID_GROUP;
+    explicit_empty_saved->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_group_serialize(
+        &explicit_empty_state, explicit_empty_saved, NULL,
+        &serialize_context));
+    nmo_chunk_close(explicit_empty_saved);
+    size_t explicit_empty_dwords = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        explicit_empty_saved, CK_STATESAVE_GROUPALL,
+        &explicit_empty_dwords));
+    ASSERT_EQ(1u, explicit_empty_dwords);
+
     nmo_ref_t ref_a = nmo_ref_from_raw(901);
     nmo_ref_t ref_b = nmo_ref_from_raw(902);
     ASSERT_EQ(NMO_OK, nmo_array_append(&source.object_ids, &ref_a));
@@ -12762,6 +12802,7 @@ TEST(chunk_id_remap, group_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(large_count, large_loaded.object_ids.count);
 
     nmo_group_vtable.destroy(&source, NULL, NULL);
+    nmo_group_vtable.destroy(&explicit_empty_state, NULL, NULL);
     nmo_group_vtable.destroy(&loaded, NULL, NULL);
     nmo_group_vtable.destroy(&reloaded, NULL, NULL);
     nmo_group_vtable.destroy(&copied, NULL, NULL);

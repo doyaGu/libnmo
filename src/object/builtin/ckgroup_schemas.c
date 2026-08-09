@@ -88,7 +88,8 @@ static const nmo_type_field_t nmo_group_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_group_state_t, base),
                        sizeof(nmo_beobject_state_t), CKPGUID_BEOBJECT,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD_REF_RECORD_ARRAY(nmo_group_state_t, object_ids)
+    NMO_FIELD_REF_RECORD_ARRAY(nmo_group_state_t, object_ids),
+    NMO_FIELD(nmo_group_state_t, has_group_data, CKPGUID_UINT8)
 };
 
 static int nmo_group_is_file_mode_ser(const nmo_chunk_t *chunk, void *context)
@@ -192,6 +193,7 @@ static nmo_status_t nmo_group_deserialize_internal(
     result = nmo_array_swap(&out_state->object_ids, &decoded);
     nmo_array_dispose(&decoded);
     if (result != NMO_OK) return result;
+    out_state->has_group_data = 1;
 
     NMO_RETURN_OK();
 }
@@ -277,8 +279,7 @@ static nmo_status_t nmo_group_serialize_internal(
         NMO_RETURN_OK();
     }
 
-    /* In file mode, emit explicit empty group payload to avoid schema fallbacks. */
-    if (!is_file && in_state->object_ids.count == 0) {
+    if (in_state->object_ids.count == 0 && !in_state->has_group_data) {
         NMO_RETURN_OK();
     }
     if ((in_state->object_ids.count > 0 && !in_state->object_ids.data) ||
@@ -356,6 +357,7 @@ static nmo_status_t nmo_group_copy(
     result = nmo_array_clone(
         &s->object_ids, &copied.object_ids, &s->object_ids.allocator);
     if (result != NMO_OK) goto fail;
+    copied.has_group_data = s->has_group_data;
 
     if (d->base.scripts.data == s->base.scripts.data) {
         memset(&d->base.scripts, 0, sizeof(d->base.scripts));
@@ -386,6 +388,7 @@ static bool nmo_group_equals(const void *a, const void *b)
     const nmo_group_state_t *lhs = (const nmo_group_state_t *)a;
     const nmo_group_state_t *rhs = (const nmo_group_state_t *)b;
     if (!nmo_beobject_vtable.equals(&lhs->base, &rhs->base) ||
+        lhs->has_group_data != rhs->has_group_data ||
         lhs->object_ids.count != rhs->object_ids.count ||
         lhs->object_ids.element_size != rhs->object_ids.element_size) {
         return false;
@@ -404,6 +407,8 @@ static uint32_t nmo_group_hash(const void *instance)
     if (instance == NULL) return 0;
     const nmo_group_state_t *state = (const nmo_group_state_t *)instance;
     uint32_t hash = nmo_beobject_vtable.hash(&state->base);
+    hash ^= (uint32_t)nmo_hash_fnv1a(
+        &state->has_group_data, sizeof(state->has_group_data));
     hash ^= (uint32_t)nmo_hash_fnv1a(
         &state->object_ids.count, sizeof(state->object_ids.count));
     if (state->object_ids.data != NULL &&
@@ -426,6 +431,7 @@ static nmo_status_t nmo_group_validate(
     if (s == NULL) return NMO_ERR_INVALID_ARGUMENT;
     NMO_RETURN_IF_ERROR(nmo_beobject_vtable.validate(
         &s->base, NULL, context));
+    if (s->has_group_data > 1u) return NMO_ERR_VALIDATION_FAILED;
     NMO_VALIDATE_COUNT(s->object_ids.data, s->object_ids.count, "object_ids");
     if (s->object_ids.element_size != sizeof(nmo_ref_t) ||
         s->object_ids.count > (size_t)INT32_MAX) {
