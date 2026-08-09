@@ -343,6 +343,43 @@ static void install_invalid_identifier_manager_or_fail(
     nmo_session_set_manager_data(session, manager_data, 1u);
 }
 
+static void install_cross_section_manager_or_fail(
+    nmo_session_t *session,
+    bool attribute_manager)
+{
+    nmo_arena_t *arena = nmo_session_get_arena(session);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        chunk, attribute_manager ? 0x52u : 0x53u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 1));
+    if (attribute_manager) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 0));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 1));
+    }
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 8u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        chunk, 0x44434241u));
+    if (attribute_manager) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 17u));
+    }
+    nmo_chunk_close(chunk);
+
+    nmo_manager_data_t *manager_data =
+        (nmo_manager_data_t *)nmo_arena_alloc(
+            arena, sizeof(*manager_data), _Alignof(nmo_manager_data_t));
+    ASSERT_NOT_NULL(manager_data);
+    memset(manager_data, 0, sizeof(*manager_data));
+    manager_data->guid = attribute_manager
+        ? NMO_MANAGER_GUID_ATTRIBUTE
+        : NMO_MANAGER_GUID_MESSAGE;
+    manager_data->chunk = chunk;
+    manager_data->data_size = (uint32_t)nmo_chunk_get_size(chunk);
+    nmo_session_set_manager_data(session, manager_data, 1u);
+}
+
 static bool report_contains_object_id(
     const nmo_edit_object_impact_t *items,
     size_t count,
@@ -3703,6 +3740,38 @@ TEST(edit_plan, executor_rejects_invalid_manager_identifier_links) {
     }
 }
 
+TEST(edit_plan, executor_rejects_cross_section_manager_strings) {
+    for (size_t attribute_manager = 0u; attribute_manager < 2u;
+         ++attribute_manager) {
+        edit_plan_fixture_t fixture;
+        edit_plan_fixture_init(&fixture);
+        install_cross_section_manager_or_fail(
+            fixture.session, attribute_manager != 0u);
+
+        nmo_object_id_t param_id = 0u;
+        nmo_parameter_state_t *state = NULL;
+        create_string_parameter(&fixture, "old", &param_id, &state);
+
+        nmo_edit_plan_t *plan = NULL;
+        nmo_edit_report_t report;
+        ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
+        ASSERT_EQ(NMO_OK, nmo_edit_plan_create(&plan));
+        ASSERT_EQ(NMO_OK, nmo_edit_plan_add_set_parameter_value(
+            plan, param_id, NULL, "new value", NULL));
+
+        ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_edit_executor_execute(
+            fixture.workspace, plan, NULL, &report));
+        ASSERT_FALSE(report.ok);
+        ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, report.status);
+        ASSERT_EQ(0,
+                  memcmp(state->buffer_data.data, "old", strlen("old") + 1u));
+
+        nmo_edit_report_dispose(&report);
+        nmo_edit_plan_destroy(plan);
+        edit_plan_fixture_dispose(&fixture);
+    }
+}
+
 TEST(edit_plan, executor_reports_explicit_behavior_interface_policy) {
     edit_plan_fixture_t fixture;
     edit_plan_fixture_init(&fixture);
@@ -4620,6 +4689,7 @@ REGISTER_TEST(edit_plan, report_owns_schema_v2_output_path);
 REGISTER_TEST(edit_plan, executor_commits_parameter_value_plan);
 REGISTER_TEST(edit_plan, executor_rejects_truncated_manager_counts);
 REGISTER_TEST(edit_plan, executor_rejects_invalid_manager_identifier_links);
+REGISTER_TEST(edit_plan, executor_rejects_cross_section_manager_strings);
 REGISTER_TEST(edit_plan, executor_report_carries_probe_selector_analysis);
 REGISTER_TEST(edit_plan, executor_rolls_back_failed_plan);
 REGISTER_TEST(edit_plan, executor_rolls_back_created_handle_chain_failure);

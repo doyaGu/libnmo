@@ -221,7 +221,9 @@ static nmo_status_t edit_plan_read_manager_snapshot(
             edit_plan_manager_snapshot_dispose(snapshot);
             return status;
         }
-        status = nmo_chunk_seek_identifier(chunk, 0x53u);
+        size_t section_dwords = 0u;
+        status = nmo_chunk_seek_identifier_with_size(
+            chunk, 0x53u, &section_dwords);
         if (status == NMO_ERR_NOT_FOUND) {
             return NMO_OK;
         }
@@ -229,17 +231,23 @@ static nmo_status_t edit_plan_read_manager_snapshot(
             edit_plan_manager_snapshot_dispose(snapshot);
             return status;
         }
+        const size_t section_end =
+            nmo_chunk_get_position(chunk) + section_dwords;
         int32_t count = 0;
         status = nmo_chunk_read_int(chunk, &count);
         if (status != NMO_OK) {
             edit_plan_manager_snapshot_dispose(snapshot);
             return status;
         }
+        if (nmo_chunk_get_position(chunk) > section_end) {
+            edit_plan_manager_snapshot_dispose(snapshot);
+            return NMO_ERR_TRUNCATED_CHUNK;
+        }
         if (count < 0 || count > 10000) {
             edit_plan_manager_snapshot_dispose(snapshot);
             return NMO_ERR_VALIDATION_FAILED;
         }
-        if ((size_t)count > nmo_chunk_get_remaining(chunk)) {
+        if ((size_t)count > section_end - nmo_chunk_get_position(chunk)) {
             edit_plan_manager_snapshot_dispose(snapshot);
             return NMO_ERR_TRUNCATED_CHUNK;
         }
@@ -257,6 +265,10 @@ static nmo_status_t edit_plan_read_manager_snapshot(
             if (status != NMO_OK) {
                 edit_plan_manager_snapshot_dispose(snapshot);
                 return status;
+            }
+            if (nmo_chunk_get_position(chunk) > section_end) {
+                edit_plan_manager_snapshot_dispose(snapshot);
+                return NMO_ERR_TRUNCATED_CHUNK;
             }
             snapshot->message_names[index] = edit_plan_strdup(name ? name : "");
             if (snapshot->message_names[index] == NULL) {
@@ -284,7 +296,9 @@ static nmo_status_t edit_plan_read_manager_snapshot(
             edit_plan_manager_snapshot_dispose(snapshot);
             return attribute_status;
         }
-        attribute_status = nmo_chunk_seek_identifier(chunk, 0x52u);
+        size_t section_dwords = 0u;
+        attribute_status = nmo_chunk_seek_identifier_with_size(
+            chunk, 0x52u, &section_dwords);
         if (attribute_status == NMO_ERR_NOT_FOUND) {
             break;
         }
@@ -292,6 +306,8 @@ static nmo_status_t edit_plan_read_manager_snapshot(
             edit_plan_manager_snapshot_dispose(snapshot);
             return attribute_status;
         }
+        const size_t section_end =
+            nmo_chunk_get_position(chunk) + section_dwords;
         int32_t category_count = 0;
         int32_t attribute_count = 0;
         attribute_status = nmo_chunk_read_int(chunk, &category_count);
@@ -302,6 +318,10 @@ static nmo_status_t edit_plan_read_manager_snapshot(
             edit_plan_manager_snapshot_dispose(snapshot);
             return attribute_status;
         }
+        if (nmo_chunk_get_position(chunk) > section_end) {
+            edit_plan_manager_snapshot_dispose(snapshot);
+            return NMO_ERR_TRUNCATED_CHUNK;
+        }
         if (category_count < 0 || category_count > 10000 ||
             attribute_count < 0 || attribute_count > 100000) {
             edit_plan_manager_snapshot_dispose(snapshot);
@@ -309,7 +329,8 @@ static nmo_status_t edit_plan_read_manager_snapshot(
         }
         const size_t minimum_entry_dwords =
             (size_t)category_count + (size_t)attribute_count;
-        if (minimum_entry_dwords > nmo_chunk_get_remaining(chunk)) {
+        if (minimum_entry_dwords >
+            section_end - nmo_chunk_get_position(chunk)) {
             edit_plan_manager_snapshot_dispose(snapshot);
             return NMO_ERR_TRUNCATED_CHUNK;
         }
@@ -344,6 +365,10 @@ static nmo_status_t edit_plan_read_manager_snapshot(
                     goto attribute_snapshot_cleanup;
                 }
             }
+            if (nmo_chunk_get_position(chunk) > section_end) {
+                attribute_status = NMO_ERR_TRUNCATED_CHUNK;
+                goto attribute_snapshot_cleanup;
+            }
         }
         snapshot->attribute_entries =
             (struct edit_plan_attribute_entry *)calloc(
@@ -357,6 +382,10 @@ static nmo_status_t edit_plan_read_manager_snapshot(
             int32_t present = 0;
             attribute_status = nmo_chunk_read_int(chunk, &present);
             if (attribute_status != NMO_OK) {
+                goto attribute_snapshot_cleanup;
+            }
+            if (nmo_chunk_get_position(chunk) > section_end) {
+                attribute_status = NMO_ERR_TRUNCATED_CHUNK;
                 goto attribute_snapshot_cleanup;
             }
             if (present == 0) {
@@ -383,6 +412,10 @@ static nmo_status_t edit_plan_read_manager_snapshot(
                 attribute_status = nmo_chunk_read_dword(chunk, &flags);
             }
             if (attribute_status != NMO_OK) {
+                goto attribute_snapshot_cleanup;
+            }
+            if (nmo_chunk_get_position(chunk) > section_end) {
+                attribute_status = NMO_ERR_TRUNCATED_CHUNK;
                 goto attribute_snapshot_cleanup;
             }
             snapshot->attribute_entries[attr_index].name =
