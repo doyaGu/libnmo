@@ -266,13 +266,10 @@ static bool nmo_place_array_equals(
                   lhs->count * lhs->element_size) == 0;
 }
 
-static void nmo_place_normalize_array(nmo_array_t *array)
+static bool nmo_place_ref_equals(const nmo_ref_t *lhs, const nmo_ref_t *rhs)
 {
-    const size_t count = array->count;
-    const size_t element_size = array->element_size;
-    memset(array, 0, sizeof(*array));
-    array->count = count;
-    array->element_size = element_size;
+    return lhs->raw_id == rhs->raw_id &&
+        lhs->id == rhs->id && lhs->state == rhs->state;
 }
 
 static bool nmo_place_equals(const void *a, const void *b)
@@ -281,38 +278,74 @@ static bool nmo_place_equals(const void *a, const void *b)
     if (a == NULL || b == NULL) return false;
     const nmo_place_state_t *lhs = (const nmo_place_state_t *)a;
     const nmo_place_state_t *rhs = (const nmo_place_state_t *)b;
-    if (!nmo_place_array_equals(&lhs->portals, &rhs->portals) ||
-        !nmo_place_array_equals(&lhs->references, &rhs->references)) {
-        return false;
+    return nmo_3dentity_vtable.equals(&lhs->base, &rhs->base) &&
+        lhs->has_camera == rhs->has_camera &&
+        nmo_place_ref_equals(&lhs->camera, &rhs->camera) &&
+        lhs->has_level == rhs->has_level &&
+        nmo_place_ref_equals(&lhs->level, &rhs->level) &&
+        nmo_place_array_equals(&lhs->portals, &rhs->portals) &&
+        nmo_place_array_equals(&lhs->references, &rhs->references);
+}
+
+static uint32_t nmo_place_hash_bytes(
+    uint32_t hash,
+    const void *data,
+    size_t size)
+{
+    const uint8_t *bytes = (const uint8_t *)data;
+    for (size_t i = 0; i < size; ++i) {
+        hash ^= bytes[i];
+        hash *= 16777619u;
     }
-    nmo_place_state_t lhs_value = *lhs;
-    nmo_place_state_t rhs_value = *rhs;
-    nmo_place_normalize_array(&lhs_value.portals);
-    nmo_place_normalize_array(&rhs_value.portals);
-    nmo_place_normalize_array(&lhs_value.references);
-    nmo_place_normalize_array(&rhs_value.references);
-    return memcmp(&lhs_value, &rhs_value, sizeof(lhs_value)) == 0;
+    return hash;
 }
 
 static uint32_t nmo_place_hash(const void *instance)
 {
     if (instance == NULL) return 0;
     const nmo_place_state_t *state = (const nmo_place_state_t *)instance;
-    nmo_place_state_t value = *state;
-    nmo_place_normalize_array(&value.portals);
-    nmo_place_normalize_array(&value.references);
-    uint32_t hash = (uint32_t)nmo_hash_fnv1a(&value, sizeof(value));
+    uint32_t hash = 2166136261u;
+    const uint32_t base_hash = nmo_3dentity_vtable.hash(&state->base);
+    hash = nmo_place_hash_bytes(hash, &base_hash, sizeof(base_hash));
+    hash = nmo_place_hash_bytes(
+        hash, &state->has_camera, sizeof(state->has_camera));
+    hash = nmo_place_hash_bytes(
+        hash, &state->camera.raw_id, sizeof(state->camera.raw_id));
+    hash = nmo_place_hash_bytes(
+        hash, &state->camera.id, sizeof(state->camera.id));
+    hash = nmo_place_hash_bytes(
+        hash, &state->camera.state, sizeof(state->camera.state));
+    hash = nmo_place_hash_bytes(
+        hash, &state->has_level, sizeof(state->has_level));
+    hash = nmo_place_hash_bytes(
+        hash, &state->level.raw_id, sizeof(state->level.raw_id));
+    hash = nmo_place_hash_bytes(
+        hash, &state->level.id, sizeof(state->level.id));
+    hash = nmo_place_hash_bytes(
+        hash, &state->level.state, sizeof(state->level.state));
+    hash = nmo_place_hash_bytes(
+        hash, &state->portals.count, sizeof(state->portals.count));
+    hash = nmo_place_hash_bytes(
+        hash, &state->portals.element_size,
+        sizeof(state->portals.element_size));
     if (state->portals.data != NULL && state->portals.count > 0 &&
         state->portals.element_size > 0 &&
         state->portals.count <= SIZE_MAX / state->portals.element_size) {
-        hash ^= (uint32_t)nmo_hash_fnv1a(
+        hash = nmo_place_hash_bytes(
+            hash,
             state->portals.data,
             state->portals.count * state->portals.element_size);
     }
+    hash = nmo_place_hash_bytes(
+        hash, &state->references.count, sizeof(state->references.count));
+    hash = nmo_place_hash_bytes(
+        hash, &state->references.element_size,
+        sizeof(state->references.element_size));
     if (state->references.data != NULL && state->references.count > 0 &&
         state->references.element_size > 0 &&
         state->references.count <= SIZE_MAX / state->references.element_size) {
-        hash ^= (uint32_t)nmo_hash_fnv1a(
+        hash = nmo_place_hash_bytes(
+            hash,
             state->references.data,
             state->references.count * state->references.element_size);
     }

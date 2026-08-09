@@ -6441,6 +6441,9 @@ TEST(chunk_id_remap, place_refs_round_trip_and_truncation_is_atomic) {
     ASSERT_EQ(2u, reloaded.references.count);
     ASSERT_EQ(803u, reloaded_refs[0].raw_id);
     ASSERT_EQ(804u, reloaded_refs[1].raw_id);
+    nmo_ref_t inherited_script = nmo_ref_from_raw(814);
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &reloaded.base.base.base.scripts, &inherited_script));
 
     nmo_place_state_t copied;
     nmo_type_descriptor_t place_type = {
@@ -6450,9 +6453,16 @@ TEST(chunk_id_remap, place_refs_round_trip_and_truncation_is_atomic) {
     ASSERT_EQ(NMO_OK, nmo_place_vtable.copy(
         &reloaded, &copied, &place_type, arena));
     ASSERT_NE(reloaded.references.data, copied.references.data);
+    ASSERT_NE(reloaded.base.base.base.scripts.data,
+              copied.base.base.base.scripts.data);
     ASSERT_TRUE(nmo_place_vtable.equals(&reloaded, &copied));
     ASSERT_EQ(nmo_place_vtable.hash(&reloaded),
               nmo_place_vtable.hash(&copied));
+    NMO_ARRAY_DATA(
+        nmo_ref_t, &copied.base.base.base.scripts)[0].raw_id = 815;
+    ASSERT_FALSE(nmo_place_vtable.equals(&reloaded, &copied));
+    NMO_ARRAY_DATA(
+        nmo_ref_t, &copied.base.base.base.scripts)[0].raw_id = 814;
 
     nmo_place_state_t copy_failed;
     ASSERT_EQ(NMO_OK, nmo_place_vtable.create(
