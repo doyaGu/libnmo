@@ -157,7 +157,8 @@ NMO_API nmo_status_t nmo_object_clone_string_array(
     do { \
         if ((count) > 0 && !(ptr)) { \
             NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, \
-                                    "Missing %s array for count %u", (label), (count)); \
+                                    "Missing %s array for count %zu", (label), \
+                                    (size_t)(count)); \
         } \
     } while (0)
 
