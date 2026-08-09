@@ -75,9 +75,11 @@ static nmo_status_t nmo_parameterlocal_deserialize_internal(
     nmo_status_t result = nmo_parameter_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;
 
-    result = nmo_chunk_seek_identifier(
-        chunk, CK_STATESAVE_PARAMETEROUT_OWNER);
+    size_t section_dwords = 0;
+    result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_PARAMETEROUT_OWNER, &section_dwords);
     if (result == NMO_OK) {
+        if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
         nmo_ref_t owner = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &owner));
         nmo_ref_check_class(
