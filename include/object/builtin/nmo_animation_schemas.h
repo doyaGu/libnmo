@@ -138,6 +138,11 @@ typedef struct nmo_objectanimation_state {
     uint32_t *morph_normals_sizes;  /**< Per-key data sizes */
     void   **morph_normals_data;    /**< Per-key arena-allocated buffers */
 
+    /* Uninterpreted CK_STATESAVE_OBJANIMMORPHKEYS payload (LEGACY only) */
+    uint8_t has_legacy_morphkeys;
+    uint8_t *legacy_morphkeys;
+    size_t legacy_morphkeys_size;
+
     /* Fallback for unparseable remainder */
     uint8_t *raw_tail;
     size_t raw_tail_size;

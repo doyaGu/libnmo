@@ -626,6 +626,70 @@ TEST(objanim_controllers, legacy_inactive_merge_section_roundtrips) {
     nmo_arena_destroy(arena);
 }
 
+TEST(objanim_controllers, legacy_old_morphkeys_payload_roundtrips) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NE(NULL, arena);
+    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_deserialize_context_t des_ctx = nmo_deserialize_context_create(
+        arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+    const uint32_t payload[] = {0x12345678u, 0x90abcdefu, 0x01020304u};
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NE(NULL, chunk);
+    chunk->class_id = NMO_CID_OBJECTANIMATION;
+    chunk->data_version = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        chunk, CK_STATESAVE_OBJANIMMORPHKEYS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_buffer_no_size(
+        chunk, payload, sizeof(payload)));
+    nmo_chunk_close(chunk);
+
+    nmo_objectanimation_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_vtable.create(
+        &loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_deserialize(
+        &loaded, chunk, NULL, &des_ctx));
+    ASSERT_TRUE(loaded.has_legacy_morphkeys);
+    ASSERT_EQ(sizeof(payload), loaded.legacy_morphkeys_size);
+    ASSERT_EQ(0, memcmp(
+        payload, loaded.legacy_morphkeys, sizeof(payload)));
+
+    nmo_objectanimation_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_vtable.create(
+        &copied, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_vtable.copy(
+        &loaded, &copied, NULL, arena));
+    ASSERT_NE(loaded.legacy_morphkeys, copied.legacy_morphkeys);
+    ASSERT_TRUE(nmo_objectanimation_vtable.equals(&loaded, &copied));
+    ASSERT_EQ(nmo_objectanimation_vtable.hash(&loaded),
+              nmo_objectanimation_vtable.hash(&copied));
+
+    nmo_chunk_t *saved = nmo_chunk_create(arena);
+    ASSERT_NE(NULL, saved);
+    saved->class_id = NMO_CID_OBJECTANIMATION;
+    saved->data_version = 0;
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_serialize(
+        &loaded, saved, NULL, &ser_ctx));
+    nmo_chunk_close(saved);
+
+    nmo_objectanimation_state_t reloaded;
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_vtable.create(
+        &reloaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_deserialize(
+        &reloaded, saved, NULL, &des_ctx));
+    ASSERT_TRUE(reloaded.has_legacy_morphkeys);
+    ASSERT_EQ(sizeof(payload), reloaded.legacy_morphkeys_size);
+    ASSERT_EQ(0, memcmp(
+        payload, reloaded.legacy_morphkeys, sizeof(payload)));
+
+    nmo_objectanimation_vtable.destroy(&loaded, NULL, NULL);
+    nmo_objectanimation_vtable.destroy(&copied, NULL, NULL);
+    nmo_objectanimation_vtable.destroy(&reloaded, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(objanim_controllers, legacy_rejects_inconsistent_controller_header) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NE(NULL, arena);
@@ -798,6 +862,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(objanim_controllers, newdata_rejects_lossy_state);
     REGISTER_TEST(objanim_controllers, legacy_controllers_roundtrip_without_loss);
     REGISTER_TEST(objanim_controllers, legacy_inactive_merge_section_roundtrips);
+    REGISTER_TEST(objanim_controllers, legacy_old_morphkeys_payload_roundtrips);
     REGISTER_TEST(objanim_controllers, legacy_rejects_inconsistent_controller_header);
     REGISTER_TEST(objanim_controllers, legacy_rejects_lossy_controller_state);
     REGISTER_TEST(objanim_controllers, copy_controllers);

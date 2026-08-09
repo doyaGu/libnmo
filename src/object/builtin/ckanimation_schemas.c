@@ -145,6 +145,11 @@ static const nmo_type_field_t nmo_objectanimation_fields[] = {
     NMO_FIELD(nmo_objectanimation_state_t, morph_normals_count, CKPGUID_UINT32),
     NMO_FIELD_OPT(nmo_objectanimation_state_t, morph_normals_sizes, CKPGUID_POINTER),
     NMO_FIELD_OPT(nmo_objectanimation_state_t, morph_normals_data, CKPGUID_POINTER),
+    NMO_FIELD(nmo_objectanimation_state_t, has_legacy_morphkeys, CKPGUID_UINT8),
+    NMO_FIELD_ARRAY_COUNTED_FLAGS(nmo_objectanimation_state_t, legacy_morphkeys,
+                                  legacy_morphkeys_size, 1, CKPGUID_UINT8,
+                                  NMO_FIELD_OPTIONAL, 0),
+    NMO_FIELD(nmo_objectanimation_state_t, legacy_morphkeys_size, CKPGUID_UINT64),
     NMO_FIELD_ARRAY_COUNTED_FLAGS(nmo_objectanimation_state_t, raw_tail, raw_tail_size, 1,
                                   CKPGUID_UINT8, NMO_FIELD_OPTIONAL, 0),
     NMO_FIELD(nmo_objectanimation_state_t, raw_tail_size, CKPGUID_UINT64)
@@ -411,6 +416,7 @@ static nmo_status_t nmo_objectanimation_copy(
     copied.morph_keys = NULL;
     copied.morph_normals_sizes = NULL;
     copied.morph_normals_data = NULL;
+    copied.legacy_morphkeys = NULL;
     copied.raw_tail = NULL;
 
     /* Deep copy controllers */
@@ -466,6 +472,10 @@ static nmo_status_t nmo_objectanimation_copy(
     }
 
     result = nmo_object_copy_bytes(
+        arena, (void **)&copied.legacy_morphkeys,
+        s->legacy_morphkeys, s->legacy_morphkeys_size);
+    if (result != NMO_OK) return result;
+    result = nmo_object_copy_bytes(
         arena, (void **)&copied.raw_tail,
         s->raw_tail, s->raw_tail_size);
     if (result != NMO_OK) return result;
@@ -485,7 +495,16 @@ static nmo_status_t nmo_objectanimation_validate(
     NMO_VALIDATE_COUNT(s->morph_keys, s->morph_key_parsed_count, "morph_keys");
     NMO_VALIDATE_COUNT(s->morph_normals_sizes, s->morph_normals_count, "morph_normals_sizes");
     NMO_VALIDATE_COUNT(s->morph_normals_data, s->morph_normals_count, "morph_normals_data");
+    NMO_VALIDATE_BYTES(
+        s->legacy_morphkeys, s->legacy_morphkeys_size,
+        "legacy morph keys");
     NMO_VALIDATE_BYTES(s->raw_tail, s->raw_tail_size, "raw_tail");
+    if ((!s->has_legacy_morphkeys && s->legacy_morphkeys_size != 0u) ||
+        (s->legacy_morphkeys_size & 3u) != 0u ||
+        (s->format != CKOBJANIM_FORMAT_LEGACY &&
+         s->has_legacy_morphkeys)) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
     size_t allocation_size = 0;
     if (!nmo_safe_mul_size(
             s->controller_count, sizeof(nmo_objanim_controller_t),
@@ -1019,6 +1038,8 @@ static bool nmo_objectanimation_equals(const void *a, const void *b)
         lhs->morph_key_parsed_count != rhs->morph_key_parsed_count ||
         lhs->morph_normals_id != rhs->morph_normals_id ||
         lhs->morph_normals_count != rhs->morph_normals_count ||
+        lhs->has_legacy_morphkeys != rhs->has_legacy_morphkeys ||
+        lhs->legacy_morphkeys_size != rhs->legacy_morphkeys_size ||
         lhs->raw_tail_size != rhs->raw_tail_size) {
         return false;
     }
@@ -1056,7 +1077,10 @@ static bool nmo_objectanimation_equals(const void *a, const void *b)
         }
     }
     return nmo_animation_buffer_equals(
-        lhs->raw_tail, rhs->raw_tail, lhs->raw_tail_size);
+               lhs->legacy_morphkeys, rhs->legacy_morphkeys,
+               lhs->legacy_morphkeys_size) &&
+        nmo_animation_buffer_equals(
+            lhs->raw_tail, rhs->raw_tail, lhs->raw_tail_size);
 }
 
 static uint32_t nmo_objectanimation_hash(const void *instance)
@@ -1118,6 +1142,10 @@ static uint32_t nmo_objectanimation_hash(const void *instance)
             hash, state->morph_normals_data[i],
             state->morph_normals_sizes[i]);
     }
+    NMO_OBJECTANIMATION_HASH_FIELD(has_legacy_morphkeys);
+    NMO_OBJECTANIMATION_HASH_FIELD(legacy_morphkeys_size);
+    hash = nmo_animation_hash_bytes(
+        hash, state->legacy_morphkeys, state->legacy_morphkeys_size);
     NMO_OBJECTANIMATION_HASH_FIELD(raw_tail_size);
     hash = nmo_animation_hash_bytes(
         hash, state->raw_tail, state->raw_tail_size);
@@ -1597,10 +1625,17 @@ static nmo_status_t read_legacy_controllers(
     bool section_found = false;
     size_t section_dwords = 0u;
 
-    /* Skip old morphkeys identifier if present */
+    /* Preserve the old morphkeys payload without assigning unproven semantics. */
     NMO_RETURN_IF_ERROR(nmo_animation_seek_optional_sized(
         chunk, CK_STATESAVE_OBJANIMMORPHKEYS, &section_found,
         &section_dwords));
+    if (section_found) {
+        out_state->has_legacy_morphkeys = 1;
+        NMO_RETURN_IF_ERROR(read_raw_tail(
+            chunk, arena, section_dwords,
+            (void **)&out_state->legacy_morphkeys,
+            &out_state->legacy_morphkeys_size));
+    }
 
     /* Read morph keys (legacy format) */
     NMO_RETURN_IF_ERROR(nmo_animation_seek_optional_sized(
@@ -2347,6 +2382,9 @@ static nmo_status_t nmo_objectanimation_deserialize_internal(
     out_state->morph_normals_count = 0;
     out_state->morph_normals_sizes = NULL;
     out_state->morph_normals_data = NULL;
+    out_state->has_legacy_morphkeys = 0;
+    out_state->legacy_morphkeys = NULL;
+    out_state->legacy_morphkeys_size = 0;
     out_state->raw_tail = NULL;
     out_state->raw_tail_size = 0;
 
@@ -2702,6 +2740,16 @@ static nmo_status_t nmo_objectanimation_serialize_internal(
         }
     } else if (in_state->format == CKOBJANIM_FORMAT_LEGACY) {
         /* LEGACY format: write identifier-based sections */
+
+        if (in_state->has_legacy_morphkeys) {
+            nmo_status_t result = nmo_chunk_write_identifier(
+                out_chunk, CK_STATESAVE_OBJANIMMORPHKEYS);
+            if (result != NMO_OK) return result;
+            result = nmo_chunk_write_buffer_no_size(
+                out_chunk, in_state->legacy_morphkeys,
+                in_state->legacy_morphkeys_size);
+            if (result != NMO_OK) return result;
+        }
 
         /* Morph keys */
         if (in_state->morph_key_parsed_count > 0 && in_state->morph_keys != NULL) {
