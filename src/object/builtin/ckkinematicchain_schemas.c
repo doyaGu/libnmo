@@ -52,6 +52,7 @@ static nmo_status_t nmo_kinematicchain_deserialize_internal(
         chunk, CK_STATESAVE_KINEMATICCHAINALL, &section_dwords);
     if (result == NMO_OK) {
         if (section_dwords < 3u) return NMO_ERR_TRUNCATED_CHUNK;
+        if (section_dwords > 3u) return NMO_ERR_INVALID_FORMAT;
         nmo_ref_t legacy_object = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         result = nmo_ref_read(chunk, &legacy_object);
         if (result != NMO_OK) return result;

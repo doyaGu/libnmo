@@ -5540,6 +5540,27 @@ TEST(chunk_id_remap, kinematicchain_unresolved_refs_round_trip_atomically) {
     ASSERT_EQ(111u, loaded.start_effector.raw_id);
     ASSERT_EQ(222u, loaded.end_effector.raw_id);
 
+    nmo_chunk_t *trailing = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(trailing);
+    trailing->class_id = NMO_CID_KINEMATICCHAIN;
+    trailing->chunk_version = NMO_CHUNK_VERSION4;
+    trailing->data_version = 7;
+    trailing->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(trailing));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        trailing, CK_STATESAVE_KINEMATICCHAINALL));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_id(trailing, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_id(trailing, 333));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_id(trailing, 444));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing, 0x12345678u));
+    nmo_chunk_close(trailing);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_kinematicchain_deserialize(
+        &loaded, trailing, NULL, NULL));
+    ASSERT_TRUE(loaded.has_chain_data);
+    ASSERT_EQ(101u, loaded.legacy_object.raw_id);
+    ASSERT_EQ(111u, loaded.start_effector.raw_id);
+    ASSERT_EQ(222u, loaded.end_effector.raw_id);
+
     nmo_kinematicchain_state_t absent;
     ASSERT_EQ(NMO_OK, nmo_kinematicchain_vtable.create(
         &absent, NULL, NULL));
