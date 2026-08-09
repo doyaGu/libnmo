@@ -17,6 +17,7 @@
 #include "core/nmo_arena.h"
 #include "core/nmo_arena_array.h"
 #include "core/nmo_allocator.h"
+#include "core/nmo_utils.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_object_index.h"
 #include "object/nmo_object_query.h"
@@ -1187,6 +1188,13 @@ void nmo_session_set_manager_data(nmo_session_t *session, nmo_manager_data_t *da
 /**
  * Set plugin dependencies
  */
+static nmo_status_t nmo_session_build_plugin_diagnostics(
+    nmo_session_t *session,
+    const nmo_plugin_dep_t *deps,
+    size_t dep_count,
+    size_t *out_missing,
+    size_t *out_outdated);
+
 nmo_status_t nmo_session_set_plugin_dependencies(
     nmo_session_t *session,
     nmo_plugin_dep_t *deps,
@@ -1195,22 +1203,19 @@ nmo_status_t nmo_session_set_plugin_dependencies(
     if (session == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
-
-    session->file_state.plugin_deps = deps;
-    session->file_state.plugin_dep_count = count;
-
-    if (deps == NULL || count == 0) {
-        nmo_context_t *ctx = nmo_session_get_context(session);
-        int registry_available = 0;
-        if (ctx != NULL && nmo_context_get_extension_registry(ctx) != NULL) {
-            registry_available = 1;
-        }
-
-        nmo_session_set_plugin_diagnostics(session, NULL, 0, 0, 0, registry_available);
-        return NMO_OK;
+    if (count > 0 && deps == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    return nmo_session_refresh_plugin_diagnostics(session);
+    nmo_status_t result = nmo_session_build_plugin_diagnostics(
+        session, deps, count, NULL, NULL);
+    if (result != NMO_OK) {
+        return result;
+    }
+
+    session->file_state.plugin_deps = count > 0 ? deps : NULL;
+    session->file_state.plugin_dep_count = count;
+    return NMO_OK;
 }
 
 static nmo_status_t nmo_session_copy_owner_ids(
@@ -1807,7 +1812,7 @@ const nmo_session_plugin_diagnostics_t *nmo_session_get_plugin_diagnostics(
     return &session->plugin_diag;
 }
 
-static int nmo_session_build_plugin_diagnostics(
+static nmo_status_t nmo_session_build_plugin_diagnostics(
     nmo_session_t *session,
     const nmo_plugin_dep_t *deps,
     size_t dep_count,
@@ -1815,6 +1820,9 @@ static int nmo_session_build_plugin_diagnostics(
     size_t *out_outdated
 ) {
     if (session == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (dep_count > 0 && deps == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
@@ -1830,87 +1838,119 @@ static int nmo_session_build_plugin_diagnostics(
     size_t missing = 0;
     size_t outdated = 0;
     size_t entry_count = 0;
-    nmo_session_plugin_dependency_status_t *entries = NULL;
+    for (size_t i = 0; i < dep_count; i++) {
+        if (!nmo_guid_is_null(deps[i].guid)) {
+            entry_count++;
+        }
+    }
 
-    nmo_arena_array_clear(&session->plugin_diag_entries);
-    if (dep_count > 0) {
-        if (nmo_arena_array_extend(&session->plugin_diag_entries, dep_count, (void **)&entries) != NMO_OK ||
-            entries == NULL) {
+    size_t entries_size = 0;
+    nmo_session_plugin_dependency_status_t *entries = NULL;
+    if (entry_count > 0) {
+        if (!nmo_safe_mul_size(
+                entry_count, sizeof(*entries), &entries_size)) {
             return NMO_ERR_NOMEM;
         }
-        memset(entries, 0, dep_count * sizeof(*entries));
+        entries = nmo_alloc(
+            &session->allocator,
+            entries_size,
+            alignof(nmo_session_plugin_dependency_status_t));
+        if (entries == NULL) {
+            return NMO_ERR_NOMEM;
+        }
+        memset(entries, 0, entries_size);
     }
 
-    if (deps != NULL && dep_count > 0) {
-        for (size_t i = 0; i < dep_count; i++) {
-            const nmo_plugin_dep_t *dep = &deps[i];
-            if (nmo_guid_is_null(dep->guid)) {
-                continue;
+    size_t entry_index = 0;
+    for (size_t i = 0; i < dep_count; i++) {
+        const nmo_plugin_dep_t *dep = &deps[i];
+        if (nmo_guid_is_null(dep->guid)) {
+            continue;
+        }
+
+        nmo_session_plugin_dependency_status_t *entry = &entries[entry_index++];
+
+        entry->guid = dep->guid;
+        entry->category = (nmo_plugin_category_t) dep->category;
+        entry->required_version = dep->version;
+
+        const nmo_extension_plugin_info_t *registered = ext_registry
+            ? nmo_extension_registry_find(ext_registry, dep->guid)
+            : NULL;
+        const nmo_behavior_proto_t *bb_proto = bb_registry
+            ? nmo_behavior_registry_find(bb_registry, dep->guid)
+            : NULL;
+        bool registered_matches =
+            registered != NULL &&
+            nmo_session_plugin_category_matches(
+                (nmo_plugin_category_t)dep->category,
+                registered->category);
+        bool behavior_matches =
+            bb_proto != NULL &&
+            nmo_session_plugin_category_matches(
+                (nmo_plugin_category_t)dep->category,
+                NMO_PLUGIN_BEHAVIOR_DLL);
+
+        if (!registered_matches && !behavior_matches) {
+            missing++;
+            entry->status_flags |= NMO_SESSION_PLUGIN_DEP_STATUS_MISSING;
+            if (ext_registry == NULL) {
+                entry->status_flags |= NMO_SESSION_PLUGIN_DEP_STATUS_MANAGER_UNAVAILABLE;
             }
+            continue;
+        }
 
-            nmo_session_plugin_dependency_status_t *entry = entries ? &entries[entry_count] : NULL;
-            entry_count++;
+        entry->resolved_version = registered_matches
+            ? registered->version
+            : bb_proto->version;
+        if (registered_matches && registered->name != NULL) {
+            entry->resolved_name = registered->name;
+        } else if (behavior_matches && bb_proto->name != NULL) {
+            entry->resolved_name = bb_proto->name;
+        }
 
-            if (entry != NULL) {
-                entry->guid = dep->guid;
-                entry->category = (nmo_plugin_category_t) dep->category;
-                entry->required_version = dep->version;
-            }
-
-            const nmo_extension_plugin_info_t *registered = ext_registry
-                ? nmo_extension_registry_find(ext_registry, dep->guid)
-                : NULL;
-            const nmo_behavior_proto_t *bb_proto = bb_registry
-                ? nmo_behavior_registry_find(bb_registry, dep->guid)
-                : NULL;
-            bool registered_matches =
-                registered != NULL &&
-                nmo_session_plugin_category_matches(
-                    (nmo_plugin_category_t)dep->category,
-                    registered->category);
-            bool behavior_matches =
-                bb_proto != NULL &&
-                nmo_session_plugin_category_matches(
-                    (nmo_plugin_category_t)dep->category,
-                    NMO_PLUGIN_BEHAVIOR_DLL);
-
-            if (!registered_matches && !behavior_matches) {
-                missing++;
-                if (entry != NULL) {
-                    entry->status_flags |= NMO_SESSION_PLUGIN_DEP_STATUS_MISSING;
-                    if (ext_registry == NULL) {
-                        entry->status_flags |= NMO_SESSION_PLUGIN_DEP_STATUS_MANAGER_UNAVAILABLE;
-                    }
-                }
-                continue;
-            }
-
-            if (entry != NULL) {
-                entry->resolved_version = registered_matches
-                    ? registered->version
-                    : bb_proto->version;
-                if (registered_matches && registered->name != NULL) {
-                    entry->resolved_name = (char *)nmo_arena_strdup(arena, registered->name);
-                } else if (bb_proto->name != NULL) {
-                    entry->resolved_name = (char *)nmo_arena_strdup(arena, bb_proto->name);
-                }
-            }
-
-            uint32_t resolved_version = registered_matches
-                ? registered->version
-                : bb_proto->version;
-            if (resolved_version < dep->version) {
-                outdated++;
-                if (entry != NULL) {
-                    entry->status_flags |= NMO_SESSION_PLUGIN_DEP_STATUS_VERSION_TOO_OLD;
-                }
-            }
+        uint32_t resolved_version = registered_matches
+            ? registered->version
+            : bb_proto->version;
+        if (resolved_version < dep->version) {
+            outdated++;
+            entry->status_flags |= NMO_SESSION_PLUGIN_DEP_STATUS_VERSION_TOO_OLD;
         }
     }
 
+    nmo_status_t reserve_result = nmo_arena_array_reserve(
+        &session->plugin_diag_entries, entry_count);
+    if (reserve_result != NMO_OK) {
+        nmo_free(&session->allocator, entries);
+        return reserve_result;
+    }
+
+    for (size_t i = 0; i < entry_count; i++) {
+        if (entries[i].resolved_name != NULL) {
+            const char *stored_name = nmo_arena_strdup(
+                arena, entries[i].resolved_name);
+            if (stored_name == NULL) {
+                nmo_free(&session->allocator, entries);
+                return NMO_ERR_NOMEM;
+            }
+            entries[i].resolved_name = stored_name;
+        }
+    }
+
+    if (entry_count > 0) {
+        memcpy(session->plugin_diag_entries.data, entries, entries_size);
+    }
+    session->plugin_diag_entries.count = entry_count;
+    nmo_free(&session->allocator, entries);
+
+    const nmo_session_plugin_dependency_status_t *published_entries =
+        entry_count > 0
+            ? (const nmo_session_plugin_dependency_status_t *)
+                  session->plugin_diag_entries.data
+            : NULL;
     nmo_session_set_plugin_diagnostics(
         session,
-        entries,
+        published_entries,
         entry_count,
         missing,
         outdated,

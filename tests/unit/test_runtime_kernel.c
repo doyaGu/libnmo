@@ -190,6 +190,62 @@ TEST(runtime_kernel, file_header_allocation_failure_preserves_state) {
     nmo_context_release(ctx);
 }
 
+TEST(runtime_kernel, plugin_dependency_failure_preserves_state) {
+    runtime_ref_graph_fail_allocator_state_t fail_state = {0};
+    nmo_allocator_t fail_allocator = nmo_allocator_custom(
+        runtime_ref_graph_fail_alloc,
+        runtime_ref_graph_fail_free,
+        &fail_state);
+    nmo_context_desc_t desc = {
+        .allocator = &fail_allocator,
+    };
+    nmo_context_t *ctx = nmo_context_create(&desc);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    nmo_plugin_dep_t original = {
+        .guid = {0x11111111u, 0x22222222u},
+        .category = NMO_PLUGIN_CUSTOM_DLL,
+        .version = 7,
+    };
+    ASSERT_EQ(NMO_OK,
+              nmo_session_set_plugin_dependencies(session, &original, 1));
+    const nmo_session_plugin_diagnostics_t *diagnostics =
+        nmo_session_get_plugin_diagnostics(session);
+    ASSERT_NOT_NULL(diagnostics);
+    ASSERT_EQ(1u, diagnostics->entry_count);
+    ASSERT_EQ(7u, diagnostics->entries[0].required_version);
+
+    const size_t replacement_count = 65536u;
+    nmo_plugin_dep_t *replacement = calloc(
+        replacement_count, sizeof(*replacement));
+    ASSERT_NOT_NULL(replacement);
+    replacement[0].guid = (nmo_guid_t){0x33333333u, 0x44444444u};
+    replacement[0].category = NMO_PLUGIN_CUSTOM_DLL;
+    replacement[0].version = 99;
+
+    fail_state.fail_allocations = 1;
+    ASSERT_EQ(NMO_ERR_NOMEM,
+              nmo_session_set_plugin_dependencies(
+                  session, replacement, (uint32_t)replacement_count));
+    diagnostics = nmo_session_get_plugin_diagnostics(session);
+    ASSERT_NOT_NULL(diagnostics);
+    ASSERT_EQ(1u, diagnostics->entry_count);
+    ASSERT_EQ(7u, diagnostics->entries[0].required_version);
+
+    fail_state.fail_allocations = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_refresh_plugin_diagnostics(session));
+    diagnostics = nmo_session_get_plugin_diagnostics(session);
+    ASSERT_NOT_NULL(diagnostics);
+    ASSERT_EQ(1u, diagnostics->entry_count);
+    ASSERT_EQ(7u, diagnostics->entries[0].required_version);
+
+    free(replacement);
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 static nmo_status_t runtime_dependency_oom_hook(
     void *instance,
     const nmo_type_descriptor_t *type,
@@ -4099,6 +4155,7 @@ TEST(runtime_kernel, normalize_and_safe_detach_keep_curve_sections_independent) 
 
 TEST_MAIN_BEGIN()
 REGISTER_TEST(runtime_kernel, file_header_allocation_failure_preserves_state);
+REGISTER_TEST(runtime_kernel, plugin_dependency_failure_preserves_state);
 REGISTER_TEST(runtime_kernel, execute_create_and_delete);
 REGISTER_TEST(runtime_kernel, invalid_execute_arguments);
 REGISTER_TEST(runtime_kernel, post_delete_runs_after_remove);
