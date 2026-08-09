@@ -8319,6 +8319,112 @@ TEST(chunk_id_remap, sound_family_failures_keep_state_and_target_chunk_atomic) {
     ASSERT_STR_EQ("old-wave.wav", wave.wave_file_name);
     ASSERT_EQ(2468, wave.duration);
 
+    nmo_chunk_t *sound_trailing = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(sound_trailing);
+    sound_trailing->class_id = NMO_CID_SOUND;
+    sound_trailing->data_version = 7;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(sound_trailing));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        sound_trailing, CK_STATESAVE_SOUNDFILENAME));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        sound_trailing, CKSOUND_EXTERNAL));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_string(sound_trailing, "new.wav"));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(sound_trailing, 0x12345678u));
+    nmo_chunk_close(sound_trailing);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_sound_deserialize(
+        &sound, sound_trailing, NULL, &deserialize_context));
+    ASSERT_EQ(CKSOUND_INCLUDEORIGINALFILE, sound.save_options);
+    ASSERT_STR_EQ("old.wav", sound.file_name);
+
+    nmo_chunk_t *midi_trailing = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(midi_trailing);
+    midi_trailing->class_id = NMO_CID_MIDISOUND;
+    midi_trailing->data_version = 7;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(midi_trailing));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        midi_trailing, CK_STATESAVE_MIDISOUNDFILE));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_string(midi_trailing, "new.mid"));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(midi_trailing, 0x12345678u));
+    nmo_chunk_close(midi_trailing);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_midisound_deserialize(
+        &midi, midi_trailing, NULL, &deserialize_context));
+    ASSERT_STR_EQ("old.mid", midi.base.file_name);
+    ASSERT_TRUE(midi.has_midi_file_name);
+    ASSERT_STR_EQ("derived.mid", midi.midi_file_name);
+
+    nmo_chunk_t *wave_file_trailing = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(wave_file_trailing);
+    wave_file_trailing->class_id = NMO_CID_WAVESOUND;
+    wave_file_trailing->data_version = 7;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(wave_file_trailing));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        wave_file_trailing, CK_STATESAVE_WAVSOUNDFILE));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_string(
+        wave_file_trailing, "new-wave.wav"));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        wave_file_trailing, 0x12345678u));
+    nmo_chunk_close(wave_file_trailing);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_wavesound_deserialize(
+        &wave, wave_file_trailing, NULL, &deserialize_context));
+    ASSERT_STR_EQ("old-wave.wav", wave.wave_file_name);
+    ASSERT_EQ(2468, wave.duration);
+
+    nmo_chunk_t *wave_duration_trailing = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(wave_duration_trailing);
+    wave_duration_trailing->class_id = NMO_CID_WAVESOUND;
+    wave_duration_trailing->data_version = 7;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(wave_duration_trailing));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        wave_duration_trailing, CK_STATESAVE_WAVSOUNDDURATION));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(wave_duration_trailing, 2469));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        wave_duration_trailing, 0x12345678u));
+    nmo_chunk_close(wave_duration_trailing);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_wavesound_deserialize(
+        &wave, wave_duration_trailing, NULL, &deserialize_context));
+    ASSERT_STR_EQ("old-wave.wav", wave.wave_file_name);
+    ASSERT_EQ(2468, wave.duration);
+
+    static const struct {
+        uint32_t data_version;
+        uint32_t state_flags;
+        size_t payload_dwords;
+        size_t first_buffer_size_index;
+        size_t second_buffer_size_index;
+    } data2_cases[] = {
+        {3u, CK_WAVESOUND_POINT, 24u, 15u, 19u},
+        {2u, CK_WAVESOUND_BACKGROUND, 8u, SIZE_MAX, SIZE_MAX},
+        {2u, CK_WAVESOUND_POINT, 26u, 17u, 21u},
+    };
+    for (size_t i = 0; i < sizeof(data2_cases) / sizeof(data2_cases[0]);
+         ++i) {
+        uint32_t payload[26] = {0};
+        payload[0] = data2_cases[i].state_flags;
+        if (data2_cases[i].first_buffer_size_index != SIZE_MAX) {
+            payload[data2_cases[i].first_buffer_size_index] = 12u;
+            payload[data2_cases[i].second_buffer_size_index] = 12u;
+        }
+
+        nmo_chunk_t *data2_trailing = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(data2_trailing);
+        data2_trailing->class_id = NMO_CID_WAVESOUND;
+        data2_trailing->data_version = data2_cases[i].data_version;
+        ASSERT_EQ(NMO_OK, nmo_chunk_start_write(data2_trailing));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+            data2_trailing, CK_STATESAVE_WAVSOUNDDATA2));
+        for (size_t j = 0; j < data2_cases[i].payload_dwords; ++j) {
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+                data2_trailing, payload[j]));
+        }
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+            data2_trailing, 0x12345678u));
+        nmo_chunk_close(data2_trailing);
+        ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_wavesound_deserialize(
+            &wave, data2_trailing, NULL, &deserialize_context));
+        ASSERT_STR_EQ("old-wave.wav", wave.wave_file_name);
+        ASSERT_EQ(2468, wave.duration);
+    }
+
     fail_after_allocator_state_t allocator_state = {
         .allocation_count = 0,
         .allowed_allocations = 2,

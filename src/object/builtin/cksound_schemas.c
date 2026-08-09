@@ -198,6 +198,9 @@ static nmo_status_t nmo_sound_deserialize_internal(
         if (nmo_chunk_get_position(chunk) > section_end) {
             return NMO_ERR_TRUNCATED_CHUNK;
         }
+        if (nmo_chunk_get_position(chunk) < section_end) {
+            return NMO_ERR_INVALID_FORMAT;
+        }
         out_state->save_options = save_options;
         out_state->file_name = file_name;
     } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
@@ -334,6 +337,9 @@ static nmo_status_t nmo_wavesound_deserialize_internal(
         if (nmo_chunk_get_position(chunk) > section_end) {
             return NMO_ERR_TRUNCATED_CHUNK;
         }
+        if (nmo_chunk_get_position(chunk) < section_end) {
+            return NMO_ERR_INVALID_FORMAT;
+        }
         out_state->has_wave_file_name = 1;
         out_state->wave_file_name = wave_file_name;
     } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
@@ -347,6 +353,9 @@ static nmo_status_t nmo_wavesound_deserialize_internal(
         NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &duration));
         if (nmo_chunk_get_position(chunk) > section_end) {
             return NMO_ERR_TRUNCATED_CHUNK;
+        }
+        if (nmo_chunk_get_position(chunk) < section_end) {
+            return NMO_ERR_INVALID_FORMAT;
         }
         out_state->has_duration = 1;
         out_state->duration = duration;
@@ -453,6 +462,9 @@ static nmo_status_t nmo_wavesound_deserialize_internal(
         }
         if (nmo_chunk_get_position(chunk) > section_end) {
             return NMO_ERR_TRUNCATED_CHUNK;
+        }
+        if (nmo_chunk_get_position(chunk) < section_end) {
+            return NMO_ERR_INVALID_FORMAT;
         }
         nmo_ref_check_class(
             &data.attached_object,
@@ -626,6 +638,9 @@ static nmo_status_t nmo_midisound_deserialize_internal(
             chunk, &midi_file_name, NULL));
         if (nmo_chunk_get_position(chunk) > section_end) {
             return NMO_ERR_TRUNCATED_CHUNK;
+        }
+        if (nmo_chunk_get_position(chunk) < section_end) {
+            return NMO_ERR_INVALID_FORMAT;
         }
         out_state->has_midi_file_name = 1;
         out_state->midi_file_name = midi_file_name;
