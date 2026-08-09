@@ -529,7 +529,9 @@ static nmo_status_t runtime_delete_validate_atomic_refs(
     nmo_grid_state_t *grid = (nmo_grid_state_t *)
         nmo_type_query_object_get_ancestor_state_by_guid(
             type_rt->types, obj, CKPGUID_GRID);
-    if (grid != NULL && grid->layers.count > 0u && grid->layers.data == NULL) {
+    if (grid != NULL &&
+        (grid->layers.element_size != sizeof(nmo_grid_layer_t) ||
+         (grid->layers.count > 0u && grid->layers.data == NULL))) {
         return NMO_ERR_VALIDATION_FAILED;
     }
 

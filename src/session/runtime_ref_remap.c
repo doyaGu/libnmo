@@ -907,7 +907,8 @@ static nmo_status_t normalize_grid_layers(
     size_t *changes)
 {
     if (!state) return NMO_OK;
-    if (state->layers.count > 0 && !state->layers.data) {
+    if (state->layers.element_size != sizeof(nmo_grid_layer_t) ||
+        (state->layers.count > 0 && !state->layers.data)) {
         return NMO_ERR_VALIDATION_FAILED;
     }
     for (size_t i = 0; i < state->layers.count;) {

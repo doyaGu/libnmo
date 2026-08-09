@@ -1999,6 +1999,49 @@ TEST(runtime_kernel, copy_remap_updates_only_resolved_grid_layers) {
     nmo_context_release(ctx);
 }
 
+TEST(runtime_kernel, rejects_malformed_grid_storage_before_runtime_mutation) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_id_t grid_id = 0;
+    nmo_object_id_t victim_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_GRID, "grid", NMO_NULL_GUID,
+        &grid_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_OBJECT, "victim", NMO_NULL_GUID,
+        &victim_id, NULL));
+    nmo_grid_state_t *grid = (nmo_grid_state_t *)
+        nmo_object_repository_find_by_id(repo, grid_id)->state;
+    ASSERT_NOT_NULL(grid);
+
+    ASSERT_NOT_NULL(nmo_session_get_ref_graph(session));
+    const size_t saved_element_size = grid->layers.element_size;
+    grid->layers.element_size = 1;
+
+    size_t changed = 0;
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,
+              nmo_runtime_normalize_invalid_refs(
+                  repo, nmo_context_get_type_runtime(ctx), &changed));
+    ASSERT_EQ(0u, changed);
+
+    nmo_runtime_report_t report = {0};
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_session_destroy_objects(
+        session, &victim_id, 1,
+        NMO_RUNTIME_REQUEST_STRICT | NMO_RUNTIME_REQUEST_SAFE_DETACH,
+        &report));
+    ASSERT_EQ(0u, report.deleted_objects);
+    ASSERT_NOT_NULL(nmo_object_repository_find_by_id(repo, victim_id));
+
+    grid->layers.element_size = saved_element_size;
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(runtime_kernel, safe_detach_prunes_all_beobject_attribute_layouts) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
@@ -3360,6 +3403,7 @@ REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_objectanimation_r
 REGISTER_TEST(runtime_kernel, safe_detach_keeps_keyedanimation_sections_independent);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_beobject_attributes);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_grid_layers);
+REGISTER_TEST(runtime_kernel, rejects_malformed_grid_storage_before_runtime_mutation);
 REGISTER_TEST(runtime_kernel, safe_detach_prunes_all_beobject_attribute_layouts);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_parameteroperation_refs);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_parameterout_refs);
