@@ -7,6 +7,7 @@
 #include "format/nmo_object.h"
 #include "type/nmo_type_query.h"
 #include "core/nmo_arena.h"
+#include "core/nmo_utils.h"
 
 #include <limits.h>
 #include <stdint.h>
@@ -148,7 +149,43 @@ nmo_status_t nmo_ref_write_sequence(
 {
     if (!chunk || (count > 0 && !refs)) return NMO_ERR_INVALID_ARGUMENT;
     if (count > INT32_MAX) return NMO_ERR_INVALID_ARGUMENT;
-    nmo_status_t result = nmo_chunk_write_object_sequence_start(chunk, count);
+
+    const nmo_chunk_file_context_t *file_context =
+        nmo_chunk_get_file_context(chunk);
+    if (file_context != NULL && file_context->runtime_to_file != NULL) {
+        for (size_t i = 0; i < count; ++i) {
+            if (refs[i].state != NMO_REF_RESOLVED ||
+                refs[i].id == NMO_OBJECT_ID_NONE) {
+                continue;
+            }
+            nmo_object_id_t unresolved_raw = NMO_OBJECT_ID_NONE;
+            if (file_context->repository != NULL &&
+                nmo_object_repository_get_unresolved_ref_raw(
+                    file_context->repository, refs[i].id, &unresolved_raw)) {
+                continue;
+            }
+            nmo_object_id_t file_id = NMO_OBJECT_ID_NONE;
+            if (nmo_id_remap_lookup_id(
+                    file_context->runtime_to_file, refs[i].id, &file_id) !=
+                NMO_OK) {
+                NMO_RETURN_ERROR(
+                    NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                    "Cannot serialize unmapped runtime object ID %u",
+                    (unsigned)refs[i].id);
+            }
+        }
+    }
+
+    size_t total_dwords = 0;
+    size_t total_bytes = 0;
+    if (!nmo_safe_add_size(count, 1u, &total_dwords) ||
+        !nmo_safe_mul_size(total_dwords, sizeof(uint32_t), &total_bytes)) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    nmo_status_t result = nmo_chunk_check_size(chunk, total_bytes);
+    if (result != NMO_OK) return result;
+
+    result = nmo_chunk_write_object_sequence_start(chunk, count);
     if (result != NMO_OK) return result;
     for (size_t i = 0; i < count; ++i) {
         result = nmo_ref_write_sequence_item(chunk, &refs[i]);

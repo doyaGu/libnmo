@@ -607,6 +607,36 @@ TEST(chunk_id_remap, null_ref_uses_file_null_encoding) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, ref_sequence_mapping_failure_is_atomic) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_id_remap_t *runtime_to_file = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(runtime_to_file);
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(runtime_to_file, 10, 100));
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    nmo_chunk_file_context_t file_context = {
+        .runtime_to_file = runtime_to_file,
+    };
+    nmo_chunk_set_file_context(chunk, &file_context);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0xA5A5A5A5u));
+
+    nmo_ref_t refs[] = {
+        nmo_ref_from_id(10),
+        nmo_ref_from_id(20),
+    };
+    ASSERT_EQ(NMO_ERR_NOT_FOUND,
+              nmo_ref_write_sequence(chunk, refs, 2));
+    ASSERT_EQ(1u, nmo_chunk_get_position(chunk));
+    ASSERT_EQ(1u, chunk->data.count);
+    ASSERT_EQ(0xA5A5A5A5u,
+              NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data)[0]);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, unresolved_ref_preserves_raw_id) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
@@ -13090,6 +13120,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, subchunk_id_remap);
     REGISTER_TEST(chunk_id_remap, zero_and_unchanged_ids);
     REGISTER_TEST(chunk_id_remap, null_ref_uses_file_null_encoding);
+    REGISTER_TEST(chunk_id_remap, ref_sequence_mapping_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, unresolved_ref_preserves_raw_id);
     REGISTER_TEST(chunk_id_remap, behavior_unresolved_ref_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, behavior_serializer_does_not_publish_partial_chunk);
