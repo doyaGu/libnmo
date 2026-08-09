@@ -7170,6 +7170,28 @@ TEST(chunk_id_remap, group_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
     invalid.object_ids.count = valid_count;
 
+    nmo_group_state_t large;
+    ASSERT_EQ(NMO_OK, nmo_group_vtable.create(&large, NULL, NULL));
+    const size_t large_count = 100001u;
+    ASSERT_EQ(NMO_OK, nmo_array_extend(
+        &large.object_ids, large_count, NULL));
+    nmo_chunk_t *large_chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(large_chunk);
+    large_chunk->class_id = NMO_CID_GROUP;
+    large_chunk->data_version = 7;
+    large_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(large_chunk, &write_context);
+    ASSERT_EQ(NMO_OK, nmo_group_serialize(
+        &large, large_chunk, NULL, &serialize_context));
+    nmo_chunk_close(large_chunk);
+    nmo_chunk_set_file_context(large_chunk, &read_context);
+    nmo_group_state_t large_loaded;
+    ASSERT_EQ(NMO_OK, nmo_group_vtable.create(
+        &large_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_group_deserialize(
+        &large_loaded, large_chunk, NULL, &deserialize_context));
+    ASSERT_EQ(large_count, large_loaded.object_ids.count);
+
     nmo_group_vtable.destroy(&source, NULL, NULL);
     nmo_group_vtable.destroy(&loaded, NULL, NULL);
     nmo_group_vtable.destroy(&reloaded, NULL, NULL);
@@ -7178,6 +7200,8 @@ TEST(chunk_id_remap, group_refs_round_trip_and_failure_is_atomic) {
     nmo_group_vtable.destroy(&failed, NULL, NULL);
     nmo_group_vtable.destroy(&failed_negative, NULL, NULL);
     nmo_group_vtable.destroy(&invalid, NULL, NULL);
+    nmo_group_vtable.destroy(&large, NULL, NULL);
+    nmo_group_vtable.destroy(&large_loaded, NULL, NULL);
     nmo_arena_destroy(arena);
 }
 

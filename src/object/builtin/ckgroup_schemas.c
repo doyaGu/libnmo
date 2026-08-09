@@ -156,12 +156,6 @@ static nmo_status_t nmo_group_deserialize_internal(
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Group object count is negative");
     }
 
-    /* Sanity check */
-    const uint32_t MAX_GROUP_OBJECTS = 100000;
-    if ((uint32_t)count > MAX_GROUP_OBJECTS) {
-        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Group object count exceeds maximum");
-    }
-
     if ((size_t)count > nmo_group_identifier_remaining_dwords(chunk)) {
         return NMO_ERR_TRUNCATED_CHUNK;
     }
