@@ -8555,6 +8555,34 @@ TEST(chunk_id_remap, beobject_legacy_attributes_are_lossless_and_atomic) {
         &invalid, partial, NULL, NULL));
     ASSERT_EQ(0u, nmo_chunk_get_data_size(partial));
 
+    nmo_beobject_state_t large;
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(&large, NULL, NULL));
+    large.has_legacy_attributes = 1;
+    const size_t large_count = 100001u;
+    nmo_beobject_legacy_attribute_t *large_attributes = NULL;
+    ASSERT_EQ(NMO_OK, nmo_array_extend(
+        &large.legacy_attributes, large_count,
+        (void **)&large_attributes));
+    large_attributes[0].compatible_class_id = 1;
+    large_attributes[0].name = "A";
+    nmo_chunk_t *large_chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(large_chunk);
+    large_chunk->class_id = NMO_CID_BEOBJECT;
+    large_chunk->data_version = 7;
+    large_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(large_chunk, &write_context);
+    ASSERT_EQ(NMO_OK, nmo_beobject_serialize(
+        &large, large_chunk, NULL, NULL));
+    nmo_chunk_close(large_chunk);
+    nmo_chunk_set_file_context(large_chunk, &read_context);
+    nmo_beobject_state_t large_loaded;
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(
+        &large_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_deserialize(
+        &large_loaded, large_chunk, NULL, NULL));
+    ASSERT_EQ(large_count, large_loaded.legacy_attributes.count);
+    ASSERT_EQ(1, large_loaded.has_legacy_attributes);
+
     nmo_array_dispose(&source.scripts);
     nmo_array_dispose(&source.attributes);
     nmo_array_dispose(&source.legacy_attributes);
@@ -8585,6 +8613,8 @@ TEST(chunk_id_remap, beobject_legacy_attributes_are_lossless_and_atomic) {
     nmo_array_dispose(&old_loaded.scripts);
     nmo_array_dispose(&old_loaded.attributes);
     nmo_array_dispose(&old_loaded.legacy_attributes);
+    nmo_beobject_vtable.destroy(&large, NULL, NULL);
+    nmo_beobject_vtable.destroy(&large_loaded, NULL, NULL);
     nmo_arena_destroy(arena);
 }
 

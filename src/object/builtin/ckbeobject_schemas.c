@@ -396,7 +396,7 @@ static nmo_status_t nmo_beobject_read_legacy_attributes(
     int32_t count_check = 0;
     nmo_status_t result = nmo_chunk_read_int(chunk, &count_check);
     if (result != NMO_OK) return result;
-    if (count_check < 0 || count_check > 100000) {
+    if (count_check < 0) {
         return NMO_ERR_INVALID_FORMAT;
     }
 
