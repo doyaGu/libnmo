@@ -2426,6 +2426,40 @@ TEST(chunk_id_remap, interfaceobjectmanager_chunk_count_stays_in_section) {
     ASSERT_TRUE(nmo_guid_equals(state.guid, old_guid));
     ASSERT_EQ(1u, state.has_guid_chunk);
 
+    nmo_chunk_t *trailing_chunks = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(trailing_chunks);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(trailing_chunks));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        trailing_chunks, 0x01234567u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(trailing_chunks, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing_chunks, 0x12345678u));
+    nmo_chunk_close(trailing_chunks);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT,
+        nmo_interfaceobjectmanager_deserialize(
+            &state, trailing_chunks, NULL, &deserialize_context));
+    ASSERT_EQ(1, state.chunk_count);
+    ASSERT_EQ(&old_chunk, state.chunks);
+    ASSERT_EQ(1u, state.has_chunks_chunk);
+    ASSERT_TRUE(nmo_guid_equals(state.guid, old_guid));
+    ASSERT_EQ(1u, state.has_guid_chunk);
+
+    nmo_chunk_t *trailing_guid = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(trailing_guid);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(trailing_guid));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        trailing_guid, 0x87654321u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_guid(trailing_guid, NMO_GUID_NULL));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing_guid, 0x12345678u));
+    nmo_chunk_close(trailing_guid);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT,
+        nmo_interfaceobjectmanager_deserialize(
+            &state, trailing_guid, NULL, &deserialize_context));
+    ASSERT_EQ(1, state.chunk_count);
+    ASSERT_EQ(&old_chunk, state.chunks);
+    ASSERT_EQ(1u, state.has_chunks_chunk);
+    ASSERT_TRUE(nmo_guid_equals(state.guid, old_guid));
+    ASSERT_EQ(1u, state.has_guid_chunk);
+
     fail_after_allocator_state_t allocator_state = {
         .allocation_count = 0,
         .allowed_allocations = 2,

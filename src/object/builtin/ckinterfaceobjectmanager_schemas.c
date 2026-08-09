@@ -145,6 +145,9 @@ static nmo_status_t nmo_interfaceobjectmanager_deserialize_internal(
         if (nmo_chunk_get_position(chunk) > chunks_section_end) {
             return NMO_ERR_TRUNCATED_CHUNK;
         }
+        if (nmo_chunk_get_position(chunk) < chunks_section_end) {
+            return NMO_ERR_INVALID_FORMAT;
+        }
         parsed_count = count;
         parsed_chunks = chunks;
         parsed_has_chunks = 1;
@@ -155,6 +158,7 @@ static nmo_status_t nmo_interfaceobjectmanager_deserialize_internal(
         chunk, CK_STATESAVE_IOM_GUID, &guid_section_dwords);
     if (seek_result == NMO_OK) {
         if (guid_section_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
+        if (guid_section_dwords > 2u) return NMO_ERR_INVALID_FORMAT;
         nmo_status_t result = nmo_chunk_read_guid(chunk, &parsed_guid);
         if (result != NMO_OK) {
             return result;
