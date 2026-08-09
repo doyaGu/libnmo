@@ -520,7 +520,8 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
         memset(out_state->skin, 0, sizeof(*out_state->skin));
 
         if (data_version < 6) {
-            NMO_RETURN_IF_ERROR(nmo_chunk_skip(chunk, 1));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(
+                chunk, &out_state->skin->legacy_before_matrix));
         }
 
         result = nmo_chunk_read_matrix(chunk, &out_state->skin->object_init_matrix);
@@ -576,7 +577,9 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
         for (uint32_t i = 0; i < out_state->skin->bone_count; ++i) {
             NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->skin->bones[i].bone_flags));
             if (data_version < 6) {
-                NMO_RETURN_IF_ERROR(nmo_chunk_skip(chunk, 1));
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(
+                    chunk,
+                    &out_state->skin->bones[i].legacy_before_matrix));
             }
             NMO_RETURN_IF_ERROR(nmo_chunk_read_matrix(chunk, &out_state->skin->bones[i].inverse_bind_matrix));
         }
@@ -640,13 +643,15 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
             vertex->bone_count = (uint32_t)bone_count_i;
 
             if (data_version < 6) {
-                NMO_RETURN_IF_ERROR(nmo_chunk_skip(chunk, 1));
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(
+                    chunk, &vertex->legacy_before_position));
             }
 
             NMO_RETURN_IF_ERROR(nmo_chunk_read_vector3(chunk, &vertex->initial_pos));
 
             if (data_version < 6) {
-                NMO_RETURN_IF_ERROR(nmo_chunk_skip(chunk, 1));
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(
+                    chunk, &vertex->legacy_before_indices));
             }
 
             if (vertex->bone_count > 0) {
@@ -663,7 +668,8 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
             }
 
             if (data_version < 6) {
-                NMO_RETURN_IF_ERROR(nmo_chunk_skip(chunk, 1));
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(
+                    chunk, &vertex->legacy_before_weights));
             }
 
             if (vertex->bone_count > 0) {
@@ -760,6 +766,25 @@ nmo_status_t nmo_3dentity_deserialize(
  * CK3dEntity SERIALIZATION
  * ============================================================================= */
 
+static bool nmo_3dentity_skin_has_legacy_words(
+    const nmo_3dentity_skin_t *skin)
+{
+    if (skin == NULL) return false;
+    if (skin->legacy_before_matrix != 0u) return true;
+    for (uint32_t i = 0; i < skin->bone_count; ++i) {
+        if (skin->bones[i].legacy_before_matrix != 0u) return true;
+    }
+    for (uint32_t i = 0; i < skin->vertex_count; ++i) {
+        const nmo_3dentity_skin_vertex_t *vertex = &skin->vertices[i];
+        if (vertex->legacy_before_position != 0u ||
+            vertex->legacy_before_indices != 0u ||
+            vertex->legacy_before_weights != 0u) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /**
  * @brief Serialize CK3dEntity state to chunk
  * 
@@ -783,6 +808,19 @@ static nmo_status_t nmo_3dentity_serialize_internal(
 
     if (!in_state || !out_chunk || !arena) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to CK3dEntity serialize");
+    }
+
+    if (nmo_chunk_get_data_version(out_chunk) == 0u &&
+        out_chunk->class_id == NMO_CID_3DENTITY) {
+        out_chunk->data_version = NMO_CHUNK_DATA_VERSION_CURRENT;
+    }
+    const uint32_t data_version =
+        nmo_chunk_get_data_version(out_chunk);
+    if (data_version >= 6u &&
+        nmo_3dentity_skin_has_legacy_words(in_state->skin)) {
+        NMO_RETURN_ERROR(
+            NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+            "CK3dEntity skin legacy words require data version below 6");
     }
 
     // First serialize parent CKRenderObject data
@@ -932,12 +970,12 @@ static nmo_status_t nmo_3dentity_serialize_internal(
     // Save skin data
     if (in_state->skin) {
         const nmo_3dentity_skin_t *skin = in_state->skin;
-        const uint32_t data_version = nmo_chunk_get_data_version(out_chunk);
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_3DENTITYSKINDATA);
         if (result != NMO_OK) return result;
 
         if (data_version < 6) {
-            result = nmo_chunk_write_dword(out_chunk, 0);
+            result = nmo_chunk_write_dword(
+                out_chunk, skin->legacy_before_matrix);
             if (result != NMO_OK) return result;
         }
 
@@ -956,7 +994,9 @@ static nmo_status_t nmo_3dentity_serialize_internal(
             result = nmo_chunk_write_dword(out_chunk, skin->bones[i].bone_flags);
             if (result != NMO_OK) return result;
             if (data_version < 6) {
-                result = nmo_chunk_write_dword(out_chunk, 0);
+                result = nmo_chunk_write_dword(
+                    out_chunk,
+                    skin->bones[i].legacy_before_matrix);
                 if (result != NMO_OK) return result;
             }
             result = nmo_chunk_write_matrix(out_chunk, &skin->bones[i].inverse_bind_matrix);
@@ -972,7 +1012,8 @@ static nmo_status_t nmo_3dentity_serialize_internal(
             if (result != NMO_OK) return result;
 
             if (data_version < 6) {
-                result = nmo_chunk_write_dword(out_chunk, 0);
+                result = nmo_chunk_write_dword(
+                    out_chunk, vertex->legacy_before_position);
                 if (result != NMO_OK) return result;
             }
 
@@ -980,7 +1021,8 @@ static nmo_status_t nmo_3dentity_serialize_internal(
             if (result != NMO_OK) return result;
 
             if (data_version < 6) {
-                result = nmo_chunk_write_dword(out_chunk, 0);
+                result = nmo_chunk_write_dword(
+                    out_chunk, vertex->legacy_before_indices);
                 if (result != NMO_OK) return result;
             }
 
@@ -995,7 +1037,8 @@ static nmo_status_t nmo_3dentity_serialize_internal(
             }
 
             if (data_version < 6) {
-                result = nmo_chunk_write_dword(out_chunk, 0);
+                result = nmo_chunk_write_dword(
+                    out_chunk, vertex->legacy_before_weights);
                 if (result != NMO_OK) return result;
             }
 
@@ -1157,6 +1200,7 @@ static bool nmo_3dentity_skin_equals(
         lhs->bone_count != rhs->bone_count ||
         lhs->vertex_count != rhs->vertex_count ||
         lhs->normal_count != rhs->normal_count ||
+        lhs->legacy_before_matrix != rhs->legacy_before_matrix ||
         lhs->normals_present != rhs->normals_present ||
         lhs->normals_have_count != rhs->normals_have_count ||
         memcmp(&lhs->object_init_matrix, &rhs->object_init_matrix,
@@ -1171,6 +1215,8 @@ static bool nmo_3dentity_skin_equals(
         if (!nmo_3dentity_ref_equals(
                 &lhs->bones[i].bone, &rhs->bones[i].bone) ||
             lhs->bones[i].bone_flags != rhs->bones[i].bone_flags ||
+            lhs->bones[i].legacy_before_matrix !=
+                rhs->bones[i].legacy_before_matrix ||
             memcmp(&lhs->bones[i].inverse_bind_matrix,
                    &rhs->bones[i].inverse_bind_matrix,
                    sizeof(lhs->bones[i].inverse_bind_matrix)) != 0) {
@@ -1181,6 +1227,12 @@ static bool nmo_3dentity_skin_equals(
         const nmo_3dentity_skin_vertex_t *lhs_vertex = &lhs->vertices[i];
         const nmo_3dentity_skin_vertex_t *rhs_vertex = &rhs->vertices[i];
         if (lhs_vertex->bone_count != rhs_vertex->bone_count ||
+            lhs_vertex->legacy_before_position !=
+                rhs_vertex->legacy_before_position ||
+            lhs_vertex->legacy_before_indices !=
+                rhs_vertex->legacy_before_indices ||
+            lhs_vertex->legacy_before_weights !=
+                rhs_vertex->legacy_before_weights ||
             memcmp(&lhs_vertex->initial_pos, &rhs_vertex->initial_pos,
                    sizeof(lhs_vertex->initial_pos)) != 0 ||
             (lhs_vertex->bone_count > 0 &&
@@ -1259,6 +1311,9 @@ static uint32_t nmo_3dentity_hash_skin(
     if (skin == NULL) return hash;
 
     hash = nmo_3dentity_hash_bytes(
+        hash, &skin->legacy_before_matrix,
+        sizeof(skin->legacy_before_matrix));
+    hash = nmo_3dentity_hash_bytes(
         hash, &skin->object_init_matrix, sizeof(skin->object_init_matrix));
     hash = nmo_3dentity_hash_bytes(
         hash, &skin->bone_count, sizeof(skin->bone_count));
@@ -1267,6 +1322,9 @@ static uint32_t nmo_3dentity_hash_skin(
         hash = nmo_3dentity_hash_bytes(
             hash, &skin->bones[i].bone_flags,
             sizeof(skin->bones[i].bone_flags));
+        hash = nmo_3dentity_hash_bytes(
+            hash, &skin->bones[i].legacy_before_matrix,
+            sizeof(skin->bones[i].legacy_before_matrix));
         hash = nmo_3dentity_hash_bytes(
             hash, &skin->bones[i].inverse_bind_matrix,
             sizeof(skin->bones[i].inverse_bind_matrix));
@@ -1280,12 +1338,21 @@ static uint32_t nmo_3dentity_hash_skin(
         hash = nmo_3dentity_hash_bytes(
             hash, &vertex->bone_count, sizeof(vertex->bone_count));
         hash = nmo_3dentity_hash_bytes(
+            hash, &vertex->legacy_before_position,
+            sizeof(vertex->legacy_before_position));
+        hash = nmo_3dentity_hash_bytes(
             hash, &vertex->initial_pos, sizeof(vertex->initial_pos));
+        hash = nmo_3dentity_hash_bytes(
+            hash, &vertex->legacy_before_indices,
+            sizeof(vertex->legacy_before_indices));
         if (vertex->bone_count > 0 && vertex->bone_indices != NULL) {
             hash = nmo_3dentity_hash_bytes(
                 hash, vertex->bone_indices,
                 (size_t)vertex->bone_count * sizeof(uint32_t));
         }
+        hash = nmo_3dentity_hash_bytes(
+            hash, &vertex->legacy_before_weights,
+            sizeof(vertex->legacy_before_weights));
         if (vertex->bone_count > 0 && vertex->bone_weights != NULL) {
             hash = nmo_3dentity_hash_bytes(
                 hash, vertex->bone_weights,

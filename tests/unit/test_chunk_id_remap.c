@@ -9374,6 +9374,175 @@ TEST(chunk_id_remap, scalar_ref_sections_do_not_publish_truncated_state) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, entity3d_skin_layout_follows_data_version) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+    ASSERT_NOT_NULL(arena);
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+
+    uint32_t bone_index = 0u;
+    float bone_weight = 0.75f;
+    nmo_3dentity_skin_vertex_t vertex = {
+        .bone_count = 1,
+        .legacy_before_position = 0x33333333u,
+        .initial_pos = {1.0f, 2.0f, 3.0f},
+        .legacy_before_indices = 0x44444444u,
+        .bone_indices = &bone_index,
+        .legacy_before_weights = 0x55555555u,
+        .bone_weights = &bone_weight,
+    };
+    nmo_3dentity_skin_bone_t bone = {
+        .bone = nmo_ref_from_raw(801),
+        .bone_flags = 3u,
+        .legacy_before_matrix = 0x22222222u,
+    };
+    nmo_3dentity_skin_t skin = {
+        .legacy_before_matrix = 0x11111111u,
+        .bone_count = 1,
+        .bones = &bone,
+        .vertex_count = 1,
+        .vertices = &vertex,
+    };
+    nmo_3dentity_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_3dentity_vtable.create(&source, NULL, NULL));
+    source.skin = &skin;
+
+    nmo_chunk_t *legacy = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(legacy);
+    legacy->class_id = NMO_CID_3DENTITY;
+    legacy->data_version = 5;
+    legacy->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_3dentity_serialize(
+        &source, legacy, NULL, &serialize_context));
+    nmo_chunk_close(legacy);
+    size_t section_dwords = 0u;
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        legacy, CK_STATESAVE_3DENTITYSKINDATA, &section_dwords));
+    ASSERT_EQ(47u, section_dwords);
+
+    nmo_3dentity_state_t legacy_loaded;
+    ASSERT_EQ(NMO_OK, nmo_3dentity_vtable.create(
+        &legacy_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_3dentity_deserialize(
+        &legacy_loaded, legacy, NULL, &deserialize_context));
+    ASSERT_NOT_NULL(legacy_loaded.skin);
+    ASSERT_EQ(0x11111111u, legacy_loaded.skin->legacy_before_matrix);
+    ASSERT_EQ(1u, legacy_loaded.skin->bone_count);
+    ASSERT_EQ(801u, legacy_loaded.skin->bones[0].bone.raw_id);
+    ASSERT_EQ(0x22222222u,
+              legacy_loaded.skin->bones[0].legacy_before_matrix);
+    ASSERT_EQ(1u, legacy_loaded.skin->vertex_count);
+    ASSERT_EQ(0x33333333u,
+              legacy_loaded.skin->vertices[0].legacy_before_position);
+    ASSERT_FLOAT_EQ(2.0f,
+                    legacy_loaded.skin->vertices[0].initial_pos.y, 0.0001f);
+    ASSERT_EQ(0x44444444u,
+              legacy_loaded.skin->vertices[0].legacy_before_indices);
+    ASSERT_EQ(0u, legacy_loaded.skin->vertices[0].bone_indices[0]);
+    ASSERT_EQ(0x55555555u,
+              legacy_loaded.skin->vertices[0].legacy_before_weights);
+    ASSERT_FLOAT_EQ(0.75f,
+                    legacy_loaded.skin->vertices[0].bone_weights[0], 0.0001f);
+
+    nmo_chunk_t *legacy_second = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(legacy_second);
+    legacy_second->class_id = NMO_CID_3DENTITY;
+    legacy_second->data_version = 5;
+    legacy_second->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_3dentity_serialize(
+        &legacy_loaded, legacy_second, NULL, &serialize_context));
+    nmo_chunk_close(legacy_second);
+    nmo_3dentity_state_t legacy_reloaded;
+    ASSERT_EQ(NMO_OK, nmo_3dentity_vtable.create(
+        &legacy_reloaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_3dentity_deserialize(
+        &legacy_reloaded, legacy_second, NULL, &deserialize_context));
+    ASSERT_EQ(0x11111111u, legacy_reloaded.skin->legacy_before_matrix);
+    ASSERT_EQ(0x22222222u,
+              legacy_reloaded.skin->bones[0].legacy_before_matrix);
+    ASSERT_EQ(0x33333333u,
+              legacy_reloaded.skin->vertices[0].legacy_before_position);
+    ASSERT_EQ(0x44444444u,
+              legacy_reloaded.skin->vertices[0].legacy_before_indices);
+    ASSERT_EQ(0x55555555u,
+              legacy_reloaded.skin->vertices[0].legacy_before_weights);
+
+    nmo_3dentity_state_t copied;
+    nmo_type_descriptor_t entity_type = {
+        .size = sizeof(nmo_3dentity_state_t),
+    };
+    ASSERT_EQ(NMO_OK, nmo_3dentity_vtable.create(&copied, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_3dentity_vtable.copy(
+        &legacy_reloaded, &copied, &entity_type, arena));
+    ASSERT_NE(legacy_reloaded.skin, copied.skin);
+    ASSERT_TRUE(nmo_3dentity_vtable.equals(&legacy_reloaded, &copied));
+    ASSERT_EQ(nmo_3dentity_vtable.hash(&legacy_reloaded),
+              nmo_3dentity_vtable.hash(&copied));
+    copied.skin->vertices[0].legacy_before_weights ^= 1u;
+    ASSERT_FALSE(nmo_3dentity_vtable.equals(&legacy_reloaded, &copied));
+    copied.skin->vertices[0].legacy_before_weights ^= 1u;
+
+    nmo_chunk_t *modern = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(modern);
+    modern->class_id = NMO_CID_3DENTITY;
+    modern->data_version = 6;
+    modern->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(modern));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(modern, 0xABCD1234u));
+    nmo_chunk_close(modern);
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_3dentity_serialize(
+        &legacy_reloaded, modern, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(modern));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(modern));
+    uint32_t marker = 0u;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(modern, &marker));
+    ASSERT_EQ(0xABCD1234u, marker);
+
+    legacy_reloaded.skin->legacy_before_matrix = 0u;
+    legacy_reloaded.skin->bones[0].legacy_before_matrix = 0u;
+    legacy_reloaded.skin->vertices[0].legacy_before_position = 0u;
+    legacy_reloaded.skin->vertices[0].legacy_before_indices = 0u;
+    legacy_reloaded.skin->vertices[0].legacy_before_weights = 0u;
+    ASSERT_EQ(NMO_OK, nmo_3dentity_serialize(
+        &legacy_reloaded, modern, NULL, &serialize_context));
+    nmo_chunk_close(modern);
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        modern, CK_STATESAVE_3DENTITYSKINDATA, &section_dwords));
+    ASSERT_EQ(42u, section_dwords);
+
+    nmo_3dentity_state_t modern_loaded;
+    ASSERT_EQ(NMO_OK, nmo_3dentity_vtable.create(
+        &modern_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_3dentity_deserialize(
+        &modern_loaded, modern, NULL, &deserialize_context));
+    ASSERT_NOT_NULL(modern_loaded.skin);
+    ASSERT_EQ(801u, modern_loaded.skin->bones[0].bone.raw_id);
+    ASSERT_FLOAT_EQ(3.0f,
+                    modern_loaded.skin->vertices[0].initial_pos.z, 0.0001f);
+    ASSERT_FLOAT_EQ(0.75f,
+                    modern_loaded.skin->vertices[0].bone_weights[0], 0.0001f);
+
+    nmo_chunk_t *default_chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(default_chunk);
+    default_chunk->class_id = NMO_CID_3DENTITY;
+    default_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_3dentity_serialize(
+        &modern_loaded, default_chunk, NULL, &serialize_context));
+    ASSERT_EQ(NMO_CHUNK_DATA_VERSION_CURRENT,
+              nmo_chunk_get_data_version(default_chunk));
+
+    source.skin = NULL;
+    nmo_3dentity_vtable.destroy(&source, NULL, NULL);
+    nmo_3dentity_vtable.destroy(&legacy_loaded, NULL, NULL);
+    nmo_3dentity_vtable.destroy(&legacy_reloaded, NULL, NULL);
+    nmo_3dentity_vtable.destroy(&copied, NULL, NULL);
+    nmo_3dentity_vtable.destroy(&modern_loaded, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, entity_scalar_refs_round_trip_unresolved_raw_ids) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
     ASSERT_NOT_NULL(arena);
@@ -18473,6 +18642,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, sound_family_failures_keep_state_and_target_chunk_atomic);
     REGISTER_TEST(chunk_id_remap, sound_family_copy_preserves_inherited_and_string_state);
     REGISTER_TEST(chunk_id_remap, scalar_ref_sections_do_not_publish_truncated_state);
+    REGISTER_TEST(chunk_id_remap, entity3d_skin_layout_follows_data_version);
     REGISTER_TEST(chunk_id_remap, entity_scalar_refs_round_trip_unresolved_raw_ids);
     REGISTER_TEST(chunk_id_remap, entity_content_equality_ignores_storage_addresses);
     REGISTER_TEST(chunk_id_remap, entity_copy_clones_inherited_and_skin_state);

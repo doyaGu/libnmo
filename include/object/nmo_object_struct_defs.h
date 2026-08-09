@@ -26,18 +26,23 @@ typedef struct nmo_chunk nmo_chunk_t;
 
 typedef struct nmo_3dentity_skin_vertex {
     uint32_t bone_count;
+    uint32_t legacy_before_position;
     nmo_vector_t initial_pos;
+    uint32_t legacy_before_indices;
     uint32_t *bone_indices;
+    uint32_t legacy_before_weights;
     float *bone_weights;
 } nmo_3dentity_skin_vertex_t;
 
 typedef struct nmo_3dentity_skin_bone {
     nmo_ref_t bone;
     uint32_t bone_flags;
+    uint32_t legacy_before_matrix;
     nmo_matrix_t inverse_bind_matrix;
 } nmo_3dentity_skin_bone_t;
 
 typedef struct nmo_3dentity_skin {
+    uint32_t legacy_before_matrix;
     nmo_matrix_t object_init_matrix;
     uint32_t bone_count;
     nmo_3dentity_skin_bone_t *bones;

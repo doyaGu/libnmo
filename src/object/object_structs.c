@@ -167,8 +167,11 @@ nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry) {
     /* CK3dEntitySkinVertex */
     static const nmo_struct_field_def_t ck3dentityskinvertex_fields[] = {
         NMO_STRUCT_FIELD_GUID("bone_count", CKPGUID_UINT32),
+        NMO_STRUCT_FIELD_GUID("legacy_before_position", CKPGUID_UINT32),
         NMO_STRUCT_FIELD_GUID("initial_pos", CKPGUID_VECTOR),
+        NMO_STRUCT_FIELD_GUID("legacy_before_indices", CKPGUID_UINT32),
         NMO_STRUCT_FIELD_PTR_COUNTED(nmo_3dentity_skin_vertex_t, bone_indices, bone_count, 1),
+        NMO_STRUCT_FIELD_GUID("legacy_before_weights", CKPGUID_UINT32),
         NMO_STRUCT_FIELD_PTR_COUNTED(nmo_3dentity_skin_vertex_t, bone_weights, bone_count, 1)
     };
     static const nmo_struct_type_def_t ck3dentityskinvertex_def =
@@ -179,6 +182,7 @@ nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry) {
     static const nmo_struct_field_def_t ck3dentityskinbone_fields[] = {
         NMO_STRUCT_FIELD_REF_RECORD("bone"),
         NMO_STRUCT_FIELD_GUID("bone_flags", CKPGUID_UINT32),
+        NMO_STRUCT_FIELD_GUID("legacy_before_matrix", CKPGUID_UINT32),
         NMO_STRUCT_FIELD_GUID("inverse_bind_matrix", CKPGUID_MATRIX)
     };
     static const nmo_struct_type_def_t ck3dentityskinbone_def =
@@ -187,6 +191,7 @@ nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry) {
 
     /* CK3dEntitySkin */
     static const nmo_struct_field_def_t ck3dentityskin_fields[] = {
+        NMO_STRUCT_FIELD_GUID("legacy_before_matrix", CKPGUID_UINT32),
         NMO_STRUCT_FIELD_GUID("object_init_matrix", CKPGUID_MATRIX),
         NMO_STRUCT_FIELD_GUID("bone_count", CKPGUID_UINT32),
         NMO_STRUCT_FIELD_PTR_COUNTED(nmo_3dentity_skin_t, bones, bone_count, 1),
