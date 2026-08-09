@@ -389,6 +389,51 @@ static nmo_status_t runtime_remap_3dentity_skin_refs(
     return NMO_OK;
 }
 
+static nmo_status_t runtime_remap_dataarray_refs(
+    nmo_dataarray_state_t *state,
+    const nmo_id_remap_t *remap)
+{
+    if (state == NULL) return NMO_OK;
+    if ((state->column_count > 0 && state->column_formats == NULL) ||
+        (state->row_count > 0 && state->rows == NULL)) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+
+    for (uint32_t row_index = 0; row_index < state->row_count; ++row_index) {
+        nmo_dataarray_row_t *row = &state->rows[row_index];
+        if (row->column_count != state->column_count ||
+            (row->column_count > 0 && row->cells == NULL)) {
+            return NMO_ERR_VALIDATION_FAILED;
+        }
+        for (uint32_t column_index = 0;
+             column_index < state->column_count;
+             ++column_index) {
+            nmo_ref_t *ref = NULL;
+            switch (state->column_formats[column_index].type) {
+            case CKARRAYTYPE_OBJECT:
+                ref = &row->cells[column_index].object_ref;
+                break;
+            case CKARRAYTYPE_PARAMETER:
+                ref = &row->cells[column_index].parameter.ref;
+                break;
+            case CKARRAYTYPE_INT:
+            case CKARRAYTYPE_FLOAT:
+            case CKARRAYTYPE_STRING:
+                continue;
+            default:
+                return NMO_ERR_VALIDATION_FAILED;
+            }
+
+            nmo_object_id_t mapped = NMO_OBJECT_ID_NONE;
+            if (ref->state == NMO_REF_RESOLVED &&
+                runtime_lookup_mapping(remap, ref->id, &mapped)) {
+                ref->id = mapped;
+            }
+        }
+    }
+    return NMO_OK;
+}
+
 /* 鈹€鈹€ Public API 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 nmo_status_t nmo_runtime_remap_copy_refs(
@@ -469,6 +514,10 @@ nmo_status_t nmo_runtime_remap_copy_refs(
         if (nmo_guid_equals(current->guid, CKPGUID_3DENTITY)) {
             NMO_RETURN_IF_ERROR(runtime_remap_3dentity_skin_refs(
                 (nmo_3dentity_state_t *)current_instance, remap));
+        }
+        if (nmo_guid_equals(current->guid, CKPGUID_DATAARRAY)) {
+            NMO_RETURN_IF_ERROR(runtime_remap_dataarray_refs(
+                (nmo_dataarray_state_t *)current_instance, remap));
         }
 
     }

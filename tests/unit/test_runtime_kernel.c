@@ -2576,6 +2576,65 @@ TEST(runtime_kernel, copy_remap_and_graph_include_skin_bones) {
     nmo_context_release(ctx);
 }
 
+TEST(runtime_kernel, copy_remap_updates_only_resolved_dataarray_refs) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    const nmo_type_runtime_t *type_rt = nmo_context_get_type_runtime(ctx);
+    const nmo_type_descriptor_t *dataarray_type =
+        nmo_type_registry_find_by_class_id(
+            type_rt->types, NMO_CID_DATAARRAY);
+    ASSERT_NOT_NULL(dataarray_type);
+
+    nmo_dataarray_column_format_t formats[] = {
+        {.type = CKARRAYTYPE_OBJECT},
+        {.type = CKARRAYTYPE_OBJECT},
+        {.type = CKARRAYTYPE_PARAMETER},
+        {.type = CKARRAYTYPE_PARAMETER},
+        {.type = CKARRAYTYPE_INT},
+    };
+    nmo_dataarray_cell_t cells[5] = {0};
+    cells[0].object_ref = nmo_ref_from_id(101);
+    cells[1].object_ref = nmo_ref_from_raw(102);
+    cells[2].parameter.ref = nmo_ref_from_id(103);
+    cells[3].parameter.ref = nmo_ref_from_raw(104);
+    cells[4].int_value = 42;
+    nmo_dataarray_row_t row = {
+        .column_count = 5,
+        .cells = cells,
+    };
+    nmo_dataarray_state_t state = {
+        .column_count = 5,
+        .column_formats = formats,
+        .row_count = 1,
+        .rows = &row,
+    };
+
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_id_remap_t *remap = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(remap);
+    for (nmo_object_id_t old_id = 101; old_id <= 104; ++old_id) {
+        ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, old_id, old_id + 100));
+    }
+
+    ASSERT_EQ(NMO_OK, nmo_runtime_remap_copy_refs(
+        type_rt, dataarray_type, &state, remap));
+    ASSERT_EQ(201u, nmo_ref_runtime_id(&cells[0].object_ref));
+    ASSERT_EQ(101u, cells[0].object_ref.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, cells[1].object_ref.state);
+    ASSERT_EQ(102u, cells[1].object_ref.raw_id);
+    ASSERT_EQ(203u, nmo_ref_runtime_id(&cells[2].parameter.ref));
+    ASSERT_EQ(103u, cells[2].parameter.ref.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, cells[3].parameter.ref.state);
+    ASSERT_EQ(104u, cells[3].parameter.ref.raw_id);
+    ASSERT_EQ(42, cells[4].int_value);
+    ASSERT_EQ(5u, row.column_count);
+    ASSERT_EQ(1u, state.row_count);
+
+    nmo_arena_destroy(arena);
+    nmo_context_release(ctx);
+}
+
 TEST(runtime_kernel, normalize_and_safe_detach_preserve_skin_indices) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
@@ -2931,6 +2990,7 @@ REGISTER_TEST(runtime_kernel, normalize_and_safe_detach_keep_patchmesh_records_a
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_curve_refs);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_place_portals);
 REGISTER_TEST(runtime_kernel, copy_remap_and_graph_include_skin_bones);
+REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_dataarray_refs);
 REGISTER_TEST(runtime_kernel, normalize_and_safe_detach_preserve_skin_indices);
 REGISTER_TEST(runtime_kernel, normalize_clears_invalid_dataarray_cells);
 REGISTER_TEST(runtime_kernel, normalize_and_safe_detach_keep_place_portals_atomic);
