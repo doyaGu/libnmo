@@ -523,6 +523,40 @@ static nmo_status_t nmo_behavior_seek_optional(
     return result == NMO_ERR_NOT_FOUND ? NMO_OK : result;
 }
 
+static nmo_status_t nmo_behavior_read_single_activity(
+    nmo_chunk_t *chunk,
+    nmo_behavior_state_t *state)
+{
+    const uint32_t preferred_id = state->use_legacy_identifiers
+        ? CK_STATESAVE_BEHAVIORSINGLEACTIVITY_LEGACY
+        : CK_STATESAVE_BEHAVIORSINGLEACTIVITY;
+    const uint32_t fallback_id = state->use_legacy_identifiers
+        ? CK_STATESAVE_BEHAVIORSINGLEACTIVITY
+        : CK_STATESAVE_BEHAVIORSINGLEACTIVITY_LEGACY;
+    size_t section_dwords = 0u;
+    nmo_status_t result = nmo_chunk_seek_identifier_with_size(
+        chunk, preferred_id, &section_dwords);
+    if (result == NMO_ERR_NOT_FOUND) {
+        result = nmo_chunk_seek_identifier_with_size(
+            chunk, fallback_id, &section_dwords);
+        if (result == NMO_OK) {
+            if (fallback_id ==
+                CK_STATESAVE_BEHAVIORSINGLEACTIVITY_LEGACY) {
+                state->use_legacy_identifiers = true;
+            }
+        }
+    }
+    if (result == NMO_ERR_NOT_FOUND) return NMO_OK;
+    if (result != NMO_OK) return result;
+    if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+    if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
+
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(
+        chunk, &state->single_activity_flags));
+    state->has_single_activity = true;
+    return NMO_OK;
+}
+
 static nmo_status_t nmo_behavior_read_ref_section(
     nmo_chunk_t *chunk,
     uint32_t identifier,
@@ -620,6 +654,8 @@ static nmo_status_t nmo_behavior_deserialize_internal(
                 chunk, section_end));
         }
 
+        NMO_RETURN_IF_ERROR(nmo_behavior_read_single_activity(
+            chunk, out_state));
         behavior_check_ref_classes(out_state, context);
         NMO_RETURN_OK();
     }
@@ -903,19 +939,9 @@ static nmo_status_t nmo_behavior_deserialize_internal(
             chunk, section_end));
     }
 
-    /* Optional: Single activity flags */
-    uint32_t single_activity_id = out_state->use_legacy_identifiers
-        ? CK_STATESAVE_BEHAVIORSINGLEACTIVITY_LEGACY
-        : CK_STATESAVE_BEHAVIORSINGLEACTIVITY;
-    size_t single_activity_dwords = 0u;
-    result = nmo_chunk_seek_identifier_with_size(
-        chunk, single_activity_id, &single_activity_dwords);
-    if (result == NMO_OK) {
-        if (single_activity_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
-        if (single_activity_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
-        NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->single_activity_flags));
-        out_state->has_single_activity = true;
-    } else if (result != NMO_ERR_NOT_FOUND) return result;
+    /* Single activity is shared by file and non-file layouts. */
+    NMO_RETURN_IF_ERROR(nmo_behavior_read_single_activity(
+        chunk, out_state));
 
     if (nmo_chunk_get_data_version(chunk) < 5) {
         if (out_state->flags & CKBEHAVIOR_BUILDINGBLOCK) {

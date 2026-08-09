@@ -1106,6 +1106,46 @@ TEST(chunk_id_remap, behavior_sections_do_not_borrow_following_identifiers) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, behavior_non_file_reads_single_activity) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+
+    const uint32_t activity_ids[] = {
+        CK_STATESAVE_BEHAVIORSINGLEACTIVITY,
+        0x00000004u,
+    };
+    for (size_t i = 0; i < sizeof(activity_ids) / sizeof(activity_ids[0]); ++i) {
+        nmo_chunk_t *chunk = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(chunk);
+        chunk->class_id = NMO_CID_BEHAVIOR;
+        chunk->data_version = 7;
+        ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+            chunk, CK_STATESAVE_BEHAVIORSUBBEHAV));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 0));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+            chunk, CK_STATESAVE_BEHAVIORLOCALPARAMS));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 0));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+            chunk, activity_ids[i]));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+            chunk, 0x12345678u + (uint32_t)i));
+        nmo_chunk_close(chunk);
+
+        nmo_behavior_state_t state;
+        ASSERT_EQ(NMO_OK, nmo_behavior_vtable.create(&state, NULL, NULL));
+        ASSERT_EQ(NMO_OK, nmo_behavior_deserialize(
+            &state, chunk, NULL, NULL));
+        ASSERT_TRUE(state.has_single_activity);
+        ASSERT_EQ(0x12345678u + (uint32_t)i,
+                  state.single_activity_flags);
+        ASSERT_EQ(i == 1u, state.use_legacy_identifiers);
+        nmo_behavior_vtable.destroy(&state, NULL, NULL);
+    }
+
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, behavior_serializer_does_not_publish_partial_chunk) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
@@ -15549,6 +15589,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, unresolved_ref_preserves_raw_id);
     REGISTER_TEST(chunk_id_remap, behavior_unresolved_ref_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, behavior_sections_do_not_borrow_following_identifiers);
+    REGISTER_TEST(chunk_id_remap, behavior_non_file_reads_single_activity);
     REGISTER_TEST(chunk_id_remap, behavior_serializer_does_not_publish_partial_chunk);
     REGISTER_TEST(chunk_id_remap, behaviorio_truncation_keeps_previous_state);
     REGISTER_TEST(chunk_id_remap, behavior_layout_defaults_preserve_legacy_absence);
