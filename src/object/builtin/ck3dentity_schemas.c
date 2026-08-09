@@ -80,11 +80,11 @@ static const nmo_type_field_t nmo_3dentity_fields[] = {
     NMO_FIELD(nmo_3dentity_state_t, entity_flags, NMO_GUID_ENUM_CK_3DENTITY_FLAGS),
     NMO_FIELD(nmo_3dentity_state_t, moveable_flags, NMO_GUID_ENUM_VX_MOVEABLE_FLAGS),
     /* Hierarchy */
-    NMO_FIELD_REF(nmo_3dentity_state_t, parent),
-    NMO_FIELD_REF(nmo_3dentity_state_t, place),
+    NMO_FIELD_REF_VALUE(nmo_3dentity_state_t, parent),
+    NMO_FIELD_REF_VALUE(nmo_3dentity_state_t, place),
     NMO_FIELD(nmo_3dentity_state_t, z_order, CKPGUID_INT),
     /* Meshes */
-    NMO_FIELD_REF(nmo_3dentity_state_t, current_mesh),
+    NMO_FIELD_REF_VALUE(nmo_3dentity_state_t, current_mesh),
     NMO_FIELD(nmo_3dentity_state_t, mesh_count, CKPGUID_UINT32),
     NMO_FIELD_REF_RECORD_ARRAY_COUNTED(nmo_3dentity_state_t, mesh_ids, mesh_count),
     /* Animations */

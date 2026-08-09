@@ -78,7 +78,7 @@ static const nmo_type_field_t nmo_parameter_fields[] = {
     NMO_FIELD(nmo_parameter_state_t, mode, NMO_GUID_ENUM_CK_PARAMETER_MODE),
     NMO_FIELD(nmo_parameter_state_t, has_state, CKPGUID_BOOL),
     NMO_FIELD_ARRAY(nmo_parameter_state_t, buffer_data, CKPGUID_UINT8),
-    NMO_FIELD_REF(nmo_parameter_state_t, object_ref),
+    NMO_FIELD_REF_VALUE(nmo_parameter_state_t, object_ref),
     NMO_FIELD(nmo_parameter_state_t, manager_guid, CKPGUID_GUID),
     NMO_FIELD(nmo_parameter_state_t, manager_value, CKPGUID_UINT32),
     NMO_FIELD_OPT(nmo_parameter_state_t, subchunk, CKPGUID_STATECHUNK)

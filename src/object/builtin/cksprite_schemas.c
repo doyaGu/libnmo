@@ -64,7 +64,7 @@ static const nmo_type_field_t nmo_sprite_fields[] = {
                     sizeof(nmo_2dentity_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_sprite_state_t, has_sprite_ref, CKPGUID_BOOL),
-    NMO_FIELD_REF(nmo_sprite_state_t, sprite_ref),
+    NMO_FIELD_REF_VALUE(nmo_sprite_state_t, sprite_ref),
     NMO_FIELD(nmo_sprite_state_t, has_bitmap_data, CKPGUID_BOOL),
     NMO_FIELD_NAMED("bitmap_data", offsetof(nmo_sprite_state_t, bitmap_data),
                     sizeof(nmo_bitmapdata_t), NMO_GUID_STRUCT_CKBITMAPDATA,

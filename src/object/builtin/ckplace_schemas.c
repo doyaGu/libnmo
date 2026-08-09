@@ -201,9 +201,9 @@ static const nmo_type_field_t nmo_place_fields[] = {
                     sizeof(nmo_3dentity_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_place_state_t, has_camera, CKPGUID_UINT8),
-    NMO_FIELD_REF(nmo_place_state_t, camera),
+    NMO_FIELD_REF_VALUE(nmo_place_state_t, camera),
     NMO_FIELD(nmo_place_state_t, has_level, CKPGUID_UINT8),
-    NMO_FIELD_REF(nmo_place_state_t, level),
+    NMO_FIELD_REF_VALUE(nmo_place_state_t, level),
     NMO_FIELD_ARRAY(nmo_place_state_t, portals, NMO_GUID_STRUCT_CKPLACEPORTALENTRY),
     NMO_FIELD_REF_RECORD_ARRAY(nmo_place_state_t, references)
 };

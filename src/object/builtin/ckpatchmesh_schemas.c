@@ -127,7 +127,7 @@ static const nmo_type_field_t nmo_patchmesh_fields[] = {
     NMO_FIELD_ARRAY_COUNTED(nmo_patchmesh_state_t, edge_data, edge_data_size, 1, CKPGUID_UINT8),
     NMO_FIELD(nmo_patchmesh_state_t, channel_count, CKPGUID_UINT32),
     NMO_FIELD_ARRAY_COUNTED(nmo_patchmesh_state_t, channels, channel_count, 1, NMO_GUID_STRUCT_CKPATCHMESHCHANNEL),
-    NMO_FIELD_REF(nmo_patchmesh_state_t, legacy_default_material),
+    NMO_FIELD_REF_VALUE(nmo_patchmesh_state_t, legacy_default_material),
     NMO_FIELD(nmo_patchmesh_state_t, legacy_patch_count, CKPGUID_UINT32),
     NMO_FIELD(nmo_patchmesh_state_t, legacy_patch_data_size, CKPGUID_UINT64),
     NMO_FIELD_ARRAY_COUNTED(nmo_patchmesh_state_t, legacy_patch_data, legacy_patch_data_size, 1, CKPGUID_UINT8),

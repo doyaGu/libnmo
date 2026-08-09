@@ -44,7 +44,7 @@ static const nmo_type_field_t nmo_parameterout_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_parameterout_state_t, base),
                     sizeof(nmo_parameter_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD_REF(nmo_parameterout_state_t, owner),
+    NMO_FIELD_REF_VALUE(nmo_parameterout_state_t, owner),
     NMO_FIELD(nmo_parameterout_state_t, destination_count, CKPGUID_UINT32),
     NMO_FIELD_REF_RECORD_ARRAY_COUNTED(
         nmo_parameterout_state_t, destination_ids, destination_count)

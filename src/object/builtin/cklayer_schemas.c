@@ -278,7 +278,7 @@ static const nmo_type_field_t nmo_layer_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_layer_state_t, base),
                     sizeof(nmo_object_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD_REF(nmo_layer_state_t, grid),
+    NMO_FIELD_REF_VALUE(nmo_layer_state_t, grid),
     NMO_FIELD(nmo_layer_state_t, type, CKPGUID_INT),
     NMO_FIELD(nmo_layer_state_t, format, CKPGUID_INT),
     NMO_FIELD(nmo_layer_state_t, version, CKPGUID_INT),

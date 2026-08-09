@@ -82,9 +82,9 @@ static const nmo_type_field_t nmo_kinematicchain_fields[] = {
                     sizeof(nmo_object_state_t), CKPGUID_OBJECT,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_kinematicchain_state_t, has_chain_data, CKPGUID_UINT8),
-    NMO_FIELD_REF(nmo_kinematicchain_state_t, legacy_object),
-    NMO_FIELD_REF(nmo_kinematicchain_state_t, start_effector),
-    NMO_FIELD_REF(nmo_kinematicchain_state_t, end_effector)
+    NMO_FIELD_REF_VALUE(nmo_kinematicchain_state_t, legacy_object),
+    NMO_FIELD_REF_VALUE(nmo_kinematicchain_state_t, start_effector),
+    NMO_FIELD_REF_VALUE(nmo_kinematicchain_state_t, end_effector)
 };
 
 nmo_status_t nmo_kinematicchain_prepare_dependencies(

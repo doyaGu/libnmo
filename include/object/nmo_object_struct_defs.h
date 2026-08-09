@@ -278,7 +278,7 @@ typedef struct nmo_ik_joint {
 } nmo_ik_joint_t;
 
 typedef struct nmo_character_subpart {
-    nmo_object_id_t object_id;
+    nmo_ref_t ref;
     nmo_chunk_t *chunk;
 } nmo_character_subpart_t;
 

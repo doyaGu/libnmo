@@ -38,7 +38,7 @@ static const nmo_type_field_t nmo_parameteroperation_fields[] = {
                     sizeof(nmo_object_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_parameteroperation_state_t, operation_guid, CKPGUID_GUID),
-    NMO_FIELD_REF(nmo_parameteroperation_state_t, legacy_prefix_ref),
+    NMO_FIELD_REF_VALUE(nmo_parameteroperation_state_t, legacy_prefix_ref),
     NMO_FIELD_NAMED("owner", offsetof(nmo_parameteroperation_state_t, owner),
                     sizeof(nmo_ref_t), CKPGUID_ID,
                     NMO_FIELD_REFERENCE | NMO_FIELD_REF_RECORD,

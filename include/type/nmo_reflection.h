@@ -181,6 +181,22 @@ extern "C" {
         .default_value = NULL \
     }
 
+/** Define a scalar object reference stored as a lossless nmo_ref_t record. */
+#define NMO_FIELD_REF_VALUE(_struct, _field) \
+    { \
+        .name = #_field, \
+        .description = NULL, \
+        .type_guid = CKPGUID_ID_INIT, \
+        .offset = (uint32_t)offsetof(_struct, _field), \
+        .size = (uint32_t)sizeof(((_struct*)0)->_field), \
+        .flags = NMO_FIELD_REFERENCE | NMO_FIELD_REF_RECORD, \
+        .added_version = 0, \
+        .removed_version = 0, \
+        .semantic = NMO_SEMANTIC_OBJECT_REF, \
+        .units = NMO_UNITS_NONE, \
+        .default_value = NULL \
+    }
+
 /**
  * @brief Define an array of object references
  */

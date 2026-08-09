@@ -124,7 +124,7 @@ static const nmo_type_field_t nmo_wavesound_fields[] = {
     NMO_FIELD(nmo_wavesound_state_t, min_distance, CKPGUID_FLOAT),
     NMO_FIELD(nmo_wavesound_state_t, max_distance, CKPGUID_FLOAT),
     NMO_FIELD(nmo_wavesound_state_t, distance_behavior, CKPGUID_UINT32),
-    NMO_FIELD_REF(nmo_wavesound_state_t, attached_object),
+    NMO_FIELD_REF_VALUE(nmo_wavesound_state_t, attached_object),
     NMO_FIELD_NAMED("position", offsetof(nmo_wavesound_state_t, position),
                     sizeof(nmo_vector_t), CKPGUID_VECTOR,
                     NMO_FIELD_REQUIRED, 0),

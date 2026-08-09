@@ -22,6 +22,7 @@
 #define CID_TRAP        0x7F010005u
 #define CID_COUNTED     0x7F010006u
 #define CID_REFARRAY    0x7F010007u
+#define CID_REFRECORD   0x7F010008u
 
 #define GUID_PAIR       NMO_GUID(0xA0010001u, 0xB0010001u)
 #define GUID_OWNER      NMO_GUID(0xA0010002u, 0xB0010002u)
@@ -31,6 +32,7 @@
 #define GUID_PAIR_ALIAS NMO_GUID(0xA0010006u, 0xB0010006u)
 #define GUID_COUNTED    NMO_GUID(0xA0010007u, 0xB0010007u)
 #define GUID_REFARRAY   NMO_GUID(0xA0010008u, 0xB0010008u)
+#define GUID_REFRECORD  NMO_GUID(0xA0010009u, 0xB0010009u)
 
 typedef struct {
     int32_t a;
@@ -67,6 +69,10 @@ typedef struct {
 typedef struct {
     nmo_array_t targets;
 } ref_array_state_t;
+
+typedef struct {
+    nmo_ref_t target;
+} ref_record_state_t;
 
 typedef struct {
     nmo_context_t *ctx;
@@ -139,6 +145,9 @@ static bool register_test_types(nmo_context_t *ctx) {
     };
     static const nmo_type_field_t ref_array_fields[] = {
         NMO_FIELD_REF_RECORD_ARRAY(ref_array_state_t, targets),
+    };
+    static const nmo_type_field_t ref_record_fields[] = {
+        NMO_FIELD_REF_VALUE(ref_record_state_t, target),
     };
 
     nmo_type_descriptor_t pair_desc = {
@@ -269,6 +278,22 @@ static bool register_test_types(nmo_context_t *ctx) {
         .field_count = NMO_FIELD_COUNT(ref_array_fields),
         .vtable = &k_dummy_object_vtable,
     };
+    nmo_type_descriptor_t ref_record_desc = {
+        .guid = GUID_REFRECORD,
+        .id = 0,
+        .class_id = CID_REFRECORD,
+        .category = NMO_TYPE_CATEGORY_STRUCT,
+        .flags = NMO_TYPE_FLAG_COPYABLE,
+        .name = "DiffRefRecord",
+        .description = NULL,
+        .base_type = NMO_GUID_NULL,
+        .base_type_id = 0,
+        .size = sizeof(ref_record_state_t),
+        .alignment = (uint32_t)_Alignof(ref_record_state_t),
+        .fields = ref_record_fields,
+        .field_count = NMO_FIELD_COUNT(ref_record_fields),
+        .vtable = &k_dummy_object_vtable,
+    };
 
     if (nmo_type_registry_register(registry, &pair_desc) != NMO_OK) return false;
     if (nmo_type_registry_register(registry, &owner_desc) != NMO_OK) return false;
@@ -278,6 +303,7 @@ static bool register_test_types(nmo_context_t *ctx) {
     if (nmo_type_registry_register(registry, &pair_alias_desc) != NMO_OK) return false;
     if (nmo_type_registry_register(registry, &counted_desc) != NMO_OK) return false;
     if (nmo_type_registry_register(registry, &ref_array_desc) != NMO_OK) return false;
+    if (nmo_type_registry_register(registry, &ref_record_desc) != NMO_OK) return false;
     if (nmo_type_registry_finalize(registry) != NMO_OK) return false;
     return true;
 }
@@ -597,6 +623,39 @@ TEST(object_diff, ref_record_arrays_use_matches_and_preserve_invalid_raw_ids) {
     fixture_destroy(&fx);
 }
 
+TEST(object_diff, scalar_ref_records_preserve_invalid_raw_ids) {
+    diff_fixture_t fx;
+    ASSERT_TRUE(fixture_init(&fx));
+
+    nmo_object_t *holder1 = add_object(
+        fx.ctx, fx.ses1, 20, CID_REFRECORD, "Holder",
+        sizeof(ref_record_state_t));
+    nmo_object_t *holder2 = add_object(
+        fx.ctx, fx.ses2, 120, CID_REFRECORD, "Holder",
+        sizeof(ref_record_state_t));
+    ASSERT_NOT_NULL(holder1);
+    ASSERT_NOT_NULL(holder2);
+    ref_record_state_t *state1 = nmo_object_get_state(holder1);
+    ref_record_state_t *state2 = nmo_object_get_state(holder2);
+    state1->target = nmo_ref_from_raw(700u);
+    state2->target = nmo_ref_from_raw(701u);
+
+    nmo_diff_result_t diff;
+    ASSERT_EQ(NMO_OK, run_diff(&fx, NULL, &diff));
+    ASSERT_EQ(1u, diff.changed_count);
+    ASSERT_EQ(1u, diff.changed[0].field_diff_total);
+    ASSERT_STR_EQ("target", diff.changed[0].field_diffs[0].field_name);
+    nmo_diff_result_destroy(&diff);
+
+    state2->target = nmo_ref_from_raw(700u);
+    ASSERT_EQ(NMO_OK, run_diff(&fx, NULL, &diff));
+    ASSERT_EQ(0u, diff.changed_count);
+    ASSERT_EQ(1u, diff.identical_count);
+    nmo_diff_result_destroy(&diff);
+
+    fixture_destroy(&fx);
+}
+
 TEST(object_diff, min_similarity_rejects_low_pairs) {
     diff_fixture_t fx;
     ASSERT_TRUE(fixture_init(&fx));
@@ -681,6 +740,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_diff, reference_target_rename_compares_equal);
     REGISTER_TEST(object_diff, counted_pointer_array_changes_are_reported);
     REGISTER_TEST(object_diff, ref_record_arrays_use_matches_and_preserve_invalid_raw_ids);
+    REGISTER_TEST(object_diff, scalar_ref_records_preserve_invalid_raw_ids);
     REGISTER_TEST(object_diff, min_similarity_rejects_low_pairs);
     REGISTER_TEST(object_diff, result_stable_across_repeated_runs);
     REGISTER_TEST(object_diff, format_path_prefers_explicit_type_view_name);

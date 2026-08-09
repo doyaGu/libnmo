@@ -72,7 +72,7 @@ static const nmo_type_field_t nmo_sprite3d_fields[] = {
     NMO_FIELD(nmo_sprite3d_state_t, half_height, CKPGUID_FLOAT),
     NMO_FIELD(nmo_sprite3d_state_t, offset, CKPGUID_2DVECTOR),
     NMO_FIELD(nmo_sprite3d_state_t, uv_rect, CKPGUID_RECT),
-    NMO_FIELD_REF(nmo_sprite3d_state_t, material)
+    NMO_FIELD_REF_VALUE(nmo_sprite3d_state_t, material)
 };
 
 static nmo_status_t nmo_sprite3d_deserialize_internal(

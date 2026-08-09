@@ -91,7 +91,7 @@ static const nmo_type_field_t nmo_scene_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_scene_state_t, base),
                          sizeof(nmo_beobject_state_t), CKPGUID_BEOBJECT,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD_REF(nmo_scene_state_t, level),
+    NMO_FIELD_REF_VALUE(nmo_scene_state_t, level),
     NMO_FIELD_ARRAY(nmo_scene_state_t, object_descs, NMO_GUID_STRUCT_CKSCENEOBJECTDESC),
     NMO_FIELD(nmo_scene_state_t, environment_settings, NMO_GUID_ENUM_CK_SCENE_FLAGS),
     NMO_FIELD_NAMED("background_color", offsetof(nmo_scene_state_t, background_color),
@@ -104,8 +104,8 @@ static const nmo_type_field_t nmo_scene_fields[] = {
     NMO_FIELD(nmo_scene_state_t, fog_start, CKPGUID_FLOAT),
     NMO_FIELD(nmo_scene_state_t, fog_end, CKPGUID_FLOAT),
     NMO_FIELD(nmo_scene_state_t, fog_density, CKPGUID_FLOAT),
-    NMO_FIELD_REF(nmo_scene_state_t, background_texture),
-    NMO_FIELD_REF(nmo_scene_state_t, starting_camera)
+    NMO_FIELD_REF_VALUE(nmo_scene_state_t, background_texture),
+    NMO_FIELD_REF_VALUE(nmo_scene_state_t, starting_camera)
 };
 
 /* Scene object flags (CKEnums.h) */

@@ -201,7 +201,7 @@ static const nmo_type_field_t nmo_curvepoint_fields[] = {
                     sizeof(nmo_3dentity_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_curvepoint_state_t, has_default_data, CKPGUID_UINT8),
-    NMO_FIELD_REF(nmo_curvepoint_state_t, curve),
+    NMO_FIELD_REF_VALUE(nmo_curvepoint_state_t, curve),
     NMO_FIELD(nmo_curvepoint_state_t, use_tcb, CKPGUID_INT),
     NMO_FIELD(nmo_curvepoint_state_t, linear, CKPGUID_INT),
     NMO_FIELD(nmo_curvepoint_state_t, tension, CKPGUID_FLOAT),

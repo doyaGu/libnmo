@@ -60,9 +60,9 @@ static const nmo_type_field_t nmo_parameterin_fields[] = {
                     sizeof(nmo_object_state_t), CKPGUID_OBJECT,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_parameterin_state_t, type_guid, CKPGUID_GUID),
-    NMO_FIELD_REF(nmo_parameterin_state_t, legacy_prefix_ref),
-    NMO_FIELD_REF(nmo_parameterin_state_t, source),
-    NMO_FIELD_REF(nmo_parameterin_state_t, owner),
+    NMO_FIELD_REF_VALUE(nmo_parameterin_state_t, legacy_prefix_ref),
+    NMO_FIELD_REF_VALUE(nmo_parameterin_state_t, source),
+    NMO_FIELD_REF_VALUE(nmo_parameterin_state_t, owner),
     NMO_FIELD(nmo_parameterin_state_t, is_shared, CKPGUID_UINT8),
     NMO_FIELD(nmo_parameterin_state_t, is_disabled, CKPGUID_UINT8)
 };

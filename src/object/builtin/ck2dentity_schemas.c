@@ -67,9 +67,9 @@ static const nmo_type_field_t nmo_2dentity_fields[] = {
     NMO_FIELD(nmo_2dentity_state_t, has_z_order, CKPGUID_BOOL),
     NMO_FIELD(nmo_2dentity_state_t, z_order, CKPGUID_INT),
     NMO_FIELD(nmo_2dentity_state_t, has_parent, CKPGUID_BOOL),
-    NMO_FIELD_REF(nmo_2dentity_state_t, parent),
+    NMO_FIELD_REF_VALUE(nmo_2dentity_state_t, parent),
     NMO_FIELD(nmo_2dentity_state_t, has_material, CKPGUID_BOOL),
-    NMO_FIELD_REF(nmo_2dentity_state_t, material),
+    NMO_FIELD_REF_VALUE(nmo_2dentity_state_t, material),
     NMO_FIELD(nmo_2dentity_state_t, flags, NMO_GUID_ENUM_CK_2DENTITY_FLAGS)
 };
 

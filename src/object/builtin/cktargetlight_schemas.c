@@ -45,7 +45,7 @@ static const nmo_type_field_t nmo_targetlight_fields[] = {
                     sizeof(nmo_light_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_targetlight_state_t, has_target, CKPGUID_UINT8),
-    NMO_FIELD_REF(nmo_targetlight_state_t, target)
+    NMO_FIELD_REF_VALUE(nmo_targetlight_state_t, target)
 };
 
 static nmo_status_t nmo_targetlight_deserialize_internal(

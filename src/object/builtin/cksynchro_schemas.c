@@ -92,7 +92,7 @@ static const nmo_type_field_t nmo_criticalsection_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_criticalsection_state_t, base),
                     sizeof(nmo_object_state_t), CKPGUID_OBJECT,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD_REF(nmo_criticalsection_state_t, object_in_section)
+    NMO_FIELD_REF_VALUE(nmo_criticalsection_state_t, object_in_section)
 };
 
 nmo_status_t nmo_state_prepare_dependencies(

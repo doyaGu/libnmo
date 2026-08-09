@@ -45,7 +45,7 @@ static const nmo_type_field_t nmo_targetcamera_fields[] = {
                     sizeof(nmo_camera_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_targetcamera_state_t, has_target, CKPGUID_UINT8),
-    NMO_FIELD_REF(nmo_targetcamera_state_t, target)
+    NMO_FIELD_REF_VALUE(nmo_targetcamera_state_t, target)
 };
 
 static nmo_status_t nmo_targetcamera_deserialize_internal(

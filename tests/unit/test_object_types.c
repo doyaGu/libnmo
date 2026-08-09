@@ -126,11 +126,24 @@ TEST(object_types, register_all_types) {
     const nmo_type_descriptor_t *entity3d =
         nmo_type_registry_find_by_guid(registry, CKPGUID_3DENTITY);
     ASSERT_NOT_NULL(entity3d);
+    const nmo_type_field_t *parent = nmo_type_get_field_by_name(
+        entity3d, "parent");
+    ASSERT_NOT_NULL(parent);
+    ASSERT_TRUE(nmo_field_uses_ref_records(parent));
     const nmo_type_field_t *skin = nmo_type_get_field_by_name(
         entity3d, "skin");
     ASSERT_NOT_NULL(skin);
     ASSERT_TRUE(nmo_guid_equals(skin->type_guid, CKPGUID_CK3DENTITYSKIN));
     ASSERT_TRUE((skin->flags & NMO_FIELD_POINTER) != 0u);
+
+    const nmo_type_descriptor_t *character_subpart =
+        nmo_type_registry_find_by_guid(
+            registry, NMO_GUID_STRUCT_CKCHARACTERSUBPART);
+    ASSERT_NOT_NULL(character_subpart);
+    ASSERT_EQ(sizeof(nmo_character_subpart_t), character_subpart->size);
+    ASSERT_EQ(sizeof(nmo_ref_t), character_subpart->fields[0].size);
+    ASSERT_TRUE(nmo_field_uses_ref_records(
+        &character_subpart->fields[0]));
 
     nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);

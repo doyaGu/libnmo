@@ -292,7 +292,7 @@ nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry) {
 
     /* CKCharacterSubpart */
     static const nmo_struct_field_def_t ckcharactersubpart_fields[] = {
-        NMO_STRUCT_FIELD_GUID_FLAGS("object_id", CKPGUID_ID, NMO_FIELD_REFERENCE),
+        NMO_STRUCT_FIELD_REF_RECORD("ref"),
         NMO_STRUCT_FIELD_GUID("chunk", CKPGUID_STATECHUNK)
     };
     static const nmo_struct_type_def_t ckcharactersubpart_def =
