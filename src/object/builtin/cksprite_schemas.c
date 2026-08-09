@@ -240,8 +240,11 @@ static nmo_status_t deserialize_file_backed(
     nmo_status_t seek_result;
     
     /* Check for sprite reference (identifier 0x80000) */
-    seek_result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SPRITESHARED);
+    size_t section_dwords = 0u;
+    seek_result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_SPRITESHARED, &section_dwords);
     if (seek_result == NMO_OK) {
+        if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
         nmo_ref_t sprite_ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         result = nmo_ref_read(chunk, &sprite_ref);
         if (result != NMO_OK) {
@@ -252,7 +255,7 @@ static nmo_status_t deserialize_file_backed(
         /* When sprite ref is present, bitmap data is cloned from referenced sprite.
          * No bitmap payload should be present in this chunk. */
         out_state->has_bitmap_data = false;
-    } else {
+    } else if (seek_result == NMO_ERR_NOT_FOUND) {
         /* No sprite reference - read embedded bitmap payloads */
         out_state->has_sprite_ref = false;
         out_state->has_bitmap_data = true;
@@ -277,11 +280,13 @@ static nmo_status_t deserialize_file_backed(
             chunk, NMO_CKSPRITE_BITMAP_RAW, arena,
             &out_state->bitmap_data.raw_chunk_data,
             &out_state->bitmap_data.raw_chunk_size));
-    }
+    } else return seek_result;
     
     /* Read transparency (identifier 0x20000) */
-    seek_result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SPRITETRANSPARENT);
+    seek_result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_SPRITETRANSPARENT, &section_dwords);
     if (seek_result == NMO_OK) {
+        if (section_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
         out_state->has_transparency = true;
         result = nmo_chunk_read_dword(chunk, &out_state->transparent_color);
         if (result != NMO_OK) {
@@ -294,23 +299,29 @@ static nmo_status_t deserialize_file_backed(
             return result;
         }
         out_state->is_transparent = (transparent_flag != 0);
-    }
+    } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
     
     /* Read current slot (identifier 0x10000) */
-    seek_result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SPRITECURRENTIMAGE);
+    seek_result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_SPRITECURRENTIMAGE, &section_dwords);
     if (seek_result == NMO_OK) {
+        if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
         out_state->has_slot = true;
         result = nmo_chunk_read_dword(chunk, &out_state->current_slot);
         if (result != NMO_OK) {
             return result;
         }
-    }
+    } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
     
     /* Read save options (identifier 0x20000000) */
-    seek_result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SPRITEFORMAT);
+    seek_result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_SPRITEFORMAT, &section_dwords);
     if (seek_result == NMO_OK) {
-        out_state->has_save_options = true;
-        result = nmo_chunk_read_dword(chunk, &out_state->save_options);
+        const size_t section_end =
+            nmo_chunk_get_position(chunk) + section_dwords;
+        if (section_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
+        uint32_t save_options = 0u;
+        result = nmo_chunk_read_dword(chunk, &save_options);
         if (result != NMO_OK) {
             return result;
         }
@@ -320,11 +331,16 @@ static nmo_status_t deserialize_file_backed(
         size_t props_size = 0;
         result = nmo_chunk_read_buffer(chunk, &props, &props_size);
         if (result != NMO_OK) return result;
+        if (nmo_chunk_get_position(chunk) > section_end) {
+            return NMO_ERR_TRUNCATED_CHUNK;
+        }
+        out_state->has_save_options = true;
+        out_state->save_options = save_options;
         if (props && props_size > 0) {
             out_state->bitmap_properties = (uint8_t *)props;
             out_state->bitmap_properties_size = props_size;
         }
-    }
+    } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
     
     NMO_RETURN_OK();
 }
@@ -347,8 +363,11 @@ static nmo_status_t deserialize_chunk_only(
     /* Chunk-only load skips bitmap payload, only reads references and state */
     
     /* Read transparency (identifier 0x20000) */
-    seek_result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SPRITETRANSPARENT);
+    size_t section_dwords = 0u;
+    seek_result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_SPRITETRANSPARENT, &section_dwords);
     if (seek_result == NMO_OK) {
+        if (section_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
         out_state->has_transparency = true;
         result = nmo_chunk_read_dword(chunk, &out_state->transparent_color);
         if (result != NMO_OK) {
@@ -360,21 +379,25 @@ static nmo_status_t deserialize_chunk_only(
             return result;
         }
         out_state->is_transparent = (transparent_flag != 0);
-    }
+    } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
     
     /* Read current slot (identifier 0x10000) */
-    seek_result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SPRITECURRENTIMAGE);
+    seek_result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_SPRITECURRENTIMAGE, &section_dwords);
     if (seek_result == NMO_OK) {
+        if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
         out_state->has_slot = true;
         result = nmo_chunk_read_dword(chunk, &out_state->current_slot);
         if (result != NMO_OK) {
             return result;
         }
-    }
+    } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
     
     /* Read sprite reference (identifier 0x80000) */
-    seek_result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SPRITESHARED);
+    seek_result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_SPRITESHARED, &section_dwords);
     if (seek_result == NMO_OK) {
+        if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
         nmo_ref_t sprite_ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         result = nmo_ref_read(chunk, &sprite_ref);
         if (result != NMO_OK) {
@@ -382,7 +405,7 @@ static nmo_status_t deserialize_chunk_only(
         }
         out_state->sprite_ref = sprite_ref;
         out_state->has_sprite_ref = sprite_ref.state != NMO_REF_NONE;
-    }
+    } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
     
     NMO_RETURN_OK();
 }

@@ -5328,6 +5328,52 @@ TEST(chunk_id_remap, sprite_failures_keep_state_and_target_chunk_atomic) {
     ASSERT_EQ(901u, nmo_beobject_script_array_get_id(
         &state.entity.base.base.scripts, 0));
 
+    nmo_chunk_t *format_cross_section = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(format_cross_section);
+    format_cross_section->class_id = NMO_CID_SPRITE;
+    format_cross_section->data_version = 7;
+    format_cross_section->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(format_cross_section));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        format_cross_section, CK_STATESAVE_2DENTITYONLY));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(format_cross_section, 0));
+    for (size_t i = 0; i < 4; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_float(
+            format_cross_section, 0.0f));
+    }
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        format_cross_section, CK_STATESAVE_SPRITEFORMAT));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(format_cross_section, 1u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(format_cross_section, 4u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        format_cross_section, 0x44332211u));
+    nmo_chunk_close(format_cross_section);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_sprite_deserialize(
+        &state, format_cross_section, NULL, &deserialize_context));
+    ASSERT_TRUE(state.has_sprite_ref);
+    ASSERT_EQ(902u, state.sprite_ref.raw_id);
+    ASSERT_TRUE(state.has_transparency);
+    ASSERT_EQ(0x11223344u, state.transparent_color);
+    ASSERT_TRUE(state.has_slot);
+    ASSERT_EQ(7u, state.current_slot);
+
+    nmo_chunk_t *shared_cross_section = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(shared_cross_section);
+    shared_cross_section->class_id = NMO_CID_SPRITE;
+    shared_cross_section->data_version = 4;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(shared_cross_section));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        shared_cross_section, CK_STATESAVE_SPRITESHARED));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        shared_cross_section, 904u));
+    nmo_chunk_close(shared_cross_section);
+    nmo_deserialize_context_t chunk_context =
+        nmo_deserialize_context_create(arena, NULL, NULL, 0);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_sprite_deserialize(
+        &state, shared_cross_section, NULL, &chunk_context));
+    ASSERT_TRUE(state.has_sprite_ref);
+    ASSERT_EQ(902u, state.sprite_ref.raw_id);
+
     nmo_id_remap_t *runtime_to_file = nmo_id_remap_create(arena);
     ASSERT_NOT_NULL(runtime_to_file);
     nmo_chunk_file_context_t file_context = {
