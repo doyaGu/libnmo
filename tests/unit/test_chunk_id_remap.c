@@ -6274,6 +6274,32 @@ TEST(chunk_id_remap, grid_failures_keep_state_and_target_chunk_atomic) {
     ASSERT_EQ(old_layers, state.layers.data);
     ASSERT_EQ(1u, state.layers.count);
 
+    nmo_chunk_t *trailing_data = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(trailing_data);
+    trailing_data->class_id = NMO_CID_GRID;
+    trailing_data->data_version = 7;
+    trailing_data->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(trailing_data));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        trailing_data, CK_STATESAVE_GRIDDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(trailing_data, 10));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(trailing_data, 20));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(trailing_data, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(trailing_data, 30));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing_data, 40));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(trailing_data, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(
+        trailing_data, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        trailing_data, 0x12345678u));
+    nmo_chunk_close(trailing_data);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_grid_deserialize(
+        &state, trailing_data, NULL, &deserialize_context));
+    ASSERT_EQ(77, state.width);
+    ASSERT_EQ(88, state.length);
+    ASSERT_EQ(old_layers, state.layers.data);
+    ASSERT_EQ(1u, state.layers.count);
+
     nmo_chunk_t *cross_section_subchunk = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(cross_section_subchunk);
     cross_section_subchunk->class_id = NMO_CID_GRID;
