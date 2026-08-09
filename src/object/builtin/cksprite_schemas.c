@@ -507,6 +507,14 @@ static nmo_status_t nmo_sprite_serialize_internal(
         return result;
     }
     NMO_RETURN_IF_ERROR(nmo_sprite_validate(in_state, type, context));
+    if (is_file && in_state->has_bitmap_data &&
+        (in_state->bitmap_data.width != 0u ||
+         in_state->bitmap_data.height != 0u ||
+         in_state->bitmap_data.pixel_data_size != 0u)) {
+        NMO_RETURN_ERROR(
+            NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+            "Sprite decoded pixel data cannot be serialized losslessly");
+    }
 
     if (in_state->has_sprite_ref) {
         if (is_file || (save_flags & CK_STATESAVE_SPRITESHARED) != 0u) {
@@ -553,35 +561,60 @@ static nmo_status_t nmo_sprite_serialize_internal(
                     in_state->bitmap_data.pixels_size);
                 if (result != NMO_OK) return result;
             }
+            if (in_state->bitmap_data.raw_chunk_data &&
+                in_state->bitmap_data.raw_chunk_size > 0) {
+                result = nmo_chunk_write_identifier(
+                    out_chunk, NMO_CKSPRITE_BITMAP_RAW);
+                if (result != NMO_OK) return result;
+                result = nmo_chunk_write_buffer_no_size(
+                    out_chunk,
+                    in_state->bitmap_data.raw_chunk_data,
+                    in_state->bitmap_data.raw_chunk_size);
+                if (result != NMO_OK) return result;
+            }
         }
 
-        result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_SPRITETRANSPARENT);
-        if (result != NMO_OK) return result;
-        result = nmo_chunk_write_dword(out_chunk, in_state->transparent_color);
-        if (result != NMO_OK) return result;
-        result = nmo_chunk_write_dword(out_chunk, in_state->is_transparent ? 1 : 0);
-        if (result != NMO_OK) return result;
+        if (in_state->has_transparency) {
+            result = nmo_chunk_write_identifier(
+                out_chunk, CK_STATESAVE_SPRITETRANSPARENT);
+            if (result != NMO_OK) return result;
+            result = nmo_chunk_write_dword(
+                out_chunk, in_state->transparent_color);
+            if (result != NMO_OK) return result;
+            result = nmo_chunk_write_dword(
+                out_chunk, in_state->is_transparent ? 1 : 0);
+            if (result != NMO_OK) return result;
+        }
 
-        result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_SPRITECURRENTIMAGE);
-        if (result != NMO_OK) return result;
-        result = nmo_chunk_write_dword(out_chunk, in_state->current_slot);
-        if (result != NMO_OK) return result;
+        if (in_state->has_slot) {
+            result = nmo_chunk_write_identifier(
+                out_chunk, CK_STATESAVE_SPRITECURRENTIMAGE);
+            if (result != NMO_OK) return result;
+            result = nmo_chunk_write_dword(
+                out_chunk, in_state->current_slot);
+            if (result != NMO_OK) return result;
+        }
 
-        result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_SPRITEFORMAT);
-        if (result != NMO_OK) return result;
-        result = nmo_chunk_write_dword(out_chunk, in_state->save_options);
-        if (result != NMO_OK) return result;
+        if (in_state->has_save_options) {
+            result = nmo_chunk_write_identifier(
+                out_chunk, CK_STATESAVE_SPRITEFORMAT);
+            if (result != NMO_OK) return result;
+            result = nmo_chunk_write_dword(out_chunk, in_state->save_options);
+            if (result != NMO_OK) return result;
 
-        if (in_state->bitmap_properties && in_state->bitmap_properties_size > 0) {
-            result = nmo_chunk_write_buffer(out_chunk, in_state->bitmap_properties,
-                in_state->bitmap_properties_size);
-            if (result != NMO_OK) {
-                return result;
-            }
-        } else {
-            result = nmo_chunk_write_buffer(out_chunk, NULL, 0);
-            if (result != NMO_OK) {
-                return result;
+            if (in_state->bitmap_properties &&
+                in_state->bitmap_properties_size > 0) {
+                result = nmo_chunk_write_buffer(
+                    out_chunk, in_state->bitmap_properties,
+                    in_state->bitmap_properties_size);
+                if (result != NMO_OK) {
+                    return result;
+                }
+            } else {
+                result = nmo_chunk_write_buffer(out_chunk, NULL, 0);
+                if (result != NMO_OK) {
+                    return result;
+                }
             }
         }
     } else {
@@ -702,6 +735,14 @@ static nmo_status_t nmo_sprite_validate(
     if (s == NULL) return NMO_ERR_INVALID_ARGUMENT;
     NMO_RETURN_IF_ERROR(nmo_2dentity_vtable.validate(
         &s->entity, NULL, context));
+    const bool has_serialized_ref =
+        nmo_ref_serialized_id(&s->sprite_ref) != NMO_OBJECT_ID_NONE;
+    if ((s->has_sprite_ref != 0) != has_serialized_ref ||
+        (s->has_sprite_ref && s->has_bitmap_data)) {
+        NMO_RETURN_ERROR(
+            NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+            "Sprite reference and bitmap modes are inconsistent");
+    }
     NMO_VALIDATE_BYTES(s->bitmap_data.pixel_data, s->bitmap_data.pixel_data_size,
                        "bitmap_data.pixel_data");
     NMO_VALIDATE_BYTES(s->bitmap_data.palette_data, s->bitmap_data.palette_size,
@@ -715,6 +756,23 @@ static nmo_status_t nmo_sprite_validate(
     NMO_VALIDATE_BYTES(s->bitmap_data.raw_chunk_data, s->bitmap_data.raw_chunk_size,
                        "bitmap_data.raw_chunk_data");
     NMO_VALIDATE_BYTES(s->bitmap_properties, s->bitmap_properties_size, "bitmap_properties");
+    if (!s->has_bitmap_data &&
+        (s->bitmap_data.width != 0u || s->bitmap_data.height != 0u ||
+         s->bitmap_data.pixel_data_size != 0u ||
+         s->bitmap_data.palette_size != 0u ||
+         s->bitmap_data.system_copy_size != 0u ||
+         s->bitmap_data.video_backup_size != 0u ||
+         s->bitmap_data.pixels_size != 0u ||
+         s->bitmap_data.raw_chunk_size != 0u)) {
+        NMO_RETURN_ERROR(
+            NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+            "Sprite bitmap payload is present while bitmap mode is disabled");
+    }
+    if (!s->has_save_options && s->bitmap_properties_size != 0u) {
+        NMO_RETURN_ERROR(
+            NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+            "Sprite bitmap properties require save options");
+    }
     NMO_RETURN_OK();
 }
 

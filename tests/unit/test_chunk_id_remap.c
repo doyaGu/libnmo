@@ -4379,6 +4379,77 @@ TEST(chunk_id_remap, sprite_shared_ref_round_trips_raw_id) {
     ASSERT_EQ(555u, loaded.sprite_ref.raw_id);
     ASSERT_EQ(NMO_OBJECT_ID_NONE, loaded.sprite_ref.id);
     ASSERT_EQ(NMO_REF_UNRESOLVED, loaded.sprite_ref.state);
+    ASSERT_FALSE(loaded.has_transparency);
+    ASSERT_FALSE(loaded.has_slot);
+    ASSERT_FALSE(loaded.has_save_options);
+
+    nmo_sprite_vtable.destroy(&source, NULL, NULL);
+    nmo_sprite_vtable.destroy(&loaded, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_id_remap, sprite_raw_bitmap_payload_round_trips) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+
+    uint32_t raw_payload = 0x12345678u;
+    nmo_sprite_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_sprite_vtable.create(&source, NULL, NULL));
+    source.has_bitmap_data = true;
+    source.bitmap_data.raw_chunk_data = (uint8_t *)&raw_payload;
+    source.bitmap_data.raw_chunk_size = sizeof(raw_payload);
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    chunk->class_id = NMO_CID_SPRITE;
+    chunk->data_version = 7;
+    chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_sprite_serialize(
+        &source, chunk, NULL, &serialize_context));
+    nmo_chunk_close(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
+        chunk, NMO_CKSPRITE_BITMAP_RAW));
+    uint32_t serialized_payload = 0u;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(
+        chunk, &serialized_payload));
+    ASSERT_EQ(raw_payload, serialized_payload);
+
+    nmo_sprite_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_sprite_vtable.create(&loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_sprite_deserialize(
+        &loaded, chunk, NULL, &deserialize_context));
+    ASSERT_TRUE(loaded.has_bitmap_data);
+    ASSERT_EQ(sizeof(raw_payload), loaded.bitmap_data.raw_chunk_size);
+    ASSERT_EQ(raw_payload,
+              *(uint32_t *)loaded.bitmap_data.raw_chunk_data);
+    ASSERT_FALSE(loaded.has_transparency);
+    ASSERT_FALSE(loaded.has_slot);
+    ASSERT_FALSE(loaded.has_save_options);
+
+    uint32_t ignored = 0u;
+    source.has_sprite_ref = true;
+    source.sprite_ref = nmo_ref_from_raw(123u);
+    nmo_chunk_t *preserved = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(preserved);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(preserved));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(
+        preserved, 0xabcdef01u));
+    nmo_chunk_close(preserved);
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_sprite_serialize(
+        &source, preserved, NULL, &serialize_context));
+    source.has_sprite_ref = false;
+    source.sprite_ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+    source.bitmap_data.width = 1u;
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_sprite_serialize(
+        &source, preserved, NULL, &serialize_context));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(preserved));
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(preserved, &ignored));
+    ASSERT_EQ(0xabcdef01u, ignored);
 
     nmo_sprite_vtable.destroy(&source, NULL, NULL);
     nmo_sprite_vtable.destroy(&loaded, NULL, NULL);
@@ -11512,6 +11583,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, grid_failures_keep_state_and_target_chunk_atomic);
     REGISTER_TEST(chunk_id_remap, grid_copy_preserves_content_equality);
     REGISTER_TEST(chunk_id_remap, sprite_shared_ref_round_trips_raw_id);
+    REGISTER_TEST(chunk_id_remap, sprite_raw_bitmap_payload_round_trips);
     REGISTER_TEST(chunk_id_remap, sprite_failures_keep_state_and_target_chunk_atomic);
     REGISTER_TEST(chunk_id_remap, spritetext_failures_keep_state_and_target_chunk_atomic);
     REGISTER_TEST(chunk_id_remap, texture_failures_keep_state_and_target_chunk_atomic);
