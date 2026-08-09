@@ -122,11 +122,11 @@ static nmo_status_t nmo_attributemanager_deserialize_internal(
     result = nmo_chunk_read_int(chunk, &attribute_count);
     if (result != NMO_OK) return result;
 
-    if (category_count < 0 || category_count > 10000) {
+    if (category_count < 0) {
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Invalid category count");
     }
 
-    if (attribute_count < 0 || attribute_count > 100000) {
+    if (attribute_count < 0) {
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Invalid attribute count");
     }
     const size_t minimum_entry_dwords =
@@ -286,8 +286,8 @@ static nmo_status_t nmo_attributemanager_serialize_internal(
     if (in_state == NULL || out_chunk == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_attributemanager_serialize");
     }
-    if (in_state->category_count > 10000 ||
-        in_state->attribute_count > 100000) {
+    if (in_state->category_count > INT32_MAX ||
+        in_state->attribute_count > INT32_MAX) {
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
                          "Attribute manager counts exceed format limits");
     }
@@ -500,8 +500,8 @@ static nmo_status_t nmo_attributemanager_validate(
     if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
 
     const nmo_attributemanager_state_t *state = instance;
-    if (state->category_count > 10000 ||
-        state->attribute_count > 100000) {
+    if (state->category_count > INT32_MAX ||
+        state->attribute_count > INT32_MAX) {
         return NMO_ERR_VALIDATION_FAILED;
     }
     if (state->category_count > 0 && state->categories == NULL) {

@@ -1517,6 +1517,51 @@ TEST(chunk_id_remap, attributemanager_failures_keep_state_and_target_chunk_atomi
     ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(target, &marker));
     ASSERT_EQ(0x12345678u, marker);
 
+    const uint32_t large_category_count = 10001u;
+    const uint32_t large_attribute_count = 100001u;
+    nmo_attribute_category_t *large_categories = nmo_arena_alloc(
+        arena, (size_t)large_category_count * sizeof(*large_categories),
+        _Alignof(nmo_attribute_category_t));
+    nmo_attribute_descriptor_t *large_attributes = nmo_arena_alloc(
+        arena, (size_t)large_attribute_count * sizeof(*large_attributes),
+        _Alignof(nmo_attribute_descriptor_t));
+    ASSERT_NOT_NULL(large_categories);
+    ASSERT_NOT_NULL(large_attributes);
+    memset(large_categories, 0,
+           (size_t)large_category_count * sizeof(*large_categories));
+    memset(large_attributes, 0,
+           (size_t)large_attribute_count * sizeof(*large_attributes));
+    nmo_attributemanager_state_t large = {
+        .category_count = large_category_count,
+        .categories = large_categories,
+        .attribute_count = large_attribute_count,
+        .attributes = large_attributes,
+    };
+    ASSERT_EQ(NMO_OK, nmo_attributemanager_vtable.validate(
+        &large, NULL, NULL));
+    nmo_chunk_t *large_chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(large_chunk);
+    ASSERT_EQ(NMO_OK, nmo_attributemanager_serialize(
+        &large, large_chunk, NULL, NULL));
+    nmo_chunk_close(large_chunk);
+    nmo_attributemanager_state_t large_loaded = {0};
+    ASSERT_EQ(NMO_OK, nmo_attributemanager_deserialize(
+        &large_loaded, large_chunk, NULL, &deserialize_context));
+    ASSERT_EQ(large_category_count, large_loaded.category_count);
+    ASSERT_EQ(large_attribute_count, large_loaded.attribute_count);
+
+    nmo_attributemanager_state_t oversized = {
+        .category_count = (uint32_t)INT32_MAX + 1u,
+        .categories = &old_category,
+    };
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,
+              nmo_attributemanager_vtable.validate(
+                  &oversized, NULL, NULL));
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,
+              nmo_attributemanager_serialize(
+                  &oversized, target, NULL, NULL));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
+
     nmo_arena_destroy(arena);
 }
 
