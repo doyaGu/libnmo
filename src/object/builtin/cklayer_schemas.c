@@ -165,6 +165,13 @@ static nmo_status_t nmo_layer_deserialize_internal(
         out_state->has_square_data = 1;
     }
 
+    const size_t position = nmo_chunk_get_position(chunk);
+    if (position != section_end) {
+        return position > section_end
+            ? NMO_ERR_TRUNCATED_CHUNK
+            : NMO_ERR_INVALID_FORMAT;
+    }
+
     NMO_RETURN_OK();
 }
 
