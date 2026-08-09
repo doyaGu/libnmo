@@ -103,7 +103,12 @@ static nmo_status_t nmo_layer_deserialize_internal(
         NMO_CID_GRID);
     out_state->grid = grid;
 
-    const int file_mode = (chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0;
+    const nmo_deserialize_context_t *deser_ctx =
+        nmo_deserialize_context_get(context);
+    const int file_mode =
+        ((chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
+        (deser_ctx != NULL &&
+         (deser_ctx->flags & NMO_DESER_FLAG_FILE_MODE) != 0);
     if (file_mode) {
         int32_t format = 0;
         int32_t version = 0;

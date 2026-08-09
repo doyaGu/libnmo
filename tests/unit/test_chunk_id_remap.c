@@ -6775,6 +6775,7 @@ TEST(chunk_id_remap, layer_unresolved_grid_round_trips_raw_id) {
     ASSERT_EQ(NMO_OK, nmo_layer_serialize(
         &source, chunk, NULL, &serialize_context));
     nmo_chunk_close(chunk);
+    chunk->chunk_options &= ~NMO_CHUNK_OPTION_FILE;
     nmo_chunk_set_file_context(chunk, &read_context);
 
     nmo_layer_state_t loaded;
