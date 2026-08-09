@@ -6454,6 +6454,30 @@ TEST(chunk_id_remap, place_refs_round_trip_and_truncation_is_atomic) {
     ASSERT_EQ(nmo_place_vtable.hash(&reloaded),
               nmo_place_vtable.hash(&copied));
 
+    nmo_place_state_t copy_failed;
+    ASSERT_EQ(NMO_OK, nmo_place_vtable.create(
+        &copy_failed, NULL, NULL));
+    copy_failed.base.entity_flags = 0x12345678u;
+    copy_failed.has_camera = 1;
+    copy_failed.camera = nmo_ref_from_raw(812);
+    nmo_ref_t previous_reference = nmo_ref_from_raw(813);
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &copy_failed.references, &previous_reference));
+    void *previous_references = copy_failed.references.data;
+    nmo_allocator_t reference_allocator = reloaded.references.allocator;
+    reloaded.references.allocator = nmo_allocator_custom(
+        beobject_fail_alloc, beobject_fail_free, NULL);
+    ASSERT_EQ(NMO_ERR_NOMEM, nmo_place_vtable.copy(
+        &reloaded, &copy_failed, &place_type, arena));
+    reloaded.references.allocator = reference_allocator;
+    ASSERT_EQ(0x12345678u, copy_failed.base.entity_flags);
+    ASSERT_TRUE(copy_failed.has_camera);
+    ASSERT_EQ(812u, copy_failed.camera.raw_id);
+    ASSERT_EQ(previous_references, copy_failed.references.data);
+    ASSERT_EQ(1u, copy_failed.references.count);
+    ASSERT_EQ(813u, NMO_ARRAY_DATA(
+        nmo_ref_t, &copy_failed.references)[0].raw_id);
+
     nmo_chunk_t *truncated = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(truncated);
     truncated->class_id = NMO_CID_PLACE;
@@ -6468,8 +6492,6 @@ TEST(chunk_id_remap, place_refs_round_trip_and_truncation_is_atomic) {
 
     nmo_place_state_t failed;
     ASSERT_EQ(NMO_OK, nmo_place_vtable.create(&failed, NULL, NULL));
-    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(
-        &failed.base.base.base, NULL, NULL));
     ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
         &failed.base.base.base.scripts, 899));
     nmo_ref_t old_reference = nmo_ref_from_raw(807);
@@ -6609,9 +6631,7 @@ TEST(chunk_id_remap, place_refs_round_trip_and_truncation_is_atomic) {
     nmo_place_vtable.destroy(&loaded, NULL, NULL);
     nmo_place_vtable.destroy(&reloaded, NULL, NULL);
     nmo_place_vtable.destroy(&copied, NULL, NULL);
-    nmo_array_dispose(&failed.base.base.base.scripts);
-    nmo_array_dispose(&failed.base.base.base.attributes);
-    nmo_array_dispose(&failed.base.base.base.legacy_attributes);
+    nmo_place_vtable.destroy(&copy_failed, NULL, NULL);
     nmo_place_vtable.destroy(&failed, NULL, NULL);
     nmo_place_vtable.destroy(&failed_camera, NULL, NULL);
     nmo_place_vtable.destroy(&failed_portal, NULL, NULL);

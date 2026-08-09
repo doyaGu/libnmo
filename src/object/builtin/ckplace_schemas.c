@@ -20,32 +20,39 @@
 #include <stdint.h>
 #include <string.h>
 
+static void nmo_place_dispose_state_arrays(nmo_place_state_t *state);
+static nmo_status_t nmo_place_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
+
 NMO_DEFINE_OBJECT_LIFECYCLE(
     place,
     nmo_place_state_t,
     do {
-        nmo_status_t result = nmo_array_init(&state->portals, sizeof(nmo_place_portal_entry_t), 0, NULL);
+        nmo_status_t result = nmo_3dentity_vtable.create(
+            &state->base, NULL, context);
         if (result != NMO_OK) return result;
+        result = nmo_array_init(
+            &state->portals, sizeof(nmo_place_portal_entry_t), 0, NULL);
+        if (result != NMO_OK) {
+            nmo_place_dispose_state_arrays(state);
+            return result;
+        }
         result = nmo_array_init(&state->references, sizeof(nmo_ref_t), 0, NULL);
         if (result != NMO_OK) {
-            nmo_array_dispose(&state->portals);
+            nmo_place_dispose_state_arrays(state);
             return result;
         }
     } while (0),
-    do {
-        nmo_array_dispose(&state->portals);
-        nmo_array_dispose(&state->references);
-    } while (0))
+    nmo_place_dispose_state_arrays(state))
 
 static void nmo_place_dispose_state_arrays(nmo_place_state_t *state)
 {
     if (state == NULL) return;
-    nmo_beobject_state_t *base = &state->base.base.base;
-    nmo_array_dispose(&base->scripts);
-    nmo_array_dispose(&base->attributes);
-    nmo_array_dispose(&base->legacy_attributes);
     nmo_array_dispose(&state->portals);
     nmo_array_dispose(&state->references);
+    nmo_3dentity_vtable.destroy(&state->base, NULL, NULL);
 }
 
 static size_t nmo_place_identifier_remaining_dwords(
@@ -194,21 +201,53 @@ static nmo_status_t nmo_place_copy(
     const nmo_type_descriptor_t *type,
     nmo_arena_t *arena)
 {
+    (void)type;
     const nmo_place_state_t *s = src;
     nmo_place_state_t *d = dst;
-    NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
-    if (d->portals.data == s->portals.data) {
-        memset(&d->portals, 0, sizeof(d->portals));
-    } else {
-        nmo_array_dispose(&d->portals);
+    if (s == NULL || d == NULL || arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
     }
-    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->portals, &d->portals, &s->portals.allocator));
-    if (d->references.data == s->references.data) {
-        memset(&d->references, 0, sizeof(d->references));
-    } else {
-        nmo_array_dispose(&d->references);
-    }
-    return nmo_array_clone(&s->references, &d->references, &s->references.allocator);
+    NMO_RETURN_IF_ERROR(nmo_place_validate(s, NULL, NULL));
+
+    nmo_place_state_t copied;
+    nmo_status_t result = nmo_place_create(&copied, NULL, NULL);
+    if (result != NMO_OK) return result;
+    result = nmo_3dentity_vtable.copy(
+        &s->base, &copied.base, NULL, arena);
+    if (result != NMO_OK) goto fail;
+    copied.has_camera = s->has_camera;
+    copied.camera = s->camera;
+    copied.has_level = s->has_level;
+    copied.level = s->level;
+
+    nmo_array_dispose(&copied.portals);
+    result = nmo_array_clone(
+        &s->portals, &copied.portals, &s->portals.allocator);
+    if (result != NMO_OK) goto fail;
+    nmo_array_dispose(&copied.references);
+    result = nmo_array_clone(
+        &s->references, &copied.references, &s->references.allocator);
+    if (result != NMO_OK) goto fail;
+
+#define NMO_PLACE_DETACH_SHARED_ARRAY(field) \
+    do { \
+        if (d->field.data == s->field.data) { \
+            memset(&d->field, 0, sizeof(d->field)); \
+        } \
+    } while (0)
+    NMO_PLACE_DETACH_SHARED_ARRAY(base.base.base.scripts);
+    NMO_PLACE_DETACH_SHARED_ARRAY(base.base.base.attributes);
+    NMO_PLACE_DETACH_SHARED_ARRAY(base.base.base.legacy_attributes);
+    NMO_PLACE_DETACH_SHARED_ARRAY(portals);
+    NMO_PLACE_DETACH_SHARED_ARRAY(references);
+#undef NMO_PLACE_DETACH_SHARED_ARRAY
+    nmo_place_destroy(d, NULL, NULL);
+    *d = copied;
+    return NMO_OK;
+
+fail:
+    nmo_place_destroy(&copied, NULL, NULL);
+    return result;
 }
 
 static bool nmo_place_array_equals(
@@ -288,6 +327,7 @@ static nmo_status_t nmo_place_validate(
     (void)type;
     (void)context;
     const nmo_place_state_t *s = instance;
+    if (s == NULL) return NMO_ERR_INVALID_ARGUMENT;
     NMO_VALIDATE_COUNT(s->portals.data, s->portals.count, "portals");
     NMO_VALIDATE_COUNT(s->references.data, s->references.count, "references");
     if (s->portals.element_size != sizeof(nmo_place_portal_entry_t)) {
@@ -492,7 +532,9 @@ nmo_status_t nmo_place_deserialize(
     (void)type;
     nmo_place_state_t *out_state = (nmo_place_state_t *)instance;
     if (out_state == NULL || chunk == NULL) return NMO_ERR_INVALID_ARGUMENT;
-    nmo_place_state_t decoded = {0};
+    nmo_place_state_t decoded;
+    nmo_status_t result = nmo_place_create(&decoded, NULL, context);
+    if (result != NMO_OK) return result;
     nmo_beobject_state_t *old_base = &out_state->base.base.base;
     nmo_beobject_state_t *new_base = &decoded.base.base.base;
     if (old_base->scripts.allocator.alloc != NULL) {
@@ -511,22 +553,16 @@ nmo_status_t nmo_place_deserialize(
     const nmo_allocator_t *reference_allocator =
         out_state->references.allocator.alloc != NULL
             ? &out_state->references.allocator : NULL;
-    nmo_status_t result = nmo_array_init(
-        &decoded.portals, sizeof(nmo_place_portal_entry_t), 0,
-        portal_allocator);
-    if (result != NMO_OK) return result;
-    result = nmo_array_init(
-        &decoded.references, sizeof(nmo_ref_t), 0, reference_allocator);
-    if (result != NMO_OK) {
-        nmo_place_dispose_state_arrays(&decoded);
-        return result;
-    }
+    decoded.portals.allocator = portal_allocator != NULL
+        ? *portal_allocator : nmo_allocator_default();
+    decoded.references.allocator = reference_allocator != NULL
+        ? *reference_allocator : nmo_allocator_default();
     result = nmo_place_deserialize_internal(&decoded, chunk, context);
     if (result != NMO_OK) {
-        nmo_place_dispose_state_arrays(&decoded);
+        nmo_place_destroy(&decoded, NULL, context);
         return result;
     }
-    nmo_place_dispose_state_arrays(out_state);
+    nmo_place_destroy(out_state, NULL, context);
     *out_state = decoded;
     return NMO_OK;
 }
