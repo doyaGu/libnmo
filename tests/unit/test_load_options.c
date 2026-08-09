@@ -9,10 +9,12 @@
 #include "document/nmo_document.h"
 #include "document/nmo_document_save.h"
 #include "io/nmo_io_file.h"
+#include "io/nmo_io_memory.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
+#include "format/nmo_header.h"
 #include "format/nmo_object.h"
 #include "runtime/nmo_context.h"
 #include "session/nmo_deserializer.h"
@@ -341,6 +343,35 @@ TEST(load_options, full_profile_is_default)
     destroy_ctx_session(ctx, session);
 }
 
+static nmo_status_t parse_memory_header(const void *data, size_t size)
+{
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    if (ctx == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    nmo_session_t *session = nmo_session_create(ctx);
+    if (session == NULL) {
+        nmo_context_release(ctx);
+        return NMO_ERR_NOMEM;
+    }
+    nmo_io_interface_t *io = nmo_memory_io_open_read(data, size);
+    if (io == NULL) {
+        destroy_ctx_session(ctx, session);
+        return NMO_ERR_NOMEM;
+    }
+    nmo_deserializer_t *ds = nmo_deserializer_create(session, io, NULL);
+    if (ds == NULL) {
+        nmo_io_close(io);
+        destroy_ctx_session(ctx, session);
+        return NMO_ERR_NOMEM;
+    }
+
+    nmo_status_t result = nmo_deserializer_parse_header(ds);
+    nmo_deserializer_destroy(ds);
+    destroy_ctx_session(ctx, session);
+    return result;
+}
+
 typedef struct rejecting_allocator_context {
     size_t allocation_calls;
 } rejecting_allocator_context_t;
@@ -436,6 +467,39 @@ TEST(load_options, custom_allocator_controls_object_and_schema_storage)
     destroy_ctx_session(ctx, session);
 }
 
+TEST(load_options, phased_header_parse_preserves_format_errors)
+{
+    static const uint8_t truncated[] = { 'N', 'e', 'm', 'o' };
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK,
+              parse_memory_header(truncated, sizeof(truncated)));
+
+    static const uint8_t invalid_signature[8] = {
+        'N', 'o', 't', ' ', 'N', 'M', 'O', '\0'
+    };
+    ASSERT_EQ(NMO_ERR_INVALID_SIGNATURE,
+              parse_memory_header(invalid_signature, sizeof(invalid_signature)));
+
+    nmo_file_header_t header = {0};
+    memcpy(header.signature, "Nemo Fi\0", sizeof(header.signature));
+    header.file_version = 8;
+    header.hdr1_pack_size = 1;
+    header.hdr1_unpack_size = 1;
+
+    nmo_io_interface_t *write_io = nmo_memory_io_open_write(65);
+    ASSERT_NOT_NULL(write_io);
+    ASSERT_EQ(NMO_OK, nmo_file_header_serialize(&header, write_io));
+    const uint8_t incomplete_header1 = 0;
+    ASSERT_EQ(NMO_OK,
+              nmo_io_write(write_io, &incomplete_header1,
+                           sizeof(incomplete_header1)));
+
+    size_t size = 0;
+    const void *data = nmo_memory_io_get_data(write_io, &size);
+    ASSERT_NOT_NULL(data);
+    ASSERT_EQ(NMO_ERR_BUFFER_OVERRUN, parse_memory_header(data, size));
+    nmo_io_close(write_io);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(load_options, metadata_profile_stops_after_header_and_rejects_mutation);
     REGISTER_TEST(load_options, partial_profile_rejects_non_empty_session);
@@ -448,6 +512,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(load_options, diagnostics_lifecycle_is_caller_owned);
     REGISTER_TEST(load_options, diagnostics_capture_current_chunk_section);
     REGISTER_TEST(load_options, custom_allocator_controls_object_and_schema_storage);
+    REGISTER_TEST(load_options, phased_header_parse_preserves_format_errors);
 TEST_MAIN_END()
 
 

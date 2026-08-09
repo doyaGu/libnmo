@@ -566,13 +566,13 @@ nmo_status_t nmo_deserializer_parse_header(nmo_deserializer_t *ds)
     nmo_status_t result = nmo_file_header_parse(io, &ds->header);
     if (result != NMO_OK) {
         nmo_log(logger, NMO_LOG_ERROR, "Failed to parse file header");
-        return NMO_ERR_INVALID_ARGUMENT;
+        return result;
     }
 
     result = nmo_file_header_validate(&ds->header);
     if (result != NMO_OK) {
         nmo_log(logger, NMO_LOG_ERROR, "Invalid file header");
-        return NMO_ERR_INVALID_ARGUMENT;
+        return result;
     }
 
     /* Set file info in session */
@@ -682,7 +682,7 @@ nmo_status_t nmo_deserializer_parse_header(nmo_deserializer_t *ds)
         load_perf_end(ds, NMO_LOAD_PERF_HEADER1_PARSE, parse_start);
         if (result != NMO_OK) {
             nmo_log(logger, NMO_LOG_ERROR, "Failed to parse header1");
-            return NMO_ERR_INVALID_ARGUMENT;
+            return result;
         }
     }
 
