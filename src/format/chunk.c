@@ -2025,9 +2025,9 @@ nmo_status_t nmo_chunk_seek_identifier_with_size(
     NMO_CHUNK_CHECK_ARGS(chunk, out_size, "Invalid identifier size arguments");
 
     nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
-    if (state == NULL || state->writing) {
+    if (state == NULL) {
         NMO_CHUNK_RETURN_ERROR(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
-                               "Chunk is not in read mode");
+                               "Chunk has no parser state");
     }
 
     const size_t saved_pos = state->current_pos;

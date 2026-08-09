@@ -1009,8 +1009,15 @@ TEST(chunk_api, identifier_seek_reports_payload_size_atomically) {
     ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 500u));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 600u));
 
-    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(chunk));
+    nmo_chunk_close(chunk);
     size_t section_size = 99u;
+    ASSERT_EQ(NMO_OK,
+              nmo_chunk_seek_identifier_with_size(
+                  chunk, 0x1000u, &section_size));
+    ASSERT_EQ(2u, section_size);
+
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(chunk));
+    section_size = 99u;
     ASSERT_EQ(NMO_OK,
               nmo_chunk_seek_identifier_with_size(
                   chunk, 0x1000u, &section_size));
