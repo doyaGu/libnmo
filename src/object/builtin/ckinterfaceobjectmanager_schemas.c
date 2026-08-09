@@ -100,9 +100,13 @@ static nmo_status_t nmo_interfaceobjectmanager_deserialize_internal(
     uint8_t parsed_has_chunks = 0;
     uint8_t parsed_has_guid = 0;
 
-    nmo_status_t seek_result = nmo_chunk_seek_identifier(
-        chunk, CK_STATESAVE_IOM_CHUNKS);
+    size_t chunks_section_dwords = 0;
+    nmo_status_t seek_result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_IOM_CHUNKS, &chunks_section_dwords);
     if (seek_result == NMO_OK) {
+        if (chunks_section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+        const size_t chunks_section_end =
+            nmo_chunk_get_position(chunk) + chunks_section_dwords;
         int32_t count = 0;
         nmo_status_t result = nmo_chunk_read_int(chunk, &count);
         if (result != NMO_OK) {
@@ -138,13 +142,19 @@ static nmo_status_t nmo_interfaceobjectmanager_deserialize_internal(
                 }
             }
         }
+        if (nmo_chunk_get_position(chunk) > chunks_section_end) {
+            return NMO_ERR_TRUNCATED_CHUNK;
+        }
         parsed_count = count;
         parsed_chunks = chunks;
         parsed_has_chunks = 1;
     } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
-    seek_result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_IOM_GUID);
+    size_t guid_section_dwords = 0;
+    seek_result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_IOM_GUID, &guid_section_dwords);
     if (seek_result == NMO_OK) {
+        if (guid_section_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
         nmo_status_t result = nmo_chunk_read_guid(chunk, &parsed_guid);
         if (result != NMO_OK) {
             return result;

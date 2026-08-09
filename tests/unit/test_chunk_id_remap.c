@@ -2163,9 +2163,12 @@ TEST(chunk_id_remap, interfaceobjectmanager_chunk_count_stays_in_section) {
     ASSERT_EQ(NMO_OK, nmo_interfaceobjectmanager_vtable.create(
         &state, NULL, NULL));
     nmo_chunk_t *old_chunk = cross_section_count;
+    const nmo_guid_t old_guid = {0x12345678u, 0x90ABCDEFu};
     state.chunk_count = 1;
     state.chunks = &old_chunk;
     state.has_chunks_chunk = 1;
+    state.guid = old_guid;
+    state.has_guid_chunk = 1;
     ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK,
         nmo_interfaceobjectmanager_deserialize(
             &state, cross_section_count, NULL, &deserialize_context));
@@ -2176,6 +2179,41 @@ TEST(chunk_id_remap, interfaceobjectmanager_chunk_count_stays_in_section) {
     ASSERT_EQ(1, state.chunk_count);
     ASSERT_EQ(&old_chunk, state.chunks);
     ASSERT_EQ(1u, state.has_chunks_chunk);
+    ASSERT_TRUE(nmo_guid_equals(state.guid, old_guid));
+    ASSERT_EQ(1u, state.has_guid_chunk);
+
+    nmo_chunk_t *missing_count = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(missing_count);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(missing_count));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        missing_count, 0x01234567u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(missing_count, 0));
+    nmo_chunk_close(missing_count);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK,
+        nmo_interfaceobjectmanager_deserialize(
+            &state, missing_count, NULL, &deserialize_context));
+    ASSERT_EQ(1, state.chunk_count);
+    ASSERT_EQ(&old_chunk, state.chunks);
+    ASSERT_EQ(1u, state.has_chunks_chunk);
+    ASSERT_TRUE(nmo_guid_equals(state.guid, old_guid));
+    ASSERT_EQ(1u, state.has_guid_chunk);
+
+    nmo_chunk_t *missing_guid = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(missing_guid);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(missing_guid));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        missing_guid, 0x87654321u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        missing_guid, 0x55667788u));
+    nmo_chunk_close(missing_guid);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK,
+        nmo_interfaceobjectmanager_deserialize(
+            &state, missing_guid, NULL, &deserialize_context));
+    ASSERT_EQ(1, state.chunk_count);
+    ASSERT_EQ(&old_chunk, state.chunks);
+    ASSERT_EQ(1u, state.has_chunks_chunk);
+    ASSERT_TRUE(nmo_guid_equals(state.guid, old_guid));
+    ASSERT_EQ(1u, state.has_guid_chunk);
 
     fail_after_allocator_state_t allocator_state = {
         .allocation_count = 0,
