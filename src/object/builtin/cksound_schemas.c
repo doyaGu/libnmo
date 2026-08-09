@@ -352,13 +352,18 @@ static nmo_status_t nmo_wavesound_deserialize_internal(
         out_state->duration = duration;
     } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
-    seek_result = nmo_chunk_seek_identifier(
-        chunk, CK_STATESAVE_WAVSOUNDDATA2);
+    seek_result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_WAVSOUNDDATA2, &section_dwords);
     if (seek_result == NMO_OK) {
+        const size_t section_end =
+            nmo_chunk_get_position(chunk) + section_dwords;
         nmo_wavesound_state_t data = *out_state;
         data.has_data2 = 1;
         uint32_t data_version = nmo_chunk_get_data_version(chunk);
         if (data_version >= 3) {
+            if (section_dwords < 24u) {
+                return NMO_ERR_TRUNCATED_CHUNK;
+            }
             NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &data.state_flags));
             NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &data.priority));
             NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &data.gain));
@@ -395,6 +400,9 @@ static nmo_status_t nmo_wavesound_deserialize_internal(
             }
         } else if (data_version >= 2) {
             /* Legacy layout (CK2 data version 2) */
+            if (section_dwords < 8u) {
+                return NMO_ERR_TRUNCATED_CHUNK;
+            }
             NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &data.state_flags));
             NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &data.priority));
 
@@ -414,33 +422,37 @@ static nmo_status_t nmo_wavesound_deserialize_internal(
             }
 
             /* Optional 3D block (not present for background sounds) */
-            if (chunk && chunk->data.count > nmo_chunk_get_position(chunk)) {
-                size_t remaining = chunk->data.count - nmo_chunk_get_position(chunk);
-                if (remaining >= 16) {
-                    float reserved = 0.0f;
-                    NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &reserved));
-                    NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &reserved));
+            if ((data.state_flags & CK_WAVESOUND_ALLTYPE) !=
+                CK_WAVESOUND_BACKGROUND) {
+                if (section_dwords < 26u) {
+                    return NMO_ERR_TRUNCATED_CHUNK;
+                }
+                float reserved = 0.0f;
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &reserved));
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &reserved));
 
-                    NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &data.cone_in_angle));
-                    NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &data.cone_out_angle));
-                    NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &data.cone_out_gain));
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &data.cone_in_angle));
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &data.cone_out_angle));
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &data.cone_out_gain));
 
-                    NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &data.min_distance));
-                    NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &data.max_distance));
-                    NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &data.distance_behavior));
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &data.min_distance));
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &data.max_distance));
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &data.distance_behavior));
 
-                    NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &data.attached_object));
-                    NMO_RETURN_IF_ERROR(read_exact_sized_buffer(
-                        chunk, &data.position, sizeof(data.position)));
-                    NMO_RETURN_IF_ERROR(read_exact_sized_buffer(
-                        chunk, &data.direction, sizeof(data.direction)));
+                NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &data.attached_object));
+                NMO_RETURN_IF_ERROR(read_exact_sized_buffer(
+                    chunk, &data.position, sizeof(data.position)));
+                NMO_RETURN_IF_ERROR(read_exact_sized_buffer(
+                    chunk, &data.direction, sizeof(data.direction)));
 
-                    {
-                        int32_t reserved_int = 0;
-                        NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &reserved_int));
-                    }
+                {
+                    int32_t reserved_int = 0;
+                    NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &reserved_int));
                 }
             }
+        }
+        if (nmo_chunk_get_position(chunk) > section_end) {
+            return NMO_ERR_TRUNCATED_CHUNK;
         }
         nmo_ref_check_class(
             &data.attached_object,
