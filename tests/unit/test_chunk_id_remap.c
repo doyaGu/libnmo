@@ -14878,6 +14878,8 @@ TEST(chunk_id_remap, objectanimation_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(NMO_REF_UNRESOLVED, loaded.anim1.state);
     ASSERT_EQ(954u, loaded.anim2.raw_id);
     ASSERT_EQ(NMO_REF_UNRESOLVED, loaded.anim2.state);
+    ASSERT_EQ(sizeof(raw_tail), loaded.raw_tail_size);
+    ASSERT_EQ(0, memcmp(raw_tail, loaded.raw_tail, sizeof(raw_tail)));
 
     nmo_chunk_t *second = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(second);
@@ -14899,6 +14901,8 @@ TEST(chunk_id_remap, objectanimation_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(952u, reloaded.entity.raw_id);
     ASSERT_EQ(953u, reloaded.anim1.raw_id);
     ASSERT_EQ(954u, reloaded.anim2.raw_id);
+    ASSERT_EQ(sizeof(raw_tail), reloaded.raw_tail_size);
+    ASSERT_EQ(0, memcmp(raw_tail, reloaded.raw_tail, sizeof(raw_tail)));
 
     nmo_chunk_t *truncated = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(truncated);
@@ -14946,6 +14950,155 @@ TEST(chunk_id_remap, objectanimation_refs_round_trip_and_failure_is_atomic) {
     nmo_objectanimation_vtable.destroy(&failed, NULL, NULL);
     nmo_objectanimation_vtable.destroy(&invalid, NULL, NULL);
     nmo_arena_destroy(copy_arena);
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_id_remap, objectanimation_sections_do_not_borrow_following_identifiers) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
+    ASSERT_NOT_NULL(arena);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+    nmo_vector_t zero = {0};
+
+    nmo_chunk_t *shared = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(shared);
+    shared->class_id = NMO_CID_OBJECTANIMATION;
+    shared->chunk_version = NMO_CHUNK_VERSION4;
+    shared->data_version = 7;
+    shared->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(shared));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        shared, CK_STATESAVE_OBJANIMSHARED));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(
+        shared, NMO_OBJECT_ID_NONE));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_vector3(shared, &zero));
+    for (size_t i = 0; i < 4u; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_float(shared, 0.0f));
+    }
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(shared, 0u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(
+        shared, NMO_OBJECT_ID_NONE));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(shared, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(shared, 0xA5A5A5A5u));
+    nmo_chunk_close(shared);
+
+    nmo_objectanimation_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_vtable.create(
+        &loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_deserialize(
+        &loaded, shared, NULL, &deserialize_context));
+    ASSERT_EQ(CKOBJANIM_FORMAT_SHARED, loaded.format);
+    ASSERT_EQ(0u, loaded.raw_tail_size);
+    nmo_objectanimation_vtable.destroy(&loaded, NULL, NULL);
+
+    const uint32_t packed_ids[] = {
+        CK_STATESAVE_OBJANIMSHARED,
+        CK_STATESAVE_OBJANIMCONTROLLERS,
+        CK_STATESAVE_OBJANIMNEWDATA,
+    };
+    for (size_t case_index = 0;
+         case_index < sizeof(packed_ids) / sizeof(packed_ids[0]);
+         ++case_index) {
+        nmo_chunk_t *chunk = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(chunk);
+        chunk->class_id = NMO_CID_OBJECTANIMATION;
+        chunk->chunk_version = NMO_CHUNK_VERSION4;
+        chunk->data_version = 7;
+        chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+        ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+            chunk, packed_ids[case_index]));
+
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_vector3(chunk, &zero));
+        for (size_t i = 0; i < 4u; ++i) {
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_float(chunk, 0.0f));
+        }
+        if (packed_ids[case_index] == CK_STATESAVE_OBJANIMSHARED) {
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0u));
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(
+                chunk, NMO_OBJECT_ID_NONE));
+        } else if (packed_ids[case_index] ==
+                   CK_STATESAVE_OBJANIMCONTROLLERS) {
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0u));
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(
+                chunk, NMO_OBJECT_ID_NONE));
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_float(chunk, 0.0f));
+        } else {
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 0));
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 0));
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0u));
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(
+                chunk, NMO_OBJECT_ID_NONE));
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_float(chunk, 0.0f));
+            for (size_t i = 0; i < 7u; ++i) {
+                ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0u));
+            }
+        }
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, 0));
+        nmo_chunk_close(chunk);
+
+        nmo_objectanimation_state_t state;
+        ASSERT_EQ(NMO_OK, nmo_objectanimation_vtable.create(
+            &state, NULL, NULL));
+        state.flags = 0x12345678u;
+        ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK,
+                  nmo_objectanimation_deserialize(
+                      &state, chunk, NULL, &deserialize_context));
+        ASSERT_EQ(0x12345678u, state.flags);
+        nmo_objectanimation_vtable.destroy(&state, NULL, NULL);
+    }
+
+    struct legacy_case {
+        uint32_t identifier;
+        size_t payload_dwords;
+        size_t following_payload_dwords;
+    };
+    const struct legacy_case legacy_cases[] = {
+        {CK_STATESAVE_OBJANIMMORPHKEYS2, 0u, 0u},
+        {CK_STATESAVE_OBJANIMPOSKEYS, 1u, 0u},
+        {CK_STATESAVE_OBJANIMROTKEYS, 3u, 0u},
+        {CK_STATESAVE_OBJANIMSCLKEYS, 1u, 0u},
+        {CK_STATESAVE_OBJANIMFLAGS, 0u, 0u},
+        {CK_STATESAVE_OBJANIMENTITY, 0u, 0u},
+        {CK_STATESAVE_OBJANIMLENGTH, 0u, 0u},
+        {CK_STATESAVE_OBJANIMMERGE, 0u, 3u},
+        {CK_STATESAVE_OBJANIMNEWDATA, 0u, 2u},
+    };
+    for (size_t case_index = 0;
+         case_index < sizeof(legacy_cases) / sizeof(legacy_cases[0]);
+         ++case_index) {
+        nmo_chunk_t *chunk = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(chunk);
+        chunk->class_id = NMO_CID_OBJECTANIMATION;
+        chunk->chunk_version = NMO_CHUNK_VERSION4;
+        chunk->data_version = 0;
+        chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+        ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+            chunk, legacy_cases[case_index].identifier));
+        for (size_t i = 0; i < legacy_cases[case_index].payload_dwords; ++i) {
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0u));
+        }
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, 0));
+        for (size_t i = 0;
+             i < legacy_cases[case_index].following_payload_dwords;
+             ++i) {
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0u));
+        }
+        nmo_chunk_close(chunk);
+
+        nmo_objectanimation_state_t state;
+        ASSERT_EQ(NMO_OK, nmo_objectanimation_vtable.create(
+            &state, NULL, NULL));
+        state.flags = 0x87654321u;
+        ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK,
+                  nmo_objectanimation_deserialize(
+                      &state, chunk, NULL, &deserialize_context));
+        ASSERT_EQ(0x87654321u, state.flags);
+        nmo_objectanimation_vtable.destroy(&state, NULL, NULL);
+    }
+
     nmo_arena_destroy(arena);
 }
 
@@ -15274,6 +15427,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, curve_staging_initializes_inherited_arrays);
     REGISTER_TEST(chunk_id_remap, curve_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, objectanimation_refs_round_trip_and_failure_is_atomic);
+    REGISTER_TEST(chunk_id_remap, objectanimation_sections_do_not_borrow_following_identifiers);
     REGISTER_TEST(chunk_id_remap, objectanimation_newdata_morph_normals_are_bounded);
     REGISTER_TEST(chunk_id_remap, legacy_unresolved_id_preserves_raw_id);
 TEST_MAIN_END()
