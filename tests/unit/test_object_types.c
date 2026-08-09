@@ -107,6 +107,47 @@ TEST(object_types, register_all_types) {
     ASSERT_NOT_NULL(nmo_type_get_field_by_name(layer, "has_flags"));
     ASSERT_NOT_NULL(nmo_type_get_field_by_name(layer, "has_square_data"));
 
+    const struct {
+        nmo_guid_t type_guid;
+        const char *field_name;
+    } layout_fields[] = {
+        {CKPGUID_3DENTITY, "has_mesh_chunk"},
+        {CKPGUID_3DENTITY, "has_animation_chunk"},
+        {CKPGUID_3DENTITY, "has_entityndata_chunk"},
+        {CKPGUID_3DENTITY, "has_parent_chunk"},
+        {CKPGUID_3DENTITY, "has_flags_chunk"},
+        {CKPGUID_3DENTITY, "has_matrix_chunk"},
+        {CKPGUID_CAMERA, "has_cameraonly_chunk"},
+        {CKPGUID_CAMERA, "has_fov_chunk"},
+        {CKPGUID_CAMERA, "has_proj_chunk"},
+        {CKPGUID_CAMERA, "has_ortho_chunk"},
+        {CKPGUID_CAMERA, "has_aspect_chunk"},
+        {CKPGUID_CAMERA, "has_planes_chunk"},
+        {CKPGUID_CURVE, "has_curveonly_chunk"},
+        {CKPGUID_CURVE, "has_controlpoints_chunk"},
+        {CKPGUID_CURVE, "has_fitting_chunk"},
+        {CKPGUID_CURVE, "has_steps_chunk"},
+        {CKPGUID_CURVE, "has_open_chunk"},
+        {CKPGUID_CURVE, "has_savepoints_chunk"},
+        {CKPGUID_CURVE, "savepoints_in_file"},
+        {CKPGUID_CURVEPOINT, "defaultdata_is_modern"},
+        {CKPGUID_CURVEPOINT, "has_tcb_chunk"},
+        {CKPGUID_CURVEPOINT, "has_tangents_chunk"},
+        {CKPGUID_CURVEPOINT, "has_legacy_position"},
+        {CKPGUID_CURVEPOINT, "legacy_position"},
+        {CKPGUID_GRID, "has_grid_data"},
+        {CKPGUID_MESH, "has_progressive_mesh"},
+    };
+    for (size_t i = 0;
+         i < sizeof(layout_fields) / sizeof(layout_fields[0]); ++i) {
+        const nmo_type_descriptor_t *layout_type =
+            nmo_type_registry_find_by_guid(
+                registry, layout_fields[i].type_guid);
+        ASSERT_NOT_NULL(layout_type);
+        ASSERT_NOT_NULL(nmo_type_get_field_by_name(
+            layout_type, layout_fields[i].field_name));
+    }
+
     const nmo_type_descriptor_t *portal_entry =
         nmo_type_registry_find_by_guid(
             registry, NMO_GUID_STRUCT_CKPLACEPORTALENTRY);

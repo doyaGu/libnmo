@@ -342,6 +342,7 @@ static const nmo_type_field_t nmo_grid_fields[] = {
     NMO_FIELD(nmo_grid_state_t, reserved_value, CKPGUID_INT),
     NMO_FIELD(nmo_grid_state_t, priority, CKPGUID_INT),
     NMO_FIELD(nmo_grid_state_t, orientation_mode, CKPGUID_UINT32),
+    NMO_FIELD(nmo_grid_state_t, has_grid_data, CKPGUID_UINT8),
     NMO_FIELD(nmo_grid_state_t, has_file_flag, CKPGUID_UINT8),
     NMO_FIELD(nmo_grid_state_t, file_flag, CKPGUID_INT),
     NMO_FIELD_ARRAY(nmo_grid_state_t, layers, NMO_GUID_STRUCT_CKGRIDLAYER)

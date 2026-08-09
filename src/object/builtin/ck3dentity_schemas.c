@@ -92,7 +92,13 @@ static const nmo_type_field_t nmo_3dentity_fields[] = {
     NMO_FIELD(nmo_3dentity_state_t, animation_count, CKPGUID_UINT32),
     NMO_FIELD_REF_RECORD_ARRAY_COUNTED(nmo_3dentity_state_t, animation_ids, animation_count),
     /* Skin (optional) */
-    NMO_FIELD_PTR(nmo_3dentity_state_t, skin, CKPGUID_CK3DENTITYSKIN)
+    NMO_FIELD_PTR(nmo_3dentity_state_t, skin, CKPGUID_CK3DENTITYSKIN),
+    NMO_FIELD(nmo_3dentity_state_t, has_mesh_chunk, CKPGUID_UINT8),
+    NMO_FIELD(nmo_3dentity_state_t, has_animation_chunk, CKPGUID_UINT8),
+    NMO_FIELD(nmo_3dentity_state_t, has_entityndata_chunk, CKPGUID_UINT8),
+    NMO_FIELD(nmo_3dentity_state_t, has_parent_chunk, CKPGUID_UINT8),
+    NMO_FIELD(nmo_3dentity_state_t, has_flags_chunk, CKPGUID_UINT8),
+    NMO_FIELD(nmo_3dentity_state_t, has_matrix_chunk, CKPGUID_UINT8)
 };
 
 /* =============================================================================

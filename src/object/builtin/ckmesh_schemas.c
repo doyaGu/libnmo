@@ -159,7 +159,8 @@ static const nmo_type_field_t nmo_mesh_fields[] = {
     NMO_FIELD(nmo_mesh_state_t, has_material_groups, CKPGUID_BOOL),
     NMO_FIELD(nmo_mesh_state_t, material_channel_count, CKPGUID_UINT32),
     NMO_FIELD_ARRAY_COUNTED(nmo_mesh_state_t, material_channels, material_channel_count, 1, NMO_GUID_STRUCT_CKMATERIALCHANNEL),
-    NMO_FIELD(nmo_mesh_state_t, has_material_channels, CKPGUID_BOOL)
+    NMO_FIELD(nmo_mesh_state_t, has_material_channels, CKPGUID_BOOL),
+    NMO_FIELD(nmo_mesh_state_t, has_progressive_mesh, CKPGUID_BOOL)
 };
 
 /* =============================================================================

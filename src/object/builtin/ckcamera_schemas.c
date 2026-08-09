@@ -93,7 +93,13 @@ static const nmo_type_field_t nmo_camera_fields[] = {
     NMO_FIELD(nmo_camera_state_t, width, CKPGUID_INT),
     NMO_FIELD(nmo_camera_state_t, height, CKPGUID_INT),
     NMO_FIELD(nmo_camera_state_t, near_plane, CKPGUID_FLOAT),
-    NMO_FIELD(nmo_camera_state_t, far_plane, CKPGUID_FLOAT)
+    NMO_FIELD(nmo_camera_state_t, far_plane, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_camera_state_t, has_cameraonly_chunk, CKPGUID_UINT8),
+    NMO_FIELD(nmo_camera_state_t, has_fov_chunk, CKPGUID_UINT8),
+    NMO_FIELD(nmo_camera_state_t, has_proj_chunk, CKPGUID_UINT8),
+    NMO_FIELD(nmo_camera_state_t, has_ortho_chunk, CKPGUID_UINT8),
+    NMO_FIELD(nmo_camera_state_t, has_aspect_chunk, CKPGUID_UINT8),
+    NMO_FIELD(nmo_camera_state_t, has_planes_chunk, CKPGUID_UINT8)
 };
 
 /* =============================================================================

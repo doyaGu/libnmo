@@ -197,7 +197,14 @@ static const nmo_type_field_t nmo_curve_fields[] = {
     NMO_FIELD(nmo_curve_state_t, step_count, CKPGUID_UINT32),
     NMO_FIELD(nmo_curve_state_t, opened, CKPGUID_UINT32),
     NMO_FIELD(nmo_curve_state_t, sub_point_count, CKPGUID_UINT32),
-    NMO_FIELD_ARRAY_COUNTED(nmo_curve_state_t, sub_points, sub_point_count, 1, NMO_GUID_STRUCT_CKCURVEPOINTSUBCHUNK)
+    NMO_FIELD_ARRAY_COUNTED(nmo_curve_state_t, sub_points, sub_point_count, 1, NMO_GUID_STRUCT_CKCURVEPOINTSUBCHUNK),
+    NMO_FIELD(nmo_curve_state_t, has_curveonly_chunk, CKPGUID_UINT8),
+    NMO_FIELD(nmo_curve_state_t, has_controlpoints_chunk, CKPGUID_UINT8),
+    NMO_FIELD(nmo_curve_state_t, has_fitting_chunk, CKPGUID_UINT8),
+    NMO_FIELD(nmo_curve_state_t, has_steps_chunk, CKPGUID_UINT8),
+    NMO_FIELD(nmo_curve_state_t, has_open_chunk, CKPGUID_UINT8),
+    NMO_FIELD(nmo_curve_state_t, has_savepoints_chunk, CKPGUID_UINT8),
+    NMO_FIELD(nmo_curve_state_t, savepoints_in_file, CKPGUID_UINT8)
 };
 
 static const nmo_type_field_t nmo_curvepoint_fields[] = {
@@ -214,7 +221,12 @@ static const nmo_type_field_t nmo_curvepoint_fields[] = {
     NMO_FIELD(nmo_curvepoint_state_t, tangent_in, CKPGUID_VECTOR),
     NMO_FIELD(nmo_curvepoint_state_t, tangent_out, CKPGUID_VECTOR),
     NMO_FIELD(nmo_curvepoint_state_t, has_reserved_vector, CKPGUID_UINT8),
-    NMO_FIELD(nmo_curvepoint_state_t, reserved_vector, CKPGUID_VECTOR)
+    NMO_FIELD(nmo_curvepoint_state_t, reserved_vector, CKPGUID_VECTOR),
+    NMO_FIELD(nmo_curvepoint_state_t, defaultdata_is_modern, CKPGUID_UINT8),
+    NMO_FIELD(nmo_curvepoint_state_t, has_tcb_chunk, CKPGUID_UINT8),
+    NMO_FIELD(nmo_curvepoint_state_t, has_tangents_chunk, CKPGUID_UINT8),
+    NMO_FIELD(nmo_curvepoint_state_t, has_legacy_position, CKPGUID_UINT8),
+    NMO_FIELD(nmo_curvepoint_state_t, legacy_position, CKPGUID_VECTOR)
 };
 
 static nmo_status_t nmo_curve_validate(
