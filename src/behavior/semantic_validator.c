@@ -2610,15 +2610,19 @@ static nmo_status_t semantic_validate_basic_edit_op(
                 has_in1 = op->data.rewire_operation.in1_parameter_id != 0u;
             }
         } else {
+            const nmo_object_id_t existing_in1_id =
+                state->has_in1
+                    ? nmo_parameteroperation_in1_id(state)
+                    : 0u;
             NMO_RETURN_IF_ERROR(semantic_add_operation_slot_ref_risk(
                 registry,
                 repo,
                 risks,
                 risk_count,
-                state->has_in1 ? nmo_parameteroperation_in1_id(state) : 0u));
+                existing_in1_id));
             in1_type = semantic_parameter_type_desc(
-                ctx, repo, state->has_in1 ? nmo_parameteroperation_in1_id(state) : 0u);
-            has_in1 = state->has_in1 != 0u;
+                ctx, repo, existing_in1_id);
+            has_in1 = existing_in1_id != 0u;
         }
 
         if ((op->data.rewire_operation.slot_flags &
@@ -2658,15 +2662,19 @@ static nmo_status_t semantic_validate_basic_edit_op(
                 has_in2 = op->data.rewire_operation.in2_parameter_id != 0u;
             }
         } else {
+            const nmo_object_id_t existing_in2_id =
+                state->has_in2
+                    ? nmo_parameteroperation_in2_id(state)
+                    : 0u;
             NMO_RETURN_IF_ERROR(semantic_add_operation_slot_ref_risk(
                 registry,
                 repo,
                 risks,
                 risk_count,
-                state->has_in2 ? nmo_parameteroperation_in2_id(state) : 0u));
+                existing_in2_id));
             in2_type = semantic_parameter_type_desc(
-                ctx, repo, state->has_in2 ? nmo_parameteroperation_in2_id(state) : 0u);
-            has_in2 = state->has_in2 != 0u;
+                ctx, repo, existing_in2_id);
+            has_in2 = existing_in2_id != 0u;
         }
 
         if ((op->data.rewire_operation.slot_flags &
@@ -2706,15 +2714,19 @@ static nmo_status_t semantic_validate_basic_edit_op(
                 has_out = op->data.rewire_operation.out_parameter_id != 0u;
             }
         } else {
+            const nmo_object_id_t existing_out_id =
+                state->has_out
+                    ? nmo_parameteroperation_out_id(state)
+                    : 0u;
             NMO_RETURN_IF_ERROR(semantic_add_operation_slot_ref_risk(
                 registry,
                 repo,
                 risks,
                 risk_count,
-                state->has_out ? nmo_parameteroperation_out_id(state) : 0u));
+                existing_out_id));
             out_type = semantic_parameter_type_desc(
-                ctx, repo, state->has_out ? nmo_parameteroperation_out_id(state) : 0u);
-            has_out = state->has_out != 0u;
+                ctx, repo, existing_out_id);
+            has_out = existing_out_id != 0u;
         }
 
         return semantic_add_operation_signature_type_risk(

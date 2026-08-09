@@ -1650,6 +1650,39 @@ TEST(cli, script_node_add_dry_run_reports_schema_v2)
     yyjson_doc_free(doc);
 }
 
+static void assert_parameter_show_layout(const char *path,
+                                         uint32_t parameter_id,
+                                         uint32_t expected_class_id,
+                                         uint32_t expected_source_id,
+                                         uint32_t expected_destination_count)
+{
+    char args[1024];
+    cli_run_result_t result;
+    yyjson_doc *doc = NULL;
+    yyjson_val *data = NULL;
+
+    snprintf(args, sizeof(args),
+             "-f json parameter show %u \"%s\"",
+             parameter_id, path);
+    result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+
+    doc = yyjson_read(result.output, strlen(result.output), 0);
+    free(result.output);
+    ASSERT_NOT_NULL(doc);
+
+    data = get_object_field(yyjson_doc_get_root(doc), "data");
+    ASSERT_NOT_NULL(data);
+    ASSERT_EQ(expected_class_id,
+              (uint32_t)get_uint_field(data, "class_id"));
+    ASSERT_EQ(expected_source_id,
+              (uint32_t)get_uint_field(data, "source_id"));
+    ASSERT_EQ(expected_destination_count,
+              (uint32_t)get_uint_field(data, "destination_count"));
+    yyjson_doc_free(doc);
+}
+
 TEST(cli, script_node_add_creates_missing_manager_entry_when_policy_allows)
 {
     cli_run_result_t result = {0};
@@ -3224,14 +3257,14 @@ TEST(cli, script_op_add_dry_run_reports_executor_validation)
     ASSERT_NOT_NULL(get_array_field(op, "handles"));
     created_objects = get_array_field(data, "created_objects");
     ASSERT_NOT_NULL(created_objects);
-    ASSERT_EQ(1u, yyjson_arr_size(created_objects));
+    ASSERT_EQ(4u, yyjson_arr_size(created_objects));
     validation = get_object_field(data, "validation");
     ASSERT_NOT_NULL(validation);
     ASSERT_EQ(0u, get_uint_field(validation, "final_status"));
     ASSERT_TRUE(yyjson_obj_get(validation, "references") == NULL);
     diff = get_object_field(data, "diff");
     ASSERT_NOT_NULL(diff);
-    ASSERT_EQ(1u, get_uint_field(diff, "created_object_count"));
+    ASSERT_EQ(4u, get_uint_field(diff, "created_object_count"));
     ASSERT_NULL(yyjson_obj_get(data, "output"));
     yyjson_doc_free(doc);
 }
@@ -3418,7 +3451,7 @@ TEST(cli, script_parameter_crud_roundtrip)
     ASSERT_NOT_NULL(find_array_object_by_id(changed_objects, target_param_id));
     yyjson_doc_free(doc);
     assert_validate_ok(connect_path);
-    assert_parameter_show_value(connect_path, source_param_id, "3", 1u);
+    assert_parameter_show_value(connect_path, source_param_id, "3", 0u);
     assert_parameter_show_source(connect_path, target_param_id, source_param_id);
     assert_script_graph_data_edge_present(connect_path,
                                           manifest.root_behavior_id,
@@ -3544,11 +3577,15 @@ TEST(cli, script_operation_crud_roundtrip)
     yyjson_val *op_item = NULL;
     yyjson_val *changed_objects = NULL;
     yyjson_val *deleted_objects = NULL;
+    yyjson_val *diff = NULL;
     uint32_t lhs_id = 0;
     uint32_t rhs_id = 0;
     uint32_t alt_id = 0;
     uint32_t out_id = 0;
     uint32_t op_id = 0;
+    uint32_t in1_slot_id = 0;
+    uint32_t in2_slot_id = 0;
+    uint32_t out_slot_id = 0;
     char args[1024];
     const char *lhs_add_path = "test_script_edit_tmp/op_lhs_add.cmo";
     const char *rhs_add_path = "test_script_edit_tmp/op_rhs_add.cmo";
@@ -3721,10 +3758,19 @@ TEST(cli, script_operation_crud_roundtrip)
     op_item = find_array_object_by_id(operations, op_id);
     ASSERT_NOT_NULL(op_item);
     ASSERT_STR_EQ("33CC6B49-3589282B", get_string_field(op_item, "operation_guid"));
-    ASSERT_EQ(lhs_id, (uint32_t)get_uint_field(op_item, "in1_id"));
-    ASSERT_EQ(rhs_id, (uint32_t)get_uint_field(op_item, "in2_id"));
-    ASSERT_EQ(out_id, (uint32_t)get_uint_field(op_item, "out_id"));
+    in1_slot_id = (uint32_t)get_uint_field(op_item, "in1_id");
+    in2_slot_id = (uint32_t)get_uint_field(op_item, "in2_id");
+    out_slot_id = (uint32_t)get_uint_field(op_item, "out_id");
+    ASSERT_TRUE(in1_slot_id != 0u && in1_slot_id != lhs_id);
+    ASSERT_TRUE(in2_slot_id != 0u && in2_slot_id != rhs_id);
+    ASSERT_TRUE(out_slot_id != 0u && out_slot_id != out_id);
     yyjson_doc_free(doc);
+    assert_parameter_show_layout(op_add_path, in1_slot_id,
+                                 NMO_CID_PARAMETERIN, lhs_id, 0u);
+    assert_parameter_show_layout(op_add_path, in2_slot_id,
+                                 NMO_CID_PARAMETERIN, rhs_id, 0u);
+    assert_parameter_show_layout(op_add_path, out_slot_id,
+                                 NMO_CID_PARAMETEROUT, 0u, 1u);
 
     snprintf(args, sizeof(args),
              "-f json script op rewire --op %u --in1 %u "
@@ -3773,10 +3819,16 @@ TEST(cli, script_operation_crud_roundtrip)
     ASSERT_NOT_NULL(operations);
     op_item = find_array_object_by_id(operations, op_id);
     ASSERT_NOT_NULL(op_item);
-    ASSERT_EQ(alt_id, (uint32_t)get_uint_field(op_item, "in1_id"));
-    ASSERT_EQ(rhs_id, (uint32_t)get_uint_field(op_item, "in2_id"));
-    ASSERT_EQ(out_id, (uint32_t)get_uint_field(op_item, "out_id"));
+    ASSERT_EQ(in1_slot_id, (uint32_t)get_uint_field(op_item, "in1_id"));
+    ASSERT_EQ(in2_slot_id, (uint32_t)get_uint_field(op_item, "in2_id"));
+    ASSERT_EQ(out_slot_id, (uint32_t)get_uint_field(op_item, "out_id"));
     yyjson_doc_free(doc);
+    assert_parameter_show_layout(op_rewire_path, in1_slot_id,
+                                 NMO_CID_PARAMETERIN, alt_id, 0u);
+    assert_parameter_show_layout(op_rewire_path, in2_slot_id,
+                                 NMO_CID_PARAMETERIN, rhs_id, 0u);
+    assert_parameter_show_layout(op_rewire_path, out_slot_id,
+                                 NMO_CID_PARAMETEROUT, 0u, 1u);
 
     snprintf(args, sizeof(args),
              "-f json script op remove --op %u "
@@ -3807,6 +3859,12 @@ TEST(cli, script_operation_crud_roundtrip)
     deleted_objects = get_array_field(data, "deleted_objects");
     ASSERT_NOT_NULL(deleted_objects);
     ASSERT_NOT_NULL(find_array_object_by_id(deleted_objects, op_id));
+    ASSERT_NOT_NULL(find_array_object_by_id(deleted_objects, in1_slot_id));
+    ASSERT_NOT_NULL(find_array_object_by_id(deleted_objects, in2_slot_id));
+    ASSERT_NOT_NULL(find_array_object_by_id(deleted_objects, out_slot_id));
+    diff = get_object_field(data, "diff");
+    ASSERT_NOT_NULL(diff);
+    ASSERT_EQ(4u, get_uint_field(diff, "deleted_object_count"));
     yyjson_doc_free(doc);
     assert_validate_ok(op_remove_path);
 

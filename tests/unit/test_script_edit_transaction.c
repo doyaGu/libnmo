@@ -1129,8 +1129,7 @@ TEST(script_edit_transaction, connects_parameters_across_explicit_parent_graph)
     ASSERT_EQ(NMO_OK,
               nmo_script_edit_connect_parameter(tx, source_id, target_id));
     ASSERT_EQ(source_id, nmo_parameterin_source_id(target));
-    ASSERT_EQ(1u, source->destination_count);
-    ASSERT_EQ(target_id, nmo_parameterout_destination_id(source, 0u));
+    ASSERT_EQ(0u, source->destination_count);
 
     nmo_script_edit_rollback(tx);
     nmo_session_destroy(session);

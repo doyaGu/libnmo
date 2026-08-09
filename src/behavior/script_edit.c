@@ -348,6 +348,7 @@ static nmo_status_t script_edit_append_deferred_destroy(
     }
 
     tx->deferred_destroy_ids[tx->deferred_destroy_count++] = object_id;
+    script_edit_note_delete(tx);
     return NMO_OK;
 }
 
@@ -1420,12 +1421,64 @@ static nmo_status_t script_edit_remove_links_for_behavior_ios(
     return NMO_OK;
 }
 
+static nmo_status_t script_edit_append_operation_slot_destroy_objects(
+    nmo_script_edit_tx_t *tx,
+    const nmo_parameteroperation_state_t *operation)
+{
+    if (!tx || !operation) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    const nmo_object_id_t slot_ids[] = {
+        nmo_parameteroperation_in1_id(operation),
+        nmo_parameteroperation_in2_id(operation),
+        nmo_parameteroperation_out_id(operation),
+    };
+    const nmo_class_id_t slot_classes[] = {
+        NMO_CID_PARAMETERIN,
+        NMO_CID_PARAMETERIN,
+        NMO_CID_PARAMETEROUT,
+    };
+    const nmo_guid_t slot_guids[] = {
+        CKPGUID_PARAMETERIN,
+        CKPGUID_PARAMETERIN,
+        CKPGUID_PARAMETEROUT,
+    };
+    for (size_t i = 0; i < sizeof(slot_ids) / sizeof(slot_ids[0]); ++i) {
+        if (script_edit_find_state_in_repo(
+                nmo_workspace_internal_type_registry(tx->workspace),
+                nmo_workspace_internal_repository(tx->workspace),
+                slot_ids[i], slot_classes[i], slot_guids[i], NULL)) {
+            NMO_RETURN_IF_ERROR(script_edit_append_deferred_destroy(
+                tx, slot_ids[i]));
+        }
+    }
+    return NMO_OK;
+}
+
 static nmo_status_t script_edit_append_behavior_owned_destroy_objects(
     nmo_script_edit_tx_t *tx,
     nmo_behavior_state_t *state)
 {
     if (!tx || !state) {
         return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    for (size_t i = 0; i < state->operations.count; ++i) {
+        const nmo_object_id_t operation_id =
+            nmo_behavior_ref_array_get_id(&state->operations, i);
+        const nmo_parameteroperation_state_t *operation =
+            script_edit_find_operation_state_in_repo(
+                nmo_workspace_internal_type_registry(tx->workspace),
+                nmo_workspace_internal_repository(tx->workspace),
+                operation_id,
+                NULL);
+        if (operation == NULL) {
+            continue;
+        }
+
+        NMO_RETURN_IF_ERROR(
+            script_edit_append_operation_slot_destroy_objects(tx, operation));
     }
 
     nmo_array_t *owned_arrays[] = {
@@ -1914,6 +1967,120 @@ static nmo_status_t script_edit_parameterout_remove_destination(
     return NMO_OK;
 }
 
+static nmo_status_t script_edit_bind_operation_input(
+    nmo_script_edit_tx_t *tx,
+    nmo_parameterin_state_t *slot,
+    nmo_object_id_t source_id)
+{
+    nmo_object_repository_t *repo = NULL;
+    const nmo_type_registry_t *registry = NULL;
+    nmo_object_t *source = NULL;
+    uint8_t is_shared = 0u;
+
+    if (!tx || !tx->edit || !slot) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    repo = nmo_workspace_internal_repository(tx->workspace);
+    registry = nmo_workspace_internal_type_registry(tx->workspace);
+    if (source_id != 0u) {
+        source = repo ? nmo_object_repository_find_by_id(repo, source_id) : NULL;
+        if (!source || !registry) {
+            return NMO_ERR_NOT_FOUND;
+        }
+        is_shared = script_edit_get_object_state(
+            registry, source, NMO_CID_PARAMETERIN,
+            CKPGUID_PARAMETERIN) != NULL;
+        if (!is_shared && !script_edit_get_value_parameter_state(
+                              registry, source)) {
+            return NMO_ERR_INVALID_ARGUMENT;
+        }
+    }
+
+    NMO_RETURN_IF_ERROR(nmo_workspace_edit_snapshot_bytes(
+        tx->edit, slot, sizeof(*slot)));
+    nmo_parameterin_set_source_id(slot, source_id);
+    slot->is_shared = is_shared;
+    slot->has_source = 1u;
+    return NMO_OK;
+}
+
+static nmo_status_t script_edit_bind_operation_output(
+    nmo_script_edit_tx_t *tx,
+    nmo_parameterout_state_t *slot,
+    nmo_object_id_t destination_id)
+{
+    nmo_object_repository_t *repo = NULL;
+    const nmo_type_registry_t *registry = NULL;
+    nmo_object_t *destination = NULL;
+
+    if (!tx || !tx->edit || !slot) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    repo = nmo_workspace_internal_repository(tx->workspace);
+    registry = nmo_workspace_internal_type_registry(tx->workspace);
+    if (destination_id != 0u) {
+        destination = repo
+            ? nmo_object_repository_find_by_id(repo, destination_id)
+            : NULL;
+        if (!destination || !registry) {
+            return NMO_ERR_NOT_FOUND;
+        }
+        if (!script_edit_get_value_parameter_state(registry, destination)) {
+            return NMO_ERR_INVALID_ARGUMENT;
+        }
+    }
+
+    NMO_RETURN_IF_ERROR(nmo_workspace_edit_snapshot_bytes(
+        tx->edit, slot, sizeof(*slot)));
+    slot->destination_ids = NULL;
+    slot->destination_count = 0u;
+    slot->has_destinations = destination_id != 0u;
+    if (destination_id != 0u) {
+        NMO_RETURN_IF_ERROR(script_edit_parameterout_append_destination(
+            tx, slot, destination_id));
+    }
+    return NMO_OK;
+}
+
+static nmo_status_t script_edit_create_operation_input_slot(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t operation_id,
+    const char *name,
+    nmo_guid_t type_guid,
+    nmo_object_id_t *out_slot_id)
+{
+    nmo_status_t rc = NMO_OK;
+    nmo_parameterin_state_t *slot = NULL;
+
+    if (!nmo_guid_is_null(type_guid)) {
+        return script_edit_create_parameter_object(
+            tx, NMO_CID_PARAMETERIN, operation_id, name, type_guid,
+            NULL, NULL, out_slot_id);
+    }
+
+    rc = script_edit_create_runtime_object(
+        tx, NMO_CID_PARAMETERIN, name, NMO_GUID_NULL, out_slot_id);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    slot = script_edit_find_parameterin_state_in_repo(
+        nmo_workspace_internal_type_registry(tx->workspace),
+        nmo_workspace_internal_repository(tx->workspace),
+        *out_slot_id, NULL);
+    if (!slot) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    slot->type_guid = NMO_GUID_NULL;
+    nmo_parameterin_set_owner_id(slot, operation_id);
+    nmo_parameterin_set_source_id(slot, NMO_OBJECT_ID_NONE);
+    slot->is_shared = 0u;
+    slot->is_disabled = 0u;
+    slot->has_data = 1u;
+    slot->has_source = 1u;
+    nmo_script_edit_mark(tx, NMO_WORKSPACE_EDIT_OBJECT_STATE);
+    return NMO_OK;
+}
+
 static nmo_status_t validate_behavior_link_owners(
     const nmo_script_edit_tx_t *tx,
     nmo_object_repository_t *repo,
@@ -2245,7 +2412,6 @@ NMO_API nmo_status_t nmo_script_edit_defer_destroy_objects(
         if (rc != NMO_OK) {
             return rc;
         }
-        script_edit_note_delete(tx);
     }
     if (object_count > 0u) {
         nmo_script_edit_mark(
@@ -3687,7 +3853,6 @@ NMO_API nmo_status_t nmo_script_edit_remove_node(
         if (rc != NMO_OK) {
             return rc;
         }
-        script_edit_note_delete(tx);
     }
 
     nmo_script_edit_mark(
@@ -3860,7 +4025,6 @@ NMO_API nmo_status_t nmo_script_edit_remove_io(
     if (rc != NMO_OK) {
         return rc;
     }
-    script_edit_note_delete(tx);
     (void)nmo_behavior_edit_mark_interface(tx->edit, owner->owner_id);
     nmo_script_edit_mark(
         tx,
@@ -3955,7 +4119,7 @@ static bool script_edit_type_matches_operation_guid(
                                          actual_id, expected_id) >= 0;
 }
 
-static bool script_edit_operation_family_matches(
+static const nmo_operation_tree_cell_t *script_edit_find_operation_match(
     const nmo_operation_family_t *family,
     const nmo_type_registry_t *type_registry,
     const nmo_type_descriptor_t *in1_type,
@@ -3963,7 +4127,7 @@ static bool script_edit_operation_family_matches(
     const nmo_type_descriptor_t *out_type)
 {
     if (!family) {
-        return false;
+        return NULL;
     }
 
     for (size_t i = 0; i < family->p1_layers.count; ++i) {
@@ -4004,12 +4168,12 @@ static bool script_edit_operation_family_matches(
                                                              cell->desc.result_type_guid)) {
                     continue;
                 }
-                return true;
+                return cell;
             }
         }
     }
 
-    return false;
+    return NULL;
 }
 
 static nmo_status_t script_edit_validate_operation_signature(
@@ -4017,7 +4181,8 @@ static nmo_status_t script_edit_validate_operation_signature(
     nmo_guid_t operation_guid,
     nmo_object_id_t in1_parameter_id,
     nmo_object_id_t in2_parameter_id,
-    nmo_object_id_t out_parameter_id)
+    nmo_object_id_t out_parameter_id,
+    const nmo_operation_tree_cell_t **out_cell)
 {
     nmo_operation_registry_t *operation_registry = NULL;
     nmo_type_registry_t *type_registry = NULL;
@@ -4026,13 +4191,11 @@ static nmo_status_t script_edit_validate_operation_signature(
     const nmo_type_descriptor_t *in2_type = NULL;
     const nmo_type_descriptor_t *out_type = NULL;
 
+    if (out_cell) {
+        *out_cell = NULL;
+    }
     if (!tx || !tx->ctx || nmo_guid_is_null(operation_guid)) {
         return NMO_ERR_INVALID_ARGUMENT;
-    }
-    if (in1_parameter_id == 0u &&
-        in2_parameter_id == 0u &&
-        out_parameter_id == 0u) {
-        return NMO_OK;
     }
 
     operation_registry = nmo_context_get_operation_registry(tx->ctx);
@@ -4065,10 +4228,16 @@ static nmo_status_t script_edit_validate_operation_signature(
         }
     }
 
-    return script_edit_operation_family_matches(family, type_registry,
-                                                in1_type, in2_type, out_type)
-        ? NMO_OK
-        : NMO_ERR_VALIDATION_FAILED;
+    const nmo_operation_tree_cell_t *cell =
+        script_edit_find_operation_match(
+            family, type_registry, in1_type, in2_type, out_type);
+    if (!cell) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    if (out_cell) {
+        *out_cell = cell;
+    }
+    return NMO_OK;
 }
 
 static nmo_status_t script_edit_disconnect_parameter_internal(
@@ -4076,7 +4245,6 @@ static nmo_status_t script_edit_disconnect_parameter_internal(
     nmo_parameterin_state_t *target_state,
     nmo_object_id_t target_parameter_id)
 {
-    nmo_parameterout_state_t *source_state = NULL;
     nmo_status_t rc = NMO_OK;
 
     if (!tx || !tx->edit || !target_state || target_parameter_id == 0u) {
@@ -4086,26 +4254,6 @@ static nmo_status_t script_edit_disconnect_parameter_internal(
         nmo_parameterin_source_id(target_state);
     if (source_id == 0u) {
         return NMO_OK;
-    }
-
-    if (target_state->is_shared == 0u) {
-        source_state = script_edit_find_parameterout_state_in_repo(
-            nmo_workspace_internal_type_registry(tx->workspace),
-            nmo_workspace_internal_repository(tx->workspace),
-            source_id,
-            NULL);
-        if (source_state) {
-            rc = nmo_workspace_edit_snapshot_bytes(tx->edit, source_state,
-                                                 sizeof(*source_state));
-            if (rc != NMO_OK) {
-                return rc;
-            }
-            rc = script_edit_parameterout_remove_destination(
-                tx, source_state, target_parameter_id);
-            if (rc != NMO_OK) {
-                return rc;
-            }
-        }
     }
 
     rc = nmo_workspace_edit_snapshot_bytes(tx->edit, target_state,
@@ -4595,7 +4743,6 @@ NMO_API nmo_status_t nmo_script_edit_connect_parameter(
     nmo_object_t *source_object = NULL;
     nmo_object_t *target_object = NULL;
     nmo_parameterin_state_t *target_state = NULL;
-    nmo_parameterout_state_t *source_state = NULL;
     nmo_guid_t source_type = NMO_GUID_NULL;
     nmo_guid_t target_type = NMO_GUID_NULL;
     nmo_object_id_t common_parent_id = 0u;
@@ -4669,24 +4816,6 @@ NMO_API nmo_status_t nmo_script_edit_connect_parameter(
         source_object,
         NMO_CID_PARAMETERIN,
         CKPGUID_PARAMETERIN) != NULL ? 1u : 0u;
-
-    source_state = script_edit_find_parameterout_state_in_repo(
-        nmo_workspace_internal_type_registry(tx->workspace),
-        nmo_workspace_internal_repository(tx->workspace),
-        source_parameter_id,
-        NULL);
-    if (source_state) {
-        rc = nmo_workspace_edit_snapshot_bytes(tx->edit, source_state,
-                                             sizeof(*source_state));
-        if (rc != NMO_OK) {
-            return rc;
-        }
-        rc = script_edit_parameterout_append_destination(tx, source_state,
-                                                         target_parameter_id);
-        if (rc != NMO_OK) {
-            return rc;
-        }
-    }
 
     (void)common_parent_id;
     nmo_script_edit_mark(tx, NMO_WORKSPACE_EDIT_OBJECT_STATE |
@@ -4808,7 +4937,6 @@ NMO_API nmo_status_t nmo_script_edit_remove_parameter(
     nmo_script_edit_mark(tx, NMO_WORKSPACE_EDIT_OBJECT_STATE |
                                NMO_WORKSPACE_EDIT_REFERENCES |
                                NMO_WORKSPACE_EDIT_BEHAVIOR_GRAPH);
-    script_edit_note_delete(tx);
     return NMO_OK;
 }
 
@@ -4823,9 +4951,16 @@ NMO_API nmo_status_t nmo_script_edit_add_operation(
 {
     const nmo_behavior_index_t *index = NULL;
     const nmo_operation_family_t *family = NULL;
+    const nmo_operation_tree_cell_t *cell = NULL;
     nmo_behavior_state_t *behavior = NULL;
     nmo_parameteroperation_state_t *state = NULL;
+    nmo_parameterin_state_t *in1_slot = NULL;
+    nmo_parameterin_state_t *in2_slot = NULL;
+    nmo_parameterout_state_t *out_slot = NULL;
     nmo_object_id_t operation_id = 0u;
+    nmo_object_id_t in1_slot_id = 0u;
+    nmo_object_id_t in2_slot_id = 0u;
+    nmo_object_id_t out_slot_id = 0u;
     nmo_status_t rc = NMO_OK;
 
     if (out_operation_id) {
@@ -4874,13 +5009,13 @@ NMO_API nmo_status_t nmo_script_edit_add_operation(
             return NMO_ERR_VALIDATION_FAILED;
         }
 
-        rc = script_edit_validate_operation_signature(tx, operation_guid,
-                                                      in1_parameter_id,
-                                                      in2_parameter_id,
-                                                      out_parameter_id);
-        if (rc != NMO_OK) {
-            return rc;
-        }
+    }
+
+    rc = script_edit_validate_operation_signature(
+        tx, operation_guid, in1_parameter_id, in2_parameter_id,
+        out_parameter_id, &cell);
+    if (rc != NMO_OK) {
+        return rc;
     }
 
     rc = nmo_workspace_edit_snapshot_behavior_state(tx->edit, behavior);
@@ -4903,15 +5038,55 @@ NMO_API nmo_status_t nmo_script_edit_add_operation(
     if (!state) {
         return NMO_ERR_INVALID_STATE;
     }
+
+    rc = script_edit_create_operation_input_slot(
+        tx, operation_id, "Pin 0", cell->desc.p1_type_guid, &in1_slot_id);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    rc = script_edit_create_operation_input_slot(
+        tx, operation_id, "Pin 1", cell->desc.p2_type_guid, &in2_slot_id);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    rc = script_edit_create_parameter_object(
+        tx, NMO_CID_PARAMETEROUT, operation_id, "Pout 0",
+        cell->desc.result_type_guid, NULL, NULL, &out_slot_id);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+
+    in1_slot = script_edit_find_parameterin_state_in_repo(
+        nmo_workspace_internal_type_registry(tx->workspace),
+        nmo_workspace_internal_repository(tx->workspace),
+        in1_slot_id, NULL);
+    in2_slot = script_edit_find_parameterin_state_in_repo(
+        nmo_workspace_internal_type_registry(tx->workspace),
+        nmo_workspace_internal_repository(tx->workspace),
+        in2_slot_id, NULL);
+    out_slot = script_edit_find_parameterout_state_in_repo(
+        nmo_workspace_internal_type_registry(tx->workspace),
+        nmo_workspace_internal_repository(tx->workspace),
+        out_slot_id, NULL);
+    if (!in1_slot || !in2_slot || !out_slot) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    NMO_RETURN_IF_ERROR(script_edit_bind_operation_input(
+        tx, in1_slot, in1_parameter_id));
+    NMO_RETURN_IF_ERROR(script_edit_bind_operation_input(
+        tx, in2_slot, in2_parameter_id));
+    NMO_RETURN_IF_ERROR(script_edit_bind_operation_output(
+        tx, out_slot, out_parameter_id));
+
     state->operation_guid = operation_guid;
     nmo_parameteroperation_set_owner_id(state, parent_behavior_id);
     state->has_owner = 1u;
-    state->has_in1 = in1_parameter_id != 0u;
-    nmo_parameteroperation_set_in1_id(state, in1_parameter_id);
-    state->has_in2 = in2_parameter_id != 0u;
-    nmo_parameteroperation_set_in2_id(state, in2_parameter_id);
-    state->has_out = out_parameter_id != 0u;
-    nmo_parameteroperation_set_out_id(state, out_parameter_id);
+    state->has_in1 = 1u;
+    nmo_parameteroperation_set_in1_id(state, in1_slot_id);
+    state->has_in2 = 1u;
+    nmo_parameteroperation_set_in2_id(state, in2_slot_id);
+    state->has_out = 1u;
+    nmo_parameteroperation_set_out_id(state, out_slot_id);
     state->in1.chunk = NULL;
     state->in2.chunk = NULL;
     state->out.chunk = NULL;
@@ -4944,6 +5119,9 @@ NMO_API nmo_status_t nmo_script_edit_rewire_operation(
     const nmo_behavior_index_t *index = NULL;
     const nmo_port_owner_t *owner = NULL;
     nmo_parameteroperation_state_t *state = NULL;
+    nmo_parameterin_state_t *in1_slot = NULL;
+    nmo_parameterin_state_t *in2_slot = NULL;
+    nmo_parameterout_state_t *out_slot = NULL;
     nmo_object_id_t final_in1_parameter_id = 0u;
     nmo_object_id_t final_in2_parameter_id = 0u;
     nmo_object_id_t final_out_parameter_id = 0u;
@@ -5005,30 +5183,45 @@ NMO_API nmo_status_t nmo_script_edit_rewire_operation(
             ? out_parameter_id
             : (state->has_out ? nmo_parameteroperation_out_id(state) : 0u);
 
-    rc = script_edit_validate_operation_signature(tx, state->operation_guid,
-                                                  final_in1_parameter_id,
-                                                  final_in2_parameter_id,
-                                                  final_out_parameter_id);
-    if (rc != NMO_OK) {
-        return rc;
-    }
-
-    rc = nmo_workspace_edit_snapshot_bytes(tx->edit, state, sizeof(*state));
+    rc = script_edit_validate_operation_signature(
+        tx, state->operation_guid, final_in1_parameter_id,
+        final_in2_parameter_id, final_out_parameter_id, NULL);
     if (rc != NMO_OK) {
         return rc;
     }
 
     if ((slot_flags & NMO_SCRIPT_EDIT_OP_SLOT_IN1) != 0u) {
-        state->has_in1 = in1_parameter_id != 0u;
-        nmo_parameteroperation_set_in1_id(state, in1_parameter_id);
+        in1_slot = script_edit_find_parameterin_state_in_repo(
+            nmo_workspace_internal_type_registry(tx->workspace),
+            nmo_workspace_internal_repository(tx->workspace),
+            nmo_parameteroperation_in1_id(state), NULL);
+        if (!in1_slot) {
+            return NMO_ERR_INVALID_STATE;
+        }
+        NMO_RETURN_IF_ERROR(script_edit_bind_operation_input(
+            tx, in1_slot, in1_parameter_id));
     }
     if ((slot_flags & NMO_SCRIPT_EDIT_OP_SLOT_IN2) != 0u) {
-        state->has_in2 = in2_parameter_id != 0u;
-        nmo_parameteroperation_set_in2_id(state, in2_parameter_id);
+        in2_slot = script_edit_find_parameterin_state_in_repo(
+            nmo_workspace_internal_type_registry(tx->workspace),
+            nmo_workspace_internal_repository(tx->workspace),
+            nmo_parameteroperation_in2_id(state), NULL);
+        if (!in2_slot) {
+            return NMO_ERR_INVALID_STATE;
+        }
+        NMO_RETURN_IF_ERROR(script_edit_bind_operation_input(
+            tx, in2_slot, in2_parameter_id));
     }
     if ((slot_flags & NMO_SCRIPT_EDIT_OP_SLOT_OUT) != 0u) {
-        state->has_out = out_parameter_id != 0u;
-        nmo_parameteroperation_set_out_id(state, out_parameter_id);
+        out_slot = script_edit_find_parameterout_state_in_repo(
+            nmo_workspace_internal_type_registry(tx->workspace),
+            nmo_workspace_internal_repository(tx->workspace),
+            nmo_parameteroperation_out_id(state), NULL);
+        if (!out_slot) {
+            return NMO_ERR_INVALID_STATE;
+        }
+        NMO_RETURN_IF_ERROR(script_edit_bind_operation_output(
+            tx, out_slot, out_parameter_id));
     }
 
     nmo_script_edit_mark(tx, NMO_WORKSPACE_EDIT_OBJECT_STATE |
@@ -5044,6 +5237,7 @@ NMO_API nmo_status_t nmo_script_edit_remove_operation(
     const nmo_behavior_index_t *index = NULL;
     const nmo_port_owner_t *owner = NULL;
     nmo_behavior_state_t *behavior = NULL;
+    nmo_parameteroperation_state_t *state = NULL;
     nmo_status_t rc = NMO_OK;
 
     if (!tx || !tx->edit || operation_id == 0u) {
@@ -5067,6 +5261,13 @@ NMO_API nmo_status_t nmo_script_edit_remove_operation(
     if (!behavior) {
         return NMO_ERR_INVALID_STATE;
     }
+    state = script_edit_find_operation_state_in_repo(
+        nmo_workspace_internal_type_registry(tx->workspace),
+        nmo_workspace_internal_repository(tx->workspace),
+        operation_id, NULL);
+    if (!state) {
+        return NMO_ERR_INVALID_STATE;
+    }
 
     rc = nmo_workspace_edit_snapshot_behavior_state(tx->edit, behavior);
     if (rc != NMO_OK) {
@@ -5078,6 +5279,9 @@ NMO_API nmo_status_t nmo_script_edit_remove_operation(
     }
     script_edit_update_behavior_save_flags(behavior);
 
+    NMO_RETURN_IF_ERROR(
+        script_edit_append_operation_slot_destroy_objects(tx, state));
+
     rc = script_edit_append_deferred_destroy(tx, operation_id);
     if (rc != NMO_OK) {
         return rc;
@@ -5087,7 +5291,6 @@ NMO_API nmo_status_t nmo_script_edit_remove_operation(
     nmo_script_edit_mark(tx, NMO_WORKSPACE_EDIT_OBJECT_STATE |
                                NMO_WORKSPACE_EDIT_REFERENCES |
                                NMO_WORKSPACE_EDIT_BEHAVIOR_GRAPH);
-    script_edit_note_delete(tx);
     return NMO_OK;
 }
 
@@ -5306,7 +5509,6 @@ NMO_API nmo_status_t nmo_script_edit_remove_behavior_link(
         NMO_WORKSPACE_EDIT_OBJECT_STATE |
             NMO_WORKSPACE_EDIT_REFERENCES |
             NMO_WORKSPACE_EDIT_BEHAVIOR_GRAPH);
-    script_edit_note_delete(tx);
     return NMO_OK;
 }
 

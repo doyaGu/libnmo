@@ -2282,15 +2282,18 @@ static void edit_report_set_operation_slot_before(
     }
     impact->has_operation_slot_before = true;
     impact->before_operation_guid = state->operation_guid;
-    impact->before_has_in1_parameter = state->has_in1 != 0u;
     impact->before_in1_parameter_id =
         state->has_in1 ? nmo_parameteroperation_in1_id(state) : 0u;
-    impact->before_has_in2_parameter = state->has_in2 != 0u;
+    impact->before_has_in1_parameter =
+        impact->before_in1_parameter_id != 0u;
     impact->before_in2_parameter_id =
         state->has_in2 ? nmo_parameteroperation_in2_id(state) : 0u;
-    impact->before_has_out_parameter = state->has_out != 0u;
+    impact->before_has_in2_parameter =
+        impact->before_in2_parameter_id != 0u;
     impact->before_out_parameter_id =
         state->has_out ? nmo_parameteroperation_out_id(state) : 0u;
+    impact->before_has_out_parameter =
+        impact->before_out_parameter_id != 0u;
 }
 
 static void edit_report_set_operation_slot_after(
@@ -2308,15 +2311,18 @@ static void edit_report_set_operation_slot_after(
     }
     impact->has_operation_slot_after = true;
     impact->after_operation_guid = state->operation_guid;
-    impact->after_has_in1_parameter = state->has_in1 != 0u;
     impact->after_in1_parameter_id =
         state->has_in1 ? nmo_parameteroperation_in1_id(state) : 0u;
-    impact->after_has_in2_parameter = state->has_in2 != 0u;
+    impact->after_has_in1_parameter =
+        impact->after_in1_parameter_id != 0u;
     impact->after_in2_parameter_id =
         state->has_in2 ? nmo_parameteroperation_in2_id(state) : 0u;
-    impact->after_has_out_parameter = state->has_out != 0u;
+    impact->after_has_in2_parameter =
+        impact->after_in2_parameter_id != 0u;
     impact->after_out_parameter_id =
         state->has_out ? nmo_parameteroperation_out_id(state) : 0u;
+    impact->after_has_out_parameter =
+        impact->after_out_parameter_id != 0u;
 }
 
 static void edit_plan_format_data_cell_value(
@@ -3057,6 +3063,43 @@ static nmo_status_t edit_report_note_parameter_detach_impacts(
     return NMO_OK;
 }
 
+static nmo_status_t edit_report_note_operation_slot_deleted_objects(
+    nmo_script_edit_tx_t *tx,
+    nmo_edit_report_t *report,
+    nmo_edit_op_kind_t cause,
+    const nmo_parameteroperation_state_t *operation)
+{
+    if (tx == NULL || report == NULL || operation == NULL) {
+        return NMO_OK;
+    }
+
+    const nmo_object_id_t slot_ids[] = {
+        nmo_parameteroperation_in1_id(operation),
+        nmo_parameteroperation_in2_id(operation),
+        nmo_parameteroperation_out_id(operation),
+    };
+    const nmo_class_id_t slot_classes[] = {
+        NMO_CID_PARAMETERIN,
+        NMO_CID_PARAMETERIN,
+        NMO_CID_PARAMETEROUT,
+    };
+    const nmo_guid_t slot_guids[] = {
+        CKPGUID_PARAMETERIN,
+        CKPGUID_PARAMETERIN,
+        CKPGUID_PARAMETEROUT,
+    };
+    for (size_t i = 0u; i < sizeof(slot_ids) / sizeof(slot_ids[0]); ++i) {
+        if (slot_ids[i] == 0u ||
+            edit_plan_get_object_state(
+                tx, slot_ids[i], slot_classes[i], slot_guids[i]) == NULL) {
+            continue;
+        }
+        NMO_RETURN_IF_ERROR(nmo_edit_report_add_deleted_object(
+            report, slot_ids[i], cause, "operation_slot"));
+    }
+    return NMO_OK;
+}
+
 static nmo_status_t edit_report_note_behavior_owned_deleted_objects(
     nmo_script_edit_tx_t *tx,
     nmo_edit_report_t *report,
@@ -3071,6 +3114,19 @@ static nmo_status_t edit_report_note_behavior_owned_deleted_objects(
         edit_plan_get_behavior_state(tx, behavior_id);
     if (state == NULL) {
         return NMO_OK;
+    }
+
+    for (size_t i = 0u; i < state->operations.count; ++i) {
+        const nmo_object_id_t operation_id =
+            nmo_behavior_ref_array_get_id(&state->operations, i);
+        const nmo_parameteroperation_state_t *operation =
+            edit_plan_get_operation_state(tx, operation_id);
+        if (operation == NULL) {
+            continue;
+        }
+
+        NMO_RETURN_IF_ERROR(edit_report_note_operation_slot_deleted_objects(
+            tx, report, cause, operation));
     }
 
     const nmo_object_id_t target_parameter_id =
@@ -4087,6 +4143,8 @@ static nmo_status_t edit_executor_apply_op(
         if (rc != NMO_OK) {
             return rc;
         }
+        NMO_RETURN_IF_ERROR(edit_report_note_operation_slot_deleted_objects(
+            tx, report, NMO_EDIT_OP_REMOVE_OPERATION, before_snapshot));
         NMO_RETURN_IF_ERROR(nmo_edit_report_add_deleted_object(
             report,
             op->data.remove_operation.operation_id,

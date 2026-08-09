@@ -2451,9 +2451,8 @@ TEST(edit_plan, executor_detaches_removed_node_parameter_edges) {
         ? (nmo_parameterout_state_t *)nmo_object_get_state(source_obj)
         : NULL;
     ASSERT_NOT_NULL(source_state);
-    ASSERT_EQ(1u, source_state->destination_count);
-    ASSERT_EQ(target_id,
-              nmo_parameterout_destination_id(source_state, 0));
+    ASSERT_EQ(0u, source_state->destination_count);
+    ASSERT_NULL(source_state->destination_ids);
 
     nmo_edit_plan_t *plan = NULL;
     nmo_edit_report_t report;
@@ -2740,6 +2739,19 @@ TEST(edit_plan, executor_reports_removed_node_operation_impact) {
                   &operation_id));
     ASSERT_EQ(NMO_OK, nmo_script_edit_commit(seed_tx));
 
+    nmo_object_t *operation_object =
+        nmo_object_repository_find_by_id(fixture.repo, operation_id);
+    nmo_parameteroperation_state_t *operation_state = operation_object
+        ? (nmo_parameteroperation_state_t *)nmo_object_get_state(operation_object)
+        : NULL;
+    ASSERT_NOT_NULL(operation_state);
+    const nmo_object_id_t in1_slot_id =
+        nmo_parameteroperation_in1_id(operation_state);
+    const nmo_object_id_t in2_slot_id =
+        nmo_parameteroperation_in2_id(operation_state);
+    const nmo_object_id_t out_slot_id =
+        nmo_parameteroperation_out_id(operation_state);
+
     nmo_edit_plan_t *plan = NULL;
     nmo_edit_report_t report;
     ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
@@ -2754,16 +2766,34 @@ TEST(edit_plan, executor_reports_removed_node_operation_impact) {
     ASSERT_EQ(NMO_OK, nmo_edit_executor_execute(fixture.workspace, plan, NULL, &report));
     ASSERT_TRUE(report.ok);
     ASSERT_NULL(nmo_object_repository_find_by_id(fixture.repo, operation_id));
+    ASSERT_NULL(nmo_object_repository_find_by_id(fixture.repo, in1_slot_id));
+    ASSERT_NULL(nmo_object_repository_find_by_id(fixture.repo, in2_slot_id));
+    ASSERT_NULL(nmo_object_repository_find_by_id(fixture.repo, out_slot_id));
 
     bool reported_operation = false;
+    bool reported_in1_slot = false;
+    bool reported_in2_slot = false;
+    bool reported_out_slot = false;
     for (size_t i = 0; i < report.deleted_object_count; ++i) {
         if (report.deleted_objects[i].id == operation_id &&
             report.deleted_objects[i].role != NULL &&
             strcmp(report.deleted_objects[i].role, "owned_operation") == 0) {
             reported_operation = true;
+        } else if (report.deleted_objects[i].role != NULL &&
+                   strcmp(report.deleted_objects[i].role, "operation_slot") == 0) {
+            if (report.deleted_objects[i].id == in1_slot_id) {
+                reported_in1_slot = true;
+            } else if (report.deleted_objects[i].id == in2_slot_id) {
+                reported_in2_slot = true;
+            } else if (report.deleted_objects[i].id == out_slot_id) {
+                reported_out_slot = true;
+            }
         }
     }
     ASSERT_TRUE(reported_operation);
+    ASSERT_TRUE(reported_in1_slot);
+    ASSERT_TRUE(reported_in2_slot);
+    ASSERT_TRUE(reported_out_slot);
 
     nmo_edit_report_dispose(&report);
     nmo_edit_plan_destroy(plan);
@@ -2947,6 +2977,19 @@ TEST(edit_plan, executor_deletes_nested_removed_node_operations) {
                   &operation_id));
     ASSERT_EQ(NMO_OK, nmo_script_edit_commit(seed_tx));
 
+    nmo_object_t *operation_object =
+        nmo_object_repository_find_by_id(fixture.repo, operation_id);
+    nmo_parameteroperation_state_t *operation_state = operation_object
+        ? (nmo_parameteroperation_state_t *)nmo_object_get_state(operation_object)
+        : NULL;
+    ASSERT_NOT_NULL(operation_state);
+    const nmo_object_id_t in1_slot_id =
+        nmo_parameteroperation_in1_id(operation_state);
+    const nmo_object_id_t in2_slot_id =
+        nmo_parameteroperation_in2_id(operation_state);
+    const nmo_object_id_t out_slot_id =
+        nmo_parameteroperation_out_id(operation_state);
+
     nmo_edit_plan_t *plan = NULL;
     nmo_edit_report_t report;
     ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
@@ -2961,16 +3004,34 @@ TEST(edit_plan, executor_deletes_nested_removed_node_operations) {
     ASSERT_EQ(NMO_OK, nmo_edit_executor_execute(fixture.workspace, plan, NULL, &report));
     ASSERT_TRUE(report.ok);
     ASSERT_NULL(nmo_object_repository_find_by_id(fixture.repo, operation_id));
+    ASSERT_NULL(nmo_object_repository_find_by_id(fixture.repo, in1_slot_id));
+    ASSERT_NULL(nmo_object_repository_find_by_id(fixture.repo, in2_slot_id));
+    ASSERT_NULL(nmo_object_repository_find_by_id(fixture.repo, out_slot_id));
 
     bool reported_operation = false;
+    bool reported_in1_slot = false;
+    bool reported_in2_slot = false;
+    bool reported_out_slot = false;
     for (size_t i = 0; i < report.deleted_object_count; ++i) {
         if (report.deleted_objects[i].id == operation_id &&
             report.deleted_objects[i].role != NULL &&
             strcmp(report.deleted_objects[i].role, "owned_operation") == 0) {
             reported_operation = true;
+        } else if (report.deleted_objects[i].role != NULL &&
+                   strcmp(report.deleted_objects[i].role, "operation_slot") == 0) {
+            if (report.deleted_objects[i].id == in1_slot_id) {
+                reported_in1_slot = true;
+            } else if (report.deleted_objects[i].id == in2_slot_id) {
+                reported_in2_slot = true;
+            } else if (report.deleted_objects[i].id == out_slot_id) {
+                reported_out_slot = true;
+            }
         }
     }
     ASSERT_TRUE(reported_operation);
+    ASSERT_TRUE(reported_in1_slot);
+    ASSERT_TRUE(reported_in2_slot);
+    ASSERT_TRUE(reported_out_slot);
 
     nmo_edit_report_dispose(&report);
     nmo_edit_plan_destroy(plan);
@@ -3321,6 +3382,53 @@ TEST(edit_plan, executor_reports_add_operation_slot_parameter_impact) {
     const nmo_object_id_t in2_id = report.operations[1].result_id;
     const nmo_object_id_t out_id = report.operations[2].result_id;
     const nmo_object_id_t operation_id = report.operations[3].result_id;
+    nmo_object_t *operation_object =
+        nmo_object_repository_find_by_id(fixture.repo, operation_id);
+    nmo_parameteroperation_state_t *operation_state = operation_object
+        ? (nmo_parameteroperation_state_t *)nmo_object_get_state(operation_object)
+        : NULL;
+    ASSERT_NOT_NULL(operation_state);
+    const nmo_object_id_t in1_slot_id =
+        nmo_parameteroperation_in1_id(operation_state);
+    const nmo_object_id_t in2_slot_id =
+        nmo_parameteroperation_in2_id(operation_state);
+    const nmo_object_id_t out_slot_id =
+        nmo_parameteroperation_out_id(operation_state);
+    ASSERT_NE(0u, in1_slot_id);
+    ASSERT_NE(0u, in2_slot_id);
+    ASSERT_NE(0u, out_slot_id);
+    ASSERT_NE(in1_id, in1_slot_id);
+    ASSERT_NE(in2_id, in2_slot_id);
+    ASSERT_NE(out_id, out_slot_id);
+
+    nmo_object_t *in1_slot_object =
+        nmo_object_repository_find_by_id(fixture.repo, in1_slot_id);
+    nmo_object_t *in2_slot_object =
+        nmo_object_repository_find_by_id(fixture.repo, in2_slot_id);
+    nmo_object_t *out_slot_object =
+        nmo_object_repository_find_by_id(fixture.repo, out_slot_id);
+    ASSERT_NOT_NULL(in1_slot_object);
+    ASSERT_NOT_NULL(in2_slot_object);
+    ASSERT_NOT_NULL(out_slot_object);
+    ASSERT_EQ(NMO_CID_PARAMETERIN,
+              nmo_object_get_class_id(in1_slot_object));
+    ASSERT_EQ(NMO_CID_PARAMETERIN,
+              nmo_object_get_class_id(in2_slot_object));
+    ASSERT_EQ(NMO_CID_PARAMETEROUT,
+              nmo_object_get_class_id(out_slot_object));
+    const nmo_parameterin_state_t *in1_slot_state =
+        (const nmo_parameterin_state_t *)nmo_object_get_state(in1_slot_object);
+    const nmo_parameterin_state_t *in2_slot_state =
+        (const nmo_parameterin_state_t *)nmo_object_get_state(in2_slot_object);
+    const nmo_parameterout_state_t *out_slot_state =
+        (const nmo_parameterout_state_t *)nmo_object_get_state(out_slot_object);
+    ASSERT_NOT_NULL(in1_slot_state);
+    ASSERT_NOT_NULL(in2_slot_state);
+    ASSERT_NOT_NULL(out_slot_state);
+    ASSERT_EQ(in1_id, nmo_parameterin_source_id(in1_slot_state));
+    ASSERT_EQ(in2_id, nmo_parameterin_source_id(in2_slot_state));
+    ASSERT_EQ(1u, out_slot_state->destination_count);
+    ASSERT_EQ(out_id, nmo_parameterout_destination_id(out_slot_state, 0u));
 
     nmo_edit_report_dispose(&report);
     nmo_edit_plan_destroy(plan);
@@ -3333,25 +3441,28 @@ TEST(edit_plan, executor_reports_add_operation_slot_parameter_impact) {
     ASSERT_TRUE(report.ok);
     ASSERT_EQ(1u, report.operation_count);
     ASSERT_EQ(NMO_EDIT_OP_REMOVE_OPERATION, report.operations[0].kind);
-    reported_in1 = false;
-    reported_in2 = false;
-    reported_out = false;
-    for (size_t i = 0; i < report.changed_object_count; ++i) {
-        if (report.changed_objects[i].role == NULL ||
-            strcmp(report.changed_objects[i].role, "operation_slot_parameter") != 0) {
+    bool reported_in1_slot = false;
+    bool reported_in2_slot = false;
+    bool reported_out_slot = false;
+    for (size_t i = 0; i < report.deleted_object_count; ++i) {
+        if (report.deleted_objects[i].role == NULL ||
+            strcmp(report.deleted_objects[i].role, "operation_slot") != 0) {
             continue;
         }
-        if (report.changed_objects[i].id == in1_id) {
-            reported_in1 = true;
-        } else if (report.changed_objects[i].id == in2_id) {
-            reported_in2 = true;
-        } else if (report.changed_objects[i].id == out_id) {
-            reported_out = true;
+        if (report.deleted_objects[i].id == in1_slot_id) {
+            reported_in1_slot = true;
+        } else if (report.deleted_objects[i].id == in2_slot_id) {
+            reported_in2_slot = true;
+        } else if (report.deleted_objects[i].id == out_slot_id) {
+            reported_out_slot = true;
         }
     }
-    ASSERT_TRUE(reported_in1);
-    ASSERT_TRUE(reported_in2);
-    ASSERT_TRUE(reported_out);
+    ASSERT_TRUE(reported_in1_slot);
+    ASSERT_TRUE(reported_in2_slot);
+    ASSERT_TRUE(reported_out_slot);
+    ASSERT_NULL(nmo_object_repository_find_by_id(fixture.repo, in1_slot_id));
+    ASSERT_NULL(nmo_object_repository_find_by_id(fixture.repo, in2_slot_id));
+    ASSERT_NULL(nmo_object_repository_find_by_id(fixture.repo, out_slot_id));
 
     nmo_edit_report_dispose(&report);
     nmo_edit_plan_destroy(plan);
@@ -3417,6 +3528,22 @@ TEST(edit_plan, executor_reports_remove_parameter_operation_slot_impact) {
                   &operation_id));
     ASSERT_EQ(NMO_OK, nmo_script_edit_commit(seed_tx));
 
+    nmo_object_t *operation_object =
+        nmo_object_repository_find_by_id(fixture.repo, operation_id);
+    nmo_parameteroperation_state_t *operation_state = operation_object
+        ? (nmo_parameteroperation_state_t *)nmo_object_get_state(operation_object)
+        : NULL;
+    ASSERT_NOT_NULL(operation_state);
+    const nmo_object_id_t in1_slot_id =
+        nmo_parameteroperation_in1_id(operation_state);
+    nmo_object_t *in1_slot_object =
+        nmo_object_repository_find_by_id(fixture.repo, in1_slot_id);
+    nmo_parameterin_state_t *in1_slot_state = in1_slot_object
+        ? (nmo_parameterin_state_t *)nmo_object_get_state(in1_slot_object)
+        : NULL;
+    ASSERT_NOT_NULL(in1_slot_state);
+    ASSERT_EQ(in1_id, nmo_parameterin_source_id(in1_slot_state));
+
     nmo_edit_plan_t *plan = NULL;
     nmo_edit_report_t report;
     ASSERT_EQ(NMO_OK, nmo_edit_report_init(&report));
@@ -3428,15 +3555,17 @@ TEST(edit_plan, executor_reports_remove_parameter_operation_slot_impact) {
     ASSERT_EQ(1u, report.operation_count);
     ASSERT_EQ(NMO_EDIT_OP_REMOVE_PARAMETER, report.operations[0].kind);
 
-    bool reported_operation_slot_owner = false;
+    bool reported_operation_slot_target = false;
     for (size_t i = 0; i < report.changed_object_count; ++i) {
-        if (report.changed_objects[i].id == operation_id &&
+        if (report.changed_objects[i].id == in1_slot_id &&
             report.changed_objects[i].role != NULL &&
-            strcmp(report.changed_objects[i].role, "operation_slot_owner") == 0) {
-            reported_operation_slot_owner = true;
+            strcmp(report.changed_objects[i].role, "parameter_edge_target") == 0) {
+            reported_operation_slot_target = true;
         }
     }
-    ASSERT_TRUE(reported_operation_slot_owner);
+    ASSERT_TRUE(reported_operation_slot_target);
+    ASSERT_EQ(in1_slot_id, nmo_parameteroperation_in1_id(operation_state));
+    ASSERT_EQ(0u, nmo_parameterin_source_id(in1_slot_state));
 
     nmo_edit_report_dispose(&report);
     nmo_edit_plan_destroy(plan);
@@ -4099,8 +4228,8 @@ TEST(edit_plan, executor_detaches_explicit_parameter_connections) {
         &report));
     ASSERT_TRUE(report.ok);
     ASSERT_EQ(source_id, nmo_parameterin_source_id(target_state));
-    ASSERT_EQ(1u, source_state->destination_count);
-    ASSERT_EQ(target_id, nmo_parameterout_destination_id(source_state, 0u));
+    ASSERT_EQ(0u, source_state->destination_count);
+    ASSERT_NULL(source_state->destination_ids);
     nmo_edit_report_dispose(&report);
     nmo_edit_plan_destroy(plan);
 
