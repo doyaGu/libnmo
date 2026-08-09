@@ -1325,6 +1325,8 @@ typedef struct normalize_ref_ctx {
     const nmo_type_descriptor_t *type;
     void *instance;
     size_t *changes;
+    bool validate_only;
+    nmo_status_t status;
 } normalize_ref_ctx_t;
 
 static bool normalize_ref_field(
@@ -1334,13 +1336,27 @@ static bool normalize_ref_field(
 {
     (void)field_ptr;
     normalize_ref_ctx_t *ctx = (normalize_ref_ctx_t *)user_data;
-    if (!ctx || !field || !nmo_field_is_ref(field)) return true;
+    if (ctx == NULL || field == NULL) {
+        if (ctx != NULL) ctx->status = NMO_ERR_INVALID_ARGUMENT;
+        return false;
+    }
+    if (!nmo_field_is_ref(field)) return true;
+    if (ctx->repo == NULL || ctx->types == NULL || ctx->type == NULL ||
+        ctx->instance == NULL || ctx->changes == NULL) {
+        ctx->status = NMO_ERR_INVALID_ARGUMENT;
+        return false;
+    }
 
     if (!nmo_field_is_array(field) && field->size == sizeof(nmo_ref_t)) {
         nmo_ref_t *ref = (nmo_ref_t *)nmo_field_get_ptr(
             ctx->instance, field);
+        if (ref == NULL) {
+            ctx->status = NMO_ERR_INVALID_STATE;
+            return false;
+        }
+        if (ctx->validate_only) return true;
         const nmo_object_id_t id = nmo_ref_runtime_id(ref);
-        if (ref != NULL && ref->state != NMO_REF_NONE &&
+        if (ref->state != NMO_REF_NONE &&
             (id == NMO_OBJECT_ID_NONE ||
              normalize_id_is_invalid_for_typed_field(
                 ctx->repo, ctx->types, ctx->type, field, id))) {
@@ -1353,7 +1369,12 @@ static bool normalize_ref_field(
     if (!nmo_field_is_array(field) && field->size == sizeof(nmo_object_id_t)) {
         nmo_object_id_t *id = (nmo_object_id_t *)nmo_field_get_ptr(
             ctx->instance, field);
-        if (id && normalize_id_is_invalid_for_typed_field(
+        if (id == NULL) {
+            ctx->status = NMO_ERR_INVALID_STATE;
+            return false;
+        }
+        if (ctx->validate_only) return true;
+        if (normalize_id_is_invalid_for_typed_field(
                 ctx->repo, ctx->types, ctx->type, field, *id)) {
             *id = NMO_OBJECT_ID_NONE;
             (*ctx->changes)++;
@@ -1363,9 +1384,21 @@ static bool normalize_ref_field(
 
     if (field->size == sizeof(nmo_array_t)) {
         nmo_array_t *array = (nmo_array_t *)nmo_field_get_ptr(ctx->instance, field);
-        if (!array) return true;
+        if (array == NULL) {
+            ctx->status = NMO_ERR_INVALID_STATE;
+            return false;
+        }
+        const size_t element_size = nmo_field_uses_ref_records(field)
+            ? sizeof(nmo_ref_t)
+            : sizeof(nmo_object_id_t);
+        if (((array->element_size != 0 || array->count > 0) &&
+             array->element_size != element_size) ||
+            (array->count > 0 && array->data == NULL)) {
+            ctx->status = NMO_ERR_VALIDATION_FAILED;
+            return false;
+        }
+        if (ctx->validate_only || array->count == 0) return true;
         if (nmo_field_uses_ref_records(field)) {
-            if (array->element_size != sizeof(nmo_ref_t)) return true;
             for (size_t i = 0; i < array->count;) {
                 nmo_ref_t *refs = NMO_ARRAY_DATA(nmo_ref_t, array);
                 const nmo_object_id_t id = nmo_ref_runtime_id(&refs[i]);
@@ -1375,12 +1408,16 @@ static bool normalize_ref_field(
                     ++i;
                     continue;
                 }
-                if (nmo_array_remove(array, i, NULL) != NMO_OK) return false;
+                nmo_status_t remove_status = nmo_array_remove(
+                    array, i, NULL);
+                if (remove_status != NMO_OK) {
+                    ctx->status = remove_status;
+                    return false;
+                }
                 (*ctx->changes)++;
             }
             return true;
         }
-        if (array->element_size != sizeof(nmo_object_id_t)) return true;
         for (size_t i = 0; i < array->count;) {
             nmo_object_id_t *ids = NMO_ARRAY_DATA(nmo_object_id_t, array);
             if (!normalize_id_is_invalid_for_typed_field(
@@ -1388,21 +1425,42 @@ static bool normalize_ref_field(
                 ++i;
                 continue;
             }
-            if (nmo_array_remove(array, i, NULL) != NMO_OK) return false;
+            nmo_status_t remove_status = nmo_array_remove(array, i, NULL);
+            if (remove_status != NMO_OK) {
+                ctx->status = remove_status;
+                return false;
+            }
             (*ctx->changes)++;
         }
         return true;
     }
 
     if (field->size == sizeof(void *)) {
+        uint32_t count = 0;
+        nmo_status_t count_status = nmo_field_resolve_count(
+            ctx->type, field, ctx->instance, &count);
+        if (count_status != NMO_OK) {
+            ctx->status = count_status;
+            return false;
+        }
+        const nmo_type_field_t *count_field = nmo_type_get_field_by_name(
+            ctx->type, field->count_field_name);
+        uint32_t *count_ptr = count_field != NULL &&
+                count_field->size == sizeof(uint32_t)
+            ? (uint32_t *)nmo_field_get_ptr(ctx->instance, count_field)
+            : NULL;
+        if (count_ptr == NULL) {
+            ctx->status = NMO_ERR_VALIDATION_FAILED;
+            return false;
+        }
         if (nmo_field_uses_ref_records(field)) {
             nmo_ref_t **values = (nmo_ref_t **)nmo_field_get_ptr(
                 ctx->instance, field);
-            uint32_t count = 0;
-            if (!values || !*values || nmo_field_resolve_count(
-                    ctx->type, field, ctx->instance, &count) != NMO_OK) {
-                return true;
+            if (values == NULL || (count > 0 && *values == NULL)) {
+                ctx->status = NMO_ERR_VALIDATION_FAILED;
+                return false;
             }
+            if (ctx->validate_only || count == 0) return true;
             uint32_t kept = 0;
             for (uint32_t i = 0; i < count; ++i) {
                 const nmo_object_id_t id = nmo_ref_runtime_id(&(*values)[i]);
@@ -1414,24 +1472,16 @@ static bool normalize_ref_field(
                 }
                 (*values)[kept++] = (*values)[i];
             }
-            if (kept != count && field->count_field_name) {
-                const nmo_type_field_t *count_field = nmo_type_get_field_by_name(
-                    ctx->type, field->count_field_name);
-                if (count_field && count_field->size == sizeof(uint32_t)) {
-                    uint32_t *count_ptr = (uint32_t *)nmo_field_get_ptr(
-                        ctx->instance, count_field);
-                    if (count_ptr) *count_ptr = kept;
-                }
-            }
+            if (kept != count) *count_ptr = kept;
             return true;
         }
         nmo_object_id_t **values = (nmo_object_id_t **)nmo_field_get_ptr(
             ctx->instance, field);
-        uint32_t count = 0;
-        if (!values || !*values || nmo_field_resolve_count(
-                ctx->type, field, ctx->instance, &count) != NMO_OK) {
-            return true;
+        if (values == NULL || (count > 0 && *values == NULL)) {
+            ctx->status = NMO_ERR_VALIDATION_FAILED;
+            return false;
         }
+        if (ctx->validate_only || count == 0) return true;
         uint32_t kept = 0;
         for (uint32_t i = 0; i < count; ++i) {
             if (normalize_id_is_invalid_for_typed_field(
@@ -1441,17 +1491,48 @@ static bool normalize_ref_field(
             }
             (*values)[kept++] = (*values)[i];
         }
-        if (kept != count && field->count_field_name) {
-            const nmo_type_field_t *count_field = nmo_type_get_field_by_name(
-                ctx->type, field->count_field_name);
-            if (count_field && count_field->size == sizeof(uint32_t)) {
-                uint32_t *count_ptr = (uint32_t *)nmo_field_get_ptr(
-                    ctx->instance, count_field);
-                if (count_ptr) *count_ptr = kept;
-            }
-        }
+        if (kept != count) *count_ptr = kept;
+        return true;
     }
-    return true;
+    ctx->status = NMO_ERR_VALIDATION_FAILED;
+    return false;
+}
+
+static nmo_status_t normalize_object_ref_fields(
+    nmo_object_repository_t *repo,
+    const nmo_type_runtime_t *type_rt,
+    nmo_object_t *obj,
+    const nmo_type_descriptor_t *derived,
+    size_t *changes,
+    bool validate_only)
+{
+    const nmo_type_descriptor_ext_t *layout = derived->ext;
+    const bool has_layout = layout != NULL && layout->hierarchy != NULL &&
+                            layout->hierarchy_depth > 0;
+    const size_t level_count = has_layout ? layout->hierarchy_depth : 1u;
+    for (size_t level = level_count; level > 0; --level) {
+        const size_t index = level - 1u;
+        const nmo_type_descriptor_t *current =
+            has_layout ? layout->hierarchy[index] : derived;
+        const uint32_t offset = has_layout && layout->state_offsets != NULL
+            ? layout->state_offsets[index]
+            : 0u;
+        void *current_instance = (uint8_t *)obj->state + offset;
+        if (current == NULL) continue;
+        normalize_ref_ctx_t normalize_ctx = {
+            .repo = repo,
+            .types = type_rt->types,
+            .type = current,
+            .instance = current_instance,
+            .changes = changes,
+            .validate_only = validate_only,
+            .status = NMO_OK,
+        };
+        NMO_RETURN_IF_ERROR(nmo_type_foreach_ref_field(
+            current, current_instance, normalize_ref_field, &normalize_ctx));
+        if (normalize_ctx.status != NMO_OK) return normalize_ctx.status;
+    }
+    return NMO_OK;
 }
 
 nmo_status_t nmo_runtime_normalize_invalid_refs(
@@ -1465,6 +1546,12 @@ nmo_status_t nmo_runtime_normalize_invalid_refs(
     for (size_t i = 0; i < count; ++i) {
         nmo_object_t *obj = nmo_object_repository_get_by_index(repo, i);
         if (!obj || !obj->state) continue;
+        const nmo_type_descriptor_t *derived =
+            runtime_find_type_for_object(type_rt, obj);
+        if (derived != NULL) {
+            NMO_RETURN_IF_ERROR(normalize_object_ref_fields(
+                repo, type_rt, obj, derived, &changed, true));
+        }
         nmo_behavior_state_t *state = (nmo_behavior_state_t *)
             nmo_type_query_object_get_ancestor_state_by_guid(
                 type_rt->types, obj, CKPGUID_BEHAVIOR);
@@ -1530,30 +1617,9 @@ nmo_status_t nmo_runtime_normalize_invalid_refs(
         NMO_RETURN_IF_ERROR(normalize_dataarray_cells(
             dataarray, repo, type_rt->types, &changed));
 
-        const nmo_type_descriptor_t *derived =
-            runtime_find_type_for_object(type_rt, obj);
         if (derived == NULL) continue;
-        const nmo_type_descriptor_ext_t *layout = derived->ext;
-        const bool has_layout = layout != NULL && layout->hierarchy != NULL &&
-                                layout->hierarchy_depth > 0;
-        const size_t level_count = has_layout ? layout->hierarchy_depth : 1u;
-        for (size_t level = level_count; level > 0; --level) {
-            const size_t index = level - 1u;
-            const nmo_type_descriptor_t *current =
-                has_layout ? layout->hierarchy[index] : derived;
-            const uint32_t offset = has_layout && layout->state_offsets != NULL
-                ? layout->state_offsets[index]
-                : 0u;
-            void *current_instance = (uint8_t *)obj->state + offset;
-            if (current == NULL) continue;
-            normalize_ref_ctx_t normalize_ctx = {
-                .repo = repo, .types = type_rt->types,
-                .type = current, .instance = current_instance,
-                .changes = &changed,
-            };
-            NMO_RETURN_IF_ERROR(nmo_type_foreach_ref_field(
-                current, current_instance, normalize_ref_field, &normalize_ctx));
-        }
+        NMO_RETURN_IF_ERROR(normalize_object_ref_fields(
+            repo, type_rt, obj, derived, &changed, false));
     }
     if (out_change_count) *out_change_count = changed;
     return NMO_OK;

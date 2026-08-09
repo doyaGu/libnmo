@@ -1252,6 +1252,44 @@ TEST(runtime_kernel, beobject_normalize_validates_attributes_before_mutation) {
     nmo_context_release(ctx);
 }
 
+TEST(runtime_kernel, normalize_reports_malformed_ref_arrays_before_mutation) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+
+    nmo_object_id_t group_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_GROUP, "group", NMO_NULL_GUID,
+        &group_id, NULL));
+    nmo_group_state_t *group = (nmo_group_state_t *)
+        nmo_object_repository_find_by_id(repo, group_id)->state;
+    ASSERT_NOT_NULL(group);
+    nmo_beobject_attribute_t invalid_attribute = {
+        .parameter = nmo_ref_from_raw(0x7FFFFF64u),
+    };
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &group->base.attributes, &invalid_attribute));
+    const size_t saved_element_size = group->object_ids.element_size;
+    group->object_ids.element_size = 1;
+
+    size_t changed = 0;
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,
+              nmo_runtime_normalize_invalid_refs(
+                  repo, nmo_context_get_type_runtime(ctx), &changed));
+    ASSERT_EQ(0u, changed);
+    ASSERT_EQ(1u, group->base.attributes.count);
+    nmo_beobject_attribute_t *attributes = NMO_ARRAY_DATA(
+        nmo_beobject_attribute_t, &group->base.attributes);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, attributes[0].parameter.state);
+    ASSERT_EQ(0x7FFFFF64u, attributes[0].parameter.raw_id);
+
+    group->object_ids.element_size = saved_element_size;
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(runtime_kernel, normalize_clears_raw_scalar_class_mismatch) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
@@ -3533,6 +3571,7 @@ REGISTER_TEST(runtime_kernel, deserialize_failure_does_not_publish_state_for_fin
 REGISTER_TEST(runtime_kernel, normalize_removes_only_invalid_reference_records);
 REGISTER_TEST(runtime_kernel, behavior_normalize_validates_lanes_before_mutation);
 REGISTER_TEST(runtime_kernel, beobject_normalize_validates_attributes_before_mutation);
+REGISTER_TEST(runtime_kernel, normalize_reports_malformed_ref_arrays_before_mutation);
 REGISTER_TEST(runtime_kernel, normalize_clears_raw_scalar_class_mismatch);
 REGISTER_TEST(runtime_kernel, normalize_preserves_explicitly_typed_reference_targets);
 REGISTER_TEST(runtime_kernel, dependency_remap_preserves_invalid_references);
