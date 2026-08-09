@@ -43,6 +43,7 @@ typedef struct object_system_ref_capture_ctx {
     nmo_object_repository_t *repo;
     nmo_object_t *source;
     nmo_logger_t *logger;
+    nmo_status_t status;
 } object_system_ref_capture_ctx_t;
 
 typedef struct object_system_created_layer {
@@ -176,12 +177,14 @@ static bool object_system_capture_ref(
     }
 
     if (nmo_reference_resolver_register_reference(ctx->resolver, &ref) == NULL) {
+        ctx->status = NMO_ERR_NOMEM;
         if (ctx->logger != NULL) {
             nmo_log(ctx->logger, NMO_LOG_WARN,
                     "  Object ID=%u: failed to register reference target id=%u",
                     ctx->source ? ctx->source->id : 0,
                     target_id);
         }
+        return false;
     }
 
     return true;
@@ -785,7 +788,8 @@ nmo_status_t nmo_object_system_deserialize_loaded_objects(
                     .resolver = reference_resolver,
                     .repo = repo,
                     .source = obj,
-                    .logger = logger
+                    .logger = logger,
+                    .status = NMO_OK
                 };
 
                 nmo_status_t ref_result = nmo_ref_enumerate_object(
@@ -793,11 +797,19 @@ nmo_status_t nmo_object_system_deserialize_loaded_objects(
                     obj,
                     object_system_capture_ref,
                     &ref_ctx);
+                if (ref_result == NMO_OK) {
+                    ref_result = ref_ctx.status;
+                }
 
                 if (ref_result != NMO_OK && logger != NULL) {
                     nmo_log(logger, NMO_LOG_WARN,
                             "  Object file_index=%zu (ID=%u, file_id=%u, class=0x%08X, name='%s'): reference enumeration failed: %d",
                             file_index, obj->id, obj->file_id, obj->class_id, object_system_name_or_default(obj), ref_result);
+                }
+                if (ref_result == NMO_ERR_NOMEM ||
+                    ref_result == NMO_ERR_INTERNAL) {
+                    nmo_chunk_close(obj->chunk);
+                    return ref_result;
                 }
             }
 
@@ -841,7 +853,8 @@ nmo_status_t nmo_object_system_deserialize_loaded_objects(
                     .resolver = reference_resolver,
                     .repo = repo,
                     .source = obj,
-                    .logger = logger
+                    .logger = logger,
+                    .status = NMO_OK
                 };
 
                 nmo_status_t ref_result = nmo_ref_enumerate_object(
@@ -849,11 +862,19 @@ nmo_status_t nmo_object_system_deserialize_loaded_objects(
                     obj,
                     object_system_capture_ref,
                     &ref_ctx);
+                if (ref_result == NMO_OK) {
+                    ref_result = ref_ctx.status;
+                }
 
                 if (ref_result != NMO_OK && logger != NULL) {
                     nmo_log(logger, NMO_LOG_WARN,
                             "  Object file_index=%zu (ID=%u, file_id=%u, class=0x%08X, name='%s'): reference enumeration failed: %d",
                             file_index, obj->id, obj->file_id, obj->class_id, object_system_name_or_default(obj), ref_result);
+                }
+                if (ref_result == NMO_ERR_NOMEM ||
+                    ref_result == NMO_ERR_INTERNAL) {
+                    nmo_chunk_close(obj->chunk);
+                    return ref_result;
                 }
             }
 
