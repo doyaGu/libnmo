@@ -7971,6 +7971,22 @@ TEST(chunk_id_remap, beobject_serializer_does_not_publish_partial_chunk) {
     ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(target, &preserved));
     ASSERT_EQ(0x12345678u, preserved);
 
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, nmo_beobject_vtable.validate(
+        NULL, NULL, NULL));
+    size_t valid_element_size = state.scripts.element_size;
+    state.scripts.element_size = sizeof(nmo_object_id_t);
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_beobject_serialize(
+        &state, target, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
+    state.scripts.element_size = valid_element_size;
+
+    size_t valid_count = state.scripts.count;
+    state.scripts.count = (size_t)INT32_MAX + 1u;
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_beobject_serialize(
+        &state, target, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
+    state.scripts.count = valid_count;
+
     nmo_array_dispose(&state.scripts);
     nmo_array_dispose(&state.attributes);
     nmo_array_dispose(&state.legacy_attributes);

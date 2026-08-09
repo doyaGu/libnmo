@@ -913,6 +913,7 @@ nmo_status_t nmo_beobject_serialize(
     if (instance == NULL || out_chunk == NULL || out_chunk->arena == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
+    NMO_RETURN_IF_ERROR(nmo_beobject_validate(instance, type, context));
 
     nmo_chunk_t *staged = nmo_chunk_create(out_chunk->arena);
     if (staged == NULL) return NMO_ERR_NOMEM;
@@ -1051,9 +1052,14 @@ static nmo_status_t nmo_beobject_validate(
     void *context)
 {
     (void)type;
-    (void)context;
     const nmo_beobject_state_t *s = instance;
+    if (s == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    NMO_RETURN_IF_ERROR(nmo_sceneobject_vtable.validate(
+        &s->base, NULL, context));
     NMO_VALIDATE_COUNT(s->scripts.data, s->scripts.count, "scripts");
+    if (s->scripts.count > (size_t)INT32_MAX) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
     if (s->scripts.element_size != 0 &&
         s->scripts.element_size != sizeof(nmo_ref_t)) {
         return NMO_ERR_VALIDATION_FAILED;
@@ -1063,6 +1069,9 @@ static nmo_status_t nmo_beobject_validate(
         return NMO_ERR_VALIDATION_FAILED;
     }
     NMO_VALIDATE_COUNT(s->attributes.data, s->attributes.count, "attributes");
+    if (s->attributes.count > (size_t)INT32_MAX) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
     if (s->attributes.element_size != 0 &&
         s->attributes.element_size != sizeof(nmo_beobject_attribute_t)) {
         return NMO_ERR_VALIDATION_FAILED;
@@ -1075,6 +1084,9 @@ static nmo_status_t nmo_beobject_validate(
     NMO_VALIDATE_COUNT(
         s->legacy_attributes.data, s->legacy_attributes.count,
         "legacy_attributes");
+    if (s->legacy_attributes.count > (size_t)INT32_MAX) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
     if (s->legacy_attributes.element_size != 0 &&
         s->legacy_attributes.element_size !=
             sizeof(nmo_beobject_legacy_attribute_t)) {
