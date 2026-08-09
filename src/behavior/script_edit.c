@@ -755,23 +755,30 @@ static nmo_status_t script_edit_find_message_manager_value(
         if (status != NMO_OK) {
             return status;
         }
-        status = nmo_chunk_seek_identifier(chunk, 0x53u);
+        size_t section_dwords = 0u;
+        status = nmo_chunk_seek_identifier_with_size(
+            chunk, 0x53u, &section_dwords);
         if (status == NMO_ERR_NOT_FOUND) {
             continue;
         }
         if (status != NMO_OK) {
             return status;
         }
+        const size_t section_end =
+            nmo_chunk_get_position(chunk) + section_dwords;
 
         int32_t count = 0;
         status = nmo_chunk_read_int(chunk, &count);
         if (status != NMO_OK) {
             return status;
         }
+        if (nmo_chunk_get_position(chunk) > section_end) {
+            return NMO_ERR_TRUNCATED_CHUNK;
+        }
         if (count < 0 || count > 10000) {
             return NMO_ERR_VALIDATION_FAILED;
         }
-        if ((size_t)count > nmo_chunk_get_remaining(chunk)) {
+        if ((size_t)count > section_end - nmo_chunk_get_position(chunk)) {
             return NMO_ERR_TRUNCATED_CHUNK;
         }
         for (int32_t index = 0; index < count; ++index) {
@@ -779,6 +786,9 @@ static nmo_status_t script_edit_find_message_manager_value(
             status = nmo_chunk_read_string_checked(chunk, &entry_name, NULL);
             if (status != NMO_OK) {
                 return status;
+            }
+            if (nmo_chunk_get_position(chunk) > section_end) {
+                return NMO_ERR_TRUNCATED_CHUNK;
             }
             if (entry_name && strcmp(entry_name, name) == 0) {
                 *out_value = (uint32_t)index;
@@ -821,13 +831,17 @@ static nmo_status_t script_edit_find_attribute_manager_value(
         if (status != NMO_OK) {
             return status;
         }
-        status = nmo_chunk_seek_identifier(chunk, 0x52u);
+        size_t section_dwords = 0u;
+        status = nmo_chunk_seek_identifier_with_size(
+            chunk, 0x52u, &section_dwords);
         if (status == NMO_ERR_NOT_FOUND) {
             continue;
         }
         if (status != NMO_OK) {
             return status;
         }
+        const size_t section_end =
+            nmo_chunk_get_position(chunk) + section_dwords;
 
         int32_t category_count = 0;
         int32_t attribute_count = 0;
@@ -838,13 +852,17 @@ static nmo_status_t script_edit_find_attribute_manager_value(
         if (status != NMO_OK) {
             return status;
         }
+        if (nmo_chunk_get_position(chunk) > section_end) {
+            return NMO_ERR_TRUNCATED_CHUNK;
+        }
         if (category_count < 0 || category_count > 10000 ||
             attribute_count < 0 || attribute_count > 100000) {
             return NMO_ERR_VALIDATION_FAILED;
         }
         const size_t minimum_entry_dwords =
             (size_t)category_count + (size_t)attribute_count;
-        if (minimum_entry_dwords > nmo_chunk_get_remaining(chunk)) {
+        if (minimum_entry_dwords >
+            section_end - nmo_chunk_get_position(chunk)) {
             return NMO_ERR_TRUNCATED_CHUNK;
         }
 
@@ -866,6 +884,9 @@ static nmo_status_t script_edit_find_attribute_manager_value(
                     return status;
                 }
             }
+            if (nmo_chunk_get_position(chunk) > section_end) {
+                return NMO_ERR_TRUNCATED_CHUNK;
+            }
         }
 
         for (int32_t attr = 0; attr < attribute_count; ++attr) {
@@ -873,6 +894,9 @@ static nmo_status_t script_edit_find_attribute_manager_value(
             status = nmo_chunk_read_int(chunk, &present);
             if (status != NMO_OK) {
                 return status;
+            }
+            if (nmo_chunk_get_position(chunk) > section_end) {
+                return NMO_ERR_TRUNCATED_CHUNK;
             }
             if (!present) {
                 continue;
@@ -899,6 +923,9 @@ static nmo_status_t script_edit_find_attribute_manager_value(
             }
             if (status != NMO_OK) {
                 return status;
+            }
+            if (nmo_chunk_get_position(chunk) > section_end) {
+                return NMO_ERR_TRUNCATED_CHUNK;
             }
             if (attr_name && strcmp(attr_name, name) == 0) {
                 *out_value = (uint32_t)attr;

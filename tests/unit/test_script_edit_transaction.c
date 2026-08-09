@@ -2,6 +2,7 @@
 
 #include "document/nmo_document.h"
 #include "behavior/nmo_behavior_edit.h"
+#include "behavior/nmo_behavior_registry.h"
 #include "behavior/nmo_script_edit.h"
 #include "behavior/nmo_behavior_analyze.h"
 #include "runtime/nmo_workspace.h"
@@ -13,6 +14,8 @@
 #include "object/nmo_object_guids.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_ref_graph.h"
+#include "object/nmo_manager_guids.h"
+#include "object/nmo_param_guids.h"
 #include "object/nmo_statesave_ids.h"
 #include "object/builtin/nmo_beobject_schemas.h"
 #include "object/builtin/nmo_behavior_schemas.h"
@@ -24,6 +27,9 @@
 #include "object/builtin/nmo_parameterout_schemas.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "format/nmo_object.h"
+#include "format/nmo_data.h"
+#include "format/nmo_chunk.h"
+#include "format/nmo_chunk_api.h"
 #include "core/nmo_array.h"
 #include "core/nmo_arena.h"
 #include "type/nmo_type_guids.h"
@@ -325,6 +331,43 @@ static void setup_script_control_fixture(nmo_session_t *session,
     set_io_direction_or_fail(session, fixture->root_output_id, CK_BEHAVIORIO_OUT);
     set_io_direction_or_fail(session, fixture->source_output_id, CK_BEHAVIORIO_OUT);
     set_io_direction_or_fail(session, fixture->target_input_id, CK_BEHAVIORIO_IN);
+}
+
+static void install_cross_section_manager_or_fail(
+    nmo_session_t *session,
+    bool attribute_manager)
+{
+    nmo_chunk_t *chunk = nmo_chunk_create(nmo_session_get_arena(session));
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        chunk, attribute_manager ? 0x52u : 0x53u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 1));
+    if (attribute_manager) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 0));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 1));
+    }
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 8u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        chunk, 0x44434241u));
+    if (attribute_manager) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 17u));
+    }
+    nmo_chunk_close(chunk);
+
+    nmo_manager_data_t *manager = (nmo_manager_data_t *)nmo_arena_alloc(
+        nmo_session_get_arena(session), sizeof(*manager),
+        _Alignof(nmo_manager_data_t));
+    ASSERT_NOT_NULL(manager);
+    *manager = (nmo_manager_data_t){
+        .guid = attribute_manager
+            ? NMO_MANAGER_GUID_ATTRIBUTE
+            : NMO_MANAGER_GUID_MESSAGE,
+        .data_size = (uint32_t)nmo_chunk_get_size(chunk),
+        .chunk = chunk,
+        .flags = 0u,
+    };
+    nmo_session_set_manager_data(session, manager, 1u);
 }
 
 static nmo_object_id_t find_named_parameter_in_ids(
@@ -1094,6 +1137,55 @@ TEST(script_edit_transaction, connects_parameters_across_explicit_parent_graph)
     nmo_context_release(ctx);
 }
 
+TEST(script_edit_transaction, add_node_rejects_cross_section_manager_strings)
+{
+    for (size_t attribute_manager = 0u; attribute_manager < 2u;
+         ++attribute_manager) {
+        nmo_context_t *ctx = nmo_context_create(
+            &(nmo_context_desc_t){ .data_dir = NMO_TEST_DATA_DIR });
+        ASSERT_NOT_NULL(ctx);
+        nmo_session_t *session = nmo_session_create(ctx);
+        ASSERT_NOT_NULL(session);
+        script_control_fixture_t fixture;
+        setup_script_control_fixture(session, &fixture);
+        install_cross_section_manager_or_fail(
+            session, attribute_manager != 0u);
+
+        const nmo_behavior_param_desc_t input_param = {
+            .name = "Manager value",
+            .type_guid = attribute_manager != 0u
+                ? CKPGUID_ATTRIBUTE
+                : CKPGUID_MESSAGE,
+            .default_value = "ABCD",
+        };
+        const nmo_guid_t proto_guid = {
+            0x12340000u + (uint32_t)attribute_manager,
+            0x56780000u,
+        };
+        const nmo_behavior_proto_t proto = {
+            .guid = proto_guid,
+            .name = "Manager boundary probe",
+            .input_params = &input_param,
+            .input_param_count = 1u,
+        };
+        ASSERT_EQ(NMO_OK, nmo_behavior_registry_add(
+            nmo_context_get_bb_registry(ctx), &proto));
+
+        nmo_script_edit_tx_t *tx = NULL;
+        ASSERT_EQ(NMO_OK, begin_test_script_edit(
+            ctx, session, "manager section boundary", &tx));
+        nmo_object_id_t node_id = 0u;
+        ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_script_edit_add_node(
+            tx, fixture.root_behavior_id, proto_guid,
+            "Manager boundary node", &node_id));
+        ASSERT_EQ(0u, node_id);
+
+        nmo_script_edit_rollback(tx);
+        nmo_session_destroy(session);
+        nmo_context_release(ctx);
+    }
+}
+
 TEST(script_edit_transaction, writes_explicit_parameter_values)
 {
     nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
@@ -1362,6 +1454,8 @@ TEST_MAIN_BEGIN()
                   add_node_keeps_ballance_script_edit_validation_green);
     REGISTER_TEST(script_edit_transaction,
                   add_node_rejects_unknown_building_block);
+    REGISTER_TEST(script_edit_transaction,
+                  add_node_rejects_cross_section_manager_strings);
     REGISTER_TEST(script_edit_transaction,
                   add_node_materializes_targetable_beobject_target);
     REGISTER_TEST(script_edit_transaction,
