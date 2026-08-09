@@ -13,6 +13,7 @@
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_grid_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
+#include "object/builtin/nmo_parameter_schemas.h"
 #include "object/builtin/nmo_parameterin_schemas.h"
 #include "object/builtin/nmo_patchmesh_schemas.h"
 #include "object/builtin/nmo_place_schemas.h"
@@ -817,6 +818,20 @@ static bool normalize_id_is_invalid_for_typed_field(
     const void *instance,
     nmo_object_id_t id)
 {
+    if (type != NULL && field != NULL && field->name != NULL &&
+        nmo_guid_equals(type->guid, CKPGUID_PARAMETER) &&
+        strcmp(field->name, "object_ref") == 0) {
+        const nmo_parameter_state_t *state =
+            (const nmo_parameter_state_t *)instance;
+        const nmo_type_descriptor_t *parameter_type = state != NULL
+            ? nmo_type_registry_find_by_guid(types, state->type_guid)
+            : NULL;
+        const nmo_class_id_t expected = parameter_type != NULL
+            ? (nmo_class_id_t)parameter_type->class_id
+            : 0;
+        return normalize_id_is_invalid(repo, id) ||
+            normalize_id_has_wrong_class(repo, types, id, expected);
+    }
     if (type != NULL && field != NULL && field->name != NULL &&
         nmo_guid_equals(type->guid, CKPGUID_PARAMETERIN)) {
         if (strcmp(field->name, "source") == 0) {

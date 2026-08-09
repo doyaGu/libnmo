@@ -2216,6 +2216,66 @@ TEST(runtime_kernel, normalize_enforces_parameterin_reference_classes) {
     nmo_context_release(ctx);
 }
 
+TEST(runtime_kernel, normalize_uses_parameter_type_for_object_refs) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    nmo_object_id_t texture_id = 0;
+    nmo_object_id_t material_id = 0;
+    nmo_object_id_t valid_parameter_id = 0;
+    nmo_object_id_t invalid_parameter_id = 0;
+    nmo_object_id_t unknown_parameter_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_TEXTURE, "texture", NMO_NULL_GUID,
+        &texture_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_MATERIAL, "material", NMO_NULL_GUID,
+        &material_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_PARAMETER, "valid", NMO_NULL_GUID,
+        &valid_parameter_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_PARAMETER, "invalid", NMO_NULL_GUID,
+        &invalid_parameter_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_PARAMETER, "unknown-type", NMO_NULL_GUID,
+        &unknown_parameter_id, NULL));
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_parameter_state_t *valid = (nmo_parameter_state_t *)
+        nmo_object_repository_find_by_id(repo, valid_parameter_id)->state;
+    nmo_parameter_state_t *invalid = (nmo_parameter_state_t *)
+        nmo_object_repository_find_by_id(repo, invalid_parameter_id)->state;
+    nmo_parameter_state_t *unknown = (nmo_parameter_state_t *)
+        nmo_object_repository_find_by_id(repo, unknown_parameter_id)->state;
+    ASSERT_NOT_NULL(valid);
+    ASSERT_NOT_NULL(invalid);
+    ASSERT_NOT_NULL(unknown);
+
+    valid->type_guid = CKPGUID_TEXTURE;
+    valid->mode = CKPARAM_MODE_OBJECT;
+    valid->object_ref = nmo_ref_from_id(texture_id);
+    invalid->type_guid = CKPGUID_TEXTURE;
+    invalid->mode = CKPARAM_MODE_OBJECT;
+    invalid->object_ref = nmo_ref_from_id(material_id);
+    unknown->type_guid = (nmo_guid_t){0x12345678u, 0x9ABCDEF0u};
+    unknown->mode = CKPARAM_MODE_OBJECT;
+    unknown->object_ref = nmo_ref_from_id(material_id);
+
+    size_t changed = 0;
+    ASSERT_EQ(NMO_OK, nmo_runtime_normalize_invalid_refs(
+        repo, nmo_context_get_type_runtime(ctx), &changed));
+    ASSERT_EQ(1u, changed);
+    ASSERT_EQ(texture_id, nmo_parameter_object_id(valid));
+    ASSERT_EQ(NMO_REF_NONE, invalid->object_ref.state);
+    ASSERT_EQ(material_id, nmo_parameter_object_id(unknown));
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(runtime_kernel, dependency_remap_preserves_invalid_references) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
@@ -4384,6 +4444,7 @@ REGISTER_TEST(runtime_kernel, normalize_reports_malformed_ref_arrays_before_muta
 REGISTER_TEST(runtime_kernel, normalize_clears_raw_scalar_class_mismatch);
 REGISTER_TEST(runtime_kernel, normalize_preserves_explicitly_typed_reference_targets);
 REGISTER_TEST(runtime_kernel, normalize_enforces_parameterin_reference_classes);
+REGISTER_TEST(runtime_kernel, normalize_uses_parameter_type_for_object_refs);
 REGISTER_TEST(runtime_kernel, dependency_remap_preserves_invalid_references);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_scene_members);
 REGISTER_TEST(runtime_kernel, copy_remap_rejects_malformed_reference_storage);
