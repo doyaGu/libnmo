@@ -6659,6 +6659,97 @@ TEST(chunk_id_remap, sprite_failures_keep_state_and_target_chunk_atomic) {
     ASSERT_TRUE(state.has_sprite_ref);
     ASSERT_EQ(902u, state.sprite_ref.raw_id);
 
+    static const struct {
+        uint32_t identifier;
+        size_t payload_dwords;
+    } fixed_sections[] = {
+        {CK_STATESAVE_SPRITESHARED, 1u},
+        {CK_STATESAVE_SPRITETRANSPARENT, 2u},
+        {CK_STATESAVE_SPRITECURRENTIMAGE, 1u},
+    };
+    for (size_t i = 0; i < sizeof(fixed_sections) / sizeof(fixed_sections[0]);
+         ++i) {
+        nmo_chunk_t *file_trailing = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(file_trailing);
+        file_trailing->class_id = NMO_CID_SPRITE;
+        file_trailing->data_version = 7;
+        file_trailing->chunk_options |= NMO_CHUNK_OPTION_FILE;
+        ASSERT_EQ(NMO_OK, nmo_chunk_start_write(file_trailing));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+            file_trailing, CK_STATESAVE_2DENTITYONLY));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(file_trailing, 0u));
+        for (size_t j = 0; j < 4u; ++j) {
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_float(file_trailing, 0.0f));
+        }
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+            file_trailing, fixed_sections[i].identifier));
+        for (size_t j = 0; j < fixed_sections[i].payload_dwords; ++j) {
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(file_trailing, 0u));
+        }
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+            file_trailing, 0x12345678u));
+        nmo_chunk_close(file_trailing);
+
+        ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_sprite_deserialize(
+            &state, file_trailing, NULL, &deserialize_context));
+        ASSERT_TRUE(state.has_sprite_ref);
+        ASSERT_EQ(902u, state.sprite_ref.raw_id);
+        ASSERT_TRUE(state.has_transparency);
+        ASSERT_EQ(0x11223344u, state.transparent_color);
+        ASSERT_TRUE(state.has_slot);
+        ASSERT_EQ(7u, state.current_slot);
+
+        nmo_chunk_t *chunk_trailing = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(chunk_trailing);
+        chunk_trailing->class_id = NMO_CID_SPRITE;
+        chunk_trailing->data_version = 4;
+        ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk_trailing));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+            chunk_trailing, fixed_sections[i].identifier));
+        for (size_t j = 0; j < fixed_sections[i].payload_dwords; ++j) {
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk_trailing, 0u));
+        }
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+            chunk_trailing, 0x12345678u));
+        nmo_chunk_close(chunk_trailing);
+
+        ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_sprite_deserialize(
+            &state, chunk_trailing, NULL, &chunk_context));
+        ASSERT_TRUE(state.has_sprite_ref);
+        ASSERT_EQ(902u, state.sprite_ref.raw_id);
+        ASSERT_TRUE(state.has_transparency);
+        ASSERT_EQ(0x11223344u, state.transparent_color);
+        ASSERT_TRUE(state.has_slot);
+        ASSERT_EQ(7u, state.current_slot);
+    }
+
+    nmo_chunk_t *format_trailing = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(format_trailing);
+    format_trailing->class_id = NMO_CID_SPRITE;
+    format_trailing->data_version = 7;
+    format_trailing->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(format_trailing));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        format_trailing, CK_STATESAVE_2DENTITYONLY));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(format_trailing, 0u));
+    for (size_t i = 0; i < 4u; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_float(format_trailing, 0.0f));
+    }
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        format_trailing, CK_STATESAVE_SPRITEFORMAT));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(format_trailing, 1u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_buffer(format_trailing, NULL, 0u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(format_trailing, 0x12345678u));
+    nmo_chunk_close(format_trailing);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_sprite_deserialize(
+        &state, format_trailing, NULL, &deserialize_context));
+    ASSERT_TRUE(state.has_sprite_ref);
+    ASSERT_EQ(902u, state.sprite_ref.raw_id);
+    ASSERT_TRUE(state.has_transparency);
+    ASSERT_EQ(0x11223344u, state.transparent_color);
+    ASSERT_TRUE(state.has_slot);
+    ASSERT_EQ(7u, state.current_slot);
+
     nmo_id_remap_t *runtime_to_file = nmo_id_remap_create(arena);
     ASSERT_NOT_NULL(runtime_to_file);
     nmo_chunk_file_context_t file_context = {
