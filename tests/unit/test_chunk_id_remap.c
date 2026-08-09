@@ -14226,6 +14226,73 @@ TEST(chunk_id_remap, curve_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(992u, failed.sub_points[0].ref.raw_id);
     ASSERT_EQ(subchunk, failed.sub_points[0].chunk);
 
+    nmo_curve_state_t bounded;
+    ASSERT_EQ(NMO_OK, nmo_curve_vtable.create(&bounded, NULL, NULL));
+    bounded.fitting_coeff = 12.5f;
+
+    nmo_chunk_t *missing_curve_tail = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(missing_curve_tail);
+    missing_curve_tail->data_version = 7;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(missing_curve_tail));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        missing_curve_tail, CK_STATESAVE_CURVEONLY));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(
+        missing_curve_tail, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(missing_curve_tail, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(missing_curve_tail, 0));
+    nmo_chunk_close(missing_curve_tail);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_curve_deserialize(
+        &bounded, missing_curve_tail, NULL, &deserialize_context));
+    ASSERT_EQ(12.5f, bounded.fitting_coeff);
+
+    nmo_chunk_t *missing_saved_point_count = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(missing_saved_point_count);
+    missing_saved_point_count->data_version = 7;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(missing_saved_point_count));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        missing_saved_point_count, CK_STATESAVE_CURVESAVEPOINTS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        missing_saved_point_count, 0));
+    nmo_chunk_close(missing_saved_point_count);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_curve_deserialize(
+        &bounded, missing_saved_point_count, NULL, &deserialize_context));
+    ASSERT_EQ(12.5f, bounded.fitting_coeff);
+
+    const uint32_t legacy_scalar_sections[] = {
+        CK_STATESAVE_CURVEFITCOEFF,
+        CK_STATESAVE_CURVESTEPS,
+        CK_STATESAVE_CURVEOPEN,
+    };
+    for (size_t i = 0;
+         i < sizeof(legacy_scalar_sections) /
+                 sizeof(legacy_scalar_sections[0]);
+         ++i) {
+        nmo_chunk_t *missing_scalar = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(missing_scalar);
+        missing_scalar->data_version = 4;
+        ASSERT_EQ(NMO_OK, nmo_chunk_start_write(missing_scalar));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+            missing_scalar, legacy_scalar_sections[i]));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(missing_scalar, 0));
+        nmo_chunk_close(missing_scalar);
+        ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_curve_deserialize(
+            &bounded, missing_scalar, NULL, &deserialize_context));
+        ASSERT_EQ(12.5f, bounded.fitting_coeff);
+    }
+
+    nmo_chunk_t *missing_legacy_point_count = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(missing_legacy_point_count);
+    missing_legacy_point_count->data_version = 4;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(missing_legacy_point_count));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        missing_legacy_point_count, CK_STATESAVE_CURVECONTROLPOINT));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        missing_legacy_point_count, 0));
+    nmo_chunk_close(missing_legacy_point_count);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_curve_deserialize(
+        &bounded, missing_legacy_point_count, NULL, &deserialize_context));
+    ASSERT_EQ(12.5f, bounded.fitting_coeff);
+
     nmo_curve_state_t invalid;
     ASSERT_EQ(NMO_OK, nmo_curve_vtable.create(&invalid, NULL, NULL));
     invalid.control_point_count = 1;
@@ -14258,6 +14325,7 @@ TEST(chunk_id_remap, curve_refs_round_trip_and_failure_is_atomic) {
     nmo_curve_vtable.destroy(&copy_failed, NULL, NULL);
     nmo_curve_vtable.destroy(&reloaded, NULL, NULL);
     nmo_curve_vtable.destroy(&failed, NULL, NULL);
+    nmo_curve_vtable.destroy(&bounded, NULL, NULL);
     nmo_curve_vtable.destroy(&invalid, NULL, NULL);
     nmo_arena_destroy(failing_arena);
     nmo_arena_destroy(arena);

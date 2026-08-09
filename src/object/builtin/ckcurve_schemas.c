@@ -126,6 +126,7 @@ static void nmo_curve_dispose_state(nmo_curve_state_t *state)
 static nmo_status_t read_object_sequence(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
+    size_t trailing_dwords,
     nmo_ref_t **out_ids,
     uint32_t *out_count)
 {
@@ -133,18 +134,21 @@ static nmo_status_t read_object_sequence(
     nmo_status_t result = nmo_chunk_read_object_sequence_start(chunk, &count);
     if (result != NMO_OK) return result;
 
-    if (count == 0) {
-        *out_ids = NULL;
-        *out_count = 0;
-        NMO_RETURN_OK();
-    }
     if (count > UINT32_MAX || count > SIZE_MAX / sizeof(nmo_ref_t)) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                          "Curve control point count overflow");
     }
-    if (count > nmo_curve_identifier_remaining_dwords(chunk)) {
+    const size_t remaining_dwords =
+        nmo_curve_identifier_remaining_dwords(chunk);
+    if (trailing_dwords > remaining_dwords ||
+        count > remaining_dwords - trailing_dwords) {
         NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                          "Curve control point count exceeds identifier payload");
+    }
+    if (count == 0) {
+        *out_ids = NULL;
+        *out_count = 0;
+        NMO_RETURN_OK();
     }
 
     nmo_ref_t *ids = (nmo_ref_t *)nmo_arena_alloc(
@@ -677,14 +681,26 @@ static nmo_status_t nmo_curve_deserialize_internal(
     uint32_t data_version = nmo_chunk_get_data_version(chunk);
 
     if (data_version < 5) {
-        result = nmo_chunk_seek_identifier(
-            chunk, CK_STATESAVE_CURVECONTROLPOINT);
+        size_t control_points_section_dwords = 0;
+        result = nmo_chunk_seek_identifier_with_size(
+            chunk, CK_STATESAVE_CURVECONTROLPOINT,
+            &control_points_section_dwords);
         if (result == NMO_OK) {
+            if (control_points_section_dwords < 1u) {
+                return NMO_ERR_TRUNCATED_CHUNK;
+            }
+            const size_t control_points_section_end =
+                nmo_chunk_get_position(chunk) +
+                control_points_section_dwords;
             nmo_ref_t *control_points = NULL;
             uint32_t control_point_count = 0;
             result = read_object_sequence(
-                chunk, arena, &control_points, &control_point_count);
+                chunk, arena, 0, &control_points, &control_point_count);
             if (result != NMO_OK) return result;
+            if (nmo_chunk_get_position(chunk) >
+                control_points_section_end) {
+                return NMO_ERR_TRUNCATED_CHUNK;
+            }
             nmo_curve_check_point_refs(
                 control_points, control_point_count, context);
             out_state->has_curve_data = 1;
@@ -692,31 +708,45 @@ static nmo_status_t nmo_curve_deserialize_internal(
             out_state->control_point_ids = control_points;
             out_state->control_point_count = control_point_count;
         } else if (result != NMO_ERR_NOT_FOUND) return result;
-        result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEFITCOEFF);
+        size_t fitting_section_dwords = 0;
+        result = nmo_chunk_seek_identifier_with_size(
+            chunk, CK_STATESAVE_CURVEFITCOEFF, &fitting_section_dwords);
         if (result == NMO_OK) {
+            if (fitting_section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
             out_state->has_curve_data = 1;
             out_state->has_fitting_chunk = 1;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->fitting_coeff));
         } else if (result != NMO_ERR_NOT_FOUND) return result;
-        result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVESTEPS);
+        size_t steps_section_dwords = 0;
+        result = nmo_chunk_seek_identifier_with_size(
+            chunk, CK_STATESAVE_CURVESTEPS, &steps_section_dwords);
         if (result == NMO_OK) {
+            if (steps_section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
             out_state->has_curve_data = 1;
             out_state->has_steps_chunk = 1;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->step_count));
         } else if (result != NMO_ERR_NOT_FOUND) return result;
-        result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEOPEN);
+        size_t open_section_dwords = 0;
+        result = nmo_chunk_seek_identifier_with_size(
+            chunk, CK_STATESAVE_CURVEOPEN, &open_section_dwords);
         if (result == NMO_OK) {
+            if (open_section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
             out_state->has_curve_data = 1;
             out_state->has_open_chunk = 1;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->opened));
         } else if (result != NMO_ERR_NOT_FOUND) return result;
     } else {
-        result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVEONLY);
+        size_t curve_section_dwords = 0;
+        result = nmo_chunk_seek_identifier_with_size(
+            chunk, CK_STATESAVE_CURVEONLY, &curve_section_dwords);
         if (result == NMO_OK) {
+            if (curve_section_dwords < 4u) return NMO_ERR_TRUNCATED_CHUNK;
+            const size_t curve_section_end =
+                nmo_chunk_get_position(chunk) + curve_section_dwords;
             nmo_ref_t *control_points = NULL;
             uint32_t control_point_count = 0;
             result = read_object_sequence(
-                chunk, arena, &control_points, &control_point_count);
+                chunk, arena, 3, &control_points, &control_point_count);
             if (result != NMO_OK) return result;
             nmo_curve_check_point_refs(
                 control_points, control_point_count, context);
@@ -727,11 +757,19 @@ static nmo_status_t nmo_curve_deserialize_internal(
             NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->fitting_coeff));
             NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->step_count));
             NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->opened));
+            if (nmo_chunk_get_position(chunk) > curve_section_end) {
+                return NMO_ERR_TRUNCATED_CHUNK;
+            }
         } else if (result != NMO_ERR_NOT_FOUND) return result;
     }
 
-    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_CURVESAVEPOINTS);
+    size_t savepoints_section_dwords = 0;
+    result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_CURVESAVEPOINTS, &savepoints_section_dwords);
     if (result == NMO_OK) {
+        if (savepoints_section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+        const size_t savepoints_section_end =
+            nmo_chunk_get_position(chunk) + savepoints_section_dwords;
         out_state->has_savepoints_chunk = 1;
         if (chunk->chunk_options & NMO_CHUNK_OPTION_FILE) {
             out_state->savepoints_in_file = 1;
@@ -768,6 +806,9 @@ static nmo_status_t nmo_curve_deserialize_internal(
                     chunk, &sub_points[i].chunk));
                 nmo_curve_check_point_refs(&sub_points[i].ref, 1, context);
             }
+        }
+        if (nmo_chunk_get_position(chunk) > savepoints_section_end) {
+            return NMO_ERR_TRUNCATED_CHUNK;
         }
     } else if (result != NMO_ERR_NOT_FOUND) return result;
 
