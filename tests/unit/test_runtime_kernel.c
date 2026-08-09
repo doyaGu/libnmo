@@ -1611,6 +1611,64 @@ TEST(runtime_kernel, copy_remap_updates_only_resolved_behaviorlink_endpoints) {
     nmo_context_release(ctx);
 }
 
+TEST(runtime_kernel, copy_remap_updates_only_resolved_behavior_records) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    const nmo_type_runtime_t *type_rt = nmo_context_get_type_runtime(ctx);
+    const nmo_type_descriptor_t *behavior_type =
+        nmo_type_registry_find_by_class_id(
+            type_rt->types, NMO_CID_BEHAVIOR);
+    ASSERT_NOT_NULL(behavior_type);
+
+    nmo_behavior_state_t state = {0};
+    ASSERT_EQ(NMO_OK, nmo_array_init(
+        &state.sub_behaviors, sizeof(nmo_behavior_ref_t), 2, NULL));
+    nmo_arena_t *chunk_arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(chunk_arena);
+    nmo_chunk_t *resolved_chunk = nmo_chunk_create(chunk_arena);
+    nmo_chunk_t *unresolved_chunk = nmo_chunk_create(chunk_arena);
+    ASSERT_NOT_NULL(resolved_chunk);
+    ASSERT_NOT_NULL(unresolved_chunk);
+    nmo_behavior_ref_t refs[] = {
+        {.ref = nmo_ref_from_id(101), .chunk = resolved_chunk},
+        {.ref = nmo_ref_from_raw(102), .chunk = unresolved_chunk},
+    };
+    ASSERT_EQ(NMO_OK, nmo_array_append_array(
+        &state.sub_behaviors, refs, 2));
+    state.owner = nmo_ref_from_id(103);
+    state.target_parameter = nmo_ref_from_raw(104);
+
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_id_remap_t *remap = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(remap);
+    for (nmo_object_id_t old_id = 101; old_id <= 104; ++old_id) {
+        ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, old_id, old_id + 100));
+    }
+
+    ASSERT_EQ(NMO_OK, nmo_runtime_remap_copy_refs(
+        type_rt, behavior_type, &state, remap));
+    nmo_behavior_ref_t *remapped = NMO_ARRAY_DATA(
+        nmo_behavior_ref_t, &state.sub_behaviors);
+    ASSERT_EQ(201u, nmo_behavior_ref_runtime_id(&remapped[0]));
+    ASSERT_EQ(101u, remapped[0].ref.raw_id);
+    ASSERT_EQ(resolved_chunk, remapped[0].chunk);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, remapped[1].ref.state);
+    ASSERT_EQ(102u, remapped[1].ref.raw_id);
+    ASSERT_EQ(unresolved_chunk, remapped[1].chunk);
+    ASSERT_EQ(203u, nmo_ref_runtime_id(&state.owner));
+    ASSERT_EQ(103u, state.owner.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, state.target_parameter.state);
+    ASSERT_EQ(104u, state.target_parameter.raw_id);
+
+    nmo_array_dispose(&state.sub_behaviors);
+    nmo_chunk_destroy(unresolved_chunk);
+    nmo_chunk_destroy(resolved_chunk);
+    nmo_arena_destroy(chunk_arena);
+    nmo_arena_destroy(arena);
+    nmo_context_release(ctx);
+}
+
 TEST(runtime_kernel, copy_remap_updates_only_resolved_material_refs) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
@@ -3261,6 +3319,7 @@ REGISTER_TEST(runtime_kernel, dependency_remap_preserves_invalid_references);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_scene_members);
 REGISTER_TEST(runtime_kernel, safe_detach_removes_scene_members_atomically);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_behaviorlink_endpoints);
+REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_behavior_records);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_material_refs);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_keyedanimation_refs);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_objectanimation_refs);

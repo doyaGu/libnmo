@@ -180,6 +180,43 @@ static void runtime_remap_scene_objects(
     }
 }
 
+static nmo_status_t runtime_remap_behavior_refs(
+    nmo_behavior_state_t *state,
+    const nmo_id_remap_t *remap)
+{
+    if (state == NULL) return NMO_OK;
+    nmo_array_t *arrays[] = {
+        &state->sub_behaviors,
+        &state->sub_behavior_links,
+        &state->operations,
+        &state->in_parameters,
+        &state->out_parameters,
+        &state->local_parameters,
+        &state->inputs,
+        &state->outputs,
+    };
+    const size_t array_count = sizeof(arrays) / sizeof(arrays[0]);
+    for (size_t i = 0; i < array_count; ++i) {
+        if ((arrays[i]->count > 0 && arrays[i]->data == NULL) ||
+            ((arrays[i]->element_size != 0 || arrays[i]->count > 0) &&
+             arrays[i]->element_size != sizeof(nmo_behavior_ref_t))) {
+            return NMO_ERR_VALIDATION_FAILED;
+        }
+    }
+    for (size_t i = 0; i < array_count; ++i) {
+        nmo_behavior_ref_t *refs = NMO_ARRAY_DATA(
+            nmo_behavior_ref_t, arrays[i]);
+        for (size_t j = 0; j < arrays[i]->count; ++j) {
+            nmo_object_id_t mapped = NMO_OBJECT_ID_NONE;
+            if (refs[j].ref.state == NMO_REF_RESOLVED &&
+                runtime_lookup_mapping(remap, refs[j].ref.id, &mapped)) {
+                refs[j].ref.id = mapped;
+            }
+        }
+    }
+    return NMO_OK;
+}
+
 static nmo_status_t runtime_remap_beobject_attributes(
     nmo_beobject_state_t *state,
     const nmo_id_remap_t *remap)
@@ -503,6 +540,10 @@ nmo_status_t nmo_runtime_remap_copy_refs(
         if (nmo_guid_equals(current->guid, CKPGUID_SCENE)) {
             runtime_remap_scene_objects(
                 (nmo_scene_state_t *)current_instance, remap);
+        }
+        if (nmo_guid_equals(current->guid, CKPGUID_BEHAVIOR)) {
+            NMO_RETURN_IF_ERROR(runtime_remap_behavior_refs(
+                (nmo_behavior_state_t *)current_instance, remap));
         }
         if (nmo_guid_equals(current->guid, CKPGUID_BEOBJECT)) {
             NMO_RETURN_IF_ERROR(runtime_remap_beobject_attributes(
