@@ -4101,6 +4101,179 @@ TEST(chunk_id_remap, texture_failures_keep_state_and_target_chunk_atomic) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, texture_copy_preserves_nested_content) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+
+    uint8_t reader_data[] = {1, 2, 3, 4};
+    uint8_t reader_alpha[] = {5, 6};
+    nmo_texture_reader_slot_t reader_slot = {
+        .format_type = 1,
+        .extension = 0x504E47u,
+        .reader_guid = {11, 12},
+        .data_size = sizeof(reader_data),
+        .data = reader_data,
+        .alpha_count = 2,
+        .alpha_value = 7,
+        .alpha_plane_size = sizeof(reader_alpha),
+        .alpha_plane = reader_alpha,
+    };
+    uint8_t blue[] = {8};
+    uint8_t green[] = {9};
+    uint8_t red[] = {10};
+    uint8_t alpha[] = {11};
+    nmo_texture_raw_slot_t raw_slot = {
+        .bits_per_pixel = 32,
+        .width = 2,
+        .height = 2,
+        .alpha_mask = 0xFF000000u,
+        .red_mask = 0x00FF0000u,
+        .green_mask = 0x0000FF00u,
+        .blue_mask = 0x000000FFu,
+        .compression = 3,
+        .blue_size = sizeof(blue),
+        .blue_data = blue,
+        .green_size = sizeof(green),
+        .green_data = green,
+        .red_size = sizeof(red),
+        .red_data = red,
+        .alpha_size = sizeof(alpha),
+        .alpha_data = alpha,
+    };
+    uint8_t bitmap2_data[] = {12, 13, 14};
+    nmo_texture_bitmap2_slot_t bitmap2_slot = {
+        .header_size = 40,
+        .buffer_size = sizeof(bitmap2_data),
+        .buffer = bitmap2_data,
+    };
+    uint8_t mip_blue[] = {15, 16};
+    nmo_texture_raw_slot_t mipmap = {
+        .bits_per_pixel = 8,
+        .width = 1,
+        .height = 1,
+        .blue_size = sizeof(mip_blue),
+        .blue_data = mip_blue,
+    };
+    char *slot_names[] = {"slot.png"};
+    uint8_t save_format[] = {17, 18, 19, 20};
+
+    nmo_texture_state_t source;
+    nmo_texture_state_t copy;
+    ASSERT_EQ(NMO_OK, nmo_texture_vtable.create(&source, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_texture_vtable.create(&copy, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &source.base.scripts, 701));
+    source.has_movie_filename = 1;
+    source.movie_filename = "movie.avi";
+    source.has_slot_filenames = 1;
+    source.slot_count = 1;
+    source.slot_filenames = slot_names;
+    source.reader_width = 2;
+    source.reader_height = 2;
+    source.reader_bpp = 32;
+    source.bitmap_kind = CKTEXTURE_BITMAP_READER;
+    source.reader_slots = &reader_slot;
+    source.raw_slots = &raw_slot;
+    source.bitmap2_slots = &bitmap2_slot;
+    source.has_pick_threshold = 1;
+    source.pick_threshold = 31;
+    source.has_oldtexonly = 1;
+    source.mipmap_level = 2;
+    source.save_options = 3;
+    source.is_transparent = 1;
+    source.is_cubemap = 1;
+    source.has_desired_video_format = 1;
+    source.desired_video_format = 4;
+    source.has_transparent_color = 1;
+    source.transparent_color = 0x11223344u;
+    source.has_current_slot = 1;
+    source.current_slot = 0;
+    source.has_save_format = 1;
+    source.save_format_data = save_format;
+    source.save_format_size = sizeof(save_format);
+    source.has_user_mipmaps = 1;
+    source.user_mipmap_count = 1;
+    source.user_mipmaps = &mipmap;
+
+    nmo_type_descriptor_t type = {
+        .size = sizeof(nmo_texture_state_t),
+    };
+    ASSERT_EQ(NMO_OK, nmo_texture_vtable.copy(
+        &source, &copy, &type, arena));
+    ASSERT_NE(source.base.scripts.data, copy.base.scripts.data);
+    ASSERT_NE(source.movie_filename, copy.movie_filename);
+    ASSERT_NE(source.slot_filenames, copy.slot_filenames);
+    ASSERT_NE(source.slot_filenames[0], copy.slot_filenames[0]);
+    ASSERT_NE(source.reader_slots, copy.reader_slots);
+    ASSERT_NE(source.reader_slots[0].data, copy.reader_slots[0].data);
+    ASSERT_NE(source.reader_slots[0].alpha_plane,
+              copy.reader_slots[0].alpha_plane);
+    ASSERT_NE(source.raw_slots, copy.raw_slots);
+    ASSERT_NE(source.raw_slots[0].red_data, copy.raw_slots[0].red_data);
+    ASSERT_NE(source.bitmap2_slots, copy.bitmap2_slots);
+    ASSERT_NE(source.bitmap2_slots[0].buffer,
+              copy.bitmap2_slots[0].buffer);
+    ASSERT_NE(source.save_format_data, copy.save_format_data);
+    ASSERT_NE(source.user_mipmaps, copy.user_mipmaps);
+    ASSERT_NE(source.user_mipmaps[0].blue_data,
+              copy.user_mipmaps[0].blue_data);
+    ASSERT_TRUE(nmo_texture_vtable.equals(&source, &copy));
+    ASSERT_EQ(nmo_texture_vtable.hash(&source),
+              nmo_texture_vtable.hash(&copy));
+    copy.raw_slots[0].red_data[0] ^= 0xFFu;
+    ASSERT_FALSE(nmo_texture_vtable.equals(&source, &copy));
+    copy.raw_slots[0].red_data[0] ^= 0xFFu;
+
+    nmo_texture_state_t unnamed;
+    nmo_texture_state_t unnamed_copy;
+    ASSERT_EQ(NMO_OK, nmo_texture_vtable.create(&unnamed, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_texture_vtable.create(
+        &unnamed_copy, NULL, NULL));
+    unnamed.slot_count = 1;
+    unnamed.bitmap_kind = CKTEXTURE_BITMAP_READER;
+    unnamed.reader_slots = &reader_slot;
+    ASSERT_EQ(NMO_OK, nmo_texture_vtable.copy(
+        &unnamed, &unnamed_copy, &type, arena));
+    ASSERT_NULL(unnamed_copy.slot_filenames);
+    ASSERT_TRUE(nmo_texture_vtable.equals(&unnamed, &unnamed_copy));
+
+    fail_after_allocator_state_t allocator_state = {
+        .allowed_allocations = 1,
+    };
+    nmo_allocator_t failing_allocator = {
+        .alloc = fail_after_alloc,
+        .free = fail_after_free,
+        .user_data = &allocator_state,
+    };
+    nmo_texture_state_t failing_source;
+    ASSERT_EQ(NMO_OK, nmo_texture_vtable.create(
+        &failing_source, NULL, NULL));
+    nmo_array_dispose(&failing_source.base.scripts);
+    ASSERT_EQ(NMO_OK, nmo_array_init(
+        &failing_source.base.scripts, sizeof(nmo_ref_t), 1,
+        &failing_allocator));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &failing_source.base.scripts, 801));
+    ASSERT_EQ(NMO_OK, nmo_beobject_attribute_array_append(
+        &failing_source.base.attributes, 802, 9, NULL));
+    allocator_state.allowed_allocations = allocator_state.allocation_count;
+    nmo_texture_reader_slot_t *published_reader_slots = copy.reader_slots;
+    void *published_save_format = copy.save_format_data;
+    ASSERT_EQ(NMO_ERR_NOMEM, nmo_texture_vtable.copy(
+        &failing_source, &copy, &type, arena));
+    ASSERT_EQ(published_reader_slots, copy.reader_slots);
+    ASSERT_EQ(published_save_format, copy.save_format_data);
+    ASSERT_EQ(1u, failing_source.base.attributes.count);
+    ASSERT_NOT_NULL(failing_source.base.attributes.data);
+
+    nmo_texture_vtable.destroy(&failing_source, NULL, NULL);
+    nmo_texture_vtable.destroy(&unnamed, NULL, NULL);
+    nmo_texture_vtable.destroy(&unnamed_copy, NULL, NULL);
+    nmo_texture_vtable.destroy(&source, NULL, NULL);
+    nmo_texture_vtable.destroy(&copy, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, curvepoint_unresolved_curve_round_trips_raw_id) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
     ASSERT_NOT_NULL(arena);
@@ -9486,6 +9659,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, sprite_failures_keep_state_and_target_chunk_atomic);
     REGISTER_TEST(chunk_id_remap, spritetext_failures_keep_state_and_target_chunk_atomic);
     REGISTER_TEST(chunk_id_remap, texture_failures_keep_state_and_target_chunk_atomic);
+    REGISTER_TEST(chunk_id_remap, texture_copy_preserves_nested_content);
     REGISTER_TEST(chunk_id_remap, curvepoint_unresolved_curve_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, sprite3d_unresolved_material_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, wavesound_unresolved_attachment_round_trips_raw_id);
