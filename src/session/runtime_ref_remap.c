@@ -764,7 +764,7 @@ static nmo_class_id_t normalize_expected_class_for_typed_field(
     if (type != NULL && field != NULL && field->name != NULL &&
         nmo_guid_equals(type->guid, CKPGUID_BEHAVIOR)) {
         if (strcmp(field->name, "owner") == 0) {
-            return NMO_CID_SCENEOBJECT;
+            return NMO_CID_BEOBJECT;
         }
         if (strcmp(field->name, "target_parameter") == 0) {
             return NMO_CID_PARAMETERIN;
@@ -1558,7 +1558,7 @@ nmo_status_t nmo_runtime_normalize_invalid_refs(
         if (state) {
             size_t object_changes = 0;
             NMO_RETURN_IF_ERROR(nmo_behavior_normalize_references(
-                state, repo, &object_changes));
+                state, repo, type_rt->types, &object_changes));
             changed += object_changes;
         }
 

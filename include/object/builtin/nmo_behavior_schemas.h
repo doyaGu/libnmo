@@ -232,6 +232,7 @@ NMO_API nmo_status_t nmo_behavior_remap_dependencies(
 NMO_API nmo_status_t nmo_behavior_normalize_references(
     nmo_behavior_state_t *state,
     nmo_object_repository_t *repository,
+    const nmo_type_registry_t *types,
     size_t *out_change_count);
 
 /**

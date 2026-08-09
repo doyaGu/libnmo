@@ -41,6 +41,7 @@
 #include "object/nmo_object_repository.h"
 #include "object/nmo_ref_graph.h"
 #include "type/nmo_reflection.h"
+#include "type/nmo_type_query.h"
 #include "nmo_types.h"
 #include <stddef.h>
 #include <stdalign.h>
@@ -1969,9 +1970,14 @@ nmo_status_t nmo_behavior_prepare_dependencies(
 static nmo_status_t normalize_behavior_array(
     nmo_array_t *refs_array,
     nmo_object_repository_t *repo,
+    const nmo_type_registry_t *types,
+    nmo_class_id_t expected_class_id,
     size_t *out_changes)
 {
-    if (!refs_array || !out_changes) return NMO_ERR_INVALID_ARGUMENT;
+    if (!refs_array || !repo || !types || expected_class_id == 0 ||
+        !out_changes) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
     if (((refs_array->element_size != 0 || refs_array->count > 0) &&
          refs_array->element_size != sizeof(nmo_behavior_ref_t)) ||
         (refs_array->count > 0 && !refs_array->data)) {
@@ -1982,8 +1988,12 @@ static nmo_status_t normalize_behavior_array(
         nmo_behavior_ref_t *refs = NMO_ARRAY_DATA(
             nmo_behavior_ref_t, refs_array);
         const nmo_object_id_t id = nmo_behavior_ref_runtime_id(&refs[i]);
-        if (id != NMO_OBJECT_ID_NONE &&
-            nmo_object_repository_find_by_id(repo, id) != NULL) {
+        const nmo_object_t *target = id != NMO_OBJECT_ID_NONE
+            ? nmo_object_repository_find_by_id(repo, id)
+            : NULL;
+        if (refs[i].ref.state == NMO_REF_RESOLVED && target != NULL &&
+            nmo_type_query_object_is_derived_from_class(
+                types, target, expected_class_id)) {
             ++i;
             continue;
         }
@@ -1996,39 +2006,62 @@ static nmo_status_t normalize_behavior_array(
 nmo_status_t nmo_behavior_normalize_references(
     nmo_behavior_state_t *state,
     nmo_object_repository_t *repository,
+    const nmo_type_registry_t *types,
     size_t *out_change_count)
 {
-    if (!state || !repository) return NMO_ERR_INVALID_ARGUMENT;
+    if (!state || !repository || !types) return NMO_ERR_INVALID_ARGUMENT;
     NMO_RETURN_IF_ERROR(nmo_behavior_validate(state, NULL, NULL));
     size_t changed = 0;
     const nmo_object_id_t owner_id = nmo_behavior_owner_id(state);
+    const nmo_object_t *owner = owner_id != NMO_OBJECT_ID_NONE
+        ? nmo_object_repository_find_by_id(repository, owner_id)
+        : NULL;
     if (state->owner.state != NMO_REF_NONE &&
-        (owner_id == NMO_OBJECT_ID_NONE ||
-         !nmo_object_repository_find_by_id(repository, owner_id))) {
+        (state->owner.state != NMO_REF_RESOLVED || owner == NULL ||
+         !nmo_type_query_object_is_derived_from_class(
+             types, owner, NMO_CID_BEOBJECT))) {
         state->owner = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         changed++;
     }
     const nmo_object_id_t target_parameter_id =
         nmo_behavior_target_parameter_id(state);
+    const nmo_object_t *target_parameter =
+        target_parameter_id != NMO_OBJECT_ID_NONE
+            ? nmo_object_repository_find_by_id(
+                  repository, target_parameter_id)
+            : NULL;
     if (state->target_parameter.state != NMO_REF_NONE &&
-        (target_parameter_id == NMO_OBJECT_ID_NONE ||
-         !nmo_object_repository_find_by_id(
-             repository, target_parameter_id))) {
+        (state->target_parameter.state != NMO_REF_RESOLVED ||
+         target_parameter == NULL ||
+         !nmo_type_query_object_is_derived_from_class(
+             types, target_parameter, NMO_CID_PARAMETERIN))) {
         state->target_parameter = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         changed++;
     }
     NMO_RETURN_IF_ERROR(normalize_behavior_array(
-        &state->sub_behaviors, repository, &changed));
+        &state->sub_behaviors, repository, types,
+        NMO_CID_BEHAVIOR, &changed));
     NMO_RETURN_IF_ERROR(normalize_behavior_array(
-        &state->local_parameters, repository, &changed));
-    nmo_array_t *arrays[] = {
-        &state->sub_behavior_links, &state->operations, &state->in_parameters,
-        &state->out_parameters, &state->inputs, &state->outputs
-    };
-    for (size_t i = 0; i < sizeof(arrays) / sizeof(arrays[0]); ++i) {
-        NMO_RETURN_IF_ERROR(normalize_behavior_array(
-            arrays[i], repository, &changed));
-    }
+        &state->sub_behavior_links, repository, types,
+        NMO_CID_BEHAVIORLINK, &changed));
+    NMO_RETURN_IF_ERROR(normalize_behavior_array(
+        &state->operations, repository, types,
+        NMO_CID_PARAMETEROPERATION, &changed));
+    NMO_RETURN_IF_ERROR(normalize_behavior_array(
+        &state->in_parameters, repository, types,
+        NMO_CID_PARAMETERIN, &changed));
+    NMO_RETURN_IF_ERROR(normalize_behavior_array(
+        &state->out_parameters, repository, types,
+        NMO_CID_PARAMETEROUT, &changed));
+    NMO_RETURN_IF_ERROR(normalize_behavior_array(
+        &state->local_parameters, repository, types,
+        NMO_CID_PARAMETERLOCAL, &changed));
+    NMO_RETURN_IF_ERROR(normalize_behavior_array(
+        &state->inputs, repository, types,
+        NMO_CID_BEHAVIORIO, &changed));
+    NMO_RETURN_IF_ERROR(normalize_behavior_array(
+        &state->outputs, repository, types,
+        NMO_CID_BEHAVIORIO, &changed));
     if (out_change_count) *out_change_count = changed;
     return NMO_OK;
 }

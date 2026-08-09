@@ -1157,6 +1157,8 @@ TEST(runtime_kernel, normalize_removes_only_invalid_reference_records) {
     nmo_object_repository_t *repo = nmo_session_get_repository(session);
 
     nmo_object_id_t valid_a = 0, valid_b = 0, behavior_id = 0, group_id = 0;
+    nmo_object_id_t valid_behavior_a = 0, valid_behavior_b = 0;
+    nmo_object_id_t valid_io_a = 0, valid_io_b = 0;
     nmo_object_id_t grid_id = 0;
     nmo_object_id_t keyed_id = 0;
     nmo_object_id_t valid_animation_a = 0, valid_animation_b = 0;
@@ -1171,6 +1173,18 @@ TEST(runtime_kernel, normalize_removes_only_invalid_reference_records) {
     ASSERT_EQ(NMO_OK, nmo_session_create_object(
         session, NMO_CID_BEHAVIOR, "behavior", (nmo_guid_t){0, 0},
         &behavior_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_BEHAVIOR, "behavior-a", (nmo_guid_t){0, 0},
+        &valid_behavior_a, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_BEHAVIOR, "behavior-b", (nmo_guid_t){0, 0},
+        &valid_behavior_b, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_BEHAVIORIO, "io-a", (nmo_guid_t){0, 0},
+        &valid_io_a, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_BEHAVIORIO, "io-b", (nmo_guid_t){0, 0},
+        &valid_io_b, NULL));
     ASSERT_EQ(NMO_OK, nmo_session_create_object(
         session, NMO_CID_GROUP, "group", (nmo_guid_t){0, 0}, &group_id, NULL));
     ASSERT_EQ(NMO_OK, nmo_session_create_object(
@@ -1226,11 +1240,11 @@ TEST(runtime_kernel, normalize_removes_only_invalid_reference_records) {
     ASSERT_NOT_NULL(parameter_out);
     nmo_object_id_t invalid = 0x7FFFFFF0u;
     ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(
-        &behavior->inputs, valid_a, NULL));
+        &behavior->inputs, valid_io_a, NULL));
     ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(
         &behavior->inputs, invalid, NULL));
     ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(
-        &behavior->inputs, valid_b, NULL));
+        &behavior->inputs, valid_io_b, NULL));
     nmo_behavior_set_target_parameter_id(behavior, valid_parameter_in);
 
     nmo_arena_t *chunk_arena = nmo_arena_create(NULL, 4096);
@@ -1242,11 +1256,11 @@ TEST(runtime_kernel, normalize_removes_only_invalid_reference_records) {
     ASSERT_NOT_NULL(chunk_invalid);
     ASSERT_NOT_NULL(chunk_b);
     ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(
-        &behavior->sub_behaviors, valid_a, chunk_a));
+        &behavior->sub_behaviors, valid_behavior_a, chunk_a));
     ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(
         &behavior->sub_behaviors, invalid, chunk_invalid));
     ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(
-        &behavior->sub_behaviors, valid_b, chunk_b));
+        &behavior->sub_behaviors, valid_behavior_b, chunk_b));
 
     nmo_ref_t keyed_ids[] = {
         nmo_ref_from_id(valid_animation_a),
@@ -1350,14 +1364,14 @@ TEST(runtime_kernel, normalize_removes_only_invalid_reference_records) {
         repo, nmo_context_get_type_runtime(ctx), &changed));
     ASSERT_EQ(16, (int)changed);
     ASSERT_EQ(2, (int)behavior->inputs.count);
-    ASSERT_EQ(valid_a, nmo_behavior_ref_array_get_id(&behavior->inputs, 0));
-    ASSERT_EQ(valid_b, nmo_behavior_ref_array_get_id(&behavior->inputs, 1));
+    ASSERT_EQ(valid_io_a, nmo_behavior_ref_array_get_id(&behavior->inputs, 0));
+    ASSERT_EQ(valid_io_b, nmo_behavior_ref_array_get_id(&behavior->inputs, 1));
     ASSERT_EQ(valid_parameter_in, nmo_behavior_target_parameter_id(behavior));
     ASSERT_EQ(2, (int)behavior->sub_behaviors.count);
     nmo_behavior_ref_t *sub_refs = NMO_ARRAY_DATA(
         nmo_behavior_ref_t, &behavior->sub_behaviors);
-    ASSERT_EQ(valid_a, nmo_behavior_ref_runtime_id(&sub_refs[0]));
-    ASSERT_EQ(valid_b, nmo_behavior_ref_runtime_id(&sub_refs[1]));
+    ASSERT_EQ(valid_behavior_a, nmo_behavior_ref_runtime_id(&sub_refs[0]));
+    ASSERT_EQ(valid_behavior_b, nmo_behavior_ref_runtime_id(&sub_refs[1]));
     ASSERT_EQ(chunk_a, sub_refs[0].chunk);
     ASSERT_EQ(chunk_b, sub_refs[1].chunk);
     ASSERT_EQ(2, (int)group->base.attributes.count);
@@ -1442,12 +1456,104 @@ TEST(runtime_kernel, behavior_normalize_validates_lanes_before_mutation) {
     size_t changed = 0;
     ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,
               nmo_behavior_normalize_references(
-                  behavior, repo, &changed));
+                  behavior, repo,
+                  nmo_context_get_type_runtime(ctx)->types,
+                  &changed));
     ASSERT_EQ(0u, changed);
     ASSERT_EQ(NMO_REF_UNRESOLVED, behavior->owner.state);
     ASSERT_EQ(0x7FFFFF62u, behavior->owner.raw_id);
 
     behavior->outputs.element_size = saved_element_size;
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
+TEST(runtime_kernel, behavior_normalize_enforces_reference_classes) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    const nmo_type_runtime_t *type_rt = nmo_context_get_type_runtime(ctx);
+    ASSERT_NOT_NULL(type_rt);
+
+    nmo_object_id_t behavior_id = 0;
+    nmo_object_id_t owner_id = 0;
+    nmo_object_id_t scene_object_id = 0;
+    nmo_object_id_t target_id = 0;
+    nmo_object_id_t wrong_target_id = 0;
+    nmo_object_id_t wrong_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_BEHAVIOR, "behavior", NMO_NULL_GUID,
+        &behavior_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_BEOBJECT, "owner", NMO_NULL_GUID,
+        &owner_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_SCENEOBJECT, "wrong-owner", NMO_NULL_GUID,
+        &scene_object_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_PARAMETERIN, "target", NMO_NULL_GUID,
+        &target_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_PARAMETEROUT, "wrong-target", NMO_NULL_GUID,
+        &wrong_target_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_OBJECT, "wrong", NMO_NULL_GUID,
+        &wrong_id, NULL));
+
+    nmo_behavior_state_t *behavior = (nmo_behavior_state_t *)
+        nmo_object_repository_find_by_id(repo, behavior_id)->state;
+    ASSERT_NOT_NULL(behavior);
+    behavior->owner = nmo_ref_from_id(owner_id);
+    behavior->target_parameter = nmo_ref_from_id(target_id);
+
+    struct {
+        nmo_array_t *lane;
+        nmo_class_id_t class_id;
+        const char *name;
+        nmo_object_id_t valid_id;
+    } lanes[] = {
+        {&behavior->sub_behaviors, NMO_CID_BEHAVIOR, "sub", 0},
+        {&behavior->sub_behavior_links, NMO_CID_BEHAVIORLINK, "link", 0},
+        {&behavior->operations, NMO_CID_PARAMETEROPERATION, "operation", 0},
+        {&behavior->in_parameters, NMO_CID_PARAMETERIN, "in", 0},
+        {&behavior->out_parameters, NMO_CID_PARAMETEROUT, "out", 0},
+        {&behavior->local_parameters, NMO_CID_PARAMETERLOCAL, "local", 0},
+        {&behavior->inputs, NMO_CID_BEHAVIORIO, "input", 0},
+        {&behavior->outputs, NMO_CID_BEHAVIORIO, "output", 0},
+    };
+    for (size_t i = 0; i < sizeof(lanes) / sizeof(lanes[0]); ++i) {
+        ASSERT_EQ(NMO_OK, nmo_session_create_object(
+            session, lanes[i].class_id, lanes[i].name, NMO_NULL_GUID,
+            &lanes[i].valid_id, NULL));
+        ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(
+            lanes[i].lane, lanes[i].valid_id, NULL));
+        ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(
+            lanes[i].lane, wrong_id, NULL));
+    }
+
+    size_t changed = 0;
+    ASSERT_EQ(NMO_OK, nmo_behavior_normalize_references(
+        behavior, repo, type_rt->types, &changed));
+    ASSERT_EQ(sizeof(lanes) / sizeof(lanes[0]), changed);
+    ASSERT_EQ(owner_id, nmo_behavior_owner_id(behavior));
+    ASSERT_EQ(target_id, nmo_behavior_target_parameter_id(behavior));
+    for (size_t i = 0; i < sizeof(lanes) / sizeof(lanes[0]); ++i) {
+        ASSERT_EQ(1u, lanes[i].lane->count);
+        ASSERT_EQ(lanes[i].valid_id,
+                  nmo_behavior_ref_array_get_id(lanes[i].lane, 0));
+    }
+
+    behavior->owner = nmo_ref_from_id(scene_object_id);
+    behavior->target_parameter = nmo_ref_from_id(wrong_target_id);
+    changed = 0;
+    ASSERT_EQ(NMO_OK, nmo_behavior_normalize_references(
+        behavior, repo, type_rt->types, &changed));
+    ASSERT_EQ(2u, changed);
+    ASSERT_EQ(NMO_REF_NONE, behavior->owner.state);
+    ASSERT_EQ(NMO_REF_NONE, behavior->target_parameter.state);
+
     nmo_session_destroy(session);
     nmo_context_release(ctx);
 }
@@ -4183,6 +4289,7 @@ REGISTER_TEST(runtime_kernel, deserialize_propagates_shadow_tail_oom);
 REGISTER_TEST(runtime_kernel, deserialize_failure_does_not_publish_state_for_finalize);
 REGISTER_TEST(runtime_kernel, normalize_removes_only_invalid_reference_records);
 REGISTER_TEST(runtime_kernel, behavior_normalize_validates_lanes_before_mutation);
+REGISTER_TEST(runtime_kernel, behavior_normalize_enforces_reference_classes);
 REGISTER_TEST(runtime_kernel, beobject_normalize_validates_attributes_before_mutation);
 REGISTER_TEST(runtime_kernel, normalize_reports_malformed_ref_arrays_before_mutation);
 REGISTER_TEST(runtime_kernel, normalize_clears_raw_scalar_class_mismatch);
