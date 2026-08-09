@@ -77,6 +77,7 @@ static const nmo_type_field_t nmo_3dentity_fields[] = {
     NMO_FIELD_NAMED("world_matrix", offsetof(nmo_3dentity_state_t, world_matrix),
                     sizeof(float) * 16, CKPGUID_MATRIX,
                     NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD(nmo_3dentity_state_t, legacy_matrix_prefix, CKPGUID_UINT32),
     NMO_FIELD(nmo_3dentity_state_t, entity_flags, NMO_GUID_ENUM_CK_3DENTITY_FLAGS),
     NMO_FIELD(nmo_3dentity_state_t, moveable_flags, NMO_GUID_ENUM_VX_MOVEABLE_FLAGS),
     /* Hierarchy */
@@ -487,7 +488,8 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
         const size_t matrix_section_end =
             nmo_chunk_get_position(chunk) + matrix_section_dwords;
         out_state->has_matrix_chunk = 1;
-        NMO_RETURN_IF_ERROR(nmo_chunk_skip(chunk, 1));
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(
+            chunk, &out_state->legacy_matrix_prefix));
         nmo_matrix_t mat;
         result = nmo_chunk_read_matrix(chunk, &mat);
         if (result != NMO_OK) return result;
@@ -961,7 +963,8 @@ static nmo_status_t nmo_3dentity_serialize_internal(
 
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_3DENTITYMATRIX);
         if (result != NMO_OK) return result;
-        result = nmo_chunk_write_dword(out_chunk, 0);
+        result = nmo_chunk_write_dword(
+            out_chunk, in_state->legacy_matrix_prefix);
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_matrix(out_chunk, &mat);
         if (result != NMO_OK) return result;
@@ -1261,6 +1264,7 @@ static bool nmo_3dentity_equals(const void *a, const void *b)
     return nmo_renderobject_vtable.equals(&lhs->base, &rhs->base) &&
         memcmp(lhs->world_matrix, rhs->world_matrix,
                sizeof(lhs->world_matrix)) == 0 &&
+        lhs->legacy_matrix_prefix == rhs->legacy_matrix_prefix &&
         lhs->entity_flags == rhs->entity_flags &&
         lhs->moveable_flags == rhs->moveable_flags &&
         nmo_3dentity_ref_equals(&lhs->parent, &rhs->parent) &&
@@ -1382,6 +1386,9 @@ static uint32_t nmo_3dentity_hash(const void *instance)
     hash = nmo_3dentity_hash_bytes(
         hash, state->world_matrix, sizeof(state->world_matrix));
     hash = nmo_3dentity_hash_bytes(
+        hash, &state->legacy_matrix_prefix,
+        sizeof(state->legacy_matrix_prefix));
+    hash = nmo_3dentity_hash_bytes(
         hash, &state->entity_flags, sizeof(state->entity_flags));
     hash = nmo_3dentity_hash_bytes(
         hash, &state->moveable_flags, sizeof(state->moveable_flags));
@@ -1502,6 +1509,7 @@ static nmo_status_t nmo_3dentity_copy(
 
     memcpy(copied.world_matrix, source->world_matrix,
            sizeof(copied.world_matrix));
+    copied.legacy_matrix_prefix = source->legacy_matrix_prefix;
     copied.entity_flags = source->entity_flags;
     copied.moveable_flags = source->moveable_flags;
     copied.parent = source->parent;

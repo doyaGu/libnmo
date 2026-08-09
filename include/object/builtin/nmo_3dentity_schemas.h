@@ -33,6 +33,7 @@ typedef struct nmo_3dentity_state {
 
     /* Transform data */
     float world_matrix[16];    ///< 4x4 world transformation matrix
+    uint32_t legacy_matrix_prefix;
     uint32_t entity_flags;     ///< CK_3DENTITY flags
     uint32_t moveable_flags;   ///< VX_MOVEABLE flags
 

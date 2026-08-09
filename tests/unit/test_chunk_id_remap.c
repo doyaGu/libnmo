@@ -9374,6 +9374,84 @@ TEST(chunk_id_remap, scalar_ref_sections_do_not_publish_truncated_state) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, entity3d_legacy_matrix_prefix_round_trips) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
+    ASSERT_NOT_NULL(arena);
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+
+    nmo_matrix_t matrix = {0};
+    matrix.m[0][0] = 1.0f;
+    matrix.m[1][1] = 2.0f;
+    matrix.m[2][2] = 3.0f;
+    matrix.m[3][3] = 1.0f;
+    matrix.m[3][0] = 4.0f;
+
+    nmo_chunk_t *legacy = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(legacy);
+    legacy->class_id = NMO_CID_3DENTITY;
+    legacy->data_version = 4;
+    legacy->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(legacy));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        legacy, CK_STATESAVE_3DENTITYMATRIX));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(legacy, 0x89ABCDEFu));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_matrix(legacy, &matrix));
+    nmo_chunk_close(legacy);
+
+    nmo_3dentity_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_3dentity_vtable.create(&loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_3dentity_deserialize(
+        &loaded, legacy, NULL, &deserialize_context));
+    ASSERT_TRUE(loaded.has_matrix_chunk);
+    ASSERT_EQ(0x89ABCDEFu, loaded.legacy_matrix_prefix);
+    ASSERT_FLOAT_EQ(2.0f, loaded.world_matrix[5], 0.0001f);
+    ASSERT_FLOAT_EQ(4.0f, loaded.world_matrix[12], 0.0001f);
+
+    nmo_chunk_t *saved = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(saved);
+    saved->class_id = NMO_CID_3DENTITY;
+    saved->data_version = 4;
+    saved->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_3dentity_serialize(
+        &loaded, saved, NULL, &serialize_context));
+    nmo_chunk_close(saved);
+    size_t section_dwords = 0u;
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        saved, CK_STATESAVE_3DENTITYMATRIX, &section_dwords));
+    ASSERT_EQ(17u, section_dwords);
+    uint32_t prefix = 0u;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(saved, &prefix));
+    ASSERT_EQ(0x89ABCDEFu, prefix);
+
+    nmo_3dentity_state_t reloaded;
+    ASSERT_EQ(NMO_OK, nmo_3dentity_vtable.create(&reloaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_3dentity_deserialize(
+        &reloaded, saved, NULL, &deserialize_context));
+    ASSERT_EQ(0x89ABCDEFu, reloaded.legacy_matrix_prefix);
+
+    nmo_3dentity_state_t copied;
+    nmo_type_descriptor_t entity_type = {
+        .size = sizeof(nmo_3dentity_state_t),
+    };
+    ASSERT_EQ(NMO_OK, nmo_3dentity_vtable.create(&copied, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_3dentity_vtable.copy(
+        &reloaded, &copied, &entity_type, arena));
+    ASSERT_TRUE(nmo_3dentity_vtable.equals(&reloaded, &copied));
+    ASSERT_EQ(nmo_3dentity_vtable.hash(&reloaded),
+              nmo_3dentity_vtable.hash(&copied));
+    copied.legacy_matrix_prefix ^= 1u;
+    ASSERT_FALSE(nmo_3dentity_vtable.equals(&reloaded, &copied));
+
+    nmo_3dentity_vtable.destroy(&loaded, NULL, NULL);
+    nmo_3dentity_vtable.destroy(&reloaded, NULL, NULL);
+    nmo_3dentity_vtable.destroy(&copied, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, entity3d_skin_layout_follows_data_version) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
     ASSERT_NOT_NULL(arena);
@@ -18642,6 +18720,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, sound_family_failures_keep_state_and_target_chunk_atomic);
     REGISTER_TEST(chunk_id_remap, sound_family_copy_preserves_inherited_and_string_state);
     REGISTER_TEST(chunk_id_remap, scalar_ref_sections_do_not_publish_truncated_state);
+    REGISTER_TEST(chunk_id_remap, entity3d_legacy_matrix_prefix_round_trips);
     REGISTER_TEST(chunk_id_remap, entity3d_skin_layout_follows_data_version);
     REGISTER_TEST(chunk_id_remap, entity_scalar_refs_round_trip_unresolved_raw_ids);
     REGISTER_TEST(chunk_id_remap, entity_content_equality_ignores_storage_addresses);
