@@ -1205,6 +1205,79 @@ TEST(chunk_id_remap, dataarray_cell_refs_round_trip_raw_ids) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, dataarray_preserves_large_dimensions) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+    ASSERT_NOT_NULL(arena);
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+
+    const uint32_t wide_count = 10001u;
+    nmo_dataarray_state_t wide;
+    ASSERT_EQ(NMO_OK, nmo_dataarray_vtable.create(&wide, NULL, NULL));
+    wide.column_count = wide_count;
+    wide.column_formats = nmo_arena_alloc(
+        arena, sizeof(*wide.column_formats) * wide_count,
+        _Alignof(nmo_dataarray_column_format_t));
+    ASSERT_NOT_NULL(wide.column_formats);
+    memset(wide.column_formats, 0,
+           sizeof(*wide.column_formats) * wide_count);
+    for (uint32_t i = 0; i < wide_count; ++i) {
+        wide.column_formats[i].name = "Value";
+        wide.column_formats[i].type = CKARRAYTYPE_INT;
+    }
+    nmo_chunk_t *wide_chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(wide_chunk);
+    wide_chunk->class_id = NMO_CID_DATAARRAY;
+    wide_chunk->data_version = 7;
+    wide_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_dataarray_serialize(
+        &wide, wide_chunk, NULL, &serialize_context));
+    nmo_chunk_close(wide_chunk);
+    nmo_dataarray_state_t wide_loaded;
+    ASSERT_EQ(NMO_OK, nmo_dataarray_vtable.create(
+        &wide_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_dataarray_deserialize(
+        &wide_loaded, wide_chunk, NULL, &deserialize_context));
+    ASSERT_EQ(wide_count, wide_loaded.column_count);
+    ASSERT_EQ(CKARRAYTYPE_INT,
+              wide_loaded.column_formats[wide_count - 1u].type);
+
+    const uint32_t tall_count = 1000001u;
+    nmo_dataarray_state_t tall;
+    ASSERT_EQ(NMO_OK, nmo_dataarray_vtable.create(&tall, NULL, NULL));
+    tall.row_count = tall_count;
+    tall.rows = nmo_arena_alloc(
+        arena, sizeof(*tall.rows) * tall_count,
+        _Alignof(nmo_dataarray_row_t));
+    ASSERT_NOT_NULL(tall.rows);
+    memset(tall.rows, 0, sizeof(*tall.rows) * tall_count);
+    nmo_chunk_t *tall_chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(tall_chunk);
+    tall_chunk->class_id = NMO_CID_DATAARRAY;
+    tall_chunk->data_version = 7;
+    tall_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_dataarray_serialize(
+        &tall, tall_chunk, NULL, &serialize_context));
+    nmo_chunk_close(tall_chunk);
+    nmo_dataarray_state_t tall_loaded;
+    ASSERT_EQ(NMO_OK, nmo_dataarray_vtable.create(
+        &tall_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_dataarray_deserialize(
+        &tall_loaded, tall_chunk, NULL, &deserialize_context));
+    ASSERT_EQ(tall_count, tall_loaded.row_count);
+    ASSERT_EQ(0u, tall_loaded.rows[tall_count - 1u].column_count);
+    ASSERT_NULL(tall_loaded.rows[tall_count - 1u].cells);
+
+    nmo_dataarray_vtable.destroy(&wide, NULL, NULL);
+    nmo_dataarray_vtable.destroy(&wide_loaded, NULL, NULL);
+    nmo_dataarray_vtable.destroy(&tall, NULL, NULL);
+    nmo_dataarray_vtable.destroy(&tall_loaded, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, dataarray_failures_keep_state_and_target_chunk_atomic) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
     ASSERT_NOT_NULL(arena);
@@ -10901,6 +10974,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, behaviorio_truncation_keeps_previous_state);
     REGISTER_TEST(chunk_id_remap, behavior_layout_defaults_preserve_legacy_absence);
     REGISTER_TEST(chunk_id_remap, dataarray_cell_refs_round_trip_raw_ids);
+    REGISTER_TEST(chunk_id_remap, dataarray_preserves_large_dimensions);
     REGISTER_TEST(chunk_id_remap, dataarray_failures_keep_state_and_target_chunk_atomic);
     REGISTER_TEST(chunk_id_remap, dataarray_copy_preserves_typed_cell_content);
     REGISTER_TEST(chunk_id_remap, attributemanager_failures_keep_state_and_target_chunk_atomic);

@@ -222,7 +222,7 @@ static nmo_status_t nmo_dataarray_deserialize_internal(
         result = nmo_chunk_read_int(chunk, &column_count);
         if (result != NMO_OK) return result;
 
-        if (column_count < 0 || column_count > 10000) {
+        if (column_count < 0) {
             NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Invalid column count");
         }
         if (nmo_dataarray_size_mul_overflows(
@@ -288,7 +288,7 @@ static nmo_status_t nmo_dataarray_deserialize_internal(
         result = nmo_chunk_read_int(chunk, &row_count);
         if (result != NMO_OK) return result;
 
-        if (row_count < 0 || row_count > 1000000) {
+        if (row_count < 0) {
             NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Invalid row count");
         }
         if (nmo_dataarray_size_mul_overflows(
@@ -716,16 +716,23 @@ static nmo_status_t nmo_dataarray_validate(
     if (s == NULL) return NMO_ERR_INVALID_ARGUMENT;
     NMO_RETURN_IF_ERROR(nmo_beobject_vtable.validate(
         &s->base, NULL, context));
-    if (s->column_count > 10000 || s->row_count > 1000000) {
+    if (s->column_count > (uint32_t)INT32_MAX ||
+        s->row_count > (uint32_t)INT32_MAX) {
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
                          "DataArray dimensions exceed format limits");
     }
     NMO_VALIDATE_COUNT(s->column_formats, s->column_count, "column_formats");
     NMO_VALIDATE_COUNT(s->rows, s->row_count, "rows");
     if (nmo_dataarray_size_mul_overflows(
+            s->column_count, sizeof(*s->column_formats)) ||
+        nmo_dataarray_size_mul_overflows(
+            s->row_count, sizeof(*s->rows)) ||
+        nmo_dataarray_size_mul_overflows(
+            s->column_count, sizeof(nmo_dataarray_cell_t)) ||
+        nmo_dataarray_size_mul_overflows(
             s->row_count, s->column_count)) {
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
-                         "DataArray cell count overflows");
+                         "DataArray allocation size overflows");
     }
     for (uint32_t column_index = 0;
          column_index < s->column_count;
