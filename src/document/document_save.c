@@ -683,6 +683,33 @@ nmo_status_t nmo_save_file(
 static nmo_status_t save_validate_session(nmo_serializer_t *ctx) {
     nmo_log(ctx->logger, NMO_LOG_INFO, "Step 1.1: Validating session state");
 
+    if ((ctx->options.flags & NMO_SAVE_CHANGED_OBJECTS_ONLY) != 0u) {
+        const uint32_t incompatible =
+            NMO_SAVE_AS_OBJECTS | NMO_SAVE_SEQUENTIAL_IDS |
+            NMO_SAVE_REQUIRE_SCHEMA;
+        if ((ctx->options.flags & incompatible) != 0u ||
+            ctx->options.include_ids != NULL) {
+            return SAVE_ERR(
+                NMO_ERR_INVALID_ARGUMENT,
+                "Changed-object save cannot filter or remap object IDs");
+        }
+        if (ctx->options.changed_object_count > 0u &&
+            ctx->options.changed_object_ids == NULL) {
+            return SAVE_ERR(
+                NMO_ERR_INVALID_ARGUMENT,
+                "Changed-object save requires changed object IDs");
+        }
+        for (size_t i = 0; i < ctx->options.changed_object_count; ++i) {
+            const nmo_object_id_t id = ctx->options.changed_object_ids[i];
+            if ((i > 0u && id <= ctx->options.changed_object_ids[i - 1u]) ||
+                nmo_object_repository_find_by_id(ctx->repo, id) == NULL) {
+                return SAVE_ERR(
+                    NMO_ERR_INVALID_ARGUMENT,
+                    "Changed object IDs must be unique, sorted, and present");
+            }
+        }
+    }
+
     /* Apply object filter if specified */
     if (ctx->options.include_ids != NULL && ctx->options.include_count > 0) {
         size_t cap = ctx->options.include_count;
@@ -743,6 +770,28 @@ static nmo_status_t save_validate_session(nmo_serializer_t *ctx) {
             ctx->object_count, reference_count);
 
     NMO_RETURN_OK();
+}
+
+static bool save_should_serialize_changed_object(
+    const nmo_save_options_t *options,
+    nmo_object_id_t id)
+{
+    if ((options->flags & NMO_SAVE_CHANGED_OBJECTS_ONLY) == 0u) {
+        return true;
+    }
+    size_t low = 0u;
+    size_t high = options->changed_object_count;
+    while (low < high) {
+        const size_t middle = low + (high - low) / 2u;
+        const nmo_object_id_t candidate = options->changed_object_ids[middle];
+        if (candidate < id) {
+            low = middle + 1u;
+        } else {
+            high = middle;
+        }
+    }
+    return low < options->changed_object_count &&
+        options->changed_object_ids[low] == id;
 }
 
 static nmo_status_t save_execute_pre_hooks(nmo_serializer_t *ctx) {
@@ -946,6 +995,12 @@ static nmo_status_t save_serialize_objects(nmo_serializer_t *ctx) {
             } else {
                 skipped_count++;
             }
+            continue;
+        }
+
+        if (obj->chunk != NULL &&
+            !save_should_serialize_changed_object(&ctx->options, obj->id)) {
+            reused_count++;
             continue;
         }
 

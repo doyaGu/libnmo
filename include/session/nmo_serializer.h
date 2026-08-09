@@ -81,6 +81,7 @@ typedef enum nmo_save_flags {
     NMO_SAVE_VALIDATE_BEFORE  = 0x0010, /**< Validate before writing */
     NMO_SAVE_STRIP_INCLUDED_FILES = 0x0020, /**< Drop included payloads during save */
     NMO_SAVE_REQUIRE_SCHEMA   = 0x0040, /**< Require schema serialization (no raw chunk reuse) */
+    NMO_SAVE_CHANGED_OBJECTS_ONLY = 0x0080, /**< Re-serialize only changed_object_ids */
 } nmo_save_flags_t;
 
 /**
@@ -113,6 +114,13 @@ typedef struct nmo_save_options {
      *  in this array. The array must remain valid until save completes. */
     const nmo_object_id_t *include_ids; /**< Object IDs to include (NULL = all) */
     size_t include_count;               /**< Number of entries in include_ids */
+
+    /** Authoritative sorted list of changed objects when
+     *  NMO_SAVE_CHANGED_OBJECTS_ONLY is set. Unlisted loaded objects reuse
+     *  their original chunks. This mode requires unchanged object membership
+     *  and file IDs, and cannot be combined with filtered or remapped saves. */
+    const nmo_object_id_t *changed_object_ids;
+    size_t changed_object_count;
 } nmo_save_options_t;
 
 /**

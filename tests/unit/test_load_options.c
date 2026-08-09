@@ -12,6 +12,7 @@
 #include "io/nmo_io_memory.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
+#include "object/builtin/nmo_object_schemas.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_header.h"
@@ -630,6 +631,78 @@ TEST(load_options, custom_allocator_controls_object_and_schema_storage)
     destroy_ctx_session(ctx, session);
 }
 
+TEST(load_options, changed_object_save_preserves_unlisted_chunks)
+{
+    const char *preserved_path = "test_changed_only_preserved.nmo";
+    const char *default_path = "test_changed_only_default.nmo";
+    remove(preserved_path);
+    remove(default_path);
+
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    ASSERT_EQ(NMO_OK, nmo_load_file(
+        session, "data/Ballance/Camera.nmo", NULL));
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+    nmo_object_t *object = NULL;
+    const size_t count = nmo_object_repository_get_count(repo);
+    for (size_t i = 0; i < count; ++i) {
+        nmo_object_t *candidate = nmo_object_repository_get_by_index(repo, i);
+        if (candidate != NULL && candidate->state != NULL &&
+            candidate->chunk != NULL) {
+            object = candidate;
+            break;
+        }
+    }
+    ASSERT_NOT_NULL(object);
+    const nmo_object_id_t file_id = object->file_id;
+    nmo_object_state_t *state = (nmo_object_state_t *)object->state;
+    const uint32_t original_visibility = state->visibility_flags;
+    state->visibility_flags ^= NMO_CKOBJECT_VISIBLE;
+    const uint32_t changed_visibility = state->visibility_flags;
+    ASSERT_NE(original_visibility, changed_visibility);
+
+    nmo_save_options_t changed_only = nmo_save_options_default();
+    changed_only.flags |= NMO_SAVE_CHANGED_OBJECTS_ONLY;
+    ASSERT_EQ(NMO_OK, nmo_save_file(
+        session, preserved_path, &changed_only));
+
+    nmo_save_options_t defaults = nmo_save_options_default();
+    ASSERT_EQ(NMO_OK, nmo_save_file(session, default_path, &defaults));
+    destroy_ctx_session(ctx, session);
+
+    nmo_context_t *preserved_ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(preserved_ctx);
+    nmo_session_t *preserved_session = nmo_session_create(preserved_ctx);
+    ASSERT_NOT_NULL(preserved_session);
+    ASSERT_EQ(NMO_OK, nmo_load_file(
+        preserved_session, preserved_path, NULL));
+    nmo_object_t *preserved_object = nmo_object_repository_find_by_file_id(
+        nmo_session_get_repository(preserved_session), file_id);
+    ASSERT_NOT_NULL(preserved_object);
+    ASSERT_EQ(original_visibility,
+              ((nmo_object_state_t *)preserved_object->state)->visibility_flags);
+    destroy_ctx_session(preserved_ctx, preserved_session);
+
+    nmo_context_t *default_ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(default_ctx);
+    nmo_session_t *default_session = nmo_session_create(default_ctx);
+    ASSERT_NOT_NULL(default_session);
+    ASSERT_EQ(NMO_OK, nmo_load_file(default_session, default_path, NULL));
+    nmo_object_t *default_object = nmo_object_repository_find_by_file_id(
+        nmo_session_get_repository(default_session), file_id);
+    ASSERT_NOT_NULL(default_object);
+    ASSERT_EQ(changed_visibility,
+              ((nmo_object_state_t *)default_object->state)->visibility_flags);
+    destroy_ctx_session(default_ctx, default_session);
+
+    ASSERT_EQ(0, remove(preserved_path));
+    ASSERT_EQ(0, remove(default_path));
+}
+
 TEST(load_options, phased_header_parse_preserves_format_errors)
 {
     static const uint8_t truncated[] = { 'N', 'e', 'm', 'o' };
@@ -756,6 +829,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(load_options, phased_partial_profile_rejects_non_empty_session);
     REGISTER_TEST(load_options, phased_partial_profile_rejects_non_object_session_state);
     REGISTER_TEST(load_options, two_phase_serializer_rejects_partial_session);
+    REGISTER_TEST(load_options, changed_object_save_preserves_unlisted_chunks);
     REGISTER_TEST(load_options, header_only_profile_stops_after_header);
     REGISTER_TEST(load_options, full_profile_is_default);
     REGISTER_TEST(load_options, diagnostics_lifecycle_is_caller_owned);
