@@ -17,6 +17,7 @@
 #include "object/builtin/nmo_beobject_schemas.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
+#include "object/nmo_object_struct_guids.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_class_ids.h"
@@ -247,10 +248,14 @@ static const nmo_type_field_t nmo_beobject_fields[] = {
                     offsetof(nmo_beobject_state_t, legacy_data_words[2]),
                     sizeof(uint32_t), CKPGUID_INT, 0, 0),
     /* Attributes */
-    NMO_FIELD_ARRAY(nmo_beobject_state_t, attributes, CKPGUID_NONE),
+    NMO_FIELD_ARRAY(
+        nmo_beobject_state_t, attributes,
+        NMO_GUID_STRUCT_CKBEOBJECTATTRIBUTE),
     NMO_FIELD(nmo_beobject_state_t, has_attributes_section, CKPGUID_BOOL),
     /* Legacy attributes */
-    NMO_FIELD_ARRAY(nmo_beobject_state_t, legacy_attributes, CKPGUID_NONE),
+    NMO_FIELD_ARRAY(
+        nmo_beobject_state_t, legacy_attributes,
+        NMO_GUID_STRUCT_CKBEOBJECTLEGACYATTRIBUTE),
     NMO_FIELD(nmo_beobject_state_t, has_legacy_attributes, CKPGUID_BOOL),
     NMO_FIELD(nmo_beobject_state_t, legacy_attr_old_version, CKPGUID_BOOL),
     /* Single activity */

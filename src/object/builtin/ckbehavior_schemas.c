@@ -22,6 +22,7 @@
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
+#include "object/nmo_object_struct_guids.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_guids.h"
@@ -210,14 +211,22 @@ static const nmo_type_field_t nmo_behavior_fields[] = {
     NMO_FIELD(nmo_behavior_state_t, block_guid, CKPGUID_GUID),
     NMO_FIELD(nmo_behavior_state_t, block_version, CKPGUID_UINT32),
     NMO_FIELD_REF_VALUE(nmo_behavior_state_t, target_parameter),
-    NMO_FIELD_ARRAY(nmo_behavior_state_t, sub_behaviors, CKPGUID_NONE),
-    NMO_FIELD_ARRAY(nmo_behavior_state_t, sub_behavior_links, CKPGUID_NONE),
-    NMO_FIELD_ARRAY(nmo_behavior_state_t, operations, CKPGUID_NONE),
-    NMO_FIELD_ARRAY(nmo_behavior_state_t, in_parameters, CKPGUID_NONE),
-    NMO_FIELD_ARRAY(nmo_behavior_state_t, out_parameters, CKPGUID_NONE),
-    NMO_FIELD_ARRAY(nmo_behavior_state_t, local_parameters, CKPGUID_NONE),
-    NMO_FIELD_ARRAY(nmo_behavior_state_t, inputs, CKPGUID_NONE),
-    NMO_FIELD_ARRAY(nmo_behavior_state_t, outputs, CKPGUID_NONE),
+    NMO_FIELD_ARRAY(
+        nmo_behavior_state_t, sub_behaviors, NMO_GUID_STRUCT_CKBEHAVIORREF),
+    NMO_FIELD_ARRAY(
+        nmo_behavior_state_t, sub_behavior_links, NMO_GUID_STRUCT_CKBEHAVIORREF),
+    NMO_FIELD_ARRAY(
+        nmo_behavior_state_t, operations, NMO_GUID_STRUCT_CKBEHAVIORREF),
+    NMO_FIELD_ARRAY(
+        nmo_behavior_state_t, in_parameters, NMO_GUID_STRUCT_CKBEHAVIORREF),
+    NMO_FIELD_ARRAY(
+        nmo_behavior_state_t, out_parameters, NMO_GUID_STRUCT_CKBEHAVIORREF),
+    NMO_FIELD_ARRAY(
+        nmo_behavior_state_t, local_parameters, NMO_GUID_STRUCT_CKBEHAVIORREF),
+    NMO_FIELD_ARRAY(
+        nmo_behavior_state_t, inputs, NMO_GUID_STRUCT_CKBEHAVIORREF),
+    NMO_FIELD_ARRAY(
+        nmo_behavior_state_t, outputs, NMO_GUID_STRUCT_CKBEHAVIORREF),
     NMO_FIELD(nmo_behavior_state_t, single_activity_flags, NMO_GUID_ENUM_CK_SCENEOBJECTACTIVITY_FLAGS),
     NMO_FIELD(nmo_behavior_state_t, has_single_activity, CKPGUID_BOOL),
     NMO_FIELD_OPT(nmo_behavior_state_t, interface_chunk, CKPGUID_STATECHUNK),

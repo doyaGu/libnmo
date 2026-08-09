@@ -10,6 +10,9 @@
 #include "object/nmo_object_struct_defs.h"
 #include "object/nmo_object_struct_guids.h"
 #include "object/nmo_class_ids.h"
+#include "object/builtin/nmo_behavior_schemas.h"
+#include "object/builtin/nmo_beobject_schemas.h"
+#include "object/builtin/nmo_grid_schemas.h"
 #include "type/nmo_operations.h"
 #include "type/nmo_reflection.h"
 #include "type/nmo_type_system.h"
@@ -178,6 +181,10 @@ TEST(object_types, register_all_types) {
         {NMO_GUID_STRUCT_CKMATERIALCHANNEL, "material"},
         {NMO_GUID_STRUCT_CKMATERIALGROUP, "material"},
         {NMO_GUID_STRUCT_CKKEYEDANIMATIONSUBANIM, "ref"},
+        {NMO_GUID_STRUCT_CKBEOBJECTATTRIBUTE, "parameter"},
+        {NMO_GUID_STRUCT_CKBEOBJECTLEGACYATTRIBUTE, "parameter"},
+        {NMO_GUID_STRUCT_CKBEHAVIORREF, "ref"},
+        {NMO_GUID_STRUCT_CKGRIDLAYER, "ref"},
     };
     for (size_t i = 0;
          i < sizeof(nested_ref_fields) / sizeof(nested_ref_fields[0]);
@@ -193,6 +200,55 @@ TEST(object_types, register_all_types) {
         ASSERT_TRUE(nmo_field_is_ref(ref_field));
         ASSERT_TRUE(nmo_field_uses_ref_records(ref_field));
         ASSERT_FALSE(nmo_field_is_array(ref_field));
+    }
+
+    ASSERT_EQ(
+        sizeof(nmo_beobject_attribute_t),
+        nmo_type_registry_find_by_guid(
+            registry, NMO_GUID_STRUCT_CKBEOBJECTATTRIBUTE)->size);
+    ASSERT_EQ(
+        sizeof(nmo_beobject_legacy_attribute_t),
+        nmo_type_registry_find_by_guid(
+            registry, NMO_GUID_STRUCT_CKBEOBJECTLEGACYATTRIBUTE)->size);
+    ASSERT_EQ(
+        sizeof(nmo_behavior_ref_t),
+        nmo_type_registry_find_by_guid(
+            registry, NMO_GUID_STRUCT_CKBEHAVIORREF)->size);
+    ASSERT_EQ(
+        sizeof(nmo_grid_layer_t),
+        nmo_type_registry_find_by_guid(
+            registry, NMO_GUID_STRUCT_CKGRIDLAYER)->size);
+
+    const struct {
+        nmo_guid_t owner_guid;
+        const char *field_name;
+        nmo_guid_t element_guid;
+    } record_arrays[] = {
+        {CKPGUID_BEOBJECT, "attributes", NMO_GUID_STRUCT_CKBEOBJECTATTRIBUTE},
+        {CKPGUID_BEOBJECT, "legacy_attributes",
+         NMO_GUID_STRUCT_CKBEOBJECTLEGACYATTRIBUTE},
+        {CKPGUID_BEHAVIOR, "sub_behaviors", NMO_GUID_STRUCT_CKBEHAVIORREF},
+        {CKPGUID_BEHAVIOR, "sub_behavior_links", NMO_GUID_STRUCT_CKBEHAVIORREF},
+        {CKPGUID_BEHAVIOR, "operations", NMO_GUID_STRUCT_CKBEHAVIORREF},
+        {CKPGUID_BEHAVIOR, "in_parameters", NMO_GUID_STRUCT_CKBEHAVIORREF},
+        {CKPGUID_BEHAVIOR, "out_parameters", NMO_GUID_STRUCT_CKBEHAVIORREF},
+        {CKPGUID_BEHAVIOR, "local_parameters", NMO_GUID_STRUCT_CKBEHAVIORREF},
+        {CKPGUID_BEHAVIOR, "inputs", NMO_GUID_STRUCT_CKBEHAVIORREF},
+        {CKPGUID_BEHAVIOR, "outputs", NMO_GUID_STRUCT_CKBEHAVIORREF},
+        {CKPGUID_GRID, "layers", NMO_GUID_STRUCT_CKGRIDLAYER},
+    };
+    for (size_t i = 0; i < sizeof(record_arrays) / sizeof(record_arrays[0]);
+         ++i) {
+        const nmo_type_descriptor_t *owner_type =
+            nmo_type_registry_find_by_guid(
+                registry, record_arrays[i].owner_guid);
+        ASSERT_NOT_NULL(owner_type);
+        const nmo_type_field_t *record_field = nmo_type_get_field_by_name(
+            owner_type, record_arrays[i].field_name);
+        ASSERT_NOT_NULL(record_field);
+        ASSERT_TRUE(nmo_field_is_array(record_field));
+        ASSERT_TRUE(nmo_guid_equals(
+            record_field->type_guid, record_arrays[i].element_guid));
     }
 
     nmo_type_registry_destroy(registry);

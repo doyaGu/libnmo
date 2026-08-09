@@ -7,6 +7,7 @@
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
+#include "object/nmo_object_struct_guids.h"
 #include "type/nmo_reflection.h"
 #include "type/nmo_type_system.h"
 #include "object/nmo_param_guids.h"
@@ -327,7 +328,7 @@ static const nmo_type_field_t nmo_grid_fields[] = {
     NMO_FIELD(nmo_grid_state_t, orientation_mode, CKPGUID_UINT32),
     NMO_FIELD(nmo_grid_state_t, has_file_flag, CKPGUID_UINT8),
     NMO_FIELD(nmo_grid_state_t, file_flag, CKPGUID_INT),
-    NMO_FIELD_ARRAY(nmo_grid_state_t, layers, CKPGUID_NONE)
+    NMO_FIELD_ARRAY(nmo_grid_state_t, layers, NMO_GUID_STRUCT_CKGRIDLAYER)
 };
 
 static nmo_status_t nmo_grid_copy(

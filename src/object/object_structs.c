@@ -11,6 +11,9 @@
 #include "type/nmo_type_system.h"
 #include "core/nmo_error.h"
 #include "object/nmo_object_enum_guids.h"
+#include "object/builtin/nmo_behavior_schemas.h"
+#include "object/builtin/nmo_beobject_schemas.h"
+#include "object/builtin/nmo_grid_schemas.h"
 
 #define NMO_STRUCT_FIELD_GUID(_name, _guid) \
     { \
@@ -204,6 +207,47 @@ nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry) {
     };
     static const nmo_struct_type_def_t cksceneobjectdesc_def =
         NMO_STRUCT_DEF("CKSceneObjectDesc", NMO_GUID_STRUCT_CKSCENEOBJECTDESC, cksceneobjectdesc_fields);
+
+    /* CKBeObjectAttribute */
+    static const nmo_struct_field_def_t ckbeobjectattribute_fields[] = {
+        NMO_STRUCT_FIELD_REF_RECORD("parameter"),
+        NMO_STRUCT_FIELD_GUID("type_id", CKPGUID_UINT32),
+        NMO_STRUCT_FIELD_GUID("chunk", CKPGUID_STATECHUNK)
+    };
+    static const nmo_struct_type_def_t ckbeobjectattribute_def =
+        NMO_STRUCT_DEF("CKBeObjectAttribute", NMO_GUID_STRUCT_CKBEOBJECTATTRIBUTE,
+                       ckbeobjectattribute_fields);
+
+    /* CKBeObjectLegacyAttribute */
+    static const nmo_struct_field_def_t ckbeobjectlegacyattribute_fields[] = {
+        NMO_STRUCT_FIELD_GUID("compatible_class_id", CKPGUID_INT),
+        NMO_STRUCT_FIELD_GUID("name", CKPGUID_STRING),
+        NMO_STRUCT_FIELD_GUID("category", CKPGUID_STRING),
+        NMO_STRUCT_FIELD_GUID("parameter_guid", CKPGUID_GUID),
+        NMO_STRUCT_FIELD_REF_RECORD("parameter")
+    };
+    static const nmo_struct_type_def_t ckbeobjectlegacyattribute_def =
+        NMO_STRUCT_DEF("CKBeObjectLegacyAttribute",
+                       NMO_GUID_STRUCT_CKBEOBJECTLEGACYATTRIBUTE,
+                       ckbeobjectlegacyattribute_fields);
+
+    /* CKBehaviorRef */
+    static const nmo_struct_field_def_t ckbehaviorref_fields[] = {
+        NMO_STRUCT_FIELD_REF_RECORD("ref"),
+        NMO_STRUCT_FIELD_GUID("chunk", CKPGUID_STATECHUNK)
+    };
+    static const nmo_struct_type_def_t ckbehaviorref_def =
+        NMO_STRUCT_DEF("CKBehaviorRef", NMO_GUID_STRUCT_CKBEHAVIORREF,
+                       ckbehaviorref_fields);
+
+    /* CKGridLayer */
+    static const nmo_struct_field_def_t ckgridlayer_fields[] = {
+        NMO_STRUCT_FIELD_REF_RECORD("ref"),
+        NMO_STRUCT_FIELD_GUID("chunk", CKPGUID_STATECHUNK)
+    };
+    static const nmo_struct_type_def_t ckgridlayer_def =
+        NMO_STRUCT_DEF("CKGridLayer", NMO_GUID_STRUCT_CKGRIDLAYER,
+                       ckgridlayer_fields);
 
     /* CKPlacePortalEntry */
     static const nmo_struct_field_def_t ckplaceportalentry_fields[] = {
@@ -465,6 +509,10 @@ nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry) {
     NMO_RETURN_IF_ERROR(nmo_type_registry_register_struct(registry, &ck3dentityskinbone_def, NULL));
     NMO_RETURN_IF_ERROR(nmo_type_registry_register_struct(registry, &ck3dentityskin_def, NULL));
     NMO_RETURN_IF_ERROR(nmo_type_registry_register_struct(registry, &cksceneobjectdesc_def, NULL));
+    NMO_RETURN_IF_ERROR(nmo_type_registry_register_struct(registry, &ckbeobjectattribute_def, NULL));
+    NMO_RETURN_IF_ERROR(nmo_type_registry_register_struct(registry, &ckbeobjectlegacyattribute_def, NULL));
+    NMO_RETURN_IF_ERROR(nmo_type_registry_register_struct(registry, &ckbehaviorref_def, NULL));
+    NMO_RETURN_IF_ERROR(nmo_type_registry_register_struct(registry, &ckgridlayer_def, NULL));
     NMO_RETURN_IF_ERROR(nmo_type_registry_register_struct(registry, &ckplaceportalentry_def, NULL));
     NMO_RETURN_IF_ERROR(nmo_type_registry_register_struct(registry, &ckpatchmeshpatch_def, NULL));
     NMO_RETURN_IF_ERROR(nmo_type_registry_register_struct(registry, &ckpatchmeshpatchrecord_def, NULL));
