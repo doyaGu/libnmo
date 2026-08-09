@@ -7981,6 +7981,7 @@ TEST(chunk_id_remap, beobject_copy_preserves_content_equality) {
     nmo_beobject_state_t copy;
     ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(&source, NULL, NULL));
     ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(&copy, NULL, NULL));
+    ASSERT_EQ(NMO_CKOBJECT_VISIBLE, source.base.base.visibility_flags);
     ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(&source.scripts, 101));
     nmo_chunk_t *attribute_chunk = nmo_chunk_create(source_arena);
     ASSERT_NOT_NULL(attribute_chunk);
@@ -8006,10 +8007,28 @@ TEST(chunk_id_remap, beobject_copy_preserves_content_equality) {
     copy_attributes[0].type_id = 304;
     ASSERT_FALSE(nmo_beobject_vtable.equals(&source, &copy));
 
-    nmo_array_dispose(&source.scripts);
-    nmo_array_dispose(&source.attributes);
-    nmo_array_dispose(&copy.scripts);
-    nmo_array_dispose(&copy.attributes);
+    nmo_beobject_state_t preserved;
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(
+        &preserved, NULL, NULL));
+    preserved.priority = 77;
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &preserved.scripts, 909));
+    void *preserved_scripts = preserved.scripts.data;
+    nmo_allocator_t source_allocator = source.scripts.allocator;
+    source.scripts.allocator = nmo_allocator_custom(
+        beobject_fail_alloc, beobject_fail_free, NULL);
+    ASSERT_EQ(NMO_ERR_NOMEM, nmo_beobject_vtable.copy(
+        &source, &preserved, &type, copy_arena));
+    source.scripts.allocator = source_allocator;
+    ASSERT_EQ(77, preserved.priority);
+    ASSERT_EQ(preserved_scripts, preserved.scripts.data);
+    ASSERT_EQ(1u, preserved.scripts.count);
+    ASSERT_EQ(909u, nmo_beobject_script_array_get_id(
+        &preserved.scripts, 0));
+
+    nmo_beobject_vtable.destroy(&preserved, NULL, NULL);
+    nmo_beobject_vtable.destroy(&source, NULL, NULL);
+    nmo_beobject_vtable.destroy(&copy, NULL, NULL);
     nmo_arena_destroy(copy_arena);
     nmo_arena_destroy(source_arena);
 }

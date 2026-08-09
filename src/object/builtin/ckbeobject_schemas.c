@@ -65,6 +65,11 @@ static void nmo_beobject_dispose_arrays(nmo_beobject_state_t *state)
     nmo_array_dispose(&state->legacy_attributes);
 }
 
+static nmo_status_t nmo_beobject_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
+
 nmo_status_t nmo_beobject_script_array_append(
     nmo_array_t *scripts,
     nmo_object_id_t script_id)
@@ -180,19 +185,38 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
     beobject,
     nmo_beobject_state_t,
     do {
-        nmo_status_t result = nmo_array_init(&state->scripts, sizeof(nmo_ref_t), 0, NULL);
+        nmo_status_t result = nmo_sceneobject_vtable.create(
+            &state->base, NULL, context);
         if (result != NMO_OK) return result;
+        result = nmo_array_init(
+            &state->scripts, sizeof(nmo_ref_t), 0, NULL);
+        if (result != NMO_OK) {
+            nmo_sceneobject_vtable.destroy(&state->base, NULL, context);
+            return result;
+        }
         result = nmo_array_init(&state->attributes, sizeof(nmo_beobject_attribute_t), 0, NULL);
-        if (result != NMO_OK) return result;
+        if (result != NMO_OK) {
+            nmo_array_dispose(&state->scripts);
+            nmo_sceneobject_vtable.destroy(&state->base, NULL, context);
+            return result;
+        }
         nmo_beobject_attribute_array_set_lifecycle(&state->attributes);
         result = nmo_array_init(
             &state->legacy_attributes,
             sizeof(nmo_beobject_legacy_attribute_t), 0, NULL);
-        if (result != NMO_OK) return result;
+        if (result != NMO_OK) {
+            nmo_array_dispose(&state->attributes);
+            nmo_array_dispose(&state->scripts);
+            nmo_sceneobject_vtable.destroy(&state->base, NULL, context);
+            return result;
+        }
         state->has_legacy_attributes = 0;
         state->legacy_attr_old_version = 0;
     } while (0),
-    ((void)0))
+    do {
+        nmo_beobject_dispose_arrays(state);
+        nmo_sceneobject_vtable.destroy(&state->base, NULL, context);
+    } while (0))
 
 /* =============================================================================
  * REFLECTION FIELDS
@@ -973,18 +997,52 @@ static nmo_status_t nmo_beobject_copy(
 {
     const nmo_beobject_state_t *s = src;
     nmo_beobject_state_t *d = dst;
-    NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
+    (void)type;
+    if (s == NULL || d == NULL || arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    NMO_RETURN_IF_ERROR(nmo_beobject_validate(s, NULL, NULL));
+
+    nmo_beobject_state_t copied;
+    nmo_status_t result = nmo_beobject_create(&copied, NULL, NULL);
+    if (result != NMO_OK) return result;
+
+    result = nmo_sceneobject_vtable.copy(
+        &s->base, &copied.base, NULL, arena);
+    if (result != NMO_OK) goto fail;
+    copied.priority = s->priority;
+    copied.has_single_activity = s->has_single_activity;
+    copied.single_activity_flags = s->single_activity_flags;
+    copied.has_legacy_attributes = s->has_legacy_attributes;
+    copied.legacy_attr_old_version = s->legacy_attr_old_version;
+
+    nmo_array_dispose(&copied.scripts);
+    result = nmo_array_clone(
+        &s->scripts, &copied.scripts, &s->scripts.allocator);
+    if (result != NMO_OK) goto fail;
+    result = nmo_beobject_clone_attributes(
+        arena, &copied.attributes, &s->attributes);
+    if (result != NMO_OK) goto fail;
+    result = nmo_beobject_clone_legacy_attributes(
+        arena, &copied.legacy_attributes, &s->legacy_attributes);
+    if (result != NMO_OK) goto fail;
+
     if (d->scripts.data == s->scripts.data) {
         memset(&d->scripts, 0, sizeof(d->scripts));
-    } else {
-        nmo_array_dispose(&d->scripts);
     }
-    NMO_RETURN_IF_ERROR(nmo_array_clone(
-        &s->scripts, &d->scripts, &s->scripts.allocator));
-    NMO_RETURN_IF_ERROR(nmo_beobject_clone_attributes(
-        arena, &d->attributes, &s->attributes));
-    return nmo_beobject_clone_legacy_attributes(
-        arena, &d->legacy_attributes, &s->legacy_attributes);
+    if (d->attributes.data == s->attributes.data) {
+        memset(&d->attributes, 0, sizeof(d->attributes));
+    }
+    if (d->legacy_attributes.data == s->legacy_attributes.data) {
+        memset(&d->legacy_attributes, 0, sizeof(d->legacy_attributes));
+    }
+    nmo_beobject_destroy(d, NULL, NULL);
+    *d = copied;
+    return NMO_OK;
+
+fail:
+    nmo_beobject_destroy(&copied, NULL, NULL);
+    return result;
 }
 
 static nmo_status_t nmo_beobject_validate(
