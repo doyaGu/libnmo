@@ -36,6 +36,7 @@
 #include "type/nmo_type_query.h"
 
 #include <inttypes.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1059,6 +1060,13 @@ static size_t validate_count_edge_class_mismatches(
     return count;
 }
 
+static int validate_compare_object_ids(const void *lhs, const void *rhs)
+{
+    const nmo_object_id_t a = *(const nmo_object_id_t *)lhs;
+    const nmo_object_id_t b = *(const nmo_object_id_t *)rhs;
+    return (a > b) - (a < b);
+}
+
 static int nmo_cmd_validate_references_in_session(nmo_cmd_ctx_t *c, int argc, char **argv) {
     bool suggest_fixes = parse_fix_flag(argc, argv);
     bool normalize = parse_flag(argc, argv, "--normalize");
@@ -1103,15 +1111,48 @@ static int nmo_cmd_validate_references_in_session(nmo_cmd_ctx_t *c, int argc, ch
     size_t normalized_changed = 0;
     if (normalize) {
         const nmo_type_runtime_t *type_rt = nmo_context_get_type_runtime(c->ctx);
-        nmo_status_t normalize_status = nmo_runtime_normalize_invalid_refs(
-            repo, type_rt, &normalized_changed);
-        if (normalize_status != NMO_OK) {
-            fprintf(stderr, "Error normalizing references: %s\n",
-                    nmo_error_string(normalize_status));
+        const size_t object_count = nmo_object_repository_get_count(repo);
+        if (object_count > SIZE_MAX / sizeof(nmo_object_id_t)) {
+            fprintf(stderr, "Error normalizing references: object count overflow\n");
             return NMO_CLI_EXIT_INTERNAL_ERROR;
         }
+        nmo_object_id_t *changed_ids = object_count > 0u
+            ? (nmo_object_id_t *)malloc(
+                object_count * sizeof(nmo_object_id_t))
+            : NULL;
+        if (object_count > 0u && changed_ids == NULL) {
+            fprintf(stderr, "Error normalizing references: out of memory\n");
+            return NMO_CLI_EXIT_INTERNAL_ERROR;
+        }
+        size_t changed_object_count = 0u;
+        for (size_t i = 0; i < object_count; ++i) {
+            nmo_object_t *object = nmo_object_repository_get_by_index(repo, i);
+            if (object == NULL) continue;
+            size_t object_changes = 0u;
+            nmo_status_t normalize_status =
+                nmo_runtime_normalize_object_invalid_refs(
+                    repo, type_rt, object, &object_changes);
+            if (normalize_status != NMO_OK) {
+                fprintf(stderr, "Error normalizing references: %s\n",
+                        nmo_error_string(normalize_status));
+                free(changed_ids);
+                return NMO_CLI_EXIT_INTERNAL_ERROR;
+            }
+            if (object_changes > 0u) {
+                changed_ids[changed_object_count++] = object->id;
+                normalized_changed += object_changes;
+            }
+        }
+        if (changed_object_count > 1u) {
+            qsort(changed_ids, changed_object_count,
+                  sizeof(*changed_ids), validate_compare_object_ids);
+        }
         nmo_save_options_t save_options = nmo_tool_owner_save_options_default();
+        save_options.flags |= NMO_SAVE_CHANGED_OBJECTS_ONLY;
+        save_options.changed_object_ids = changed_ids;
+        save_options.changed_object_count = changed_object_count;
         int save_rc = nmo_cli_save_document(c->document, output_path, &save_options);
+        free(changed_ids);
         if (save_rc != NMO_CLI_EXIT_SUCCESS) return save_rc;
     }
 
