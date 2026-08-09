@@ -86,7 +86,7 @@ void nmo_document_set_file_header(
 {
     nmo_session_t *session = nmo_document_internal_session(document);
     if (session != NULL) {
-        nmo_session_set_file_header(session, header, header_size);
+        (void)nmo_session_set_file_header(session, header, header_size);
     }
 }
 

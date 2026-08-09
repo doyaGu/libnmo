@@ -157,6 +157,39 @@ static nmo_status_t runtime_prepare_probe_hook(
     return NMO_OK;
 }
 
+TEST(runtime_kernel, file_header_allocation_failure_preserves_state) {
+    runtime_ref_graph_fail_allocator_state_t fail_state = {0};
+    nmo_allocator_t fail_allocator = nmo_allocator_custom(
+        runtime_ref_graph_fail_alloc,
+        runtime_ref_graph_fail_free,
+        &fail_state);
+    nmo_context_desc_t desc = {
+        .allocator = &fail_allocator,
+    };
+    nmo_context_t *ctx = nmo_context_create(&desc);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    const uint32_t original_header = 0x12345678u;
+    ASSERT_EQ(NMO_OK,
+              nmo_session_set_file_header(
+                  session, &original_header, sizeof(original_header)));
+    const nmo_header_t *stored_header = nmo_session_get_header(session);
+    ASSERT_NOT_NULL(stored_header);
+
+    fail_state.fail_allocations = 1;
+    const uint8_t replacement = 0;
+    ASSERT_EQ(NMO_ERR_NOMEM,
+              nmo_session_set_file_header(
+                  session, &replacement, 1024u * 1024u));
+    ASSERT_TRUE(stored_header == nmo_session_get_header(session));
+
+    fail_state.fail_allocations = 0;
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 static nmo_status_t runtime_dependency_oom_hook(
     void *instance,
     const nmo_type_descriptor_t *type,
@@ -4065,6 +4098,7 @@ TEST(runtime_kernel, normalize_and_safe_detach_keep_curve_sections_independent) 
 }
 
 TEST_MAIN_BEGIN()
+REGISTER_TEST(runtime_kernel, file_header_allocation_failure_preserves_state);
 REGISTER_TEST(runtime_kernel, execute_create_and_delete);
 REGISTER_TEST(runtime_kernel, invalid_execute_arguments);
 REGISTER_TEST(runtime_kernel, post_delete_runs_after_remove);

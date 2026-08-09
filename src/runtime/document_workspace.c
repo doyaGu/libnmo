@@ -1954,9 +1954,12 @@ const nmo_header_t *nmo_session_get_header(const nmo_session_t *session) {
 /**
  * Set file header (internal use by parser)
  */
-void nmo_session_set_file_header(nmo_session_t *session, const void *header, size_t header_size) {
+nmo_status_t nmo_session_set_file_header(
+    nmo_session_t *session,
+    const void *header,
+    size_t header_size) {
     if (session == NULL || header == NULL || session->arena == NULL || header_size == 0) {
-        return;
+        return NMO_ERR_INVALID_ARGUMENT;
     }
     
     /* Allocate header in session arena */
@@ -1966,12 +1969,15 @@ void nmo_session_set_file_header(nmo_session_t *session, const void *header, siz
         alignof(max_align_t)
     );
     
-    if (stored_header != NULL) {
-        /* Copy header data */
-        memcpy(stored_header, header, header_size);
-        session->file_header = stored_header;
-        session->file_header_size = header_size;
+    if (stored_header == NULL) {
+        return NMO_ERR_NOMEM;
     }
+
+    /* Publish only after the complete header has been copied. */
+    memcpy(stored_header, header, header_size);
+    session->file_header = stored_header;
+    session->file_header_size = header_size;
+    return NMO_OK;
 }
 
 nmo_reference_resolver_t *nmo_session_get_reference_resolver(

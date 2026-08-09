@@ -675,7 +675,11 @@ nmo_status_t nmo_deserializer_parse_header(nmo_deserializer_t *ds)
         return info_result;
     }
 
-    nmo_session_set_file_header(session, &ds->header, sizeof(nmo_file_header_t));
+    int header_store_result = nmo_session_set_file_header(
+        session, &ds->header, sizeof(nmo_file_header_t));
+    if (header_store_result != NMO_OK) {
+        return header_store_result;
+    }
 
     nmo_log(logger, NMO_LOG_INFO, "Found %u objects, %u managers, %u plugins",
             ds->hdr1.object_count, ds->header.manager_count, ds->hdr1.plugin_dep_count);

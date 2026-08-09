@@ -121,7 +121,7 @@ nmo_behavior_index_t *nmo_session_get_behavior_index(
     nmo_session_t *session);
 nmo_status_t nmo_session_ensure_behavior_acceleration(
     nmo_session_t *session);
-void nmo_session_set_file_header(
+nmo_status_t nmo_session_set_file_header(
     nmo_session_t *session,
     const void *header,
     size_t header_size);
