@@ -1300,7 +1300,7 @@ TEST(runtime_kernel, normalize_removes_only_invalid_reference_records) {
 
     uint32_t type_a = 11, type_invalid = 22, type_b = 33;
     ASSERT_EQ(NMO_OK, nmo_beobject_attribute_array_append(
-        &group->base.attributes, valid_parameter, type_a, NULL));
+        &group->base.attributes, parameter_out_id, type_a, NULL));
     nmo_beobject_attribute_t invalid_attribute = {
         .parameter = nmo_ref_from_raw(invalid),
         .type_id = type_invalid,
@@ -1313,7 +1313,7 @@ TEST(runtime_kernel, normalize_removes_only_invalid_reference_records) {
         {
             .compatible_class_id = 1,
             .name = "valid-a",
-            .parameter = nmo_ref_from_id(valid_parameter),
+            .parameter = nmo_ref_from_id(parameter_out_id),
         },
         {
             .compatible_class_id = 2,
@@ -1327,8 +1327,8 @@ TEST(runtime_kernel, normalize_removes_only_invalid_reference_records) {
         },
         {
             .compatible_class_id = 4,
-            .name = "valid-b",
-            .parameter = nmo_ref_from_id(valid_parameter_in),
+            .name = "wrong-parameter-class",
+            .parameter = nmo_ref_from_id(valid_parameter),
         },
     };
     ASSERT_EQ(NMO_OK, nmo_array_append_array(
@@ -1362,7 +1362,7 @@ TEST(runtime_kernel, normalize_removes_only_invalid_reference_records) {
     size_t changed = 0;
     ASSERT_EQ(NMO_OK, nmo_runtime_normalize_invalid_refs(
         repo, nmo_context_get_type_runtime(ctx), &changed));
-    ASSERT_EQ(16, (int)changed);
+    ASSERT_EQ(17, (int)changed);
     ASSERT_EQ(2, (int)behavior->inputs.count);
     ASSERT_EQ(valid_io_a, nmo_behavior_ref_array_get_id(&behavior->inputs, 0));
     ASSERT_EQ(valid_io_b, nmo_behavior_ref_array_get_id(&behavior->inputs, 1));
@@ -1374,25 +1374,19 @@ TEST(runtime_kernel, normalize_removes_only_invalid_reference_records) {
     ASSERT_EQ(valid_behavior_b, nmo_behavior_ref_runtime_id(&sub_refs[1]));
     ASSERT_EQ(chunk_a, sub_refs[0].chunk);
     ASSERT_EQ(chunk_b, sub_refs[1].chunk);
-    ASSERT_EQ(2, (int)group->base.attributes.count);
+    ASSERT_EQ(1, (int)group->base.attributes.count);
     nmo_beobject_attribute_t *attributes = NMO_ARRAY_DATA(
         nmo_beobject_attribute_t, &group->base.attributes);
-    ASSERT_EQ(valid_parameter,
+    ASSERT_EQ(parameter_out_id,
               nmo_ref_runtime_id(&attributes[0].parameter));
-    ASSERT_EQ(valid_parameter_in,
-              nmo_ref_runtime_id(&attributes[1].parameter));
     ASSERT_EQ(type_a, attributes[0].type_id);
-    ASSERT_EQ(type_b, attributes[1].type_id);
-    ASSERT_EQ(2u, group->base.legacy_attributes.count);
+    ASSERT_EQ(1u, group->base.legacy_attributes.count);
     nmo_beobject_legacy_attribute_t *normalized_legacy = NMO_ARRAY_DATA(
         nmo_beobject_legacy_attribute_t,
         &group->base.legacy_attributes);
-    ASSERT_EQ(valid_parameter,
+    ASSERT_EQ(parameter_out_id,
               nmo_ref_runtime_id(&normalized_legacy[0].parameter));
-    ASSERT_EQ(valid_parameter_in,
-              nmo_ref_runtime_id(&normalized_legacy[1].parameter));
     ASSERT_STR_EQ("valid-a", normalized_legacy[0].name);
-    ASSERT_STR_EQ("valid-b", normalized_legacy[1].name);
     ASSERT_EQ(1, (int)grid->layers.count);
     nmo_grid_layer_t *layers = NMO_ARRAY_DATA(nmo_grid_layer_t, &grid->layers);
     ASSERT_EQ(valid_a, layers[0].ref.id);
@@ -1424,9 +1418,10 @@ TEST(runtime_kernel, normalize_removes_only_invalid_reference_records) {
     ASSERT_EQ(valid_b, nmo_ref_runtime_id(
                            &NMO_ARRAY_DATA(
                                nmo_ref_t, &synchro->passed_ids)[0]));
-    ASSERT_EQ(NMO_REF_NONE, parameter_out->owner.state);
+    ASSERT_EQ(NMO_REF_RESOLVED, parameter_out->owner.state);
+    ASSERT_EQ(valid_parameter, parameter_out->owner.id);
     ASSERT_EQ(1u, parameter_out->destination_count);
-    ASSERT_EQ(valid_parameter_in,
+    ASSERT_EQ(valid_parameter,
               nmo_parameterout_destination_id(parameter_out, 0));
 
     nmo_session_destroy(session);
@@ -2034,7 +2029,7 @@ TEST(runtime_kernel, normalize_clears_raw_scalar_class_mismatch) {
     size_t changed = 0;
     ASSERT_EQ(NMO_OK, nmo_runtime_normalize_invalid_refs(
         repo, nmo_context_get_type_runtime(ctx), &changed));
-    ASSERT_EQ((size_t)17, changed);
+    ASSERT_EQ((size_t)18, changed);
     ASSERT_EQ(NMO_REF_NONE, entity->current_mesh.state);
     ASSERT_EQ(NMO_OBJECT_ID_NONE, entity->current_mesh.raw_id);
     ASSERT_EQ(NMO_OBJECT_ID_NONE, entity->current_mesh.id);
@@ -2064,7 +2059,7 @@ TEST(runtime_kernel, normalize_clears_raw_scalar_class_mismatch) {
     ASSERT_EQ(NMO_REF_NONE, material->effect_parameter.state);
     ASSERT_EQ(NMO_REF_NONE, operation->owner.state);
     ASSERT_EQ(NMO_REF_NONE, operation->in1.ref.state);
-    ASSERT_EQ(parameter_id, nmo_parameteroperation_in2_id(operation));
+    ASSERT_EQ(NMO_REF_NONE, operation->in2.ref.state);
     ASSERT_EQ(NMO_REF_NONE, operation->out.ref.state);
 
     nmo_session_destroy(session);
@@ -2080,7 +2075,8 @@ TEST(runtime_kernel, normalize_preserves_explicitly_typed_reference_targets) {
     nmo_object_id_t entity_id = 0;
     nmo_object_id_t mesh_id = 0;
     nmo_object_id_t group_id = 0;
-    nmo_object_id_t parameter_id = 0;
+    nmo_object_id_t parameter_in_id = 0;
+    nmo_object_id_t parameter_out_id = 0;
     nmo_object_id_t operation_id = 0;
     ASSERT_EQ(NMO_OK, nmo_session_create_object(
         session, NMO_CID_3DENTITY, "entity", NMO_NULL_GUID,
@@ -2091,8 +2087,11 @@ TEST(runtime_kernel, normalize_preserves_explicitly_typed_reference_targets) {
         session, NMO_CID_GROUP, "group", NMO_NULL_GUID,
         &group_id, NULL));
     ASSERT_EQ(NMO_OK, nmo_session_create_object(
-        session, 0, "typed-parameter", CKPGUID_PARAMETERIN,
-        &parameter_id, NULL));
+        session, 0, "typed-parameter-in", CKPGUID_PARAMETERIN,
+        &parameter_in_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, 0, "typed-parameter-out", CKPGUID_PARAMETEROUT,
+        &parameter_out_id, NULL));
     ASSERT_EQ(NMO_OK, nmo_session_create_object(
         session, NMO_CID_PARAMETEROPERATION, "operation", NMO_NULL_GUID,
         &operation_id, NULL));
@@ -2109,12 +2108,12 @@ TEST(runtime_kernel, normalize_preserves_explicitly_typed_reference_targets) {
         nmo_object_repository_find_by_id(repo, group_id)->state;
     ASSERT_NOT_NULL(group);
     ASSERT_EQ(NMO_OK, nmo_beobject_attribute_array_append(
-        &group->base.attributes, parameter_id, 1u, NULL));
+        &group->base.attributes, parameter_out_id, 1u, NULL));
     nmo_parameteroperation_state_t *operation =
         (nmo_parameteroperation_state_t *)
             nmo_object_repository_find_by_id(repo, operation_id)->state;
     ASSERT_NOT_NULL(operation);
-    operation->in1.ref = nmo_ref_from_id(parameter_id);
+    operation->in1.ref = nmo_ref_from_id(parameter_in_id);
     operation->has_in1 = 1;
 
     size_t changed = 0;
@@ -2124,11 +2123,94 @@ TEST(runtime_kernel, normalize_preserves_explicitly_typed_reference_targets) {
     ASSERT_EQ(NMO_REF_RESOLVED, entity->current_mesh.state);
     ASSERT_EQ(mesh_id, entity->current_mesh.id);
     ASSERT_EQ(1u, group->base.attributes.count);
-    ASSERT_EQ(parameter_id, nmo_ref_runtime_id(
+    ASSERT_EQ(parameter_out_id, nmo_ref_runtime_id(
         &NMO_ARRAY_DATA(
             nmo_beobject_attribute_t, &group->base.attributes)[0].parameter));
     ASSERT_EQ(NMO_REF_RESOLVED, operation->in1.ref.state);
-    ASSERT_EQ(parameter_id, operation->in1.ref.id);
+    ASSERT_EQ(parameter_in_id, operation->in1.ref.id);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
+TEST(runtime_kernel, normalize_enforces_parameterin_reference_classes) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    nmo_object_id_t parameter_id = 0;
+    nmo_object_id_t parameter_out_id = 0;
+    nmo_object_id_t behavior_id = 0;
+    nmo_object_id_t operation_id = 0;
+    nmo_object_id_t direct_valid_id = 0;
+    nmo_object_id_t shared_valid_id = 0;
+    nmo_object_id_t direct_invalid_id = 0;
+    nmo_object_id_t shared_invalid_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_PARAMETER, "parameter", NMO_NULL_GUID,
+        &parameter_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_PARAMETEROUT, "parameter-out", NMO_NULL_GUID,
+        &parameter_out_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_BEHAVIOR, "behavior", NMO_NULL_GUID,
+        &behavior_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_PARAMETEROPERATION, "operation", NMO_NULL_GUID,
+        &operation_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_PARAMETERIN, "direct-valid", NMO_NULL_GUID,
+        &direct_valid_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_PARAMETERIN, "shared-valid", NMO_NULL_GUID,
+        &shared_valid_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_PARAMETERIN, "direct-invalid", NMO_NULL_GUID,
+        &direct_invalid_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_PARAMETERIN, "shared-invalid", NMO_NULL_GUID,
+        &shared_invalid_id, NULL));
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_parameterin_state_t *direct_valid = (nmo_parameterin_state_t *)
+        nmo_object_repository_find_by_id(repo, direct_valid_id)->state;
+    nmo_parameterin_state_t *shared_valid = (nmo_parameterin_state_t *)
+        nmo_object_repository_find_by_id(repo, shared_valid_id)->state;
+    nmo_parameterin_state_t *direct_invalid = (nmo_parameterin_state_t *)
+        nmo_object_repository_find_by_id(repo, direct_invalid_id)->state;
+    nmo_parameterin_state_t *shared_invalid = (nmo_parameterin_state_t *)
+        nmo_object_repository_find_by_id(repo, shared_invalid_id)->state;
+    ASSERT_NOT_NULL(direct_valid);
+    ASSERT_NOT_NULL(shared_valid);
+    ASSERT_NOT_NULL(direct_invalid);
+    ASSERT_NOT_NULL(shared_invalid);
+
+    direct_valid->source = nmo_ref_from_id(parameter_out_id);
+    direct_valid->owner = nmo_ref_from_id(operation_id);
+    direct_valid->is_shared = 0;
+    shared_valid->source = nmo_ref_from_id(direct_valid_id);
+    shared_valid->owner = nmo_ref_from_id(behavior_id);
+    shared_valid->is_shared = 1;
+    direct_invalid->source = nmo_ref_from_id(shared_valid_id);
+    direct_invalid->owner = nmo_ref_from_id(parameter_id);
+    direct_invalid->is_shared = 0;
+    shared_invalid->source = nmo_ref_from_id(parameter_out_id);
+    shared_invalid->owner = nmo_ref_from_id(parameter_out_id);
+    shared_invalid->is_shared = 1;
+
+    size_t changed = 0;
+    ASSERT_EQ(NMO_OK, nmo_runtime_normalize_invalid_refs(
+        repo, nmo_context_get_type_runtime(ctx), &changed));
+    ASSERT_EQ(4u, changed);
+    ASSERT_EQ(parameter_out_id, nmo_parameterin_source_id(direct_valid));
+    ASSERT_EQ(operation_id, nmo_parameterin_owner_id(direct_valid));
+    ASSERT_EQ(direct_valid_id, nmo_parameterin_source_id(shared_valid));
+    ASSERT_EQ(behavior_id, nmo_parameterin_owner_id(shared_valid));
+    ASSERT_EQ(NMO_REF_NONE, direct_invalid->source.state);
+    ASSERT_EQ(NMO_REF_NONE, direct_invalid->owner.state);
+    ASSERT_EQ(NMO_REF_NONE, shared_invalid->source.state);
+    ASSERT_EQ(NMO_REF_NONE, shared_invalid->owner.state);
 
     nmo_session_destroy(session);
     nmo_context_release(ctx);
@@ -3969,6 +4051,7 @@ TEST(runtime_kernel, normalize_clears_invalid_dataarray_cells) {
     nmo_object_id_t dataarray_id = 0;
     nmo_object_id_t object_id = 0;
     nmo_object_id_t parameter_id = 0;
+    nmo_object_id_t parameter_in_id = 0;
     ASSERT_EQ(NMO_OK, nmo_session_create_object(
         session, NMO_CID_DATAARRAY, "array", NMO_NULL_GUID,
         &dataarray_id, NULL));
@@ -3978,27 +4061,32 @@ TEST(runtime_kernel, normalize_clears_invalid_dataarray_cells) {
     ASSERT_EQ(NMO_OK, nmo_session_create_object(
         session, NMO_CID_PARAMETER, "parameter", NMO_NULL_GUID,
         &parameter_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_PARAMETERIN, "parameter-in", NMO_NULL_GUID,
+        &parameter_in_id, NULL));
 
     nmo_dataarray_column_format_t formats[] = {
         {.type = CKARRAYTYPE_OBJECT},
         {.type = CKARRAYTYPE_OBJECT},
         {.type = CKARRAYTYPE_PARAMETER},
         {.type = CKARRAYTYPE_PARAMETER},
+        {.type = CKARRAYTYPE_PARAMETER},
         {.type = CKARRAYTYPE_INT},
     };
-    nmo_dataarray_cell_t cells[5] = {0};
+    nmo_dataarray_cell_t cells[6] = {0};
     cells[0].object_ref = nmo_ref_from_id(object_id);
     cells[1].object_ref = nmo_ref_from_raw(0x7FFFFF41u);
     cells[2].parameter.ref = nmo_ref_from_id(parameter_id);
     cells[3].parameter.ref = nmo_ref_from_id(object_id);
-    cells[4].int_value = 42;
+    cells[4].parameter.ref = nmo_ref_from_id(parameter_in_id);
+    cells[5].int_value = 42;
     nmo_dataarray_row_t row = {
-        .column_count = 5,
+        .column_count = 6,
         .cells = cells,
     };
     nmo_dataarray_state_t *state = (nmo_dataarray_state_t *)
         nmo_object_repository_find_by_id(repo, dataarray_id)->state;
-    state->column_count = 5;
+    state->column_count = 6;
     state->column_formats = formats;
     state->row_count = 1;
     state->rows = &row;
@@ -4006,13 +4094,14 @@ TEST(runtime_kernel, normalize_clears_invalid_dataarray_cells) {
     size_t changed = 0;
     ASSERT_EQ(NMO_OK, nmo_runtime_normalize_invalid_refs(
         repo, nmo_context_get_type_runtime(ctx), &changed));
-    ASSERT_EQ(2u, changed);
+    ASSERT_EQ(3u, changed);
     ASSERT_EQ(object_id, nmo_ref_runtime_id(&cells[0].object_ref));
     ASSERT_EQ(NMO_REF_NONE, cells[1].object_ref.state);
     ASSERT_EQ(parameter_id, nmo_ref_runtime_id(&cells[2].parameter.ref));
     ASSERT_EQ(NMO_REF_NONE, cells[3].parameter.ref.state);
-    ASSERT_EQ(42, cells[4].int_value);
-    ASSERT_EQ(5u, state->column_count);
+    ASSERT_EQ(NMO_REF_NONE, cells[4].parameter.ref.state);
+    ASSERT_EQ(42, cells[5].int_value);
+    ASSERT_EQ(6u, state->column_count);
     ASSERT_EQ(1u, state->row_count);
 
     nmo_session_destroy(session);
@@ -4294,6 +4383,7 @@ REGISTER_TEST(runtime_kernel, beobject_normalize_validates_attributes_before_mut
 REGISTER_TEST(runtime_kernel, normalize_reports_malformed_ref_arrays_before_mutation);
 REGISTER_TEST(runtime_kernel, normalize_clears_raw_scalar_class_mismatch);
 REGISTER_TEST(runtime_kernel, normalize_preserves_explicitly_typed_reference_targets);
+REGISTER_TEST(runtime_kernel, normalize_enforces_parameterin_reference_classes);
 REGISTER_TEST(runtime_kernel, dependency_remap_preserves_invalid_references);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_scene_members);
 REGISTER_TEST(runtime_kernel, copy_remap_rejects_malformed_reference_storage);

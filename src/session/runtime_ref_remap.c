@@ -13,6 +13,7 @@
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_grid_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
+#include "object/builtin/nmo_parameterin_schemas.h"
 #include "object/builtin/nmo_patchmesh_schemas.h"
 #include "object/builtin/nmo_place_schemas.h"
 #include "object/builtin/nmo_scene_schemas.h"
@@ -714,9 +715,6 @@ static nmo_class_id_t normalize_expected_class_for_field(const char *name)
     }
     if (strstr(name, "material") != NULL) return NMO_CID_MATERIAL;
     if (strstr(name, "texture") != NULL) return NMO_CID_TEXTURE;
-    if (strcmp(name, "destination_ids") == 0) {
-        return NMO_CID_PARAMETERIN;
-    }
     if (strstr(name, "parameter") != NULL ||
         strcmp(name, "source_id") == 0 || strcmp(name, "in1_id") == 0 ||
         strcmp(name, "in2_id") == 0 || strcmp(name, "out_id") == 0) {
@@ -771,18 +769,23 @@ static nmo_class_id_t normalize_expected_class_for_typed_field(
         }
     }
     if (type != NULL && field != NULL && field->name != NULL &&
-        strcmp(field->name, "owner") == 0 &&
-        (nmo_guid_equals(type->guid, CKPGUID_PARAMETERIN) ||
-         nmo_guid_equals(type->guid, CKPGUID_PARAMETEROUT) ||
-         nmo_guid_equals(type->guid, CKPGUID_PARAMETERLOCAL))) {
-        return NMO_CID_BEHAVIOR;
-    }
-    if (type != NULL && field != NULL && field->name != NULL &&
         nmo_guid_equals(type->guid, CKPGUID_PARAMETEROPERATION)) {
         if (strcmp(field->name, "owner") == 0) return NMO_CID_BEHAVIOR;
         if (strcmp(field->name, "in1") == 0 ||
-            strcmp(field->name, "in2") == 0 ||
-            strcmp(field->name, "out") == 0) return 0;
+            strcmp(field->name, "in2") == 0) return NMO_CID_PARAMETERIN;
+        if (strcmp(field->name, "out") == 0) return NMO_CID_PARAMETEROUT;
+    }
+    if (type != NULL && field != NULL && field->name != NULL &&
+        nmo_guid_equals(type->guid, CKPGUID_PARAMETEROUT)) {
+        if (strcmp(field->name, "destination_ids") == 0) {
+            return NMO_CID_PARAMETER;
+        }
+        if (strcmp(field->name, "owner") == 0) return 0;
+    }
+    if (type != NULL && field != NULL && field->name != NULL &&
+        nmo_guid_equals(type->guid, CKPGUID_PARAMETERLOCAL) &&
+        strcmp(field->name, "owner") == 0) {
+        return 0;
     }
     if (type != NULL && field != NULL && field->name != NULL &&
         strcmp(field->name, "parent") == 0) {
@@ -796,53 +799,14 @@ static nmo_class_id_t normalize_expected_class_for_typed_field(
     return normalize_expected_class_for_field(field ? field->name : NULL);
 }
 
-static bool normalize_is_parameter_family_slot(
-    const nmo_type_descriptor_t *type,
-    const nmo_type_field_t *field)
-{
-    if (type == NULL || field == NULL || field->name == NULL) return false;
-    if (nmo_guid_equals(type->guid, CKPGUID_PARAMETERIN) &&
-        strcmp(field->name, "source") == 0) {
-        return true;
-    }
-    return nmo_guid_equals(type->guid, CKPGUID_PARAMETEROPERATION) &&
-           (strcmp(field->name, "in1") == 0 ||
-            strcmp(field->name, "in2") == 0 ||
-            strcmp(field->name, "out") == 0);
-}
-
-static bool normalize_is_parameter_object(
-    const nmo_type_registry_t *types,
-    const nmo_object_t *object,
-    bool allow_operation)
-{
-    const nmo_class_id_t classes[] = {
-        NMO_CID_PARAMETER,
-        NMO_CID_PARAMETERIN,
-        NMO_CID_PARAMETEROUT,
-        NMO_CID_PARAMETERLOCAL,
-        NMO_CID_PARAMETEROPERATION,
-    };
-    size_t count = sizeof(classes) / sizeof(classes[0]);
-    if (!allow_operation) --count;
-    for (size_t i = 0; i < count; ++i) {
-        if (nmo_type_query_object_is_derived_from_class(
-                types, object, classes[i])) {
-            return true;
-        }
-    }
-    return false;
-}
-
 static bool normalize_id_is_invalid_attribute_parameter(
     nmo_object_repository_t *repo,
     const nmo_type_registry_t *types,
     nmo_object_id_t id)
 {
-    if (normalize_id_is_invalid(repo, id)) return true;
-    const nmo_object_t *target = nmo_object_repository_find_by_id(repo, id);
-    return target != NULL &&
-           !normalize_is_parameter_object(types, target, false);
+    return normalize_id_is_invalid(repo, id) ||
+        normalize_id_has_wrong_class(
+            repo, types, id, NMO_CID_PARAMETEROUT);
 }
 
 static bool normalize_id_is_invalid_for_typed_field(
@@ -850,14 +814,31 @@ static bool normalize_id_is_invalid_for_typed_field(
     const nmo_type_registry_t *types,
     const nmo_type_descriptor_t *type,
     const nmo_type_field_t *field,
+    const void *instance,
     nmo_object_id_t id)
 {
-    if (normalize_is_parameter_family_slot(type, field)) {
-        if (normalize_id_is_invalid(repo, id)) return true;
-        const nmo_object_t *target =
-            nmo_object_repository_find_by_id(repo, id);
-        return target != NULL &&
-               !normalize_is_parameter_object(types, target, true);
+    if (type != NULL && field != NULL && field->name != NULL &&
+        nmo_guid_equals(type->guid, CKPGUID_PARAMETERIN)) {
+        if (strcmp(field->name, "source") == 0) {
+            const nmo_parameterin_state_t *state =
+                (const nmo_parameterin_state_t *)instance;
+            const nmo_class_id_t expected = state != NULL && state->is_shared
+                ? NMO_CID_PARAMETERIN
+                : NMO_CID_PARAMETER;
+            return normalize_id_is_invalid(repo, id) ||
+                normalize_id_has_wrong_class(repo, types, id, expected);
+        }
+        if (strcmp(field->name, "owner") == 0) {
+            if (normalize_id_is_invalid(repo, id)) return true;
+            if (id == NMO_OBJECT_ID_NONE) return false;
+            const nmo_object_t *target =
+                nmo_object_repository_find_by_id(repo, id);
+            return target != NULL &&
+                !nmo_type_query_object_is_derived_from_class(
+                    types, target, NMO_CID_BEHAVIOR) &&
+                !nmo_type_query_object_is_derived_from_class(
+                    types, target, NMO_CID_PARAMETEROPERATION);
+        }
     }
     return normalize_id_is_invalid(repo, id) ||
         normalize_id_has_wrong_class(
@@ -1297,14 +1278,11 @@ static nmo_status_t normalize_dataarray_cells(
                      !normalize_id_is_invalid(repo, ref->id));
             } else if (column_type == CKARRAYTYPE_PARAMETER) {
                 ref = &row->cells[column_index].parameter.ref;
-                if (ref->state != NMO_REF_NONE) {
-                    const nmo_object_t *target =
-                        ref->state == NMO_REF_RESOLVED
-                            ? nmo_object_repository_find_by_id(repo, ref->id)
-                            : NULL;
-                    valid = target != NULL &&
-                        normalize_is_parameter_object(types, target, true);
-                }
+                valid = ref->state == NMO_REF_NONE ||
+                    (ref->state == NMO_REF_RESOLVED &&
+                     !normalize_id_is_invalid(repo, ref->id) &&
+                     !normalize_id_has_wrong_class(
+                         repo, types, ref->id, NMO_CID_PARAMETER));
             } else if (column_type != CKARRAYTYPE_INT &&
                        column_type != CKARRAYTYPE_FLOAT &&
                        column_type != CKARRAYTYPE_STRING) {
@@ -1359,7 +1337,8 @@ static bool normalize_ref_field(
         if (ref->state != NMO_REF_NONE &&
             (id == NMO_OBJECT_ID_NONE ||
              normalize_id_is_invalid_for_typed_field(
-                ctx->repo, ctx->types, ctx->type, field, id))) {
+                ctx->repo, ctx->types, ctx->type, field,
+                ctx->instance, id))) {
             *ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
             (*ctx->changes)++;
         }
@@ -1375,7 +1354,8 @@ static bool normalize_ref_field(
         }
         if (ctx->validate_only) return true;
         if (normalize_id_is_invalid_for_typed_field(
-                ctx->repo, ctx->types, ctx->type, field, *id)) {
+                ctx->repo, ctx->types, ctx->type, field,
+                ctx->instance, *id)) {
             *id = NMO_OBJECT_ID_NONE;
             (*ctx->changes)++;
         }
@@ -1404,7 +1384,8 @@ static bool normalize_ref_field(
                 const nmo_object_id_t id = nmo_ref_runtime_id(&refs[i]);
                 if (refs[i].state == NMO_REF_RESOLVED &&
                     !normalize_id_is_invalid_for_typed_field(
-                        ctx->repo, ctx->types, ctx->type, field, id)) {
+                        ctx->repo, ctx->types, ctx->type, field,
+                        ctx->instance, id)) {
                     ++i;
                     continue;
                 }
@@ -1421,7 +1402,8 @@ static bool normalize_ref_field(
         for (size_t i = 0; i < array->count;) {
             nmo_object_id_t *ids = NMO_ARRAY_DATA(nmo_object_id_t, array);
             if (!normalize_id_is_invalid_for_typed_field(
-                    ctx->repo, ctx->types, ctx->type, field, ids[i])) {
+                    ctx->repo, ctx->types, ctx->type, field,
+                    ctx->instance, ids[i])) {
                 ++i;
                 continue;
             }
@@ -1466,7 +1448,8 @@ static bool normalize_ref_field(
                 const nmo_object_id_t id = nmo_ref_runtime_id(&(*values)[i]);
                 if ((*values)[i].state != NMO_REF_RESOLVED ||
                     normalize_id_is_invalid_for_typed_field(
-                        ctx->repo, ctx->types, ctx->type, field, id)) {
+                        ctx->repo, ctx->types, ctx->type, field,
+                        ctx->instance, id)) {
                     (*ctx->changes)++;
                     continue;
                 }
@@ -1485,7 +1468,8 @@ static bool normalize_ref_field(
         uint32_t kept = 0;
         for (uint32_t i = 0; i < count; ++i) {
             if (normalize_id_is_invalid_for_typed_field(
-                    ctx->repo, ctx->types, ctx->type, field, (*values)[i])) {
+                    ctx->repo, ctx->types, ctx->type, field,
+                    ctx->instance, (*values)[i])) {
                 (*ctx->changes)++;
                 continue;
             }
