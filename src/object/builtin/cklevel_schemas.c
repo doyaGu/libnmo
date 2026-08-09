@@ -32,6 +32,10 @@
 #include <string.h>
 
 static void nmo_level_dispose_state_arrays(nmo_level_state_t *state);
+static nmo_status_t nmo_level_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 NMO_DEFINE_OBJECT_LIFECYCLE(
     level,
@@ -63,12 +67,14 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
 static void nmo_level_dispose_state_arrays(nmo_level_state_t *state)
 {
     if (state == NULL) return;
-    nmo_array_dispose(&state->base.scripts);
-    nmo_array_dispose(&state->base.attributes);
-    nmo_array_dispose(&state->base.legacy_attributes);
     nmo_array_dispose(&state->scene_ids);
     nmo_array_dispose(&state->inactive_manager_guids);
     nmo_array_dispose(&state->duplicate_manager_names);
+    if (state->level_scene_chunk != NULL) {
+        nmo_chunk_destroy(state->level_scene_chunk);
+        state->level_scene_chunk = NULL;
+    }
+    nmo_beobject_vtable.destroy(&state->base, NULL, NULL);
 }
 
 static size_t nmo_level_identifier_remaining_dwords(
@@ -574,48 +580,64 @@ static nmo_status_t nmo_level_copy(
 {
     const nmo_level_state_t *s = src;
     nmo_level_state_t *d = dst;
-    NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
-    if (d->base.scripts.data == s->base.scripts.data) {
-        memset(&d->base.scripts, 0, sizeof(d->base.scripts));
-    } else {
-        nmo_array_dispose(&d->base.scripts);
+    (void)type;
+    if (s == NULL || d == NULL || arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
     }
-    if (s->base.scripts.element_size == 0) {
-        NMO_RETURN_IF_ERROR(nmo_array_init(
-            &d->base.scripts, sizeof(nmo_ref_t), 0, NULL));
-    } else {
-        NMO_RETURN_IF_ERROR(nmo_array_clone(
-            &s->base.scripts, &d->base.scripts,
-            &s->base.scripts.allocator));
-    }
-    NMO_RETURN_IF_ERROR(nmo_beobject_clone_attributes(
-        arena, &d->base.attributes, &s->base.attributes));
-    NMO_RETURN_IF_ERROR(nmo_beobject_clone_legacy_attributes(
-        arena, &d->base.legacy_attributes, &s->base.legacy_attributes));
+    NMO_RETURN_IF_ERROR(nmo_level_validate(s, NULL, NULL));
 
-    if (d->scene_ids.data == s->scene_ids.data) {
-        memset(&d->scene_ids, 0, sizeof(d->scene_ids));
-    } else {
-        nmo_array_dispose(&d->scene_ids);
+    nmo_level_state_t copied;
+    nmo_status_t result = nmo_level_create(&copied, NULL, NULL);
+    if (result != NMO_OK) return result;
+    result = nmo_beobject_vtable.copy(
+        &s->base, &copied.base, NULL, arena);
+    if (result != NMO_OK) goto fail;
+    copied.current_scene = s->current_scene;
+    copied.level_scene = s->level_scene;
+    copied.has_inactive_manager_section = s->has_inactive_manager_section;
+
+    nmo_array_dispose(&copied.scene_ids);
+    result = nmo_array_clone(
+        &s->scene_ids, &copied.scene_ids, &s->scene_ids.allocator);
+    if (result != NMO_OK) goto fail;
+    result = nmo_object_copy_chunk(
+        arena, &copied.level_scene_chunk, s->level_scene_chunk);
+    if (result != NMO_OK) goto fail;
+    nmo_array_dispose(&copied.inactive_manager_guids);
+    result = nmo_array_clone(
+        &s->inactive_manager_guids, &copied.inactive_manager_guids,
+        &s->inactive_manager_guids.allocator);
+    if (result != NMO_OK) goto fail;
+    nmo_array_dispose(&copied.duplicate_manager_names);
+    result = nmo_object_clone_string_array(
+        arena, &copied.duplicate_manager_names,
+        &s->duplicate_manager_names);
+    if (result != NMO_OK) goto fail;
+    nmo_object_array_set_string_lifecycle(&copied.duplicate_manager_names);
+
+#define NMO_LEVEL_DETACH_SHARED_ARRAY(field) \
+    do { \
+        if (d->field.data == s->field.data) { \
+            memset(&d->field, 0, sizeof(d->field)); \
+        } \
+    } while (0)
+    NMO_LEVEL_DETACH_SHARED_ARRAY(base.scripts);
+    NMO_LEVEL_DETACH_SHARED_ARRAY(base.attributes);
+    NMO_LEVEL_DETACH_SHARED_ARRAY(base.legacy_attributes);
+    NMO_LEVEL_DETACH_SHARED_ARRAY(scene_ids);
+    NMO_LEVEL_DETACH_SHARED_ARRAY(inactive_manager_guids);
+    NMO_LEVEL_DETACH_SHARED_ARRAY(duplicate_manager_names);
+#undef NMO_LEVEL_DETACH_SHARED_ARRAY
+    if (d->level_scene_chunk == s->level_scene_chunk) {
+        d->level_scene_chunk = NULL;
     }
-    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->scene_ids, &d->scene_ids, &s->scene_ids.allocator));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_chunk(arena, &d->level_scene_chunk, s->level_scene_chunk));
-    if (d->inactive_manager_guids.data == s->inactive_manager_guids.data) {
-        memset(&d->inactive_manager_guids, 0, sizeof(d->inactive_manager_guids));
-    } else {
-        nmo_array_dispose(&d->inactive_manager_guids);
-    }
-    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->inactive_manager_guids, &d->inactive_manager_guids,
-                                        &s->inactive_manager_guids.allocator));
-    if (d->duplicate_manager_names.data == s->duplicate_manager_names.data) {
-        memset(&d->duplicate_manager_names, 0, sizeof(d->duplicate_manager_names));
-    } else {
-        nmo_array_dispose(&d->duplicate_manager_names);
-    }
-    NMO_RETURN_IF_ERROR(nmo_object_clone_string_array(
-        arena, &d->duplicate_manager_names, &s->duplicate_manager_names));
-    nmo_object_array_set_string_lifecycle(&d->duplicate_manager_names);
-    NMO_RETURN_OK();
+    nmo_level_destroy(d, NULL, NULL);
+    *d = copied;
+    return NMO_OK;
+
+fail:
+    nmo_level_destroy(&copied, NULL, NULL);
+    return result;
 }
 
 nmo_status_t nmo_level_serialize(
