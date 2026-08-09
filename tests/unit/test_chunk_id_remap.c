@@ -8930,6 +8930,42 @@ TEST(chunk_id_remap, level_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(899u, nmo_beobject_script_array_get_id(
         &failed_scenes.base.scripts, 0));
 
+    const nmo_guid_t old_inactive_guid = {
+        0x12345678u, 0x90ABCDEFu,
+    };
+    const char *old_duplicate_name = "old-manager";
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &failed_scenes.inactive_manager_guids, &old_inactive_guid));
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &failed_scenes.duplicate_manager_names, &old_duplicate_name));
+    void *old_inactive_guids = failed_scenes.inactive_manager_guids.data;
+    void *old_duplicate_names = failed_scenes.duplicate_manager_names.data;
+
+    nmo_chunk_t *unterminated_manager_names = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(unterminated_manager_names);
+    unterminated_manager_names->class_id = NMO_CID_LEVEL;
+    unterminated_manager_names->data_version = 7;
+    unterminated_manager_names->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(unterminated_manager_names));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        unterminated_manager_names, CK_STATESAVE_LEVELINACTIVEMAN));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        unterminated_manager_names, CK_STATESAVE_LEVELDUPLICATEMAN));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_string(
+        unterminated_manager_names, "duplicate-manager"));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        unterminated_manager_names, 0u));
+    nmo_chunk_close(unterminated_manager_names);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_level_deserialize(
+        &failed_scenes, unterminated_manager_names, NULL,
+        &deserialize_context));
+    ASSERT_EQ(old_inactive_guids, failed_scenes.inactive_manager_guids.data);
+    ASSERT_EQ(old_duplicate_names, failed_scenes.duplicate_manager_names.data);
+    ASSERT_EQ(1u, failed_scenes.inactive_manager_guids.count);
+    ASSERT_EQ(1u, failed_scenes.duplicate_manager_names.count);
+    ASSERT_STR_EQ("old-manager", NMO_ARRAY_DATA(
+        const char *, &failed_scenes.duplicate_manager_names)[0]);
+
     nmo_chunk_t *truncated_scalars = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(truncated_scalars);
     truncated_scalars->class_id = NMO_CID_LEVEL;

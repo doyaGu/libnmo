@@ -435,8 +435,13 @@ default_data_done:;
         }
 
         /* Section 4: LEVELDUPLICATEMAN (optional) - Duplicate manager names */
-        result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_LEVELDUPLICATEMAN);
+        size_t duplicate_section_dwords = 0u;
+        result = nmo_chunk_seek_identifier_with_size(
+            chunk, CK_STATESAVE_LEVELDUPLICATEMAN,
+            &duplicate_section_dwords);
         if (result == NMO_OK) {
+            const size_t duplicate_section_end =
+                nmo_chunk_get_position(chunk) + duplicate_section_dwords;
             nmo_array_t duplicate_names;
             result = nmo_array_init(
                 &duplicate_names, sizeof(char *), 0,
@@ -448,6 +453,11 @@ default_data_done:;
             nmo_array_set_lifecycle(
                 &duplicate_names, &out_state->duplicate_manager_names.lifecycle);
             for (;;) {
+                if (nmo_chunk_get_position(chunk) >= duplicate_section_end) {
+                    nmo_array_dispose(&duplicate_names);
+                    nmo_array_dispose(&inactive_guids);
+                    return NMO_ERR_TRUNCATED_CHUNK;
+                }
                 char *name = NULL;
                 size_t len = 0;
                 result = nmo_chunk_read_string_checked(chunk, &name, &len);
@@ -455,6 +465,11 @@ default_data_done:;
                     nmo_array_dispose(&duplicate_names);
                     nmo_array_dispose(&inactive_guids);
                     return result;
+                }
+                if (nmo_chunk_get_position(chunk) > duplicate_section_end) {
+                    nmo_array_dispose(&duplicate_names);
+                    nmo_array_dispose(&inactive_guids);
+                    return NMO_ERR_TRUNCATED_CHUNK;
                 }
                 if (len == 0 || name == NULL) {
                     break;
