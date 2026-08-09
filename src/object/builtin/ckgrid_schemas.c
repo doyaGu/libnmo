@@ -476,11 +476,7 @@ static nmo_status_t nmo_grid_enumerate_refs(
     (void)type;
     const nmo_grid_state_t *state = instance;
     if (!state || !visitor) return NMO_OK;
-    if (state->layers.count > 0 &&
-        (state->layers.data == NULL ||
-         state->layers.element_size != sizeof(nmo_grid_layer_t))) {
-        return NMO_ERR_VALIDATION_FAILED;
-    }
+    NMO_RETURN_IF_ERROR(nmo_grid_validate(state, NULL, NULL));
     const nmo_grid_layer_t *layers = NMO_ARRAY_DATA(
         nmo_grid_layer_t, &state->layers);
     for (size_t i = 0; i < state->layers.count; ++i) {

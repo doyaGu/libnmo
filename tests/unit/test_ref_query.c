@@ -12,6 +12,7 @@
 #include "object/builtin/nmo_scene_schemas.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_dataarray_schemas.h"
+#include "object/builtin/nmo_grid_schemas.h"
 #include "object/builtin/nmo_character_schemas.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_ref_graph.h"
@@ -585,6 +586,37 @@ TEST(ref_query, dataarray_enumeration_validates_all_rows_first) {
     nmo_context_release(ctx);
 }
 
+TEST(ref_query, grid_enumeration_rejects_invalid_empty_layer_storage) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+
+    nmo_object_id_t grid_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_GRID, "grid", NMO_NULL_GUID,
+        &grid_id, NULL));
+    nmo_object_t *grid_object =
+        nmo_object_repository_find_by_id(repo, grid_id);
+    ASSERT_NOT_NULL(grid_object);
+    nmo_grid_state_t *grid = (nmo_grid_state_t *)grid_object->state;
+    ASSERT_NOT_NULL(grid);
+
+    const size_t saved_element_size = grid->layers.element_size;
+    grid->layers.element_size = 1;
+
+    direct_ref_capture_t capture = {0};
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_ref_enumerate_object(
+        nmo_context_get_type_registry(ctx), grid_object,
+        capture_direct_ref, &capture));
+    ASSERT_EQ(0u, capture.count);
+
+    grid->layers.element_size = saved_element_size;
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(ref_query, legacy_beobject_attribute_reference_is_enumerated) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
@@ -678,6 +710,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(ref_query, scene_enumeration_rejects_malformed_descriptors);
     REGISTER_TEST(ref_query, behavior_enumeration_rejects_malformed_reference_lanes);
     REGISTER_TEST(ref_query, dataarray_enumeration_validates_all_rows_first);
+    REGISTER_TEST(ref_query, grid_enumeration_rejects_invalid_empty_layer_storage);
     REGISTER_TEST(ref_query, legacy_beobject_attribute_reference_is_enumerated);
     REGISTER_TEST(ref_query, character_part_reference_is_enumerated);
 TEST_MAIN_END()
