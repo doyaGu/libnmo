@@ -64,6 +64,13 @@ hangs/
 *.log
 *.tmp
 
+# Test artifacts
+/test_behavior_execute_interface_*.cmo
+/test_script_edit_interface_*.cmo
+/test_cli_tmp_*/
+/test_patch_tmp/
+/tools/scripts/__pycache__/
+
 # Documentation
 docs/html/
 docs/latex/
