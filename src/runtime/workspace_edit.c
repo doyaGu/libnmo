@@ -4492,14 +4492,18 @@ static nmo_status_t workspace_edit_read_message_manager_names(
         workspace_edit_seek_message_manager_identifier(chunk));
 
     int32_t count = 0;
-    if (nmo_chunk_read_int(chunk, &count) != NMO_OK || count < 0) {
-        return NMO_ERR_INVALID_STATE;
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &count));
+    if (count < 0) {
+        return NMO_ERR_VALIDATION_FAILED;
     }
     if (count == 0) {
         return NMO_OK;
     }
+    if ((size_t)count > nmo_chunk_get_remaining(chunk)) {
+        return NMO_ERR_TRUNCATED_CHUNK;
+    }
     if ((size_t)count > SIZE_MAX / sizeof(const char *)) {
-        return NMO_ERR_NOMEM;
+        return NMO_ERR_VALIDATION_FAILED;
     }
 
     const char **names = (const char **)nmo_arena_alloc(
@@ -4581,6 +4585,17 @@ static nmo_status_t workspace_edit_read_attribute_manager_state(
     NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &category_count));
     NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &attribute_count));
     if (category_count < 0 || attribute_count < 0) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    const size_t minimum_entry_dwords =
+        (size_t)category_count + (size_t)attribute_count;
+    if (minimum_entry_dwords > nmo_chunk_get_remaining(chunk)) {
+        return NMO_ERR_TRUNCATED_CHUNK;
+    }
+    if ((size_t)category_count >
+            SIZE_MAX / sizeof(*out_state->categories) ||
+        (size_t)attribute_count >
+            SIZE_MAX / sizeof(*out_state->attributes)) {
         return NMO_ERR_VALIDATION_FAILED;
     }
 

@@ -1064,6 +1064,60 @@ TEST(workspace_edit, manager_edits_reject_invalid_identifier_links) {
     }
 }
 
+TEST(workspace_edit, manager_edits_classify_invalid_counts) {
+    for (size_t case_index = 0u; case_index < 4u; ++case_index) {
+        const bool attribute_manager = (case_index & 1u) != 0u;
+        const bool negative_count = case_index >= 2u;
+        nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+        ASSERT_NOT_NULL(ctx);
+        nmo_session_t *session = nmo_session_create(ctx);
+        ASSERT_NOT_NULL(session);
+
+        nmo_chunk_t *chunk = nmo_chunk_create(nmo_session_get_arena(session));
+        ASSERT_NOT_NULL(chunk);
+        ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+            chunk, attribute_manager ? 0x52u : 0x53u));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_int(
+            chunk, negative_count ? -1 : 1));
+        if (attribute_manager) {
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_int(
+                chunk, negative_count ? 0 : 1));
+        }
+        nmo_chunk_close(chunk);
+
+        nmo_manager_data_t manager = {
+            .guid = attribute_manager
+                ? NMO_MANAGER_GUID_ATTRIBUTE
+                : NMO_MANAGER_GUID_MESSAGE,
+            .data_size = (uint32_t)nmo_chunk_get_size(chunk),
+            .chunk = chunk,
+            .flags = 0u,
+        };
+        nmo_session_set_manager_data(session, &manager, 1u);
+
+        workspace_edit_scope_t scope = {0};
+        nmo_workspace_edit_t *edit = NULL;
+        ASSERT_EQ(NMO_OK, begin_workspace_edit_for_session(
+            ctx, session, "invalid manager count", &scope, &edit));
+        uint32_t value = UINT32_MAX;
+        nmo_status_t status = attribute_manager
+            ? nmo_object_edit_ensure_attribute_manager_entry(
+                  edit, "new-attribute", NULL, &value)
+            : nmo_object_edit_ensure_message_manager_entry(
+                  edit, "new-message", &value);
+        ASSERT_EQ(negative_count
+                      ? NMO_ERR_VALIDATION_FAILED
+                      : NMO_ERR_TRUNCATED_CHUNK,
+                  status);
+        ASSERT_EQ(UINT32_MAX, value);
+        rollback_workspace_edit_scope(&scope);
+
+        nmo_session_destroy(session);
+        nmo_context_release(ctx);
+    }
+}
+
 TEST(workspace_edit, parameter_write_uses_manager_entry_key_for_lookup) {
     nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
     ASSERT_NOT_NULL(ctx);
@@ -1985,6 +2039,7 @@ REGISTER_TEST(workspace_edit, parameter_write_writes_manager_refs_and_rejects_in
 REGISTER_TEST(workspace_edit, parameter_write_resolves_message_manager_names_with_policy);
 REGISTER_TEST(workspace_edit, message_manager_edit_rejects_truncated_name);
 REGISTER_TEST(workspace_edit, manager_edits_reject_invalid_identifier_links);
+REGISTER_TEST(workspace_edit, manager_edits_classify_invalid_counts);
 REGISTER_TEST(workspace_edit, parameter_write_uses_manager_entry_key_for_lookup);
 REGISTER_TEST(workspace_edit, parameter_write_rejects_unsupported_manager_entry_kind);
 REGISTER_TEST(workspace_edit, parameter_write_accepts_message_manager_guid_option);
