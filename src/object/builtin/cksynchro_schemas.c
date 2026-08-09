@@ -705,6 +705,7 @@ static nmo_status_t nmo_synchro_copy(
     (void)type;
     (void)arena;
     if (src == NULL || dst == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    if (src == dst) return NMO_OK;
     const nmo_synchro_state_t *s = (const nmo_synchro_state_t *)src;
     nmo_synchro_state_t *d = (nmo_synchro_state_t *)dst;
     NMO_RETURN_IF_ERROR(nmo_synchro_validate(s, type, NULL));
@@ -719,12 +720,22 @@ static nmo_status_t nmo_synchro_copy(
         nmo_array_dispose(&arrived_ids);
         return result;
     }
-    nmo_array_dispose(&d->arrived_ids);
-    nmo_array_dispose(&d->passed_ids);
-    d->base = s->base;
-    d->max_waiters = s->max_waiters;
-    d->arrived_ids = arrived_ids;
-    d->passed_ids = passed_ids;
+    nmo_synchro_state_t copied = {
+        .base = s->base,
+        .max_waiters = s->max_waiters,
+        .arrived_ids = arrived_ids,
+        .passed_ids = passed_ids,
+    };
+    if (s->arrived_ids.data != NULL &&
+        d->arrived_ids.data == s->arrived_ids.data) {
+        memset(&d->arrived_ids, 0, sizeof(d->arrived_ids));
+    }
+    if (s->passed_ids.data != NULL &&
+        d->passed_ids.data == s->passed_ids.data) {
+        memset(&d->passed_ids, 0, sizeof(d->passed_ids));
+    }
+    nmo_synchro_destroy(d, NULL, NULL);
+    *d = copied;
     return NMO_OK;
 }
 

@@ -7522,6 +7522,17 @@ TEST(chunk_id_remap, synchro_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(nmo_synchro_vtable.hash(&reloaded),
               nmo_synchro_vtable.hash(&copied));
 
+    nmo_synchro_state_t aliased_copy = reloaded;
+    ASSERT_EQ(NMO_OK, nmo_synchro_vtable.copy(
+        &reloaded, &aliased_copy, NULL, arena));
+    ASSERT_NE(reloaded.arrived_ids.data, aliased_copy.arrived_ids.data);
+    ASSERT_NE(reloaded.passed_ids.data, aliased_copy.passed_ids.data);
+    ASSERT_EQ(921u, NMO_ARRAY_DATA(
+        nmo_ref_t, &reloaded.arrived_ids)[0].raw_id);
+    ASSERT_EQ(922u, NMO_ARRAY_DATA(
+        nmo_ref_t, &reloaded.passed_ids)[0].raw_id);
+    ASSERT_TRUE(nmo_synchro_vtable.equals(&reloaded, &aliased_copy));
+
     nmo_chunk_t *truncated = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(truncated);
     truncated->class_id = NMO_CID_SYNCHRO;
@@ -7613,6 +7624,7 @@ TEST(chunk_id_remap, synchro_refs_round_trip_and_failure_is_atomic) {
     nmo_synchro_vtable.destroy(&loaded, NULL, NULL);
     nmo_synchro_vtable.destroy(&reloaded, NULL, NULL);
     nmo_synchro_vtable.destroy(&copied, NULL, NULL);
+    nmo_synchro_vtable.destroy(&aliased_copy, NULL, NULL);
     nmo_synchro_vtable.destroy(&failed, NULL, NULL);
     nmo_synchro_vtable.destroy(&invalid, NULL, NULL);
     nmo_arena_destroy(arena);
