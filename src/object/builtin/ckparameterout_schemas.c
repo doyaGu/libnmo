@@ -21,7 +21,6 @@
 #include "format/nmo_object.h"
 #include "object/nmo_object_repository.h"
 #include "type/nmo_type_system.h"
-#include "type/nmo_type_query.h"
 #include "type/nmo_reflection.h"
 #include "nmo_types.h"
 #include <stdalign.h>
@@ -49,7 +48,6 @@ static const nmo_type_field_t nmo_parameterout_fields[] = {
     NMO_FIELD(nmo_parameterout_state_t, destination_count, CKPGUID_UINT32),
     NMO_FIELD_REF_RECORD_ARRAY_COUNTED(
         nmo_parameterout_state_t, destination_ids, destination_count),
-    NMO_FIELD(nmo_parameterout_state_t, has_owner, CKPGUID_UINT8),
     NMO_FIELD(nmo_parameterout_state_t, has_destinations, CKPGUID_UINT8)
 };
 
@@ -77,26 +75,6 @@ static size_t nmo_parameterout_identifier_remaining_dwords(
     return next_pos - state->current_pos;
 }
 
-static void nmo_parameterout_check_owner(
-    nmo_ref_t *ref,
-    const nmo_object_repository_t *repository,
-    const nmo_type_registry_t *types)
-{
-    if (ref == NULL || ref->state != NMO_REF_RESOLVED ||
-        repository == NULL || types == NULL) {
-        return;
-    }
-    const nmo_object_t *target =
-        nmo_object_repository_find_by_id(repository, ref->id);
-    if (target != NULL &&
-        !nmo_type_query_object_is_derived_from_class(
-            types, target, NMO_CID_BEHAVIOR) &&
-        !nmo_type_query_object_is_derived_from_class(
-            types, target, NMO_CID_PARAMETEROPERATION)) {
-        ref->state = NMO_REF_CLASS_MISMATCH;
-    }
-}
-
 /**
  * @brief Deserialize CKParameterOut state from chunk
  *
@@ -121,10 +99,8 @@ static nmo_status_t nmo_parameterout_deserialize_internal(
     nmo_status_t result = nmo_parameter_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;
 
-    nmo_ref_t owner = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     nmo_ref_t *destination_ids = NULL;
     uint32_t destination_count = 0;
-    uint8_t has_owner = 0;
     uint8_t has_destinations = 0;
     const nmo_object_repository_t *repository =
         (const nmo_object_repository_t *)
@@ -133,16 +109,6 @@ static nmo_status_t nmo_parameterout_deserialize_internal(
         nmo_deserialize_context_get_type_registry(context);
 
     size_t section_dwords = 0;
-    result = nmo_chunk_seek_identifier_with_size(
-        chunk, CK_STATESAVE_PARAMETEROUT_OWNER, &section_dwords);
-    if (result == NMO_OK) {
-        if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
-        if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
-        NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &owner));
-        nmo_parameterout_check_owner(&owner, repository, types);
-        has_owner = 1;
-    } else if (result != NMO_ERR_NOT_FOUND) return result;
-
     /* Read destinations if present */
     result = nmo_chunk_seek_identifier_with_size(
         chunk, CK_STATESAVE_PARAMETEROUT_DESTINATIONS, &section_dwords);
@@ -182,10 +148,8 @@ static nmo_status_t nmo_parameterout_deserialize_internal(
         }
     } else if (result != NMO_ERR_NOT_FOUND) return result;
 
-    out_state->owner = owner;
     out_state->destination_ids = destination_ids;
     out_state->destination_count = destination_count;
-    out_state->has_owner = has_owner;
     out_state->has_destinations = has_destinations;
 
     NMO_RETURN_OK();
@@ -266,17 +230,6 @@ static nmo_status_t nmo_parameterout_serialize_internal(
         return NMO_OK;
     }
 
-    const bool has_owner = in_state->has_owner ||
-        nmo_ref_serialized_id(&in_state->owner) != NMO_OBJECT_ID_NONE;
-    if (!is_file &&
-        (save_flags & CK_STATESAVE_PARAMETEROUT_OWNER) != 0 &&
-        has_owner) {
-        result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_PARAMETEROUT_OWNER);
-        if (result != NMO_OK) return result;
-        result = nmo_ref_write(out_chunk, &in_state->owner);
-        if (result != NMO_OK) return result;
-    }
-
     /* Write destinations if any */
     if (want_destinations && in_state->destination_count > 0) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_PARAMETEROUT_DESTINATIONS);
@@ -348,7 +301,6 @@ static nmo_status_t nmo_parameterout_copy(
 
     copied.owner = s->owner;
     copied.destination_count = s->destination_count;
-    copied.has_owner = s->has_owner;
     copied.has_destinations = s->has_destinations;
     result = nmo_object_copy_array(
         arena, (void **)&copied.destination_ids, s->destination_ids,
@@ -481,7 +433,6 @@ static bool nmo_parameterout_equals(const void *a, const void *b)
                  lhs->base.buffer_data.count) != 0)) ||
         memcmp(&lhs->owner, &rhs->owner, sizeof(nmo_ref_t)) != 0 ||
         lhs->destination_count != rhs->destination_count ||
-        lhs->has_owner != rhs->has_owner ||
         lhs->has_destinations != rhs->has_destinations ||
         (lhs->destination_count > 0 &&
          (lhs->destination_ids == NULL || rhs->destination_ids == NULL))) {
@@ -568,8 +519,6 @@ static uint32_t nmo_parameterout_hash(const void *instance)
     hash = nmo_parameterout_hash_bytes(
         hash, &state->destination_count,
         sizeof(state->destination_count));
-    hash = nmo_parameterout_hash_bytes(
-        hash, &state->has_owner, sizeof(state->has_owner));
     hash = nmo_parameterout_hash_bytes(
         hash, &state->has_destinations,
         sizeof(state->has_destinations));

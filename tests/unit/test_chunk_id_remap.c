@@ -4249,10 +4249,9 @@ TEST(chunk_id_remap, parameterout_refs_round_trip_and_failure_is_atomic) {
         &source, owner_only, NULL, &owner_serialize_context));
     nmo_chunk_close(owner_only);
     size_t owner_only_dwords = 0u;
-    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_chunk_seek_identifier_with_size(
         owner_only, CK_STATESAVE_PARAMETEROUT_OWNER,
         &owner_only_dwords));
-    ASSERT_EQ(1u, owner_only_dwords);
 
     nmo_chunk_t *first = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(first);
@@ -4270,7 +4269,6 @@ TEST(chunk_id_remap, parameterout_refs_round_trip_and_failure_is_atomic) {
         &loaded, NULL, NULL));
     ASSERT_EQ(NMO_OK, nmo_parameterout_deserialize(
         &loaded, first, NULL, &deserialize_context));
-    ASSERT_FALSE(loaded.has_owner);
     ASSERT_EQ(NMO_OBJECT_ID_NONE, loaded.owner.raw_id);
     ASSERT_EQ(NMO_REF_NONE, loaded.owner.state);
     ASSERT_EQ(NMO_OBJECT_ID_NONE, nmo_parameterout_owner_id(&loaded));
@@ -4301,7 +4299,6 @@ TEST(chunk_id_remap, parameterout_refs_round_trip_and_failure_is_atomic) {
         &reloaded, NULL, NULL));
     ASSERT_EQ(NMO_OK, nmo_parameterout_deserialize(
         &reloaded, second, NULL, &deserialize_context));
-    ASSERT_FALSE(reloaded.has_owner);
     ASSERT_EQ(NMO_OBJECT_ID_NONE, reloaded.owner.raw_id);
     ASSERT_EQ(3u, reloaded.destination_count);
     for (uint32_t i = 0; i < reloaded.destination_count; ++i) {
@@ -4320,7 +4317,7 @@ TEST(chunk_id_remap, parameterout_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
         empty_sections, CK_STATESAVE_PARAMETEROUT_OWNER));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(
-        empty_sections, NMO_OBJECT_ID_NONE));
+        empty_sections, 735));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
         empty_sections, CK_STATESAVE_PARAMETEROUT_DESTINATIONS));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_int(empty_sections, 0));
@@ -4332,7 +4329,6 @@ TEST(chunk_id_remap, parameterout_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(NMO_OK, nmo_parameterout_deserialize(
         &empty_sections_loaded, empty_sections, NULL,
         &deserialize_context));
-    ASSERT_TRUE(empty_sections_loaded.has_owner);
     ASSERT_TRUE(empty_sections_loaded.has_destinations);
     ASSERT_EQ(NMO_OBJECT_ID_NONE,
               empty_sections_loaded.owner.raw_id);
@@ -4408,44 +4404,6 @@ TEST(chunk_id_remap, parameterout_refs_round_trip_and_failure_is_atomic) {
     nmo_chunk_close(invalid_count);
     ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_parameterout_deserialize(
         &failed, invalid_count, NULL, &deserialize_context));
-    ASSERT_EQ(901u, failed.owner.raw_id);
-    ASSERT_EQ(previous_destinations, failed.destination_ids);
-    ASSERT_EQ(1u, failed.destination_count);
-
-    nmo_chunk_t *owner_cross_section = nmo_chunk_create(arena);
-    ASSERT_NOT_NULL(owner_cross_section);
-    owner_cross_section->class_id = NMO_CID_PARAMETEROUT;
-    owner_cross_section->data_version = 8;
-    owner_cross_section->chunk_options |= NMO_CHUNK_OPTION_FILE;
-    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(owner_cross_section));
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
-        owner_cross_section, CK_STATESAVE_PARAMETEROUT_OWNER));
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
-        owner_cross_section, 0x11223344u));
-    nmo_chunk_close(owner_cross_section);
-    nmo_chunk_set_file_context(owner_cross_section, &read_context);
-    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_parameterout_deserialize(
-        &failed, owner_cross_section, NULL, &deserialize_context));
-    ASSERT_EQ(901u, failed.owner.raw_id);
-    ASSERT_EQ(previous_destinations, failed.destination_ids);
-    ASSERT_EQ(1u, failed.destination_count);
-
-    nmo_chunk_t *owner_trailing_payload = nmo_chunk_create(arena);
-    ASSERT_NOT_NULL(owner_trailing_payload);
-    owner_trailing_payload->class_id = NMO_CID_PARAMETEROUT;
-    owner_trailing_payload->data_version = 8;
-    owner_trailing_payload->chunk_options |= NMO_CHUNK_OPTION_FILE;
-    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(owner_trailing_payload));
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
-        owner_trailing_payload, CK_STATESAVE_PARAMETEROUT_OWNER));
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(
-        owner_trailing_payload, 801));
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
-        owner_trailing_payload, 0x12345678u));
-    nmo_chunk_close(owner_trailing_payload);
-    nmo_chunk_set_file_context(owner_trailing_payload, &read_context);
-    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_parameterout_deserialize(
-        &failed, owner_trailing_payload, NULL, &deserialize_context));
     ASSERT_EQ(901u, failed.owner.raw_id);
     ASSERT_EQ(previous_destinations, failed.destination_ids);
     ASSERT_EQ(1u, failed.destination_count);
@@ -5495,8 +5453,8 @@ TEST(chunk_id_remap, parameter_refs_require_layout_classes) {
         &output_loaded, NULL, NULL));
     ASSERT_EQ(NMO_OK, nmo_parameterout_deserialize(
         &output_loaded, parameter_out, NULL, &context));
-    ASSERT_EQ(NMO_REF_RESOLVED, output_loaded.owner.state);
-    ASSERT_EQ(1704u, output_loaded.owner.id);
+    ASSERT_EQ(NMO_REF_NONE, output_loaded.owner.state);
+    ASSERT_EQ(NMO_OBJECT_ID_NONE, output_loaded.owner.id);
     ASSERT_EQ(3u, output_loaded.destination_count);
     ASSERT_EQ(NMO_REF_RESOLVED, output_loaded.destination_ids[0].state);
     ASSERT_EQ(1701u, output_loaded.destination_ids[0].id);
