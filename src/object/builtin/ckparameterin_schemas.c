@@ -64,7 +64,8 @@ static const nmo_type_field_t nmo_parameterin_fields[] = {
     NMO_FIELD_REF_VALUE(nmo_parameterin_state_t, source),
     NMO_FIELD_REF_VALUE(nmo_parameterin_state_t, owner),
     NMO_FIELD(nmo_parameterin_state_t, is_shared, CKPGUID_UINT8),
-    NMO_FIELD(nmo_parameterin_state_t, is_disabled, CKPGUID_UINT8)
+    NMO_FIELD(nmo_parameterin_state_t, is_disabled, CKPGUID_UINT8),
+    NMO_FIELD(nmo_parameterin_state_t, has_legacy_layout, CKPGUID_UINT8)
 };
 
 static void nmo_parameterin_check_source(
@@ -268,6 +269,7 @@ static nmo_status_t nmo_parameterin_deserialize_internal(
     out_state->owner = owner;
     out_state->is_shared = is_shared;
     out_state->is_disabled = is_disabled;
+    out_state->has_legacy_layout = data_version < 1u;
 
     NMO_RETURN_OK();
 }
@@ -309,7 +311,13 @@ static nmo_status_t nmo_parameterin_serialize_internal(
     }
 
     /* Write base CKObject state (merged into this chunk by AddChunkAndDelete) */
-    const uint32_t data_version = nmo_chunk_get_data_version(out_chunk);
+    uint32_t data_version = nmo_chunk_get_data_version(out_chunk);
+    const bool legacy_layout =
+        data_version == 0u && in_state->has_legacy_layout;
+    if (data_version == 0u && !legacy_layout) {
+        out_chunk->data_version = NMO_CHUNK_DATA_VERSION_CURRENT;
+        data_version = out_chunk->data_version;
+    }
     const bool writes_owner_layout =
         data_version >= 1u &&
         nmo_ref_serialized_id(&in_state->owner) != NMO_OBJECT_ID_NONE;
@@ -553,7 +561,8 @@ static bool nmo_parameterin_equals(const void *a, const void *b)
         nmo_parameterin_ref_equals(&lhs->source, &rhs->source) &&
         nmo_parameterin_ref_equals(&lhs->owner, &rhs->owner) &&
         lhs->is_shared == rhs->is_shared &&
-        lhs->is_disabled == rhs->is_disabled;
+        lhs->is_disabled == rhs->is_disabled &&
+        lhs->has_legacy_layout == rhs->has_legacy_layout;
 }
 
 static uint32_t nmo_parameterin_hash(const void *instance)
@@ -580,6 +589,7 @@ static uint32_t nmo_parameterin_hash(const void *instance)
     NMO_PARAMETERIN_HASH_FIELD(owner.state);
     NMO_PARAMETERIN_HASH_FIELD(is_shared);
     NMO_PARAMETERIN_HASH_FIELD(is_disabled);
+    NMO_PARAMETERIN_HASH_FIELD(has_legacy_layout);
 #undef NMO_PARAMETERIN_HASH_FIELD
     return hash;
 }

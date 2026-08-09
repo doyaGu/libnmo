@@ -49,6 +49,7 @@ typedef struct nmo_parameterin_state {
     nmo_ref_t owner;                   /**< Owner behavior (legacy/default data) */
     uint8_t is_shared;                 /**< TRUE if shared input, FALSE if direct source */
     uint8_t is_disabled;               /**< TRUE if parameter is disabled */
+    uint8_t has_legacy_layout;         /**< TRUE for the pre-v1 multi-section layout */
 } nmo_parameterin_state_t;
 
 static inline nmo_object_id_t nmo_parameterin_source_id(
