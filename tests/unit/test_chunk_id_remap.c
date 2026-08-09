@@ -12133,6 +12133,88 @@ TEST(chunk_id_remap, character_rejects_cross_section_counts_before_allocation) {
     ASSERT_EQ(0u, state.body_parts.count);
     state.body_parts.allocator = body_allocator;
 
+    state.active_animation = nmo_ref_from_raw(777);
+
+    nmo_chunk_t *missing_body_count = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(missing_body_count);
+    missing_body_count->class_id = NMO_CID_CHARACTER;
+    missing_body_count->data_version = 5;
+    missing_body_count->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(missing_body_count));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        missing_body_count, CK_STATESAVE_CHARACTERBODYPARTS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(missing_body_count, 0));
+    nmo_chunk_close(missing_body_count);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_character_deserialize(
+        &state, missing_body_count, NULL, &file_context));
+    ASSERT_EQ(777u, state.active_animation.raw_id);
+
+    nmo_chunk_t *short_character_only = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(short_character_only);
+    short_character_only->class_id = NMO_CID_CHARACTER;
+    short_character_only->data_version = 5;
+    short_character_only->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(short_character_only));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        short_character_only, CK_STATESAVE_CHARACTERONLY));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(
+        short_character_only, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(short_character_only, 4));
+    for (size_t i = 0; i < 3; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(short_character_only, 0));
+    }
+    nmo_chunk_close(short_character_only);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_character_deserialize(
+        &state, short_character_only, NULL, &file_context));
+    ASSERT_EQ(777u, state.active_animation.raw_id);
+
+    nmo_chunk_t *short_legacy_animations = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(short_legacy_animations);
+    short_legacy_animations->class_id = NMO_CID_CHARACTER;
+    short_legacy_animations->data_version = 4;
+    short_legacy_animations->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(short_legacy_animations));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        short_legacy_animations, CK_STATESAVE_CHARACTERANIMATIONS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(
+        short_legacy_animations, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        short_legacy_animations, 0));
+    nmo_chunk_close(short_legacy_animations);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_character_deserialize(
+        &state, short_legacy_animations, NULL, &file_context));
+    ASSERT_EQ(777u, state.active_animation.raw_id);
+
+    nmo_chunk_t *missing_runtime_anim_fields = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(missing_runtime_anim_fields);
+    missing_runtime_anim_fields->class_id = NMO_CID_CHARACTER;
+    missing_runtime_anim_fields->data_version = 4;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(missing_runtime_anim_fields));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        missing_runtime_anim_fields, CK_STATESAVE_CHARACTERSAVEANIMS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        missing_runtime_anim_fields, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        missing_runtime_anim_fields, 0));
+    nmo_chunk_close(missing_runtime_anim_fields);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_character_deserialize(
+        &state, missing_runtime_anim_fields, NULL, &runtime_context));
+    ASSERT_EQ(777u, state.active_animation.raw_id);
+
+    nmo_chunk_t *missing_root_ref = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(missing_root_ref);
+    missing_root_ref->class_id = NMO_CID_CHARACTER;
+    missing_root_ref->data_version = 4;
+    missing_root_ref->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(missing_root_ref));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        missing_root_ref, CK_STATESAVE_CHARACTERROOT));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(missing_root_ref, 0));
+    nmo_chunk_close(missing_root_ref);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_character_deserialize(
+        &state, missing_root_ref, NULL, &file_context));
+    ASSERT_EQ(777u, state.active_animation.raw_id);
+
     nmo_chunk_t *large_runtime_parts = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(large_runtime_parts);
     large_runtime_parts->class_id = NMO_CID_CHARACTER;
@@ -12466,6 +12548,53 @@ TEST(chunk_id_remap, character_refs_round_trip_and_failure_is_atomic) {
     nmo_character_vtable.destroy(&copy_failed, NULL, NULL);
     nmo_character_vtable.destroy(&failed, NULL, NULL);
     nmo_character_vtable.destroy(&allocation_failed, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_id_remap, bodypart_rotation_joint_round_trips_without_size_prefix) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_serialize_context_t serialize_context =
+        nmo_serialize_context_create(
+            arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+
+    nmo_bodypart_state_t source;
+    nmo_bodypart_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_bodypart_vtable.create(&source, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_bodypart_vtable.create(&loaded, NULL, NULL));
+    source.base.entity.entity_flags |= CK_3DENTITY_IKJOINTVALID;
+    source.has_character = 1;
+    source.character = nmo_ref_from_raw(701);
+    source.has_rotation_joint = 1;
+    source.rotation_joint.flags = 0x12345678u;
+    source.rotation_joint.min = (nmo_vector_t){-1.0f, -2.0f, -3.0f};
+    source.rotation_joint.max = (nmo_vector_t){1.0f, 2.0f, 3.0f};
+    source.rotation_joint.damping = (nmo_vector_t){0.25f, 0.5f, 0.75f};
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    chunk->class_id = NMO_CID_BODYPART;
+    chunk->data_version = 5;
+    chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_bodypart_serialize(
+        &source, chunk, NULL, &serialize_context));
+    nmo_chunk_close(chunk);
+    ASSERT_EQ(NMO_OK, nmo_bodypart_deserialize(
+        &loaded, chunk, NULL, &deserialize_context));
+
+    ASSERT_EQ(1, loaded.has_character);
+    ASSERT_EQ(701u, loaded.character.raw_id);
+    ASSERT_EQ(1, loaded.has_rotation_joint);
+    ASSERT_EQ(0x12345678u, loaded.rotation_joint.flags);
+    ASSERT_FLOAT_EQ(-1.0f, loaded.rotation_joint.min.x, 0.0001f);
+    ASSERT_FLOAT_EQ(2.0f, loaded.rotation_joint.max.y, 0.0001f);
+    ASSERT_FLOAT_EQ(0.75f, loaded.rotation_joint.damping.z, 0.0001f);
+
+    nmo_bodypart_vtable.destroy(&loaded, NULL, NULL);
+    nmo_bodypart_vtable.destroy(&source, NULL, NULL);
     nmo_arena_destroy(arena);
 }
 
@@ -14877,6 +15006,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, renderobject_copy_preserves_content_equality);
     REGISTER_TEST(chunk_id_remap, character_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, character_rejects_cross_section_counts_before_allocation);
+    REGISTER_TEST(chunk_id_remap, bodypart_rotation_joint_round_trips_without_size_prefix);
     REGISTER_TEST(chunk_id_remap, mesh_material_refs_round_trip_without_compaction);
     REGISTER_TEST(chunk_id_remap, mesh_material_sections_and_failures_are_atomic);
     REGISTER_TEST(chunk_id_remap, mesh_preserves_large_material_sections);

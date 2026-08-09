@@ -89,16 +89,13 @@ static nmo_status_t nmo_character_validate(
     const nmo_type_descriptor_t *type,
     void *context);
 
-static nmo_status_t read_exact_sized_buffer(
+static nmo_status_t read_exact_buffer(
     nmo_chunk_t *chunk,
     void *buffer,
     size_t expected_size)
 {
-    size_t actual_size = 0;
-    nmo_status_t result = nmo_chunk_read_and_fill_buffer_checked(
-        chunk, buffer, expected_size, &actual_size);
-    if (result != NMO_OK) return result;
-    return actual_size == expected_size ? NMO_OK : NMO_ERR_INVALID_FORMAT;
+    return nmo_chunk_read_and_fill_buffer_nosize_checked(
+        chunk, buffer, expected_size);
 }
 
 static int nmo_character_is_file_mode_deser(const nmo_chunk_t *chunk, void *context) {
@@ -135,7 +132,8 @@ static size_t nmo_character_identifier_remaining_dwords(
 
 static nmo_status_t read_ref_sequence(
     nmo_chunk_t *chunk,
-    nmo_array_t *out_refs)
+    nmo_array_t *out_refs,
+    size_t trailing_dwords)
 {
     size_t count = 0;
     nmo_status_t result = nmo_chunk_read_object_sequence_start(chunk, &count);
@@ -143,7 +141,10 @@ static nmo_status_t read_ref_sequence(
     if (count > UINT32_MAX) {
         return NMO_ERR_INVALID_FORMAT;
     }
-    if (count > nmo_character_identifier_remaining_dwords(chunk)) {
+    const size_t remaining_dwords =
+        nmo_character_identifier_remaining_dwords(chunk);
+    if (trailing_dwords > remaining_dwords ||
+        count > remaining_dwords - trailing_dwords) {
         return NMO_ERR_TRUNCATED_CHUNK;
     }
     nmo_array_t decoded;
@@ -776,14 +777,17 @@ static void nmo_character_check_ref_classes(
 static nmo_status_t nmo_character_seek_optional(
     nmo_chunk_t *chunk,
     uint32_t identifier,
-    bool *out_found)
+    bool *out_found,
+    size_t *out_dwords)
 {
-    nmo_status_t result = nmo_chunk_seek_identifier(chunk, identifier);
+    nmo_status_t result = nmo_chunk_seek_identifier_with_size(
+        chunk, identifier, out_dwords);
     if (result == NMO_OK) {
         *out_found = true;
         return NMO_OK;
     }
     *out_found = false;
+    *out_dwords = 0;
     return result == NMO_ERR_NOT_FOUND ? NMO_OK : result;
 }
 
@@ -816,31 +820,59 @@ static nmo_status_t nmo_character_deserialize_internal(
     const uint32_t data_version = nmo_chunk_get_data_version(chunk);
     const bool is_file = nmo_character_is_file_mode_deser(chunk, context);
     bool section_found = false;
+    size_t section_dwords = 0;
     if (data_version < 5) {
         if (is_file) {
             result = nmo_character_seek_optional(
-                chunk, CK_STATESAVE_CHARACTERBODYPARTS, &section_found);
+                chunk, CK_STATESAVE_CHARACTERBODYPARTS, &section_found,
+                &section_dwords);
             if (result != NMO_OK) goto fail;
             if (section_found) {
+                if (section_dwords < 1u) {
+                    result = NMO_ERR_TRUNCATED_CHUNK;
+                    goto fail;
+                }
+                const size_t section_end =
+                    nmo_chunk_get_position(chunk) + section_dwords;
                 result = read_part_sequence(chunk, &decoded.body_parts);
                 if (result != NMO_OK) goto fail;
+                if (nmo_chunk_get_position(chunk) > section_end) {
+                    result = NMO_ERR_TRUNCATED_CHUNK;
+                    goto fail;
+                }
             }
             result = nmo_character_seek_optional(
-                chunk, CK_STATESAVE_CHARACTERANIMATIONS, &section_found);
+                chunk, CK_STATESAVE_CHARACTERANIMATIONS, &section_found,
+                &section_dwords);
             if (result != NMO_OK) goto fail;
             if (section_found) {
-                result = read_ref_sequence(chunk, &decoded.animations);
+                if (section_dwords < 3u) {
+                    result = NMO_ERR_TRUNCATED_CHUNK;
+                    goto fail;
+                }
+                const size_t section_end =
+                    nmo_chunk_get_position(chunk) + section_dwords;
+                result = read_ref_sequence(chunk, &decoded.animations, 2);
                 if (result != NMO_OK) goto fail;
                 result = nmo_ref_read(chunk, &decoded.active_animation);
                 if (result != NMO_OK) goto fail;
                 result = nmo_ref_read(chunk, &decoded.anim_dest);
                 if (result != NMO_OK) goto fail;
+                if (nmo_chunk_get_position(chunk) > section_end) {
+                    result = NMO_ERR_TRUNCATED_CHUNK;
+                    goto fail;
+                }
             }
         } else {
             result = nmo_character_seek_optional(
-                chunk, CK_STATESAVE_CHARACTERSAVEANIMS, &section_found);
+                chunk, CK_STATESAVE_CHARACTERSAVEANIMS, &section_found,
+                &section_dwords);
             if (result != NMO_OK) goto fail;
             if (section_found) {
+                if (section_dwords < 3u) {
+                    result = NMO_ERR_TRUNCATED_CHUNK;
+                    goto fail;
+                }
                 uint32_t unused = 0;
                 result = nmo_chunk_read_dword(chunk, &unused);
                 if (result != NMO_OK) goto fail;
@@ -850,9 +882,16 @@ static nmo_status_t nmo_character_deserialize_internal(
                 if (result != NMO_OK) goto fail;
             }
             result = nmo_character_seek_optional(
-                chunk, CK_STATESAVE_CHARACTERSAVEPARTS, &section_found);
+                chunk, CK_STATESAVE_CHARACTERSAVEPARTS, &section_found,
+                &section_dwords);
             if (result != NMO_OK) goto fail;
             if (section_found) {
+                if (section_dwords < 1u) {
+                    result = NMO_ERR_TRUNCATED_CHUNK;
+                    goto fail;
+                }
+                const size_t section_end =
+                    nmo_chunk_get_position(chunk) + section_dwords;
                 uint32_t count = 0;
                 result = nmo_chunk_read_dword(chunk, &count);
                 if (result != NMO_OK) goto fail;
@@ -871,37 +910,73 @@ static nmo_status_t nmo_character_deserialize_internal(
                     result = nmo_chunk_read_sub_chunk(chunk, &parts[i].chunk);
                     if (result != NMO_OK) goto fail;
                 }
+                if (nmo_chunk_get_position(chunk) > section_end) {
+                    result = NMO_ERR_TRUNCATED_CHUNK;
+                    goto fail;
+                }
             }
         }
         result = nmo_character_seek_optional(
-            chunk, CK_STATESAVE_CHARACTERROOT, &section_found);
+            chunk, CK_STATESAVE_CHARACTERROOT, &section_found,
+            &section_dwords);
         if (result != NMO_OK) goto fail;
         if (section_found) {
+            if (section_dwords < 1u) {
+                result = NMO_ERR_TRUNCATED_CHUNK;
+                goto fail;
+            }
             result = nmo_ref_read(chunk, &decoded.root_body_part);
             if (result != NMO_OK) goto fail;
         }
         result = nmo_character_seek_optional(
-            chunk, CK_STATESAVE_CHARACTERFLOORREF, &section_found);
+            chunk, CK_STATESAVE_CHARACTERFLOORREF, &section_found,
+            &section_dwords);
         if (result != NMO_OK) goto fail;
         if (section_found) {
+            if (section_dwords < 1u) {
+                result = NMO_ERR_TRUNCATED_CHUNK;
+                goto fail;
+            }
             result = nmo_ref_read(chunk, &decoded.floor_ref);
             if (result != NMO_OK) goto fail;
         }
     } else {
         result = nmo_character_seek_optional(
-            chunk, CK_STATESAVE_CHARACTERBODYPARTS, &section_found);
+            chunk, CK_STATESAVE_CHARACTERBODYPARTS, &section_found,
+            &section_dwords);
         if (result != NMO_OK) goto fail;
         if (section_found) {
+            if (section_dwords < 1u) {
+                result = NMO_ERR_TRUNCATED_CHUNK;
+                goto fail;
+            }
+            const size_t section_end =
+                nmo_chunk_get_position(chunk) + section_dwords;
             result = read_part_sequence(chunk, &decoded.body_parts);
             if (result != NMO_OK) goto fail;
+            if (nmo_chunk_get_position(chunk) > section_end) {
+                result = NMO_ERR_TRUNCATED_CHUNK;
+                goto fail;
+            }
         }
         result = nmo_character_seek_optional(
-            chunk, CK_STATESAVE_CHARACTERSAVEPARTS, &section_found);
+            chunk, CK_STATESAVE_CHARACTERSAVEPARTS, &section_found,
+            &section_dwords);
         if (result != NMO_OK) goto fail;
         if (section_found) {
+            if (section_dwords < 1u) {
+                result = NMO_ERR_TRUNCATED_CHUNK;
+                goto fail;
+            }
+            const size_t section_end =
+                nmo_chunk_get_position(chunk) + section_dwords;
             size_t count = 0;
             result = nmo_chunk_start_read_sub_chunk_sequence(chunk, &count);
             if (result != NMO_OK) goto fail;
+            if (count > nmo_character_identifier_remaining_dwords(chunk)) {
+                result = NMO_ERR_TRUNCATED_CHUNK;
+                goto fail;
+            }
             if (count != decoded.body_parts.count) {
                 result = NMO_ERR_INVALID_FORMAT;
                 goto fail;
@@ -912,13 +987,25 @@ static nmo_status_t nmo_character_deserialize_internal(
                 result = nmo_chunk_read_sub_chunk(chunk, &parts[i].chunk);
                 if (result != NMO_OK) goto fail;
             }
+            if (nmo_chunk_get_position(chunk) > section_end) {
+                result = NMO_ERR_TRUNCATED_CHUNK;
+                goto fail;
+            }
         }
         result = nmo_character_seek_optional(
-            chunk, CK_STATESAVE_CHARACTERONLY, &section_found);
+            chunk, CK_STATESAVE_CHARACTERONLY, &section_found,
+            &section_dwords);
         if (result != NMO_OK) goto fail;
         if (section_found) {
+            const size_t minimum_dwords = is_file ? 6u : 5u;
+            if (section_dwords < minimum_dwords) {
+                result = NMO_ERR_TRUNCATED_CHUNK;
+                goto fail;
+            }
+            const size_t section_end =
+                nmo_chunk_get_position(chunk) + section_dwords;
             if (is_file) {
-                result = read_ref_sequence(chunk, &decoded.animations);
+                result = read_ref_sequence(chunk, &decoded.animations, 5);
                 if (result != NMO_OK) goto fail;
             }
             size_t seq_count = 0;
@@ -938,6 +1025,10 @@ static nmo_status_t nmo_character_deserialize_internal(
             if (result != NMO_OK) goto fail;
             result = nmo_ref_read(chunk, &decoded.floor_ref);
             if (result != NMO_OK) goto fail;
+            if (nmo_chunk_get_position(chunk) > section_end) {
+                result = NMO_ERR_TRUNCATED_CHUNK;
+                goto fail;
+            }
         }
     }
 
@@ -1051,19 +1142,31 @@ static nmo_status_t nmo_bodypart_deserialize_internal(
     nmo_ref_t character = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     nmo_ik_joint_t rotation_joint = {0};
     bool section_found = false;
+    size_t section_dwords = 0;
     nmo_status_t result = NMO_OK;
 
     if (data_version >= 5) {
         result = nmo_character_seek_optional(
-            chunk, CK_STATESAVE_BODYPARTCHARACTER, &section_found);
+            chunk, CK_STATESAVE_BODYPARTCHARACTER, &section_found,
+            &section_dwords);
         if (result != NMO_OK) return result;
         if (section_found) {
+            const size_t joint_dwords =
+                (sizeof(nmo_ik_joint_t) + sizeof(uint32_t) - 1u) /
+                sizeof(uint32_t);
+            const size_t required_dwords =
+                (out_state->base.entity.entity_flags &
+                 CK_3DENTITY_IKJOINTVALID) != 0
+                    ? 1u + joint_dwords : 1u;
+            if (section_dwords < required_dwords) {
+                return NMO_ERR_TRUNCATED_CHUNK;
+            }
             result = nmo_ref_read(chunk, &character);
             if (result != NMO_OK) return result;
             has_character = 1;
 
             if ((out_state->base.entity.entity_flags & CK_3DENTITY_IKJOINTVALID) != 0) {
-                result = read_exact_sized_buffer(
+                result = read_exact_buffer(
                     chunk, &rotation_joint, sizeof(nmo_ik_joint_t));
                 if (result != NMO_OK) return result;
                 has_rotation_joint = 1;
@@ -1071,12 +1174,14 @@ static nmo_status_t nmo_bodypart_deserialize_internal(
         }
     } else {
         result = nmo_character_seek_optional(
-            chunk, CK_STATESAVE_BODYPARTROTJOINT, &section_found);
+            chunk, CK_STATESAVE_BODYPARTROTJOINT, &section_found,
+            &section_dwords);
         if (result != NMO_OK) return result;
         if (section_found) {
+            if (section_dwords < 18u) return NMO_ERR_TRUNCATED_CHUNK;
             nmo_vector_t vectors[6];
             memset(vectors, 0, sizeof(vectors));
-            result = read_exact_sized_buffer(chunk, vectors, sizeof(vectors));
+            result = read_exact_buffer(chunk, vectors, sizeof(vectors));
             if (result != NMO_OK) return result;
 
             has_rotation_joint = 1;
@@ -1096,9 +1201,11 @@ static nmo_status_t nmo_bodypart_deserialize_internal(
         }
 
         result = nmo_character_seek_optional(
-            chunk, CK_STATESAVE_BODYPARTCHARACTER, &section_found);
+            chunk, CK_STATESAVE_BODYPARTCHARACTER, &section_found,
+            &section_dwords);
         if (result != NMO_OK) return result;
         if (section_found) {
+            if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
             result = nmo_ref_read(chunk, &character);
             if (result != NMO_OK) return result;
             has_character = 1;
