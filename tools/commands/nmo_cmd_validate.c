@@ -29,6 +29,7 @@
 #include "object/nmo_object_repository.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_ref_graph.h"
+#include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/nmo_object_guids.h"
 #include "type/nmo_reflection.h"
 #include "type/nmo_type_query.h"
@@ -815,6 +816,33 @@ static bool validate_visit_reflected_refs(
     return true;
 }
 
+static bool validate_visit_skin_bone_ref_issues(
+    const nmo_type_registry_t *types,
+    nmo_object_t *source,
+    validate_typed_ref_issue_fn visitor,
+    void *user_data,
+    size_t *issue_count)
+{
+    const nmo_3dentity_state_t *entity =
+        (const nmo_3dentity_state_t *)
+            nmo_type_query_object_get_ancestor_state_by_guid(
+                types, source, CKPGUID_3DENTITY);
+    if (entity == NULL || entity->skin == NULL ||
+        entity->skin->bones == NULL) {
+        return true;
+    }
+    for (size_t i = 0; i < entity->skin->bone_count; ++i) {
+        const nmo_ref_t *ref = &entity->skin->bones[i].bone;
+        if (!validate_ref_has_issue(ref)) continue;
+        ++*issue_count;
+        if (visitor != NULL && !visitor(
+                user_data, source, ref, "skin.bones", i)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 static size_t validate_foreach_typed_ref_issue(
     const nmo_cmd_ctx_t *c,
     nmo_object_repository_t *repo,
@@ -854,6 +882,10 @@ static size_t validate_foreach_typed_ref_issue(
             if (nmo_guid_is_null(current->base_type)) break;
             current = nmo_type_registry_find_by_guid(
                 type_rt->types, current->base_type);
+        }
+        if (!validate_visit_skin_bone_ref_issues(
+                type_rt->types, source, visitor, user_data, &issue_count)) {
+            return issue_count;
         }
     }
     return issue_count;

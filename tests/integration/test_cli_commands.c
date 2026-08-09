@@ -1166,6 +1166,44 @@ cleanup:
     return ok;
 }
 
+static bool create_skin_dangling_reference_fixture(const char *path) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    if (ctx == NULL) return false;
+    nmo_session_t *session = nmo_session_create(ctx);
+    if (session == NULL) {
+        nmo_context_release(ctx);
+        return false;
+    }
+
+    nmo_object_id_t entity_id = 0;
+    bool ok = false;
+    if (nmo_session_create_object(
+            session, NMO_CID_3DENTITY, "skin-dangling-entity",
+            (nmo_guid_t){0, 0}, &entity_id, NULL) != NMO_OK) {
+        goto cleanup;
+    }
+    nmo_object_t *object = nmo_object_repository_find_by_id(
+        nmo_session_get_repository(session), entity_id);
+    if (object == NULL || object->state == NULL) goto cleanup;
+
+    nmo_3dentity_skin_bone_t bone = {0};
+    nmo_3dentity_skin_t skin = {0};
+    bone.bone = nmo_ref_from_raw(765432u);
+    skin.bone_count = 1;
+    skin.bones = &bone;
+    nmo_3dentity_state_t *state = (nmo_3dentity_state_t *)object->state;
+    state->skin = &skin;
+
+    nmo_save_options_t save_opts = nmo_save_options_default();
+    ok = nmo_session_save_file(session, path, &save_opts, NULL) == NMO_OK;
+    state->skin = NULL;
+
+cleanup:
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+    return ok;
+}
+
 static bool create_class_mismatch_reference_fixture(const char *path) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     if (ctx == NULL) return false;
@@ -1287,6 +1325,24 @@ TEST(cli, validate_references_reports_nested_unresolved_refs) {
     ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
     ASSERT_STR_CONTAINS(result.output, "object_descs[0]");
     ASSERT_STR_CONTAINS(result.output, "876543");
+    ASSERT_STR_CONTAINS(result.output, "unresolved");
+
+    free(result.output);
+    remove(fixture);
+}
+
+TEST(cli, validate_references_reports_skin_bone_unresolved_refs) {
+    const char *fixture = "test_validate_refs_skin_dangling.nmo";
+    remove(fixture);
+    ASSERT_TRUE(create_skin_dangling_reference_fixture(fixture));
+
+    char args[512];
+    snprintf(args, sizeof(args), "validate references \"%s\"", fixture);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "skin.bones[0]");
+    ASSERT_STR_CONTAINS(result.output, "765432");
     ASSERT_STR_CONTAINS(result.output, "unresolved");
 
     free(result.output);
@@ -4430,6 +4486,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, validate_references_strict_scans_before_failing);
     REGISTER_TEST(cli, validate_references_reports_typed_unresolved_refs);
     REGISTER_TEST(cli, validate_references_reports_nested_unresolved_refs);
+    REGISTER_TEST(cli, validate_references_reports_skin_bone_unresolved_refs);
     REGISTER_TEST(cli, validate_references_normalize_saves_distinct_clean_output);
     REGISTER_TEST(cli, validate_references_normalize_rejects_input_overwrite);
     REGISTER_TEST(cli, validate_references_reports_raw_field_class_mismatch);
