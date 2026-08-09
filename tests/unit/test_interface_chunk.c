@@ -299,7 +299,7 @@ TEST(interface_chunk, reject_corrupt_identifier_chain_after_header) {
 
     nmo_interface_data_t rejected;
     memset(&rejected, 0xA5, sizeof(rejected));
-    ASSERT_EQ(NMO_ERR_INVALID_STATE,
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT,
               nmo_interface_chunk_parse(chunk, arena, NULL, &rejected));
     ASSERT_EQ(0u, rejected.version);
     ASSERT_EQ(0u, rejected.sub_count);
