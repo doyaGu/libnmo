@@ -1147,6 +1147,12 @@ static nmo_status_t parse_parameters(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                          "interface chunk: local param count %d out of range", local_count);
     }
+    const size_t local_remaining =
+        interface_identifier_remaining_dwords(chunk);
+    if (local_remaining < 1u ||
+        (size_t)local_count > (local_remaining - 1u) / 3u) {
+        return NMO_ERR_TRUNCATED_CHUNK;
+    }
     params->local_count = (size_t)local_count;
 
     if (params->local_count > 0) {
@@ -1183,6 +1189,12 @@ static nmo_status_t parse_parameters(
     if (shared_count < 0 || shared_count > 100000) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                          "interface chunk: shared param count %d out of range", shared_count);
+    }
+    const size_t shared_dwords_per_item = version >= 0x15 ? 4u : 6u;
+    if ((size_t)shared_count >
+        interface_identifier_remaining_dwords(chunk) /
+            shared_dwords_per_item) {
+        return NMO_ERR_TRUNCATED_CHUNK;
     }
     params->shared_count = (size_t)shared_count;
 
