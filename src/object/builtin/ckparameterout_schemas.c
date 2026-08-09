@@ -278,8 +278,7 @@ static nmo_status_t nmo_parameterout_serialize_internal(
     }
 
     /* Write destinations if any */
-    if (want_destinations &&
-        (in_state->has_destinations || in_state->destination_count > 0)) {
+    if (want_destinations && in_state->destination_count > 0) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_PARAMETEROUT_DESTINATIONS);
         if (result != NMO_OK) return result;
 

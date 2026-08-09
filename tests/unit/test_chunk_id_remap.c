@@ -4393,10 +4393,9 @@ TEST(chunk_id_remap, parameterout_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_chunk_seek_identifier_with_size(
         empty_sections_saved, CK_STATESAVE_PARAMETEROUT_OWNER,
         &owner_dwords));
-    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_chunk_seek_identifier_with_size(
         empty_sections_saved, CK_STATESAVE_PARAMETEROUT_DESTINATIONS,
         &destination_dwords));
-    ASSERT_EQ(1u, destination_dwords);
 
     nmo_chunk_t *truncated = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(truncated);
