@@ -1161,6 +1161,12 @@ static nmo_status_t nmo_curvepoint_serialize_internal(
         }
     }
 
+    const bool modern_layout =
+        nmo_chunk_get_data_version(out_chunk) >= 5u;
+    if (modern_layout && in_state->has_legacy_position) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+
     if (in_state->has_default_data) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_CURVEPOINTDEFAULTDATA);
         if (result != NMO_OK) return result;
@@ -1171,7 +1177,7 @@ static nmo_status_t nmo_curvepoint_serialize_internal(
         result = nmo_chunk_write_int(out_chunk, in_state->linear);
         if (result != NMO_OK) return result;
 
-        if (in_state->defaultdata_is_modern) {
+        if (modern_layout) {
             result = nmo_chunk_write_float(out_chunk, in_state->tension);
             if (result != NMO_OK) return result;
             result = nmo_chunk_write_float(out_chunk, in_state->continuity);
@@ -1191,7 +1197,10 @@ static nmo_status_t nmo_curvepoint_serialize_internal(
         }
     }
 
-    if (in_state->has_tcb_chunk) {
+    const bool convert_modern_default =
+        !modern_layout && in_state->has_default_data &&
+        in_state->defaultdata_is_modern;
+    if (in_state->has_tcb_chunk || convert_modern_default) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_CURVEPOINTTCB);
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_float(out_chunk, in_state->tension);
@@ -1202,7 +1211,7 @@ static nmo_status_t nmo_curvepoint_serialize_internal(
         if (result != NMO_OK) return result;
     }
 
-    if (in_state->has_tangents_chunk) {
+    if (in_state->has_tangents_chunk || convert_modern_default) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_CURVEPOINTTANGENTS);
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_vector3(out_chunk, &in_state->tangent_in);

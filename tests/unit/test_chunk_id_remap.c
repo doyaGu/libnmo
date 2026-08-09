@@ -8107,6 +8107,108 @@ TEST(chunk_id_remap, curvepoint_unresolved_curve_round_trips_raw_id) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, curvepoint_layout_follows_data_version) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
+    ASSERT_NOT_NULL(arena);
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+
+    nmo_curvepoint_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_curvepoint_vtable.create(&source, NULL, NULL));
+    source.curve = nmo_ref_from_raw(721);
+    source.use_tcb = 1;
+    source.tension = 0.1f;
+    source.continuity = 0.2f;
+    source.bias = 0.3f;
+    source.tangent_in = (nmo_vector_t){1.0f, 2.0f, 3.0f};
+    source.tangent_out = (nmo_vector_t){4.0f, 5.0f, 6.0f};
+
+    nmo_chunk_t *legacy = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(legacy);
+    legacy->class_id = NMO_CID_CURVEPOINT;
+    legacy->data_version = 4;
+    legacy->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_curvepoint_serialize(
+        &source, legacy, NULL, &serialize_context));
+    nmo_chunk_close(legacy);
+
+    size_t section_dwords = 0u;
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        legacy, CK_STATESAVE_CURVEPOINTDEFAULTDATA, &section_dwords));
+    ASSERT_EQ(6u, section_dwords);
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        legacy, CK_STATESAVE_CURVEPOINTTCB, &section_dwords));
+    ASSERT_EQ(3u, section_dwords);
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        legacy, CK_STATESAVE_CURVEPOINTTANGENTS, &section_dwords));
+    ASSERT_EQ(6u, section_dwords);
+
+    nmo_curvepoint_state_t legacy_loaded;
+    ASSERT_EQ(NMO_OK, nmo_curvepoint_vtable.create(
+        &legacy_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_curvepoint_deserialize(
+        &legacy_loaded, legacy, NULL, &deserialize_context));
+    ASSERT_FALSE(legacy_loaded.defaultdata_is_modern);
+    ASSERT_TRUE(legacy_loaded.has_legacy_position);
+    ASSERT_FLOAT_EQ(0.0f, legacy_loaded.legacy_position.x, 0.0001f);
+    ASSERT_TRUE(legacy_loaded.has_tcb_chunk);
+    ASSERT_TRUE(legacy_loaded.has_tangents_chunk);
+    ASSERT_FLOAT_EQ(source.tension, legacy_loaded.tension, 0.0001f);
+    ASSERT_FLOAT_EQ(source.continuity, legacy_loaded.continuity, 0.0001f);
+    ASSERT_FLOAT_EQ(source.bias, legacy_loaded.bias, 0.0001f);
+    ASSERT_FLOAT_EQ(source.tangent_in.y,
+                    legacy_loaded.tangent_in.y, 0.0001f);
+    ASSERT_FLOAT_EQ(source.tangent_out.z,
+                    legacy_loaded.tangent_out.z, 0.0001f);
+
+    nmo_chunk_t *modern = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(modern);
+    modern->class_id = NMO_CID_CURVEPOINT;
+    modern->data_version = 7;
+    modern->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(modern));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(modern, 0xABCD1234u));
+    nmo_chunk_close(modern);
+
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_curvepoint_serialize(
+        &legacy_loaded, modern, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(modern));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(modern));
+    uint32_t marker = 0u;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(modern, &marker));
+    ASSERT_EQ(0xABCD1234u, marker);
+
+    legacy_loaded.has_legacy_position = 0;
+    ASSERT_EQ(NMO_OK, nmo_curvepoint_serialize(
+        &legacy_loaded, modern, NULL, &serialize_context));
+    nmo_chunk_close(modern);
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        modern, CK_STATESAVE_CURVEPOINTDEFAULTDATA, &section_dwords));
+    ASSERT_EQ(12u, section_dwords);
+
+    nmo_curvepoint_state_t modern_loaded;
+    ASSERT_EQ(NMO_OK, nmo_curvepoint_vtable.create(
+        &modern_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_curvepoint_deserialize(
+        &modern_loaded, modern, NULL, &deserialize_context));
+    ASSERT_TRUE(modern_loaded.defaultdata_is_modern);
+    ASSERT_FALSE(modern_loaded.has_legacy_position);
+    ASSERT_EQ(721u, modern_loaded.curve.raw_id);
+    ASSERT_FLOAT_EQ(source.tension, modern_loaded.tension, 0.0001f);
+    ASSERT_FLOAT_EQ(source.tangent_in.x,
+                    modern_loaded.tangent_in.x, 0.0001f);
+    ASSERT_FLOAT_EQ(source.tangent_out.y,
+                    modern_loaded.tangent_out.y, 0.0001f);
+
+    nmo_curvepoint_vtable.destroy(&source, NULL, NULL);
+    nmo_curvepoint_vtable.destroy(&legacy_loaded, NULL, NULL);
+    nmo_curvepoint_vtable.destroy(&modern_loaded, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, curvepoint_fields_stay_in_identifier_sections) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
     ASSERT_NOT_NULL(arena);
@@ -18185,6 +18287,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, texture_preserves_legacy_file_layout);
     REGISTER_TEST(chunk_id_remap, texture_empty_sections_round_trip_presence);
     REGISTER_TEST(chunk_id_remap, curvepoint_unresolved_curve_round_trips_raw_id);
+    REGISTER_TEST(chunk_id_remap, curvepoint_layout_follows_data_version);
     REGISTER_TEST(chunk_id_remap, curvepoint_fields_stay_in_identifier_sections);
     REGISTER_TEST(chunk_id_remap, sprite3d_unresolved_material_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, wavesound_unresolved_attachment_round_trips_raw_id);
