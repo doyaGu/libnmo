@@ -1856,12 +1856,11 @@ static nmo_status_t read_legacy_controllers(
         NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->merge_factor));
         int32_t merged = 0;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &merged));
+        out_state->has_merge = 1;
         if (merged) {
             out_state->flags |= 0x80u;
-            out_state->has_merge = 1;
         } else {
             out_state->flags &= ~0x80u;
-            out_state->has_merge = 0;
         }
         NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &out_state->anim1));
         NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &out_state->anim2));

@@ -570,6 +570,62 @@ TEST(objanim_controllers, legacy_controllers_roundtrip_without_loss) {
     nmo_arena_destroy(arena);
 }
 
+TEST(objanim_controllers, legacy_inactive_merge_section_roundtrips) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NE(NULL, arena);
+    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_deserialize_context_t des_ctx = nmo_deserialize_context_create(
+        arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NE(NULL, chunk);
+    chunk->class_id = NMO_CID_OBJECTANIMATION;
+    chunk->data_version = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        chunk, CK_STATESAVE_OBJANIMMERGE));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_float(chunk, 0.25f));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(chunk, 701));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(chunk, 702));
+    nmo_chunk_close(chunk);
+
+    nmo_objectanimation_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_vtable.create(
+        &loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_deserialize(
+        &loaded, chunk, NULL, &des_ctx));
+    ASSERT_TRUE(loaded.has_merge);
+    ASSERT_EQ(0u, loaded.flags & 0x80u);
+    ASSERT_EQ(0.25f, loaded.merge_factor);
+    ASSERT_EQ(701u, loaded.anim1.raw_id);
+    ASSERT_EQ(702u, loaded.anim2.raw_id);
+
+    nmo_chunk_t *saved = nmo_chunk_create(arena);
+    ASSERT_NE(NULL, saved);
+    saved->class_id = NMO_CID_OBJECTANIMATION;
+    saved->data_version = 0;
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_serialize(
+        &loaded, saved, NULL, &ser_ctx));
+    nmo_chunk_close(saved);
+
+    nmo_objectanimation_state_t reloaded;
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_vtable.create(
+        &reloaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_deserialize(
+        &reloaded, saved, NULL, &des_ctx));
+    ASSERT_TRUE(reloaded.has_merge);
+    ASSERT_EQ(0u, reloaded.flags & 0x80u);
+    ASSERT_EQ(0.25f, reloaded.merge_factor);
+    ASSERT_EQ(701u, reloaded.anim1.raw_id);
+    ASSERT_EQ(702u, reloaded.anim2.raw_id);
+
+    nmo_objectanimation_vtable.destroy(&loaded, NULL, NULL);
+    nmo_objectanimation_vtable.destroy(&reloaded, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(objanim_controllers, legacy_rejects_inconsistent_controller_header) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NE(NULL, arena);
@@ -741,6 +797,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(objanim_controllers, newdata_rejects_inconsistent_controller_header);
     REGISTER_TEST(objanim_controllers, newdata_rejects_lossy_state);
     REGISTER_TEST(objanim_controllers, legacy_controllers_roundtrip_without_loss);
+    REGISTER_TEST(objanim_controllers, legacy_inactive_merge_section_roundtrips);
     REGISTER_TEST(objanim_controllers, legacy_rejects_inconsistent_controller_header);
     REGISTER_TEST(objanim_controllers, legacy_rejects_lossy_controller_state);
     REGISTER_TEST(objanim_controllers, copy_controllers);
