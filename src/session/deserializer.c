@@ -630,9 +630,13 @@ nmo_status_t nmo_deserializer_parse_header(nmo_deserializer_t *ds)
         uint64_t read_start = load_perf_begin(ds);
         int read_result = nmo_io_read(io, packed_hdr1, ds->header.hdr1_pack_size, &bytes_read);
         load_perf_end(ds, NMO_LOAD_PERF_HEADER1_READ, read_start);
-        if (read_result != NMO_OK || bytes_read != ds->header.hdr1_pack_size) {
+        if (read_result != NMO_OK) {
             nmo_log(logger, NMO_LOG_ERROR, "Failed to read header1 data");
-            return NMO_ERR_INVALID_ARGUMENT;
+            return read_result;
+        }
+        if (bytes_read != ds->header.hdr1_pack_size) {
+            nmo_log(logger, NMO_LOG_ERROR, "Truncated header1 data");
+            return NMO_ERR_TRUNCATED_CHUNK;
         }
 
         /* Decompress if needed */
@@ -658,13 +662,13 @@ nmo_status_t nmo_deserializer_parse_header(nmo_deserializer_t *ds)
             if (uncompress_result != MZ_OK) {
                 nmo_log(logger, NMO_LOG_ERROR, "Failed to decompress header1: %d",
                         uncompress_result);
-                return NMO_ERR_INVALID_ARGUMENT;
+                return NMO_ERR_DECOMPRESSION_FAILED;
             }
 
             if (dest_len != ds->header.hdr1_unpack_size) {
                 nmo_log(logger, NMO_LOG_ERROR, "Header1 decompression size mismatch: expected %u, got %lu",
                         ds->header.hdr1_unpack_size, dest_len);
-                return NMO_ERR_INVALID_ARGUMENT;
+                return NMO_ERR_DECOMPRESSION_FAILED;
             }
 
             hdr1_size = dest_len;

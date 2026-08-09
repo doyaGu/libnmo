@@ -372,6 +372,36 @@ static nmo_status_t parse_memory_header(const void *data, size_t size)
     return result;
 }
 
+static nmo_status_t parse_header1_payload(const void *payload,
+                                          size_t payload_size,
+                                          uint32_t packed_size,
+                                          uint32_t unpacked_size)
+{
+    nmo_file_header_t header = {0};
+    memcpy(header.signature, "Nemo Fi\0", sizeof(header.signature));
+    header.file_version = 8;
+    header.hdr1_pack_size = packed_size;
+    header.hdr1_unpack_size = unpacked_size;
+
+    nmo_io_interface_t *write_io = nmo_memory_io_open_write(64 + payload_size);
+    if (write_io == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    nmo_status_t result = nmo_file_header_serialize(&header, write_io);
+    if (result == NMO_OK && payload_size > 0) {
+        result = nmo_io_write(write_io, payload, payload_size);
+    }
+    if (result == NMO_OK) {
+        size_t size = 0;
+        const void *data = nmo_memory_io_get_data(write_io, &size);
+        result = data != NULL
+            ? parse_memory_header(data, size)
+            : NMO_ERR_INTERNAL;
+    }
+    nmo_io_close(write_io);
+    return result;
+}
+
 typedef struct rejecting_allocator_context {
     size_t allocation_calls;
 } rejecting_allocator_context_t;
@@ -479,25 +509,25 @@ TEST(load_options, phased_header_parse_preserves_format_errors)
     ASSERT_EQ(NMO_ERR_INVALID_SIGNATURE,
               parse_memory_header(invalid_signature, sizeof(invalid_signature)));
 
-    nmo_file_header_t header = {0};
-    memcpy(header.signature, "Nemo Fi\0", sizeof(header.signature));
-    header.file_version = 8;
-    header.hdr1_pack_size = 1;
-    header.hdr1_unpack_size = 1;
-
-    nmo_io_interface_t *write_io = nmo_memory_io_open_write(65);
-    ASSERT_NOT_NULL(write_io);
-    ASSERT_EQ(NMO_OK, nmo_file_header_serialize(&header, write_io));
     const uint8_t incomplete_header1 = 0;
-    ASSERT_EQ(NMO_OK,
-              nmo_io_write(write_io, &incomplete_header1,
-                           sizeof(incomplete_header1)));
+    ASSERT_EQ(NMO_ERR_BUFFER_OVERRUN,
+              parse_header1_payload(&incomplete_header1, 1, 1, 1));
+}
 
-    size_t size = 0;
-    const void *data = nmo_memory_io_get_data(write_io, &size);
-    ASSERT_NOT_NULL(data);
-    ASSERT_EQ(NMO_ERR_BUFFER_OVERRUN, parse_memory_header(data, size));
-    nmo_io_close(write_io);
+TEST(load_options, phased_header1_classifies_payload_failures)
+{
+    const uint8_t short_payload = 0;
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK,
+              parse_header1_payload(&short_payload, 1, 4, 4));
+
+    static const uint8_t corrupt_compressed_payload[4] = {
+        0xDE, 0xAD, 0xBE, 0xEF
+    };
+    ASSERT_EQ(NMO_ERR_DECOMPRESSION_FAILED,
+              parse_header1_payload(corrupt_compressed_payload,
+                                    sizeof(corrupt_compressed_payload),
+                                    sizeof(corrupt_compressed_payload),
+                                    8));
 }
 
 TEST_MAIN_BEGIN()
@@ -513,6 +543,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(load_options, diagnostics_capture_current_chunk_section);
     REGISTER_TEST(load_options, custom_allocator_controls_object_and_schema_storage);
     REGISTER_TEST(load_options, phased_header_parse_preserves_format_errors);
+    REGISTER_TEST(load_options, phased_header1_classifies_payload_failures);
 TEST_MAIN_END()
 
 
