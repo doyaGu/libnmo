@@ -10,6 +10,30 @@
 #include <stdlib.h>
 #include <string.h>
 
+static nmo_status_t header_read_failure(
+    void *handle,
+    void *buffer,
+    size_t size,
+    size_t *bytes_read) {
+    (void)handle;
+    (void)buffer;
+    (void)size;
+    if (bytes_read != NULL) {
+        *bytes_read = 0;
+    }
+    return NMO_ERR_CANT_READ_FILE;
+}
+
+static nmo_status_t header_write_failure(
+    void *handle,
+    const void *buffer,
+    size_t size) {
+    (void)handle;
+    (void)buffer;
+    (void)size;
+    return NMO_ERR_CANCELLED;
+}
+
 TEST(header, create_and_destroy) {
     nmo_header_t *header = nmo_header_create();
     ASSERT_NOT_NULL(header);
@@ -104,10 +128,75 @@ TEST(header, compute_crc_matches_ck2_reference_fixture) {
     free(bytes);
 }
 
+TEST(header, parse_failure_preserves_output) {
+    static const uint8_t truncated[] = {
+        'N', 'e', 'm', 'o', ' ', 'F', 'i', '\0',
+        0x12, 0x34,
+    };
+    nmo_io_interface_t *io =
+        nmo_memory_io_open_read(truncated, sizeof(truncated));
+    ASSERT_NOT_NULL(io);
+
+    nmo_file_header_t header;
+    nmo_file_header_t expected;
+    memset(&header, 0xA5, sizeof(header));
+    expected = header;
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_file_header_parse(io, &header));
+    ASSERT_MEM_EQ(&expected, &header, sizeof(header));
+
+    nmo_io_close(io);
+}
+
+TEST(header, propagates_backend_errors) {
+    nmo_io_interface_t read_io = {
+        .read = header_read_failure,
+    };
+    nmo_file_header_t parsed;
+    memset(&parsed, 0xA5, sizeof(parsed));
+    nmo_file_header_t expected = parsed;
+    ASSERT_EQ(NMO_ERR_CANT_READ_FILE,
+              nmo_file_header_parse(&read_io, &parsed));
+    ASSERT_MEM_EQ(&expected, &parsed, sizeof(parsed));
+
+    nmo_file_header_t header = {0};
+    memcpy(header.signature, "Nemo Fi\0", 8);
+    header.file_version = 8;
+    nmo_io_interface_t write_io = {
+        .write = header_write_failure,
+    };
+    ASSERT_EQ(NMO_ERR_CANCELLED,
+              nmo_file_header_serialize(&header, &write_io));
+}
+
+TEST(header, rejects_invalid_header_before_writing) {
+    nmo_file_header_t header = {0};
+    header.file_version = 8;
+
+    nmo_io_interface_t *io = nmo_memory_io_open_write(64);
+    ASSERT_NOT_NULL(io);
+    ASSERT_EQ(NMO_ERR_INVALID_SIGNATURE,
+              nmo_file_header_serialize(&header, io));
+
+    size_t written_size = SIZE_MAX;
+    (void)nmo_memory_io_get_data(io, &written_size);
+    ASSERT_EQ(0u, written_size);
+
+    memcpy(header.signature, "Nemo Fi\0", 8);
+    header.file_version2 = 1;
+    ASSERT_EQ(NMO_ERR_UNSUPPORTED_VERSION,
+              nmo_file_header_serialize(&header, io));
+    (void)nmo_memory_io_get_data(io, &written_size);
+    ASSERT_EQ(0u, written_size);
+    nmo_io_close(io);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(header, create_and_destroy);
     REGISTER_TEST(header, get_size);
     REGISTER_TEST(header, write_and_read);
     REGISTER_TEST(header, validate);
     REGISTER_TEST(header, compute_crc_matches_ck2_reference_fixture);
+    REGISTER_TEST(header, parse_failure_preserves_output);
+    REGISTER_TEST(header, propagates_backend_errors);
+    REGISTER_TEST(header, rejects_invalid_header_before_writing);
 TEST_MAIN_END()
