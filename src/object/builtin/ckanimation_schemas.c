@@ -194,7 +194,8 @@ static nmo_status_t read_ref_array(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
     nmo_ref_t **out_refs,
-    uint32_t *out_count)
+    uint32_t *out_count,
+    size_t trailing_dwords)
 {
     size_t count = 0;
     nmo_status_t result = nmo_chunk_read_object_sequence_start(
@@ -204,7 +205,10 @@ static nmo_status_t read_ref_array(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                          "Animation reference count exceeds limits");
     }
-    if (count > nmo_animation_identifier_remaining_dwords(chunk)) {
+    const size_t remaining_dwords =
+        nmo_animation_identifier_remaining_dwords(chunk);
+    if (trailing_dwords > remaining_dwords ||
+        count > remaining_dwords - trailing_dwords) {
         NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                          "Animation reference count exceeds identifier payload");
     }
@@ -1259,6 +1263,33 @@ static nmo_status_t nmo_animation_seek_optional(
     return result == NMO_ERR_NOT_FOUND ? NMO_OK : result;
 }
 
+static nmo_status_t nmo_animation_seek_optional_sized(
+    nmo_chunk_t *chunk,
+    uint32_t identifier,
+    bool *out_found,
+    size_t *out_dwords)
+{
+    nmo_status_t result = nmo_chunk_seek_identifier_with_size(
+        chunk, identifier, out_dwords);
+    if (result == NMO_OK) {
+        *out_found = true;
+        return NMO_OK;
+    }
+    *out_found = false;
+    *out_dwords = 0u;
+    return result == NMO_ERR_NOT_FOUND ? NMO_OK : result;
+}
+
+static nmo_status_t nmo_animation_require_section_end(
+    const nmo_chunk_t *chunk,
+    size_t section_end)
+{
+    const size_t position = nmo_chunk_get_position(chunk);
+    if (position > section_end) return NMO_ERR_TRUNCATED_CHUNK;
+    if (position < section_end) return NMO_ERR_INVALID_FORMAT;
+    return NMO_OK;
+}
+
 static nmo_status_t nmo_animation_validate_payload_size(
     nmo_chunk_t *chunk,
     uint32_t size_bytes)
@@ -1826,13 +1857,15 @@ static nmo_status_t nmo_animation_deserialize_internal(
     out_state->has_current_step = 0;
     out_state->current_step = 0.0f;
     bool section_found = false;
+    size_t section_dwords = 0u;
 
-    NMO_RETURN_IF_ERROR(nmo_animation_seek_optional(
-        chunk, CK_STATESAVE_ANIMATIONDATA, &section_found));
+    NMO_RETURN_IF_ERROR(nmo_animation_seek_optional_sized(
+        chunk, CK_STATESAVE_ANIMATIONDATA, &section_found,
+        &section_dwords));
     if (section_found) {
         out_state->has_data = 1;
 
-        size_t remaining_dwords = nmo_animation_identifier_remaining_dwords(chunk);
+        size_t remaining_dwords = section_dwords;
         if (remaining_dwords == 0) {
             NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                              "Animation data section is empty");
@@ -1874,24 +1907,31 @@ static nmo_status_t nmo_animation_deserialize_internal(
         }
     }
 
-    NMO_RETURN_IF_ERROR(nmo_animation_seek_optional(
-        chunk, CK_STATESAVE_ANIMATIONLENGTH, &section_found));
+    NMO_RETURN_IF_ERROR(nmo_animation_seek_optional_sized(
+        chunk, CK_STATESAVE_ANIMATIONLENGTH, &section_found,
+        &section_dwords));
     if (section_found) {
+        if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+        if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
         out_state->has_length = 1;
         nmo_status_t result = nmo_chunk_read_float(chunk, &out_state->length);
         if (result != NMO_OK) return result;
     }
 
-    NMO_RETURN_IF_ERROR(nmo_animation_seek_optional(
-        chunk, CK_STATESAVE_ANIMATIONBODYPARTS, &section_found));
+    NMO_RETURN_IF_ERROR(nmo_animation_seek_optional_sized(
+        chunk, CK_STATESAVE_ANIMATIONBODYPARTS, &section_found,
+        &section_dwords));
     if (section_found) {
+        if (section_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
+        const size_t section_end =
+            nmo_chunk_get_position(chunk) + section_dwords;
         nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
         if (arena == NULL) arena = chunk->arena;
         nmo_ref_t *legacy_body_parts = NULL;
         uint32_t legacy_body_part_count = 0;
         nmo_status_t result = read_ref_array(
             chunk, arena, &legacy_body_parts,
-            &legacy_body_part_count);
+            &legacy_body_part_count, 1u);
         if (result != NMO_OK) return result;
         const size_t remaining_dwords =
             nmo_animation_identifier_remaining_dwords(chunk);
@@ -1905,6 +1945,8 @@ static nmo_status_t nmo_animation_deserialize_internal(
         }
         nmo_ref_t root_entity = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         result = nmo_ref_read(chunk, &root_entity);
+        if (result != NMO_OK) return result;
+        result = nmo_animation_require_section_end(chunk, section_end);
         if (result != NMO_OK) return result;
         const nmo_object_repository_t *repository =
             (const nmo_object_repository_t *)
@@ -1925,9 +1967,12 @@ static nmo_status_t nmo_animation_deserialize_internal(
         out_state->root_entity = root_entity;
     }
 
-    NMO_RETURN_IF_ERROR(nmo_animation_seek_optional(
-        chunk, CK_STATESAVE_ANIMATIONCHARACTER, &section_found));
+    NMO_RETURN_IF_ERROR(nmo_animation_seek_optional_sized(
+        chunk, CK_STATESAVE_ANIMATIONCHARACTER, &section_found,
+        &section_dwords));
     if (section_found) {
+        if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+        if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
         out_state->has_character = 1;
         nmo_ref_t character = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         nmo_status_t result = nmo_ref_read(chunk, &character);
@@ -1941,9 +1986,12 @@ static nmo_status_t nmo_animation_deserialize_internal(
         out_state->character = character;
     }
 
-    NMO_RETURN_IF_ERROR(nmo_animation_seek_optional(
-        chunk, CK_STATESAVE_ANIMATIONCURRENTSTEP, &section_found));
+    NMO_RETURN_IF_ERROR(nmo_animation_seek_optional_sized(
+        chunk, CK_STATESAVE_ANIMATIONCURRENTSTEP, &section_found,
+        &section_dwords));
     if (section_found) {
+        if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+        if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
         out_state->has_current_step = 1;
         nmo_status_t result = nmo_chunk_read_float(chunk, &out_state->current_step);
         if (result != NMO_OK) return result;
@@ -2032,13 +2080,21 @@ static nmo_status_t nmo_keyedanimation_deserialize_internal(
     nmo_status_t result = nmo_animation_deserialize_internal(chunk, context, &out_state->base);
     if (result != NMO_OK) return result;
     bool section_found = false;
+    size_t section_dwords = 0u;
 
-    NMO_RETURN_IF_ERROR(nmo_animation_seek_optional(
-        chunk, CK_STATESAVE_KEYEDANIMANIMLIST, &section_found));
+    NMO_RETURN_IF_ERROR(nmo_animation_seek_optional_sized(
+        chunk, CK_STATESAVE_KEYEDANIMANIMLIST, &section_found,
+        &section_dwords));
     if (section_found) {
+        if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+        const size_t section_end =
+            nmo_chunk_get_position(chunk) + section_dwords;
         nmo_ref_t *animation_ids = NULL;
         uint32_t animation_count = 0;
-        result = read_ref_array(chunk, arena, &animation_ids, &animation_count);
+        result = read_ref_array(
+            chunk, arena, &animation_ids, &animation_count, 0u);
+        if (result != NMO_OK) return result;
+        result = nmo_animation_require_section_end(chunk, section_end);
         if (result != NMO_OK) return result;
         const nmo_object_repository_t *repository =
             nmo_deserialize_context_get_repository(context);
@@ -2053,9 +2109,12 @@ static nmo_status_t nmo_keyedanimation_deserialize_internal(
         out_state->animation_count = animation_count;
     }
 
-    NMO_RETURN_IF_ERROR(nmo_animation_seek_optional(
-        chunk, CK_STATESAVE_KEYEDANIMMERGE, &section_found));
+    NMO_RETURN_IF_ERROR(nmo_animation_seek_optional_sized(
+        chunk, CK_STATESAVE_KEYEDANIMMERGE, &section_found,
+        &section_dwords));
     if (section_found) {
+        if (section_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
+        if (section_dwords > 2u) return NMO_ERR_INVALID_FORMAT;
         out_state->has_merge = 1;
         result = nmo_chunk_read_int(chunk, &out_state->merged);
         if (result != NMO_OK) return result;
@@ -2065,10 +2124,14 @@ static nmo_status_t nmo_keyedanimation_deserialize_internal(
 
     const bool is_file = nmo_animation_is_file_mode_deser(chunk, context);
     if (!is_file) {
-        NMO_RETURN_IF_ERROR(nmo_animation_seek_optional(
-            chunk, CK_STATESAVE_KEYEDANIMSUBANIMS, &section_found));
+        NMO_RETURN_IF_ERROR(nmo_animation_seek_optional_sized(
+            chunk, CK_STATESAVE_KEYEDANIMSUBANIMS, &section_found,
+            &section_dwords));
     }
     if (!is_file && section_found) {
+        if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+        const size_t section_end =
+            nmo_chunk_get_position(chunk) + section_dwords;
         uint32_t count = 0;
         result = nmo_chunk_read_dword(chunk, &count);
         if (result != NMO_OK) return result;
@@ -2112,6 +2175,8 @@ static nmo_status_t nmo_keyedanimation_deserialize_internal(
             out_state->subanims = subanims;
             out_state->subanim_count = count;
         }
+        result = nmo_animation_require_section_end(chunk, section_end);
+        if (result != NMO_OK) return result;
     }
 
     NMO_RETURN_OK();

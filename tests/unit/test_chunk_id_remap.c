@@ -14307,6 +14307,104 @@ TEST(chunk_id_remap, keyedanimation_sections_round_trip_independently) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, animation_sections_do_not_borrow_following_identifiers) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
+    ASSERT_NOT_NULL(arena);
+    nmo_deserialize_context_t file_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+    nmo_deserialize_context_t runtime_context =
+        nmo_deserialize_context_create(arena, NULL, NULL, 0);
+
+    nmo_animation_state_t animation;
+    ASSERT_EQ(NMO_OK, nmo_animation_vtable.create(
+        &animation, NULL, NULL));
+    animation.flags = 0x12345678u;
+
+    const uint32_t scalar_ids[] = {
+        CK_STATESAVE_ANIMATIONLENGTH,
+        CK_STATESAVE_ANIMATIONCHARACTER,
+        CK_STATESAVE_ANIMATIONCURRENTSTEP,
+    };
+    for (size_t i = 0;
+         i < sizeof(scalar_ids) / sizeof(scalar_ids[0]); ++i) {
+        nmo_chunk_t *chunk = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(chunk);
+        chunk->class_id = NMO_CID_ANIMATION;
+        chunk->data_version = 7;
+        chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+        ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+            chunk, scalar_ids[i]));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, 0));
+        nmo_chunk_close(chunk);
+        ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_animation_deserialize(
+            &animation, chunk, NULL, &file_context));
+        ASSERT_EQ(0x12345678u, animation.flags);
+    }
+
+    nmo_chunk_t *missing_root = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(missing_root);
+    missing_root->class_id = NMO_CID_ANIMATION;
+    missing_root->data_version = 7;
+    missing_root->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(missing_root));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        missing_root, CK_STATESAVE_ANIMATIONBODYPARTS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(
+        missing_root, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(missing_root, 0));
+    nmo_chunk_close(missing_root);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_animation_deserialize(
+        &animation, missing_root, NULL, &file_context));
+    ASSERT_EQ(0x12345678u, animation.flags);
+
+    nmo_keyedanimation_state_t keyed;
+    ASSERT_EQ(NMO_OK, nmo_keyedanimation_vtable.create(
+        &keyed, NULL, NULL));
+    keyed.base.flags = 0x87654321u;
+
+    const uint32_t keyed_file_ids[] = {
+        CK_STATESAVE_KEYEDANIMANIMLIST,
+        CK_STATESAVE_KEYEDANIMMERGE,
+    };
+    for (size_t i = 0;
+         i < sizeof(keyed_file_ids) / sizeof(keyed_file_ids[0]); ++i) {
+        nmo_chunk_t *chunk = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(chunk);
+        chunk->class_id = NMO_CID_KEYEDANIMATION;
+        chunk->data_version = 7;
+        chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+        ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+            chunk, keyed_file_ids[i]));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, 0));
+        nmo_chunk_close(chunk);
+        ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK,
+                  nmo_keyedanimation_deserialize(
+                      &keyed, chunk, NULL, &file_context));
+        ASSERT_EQ(0x87654321u, keyed.base.flags);
+    }
+
+    nmo_chunk_t *missing_subanim_count = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(missing_subanim_count);
+    missing_subanim_count->class_id = NMO_CID_KEYEDANIMATION;
+    missing_subanim_count->data_version = 7;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(missing_subanim_count));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        missing_subanim_count, CK_STATESAVE_KEYEDANIMSUBANIMS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        missing_subanim_count, 0));
+    nmo_chunk_close(missing_subanim_count);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_keyedanimation_deserialize(
+        &keyed, missing_subanim_count, NULL, &runtime_context));
+    ASSERT_EQ(0x87654321u, keyed.base.flags);
+
+    nmo_keyedanimation_vtable.destroy(&keyed, NULL, NULL);
+    nmo_animation_vtable.destroy(&animation, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, curve_staging_initializes_inherited_arrays) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
     ASSERT_NOT_NULL(arena);
@@ -15172,6 +15270,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, patchmesh_copy_preserves_atomic_records);
     REGISTER_TEST(chunk_id_remap, animation_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, keyedanimation_sections_round_trip_independently);
+    REGISTER_TEST(chunk_id_remap, animation_sections_do_not_borrow_following_identifiers);
     REGISTER_TEST(chunk_id_remap, curve_staging_initializes_inherited_arrays);
     REGISTER_TEST(chunk_id_remap, curve_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, objectanimation_refs_round_trip_and_failure_is_atomic);
