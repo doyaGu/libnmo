@@ -146,6 +146,8 @@ static nmo_status_t nmo_group_deserialize_internal(
         return result;
     }
     if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+    const size_t section_end =
+        nmo_chunk_get_position(chunk) + section_dwords;
 
     /* Read object array using XObjectPointerArray::Load format
      * Reference: XObjectArray.cpp - array is stored as [count, id1, id2, ...] */
@@ -182,6 +184,10 @@ static nmo_status_t nmo_group_deserialize_internal(
     if (result != NMO_OK) {
         nmo_array_dispose(&decoded);
         return result;
+    }
+    if (nmo_chunk_get_position(chunk) != section_end) {
+        nmo_array_dispose(&decoded);
+        return NMO_ERR_INVALID_FORMAT;
     }
     result = nmo_array_swap(&out_state->object_ids, &decoded);
     nmo_array_dispose(&decoded);
