@@ -313,6 +313,7 @@ nmo_status_t nmo_group_serialize(
     if (instance == NULL || out_chunk == NULL || out_chunk->arena == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
+    NMO_RETURN_IF_ERROR(nmo_group_validate(instance, type, context));
     nmo_chunk_t *staged = nmo_chunk_create(out_chunk->arena);
     if (staged == NULL) return NMO_ERR_NOMEM;
     staged->class_id = out_chunk->class_id;
@@ -418,10 +419,13 @@ static nmo_status_t nmo_group_validate(
     void *context)
 {
     (void)type;
-    (void)context;
     const nmo_group_state_t *s = instance;
+    if (s == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    NMO_RETURN_IF_ERROR(nmo_beobject_vtable.validate(
+        &s->base, NULL, context));
     NMO_VALIDATE_COUNT(s->object_ids.data, s->object_ids.count, "object_ids");
-    if (s->object_ids.element_size != sizeof(nmo_ref_t)) {
+    if (s->object_ids.element_size != sizeof(nmo_ref_t) ||
+        s->object_ids.count > (size_t)INT32_MAX) {
         return NMO_ERR_VALIDATION_FAILED;
     }
     NMO_RETURN_OK();

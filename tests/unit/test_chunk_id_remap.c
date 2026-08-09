@@ -7023,6 +7023,15 @@ TEST(chunk_id_remap, group_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(target, &marker));
     ASSERT_EQ(0x12345678u, marker);
 
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, nmo_group_vtable.validate(
+        NULL, NULL, NULL));
+    size_t valid_count = invalid.object_ids.count;
+    invalid.object_ids.count = (size_t)INT32_MAX + 1u;
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_group_serialize(
+        &invalid, target, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
+    invalid.object_ids.count = valid_count;
+
     nmo_group_vtable.destroy(&source, NULL, NULL);
     nmo_group_vtable.destroy(&loaded, NULL, NULL);
     nmo_group_vtable.destroy(&reloaded, NULL, NULL);
