@@ -52,10 +52,15 @@ static int nmo_load_profile_is_valid(nmo_load_profile_t profile) {
  * @param path File path to inspect
  * @return 1 if compressed, 0 if uncompressed, -1 on error
  */
-static int nmo_detect_file_compression(const char *path) {
+static nmo_status_t nmo_detect_file_compression(const char *path,
+                                                int *out_is_compressed) {
+    if (path == NULL || out_is_compressed == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
     nmo_io_interface_t *io = nmo_file_io_open(path, NMO_IO_READ);
     if (io == NULL) {
-        return -1;
+        return NMO_ERR_FILE_NOT_FOUND;
     }
 
     /* Parse the file header to check compression flags */
@@ -64,7 +69,7 @@ static int nmo_detect_file_compression(const char *path) {
     nmo_io_close(io);
 
     if (result != NMO_OK) {
-        return -1;
+        return result;
     }
 
     /* Check if any compression is enabled */
@@ -81,7 +86,8 @@ static int nmo_detect_file_compression(const char *path) {
         is_compressed = 1;
     }
 
-    return is_compressed;
+    *out_is_compressed = is_compressed;
+    return NMO_OK;
 }
 
 /**
@@ -124,11 +130,14 @@ nmo_status_t nmo_load_file(nmo_session_t *session,
 
     /* Select best IO path automatically (mmap for uncompressed, fallback to standard) */
     uint64_t open_detect_start = load_perf_begin(perf_stats);
-    int is_compressed = nmo_detect_file_compression(path);
-    if (is_compressed < 0) {
+    int is_compressed = 0;
+    nmo_status_t detect_result =
+        nmo_detect_file_compression(path, &is_compressed);
+    if (detect_result != NMO_OK) {
         load_perf_end(perf_stats, NMO_LOAD_PERF_OPEN_DETECT, open_detect_start);
-        nmo_log(logger, NMO_LOG_ERROR, "Failed to detect file compression for: %s", path);
-        return NMO_ERR_FILE_NOT_FOUND;
+        nmo_log(logger, NMO_LOG_ERROR,
+                "Failed to inspect file header for compression: %s", path);
+        return detect_result;
     }
 
     nmo_io_interface_t *io = NULL;

@@ -530,6 +530,38 @@ TEST(load_options, phased_header1_classifies_payload_failures)
                                     8));
 }
 
+TEST(load_options, load_file_preserves_header_errors)
+{
+    const char *path = "test_load_options_invalid_header.nmo";
+    FILE *file = fopen(path, "wb");
+    ASSERT_NOT_NULL(file);
+    static const uint8_t invalid_signature[8] = {
+        'N', 'o', 't', ' ', 'N', 'M', 'O', '\0'
+    };
+    ASSERT_EQ(sizeof(invalid_signature),
+              fwrite(invalid_signature, 1, sizeof(invalid_signature), file));
+    ASSERT_EQ(0, fclose(file));
+
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    ASSERT_EQ(NMO_ERR_INVALID_SIGNATURE,
+              nmo_load_file(session, path, NULL));
+
+    file = fopen(path, "wb");
+    ASSERT_NOT_NULL(file);
+    static const uint8_t truncated[] = { 'N', 'e', 'm', 'o' };
+    ASSERT_EQ(sizeof(truncated),
+              fwrite(truncated, 1, sizeof(truncated), file));
+    ASSERT_EQ(0, fclose(file));
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK,
+              nmo_load_file(session, path, NULL));
+
+    destroy_ctx_session(ctx, session);
+    ASSERT_EQ(0, remove(path));
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(load_options, metadata_profile_stops_after_header_and_rejects_mutation);
     REGISTER_TEST(load_options, partial_profile_rejects_non_empty_session);
@@ -544,6 +576,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(load_options, custom_allocator_controls_object_and_schema_storage);
     REGISTER_TEST(load_options, phased_header_parse_preserves_format_errors);
     REGISTER_TEST(load_options, phased_header1_classifies_payload_failures);
+    REGISTER_TEST(load_options, load_file_preserves_header_errors);
 TEST_MAIN_END()
 
 
