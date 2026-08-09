@@ -137,12 +137,15 @@ static nmo_status_t nmo_group_deserialize_internal(
     if (result != NMO_OK) return result;
 
     /* Seek group data identifier */
-    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_GROUPALL);
+    size_t section_dwords = 0;
+    result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_GROUPALL, &section_dwords);
     if (result != NMO_OK) {
         /* No group data - empty group is valid */
         if (result == NMO_ERR_NOT_FOUND) NMO_RETURN_OK();
         return result;
     }
+    if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
 
     /* Read object array using XObjectPointerArray::Load format
      * Reference: XObjectArray.cpp - array is stored as [count, id1, id2, ...] */

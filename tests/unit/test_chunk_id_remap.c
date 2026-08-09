@@ -9438,6 +9438,24 @@ TEST(chunk_id_remap, group_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(899u, nmo_beobject_script_array_get_id(
         &failed.base.scripts, 0));
 
+    nmo_chunk_t *missing_count = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(missing_count);
+    missing_count->class_id = NMO_CID_GROUP;
+    missing_count->data_version = 7;
+    missing_count->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(missing_count));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        missing_count, CK_STATESAVE_GROUPALL));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(missing_count, 0));
+    nmo_chunk_close(missing_count);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_group_deserialize(
+        &failed, missing_count, NULL, &deserialize_context));
+    ASSERT_EQ(1u, failed.object_ids.count);
+    ASSERT_EQ(904u, NMO_ARRAY_DATA(
+        nmo_ref_t, &failed.object_ids)[0].raw_id);
+    ASSERT_EQ(899u, nmo_beobject_script_array_get_id(
+        &failed.base.scripts, 0));
+
     nmo_chunk_t *cross_section_count = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(cross_section_count);
     cross_section_count->class_id = NMO_CID_GROUP;
