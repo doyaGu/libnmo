@@ -854,12 +854,8 @@ static nmo_status_t nmo_character_deserialize_internal(
                 uint32_t count = 0;
                 result = nmo_chunk_read_dword(chunk, &count);
                 if (result != NMO_OK) goto fail;
-                if (count > 10000u) {
-                    result = NMO_ERR_INVALID_FORMAT;
-                    goto fail;
-                }
-                if ((size_t)count * 2u >
-                    nmo_character_identifier_remaining_dwords(chunk)) {
+                if ((size_t)count >
+                    nmo_character_identifier_remaining_dwords(chunk) / 2u) {
                     result = NMO_ERR_TRUNCATED_CHUNK;
                     goto fail;
                 }

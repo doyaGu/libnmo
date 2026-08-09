@@ -8891,6 +8891,32 @@ TEST(chunk_id_remap, character_rejects_cross_section_counts_before_allocation) {
     ASSERT_EQ(0u, state.body_parts.count);
     state.body_parts.allocator = body_allocator;
 
+    nmo_chunk_t *large_runtime_parts = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(large_runtime_parts);
+    large_runtime_parts->class_id = NMO_CID_CHARACTER;
+    large_runtime_parts->data_version = 4;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(large_runtime_parts));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        large_runtime_parts, CK_STATESAVE_CHARACTERSAVEPARTS));
+    const uint32_t large_count = 10001u;
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        large_runtime_parts, large_count));
+    for (uint32_t i = 0; i < large_count; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_object_id(
+            large_runtime_parts, (nmo_object_id_t)(i + 1u)));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_sub_chunk(
+            large_runtime_parts, NULL));
+    }
+    nmo_chunk_close(large_runtime_parts);
+    ASSERT_EQ(NMO_OK, nmo_character_deserialize(
+        &state, large_runtime_parts, NULL, &runtime_context));
+    ASSERT_EQ((size_t)large_count, state.body_parts.count);
+    const nmo_character_part_t *large_parts = NMO_ARRAY_DATA(
+        nmo_character_part_t, &state.body_parts);
+    ASSERT_EQ(1u, large_parts[0].ref.raw_id);
+    ASSERT_EQ(large_count, large_parts[large_count - 1u].ref.raw_id);
+    ASSERT_NULL(large_parts[large_count - 1u].chunk);
+
     nmo_character_vtable.destroy(&state, NULL, NULL);
     nmo_arena_destroy(arena);
 }
