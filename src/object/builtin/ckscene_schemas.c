@@ -35,6 +35,28 @@
 #include <stdalign.h>
 #include <string.h>
 
+static void nmo_scene_object_desc_dispose(void *element, void *user_data)
+{
+    (void)user_data;
+    nmo_scene_object_desc_t *desc = (nmo_scene_object_desc_t *)element;
+    if (desc == NULL) return;
+    if (desc->initial_value != NULL) {
+        nmo_chunk_destroy(desc->initial_value);
+        desc->initial_value = NULL;
+    }
+    if (desc->reserved != NULL) {
+        nmo_chunk_destroy(desc->reserved);
+        desc->reserved = NULL;
+    }
+}
+
+static void nmo_scene_object_descs_set_lifecycle(nmo_array_t *descs)
+{
+    nmo_container_lifecycle_t lifecycle = NMO_CONTAINER_LIFECYCLE_INIT;
+    lifecycle.dispose = nmo_scene_object_desc_dispose;
+    nmo_array_set_lifecycle(descs, &lifecycle);
+}
+
 static void nmo_scene_dispose_state_arrays(nmo_scene_state_t *state);
 
 NMO_DEFINE_OBJECT_LIFECYCLE(
@@ -50,16 +72,15 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
             nmo_scene_dispose_state_arrays(state);
             return result;
         }
+        nmo_scene_object_descs_set_lifecycle(&state->object_descs);
     } while (0),
     nmo_scene_dispose_state_arrays(state))
 
 static void nmo_scene_dispose_state_arrays(nmo_scene_state_t *state)
 {
     if (state == NULL) return;
-    nmo_array_dispose(&state->base.scripts);
-    nmo_array_dispose(&state->base.attributes);
-    nmo_array_dispose(&state->base.legacy_attributes);
     nmo_array_dispose(&state->object_descs);
+    nmo_beobject_vtable.destroy(&state->base, NULL, NULL);
 }
 
 /* =============================================================================
@@ -149,6 +170,7 @@ static nmo_status_t nmo_scene_read_new_data(
         &decoded, sizeof(nmo_scene_object_desc_t),
         (size_t)desc_count, allocator);
     if (result != NMO_OK) return result;
+    nmo_scene_object_descs_set_lifecycle(&decoded);
 
     nmo_scene_object_desc_t *descs = NULL;
     result = nmo_array_extend(
@@ -358,6 +380,7 @@ nmo_status_t nmo_scene_deserialize(
     nmo_status_t result = nmo_array_init(
         &decoded.object_descs, sizeof(nmo_scene_object_desc_t), 0, allocator);
     if (result != NMO_OK) return result;
+    nmo_scene_object_descs_set_lifecycle(&decoded.object_descs);
     result = nmo_scene_deserialize_internal(
         &decoded, chunk, type, context);
     if (result != NMO_OK) {
@@ -534,51 +557,74 @@ static nmo_status_t nmo_scene_copy(
     const nmo_type_descriptor_t *type,
     nmo_arena_t *arena)
 {
+    (void)type;
     const nmo_scene_state_t *s = src;
     nmo_scene_state_t *d = dst;
-    NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
-    if (d->base.scripts.data == s->base.scripts.data) {
-        memset(&d->base.scripts, 0, sizeof(d->base.scripts));
-    } else {
-        nmo_array_dispose(&d->base.scripts);
+    if (s == NULL || d == NULL || arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
     }
-    if (s->base.scripts.element_size == 0) {
-        NMO_RETURN_IF_ERROR(nmo_array_init(
-            &d->base.scripts, sizeof(nmo_ref_t), 0, NULL));
-    } else {
-        NMO_RETURN_IF_ERROR(nmo_array_clone(
-            &s->base.scripts, &d->base.scripts,
-            &s->base.scripts.allocator));
-    }
-    NMO_RETURN_IF_ERROR(nmo_beobject_clone_attributes(
-        arena, &d->base.attributes, &s->base.attributes));
-    NMO_RETURN_IF_ERROR(nmo_beobject_clone_legacy_attributes(
-        arena, &d->base.legacy_attributes, &s->base.legacy_attributes));
+    NMO_RETURN_IF_ERROR(nmo_scene_validate(s, NULL, NULL));
 
-    if (d->object_descs.data == s->object_descs.data) {
-        memset(&d->object_descs, 0, sizeof(d->object_descs));
-    } else {
-        nmo_array_dispose(&d->object_descs);
-    }
-    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->object_descs, &d->object_descs,
-                                        &s->object_descs.allocator));
-    if (s->object_descs.count > 0) {
-        const nmo_scene_object_desc_t *src_descs = NMO_ARRAY_DATA(nmo_scene_object_desc_t,
-                                                                  &s->object_descs);
-        nmo_scene_object_desc_t *dst_descs = NMO_ARRAY_DATA(nmo_scene_object_desc_t,
-                                                            &d->object_descs);
-        for (uint32_t i = 0; i < s->object_descs.count; ++i) {
-            nmo_chunk_t *clone = NULL;
-            NMO_RETURN_IF_ERROR(nmo_object_copy_chunk(arena, &clone, src_descs[i].initial_value));
-            dst_descs[i].initial_value = clone;
-            clone = NULL;
-            NMO_RETURN_IF_ERROR(nmo_object_copy_chunk(
-                arena, &clone, src_descs[i].reserved));
-            dst_descs[i].reserved = clone;
-        }
+    nmo_scene_state_t copied;
+    nmo_status_t result = nmo_scene_create(&copied, NULL, NULL);
+    if (result != NMO_OK) return result;
+    result = nmo_beobject_vtable.copy(
+        &s->base, &copied.base, NULL, arena);
+    if (result != NMO_OK) goto fail;
+
+    copied.level = s->level;
+    copied.environment_settings = s->environment_settings;
+    copied.background_color = s->background_color;
+    copied.ambient_light_color = s->ambient_light_color;
+    copied.fog_mode = s->fog_mode;
+    copied.fog_color = s->fog_color;
+    copied.fog_start = s->fog_start;
+    copied.fog_end = s->fog_end;
+    copied.fog_density = s->fog_density;
+    copied.background_texture = s->background_texture;
+    copied.starting_camera = s->starting_camera;
+
+    nmo_array_dispose(&copied.object_descs);
+    result = nmo_array_init(
+        &copied.object_descs, sizeof(nmo_scene_object_desc_t),
+        s->object_descs.count, &s->object_descs.allocator);
+    if (result != NMO_OK) goto fail;
+    nmo_scene_object_descs_set_lifecycle(&copied.object_descs);
+    nmo_scene_object_desc_t *dst_descs = NULL;
+    result = nmo_array_extend(
+        &copied.object_descs, s->object_descs.count, (void **)&dst_descs);
+    if (result != NMO_OK) goto fail;
+    const nmo_scene_object_desc_t *src_descs = NMO_ARRAY_DATA(
+        nmo_scene_object_desc_t, &s->object_descs);
+    for (size_t i = 0; i < s->object_descs.count; ++i) {
+        dst_descs[i].ref = src_descs[i].ref;
+        dst_descs[i].flags = src_descs[i].flags;
+        result = nmo_object_copy_chunk(
+            arena, &dst_descs[i].initial_value, src_descs[i].initial_value);
+        if (result != NMO_OK) goto fail;
+        result = nmo_object_copy_chunk(
+            arena, &dst_descs[i].reserved, src_descs[i].reserved);
+        if (result != NMO_OK) goto fail;
     }
 
-    NMO_RETURN_OK();
+#define NMO_SCENE_DETACH_SHARED_ARRAY(field) \
+    do { \
+        if (d->field.data == s->field.data) { \
+            memset(&d->field, 0, sizeof(d->field)); \
+        } \
+    } while (0)
+    NMO_SCENE_DETACH_SHARED_ARRAY(base.scripts);
+    NMO_SCENE_DETACH_SHARED_ARRAY(base.attributes);
+    NMO_SCENE_DETACH_SHARED_ARRAY(base.legacy_attributes);
+    NMO_SCENE_DETACH_SHARED_ARRAY(object_descs);
+#undef NMO_SCENE_DETACH_SHARED_ARRAY
+    nmo_scene_destroy(d, NULL, NULL);
+    *d = copied;
+    return NMO_OK;
+
+fail:
+    nmo_scene_destroy(&copied, NULL, NULL);
+    return result;
 }
 
 static nmo_status_t nmo_scene_validate(

@@ -7061,6 +7061,31 @@ TEST(chunk_id_remap, scene_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(nmo_scene_vtable.hash(&reloaded),
               nmo_scene_vtable.hash(&copied));
 
+    nmo_scene_state_t copy_failed;
+    ASSERT_EQ(NMO_OK, nmo_scene_vtable.create(
+        &copy_failed, NULL, NULL));
+    copy_failed.base.priority = 77;
+    copy_failed.level = nmo_ref_from_raw(961);
+    nmo_scene_object_desc_t copy_old_desc = {
+        .ref = nmo_ref_from_raw(962),
+    };
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &copy_failed.object_descs, &copy_old_desc));
+    void *copy_old_descs = copy_failed.object_descs.data;
+    nmo_allocator_t source_allocator = reloaded.object_descs.allocator;
+    reloaded.object_descs.allocator = nmo_allocator_custom(
+        beobject_fail_alloc, beobject_fail_free, NULL);
+    ASSERT_EQ(NMO_ERR_NOMEM, nmo_scene_vtable.copy(
+        &reloaded, &copy_failed, &scene_type, arena));
+    reloaded.object_descs.allocator = source_allocator;
+    ASSERT_EQ(77, copy_failed.base.priority);
+    ASSERT_EQ(961u, copy_failed.level.raw_id);
+    ASSERT_EQ(copy_old_descs, copy_failed.object_descs.data);
+    ASSERT_EQ(1u, copy_failed.object_descs.count);
+    ASSERT_EQ(962u, NMO_ARRAY_DATA(
+        nmo_scene_object_desc_t,
+        &copy_failed.object_descs)[0].ref.raw_id);
+
     nmo_chunk_t *truncated_descs = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(truncated_descs);
     truncated_descs->class_id = NMO_CID_SCENE;
@@ -7083,8 +7108,6 @@ TEST(chunk_id_remap, scene_refs_round_trip_and_failure_is_atomic) {
 
     nmo_scene_state_t failed_descs;
     ASSERT_EQ(NMO_OK, nmo_scene_vtable.create(&failed_descs, NULL, NULL));
-    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(
-        &failed_descs.base, NULL, NULL));
     ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
         &failed_descs.base.scripts, 899));
     failed_descs.level = nmo_ref_from_raw(950);
@@ -7189,9 +7212,7 @@ TEST(chunk_id_remap, scene_refs_round_trip_and_failure_is_atomic) {
     nmo_scene_vtable.destroy(&loaded, NULL, NULL);
     nmo_scene_vtable.destroy(&reloaded, NULL, NULL);
     nmo_scene_vtable.destroy(&copied, NULL, NULL);
-    nmo_array_dispose(&failed_descs.base.scripts);
-    nmo_array_dispose(&failed_descs.base.attributes);
-    nmo_array_dispose(&failed_descs.base.legacy_attributes);
+    nmo_scene_vtable.destroy(&copy_failed, NULL, NULL);
     nmo_scene_vtable.destroy(&failed_descs, NULL, NULL);
     nmo_scene_vtable.destroy(&failed_render, NULL, NULL);
     nmo_scene_vtable.destroy(&invalid, NULL, NULL);
