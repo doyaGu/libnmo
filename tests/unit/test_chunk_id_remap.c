@@ -14960,6 +14960,85 @@ TEST(chunk_id_remap, bodypart_rotation_joint_round_trips_without_size_prefix) {
     ASSERT_FLOAT_EQ(2.0f, loaded.rotation_joint.max.y, 0.0001f);
     ASSERT_FLOAT_EQ(0.75f, loaded.rotation_joint.damping.z, 0.0001f);
 
+    nmo_bodypart_state_t legacy;
+    nmo_bodypart_state_t legacy_loaded;
+    nmo_bodypart_state_t legacy_reloaded;
+    ASSERT_EQ(NMO_OK, nmo_bodypart_vtable.create(&legacy, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_bodypart_vtable.create(
+        &legacy_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_bodypart_vtable.create(
+        &legacy_reloaded, NULL, NULL));
+    legacy.base.entity.entity_flags |= CK_3DENTITY_IKJOINTVALID;
+    legacy.has_character = 1;
+    legacy.character = nmo_ref_from_raw(702);
+    legacy.has_rotation_joint = 1;
+    legacy.rotation_joint.flags = 0x421u;
+    legacy.rotation_joint.min = (nmo_vector_t){-4.0f, -5.0f, -6.0f};
+    legacy.rotation_joint.max = (nmo_vector_t){4.0f, 5.0f, 6.0f};
+    legacy.rotation_joint.damping =
+        (nmo_vector_t){0.125f, 0.25f, 0.5f};
+
+    nmo_chunk_t *legacy_chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(legacy_chunk);
+    legacy_chunk->class_id = NMO_CID_BODYPART;
+    legacy_chunk->data_version = 4;
+    legacy_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_bodypart_serialize(
+        &legacy, legacy_chunk, NULL, &serialize_context));
+    nmo_chunk_close(legacy_chunk);
+    size_t section_dwords = 0u;
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        legacy_chunk, CK_STATESAVE_BODYPARTROTJOINT,
+        &section_dwords));
+    ASSERT_EQ(18u, section_dwords);
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        legacy_chunk, CK_STATESAVE_BODYPARTCHARACTER,
+        &section_dwords));
+    ASSERT_EQ(1u, section_dwords);
+    ASSERT_EQ(NMO_OK, nmo_bodypart_deserialize(
+        &legacy_loaded, legacy_chunk, NULL, &deserialize_context));
+    ASSERT_TRUE(legacy_loaded.has_character);
+    ASSERT_EQ(702u, legacy_loaded.character.raw_id);
+    ASSERT_TRUE(legacy_loaded.has_rotation_joint);
+    ASSERT_EQ(legacy.rotation_joint.flags,
+              legacy_loaded.rotation_joint.flags);
+    ASSERT_EQ(legacy.rotation_joint.min.x,
+              legacy_loaded.rotation_joint.min.x);
+    ASSERT_EQ(legacy.rotation_joint.max.y,
+              legacy_loaded.rotation_joint.max.y);
+    ASSERT_EQ(legacy.rotation_joint.damping.z,
+              legacy_loaded.rotation_joint.damping.z);
+
+    nmo_chunk_t *legacy_roundtrip = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(legacy_roundtrip);
+    legacy_roundtrip->class_id = NMO_CID_BODYPART;
+    legacy_roundtrip->data_version = 4;
+    legacy_roundtrip->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_bodypart_serialize(
+        &legacy_loaded, legacy_roundtrip, NULL, &serialize_context));
+    nmo_chunk_close(legacy_roundtrip);
+    ASSERT_EQ(NMO_OK, nmo_bodypart_deserialize(
+        &legacy_reloaded, legacy_roundtrip, NULL,
+        &deserialize_context));
+    ASSERT_EQ(0x421u, legacy_reloaded.rotation_joint.flags);
+
+    nmo_chunk_t *preserved = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(preserved);
+    preserved->class_id = NMO_CID_BODYPART;
+    preserved->data_version = 4;
+    preserved->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(preserved));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(preserved, 0xAABBCCDDu));
+    nmo_chunk_close(preserved);
+    legacy.rotation_joint.flags = 0x800u;
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_bodypart_serialize(
+        &legacy, preserved, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(preserved));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(preserved));
+    uint32_t marker = 0u;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(preserved, &marker));
+    ASSERT_EQ(0xAABBCCDDu, marker);
+
     static const struct {
         uint32_t identifier;
         uint32_t data_version;
@@ -15016,6 +15095,9 @@ TEST(chunk_id_remap, bodypart_rotation_joint_round_trips_without_size_prefix) {
 
     nmo_bodypart_vtable.destroy(&loaded, NULL, NULL);
     nmo_bodypart_vtable.destroy(&source, NULL, NULL);
+    nmo_bodypart_vtable.destroy(&legacy, NULL, NULL);
+    nmo_bodypart_vtable.destroy(&legacy_loaded, NULL, NULL);
+    nmo_bodypart_vtable.destroy(&legacy_reloaded, NULL, NULL);
     nmo_arena_destroy(arena);
 }
 

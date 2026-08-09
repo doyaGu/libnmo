@@ -1342,17 +1342,62 @@ static nmo_status_t nmo_bodypart_serialize_internal(
         NMO_RETURN_OK();
     }
 
-    {
-        nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_BODYPARTCHARACTER);
-        if (result != NMO_OK) return result;
-        result = nmo_ref_write(out_chunk, &in_state->character);
-        if (result != NMO_OK) return result;
+    if (!in_state->has_character &&
+        nmo_ref_serialized_id(&in_state->character) != NMO_OBJECT_ID_NONE) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
 
-        if ((in_state->base.entity.entity_flags & CK_3DENTITY_IKJOINTVALID) != 0) {
-            result = nmo_chunk_write_buffer_no_size(out_chunk,
-                                                    &in_state->rotation_joint,
-                                                    sizeof(nmo_ik_joint_t));
-            if (result != NMO_OK) return result;
+    if (nmo_chunk_get_data_version(out_chunk) < 5u) {
+        if (in_state->has_rotation_joint) {
+            const uint32_t legacy_flags_mask = 0x00000777u;
+            if ((in_state->rotation_joint.flags & ~legacy_flags_mask) != 0u) {
+                return NMO_ERR_VALIDATION_FAILED;
+            }
+            nmo_vector_t vectors[6] = {0};
+            for (size_t i = 0; i < 3u; ++i) {
+                if ((in_state->rotation_joint.flags & (1u << i)) != 0u) {
+                    (&vectors[0].x)[i] = 1.0f;
+                }
+                if ((in_state->rotation_joint.flags & (16u << i)) != 0u) {
+                    (&vectors[1].x)[i] = 1.0f;
+                }
+                if ((in_state->rotation_joint.flags & (256u << i)) != 0u) {
+                    (&vectors[2].x)[i] = 1.0f;
+                }
+            }
+            vectors[3] = in_state->rotation_joint.min;
+            vectors[4] = in_state->rotation_joint.max;
+            vectors[5] = in_state->rotation_joint.damping;
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(
+                out_chunk, CK_STATESAVE_BODYPARTROTJOINT));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_buffer_no_size(
+                out_chunk, vectors, sizeof(vectors)));
+        }
+        if (in_state->has_character) {
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(
+                out_chunk, CK_STATESAVE_BODYPARTCHARACTER));
+            NMO_RETURN_IF_ERROR(nmo_ref_write(
+                out_chunk, &in_state->character));
+        }
+        return NMO_OK;
+    }
+
+    const bool joint_in_section =
+        (in_state->base.entity.entity_flags &
+         CK_3DENTITY_IKJOINTVALID) != 0u;
+    if ((in_state->has_rotation_joint && !in_state->has_character) ||
+        (in_state->has_character &&
+         ((in_state->has_rotation_joint != 0u) != joint_in_section))) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    if (in_state->has_character) {
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(
+            out_chunk, CK_STATESAVE_BODYPARTCHARACTER));
+        NMO_RETURN_IF_ERROR(nmo_ref_write(out_chunk, &in_state->character));
+        if (joint_in_section) {
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_buffer_no_size(
+                out_chunk, &in_state->rotation_joint,
+                sizeof(nmo_ik_joint_t)));
         }
     }
 
