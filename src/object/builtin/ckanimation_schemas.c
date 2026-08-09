@@ -87,6 +87,7 @@ static const nmo_type_field_t nmo_animation_fields[] = {
                     sizeof(nmo_sceneobject_state_t), CKPGUID_SCENEOBJECT,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_animation_state_t, has_data, CKPGUID_UINT8),
+    NMO_FIELD(nmo_animation_state_t, data_is_legacy, CKPGUID_UINT8),
     NMO_FIELD(nmo_animation_state_t, flags, CKPGUID_UINT32),
     NMO_FIELD(nmo_animation_state_t, frame_rate, CKPGUID_FLOAT),
     NMO_FIELD(nmo_animation_state_t, has_length, CKPGUID_UINT8),
@@ -286,6 +287,11 @@ static nmo_status_t nmo_animation_validate(
         state->legacy_body_parts, state->legacy_body_part_count,
         "legacy_body_parts");
     if (state->legacy_body_part_count > (uint32_t)INT32_MAX) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    if (state->data_is_legacy &&
+        (state->flags & ~(CKANIMATION_LINKTOFRAMERATE |
+                          CKANIMATION_CANBEBREAK)) != 0u) {
         return NMO_ERR_VALIDATION_FAILED;
     }
     return nmo_sceneobject_vtable.validate(&state->base, NULL, context);
@@ -760,6 +766,7 @@ static bool nmo_animation_equals(const void *a, const void *b)
         nmo_animation_validate(rhs, NULL, NULL) != NMO_OK ||
         !nmo_sceneobject_vtable.equals(&lhs->base, &rhs->base) ||
         lhs->has_data != rhs->has_data ||
+        lhs->data_is_legacy != rhs->data_is_legacy ||
         lhs->flags != rhs->flags ||
         !nmo_animation_float_equals(lhs->frame_rate, rhs->frame_rate) ||
         lhs->has_length != rhs->has_length ||
@@ -817,6 +824,7 @@ static uint32_t nmo_animation_hash(const void *instance)
     hash = nmo_animation_hash_bytes( \
         hash, &state->field, sizeof(state->field))
     NMO_ANIMATION_HASH_FIELD(has_data);
+    NMO_ANIMATION_HASH_FIELD(data_is_legacy);
     NMO_ANIMATION_HASH_FIELD(flags);
     NMO_ANIMATION_HASH_FIELD(frame_rate);
     NMO_ANIMATION_HASH_FIELD(has_length);
@@ -1901,6 +1909,7 @@ static nmo_status_t nmo_animation_deserialize_internal(
     }
 
     out_state->has_data = 0;
+    out_state->data_is_legacy = 0;
     out_state->flags = CKANIMATION_LINKTOFRAMERATE | CKANIMATION_CANBEBREAK;
     out_state->frame_rate = 30.0f;
     out_state->has_length = 0;
@@ -1932,6 +1941,7 @@ static nmo_status_t nmo_animation_deserialize_internal(
                              "Unsupported animation data layout");
         }
         if (remaining_dwords == 3u) {
+            out_state->data_is_legacy = 1;
             int32_t can_interrupt = 0;
             int32_t linked_to_framerate = 0;
             float frame_rate = 0.0f;
@@ -2076,8 +2086,19 @@ static nmo_status_t nmo_animation_serialize_internal(
     if (is_file || (save_flags & CK_STATESAVE_ANIMATIONDATA) != 0) {
         nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_ANIMATIONDATA);
         if (result != NMO_OK) return result;
-        result = nmo_chunk_write_dword(out_chunk, in_state->flags);
-        if (result != NMO_OK) return result;
+        if (in_state->data_is_legacy) {
+            result = nmo_chunk_write_int(
+                out_chunk,
+                (in_state->flags & CKANIMATION_CANBEBREAK) != 0u);
+            if (result != NMO_OK) return result;
+            result = nmo_chunk_write_int(
+                out_chunk,
+                (in_state->flags & CKANIMATION_LINKTOFRAMERATE) != 0u);
+            if (result != NMO_OK) return result;
+        } else {
+            result = nmo_chunk_write_dword(out_chunk, in_state->flags);
+            if (result != NMO_OK) return result;
+        }
         result = nmo_chunk_write_float(out_chunk, in_state->frame_rate);
         if (result != NMO_OK) return result;
     }

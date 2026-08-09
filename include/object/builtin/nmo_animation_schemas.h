@@ -31,6 +31,7 @@ typedef struct nmo_animation_state {
     nmo_sceneobject_state_t base;
 
     uint8_t has_data;
+    uint8_t data_is_legacy;
     uint32_t flags;
     float frame_rate;
 
