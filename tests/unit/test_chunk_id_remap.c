@@ -4586,6 +4586,30 @@ TEST(chunk_id_remap, parameteroperation_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(902u, failed.in2.ref.raw_id);
     ASSERT_EQ(903u, failed.out.ref.raw_id);
 
+    nmo_chunk_t *trailing_sequence = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(trailing_sequence);
+    trailing_sequence->class_id = NMO_CID_PARAMETEROPERATION;
+    trailing_sequence->data_version = 8;
+    trailing_sequence->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(trailing_sequence));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        trailing_sequence, CK_STATESAVE_OPERATIONNEWDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_guid(
+        trailing_sequence, (nmo_guid_t){1u, 2u}));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(
+        trailing_sequence, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        trailing_sequence, 0x12345678u));
+    nmo_chunk_close(trailing_sequence);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_parameteroperation_deserialize(
+        &failed, trailing_sequence, NULL, &deserialize_context));
+    ASSERT_EQ(NMO_CKOBJECT_HIERARCHICAL, failed.base.visibility_flags);
+    ASSERT_EQ(3u, failed.operation_guid.d1);
+    ASSERT_EQ(4u, failed.operation_guid.d2);
+    ASSERT_EQ(901u, failed.in1.ref.raw_id);
+    ASSERT_EQ(902u, failed.in2.ref.raw_id);
+    ASSERT_EQ(903u, failed.out.ref.raw_id);
+
     nmo_parameteroperation_state_t invalid = source;
     invalid.out.ref = nmo_ref_from_id(999);
     nmo_chunk_t *target = nmo_chunk_create(arena);
@@ -4618,7 +4642,7 @@ TEST(chunk_id_remap, parameteroperation_refs_round_trip_and_failure_is_atomic) {
 }
 
 TEST(chunk_id_remap, parameteroperation_legacy_sections_are_atomic) {
-    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
     ASSERT_NOT_NULL(arena);
     nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
         arena, NULL, NMO_SERIALIZE_FLAG_NONE,
@@ -4780,6 +4804,74 @@ TEST(chunk_id_remap, parameteroperation_legacy_sections_are_atomic) {
         &legacy_file_reloaded, legacy_file_saved, NULL, NULL));
     ASSERT_TRUE(nmo_parameteroperation_vtable.equals(
         &legacy_file_loaded, &legacy_file_reloaded));
+
+    const struct {
+        uint32_t identifier;
+        size_t payload_dwords;
+    } file_trailing_cases[] = {
+        {CK_STATESAVE_OPERATIONOP, 2u},
+        {CK_STATESAVE_OPERATIONDEFAULTDATA, 1u},
+        {CK_STATESAVE_OPERATIONOUTPUT, 1u},
+        {CK_STATESAVE_OPERATIONINPUTS, 2u},
+    };
+    for (size_t i = 0;
+         i < sizeof(file_trailing_cases) / sizeof(file_trailing_cases[0]);
+         ++i) {
+        nmo_chunk_t *trailing = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(trailing);
+        trailing->class_id = NMO_CID_PARAMETEROPERATION;
+        trailing->data_version = 8;
+        trailing->chunk_options |= NMO_CHUNK_OPTION_FILE;
+        ASSERT_EQ(NMO_OK, nmo_chunk_start_write(trailing));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+            trailing, file_trailing_cases[i].identifier));
+        for (size_t j = 0; j < file_trailing_cases[i].payload_dwords; ++j) {
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing, 0));
+        }
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing, 0x12345678u));
+        nmo_chunk_close(trailing);
+        ASSERT_EQ(NMO_ERR_INVALID_FORMAT,
+                  nmo_parameteroperation_deserialize(
+                      &legacy_file_loaded, trailing, NULL, NULL));
+        ASSERT_EQ(820u, legacy_file_loaded.owner.raw_id);
+        ASSERT_EQ(821u, legacy_file_loaded.in1.ref.raw_id);
+        ASSERT_EQ(822u, legacy_file_loaded.in2.ref.raw_id);
+        ASSERT_EQ(823u, legacy_file_loaded.out.ref.raw_id);
+    }
+
+    const struct {
+        uint32_t identifier;
+        size_t payload_dwords;
+    } nonfile_trailing_cases[] = {
+        {CK_STATESAVE_OPERATIONOP, 2u},
+        {CK_STATESAVE_OPERATIONDEFAULTDATA, 1u},
+        {CK_STATESAVE_OPERATIONOUTPUT, 2u},
+        {CK_STATESAVE_OPERATIONINPUTS, 4u},
+    };
+    for (size_t i = 0;
+         i < sizeof(nonfile_trailing_cases) /
+             sizeof(nonfile_trailing_cases[0]);
+         ++i) {
+        nmo_chunk_t *trailing = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(trailing);
+        trailing->class_id = NMO_CID_PARAMETEROPERATION;
+        trailing->data_version = 8;
+        ASSERT_EQ(NMO_OK, nmo_chunk_start_write(trailing));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+            trailing, nonfile_trailing_cases[i].identifier));
+        for (size_t j = 0; j < nonfile_trailing_cases[i].payload_dwords; ++j) {
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing, 0));
+        }
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing, 0x12345678u));
+        nmo_chunk_close(trailing);
+        ASSERT_EQ(NMO_ERR_INVALID_FORMAT,
+                  nmo_parameteroperation_deserialize(
+                      &loaded, trailing, NULL, NULL));
+        ASSERT_EQ(720u, loaded.owner.raw_id);
+        ASSERT_EQ(911u, loaded.in1.ref.raw_id);
+        ASSERT_EQ(912u, loaded.in2.ref.raw_id);
+        ASSERT_EQ(723u, loaded.out.ref.raw_id);
+    }
 
     nmo_chunk_t *empty_file = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(empty_file);

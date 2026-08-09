@@ -207,6 +207,9 @@ static nmo_status_t nmo_parameteroperation_deserialize_internal(
             if (nmo_chunk_get_position(chunk) > section_end) {
                 return NMO_ERR_TRUNCATED_CHUNK;
             }
+            if (nmo_chunk_get_position(chunk) < section_end) {
+                return NMO_ERR_INVALID_FORMAT;
+            }
             goto commit;
         }
         if (result != NMO_ERR_NOT_FOUND) return result;
@@ -215,6 +218,7 @@ static nmo_status_t nmo_parameteroperation_deserialize_internal(
             chunk, CK_STATESAVE_OPERATIONOP, &section_dwords);
         if (result == NMO_OK) {
             if (section_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
+            if (section_dwords > 2u) return NMO_ERR_INVALID_FORMAT;
             decoded.has_operation = 1;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_guid(chunk, &decoded.operation_guid));
         } else if (result != NMO_ERR_NOT_FOUND) return result;
@@ -222,6 +226,7 @@ static nmo_status_t nmo_parameteroperation_deserialize_internal(
             chunk, CK_STATESAVE_OPERATIONDEFAULTDATA, &section_dwords);
         if (result == NMO_OK) {
             if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+            if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
             NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &decoded.owner));
             decoded.has_owner = 1;
         } else if (result != NMO_ERR_NOT_FOUND) return result;
@@ -229,6 +234,7 @@ static nmo_status_t nmo_parameteroperation_deserialize_internal(
             chunk, CK_STATESAVE_OPERATIONOUTPUT, &section_dwords);
         if (result == NMO_OK) {
             if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+            if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
             NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &decoded.out.ref));
             decoded.has_out = 1;
         } else if (result != NMO_ERR_NOT_FOUND) return result;
@@ -236,6 +242,7 @@ static nmo_status_t nmo_parameteroperation_deserialize_internal(
             chunk, CK_STATESAVE_OPERATIONINPUTS, &section_dwords);
         if (result == NMO_OK) {
             if (section_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
+            if (section_dwords > 2u) return NMO_ERR_INVALID_FORMAT;
             NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &decoded.in1.ref));
             NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &decoded.in2.ref));
             decoded.has_in1 = 1;
@@ -249,6 +256,7 @@ static nmo_status_t nmo_parameteroperation_deserialize_internal(
         chunk, CK_STATESAVE_OPERATIONOP, &section_dwords);
     if (result == NMO_OK) {
         if (section_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
+        if (section_dwords > 2u) return NMO_ERR_INVALID_FORMAT;
         decoded.has_operation = 1;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_guid(chunk, &decoded.operation_guid));
     } else if (result != NMO_ERR_NOT_FOUND) return result;
@@ -257,6 +265,7 @@ static nmo_status_t nmo_parameteroperation_deserialize_internal(
         chunk, CK_STATESAVE_OPERATIONDEFAULTDATA, &section_dwords);
     if (result == NMO_OK) {
         if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+        if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
         NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &decoded.owner));
         decoded.has_owner = 1;
     } else if (result != NMO_ERR_NOT_FOUND) return result;
@@ -271,6 +280,9 @@ static nmo_status_t nmo_parameteroperation_deserialize_internal(
         NMO_RETURN_IF_ERROR(nmo_chunk_read_sub_chunk(chunk, &decoded.out.chunk));
         if (nmo_chunk_get_position(chunk) > section_end) {
             return NMO_ERR_TRUNCATED_CHUNK;
+        }
+        if (nmo_chunk_get_position(chunk) < section_end) {
+            return NMO_ERR_INVALID_FORMAT;
         }
         decoded.has_out = 1;
     } else if (result != NMO_ERR_NOT_FOUND) return result;
@@ -287,6 +299,9 @@ static nmo_status_t nmo_parameteroperation_deserialize_internal(
         NMO_RETURN_IF_ERROR(nmo_chunk_read_sub_chunk(chunk, &decoded.in2.chunk));
         if (nmo_chunk_get_position(chunk) > section_end) {
             return NMO_ERR_TRUNCATED_CHUNK;
+        }
+        if (nmo_chunk_get_position(chunk) < section_end) {
+            return NMO_ERR_INVALID_FORMAT;
         }
         decoded.has_in1 = 1;
         decoded.has_in2 = 1;
