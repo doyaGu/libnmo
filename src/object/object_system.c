@@ -319,6 +319,13 @@ nmo_status_t nmo_object_system_deserialize_repository(
                 state, &deser_ctx, created_layers, created_count);
             object_system_clear_failed_object_state(obj);
             nmo_chunk_close(obj->chunk);
+            if (read_result == NMO_ERR_NOMEM ||
+                read_result == NMO_ERR_INTERNAL) {
+                if (out_stats != NULL) {
+                    *out_stats = stats;
+                }
+                return read_result;
+            }
             continue;
         }
 
