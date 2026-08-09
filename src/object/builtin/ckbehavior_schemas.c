@@ -1810,6 +1810,7 @@ static nmo_status_t nmo_behavior_enumerate_refs(
     (void)type;
     const nmo_behavior_state_t *state = instance;
     if (state == NULL || visitor == NULL) return NMO_OK;
+    NMO_RETURN_IF_ERROR(nmo_behavior_validate(state, NULL, NULL));
     const nmo_object_id_t owner_id = nmo_behavior_owner_id(state);
     if (owner_id != NMO_OBJECT_ID_NONE &&
         !visitor(user_data, owner_id, NMO_REF_KIND_OWNER,

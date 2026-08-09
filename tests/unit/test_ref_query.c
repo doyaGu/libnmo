@@ -10,6 +10,7 @@
 #include "object/builtin/nmo_group_schemas.h"
 #include "object/builtin/nmo_place_schemas.h"
 #include "object/builtin/nmo_scene_schemas.h"
+#include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_character_schemas.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_ref_graph.h"
@@ -496,6 +497,43 @@ TEST(ref_query, scene_enumeration_rejects_malformed_descriptors) {
     nmo_context_release(ctx);
 }
 
+TEST(ref_query, behavior_enumeration_rejects_malformed_reference_lanes) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+
+    nmo_object_id_t target_id = 0;
+    nmo_object_id_t behavior_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_GROUP, "target", NMO_NULL_GUID,
+        &target_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_BEHAVIOR, "behavior", NMO_NULL_GUID,
+        &behavior_id, NULL));
+    nmo_object_t *behavior_object =
+        nmo_object_repository_find_by_id(repo, behavior_id);
+    ASSERT_NOT_NULL(behavior_object);
+    nmo_behavior_state_t *behavior =
+        (nmo_behavior_state_t *)behavior_object->state;
+    ASSERT_NOT_NULL(behavior);
+
+    behavior->owner = nmo_ref_from_id(target_id);
+    const size_t saved_element_size = behavior->outputs.element_size;
+    behavior->outputs.element_size = 1;
+
+    direct_ref_capture_t capture = {0};
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_ref_enumerate_object(
+        nmo_context_get_type_registry(ctx), behavior_object,
+        capture_direct_ref, &capture));
+    ASSERT_EQ(0u, capture.count);
+
+    behavior->outputs.element_size = saved_element_size;
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(ref_query, legacy_beobject_attribute_reference_is_enumerated) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
@@ -587,6 +625,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(ref_query, visits_edges_without_exposing_graph_handles);
     REGISTER_TEST(ref_query, scene_base_references_are_enumerated_once);
     REGISTER_TEST(ref_query, scene_enumeration_rejects_malformed_descriptors);
+    REGISTER_TEST(ref_query, behavior_enumeration_rejects_malformed_reference_lanes);
     REGISTER_TEST(ref_query, legacy_beobject_attribute_reference_is_enumerated);
     REGISTER_TEST(ref_query, character_part_reference_is_enumerated);
 TEST_MAIN_END()
