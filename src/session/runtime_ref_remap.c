@@ -789,6 +789,22 @@ static nmo_class_id_t normalize_expected_class_for_typed_field(
         return 0;
     }
     if (type != NULL && field != NULL && field->name != NULL &&
+        nmo_guid_equals(type->guid, CKPGUID_CHARACTER)) {
+        if (strcmp(field->name, "animations") == 0 ||
+            strcmp(field->name, "anim_dest") == 0) {
+            return NMO_CID_ANIMATION;
+        }
+        if (strcmp(field->name, "active_animation") == 0) {
+            return NMO_CID_KEYEDANIMATION;
+        }
+        if (strcmp(field->name, "root_body_part") == 0) {
+            return NMO_CID_BODYPART;
+        }
+        if (strcmp(field->name, "floor_ref") == 0) {
+            return NMO_CID_3DENTITY;
+        }
+    }
+    if (type != NULL && field != NULL && field->name != NULL &&
         strcmp(field->name, "parent") == 0) {
         if (nmo_guid_equals(type->guid, CKPGUID_2DENTITY)) {
             return NMO_CID_2DENTITY;

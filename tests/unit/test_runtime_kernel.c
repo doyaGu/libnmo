@@ -3442,6 +3442,91 @@ TEST(runtime_kernel, normalize_and_safe_detach_keep_character_parts_atomic) {
     nmo_context_release(ctx);
 }
 
+TEST(runtime_kernel, normalize_enforces_character_reference_classes) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+
+    nmo_object_id_t valid_character_id = 0;
+    nmo_object_id_t invalid_character_id = 0;
+    nmo_object_id_t animation_id = 0;
+    nmo_object_id_t keyed_animation_id = 0;
+    nmo_object_id_t object_animation_id = 0;
+    nmo_object_id_t body_part_id = 0;
+    nmo_object_id_t entity_id = 0;
+    nmo_object_id_t material_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_CHARACTER, "valid-character", NMO_NULL_GUID,
+        &valid_character_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_CHARACTER, "invalid-character", NMO_NULL_GUID,
+        &invalid_character_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_ANIMATION, "animation", NMO_NULL_GUID,
+        &animation_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_KEYEDANIMATION, "keyed", NMO_NULL_GUID,
+        &keyed_animation_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_OBJECTANIMATION, "object-animation", NMO_NULL_GUID,
+        &object_animation_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_BODYPART, "body-part", NMO_NULL_GUID,
+        &body_part_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_3DENTITY, "entity", NMO_NULL_GUID,
+        &entity_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_MATERIAL, "material", NMO_NULL_GUID,
+        &material_id, NULL));
+
+    nmo_character_state_t *valid = (nmo_character_state_t *)
+        nmo_object_repository_find_by_id(repo, valid_character_id)->state;
+    nmo_character_state_t *invalid = (nmo_character_state_t *)
+        nmo_object_repository_find_by_id(repo, invalid_character_id)->state;
+    ASSERT_NOT_NULL(valid);
+    ASSERT_NOT_NULL(invalid);
+    nmo_ref_t animation_ref = nmo_ref_from_id(animation_id);
+    nmo_ref_t keyed_ref = nmo_ref_from_id(keyed_animation_id);
+    nmo_ref_t object_animation_ref = nmo_ref_from_id(object_animation_id);
+    ASSERT_EQ(NMO_OK, nmo_array_append(&valid->animations, &animation_ref));
+    ASSERT_EQ(NMO_OK, nmo_array_append(&valid->animations, &keyed_ref));
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &valid->animations, &object_animation_ref));
+    valid->active_animation = nmo_ref_from_id(keyed_animation_id);
+    valid->anim_dest = nmo_ref_from_id(animation_id);
+    valid->root_body_part = nmo_ref_from_id(body_part_id);
+    valid->floor_ref = nmo_ref_from_id(entity_id);
+
+    invalid->active_animation = nmo_ref_from_id(animation_id);
+    invalid->anim_dest = nmo_ref_from_id(object_animation_id);
+    invalid->root_body_part = nmo_ref_from_id(entity_id);
+    invalid->floor_ref = nmo_ref_from_id(material_id);
+
+    size_t changed = 0;
+    ASSERT_EQ(NMO_OK, nmo_runtime_normalize_invalid_refs(
+        repo, nmo_context_get_type_runtime(ctx), &changed));
+    ASSERT_EQ(5u, changed);
+    ASSERT_EQ(2u, valid->animations.count);
+    nmo_ref_t *animations = NMO_ARRAY_DATA(nmo_ref_t, &valid->animations);
+    ASSERT_EQ(animation_id, nmo_ref_runtime_id(&animations[0]));
+    ASSERT_EQ(keyed_animation_id, nmo_ref_runtime_id(&animations[1]));
+    ASSERT_EQ(keyed_animation_id,
+              nmo_ref_runtime_id(&valid->active_animation));
+    ASSERT_EQ(animation_id, nmo_ref_runtime_id(&valid->anim_dest));
+    ASSERT_EQ(body_part_id, nmo_ref_runtime_id(&valid->root_body_part));
+    ASSERT_EQ(entity_id, nmo_ref_runtime_id(&valid->floor_ref));
+    ASSERT_EQ(NMO_REF_NONE, invalid->active_animation.state);
+    ASSERT_EQ(NMO_REF_NONE, invalid->anim_dest.state);
+    ASSERT_EQ(NMO_REF_NONE, invalid->root_body_part.state);
+    ASSERT_EQ(NMO_REF_NONE, invalid->floor_ref.state);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(runtime_kernel, copy_remap_updates_only_resolved_mesh_refs) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
@@ -4467,6 +4552,7 @@ REGISTER_TEST(runtime_kernel, dependency_remap_preserves_nonreference_state);
 REGISTER_TEST(runtime_kernel, serializer_failure_does_not_reuse_raw_chunk);
 REGISTER_TEST(runtime_kernel, copy_remap_preserves_invalid_character_references);
 REGISTER_TEST(runtime_kernel, normalize_and_safe_detach_keep_character_parts_atomic);
+REGISTER_TEST(runtime_kernel, normalize_enforces_character_reference_classes);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_mesh_refs);
 REGISTER_TEST(runtime_kernel, normalize_and_safe_detach_keep_mesh_records_atomic);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_patchmesh_refs);
