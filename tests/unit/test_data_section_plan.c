@@ -240,6 +240,28 @@ TEST(data_section_plan, rejects_missing_legacy_id_during_build) {
     nmo_arena_destroy(arena);
 }
 
+TEST(data_section_plan, legacy_serialize_failure_preserves_output) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 1024 * 1024);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_data_section_t section = make_mixed_data_section(arena);
+    section.objects[0].object_id = 0;
+
+    uint8_t output[256];
+    uint8_t expected[256];
+    memset(output, 0xA5, sizeof(output));
+    memset(expected, 0xA5, sizeof(expected));
+    size_t bytes_written = SIZE_MAX;
+
+    ASSERT_EQ(NMO_ERR_INVALID_STATE,
+              nmo_data_section_serialize(
+                  &section, 6, output, sizeof(output), &bytes_written, arena));
+    ASSERT_EQ(0u, bytes_written);
+    ASSERT_MEM_EQ(expected, output, sizeof(output));
+
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(data_section_plan, matches_legacy_serialization);
     REGISTER_TEST(data_section_plan, rejects_short_output_buffer);
@@ -248,4 +270,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(data_section_plan, calculate_size_uses_serialized_chunks);
     REGISTER_TEST(data_section_plan, rejects_invalid_plan_before_writing);
     REGISTER_TEST(data_section_plan, rejects_missing_legacy_id_during_build);
+    REGISTER_TEST(data_section_plan, legacy_serialize_failure_preserves_output);
 TEST_MAIN_END()

@@ -306,114 +306,13 @@ nmo_status_t nmo_data_section_serialize(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                                 "Invalid arguments to nmo_data_section_serialize");
     }
-    NMO_RETURN_IF_ERROR(data_section_validate_storage(data_section));
+    nmo_data_section_plan_t plan;
+    NMO_RETURN_IF_ERROR(nmo_data_section_plan_build(
+        data_section, file_version, arena, &plan));
+    NMO_RETURN_IF_ERROR(nmo_data_section_plan_write(
+        data_section, &plan, file_version, (uint8_t *)buffer, buffer_size));
 
-    uint8_t *buf = (uint8_t *) buffer;
-    size_t pos = 0;
-
-    /* Serialize manager data */
-    if (data_section->managers != NULL) {
-        for (uint32_t i = 0; i < data_section->manager_count; i++) {
-            const nmo_manager_data_t *mgr = &data_section->managers[i];
-
-            /* Write GUID (8 bytes: d1, d2) */
-            NMO_ENSURE(pos + 8 <= buffer_size, NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR,
-                       "Buffer too small for manager GUID (index=%u)", (unsigned)i);
-            nmo_write_u32_le(buf + pos, mgr->guid.d1);
-            pos += 4;
-            nmo_write_u32_le(buf + pos, mgr->guid.d2);
-            pos += 4;
-
-            /* Serialize chunk to get its data and size */
-            const void *chunk_data = NULL;
-            void *serialized_data = NULL;
-            size_t chunk_size = 0;
-            if (mgr->chunk != NULL) {
-                /* Use raw_data if available, otherwise serialize */
-                if (mgr->chunk->raw_data != NULL && mgr->chunk->raw_size > 0) {
-                    chunk_data = mgr->chunk->raw_data;
-                    chunk_size = mgr->chunk->raw_size;
-                } else {
-                    NMO_RETURN_IF_ERROR_CTX(nmo_chunk_serialize_version1(mgr->chunk, &serialized_data, &chunk_size, arena),
-                                            "Failed to serialize manager chunk (index=%u)",
-                                            (unsigned)i);
-                    chunk_data = serialized_data;
-                }
-            }
-
-            /* Write actual data size */
-            NMO_ENSURE(pos + 4 <= buffer_size, NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR,
-                       "Buffer too small for manager data size (index=%u)", (unsigned)i);
-            NMO_ENSURE(chunk_size <= (size_t)UINT32_MAX, NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR,
-                       "Manager chunk too large to serialize (index=%u, size=%zu)",
-                       (unsigned)i, chunk_size);
-            nmo_write_u32_le(buf + pos, (uint32_t)chunk_size);
-            pos += 4;
-
-            /* Write chunk data */
-            if (chunk_size > 0) {
-                NMO_ENSURE(pos + chunk_size <= buffer_size, NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR,
-                           "Buffer too small for manager chunk data (index=%u, size=%zu)",
-                           (unsigned)i, chunk_size);
-                memcpy(buf + pos, chunk_data, chunk_size);
-                pos += chunk_size;
-            }
-        }
-    }
-
-    /* Serialize object data */
-    if (data_section->objects != NULL) {
-        for (uint32_t i = 0; i < data_section->object_count; i++) {
-            const nmo_object_data_t *obj = &data_section->objects[i];
-
-            /* For file_version < 7, write object ID */
-            if (file_version < 7) {
-                NMO_ENSURE(pos + 4 <= buffer_size, NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR,
-                           "Buffer too small for object ID (index=%u)", (unsigned)i);
-                NMO_ENSURE(obj->object_id != 0, NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
-                           "Missing object ID for legacy data section (index=%u)", (unsigned)i);
-                nmo_write_u32_le(buf + pos, obj->object_id);
-                pos += 4;
-            }
-
-            /* Serialize chunk to get its data and size */
-            const void *chunk_data = NULL;
-            void *serialized_data = NULL;
-            size_t chunk_size = 0;
-            if (obj->chunk != NULL) {
-                /* Use raw_data if available, otherwise serialize */
-                if (obj->chunk->raw_data != NULL && obj->chunk->raw_size > 0) {
-                    chunk_data = obj->chunk->raw_data;
-                    chunk_size = obj->chunk->raw_size;
-                } else {
-                    NMO_RETURN_IF_ERROR_CTX(nmo_chunk_serialize_version1(obj->chunk, &serialized_data, &chunk_size, arena),
-                                            "Failed to serialize object chunk (index=%u)",
-                                            (unsigned)i);
-                    chunk_data = serialized_data;
-                }
-            }
-
-            /* Write actual data size */
-            NMO_ENSURE(pos + 4 <= buffer_size, NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR,
-                       "Buffer too small for object data size (index=%u)", (unsigned)i);
-            NMO_ENSURE(chunk_size <= (size_t)UINT32_MAX, NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR,
-                       "Object chunk too large to serialize (index=%u, size=%zu)",
-                       (unsigned)i, chunk_size);
-            nmo_write_u32_le(buf + pos, (uint32_t)chunk_size);
-            pos += 4;
-
-            /* Write chunk data */
-            if (chunk_size > 0) {
-                NMO_ENSURE(pos + chunk_size <= buffer_size, NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR,
-                           "Buffer too small for object chunk data (index=%u, size=%zu)",
-                           (unsigned)i, chunk_size);
-                memcpy(buf + pos, chunk_data, chunk_size);
-                pos += chunk_size;
-            }
-        }
-    }
-
-    *bytes_written = pos;
+    *bytes_written = plan.total_size;
     NMO_RETURN_OK();
 }
 
