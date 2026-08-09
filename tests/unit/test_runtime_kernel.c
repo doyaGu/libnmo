@@ -49,6 +49,18 @@
 #include "core/nmo_allocator.h"
 #include "type/nmo_type_system.h"
 #include "type/nmo_type_runtime.h"
+#include "type/nmo_reflection.h"
+
+typedef struct normalize_custom_ref_state {
+    nmo_ref_t target;
+} normalize_custom_ref_state_t;
+
+static const nmo_guid_t normalize_custom_ref_guid =
+    {0x6E6D6F31u, 0x72656631u};
+
+static const nmo_type_field_t normalize_custom_ref_fields[] = {
+    NMO_FIELD_REF_VALUE(normalize_custom_ref_state_t, target),
+};
 
 static int test_id_lookup(void *ctx, nmo_object_id_t file_index,
                           nmo_object_id_t *out_id) {
@@ -2141,6 +2153,62 @@ TEST(runtime_kernel, normalize_preserves_explicitly_typed_reference_targets) {
             nmo_beobject_attribute_t, &group->base.attributes)[0].parameter));
     ASSERT_EQ(NMO_REF_RESOLVED, operation->in1.ref.state);
     ASSERT_EQ(parameter_in_id, operation->in1.ref.id);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
+TEST(runtime_kernel, normalize_does_not_infer_plugin_reference_classes) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_type_registry_t *types = nmo_context_get_type_registry(ctx);
+    ASSERT_NOT_NULL(types);
+    ASSERT_EQ(NMO_OK, nmo_type_registry_begin_update(types));
+    nmo_type_descriptor_t descriptor = {
+        .guid = normalize_custom_ref_guid,
+        .id = NMO_TYPE_ID_INVALID,
+        .class_id = 0,
+        .category = NMO_TYPE_CATEGORY_STRUCT,
+        .name = "NormalizeCustomRef",
+        .base_type = NMO_NULL_GUID,
+        .base_type_id = NMO_TYPE_ID_INVALID,
+        .size = (uint32_t)sizeof(normalize_custom_ref_state_t),
+        .alignment = (uint32_t)_Alignof(normalize_custom_ref_state_t),
+        .fields = normalize_custom_ref_fields,
+        .field_count = sizeof(normalize_custom_ref_fields) /
+                       sizeof(normalize_custom_ref_fields[0]),
+        .specialized_index = NMO_SPECIALIZED_INDEX_INVALID,
+        .valid = true,
+    };
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(types, &descriptor));
+    ASSERT_EQ(NMO_OK, nmo_type_registry_finalize(types));
+
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_object_id_t material_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_MATERIAL, "material", NMO_NULL_GUID,
+        &material_id, NULL));
+
+    nmo_object_t *object = nmo_object_create(NULL, NMO_OBJECT_ID_NONE, 0);
+    ASSERT_NOT_NULL(object);
+    ASSERT_EQ(NMO_OK, nmo_object_set_type_guid(
+        object, normalize_custom_ref_guid));
+    ASSERT_EQ(NMO_OK, nmo_object_alloc_state(
+        object, (uint32_t)sizeof(normalize_custom_ref_state_t)));
+    normalize_custom_ref_state_t *state =
+        (normalize_custom_ref_state_t *)nmo_object_get_state(object);
+    ASSERT_NOT_NULL(state);
+    state->target = nmo_ref_from_id(material_id);
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &object));
+    ASSERT_NULL(object);
+
+    size_t changed = 0;
+    ASSERT_EQ(NMO_OK, nmo_runtime_normalize_invalid_refs(
+        repo, nmo_context_get_type_runtime(ctx), &changed));
+    ASSERT_EQ(0u, changed);
+    ASSERT_EQ(material_id, nmo_ref_runtime_id(&state->target));
 
     nmo_session_destroy(session);
     nmo_context_release(ctx);
@@ -4677,6 +4745,7 @@ REGISTER_TEST(runtime_kernel, beobject_normalize_validates_attributes_before_mut
 REGISTER_TEST(runtime_kernel, normalize_reports_malformed_ref_arrays_before_mutation);
 REGISTER_TEST(runtime_kernel, normalize_clears_raw_scalar_class_mismatch);
 REGISTER_TEST(runtime_kernel, normalize_preserves_explicitly_typed_reference_targets);
+REGISTER_TEST(runtime_kernel, normalize_does_not_infer_plugin_reference_classes);
 REGISTER_TEST(runtime_kernel, normalize_enforces_parameterin_reference_classes);
 REGISTER_TEST(runtime_kernel, normalize_uses_parameter_type_for_object_refs);
 REGISTER_TEST(runtime_kernel, normalize_enforces_container_reference_classes);

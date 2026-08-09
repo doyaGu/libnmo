@@ -707,137 +707,118 @@ static bool normalize_id_has_wrong_class(
         types, target, expected_class_id);
 }
 
-static nmo_class_id_t normalize_expected_class_for_field(const char *name)
-{
-    if (name == NULL) return 0;
-    if (strstr(name, "mesh") != NULL) return NMO_CID_MESH;
-    if (strstr(name, "animation") != NULL || strstr(name, "anim") != NULL) {
-        return NMO_CID_OBJECTANIMATION;
-    }
-    if (strstr(name, "material") != NULL) return NMO_CID_MATERIAL;
-    if (strstr(name, "texture") != NULL) return NMO_CID_TEXTURE;
-    if (strstr(name, "parameter") != NULL ||
-        strcmp(name, "source_id") == 0 || strcmp(name, "in1_id") == 0 ||
-        strcmp(name, "in2_id") == 0 || strcmp(name, "out_id") == 0) {
-        return NMO_CID_PARAMETER;
-    }
-    if (strstr(name, "script") != NULL) return NMO_CID_BEHAVIOR;
-    if (strcmp(name, "in_io") == 0 || strcmp(name, "out_io") == 0) {
-        return NMO_CID_BEHAVIORIO;
-    }
-    if (strcmp(name, "grid_id") == 0 || strcmp(name, "grid") == 0) {
-        return NMO_CID_GRID;
-    }
-    if (strcmp(name, "camera_id") == 0 || strcmp(name, "camera") == 0 ||
-        strcmp(name, "starting_camera_id") == 0 ||
-        strcmp(name, "starting_camera") == 0) return NMO_CID_CAMERA;
-    if (strcmp(name, "level_id") == 0 || strcmp(name, "level") == 0) {
-        return NMO_CID_LEVEL;
-    }
-    if (strstr(name, "scene") != NULL) return NMO_CID_SCENE;
-    if (strcmp(name, "target") == 0) return NMO_CID_3DENTITY;
-    if (strcmp(name, "entity") == 0) return NMO_CID_3DENTITY;
-    if (strcmp(name, "root_entity") == 0) return NMO_CID_3DENTITY;
-    if (strcmp(name, "character") == 0) return NMO_CID_CHARACTER;
-    if (strcmp(name, "curve_id") == 0 || strcmp(name, "curve") == 0) {
-        return NMO_CID_CURVE;
-    }
-    if (strcmp(name, "control_point_ids") == 0 ||
-        strcmp(name, "sub_points.ref") == 0) {
-        return NMO_CID_CURVEPOINT;
-    }
-    if (strcmp(name, "place_id") == 0 || strcmp(name, "place") == 0) {
-        return NMO_CID_PLACE;
-    }
-    if (strcmp(name, "attached_object") == 0) return NMO_CID_3DENTITY;
-    if (strcmp(name, "sprite_ref_id") == 0 ||
-        strcmp(name, "sprite_ref") == 0) return NMO_CID_SPRITE;
-    if (strstr(name, "body_part") != NULL) return NMO_CID_BODYPART;
-    return 0;
-}
-
 static nmo_class_id_t normalize_expected_class_for_typed_field(
     const nmo_type_descriptor_t *type,
     const nmo_type_field_t *field)
 {
-    if (type != NULL && field != NULL && field->name != NULL &&
-        nmo_guid_equals(type->guid, CKPGUID_BEHAVIOR)) {
-        if (strcmp(field->name, "owner") == 0) {
-            return NMO_CID_BEOBJECT;
+    if (type == NULL || field == NULL || field->name == NULL) return 0;
+    const nmo_guid_t guid = type->guid;
+    const char *name = field->name;
+
+    if (nmo_guid_equals(guid, CKPGUID_2DENTITY)) {
+        if (strcmp(name, "parent") == 0) return NMO_CID_2DENTITY;
+        if (strcmp(name, "material") == 0) return NMO_CID_MATERIAL;
+    } else if (nmo_guid_equals(guid, CKPGUID_3DENTITY)) {
+        if (strcmp(name, "parent") == 0) return NMO_CID_3DENTITY;
+        if (strcmp(name, "place") == 0) return NMO_CID_PLACE;
+        if (strcmp(name, "current_mesh") == 0 ||
+            strcmp(name, "mesh_ids") == 0) return NMO_CID_MESH;
+        if (strcmp(name, "animation_ids") == 0) {
+            return NMO_CID_OBJECTANIMATION;
         }
-        if (strcmp(field->name, "target_parameter") == 0) {
+    } else if (nmo_guid_equals(guid, CKPGUID_ANIMATION)) {
+        if (strcmp(name, "legacy_body_parts") == 0) return NMO_CID_BODYPART;
+        if (strcmp(name, "root_entity") == 0) return NMO_CID_3DENTITY;
+        if (strcmp(name, "character") == 0) return NMO_CID_CHARACTER;
+    } else if (nmo_guid_equals(guid, CKPGUID_KEYEDANIMATION)) {
+        if (strcmp(name, "animation_ids") == 0) {
+            return NMO_CID_OBJECTANIMATION;
+        }
+    } else if (nmo_guid_equals(guid, CKPGUID_OBJECTANIMATION)) {
+        if (strcmp(name, "entity") == 0) return NMO_CID_3DENTITY;
+        if (strcmp(name, "anim1") == 0 || strcmp(name, "anim2") == 0 ||
+            strcmp(name, "shared_anim") == 0) {
+            return NMO_CID_OBJECTANIMATION;
+        }
+    } else if (nmo_guid_equals(guid, CKPGUID_BEHAVIOR)) {
+        if (strcmp(name, "owner") == 0) return NMO_CID_BEOBJECT;
+        if (strcmp(name, "target_parameter") == 0) {
             return NMO_CID_PARAMETERIN;
         }
-    }
-    if (type != NULL && field != NULL && field->name != NULL &&
-        nmo_guid_equals(type->guid, CKPGUID_PARAMETEROPERATION)) {
-        if (strcmp(field->name, "owner") == 0) return NMO_CID_BEHAVIOR;
-        if (strcmp(field->name, "in1") == 0 ||
-            strcmp(field->name, "in2") == 0) return NMO_CID_PARAMETERIN;
-        if (strcmp(field->name, "out") == 0) return NMO_CID_PARAMETEROUT;
-    }
-    if (type != NULL && field != NULL && field->name != NULL &&
-        nmo_guid_equals(type->guid, CKPGUID_PARAMETEROUT)) {
-        if (strcmp(field->name, "destination_ids") == 0) {
-            return NMO_CID_PARAMETER;
+    } else if (nmo_guid_equals(guid, CKPGUID_BEHAVIORLINK)) {
+        if (strcmp(name, "in_io") == 0 || strcmp(name, "out_io") == 0) {
+            return NMO_CID_BEHAVIORIO;
         }
-        if (strcmp(field->name, "owner") == 0) return 0;
-    }
-    if (type != NULL && field != NULL && field->name != NULL &&
-        nmo_guid_equals(type->guid, CKPGUID_PARAMETERLOCAL) &&
-        strcmp(field->name, "owner") == 0) {
-        return 0;
-    }
-    if (type != NULL && field != NULL && field->name != NULL &&
-        nmo_guid_equals(type->guid, CKPGUID_CHARACTER)) {
-        if (strcmp(field->name, "animations") == 0 ||
-            strcmp(field->name, "anim_dest") == 0) {
-            return NMO_CID_ANIMATION;
-        }
-        if (strcmp(field->name, "active_animation") == 0) {
+    } else if (nmo_guid_equals(guid, CKPGUID_BEOBJECT)) {
+        if (strcmp(name, "scripts") == 0) return NMO_CID_BEHAVIOR;
+    } else if (nmo_guid_equals(guid, CKPGUID_BODYPART)) {
+        if (strcmp(name, "character") == 0) return NMO_CID_CHARACTER;
+    } else if (nmo_guid_equals(guid, CKPGUID_CHARACTER)) {
+        if (strcmp(name, "animations") == 0 ||
+            strcmp(name, "anim_dest") == 0) return NMO_CID_ANIMATION;
+        if (strcmp(name, "active_animation") == 0) {
             return NMO_CID_KEYEDANIMATION;
         }
-        if (strcmp(field->name, "root_body_part") == 0) {
-            return NMO_CID_BODYPART;
+        if (strcmp(name, "root_body_part") == 0) return NMO_CID_BODYPART;
+        if (strcmp(name, "floor_ref") == 0) return NMO_CID_3DENTITY;
+    } else if (nmo_guid_equals(guid, CKPGUID_CURVE)) {
+        if (strcmp(name, "control_point_ids") == 0) {
+            return NMO_CID_CURVEPOINT;
         }
-        if (strcmp(field->name, "floor_ref") == 0) {
-            return NMO_CID_3DENTITY;
+    } else if (nmo_guid_equals(guid, CKPGUID_CURVEPOINT)) {
+        if (strcmp(name, "curve") == 0) return NMO_CID_CURVE;
+    } else if (nmo_guid_equals(guid, CKPGUID_GROUP)) {
+        if (strcmp(name, "object_ids") == 0) return NMO_CID_BEOBJECT;
+    } else if (nmo_guid_equals(guid, CKPGUID_KINEMATICCHAIN)) {
+        if (strcmp(name, "start_effector") == 0 ||
+            strcmp(name, "end_effector") == 0) return NMO_CID_BODYPART;
+    } else if (nmo_guid_equals(guid, CKPGUID_LAYER)) {
+        if (strcmp(name, "grid") == 0) return NMO_CID_GRID;
+    } else if (nmo_guid_equals(guid, CKPGUID_LEVEL)) {
+        if (strcmp(name, "scene_ids") == 0 ||
+            strcmp(name, "current_scene") == 0 ||
+            strcmp(name, "level_scene") == 0) return NMO_CID_SCENE;
+    } else if (nmo_guid_equals(guid, CKPGUID_MATERIAL)) {
+        if (strcmp(name, "texture_0") == 0 ||
+            strcmp(name, "texture_1") == 0 ||
+            strcmp(name, "texture_2") == 0 ||
+            strcmp(name, "texture_3") == 0) return NMO_CID_TEXTURE;
+        if (strcmp(name, "effect_parameter") == 0) return NMO_CID_PARAMETER;
+    } else if (nmo_guid_equals(guid, CKPGUID_PARAMETEROPERATION)) {
+        if (strcmp(name, "owner") == 0) return NMO_CID_BEHAVIOR;
+        if (strcmp(name, "in1") == 0 || strcmp(name, "in2") == 0) {
+            return NMO_CID_PARAMETERIN;
         }
+        if (strcmp(name, "out") == 0) return NMO_CID_PARAMETEROUT;
+    } else if (nmo_guid_equals(guid, CKPGUID_PARAMETEROUT)) {
+        if (strcmp(name, "destination_ids") == 0) return NMO_CID_PARAMETER;
+    } else if (nmo_guid_equals(guid, CKPGUID_PATCHMESH)) {
+        if (strcmp(name, "legacy_default_material") == 0 ||
+            strcmp(name, "legacy_materials") == 0) return NMO_CID_MATERIAL;
+    } else if (nmo_guid_equals(guid, CKPGUID_PLACE)) {
+        if (strcmp(name, "camera") == 0) return NMO_CID_CAMERA;
+        if (strcmp(name, "level") == 0) return NMO_CID_LEVEL;
+        if (strcmp(name, "references") == 0) return NMO_CID_3DENTITY;
+    } else if (nmo_guid_equals(guid, CKPGUID_SCENE)) {
+        if (strcmp(name, "level") == 0) return NMO_CID_LEVEL;
+        if (strcmp(name, "background_texture") == 0) return NMO_CID_TEXTURE;
+        if (strcmp(name, "starting_camera") == 0) return NMO_CID_CAMERA;
+    } else if (nmo_guid_equals(guid, CKPGUID_SPRITE)) {
+        if (strcmp(name, "sprite_ref") == 0) return NMO_CID_SPRITE;
+    } else if (nmo_guid_equals(guid, CKPGUID_SPRITE3D)) {
+        if (strcmp(name, "material") == 0) return NMO_CID_MATERIAL;
+    } else if (nmo_guid_equals(guid, CKPGUID_SYNCHRO)) {
+        if (strcmp(name, "arrived_ids") == 0 ||
+            strcmp(name, "passed_ids") == 0) return NMO_CID_BEOBJECT;
+    } else if (nmo_guid_equals(guid, CKPGUID_CRITICALSECTION)) {
+        if (strcmp(name, "object_in_section") == 0) return NMO_CID_BEOBJECT;
+    } else if (nmo_guid_equals(guid, CKPGUID_TARGETCAMERA) ||
+               nmo_guid_equals(guid, CKPGUID_TARGETLIGHT)) {
+        if (strcmp(name, "target") == 0) return NMO_CID_3DENTITY;
+    } else if (nmo_guid_equals(guid, CKPGUID_WAVESOUND)) {
+        if (strcmp(name, "attached_object") == 0) return NMO_CID_3DENTITY;
     }
-    if (type != NULL && field != NULL && field->name != NULL) {
-        if (nmo_guid_equals(type->guid, CKPGUID_GROUP) &&
-            strcmp(field->name, "object_ids") == 0) {
-            return NMO_CID_BEOBJECT;
-        }
-        if (nmo_guid_equals(type->guid, CKPGUID_PLACE) &&
-            strcmp(field->name, "references") == 0) {
-            return NMO_CID_3DENTITY;
-        }
-        if (nmo_guid_equals(type->guid, CKPGUID_SYNCHRO) &&
-            (strcmp(field->name, "arrived_ids") == 0 ||
-             strcmp(field->name, "passed_ids") == 0)) {
-            return NMO_CID_BEOBJECT;
-        }
-        if (nmo_guid_equals(type->guid, CKPGUID_CRITICALSECTION) &&
-            strcmp(field->name, "object_in_section") == 0) {
-            return NMO_CID_BEOBJECT;
-        }
-        if (nmo_guid_equals(type->guid, CKPGUID_KINEMATICCHAIN) &&
-            (strcmp(field->name, "start_effector") == 0 ||
-             strcmp(field->name, "end_effector") == 0)) {
-            return NMO_CID_BODYPART;
-        }
-    }
-    if (type != NULL && field != NULL && field->name != NULL &&
-        strcmp(field->name, "parent") == 0) {
-        if (nmo_guid_equals(type->guid, CKPGUID_2DENTITY)) {
-            return NMO_CID_2DENTITY;
-        }
-        if (nmo_guid_equals(type->guid, CKPGUID_3DENTITY)) {
-            return NMO_CID_3DENTITY;
-        }
-    }
-    return normalize_expected_class_for_field(field ? field->name : NULL);
+    return 0;
 }
 
 static bool normalize_id_is_invalid_attribute_parameter(
