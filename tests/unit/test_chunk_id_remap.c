@@ -3712,7 +3712,7 @@ TEST(chunk_id_remap, camera_preserves_file_layouts) {
     nmo_chunk_t *saved_legacy = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(saved_legacy);
     saved_legacy->class_id = NMO_CID_CAMERA;
-    saved_legacy->data_version = 4;
+    saved_legacy->data_version = 0;
     saved_legacy->chunk_options |= NMO_CHUNK_OPTION_FILE;
     ASSERT_EQ(NMO_OK, nmo_camera_serialize(
         &camera, saved_legacy, NULL, &serialize_context));
@@ -3766,7 +3766,21 @@ TEST(chunk_id_remap, camera_preserves_file_layouts) {
         &camera, saved_empty, NULL, &serialize_context));
     ASSERT_EQ(4u, nmo_chunk_get_data_size(saved_empty));
 
+    nmo_camera_state_t modern_default;
+    ASSERT_EQ(NMO_OK, nmo_camera_vtable.create(
+        &modern_default, NULL, NULL));
+    nmo_chunk_t *default_version = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(default_version);
+    default_version->class_id = NMO_CID_CAMERA;
+    default_version->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_camera_serialize(
+        &modern_default, default_version, NULL, &serialize_context));
+    nmo_chunk_close(default_version);
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
+        default_version, CK_STATESAVE_CAMERAONLY));
+
     nmo_camera_vtable.destroy(&camera, NULL, NULL);
+    nmo_camera_vtable.destroy(&modern_default, NULL, NULL);
     nmo_arena_destroy(arena);
 }
 

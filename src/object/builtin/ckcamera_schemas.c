@@ -264,13 +264,15 @@ static nmo_status_t nmo_camera_serialize_internal(
         in_state->has_fov_chunk || in_state->has_proj_chunk ||
         in_state->has_ortho_chunk || in_state->has_aspect_chunk ||
         in_state->has_planes_chunk;
+    const bool write_legacy = is_file && data_version < 5u &&
+        (data_version != 0u || has_legacy_layout);
     const bool has_default_values =
         in_state->projection_type == 1u && in_state->fov == 0.5f &&
         in_state->orthographic_zoom == 1.0f &&
         in_state->width == 4 && in_state->height == 3 &&
         in_state->near_plane == 1.0f && in_state->far_plane == 4000.0f;
 
-    if (is_file && data_version < 5u) {
+    if (write_legacy) {
         if (in_state->has_cameraonly_chunk ||
             (!in_state->has_fov_chunk && in_state->fov != 0.5f) ||
             (!in_state->has_proj_chunk && in_state->projection_type != 1u) ||
@@ -296,7 +298,7 @@ static nmo_status_t nmo_camera_serialize_internal(
 
     const bool writes_packed_layout =
         (!is_file && write_camera) ||
-        (is_file && data_version >= 5u &&
+        (is_file && !write_legacy &&
          in_state->has_cameraonly_chunk);
     if (writes_packed_layout &&
         (in_state->width < 0 || in_state->width > UINT16_MAX ||
@@ -314,7 +316,7 @@ static nmo_status_t nmo_camera_serialize_internal(
 
     if (!write_camera) return NMO_OK;
 
-    if (!is_file || data_version >= 5u) {
+    if (!is_file || !write_legacy) {
         if (is_file && !in_state->has_cameraonly_chunk) return NMO_OK;
 
         NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(
