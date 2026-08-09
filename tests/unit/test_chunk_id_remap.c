@@ -2305,6 +2305,50 @@ TEST(chunk_id_remap, behaviorlink_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(NMO_REF_UNRESOLVED, failed.out_io.state);
     ASSERT_EQ(NMO_CKOBJECT_HIERARCHICAL, failed.base.visibility_flags);
 
+    nmo_chunk_t *new_cross_section = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(new_cross_section);
+    new_cross_section->class_id = NMO_CID_BEHAVIORLINK;
+    new_cross_section->data_version = 8;
+    new_cross_section->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(new_cross_section));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        new_cross_section, CK_STATESAVE_BEHAV_LINK_NEWDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        new_cross_section, 0x00090005u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(
+        new_cross_section, 900));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        new_cross_section, 0x11223344u));
+    nmo_chunk_close(new_cross_section);
+    nmo_chunk_set_file_context(new_cross_section, &read_context);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_behaviorlink_deserialize(
+        &failed, new_cross_section, NULL, &deserialize_context));
+    ASSERT_EQ(11, failed.activation_delay);
+    ASSERT_EQ(12, failed.initial_activation_delay);
+    ASSERT_EQ(901u, failed.in_io.raw_id);
+    ASSERT_EQ(902u, failed.out_io.raw_id);
+
+    nmo_chunk_t *legacy_cross_section = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(legacy_cross_section);
+    legacy_cross_section->class_id = NMO_CID_BEHAVIORLINK;
+    legacy_cross_section->data_version = 8;
+    legacy_cross_section->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(legacy_cross_section));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        legacy_cross_section, CK_STATESAVE_BEHAV_LINK_IOS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(
+        legacy_cross_section, 900));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        legacy_cross_section, 0x11223344u));
+    nmo_chunk_close(legacy_cross_section);
+    nmo_chunk_set_file_context(legacy_cross_section, &read_context);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_behaviorlink_deserialize(
+        &failed, legacy_cross_section, NULL, &deserialize_context));
+    ASSERT_EQ(11, failed.activation_delay);
+    ASSERT_EQ(12, failed.initial_activation_delay);
+    ASSERT_EQ(901u, failed.in_io.raw_id);
+    ASSERT_EQ(902u, failed.out_io.raw_id);
+
     nmo_behaviorlink_state_t invalid;
     ASSERT_EQ(NMO_OK, nmo_behaviorlink_vtable.create(&invalid, NULL, NULL));
     invalid.in_io = nmo_ref_from_raw(903);

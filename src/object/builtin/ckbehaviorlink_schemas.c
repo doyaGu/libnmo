@@ -114,8 +114,11 @@ static nmo_status_t nmo_behaviorlink_deserialize_internal(
 
     /* Try new format first (preferred). Decode into locals so a truncated
      * section cannot publish a partial endpoint pair. */
-    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAV_LINK_NEWDATA);
+    size_t section_dwords = 0;
+    result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_BEHAV_LINK_NEWDATA, &section_dwords);
     if (result == NMO_OK) {
+        if (section_dwords < 3u) return NMO_ERR_TRUNCATED_CHUNK;
         has_format = true;
         use_new_format = true;
         /* New format: packed delays (lower 16 bits = activation, upper 16 bits = initial) */
@@ -135,8 +138,10 @@ static nmo_status_t nmo_behaviorlink_deserialize_internal(
     } else {
         if (result != NMO_ERR_NOT_FOUND) return result;
         /* Legacy format support */
-        result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAV_LINK_CURDELAY);
+        result = nmo_chunk_seek_identifier_with_size(
+            chunk, CK_STATESAVE_BEHAV_LINK_CURDELAY, &section_dwords);
         if (result == NMO_OK) {
+            if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
             int32_t delay;
             result = nmo_chunk_read_int(chunk, &delay);
             if (result != NMO_OK) return result;
@@ -145,8 +150,10 @@ static nmo_status_t nmo_behaviorlink_deserialize_internal(
             has_legacy_curdelay = true;
         } else if (result != NMO_ERR_NOT_FOUND) return result;
 
-        result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAV_LINK_IOS);
+        result = nmo_chunk_seek_identifier_with_size(
+            chunk, CK_STATESAVE_BEHAV_LINK_IOS, &section_dwords);
         if (result == NMO_OK) {
+            if (section_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
             result = nmo_ref_read(chunk, &in_io);
             if (result != NMO_OK) return result;
 
@@ -156,8 +163,10 @@ static nmo_status_t nmo_behaviorlink_deserialize_internal(
             has_legacy_ios = true;
         } else if (result != NMO_ERR_NOT_FOUND) return result;
 
-        result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAV_LINK_DELAY);
+        result = nmo_chunk_seek_identifier_with_size(
+            chunk, CK_STATESAVE_BEHAV_LINK_DELAY, &section_dwords);
         if (result == NMO_OK) {
+            if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
             int32_t delay;
             result = nmo_chunk_read_int(chunk, &delay);
             if (result != NMO_OK) return result;
