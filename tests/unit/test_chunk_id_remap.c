@@ -4806,6 +4806,27 @@ TEST(chunk_id_remap, kinematicchain_unresolved_refs_round_trip_atomically) {
     ASSERT_EQ(222u, loaded.end_effector.raw_id);
     ASSERT_EQ(NMO_REF_UNRESOLVED, loaded.end_effector.state);
 
+    nmo_chunk_t *cross_section = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(cross_section);
+    cross_section->class_id = NMO_CID_KINEMATICCHAIN;
+    cross_section->chunk_version = NMO_CHUNK_VERSION4;
+    cross_section->data_version = 7;
+    cross_section->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(cross_section));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_section, CK_STATESAVE_KINEMATICCHAINALL));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_id(cross_section, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_id(cross_section, 333));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_section, 0x11223344u));
+    nmo_chunk_close(cross_section);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_kinematicchain_deserialize(
+        &loaded, cross_section, NULL, NULL));
+    ASSERT_TRUE(loaded.has_chain_data);
+    ASSERT_EQ(101u, loaded.legacy_object.raw_id);
+    ASSERT_EQ(111u, loaded.start_effector.raw_id);
+    ASSERT_EQ(222u, loaded.end_effector.raw_id);
+
     nmo_kinematicchain_state_t absent;
     ASSERT_EQ(NMO_OK, nmo_kinematicchain_vtable.create(
         &absent, NULL, NULL));

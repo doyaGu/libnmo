@@ -47,9 +47,11 @@ static nmo_status_t nmo_kinematicchain_deserialize_internal(
     nmo_status_t result = nmo_object_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;
 
-    result = nmo_chunk_seek_identifier(
-        chunk, CK_STATESAVE_KINEMATICCHAINALL);
+    size_t section_dwords = 0;
+    result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_KINEMATICCHAINALL, &section_dwords);
     if (result == NMO_OK) {
+        if (section_dwords < 3u) return NMO_ERR_TRUNCATED_CHUNK;
         nmo_ref_t legacy_object = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         result = nmo_ref_read(chunk, &legacy_object);
         if (result != NMO_OK) return result;
