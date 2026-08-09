@@ -127,6 +127,11 @@ typedef struct nmo_objectanimation_state {
     /* Parsed controller data */
     uint32_t controller_count;
     nmo_objanim_controller_t *controllers;
+    uint8_t has_legacy_position_section;
+    uint8_t has_legacy_rotation_section;
+    uint8_t has_legacy_scale_section;
+    uint8_t has_legacy_flags_section;
+    uint8_t has_legacy_entity_section;
 
     /* Morph keys (NEWDATA/LEGACY formats) */
     uint32_t morph_key_parsed_count;

@@ -139,6 +139,11 @@ static const nmo_type_field_t nmo_objectanimation_fields[] = {
     NMO_FIELD(nmo_objectanimation_state_t, morph_key_count, CKPGUID_INT),
     NMO_FIELD(nmo_objectanimation_state_t, controller_count, CKPGUID_UINT32),
     NMO_FIELD_OPT(nmo_objectanimation_state_t, controllers, CKPGUID_POINTER),
+    NMO_FIELD(nmo_objectanimation_state_t, has_legacy_position_section, CKPGUID_UINT8),
+    NMO_FIELD(nmo_objectanimation_state_t, has_legacy_rotation_section, CKPGUID_UINT8),
+    NMO_FIELD(nmo_objectanimation_state_t, has_legacy_scale_section, CKPGUID_UINT8),
+    NMO_FIELD(nmo_objectanimation_state_t, has_legacy_flags_section, CKPGUID_UINT8),
+    NMO_FIELD(nmo_objectanimation_state_t, has_legacy_entity_section, CKPGUID_UINT8),
     NMO_FIELD(nmo_objectanimation_state_t, morph_key_parsed_count, CKPGUID_UINT32),
     NMO_FIELD_OPT(nmo_objectanimation_state_t, morph_keys, CKPGUID_POINTER),
     NMO_FIELD(nmo_objectanimation_state_t, morph_normals_id, CKPGUID_UINT32),
@@ -502,7 +507,12 @@ static nmo_status_t nmo_objectanimation_validate(
     if ((!s->has_legacy_morphkeys && s->legacy_morphkeys_size != 0u) ||
         (s->legacy_morphkeys_size & 3u) != 0u ||
         (s->format != CKOBJANIM_FORMAT_LEGACY &&
-         s->has_legacy_morphkeys)) {
+         (s->has_legacy_morphkeys ||
+          s->has_legacy_position_section ||
+          s->has_legacy_rotation_section ||
+          s->has_legacy_scale_section ||
+          s->has_legacy_flags_section ||
+          s->has_legacy_entity_section))) {
         return NMO_ERR_VALIDATION_FAILED;
     }
     size_t allocation_size = 0;
@@ -1030,6 +1040,16 @@ static bool nmo_objectanimation_equals(const void *a, const void *b)
         lhs->morph_vertex_count != rhs->morph_vertex_count ||
         lhs->morph_key_count != rhs->morph_key_count ||
         lhs->controller_count != rhs->controller_count ||
+        lhs->has_legacy_position_section !=
+            rhs->has_legacy_position_section ||
+        lhs->has_legacy_rotation_section !=
+            rhs->has_legacy_rotation_section ||
+        lhs->has_legacy_scale_section !=
+            rhs->has_legacy_scale_section ||
+        lhs->has_legacy_flags_section !=
+            rhs->has_legacy_flags_section ||
+        lhs->has_legacy_entity_section !=
+            rhs->has_legacy_entity_section ||
         lhs->morph_key_parsed_count != rhs->morph_key_parsed_count ||
         lhs->morph_normals_id != rhs->morph_normals_id ||
         lhs->morph_normals_count != rhs->morph_normals_count ||
@@ -1106,6 +1126,11 @@ static uint32_t nmo_objectanimation_hash(const void *instance)
     NMO_OBJECTANIMATION_HASH_FIELD(morph_vertex_count);
     NMO_OBJECTANIMATION_HASH_FIELD(morph_key_count);
     NMO_OBJECTANIMATION_HASH_FIELD(controller_count);
+    NMO_OBJECTANIMATION_HASH_FIELD(has_legacy_position_section);
+    NMO_OBJECTANIMATION_HASH_FIELD(has_legacy_rotation_section);
+    NMO_OBJECTANIMATION_HASH_FIELD(has_legacy_scale_section);
+    NMO_OBJECTANIMATION_HASH_FIELD(has_legacy_flags_section);
+    NMO_OBJECTANIMATION_HASH_FIELD(has_legacy_entity_section);
     for (uint32_t i = 0; i < state->controller_count; ++i) {
         const nmo_objanim_controller_t *controller = &state->controllers[i];
         hash = nmo_animation_hash_bytes(
@@ -1640,6 +1665,7 @@ static nmo_status_t read_legacy_controllers(
         if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
         const size_t section_end =
             nmo_chunk_get_position(chunk) + section_dwords;
+        out_state->has_morph_counts = 1;
         int32_t morph_key_count = 0;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &morph_key_count));
         if (morph_key_count < 0) {
@@ -1662,7 +1688,6 @@ static nmo_status_t read_legacy_controllers(
                                  "Morph key count exceeds identifier payload");
             }
 
-            out_state->has_morph_counts = 1;
             out_state->morph_key_count = morph_key_count;
             out_state->morph_vertex_count = morph_vertex_count;
 
@@ -1712,6 +1737,7 @@ static nmo_status_t read_legacy_controllers(
         chunk, CK_STATESAVE_OBJANIMPOSKEYS, &section_found,
         &section_dwords));
     if (section_found) {
+        out_state->has_legacy_position_section = 1;
         if (section_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
         const size_t section_end =
             nmo_chunk_get_position(chunk) + section_dwords;
@@ -1750,6 +1776,7 @@ static nmo_status_t read_legacy_controllers(
         chunk, CK_STATESAVE_OBJANIMROTKEYS, &section_found,
         &section_dwords));
     if (section_found) {
+        out_state->has_legacy_rotation_section = 1;
         if (section_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
         const size_t section_end =
             nmo_chunk_get_position(chunk) + section_dwords;
@@ -1815,6 +1842,7 @@ static nmo_status_t read_legacy_controllers(
         chunk, CK_STATESAVE_OBJANIMSCLKEYS, &section_found,
         &section_dwords));
     if (section_found) {
+        out_state->has_legacy_scale_section = 1;
         if (section_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
         const size_t section_end =
             nmo_chunk_get_position(chunk) + section_dwords;
@@ -1853,6 +1881,7 @@ static nmo_status_t read_legacy_controllers(
         chunk, CK_STATESAVE_OBJANIMFLAGS, &section_found,
         &section_dwords));
     if (section_found) {
+        out_state->has_legacy_flags_section = 1;
         if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
         if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->flags));
@@ -1862,6 +1891,7 @@ static nmo_status_t read_legacy_controllers(
         chunk, CK_STATESAVE_OBJANIMENTITY, &section_found,
         &section_dwords));
     if (section_found) {
+        out_state->has_legacy_entity_section = 1;
         if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
         if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
         NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &out_state->entity));
@@ -2371,6 +2401,11 @@ static nmo_status_t nmo_objectanimation_deserialize_internal(
     out_state->morph_key_count = 0;
     out_state->controller_count = 0;
     out_state->controllers = NULL;
+    out_state->has_legacy_position_section = 0;
+    out_state->has_legacy_rotation_section = 0;
+    out_state->has_legacy_scale_section = 0;
+    out_state->has_legacy_flags_section = 0;
+    out_state->has_legacy_entity_section = 0;
     out_state->morph_key_parsed_count = 0;
     out_state->morph_keys = NULL;
     out_state->morph_normals_id = 0;
@@ -2786,13 +2821,17 @@ static nmo_status_t nmo_objectanimation_serialize_internal(
         }
 
         /* Morph keys */
-        if (in_state->morph_key_parsed_count > 0 && in_state->morph_keys != NULL) {
+        if (in_state->has_morph_counts ||
+            in_state->morph_key_parsed_count > 0) {
             nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_OBJANIMMORPHKEYS2);
             if (result != NMO_OK) return result;
             result = nmo_chunk_write_int(out_chunk, (int32_t)in_state->morph_key_parsed_count);
             if (result != NMO_OK) return result;
-            result = nmo_chunk_write_int(out_chunk, in_state->morph_vertex_count);
-            if (result != NMO_OK) return result;
+            if (in_state->morph_key_parsed_count > 0) {
+                result = nmo_chunk_write_int(
+                    out_chunk, in_state->morph_vertex_count);
+                if (result != NMO_OK) return result;
+            }
             for (uint32_t i = 0; i < in_state->morph_key_parsed_count; ++i) {
                 const nmo_objanim_morph_key_t *mk = &in_state->morph_keys[i];
                 result = nmo_chunk_write_float(out_chunk, mk->time_step);
@@ -2819,13 +2858,14 @@ static nmo_status_t nmo_objectanimation_serialize_internal(
             nmo_objectanimation_find_controller(
                 in_state, CKANIMATION_LINSCL_CONTROL);
 
-        if (position != NULL) {
+        if (in_state->has_legacy_position_section || position != NULL) {
             NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(
                 out_chunk, CK_STATESAVE_OBJANIMPOSKEYS));
             NMO_RETURN_IF_ERROR(nmo_objectanimation_write_legacy_controller(
                 out_chunk, position));
         }
-        if (rotation != NULL || scale_axis != NULL) {
+        if (in_state->has_legacy_rotation_section ||
+            rotation != NULL || scale_axis != NULL) {
             NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(
                 out_chunk, CK_STATESAVE_OBJANIMROTKEYS));
             NMO_RETURN_IF_ERROR(nmo_objectanimation_write_legacy_controller(
@@ -2833,7 +2873,7 @@ static nmo_status_t nmo_objectanimation_serialize_internal(
             NMO_RETURN_IF_ERROR(nmo_objectanimation_write_legacy_controller(
                 out_chunk, scale_axis));
         }
-        if (scale != NULL) {
+        if (in_state->has_legacy_scale_section || scale != NULL) {
             NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(
                 out_chunk, CK_STATESAVE_OBJANIMSCLKEYS));
             NMO_RETURN_IF_ERROR(nmo_objectanimation_write_legacy_controller(
@@ -2841,14 +2881,16 @@ static nmo_status_t nmo_objectanimation_serialize_internal(
         }
 
         /* Legacy header fields */
-        if (in_state->flags != 0) {
+        if (in_state->has_legacy_flags_section || in_state->flags != 0) {
             nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_OBJANIMFLAGS);
             if (result != NMO_OK) return result;
             result = nmo_chunk_write_dword(out_chunk, in_state->flags);
             if (result != NMO_OK) return result;
         }
 
-        if (nmo_ref_serialized_id(&in_state->entity) != NMO_OBJECT_ID_NONE) {
+        if (in_state->has_legacy_entity_section ||
+            nmo_ref_serialized_id(&in_state->entity) !=
+                NMO_OBJECT_ID_NONE) {
             nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_OBJANIMENTITY);
             if (result != NMO_OK) return result;
             result = nmo_ref_write(out_chunk, &in_state->entity);
