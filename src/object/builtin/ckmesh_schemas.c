@@ -746,7 +746,7 @@ static nmo_status_t nmo_mesh_deserialize_modern(
         }
         if (face_count > 0) {
             if ((size_t)face_count >
-                nmo_mesh_identifier_remaining_dwords(chunk) / 4u) {
+                nmo_mesh_identifier_remaining_dwords(chunk) / 2u) {
                 NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK,
                                  NMO_SEVERITY_ERROR,
                                  "Modern mesh faces exceed remaining DWORDs");
@@ -987,7 +987,7 @@ static nmo_status_t nmo_mesh_deserialize_modern(
                                  NMO_SEVERITY_ERROR,
                                  "Modern mesh faces missing for channel masks");
             }
-            if ((size_t)pair_count * 2u + remainder >
+            if ((size_t)pair_count + remainder >
                 nmo_mesh_identifier_remaining_dwords(chunk)) {
                 return NMO_ERR_TRUNCATED_CHUNK;
             }
@@ -1399,7 +1399,7 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
                                  NMO_SEVERITY_ERROR,
                                  "Legacy mesh faces missing for channel masks");
             }
-            if ((size_t)pair_count * 2u + remainder >
+            if ((size_t)pair_count + remainder >
                 nmo_mesh_identifier_remaining_dwords(chunk)) {
                 return NMO_ERR_TRUNCATED_CHUNK;
             }

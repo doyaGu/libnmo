@@ -16612,7 +16612,7 @@ TEST(chunk_id_remap, mesh_layout_follows_data_version) {
     ASSERT_EQ(3u, section_dwords);
     ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
         legacy, CK_STATESAVE_MESHFACECHANMASK, &section_dwords));
-    ASSERT_EQ(3u, section_dwords);
+    ASSERT_EQ(2u, section_dwords);
 
     ASSERT_EQ(NMO_OK, nmo_chunk_start_read(legacy));
     ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
@@ -16673,13 +16673,32 @@ TEST(chunk_id_remap, mesh_layout_follows_data_version) {
     ASSERT_EQ(31u, section_dwords);
     ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
         modern, CK_STATESAVE_MESHFACES, &section_dwords));
-    ASSERT_EQ(9u, section_dwords);
+    ASSERT_EQ(5u, section_dwords);
+    serialized_count = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_int(modern, &serialized_count));
+    ASSERT_EQ(2, serialized_count);
+    uint32_t packed_face_word = 0u;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(modern, &packed_face_word));
+    ASSERT_EQ(0x00010000u, packed_face_word);
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(modern, &packed_face_word));
+    ASSERT_EQ(0x00050002u, packed_face_word);
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(modern, &packed_face_word));
+    ASSERT_EQ(0x00010002u, packed_face_word);
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(modern, &packed_face_word));
+    ASSERT_EQ(0x00060000u, packed_face_word);
     ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
         modern, CK_STATESAVE_MESHLINES, &section_dwords));
     ASSERT_EQ(3u, section_dwords);
     ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
         modern, CK_STATESAVE_MESHFACECHANMASK, &section_dwords));
-    ASSERT_EQ(3u, section_dwords);
+    ASSERT_EQ(2u, section_dwords);
+    serialized_count = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_int(modern, &serialized_count));
+    ASSERT_EQ(2, serialized_count);
+    uint32_t packed_face_masks = 0u;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(
+        modern, &packed_face_masks));
+    ASSERT_EQ(0xABCD1234u, packed_face_masks);
 
     nmo_mesh_state_t modern_loaded;
     ASSERT_EQ(NMO_OK, nmo_mesh_vtable.create(

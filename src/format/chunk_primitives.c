@@ -693,20 +693,15 @@ nmo_status_t nmo_chunk_write_dword_array_as_words(
         NMO_RETURN_OK();
     }
     NMO_CHUNK_CHECK_PTR(values, "Invalid DWORD word array");
-    if (count > SIZE_MAX / 2u) {
+    if (count > SIZE_MAX / sizeof(uint32_t)) {
         NMO_CHUNK_RETURN_INVALID_ARGUMENT("DWORD word array size overflow");
     }
 
     uint32_t *data = NULL;
     nmo_status_t result = nmo_chunk_lock_write_buffer(
-        chunk, count * 2u, &data);
+        chunk, count, &data);
     NMO_RETURN_IF_ERROR(result);
-    for (size_t i = 0; i < count; ++i) {
-        data[i * 2u] = (uint32_t)nmo_htole16(
-            (uint16_t)(values[i] & UINT32_C(0xFFFF)));
-        data[i * 2u + 1u] = (uint32_t)nmo_htole16(
-            (uint16_t)(values[i] >> 16));
-    }
+    memcpy(data, values, count * sizeof(uint32_t));
     NMO_RETURN_OK();
 }
 
@@ -870,22 +865,16 @@ nmo_status_t nmo_chunk_read_dword_array_as_words(
     if (count == 0u) {
         NMO_RETURN_OK();
     }
-    if (count > SIZE_MAX / 2u) {
+    if (count > SIZE_MAX / sizeof(uint32_t)) {
         NMO_CHUNK_RETURN_INVALID_ARGUMENT("DWORD word array size overflow");
     }
 
     const uint32_t *data = NULL;
     nmo_status_t result = nmo_chunk_lock_read_buffer(
-        chunk, count * 2u, &data);
+        chunk, count, &data);
     NMO_RETURN_IF_ERROR(result);
-    for (size_t i = 0; i < count; ++i) {
-        const uint16_t low = nmo_le16toh(
-            (uint16_t)(data[i * 2u] & UINT32_C(0xFFFF)));
-        const uint16_t high = nmo_le16toh(
-            (uint16_t)(data[i * 2u + 1u] & UINT32_C(0xFFFF)));
-        out_values[i] = (uint32_t)low | ((uint32_t)high << 16);
-    }
-    nmo_chunk_get_parser_state(chunk)->current_pos += count * 2u;
+    memcpy(out_values, data, count * sizeof(uint32_t));
+    nmo_chunk_get_parser_state(chunk)->current_pos += count;
     NMO_RETURN_OK();
 }
 

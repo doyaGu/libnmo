@@ -538,12 +538,12 @@ NMO_API nmo_status_t nmo_chunk_write_buffer_no_size_lendian16(
     const uint16_t *values,
     size_t value_count);
 
-/** @brief Write a DWORD as low and high 16-bit values in separate DWORDs. */
+/** @brief Write two packed 16-bit values in one DWORD. */
 NMO_API nmo_status_t nmo_chunk_write_dword_as_words(
     nmo_chunk_t *chunk,
     uint32_t value);
 
-/** @brief Write DWORDs using the two-DWORD word representation. */
+/** @brief Write DWORDs containing packed pairs of 16-bit values. */
 NMO_API nmo_status_t nmo_chunk_write_dword_array_as_words(
     nmo_chunk_t *chunk,
     const uint32_t *values,
@@ -713,12 +713,12 @@ NMO_API nmo_status_t nmo_chunk_read_buffer_no_size_lendian16(
     uint16_t *values,
     size_t value_count);
 
-/** @brief Read a DWORD stored as low and high words in separate DWORDs. */
+/** @brief Read two packed 16-bit values from one DWORD. */
 NMO_API nmo_status_t nmo_chunk_read_dword_as_words(
     nmo_chunk_t *chunk,
     uint32_t *out_value);
 
-/** @brief Read DWORDs stored in the two-DWORD word representation. */
+/** @brief Read DWORDs containing packed pairs of 16-bit values. */
 NMO_API nmo_status_t nmo_chunk_read_dword_array_as_words(
     nmo_chunk_t *chunk,
     uint32_t *out_values,

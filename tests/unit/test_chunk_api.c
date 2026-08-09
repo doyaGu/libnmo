@@ -753,13 +753,12 @@ TEST(chunk_api, special_16bit_formats_round_trip) {
               nmo_chunk_write_array_lendian16(
                   chunk, array, sizeof(array) / sizeof(array[0]),
                   sizeof(array[0])));
-    ASSERT_EQ(16u, nmo_chunk_get_position(chunk));
+    ASSERT_EQ(13u, nmo_chunk_get_position(chunk));
 
     const uint32_t *encoded = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
-    ASSERT_EQ(0x0002u, encoded[0]);
-    ASSERT_EQ(0x0001u, encoded[1]);
-    ASSERT_EQ(0xBEEFu, encoded[2]);
-    ASSERT_EQ(0xDEADu, encoded[3]);
+    ASSERT_EQ(0x00010002u, encoded[0]);
+    ASSERT_EQ(0xDEADBEEFu, encoded[1]);
+    ASSERT_EQ(0xF00DFACEu, encoded[2]);
 
     ASSERT_EQ(NMO_OK, nmo_chunk_start_read(chunk));
     uint32_t decoded_dwords[3] = {0};
