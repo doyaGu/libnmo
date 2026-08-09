@@ -5003,11 +5003,12 @@ TEST(chunk_id_remap, parameteroperation_refs_round_trip_and_failure_is_atomic) {
     ASSERT_NOT_NULL(first);
     first->class_id = NMO_CID_PARAMETEROPERATION;
     first->data_version = 8;
-    first->chunk_options |= NMO_CHUNK_OPTION_FILE;
     nmo_chunk_set_file_context(first, &write_context);
     ASSERT_EQ(NMO_OK, nmo_parameteroperation_serialize(
         &source, first, NULL, &serialize_context));
     nmo_chunk_close(first);
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
+        first, CK_STATESAVE_OPERATIONNEWDATA));
     nmo_chunk_set_file_context(first, &read_context);
 
     nmo_parameteroperation_state_t loaded;
@@ -5026,7 +5027,6 @@ TEST(chunk_id_remap, parameteroperation_refs_round_trip_and_failure_is_atomic) {
     ASSERT_NOT_NULL(second);
     second->class_id = NMO_CID_PARAMETEROPERATION;
     second->data_version = 8;
-    second->chunk_options |= NMO_CHUNK_OPTION_FILE;
     nmo_chunk_set_file_context(second, &write_context);
     ASSERT_EQ(NMO_OK, nmo_parameteroperation_serialize(
         &loaded, second, NULL, &serialize_context));

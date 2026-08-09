@@ -133,7 +133,12 @@ static nmo_status_t nmo_parameteroperation_deserialize_internal(
     decoded.has_in2 = 0;
     decoded.has_out = 0;
 
-    const int is_file = (chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0;
+    const nmo_deserialize_context_t *deserialize_context =
+        nmo_deserialize_context_get(context);
+    const int is_file =
+        ((chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
+        (deserialize_context != NULL &&
+         (deserialize_context->flags & NMO_DESER_FLAG_FILE_MODE) != 0);
 
     if (is_file) {
         size_t section_dwords = 0;
@@ -424,7 +429,12 @@ static nmo_status_t nmo_parameteroperation_serialize_internal(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_parameteroperation_serialize");
     }
 
-    const int is_file = (out_chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0;
+    const nmo_serialize_context_t *serialize_context =
+        nmo_serialize_context_try(context);
+    const int is_file =
+        ((out_chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
+        (serialize_context != NULL &&
+         (serialize_context->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
     uint32_t data_version = nmo_chunk_get_data_version(out_chunk);
     const bool legacy_file_layout = is_file && data_version < 5u &&
         (data_version != 0u || in_state->has_legacy_prefix ||
