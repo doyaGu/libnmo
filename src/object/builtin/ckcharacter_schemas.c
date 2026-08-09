@@ -172,7 +172,9 @@ static const nmo_type_field_t nmo_character_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_character_state_t, base),
                     sizeof(nmo_3dentity_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
-    NMO_FIELD_ARRAY(nmo_character_state_t, body_parts, CKPGUID_NONE),
+    NMO_FIELD_ARRAY(
+        nmo_character_state_t, body_parts,
+        NMO_GUID_STRUCT_CKCHARACTERSUBPART),
     NMO_FIELD_REF_RECORD_ARRAY(nmo_character_state_t, animations),
     NMO_FIELD_NAMED("active_animation", offsetof(nmo_character_state_t, active_animation),
                     sizeof(nmo_ref_t), CKPGUID_ID,

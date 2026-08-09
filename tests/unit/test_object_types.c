@@ -155,6 +155,16 @@ TEST(object_types, register_all_types) {
     ASSERT_TRUE(nmo_field_uses_ref_records(
         &character_subpart->fields[0]));
 
+    const nmo_type_descriptor_t *character =
+        nmo_type_registry_find_by_guid(registry, CKPGUID_CHARACTER);
+    ASSERT_NOT_NULL(character);
+    const nmo_type_field_t *body_parts = nmo_type_get_field_by_name(
+        character, "body_parts");
+    ASSERT_NOT_NULL(body_parts);
+    ASSERT_TRUE(nmo_field_is_array(body_parts));
+    ASSERT_TRUE(nmo_guid_equals(
+        body_parts->type_guid, NMO_GUID_STRUCT_CKCHARACTERSUBPART));
+
     const struct {
         nmo_guid_t type_guid;
         const char *field_name;
