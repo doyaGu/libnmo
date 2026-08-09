@@ -5016,9 +5016,54 @@ TEST(chunk_id_remap, texture_empty_sections_round_trip_presence) {
     ASSERT_EQ(0u, loaded.save_format_size);
     ASSERT_TRUE(loaded.has_user_mipmaps);
     ASSERT_EQ(0u, loaded.user_mipmap_count);
+    ASSERT_TRUE(loaded.has_oldtexonly);
+    ASSERT_FALSE(loaded.has_transparent_color);
+    ASSERT_FALSE(loaded.has_current_slot);
+    ASSERT_FALSE(loaded.has_desired_video_format);
+
+    source.has_oldtexonly = 0;
+    nmo_chunk_t *without_oldtex = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(without_oldtex);
+    without_oldtex->class_id = NMO_CID_TEXTURE;
+    without_oldtex->data_version = 7;
+    without_oldtex->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_texture_serialize(
+        &source, without_oldtex, NULL, &serialize_context));
+    nmo_chunk_close(without_oldtex);
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_chunk_seek_identifier(
+        without_oldtex, CK_STATESAVE_OLDTEXONLY));
+
+    source.has_oldtexonly = 1;
+    source.has_current_slot = 1;
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_texture_serialize(
+        &source, without_oldtex, NULL, &serialize_context));
+    source.has_transparent_color = 1;
+    source.transparent_color = 0x11223344u;
+    source.has_desired_video_format = 1;
+    source.desired_video_format = 1u;
+    nmo_chunk_t *packed = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(packed);
+    packed->class_id = NMO_CID_TEXTURE;
+    packed->data_version = 7;
+    packed->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_texture_serialize(
+        &source, packed, NULL, &serialize_context));
+    nmo_chunk_close(packed);
+    nmo_texture_state_t packed_loaded;
+    ASSERT_EQ(NMO_OK, nmo_texture_vtable.create(
+        &packed_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_texture_deserialize(
+        &packed_loaded, packed, NULL, &deserialize_context));
+    ASSERT_TRUE(packed_loaded.has_transparent_color);
+    ASSERT_EQ(0x11223344u, packed_loaded.transparent_color);
+    ASSERT_TRUE(packed_loaded.has_current_slot);
+    ASSERT_EQ(0, packed_loaded.current_slot);
+    ASSERT_TRUE(packed_loaded.has_desired_video_format);
+    ASSERT_EQ(1u, packed_loaded.desired_video_format);
 
     nmo_texture_vtable.destroy(&source, NULL, NULL);
     nmo_texture_vtable.destroy(&loaded, NULL, NULL);
+    nmo_texture_vtable.destroy(&packed_loaded, NULL, NULL);
     nmo_arena_destroy(arena);
 }
 

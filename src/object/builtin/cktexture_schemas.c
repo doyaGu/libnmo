@@ -54,6 +54,31 @@ static nmo_status_t nmo_texture_validate(
     const nmo_type_descriptor_t *type,
     void *context);
 
+static bool nmo_texture_oldtex_layout_is_representable(
+    const nmo_texture_state_t *state)
+{
+    const uint32_t field_count =
+        (state->has_transparent_color ? 1u : 0u) +
+        (state->has_current_slot ? 1u : 0u) +
+        (state->has_desired_video_format ? 1u : 0u);
+    if (field_count == 0u) return true;
+    if (field_count == 3u) return true;
+    if (field_count == 2u) {
+        const bool expects_transparent =
+            state->slot_count <= 1u || !state->has_desired_video_format;
+        const bool expects_current = state->slot_count > 1u;
+        return state->has_transparent_color == expects_transparent &&
+            state->has_current_slot == expects_current;
+    }
+    if (state->has_desired_video_format) {
+        return !state->has_transparent_color && !state->has_current_slot;
+    }
+    if (state->slot_count <= 1u) {
+        return state->has_transparent_color && !state->has_current_slot;
+    }
+    return !state->has_transparent_color && state->has_current_slot;
+}
+
 static size_t nmo_texture_identifier_remaining_dwords(
     const nmo_chunk_t *chunk)
 {
@@ -1041,6 +1066,10 @@ static nmo_status_t nmo_texture_validate(
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
                          "Texture movie filename is marked present but missing");
     }
+    if (!s->has_movie_filename && s->movie_filename != NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                         "Texture movie filename is present without its section");
+    }
     if (s->has_slot_filenames) {
         NMO_VALIDATE_COUNT(s->slot_filenames, s->slot_count, "slot_filenames");
     }
@@ -1100,6 +1129,31 @@ static nmo_status_t nmo_texture_validate(
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
                          "Texture save format exceeds serialized range");
     }
+    if (!s->has_pick_threshold && s->pick_threshold != 0) {
+        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                         "Texture pick threshold is present without its section");
+    }
+    if (s->has_oldtexonly &&
+        ((s->has_desired_video_format &&
+                s->desired_video_format == UNKNOWN_PF) ||
+               (!s->has_desired_video_format &&
+                s->desired_video_format != UNKNOWN_PF) ||
+               (!s->has_transparent_color &&
+                s->transparent_color != 0u) ||
+               (!s->has_current_slot && s->current_slot != 0) ||
+               !nmo_texture_oldtex_layout_is_representable(s))) {
+        NMO_RETURN_ERROR(
+            NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+            "Texture OLDTEXONLY fields cannot be serialized losslessly");
+    }
+    if (!s->has_save_format && s->save_format_size != 0u) {
+        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                         "Texture save format is present without its section");
+    }
+    if (!s->has_user_mipmaps && s->user_mipmap_count != 0u) {
+        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                         "Texture user mipmaps are present without their section");
+    }
     NMO_VALIDATE_BYTES(s->save_format_data, s->save_format_size, "save_format_data");
     NMO_VALIDATE_COUNT(s->user_mipmaps, s->user_mipmap_count, "user_mipmaps");
     for (uint32_t i = 0; i < s->user_mipmap_count; ++i) {
@@ -1136,6 +1190,18 @@ static nmo_status_t nmo_texture_serialize_internal(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_texture_serialize");
     }
     NMO_RETURN_IF_ERROR(nmo_texture_validate(state, type, context));
+    if (is_file && nmo_chunk_get_data_version(chunk) >= 5u &&
+        !state->has_oldtexonly &&
+        (state->mipmap_level != 0u || state->save_options != 0u ||
+         state->is_transparent || state->is_cubemap ||
+         state->has_desired_video_format ||
+         state->desired_video_format != UNKNOWN_PF ||
+         state->has_transparent_color || state->transparent_color != 0u ||
+         state->has_current_slot || state->current_slot != 0)) {
+        NMO_RETURN_ERROR(
+            NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+            "Texture packed state is present without OLDTEXONLY");
+    }
 
     {
         nmo_status_t result = nmo_beobject_serialize(&state->base, chunk, NULL, context);
@@ -1196,7 +1262,7 @@ static nmo_status_t nmo_texture_serialize_internal(
         NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, state->pick_threshold));
     }
 
-    {
+    if (state->has_oldtexonly) {
         nmo_status_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_OLDTEXONLY);
         if (result != NMO_OK) return result;
 
@@ -1204,16 +1270,19 @@ static nmo_status_t nmo_texture_serialize_internal(
         dword |= ((uint32_t)(state->save_options & 0xFF) << 16);
         if (state->is_transparent) dword |= 0x100;
         if (state->is_cubemap) dword |= 0x400;
-        if (state->has_desired_video_format && state->desired_video_format != UNKNOWN_PF) dword |= 0x200;
+        if (state->has_desired_video_format) dword |= 0x200;
 
         NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(chunk, dword));
-        NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(chunk, state->transparent_color));
+        if (state->has_transparent_color) {
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
+                chunk, state->transparent_color));
+        }
 
-        if (state->slot_count > 1) {
+        if (state->has_current_slot) {
             NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, state->current_slot));
         }
 
-        if (state->has_desired_video_format && state->desired_video_format != UNKNOWN_PF) {
+        if (state->has_desired_video_format) {
             NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(chunk, state->desired_video_format));
         }
     }
@@ -1712,6 +1781,7 @@ nmo_status_t nmo_texture_replace_bitmap(
     state->reader_height = (int32_t)height;
     state->reader_bpp = 32;
     state->save_options = NMO_CKTEXTURE_IMAGEFORMAT;
+    state->has_oldtexonly = 1;
 
     /* Ensure at least one slot */
     if (state->slot_count == 0)
