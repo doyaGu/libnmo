@@ -182,10 +182,70 @@ TEST(data_section_plan, calculate_size_uses_serialized_chunks) {
     nmo_arena_destroy(arena);
 }
 
+TEST(data_section_plan, rejects_invalid_plan_before_writing) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 1024 * 1024);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_data_section_t section = make_mixed_data_section(arena);
+    nmo_data_section_plan_t plan = {0};
+    ASSERT_EQ(NMO_OK, nmo_data_section_plan_build(&section, 6, arena, &plan));
+    ASSERT_LT(plan.total_size, 256u);
+
+    uint8_t output[256];
+    uint8_t expected[256];
+    memset(output, 0xA5, sizeof(output));
+    memset(expected, 0xA5, sizeof(expected));
+
+    section.objects[0].object_id = 0;
+    ASSERT_EQ(NMO_ERR_INVALID_STATE,
+              nmo_data_section_plan_write(
+                  &section, &plan, 6, output, sizeof(output)));
+    ASSERT_MEM_EQ(expected, output, sizeof(output));
+
+    section.objects[0].object_id = 42;
+    const uint8_t *object_bytes = plan.object_slices[0].bytes;
+    plan.object_slices[0].bytes = NULL;
+    ASSERT_EQ(NMO_ERR_INVALID_STATE,
+              nmo_data_section_plan_write(
+                  &section, &plan, 6, output, sizeof(output)));
+    ASSERT_MEM_EQ(expected, output, sizeof(output));
+
+    plan.object_slices[0].bytes = object_bytes;
+    plan.total_size++;
+    ASSERT_EQ(NMO_ERR_INVALID_STATE,
+              nmo_data_section_plan_write(
+                  &section, &plan, 6, output, sizeof(output)));
+    ASSERT_MEM_EQ(expected, output, sizeof(output));
+
+    nmo_arena_destroy(arena);
+}
+
+TEST(data_section_plan, rejects_missing_legacy_id_during_build) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 1024 * 1024);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_data_section_t section = make_mixed_data_section(arena);
+    section.objects[0].object_id = 0;
+
+    nmo_data_section_plan_t plan;
+    memset(&plan, 0xA5, sizeof(plan));
+    ASSERT_EQ(NMO_ERR_INVALID_STATE,
+              nmo_data_section_plan_build(&section, 6, arena, &plan));
+    ASSERT_EQ(0u, plan.total_size);
+    ASSERT_EQ(0u, plan.manager_count);
+    ASSERT_EQ(0u, plan.object_count);
+    ASSERT_NULL(plan.manager_slices);
+    ASSERT_NULL(plan.object_slices);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(data_section_plan, matches_legacy_serialization);
     REGISTER_TEST(data_section_plan, rejects_short_output_buffer);
     REGISTER_TEST(data_section_plan, rejects_missing_storage);
     REGISTER_TEST(data_section_plan, build_failure_does_not_publish_prefix);
     REGISTER_TEST(data_section_plan, calculate_size_uses_serialized_chunks);
+    REGISTER_TEST(data_section_plan, rejects_invalid_plan_before_writing);
+    REGISTER_TEST(data_section_plan, rejects_missing_legacy_id_during_build);
 TEST_MAIN_END()
