@@ -2169,8 +2169,8 @@ TEST(chunk_id_remap, material_refs_round_trip_and_failure_is_atomic) {
     source.emissive_color = 0xDDEEFF00u;
     source.specular_power = 3.5f;
     source.texture_border_color = 0x01020304u;
-    source.packed_modes = 0x12345678u;
-    source.packed_flags = 0x11223344u;
+    source.packed_modes = 0x12245678u;
+    source.packed_flags = 0x11020344u;
     for (size_t i = 0; i < 4; ++i) {
         source.textures[i] = nmo_ref_from_raw((nmo_object_id_t)(700 + i));
     }
@@ -2286,6 +2286,98 @@ TEST(chunk_id_remap, material_refs_round_trip_and_failure_is_atomic) {
     nmo_array_dispose(&failed.base.legacy_attributes);
     nmo_material_vtable.destroy(&failed, NULL, NULL);
     nmo_material_vtable.destroy(&invalid, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_id_remap, material_preserves_file_layouts) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+
+    nmo_material_state_t material;
+    ASSERT_EQ(NMO_OK, nmo_material_vtable.create(&material, NULL, NULL));
+    ASSERT_TRUE(material.has_material_data);
+
+    nmo_chunk_t *legacy = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(legacy);
+    legacy->class_id = NMO_CID_MATERIAL;
+    legacy->data_version = 4;
+    legacy->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_material_serialize(
+        &material, legacy, NULL, &serialize_context));
+    nmo_chunk_close(legacy);
+
+    nmo_material_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_material_vtable.create(&loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_material_deserialize(
+        &loaded, legacy, NULL, &deserialize_context));
+    ASSERT_TRUE(loaded.has_material_data);
+    ASSERT_EQ(material.diffuse_color, loaded.diffuse_color);
+    ASSERT_EQ(material.ambient_color, loaded.ambient_color);
+    ASSERT_EQ(material.specular_color, loaded.specular_color);
+    ASSERT_EQ(material.emissive_color, loaded.emissive_color);
+    ASSERT_EQ(material.packed_modes, loaded.packed_modes);
+    ASSERT_EQ(material.packed_flags, loaded.packed_flags);
+
+    loaded.has_effect = 1;
+    loaded.effect = 0;
+    loaded.has_additional_textures = 1;
+    nmo_chunk_t *modern = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(modern);
+    modern->class_id = NMO_CID_MATERIAL;
+    modern->data_version = 8;
+    modern->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_material_serialize(
+        &loaded, modern, NULL, &serialize_context));
+    nmo_chunk_close(modern);
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
+        modern, CK_STATESAVE_MATDATA3));
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
+        modern, CK_STATESAVE_MATDATA2));
+
+    nmo_chunk_t *empty = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(empty);
+    empty->class_id = NMO_CID_MATERIAL;
+    empty->data_version = 8;
+    empty->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(empty));
+    nmo_chunk_close(empty);
+    ASSERT_EQ(NMO_OK, nmo_material_deserialize(
+        &loaded, empty, NULL, &deserialize_context));
+    ASSERT_FALSE(loaded.has_material_data);
+    ASSERT_EQ(NMO_OK, nmo_material_serialize(
+        &loaded, empty, NULL, &serialize_context));
+    nmo_chunk_close(empty);
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_chunk_seek_identifier(
+        empty, CK_STATESAVE_MATDATA));
+
+    nmo_chunk_t *conflicting = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(conflicting);
+    conflicting->class_id = NMO_CID_MATERIAL;
+    conflicting->data_version = 8;
+    conflicting->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(conflicting));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        conflicting, CK_STATESAVE_MATDATA3));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(conflicting, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        conflicting, CK_STATESAVE_MATDATA5));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(conflicting, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(conflicting, 2));
+    nmo_chunk_close(conflicting);
+    loaded.effect = 77;
+    loaded.has_effect = 1;
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_material_deserialize(
+        &loaded, conflicting, NULL, &deserialize_context));
+    ASSERT_EQ(77u, loaded.effect);
+    ASSERT_TRUE(loaded.has_effect);
+
+    nmo_material_vtable.destroy(&loaded, NULL, NULL);
+    nmo_material_vtable.destroy(&material, NULL, NULL);
     nmo_arena_destroy(arena);
 }
 
@@ -11921,6 +12013,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, interfaceobjectmanager_chunk_count_stays_in_section);
     REGISTER_TEST(chunk_id_remap, behaviorlink_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, material_refs_round_trip_and_failure_is_atomic);
+    REGISTER_TEST(chunk_id_remap, material_preserves_file_layouts);
     REGISTER_TEST(chunk_id_remap, parameterlocal_owner_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, parameterin_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, parameterout_refs_round_trip_and_failure_is_atomic);

@@ -56,6 +56,7 @@ static void nmo_material_set_defaults(nmo_material_state_t *state)
         ((uint32_t)VXCMP_LESSEQUAL << 8) |
         ((uint32_t)VXCMP_ALWAYS << 16);
     state->effect_parameter = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+    state->has_material_data = 1;
 }
 
 static void nmo_material_dispose_base_arrays(nmo_material_state_t *state)
@@ -76,6 +77,11 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
         nmo_material_set_defaults(state);
     } while (0),
     nmo_beobject_vtable.destroy(&state->base, NULL, context))
+
+static nmo_status_t nmo_material_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 /* =============================================================================
  * REFLECTION FIELDS
@@ -114,6 +120,7 @@ static const nmo_type_field_t nmo_material_fields[] = {
     /* Effect */
     NMO_FIELD(nmo_material_state_t, effect, CKPGUID_UINT32),
     NMO_FIELD_REF(nmo_material_state_t, effect_parameter),
+    NMO_FIELD(nmo_material_state_t, has_material_data, CKPGUID_UINT8),
     NMO_FIELD(nmo_material_state_t, has_effect, CKPGUID_UINT8),
     NMO_FIELD(nmo_material_state_t, has_effect_param, CKPGUID_UINT8),
     NMO_FIELD(nmo_material_state_t, has_additional_textures, CKPGUID_UINT8)
@@ -150,6 +157,7 @@ static nmo_status_t nmo_material_deserialize_internal(
         decoded.textures[i] = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     }
     decoded.effect_parameter = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+    decoded.has_material_data = 0;
     decoded.has_effect = 0;
     decoded.has_effect_param = 0;
     decoded.has_additional_textures = 0;
@@ -157,6 +165,7 @@ static nmo_status_t nmo_material_deserialize_internal(
     nmo_status_t seek_result = nmo_chunk_seek_identifier(
         chunk, CK_STATESAVE_MATDATA);
     if (seek_result == NMO_OK) {
+        decoded.has_material_data = 1;
         uint32_t data_version = nmo_chunk_get_data_version(chunk);
 
         if (data_version < 5) {
@@ -332,6 +341,11 @@ static nmo_status_t nmo_material_deserialize_internal(
 
     seek_result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_MATDATA5);
     if (seek_result == NMO_OK) {
+        if (decoded.has_effect) {
+            NMO_RETURN_ERROR(
+                NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                "Material contains conflicting effect sections");
+        }
         NMO_RETURN_IF_ERROR(nmo_ref_read(
             chunk, &decoded.effect_parameter));
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &decoded.effect));
@@ -477,6 +491,7 @@ static nmo_status_t nmo_material_copy(
     target->packed_flags = source->packed_flags;
     target->effect = source->effect;
     target->effect_parameter = source->effect_parameter;
+    target->has_material_data = source->has_material_data;
     target->has_effect = source->has_effect;
     target->has_effect_param = source->has_effect_param;
     target->has_additional_textures = source->has_additional_textures;
@@ -491,7 +506,18 @@ static nmo_status_t nmo_material_validate(
     (void)type;
     if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
     const nmo_material_state_t *state = instance;
-    return nmo_beobject_vtable.validate(&state->base, NULL, context);
+    NMO_RETURN_IF_ERROR(nmo_beobject_vtable.validate(
+        &state->base, NULL, context));
+    if (nmo_material_normalize_packed_flags(state->packed_flags) !=
+        state->packed_flags ||
+        ((state->packed_modes >> 20) & 0xFu) >
+            (uint32_t)VXSHADE_GOURAUD ||
+        (state->has_effect_param && !state->has_effect)) {
+        NMO_RETURN_ERROR(
+            NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+            "Material state cannot be serialized losslessly");
+    }
+    NMO_RETURN_OK();
 }
 
 static bool nmo_material_ref_equals(
@@ -530,6 +556,7 @@ static bool nmo_material_equals(const void *a, const void *b)
         lhs->effect == rhs->effect &&
         nmo_material_ref_equals(
             &lhs->effect_parameter, &rhs->effect_parameter) &&
+        lhs->has_material_data == rhs->has_material_data &&
         lhs->has_effect == rhs->has_effect &&
         lhs->has_effect_param == rhs->has_effect_param &&
         lhs->has_additional_textures == rhs->has_additional_textures;
@@ -577,6 +604,7 @@ static uint32_t nmo_material_hash(const void *instance)
     NMO_MATERIAL_HASH_FIELD(packed_flags);
     NMO_MATERIAL_HASH_FIELD(effect);
     hash = nmo_material_hash_ref(hash, &state->effect_parameter);
+    NMO_MATERIAL_HASH_FIELD(has_material_data);
     NMO_MATERIAL_HASH_FIELD(has_effect);
     NMO_MATERIAL_HASH_FIELD(has_effect_param);
     NMO_MATERIAL_HASH_FIELD(has_additional_textures);
@@ -630,30 +658,118 @@ static nmo_status_t nmo_material_serialize_internal(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_material_serialize");
     }
 
+    const bool write_material = is_file ||
+        (save_flags & CK_STATESAVE_MATERIALONLY) != 0;
+    const bool write_legacy = is_file &&
+        nmo_chunk_get_data_version(chunk) < 5u;
+    if (write_material) {
+        NMO_RETURN_IF_ERROR(nmo_material_validate(state, type, context));
+        if (write_legacy &&
+            (((state->packed_flags >> 16) & 0xFu) !=
+                 (uint32_t)VXCMP_ALWAYS ||
+             (state->packed_flags & 0xFF000000u) != 0u)) {
+            NMO_RETURN_ERROR(
+                NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                "Legacy material layout cannot store alpha settings");
+        }
+    }
+
     {
         nmo_status_t result = nmo_beobject_serialize(&state->base, chunk, NULL, context);
             if (result != NMO_OK) return result;
     }
 
-    if (!is_file && (save_flags & CK_STATESAVE_MATERIALONLY) == 0) {
-        NMO_RETURN_OK();
+    if (!write_material) NMO_RETURN_OK();
+
+    nmo_material_state_t defaults = {0};
+    nmo_material_set_defaults(&defaults);
+    const bool has_default_data =
+        state->diffuse_color == defaults.diffuse_color &&
+        state->ambient_color == defaults.ambient_color &&
+        state->specular_color == defaults.specular_color &&
+        state->emissive_color == defaults.emissive_color &&
+        state->specular_power == defaults.specular_power &&
+        nmo_ref_serialized_id(&state->textures[0]) == NMO_OBJECT_ID_NONE &&
+        state->texture_border_color == defaults.texture_border_color &&
+        state->packed_modes == defaults.packed_modes &&
+        state->packed_flags == defaults.packed_flags;
+    const bool write_data = !is_file || state->has_material_data ||
+        !has_default_data;
+
+    nmo_status_t result;
+    if (write_data) {
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(
+            chunk, CK_STATESAVE_MATDATA));
+        if (write_legacy) {
+            const uint32_t colors[] = {
+                state->diffuse_color,
+                state->ambient_color,
+                state->specular_color,
+                state->emissive_color,
+            };
+            for (size_t i = 0; i < 4; ++i) {
+                nmo_color_t color;
+                nmo_color_from_argb32(colors[i], &color);
+                NMO_RETURN_IF_ERROR(nmo_chunk_write_float(chunk, color.r));
+                NMO_RETURN_IF_ERROR(nmo_chunk_write_float(chunk, color.g));
+                NMO_RETURN_IF_ERROR(nmo_chunk_write_float(chunk, color.b));
+                NMO_RETURN_IF_ERROR(nmo_chunk_write_float(chunk, color.a));
+            }
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
+                chunk, state->specular_power));
+            NMO_RETURN_IF_ERROR(nmo_ref_write(chunk, &state->textures[0]));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
+                chunk, state->packed_flags & 0xFFu));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
+                chunk, state->packed_modes & 0xFu));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
+                chunk, (state->packed_modes >> 4) & 0xFu));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
+                chunk, (state->packed_modes >> 8) & 0xFu));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
+                chunk, (state->packed_modes >> 12) & 0xFu));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
+                chunk, (state->packed_modes >> 16) & 0xFu));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
+                chunk, (state->packed_modes >> 20) & 0xFu));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
+                chunk, (state->packed_modes >> 24) & 0xFu));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
+                chunk, (state->packed_modes >> 28) & 0xFu));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
+                chunk, state->texture_border_color));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
+                chunk, (state->packed_flags >> 8) & 0xFu));
+        } else {
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
+                chunk, state->diffuse_color));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
+                chunk, state->ambient_color));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
+                chunk, state->specular_color));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
+                chunk, state->emissive_color));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
+                chunk, state->specular_power));
+            NMO_RETURN_IF_ERROR(nmo_ref_write(chunk, &state->textures[0]));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
+                chunk, state->texture_border_color));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
+                chunk, state->packed_modes));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
+                chunk, state->packed_flags));
+        }
     }
 
-    nmo_status_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_MATDATA);
-    if (result != NMO_OK) return result;
-
-    NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(chunk, state->diffuse_color));
-    NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(chunk, state->ambient_color));
-    NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(chunk, state->specular_color));
-    NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(chunk, state->emissive_color));
-    NMO_RETURN_IF_ERROR(nmo_chunk_write_float(chunk, state->specular_power));
-    NMO_RETURN_IF_ERROR(nmo_ref_write(chunk, &state->textures[0]));
-    NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(chunk, state->texture_border_color));
-    NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(chunk, state->packed_modes));
-    NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(chunk, nmo_material_normalize_packed_flags(state->packed_flags)));
-
-    if (state->has_effect && state->effect != 0) {
-        if (state->has_effect_param) {
+    const bool has_effect_parameter =
+        nmo_ref_serialized_id(&state->effect_parameter) !=
+        NMO_OBJECT_ID_NONE;
+    const bool write_effect_param = state->has_effect_param ||
+        has_effect_parameter;
+    const bool write_effect = state->has_effect || write_effect_param ||
+        state->effect != 0u;
+    if (write_effect) {
+        if (write_effect_param) {
             result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_MATDATA5);
             if (result != NMO_OK) return result;
             NMO_RETURN_IF_ERROR(nmo_ref_write(
@@ -665,7 +781,8 @@ static nmo_status_t nmo_material_serialize_internal(
         NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(chunk, state->effect));
     }
 
-    if (nmo_ref_serialized_id(&state->textures[1]) != NMO_OBJECT_ID_NONE ||
+    if (state->has_additional_textures ||
+        nmo_ref_serialized_id(&state->textures[1]) != NMO_OBJECT_ID_NONE ||
         nmo_ref_serialized_id(&state->textures[2]) != NMO_OBJECT_ID_NONE ||
         nmo_ref_serialized_id(&state->textures[3]) != NMO_OBJECT_ID_NONE) {
         result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_MATDATA2);

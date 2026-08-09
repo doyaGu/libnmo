@@ -159,6 +159,7 @@ typedef struct nmo_material_state {
     /* Effect data */
     uint32_t effect;
     nmo_ref_t effect_parameter;
+    uint8_t has_material_data;
     uint8_t has_effect;
     uint8_t has_effect_param;
     uint8_t has_additional_textures;
