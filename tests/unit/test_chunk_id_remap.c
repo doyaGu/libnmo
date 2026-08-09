@@ -13531,6 +13531,54 @@ TEST(chunk_id_remap, character_rejects_cross_section_counts_before_allocation) {
         &state, missing_root_ref, NULL, &file_context));
     ASSERT_EQ(777u, state.active_animation.raw_id);
 
+    static const struct {
+        uint32_t identifier;
+        uint32_t data_version;
+        bool file_mode;
+        size_t payload_dwords;
+        uint32_t payload[6];
+    } trailing_cases[] = {
+        {CK_STATESAVE_CHARACTERBODYPARTS, 4u, true, 1u, {0u}},
+        {CK_STATESAVE_CHARACTERANIMATIONS, 4u, true, 3u, {0u, 0u, 0u}},
+        {CK_STATESAVE_CHARACTERSAVEANIMS, 4u, false, 3u, {0u, 0u, 0u}},
+        {CK_STATESAVE_CHARACTERSAVEPARTS, 4u, false, 1u, {0u}},
+        {CK_STATESAVE_CHARACTERROOT, 4u, true, 1u, {0u}},
+        {CK_STATESAVE_CHARACTERFLOORREF, 4u, true, 1u, {0u}},
+        {CK_STATESAVE_CHARACTERBODYPARTS, 5u, true, 1u, {0u}},
+        {CK_STATESAVE_CHARACTERSAVEPARTS, 5u, false, 1u, {0u}},
+        {CK_STATESAVE_CHARACTERONLY, 5u, true, 6u,
+         {0u, 4u, 0u, 0u, 0u, 0u}},
+        {CK_STATESAVE_CHARACTERONLY, 5u, false, 5u,
+         {4u, 0u, 0u, 0u, 0u}},
+    };
+    for (size_t i = 0;
+         i < sizeof(trailing_cases) / sizeof(trailing_cases[0]); ++i) {
+        nmo_chunk_t *trailing = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(trailing);
+        trailing->class_id = NMO_CID_CHARACTER;
+        trailing->data_version = trailing_cases[i].data_version;
+        if (trailing_cases[i].file_mode) {
+            trailing->chunk_options |= NMO_CHUNK_OPTION_FILE;
+        }
+        ASSERT_EQ(NMO_OK, nmo_chunk_start_write(trailing));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+            trailing, trailing_cases[i].identifier));
+        for (size_t j = 0; j < trailing_cases[i].payload_dwords; ++j) {
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+                trailing, trailing_cases[i].payload[j]));
+        }
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing, 0x12345678u));
+        nmo_chunk_close(trailing);
+
+        nmo_deserialize_context_t *case_context = trailing_cases[i].file_mode
+            ? &file_context : &runtime_context;
+        ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_character_deserialize(
+            &state, trailing, NULL, case_context));
+        ASSERT_EQ(777u, state.active_animation.raw_id);
+        ASSERT_EQ(0u, state.body_parts.count);
+        ASSERT_EQ(0u, state.animations.count);
+    }
+
     nmo_chunk_t *large_runtime_parts = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(large_runtime_parts);
     large_runtime_parts->class_id = NMO_CID_CHARACTER;
@@ -13908,6 +13956,60 @@ TEST(chunk_id_remap, bodypart_rotation_joint_round_trips_without_size_prefix) {
     ASSERT_FLOAT_EQ(-1.0f, loaded.rotation_joint.min.x, 0.0001f);
     ASSERT_FLOAT_EQ(2.0f, loaded.rotation_joint.max.y, 0.0001f);
     ASSERT_FLOAT_EQ(0.75f, loaded.rotation_joint.damping.z, 0.0001f);
+
+    static const struct {
+        uint32_t identifier;
+        uint32_t data_version;
+        size_t payload_dwords;
+    } trailing_cases[] = {
+        {CK_STATESAVE_BODYPARTCHARACTER, 5u, 1u},
+        {CK_STATESAVE_BODYPARTROTJOINT, 4u, 18u},
+        {CK_STATESAVE_BODYPARTCHARACTER, 4u, 1u},
+    };
+    for (size_t i = 0;
+         i < sizeof(trailing_cases) / sizeof(trailing_cases[0]); ++i) {
+        nmo_chunk_t *trailing = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(trailing);
+        trailing->class_id = NMO_CID_BODYPART;
+        trailing->data_version = trailing_cases[i].data_version;
+        trailing->chunk_options |= NMO_CHUNK_OPTION_FILE;
+        ASSERT_EQ(NMO_OK, nmo_chunk_start_write(trailing));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+            trailing, trailing_cases[i].identifier));
+        for (size_t j = 0; j < trailing_cases[i].payload_dwords; ++j) {
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing, 0u));
+        }
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing, 0x12345678u));
+        nmo_chunk_close(trailing);
+        ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_bodypart_deserialize(
+            &loaded, trailing, NULL, &deserialize_context));
+        ASSERT_EQ(701u, loaded.character.raw_id);
+        ASSERT_EQ(0x12345678u, loaded.rotation_joint.flags);
+    }
+
+    nmo_chunk_t *joint_trailing = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(joint_trailing);
+    joint_trailing->class_id = NMO_CID_BODYPART;
+    joint_trailing->data_version = 5;
+    joint_trailing->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(joint_trailing));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        joint_trailing, CK_STATESAVE_3DENTITYFLAGS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        joint_trailing, CK_3DENTITY_IKJOINTVALID));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(joint_trailing, 0u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        joint_trailing, CK_STATESAVE_BODYPARTCHARACTER));
+    for (size_t i = 0; i < 11u; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(joint_trailing, 0u));
+    }
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        joint_trailing, 0x12345678u));
+    nmo_chunk_close(joint_trailing);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_bodypart_deserialize(
+        &loaded, joint_trailing, NULL, &deserialize_context));
+    ASSERT_EQ(701u, loaded.character.raw_id);
+    ASSERT_EQ(0x12345678u, loaded.rotation_joint.flags);
 
     nmo_bodypart_vtable.destroy(&loaded, NULL, NULL);
     nmo_bodypart_vtable.destroy(&source, NULL, NULL);
