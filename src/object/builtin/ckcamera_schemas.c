@@ -148,42 +148,50 @@ static nmo_status_t nmo_camera_deserialize_internal(
 
     const uint32_t data_version = nmo_chunk_get_data_version(chunk);
     if (data_version < 5) {
-        nmo_status_t seek_result = nmo_chunk_seek_identifier(
-            chunk, CK_STATESAVE_CAMERAFOV);
+        size_t payload_dwords = 0;
+        nmo_status_t seek_result = nmo_chunk_seek_identifier_with_size(
+            chunk, CK_STATESAVE_CAMERAFOV, &payload_dwords);
         if (seek_result == NMO_OK) {
+            if (payload_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
             out_state->has_fov_chunk = 1;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->fov));
         } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
-        seek_result = nmo_chunk_seek_identifier(
-            chunk, CK_STATESAVE_CAMERAPROJTYPE);
+        seek_result = nmo_chunk_seek_identifier_with_size(
+            chunk, CK_STATESAVE_CAMERAPROJTYPE, &payload_dwords);
         if (seek_result == NMO_OK) {
+            if (payload_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
             out_state->has_proj_chunk = 1;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->projection_type));
         } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
-        seek_result = nmo_chunk_seek_identifier(
-            chunk, CK_STATESAVE_CAMERAOTHOZOOM);
+        seek_result = nmo_chunk_seek_identifier_with_size(
+            chunk, CK_STATESAVE_CAMERAOTHOZOOM, &payload_dwords);
         if (seek_result == NMO_OK) {
+            if (payload_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
             out_state->has_ortho_chunk = 1;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->orthographic_zoom));
         } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
-        seek_result = nmo_chunk_seek_identifier(
-            chunk, CK_STATESAVE_CAMERAASPECT);
+        seek_result = nmo_chunk_seek_identifier_with_size(
+            chunk, CK_STATESAVE_CAMERAASPECT, &payload_dwords);
         if (seek_result == NMO_OK) {
+            if (payload_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
             out_state->has_aspect_chunk = 1;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &out_state->width));
             NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &out_state->height));
         } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
-        seek_result = nmo_chunk_seek_identifier(
-            chunk, CK_STATESAVE_CAMERAPLANES);
+        seek_result = nmo_chunk_seek_identifier_with_size(
+            chunk, CK_STATESAVE_CAMERAPLANES, &payload_dwords);
         if (seek_result == NMO_OK) {
+            if (payload_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
             out_state->has_planes_chunk = 1;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->near_plane));
             NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->far_plane));
         } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
     } else {
-        nmo_status_t seek_result = nmo_chunk_seek_identifier(
-            chunk, CK_STATESAVE_CAMERAONLY);
+        size_t payload_dwords = 0;
+        nmo_status_t seek_result = nmo_chunk_seek_identifier_with_size(
+            chunk, CK_STATESAVE_CAMERAONLY, &payload_dwords);
         if (seek_result == NMO_OK) {
+            if (payload_dwords < 6u) return NMO_ERR_TRUNCATED_CHUNK;
             out_state->has_cameraonly_chunk = 1;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, (int32_t *)&out_state->projection_type));
             NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->fov));

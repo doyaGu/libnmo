@@ -4110,6 +4110,47 @@ TEST(chunk_id_remap, camera_and_light_failures_keep_previous_state) {
     ASSERT_EQ(901u, nmo_beobject_script_array_get_id(
         &camera.entity.base.base.scripts, 0));
 
+    nmo_chunk_t *camera_cross_section = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(camera_cross_section);
+    camera_cross_section->class_id = NMO_CID_CAMERA;
+    camera_cross_section->data_version = 7;
+    camera_cross_section->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(camera_cross_section));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        camera_cross_section, CK_STATESAVE_CAMERAONLY));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(camera_cross_section, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_float(camera_cross_section, 0.75f));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_float(camera_cross_section, 1.0f));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(camera_cross_section, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_float(camera_cross_section, 0.1f));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        camera_cross_section, 0x3F800000u));
+    nmo_chunk_close(camera_cross_section);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_camera_deserialize(
+        &camera, camera_cross_section, NULL, &deserialize_context));
+    ASSERT_EQ(8.0f, camera.fov);
+    ASSERT_EQ(77, camera.width);
+    ASSERT_EQ(901u, nmo_beobject_script_array_get_id(
+        &camera.entity.base.base.scripts, 0));
+
+    nmo_chunk_t *legacy_camera_cross_section = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(legacy_camera_cross_section);
+    legacy_camera_cross_section->class_id = NMO_CID_CAMERA;
+    legacy_camera_cross_section->data_version = 4;
+    legacy_camera_cross_section->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(legacy_camera_cross_section));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        legacy_camera_cross_section, CK_STATESAVE_CAMERAFOV));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        legacy_camera_cross_section, 0x3F800000u));
+    nmo_chunk_close(legacy_camera_cross_section);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_camera_deserialize(
+        &camera, legacy_camera_cross_section, NULL, &deserialize_context));
+    ASSERT_EQ(8.0f, camera.fov);
+    ASSERT_EQ(77, camera.width);
+    ASSERT_EQ(901u, nmo_beobject_script_array_get_id(
+        &camera.entity.base.base.scripts, 0));
+
     nmo_chunk_t *light_chunk = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(light_chunk);
     light_chunk->class_id = NMO_CID_LIGHT;
