@@ -21,6 +21,7 @@
 #include "format/nmo_object.h"
 #include "object/nmo_object_repository.h"
 #include "type/nmo_type_system.h"
+#include "type/nmo_type_query.h"
 #include "type/nmo_reflection.h"
 #include "nmo_types.h"
 #include <stdalign.h>
@@ -74,6 +75,26 @@ static size_t nmo_parameterout_identifier_remaining_dwords(
     return next_pos - state->current_pos;
 }
 
+static void nmo_parameterout_check_owner(
+    nmo_ref_t *ref,
+    const nmo_object_repository_t *repository,
+    const nmo_type_registry_t *types)
+{
+    if (ref == NULL || ref->state != NMO_REF_RESOLVED ||
+        repository == NULL || types == NULL) {
+        return;
+    }
+    const nmo_object_t *target =
+        nmo_object_repository_find_by_id(repository, ref->id);
+    if (target != NULL &&
+        !nmo_type_query_object_is_derived_from_class(
+            types, target, NMO_CID_BEHAVIOR) &&
+        !nmo_type_query_object_is_derived_from_class(
+            types, target, NMO_CID_PARAMETEROPERATION)) {
+        ref->state = NMO_REF_CLASS_MISMATCH;
+    }
+}
+
 /**
  * @brief Deserialize CKParameterOut state from chunk
  *
@@ -114,7 +135,7 @@ static nmo_status_t nmo_parameterout_deserialize_internal(
         if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
         if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
         NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &owner));
-        nmo_ref_check_class(&owner, repository, types, NMO_CID_BEHAVIOR);
+        nmo_parameterout_check_owner(&owner, repository, types);
     } else if (result != NMO_ERR_NOT_FOUND) return result;
 
     /* Read destinations if present */
@@ -146,7 +167,7 @@ static nmo_status_t nmo_parameterout_deserialize_internal(
                     chunk, &destination_ids[i]));
                 nmo_ref_check_class(
                     &destination_ids[i], repository, types,
-                    NMO_CID_PARAMETERIN);
+                    NMO_CID_PARAMETER);
             }
         }
         destination_count = (uint32_t)count;

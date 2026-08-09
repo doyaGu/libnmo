@@ -5410,10 +5410,45 @@ TEST(chunk_id_remap, parameter_refs_require_layout_classes) {
     ASSERT_EQ(NMO_REF_CLASS_MISMATCH, direct_loaded.source.state);
     ASSERT_EQ(1702u, direct_loaded.source.id);
 
+    nmo_chunk_t *parameter_out = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(parameter_out);
+    parameter_out->class_id = NMO_CID_PARAMETEROUT;
+    parameter_out->data_version = 8;
+    parameter_out->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(parameter_out));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        parameter_out, CK_STATESAVE_PARAMETEROUT_OWNER));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(parameter_out, 704u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        parameter_out, CK_STATESAVE_PARAMETEROUT_DESTINATIONS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(parameter_out, 3));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(parameter_out, 701u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(parameter_out, 702u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(parameter_out, 703u));
+    nmo_chunk_close(parameter_out);
+    nmo_chunk_set_file_context(parameter_out, &file_context);
+
+    nmo_parameterout_state_t output_loaded;
+    ASSERT_EQ(NMO_OK, nmo_parameterout_vtable.create(
+        &output_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_parameterout_deserialize(
+        &output_loaded, parameter_out, NULL, &context));
+    ASSERT_EQ(NMO_REF_RESOLVED, output_loaded.owner.state);
+    ASSERT_EQ(1704u, output_loaded.owner.id);
+    ASSERT_EQ(3u, output_loaded.destination_count);
+    ASSERT_EQ(NMO_REF_RESOLVED, output_loaded.destination_ids[0].state);
+    ASSERT_EQ(1701u, output_loaded.destination_ids[0].id);
+    ASSERT_EQ(NMO_REF_CLASS_MISMATCH,
+              output_loaded.destination_ids[1].state);
+    ASSERT_EQ(1702u, output_loaded.destination_ids[1].id);
+    ASSERT_EQ(NMO_REF_RESOLVED, output_loaded.destination_ids[2].state);
+    ASSERT_EQ(1703u, output_loaded.destination_ids[2].id);
+
     nmo_parameteroperation_vtable.destroy(&loaded, NULL, NULL);
     nmo_parameterin_vtable.destroy(&owned_loaded, NULL, NULL);
     nmo_parameterin_vtable.destroy(&shared_loaded, NULL, NULL);
     nmo_parameterin_vtable.destroy(&direct_loaded, NULL, NULL);
+    nmo_parameterout_vtable.destroy(&output_loaded, NULL, NULL);
     nmo_object_repository_destroy(repository);
     nmo_type_registry_destroy(types);
     nmo_arena_destroy(arena);

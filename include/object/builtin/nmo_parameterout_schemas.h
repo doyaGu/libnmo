@@ -43,7 +43,7 @@ typedef struct nmo_parameterout_state {
     nmo_parameter_state_t base;
 
     /* Legacy owner reference (obsolete in CK2 but present in old files) */
-    nmo_ref_t owner;                   /**< Owner behavior (legacy formats) */
+    nmo_ref_t owner;                   /**< Owner behavior or parameter operation */
 
     /* Destination parameters */
     nmo_ref_t *destination_ids;        /**< Destination parameter references */
