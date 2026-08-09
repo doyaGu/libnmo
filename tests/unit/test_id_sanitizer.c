@@ -150,6 +150,47 @@ TEST(id_sanitizer, reseed_bulk_loads_mappings) {
     nmo_arena_destroy(arena);
 }
 
+TEST(id_sanitizer, reseed_failure_does_not_publish_prefix) {
+    sanitizer_fail_allocator_t fail_ctx = {
+        .base = nmo_allocator_default(),
+        .fail_allocations = false,
+    };
+    nmo_allocator_t allocator = nmo_allocator_custom(
+        sanitizer_fail_alloc, sanitizer_fail_free, &fail_ctx);
+    nmo_arena_t *arena = nmo_arena_create(&allocator, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_id_sanitizer_t *s = nmo_id_sanitizer_create(arena);
+    ASSERT_NOT_NULL(s);
+
+    uint32_t file_ids[45];
+    uint32_t runtime_ids[45];
+    for (uint32_t i = 0; i < 45; ++i) {
+        file_ids[i] = i + 1;
+        runtime_ids[i] = i + 101;
+    }
+
+    for (uint32_t i = 0; i < 44; ++i) {
+        ASSERT_EQ(NMO_OK,
+                  nmo_id_sanitizer_register(
+                      s, file_ids[i], runtime_ids[i]));
+    }
+
+    fail_ctx.fail_allocations = true;
+    ASSERT_EQ(NMO_ERR_NOMEM,
+              nmo_id_sanitizer_reseed(
+                  s, file_ids, runtime_ids, 45));
+    for (uint32_t i = 0; i < 45; ++i) {
+        ASSERT_EQ(NMO_OBJECT_ID_INVALID,
+                  nmo_id_file_to_runtime(s, file_ids[i]));
+        ASSERT_EQ(NMO_OBJECT_ID_INVALID,
+                  nmo_id_runtime_to_file(s, runtime_ids[i]));
+    }
+
+    fail_ctx.fail_allocations = false;
+    nmo_id_sanitizer_destroy(s);
+    nmo_arena_destroy(arena);
+}
+
 TEST(id_sanitizer, tracks_external_negative_ids) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
@@ -183,5 +224,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(id_sanitizer, reset_clears_state);
     REGISTER_TEST(id_sanitizer, mask_handling_on_registration);
     REGISTER_TEST(id_sanitizer, reseed_bulk_loads_mappings);
+    REGISTER_TEST(id_sanitizer, reseed_failure_does_not_publish_prefix);
     REGISTER_TEST(id_sanitizer, tracks_external_negative_ids);
 TEST_MAIN_END()

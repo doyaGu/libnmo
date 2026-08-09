@@ -164,6 +164,7 @@ nmo_status_t nmo_id_sanitizer_reseed(nmo_id_sanitizer_t *sanitizer,
     for (size_t i = 0; i < count; i++) {
         int r = nmo_id_sanitizer_register(sanitizer, file_ids[i], runtime_ids[i]);
         if (r != NMO_OK) {
+            nmo_id_sanitizer_reset(sanitizer);
             return r;
         }
     }
