@@ -4122,6 +4122,28 @@ TEST(chunk_id_remap, parameteroperation_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(902u, failed.in2.ref.raw_id);
     ASSERT_EQ(903u, failed.out.ref.raw_id);
 
+    nmo_chunk_t *missing_sequence_count = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(missing_sequence_count);
+    missing_sequence_count->class_id = NMO_CID_PARAMETEROPERATION;
+    missing_sequence_count->data_version = 8;
+    missing_sequence_count->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(missing_sequence_count));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        missing_sequence_count, CK_STATESAVE_OPERATIONNEWDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_guid(
+        missing_sequence_count, (nmo_guid_t){1u, 2u}));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        missing_sequence_count, 0));
+    nmo_chunk_close(missing_sequence_count);
+    nmo_chunk_set_file_context(missing_sequence_count, &read_context);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_parameteroperation_deserialize(
+        &failed, missing_sequence_count, NULL, &deserialize_context));
+    ASSERT_EQ(3u, failed.operation_guid.d1);
+    ASSERT_EQ(4u, failed.operation_guid.d2);
+    ASSERT_EQ(901u, failed.in1.ref.raw_id);
+    ASSERT_EQ(902u, failed.in2.ref.raw_id);
+    ASSERT_EQ(903u, failed.out.ref.raw_id);
+
     nmo_parameteroperation_state_t invalid = source;
     invalid.out.ref = nmo_ref_from_id(999);
     nmo_chunk_t *target = nmo_chunk_create(arena);
@@ -4208,6 +4230,45 @@ TEST(chunk_id_remap, parameteroperation_legacy_sections_are_atomic) {
     loaded.has_in2 = 1;
     ASSERT_NE(NMO_OK, nmo_parameteroperation_deserialize(
         &loaded, truncated, NULL, NULL));
+    ASSERT_EQ(911u, loaded.in1.ref.raw_id);
+    ASSERT_EQ(912u, loaded.in2.ref.raw_id);
+    ASSERT_EQ(1u, loaded.has_in1);
+    ASSERT_EQ(1u, loaded.has_in2);
+
+    nmo_chunk_t *output_cross_section = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(output_cross_section);
+    output_cross_section->class_id = NMO_CID_PARAMETEROPERATION;
+    output_cross_section->data_version = 8;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(output_cross_section));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        output_cross_section, CK_STATESAVE_OPERATIONOUTPUT));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(
+        output_cross_section, 823));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(output_cross_section, 0));
+    nmo_chunk_close(output_cross_section);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_parameteroperation_deserialize(
+        &loaded, output_cross_section, NULL, NULL));
+    ASSERT_EQ(911u, loaded.in1.ref.raw_id);
+    ASSERT_EQ(912u, loaded.in2.ref.raw_id);
+    ASSERT_EQ(1u, loaded.has_in1);
+    ASSERT_EQ(1u, loaded.has_in2);
+
+    nmo_chunk_t *inputs_cross_section = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(inputs_cross_section);
+    inputs_cross_section->class_id = NMO_CID_PARAMETEROPERATION;
+    inputs_cross_section->data_version = 8;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(inputs_cross_section));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        inputs_cross_section, CK_STATESAVE_OPERATIONINPUTS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(
+        inputs_cross_section, 821));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_sub_chunk(inputs_cross_section, NULL));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(
+        inputs_cross_section, 822));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(inputs_cross_section, 0));
+    nmo_chunk_close(inputs_cross_section);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_parameteroperation_deserialize(
+        &loaded, inputs_cross_section, NULL, NULL));
     ASSERT_EQ(911u, loaded.in1.ref.raw_id);
     ASSERT_EQ(912u, loaded.in2.ref.raw_id);
     ASSERT_EQ(1u, loaded.has_in1);

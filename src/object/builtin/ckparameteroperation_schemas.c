@@ -168,9 +168,13 @@ static nmo_status_t nmo_parameteroperation_deserialize_internal(
     const int is_file = (chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0;
 
     if (is_file) {
-        nmo_status_t result = nmo_chunk_seek_identifier(
-            chunk, CK_STATESAVE_OPERATIONNEWDATA);
+        size_t section_dwords = 0;
+        nmo_status_t result = nmo_chunk_seek_identifier_with_size(
+            chunk, CK_STATESAVE_OPERATIONNEWDATA, &section_dwords);
         if (result == NMO_OK) {
+            if (section_dwords < 3u) return NMO_ERR_TRUNCATED_CHUNK;
+            const size_t section_end =
+                nmo_chunk_get_position(chunk) + section_dwords;
             decoded.has_new_data = 1;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_guid(chunk, &decoded.operation_guid));
 
@@ -200,27 +204,38 @@ static nmo_status_t nmo_parameteroperation_deserialize_internal(
                 NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &decoded.out.ref));
                 decoded.has_out = 1;
             }
+            if (nmo_chunk_get_position(chunk) > section_end) {
+                return NMO_ERR_TRUNCATED_CHUNK;
+            }
             goto commit;
         }
         if (result != NMO_ERR_NOT_FOUND) return result;
 
-        result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OPERATIONOP);
+        result = nmo_chunk_seek_identifier_with_size(
+            chunk, CK_STATESAVE_OPERATIONOP, &section_dwords);
         if (result == NMO_OK) {
+            if (section_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
             decoded.has_operation = 1;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_guid(chunk, &decoded.operation_guid));
         } else if (result != NMO_ERR_NOT_FOUND) return result;
-        result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OPERATIONDEFAULTDATA);
+        result = nmo_chunk_seek_identifier_with_size(
+            chunk, CK_STATESAVE_OPERATIONDEFAULTDATA, &section_dwords);
         if (result == NMO_OK) {
+            if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
             NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &decoded.owner));
             decoded.has_owner = 1;
         } else if (result != NMO_ERR_NOT_FOUND) return result;
-        result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OPERATIONOUTPUT);
+        result = nmo_chunk_seek_identifier_with_size(
+            chunk, CK_STATESAVE_OPERATIONOUTPUT, &section_dwords);
         if (result == NMO_OK) {
+            if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
             NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &decoded.out.ref));
             decoded.has_out = 1;
         } else if (result != NMO_ERR_NOT_FOUND) return result;
-        result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OPERATIONINPUTS);
+        result = nmo_chunk_seek_identifier_with_size(
+            chunk, CK_STATESAVE_OPERATIONINPUTS, &section_dwords);
         if (result == NMO_OK) {
+            if (section_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
             NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &decoded.in1.ref));
             NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &decoded.in2.ref));
             decoded.has_in1 = 1;
@@ -229,31 +244,50 @@ static nmo_status_t nmo_parameteroperation_deserialize_internal(
         goto commit;
     }
 
-    nmo_status_t result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OPERATIONOP);
+    size_t section_dwords = 0;
+    nmo_status_t result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_OPERATIONOP, &section_dwords);
     if (result == NMO_OK) {
+        if (section_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
         decoded.has_operation = 1;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_guid(chunk, &decoded.operation_guid));
     } else if (result != NMO_ERR_NOT_FOUND) return result;
 
-    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OPERATIONDEFAULTDATA);
+    result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_OPERATIONDEFAULTDATA, &section_dwords);
     if (result == NMO_OK) {
+        if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
         NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &decoded.owner));
         decoded.has_owner = 1;
     } else if (result != NMO_ERR_NOT_FOUND) return result;
 
-    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OPERATIONOUTPUT);
+    result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_OPERATIONOUTPUT, &section_dwords);
     if (result == NMO_OK) {
+        if (section_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
+        const size_t section_end =
+            nmo_chunk_get_position(chunk) + section_dwords;
         NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &decoded.out.ref));
         NMO_RETURN_IF_ERROR(nmo_chunk_read_sub_chunk(chunk, &decoded.out.chunk));
+        if (nmo_chunk_get_position(chunk) > section_end) {
+            return NMO_ERR_TRUNCATED_CHUNK;
+        }
         decoded.has_out = 1;
     } else if (result != NMO_ERR_NOT_FOUND) return result;
 
-    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OPERATIONINPUTS);
+    result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_OPERATIONINPUTS, &section_dwords);
     if (result == NMO_OK) {
+        if (section_dwords < 4u) return NMO_ERR_TRUNCATED_CHUNK;
+        const size_t section_end =
+            nmo_chunk_get_position(chunk) + section_dwords;
         NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &decoded.in1.ref));
         NMO_RETURN_IF_ERROR(nmo_chunk_read_sub_chunk(chunk, &decoded.in1.chunk));
         NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &decoded.in2.ref));
         NMO_RETURN_IF_ERROR(nmo_chunk_read_sub_chunk(chunk, &decoded.in2.chunk));
+        if (nmo_chunk_get_position(chunk) > section_end) {
+            return NMO_ERR_TRUNCATED_CHUNK;
+        }
         decoded.has_in1 = 1;
         decoded.has_in2 = 1;
     } else if (result != NMO_ERR_NOT_FOUND) return result;
