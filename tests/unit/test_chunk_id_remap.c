@@ -6920,6 +6920,50 @@ TEST(chunk_id_remap, curvepoint_unresolved_curve_round_trips_raw_id) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, curvepoint_fields_stay_in_identifier_sections) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+    nmo_curvepoint_state_t state;
+    ASSERT_EQ(NMO_OK, nmo_curvepoint_vtable.create(&state, NULL, NULL));
+    state.curve = nmo_ref_from_raw(613);
+    state.tension = 12.5f;
+
+    const struct {
+        uint32_t identifier;
+        uint32_t data_version;
+        size_t required_dwords;
+    } cases[] = {
+        {CK_STATESAVE_CURVEPOINTDEFAULTDATA, 7, 12},
+        {CK_STATESAVE_CURVEPOINTDEFAULTDATA, 4, 6},
+        {CK_STATESAVE_CURVEPOINTTCB, 4, 3},
+        {CK_STATESAVE_CURVEPOINTCURVEPOS, 4, 3},
+        {CK_STATESAVE_CURVEPOINTTANGENTS, 4, 6},
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+        nmo_chunk_t *chunk = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(chunk);
+        chunk->data_version = cases[i].data_version;
+        ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+            chunk, cases[i].identifier));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, 0));
+        for (size_t j = 2; j < cases[i].required_dwords; ++j) {
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0));
+        }
+        nmo_chunk_close(chunk);
+        ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_curvepoint_deserialize(
+            &state, chunk, NULL, &deserialize_context));
+        ASSERT_EQ(613u, state.curve.raw_id);
+        ASSERT_EQ(12.5f, state.tension);
+    }
+
+    nmo_curvepoint_vtable.destroy(&state, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, sprite3d_unresolved_material_round_trips_raw_id) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
     ASSERT_NOT_NULL(arena);
@@ -14786,6 +14830,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, texture_preserves_legacy_file_layout);
     REGISTER_TEST(chunk_id_remap, texture_empty_sections_round_trip_presence);
     REGISTER_TEST(chunk_id_remap, curvepoint_unresolved_curve_round_trips_raw_id);
+    REGISTER_TEST(chunk_id_remap, curvepoint_fields_stay_in_identifier_sections);
     REGISTER_TEST(chunk_id_remap, sprite3d_unresolved_material_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, wavesound_unresolved_attachment_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, wavesound_data_stays_in_identifier_section);
