@@ -885,6 +885,20 @@ TEST(chunk_id_remap, behavior_serializer_does_not_publish_partial_chunk) {
     ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(chunk, &preserved));
     ASSERT_EQ(0x12345678u, preserved);
 
+    uint8_t malformed_entry = 0;
+    invalid.inputs.data = &malformed_entry;
+    invalid.inputs.element_size = sizeof(malformed_entry);
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_behavior_serialize(
+        &invalid, chunk, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(chunk));
+
+    invalid.inputs.data = &invalid;
+    invalid.inputs.element_size = sizeof(nmo_behavior_ref_t);
+    invalid.inputs.count = (size_t)INT32_MAX + 1u;
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_behavior_serialize(
+        &invalid, chunk, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(chunk));
+
     nmo_arena_destroy(arena);
 }
 

@@ -876,6 +876,11 @@ static nmo_status_t build_interface_file_index_remap(
  * CKBehavior SERIALIZATION
  * ============================================================================= */
 
+static nmo_status_t nmo_behavior_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
+
 /**
  * @brief Serialize CKBehavior state to chunk
  * 
@@ -1179,6 +1184,7 @@ nmo_status_t nmo_behavior_serialize(
     if (instance == NULL || out_chunk == NULL || out_chunk->arena == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
+    NMO_RETURN_IF_ERROR(nmo_behavior_validate(instance, type, context));
 
     nmo_chunk_t *staged = nmo_chunk_create(out_chunk->arena);
     if (staged == NULL) return NMO_ERR_NOMEM;
@@ -1450,11 +1456,6 @@ static nmo_status_t nmo_interface_copy_data(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t nmo_behavior_validate(
-    const void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context);
-
 static nmo_status_t nmo_behavior_copy_ref_array(
     nmo_arena_t *arena,
     nmo_array_t *dst,
@@ -1587,15 +1588,29 @@ static nmo_status_t nmo_behavior_validate(
     (void)context;
     const nmo_behavior_state_t *s = instance;
     if (s == NULL) return NMO_ERR_INVALID_ARGUMENT;
-    NMO_VALIDATE_COUNT(s->sub_behaviors.data, s->sub_behaviors.count, "sub_behaviors");
-    NMO_VALIDATE_COUNT(s->sub_behavior_links.data, s->sub_behavior_links.count,
-                       "sub_behavior_links");
-    NMO_VALIDATE_COUNT(s->operations.data, s->operations.count, "operations");
-    NMO_VALIDATE_COUNT(s->in_parameters.data, s->in_parameters.count, "in_parameters");
-    NMO_VALIDATE_COUNT(s->out_parameters.data, s->out_parameters.count, "out_parameters");
-    NMO_VALIDATE_COUNT(s->local_parameters.data, s->local_parameters.count, "local_parameters");
-    NMO_VALIDATE_COUNT(s->inputs.data, s->inputs.count, "inputs");
-    NMO_VALIDATE_COUNT(s->outputs.data, s->outputs.count, "outputs");
+    const nmo_array_t *arrays[] = {
+        &s->sub_behaviors, &s->sub_behavior_links, &s->operations,
+        &s->in_parameters, &s->out_parameters, &s->local_parameters,
+        &s->inputs, &s->outputs,
+    };
+    const char *names[] = {
+        "sub_behaviors", "sub_behavior_links", "operations",
+        "in_parameters", "out_parameters", "local_parameters",
+        "inputs", "outputs",
+    };
+    for (size_t i = 0; i < sizeof(arrays) / sizeof(arrays[0]); ++i) {
+        const nmo_array_t *array = arrays[i];
+        if (array->count > 0 && array->data == NULL) {
+            NMO_RETURN_ERROR(
+                NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                "Missing %s array for count %zu", names[i], array->count);
+        }
+        if (array->count > INT32_MAX ||
+            ((array->element_size != 0 || array->count > 0) &&
+             array->element_size != sizeof(nmo_behavior_ref_t))) {
+            return NMO_ERR_VALIDATION_FAILED;
+        }
+    }
     NMO_RETURN_OK();
 }
 
