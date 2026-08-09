@@ -2861,8 +2861,6 @@ TEST(interface_chunk, behavior_copy_deep_copies_interface_data) {
     ASSERT_FALSE(nmo_behavior_vtable.equals(&src, &dst));
     ASSERT_EQ((nmo_object_id_t)134, dst.interface_data->subs[0].behavior_id);
 
-    nmo_array_dispose(&src.sub_behaviors);
-    nmo_array_dispose(&dst.sub_behaviors);
     nmo_behavior_vtable.destroy(&src, NULL, NULL);
     nmo_behavior_vtable.destroy(&dst, NULL, NULL);
     nmo_arena_destroy(arena);

@@ -644,17 +644,63 @@ TEST(chunk_id_remap, behavior_unresolved_ref_round_trips_raw_id) {
 
     nmo_behavior_state_t source;
     ASSERT_EQ(NMO_OK, nmo_behavior_vtable.create(&source, NULL, NULL));
+    ASSERT_EQ(NMO_CKOBJECT_VISIBLE, source.base.base.visibility_flags);
     source.flags |= CKBEHAVIOR_TARGETABLE;
     source.target_parameter = nmo_ref_from_raw(778);
+    nmo_chunk_t *input_chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(input_chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(input_chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(input_chunk, 0x1234ABCDu));
+    nmo_chunk_close(input_chunk);
     nmo_behavior_ref_t unresolved = {
         .ref = {
             .raw_id = 777,
             .id = NMO_OBJECT_ID_NONE,
             .state = NMO_REF_UNRESOLVED,
         },
-        .chunk = NULL,
+        .chunk = input_chunk,
     };
     ASSERT_EQ(NMO_OK, nmo_array_append(&source.inputs, &unresolved));
+
+    nmo_behavior_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_behavior_vtable.create(&copied, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_behavior_vtable.copy(
+        &source, &copied, NULL, arena));
+    ASSERT_NE(source.inputs.data, copied.inputs.data);
+    ASSERT_NE(NMO_ARRAY_DATA(
+                  nmo_behavior_ref_t, &source.inputs)[0].chunk,
+              NMO_ARRAY_DATA(
+                  nmo_behavior_ref_t, &copied.inputs)[0].chunk);
+    ASSERT_TRUE(nmo_behavior_vtable.equals(&source, &copied));
+    ASSERT_EQ(nmo_behavior_vtable.hash(&source),
+              nmo_behavior_vtable.hash(&copied));
+
+    fail_after_allocator_state_t copy_allocator_state = {
+        .allocation_count = 0,
+        .allowed_allocations = 2,
+    };
+    nmo_allocator_t copy_allocator = nmo_allocator_custom(
+        fail_after_alloc, fail_after_free, &copy_allocator_state);
+    nmo_arena_t *copy_arena = nmo_arena_create(&copy_allocator, 1);
+    ASSERT_NOT_NULL(copy_arena);
+    nmo_behavior_state_t failed_copy;
+    ASSERT_EQ(NMO_OK, nmo_behavior_vtable.create(
+        &failed_copy, NULL, NULL));
+    failed_copy.flags = 0x87654321u;
+    nmo_behavior_ref_t preserved_ref = {
+        .ref = nmo_ref_from_raw(904),
+        .chunk = NULL,
+    };
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &failed_copy.inputs, &preserved_ref));
+    void *preserved_inputs = failed_copy.inputs.data;
+    ASSERT_EQ(NMO_ERR_NOMEM, nmo_behavior_vtable.copy(
+        &source, &failed_copy, NULL, copy_arena));
+    ASSERT_EQ(0x87654321u, failed_copy.flags);
+    ASSERT_EQ(preserved_inputs, failed_copy.inputs.data);
+    ASSERT_EQ(1u, failed_copy.inputs.count);
+    ASSERT_EQ(904u, NMO_ARRAY_DATA(
+        nmo_behavior_ref_t, &failed_copy.inputs)[0].ref.raw_id);
 
     nmo_chunk_file_context_t write_context = {
         .runtime_to_file = runtime_to_file,
@@ -798,10 +844,13 @@ TEST(chunk_id_remap, behavior_unresolved_ref_round_trips_raw_id) {
     ASSERT_EQ(0x12345678u, failed.flags);
     ASSERT_EQ(1u, failed.inputs.count);
 
-    nmo_array_dispose(&source.inputs);
-    nmo_array_dispose(&loaded.inputs);
-    nmo_array_dispose(&reloaded.inputs);
-    nmo_array_dispose(&failed.inputs);
+    nmo_behavior_vtable.destroy(&failed_copy, NULL, NULL);
+    nmo_arena_destroy(copy_arena);
+    nmo_behavior_vtable.destroy(&copied, NULL, NULL);
+    nmo_behavior_vtable.destroy(&source, NULL, NULL);
+    nmo_behavior_vtable.destroy(&loaded, NULL, NULL);
+    nmo_behavior_vtable.destroy(&reloaded, NULL, NULL);
+    nmo_behavior_vtable.destroy(&failed, NULL, NULL);
     nmo_arena_destroy(arena);
 }
 
