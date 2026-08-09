@@ -5134,6 +5134,25 @@ TEST(chunk_id_remap, target_camera_and_light_failures_are_atomic) {
     ASSERT_EQ(1u, camera.has_target);
     ASSERT_EQ(901u, camera.target.raw_id);
 
+    nmo_chunk_t *trailing_camera = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(trailing_camera);
+    trailing_camera->class_id = NMO_CID_TARGETCAMERA;
+    trailing_camera->data_version = 7;
+    trailing_camera->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(trailing_camera));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        trailing_camera, CK_STATESAVE_TCAMERATARGET));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(
+        trailing_camera, 801));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        trailing_camera, 0x12345678u));
+    nmo_chunk_close(trailing_camera);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_targetcamera_deserialize(
+        &camera, trailing_camera, NULL, &deserialize_context));
+    ASSERT_EQ(8.0f, camera.base.fov);
+    ASSERT_EQ(1u, camera.has_target);
+    ASSERT_EQ(901u, camera.target.raw_id);
+
     nmo_chunk_t *truncated_light = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(truncated_light);
     truncated_light->class_id = NMO_CID_TARGETLIGHT;
@@ -5170,6 +5189,26 @@ TEST(chunk_id_remap, target_camera_and_light_failures_are_atomic) {
     nmo_chunk_close(cross_light);
     ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_targetlight_deserialize(
         &light, cross_light, NULL, &deserialize_context));
+    ASSERT_EQ(0x123400u, light.base.flags);
+    ASSERT_EQ(9.0f, light.base.light_power);
+    ASSERT_EQ(1u, light.has_target);
+    ASSERT_EQ(902u, light.target.raw_id);
+
+    nmo_chunk_t *trailing_light = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(trailing_light);
+    trailing_light->class_id = NMO_CID_TARGETLIGHT;
+    trailing_light->data_version = 7;
+    trailing_light->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(trailing_light));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        trailing_light, CK_STATESAVE_TLIGHTTARGET));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(
+        trailing_light, 802));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        trailing_light, 0x87654321u));
+    nmo_chunk_close(trailing_light);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_targetlight_deserialize(
+        &light, trailing_light, NULL, &deserialize_context));
     ASSERT_EQ(0x123400u, light.base.flags);
     ASSERT_EQ(9.0f, light.base.light_power);
     ASSERT_EQ(1u, light.has_target);
