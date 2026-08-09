@@ -3640,6 +3640,7 @@ TEST(chunk_id_remap, layer_default_format_writes_empty_square_buffer) {
     nmo_layer_state_t loaded;
     ASSERT_EQ(NMO_OK, nmo_layer_vtable.create(&source, NULL, NULL));
     ASSERT_EQ(NMO_OK, nmo_layer_vtable.create(&loaded, NULL, NULL));
+    ASSERT_EQ(NMO_CKOBJECT_VISIBLE, source.base.visibility_flags);
     ASSERT_EQ(0, source.format);
     ASSERT_FALSE(source.has_square_data);
 
@@ -3707,6 +3708,31 @@ TEST(chunk_id_remap, layer_copy_preserves_content_equality) {
     ASSERT_EQ(nmo_layer_vtable.hash(&source),
               nmo_layer_vtable.hash(&copy));
 
+    fail_after_allocator_state_t allocator_state = {
+        .allowed_allocations = 2,
+    };
+    nmo_allocator_t failing_allocator = nmo_allocator_custom(
+        fail_after_alloc, fail_after_free, &allocator_state);
+    nmo_arena_t *failing_arena = nmo_arena_create(
+        &failing_allocator, 1);
+    ASSERT_NOT_NULL(failing_arena);
+    allocator_state.allowed_allocations = allocator_state.allocation_count;
+    nmo_layer_state_t copy_failed;
+    ASSERT_EQ(NMO_OK, nmo_layer_vtable.create(
+        &copy_failed, NULL, NULL));
+    copy_failed.type = 77;
+    copy_failed.grid = nmo_ref_from_raw(502);
+    uint32_t previous_square = 0xAABBCCDDu;
+    copy_failed.square_data = &previous_square;
+    copy_failed.square_data_size = sizeof(previous_square);
+    copy_failed.has_square_data = 1;
+    ASSERT_EQ(NMO_ERR_NOMEM, nmo_layer_vtable.copy(
+        &source, &copy_failed, &layer_type, failing_arena));
+    ASSERT_EQ(77, copy_failed.type);
+    ASSERT_EQ(502u, copy_failed.grid.raw_id);
+    ASSERT_EQ(&previous_square, copy_failed.square_data);
+    ASSERT_EQ(sizeof(previous_square), copy_failed.square_data_size);
+
     copy.type++;
     ASSERT_FALSE(nmo_layer_vtable.equals(&source, &copy));
     copy.type = source.type;
@@ -3716,8 +3742,10 @@ TEST(chunk_id_remap, layer_copy_preserves_content_equality) {
     ((uint8_t *)copy.square_data)[0] ^= 0xFFu;
     ASSERT_FALSE(nmo_layer_vtable.equals(&source, &copy));
 
+    nmo_layer_vtable.destroy(&copy_failed, NULL, NULL);
     nmo_layer_vtable.destroy(&copy, NULL, NULL);
     nmo_layer_vtable.destroy(&source, NULL, NULL);
+    nmo_arena_destroy(failing_arena);
     nmo_arena_destroy(copy_arena);
     nmo_arena_destroy(source_arena);
 }

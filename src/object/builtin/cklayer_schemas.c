@@ -47,10 +47,13 @@ static void nmo_layer_set_defaults(nmo_layer_state_t *state) {
 NMO_DEFINE_OBJECT_LIFECYCLE(
     layer,
     nmo_layer_state_t,
-    do { \
-        nmo_layer_set_defaults(state); \
+    do {
+        nmo_status_t result = nmo_object_vtable.create(
+            &state->base, NULL, context);
+        if (result != NMO_OK) return result;
+        nmo_layer_set_defaults(state);
     } while (0),
-    ((void)0))
+    nmo_object_vtable.destroy(&state->base, NULL, context))
 
 static nmo_status_t nmo_layer_deserialize_internal(
     void *instance,
@@ -167,8 +170,12 @@ nmo_status_t nmo_layer_deserialize(
     nmo_status_t result = nmo_layer_create(&decoded, type, context);
     if (result != NMO_OK) return result;
     result = nmo_layer_deserialize_internal(&decoded, chunk, type, context);
-    if (result != NMO_OK) return result;
+    if (result != NMO_OK) {
+        nmo_layer_destroy(&decoded, NULL, NULL);
+        return result;
+    }
 
+    nmo_layer_destroy(out_state, NULL, NULL);
     *out_state = decoded;
     return NMO_OK;
 }
@@ -288,17 +295,62 @@ static const nmo_type_field_t nmo_layer_fields[] = {
     NMO_FIELD(nmo_layer_state_t, square_data_size, CKPGUID_UINT64)
 };
 
+static nmo_status_t nmo_layer_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
+
 static nmo_status_t nmo_layer_copy(
     const void *src,
     void *dst,
     const nmo_type_descriptor_t *type,
     nmo_arena_t *arena)
 {
+    (void)type;
     const nmo_layer_state_t *s = src;
     nmo_layer_state_t *d = dst;
-    NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
-    return nmo_object_copy_bytes(arena, (void **)&d->square_data,
-                                 s->square_data, s->square_data_size);
+    if (s == NULL || d == NULL || arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    NMO_RETURN_IF_ERROR(nmo_layer_validate(s, NULL, NULL));
+
+    nmo_layer_state_t copied;
+    nmo_status_t result = nmo_layer_create(&copied, NULL, NULL);
+    if (result != NMO_OK) return result;
+    nmo_type_descriptor_t base_type = {
+        .size = sizeof(nmo_object_state_t),
+    };
+    result = nmo_object_vtable.copy(
+        &s->base, &copied.base, &base_type, arena);
+    if (result != NMO_OK) goto fail;
+
+    copied.grid = s->grid;
+    copied.type = s->type;
+    copied.format = s->format;
+    copied.version = s->version;
+    copied.color_rgba = s->color_rgba;
+    copied.param_guid = s->param_guid;
+    copied.flags = s->flags;
+    copied.has_layer_data = s->has_layer_data;
+    copied.has_type = s->has_type;
+    copied.has_version = s->has_version;
+    copied.has_color = s->has_color;
+    copied.has_param_guid = s->has_param_guid;
+    copied.has_flags = s->has_flags;
+    copied.has_square_data = s->has_square_data;
+    copied.square_data_size = s->square_data_size;
+    result = nmo_object_copy_bytes(
+        arena, &copied.square_data,
+        s->square_data, s->square_data_size);
+    if (result != NMO_OK) goto fail;
+
+    nmo_layer_destroy(d, NULL, NULL);
+    *d = copied;
+    return NMO_OK;
+
+fail:
+    nmo_layer_destroy(&copied, NULL, NULL);
+    return result;
 }
 
 static nmo_status_t nmo_layer_validate(
@@ -309,6 +361,7 @@ static nmo_status_t nmo_layer_validate(
     (void)type;
     (void)context;
     const nmo_layer_state_t *s = instance;
+    if (s == NULL) return NMO_ERR_INVALID_ARGUMENT;
     NMO_VALIDATE_BYTES(s->square_data, s->square_data_size, "square_data");
     NMO_RETURN_OK();
 }
