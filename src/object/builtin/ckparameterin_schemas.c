@@ -67,38 +67,33 @@ static const nmo_type_field_t nmo_parameterin_fields[] = {
     NMO_FIELD(nmo_parameterin_state_t, is_disabled, CKPGUID_UINT8)
 };
 
-static int nmo_parameterin_is_parameter_object(
-    const nmo_object_t *object,
-    const nmo_type_registry_t *types)
+static void nmo_parameterin_check_source(
+    nmo_ref_t *ref,
+    const nmo_object_repository_t *repository,
+    const nmo_type_registry_t *types,
+    uint8_t is_shared)
 {
-    const nmo_class_id_t bases[] = {
-        NMO_CID_PARAMETER,
-        NMO_CID_PARAMETERIN,
-        NMO_CID_PARAMETEROUT,
-        NMO_CID_PARAMETERLOCAL,
-        NMO_CID_PARAMETEROPERATION,
-    };
-    for (size_t i = 0; i < sizeof(bases) / sizeof(bases[0]); ++i) {
-        if (nmo_type_query_object_is_derived_from_class(
-                types, object, bases[i])) {
-            return 1;
-        }
-    }
-    return 0;
+    nmo_ref_check_class(
+        ref, repository, types,
+        is_shared ? NMO_CID_PARAMETERIN : NMO_CID_PARAMETER);
 }
 
-static void nmo_parameterin_check_source(
+static void nmo_parameterin_check_owner(
     nmo_ref_t *ref,
     const nmo_object_repository_t *repository,
     const nmo_type_registry_t *types)
 {
-    if (ref == NULL || ref->state != NMO_REF_RESOLVED || repository == NULL) {
+    if (ref == NULL || ref->state != NMO_REF_RESOLVED ||
+        repository == NULL || types == NULL) {
         return;
     }
     const nmo_object_t *target =
         nmo_object_repository_find_by_id(repository, ref->id);
-    if (target != NULL && !nmo_parameterin_is_parameter_object(
-            target, types)) {
+    if (target != NULL &&
+        !nmo_type_query_object_is_derived_from_class(
+            types, target, NMO_CID_BEHAVIOR) &&
+        !nmo_type_query_object_is_derived_from_class(
+            types, target, NMO_CID_PARAMETEROPERATION)) {
         ref->state = NMO_REF_CLASS_MISMATCH;
     }
 }
@@ -264,8 +259,9 @@ static nmo_status_t nmo_parameterin_deserialize_internal(
             nmo_deserialize_context_get_repository(context);
     const nmo_type_registry_t *types =
         nmo_deserialize_context_get_type_registry(context);
-    nmo_ref_check_class(&owner, repository, types, NMO_CID_BEHAVIOR);
-    nmo_parameterin_check_source(&source, repository, types);
+    nmo_parameterin_check_owner(&owner, repository, types);
+    nmo_parameterin_check_source(
+        &source, repository, types, is_shared);
     out_state->type_guid = type_guid;
     out_state->legacy_prefix_ref = legacy_prefix_ref;
     out_state->source = source;

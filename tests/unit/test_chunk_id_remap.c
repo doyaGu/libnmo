@@ -5037,7 +5037,7 @@ TEST(chunk_id_remap, parameteroperation_refs_round_trip_and_failure_is_atomic) {
     nmo_arena_destroy(arena);
 }
 
-TEST(chunk_id_remap, parameteroperation_refs_require_exact_parameter_classes) {
+TEST(chunk_id_remap, parameter_refs_require_layout_classes) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
     ASSERT_NOT_NULL(arena);
     nmo_type_registry_t *types = nmo_type_registry_create(arena);
@@ -5054,27 +5054,35 @@ TEST(chunk_id_remap, parameteroperation_refs_require_exact_parameter_classes) {
         NULL, 1702u, NMO_CID_PARAMETERIN);
     nmo_object_t *wrong_output = nmo_object_create(
         NULL, 1703u, NMO_CID_PARAMETERLOCAL);
+    nmo_object_t *operation_owner = nmo_object_create(
+        NULL, 1704u, NMO_CID_PARAMETEROPERATION);
     ASSERT_NOT_NULL(wrong_input);
     ASSERT_NOT_NULL(valid_input);
     ASSERT_NOT_NULL(wrong_output);
+    ASSERT_NOT_NULL(operation_owner);
     ASSERT_EQ(NMO_OK, nmo_object_set_type_guid(
         wrong_input, CKPGUID_PARAMETEROUT));
     ASSERT_EQ(NMO_OK, nmo_object_set_type_guid(
         valid_input, CKPGUID_PARAMETERIN));
     ASSERT_EQ(NMO_OK, nmo_object_set_type_guid(
         wrong_output, CKPGUID_PARAMETERLOCAL));
+    ASSERT_EQ(NMO_OK, nmo_object_set_type_guid(
+        operation_owner, CKPGUID_PARAMETEROPERATION));
     ASSERT_EQ(NMO_OK, nmo_object_repository_add(
         repository, &wrong_input));
     ASSERT_EQ(NMO_OK, nmo_object_repository_add(
         repository, &valid_input));
     ASSERT_EQ(NMO_OK, nmo_object_repository_add(
         repository, &wrong_output));
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(
+        repository, &operation_owner));
 
     nmo_id_remap_t *file_to_runtime = nmo_id_remap_create(arena);
     ASSERT_NOT_NULL(file_to_runtime);
     ASSERT_EQ(NMO_OK, nmo_id_remap_add(file_to_runtime, 701u, 1701u));
     ASSERT_EQ(NMO_OK, nmo_id_remap_add(file_to_runtime, 702u, 1702u));
     ASSERT_EQ(NMO_OK, nmo_id_remap_add(file_to_runtime, 703u, 1703u));
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(file_to_runtime, 704u, 1704u));
 
     nmo_chunk_t *chunk = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(chunk);
@@ -5112,7 +5120,84 @@ TEST(chunk_id_remap, parameteroperation_refs_require_exact_parameter_classes) {
     ASSERT_EQ(NMO_REF_CLASS_MISMATCH, loaded.out.ref.state);
     ASSERT_EQ(1703u, loaded.out.ref.id);
 
+    nmo_chunk_t *owned_input = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(owned_input);
+    owned_input->class_id = NMO_CID_PARAMETERIN;
+    owned_input->data_version = 8;
+    owned_input->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(owned_input));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        owned_input, CK_STATESAVE_PARAMETERIN_DEFAULTDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_guid(
+        owned_input, (nmo_guid_t){3u, 4u}));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(owned_input, 704u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(owned_input, 701u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(
+        owned_input, NMO_OBJECT_ID_NONE));
+    nmo_chunk_close(owned_input);
+    nmo_chunk_set_file_context(owned_input, &file_context);
+
+    nmo_parameterin_state_t owned_loaded;
+    ASSERT_EQ(NMO_OK, nmo_parameterin_vtable.create(
+        &owned_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_parameterin_deserialize(
+        &owned_loaded, owned_input, NULL, &context));
+    ASSERT_EQ(NMO_REF_RESOLVED, owned_loaded.owner.state);
+    ASSERT_EQ(1704u, owned_loaded.owner.id);
+    ASSERT_EQ(NMO_REF_RESOLVED, owned_loaded.source.state);
+    ASSERT_EQ(1701u, owned_loaded.source.id);
+    ASSERT_FALSE(owned_loaded.is_shared);
+
+    nmo_chunk_t *shared_input = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(shared_input);
+    shared_input->class_id = NMO_CID_PARAMETERIN;
+    shared_input->data_version = 8;
+    shared_input->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(shared_input));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        shared_input, CK_STATESAVE_PARAMETERIN_DATASHARED));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_guid(
+        shared_input, (nmo_guid_t){5u, 6u}));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(shared_input, 701u));
+    nmo_chunk_close(shared_input);
+    nmo_chunk_set_file_context(shared_input, &file_context);
+
+    nmo_parameterin_state_t shared_loaded;
+    ASSERT_EQ(NMO_OK, nmo_parameterin_vtable.create(
+        &shared_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_parameterin_deserialize(
+        &shared_loaded, shared_input, NULL, &context));
+    ASSERT_TRUE(shared_loaded.is_shared);
+    ASSERT_EQ(NMO_REF_CLASS_MISMATCH, shared_loaded.source.state);
+    ASSERT_EQ(1701u, shared_loaded.source.id);
+
+    nmo_chunk_t *direct_input = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(direct_input);
+    direct_input->class_id = NMO_CID_PARAMETERIN;
+    direct_input->data_version = 8;
+    direct_input->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(direct_input));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        direct_input, CK_STATESAVE_PARAMETERIN_DATASOURCE));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_guid(
+        direct_input, (nmo_guid_t){7u, 8u}));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(direct_input, 702u));
+    nmo_chunk_close(direct_input);
+    nmo_chunk_set_file_context(direct_input, &file_context);
+
+    nmo_parameterin_state_t direct_loaded;
+    ASSERT_EQ(NMO_OK, nmo_parameterin_vtable.create(
+        &direct_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_parameterin_deserialize(
+        &direct_loaded, direct_input, NULL, &context));
+    ASSERT_FALSE(direct_loaded.is_shared);
+    ASSERT_EQ(NMO_REF_CLASS_MISMATCH, direct_loaded.source.state);
+    ASSERT_EQ(1702u, direct_loaded.source.id);
+
     nmo_parameteroperation_vtable.destroy(&loaded, NULL, NULL);
+    nmo_parameterin_vtable.destroy(&owned_loaded, NULL, NULL);
+    nmo_parameterin_vtable.destroy(&shared_loaded, NULL, NULL);
+    nmo_parameterin_vtable.destroy(&direct_loaded, NULL, NULL);
     nmo_object_repository_destroy(repository);
     nmo_type_registry_destroy(types);
     nmo_arena_destroy(arena);
@@ -19044,7 +19129,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, parameter_object_ref_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, parameter_copy_is_deep_and_atomic);
     REGISTER_TEST(chunk_id_remap, parameteroperation_refs_round_trip_and_failure_is_atomic);
-    REGISTER_TEST(chunk_id_remap, parameteroperation_refs_require_exact_parameter_classes);
+    REGISTER_TEST(chunk_id_remap, parameter_refs_require_layout_classes);
     REGISTER_TEST(chunk_id_remap, parameteroperation_legacy_sections_are_atomic);
     REGISTER_TEST(chunk_id_remap, camera_and_light_failures_keep_previous_state);
     REGISTER_TEST(chunk_id_remap, camera_preserves_file_layouts);
