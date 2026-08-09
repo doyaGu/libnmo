@@ -1370,22 +1370,8 @@ static nmo_status_t workspace_edit_seek_message_manager_identifier(
     if (chunk == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
-    if (nmo_chunk_start_read(chunk) != NMO_OK) {
-        return NMO_ERR_INVALID_STATE;
-    }
-    if (nmo_chunk_seek_identifier(chunk, 0x53u) == NMO_OK) {
-        return NMO_OK;
-    }
-
-    if (nmo_chunk_start_read(chunk) != NMO_OK) {
-        return NMO_ERR_INVALID_STATE;
-    }
-    uint32_t identifier = 0u;
-    if (nmo_chunk_read_identifier(chunk, &identifier) != NMO_OK ||
-        identifier != 0x53u) {
-        return NMO_ERR_INVALID_STATE;
-    }
-    return NMO_OK;
+    NMO_RETURN_IF_ERROR(nmo_chunk_start_read(chunk));
+    return nmo_chunk_seek_identifier(chunk, 0x53u);
 }
 
 static nmo_status_t workspace_edit_seek_attribute_manager_identifier(
@@ -1394,21 +1380,8 @@ static nmo_status_t workspace_edit_seek_attribute_manager_identifier(
     if (chunk == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
-    if (nmo_chunk_start_read(chunk) != NMO_OK) {
-        return NMO_ERR_INVALID_STATE;
-    }
-    if (nmo_chunk_seek_identifier(chunk, 0x52u) == NMO_OK) {
-        return NMO_OK;
-    }
-    if (nmo_chunk_start_read(chunk) != NMO_OK) {
-        return NMO_ERR_INVALID_STATE;
-    }
-    uint32_t identifier = 0u;
-    if (nmo_chunk_read_identifier(chunk, &identifier) != NMO_OK ||
-        identifier != 0x52u) {
-        return NMO_ERR_INVALID_STATE;
-    }
-    return NMO_OK;
+    NMO_RETURN_IF_ERROR(nmo_chunk_start_read(chunk));
+    return nmo_chunk_seek_identifier(chunk, 0x52u);
 }
 
 static nmo_status_t workspace_edit_begin_for_workspace(
@@ -4515,9 +4488,8 @@ static nmo_status_t workspace_edit_read_message_manager_names(
     if (chunk == NULL) {
         return NMO_ERR_NOMEM;
     }
-    if (workspace_edit_seek_message_manager_identifier(chunk) != NMO_OK) {
-        return NMO_ERR_INVALID_STATE;
-    }
+    NMO_RETURN_IF_ERROR(
+        workspace_edit_seek_message_manager_identifier(chunk));
 
     int32_t count = 0;
     if (nmo_chunk_read_int(chunk, &count) != NMO_OK || count < 0) {
@@ -4597,9 +4569,12 @@ static nmo_status_t workspace_edit_read_attribute_manager_state(
     if (chunk == NULL) {
         return NMO_ERR_NOMEM;
     }
-    if (workspace_edit_seek_attribute_manager_identifier(chunk) != NMO_OK) {
+    const nmo_status_t seek_status =
+        workspace_edit_seek_attribute_manager_identifier(chunk);
+    if (seek_status == NMO_ERR_NOT_FOUND) {
         return NMO_OK;
     }
+    NMO_RETURN_IF_ERROR(seek_status);
 
     int32_t category_count = 0;
     int32_t attribute_count = 0;

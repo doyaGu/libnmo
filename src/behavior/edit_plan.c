@@ -279,23 +279,22 @@ static nmo_status_t edit_plan_read_manager_snapshot(
             edit_plan_manager_snapshot_dispose(snapshot);
             return NMO_ERR_NOMEM;
         }
-        if (nmo_chunk_start_read(chunk) != NMO_OK) {
-            return NMO_OK;
+        nmo_status_t attribute_status = nmo_chunk_start_read(chunk);
+        if (attribute_status != NMO_OK) {
+            edit_plan_manager_snapshot_dispose(snapshot);
+            return attribute_status;
         }
-        if (nmo_chunk_seek_identifier(chunk, 0x52u) != NMO_OK) {
-            if (nmo_chunk_start_read(chunk) != NMO_OK) {
-                return NMO_OK;
-            }
-            uint32_t identifier = 0u;
-            if (nmo_chunk_read_identifier(chunk, &identifier) != NMO_OK ||
-                identifier != 0x52u) {
-                return NMO_OK;
-            }
+        attribute_status = nmo_chunk_seek_identifier(chunk, 0x52u);
+        if (attribute_status == NMO_ERR_NOT_FOUND) {
+            break;
+        }
+        if (attribute_status != NMO_OK) {
+            edit_plan_manager_snapshot_dispose(snapshot);
+            return attribute_status;
         }
         int32_t category_count = 0;
         int32_t attribute_count = 0;
-        nmo_status_t attribute_status =
-            nmo_chunk_read_int(chunk, &category_count);
+        attribute_status = nmo_chunk_read_int(chunk, &category_count);
         if (attribute_status == NMO_OK) {
             attribute_status = nmo_chunk_read_int(chunk, &attribute_count);
         }
