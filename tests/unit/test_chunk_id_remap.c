@@ -5097,6 +5097,45 @@ TEST(chunk_id_remap, camera_and_light_failures_keep_previous_state) {
     ASSERT_EQ(901u, nmo_beobject_script_array_get_id(
         &camera.entity.base.base.scripts, 0));
 
+    const struct {
+        uint32_t identifier;
+        uint32_t data_version;
+        size_t payload_dwords;
+    } trailing_camera_sections[] = {
+        {CK_STATESAVE_CAMERAFOV, 4u, 1u},
+        {CK_STATESAVE_CAMERAPROJTYPE, 4u, 1u},
+        {CK_STATESAVE_CAMERAOTHOZOOM, 4u, 1u},
+        {CK_STATESAVE_CAMERAASPECT, 4u, 2u},
+        {CK_STATESAVE_CAMERAPLANES, 4u, 2u},
+        {CK_STATESAVE_CAMERAONLY, 7u, 6u},
+    };
+    for (size_t i = 0;
+         i < sizeof(trailing_camera_sections) /
+             sizeof(trailing_camera_sections[0]);
+         ++i) {
+        nmo_chunk_t *trailing = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(trailing);
+        trailing->class_id = NMO_CID_CAMERA;
+        trailing->data_version = trailing_camera_sections[i].data_version;
+        trailing->chunk_options |= NMO_CHUNK_OPTION_FILE;
+        ASSERT_EQ(NMO_OK, nmo_chunk_start_write(trailing));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+            trailing, trailing_camera_sections[i].identifier));
+        for (size_t j = 0;
+             j < trailing_camera_sections[i].payload_dwords;
+             ++j) {
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing, 0));
+        }
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing, 0x12345678u));
+        nmo_chunk_close(trailing);
+        ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_camera_deserialize(
+            &camera, trailing, NULL, &deserialize_context));
+        ASSERT_EQ(8.0f, camera.fov);
+        ASSERT_EQ(77, camera.width);
+        ASSERT_EQ(901u, nmo_beobject_script_array_get_id(
+            &camera.entity.base.base.scripts, 0));
+    }
+
     nmo_chunk_t *light_chunk = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(light_chunk);
     light_chunk->class_id = NMO_CID_LIGHT;
