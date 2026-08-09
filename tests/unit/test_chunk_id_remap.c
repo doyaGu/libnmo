@@ -17186,6 +17186,83 @@ TEST(chunk_id_remap, curve_staging_initializes_inherited_arrays) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, curve_layout_follows_data_version) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
+    ASSERT_NOT_NULL(arena);
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, UINT32_MAX);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+
+    nmo_curve_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_curve_vtable.create(&source, NULL, NULL));
+    nmo_ref_t point = nmo_ref_from_raw(751);
+    source.control_point_count = 1;
+    source.control_point_ids = &point;
+    source.fitting_coeff = 1.5f;
+    source.step_count = 42;
+    source.opened = 0;
+
+    nmo_chunk_t *legacy = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(legacy);
+    legacy->class_id = NMO_CID_CURVE;
+    legacy->data_version = 4;
+    legacy->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_curve_serialize(
+        &source, legacy, NULL, &serialize_context));
+    nmo_chunk_close(legacy);
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_chunk_seek_identifier(
+        legacy, CK_STATESAVE_CURVEONLY));
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
+        legacy, CK_STATESAVE_CURVECONTROLPOINT));
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
+        legacy, CK_STATESAVE_CURVEFITCOEFF));
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
+        legacy, CK_STATESAVE_CURVESTEPS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
+        legacy, CK_STATESAVE_CURVEOPEN));
+
+    nmo_curve_state_t legacy_loaded;
+    ASSERT_EQ(NMO_OK, nmo_curve_vtable.create(
+        &legacy_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_curve_deserialize(
+        &legacy_loaded, legacy, NULL, &deserialize_context));
+    ASSERT_EQ(1u, legacy_loaded.control_point_count);
+    ASSERT_EQ(751u, legacy_loaded.control_point_ids[0].raw_id);
+    ASSERT_EQ(1.5f, legacy_loaded.fitting_coeff);
+    ASSERT_EQ(42u, legacy_loaded.step_count);
+    ASSERT_EQ(0u, legacy_loaded.opened);
+
+    nmo_chunk_t *modern = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(modern);
+    modern->class_id = NMO_CID_CURVE;
+    modern->data_version = 7;
+    modern->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_curve_serialize(
+        &legacy_loaded, modern, NULL, &serialize_context));
+    nmo_chunk_close(modern);
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
+        modern, CK_STATESAVE_CURVEONLY));
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_chunk_seek_identifier(
+        modern, CK_STATESAVE_CURVECONTROLPOINT));
+
+    nmo_curve_state_t modern_loaded;
+    ASSERT_EQ(NMO_OK, nmo_curve_vtable.create(
+        &modern_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_curve_deserialize(
+        &modern_loaded, modern, NULL, &deserialize_context));
+    ASSERT_EQ(751u, modern_loaded.control_point_ids[0].raw_id);
+    ASSERT_EQ(1.5f, modern_loaded.fitting_coeff);
+    ASSERT_EQ(42u, modern_loaded.step_count);
+    ASSERT_EQ(0u, modern_loaded.opened);
+
+    nmo_curve_vtable.destroy(&source, NULL, NULL);
+    nmo_curve_vtable.destroy(&legacy_loaded, NULL, NULL);
+    nmo_curve_vtable.destroy(&modern_loaded, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, curve_refs_round_trip_and_failure_is_atomic) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
     ASSERT_NOT_NULL(arena);
@@ -18181,6 +18258,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, keyedanimation_sections_round_trip_independently);
     REGISTER_TEST(chunk_id_remap, animation_sections_do_not_borrow_following_identifiers);
     REGISTER_TEST(chunk_id_remap, curve_staging_initializes_inherited_arrays);
+    REGISTER_TEST(chunk_id_remap, curve_layout_follows_data_version);
     REGISTER_TEST(chunk_id_remap, curve_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, objectanimation_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, objectanimation_sections_do_not_borrow_following_identifiers);

@@ -860,8 +860,10 @@ static nmo_status_t nmo_curve_serialize_internal(
         const bool has_legacy_ids = in_state->has_controlpoints_chunk ||
             in_state->has_fitting_chunk || in_state->has_steps_chunk ||
             in_state->has_open_chunk;
+        const bool modern_layout =
+            nmo_chunk_get_data_version(out_chunk) >= 5u;
 
-        if (in_state->has_curveonly_chunk || !has_legacy_ids) {
+        if (modern_layout) {
             result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_CURVEONLY);
             if (result != NMO_OK) return result;
             result = write_object_sequence(out_chunk,
@@ -875,7 +877,10 @@ static nmo_status_t nmo_curve_serialize_internal(
             result = nmo_chunk_write_dword(out_chunk, in_state->opened);
             if (result != NMO_OK) return result;
         } else {
-            if (in_state->has_controlpoints_chunk) {
+            const bool convert_modern_layout =
+                in_state->has_curveonly_chunk || !has_legacy_ids;
+            if (in_state->has_controlpoints_chunk ||
+                convert_modern_layout) {
                 result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_CURVECONTROLPOINT);
                 if (result != NMO_OK) return result;
                 result = write_object_sequence(out_chunk,
@@ -883,19 +888,19 @@ static nmo_status_t nmo_curve_serialize_internal(
                                    in_state->control_point_count);
                 if (result != NMO_OK) return result;
             }
-            if (in_state->has_fitting_chunk) {
+            if (in_state->has_fitting_chunk || convert_modern_layout) {
                 result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_CURVEFITCOEFF);
                 if (result != NMO_OK) return result;
                 result = nmo_chunk_write_float(out_chunk, in_state->fitting_coeff);
                 if (result != NMO_OK) return result;
             }
-            if (in_state->has_steps_chunk) {
+            if (in_state->has_steps_chunk || convert_modern_layout) {
                 result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_CURVESTEPS);
                 if (result != NMO_OK) return result;
                 result = nmo_chunk_write_dword(out_chunk, in_state->step_count);
                 if (result != NMO_OK) return result;
             }
-            if (in_state->has_open_chunk) {
+            if (in_state->has_open_chunk || convert_modern_layout) {
                 result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_CURVEOPEN);
                 if (result != NMO_OK) return result;
                 result = nmo_chunk_write_dword(out_chunk, in_state->opened);
