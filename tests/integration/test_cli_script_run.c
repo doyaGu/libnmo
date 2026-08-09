@@ -1753,6 +1753,8 @@ TEST(cli, script_run_executor_rewire_operation_uses_edit_plan) {
     changed_objects = get_array_field(data, "changed_objects");
     ASSERT_NOT_NULL(changed_objects);
     ASSERT_TRUE(array_contains_object_id(changed_objects, 17u));
+    ASSERT_TRUE(array_contains_object_id_with_role(
+        changed_objects, 16u, "operation_slot_parameter"));
     yyjson_doc_free(doc);
 }
 

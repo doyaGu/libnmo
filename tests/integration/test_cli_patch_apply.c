@@ -411,7 +411,7 @@ static void write_rewire_operation_patch(const char *path,
              "      \"op\": \"add_parameter\",\n"
              "      \"owner_id\": 6,\n"
              "      \"kind\": \"local\",\n"
-             "      \"type_guid\": \"5A5716FD-44E276D7\",\n"
+             "      \"type_guid\": \"47884C3F-432C2C20\",\n"
              "      \"name\": \"Patch Current Op In\"\n"
              "    },\n"
              "    {\n"
@@ -1915,6 +1915,8 @@ TEST(cli, patch_apply_rewire_operation_dry_run) {
     yyjson_val *changed_objects = get_array_field(data, "changed_objects");
     ASSERT_NOT_NULL(changed_objects);
     ASSERT_TRUE(array_contains_object_id(changed_objects, 17u));
+    ASSERT_NOT_NULL(find_object_by_id_and_role(
+        changed_objects, 16u, "operation_slot_parameter"));
     yyjson_val *diff = get_object_field(data, "diff");
     ASSERT_NOT_NULL(diff);
     yyjson_val *operation_graph_diff =
@@ -1934,12 +1936,15 @@ TEST(cli, patch_apply_rewire_operation_dry_run) {
     ASSERT_NOT_NULL(rewire_after);
     ASSERT_STR_EQ("{33CC6B49-3589282B}",
                   get_string_field(rewire_before, "operation_guid"));
-    ASSERT_FALSE(get_bool_field(rewire_before, "has_in1"));
-    ASSERT_EQ(0u, (uint32_t)get_uint_field(rewire_before, "in1_parameter_id"));
+    ASSERT_TRUE(get_bool_field(rewire_before, "has_in1"));
+    const uint32_t in1_slot_id =
+        (uint32_t)get_uint_field(rewire_before, "in1_parameter_id");
+    ASSERT_NE(0u, in1_slot_id);
     ASSERT_STR_EQ("{33CC6B49-3589282B}",
                   get_string_field(rewire_after, "operation_guid"));
     ASSERT_TRUE(get_bool_field(rewire_after, "has_in1"));
-    ASSERT_EQ(16u, (uint32_t)get_uint_field(rewire_after, "in1_parameter_id"));
+    ASSERT_EQ(in1_slot_id,
+              (uint32_t)get_uint_field(rewire_after, "in1_parameter_id"));
     ASSERT_FALSE(file_exists(output));
     yyjson_doc_free(doc);
     remove(patch);
