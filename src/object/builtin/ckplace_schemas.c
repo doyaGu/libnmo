@@ -95,8 +95,11 @@ static nmo_status_t nmo_place_deserialize_internal(
         NMO_RETURN_OK();
     }
 
-    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PLACECAMERA);
+    size_t section_dwords = 0;
+    result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_PLACECAMERA, &section_dwords);
     if (result == NMO_OK) {
+        if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
         nmo_ref_t camera = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &camera));
         nmo_ref_check_class(
@@ -109,8 +112,10 @@ static nmo_status_t nmo_place_deserialize_internal(
         out_state->has_camera = 1;
     } else if (result != NMO_ERR_NOT_FOUND) return result;
 
-    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PLACELEVEL);
+    result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_PLACELEVEL, &section_dwords);
     if (result == NMO_OK) {
+        if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
         nmo_ref_t level = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &level));
         nmo_ref_check_class(
@@ -123,8 +128,10 @@ static nmo_status_t nmo_place_deserialize_internal(
         out_state->has_level = 1;
     } else if (result != NMO_ERR_NOT_FOUND) return result;
 
-    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PLACEPORTALS);
+    result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_PLACEPORTALS, &section_dwords);
     if (result == NMO_OK) {
+        if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
         int32_t count = 0;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &count));
         if (count < 0) return NMO_ERR_INVALID_FORMAT;
@@ -168,8 +175,10 @@ static nmo_status_t nmo_place_deserialize_internal(
         nmo_array_dispose(&portals);
     } else if (result != NMO_ERR_NOT_FOUND) return result;
 
-    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PLACEREFERENCES);
+    result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_PLACEREFERENCES, &section_dwords);
     if (result == NMO_OK) {
+        if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
         nmo_ref_t *refs = NULL;
         size_t count = 0;
         nmo_status_t result = nmo_ref_read_sequence(

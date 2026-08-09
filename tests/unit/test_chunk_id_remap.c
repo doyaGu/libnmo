@@ -9213,6 +9213,25 @@ TEST(chunk_id_remap, place_refs_round_trip_and_truncation_is_atomic) {
     ASSERT_EQ(899u, nmo_beobject_script_array_get_id(
         &failed.base.base.base.scripts, 0));
 
+    nmo_chunk_t *missing_reference_count = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(missing_reference_count);
+    missing_reference_count->class_id = NMO_CID_PLACE;
+    missing_reference_count->data_version = 7;
+    missing_reference_count->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(missing_reference_count));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        missing_reference_count, CK_STATESAVE_PLACEREFERENCES));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        missing_reference_count, 0));
+    nmo_chunk_close(missing_reference_count);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_place_deserialize(
+        &failed, missing_reference_count, NULL, &deserialize_context));
+    ASSERT_EQ(1u, failed.references.count);
+    ASSERT_EQ(807u, NMO_ARRAY_DATA(
+        nmo_ref_t, &failed.references)[0].raw_id);
+    ASSERT_EQ(899u, nmo_beobject_script_array_get_id(
+        &failed.base.base.base.scripts, 0));
+
     nmo_chunk_t *truncated_camera = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(truncated_camera);
     truncated_camera->class_id = NMO_CID_PLACE;
@@ -9229,6 +9248,22 @@ TEST(chunk_id_remap, place_refs_round_trip_and_truncation_is_atomic) {
     failed_camera.camera = nmo_ref_from_raw(808);
     ASSERT_NE(NMO_OK, nmo_place_deserialize(
         &failed_camera, truncated_camera, NULL, &deserialize_context));
+    ASSERT_TRUE(failed_camera.has_camera);
+    ASSERT_EQ(808u, failed_camera.camera.raw_id);
+
+    nmo_chunk_t *cross_section_camera = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(cross_section_camera);
+    cross_section_camera->class_id = NMO_CID_PLACE;
+    cross_section_camera->data_version = 7;
+    cross_section_camera->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(cross_section_camera));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_section_camera, CK_STATESAVE_PLACECAMERA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_section_camera, 0x11223344u));
+    nmo_chunk_close(cross_section_camera);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_place_deserialize(
+        &failed_camera, cross_section_camera, NULL, &deserialize_context));
     ASSERT_TRUE(failed_camera.has_camera);
     ASSERT_EQ(808u, failed_camera.camera.raw_id);
 
@@ -9257,6 +9292,24 @@ TEST(chunk_id_remap, place_refs_round_trip_and_truncation_is_atomic) {
     ASSERT_EQ(1u, failed_portal.portals.count);
     ASSERT_EQ(809u, NMO_ARRAY_DATA(
         nmo_place_portal_entry_t, &failed_portal.portals)[0].place.raw_id);
+
+    nmo_chunk_t *missing_portal_count = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(missing_portal_count);
+    missing_portal_count->class_id = NMO_CID_PLACE;
+    missing_portal_count->data_version = 7;
+    missing_portal_count->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(missing_portal_count));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        missing_portal_count, CK_STATESAVE_PLACEPORTALS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(missing_portal_count, 0));
+    nmo_chunk_close(missing_portal_count);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_place_deserialize(
+        &failed_portal, missing_portal_count, NULL, &deserialize_context));
+    ASSERT_EQ(1u, failed_portal.portals.count);
+    ASSERT_EQ(809u, NMO_ARRAY_DATA(
+        nmo_place_portal_entry_t, &failed_portal.portals)[0].place.raw_id);
+    ASSERT_EQ(810u, NMO_ARRAY_DATA(
+        nmo_place_portal_entry_t, &failed_portal.portals)[0].portal.raw_id);
 
     nmo_chunk_t *cross_section_portal = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(cross_section_portal);
