@@ -478,7 +478,13 @@ static nmo_status_t nmo_objectanimation_validate(
             return NMO_ERR_VALIDATION_FAILED;
         }
     }
-    uint32_t newdata_controller_slots = 0u;
+    if (s->format == CKOBJANIM_FORMAT_LEGACY &&
+        (s->morph_key_count < 0 || s->morph_vertex_count < 0 ||
+         (uint32_t)s->morph_key_count != s->morph_key_parsed_count ||
+         s->morph_normals_id != 0u || s->morph_normals_count != 0u)) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    uint32_t controller_slots = 0u;
     for (uint32_t i = 0; i < s->controller_count; ++i) {
         NMO_VALIDATE_BYTES(
             s->controllers[i].data,
@@ -489,7 +495,8 @@ static nmo_status_t nmo_objectanimation_validate(
              (s->controllers[i].data_size & 3u) != 0u)) {
             return NMO_ERR_VALIDATION_FAILED;
         }
-        if (s->format == CKOBJANIM_FORMAT_NEWDATA) {
+        if (s->format == CKOBJANIM_FORMAT_NEWDATA ||
+            s->format == CKOBJANIM_FORMAT_LEGACY) {
             uint32_t slot = 0u;
             switch (s->controllers[i].type) {
             case CKANIMATION_LINPOS_CONTROL: slot = 1u << 0; break;
@@ -498,13 +505,18 @@ static nmo_status_t nmo_objectanimation_validate(
             case CKANIMATION_LINSCLAXIS_CONTROL: slot = 1u << 3; break;
             default: return NMO_ERR_VALIDATION_FAILED;
             }
-            if ((newdata_controller_slots & slot) != 0u ||
+            if ((controller_slots & slot) != 0u ||
                 s->controllers[i].key_count == 0u ||
                 s->controllers[i].data_size == 0u) {
                 return NMO_ERR_VALIDATION_FAILED;
             }
-            newdata_controller_slots |= slot;
+            controller_slots |= slot;
         }
+    }
+    if (s->format == CKOBJANIM_FORMAT_LEGACY &&
+        (controller_slots & (1u << 3)) != 0u &&
+        (controller_slots & (1u << 2)) == 0u) {
+        return NMO_ERR_VALIDATION_FAILED;
     }
     for (uint32_t i = 0; i < s->morph_key_parsed_count; ++i) {
         NMO_VALIDATE_BYTES(
@@ -1559,6 +1571,10 @@ static nmo_status_t read_legacy_controllers(
         uint32_t key_count = 0;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &buf_size));
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &key_count));
+        if ((key_count == 0u) != (buf_size == 0u)) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Inconsistent legacy position controller payload");
+        }
         NMO_RETURN_IF_ERROR(nmo_animation_validate_payload_size(
             chunk, buf_size));
 
@@ -1587,6 +1603,10 @@ static nmo_status_t read_legacy_controllers(
         uint32_t rot_key_count = 0;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &rot_buf_size));
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &rot_key_count));
+        if ((rot_key_count == 0u) != (rot_buf_size == 0u)) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Inconsistent legacy rotation controller payload");
+        }
         NMO_RETURN_IF_ERROR(nmo_animation_validate_payload_size(
             chunk, rot_buf_size));
 
@@ -1610,6 +1630,10 @@ static nmo_status_t read_legacy_controllers(
         uint32_t axis_key_count = 0;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &axis_buf_size));
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &axis_key_count));
+        if ((axis_key_count == 0u) != (axis_buf_size == 0u)) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Inconsistent legacy scale-axis controller payload");
+        }
         NMO_RETURN_IF_ERROR(nmo_animation_validate_payload_size(
             chunk, axis_buf_size));
 
@@ -1638,6 +1662,10 @@ static nmo_status_t read_legacy_controllers(
         uint32_t key_count = 0;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &buf_size));
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &key_count));
+        if ((key_count == 0u) != (buf_size == 0u)) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Inconsistent legacy scale controller payload");
+        }
         NMO_RETURN_IF_ERROR(nmo_animation_validate_payload_size(
             chunk, buf_size));
 
