@@ -269,6 +269,45 @@ TEST(interface_chunk, parse_prefers_legacy_version_when_canonical_invalid) {
     nmo_arena_destroy(arena);
 }
 
+TEST(interface_chunk, reject_corrupt_identifier_chain_after_header) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, 0xB0000001u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0x16u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, 0xB0000002u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 1));
+
+    const size_t header_pos = nmo_chunk_get_position(chunk);
+    ASSERT_TRUE(header_pos != (size_t)-1);
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, 0xB0070000u));
+    write_script_header_fields(
+        chunk, 100, NMO_INTERFACE_FLAG_HEADER_ONLY, 0, 0.0f, 0.0f);
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_float(chunk, 10.0f));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_float(chunk, 20.0f));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_float(chunk, 100.0f));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 0));
+    nmo_chunk_close(chunk);
+
+    uint32_t *dwords = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    ASSERT_TRUE(header_pos + 1u < chunk->data.count);
+    dwords[header_pos + 1u] = (uint32_t)header_pos;
+
+    nmo_interface_data_t rejected;
+    memset(&rejected, 0xA5, sizeof(rejected));
+    ASSERT_EQ(NMO_ERR_INVALID_STATE,
+              nmo_interface_chunk_parse(chunk, arena, NULL, &rejected));
+    ASSERT_EQ(0u, rejected.version);
+    ASSERT_EQ(0u, rejected.sub_count);
+    ASSERT_NULL(rejected.subs);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST(interface_chunk, reject_version_too_low) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
@@ -3079,6 +3118,7 @@ TEST_MAIN_BEGIN()
     /* Tasks 1-3 */
     REGISTER_TEST(interface_chunk, parse_minimal);
     REGISTER_TEST(interface_chunk, parse_prefers_legacy_version_when_canonical_invalid);
+    REGISTER_TEST(interface_chunk, reject_corrupt_identifier_chain_after_header);
     REGISTER_TEST(interface_chunk, reject_version_too_low);
     REGISTER_TEST(interface_chunk, reject_version_too_high);
     REGISTER_TEST(interface_chunk, version_min_accepted);

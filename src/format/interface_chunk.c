@@ -1357,25 +1357,24 @@ static nmo_status_t parse_extra_data(
      */
     uint32_t extra_version = 0;
 
-    nmo_chunk_parser_state_t *ps = nmo_chunk_get_parser_state(chunk);
-    nmo_chunk_parser_state_t saved_ps;
-    if (ps) { saved_ps = *ps; }
-
-    st = nmo_chunk_seek_identifier(chunk, NMO_INTERFACE_EXTRA_ID_V3);
-    if (st == NMO_OK) {
+    bool found = false;
+    st = optional_seek_identifier(
+        chunk, NMO_INTERFACE_EXTRA_ID_V3, &found);
+    NMO_RETURN_IF_ERROR(st);
+    if (found) {
         extra_version = 3;
     } else {
-        if (ps) { *ps = saved_ps; }
-        st = nmo_chunk_seek_identifier(chunk, NMO_INTERFACE_EXTRA_ID_V2);
-        if (st == NMO_OK) {
+        st = optional_seek_identifier(
+            chunk, NMO_INTERFACE_EXTRA_ID_V2, &found);
+        NMO_RETURN_IF_ERROR(st);
+        if (found) {
             extra_version = 2;
         } else {
-            if (ps) { *ps = saved_ps; }
-            st = nmo_chunk_seek_identifier(chunk, NMO_INTERFACE_EXTRA_ID_V1);
-            if (st == NMO_OK) {
+            st = optional_seek_identifier(
+                chunk, NMO_INTERFACE_EXTRA_ID_V1, &found);
+            NMO_RETURN_IF_ERROR(st);
+            if (found) {
                 extra_version = 1;
-            } else {
-                if (ps) { *ps = saved_ps; }
             }
         }
     }
@@ -1385,16 +1384,16 @@ static nmo_status_t parse_extra_data(
         uint32_t peek_val = 0;
         size_t pos_before = nmo_chunk_get_position(chunk);
         st = nmo_chunk_read_dword(chunk, &peek_val);
-        if (st == NMO_OK) {
-            extra_version = match_extra_identifier(peek_val);
-            if (extra_version > 0) {
-                /* Skip the next-pointer DWORD */
-                st = nmo_chunk_skip(chunk, 1);
-                if (st != NMO_OK) extra_version = 0;
-            } else {
-                /* Not an identifier, restore position */
-                nmo_chunk_goto(chunk, pos_before);
-            }
+        NMO_RETURN_IF_ERROR(st);
+        extra_version = match_extra_identifier(peek_val);
+        if (extra_version > 0) {
+            /* Skip the next-pointer DWORD */
+            st = nmo_chunk_skip(chunk, 1);
+            NMO_RETURN_IF_ERROR(st);
+        } else {
+            /* Not an identifier, restore position */
+            st = nmo_chunk_goto(chunk, pos_before);
+            NMO_RETURN_IF_ERROR(st);
         }
     }
 
