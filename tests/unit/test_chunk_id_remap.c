@@ -13681,6 +13681,115 @@ TEST(chunk_id_remap, patchmesh_rejects_cross_section_legacy_materials) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, patchmesh_data_sections_do_not_borrow_following_identifiers) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
+    ASSERT_NOT_NULL(arena);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+
+    const struct packed_case {
+        uint32_t identifier;
+        size_t payload_dwords;
+    } packed_cases[] = {
+        {CK_STATESAVE_PATCHMESHDATA3, 8u},
+        {CK_STATESAVE_PATCHMESHDATA2, 13u},
+    };
+    for (size_t case_index = 0;
+         case_index < sizeof(packed_cases) / sizeof(packed_cases[0]);
+         ++case_index) {
+        nmo_chunk_t *chunk = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(chunk);
+        chunk->class_id = NMO_CID_PATCHMESH;
+        chunk->chunk_version = NMO_CHUNK_VERSION4;
+        chunk->data_version = 7;
+        chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+        ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+            chunk, packed_cases[case_index].identifier));
+        for (size_t i = 0; i < packed_cases[case_index].payload_dwords; ++i) {
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0u));
+        }
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, 0));
+        nmo_chunk_close(chunk);
+
+        nmo_patchmesh_state_t state;
+        ASSERT_EQ(NMO_OK, nmo_patchmesh_vtable.create(
+            &state, NULL, NULL));
+        state.patch_flags = 0x12345678u;
+        ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK,
+                  nmo_patchmesh_deserialize(
+                      &state, chunk, NULL, &deserialize_context));
+        ASSERT_EQ(0x12345678u, state.patch_flags);
+        nmo_patchmesh_vtable.destroy(&state, NULL, NULL);
+    }
+
+    nmo_chunk_t *vector_tail = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(vector_tail);
+    vector_tail->class_id = NMO_CID_PATCHMESH;
+    vector_tail->chunk_version = NMO_CHUNK_VERSION4;
+    vector_tail->data_version = 7;
+    vector_tail->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(vector_tail));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        vector_tail, CK_STATESAVE_PATCHMESHDATA3));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(vector_tail, 0u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(vector_tail, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(vector_tail, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        vector_tail, sizeof(nmo_vector_t)));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(vector_tail, 1u));
+    for (size_t i = 0; i < sizeof(nmo_vector_t) / sizeof(uint32_t); ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(vector_tail, 0u));
+    }
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(vector_tail, 0));
+    for (size_t i = 0; i < 3u; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(vector_tail, 0u));
+    }
+    nmo_chunk_close(vector_tail);
+
+    nmo_patchmesh_state_t vector_state;
+    ASSERT_EQ(NMO_OK, nmo_patchmesh_vtable.create(
+        &vector_state, NULL, NULL));
+    vector_state.patch_flags = 0x87654321u;
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK,
+              nmo_patchmesh_deserialize(
+                  &vector_state, vector_tail, NULL, &deserialize_context));
+    ASSERT_EQ(0x87654321u, vector_state.patch_flags);
+    nmo_patchmesh_vtable.destroy(&vector_state, NULL, NULL);
+
+    nmo_chunk_t *smoothing = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(smoothing);
+    smoothing->class_id = NMO_CID_PATCHMESH;
+    smoothing->chunk_version = NMO_CHUNK_VERSION4;
+    smoothing->data_version = 7;
+    smoothing->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(smoothing));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        smoothing, CK_STATESAVE_PATCHMESHDATA2));
+    for (size_t i = 0; i < 14u; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(smoothing, 0u));
+    }
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        smoothing, CK_STATESAVE_PATCHMESHSMOOTH));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(smoothing, 0u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(smoothing, 0));
+    nmo_chunk_close(smoothing);
+
+    nmo_patchmesh_state_t smoothing_state;
+    ASSERT_EQ(NMO_OK, nmo_patchmesh_vtable.create(
+        &smoothing_state, NULL, NULL));
+    smoothing_state.patch_flags = 0xCAFEBABEu;
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK,
+              nmo_patchmesh_deserialize(
+                  &smoothing_state, smoothing, NULL,
+                  &deserialize_context));
+    ASSERT_EQ(0xCAFEBABEu, smoothing_state.patch_flags);
+    nmo_patchmesh_vtable.destroy(&smoothing_state, NULL, NULL);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, patchmesh_data2_layout_and_empty_sections_round_trip) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
     ASSERT_NOT_NULL(arena);
@@ -15418,6 +15527,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, mesh_rejects_truncated_large_weights_before_allocation);
     REGISTER_TEST(chunk_id_remap, patchmesh_data3_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, patchmesh_rejects_cross_section_legacy_materials);
+    REGISTER_TEST(chunk_id_remap, patchmesh_data_sections_do_not_borrow_following_identifiers);
     REGISTER_TEST(chunk_id_remap, patchmesh_data2_layout_and_empty_sections_round_trip);
     REGISTER_TEST(chunk_id_remap, patchmesh_serializer_rejects_partial_state);
     REGISTER_TEST(chunk_id_remap, patchmesh_copy_preserves_atomic_records);

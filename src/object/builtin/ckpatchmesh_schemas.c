@@ -96,14 +96,41 @@ static size_t nmo_patchmesh_identifier_remaining_dwords(
 static nmo_status_t nmo_patchmesh_check_buffer_available(
     nmo_chunk_t *chunk,
     uint32_t byte_count,
+    size_t trailing_dwords,
     const char *label)
 {
     const size_t dword_count = ((size_t)byte_count + 3u) / 4u;
-    if (dword_count > nmo_patchmesh_identifier_remaining_dwords(chunk)) {
+    const size_t remaining_dwords =
+        nmo_patchmesh_identifier_remaining_dwords(chunk);
+    if (trailing_dwords > remaining_dwords ||
+        dword_count > remaining_dwords - trailing_dwords) {
         NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                          "CKPatchMesh %s exceeds remaining DWORDs", label);
     }
     NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_patchmesh_require_dwords(
+    const nmo_chunk_t *chunk,
+    size_t required_dwords,
+    const char *label)
+{
+    if (required_dwords >
+        nmo_patchmesh_identifier_remaining_dwords(chunk)) {
+        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                         "CKPatchMesh %s is truncated", label);
+    }
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t nmo_patchmesh_require_section_end(
+    const nmo_chunk_t *chunk,
+    size_t section_end)
+{
+    const size_t position = nmo_chunk_get_position(chunk);
+    if (position > section_end) return NMO_ERR_TRUNCATED_CHUNK;
+    if (position < section_end) return NMO_ERR_INVALID_FORMAT;
+    return NMO_OK;
 }
 
 /* =============================================================================
@@ -205,9 +232,14 @@ static nmo_status_t nmo_patchmesh_decode_payload(
 
 #define decoded (*decoded_state)
 
-    nmo_status_t seek_result = nmo_chunk_seek_identifier(
-        chunk, CK_STATESAVE_PATCHMESHDATA3);
+    size_t section_dwords = 0u;
+    nmo_status_t seek_result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_PATCHMESHDATA3, &section_dwords);
     if (seek_result == NMO_OK) {
+        const size_t section_end =
+            nmo_chunk_get_position(chunk) + section_dwords;
+        NMO_RETURN_IF_ERROR(nmo_patchmesh_require_dwords(
+            chunk, 5u, "DATA3 header"));
         decoded.format = CKPATCHMESH_FORMAT_DATA3;
 
         uint32_t patch_flags = 0;
@@ -227,7 +259,7 @@ static nmo_status_t nmo_patchmesh_decode_payload(
         NMO_RETURN_IF_ERROR(nmo_patchmesh_check_buffer_layout(
             buffer_size, total_count, sizeof(nmo_vector_t), "vector buffer"));
         NMO_RETURN_IF_ERROR(nmo_patchmesh_check_buffer_available(
-            chunk, buffer_size, "vector buffer"));
+            chunk, buffer_size, 4u, "vector buffer"));
         decoded.total_count = total_count;
 
         if (total_count > 0) {
@@ -254,8 +286,9 @@ static nmo_status_t nmo_patchmesh_decode_payload(
                              "CKPatchMesh patch count exceeds limits");
         }
         if (patch_count > SIZE_MAX / 13u ||
+            nmo_patchmesh_identifier_remaining_dwords(chunk) < 3u ||
             patch_count * 13u >
-                nmo_patchmesh_identifier_remaining_dwords(chunk)) {
+                nmo_patchmesh_identifier_remaining_dwords(chunk) - 3u) {
             NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                              "CKPatchMesh patches exceed remaining DWORDs");
         }
@@ -288,6 +321,8 @@ static nmo_status_t nmo_patchmesh_decode_payload(
 
         uint32_t edge_bytes = 0;
         uint32_t edge_count = 0;
+        NMO_RETURN_IF_ERROR(nmo_patchmesh_require_dwords(
+            chunk, 3u, "DATA3 edge header"));
         NMO_PATCHMESH_READ(nmo_chunk_read_dword(chunk, &edge_bytes),
                            "edge buffer size");
         NMO_PATCHMESH_READ(nmo_chunk_read_dword(chunk, &edge_count),
@@ -295,7 +330,7 @@ static nmo_status_t nmo_patchmesh_decode_payload(
         NMO_RETURN_IF_ERROR(nmo_patchmesh_check_buffer_layout(
             edge_bytes, edge_count, 12u, "edge buffer"));
         NMO_RETURN_IF_ERROR(nmo_patchmesh_check_buffer_available(
-            chunk, edge_bytes, "edge buffer"));
+            chunk, edge_bytes, 1u, "edge buffer"));
         decoded.edge_count = edge_count;
         decoded.edge_data_size = edge_bytes;
         if (edge_bytes > 0) {
@@ -308,6 +343,8 @@ static nmo_status_t nmo_patchmesh_decode_payload(
         }
 
         size_t channel_count = 0;
+        NMO_RETURN_IF_ERROR(nmo_patchmesh_require_dwords(
+            chunk, 1u, "DATA3 channel count"));
         sequence_result = nmo_chunk_read_object_sequence_start(
             chunk, &channel_count);
         if (sequence_result != NMO_OK) {
@@ -344,6 +381,11 @@ static nmo_status_t nmo_patchmesh_decode_payload(
 
             for (uint32_t i = 0; i < decoded.channel_count; ++i) {
                 nmo_patchmesh_channel_t *channel = &decoded.channels[i];
+                const size_t later_channel_dwords =
+                    (size_t)(decoded.channel_count - i - 1u) * 7u;
+                NMO_RETURN_IF_ERROR(nmo_patchmesh_require_dwords(
+                    chunk, 7u + later_channel_dwords,
+                    "DATA3 channel fields"));
                 NMO_PATCHMESH_READ(nmo_chunk_read_dword(chunk, &channel->flags),
                                    "channel flags");
                 NMO_PATCHMESH_READ(nmo_chunk_read_dword(chunk, &channel->type),
@@ -361,7 +403,8 @@ static nmo_status_t nmo_patchmesh_decode_payload(
                     patches_bytes, patches_count, 8u,
                     "channel patch buffer"));
                 NMO_RETURN_IF_ERROR(nmo_patchmesh_check_buffer_available(
-                    chunk, patches_bytes, "channel patch buffer"));
+                    chunk, patches_bytes, 2u + later_channel_dwords,
+                    "channel patch buffer"));
                 channel->patch_count = patches_count;
                 if (patches_bytes > 0) {
                     channel->patches_raw = (uint8_t *)nmo_arena_alloc(arena, patches_bytes, 1);
@@ -383,7 +426,8 @@ static nmo_status_t nmo_patchmesh_decode_payload(
                     uv_bytes, uv_count, sizeof(nmo_vector2_t),
                     "channel UV buffer"));
                 NMO_RETURN_IF_ERROR(nmo_patchmesh_check_buffer_available(
-                    chunk, uv_bytes, "channel UV buffer"));
+                    chunk, uv_bytes, later_channel_dwords,
+                    "channel UV buffer"));
                 channel->uv_count = uv_count;
                 if (uv_count > 0) {
                     channel->uvs = (nmo_vector2_t *)nmo_arena_alloc(
@@ -396,6 +440,9 @@ static nmo_status_t nmo_patchmesh_decode_payload(
                 }
             }
         }
+
+        NMO_RETURN_IF_ERROR(nmo_patchmesh_require_section_end(
+            chunk, section_end));
 
         const nmo_object_repository_t *repository =
             nmo_deserialize_context_get_repository(context);
@@ -414,8 +461,13 @@ static nmo_status_t nmo_patchmesh_decode_payload(
 
     if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
-    seek_result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_PATCHMESHDATA2);
+    seek_result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_PATCHMESHDATA2, &section_dwords);
     if (seek_result == NMO_OK) {
+        const size_t section_end =
+            nmo_chunk_get_position(chunk) + section_dwords;
+        NMO_RETURN_IF_ERROR(nmo_patchmesh_require_dwords(
+            chunk, 6u, "DATA2 header"));
         decoded.format = CKPATCHMESH_FORMAT_DATA2;
 
         uint32_t patch_flags = 0;
@@ -440,7 +492,7 @@ static nmo_status_t nmo_patchmesh_decode_payload(
             buffer_size, total_count, sizeof(nmo_vector_t),
             "DATA2 vector buffer"));
         NMO_RETURN_IF_ERROR(nmo_patchmesh_check_buffer_available(
-            chunk, buffer_size, "DATA2 vector buffer"));
+            chunk, buffer_size, 8u, "DATA2 vector buffer"));
         decoded.total_count = total_count;
 
         if (total_count > 0) {
@@ -463,7 +515,7 @@ static nmo_status_t nmo_patchmesh_decode_payload(
         NMO_RETURN_IF_ERROR(nmo_patchmesh_check_buffer_layout(
             patch_bytes, patch_count, 88u, "DATA2 patch buffer"));
         NMO_RETURN_IF_ERROR(nmo_patchmesh_check_buffer_available(
-            chunk, patch_bytes, "DATA2 patch buffer"));
+            chunk, patch_bytes, 6u, "DATA2 patch buffer"));
         decoded.legacy_patch_count = patch_count;
         decoded.legacy_patch_data_size = patch_bytes;
         if (patch_bytes > 0) {
@@ -485,7 +537,7 @@ static nmo_status_t nmo_patchmesh_decode_payload(
         NMO_RETURN_IF_ERROR(nmo_patchmesh_check_buffer_layout(
             edge_bytes, edge_count, 24u, "DATA2 edge buffer"));
         NMO_RETURN_IF_ERROR(nmo_patchmesh_check_buffer_available(
-            chunk, edge_bytes, "DATA2 edge buffer"));
+            chunk, edge_bytes, 4u, "DATA2 edge buffer"));
         decoded.legacy_edge_count = edge_count;
         decoded.legacy_edge_data_size = edge_bytes;
         if (edge_bytes > 0) {
@@ -507,7 +559,7 @@ static nmo_status_t nmo_patchmesh_decode_payload(
         NMO_RETURN_IF_ERROR(nmo_patchmesh_check_buffer_layout(
             tv_bytes, tv_count, 16u, "DATA2 TVPatch buffer"));
         NMO_RETURN_IF_ERROR(nmo_patchmesh_check_buffer_available(
-            chunk, tv_bytes, "DATA2 TVPatch buffer"));
+            chunk, tv_bytes, 2u, "DATA2 TVPatch buffer"));
         decoded.legacy_tvpatch_count = tv_count;
         decoded.legacy_tvpatch_data_size = tv_bytes;
         if (tv_bytes > 0) {
@@ -529,7 +581,7 @@ static nmo_status_t nmo_patchmesh_decode_payload(
         NMO_RETURN_IF_ERROR(nmo_patchmesh_check_buffer_layout(
             uv_bytes, uv_count, sizeof(nmo_vector2_t), "DATA2 UV buffer"));
         NMO_RETURN_IF_ERROR(nmo_patchmesh_check_buffer_available(
-            chunk, uv_bytes, "DATA2 UV buffer"));
+            chunk, uv_bytes, 0u, "DATA2 UV buffer"));
         decoded.legacy_uv_count = uv_count;
         decoded.legacy_uv_data_size = uv_bytes;
         if (uv_bytes > 0) {
@@ -542,9 +594,16 @@ static nmo_status_t nmo_patchmesh_decode_payload(
                 "DATA2 UV buffer");
         }
 
-        seek_result = nmo_chunk_seek_identifier(
-            chunk, CK_STATESAVE_PATCHMESHSMOOTH);
+        NMO_RETURN_IF_ERROR(nmo_patchmesh_require_section_end(
+            chunk, section_end));
+
+        seek_result = nmo_chunk_seek_identifier_with_size(
+            chunk, CK_STATESAVE_PATCHMESHSMOOTH, &section_dwords);
         if (seek_result == NMO_OK) {
+            const size_t optional_section_end =
+                nmo_chunk_get_position(chunk) + section_dwords;
+            NMO_RETURN_IF_ERROR(nmo_patchmesh_require_dwords(
+                chunk, 2u, "DATA2 smoothing header"));
             decoded.has_legacy_smoothing = 1;
             uint32_t smooth_bytes = 0;
             uint32_t smooth_count = 0;
@@ -554,7 +613,7 @@ static nmo_status_t nmo_patchmesh_decode_payload(
                 smooth_bytes, smooth_count, sizeof(uint32_t),
                 "DATA2 smoothing buffer"));
             NMO_RETURN_IF_ERROR(nmo_patchmesh_check_buffer_available(
-                chunk, smooth_bytes, "DATA2 smoothing buffer"));
+                chunk, smooth_bytes, 0u, "DATA2 smoothing buffer"));
             decoded.legacy_smoothing_count = smooth_count;
             if (smooth_count > 0) {
                 decoded.legacy_smoothing_groups = (uint32_t *)nmo_arena_alloc(
@@ -566,11 +625,17 @@ static nmo_status_t nmo_patchmesh_decode_payload(
                 NMO_RETURN_IF_ERROR(nmo_chunk_read_and_fill_buffer_nosize_checked(
                     chunk, decoded.legacy_smoothing_groups, smooth_bytes));
             }
+            NMO_RETURN_IF_ERROR(nmo_patchmesh_require_section_end(
+                chunk, optional_section_end));
         } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
-        seek_result = nmo_chunk_seek_identifier(
-            chunk, CK_STATESAVE_PATCHMESHMATERIALS);
+        seek_result = nmo_chunk_seek_identifier_with_size(
+            chunk, CK_STATESAVE_PATCHMESHMATERIALS, &section_dwords);
         if (seek_result == NMO_OK) {
+            const size_t optional_section_end =
+                nmo_chunk_get_position(chunk) + section_dwords;
+            NMO_RETURN_IF_ERROR(nmo_patchmesh_require_dwords(
+                chunk, 1u, "DATA2 material count"));
             decoded.has_legacy_materials = 1;
             size_t seq_count = 0;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_object_sequence_start(
@@ -599,6 +664,8 @@ static nmo_status_t nmo_patchmesh_decode_payload(
                         chunk, &decoded.legacy_materials[i]));
                 }
             }
+            NMO_RETURN_IF_ERROR(nmo_patchmesh_require_section_end(
+                chunk, optional_section_end));
         } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
         const nmo_object_repository_t *repository =
