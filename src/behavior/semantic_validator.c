@@ -1532,22 +1532,29 @@ static bool semantic_message_manager_has_name(nmo_workspace_t *workspace,
 
         nmo_chunk_t *chunk =
             nmo_chunk_clone(manager->chunk, nmo_session_get_arena(session));
+        size_t section_dwords = 0u;
         if (chunk == NULL ||
             nmo_chunk_start_read(chunk) != NMO_OK ||
-            nmo_chunk_seek_identifier(chunk, 0x53u) !=
-                NMO_OK) {
+            nmo_chunk_seek_identifier_with_size(
+                chunk, 0x53u, &section_dwords) != NMO_OK) {
             continue;
         }
+        const size_t section_end =
+            nmo_chunk_get_position(chunk) + section_dwords;
 
         int32_t count = 0;
         if (nmo_chunk_read_int(chunk, &count) != NMO_OK ||
+            nmo_chunk_get_position(chunk) > section_end ||
             count < 0 || count > 10000 ||
-            (size_t)count > nmo_chunk_get_remaining(chunk)) {
+            (size_t)count > section_end - nmo_chunk_get_position(chunk)) {
             continue;
         }
         for (int32_t index = 0; index < count; ++index) {
             char *name = NULL;
             if (nmo_chunk_read_string_checked(chunk, &name, NULL) != NMO_OK) {
+                break;
+            }
+            if (nmo_chunk_get_position(chunk) > section_end) {
                 break;
             }
             if (name != NULL && strcmp(name, message_name) == 0) {
@@ -1583,23 +1590,29 @@ static bool semantic_attribute_manager_has_name(nmo_workspace_t *workspace,
 
         nmo_chunk_t *chunk =
             nmo_chunk_clone(manager->chunk, nmo_session_get_arena(session));
+        size_t section_dwords = 0u;
         if (chunk == NULL ||
             nmo_chunk_start_read(chunk) != NMO_OK ||
-            nmo_chunk_seek_identifier(chunk, 0x52u) != NMO_OK) {
+            nmo_chunk_seek_identifier_with_size(
+                chunk, 0x52u, &section_dwords) != NMO_OK) {
             continue;
         }
+        const size_t section_end =
+            nmo_chunk_get_position(chunk) + section_dwords;
 
         int32_t category_count = 0;
         int32_t attribute_count = 0;
         if (nmo_chunk_read_int(chunk, &category_count) != NMO_OK ||
             nmo_chunk_read_int(chunk, &attribute_count) != NMO_OK ||
+            nmo_chunk_get_position(chunk) > section_end ||
             category_count < 0 || category_count > 10000 ||
             attribute_count < 0 || attribute_count > 100000) {
             continue;
         }
         const size_t minimum_entry_dwords =
             (size_t)category_count + (size_t)attribute_count;
-        if (minimum_entry_dwords > nmo_chunk_get_remaining(chunk)) {
+        if (minimum_entry_dwords >
+            section_end - nmo_chunk_get_position(chunk)) {
             continue;
         }
         bool malformed = false;
@@ -1618,6 +1631,10 @@ static bool semantic_attribute_manager_has_name(nmo_workspace_t *workspace,
                     break;
                 }
             }
+            if (nmo_chunk_get_position(chunk) > section_end) {
+                malformed = true;
+                break;
+            }
         }
         if (malformed) {
             continue;
@@ -1625,6 +1642,9 @@ static bool semantic_attribute_manager_has_name(nmo_workspace_t *workspace,
         for (int32_t attribute = 0; attribute < attribute_count; ++attribute) {
             int32_t present = 0;
             if (nmo_chunk_read_int(chunk, &present) != NMO_OK) {
+                break;
+            }
+            if (nmo_chunk_get_position(chunk) > section_end) {
                 break;
             }
             if (present == 0) {
@@ -1640,6 +1660,9 @@ static bool semantic_attribute_manager_has_name(nmo_workspace_t *workspace,
                 nmo_chunk_read_int(chunk, &category_index) != NMO_OK ||
                 nmo_chunk_read_int(chunk, &compatible_class_id) != NMO_OK ||
                 nmo_chunk_read_dword(chunk, &flags) != NMO_OK) {
+                break;
+            }
+            if (nmo_chunk_get_position(chunk) > section_end) {
                 break;
             }
             if (name != NULL && strcmp(name, attribute_name) == 0) {
