@@ -449,8 +449,13 @@ static nmo_status_t nmo_sprite_deserialize_internal(
     out_state->has_sprite_ref = false;
     out_state->sprite_ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
 
-    /* Use chunk option to select file-backed vs chunk-only path */
-    if ((chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) {
+    const nmo_deserialize_context_t *deserialize_context =
+        nmo_deserialize_context_get(context);
+    const bool is_file =
+        ((chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
+        (deserialize_context != NULL &&
+         (deserialize_context->flags & NMO_DESER_FLAG_FILE_MODE) != 0);
+    if (is_file) {
         result = deserialize_file_backed(chunk, arena, out_state);
     } else {
         result = deserialize_chunk_only(chunk, arena, out_state);

@@ -7481,7 +7481,6 @@ TEST(chunk_id_remap, sprite_raw_bitmap_payload_round_trips) {
     ASSERT_NOT_NULL(chunk);
     chunk->class_id = NMO_CID_SPRITE;
     chunk->data_version = 7;
-    chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
     ASSERT_EQ(NMO_OK, nmo_sprite_serialize(
         &source, chunk, NULL, &serialize_context));
     nmo_chunk_close(chunk);
