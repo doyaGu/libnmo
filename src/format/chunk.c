@@ -1921,6 +1921,27 @@ nmo_status_t nmo_chunk_read_identifier(nmo_chunk_t *chunk, uint32_t *out_id) {
     NMO_RETURN_OK();
 }
 
+static nmo_status_t nmo_chunk_require_valid_identifier_entry(
+    const nmo_chunk_t *chunk,
+    size_t identifier_pos)
+{
+    if (identifier_pos >= chunk->data.count ||
+        chunk->data.count - identifier_pos < 2u) {
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                               "Truncated identifier entry");
+    }
+
+    const uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    const size_t payload_pos = identifier_pos + 2u;
+    const size_t next_pos = data[identifier_pos + 1u];
+    if (next_pos != 0u &&
+        (next_pos < payload_pos || next_pos > chunk->data.count - 2u)) {
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                               "Invalid next identifier position");
+    }
+    NMO_RETURN_OK();
+}
+
 nmo_status_t nmo_chunk_seek_identifier(nmo_chunk_t *chunk, uint32_t id) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 
@@ -1948,7 +1969,10 @@ nmo_status_t nmo_chunk_seek_identifier(nmo_chunk_t *chunk, uint32_t id) {
     uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
 
     size_t start_pos = 0;
-    if (state->prev_identifier_pos + 1 < chunk->data.count) {
+    if (state->prev_identifier_pos < chunk->data.count &&
+        chunk->data.count - state->prev_identifier_pos >= 2u) {
+        NMO_RETURN_IF_ERROR(nmo_chunk_require_valid_identifier_entry(
+            chunk, state->prev_identifier_pos));
         start_pos = data[state->prev_identifier_pos + 1];
     }
 
@@ -1956,10 +1980,8 @@ nmo_status_t nmo_chunk_seek_identifier(nmo_chunk_t *chunk, uint32_t id) {
     if (current_pos != 0) {
         size_t guard = 0;
         while (current_pos < chunk->data.count && data[current_pos] != id) {
-            if (current_pos + 1 >= chunk->data.count) {
-                NMO_CHUNK_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
-                                       "Corrupt identifier chain");
-            }
+            NMO_RETURN_IF_ERROR(nmo_chunk_require_valid_identifier_entry(
+                chunk, current_pos));
             current_pos = data[current_pos + 1];
             if (current_pos == 0) {
                 break;
@@ -1971,10 +1993,8 @@ nmo_status_t nmo_chunk_seek_identifier(nmo_chunk_t *chunk, uint32_t id) {
         }
 
         if (current_pos != 0 && current_pos < chunk->data.count) {
-            if (current_pos + 1 >= chunk->data.count) {
-                NMO_CHUNK_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
-                                       "Truncated identifier entry");
-            }
+            NMO_RETURN_IF_ERROR(nmo_chunk_require_valid_identifier_entry(
+                chunk, current_pos));
             state->prev_identifier_pos = current_pos;
             state->current_pos = current_pos + 2;
             NMO_RETURN_OK();
@@ -1984,10 +2004,8 @@ nmo_status_t nmo_chunk_seek_identifier(nmo_chunk_t *chunk, uint32_t id) {
     current_pos = 0;
     size_t guard = 0;
     while (current_pos < chunk->data.count && data[current_pos] != id) {
-        if (current_pos + 1 >= chunk->data.count) {
-            NMO_CHUNK_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
-                                   "Corrupt identifier chain");
-        }
+        NMO_RETURN_IF_ERROR(nmo_chunk_require_valid_identifier_entry(
+            chunk, current_pos));
         current_pos = data[current_pos + 1];
         if (current_pos == start_pos) {
             NMO_CHUNK_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_INFO,
@@ -2004,10 +2022,8 @@ nmo_status_t nmo_chunk_seek_identifier(nmo_chunk_t *chunk, uint32_t id) {
                                "Identifier not found");
     }
 
-    if (current_pos + 1 >= chunk->data.count) {
-        NMO_CHUNK_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
-                               "Truncated identifier entry");
-    }
+    NMO_RETURN_IF_ERROR(nmo_chunk_require_valid_identifier_entry(
+        chunk, current_pos));
 
     state->prev_identifier_pos = current_pos;
     state->current_pos = current_pos + 2;

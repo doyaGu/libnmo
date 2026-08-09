@@ -652,7 +652,9 @@ TEST(chunk_id_remap, ref_sequence_rejects_invalid_identifier_end) {
     data[1] = (uint32_t)chunk->data.count;
 
     ASSERT_EQ(NMO_OK, nmo_chunk_start_read(chunk));
-    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(chunk, 0x1234u));
+    uint32_t identifier = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_identifier(chunk, &identifier));
+    ASSERT_EQ(0x1234u, identifier);
     const size_t payload_pos = nmo_chunk_get_position(chunk);
     nmo_ref_t *refs = (nmo_ref_t *)(uintptr_t)1;
     size_t count = 9;

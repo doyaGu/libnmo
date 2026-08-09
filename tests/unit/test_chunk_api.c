@@ -1057,6 +1057,33 @@ TEST(chunk_api, identifier_seek_reports_payload_size_atomically) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_api, identifier_seek_rejects_invalid_link_atomically) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, 0x1000u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 123u));
+    nmo_chunk_close(chunk);
+
+    uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    data[1] = (uint32_t)chunk->data.count;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(chunk));
+
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT,
+              nmo_chunk_seek_identifier(chunk, 0x1000u));
+    ASSERT_EQ(0u, nmo_chunk_get_position(chunk));
+    ASSERT_EQ(0u, nmo_chunk_get_parser_state(chunk)->prev_identifier_pos);
+
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT,
+              nmo_chunk_seek_identifier(chunk, 0x2000u));
+    ASSERT_EQ(0u, nmo_chunk_get_position(chunk));
+    ASSERT_EQ(0u, nmo_chunk_get_parser_state(chunk)->prev_identifier_pos);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_api, identifier_write_validation_is_atomic) {
     nmo_arena_t* arena = nmo_arena_create(NULL, 8192);
     ASSERT_NOT_NULL(arena);
@@ -2017,6 +2044,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_api, auto_expand);
     REGISTER_TEST(chunk_api, identifiers);
     REGISTER_TEST(chunk_api, identifier_seek_reports_payload_size_atomically);
+    REGISTER_TEST(chunk_api, identifier_seek_rejects_invalid_link_atomically);
     REGISTER_TEST(chunk_api, identifier_write_validation_is_atomic);
     REGISTER_TEST(chunk_api, read_identifier_eof);
     REGISTER_TEST(chunk_api, manager_sequence);
