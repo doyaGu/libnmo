@@ -476,10 +476,17 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
     } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
     // Skin data (identifier CK_STATESAVE_3DENTITYSKINDATA)
-    seek_result = nmo_chunk_seek_identifier(
-        chunk, CK_STATESAVE_3DENTITYSKINDATA);
+    size_t skin_section_dwords = 0;
+    seek_result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_3DENTITYSKINDATA, &skin_section_dwords);
     if (seek_result == NMO_OK) {
         uint32_t data_version = nmo_chunk_get_data_version(chunk);
+        const size_t minimum_skin_dwords = data_version < 6 ? 19u : 18u;
+        if (skin_section_dwords < minimum_skin_dwords) {
+            return NMO_ERR_TRUNCATED_CHUNK;
+        }
+        const size_t skin_section_end =
+            nmo_chunk_get_position(chunk) + skin_section_dwords;
         out_state->skin = (nmo_3dentity_skin_t *)nmo_arena_alloc(
             arena, sizeof(nmo_3dentity_skin_t), _Alignof(nmo_3dentity_skin_t));
         if (!out_state->skin) {
@@ -646,6 +653,9 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
                     return result;
                 }
             }
+        }
+        if (nmo_chunk_get_position(chunk) > skin_section_end) {
+            return NMO_ERR_TRUNCATED_CHUNK;
         }
 
         seek_result = nmo_chunk_seek_identifier(

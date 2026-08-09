@@ -8858,6 +8858,23 @@ TEST(chunk_id_remap, entity_sections_do_not_borrow_following_identifiers) {
         &state, matrix, NULL, &deserialize_context));
     ASSERT_EQ(0xCAFEBABEu, state.entity_flags);
 
+    nmo_chunk_t *skin = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(skin);
+    skin->data_version = 7;
+    skin->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(skin));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        skin, CK_STATESAVE_3DENTITYSKINDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(skin, 0));
+    for (size_t i = 0; i < 16; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(skin, 0));
+    }
+    nmo_chunk_close(skin);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_3dentity_deserialize(
+        &state, skin, NULL, &deserialize_context));
+    ASSERT_EQ(0xCAFEBABEu, state.entity_flags);
+    ASSERT_NULL(state.skin);
+
     nmo_3dentity_vtable.destroy(&state, NULL, NULL);
     nmo_arena_destroy(arena);
 }
