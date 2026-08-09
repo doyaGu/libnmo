@@ -51,6 +51,8 @@ typedef struct nmo_light_state {
     /* Chunk presence tracking */
     uint8_t has_light_data_chunk;
     uint8_t has_light_power_chunk;
+    uint8_t light_data_is_legacy;
+    float legacy_diffuse_alpha;
 } nmo_light_state_t;
 
 NMO_API nmo_status_t nmo_light_deserialize(

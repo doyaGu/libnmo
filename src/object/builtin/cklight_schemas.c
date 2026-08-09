@@ -88,6 +88,8 @@ static void nmo_light_set_defaults(nmo_light_state_t *state) {
     state->light_data.outer_spot_cone = 0.78539819f;
     state->has_light_data_chunk = 1;
     state->has_light_power_chunk = 0;
+    state->light_data_is_legacy = 0;
+    state->legacy_diffuse_alpha = 1.0f;
 }
 
 static void nmo_light_apply_nonspot_defaults(nmo_light_state_t *state) {
@@ -137,7 +139,11 @@ static const nmo_type_field_t nmo_light_fields[] = {
                     sizeof(nmo_light_data_t), NMO_GUID_STRUCT_CKLIGHTDATA,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_light_state_t, flags, CKPGUID_UINT32),
-    NMO_FIELD(nmo_light_state_t, light_power, CKPGUID_FLOAT)
+    NMO_FIELD(nmo_light_state_t, light_power, CKPGUID_FLOAT),
+    NMO_FIELD(nmo_light_state_t, has_light_data_chunk, CKPGUID_BOOL),
+    NMO_FIELD(nmo_light_state_t, has_light_power_chunk, CKPGUID_BOOL),
+    NMO_FIELD(nmo_light_state_t, light_data_is_legacy, CKPGUID_BOOL),
+    NMO_FIELD(nmo_light_state_t, legacy_diffuse_alpha, CKPGUID_FLOAT)
 };
 
 /* =============================================================================
@@ -156,8 +162,11 @@ static nmo_status_t nmo_light_deserialize_modern(
     nmo_status_t result;
     
     // Seek to light data identifier (CK_STATESAVE_LIGHTDATA)
-    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_LIGHTDATA);
+    size_t payload_dwords = 0;
+    result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_LIGHTDATA, &payload_dwords);
     if (result == NMO_OK) {
+        if (payload_dwords < 6u) return NMO_ERR_TRUNCATED_CHUNK;
         out_state->has_light_data_chunk = 1;
         // Read Type|Flags packed DWORD
         uint32_t packed_type_flags;
@@ -173,7 +182,15 @@ static nmo_status_t nmo_light_deserialize_modern(
         // Validate type
         if (out_state->light_data.type < VX_LIGHTPOINT ||
             out_state->light_data.type > VX_LIGHTDIREC) {
-            out_state->light_data.type = VX_LIGHTPOINT;  // Default to point light
+            return NMO_ERR_INVALID_FORMAT;
+        }
+        const size_t expected_dwords =
+            out_state->light_data.type == VX_LIGHTSPOT ? 9u : 6u;
+        if (payload_dwords < expected_dwords) {
+            return NMO_ERR_TRUNCATED_CHUNK;
+        }
+        if (payload_dwords > expected_dwords) {
+            return NMO_ERR_INVALID_FORMAT;
         }
 
         // Read Diffuse color (packed ARGB)
@@ -229,8 +246,11 @@ static nmo_status_t nmo_light_deserialize_modern(
     } else if (result != NMO_ERR_NOT_FOUND) return result;
 
     // Optional: light power (CK_STATESAVE_LIGHTDATA2)
-    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_LIGHTDATA2);
+    result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_LIGHTDATA2, &payload_dwords);
     if (result == NMO_OK) {
+        if (payload_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+        if (payload_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
         out_state->has_light_power_chunk = 1;
         result = nmo_chunk_read_float(chunk, &out_state->light_power);
         if (result != NMO_OK) {
@@ -257,8 +277,12 @@ static nmo_status_t nmo_light_deserialize_legacy(
     nmo_status_t result;
     
     // Seek to light data identifier (CK_STATESAVE_LIGHTDATA)
-    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_LIGHTDATA);
+    size_t payload_dwords = 0;
+    result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_LIGHTDATA, &payload_dwords);
     if (result == NMO_OK) {
+        if (payload_dwords < 14u) return NMO_ERR_TRUNCATED_CHUNK;
+        if (payload_dwords > 14u) return NMO_ERR_INVALID_FORMAT;
         out_state->has_light_data_chunk = 1;
         // Read Type
         uint32_t type;
@@ -271,7 +295,7 @@ static nmo_status_t nmo_light_deserialize_legacy(
         // Validate type
         if (out_state->light_data.type < VX_LIGHTPOINT ||
             out_state->light_data.type > VX_LIGHTDIREC) {
-            out_state->light_data.type = VX_LIGHTPOINT;
+            return NMO_ERR_INVALID_FORMAT;
         }
 
         // Read Diffuse.rgb (3 floats)
@@ -290,9 +314,9 @@ static nmo_status_t nmo_light_deserialize_legacy(
             return result;
         }
 
-        // Skip alpha
-        float skip_alpha;
-        result = nmo_chunk_read_float(chunk, &skip_alpha);
+        // Preserve the legacy alpha field even though it has no runtime meaning.
+        result = nmo_chunk_read_float(
+            chunk, &out_state->legacy_diffuse_alpha);
         if (result != NMO_OK) {
             return result;
         }
@@ -304,6 +328,7 @@ static nmo_status_t nmo_light_deserialize_legacy(
         if (result != NMO_OK) {
             return result;
         }
+        if (active != 0 && active != 1) return NMO_ERR_INVALID_FORMAT;
         // Store active in flags (bit mapping matches engine: 0x100)
         if (active) {
             out_state->flags |= 0x100u;
@@ -317,6 +342,7 @@ static nmo_status_t nmo_light_deserialize_legacy(
         if (result != NMO_OK) {
             return result;
         }
+        if (specular != 0 && specular != 1) return NMO_ERR_INVALID_FORMAT;
         if (specular) {
             out_state->flags |= 0x200u;
         } else {
@@ -397,6 +423,7 @@ static nmo_status_t nmo_light_deserialize_internal(
 
     // Check data version to dispatch to modern or legacy deserializer
     uint32_t version = nmo_chunk_get_data_version(chunk);
+    out_state->light_data_is_legacy = version < 5u;
     
     if (version < 5) {
         return nmo_light_deserialize_legacy(chunk, arena, out_state);
@@ -458,8 +485,9 @@ static nmo_status_t nmo_light_serialize_internal(
     const bool write_light = is_file ||
         (nmo_serialize_context_get_save_flags(context) &
          CK_STATESAVE_LIGHTONLY) != 0;
-    const bool write_legacy = is_file &&
-        nmo_chunk_get_data_version(chunk) < 5u;
+    const uint32_t data_version = nmo_chunk_get_data_version(chunk);
+    const bool write_legacy = is_file && data_version < 5u &&
+        (data_version != 0u || state->light_data_is_legacy);
     const bool has_default_data =
         state->light_data.type == VX_LIGHTPOINT &&
         state->flags == 0x100u &&
@@ -486,6 +514,12 @@ static nmo_status_t nmo_light_serialize_internal(
         NMO_RETURN_ERROR(
             NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
             "Light data cannot be serialized losslessly");
+    }
+    if (write_light && !write_legacy &&
+        state->legacy_diffuse_alpha != 1.0f) {
+        NMO_RETURN_ERROR(
+            NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+            "Modern light layout cannot store legacy diffuse alpha");
     }
     if (write_light && (!is_file || !write_legacy) &&
         state->light_data.type != VX_LIGHTSPOT &&
@@ -524,7 +558,7 @@ static nmo_status_t nmo_light_serialize_internal(
         NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
             chunk, state->light_data.diffuse.b));
         NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
-            chunk, state->light_data.diffuse.a));
+            chunk, state->legacy_diffuse_alpha));
         NMO_RETURN_IF_ERROR(nmo_chunk_write_int(
             chunk, (state->flags & 0x100u) != 0u));
         NMO_RETURN_IF_ERROR(nmo_chunk_write_int(
@@ -731,6 +765,8 @@ static nmo_status_t nmo_light_copy(
     target->light_power = source->light_power;
     target->has_light_data_chunk = source->has_light_data_chunk;
     target->has_light_power_chunk = source->has_light_power_chunk;
+    target->light_data_is_legacy = source->light_data_is_legacy;
+    target->legacy_diffuse_alpha = source->legacy_diffuse_alpha;
     return NMO_OK;
 }
 
@@ -766,7 +802,10 @@ static bool nmo_light_equals(const void *a, const void *b)
         memcmp(&lhs->light_power, &rhs->light_power,
                sizeof(lhs->light_power)) == 0 &&
         lhs->has_light_data_chunk == rhs->has_light_data_chunk &&
-        lhs->has_light_power_chunk == rhs->has_light_power_chunk;
+        lhs->has_light_power_chunk == rhs->has_light_power_chunk &&
+        lhs->light_data_is_legacy == rhs->light_data_is_legacy &&
+        memcmp(&lhs->legacy_diffuse_alpha, &rhs->legacy_diffuse_alpha,
+               sizeof(lhs->legacy_diffuse_alpha)) == 0;
 }
 
 static uint32_t nmo_light_hash_bytes(
@@ -795,9 +834,15 @@ static uint32_t nmo_light_hash(const void *instance)
     hash = nmo_light_hash_bytes(
         hash, &state->has_light_data_chunk,
         sizeof(state->has_light_data_chunk));
-    return nmo_light_hash_bytes(
+    hash = nmo_light_hash_bytes(
         hash, &state->has_light_power_chunk,
         sizeof(state->has_light_power_chunk));
+    hash = nmo_light_hash_bytes(
+        hash, &state->light_data_is_legacy,
+        sizeof(state->light_data_is_legacy));
+    return nmo_light_hash_bytes(
+        hash, &state->legacy_diffuse_alpha,
+        sizeof(state->legacy_diffuse_alpha));
 }
 
 nmo_type_vtable_t nmo_light_vtable = {

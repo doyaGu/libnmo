@@ -3796,7 +3796,7 @@ TEST(chunk_id_remap, light_preserves_file_layouts) {
     nmo_chunk_t *legacy = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(legacy);
     legacy->class_id = NMO_CID_LIGHT;
-    legacy->data_version = 4;
+    legacy->data_version = 0;
     legacy->chunk_options |= NMO_CHUNK_OPTION_FILE;
     ASSERT_EQ(NMO_OK, nmo_chunk_start_write(legacy));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
@@ -3816,6 +3816,10 @@ TEST(chunk_id_remap, light_preserves_file_layouts) {
     ASSERT_EQ(NMO_OK, nmo_chunk_write_float(legacy, 0.4f));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_float(legacy, 2.0f));
     nmo_chunk_close(legacy);
+    size_t legacy_payload_dwords = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        legacy, CK_STATESAVE_LIGHTDATA, &legacy_payload_dwords));
+    ASSERT_EQ(14u, legacy_payload_dwords);
 
     nmo_light_state_t light;
     ASSERT_EQ(NMO_OK, nmo_light_vtable.create(&light, NULL, NULL));
@@ -3824,12 +3828,14 @@ TEST(chunk_id_remap, light_preserves_file_layouts) {
         &light, legacy, NULL, &deserialize_context));
     ASSERT_TRUE(light.has_light_data_chunk);
     ASSERT_FALSE(light.has_light_power_chunk);
+    ASSERT_TRUE(light.light_data_is_legacy);
+    ASSERT_EQ(0.125f, light.legacy_diffuse_alpha);
     ASSERT_EQ(0x300u, light.flags);
 
     nmo_chunk_t *saved_legacy = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(saved_legacy);
     saved_legacy->class_id = NMO_CID_LIGHT;
-    saved_legacy->data_version = 4;
+    saved_legacy->data_version = 0;
     saved_legacy->chunk_options |= NMO_CHUNK_OPTION_FILE;
     ASSERT_EQ(NMO_OK, nmo_light_serialize(
         &light, saved_legacy, NULL, &serialize_context));
@@ -3848,6 +3854,7 @@ TEST(chunk_id_remap, light_preserves_file_layouts) {
     ASSERT_EQ(0.25f, reloaded.light_data.diffuse.r);
     ASSERT_EQ(0.5f, reloaded.light_data.diffuse.g);
     ASSERT_EQ(0.75f, reloaded.light_data.diffuse.b);
+    ASSERT_EQ(0.125f, reloaded.legacy_diffuse_alpha);
     ASSERT_EQ(50.0f, reloaded.light_data.range);
     ASSERT_EQ(2.0f, reloaded.light_data.falloff);
 
@@ -3906,8 +3913,24 @@ TEST(chunk_id_remap, light_preserves_file_layouts) {
     ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_chunk_seek_identifier(
         empty, CK_STATESAVE_LIGHTDATA));
 
+    nmo_light_state_t modern_default;
+    ASSERT_EQ(NMO_OK, nmo_light_vtable.create(
+        &modern_default, NULL, NULL));
+    nmo_chunk_t *default_version = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(default_version);
+    default_version->class_id = NMO_CID_LIGHT;
+    default_version->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_light_serialize(
+        &modern_default, default_version, NULL, &serialize_context));
+    nmo_chunk_close(default_version);
+    size_t payload_dwords = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        default_version, CK_STATESAVE_LIGHTDATA, &payload_dwords));
+    ASSERT_EQ(6u, payload_dwords);
+
     nmo_light_vtable.destroy(&reloaded, NULL, NULL);
     nmo_light_vtable.destroy(&light, NULL, NULL);
+    nmo_light_vtable.destroy(&modern_default, NULL, NULL);
     nmo_arena_destroy(arena);
 }
 
@@ -4114,6 +4137,10 @@ TEST(chunk_id_remap, targetlight_unresolved_ref_round_trips_raw_id) {
     ASSERT_EQ(NMO_OK, nmo_targetlight_serialize(
         &source, first, NULL, &serialize_context));
     nmo_chunk_close(first);
+    size_t light_payload_dwords = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        first, CK_STATESAVE_LIGHTDATA, &light_payload_dwords));
+    ASSERT_EQ(6u, light_payload_dwords);
     nmo_chunk_set_file_context(first, &read_context);
 
     nmo_targetlight_state_t loaded;
