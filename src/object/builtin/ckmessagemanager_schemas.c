@@ -123,9 +123,6 @@ static nmo_status_t nmo_messagemanager_deserialize_internal(
         NMO_RETURN_OK();
     }
 
-    if (type_count > 10000) {
-        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Invalid message type count");
-    }
     if ((size_t)type_count >
         nmo_messagemanager_identifier_remaining_dwords(chunk)) {
         NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
@@ -212,7 +209,7 @@ static nmo_status_t nmo_messagemanager_serialize_internal(
     if (in_state == NULL || out_chunk == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_messagemanager_serialize");
     }
-    if (in_state->message_type_count > 10000) {
+    if (in_state->message_type_count > INT32_MAX) {
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
                          "Message type count exceeds format limits");
     }
@@ -340,19 +337,13 @@ static nmo_status_t nmo_messagemanager_copy(
     const nmo_type_descriptor_t *type,
     nmo_arena_t *arena)
 {
-    (void)type;
     if (src == NULL || dst == NULL || arena == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
     const nmo_messagemanager_state_t *source = src;
-    if (source->message_type_count > 10000) {
-        return NMO_ERR_VALIDATION_FAILED;
-    }
-    if (source->message_type_count > 0 &&
-        source->message_type_names == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
+    NMO_RETURN_IF_ERROR(nmo_messagemanager_validate(
+        source, type, NULL));
 
     const char **names = NULL;
     if (source->message_type_count > 0) {
@@ -388,7 +379,7 @@ static nmo_status_t nmo_messagemanager_validate(
     if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
 
     const nmo_messagemanager_state_t *state = instance;
-    if (state->message_type_count > 10000) {
+    if (state->message_type_count > INT32_MAX) {
         return NMO_ERR_VALIDATION_FAILED;
     }
     if (state->message_type_count > 0 &&
