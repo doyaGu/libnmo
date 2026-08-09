@@ -22,8 +22,11 @@
 NMO_DEFINE_OBJECT_LIFECYCLE(
     parameteroperation,
     nmo_parameteroperation_state_t,
-    NMO_RETURN_IF_ERROR(nmo_object_vtable.create(
-        &state->base, NULL, context)),
+    do {
+        NMO_RETURN_IF_ERROR(nmo_object_vtable.create(
+            &state->base, NULL, context));
+        state->has_new_data = 1;
+    } while (0),
     nmo_object_vtable.destroy(&state->base, NULL, context))
 
 /* =============================================================================
@@ -52,6 +55,8 @@ static const nmo_type_field_t nmo_parameteroperation_fields[] = {
                     sizeof(nmo_ref_t), CKPGUID_ID,
                     NMO_FIELD_REFERENCE | NMO_FIELD_REF_RECORD,
                     NMO_SEMANTIC_OBJECT_REF),
+    NMO_FIELD(nmo_parameteroperation_state_t, has_new_data, CKPGUID_UINT8),
+    NMO_FIELD(nmo_parameteroperation_state_t, has_operation, CKPGUID_UINT8),
     NMO_FIELD(nmo_parameteroperation_state_t, has_owner, CKPGUID_UINT8),
     NMO_FIELD(nmo_parameteroperation_state_t, has_in1, CKPGUID_UINT8),
     NMO_FIELD(nmo_parameteroperation_state_t, has_in2, CKPGUID_UINT8),
@@ -153,6 +158,8 @@ static nmo_status_t nmo_parameteroperation_deserialize_internal(
     decoded.in2.chunk = NULL;
     decoded.out.ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     decoded.out.chunk = NULL;
+    decoded.has_new_data = 0;
+    decoded.has_operation = 0;
     decoded.has_owner = 0;
     decoded.has_in1 = 0;
     decoded.has_in2 = 0;
@@ -164,6 +171,7 @@ static nmo_status_t nmo_parameteroperation_deserialize_internal(
         nmo_status_t result = nmo_chunk_seek_identifier(
             chunk, CK_STATESAVE_OPERATIONNEWDATA);
         if (result == NMO_OK) {
+            decoded.has_new_data = 1;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_guid(chunk, &decoded.operation_guid));
 
             size_t count = 0;
@@ -198,6 +206,7 @@ static nmo_status_t nmo_parameteroperation_deserialize_internal(
 
         result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OPERATIONOP);
         if (result == NMO_OK) {
+            decoded.has_operation = 1;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_guid(chunk, &decoded.operation_guid));
         } else if (result != NMO_ERR_NOT_FOUND) return result;
         result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OPERATIONDEFAULTDATA);
@@ -222,6 +231,7 @@ static nmo_status_t nmo_parameteroperation_deserialize_internal(
 
     nmo_status_t result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OPERATIONOP);
     if (result == NMO_OK) {
+        decoded.has_operation = 1;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_guid(chunk, &decoded.operation_guid));
     } else if (result != NMO_ERR_NOT_FOUND) return result;
 
@@ -405,7 +415,7 @@ static nmo_status_t nmo_parameteroperation_serialize_internal(
 
     const int is_file = (out_chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0;
     const uint32_t data_version = nmo_chunk_get_data_version(out_chunk);
-    if ((!is_file || data_version >= 5u) &&
+    if ((!is_file || !in_state->has_new_data || data_version >= 5u) &&
         nmo_ref_serialized_id(&in_state->legacy_prefix_ref) !=
             NMO_OBJECT_ID_NONE) {
         NMO_RETURN_ERROR(
@@ -414,6 +424,39 @@ static nmo_status_t nmo_parameteroperation_serialize_internal(
     }
 
     if (is_file) {
+        if (!in_state->has_new_data) {
+            const nmo_ref_t none = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+            if (in_state->has_operation) {
+                NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(
+                    out_chunk, CK_STATESAVE_OPERATIONOP));
+                NMO_RETURN_IF_ERROR(nmo_chunk_write_guid(
+                    out_chunk, in_state->operation_guid));
+            }
+            if (in_state->has_owner) {
+                NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(
+                    out_chunk, CK_STATESAVE_OPERATIONDEFAULTDATA));
+                NMO_RETURN_IF_ERROR(nmo_ref_write(
+                    out_chunk, &in_state->owner));
+            }
+            if (in_state->has_out) {
+                NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(
+                    out_chunk, CK_STATESAVE_OPERATIONOUTPUT));
+                NMO_RETURN_IF_ERROR(nmo_ref_write(
+                    out_chunk, &in_state->out.ref));
+            }
+            if (in_state->has_in1 || in_state->has_in2) {
+                NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(
+                    out_chunk, CK_STATESAVE_OPERATIONINPUTS));
+                NMO_RETURN_IF_ERROR(nmo_ref_write(
+                    out_chunk,
+                    in_state->has_in1 ? &in_state->in1.ref : &none));
+                NMO_RETURN_IF_ERROR(nmo_ref_write(
+                    out_chunk,
+                    in_state->has_in2 ? &in_state->in2.ref : &none));
+            }
+            NMO_RETURN_OK();
+        }
+
         nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_OPERATIONNEWDATA);
         if (result != NMO_OK) return result;
 
@@ -557,6 +600,8 @@ static bool nmo_parameteroperation_equals(const void *a, const void *b)
         memcmp(&lhs->in1.ref, &rhs->in1.ref, sizeof(nmo_ref_t)) == 0 &&
         memcmp(&lhs->in2.ref, &rhs->in2.ref, sizeof(nmo_ref_t)) == 0 &&
         memcmp(&lhs->out.ref, &rhs->out.ref, sizeof(nmo_ref_t)) == 0 &&
+        lhs->has_new_data == rhs->has_new_data &&
+        lhs->has_operation == rhs->has_operation &&
         lhs->has_owner == rhs->has_owner &&
         lhs->has_in1 == rhs->has_in1 &&
         lhs->has_in2 == rhs->has_in2 &&
@@ -610,6 +655,8 @@ static uint32_t nmo_parameteroperation_hash(const void *instance)
     NMO_PARAMETEROPERATION_HASH_FIELD(state->in1.ref);
     NMO_PARAMETEROPERATION_HASH_FIELD(state->in2.ref);
     NMO_PARAMETEROPERATION_HASH_FIELD(state->out.ref);
+    NMO_PARAMETEROPERATION_HASH_FIELD(state->has_new_data);
+    NMO_PARAMETEROPERATION_HASH_FIELD(state->has_operation);
     NMO_PARAMETEROPERATION_HASH_FIELD(state->has_owner);
     NMO_PARAMETEROPERATION_HASH_FIELD(state->has_in1);
     NMO_PARAMETEROPERATION_HASH_FIELD(state->has_in2);

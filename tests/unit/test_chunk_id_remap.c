@@ -3725,8 +3725,103 @@ TEST(chunk_id_remap, parameteroperation_legacy_sections_are_atomic) {
     ASSERT_EQ(1u, loaded.has_in1);
     ASSERT_EQ(1u, loaded.has_in2);
 
+    nmo_chunk_t *legacy_file = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(legacy_file);
+    legacy_file->class_id = NMO_CID_PARAMETEROPERATION;
+    legacy_file->data_version = 8;
+    legacy_file->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(legacy_file));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        legacy_file, CK_STATESAVE_OPERATIONOP));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_guid(
+        legacy_file, (nmo_guid_t){31u, 32u}));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        legacy_file, CK_STATESAVE_OPERATIONDEFAULTDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(legacy_file, 820));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        legacy_file, CK_STATESAVE_OPERATIONOUTPUT));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(legacy_file, 823));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        legacy_file, CK_STATESAVE_OPERATIONINPUTS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(legacy_file, 821));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(legacy_file, 822));
+    nmo_chunk_close(legacy_file);
+
+    nmo_parameteroperation_state_t legacy_file_loaded;
+    ASSERT_EQ(NMO_OK, nmo_parameteroperation_vtable.create(
+        &legacy_file_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_parameteroperation_deserialize(
+        &legacy_file_loaded, legacy_file, NULL, NULL));
+    ASSERT_FALSE(legacy_file_loaded.has_new_data);
+    ASSERT_TRUE(legacy_file_loaded.has_operation);
+    ASSERT_TRUE(legacy_file_loaded.has_owner);
+    ASSERT_TRUE(legacy_file_loaded.has_out);
+    ASSERT_TRUE(legacy_file_loaded.has_in1);
+    ASSERT_TRUE(legacy_file_loaded.has_in2);
+    ASSERT_EQ(820u, legacy_file_loaded.owner.raw_id);
+    ASSERT_EQ(821u, legacy_file_loaded.in1.ref.raw_id);
+    ASSERT_EQ(822u, legacy_file_loaded.in2.ref.raw_id);
+    ASSERT_EQ(823u, legacy_file_loaded.out.ref.raw_id);
+
+    nmo_chunk_t *legacy_file_saved = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(legacy_file_saved);
+    legacy_file_saved->class_id = NMO_CID_PARAMETEROPERATION;
+    legacy_file_saved->data_version = 8;
+    legacy_file_saved->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_parameteroperation_serialize(
+        &legacy_file_loaded, legacy_file_saved, NULL, NULL));
+    nmo_chunk_close(legacy_file_saved);
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_chunk_seek_identifier(
+        legacy_file_saved, CK_STATESAVE_OPERATIONNEWDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
+        legacy_file_saved, CK_STATESAVE_OPERATIONOP));
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
+        legacy_file_saved, CK_STATESAVE_OPERATIONDEFAULTDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
+        legacy_file_saved, CK_STATESAVE_OPERATIONOUTPUT));
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
+        legacy_file_saved, CK_STATESAVE_OPERATIONINPUTS));
+
+    nmo_parameteroperation_state_t legacy_file_reloaded;
+    ASSERT_EQ(NMO_OK, nmo_parameteroperation_vtable.create(
+        &legacy_file_reloaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_parameteroperation_deserialize(
+        &legacy_file_reloaded, legacy_file_saved, NULL, NULL));
+    ASSERT_TRUE(nmo_parameteroperation_vtable.equals(
+        &legacy_file_loaded, &legacy_file_reloaded));
+
+    nmo_chunk_t *empty_file = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(empty_file);
+    empty_file->class_id = NMO_CID_PARAMETEROPERATION;
+    empty_file->data_version = 8;
+    empty_file->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(empty_file));
+    nmo_chunk_close(empty_file);
+    nmo_parameteroperation_state_t empty_file_loaded;
+    ASSERT_EQ(NMO_OK, nmo_parameteroperation_vtable.create(
+        &empty_file_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_parameteroperation_deserialize(
+        &empty_file_loaded, empty_file, NULL, NULL));
+    ASSERT_FALSE(empty_file_loaded.has_new_data);
+    ASSERT_FALSE(empty_file_loaded.has_operation);
+    nmo_chunk_t *empty_file_saved = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(empty_file_saved);
+    empty_file_saved->class_id = NMO_CID_PARAMETEROPERATION;
+    empty_file_saved->data_version = 8;
+    empty_file_saved->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_parameteroperation_serialize(
+        &empty_file_loaded, empty_file_saved, NULL, NULL));
+    nmo_chunk_close(empty_file_saved);
+    ASSERT_EQ(0u, nmo_chunk_get_data_size(empty_file_saved));
+
     nmo_parameteroperation_vtable.destroy(&source, NULL, NULL);
     nmo_parameteroperation_vtable.destroy(&loaded, NULL, NULL);
+    nmo_parameteroperation_vtable.destroy(
+        &legacy_file_loaded, NULL, NULL);
+    nmo_parameteroperation_vtable.destroy(
+        &legacy_file_reloaded, NULL, NULL);
+    nmo_parameteroperation_vtable.destroy(
+        &empty_file_loaded, NULL, NULL);
     nmo_arena_destroy(arena);
 }
 

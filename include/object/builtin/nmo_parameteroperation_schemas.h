@@ -39,6 +39,8 @@ typedef struct nmo_parameteroperation_state {
     nmo_parameteroperation_ref_t in1;
     nmo_parameteroperation_ref_t in2;
     nmo_parameteroperation_ref_t out;
+    uint8_t has_new_data;
+    uint8_t has_operation;
     uint8_t has_owner;
     uint8_t has_in1;
     uint8_t has_in2;
