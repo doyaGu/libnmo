@@ -370,6 +370,14 @@ static int nmo_load_included_files(
     }
 
 cleanup:
+    if (shadow_storage != NULL && result == NMO_OK) {
+        int shadow_result = nmo_shadow_capture_included_files(
+            shadow_storage, shadow_blob, shadow_size);
+        if (shadow_result != NMO_OK) {
+            result = shadow_result;
+        }
+    }
+
     if (result != NMO_OK) {
         uint32_t current_count = 0;
         (void)nmo_session_get_included_files(session, &current_count);
@@ -384,14 +392,6 @@ cleanup:
                 break;
             }
             current_count--;
-        }
-    }
-
-    if (shadow_storage != NULL && result == NMO_OK) {
-        int shadow_result = nmo_shadow_capture_included_files(
-            shadow_storage, shadow_blob, shadow_size);
-        if (shadow_result != NMO_OK) {
-            result = shadow_result;
         }
     }
 
