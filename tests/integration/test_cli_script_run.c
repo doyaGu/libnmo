@@ -986,9 +986,15 @@ TEST(cli, script_run_executor_add_operation_uses_edit_plan) {
     ASSERT_TRUE(get_uint_field(op, "result_id") != 0u);
     created_objects = get_array_field(data, "created_objects");
     ASSERT_NOT_NULL(created_objects);
-    ASSERT_EQ(1u, yyjson_arr_size(created_objects));
+    ASSERT_EQ(4u, yyjson_arr_size(created_objects));
     created = yyjson_arr_get(created_objects, 0);
+    ASSERT_EQ(get_uint_field(op, "result_id"),
+              get_uint_field(created, "object_id"));
     ASSERT_STR_EQ("add_operation", get_string_field(created, "cause"));
+    for (size_t i = 1u; i < yyjson_arr_size(created_objects); ++i) {
+        created = yyjson_arr_get(created_objects, i);
+        ASSERT_STR_EQ("add_operation", get_string_field(created, "cause"));
+    }
     yyjson_doc_free(doc);
 }
 
@@ -1790,8 +1796,11 @@ TEST(cli, script_run_executor_remove_operation_uses_edit_plan) {
     ASSERT_EQ(16u, get_uint_field(op, "primary_id"));
     deleted_objects = get_array_field(data, "deleted_objects");
     ASSERT_NOT_NULL(deleted_objects);
-    ASSERT_EQ(1u, yyjson_arr_size(deleted_objects));
-    ASSERT_EQ(16u, get_uint_field(yyjson_arr_get(deleted_objects, 0), "object_id"));
+    ASSERT_EQ(4u, yyjson_arr_size(deleted_objects));
+    ASSERT_TRUE(array_contains_object_id(deleted_objects, 16u));
+    ASSERT_TRUE(array_contains_object_id(deleted_objects, 17u));
+    ASSERT_TRUE(array_contains_object_id(deleted_objects, 18u));
+    ASSERT_TRUE(array_contains_object_id(deleted_objects, 19u));
     yyjson_doc_free(doc);
 }
 

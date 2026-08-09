@@ -1847,7 +1847,7 @@ TEST(cli, patch_apply_add_operation_dry_run) {
     ASSERT_TRUE(get_uint_field(op, "result_id") != 0u);
     yyjson_val *created_objects = get_array_field(data, "created_objects");
     ASSERT_NOT_NULL(created_objects);
-    ASSERT_TRUE(yyjson_arr_size(created_objects) > 0u);
+    ASSERT_EQ(4u, (uint32_t)yyjson_arr_size(created_objects));
     yyjson_val *diff = get_object_field(data, "diff");
     ASSERT_NOT_NULL(diff);
     yyjson_val *operation_graph_diff =
@@ -1865,12 +1865,21 @@ TEST(cli, patch_apply_add_operation_dry_run) {
     ASSERT_NOT_NULL(created_after);
     ASSERT_STR_EQ("{33CC6B49-3589282B}",
                   get_string_field(created_after, "operation_guid"));
-    ASSERT_FALSE(get_bool_field(created_after, "has_in1"));
-    ASSERT_EQ(0u, (uint32_t)get_uint_field(created_after, "in1_parameter_id"));
-    ASSERT_FALSE(get_bool_field(created_after, "has_in2"));
-    ASSERT_EQ(0u, (uint32_t)get_uint_field(created_after, "in2_parameter_id"));
-    ASSERT_FALSE(get_bool_field(created_after, "has_out"));
-    ASSERT_EQ(0u, (uint32_t)get_uint_field(created_after, "out_parameter_id"));
+    ASSERT_TRUE(get_bool_field(created_after, "has_in1"));
+    const uint32_t in1_id =
+        (uint32_t)get_uint_field(created_after, "in1_parameter_id");
+    ASSERT_TRUE(get_bool_field(created_after, "has_in2"));
+    const uint32_t in2_id =
+        (uint32_t)get_uint_field(created_after, "in2_parameter_id");
+    ASSERT_TRUE(get_bool_field(created_after, "has_out"));
+    const uint32_t out_id =
+        (uint32_t)get_uint_field(created_after, "out_parameter_id");
+    ASSERT_NE(0u, in1_id);
+    ASSERT_NE(0u, in2_id);
+    ASSERT_NE(0u, out_id);
+    ASSERT_TRUE(array_contains_object_id(created_objects, in1_id));
+    ASSERT_TRUE(array_contains_object_id(created_objects, in2_id));
+    ASSERT_TRUE(array_contains_object_id(created_objects, out_id));
     ASSERT_FALSE(file_exists(output));
     yyjson_doc_free(doc);
     remove(patch);
@@ -1965,6 +1974,7 @@ TEST(cli, patch_apply_remove_operation_dry_run) {
     ASSERT_EQ(16u, (uint32_t)get_uint_field(op, "primary_id"));
     yyjson_val *deleted_objects = get_array_field(data, "deleted_objects");
     ASSERT_NOT_NULL(deleted_objects);
+    ASSERT_EQ(4u, (uint32_t)yyjson_arr_size(deleted_objects));
     ASSERT_TRUE(array_contains_object_id(deleted_objects, 16u));
     yyjson_val *diff = get_object_field(data, "diff");
     ASSERT_NOT_NULL(diff);
@@ -1983,8 +1993,18 @@ TEST(cli, patch_apply_remove_operation_dry_run) {
     ASSERT_TRUE(yyjson_is_null(yyjson_obj_get(deleted_operation, "after")));
     ASSERT_STR_EQ("{33CC6B49-3589282B}",
                   get_string_field(remove_before, "operation_guid"));
-    ASSERT_FALSE(get_bool_field(remove_before, "has_in1"));
-    ASSERT_EQ(0u, (uint32_t)get_uint_field(remove_before, "in1_parameter_id"));
+    ASSERT_TRUE(get_bool_field(remove_before, "has_in1"));
+    const uint32_t in1_id =
+        (uint32_t)get_uint_field(remove_before, "in1_parameter_id");
+    ASSERT_TRUE(get_bool_field(remove_before, "has_in2"));
+    const uint32_t in2_id =
+        (uint32_t)get_uint_field(remove_before, "in2_parameter_id");
+    ASSERT_TRUE(get_bool_field(remove_before, "has_out"));
+    const uint32_t out_id =
+        (uint32_t)get_uint_field(remove_before, "out_parameter_id");
+    ASSERT_TRUE(array_contains_object_id(deleted_objects, in1_id));
+    ASSERT_TRUE(array_contains_object_id(deleted_objects, in2_id));
+    ASSERT_TRUE(array_contains_object_id(deleted_objects, out_id));
     ASSERT_FALSE(file_exists(output));
     yyjson_doc_free(doc);
     remove(patch);
