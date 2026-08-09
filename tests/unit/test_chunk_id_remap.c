@@ -11107,8 +11107,13 @@ TEST(chunk_id_remap, beobject_attribute_failure_keeps_previous_atomic_state) {
     ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_sequence_item(truncated, 777));
     nmo_chunk_close(truncated);
 
-    ASSERT_NE(NMO_OK, nmo_beobject_deserialize(
+    nmo_allocator_t original_attributes_allocator =
+        state.attributes.allocator;
+    state.attributes.allocator = nmo_allocator_custom(
+        beobject_fail_alloc, beobject_fail_free, NULL);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_beobject_deserialize(
         &state, truncated, NULL, NULL));
+    state.attributes.allocator = original_attributes_allocator;
     ASSERT_EQ(NMO_CKOBJECT_VISIBLE, state.base.base.visibility_flags);
     ASSERT_EQ(55, state.priority);
     ASSERT_EQ(1u, state.scripts.count);
@@ -11118,6 +11123,52 @@ TEST(chunk_id_remap, beobject_attribute_failure_keeps_previous_atomic_state) {
         nmo_beobject_attribute_t, &state.attributes);
     ASSERT_EQ(123u, nmo_ref_runtime_id(&attributes[0].parameter));
     ASSERT_EQ(7u, attributes[0].type_id);
+
+    nmo_chunk_t *empty_scripts = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(empty_scripts);
+    empty_scripts->class_id = NMO_CID_BEOBJECT;
+    empty_scripts->data_version = 7;
+    empty_scripts->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(empty_scripts));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        empty_scripts, CK_STATESAVE_SCRIPTS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(empty_scripts, 0));
+    nmo_chunk_close(empty_scripts);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_beobject_deserialize(
+        &state, empty_scripts, NULL, NULL));
+    ASSERT_EQ(55, state.priority);
+
+    nmo_chunk_t *empty_modern_attributes = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(empty_modern_attributes);
+    empty_modern_attributes->class_id = NMO_CID_BEOBJECT;
+    empty_modern_attributes->data_version = 7;
+    empty_modern_attributes->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(empty_modern_attributes));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        empty_modern_attributes, CK_STATESAVE_NEWATTRIBUTES));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        empty_modern_attributes, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_guid(
+        empty_modern_attributes, NMO_MANAGER_GUID_ATTRIBUTE));
+    nmo_chunk_close(empty_modern_attributes);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_beobject_deserialize(
+        &state, empty_modern_attributes, NULL, NULL));
+    ASSERT_EQ(55, state.priority);
+
+    nmo_chunk_t *empty_legacy_attributes = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(empty_legacy_attributes);
+    empty_legacy_attributes->class_id = NMO_CID_BEOBJECT;
+    empty_legacy_attributes->data_version = 7;
+    empty_legacy_attributes->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(empty_legacy_attributes));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        empty_legacy_attributes, CK_STATESAVE_ATTRIBUTES));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        empty_legacy_attributes, 0));
+    nmo_chunk_close(empty_legacy_attributes);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_beobject_deserialize(
+        &state, empty_legacy_attributes, NULL, NULL));
+    ASSERT_EQ(55, state.priority);
 
     nmo_array_dispose(&state.scripts);
     nmo_array_dispose(&state.attributes);

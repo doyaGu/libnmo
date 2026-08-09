@@ -415,8 +415,12 @@ static void nmo_beobject_check_ref_classes(
 
 static nmo_status_t nmo_beobject_read_legacy_attributes(
     nmo_chunk_t *chunk,
-    nmo_beobject_state_t *out_state)
+    nmo_beobject_state_t *out_state,
+    size_t section_dwords)
 {
+    if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+    const size_t section_end =
+        nmo_chunk_get_position(chunk) + section_dwords;
     int32_t count_check = 0;
     nmo_status_t result = nmo_chunk_read_int(chunk, &count_check);
     if (result != NMO_OK) return result;
@@ -426,6 +430,7 @@ static nmo_status_t nmo_beobject_read_legacy_attributes(
 
     uint8_t old_version = 0;
     if (count_check > 0) {
+        if (section_dwords < 3u) return NMO_ERR_TRUNCATED_CHUNK;
         int32_t compatible_class_id = 0;
         int32_t next_value = 0;
         result = nmo_chunk_read_int(chunk, &compatible_class_id);
@@ -438,8 +443,13 @@ static nmo_status_t nmo_beobject_read_legacy_attributes(
         }
     }
 
-    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_ATTRIBUTES);
+    size_t repeated_section_dwords = 0u;
+    result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_ATTRIBUTES, &repeated_section_dwords);
     if (result != NMO_OK) return result;
+    if (repeated_section_dwords != section_dwords) {
+        return NMO_ERR_INVALID_FORMAT;
+    }
     int32_t attr_count = 0;
     result = nmo_chunk_read_int(chunk, &attr_count);
     if (result != NMO_OK) return result;
@@ -499,7 +509,12 @@ static nmo_status_t nmo_beobject_read_legacy_attributes(
             return result;
         }
     }
-    if (nmo_beobject_identifier_remaining_dwords(chunk) != 0u) {
+    const size_t final_position = nmo_chunk_get_position(chunk);
+    if (final_position > section_end) {
+        nmo_array_dispose(&decoded);
+        return NMO_ERR_TRUNCATED_CHUNK;
+    }
+    if (final_position < section_end) {
         nmo_array_dispose(&decoded);
         return NMO_ERR_INVALID_FORMAT;
     }
@@ -558,6 +573,7 @@ static nmo_status_t nmo_beobject_deserialize_internal(
         result = nmo_chunk_seek_identifier_with_size(
             chunk, CK_STATESAVE_BEHAVIORS, &payload_dwords);
         if (result == NMO_OK) {
+            if (payload_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
             result = nmo_beobject_read_object_sequence(chunk, &out_state->scripts);
             if (result != NMO_OK) return result;
             found_legacy_scripts = true;
@@ -570,6 +586,7 @@ static nmo_status_t nmo_beobject_deserialize_internal(
     result = nmo_chunk_seek_identifier_with_size(
         chunk, CK_STATESAVE_SCRIPTS, &payload_dwords);
     if (result == NMO_OK) {
+        if (payload_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
         if (found_legacy_scripts) {
             NMO_RETURN_ERROR(
                 NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
@@ -621,8 +638,16 @@ static nmo_status_t nmo_beobject_deserialize_internal(
 
     /* Load attributes - optional section */
     bool found_modern_attributes = false;
-    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_NEWATTRIBUTES);
+    payload_dwords = 0u;
+    result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_NEWATTRIBUTES, &payload_dwords);
     if (result == NMO_OK) {
+        const size_t minimum_section_dwords = is_file ? 4u : 5u;
+        if (payload_dwords < minimum_section_dwords) {
+            return NMO_ERR_TRUNCATED_CHUNK;
+        }
+        const size_t section_end =
+            nmo_chunk_get_position(chunk) + payload_dwords;
         /* Read attribute object sequence using proper sequence API
          * Reference: CKBeObject.cpp line 537: const int attrCount = chunk->StartReadSequence(); */
         size_t attr_count = 0;
@@ -631,7 +656,14 @@ static nmo_status_t nmo_beobject_deserialize_internal(
             return result;
         }
 
-        if (attr_count > nmo_beobject_identifier_remaining_dwords(chunk)) {
+        const size_t fixed_remaining_dwords = is_file ? 3u : 4u;
+        const size_t dwords_per_attribute = is_file ? 2u : 3u;
+        const size_t remaining_dwords =
+            nmo_beobject_identifier_remaining_dwords(chunk);
+        if (remaining_dwords < fixed_remaining_dwords ||
+            attr_count >
+                (remaining_dwords - fixed_remaining_dwords) /
+                    dwords_per_attribute) {
             return NMO_ERR_TRUNCATED_CHUNK;
         }
 
@@ -691,7 +723,12 @@ static nmo_status_t nmo_beobject_deserialize_internal(
                 return result;
             }
         }
-        if (nmo_beobject_identifier_remaining_dwords(chunk) != 0u) {
+        const size_t final_position = nmo_chunk_get_position(chunk);
+        if (final_position > section_end) {
+            nmo_array_dispose(&decoded);
+            return NMO_ERR_TRUNCATED_CHUNK;
+        }
+        if (final_position < section_end) {
             nmo_array_dispose(&decoded);
             return NMO_ERR_INVALID_FORMAT;
         }
@@ -702,14 +739,17 @@ static nmo_status_t nmo_beobject_deserialize_internal(
         found_modern_attributes = true;
     } else if (result != NMO_ERR_NOT_FOUND) return result;
 
-    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_ATTRIBUTES);
+    payload_dwords = 0u;
+    result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_ATTRIBUTES, &payload_dwords);
     if (result == NMO_OK) {
         if (found_modern_attributes) {
             NMO_RETURN_ERROR(
                 NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                 "CKBeObject contains both modern and legacy attribute sections");
         }
-        result = nmo_beobject_read_legacy_attributes(chunk, out_state);
+        result = nmo_beobject_read_legacy_attributes(
+            chunk, out_state, payload_dwords);
         if (result != NMO_OK) return result;
     } else if (result != NMO_ERR_NOT_FOUND) return result;
     /* If identifier not found, attributes section is optional - continue */
