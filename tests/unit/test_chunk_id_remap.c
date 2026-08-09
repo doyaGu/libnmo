@@ -12854,6 +12854,74 @@ TEST(chunk_id_remap, mesh_material_sections_and_failures_are_atomic) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, mesh_fields_stay_in_identifier_sections) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
+    ASSERT_NOT_NULL(arena);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+
+    nmo_mesh_state_t state;
+    ASSERT_EQ(NMO_OK, nmo_mesh_vtable.create(&state, NULL, NULL));
+    state.flags = 0x12345678u;
+
+    const struct {
+        uint32_t identifier;
+        size_t borrowed_payload_dwords;
+    } empty_sections[] = {
+        {CK_STATESAVE_MESHFLAGS, 0},
+        {CK_STATESAVE_MESHMATERIALS, 0},
+        {CK_STATESAVE_MESHVERTICES, 0},
+        {CK_STATESAVE_MESHFACES, 0},
+        {CK_STATESAVE_MESHLINES, 0},
+        {CK_STATESAVE_MESHCHANNELS, 0},
+        {CK_STATESAVE_MESHWEIGHTS, 0},
+        {CK_STATESAVE_MESHFACECHANMASK, 0},
+        {CK_STATESAVE_PROGRESSIVEMESH, 1},
+    };
+    for (size_t i = 0;
+         i < sizeof(empty_sections) / sizeof(empty_sections[0]); ++i) {
+        nmo_chunk_t *chunk = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(chunk);
+        chunk->class_id = NMO_CID_MESH;
+        chunk->chunk_version = NMO_CHUNK_VERSION4;
+        chunk->data_version = 9;
+        chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+        ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+            chunk, empty_sections[i].identifier));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, 0));
+        for (size_t j = 0;
+             j < empty_sections[i].borrowed_payload_dwords; ++j) {
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0));
+        }
+        nmo_chunk_close(chunk);
+
+        ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_mesh_deserialize(
+            &state, chunk, NULL, &deserialize_context));
+        ASSERT_EQ(0x12345678u, state.flags);
+    }
+
+    nmo_chunk_t *short_legacy_vertices = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(short_legacy_vertices);
+    short_legacy_vertices->class_id = NMO_CID_MESH;
+    short_legacy_vertices->chunk_version = NMO_CHUNK_VERSION4;
+    short_legacy_vertices->data_version = 7;
+    short_legacy_vertices->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(short_legacy_vertices));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        short_legacy_vertices, CK_STATESAVE_MESHVERTICES));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(short_legacy_vertices, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(short_legacy_vertices, 0));
+    nmo_chunk_close(short_legacy_vertices);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_mesh_deserialize(
+        &state, short_legacy_vertices, NULL, &deserialize_context));
+    ASSERT_EQ(0x12345678u, state.flags);
+
+    nmo_mesh_vtable.destroy(&state, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, mesh_preserves_large_material_sections) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
     ASSERT_NOT_NULL(arena);
@@ -15009,6 +15077,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, bodypart_rotation_joint_round_trips_without_size_prefix);
     REGISTER_TEST(chunk_id_remap, mesh_material_refs_round_trip_without_compaction);
     REGISTER_TEST(chunk_id_remap, mesh_material_sections_and_failures_are_atomic);
+    REGISTER_TEST(chunk_id_remap, mesh_fields_stay_in_identifier_sections);
     REGISTER_TEST(chunk_id_remap, mesh_preserves_large_material_sections);
     REGISTER_TEST(chunk_id_remap, mesh_copy_preserves_material_records);
     REGISTER_TEST(chunk_id_remap, mesh_rejects_truncated_large_lines_before_allocation);

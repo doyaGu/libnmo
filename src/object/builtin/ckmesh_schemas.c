@@ -254,14 +254,17 @@ static bool nmo_mesh_vertex_payload_dwords(
 static nmo_status_t nmo_mesh_seek_optional(
     nmo_chunk_t *chunk,
     uint32_t identifier,
-    bool *out_found)
+    bool *out_found,
+    size_t *out_dwords)
 {
-    nmo_status_t result = nmo_chunk_seek_identifier(chunk, identifier);
+    nmo_status_t result = nmo_chunk_seek_identifier_with_size(
+        chunk, identifier, out_dwords);
     if (result == NMO_OK) {
         *out_found = true;
         return NMO_OK;
     }
     *out_found = false;
+    *out_dwords = 0u;
     return result == NMO_ERR_NOT_FOUND ? NMO_OK : result;
 }
 
@@ -341,10 +344,11 @@ static nmo_status_t nmo_mesh_deserialize_vertices(
 {
     nmo_status_t result;
     bool section_found = false;
+    size_t section_dwords = 0u;
     
     // Seek to vertex data identifier
     result = nmo_mesh_seek_optional(
-        chunk, CK_STATESAVE_MESHVERTICES, &section_found);
+        chunk, CK_STATESAVE_MESHVERTICES, &section_found, &section_dwords);
     if (result != NMO_OK) {
         return result;
     }
@@ -352,6 +356,7 @@ static nmo_status_t nmo_mesh_deserialize_vertices(
         out_state->vertex_count = 0;
         NMO_RETURN_OK();
     }
+    if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
     
     // Read vertex count
     int32_t vertex_count;
@@ -521,10 +526,12 @@ static nmo_status_t nmo_mesh_deserialize_material_groups(
     nmo_arena_t *arena,
     nmo_mesh_state_t *out_state)
 {
-    nmo_status_t result = nmo_chunk_seek_identifier(
-        chunk, CK_STATESAVE_MESHMATERIALS);
+    size_t section_dwords = 0u;
+    nmo_status_t result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_MESHMATERIALS, &section_dwords);
     if (result == NMO_ERR_NOT_FOUND) return NMO_OK;
     if (result != NMO_OK) return result;
+    if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
 
     out_state->has_material_groups = 1;
     int32_t group_count = 0;
@@ -656,6 +663,7 @@ static nmo_status_t nmo_mesh_deserialize_modern(
 {
     nmo_status_t result;
     bool section_found = false;
+    size_t section_dwords = 0u;
 
     // Load parent CKBeObject
     result = nmo_beobject_deserialize(&out_state->beobject, chunk, NULL, arena);
@@ -665,8 +673,9 @@ static nmo_status_t nmo_mesh_deserialize_modern(
     
     // Read mesh flags (identifier CK_STATESAVE_MESHFLAGS)
     NMO_RETURN_IF_ERROR(nmo_mesh_seek_optional(
-        chunk, CK_STATESAVE_MESHFLAGS, &section_found));
+        chunk, CK_STATESAVE_MESHFLAGS, &section_found, &section_dwords));
     if (section_found) {
+        if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
         uint32_t flags;
         result = nmo_chunk_read_dword(chunk, &flags);
         if (result != NMO_OK) {
@@ -686,8 +695,9 @@ static nmo_status_t nmo_mesh_deserialize_modern(
     
     // Read faces (identifier CK_STATESAVE_MESHFACES)
     NMO_RETURN_IF_ERROR(nmo_mesh_seek_optional(
-        chunk, CK_STATESAVE_MESHFACES, &section_found));
+        chunk, CK_STATESAVE_MESHFACES, &section_found, &section_dwords));
     if (section_found) {
+        if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
         int32_t face_count;
         result = nmo_chunk_read_int(chunk, &face_count);
         if (result != NMO_OK) {
@@ -750,8 +760,9 @@ static nmo_status_t nmo_mesh_deserialize_modern(
     
     // Read lines (identifier CK_STATESAVE_MESHLINES, optional)
     NMO_RETURN_IF_ERROR(nmo_mesh_seek_optional(
-        chunk, CK_STATESAVE_MESHLINES, &section_found));
+        chunk, CK_STATESAVE_MESHLINES, &section_found, &section_dwords));
     if (section_found) {
+        if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
         int32_t line_count;
         result = nmo_chunk_read_int(chunk, &line_count);
         if (result != NMO_OK) {
@@ -798,8 +809,9 @@ static nmo_status_t nmo_mesh_deserialize_modern(
     
     // Read material channels (identifier CK_STATESAVE_MESHCHANNELS, optional)
     NMO_RETURN_IF_ERROR(nmo_mesh_seek_optional(
-        chunk, CK_STATESAVE_MESHCHANNELS, &section_found));
+        chunk, CK_STATESAVE_MESHCHANNELS, &section_found, &section_dwords));
     if (section_found) {
+        if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
         out_state->has_material_channels = 1;
         int32_t channel_count;
         result = nmo_chunk_read_int(chunk, &channel_count);
@@ -892,16 +904,19 @@ static nmo_status_t nmo_mesh_deserialize_modern(
     
     // Read vertex weights (identifier CK_STATESAVE_MESHWEIGHTS, optional)
     NMO_RETURN_IF_ERROR(nmo_mesh_seek_optional(
-        chunk, CK_STATESAVE_MESHWEIGHTS, &section_found));
+        chunk, CK_STATESAVE_MESHWEIGHTS, &section_found, &section_dwords));
     if (section_found) {
+        if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
         NMO_RETURN_IF_ERROR(nmo_mesh_deserialize_weights(
             chunk, arena, out_state, "modern"));
     }
     
     // Read face channel masks (identifier CK_STATESAVE_MESHFACECHANMASK, optional)
     NMO_RETURN_IF_ERROR(nmo_mesh_seek_optional(
-        chunk, CK_STATESAVE_MESHFACECHANMASK, &section_found));
+        chunk, CK_STATESAVE_MESHFACECHANMASK, &section_found,
+        &section_dwords));
     if (section_found) {
+        if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
         int32_t mask_face_count;
         result = nmo_chunk_read_int(chunk, &mask_face_count);
         if (result != NMO_OK) {
@@ -955,8 +970,10 @@ static nmo_status_t nmo_mesh_deserialize_modern(
     
     // Read progressive mesh (identifier CK_STATESAVE_PROGRESSIVEMESH, optional)
     NMO_RETURN_IF_ERROR(nmo_mesh_seek_optional(
-        chunk, CK_STATESAVE_PROGRESSIVEMESH, &section_found));
+        chunk, CK_STATESAVE_PROGRESSIVEMESH, &section_found,
+        &section_dwords));
     if (section_found) {
+        if (section_dwords < 3u) return NMO_ERR_TRUNCATED_CHUNK;
         size_t pm_bytes_total = nmo_mesh_identifier_remaining_dwords(chunk) * 4u;
         out_state->has_progressive_mesh = true;
         
@@ -992,6 +1009,7 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
 {
     nmo_status_t result;
     bool section_found = false;
+    size_t section_dwords = 0u;
 
     result = nmo_beobject_deserialize(&out_state->beobject, chunk, NULL, arena);
     if (result != NMO_OK) {
@@ -999,8 +1017,9 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
     }
 
     NMO_RETURN_IF_ERROR(nmo_mesh_seek_optional(
-        chunk, CK_STATESAVE_MESHFLAGS, &section_found));
+        chunk, CK_STATESAVE_MESHFLAGS, &section_found, &section_dwords));
     if (section_found) {
+        if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
         uint32_t flags;
         result = nmo_chunk_read_dword(chunk, &flags);
         if (result != NMO_OK) return result;
@@ -1011,8 +1030,9 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
         chunk, arena, out_state));
 
     NMO_RETURN_IF_ERROR(nmo_mesh_seek_optional(
-        chunk, CK_STATESAVE_MESHVERTICES, &section_found));
+        chunk, CK_STATESAVE_MESHVERTICES, &section_found, &section_dwords));
     if (section_found) {
+        if (section_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
         int32_t vertex_count;
         result = nmo_chunk_read_int(chunk, &vertex_count);
         if (result != NMO_OK) return result;
@@ -1097,8 +1117,9 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
     }
 
     NMO_RETURN_IF_ERROR(nmo_mesh_seek_optional(
-        chunk, CK_STATESAVE_MESHFACES, &section_found));
+        chunk, CK_STATESAVE_MESHFACES, &section_found, &section_dwords));
     if (section_found) {
+        if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
         int32_t face_count;
         result = nmo_chunk_read_int(chunk, &face_count);
         if (result != NMO_OK) return result;
@@ -1160,8 +1181,9 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
     }
 
     NMO_RETURN_IF_ERROR(nmo_mesh_seek_optional(
-        chunk, CK_STATESAVE_MESHLINES, &section_found));
+        chunk, CK_STATESAVE_MESHLINES, &section_found, &section_dwords));
     if (section_found) {
+        if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
         int32_t line_count;
         result = nmo_chunk_read_int(chunk, &line_count);
         if (result != NMO_OK) return result;
@@ -1204,8 +1226,9 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
     }
 
     NMO_RETURN_IF_ERROR(nmo_mesh_seek_optional(
-        chunk, CK_STATESAVE_MESHCHANNELS, &section_found));
+        chunk, CK_STATESAVE_MESHCHANNELS, &section_found, &section_dwords));
     if (section_found) {
+        if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
         out_state->has_material_channels = 1;
         int32_t channel_count;
         result = nmo_chunk_read_int(chunk, &channel_count);
@@ -1285,15 +1308,18 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
     }
 
     NMO_RETURN_IF_ERROR(nmo_mesh_seek_optional(
-        chunk, CK_STATESAVE_MESHWEIGHTS, &section_found));
+        chunk, CK_STATESAVE_MESHWEIGHTS, &section_found, &section_dwords));
     if (section_found) {
+        if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
         NMO_RETURN_IF_ERROR(nmo_mesh_deserialize_weights(
             chunk, arena, out_state, "legacy"));
     }
 
     NMO_RETURN_IF_ERROR(nmo_mesh_seek_optional(
-        chunk, CK_STATESAVE_MESHFACECHANMASK, &section_found));
+        chunk, CK_STATESAVE_MESHFACECHANMASK, &section_found,
+        &section_dwords));
     if (section_found) {
+        if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
         int32_t mask_face_count;
         result = nmo_chunk_read_int(chunk, &mask_face_count);
         if (result != NMO_OK) return result;
@@ -1335,8 +1361,10 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
     }
 
     NMO_RETURN_IF_ERROR(nmo_mesh_seek_optional(
-        chunk, CK_STATESAVE_PROGRESSIVEMESH, &section_found));
+        chunk, CK_STATESAVE_PROGRESSIVEMESH, &section_found,
+        &section_dwords));
     if (section_found) {
+        if (section_dwords < 3u) return NMO_ERR_TRUNCATED_CHUNK;
         size_t pm_bytes_total = nmo_mesh_identifier_remaining_dwords(chunk) * 4u;
         out_state->has_progressive_mesh = true;
 
