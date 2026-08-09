@@ -1091,6 +1091,39 @@ TEST(interface_chunk, reject_truncated_parameter_counts_before_allocation) {
     }
 }
 
+TEST(interface_chunk, reject_truncated_sub_count_before_allocation) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, 1u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0x15u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 2));
+    write_script_header_fields(
+        chunk, 100, NMO_INTERFACE_FLAG_HEADER_ONLY, 0, 0.0f, 0.0f);
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_float(chunk, 0.0f));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_float(chunk, 0.0f));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_float(chunk, 50.0f));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0));
+    nmo_chunk_close(chunk);
+
+    const size_t bytes_before = nmo_arena_bytes_used(arena);
+    nmo_interface_data_t rejected;
+    memset(&rejected, 0xA5, sizeof(rejected));
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK,
+              nmo_interface_chunk_parse(chunk, arena, NULL, &rejected));
+    ASSERT_EQ(bytes_before, nmo_arena_bytes_used(arena));
+    ASSERT_EQ(0u, rejected.version);
+    ASSERT_EQ(0u, rejected.sub_count);
+    ASSERT_NULL(rejected.subs);
+
+    nmo_arena_destroy(arena);
+}
+
 /* ============================================================================
  * Task 6: Sub-behavior and graph IO tests
  * ============================================================================ */
@@ -3178,6 +3211,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(interface_chunk, parse_parameters_v15);
     REGISTER_TEST(interface_chunk, parse_parameters_v14_legacy);
     REGISTER_TEST(interface_chunk, reject_truncated_parameter_counts_before_allocation);
+    REGISTER_TEST(interface_chunk, reject_truncated_sub_count_before_allocation);
     /* Task 6: Sub-behaviors and graph IO */
     REGISTER_TEST(interface_chunk, parse_sub_behaviors);
     REGISTER_TEST(interface_chunk, parse_graph_io);

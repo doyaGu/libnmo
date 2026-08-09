@@ -312,6 +312,12 @@ static nmo_status_t nmo_interface_chunk_parse_impl(
 
     /* Sub-behavior loop */
     if (out->sub_count > 0) {
+        const size_t available_dwords = use_sectioned
+            ? chunk->data.count
+            : interface_identifier_remaining_dwords(chunk);
+        if (out->sub_count > available_dwords / 9u) {
+            return NMO_ERR_TRUNCATED_CHUNK;
+        }
         out->subs = nmo_arena_alloc(arena,
             out->sub_count * sizeof(nmo_interface_behavior_t),
             alignof(nmo_interface_behavior_t));
