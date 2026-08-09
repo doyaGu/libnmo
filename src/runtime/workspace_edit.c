@@ -175,7 +175,8 @@ static nmo_status_t workspace_edit_read_message_manager_names(
     const char ***out_names,
     uint32_t *out_count);
 static nmo_status_t workspace_edit_seek_message_manager_identifier(
-    nmo_chunk_t *chunk);
+    nmo_chunk_t *chunk,
+    size_t *out_section_end);
 static void workspace_edit_free(nmo_workspace_edit_t *edit)
 {
     if (edit == NULL) {
@@ -1365,23 +1366,33 @@ static nmo_status_t workspace_edit_build_manager_data_update(
 }
 
 static nmo_status_t workspace_edit_seek_message_manager_identifier(
-    nmo_chunk_t *chunk)
+    nmo_chunk_t *chunk,
+    size_t *out_section_end)
 {
-    if (chunk == NULL) {
+    if (chunk == NULL || out_section_end == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
     NMO_RETURN_IF_ERROR(nmo_chunk_start_read(chunk));
-    return nmo_chunk_seek_identifier(chunk, 0x53u);
+    size_t section_dwords = 0u;
+    NMO_RETURN_IF_ERROR(nmo_chunk_seek_identifier_with_size(
+        chunk, 0x53u, &section_dwords));
+    *out_section_end = nmo_chunk_get_position(chunk) + section_dwords;
+    return NMO_OK;
 }
 
 static nmo_status_t workspace_edit_seek_attribute_manager_identifier(
-    nmo_chunk_t *chunk)
+    nmo_chunk_t *chunk,
+    size_t *out_section_end)
 {
-    if (chunk == NULL) {
+    if (chunk == NULL || out_section_end == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
     NMO_RETURN_IF_ERROR(nmo_chunk_start_read(chunk));
-    return nmo_chunk_seek_identifier(chunk, 0x52u);
+    size_t section_dwords = 0u;
+    NMO_RETURN_IF_ERROR(nmo_chunk_seek_identifier_with_size(
+        chunk, 0x52u, &section_dwords));
+    *out_section_end = nmo_chunk_get_position(chunk) + section_dwords;
+    return NMO_OK;
 }
 
 static nmo_status_t workspace_edit_begin_for_workspace(
@@ -4488,18 +4499,22 @@ static nmo_status_t workspace_edit_read_message_manager_names(
     if (chunk == NULL) {
         return NMO_ERR_NOMEM;
     }
-    NMO_RETURN_IF_ERROR(
-        workspace_edit_seek_message_manager_identifier(chunk));
+    size_t section_end = 0u;
+    NMO_RETURN_IF_ERROR(workspace_edit_seek_message_manager_identifier(
+        chunk, &section_end));
 
     int32_t count = 0;
     NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &count));
+    if (nmo_chunk_get_position(chunk) > section_end) {
+        return NMO_ERR_TRUNCATED_CHUNK;
+    }
     if (count < 0) {
         return NMO_ERR_VALIDATION_FAILED;
     }
     if (count == 0) {
         return NMO_OK;
     }
-    if ((size_t)count > nmo_chunk_get_remaining(chunk)) {
+    if ((size_t)count > section_end - nmo_chunk_get_position(chunk)) {
         return NMO_ERR_TRUNCATED_CHUNK;
     }
     if ((size_t)count > SIZE_MAX / sizeof(const char *)) {
@@ -4517,6 +4532,9 @@ static nmo_status_t workspace_edit_read_message_manager_names(
         size_t entry_length = 0;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_string_checked(
             chunk, &entry_name, &entry_length));
+        if (nmo_chunk_get_position(chunk) > section_end) {
+            return NMO_ERR_TRUNCATED_CHUNK;
+        }
         (void)entry_length;
         names[i] = nmo_arena_strdup(arena, entry_name ? entry_name : "");
         if (names[i] == NULL) {
@@ -4573,8 +4591,9 @@ static nmo_status_t workspace_edit_read_attribute_manager_state(
     if (chunk == NULL) {
         return NMO_ERR_NOMEM;
     }
+    size_t section_end = 0u;
     const nmo_status_t seek_status =
-        workspace_edit_seek_attribute_manager_identifier(chunk);
+        workspace_edit_seek_attribute_manager_identifier(chunk, &section_end);
     if (seek_status == NMO_ERR_NOT_FOUND) {
         return NMO_OK;
     }
@@ -4584,12 +4603,16 @@ static nmo_status_t workspace_edit_read_attribute_manager_state(
     int32_t attribute_count = 0;
     NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &category_count));
     NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &attribute_count));
+    if (nmo_chunk_get_position(chunk) > section_end) {
+        return NMO_ERR_TRUNCATED_CHUNK;
+    }
     if (category_count < 0 || attribute_count < 0) {
         return NMO_ERR_VALIDATION_FAILED;
     }
     const size_t minimum_entry_dwords =
         (size_t)category_count + (size_t)attribute_count;
-    if (minimum_entry_dwords > nmo_chunk_get_remaining(chunk)) {
+    if (minimum_entry_dwords >
+        section_end - nmo_chunk_get_position(chunk)) {
         return NMO_ERR_TRUNCATED_CHUNK;
     }
     if ((size_t)category_count >
@@ -4631,6 +4654,9 @@ static nmo_status_t workspace_edit_read_attribute_manager_state(
             NMO_RETURN_IF_ERROR(
                 nmo_chunk_read_dword(chunk, &out_state->categories[i].flags));
         }
+        if (nmo_chunk_get_position(chunk) > section_end) {
+            return NMO_ERR_TRUNCATED_CHUNK;
+        }
     }
 
     if (attribute_count > 0) {
@@ -4668,6 +4694,9 @@ static nmo_status_t workspace_edit_read_attribute_manager_state(
                 chunk, &out_state->attributes[i].compatible_class_id));
             NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(
                 chunk, &out_state->attributes[i].flags));
+        }
+        if (nmo_chunk_get_position(chunk) > section_end) {
+            return NMO_ERR_TRUNCATED_CHUNK;
         }
     }
     return NMO_OK;
