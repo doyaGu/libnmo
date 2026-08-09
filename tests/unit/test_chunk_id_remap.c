@@ -1708,6 +1708,24 @@ TEST(chunk_id_remap, attributemanager_failures_keep_state_and_target_chunk_atomi
     ASSERT_EQ(&old_category, state.categories);
     ASSERT_EQ(&old_attribute, state.attributes);
 
+    nmo_chunk_t *cross_section_string = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(cross_section_string);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(cross_section_string));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_section_string, 0x52u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(cross_section_string, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(cross_section_string, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(cross_section_string, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(cross_section_string, 8u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_section_string, 0x44434241u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(cross_section_string, 17u));
+    nmo_chunk_close(cross_section_string);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_attributemanager_deserialize(
+        &state, cross_section_string, NULL, &deserialize_context));
+    ASSERT_EQ(&old_category, state.categories);
+    ASSERT_EQ(&old_attribute, state.attributes);
+
     nmo_chunk_t *missing_name = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(missing_name);
     ASSERT_EQ(NMO_OK, nmo_chunk_start_write(missing_name));
@@ -1917,6 +1935,21 @@ TEST(chunk_id_remap, messagemanager_failures_keep_state_and_target_chunk_atomic)
         (nmo_chunk_parser_state_t *)cross_section_count->parser_state;
     ASSERT_NOT_NULL(parser);
     ASSERT_EQ(parser->prev_identifier_pos + 3u, parser->current_pos);
+    ASSERT_EQ(old_names, state.message_type_names);
+    ASSERT_EQ(1u, state.message_type_count);
+
+    nmo_chunk_t *cross_section_string = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(cross_section_string);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(cross_section_string));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_section_string, 0x53u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(cross_section_string, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(cross_section_string, 8u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_section_string, 0x44434241u));
+    nmo_chunk_close(cross_section_string);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_messagemanager_deserialize(
+        &state, cross_section_string, NULL, &deserialize_context));
     ASSERT_EQ(old_names, state.message_type_names);
     ASSERT_EQ(1u, state.message_type_count);
 
