@@ -1859,6 +1859,55 @@ TEST(runtime_kernel, copy_remap_updates_only_resolved_beobject_attributes) {
     nmo_context_release(ctx);
 }
 
+TEST(runtime_kernel, copy_remap_updates_only_resolved_grid_layers) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    const nmo_type_runtime_t *type_rt = nmo_context_get_type_runtime(ctx);
+    const nmo_type_descriptor_t *grid_type =
+        nmo_type_registry_find_by_class_id(type_rt->types, NMO_CID_GRID);
+    ASSERT_NOT_NULL(grid_type);
+
+    nmo_arena_t *chunk_arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(chunk_arena);
+    nmo_chunk_t *resolved_chunk = nmo_chunk_create(chunk_arena);
+    nmo_chunk_t *unresolved_chunk = nmo_chunk_create(chunk_arena);
+    ASSERT_NOT_NULL(resolved_chunk);
+    ASSERT_NOT_NULL(unresolved_chunk);
+    nmo_grid_layer_t layers[] = {
+        {.ref = nmo_ref_from_id(101), .chunk = resolved_chunk},
+        {.ref = nmo_ref_from_raw(102), .chunk = unresolved_chunk},
+    };
+    nmo_grid_state_t state = {0};
+    ASSERT_EQ(NMO_OK, nmo_array_init(
+        &state.layers, sizeof(nmo_grid_layer_t), 2, NULL));
+    ASSERT_EQ(NMO_OK, nmo_array_append_array(&state.layers, layers, 2));
+
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_id_remap_t *remap = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(remap);
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, 101, 201));
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, 102, 202));
+
+    ASSERT_EQ(NMO_OK, nmo_runtime_remap_copy_refs(
+        type_rt, grid_type, &state, remap));
+    nmo_grid_layer_t *remapped = NMO_ARRAY_DATA(
+        nmo_grid_layer_t, &state.layers);
+    ASSERT_EQ(201u, nmo_ref_runtime_id(&remapped[0].ref));
+    ASSERT_EQ(101u, remapped[0].ref.raw_id);
+    ASSERT_EQ(resolved_chunk, remapped[0].chunk);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, remapped[1].ref.state);
+    ASSERT_EQ(102u, remapped[1].ref.raw_id);
+    ASSERT_EQ(unresolved_chunk, remapped[1].chunk);
+
+    nmo_array_dispose(&state.layers);
+    nmo_chunk_destroy(unresolved_chunk);
+    nmo_chunk_destroy(resolved_chunk);
+    nmo_arena_destroy(chunk_arena);
+    nmo_arena_destroy(arena);
+    nmo_context_release(ctx);
+}
+
 TEST(runtime_kernel, safe_detach_prunes_all_beobject_attribute_layouts) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
@@ -3217,6 +3266,7 @@ REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_keyedanimation_re
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_objectanimation_refs);
 REGISTER_TEST(runtime_kernel, safe_detach_keeps_keyedanimation_sections_independent);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_beobject_attributes);
+REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_grid_layers);
 REGISTER_TEST(runtime_kernel, safe_detach_prunes_all_beobject_attribute_layouts);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_parameteroperation_refs);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_parameterout_refs);

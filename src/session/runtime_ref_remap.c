@@ -225,6 +225,27 @@ static nmo_status_t runtime_remap_beobject_attributes(
     return NMO_OK;
 }
 
+static nmo_status_t runtime_remap_grid_layers(
+    nmo_grid_state_t *state,
+    const nmo_id_remap_t *remap)
+{
+    if (state == NULL) return NMO_OK;
+    if (state->layers.element_size != sizeof(nmo_grid_layer_t) ||
+        (state->layers.count > 0 && state->layers.data == NULL)) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    nmo_grid_layer_t *layers = NMO_ARRAY_DATA(
+        nmo_grid_layer_t, &state->layers);
+    for (size_t i = 0; i < state->layers.count; ++i) {
+        nmo_object_id_t mapped = NMO_OBJECT_ID_NONE;
+        if (layers[i].ref.state == NMO_REF_RESOLVED &&
+            runtime_lookup_mapping(remap, layers[i].ref.id, &mapped)) {
+            layers[i].ref.id = mapped;
+        }
+    }
+    return NMO_OK;
+}
+
 static nmo_status_t runtime_remap_character_parts(
     nmo_character_state_t *state,
     const nmo_id_remap_t *remap)
@@ -486,6 +507,10 @@ nmo_status_t nmo_runtime_remap_copy_refs(
         if (nmo_guid_equals(current->guid, CKPGUID_BEOBJECT)) {
             NMO_RETURN_IF_ERROR(runtime_remap_beobject_attributes(
                 (nmo_beobject_state_t *)current_instance, remap));
+        }
+        if (nmo_guid_equals(current->guid, CKPGUID_GRID)) {
+            NMO_RETURN_IF_ERROR(runtime_remap_grid_layers(
+                (nmo_grid_state_t *)current_instance, remap));
         }
         if (nmo_guid_equals(current->guid, CKPGUID_CHARACTER)) {
             NMO_RETURN_IF_ERROR(runtime_remap_character_parts(
