@@ -11090,6 +11090,25 @@ TEST(chunk_id_remap, scene_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(951u, NMO_ARRAY_DATA(
         nmo_scene_object_desc_t, &failed_descs.object_descs)[0].ref.raw_id);
 
+    nmo_chunk_t *trailing_descs = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(trailing_descs);
+    trailing_descs->class_id = NMO_CID_SCENE;
+    trailing_descs->data_version = 8;
+    trailing_descs->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(trailing_descs));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        trailing_descs, CK_STATESAVE_SCENENEWDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_id(trailing_descs, 945));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(trailing_descs, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing_descs, 0x12345678u));
+    nmo_chunk_close(trailing_descs);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_scene_deserialize(
+        &failed_descs, trailing_descs, NULL, &deserialize_context));
+    ASSERT_EQ(950u, failed_descs.level.raw_id);
+    ASSERT_EQ(1u, failed_descs.object_descs.count);
+    ASSERT_EQ(951u, NMO_ARRAY_DATA(
+        nmo_scene_object_desc_t, &failed_descs.object_descs)[0].ref.raw_id);
+
     nmo_chunk_t *truncated_render = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(truncated_render);
     truncated_render->class_id = NMO_CID_SCENE;
@@ -11113,10 +11132,52 @@ TEST(chunk_id_remap, scene_refs_round_trip_and_failure_is_atomic) {
     nmo_scene_state_t failed_render;
     ASSERT_EQ(NMO_OK, nmo_scene_vtable.create(&failed_render, NULL, NULL));
     failed_render.background_color = 0xAABBCCDDu;
+    failed_render.environment_settings = 0x11223344u;
     failed_render.background_texture = nmo_ref_from_raw(953);
     failed_render.starting_camera = nmo_ref_from_raw(954);
     ASSERT_NE(NMO_OK, nmo_scene_deserialize(
         &failed_render, truncated_render, NULL, &deserialize_context));
+    ASSERT_EQ(0xAABBCCDDu, failed_render.background_color);
+    ASSERT_EQ(953u, failed_render.background_texture.raw_id);
+    ASSERT_EQ(954u, failed_render.starting_camera.raw_id);
+
+    nmo_chunk_t *trailing_launched = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(trailing_launched);
+    trailing_launched->class_id = NMO_CID_SCENE;
+    trailing_launched->data_version = 8;
+    trailing_launched->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(trailing_launched));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        trailing_launched, CK_STATESAVE_SCENELAUNCHED));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing_launched, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        trailing_launched, 0x12345678u));
+    nmo_chunk_close(trailing_launched);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_scene_deserialize(
+        &failed_render, trailing_launched, NULL, &deserialize_context));
+    ASSERT_EQ(0x11223344u, failed_render.environment_settings);
+
+    nmo_chunk_t *trailing_render = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(trailing_render);
+    trailing_render->class_id = NMO_CID_SCENE;
+    trailing_render->data_version = 8;
+    trailing_render->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(trailing_render));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        trailing_render, CK_STATESAVE_SCENERENDERSETTINGS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing_render, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing_render, 2));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing_render, 3));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing_render, 4));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_float(trailing_render, 5.0f));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_float(trailing_render, 6.0f));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_float(trailing_render, 7.0f));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_id(trailing_render, 952));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_id(trailing_render, 953));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing_render, 0x12345678u));
+    nmo_chunk_close(trailing_render);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_scene_deserialize(
+        &failed_render, trailing_render, NULL, &deserialize_context));
     ASSERT_EQ(0xAABBCCDDu, failed_render.background_color);
     ASSERT_EQ(953u, failed_render.background_texture.raw_id);
     ASSERT_EQ(954u, failed_render.starting_camera.raw_id);

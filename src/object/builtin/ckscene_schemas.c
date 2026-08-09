@@ -234,6 +234,10 @@ static nmo_status_t nmo_scene_read_new_data(
         result = NMO_ERR_TRUNCATED_CHUNK;
         goto fail;
     }
+    if (nmo_chunk_get_position(chunk) < section_end) {
+        result = NMO_ERR_INVALID_FORMAT;
+        goto fail;
+    }
 
     nmo_ref_check_class(
         &level,
@@ -353,6 +357,7 @@ static nmo_status_t nmo_scene_deserialize_internal(
         chunk, CK_STATESAVE_SCENELAUNCHED, &section_dwords);
     if (result == NMO_OK) {
         if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+        if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
         uint32_t environment_settings = 0;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(
             chunk, &environment_settings));
@@ -364,6 +369,7 @@ static nmo_status_t nmo_scene_deserialize_internal(
         chunk, CK_STATESAVE_SCENERENDERSETTINGS, &section_dwords);
     if (result == NMO_OK) {
         if (section_dwords < 9u) return NMO_ERR_TRUNCATED_CHUNK;
+        if (section_dwords > 9u) return NMO_ERR_INVALID_FORMAT;
         NMO_RETURN_IF_ERROR(nmo_scene_read_render_settings(
             out_state, chunk, context));
     } else if (result != NMO_ERR_NOT_FOUND) return result;
