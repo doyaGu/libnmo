@@ -64,9 +64,15 @@ typedef struct nmo_beobject_state {
     
     /* Scripts */
     nmo_array_t scripts;           /**< Script behavior references (nmo_ref_t) */
+    uint8_t has_scripts_section;   /**< Preserve an empty scripts section */
+    uint8_t scripts_use_legacy_identifier; /**< CK_STATESAVE_BEHAVIORS */
     
     /* Priority */
     int32_t priority;              /**< Execution priority (0 = default) */
+    uint8_t has_data_section;      /**< Preserve CK_STATESAVE_DATAS */
+    uint8_t data_is_legacy;        /**< DATAS uses the pre-v5 five-DWORD layout */
+    uint32_t data_flags;           /**< DATAS first DWORD, preserved verbatim */
+    uint32_t legacy_data_words[3]; /**< Uninterpreted pre-v5 DATAS words */
     
     /* Attributes */
     nmo_array_t attributes;                    /**< Modern attributes (nmo_beobject_attribute_t) */

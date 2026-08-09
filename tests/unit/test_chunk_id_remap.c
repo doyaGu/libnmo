@@ -9356,6 +9356,216 @@ TEST(chunk_id_remap, beobject_serializer_does_not_publish_partial_chunk) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, beobject_preserves_script_and_priority_layouts) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_chunk_t *legacy = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(legacy);
+    legacy->class_id = NMO_CID_BEOBJECT;
+    legacy->data_version = 4;
+    legacy->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(legacy));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        legacy, CK_STATESAVE_BEHAVIORS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(legacy, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_sequence_item(legacy, 321));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        legacy, CK_STATESAVE_DATAS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(legacy, 0xA0000001u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(legacy, 0x11111111u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(legacy, 0x22222222u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(legacy, 0x33333333u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(legacy, -7));
+    nmo_chunk_close(legacy);
+
+    nmo_beobject_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(&loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_deserialize(
+        &loaded, legacy, NULL, NULL));
+    ASSERT_EQ(1, loaded.has_scripts_section);
+    ASSERT_EQ(1, loaded.scripts_use_legacy_identifier);
+    ASSERT_EQ(1u, loaded.scripts.count);
+    ASSERT_EQ(321u, NMO_ARRAY_DATA(nmo_ref_t, &loaded.scripts)[0].raw_id);
+    ASSERT_EQ(1, loaded.has_data_section);
+    ASSERT_EQ(1, loaded.data_is_legacy);
+    ASSERT_EQ(0xA0000001u, loaded.data_flags);
+    ASSERT_EQ(0x11111111u, loaded.legacy_data_words[0]);
+    ASSERT_EQ(0x22222222u, loaded.legacy_data_words[1]);
+    ASSERT_EQ(0x33333333u, loaded.legacy_data_words[2]);
+    ASSERT_EQ(-7, loaded.priority);
+
+    nmo_beobject_state_t legacy_copy;
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(
+        &legacy_copy, NULL, NULL));
+    nmo_type_descriptor_t beobject_type = {
+        .size = sizeof(nmo_beobject_state_t),
+    };
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.copy(
+        &loaded, &legacy_copy, &beobject_type, arena));
+    ASSERT_TRUE(nmo_beobject_vtable.equals(&loaded, &legacy_copy));
+    ASSERT_EQ(nmo_beobject_vtable.hash(&loaded),
+              nmo_beobject_vtable.hash(&legacy_copy));
+
+    nmo_chunk_t *legacy_saved = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(legacy_saved);
+    legacy_saved->class_id = NMO_CID_BEOBJECT;
+    legacy_saved->data_version = 4;
+    legacy_saved->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_beobject_serialize(
+        &loaded, legacy_saved, NULL, NULL));
+    nmo_chunk_close(legacy_saved);
+
+    size_t payload_dwords = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        legacy_saved, CK_STATESAVE_BEHAVIORS, &payload_dwords));
+    ASSERT_EQ(2u, payload_dwords);
+    size_t count = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_object_sequence_start(
+        legacy_saved, &count));
+    ASSERT_EQ(1u, count);
+    int32_t raw_script = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_int(legacy_saved, &raw_script));
+    ASSERT_EQ(321, raw_script);
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_chunk_seek_identifier(
+        legacy_saved, CK_STATESAVE_SCRIPTS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        legacy_saved, CK_STATESAVE_DATAS, &payload_dwords));
+    ASSERT_EQ(5u, payload_dwords);
+    uint32_t word = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(legacy_saved, &word));
+    ASSERT_EQ(0xA0000001u, word);
+    for (size_t i = 0; i < 3u; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(legacy_saved, &word));
+        ASSERT_EQ(loaded.legacy_data_words[i], word);
+    }
+    int32_t priority = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_int(legacy_saved, &priority));
+    ASSERT_EQ(-7, priority);
+
+    nmo_beobject_state_t legacy_reloaded;
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(
+        &legacy_reloaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_deserialize(
+        &legacy_reloaded, legacy_saved, NULL, NULL));
+    ASSERT_EQ(1, legacy_reloaded.scripts_use_legacy_identifier);
+    ASSERT_EQ(0xA0000001u, legacy_reloaded.data_flags);
+    ASSERT_EQ(0x33333333u, legacy_reloaded.legacy_data_words[2]);
+    ASSERT_EQ(-7, legacy_reloaded.priority);
+
+    nmo_chunk_t *modern = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(modern);
+    modern->class_id = NMO_CID_BEOBJECT;
+    modern->data_version = 7;
+    modern->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(modern));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        modern, CK_STATESAVE_SCRIPTS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(modern, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        modern, CK_STATESAVE_DATAS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(modern, 0x20000000u));
+    nmo_chunk_close(modern);
+
+    nmo_beobject_state_t modern_loaded;
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(
+        &modern_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_deserialize(
+        &modern_loaded, modern, NULL, NULL));
+    ASSERT_EQ(1, modern_loaded.has_scripts_section);
+    ASSERT_EQ(0u, modern_loaded.scripts.count);
+    ASSERT_EQ(1, modern_loaded.has_data_section);
+    ASSERT_EQ(0, modern_loaded.data_is_legacy);
+    ASSERT_EQ(0x20000000u, modern_loaded.data_flags);
+    ASSERT_EQ(0, modern_loaded.priority);
+
+    nmo_chunk_t *modern_saved = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(modern_saved);
+    modern_saved->class_id = NMO_CID_BEOBJECT;
+    modern_saved->data_version = 7;
+    modern_saved->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_beobject_serialize(
+        &modern_loaded, modern_saved, NULL, NULL));
+    nmo_chunk_close(modern_saved);
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        modern_saved, CK_STATESAVE_SCRIPTS, &payload_dwords));
+    ASSERT_EQ(1u, payload_dwords);
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        modern_saved, CK_STATESAVE_DATAS, &payload_dwords));
+    ASSERT_EQ(1u, payload_dwords);
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(modern_saved, &word));
+    ASSERT_EQ(0x20000000u, word);
+
+    nmo_beobject_state_t authored;
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(&authored, NULL, NULL));
+    authored.priority = 9;
+    nmo_chunk_t *authored_chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(authored_chunk);
+    authored_chunk->class_id = NMO_CID_BEOBJECT;
+    authored_chunk->data_version = 0;
+    authored_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_beobject_serialize(
+        &authored, authored_chunk, NULL, NULL));
+    ASSERT_EQ(7u, authored_chunk->data_version);
+    nmo_chunk_close(authored_chunk);
+    nmo_beobject_state_t authored_loaded;
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(
+        &authored_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_deserialize(
+        &authored_loaded, authored_chunk, NULL, NULL));
+    ASSERT_EQ(9, authored_loaded.priority);
+    ASSERT_EQ(1, authored_loaded.has_data_section);
+    ASSERT_EQ(0, authored_loaded.data_is_legacy);
+
+    nmo_beobject_state_t atomic;
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(&atomic, NULL, NULL));
+    atomic.priority = 42;
+    nmo_chunk_t *dual_scripts = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(dual_scripts);
+    dual_scripts->class_id = NMO_CID_BEOBJECT;
+    dual_scripts->data_version = 4;
+    dual_scripts->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(dual_scripts));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        dual_scripts, CK_STATESAVE_BEHAVIORS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(
+        dual_scripts, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        dual_scripts, CK_STATESAVE_SCRIPTS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(
+        dual_scripts, 0));
+    nmo_chunk_close(dual_scripts);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_beobject_deserialize(
+        &atomic, dual_scripts, NULL, NULL));
+    ASSERT_EQ(42, atomic.priority);
+
+    nmo_chunk_t *truncated_data = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(truncated_data);
+    truncated_data->class_id = NMO_CID_BEOBJECT;
+    truncated_data->data_version = 4;
+    truncated_data->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(truncated_data));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        truncated_data, CK_STATESAVE_DATAS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(truncated_data, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(truncated_data, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(truncated_data, 2));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(truncated_data, 3));
+    nmo_chunk_close(truncated_data);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_beobject_deserialize(
+        &atomic, truncated_data, NULL, NULL));
+    ASSERT_EQ(42, atomic.priority);
+
+    nmo_beobject_vtable.destroy(&atomic, NULL, NULL);
+    nmo_beobject_vtable.destroy(&authored_loaded, NULL, NULL);
+    nmo_beobject_vtable.destroy(&authored, NULL, NULL);
+    nmo_beobject_vtable.destroy(&modern_loaded, NULL, NULL);
+    nmo_beobject_vtable.destroy(&legacy_copy, NULL, NULL);
+    nmo_beobject_vtable.destroy(&legacy_reloaded, NULL, NULL);
+    nmo_beobject_vtable.destroy(&loaded, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, beobject_legacy_attributes_are_lossless_and_atomic) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
     ASSERT_NOT_NULL(arena);
@@ -12536,6 +12746,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, beobject_attribute_unresolved_ref_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, beobject_attribute_failure_keeps_previous_atomic_state);
     REGISTER_TEST(chunk_id_remap, beobject_serializer_does_not_publish_partial_chunk);
+    REGISTER_TEST(chunk_id_remap, beobject_preserves_script_and_priority_layouts);
     REGISTER_TEST(chunk_id_remap, beobject_legacy_attributes_are_lossless_and_atomic);
     REGISTER_TEST(chunk_id_remap, derived_beobject_copy_clones_legacy_attributes);
     REGISTER_TEST(chunk_id_remap, beobject_copy_preserves_content_equality);

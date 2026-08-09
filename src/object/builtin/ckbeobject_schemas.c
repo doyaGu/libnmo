@@ -229,8 +229,23 @@ static const nmo_type_field_t nmo_beobject_fields[] = {
                     NMO_FIELD_REQUIRED, 0),
     /* Scripts */
     NMO_FIELD_ARRAY(nmo_beobject_state_t, scripts, CKPGUID_NONE),
+    NMO_FIELD(nmo_beobject_state_t, has_scripts_section, CKPGUID_BOOL),
+    NMO_FIELD(nmo_beobject_state_t, scripts_use_legacy_identifier,
+              CKPGUID_BOOL),
     /* Priority */
     NMO_FIELD(nmo_beobject_state_t, priority, CKPGUID_INT),
+    NMO_FIELD(nmo_beobject_state_t, has_data_section, CKPGUID_BOOL),
+    NMO_FIELD(nmo_beobject_state_t, data_is_legacy, CKPGUID_BOOL),
+    NMO_FIELD(nmo_beobject_state_t, data_flags, CKPGUID_INT),
+    NMO_FIELD_NAMED("legacy_data_word_0",
+                    offsetof(nmo_beobject_state_t, legacy_data_words[0]),
+                    sizeof(uint32_t), CKPGUID_INT, 0, 0),
+    NMO_FIELD_NAMED("legacy_data_word_1",
+                    offsetof(nmo_beobject_state_t, legacy_data_words[1]),
+                    sizeof(uint32_t), CKPGUID_INT, 0, 0),
+    NMO_FIELD_NAMED("legacy_data_word_2",
+                    offsetof(nmo_beobject_state_t, legacy_data_words[2]),
+                    sizeof(uint32_t), CKPGUID_INT, 0, 0),
     /* Attributes */
     NMO_FIELD_ARRAY(nmo_beobject_state_t, attributes, CKPGUID_NONE),
     /* Legacy attributes */
@@ -288,6 +303,9 @@ static nmo_status_t nmo_beobject_read_object_sequence(
     }
     if (count > nmo_beobject_identifier_remaining_dwords(chunk)) {
         return NMO_ERR_TRUNCATED_CHUNK;
+    }
+    if (count < nmo_beobject_identifier_remaining_dwords(chunk)) {
+        return NMO_ERR_INVALID_FORMAT;
     }
 
     nmo_array_t decoded;
@@ -524,45 +542,70 @@ static nmo_status_t nmo_beobject_deserialize_internal(
     /* Load scripts array - optional section (legacy + modern) */
     nmo_last_error_clear();
     result = NMO_OK;
+    bool found_legacy_scripts = false;
     if (is_file && data_version < 5) {
-        result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAVIORS);
+        size_t payload_dwords = 0;
+        result = nmo_chunk_seek_identifier_with_size(
+            chunk, CK_STATESAVE_BEHAVIORS, &payload_dwords);
         if (result == NMO_OK) {
             result = nmo_beobject_read_object_sequence(chunk, &out_state->scripts);
             if (result != NMO_OK) return result;
+            found_legacy_scripts = true;
+            out_state->has_scripts_section = 1;
+            out_state->scripts_use_legacy_identifier = 1;
         } else if (result != NMO_ERR_NOT_FOUND) return result;
     }
 
-    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SCRIPTS);
+    size_t payload_dwords = 0;
+    result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_SCRIPTS, &payload_dwords);
     if (result == NMO_OK) {
+        if (found_legacy_scripts) {
+            NMO_RETURN_ERROR(
+                NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                "CKBeObject contains both legacy and modern scripts sections");
+        }
         result = nmo_beobject_read_object_sequence(chunk, &out_state->scripts);
         if (result != NMO_OK) return result;
+        out_state->has_scripts_section = 1;
+        out_state->scripts_use_legacy_identifier = 0;
     } else if (result != NMO_ERR_NOT_FOUND) return result;
 
     /* Load priority data - optional section */
-    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_DATAS);
+    payload_dwords = 0;
+    result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_DATAS, &payload_dwords);
     if (result == NMO_OK) {
         if (!is_file) {
+            if (payload_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+            if (payload_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
             int32_t ignored = 0;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &ignored));
         } else {
             uint32_t version_flag = 0;
+            if (payload_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
             result = nmo_chunk_read_dword(chunk, &version_flag);
             if (result != NMO_OK) return result;
 
             if (data_version < 5) {
-                int32_t ignored = 0;
-                NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &ignored));
-                NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &ignored));
-                NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &ignored));
+                if (payload_dwords < 5u) return NMO_ERR_TRUNCATED_CHUNK;
+                if (payload_dwords > 5u) return NMO_ERR_INVALID_FORMAT;
+                for (size_t i = 0; i < 3u; ++i) {
+                    NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(
+                        chunk, &out_state->legacy_data_words[i]));
+                }
                 NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &out_state->priority));
+                out_state->data_is_legacy = 1;
             } else if (version_flag & CK_DATAS_VERSION_FLAG) {
+                if (payload_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
+                if (payload_dwords > 2u) return NMO_ERR_INVALID_FORMAT;
                 NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &out_state->priority));
             } else {
-                if (data_version >= 5 && nmo_beobject_identifier_remaining_dwords(chunk) > 0) {
-                    NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "CKBeObject: DATAS section missing version flag but contains data");
-                }
+                if (payload_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
                 out_state->priority = 0;
             }
+            out_state->has_data_section = 1;
+            out_state->data_flags = version_flag;
         }
     } else if (result != NMO_ERR_NOT_FOUND) return result;
 
@@ -736,6 +779,20 @@ static nmo_status_t nmo_beobject_serialize_internal(
 
     const bool is_file =
         (out_chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0;
+    const bool write_data_section = is_file &&
+        (in_state->has_data_section || in_state->priority != 0);
+    const uint32_t requested_data_version =
+        nmo_chunk_get_data_version(out_chunk);
+    const bool write_legacy_data = write_data_section &&
+        (in_state->has_data_section
+             ? in_state->data_is_legacy != 0
+             : (requested_data_version > 0u &&
+                requested_data_version < 5u));
+    if (write_data_section && requested_data_version == 0u &&
+        !write_legacy_data) {
+        out_chunk->data_version = 7u;
+    }
+    const uint32_t data_version = nmo_chunk_get_data_version(out_chunk);
     const bool write_legacy_attributes =
         in_state->attributes.count == 0 &&
         (in_state->has_legacy_attributes ||
@@ -771,9 +828,20 @@ static nmo_status_t nmo_beobject_serialize_internal(
         NMO_RETURN_OK();
     }
 
-    /* Write scripts if present (file mode only) */
-    if (is_file && in_state->scripts.count > 0 && in_state->scripts.data) {
-        nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_SCRIPTS);
+    /* Write scripts if present (file mode only). */
+    if (is_file &&
+        (in_state->has_scripts_section || in_state->scripts.count > 0)) {
+        if (in_state->scripts_use_legacy_identifier && data_version >= 5u) {
+            NMO_RETURN_ERROR(
+                NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                "Legacy BeObject scripts identifier requires data version below 5");
+        }
+        const uint32_t identifier =
+            in_state->scripts_use_legacy_identifier
+                ? CK_STATESAVE_BEHAVIORS
+                : CK_STATESAVE_SCRIPTS;
+        nmo_status_t result = nmo_chunk_write_identifier(
+            out_chunk, identifier);
         if (result != NMO_OK) return result;
 
         /* Write script object sequence */
@@ -786,18 +854,39 @@ static nmo_status_t nmo_beobject_serialize_internal(
         }
     }
 
-    /* Write priority data if non-zero (file mode only) */
-    if (is_file && in_state->priority != 0) {
+    /* Preserve the exact legacy/modern priority section layout. */
+    if (write_data_section) {
+        if ((write_legacy_data && data_version >= 5u) ||
+            (!write_legacy_data && data_version < 5u)) {
+            NMO_RETURN_ERROR(
+                NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                "BeObject DATAS layout does not match the chunk data version");
+        }
         nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_DATAS);
         if (result != NMO_OK) return result;
 
-        /* Write version flag (modern format) */
-        result = nmo_chunk_write_dword(out_chunk, CK_DATAS_VERSION_FLAG);
+        const uint32_t data_flags = in_state->has_data_section
+            ? in_state->data_flags
+            : CK_DATAS_VERSION_FLAG;
+        result = nmo_chunk_write_dword(out_chunk, data_flags);
         if (result != NMO_OK) return result;
 
-        /* Write priority value */
-        result = nmo_chunk_write_int(out_chunk, in_state->priority);
-        if (result != NMO_OK) return result;
+        if (write_legacy_data) {
+            for (size_t i = 0; i < 3u; ++i) {
+                result = nmo_chunk_write_dword(
+                    out_chunk, in_state->legacy_data_words[i]);
+                if (result != NMO_OK) return result;
+            }
+            result = nmo_chunk_write_int(out_chunk, in_state->priority);
+            if (result != NMO_OK) return result;
+        } else if ((data_flags & CK_DATAS_VERSION_FLAG) != 0u) {
+            result = nmo_chunk_write_int(out_chunk, in_state->priority);
+            if (result != NMO_OK) return result;
+        } else if (in_state->priority != 0) {
+            NMO_RETURN_ERROR(
+                NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                "BeObject DATAS flags cannot store a non-zero priority");
+        }
     }
 
     /* Write legacy attributes if no modern attributes were decoded */
@@ -1008,6 +1097,14 @@ static nmo_status_t nmo_beobject_copy(
         &s->base, &copied.base, NULL, arena);
     if (result != NMO_OK) goto fail;
     copied.priority = s->priority;
+    copied.has_scripts_section = s->has_scripts_section;
+    copied.scripts_use_legacy_identifier =
+        s->scripts_use_legacy_identifier;
+    copied.has_data_section = s->has_data_section;
+    copied.data_is_legacy = s->data_is_legacy;
+    copied.data_flags = s->data_flags;
+    memcpy(copied.legacy_data_words, s->legacy_data_words,
+           sizeof(copied.legacy_data_words));
     copied.has_single_activity = s->has_single_activity;
     copied.single_activity_flags = s->single_activity_flags;
     copied.has_legacy_attributes = s->has_legacy_attributes;
@@ -1062,6 +1159,31 @@ static nmo_status_t nmo_beobject_validate(
     }
     if (s->scripts.count > 0 &&
         s->scripts.element_size != sizeof(nmo_ref_t)) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    if (s->has_scripts_section > 1u ||
+        s->scripts_use_legacy_identifier > 1u ||
+        s->has_data_section > 1u || s->data_is_legacy > 1u) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    if (s->data_is_legacy && !s->has_data_section) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    if (s->scripts_use_legacy_identifier &&
+        (s->has_scripts_section || s->scripts.count > 0u) &&
+        s->has_data_section && !s->data_is_legacy) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    if (!s->has_data_section &&
+        (s->data_flags != 0u || s->legacy_data_words[0] != 0u ||
+         s->legacy_data_words[1] != 0u ||
+         s->legacy_data_words[2] != 0u)) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    if (s->has_data_section && !s->data_is_legacy &&
+        (s->legacy_data_words[0] != 0u ||
+         s->legacy_data_words[1] != 0u ||
+         s->legacy_data_words[2] != 0u)) {
         return NMO_ERR_VALIDATION_FAILED;
     }
     NMO_VALIDATE_COUNT(s->attributes.data, s->attributes.count, "attributes");
@@ -1260,37 +1382,57 @@ static nmo_status_t nmo_beobject_enumerate_refs(
  * Vtable + registration
  * ============================================================================ */
 
-static const nmo_object_serialize_pass_t nmo_beobject_compare_passes[] = {
-    {
+static uint32_t nmo_beobject_compare_data_version(
+    const nmo_beobject_state_t *state)
+{
+    const bool has_scripts =
+        state->has_scripts_section || state->scripts.count > 0u;
+    if ((has_scripts && state->scripts_use_legacy_identifier) ||
+        (state->has_data_section && state->data_is_legacy)) {
+        return 4u;
+    }
+    return 7u;
+}
+
+static void nmo_beobject_compare_passes(
+    const nmo_beobject_state_t *state,
+    nmo_object_serialize_pass_t passes[2])
+{
+    const uint32_t data_version =
+        nmo_beobject_compare_data_version(state);
+    passes[0] = (nmo_object_serialize_pass_t){
         .class_id = NMO_CID_BEOBJECT,
-        .data_version = 7,
+        .data_version = data_version,
         .chunk_options = NMO_CHUNK_OPTION_FILE,
-    },
-    {
+    };
+    passes[1] = (nmo_object_serialize_pass_t){
         .class_id = NMO_CID_BEOBJECT,
-        .data_version = 7,
+        .data_version = data_version,
         .save_flags = CK_STATESAVE_BEOBJECTONLY,
         .use_context = 1,
-    },
-};
+    };
+}
 
 static bool nmo_beobject_equals(const void *a, const void *b)
 {
+    if (a == b) return true;
+    if (a == NULL || b == NULL) return false;
+    nmo_object_serialize_pass_t passes[2];
+    nmo_beobject_compare_passes(a, passes);
     return nmo_object_serialized_state_equals(
         a, b, nmo_beobject_serialize,
-        nmo_beobject_compare_passes,
-        sizeof(nmo_beobject_compare_passes) /
-            sizeof(nmo_beobject_compare_passes[0]),
+        passes, sizeof(passes) / sizeof(passes[0]),
         4096);
 }
 
 static uint32_t nmo_beobject_hash(const void *instance)
 {
+    if (instance == NULL) return 0;
+    nmo_object_serialize_pass_t passes[2];
+    nmo_beobject_compare_passes(instance, passes);
     return nmo_object_serialized_state_hash(
         instance, nmo_beobject_serialize,
-        nmo_beobject_compare_passes,
-        sizeof(nmo_beobject_compare_passes) /
-            sizeof(nmo_beobject_compare_passes[0]),
+        passes, sizeof(passes) / sizeof(passes[0]),
         4096);
 }
 
