@@ -13928,6 +13928,55 @@ TEST(chunk_id_remap, beobject_preserves_script_and_priority_layouts) {
     ASSERT_EQ(1, authored_loaded.has_data_section);
     ASSERT_EQ(0, authored_loaded.data_is_legacy);
 
+    nmo_chunk_t *runtime = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(runtime);
+    runtime->class_id = NMO_CID_BEOBJECT;
+    runtime->data_version = 7;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(runtime));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        runtime, CK_STATESAVE_DATAS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(runtime, 0x12345678));
+    nmo_chunk_close(runtime);
+    nmo_beobject_state_t runtime_loaded;
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(
+        &runtime_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_deserialize(
+        &runtime_loaded, runtime, NULL, NULL));
+    ASSERT_EQ(1, runtime_loaded.has_runtime_data_section);
+    ASSERT_EQ(0x12345678, runtime_loaded.runtime_data_value);
+    ASSERT_EQ(0, runtime_loaded.has_data_section);
+
+    nmo_chunk_t *runtime_saved = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(runtime_saved);
+    runtime_saved->class_id = NMO_CID_BEOBJECT;
+    runtime_saved->data_version = 7;
+    nmo_serialize_context_t runtime_context =
+        nmo_serialize_context_create_nonfile(
+            arena, NULL, CK_STATESAVE_BEOBJECTONLY);
+    ASSERT_EQ(NMO_OK, nmo_beobject_serialize(
+        &runtime_loaded, runtime_saved, NULL, &runtime_context));
+    nmo_chunk_close(runtime_saved);
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        runtime_saved, CK_STATESAVE_DATAS, &payload_dwords));
+    ASSERT_EQ(1u, payload_dwords);
+    int32_t runtime_value = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_int(
+        runtime_saved, &runtime_value));
+    ASSERT_EQ(0x12345678, runtime_value);
+
+    nmo_beobject_state_t runtime_copy;
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(
+        &runtime_copy, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.copy(
+        &runtime_loaded, &runtime_copy, &beobject_type, arena));
+    ASSERT_TRUE(nmo_beobject_vtable.equals(
+        &runtime_loaded, &runtime_copy));
+    ASSERT_EQ(nmo_beobject_vtable.hash(&runtime_loaded),
+              nmo_beobject_vtable.hash(&runtime_copy));
+    runtime_copy.runtime_data_value ^= 1;
+    ASSERT_FALSE(nmo_beobject_vtable.equals(
+        &runtime_loaded, &runtime_copy));
+
     nmo_beobject_state_t atomic;
     ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(&atomic, NULL, NULL));
     atomic.priority = 42;
@@ -13968,6 +14017,8 @@ TEST(chunk_id_remap, beobject_preserves_script_and_priority_layouts) {
     ASSERT_EQ(42, atomic.priority);
 
     nmo_beobject_vtable.destroy(&atomic, NULL, NULL);
+    nmo_beobject_vtable.destroy(&runtime_copy, NULL, NULL);
+    nmo_beobject_vtable.destroy(&runtime_loaded, NULL, NULL);
     nmo_beobject_vtable.destroy(&authored_loaded, NULL, NULL);
     nmo_beobject_vtable.destroy(&authored, NULL, NULL);
     nmo_beobject_vtable.destroy(&modern_loaded, NULL, NULL);

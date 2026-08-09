@@ -73,6 +73,8 @@ typedef struct nmo_beobject_state {
     uint8_t data_is_legacy;        /**< DATAS uses the pre-v5 five-DWORD layout */
     uint32_t data_flags;           /**< DATAS first DWORD, preserved verbatim */
     uint32_t legacy_data_words[3]; /**< Uninterpreted pre-v5 DATAS words */
+    uint8_t has_runtime_data_section; /**< Preserve non-file DATAS */
+    int32_t runtime_data_value;     /**< Uninterpreted non-file DATAS value */
     
     /* Attributes */
     nmo_array_t attributes;                    /**< Modern attributes (nmo_beobject_attribute_t) */

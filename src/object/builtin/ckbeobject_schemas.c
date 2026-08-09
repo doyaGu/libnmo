@@ -247,6 +247,8 @@ static const nmo_type_field_t nmo_beobject_fields[] = {
     NMO_FIELD_NAMED("legacy_data_word_2",
                     offsetof(nmo_beobject_state_t, legacy_data_words[2]),
                     sizeof(uint32_t), CKPGUID_INT, 0, 0),
+    NMO_FIELD(nmo_beobject_state_t, has_runtime_data_section, CKPGUID_BOOL),
+    NMO_FIELD(nmo_beobject_state_t, runtime_data_value, CKPGUID_INT),
     /* Attributes */
     NMO_FIELD_ARRAY(
         nmo_beobject_state_t, attributes,
@@ -606,8 +608,9 @@ static nmo_status_t nmo_beobject_deserialize_internal(
         if (!is_file) {
             if (payload_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
             if (payload_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
-            int32_t ignored = 0;
-            NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &ignored));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_int(
+                chunk, &out_state->runtime_data_value));
+            out_state->has_runtime_data_section = 1;
         } else {
             uint32_t version_flag = 0;
             if (payload_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
@@ -959,6 +962,12 @@ static nmo_status_t nmo_beobject_serialize_internal(
                 NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
                 "BeObject DATAS flags cannot store a non-zero priority");
         }
+    } else if (!is_file && in_state->has_runtime_data_section) {
+        result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_DATAS);
+        if (result != NMO_OK) return result;
+        result = nmo_chunk_write_int(
+            out_chunk, in_state->runtime_data_value);
+        if (result != NMO_OK) return result;
     }
 
     /* Write legacy attributes if no modern attributes were decoded */
@@ -1177,6 +1186,8 @@ static nmo_status_t nmo_beobject_copy(
     copied.data_flags = s->data_flags;
     memcpy(copied.legacy_data_words, s->legacy_data_words,
            sizeof(copied.legacy_data_words));
+    copied.has_runtime_data_section = s->has_runtime_data_section;
+    copied.runtime_data_value = s->runtime_data_value;
     copied.has_single_activity = s->has_single_activity;
     copied.single_activity_flags = s->single_activity_flags;
     copied.has_attributes_section = s->has_attributes_section;
@@ -1236,7 +1247,11 @@ static nmo_status_t nmo_beobject_validate(
     }
     if (s->has_scripts_section > 1u ||
         s->scripts_use_legacy_identifier > 1u ||
-        s->has_data_section > 1u || s->data_is_legacy > 1u) {
+        s->has_data_section > 1u || s->data_is_legacy > 1u ||
+        s->has_runtime_data_section > 1u) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    if (!s->has_runtime_data_section && s->runtime_data_value != 0) {
         return NMO_ERR_VALIDATION_FAILED;
     }
     if (s->data_is_legacy && !s->has_data_section) {
