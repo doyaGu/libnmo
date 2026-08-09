@@ -4519,6 +4519,120 @@ TEST(chunk_id_remap, sound_family_failures_keep_state_and_target_chunk_atomic) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, sound_family_copy_preserves_inherited_and_string_state) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_wavesound_state_t wave;
+    nmo_wavesound_state_t wave_copy;
+    ASSERT_EQ(NMO_OK, nmo_wavesound_vtable.create(&wave, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_wavesound_vtable.create(
+        &wave_copy, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &wave.base.base.scripts, 101));
+    wave.base.save_options = CKSOUND_EXTERNAL;
+    wave.base.file_name = "audio/base.wav";
+    wave.has_wave_file_name = 1;
+    wave.wave_file_name = "audio/wave.wav";
+    wave.has_duration = 1;
+    wave.duration = 1200;
+    wave.has_data2 = 1;
+    wave.state_flags = 7;
+    wave.priority = 0.75f;
+    wave.gain = 0.5f;
+    wave.pan = -0.25f;
+    wave.pitch = 1.25f;
+    wave.cone_in_angle = 0.1f;
+    wave.cone_out_angle = 0.2f;
+    wave.cone_out_gain = 0.3f;
+    wave.min_distance = 2.0f;
+    wave.max_distance = 20.0f;
+    wave.distance_behavior = 3;
+    wave.attached_object = nmo_ref_from_raw(301);
+    wave.position = (nmo_vector_t){1.0f, 2.0f, 3.0f};
+    wave.direction = (nmo_vector_t){0.0f, 1.0f, 0.0f};
+    nmo_type_descriptor_t wave_type = {
+        .size = sizeof(nmo_wavesound_state_t),
+    };
+
+    ASSERT_EQ(NMO_OK, nmo_wavesound_vtable.copy(
+        &wave, &wave_copy, &wave_type, arena));
+    ASSERT_NE(wave.base.base.scripts.data,
+              wave_copy.base.base.scripts.data);
+    ASSERT_NE(wave.base.file_name, wave_copy.base.file_name);
+    ASSERT_NE(wave.wave_file_name, wave_copy.wave_file_name);
+    ASSERT_TRUE(nmo_wavesound_vtable.equals(&wave, &wave_copy));
+    ASSERT_EQ(nmo_wavesound_vtable.hash(&wave),
+              nmo_wavesound_vtable.hash(&wave_copy));
+    ((char *)wave_copy.wave_file_name)[0] = 'X';
+    ASSERT_STR_EQ("audio/wave.wav", wave.wave_file_name);
+    ASSERT_FALSE(nmo_wavesound_vtable.equals(&wave, &wave_copy));
+
+    nmo_midisound_state_t midi;
+    nmo_midisound_state_t midi_copy;
+    ASSERT_EQ(NMO_OK, nmo_midisound_vtable.create(&midi, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_midisound_vtable.create(
+        &midi_copy, NULL, NULL));
+    midi.base.file_name = "music/base.mid";
+    midi.has_midi_file_name = 1;
+    midi.midi_file_name = "music/derived.mid";
+    nmo_type_descriptor_t midi_type = {
+        .size = sizeof(nmo_midisound_state_t),
+    };
+    ASSERT_EQ(NMO_OK, nmo_midisound_vtable.copy(
+        &midi, &midi_copy, &midi_type, arena));
+    ASSERT_NE(midi.base.file_name, midi_copy.base.file_name);
+    ASSERT_NE(midi.midi_file_name, midi_copy.midi_file_name);
+    ASSERT_TRUE(nmo_midisound_vtable.equals(&midi, &midi_copy));
+    ASSERT_EQ(nmo_midisound_vtable.hash(&midi),
+              nmo_midisound_vtable.hash(&midi_copy));
+
+    fail_after_allocator_state_t allocator_state = {
+        .allowed_allocations = 1,
+    };
+    nmo_allocator_t failing_allocator = {
+        .alloc = fail_after_alloc,
+        .free = fail_after_free,
+        .user_data = &allocator_state,
+    };
+    nmo_sound_state_t failing_source;
+    nmo_sound_state_t preserved;
+    ASSERT_EQ(NMO_OK, nmo_sound_vtable.create(
+        &failing_source, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_sound_vtable.create(&preserved, NULL, NULL));
+    nmo_array_dispose(&failing_source.base.scripts);
+    ASSERT_EQ(NMO_OK, nmo_array_init(
+        &failing_source.base.scripts, sizeof(nmo_ref_t), 1,
+        &failing_allocator));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &failing_source.base.scripts, 401));
+    ASSERT_EQ(NMO_OK, nmo_beobject_attribute_array_append(
+        &failing_source.base.attributes, 402, 9, NULL));
+    failing_source.file_name = "failure.wav";
+    allocator_state.allowed_allocations = allocator_state.allocation_count;
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
+        &preserved.base.scripts, 499));
+    preserved.save_options = CKSOUND_INCLUDEORIGINALFILE;
+    preserved.file_name = "preserved.wav";
+    nmo_ref_t *preserved_scripts =
+        NMO_ARRAY_DATA(nmo_ref_t, &preserved.base.scripts);
+    ASSERT_EQ(NMO_ERR_NOMEM, nmo_sound_vtable.copy(
+        &failing_source, &preserved, NULL, arena));
+    ASSERT_EQ(preserved_scripts, preserved.base.scripts.data);
+    ASSERT_EQ(CKSOUND_INCLUDEORIGINALFILE, preserved.save_options);
+    ASSERT_STR_EQ("preserved.wav", preserved.file_name);
+    ASSERT_EQ(1u, failing_source.base.attributes.count);
+    ASSERT_NOT_NULL(failing_source.base.attributes.data);
+
+    nmo_sound_vtable.destroy(&failing_source, NULL, NULL);
+    nmo_sound_vtable.destroy(&preserved, NULL, NULL);
+    nmo_midisound_vtable.destroy(&midi, NULL, NULL);
+    nmo_midisound_vtable.destroy(&midi_copy, NULL, NULL);
+    nmo_wavesound_vtable.destroy(&wave, NULL, NULL);
+    nmo_wavesound_vtable.destroy(&wave_copy, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, scalar_ref_sections_do_not_publish_truncated_state) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
     ASSERT_NOT_NULL(arena);
@@ -9376,6 +9490,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, sprite3d_unresolved_material_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, wavesound_unresolved_attachment_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, sound_family_failures_keep_state_and_target_chunk_atomic);
+    REGISTER_TEST(chunk_id_remap, sound_family_copy_preserves_inherited_and_string_state);
     REGISTER_TEST(chunk_id_remap, scalar_ref_sections_do_not_publish_truncated_state);
     REGISTER_TEST(chunk_id_remap, entity_scalar_refs_round_trip_unresolved_raw_ids);
     REGISTER_TEST(chunk_id_remap, entity_content_equality_ignores_storage_addresses);
