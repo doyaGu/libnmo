@@ -3221,6 +3221,41 @@ TEST(chunk_id_remap, parameterlocal_owner_round_trips_raw_id) {
     ASSERT_TRUE(failed.is_myself);
     ASSERT_TRUE(failed.is_setting);
 
+    const struct {
+        uint32_t identifier;
+        size_t payload_dwords;
+    } trailing_cases[] = {
+        {CK_STATESAVE_PARAMETEROUT_OWNER, 1u},
+        {CK_STATESAVE_PARAMETEROUT_MYSELF, 0u},
+        {CK_STATESAVE_PARAMETEROUT_ISSETTING, 0u},
+    };
+    for (size_t i = 0;
+         i < sizeof(trailing_cases) / sizeof(trailing_cases[0]); ++i) {
+        nmo_chunk_t *trailing = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(trailing);
+        trailing->class_id = NMO_CID_PARAMETERLOCAL;
+        trailing->data_version = 8;
+        ASSERT_EQ(NMO_OK, nmo_chunk_start_write(trailing));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+            trailing, trailing_cases[i].identifier));
+        for (size_t j = 0; j < trailing_cases[i].payload_dwords; ++j) {
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing, 0));
+        }
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing, 0x12345678u));
+        nmo_chunk_close(trailing);
+        nmo_chunk_set_file_context(trailing, &read_context);
+        ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_parameterlocal_deserialize(
+            &failed, trailing, NULL, &deserialize_context));
+        ASSERT_TRUE(nmo_guid_equals(CKPGUID_INT, failed.base.type_guid));
+        ASSERT_EQ(CKPARAM_MODE_BUFFER, failed.base.mode);
+        ASSERT_EQ(1u, failed.base.buffer_data.count);
+        ASSERT_EQ(0xabu, NMO_ARRAY_DATA(
+            uint8_t, &failed.base.buffer_data)[0]);
+        ASSERT_EQ(692u, failed.owner.raw_id);
+        ASSERT_TRUE(failed.is_myself);
+        ASSERT_TRUE(failed.is_setting);
+    }
+
     nmo_parameterlocal_state_t invalid;
     ASSERT_EQ(NMO_OK, nmo_parameterlocal_vtable.create(
         &invalid, NULL, NULL));

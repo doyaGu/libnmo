@@ -80,6 +80,7 @@ static nmo_status_t nmo_parameterlocal_deserialize_internal(
         chunk, CK_STATESAVE_PARAMETEROUT_OWNER, &section_dwords);
     if (result == NMO_OK) {
         if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+        if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
         nmo_ref_t owner = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &owner));
         nmo_ref_check_class(
@@ -92,16 +93,18 @@ static nmo_status_t nmo_parameterlocal_deserialize_internal(
     } else if (result != NMO_ERR_NOT_FOUND) return result;
 
     /* Check if "myself" parameter */
-    result = nmo_chunk_seek_identifier(
-        chunk, CK_STATESAVE_PARAMETEROUT_MYSELF);
+    result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_PARAMETEROUT_MYSELF, &section_dwords);
     if (result == NMO_OK) {
+        if (section_dwords != 0u) return NMO_ERR_INVALID_FORMAT;
         out_state->is_myself = 1;
     } else if (result != NMO_ERR_NOT_FOUND) return result;
 
     /* Check if setting */
-    result = nmo_chunk_seek_identifier(
-        chunk, CK_STATESAVE_PARAMETEROUT_ISSETTING);
+    result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_PARAMETEROUT_ISSETTING, &section_dwords);
     if (result == NMO_OK) {
+        if (section_dwords != 0u) return NMO_ERR_INVALID_FORMAT;
         out_state->is_setting = 1;
     } else if (result != NMO_ERR_NOT_FOUND) return result;
 
