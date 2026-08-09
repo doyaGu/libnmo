@@ -541,7 +541,13 @@ nmo_status_t nmo_object_system_prepare_loaded_objects(
 
         for (size_t i = 0; i < desc_count; i++) {
             if (created_objects[i] != NULL) {
-                (void)nmo_id_remap_add(remap_table, (nmo_object_id_t)i, created_objects[i]->id);
+                nmo_status_t add_result = nmo_id_remap_add(
+                    remap_table,
+                    (nmo_object_id_t)i,
+                    created_objects[i]->id);
+                if (add_result != NMO_OK) {
+                    return add_result;
+                }
             }
         }
     }

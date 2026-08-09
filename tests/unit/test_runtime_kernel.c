@@ -41,6 +41,7 @@
 #include "session/nmo_reference_resolver.h"
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_chunk_context.h"
+#include "format/nmo_header1.h"
 #include "format/nmo_id_remap.h"
 #include "format/nmo_object.h"
 #include "core/nmo_allocator.h"
@@ -77,6 +78,17 @@ static void *runtime_ref_graph_fail_alloc(
     }
     nmo_allocator_t allocator = nmo_allocator_default();
     return allocator.alloc(allocator.user_data, size, alignment);
+}
+
+static nmo_status_t test_id_register_noop(
+    void *ctx,
+    nmo_object_t *object,
+    nmo_object_id_t file_index)
+{
+    (void)ctx;
+    (void)object;
+    (void)file_index;
+    return NMO_OK;
 }
 
 static void runtime_ref_graph_fail_free(void *user_data, void *ptr) {
@@ -1508,6 +1520,50 @@ TEST(runtime_kernel, deserialize_propagates_reference_registration_oom) {
     nmo_id_mapping_destroy(load_session);
     nmo_session_destroy(session);
     nmo_context_release(ctx);
+}
+
+TEST(runtime_kernel, prepare_loaded_objects_propagates_remap_growth_oom) {
+    runtime_ref_graph_fail_allocator_state_t fail_state = {0};
+    nmo_allocator_t fail_allocator = nmo_allocator_custom(
+        runtime_ref_graph_fail_alloc,
+        runtime_ref_graph_fail_free,
+        &fail_state);
+    nmo_arena_t *arena = nmo_arena_create(&fail_allocator, 2048);
+    nmo_object_repository_t *repo = nmo_object_repository_create(NULL);
+    ASSERT_NOT_NULL(arena);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_desc_t descs[33] = {0};
+    for (size_t i = 0; i < 33; ++i) {
+        descs[i].file_id = (nmo_object_id_t)(i + 1u);
+        descs[i].class_id = NMO_CID_OBJECT;
+        descs[i].file_index = (nmo_object_id_t)i;
+    }
+
+    nmo_allocator_t object_allocator = nmo_allocator_default();
+    fail_state.fail_allocations = 1;
+    ASSERT_EQ(
+        NMO_ERR_NOMEM,
+        nmo_object_system_prepare_loaded_objects(
+            &object_allocator,
+            arena,
+            repo,
+            NULL,
+            test_id_register_noop,
+            NULL,
+            descs,
+            33,
+            NULL,
+            0,
+            NULL,
+            0,
+            NULL,
+            NULL));
+    ASSERT_EQ((size_t)33, nmo_object_repository_get_count(repo));
+
+    fail_state.fail_allocations = 0;
+    nmo_object_repository_destroy(repo);
+    nmo_arena_destroy(arena);
 }
 
 TEST(runtime_kernel, beobject_normalize_validates_attributes_before_mutation) {
@@ -3956,6 +4012,7 @@ REGISTER_TEST(runtime_kernel, delete_safe_detach_prunes_group_references);
 REGISTER_TEST(runtime_kernel, delete_safe_detach_uses_explicit_object_type);
 REGISTER_TEST(runtime_kernel, delete_safe_detach_prunes_behavior_links_with_deleted_io);
 REGISTER_TEST(runtime_kernel, delete_cascade_removes_referencing_group);
+REGISTER_TEST(runtime_kernel, prepare_loaded_objects_propagates_remap_growth_oom);
 REGISTER_TEST(runtime_kernel, deserialize_propagates_reference_registration_oom);
 REGISTER_TEST(runtime_kernel, deserialize_propagates_chunk_reader_oom);
 REGISTER_TEST(runtime_kernel, deserialize_failure_does_not_publish_state_for_finalize);
