@@ -11927,7 +11927,12 @@ TEST(chunk_id_remap, animation_refs_round_trip_and_failure_is_atomic) {
     nmo_animation_state_t source;
     ASSERT_EQ(NMO_OK, nmo_animation_vtable.create(&source, NULL, NULL));
     ASSERT_EQ(NMO_CKOBJECT_VISIBLE, source.base.base.visibility_flags);
+    nmo_ref_t legacy_body_parts[] = {
+        nmo_ref_from_raw(897), nmo_ref_from_raw(898),
+    };
     source.has_root_entity = 1;
+    source.legacy_body_part_count = 2;
+    source.legacy_body_parts = legacy_body_parts;
     source.root_entity = nmo_ref_from_raw(901);
     source.has_character = 1;
     source.character = nmo_ref_from_raw(902);
@@ -11935,10 +11940,14 @@ TEST(chunk_id_remap, animation_refs_round_trip_and_failure_is_atomic) {
     nmo_animation_state_t copied;
     ASSERT_EQ(NMO_OK, nmo_animation_vtable.create(&copied, NULL, NULL));
     ASSERT_EQ(NMO_OK, nmo_animation_vtable.copy(
-        &source, &copied, NULL, NULL));
+        &source, &copied, NULL, arena));
+    ASSERT_NE(source.legacy_body_parts, copied.legacy_body_parts);
     ASSERT_TRUE(nmo_animation_vtable.equals(&source, &copied));
     ASSERT_EQ(nmo_animation_vtable.hash(&source),
               nmo_animation_vtable.hash(&copied));
+    copied.legacy_body_parts[0].raw_id++;
+    ASSERT_FALSE(nmo_animation_vtable.equals(&source, &copied));
+    copied.legacy_body_parts[0].raw_id--;
     copied.character.raw_id++;
     ASSERT_FALSE(nmo_animation_vtable.equals(&source, &copied));
 
@@ -11958,6 +11967,11 @@ TEST(chunk_id_remap, animation_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(NMO_OK, nmo_animation_deserialize(
         &loaded, first, NULL, &deserialize_context));
     ASSERT_TRUE(loaded.has_root_entity);
+    ASSERT_EQ(2u, loaded.legacy_body_part_count);
+    ASSERT_EQ(897u, loaded.legacy_body_parts[0].raw_id);
+    ASSERT_EQ(898u, loaded.legacy_body_parts[1].raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED,
+              loaded.legacy_body_parts[0].state);
     ASSERT_EQ(901u, loaded.root_entity.raw_id);
     ASSERT_EQ(NMO_REF_UNRESOLVED, loaded.root_entity.state);
     ASSERT_TRUE(loaded.has_character);
@@ -11979,6 +11993,9 @@ TEST(chunk_id_remap, animation_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(NMO_OK, nmo_animation_vtable.create(&reloaded, NULL, NULL));
     ASSERT_EQ(NMO_OK, nmo_animation_deserialize(
         &reloaded, second, NULL, &deserialize_context));
+    ASSERT_EQ(2u, reloaded.legacy_body_part_count);
+    ASSERT_EQ(897u, reloaded.legacy_body_parts[0].raw_id);
+    ASSERT_EQ(898u, reloaded.legacy_body_parts[1].raw_id);
     ASSERT_EQ(901u, reloaded.root_entity.raw_id);
     ASSERT_EQ(NMO_REF_UNRESOLVED, reloaded.root_entity.state);
     ASSERT_EQ(902u, reloaded.character.raw_id);
@@ -11998,19 +12015,69 @@ TEST(chunk_id_remap, animation_refs_round_trip_and_failure_is_atomic) {
 
     nmo_animation_state_t failed;
     ASSERT_EQ(NMO_OK, nmo_animation_vtable.create(&failed, NULL, NULL));
+    nmo_ref_t previous_body_part = nmo_ref_from_raw(998);
     failed.has_root_entity = 1;
+    failed.legacy_body_part_count = 1;
+    failed.legacy_body_parts = &previous_body_part;
     failed.root_entity = nmo_ref_from_raw(999);
     ASSERT_NE(NMO_OK, nmo_animation_deserialize(
         &failed, truncated, NULL, &deserialize_context));
     ASSERT_TRUE(failed.has_root_entity);
+    ASSERT_EQ(1u, failed.legacy_body_part_count);
+    ASSERT_EQ(&previous_body_part, failed.legacy_body_parts);
+    ASSERT_EQ(998u, failed.legacy_body_parts[0].raw_id);
     ASSERT_EQ(999u, failed.root_entity.raw_id);
     ASSERT_EQ(NMO_REF_UNRESOLVED, failed.root_entity.state);
+
+    fail_after_allocator_state_t allocator_state = {
+        .allocation_count = 0,
+        .allowed_allocations = 2,
+    };
+    nmo_allocator_t failing_allocator = nmo_allocator_custom(
+        fail_after_alloc, fail_after_free, &allocator_state);
+    nmo_arena_t *failing_arena = nmo_arena_create(
+        &failing_allocator, 1);
+    ASSERT_NOT_NULL(failing_arena);
+    nmo_deserialize_context_t failing_context =
+        nmo_deserialize_context_create(
+            failing_arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+    nmo_animation_state_t failed_alloc;
+    ASSERT_EQ(NMO_OK, nmo_animation_vtable.create(
+        &failed_alloc, NULL, NULL));
+    failed_alloc.flags = 0x12345678u;
+    ASSERT_EQ(NMO_ERR_NOMEM, nmo_animation_deserialize(
+        &failed_alloc, first, NULL, &failing_context));
+    ASSERT_EQ(0x12345678u, failed_alloc.flags);
+    ASSERT_EQ(0u, failed_alloc.legacy_body_part_count);
+    ASSERT_NULL(failed_alloc.legacy_body_parts);
+    ASSERT_EQ(2u, allocator_state.allocation_count);
+
+    nmo_animation_state_t invalid;
+    ASSERT_EQ(NMO_OK, nmo_animation_vtable.create(
+        &invalid, NULL, NULL));
+    invalid.legacy_body_part_count = UINT32_MAX;
+    invalid.legacy_body_parts = legacy_body_parts;
+    nmo_chunk_t *target = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(target);
+    target->class_id = NMO_CID_ANIMATION;
+    target->data_version = 7;
+    target->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        target, 0x12345678u));
+    nmo_chunk_close(target);
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_animation_serialize(
+        &invalid, target, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
 
     nmo_animation_vtable.destroy(&source, NULL, NULL);
     nmo_animation_vtable.destroy(&copied, NULL, NULL);
     nmo_animation_vtable.destroy(&loaded, NULL, NULL);
     nmo_animation_vtable.destroy(&reloaded, NULL, NULL);
     nmo_animation_vtable.destroy(&failed, NULL, NULL);
+    nmo_animation_vtable.destroy(&failed_alloc, NULL, NULL);
+    nmo_animation_vtable.destroy(&invalid, NULL, NULL);
+    nmo_arena_destroy(failing_arena);
     nmo_arena_destroy(arena);
 }
 

@@ -38,6 +38,8 @@ typedef struct nmo_animation_state {
     float length;
 
     uint8_t has_root_entity;
+    uint32_t legacy_body_part_count;
+    nmo_ref_t *legacy_body_parts;
     nmo_ref_t root_entity;
 
     uint8_t has_character;

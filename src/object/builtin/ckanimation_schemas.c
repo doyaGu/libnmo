@@ -92,6 +92,10 @@ static const nmo_type_field_t nmo_animation_fields[] = {
     NMO_FIELD(nmo_animation_state_t, has_length, CKPGUID_UINT8),
     NMO_FIELD(nmo_animation_state_t, length, CKPGUID_FLOAT),
     NMO_FIELD(nmo_animation_state_t, has_root_entity, CKPGUID_UINT8),
+    NMO_FIELD(nmo_animation_state_t, legacy_body_part_count, CKPGUID_UINT32),
+    NMO_FIELD_REF_RECORD_ARRAY_COUNTED(
+        nmo_animation_state_t, legacy_body_parts,
+        legacy_body_part_count),
     NMO_FIELD_REF(nmo_animation_state_t, root_entity),
     NMO_FIELD(nmo_animation_state_t, has_character, CKPGUID_UINT8),
     NMO_FIELD_REF(nmo_animation_state_t, character),
@@ -238,6 +242,11 @@ static void nmo_objectanimation_check_refs(
         &state->shared_anim, repository, types, NMO_CID_OBJECTANIMATION);
 }
 
+static nmo_status_t nmo_animation_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
+
 static nmo_status_t nmo_animation_copy(
     const void *src,
     void *dst,
@@ -245,10 +254,19 @@ static nmo_status_t nmo_animation_copy(
     nmo_arena_t *arena)
 {
     (void)type;
-    (void)arena;
     if (src == NULL || dst == NULL) return NMO_ERR_INVALID_ARGUMENT;
-    if (src != dst) *(nmo_animation_state_t *)dst =
-        *(const nmo_animation_state_t *)src;
+    const nmo_animation_state_t *s = src;
+    nmo_animation_state_t *d = dst;
+    NMO_RETURN_IF_ERROR(nmo_animation_validate(s, NULL, NULL));
+    if (src == dst) return NMO_OK;
+
+    nmo_animation_state_t copied = *s;
+    copied.legacy_body_parts = NULL;
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(
+        arena, (void **)&copied.legacy_body_parts,
+        s->legacy_body_parts, sizeof(nmo_ref_t),
+        s->legacy_body_part_count));
+    *d = copied;
     return NMO_OK;
 }
 
@@ -260,6 +278,12 @@ static nmo_status_t nmo_animation_validate(
     (void)type;
     if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
     const nmo_animation_state_t *state = instance;
+    NMO_VALIDATE_COUNT(
+        state->legacy_body_parts, state->legacy_body_part_count,
+        "legacy_body_parts");
+    if (state->legacy_body_part_count > (uint32_t)INT32_MAX) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
     return nmo_sceneobject_vtable.validate(&state->base, NULL, context);
 }
 
@@ -282,9 +306,15 @@ static nmo_status_t nmo_keyedanimation_copy(
     if (src == dst) return NMO_OK;
 
     nmo_keyedanimation_state_t copied = *s;
+    copied.base.legacy_body_parts = NULL;
     copied.animation_ids = NULL;
     copied.subanims = NULL;
     nmo_status_t result = nmo_object_copy_array(
+        arena, (void **)&copied.base.legacy_body_parts,
+        s->base.legacy_body_parts, sizeof(nmo_ref_t),
+        s->base.legacy_body_part_count);
+    if (result != NMO_OK) return result;
+    result = nmo_object_copy_array(
         arena, (void **)&copied.animation_ids,
         s->animation_ids, sizeof(nmo_ref_t), s->animation_count);
     if (result != NMO_OK) return result;
@@ -635,6 +665,8 @@ static nmo_status_t nmo_animation_pre_delete(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "Invalid arguments to nmo_animation_pre_delete");
     }
+    nmo_animation_state_t *state = instance;
+    state->legacy_body_part_count = 0;
     NMO_RETURN_OK();
 }
 
@@ -720,18 +752,31 @@ static bool nmo_animation_equals(const void *a, const void *b)
     if (a == NULL || b == NULL) return false;
     const nmo_animation_state_t *lhs = a;
     const nmo_animation_state_t *rhs = b;
-    return nmo_sceneobject_vtable.equals(&lhs->base, &rhs->base) &&
-        lhs->has_data == rhs->has_data &&
-        lhs->flags == rhs->flags &&
-        nmo_animation_float_equals(lhs->frame_rate, rhs->frame_rate) &&
-        lhs->has_length == rhs->has_length &&
-        nmo_animation_float_equals(lhs->length, rhs->length) &&
-        lhs->has_root_entity == rhs->has_root_entity &&
-        nmo_animation_ref_equals(&lhs->root_entity, &rhs->root_entity) &&
-        lhs->has_character == rhs->has_character &&
-        nmo_animation_ref_equals(&lhs->character, &rhs->character) &&
-        lhs->has_current_step == rhs->has_current_step &&
-        nmo_animation_float_equals(lhs->current_step, rhs->current_step);
+    if (nmo_animation_validate(lhs, NULL, NULL) != NMO_OK ||
+        nmo_animation_validate(rhs, NULL, NULL) != NMO_OK ||
+        !nmo_sceneobject_vtable.equals(&lhs->base, &rhs->base) ||
+        lhs->has_data != rhs->has_data ||
+        lhs->flags != rhs->flags ||
+        !nmo_animation_float_equals(lhs->frame_rate, rhs->frame_rate) ||
+        lhs->has_length != rhs->has_length ||
+        !nmo_animation_float_equals(lhs->length, rhs->length) ||
+        lhs->has_root_entity != rhs->has_root_entity ||
+        lhs->legacy_body_part_count != rhs->legacy_body_part_count ||
+        !nmo_animation_ref_equals(&lhs->root_entity, &rhs->root_entity) ||
+        lhs->has_character != rhs->has_character ||
+        !nmo_animation_ref_equals(&lhs->character, &rhs->character) ||
+        lhs->has_current_step != rhs->has_current_step ||
+        !nmo_animation_float_equals(lhs->current_step, rhs->current_step)) {
+        return false;
+    }
+    for (uint32_t i = 0; i < lhs->legacy_body_part_count; ++i) {
+        if (!nmo_animation_ref_equals(
+                &lhs->legacy_body_parts[i],
+                &rhs->legacy_body_parts[i])) {
+            return false;
+        }
+    }
+    return true;
 }
 
 static uint32_t nmo_animation_hash_bytes(
@@ -762,6 +807,7 @@ static uint32_t nmo_animation_hash(const void *instance)
 {
     if (instance == NULL) return 0;
     const nmo_animation_state_t *state = instance;
+    if (nmo_animation_validate(state, NULL, NULL) != NMO_OK) return 0;
     uint32_t hash = nmo_sceneobject_vtable.hash(&state->base);
 #define NMO_ANIMATION_HASH_FIELD(field) \
     hash = nmo_animation_hash_bytes( \
@@ -772,6 +818,11 @@ static uint32_t nmo_animation_hash(const void *instance)
     NMO_ANIMATION_HASH_FIELD(has_length);
     NMO_ANIMATION_HASH_FIELD(length);
     NMO_ANIMATION_HASH_FIELD(has_root_entity);
+    NMO_ANIMATION_HASH_FIELD(legacy_body_part_count);
+    for (uint32_t i = 0; i < state->legacy_body_part_count; ++i) {
+        hash = nmo_animation_hash_ref(
+            hash, &state->legacy_body_parts[i]);
+    }
     hash = nmo_animation_hash_ref(hash, &state->root_entity);
     NMO_ANIMATION_HASH_FIELD(has_character);
     hash = nmo_animation_hash_ref(hash, &state->character);
@@ -1767,6 +1818,8 @@ static nmo_status_t nmo_animation_deserialize_internal(
     out_state->has_length = 0;
     out_state->length = 100.0f;
     out_state->has_root_entity = 0;
+    out_state->legacy_body_part_count = 0;
+    out_state->legacy_body_parts = NULL;
     out_state->root_entity = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     out_state->has_character = 0;
     out_state->character = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
@@ -1832,35 +1885,43 @@ static nmo_status_t nmo_animation_deserialize_internal(
     NMO_RETURN_IF_ERROR(nmo_animation_seek_optional(
         chunk, CK_STATESAVE_ANIMATIONBODYPARTS, &section_found));
     if (section_found) {
-        out_state->has_root_entity = 1;
-        /* Legacy list of body parts (ignored) */
-        int32_t count = 0;
-        nmo_status_t result = nmo_chunk_read_int(chunk, &count);
+        nmo_arena_t *arena = nmo_deserialize_context_get_arena(context);
+        if (arena == NULL) arena = chunk->arena;
+        nmo_ref_t *legacy_body_parts = NULL;
+        uint32_t legacy_body_part_count = 0;
+        nmo_status_t result = read_ref_array(
+            chunk, arena, &legacy_body_parts,
+            &legacy_body_part_count);
         if (result != NMO_OK) return result;
-        if (count < 0) {
-            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Invalid body part count");
-        }
         const size_t remaining_dwords =
             nmo_animation_identifier_remaining_dwords(chunk);
-        if (remaining_dwords == 0 ||
-            (size_t)count > remaining_dwords - 1u) {
+        if (remaining_dwords == 0) {
             NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
-                             "Body part count exceeds identifier payload");
+                             "Animation root entity is missing");
         }
-        for (int32_t i = 0; i < count; ++i) {
-            nmo_object_id_t tmp = 0;
-            result = nmo_chunk_read_object_id(chunk, &tmp);
-            if (result != NMO_OK) return result;
+        if (remaining_dwords != 1u) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Animation body part section has trailing data");
         }
         nmo_ref_t root_entity = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         result = nmo_ref_read(chunk, &root_entity);
         if (result != NMO_OK) return result;
-        nmo_ref_check_class(
-            &root_entity,
+        const nmo_object_repository_t *repository =
             (const nmo_object_repository_t *)
-                nmo_deserialize_context_get_repository(context),
-            nmo_deserialize_context_get_type_registry(context),
+                nmo_deserialize_context_get_repository(context);
+        const nmo_type_registry_t *types =
+            nmo_deserialize_context_get_type_registry(context);
+        for (uint32_t i = 0; i < legacy_body_part_count; ++i) {
+            nmo_ref_check_class(
+                &legacy_body_parts[i], repository, types,
+                NMO_CID_BODYPART);
+        }
+        nmo_ref_check_class(
+            &root_entity, repository, types,
             NMO_CID_3DENTITY);
+        out_state->has_root_entity = 1;
+        out_state->legacy_body_part_count = legacy_body_part_count;
+        out_state->legacy_body_parts = legacy_body_parts;
         out_state->root_entity = root_entity;
     }
 
@@ -1899,6 +1960,7 @@ static nmo_status_t nmo_animation_serialize_internal(
     if (!in_state || !out_chunk) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_animation_serialize");
     }
+    NMO_RETURN_IF_ERROR(nmo_animation_validate(in_state, NULL, context));
 
     {
         nmo_status_t result = nmo_sceneobject_serialize(&in_state->base, out_chunk, NULL, context);
@@ -1930,7 +1992,9 @@ static nmo_status_t nmo_animation_serialize_internal(
     if (is_file || (save_flags & CK_STATESAVE_ANIMATIONBODYPARTS) != 0) {
         nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_ANIMATIONBODYPARTS);
         if (result != NMO_OK) return result;
-        result = nmo_chunk_write_int(out_chunk, 0);
+        result = nmo_ref_write_sequence(
+            out_chunk, in_state->legacy_body_parts,
+            in_state->legacy_body_part_count);
         if (result != NMO_OK) return result;
         result = nmo_ref_write(out_chunk, &in_state->root_entity);
         if (result != NMO_OK) return result;
