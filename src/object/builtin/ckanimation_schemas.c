@@ -40,13 +40,12 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
     keyedanimation,
     nmo_keyedanimation_state_t,
     do {
-        state->base.flags = CKANIMATION_LINKTOFRAMERATE | CKANIMATION_CANBEBREAK;
-        state->base.frame_rate = 30.0f;
-        state->base.length = 100.0f;
-        state->base.current_step = 0.0f;
+        nmo_status_t result = nmo_animation_vtable.create(
+            &state->base, NULL, context);
+        if (result != NMO_OK) return result;
         state->merge_factor = 0.5f;
     } while (0),
-    ((void)0))
+    nmo_animation_vtable.destroy(&state->base, NULL, context))
 
 NMO_DEFINE_OBJECT_LIFECYCLE(
     objectanimation,
@@ -85,7 +84,7 @@ static const nmo_type_field_t nmo_animation_fields[] = {
 
 static const nmo_type_field_t nmo_keyedanimation_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_keyedanimation_state_t, base),
-                    sizeof(nmo_animation_state_t), CKPGUID_NONE,
+                    sizeof(nmo_animation_state_t), CKPGUID_ANIMATION,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_keyedanimation_state_t, animation_count, CKPGUID_UINT32),
     NMO_FIELD_REF_RECORD_ARRAY_COUNTED(nmo_keyedanimation_state_t, animation_ids, animation_count),
@@ -247,27 +246,46 @@ static nmo_status_t nmo_animation_validate(
     return nmo_sceneobject_vtable.validate(&state->base, NULL, context);
 }
 
+static nmo_status_t nmo_keyedanimation_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
+
 static nmo_status_t nmo_keyedanimation_copy(
     const void *src,
     void *dst,
     const nmo_type_descriptor_t *type,
     nmo_arena_t *arena)
 {
+    (void)type;
+    if (src == NULL || dst == NULL) return NMO_ERR_INVALID_ARGUMENT;
     const nmo_keyedanimation_state_t *s = src;
     nmo_keyedanimation_state_t *d = dst;
-    NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->animation_ids,
-                                              s->animation_ids, sizeof(nmo_ref_t), s->animation_count));
+    NMO_RETURN_IF_ERROR(nmo_keyedanimation_validate(s, NULL, NULL));
+    if (src == dst) return NMO_OK;
+
+    nmo_keyedanimation_state_t copied = *s;
+    copied.animation_ids = NULL;
+    copied.subanims = NULL;
+    nmo_status_t result = nmo_object_copy_array(
+        arena, (void **)&copied.animation_ids,
+        s->animation_ids, sizeof(nmo_ref_t), s->animation_count);
+    if (result != NMO_OK) return result;
     if (s->subanim_count > 0) {
-        NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->subanims,
-                                                  s->subanims, sizeof(nmo_keyedanimation_subanim_t),
-                                                  s->subanim_count));
+        result = nmo_object_copy_array(
+            arena, (void **)&copied.subanims,
+            s->subanims, sizeof(nmo_keyedanimation_subanim_t),
+            s->subanim_count);
+        if (result != NMO_OK) return result;
         for (uint32_t i = 0; i < s->subanim_count; ++i) {
             nmo_chunk_t *clone = NULL;
-            NMO_RETURN_IF_ERROR(nmo_object_copy_chunk(arena, &clone, s->subanims[i].chunk));
-            d->subanims[i].chunk = clone;
+            result = nmo_object_copy_chunk(
+                arena, &clone, s->subanims[i].chunk);
+            if (result != NMO_OK) return result;
+            copied.subanims[i].chunk = clone;
         }
     }
+    *d = copied;
     NMO_RETURN_OK();
 }
 
@@ -277,11 +295,11 @@ static nmo_status_t nmo_keyedanimation_validate(
     void *context)
 {
     (void)type;
-    (void)context;
+    if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
     const nmo_keyedanimation_state_t *s = instance;
     NMO_VALIDATE_COUNT(s->animation_ids, s->animation_count, "animation_ids");
     NMO_VALIDATE_COUNT(s->subanims, s->subanim_count, "subanims");
-    NMO_RETURN_OK();
+    return nmo_animation_vtable.validate(&s->base, NULL, context);
 }
 
 static nmo_status_t nmo_keyedanimation_enumerate_refs(
@@ -673,25 +691,137 @@ static uint32_t nmo_animation_hash(const void *instance)
     return hash;
 }
 
-static const nmo_object_serialize_pass_t nmo_keyedanimation_compare_pass = {
-    .class_id = NMO_CID_KEYEDANIMATION,
-    .data_version = 9,
-    .save_flags = UINT32_MAX,
-    .use_context = 1,
-};
+static bool nmo_animation_chunk_array_equals(
+    const nmo_arena_array_t *lhs,
+    const nmo_arena_array_t *rhs)
+{
+    if (lhs->count != rhs->count) return false;
+    if (lhs->count == 0) return true;
+    if (lhs->data == NULL || rhs->data == NULL ||
+        lhs->element_size != sizeof(uint32_t) ||
+        rhs->element_size != sizeof(uint32_t) ||
+        lhs->count > lhs->capacity || rhs->count > rhs->capacity) {
+        return false;
+    }
+    return memcmp(
+        lhs->data, rhs->data,
+        lhs->count * sizeof(uint32_t)) == 0;
+}
+
+static bool nmo_animation_chunk_equals(
+    const nmo_chunk_t *lhs,
+    const nmo_chunk_t *rhs)
+{
+    if (lhs == rhs) return true;
+    if (lhs == NULL || rhs == NULL) return false;
+    return lhs->class_id == rhs->class_id &&
+        lhs->data_version == rhs->data_version &&
+        lhs->chunk_version == rhs->chunk_version &&
+        ((lhs->chunk_options ^ rhs->chunk_options) &
+         NMO_CHUNK_OPTION_FILE) == 0 &&
+        nmo_animation_chunk_array_equals(&lhs->data, &rhs->data) &&
+        nmo_animation_chunk_array_equals(&lhs->ids, &rhs->ids) &&
+        nmo_animation_chunk_array_equals(
+            &lhs->chunk_refs, &rhs->chunk_refs) &&
+        nmo_animation_chunk_array_equals(&lhs->managers, &rhs->managers);
+}
 
 static bool nmo_keyedanimation_equals(const void *a, const void *b)
 {
-    return nmo_object_serialized_state_equals(
-        a, b, nmo_keyedanimation_serialize,
-        &nmo_keyedanimation_compare_pass, 1, 4096);
+    if (a == b) return true;
+    if (a == NULL || b == NULL) return false;
+    const nmo_keyedanimation_state_t *lhs = a;
+    const nmo_keyedanimation_state_t *rhs = b;
+    if (nmo_keyedanimation_validate(lhs, NULL, NULL) != NMO_OK ||
+        nmo_keyedanimation_validate(rhs, NULL, NULL) != NMO_OK ||
+        !nmo_animation_vtable.equals(&lhs->base, &rhs->base) ||
+        lhs->animation_count != rhs->animation_count ||
+        lhs->has_merge != rhs->has_merge ||
+        lhs->merged != rhs->merged ||
+        !nmo_animation_float_equals(
+            lhs->merge_factor, rhs->merge_factor) ||
+        lhs->subanim_count != rhs->subanim_count) {
+        return false;
+    }
+    for (uint32_t i = 0; i < lhs->animation_count; ++i) {
+        if (!nmo_animation_ref_equals(
+                &lhs->animation_ids[i], &rhs->animation_ids[i])) {
+            return false;
+        }
+    }
+    for (uint32_t i = 0; i < lhs->subanim_count; ++i) {
+        if (!nmo_animation_ref_equals(
+                &lhs->subanims[i].ref, &rhs->subanims[i].ref) ||
+            !nmo_animation_chunk_equals(
+                lhs->subanims[i].chunk, rhs->subanims[i].chunk)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static uint32_t nmo_animation_hash_chunk_array(
+    uint32_t hash,
+    const nmo_arena_array_t *array)
+{
+    hash = nmo_animation_hash_bytes(
+        hash, &array->count, sizeof(array->count));
+    if (array->count == 0 || array->data == NULL ||
+        array->element_size != sizeof(uint32_t) ||
+        array->count > array->capacity) {
+        return hash;
+    }
+    return nmo_animation_hash_bytes(
+        hash, array->data, array->count * sizeof(uint32_t));
+}
+
+static uint32_t nmo_animation_hash_chunk(
+    uint32_t hash,
+    const nmo_chunk_t *chunk)
+{
+    const uint8_t present = chunk != NULL;
+    hash = nmo_animation_hash_bytes(hash, &present, sizeof(present));
+    if (chunk == NULL) return hash;
+    const uint8_t is_file =
+        (chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0;
+    hash = nmo_animation_hash_bytes(
+        hash, &chunk->class_id, sizeof(chunk->class_id));
+    hash = nmo_animation_hash_bytes(
+        hash, &chunk->data_version, sizeof(chunk->data_version));
+    hash = nmo_animation_hash_bytes(
+        hash, &chunk->chunk_version, sizeof(chunk->chunk_version));
+    hash = nmo_animation_hash_bytes(hash, &is_file, sizeof(is_file));
+    hash = nmo_animation_hash_chunk_array(hash, &chunk->data);
+    hash = nmo_animation_hash_chunk_array(hash, &chunk->ids);
+    hash = nmo_animation_hash_chunk_array(hash, &chunk->chunk_refs);
+    return nmo_animation_hash_chunk_array(hash, &chunk->managers);
 }
 
 static uint32_t nmo_keyedanimation_hash(const void *instance)
 {
-    return nmo_object_serialized_state_hash(
-        instance, nmo_keyedanimation_serialize,
-        &nmo_keyedanimation_compare_pass, 1, 4096);
+    if (instance == NULL) return 0;
+    const nmo_keyedanimation_state_t *state = instance;
+    if (nmo_keyedanimation_validate(state, NULL, NULL) != NMO_OK) return 0;
+    uint32_t hash = nmo_animation_vtable.hash(&state->base);
+    hash = nmo_animation_hash_bytes(
+        hash, &state->animation_count, sizeof(state->animation_count));
+    for (uint32_t i = 0; i < state->animation_count; ++i) {
+        hash = nmo_animation_hash_ref(hash, &state->animation_ids[i]);
+    }
+    hash = nmo_animation_hash_bytes(
+        hash, &state->has_merge, sizeof(state->has_merge));
+    hash = nmo_animation_hash_bytes(
+        hash, &state->merged, sizeof(state->merged));
+    hash = nmo_animation_hash_bytes(
+        hash, &state->merge_factor, sizeof(state->merge_factor));
+    hash = nmo_animation_hash_bytes(
+        hash, &state->subanim_count, sizeof(state->subanim_count));
+    for (uint32_t i = 0; i < state->subanim_count; ++i) {
+        hash = nmo_animation_hash_ref(hash, &state->subanims[i].ref);
+        hash = nmo_animation_hash_chunk(
+            hash, state->subanims[i].chunk);
+    }
+    return hash;
 }
 
 static const nmo_object_serialize_pass_t nmo_objectanimation_compare_pass = {

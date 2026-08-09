@@ -9259,6 +9259,8 @@ TEST(chunk_id_remap, keyedanimation_sections_round_trip_independently) {
     nmo_keyedanimation_state_t source;
     ASSERT_EQ(NMO_OK, nmo_keyedanimation_vtable.create(
         &source, NULL, NULL));
+    ASSERT_EQ(NMO_CKOBJECT_VISIBLE,
+              source.base.base.base.visibility_flags);
     source.animation_count = 2;
     source.animation_ids = animation_ids;
     source.subanim_count = 1;
@@ -9313,17 +9315,39 @@ TEST(chunk_id_remap, keyedanimation_sections_round_trip_independently) {
     nmo_keyedanimation_state_t copied;
     ASSERT_EQ(NMO_OK, nmo_keyedanimation_vtable.create(
         &copied, NULL, NULL));
-    const nmo_type_descriptor_t keyed_type = {
-        .size = sizeof(nmo_keyedanimation_state_t),
-    };
     ASSERT_EQ(NMO_OK, nmo_keyedanimation_vtable.copy(
-        &reloaded, &copied, &keyed_type, arena));
+        &reloaded, &copied, NULL, arena));
     ASSERT_TRUE(copied.animation_ids != reloaded.animation_ids);
     ASSERT_TRUE(copied.subanims != reloaded.subanims);
     ASSERT_TRUE(copied.subanims[0].chunk != reloaded.subanims[0].chunk);
     ASSERT_TRUE(nmo_keyedanimation_vtable.equals(&reloaded, &copied));
     ASSERT_EQ(nmo_keyedanimation_vtable.hash(&reloaded),
               nmo_keyedanimation_vtable.hash(&copied));
+    copied.subanims[0].ref.raw_id++;
+    ASSERT_FALSE(nmo_keyedanimation_vtable.equals(&reloaded, &copied));
+    copied.subanims[0].ref.raw_id--;
+
+    fail_after_allocator_state_t copy_allocator_state = {
+        .allocation_count = 0,
+        .allowed_allocations = 2,
+    };
+    nmo_allocator_t copy_allocator = nmo_allocator_custom(
+        fail_after_alloc, fail_after_free, &copy_allocator_state);
+    nmo_arena_t *copy_arena = nmo_arena_create(&copy_allocator, 1);
+    ASSERT_NOT_NULL(copy_arena);
+    nmo_ref_t previous_copy_ref = nmo_ref_from_raw(943);
+    nmo_keyedanimation_state_t failed_copy;
+    ASSERT_EQ(NMO_OK, nmo_keyedanimation_vtable.create(
+        &failed_copy, NULL, NULL));
+    failed_copy.base.flags = 0x12345678u;
+    failed_copy.animation_count = 1;
+    failed_copy.animation_ids = &previous_copy_ref;
+    ASSERT_EQ(NMO_ERR_NOMEM, nmo_keyedanimation_vtable.copy(
+        &reloaded, &failed_copy, NULL, copy_arena));
+    ASSERT_EQ(0x12345678u, failed_copy.base.flags);
+    ASSERT_EQ(1u, failed_copy.animation_count);
+    ASSERT_EQ(&previous_copy_ref, failed_copy.animation_ids);
+    ASSERT_EQ(943u, failed_copy.animation_ids[0].raw_id);
 
     nmo_chunk_t *truncated = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(truncated);
@@ -9378,8 +9402,10 @@ TEST(chunk_id_remap, keyedanimation_sections_round_trip_independently) {
     nmo_keyedanimation_vtable.destroy(&loaded, NULL, NULL);
     nmo_keyedanimation_vtable.destroy(&reloaded, NULL, NULL);
     nmo_keyedanimation_vtable.destroy(&copied, NULL, NULL);
+    nmo_keyedanimation_vtable.destroy(&failed_copy, NULL, NULL);
     nmo_keyedanimation_vtable.destroy(&failed, NULL, NULL);
     nmo_keyedanimation_vtable.destroy(&invalid, NULL, NULL);
+    nmo_arena_destroy(copy_arena);
     nmo_arena_destroy(arena);
 }
 
