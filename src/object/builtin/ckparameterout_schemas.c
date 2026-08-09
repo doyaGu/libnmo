@@ -48,7 +48,9 @@ static const nmo_type_field_t nmo_parameterout_fields[] = {
     NMO_FIELD_REF_VALUE(nmo_parameterout_state_t, owner),
     NMO_FIELD(nmo_parameterout_state_t, destination_count, CKPGUID_UINT32),
     NMO_FIELD_REF_RECORD_ARRAY_COUNTED(
-        nmo_parameterout_state_t, destination_ids, destination_count)
+        nmo_parameterout_state_t, destination_ids, destination_count),
+    NMO_FIELD(nmo_parameterout_state_t, has_owner, CKPGUID_UINT8),
+    NMO_FIELD(nmo_parameterout_state_t, has_destinations, CKPGUID_UINT8)
 };
 
 /* =============================================================================
@@ -122,6 +124,8 @@ static nmo_status_t nmo_parameterout_deserialize_internal(
     nmo_ref_t owner = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     nmo_ref_t *destination_ids = NULL;
     uint32_t destination_count = 0;
+    uint8_t has_owner = 0;
+    uint8_t has_destinations = 0;
     const nmo_object_repository_t *repository =
         (const nmo_object_repository_t *)
             nmo_deserialize_context_get_repository(context);
@@ -136,12 +140,14 @@ static nmo_status_t nmo_parameterout_deserialize_internal(
         if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
         NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &owner));
         nmo_parameterout_check_owner(&owner, repository, types);
+        has_owner = 1;
     } else if (result != NMO_ERR_NOT_FOUND) return result;
 
     /* Read destinations if present */
     result = nmo_chunk_seek_identifier_with_size(
         chunk, CK_STATESAVE_PARAMETEROUT_DESTINATIONS, &section_dwords);
     if (result == NMO_OK) {
+        has_destinations = 1;
         if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
         const size_t section_end =
             nmo_chunk_get_position(chunk) + section_dwords;
@@ -179,6 +185,8 @@ static nmo_status_t nmo_parameterout_deserialize_internal(
     out_state->owner = owner;
     out_state->destination_ids = destination_ids;
     out_state->destination_count = destination_count;
+    out_state->has_owner = has_owner;
+    out_state->has_destinations = has_destinations;
 
     NMO_RETURN_OK();
 }
@@ -258,9 +266,11 @@ static nmo_status_t nmo_parameterout_serialize_internal(
         return NMO_OK;
     }
 
+    const bool has_owner = in_state->has_owner ||
+        nmo_ref_serialized_id(&in_state->owner) != NMO_OBJECT_ID_NONE;
     if ((is_file ||
          (save_flags & CK_STATESAVE_PARAMETEROUT_OWNER) != 0) &&
-        nmo_ref_serialized_id(&in_state->owner) != NMO_OBJECT_ID_NONE) {
+        has_owner) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_PARAMETEROUT_OWNER);
         if (result != NMO_OK) return result;
         result = nmo_ref_write(out_chunk, &in_state->owner);
@@ -268,7 +278,8 @@ static nmo_status_t nmo_parameterout_serialize_internal(
     }
 
     /* Write destinations if any */
-    if (want_destinations && in_state->destination_count > 0) {
+    if (want_destinations &&
+        (in_state->has_destinations || in_state->destination_count > 0)) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_PARAMETEROUT_DESTINATIONS);
         if (result != NMO_OK) return result;
 
@@ -338,6 +349,8 @@ static nmo_status_t nmo_parameterout_copy(
 
     copied.owner = s->owner;
     copied.destination_count = s->destination_count;
+    copied.has_owner = s->has_owner;
+    copied.has_destinations = s->has_destinations;
     result = nmo_object_copy_array(
         arena, (void **)&copied.destination_ids, s->destination_ids,
         sizeof(nmo_ref_t), s->destination_count);
@@ -469,6 +482,8 @@ static bool nmo_parameterout_equals(const void *a, const void *b)
                  lhs->base.buffer_data.count) != 0)) ||
         memcmp(&lhs->owner, &rhs->owner, sizeof(nmo_ref_t)) != 0 ||
         lhs->destination_count != rhs->destination_count ||
+        lhs->has_owner != rhs->has_owner ||
+        lhs->has_destinations != rhs->has_destinations ||
         (lhs->destination_count > 0 &&
          (lhs->destination_ids == NULL || rhs->destination_ids == NULL))) {
         return false;
@@ -554,6 +569,11 @@ static uint32_t nmo_parameterout_hash(const void *instance)
     hash = nmo_parameterout_hash_bytes(
         hash, &state->destination_count,
         sizeof(state->destination_count));
+    hash = nmo_parameterout_hash_bytes(
+        hash, &state->has_owner, sizeof(state->has_owner));
+    hash = nmo_parameterout_hash_bytes(
+        hash, &state->has_destinations,
+        sizeof(state->has_destinations));
     if (state->destination_ids != NULL && state->destination_count > 0) {
         hash = nmo_parameterout_hash_bytes(
             hash, state->destination_ids,

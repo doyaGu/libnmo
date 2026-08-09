@@ -4296,6 +4296,53 @@ TEST(chunk_id_remap, parameterout_refs_round_trip_and_failure_is_atomic) {
                   reloaded.destination_ids[i].state);
     }
 
+    nmo_chunk_t *empty_sections = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(empty_sections);
+    empty_sections->class_id = NMO_CID_PARAMETEROUT;
+    empty_sections->data_version = 8;
+    empty_sections->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(empty_sections));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        empty_sections, CK_STATESAVE_PARAMETEROUT_OWNER));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(
+        empty_sections, NMO_OBJECT_ID_NONE));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        empty_sections, CK_STATESAVE_PARAMETEROUT_DESTINATIONS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(empty_sections, 0));
+    nmo_chunk_close(empty_sections);
+
+    nmo_parameterout_state_t empty_sections_loaded;
+    ASSERT_EQ(NMO_OK, nmo_parameterout_vtable.create(
+        &empty_sections_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_parameterout_deserialize(
+        &empty_sections_loaded, empty_sections, NULL,
+        &deserialize_context));
+    ASSERT_TRUE(empty_sections_loaded.has_owner);
+    ASSERT_TRUE(empty_sections_loaded.has_destinations);
+    ASSERT_EQ(NMO_OBJECT_ID_NONE,
+              empty_sections_loaded.owner.raw_id);
+    ASSERT_EQ(0u, empty_sections_loaded.destination_count);
+
+    nmo_chunk_t *empty_sections_saved = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(empty_sections_saved);
+    empty_sections_saved->class_id = NMO_CID_PARAMETEROUT;
+    empty_sections_saved->data_version = 8;
+    empty_sections_saved->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_parameterout_serialize(
+        &empty_sections_loaded, empty_sections_saved, NULL,
+        &serialize_context));
+    nmo_chunk_close(empty_sections_saved);
+    size_t owner_dwords = 0;
+    size_t destination_dwords = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        empty_sections_saved, CK_STATESAVE_PARAMETEROUT_OWNER,
+        &owner_dwords));
+    ASSERT_EQ(1u, owner_dwords);
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        empty_sections_saved, CK_STATESAVE_PARAMETEROUT_DESTINATIONS,
+        &destination_dwords));
+    ASSERT_EQ(1u, destination_dwords);
+
     nmo_chunk_t *truncated = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(truncated);
     truncated->class_id = NMO_CID_PARAMETEROUT;
@@ -4521,6 +4568,8 @@ TEST(chunk_id_remap, parameterout_refs_round_trip_and_failure_is_atomic) {
     nmo_parameterout_vtable.destroy(&aliased_copy, NULL, NULL);
     nmo_parameterout_vtable.destroy(&loaded, NULL, NULL);
     nmo_parameterout_vtable.destroy(&reloaded, NULL, NULL);
+    nmo_parameterout_vtable.destroy(
+        &empty_sections_loaded, NULL, NULL);
     nmo_parameterout_vtable.destroy(&failed, NULL, NULL);
     nmo_parameterout_vtable.destroy(&invalid_ref, NULL, NULL);
     nmo_parameterout_vtable.destroy(&failing_copy_source, NULL, NULL);

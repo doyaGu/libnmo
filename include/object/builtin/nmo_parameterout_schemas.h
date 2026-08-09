@@ -48,6 +48,8 @@ typedef struct nmo_parameterout_state {
     /* Destination parameters */
     nmo_ref_t *destination_ids;        /**< Destination parameter references */
     uint32_t destination_count;        /**< Number of destinations */
+    uint8_t has_owner;                 /**< Owner section was present */
+    uint8_t has_destinations;          /**< Destinations section was present */
 } nmo_parameterout_state_t;
 
 static inline nmo_object_id_t nmo_parameterout_owner_id(
@@ -62,7 +64,10 @@ static inline void nmo_parameterout_set_owner_id(
     nmo_parameterout_state_t *state,
     nmo_object_id_t id)
 {
-    if (state != NULL) state->owner = nmo_ref_from_id(id);
+    if (state != NULL) {
+        state->owner = nmo_ref_from_id(id);
+        state->has_owner = 1;
+    }
 }
 
 static inline nmo_object_id_t nmo_parameterout_destination_id(
