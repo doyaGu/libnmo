@@ -764,7 +764,7 @@ static nmo_status_t runtime_delete_detach_atomic_refs(
             }
             mesh->material_group_count = --count;
             for (uint32_t face = 0u; face < mesh->face_count; ++face) {
-                uint16_t *index = &mesh->faces[face].material_group_idx;
+                uint32_t *index = &mesh->faces[face].material_group_idx;
                 if (*index == i) {
                     *index = 0;
                 } else if (*index > i) {

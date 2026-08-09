@@ -364,7 +364,7 @@ nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry) {
     /* CKFace */
     static const nmo_struct_field_def_t ckface_fields[] = {
         NMO_STRUCT_FIELD_GUID("normal", CKPGUID_VECTOR),
-        NMO_STRUCT_FIELD_GUID("material_group_idx", CKPGUID_UINT16),
+        NMO_STRUCT_FIELD_GUID("material_group_idx", CKPGUID_UINT32),
         NMO_STRUCT_FIELD_GUID("channel_mask", CKPGUID_UINT16)
     };
     static const nmo_struct_type_def_t ckface_def =

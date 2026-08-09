@@ -61,7 +61,7 @@ typedef struct nmo_vertex {
 
 typedef struct nmo_face {
     nmo_vector_t normal;
-    uint16_t material_group_idx;
+    uint32_t material_group_idx;
     uint16_t channel_mask;
 } nmo_face_t;
 

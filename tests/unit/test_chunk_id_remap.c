@@ -15322,6 +15322,182 @@ TEST(chunk_id_remap, mesh_material_refs_round_trip_without_compaction) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, mesh_layout_follows_data_version) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+    ASSERT_NOT_NULL(arena);
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+
+    nmo_mesh_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_mesh_vtable.create(&source, NULL, NULL));
+    source.flags = VXMESH_GENNORMALS | VXMESH_PROCEDURALPOS;
+    nmo_vertex_t vertices[3] = {0};
+    vertices[0].normal.z = 1.0f;
+    vertices[1].position.x = 1.0f;
+    vertices[2].position.y = 1.0f;
+    uint32_t colors[3] = {0x11u, 0x22u, 0x33u};
+    uint32_t specular[3] = {0u, 0u, 0u};
+    source.vertex_count = 3u;
+    source.vertices = vertices;
+    source.vertex_colors = colors;
+    source.vertex_specular = specular;
+
+    nmo_face_t faces[2] = {
+        {.material_group_idx = 70000u, .channel_mask = 0x1234u},
+        {.material_group_idx = 6u, .channel_mask = 0xABCDu},
+    };
+    uint16_t face_indices[6] = {0u, 1u, 2u, 2u, 1u, 0u};
+    source.face_count = 2u;
+    source.faces = faces;
+    source.face_vertex_indices = face_indices;
+    uint16_t line_indices[2] = {0x12u, 0x234u};
+    source.line_count = 1u;
+    source.line_indices = line_indices;
+    nmo_material_channel_t channel = {
+        .material = nmo_ref_from_raw(NMO_OBJECT_ID_NONE),
+    };
+    source.has_material_channels = 1u;
+    source.material_channel_count = 1u;
+    source.material_channels = &channel;
+
+    nmo_chunk_t *legacy = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(legacy);
+    legacy->class_id = NMO_CID_MESH;
+    legacy->data_version = 8u;
+    legacy->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_mesh_serialize(
+        &source, legacy, NULL, &serialize_context));
+    nmo_chunk_close(legacy);
+
+    size_t section_dwords = 0u;
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        legacy, CK_STATESAVE_MESHVERTICES, &section_dwords));
+    ASSERT_EQ(23u, section_dwords);
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        legacy, CK_STATESAVE_MESHFACES, &section_dwords));
+    ASSERT_EQ(9u, section_dwords);
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        legacy, CK_STATESAVE_MESHLINES, &section_dwords));
+    ASSERT_EQ(3u, section_dwords);
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        legacy, CK_STATESAVE_MESHFACECHANMASK, &section_dwords));
+    ASSERT_EQ(3u, section_dwords);
+
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(legacy));
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
+        legacy, CK_STATESAVE_MESHFACES));
+    int32_t serialized_count = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_int(legacy, &serialized_count));
+    ASSERT_EQ(2, serialized_count);
+    uint16_t serialized_index = 0u;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_word(legacy, &serialized_index));
+    ASSERT_EQ(0u, serialized_index);
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_word(legacy, &serialized_index));
+    ASSERT_EQ(1u, serialized_index);
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_word(legacy, &serialized_index));
+    ASSERT_EQ(2u, serialized_index);
+    uint32_t serialized_material = 0u;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(
+        legacy, &serialized_material));
+    ASSERT_EQ(70000u, serialized_material);
+
+    nmo_mesh_state_t legacy_loaded;
+    ASSERT_EQ(NMO_OK, nmo_mesh_vtable.create(
+        &legacy_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_mesh_deserialize(
+        &legacy_loaded, legacy, NULL, &deserialize_context));
+    ASSERT_EQ(70000u, legacy_loaded.faces[0].material_group_idx);
+    ASSERT_EQ(0x1234u, legacy_loaded.faces[0].channel_mask);
+    ASSERT_EQ(0xABCDu, legacy_loaded.faces[1].channel_mask);
+    ASSERT_EQ(0x234u, legacy_loaded.line_indices[1]);
+    ASSERT_EQ(0x33u, legacy_loaded.vertex_colors[2]);
+    ASSERT_EQ(0u, legacy_loaded.vertex_specular[2]);
+    ASSERT_FLOAT_EQ(1.0f,
+                    legacy_loaded.vertices[2].position.y, 0.0001f);
+
+    nmo_chunk_t *modern = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(modern);
+    modern->class_id = NMO_CID_MESH;
+    modern->data_version = 9u;
+    modern->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(modern));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(modern, 0xABCD1234u));
+    nmo_chunk_close(modern);
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_mesh_serialize(
+        &legacy_loaded, modern, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(modern));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(modern));
+    uint32_t marker = 0u;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(modern, &marker));
+    ASSERT_EQ(0xABCD1234u, marker);
+
+    legacy_loaded.faces[0].material_group_idx = 5u;
+    legacy_loaded.flags |= VXMESH_PROCEDURALUV;
+    legacy_loaded.vertices[1].uv.x = 0.25f;
+    ASSERT_EQ(NMO_OK, nmo_mesh_serialize(
+        &legacy_loaded, modern, NULL, &serialize_context));
+    nmo_chunk_close(modern);
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        modern, CK_STATESAVE_MESHVERTICES, &section_dwords));
+    ASSERT_EQ(31u, section_dwords);
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        modern, CK_STATESAVE_MESHFACES, &section_dwords));
+    ASSERT_EQ(9u, section_dwords);
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        modern, CK_STATESAVE_MESHLINES, &section_dwords));
+    ASSERT_EQ(3u, section_dwords);
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        modern, CK_STATESAVE_MESHFACECHANMASK, &section_dwords));
+    ASSERT_EQ(3u, section_dwords);
+
+    nmo_mesh_state_t modern_loaded;
+    ASSERT_EQ(NMO_OK, nmo_mesh_vtable.create(
+        &modern_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_mesh_deserialize(
+        &modern_loaded, modern, NULL, &deserialize_context));
+    ASSERT_EQ(5u, modern_loaded.faces[0].material_group_idx);
+    ASSERT_EQ(0x1234u, modern_loaded.faces[0].channel_mask);
+    ASSERT_EQ(0xABCDu, modern_loaded.faces[1].channel_mask);
+    ASSERT_EQ(0x234u, modern_loaded.line_indices[1]);
+    ASSERT_FLOAT_EQ(1.0f,
+                    modern_loaded.vertices[1].position.x, 0.0001f);
+    ASSERT_FLOAT_EQ(1.0f,
+                    modern_loaded.vertices[0].normal.z, 0.0001f);
+    ASSERT_FLOAT_EQ(0.25f,
+                    modern_loaded.vertices[1].uv.x, 0.0001f);
+
+    nmo_chunk_t *default_chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(default_chunk);
+    default_chunk->class_id = NMO_CID_MESH;
+    default_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_mesh_serialize(
+        &modern_loaded, default_chunk, NULL, &serialize_context));
+    ASSERT_EQ(NMO_CHUNK_DATA_VERSION_CURRENT,
+              nmo_chunk_get_data_version(default_chunk));
+
+    nmo_chunk_t *legacy_rejected = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(legacy_rejected);
+    legacy_rejected->class_id = NMO_CID_MESH;
+    legacy_rejected->data_version = 8u;
+    legacy_rejected->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(legacy_rejected));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        legacy_rejected, 0x1234ABCDu));
+    nmo_chunk_close(legacy_rejected);
+    modern_loaded.vertices[0].uv.x = 0.5f;
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_mesh_serialize(
+        &modern_loaded, legacy_rejected, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(legacy_rejected));
+
+    nmo_mesh_vtable.destroy(&source, NULL, NULL);
+    nmo_mesh_vtable.destroy(&legacy_loaded, NULL, NULL);
+    nmo_mesh_vtable.destroy(&modern_loaded, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, mesh_material_sections_and_failures_are_atomic) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
     ASSERT_NOT_NULL(arena);
@@ -18342,6 +18518,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, character_rejects_cross_section_counts_before_allocation);
     REGISTER_TEST(chunk_id_remap, bodypart_rotation_joint_round_trips_without_size_prefix);
     REGISTER_TEST(chunk_id_remap, mesh_material_refs_round_trip_without_compaction);
+    REGISTER_TEST(chunk_id_remap, mesh_layout_follows_data_version);
     REGISTER_TEST(chunk_id_remap, mesh_material_sections_and_failures_are_atomic);
     REGISTER_TEST(chunk_id_remap, mesh_fields_stay_in_identifier_sections);
     REGISTER_TEST(chunk_id_remap, mesh_preserves_large_material_sections);

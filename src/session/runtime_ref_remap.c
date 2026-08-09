@@ -1084,7 +1084,7 @@ static nmo_status_t normalize_mesh_materials(
         }
         state->material_group_count = --count;
         for (uint32_t face = 0; face < state->face_count; ++face) {
-            uint16_t *index = &state->faces[face].material_group_idx;
+            uint32_t *index = &state->faces[face].material_group_idx;
             if (*index == i) {
                 *index = 0;
             } else if (*index > i) {
