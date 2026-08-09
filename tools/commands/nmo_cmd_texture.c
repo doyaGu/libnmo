@@ -74,7 +74,7 @@ static const char *bitmap_kind_str(CKTEXTURE_BITMAP_KIND kind) {
     }
 }
 
-static const char *save_options_str(uint16_t opts) {
+static const char *save_options_str(uint32_t opts) {
     if (opts & NMO_CKTEXTURE_EXTERNAL)         return "external";
     if (opts & NMO_CKTEXTURE_IMAGEFORMAT)      return "imageformat";
     if (opts & NMO_CKTEXTURE_INCLUDEORIGINALFILE) return "include_original";

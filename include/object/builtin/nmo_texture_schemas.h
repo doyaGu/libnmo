@@ -107,7 +107,7 @@ typedef struct nmo_texture_state {
     /* Packed flags (CK_STATESAVE_OLDTEXONLY) */
     uint8_t has_oldtexonly;
     uint8_t mipmap_level;
-    uint16_t save_options;
+    uint32_t save_options;
     uint8_t is_transparent;
     uint8_t is_cubemap;
     uint8_t has_desired_video_format;
@@ -116,6 +116,14 @@ typedef struct nmo_texture_state {
     uint32_t transparent_color;
     uint8_t has_current_slot;
     int32_t current_slot;
+
+    /* Pre-CHUNK_VERSION2 layout provenance.  The USERMIPMAP tail includes
+     * the serialized buffer length and its DWORD padding verbatim. */
+    uint8_t has_legacy_user_mipmap;
+    int32_t legacy_use_mipmap;
+    void *legacy_user_mipmap_data;
+    size_t legacy_user_mipmap_size;
+    uint8_t has_legacy_system_caching;
 
     /* Save format and user mipmaps */
     uint8_t has_save_format;

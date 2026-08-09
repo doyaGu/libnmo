@@ -99,6 +99,13 @@ static size_t nmo_texture_identifier_remaining_dwords(
     return next_pos - state->current_pos;
 }
 
+static nmo_status_t nmo_texture_require_identifier_end(
+    const nmo_chunk_t *chunk)
+{
+    return nmo_texture_identifier_remaining_dwords(chunk) == 0u
+        ? NMO_OK : NMO_ERR_INVALID_FORMAT;
+}
+
 static nmo_status_t nmo_texture_validate_array_count(
     const nmo_chunk_t *chunk,
     int32_t count,
@@ -174,6 +181,14 @@ static const nmo_type_field_t nmo_texture_fields[] = {
                    NMO_FIELD_OPTIONAL, 0),
     NMO_FIELD(nmo_texture_state_t, has_current_slot, CKPGUID_BOOL),
     NMO_FIELD(nmo_texture_state_t, current_slot, CKPGUID_INT),
+    NMO_FIELD(nmo_texture_state_t, has_legacy_user_mipmap, CKPGUID_BOOL),
+    NMO_FIELD(nmo_texture_state_t, legacy_use_mipmap, CKPGUID_INT),
+    NMO_FIELD_OPT(nmo_texture_state_t, legacy_user_mipmap_data, CKPGUID_POINTER),
+    NMO_FIELD(nmo_texture_state_t, legacy_user_mipmap_size, CKPGUID_UINT64),
+    NMO_FIELD(nmo_texture_state_t, has_legacy_system_caching, CKPGUID_BOOL),
+    NMO_FIELD(nmo_texture_state_t, has_save_format, CKPGUID_BOOL),
+    NMO_FIELD_OPT(nmo_texture_state_t, save_format_data, CKPGUID_POINTER),
+    NMO_FIELD(nmo_texture_state_t, save_format_size, CKPGUID_UINT64),
     /* User mipmaps */
     NMO_FIELD(nmo_texture_state_t, has_user_mipmaps, CKPGUID_BOOL),
     NMO_FIELD(nmo_texture_state_t, user_mipmap_count, CKPGUID_UINT32)
@@ -540,56 +555,74 @@ static uint32_t nmo_texture_pixel_format_from_desc(const nmo_image_desc_t *desc)
     return UNKNOWN_PF;
 }
 
-static nmo_status_t nmo_texture_apply_legacy_format(
-    nmo_texture_state_t *state,
-    nmo_chunk_t *chunk,
-    size_t payload,
-    size_t *out_consumed)
+static uint32_t nmo_texture_legacy_format_from_data(
+    const void *data,
+    size_t size)
 {
-    if (state == NULL || chunk == NULL || out_consumed == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    *out_consumed = 0;
-    if (payload <= sizeof(uint32_t)) return NMO_OK;
-
-    size_t buffer_size = payload - sizeof(uint32_t);
-    if (buffer_size < 40u) return NMO_OK;
+    if (data == NULL || size < 36u) return UNKNOWN_PF;
 
     nmo_image_desc_t desc = {0};
-    int32_t width = 0;
-    int32_t height = 0;
-    int32_t bytes_per_line = 0;
-    int32_t bits_per_pixel = 0;
-    uint32_t red_mask = 0;
-    uint32_t green_mask = 0;
-    uint32_t blue_mask = 0;
-    uint32_t alpha_mask = 0;
-    int16_t bytes_per_entry = 0;
-    int16_t color_map_entries = 0;
+    const uint8_t *bytes = data;
+    memcpy(&desc.width, bytes, sizeof(desc.width));
+    memcpy(&desc.height, bytes + 4u, sizeof(desc.height));
+    memcpy(&desc.bytes_per_line, bytes + 8u, sizeof(desc.bytes_per_line));
+    memcpy(&desc.bits_per_pixel, bytes + 12u, sizeof(desc.bits_per_pixel));
+    memcpy(&desc.red_mask, bytes + 16u, sizeof(desc.red_mask));
+    memcpy(&desc.green_mask, bytes + 20u, sizeof(desc.green_mask));
+    memcpy(&desc.blue_mask, bytes + 24u, sizeof(desc.blue_mask));
+    memcpy(&desc.alpha_mask, bytes + 28u, sizeof(desc.alpha_mask));
+    return nmo_texture_pixel_format_from_desc(&desc);
+}
 
-    NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &width));
-    NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &height));
-    NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &bytes_per_line));
-    NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &bits_per_pixel));
-    NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &red_mask));
-    NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &green_mask));
-    NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &blue_mask));
-    NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &alpha_mask));
-    NMO_RETURN_IF_ERROR(nmo_chunk_read_word(chunk, (uint16_t *)&bytes_per_entry));
-    NMO_RETURN_IF_ERROR(nmo_chunk_read_word(chunk, (uint16_t *)&color_map_entries));
+static nmo_status_t nmo_texture_legacy_tail_format(
+    const void *tail,
+    size_t tail_size,
+    uint32_t *out_format)
+{
+    if (out_format == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    *out_format = UNKNOWN_PF;
+    if (tail_size == 0u) return NMO_OK;
+    if (tail == NULL || tail_size < sizeof(uint32_t) ||
+        (tail_size & 3u) != 0u) {
+        return NMO_ERR_INVALID_FORMAT;
+    }
 
-    desc.width = width;
-    desc.height = height;
-    desc.bits_per_pixel = bits_per_pixel;
-    desc.bytes_per_line = bytes_per_line;
-    desc.red_mask = red_mask;
-    desc.green_mask = green_mask;
-    desc.blue_mask = blue_mask;
-    desc.alpha_mask = alpha_mask;
+    uint32_t buffer_size = 0;
+    memcpy(&buffer_size, tail, sizeof(buffer_size));
+    const size_t buffer_dwords = ((size_t)buffer_size + 3u) / 4u;
+    if (buffer_dwords > (tail_size - sizeof(uint32_t)) / sizeof(uint32_t)) {
+        return NMO_ERR_TRUNCATED_CHUNK;
+    }
+    *out_format = nmo_texture_legacy_format_from_data(
+        (const uint8_t *)tail + sizeof(uint32_t), buffer_size);
+    return NMO_OK;
+}
 
-    state->desired_video_format = nmo_texture_pixel_format_from_desc(&desc);
-    state->has_desired_video_format = (state->desired_video_format != UNKNOWN_PF);
-    *out_consumed = 40u;
+static nmo_status_t nmo_texture_read_legacy_mipmap_tail(
+    nmo_texture_state_t *state,
+    nmo_chunk_t *chunk,
+    nmo_arena_t *arena,
+    size_t tail_size)
+{
+    if (tail_size == 0u) return NMO_OK;
+    if ((tail_size & 3u) != 0u || tail_size < sizeof(uint32_t)) {
+        return NMO_ERR_INVALID_FORMAT;
+    }
+
+    void *tail = nmo_arena_alloc(arena, tail_size, _Alignof(uint32_t));
+    if (tail == NULL) return NMO_ERR_NOMEM;
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_and_fill_buffer_nosize_checked(
+        chunk, tail, tail_size));
+
+    state->legacy_user_mipmap_data = tail;
+    state->legacy_user_mipmap_size = tail_size;
+    uint32_t format = UNKNOWN_PF;
+    NMO_RETURN_IF_ERROR(nmo_texture_legacy_tail_format(
+        tail, tail_size, &format));
+    if (format != UNKNOWN_PF) {
+        state->has_desired_video_format = 1;
+        state->desired_video_format = format;
+    }
     return NMO_OK;
 }
 
@@ -656,6 +689,7 @@ static nmo_status_t nmo_texture_deserialize_internal(
             }
             out_state->reader_slots = slots;
         }
+        NMO_RETURN_IF_ERROR(nmo_texture_require_identifier_end(chunk));
     } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
     else if (nmo_texture_seek_found(
                  chunk, CK_STATESAVE_TEXCOMPRESSED, &seek_result)) {
@@ -678,6 +712,7 @@ static nmo_status_t nmo_texture_deserialize_internal(
             }
             out_state->raw_slots = slots;
         }
+        NMO_RETURN_IF_ERROR(nmo_texture_require_identifier_end(chunk));
     } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
     else if (nmo_texture_seek_found(
                  chunk, CK_STATESAVE_TEXBITMAPS, &seek_result)) {
@@ -700,12 +735,14 @@ static nmo_status_t nmo_texture_deserialize_internal(
             }
             out_state->bitmap2_slots = slots;
         }
+        NMO_RETURN_IF_ERROR(nmo_texture_require_identifier_end(chunk));
     } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
     if (nmo_texture_seek_found(
             chunk, CK_STATESAVE_TEXFILENAMES, &seek_result)) {
         nmo_status_t result = nmo_texture_read_slot_filenames(chunk, arena, out_state);
         if (result != NMO_OK) return result;
+        NMO_RETURN_IF_ERROR(nmo_texture_require_identifier_end(chunk));
     } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
     if (nmo_texture_seek_found(
@@ -713,11 +750,15 @@ static nmo_status_t nmo_texture_deserialize_internal(
         char *movie = NULL;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_string_checked(chunk, &movie, NULL));
         out_state->movie_filename = movie;
-        out_state->has_movie_filename = (movie != NULL);
+        out_state->has_movie_filename = 1;
+        NMO_RETURN_IF_ERROR(nmo_texture_require_identifier_end(chunk));
     } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
     if (nmo_texture_seek_found(
             chunk, CK_STATESAVE_PICKTHRESHOLD, &seek_result)) {
+        if (nmo_texture_identifier_payload_size(chunk) != sizeof(uint32_t)) {
+            return NMO_ERR_INVALID_FORMAT;
+        }
         int32_t threshold = 0;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &threshold));
         out_state->pick_threshold = threshold;
@@ -728,6 +769,9 @@ static nmo_status_t nmo_texture_deserialize_internal(
     if (data_version < 5) {
         if (nmo_texture_seek_found(
                 chunk, CK_STATESAVE_TEXTRANSPARENT, &seek_result)) {
+            if (nmo_texture_identifier_payload_size(chunk) != 2u * sizeof(uint32_t)) {
+                return NMO_ERR_INVALID_FORMAT;
+            }
             uint32_t color = 0;
             uint32_t transparency = 0;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &color));
@@ -739,6 +783,9 @@ static nmo_status_t nmo_texture_deserialize_internal(
 
         if (nmo_texture_seek_found(
                 chunk, CK_STATESAVE_TEXCURRENTIMAGE, &seek_result)) {
+            if (nmo_texture_identifier_payload_size(chunk) != sizeof(uint32_t)) {
+                return NMO_ERR_INVALID_FORMAT;
+            }
             int32_t slot = 0;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &slot));
             out_state->current_slot = slot;
@@ -748,29 +795,31 @@ static nmo_status_t nmo_texture_deserialize_internal(
         if (nmo_texture_seek_found(
                 chunk, CK_STATESAVE_USERMIPMAP, &seek_result)) {
             size_t payload = nmo_texture_identifier_payload_size(chunk);
+            if (payload < sizeof(int32_t)) return NMO_ERR_TRUNCATED_CHUNK;
             int32_t use_mipmap = 0;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &use_mipmap));
-            if (payload > sizeof(int32_t)) {
-                size_t consumed = 0;
-                NMO_RETURN_IF_ERROR(nmo_texture_apply_legacy_format(
-                    out_state, chunk, payload, &consumed));
-                size_t remaining = payload - sizeof(int32_t);
-                if (remaining > consumed) {
-                    NMO_RETURN_IF_ERROR(nmo_chunk_skip(chunk, (remaining - consumed + 3) / 4));
-                }
-            }
+            out_state->has_legacy_user_mipmap = 1;
+            out_state->legacy_use_mipmap = use_mipmap;
+            out_state->mipmap_level = use_mipmap != 0 ? UINT8_MAX : 0u;
+            NMO_RETURN_IF_ERROR(nmo_texture_read_legacy_mipmap_tail(
+                out_state, chunk, arena, payload - sizeof(int32_t)));
         } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
         if (nmo_texture_seek_found(
                 chunk, CK_STATESAVE_TEXSYSTEMCACHING, &seek_result)) {
+            const size_t payload = nmo_texture_identifier_payload_size(chunk);
+            if (payload < 2u * sizeof(uint32_t)) return NMO_ERR_TRUNCATED_CHUNK;
             uint32_t save_options = 0;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &save_options));
-            out_state->save_options = (uint16_t)(save_options & 0xFF);
-            out_state->has_save_format = 1;
+            out_state->save_options = save_options;
+            out_state->has_legacy_system_caching = 1;
 
             void *format = NULL;
             size_t size = 0;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_buffer(chunk, &format, &size));
+            if (payload != 2u * sizeof(uint32_t) + ((size + 3u) & ~(size_t)3u)) {
+                return NMO_ERR_INVALID_FORMAT;
+            }
             out_state->save_format_data = format;
             out_state->save_format_size = size;
         } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
@@ -781,15 +830,24 @@ static nmo_status_t nmo_texture_deserialize_internal(
     if (nmo_texture_seek_found(
             chunk, CK_STATESAVE_OLDTEXONLY, &seek_result)) {
         size_t payload = nmo_texture_identifier_payload_size(chunk);
+        if (payload != sizeof(uint32_t) &&
+            payload != 2u * sizeof(uint32_t) &&
+            payload != 3u * sizeof(uint32_t) &&
+            payload != 4u * sizeof(uint32_t)) {
+            return NMO_ERR_INVALID_FORMAT;
+        }
         uint32_t dword = 0;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &dword));
+        if ((dword & ~UINT32_C(0x00FF07FF)) != 0u) {
+            return NMO_ERR_INVALID_FORMAT;
+        }
 
         out_state->has_oldtexonly = 1;
         out_state->mipmap_level = (uint8_t)(dword & 0xFF);
-        out_state->save_options = (uint16_t)((dword >> 16) & 0xFF);
+        out_state->save_options = (dword >> 16) & 0xFF;
         out_state->is_transparent = (dword & 0x100) != 0;
         out_state->is_cubemap = (dword & 0x400) != 0;
-        out_state->has_desired_video_format = (dword & 0x200) != 0;
+        const bool has_desired_flag = (dword & 0x200) != 0;
 
         if (payload >= sizeof(uint32_t)) {
             payload -= sizeof(uint32_t);
@@ -803,7 +861,7 @@ static nmo_status_t nmo_texture_deserialize_internal(
             NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->desired_video_format));
             out_state->has_desired_video_format = 1;
         } else if (payload == 2 * sizeof(uint32_t)) {
-            if (out_state->slot_count <= 1 || !out_state->has_desired_video_format) {
+            if (out_state->slot_count <= 1 || !has_desired_flag) {
                 NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->transparent_color));
                 out_state->has_transparent_color = 1;
             }
@@ -811,12 +869,14 @@ static nmo_status_t nmo_texture_deserialize_internal(
                 NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &out_state->current_slot));
                 out_state->has_current_slot = 1;
             }
-            if (out_state->has_desired_video_format) {
+            if (has_desired_flag) {
                 NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->desired_video_format));
+                out_state->has_desired_video_format = 1;
             }
         } else if (payload == sizeof(uint32_t)) {
-            if (out_state->has_desired_video_format) {
+            if (has_desired_flag) {
                 NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->desired_video_format));
+                out_state->has_desired_video_format = 1;
             } else if (out_state->slot_count <= 1) {
                 NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->transparent_color));
                 out_state->has_transparent_color = 1;
@@ -824,6 +884,12 @@ static nmo_status_t nmo_texture_deserialize_internal(
                 NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &out_state->current_slot));
                 out_state->has_current_slot = 1;
             }
+        }
+        if (has_desired_flag != (out_state->has_desired_video_format != 0)) {
+            return NMO_ERR_INVALID_FORMAT;
+        }
+        if (nmo_texture_identifier_remaining_dwords(chunk) != 0u) {
+            return NMO_ERR_INVALID_FORMAT;
         }
     } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
@@ -847,13 +913,18 @@ static nmo_status_t nmo_texture_deserialize_internal(
             }
             out_state->user_mipmaps = mips;
         }
+        NMO_RETURN_IF_ERROR(nmo_texture_require_identifier_end(chunk));
     } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
     if (nmo_texture_seek_found(
             chunk, CK_STATESAVE_TEXSAVEFORMAT, &seek_result)) {
+        const size_t payload = nmo_texture_identifier_payload_size(chunk);
         void *format = NULL;
         size_t size = 0;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_buffer(chunk, &format, &size));
+        if (payload != sizeof(uint32_t) + ((size + 3u) & ~(size_t)3u)) {
+            return NMO_ERR_INVALID_FORMAT;
+        }
         out_state->has_save_format = 1;
         out_state->save_format_data = format;
         out_state->save_format_size = size;
@@ -1002,6 +1073,7 @@ static nmo_status_t nmo_texture_copy(
     copied.reader_slots = NULL;
     copied.raw_slots = NULL;
     copied.bitmap2_slots = NULL;
+    copied.legacy_user_mipmap_data = NULL;
     copied.save_format_data = NULL;
     copied.user_mipmaps = NULL;
 
@@ -1026,6 +1098,12 @@ static nmo_status_t nmo_texture_copy(
         copy_status = nmo_texture_copy_bitmap2_slots(
             arena, &copied.bitmap2_slots,
             source->bitmap2_slots, source->slot_count);
+    }
+    if (copy_status == NMO_OK) {
+        copy_status = nmo_object_copy_bytes(
+            arena, &copied.legacy_user_mipmap_data,
+            source->legacy_user_mipmap_data,
+            source->legacy_user_mipmap_size);
     }
     if (copy_status == NMO_OK) {
         copy_status = nmo_object_copy_bytes(
@@ -1062,25 +1140,16 @@ static nmo_status_t nmo_texture_validate(
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
                          "Texture slot count exceeds serialized range");
     }
-    if (s->has_movie_filename && s->movie_filename == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
-                         "Texture movie filename is marked present but missing");
-    }
     if (!s->has_movie_filename && s->movie_filename != NULL) {
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
                          "Texture movie filename is present without its section");
     }
     if (s->has_slot_filenames) {
         NMO_VALIDATE_COUNT(s->slot_filenames, s->slot_count, "slot_filenames");
-    }
-    if (s->slot_filenames != NULL) {
-        for (uint32_t i = 0; i < s->slot_count; ++i) {
-            if (s->slot_filenames[i] == NULL) {
-                NMO_RETURN_ERROR(
-                    NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
-                    "Texture slot filename %u is missing", i);
-            }
-        }
+    } else if (s->slot_filenames != NULL) {
+        NMO_RETURN_ERROR(
+            NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+            "Texture slot filenames are present without their section");
     }
     if (s->bitmap_kind == CKTEXTURE_BITMAP_READER) {
         NMO_VALIDATE_COUNT(s->reader_slots, s->slot_count, "reader_slots");
@@ -1129,6 +1198,12 @@ static nmo_status_t nmo_texture_validate(
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
                          "Texture save format exceeds serialized range");
     }
+    if (s->legacy_user_mipmap_size > UINT32_MAX ||
+        (s->legacy_user_mipmap_size & 3u) != 0u) {
+        NMO_RETURN_ERROR(
+            NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+            "Texture legacy USERMIPMAP tail is not representable");
+    }
     if (!s->has_pick_threshold && s->pick_threshold != 0) {
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
                          "Texture pick threshold is present without its section");
@@ -1146,13 +1221,51 @@ static nmo_status_t nmo_texture_validate(
             NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
             "Texture OLDTEXONLY fields cannot be serialized losslessly");
     }
-    if (!s->has_save_format && s->save_format_size != 0u) {
+    if (!s->has_legacy_user_mipmap &&
+        (s->legacy_use_mipmap != 0 ||
+         s->legacy_user_mipmap_size != 0u)) {
+        NMO_RETURN_ERROR(
+            NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+            "Texture legacy USERMIPMAP data is present without its section");
+    }
+    if (!s->has_save_format && !s->has_legacy_system_caching &&
+        s->save_format_size != 0u) {
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
                          "Texture save format is present without its section");
     }
     if (!s->has_user_mipmaps && s->user_mipmap_count != 0u) {
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
                          "Texture user mipmaps are present without their section");
+    }
+    NMO_VALIDATE_BYTES(
+        s->legacy_user_mipmap_data, s->legacy_user_mipmap_size,
+        "legacy_user_mipmap_data");
+    if (s->has_legacy_user_mipmap) {
+        uint32_t legacy_format = UNKNOWN_PF;
+        const nmo_status_t legacy_result = nmo_texture_legacy_tail_format(
+            s->legacy_user_mipmap_data,
+            s->legacy_user_mipmap_size,
+            &legacy_format);
+        if (legacy_result != NMO_OK) {
+            NMO_RETURN_ERROR(
+                NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                "Texture legacy USERMIPMAP tail is malformed");
+        }
+        if ((legacy_format != UNKNOWN_PF) !=
+                (s->has_desired_video_format != 0) ||
+            (legacy_format != UNKNOWN_PF &&
+             legacy_format != s->desired_video_format)) {
+            NMO_RETURN_ERROR(
+                NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                "Texture legacy video format does not match its raw layout");
+        }
+        const uint8_t legacy_level =
+            s->legacy_use_mipmap != 0 ? UINT8_MAX : 0u;
+        if (s->mipmap_level != legacy_level) {
+            NMO_RETURN_ERROR(
+                NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                "Texture legacy mipmap flag does not match mipmap level");
+        }
     }
     NMO_VALIDATE_BYTES(s->save_format_data, s->save_format_size, "save_format_data");
     NMO_VALIDATE_COUNT(s->user_mipmaps, s->user_mipmap_count, "user_mipmaps");
@@ -1190,17 +1303,76 @@ static nmo_status_t nmo_texture_serialize_internal(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_texture_serialize");
     }
     NMO_RETURN_IF_ERROR(nmo_texture_validate(state, type, context));
-    if (is_file && nmo_chunk_get_data_version(chunk) >= 5u &&
-        !state->has_oldtexonly &&
-        (state->mipmap_level != 0u || state->save_options != 0u ||
-         state->is_transparent || state->is_cubemap ||
-         state->has_desired_video_format ||
-         state->desired_video_format != UNKNOWN_PF ||
-         state->has_transparent_color || state->transparent_color != 0u ||
-         state->has_current_slot || state->current_slot != 0)) {
+    const uint32_t data_version = nmo_chunk_get_data_version(chunk);
+    const bool has_legacy_layout =
+        state->has_legacy_user_mipmap ||
+        state->has_legacy_system_caching ||
+        (!state->has_oldtexonly &&
+         (state->has_transparent_color || state->is_transparent ||
+          state->has_current_slot));
+    const bool legacy_file_layout = is_file && data_version < 5u &&
+        (data_version != 0u || has_legacy_layout);
+    nmo_texture_state_t packed_layout = *state;
+    if (packed_layout.transparent_color != 0u) {
+        packed_layout.has_transparent_color = 1;
+    }
+    if (packed_layout.current_slot != 0) {
+        packed_layout.has_current_slot = 1;
+    }
+    const bool has_packed_state =
+        packed_layout.mipmap_level != 0u ||
+        packed_layout.save_options != 0u ||
+        packed_layout.is_transparent || packed_layout.is_cubemap ||
+        packed_layout.has_desired_video_format ||
+        packed_layout.has_transparent_color ||
+        packed_layout.has_current_slot;
+    const bool write_oldtexonly = state->has_oldtexonly || has_packed_state;
+
+    if ((state->has_desired_video_format &&
+            state->desired_video_format == UNKNOWN_PF) ||
+        (!state->has_desired_video_format &&
+            state->desired_video_format != UNKNOWN_PF)) {
         NMO_RETURN_ERROR(
             NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
-            "Texture packed state is present without OLDTEXONLY");
+            "Texture desired video format presence is inconsistent");
+    }
+    if ((state->bitmap_kind != CKTEXTURE_BITMAP_READER &&
+         state->reader_slots != NULL) ||
+        (state->bitmap_kind != CKTEXTURE_BITMAP_RAW &&
+         state->raw_slots != NULL) ||
+        (state->bitmap_kind != CKTEXTURE_BITMAP_BITMAP2 &&
+         state->bitmap2_slots != NULL)) {
+        NMO_RETURN_ERROR(
+            NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+            "Texture contains inactive bitmap slot storage");
+    }
+    if (legacy_file_layout) {
+        if (state->has_user_mipmaps) {
+            NMO_RETURN_ERROR(
+                NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                "Texture modern user mipmaps cannot be written to a legacy file");
+        }
+        if (state->is_cubemap ||
+            (state->mipmap_level != 0u && state->mipmap_level != UINT8_MAX) ||
+            (state->has_desired_video_format &&
+             !state->has_legacy_user_mipmap)) {
+            NMO_RETURN_ERROR(
+                NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                "Texture state cannot be represented by the legacy layout");
+        }
+    } else {
+        if (state->has_legacy_user_mipmap) {
+            NMO_RETURN_ERROR(
+                NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                "Texture legacy USERMIPMAP data cannot be written to the modern layout");
+        }
+        if (state->save_options > UINT8_MAX ||
+            (write_oldtexonly &&
+             !nmo_texture_oldtex_layout_is_representable(&packed_layout))) {
+            NMO_RETURN_ERROR(
+                NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                "Texture packed state cannot be represented by OLDTEXONLY");
+        }
     }
 
     {
@@ -1250,7 +1422,7 @@ static nmo_status_t nmo_texture_serialize_internal(
         }
     }
 
-    if (state->has_movie_filename && state->movie_filename) {
+    if (state->has_movie_filename) {
         nmo_status_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_TEXAVIFILENAME);
         if (result != NMO_OK) return result;
         NMO_RETURN_IF_ERROR(nmo_chunk_write_string(chunk, state->movie_filename));
@@ -1262,32 +1434,81 @@ static nmo_status_t nmo_texture_serialize_internal(
         NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, state->pick_threshold));
     }
 
-    if (state->has_oldtexonly) {
+    if (legacy_file_layout) {
+        const bool write_transparent =
+            state->has_transparent_color ||
+            state->transparent_color != 0u || state->is_transparent;
+        if (write_transparent) {
+            nmo_status_t result = nmo_chunk_write_identifier(
+                chunk, CK_STATESAVE_TEXTRANSPARENT);
+            if (result != NMO_OK) return result;
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
+                chunk, state->transparent_color));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
+                chunk, state->is_transparent ? 1u : 0u));
+        }
+
+        if (state->has_current_slot || state->current_slot != 0) {
+            nmo_status_t result = nmo_chunk_write_identifier(
+                chunk, CK_STATESAVE_TEXCURRENTIMAGE);
+            if (result != NMO_OK) return result;
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_int(
+                chunk, state->current_slot));
+        }
+
+        if (state->has_legacy_user_mipmap || state->mipmap_level != 0u) {
+            nmo_status_t result = nmo_chunk_write_identifier(
+                chunk, CK_STATESAVE_USERMIPMAP);
+            if (result != NMO_OK) return result;
+            const int32_t use_mipmap = state->has_legacy_user_mipmap
+                ? state->legacy_use_mipmap : 1;
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, use_mipmap));
+            result = nmo_chunk_write_buffer_no_size(
+                chunk, state->legacy_user_mipmap_data,
+                state->legacy_user_mipmap_size);
+            if (result != NMO_OK) return result;
+        }
+
+        if (state->has_legacy_system_caching || state->has_save_format ||
+            state->save_options != 0u || state->save_format_size != 0u) {
+            nmo_status_t result = nmo_chunk_write_identifier(
+                chunk, CK_STATESAVE_TEXSYSTEMCACHING);
+            if (result != NMO_OK) return result;
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
+                chunk, state->save_options));
+            result = nmo_chunk_write_buffer(
+                chunk, state->save_format_data, state->save_format_size);
+            if (result != NMO_OK) return result;
+        }
+        NMO_RETURN_OK();
+    }
+
+    if (write_oldtexonly) {
         nmo_status_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_OLDTEXONLY);
         if (result != NMO_OK) return result;
 
-        uint32_t dword = (uint32_t)(state->mipmap_level & 0xFF);
-        dword |= ((uint32_t)(state->save_options & 0xFF) << 16);
-        if (state->is_transparent) dword |= 0x100;
-        if (state->is_cubemap) dword |= 0x400;
-        if (state->has_desired_video_format) dword |= 0x200;
+        uint32_t dword = (uint32_t)(packed_layout.mipmap_level & 0xFF);
+        dword |= ((uint32_t)(packed_layout.save_options & 0xFF) << 16);
+        if (packed_layout.is_transparent) dword |= 0x100;
+        if (packed_layout.is_cubemap) dword |= 0x400;
+        if (packed_layout.has_desired_video_format) dword |= 0x200;
 
         NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(chunk, dword));
-        if (state->has_transparent_color) {
+        if (packed_layout.has_transparent_color) {
             NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
-                chunk, state->transparent_color));
+                chunk, packed_layout.transparent_color));
         }
 
-        if (state->has_current_slot) {
-            NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, state->current_slot));
+        if (packed_layout.has_current_slot) {
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, packed_layout.current_slot));
         }
 
-        if (state->has_desired_video_format) {
-            NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(chunk, state->desired_video_format));
+        if (packed_layout.has_desired_video_format) {
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(chunk, packed_layout.desired_video_format));
         }
     }
 
-    if (state->has_save_format) {
+    if (state->has_save_format || state->has_legacy_system_caching) {
         nmo_status_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_TEXSAVEFORMAT);
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_buffer(chunk, state->save_format_data, state->save_format_size);
@@ -1556,6 +1777,15 @@ static bool nmo_texture_equals(const void *a, const void *b)
         lhs->transparent_color == rhs->transparent_color &&
         lhs->has_current_slot == rhs->has_current_slot &&
         lhs->current_slot == rhs->current_slot &&
+        lhs->has_legacy_user_mipmap == rhs->has_legacy_user_mipmap &&
+        lhs->legacy_use_mipmap == rhs->legacy_use_mipmap &&
+        lhs->legacy_user_mipmap_size == rhs->legacy_user_mipmap_size &&
+        nmo_texture_bytes_equal(
+            lhs->legacy_user_mipmap_data,
+            rhs->legacy_user_mipmap_data,
+            lhs->legacy_user_mipmap_size) &&
+        lhs->has_legacy_system_caching ==
+            rhs->has_legacy_system_caching &&
         lhs->has_save_format == rhs->has_save_format &&
         lhs->save_format_size == rhs->save_format_size &&
         nmo_texture_bytes_equal(
@@ -1717,6 +1947,12 @@ static uint32_t nmo_texture_hash(const void *instance)
     NMO_TEXTURE_HASH_FIELD(transparent_color);
     NMO_TEXTURE_HASH_FIELD(has_current_slot);
     NMO_TEXTURE_HASH_FIELD(current_slot);
+    NMO_TEXTURE_HASH_FIELD(has_legacy_user_mipmap);
+    NMO_TEXTURE_HASH_FIELD(legacy_use_mipmap);
+    hash = nmo_texture_hash_buffer(
+        hash, state->legacy_user_mipmap_data,
+        state->legacy_user_mipmap_size);
+    NMO_TEXTURE_HASH_FIELD(has_legacy_system_caching);
     NMO_TEXTURE_HASH_FIELD(has_save_format);
     hash = nmo_texture_hash_buffer(
         hash, state->save_format_data, state->save_format_size);

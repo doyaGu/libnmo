@@ -3685,7 +3685,7 @@ TEST(chunk_id_remap, camera_preserves_file_layouts) {
     nmo_chunk_t *legacy = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(legacy);
     legacy->class_id = NMO_CID_CAMERA;
-    legacy->data_version = 4;
+    legacy->data_version = 0;
     legacy->chunk_options |= NMO_CHUNK_OPTION_FILE;
     ASSERT_EQ(NMO_OK, nmo_chunk_start_write(legacy));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
@@ -5301,6 +5301,167 @@ TEST(chunk_id_remap, texture_copy_preserves_nested_content) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, texture_preserves_legacy_file_layout) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+
+    const uint32_t legacy_desc[] = {
+        64u, 32u, 256u, 32u,
+        0x00FF0000u, 0x0000FF00u, 0x000000FFu, 0xFF000000u,
+        0u,
+    };
+    const uint8_t save_format[] = {0x11u, 0x22u, 0x33u};
+    nmo_chunk_t *legacy = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(legacy);
+    legacy->class_id = NMO_CID_TEXTURE;
+    legacy->data_version = 4;
+    legacy->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(legacy));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        legacy, CK_STATESAVE_TEXTRANSPARENT));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(legacy, 0x10203040u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(legacy, 1u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        legacy, CK_STATESAVE_TEXCURRENTIMAGE));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(legacy, -3));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        legacy, CK_STATESAVE_USERMIPMAP));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(legacy, -7));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_buffer(
+        legacy, legacy_desc, sizeof(legacy_desc)));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        legacy, CK_STATESAVE_TEXSYSTEMCACHING));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(legacy, 0x12345678u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_buffer(
+        legacy, save_format, sizeof(save_format)));
+    nmo_chunk_close(legacy);
+
+    nmo_texture_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_texture_vtable.create(&loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_texture_deserialize(
+        &loaded, legacy, NULL, &deserialize_context));
+    ASSERT_TRUE(loaded.has_transparent_color);
+    ASSERT_EQ(0x10203040u, loaded.transparent_color);
+    ASSERT_TRUE(loaded.is_transparent);
+    ASSERT_TRUE(loaded.has_current_slot);
+    ASSERT_EQ(-3, loaded.current_slot);
+    ASSERT_TRUE(loaded.has_legacy_user_mipmap);
+    ASSERT_EQ(-7, loaded.legacy_use_mipmap);
+    ASSERT_EQ(UINT8_MAX, loaded.mipmap_level);
+    ASSERT_EQ(sizeof(legacy_desc) + sizeof(uint32_t),
+              loaded.legacy_user_mipmap_size);
+    ASSERT_TRUE(loaded.has_desired_video_format);
+    ASSERT_EQ(_32_ARGB8888, loaded.desired_video_format);
+    ASSERT_TRUE(loaded.has_legacy_system_caching);
+    ASSERT_FALSE(loaded.has_save_format);
+    ASSERT_EQ(0x12345678u, loaded.save_options);
+    ASSERT_EQ(sizeof(save_format), loaded.save_format_size);
+    ASSERT_MEM_EQ(save_format, loaded.save_format_data,
+                  sizeof(save_format));
+
+    nmo_texture_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_texture_vtable.create(&copied, NULL, NULL));
+    nmo_type_descriptor_t type = {.size = sizeof(nmo_texture_state_t)};
+    ASSERT_EQ(NMO_OK, nmo_texture_vtable.copy(
+        &loaded, &copied, &type, arena));
+    ASSERT_NE(loaded.legacy_user_mipmap_data,
+              copied.legacy_user_mipmap_data);
+    ASSERT_TRUE(nmo_texture_vtable.equals(&loaded, &copied));
+    ASSERT_EQ(nmo_texture_vtable.hash(&loaded),
+              nmo_texture_vtable.hash(&copied));
+
+    nmo_chunk_t *saved = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(saved);
+    saved->class_id = NMO_CID_TEXTURE;
+    saved->data_version = 0;
+    saved->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_texture_serialize(
+        &loaded, saved, NULL, &serialize_context));
+    nmo_chunk_close(saved);
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_chunk_seek_identifier(
+        saved, CK_STATESAVE_OLDTEXONLY));
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_chunk_seek_identifier(
+        saved, CK_STATESAVE_TEXSAVEFORMAT));
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
+        saved, CK_STATESAVE_USERMIPMAP));
+    int32_t use_mipmap = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_int(saved, &use_mipmap));
+    ASSERT_EQ(-7, use_mipmap);
+    void *saved_desc = NULL;
+    size_t saved_desc_size = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_buffer(
+        saved, &saved_desc, &saved_desc_size));
+    ASSERT_EQ(sizeof(legacy_desc), saved_desc_size);
+    ASSERT_MEM_EQ(legacy_desc, saved_desc, sizeof(legacy_desc));
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
+        saved, CK_STATESAVE_TEXSYSTEMCACHING));
+    uint32_t saved_options = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(saved, &saved_options));
+    ASSERT_EQ(0x12345678u, saved_options);
+    void *saved_format = NULL;
+    size_t saved_format_size = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_buffer(
+        saved, &saved_format, &saved_format_size));
+    ASSERT_EQ(sizeof(save_format), saved_format_size);
+    ASSERT_MEM_EQ(save_format, saved_format, sizeof(save_format));
+
+    nmo_texture_state_t reloaded;
+    ASSERT_EQ(NMO_OK, nmo_texture_vtable.create(&reloaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_texture_deserialize(
+        &reloaded, saved, NULL, &deserialize_context));
+    ASSERT_TRUE(nmo_texture_vtable.equals(&loaded, &reloaded));
+
+    loaded.has_user_mipmaps = 1;
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_texture_serialize(
+        &loaded, saved, NULL, &serialize_context));
+    loaded.has_user_mipmaps = 0;
+
+    nmo_chunk_t *malformed = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(malformed);
+    malformed->class_id = NMO_CID_TEXTURE;
+    malformed->data_version = 0;
+    malformed->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(malformed));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        malformed, CK_STATESAVE_USERMIPMAP));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(malformed, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(malformed, 64u));
+    nmo_chunk_close(malformed);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_texture_deserialize(
+        &loaded, malformed, NULL, &deserialize_context));
+    ASSERT_TRUE(loaded.has_legacy_user_mipmap);
+    ASSERT_EQ(-7, loaded.legacy_use_mipmap);
+    ASSERT_EQ(0x12345678u, loaded.save_options);
+
+    nmo_texture_state_t modern_default;
+    ASSERT_EQ(NMO_OK, nmo_texture_vtable.create(
+        &modern_default, NULL, NULL));
+    modern_default.has_oldtexonly = 1;
+    modern_default.save_options = NMO_CKTEXTURE_IMAGEFORMAT;
+    nmo_chunk_t *modern = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(modern);
+    modern->class_id = NMO_CID_TEXTURE;
+    modern->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_texture_serialize(
+        &modern_default, modern, NULL, &serialize_context));
+    nmo_chunk_close(modern);
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
+        modern, CK_STATESAVE_OLDTEXONLY));
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_chunk_seek_identifier(
+        modern, CK_STATESAVE_TEXSYSTEMCACHING));
+
+    nmo_texture_vtable.destroy(&loaded, NULL, NULL);
+    nmo_texture_vtable.destroy(&copied, NULL, NULL);
+    nmo_texture_vtable.destroy(&reloaded, NULL, NULL);
+    nmo_texture_vtable.destroy(&modern_default, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, texture_empty_sections_round_trip_presence) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
     ASSERT_NOT_NULL(arena);
@@ -5316,6 +5477,7 @@ TEST(chunk_id_remap, texture_empty_sections_round_trip_presence) {
     source.reader_width = 64;
     source.reader_height = 32;
     source.reader_bpp = 24;
+    source.has_movie_filename = 1;
     source.has_slot_filenames = 1;
     source.has_pick_threshold = 1;
     source.pick_threshold = 0;
@@ -5336,6 +5498,8 @@ TEST(chunk_id_remap, texture_empty_sections_round_trip_presence) {
     ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
         chunk, CK_STATESAVE_TEXFILENAMES));
     ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
+        chunk, CK_STATESAVE_TEXAVIFILENAME));
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
         chunk, CK_STATESAVE_PICKTHRESHOLD));
     ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
         chunk, CK_STATESAVE_TEXSAVEFORMAT));
@@ -5351,6 +5515,8 @@ TEST(chunk_id_remap, texture_empty_sections_round_trip_presence) {
     ASSERT_EQ(64, loaded.reader_width);
     ASSERT_EQ(32, loaded.reader_height);
     ASSERT_EQ(24, loaded.reader_bpp);
+    ASSERT_TRUE(loaded.has_movie_filename);
+    ASSERT_NULL(loaded.movie_filename);
     ASSERT_TRUE(loaded.has_slot_filenames);
     ASSERT_TRUE(loaded.has_pick_threshold);
     ASSERT_EQ(0, loaded.pick_threshold);
@@ -12041,6 +12207,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, spritetext_failures_keep_state_and_target_chunk_atomic);
     REGISTER_TEST(chunk_id_remap, texture_failures_keep_state_and_target_chunk_atomic);
     REGISTER_TEST(chunk_id_remap, texture_copy_preserves_nested_content);
+    REGISTER_TEST(chunk_id_remap, texture_preserves_legacy_file_layout);
     REGISTER_TEST(chunk_id_remap, texture_empty_sections_round_trip_presence);
     REGISTER_TEST(chunk_id_remap, curvepoint_unresolved_curve_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, sprite3d_unresolved_material_round_trips_raw_id);
