@@ -2575,6 +2575,98 @@ TEST(runtime_kernel, copy_remap_and_graph_include_skin_bones) {
     nmo_context_release(ctx);
 }
 
+TEST(runtime_kernel, normalize_and_safe_detach_preserve_skin_indices) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+
+    nmo_object_id_t owner_id = 0;
+    nmo_object_id_t valid_bone_id = 0;
+    nmo_object_id_t deleted_bone_id = 0;
+    nmo_object_id_t wrong_class_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_3DENTITY, "owner", NMO_NULL_GUID,
+        &owner_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_3DENTITY, "valid-bone", NMO_NULL_GUID,
+        &valid_bone_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_3DENTITY, "deleted-bone", NMO_NULL_GUID,
+        &deleted_bone_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_OBJECT, "wrong", NMO_NULL_GUID,
+        &wrong_class_id, NULL));
+
+    nmo_ref_t wrong_class = nmo_ref_from_id(wrong_class_id);
+    wrong_class.state = NMO_REF_CLASS_MISMATCH;
+    nmo_3dentity_skin_bone_t bones[] = {
+        {.bone = nmo_ref_from_id(valid_bone_id), .bone_flags = 11},
+        {.bone = nmo_ref_from_raw(0x7FFFFF33u), .bone_flags = 22},
+        {.bone = wrong_class, .bone_flags = 33},
+        {.bone = nmo_ref_from_id(deleted_bone_id), .bone_flags = 44},
+    };
+    uint32_t bone_indices[] = {0, 1, 2, 3};
+    float bone_weights[] = {0.4f, 0.3f, 0.2f, 0.1f};
+    nmo_3dentity_skin_vertex_t vertex = {
+        .bone_count = 4,
+        .bone_indices = bone_indices,
+        .bone_weights = bone_weights,
+    };
+    nmo_3dentity_skin_t skin = {
+        .bone_count = 4,
+        .bones = bones,
+        .vertex_count = 1,
+        .vertices = &vertex,
+    };
+    nmo_3dentity_state_t *owner = (nmo_3dentity_state_t *)
+        nmo_object_repository_find_by_id(repo, owner_id)->state;
+    owner->skin = &skin;
+
+    nmo_arena_t *graph_arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(graph_arena);
+    nmo_ref_graph_t *graph = nmo_ref_graph_create(
+        repo, nmo_context_get_type_runtime(ctx)->types, graph_arena);
+    ASSERT_NOT_NULL(graph);
+    nmo_ref_edge_t *outgoing = NULL;
+    size_t outgoing_count = 0;
+    ASSERT_EQ(NMO_OK, nmo_ref_graph_get_object_edges(
+        graph, owner_id, NMO_REF_DIR_OUTGOING,
+        &outgoing, &outgoing_count));
+    ASSERT_EQ(2u, outgoing_count);
+    nmo_ref_graph_destroy(graph);
+    nmo_arena_destroy(graph_arena);
+
+    size_t changed = 0;
+    ASSERT_EQ(NMO_OK, nmo_runtime_normalize_invalid_refs(
+        repo, nmo_context_get_type_runtime(ctx), &changed));
+    ASSERT_EQ(2u, changed);
+    ASSERT_EQ(4u, skin.bone_count);
+    ASSERT_EQ(valid_bone_id, nmo_ref_runtime_id(&bones[0].bone));
+    ASSERT_EQ(NMO_REF_NONE, bones[1].bone.state);
+    ASSERT_EQ(NMO_REF_NONE, bones[2].bone.state);
+    ASSERT_EQ(deleted_bone_id, nmo_ref_runtime_id(&bones[3].bone));
+
+    nmo_runtime_report_t report = {0};
+    ASSERT_EQ(NMO_OK, nmo_session_destroy_objects(
+        session, &deleted_bone_id, 1,
+        NMO_RUNTIME_REQUEST_STRICT | NMO_RUNTIME_REQUEST_SAFE_DETACH,
+        &report));
+    ASSERT_EQ(1u, report.deleted_objects);
+    ASSERT_EQ(4u, skin.bone_count);
+    ASSERT_EQ(NMO_REF_NONE, bones[3].bone.state);
+    for (uint32_t i = 0; i < 4; ++i) {
+        ASSERT_EQ(i, bone_indices[i]);
+        ASSERT_FLOAT_EQ(0.4f - 0.1f * (float)i, bone_weights[i], 0.0001f);
+        ASSERT_EQ((i + 1u) * 11u, bones[i].bone_flags);
+    }
+
+    owner->skin = NULL;
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(runtime_kernel, normalize_and_safe_detach_keep_place_portals_atomic) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
@@ -2778,6 +2870,7 @@ REGISTER_TEST(runtime_kernel, normalize_and_safe_detach_keep_patchmesh_records_a
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_curve_refs);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_place_portals);
 REGISTER_TEST(runtime_kernel, copy_remap_and_graph_include_skin_bones);
+REGISTER_TEST(runtime_kernel, normalize_and_safe_detach_preserve_skin_indices);
 REGISTER_TEST(runtime_kernel, normalize_and_safe_detach_keep_place_portals_atomic);
 REGISTER_TEST(runtime_kernel, normalize_and_safe_detach_keep_curve_sections_independent);
 TEST_MAIN_END()

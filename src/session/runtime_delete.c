@@ -15,6 +15,7 @@
 #include "object/builtin/nmo_animation_schemas.h"
 #include "object/builtin/nmo_beobject_schemas.h"
 #include "object/builtin/nmo_character_schemas.h"
+#include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_curve_schemas.h"
 #include "object/builtin/nmo_grid_schemas.h"
 #include "object/builtin/nmo_group_schemas.h"
@@ -585,6 +586,15 @@ static nmo_status_t runtime_delete_validate_atomic_refs(
          (place->portals.count > 0u && place->portals.data == NULL))) {
         return NMO_ERR_VALIDATION_FAILED;
     }
+
+    nmo_3dentity_state_t *entity3d = (nmo_3dentity_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            type_rt->types, obj, CKPGUID_3DENTITY);
+    if (entity3d != NULL && entity3d->skin != NULL &&
+        entity3d->skin->bone_count > 0u &&
+        entity3d->skin->bones == NULL) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
     return NMO_OK;
 }
 
@@ -806,6 +816,21 @@ static nmo_status_t runtime_delete_detach_atomic_refs(
             }
             NMO_RETURN_IF_ERROR(nmo_array_remove(
                 &place->portals, index, NULL));
+        }
+    }
+
+    nmo_3dentity_state_t *entity3d = (nmo_3dentity_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            type_rt->types, obj, CKPGUID_3DENTITY);
+    if (entity3d != NULL && entity3d->skin != NULL) {
+        nmo_3dentity_skin_t *skin = entity3d->skin;
+        for (uint32_t i = 0u; i < skin->bone_count; ++i) {
+            if (runtime_id_set_contains(
+                    delete_set,
+                    nmo_ref_runtime_id(&skin->bones[i].bone))) {
+                skin->bones[i].bone =
+                    nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+            }
         }
     }
     return NMO_OK;

@@ -1067,6 +1067,33 @@ static nmo_status_t normalize_place_portals(
     return NMO_OK;
 }
 
+static nmo_status_t normalize_3dentity_skin_bones(
+    nmo_3dentity_state_t *state,
+    nmo_object_repository_t *repo,
+    const nmo_type_registry_t *types,
+    size_t *changes)
+{
+    if (state == NULL || state->skin == NULL) return NMO_OK;
+    nmo_3dentity_skin_t *skin = state->skin;
+    if (skin->bone_count > 0 && skin->bones == NULL) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    for (uint32_t i = 0; i < skin->bone_count; ++i) {
+        nmo_ref_t *ref = &skin->bones[i].bone;
+        const nmo_object_id_t id = nmo_ref_runtime_id(ref);
+        if (ref->state == NMO_REF_NONE) continue;
+        if (ref->state == NMO_REF_RESOLVED &&
+            !normalize_id_is_invalid(repo, id) &&
+            !normalize_id_has_wrong_class(
+                repo, types, id, NMO_CID_3DENTITY)) {
+            continue;
+        }
+        *ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+        (*changes)++;
+    }
+    return NMO_OK;
+}
+
 typedef struct normalize_ref_ctx {
     nmo_object_repository_t *repo;
     const nmo_type_registry_t *types;
@@ -1267,6 +1294,11 @@ nmo_status_t nmo_runtime_normalize_invalid_refs(
                 type_rt->types, obj, CKPGUID_PLACE);
         NMO_RETURN_IF_ERROR(normalize_place_portals(
             place, repo, type_rt->types, &changed));
+        nmo_3dentity_state_t *entity3d = (nmo_3dentity_state_t *)
+            nmo_type_query_object_get_ancestor_state_by_guid(
+                type_rt->types, obj, CKPGUID_3DENTITY);
+        NMO_RETURN_IF_ERROR(normalize_3dentity_skin_bones(
+            entity3d, repo, type_rt->types, &changed));
 
         const nmo_type_descriptor_t *derived =
             runtime_find_type_for_object(type_rt, obj);
