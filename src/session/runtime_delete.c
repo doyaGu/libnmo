@@ -515,7 +515,14 @@ static nmo_status_t runtime_delete_validate_atomic_refs(
          (beobject->attributes.count > 0u &&
           beobject->attributes.element_size != sizeof(nmo_beobject_attribute_t)) ||
          (beobject->attributes.count > 0u &&
-          beobject->attributes.data == NULL))) {
+          beobject->attributes.data == NULL) ||
+         (beobject->legacy_attributes.element_size != 0 &&
+          beobject->legacy_attributes.element_size !=
+              sizeof(nmo_beobject_legacy_attribute_t)) ||
+         (beobject->legacy_attributes.count > 0u &&
+          (beobject->legacy_attributes.data == NULL ||
+           beobject->legacy_attributes.element_size !=
+               sizeof(nmo_beobject_legacy_attribute_t))))) {
         return NMO_ERR_VALIDATION_FAILED;
     }
 
@@ -662,6 +669,19 @@ static nmo_status_t runtime_delete_detach_atomic_refs(
             if (!runtime_id_set_contains(delete_set, id)) continue;
             NMO_RETURN_IF_ERROR(nmo_array_remove(
                 &beobject->attributes, index, NULL));
+        }
+        for (size_t i = beobject->legacy_attributes.count; i > 0u; --i) {
+            nmo_beobject_legacy_attribute_t *legacy = NMO_ARRAY_DATA(
+                nmo_beobject_legacy_attribute_t,
+                &beobject->legacy_attributes);
+            const size_t index = i - 1u;
+            if (!runtime_id_set_contains(
+                    delete_set,
+                    nmo_ref_runtime_id(&legacy[index].parameter))) {
+                continue;
+            }
+            NMO_RETURN_IF_ERROR(nmo_array_remove(
+                &beobject->legacy_attributes, index, NULL));
         }
     }
 

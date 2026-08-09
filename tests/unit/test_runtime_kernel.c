@@ -1859,6 +1859,97 @@ TEST(runtime_kernel, copy_remap_updates_only_resolved_beobject_attributes) {
     nmo_context_release(ctx);
 }
 
+TEST(runtime_kernel, safe_detach_prunes_all_beobject_attribute_layouts) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+
+    nmo_object_id_t modern_owner_id = 0;
+    nmo_object_id_t legacy_owner_id = 0;
+    nmo_object_id_t deleted_parameter_id = 0;
+    nmo_object_id_t kept_parameter_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_BEOBJECT, "modern-owner", NMO_NULL_GUID,
+        &modern_owner_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_BEOBJECT, "legacy-owner", NMO_NULL_GUID,
+        &legacy_owner_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_PARAMETER, "deleted", NMO_NULL_GUID,
+        &deleted_parameter_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_PARAMETER, "kept", NMO_NULL_GUID,
+        &kept_parameter_id, NULL));
+
+    nmo_arena_t *chunk_arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(chunk_arena);
+    nmo_chunk_t *deleted_chunk = nmo_chunk_create(chunk_arena);
+    nmo_chunk_t *kept_chunk = nmo_chunk_create(chunk_arena);
+    ASSERT_NOT_NULL(deleted_chunk);
+    ASSERT_NOT_NULL(kept_chunk);
+    nmo_beobject_state_t *modern_owner = (nmo_beobject_state_t *)
+        nmo_object_repository_find_by_id(repo, modern_owner_id)->state;
+    nmo_beobject_state_t *legacy_owner = (nmo_beobject_state_t *)
+        nmo_object_repository_find_by_id(repo, legacy_owner_id)->state;
+    ASSERT_EQ(NMO_OK, nmo_beobject_attribute_array_append(
+        &modern_owner->attributes, deleted_parameter_id, 11, deleted_chunk));
+    ASSERT_EQ(NMO_OK, nmo_beobject_attribute_array_append(
+        &modern_owner->attributes, kept_parameter_id, 22, kept_chunk));
+    nmo_beobject_legacy_attribute_t legacy[] = {
+        {
+            .compatible_class_id = 31,
+            .name = "deleted",
+            .category = "first",
+            .parameter = nmo_ref_from_id(deleted_parameter_id),
+        },
+        {
+            .compatible_class_id = 32,
+            .name = "kept",
+            .category = "second",
+            .parameter = nmo_ref_from_id(kept_parameter_id),
+        },
+        {
+            .compatible_class_id = 33,
+            .name = "unresolved",
+            .category = "third",
+            .parameter = nmo_ref_from_raw(0x7FFFFF52u),
+        },
+    };
+    ASSERT_EQ(NMO_OK, nmo_array_append_array(
+        &legacy_owner->legacy_attributes, legacy, 3));
+
+    nmo_runtime_report_t report = {0};
+    ASSERT_EQ(NMO_OK, nmo_session_destroy_objects(
+        session, &deleted_parameter_id, 1,
+        NMO_RUNTIME_REQUEST_STRICT | NMO_RUNTIME_REQUEST_SAFE_DETACH,
+        &report));
+    ASSERT_EQ(1u, report.deleted_objects);
+    ASSERT_EQ(1u, modern_owner->attributes.count);
+    nmo_beobject_attribute_t *modern = NMO_ARRAY_DATA(
+        nmo_beobject_attribute_t, &modern_owner->attributes);
+    ASSERT_EQ(kept_parameter_id,
+              nmo_ref_runtime_id(&modern[0].parameter));
+    ASSERT_EQ(22u, modern[0].type_id);
+    ASSERT_EQ(kept_chunk, modern[0].chunk);
+    ASSERT_EQ(2u, legacy_owner->legacy_attributes.count);
+    nmo_beobject_legacy_attribute_t *remaining = NMO_ARRAY_DATA(
+        nmo_beobject_legacy_attribute_t, &legacy_owner->legacy_attributes);
+    ASSERT_EQ(kept_parameter_id,
+              nmo_ref_runtime_id(&remaining[0].parameter));
+    ASSERT_EQ(32, remaining[0].compatible_class_id);
+    ASSERT_STR_EQ("kept", remaining[0].name);
+    ASSERT_STR_EQ("second", remaining[0].category);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, remaining[1].parameter.state);
+    ASSERT_EQ(0x7FFFFF52u, remaining[1].parameter.raw_id);
+    ASSERT_EQ(33, remaining[1].compatible_class_id);
+
+    nmo_session_destroy(session);
+    nmo_arena_destroy(chunk_arena);
+    nmo_context_release(ctx);
+}
+
 TEST(runtime_kernel, copy_remap_updates_only_resolved_parameteroperation_refs) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
@@ -3126,6 +3217,7 @@ REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_keyedanimation_re
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_objectanimation_refs);
 REGISTER_TEST(runtime_kernel, safe_detach_keeps_keyedanimation_sections_independent);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_beobject_attributes);
+REGISTER_TEST(runtime_kernel, safe_detach_prunes_all_beobject_attribute_layouts);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_parameteroperation_refs);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_parameterout_refs);
 REGISTER_TEST(runtime_kernel, dependency_remap_preserves_nonreference_state);
