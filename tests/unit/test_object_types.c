@@ -100,6 +100,13 @@ TEST(object_types, register_all_types) {
     ASSERT_NE(NULL, nmo_type_registry_find_by_guid(registry, CKPGUID_3DENTITY));
     ASSERT_NE(NULL, nmo_type_registry_find_by_guid(registry, CKPGUID_BEHAVIOR));
 
+    const nmo_type_descriptor_t *layer =
+        nmo_type_registry_find_by_guid(registry, CKPGUID_LAYER);
+    ASSERT_NOT_NULL(layer);
+    ASSERT_NOT_NULL(nmo_type_get_field_by_name(layer, "has_layer_data"));
+    ASSERT_NOT_NULL(nmo_type_get_field_by_name(layer, "has_flags"));
+    ASSERT_NOT_NULL(nmo_type_get_field_by_name(layer, "has_square_data"));
+
     const nmo_type_descriptor_t *portal_entry =
         nmo_type_registry_find_by_guid(
             registry, NMO_GUID_STRUCT_CKPLACEPORTALENTRY);

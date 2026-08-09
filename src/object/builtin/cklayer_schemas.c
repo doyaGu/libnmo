@@ -310,10 +310,13 @@ static const nmo_type_field_t nmo_layer_fields[] = {
     NMO_FIELD_NAMED("param_guid", offsetof(nmo_layer_state_t, param_guid),
                     sizeof(nmo_guid_t), CKPGUID_GUID, NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_layer_state_t, flags, CKPGUID_UINT32),
+    NMO_FIELD(nmo_layer_state_t, has_layer_data, CKPGUID_UINT8),
     NMO_FIELD(nmo_layer_state_t, has_type, CKPGUID_UINT8),
     NMO_FIELD(nmo_layer_state_t, has_version, CKPGUID_UINT8),
     NMO_FIELD(nmo_layer_state_t, has_color, CKPGUID_UINT8),
     NMO_FIELD(nmo_layer_state_t, has_param_guid, CKPGUID_UINT8),
+    NMO_FIELD(nmo_layer_state_t, has_flags, CKPGUID_UINT8),
+    NMO_FIELD(nmo_layer_state_t, has_square_data, CKPGUID_UINT8),
     NMO_FIELD_OPT(nmo_layer_state_t, square_data, CKPGUID_POINTER),
     NMO_FIELD(nmo_layer_state_t, square_data_size, CKPGUID_UINT64)
 };
