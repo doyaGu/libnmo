@@ -3488,6 +3488,7 @@ TEST(chunk_id_remap, parameteroperation_refs_round_trip_and_failure_is_atomic) {
 
     nmo_chunk_t *legacy_version = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(legacy_version);
+    source.legacy_prefix_ref = nmo_ref_from_raw(709);
     legacy_version->class_id = NMO_CID_PARAMETEROPERATION;
     legacy_version->data_version = 4;
     legacy_version->chunk_options |= NMO_CHUNK_OPTION_FILE;
@@ -3501,9 +3502,48 @@ TEST(chunk_id_remap, parameteroperation_refs_round_trip_and_failure_is_atomic) {
         &legacy_loaded, NULL, NULL));
     ASSERT_EQ(NMO_OK, nmo_parameteroperation_deserialize(
         &legacy_loaded, legacy_version, NULL, &deserialize_context));
+    ASSERT_EQ(709u, legacy_loaded.legacy_prefix_ref.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED,
+              legacy_loaded.legacy_prefix_ref.state);
     ASSERT_EQ(710u, legacy_loaded.in1.ref.raw_id);
     ASSERT_EQ(711u, legacy_loaded.in2.ref.raw_id);
     ASSERT_EQ(712u, legacy_loaded.out.ref.raw_id);
+
+    nmo_chunk_t *legacy_saved = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(legacy_saved);
+    legacy_saved->class_id = NMO_CID_PARAMETEROPERATION;
+    legacy_saved->data_version = 4;
+    legacy_saved->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(legacy_saved, &write_context);
+    ASSERT_EQ(NMO_OK, nmo_parameteroperation_serialize(
+        &legacy_loaded, legacy_saved, NULL, &serialize_context));
+    nmo_chunk_close(legacy_saved);
+    nmo_chunk_set_file_context(legacy_saved, &read_context);
+    nmo_parameteroperation_state_t legacy_reloaded;
+    ASSERT_EQ(NMO_OK, nmo_parameteroperation_vtable.create(
+        &legacy_reloaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_parameteroperation_deserialize(
+        &legacy_reloaded, legacy_saved, NULL, &deserialize_context));
+    ASSERT_EQ(709u, legacy_reloaded.legacy_prefix_ref.raw_id);
+    ASSERT_EQ(710u, legacy_reloaded.in1.ref.raw_id);
+    ASSERT_EQ(711u, legacy_reloaded.in2.ref.raw_id);
+    ASSERT_EQ(712u, legacy_reloaded.out.ref.raw_id);
+
+    nmo_chunk_t *lossy_legacy_target = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(lossy_legacy_target);
+    lossy_legacy_target->class_id = NMO_CID_PARAMETEROPERATION;
+    lossy_legacy_target->data_version = 8;
+    lossy_legacy_target->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(lossy_legacy_target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        lossy_legacy_target, 0x12345678u));
+    nmo_chunk_close(lossy_legacy_target);
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,
+              nmo_parameteroperation_serialize(
+                  &legacy_loaded, lossy_legacy_target, NULL,
+                  &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(lossy_legacy_target));
+    source.legacy_prefix_ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
 
     nmo_parameteroperation_state_t short_source = source;
     short_source.has_in2 = 0;
@@ -3618,6 +3658,7 @@ TEST(chunk_id_remap, parameteroperation_refs_round_trip_and_failure_is_atomic) {
     nmo_parameteroperation_vtable.destroy(&loaded, NULL, NULL);
     nmo_parameteroperation_vtable.destroy(&reloaded, NULL, NULL);
     nmo_parameteroperation_vtable.destroy(&legacy_loaded, NULL, NULL);
+    nmo_parameteroperation_vtable.destroy(&legacy_reloaded, NULL, NULL);
     nmo_parameteroperation_vtable.destroy(&short_loaded, NULL, NULL);
     nmo_parameteroperation_vtable.destroy(&failed, NULL, NULL);
     nmo_parameteroperation_vtable.destroy(&invalid, NULL, NULL);

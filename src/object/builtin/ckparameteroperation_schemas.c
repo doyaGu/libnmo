@@ -35,6 +35,7 @@ static const nmo_type_field_t nmo_parameteroperation_fields[] = {
                     sizeof(nmo_object_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_parameteroperation_state_t, operation_guid, CKPGUID_GUID),
+    NMO_FIELD_REF(nmo_parameteroperation_state_t, legacy_prefix_ref),
     NMO_FIELD_NAMED("owner", offsetof(nmo_parameteroperation_state_t, owner),
                     sizeof(nmo_ref_t), CKPGUID_ID,
                     NMO_FIELD_REFERENCE | NMO_FIELD_REF_RECORD,
@@ -144,6 +145,7 @@ static nmo_status_t nmo_parameteroperation_deserialize_internal(
 
     nmo_parameteroperation_state_t decoded = *out_state;
     memset(&decoded.operation_guid, 0, sizeof(decoded.operation_guid));
+    decoded.legacy_prefix_ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     decoded.owner = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     decoded.in1.ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     decoded.in1.chunk = NULL;
@@ -173,8 +175,8 @@ static nmo_status_t nmo_parameteroperation_deserialize_internal(
             }
             if (nmo_chunk_get_data_version(chunk) < 5) {
                 if (count == 0) return NMO_ERR_INVALID_FORMAT;
-                nmo_ref_t dummy = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
-                NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &dummy));
+                NMO_RETURN_IF_ERROR(nmo_ref_read(
+                    chunk, &decoded.legacy_prefix_ref));
                 count -= 1;
             }
             if (count > 3) return NMO_ERR_INVALID_FORMAT;
@@ -362,6 +364,7 @@ static nmo_status_t nmo_parameteroperation_pre_delete(
     }
     nmo_parameteroperation_state_t *state =
         (nmo_parameteroperation_state_t *)instance;
+    state->legacy_prefix_ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     state->owner = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     state->in1.ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     state->in2.ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
@@ -401,6 +404,14 @@ static nmo_status_t nmo_parameteroperation_serialize_internal(
     }
 
     const int is_file = (out_chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0;
+    const uint32_t data_version = nmo_chunk_get_data_version(out_chunk);
+    if ((!is_file || data_version >= 5u) &&
+        nmo_ref_serialized_id(&in_state->legacy_prefix_ref) !=
+            NMO_OBJECT_ID_NONE) {
+        NMO_RETURN_ERROR(
+            NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+            "ParameterOperation layout cannot store the legacy prefix reference");
+    }
 
     if (is_file) {
         nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_OPERATIONNEWDATA);
@@ -411,14 +422,15 @@ static nmo_status_t nmo_parameteroperation_serialize_internal(
 
         size_t ref_count = in_state->has_out ? 3u :
             (in_state->has_in2 ? 2u : (in_state->has_in1 ? 1u : 0u));
-        const int has_legacy_dummy = nmo_chunk_get_data_version(out_chunk) < 5;
+        const int has_legacy_dummy = data_version < 5u;
         result = nmo_chunk_write_object_sequence_start(
             out_chunk, ref_count + (has_legacy_dummy ? 1u : 0u));
         if (result != NMO_OK) return result;
 
         const nmo_ref_t none = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         if (has_legacy_dummy) {
-            NMO_RETURN_IF_ERROR(nmo_ref_write_sequence_item(out_chunk, &none));
+            NMO_RETURN_IF_ERROR(nmo_ref_write_sequence_item(
+                out_chunk, &in_state->legacy_prefix_ref));
         }
         if (ref_count >= 1u) {
             NMO_RETURN_IF_ERROR(nmo_ref_write_sequence_item(
@@ -539,6 +551,8 @@ static bool nmo_parameteroperation_equals(const void *a, const void *b)
         (const nmo_parameteroperation_state_t *)b;
     return lhs->base.visibility_flags == rhs->base.visibility_flags &&
         nmo_guid_equals(lhs->operation_guid, rhs->operation_guid) &&
+        memcmp(&lhs->legacy_prefix_ref, &rhs->legacy_prefix_ref,
+               sizeof(nmo_ref_t)) == 0 &&
         memcmp(&lhs->owner, &rhs->owner, sizeof(nmo_ref_t)) == 0 &&
         memcmp(&lhs->in1.ref, &rhs->in1.ref, sizeof(nmo_ref_t)) == 0 &&
         memcmp(&lhs->in2.ref, &rhs->in2.ref, sizeof(nmo_ref_t)) == 0 &&
@@ -591,6 +605,7 @@ static uint32_t nmo_parameteroperation_hash(const void *instance)
     hash = nmo_parameteroperation_hash_bytes(hash, &(field), sizeof(field))
     NMO_PARAMETEROPERATION_HASH_FIELD(state->base.visibility_flags);
     NMO_PARAMETEROPERATION_HASH_FIELD(state->operation_guid);
+    NMO_PARAMETEROPERATION_HASH_FIELD(state->legacy_prefix_ref);
     NMO_PARAMETEROPERATION_HASH_FIELD(state->owner);
     NMO_PARAMETEROPERATION_HASH_FIELD(state->in1.ref);
     NMO_PARAMETEROPERATION_HASH_FIELD(state->in2.ref);

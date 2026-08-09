@@ -34,6 +34,7 @@ typedef struct nmo_parameteroperation_ref {
 typedef struct nmo_parameteroperation_state {
     nmo_object_state_t base;
     nmo_guid_t operation_guid;
+    nmo_ref_t legacy_prefix_ref;
     nmo_ref_t owner;
     nmo_parameteroperation_ref_t in1;
     nmo_parameteroperation_ref_t in2;
