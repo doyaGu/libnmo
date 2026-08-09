@@ -307,8 +307,13 @@ static nmo_status_t nmo_level_deserialize_internal(
     out_state->has_inactive_manager_section = 0;
 
     /* Section 1: LEVELDEFAULTDATA - Legacy arrays + scene list */
-    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_LEVELDEFAULTDATA);
+    size_t default_section_dwords = 0;
+    result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_LEVELDEFAULTDATA, &default_section_dwords);
     if (result == NMO_OK) {
+        if (default_section_dwords < 3u) return NMO_ERR_TRUNCATED_CHUNK;
+        const size_t default_section_end =
+            nmo_chunk_get_position(chunk) + default_section_dwords;
         nmo_array_t legacy_object_ids = {0};
         nmo_array_t legacy_pointer_ids = {0};
         nmo_array_t scene_ids = {0};
@@ -326,7 +331,11 @@ static nmo_status_t nmo_level_deserialize_internal(
             chunk, nmo_level_array_allocator(&out_state->scene_ids),
             &scene_ids);
         if (result != NMO_OK) goto default_data_fail;
-        if (nmo_level_identifier_remaining_dwords(chunk) != 0u) {
+        if (nmo_chunk_get_position(chunk) > default_section_end) {
+            result = NMO_ERR_TRUNCATED_CHUNK;
+            goto default_data_fail;
+        }
+        if (nmo_chunk_get_position(chunk) != default_section_end) {
             result = NMO_ERR_INVALID_FORMAT;
             goto default_data_fail;
         }
@@ -364,8 +373,13 @@ default_data_done:;
     } else if (result != NMO_ERR_NOT_FOUND) return result;
 
     /* Section 2: LEVELSCENE - Current scene + level scene */
-    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_LEVELSCENE);
+    size_t scene_section_dwords = 0;
+    result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_LEVELSCENE, &scene_section_dwords);
     if (result == NMO_OK) {
+        if (scene_section_dwords < 3u) return NMO_ERR_TRUNCATED_CHUNK;
+        const size_t scene_section_end =
+            nmo_chunk_get_position(chunk) + scene_section_dwords;
         nmo_ref_t current_scene = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         nmo_ref_t level_scene = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         nmo_chunk_t *level_scene_chunk = NULL;
@@ -381,6 +395,9 @@ default_data_done:;
         /* Read level scene sub-chunk */
         result = nmo_chunk_read_sub_chunk(chunk, &level_scene_chunk);
         if (result != NMO_OK) return result;
+        if (nmo_chunk_get_position(chunk) > scene_section_end) {
+            return NMO_ERR_TRUNCATED_CHUNK;
+        }
 
         nmo_ref_check_class(
             &current_scene,

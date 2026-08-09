@@ -9887,6 +9887,29 @@ TEST(chunk_id_remap, level_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(899u, nmo_beobject_script_array_get_id(
         &failed_scenes.base.scripts, 0));
 
+    nmo_chunk_t *missing_scene_count = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(missing_scene_count);
+    missing_scene_count->class_id = NMO_CID_LEVEL;
+    missing_scene_count->data_version = 7;
+    missing_scene_count->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(missing_scene_count));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        missing_scene_count, CK_STATESAVE_LEVELDEFAULTDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(
+        missing_scene_count, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(
+        missing_scene_count, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        missing_scene_count, 0));
+    nmo_chunk_close(missing_scene_count);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_level_deserialize(
+        &failed_scenes, missing_scene_count, NULL, &deserialize_context));
+    ASSERT_EQ(1u, failed_scenes.scene_ids.count);
+    ASSERT_EQ(917u, NMO_ARRAY_DATA(
+        nmo_ref_t, &failed_scenes.scene_ids)[0].raw_id);
+    ASSERT_EQ(899u, nmo_beobject_script_array_get_id(
+        &failed_scenes.base.scripts, 0));
+
     const nmo_guid_t old_inactive_guid = {
         0x12345678u, 0x90ABCDEFu,
     };
@@ -9940,6 +9963,28 @@ TEST(chunk_id_remap, level_refs_round_trip_and_failure_is_atomic) {
     failed_scalars.level_scene = nmo_ref_from_raw(919);
     ASSERT_NE(NMO_OK, nmo_level_deserialize(
         &failed_scalars, truncated_scalars, NULL, &deserialize_context));
+    ASSERT_EQ(918u, failed_scalars.current_scene.raw_id);
+    ASSERT_EQ(919u, failed_scalars.level_scene.raw_id);
+    ASSERT_NULL(failed_scalars.level_scene_chunk);
+
+    nmo_chunk_t *missing_level_scene_chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(missing_level_scene_chunk);
+    missing_level_scene_chunk->class_id = NMO_CID_LEVEL;
+    missing_level_scene_chunk->data_version = 7;
+    missing_level_scene_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(missing_level_scene_chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        missing_level_scene_chunk, CK_STATESAVE_LEVELSCENE));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_id(
+        missing_level_scene_chunk, 916));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_id(
+        missing_level_scene_chunk, 917));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        missing_level_scene_chunk, 0));
+    nmo_chunk_close(missing_level_scene_chunk);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_level_deserialize(
+        &failed_scalars, missing_level_scene_chunk, NULL,
+        &deserialize_context));
     ASSERT_EQ(918u, failed_scalars.current_scene.raw_id);
     ASSERT_EQ(919u, failed_scalars.level_scene.raw_id);
     ASSERT_NULL(failed_scalars.level_scene_chunk);
