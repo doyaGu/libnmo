@@ -46,10 +46,13 @@ typedef struct nmo_parameterin_state {
     nmo_guid_t type_guid;              /**< Parameter type GUID */
     nmo_ref_t legacy_prefix_ref;        /**< Preserved v1-v4 prefix reference */
     nmo_ref_t source;                  /**< Source parameter (direct or shared) */
-    nmo_ref_t owner;                   /**< Owner behavior (legacy/default data) */
+    nmo_ref_t owner;                   /**< Owner behavior or parameter operation */
     uint8_t is_shared;                 /**< TRUE if shared input, FALSE if direct source */
     uint8_t is_disabled;               /**< TRUE if parameter is disabled */
     uint8_t has_legacy_layout;         /**< TRUE for the pre-v1 multi-section layout */
+    uint8_t has_data;                  /**< Data section was present */
+    uint8_t has_owner;                 /**< Owner lane/section was present */
+    uint8_t has_source;                /**< Source lane/section was present */
 } nmo_parameterin_state_t;
 
 static inline nmo_object_id_t nmo_parameterin_source_id(
@@ -72,14 +75,22 @@ static inline void nmo_parameterin_set_source_id(
     nmo_parameterin_state_t *state,
     nmo_object_id_t id)
 {
-    if (state != NULL) state->source = nmo_ref_from_id(id);
+    if (state != NULL) {
+        state->source = nmo_ref_from_id(id);
+        state->has_data = 1;
+        state->has_source = 1;
+    }
 }
 
 static inline void nmo_parameterin_set_owner_id(
     nmo_parameterin_state_t *state,
     nmo_object_id_t id)
 {
-    if (state != NULL) state->owner = nmo_ref_from_id(id);
+    if (state != NULL) {
+        state->owner = nmo_ref_from_id(id);
+        state->has_data = 1;
+        state->has_owner = 1;
+    }
 }
 
 /* =============================================================================
