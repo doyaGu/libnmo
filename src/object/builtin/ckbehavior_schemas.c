@@ -978,6 +978,16 @@ static nmo_status_t nmo_behavior_deserialize_internal(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t nmo_behavior_write_ref_section(
+    nmo_chunk_t *chunk,
+    uint32_t identifier,
+    const nmo_array_t *refs)
+{
+    if (refs->count == 0u) return NMO_OK;
+    NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(chunk, identifier));
+    return write_object_sequence(chunk, refs);
+}
+
 nmo_status_t nmo_behavior_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
@@ -1094,6 +1104,8 @@ static nmo_status_t nmo_behavior_serialize_internal(
 
     const bool is_file = (out_chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0;
     const bool write_file_format = is_file;
+    const uint32_t data_version =
+        nmo_chunk_get_data_version(out_chunk);
 
     /* Start write mode for behavior chunk */
     nmo_status_t result = nmo_chunk_start_write(out_chunk);
@@ -1154,7 +1166,9 @@ static nmo_status_t nmo_behavior_serialize_internal(
 
     /* Optional: Interface chunk */
     if (in_state->has_interface || in_state->interface_chunk) {
-        const uint32_t interface_id = CK_STATESAVE_BEHAVIORINTERFACE;
+        const uint32_t interface_id = in_state->use_legacy_identifiers
+            ? CK_STATESAVE_BEHAVIORINTERFACE_LEGACY
+            : CK_STATESAVE_BEHAVIORINTERFACE;
         result = nmo_chunk_write_identifier(out_chunk, interface_id);
         if (result != NMO_OK) return result;
 
@@ -1221,8 +1235,89 @@ static nmo_status_t nmo_behavior_serialize_internal(
         }
     }
 
+    if (data_version < 5u) {
+        if (in_state->has_save_flags ||
+            nmo_ref_serialized_id(&in_state->target_parameter) !=
+                NMO_OBJECT_ID_NONE) {
+            return NMO_ERR_VALIDATION_FAILED;
+        }
+        if ((in_state->flags & CKBEHAVIOR_BUILDINGBLOCK) != 0u &&
+            (in_state->sub_behaviors.count != 0u ||
+             in_state->sub_behavior_links.count != 0u ||
+             in_state->operations.count != 0u ||
+             in_state->in_parameters.count != 0u ||
+             in_state->out_parameters.count != 0u ||
+             in_state->local_parameters.count != 0u ||
+             in_state->inputs.count != 0u ||
+             in_state->outputs.count != 0u)) {
+            return NMO_ERR_VALIDATION_FAILED;
+        }
+
+        const uint32_t newdata_id = in_state->use_legacy_identifiers
+            ? CK_STATESAVE_BEHAVIORNEWDATA_LEGACY
+            : CK_STATESAVE_BEHAVIORNEWDATA;
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(
+            out_chunk, newdata_id));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_guid(
+            out_chunk, in_state->block_guid));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
+            out_chunk, in_state->flags));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
+            out_chunk, (uint32_t)in_state->compatible_class_id));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
+            out_chunk, in_state->behavior_type));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_int(
+            out_chunk, in_state->priority));
+        NMO_RETURN_IF_ERROR(nmo_ref_write(out_chunk, &in_state->owner));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
+            out_chunk,
+            (in_state->flags & CKBEHAVIOR_BUILDINGBLOCK) != 0u
+                ? in_state->block_version : 0u));
+
+        if ((in_state->flags & CKBEHAVIOR_BUILDINGBLOCK) == 0u) {
+            NMO_RETURN_IF_ERROR(nmo_behavior_write_ref_section(
+                out_chunk, CK_STATESAVE_BEHAVIORSUBBEHAV,
+                &in_state->sub_behaviors));
+            NMO_RETURN_IF_ERROR(nmo_behavior_write_ref_section(
+                out_chunk, CK_STATESAVE_BEHAVIORSUBLINKS,
+                &in_state->sub_behavior_links));
+            NMO_RETURN_IF_ERROR(nmo_behavior_write_ref_section(
+                out_chunk, CK_STATESAVE_BEHAVIOROPERATIONS,
+                &in_state->operations));
+            NMO_RETURN_IF_ERROR(nmo_behavior_write_ref_section(
+                out_chunk, CK_STATESAVE_BEHAVIORINPARAMS,
+                &in_state->in_parameters));
+            NMO_RETURN_IF_ERROR(nmo_behavior_write_ref_section(
+                out_chunk, CK_STATESAVE_BEHAVIORLOCALPARAMS,
+                &in_state->local_parameters));
+            NMO_RETURN_IF_ERROR(nmo_behavior_write_ref_section(
+                out_chunk, CK_STATESAVE_BEHAVIOROUTPARAMS,
+                &in_state->out_parameters));
+            NMO_RETURN_IF_ERROR(nmo_behavior_write_ref_section(
+                out_chunk, CK_STATESAVE_BEHAVIORINPUTS,
+                &in_state->inputs));
+            NMO_RETURN_IF_ERROR(nmo_behavior_write_ref_section(
+                out_chunk, CK_STATESAVE_BEHAVIOROUTPUTS,
+                &in_state->outputs));
+        }
+
+        if (in_state->has_single_activity) {
+            const uint32_t single_activity_id =
+                in_state->use_legacy_identifiers
+                    ? CK_STATESAVE_BEHAVIORSINGLEACTIVITY_LEGACY
+                    : CK_STATESAVE_BEHAVIORSINGLEACTIVITY;
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(
+                out_chunk, single_activity_id));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
+                out_chunk, in_state->single_activity_flags));
+        }
+        NMO_RETURN_OK();
+    }
+
     /* Main behavior data */
-    const uint32_t newdata_id = CK_STATESAVE_BEHAVIORNEWDATA;
+    const uint32_t newdata_id = in_state->use_legacy_identifiers
+        ? CK_STATESAVE_BEHAVIORNEWDATA_LEGACY
+        : CK_STATESAVE_BEHAVIORNEWDATA;
     result = nmo_chunk_write_identifier(out_chunk, newdata_id);
     if (result != NMO_OK) return result;
 

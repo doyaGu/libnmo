@@ -982,6 +982,144 @@ TEST(chunk_id_remap, behavior_unresolved_ref_round_trips_raw_id) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, behavior_legacy_file_layout_round_trips) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
+    ASSERT_NOT_NULL(arena);
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+
+    nmo_behavior_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_behavior_vtable.create(&source, NULL, NULL));
+    source.flags = CKBEHAVIOR_SCRIPT;
+    source.behavior_type = CKBEHAVIORTYPE_SCRIPT;
+    source.priority = 17;
+    source.compatible_class_id = NMO_CID_3DENTITY;
+    source.owner = nmo_ref_from_raw(710);
+    source.has_single_activity = true;
+    source.single_activity_flags = 0x12345678u;
+    nmo_behavior_ref_t sub_behavior = {
+        .ref = nmo_ref_from_raw(711),
+        .chunk = NULL,
+    };
+    nmo_behavior_ref_t input = {
+        .ref = nmo_ref_from_raw(712),
+        .chunk = NULL,
+    };
+    nmo_behavior_ref_t output = {
+        .ref = nmo_ref_from_raw(713),
+        .chunk = NULL,
+    };
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &source.sub_behaviors, &sub_behavior));
+    ASSERT_EQ(NMO_OK, nmo_array_append(&source.inputs, &input));
+    ASSERT_EQ(NMO_OK, nmo_array_append(&source.outputs, &output));
+
+    nmo_chunk_t *first = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(first);
+    first->class_id = NMO_CID_BEHAVIOR;
+    first->data_version = 4;
+    first->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_behavior_serialize(
+        &source, first, NULL, &serialize_context));
+    nmo_chunk_close(first);
+    size_t newdata_dwords = 0u;
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        first, CK_STATESAVE_BEHAVIORNEWDATA, &newdata_dwords));
+    ASSERT_EQ(8u, newdata_dwords);
+
+    nmo_behavior_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_behavior_vtable.create(&loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_behavior_deserialize(
+        &loaded, first, NULL, NULL));
+    ASSERT_EQ(source.flags, loaded.flags);
+    ASSERT_EQ(source.behavior_type, loaded.behavior_type);
+    ASSERT_EQ(source.priority, loaded.priority);
+    ASSERT_EQ(source.compatible_class_id, loaded.compatible_class_id);
+    ASSERT_EQ(710u, loaded.owner.raw_id);
+    ASSERT_EQ(1u, loaded.sub_behaviors.count);
+    ASSERT_EQ(711u, NMO_ARRAY_DATA(
+        nmo_behavior_ref_t, &loaded.sub_behaviors)[0].ref.raw_id);
+    ASSERT_EQ(712u, NMO_ARRAY_DATA(
+        nmo_behavior_ref_t, &loaded.inputs)[0].ref.raw_id);
+    ASSERT_EQ(713u, NMO_ARRAY_DATA(
+        nmo_behavior_ref_t, &loaded.outputs)[0].ref.raw_id);
+    ASSERT_TRUE(loaded.has_single_activity);
+    ASSERT_EQ(source.single_activity_flags,
+              loaded.single_activity_flags);
+
+    nmo_chunk_t *second = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(second);
+    second->class_id = NMO_CID_BEHAVIOR;
+    second->data_version = 4;
+    second->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_behavior_serialize(
+        &loaded, second, NULL, &serialize_context));
+    nmo_chunk_close(second);
+    nmo_behavior_state_t reloaded;
+    ASSERT_EQ(NMO_OK, nmo_behavior_vtable.create(&reloaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_behavior_deserialize(
+        &reloaded, second, NULL, NULL));
+    ASSERT_EQ(710u, reloaded.owner.raw_id);
+    ASSERT_EQ(711u, NMO_ARRAY_DATA(
+        nmo_behavior_ref_t, &reloaded.sub_behaviors)[0].ref.raw_id);
+    ASSERT_EQ(712u, NMO_ARRAY_DATA(
+        nmo_behavior_ref_t, &reloaded.inputs)[0].ref.raw_id);
+    ASSERT_EQ(713u, NMO_ARRAY_DATA(
+        nmo_behavior_ref_t, &reloaded.outputs)[0].ref.raw_id);
+
+    nmo_chunk_t *preserved = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(preserved);
+    preserved->class_id = NMO_CID_BEHAVIOR;
+    preserved->data_version = 4;
+    preserved->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(preserved));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(preserved, 0xBEEFBEEFu));
+    nmo_chunk_close(preserved);
+    loaded.target_parameter = nmo_ref_from_raw(714);
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_behavior_serialize(
+        &loaded, preserved, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(preserved));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(preserved));
+    uint32_t marker = 0u;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(preserved, &marker));
+    ASSERT_EQ(0xBEEFBEEFu, marker);
+    loaded.target_parameter = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+    loaded.has_save_flags = true;
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_behavior_serialize(
+        &loaded, preserved, NULL, &serialize_context));
+
+    nmo_behavior_state_t block;
+    ASSERT_EQ(NMO_OK, nmo_behavior_vtable.create(&block, NULL, NULL));
+    block.flags = CKBEHAVIOR_BUILDINGBLOCK;
+    block.block_guid = (nmo_guid_t){0x12345678u, 0x9ABCDEF0u};
+    block.block_version = 0x00010203u;
+    block.owner = nmo_ref_from_raw(715);
+    nmo_chunk_t *block_chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(block_chunk);
+    block_chunk->class_id = NMO_CID_BEHAVIOR;
+    block_chunk->data_version = 4;
+    block_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_behavior_serialize(
+        &block, block_chunk, NULL, &serialize_context));
+    nmo_chunk_close(block_chunk);
+    nmo_behavior_state_t block_loaded;
+    ASSERT_EQ(NMO_OK, nmo_behavior_vtable.create(
+        &block_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_behavior_deserialize(
+        &block_loaded, block_chunk, NULL, NULL));
+    ASSERT_EQ(block.flags, block_loaded.flags);
+    ASSERT_TRUE(nmo_guid_equals(block.block_guid, block_loaded.block_guid));
+    ASSERT_EQ(block.block_version, block_loaded.block_version);
+    ASSERT_EQ(715u, block_loaded.owner.raw_id);
+
+    nmo_behavior_vtable.destroy(&source, NULL, NULL);
+    nmo_behavior_vtable.destroy(&loaded, NULL, NULL);
+    nmo_behavior_vtable.destroy(&reloaded, NULL, NULL);
+    nmo_behavior_vtable.destroy(&block, NULL, NULL);
+    nmo_behavior_vtable.destroy(&block_loaded, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, behavior_sections_do_not_borrow_following_identifiers) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
     ASSERT_NOT_NULL(arena);
@@ -17492,6 +17630,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, ref_sequence_rejects_invalid_identifier_end);
     REGISTER_TEST(chunk_id_remap, unresolved_ref_preserves_raw_id);
     REGISTER_TEST(chunk_id_remap, behavior_unresolved_ref_round_trips_raw_id);
+    REGISTER_TEST(chunk_id_remap, behavior_legacy_file_layout_round_trips);
     REGISTER_TEST(chunk_id_remap, behavior_sections_do_not_borrow_following_identifiers);
     REGISTER_TEST(chunk_id_remap, behavior_non_file_reads_single_activity);
     REGISTER_TEST(chunk_id_remap, behavior_serializer_does_not_publish_partial_chunk);
