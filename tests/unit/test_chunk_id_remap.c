@@ -4461,6 +4461,23 @@ TEST(chunk_id_remap, target_camera_and_light_failures_are_atomic) {
     ASSERT_EQ(1u, camera.has_target);
     ASSERT_EQ(901u, camera.target.raw_id);
 
+    nmo_chunk_t *cross_camera = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(cross_camera);
+    cross_camera->class_id = NMO_CID_TARGETCAMERA;
+    cross_camera->data_version = 7;
+    cross_camera->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(cross_camera));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_camera, CK_STATESAVE_TCAMERATARGET));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_camera, 0x11223344u));
+    nmo_chunk_close(cross_camera);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_targetcamera_deserialize(
+        &camera, cross_camera, NULL, &deserialize_context));
+    ASSERT_EQ(8.0f, camera.base.fov);
+    ASSERT_EQ(1u, camera.has_target);
+    ASSERT_EQ(901u, camera.target.raw_id);
+
     nmo_chunk_t *truncated_light = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(truncated_light);
     truncated_light->class_id = NMO_CID_TARGETLIGHT;
@@ -4479,6 +4496,24 @@ TEST(chunk_id_remap, target_camera_and_light_failures_are_atomic) {
     light.target = nmo_ref_from_raw(902);
     ASSERT_NE(NMO_OK, nmo_targetlight_deserialize(
         &light, truncated_light, NULL, &deserialize_context));
+    ASSERT_EQ(0x123400u, light.base.flags);
+    ASSERT_EQ(9.0f, light.base.light_power);
+    ASSERT_EQ(1u, light.has_target);
+    ASSERT_EQ(902u, light.target.raw_id);
+
+    nmo_chunk_t *cross_light = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(cross_light);
+    cross_light->class_id = NMO_CID_TARGETLIGHT;
+    cross_light->data_version = 7;
+    cross_light->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(cross_light));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_light, CK_STATESAVE_TLIGHTTARGET));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_light, 0x55667788u));
+    nmo_chunk_close(cross_light);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_targetlight_deserialize(
+        &light, cross_light, NULL, &deserialize_context));
     ASSERT_EQ(0x123400u, light.base.flags);
     ASSERT_EQ(9.0f, light.base.light_power);
     ASSERT_EQ(1u, light.has_target);

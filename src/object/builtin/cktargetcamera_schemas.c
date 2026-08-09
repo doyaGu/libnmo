@@ -65,8 +65,11 @@ static nmo_status_t nmo_targetcamera_deserialize_internal(
     out_state->has_target = 0;
     out_state->target = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
 
-    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_TCAMERATARGET);
+    size_t section_dwords = 0;
+    result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_TCAMERATARGET, &section_dwords);
     if (result == NMO_OK) {
+        if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
         nmo_ref_t target = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         result = nmo_ref_read(chunk, &target);
         if (result != NMO_OK) {
