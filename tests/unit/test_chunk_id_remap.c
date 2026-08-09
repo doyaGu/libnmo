@@ -10485,6 +10485,28 @@ TEST(chunk_id_remap, synchro_refs_round_trip_and_failure_is_atomic) {
                         nmo_ref_t, &failed.passed_ids)[0].raw_id);
     ASSERT_EQ(NMO_CKOBJECT_HIERARCHICAL, failed.base.visibility_flags);
 
+    nmo_chunk_t *missing_waiter_counts = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(missing_waiter_counts);
+    missing_waiter_counts->class_id = NMO_CID_SYNCHRO;
+    missing_waiter_counts->data_version = 7;
+    missing_waiter_counts->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(missing_waiter_counts));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        missing_waiter_counts, CK_STATESAVE_SYNCHRODATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(missing_waiter_counts, 8));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        missing_waiter_counts, 0));
+    nmo_chunk_close(missing_waiter_counts);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_synchro_deserialize(
+        &failed, missing_waiter_counts, NULL, &deserialize_context));
+    ASSERT_EQ(99, failed.max_waiters);
+    ASSERT_EQ(1u, failed.arrived_ids.count);
+    ASSERT_EQ(1u, failed.passed_ids.count);
+    ASSERT_EQ(930u, NMO_ARRAY_DATA(
+                        nmo_ref_t, &failed.arrived_ids)[0].raw_id);
+    ASSERT_EQ(931u, NMO_ARRAY_DATA(
+                        nmo_ref_t, &failed.passed_ids)[0].raw_id);
+
     nmo_chunk_t *cross_section_waiters = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(cross_section_waiters);
     cross_section_waiters->class_id = NMO_CID_SYNCHRO;
@@ -10504,7 +10526,7 @@ TEST(chunk_id_remap, synchro_refs_round_trip_and_failure_is_atomic) {
     nmo_chunk_parser_state_t *parser =
         (nmo_chunk_parser_state_t *)cross_section_waiters->parser_state;
     ASSERT_NOT_NULL(parser);
-    ASSERT_EQ(parser->prev_identifier_pos + 4u, parser->current_pos);
+    ASSERT_EQ(parser->prev_identifier_pos + 2u, parser->current_pos);
     ASSERT_EQ(99, failed.max_waiters);
     ASSERT_EQ(1u, failed.arrived_ids.count);
     ASSERT_EQ(1u, failed.passed_ids.count);
@@ -10580,6 +10602,20 @@ TEST(chunk_id_remap, synchro_scalar_failures_keep_state_and_target_chunk_atomic)
     ASSERT_EQ(NMO_CKOBJECT_HIERARCHICAL, state.base.visibility_flags);
     ASSERT_EQ(42, state.event_flag);
 
+    nmo_chunk_t *cross_section_state = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(cross_section_state);
+    cross_section_state->class_id = NMO_CID_STATE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(cross_section_state));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_section_state, CK_STATESAVE_SYNCHRODATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_section_state, 0x11223344u));
+    nmo_chunk_close(cross_section_state);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_state_deserialize(
+        &state, cross_section_state, NULL, &deserialize_context));
+    ASSERT_EQ(NMO_CKOBJECT_HIERARCHICAL, state.base.visibility_flags);
+    ASSERT_EQ(42, state.event_flag);
+
     nmo_chunk_t *critical_chunk = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(critical_chunk);
     critical_chunk->class_id = NMO_CID_CRITICALSECTION;
@@ -10607,6 +10643,20 @@ TEST(chunk_id_remap, synchro_scalar_failures_keep_state_and_target_chunk_atomic)
         &critical, &critical_copy));
     ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_criticalsection_deserialize(
         &critical, critical_chunk, NULL, &deserialize_context));
+    ASSERT_EQ(NMO_CKOBJECT_HIERARCHICAL, critical.base.visibility_flags);
+    ASSERT_EQ(933u, critical.object_in_section.raw_id);
+
+    nmo_chunk_t *cross_section_critical = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(cross_section_critical);
+    cross_section_critical->class_id = NMO_CID_CRITICALSECTION;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(cross_section_critical));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_section_critical, CK_STATESAVE_SYNCHRODATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_section_critical, 0x55667788u));
+    nmo_chunk_close(cross_section_critical);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_criticalsection_deserialize(
+        &critical, cross_section_critical, NULL, &deserialize_context));
     ASSERT_EQ(NMO_CKOBJECT_HIERARCHICAL, critical.base.visibility_flags);
     ASSERT_EQ(933u, critical.object_in_section.raw_id);
 
