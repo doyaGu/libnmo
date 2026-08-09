@@ -6746,6 +6746,73 @@ TEST(chunk_id_remap, grid_failures_keep_state_and_target_chunk_atomic) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, grid_reserved_value_round_trips) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    chunk->class_id = NMO_CID_GRID;
+    chunk->data_version = 7;
+    chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        chunk, CK_STATESAVE_GRIDDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 12));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 34));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 0x12345678));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 5));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 6));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(chunk, 0));
+    nmo_chunk_close(chunk);
+
+    nmo_grid_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_grid_vtable.create(&loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_grid_deserialize(
+        &loaded, chunk, NULL, &deserialize_context));
+    ASSERT_EQ(0x12345678, loaded.reserved_value);
+
+    nmo_chunk_t *saved = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(saved);
+    saved->class_id = NMO_CID_GRID;
+    saved->data_version = 7;
+    saved->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_grid_serialize(
+        &loaded, saved, NULL, &serialize_context));
+    nmo_chunk_close(saved);
+    size_t section_dwords = 0u;
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        saved, CK_STATESAVE_GRIDDATA, &section_dwords));
+    ASSERT_EQ(7u, section_dwords);
+    int32_t value = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_int(saved, &value));
+    ASSERT_EQ(12, value);
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_int(saved, &value));
+    ASSERT_EQ(34, value);
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_int(saved, &value));
+    ASSERT_EQ(0x12345678, value);
+
+    nmo_grid_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_grid_vtable.create(&copied, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_grid_vtable.copy(
+        &loaded, &copied, NULL, arena));
+    ASSERT_EQ(0x12345678, copied.reserved_value);
+    ASSERT_TRUE(nmo_grid_vtable.equals(&loaded, &copied));
+    ASSERT_EQ(nmo_grid_vtable.hash(&loaded), nmo_grid_vtable.hash(&copied));
+    copied.reserved_value ^= 1;
+    ASSERT_FALSE(nmo_grid_vtable.equals(&loaded, &copied));
+
+    nmo_grid_vtable.destroy(&loaded, NULL, NULL);
+    nmo_grid_vtable.destroy(&copied, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, grid_copy_preserves_content_equality) {
     nmo_arena_t *source_arena = nmo_arena_create(NULL, 8192);
     nmo_arena_t *copy_arena = nmo_arena_create(NULL, 8192);
@@ -18700,6 +18767,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, layer_default_format_writes_empty_square_buffer);
     REGISTER_TEST(chunk_id_remap, layer_copy_preserves_content_equality);
     REGISTER_TEST(chunk_id_remap, grid_failures_keep_state_and_target_chunk_atomic);
+    REGISTER_TEST(chunk_id_remap, grid_reserved_value_round_trips);
     REGISTER_TEST(chunk_id_remap, grid_copy_preserves_content_equality);
     REGISTER_TEST(chunk_id_remap, sprite_shared_ref_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, sprite_raw_bitmap_payload_round_trips);

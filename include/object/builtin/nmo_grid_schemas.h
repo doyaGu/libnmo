@@ -35,6 +35,7 @@ typedef struct nmo_grid_state {
 
     int32_t width;
     int32_t length;
+    int32_t reserved_value;
     int32_t priority;
     uint32_t orientation_mode;
 

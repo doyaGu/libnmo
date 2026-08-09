@@ -135,10 +135,8 @@ static nmo_status_t nmo_grid_deserialize_internal(
 
     NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &out_state->width));
     NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &out_state->length));
-    {
-        int32_t reserved = 0;
-        NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &reserved));
-    }
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_int(
+        chunk, &out_state->reserved_value));
     NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &out_state->priority));
     NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->orientation_mode));
 
@@ -282,7 +280,8 @@ static nmo_status_t nmo_grid_serialize_internal(
 
     NMO_RETURN_IF_ERROR(nmo_chunk_write_int(out_chunk, in_state->width));
     NMO_RETURN_IF_ERROR(nmo_chunk_write_int(out_chunk, in_state->length));
-    NMO_RETURN_IF_ERROR(nmo_chunk_write_int(out_chunk, 0));
+    NMO_RETURN_IF_ERROR(nmo_chunk_write_int(
+        out_chunk, in_state->reserved_value));
     NMO_RETURN_IF_ERROR(nmo_chunk_write_int(out_chunk, in_state->priority));
     NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(out_chunk, in_state->orientation_mode));
 
@@ -340,6 +339,7 @@ static const nmo_type_field_t nmo_grid_fields[] = {
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_grid_state_t, width, CKPGUID_INT),
     NMO_FIELD(nmo_grid_state_t, length, CKPGUID_INT),
+    NMO_FIELD(nmo_grid_state_t, reserved_value, CKPGUID_INT),
     NMO_FIELD(nmo_grid_state_t, priority, CKPGUID_INT),
     NMO_FIELD(nmo_grid_state_t, orientation_mode, CKPGUID_UINT32),
     NMO_FIELD(nmo_grid_state_t, has_file_flag, CKPGUID_UINT8),
@@ -370,6 +370,7 @@ static nmo_status_t nmo_grid_copy(
 
     copied.width = s->width;
     copied.length = s->length;
+    copied.reserved_value = s->reserved_value;
     copied.priority = s->priority;
     copied.orientation_mode = s->orientation_mode;
     copied.has_grid_data = s->has_grid_data;
