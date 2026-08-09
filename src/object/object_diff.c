@@ -500,6 +500,20 @@ static bool reflected_instance_equal(
     bool use_refs,
     unsigned depth);
 
+static bool schema_instance_equal(
+    const nmo_type_descriptor_t *t1,
+    const void *instance1,
+    const nmo_type_descriptor_t *t2,
+    const void *instance2)
+{
+    return t1 != NULL && t2 != NULL && instance1 != NULL && instance2 != NULL &&
+        nmo_guid_equals(t1->guid, t2->guid) && t1->size == t2->size &&
+        t1->vtable != NULL && t2->vtable != NULL &&
+        t1->vtable->equals != NULL &&
+        t1->vtable->equals == t2->vtable->equals &&
+        t1->vtable->equals(instance1, instance2);
+}
+
 static bool repeated_equal(const nmo_type_descriptor_t *t1,
                            const void *instance1,
                            const nmo_type_field_t *f1,
@@ -717,6 +731,10 @@ static float similarity_core(const nmo_object_t *obj1, const nmo_object_t *obj2,
     const nmo_type_descriptor_t *t2 = resolve_object_type(reg2, obj2);
     const void *s1 = nmo_object_get_state(obj1);
     const void *s2 = nmo_object_get_state(obj2);
+
+    if (schema_instance_equal(t1, s1, t2, s2)) {
+        return 1.0f;
+    }
 
     if (t1 && t2 && s1 && s2 && nmo_type_has_reflection(t1) && nmo_type_has_reflection(t2)) {
         size_t total = 0, eq = 0;
@@ -1861,6 +1879,10 @@ static bool build_field_diffs(const nmo_object_t *obj1,
     const nmo_type_descriptor_t *t2 = resolve_object_type(s2->registry, obj2);
     const void *st1 = nmo_object_get_state(obj1);
     const void *st2 = nmo_object_get_state(obj2);
+
+    if (schema_instance_equal(t1, st1, t2, st2)) {
+        return true;
+    }
 
     size_t limit = max_fields == 0 ? SIZE_MAX : (size_t)max_fields;
     if (t1 && t2 && st1 && st2 && nmo_type_has_reflection(t1) && nmo_type_has_reflection(t2)) {

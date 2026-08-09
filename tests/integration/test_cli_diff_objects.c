@@ -27,6 +27,10 @@
 #define NMO_CLI_PATH "nmo"
 #endif
 
+#ifndef NMO_SOURCE_DIR
+#define NMO_SOURCE_DIR "."
+#endif
+
 static char *run_cli(const char *args) {
     char cmd[2048];
     snprintf(cmd, sizeof(cmd), "%s %s 2>&1", NMO_CLI_PATH, args);
@@ -214,8 +218,31 @@ TEST(cli_diff_objects, text_contains_renamed_section) {
     remove(f2);
 }
 
+TEST(cli_diff_objects, identical_dataarray_file_has_no_pointer_diffs) {
+    const char *fixture =
+        NMO_SOURCE_DIR "/data/Ballance/Language.nmo";
+    char args[2048];
+    snprintf(args, sizeof(args),
+             "diff objects \"%s\" \"%s\"", fixture, fixture);
+    yyjson_doc *doc = run_cli_json(args);
+    ASSERT_NOT_NULL(doc);
+
+    yyjson_val *data = json_data(doc);
+    ASSERT_NOT_NULL(data);
+    uint64_t object_count = yyjson_get_uint(
+        yyjson_obj_get(data, "objects_file1"));
+    ASSERT_TRUE(object_count > 0u);
+    ASSERT_EQ(0u, yyjson_get_uint(
+        yyjson_obj_get(data, "changed_count")));
+    ASSERT_EQ(object_count, yyjson_get_uint(
+        yyjson_obj_get(data, "identical_count")));
+
+    yyjson_doc_free(doc);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(cli_diff_objects, json_contains_renamed_fields);
     REGISTER_TEST(cli_diff_objects, text_contains_renamed_section);
+    REGISTER_TEST(cli_diff_objects, identical_dataarray_file_has_no_pointer_diffs);
 TEST_MAIN_END()
 
