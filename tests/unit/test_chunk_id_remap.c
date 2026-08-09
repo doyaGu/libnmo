@@ -3559,6 +3559,49 @@ TEST(chunk_id_remap, parameterin_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(1u, failed.is_shared);
     ASSERT_EQ(1u, failed.is_disabled);
 
+    const struct {
+        uint32_t identifier;
+        uint32_t data_version;
+        size_t payload_dwords;
+    } trailing_cases[] = {
+        {CK_STATESAVE_PARAMETERIN_DATASHARED, 8u, 3u},
+        {CK_STATESAVE_PARAMETERIN_DATASOURCE, 8u, 3u},
+        {CK_STATESAVE_PARAMETERIN_DATASHARED, 4u, 4u},
+        {CK_STATESAVE_PARAMETERIN_DATASOURCE, 4u, 4u},
+        {CK_STATESAVE_PARAMETERIN_DEFAULTDATA, 8u, 5u},
+        {CK_STATESAVE_PARAMETERIN_DEFAULTDATA, 0u, 2u},
+        {CK_STATESAVE_PARAMETERIN_OWNER, 0u, 1u},
+        {CK_STATESAVE_PARAMETERIN_INSHARED, 0u, 1u},
+        {CK_STATESAVE_PARAMETERIN_OUTSOURCE, 0u, 1u},
+        {CK_STATESAVE_PARAMETERIN_DISABLED, 8u, 0u},
+    };
+    for (size_t i = 0;
+         i < sizeof(trailing_cases) / sizeof(trailing_cases[0]); ++i) {
+        nmo_chunk_t *trailing = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(trailing);
+        trailing->class_id = NMO_CID_PARAMETERIN;
+        trailing->data_version = trailing_cases[i].data_version;
+        trailing->chunk_options |= NMO_CHUNK_OPTION_FILE;
+        ASSERT_EQ(NMO_OK, nmo_chunk_start_write(trailing));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+            trailing, trailing_cases[i].identifier));
+        for (size_t j = 0; j < trailing_cases[i].payload_dwords; ++j) {
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing, 0));
+        }
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing, 0x12345678u));
+        nmo_chunk_close(trailing);
+        nmo_chunk_set_file_context(trailing, &read_context);
+        ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_parameterin_deserialize(
+            &failed, trailing, NULL, &deserialize_context));
+        ASSERT_EQ(NMO_CKOBJECT_HIERARCHICAL, failed.base.visibility_flags);
+        ASSERT_EQ(7u, failed.type_guid.d1);
+        ASSERT_EQ(8u, failed.type_guid.d2);
+        ASSERT_EQ(901u, failed.source.raw_id);
+        ASSERT_EQ(902u, failed.owner.raw_id);
+        ASSERT_EQ(1u, failed.is_shared);
+        ASSERT_EQ(1u, failed.is_disabled);
+    }
+
     nmo_parameterin_state_t invalid;
     ASSERT_EQ(NMO_OK, nmo_parameterin_vtable.create(&invalid, NULL, NULL));
     invalid.type_guid = (nmo_guid_t){9u, 10u};

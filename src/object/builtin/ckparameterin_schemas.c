@@ -144,8 +144,12 @@ static nmo_status_t nmo_parameterin_deserialize_internal(
             chunk, CK_STATESAVE_PARAMETERIN_DATASHARED,
             &section_dwords);
         if (result == NMO_OK) {
-            if (section_dwords < (data_version < 5 ? 4u : 3u)) {
+            const size_t expected_dwords = data_version < 5 ? 4u : 3u;
+            if (section_dwords < expected_dwords) {
                 return NMO_ERR_TRUNCATED_CHUNK;
+            }
+            if (section_dwords > expected_dwords) {
+                return NMO_ERR_INVALID_FORMAT;
             }
             NMO_RETURN_IF_ERROR(nmo_chunk_read_guid(chunk, &type_guid));
             nmo_parameterin_convert_legacy_guid(&type_guid);
@@ -160,8 +164,12 @@ static nmo_status_t nmo_parameterin_deserialize_internal(
                 chunk, CK_STATESAVE_PARAMETERIN_DATASOURCE,
                 &section_dwords);
             if (result == NMO_OK) {
-                if (section_dwords < (data_version < 5 ? 4u : 3u)) {
+                const size_t expected_dwords = data_version < 5 ? 4u : 3u;
+                if (section_dwords < expected_dwords) {
                     return NMO_ERR_TRUNCATED_CHUNK;
+                }
+                if (section_dwords > expected_dwords) {
+                    return NMO_ERR_INVALID_FORMAT;
                 }
                 NMO_RETURN_IF_ERROR(nmo_chunk_read_guid(chunk, &type_guid));
                 nmo_parameterin_convert_legacy_guid(&type_guid);
@@ -177,6 +185,9 @@ static nmo_status_t nmo_parameterin_deserialize_internal(
                 if (result == NMO_OK) {
                     if (section_dwords < 5u) {
                         return NMO_ERR_TRUNCATED_CHUNK;
+                    }
+                    if (section_dwords > 5u) {
+                        return NMO_ERR_INVALID_FORMAT;
                     }
                     NMO_RETURN_IF_ERROR(nmo_chunk_read_guid(
                         chunk, &type_guid));
@@ -208,6 +219,7 @@ static nmo_status_t nmo_parameterin_deserialize_internal(
             &section_dwords);
         if (result == NMO_OK) {
             if (section_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
+            if (section_dwords > 2u) return NMO_ERR_INVALID_FORMAT;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_guid(chunk, &type_guid));
             nmo_parameterin_convert_legacy_guid(&type_guid);
         } else if (result != NMO_ERR_NOT_FOUND) return result;
@@ -215,6 +227,7 @@ static nmo_status_t nmo_parameterin_deserialize_internal(
             chunk, CK_STATESAVE_PARAMETERIN_OWNER, &section_dwords);
         if (result == NMO_OK) {
             if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+            if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
             NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &owner));
         } else if (result != NMO_ERR_NOT_FOUND) return result;
         result = nmo_chunk_seek_identifier_with_size(
@@ -222,6 +235,7 @@ static nmo_status_t nmo_parameterin_deserialize_internal(
             &section_dwords);
         if (result == NMO_OK) {
             if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+            if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
             NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &source));
             is_shared = 1;
         } else if (result != NMO_ERR_NOT_FOUND) return result;
@@ -231,15 +245,17 @@ static nmo_status_t nmo_parameterin_deserialize_internal(
                 &section_dwords);
             if (result == NMO_OK) {
                 if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+                if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
                 NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &source));
             } else if (result != NMO_ERR_NOT_FOUND) return result;
         }
     }
 
     /* Check if disabled */
-    result = nmo_chunk_seek_identifier(
-        chunk, CK_STATESAVE_PARAMETERIN_DISABLED);
+    result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_PARAMETERIN_DISABLED, &section_dwords);
     if (result == NMO_OK) {
+        if (section_dwords != 0u) return NMO_ERR_INVALID_FORMAT;
         is_disabled = 1;
     } else if (result != NMO_ERR_NOT_FOUND) return result;
 
