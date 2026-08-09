@@ -2450,6 +2450,104 @@ TEST(chunk_id_remap, material_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(899u, nmo_beobject_script_array_get_id(
         &failed.base.scripts, 0));
 
+    nmo_chunk_t *modern_cross_section = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(modern_cross_section);
+    modern_cross_section->class_id = NMO_CID_MATERIAL;
+    modern_cross_section->data_version = 8;
+    modern_cross_section->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(modern_cross_section));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        modern_cross_section, CK_STATESAVE_MATDATA));
+    for (size_t i = 0; i < 8; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(modern_cross_section, 0));
+    }
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        modern_cross_section, 0x01020304u));
+    nmo_chunk_close(modern_cross_section);
+    nmo_chunk_set_file_context(modern_cross_section, &read_context);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_material_deserialize(
+        &failed, modern_cross_section, NULL, &deserialize_context));
+    ASSERT_EQ(0xCAFEBABEu, failed.diffuse_color);
+    ASSERT_EQ(900u, failed.textures[0].raw_id);
+
+    nmo_chunk_t *legacy_cross_section = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(legacy_cross_section);
+    legacy_cross_section->class_id = NMO_CID_MATERIAL;
+    legacy_cross_section->data_version = 4;
+    legacy_cross_section->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(legacy_cross_section));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        legacy_cross_section, CK_STATESAVE_MATDATA));
+    for (size_t i = 0; i < 28; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(legacy_cross_section, 0));
+    }
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        legacy_cross_section, 0x01020304u));
+    nmo_chunk_close(legacy_cross_section);
+    nmo_chunk_set_file_context(legacy_cross_section, &read_context);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_material_deserialize(
+        &failed, legacy_cross_section, NULL, &deserialize_context));
+    ASSERT_EQ(0xCAFEBABEu, failed.diffuse_color);
+    ASSERT_EQ(900u, failed.textures[0].raw_id);
+
+    nmo_chunk_t *textures_cross_section = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(textures_cross_section);
+    textures_cross_section->class_id = NMO_CID_MATERIAL;
+    textures_cross_section->data_version = 8;
+    textures_cross_section->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(textures_cross_section));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        textures_cross_section, CK_STATESAVE_MATDATA2));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(
+        textures_cross_section, 800));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(
+        textures_cross_section, 801));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        textures_cross_section, 0x01020304u));
+    nmo_chunk_close(textures_cross_section);
+    nmo_chunk_set_file_context(textures_cross_section, &read_context);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_material_deserialize(
+        &failed, textures_cross_section, NULL, &deserialize_context));
+    ASSERT_EQ(900u, failed.textures[0].raw_id);
+    ASSERT_EQ(903u, failed.textures[3].raw_id);
+
+    nmo_chunk_t *effect_cross_section = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(effect_cross_section);
+    effect_cross_section->class_id = NMO_CID_MATERIAL;
+    effect_cross_section->data_version = 8;
+    effect_cross_section->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(effect_cross_section));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        effect_cross_section, CK_STATESAVE_MATDATA3));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        effect_cross_section, 0x01020304u));
+    nmo_chunk_close(effect_cross_section);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_material_deserialize(
+        &failed, effect_cross_section, NULL, &deserialize_context));
+    ASSERT_EQ(0xCAFEBABEu, failed.diffuse_color);
+    ASSERT_EQ(900u, failed.textures[0].raw_id);
+
+    nmo_chunk_t *effect_param_cross_section = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(effect_param_cross_section);
+    effect_param_cross_section->class_id = NMO_CID_MATERIAL;
+    effect_param_cross_section->data_version = 8;
+    effect_param_cross_section->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(effect_param_cross_section));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        effect_param_cross_section, CK_STATESAVE_MATDATA5));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(
+        effect_param_cross_section, 800));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        effect_param_cross_section, 0x01020304u));
+    nmo_chunk_close(effect_param_cross_section);
+    nmo_chunk_set_file_context(effect_param_cross_section, &read_context);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_material_deserialize(
+        &failed, effect_param_cross_section, NULL, &deserialize_context));
+    ASSERT_EQ(0xCAFEBABEu, failed.diffuse_color);
+    ASSERT_EQ(900u, failed.textures[0].raw_id);
+    ASSERT_EQ(899u, nmo_beobject_script_array_get_id(
+        &failed.base.scripts, 0));
+
     nmo_material_state_t invalid;
     ASSERT_EQ(NMO_OK, nmo_material_vtable.create(&invalid, NULL, NULL));
     invalid.textures[0] = nmo_ref_from_id(999);

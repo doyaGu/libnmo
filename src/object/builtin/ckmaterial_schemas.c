@@ -168,14 +168,16 @@ static nmo_status_t nmo_material_deserialize_internal(
     decoded.has_effect_param = 0;
     decoded.has_additional_textures = 0;
 
-    nmo_status_t seek_result = nmo_chunk_seek_identifier(
-        chunk, CK_STATESAVE_MATDATA);
+    size_t payload_dwords = 0;
+    nmo_status_t seek_result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_MATDATA, &payload_dwords);
     if (seek_result == NMO_OK) {
         decoded.has_material_data = 1;
         uint32_t data_version = nmo_chunk_get_data_version(chunk);
         decoded.material_data_is_legacy = data_version < 5u;
 
         if (data_version < 5) {
+            if (payload_dwords < 29u) return NMO_ERR_TRUNCATED_CHUNK;
             float r = 0.0f, g = 0.0f, b = 0.0f, a = 0.0f;
             float diffuse_a = 0.0f;
             nmo_color_t color;
@@ -295,6 +297,7 @@ static nmo_status_t nmo_material_deserialize_internal(
                 (((uint32_t)VXCMP_ALWAYS & 0xF) << 16) |
                 ((uint32_t)0 << 24);
         } else {
+            if (payload_dwords < 9u) return NMO_ERR_TRUNCATED_CHUNK;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(
                 chunk, &decoded.diffuse_color));
             NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(
@@ -331,23 +334,29 @@ static nmo_status_t nmo_material_deserialize_internal(
         }
     } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
-    seek_result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_MATDATA2);
+    seek_result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_MATDATA2, &payload_dwords);
     if (seek_result == NMO_OK) {
+        if (payload_dwords < 3u) return NMO_ERR_TRUNCATED_CHUNK;
         NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &decoded.textures[1]));
         NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &decoded.textures[2]));
         NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &decoded.textures[3]));
         decoded.has_additional_textures = 1;
     } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
-    seek_result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_MATDATA3);
+    seek_result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_MATDATA3, &payload_dwords);
     if (seek_result == NMO_OK) {
+        if (payload_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &decoded.effect));
         decoded.has_effect = 1;
         decoded.has_effect_param = 0;
     } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
-    seek_result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_MATDATA5);
+    seek_result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_MATDATA5, &payload_dwords);
     if (seek_result == NMO_OK) {
+        if (payload_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
         if (decoded.has_effect) {
             NMO_RETURN_ERROR(
                 NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
