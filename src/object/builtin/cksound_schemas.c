@@ -577,29 +577,62 @@ static nmo_status_t nmo_wavesound_serialize_internal(
                 NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(out_chunk, word));
             }
         } else {
+            const bool modern_layout =
+                nmo_chunk_get_data_version(out_chunk) >= 3u;
+            const bool write_3d_data = modern_layout ||
+                (in_state->state_flags & CK_WAVESOUND_ALLTYPE) !=
+                    CK_WAVESOUND_BACKGROUND;
             NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(out_chunk, in_state->state_flags));
             NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, in_state->priority));
-            NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, in_state->gain));
-            NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, in_state->pan));
-            NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, in_state->pitch));
+            if (!modern_layout) {
+                NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(out_chunk, 0u));
+                NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(out_chunk, 0u));
+            }
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
+                out_chunk, in_state->gain));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
+                out_chunk, in_state->pan));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
+                out_chunk, in_state->pitch));
 
             NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, 0.0f));
-            NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, 0.0f));
-            NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, 0.0f));
+            if (modern_layout) {
+                NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, 0.0f));
+                NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, 0.0f));
+            }
 
-            NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, in_state->cone_in_angle));
-            NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, in_state->cone_out_angle));
-            NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, in_state->cone_out_gain));
+            if (write_3d_data) {
+                if (!modern_layout) {
+                    NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
+                        out_chunk, 0.0f));
+                    NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
+                        out_chunk, 0.0f));
+                }
+                NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
+                    out_chunk, in_state->cone_in_angle));
+                NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
+                    out_chunk, in_state->cone_out_angle));
+                NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
+                    out_chunk, in_state->cone_out_gain));
 
-            NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, in_state->min_distance));
-            NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, in_state->max_distance));
-            NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(out_chunk, in_state->distance_behavior));
+                NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
+                    out_chunk, in_state->min_distance));
+                NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
+                    out_chunk, in_state->max_distance));
+                NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
+                    out_chunk, in_state->distance_behavior));
 
-            NMO_RETURN_IF_ERROR(nmo_ref_write(out_chunk, &in_state->attached_object));
-            NMO_RETURN_IF_ERROR(nmo_chunk_write_buffer(out_chunk, &in_state->position, sizeof(in_state->position)));
-            NMO_RETURN_IF_ERROR(nmo_chunk_write_buffer(out_chunk, &in_state->direction, sizeof(in_state->direction)));
+                NMO_RETURN_IF_ERROR(nmo_ref_write(
+                    out_chunk, &in_state->attached_object));
+                NMO_RETURN_IF_ERROR(nmo_chunk_write_buffer(
+                    out_chunk, &in_state->position,
+                    sizeof(in_state->position)));
+                NMO_RETURN_IF_ERROR(nmo_chunk_write_buffer(
+                    out_chunk, &in_state->direction,
+                    sizeof(in_state->direction)));
 
-            NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(out_chunk, 0));
+                NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(out_chunk, 0u));
+            }
         }
     }
 

@@ -8446,6 +8446,106 @@ TEST(chunk_id_remap, wavesound_legacy_data2_round_trips_unknown_words) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, wavesound_serializer_matches_version_two_layouts) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_id_remap_t *runtime_to_file = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(runtime_to_file);
+    nmo_chunk_file_context_t write_context = {
+        .runtime_to_file = runtime_to_file,
+    };
+
+    nmo_wavesound_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_wavesound_vtable.create(&source, NULL, NULL));
+    source.has_data2 = 1;
+    source.state_flags = CK_WAVESOUND_BACKGROUND;
+    source.priority = 0.25f;
+    source.gain = 0.5f;
+    source.pan = -0.75f;
+    source.pitch = 1.25f;
+    source.attached_object = nmo_ref_from_id(999u);
+
+    nmo_chunk_t *background = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(background);
+    background->class_id = NMO_CID_WAVESOUND;
+    background->data_version = 2;
+    background->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(background, &write_context);
+    ASSERT_EQ(NMO_OK, nmo_wavesound_serialize(
+        &source, background, NULL, NULL));
+    nmo_chunk_close(background);
+
+    size_t section_dwords = 0u;
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        background, CK_STATESAVE_WAVSOUNDDATA2, &section_dwords));
+    ASSERT_EQ(8u, section_dwords);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(background));
+    nmo_wavesound_state_t background_loaded;
+    ASSERT_EQ(NMO_OK, nmo_wavesound_vtable.create(
+        &background_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_wavesound_deserialize(
+        &background_loaded, background, NULL, NULL));
+    ASSERT_EQ(CK_WAVESOUND_BACKGROUND,
+              background_loaded.state_flags & CK_WAVESOUND_ALLTYPE);
+    ASSERT_EQ(0.25f, background_loaded.priority);
+    ASSERT_EQ(0.5f, background_loaded.gain);
+    ASSERT_EQ(-0.75f, background_loaded.pan);
+    ASSERT_EQ(1.25f, background_loaded.pitch);
+    ASSERT_EQ(NMO_OBJECT_ID_NONE,
+              background_loaded.attached_object.raw_id);
+
+    source.state_flags = CK_WAVESOUND_POINT;
+    source.cone_in_angle = 0.1f;
+    source.cone_out_angle = 0.2f;
+    source.cone_out_gain = 0.3f;
+    source.min_distance = 2.0f;
+    source.max_distance = 20.0f;
+    source.distance_behavior = 3u;
+    source.attached_object = nmo_ref_from_raw(701u);
+    source.position = (nmo_vector_t){1.0f, 2.0f, 3.0f};
+    source.direction = (nmo_vector_t){0.0f, 1.0f, 0.0f};
+
+    nmo_chunk_t *point = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(point);
+    point->class_id = NMO_CID_WAVESOUND;
+    point->data_version = 2;
+    point->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(point, &write_context);
+    ASSERT_EQ(NMO_OK, nmo_wavesound_serialize(
+        &source, point, NULL, NULL));
+    nmo_chunk_close(point);
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        point, CK_STATESAVE_WAVSOUNDDATA2, &section_dwords));
+    ASSERT_EQ(26u, section_dwords);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(point));
+
+    nmo_wavesound_state_t point_loaded;
+    ASSERT_EQ(NMO_OK, nmo_wavesound_vtable.create(
+        &point_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_wavesound_deserialize(
+        &point_loaded, point, NULL, NULL));
+    ASSERT_EQ(CK_WAVESOUND_POINT,
+              point_loaded.state_flags & CK_WAVESOUND_ALLTYPE);
+    ASSERT_EQ(0.1f, point_loaded.cone_in_angle);
+    ASSERT_EQ(0.2f, point_loaded.cone_out_angle);
+    ASSERT_EQ(0.3f, point_loaded.cone_out_gain);
+    ASSERT_EQ(2.0f, point_loaded.min_distance);
+    ASSERT_EQ(20.0f, point_loaded.max_distance);
+    ASSERT_EQ(3u, point_loaded.distance_behavior);
+    ASSERT_EQ(701u, point_loaded.attached_object.raw_id);
+    ASSERT_EQ(1.0f, point_loaded.position.x);
+    ASSERT_EQ(2.0f, point_loaded.position.y);
+    ASSERT_EQ(3.0f, point_loaded.position.z);
+    ASSERT_EQ(0.0f, point_loaded.direction.x);
+    ASSERT_EQ(1.0f, point_loaded.direction.y);
+    ASSERT_EQ(0.0f, point_loaded.direction.z);
+
+    nmo_wavesound_vtable.destroy(&source, NULL, NULL);
+    nmo_wavesound_vtable.destroy(&background_loaded, NULL, NULL);
+    nmo_wavesound_vtable.destroy(&point_loaded, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, sound_family_failures_keep_state_and_target_chunk_atomic) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
     ASSERT_NOT_NULL(arena);
@@ -17254,6 +17354,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, wavesound_unresolved_attachment_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, wavesound_data_stays_in_identifier_section);
     REGISTER_TEST(chunk_id_remap, wavesound_legacy_data2_round_trips_unknown_words);
+    REGISTER_TEST(chunk_id_remap, wavesound_serializer_matches_version_two_layouts);
     REGISTER_TEST(chunk_id_remap, sound_family_failures_keep_state_and_target_chunk_atomic);
     REGISTER_TEST(chunk_id_remap, sound_family_copy_preserves_inherited_and_string_state);
     REGISTER_TEST(chunk_id_remap, scalar_ref_sections_do_not_publish_truncated_state);
