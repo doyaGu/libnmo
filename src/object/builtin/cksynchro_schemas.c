@@ -21,20 +21,45 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
     synchro,
     nmo_synchro_state_t,
     do {
-        nmo_status_t result = nmo_array_init(&state->arrived_ids, sizeof(nmo_ref_t), 0, NULL);
+        nmo_status_t result = nmo_object_vtable.create(
+            &state->base, NULL, context);
         if (result != NMO_OK) return result;
+        result = nmo_array_init(
+            &state->arrived_ids, sizeof(nmo_ref_t), 0, NULL);
+        if (result != NMO_OK) {
+            nmo_object_vtable.destroy(&state->base, NULL, context);
+            return result;
+        }
         result = nmo_array_init(&state->passed_ids, sizeof(nmo_ref_t), 0, NULL);
         if (result != NMO_OK) {
             nmo_array_dispose(&state->arrived_ids);
+            nmo_object_vtable.destroy(&state->base, NULL, context);
             return result;
         }
     } while (0),
     do {
         nmo_array_dispose(&state->arrived_ids);
         nmo_array_dispose(&state->passed_ids);
+        nmo_object_vtable.destroy(&state->base, NULL, context);
     } while (0))
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(state, nmo_state_state_t)
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(criticalsection, nmo_criticalsection_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE(
+    state,
+    nmo_state_state_t,
+    do {
+        nmo_status_t result = nmo_object_vtable.create(
+            &state->base, NULL, context);
+        if (result != NMO_OK) return result;
+    } while (0),
+    nmo_object_vtable.destroy(&state->base, NULL, context))
+NMO_DEFINE_OBJECT_LIFECYCLE(
+    criticalsection,
+    nmo_criticalsection_state_t,
+    do {
+        nmo_status_t result = nmo_object_vtable.create(
+            &state->base, NULL, context);
+        if (result != NMO_OK) return result;
+    } while (0),
+    nmo_object_vtable.destroy(&state->base, NULL, context))
 
 static void nmo_synchro_dispose_arrays(nmo_synchro_state_t *state)
 {
@@ -49,7 +74,7 @@ static void nmo_synchro_dispose_arrays(nmo_synchro_state_t *state)
 
 static const nmo_type_field_t nmo_synchro_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_synchro_state_t, base),
-                    sizeof(nmo_object_state_t), CKPGUID_NONE,
+                    sizeof(nmo_object_state_t), CKPGUID_OBJECT,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_synchro_state_t, max_waiters, CKPGUID_INT),
     NMO_FIELD_REF_RECORD_ARRAY(nmo_synchro_state_t, arrived_ids),
@@ -58,14 +83,14 @@ static const nmo_type_field_t nmo_synchro_fields[] = {
 
 static const nmo_type_field_t nmo_state_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_state_state_t, base),
-                    sizeof(nmo_object_state_t), CKPGUID_NONE,
+                    sizeof(nmo_object_state_t), CKPGUID_OBJECT,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_state_state_t, event_flag, CKPGUID_INT)
 };
 
 static const nmo_type_field_t nmo_criticalsection_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_criticalsection_state_t, base),
-                    sizeof(nmo_object_state_t), CKPGUID_NONE,
+                    sizeof(nmo_object_state_t), CKPGUID_OBJECT,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD_REF(nmo_criticalsection_state_t, object_in_section)
 };
@@ -721,7 +746,7 @@ static nmo_status_t nmo_synchro_validate(
         (state->passed_ids.count > 0 && state->passed_ids.data == NULL)) {
         return NMO_ERR_VALIDATION_FAILED;
     }
-    return NMO_OK;
+    return nmo_object_vtable.validate(&state->base, NULL, context);
 }
 
 static bool nmo_synchro_ref_arrays_equal(
@@ -751,7 +776,7 @@ static bool nmo_synchro_equals(const void *a, const void *b)
         nmo_synchro_validate(sb, NULL, NULL) != NMO_OK) {
         return false;
     }
-    return sa->base.visibility_flags == sb->base.visibility_flags &&
+    return nmo_object_vtable.equals(&sa->base, &sb->base) &&
         sa->max_waiters == sb->max_waiters &&
         nmo_synchro_ref_arrays_equal(&sa->arrived_ids, &sb->arrived_ids) &&
         nmo_synchro_ref_arrays_equal(&sa->passed_ids, &sb->passed_ids);
@@ -772,8 +797,7 @@ static uint32_t nmo_synchro_hash(const void *instance)
     const nmo_synchro_state_t *state =
         (const nmo_synchro_state_t *)instance;
     if (nmo_synchro_validate(state, NULL, NULL) != NMO_OK) return 0;
-    uint32_t hash = 2166136261u;
-    hash = nmo_synchro_hash_u32(hash, state->base.visibility_flags);
+    uint32_t hash = nmo_object_vtable.hash(&state->base);
     hash = nmo_synchro_hash_u32(hash, (uint32_t)state->max_waiters);
     const nmo_array_t *arrays[] = {
         &state->arrived_ids, &state->passed_ids
@@ -792,8 +816,96 @@ static uint32_t nmo_synchro_hash(const void *instance)
     return hash;
 }
 
-NMO_DEFINE_OBJECT_STATE_OPS(state, nmo_state_state_t)
-NMO_DEFINE_OBJECT_STATE_OPS(criticalsection, nmo_criticalsection_state_t)
+static nmo_status_t nmo_state_copy(
+    const void *src,
+    void *dst,
+    const nmo_type_descriptor_t *type,
+    nmo_arena_t *arena)
+{
+    (void)type;
+    (void)arena;
+    if (src == NULL || dst == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    if (src != dst) *(nmo_state_state_t *)dst =
+        *(const nmo_state_state_t *)src;
+    return NMO_OK;
+}
+
+static nmo_status_t nmo_state_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    const nmo_state_state_t *state = instance;
+    return nmo_object_vtable.validate(&state->base, NULL, context);
+}
+
+static bool nmo_state_equals(const void *a, const void *b)
+{
+    if (a == b) return true;
+    if (a == NULL || b == NULL) return false;
+    const nmo_state_state_t *lhs = a;
+    const nmo_state_state_t *rhs = b;
+    return nmo_object_vtable.equals(&lhs->base, &rhs->base) &&
+        lhs->event_flag == rhs->event_flag;
+}
+
+static uint32_t nmo_state_hash(const void *instance)
+{
+    if (instance == NULL) return 0;
+    const nmo_state_state_t *state = instance;
+    return nmo_synchro_hash_u32(
+        nmo_object_vtable.hash(&state->base), (uint32_t)state->event_flag);
+}
+
+static nmo_status_t nmo_criticalsection_copy(
+    const void *src,
+    void *dst,
+    const nmo_type_descriptor_t *type,
+    nmo_arena_t *arena)
+{
+    (void)type;
+    (void)arena;
+    if (src == NULL || dst == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    if (src != dst) *(nmo_criticalsection_state_t *)dst =
+        *(const nmo_criticalsection_state_t *)src;
+    return NMO_OK;
+}
+
+static nmo_status_t nmo_criticalsection_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    const nmo_criticalsection_state_t *state = instance;
+    return nmo_object_vtable.validate(&state->base, NULL, context);
+}
+
+static bool nmo_criticalsection_equals(const void *a, const void *b)
+{
+    if (a == b) return true;
+    if (a == NULL || b == NULL) return false;
+    const nmo_criticalsection_state_t *lhs = a;
+    const nmo_criticalsection_state_t *rhs = b;
+    return nmo_object_vtable.equals(&lhs->base, &rhs->base) &&
+        lhs->object_in_section.raw_id == rhs->object_in_section.raw_id &&
+        lhs->object_in_section.id == rhs->object_in_section.id &&
+        lhs->object_in_section.state == rhs->object_in_section.state;
+}
+
+static uint32_t nmo_criticalsection_hash(const void *instance)
+{
+    if (instance == NULL) return 0;
+    const nmo_criticalsection_state_t *state = instance;
+    uint32_t hash = nmo_object_vtable.hash(&state->base);
+    hash = nmo_synchro_hash_u32(hash, state->object_in_section.raw_id);
+    hash = nmo_synchro_hash_u32(hash, state->object_in_section.id);
+    return nmo_synchro_hash_u32(
+        hash, (uint32_t)state->object_in_section.state);
+}
 
 nmo_type_vtable_t nmo_synchro_vtable = {
     .prepare_dependencies = nmo_synchro_prepare_dependencies,

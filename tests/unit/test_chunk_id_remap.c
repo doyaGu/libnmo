@@ -7138,6 +7138,7 @@ TEST(chunk_id_remap, synchro_refs_round_trip_and_failure_is_atomic) {
 
     nmo_synchro_state_t source;
     ASSERT_EQ(NMO_OK, nmo_synchro_vtable.create(&source, NULL, NULL));
+    ASSERT_EQ(NMO_CKOBJECT_VISIBLE, source.base.visibility_flags);
     source.max_waiters = 4;
     nmo_ref_t arrived = nmo_ref_from_raw(921);
     nmo_ref_t passed = nmo_ref_from_raw(922);
@@ -7310,8 +7311,18 @@ TEST(chunk_id_remap, synchro_scalar_failures_keep_state_and_target_chunk_atomic)
     nmo_chunk_close(state_chunk);
     nmo_state_state_t state;
     ASSERT_EQ(NMO_OK, nmo_state_vtable.create(&state, NULL, NULL));
-    state.base.visibility_flags = NMO_CKOBJECT_HIERARCHICAL;
+    ASSERT_EQ(NMO_CKOBJECT_VISIBLE, state.base.visibility_flags);
+    nmo_state_state_t state_copy;
+    ASSERT_EQ(NMO_OK, nmo_state_vtable.create(&state_copy, NULL, NULL));
     state.event_flag = 42;
+    ASSERT_EQ(NMO_OK, nmo_state_vtable.copy(
+        &state, &state_copy, NULL, NULL));
+    ASSERT_TRUE(nmo_state_vtable.equals(&state, &state_copy));
+    ASSERT_EQ(nmo_state_vtable.hash(&state),
+              nmo_state_vtable.hash(&state_copy));
+    state_copy.event_flag++;
+    ASSERT_FALSE(nmo_state_vtable.equals(&state, &state_copy));
+    state.base.visibility_flags = NMO_CKOBJECT_HIERARCHICAL;
     ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_state_deserialize(
         &state, state_chunk, NULL, &deserialize_context));
     ASSERT_EQ(NMO_CKOBJECT_HIERARCHICAL, state.base.visibility_flags);
@@ -7327,8 +7338,21 @@ TEST(chunk_id_remap, synchro_scalar_failures_keep_state_and_target_chunk_atomic)
     nmo_criticalsection_state_t critical;
     ASSERT_EQ(NMO_OK, nmo_criticalsection_vtable.create(
         &critical, NULL, NULL));
+    ASSERT_EQ(NMO_CKOBJECT_VISIBLE, critical.base.visibility_flags);
     critical.base.visibility_flags = NMO_CKOBJECT_HIERARCHICAL;
     critical.object_in_section = nmo_ref_from_raw(933);
+    nmo_criticalsection_state_t critical_copy;
+    ASSERT_EQ(NMO_OK, nmo_criticalsection_vtable.create(
+        &critical_copy, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_criticalsection_vtable.copy(
+        &critical, &critical_copy, NULL, NULL));
+    ASSERT_TRUE(nmo_criticalsection_vtable.equals(
+        &critical, &critical_copy));
+    ASSERT_EQ(nmo_criticalsection_vtable.hash(&critical),
+              nmo_criticalsection_vtable.hash(&critical_copy));
+    critical_copy.object_in_section.raw_id++;
+    ASSERT_FALSE(nmo_criticalsection_vtable.equals(
+        &critical, &critical_copy));
     ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_criticalsection_deserialize(
         &critical, critical_chunk, NULL, &deserialize_context));
     ASSERT_EQ(NMO_CKOBJECT_HIERARCHICAL, critical.base.visibility_flags);
@@ -7362,7 +7386,9 @@ TEST(chunk_id_remap, synchro_scalar_failures_keep_state_and_target_chunk_atomic)
     ASSERT_EQ(0x12345678u, marker);
 
     nmo_state_vtable.destroy(&state, NULL, NULL);
+    nmo_state_vtable.destroy(&state_copy, NULL, NULL);
     nmo_criticalsection_vtable.destroy(&critical, NULL, NULL);
+    nmo_criticalsection_vtable.destroy(&critical_copy, NULL, NULL);
     nmo_criticalsection_vtable.destroy(&invalid, NULL, NULL);
     nmo_arena_destroy(arena);
 }
