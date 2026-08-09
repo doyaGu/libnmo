@@ -4225,6 +4225,50 @@ TEST(chunk_id_remap, parameter_object_ref_round_trips_raw_id) {
     ASSERT_EQ(1u, failed.buffer_data.count);
     ASSERT_EQ(0xabu, NMO_ARRAY_DATA(uint8_t, &failed.buffer_data)[0]);
 
+    const struct {
+        nmo_guid_t type_guid;
+        uint32_t param_state;
+        size_t payload_dwords;
+    } trailing_cases[] = {
+        {CKPGUID_INT, 3u, 0u},
+        {CKPGUID_OBJECT, 2u, 1u},
+        {CKPGUID_INT, 0u, 1u},
+        {CKPGUID_INT, 1u, 1u},
+        {CKPGUID_PARAMETERTYPE, 1u, 2u},
+        {CKPGUID_INT, 4u, 2u},
+    };
+    for (size_t i = 0;
+         i < sizeof(trailing_cases) / sizeof(trailing_cases[0]); ++i) {
+        nmo_chunk_t *trailing = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(trailing);
+        trailing->class_id = NMO_CID_PARAMETER;
+        trailing->data_version = 8;
+        trailing->chunk_options |= NMO_CHUNK_OPTION_FILE;
+        ASSERT_EQ(NMO_OK, nmo_chunk_start_write(trailing));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+            trailing, 0x40u));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_guid(
+            trailing, trailing_cases[i].type_guid));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+            trailing, trailing_cases[i].param_state));
+        for (size_t j = 0; j < trailing_cases[i].payload_dwords; ++j) {
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing, 0));
+        }
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing, 0x12345678u));
+        nmo_chunk_close(trailing);
+        nmo_chunk_set_file_context(trailing, &read_context);
+        ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_parameter_deserialize(
+            &failed, trailing, NULL, &deserialize_context));
+        ASSERT_TRUE(nmo_guid_equals(CKPGUID_INT, failed.type_guid));
+        ASSERT_EQ(CKPARAM_MODE_BUFFER, failed.mode);
+        ASSERT_TRUE(failed.has_state);
+        ASSERT_EQ(702u, failed.object_ref.raw_id);
+        ASSERT_EQ(0x11223344u, failed.manager_guid.d1);
+        ASSERT_EQ(55u, failed.manager_value);
+        ASSERT_EQ(1u, failed.buffer_data.count);
+        ASSERT_EQ(0xabu, NMO_ARRAY_DATA(uint8_t, &failed.buffer_data)[0]);
+    }
+
     nmo_parameter_state_t invalid = source;
     invalid.object_ref = nmo_ref_from_id(999);
     nmo_chunk_t *target = nmo_chunk_create(arena);

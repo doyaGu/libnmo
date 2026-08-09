@@ -189,6 +189,9 @@ static nmo_status_t nmo_parameter_deserialize_internal(
     out_state->has_state = true;
 
     if (param_state == 3) {
+        if (nmo_chunk_get_position(chunk) < section_end) {
+            return NMO_ERR_INVALID_FORMAT;
+        }
         out_state->mode = CKPARAM_MODE_NONE;
         NMO_RETURN_OK();
     }
@@ -206,6 +209,10 @@ static nmo_status_t nmo_parameter_deserialize_internal(
             if (subchunk != NULL) nmo_chunk_destroy(subchunk);
             return NMO_ERR_TRUNCATED_CHUNK;
         }
+        if (nmo_chunk_get_position(chunk) < section_end) {
+            if (subchunk != NULL) nmo_chunk_destroy(subchunk);
+            return NMO_ERR_INVALID_FORMAT;
+        }
         out_state->mode = CKPARAM_MODE_SUBCHUNK;
         out_state->subchunk = subchunk;
         return NMO_OK;
@@ -221,6 +228,9 @@ static nmo_status_t nmo_parameter_deserialize_internal(
         if (nmo_chunk_get_position(chunk) > section_end) {
             return NMO_ERR_TRUNCATED_CHUNK;
         }
+        if (nmo_chunk_get_position(chunk) < section_end) {
+            return NMO_ERR_INVALID_FORMAT;
+        }
         out_state->mode = CKPARAM_MODE_OBJECT;
         out_state->object_ref = object_ref;
         NMO_RETURN_OK();
@@ -235,6 +245,9 @@ static nmo_status_t nmo_parameter_deserialize_internal(
             result = nmo_chunk_read_guid(chunk, &type_guid);
             if (result != NMO_OK) {
                 return result;
+            }
+            if (nmo_chunk_get_position(chunk) < section_end) {
+                return NMO_ERR_INVALID_FORMAT;
             }
             result = nmo_array_resize(
                 &out_state->buffer_data, sizeof(nmo_guid_t));
@@ -257,6 +270,9 @@ static nmo_status_t nmo_parameter_deserialize_internal(
         }
         if (nmo_chunk_get_position(chunk) > section_end) {
             return NMO_ERR_TRUNCATED_CHUNK;
+        }
+        if (nmo_chunk_get_position(chunk) < section_end) {
+            return NMO_ERR_INVALID_FORMAT;
         }
         if (buffer_size > 0) {
             result = nmo_array_resize(&out_state->buffer_data, buffer_size);
@@ -282,6 +298,9 @@ static nmo_status_t nmo_parameter_deserialize_internal(
     result = nmo_chunk_read_dword(chunk, &manager_value);
     if (result != NMO_OK) {
         return result;
+    }
+    if (nmo_chunk_get_position(chunk) < section_end) {
+        return NMO_ERR_INVALID_FORMAT;
     }
     out_state->mode = CKPARAM_MODE_MANAGER;
     out_state->manager_guid.d1 = param_state;
