@@ -386,8 +386,19 @@ static nmo_status_t ref_graph_build_object(
         return graph->build_status;
     }
     graph->current_object_id = nmo_object_get_id(object);
+    const size_t saved_edge_count = graph->edge_count;
+    const nmo_ref_graph_stats_t saved_stats = graph->stats;
     nmo_status_t status = nmo_ref_enumerate_object(
         graph->type_registry, object, ref_graph_visitor, graph);
+    if (graph->build_status != NMO_OK) {
+        return graph->build_status;
+    }
+    if (status == NMO_ERR_INVALID_ARGUMENT ||
+        status == NMO_ERR_VALIDATION_FAILED) {
+        graph->edge_count = saved_edge_count;
+        graph->stats = saved_stats;
+        return NMO_OK;
+    }
     if (status != NMO_OK) {
         graph->build_status = status;
         return status;

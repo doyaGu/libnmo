@@ -586,6 +586,59 @@ TEST(ref_query, dataarray_enumeration_validates_all_rows_first) {
     nmo_context_release(ctx);
 }
 
+TEST(ref_query, graph_skips_invalid_object_state) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_id_t target_id = 0;
+    nmo_object_id_t group_id = 0;
+    nmo_object_id_t dataarray_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_OBJECT, "target", NMO_NULL_GUID,
+        &target_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_GROUP, "group", NMO_NULL_GUID,
+        &group_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_DATAARRAY, "invalid-array", NMO_NULL_GUID,
+        &dataarray_id, NULL));
+    set_group_members(session, group_id, &target_id, 1u);
+
+    nmo_object_t *dataarray_object =
+        nmo_object_repository_find_by_id(repo, dataarray_id);
+    ASSERT_NOT_NULL(dataarray_object);
+    nmo_dataarray_state_t *dataarray =
+        (nmo_dataarray_state_t *)dataarray_object->state;
+    ASSERT_NOT_NULL(dataarray);
+    dataarray->column_count = 1u;
+    dataarray->row_count = 1u;
+    dataarray->column_formats = NULL;
+    dataarray->rows = NULL;
+
+    nmo_session_invalidate_ref_graph(session);
+    nmo_ref_graph_t *graph = nmo_session_get_ref_graph(session);
+    ASSERT_NOT_NULL(graph);
+
+    nmo_ref_edge_t *edges = NULL;
+    size_t edge_count = 0;
+    ASSERT_EQ(NMO_OK, nmo_ref_graph_get_object_edges(
+        graph, group_id, NMO_REF_DIR_OUTGOING, &edges, &edge_count));
+    ASSERT_EQ(1u, edge_count);
+    ASSERT_EQ(target_id, edges[0].to);
+    ASSERT_EQ(NMO_OK, nmo_ref_graph_get_object_edges(
+        graph, dataarray_id, NMO_REF_DIR_OUTGOING, &edges, &edge_count));
+    ASSERT_EQ(0u, edge_count);
+
+    dataarray->column_count = 0u;
+    dataarray->row_count = 0u;
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(ref_query, grid_enumeration_rejects_invalid_empty_layer_storage) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
@@ -710,6 +763,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(ref_query, scene_enumeration_rejects_malformed_descriptors);
     REGISTER_TEST(ref_query, behavior_enumeration_rejects_malformed_reference_lanes);
     REGISTER_TEST(ref_query, dataarray_enumeration_validates_all_rows_first);
+    REGISTER_TEST(ref_query, graph_skips_invalid_object_state);
     REGISTER_TEST(ref_query, grid_enumeration_rejects_invalid_empty_layer_storage);
     REGISTER_TEST(ref_query, legacy_beobject_attribute_reference_is_enumerated);
     REGISTER_TEST(ref_query, character_part_reference_is_enumerated);
