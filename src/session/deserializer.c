@@ -1109,8 +1109,12 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
         memset(&deser_stats, 0, sizeof(deser_stats));
         nmo_reference_resolver_t *reference_resolver = nmo_session_ensure_reference_resolver(session);
         if (reference_resolver == NULL) {
-            nmo_log(logger, NMO_LOG_WARN,
-                    "  Failed to create session reference resolver; continuing without registration");
+            nmo_log(logger, NMO_LOG_ERROR,
+                    "  Failed to create session reference resolver");
+            nmo_id_mapping_end(id_map);
+            nmo_id_mapping_destroy(id_map);
+            ds->id_mapping = NULL;
+            return NMO_ERR_NOMEM;
         }
 
         uint64_t object_deser_start = load_perf_begin(ds);
