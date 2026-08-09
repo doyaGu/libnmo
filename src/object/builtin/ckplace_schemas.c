@@ -100,6 +100,7 @@ static nmo_status_t nmo_place_deserialize_internal(
         chunk, CK_STATESAVE_PLACECAMERA, &section_dwords);
     if (result == NMO_OK) {
         if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+        if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
         nmo_ref_t camera = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &camera));
         nmo_ref_check_class(
@@ -116,6 +117,7 @@ static nmo_status_t nmo_place_deserialize_internal(
         chunk, CK_STATESAVE_PLACELEVEL, &section_dwords);
     if (result == NMO_OK) {
         if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+        if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
         nmo_ref_t level = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &level));
         nmo_ref_check_class(
@@ -132,6 +134,8 @@ static nmo_status_t nmo_place_deserialize_internal(
         chunk, CK_STATESAVE_PLACEPORTALS, &section_dwords);
     if (result == NMO_OK) {
         if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+        const size_t section_end =
+            nmo_chunk_get_position(chunk) + section_dwords;
         int32_t count = 0;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &count));
         if (count < 0) return NMO_ERR_INVALID_FORMAT;
@@ -171,6 +175,10 @@ static nmo_status_t nmo_place_deserialize_internal(
             nmo_array_dispose(&portals);
             return result;
         }
+        if (nmo_chunk_get_position(chunk) != section_end) {
+            nmo_array_dispose(&portals);
+            return NMO_ERR_INVALID_FORMAT;
+        }
         NMO_RETURN_IF_ERROR(nmo_array_swap(&out_state->portals, &portals));
         nmo_array_dispose(&portals);
     } else if (result != NMO_ERR_NOT_FOUND) return result;
@@ -179,11 +187,16 @@ static nmo_status_t nmo_place_deserialize_internal(
         chunk, CK_STATESAVE_PLACEREFERENCES, &section_dwords);
     if (result == NMO_OK) {
         if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+        const size_t section_end =
+            nmo_chunk_get_position(chunk) + section_dwords;
         nmo_ref_t *refs = NULL;
         size_t count = 0;
         nmo_status_t result = nmo_ref_read_sequence(
             chunk, &refs, &count, arena);
         if (result != NMO_OK) return result;
+        if (nmo_chunk_get_position(chunk) != section_end) {
+            return NMO_ERR_INVALID_FORMAT;
+        }
         nmo_array_t references = {0};
         const nmo_allocator_t *allocator =
             out_state->references.allocator.alloc != NULL

@@ -9687,6 +9687,26 @@ TEST(chunk_id_remap, place_refs_round_trip_and_truncation_is_atomic) {
     ASSERT_EQ(899u, nmo_beobject_script_array_get_id(
         &failed.base.base.base.scripts, 0));
 
+    nmo_chunk_t *references_trailing_payload = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(references_trailing_payload);
+    references_trailing_payload->class_id = NMO_CID_PLACE;
+    references_trailing_payload->data_version = 7;
+    references_trailing_payload->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(
+        references_trailing_payload));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        references_trailing_payload, CK_STATESAVE_PLACEREFERENCES));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(
+        references_trailing_payload, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        references_trailing_payload, 0x12345678u));
+    nmo_chunk_close(references_trailing_payload);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_place_deserialize(
+        &failed, references_trailing_payload, NULL, &deserialize_context));
+    ASSERT_EQ(1u, failed.references.count);
+    ASSERT_EQ(807u, NMO_ARRAY_DATA(
+        nmo_ref_t, &failed.references)[0].raw_id);
+
     nmo_chunk_t *truncated_camera = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(truncated_camera);
     truncated_camera->class_id = NMO_CID_PLACE;
@@ -9719,6 +9739,25 @@ TEST(chunk_id_remap, place_refs_round_trip_and_truncation_is_atomic) {
     nmo_chunk_close(cross_section_camera);
     ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_place_deserialize(
         &failed_camera, cross_section_camera, NULL, &deserialize_context));
+    ASSERT_TRUE(failed_camera.has_camera);
+    ASSERT_EQ(808u, failed_camera.camera.raw_id);
+
+    nmo_chunk_t *camera_trailing_payload = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(camera_trailing_payload);
+    camera_trailing_payload->class_id = NMO_CID_PLACE;
+    camera_trailing_payload->data_version = 7;
+    camera_trailing_payload->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(camera_trailing_payload));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        camera_trailing_payload, CK_STATESAVE_PLACECAMERA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(
+        camera_trailing_payload, 801));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        camera_trailing_payload, 0x12345678u));
+    nmo_chunk_close(camera_trailing_payload);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_place_deserialize(
+        &failed_camera, camera_trailing_payload, NULL,
+        &deserialize_context));
     ASSERT_TRUE(failed_camera.has_camera);
     ASSERT_EQ(808u, failed_camera.camera.raw_id);
 
@@ -9765,6 +9804,26 @@ TEST(chunk_id_remap, place_refs_round_trip_and_truncation_is_atomic) {
         nmo_place_portal_entry_t, &failed_portal.portals)[0].place.raw_id);
     ASSERT_EQ(810u, NMO_ARRAY_DATA(
         nmo_place_portal_entry_t, &failed_portal.portals)[0].portal.raw_id);
+
+    nmo_chunk_t *portal_trailing_payload = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(portal_trailing_payload);
+    portal_trailing_payload->class_id = NMO_CID_PLACE;
+    portal_trailing_payload->data_version = 7;
+    portal_trailing_payload->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(portal_trailing_payload));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        portal_trailing_payload, CK_STATESAVE_PLACEPORTALS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(portal_trailing_payload, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        portal_trailing_payload, 0x12345678u));
+    nmo_chunk_close(portal_trailing_payload);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_place_deserialize(
+        &failed_portal, portal_trailing_payload, NULL,
+        &deserialize_context));
+    ASSERT_EQ(1u, failed_portal.portals.count);
+    ASSERT_EQ(809u, NMO_ARRAY_DATA(
+        nmo_place_portal_entry_t,
+        &failed_portal.portals)[0].place.raw_id);
 
     nmo_chunk_t *cross_section_portal = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(cross_section_portal);
