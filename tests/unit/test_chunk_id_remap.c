@@ -6849,6 +6849,32 @@ TEST(chunk_id_remap, place_refs_round_trip_and_truncation_is_atomic) {
     ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(target, &marker));
     ASSERT_EQ(0x12345678u, marker);
 
+    nmo_place_state_t oversized;
+    ASSERT_EQ(NMO_OK, nmo_place_vtable.create(
+        &oversized, NULL, NULL));
+    nmo_place_portal_entry_t oversized_portal = {0};
+    oversized.portals.data = &oversized_portal;
+    oversized.portals.count = (size_t)INT32_MAX + 1u;
+    oversized.portals.capacity = oversized.portals.count;
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_place_serialize(
+        &oversized, target, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
+    oversized.portals.data = NULL;
+    oversized.portals.count = 0;
+    oversized.portals.capacity = 0;
+
+    nmo_ref_t oversized_reference = nmo_ref_from_raw(816);
+    oversized.references.data = &oversized_reference;
+    oversized.references.count = (size_t)INT32_MAX + 1u;
+    oversized.references.capacity = oversized.references.count;
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_place_vtable.copy(
+        &oversized, &copy_failed, &place_type, arena));
+    ASSERT_EQ(0x12345678u, copy_failed.base.entity_flags);
+    ASSERT_EQ(previous_references, copy_failed.references.data);
+    oversized.references.data = NULL;
+    oversized.references.count = 0;
+    oversized.references.capacity = 0;
+
     nmo_place_vtable.destroy(&source, NULL, NULL);
     nmo_place_vtable.destroy(&loaded, NULL, NULL);
     nmo_place_vtable.destroy(&reloaded, NULL, NULL);
@@ -6858,6 +6884,7 @@ TEST(chunk_id_remap, place_refs_round_trip_and_truncation_is_atomic) {
     nmo_place_vtable.destroy(&failed_camera, NULL, NULL);
     nmo_place_vtable.destroy(&failed_portal, NULL, NULL);
     nmo_place_vtable.destroy(&invalid, NULL, NULL);
+    nmo_place_vtable.destroy(&oversized, NULL, NULL);
     nmo_arena_destroy(arena);
 }
 

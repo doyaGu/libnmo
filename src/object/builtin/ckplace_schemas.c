@@ -358,15 +358,18 @@ static nmo_status_t nmo_place_validate(
     void *context)
 {
     (void)type;
-    (void)context;
     const nmo_place_state_t *s = instance;
     if (s == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    NMO_RETURN_IF_ERROR(nmo_3dentity_vtable.validate(
+        &s->base, NULL, context));
     NMO_VALIDATE_COUNT(s->portals.data, s->portals.count, "portals");
     NMO_VALIDATE_COUNT(s->references.data, s->references.count, "references");
-    if (s->portals.element_size != sizeof(nmo_place_portal_entry_t)) {
+    if (s->portals.element_size != sizeof(nmo_place_portal_entry_t) ||
+        s->portals.count > INT32_MAX) {
         return NMO_ERR_VALIDATION_FAILED;
     }
-    if (s->references.element_size != sizeof(nmo_ref_t)) {
+    if (s->references.element_size != sizeof(nmo_ref_t) ||
+        s->references.count > INT32_MAX) {
         return NMO_ERR_VALIDATION_FAILED;
     }
     NMO_RETURN_OK();
