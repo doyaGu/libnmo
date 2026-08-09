@@ -804,6 +804,30 @@ static nmo_class_id_t normalize_expected_class_for_typed_field(
             return NMO_CID_3DENTITY;
         }
     }
+    if (type != NULL && field != NULL && field->name != NULL) {
+        if (nmo_guid_equals(type->guid, CKPGUID_GROUP) &&
+            strcmp(field->name, "object_ids") == 0) {
+            return NMO_CID_BEOBJECT;
+        }
+        if (nmo_guid_equals(type->guid, CKPGUID_PLACE) &&
+            strcmp(field->name, "references") == 0) {
+            return NMO_CID_3DENTITY;
+        }
+        if (nmo_guid_equals(type->guid, CKPGUID_SYNCHRO) &&
+            (strcmp(field->name, "arrived_ids") == 0 ||
+             strcmp(field->name, "passed_ids") == 0)) {
+            return NMO_CID_BEOBJECT;
+        }
+        if (nmo_guid_equals(type->guid, CKPGUID_CRITICALSECTION) &&
+            strcmp(field->name, "object_in_section") == 0) {
+            return NMO_CID_BEOBJECT;
+        }
+        if (nmo_guid_equals(type->guid, CKPGUID_KINEMATICCHAIN) &&
+            (strcmp(field->name, "start_effector") == 0 ||
+             strcmp(field->name, "end_effector") == 0)) {
+            return NMO_CID_BODYPART;
+        }
+    }
     if (type != NULL && field != NULL && field->name != NULL &&
         strcmp(field->name, "parent") == 0) {
         if (nmo_guid_equals(type->guid, CKPGUID_2DENTITY)) {
@@ -939,6 +963,7 @@ static nmo_status_t normalize_beobject_attributes(
 static nmo_status_t normalize_grid_layers(
     nmo_grid_state_t *state,
     nmo_object_repository_t *repo,
+    const nmo_type_registry_t *types,
     size_t *changes)
 {
     if (!state) return NMO_OK;
@@ -950,7 +975,9 @@ static nmo_status_t normalize_grid_layers(
         nmo_grid_layer_t *layers = NMO_ARRAY_DATA(nmo_grid_layer_t, &state->layers);
         const nmo_ref_t *ref = &layers[i].ref;
         bool invalid = ref->state != NMO_REF_RESOLVED ||
-                       normalize_id_is_invalid(repo, ref->id);
+                       normalize_id_is_invalid(repo, ref->id) ||
+                       normalize_id_has_wrong_class(
+                           repo, types, ref->id, NMO_CID_LAYER);
         if (!invalid) {
             ++i;
             continue;
@@ -996,6 +1023,7 @@ static nmo_status_t normalize_character_parts(
 static nmo_status_t normalize_scene_objects(
     nmo_scene_state_t *state,
     nmo_object_repository_t *repo,
+    const nmo_type_registry_t *types,
     size_t *changes)
 {
     if (state == NULL) return NMO_OK;
@@ -1008,7 +1036,9 @@ static nmo_status_t normalize_scene_objects(
             nmo_scene_object_desc_t, &state->object_descs);
         const nmo_object_id_t id = nmo_ref_runtime_id(&descs[i].ref);
         if (descs[i].ref.state == NMO_REF_RESOLVED &&
-            !normalize_id_is_invalid(repo, id)) {
+            !normalize_id_is_invalid(repo, id) &&
+            !normalize_id_has_wrong_class(
+                repo, types, id, NMO_CID_SCENEOBJECT)) {
             ++i;
             continue;
         }
@@ -1590,12 +1620,13 @@ nmo_status_t nmo_runtime_normalize_invalid_refs(
         nmo_grid_state_t *grid = (nmo_grid_state_t *)
             nmo_type_query_object_get_ancestor_state_by_guid(
                 type_rt->types, obj, CKPGUID_GRID);
-        NMO_RETURN_IF_ERROR(normalize_grid_layers(grid, repo, &changed));
+        NMO_RETURN_IF_ERROR(normalize_grid_layers(
+            grid, repo, type_rt->types, &changed));
         nmo_scene_state_t *scene = (nmo_scene_state_t *)
             nmo_type_query_object_get_ancestor_state_by_guid(
                 type_rt->types, obj, CKPGUID_SCENE);
         NMO_RETURN_IF_ERROR(normalize_scene_objects(
-            scene, repo, &changed));
+            scene, repo, type_rt->types, &changed));
         nmo_patchmesh_state_t *patchmesh = (nmo_patchmesh_state_t *)
             nmo_type_query_object_get_ancestor_state_by_guid(
                 type_rt->types, obj, CKPGUID_PATCHMESH);

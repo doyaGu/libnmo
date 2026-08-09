@@ -29,6 +29,7 @@
 #include "object/builtin/nmo_patchmesh_schemas.h"
 #include "object/builtin/nmo_place_schemas.h"
 #include "object/builtin/nmo_interfaceobjectmanager_schemas.h"
+#include "object/builtin/nmo_kinematicchain_schemas.h"
 #include "object/builtin/nmo_light_schemas.h"
 #include "object/builtin/nmo_level_schemas.h"
 #include "object/builtin/nmo_messagemanager_schemas.h"
@@ -1159,11 +1160,12 @@ TEST(runtime_kernel, normalize_removes_only_invalid_reference_records) {
     nmo_object_id_t valid_a = 0, valid_b = 0, behavior_id = 0, group_id = 0;
     nmo_object_id_t valid_behavior_a = 0, valid_behavior_b = 0;
     nmo_object_id_t valid_io_a = 0, valid_io_b = 0;
-    nmo_object_id_t grid_id = 0;
+    nmo_object_id_t grid_id = 0, valid_layer_id = 0;
     nmo_object_id_t keyed_id = 0;
     nmo_object_id_t valid_animation_a = 0, valid_animation_b = 0;
     nmo_object_id_t valid_parameter = 0, valid_parameter_in = 0;
     nmo_object_id_t parameter_out_id = 0;
+    nmo_object_id_t valid_beobject_a = 0, valid_beobject_b = 0;
     nmo_object_id_t entity3d_id = 0, valid_mesh = 0;
     nmo_object_id_t synchro_id = 0;
     ASSERT_EQ(NMO_OK, nmo_session_create_object(
@@ -1190,6 +1192,9 @@ TEST(runtime_kernel, normalize_removes_only_invalid_reference_records) {
     ASSERT_EQ(NMO_OK, nmo_session_create_object(
         session, NMO_CID_GRID, "grid", (nmo_guid_t){0, 0}, &grid_id, NULL));
     ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_LAYER, "layer", (nmo_guid_t){0, 0},
+        &valid_layer_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
         session, NMO_CID_KEYEDANIMATION, "keyed", (nmo_guid_t){0, 0},
         &keyed_id, NULL));
     ASSERT_EQ(NMO_OK, nmo_session_create_object(
@@ -1207,6 +1212,12 @@ TEST(runtime_kernel, normalize_removes_only_invalid_reference_records) {
     ASSERT_EQ(NMO_OK, nmo_session_create_object(
         session, NMO_CID_PARAMETEROUT, "parameter-out", (nmo_guid_t){0, 0},
         &parameter_out_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_MATERIAL, "beobject-a", (nmo_guid_t){0, 0},
+        &valid_beobject_a, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_MATERIAL, "beobject-b", (nmo_guid_t){0, 0},
+        &valid_beobject_b, NULL));
     ASSERT_EQ(NMO_OK, nmo_session_create_object(
         session, NMO_CID_3DENTITY, "entity", (nmo_guid_t){0, 0},
         &entity3d_id, NULL));
@@ -1335,15 +1346,17 @@ TEST(runtime_kernel, normalize_removes_only_invalid_reference_records) {
         &group->base.legacy_attributes, legacy_attributes, 4));
     group->base.has_legacy_attributes = 1;
     nmo_grid_layer_t valid_layer = {
-        .ref = {.raw_id = valid_a, .id = valid_a, .state = NMO_REF_RESOLVED},
+        .ref = {.raw_id = valid_layer_id,
+                .id = valid_layer_id,
+                .state = NMO_REF_RESOLVED},
     };
     nmo_grid_layer_t invalid_layer = {
         .ref = {.raw_id = invalid, .id = 0, .state = NMO_REF_UNRESOLVED},
     };
     ASSERT_EQ(NMO_OK, nmo_array_append(&grid->layers, &valid_layer));
     ASSERT_EQ(NMO_OK, nmo_array_append(&grid->layers, &invalid_layer));
-    nmo_ref_t valid_ref_a = nmo_ref_from_id(valid_a);
-    nmo_ref_t valid_ref_b = nmo_ref_from_id(valid_b);
+    nmo_ref_t valid_ref_a = nmo_ref_from_id(valid_beobject_a);
+    nmo_ref_t valid_ref_b = nmo_ref_from_id(valid_beobject_b);
     nmo_ref_t invalid_ref = nmo_ref_from_raw(invalid);
     ASSERT_EQ(NMO_OK, nmo_array_append(&synchro->arrived_ids, &valid_ref_a));
     ASSERT_EQ(NMO_OK, nmo_array_append(&synchro->arrived_ids, &invalid_ref));
@@ -1389,7 +1402,7 @@ TEST(runtime_kernel, normalize_removes_only_invalid_reference_records) {
     ASSERT_STR_EQ("valid-a", normalized_legacy[0].name);
     ASSERT_EQ(1, (int)grid->layers.count);
     nmo_grid_layer_t *layers = NMO_ARRAY_DATA(nmo_grid_layer_t, &grid->layers);
-    ASSERT_EQ(valid_a, layers[0].ref.id);
+    ASSERT_EQ(valid_layer_id, layers[0].ref.id);
     ASSERT_EQ(2, (int)keyed->animation_count);
     ASSERT_EQ(2, (int)keyed->subanim_count);
     ASSERT_EQ(valid_animation_a,
@@ -1408,14 +1421,14 @@ TEST(runtime_kernel, normalize_removes_only_invalid_reference_records) {
     ASSERT_EQ(valid_animation_b,
               nmo_ref_runtime_id(&entity3d->animation_ids[1]));
     ASSERT_EQ(2u, synchro->arrived_ids.count);
-    ASSERT_EQ(valid_a, nmo_ref_runtime_id(
+    ASSERT_EQ(valid_beobject_a, nmo_ref_runtime_id(
                            &NMO_ARRAY_DATA(
                                nmo_ref_t, &synchro->arrived_ids)[0]));
-    ASSERT_EQ(valid_b, nmo_ref_runtime_id(
+    ASSERT_EQ(valid_beobject_b, nmo_ref_runtime_id(
                            &NMO_ARRAY_DATA(
                                nmo_ref_t, &synchro->arrived_ids)[1]));
     ASSERT_EQ(1u, synchro->passed_ids.count);
-    ASSERT_EQ(valid_b, nmo_ref_runtime_id(
+    ASSERT_EQ(valid_beobject_b, nmo_ref_runtime_id(
                            &NMO_ARRAY_DATA(
                                nmo_ref_t, &synchro->passed_ids)[0]));
     ASSERT_EQ(NMO_REF_RESOLVED, parameter_out->owner.state);
@@ -2271,6 +2284,142 @@ TEST(runtime_kernel, normalize_uses_parameter_type_for_object_refs) {
     ASSERT_EQ(texture_id, nmo_parameter_object_id(valid));
     ASSERT_EQ(NMO_REF_NONE, invalid->object_ref.state);
     ASSERT_EQ(material_id, nmo_parameter_object_id(unknown));
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
+TEST(runtime_kernel, normalize_enforces_container_reference_classes) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+
+    nmo_object_id_t group_id = 0;
+    nmo_object_id_t object_id = 0;
+    nmo_object_id_t place_id = 0;
+    nmo_object_id_t entity_id = 0;
+    nmo_object_id_t material_id = 0;
+    nmo_object_id_t synchro_id = 0;
+    nmo_object_id_t valid_critical_id = 0;
+    nmo_object_id_t invalid_critical_id = 0;
+    nmo_object_id_t chain_id = 0;
+    nmo_object_id_t body_part_id = 0;
+    nmo_object_id_t grid_id = 0;
+    nmo_object_id_t layer_id = 0;
+    nmo_object_id_t scene_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_GROUP, "group", NMO_NULL_GUID, &group_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_OBJECT, "object", NMO_NULL_GUID, &object_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_PLACE, "place", NMO_NULL_GUID, &place_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_3DENTITY, "entity", NMO_NULL_GUID,
+        &entity_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_MATERIAL, "material", NMO_NULL_GUID,
+        &material_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_SYNCHRO, "synchro", NMO_NULL_GUID,
+        &synchro_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_CRITICALSECTION, "critical-valid", NMO_NULL_GUID,
+        &valid_critical_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_CRITICALSECTION, "critical-invalid", NMO_NULL_GUID,
+        &invalid_critical_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_KINEMATICCHAIN, "chain", NMO_NULL_GUID,
+        &chain_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_BODYPART, "body-part", NMO_NULL_GUID,
+        &body_part_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_GRID, "grid", NMO_NULL_GUID, &grid_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_LAYER, "layer", NMO_NULL_GUID, &layer_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_SCENE, "scene", NMO_NULL_GUID, &scene_id, NULL));
+
+    nmo_group_state_t *group = (nmo_group_state_t *)
+        nmo_object_repository_find_by_id(repo, group_id)->state;
+    nmo_place_state_t *place = (nmo_place_state_t *)
+        nmo_object_repository_find_by_id(repo, place_id)->state;
+    nmo_synchro_state_t *synchro = (nmo_synchro_state_t *)
+        nmo_object_repository_find_by_id(repo, synchro_id)->state;
+    nmo_criticalsection_state_t *valid_critical =
+        (nmo_criticalsection_state_t *)nmo_object_repository_find_by_id(
+            repo, valid_critical_id)->state;
+    nmo_criticalsection_state_t *invalid_critical =
+        (nmo_criticalsection_state_t *)nmo_object_repository_find_by_id(
+            repo, invalid_critical_id)->state;
+    nmo_kinematicchain_state_t *chain = (nmo_kinematicchain_state_t *)
+        nmo_object_repository_find_by_id(repo, chain_id)->state;
+    nmo_grid_state_t *grid = (nmo_grid_state_t *)
+        nmo_object_repository_find_by_id(repo, grid_id)->state;
+    nmo_scene_state_t *scene = (nmo_scene_state_t *)
+        nmo_object_repository_find_by_id(repo, scene_id)->state;
+    ASSERT_NOT_NULL(group);
+    ASSERT_NOT_NULL(place);
+    ASSERT_NOT_NULL(synchro);
+    ASSERT_NOT_NULL(valid_critical);
+    ASSERT_NOT_NULL(invalid_critical);
+    ASSERT_NOT_NULL(chain);
+    ASSERT_NOT_NULL(grid);
+    ASSERT_NOT_NULL(scene);
+
+    nmo_ref_t beobject_ref = nmo_ref_from_id(material_id);
+    nmo_ref_t object_ref = nmo_ref_from_id(object_id);
+    nmo_ref_t entity_ref = nmo_ref_from_id(entity_id);
+    nmo_ref_t material_ref = nmo_ref_from_id(material_id);
+    ASSERT_EQ(NMO_OK, nmo_array_append(&group->object_ids, &beobject_ref));
+    ASSERT_EQ(NMO_OK, nmo_array_append(&group->object_ids, &object_ref));
+    ASSERT_EQ(NMO_OK, nmo_array_append(&place->references, &entity_ref));
+    ASSERT_EQ(NMO_OK, nmo_array_append(&place->references, &material_ref));
+    ASSERT_EQ(NMO_OK, nmo_array_append(&synchro->arrived_ids, &beobject_ref));
+    ASSERT_EQ(NMO_OK, nmo_array_append(&synchro->arrived_ids, &object_ref));
+    valid_critical->object_in_section = beobject_ref;
+    invalid_critical->object_in_section = object_ref;
+    chain->start_effector = nmo_ref_from_id(body_part_id);
+    chain->end_effector = material_ref;
+    nmo_grid_layer_t valid_layer = {.ref = nmo_ref_from_id(layer_id)};
+    nmo_grid_layer_t invalid_layer = {.ref = material_ref};
+    ASSERT_EQ(NMO_OK, nmo_array_append(&grid->layers, &valid_layer));
+    ASSERT_EQ(NMO_OK, nmo_array_append(&grid->layers, &invalid_layer));
+    nmo_scene_object_desc_t valid_scene_object = {.ref = entity_ref};
+    nmo_scene_object_desc_t invalid_scene_object = {.ref = object_ref};
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &scene->object_descs, &valid_scene_object));
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &scene->object_descs, &invalid_scene_object));
+
+    size_t changed = 0;
+    ASSERT_EQ(NMO_OK, nmo_runtime_normalize_invalid_refs(
+        repo, nmo_context_get_type_runtime(ctx), &changed));
+    ASSERT_EQ(7u, changed);
+    ASSERT_EQ(1u, group->object_ids.count);
+    ASSERT_EQ(material_id, nmo_ref_runtime_id(
+        &NMO_ARRAY_DATA(nmo_ref_t, &group->object_ids)[0]));
+    ASSERT_EQ(1u, place->references.count);
+    ASSERT_EQ(entity_id, nmo_ref_runtime_id(
+        &NMO_ARRAY_DATA(nmo_ref_t, &place->references)[0]));
+    ASSERT_EQ(1u, synchro->arrived_ids.count);
+    ASSERT_EQ(material_id, nmo_ref_runtime_id(
+        &NMO_ARRAY_DATA(nmo_ref_t, &synchro->arrived_ids)[0]));
+    ASSERT_EQ(material_id, nmo_ref_runtime_id(
+        &valid_critical->object_in_section));
+    ASSERT_EQ(NMO_REF_NONE, invalid_critical->object_in_section.state);
+    ASSERT_EQ(body_part_id, nmo_ref_runtime_id(&chain->start_effector));
+    ASSERT_EQ(NMO_REF_NONE, chain->end_effector.state);
+    ASSERT_EQ(1u, grid->layers.count);
+    ASSERT_EQ(layer_id, nmo_ref_runtime_id(
+        &NMO_ARRAY_DATA(nmo_grid_layer_t, &grid->layers)[0].ref));
+    ASSERT_EQ(1u, scene->object_descs.count);
+    ASSERT_EQ(entity_id, nmo_ref_runtime_id(
+        &NMO_ARRAY_DATA(
+            nmo_scene_object_desc_t, &scene->object_descs)[0].ref));
 
     nmo_session_destroy(session);
     nmo_context_release(ctx);
@@ -4530,6 +4679,7 @@ REGISTER_TEST(runtime_kernel, normalize_clears_raw_scalar_class_mismatch);
 REGISTER_TEST(runtime_kernel, normalize_preserves_explicitly_typed_reference_targets);
 REGISTER_TEST(runtime_kernel, normalize_enforces_parameterin_reference_classes);
 REGISTER_TEST(runtime_kernel, normalize_uses_parameter_type_for_object_refs);
+REGISTER_TEST(runtime_kernel, normalize_enforces_container_reference_classes);
 REGISTER_TEST(runtime_kernel, dependency_remap_preserves_invalid_references);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_scene_members);
 REGISTER_TEST(runtime_kernel, copy_remap_rejects_malformed_reference_storage);
