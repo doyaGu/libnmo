@@ -205,9 +205,6 @@ static int nmo_load_included_files(
     (void)nmo_session_get_included_files(session, &initial_count);
     nmo_arena_t *arena = nmo_session_get_arena(session);
 
-    const int has_authoritative_table =
-        (hdr1 != NULL && hdr1->included_files != NULL && hdr1->included_file_count > 0);
-
     uint8_t *shadow_blob = NULL;
     size_t shadow_size = 0;
     size_t shadow_capacity = 0;
@@ -218,11 +215,7 @@ static int nmo_load_included_files(
 
     int result = NMO_OK;
 
-    while (1) {
-        if (has_authoritative_table && parsed >= expected) {
-            break;
-        }
-
+    while (parsed < expected) {
         uint32_t name_len = 0;
         int read_result = nmo_io_read_u32(io, &name_len);
         if (read_result != NMO_OK) {
@@ -366,12 +359,6 @@ static int nmo_load_included_files(
         }
 
         parsed++;
-    }
-
-    if (expected != 0 && parsed > expected) {
-        nmo_log(logger, NMO_LOG_WARN,
-                "  Parsed %u included file(s), but Header1 advertised %u",
-                parsed, expected);
     }
 
     if (expected > parsed) {

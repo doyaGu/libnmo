@@ -732,6 +732,23 @@ TEST(load_options, included_file_failure_does_not_publish_prefix)
     ASSERT_EQ(0u, loaded_count);
 }
 
+TEST(load_options, included_file_loading_stops_at_header_count)
+{
+    static const uint8_t two_file_payload[] = {
+        1, 0, 0, 0, 'a',
+        1, 0, 0, 0, 'x',
+        1, 0, 0, 0, 'b',
+        1, 0, 0, 0, 'y'
+    };
+    uint32_t loaded_count = UINT32_MAX;
+    ASSERT_EQ(NMO_OK,
+              parse_included_payload(two_file_payload,
+                                     sizeof(two_file_payload),
+                                     1,
+                                     &loaded_count));
+    ASSERT_EQ(1u, loaded_count);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(load_options, metadata_profile_stops_after_header_and_rejects_mutation);
     REGISTER_TEST(load_options, partial_profile_rejects_non_empty_session);
@@ -749,6 +766,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(load_options, load_file_preserves_header_errors);
     REGISTER_TEST(load_options, phased_data_classifies_payload_failures);
     REGISTER_TEST(load_options, included_file_failure_does_not_publish_prefix);
+    REGISTER_TEST(load_options, included_file_loading_stops_at_header_count);
 TEST_MAIN_END()
 
 
