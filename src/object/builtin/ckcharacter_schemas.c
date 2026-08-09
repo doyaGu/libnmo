@@ -1113,14 +1113,70 @@ static nmo_status_t nmo_character_serialize_internal(
         return NMO_OK;
     }
 
+    const uint32_t data_version = nmo_chunk_get_data_version(out_chunk);
+    const nmo_character_part_t *parts = NMO_ARRAY_DATA(
+        nmo_character_part_t, &in_state->body_parts);
+    if (data_version < 5u) {
+        if (is_file) {
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(
+                out_chunk, CK_STATESAVE_CHARACTERBODYPARTS));
+            NMO_RETURN_IF_ERROR(write_part_sequence(
+                out_chunk, &in_state->body_parts));
+
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(
+                out_chunk, CK_STATESAVE_CHARACTERANIMATIONS));
+            NMO_RETURN_IF_ERROR(write_ref_sequence(
+                out_chunk, &in_state->animations));
+            NMO_RETURN_IF_ERROR(nmo_ref_write(
+                out_chunk, &in_state->active_animation));
+            NMO_RETURN_IF_ERROR(nmo_ref_write(
+                out_chunk, &in_state->anim_dest));
+        } else {
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(
+                out_chunk, CK_STATESAVE_CHARACTERSAVEANIMS));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(out_chunk, 0u));
+            NMO_RETURN_IF_ERROR(nmo_ref_write(
+                out_chunk, &in_state->active_animation));
+            NMO_RETURN_IF_ERROR(nmo_ref_write(
+                out_chunk, &in_state->anim_dest));
+
+            if ((save_flags & CK_STATESAVE_CHARACTERSAVEPARTS) != 0u) {
+                NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(
+                    out_chunk, CK_STATESAVE_CHARACTERSAVEPARTS));
+                NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
+                    out_chunk, (uint32_t)in_state->body_parts.count));
+                for (size_t i = 0; i < in_state->body_parts.count; ++i) {
+                    NMO_RETURN_IF_ERROR(nmo_ref_write(
+                        out_chunk, &parts[i].ref));
+                    NMO_RETURN_IF_ERROR(nmo_chunk_write_sub_chunk(
+                        out_chunk, parts[i].chunk));
+                }
+            }
+        }
+
+        if (nmo_ref_serialized_id(&in_state->root_body_part) !=
+            NMO_OBJECT_ID_NONE) {
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(
+                out_chunk, CK_STATESAVE_CHARACTERROOT));
+            NMO_RETURN_IF_ERROR(nmo_ref_write(
+                out_chunk, &in_state->root_body_part));
+        }
+        if (nmo_ref_serialized_id(&in_state->floor_ref) !=
+            NMO_OBJECT_ID_NONE) {
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(
+                out_chunk, CK_STATESAVE_CHARACTERFLOORREF));
+            NMO_RETURN_IF_ERROR(nmo_ref_write(
+                out_chunk, &in_state->floor_ref));
+        }
+        return NMO_OK;
+    }
+
     result = nmo_chunk_write_identifier(
         out_chunk, CK_STATESAVE_CHARACTERBODYPARTS);
     if (result != NMO_OK) return result;
     result = write_part_sequence(out_chunk, &in_state->body_parts);
     if (result != NMO_OK) return result;
 
-    const nmo_character_part_t *parts = NMO_ARRAY_DATA(
-        nmo_character_part_t, &in_state->body_parts);
     if (!is_file && (save_flags & CK_STATESAVE_CHARACTERSAVEPARTS) != 0) {
         result = nmo_chunk_write_identifier(
             out_chunk, CK_STATESAVE_CHARACTERSAVEPARTS);
