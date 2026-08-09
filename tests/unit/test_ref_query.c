@@ -460,6 +460,42 @@ TEST(ref_query, scene_base_references_are_enumerated_once) {
     nmo_context_release(ctx);
 }
 
+TEST(ref_query, scene_enumeration_rejects_malformed_descriptors) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+
+    nmo_object_id_t target_id = 0;
+    nmo_object_id_t scene_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_BEHAVIOR, "target", NMO_NULL_GUID,
+        &target_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_SCENE, "scene", NMO_NULL_GUID,
+        &scene_id, NULL));
+    nmo_object_t *scene_object =
+        nmo_object_repository_find_by_id(repo, scene_id);
+    ASSERT_NOT_NULL(scene_object);
+    nmo_scene_state_t *scene = (nmo_scene_state_t *)scene_object->state;
+    ASSERT_NOT_NULL(scene);
+
+    scene->level = nmo_ref_from_id(target_id);
+    const size_t saved_element_size = scene->object_descs.element_size;
+    scene->object_descs.element_size = 1;
+
+    direct_ref_capture_t capture = {0};
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_ref_enumerate_object(
+        nmo_context_get_type_registry(ctx), scene_object,
+        capture_direct_ref, &capture));
+    ASSERT_EQ(0u, capture.count);
+
+    scene->object_descs.element_size = saved_element_size;
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(ref_query, legacy_beobject_attribute_reference_is_enumerated) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
@@ -550,6 +586,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(ref_query, reports_broken_reference_count);
     REGISTER_TEST(ref_query, visits_edges_without_exposing_graph_handles);
     REGISTER_TEST(ref_query, scene_base_references_are_enumerated_once);
+    REGISTER_TEST(ref_query, scene_enumeration_rejects_malformed_descriptors);
     REGISTER_TEST(ref_query, legacy_beobject_attribute_reference_is_enumerated);
     REGISTER_TEST(ref_query, character_part_reference_is_enumerated);
 TEST_MAIN_END()

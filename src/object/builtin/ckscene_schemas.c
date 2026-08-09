@@ -730,6 +730,7 @@ static nmo_status_t nmo_scene_enumerate_refs(
     if (!s || !visitor) {
         NMO_RETURN_OK();
     }
+    NMO_RETURN_IF_ERROR(nmo_scene_validate(s, NULL, NULL));
 
     /* Parent level. */
     const nmo_object_id_t level_id = nmo_ref_runtime_id(&s->level);
