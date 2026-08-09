@@ -9696,6 +9696,62 @@ TEST(chunk_id_remap, beobject_preserves_empty_modern_attributes) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, beobject_bounds_single_activity_section) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+    nmo_beobject_state_t state;
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(&state, NULL, NULL));
+    state.priority = 42;
+
+    nmo_chunk_t *valid = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(valid);
+    valid->class_id = NMO_CID_BEOBJECT;
+    valid->data_version = 7;
+    valid->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(valid));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        valid, CK_STATESAVE_SINGLEACTIVITY));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(valid, 0x12345678u));
+    nmo_chunk_close(valid);
+    ASSERT_EQ(NMO_OK, nmo_beobject_deserialize(
+        &state, valid, NULL, NULL));
+    ASSERT_EQ(1, state.has_single_activity);
+    ASSERT_EQ(0x12345678u, state.single_activity_flags);
+
+    nmo_chunk_t *empty = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(empty);
+    empty->class_id = NMO_CID_BEOBJECT;
+    empty->data_version = 7;
+    empty->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(empty));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        empty, CK_STATESAVE_SINGLEACTIVITY));
+    nmo_chunk_close(empty);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_beobject_deserialize(
+        &state, empty, NULL, NULL));
+    ASSERT_EQ(1, state.has_single_activity);
+    ASSERT_EQ(0x12345678u, state.single_activity_flags);
+
+    nmo_chunk_t *extra = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(extra);
+    extra->class_id = NMO_CID_BEOBJECT;
+    extra->data_version = 7;
+    extra->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(extra));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        extra, CK_STATESAVE_SINGLEACTIVITY));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(extra, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(extra, 2));
+    nmo_chunk_close(extra);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_beobject_deserialize(
+        &state, extra, NULL, NULL));
+    ASSERT_EQ(1, state.has_single_activity);
+    ASSERT_EQ(0x12345678u, state.single_activity_flags);
+
+    nmo_beobject_vtable.destroy(&state, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, beobject_legacy_attributes_are_lossless_and_atomic) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
     ASSERT_NOT_NULL(arena);
@@ -12878,6 +12934,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, beobject_serializer_does_not_publish_partial_chunk);
     REGISTER_TEST(chunk_id_remap, beobject_preserves_script_and_priority_layouts);
     REGISTER_TEST(chunk_id_remap, beobject_preserves_empty_modern_attributes);
+    REGISTER_TEST(chunk_id_remap, beobject_bounds_single_activity_section);
     REGISTER_TEST(chunk_id_remap, beobject_legacy_attributes_are_lossless_and_atomic);
     REGISTER_TEST(chunk_id_remap, derived_beobject_copy_clones_legacy_attributes);
     REGISTER_TEST(chunk_id_remap, beobject_copy_preserves_content_equality);

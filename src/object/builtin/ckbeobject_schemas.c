@@ -710,8 +710,12 @@ static nmo_status_t nmo_beobject_deserialize_internal(
     /* If identifier not found, attributes section is optional - continue */
 
     if (is_file) {
-        result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SINGLEACTIVITY);
+        size_t payload_dwords = 0;
+        result = nmo_chunk_seek_identifier_with_size(
+            chunk, CK_STATESAVE_SINGLEACTIVITY, &payload_dwords);
         if (result == NMO_OK) {
+            if (payload_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+            if (payload_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
             out_state->has_single_activity = 1;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(
                 chunk, &out_state->single_activity_flags));
