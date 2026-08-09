@@ -223,6 +223,21 @@ static void release_pooled_chunks(nmo_data_section_t *section,
     }
 }
 
+static nmo_status_t data_section_validate_storage(
+    const nmo_data_section_t *data_section)
+{
+    if (data_section == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (data_section->manager_count > 0 && data_section->managers == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    if (data_section->object_count > 0 && data_section->objects == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    return NMO_OK;
+}
+
 nmo_status_t nmo_data_section_parse(
     const void *data,
     size_t size,
@@ -280,6 +295,9 @@ nmo_status_t nmo_data_section_serialize(
     size_t buffer_size,
     size_t *bytes_written,
     nmo_arena_t *arena) {
+    if (bytes_written != NULL) {
+        *bytes_written = 0;
+    }
     if (arena == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                                 "NULL arena passed to nmo_data_section_serialize");
@@ -288,6 +306,7 @@ nmo_status_t nmo_data_section_serialize(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                                 "Invalid arguments to nmo_data_section_serialize");
     }
+    NMO_RETURN_IF_ERROR(data_section_validate_storage(data_section));
 
     uint8_t *buf = (uint8_t *) buffer;
     size_t pos = 0;
@@ -457,8 +476,12 @@ nmo_status_t nmo_data_section_plan_build(
     }
 
     memset(out_plan, 0, sizeof(*out_plan));
+    NMO_RETURN_IF_ERROR(data_section_validate_storage(data_section));
 
-    if (data_section->managers != NULL && data_section->manager_count > 0) {
+    nmo_data_section_plan_t staged;
+    memset(&staged, 0, sizeof(staged));
+
+    if (data_section->manager_count > 0) {
         size_t slice_bytes = 0;
         if (!nmo_safe_mul_size(sizeof(nmo_data_chunk_slice_t),
                                data_section->manager_count,
@@ -466,24 +489,24 @@ nmo_status_t nmo_data_section_plan_build(
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Manager slice allocation overflow");
         }
 
-        out_plan->manager_slices = (nmo_data_chunk_slice_t *)nmo_arena_alloc(
+        staged.manager_slices = (nmo_data_chunk_slice_t *)nmo_arena_alloc(
             arena, slice_bytes, alignof(nmo_data_chunk_slice_t));
-        if (out_plan->manager_slices == NULL) {
+        if (staged.manager_slices == NULL) {
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate manager slices");
         }
-        out_plan->manager_count = data_section->manager_count;
+        staged.manager_count = data_section->manager_count;
 
         for (uint32_t i = 0; i < data_section->manager_count; i++) {
             const nmo_manager_data_t *mgr = &data_section->managers[i];
-            nmo_data_chunk_slice_t *slice = &out_plan->manager_slices[i];
+            nmo_data_chunk_slice_t *slice = &staged.manager_slices[i];
             NMO_RETURN_IF_ERROR_CTX(data_section_make_slice(mgr->chunk, arena, slice),
                                     "Failed to plan manager data chunk (index=%u)",
                                     (unsigned)i);
-            NMO_RETURN_IF_ERROR(data_section_plan_add_entry_size(&out_plan->total_size, 12u, slice->size));
+            NMO_RETURN_IF_ERROR(data_section_plan_add_entry_size(&staged.total_size, 12u, slice->size));
         }
     }
 
-    if (data_section->objects != NULL && data_section->object_count > 0) {
+    if (data_section->object_count > 0) {
         size_t slice_bytes = 0;
         if (!nmo_safe_mul_size(sizeof(nmo_data_chunk_slice_t),
                                data_section->object_count,
@@ -491,26 +514,27 @@ nmo_status_t nmo_data_section_plan_build(
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Object slice allocation overflow");
         }
 
-        out_plan->object_slices = (nmo_data_chunk_slice_t *)nmo_arena_alloc(
+        staged.object_slices = (nmo_data_chunk_slice_t *)nmo_arena_alloc(
             arena, slice_bytes, alignof(nmo_data_chunk_slice_t));
-        if (out_plan->object_slices == NULL) {
+        if (staged.object_slices == NULL) {
             NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate object slices");
         }
-        out_plan->object_count = data_section->object_count;
+        staged.object_count = data_section->object_count;
 
         size_t entry_header_bytes = (file_version < 7) ? 8u : 4u;
         for (uint32_t i = 0; i < data_section->object_count; i++) {
             const nmo_object_data_t *obj = &data_section->objects[i];
-            nmo_data_chunk_slice_t *slice = &out_plan->object_slices[i];
+            nmo_data_chunk_slice_t *slice = &staged.object_slices[i];
             NMO_RETURN_IF_ERROR_CTX(data_section_make_slice(obj->chunk, arena, slice),
                                     "Failed to plan object data chunk (index=%u)",
                                     (unsigned)i);
-            NMO_RETURN_IF_ERROR(data_section_plan_add_entry_size(&out_plan->total_size,
+            NMO_RETURN_IF_ERROR(data_section_plan_add_entry_size(&staged.total_size,
                                                                  entry_header_bytes,
                                                                  slice->size));
         }
     }
 
+    *out_plan = staged;
     NMO_RETURN_OK();
 }
 
@@ -524,6 +548,7 @@ nmo_status_t nmo_data_section_plan_write(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "Invalid arguments to nmo_data_section_plan_write");
     }
+    NMO_RETURN_IF_ERROR(data_section_validate_storage(data_section));
     if (output_size < plan->total_size) {
         NMO_RETURN_ERROR(NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR,
                          "Data section output buffer too small (need=%zu, have=%zu)",
