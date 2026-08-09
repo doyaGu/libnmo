@@ -2977,6 +2977,77 @@ TEST(runtime_kernel, copy_remap_updates_only_resolved_dataarray_refs) {
     nmo_context_release(ctx);
 }
 
+TEST(runtime_kernel, dataarray_runtime_edits_validate_before_mutation) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    const nmo_type_runtime_t *type_rt = nmo_context_get_type_runtime(ctx);
+    const nmo_type_descriptor_t *dataarray_type =
+        nmo_type_registry_find_by_class_id(
+            type_rt->types, NMO_CID_DATAARRAY);
+    ASSERT_NOT_NULL(dataarray_type);
+
+    nmo_dataarray_column_format_t copy_formats[] = {
+        {.type = CKARRAYTYPE_OBJECT},
+        {.type = (CK_ARRAYTYPE)99},
+    };
+    nmo_dataarray_cell_t copy_cells[2] = {0};
+    copy_cells[0].object_ref = nmo_ref_from_id(101);
+    nmo_dataarray_row_t copy_row = {
+        .column_count = 2,
+        .cells = copy_cells,
+    };
+    nmo_dataarray_state_t copy_state = {
+        .column_count = 2,
+        .column_formats = copy_formats,
+        .row_count = 1,
+        .rows = &copy_row,
+    };
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_id_remap_t *remap = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(remap);
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, 101, 201));
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_runtime_remap_copy_refs(
+        type_rt, dataarray_type, &copy_state, remap));
+    ASSERT_EQ(101u, nmo_ref_runtime_id(&copy_cells[0].object_ref));
+    nmo_arena_destroy(arena);
+
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_object_id_t dataarray_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_DATAARRAY, "array", NMO_NULL_GUID,
+        &dataarray_id, NULL));
+    nmo_dataarray_state_t *state = (nmo_dataarray_state_t *)
+        nmo_object_repository_find_by_id(repo, dataarray_id)->state;
+    ASSERT_NOT_NULL(state);
+    nmo_dataarray_column_format_t normalize_formats[] = {
+        {.type = CKARRAYTYPE_OBJECT},
+        {.type = (CK_ARRAYTYPE)99},
+    };
+    nmo_dataarray_cell_t normalize_cells[2] = {0};
+    normalize_cells[0].object_ref = nmo_ref_from_raw(0x7FFFFF61u);
+    nmo_dataarray_row_t normalize_row = {
+        .column_count = 2,
+        .cells = normalize_cells,
+    };
+    state->column_count = 2;
+    state->column_formats = normalize_formats;
+    state->row_count = 1;
+    state->rows = &normalize_row;
+
+    size_t changed = 0;
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,
+              nmo_runtime_normalize_invalid_refs(repo, type_rt, &changed));
+    ASSERT_EQ(0u, changed);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, normalize_cells[0].object_ref.state);
+    ASSERT_EQ(0x7FFFFF61u, normalize_cells[0].object_ref.raw_id);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(runtime_kernel, normalize_and_safe_detach_preserve_skin_indices) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
@@ -3419,6 +3490,7 @@ REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_curve_refs);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_place_portals);
 REGISTER_TEST(runtime_kernel, copy_remap_and_graph_include_skin_bones);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_dataarray_refs);
+REGISTER_TEST(runtime_kernel, dataarray_runtime_edits_validate_before_mutation);
 REGISTER_TEST(runtime_kernel, normalize_and_safe_detach_preserve_skin_indices);
 REGISTER_TEST(runtime_kernel, normalize_clears_invalid_dataarray_cells);
 REGISTER_TEST(runtime_kernel, safe_detach_clears_dataarray_cells_in_place);

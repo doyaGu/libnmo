@@ -481,22 +481,45 @@ static nmo_status_t runtime_remap_3dentity_skin_refs(
     return NMO_OK;
 }
 
-static nmo_status_t runtime_remap_dataarray_refs(
-    nmo_dataarray_state_t *state,
-    const nmo_id_remap_t *remap)
+static nmo_status_t runtime_validate_dataarray_ref_storage(
+    const nmo_dataarray_state_t *state)
 {
     if (state == NULL) return NMO_OK;
     if ((state->column_count > 0 && state->column_formats == NULL) ||
         (state->row_count > 0 && state->rows == NULL)) {
         return NMO_ERR_VALIDATION_FAILED;
     }
+    for (uint32_t column = 0; column < state->column_count; ++column) {
+        switch (state->column_formats[column].type) {
+        case CKARRAYTYPE_INT:
+        case CKARRAYTYPE_FLOAT:
+        case CKARRAYTYPE_STRING:
+        case CKARRAYTYPE_OBJECT:
+        case CKARRAYTYPE_PARAMETER:
+            break;
+        default:
+            return NMO_ERR_VALIDATION_FAILED;
+        }
+    }
+    for (uint32_t row = 0; row < state->row_count; ++row) {
+        if (state->rows[row].column_count != state->column_count ||
+            (state->rows[row].column_count > 0 &&
+             state->rows[row].cells == NULL)) {
+            return NMO_ERR_VALIDATION_FAILED;
+        }
+    }
+    return NMO_OK;
+}
+
+static nmo_status_t runtime_remap_dataarray_refs(
+    nmo_dataarray_state_t *state,
+    const nmo_id_remap_t *remap)
+{
+    if (state == NULL) return NMO_OK;
+    NMO_RETURN_IF_ERROR(runtime_validate_dataarray_ref_storage(state));
 
     for (uint32_t row_index = 0; row_index < state->row_count; ++row_index) {
         nmo_dataarray_row_t *row = &state->rows[row_index];
-        if (row->column_count != state->column_count ||
-            (row->column_count > 0 && row->cells == NULL)) {
-            return NMO_ERR_VALIDATION_FAILED;
-        }
         for (uint32_t column_index = 0;
              column_index < state->column_count;
              ++column_index) {
@@ -1256,17 +1279,10 @@ static nmo_status_t normalize_dataarray_cells(
     size_t *changes)
 {
     if (state == NULL) return NMO_OK;
-    if ((state->column_count > 0 && state->column_formats == NULL) ||
-        (state->row_count > 0 && state->rows == NULL)) {
-        return NMO_ERR_VALIDATION_FAILED;
-    }
+    NMO_RETURN_IF_ERROR(runtime_validate_dataarray_ref_storage(state));
 
     for (uint32_t row_index = 0; row_index < state->row_count; ++row_index) {
         nmo_dataarray_row_t *row = &state->rows[row_index];
-        if (row->column_count != state->column_count ||
-            (row->column_count > 0 && row->cells == NULL)) {
-            return NMO_ERR_VALIDATION_FAILED;
-        }
         for (uint32_t column_index = 0;
              column_index < state->column_count;
              ++column_index) {
