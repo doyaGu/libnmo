@@ -1934,6 +1934,21 @@ TEST(chunk_id_remap, attributemanager_failures_keep_state_and_target_chunk_atomi
     ASSERT_EQ(&old_category, state.categories);
     ASSERT_EQ(&old_attribute, state.attributes);
 
+    nmo_chunk_t *trailing_payload = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(trailing_payload);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(trailing_payload));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        trailing_payload, 0x52u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(trailing_payload, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(trailing_payload, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        trailing_payload, 0x12345678u));
+    nmo_chunk_close(trailing_payload);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_attributemanager_deserialize(
+        &state, trailing_payload, NULL, &deserialize_context));
+    ASSERT_EQ(&old_category, state.categories);
+    ASSERT_EQ(&old_attribute, state.attributes);
+
     nmo_chunk_t *cross_section_count = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(cross_section_count);
     ASSERT_EQ(NMO_OK, nmo_chunk_start_write(cross_section_count));

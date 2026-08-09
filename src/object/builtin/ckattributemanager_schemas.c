@@ -223,6 +223,10 @@ static nmo_status_t nmo_attributemanager_deserialize_internal(
         }
     }
 
+    if (nmo_chunk_get_position(chunk) != section_end) {
+        return NMO_ERR_INVALID_FORMAT;
+    }
+
     out_state->category_count = (uint32_t)category_count;
     out_state->categories = categories;
     out_state->attribute_count = (uint32_t)attribute_count;
