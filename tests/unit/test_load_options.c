@@ -462,6 +462,73 @@ static nmo_status_t parse_data_payload(const void *payload,
     return result;
 }
 
+static nmo_status_t parse_included_payload(const void *payload,
+                                           size_t payload_size,
+                                           uint32_t included_count,
+                                           uint32_t *out_loaded_count)
+{
+    nmo_file_header_t header = {0};
+    memcpy(header.signature, "Nemo Fi\0", sizeof(header.signature));
+    header.file_version = 8;
+    header.hdr1_pack_size = 3u * sizeof(uint32_t);
+    header.hdr1_unpack_size = 3u * sizeof(uint32_t);
+
+    nmo_io_interface_t *write_io = nmo_memory_io_open_write(
+        64 + header.hdr1_pack_size + payload_size);
+    if (write_io == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    nmo_status_t result = nmo_file_header_serialize(&header, write_io);
+    if (result == NMO_OK) {
+        result = nmo_io_write_u32(write_io, 0);
+    }
+    if (result == NMO_OK) {
+        result = nmo_io_write_u32(write_io, sizeof(uint32_t));
+    }
+    if (result == NMO_OK) {
+        result = nmo_io_write_u32(write_io, included_count);
+    }
+    if (result == NMO_OK && payload_size > 0) {
+        result = nmo_io_write(write_io, payload, payload_size);
+    }
+
+    size_t size = 0;
+    const void *data = nmo_memory_io_get_data(write_io, &size);
+    if (result != NMO_OK || data == NULL) {
+        nmo_io_close(write_io);
+        return result != NMO_OK ? result : NMO_ERR_INTERNAL;
+    }
+
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    nmo_session_t *session = ctx != NULL ? nmo_session_create(ctx) : NULL;
+    nmo_io_interface_t *read_io = session != NULL
+        ? nmo_memory_io_open_read(data, size)
+        : NULL;
+    nmo_deserializer_t *ds = read_io != NULL
+        ? nmo_deserializer_create(session, read_io, NULL)
+        : NULL;
+    if (ds == NULL) {
+        if (read_io != NULL) {
+            nmo_io_close(read_io);
+        }
+        destroy_ctx_session(ctx, session);
+        nmo_io_close(write_io);
+        return NMO_ERR_NOMEM;
+    }
+
+    result = nmo_deserializer_parse_header(ds);
+    if (result == NMO_OK) {
+        result = nmo_deserializer_parse_objects(ds);
+    }
+    if (out_loaded_count != NULL) {
+        (void)nmo_session_get_included_files(session, out_loaded_count);
+    }
+    nmo_deserializer_destroy(ds);
+    destroy_ctx_session(ctx, session);
+    nmo_io_close(write_io);
+    return result;
+}
+
 typedef struct rejecting_allocator_context {
     size_t allocation_calls;
 } rejecting_allocator_context_t;
@@ -638,6 +705,21 @@ TEST(load_options, phased_data_classifies_payload_failures)
                                  8));
 }
 
+TEST(load_options, included_file_failure_does_not_publish_prefix)
+{
+    static const uint8_t one_of_two_payload[] = {
+        1, 0, 0, 0, 'a',
+        1, 0, 0, 0, 'x'
+    };
+    uint32_t loaded_count = UINT32_MAX;
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK,
+              parse_included_payload(one_of_two_payload,
+                                     sizeof(one_of_two_payload),
+                                     2,
+                                     &loaded_count));
+    ASSERT_EQ(0u, loaded_count);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(load_options, metadata_profile_stops_after_header_and_rejects_mutation);
     REGISTER_TEST(load_options, partial_profile_rejects_non_empty_session);
@@ -654,6 +736,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(load_options, phased_header1_classifies_payload_failures);
     REGISTER_TEST(load_options, load_file_preserves_header_errors);
     REGISTER_TEST(load_options, phased_data_classifies_payload_failures);
+    REGISTER_TEST(load_options, included_file_failure_does_not_publish_prefix);
 TEST_MAIN_END()
 
 

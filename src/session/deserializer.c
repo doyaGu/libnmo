@@ -122,24 +122,6 @@ static void load_perf_end(const nmo_deserializer_t *ds,
  * Static helpers (migrated from load.c)
  * ============================================================================ */
 
-static int nmo_register_included_metadata(
-    nmo_session_t *session,
-    const char *name,
-    uint32_t data_size
-) {
-    nmo_included_file_metadata_t meta;
-    meta.owner_ids = NULL;
-    meta.owner_count = 0;
-    meta.attributes = NMO_INCLUDED_FILE_ATTR_METADATA_ONLY;
-    const char *safe_name = (name != NULL) ? name : "";
-    return nmo_session_add_included_file_borrowed_ex(
-        session,
-        safe_name,
-        NULL,
-        data_size,
-        &meta);
-}
-
 static int nmo_shadow_buffer_append(nmo_arena_t *arena,
                                     uint8_t **buffer,
                                     size_t *size,
@@ -219,6 +201,8 @@ static int nmo_load_included_files(
 
     uint32_t expected = (hdr1 != NULL) ? hdr1->included_file_count : 0;
     uint32_t parsed = 0;
+    uint32_t initial_count = 0;
+    (void)nmo_session_get_included_files(session, &initial_count);
     nmo_arena_t *arena = nmo_session_get_arena(session);
 
     const int has_authoritative_table =
@@ -301,10 +285,13 @@ static int nmo_load_included_files(
         }
 
         uint32_t data_size_val = 0;
-        if (nmo_io_read_u32(io, &data_size_val) != NMO_OK) {
+        int size_result = nmo_io_read_u32(io, &data_size_val);
+        if (size_result != NMO_OK) {
             nmo_log(logger, NMO_LOG_ERROR,
                     "Failed to read included file size for '%s'", name_buf);
-            result = NMO_ERR_TRUNCATED_CHUNK;
+            result = size_result == NMO_ERR_EOF
+                ? NMO_ERR_TRUNCATED_CHUNK
+                : size_result;
             goto cleanup;
         }
 
@@ -388,40 +375,31 @@ static int nmo_load_included_files(
     }
 
     if (expected > parsed) {
-        nmo_log(logger, NMO_LOG_INFO,
+        nmo_log(logger, NMO_LOG_ERROR,
                 "  Header references %u included file(s), parsed %u entries",
                 expected, parsed);
-
-        if (has_authoritative_table) {
-            result = NMO_ERR_TRUNCATED_CHUNK;
-            goto cleanup;
-        }
-
-        if (hdr1 != NULL && hdr1->included_files != NULL) {
-            for (uint32_t i = parsed; i < expected; i++) {
-                const nmo_included_file_desc_t *desc = &hdr1->included_files[i];
-                const char *meta_name = (desc != NULL && desc->name != NULL)
-                    ? desc->name
-                    : "";
-                int meta_result = nmo_register_included_metadata(
-                    session,
-                    meta_name,
-                    desc != NULL ? desc->data_size : 0u);
-                if (meta_result != NMO_OK) {
-                    result = meta_result;
-                    goto cleanup;
-                }
-            }
-            nmo_log(logger, NMO_LOG_INFO,
-                    "  Recorded %u metadata-only include entries",
-                    expected - parsed);
-        } else {
-            nmo_log(logger, NMO_LOG_DEBUG,
-                    "  Note: Header1 included file descriptors not populated (expected for Virtools format)");
-        }
+        result = NMO_ERR_TRUNCATED_CHUNK;
+        goto cleanup;
     }
 
 cleanup:
+    if (result != NMO_OK) {
+        uint32_t current_count = 0;
+        (void)nmo_session_get_included_files(session, &current_count);
+        while (current_count > initial_count) {
+            int rollback_result = nmo_session_remove_included_file(
+                session, current_count - 1u);
+            if (rollback_result != NMO_OK) {
+                nmo_log(logger, NMO_LOG_ERROR,
+                        "Failed to roll back included file after load error: %d",
+                        rollback_result);
+                result = rollback_result;
+                break;
+            }
+            current_count--;
+        }
+    }
+
     if (shadow_storage != NULL && result == NMO_OK) {
         int shadow_result = nmo_shadow_capture_included_files(
             shadow_storage, shadow_blob, shadow_size);
