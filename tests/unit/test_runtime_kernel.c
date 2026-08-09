@@ -144,6 +144,17 @@ static nmo_status_t runtime_prepare_probe_hook(
     return NMO_OK;
 }
 
+static nmo_status_t runtime_dependency_oom_hook(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
+    return NMO_ERR_NOMEM;
+}
+
 static void runtime_group_set_members(
     nmo_object_t *group_obj,
     const nmo_object_id_t *member_ids,
@@ -776,6 +787,53 @@ TEST(runtime_kernel, finalize_load_propagates_index_rebuild_oom) {
               nmo_runtime_kernel_finalize_load(session, NULL, &report));
 
     fail_state.fail_allocations = 0;
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
+TEST(runtime_kernel, finalize_load_propagates_dependency_hook_oom) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    nmo_object_id_t object_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session,
+        NMO_CID_OBJECT,
+        "hooked",
+        NMO_NULL_GUID,
+        &object_id,
+        NULL));
+
+    nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
+    const nmo_type_descriptor_t *object_type =
+        nmo_type_registry_find_by_class_id_inherited(
+            registry, NMO_CID_OBJECT);
+    ASSERT_NOT_NULL(object_type);
+    ASSERT_NOT_NULL(object_type->vtable);
+    nmo_type_vtable_t *vtable =
+        (nmo_type_vtable_t *)(void *)object_type->vtable;
+
+    nmo_type_prepare_dependencies_fn old_prepare =
+        vtable->prepare_dependencies;
+    vtable->prepare_dependencies = runtime_dependency_oom_hook;
+    nmo_runtime_report_t report = {0};
+    nmo_status_t result = nmo_runtime_kernel_finalize_load(
+        session, NULL, &report);
+    vtable->prepare_dependencies = old_prepare;
+    ASSERT_EQ(NMO_ERR_NOMEM, result);
+    ASSERT_EQ(1u, report.object_hook_errors);
+
+    nmo_type_remap_dependencies_fn old_remap =
+        vtable->remap_dependencies;
+    vtable->remap_dependencies = runtime_dependency_oom_hook;
+    memset(&report, 0, sizeof(report));
+    result = nmo_runtime_kernel_finalize_load(session, NULL, &report);
+    vtable->remap_dependencies = old_remap;
+    ASSERT_EQ(NMO_ERR_NOMEM, result);
+    ASSERT_EQ(1u, report.object_hook_errors);
+
     nmo_session_destroy(session);
     nmo_context_release(ctx);
 }
@@ -3891,6 +3949,7 @@ REGISTER_TEST(runtime_kernel, copy_rejects_ambiguous_or_missing_sources_atomical
 REGISTER_TEST(runtime_kernel, copy_hook_failure_rolls_back_all_clones);
 REGISTER_TEST(runtime_kernel, ref_graph_creation_fails_on_edge_allocation_error);
 REGISTER_TEST(runtime_kernel, ref_graph_creation_propagates_enumerator_error);
+REGISTER_TEST(runtime_kernel, finalize_load_propagates_dependency_hook_oom);
 REGISTER_TEST(runtime_kernel, finalize_load_propagates_index_rebuild_oom);
 REGISTER_TEST(runtime_kernel, finalize_load_propagates_reference_resolver_oom);
 REGISTER_TEST(runtime_kernel, delete_safe_detach_prunes_group_references);

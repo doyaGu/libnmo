@@ -747,6 +747,10 @@ nmo_status_t nmo_runtime_kernel_finalize_load(
                                 obj->id,
                                 hook_result);
                     }
+                    if (hook_result == NMO_ERR_NOMEM ||
+                        hook_result == NMO_ERR_INTERNAL) {
+                        return hook_result;
+                    }
                     continue;
                 }
             }
@@ -766,6 +770,10 @@ nmo_status_t nmo_runtime_kernel_finalize_load(
                             "Runtime remap/post hook failed for object %u: %d",
                             obj->id,
                             hook_result);
+                }
+                if (hook_result == NMO_ERR_NOMEM ||
+                    hook_result == NMO_ERR_INTERNAL) {
+                    return hook_result;
                 }
             }
         }
