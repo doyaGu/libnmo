@@ -74,10 +74,6 @@ static void nmo_grid_dispose_state_arrays(nmo_grid_state_t *state)
     nmo_3dentity_vtable.destroy(&state->base, NULL, NULL);
 }
 
-static int nmo_chunk_is_file_mode(const nmo_chunk_t *chunk) {
-    return chunk && (chunk->chunk_options & NMO_CHUNK_OPTION_FILE);
-}
-
 static size_t nmo_grid_identifier_remaining_dwords(
     const nmo_chunk_t *chunk)
 {
@@ -117,6 +113,13 @@ static nmo_status_t nmo_grid_deserialize_internal(
     out_state->has_file_flag = 0;
     out_state->file_flag = 0;
 
+    const nmo_deserialize_context_t *deserialize_context =
+        nmo_deserialize_context_get(context);
+    const int is_file =
+        ((chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
+        (deserialize_context != NULL &&
+         (deserialize_context->flags & NMO_DESER_FLAG_FILE_MODE) != 0);
+
     size_t section_dwords = 0;
     result = nmo_chunk_seek_identifier_with_size(
         chunk, CK_STATESAVE_GRIDDATA, &section_dwords);
@@ -127,7 +130,7 @@ static nmo_status_t nmo_grid_deserialize_internal(
     const size_t section_end =
         nmo_chunk_get_position(chunk) + section_dwords;
     const size_t minimum_header_dwords =
-        nmo_chunk_is_file_mode(chunk) ? 7u : 6u;
+        is_file ? 7u : 6u;
     if (section_dwords < minimum_header_dwords) {
         return NMO_ERR_TRUNCATED_CHUNK;
     }
@@ -140,7 +143,7 @@ static nmo_status_t nmo_grid_deserialize_internal(
     NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &out_state->priority));
     NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->orientation_mode));
 
-    if (nmo_chunk_is_file_mode(chunk)) {
+    if (is_file) {
         int32_t file_flag = 0;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &file_flag));
         out_state->has_file_flag = 1;
@@ -153,7 +156,7 @@ static nmo_status_t nmo_grid_deserialize_internal(
         return NMO_ERR_INVALID_FORMAT;
     }
     const size_t minimum_dwords_per_layer =
-        nmo_chunk_is_file_mode(chunk) ? 1u : 2u;
+        is_file ? 1u : 2u;
     if (count >
         nmo_grid_identifier_remaining_dwords(chunk) /
             minimum_dwords_per_layer) {
@@ -183,7 +186,7 @@ static nmo_status_t nmo_grid_deserialize_internal(
             nmo_deserialize_context_get_type_registry(context),
             NMO_CID_LAYER);
     }
-    if (!nmo_chunk_is_file_mode(chunk)) {
+    if (!is_file) {
         for (size_t i = 0; i < count; ++i) {
             result = nmo_chunk_read_sub_chunk(chunk, &items[i].chunk);
             if (result != NMO_OK) {

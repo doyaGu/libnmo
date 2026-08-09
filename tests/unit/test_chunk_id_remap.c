@@ -7050,6 +7050,8 @@ TEST(chunk_id_remap, grid_failures_keep_state_and_target_chunk_atomic) {
     nmo_deserialize_context_t deserialize_context =
         nmo_deserialize_context_create(
             arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+    nmo_deserialize_context_t nonfile_deserialize_context =
+        nmo_deserialize_context_create(arena, NULL, NULL, 0);
 
     nmo_chunk_t *truncated = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(truncated);
@@ -7196,7 +7198,8 @@ TEST(chunk_id_remap, grid_failures_keep_state_and_target_chunk_atomic) {
     }
     nmo_chunk_close(cross_section_subchunk);
     ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_grid_deserialize(
-        &state, cross_section_subchunk, NULL, &deserialize_context));
+        &state, cross_section_subchunk, NULL,
+        &nonfile_deserialize_context));
     ASSERT_EQ(77, state.width);
     ASSERT_EQ(88, state.length);
     ASSERT_EQ(old_layers, state.layers.data);
@@ -7266,7 +7269,6 @@ TEST(chunk_id_remap, grid_reserved_value_round_trips) {
     ASSERT_NOT_NULL(chunk);
     chunk->class_id = NMO_CID_GRID;
     chunk->data_version = 7;
-    chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
     ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
         chunk, CK_STATESAVE_GRIDDATA));
@@ -7284,12 +7286,13 @@ TEST(chunk_id_remap, grid_reserved_value_round_trips) {
     ASSERT_EQ(NMO_OK, nmo_grid_deserialize(
         &loaded, chunk, NULL, &deserialize_context));
     ASSERT_EQ(0x12345678, loaded.reserved_value);
+    ASSERT_TRUE(loaded.has_file_flag);
+    ASSERT_EQ(1, loaded.file_flag);
 
     nmo_chunk_t *saved = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(saved);
     saved->class_id = NMO_CID_GRID;
     saved->data_version = 7;
-    saved->chunk_options |= NMO_CHUNK_OPTION_FILE;
     ASSERT_EQ(NMO_OK, nmo_grid_serialize(
         &loaded, saved, NULL, &serialize_context));
     nmo_chunk_close(saved);
