@@ -147,8 +147,6 @@ static nmo_status_t parse_plugin_deps(
         *pos += guid_bytes;
     }
 
-    /* Reset position to start of categories */
-    *pos = saved_pos;
     if (total_plugins > UINT32_MAX) {
         NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR, "Plugin dependency count overflow");
     }
@@ -158,6 +156,9 @@ static nmo_status_t parse_plugin_deps(
         header->plugin_deps = NULL;
         NMO_RETURN_OK();
     }
+
+    /* Reset position to start of categories for the materialization pass. */
+    *pos = saved_pos;
 
     /* Allocate plugin dependency array */
     size_t deps_size = 0;
