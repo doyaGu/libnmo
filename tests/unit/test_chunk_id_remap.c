@@ -14532,12 +14532,17 @@ TEST(chunk_id_remap, beobject_serializer_does_not_publish_partial_chunk) {
 TEST(chunk_id_remap, beobject_preserves_script_and_priority_layouts) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
     ASSERT_NOT_NULL(arena);
+    nmo_serialize_context_t file_serialize_context =
+        nmo_serialize_context_create(
+            arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_deserialize_context_t file_deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
 
     nmo_chunk_t *legacy = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(legacy);
     legacy->class_id = NMO_CID_BEOBJECT;
     legacy->data_version = 4;
-    legacy->chunk_options |= NMO_CHUNK_OPTION_FILE;
     ASSERT_EQ(NMO_OK, nmo_chunk_start_write(legacy));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
         legacy, CK_STATESAVE_BEHAVIORS));
@@ -14555,7 +14560,7 @@ TEST(chunk_id_remap, beobject_preserves_script_and_priority_layouts) {
     nmo_beobject_state_t loaded;
     ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(&loaded, NULL, NULL));
     ASSERT_EQ(NMO_OK, nmo_beobject_deserialize(
-        &loaded, legacy, NULL, NULL));
+        &loaded, legacy, NULL, &file_deserialize_context));
     ASSERT_EQ(1, loaded.has_scripts_section);
     ASSERT_EQ(1, loaded.scripts_use_legacy_identifier);
     ASSERT_EQ(1u, loaded.scripts.count);
@@ -14584,9 +14589,8 @@ TEST(chunk_id_remap, beobject_preserves_script_and_priority_layouts) {
     ASSERT_NOT_NULL(legacy_saved);
     legacy_saved->class_id = NMO_CID_BEOBJECT;
     legacy_saved->data_version = 4;
-    legacy_saved->chunk_options |= NMO_CHUNK_OPTION_FILE;
     ASSERT_EQ(NMO_OK, nmo_beobject_serialize(
-        &loaded, legacy_saved, NULL, NULL));
+        &loaded, legacy_saved, NULL, &file_serialize_context));
     nmo_chunk_close(legacy_saved);
 
     size_t payload_dwords = 0;
@@ -14620,7 +14624,8 @@ TEST(chunk_id_remap, beobject_preserves_script_and_priority_layouts) {
     ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(
         &legacy_reloaded, NULL, NULL));
     ASSERT_EQ(NMO_OK, nmo_beobject_deserialize(
-        &legacy_reloaded, legacy_saved, NULL, NULL));
+        &legacy_reloaded, legacy_saved, NULL,
+        &file_deserialize_context));
     ASSERT_EQ(1, legacy_reloaded.scripts_use_legacy_identifier);
     ASSERT_EQ(0xA0000001u, legacy_reloaded.data_flags);
     ASSERT_EQ(0x33333333u, legacy_reloaded.legacy_data_words[2]);
