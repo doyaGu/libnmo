@@ -39,18 +39,29 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
     character,
     nmo_character_state_t,
     do {
-        nmo_status_t result = nmo_array_init(
-            &state->body_parts, sizeof(nmo_character_part_t), 0, NULL);
+        nmo_status_t result = nmo_3dentity_vtable.create(
+            &state->base, NULL, context);
         if (result != NMO_OK) return result;
+        result = nmo_array_init(
+            &state->body_parts, sizeof(nmo_character_part_t), 0, NULL);
+        if (result != NMO_OK) {
+            nmo_3dentity_vtable.destroy(&state->base, NULL, context);
+            return result;
+        }
         character_parts_set_lifecycle(&state->body_parts);
         result = nmo_array_init(
             &state->animations, sizeof(nmo_ref_t), 0, NULL);
         if (result != NMO_OK) {
             nmo_array_dispose(&state->body_parts);
+            nmo_3dentity_vtable.destroy(&state->base, NULL, context);
             return result;
         }
     } while (0),
-    ((void)0))
+    do {
+        nmo_array_dispose(&state->body_parts);
+        nmo_array_dispose(&state->animations);
+        nmo_3dentity_vtable.destroy(&state->base, NULL, context);
+    } while (0))
 NMO_DEFINE_OBJECT_LIFECYCLE(
     bodypart,
     nmo_bodypart_state_t,
@@ -60,38 +71,6 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
         if (result != NMO_OK) return result;
     } while (0),
     nmo_3dobject_vtable.destroy(&state->base, NULL, context))
-
-static nmo_status_t character_staged_base_create(
-    nmo_3dentity_state_t *state,
-    void *context)
-{
-    if (state == NULL) return NMO_ERR_INVALID_ARGUMENT;
-    nmo_beobject_state_t *beobject = &state->base.base;
-    nmo_status_t result = nmo_beobject_vtable.create(
-        beobject, NULL, context);
-    if (result != NMO_OK) {
-        nmo_array_dispose(&beobject->scripts);
-        nmo_array_dispose(&beobject->attributes);
-        nmo_array_dispose(&beobject->legacy_attributes);
-    }
-    return result;
-}
-
-static void character_staged_base_destroy(nmo_3dentity_state_t *state)
-{
-    if (state == NULL) return;
-    nmo_beobject_state_t *beobject = &state->base.base;
-    nmo_array_dispose(&beobject->scripts);
-    nmo_array_dispose(&beobject->attributes);
-    nmo_array_dispose(&beobject->legacy_attributes);
-}
-
-static void character_dispose_arrays(nmo_character_state_t *state)
-{
-    if (state == NULL) return;
-    nmo_array_dispose(&state->body_parts);
-    nmo_array_dispose(&state->animations);
-}
 
 static void character_copy_base_allocators(
     nmo_3dentity_state_t *destination,
@@ -104,6 +83,11 @@ static void character_copy_base_allocators(
     destination_base->legacy_attributes.allocator =
         source_base->legacy_attributes.allocator;
 }
+
+static nmo_status_t nmo_character_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 static nmo_status_t read_exact_sized_buffer(
     nmo_chunk_t *chunk,
@@ -231,32 +215,76 @@ static nmo_status_t nmo_character_copy(
 {
     const nmo_character_state_t *s = src;
     nmo_character_state_t *d = dst;
-    if (s == NULL || d == NULL || type == NULL) {
+    (void)type;
+    if (s == NULL || d == NULL || arena == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
-    nmo_type_descriptor_t scalar_type = *type;
-    scalar_type.fields = NULL;
-    scalar_type.field_count = 0;
-    NMO_RETURN_IF_ERROR(nmo_object_default_copy(
-        src, dst, &scalar_type, arena));
-    memset(&d->body_parts, 0, sizeof(d->body_parts));
-    memset(&d->animations, 0, sizeof(d->animations));
-    NMO_RETURN_IF_ERROR(nmo_array_init(
-        &d->body_parts, sizeof(nmo_character_part_t),
-        s->body_parts.count, &s->body_parts.allocator));
-    character_parts_set_lifecycle(&d->body_parts);
+    NMO_RETURN_IF_ERROR(nmo_character_validate(s, NULL, NULL));
+
+    nmo_character_state_t copied;
+    nmo_status_t result = nmo_character_create(&copied, NULL, NULL);
+    if (result != NMO_OK) return result;
+
+    nmo_type_descriptor_t base_type = {
+        .size = sizeof(nmo_3dentity_state_t),
+    };
+    result = nmo_3dentity_vtable.copy(
+        &s->base, &copied.base, &base_type, arena);
+    if (result != NMO_OK) goto fail;
+    copied.active_animation = s->active_animation;
+    copied.anim_dest = s->anim_dest;
+    copied.root_body_part = s->root_body_part;
+    copied.floor_ref = s->floor_ref;
+
+    nmo_array_dispose(&copied.body_parts);
+    result = nmo_array_init(
+        &copied.body_parts, sizeof(nmo_character_part_t),
+        s->body_parts.count, &s->body_parts.allocator);
+    if (result != NMO_OK) goto fail;
+    character_parts_set_lifecycle(&copied.body_parts);
     nmo_character_part_t *dst_parts = NULL;
-    NMO_RETURN_IF_ERROR(nmo_array_extend(
-        &d->body_parts, s->body_parts.count, (void **)&dst_parts));
+    result = nmo_array_extend(
+        &copied.body_parts, s->body_parts.count, (void **)&dst_parts);
+    if (result != NMO_OK) goto fail;
     const nmo_character_part_t *src_parts = NMO_ARRAY_DATA(
         nmo_character_part_t, &s->body_parts);
     for (size_t i = 0; i < s->body_parts.count; ++i) {
         dst_parts[i].ref = src_parts[i].ref;
-        NMO_RETURN_IF_ERROR(nmo_object_copy_chunk(
-            arena, &dst_parts[i].chunk, src_parts[i].chunk));
+        result = nmo_object_copy_chunk(
+            arena, &dst_parts[i].chunk, src_parts[i].chunk);
+        if (result != NMO_OK) goto fail;
     }
-    return nmo_array_clone(
-        &s->animations, &d->animations, &s->animations.allocator);
+    nmo_array_dispose(&copied.animations);
+    result = nmo_array_clone(
+        &s->animations, &copied.animations, &s->animations.allocator);
+    if (result != NMO_OK) goto fail;
+
+    nmo_beobject_state_t *target_base = &d->base.base.base;
+    const nmo_beobject_state_t *source_base = &s->base.base.base;
+    if (target_base->scripts.data == source_base->scripts.data) {
+        memset(&target_base->scripts, 0, sizeof(target_base->scripts));
+    }
+    if (target_base->attributes.data == source_base->attributes.data) {
+        memset(&target_base->attributes, 0, sizeof(target_base->attributes));
+    }
+    if (target_base->legacy_attributes.data ==
+        source_base->legacy_attributes.data) {
+        memset(&target_base->legacy_attributes, 0,
+               sizeof(target_base->legacy_attributes));
+    }
+    if (d->body_parts.data == s->body_parts.data) {
+        memset(&d->body_parts, 0, sizeof(d->body_parts));
+    }
+    if (d->animations.data == s->animations.data) {
+        memset(&d->animations, 0, sizeof(d->animations));
+    }
+    nmo_character_destroy(d, NULL, NULL);
+    *d = copied;
+    return NMO_OK;
+
+fail:
+    nmo_character_destroy(&copied, NULL, NULL);
+    return result;
 }
 
 static nmo_status_t nmo_character_validate(
@@ -1137,21 +1165,14 @@ nmo_status_t nmo_character_deserialize(
     if (result != NMO_OK) return result;
     decoded.body_parts.allocator = out_state->body_parts.allocator;
     decoded.animations.allocator = out_state->animations.allocator;
-    result = character_staged_base_create(&decoded.base, context);
-    if (result != NMO_OK) {
-        character_dispose_arrays(&decoded);
-        return result;
-    }
     character_copy_base_allocators(&decoded.base, &out_state->base);
     result = nmo_character_deserialize_internal(chunk, context, &decoded);
     if (result != NMO_OK) {
-        character_staged_base_destroy(&decoded.base);
-        character_dispose_arrays(&decoded);
+        nmo_character_destroy(&decoded, NULL, context);
         return result;
     }
 
-    character_staged_base_destroy(&out_state->base);
-    character_dispose_arrays(out_state);
+    nmo_character_destroy(out_state, NULL, context);
     *out_state = decoded;
     return NMO_OK;
 }
@@ -1194,17 +1215,15 @@ nmo_status_t nmo_bodypart_deserialize(
     nmo_bodypart_state_t decoded;
     nmo_status_t result = nmo_bodypart_create(&decoded, type, context);
     if (result != NMO_OK) return result;
-    result = character_staged_base_create(&decoded.base.entity, context);
-    if (result != NMO_OK) return result;
     character_copy_base_allocators(
         &decoded.base.entity, &out_state->base.entity);
     result = nmo_bodypart_deserialize_internal(chunk, context, &decoded);
     if (result != NMO_OK) {
-        character_staged_base_destroy(&decoded.base.entity);
+        nmo_bodypart_destroy(&decoded, NULL, context);
         return result;
     }
 
-    character_staged_base_destroy(&out_state->base.entity);
+    nmo_bodypart_destroy(out_state, NULL, context);
     *out_state = decoded;
     return NMO_OK;
 }

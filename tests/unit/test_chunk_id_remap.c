@@ -8340,6 +8340,28 @@ TEST(chunk_id_remap, character_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(4u, nmo_chunk_get_data_size(part_chunk));
     ASSERT_EQ(4u, nmo_chunk_get_data_size(copied_parts[0].chunk));
 
+    nmo_character_state_t copy_failed;
+    ASSERT_EQ(NMO_OK, nmo_character_vtable.create(
+        &copy_failed, NULL, NULL));
+    copy_failed.base.entity_flags = 0x12345678u;
+    nmo_character_part_t copy_previous = {
+        .ref = nmo_ref_from_raw(902),
+    };
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &copy_failed.body_parts, &copy_previous));
+    void *copy_previous_data = copy_failed.body_parts.data;
+    nmo_allocator_t source_body_allocator = source.body_parts.allocator;
+    source.body_parts.allocator = nmo_allocator_custom(
+        beobject_fail_alloc, beobject_fail_free, NULL);
+    ASSERT_EQ(NMO_ERR_NOMEM, nmo_character_vtable.copy(
+        &source, &copy_failed, &character_type, arena));
+    source.body_parts.allocator = source_body_allocator;
+    ASSERT_EQ(0x12345678u, copy_failed.base.entity_flags);
+    ASSERT_EQ(copy_previous_data, copy_failed.body_parts.data);
+    ASSERT_EQ(1u, copy_failed.body_parts.count);
+    ASSERT_EQ(902u, NMO_ARRAY_DATA(
+        nmo_character_part_t, &copy_failed.body_parts)[0].ref.raw_id);
+
     nmo_character_state_t failed;
     ASSERT_EQ(NMO_OK, nmo_character_vtable.create(&failed, NULL, NULL));
     nmo_character_part_t previous = {
@@ -8442,20 +8464,16 @@ TEST(chunk_id_remap, character_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(701u, bodypart_loaded.character.raw_id);
     ASSERT_EQ(NMO_REF_UNRESOLVED, bodypart_loaded.character.state);
 
-    nmo_array_dispose(&source.body_parts);
-    nmo_array_dispose(&source.animations);
-    nmo_array_dispose(&loaded.body_parts);
-    nmo_array_dispose(&loaded.animations);
-    nmo_array_dispose(&reloaded.body_parts);
-    nmo_array_dispose(&reloaded.animations);
-    nmo_array_dispose(&runtime_loaded.body_parts);
-    nmo_array_dispose(&runtime_loaded.animations);
-    nmo_array_dispose(&copied.body_parts);
-    nmo_array_dispose(&copied.animations);
-    nmo_array_dispose(&failed.body_parts);
-    nmo_array_dispose(&failed.animations);
-    nmo_array_dispose(&allocation_failed.body_parts);
-    nmo_array_dispose(&allocation_failed.animations);
+    nmo_3dentity_vtable.destroy(&runtime_base, NULL, NULL);
+    nmo_bodypart_vtable.destroy(&bodypart_loaded, NULL, NULL);
+    nmo_character_vtable.destroy(&source, NULL, NULL);
+    nmo_character_vtable.destroy(&loaded, NULL, NULL);
+    nmo_character_vtable.destroy(&reloaded, NULL, NULL);
+    nmo_character_vtable.destroy(&runtime_loaded, NULL, NULL);
+    nmo_character_vtable.destroy(&copied, NULL, NULL);
+    nmo_character_vtable.destroy(&copy_failed, NULL, NULL);
+    nmo_character_vtable.destroy(&failed, NULL, NULL);
+    nmo_character_vtable.destroy(&allocation_failed, NULL, NULL);
     nmo_arena_destroy(arena);
 }
 
