@@ -416,12 +416,15 @@ static nmo_status_t nmo_texture_read_slot_filenames(
     NMO_RETURN_IF_ERROR(nmo_texture_validate_array_count(
         chunk, count, sizeof(char *), 0, 1, "filename"));
 
-    if (count == 0) {
-        NMO_RETURN_OK();
-    }
     if (state->slot_count != 0 && state->slot_count != (uint32_t)count) {
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
                          "Texture filename count does not match bitmap slots");
+    }
+
+    state->slot_count = (uint32_t)count;
+    state->has_slot_filenames = 1;
+    if (count == 0) {
+        NMO_RETURN_OK();
     }
 
     char **names = (char **)nmo_arena_alloc(arena, sizeof(char *) * (size_t)count, _Alignof(char *));
@@ -435,9 +438,7 @@ static nmo_status_t nmo_texture_read_slot_filenames(
         names[i] = name;
     }
 
-    state->slot_count = (uint32_t)count;
     state->slot_filenames = names;
-    state->has_slot_filenames = 1;
 
     NMO_RETURN_OK();
 }
@@ -615,6 +616,8 @@ static nmo_status_t nmo_texture_deserialize_internal(
         out_state->reader_width = width;
         out_state->reader_height = height;
         out_state->reader_bpp = bpp;
+        out_state->bitmap_kind = CKTEXTURE_BITMAP_READER;
+        out_state->slot_count = (uint32_t)count;
 
         if (count > 0) {
             nmo_texture_reader_slot_t *slots = (nmo_texture_reader_slot_t *)nmo_arena_alloc(
@@ -626,9 +629,7 @@ static nmo_status_t nmo_texture_deserialize_internal(
                 nmo_status_t result = nmo_texture_read_reader_slot(chunk, arena, &slots[i]);
                 if (result != NMO_OK) return result;
             }
-            out_state->bitmap_kind = CKTEXTURE_BITMAP_READER;
             out_state->reader_slots = slots;
-            out_state->slot_count = (uint32_t)count;
         }
     } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
     else if (nmo_texture_seek_found(
@@ -637,6 +638,8 @@ static nmo_status_t nmo_texture_deserialize_internal(
         NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &count));
         NMO_RETURN_IF_ERROR(nmo_texture_validate_array_count(
             chunk, count, sizeof(nmo_texture_raw_slot_t), 0, 1, "raw slot"));
+        out_state->bitmap_kind = CKTEXTURE_BITMAP_RAW;
+        out_state->slot_count = (uint32_t)count;
 
         if (count > 0) {
             nmo_texture_raw_slot_t *slots = (nmo_texture_raw_slot_t *)nmo_arena_alloc(
@@ -648,9 +651,7 @@ static nmo_status_t nmo_texture_deserialize_internal(
                 nmo_status_t result = nmo_texture_read_raw_slot(chunk, arena, &slots[i]);
                 if (result != NMO_OK) return result;
             }
-            out_state->bitmap_kind = CKTEXTURE_BITMAP_RAW;
             out_state->raw_slots = slots;
-            out_state->slot_count = (uint32_t)count;
         }
     } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
     else if (nmo_texture_seek_found(
@@ -659,6 +660,8 @@ static nmo_status_t nmo_texture_deserialize_internal(
         NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &count));
         NMO_RETURN_IF_ERROR(nmo_texture_validate_array_count(
             chunk, count, sizeof(nmo_texture_bitmap2_slot_t), 0, 2, "bitmap slot"));
+        out_state->bitmap_kind = CKTEXTURE_BITMAP_BITMAP2;
+        out_state->slot_count = (uint32_t)count;
 
         if (count > 0) {
             nmo_texture_bitmap2_slot_t *slots = (nmo_texture_bitmap2_slot_t *)nmo_arena_alloc(
@@ -670,9 +673,7 @@ static nmo_status_t nmo_texture_deserialize_internal(
                 nmo_status_t result = nmo_texture_read_bitmap2_slot(chunk, arena, &slots[i]);
                 if (result != NMO_OK) return result;
             }
-            out_state->bitmap_kind = CKTEXTURE_BITMAP_BITMAP2;
             out_state->bitmap2_slots = slots;
-            out_state->slot_count = (uint32_t)count;
         }
     } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
@@ -807,6 +808,8 @@ static nmo_status_t nmo_texture_deserialize_internal(
         NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &count));
         NMO_RETURN_IF_ERROR(nmo_texture_validate_array_count(
             chunk, count, sizeof(nmo_texture_raw_slot_t), 0, 1, "mipmap"));
+        out_state->has_user_mipmaps = 1;
+        out_state->user_mipmap_count = (uint32_t)count;
         if (count > 0) {
             nmo_texture_raw_slot_t *mips = (nmo_texture_raw_slot_t *)nmo_arena_alloc(
                 arena, sizeof(nmo_texture_raw_slot_t) * (size_t)count, _Alignof(nmo_texture_raw_slot_t));
@@ -817,8 +820,6 @@ static nmo_status_t nmo_texture_deserialize_internal(
                 nmo_status_t result = nmo_texture_read_raw_slot(chunk, arena, &mips[i]);
                 if (result != NMO_OK) return result;
             }
-            out_state->has_user_mipmaps = 1;
-            out_state->user_mipmap_count = (uint32_t)count;
             out_state->user_mipmaps = mips;
         }
     } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
@@ -1145,7 +1146,7 @@ static nmo_status_t nmo_texture_serialize_internal(
         NMO_RETURN_OK();
     }
 
-    if (state->bitmap_kind == CKTEXTURE_BITMAP_READER && state->reader_slots && state->slot_count > 0) {
+    if (state->bitmap_kind == CKTEXTURE_BITMAP_READER) {
         nmo_status_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_TEXREADER);
         if (result != NMO_OK) return result;
         NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, (int32_t)state->slot_count));
@@ -1156,7 +1157,7 @@ static nmo_status_t nmo_texture_serialize_internal(
             result = nmo_texture_write_reader_slot(chunk, &state->reader_slots[i]);
             if (result != NMO_OK) return result;
         }
-    } else if (state->bitmap_kind == CKTEXTURE_BITMAP_RAW && state->raw_slots && state->slot_count > 0) {
+    } else if (state->bitmap_kind == CKTEXTURE_BITMAP_RAW) {
         nmo_status_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_TEXCOMPRESSED);
         if (result != NMO_OK) return result;
         NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, (int32_t)state->slot_count));
@@ -1164,7 +1165,7 @@ static nmo_status_t nmo_texture_serialize_internal(
             result = nmo_texture_write_raw_slot(chunk, &state->raw_slots[i]);
             if (result != NMO_OK) return result;
         }
-    } else if (state->bitmap_kind == CKTEXTURE_BITMAP_BITMAP2 && state->bitmap2_slots && state->slot_count > 0) {
+    } else if (state->bitmap_kind == CKTEXTURE_BITMAP_BITMAP2) {
         nmo_status_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_TEXBITMAPS);
         if (result != NMO_OK) return result;
         NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, (int32_t)state->slot_count));
@@ -1174,7 +1175,7 @@ static nmo_status_t nmo_texture_serialize_internal(
         }
     }
 
-    if (state->has_slot_filenames && state->slot_filenames && state->slot_count > 0) {
+    if (state->has_slot_filenames) {
         nmo_status_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_TEXFILENAMES);
         if (result != NMO_OK) return result;
         NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, (int32_t)state->slot_count));
@@ -1189,7 +1190,7 @@ static nmo_status_t nmo_texture_serialize_internal(
         NMO_RETURN_IF_ERROR(nmo_chunk_write_string(chunk, state->movie_filename));
     }
 
-    if (state->pick_threshold != 0) {
+    if (state->has_pick_threshold) {
         nmo_status_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_PICKTHRESHOLD);
         if (result != NMO_OK) return result;
         NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, state->pick_threshold));
@@ -1217,14 +1218,14 @@ static nmo_status_t nmo_texture_serialize_internal(
         }
     }
 
-    if (state->has_save_format && state->save_format_data && state->save_format_size > 0) {
+    if (state->has_save_format) {
         nmo_status_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_TEXSAVEFORMAT);
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_buffer(chunk, state->save_format_data, state->save_format_size);
         if (result != NMO_OK) return result;
     }
 
-    if (state->has_user_mipmaps && state->user_mipmap_count > 0 && state->user_mipmaps) {
+    if (state->has_user_mipmaps) {
         nmo_status_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_USERMIPMAP);
         if (result != NMO_OK) return result;
         NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, (int32_t)state->user_mipmap_count));

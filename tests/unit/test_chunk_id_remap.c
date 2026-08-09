@@ -4959,6 +4959,69 @@ TEST(chunk_id_remap, texture_copy_preserves_nested_content) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, texture_empty_sections_round_trip_presence) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+
+    nmo_texture_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_texture_vtable.create(&source, NULL, NULL));
+    source.bitmap_kind = CKTEXTURE_BITMAP_READER;
+    source.reader_width = 64;
+    source.reader_height = 32;
+    source.reader_bpp = 24;
+    source.has_slot_filenames = 1;
+    source.has_pick_threshold = 1;
+    source.pick_threshold = 0;
+    source.has_oldtexonly = 1;
+    source.has_save_format = 1;
+    source.has_user_mipmaps = 1;
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    chunk->class_id = NMO_CID_TEXTURE;
+    chunk->data_version = 7;
+    chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_texture_serialize(
+        &source, chunk, NULL, &serialize_context));
+    nmo_chunk_close(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
+        chunk, CK_STATESAVE_TEXREADER));
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
+        chunk, CK_STATESAVE_TEXFILENAMES));
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
+        chunk, CK_STATESAVE_PICKTHRESHOLD));
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
+        chunk, CK_STATESAVE_TEXSAVEFORMAT));
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
+        chunk, CK_STATESAVE_USERMIPMAP));
+
+    nmo_texture_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_texture_vtable.create(&loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_texture_deserialize(
+        &loaded, chunk, NULL, &deserialize_context));
+    ASSERT_EQ(CKTEXTURE_BITMAP_READER, loaded.bitmap_kind);
+    ASSERT_EQ(0u, loaded.slot_count);
+    ASSERT_EQ(64, loaded.reader_width);
+    ASSERT_EQ(32, loaded.reader_height);
+    ASSERT_EQ(24, loaded.reader_bpp);
+    ASSERT_TRUE(loaded.has_slot_filenames);
+    ASSERT_TRUE(loaded.has_pick_threshold);
+    ASSERT_EQ(0, loaded.pick_threshold);
+    ASSERT_TRUE(loaded.has_save_format);
+    ASSERT_EQ(0u, loaded.save_format_size);
+    ASSERT_TRUE(loaded.has_user_mipmaps);
+    ASSERT_EQ(0u, loaded.user_mipmap_count);
+
+    nmo_texture_vtable.destroy(&source, NULL, NULL);
+    nmo_texture_vtable.destroy(&loaded, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, curvepoint_unresolved_curve_round_trips_raw_id) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
     ASSERT_NOT_NULL(arena);
@@ -11588,6 +11651,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, spritetext_failures_keep_state_and_target_chunk_atomic);
     REGISTER_TEST(chunk_id_remap, texture_failures_keep_state_and_target_chunk_atomic);
     REGISTER_TEST(chunk_id_remap, texture_copy_preserves_nested_content);
+    REGISTER_TEST(chunk_id_remap, texture_empty_sections_round_trip_presence);
     REGISTER_TEST(chunk_id_remap, curvepoint_unresolved_curve_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, sprite3d_unresolved_material_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, wavesound_unresolved_attachment_round_trips_raw_id);
