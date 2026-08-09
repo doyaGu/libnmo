@@ -1527,6 +1527,34 @@ TEST(cli, validate_references_normalize_preserves_clean_chunks) {
     ASSERT_EQ(0, remove(output));
 }
 
+TEST(cli, validate_references_normalize_preserves_uncompressed_mode) {
+    const char *fixture = NMO_TEST_DATA_FILE(
+        "TechnicalSamples/VSL/Documentation samples/Hello World.cmo");
+    const char *output = "test_validate_refs_normalize_uncompressed_output.cmo";
+    remove(output);
+
+    char args[768];
+    snprintf(args, sizeof(args),
+             "validate references --normalize -o \"%s\" \"%s\"",
+             output, fixture);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "Normalized references: 0");
+    free(result.output);
+
+    snprintf(args, sizeof(args), "-f json file header \"%s\"", output);
+    yyjson_doc *doc = run_cli_json(args);
+    ASSERT_NOT_NULL(doc);
+    yyjson_val *data = json_envelope_data(doc);
+    ASSERT_NOT_NULL(data);
+    ASSERT_EQ(NMO_FILE_WRITE_UNCOMPRESSED,
+              yyjson_get_uint(yyjson_obj_get(data, "file_write_mode")));
+    yyjson_doc_free(doc);
+
+    ASSERT_EQ(0, remove(output));
+}
+
 TEST(cli, validate_references_normalize_rejects_input_overwrite) {
     const char *fixture = "test_validate_refs_normalize_same_file.nmo";
     remove(fixture);
@@ -4647,6 +4675,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, validate_references_reports_dataarray_unresolved_refs);
     REGISTER_TEST(cli, validate_references_normalize_saves_distinct_clean_output);
     REGISTER_TEST(cli, validate_references_normalize_preserves_clean_chunks);
+    REGISTER_TEST(cli, validate_references_normalize_preserves_uncompressed_mode);
     REGISTER_TEST(cli, validate_references_normalize_rejects_input_overwrite);
     REGISTER_TEST(cli, validate_references_reports_raw_field_class_mismatch);
     REGISTER_TEST(cli, validate_references_reports_typed_scalar_class_mismatch);

@@ -1148,6 +1148,14 @@ static int nmo_cmd_validate_references_in_session(nmo_cmd_ctx_t *c, int argc, ch
                   sizeof(*changed_ids), validate_compare_object_ids);
         }
         nmo_save_options_t save_options = nmo_tool_owner_save_options_default();
+        nmo_file_info_t file_info = nmo_document_get_file_info(c->document);
+        const uint32_t compression_mask =
+            NMO_FILE_WRITE_CHUNK_COMPRESSED_OLD |
+            NMO_FILE_WRITE_WHOLE_COMPRESSED;
+        const bool source_compressed =
+            (file_info.write_mode & compression_mask) != 0u;
+        save_options.compress_header = source_compressed;
+        save_options.compress_data = source_compressed;
         save_options.flags |= NMO_SAVE_CHANGED_OBJECTS_ONLY;
         save_options.changed_object_ids = changed_ids;
         save_options.changed_object_count = changed_object_count;
