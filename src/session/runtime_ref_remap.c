@@ -872,15 +872,24 @@ static nmo_status_t normalize_beobject_attributes(
     size_t *changes)
 {
     if (!state) return NMO_OK;
-    size_t count = state->attributes.count;
+    const size_t modern_count = state->attributes.count;
+    const size_t legacy_count = state->legacy_attributes.count;
     if ((state->attributes.element_size != 0 &&
          state->attributes.element_size != sizeof(nmo_beobject_attribute_t)) ||
-        (count > 0 &&
+        (modern_count > 0 &&
          state->attributes.element_size != sizeof(nmo_beobject_attribute_t)) ||
-        (count > 0 && state->attributes.data == NULL)) {
+        (modern_count > 0 && state->attributes.data == NULL) ||
+        (state->legacy_attributes.element_size != 0 &&
+         state->legacy_attributes.element_size !=
+             sizeof(nmo_beobject_legacy_attribute_t)) ||
+        (legacy_count > 0 &&
+         (state->legacy_attributes.data == NULL ||
+          state->legacy_attributes.element_size !=
+              sizeof(nmo_beobject_legacy_attribute_t)))) {
         return NMO_ERR_VALIDATION_FAILED;
     }
 
+    size_t count = modern_count;
     for (size_t i = 0; i < count;) {
         nmo_beobject_attribute_t *attributes = NMO_ARRAY_DATA(
             nmo_beobject_attribute_t, &state->attributes);
@@ -896,16 +905,7 @@ static nmo_status_t normalize_beobject_attributes(
         (*changes)++;
     }
 
-    count = state->legacy_attributes.count;
-    if ((state->legacy_attributes.element_size != 0 &&
-         state->legacy_attributes.element_size !=
-             sizeof(nmo_beobject_legacy_attribute_t)) ||
-        (count > 0 &&
-         (state->legacy_attributes.data == NULL ||
-          state->legacy_attributes.element_size !=
-              sizeof(nmo_beobject_legacy_attribute_t)))) {
-        return NMO_ERR_VALIDATION_FAILED;
-    }
+    count = legacy_count;
     for (size_t i = 0; i < count;) {
         nmo_beobject_legacy_attribute_t *legacy_attributes = NMO_ARRAY_DATA(
             nmo_beobject_legacy_attribute_t, &state->legacy_attributes);
