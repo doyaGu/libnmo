@@ -5373,12 +5373,37 @@ TEST(chunk_id_remap, entity_copy_clones_inherited_and_skin_state) {
     ASSERT_EQ(nmo_3dentity_vtable.hash(&source),
               nmo_3dentity_vtable.hash(&copy));
 
+    fail_after_allocator_state_t allocator_state = {
+        .allowed_allocations = 2,
+    };
+    nmo_allocator_t failing_allocator = nmo_allocator_custom(
+        fail_after_alloc, fail_after_free, &allocator_state);
+    nmo_arena_t *failing_arena = nmo_arena_create(
+        &failing_allocator, 1);
+    ASSERT_NOT_NULL(failing_arena);
+    allocator_state.allowed_allocations = allocator_state.allocation_count;
+    nmo_ref_t previous_mesh = nmo_ref_from_raw(909);
+    nmo_3dentity_state_t preserved;
+    ASSERT_EQ(NMO_OK, nmo_3dentity_vtable.create(
+        &preserved, NULL, NULL));
+    preserved.entity_flags = 0x12345678u;
+    preserved.mesh_count = 1;
+    preserved.mesh_ids = &previous_mesh;
+    ASSERT_EQ(NMO_ERR_NOMEM, nmo_3dentity_vtable.copy(
+        &source, &preserved, &entity_type, failing_arena));
+    ASSERT_EQ(0x12345678u, preserved.entity_flags);
+    ASSERT_EQ(1u, preserved.mesh_count);
+    ASSERT_EQ(&previous_mesh, preserved.mesh_ids);
+    ASSERT_EQ(909u, preserved.mesh_ids[0].raw_id);
+
     copy.skin->vertices[0].bone_weights[0] = 0.75f;
     ASSERT_EQ(0.5f, source.skin->vertices[0].bone_weights[0]);
     ASSERT_FALSE(nmo_3dentity_vtable.equals(&source, &copy));
 
+    nmo_3dentity_vtable.destroy(&preserved, NULL, NULL);
     nmo_3dentity_vtable.destroy(&copy, NULL, NULL);
     nmo_3dentity_vtable.destroy(&source, NULL, NULL);
+    nmo_arena_destroy(failing_arena);
     nmo_arena_destroy(copy_arena);
     nmo_arena_destroy(source_arena);
 }

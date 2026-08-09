@@ -39,6 +39,11 @@
 #include <string.h>
 #include <stdint.h>
 
+static nmo_status_t nmo_3dentity_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
+
 NMO_DEFINE_OBJECT_LIFECYCLE(
     3dentity,
     nmo_3dentity_state_t,
@@ -1327,25 +1332,71 @@ static nmo_status_t nmo_3dentity_copy(
 {
     const nmo_3dentity_state_t *source = (const nmo_3dentity_state_t *)src;
     nmo_3dentity_state_t *target = (nmo_3dentity_state_t *)dst;
-    if (source == NULL || target == NULL || type == NULL || arena == NULL) {
+    (void)type;
+    if (source == NULL || target == NULL || arena == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
-    NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
+    NMO_RETURN_IF_ERROR(nmo_3dentity_validate(source, NULL, NULL));
+
+    nmo_3dentity_state_t copied;
+    nmo_status_t result = nmo_3dentity_create(&copied, NULL, NULL);
+    if (result != NMO_OK) return result;
+
     nmo_type_descriptor_t base_type = {
         .size = sizeof(nmo_renderobject_state_t),
     };
-    NMO_RETURN_IF_ERROR(nmo_renderobject_vtable.copy(
-        &source->base, &target->base, &base_type, arena));
-    target->mesh_ids = NULL;
-    target->animation_ids = NULL;
-    target->skin = NULL;
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(
-        arena, (void **)&target->mesh_ids, source->mesh_ids,
-        sizeof(nmo_ref_t), source->mesh_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(
-        arena, (void **)&target->animation_ids, source->animation_ids,
-        sizeof(nmo_ref_t), source->animation_count));
-    return nmo_3dentity_copy_skin(arena, source->skin, &target->skin);
+    result = nmo_renderobject_vtable.copy(
+        &source->base, &copied.base, &base_type, arena);
+    if (result != NMO_OK) goto fail;
+
+    memcpy(copied.world_matrix, source->world_matrix,
+           sizeof(copied.world_matrix));
+    copied.entity_flags = source->entity_flags;
+    copied.moveable_flags = source->moveable_flags;
+    copied.parent = source->parent;
+    copied.place = source->place;
+    copied.z_order = source->z_order;
+    copied.current_mesh = source->current_mesh;
+    copied.mesh_count = source->mesh_count;
+    copied.animation_count = source->animation_count;
+    copied.has_mesh_chunk = source->has_mesh_chunk;
+    copied.has_animation_chunk = source->has_animation_chunk;
+    copied.has_entityndata_chunk = source->has_entityndata_chunk;
+    copied.has_parent_chunk = source->has_parent_chunk;
+    copied.has_flags_chunk = source->has_flags_chunk;
+    copied.has_matrix_chunk = source->has_matrix_chunk;
+
+    result = nmo_object_copy_array(
+        arena, (void **)&copied.mesh_ids, source->mesh_ids,
+        sizeof(nmo_ref_t), source->mesh_count);
+    if (result != NMO_OK) goto fail;
+    result = nmo_object_copy_array(
+        arena, (void **)&copied.animation_ids, source->animation_ids,
+        sizeof(nmo_ref_t), source->animation_count);
+    if (result != NMO_OK) goto fail;
+    result = nmo_3dentity_copy_skin(arena, source->skin, &copied.skin);
+    if (result != NMO_OK) goto fail;
+
+    nmo_beobject_state_t *target_base = &target->base.base;
+    const nmo_beobject_state_t *source_base = &source->base.base;
+    if (target_base->scripts.data == source_base->scripts.data) {
+        memset(&target_base->scripts, 0, sizeof(target_base->scripts));
+    }
+    if (target_base->attributes.data == source_base->attributes.data) {
+        memset(&target_base->attributes, 0, sizeof(target_base->attributes));
+    }
+    if (target_base->legacy_attributes.data ==
+        source_base->legacy_attributes.data) {
+        memset(&target_base->legacy_attributes, 0,
+               sizeof(target_base->legacy_attributes));
+    }
+    nmo_3dentity_destroy(target, NULL, NULL);
+    *target = copied;
+    return NMO_OK;
+
+fail:
+    nmo_3dentity_destroy(&copied, NULL, NULL);
+    return result;
 }
 
 static nmo_status_t nmo_3dentity_validate(
