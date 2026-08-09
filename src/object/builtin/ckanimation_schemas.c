@@ -572,11 +572,6 @@ static nmo_status_t nmo_objectanimation_validate(
             controller_slots |= slot;
         }
     }
-    if (s->format == CKOBJANIM_FORMAT_LEGACY &&
-        (controller_slots & (1u << 3)) != 0u &&
-        (controller_slots & (1u << 2)) == 0u) {
-        return NMO_ERR_VALIDATION_FAILED;
-    }
     for (uint32_t i = 0; i < s->morph_key_parsed_count; ++i) {
         NMO_VALIDATE_BYTES(
             s->morph_keys[i].data,
@@ -2555,6 +2550,33 @@ static nmo_status_t nmo_objectanimation_deserialize_internal(
     NMO_RETURN_OK();
 }
 
+static const nmo_objanim_controller_t *nmo_objectanimation_find_controller(
+    const nmo_objectanimation_state_t *state,
+    uint32_t type)
+{
+    for (uint32_t i = 0; i < state->controller_count; ++i) {
+        if (state->controllers[i].type == type) {
+            return &state->controllers[i];
+        }
+    }
+    return NULL;
+}
+
+static nmo_status_t nmo_objectanimation_write_legacy_controller(
+    nmo_chunk_t *chunk,
+    const nmo_objanim_controller_t *controller)
+{
+    const uint32_t data_size = controller ? controller->data_size : 0u;
+    const uint32_t key_count = controller ? controller->key_count : 0u;
+    NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(chunk, data_size));
+    NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(chunk, key_count));
+    if (controller != NULL) {
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_buffer_no_size(
+            chunk, controller->data, controller->data_size));
+    }
+    return NMO_OK;
+}
+
 static nmo_status_t nmo_objectanimation_serialize_internal(
     const nmo_objectanimation_state_t *in_state,
     nmo_chunk_t *out_chunk,
@@ -2772,61 +2794,38 @@ static nmo_status_t nmo_objectanimation_serialize_internal(
             }
         }
 
-        /* Write controllers with their legacy identifiers */
-        for (uint32_t i = 0; i < in_state->controller_count; ++i) {
-            const nmo_objanim_controller_t *ctrl = &in_state->controllers[i];
-            uint32_t id = 0;
-            if (ctrl->type == CKANIMATION_LINPOS_CONTROL)
-                id = CK_STATESAVE_OBJANIMPOSKEYS;
-            else if (ctrl->type == CKANIMATION_LINROT_CONTROL)
-                id = CK_STATESAVE_OBJANIMROTKEYS;
-            else if (ctrl->type == CKANIMATION_LINSCL_CONTROL)
-                id = CK_STATESAVE_OBJANIMSCLKEYS;
-            else if (ctrl->type == CKANIMATION_LINSCLAXIS_CONTROL)
-                id = CK_STATESAVE_OBJANIMROTKEYS; /* packed with rotation */
+        const nmo_objanim_controller_t *position =
+            nmo_objectanimation_find_controller(
+                in_state, CKANIMATION_LINPOS_CONTROL);
+        const nmo_objanim_controller_t *rotation =
+            nmo_objectanimation_find_controller(
+                in_state, CKANIMATION_LINROT_CONTROL);
+        const nmo_objanim_controller_t *scale_axis =
+            nmo_objectanimation_find_controller(
+                in_state, CKANIMATION_LINSCLAXIS_CONTROL);
+        const nmo_objanim_controller_t *scale =
+            nmo_objectanimation_find_controller(
+                in_state, CKANIMATION_LINSCL_CONTROL);
 
-            /* ScaleAxis is packed inside ROTKEYS section, skip standalone write */
-            if (ctrl->type == CKANIMATION_LINSCLAXIS_CONTROL)
-                continue;
-
-            if (id != 0) {
-                nmo_status_t result = nmo_chunk_write_identifier(out_chunk, id);
-                if (result != NMO_OK) return result;
-                result = nmo_chunk_write_dword(out_chunk, ctrl->data_size);
-                if (result != NMO_OK) return result;
-                result = nmo_chunk_write_dword(out_chunk, ctrl->key_count);
-                if (result != NMO_OK) return result;
-                if (ctrl->data_size > 0 && ctrl->data != NULL) {
-                    result = nmo_chunk_write_buffer_no_size(out_chunk, ctrl->data, ctrl->data_size);
-                    if (result != NMO_OK) return result;
-                }
-
-                /* If this is rotation, append scale axis controller data */
-                if (ctrl->type == CKANIMATION_LINROT_CONTROL) {
-                    const nmo_objanim_controller_t *axis = NULL;
-                    for (uint32_t j = 0; j < in_state->controller_count; ++j) {
-                        if (in_state->controllers[j].type == CKANIMATION_LINSCLAXIS_CONTROL) {
-                            axis = &in_state->controllers[j];
-                            break;
-                        }
-                    }
-                    if (axis != NULL) {
-                        result = nmo_chunk_write_dword(out_chunk, axis->data_size);
-                        if (result != NMO_OK) return result;
-                        result = nmo_chunk_write_dword(out_chunk, axis->key_count);
-                        if (result != NMO_OK) return result;
-                        if (axis->data_size > 0 && axis->data != NULL) {
-                            result = nmo_chunk_write_buffer_no_size(out_chunk, axis->data, axis->data_size);
-                            if (result != NMO_OK) return result;
-                        }
-                    } else {
-                        result = nmo_chunk_write_dword(out_chunk, 0);
-                        if (result != NMO_OK) return result;
-                        result = nmo_chunk_write_dword(out_chunk, 0);
-                        if (result != NMO_OK) return result;
-                    }
-                }
-            }
+        if (position != NULL) {
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(
+                out_chunk, CK_STATESAVE_OBJANIMPOSKEYS));
+            NMO_RETURN_IF_ERROR(nmo_objectanimation_write_legacy_controller(
+                out_chunk, position));
+        }
+        if (rotation != NULL || scale_axis != NULL) {
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(
+                out_chunk, CK_STATESAVE_OBJANIMROTKEYS));
+            NMO_RETURN_IF_ERROR(nmo_objectanimation_write_legacy_controller(
+                out_chunk, rotation));
+            NMO_RETURN_IF_ERROR(nmo_objectanimation_write_legacy_controller(
+                out_chunk, scale_axis));
+        }
+        if (scale != NULL) {
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(
+                out_chunk, CK_STATESAVE_OBJANIMSCLKEYS));
+            NMO_RETURN_IF_ERROR(nmo_objectanimation_write_legacy_controller(
+                out_chunk, scale));
         }
 
         /* Legacy header fields */
