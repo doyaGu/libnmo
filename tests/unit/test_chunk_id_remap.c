@@ -1642,6 +1642,72 @@ TEST(chunk_id_remap, dataarray_cell_refs_round_trip_raw_ids) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, dataarray_legacy_members_match_storage_mode) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_serialize_context_t memory_serialize =
+        nmo_serialize_context_create(arena, NULL, 0, 0);
+    nmo_deserialize_context_t memory_deserialize =
+        nmo_deserialize_context_create(arena, NULL, NULL, 0);
+    nmo_serialize_context_t file_serialize =
+        nmo_serialize_context_create(
+            arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_deserialize_context_t file_deserialize =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+
+    nmo_dataarray_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_dataarray_vtable.create(&source, NULL, NULL));
+    source.order = 11;
+    source.column_index = 12;
+    source.key_column = 13;
+
+    nmo_chunk_t *memory_chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(memory_chunk);
+    memory_chunk->class_id = NMO_CID_DATAARRAY;
+    memory_chunk->data_version = 4;
+    ASSERT_EQ(NMO_OK, nmo_dataarray_serialize(
+        &source, memory_chunk, NULL, &memory_serialize));
+    nmo_chunk_close(memory_chunk);
+    size_t section_dwords = 0u;
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        memory_chunk, CK_STATESAVE_DATAARRAYMEMBERS, &section_dwords));
+    ASSERT_EQ(2u, section_dwords);
+
+    nmo_dataarray_state_t memory_loaded;
+    ASSERT_EQ(NMO_OK, nmo_dataarray_vtable.create(
+        &memory_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_dataarray_deserialize(
+        &memory_loaded, memory_chunk, NULL, &memory_deserialize));
+    ASSERT_EQ(source.order, memory_loaded.order);
+    ASSERT_EQ(source.column_index, memory_loaded.column_index);
+    ASSERT_EQ(-1, memory_loaded.key_column);
+
+    nmo_chunk_t *file_chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(file_chunk);
+    file_chunk->class_id = NMO_CID_DATAARRAY;
+    file_chunk->data_version = 4;
+    file_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_dataarray_serialize(
+        &source, file_chunk, NULL, &file_serialize));
+    nmo_chunk_close(file_chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        file_chunk, CK_STATESAVE_DATAARRAYMEMBERS, &section_dwords));
+    ASSERT_EQ(3u, section_dwords);
+
+    nmo_dataarray_state_t file_loaded;
+    ASSERT_EQ(NMO_OK, nmo_dataarray_vtable.create(
+        &file_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_dataarray_deserialize(
+        &file_loaded, file_chunk, NULL, &file_deserialize));
+    ASSERT_EQ(source.key_column, file_loaded.key_column);
+
+    nmo_dataarray_vtable.destroy(&source, NULL, NULL);
+    nmo_dataarray_vtable.destroy(&memory_loaded, NULL, NULL);
+    nmo_dataarray_vtable.destroy(&file_loaded, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, dataarray_preserves_large_dimensions) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
     ASSERT_NOT_NULL(arena);
@@ -17794,6 +17860,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, behaviorio_truncation_keeps_previous_state);
     REGISTER_TEST(chunk_id_remap, behavior_layout_defaults_preserve_legacy_absence);
     REGISTER_TEST(chunk_id_remap, dataarray_cell_refs_round_trip_raw_ids);
+    REGISTER_TEST(chunk_id_remap, dataarray_legacy_members_match_storage_mode);
     REGISTER_TEST(chunk_id_remap, dataarray_preserves_large_dimensions);
     REGISTER_TEST(chunk_id_remap, dataarray_failures_keep_state_and_target_chunk_atomic);
     REGISTER_TEST(chunk_id_remap, dataarray_copy_preserves_typed_cell_content);

@@ -612,8 +612,10 @@ static nmo_status_t nmo_dataarray_serialize_internal(
     result = nmo_chunk_write_dword(out_chunk, in_state->column_index);
     if (result != NMO_OK) return result;
 
-    result = nmo_chunk_write_int(out_chunk, in_state->key_column);
-    if (result != NMO_OK) return result;
+    if (is_file || nmo_chunk_get_data_version(out_chunk) >= 5u) {
+        result = nmo_chunk_write_int(out_chunk, in_state->key_column);
+        if (result != NMO_OK) return result;
+    }
 
     NMO_RETURN_OK();
 }
