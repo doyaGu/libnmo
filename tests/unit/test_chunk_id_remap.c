@@ -2681,6 +2681,36 @@ TEST(chunk_id_remap, parameterout_refs_round_trip_and_failure_is_atomic) {
         &invalid, partial, NULL, &serialize_context));
     ASSERT_EQ(0u, nmo_chunk_get_data_size(partial));
 
+    nmo_parameterout_state_t oversized;
+    ASSERT_EQ(NMO_OK, nmo_parameterout_vtable.create(
+        &oversized, NULL, NULL));
+    nmo_ref_t oversized_destination = nmo_ref_from_raw(805);
+    oversized.destination_ids = &oversized_destination;
+    oversized.destination_count = (uint32_t)INT32_MAX + 1u;
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,
+              nmo_parameterout_vtable.validate(
+                  &oversized, &parameterout_type, NULL));
+    nmo_chunk_t *oversized_target = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(oversized_target);
+    oversized_target->class_id = NMO_CID_PARAMETEROUT;
+    oversized_target->data_version = 8;
+    oversized_target->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(oversized_target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        oversized_target, 0x87654321u));
+    nmo_chunk_close(oversized_target);
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_parameterout_serialize(
+        &oversized, oversized_target, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(oversized_target));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(oversized_target));
+    uint32_t oversized_marker = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(
+        oversized_target, &oversized_marker));
+    ASSERT_EQ(0x87654321u, oversized_marker);
+    oversized.destination_ids = NULL;
+    oversized.destination_count = 0;
+    nmo_parameterout_vtable.destroy(&oversized, NULL, NULL);
+
     nmo_ref_t invalid_destinations[] = {
         nmo_ref_from_raw(803),
         nmo_ref_from_id(999),

@@ -336,6 +336,9 @@ static nmo_status_t nmo_parameterout_validate(
     if (s == NULL) return NMO_ERR_INVALID_ARGUMENT;
     NMO_RETURN_IF_ERROR(nmo_parameter_vtable.validate(
         &s->base, NULL, context));
+    if (s->destination_count > INT32_MAX) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
     NMO_VALIDATE_COUNT(s->destination_ids, s->destination_count, "destination_ids");
     NMO_RETURN_OK();
 }
