@@ -6384,6 +6384,24 @@ TEST(chunk_id_remap, sound_family_failures_keep_state_and_target_chunk_atomic) {
     ASSERT_EQ(899u, nmo_beobject_script_array_get_id(
         &sound.base.scripts, 0));
 
+    nmo_chunk_t *sound_cross_section = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(sound_cross_section);
+    sound_cross_section->class_id = NMO_CID_SOUND;
+    sound_cross_section->data_version = 7;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(sound_cross_section));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        sound_cross_section, CK_STATESAVE_SOUNDFILENAME));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        sound_cross_section, CKSOUND_EXTERNAL));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(sound_cross_section, 8u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        sound_cross_section, 0x44434241u));
+    nmo_chunk_close(sound_cross_section);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_sound_deserialize(
+        &sound, sound_cross_section, NULL, &deserialize_context));
+    ASSERT_EQ(CKSOUND_INCLUDEORIGINALFILE, sound.save_options);
+    ASSERT_STR_EQ("old.wav", sound.file_name);
+
     nmo_chunk_t *midi_truncated = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(midi_truncated);
     midi_truncated->class_id = NMO_CID_MIDISOUND;
@@ -6409,6 +6427,61 @@ TEST(chunk_id_remap, sound_family_failures_keep_state_and_target_chunk_atomic) {
     ASSERT_STR_EQ("derived.mid", midi.midi_file_name);
     ASSERT_EQ(898u, nmo_beobject_script_array_get_id(
         &midi.base.base.scripts, 0));
+
+    nmo_chunk_t *midi_cross_section = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(midi_cross_section);
+    midi_cross_section->class_id = NMO_CID_MIDISOUND;
+    midi_cross_section->data_version = 7;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(midi_cross_section));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        midi_cross_section, CK_STATESAVE_MIDISOUNDFILE));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(midi_cross_section, 8u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        midi_cross_section, 0x44434241u));
+    nmo_chunk_close(midi_cross_section);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_midisound_deserialize(
+        &midi, midi_cross_section, NULL, &deserialize_context));
+    ASSERT_STR_EQ("old.mid", midi.base.file_name);
+    ASSERT_TRUE(midi.has_midi_file_name);
+    ASSERT_STR_EQ("derived.mid", midi.midi_file_name);
+
+    nmo_wavesound_state_t wave;
+    ASSERT_EQ(NMO_OK, nmo_wavesound_vtable.create(&wave, NULL, NULL));
+    wave.has_wave_file_name = 1;
+    wave.wave_file_name = "old-wave.wav";
+    wave.has_duration = 1;
+    wave.duration = 2468;
+
+    nmo_chunk_t *wave_file_cross_section = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(wave_file_cross_section);
+    wave_file_cross_section->class_id = NMO_CID_WAVESOUND;
+    wave_file_cross_section->data_version = 7;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(wave_file_cross_section));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        wave_file_cross_section, CK_STATESAVE_WAVSOUNDFILE));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(wave_file_cross_section, 8u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        wave_file_cross_section, 0x44434241u));
+    nmo_chunk_close(wave_file_cross_section);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_wavesound_deserialize(
+        &wave, wave_file_cross_section, NULL, &deserialize_context));
+    ASSERT_STR_EQ("old-wave.wav", wave.wave_file_name);
+    ASSERT_EQ(2468, wave.duration);
+
+    nmo_chunk_t *wave_duration_cross_section = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(wave_duration_cross_section);
+    wave_duration_cross_section->class_id = NMO_CID_WAVESOUND;
+    wave_duration_cross_section->data_version = 7;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(wave_duration_cross_section));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        wave_duration_cross_section, CK_STATESAVE_WAVSOUNDDURATION));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        wave_duration_cross_section, 2469u));
+    nmo_chunk_close(wave_duration_cross_section);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_wavesound_deserialize(
+        &wave, wave_duration_cross_section, NULL, &deserialize_context));
+    ASSERT_STR_EQ("old-wave.wav", wave.wave_file_name);
+    ASSERT_EQ(2468, wave.duration);
 
     fail_after_allocator_state_t allocator_state = {
         .allocation_count = 0,
@@ -6451,6 +6524,7 @@ TEST(chunk_id_remap, sound_family_failures_keep_state_and_target_chunk_atomic) {
     nmo_array_dispose(&midi.base.base.legacy_attributes);
     nmo_sound_vtable.destroy(&sound, NULL, NULL);
     nmo_midisound_vtable.destroy(&midi, NULL, NULL);
+    nmo_wavesound_vtable.destroy(&wave, NULL, NULL);
     nmo_sound_vtable.destroy(&source, NULL, NULL);
     nmo_arena_destroy(failing_arena);
     nmo_arena_destroy(arena);

@@ -181,15 +181,25 @@ static nmo_status_t nmo_sound_deserialize_internal(
     out_state->file_name = NULL;
     out_state->save_options = CKSOUND_USEGLOBAL;
 
-    nmo_status_t seek_result = nmo_chunk_seek_identifier(
-        chunk, CK_STATESAVE_SOUNDFILENAME);
+    size_t section_dwords = 0u;
+    nmo_status_t seek_result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_SOUNDFILENAME, &section_dwords);
     if (seek_result == NMO_OK) {
-        nmo_status_t result = nmo_chunk_read_dword(chunk, &out_state->save_options);
+        const size_t section_end =
+            nmo_chunk_get_position(chunk) + section_dwords;
+        uint32_t save_options = CKSOUND_USEGLOBAL;
+        char *file_name = NULL;
+        nmo_status_t result = nmo_chunk_read_dword(chunk, &save_options);
         if (result != NMO_OK) {
             return result;
         }
-        NMO_RETURN_IF_ERROR(
-            nmo_chunk_read_string_checked(chunk, &out_state->file_name, NULL));
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_string_checked(
+            chunk, &file_name, NULL));
+        if (nmo_chunk_get_position(chunk) > section_end) {
+            return NMO_ERR_TRUNCATED_CHUNK;
+        }
+        out_state->save_options = save_options;
+        out_state->file_name = file_name;
     } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
     NMO_RETURN_OK();
@@ -312,19 +322,34 @@ static nmo_status_t nmo_wavesound_deserialize_internal(
     out_state->position = (nmo_vector_t){0.0f, 0.0f, 0.0f};
     out_state->direction = (nmo_vector_t){0.0f, 0.0f, 0.0f};
 
-    nmo_status_t seek_result = nmo_chunk_seek_identifier(
-        chunk, CK_STATESAVE_WAVSOUNDFILE);
+    size_t section_dwords = 0u;
+    nmo_status_t seek_result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_WAVSOUNDFILE, &section_dwords);
     if (seek_result == NMO_OK) {
+        const size_t section_end =
+            nmo_chunk_get_position(chunk) + section_dwords;
+        char *wave_file_name = NULL;
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_string_checked(
+            chunk, &wave_file_name, NULL));
+        if (nmo_chunk_get_position(chunk) > section_end) {
+            return NMO_ERR_TRUNCATED_CHUNK;
+        }
         out_state->has_wave_file_name = 1;
-        NMO_RETURN_IF_ERROR(
-            nmo_chunk_read_string_checked(chunk, &out_state->wave_file_name, NULL));
+        out_state->wave_file_name = wave_file_name;
     } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
-    seek_result = nmo_chunk_seek_identifier(
-        chunk, CK_STATESAVE_WAVSOUNDDURATION);
+    seek_result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_WAVSOUNDDURATION, &section_dwords);
     if (seek_result == NMO_OK) {
+        const size_t section_end =
+            nmo_chunk_get_position(chunk) + section_dwords;
+        int32_t duration = 0;
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &duration));
+        if (nmo_chunk_get_position(chunk) > section_end) {
+            return NMO_ERR_TRUNCATED_CHUNK;
+        }
         out_state->has_duration = 1;
-        NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &out_state->duration));
+        out_state->duration = duration;
     } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
     seek_result = nmo_chunk_seek_identifier(
@@ -578,12 +603,20 @@ static nmo_status_t nmo_midisound_deserialize_internal(
     out_state->has_midi_file_name = 0;
     out_state->midi_file_name = NULL;
 
-    nmo_status_t seek_result = nmo_chunk_seek_identifier(
-        chunk, CK_STATESAVE_MIDISOUNDFILE);
+    size_t section_dwords = 0u;
+    nmo_status_t seek_result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_MIDISOUNDFILE, &section_dwords);
     if (seek_result == NMO_OK) {
+        const size_t section_end =
+            nmo_chunk_get_position(chunk) + section_dwords;
+        char *midi_file_name = NULL;
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_string_checked(
+            chunk, &midi_file_name, NULL));
+        if (nmo_chunk_get_position(chunk) > section_end) {
+            return NMO_ERR_TRUNCATED_CHUNK;
+        }
         out_state->has_midi_file_name = 1;
-        NMO_RETURN_IF_ERROR(
-            nmo_chunk_read_string_checked(chunk, &out_state->midi_file_name, NULL));
+        out_state->midi_file_name = midi_file_name;
     } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
     NMO_RETURN_OK();
