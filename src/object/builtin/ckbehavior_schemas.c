@@ -464,7 +464,7 @@ static void behavior_check_ref_classes(
             &state->owner,
             repository,
             types,
-            NMO_CID_SCENEOBJECT);
+            NMO_CID_BEOBJECT);
         nmo_ref_check_class(
             &state->target_parameter,
             repository,

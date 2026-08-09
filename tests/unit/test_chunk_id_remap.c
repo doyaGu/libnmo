@@ -988,6 +988,97 @@ TEST(chunk_id_remap, behavior_unresolved_ref_round_trips_raw_id) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, behavior_owner_requires_beobject_class) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
+    ASSERT_NOT_NULL(arena);
+    nmo_type_registry_t *types = nmo_type_registry_create(arena);
+    ASSERT_NOT_NULL(types);
+    ASSERT_EQ(NMO_OK, nmo_register_builtin_types(types));
+    ASSERT_EQ(NMO_OK, nmo_register_object_types(types));
+    nmo_object_repository_t *repository =
+        nmo_object_repository_create(NULL);
+    ASSERT_NOT_NULL(repository);
+
+    nmo_object_t *wrong = nmo_object_create(
+        NULL, 1750u, NMO_CID_SCENEOBJECT);
+    nmo_object_t *valid = nmo_object_create(
+        NULL, 1751u, NMO_CID_BEOBJECT);
+    ASSERT_NOT_NULL(wrong);
+    ASSERT_NOT_NULL(valid);
+    ASSERT_EQ(NMO_OK, nmo_object_set_type_guid(
+        wrong, CKPGUID_SCENEOBJECT));
+    ASSERT_EQ(NMO_OK, nmo_object_set_type_guid(
+        valid, CKPGUID_BEOBJECT));
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repository, &wrong));
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repository, &valid));
+
+    nmo_id_remap_t *file_to_runtime = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(file_to_runtime);
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(file_to_runtime, 741u, 1750u));
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(file_to_runtime, 742u, 1751u));
+    nmo_chunk_file_context_t file_context = {
+        .file_to_runtime = file_to_runtime,
+        .repository = repository,
+    };
+    nmo_type_runtime_t type_runtime = {.types = types, .ops = NULL};
+    nmo_deserialize_context_t context = nmo_deserialize_context_create(
+        arena, repository, &type_runtime, NMO_DESER_FLAG_FILE_MODE);
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, repository, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+
+    nmo_behavior_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_behavior_vtable.create(&source, NULL, NULL));
+    source.owner = nmo_ref_from_raw(741u);
+
+    nmo_chunk_t *wrong_chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(wrong_chunk);
+    wrong_chunk->class_id = NMO_CID_BEHAVIOR;
+    wrong_chunk->chunk_version = NMO_CHUNK_VERSION4;
+    wrong_chunk->data_version = 4;
+    wrong_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_behavior_serialize(
+        &source, wrong_chunk, NULL, &serialize_context));
+    nmo_chunk_close(wrong_chunk);
+    nmo_chunk_set_file_context(wrong_chunk, &file_context);
+
+    nmo_behavior_state_t wrong_owner;
+    ASSERT_EQ(NMO_OK, nmo_behavior_vtable.create(
+        &wrong_owner, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_behavior_deserialize(
+        &wrong_owner, wrong_chunk, NULL, &context));
+    ASSERT_EQ(NMO_REF_CLASS_MISMATCH, wrong_owner.owner.state);
+    ASSERT_EQ(741u, wrong_owner.owner.raw_id);
+    ASSERT_EQ(1750u, wrong_owner.owner.id);
+
+    source.owner = nmo_ref_from_raw(742u);
+    nmo_chunk_t *valid_chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(valid_chunk);
+    valid_chunk->class_id = NMO_CID_BEHAVIOR;
+    valid_chunk->chunk_version = NMO_CHUNK_VERSION4;
+    valid_chunk->data_version = 4;
+    valid_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_behavior_serialize(
+        &source, valid_chunk, NULL, &serialize_context));
+    nmo_chunk_close(valid_chunk);
+    nmo_chunk_set_file_context(valid_chunk, &file_context);
+
+    nmo_behavior_state_t valid_owner;
+    ASSERT_EQ(NMO_OK, nmo_behavior_vtable.create(
+        &valid_owner, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_behavior_deserialize(
+        &valid_owner, valid_chunk, NULL, &context));
+    ASSERT_EQ(NMO_REF_RESOLVED, valid_owner.owner.state);
+    ASSERT_EQ(742u, valid_owner.owner.raw_id);
+    ASSERT_EQ(1751u, valid_owner.owner.id);
+
+    nmo_behavior_vtable.destroy(&source, NULL, NULL);
+    nmo_behavior_vtable.destroy(&wrong_owner, NULL, NULL);
+    nmo_behavior_vtable.destroy(&valid_owner, NULL, NULL);
+    nmo_object_repository_destroy(repository);
+    nmo_type_registry_destroy(types);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, behavior_legacy_file_layout_round_trips) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
     ASSERT_NOT_NULL(arena);
@@ -20190,6 +20281,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, ref_sequence_rejects_invalid_identifier_end);
     REGISTER_TEST(chunk_id_remap, unresolved_ref_preserves_raw_id);
     REGISTER_TEST(chunk_id_remap, behavior_unresolved_ref_round_trips_raw_id);
+    REGISTER_TEST(chunk_id_remap, behavior_owner_requires_beobject_class);
     REGISTER_TEST(chunk_id_remap, behavior_legacy_file_layout_round_trips);
     REGISTER_TEST(chunk_id_remap, behavior_sections_do_not_borrow_following_identifiers);
     REGISTER_TEST(chunk_id_remap, behavior_non_file_reads_single_activity);
