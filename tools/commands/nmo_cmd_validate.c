@@ -30,6 +30,7 @@
 #include "object/nmo_class_ids.h"
 #include "object/nmo_ref_graph.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
+#include "object/builtin/nmo_dataarray_schemas.h"
 #include "object/nmo_object_guids.h"
 #include "type/nmo_reflection.h"
 #include "type/nmo_type_query.h"
@@ -843,6 +844,51 @@ static bool validate_visit_skin_bone_ref_issues(
     return true;
 }
 
+static bool validate_visit_dataarray_ref_issues(
+    const nmo_type_registry_t *types,
+    nmo_object_t *source,
+    validate_typed_ref_issue_fn visitor,
+    void *user_data,
+    size_t *issue_count)
+{
+    const nmo_dataarray_state_t *dataarray =
+        (const nmo_dataarray_state_t *)
+            nmo_type_query_object_get_ancestor_state_by_guid(
+                types, source, CKPGUID_DATAARRAY);
+    if (dataarray == NULL || dataarray->column_formats == NULL ||
+        dataarray->rows == NULL) {
+        return true;
+    }
+
+    for (size_t row_index = 0; row_index < dataarray->row_count; ++row_index) {
+        const nmo_dataarray_row_t *row = &dataarray->rows[row_index];
+        if (row->cells == NULL) continue;
+        const size_t column_count = row->column_count < dataarray->column_count
+            ? row->column_count : dataarray->column_count;
+        for (size_t column_index = 0;
+             column_index < column_count;
+             ++column_index) {
+            const CK_ARRAYTYPE column_type =
+                dataarray->column_formats[column_index].type;
+            const nmo_ref_t *ref = NULL;
+            if (column_type == CKARRAYTYPE_OBJECT) {
+                ref = &row->cells[column_index].object_ref;
+            } else if (column_type == CKARRAYTYPE_PARAMETER) {
+                ref = &row->cells[column_index].parameter.ref;
+            }
+            if (!validate_ref_has_issue(ref)) continue;
+            ++*issue_count;
+            const size_t index = row_index * dataarray->column_count +
+                column_index;
+            if (visitor != NULL && !visitor(
+                    user_data, source, ref, "rows", index)) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 static size_t validate_foreach_typed_ref_issue(
     const nmo_cmd_ctx_t *c,
     nmo_object_repository_t *repo,
@@ -884,6 +930,10 @@ static size_t validate_foreach_typed_ref_issue(
                 type_rt->types, current->base_type);
         }
         if (!validate_visit_skin_bone_ref_issues(
+                type_rt->types, source, visitor, user_data, &issue_count)) {
+            return issue_count;
+        }
+        if (!validate_visit_dataarray_ref_issues(
                 type_rt->types, source, visitor, user_data, &issue_count)) {
             return issue_count;
         }
