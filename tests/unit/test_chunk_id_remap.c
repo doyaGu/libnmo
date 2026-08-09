@@ -11361,6 +11361,32 @@ TEST(chunk_id_remap, synchro_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(931u, NMO_ARRAY_DATA(
         nmo_ref_t, &failed.passed_ids)[0].raw_id);
 
+    nmo_chunk_t *trailing_waiters = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(trailing_waiters);
+    trailing_waiters->class_id = NMO_CID_SYNCHRO;
+    trailing_waiters->data_version = 7;
+    trailing_waiters->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(trailing_waiters));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        trailing_waiters, CK_STATESAVE_SYNCHRODATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(trailing_waiters, 8));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(
+        trailing_waiters, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(
+        trailing_waiters, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        trailing_waiters, 0x12345678u));
+    nmo_chunk_close(trailing_waiters);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_synchro_deserialize(
+        &failed, trailing_waiters, NULL, &deserialize_context));
+    ASSERT_EQ(99, failed.max_waiters);
+    ASSERT_EQ(1u, failed.arrived_ids.count);
+    ASSERT_EQ(1u, failed.passed_ids.count);
+    ASSERT_EQ(930u, NMO_ARRAY_DATA(
+        nmo_ref_t, &failed.arrived_ids)[0].raw_id);
+    ASSERT_EQ(931u, NMO_ARRAY_DATA(
+        nmo_ref_t, &failed.passed_ids)[0].raw_id);
+
     nmo_synchro_state_t invalid;
     ASSERT_EQ(NMO_OK, nmo_synchro_vtable.create(&invalid, NULL, NULL));
     nmo_ref_t valid_waiter = nmo_ref_from_raw(932);
@@ -11428,6 +11454,20 @@ TEST(chunk_id_remap, synchro_scalar_failures_keep_state_and_target_chunk_atomic)
     ASSERT_EQ(NMO_CKOBJECT_HIERARCHICAL, state.base.visibility_flags);
     ASSERT_EQ(42, state.event_flag);
 
+    nmo_chunk_t *trailing_state = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(trailing_state);
+    trailing_state->class_id = NMO_CID_STATE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(trailing_state));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        trailing_state, CK_STATESAVE_SYNCHRODATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(trailing_state, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing_state, 0x12345678u));
+    nmo_chunk_close(trailing_state);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_state_deserialize(
+        &state, trailing_state, NULL, &deserialize_context));
+    ASSERT_EQ(NMO_CKOBJECT_HIERARCHICAL, state.base.visibility_flags);
+    ASSERT_EQ(42, state.event_flag);
+
     nmo_chunk_t *cross_section_state = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(cross_section_state);
     cross_section_state->class_id = NMO_CID_STATE;
@@ -11483,6 +11523,21 @@ TEST(chunk_id_remap, synchro_scalar_failures_keep_state_and_target_chunk_atomic)
     nmo_chunk_close(cross_section_critical);
     ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_criticalsection_deserialize(
         &critical, cross_section_critical, NULL, &deserialize_context));
+    ASSERT_EQ(NMO_CKOBJECT_HIERARCHICAL, critical.base.visibility_flags);
+    ASSERT_EQ(933u, critical.object_in_section.raw_id);
+
+    nmo_chunk_t *trailing_critical = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(trailing_critical);
+    trailing_critical->class_id = NMO_CID_CRITICALSECTION;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(trailing_critical));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        trailing_critical, CK_STATESAVE_SYNCHRODATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(trailing_critical, 934));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        trailing_critical, 0x12345678u));
+    nmo_chunk_close(trailing_critical);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_criticalsection_deserialize(
+        &critical, trailing_critical, NULL, &deserialize_context));
     ASSERT_EQ(NMO_CKOBJECT_HIERARCHICAL, critical.base.visibility_flags);
     ASSERT_EQ(933u, critical.object_in_section.raw_id);
 
