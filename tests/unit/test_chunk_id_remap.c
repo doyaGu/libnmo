@@ -14773,6 +14773,78 @@ TEST(chunk_id_remap, beobject_attribute_unresolved_ref_round_trips_raw_id) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, beobject_attributes_require_parameterout_class) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
+    ASSERT_NOT_NULL(arena);
+    nmo_type_registry_t *types = nmo_type_registry_create(arena);
+    ASSERT_NOT_NULL(types);
+    ASSERT_EQ(NMO_OK, nmo_register_builtin_types(types));
+    ASSERT_EQ(NMO_OK, nmo_register_object_types(types));
+    nmo_object_repository_t *repository =
+        nmo_object_repository_create(NULL);
+    ASSERT_NOT_NULL(repository);
+
+    nmo_object_t *wrong = nmo_object_create(
+        NULL, 1740u, NMO_CID_PARAMETER);
+    nmo_object_t *valid = nmo_object_create(
+        NULL, 1741u, NMO_CID_PARAMETEROUT);
+    ASSERT_NOT_NULL(wrong);
+    ASSERT_NOT_NULL(valid);
+    ASSERT_EQ(NMO_OK, nmo_object_set_type_guid(
+        wrong, CKPGUID_PARAMETER));
+    ASSERT_EQ(NMO_OK, nmo_object_set_type_guid(
+        valid, CKPGUID_PARAMETEROUT));
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repository, &wrong));
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repository, &valid));
+
+    nmo_id_remap_t *file_to_runtime = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(file_to_runtime);
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(file_to_runtime, 731u, 1740u));
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(file_to_runtime, 732u, 1741u));
+    nmo_chunk_file_context_t file_context = {
+        .file_to_runtime = file_to_runtime,
+        .repository = repository,
+    };
+    nmo_type_runtime_t type_runtime = {.types = types, .ops = NULL};
+    nmo_deserialize_context_t context = nmo_deserialize_context_create(
+        arena, repository, &type_runtime, NMO_DESER_FLAG_FILE_MODE);
+
+    nmo_beobject_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(&source, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_attribute_array_append(
+        &source.attributes, 731u, 1u, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_attribute_array_append(
+        &source.attributes, 732u, 2u, NULL));
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    chunk->class_id = NMO_CID_BEOBJECT;
+    chunk->data_version = 7;
+    chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_beobject_serialize(&source, chunk, NULL, NULL));
+    nmo_chunk_close(chunk);
+    nmo_chunk_set_file_context(chunk, &file_context);
+
+    nmo_beobject_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(&loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_deserialize(
+        &loaded, chunk, NULL, &context));
+    ASSERT_EQ(2u, loaded.attributes.count);
+    const nmo_beobject_attribute_t *attributes = NMO_ARRAY_DATA(
+        nmo_beobject_attribute_t, &loaded.attributes);
+    ASSERT_EQ(NMO_REF_CLASS_MISMATCH, attributes[0].parameter.state);
+    ASSERT_EQ(731u, attributes[0].parameter.raw_id);
+    ASSERT_EQ(1740u, attributes[0].parameter.id);
+    ASSERT_EQ(NMO_REF_RESOLVED, attributes[1].parameter.state);
+    ASSERT_EQ(732u, attributes[1].parameter.raw_id);
+    ASSERT_EQ(1741u, attributes[1].parameter.id);
+
+    nmo_beobject_vtable.destroy(&source, NULL, NULL);
+    nmo_beobject_vtable.destroy(&loaded, NULL, NULL);
+    nmo_object_repository_destroy(repository);
+    nmo_type_registry_destroy(types);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, beobject_attribute_failure_keeps_previous_atomic_state) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
     ASSERT_NOT_NULL(arena);
@@ -20214,6 +20286,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, synchro_scalar_failures_keep_state_and_target_chunk_atomic);
     REGISTER_TEST(chunk_id_remap, synchro_refs_require_beobject_class);
     REGISTER_TEST(chunk_id_remap, beobject_attribute_unresolved_ref_round_trips_raw_id);
+    REGISTER_TEST(chunk_id_remap, beobject_attributes_require_parameterout_class);
     REGISTER_TEST(chunk_id_remap, beobject_attribute_failure_keeps_previous_atomic_state);
     REGISTER_TEST(chunk_id_remap, beobject_serializer_does_not_publish_partial_chunk);
     REGISTER_TEST(chunk_id_remap, beobject_preserves_script_and_priority_layouts);
