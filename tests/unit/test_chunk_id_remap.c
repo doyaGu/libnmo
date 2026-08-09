@@ -3139,7 +3139,7 @@ TEST(chunk_id_remap, material_preserves_file_layouts) {
     ASSERT_EQ(NMO_OK, nmo_material_serialize(
         &modern_default, default_version, NULL, &serialize_context));
     nmo_chunk_close(default_version);
-    ASSERT_EQ(7u, default_version->data_version);
+    ASSERT_EQ(NMO_CHUNK_DATA_VERSION_CURRENT, default_version->data_version);
     nmo_material_state_t default_loaded;
     ASSERT_EQ(NMO_OK, nmo_material_vtable.create(
         &default_loaded, NULL, NULL));
@@ -5347,7 +5347,7 @@ TEST(chunk_id_remap, camera_preserves_file_layouts) {
     ASSERT_EQ(NMO_OK, nmo_camera_serialize(
         &modern_default, default_version, NULL, &serialize_context));
     nmo_chunk_close(default_version);
-    ASSERT_EQ(7u, default_version->data_version);
+    ASSERT_EQ(NMO_CHUNK_DATA_VERSION_CURRENT, default_version->data_version);
     ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
         default_version, CK_STATESAVE_CAMERAONLY));
     nmo_camera_state_t default_loaded;
@@ -5502,7 +5502,7 @@ TEST(chunk_id_remap, light_preserves_file_layouts) {
     ASSERT_EQ(NMO_OK, nmo_light_serialize(
         &modern_default, default_version, NULL, &serialize_context));
     nmo_chunk_close(default_version);
-    ASSERT_EQ(7u, default_version->data_version);
+    ASSERT_EQ(NMO_CHUNK_DATA_VERSION_CURRENT, default_version->data_version);
     size_t payload_dwords = 0;
     ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
         default_version, CK_STATESAVE_LIGHTDATA, &payload_dwords));
@@ -7662,7 +7662,7 @@ TEST(chunk_id_remap, texture_preserves_legacy_file_layout) {
     ASSERT_EQ(NMO_OK, nmo_texture_serialize(
         &modern_default, modern, NULL, &serialize_context));
     nmo_chunk_close(modern);
-    ASSERT_EQ(7u, modern->data_version);
+    ASSERT_EQ(NMO_CHUNK_DATA_VERSION_CURRENT, modern->data_version);
     ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
         modern, CK_STATESAVE_OLDTEXONLY));
     ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_chunk_seek_identifier(
@@ -13133,7 +13133,7 @@ TEST(chunk_id_remap, beobject_preserves_script_and_priority_layouts) {
     authored_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
     ASSERT_EQ(NMO_OK, nmo_beobject_serialize(
         &authored, authored_chunk, NULL, NULL));
-    ASSERT_EQ(7u, authored_chunk->data_version);
+    ASSERT_EQ(NMO_CHUNK_DATA_VERSION_CURRENT, authored_chunk->data_version);
     nmo_chunk_close(authored_chunk);
     nmo_beobject_state_t authored_loaded;
     ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(

@@ -281,7 +281,7 @@ static nmo_status_t nmo_camera_serialize_internal(
     const bool write_legacy = is_file && data_version < 5u &&
         (data_version != 0u || has_legacy_layout);
     if (data_version == 0u && !write_legacy) {
-        out_chunk->data_version = 7u;
+        out_chunk->data_version = NMO_CHUNK_DATA_VERSION_CURRENT;
     }
     const bool has_default_values =
         in_state->projection_type == 1u && in_state->fov == 0.5f &&

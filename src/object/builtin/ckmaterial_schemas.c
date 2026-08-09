@@ -689,7 +689,7 @@ static nmo_status_t nmo_material_serialize_internal(
     const bool write_legacy = is_file && data_version < 5u &&
         (data_version != 0u || state->material_data_is_legacy);
     if (data_version == 0u && !write_legacy) {
-        chunk->data_version = 7u;
+        chunk->data_version = NMO_CHUNK_DATA_VERSION_CURRENT;
     }
     if (write_material) {
         NMO_RETURN_IF_ERROR(nmo_material_validate(state, type, context));

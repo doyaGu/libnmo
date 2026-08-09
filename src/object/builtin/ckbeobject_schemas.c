@@ -854,7 +854,7 @@ static nmo_status_t nmo_beobject_serialize_internal(
                 requested_data_version < 5u));
     if (write_data_section && requested_data_version == 0u &&
         !write_legacy_data) {
-        out_chunk->data_version = 7u;
+        out_chunk->data_version = NMO_CHUNK_DATA_VERSION_CURRENT;
     }
     const uint32_t data_version = nmo_chunk_get_data_version(out_chunk);
     const bool write_modern_attributes =
