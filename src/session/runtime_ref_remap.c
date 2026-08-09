@@ -9,6 +9,7 @@
 #include "object/builtin/nmo_beobject_schemas.h"
 #include "object/builtin/nmo_character_schemas.h"
 #include "object/builtin/nmo_curve_schemas.h"
+#include "object/builtin/nmo_dataarray_schemas.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_grid_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
@@ -1094,6 +1095,60 @@ static nmo_status_t normalize_3dentity_skin_bones(
     return NMO_OK;
 }
 
+static nmo_status_t normalize_dataarray_cells(
+    nmo_dataarray_state_t *state,
+    nmo_object_repository_t *repo,
+    const nmo_type_registry_t *types,
+    size_t *changes)
+{
+    if (state == NULL) return NMO_OK;
+    if ((state->column_count > 0 && state->column_formats == NULL) ||
+        (state->row_count > 0 && state->rows == NULL)) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+
+    for (uint32_t row_index = 0; row_index < state->row_count; ++row_index) {
+        nmo_dataarray_row_t *row = &state->rows[row_index];
+        if (row->column_count != state->column_count ||
+            (row->column_count > 0 && row->cells == NULL)) {
+            return NMO_ERR_VALIDATION_FAILED;
+        }
+        for (uint32_t column_index = 0;
+             column_index < state->column_count;
+             ++column_index) {
+            const CK_ARRAYTYPE column_type =
+                state->column_formats[column_index].type;
+            nmo_ref_t *ref = NULL;
+            bool valid = true;
+            if (column_type == CKARRAYTYPE_OBJECT) {
+                ref = &row->cells[column_index].object_ref;
+                valid = ref->state == NMO_REF_NONE ||
+                    (ref->state == NMO_REF_RESOLVED &&
+                     !normalize_id_is_invalid(repo, ref->id));
+            } else if (column_type == CKARRAYTYPE_PARAMETER) {
+                ref = &row->cells[column_index].parameter.ref;
+                if (ref->state != NMO_REF_NONE) {
+                    const nmo_object_t *target =
+                        ref->state == NMO_REF_RESOLVED
+                            ? nmo_object_repository_find_by_id(repo, ref->id)
+                            : NULL;
+                    valid = target != NULL &&
+                        normalize_is_parameter_object(types, target, true);
+                }
+            } else if (column_type != CKARRAYTYPE_INT &&
+                       column_type != CKARRAYTYPE_FLOAT &&
+                       column_type != CKARRAYTYPE_STRING) {
+                return NMO_ERR_VALIDATION_FAILED;
+            }
+            if (ref != NULL && !valid) {
+                *ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+                ++*changes;
+            }
+        }
+    }
+    return NMO_OK;
+}
+
 typedef struct normalize_ref_ctx {
     nmo_object_repository_t *repo;
     const nmo_type_registry_t *types;
@@ -1299,6 +1354,11 @@ nmo_status_t nmo_runtime_normalize_invalid_refs(
                 type_rt->types, obj, CKPGUID_3DENTITY);
         NMO_RETURN_IF_ERROR(normalize_3dentity_skin_bones(
             entity3d, repo, type_rt->types, &changed));
+        nmo_dataarray_state_t *dataarray = (nmo_dataarray_state_t *)
+            nmo_type_query_object_get_ancestor_state_by_guid(
+                type_rt->types, obj, CKPGUID_DATAARRAY);
+        NMO_RETURN_IF_ERROR(normalize_dataarray_cells(
+            dataarray, repo, type_rt->types, &changed));
 
         const nmo_type_descriptor_t *derived =
             runtime_find_type_for_object(type_rt, obj);

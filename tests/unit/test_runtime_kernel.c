@@ -23,6 +23,7 @@
 #include "object/builtin/nmo_camera_schemas.h"
 #include "object/builtin/nmo_character_schemas.h"
 #include "object/builtin/nmo_curve_schemas.h"
+#include "object/builtin/nmo_dataarray_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "object/builtin/nmo_patchmesh_schemas.h"
 #include "object/builtin/nmo_place_schemas.h"
@@ -2667,6 +2668,66 @@ TEST(runtime_kernel, normalize_and_safe_detach_preserve_skin_indices) {
     nmo_context_release(ctx);
 }
 
+TEST(runtime_kernel, normalize_clears_invalid_dataarray_cells) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+
+    nmo_object_id_t dataarray_id = 0;
+    nmo_object_id_t object_id = 0;
+    nmo_object_id_t parameter_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_DATAARRAY, "array", NMO_NULL_GUID,
+        &dataarray_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_OBJECT, "object", NMO_NULL_GUID,
+        &object_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_PARAMETER, "parameter", NMO_NULL_GUID,
+        &parameter_id, NULL));
+
+    nmo_dataarray_column_format_t formats[] = {
+        {.type = CKARRAYTYPE_OBJECT},
+        {.type = CKARRAYTYPE_OBJECT},
+        {.type = CKARRAYTYPE_PARAMETER},
+        {.type = CKARRAYTYPE_PARAMETER},
+        {.type = CKARRAYTYPE_INT},
+    };
+    nmo_dataarray_cell_t cells[5] = {0};
+    cells[0].object_ref = nmo_ref_from_id(object_id);
+    cells[1].object_ref = nmo_ref_from_raw(0x7FFFFF41u);
+    cells[2].parameter.ref = nmo_ref_from_id(parameter_id);
+    cells[3].parameter.ref = nmo_ref_from_id(object_id);
+    cells[4].int_value = 42;
+    nmo_dataarray_row_t row = {
+        .column_count = 5,
+        .cells = cells,
+    };
+    nmo_dataarray_state_t *state = (nmo_dataarray_state_t *)
+        nmo_object_repository_find_by_id(repo, dataarray_id)->state;
+    state->column_count = 5;
+    state->column_formats = formats;
+    state->row_count = 1;
+    state->rows = &row;
+
+    size_t changed = 0;
+    ASSERT_EQ(NMO_OK, nmo_runtime_normalize_invalid_refs(
+        repo, nmo_context_get_type_runtime(ctx), &changed));
+    ASSERT_EQ(2u, changed);
+    ASSERT_EQ(object_id, nmo_ref_runtime_id(&cells[0].object_ref));
+    ASSERT_EQ(NMO_REF_NONE, cells[1].object_ref.state);
+    ASSERT_EQ(parameter_id, nmo_ref_runtime_id(&cells[2].parameter.ref));
+    ASSERT_EQ(NMO_REF_NONE, cells[3].parameter.ref.state);
+    ASSERT_EQ(42, cells[4].int_value);
+    ASSERT_EQ(5u, state->column_count);
+    ASSERT_EQ(1u, state->row_count);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(runtime_kernel, normalize_and_safe_detach_keep_place_portals_atomic) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
@@ -2871,6 +2932,7 @@ REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_curve_refs);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_place_portals);
 REGISTER_TEST(runtime_kernel, copy_remap_and_graph_include_skin_bones);
 REGISTER_TEST(runtime_kernel, normalize_and_safe_detach_preserve_skin_indices);
+REGISTER_TEST(runtime_kernel, normalize_clears_invalid_dataarray_cells);
 REGISTER_TEST(runtime_kernel, normalize_and_safe_detach_keep_place_portals_atomic);
 REGISTER_TEST(runtime_kernel, normalize_and_safe_detach_keep_curve_sections_independent);
 TEST_MAIN_END()
