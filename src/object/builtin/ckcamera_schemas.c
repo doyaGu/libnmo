@@ -51,7 +51,7 @@ static void nmo_camera_set_defaults(nmo_camera_state_t *state) {
     state->near_plane = 1.0f;
     state->far_plane = 4000.0f;
 
-    state->has_cameraonly_chunk = 0;
+    state->has_cameraonly_chunk = 1;
     state->has_fov_chunk = 0;
     state->has_proj_chunk = 0;
     state->has_ortho_chunk = 0;
@@ -252,44 +252,120 @@ static nmo_status_t nmo_camera_serialize_internal(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to CKCamera serialize");
     }
 
+    const nmo_serialize_context_t *ser_ctx = nmo_serialize_context_try(context);
+    const bool is_file = ((out_chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
+        (ser_ctx != NULL && (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
+    const uint32_t save_flags =
+        nmo_serialize_context_get_save_flags(context);
+    const bool write_camera = is_file ||
+        (save_flags & CK_STATESAVE_CAMERAONLY) != 0;
+    const uint32_t data_version = nmo_chunk_get_data_version(out_chunk);
+    const bool has_legacy_layout =
+        in_state->has_fov_chunk || in_state->has_proj_chunk ||
+        in_state->has_ortho_chunk || in_state->has_aspect_chunk ||
+        in_state->has_planes_chunk;
+    const bool has_default_values =
+        in_state->projection_type == 1u && in_state->fov == 0.5f &&
+        in_state->orthographic_zoom == 1.0f &&
+        in_state->width == 4 && in_state->height == 3 &&
+        in_state->near_plane == 1.0f && in_state->far_plane == 4000.0f;
+
+    if (is_file && data_version < 5u) {
+        if (in_state->has_cameraonly_chunk ||
+            (!in_state->has_fov_chunk && in_state->fov != 0.5f) ||
+            (!in_state->has_proj_chunk && in_state->projection_type != 1u) ||
+            (!in_state->has_ortho_chunk &&
+             in_state->orthographic_zoom != 1.0f) ||
+            (!in_state->has_aspect_chunk &&
+             (in_state->width != 4 || in_state->height != 3)) ||
+            (!in_state->has_planes_chunk &&
+             (in_state->near_plane != 1.0f ||
+              in_state->far_plane != 4000.0f))) {
+            NMO_RETURN_ERROR(
+                NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                "Camera state does not match its legacy section layout");
+        }
+    } else if (is_file) {
+        if (has_legacy_layout ||
+            (!in_state->has_cameraonly_chunk && !has_default_values)) {
+            NMO_RETURN_ERROR(
+                NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                "Camera state does not match its modern section layout");
+        }
+    }
+
+    const bool writes_packed_layout =
+        (!is_file && write_camera) ||
+        (is_file && data_version >= 5u &&
+         in_state->has_cameraonly_chunk);
+    if (writes_packed_layout &&
+        (in_state->width < 0 || in_state->width > UINT16_MAX ||
+         in_state->height < 0 || in_state->height > UINT16_MAX)) {
+        NMO_RETURN_ERROR(
+            NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+            "Camera dimensions cannot be represented by the packed layout");
+    }
+
     // First serialize parent CK3dEntity data
     nmo_status_t result = nmo_3dentity_serialize(&in_state->entity, out_chunk, NULL, context);
     if (result != NMO_OK) {
         return result;
     }
 
-    const nmo_serialize_context_t *ser_ctx = nmo_serialize_context_try(context);
-    const bool is_file = ((out_chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
-        (ser_ctx != NULL && (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
-    if (!is_file) {
-        uint32_t save_flags = nmo_serialize_context_get_save_flags(context);
-        if ((save_flags & CK_STATESAVE_CAMERAONLY) == 0) {
-            return NMO_OK;
-        }
+    if (!write_camera) return NMO_OK;
+
+    if (!is_file || data_version >= 5u) {
+        if (is_file && !in_state->has_cameraonly_chunk) return NMO_OK;
+
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(
+            out_chunk, CK_STATESAVE_CAMERAONLY));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
+            out_chunk, in_state->projection_type));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, in_state->fov));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
+            out_chunk, in_state->orthographic_zoom));
+
+        const uint32_t packed = ((uint32_t)in_state->height << 16) |
+            (uint32_t)in_state->width;
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(out_chunk, packed));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
+            out_chunk, in_state->near_plane));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
+            out_chunk, in_state->far_plane));
+        NMO_RETURN_OK();
     }
 
-    result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_CAMERAONLY);
-    if (result != NMO_OK) return result;
-
-    result = nmo_chunk_write_dword(out_chunk, in_state->projection_type);
-    if (result != NMO_OK) return result;
-
-    result = nmo_chunk_write_float(out_chunk, in_state->fov);
-    if (result != NMO_OK) return result;
-
-    result = nmo_chunk_write_float(out_chunk, in_state->orthographic_zoom);
-    if (result != NMO_OK) return result;
-
-    uint32_t packed = ((uint32_t)(in_state->height & 0xFFFF) << 16) |
-        (uint32_t)(in_state->width & 0xFFFF);
-    result = nmo_chunk_write_dword(out_chunk, packed);
-    if (result != NMO_OK) return result;
-
-    result = nmo_chunk_write_float(out_chunk, in_state->near_plane);
-    if (result != NMO_OK) return result;
-
-    result = nmo_chunk_write_float(out_chunk, in_state->far_plane);
-    if (result != NMO_OK) return result;
+    if (in_state->has_fov_chunk) {
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(
+            out_chunk, CK_STATESAVE_CAMERAFOV));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(out_chunk, in_state->fov));
+    }
+    if (in_state->has_proj_chunk) {
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(
+            out_chunk, CK_STATESAVE_CAMERAPROJTYPE));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
+            out_chunk, in_state->projection_type));
+    }
+    if (in_state->has_ortho_chunk) {
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(
+            out_chunk, CK_STATESAVE_CAMERAOTHOZOOM));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
+            out_chunk, in_state->orthographic_zoom));
+    }
+    if (in_state->has_aspect_chunk) {
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(
+            out_chunk, CK_STATESAVE_CAMERAASPECT));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_int(out_chunk, in_state->width));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_int(out_chunk, in_state->height));
+    }
+    if (in_state->has_planes_chunk) {
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(
+            out_chunk, CK_STATESAVE_CAMERAPLANES));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
+            out_chunk, in_state->near_plane));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
+            out_chunk, in_state->far_plane));
+    }
 
     NMO_RETURN_OK();
 }

@@ -3579,6 +3579,103 @@ TEST(chunk_id_remap, camera_and_light_failures_keep_previous_state) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, camera_preserves_file_layouts) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+
+    nmo_chunk_t *legacy = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(legacy);
+    legacy->class_id = NMO_CID_CAMERA;
+    legacy->data_version = 4;
+    legacy->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(legacy));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        legacy, CK_STATESAVE_CAMERAFOV));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_float(legacy, 0.75f));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        legacy, CK_STATESAVE_CAMERAPLANES));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_float(legacy, 0.25f));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_float(legacy, 8000.0f));
+    nmo_chunk_close(legacy);
+
+    nmo_camera_state_t camera;
+    ASSERT_EQ(NMO_OK, nmo_camera_vtable.create(&camera, NULL, NULL));
+    ASSERT_TRUE(camera.has_cameraonly_chunk);
+    ASSERT_EQ(NMO_OK, nmo_camera_deserialize(
+        &camera, legacy, NULL, &deserialize_context));
+    ASSERT_FALSE(camera.has_cameraonly_chunk);
+    ASSERT_TRUE(camera.has_fov_chunk);
+    ASSERT_FALSE(camera.has_proj_chunk);
+    ASSERT_FALSE(camera.has_ortho_chunk);
+    ASSERT_FALSE(camera.has_aspect_chunk);
+    ASSERT_TRUE(camera.has_planes_chunk);
+
+    nmo_chunk_t *saved_legacy = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(saved_legacy);
+    saved_legacy->class_id = NMO_CID_CAMERA;
+    saved_legacy->data_version = 4;
+    saved_legacy->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_camera_serialize(
+        &camera, saved_legacy, NULL, &serialize_context));
+    nmo_chunk_close(saved_legacy);
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
+        saved_legacy, CK_STATESAVE_CAMERAFOV));
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_chunk_seek_identifier(
+        saved_legacy, CK_STATESAVE_CAMERAPROJTYPE));
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_chunk_seek_identifier(
+        saved_legacy, CK_STATESAVE_CAMERAOTHOZOOM));
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_chunk_seek_identifier(
+        saved_legacy, CK_STATESAVE_CAMERAASPECT));
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
+        saved_legacy, CK_STATESAVE_CAMERAPLANES));
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_chunk_seek_identifier(
+        saved_legacy, CK_STATESAVE_CAMERAONLY));
+
+    nmo_chunk_t *modern_empty = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(modern_empty);
+    modern_empty->class_id = NMO_CID_CAMERA;
+    modern_empty->data_version = 7;
+    modern_empty->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(modern_empty));
+    nmo_chunk_close(modern_empty);
+    ASSERT_EQ(NMO_OK, nmo_camera_deserialize(
+        &camera, modern_empty, NULL, &deserialize_context));
+    ASSERT_FALSE(camera.has_cameraonly_chunk);
+
+    nmo_chunk_t *saved_empty = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(saved_empty);
+    saved_empty->class_id = NMO_CID_CAMERA;
+    saved_empty->data_version = 7;
+    saved_empty->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_camera_serialize(
+        &camera, saved_empty, NULL, &serialize_context));
+    nmo_chunk_close(saved_empty);
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_chunk_seek_identifier(
+        saved_empty, CK_STATESAVE_CAMERAONLY));
+
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(saved_empty));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(saved_empty, 0x12345678u));
+    nmo_chunk_close(saved_empty);
+    camera.fov = 1.0f;
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_camera_serialize(
+        &camera, saved_empty, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(saved_empty));
+    camera.fov = 0.5f;
+    camera.has_cameraonly_chunk = 1;
+    camera.width = 65536;
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_camera_serialize(
+        &camera, saved_empty, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(saved_empty));
+
+    nmo_camera_vtable.destroy(&camera, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, target_camera_and_light_failures_are_atomic) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
     ASSERT_NOT_NULL(arena);
@@ -11705,6 +11802,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, parameteroperation_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, parameteroperation_legacy_sections_are_atomic);
     REGISTER_TEST(chunk_id_remap, camera_and_light_failures_keep_previous_state);
+    REGISTER_TEST(chunk_id_remap, camera_preserves_file_layouts);
     REGISTER_TEST(chunk_id_remap, target_camera_and_light_failures_are_atomic);
     REGISTER_TEST(chunk_id_remap, targetcamera_unresolved_ref_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, targetlight_unresolved_ref_round_trips_raw_id);
