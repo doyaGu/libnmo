@@ -2598,6 +2598,71 @@ TEST(chunk_id_remap, behaviorlink_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(901u, failed.in_io.raw_id);
     ASSERT_EQ(902u, failed.out_io.raw_id);
 
+    nmo_chunk_t *new_trailing = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(new_trailing);
+    new_trailing->class_id = NMO_CID_BEHAVIORLINK;
+    new_trailing->data_version = 8;
+    new_trailing->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(new_trailing));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        new_trailing, CK_STATESAVE_BEHAV_LINK_NEWDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(new_trailing, 0x00090005u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(new_trailing, 900));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(new_trailing, 901));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(new_trailing, 0x12345678u));
+    nmo_chunk_close(new_trailing);
+    nmo_chunk_set_file_context(new_trailing, &read_context);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_behaviorlink_deserialize(
+        &failed, new_trailing, NULL, &deserialize_context));
+
+    nmo_chunk_t *curdelay_trailing = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(curdelay_trailing);
+    curdelay_trailing->class_id = NMO_CID_BEHAVIORLINK;
+    curdelay_trailing->data_version = 8;
+    curdelay_trailing->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(curdelay_trailing));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        curdelay_trailing, CK_STATESAVE_BEHAV_LINK_CURDELAY));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(curdelay_trailing, 5));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(curdelay_trailing, 0x12345678u));
+    nmo_chunk_close(curdelay_trailing);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_behaviorlink_deserialize(
+        &failed, curdelay_trailing, NULL, &deserialize_context));
+
+    nmo_chunk_t *ios_trailing = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(ios_trailing);
+    ios_trailing->class_id = NMO_CID_BEHAVIORLINK;
+    ios_trailing->data_version = 8;
+    ios_trailing->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(ios_trailing));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        ios_trailing, CK_STATESAVE_BEHAV_LINK_IOS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(ios_trailing, 900));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(ios_trailing, 901));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(ios_trailing, 0x12345678u));
+    nmo_chunk_close(ios_trailing);
+    nmo_chunk_set_file_context(ios_trailing, &read_context);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_behaviorlink_deserialize(
+        &failed, ios_trailing, NULL, &deserialize_context));
+
+    nmo_chunk_t *delay_trailing = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(delay_trailing);
+    delay_trailing->class_id = NMO_CID_BEHAVIORLINK;
+    delay_trailing->data_version = 8;
+    delay_trailing->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(delay_trailing));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        delay_trailing, CK_STATESAVE_BEHAV_LINK_DELAY));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(delay_trailing, 9));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(delay_trailing, 0x12345678u));
+    nmo_chunk_close(delay_trailing);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_behaviorlink_deserialize(
+        &failed, delay_trailing, NULL, &deserialize_context));
+    ASSERT_EQ(11, failed.activation_delay);
+    ASSERT_EQ(12, failed.initial_activation_delay);
+    ASSERT_EQ(901u, failed.in_io.raw_id);
+    ASSERT_EQ(902u, failed.out_io.raw_id);
+
     nmo_behaviorlink_state_t invalid;
     ASSERT_EQ(NMO_OK, nmo_behaviorlink_vtable.create(&invalid, NULL, NULL));
     invalid.in_io = nmo_ref_from_raw(903);
