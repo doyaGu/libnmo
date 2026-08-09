@@ -1740,6 +1740,102 @@ TEST(chunk_id_remap, dataarray_cell_refs_round_trip_raw_ids) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, dataarray_parameter_cells_require_parameter_class) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
+    ASSERT_NOT_NULL(arena);
+    nmo_type_registry_t *types = nmo_type_registry_create(arena);
+    ASSERT_NOT_NULL(types);
+    ASSERT_EQ(NMO_OK, nmo_register_builtin_types(types));
+    ASSERT_EQ(NMO_OK, nmo_register_object_types(types));
+    nmo_object_repository_t *repository =
+        nmo_object_repository_create(NULL);
+    ASSERT_NOT_NULL(repository);
+
+    nmo_object_t *wrong = nmo_object_create(
+        NULL, 1760u, NMO_CID_PARAMETERIN);
+    nmo_object_t *valid = nmo_object_create(
+        NULL, 1761u, NMO_CID_PARAMETERLOCAL);
+    ASSERT_NOT_NULL(wrong);
+    ASSERT_NOT_NULL(valid);
+    ASSERT_EQ(NMO_OK, nmo_object_set_type_guid(
+        wrong, CKPGUID_PARAMETERIN));
+    ASSERT_EQ(NMO_OK, nmo_object_set_type_guid(
+        valid, CKPGUID_PARAMETERLOCAL));
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repository, &wrong));
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repository, &valid));
+
+    nmo_id_remap_t *file_to_runtime = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(file_to_runtime);
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(file_to_runtime, 751u, 1760u));
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(file_to_runtime, 752u, 1761u));
+    nmo_chunk_file_context_t file_context = {
+        .file_to_runtime = file_to_runtime,
+        .repository = repository,
+    };
+    nmo_type_runtime_t type_runtime = {.types = types, .ops = NULL};
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, repository, &type_runtime, NMO_DESER_FLAG_FILE_MODE);
+    nmo_serialize_context_t serialize_context =
+        nmo_serialize_context_create(
+            arena, repository, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+
+    nmo_dataarray_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_dataarray_vtable.create(&source, NULL, NULL));
+    source.column_count = 1;
+    source.column_formats = (nmo_dataarray_column_format_t *)nmo_arena_alloc(
+        arena, sizeof(*source.column_formats),
+        _Alignof(nmo_dataarray_column_format_t));
+    ASSERT_NOT_NULL(source.column_formats);
+    memset(source.column_formats, 0, sizeof(*source.column_formats));
+    source.column_formats[0].name = "Parameter";
+    source.column_formats[0].type = CKARRAYTYPE_PARAMETER;
+    source.row_count = 2;
+    source.rows = (nmo_dataarray_row_t *)nmo_arena_alloc(
+        arena, 2 * sizeof(*source.rows), _Alignof(nmo_dataarray_row_t));
+    ASSERT_NOT_NULL(source.rows);
+    memset(source.rows, 0, 2 * sizeof(*source.rows));
+    for (size_t i = 0; i < 2; ++i) {
+        source.rows[i].column_count = 1;
+        source.rows[i].cells = (nmo_dataarray_cell_t *)nmo_arena_alloc(
+            arena, sizeof(*source.rows[i].cells),
+            _Alignof(nmo_dataarray_cell_t));
+        ASSERT_NOT_NULL(source.rows[i].cells);
+        memset(source.rows[i].cells, 0, sizeof(*source.rows[i].cells));
+    }
+    source.rows[0].cells[0].parameter.ref = nmo_ref_from_raw(751u);
+    source.rows[1].cells[0].parameter.ref = nmo_ref_from_raw(752u);
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    chunk->class_id = NMO_CID_DATAARRAY;
+    chunk->data_version = 7;
+    chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_dataarray_serialize(
+        &source, chunk, NULL, &serialize_context));
+    nmo_chunk_close(chunk);
+    nmo_chunk_set_file_context(chunk, &file_context);
+
+    nmo_dataarray_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_dataarray_vtable.create(&loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_dataarray_deserialize(
+        &loaded, chunk, NULL, &deserialize_context));
+    ASSERT_EQ(NMO_REF_CLASS_MISMATCH,
+              loaded.rows[0].cells[0].parameter.ref.state);
+    ASSERT_EQ(751u, loaded.rows[0].cells[0].parameter.ref.raw_id);
+    ASSERT_EQ(1760u, loaded.rows[0].cells[0].parameter.ref.id);
+    ASSERT_EQ(NMO_REF_RESOLVED,
+              loaded.rows[1].cells[0].parameter.ref.state);
+    ASSERT_EQ(752u, loaded.rows[1].cells[0].parameter.ref.raw_id);
+    ASSERT_EQ(1761u, loaded.rows[1].cells[0].parameter.ref.id);
+
+    nmo_dataarray_vtable.destroy(&source, NULL, NULL);
+    nmo_dataarray_vtable.destroy(&loaded, NULL, NULL);
+    nmo_object_repository_destroy(repository);
+    nmo_type_registry_destroy(types);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, dataarray_legacy_members_match_storage_mode) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
     ASSERT_NOT_NULL(arena);
@@ -20289,6 +20385,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, behaviorio_truncation_keeps_previous_state);
     REGISTER_TEST(chunk_id_remap, behavior_layout_defaults_preserve_legacy_absence);
     REGISTER_TEST(chunk_id_remap, dataarray_cell_refs_round_trip_raw_ids);
+    REGISTER_TEST(chunk_id_remap, dataarray_parameter_cells_require_parameter_class);
     REGISTER_TEST(chunk_id_remap, dataarray_legacy_members_match_storage_mode);
     REGISTER_TEST(chunk_id_remap, dataarray_preserves_large_dimensions);
     REGISTER_TEST(chunk_id_remap, dataarray_failures_keep_state_and_target_chunk_atomic);

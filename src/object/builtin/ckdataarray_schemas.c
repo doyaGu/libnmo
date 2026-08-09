@@ -25,7 +25,6 @@
 #include "object/nmo_object_repository.h"
 #include "object/nmo_ref_graph.h"
 #include "type/nmo_reflection.h"
-#include "type/nmo_type_query.h"
 #include "object/nmo_object_struct_guids.h"
 #include "nmo_types.h"
 #include <stddef.h>
@@ -137,42 +136,6 @@ static int nmo_dataarray_is_file_mode(const nmo_chunk_t *chunk, void *context) {
     return (chunk && (chunk->chunk_options & NMO_CHUNK_OPTION_FILE)) ||
         (deser_ctx != NULL && (deser_ctx->flags & NMO_DESER_FLAG_FILE_MODE) != 0) ||
         (ser_ctx != NULL && (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
-}
-
-static bool nmo_dataarray_is_parameter_object(
-    const nmo_object_t *object,
-    const nmo_type_registry_t *types)
-{
-    const nmo_class_id_t classes[] = {
-        NMO_CID_PARAMETER,
-        NMO_CID_PARAMETERIN,
-        NMO_CID_PARAMETEROUT,
-        NMO_CID_PARAMETERLOCAL,
-        NMO_CID_PARAMETEROPERATION,
-    };
-    for (size_t i = 0; i < sizeof(classes) / sizeof(classes[0]); ++i) {
-        if (nmo_type_query_object_is_derived_from_class(
-                types, object, classes[i])) {
-            return true;
-        }
-    }
-    return false;
-}
-
-static void nmo_dataarray_check_parameter_ref(
-    nmo_ref_t *ref,
-    const nmo_object_repository_t *repository,
-    const nmo_type_registry_t *types)
-{
-    if (ref == NULL || ref->state != NMO_REF_RESOLVED || repository == NULL) {
-        return;
-    }
-    const nmo_object_t *target =
-        nmo_object_repository_find_by_id(repository, ref->id);
-    if (target != NULL &&
-        !nmo_dataarray_is_parameter_object(target, types)) {
-        ref->state = NMO_REF_CLASS_MISMATCH;
-    }
 }
 
 /* =============================================================================
@@ -385,17 +348,24 @@ static nmo_status_t nmo_dataarray_deserialize_internal(
                         case CKARRAYTYPE_OBJECT:
                             result = nmo_ref_read(chunk, &cell->object_ref);
                             if (result != NMO_OK) return result;
+                            nmo_ref_check_class(
+                                &cell->object_ref,
+                                (const nmo_object_repository_t *)
+                                    nmo_deserialize_context_get_repository(context),
+                                nmo_deserialize_context_get_type_registry(context),
+                                NMO_CID_OBJECT);
                             break;
 
                         case CKARRAYTYPE_PARAMETER:
                             if (is_file) {
                                 result = nmo_ref_read(chunk, &cell->parameter.ref);
                                 if (result != NMO_OK) return result;
-                                nmo_dataarray_check_parameter_ref(
+                                nmo_ref_check_class(
                                     &cell->parameter.ref,
                                     (const nmo_object_repository_t *)
                                         nmo_deserialize_context_get_repository(context),
-                                    nmo_deserialize_context_get_type_registry(context));
+                                    nmo_deserialize_context_get_type_registry(context),
+                                    NMO_CID_PARAMETER);
                             } else {
                                 cell->parameter.ref =
                                     nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
