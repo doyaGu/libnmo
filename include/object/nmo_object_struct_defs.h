@@ -229,8 +229,8 @@ typedef struct nmo_scene_object_desc {
 } nmo_scene_object_desc_t;
 
 typedef struct nmo_place_portal_entry {
-    nmo_object_id_t place_id;
-    nmo_object_id_t portal_id;
+    nmo_ref_t place;
+    nmo_ref_t portal;
 } nmo_place_portal_entry_t;
 
 /* ============================================================================

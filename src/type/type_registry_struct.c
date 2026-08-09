@@ -110,6 +110,17 @@ typedef struct parsed_struct_field_type {
     uint32_t pointer_depth;
 } parsed_struct_field_type_t;
 
+static bool struct_field_is_scalar_ref_record(
+    const nmo_struct_field_def_t *field_def,
+    const parsed_struct_field_type_t *parsed_type,
+    uint32_t storage_size)
+{
+    return field_def != NULL && parsed_type != NULL &&
+           (field_def->flags & NMO_FIELD_REF_RECORD) != 0u &&
+           nmo_guid_equals(parsed_type->type_guid, CKPGUID_ID) &&
+           storage_size == sizeof(nmo_ref_t);
+}
+
 static void parse_struct_field_type_if_available(
     const nmo_type_registry_t *type_registry,
     const nmo_struct_field_def_t *field_def,
@@ -483,6 +494,8 @@ nmo_status_t nmo_type_registry_register_struct(
         /* Calculate field size (including arrays) */
         uint32_t total_field_size =
             struct_field_storage_size(field_type, parsed_type.array_count);
+        const bool scalar_ref_record = struct_field_is_scalar_ref_record(
+            field_def, &parsed_type, total_field_size);
         
         uint32_t field_align = struct_def->packed ? 1 : field_type->alignment;
         offset = (uint32_t)nmo_align((size_t)(offset), (size_t)(field_align));
@@ -490,7 +503,8 @@ nmo_status_t nmo_type_registry_register_struct(
         field_desc->type_guid = field_type_guid;
         field_desc->offset = offset;
         field_desc->size = total_field_size;
-        field_desc->array_count = parsed_type.array_count;
+        field_desc->array_count = scalar_ref_record
+            ? 0u : parsed_type.array_count;
         field_desc->flags = field_def->flags;
         field_desc->description = field_def->description ?
             nmo_arena_strdup(arena, field_def->description) : NULL;
@@ -505,7 +519,7 @@ nmo_status_t nmo_type_registry_register_struct(
         type_fields[i].offset = offset;
         type_fields[i].size = total_field_size;
         type_fields[i].flags = field_def->flags;
-        if (parsed_type.array_count > 0) {
+        if (parsed_type.array_count > 0 && !scalar_ref_record) {
             type_fields[i].flags |= NMO_FIELD_REPEATED;
         }
         type_fields[i].added_version = 0;
@@ -515,8 +529,9 @@ nmo_status_t nmo_type_registry_register_struct(
         type_fields[i].default_value = field_def->default_value;
         type_fields[i].count_field_name = field_def->count_field_name;
         type_fields[i].count_multiplier = field_def->count_multiplier;
-        type_fields[i].element_size = struct_field_element_size(
-            type_registry, field_def, &parsed_type, field_type);
+        type_fields[i].element_size = scalar_ref_record ? 0u :
+            struct_field_element_size(
+                type_registry, field_def, &parsed_type, field_type);
 
         offset += total_field_size;
     }
@@ -911,8 +926,11 @@ nmo_status_t nmo_type_registry_finalize_struct(
         field_desc->offset = offset;
         uint32_t total_field_size =
             struct_field_storage_size(field_type, parsed_type.array_count);
+        const bool scalar_ref_record = struct_field_is_scalar_ref_record(
+            field_def, &parsed_type, total_field_size);
         field_desc->size = total_field_size;
-        field_desc->array_count = parsed_type.array_count;
+        field_desc->array_count = scalar_ref_record
+            ? 0u : parsed_type.array_count;
         field_desc->flags = field_def->flags;
         field_desc->description = field_def->description;
         field_desc->pointee_guid = parsed_type.pointee_guid;
@@ -940,7 +958,7 @@ nmo_status_t nmo_type_registry_finalize_struct(
         type_fields[i].offset = offset;
         type_fields[i].size = total_field_size;
         type_fields[i].flags = field_def->flags;
-        if (parsed_type.array_count > 0) {
+        if (parsed_type.array_count > 0 && !scalar_ref_record) {
             type_fields[i].flags |= NMO_FIELD_REPEATED;
         }
         type_fields[i].added_version = 0;
@@ -949,8 +967,9 @@ nmo_status_t nmo_type_registry_finalize_struct(
         type_fields[i].units = NMO_UNITS_NONE;
         type_fields[i].count_field_name = field_def->count_field_name;
         type_fields[i].count_multiplier = field_def->count_multiplier;
-        type_fields[i].element_size = struct_field_element_size(
-            type_registry, field_def, &parsed_type, field_type);
+        type_fields[i].element_size = scalar_ref_record ? 0u :
+            struct_field_element_size(
+                type_registry, field_def, &parsed_type, field_type);
         if (field_def->default_value && total_field_size > 0) {
             void *default_copy = nmo_alloc(
                 &type_registry->type_allocator,
@@ -1241,11 +1260,14 @@ nmo_status_t nmo_type_registry_register_union(
 
         uint32_t total_field_size =
             struct_field_storage_size(field_type, parsed_type.array_count);
+        const bool scalar_ref_record = struct_field_is_scalar_ref_record(
+            field_def, &parsed_type, total_field_size);
 
         field_desc->type_guid = field_type_guid;
         field_desc->offset = 0;
         field_desc->size = total_field_size;
-        field_desc->array_count = parsed_type.array_count;
+        field_desc->array_count = scalar_ref_record
+            ? 0u : parsed_type.array_count;
         field_desc->flags = field_def->flags;
         field_desc->description = field_def->description ?
             nmo_arena_strdup(arena, field_def->description) : NULL;
@@ -1259,7 +1281,7 @@ nmo_status_t nmo_type_registry_register_union(
         type_fields[i].offset = 0;
         type_fields[i].size = total_field_size;
         type_fields[i].flags = field_def->flags;
-        if (parsed_type.array_count > 0) {
+        if (parsed_type.array_count > 0 && !scalar_ref_record) {
             type_fields[i].flags |= NMO_FIELD_REPEATED;
         }
         type_fields[i].added_version = 0;
@@ -1269,8 +1291,9 @@ nmo_status_t nmo_type_registry_register_union(
         type_fields[i].default_value = field_def->default_value;
         type_fields[i].count_field_name = field_def->count_field_name;
         type_fields[i].count_multiplier = field_def->count_multiplier;
-        type_fields[i].element_size = struct_field_element_size(
-            type_registry, field_def, &parsed_type, field_type);
+        type_fields[i].element_size = scalar_ref_record ? 0u :
+            struct_field_element_size(
+                type_registry, field_def, &parsed_type, field_type);
     }
 
     nmo_status_t consistency_res = validate_struct_field_consistency(

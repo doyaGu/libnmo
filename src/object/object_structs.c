@@ -42,6 +42,16 @@
         .default_value = NULL \
     }
 
+#define NMO_STRUCT_FIELD_REF_RECORD(_name) \
+    { \
+        .name = (_name), \
+        .type_name = "object_id[3]", \
+        .type_guid = {0, 0}, \
+        .description = NULL, \
+        .flags = NMO_FIELD_REFERENCE | NMO_FIELD_REF_RECORD, \
+        .default_value = NULL \
+    }
+
 #define NMO_STRUCT_FIELD_PTR(_name, _flags) \
     { \
         .name = (_name), \
@@ -197,8 +207,8 @@ nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry) {
 
     /* CKPlacePortalEntry */
     static const nmo_struct_field_def_t ckplaceportalentry_fields[] = {
-        NMO_STRUCT_FIELD_GUID_FLAGS("place_id", CKPGUID_ID, NMO_FIELD_REFERENCE),
-        NMO_STRUCT_FIELD_GUID_FLAGS("portal_id", CKPGUID_ID, NMO_FIELD_REFERENCE)
+        NMO_STRUCT_FIELD_REF_RECORD("place"),
+        NMO_STRUCT_FIELD_REF_RECORD("portal")
     };
     static const nmo_struct_type_def_t ckplaceportalentry_def =
         NMO_STRUCT_DEF("CKPlacePortalEntry", NMO_GUID_STRUCT_CKPLACEPORTALENTRY, ckplaceportalentry_fields);

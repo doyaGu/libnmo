@@ -7805,6 +7805,11 @@ TEST(chunk_id_remap, place_refs_round_trip_and_truncation_is_atomic) {
     nmo_ref_t ref_b = nmo_ref_from_raw(804);
     ASSERT_EQ(NMO_OK, nmo_array_append(&source.references, &ref_a));
     ASSERT_EQ(NMO_OK, nmo_array_append(&source.references, &ref_b));
+    nmo_place_portal_entry_t source_portal = {
+        .place = nmo_ref_from_raw(817),
+        .portal = nmo_ref_from_raw(818),
+    };
+    ASSERT_EQ(NMO_OK, nmo_array_append(&source.portals, &source_portal));
     source.base.base.base.base.base.visibility_flags = NMO_CKOBJECT_VISIBLE;
     source.base.moveable_flags = VX_MOVEABLE_HIERARCHICALHIDE;
     ASSERT_EQ(NMO_OK, nmo_place_remap_dependencies(&source, NULL, NULL));
@@ -7841,6 +7846,13 @@ TEST(chunk_id_remap, place_refs_round_trip_and_truncation_is_atomic) {
     ASSERT_EQ(804u, loaded_refs[1].raw_id);
     ASSERT_EQ(NMO_REF_UNRESOLVED, loaded_refs[0].state);
     ASSERT_EQ(NMO_REF_UNRESOLVED, loaded_refs[1].state);
+    ASSERT_EQ(1u, loaded.portals.count);
+    const nmo_place_portal_entry_t *loaded_portals = NMO_ARRAY_DATA(
+        nmo_place_portal_entry_t, &loaded.portals);
+    ASSERT_EQ(817u, loaded_portals[0].place.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, loaded_portals[0].place.state);
+    ASSERT_EQ(818u, loaded_portals[0].portal.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, loaded_portals[0].portal.state);
 
     nmo_chunk_t *second = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(second);
@@ -7865,6 +7877,11 @@ TEST(chunk_id_remap, place_refs_round_trip_and_truncation_is_atomic) {
     ASSERT_EQ(2u, reloaded.references.count);
     ASSERT_EQ(803u, reloaded_refs[0].raw_id);
     ASSERT_EQ(804u, reloaded_refs[1].raw_id);
+    ASSERT_EQ(1u, reloaded.portals.count);
+    const nmo_place_portal_entry_t *reloaded_portals = NMO_ARRAY_DATA(
+        nmo_place_portal_entry_t, &reloaded.portals);
+    ASSERT_EQ(817u, reloaded_portals[0].place.raw_id);
+    ASSERT_EQ(818u, reloaded_portals[0].portal.raw_id);
     nmo_ref_t inherited_script = nmo_ref_from_raw(814);
     ASSERT_EQ(NMO_OK, nmo_array_append(
         &reloaded.base.base.base.scripts, &inherited_script));
@@ -7877,6 +7894,7 @@ TEST(chunk_id_remap, place_refs_round_trip_and_truncation_is_atomic) {
     ASSERT_EQ(NMO_OK, nmo_place_vtable.copy(
         &reloaded, &copied, &place_type, arena));
     ASSERT_NE(reloaded.references.data, copied.references.data);
+    ASSERT_NE(reloaded.portals.data, copied.portals.data);
     ASSERT_NE(reloaded.base.base.base.scripts.data,
               copied.base.base.base.scripts.data);
     ASSERT_TRUE(nmo_place_vtable.equals(&reloaded, &copied));
@@ -7887,6 +7905,11 @@ TEST(chunk_id_remap, place_refs_round_trip_and_truncation_is_atomic) {
     ASSERT_FALSE(nmo_place_vtable.equals(&reloaded, &copied));
     NMO_ARRAY_DATA(
         nmo_ref_t, &copied.base.base.base.scripts)[0].raw_id = 814;
+    NMO_ARRAY_DATA(
+        nmo_place_portal_entry_t, &copied.portals)[0].portal.raw_id = 819;
+    ASSERT_FALSE(nmo_place_vtable.equals(&reloaded, &copied));
+    NMO_ARRAY_DATA(
+        nmo_place_portal_entry_t, &copied.portals)[0].portal.raw_id = 818;
 
     nmo_place_state_t copy_failed;
     ASSERT_EQ(NMO_OK, nmo_place_vtable.create(
@@ -8000,8 +8023,8 @@ TEST(chunk_id_remap, place_refs_round_trip_and_truncation_is_atomic) {
     nmo_place_state_t failed_portal;
     ASSERT_EQ(NMO_OK, nmo_place_vtable.create(&failed_portal, NULL, NULL));
     nmo_place_portal_entry_t old_portal = {
-        .place_id = 809,
-        .portal_id = 810,
+        .place = nmo_ref_from_raw(809),
+        .portal = nmo_ref_from_raw(810),
     };
     ASSERT_EQ(NMO_OK, nmo_array_append(
         &failed_portal.portals, &old_portal));
@@ -8009,7 +8032,7 @@ TEST(chunk_id_remap, place_refs_round_trip_and_truncation_is_atomic) {
         &failed_portal, truncated_portal, NULL, &deserialize_context));
     ASSERT_EQ(1u, failed_portal.portals.count);
     ASSERT_EQ(809u, NMO_ARRAY_DATA(
-        nmo_place_portal_entry_t, &failed_portal.portals)[0].place_id);
+        nmo_place_portal_entry_t, &failed_portal.portals)[0].place.raw_id);
 
     nmo_chunk_t *cross_section_portal = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(cross_section_portal);
@@ -8032,18 +8055,33 @@ TEST(chunk_id_remap, place_refs_round_trip_and_truncation_is_atomic) {
               portal_parser->current_pos);
     ASSERT_EQ(1u, failed_portal.portals.count);
     ASSERT_EQ(809u, NMO_ARRAY_DATA(
-        nmo_place_portal_entry_t, &failed_portal.portals)[0].place_id);
+        nmo_place_portal_entry_t, &failed_portal.portals)[0].place.raw_id);
     ASSERT_EQ(810u, NMO_ARRAY_DATA(
-        nmo_place_portal_entry_t, &failed_portal.portals)[0].portal_id);
+        nmo_place_portal_entry_t, &failed_portal.portals)[0].portal.raw_id);
+
+    nmo_place_state_t failed_portal_alloc;
+    ASSERT_EQ(NMO_OK, nmo_place_vtable.create(
+        &failed_portal_alloc, NULL, NULL));
+    failed_portal_alloc.base.entity_flags = 0x87654321u;
+    failed_portal_alloc.portals.allocator = nmo_allocator_custom(
+        beobject_fail_alloc, beobject_fail_free, NULL);
+    ASSERT_EQ(NMO_ERR_NOMEM, nmo_place_deserialize(
+        &failed_portal_alloc, first, NULL, &deserialize_context));
+    ASSERT_EQ(0x87654321u, failed_portal_alloc.base.entity_flags);
+    ASSERT_EQ(0u, failed_portal_alloc.portals.count);
+    ASSERT_NULL(failed_portal_alloc.portals.data);
 
     nmo_place_state_t invalid;
     ASSERT_EQ(NMO_OK, nmo_place_vtable.create(&invalid, NULL, NULL));
     nmo_ref_t valid_reference = nmo_ref_from_raw(811);
-    nmo_ref_t invalid_reference = nmo_ref_from_id(999);
     ASSERT_EQ(NMO_OK, nmo_array_append(
         &invalid.references, &valid_reference));
+    nmo_place_portal_entry_t invalid_portal = {
+        .place = nmo_ref_from_raw(812),
+        .portal = nmo_ref_from_id(999),
+    };
     ASSERT_EQ(NMO_OK, nmo_array_append(
-        &invalid.references, &invalid_reference));
+        &invalid.portals, &invalid_portal));
     nmo_chunk_t *target = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(target);
     target->class_id = NMO_CID_PLACE;
@@ -8095,6 +8133,7 @@ TEST(chunk_id_remap, place_refs_round_trip_and_truncation_is_atomic) {
     nmo_place_vtable.destroy(&failed, NULL, NULL);
     nmo_place_vtable.destroy(&failed_camera, NULL, NULL);
     nmo_place_vtable.destroy(&failed_portal, NULL, NULL);
+    nmo_place_vtable.destroy(&failed_portal_alloc, NULL, NULL);
     nmo_place_vtable.destroy(&invalid, NULL, NULL);
     nmo_place_vtable.destroy(&oversized, NULL, NULL);
     nmo_arena_destroy(arena);

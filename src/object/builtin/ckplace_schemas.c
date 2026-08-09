@@ -141,10 +141,23 @@ static nmo_status_t nmo_place_deserialize_internal(
         if (result != NMO_OK) return result;
         nmo_place_portal_entry_t *entries = NULL;
         result = nmo_array_extend(&portals, (size_t)count, (void **)&entries);
+        const nmo_object_repository_t *repository =
+            (const nmo_object_repository_t *)
+                nmo_deserialize_context_get_repository(context);
+        const nmo_type_registry_t *types =
+            nmo_deserialize_context_get_type_registry(context);
         for (uint32_t i = 0; result == NMO_OK && i < (uint32_t)count; ++i) {
-            result = nmo_chunk_read_object_id(chunk, &entries[i].place_id);
+            entries[i].place = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+            entries[i].portal = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+            result = nmo_ref_read(chunk, &entries[i].place);
             if (result == NMO_OK) {
-                result = nmo_chunk_read_object_id(chunk, &entries[i].portal_id);
+                result = nmo_ref_read(chunk, &entries[i].portal);
+            }
+            if (result == NMO_OK) {
+                nmo_ref_check_class(
+                    &entries[i].place, repository, types, NMO_CID_PLACE);
+                nmo_ref_check_class(
+                    &entries[i].portal, repository, types, NMO_CID_3DENTITY);
             }
         }
         if (result != NMO_OK) {
@@ -531,9 +544,9 @@ static nmo_status_t nmo_place_serialize_internal(
         const nmo_place_portal_entry_t *portals = NMO_ARRAY_DATA(
             nmo_place_portal_entry_t, &in_state->portals);
         for (uint32_t i = 0; i < in_state->portals.count; ++i) {
-            result = nmo_chunk_write_object_id(out_chunk, portals[i].place_id);
+            result = nmo_ref_write(out_chunk, &portals[i].place);
             if (result != NMO_OK) return result;
-            result = nmo_chunk_write_object_id(out_chunk, portals[i].portal_id);
+            result = nmo_ref_write(out_chunk, &portals[i].portal);
             if (result != NMO_OK) return result;
         }
     }

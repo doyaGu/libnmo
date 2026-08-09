@@ -7,8 +7,11 @@
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
 #include "object/nmo_object_guids.h"
+#include "object/nmo_object_struct_defs.h"
+#include "object/nmo_object_struct_guids.h"
 #include "object/nmo_class_ids.h"
 #include "type/nmo_operations.h"
+#include "type/nmo_reflection.h"
 #include "type/nmo_type_system.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_error.h"
@@ -93,6 +96,21 @@ TEST(object_types, register_all_types) {
     ASSERT_NE(NULL, nmo_type_registry_find_by_guid(registry, CKPGUID_MATERIAL));
     ASSERT_NE(NULL, nmo_type_registry_find_by_guid(registry, CKPGUID_3DENTITY));
     ASSERT_NE(NULL, nmo_type_registry_find_by_guid(registry, CKPGUID_BEHAVIOR));
+
+    const nmo_type_descriptor_t *portal_entry =
+        nmo_type_registry_find_by_guid(
+            registry, NMO_GUID_STRUCT_CKPLACEPORTALENTRY);
+    ASSERT_NOT_NULL(portal_entry);
+    ASSERT_EQ(sizeof(nmo_place_portal_entry_t), portal_entry->size);
+    ASSERT_EQ(2u, portal_entry->field_count);
+    ASSERT_EQ(sizeof(nmo_ref_t), portal_entry->fields[0].size);
+    ASSERT_TRUE(nmo_field_is_ref(&portal_entry->fields[0]));
+    ASSERT_TRUE(nmo_field_uses_ref_records(&portal_entry->fields[0]));
+    ASSERT_FALSE(nmo_field_is_array(&portal_entry->fields[0]));
+    ASSERT_EQ(sizeof(nmo_ref_t), portal_entry->fields[1].size);
+    ASSERT_TRUE(nmo_field_is_ref(&portal_entry->fields[1]));
+    ASSERT_TRUE(nmo_field_uses_ref_records(&portal_entry->fields[1]));
+    ASSERT_FALSE(nmo_field_is_array(&portal_entry->fields[1]));
 
     nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
