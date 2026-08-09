@@ -27,15 +27,6 @@
 #include <stdalign.h>
 #include <string.h>
 
-static void nmo_renderobject_dispose_base_arrays(
-    nmo_renderobject_state_t *state)
-{
-    if (state == NULL) return;
-    nmo_array_dispose(&state->base.scripts);
-    nmo_array_dispose(&state->base.attributes);
-    nmo_array_dispose(&state->base.legacy_attributes);
-}
-
 NMO_DEFINE_OBJECT_LIFECYCLE(
     renderobject,
     nmo_renderobject_state_t,
@@ -44,7 +35,7 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
             &state->base, NULL, context);
         if (result != NMO_OK) return result;
     } while (0),
-    nmo_renderobject_dispose_base_arrays(state))
+    nmo_beobject_vtable.destroy(&state->base, NULL, context))
 
 /* =============================================================================
  * REFLECTION FIELDS
@@ -140,15 +131,12 @@ static nmo_status_t nmo_renderobject_copy(
     const nmo_type_descriptor_t *type,
     nmo_arena_t *arena)
 {
-    const nmo_renderobject_state_t *s = src;
-    nmo_renderobject_state_t *d = dst;
-    NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
-    NMO_RETURN_IF_ERROR(nmo_array_clone(&s->base.scripts, &d->base.scripts,
-                                        &s->base.scripts.allocator));
-    NMO_RETURN_IF_ERROR(nmo_beobject_clone_attributes(
-        arena, &d->base.attributes, &s->base.attributes));
-    return nmo_beobject_clone_legacy_attributes(
-        arena, &d->base.legacy_attributes, &s->base.legacy_attributes);
+    (void)type;
+    if (src == NULL || dst == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    const nmo_renderobject_state_t *source = src;
+    nmo_renderobject_state_t *target = dst;
+    return nmo_beobject_vtable.copy(
+        &source->base, &target->base, NULL, arena);
 }
 
 static nmo_status_t nmo_renderobject_validate(
@@ -157,16 +145,9 @@ static nmo_status_t nmo_renderobject_validate(
     void *context)
 {
     (void)type;
-    (void)context;
-    const nmo_renderobject_state_t *s = instance;
-    size_t script_count = nmo_array_size(&s->base.scripts);
-    size_t attribute_count = nmo_array_size(&s->base.attributes);
-
-    NMO_VALIDATE_COUNT(nmo_array_data(&s->base.scripts), (uint32_t)script_count,
-                       "scripts");
-    NMO_VALIDATE_COUNT(nmo_array_data(&s->base.attributes), (uint32_t)attribute_count,
-                       "attributes");
-    NMO_RETURN_OK();
+    if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    const nmo_renderobject_state_t *state = instance;
+    return nmo_beobject_vtable.validate(&state->base, NULL, context);
 }
 
 nmo_status_t nmo_renderobject_prepare_dependencies(
@@ -175,12 +156,10 @@ nmo_status_t nmo_renderobject_prepare_dependencies(
     void *context)
 {
     (void)type;
-    (void)context;
-    if (instance == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_renderobject_prepare_dependencies");
-    }
-    NMO_RETURN_OK();
+    if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    nmo_renderobject_state_t *state = instance;
+    return nmo_beobject_vtable.prepare_dependencies(
+        &state->base, NULL, context);
 }
 
 nmo_status_t nmo_renderobject_remap_dependencies(
@@ -205,12 +184,10 @@ static nmo_status_t nmo_renderobject_pre_delete(
     void *context)
 {
     (void)type;
-    (void)context;
-    if (instance == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_renderobject_pre_delete");
-    }
-    NMO_RETURN_OK();
+    if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    nmo_renderobject_state_t *state = instance;
+    return nmo_beobject_vtable.pre_delete(
+        &state->base, NULL, context);
 }
 
 static void nmo_renderobject_post_delete(
@@ -218,9 +195,10 @@ static void nmo_renderobject_post_delete(
     const nmo_type_descriptor_t *type,
     void *context)
 {
-    (void)instance;
     (void)type;
-    (void)context;
+    if (instance == NULL) return;
+    nmo_renderobject_state_t *state = instance;
+    nmo_beobject_vtable.post_delete(&state->base, NULL, context);
 }
 
 /* ============================================================================
