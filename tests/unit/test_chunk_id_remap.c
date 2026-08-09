@@ -2071,6 +2071,7 @@ TEST(chunk_id_remap, parameterlocal_owner_round_trips_raw_id) {
     nmo_parameterlocal_state_t source;
     ASSERT_EQ(NMO_OK, nmo_parameterlocal_vtable.create(
         &source, NULL, NULL));
+    ASSERT_EQ(NMO_CKOBJECT_VISIBLE, source.base.base.visibility_flags);
     source.base.type_guid = CKPGUID_INT;
     source.base.mode = CKPARAM_MODE_BUFFER;
     source.base.has_state = true;
@@ -2431,6 +2432,7 @@ TEST(chunk_id_remap, parameterout_refs_round_trip_and_failure_is_atomic) {
     nmo_parameterout_state_t source;
     ASSERT_EQ(NMO_OK, nmo_parameterout_vtable.create(
         &source, NULL, NULL));
+    ASSERT_EQ(NMO_CKOBJECT_VISIBLE, source.base.base.visibility_flags);
     source.base.type_guid = CKPGUID_INT;
     source.base.mode = CKPARAM_MODE_BUFFER;
     source.base.has_state = true;
@@ -2703,6 +2705,7 @@ TEST(chunk_id_remap, parameter_object_ref_round_trips_raw_id) {
 
     nmo_parameter_state_t source;
     ASSERT_EQ(NMO_OK, nmo_parameter_vtable.create(&source, NULL, NULL));
+    ASSERT_EQ(NMO_CKOBJECT_VISIBLE, source.base.visibility_flags);
     source.type_guid = CKPGUID_OBJECT;
     source.mode = CKPARAM_MODE_OBJECT;
     source.has_state = true;
@@ -2904,6 +2907,7 @@ TEST(chunk_id_remap, parameteroperation_refs_round_trip_and_failure_is_atomic) {
     nmo_parameteroperation_state_t source;
     ASSERT_EQ(NMO_OK, nmo_parameteroperation_vtable.create(
         &source, NULL, NULL));
+    ASSERT_EQ(NMO_CKOBJECT_VISIBLE, source.base.visibility_flags);
     source.operation_guid = (nmo_guid_t){0x12345678u, 0x9ABCDEF0u};
     source.in1.ref = nmo_ref_from_raw(710);
     source.in2.ref = nmo_ref_from_raw(711);

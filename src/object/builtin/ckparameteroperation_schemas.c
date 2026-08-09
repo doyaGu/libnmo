@@ -19,7 +19,12 @@
 #include "type/nmo_type_query.h"
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(parameteroperation, nmo_parameteroperation_state_t)
+NMO_DEFINE_OBJECT_LIFECYCLE(
+    parameteroperation,
+    nmo_parameteroperation_state_t,
+    NMO_RETURN_IF_ERROR(nmo_object_vtable.create(
+        &state->base, NULL, context)),
+    nmo_object_vtable.destroy(&state->base, NULL, context))
 
 /* =============================================================================
  * REFLECTION FIELDS

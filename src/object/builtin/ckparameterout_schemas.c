@@ -30,14 +30,11 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
     parameterout,
     nmo_parameterout_state_t,
     do {
-        nmo_status_t result = nmo_array_init(
-            &state->base.buffer_data, sizeof(uint8_t), 0, NULL);
-        if (result != NMO_OK) return result;
-        state->base.mode = CKPARAM_MODE_NONE;
-        state->base.object_ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+        NMO_RETURN_IF_ERROR(nmo_parameter_vtable.create(
+            &state->base, NULL, context));
         state->owner = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     } while (0),
-    nmo_array_dispose(&state->base.buffer_data))
+    nmo_parameter_vtable.destroy(&state->base, NULL, context))
 
 /* =============================================================================
  * REFLECTION FIELDS

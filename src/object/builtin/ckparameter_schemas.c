@@ -46,13 +46,21 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
     parameter,
     nmo_parameter_state_t,
     do { \
+        NMO_RETURN_IF_ERROR(nmo_object_vtable.create( \
+            &state->base, NULL, context)); \
         nmo_status_t result = nmo_array_init(&state->buffer_data, sizeof(uint8_t), 0, NULL); \
-        if (result != NMO_OK) return result; \
+        if (result != NMO_OK) { \
+            nmo_object_vtable.destroy(&state->base, NULL, context); \
+            return result; \
+        } \
         state->mode = CKPARAM_MODE_NONE; \
         state->has_state = false; \
         state->object_ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE); \
     } while (0),
-    nmo_array_dispose(&state->buffer_data))
+    do { \
+        nmo_array_dispose(&state->buffer_data); \
+        nmo_object_vtable.destroy(&state->base, NULL, context); \
+    } while (0))
 #include <stddef.h>
 #include <stdalign.h>
 #include <stdlib.h>
