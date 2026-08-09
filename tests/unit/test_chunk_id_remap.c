@@ -995,9 +995,11 @@ TEST(chunk_id_remap, behavior_layout_defaults_preserve_legacy_absence) {
     nmo_behaviorio_state_t io;
     ASSERT_EQ(NMO_OK, nmo_behaviorio_vtable.create(&io, NULL, NULL));
     ASSERT_TRUE(io.has_flags);
+    io.old_flags = 0x12345678u;
     ASSERT_EQ(NMO_OK, nmo_behaviorio_deserialize(
         &io, legacy_io, NULL, NULL));
     ASSERT_FALSE(io.has_flags);
+    ASSERT_EQ(0u, io.old_flags);
     ASSERT_EQ(NMO_CKOBJECT_VISIBLE, io.base.visibility_flags);
 
     nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
@@ -1022,10 +1024,18 @@ TEST(chunk_id_remap, behavior_layout_defaults_preserve_legacy_absence) {
     ASSERT_EQ(NMO_OK, nmo_behaviorlink_vtable.create(&link, NULL, NULL));
     ASSERT_TRUE(link.has_format);
     ASSERT_TRUE(link.use_new_format);
+    link.activation_delay = 7;
+    link.initial_activation_delay = 8;
+    link.in_io = nmo_ref_from_raw(501);
+    link.out_io = nmo_ref_from_raw(502);
     ASSERT_EQ(NMO_OK, nmo_behaviorlink_deserialize(
         &link, legacy_link, NULL, NULL));
     ASSERT_FALSE(link.has_format);
     ASSERT_FALSE(link.use_new_format);
+    ASSERT_EQ(1, link.activation_delay);
+    ASSERT_EQ(1, link.initial_activation_delay);
+    ASSERT_EQ(NMO_OBJECT_ID_NONE, nmo_ref_serialized_id(&link.in_io));
+    ASSERT_EQ(NMO_OBJECT_ID_NONE, nmo_ref_serialized_id(&link.out_io));
     ASSERT_EQ(NMO_CKOBJECT_VISIBLE, link.base.visibility_flags);
 
     nmo_chunk_t *saved_empty_link = nmo_chunk_create(arena);
@@ -1039,6 +1049,20 @@ TEST(chunk_id_remap, behavior_layout_defaults_preserve_legacy_absence) {
         saved_empty_link, CK_STATESAVE_BEHAV_LINK_NEWDATA));
     ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_chunk_seek_identifier(
         saved_empty_link, CK_STATESAVE_BEHAV_LINK_CURDELAY));
+
+    io.old_flags = 1u;
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_behaviorio_serialize(
+        &io, saved_io, NULL, &serialize_context));
+    io.old_flags = 0u;
+    link.activation_delay = 2;
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_behaviorlink_serialize(
+        &link, saved_empty_link, NULL, &serialize_context));
+    link.activation_delay = 1;
+    link.has_format = true;
+    link.use_new_format = false;
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_behaviorlink_serialize(
+        &link, saved_empty_link, NULL, &serialize_context));
+    link.has_format = false;
 
     nmo_chunk_t *legacy_sections = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(legacy_sections);

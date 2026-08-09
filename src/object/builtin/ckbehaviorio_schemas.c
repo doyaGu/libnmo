@@ -38,6 +38,11 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
     } while (0),
     nmo_object_vtable.destroy(&state->base, NULL, context))
 
+static nmo_status_t nmo_behaviorio_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
+
 /* =============================================================================
  * REFLECTION FIELDS
  * ============================================================================= */
@@ -112,8 +117,12 @@ nmo_status_t nmo_behaviorio_deserialize(
     if (result != NMO_OK) return result;
     result = nmo_behaviorio_deserialize_internal(
         &decoded, chunk, type, context);
-    if (result != NMO_OK) return result;
+    if (result != NMO_OK) {
+        nmo_behaviorio_destroy(&decoded, type, context);
+        return result;
+    }
 
+    nmo_behaviorio_destroy(out_state, type, context);
     *out_state = decoded;
     return NMO_OK;
 }
@@ -146,6 +155,8 @@ static nmo_status_t nmo_behaviorio_serialize_internal(
     if (in_state == NULL || out_chunk == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_behaviorio_serialize");
     }
+    NMO_RETURN_IF_ERROR(nmo_behaviorio_validate(
+        in_state, type, context));
 
     nmo_status_t result;
 
@@ -288,7 +299,14 @@ static nmo_status_t nmo_behaviorio_validate(
     (void)type;
     if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
     const nmo_behaviorio_state_t *state = instance;
-    return nmo_object_vtable.validate(&state->base, NULL, context);
+    NMO_RETURN_IF_ERROR(nmo_object_vtable.validate(
+        &state->base, NULL, context));
+    if (!state->has_flags && state->old_flags != 0u) {
+        NMO_RETURN_ERROR(
+            NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+            "BehaviorIO flags are present without their section");
+    }
+    NMO_RETURN_OK();
 }
 
 static bool nmo_behaviorio_equals(const void *a, const void *b)

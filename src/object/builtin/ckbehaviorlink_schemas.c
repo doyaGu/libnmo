@@ -41,6 +41,11 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
     } while (0),
     nmo_object_vtable.destroy(&state->base, NULL, context))
 
+static nmo_status_t nmo_behaviorlink_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
+
 /* =============================================================================
  * REFLECTION FIELDS
  * ============================================================================= */
@@ -192,10 +197,17 @@ nmo_status_t nmo_behaviorlink_deserialize(
     nmo_behaviorlink_state_t *out_state =
         (nmo_behaviorlink_state_t *)instance;
     if (out_state == NULL || chunk == NULL) return NMO_ERR_INVALID_ARGUMENT;
-    nmo_behaviorlink_state_t decoded = *out_state;
-    nmo_status_t result = nmo_behaviorlink_deserialize_internal(
-        &decoded, chunk, type, context);
+    nmo_behaviorlink_state_t decoded;
+    nmo_status_t result = nmo_behaviorlink_create(
+        &decoded, type, context);
     if (result != NMO_OK) return result;
+    result = nmo_behaviorlink_deserialize_internal(
+        &decoded, chunk, type, context);
+    if (result != NMO_OK) {
+        nmo_behaviorlink_destroy(&decoded, type, context);
+        return result;
+    }
+    nmo_behaviorlink_destroy(out_state, type, context);
     *out_state = decoded;
     return NMO_OK;
 }
@@ -228,6 +240,8 @@ static nmo_status_t nmo_behaviorlink_serialize_internal(
     if (in_state == NULL || out_chunk == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_behaviorlink_serialize");
     }
+    NMO_RETURN_IF_ERROR(nmo_behaviorlink_validate(
+        in_state, type, context));
 
     nmo_status_t result;
 
@@ -405,7 +419,49 @@ static nmo_status_t nmo_behaviorlink_validate(
     (void)type;
     if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
     const nmo_behaviorlink_state_t *state = instance;
-    return nmo_object_vtable.validate(&state->base, NULL, context);
+    NMO_RETURN_IF_ERROR(nmo_object_vtable.validate(
+        &state->base, NULL, context));
+
+    const bool has_in_io =
+        nmo_ref_serialized_id(&state->in_io) != NMO_OBJECT_ID_NONE;
+    const bool has_out_io =
+        nmo_ref_serialized_id(&state->out_io) != NMO_OBJECT_ID_NONE;
+    if (!state->has_format) {
+        if (state->use_new_format || state->has_legacy_curdelay ||
+            state->has_legacy_ios || state->has_legacy_delay ||
+            state->activation_delay != 1 ||
+            state->initial_activation_delay != 1 ||
+            has_in_io || has_out_io) {
+            NMO_RETURN_ERROR(
+                NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                "BehaviorLink data is present without a format section");
+        }
+        NMO_RETURN_OK();
+    }
+    if (state->use_new_format) {
+        if (state->has_legacy_curdelay || state->has_legacy_ios ||
+            state->has_legacy_delay) {
+            NMO_RETURN_ERROR(
+                NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                "BehaviorLink new and legacy layouts are mixed");
+        }
+        NMO_RETURN_OK();
+    }
+    if (!state->has_legacy_curdelay && !state->has_legacy_ios &&
+        !state->has_legacy_delay) {
+        NMO_RETURN_ERROR(
+            NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+            "BehaviorLink legacy layout has no sections");
+    }
+    if ((!state->has_legacy_curdelay && state->activation_delay != 1) ||
+        (!state->has_legacy_delay &&
+         state->initial_activation_delay != 1) ||
+        (!state->has_legacy_ios && (has_in_io || has_out_io))) {
+        NMO_RETURN_ERROR(
+            NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+            "BehaviorLink legacy state cannot be serialized losslessly");
+    }
+    NMO_RETURN_OK();
 }
 
 static bool nmo_behaviorlink_ref_equals(
