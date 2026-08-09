@@ -1130,6 +1130,48 @@ cleanup:
     return ok;
 }
 
+static bool create_behavior_input_parameter_fixture(const char *path) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    if (ctx == NULL) return false;
+    nmo_session_t *session = nmo_session_create(ctx);
+    if (session == NULL) {
+        nmo_context_release(ctx);
+        return false;
+    }
+
+    nmo_object_id_t input_id = 0;
+    nmo_object_id_t behavior_id = 0;
+    bool ok = false;
+    if (nmo_session_create_object(
+            session, NMO_CID_PARAMETERIN, "input",
+            (nmo_guid_t){0, 0}, &input_id, NULL) != NMO_OK ||
+        nmo_session_create_object(
+            session, NMO_CID_BEHAVIOR, "behavior",
+            (nmo_guid_t){0, 0}, &behavior_id, NULL) != NMO_OK) {
+        goto cleanup;
+    }
+
+    nmo_object_t *object = nmo_object_repository_find_by_id(
+        nmo_session_get_repository(session), behavior_id);
+    if (object == NULL || object->state == NULL) goto cleanup;
+
+    nmo_behavior_state_t *behavior = (nmo_behavior_state_t *)object->state;
+    nmo_behavior_ref_t input = nmo_behavior_ref_from_id(input_id);
+    if (nmo_array_append(&behavior->in_parameters, &input) != NMO_OK) {
+        goto cleanup;
+    }
+    behavior->save_flags |= CK_STATESAVE_BEHAVIORINPARAMS;
+    behavior->has_save_flags = true;
+
+    nmo_save_options_t save_opts = nmo_save_options_default();
+    ok = nmo_session_save_file(session, path, &save_opts, NULL) == NMO_OK;
+
+cleanup:
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+    return ok;
+}
+
 static bool create_nested_dangling_reference_fixture(const char *path) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     if (ctx == NULL) return false;
@@ -1504,6 +1546,22 @@ TEST(cli, validate_references_reports_typed_scalar_class_mismatch) {
     ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
     ASSERT_STR_CONTAINS(result.output, "target[0]");
     ASSERT_STR_CONTAINS(result.output, "class_mismatch");
+
+    free(result.output);
+    remove(fixture);
+}
+
+TEST(cli, validate_references_accepts_behavior_input_parameters) {
+    const char *fixture = "test_validate_refs_behavior_input.nmo";
+    remove(fixture);
+    ASSERT_TRUE(create_behavior_input_parameter_fixture(fixture));
+
+    char args[512];
+    snprintf(args, sizeof(args), "validate references \"%s\"", fixture);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "All references valid");
 
     free(result.output);
     remove(fixture);
@@ -4556,6 +4614,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, validate_references_normalize_rejects_input_overwrite);
     REGISTER_TEST(cli, validate_references_reports_raw_field_class_mismatch);
     REGISTER_TEST(cli, validate_references_reports_typed_scalar_class_mismatch);
+    REGISTER_TEST(cli, validate_references_accepts_behavior_input_parameters);
 
     /* type commands */
     REGISTER_TEST(cli, type_list_text);

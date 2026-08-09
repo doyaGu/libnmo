@@ -1003,7 +1003,6 @@ static nmo_class_id_t validate_expected_class_for_kind(nmo_ref_kind_t kind)
     case NMO_REF_KIND_MATERIAL: return NMO_CID_MATERIAL;
     case NMO_REF_KIND_TEXTURE: return NMO_CID_TEXTURE;
     case NMO_REF_KIND_BEHAVIOR_LINK: return NMO_CID_BEHAVIORLINK;
-    case NMO_REF_KIND_PARAMETER: return NMO_CID_PARAMETER;
     case NMO_REF_KIND_PLACE: return NMO_CID_PLACE;
     case NMO_REF_KIND_SKIN_BONE: return NMO_CID_BODYPART;
     case NMO_REF_KIND_DATA_ARRAY: return NMO_CID_DATAARRAY;
@@ -1012,20 +1011,39 @@ static nmo_class_id_t validate_expected_class_for_kind(nmo_ref_kind_t kind)
     }
 }
 
+static bool validate_target_matches_kind(
+    const nmo_type_registry_t *types,
+    nmo_ref_kind_t kind,
+    nmo_class_id_t target_class_id)
+{
+    if (types == NULL) return true;
+
+    /* CKParameterIn is a CKObject sibling of CKParameter, while
+     * CKParameterOut and CKParameterLocal derive from CKParameter.  The
+     * graph kind describes the semantic parameter family, not that C++
+     * inheritance branch. */
+    if (kind == NMO_REF_KIND_PARAMETER) {
+        return target_class_id == NMO_CID_PARAMETERIN ||
+            nmo_type_registry_is_class_derived_from(
+                types, (uint32_t)target_class_id, NMO_CID_PARAMETER);
+    }
+
+    nmo_class_id_t expected = validate_expected_class_for_kind(kind);
+    return expected == 0 || nmo_type_registry_is_class_derived_from(
+        types, (uint32_t)target_class_id, (uint32_t)expected);
+}
+
 static bool validate_edge_has_class_mismatch(
     const nmo_cmd_ctx_t *command,
     const nmo_object_repository_t *repo,
     const nmo_ref_edge_t *edge)
 {
-    nmo_class_id_t expected = validate_expected_class_for_kind(edge->kind);
-    if (expected == 0) return false;
     const nmo_object_t *target = nmo_object_repository_find_by_id(repo, edge->to);
     if (target == NULL) return false;
     const nmo_type_runtime_t *type_rt = nmo_context_get_type_runtime(command->ctx);
     return type_rt != NULL && type_rt->types != NULL &&
-        !nmo_type_registry_is_class_derived_from(
-            type_rt->types, (uint32_t)nmo_object_get_class_id(target),
-            (uint32_t)expected);
+        !validate_target_matches_kind(
+            type_rt->types, edge->kind, nmo_object_get_class_id(target));
 }
 
 static size_t validate_count_edge_class_mismatches(
