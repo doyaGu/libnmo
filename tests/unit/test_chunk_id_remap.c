@@ -3373,6 +3373,39 @@ TEST(chunk_id_remap, parameterout_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(previous_destinations, failed.destination_ids);
     ASSERT_EQ(1u, failed.destination_count);
 
+    nmo_chunk_t *owner_cross_section = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(owner_cross_section);
+    owner_cross_section->class_id = NMO_CID_PARAMETEROUT;
+    owner_cross_section->data_version = 8;
+    owner_cross_section->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(owner_cross_section));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        owner_cross_section, CK_STATESAVE_PARAMETEROUT_OWNER));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        owner_cross_section, 0x11223344u));
+    nmo_chunk_close(owner_cross_section);
+    nmo_chunk_set_file_context(owner_cross_section, &read_context);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_parameterout_deserialize(
+        &failed, owner_cross_section, NULL, &deserialize_context));
+    ASSERT_EQ(901u, failed.owner.raw_id);
+    ASSERT_EQ(previous_destinations, failed.destination_ids);
+    ASSERT_EQ(1u, failed.destination_count);
+
+    nmo_chunk_t *count_cross_section = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(count_cross_section);
+    count_cross_section->class_id = NMO_CID_PARAMETEROUT;
+    count_cross_section->data_version = 8;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(count_cross_section));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        count_cross_section, CK_STATESAVE_PARAMETEROUT_DESTINATIONS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(count_cross_section, 0));
+    nmo_chunk_close(count_cross_section);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_parameterout_deserialize(
+        &failed, count_cross_section, NULL, &deserialize_context));
+    ASSERT_EQ(901u, failed.owner.raw_id);
+    ASSERT_EQ(previous_destinations, failed.destination_ids);
+    ASSERT_EQ(1u, failed.destination_count);
+
     nmo_chunk_t *cross_section_count = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(cross_section_count);
     cross_section_count->class_id = NMO_CID_PARAMETEROUT;

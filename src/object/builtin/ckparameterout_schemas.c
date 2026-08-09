@@ -107,17 +107,20 @@ static nmo_status_t nmo_parameterout_deserialize_internal(
     const nmo_type_registry_t *types =
         nmo_deserialize_context_get_type_registry(context);
 
-    result = nmo_chunk_seek_identifier(
-        chunk, CK_STATESAVE_PARAMETEROUT_OWNER);
+    size_t section_dwords = 0;
+    result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_PARAMETEROUT_OWNER, &section_dwords);
     if (result == NMO_OK) {
+        if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
         NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &owner));
         nmo_ref_check_class(&owner, repository, types, NMO_CID_BEHAVIOR);
     } else if (result != NMO_ERR_NOT_FOUND) return result;
 
     /* Read destinations if present */
-    result = nmo_chunk_seek_identifier(
-        chunk, CK_STATESAVE_PARAMETEROUT_DESTINATIONS);
+    result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_PARAMETEROUT_DESTINATIONS, &section_dwords);
     if (result == NMO_OK) {
+        if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
         int32_t count = 0;
         nmo_status_t result = nmo_chunk_read_int(chunk, &count);
         if (result != NMO_OK) return result;
