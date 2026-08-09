@@ -64,6 +64,7 @@ static nmo_status_t parse_manager_data(
     if (section->managers == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate manager data array");
     }
+    memset(section->managers, 0, manager_bytes);
 
     /* Parse each manager */
     for (uint32_t i = 0; i < section->manager_count; i++) {
@@ -147,6 +148,7 @@ static nmo_status_t parse_object_data(
     if (section->objects == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate object data array");
     }
+    memset(section->objects, 0, object_bytes);
 
     /* Parse each object */
     for (uint32_t i = 0; i < section->object_count; i++) {
@@ -199,6 +201,28 @@ static nmo_status_t parse_object_data(
     NMO_RETURN_OK();
 }
 
+static void release_pooled_chunks(nmo_data_section_t *section,
+                                  nmo_chunk_pool_t *chunk_pool) {
+    if (section == NULL || chunk_pool == NULL) {
+        return;
+    }
+
+    for (uint32_t i = 0; section->managers != NULL &&
+                         i < section->manager_count; ++i) {
+        nmo_chunk_t *chunk = section->managers[i].chunk;
+        if (chunk != NULL && nmo_chunk_pool_validate(chunk_pool, chunk)) {
+            nmo_chunk_pool_release(chunk_pool, chunk);
+        }
+    }
+    for (uint32_t i = 0; section->objects != NULL &&
+                         i < section->object_count; ++i) {
+        nmo_chunk_t *chunk = section->objects[i].chunk;
+        if (chunk != NULL && nmo_chunk_pool_validate(chunk_pool, chunk)) {
+            nmo_chunk_pool_release(chunk_pool, chunk);
+        }
+    }
+}
+
 nmo_status_t nmo_data_section_parse(
     const void *data,
     size_t size,
@@ -216,42 +240,36 @@ nmo_status_t nmo_data_section_parse(
                                 "NULL pointer passed to nmo_data_section_parse");
     }
 
-    /* Save counts which must be set by caller (from file header) */
-    uint32_t manager_count = data_section->manager_count;
-    uint32_t object_count = data_section->object_count;
-
-    /* Initialize data section */
-    memset(data_section, 0, sizeof(nmo_data_section_t));
-
-    /* Restore counts */
-    data_section->manager_count = manager_count;
-    data_section->object_count = object_count;
+    nmo_data_section_t staged;
+    memset(&staged, 0, sizeof(staged));
+    staged.manager_count = data_section->manager_count;
+    staged.object_count = data_section->object_count;
 
     const uint8_t *buffer = (const uint8_t *) data;
     size_t pos = 0;
 
     /* Parse manager data (file_version >= 6) */
-    if (file_version >= 6 && manager_count > 0) {
-        NMO_RETURN_IF_ERROR_CTX(parse_manager_data(buffer, size, &pos, data_section, chunk_pool, arena),
-                                "Failed to parse manager data (count=%u)",
-                                (unsigned)manager_count);
+    nmo_status_t result = NMO_OK;
+    if (file_version >= 6 && staged.manager_count > 0) {
+        result = parse_manager_data(
+            buffer, size, &pos, &staged, chunk_pool, arena);
+        if (result != NMO_OK) {
+            release_pooled_chunks(&staged, chunk_pool);
+            return result;
+        }
     }
 
     /* Parse object data (file_version >= 4) */
-    if (file_version >= 4 && object_count > 0) {
-        NMO_RETURN_IF_ERROR_CTX(parse_object_data(
-                                    buffer,
-                                    size,
-                                    &pos,
-                                    file_version,
-                                    data_section,
-                                    chunk_pool,
-                                    arena),
-                                "Failed to parse object data (count=%u, file_version=%u)",
-                                (unsigned)object_count,
-                                (unsigned)file_version);
+    if (file_version >= 4 && staged.object_count > 0) {
+        result = parse_object_data(
+            buffer, size, &pos, file_version, &staged, chunk_pool, arena);
+        if (result != NMO_OK) {
+            release_pooled_chunks(&staged, chunk_pool);
+            return result;
+        }
     }
 
+    *data_section = staged;
     NMO_RETURN_OK();
 }
 

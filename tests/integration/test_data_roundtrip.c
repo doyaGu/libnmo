@@ -25,6 +25,7 @@ static void test_manager_with_chunk_data(void);
 static void test_manager_with_chunk_data_without_raw_data(void);
 static void test_object_with_chunk_data_without_raw_data(void);
 static void test_parse_with_chunk_pool(void);
+static void test_parse_failure_is_atomic(void);
 
 static void register_tests(void) {
     test_register("data_roundtrip", "empty_data_section", test_empty_data_section);
@@ -35,6 +36,7 @@ static void register_tests(void) {
     test_register("data_roundtrip", "manager_with_chunk_data_without_raw_data", test_manager_with_chunk_data_without_raw_data);
     test_register("data_roundtrip", "object_with_chunk_data_without_raw_data", test_object_with_chunk_data_without_raw_data);
     test_register("data_roundtrip", "parse_with_chunk_pool", test_parse_with_chunk_pool);
+    test_register("data_roundtrip", "parse_failure_is_atomic", test_parse_failure_is_atomic);
 }
 
 static void test_empty_data_section(void) {
@@ -482,6 +484,53 @@ static void test_parse_with_chunk_pool(void) {
     ASSERT_EQ(total, 1u);
     ASSERT_EQ(in_use, 1u);
     ASSERT_EQ(available, 0u);
+
+    nmo_arena_destroy(arena);
+}
+
+static void test_parse_failure_is_atomic(void) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_pool_t *pool = nmo_chunk_pool_create(2, arena);
+    ASSERT_NOT_NULL(pool);
+
+    nmo_chunk_t *source = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(source);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(source));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(source, 0x12345678u));
+    nmo_chunk_close(source);
+
+    void *chunk_data = NULL;
+    size_t chunk_size = 0;
+    ASSERT_EQ(NMO_OK,
+              nmo_chunk_serialize_version1(
+                  source, &chunk_data, &chunk_size, arena));
+    ASSERT_NOT_NULL(chunk_data);
+
+    size_t buffer_size = sizeof(uint32_t) + chunk_size;
+    uint8_t *buffer = (uint8_t *)nmo_arena_alloc(arena, buffer_size, 4);
+    ASSERT_NOT_NULL(buffer);
+    nmo_write_u32_le(buffer, (uint32_t)chunk_size);
+    memcpy(buffer + sizeof(uint32_t), chunk_data, chunk_size);
+
+    nmo_object_data_t sentinel_object = {0};
+    nmo_data_section_t parsed = {0};
+    parsed.object_count = 2;
+    parsed.objects = &sentinel_object;
+
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK,
+              nmo_data_section_parse(
+                  buffer, buffer_size, 8, &parsed, pool, arena));
+    ASSERT_EQ(2u, parsed.object_count);
+    ASSERT_EQ(&sentinel_object, parsed.objects);
+
+    size_t total = 0;
+    size_t available = 0;
+    size_t in_use = 0;
+    nmo_chunk_pool_get_stats(pool, &total, &available, &in_use);
+    ASSERT_EQ(1u, total);
+    ASSERT_EQ(1u, available);
+    ASSERT_EQ(0u, in_use);
 
     nmo_arena_destroy(arena);
 }
