@@ -24,11 +24,14 @@ static size_t nmo_ref_identifier_remaining_dwords(
     size_t next_pos = chunk->data.count;
     if (state->prev_identifier_pos + 1u < chunk->data.count) {
         const uint32_t candidate = data[state->prev_identifier_pos + 1u];
-        if (candidate != 0 && candidate <= chunk->data.count) {
+        if (candidate != 0) {
+            if (candidate < state->current_pos ||
+                candidate > chunk->data.count - 2u) {
+                return 0;
+            }
             next_pos = candidate;
         }
     }
-    if (next_pos < state->current_pos) return 0;
     return next_pos - state->current_pos;
 }
 

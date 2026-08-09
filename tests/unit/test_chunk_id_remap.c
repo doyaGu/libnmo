@@ -637,6 +637,34 @@ TEST(chunk_id_remap, ref_sequence_mapping_failure_is_atomic) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, ref_sequence_rejects_invalid_identifier_end) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, 0x1234u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 77));
+    nmo_chunk_close(chunk);
+
+    uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+    data[1] = (uint32_t)chunk->data.count;
+
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(chunk, 0x1234u));
+    const size_t payload_pos = nmo_chunk_get_position(chunk);
+    nmo_ref_t *refs = (nmo_ref_t *)(uintptr_t)1;
+    size_t count = 9;
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK,
+              nmo_ref_read_sequence(chunk, &refs, &count, arena));
+    ASSERT_NULL(refs);
+    ASSERT_EQ(0u, count);
+    ASSERT_EQ(payload_pos, nmo_chunk_get_position(chunk));
+
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, unresolved_ref_preserves_raw_id) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
@@ -13121,6 +13149,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, zero_and_unchanged_ids);
     REGISTER_TEST(chunk_id_remap, null_ref_uses_file_null_encoding);
     REGISTER_TEST(chunk_id_remap, ref_sequence_mapping_failure_is_atomic);
+    REGISTER_TEST(chunk_id_remap, ref_sequence_rejects_invalid_identifier_end);
     REGISTER_TEST(chunk_id_remap, unresolved_ref_preserves_raw_id);
     REGISTER_TEST(chunk_id_remap, behavior_unresolved_ref_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, behavior_serializer_does_not_publish_partial_chunk);
