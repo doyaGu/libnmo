@@ -18,9 +18,13 @@ struct nmo_id_sanitizer {
     nmo_arena_t *arena;
 };
 
-static nmo_hash_table_t *nmo_id_sanitizer_make_table(size_t key_size, size_t value_size) {
+static nmo_hash_table_t *nmo_id_sanitizer_make_table(
+    const nmo_allocator_t *allocator,
+    size_t key_size,
+    size_t value_size)
+{
     return nmo_hash_table_create(
-        NULL,
+        allocator,
         key_size,
         value_size,
         64,               /* initial capacity */
@@ -33,6 +37,11 @@ nmo_id_sanitizer_t *nmo_id_sanitizer_create(nmo_arena_t *arena) {
         return NULL;
     }
 
+    nmo_allocator_t allocator;
+    if (nmo_arena_get_allocator(arena, &allocator) != NMO_OK) {
+        return NULL;
+    }
+
     nmo_id_sanitizer_t *s = (nmo_id_sanitizer_t *) nmo_arena_alloc(
         arena, sizeof(nmo_id_sanitizer_t), alignof(nmo_id_sanitizer_t));
     if (s == NULL) {
@@ -40,9 +49,12 @@ nmo_id_sanitizer_t *nmo_id_sanitizer_create(nmo_arena_t *arena) {
     }
 
     s->arena = arena;
-    s->file_to_runtime = nmo_id_sanitizer_make_table(sizeof(uint32_t), sizeof(uint32_t));
-    s->runtime_to_file = nmo_id_sanitizer_make_table(sizeof(uint32_t), sizeof(uint32_t));
-    s->negative_refs = nmo_id_sanitizer_make_table(sizeof(uint32_t), sizeof(int32_t));
+    s->file_to_runtime = nmo_id_sanitizer_make_table(
+        &allocator, sizeof(uint32_t), sizeof(uint32_t));
+    s->runtime_to_file = nmo_id_sanitizer_make_table(
+        &allocator, sizeof(uint32_t), sizeof(uint32_t));
+    s->negative_refs = nmo_id_sanitizer_make_table(
+        &allocator, sizeof(uint32_t), sizeof(int32_t));
 
     if (!s->file_to_runtime || !s->runtime_to_file || !s->negative_refs) {
         nmo_id_sanitizer_destroy(s);

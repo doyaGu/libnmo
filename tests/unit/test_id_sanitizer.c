@@ -4,8 +4,33 @@
  */
 
 #include "session/nmo_session_pipeline.h"
+#include "core/nmo_allocator.h"
 #include "core/nmo_arena.h"
 #include "test_framework.h"
+
+typedef struct sanitizer_fail_allocator {
+    nmo_allocator_t base;
+    bool fail_allocations;
+} sanitizer_fail_allocator_t;
+
+static void *sanitizer_fail_alloc(
+    void *user_data,
+    size_t size,
+    size_t alignment)
+{
+    sanitizer_fail_allocator_t *ctx =
+        (sanitizer_fail_allocator_t *)user_data;
+    if (ctx->fail_allocations) {
+        return NULL;
+    }
+    return nmo_alloc(&ctx->base, size, alignment);
+}
+
+static void sanitizer_fail_free(void *user_data, void *ptr) {
+    sanitizer_fail_allocator_t *ctx =
+        (sanitizer_fail_allocator_t *)user_data;
+    nmo_free(&ctx->base, ptr);
+}
 
 TEST(id_sanitizer, strips_mask_and_passthrough) {
     ASSERT_EQ(nmo_id_sanitize(NMO_OBJECT_REFERENCE_FLAG | 0x42u), 0x42u);
@@ -39,6 +64,33 @@ TEST(id_sanitizer, registers_bidirectional_mappings) {
     ASSERT_EQ(nmo_id_file_to_runtime(s, 1), NMO_OBJECT_ID_INVALID);
     ASSERT_EQ(nmo_id_runtime_to_file(s, 42), NMO_OBJECT_ID_INVALID);
 
+    nmo_id_sanitizer_destroy(s);
+    nmo_arena_destroy(arena);
+}
+
+TEST(id_sanitizer, registration_uses_arena_backing_allocator) {
+    sanitizer_fail_allocator_t fail_ctx = {
+        .base = nmo_allocator_default(),
+        .fail_allocations = false,
+    };
+    nmo_allocator_t allocator = nmo_allocator_custom(
+        sanitizer_fail_alloc, sanitizer_fail_free, &fail_ctx);
+    nmo_arena_t *arena = nmo_arena_create(&allocator, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_id_sanitizer_t *s = nmo_id_sanitizer_create(arena);
+    ASSERT_NOT_NULL(s);
+
+    for (uint32_t i = 1; i <= 44; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_id_sanitizer_register(s, i, i + 100));
+    }
+
+    fail_ctx.fail_allocations = true;
+    ASSERT_EQ(NMO_ERR_NOMEM, nmo_id_sanitizer_register(s, 45, 145));
+    ASSERT_EQ(NMO_OBJECT_ID_INVALID, nmo_id_file_to_runtime(s, 45));
+    ASSERT_EQ(NMO_OBJECT_ID_INVALID, nmo_id_runtime_to_file(s, 145));
+    ASSERT_EQ(101u, nmo_id_file_to_runtime(s, 1));
+
+    fail_ctx.fail_allocations = false;
     nmo_id_sanitizer_destroy(s);
     nmo_arena_destroy(arena);
 }
@@ -127,6 +179,7 @@ TEST(id_sanitizer, tracks_external_negative_ids) {
 TEST_MAIN_BEGIN()
     REGISTER_TEST(id_sanitizer, strips_mask_and_passthrough);
     REGISTER_TEST(id_sanitizer, registers_bidirectional_mappings);
+    REGISTER_TEST(id_sanitizer, registration_uses_arena_backing_allocator);
     REGISTER_TEST(id_sanitizer, reset_clears_state);
     REGISTER_TEST(id_sanitizer, mask_handling_on_registration);
     REGISTER_TEST(id_sanitizer, reseed_bulk_loads_mappings);
