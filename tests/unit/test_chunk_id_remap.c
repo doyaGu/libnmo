@@ -4564,9 +4564,43 @@ TEST(chunk_id_remap, curvepoint_unresolved_curve_round_trips_raw_id) {
     ASSERT_EQ(611u, reloaded.curve.raw_id);
     ASSERT_EQ(NMO_REF_UNRESOLVED, reloaded.curve.state);
 
+    nmo_ref_t inherited_script = nmo_ref_from_raw(612);
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &reloaded.base.base.base.scripts, &inherited_script));
+    nmo_curvepoint_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_curvepoint_vtable.create(
+        &copied, NULL, NULL));
+    nmo_type_descriptor_t curvepoint_type = {
+        .size = sizeof(nmo_curvepoint_state_t),
+    };
+    ASSERT_EQ(NMO_OK, nmo_curvepoint_vtable.copy(
+        &reloaded, &copied, &curvepoint_type, arena));
+    ASSERT_EQ(611u, copied.curve.raw_id);
+    ASSERT_NE(reloaded.base.base.base.scripts.data,
+              copied.base.base.base.scripts.data);
+    ASSERT_EQ(612u, NMO_ARRAY_DATA(
+        nmo_ref_t, &copied.base.base.base.scripts)[0].raw_id);
+
+    nmo_curvepoint_state_t copy_failed;
+    ASSERT_EQ(NMO_OK, nmo_curvepoint_vtable.create(
+        &copy_failed, NULL, NULL));
+    copy_failed.curve = nmo_ref_from_raw(613);
+    copy_failed.use_tcb = 77;
+    nmo_allocator_t script_allocator =
+        reloaded.base.base.base.scripts.allocator;
+    reloaded.base.base.base.scripts.allocator = nmo_allocator_custom(
+        beobject_fail_alloc, beobject_fail_free, NULL);
+    ASSERT_EQ(NMO_ERR_NOMEM, nmo_curvepoint_vtable.copy(
+        &reloaded, &copy_failed, &curvepoint_type, arena));
+    reloaded.base.base.base.scripts.allocator = script_allocator;
+    ASSERT_EQ(613u, copy_failed.curve.raw_id);
+    ASSERT_EQ(77, copy_failed.use_tcb);
+
     nmo_curvepoint_vtable.destroy(&source, NULL, NULL);
     nmo_curvepoint_vtable.destroy(&loaded, NULL, NULL);
     nmo_curvepoint_vtable.destroy(&reloaded, NULL, NULL);
+    nmo_curvepoint_vtable.destroy(&copied, NULL, NULL);
+    nmo_curvepoint_vtable.destroy(&copy_failed, NULL, NULL);
     nmo_arena_destroy(arena);
 }
 
@@ -9749,6 +9783,36 @@ TEST(chunk_id_remap, curve_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(nmo_curve_vtable.hash(&loaded),
               nmo_curve_vtable.hash(&copied));
 
+    fail_after_allocator_state_t allocator_state = {
+        .allowed_allocations = 2,
+    };
+    nmo_allocator_t failing_allocator = nmo_allocator_custom(
+        fail_after_alloc, fail_after_free, &allocator_state);
+    nmo_arena_t *failing_arena = nmo_arena_create(
+        &failing_allocator, 1);
+    ASSERT_NOT_NULL(failing_arena);
+    allocator_state.allowed_allocations = allocator_state.allocation_count;
+    nmo_ref_t previous_control = nmo_ref_from_raw(991);
+    nmo_curve_point_subchunk_t previous_saved = {
+        .ref = nmo_ref_from_raw(992),
+        .chunk = subchunk,
+    };
+    nmo_curve_state_t copy_failed;
+    ASSERT_EQ(NMO_OK, nmo_curve_vtable.create(
+        &copy_failed, NULL, NULL));
+    copy_failed.base.entity_flags = 0x12345678u;
+    copy_failed.control_point_count = 1;
+    copy_failed.control_point_ids = &previous_control;
+    copy_failed.sub_point_count = 1;
+    copy_failed.sub_points = &previous_saved;
+    ASSERT_EQ(NMO_ERR_NOMEM, nmo_curve_vtable.copy(
+        &loaded, &copy_failed, &curve_type, failing_arena));
+    ASSERT_EQ(0x12345678u, copy_failed.base.entity_flags);
+    ASSERT_EQ(&previous_control, copy_failed.control_point_ids);
+    ASSERT_EQ(991u, copy_failed.control_point_ids[0].raw_id);
+    ASSERT_EQ(&previous_saved, copy_failed.sub_points);
+    ASSERT_EQ(subchunk, copy_failed.sub_points[0].chunk);
+
     nmo_chunk_t *second = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(second);
     second->class_id = NMO_CID_CURVE;
@@ -9786,11 +9850,6 @@ TEST(chunk_id_remap, curve_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_item(truncated, 981));
     nmo_chunk_close(truncated);
 
-    nmo_ref_t previous_control = nmo_ref_from_raw(991);
-    nmo_curve_point_subchunk_t previous_saved = {
-        .ref = nmo_ref_from_raw(992),
-        .chunk = subchunk,
-    };
     nmo_curve_state_t failed;
     ASSERT_EQ(NMO_OK, nmo_curve_vtable.create(&failed, NULL, NULL));
     failed.control_point_count = 1;
@@ -9827,9 +9886,11 @@ TEST(chunk_id_remap, curve_refs_round_trip_and_failure_is_atomic) {
     nmo_curve_vtable.destroy(&source, NULL, NULL);
     nmo_curve_vtable.destroy(&loaded, NULL, NULL);
     nmo_curve_vtable.destroy(&copied, NULL, NULL);
+    nmo_curve_vtable.destroy(&copy_failed, NULL, NULL);
     nmo_curve_vtable.destroy(&reloaded, NULL, NULL);
     nmo_curve_vtable.destroy(&failed, NULL, NULL);
     nmo_curve_vtable.destroy(&invalid, NULL, NULL);
+    nmo_arena_destroy(failing_arena);
     nmo_arena_destroy(arena);
 }
 
