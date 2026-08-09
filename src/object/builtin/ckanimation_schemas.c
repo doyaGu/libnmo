@@ -1166,6 +1166,64 @@ static nmo_status_t nmo_animation_validate_payload_size(
     return NMO_OK;
 }
 
+static nmo_status_t nmo_objectanimation_read_morph_normals(
+    nmo_chunk_t *chunk,
+    nmo_arena_t *arena,
+    nmo_objectanimation_state_t *out_state,
+    uint32_t identifier,
+    uint32_t count)
+{
+    if ((size_t)count >
+        nmo_animation_identifier_remaining_dwords(chunk)) {
+        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                         "Morph normal sizes exceed identifier payload");
+    }
+
+    size_t sizes_bytes = 0u;
+    size_t pointers_bytes = 0u;
+    if (!nmo_safe_mul_size(count, sizeof(uint32_t), &sizes_bytes) ||
+        !nmo_safe_mul_size(count, sizeof(void *), &pointers_bytes)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Morph normal array size overflows");
+    }
+
+    uint32_t *sizes = nmo_arena_alloc(
+        arena, sizes_bytes, _Alignof(uint32_t));
+    void **data_ptrs = nmo_arena_alloc(
+        arena, pointers_bytes, _Alignof(void *));
+    if (!sizes || !data_ptrs) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "Failed to allocate morph normal arrays");
+    }
+
+    for (uint32_t i = 0; i < count; ++i) {
+        uint32_t size_bytes = 0u;
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &size_bytes));
+        sizes[i] = size_bytes;
+        NMO_RETURN_IF_ERROR(nmo_animation_validate_payload_size(
+            chunk, size_bytes));
+
+        data_ptrs[i] = NULL;
+        if (size_bytes > 0u) {
+            void *data = nmo_arena_alloc(arena, size_bytes, 4);
+            if (!data) {
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                 "Failed to allocate morph normal data");
+            }
+            NMO_RETURN_IF_ERROR(
+                nmo_chunk_read_and_fill_buffer_nosize_checked(
+                    chunk, data, size_bytes));
+            data_ptrs[i] = data;
+        }
+    }
+
+    out_state->morph_normals_id = identifier;
+    out_state->morph_normals_count = count;
+    out_state->morph_normals_sizes = sizes;
+    out_state->morph_normals_data = data_ptrs;
+    return NMO_OK;
+}
+
 static nmo_status_t read_controllers_loop(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
@@ -1323,80 +1381,17 @@ static nmo_status_t read_newdata_controllers(
     NMO_RETURN_IF_ERROR(nmo_animation_seek_optional(
         chunk, CK_STATESAVE_OBJANIMMORPHCOMP, &section_found));
     if (section_found && out_state->morph_key_parsed_count > 0) {
-        out_state->morph_normals_id = CK_STATESAVE_OBJANIMMORPHCOMP;
-        out_state->morph_normals_count = out_state->morph_key_parsed_count;
-
-        uint32_t *sizes = nmo_arena_alloc(arena, sizeof(uint32_t) * out_state->morph_normals_count,
-                                          _Alignof(uint32_t));
-        void **data_ptrs = nmo_arena_alloc(arena, sizeof(void *) * out_state->morph_normals_count,
-                                           _Alignof(void *));
-        if (!sizes || !data_ptrs) {
-            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                             "Failed to allocate morph normals arrays");
-        }
-
-        for (uint32_t i = 0; i < out_state->morph_normals_count; ++i) {
-            uint32_t size_bytes = 0;
-            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &size_bytes));
-            sizes[i] = size_bytes;
-            NMO_RETURN_IF_ERROR(nmo_animation_validate_payload_size(
-                chunk, size_bytes));
-
-            if (size_bytes > 0) {
-                void *data = nmo_arena_alloc(arena, size_bytes, 4);
-                if (!data) {
-                    NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                                     "Failed to allocate morph normal data");
-                }
-                NMO_RETURN_IF_ERROR(
-                    nmo_chunk_read_and_fill_buffer_nosize_checked(chunk, data, size_bytes));
-                data_ptrs[i] = data;
-            } else {
-                data_ptrs[i] = NULL;
-            }
-        }
-
-        out_state->morph_normals_sizes = sizes;
-        out_state->morph_normals_data = data_ptrs;
+        NMO_RETURN_IF_ERROR(nmo_objectanimation_read_morph_normals(
+            chunk, arena, out_state, CK_STATESAVE_OBJANIMMORPHCOMP,
+            out_state->morph_key_parsed_count));
     } else {
         NMO_RETURN_IF_ERROR(nmo_animation_seek_optional(
             chunk, CK_STATESAVE_OBJANIMMORPHNORMALS, &section_found));
         if (section_found && out_state->morph_key_parsed_count > 0) {
-        out_state->morph_normals_id = CK_STATESAVE_OBJANIMMORPHNORMALS;
-        out_state->morph_normals_count = out_state->morph_key_parsed_count;
-
-        uint32_t *sizes = nmo_arena_alloc(arena, sizeof(uint32_t) * out_state->morph_normals_count,
-                                          _Alignof(uint32_t));
-        void **data_ptrs = nmo_arena_alloc(arena, sizeof(void *) * out_state->morph_normals_count,
-                                           _Alignof(void *));
-        if (!sizes || !data_ptrs) {
-            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                             "Failed to allocate morph normals arrays");
-        }
-
-        for (uint32_t i = 0; i < out_state->morph_normals_count; ++i) {
-            uint32_t size_bytes = 0;
-            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &size_bytes));
-            sizes[i] = size_bytes;
-            NMO_RETURN_IF_ERROR(nmo_animation_validate_payload_size(
-                chunk, size_bytes));
-
-            if (size_bytes > 0) {
-                void *data = nmo_arena_alloc(arena, size_bytes, 4);
-                if (!data) {
-                    NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                                     "Failed to allocate morph normal data");
-                }
-                NMO_RETURN_IF_ERROR(
-                    nmo_chunk_read_and_fill_buffer_nosize_checked(chunk, data, size_bytes));
-                data_ptrs[i] = data;
-            } else {
-                data_ptrs[i] = NULL;
-            }
-        }
-
-        out_state->morph_normals_sizes = sizes;
-        out_state->morph_normals_data = data_ptrs;
+            NMO_RETURN_IF_ERROR(nmo_objectanimation_read_morph_normals(
+                chunk, arena, out_state,
+                CK_STATESAVE_OBJANIMMORPHNORMALS,
+                out_state->morph_key_parsed_count));
         }
     }
 

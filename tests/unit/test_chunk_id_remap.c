@@ -11270,6 +11270,141 @@ TEST(chunk_id_remap, objectanimation_refs_round_trip_and_failure_is_atomic) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, objectanimation_newdata_morph_normals_are_bounded) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
+    ASSERT_NOT_NULL(arena);
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+
+    nmo_objectanimation_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_vtable.create(
+        &source, NULL, NULL));
+    source.format = CKOBJANIM_FORMAT_NEWDATA;
+    source.has_root_pos = 1;
+    source.has_length = 1;
+    source.has_morph_counts = 1;
+    source.morph_vertex_count = 3;
+    source.morph_key_count = 2;
+    nmo_objanim_morph_key_t morph_keys[2] = {0};
+    source.morph_key_parsed_count = 2u;
+    source.morph_keys = morph_keys;
+
+    uint8_t controller_data[16] = {0};
+    controller_data[15] = 0x7fu;
+    nmo_objanim_controller_t controller = {
+        .type = 0x637c4301u,
+        .key_count = 1u,
+        .data_size = sizeof(controller_data),
+        .data = controller_data,
+    };
+    source.controller_count = 1u;
+    source.controllers = &controller;
+
+    uint8_t normal_data[4] = {1u, 2u, 3u, 4u};
+    uint32_t normal_sizes[2] = {sizeof(normal_data), 0u};
+    void *normal_data_ptrs[2] = {normal_data, NULL};
+    source.morph_normals_count = 2u;
+    source.morph_normals_sizes = normal_sizes;
+    source.morph_normals_data = normal_data_ptrs;
+
+    const uint32_t normal_ids[2] = {
+        CK_STATESAVE_OBJANIMMORPHCOMP,
+        CK_STATESAVE_OBJANIMMORPHNORMALS,
+    };
+    for (size_t i = 0; i < 2u; ++i) {
+        source.morph_normals_id = normal_ids[i];
+        nmo_chunk_t *chunk = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(chunk);
+        chunk->class_id = NMO_CID_OBJECTANIMATION;
+        chunk->chunk_version = NMO_CHUNK_VERSION4;
+        chunk->data_version = 7;
+        chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+        ASSERT_EQ(NMO_OK, nmo_objectanimation_serialize(
+            &source, chunk, NULL, &serialize_context));
+        nmo_chunk_close(chunk);
+
+        nmo_objectanimation_state_t loaded;
+        ASSERT_EQ(NMO_OK, nmo_objectanimation_vtable.create(
+            &loaded, NULL, NULL));
+        ASSERT_EQ(NMO_OK, nmo_objectanimation_deserialize(
+            &loaded, chunk, NULL, &deserialize_context));
+        ASSERT_EQ(CKOBJANIM_FORMAT_NEWDATA, loaded.format);
+        ASSERT_EQ(2u, loaded.morph_key_parsed_count);
+        ASSERT_EQ(1u, loaded.controller_count);
+        ASSERT_EQ(sizeof(controller_data), loaded.controllers[0].data_size);
+        ASSERT_EQ(0x7fu,
+                  ((uint8_t *)loaded.controllers[0].data)[15]);
+        ASSERT_EQ(normal_ids[i], loaded.morph_normals_id);
+        ASSERT_EQ(2u, loaded.morph_normals_count);
+        ASSERT_EQ(sizeof(normal_data), loaded.morph_normals_sizes[0]);
+        ASSERT_EQ(4u,
+                  ((uint8_t *)loaded.morph_normals_data[0])[3]);
+        ASSERT_EQ(0u, loaded.morph_normals_sizes[1]);
+        ASSERT_NULL(loaded.morph_normals_data[1]);
+        nmo_objectanimation_vtable.destroy(&loaded, NULL, NULL);
+    }
+
+    nmo_chunk_t *truncated = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(truncated);
+    truncated->class_id = NMO_CID_OBJECTANIMATION;
+    truncated->chunk_version = NMO_CHUNK_VERSION4;
+    truncated->data_version = 7;
+    truncated->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(truncated));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        truncated, CK_STATESAVE_OBJANIMNEWDATA));
+    nmo_vector_t zero = {0};
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_vector3(truncated, &zero));
+    for (size_t i = 0; i < 4u; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_float(truncated, 0.0f));
+    }
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(truncated, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(truncated, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(truncated, 0u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(
+        truncated, NMO_OBJECT_ID_NONE));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_float(truncated, 0.0f));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_float(truncated, 0.0f));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(truncated, 0u));
+    for (size_t i = 0; i < 4u; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(truncated, 0u));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(truncated, 0u));
+    }
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        truncated, CK_STATESAVE_OBJANIMMORPHCOMP));
+    nmo_chunk_close(truncated);
+
+    fail_after_allocator_state_t allocator_state = {
+        .allocation_count = 0,
+        .allowed_allocations = 3,
+    };
+    nmo_allocator_t failing_allocator = nmo_allocator_custom(
+        fail_after_alloc, fail_after_free, &allocator_state);
+    nmo_arena_t *failing_arena = nmo_arena_create(&failing_allocator, 1);
+    ASSERT_NOT_NULL(failing_arena);
+    nmo_deserialize_context_t failing_context =
+        nmo_deserialize_context_create(
+            failing_arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+    nmo_objectanimation_state_t failed;
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_vtable.create(
+        &failed, NULL, NULL));
+    failed.flags = 0x12345678u;
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_objectanimation_deserialize(
+        &failed, truncated, NULL, &failing_context));
+    ASSERT_EQ(0x12345678u, failed.flags);
+    ASSERT_NULL(failed.morph_normals_sizes);
+    ASSERT_NULL(failed.morph_normals_data);
+    ASSERT_EQ(3u, allocator_state.allocation_count);
+
+    nmo_objectanimation_vtable.destroy(&source, NULL, NULL);
+    nmo_objectanimation_vtable.destroy(&failed, NULL, NULL);
+    nmo_arena_destroy(failing_arena);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, legacy_unresolved_id_preserves_raw_id) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
@@ -11441,5 +11576,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, curve_staging_initializes_inherited_arrays);
     REGISTER_TEST(chunk_id_remap, curve_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, objectanimation_refs_round_trip_and_failure_is_atomic);
+    REGISTER_TEST(chunk_id_remap, objectanimation_newdata_morph_normals_are_bounded);
     REGISTER_TEST(chunk_id_remap, legacy_unresolved_id_preserves_raw_id);
 TEST_MAIN_END()
