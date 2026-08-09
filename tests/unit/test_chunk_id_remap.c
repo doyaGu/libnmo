@@ -6499,6 +6499,39 @@ TEST(chunk_id_remap, entity_serializer_does_not_publish_partial_chunk) {
     ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(target, &preserved));
     ASSERT_EQ(0x12345678u, preserved);
 
+    state.has_mesh_chunk = 0;
+    state.current_mesh = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+    nmo_3dentity_skin_t invalid_skin = {0};
+    state.skin = &invalid_skin;
+
+    invalid_skin.bone_count = 1;
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_3dentity_vtable.validate(
+        &state, NULL, NULL));
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_3dentity_serialize(
+        &state, target, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
+
+    invalid_skin.bone_count = 0;
+    invalid_skin.vertex_count = 1;
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_3dentity_serialize(
+        &state, target, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
+
+    nmo_3dentity_skin_vertex_t invalid_vertex = {0};
+    invalid_vertex.bone_count = 1;
+    invalid_skin.vertices = &invalid_vertex;
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_3dentity_serialize(
+        &state, target, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
+
+    state.skin = NULL;
+    nmo_ref_t mesh = nmo_ref_from_raw(456);
+    state.mesh_ids = &mesh;
+    state.mesh_count = (uint32_t)INT32_MAX + 1u;
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_3dentity_serialize(
+        &state, target, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
+
     nmo_arena_destroy(arena);
 }
 

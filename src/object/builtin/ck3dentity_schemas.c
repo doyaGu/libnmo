@@ -964,6 +964,7 @@ nmo_status_t nmo_3dentity_serialize(
     if (instance == NULL || out_chunk == NULL || out_chunk->arena == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
+    NMO_RETURN_IF_ERROR(nmo_3dentity_validate(instance, type, context));
 
     nmo_chunk_t *staged = nmo_chunk_create(out_chunk->arena);
     if (staged == NULL) return NMO_ERR_NOMEM;
@@ -1404,11 +1405,42 @@ static nmo_status_t nmo_3dentity_validate(
     const nmo_type_descriptor_t *type,
     void *context)
 {
-    NMO_RETURN_IF_ERROR(nmo_object_default_validate(instance, type, context));
+    (void)type;
+    if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
     const nmo_3dentity_state_t *state =
         (const nmo_3dentity_state_t *)instance;
+    NMO_RETURN_IF_ERROR(nmo_renderobject_vtable.validate(
+        &state->base, NULL, context));
     if ((state->mesh_count > 0 && state->mesh_ids == NULL) ||
         (state->animation_count > 0 && state->animation_ids == NULL)) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    if (state->mesh_count > (uint32_t)INT32_MAX ||
+        state->animation_count > (uint32_t)INT32_MAX) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+
+    const nmo_3dentity_skin_t *skin = state->skin;
+    if (skin == NULL) return NMO_OK;
+    if ((skin->bone_count > 0 && skin->bones == NULL) ||
+        (skin->vertex_count > 0 && skin->vertices == NULL) ||
+        (skin->normal_count > 0 && skin->normals == NULL) ||
+        skin->bone_count > (uint32_t)INT32_MAX ||
+        skin->vertex_count > (uint32_t)INT32_MAX ||
+        skin->normal_count > (uint32_t)INT32_MAX) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    for (uint32_t i = 0; i < skin->vertex_count; ++i) {
+        const nmo_3dentity_skin_vertex_t *vertex = &skin->vertices[i];
+        if (vertex->bone_count > (uint32_t)INT32_MAX ||
+            (vertex->bone_count > 0 &&
+             (vertex->bone_indices == NULL ||
+              vertex->bone_weights == NULL))) {
+            return NMO_ERR_VALIDATION_FAILED;
+        }
+    }
+    if ((skin->normals_present || skin->normal_count > 0) &&
+        skin->normal_count != skin->vertex_count) {
         return NMO_ERR_VALIDATION_FAILED;
     }
     return NMO_OK;
