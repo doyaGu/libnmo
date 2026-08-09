@@ -26,6 +26,7 @@
 #include "object/builtin/nmo_behaviorlink_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "object/builtin/nmo_targetcamera_schemas.h"
+#include "object/builtin/nmo_scene_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_statesave_ids.h"
 #include "object/nmo_object_repository.h"
@@ -1128,6 +1129,43 @@ cleanup:
     return ok;
 }
 
+static bool create_nested_dangling_reference_fixture(const char *path) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    if (ctx == NULL) return false;
+    nmo_session_t *session = nmo_session_create(ctx);
+    if (session == NULL) {
+        nmo_context_release(ctx);
+        return false;
+    }
+
+    nmo_object_id_t scene_id = 0;
+    bool ok = false;
+    if (nmo_session_create_object(
+            session, NMO_CID_SCENE, "nested-dangling-scene",
+            (nmo_guid_t){0, 0}, &scene_id, NULL) != NMO_OK) {
+        goto cleanup;
+    }
+    nmo_object_t *object = nmo_object_repository_find_by_id(
+        nmo_session_get_repository(session), scene_id);
+    if (object == NULL || object->state == NULL) goto cleanup;
+
+    nmo_scene_object_desc_t desc = {0};
+    desc.ref = nmo_ref_from_raw(876543u);
+    if (nmo_array_append(
+            &((nmo_scene_state_t *)object->state)->object_descs,
+            &desc) != NMO_OK) {
+        goto cleanup;
+    }
+
+    nmo_save_options_t save_opts = nmo_save_options_default();
+    ok = nmo_session_save_file(session, path, &save_opts, NULL) == NMO_OK;
+
+cleanup:
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+    return ok;
+}
+
 static bool create_class_mismatch_reference_fixture(const char *path) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     if (ctx == NULL) return false;
@@ -1231,6 +1269,24 @@ TEST(cli, validate_references_reports_typed_unresolved_refs) {
     ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
     ASSERT_STR_CONTAINS(result.output, "inputs[0]");
     ASSERT_STR_CONTAINS(result.output, "987654");
+    ASSERT_STR_CONTAINS(result.output, "unresolved");
+
+    free(result.output);
+    remove(fixture);
+}
+
+TEST(cli, validate_references_reports_nested_unresolved_refs) {
+    const char *fixture = "test_validate_refs_nested_dangling.nmo";
+    remove(fixture);
+    ASSERT_TRUE(create_nested_dangling_reference_fixture(fixture));
+
+    char args[512];
+    snprintf(args, sizeof(args), "validate references \"%s\"", fixture);
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    ASSERT_STR_CONTAINS(result.output, "object_descs[0]");
+    ASSERT_STR_CONTAINS(result.output, "876543");
     ASSERT_STR_CONTAINS(result.output, "unresolved");
 
     free(result.output);
@@ -4373,6 +4429,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, validate_references_json);
     REGISTER_TEST(cli, validate_references_strict_scans_before_failing);
     REGISTER_TEST(cli, validate_references_reports_typed_unresolved_refs);
+    REGISTER_TEST(cli, validate_references_reports_nested_unresolved_refs);
     REGISTER_TEST(cli, validate_references_normalize_saves_distinct_clean_output);
     REGISTER_TEST(cli, validate_references_normalize_rejects_input_overwrite);
     REGISTER_TEST(cli, validate_references_reports_raw_field_class_mismatch);

@@ -29,9 +29,6 @@
 #include "object/nmo_object_repository.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_ref_graph.h"
-#include "object/builtin/nmo_behavior_schemas.h"
-#include "object/builtin/nmo_beobject_schemas.h"
-#include "object/builtin/nmo_grid_schemas.h"
 #include "object/nmo_object_guids.h"
 #include "type/nmo_reflection.h"
 #include "type/nmo_type_query.h"
@@ -599,16 +596,6 @@ static nmo_object_id_t validate_display_target_id(
     return unresolved ? raw_id : target_id;
 }
 
-static nmo_grid_state_t *validate_get_grid_state(
-    const nmo_cmd_ctx_t *c,
-    nmo_object_t *obj)
-{
-    const nmo_type_runtime_t *type_rt = nmo_context_get_type_runtime(c->ctx);
-    if (!type_rt || !type_rt->types || !obj) return NULL;
-    return (nmo_grid_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(
-        type_rt->types, obj, CKPGUID_GRID);
-}
-
 typedef bool (*validate_typed_ref_issue_fn)(
     void *user_data,
     const nmo_object_t *source,
@@ -635,129 +622,195 @@ static const char *validate_ref_state_name(nmo_ref_state_t state)
     }
 }
 
-static bool validate_visit_ref_array(
-    const nmo_object_t *source,
-    const nmo_array_t *array,
-    size_t element_size,
-    size_t ref_offset,
-    const char *field,
-    validate_typed_ref_issue_fn visitor,
-    void *user_data,
-    size_t *issue_count)
-{
-    if (array == NULL || array->count == 0 || array->data == NULL ||
-        array->element_size != element_size) {
-        return true;
-    }
-    for (size_t i = 0; i < array->count; ++i) {
-        const char *element = (const char *)array->data + i * element_size;
-        const nmo_ref_t *ref = (const nmo_ref_t *)(element + ref_offset);
-        if (!validate_ref_has_issue(ref)) continue;
-        ++*issue_count;
-        if (visitor != NULL && !visitor(user_data, source, ref, field, i)) {
-            return false;
-        }
-    }
-    return true;
-}
-
-typedef struct validate_scalar_ref_ctx {
+typedef struct validate_ref_walk_ctx {
+    const nmo_type_registry_t *types;
     const nmo_object_t *source;
-    const nmo_type_descriptor_t *type;
-    const void *instance;
     validate_typed_ref_issue_fn visitor;
     void *user_data;
     size_t *issue_count;
     bool keep_going;
-} validate_scalar_ref_ctx_t;
+} validate_ref_walk_ctx_t;
 
-static bool validate_visit_scalar_ref_field(
-    void *user_data,
+typedef struct validate_repeated_view {
+    const void *data;
+    size_t count;
+    size_t element_size;
+} validate_repeated_view_t;
+
+static bool validate_get_repeated_view(
+    const nmo_type_descriptor_t *owner_type,
+    const void *owner_instance,
     const nmo_type_field_t *field,
-    const void *field_ptr)
+    const nmo_type_registry_t *types,
+    validate_repeated_view_t *out)
 {
-    validate_scalar_ref_ctx_t *ctx = (validate_scalar_ref_ctx_t *)user_data;
-    if (ctx == NULL || field == NULL || field_ptr == NULL) {
-        return true;
+    if (owner_type == NULL || owner_instance == NULL || field == NULL ||
+        out == NULL || !nmo_field_is_array(field)) {
+        return false;
+    }
+    memset(out, 0, sizeof(*out));
+    const void *field_ptr = nmo_field_get_ptr_const(owner_instance, field);
+    if (field_ptr == NULL) return false;
+
+    if (field->size == sizeof(nmo_array_t)) {
+        const nmo_array_t *array = (const nmo_array_t *)field_ptr;
+        out->data = array->data;
+        out->count = array->count;
+        out->element_size = array->element_size;
+    } else if (field->size == sizeof(void *) &&
+               field->count_field_name != NULL) {
+        uint32_t count = 0;
+        if (nmo_field_resolve_count(
+                owner_type, field, owner_instance, &count) != NMO_OK) {
+            return false;
+        }
+        const nmo_type_descriptor_t *element_type =
+            types != NULL
+                ? nmo_type_registry_find_by_guid(types, field->type_guid)
+                : NULL;
+        out->data = *(const void *const *)field_ptr;
+        out->count = count;
+        out->element_size = nmo_field_resolve_element_size(
+            field, element_type);
+    } else {
+        return false;
     }
 
-    if (nmo_field_is_array(field)) {
-        if (!nmo_field_uses_ref_records(field)) return true;
-        const nmo_ref_t *refs = NULL;
-        size_t count = 0;
-        if (field->size == sizeof(nmo_array_t)) {
-            const nmo_array_t *array = (const nmo_array_t *)field_ptr;
-            if (array->element_size != sizeof(nmo_ref_t)) return true;
-            refs = NMO_ARRAY_DATA(nmo_ref_t, array);
-            count = array->count;
-        } else if (field->size == sizeof(void *)) {
-            refs = *(const nmo_ref_t *const *)field_ptr;
-            uint32_t resolved_count = 0;
-            if (nmo_field_resolve_count(
-                    ctx->type, field, ctx->instance,
-                    &resolved_count) != NMO_OK) {
-                return true;
-            }
-            count = resolved_count;
-        }
-        if (refs == NULL) return true;
-        for (size_t i = 0; i < count; ++i) {
-            if (!validate_ref_has_issue(&refs[i])) continue;
-            ++*ctx->issue_count;
-            if (ctx->visitor != NULL && !ctx->visitor(
-                    ctx->user_data, ctx->source, &refs[i], field->name, i)) {
-                ctx->keep_going = false;
-                return false;
-            }
-        }
-        return true;
-    }
-    if (field->size != sizeof(nmo_ref_t)) return true;
+    if (out->count == 0) return true;
+    return out->data != NULL && out->element_size != 0 &&
+           out->count <= SIZE_MAX / out->element_size;
+}
 
-    const nmo_ref_t *ref = (const nmo_ref_t *)field_ptr;
+static bool validate_report_typed_ref(
+    validate_ref_walk_ctx_t *ctx,
+    const nmo_ref_t *ref,
+    const char *field,
+    size_t index)
+{
     if (!validate_ref_has_issue(ref)) return true;
-
     ++*ctx->issue_count;
-    if (ctx->visitor != NULL &&
-        !ctx->visitor(ctx->user_data, ctx->source, ref, field->name, 0)) {
+    if (ctx->visitor != NULL && !ctx->visitor(
+            ctx->user_data, ctx->source, ref, field, index)) {
         ctx->keep_going = false;
         return false;
     }
     return true;
 }
 
-static bool validate_visit_scalar_ref_fields(
-    const nmo_type_registry_t *types,
-    nmo_object_t *source,
-    validate_typed_ref_issue_fn visitor,
-    void *user_data,
-    size_t *issue_count)
+static void validate_build_ref_path(
+    char *out,
+    size_t out_size,
+    const char *prefix,
+    size_t prefix_index,
+    bool prefix_has_index,
+    const char *field_name,
+    bool materialize_prefix_index)
 {
-    const nmo_type_descriptor_t *current =
-        nmo_type_registry_find_by_class_id_inherited(
-            types, (uint32_t)nmo_object_get_class_id(source));
-    for (size_t depth = 0; current != NULL && depth < 64; ++depth) {
-        const void *instance = nmo_type_query_object_get_ancestor_state_by_guid(
-            types, source, current->guid);
-        if (instance == NULL) return true;
+    const bool omit_ref_name = prefix != NULL && prefix[0] != '\0' &&
+        field_name != NULL && strcmp(field_name, "ref") == 0;
+    if (prefix == NULL || prefix[0] == '\0') {
+        snprintf(out, out_size, "%s", field_name != NULL ? field_name : "ref");
+    } else if (omit_ref_name) {
+        snprintf(out, out_size, "%s", prefix);
+    } else if (prefix_has_index && materialize_prefix_index) {
+        snprintf(out, out_size, "%s[%zu].%s", prefix, prefix_index,
+                 field_name != NULL ? field_name : "ref");
+    } else {
+        snprintf(out, out_size, "%s.%s", prefix,
+                 field_name != NULL ? field_name : "ref");
+    }
+}
 
-        validate_scalar_ref_ctx_t ctx = {
-            .source = source,
-            .type = current,
-            .instance = instance,
-            .visitor = visitor,
-            .user_data = user_data,
-            .issue_count = issue_count,
-            .keep_going = true,
-        };
-        if (nmo_type_foreach_ref_field(
-                current, instance, validate_visit_scalar_ref_field, &ctx) != NMO_OK ||
-            !ctx.keep_going) {
-            return false;
+static bool validate_visit_reflected_refs(
+    validate_ref_walk_ctx_t *ctx,
+    const nmo_type_descriptor_t *type,
+    const void *instance,
+    const char *prefix,
+    size_t prefix_index,
+    bool prefix_has_index,
+    unsigned depth)
+{
+    if (ctx == NULL || type == NULL || instance == NULL || depth >= 16) {
+        return true;
+    }
+
+    const size_t field_count = nmo_type_get_field_count(type);
+    for (size_t field_index = 0; field_index < field_count; ++field_index) {
+        const nmo_type_field_t *field = nmo_type_get_field_by_index(
+            type, field_index);
+        if (field == NULL || nmo_field_is_base_embedding(type, field)) {
+            continue;
+        }
+        const void *field_ptr = nmo_field_get_ptr_const(instance, field);
+        if (field_ptr == NULL) continue;
+
+        char path[256];
+        validate_build_ref_path(
+            path, sizeof(path), prefix, prefix_index, prefix_has_index,
+            field->name, nmo_field_is_array(field));
+
+        if (nmo_field_is_ref(field)) {
+            if (!nmo_field_uses_ref_records(field)) continue;
+            if (!nmo_field_is_array(field)) {
+                if (field->size == sizeof(nmo_ref_t) &&
+                    !validate_report_typed_ref(
+                        ctx, (const nmo_ref_t *)field_ptr, path,
+                        prefix_has_index ? prefix_index : 0u)) {
+                    return false;
+                }
+                continue;
+            }
+
+            validate_repeated_view_t view;
+            if (!validate_get_repeated_view(
+                    type, instance, field, ctx->types, &view) ||
+                view.element_size != sizeof(nmo_ref_t)) {
+                continue;
+            }
+            const nmo_ref_t *refs = (const nmo_ref_t *)view.data;
+            for (size_t i = 0; i < view.count; ++i) {
+                if (!validate_report_typed_ref(ctx, &refs[i], path, i)) {
+                    return false;
+                }
+            }
+            continue;
         }
 
-        if (nmo_guid_is_null(current->base_type)) break;
-        current = nmo_type_registry_find_by_guid(types, current->base_type);
+        const nmo_type_descriptor_t *nested =
+            nmo_type_registry_find_by_guid(ctx->types, field->type_guid);
+        if (nested == NULL ||
+            (nested->category & NMO_TYPE_CATEGORY_STRUCT) == 0 ||
+            !nmo_type_has_reflection(nested)) {
+            continue;
+        }
+
+        if (nmo_field_is_array(field)) {
+            validate_repeated_view_t view;
+            if (!validate_get_repeated_view(
+                    type, instance, field, ctx->types, &view) ||
+                view.element_size != nested->size) {
+                continue;
+            }
+            for (size_t i = 0; i < view.count; ++i) {
+                const void *element = (const unsigned char *)view.data +
+                    i * view.element_size;
+                if (!validate_visit_reflected_refs(
+                        ctx, nested, element, path, i, true, depth + 1u)) {
+                    return false;
+                }
+            }
+            continue;
+        }
+
+        const void *nested_instance = field_ptr;
+        if ((field->flags & NMO_FIELD_POINTER) != 0) {
+            nested_instance = *(const void *const *)field_ptr;
+        }
+        if (nested_instance != NULL && !validate_visit_reflected_refs(
+                ctx, nested, nested_instance, path, prefix_index,
+                prefix_has_index, depth + 1u)) {
+            return false;
+        }
     }
     return true;
 }
@@ -769,19 +822,6 @@ static size_t validate_foreach_typed_ref_issue(
     void *user_data)
 {
     size_t issue_count = 0;
-    static const struct {
-        size_t offset;
-        const char *name;
-    } behavior_arrays[] = {
-        {offsetof(nmo_behavior_state_t, sub_behaviors), "sub_behaviors"},
-        {offsetof(nmo_behavior_state_t, sub_behavior_links), "sub_behavior_links"},
-        {offsetof(nmo_behavior_state_t, operations), "operations"},
-        {offsetof(nmo_behavior_state_t, in_parameters), "in_parameters"},
-        {offsetof(nmo_behavior_state_t, out_parameters), "out_parameters"},
-        {offsetof(nmo_behavior_state_t, local_parameters), "local_parameters"},
-        {offsetof(nmo_behavior_state_t, inputs), "inputs"},
-        {offsetof(nmo_behavior_state_t, outputs), "outputs"},
-    };
     const nmo_type_runtime_t *type_rt = nmo_context_get_type_runtime(c->ctx);
     if (type_rt == NULL || type_rt->types == NULL) return 0;
 
@@ -790,48 +830,30 @@ static size_t validate_foreach_typed_ref_issue(
         nmo_object_t *source = nmo_object_repository_get_by_index(repo, i);
         if (source == NULL) continue;
 
-        if (!validate_visit_scalar_ref_fields(
-                type_rt->types, source, visitor, user_data, &issue_count)) {
-            return issue_count;
-        }
-
-        const nmo_behavior_state_t *behavior =
-            (const nmo_behavior_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(
-                type_rt->types, source, CKPGUID_BEHAVIOR);
-        if (behavior != NULL) {
-            for (size_t j = 0; j < sizeof(behavior_arrays) / sizeof(behavior_arrays[0]); ++j) {
-                const nmo_array_t *array = (const nmo_array_t *)(
-                    (const char *)behavior + behavior_arrays[j].offset);
-                if (!validate_visit_ref_array(
-                        source, array, sizeof(nmo_behavior_ref_t),
-                        offsetof(nmo_behavior_ref_t, ref), behavior_arrays[j].name,
-                        visitor, user_data, &issue_count)) {
-                    return issue_count;
-                }
-            }
-        }
-
-        const nmo_beobject_state_t *beobject =
-            (const nmo_beobject_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(
-                type_rt->types, source, CKPGUID_BEOBJECT);
-        if (beobject != NULL) {
-            if (!validate_visit_ref_array(
-                    source, &beobject->scripts, sizeof(nmo_ref_t), 0,
-                    "scripts", visitor, user_data, &issue_count) ||
-                !validate_visit_ref_array(
-                    source, &beobject->attributes, sizeof(nmo_beobject_attribute_t),
-                    offsetof(nmo_beobject_attribute_t, parameter), "attributes",
-                    visitor, user_data, &issue_count)) {
+        const nmo_type_descriptor_t *current =
+            nmo_type_registry_find_by_class_id_inherited(
+                type_rt->types, (uint32_t)nmo_object_get_class_id(source));
+        for (size_t depth = 0; current != NULL && depth < 64; ++depth) {
+            const void *instance =
+                nmo_type_query_object_get_ancestor_state_by_guid(
+                    type_rt->types, source, current->guid);
+            if (instance == NULL) break;
+            validate_ref_walk_ctx_t walk = {
+                .types = type_rt->types,
+                .source = source,
+                .visitor = visitor,
+                .user_data = user_data,
+                .issue_count = &issue_count,
+                .keep_going = true,
+            };
+            if (!validate_visit_reflected_refs(
+                    &walk, current, instance, NULL, 0, false, 0) ||
+                !walk.keep_going) {
                 return issue_count;
             }
-        }
-
-        const nmo_grid_state_t *grid = validate_get_grid_state(c, source);
-        if (grid != NULL && !validate_visit_ref_array(
-                source, &grid->layers, sizeof(nmo_grid_layer_t),
-                offsetof(nmo_grid_layer_t, ref), "layers",
-                visitor, user_data, &issue_count)) {
-            return issue_count;
+            if (nmo_guid_is_null(current->base_type)) break;
+            current = nmo_type_registry_find_by_guid(
+                type_rt->types, current->base_type);
         }
     }
     return issue_count;
