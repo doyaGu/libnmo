@@ -120,11 +120,16 @@ TEST(object_types, register_all_types) {
             registry, CKPGUID_CK3DENTITYSKINBONE);
     ASSERT_NOT_NULL(skin_bone);
     ASSERT_EQ(sizeof(nmo_3dentity_skin_bone_t), skin_bone->size);
-    ASSERT_EQ(3u, skin_bone->field_count);
+    ASSERT_EQ(4u, skin_bone->field_count);
     ASSERT_EQ(sizeof(nmo_ref_t), skin_bone->fields[0].size);
     ASSERT_TRUE(nmo_field_is_ref(&skin_bone->fields[0]));
     ASSERT_TRUE(nmo_field_uses_ref_records(&skin_bone->fields[0]));
     ASSERT_FALSE(nmo_field_is_array(&skin_bone->fields[0]));
+    const nmo_type_field_t *legacy_before_matrix =
+        nmo_type_get_field_by_name(skin_bone, "legacy_before_matrix");
+    ASSERT_NOT_NULL(legacy_before_matrix);
+    ASSERT_TRUE(nmo_guid_equals(
+        legacy_before_matrix->type_guid, CKPGUID_UINT32));
 
     const nmo_type_descriptor_t *entity3d =
         nmo_type_registry_find_by_guid(registry, CKPGUID_3DENTITY);
