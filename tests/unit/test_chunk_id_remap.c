@@ -8657,7 +8657,7 @@ TEST(chunk_id_remap, entity2d_copy_preserves_inherited_and_own_state) {
 }
 
 TEST(chunk_id_remap, entity2d_fields_stay_in_identifier_sections) {
-    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
     ASSERT_NOT_NULL(arena);
     nmo_deserialize_context_t deserialize_context =
         nmo_deserialize_context_create(
@@ -8729,6 +8729,83 @@ TEST(chunk_id_remap, entity2d_fields_stay_in_identifier_sections) {
     nmo_chunk_close(material_cross_section);
     ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_2dentity_deserialize(
         &state, material_cross_section, NULL, &deserialize_context));
+    ASSERT_EQ(0xCAFEBABEu, state.flags);
+    ASSERT_EQ(12.5f, state.rect.left);
+    ASSERT_EQ(912u, state.material.raw_id);
+
+    nmo_chunk_t *modern_trailing = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(modern_trailing);
+    modern_trailing->class_id = NMO_CID_2DENTITY;
+    modern_trailing->data_version = 7;
+    modern_trailing->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(modern_trailing));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        modern_trailing, CK_STATESAVE_2DENTITYONLY));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(modern_trailing, 0));
+    for (size_t i = 0; i < 4; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_float(modern_trailing, 0.0f));
+    }
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(modern_trailing, 0x12345678u));
+    nmo_chunk_close(modern_trailing);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_2dentity_deserialize(
+        &state, modern_trailing, NULL, &deserialize_context));
+    ASSERT_EQ(0xCAFEBABEu, state.flags);
+    ASSERT_EQ(12.5f, state.rect.left);
+    ASSERT_EQ(912u, state.material.raw_id);
+
+    const struct {
+        uint32_t identifier;
+        size_t payload_dwords;
+    } legacy_trailing_cases[] = {
+        {CK_STATESAVE_2DENTITYFLAGS, 1u},
+        {CK_STATESAVE_2DENTITYPOS, 2u},
+        {CK_STATESAVE_2DENTITYSIZE, 2u},
+        {CK_STATESAVE_2DENTITYSRCSIZE, 4u},
+        {CK_STATESAVE_2DENTITYZORDER, 1u},
+    };
+    for (size_t i = 0;
+         i < sizeof(legacy_trailing_cases) / sizeof(legacy_trailing_cases[0]);
+         ++i) {
+        nmo_chunk_t *legacy_trailing = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(legacy_trailing);
+        legacy_trailing->class_id = NMO_CID_2DENTITY;
+        legacy_trailing->data_version = 4;
+        legacy_trailing->chunk_options |= NMO_CHUNK_OPTION_FILE;
+        ASSERT_EQ(NMO_OK, nmo_chunk_start_write(legacy_trailing));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+            legacy_trailing, legacy_trailing_cases[i].identifier));
+        for (size_t j = 0; j < legacy_trailing_cases[i].payload_dwords; ++j) {
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(legacy_trailing, 0));
+        }
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+            legacy_trailing, 0x12345678u));
+        nmo_chunk_close(legacy_trailing);
+        ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_2dentity_deserialize(
+            &state, legacy_trailing, NULL, &deserialize_context));
+        ASSERT_EQ(0xCAFEBABEu, state.flags);
+        ASSERT_EQ(12.5f, state.rect.left);
+        ASSERT_EQ(912u, state.material.raw_id);
+    }
+
+    nmo_chunk_t *material_trailing = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(material_trailing);
+    material_trailing->class_id = NMO_CID_2DENTITY;
+    material_trailing->data_version = 7;
+    material_trailing->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(material_trailing));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        material_trailing, CK_STATESAVE_2DENTITYONLY));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(material_trailing, 0));
+    for (size_t i = 0; i < 4; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_float(material_trailing, 0.0f));
+    }
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        material_trailing, CK_STATESAVE_2DENTITYMATERIAL));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(material_trailing, 913));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(material_trailing, 0x12345678u));
+    nmo_chunk_close(material_trailing);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_2dentity_deserialize(
+        &state, material_trailing, NULL, &deserialize_context));
     ASSERT_EQ(0xCAFEBABEu, state.flags);
     ASSERT_EQ(12.5f, state.rect.left);
     ASSERT_EQ(912u, state.material.raw_id);

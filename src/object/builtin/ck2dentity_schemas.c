@@ -270,6 +270,7 @@ static nmo_status_t deserialize_legacy(
         chunk, CK_STATESAVE_2DENTITYFLAGS, &section_dwords);
     if (seek_result == NMO_OK) {
         if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+        if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
         uint32_t raw_flags;
         result = nmo_chunk_read_dword(chunk, &raw_flags);
         if (result != NMO_OK) {
@@ -292,6 +293,7 @@ static nmo_status_t deserialize_legacy(
         chunk, CK_STATESAVE_2DENTITYPOS, &section_dwords);
     if (seek_result == NMO_OK) {
         if (section_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
+        if (section_dwords > 2u) return NMO_ERR_INVALID_FORMAT;
         if (out_state->flags & NMO_CK2DENTITY_FLAG_HOMOGENEOUS) {
             out_state->has_homogeneous_rect = true;
             result = nmo_chunk_read_float(chunk, &out_state->homogeneous_rect.left);
@@ -323,6 +325,7 @@ static nmo_status_t deserialize_legacy(
         chunk, CK_STATESAVE_2DENTITYSIZE, &section_dwords);
     if (seek_result == NMO_OK) {
         if (section_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
+        if (section_dwords > 2u) return NMO_ERR_INVALID_FORMAT;
         if (out_state->flags & NMO_CK2DENTITY_FLAG_HOMOGENEOUS) {
             float w, h;
             out_state->has_homogeneous_rect = true;
@@ -356,6 +359,7 @@ static nmo_status_t deserialize_legacy(
         chunk, CK_STATESAVE_2DENTITYSRCSIZE, &section_dwords);
     if (seek_result == NMO_OK) {
         if (section_dwords < 4u) return NMO_ERR_TRUNCATED_CHUNK;
+        if (section_dwords > 4u) return NMO_ERR_INVALID_FORMAT;
         int32_t x, y, w, h;
         result = nmo_chunk_read_int(chunk, &x);
         if (result != NMO_OK) return result;
@@ -378,6 +382,7 @@ static nmo_status_t deserialize_legacy(
         chunk, CK_STATESAVE_2DENTITYZORDER, &section_dwords);
     if (seek_result == NMO_OK) {
         if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+        if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
         out_state->has_z_order = true;
         result = nmo_chunk_read_int(chunk, (int32_t *)&out_state->z_order);
         if (result != NMO_OK) {
@@ -435,6 +440,9 @@ static nmo_status_t nmo_2dentity_deserialize_internal(
         if (nmo_chunk_get_position(chunk) > section_end) {
             return NMO_ERR_TRUNCATED_CHUNK;
         }
+        if (nmo_chunk_get_position(chunk) < section_end) {
+            return NMO_ERR_INVALID_FORMAT;
+        }
     } else {
         /* Legacy format: separate identifiers */
         result = deserialize_legacy(chunk, arena, out_state);
@@ -451,6 +459,7 @@ static nmo_status_t nmo_2dentity_deserialize_internal(
             chunk, CK_STATESAVE_2DENTITYMATERIAL, &section_dwords);
         if (seek_result == NMO_OK) {
             if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+            if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
             nmo_ref_t material = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
             result = nmo_ref_read(chunk, &material);
             if (result != NMO_OK) {
