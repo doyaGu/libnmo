@@ -287,6 +287,11 @@ static void nmo_parameterlocal_post_delete(
  * Vtable + registration
  * ============================================================================ */
 
+static nmo_status_t nmo_parameterlocal_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
+
 static nmo_status_t nmo_parameterlocal_copy(
     const void *src,
     void *dst,
@@ -299,22 +304,31 @@ static nmo_status_t nmo_parameterlocal_copy(
     const nmo_parameterlocal_state_t *s =
         (const nmo_parameterlocal_state_t *)src;
     nmo_parameterlocal_state_t *d = (nmo_parameterlocal_state_t *)dst;
-    nmo_array_t buffer_data = {0};
-    nmo_status_t result = nmo_array_clone(
-        &s->base.buffer_data, &buffer_data,
-        &s->base.buffer_data.allocator);
+    NMO_RETURN_IF_ERROR(nmo_parameterlocal_validate(s, type, NULL));
+
+    nmo_parameterlocal_state_t copied;
+    nmo_status_t result = nmo_parameterlocal_create(
+        &copied, NULL, NULL);
     if (result != NMO_OK) return result;
-    nmo_chunk_t *subchunk = NULL;
-    result = nmo_object_copy_chunk(arena, &subchunk, s->base.subchunk);
-    if (result != NMO_OK) {
-        nmo_array_dispose(&buffer_data);
-        return result;
+    result = nmo_parameter_vtable.copy(
+        &s->base, &copied.base, NULL, arena);
+    if (result != NMO_OK) goto fail;
+
+    copied.owner = s->owner;
+    copied.is_myself = s->is_myself;
+    copied.is_setting = s->is_setting;
+
+    if (s->base.buffer_data.data != NULL &&
+        d->base.buffer_data.data == s->base.buffer_data.data) {
+        memset(&d->base.buffer_data, 0, sizeof(d->base.buffer_data));
     }
-    nmo_array_dispose(&d->base.buffer_data);
-    *d = *s;
-    d->base.buffer_data = buffer_data;
-    d->base.subchunk = subchunk;
+    nmo_parameterlocal_destroy(d, NULL, NULL);
+    *d = copied;
     return NMO_OK;
+
+fail:
+    nmo_parameterlocal_destroy(&copied, NULL, NULL);
+    return result;
 }
 
 static nmo_status_t nmo_parameterlocal_validate(

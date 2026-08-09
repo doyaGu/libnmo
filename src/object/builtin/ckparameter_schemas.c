@@ -442,21 +442,42 @@ static nmo_status_t nmo_parameter_copy(
     const nmo_parameter_state_t *s = src;
     nmo_parameter_state_t *d = dst;
     NMO_RETURN_IF_ERROR(nmo_parameter_validate(s, type, NULL));
-    nmo_array_t buffer_data = {0};
-    nmo_status_t result = nmo_array_clone(
-        &s->buffer_data, &buffer_data, &s->buffer_data.allocator);
+
+    nmo_parameter_state_t copied;
+    nmo_status_t result = nmo_parameter_create(&copied, NULL, NULL);
     if (result != NMO_OK) return result;
-    nmo_chunk_t *subchunk = NULL;
-    result = nmo_object_copy_chunk(arena, &subchunk, s->subchunk);
-    if (result != NMO_OK) {
-        nmo_array_dispose(&buffer_data);
-        return result;
+    nmo_type_descriptor_t base_type = {
+        .size = sizeof(nmo_object_state_t),
+    };
+    result = nmo_object_vtable.copy(
+        &s->base, &copied.base, &base_type, arena);
+    if (result != NMO_OK) goto fail;
+
+    copied.type_guid = s->type_guid;
+    copied.mode = s->mode;
+    copied.has_state = s->has_state;
+    copied.object_ref = s->object_ref;
+    copied.manager_guid = s->manager_guid;
+    copied.manager_value = s->manager_value;
+    result = nmo_array_clone(
+        &s->buffer_data, &copied.buffer_data,
+        &s->buffer_data.allocator);
+    if (result != NMO_OK) goto fail;
+    result = nmo_object_copy_chunk(
+        arena, &copied.subchunk, s->subchunk);
+    if (result != NMO_OK) goto fail;
+
+    if (s->buffer_data.data != NULL &&
+        d->buffer_data.data == s->buffer_data.data) {
+        memset(&d->buffer_data, 0, sizeof(d->buffer_data));
     }
-    nmo_array_dispose(&d->buffer_data);
-    *d = *s;
-    d->buffer_data = buffer_data;
-    d->subchunk = subchunk;
+    nmo_parameter_destroy(d, NULL, NULL);
+    *d = copied;
     return NMO_OK;
+
+fail:
+    nmo_parameter_destroy(&copied, NULL, NULL);
+    return result;
 }
 
 static nmo_status_t nmo_parameter_validate(

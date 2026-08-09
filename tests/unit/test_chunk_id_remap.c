@@ -2097,6 +2097,16 @@ TEST(chunk_id_remap, parameterlocal_owner_round_trips_raw_id) {
     ASSERT_EQ(nmo_parameterlocal_vtable.hash(&source),
               nmo_parameterlocal_vtable.hash(&copied));
 
+    nmo_parameterlocal_state_t aliased_copy = source;
+    ASSERT_EQ(NMO_OK, nmo_parameterlocal_vtable.copy(
+        &source, &aliased_copy, NULL, arena));
+    ASSERT_NE(source.base.buffer_data.data,
+              aliased_copy.base.buffer_data.data);
+    ASSERT_EQ(0x42u, NMO_ARRAY_DATA(
+        uint8_t, &source.base.buffer_data)[0]);
+    ASSERT_TRUE(nmo_parameterlocal_vtable.equals(
+        &source, &aliased_copy));
+
     nmo_chunk_t *file_chunk = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(file_chunk);
     file_chunk->class_id = NMO_CID_PARAMETERLOCAL;
@@ -2207,6 +2217,7 @@ TEST(chunk_id_remap, parameterlocal_owner_round_trips_raw_id) {
 
     nmo_parameterlocal_vtable.destroy(&source, NULL, NULL);
     nmo_parameterlocal_vtable.destroy(&copied, NULL, NULL);
+    nmo_parameterlocal_vtable.destroy(&aliased_copy, NULL, NULL);
     nmo_parameterlocal_vtable.destroy(&file_loaded, NULL, NULL);
     nmo_parameterlocal_vtable.destroy(&loaded, NULL, NULL);
     nmo_parameterlocal_vtable.destroy(&reloaded, NULL, NULL);
@@ -2466,6 +2477,16 @@ TEST(chunk_id_remap, parameterout_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(nmo_parameterout_vtable.hash(&source),
               nmo_parameterout_vtable.hash(&copied));
 
+    nmo_parameterout_state_t aliased_copy = source;
+    ASSERT_EQ(NMO_OK, nmo_parameterout_vtable.copy(
+        &source, &aliased_copy, &parameterout_type, arena));
+    ASSERT_NE(source.base.buffer_data.data,
+              aliased_copy.base.buffer_data.data);
+    ASSERT_EQ(0x11u, NMO_ARRAY_DATA(
+        uint8_t, &source.base.buffer_data)[0]);
+    ASSERT_TRUE(nmo_parameterout_vtable.equals(
+        &source, &aliased_copy));
+
     fail_after_allocator_state_t copy_allocator_state = {
         .allowed_allocations = 1,
     };
@@ -2675,6 +2696,7 @@ TEST(chunk_id_remap, parameterout_refs_round_trip_and_failure_is_atomic) {
 
     nmo_parameterout_vtable.destroy(&source, NULL, NULL);
     nmo_parameterout_vtable.destroy(&copied, NULL, NULL);
+    nmo_parameterout_vtable.destroy(&aliased_copy, NULL, NULL);
     nmo_parameterout_vtable.destroy(&loaded, NULL, NULL);
     nmo_parameterout_vtable.destroy(&reloaded, NULL, NULL);
     nmo_parameterout_vtable.destroy(&failed, NULL, NULL);
@@ -2841,9 +2863,19 @@ TEST(chunk_id_remap, parameter_copy_is_deep_and_atomic) {
     ASSERT_TRUE(nmo_parameter_vtable.equals(&source, &copied));
     ASSERT_EQ(nmo_parameter_vtable.hash(&source),
               nmo_parameter_vtable.hash(&copied));
+
+    nmo_parameter_state_t aliased_copy = source;
+    ASSERT_EQ(NMO_OK, nmo_parameter_vtable.copy(
+        &source, &aliased_copy, NULL, arena));
+    ASSERT_NE(source.buffer_data.data, aliased_copy.buffer_data.data);
+    ASSERT_EQ(0x11u, NMO_ARRAY_DATA(uint8_t, &source.buffer_data)[0]);
+    ASSERT_TRUE(nmo_parameter_vtable.equals(&source, &aliased_copy));
+
     NMO_ARRAY_DATA(uint8_t, &source.buffer_data)[0] = 0x33u;
     ASSERT_FALSE(nmo_parameter_vtable.equals(&source, &copied));
     ASSERT_EQ(0x11u, NMO_ARRAY_DATA(uint8_t, &copied.buffer_data)[0]);
+    ASSERT_EQ(0x11u, NMO_ARRAY_DATA(
+        uint8_t, &aliased_copy.buffer_data)[0]);
 
     fail_after_allocator_state_t allocator_state = {
         .allowed_allocations = 1,
@@ -2880,6 +2912,7 @@ TEST(chunk_id_remap, parameter_copy_is_deep_and_atomic) {
 
     nmo_parameter_vtable.destroy(&source, NULL, NULL);
     nmo_parameter_vtable.destroy(&copied, NULL, NULL);
+    nmo_parameter_vtable.destroy(&aliased_copy, NULL, NULL);
     nmo_parameter_vtable.destroy(&failing_source, NULL, NULL);
     nmo_parameter_vtable.destroy(&preserved, NULL, NULL);
     nmo_arena_destroy(arena);

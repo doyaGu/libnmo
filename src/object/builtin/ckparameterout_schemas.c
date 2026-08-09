@@ -297,31 +297,33 @@ static nmo_status_t nmo_parameterout_copy(
     const nmo_parameterout_state_t *s = src;
     nmo_parameterout_state_t *d = dst;
     NMO_RETURN_IF_ERROR(nmo_parameterout_validate(s, type, NULL));
-    nmo_array_t buffer_data = {0};
-    nmo_status_t result = nmo_array_clone(
-        &s->base.buffer_data, &buffer_data,
-        &s->base.buffer_data.allocator);
+
+    nmo_parameterout_state_t copied;
+    nmo_status_t result = nmo_parameterout_create(
+        &copied, NULL, NULL);
     if (result != NMO_OK) return result;
-    nmo_chunk_t *subchunk = NULL;
-    result = nmo_object_copy_chunk(arena, &subchunk, s->base.subchunk);
-    if (result != NMO_OK) {
-        nmo_array_dispose(&buffer_data);
-        return result;
-    }
-    nmo_ref_t *destination_ids = NULL;
+    result = nmo_parameter_vtable.copy(
+        &s->base, &copied.base, NULL, arena);
+    if (result != NMO_OK) goto fail;
+
+    copied.owner = s->owner;
+    copied.destination_count = s->destination_count;
     result = nmo_object_copy_array(
-        arena, (void **)&destination_ids, s->destination_ids,
+        arena, (void **)&copied.destination_ids, s->destination_ids,
         sizeof(nmo_ref_t), s->destination_count);
-    if (result != NMO_OK) {
-        nmo_array_dispose(&buffer_data);
-        return result;
+    if (result != NMO_OK) goto fail;
+
+    if (s->base.buffer_data.data != NULL &&
+        d->base.buffer_data.data == s->base.buffer_data.data) {
+        memset(&d->base.buffer_data, 0, sizeof(d->base.buffer_data));
     }
-    nmo_array_dispose(&d->base.buffer_data);
-    *d = *s;
-    d->base.buffer_data = buffer_data;
-    d->base.subchunk = subchunk;
-    d->destination_ids = destination_ids;
+    nmo_parameterout_destroy(d, NULL, NULL);
+    *d = copied;
     return NMO_OK;
+
+fail:
+    nmo_parameterout_destroy(&copied, NULL, NULL);
+    return result;
 }
 
 static nmo_status_t nmo_parameterout_validate(
