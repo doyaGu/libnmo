@@ -20,6 +20,7 @@
 #include "object/builtin/nmo_group_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "object/builtin/nmo_patchmesh_schemas.h"
+#include "object/builtin/nmo_place_schemas.h"
 #include "object/nmo_object_guids.h"
 #include "type/nmo_reflection.h"
 #include "type/nmo_type_query.h"
@@ -575,6 +576,15 @@ static nmo_status_t runtime_delete_validate_atomic_refs(
          (curve->sub_point_count > 0u && curve->sub_points == NULL))) {
         return NMO_ERR_VALIDATION_FAILED;
     }
+
+    nmo_place_state_t *place = (nmo_place_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            type_rt->types, obj, CKPGUID_PLACE);
+    if (place != NULL &&
+        (place->portals.element_size != sizeof(nmo_place_portal_entry_t) ||
+         (place->portals.count > 0u && place->portals.data == NULL))) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
     return NMO_OK;
 }
 
@@ -777,6 +787,25 @@ static nmo_status_t runtime_delete_detach_atomic_refs(
             }
             curve->sub_point_count = --count;
             curve->sub_points[count].chunk = NULL;
+        }
+    }
+
+    nmo_place_state_t *place = (nmo_place_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            type_rt->types, obj, CKPGUID_PLACE);
+    if (place != NULL) {
+        for (size_t i = place->portals.count; i > 0u; --i) {
+            nmo_place_portal_entry_t *entries = NMO_ARRAY_DATA(
+                nmo_place_portal_entry_t, &place->portals);
+            const size_t index = i - 1u;
+            if (!runtime_id_set_contains(
+                    delete_set, nmo_ref_runtime_id(&entries[index].place)) &&
+                !runtime_id_set_contains(
+                    delete_set, nmo_ref_runtime_id(&entries[index].portal))) {
+                continue;
+            }
+            NMO_RETURN_IF_ERROR(nmo_array_remove(
+                &place->portals, index, NULL));
         }
     }
     return NMO_OK;

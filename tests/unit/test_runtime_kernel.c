@@ -25,6 +25,7 @@
 #include "object/builtin/nmo_curve_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "object/builtin/nmo_patchmesh_schemas.h"
+#include "object/builtin/nmo_place_schemas.h"
 #include "object/builtin/nmo_interfaceobjectmanager_schemas.h"
 #include "object/builtin/nmo_light_schemas.h"
 #include "object/builtin/nmo_level_schemas.h"
@@ -2451,6 +2452,131 @@ TEST(runtime_kernel, copy_remap_updates_only_resolved_curve_refs) {
     nmo_context_release(ctx);
 }
 
+TEST(runtime_kernel, copy_remap_updates_only_resolved_place_portals) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    const nmo_type_runtime_t *type_rt = nmo_context_get_type_runtime(ctx);
+    const nmo_type_descriptor_t *place_type =
+        nmo_type_registry_find_by_class_id(type_rt->types, NMO_CID_PLACE);
+    ASSERT_NOT_NULL(place_type);
+
+    nmo_place_portal_entry_t entries[] = {
+        {.place = nmo_ref_from_id(101), .portal = nmo_ref_from_id(102)},
+        {.place = nmo_ref_from_raw(103), .portal = nmo_ref_from_raw(104)},
+    };
+    nmo_place_state_t state = {0};
+    ASSERT_EQ(NMO_OK, nmo_array_init(
+        &state.portals, sizeof(nmo_place_portal_entry_t), 2, NULL));
+    ASSERT_EQ(NMO_OK, nmo_array_append_array(&state.portals, entries, 2));
+
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_id_remap_t *remap = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(remap);
+    for (nmo_object_id_t old_id = 101; old_id <= 104; ++old_id) {
+        ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, old_id, old_id + 100));
+    }
+
+    ASSERT_EQ(NMO_OK, nmo_runtime_remap_copy_refs(
+        type_rt, place_type, &state, remap));
+    nmo_place_portal_entry_t *remapped = NMO_ARRAY_DATA(
+        nmo_place_portal_entry_t, &state.portals);
+    ASSERT_EQ(201u, nmo_ref_runtime_id(&remapped[0].place));
+    ASSERT_EQ(101u, remapped[0].place.raw_id);
+    ASSERT_EQ(202u, nmo_ref_runtime_id(&remapped[0].portal));
+    ASSERT_EQ(102u, remapped[0].portal.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, remapped[1].place.state);
+    ASSERT_EQ(103u, remapped[1].place.raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, remapped[1].portal.state);
+    ASSERT_EQ(104u, remapped[1].portal.raw_id);
+
+    nmo_array_dispose(&state.portals);
+    nmo_arena_destroy(arena);
+    nmo_context_release(ctx);
+}
+
+TEST(runtime_kernel, normalize_and_safe_detach_keep_place_portals_atomic) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_id_t owner_id = 0;
+    nmo_object_id_t destination_id = 0;
+    nmo_object_id_t portal_id = 0;
+    nmo_object_id_t wrong_class_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_PLACE, "owner", NMO_NULL_GUID,
+        &owner_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_PLACE, "destination", NMO_NULL_GUID,
+        &destination_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_3DENTITY, "portal", NMO_NULL_GUID,
+        &portal_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_OBJECT, "wrong", NMO_NULL_GUID,
+        &wrong_class_id, NULL));
+
+    nmo_place_state_t *owner = (nmo_place_state_t *)
+        nmo_object_repository_find_by_id(repo, owner_id)->state;
+    ASSERT_NOT_NULL(owner);
+    const nmo_place_portal_entry_t entries[] = {
+        {
+            .place = nmo_ref_from_id(destination_id),
+            .portal = nmo_ref_from_id(portal_id),
+        },
+        {
+            .place = nmo_ref_from_raw(0x7FFFFF31u),
+            .portal = nmo_ref_from_id(portal_id),
+        },
+        {
+            .place = nmo_ref_from_id(wrong_class_id),
+            .portal = nmo_ref_from_id(wrong_class_id),
+        },
+    };
+    ASSERT_EQ(NMO_OK, nmo_array_append_array(&owner->portals, entries, 3));
+
+    nmo_arena_t *graph_arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(graph_arena);
+    nmo_ref_graph_t *graph = nmo_ref_graph_create(
+        repo, nmo_context_get_type_runtime(ctx)->types, graph_arena);
+    ASSERT_NOT_NULL(graph);
+    nmo_ref_edge_t *outgoing = NULL;
+    size_t outgoing_count = 0;
+    ASSERT_EQ(NMO_OK, nmo_ref_graph_get_object_edges(
+        graph, owner_id, NMO_REF_DIR_OUTGOING,
+        &outgoing, &outgoing_count));
+    ASSERT_EQ(5u, outgoing_count);
+    nmo_ref_graph_destroy(graph);
+    nmo_arena_destroy(graph_arena);
+
+    size_t changed = 0;
+    ASSERT_EQ(NMO_OK, nmo_runtime_normalize_invalid_refs(
+        repo, nmo_context_get_type_runtime(ctx), &changed));
+    ASSERT_EQ(2u, changed);
+    ASSERT_EQ(1u, owner->portals.count);
+    nmo_place_portal_entry_t *remaining = NMO_ARRAY_DATA(
+        nmo_place_portal_entry_t, &owner->portals);
+    ASSERT_EQ(destination_id, nmo_ref_runtime_id(&remaining[0].place));
+    ASSERT_EQ(portal_id, nmo_ref_runtime_id(&remaining[0].portal));
+
+    nmo_runtime_report_t report = {0};
+    ASSERT_EQ(NMO_OK, nmo_session_destroy_objects(
+        session, &portal_id, 1,
+        NMO_RUNTIME_REQUEST_STRICT | NMO_RUNTIME_REQUEST_SAFE_DETACH,
+        &report));
+    ASSERT_EQ(1u, report.deleted_objects);
+    owner = (nmo_place_state_t *)
+        nmo_object_repository_find_by_id(repo, owner_id)->state;
+    ASSERT_EQ(0u, owner->portals.count);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(runtime_kernel, normalize_and_safe_detach_keep_curve_sections_independent) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
@@ -2570,6 +2696,8 @@ REGISTER_TEST(runtime_kernel, normalize_and_safe_detach_keep_mesh_records_atomic
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_patchmesh_refs);
 REGISTER_TEST(runtime_kernel, normalize_and_safe_detach_keep_patchmesh_records_atomic);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_curve_refs);
+REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_place_portals);
+REGISTER_TEST(runtime_kernel, normalize_and_safe_detach_keep_place_portals_atomic);
 REGISTER_TEST(runtime_kernel, normalize_and_safe_detach_keep_curve_sections_independent);
 TEST_MAIN_END()
 

@@ -12,6 +12,7 @@
 #include "object/builtin/nmo_grid_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "object/builtin/nmo_patchmesh_schemas.h"
+#include "object/builtin/nmo_place_schemas.h"
 #include "object/builtin/nmo_scene_schemas.h"
 #include "object/nmo_object_guids.h"
 #include "object/nmo_param_guids.h"
@@ -342,6 +343,30 @@ static nmo_status_t runtime_remap_curve_refs(
     return NMO_OK;
 }
 
+static nmo_status_t runtime_remap_place_refs(
+    nmo_place_state_t *state,
+    const nmo_id_remap_t *remap)
+{
+    if (state == NULL) return NMO_OK;
+    if (state->portals.element_size != sizeof(nmo_place_portal_entry_t) ||
+        (state->portals.count > 0 && state->portals.data == NULL)) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    nmo_place_portal_entry_t *entries = NMO_ARRAY_DATA(
+        nmo_place_portal_entry_t, &state->portals);
+    for (size_t i = 0; i < state->portals.count; ++i) {
+        nmo_ref_t *refs[] = {&entries[i].place, &entries[i].portal};
+        for (size_t j = 0; j < 2; ++j) {
+            nmo_object_id_t mapped = NMO_OBJECT_ID_NONE;
+            if (refs[j]->state == NMO_REF_RESOLVED &&
+                runtime_lookup_mapping(remap, refs[j]->id, &mapped)) {
+                refs[j]->id = mapped;
+            }
+        }
+    }
+    return NMO_OK;
+}
+
 /* 鈹€鈹€ Public API 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
 nmo_status_t nmo_runtime_remap_copy_refs(
@@ -414,6 +439,10 @@ nmo_status_t nmo_runtime_remap_copy_refs(
         if (nmo_guid_equals(current->guid, CKPGUID_CURVE)) {
             NMO_RETURN_IF_ERROR(runtime_remap_curve_refs(
                 (nmo_curve_state_t *)current_instance, remap));
+        }
+        if (nmo_guid_equals(current->guid, CKPGUID_PLACE)) {
+            NMO_RETURN_IF_ERROR(runtime_remap_place_refs(
+                (nmo_place_state_t *)current_instance, remap));
         }
 
     }
@@ -976,6 +1005,43 @@ static nmo_status_t normalize_curve_sub_points(
     return NMO_OK;
 }
 
+static nmo_status_t normalize_place_portals(
+    nmo_place_state_t *state,
+    nmo_object_repository_t *repo,
+    const nmo_type_registry_t *types,
+    size_t *changes)
+{
+    if (state == NULL) return NMO_OK;
+    if (state->portals.element_size != sizeof(nmo_place_portal_entry_t) ||
+        (state->portals.count > 0 && state->portals.data == NULL)) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    for (size_t i = 0; i < state->portals.count;) {
+        nmo_place_portal_entry_t *entries = NMO_ARRAY_DATA(
+            nmo_place_portal_entry_t, &state->portals);
+        const nmo_object_id_t place_id = nmo_ref_runtime_id(
+            &entries[i].place);
+        const nmo_object_id_t portal_id = nmo_ref_runtime_id(
+            &entries[i].portal);
+        const bool valid =
+            entries[i].place.state == NMO_REF_RESOLVED &&
+            entries[i].portal.state == NMO_REF_RESOLVED &&
+            !normalize_id_is_invalid(repo, place_id) &&
+            !normalize_id_is_invalid(repo, portal_id) &&
+            !normalize_id_has_wrong_class(
+                repo, types, place_id, NMO_CID_PLACE) &&
+            !normalize_id_has_wrong_class(
+                repo, types, portal_id, NMO_CID_3DENTITY);
+        if (valid) {
+            ++i;
+            continue;
+        }
+        NMO_RETURN_IF_ERROR(nmo_array_remove(&state->portals, i, NULL));
+        (*changes)++;
+    }
+    return NMO_OK;
+}
+
 typedef struct normalize_ref_ctx {
     nmo_object_repository_t *repo;
     const nmo_type_registry_t *types;
@@ -1171,6 +1237,11 @@ nmo_status_t nmo_runtime_normalize_invalid_refs(
                 type_rt->types, obj, CKPGUID_CURVE);
         NMO_RETURN_IF_ERROR(normalize_curve_sub_points(
             curve, repo, type_rt->types, &changed));
+        nmo_place_state_t *place = (nmo_place_state_t *)
+            nmo_type_query_object_get_ancestor_state_by_guid(
+                type_rt->types, obj, CKPGUID_PLACE);
+        NMO_RETURN_IF_ERROR(normalize_place_portals(
+            place, repo, type_rt->types, &changed));
 
         const nmo_type_descriptor_t *derived =
             runtime_find_type_for_object(type_rt, obj);
