@@ -293,10 +293,16 @@ static nmo_status_t nmo_character_validate(
     void *context)
 {
     (void)type;
-    (void)context;
     const nmo_character_state_t *s = instance;
+    if (s == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    NMO_RETURN_IF_ERROR(nmo_3dentity_vtable.validate(
+        &s->base, NULL, context));
     NMO_VALIDATE_COUNT(s->body_parts.data, s->body_parts.count, "body_parts");
     NMO_VALIDATE_COUNT(s->animations.data, s->animations.count, "animations");
+    if (s->body_parts.count > (size_t)INT32_MAX ||
+        s->animations.count > (size_t)INT32_MAX) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
     if ((s->body_parts.element_size != 0 &&
          s->body_parts.element_size != sizeof(nmo_character_part_t)) ||
         (s->body_parts.count > 0 &&

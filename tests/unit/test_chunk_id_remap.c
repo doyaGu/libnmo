@@ -8819,6 +8819,14 @@ TEST(chunk_id_remap, character_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(partial, &preserved));
     ASSERT_EQ(0x12345678u, preserved);
 
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, nmo_character_vtable.validate(
+        NULL, NULL, NULL));
+    invalid.body_parts.data = &part;
+    invalid.body_parts.count = (size_t)INT32_MAX + 1u;
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_character_serialize(
+        &invalid, partial, NULL, &file_serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(partial));
+
     nmo_bodypart_state_t bodypart = {0};
     bodypart.has_character = 1;
     bodypart.character = nmo_ref_from_raw(701);
