@@ -802,6 +802,9 @@ nmo_status_t nmo_runtime_kernel_finalize_load(
         nmo_log(logger, NMO_LOG_WARN,
                 "Runtime index rebuild failed: %d", index_result);
     }
+    if (index_result != NMO_OK) {
+        return index_result;
+    }
 
     finish_stats.flags = 0;
     nmo_session_set_runtime_load_stats(session, &finish_stats);

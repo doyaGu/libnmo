@@ -743,6 +743,43 @@ TEST(runtime_kernel, finalize_load_propagates_reference_resolver_oom) {
     nmo_context_release(ctx);
 }
 
+TEST(runtime_kernel, finalize_load_propagates_index_rebuild_oom) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    nmo_object_id_t object_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session,
+        NMO_CID_OBJECT,
+        "indexed",
+        NMO_NULL_GUID,
+        &object_id,
+        NULL));
+
+    runtime_ref_graph_fail_allocator_state_t fail_state = {0};
+    nmo_allocator_t fail_allocator = nmo_allocator_custom(
+        runtime_ref_graph_fail_alloc,
+        runtime_ref_graph_fail_free,
+        &fail_state);
+    nmo_object_index_t *index = nmo_object_index_create(
+        nmo_session_get_repository(session),
+        nmo_session_get_arena(session),
+        &fail_allocator);
+    ASSERT_NOT_NULL(index);
+    nmo_session_set_object_index(session, index);
+    fail_state.fail_allocations = 1;
+
+    nmo_runtime_report_t report = {0};
+    ASSERT_EQ(NMO_ERR_NOMEM,
+              nmo_runtime_kernel_finalize_load(session, NULL, &report));
+
+    fail_state.fail_allocations = 0;
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(runtime_kernel, delete_safe_detach_prunes_behavior_links_with_deleted_io) {
     nmo_context_desc_t desc = {0};
     nmo_context_t *ctx = nmo_context_create(&desc);
@@ -3854,6 +3891,7 @@ REGISTER_TEST(runtime_kernel, copy_rejects_ambiguous_or_missing_sources_atomical
 REGISTER_TEST(runtime_kernel, copy_hook_failure_rolls_back_all_clones);
 REGISTER_TEST(runtime_kernel, ref_graph_creation_fails_on_edge_allocation_error);
 REGISTER_TEST(runtime_kernel, ref_graph_creation_propagates_enumerator_error);
+REGISTER_TEST(runtime_kernel, finalize_load_propagates_index_rebuild_oom);
 REGISTER_TEST(runtime_kernel, finalize_load_propagates_reference_resolver_oom);
 REGISTER_TEST(runtime_kernel, delete_safe_detach_prunes_group_references);
 REGISTER_TEST(runtime_kernel, delete_safe_detach_uses_explicit_object_type);
