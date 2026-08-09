@@ -242,6 +242,15 @@ static nmo_status_t nmo_place_deserialize_internal(
             return nmo_place_restore_read_position(
                 chunk, sequence_start, result);
         }
+        const nmo_object_repository_t *repository =
+            (const nmo_object_repository_t *)
+                nmo_deserialize_context_get_repository(context);
+        const nmo_type_registry_t *types =
+            nmo_deserialize_context_get_type_registry(context);
+        for (size_t i = 0; i < count; ++i) {
+            nmo_ref_check_class(
+                &dest[i], repository, types, NMO_CID_3DENTITY);
+        }
         if (nmo_chunk_get_position(chunk) != section_end) {
             nmo_array_dispose(&references);
             return NMO_ERR_INVALID_FORMAT;

@@ -12666,6 +12666,77 @@ TEST(chunk_id_remap, place_refs_round_trip_and_truncation_is_atomic) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, place_child_refs_require_3dentity_class) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
+    ASSERT_NOT_NULL(arena);
+    nmo_type_registry_t *types = nmo_type_registry_create(arena);
+    ASSERT_NOT_NULL(types);
+    ASSERT_EQ(NMO_OK, nmo_register_builtin_types(types));
+    ASSERT_EQ(NMO_OK, nmo_register_object_types(types));
+    nmo_object_repository_t *repository =
+        nmo_object_repository_create(NULL);
+    ASSERT_NOT_NULL(repository);
+
+    nmo_object_t *wrong = nmo_object_create(
+        NULL, 1720u, NMO_CID_OBJECT);
+    nmo_object_t *valid_derived = nmo_object_create(
+        NULL, 1721u, NMO_CID_PLACE);
+    ASSERT_NOT_NULL(wrong);
+    ASSERT_NOT_NULL(valid_derived);
+    ASSERT_EQ(NMO_OK, nmo_object_set_type_guid(wrong, CKPGUID_OBJECT));
+    ASSERT_EQ(NMO_OK, nmo_object_set_type_guid(
+        valid_derived, CKPGUID_PLACE));
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repository, &wrong));
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(
+        repository, &valid_derived));
+
+    nmo_id_remap_t *file_to_runtime = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(file_to_runtime);
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(file_to_runtime, 711u, 1720u));
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(file_to_runtime, 712u, 1721u));
+    nmo_chunk_file_context_t file_context = {
+        .file_to_runtime = file_to_runtime,
+        .repository = repository,
+    };
+    nmo_type_runtime_t type_runtime = {.types = types, .ops = NULL};
+    nmo_deserialize_context_t context = nmo_deserialize_context_create(
+        arena, repository, &type_runtime, NMO_DESER_FLAG_FILE_MODE);
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    chunk->class_id = NMO_CID_PLACE;
+    chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        chunk, CK_STATESAVE_PLACEREFERENCES));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(chunk, 2u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_sequence_item(
+        chunk, 711u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_sequence_item(
+        chunk, 712u));
+    nmo_chunk_close(chunk);
+    nmo_chunk_set_file_context(chunk, &file_context);
+
+    nmo_place_state_t place;
+    ASSERT_EQ(NMO_OK, nmo_place_vtable.create(&place, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_place_deserialize(
+        &place, chunk, NULL, &context));
+    ASSERT_EQ(2u, place.references.count);
+    const nmo_ref_t *refs = NMO_ARRAY_DATA(
+        nmo_ref_t, &place.references);
+    ASSERT_EQ(NMO_REF_CLASS_MISMATCH, refs[0].state);
+    ASSERT_EQ(711u, refs[0].raw_id);
+    ASSERT_EQ(1720u, refs[0].id);
+    ASSERT_EQ(NMO_REF_RESOLVED, refs[1].state);
+    ASSERT_EQ(712u, refs[1].raw_id);
+    ASSERT_EQ(1721u, refs[1].id);
+
+    nmo_place_vtable.destroy(&place, NULL, NULL);
+    nmo_object_repository_destroy(repository);
+    nmo_type_registry_destroy(types);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, group_refs_round_trip_and_failure_is_atomic) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
     ASSERT_NOT_NULL(arena);
@@ -20036,6 +20107,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, entity_serializer_does_not_publish_partial_chunk);
     REGISTER_TEST(chunk_id_remap, entity2d_serializer_does_not_publish_partial_chunk);
     REGISTER_TEST(chunk_id_remap, place_refs_round_trip_and_truncation_is_atomic);
+    REGISTER_TEST(chunk_id_remap, place_child_refs_require_3dentity_class);
     REGISTER_TEST(chunk_id_remap, group_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, level_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, scene_refs_round_trip_and_failure_is_atomic);
