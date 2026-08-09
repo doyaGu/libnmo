@@ -173,6 +173,11 @@ static nmo_status_t nmo_attributemanager_deserialize_internal(
             if (cat->present) {
                 char *name = NULL;
                 NMO_RETURN_IF_ERROR(nmo_chunk_read_string_checked(chunk, &name, NULL));
+                if (name == NULL) {
+                    NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED,
+                                     NMO_SEVERITY_ERROR,
+                                     "Attribute category name is missing");
+                }
                 cat->name = name;
 
                 result = nmo_chunk_read_dword(chunk, &cat->flags);
@@ -203,6 +208,11 @@ static nmo_status_t nmo_attributemanager_deserialize_internal(
             if (attr->present) {
                 char *name = NULL;
                 NMO_RETURN_IF_ERROR(nmo_chunk_read_string_checked(chunk, &name, NULL));
+                if (name == NULL) {
+                    NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED,
+                                     NMO_SEVERITY_ERROR,
+                                     "Attribute name is missing");
+                }
                 attr->name = name;
 
                 result = nmo_chunk_read_guid(chunk, &attr->parameter_type_guid);
@@ -309,7 +319,12 @@ static nmo_status_t nmo_attributemanager_serialize_internal(
         if (result != NMO_OK) return result;
 
         if (cat->present) {
-            result = nmo_chunk_write_string(out_chunk, cat->name ? cat->name : "");
+            if (cat->name == NULL) {
+                NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED,
+                                 NMO_SEVERITY_ERROR,
+                                 "Attribute category name is missing");
+            }
+            result = nmo_chunk_write_string(out_chunk, cat->name);
             if (result != NMO_OK) return result;
 
             result = nmo_chunk_write_dword(out_chunk, cat->flags);
@@ -325,7 +340,12 @@ static nmo_status_t nmo_attributemanager_serialize_internal(
         if (result != NMO_OK) return result;
 
         if (attr->present) {
-            result = nmo_chunk_write_string(out_chunk, attr->name ? attr->name : "");
+            if (attr->name == NULL) {
+                NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED,
+                                 NMO_SEVERITY_ERROR,
+                                 "Attribute name is missing");
+            }
+            result = nmo_chunk_write_string(out_chunk, attr->name);
             if (result != NMO_OK) return result;
 
             result = nmo_chunk_write_guid(out_chunk, attr->parameter_type_guid);
@@ -375,12 +395,17 @@ nmo_status_t nmo_attributemanager_serialize(
  * Vtable + registration
  * ============================================================================= */
 
+static nmo_status_t nmo_attributemanager_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
+
 nmo_status_t nmo_attributemanager_prepare_dependencies(
     void *instance,
     const nmo_type_descriptor_t *type,
     void *context)
 {
-    return nmo_object_default_validate(instance, type, context);
+    return nmo_attributemanager_validate(instance, type, context);
 }
 
 nmo_status_t nmo_attributemanager_remap_dependencies(
@@ -398,17 +423,7 @@ nmo_status_t nmo_attributemanager_remap_dependencies(
 
     nmo_attributemanager_state_t *state = (nmo_attributemanager_state_t *)instance;
 
-    if (state->category_count > 0 && state->categories == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Attribute categories missing");
-    }
-
-    if (state->attribute_count > 0 && state->attributes == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Attribute descriptors missing");
-    }
-
-    return nmo_object_default_validate(state, NULL, NULL);
+    return nmo_attributemanager_validate(state, NULL, NULL);
 }
 
 static nmo_status_t nmo_attributemanager_pre_delete(
@@ -435,7 +450,192 @@ static void nmo_attributemanager_post_delete(
     (void)context;
 }
 
-NMO_DEFINE_OBJECT_STATE_OPS(attributemanager, nmo_attributemanager_state_t)
+static nmo_status_t nmo_attributemanager_copy(
+    const void *src,
+    void *dst,
+    const nmo_type_descriptor_t *type,
+    nmo_arena_t *arena)
+{
+    if (src == NULL || dst == NULL || arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    NMO_RETURN_IF_ERROR(nmo_attributemanager_validate(src, type, NULL));
+
+    const nmo_attributemanager_state_t *source = src;
+    nmo_attributemanager_state_t copied = {
+        .category_count = source->category_count,
+        .attribute_count = source->attribute_count,
+    };
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(
+        arena, (void **)&copied.categories, source->categories,
+        sizeof(*copied.categories), copied.category_count));
+    for (uint32_t i = 0; i < copied.category_count; ++i) {
+        copied.categories[i].name = NULL;
+        NMO_RETURN_IF_ERROR(nmo_object_copy_string(
+            arena, (char **)&copied.categories[i].name,
+            source->categories[i].name));
+    }
+
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(
+        arena, (void **)&copied.attributes, source->attributes,
+        sizeof(*copied.attributes), copied.attribute_count));
+    for (uint32_t i = 0; i < copied.attribute_count; ++i) {
+        copied.attributes[i].name = NULL;
+        NMO_RETURN_IF_ERROR(nmo_object_copy_string(
+            arena, (char **)&copied.attributes[i].name,
+            source->attributes[i].name));
+    }
+
+    *(nmo_attributemanager_state_t *)dst = copied;
+    return NMO_OK;
+}
+
+static nmo_status_t nmo_attributemanager_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
+
+    const nmo_attributemanager_state_t *state = instance;
+    if (state->category_count > 10000 ||
+        state->attribute_count > 100000) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    if (state->category_count > 0 && state->categories == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (state->attribute_count > 0 && state->attributes == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    for (uint32_t i = 0; i < state->category_count; ++i) {
+        if (state->categories[i].present &&
+            state->categories[i].name == NULL) {
+            return NMO_ERR_VALIDATION_FAILED;
+        }
+    }
+    for (uint32_t i = 0; i < state->attribute_count; ++i) {
+        if (state->attributes[i].present &&
+            state->attributes[i].name == NULL) {
+            return NMO_ERR_VALIDATION_FAILED;
+        }
+    }
+    return NMO_OK;
+}
+
+static bool nmo_attributemanager_string_equals(
+    const char *lhs,
+    const char *rhs)
+{
+    if (lhs == rhs) return true;
+    return lhs != NULL && rhs != NULL && strcmp(lhs, rhs) == 0;
+}
+
+static bool nmo_attributemanager_equals(const void *a, const void *b)
+{
+    if (a == b) return true;
+    if (a == NULL || b == NULL) return false;
+
+    const nmo_attributemanager_state_t *lhs = a;
+    const nmo_attributemanager_state_t *rhs = b;
+    if (lhs->category_count != rhs->category_count ||
+        lhs->attribute_count != rhs->attribute_count) {
+        return false;
+    }
+    if ((lhs->category_count > 0 &&
+         (lhs->categories == NULL || rhs->categories == NULL)) ||
+        (lhs->attribute_count > 0 &&
+         (lhs->attributes == NULL || rhs->attributes == NULL))) {
+        return false;
+    }
+
+    for (uint32_t i = 0; i < lhs->category_count; ++i) {
+        const nmo_attribute_category_t *lhs_category = &lhs->categories[i];
+        const nmo_attribute_category_t *rhs_category = &rhs->categories[i];
+        if (!nmo_attributemanager_string_equals(
+                lhs_category->name, rhs_category->name) ||
+            lhs_category->flags != rhs_category->flags ||
+            lhs_category->present != rhs_category->present) {
+            return false;
+        }
+    }
+    for (uint32_t i = 0; i < lhs->attribute_count; ++i) {
+        const nmo_attribute_descriptor_t *lhs_attribute = &lhs->attributes[i];
+        const nmo_attribute_descriptor_t *rhs_attribute = &rhs->attributes[i];
+        if (!nmo_attributemanager_string_equals(
+                lhs_attribute->name, rhs_attribute->name) ||
+            !nmo_guid_equals(lhs_attribute->parameter_type_guid,
+                             rhs_attribute->parameter_type_guid) ||
+            lhs_attribute->category_index != rhs_attribute->category_index ||
+            lhs_attribute->compatible_class_id !=
+                rhs_attribute->compatible_class_id ||
+            lhs_attribute->flags != rhs_attribute->flags ||
+            lhs_attribute->present != rhs_attribute->present) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static uint32_t nmo_attributemanager_hash_bytes(
+    uint32_t hash,
+    const void *data,
+    size_t size)
+{
+    const uint8_t *bytes = data;
+    for (size_t i = 0; i < size; ++i) {
+        hash ^= bytes[i];
+        hash *= 16777619u;
+    }
+    return hash;
+}
+
+static uint32_t nmo_attributemanager_hash_string(
+    uint32_t hash,
+    const char *string)
+{
+    const uint8_t present = string != NULL;
+    hash = nmo_attributemanager_hash_bytes(
+        hash, &present, sizeof(present));
+    return present
+        ? nmo_attributemanager_hash_bytes(
+            hash, string, strlen(string) + 1u)
+        : hash;
+}
+
+static uint32_t nmo_attributemanager_hash(const void *instance)
+{
+    if (instance == NULL) return 0;
+    const nmo_attributemanager_state_t *state = instance;
+    uint32_t hash = 2166136261u;
+#define NMO_ATTRIBUTEMANAGER_HASH_FIELD(value) \
+    hash = nmo_attributemanager_hash_bytes( \
+        hash, &(value), sizeof(value))
+    NMO_ATTRIBUTEMANAGER_HASH_FIELD(state->category_count);
+    if (state->category_count > 0 && state->categories == NULL) return hash;
+    for (uint32_t i = 0; i < state->category_count; ++i) {
+        const nmo_attribute_category_t *category = &state->categories[i];
+        hash = nmo_attributemanager_hash_string(hash, category->name);
+        NMO_ATTRIBUTEMANAGER_HASH_FIELD(category->flags);
+        NMO_ATTRIBUTEMANAGER_HASH_FIELD(category->present);
+    }
+    NMO_ATTRIBUTEMANAGER_HASH_FIELD(state->attribute_count);
+    if (state->attribute_count > 0 && state->attributes == NULL) return hash;
+    for (uint32_t i = 0; i < state->attribute_count; ++i) {
+        const nmo_attribute_descriptor_t *attribute = &state->attributes[i];
+        hash = nmo_attributemanager_hash_string(hash, attribute->name);
+        NMO_ATTRIBUTEMANAGER_HASH_FIELD(attribute->parameter_type_guid.d1);
+        NMO_ATTRIBUTEMANAGER_HASH_FIELD(attribute->parameter_type_guid.d2);
+        NMO_ATTRIBUTEMANAGER_HASH_FIELD(attribute->category_index);
+        NMO_ATTRIBUTEMANAGER_HASH_FIELD(attribute->compatible_class_id);
+        NMO_ATTRIBUTEMANAGER_HASH_FIELD(attribute->flags);
+        NMO_ATTRIBUTEMANAGER_HASH_FIELD(attribute->present);
+    }
+#undef NMO_ATTRIBUTEMANAGER_HASH_FIELD
+    return hash;
+}
 
 nmo_type_vtable_t nmo_attributemanager_vtable = {
     .prepare_dependencies = nmo_attributemanager_prepare_dependencies,

@@ -1144,6 +1144,21 @@ TEST(chunk_id_remap, attributemanager_failures_keep_state_and_target_chunk_atomi
     ASSERT_EQ(&old_category, state.categories);
     ASSERT_EQ(&old_attribute, state.attributes);
 
+    nmo_chunk_t *missing_name = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(missing_name);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(missing_name));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(missing_name, 0x52u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(missing_name, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(missing_name, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(missing_name, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_string(missing_name, NULL));
+    nmo_chunk_close(missing_name);
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,
+              nmo_attributemanager_deserialize(
+                  &state, missing_name, NULL, &deserialize_context));
+    ASSERT_EQ(&old_category, state.categories);
+    ASSERT_EQ(&old_attribute, state.attributes);
+
     nmo_attributemanager_state_t invalid = {
         .category_count = 1,
         .categories = &old_category,
@@ -1162,6 +1177,80 @@ TEST(chunk_id_remap, attributemanager_failures_keep_state_and_target_chunk_atomi
     uint32_t marker = 0;
     ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(target, &marker));
     ASSERT_EQ(0x12345678u, marker);
+
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_id_remap, attributemanager_copy_preserves_record_content) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_attribute_category_t categories[] = {
+        {.name = "Gameplay", .flags = 17, .present = true},
+        {.name = NULL, .flags = 0, .present = false},
+    };
+    nmo_attribute_descriptor_t attributes[] = {
+        {
+            .name = "Active",
+            .parameter_type_guid = CKPGUID_BOOL,
+            .category_index = 0,
+            .compatible_class_id = NMO_CID_BEOBJECT,
+            .flags = 23,
+            .present = true,
+        },
+    };
+    nmo_attributemanager_state_t source = {
+        .category_count = 2,
+        .categories = categories,
+        .attribute_count = 1,
+        .attributes = attributes,
+    };
+    nmo_attribute_category_t old_category = {
+        .name = "Old",
+        .present = true,
+    };
+    nmo_attributemanager_state_t copy = {
+        .category_count = 1,
+        .categories = &old_category,
+    };
+    nmo_type_descriptor_t type = {
+        .size = sizeof(nmo_attributemanager_state_t),
+    };
+
+    ASSERT_EQ(NMO_OK, nmo_attributemanager_vtable.copy(
+        &source, &copy, &type, arena));
+    ASSERT_NE(source.categories, copy.categories);
+    ASSERT_NE(source.attributes, copy.attributes);
+    ASSERT_NE(source.categories[0].name, copy.categories[0].name);
+    ASSERT_NE(source.attributes[0].name, copy.attributes[0].name);
+    ASSERT_TRUE(nmo_attributemanager_vtable.equals(&source, &copy));
+    ASSERT_EQ(nmo_attributemanager_vtable.hash(&source),
+              nmo_attributemanager_vtable.hash(&copy));
+    ASSERT_EQ(NMO_OK, nmo_attributemanager_vtable.validate(
+        &copy, &type, NULL));
+
+    ((char *)copy.attributes[0].name)[0] = 'X';
+    ASSERT_STR_EQ("Active", source.attributes[0].name);
+    ASSERT_FALSE(nmo_attributemanager_vtable.equals(&source, &copy));
+
+    nmo_attribute_descriptor_t invalid_attribute = {
+        .name = NULL,
+        .present = true,
+    };
+    nmo_attributemanager_state_t invalid = {
+        .attribute_count = 1,
+        .attributes = &invalid_attribute,
+    };
+    nmo_attribute_category_t *published_categories = copy.categories;
+    nmo_attribute_descriptor_t *published_attributes = copy.attributes;
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,
+              nmo_attributemanager_vtable.copy(
+                  &invalid, &copy, &type, arena));
+    ASSERT_EQ(published_categories, copy.categories);
+    ASSERT_EQ(published_attributes, copy.attributes);
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,
+              nmo_attributemanager_vtable.validate(
+                  &invalid, &type, NULL));
 
     nmo_arena_destroy(arena);
 }
@@ -9130,6 +9219,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, dataarray_cell_refs_round_trip_raw_ids);
     REGISTER_TEST(chunk_id_remap, dataarray_failures_keep_state_and_target_chunk_atomic);
     REGISTER_TEST(chunk_id_remap, attributemanager_failures_keep_state_and_target_chunk_atomic);
+    REGISTER_TEST(chunk_id_remap, attributemanager_copy_preserves_record_content);
     REGISTER_TEST(chunk_id_remap, messagemanager_failures_keep_state_and_target_chunk_atomic);
     REGISTER_TEST(chunk_id_remap, messagemanager_copy_preserves_string_content);
     REGISTER_TEST(chunk_id_remap, interfaceobjectmanager_chunk_count_stays_in_section);
