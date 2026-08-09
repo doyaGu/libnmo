@@ -1235,6 +1235,24 @@ TEST(chunk_id_remap, behaviorio_truncation_keeps_previous_state) {
     ASSERT_EQ(0xA5A5A5A5u, state.old_flags);
     ASSERT_TRUE(state.has_flags);
 
+    nmo_chunk_t *trailing_payload = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(trailing_payload);
+    trailing_payload->class_id = NMO_CID_BEHAVIORIO;
+    trailing_payload->data_version = 7;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(trailing_payload));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        trailing_payload, CK_STATESAVE_BEHAV_IOFLAGS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        trailing_payload, 0x01020304u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        trailing_payload, 0x05060708u));
+    nmo_chunk_close(trailing_payload);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_behaviorio_deserialize(
+        &state, trailing_payload, NULL, NULL));
+    ASSERT_EQ(0x12345678u, state.base.visibility_flags);
+    ASSERT_EQ(0xA5A5A5A5u, state.old_flags);
+    ASSERT_TRUE(state.has_flags);
+
     nmo_behaviorio_vtable.destroy(&state, NULL, NULL);
     nmo_arena_destroy(arena);
 }

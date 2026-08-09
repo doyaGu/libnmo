@@ -97,6 +97,7 @@ static nmo_status_t nmo_behaviorio_deserialize_internal(
         chunk, CK_STATESAVE_BEHAV_IOFLAGS, &section_dwords);
     if (result == NMO_OK) {
         if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+        if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
         result = nmo_chunk_read_dword(chunk, &out_state->old_flags);
         if (result != NMO_OK) return result;
         out_state->has_flags = true;
