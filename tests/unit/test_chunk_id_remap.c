@@ -6652,18 +6652,20 @@ TEST(chunk_id_remap, targetlight_unresolved_ref_round_trips_raw_id) {
     nmo_arena_destroy(arena);
 }
 
-TEST(chunk_id_remap, kinematicchain_unresolved_refs_round_trip_atomically) {
+TEST(chunk_id_remap, kinematicchain_effectors_round_trip_atomically) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
     ASSERT_NOT_NULL(arena);
     nmo_id_remap_t *file_to_runtime = nmo_id_remap_create(arena);
     nmo_id_remap_t *runtime_to_file = nmo_id_remap_create(arena);
     ASSERT_NOT_NULL(file_to_runtime);
     ASSERT_NOT_NULL(runtime_to_file);
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(file_to_runtime, 101, 1001));
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(runtime_to_file, 101, 1002));
 
     nmo_kinematicchain_state_t source;
     ASSERT_EQ(NMO_OK, nmo_kinematicchain_vtable.create(&source, NULL, NULL));
     source.has_chain_data = 1;
-    source.legacy_object = nmo_ref_from_raw(101);
+    source.reserved_object_id = 101;
     source.start_effector = nmo_ref_from_raw(111);
     source.end_effector = nmo_ref_from_raw(222);
     ASSERT_EQ(NMO_CKOBJECT_VISIBLE, source.base.visibility_flags);
@@ -6676,9 +6678,9 @@ TEST(chunk_id_remap, kinematicchain_unresolved_refs_round_trip_atomically) {
     ASSERT_TRUE(nmo_kinematicchain_vtable.equals(&source, &copied));
     ASSERT_EQ(nmo_kinematicchain_vtable.hash(&source),
               nmo_kinematicchain_vtable.hash(&copied));
-    copied.legacy_object.raw_id++;
+    copied.reserved_object_id++;
     ASSERT_FALSE(nmo_kinematicchain_vtable.equals(&source, &copied));
-    copied.legacy_object.raw_id--;
+    copied.reserved_object_id--;
     copied.end_effector.raw_id++;
     ASSERT_FALSE(nmo_kinematicchain_vtable.equals(&source, &copied));
 
@@ -6706,8 +6708,7 @@ TEST(chunk_id_remap, kinematicchain_unresolved_refs_round_trip_atomically) {
     ASSERT_EQ(NMO_OK, nmo_kinematicchain_vtable.create(&loaded, NULL, NULL));
     ASSERT_EQ(NMO_OK, nmo_kinematicchain_deserialize(
         &loaded, chunk, NULL, NULL));
-    ASSERT_EQ(101u, loaded.legacy_object.raw_id);
-    ASSERT_EQ(NMO_REF_UNRESOLVED, loaded.legacy_object.state);
+    ASSERT_EQ(101u, loaded.reserved_object_id);
     ASSERT_EQ(111u, loaded.start_effector.raw_id);
     ASSERT_EQ(NMO_REF_UNRESOLVED, loaded.start_effector.state);
     ASSERT_EQ(222u, loaded.end_effector.raw_id);
@@ -6729,8 +6730,7 @@ TEST(chunk_id_remap, kinematicchain_unresolved_refs_round_trip_atomically) {
         &reloaded, NULL, NULL));
     ASSERT_EQ(NMO_OK, nmo_kinematicchain_deserialize(
         &reloaded, second, NULL, NULL));
-    ASSERT_EQ(101u, reloaded.legacy_object.raw_id);
-    ASSERT_EQ(NMO_REF_UNRESOLVED, reloaded.legacy_object.state);
+    ASSERT_EQ(101u, reloaded.reserved_object_id);
 
     nmo_chunk_t *truncated = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(truncated);
@@ -6747,7 +6747,7 @@ TEST(chunk_id_remap, kinematicchain_unresolved_refs_round_trip_atomically) {
     ASSERT_NE(NMO_OK, nmo_kinematicchain_deserialize(
         &loaded, truncated, NULL, NULL));
     ASSERT_TRUE(loaded.has_chain_data);
-    ASSERT_EQ(101u, loaded.legacy_object.raw_id);
+    ASSERT_EQ(101u, loaded.reserved_object_id);
     ASSERT_EQ(111u, loaded.start_effector.raw_id);
     ASSERT_EQ(NMO_REF_UNRESOLVED, loaded.start_effector.state);
     ASSERT_EQ(222u, loaded.end_effector.raw_id);
@@ -6770,7 +6770,7 @@ TEST(chunk_id_remap, kinematicchain_unresolved_refs_round_trip_atomically) {
     ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_kinematicchain_deserialize(
         &loaded, cross_section, NULL, NULL));
     ASSERT_TRUE(loaded.has_chain_data);
-    ASSERT_EQ(101u, loaded.legacy_object.raw_id);
+    ASSERT_EQ(101u, loaded.reserved_object_id);
     ASSERT_EQ(111u, loaded.start_effector.raw_id);
     ASSERT_EQ(222u, loaded.end_effector.raw_id);
 
@@ -6791,7 +6791,7 @@ TEST(chunk_id_remap, kinematicchain_unresolved_refs_round_trip_atomically) {
     ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_kinematicchain_deserialize(
         &loaded, trailing, NULL, NULL));
     ASSERT_TRUE(loaded.has_chain_data);
-    ASSERT_EQ(101u, loaded.legacy_object.raw_id);
+    ASSERT_EQ(101u, loaded.reserved_object_id);
     ASSERT_EQ(111u, loaded.start_effector.raw_id);
     ASSERT_EQ(222u, loaded.end_effector.raw_id);
 
@@ -19903,7 +19903,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, target_camera_and_light_failures_are_atomic);
     REGISTER_TEST(chunk_id_remap, targetcamera_unresolved_ref_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, targetlight_unresolved_ref_round_trips_raw_id);
-    REGISTER_TEST(chunk_id_remap, kinematicchain_unresolved_refs_round_trip_atomically);
+    REGISTER_TEST(chunk_id_remap, kinematicchain_effectors_round_trip_atomically);
     REGISTER_TEST(chunk_id_remap, layer_unresolved_grid_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, layer_default_format_writes_empty_square_buffer);
     REGISTER_TEST(chunk_id_remap, layer_copy_preserves_content_equality);

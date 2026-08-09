@@ -40,7 +40,7 @@ static nmo_status_t nmo_kinematicchain_deserialize_internal(
     }
 
     out_state->has_chain_data = 0;
-    out_state->legacy_object = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+    out_state->reserved_object_id = 0;
     out_state->start_effector = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     out_state->end_effector = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
 
@@ -53,8 +53,8 @@ static nmo_status_t nmo_kinematicchain_deserialize_internal(
     if (result == NMO_OK) {
         if (section_dwords < 3u) return NMO_ERR_TRUNCATED_CHUNK;
         if (section_dwords > 3u) return NMO_ERR_INVALID_FORMAT;
-        nmo_ref_t legacy_object = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
-        result = nmo_ref_read(chunk, &legacy_object);
+        uint32_t reserved_object_id = 0;
+        result = nmo_chunk_read_dword(chunk, &reserved_object_id);
         if (result != NMO_OK) return result;
         nmo_ref_t start_effector = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         nmo_ref_t end_effector = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
@@ -72,7 +72,7 @@ static nmo_status_t nmo_kinematicchain_deserialize_internal(
         nmo_ref_check_class(
             &end_effector, repository, types, NMO_CID_BODYPART);
         out_state->has_chain_data = 1;
-        out_state->legacy_object = legacy_object;
+        out_state->reserved_object_id = reserved_object_id;
         out_state->start_effector = start_effector;
         out_state->end_effector = end_effector;
     } else if (result != NMO_ERR_NOT_FOUND) return result;
@@ -85,7 +85,7 @@ static const nmo_type_field_t nmo_kinematicchain_fields[] = {
                     sizeof(nmo_object_state_t), CKPGUID_OBJECT,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_kinematicchain_state_t, has_chain_data, CKPGUID_UINT8),
-    NMO_FIELD_REF_VALUE(nmo_kinematicchain_state_t, legacy_object),
+    NMO_FIELD(nmo_kinematicchain_state_t, reserved_object_id, CKPGUID_UINT32),
     NMO_FIELD_REF_VALUE(nmo_kinematicchain_state_t, start_effector),
     NMO_FIELD_REF_VALUE(nmo_kinematicchain_state_t, end_effector)
 };
@@ -130,7 +130,6 @@ static nmo_status_t nmo_kinematicchain_pre_delete(
                          "Invalid arguments to nmo_kinematicchain_pre_delete");
     }
     nmo_kinematicchain_state_t *state = instance;
-    state->legacy_object = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     state->start_effector = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     state->end_effector = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     NMO_RETURN_OK();
@@ -192,8 +191,7 @@ static bool nmo_kinematicchain_equals(const void *a, const void *b)
     const nmo_kinematicchain_state_t *rhs = b;
     return nmo_object_vtable.equals(&lhs->base, &rhs->base) &&
         lhs->has_chain_data == rhs->has_chain_data &&
-        nmo_kinematicchain_ref_equals(
-            &lhs->legacy_object, &rhs->legacy_object) &&
+        lhs->reserved_object_id == rhs->reserved_object_id &&
         nmo_kinematicchain_ref_equals(
             &lhs->start_effector, &rhs->start_effector) &&
         nmo_kinematicchain_ref_equals(
@@ -212,9 +210,7 @@ static uint32_t nmo_kinematicchain_hash(const void *instance)
         hash *= 16777619u; \
     } while (0)
     NMO_KINEMATICCHAIN_HASH_FIELD(has_chain_data);
-    NMO_KINEMATICCHAIN_HASH_FIELD(legacy_object.raw_id);
-    NMO_KINEMATICCHAIN_HASH_FIELD(legacy_object.id);
-    NMO_KINEMATICCHAIN_HASH_FIELD(legacy_object.state);
+    NMO_KINEMATICCHAIN_HASH_FIELD(reserved_object_id);
     NMO_KINEMATICCHAIN_HASH_FIELD(start_effector.raw_id);
     NMO_KINEMATICCHAIN_HASH_FIELD(start_effector.id);
     NMO_KINEMATICCHAIN_HASH_FIELD(start_effector.state);
@@ -275,7 +271,7 @@ static nmo_status_t nmo_kinematicchain_serialize_internal(
     {
         nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_KINEMATICCHAINALL);
         if (result != NMO_OK) return result;
-        result = nmo_ref_write(out_chunk, &in_state->legacy_object);
+        result = nmo_chunk_write_dword(out_chunk, in_state->reserved_object_id);
         if (result != NMO_OK) return result;
         result = nmo_ref_write(out_chunk, &in_state->start_effector);
         if (result != NMO_OK) return result;
