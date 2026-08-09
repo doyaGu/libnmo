@@ -8329,6 +8329,15 @@ TEST(chunk_id_remap, level_refs_round_trip_and_failure_is_atomic) {
 
     nmo_level_state_t source;
     ASSERT_EQ(NMO_OK, nmo_level_vtable.create(&source, NULL, NULL));
+    nmo_ref_t legacy_a = nmo_ref_from_raw(907);
+    nmo_ref_t legacy_b = nmo_ref_from_raw(908);
+    nmo_ref_t legacy_pointer = nmo_ref_from_raw(909);
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &source.legacy_object_ids, &legacy_a));
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &source.legacy_object_ids, &legacy_b));
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &source.legacy_pointer_ids, &legacy_pointer));
     nmo_ref_t scene_a = nmo_ref_from_raw(911);
     nmo_ref_t scene_b = nmo_ref_from_raw(912);
     ASSERT_EQ(NMO_OK, nmo_array_append(&source.scene_ids, &scene_a));
@@ -8352,6 +8361,16 @@ TEST(chunk_id_remap, level_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(NMO_OK, nmo_level_vtable.create(&loaded, NULL, NULL));
     ASSERT_EQ(NMO_OK, nmo_level_deserialize(
         &loaded, first, NULL, &deserialize_context));
+    ASSERT_EQ(2u, loaded.legacy_object_ids.count);
+    ASSERT_EQ(1u, loaded.legacy_pointer_ids.count);
+    const nmo_ref_t *loaded_legacy = NMO_ARRAY_DATA(
+        nmo_ref_t, &loaded.legacy_object_ids);
+    const nmo_ref_t *loaded_legacy_pointers = NMO_ARRAY_DATA(
+        nmo_ref_t, &loaded.legacy_pointer_ids);
+    ASSERT_EQ(907u, loaded_legacy[0].raw_id);
+    ASSERT_EQ(908u, loaded_legacy[1].raw_id);
+    ASSERT_EQ(909u, loaded_legacy_pointers[0].raw_id);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, loaded_legacy[0].state);
     ASSERT_EQ(2u, loaded.scene_ids.count);
     const nmo_ref_t *loaded_scenes = NMO_ARRAY_DATA(
         nmo_ref_t, &loaded.scene_ids);
@@ -8377,6 +8396,13 @@ TEST(chunk_id_remap, level_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(NMO_OK, nmo_level_vtable.create(&reloaded, NULL, NULL));
     ASSERT_EQ(NMO_OK, nmo_level_deserialize(
         &reloaded, second, NULL, &deserialize_context));
+    const nmo_ref_t *reloaded_legacy = NMO_ARRAY_DATA(
+        nmo_ref_t, &reloaded.legacy_object_ids);
+    const nmo_ref_t *reloaded_legacy_pointers = NMO_ARRAY_DATA(
+        nmo_ref_t, &reloaded.legacy_pointer_ids);
+    ASSERT_EQ(907u, reloaded_legacy[0].raw_id);
+    ASSERT_EQ(908u, reloaded_legacy[1].raw_id);
+    ASSERT_EQ(909u, reloaded_legacy_pointers[0].raw_id);
     const nmo_ref_t *reloaded_scenes = NMO_ARRAY_DATA(
         nmo_ref_t, &reloaded.scene_ids);
     ASSERT_EQ(911u, reloaded_scenes[0].raw_id);
@@ -8391,6 +8417,10 @@ TEST(chunk_id_remap, level_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(NMO_OK, nmo_level_vtable.create(&copied, NULL, NULL));
     ASSERT_EQ(NMO_OK, nmo_level_vtable.copy(
         &reloaded, &copied, &level_type, arena));
+    ASSERT_NE(reloaded.legacy_object_ids.data,
+              copied.legacy_object_ids.data);
+    ASSERT_NE(reloaded.legacy_pointer_ids.data,
+              copied.legacy_pointer_ids.data);
     ASSERT_NE(reloaded.scene_ids.data, copied.scene_ids.data);
     ASSERT_TRUE(nmo_level_vtable.equals(&reloaded, &copied));
     ASSERT_EQ(nmo_level_vtable.hash(&reloaded),
@@ -8449,6 +8479,23 @@ TEST(chunk_id_remap, level_refs_round_trip_and_failure_is_atomic) {
         nmo_ref_t, &failed_scenes.scene_ids)[0].raw_id);
     ASSERT_EQ(899u, nmo_beobject_script_array_get_id(
         &failed_scenes.base.scripts, 0));
+
+    nmo_level_state_t failed_legacy_alloc;
+    ASSERT_EQ(NMO_OK, nmo_level_vtable.create(
+        &failed_legacy_alloc, NULL, NULL));
+    failed_legacy_alloc.base.priority = 71;
+    nmo_ref_t old_alloc_scene = nmo_ref_from_raw(923);
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &failed_legacy_alloc.scene_ids, &old_alloc_scene));
+    failed_legacy_alloc.legacy_object_ids.allocator =
+        nmo_allocator_custom(beobject_fail_alloc, beobject_fail_free, NULL);
+    ASSERT_EQ(NMO_ERR_NOMEM, nmo_level_deserialize(
+        &failed_legacy_alloc, first, NULL, &deserialize_context));
+    ASSERT_EQ(71, failed_legacy_alloc.base.priority);
+    ASSERT_EQ(0u, failed_legacy_alloc.legacy_object_ids.count);
+    ASSERT_EQ(1u, failed_legacy_alloc.scene_ids.count);
+    ASSERT_EQ(923u, NMO_ARRAY_DATA(
+        nmo_ref_t, &failed_legacy_alloc.scene_ids)[0].raw_id);
 
     nmo_chunk_t *cross_section_scenes = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(cross_section_scenes);
@@ -8540,6 +8587,16 @@ TEST(chunk_id_remap, level_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
     invalid.scene_ids.count = invalid_scene_count;
 
+    nmo_ref_t valid_legacy = nmo_ref_from_raw(924);
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &invalid.legacy_object_ids, &valid_legacy));
+    size_t invalid_legacy_count = invalid.legacy_object_ids.count;
+    invalid.legacy_object_ids.count = (size_t)INT32_MAX + 1u;
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_level_serialize(
+        &invalid, target, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(target));
+    invalid.legacy_object_ids.count = invalid_legacy_count;
+
     nmo_level_state_t large;
     ASSERT_EQ(NMO_OK, nmo_level_vtable.create(&large, NULL, NULL));
     const size_t large_count = 10001u;
@@ -8568,6 +8625,7 @@ TEST(chunk_id_remap, level_refs_round_trip_and_failure_is_atomic) {
     nmo_level_vtable.destroy(&copied, NULL, NULL);
     nmo_level_vtable.destroy(&copy_failed, NULL, NULL);
     nmo_level_vtable.destroy(&failed_scenes, NULL, NULL);
+    nmo_level_vtable.destroy(&failed_legacy_alloc, NULL, NULL);
     nmo_level_vtable.destroy(&failed_scalars, NULL, NULL);
     nmo_level_vtable.destroy(&invalid, NULL, NULL);
     nmo_level_vtable.destroy(&large, NULL, NULL);

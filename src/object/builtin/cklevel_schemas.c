@@ -45,6 +45,18 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
         nmo_status_t result = nmo_beobject_vtable.create(
             &state->base, NULL, context);
         if (result != NMO_OK) return result;
+        result = nmo_array_init(
+            &state->legacy_object_ids, sizeof(nmo_ref_t), 0, NULL);
+        if (result != NMO_OK) {
+            nmo_level_dispose_state_arrays(state);
+            return result;
+        }
+        result = nmo_array_init(
+            &state->legacy_pointer_ids, sizeof(nmo_ref_t), 0, NULL);
+        if (result != NMO_OK) {
+            nmo_level_dispose_state_arrays(state);
+            return result;
+        }
         result = nmo_array_init(&state->scene_ids, sizeof(nmo_ref_t), 0, NULL);
         if (result != NMO_OK) {
             nmo_level_dispose_state_arrays(state);
@@ -67,6 +79,8 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
 static void nmo_level_dispose_state_arrays(nmo_level_state_t *state)
 {
     if (state == NULL) return;
+    nmo_array_dispose(&state->legacy_object_ids);
+    nmo_array_dispose(&state->legacy_pointer_ids);
     nmo_array_dispose(&state->scene_ids);
     nmo_array_dispose(&state->inactive_manager_guids);
     nmo_array_dispose(&state->duplicate_manager_names);
@@ -119,9 +133,23 @@ static nmo_status_t nmo_level_init_staged_state(
             current->base.legacy_attributes.allocator;
     }
     nmo_status_t result = nmo_array_init(
+        &staged->legacy_object_ids, sizeof(nmo_ref_t), 0,
+        nmo_level_array_allocator(&current->legacy_object_ids));
+    if (result != NMO_OK) return result;
+    result = nmo_array_init(
+        &staged->legacy_pointer_ids, sizeof(nmo_ref_t), 0,
+        nmo_level_array_allocator(&current->legacy_pointer_ids));
+    if (result != NMO_OK) {
+        nmo_level_dispose_state_arrays(staged);
+        return result;
+    }
+    result = nmo_array_init(
         &staged->scene_ids, sizeof(nmo_ref_t), 0,
         nmo_level_array_allocator(&current->scene_ids));
-    if (result != NMO_OK) return result;
+    if (result != NMO_OK) {
+        nmo_level_dispose_state_arrays(staged);
+        return result;
+    }
     result = nmo_array_init(
         &staged->inactive_manager_guids, sizeof(nmo_guid_t), 0,
         nmo_level_array_allocator(&current->inactive_manager_guids));
@@ -184,6 +212,8 @@ static const nmo_type_field_t nmo_level_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_level_state_t, base),
                        sizeof(nmo_beobject_state_t), CKPGUID_BEOBJECT,
                     NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD_REF_RECORD_ARRAY(nmo_level_state_t, legacy_object_ids),
+    NMO_FIELD_REF_RECORD_ARRAY(nmo_level_state_t, legacy_pointer_ids),
     NMO_FIELD_REF_RECORD_ARRAY(nmo_level_state_t, scene_ids),
     NMO_FIELD_REF(nmo_level_state_t, current_scene),
     NMO_FIELD_REF(nmo_level_state_t, level_scene),
@@ -197,6 +227,42 @@ static nmo_status_t nmo_level_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
     void *context);
+
+static nmo_status_t nmo_level_read_ref_sequence(
+    nmo_chunk_t *chunk,
+    const nmo_allocator_t *allocator,
+    nmo_array_t *out_refs)
+{
+    size_t count = 0;
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_object_sequence_start(
+        chunk, &count));
+    if (count > SIZE_MAX / sizeof(nmo_ref_t)) {
+        return NMO_ERR_NOMEM;
+    }
+    if (count > nmo_level_identifier_remaining_dwords(chunk)) {
+        return NMO_ERR_TRUNCATED_CHUNK;
+    }
+
+    nmo_array_t refs;
+    nmo_status_t result = nmo_array_init(
+        &refs, sizeof(nmo_ref_t), count, allocator);
+    if (result != NMO_OK) return result;
+    nmo_ref_t *items = NULL;
+    result = nmo_array_extend(&refs, count, (void **)&items);
+    if (result != NMO_OK) {
+        nmo_array_dispose(&refs);
+        return result;
+    }
+    for (size_t i = 0; i < count; ++i) {
+        result = nmo_ref_read(chunk, &items[i]);
+        if (result != NMO_OK) {
+            nmo_array_dispose(&refs);
+            return result;
+        }
+    }
+    *out_refs = refs;
+    return NMO_OK;
+}
 
 /* =============================================================================
  * CKLevel DESERIALIZATION
@@ -243,70 +309,58 @@ static nmo_status_t nmo_level_deserialize_internal(
     /* Section 1: LEVELDEFAULTDATA - Legacy arrays + scene list */
     result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_LEVELDEFAULTDATA);
     if (result == NMO_OK) {
-        /* 1) Legacy CKObjectArray (unused) */
-        size_t legacy_count = 0;
-        result = nmo_chunk_read_object_sequence_start(chunk, &legacy_count);
-        if (result != NMO_OK) return result;
-        if (legacy_count > nmo_level_identifier_remaining_dwords(chunk)) {
-            return NMO_ERR_TRUNCATED_CHUNK;
-        }
-        for (size_t i = 0; i < legacy_count; ++i) {
-            nmo_object_id_t ignored_id = 0;
-            NMO_RETURN_IF_ERROR(nmo_chunk_read_object_sequence_item(chunk, &ignored_id));
-        }
-
-        /* 2) Legacy XObjectPointerArray (empty in modern files) */
-        result = nmo_chunk_read_object_sequence_start(chunk, &legacy_count);
-        if (result != NMO_OK) return result;
-        if (legacy_count > nmo_level_identifier_remaining_dwords(chunk)) {
-            return NMO_ERR_TRUNCATED_CHUNK;
-        }
-        for (size_t i = 0; i < legacy_count; ++i) {
-            nmo_object_id_t ignored_id = 0;
-            NMO_RETURN_IF_ERROR(nmo_chunk_read_object_sequence_item(chunk, &ignored_id));
-        }
-
-        /* 3) Scene list (XObjectPointerArray::Save) */
-        size_t scene_count = 0;
-        result = nmo_chunk_read_object_sequence_start(chunk, &scene_count);
-        if (result != NMO_OK) return result;
-
-        if (scene_count > SIZE_MAX / sizeof(nmo_ref_t)) {
-            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
-                             "Scene count exceeds maximum");
-        }
-        if (scene_count > nmo_level_identifier_remaining_dwords(chunk)) {
-            return NMO_ERR_TRUNCATED_CHUNK;
+        nmo_array_t legacy_object_ids = {0};
+        nmo_array_t legacy_pointer_ids = {0};
+        nmo_array_t scene_ids = {0};
+        result = nmo_level_read_ref_sequence(
+            chunk,
+            nmo_level_array_allocator(&out_state->legacy_object_ids),
+            &legacy_object_ids);
+        if (result != NMO_OK) goto default_data_fail;
+        result = nmo_level_read_ref_sequence(
+            chunk,
+            nmo_level_array_allocator(&out_state->legacy_pointer_ids),
+            &legacy_pointer_ids);
+        if (result != NMO_OK) goto default_data_fail;
+        result = nmo_level_read_ref_sequence(
+            chunk, nmo_level_array_allocator(&out_state->scene_ids),
+            &scene_ids);
+        if (result != NMO_OK) goto default_data_fail;
+        if (nmo_level_identifier_remaining_dwords(chunk) != 0u) {
+            result = NMO_ERR_INVALID_FORMAT;
+            goto default_data_fail;
         }
 
-        nmo_array_t scene_ids;
-        result = nmo_array_init(&scene_ids, sizeof(nmo_ref_t),
-                                scene_count, &out_state->scene_ids.allocator);
-        if (result != NMO_OK) return result;
-        if (scene_count > 0) {
-            nmo_ref_t *refs = NULL;
-            result = nmo_array_extend(&scene_ids, scene_count, (void **)&refs);
-            if (result != NMO_OK) {
-                nmo_array_dispose(&scene_ids);
-                return result;
-            }
-
-            for (size_t i = 0; i < scene_count; i++) {
-                result = nmo_ref_read(chunk, &refs[i]);
-                if (result != NMO_OK) {
-                    nmo_array_dispose(&scene_ids);
-                    return result;
-                }
-                nmo_ref_check_class(
-                    &refs[i],
-                    (const nmo_object_repository_t *)
-                        nmo_deserialize_context_get_repository(context),
-                    nmo_deserialize_context_get_type_registry(context),
-                    NMO_CID_SCENE);
-            }
+        nmo_ref_t *scenes = NMO_ARRAY_DATA(nmo_ref_t, &scene_ids);
+        for (size_t i = 0; i < scene_ids.count; ++i) {
+            nmo_ref_check_class(
+                &scenes[i],
+                (const nmo_object_repository_t *)
+                    nmo_deserialize_context_get_repository(context),
+                nmo_deserialize_context_get_type_registry(context),
+                NMO_CID_SCENE);
         }
-        NMO_RETURN_IF_ERROR(nmo_array_swap(&out_state->scene_ids, &scene_ids));
+
+        nmo_array_t old_legacy_object_ids = out_state->legacy_object_ids;
+        nmo_array_t old_legacy_pointer_ids = out_state->legacy_pointer_ids;
+        nmo_array_t old_scene_ids = out_state->scene_ids;
+        out_state->legacy_object_ids = legacy_object_ids;
+        out_state->legacy_pointer_ids = legacy_pointer_ids;
+        out_state->scene_ids = scene_ids;
+        legacy_object_ids = old_legacy_object_ids;
+        legacy_pointer_ids = old_legacy_pointer_ids;
+        scene_ids = old_scene_ids;
+        nmo_array_dispose(&legacy_object_ids);
+        nmo_array_dispose(&legacy_pointer_ids);
         nmo_array_dispose(&scene_ids);
+        goto default_data_done;
+
+default_data_fail:
+        nmo_array_dispose(&legacy_object_ids);
+        nmo_array_dispose(&legacy_pointer_ids);
+        nmo_array_dispose(&scene_ids);
+        return result;
+default_data_done:;
     } else if (result != NMO_ERR_NOT_FOUND) return result;
 
     /* Section 2: LEVELSCENE - Current scene + level scene */
@@ -502,13 +556,27 @@ static nmo_status_t nmo_level_serialize_internal(
     result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_LEVELDEFAULTDATA);
     if (result != NMO_OK) return result;
 
-    /* 1) Legacy CKObjectArray (unused) */
-    result = nmo_chunk_write_object_sequence_start(out_chunk, 0);
+    /* 1) Legacy CKObjectArray */
+    result = nmo_chunk_write_object_sequence_start(
+        out_chunk, in_state->legacy_object_ids.count);
     if (result != NMO_OK) return result;
+    const nmo_ref_t *legacy_object_ids = NMO_ARRAY_DATA(
+        nmo_ref_t, &in_state->legacy_object_ids);
+    for (size_t i = 0; i < in_state->legacy_object_ids.count; ++i) {
+        NMO_RETURN_IF_ERROR(nmo_ref_write_sequence_item(
+            out_chunk, &legacy_object_ids[i]));
+    }
 
-    /* 2) Legacy XObjectPointerArray (empty in modern files) */
-    result = nmo_chunk_write_object_sequence_start(out_chunk, 0);
+    /* 2) Legacy XObjectPointerArray */
+    result = nmo_chunk_write_object_sequence_start(
+        out_chunk, in_state->legacy_pointer_ids.count);
     if (result != NMO_OK) return result;
+    const nmo_ref_t *legacy_pointer_ids = NMO_ARRAY_DATA(
+        nmo_ref_t, &in_state->legacy_pointer_ids);
+    for (size_t i = 0; i < in_state->legacy_pointer_ids.count; ++i) {
+        NMO_RETURN_IF_ERROR(nmo_ref_write_sequence_item(
+            out_chunk, &legacy_pointer_ids[i]));
+    }
 
     /* 3) Scene list */
     result = nmo_chunk_write_object_sequence_start(out_chunk, in_state->scene_ids.count);
@@ -596,6 +664,16 @@ static nmo_status_t nmo_level_copy(
     copied.level_scene = s->level_scene;
     copied.has_inactive_manager_section = s->has_inactive_manager_section;
 
+    nmo_array_dispose(&copied.legacy_object_ids);
+    result = nmo_array_clone(
+        &s->legacy_object_ids, &copied.legacy_object_ids,
+        &s->legacy_object_ids.allocator);
+    if (result != NMO_OK) goto fail;
+    nmo_array_dispose(&copied.legacy_pointer_ids);
+    result = nmo_array_clone(
+        &s->legacy_pointer_ids, &copied.legacy_pointer_ids,
+        &s->legacy_pointer_ids.allocator);
+    if (result != NMO_OK) goto fail;
     nmo_array_dispose(&copied.scene_ids);
     result = nmo_array_clone(
         &s->scene_ids, &copied.scene_ids, &s->scene_ids.allocator);
@@ -624,6 +702,8 @@ static nmo_status_t nmo_level_copy(
     NMO_LEVEL_DETACH_SHARED_ARRAY(base.scripts);
     NMO_LEVEL_DETACH_SHARED_ARRAY(base.attributes);
     NMO_LEVEL_DETACH_SHARED_ARRAY(base.legacy_attributes);
+    NMO_LEVEL_DETACH_SHARED_ARRAY(legacy_object_ids);
+    NMO_LEVEL_DETACH_SHARED_ARRAY(legacy_pointer_ids);
     NMO_LEVEL_DETACH_SHARED_ARRAY(scene_ids);
     NMO_LEVEL_DETACH_SHARED_ARRAY(inactive_manager_guids);
     NMO_LEVEL_DETACH_SHARED_ARRAY(duplicate_manager_names);
@@ -674,6 +754,20 @@ static nmo_status_t nmo_level_validate(
     if (s == NULL) return NMO_ERR_INVALID_ARGUMENT;
     NMO_RETURN_IF_ERROR(nmo_beobject_vtable.validate(
         &s->base, NULL, context));
+    NMO_VALIDATE_COUNT(
+        s->legacy_object_ids.data, s->legacy_object_ids.count,
+        "legacy_object_ids");
+    if (s->legacy_object_ids.element_size != sizeof(nmo_ref_t) ||
+        s->legacy_object_ids.count > INT32_MAX) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    NMO_VALIDATE_COUNT(
+        s->legacy_pointer_ids.data, s->legacy_pointer_ids.count,
+        "legacy_pointer_ids");
+    if (s->legacy_pointer_ids.element_size != sizeof(nmo_ref_t) ||
+        s->legacy_pointer_ids.count > INT32_MAX) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
     NMO_VALIDATE_COUNT(s->scene_ids.data, s->scene_ids.count, "scene_ids");
     if (s->scene_ids.element_size != sizeof(nmo_ref_t) ||
         s->scene_ids.count > INT32_MAX) {
@@ -742,6 +836,8 @@ static nmo_status_t nmo_level_pre_delete(
                          "Invalid arguments to nmo_level_pre_delete");
     }
     nmo_level_state_t *state = (nmo_level_state_t *)instance;
+    state->legacy_object_ids.count = 0;
+    state->legacy_pointer_ids.count = 0;
     state->scene_ids.count = 0;
     state->current_scene = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     state->level_scene = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);

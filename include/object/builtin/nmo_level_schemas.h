@@ -41,7 +41,7 @@ typedef struct nmo_type_descriptor nmo_type_descriptor_t;
  * and providing the execution context.
  * 
  * Storage layout:
- * 1. CK_STATESAVE_LEVELDEFAULTDATA: Legacy arrays (empty) + scene list
+ * 1. CK_STATESAVE_LEVELDEFAULTDATA: Legacy arrays + scene list
  * 2. CK_STATESAVE_LEVELSCENE: Current scene + level scene with embedded chunk
  * 3. CK_STATESAVE_LEVELINACTIVEMAN (optional): Inactive manager GUIDs
  * 4. CK_STATESAVE_LEVELDUPLICATEMAN (optional): Duplicate manager names
@@ -53,6 +53,8 @@ typedef struct nmo_level_state {
     nmo_beobject_state_t base;         /**< CKBeObject base state */
     
     /* Scene management */
+    nmo_array_t legacy_object_ids;       /**< First legacy object sequence (nmo_ref_t) */
+    nmo_array_t legacy_pointer_ids;      /**< Second legacy object sequence (nmo_ref_t) */
     nmo_array_t scene_ids;               /**< Scene references (nmo_ref_t) */
     
     nmo_ref_t current_scene;              /**< Current active scene */
