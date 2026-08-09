@@ -1693,6 +1693,31 @@ TEST(chunk_id_remap, interfaceobjectmanager_chunk_count_stays_in_section) {
     ASSERT_EQ(&old_chunk, state.chunks);
     ASSERT_EQ(1u, state.has_chunks_chunk);
 
+    fail_after_allocator_state_t allocator_state = {
+        .allocation_count = 0,
+        .allowed_allocations = 2,
+    };
+    nmo_allocator_t failing_allocator = nmo_allocator_custom(
+        fail_after_alloc, fail_after_free, &allocator_state);
+    nmo_arena_t *copy_arena = nmo_arena_create(&failing_allocator, 1);
+    ASSERT_NOT_NULL(copy_arena);
+    nmo_chunk_t *preserved_chunk = cross_section_count;
+    nmo_interfaceobjectmanager_state_t copy_target;
+    ASSERT_EQ(NMO_OK, nmo_interfaceobjectmanager_vtable.create(
+        &copy_target, NULL, NULL));
+    copy_target.base.visibility_flags = 0x12345678u;
+    copy_target.chunk_count = 1;
+    copy_target.chunks = &preserved_chunk;
+    copy_target.has_chunks_chunk = 1;
+    ASSERT_EQ(NMO_ERR_NOMEM, nmo_interfaceobjectmanager_vtable.copy(
+        &state, &copy_target, NULL, copy_arena));
+    ASSERT_EQ(0x12345678u, copy_target.base.visibility_flags);
+    ASSERT_EQ(1, copy_target.chunk_count);
+    ASSERT_EQ(&preserved_chunk, copy_target.chunks);
+    ASSERT_EQ(cross_section_count, copy_target.chunks[0]);
+
+    nmo_interfaceobjectmanager_vtable.destroy(&copy_target, NULL, NULL);
+    nmo_arena_destroy(copy_arena);
     nmo_interfaceobjectmanager_vtable.destroy(&state, NULL, NULL);
     nmo_arena_destroy(arena);
 }

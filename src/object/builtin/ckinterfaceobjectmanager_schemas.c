@@ -26,14 +26,15 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
     interfaceobjectmanager,
     nmo_interfaceobjectmanager_state_t,
     do {
-        state->base.visibility_flags = NMO_CKOBJECT_VISIBLE;
+        NMO_RETURN_IF_ERROR(nmo_object_vtable.create(
+            &state->base, NULL, context));
         state->chunk_count = 0;
         state->chunks = NULL;
         state->has_chunks_chunk = 1;
         state->guid = NMO_GUID_NULL;
         state->has_guid_chunk = 1;
     } while (0),
-    ((void)0))
+    nmo_object_vtable.destroy(&state->base, NULL, context))
 
 /* =============================================================================
  * REFLECTION FIELDS
@@ -160,6 +161,11 @@ static nmo_status_t nmo_interfaceobjectmanager_deserialize_internal(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t nmo_interfaceobjectmanager_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
+
 static nmo_status_t nmo_interfaceobjectmanager_copy(
     const void *src,
     void *dst,
@@ -168,12 +174,38 @@ static nmo_status_t nmo_interfaceobjectmanager_copy(
 {
     const nmo_interfaceobjectmanager_state_t *s = src;
     nmo_interfaceobjectmanager_state_t *d = dst;
-    if (s->chunk_count < 0 ||
-        (s->chunk_count > 0 && s->chunks == NULL)) {
-        return NMO_ERR_VALIDATION_FAILED;
+    if (s == NULL || d == NULL || arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
     }
-    NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
-    return nmo_object_copy_chunk_array(arena, &d->chunks, s->chunks, (uint32_t)s->chunk_count);
+    NMO_RETURN_IF_ERROR(nmo_interfaceobjectmanager_validate(
+        s, type, NULL));
+
+    nmo_interfaceobjectmanager_state_t copied;
+    nmo_status_t result = nmo_interfaceobjectmanager_create(
+        &copied, NULL, NULL);
+    if (result != NMO_OK) return result;
+    nmo_type_descriptor_t base_type = {
+        .size = sizeof(nmo_object_state_t),
+    };
+    result = nmo_object_vtable.copy(
+        &s->base, &copied.base, &base_type, arena);
+    if (result != NMO_OK) goto fail;
+
+    copied.chunk_count = s->chunk_count;
+    copied.has_chunks_chunk = s->has_chunks_chunk;
+    copied.guid = s->guid;
+    copied.has_guid_chunk = s->has_guid_chunk;
+    result = nmo_object_copy_chunk_array(
+        arena, &copied.chunks, s->chunks, (uint32_t)s->chunk_count);
+    if (result != NMO_OK) goto fail;
+
+    nmo_interfaceobjectmanager_destroy(d, NULL, NULL);
+    *d = copied;
+    return NMO_OK;
+
+fail:
+    nmo_interfaceobjectmanager_destroy(&copied, NULL, NULL);
+    return result;
 }
 
 static nmo_status_t nmo_interfaceobjectmanager_validate(
