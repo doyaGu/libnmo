@@ -121,6 +121,7 @@ static const nmo_type_field_t nmo_material_fields[] = {
     NMO_FIELD(nmo_material_state_t, effect, CKPGUID_UINT32),
     NMO_FIELD_REF(nmo_material_state_t, effect_parameter),
     NMO_FIELD(nmo_material_state_t, has_material_data, CKPGUID_UINT8),
+    NMO_FIELD(nmo_material_state_t, material_data_is_legacy, CKPGUID_UINT8),
     NMO_FIELD(nmo_material_state_t, has_effect, CKPGUID_UINT8),
     NMO_FIELD(nmo_material_state_t, has_effect_param, CKPGUID_UINT8),
     NMO_FIELD(nmo_material_state_t, has_additional_textures, CKPGUID_UINT8)
@@ -158,6 +159,7 @@ static nmo_status_t nmo_material_deserialize_internal(
     }
     decoded.effect_parameter = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     decoded.has_material_data = 0;
+    decoded.material_data_is_legacy = 0;
     decoded.has_effect = 0;
     decoded.has_effect_param = 0;
     decoded.has_additional_textures = 0;
@@ -167,6 +169,7 @@ static nmo_status_t nmo_material_deserialize_internal(
     if (seek_result == NMO_OK) {
         decoded.has_material_data = 1;
         uint32_t data_version = nmo_chunk_get_data_version(chunk);
+        decoded.material_data_is_legacy = data_version < 5u;
 
         if (data_version < 5) {
             float r = 0.0f, g = 0.0f, b = 0.0f, a = 0.0f;
@@ -492,6 +495,7 @@ static nmo_status_t nmo_material_copy(
     target->effect = source->effect;
     target->effect_parameter = source->effect_parameter;
     target->has_material_data = source->has_material_data;
+    target->material_data_is_legacy = source->material_data_is_legacy;
     target->has_effect = source->has_effect;
     target->has_effect_param = source->has_effect_param;
     target->has_additional_textures = source->has_additional_textures;
@@ -508,9 +512,7 @@ static nmo_status_t nmo_material_validate(
     const nmo_material_state_t *state = instance;
     NMO_RETURN_IF_ERROR(nmo_beobject_vtable.validate(
         &state->base, NULL, context));
-    if (nmo_material_normalize_packed_flags(state->packed_flags) !=
-        state->packed_flags ||
-        ((state->packed_modes >> 20) & 0xFu) >
+    if (((state->packed_modes >> 20) & 0xFu) >
             (uint32_t)VXSHADE_GOURAUD ||
         (state->has_effect_param && !state->has_effect)) {
         NMO_RETURN_ERROR(
@@ -557,6 +559,7 @@ static bool nmo_material_equals(const void *a, const void *b)
         nmo_material_ref_equals(
             &lhs->effect_parameter, &rhs->effect_parameter) &&
         lhs->has_material_data == rhs->has_material_data &&
+        lhs->material_data_is_legacy == rhs->material_data_is_legacy &&
         lhs->has_effect == rhs->has_effect &&
         lhs->has_effect_param == rhs->has_effect_param &&
         lhs->has_additional_textures == rhs->has_additional_textures;
@@ -605,6 +608,7 @@ static uint32_t nmo_material_hash(const void *instance)
     NMO_MATERIAL_HASH_FIELD(effect);
     hash = nmo_material_hash_ref(hash, &state->effect_parameter);
     NMO_MATERIAL_HASH_FIELD(has_material_data);
+    NMO_MATERIAL_HASH_FIELD(material_data_is_legacy);
     NMO_MATERIAL_HASH_FIELD(has_effect);
     NMO_MATERIAL_HASH_FIELD(has_effect_param);
     NMO_MATERIAL_HASH_FIELD(has_additional_textures);
@@ -660,8 +664,9 @@ static nmo_status_t nmo_material_serialize_internal(
 
     const bool write_material = is_file ||
         (save_flags & CK_STATESAVE_MATERIALONLY) != 0;
-    const bool write_legacy = is_file &&
-        nmo_chunk_get_data_version(chunk) < 5u;
+    const uint32_t data_version = nmo_chunk_get_data_version(chunk);
+    const bool write_legacy = is_file && data_version < 5u &&
+        (data_version != 0u || state->material_data_is_legacy);
     if (write_material) {
         NMO_RETURN_IF_ERROR(nmo_material_validate(state, type, context));
         if (write_legacy &&
@@ -692,7 +697,8 @@ static nmo_status_t nmo_material_serialize_internal(
         nmo_ref_serialized_id(&state->textures[0]) == NMO_OBJECT_ID_NONE &&
         state->texture_border_color == defaults.texture_border_color &&
         state->packed_modes == defaults.packed_modes &&
-        state->packed_flags == defaults.packed_flags;
+        nmo_material_normalize_packed_flags(state->packed_flags) ==
+            defaults.packed_flags;
     const bool write_data = !is_file || state->has_material_data ||
         !has_default_data;
 
@@ -757,7 +763,8 @@ static nmo_status_t nmo_material_serialize_internal(
             NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
                 chunk, state->packed_modes));
             NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
-                chunk, state->packed_flags));
+                chunk, nmo_material_normalize_packed_flags(
+                    state->packed_flags)));
         }
     }
 

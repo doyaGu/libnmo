@@ -2301,11 +2301,12 @@ TEST(chunk_id_remap, material_preserves_file_layouts) {
     nmo_material_state_t material;
     ASSERT_EQ(NMO_OK, nmo_material_vtable.create(&material, NULL, NULL));
     ASSERT_TRUE(material.has_material_data);
+    material.material_data_is_legacy = 1;
 
     nmo_chunk_t *legacy = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(legacy);
     legacy->class_id = NMO_CID_MATERIAL;
-    legacy->data_version = 4;
+    legacy->data_version = 0;
     legacy->chunk_options |= NMO_CHUNK_OPTION_FILE;
     ASSERT_EQ(NMO_OK, nmo_material_serialize(
         &material, legacy, NULL, &serialize_context));
@@ -2316,6 +2317,7 @@ TEST(chunk_id_remap, material_preserves_file_layouts) {
     ASSERT_EQ(NMO_OK, nmo_material_deserialize(
         &loaded, legacy, NULL, &deserialize_context));
     ASSERT_TRUE(loaded.has_material_data);
+    ASSERT_TRUE(loaded.material_data_is_legacy);
     ASSERT_EQ(material.diffuse_color, loaded.diffuse_color);
     ASSERT_EQ(material.ambient_color, loaded.ambient_color);
     ASSERT_EQ(material.specular_color, loaded.specular_color);
