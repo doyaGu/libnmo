@@ -823,6 +823,10 @@ nmo_status_t nmo_object_system_deserialize_loaded_objects(
             if (issue_result != NMO_OK) {
                 return issue_result;
             }
+            if (read_result == NMO_ERR_NOMEM ||
+                read_result == NMO_ERR_INTERNAL) {
+                return read_result;
+            }
             continue;
         }
 

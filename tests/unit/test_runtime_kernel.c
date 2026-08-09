@@ -1252,6 +1252,81 @@ TEST(runtime_kernel, behavior_normalize_validates_lanes_before_mutation) {
     nmo_context_release(ctx);
 }
 
+TEST(runtime_kernel, deserialize_propagates_chunk_reader_oom) {
+    runtime_ref_graph_fail_allocator_state_t fail_state = {0};
+    nmo_allocator_t fail_allocator = nmo_allocator_custom(
+        runtime_ref_graph_fail_alloc,
+        runtime_ref_graph_fail_free,
+        &fail_state);
+    nmo_context_desc_t desc = {
+        .allocator = &fail_allocator,
+    };
+    nmo_context_t *ctx = nmo_context_create(&desc);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_arena_t *arena = nmo_session_get_arena(session);
+    const nmo_type_runtime_t *type_rt = nmo_context_get_type_runtime(ctx);
+    ASSERT_NOT_NULL(repo);
+    ASSERT_NOT_NULL(arena);
+    ASSERT_NOT_NULL(type_rt);
+
+    nmo_allocator_t object_allocator = nmo_allocator_default();
+    nmo_object_t *obj = nmo_object_create(
+        &object_allocator, NMO_OBJECT_ID_NONE, NMO_CID_OBJECT);
+    ASSERT_NOT_NULL(obj);
+    nmo_object_t *repo_obj = obj;
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(repo, &obj));
+    obj = repo_obj;
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 123));
+    nmo_chunk_close(chunk);
+    chunk->parser_state = NULL;
+    obj->chunk = chunk;
+
+    nmo_id_mapping_t *load_session = nmo_id_mapping_create(repo, 1);
+    ASSERT_NOT_NULL(load_session);
+    ASSERT_EQ(NMO_OK, nmo_id_mapping_register(load_session, obj, 0));
+
+    ASSERT_NOT_NULL(nmo_arena_alloc(
+        arena, 2u * 1024u * 1024u, 1u));
+    fail_state.fail_allocations = 1;
+
+    nmo_load_diagnostics_t diagnostics;
+    nmo_load_diagnostics_init(&diagnostics);
+    nmo_object_system_deserialize_stats_t stats = {0};
+    ASSERT_EQ(
+        NMO_ERR_NOMEM,
+        nmo_object_system_deserialize_loaded_objects(
+            repo,
+            type_rt,
+            arena,
+            NULL,
+            NULL,
+            0,
+            NULL,
+            test_id_lookup,
+            load_session,
+            1,
+            &diagnostics,
+            &stats));
+    ASSERT_NULL(obj->state);
+    ASSERT_EQ(0u, obj->state_size);
+    ASSERT_EQ((size_t)1, diagnostics.count);
+    ASSERT_EQ(NMO_ERR_NOMEM, diagnostics.issues[0].status);
+
+    fail_state.fail_allocations = 0;
+    nmo_load_diagnostics_destroy(&diagnostics);
+    nmo_id_mapping_destroy(load_session);
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(runtime_kernel, beobject_normalize_validates_attributes_before_mutation) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
@@ -3696,6 +3771,7 @@ REGISTER_TEST(runtime_kernel, delete_safe_detach_prunes_group_references);
 REGISTER_TEST(runtime_kernel, delete_safe_detach_uses_explicit_object_type);
 REGISTER_TEST(runtime_kernel, delete_safe_detach_prunes_behavior_links_with_deleted_io);
 REGISTER_TEST(runtime_kernel, delete_cascade_removes_referencing_group);
+REGISTER_TEST(runtime_kernel, deserialize_propagates_chunk_reader_oom);
 REGISTER_TEST(runtime_kernel, deserialize_failure_does_not_publish_state_for_finalize);
 REGISTER_TEST(runtime_kernel, normalize_removes_only_invalid_reference_records);
 REGISTER_TEST(runtime_kernel, behavior_normalize_validates_lanes_before_mutation);
