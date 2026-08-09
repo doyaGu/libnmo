@@ -2151,6 +2151,95 @@ TEST(runtime_kernel, rejects_malformed_grid_storage_before_runtime_mutation) {
     nmo_context_release(ctx);
 }
 
+TEST(runtime_kernel, safe_detach_rejects_malformed_ref_array_storage) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_id_t victim_id = 0;
+    nmo_object_id_t synchro_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_OBJECT, "victim", NMO_NULL_GUID,
+        &victim_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_SYNCHRO, "synchro", NMO_NULL_GUID,
+        &synchro_id, NULL));
+    nmo_synchro_state_t *synchro = (nmo_synchro_state_t *)
+        nmo_object_repository_find_by_id(repo, synchro_id)->state;
+    ASSERT_NOT_NULL(synchro);
+    nmo_ref_t victim_ref = nmo_ref_from_id(victim_id);
+    ASSERT_EQ(NMO_OK, nmo_array_append(&synchro->arrived_ids, &victim_ref));
+
+    ASSERT_NOT_NULL(nmo_session_get_ref_graph(session));
+    const size_t saved_element_size = synchro->arrived_ids.element_size;
+    synchro->arrived_ids.element_size = 1u;
+
+    nmo_runtime_report_t report = {0};
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_session_destroy_objects(
+        session, &victim_id, 1,
+        NMO_RUNTIME_REQUEST_STRICT | NMO_RUNTIME_REQUEST_SAFE_DETACH,
+        &report));
+    ASSERT_EQ(0u, report.deleted_objects);
+    ASSERT_NOT_NULL(nmo_object_repository_find_by_id(repo, victim_id));
+    ASSERT_EQ(1u, synchro->arrived_ids.count);
+
+    synchro->arrived_ids.element_size = saved_element_size;
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
+TEST(runtime_kernel, safe_detach_validates_behavior_before_mutation) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_id_t victim_id = 0;
+    nmo_object_id_t group_id = 0;
+    nmo_object_id_t behavior_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_OBJECT, "victim", NMO_NULL_GUID,
+        &victim_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_GROUP, "group", NMO_NULL_GUID,
+        &group_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_BEHAVIOR, "behavior", NMO_NULL_GUID,
+        &behavior_id, NULL));
+    nmo_object_t *group_obj =
+        nmo_object_repository_find_by_id(repo, group_id);
+    ASSERT_NOT_NULL(group_obj);
+    runtime_group_set_members(group_obj, &victim_id, 1);
+    nmo_behavior_state_t *behavior = (nmo_behavior_state_t *)
+        nmo_object_repository_find_by_id(repo, behavior_id)->state;
+    ASSERT_NOT_NULL(behavior);
+
+    ASSERT_NOT_NULL(nmo_session_get_ref_graph(session));
+    const size_t saved_element_size = behavior->outputs.element_size;
+    behavior->outputs.element_size = 1u;
+
+    nmo_runtime_report_t report = {0};
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_session_destroy_objects(
+        session, &victim_id, 1,
+        NMO_RUNTIME_REQUEST_STRICT | NMO_RUNTIME_REQUEST_SAFE_DETACH,
+        &report));
+    ASSERT_EQ(0u, report.deleted_objects);
+    ASSERT_NOT_NULL(nmo_object_repository_find_by_id(repo, victim_id));
+    nmo_group_state_t *group = (nmo_group_state_t *)group_obj->state;
+    ASSERT_EQ(1u, group->object_ids.count);
+    ASSERT_EQ(victim_id, nmo_ref_runtime_id(
+        &NMO_ARRAY_DATA(nmo_ref_t, &group->object_ids)[0]));
+
+    behavior->outputs.element_size = saved_element_size;
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(runtime_kernel, safe_detach_prunes_all_beobject_attribute_layouts) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
@@ -3587,6 +3676,8 @@ REGISTER_TEST(runtime_kernel, safe_detach_keeps_keyedanimation_sections_independ
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_beobject_attributes);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_grid_layers);
 REGISTER_TEST(runtime_kernel, rejects_malformed_grid_storage_before_runtime_mutation);
+REGISTER_TEST(runtime_kernel, safe_detach_rejects_malformed_ref_array_storage);
+REGISTER_TEST(runtime_kernel, safe_detach_validates_behavior_before_mutation);
 REGISTER_TEST(runtime_kernel, safe_detach_prunes_all_beobject_attribute_layouts);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_parameteroperation_refs);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_parameterout_refs);

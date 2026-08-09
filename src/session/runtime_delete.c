@@ -329,16 +329,29 @@ static bool runtime_delete_ref_field(
 {
     (void)field_ptr;
     runtime_delete_ref_ctx_t *ctx = (runtime_delete_ref_ctx_t *)user_data;
-    if (ctx == NULL || field == NULL || !nmo_field_is_ref(field) ||
+    if (ctx == NULL || field == NULL) {
+        if (ctx != NULL) ctx->status = NMO_ERR_INVALID_ARGUMENT;
+        return false;
+    }
+    if (!nmo_field_is_ref(field) ||
         runtime_delete_is_atomic_ref_field(ctx->type, field)) {
         return true;
+    }
+    if (ctx->delete_set == NULL || ctx->type == NULL ||
+        ctx->instance == NULL) {
+        ctx->status = NMO_ERR_INVALID_ARGUMENT;
+        return false;
     }
 
     if (!nmo_field_is_array(field) &&
         field->size == sizeof(nmo_ref_t)) {
         nmo_ref_t *ref = (nmo_ref_t *)nmo_field_get_ptr(
             ctx->instance, field);
-        if (!ctx->validate_only && ref != NULL &&
+        if (ref == NULL) {
+            ctx->status = NMO_ERR_INVALID_STATE;
+            return false;
+        }
+        if (!ctx->validate_only &&
             runtime_id_set_contains(
                 ctx->delete_set, nmo_ref_runtime_id(ref))) {
             *ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
@@ -350,7 +363,11 @@ static bool runtime_delete_ref_field(
         field->size == sizeof(nmo_object_id_t)) {
         nmo_object_id_t *id = (nmo_object_id_t *)nmo_field_get_ptr(
             ctx->instance, field);
-        if (!ctx->validate_only && id != NULL &&
+        if (id == NULL) {
+            ctx->status = NMO_ERR_INVALID_STATE;
+            return false;
+        }
+        if (!ctx->validate_only &&
             runtime_id_set_contains(ctx->delete_set, *id)) {
             *id = NMO_OBJECT_ID_NONE;
         }
@@ -361,37 +378,34 @@ static bool runtime_delete_ref_field(
         nmo_array_t *array = (nmo_array_t *)nmo_field_get_ptr(
             ctx->instance, field);
         if (array == NULL) {
-            return true;
+            ctx->status = NMO_ERR_INVALID_STATE;
+            return false;
         }
+        const size_t element_size = nmo_field_uses_ref_records(field)
+            ? sizeof(nmo_ref_t)
+            : sizeof(nmo_object_id_t);
+        if (((array->element_size != 0u || array->count > 0u) &&
+             array->element_size != element_size) ||
+            (array->count > 0u && array->data == NULL)) {
+            ctx->status = NMO_ERR_VALIDATION_FAILED;
+            return false;
+        }
+        if (ctx->validate_only || array->count == 0u) return true;
         if (nmo_field_uses_ref_records(field)) {
-            if (array->element_size != sizeof(nmo_ref_t)) return true;
-            if (array->count > 0u && array->data == NULL) {
-                ctx->status = NMO_ERR_VALIDATION_FAILED;
-                return false;
-            }
-            if (!ctx->validate_only) {
-                for (size_t i = array->count; i > 0u; --i) {
-                    nmo_ref_t *refs = NMO_ARRAY_DATA(nmo_ref_t, array);
-                    if (runtime_id_set_contains(
-                            ctx->delete_set,
-                            nmo_ref_runtime_id(&refs[i - 1u]))) {
-                        ctx->status = nmo_array_remove(array, i - 1u, NULL);
-                        if (ctx->status != NMO_OK) return false;
-                    }
+            for (size_t i = array->count; i > 0u; --i) {
+                nmo_ref_t *refs = NMO_ARRAY_DATA(nmo_ref_t, array);
+                if (runtime_id_set_contains(
+                        ctx->delete_set,
+                        nmo_ref_runtime_id(&refs[i - 1u]))) {
+                    ctx->status = nmo_array_remove(array, i - 1u, NULL);
+                    if (ctx->status != NMO_OK) return false;
                 }
             }
             return true;
         }
-        if (array->element_size != sizeof(nmo_object_id_t)) return true;
-        if (array->count > 0u && array->data == NULL) {
-            ctx->status = NMO_ERR_VALIDATION_FAILED;
-            return false;
-        }
-        if (!ctx->validate_only) {
-            ctx->status = runtime_remove_deleted_ids_from_array(
-                array, NULL, ctx->delete_set);
-            if (ctx->status != NMO_OK) return false;
-        }
+        ctx->status = runtime_remove_deleted_ids_from_array(
+            array, NULL, ctx->delete_set);
+        if (ctx->status != NMO_OK) return false;
         return true;
     }
 
@@ -461,8 +475,10 @@ static bool runtime_delete_ref_field(
             *count_ptr = kept;
             if (kept == 0u) *ids = NULL;
         }
+        return true;
     }
-    return true;
+    ctx->status = NMO_ERR_VALIDATION_FAILED;
+    return false;
 }
 
 static nmo_status_t runtime_delete_visit_ref_fields(
@@ -963,12 +979,6 @@ static nmo_status_t runtime_detach_deleted_references(
         NMO_RETURN_IF_ERROR(runtime_delete_validate_atomic_refs(type_rt, obj));
         NMO_RETURN_IF_ERROR(runtime_delete_visit_ref_fields(
             type_rt, obj, delete_set, true));
-        if (obj->class_id == NMO_CID_GROUP) {
-            nmo_group_state_t *group = (nmo_group_state_t *)obj->state;
-            if (group->object_ids.count > 0u && group->object_ids.data == NULL) {
-                return NMO_ERR_VALIDATION_FAILED;
-            }
-        }
         if (!obj || obj->class_id != NMO_CID_BEHAVIOR || !obj->state ||
             runtime_id_set_contains(delete_set, obj->id)) {
             continue;
@@ -987,8 +997,12 @@ static nmo_status_t runtime_detach_deleted_references(
         };
         for (size_t ai = 0u;
              ai < sizeof(plain_arrays) / sizeof(plain_arrays[0]); ++ai) {
-            if (plain_arrays[ai]->count > 0u &&
-                plain_arrays[ai]->data == NULL) {
+            if (((plain_arrays[ai]->element_size != 0u ||
+                  plain_arrays[ai]->count > 0u) &&
+                 plain_arrays[ai]->element_size !=
+                     sizeof(nmo_behavior_ref_t)) ||
+                (plain_arrays[ai]->count > 0u &&
+                 plain_arrays[ai]->data == NULL)) {
                 return NMO_ERR_VALIDATION_FAILED;
             }
         }
