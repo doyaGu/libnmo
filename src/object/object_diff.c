@@ -448,6 +448,12 @@ static bool scalar_equal(const nmo_type_field_t *f,
     if (!f) return false;
     if (!p1 || !p2) return p1 == p2;
 
+    if (nmo_guid_equals(f->type_guid, CKPGUID_STATECHUNK) &&
+        f->size == sizeof(nmo_chunk_t *)) {
+        return diff_chunk_value_equal(
+            *(nmo_chunk_t *const *)p1, *(nmo_chunk_t *const *)p2);
+    }
+
     /* Pointer fields: compare pointed-to data, not pointer addresses.
      * Resolve the pointee type via registry to get the real struct size. */
     if (f->flags & NMO_FIELD_POINTER) {
@@ -481,6 +487,19 @@ static bool scalar_equal(const nmo_type_field_t *f,
     return memcmp(p1, p2, f->size) == 0;
 }
 
+static bool reflected_instance_equal(
+    const nmo_type_descriptor_t *t1,
+    const void *instance1,
+    const nmo_type_registry_t *registry1,
+    const nmo_type_descriptor_t *t2,
+    const void *instance2,
+    const nmo_type_registry_t *registry2,
+    const nmo_object_repository_t *repo1,
+    const nmo_object_repository_t *repo2,
+    const match_lookup_t *lookup,
+    bool use_refs,
+    unsigned depth);
+
 static bool repeated_equal(const nmo_type_descriptor_t *t1,
                            const void *instance1,
                            const nmo_type_field_t *f1,
@@ -492,7 +511,8 @@ static bool repeated_equal(const nmo_type_descriptor_t *t1,
                            const nmo_object_repository_t *repo1,
                            const nmo_object_repository_t *repo2,
                            const match_lookup_t *lookup,
-                           bool use_refs)
+                           bool use_refs,
+                           unsigned depth)
 {
     if (!f1 || !f2) return false;
     const bool ref1 = is_object_ref(f1);
@@ -567,6 +587,36 @@ static bool repeated_equal(const nmo_type_descriptor_t *t1,
         }
         return true;
     }
+
+    const nmo_type_descriptor_t *element_type1 =
+        registry1 && !nmo_guid_is_null(f1->type_guid)
+            ? nmo_type_registry_find_by_guid(registry1, f1->type_guid)
+            : NULL;
+    const nmo_type_descriptor_t *element_type2 =
+        registry2 && !nmo_guid_is_null(f2->type_guid)
+            ? nmo_type_registry_find_by_guid(registry2, f2->type_guid)
+            : NULL;
+    if (element_type1 && element_type2 &&
+        element_type1->category == NMO_TYPE_CATEGORY_STRUCT &&
+        element_type2->category == NMO_TYPE_CATEGORY_STRUCT &&
+        nmo_type_has_reflection(element_type1) &&
+        nmo_type_has_reflection(element_type2) &&
+        element_type1->size == view1.element_size &&
+        element_type2->size == view2.element_size) {
+        for (size_t i = 0; i < view1.count; ++i) {
+            const void *item1 =
+                (const uint8_t *)view1.data + i * view1.element_size;
+            const void *item2 =
+                (const uint8_t *)view2.data + i * view2.element_size;
+            if (!reflected_instance_equal(
+                    element_type1, item1, registry1,
+                    element_type2, item2, registry2,
+                    repo1, repo2, lookup, use_refs, depth + 1u)) {
+                return false;
+            }
+        }
+        return true;
+    }
     size_t byte_count = 0;
     return diff_mul_size(view1.count, view1.element_size, &byte_count) &&
            memcmp(view1.data, view2.data, byte_count) == 0;
@@ -578,6 +628,11 @@ static bool scalar_equal_noref(const nmo_type_field_t *f, const void *p1, const 
     if (!f) return false;
     if (!p1 || !p2) return p1 == p2;
     if (is_object_ref(f)) return true;
+    if (nmo_guid_equals(f->type_guid, CKPGUID_STATECHUNK) &&
+        f->size == sizeof(nmo_chunk_t *)) {
+        return diff_chunk_value_equal(
+            *(nmo_chunk_t *const *)p1, *(nmo_chunk_t *const *)p2);
+    }
     /* Pointer fields: compare pointed-to data, not pointer addresses */
     if (f->flags & NMO_FIELD_POINTER) {
         const void *a_ptr = *(const void *const *)p1;
@@ -596,6 +651,55 @@ static bool scalar_equal_noref(const nmo_type_field_t *f, const void *p1, const 
         return strcmp(s1, s2) == 0;
     }
     return memcmp(p1, p2, f->size) == 0;
+}
+
+static bool reflected_instance_equal(
+    const nmo_type_descriptor_t *t1,
+    const void *instance1,
+    const nmo_type_registry_t *registry1,
+    const nmo_type_descriptor_t *t2,
+    const void *instance2,
+    const nmo_type_registry_t *registry2,
+    const nmo_object_repository_t *repo1,
+    const nmo_object_repository_t *repo2,
+    const match_lookup_t *lookup,
+    bool use_refs,
+    unsigned depth)
+{
+    if (!t1 || !t2 || !instance1 || !instance2 || depth > 16u ||
+        !nmo_guid_equals(t1->guid, t2->guid) ||
+        t1->field_count != t2->field_count) {
+        return false;
+    }
+
+    for (size_t i = 0; i < t1->field_count; ++i) {
+        const nmo_type_field_t *f1 = nmo_type_get_field_by_index(t1, i);
+        if (!f1 || !f1->name || nmo_field_is_base_embedding(t1, f1)) {
+            continue;
+        }
+        const nmo_type_field_t *f2 = nmo_type_get_field_by_name(t2, f1->name);
+        if (!f2 || f1->size != f2->size) return false;
+
+        const void *p1 = nmo_field_get_ptr_const(instance1, f1);
+        const void *p2 = nmo_field_get_ptr_const(instance2, f2);
+        if ((f1->flags & NMO_FIELD_REPEATED) ||
+            (f2->flags & NMO_FIELD_REPEATED)) {
+            if (!repeated_equal(
+                    t1, instance1, f1, registry1,
+                    t2, instance2, f2, registry2,
+                    repo1, repo2, lookup, use_refs, depth + 1u)) {
+                return false;
+            }
+        } else if (use_refs) {
+            if (!scalar_equal(
+                    f1, p1, p2, repo1, repo2, lookup, registry1)) {
+                return false;
+            }
+        } else if (!scalar_equal_noref(f1, p1, p2, registry1)) {
+            return false;
+        }
+    }
+    return true;
 }
 
 static float similarity_core(const nmo_object_t *obj1, const nmo_object_t *obj2,
@@ -629,7 +733,7 @@ static float similarity_core(const nmo_object_t *obj1, const nmo_object_t *obj2,
             if ((f1->flags & NMO_FIELD_REPEATED) || (f2->flags & NMO_FIELD_REPEATED)) {
                 same = repeated_equal(
                     t1, s1, f1, reg1, t2, s2, f2, reg2,
-                    repo1, repo2, lookup, use_refs);
+                    repo1, repo2, lookup, use_refs, 0u);
             } else if (f1->size != f2->size) {
                 same = false;
             } else {
@@ -1775,7 +1879,7 @@ static bool build_field_diffs(const nmo_object_t *obj1,
                 same = repeated_equal(
                     t1, st1, f1, s1->registry,
                     t2, st2, f2, s2->registry,
-                    s1->repo, s2->repo, lookup, true);
+                    s1->repo, s2->repo, lookup, true, 0u);
             } else if (f1->size != f2->size) {
                 same = false;
             } else {
@@ -1813,7 +1917,7 @@ static bool build_field_diffs(const nmo_object_t *obj1,
                 same = repeated_equal(
                     t1, st1, f1, s1->registry,
                     t2, st2, f2, s2->registry,
-                    s1->repo, s2->repo, lookup, true);
+                    s1->repo, s2->repo, lookup, true, 0u);
             } else if (f1->size != f2->size) {
                 same = false;
             } else {

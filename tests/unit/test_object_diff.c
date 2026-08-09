@@ -7,7 +7,10 @@
 #include "session/nmo_session_pipeline.h"
 #include "core/nmo_array.h"
 #include "core/nmo_guid.h"
+#include "format/nmo_chunk_api.h"
 #include "format/nmo_object.h"
+#include "object/builtin/nmo_character_schemas.h"
+#include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_ref.h"
 #include "type/nmo_reflection.h"
@@ -656,6 +659,80 @@ TEST(object_diff, scalar_ref_records_preserve_invalid_raw_ids) {
     fixture_destroy(&fx);
 }
 
+TEST(object_diff, character_parts_compare_refs_and_chunk_contents) {
+    diff_fixture_t fx;
+    ASSERT_TRUE(fixture_init(&fx));
+
+    nmo_object_t *target1 = add_object(
+        fx.ctx, fx.ses1, 10, CID_PAIR, "Target", sizeof(pair_state_t));
+    nmo_object_t *holder1 = add_object(
+        fx.ctx, fx.ses1, 20, NMO_CID_CHARACTER, "Holder",
+        sizeof(nmo_character_state_t));
+    nmo_object_t *target2 = add_object(
+        fx.ctx, fx.ses2, 110, CID_PAIR, "Target", sizeof(pair_state_t));
+    nmo_object_t *holder2 = add_object(
+        fx.ctx, fx.ses2, 120, NMO_CID_CHARACTER, "Holder",
+        sizeof(nmo_character_state_t));
+    ASSERT_NOT_NULL(target1);
+    ASSERT_NOT_NULL(holder1);
+    ASSERT_NOT_NULL(target2);
+    ASSERT_NOT_NULL(holder2);
+
+    nmo_arena_t *arena = nmo_context_get_arena(fx.ctx);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t *chunk1 = nmo_chunk_create(arena);
+    nmo_chunk_t *chunk2 = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk1);
+    ASSERT_NOT_NULL(chunk2);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk2));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk1, 123));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk2, 123));
+    nmo_chunk_close(chunk1);
+    nmo_chunk_close(chunk2);
+
+    nmo_character_part_t parts1[] = {
+        {.ref = nmo_ref_from_id(10), .chunk = chunk1},
+    };
+    nmo_character_part_t parts2[] = {
+        {.ref = nmo_ref_from_id(110), .chunk = chunk2},
+    };
+    nmo_character_state_t *state1 = nmo_object_get_state(holder1);
+    nmo_character_state_t *state2 = nmo_object_get_state(holder2);
+    state1->body_parts = (nmo_array_t){
+        .data = parts1,
+        .count = 1u,
+        .capacity = 1u,
+        .element_size = sizeof(nmo_character_part_t),
+    };
+    state2->body_parts = (nmo_array_t){
+        .data = parts2,
+        .count = 1u,
+        .capacity = 1u,
+        .element_size = sizeof(nmo_character_part_t),
+    };
+
+    nmo_diff_result_t diff;
+    ASSERT_EQ(NMO_OK, run_diff(&fx, NULL, &diff));
+    ASSERT_EQ(0u, diff.changed_count);
+    ASSERT_EQ(2u, diff.identical_count);
+    nmo_diff_result_destroy(&diff);
+
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk2));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk2, 456));
+    nmo_chunk_close(chunk2);
+    ASSERT_EQ(NMO_OK, run_diff(&fx, NULL, &diff));
+    ASSERT_EQ(1u, diff.changed_count);
+    ASSERT_EQ(1u, diff.changed[0].field_diff_total);
+    ASSERT_STR_EQ("body_parts", diff.changed[0].field_diffs[0].field_name);
+    ASSERT_EQ(1u, diff.identical_count);
+    nmo_diff_result_destroy(&diff);
+
+    nmo_chunk_destroy(chunk1);
+    nmo_chunk_destroy(chunk2);
+    fixture_destroy(&fx);
+}
+
 TEST(object_diff, min_similarity_rejects_low_pairs) {
     diff_fixture_t fx;
     ASSERT_TRUE(fixture_init(&fx));
@@ -741,6 +818,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_diff, counted_pointer_array_changes_are_reported);
     REGISTER_TEST(object_diff, ref_record_arrays_use_matches_and_preserve_invalid_raw_ids);
     REGISTER_TEST(object_diff, scalar_ref_records_preserve_invalid_raw_ids);
+    REGISTER_TEST(object_diff, character_parts_compare_refs_and_chunk_contents);
     REGISTER_TEST(object_diff, min_similarity_rejects_low_pairs);
     REGISTER_TEST(object_diff, result_stable_across_repeated_runs);
     REGISTER_TEST(object_diff, format_path_prefers_explicit_type_view_name);
