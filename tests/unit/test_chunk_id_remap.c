@@ -9944,6 +9944,40 @@ TEST(chunk_id_remap, entity_sections_do_not_borrow_following_identifiers) {
     ASSERT_EQ(0xCAFEBABEu, state.entity_flags);
     ASSERT_NULL(state.skin);
 
+    const struct {
+        uint32_t identifier;
+        size_t payload_dwords;
+    } trailing_sections[] = {
+        {CK_STATESAVE_ANIMATION, 1u},
+        {CK_STATESAVE_MESHS, 2u},
+        {CK_STATESAVE_3DENTITYNDATA, 14u},
+        {CK_STATESAVE_PARENT, 1u},
+        {CK_STATESAVE_3DENTITYFLAGS, 2u},
+        {CK_STATESAVE_3DENTITYMATRIX, 17u},
+        {CK_STATESAVE_3DENTITYSKINDATA, 18u},
+    };
+    for (size_t i = 0;
+         i < sizeof(trailing_sections) / sizeof(trailing_sections[0]);
+         ++i) {
+        nmo_chunk_t *trailing = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(trailing);
+        trailing->data_version = 7;
+        trailing->chunk_options |= NMO_CHUNK_OPTION_FILE;
+        ASSERT_EQ(NMO_OK, nmo_chunk_start_write(trailing));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+            trailing, trailing_sections[i].identifier));
+        for (size_t j = 0; j < trailing_sections[i].payload_dwords; ++j) {
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing, 0));
+        }
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing, 0x12345678u));
+        nmo_chunk_close(trailing);
+
+        ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_3dentity_deserialize(
+            &state, trailing, NULL, &deserialize_context));
+        ASSERT_EQ(0xCAFEBABEu, state.entity_flags);
+        ASSERT_NULL(state.skin);
+    }
+
     nmo_3dentity_vtable.destroy(&state, NULL, NULL);
     nmo_arena_destroy(arena);
 }

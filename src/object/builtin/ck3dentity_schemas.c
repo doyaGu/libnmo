@@ -168,6 +168,17 @@ static nmo_status_t nmo_3dentity_identifier_payload_size_bytes(nmo_chunk_t *chun
     return NMO_OK;
 }
 
+static nmo_status_t nmo_3dentity_require_section_end(
+    const nmo_chunk_t *chunk,
+    size_t section_end)
+{
+    const size_t position = nmo_chunk_get_position(chunk);
+    if (position == section_end) return NMO_OK;
+    return position > section_end
+        ? NMO_ERR_TRUNCATED_CHUNK
+        : NMO_ERR_INVALID_FORMAT;
+}
+
 /* =============================================================================
  * CK3dEntity DESERIALIZATION
  * ============================================================================= */
@@ -269,9 +280,8 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
                     NMO_CID_OBJECTANIMATION);
             }
         }
-        if (nmo_chunk_get_position(chunk) > animation_section_end) {
-            return NMO_ERR_TRUNCATED_CHUNK;
-        }
+        NMO_RETURN_IF_ERROR(nmo_3dentity_require_section_end(
+            chunk, animation_section_end));
         out_state->animation_count = (uint32_t)anim_count;
         out_state->animation_ids = animation_ids;
         out_state->has_animation_chunk = 1;
@@ -324,9 +334,8 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
                     NMO_CID_MESH);
             }
         }
-        if (nmo_chunk_get_position(chunk) > mesh_section_end) {
-            return NMO_ERR_TRUNCATED_CHUNK;
-        }
+        NMO_RETURN_IF_ERROR(nmo_3dentity_require_section_end(
+            chunk, mesh_section_end));
         nmo_ref_check_class(
             &current_mesh,
             (const nmo_object_repository_t *)
@@ -347,6 +356,8 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
         if (entity_data_section_dwords < 14u) {
             return NMO_ERR_TRUNCATED_CHUNK;
         }
+        const size_t entity_data_section_end =
+            nmo_chunk_get_position(chunk) + entity_data_section_dwords;
         nmo_3dentity_state_t data = *out_state;
         data.has_entityndata_chunk = 1;
         result = nmo_chunk_read_dword(chunk, &data.entity_flags);
@@ -413,6 +424,8 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
         } else {
             data.z_order = 0;
         }
+        NMO_RETURN_IF_ERROR(nmo_3dentity_require_section_end(
+            chunk, entity_data_section_end));
         nmo_ref_check_class(
             &data.place,
             (const nmo_object_repository_t *)
@@ -434,8 +447,12 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
         chunk, CK_STATESAVE_PARENT, &parent_section_dwords);
     if (seek_result == NMO_OK) {
         if (parent_section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+        const size_t parent_section_end =
+            nmo_chunk_get_position(chunk) + parent_section_dwords;
         nmo_ref_t parent = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &parent));
+        NMO_RETURN_IF_ERROR(nmo_3dentity_require_section_end(
+            chunk, parent_section_end));
         nmo_ref_check_class(
             &parent,
             (const nmo_object_repository_t *)
@@ -452,9 +469,13 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
         chunk, CK_STATESAVE_3DENTITYFLAGS, &flags_section_dwords);
     if (seek_result == NMO_OK) {
         if (flags_section_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
+        const size_t flags_section_end =
+            nmo_chunk_get_position(chunk) + flags_section_dwords;
         out_state->has_flags_chunk = 1;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->entity_flags));
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->moveable_flags));
+        NMO_RETURN_IF_ERROR(nmo_3dentity_require_section_end(
+            chunk, flags_section_end));
     } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
     // Legacy matrix chunk
@@ -463,6 +484,8 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
         chunk, CK_STATESAVE_3DENTITYMATRIX, &matrix_section_dwords);
     if (seek_result == NMO_OK) {
         if (matrix_section_dwords < 17u) return NMO_ERR_TRUNCATED_CHUNK;
+        const size_t matrix_section_end =
+            nmo_chunk_get_position(chunk) + matrix_section_dwords;
         out_state->has_matrix_chunk = 1;
         NMO_RETURN_IF_ERROR(nmo_chunk_skip(chunk, 1));
         nmo_matrix_t mat;
@@ -473,6 +496,8 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
                 out_state->world_matrix[r * 4 + c] = mat.m[r][c];
             }
         }
+        NMO_RETURN_IF_ERROR(nmo_3dentity_require_section_end(
+            chunk, matrix_section_end));
     } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
     // Skin data (identifier CK_STATESAVE_3DENTITYSKINDATA)
@@ -654,9 +679,8 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
                 }
             }
         }
-        if (nmo_chunk_get_position(chunk) > skin_section_end) {
-            return NMO_ERR_TRUNCATED_CHUNK;
-        }
+        NMO_RETURN_IF_ERROR(nmo_3dentity_require_section_end(
+            chunk, skin_section_end));
 
         seek_result = nmo_chunk_seek_identifier(
             chunk, CK_STATESAVE_3DENTITYSKINDATANORMALS);
