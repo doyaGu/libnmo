@@ -159,7 +159,8 @@ static size_t nmo_synchro_identifier_remaining_dwords(
 static nmo_status_t nmo_synchro_read_ref_array(
     nmo_chunk_t *chunk,
     nmo_array_t *out_refs,
-    const nmo_allocator_t *allocator)
+    const nmo_allocator_t *allocator,
+    void *context)
 {
     size_t count = 0;
     nmo_status_t result = nmo_chunk_read_object_sequence_start(chunk, &count);
@@ -177,6 +178,14 @@ static nmo_status_t nmo_synchro_read_ref_array(
     result = nmo_array_extend(out_refs, count, (void **)&refs);
     for (size_t i = 0; result == NMO_OK && i < count; ++i) {
         result = nmo_ref_read(chunk, &refs[i]);
+        if (result == NMO_OK) {
+            nmo_ref_check_class(
+                &refs[i],
+                (const nmo_object_repository_t *)
+                    nmo_deserialize_context_get_repository(context),
+                nmo_deserialize_context_get_type_registry(context),
+                NMO_CID_BEOBJECT);
+        }
     }
     if (result != NMO_OK) {
         nmo_array_dispose(out_refs);
@@ -224,10 +233,10 @@ static nmo_status_t nmo_synchro_deserialize_internal(
             out_state->passed_ids.element_size != 0
                 ? &out_state->passed_ids.allocator : NULL;
         result = nmo_synchro_read_ref_array(
-            chunk, &arrived_ids, arrived_allocator);
+            chunk, &arrived_ids, arrived_allocator, context);
         if (result != NMO_OK) return result;
         result = nmo_synchro_read_ref_array(
-            chunk, &passed_ids, passed_allocator);
+            chunk, &passed_ids, passed_allocator, context);
         if (result != NMO_OK) {
             nmo_array_dispose(&arrived_ids);
             return result;
@@ -514,6 +523,12 @@ static nmo_status_t nmo_criticalsection_deserialize_internal(
         if (result != NMO_OK) {
             return result;
         }
+        nmo_ref_check_class(
+            &object_in_section,
+            (const nmo_object_repository_t *)
+                nmo_deserialize_context_get_repository(context),
+            nmo_deserialize_context_get_type_registry(context),
+            NMO_CID_BEOBJECT);
         out_state->object_in_section = object_in_section;
     } else if (result != NMO_ERR_NOT_FOUND) return result;
 
