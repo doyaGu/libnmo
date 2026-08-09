@@ -112,6 +112,7 @@ static nmo_status_t nmo_parameterout_deserialize_internal(
         chunk, CK_STATESAVE_PARAMETEROUT_OWNER, &section_dwords);
     if (result == NMO_OK) {
         if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+        if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
         NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &owner));
         nmo_ref_check_class(&owner, repository, types, NMO_CID_BEHAVIOR);
     } else if (result != NMO_ERR_NOT_FOUND) return result;
@@ -121,6 +122,8 @@ static nmo_status_t nmo_parameterout_deserialize_internal(
         chunk, CK_STATESAVE_PARAMETEROUT_DESTINATIONS, &section_dwords);
     if (result == NMO_OK) {
         if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+        const size_t section_end =
+            nmo_chunk_get_position(chunk) + section_dwords;
         int32_t count = 0;
         nmo_status_t result = nmo_chunk_read_int(chunk, &count);
         if (result != NMO_OK) return result;
@@ -147,6 +150,9 @@ static nmo_status_t nmo_parameterout_deserialize_internal(
             }
         }
         destination_count = (uint32_t)count;
+        if (nmo_chunk_get_position(chunk) != section_end) {
+            return NMO_ERR_INVALID_FORMAT;
+        }
     } else if (result != NMO_ERR_NOT_FOUND) return result;
 
     out_state->owner = owner;

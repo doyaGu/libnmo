@@ -3751,6 +3751,26 @@ TEST(chunk_id_remap, parameterout_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(previous_destinations, failed.destination_ids);
     ASSERT_EQ(1u, failed.destination_count);
 
+    nmo_chunk_t *owner_trailing_payload = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(owner_trailing_payload);
+    owner_trailing_payload->class_id = NMO_CID_PARAMETEROUT;
+    owner_trailing_payload->data_version = 8;
+    owner_trailing_payload->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(owner_trailing_payload));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        owner_trailing_payload, CK_STATESAVE_PARAMETEROUT_OWNER));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(
+        owner_trailing_payload, 801));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        owner_trailing_payload, 0x12345678u));
+    nmo_chunk_close(owner_trailing_payload);
+    nmo_chunk_set_file_context(owner_trailing_payload, &read_context);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_parameterout_deserialize(
+        &failed, owner_trailing_payload, NULL, &deserialize_context));
+    ASSERT_EQ(901u, failed.owner.raw_id);
+    ASSERT_EQ(previous_destinations, failed.destination_ids);
+    ASSERT_EQ(1u, failed.destination_count);
+
     nmo_chunk_t *count_cross_section = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(count_cross_section);
     count_cross_section->class_id = NMO_CID_PARAMETEROUT;
@@ -3762,6 +3782,27 @@ TEST(chunk_id_remap, parameterout_refs_round_trip_and_failure_is_atomic) {
     nmo_chunk_close(count_cross_section);
     ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_parameterout_deserialize(
         &failed, count_cross_section, NULL, &deserialize_context));
+    ASSERT_EQ(901u, failed.owner.raw_id);
+    ASSERT_EQ(previous_destinations, failed.destination_ids);
+    ASSERT_EQ(1u, failed.destination_count);
+
+    nmo_chunk_t *destinations_trailing_payload = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(destinations_trailing_payload);
+    destinations_trailing_payload->class_id = NMO_CID_PARAMETEROUT;
+    destinations_trailing_payload->data_version = 8;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(
+        destinations_trailing_payload));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        destinations_trailing_payload,
+        CK_STATESAVE_PARAMETEROUT_DESTINATIONS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(
+        destinations_trailing_payload, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        destinations_trailing_payload, 0x12345678u));
+    nmo_chunk_close(destinations_trailing_payload);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_parameterout_deserialize(
+        &failed, destinations_trailing_payload, NULL,
+        &deserialize_context));
     ASSERT_EQ(901u, failed.owner.raw_id);
     ASSERT_EQ(previous_destinations, failed.destination_ids);
     ASSERT_EQ(1u, failed.destination_count);
