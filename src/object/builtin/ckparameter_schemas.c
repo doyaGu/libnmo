@@ -91,6 +91,28 @@ static const nmo_type_field_t nmo_parameter_fields[] = {
 /* From CKParameter.cpp */
 #define CK_PARAM_IDENTIFIER  0x00000040
 
+static void nmo_parameter_check_object_ref(
+    nmo_ref_t *ref,
+    nmo_guid_t parameter_type_guid,
+    void *context)
+{
+    const nmo_type_registry_t *types =
+        nmo_deserialize_context_get_type_registry(context);
+    const nmo_type_descriptor_t *parameter_type =
+        types != NULL
+            ? nmo_type_registry_find_by_guid(types, parameter_type_guid)
+            : NULL;
+    if (parameter_type == NULL || parameter_type->class_id == 0) {
+        return;
+    }
+    nmo_ref_check_class(
+        ref,
+        (const nmo_object_repository_t *)
+            nmo_deserialize_context_get_repository(context),
+        types,
+        parameter_type->class_id);
+}
+
 /* =============================================================================
  * CKParameter DESERIALIZATION
  * ============================================================================= */
@@ -212,6 +234,8 @@ static nmo_status_t nmo_parameter_deserialize_internal(
         if (nmo_chunk_get_position(chunk) < section_end) {
             return NMO_ERR_INVALID_FORMAT;
         }
+        nmo_parameter_check_object_ref(
+            &object_ref, out_state->type_guid, context);
         out_state->mode = CKPARAM_MODE_OBJECT;
         out_state->object_ref = object_ref;
         NMO_RETURN_OK();
