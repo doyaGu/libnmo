@@ -12899,6 +12899,39 @@ TEST(chunk_id_remap, level_refs_round_trip_and_failure_is_atomic) {
 
     nmo_level_state_t source;
     ASSERT_EQ(NMO_OK, nmo_level_vtable.create(&source, NULL, NULL));
+
+    nmo_chunk_t *inactive_only = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(inactive_only);
+    inactive_only->class_id = NMO_CID_LEVEL;
+    inactive_only->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(inactive_only));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        inactive_only, CK_STATESAVE_LEVELINACTIVEMAN));
+    nmo_chunk_close(inactive_only);
+    nmo_level_state_t inactive_only_state;
+    ASSERT_EQ(NMO_OK, nmo_level_vtable.create(
+        &inactive_only_state, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_level_deserialize(
+        &inactive_only_state, inactive_only, NULL,
+        &deserialize_context));
+    ASSERT_EQ(1u, inactive_only_state.has_inactive_manager_section);
+    ASSERT_EQ(0u, inactive_only_state.has_duplicate_manager_section);
+    nmo_chunk_t *inactive_only_saved = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(inactive_only_saved);
+    inactive_only_saved->class_id = NMO_CID_LEVEL;
+    inactive_only_saved->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_level_serialize(
+        &inactive_only_state, inactive_only_saved, NULL,
+        &serialize_context));
+    nmo_chunk_close(inactive_only_saved);
+    size_t inactive_dwords = 1u;
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        inactive_only_saved, CK_STATESAVE_LEVELINACTIVEMAN,
+        &inactive_dwords));
+    ASSERT_EQ(0u, inactive_dwords);
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_chunk_seek_identifier(
+        inactive_only_saved, CK_STATESAVE_LEVELDUPLICATEMAN));
+
     nmo_ref_t legacy_a = nmo_ref_from_raw(907);
     nmo_ref_t legacy_b = nmo_ref_from_raw(908);
     nmo_ref_t legacy_pointer = nmo_ref_from_raw(909);
@@ -13316,6 +13349,7 @@ TEST(chunk_id_remap, level_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(large_count, large_loaded.scene_ids.count);
 
     nmo_level_vtable.destroy(&source, NULL, NULL);
+    nmo_level_vtable.destroy(&inactive_only_state, NULL, NULL);
     nmo_level_vtable.destroy(&loaded, NULL, NULL);
     nmo_level_vtable.destroy(&reloaded, NULL, NULL);
     nmo_level_vtable.destroy(&copied, NULL, NULL);

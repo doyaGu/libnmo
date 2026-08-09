@@ -220,6 +220,7 @@ static const nmo_type_field_t nmo_level_fields[] = {
     NMO_FIELD_OPT(nmo_level_state_t, level_scene_chunk, CKPGUID_STATECHUNK),
     NMO_FIELD(nmo_level_state_t, has_inactive_manager_section, CKPGUID_UINT8),
     NMO_FIELD_ARRAY(nmo_level_state_t, inactive_manager_guids, CKPGUID_GUID),
+    NMO_FIELD(nmo_level_state_t, has_duplicate_manager_section, CKPGUID_UINT8),
     NMO_FIELD_ARRAY(nmo_level_state_t, duplicate_manager_names, CKPGUID_STRING)
 };
 
@@ -444,6 +445,7 @@ default_data_done:;
                 nmo_array_dispose(&inactive_guids);
                 return result;
             }
+            out_state->has_duplicate_manager_section = 1;
 
             for (uint32_t i = 0; i < guid_count; i++) {
                 result = nmo_chunk_read_guid(chunk, &guids[i]);
@@ -647,6 +649,12 @@ static nmo_status_t nmo_level_serialize_internal(
         (in_state->has_inactive_manager_section != 0) ||
         (in_state->inactive_manager_guids.count > 0 && in_state->inactive_manager_guids.data) ||
         (in_state->duplicate_manager_names.count > 0 && in_state->duplicate_manager_names.data);
+    const bool inferred_manager_sections =
+        !in_state->has_inactive_manager_section &&
+        ((in_state->inactive_manager_guids.count > 0 &&
+          in_state->inactive_manager_guids.data) ||
+         (in_state->duplicate_manager_names.count > 0 &&
+          in_state->duplicate_manager_names.data));
 
     if (write_inactive_manager_section) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_LEVELINACTIVEMAN);
@@ -658,23 +666,29 @@ static nmo_status_t nmo_level_serialize_internal(
             if (result != NMO_OK) return result;
         }
 
-        /* Section 4: LEVELDUPLICATEMAN (optional) */
-        result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_LEVELDUPLICATEMAN);
-        if (result != NMO_OK) return result;
+        const bool write_duplicate_manager_section =
+            in_state->has_duplicate_manager_section ||
+            inferred_manager_sections;
+        if (write_duplicate_manager_section) {
+            /* Section 4: LEVELDUPLICATEMAN (optional) */
+            result = nmo_chunk_write_identifier(
+                out_chunk, CK_STATESAVE_LEVELDUPLICATEMAN);
+            if (result != NMO_OK) return result;
 
-        if (in_state->duplicate_manager_names.count > 0 && in_state->duplicate_manager_names.data) {
-            const char *const *dup_names = NMO_ARRAY_DATA(const char *, &in_state->duplicate_manager_names);
-            for (size_t i = 0;
-                 i < in_state->duplicate_manager_names.count;
-                 ++i) {
-                result = nmo_chunk_write_string(out_chunk, dup_names[i]);
-                if (result != NMO_OK) return result;
+            if (in_state->duplicate_manager_names.count > 0 && in_state->duplicate_manager_names.data) {
+                const char *const *dup_names = NMO_ARRAY_DATA(const char *, &in_state->duplicate_manager_names);
+                for (size_t i = 0;
+                     i < in_state->duplicate_manager_names.count;
+                     ++i) {
+                    result = nmo_chunk_write_string(out_chunk, dup_names[i]);
+                    if (result != NMO_OK) return result;
+                }
             }
-        }
 
-        /* Write NULL terminator */
-        result = nmo_chunk_write_string(out_chunk, NULL);
-        if (result != NMO_OK) return result;
+            /* Write NULL terminator */
+            result = nmo_chunk_write_string(out_chunk, NULL);
+            if (result != NMO_OK) return result;
+        }
     }
 
     NMO_RETURN_OK();
@@ -703,6 +717,8 @@ static nmo_status_t nmo_level_copy(
     copied.current_scene = s->current_scene;
     copied.level_scene = s->level_scene;
     copied.has_inactive_manager_section = s->has_inactive_manager_section;
+    copied.has_duplicate_manager_section =
+        s->has_duplicate_manager_section;
 
     nmo_array_dispose(&copied.legacy_object_ids);
     result = nmo_array_clone(
@@ -794,6 +810,12 @@ static nmo_status_t nmo_level_validate(
     if (s == NULL) return NMO_ERR_INVALID_ARGUMENT;
     NMO_RETURN_IF_ERROR(nmo_beobject_vtable.validate(
         &s->base, NULL, context));
+    if (s->has_inactive_manager_section > 1u ||
+        s->has_duplicate_manager_section > 1u ||
+        (s->has_duplicate_manager_section &&
+         !s->has_inactive_manager_section)) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
     NMO_VALIDATE_COUNT(
         s->legacy_object_ids.data, s->legacy_object_ids.count,
         "legacy_object_ids");
@@ -885,6 +907,7 @@ static nmo_status_t nmo_level_pre_delete(
     state->inactive_manager_guids.count = 0;
     state->duplicate_manager_names.count = 0;
     state->has_inactive_manager_section = 0;
+    state->has_duplicate_manager_section = 0;
     NMO_RETURN_OK();
 }
 

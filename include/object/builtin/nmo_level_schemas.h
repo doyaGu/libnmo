@@ -66,7 +66,8 @@ typedef struct nmo_level_state {
     /* Manager state (optional, rarely used) */
     uint8_t has_inactive_manager_section; /**< Presence of LEVELINACTIVEMAN section */
     nmo_array_t inactive_manager_guids;  /**< Inactive manager GUIDs (nmo_guid_t) */
-    
+
+    uint8_t has_duplicate_manager_section; /**< Presence of LEVELDUPLICATEMAN section */
     nmo_array_t duplicate_manager_names; /**< Duplicate manager names (char *) */
 } nmo_level_state_t;
 
