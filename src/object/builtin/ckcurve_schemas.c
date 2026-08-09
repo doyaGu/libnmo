@@ -305,11 +305,15 @@ static nmo_status_t nmo_curve_validate(
     void *context)
 {
     (void)type;
-    (void)context;
     const nmo_curve_state_t *s = instance;
     if (s == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    NMO_RETURN_IF_ERROR(nmo_3dentity_vtable.validate(
+        &s->base, NULL, context));
     NMO_VALIDATE_COUNT(s->control_point_ids, s->control_point_count, "control_point_ids");
     NMO_VALIDATE_COUNT(s->sub_points, s->sub_point_count, "sub_points");
+    if (s->control_point_count > (uint32_t)INT32_MAX) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
     NMO_RETURN_OK();
 }
 
@@ -376,9 +380,9 @@ static nmo_status_t nmo_curvepoint_validate(
     void *context)
 {
     (void)type;
-    (void)context;
     if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
-    NMO_RETURN_OK();
+    const nmo_curvepoint_state_t *state = instance;
+    return nmo_3dentity_vtable.validate(&state->base, NULL, context);
 }
 
 static nmo_status_t nmo_curve_enumerate_refs(
@@ -1135,7 +1139,7 @@ nmo_status_t nmo_curve_serialize(
     if (!in_state || !out_chunk || !out_chunk->arena) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
-    nmo_status_t result = nmo_curve_validate(in_state, NULL, NULL);
+    nmo_status_t result = nmo_curve_validate(in_state, type, context);
     if (result != NMO_OK) return result;
     nmo_chunk_t *staged = nmo_chunk_create(out_chunk->arena);
     if (!staged) return NMO_ERR_NOMEM;
@@ -1184,7 +1188,7 @@ nmo_status_t nmo_curvepoint_serialize(
     if (!in_state || !out_chunk || !out_chunk->arena) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
-    nmo_status_t result = nmo_curvepoint_validate(in_state, NULL, NULL);
+    nmo_status_t result = nmo_curvepoint_validate(in_state, type, context);
     if (result != NMO_OK) return result;
     nmo_chunk_t *staged = nmo_chunk_create(out_chunk->arena);
     if (!staged) return NMO_ERR_NOMEM;

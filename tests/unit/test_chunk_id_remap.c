@@ -10217,6 +10217,16 @@ TEST(chunk_id_remap, curve_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(preserved, &marker));
     ASSERT_EQ(0xCAFEBABEu, marker);
 
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, nmo_curve_vtable.validate(
+        NULL, NULL, NULL));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, nmo_curvepoint_vtable.validate(
+        NULL, NULL, NULL));
+    invalid.control_point_ids = &previous_control;
+    invalid.control_point_count = (uint32_t)INT32_MAX + 1u;
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_curve_serialize(
+        &invalid, preserved, NULL, &serialize_context));
+    ASSERT_EQ(4u, nmo_chunk_get_data_size(preserved));
+
     nmo_curve_vtable.destroy(&source, NULL, NULL);
     nmo_curve_vtable.destroy(&loaded, NULL, NULL);
     nmo_curve_vtable.destroy(&copied, NULL, NULL);
