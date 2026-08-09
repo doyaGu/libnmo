@@ -177,6 +177,7 @@ static const nmo_type_field_t nmo_character_fields[] = {
         nmo_character_state_t, body_parts,
         NMO_GUID_STRUCT_CKCHARACTERSUBPART),
     NMO_FIELD_REF_RECORD_ARRAY(nmo_character_state_t, animations),
+    NMO_FIELD(nmo_character_state_t, legacy_animation_prefix, CKPGUID_UINT32),
     NMO_FIELD_NAMED("active_animation", offsetof(nmo_character_state_t, active_animation),
                     sizeof(nmo_ref_t), CKPGUID_ID,
                     NMO_FIELD_REFERENCE | NMO_FIELD_REF_RECORD,
@@ -234,6 +235,7 @@ static nmo_status_t nmo_character_copy(
     result = nmo_3dentity_vtable.copy(
         &s->base, &copied.base, &base_type, arena);
     if (result != NMO_OK) goto fail;
+    copied.legacy_animation_prefix = s->legacy_animation_prefix;
     copied.active_animation = s->active_animation;
     copied.anim_dest = s->anim_dest;
     copied.root_body_part = s->root_body_part;
@@ -536,6 +538,12 @@ static const nmo_object_serialize_pass_t nmo_character_compare_passes[] = {
         .data_version = 5,
         .save_flags = CK_STATESAVE_CHARACTERONLY |
             CK_STATESAVE_CHARACTERSAVEPARTS,
+        .use_context = 1,
+    },
+    {
+        .class_id = NMO_CID_CHARACTER,
+        .data_version = 4,
+        .save_flags = CK_STATESAVE_CHARACTERONLY,
         .use_context = 1,
     },
 };
@@ -885,8 +893,8 @@ static nmo_status_t nmo_character_deserialize_internal(
                     result = NMO_ERR_INVALID_FORMAT;
                     goto fail;
                 }
-                uint32_t unused = 0;
-                result = nmo_chunk_read_dword(chunk, &unused);
+                result = nmo_chunk_read_dword(
+                    chunk, &decoded.legacy_animation_prefix);
                 if (result != NMO_OK) goto fail;
                 result = nmo_ref_read(chunk, &decoded.active_animation);
                 if (result != NMO_OK) goto fail;
@@ -1080,6 +1088,8 @@ static nmo_status_t nmo_character_deserialize_internal(
     out_state->anim_dest = decoded.anim_dest;
     out_state->root_body_part = decoded.root_body_part;
     out_state->floor_ref = decoded.floor_ref;
+    out_state->legacy_animation_prefix =
+        decoded.legacy_animation_prefix;
     nmo_array_dispose(&decoded.body_parts);
     nmo_array_dispose(&decoded.animations);
     return NMO_OK;
@@ -1134,7 +1144,8 @@ static nmo_status_t nmo_character_serialize_internal(
         } else {
             NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(
                 out_chunk, CK_STATESAVE_CHARACTERSAVEANIMS));
-            NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(out_chunk, 0u));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
+                out_chunk, in_state->legacy_animation_prefix));
             NMO_RETURN_IF_ERROR(nmo_ref_write(
                 out_chunk, &in_state->active_animation));
             NMO_RETURN_IF_ERROR(nmo_ref_write(

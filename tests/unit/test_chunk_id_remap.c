@@ -15250,6 +15250,7 @@ TEST(chunk_id_remap, character_legacy_layouts_round_trip) {
     source.anim_dest = nmo_ref_from_raw(804);
     source.root_body_part = nmo_ref_from_raw(805);
     source.floor_ref = nmo_ref_from_raw(806);
+    source.legacy_animation_prefix = 0x12345678u;
 
     nmo_chunk_t *file_chunk = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(file_chunk);
@@ -15306,6 +15307,10 @@ TEST(chunk_id_remap, character_legacy_layouts_round_trip) {
     nmo_chunk_close(memory_chunk);
     ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
         memory_chunk, CK_STATESAVE_CHARACTERSAVEANIMS));
+    uint32_t animation_prefix = 0u;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(
+        memory_chunk, &animation_prefix));
+    ASSERT_EQ(0x12345678u, animation_prefix);
     ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
         memory_chunk, CK_STATESAVE_CHARACTERSAVEPARTS));
     ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_chunk_seek_identifier(
@@ -15326,11 +15331,41 @@ TEST(chunk_id_remap, character_legacy_layouts_round_trip) {
     ASSERT_EQ(804u, memory_loaded.anim_dest.raw_id);
     ASSERT_EQ(805u, memory_loaded.root_body_part.raw_id);
     ASSERT_EQ(806u, memory_loaded.floor_ref.raw_id);
+    ASSERT_EQ(0x12345678u, memory_loaded.legacy_animation_prefix);
+
+    nmo_chunk_t *memory_roundtrip = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(memory_roundtrip);
+    memory_roundtrip->class_id = NMO_CID_CHARACTER;
+    memory_roundtrip->data_version = 4;
+    ASSERT_EQ(NMO_OK, nmo_character_serialize(
+        &memory_loaded, memory_roundtrip, NULL, &memory_serialize));
+    nmo_chunk_close(memory_roundtrip);
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
+        memory_roundtrip, CK_STATESAVE_CHARACTERSAVEANIMS));
+    animation_prefix = 0u;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(
+        memory_roundtrip, &animation_prefix));
+    ASSERT_EQ(0x12345678u, animation_prefix);
+
+    nmo_character_state_t memory_copy;
+    ASSERT_EQ(NMO_OK, nmo_character_vtable.create(
+        &memory_copy, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_character_vtable.copy(
+        &memory_loaded, &memory_copy, NULL, arena));
+    ASSERT_EQ(0x12345678u, memory_copy.legacy_animation_prefix);
+    ASSERT_TRUE(nmo_character_vtable.equals(
+        &memory_loaded, &memory_copy));
+    ASSERT_EQ(nmo_character_vtable.hash(&memory_loaded),
+              nmo_character_vtable.hash(&memory_copy));
+    memory_copy.legacy_animation_prefix ^= 1u;
+    ASSERT_FALSE(nmo_character_vtable.equals(
+        &memory_loaded, &memory_copy));
 
     nmo_character_vtable.destroy(&source, NULL, NULL);
     nmo_character_vtable.destroy(&file_loaded, NULL, NULL);
     nmo_character_vtable.destroy(&file_reloaded, NULL, NULL);
     nmo_character_vtable.destroy(&memory_loaded, NULL, NULL);
+    nmo_character_vtable.destroy(&memory_copy, NULL, NULL);
     nmo_arena_destroy(arena);
 }
 

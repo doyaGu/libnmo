@@ -39,6 +39,7 @@ typedef struct nmo_character_state {
     nmo_array_t body_parts;                 /**< nmo_character_part_t */
     nmo_array_t animations;                 /**< nmo_ref_t */
 
+    uint32_t legacy_animation_prefix;
     nmo_ref_t active_animation;
     nmo_ref_t anim_dest;
     nmo_ref_t root_body_part;
