@@ -764,6 +764,52 @@ TEST(chunk_id_remap, behavior_unresolved_ref_round_trips_raw_id) {
     ASSERT_EQ(NMO_OBJECT_ID_NONE,
               nmo_behavior_target_parameter_id(&reloaded));
 
+    nmo_behavior_state_t large;
+    ASSERT_EQ(NMO_OK, nmo_behavior_vtable.create(&large, NULL, NULL));
+    const size_t large_count = 100001u;
+    ASSERT_EQ(NMO_OK, nmo_array_extend(
+        &large.inputs, large_count, NULL));
+    nmo_chunk_t *large_chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(large_chunk);
+    large_chunk->class_id = NMO_CID_BEHAVIOR;
+    large_chunk->data_version = 7;
+    large_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    nmo_chunk_set_file_context(large_chunk, &write_context);
+    ASSERT_EQ(NMO_OK, nmo_behavior_serialize(
+        &large, large_chunk, NULL, &serialize_context));
+    nmo_chunk_close(large_chunk);
+    nmo_chunk_set_file_context(large_chunk, &read_context);
+    nmo_behavior_state_t large_loaded;
+    ASSERT_EQ(NMO_OK, nmo_behavior_vtable.create(
+        &large_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_behavior_deserialize(
+        &large_loaded, large_chunk, NULL, NULL));
+    ASSERT_EQ(large_count, large_loaded.inputs.count);
+
+    nmo_behavior_state_t large_subchunks;
+    ASSERT_EQ(NMO_OK, nmo_behavior_vtable.create(
+        &large_subchunks, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_array_extend(
+        &large_subchunks.sub_behaviors, large_count, NULL));
+    nmo_serialize_context_t subchunk_serialize_context =
+        nmo_serialize_context_create(
+            arena, NULL, 0, CK_STATESAVE_BEHAVIORSUBBEHAV);
+    nmo_chunk_t *large_subchunk_chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(large_subchunk_chunk);
+    large_subchunk_chunk->class_id = NMO_CID_BEHAVIOR;
+    large_subchunk_chunk->data_version = 7;
+    ASSERT_EQ(NMO_OK, nmo_behavior_serialize(
+        &large_subchunks, large_subchunk_chunk, NULL,
+        &subchunk_serialize_context));
+    nmo_chunk_close(large_subchunk_chunk);
+    nmo_behavior_state_t large_subchunks_loaded;
+    ASSERT_EQ(NMO_OK, nmo_behavior_vtable.create(
+        &large_subchunks_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_behavior_deserialize(
+        &large_subchunks_loaded, large_subchunk_chunk, NULL, NULL));
+    ASSERT_EQ(large_count,
+              large_subchunks_loaded.sub_behaviors.count);
+
     nmo_chunk_t *truncated = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(truncated);
     truncated->class_id = NMO_CID_BEHAVIOR;
@@ -851,6 +897,11 @@ TEST(chunk_id_remap, behavior_unresolved_ref_round_trips_raw_id) {
     nmo_behavior_vtable.destroy(&loaded, NULL, NULL);
     nmo_behavior_vtable.destroy(&reloaded, NULL, NULL);
     nmo_behavior_vtable.destroy(&failed, NULL, NULL);
+    nmo_behavior_vtable.destroy(&large, NULL, NULL);
+    nmo_behavior_vtable.destroy(&large_loaded, NULL, NULL);
+    nmo_behavior_vtable.destroy(&large_subchunks, NULL, NULL);
+    nmo_behavior_vtable.destroy(
+        &large_subchunks_loaded, NULL, NULL);
     nmo_arena_destroy(arena);
 }
 

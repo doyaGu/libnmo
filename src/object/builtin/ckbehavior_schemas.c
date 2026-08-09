@@ -230,6 +230,9 @@ static const nmo_type_field_t nmo_behavior_fields[] = {
  * HELPER FUNCTIONS
  * ============================================================================= */
 
+static size_t nmo_behavior_identifier_remaining_dwords(
+    const nmo_chunk_t *chunk);
+
 /**
  * @brief Read object ID array using XObjectPointerArray format
  */
@@ -238,9 +241,8 @@ static nmo_status_t read_object_sequence(nmo_chunk_t *chunk, nmo_array_t *out_re
     nmo_status_t result = nmo_chunk_read_object_sequence_start(chunk, &count);
     if (result != NMO_OK) return result;
 
-    const uint32_t MAX_ARRAY_SIZE = 100000;
-    if (count > MAX_ARRAY_SIZE) {
-        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Array count exceeds maximum");
+    if (count > nmo_behavior_identifier_remaining_dwords(chunk)) {
+        return NMO_ERR_TRUNCATED_CHUNK;
     }
 
     nmo_array_t decoded;
@@ -273,7 +275,7 @@ static nmo_status_t read_object_sequence(nmo_chunk_t *chunk, nmo_array_t *out_re
  * @brief Write object ID array using XObjectPointerArray format
  */
 static nmo_status_t write_object_sequence(nmo_chunk_t *chunk, const nmo_array_t *refs) {
-    if (!chunk || !refs || refs->count > UINT32_MAX ||
+    if (!chunk || !refs || refs->count > INT32_MAX ||
         (refs->count > 0u &&
          (refs->data == NULL || refs->element_size != sizeof(nmo_behavior_ref_t)))) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
@@ -327,10 +329,6 @@ static nmo_status_t read_object_subchunk_list(
                          "Object sub-chunk count cannot be negative");
     }
 
-    const uint32_t MAX_ARRAY_SIZE = 100000;
-    if ((uint32_t)count > MAX_ARRAY_SIZE) {
-        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Array count exceeds maximum");
-    }
     if ((size_t)count * 2u >
         nmo_behavior_identifier_remaining_dwords(chunk)) {
         NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
@@ -1585,9 +1583,10 @@ static nmo_status_t nmo_behavior_validate(
     void *context)
 {
     (void)type;
-    (void)context;
     const nmo_behavior_state_t *s = instance;
     if (s == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    NMO_RETURN_IF_ERROR(nmo_sceneobject_vtable.validate(
+        &s->base, NULL, context));
     const nmo_array_t *arrays[] = {
         &s->sub_behaviors, &s->sub_behavior_links, &s->operations,
         &s->in_parameters, &s->out_parameters, &s->local_parameters,
