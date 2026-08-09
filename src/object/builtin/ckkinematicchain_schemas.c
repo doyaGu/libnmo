@@ -7,6 +7,7 @@
 #include "object/builtin/nmo_object_schemas.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
+#include "object/nmo_deserialize_context.h"
 #include "type/nmo_reflection.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
@@ -39,6 +40,7 @@ static nmo_status_t nmo_kinematicchain_deserialize_internal(
     }
 
     out_state->has_chain_data = 0;
+    out_state->legacy_object = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     out_state->start_effector = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     out_state->end_effector = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
 
@@ -48,8 +50,8 @@ static nmo_status_t nmo_kinematicchain_deserialize_internal(
     result = nmo_chunk_seek_identifier(
         chunk, CK_STATESAVE_KINEMATICCHAINALL);
     if (result == NMO_OK) {
-        nmo_object_id_t placeholder = 0;
-        result = nmo_chunk_read_object_id(chunk, &placeholder);
+        nmo_ref_t legacy_object = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+        result = nmo_ref_read(chunk, &legacy_object);
         if (result != NMO_OK) return result;
         nmo_ref_t start_effector = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         nmo_ref_t end_effector = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
@@ -57,7 +59,17 @@ static nmo_status_t nmo_kinematicchain_deserialize_internal(
         if (result != NMO_OK) return result;
         result = nmo_ref_read(chunk, &end_effector);
         if (result != NMO_OK) return result;
+        const nmo_object_repository_t *repository =
+            (const nmo_object_repository_t *)
+                nmo_deserialize_context_get_repository(context);
+        const nmo_type_registry_t *types =
+            nmo_deserialize_context_get_type_registry(context);
+        nmo_ref_check_class(
+            &start_effector, repository, types, NMO_CID_BODYPART);
+        nmo_ref_check_class(
+            &end_effector, repository, types, NMO_CID_BODYPART);
         out_state->has_chain_data = 1;
+        out_state->legacy_object = legacy_object;
         out_state->start_effector = start_effector;
         out_state->end_effector = end_effector;
     } else if (result != NMO_ERR_NOT_FOUND) return result;
@@ -70,6 +82,7 @@ static const nmo_type_field_t nmo_kinematicchain_fields[] = {
                     sizeof(nmo_object_state_t), CKPGUID_OBJECT,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_kinematicchain_state_t, has_chain_data, CKPGUID_UINT8),
+    NMO_FIELD_REF(nmo_kinematicchain_state_t, legacy_object),
     NMO_FIELD_REF(nmo_kinematicchain_state_t, start_effector),
     NMO_FIELD_REF(nmo_kinematicchain_state_t, end_effector)
 };
@@ -98,7 +111,7 @@ nmo_status_t nmo_kinematicchain_remap_dependencies(
 
     NMO_RETURN_IF_ERROR(nmo_object_remap_dependencies(&state->base, NULL, context));
 
-    /* Preserve chain section presence and unresolved endpoints. */
+    /* Preserve chain section presence and unresolved serialized values. */
     return nmo_object_default_validate(state, NULL, NULL);
 }
 
@@ -113,6 +126,10 @@ static nmo_status_t nmo_kinematicchain_pre_delete(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "Invalid arguments to nmo_kinematicchain_pre_delete");
     }
+    nmo_kinematicchain_state_t *state = instance;
+    state->legacy_object = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+    state->start_effector = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+    state->end_effector = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     NMO_RETURN_OK();
 }
 
@@ -173,6 +190,8 @@ static bool nmo_kinematicchain_equals(const void *a, const void *b)
     return nmo_object_vtable.equals(&lhs->base, &rhs->base) &&
         lhs->has_chain_data == rhs->has_chain_data &&
         nmo_kinematicchain_ref_equals(
+            &lhs->legacy_object, &rhs->legacy_object) &&
+        nmo_kinematicchain_ref_equals(
             &lhs->start_effector, &rhs->start_effector) &&
         nmo_kinematicchain_ref_equals(
             &lhs->end_effector, &rhs->end_effector);
@@ -190,6 +209,9 @@ static uint32_t nmo_kinematicchain_hash(const void *instance)
         hash *= 16777619u; \
     } while (0)
     NMO_KINEMATICCHAIN_HASH_FIELD(has_chain_data);
+    NMO_KINEMATICCHAIN_HASH_FIELD(legacy_object.raw_id);
+    NMO_KINEMATICCHAIN_HASH_FIELD(legacy_object.id);
+    NMO_KINEMATICCHAIN_HASH_FIELD(legacy_object.state);
     NMO_KINEMATICCHAIN_HASH_FIELD(start_effector.raw_id);
     NMO_KINEMATICCHAIN_HASH_FIELD(start_effector.id);
     NMO_KINEMATICCHAIN_HASH_FIELD(start_effector.state);
@@ -250,7 +272,7 @@ static nmo_status_t nmo_kinematicchain_serialize_internal(
     {
         nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_KINEMATICCHAINALL);
         if (result != NMO_OK) return result;
-        result = nmo_chunk_write_object_id(out_chunk, 0);
+        result = nmo_ref_write(out_chunk, &in_state->legacy_object);
         if (result != NMO_OK) return result;
         result = nmo_ref_write(out_chunk, &in_state->start_effector);
         if (result != NMO_OK) return result;
