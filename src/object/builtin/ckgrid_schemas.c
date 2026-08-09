@@ -36,13 +36,25 @@ static void grid_layers_set_lifecycle(nmo_array_t *layers)
     nmo_array_set_lifecycle(layers, &lifecycle);
 }
 
+static void nmo_grid_dispose_state_arrays(nmo_grid_state_t *state);
+static nmo_status_t nmo_grid_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
+
 NMO_DEFINE_OBJECT_LIFECYCLE(
     grid,
     nmo_grid_state_t,
     do {
-        nmo_status_t result = nmo_array_init(
-            &state->layers, sizeof(nmo_grid_layer_t), 0, NULL);
+        nmo_status_t result = nmo_3dentity_vtable.create(
+            &state->base, NULL, context);
         if (result != NMO_OK) return result;
+        result = nmo_array_init(
+            &state->layers, sizeof(nmo_grid_layer_t), 0, NULL);
+        if (result != NMO_OK) {
+            nmo_grid_dispose_state_arrays(state);
+            return result;
+        }
         grid_layers_set_lifecycle(&state->layers);
         state->width = 0;
         state->length = 0;
@@ -52,16 +64,13 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
         state->has_file_flag = 0;
         state->file_flag = 0;
     } while (0),
-    ((void)0))
+    nmo_grid_dispose_state_arrays(state))
 
 static void nmo_grid_dispose_state_arrays(nmo_grid_state_t *state)
 {
     if (state == NULL) return;
-    nmo_beobject_state_t *beobject = &state->base.base.base;
-    nmo_array_dispose(&beobject->scripts);
-    nmo_array_dispose(&beobject->attributes);
-    nmo_array_dispose(&beobject->legacy_attributes);
     nmo_array_dispose(&state->layers);
+    nmo_3dentity_vtable.destroy(&state->base, NULL, NULL);
 }
 
 static int nmo_chunk_is_file_mode(const nmo_chunk_t *chunk) {
@@ -326,31 +335,66 @@ static nmo_status_t nmo_grid_copy(
     const nmo_type_descriptor_t *type,
     nmo_arena_t *arena)
 {
+    (void)type;
     const nmo_grid_state_t *s = src;
     nmo_grid_state_t *d = dst;
-    NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
-    /* The default reflected clone is shallow for the nested chunk pointer.
-     * Release only its backing storage before building the deep clone. */
-    nmo_container_lifecycle_t no_lifecycle = NMO_CONTAINER_LIFECYCLE_INIT;
-    nmo_array_set_lifecycle(&d->layers, &no_lifecycle);
-    nmo_array_dispose(&d->layers);
-    NMO_RETURN_IF_ERROR(nmo_array_init(
-        &d->layers, sizeof(nmo_grid_layer_t), s->layers.count, &s->layers.allocator));
-    grid_layers_set_lifecycle(&d->layers);
+    if (s == NULL || d == NULL || arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    NMO_RETURN_IF_ERROR(nmo_grid_validate(s, NULL, NULL));
+
+    nmo_grid_state_t copied;
+    nmo_status_t result = nmo_grid_create(&copied, NULL, NULL);
+    if (result != NMO_OK) return result;
+    result = nmo_3dentity_vtable.copy(
+        &s->base, &copied.base, NULL, arena);
+    if (result != NMO_OK) goto fail;
+
+    copied.width = s->width;
+    copied.length = s->length;
+    copied.priority = s->priority;
+    copied.orientation_mode = s->orientation_mode;
+    copied.has_grid_data = s->has_grid_data;
+    copied.has_file_flag = s->has_file_flag;
+    copied.file_flag = s->file_flag;
+
+    nmo_array_dispose(&copied.layers);
+    result = nmo_array_init(
+        &copied.layers, sizeof(nmo_grid_layer_t),
+        s->layers.count, &s->layers.allocator);
+    if (result != NMO_OK) goto fail;
+    grid_layers_set_lifecycle(&copied.layers);
     nmo_grid_layer_t *dst_layers = NULL;
-    NMO_RETURN_IF_ERROR(nmo_array_extend(&d->layers, s->layers.count, (void **)&dst_layers));
-    const nmo_grid_layer_t *src_layers = NMO_ARRAY_DATA(nmo_grid_layer_t, &s->layers);
+    result = nmo_array_extend(
+        &copied.layers, s->layers.count, (void **)&dst_layers);
+    if (result != NMO_OK) goto fail;
+    const nmo_grid_layer_t *src_layers = NMO_ARRAY_DATA(
+        nmo_grid_layer_t, &s->layers);
     for (size_t i = 0; i < s->layers.count; ++i) {
         dst_layers[i].ref = src_layers[i].ref;
-        if (src_layers[i].chunk) {
-            dst_layers[i].chunk = nmo_chunk_clone(src_layers[i].chunk, arena);
-            if (!dst_layers[i].chunk) {
-                nmo_array_dispose(&d->layers);
-                return NMO_ERR_NOMEM;
-            }
-        }
+        result = nmo_object_copy_chunk(
+            arena, &dst_layers[i].chunk, src_layers[i].chunk);
+        if (result != NMO_OK) goto fail;
     }
+
+#define NMO_GRID_DETACH_SHARED_ARRAY(field) \
+    do { \
+        if (d->field.data == s->field.data) { \
+            memset(&d->field, 0, sizeof(d->field)); \
+        } \
+    } while (0)
+    NMO_GRID_DETACH_SHARED_ARRAY(base.base.base.scripts);
+    NMO_GRID_DETACH_SHARED_ARRAY(base.base.base.attributes);
+    NMO_GRID_DETACH_SHARED_ARRAY(base.base.base.legacy_attributes);
+    NMO_GRID_DETACH_SHARED_ARRAY(layers);
+#undef NMO_GRID_DETACH_SHARED_ARRAY
+    nmo_grid_destroy(d, NULL, NULL);
+    *d = copied;
     return NMO_OK;
+
+fail:
+    nmo_grid_destroy(&copied, NULL, NULL);
+    return result;
 }
 
 static nmo_status_t nmo_grid_validate(
@@ -361,7 +405,11 @@ static nmo_status_t nmo_grid_validate(
     (void)type;
     (void)context;
     const nmo_grid_state_t *s = instance;
+    if (s == NULL) return NMO_ERR_INVALID_ARGUMENT;
     NMO_VALIDATE_COUNT(s->layers.data, s->layers.count, "layers");
+    if (s->layers.element_size != sizeof(nmo_grid_layer_t)) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
     NMO_RETURN_OK();
 }
 

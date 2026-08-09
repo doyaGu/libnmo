@@ -3748,8 +3748,6 @@ TEST(chunk_id_remap, grid_failures_keep_state_and_target_chunk_atomic) {
 
     nmo_grid_state_t state;
     ASSERT_EQ(NMO_OK, nmo_grid_vtable.create(&state, NULL, NULL));
-    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(
-        &state.base.base.base, NULL, NULL));
     ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
         &state.base.base.base.scripts, 901));
     state.width = 77;
@@ -3835,12 +3833,7 @@ TEST(chunk_id_remap, grid_failures_keep_state_and_target_chunk_atomic) {
     ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(target, &preserved));
     ASSERT_EQ(0x12345678u, preserved);
 
-    nmo_array_dispose(&state.base.base.base.scripts);
-    nmo_array_dispose(&state.base.base.base.attributes);
-    nmo_array_dispose(&state.base.base.base.legacy_attributes);
-    nmo_array_dispose(&state.layers);
     nmo_grid_vtable.destroy(&state, NULL, NULL);
-    nmo_array_dispose(&source.layers);
     nmo_grid_vtable.destroy(&source, NULL, NULL);
     nmo_arena_destroy(arena);
 }
@@ -3892,14 +3885,39 @@ TEST(chunk_id_remap, grid_copy_preserves_content_equality) {
     ASSERT_TRUE(nmo_grid_vtable.equals(&source, &copy));
     ASSERT_EQ(nmo_grid_vtable.hash(&source), nmo_grid_vtable.hash(&copy));
 
+    nmo_grid_state_t copy_failed;
+    ASSERT_EQ(NMO_OK, nmo_grid_vtable.create(
+        &copy_failed, NULL, NULL));
+    copy_failed.width = 77;
+    copy_failed.base.entity_flags = 0x12345678u;
+    nmo_grid_layer_t previous_layer = {
+        .ref = nmo_ref_from_raw(502),
+    };
+    ASSERT_EQ(NMO_OK, nmo_array_append(
+        &copy_failed.layers, &previous_layer));
+    void *previous_layers = copy_failed.layers.data;
+    nmo_allocator_t source_allocator = source.layers.allocator;
+    source.layers.allocator = nmo_allocator_custom(
+        beobject_fail_alloc, beobject_fail_free, NULL);
+    ASSERT_EQ(NMO_ERR_NOMEM, nmo_grid_vtable.copy(
+        &source, &copy_failed, &grid_type, copy_arena));
+    source.layers.allocator = source_allocator;
+    ASSERT_EQ(77, copy_failed.width);
+    ASSERT_EQ(0x12345678u, copy_failed.base.entity_flags);
+    ASSERT_EQ(previous_layers, copy_failed.layers.data);
+    ASSERT_EQ(1u, copy_failed.layers.count);
+    ASSERT_EQ(502u, NMO_ARRAY_DATA(
+        nmo_grid_layer_t, &copy_failed.layers)[0].ref.raw_id);
+
     ASSERT_EQ(NMO_OK, nmo_chunk_start_write(copy_layers[0].chunk));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
         copy_layers[0].chunk, 0x55667788u));
     nmo_chunk_close(copy_layers[0].chunk);
     ASSERT_FALSE(nmo_grid_vtable.equals(&source, &copy));
 
-    nmo_array_dispose(&copy.layers);
-    nmo_array_dispose(&source.layers);
+    nmo_grid_vtable.destroy(&copy_failed, NULL, NULL);
+    nmo_grid_vtable.destroy(&copy, NULL, NULL);
+    nmo_grid_vtable.destroy(&source, NULL, NULL);
     nmo_arena_destroy(copy_arena);
     nmo_arena_destroy(source_arena);
 }
