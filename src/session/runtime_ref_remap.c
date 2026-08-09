@@ -1041,24 +1041,17 @@ static nmo_status_t normalize_patchmesh_patches(
         (state->channel_count > 0 && !state->channels)) {
         return NMO_ERR_VALIDATION_FAILED;
     }
-    uint32_t count = state->patch_count;
-    for (uint32_t i = 0; i < count;) {
-        const nmo_ref_t *ref = &state->patches[i].material;
+    for (uint32_t i = 0; i < state->patch_count; ++i) {
+        nmo_ref_t *ref = &state->patches[i].material;
         const nmo_object_id_t id = nmo_ref_runtime_id(ref);
-        if (ref->state == NMO_REF_RESOLVED &&
-            !normalize_id_is_invalid(repo, id) &&
-            !normalize_id_has_wrong_class(
-                repo, types, id, NMO_CID_MATERIAL)) {
-            ++i;
-            continue;
+        if (ref->state != NMO_REF_NONE &&
+            (ref->state != NMO_REF_RESOLVED ||
+             normalize_id_is_invalid(repo, id) ||
+             normalize_id_has_wrong_class(
+                 repo, types, id, NMO_CID_MATERIAL))) {
+            *ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+            (*changes)++;
         }
-        uint32_t remaining = count - i - 1;
-        if (remaining > 0) {
-            memmove(&state->patches[i], &state->patches[i + 1],
-                    (size_t)remaining * sizeof(*state->patches));
-        }
-        state->patch_count = --count;
-        (*changes)++;
     }
     for (uint32_t i = 0; i < state->channel_count; ++i) {
         nmo_ref_t *ref = &state->channels[i].material;
@@ -1088,33 +1081,17 @@ static nmo_status_t normalize_mesh_materials(
         return NMO_ERR_VALIDATION_FAILED;
     }
 
-    uint32_t count = state->material_group_count;
-    for (uint32_t i = 0; i < count;) {
-        const nmo_ref_t *ref = &state->material_groups[i].material;
+    for (uint32_t i = 0; i < state->material_group_count; ++i) {
+        nmo_ref_t *ref = &state->material_groups[i].material;
         const nmo_object_id_t id = nmo_ref_runtime_id(ref);
-        if (ref->state == NMO_REF_RESOLVED &&
-            !normalize_id_is_invalid(repo, id) &&
-            !normalize_id_has_wrong_class(
-                repo, types, id, NMO_CID_MATERIAL)) {
-            ++i;
-            continue;
+        if (ref->state != NMO_REF_NONE &&
+            (ref->state != NMO_REF_RESOLVED ||
+             normalize_id_is_invalid(repo, id) ||
+             normalize_id_has_wrong_class(
+                 repo, types, id, NMO_CID_MATERIAL))) {
+            *ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+            (*changes)++;
         }
-        uint32_t remaining = count - i - 1u;
-        if (remaining > 0) {
-            memmove(&state->material_groups[i],
-                    &state->material_groups[i + 1u],
-                    (size_t)remaining * sizeof(*state->material_groups));
-        }
-        state->material_group_count = --count;
-        for (uint32_t face = 0; face < state->face_count; ++face) {
-            uint32_t *index = &state->faces[face].material_group_idx;
-            if (*index == i) {
-                *index = 0;
-            } else if (*index > i) {
-                --*index;
-            }
-        }
-        (*changes)++;
     }
 
     for (uint32_t i = 0; i < state->material_channel_count; ++i) {

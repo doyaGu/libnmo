@@ -3820,6 +3820,7 @@ TEST(runtime_kernel, normalize_and_safe_detach_keep_mesh_records_atomic) {
     ASSERT_NOT_NULL(mesh);
     nmo_material_group_t groups[] = {
         {.material = nmo_ref_from_id(material_id), .padding = 11},
+        {.material = nmo_ref_from_raw(NMO_OBJECT_ID_NONE), .padding = 12},
         {.material = nmo_ref_from_raw(0x7FFFFF11u), .padding = 22},
         {.material = nmo_ref_from_id(wrong_class_id), .padding = 33},
     };
@@ -3832,13 +3833,14 @@ TEST(runtime_kernel, normalize_and_safe_detach_keep_mesh_records_atomic) {
         {.material_group_idx = 0},
         {.material_group_idx = 1},
         {.material_group_idx = 2},
+        {.material_group_idx = 3},
     };
-    uint16_t face_indices[9] = {0};
-    mesh->material_group_count = 3;
+    uint16_t face_indices[12] = {0};
+    mesh->material_group_count = 4;
     mesh->material_groups = groups;
     mesh->material_channel_count = 3;
     mesh->material_channels = channels;
-    mesh->face_count = 3;
+    mesh->face_count = 4;
     mesh->faces = faces;
     mesh->face_vertex_indices = face_indices;
 
@@ -3846,13 +3848,20 @@ TEST(runtime_kernel, normalize_and_safe_detach_keep_mesh_records_atomic) {
     ASSERT_EQ(NMO_OK, nmo_runtime_normalize_invalid_refs(
         repo, nmo_context_get_type_runtime(ctx), &changed));
     ASSERT_EQ(4u, changed);
-    ASSERT_EQ(1u, mesh->material_group_count);
+    ASSERT_EQ(4u, mesh->material_group_count);
     ASSERT_EQ(material_id,
               nmo_ref_runtime_id(&mesh->material_groups[0].material));
     ASSERT_EQ(11, mesh->material_groups[0].padding);
+    ASSERT_EQ(NMO_REF_NONE, mesh->material_groups[1].material.state);
+    ASSERT_EQ(12, mesh->material_groups[1].padding);
+    ASSERT_EQ(NMO_REF_NONE, mesh->material_groups[2].material.state);
+    ASSERT_EQ(22, mesh->material_groups[2].padding);
+    ASSERT_EQ(NMO_REF_NONE, mesh->material_groups[3].material.state);
+    ASSERT_EQ(33, mesh->material_groups[3].padding);
     ASSERT_EQ(0u, mesh->faces[0].material_group_idx);
-    ASSERT_EQ(0u, mesh->faces[1].material_group_idx);
-    ASSERT_EQ(0u, mesh->faces[2].material_group_idx);
+    ASSERT_EQ(1u, mesh->faces[1].material_group_idx);
+    ASSERT_EQ(2u, mesh->faces[2].material_group_idx);
+    ASSERT_EQ(3u, mesh->faces[3].material_group_idx);
     ASSERT_EQ(NMO_REF_RESOLVED, mesh->material_channels[0].material.state);
     ASSERT_EQ(44u, mesh->material_channels[0].flags);
     ASSERT_EQ(NMO_REF_NONE, mesh->material_channels[1].material.state);
@@ -3873,7 +3882,13 @@ TEST(runtime_kernel, normalize_and_safe_detach_keep_mesh_records_atomic) {
     ASSERT_EQ(1u, report.deleted_objects);
     mesh = (nmo_mesh_state_t *)
         nmo_object_repository_find_by_id(repo, mesh_id)->state;
-    ASSERT_EQ(0u, mesh->material_group_count);
+    ASSERT_EQ(4u, mesh->material_group_count);
+    ASSERT_EQ(NMO_REF_NONE, mesh->material_groups[0].material.state);
+    ASSERT_EQ(11, mesh->material_groups[0].padding);
+    ASSERT_EQ(0u, mesh->faces[0].material_group_idx);
+    ASSERT_EQ(1u, mesh->faces[1].material_group_idx);
+    ASSERT_EQ(2u, mesh->faces[2].material_group_idx);
+    ASSERT_EQ(3u, mesh->faces[3].material_group_idx);
     ASSERT_EQ(NMO_REF_NONE, mesh->material_channels[0].material.state);
     ASSERT_EQ(44u, mesh->material_channels[0].flags);
 
@@ -3968,6 +3983,8 @@ TEST(runtime_kernel, normalize_and_safe_detach_keep_patchmesh_records_atomic) {
     ASSERT_NOT_NULL(patchmesh);
     nmo_patchmesh_patch_record_t patches[] = {
         {.material = nmo_ref_from_id(material_id), .patch = {.type = 11}},
+        {.material = nmo_ref_from_raw(NMO_OBJECT_ID_NONE),
+         .patch = {.type = 12}},
         {.material = nmo_ref_from_raw(0x7FFFFF01u), .patch = {.type = 22}},
         {.material = nmo_ref_from_id(wrong_class_id), .patch = {.type = 33}},
     };
@@ -3977,7 +3994,7 @@ TEST(runtime_kernel, normalize_and_safe_detach_keep_patchmesh_records_atomic) {
         {.material = nmo_ref_from_id(wrong_class_id), .flags = 66},
     };
     patchmesh->format = CKPATCHMESH_FORMAT_DATA3;
-    patchmesh->patch_count = 3;
+    patchmesh->patch_count = 4;
     patchmesh->patches = patches;
     patchmesh->channel_count = 3;
     patchmesh->channels = channels;
@@ -3986,10 +4003,16 @@ TEST(runtime_kernel, normalize_and_safe_detach_keep_patchmesh_records_atomic) {
     ASSERT_EQ(NMO_OK, nmo_runtime_normalize_invalid_refs(
         repo, nmo_context_get_type_runtime(ctx), &changed));
     ASSERT_EQ(4u, changed);
-    ASSERT_EQ(1u, patchmesh->patch_count);
+    ASSERT_EQ(4u, patchmesh->patch_count);
     ASSERT_EQ(material_id,
               nmo_ref_runtime_id(&patchmesh->patches[0].material));
     ASSERT_EQ(11u, patchmesh->patches[0].patch.type);
+    ASSERT_EQ(NMO_REF_NONE, patchmesh->patches[1].material.state);
+    ASSERT_EQ(12u, patchmesh->patches[1].patch.type);
+    ASSERT_EQ(NMO_REF_NONE, patchmesh->patches[2].material.state);
+    ASSERT_EQ(22u, patchmesh->patches[2].patch.type);
+    ASSERT_EQ(NMO_REF_NONE, patchmesh->patches[3].material.state);
+    ASSERT_EQ(33u, patchmesh->patches[3].patch.type);
     ASSERT_EQ(NMO_REF_RESOLVED, patchmesh->channels[0].material.state);
     ASSERT_EQ(44u, patchmesh->channels[0].flags);
     ASSERT_EQ(NMO_REF_NONE, patchmesh->channels[1].material.state);
@@ -4005,7 +4028,9 @@ TEST(runtime_kernel, normalize_and_safe_detach_keep_patchmesh_records_atomic) {
     ASSERT_EQ(1u, report.deleted_objects);
     patchmesh = (nmo_patchmesh_state_t *)
         nmo_object_repository_find_by_id(repo, patchmesh_id)->state;
-    ASSERT_EQ(0u, patchmesh->patch_count);
+    ASSERT_EQ(4u, patchmesh->patch_count);
+    ASSERT_EQ(NMO_REF_NONE, patchmesh->patches[0].material.state);
+    ASSERT_EQ(11u, patchmesh->patches[0].patch.type);
     ASSERT_EQ(NMO_REF_NONE, patchmesh->channels[0].material.state);
     ASSERT_EQ(44u, patchmesh->channels[0].flags);
 

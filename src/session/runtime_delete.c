@@ -719,20 +719,13 @@ static nmo_status_t runtime_delete_detach_atomic_refs(
         nmo_type_query_object_get_ancestor_state_by_guid(
             type_rt->types, obj, CKPGUID_PATCHMESH);
     if (patchmesh != NULL) {
-        uint32_t count = patchmesh->patch_count;
-        for (uint32_t i = 0u; i < count;) {
-            if (!runtime_id_set_contains(
+        for (uint32_t i = 0u; i < patchmesh->patch_count; ++i) {
+            if (runtime_id_set_contains(
                     delete_set,
                     nmo_ref_runtime_id(&patchmesh->patches[i].material))) {
-                ++i;
-                continue;
+                patchmesh->patches[i].material =
+                    nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
             }
-            uint32_t remaining = count - i - 1u;
-            if (remaining > 0u) {
-                memmove(&patchmesh->patches[i], &patchmesh->patches[i + 1u],
-                        (size_t)remaining * sizeof(*patchmesh->patches));
-            }
-            patchmesh->patch_count = --count;
         }
         for (uint32_t i = 0u; i < patchmesh->channel_count; ++i) {
             if (runtime_id_set_contains(
@@ -748,28 +741,12 @@ static nmo_status_t runtime_delete_detach_atomic_refs(
         nmo_type_query_object_get_ancestor_state_by_guid(
             type_rt->types, obj, CKPGUID_MESH);
     if (mesh != NULL) {
-        uint32_t count = mesh->material_group_count;
-        for (uint32_t i = 0u; i < count;) {
-            if (!runtime_id_set_contains(
+        for (uint32_t i = 0u; i < mesh->material_group_count; ++i) {
+            if (runtime_id_set_contains(
                     delete_set,
                     nmo_ref_runtime_id(&mesh->material_groups[i].material))) {
-                ++i;
-                continue;
-            }
-            uint32_t remaining = count - i - 1u;
-            if (remaining > 0u) {
-                memmove(&mesh->material_groups[i],
-                        &mesh->material_groups[i + 1u],
-                        (size_t)remaining * sizeof(*mesh->material_groups));
-            }
-            mesh->material_group_count = --count;
-            for (uint32_t face = 0u; face < mesh->face_count; ++face) {
-                uint32_t *index = &mesh->faces[face].material_group_idx;
-                if (*index == i) {
-                    *index = 0;
-                } else if (*index > i) {
-                    --*index;
-                }
+                mesh->material_groups[i].material =
+                    nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
             }
         }
         for (uint32_t i = 0u; i < mesh->material_channel_count; ++i) {
