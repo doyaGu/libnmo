@@ -13199,13 +13199,28 @@ TEST(chunk_id_remap, scene_legacy_flags_round_trip_without_reinterpretation) {
     ASSERT_EQ(loaded_descs[0].flags, NMO_ARRAY_DATA(
         nmo_scene_object_desc_t, &modern_loaded.object_descs)[0].flags);
 
-    modern->data_version = 0;
-    ASSERT_EQ(NMO_ERR_UNSUPPORTED_VERSION, nmo_scene_serialize(
-        &loaded, modern, NULL, &serialize_context));
+    nmo_chunk_t *default_version = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(default_version);
+    default_version->class_id = NMO_CID_SCENE;
+    default_version->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_scene_serialize(
+        &loaded, default_version, NULL, &serialize_context));
+    ASSERT_EQ(NMO_CHUNK_DATA_VERSION_CURRENT,
+              nmo_chunk_get_data_version(default_version));
+    nmo_chunk_close(default_version);
+
+    nmo_scene_state_t default_loaded;
+    ASSERT_EQ(NMO_OK, nmo_scene_vtable.create(
+        &default_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_scene_deserialize(
+        &default_loaded, default_version, NULL, &deserialize_context));
+    ASSERT_EQ(loaded_descs[0].flags, NMO_ARRAY_DATA(
+        nmo_scene_object_desc_t, &default_loaded.object_descs)[0].flags);
 
     nmo_scene_vtable.destroy(&loaded, NULL, NULL);
     nmo_scene_vtable.destroy(&reloaded, NULL, NULL);
     nmo_scene_vtable.destroy(&modern_loaded, NULL, NULL);
+    nmo_scene_vtable.destroy(&default_loaded, NULL, NULL);
     nmo_arena_destroy(arena);
 }
 

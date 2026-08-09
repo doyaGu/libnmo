@@ -475,9 +475,10 @@ static nmo_status_t nmo_scene_serialize_internal(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_scene_serialize");
     }
     NMO_RETURN_IF_ERROR(nmo_scene_validate(in_state, type, context));
-    const uint32_t data_version = nmo_chunk_get_data_version(out_chunk);
-    if (data_version < 1u) {
-        return NMO_ERR_UNSUPPORTED_VERSION;
+    uint32_t data_version = nmo_chunk_get_data_version(out_chunk);
+    if (data_version == 0u) {
+        out_chunk->data_version = NMO_CHUNK_DATA_VERSION_CURRENT;
+        data_version = out_chunk->data_version;
     }
 
     /* Write base class (CKBeObject) data */
