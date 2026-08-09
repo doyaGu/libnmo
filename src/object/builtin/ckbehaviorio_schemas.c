@@ -92,8 +92,11 @@ static nmo_status_t nmo_behaviorio_deserialize_internal(
     /* Read I/O flags.  Newly-created states persist this section, while a
      * loaded legacy chunk must retain its absence. */
     out_state->has_flags = false;
-    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_BEHAV_IOFLAGS);
+    size_t section_dwords = 0;
+    result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_BEHAV_IOFLAGS, &section_dwords);
     if (result == NMO_OK) {
+        if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
         result = nmo_chunk_read_dword(chunk, &out_state->old_flags);
         if (result != NMO_OK) return result;
         out_state->has_flags = true;

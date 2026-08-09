@@ -1055,6 +1055,22 @@ TEST(chunk_id_remap, behaviorio_truncation_keeps_previous_state) {
     ASSERT_EQ(0xA5A5A5A5u, state.old_flags);
     ASSERT_TRUE(state.has_flags);
 
+    nmo_chunk_t *cross_section = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(cross_section);
+    cross_section->class_id = NMO_CID_BEHAVIORIO;
+    cross_section->data_version = 7;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(cross_section));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_section, CK_STATESAVE_BEHAV_IOFLAGS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_section, 0x11223344u));
+    nmo_chunk_close(cross_section);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_behaviorio_deserialize(
+        &state, cross_section, NULL, NULL));
+    ASSERT_EQ(0x12345678u, state.base.visibility_flags);
+    ASSERT_EQ(0xA5A5A5A5u, state.old_flags);
+    ASSERT_TRUE(state.has_flags);
+
     nmo_behaviorio_vtable.destroy(&state, NULL, NULL);
     nmo_arena_destroy(arena);
 }
