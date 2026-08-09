@@ -6797,6 +6797,57 @@ TEST(chunk_id_remap, spritetext_failures_keep_state_and_target_chunk_atomic) {
     ASSERT_EQ(0x11223344u, state.font_color);
     ASSERT_EQ(0x55667788u, state.background_color);
 
+    nmo_chunk_t *text_trailing = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(text_trailing);
+    text_trailing->class_id = NMO_CID_SPRITETEXT;
+    text_trailing->data_version = 4;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(text_trailing));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        text_trailing, CK_STATESAVE_SPRITETEXT));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_string(text_trailing, "New text"));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(text_trailing, 0x12345678u));
+    nmo_chunk_close(text_trailing);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_spritetext_deserialize(
+        &state, text_trailing, NULL, &deserialize_context));
+    ASSERT_STR_EQ("Old text", state.text_content);
+    ASSERT_STR_EQ("Old font", state.font.font_name);
+
+    nmo_chunk_t *font_trailing = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(font_trailing);
+    font_trailing->class_id = NMO_CID_SPRITETEXT;
+    font_trailing->data_version = 4;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(font_trailing));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        font_trailing, CK_STATESAVE_SPRITEFONT));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_string(font_trailing, "Arial"));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(font_trailing, 12));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(font_trailing, 400));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(font_trailing, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(font_trailing, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(font_trailing, 0x12345678u));
+    nmo_chunk_close(font_trailing);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_spritetext_deserialize(
+        &state, font_trailing, NULL, &deserialize_context));
+    ASSERT_STR_EQ("Old font", state.font.font_name);
+    ASSERT_EQ(21, state.font.size);
+    ASSERT_EQ(1, state.font.underline);
+
+    nmo_chunk_t *colors_trailing = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(colors_trailing);
+    colors_trailing->class_id = NMO_CID_SPRITETEXT;
+    colors_trailing->data_version = 4;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(colors_trailing));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        colors_trailing, CK_STATESAVE_SPRITETEXTCOLOR));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(colors_trailing, 0xAABBCCDDu));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(colors_trailing, 0x01020304u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(colors_trailing, 0x12345678u));
+    nmo_chunk_close(colors_trailing);
+    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_spritetext_deserialize(
+        &state, colors_trailing, NULL, &deserialize_context));
+    ASSERT_EQ(0x11223344u, state.font_color);
+    ASSERT_EQ(0x55667788u, state.background_color);
+
     fail_after_allocator_state_t allocator_state = {
         .allocation_count = 0,
         .allowed_allocations = 2,

@@ -217,6 +217,9 @@ static nmo_status_t ckspritetext_deserialize_modern(
         if (nmo_chunk_get_position(chunk) > section_end) {
             return NMO_ERR_TRUNCATED_CHUNK;
         }
+        if (nmo_chunk_get_position(chunk) < section_end) {
+            return NMO_ERR_INVALID_FORMAT;
+        }
     } else if (result != NMO_ERR_NOT_FOUND) return result;
     
     /* Process identifier 0x02000000: Font properties */
@@ -231,6 +234,9 @@ static nmo_status_t ckspritetext_deserialize_modern(
         if (nmo_chunk_get_position(chunk) > section_end) {
             return NMO_ERR_TRUNCATED_CHUNK;
         }
+        if (nmo_chunk_get_position(chunk) < section_end) {
+            return NMO_ERR_INVALID_FORMAT;
+        }
     } else if (result != NMO_ERR_NOT_FOUND) return result;
     
     /* Process identifier 0x04000000: Colors */
@@ -238,6 +244,7 @@ static nmo_status_t ckspritetext_deserialize_modern(
         chunk, CK_STATESAVE_SPRITETEXTCOLOR, &section_dwords);
     if (result == NMO_OK) {
         if (section_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
+        if (section_dwords > 2u) return NMO_ERR_INVALID_FORMAT;
         result = deserialize_colors(chunk, arena, out_state);
         NMO_RETURN_IF_ERROR(result);
     } else if (result == NMO_ERR_NOT_FOUND) {
