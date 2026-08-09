@@ -210,10 +210,6 @@ static nmo_status_t parse_included_files(
     nmo_arena_t *arena) {
     (void)arena;
 
-    if (*pos + sizeof(uint32_t) > size) {
-        NMO_RETURN_OK();
-    }
-
     CHECK_BUFFER_SIZE(*pos, sizeof(uint32_t), size);
     uint32_t payload_size = nmo_read_u32_le(data + *pos);
     *pos += sizeof(uint32_t);

@@ -334,6 +334,27 @@ TEST(header1, parse_failure_preserves_state) {
     nmo_arena_destroy(arena);
 }
 
+TEST(header1, rejects_partial_included_file_size) {
+    nmo_arena_t* arena = nmo_arena_create(NULL, 1024);
+    ASSERT_NOT_NULL(arena);
+
+    uint8_t buffer[7] = {0};
+    nmo_write_u32_le(buffer, 0);
+
+    for (size_t tail_size = 1; tail_size < sizeof(uint32_t); tail_size++) {
+        nmo_header1_t header;
+        memset(&header, 0, sizeof(header));
+        header.plugin_dep_count = 7;
+
+        ASSERT_EQ(NMO_ERR_BUFFER_OVERRUN,
+            nmo_header1_parse(
+                buffer, sizeof(uint32_t) + tail_size, &header, arena));
+        ASSERT_EQ(7u, header.plugin_dep_count);
+    }
+
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(header1, serialization);
     REGISTER_TEST(header1, round_trip);
@@ -342,4 +363,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(header1, size_overflow);
     REGISTER_TEST(header1, write_failures_clear_outputs);
     REGISTER_TEST(header1, parse_failure_preserves_state);
+    REGISTER_TEST(header1, rejects_partial_included_file_size);
 TEST_MAIN_END()
