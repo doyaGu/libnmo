@@ -5804,6 +5804,9 @@ TEST(chunk_id_remap, spritetext_copy_preserves_base_and_strings) {
     source.font_color = 0xAABBCCDDu;
     source.background_color = 0x11223344u;
     source.needs_redraw = true;
+    ASSERT_EQ(NMO_OK, nmo_spritetext_remap_dependencies(
+        &source, NULL, NULL));
+    ASSERT_TRUE(source.needs_redraw);
 
     nmo_type_descriptor_t text_type = {
         .size = sizeof(nmo_spritetext_state_t),
@@ -6273,6 +6276,12 @@ TEST(chunk_id_remap, place_refs_round_trip_and_truncation_is_atomic) {
     nmo_ref_t ref_b = nmo_ref_from_raw(804);
     ASSERT_EQ(NMO_OK, nmo_array_append(&source.references, &ref_a));
     ASSERT_EQ(NMO_OK, nmo_array_append(&source.references, &ref_b));
+    source.base.base.base.base.base.visibility_flags = NMO_CKOBJECT_VISIBLE;
+    source.base.moveable_flags = VX_MOVEABLE_HIERARCHICALHIDE;
+    ASSERT_EQ(NMO_OK, nmo_place_remap_dependencies(&source, NULL, NULL));
+    ASSERT_EQ(NMO_CKOBJECT_VISIBLE,
+              source.base.base.base.base.base.visibility_flags);
+    ASSERT_EQ(VX_MOVEABLE_HIERARCHICALHIDE, source.base.moveable_flags);
 
     nmo_chunk_t *first = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(first);

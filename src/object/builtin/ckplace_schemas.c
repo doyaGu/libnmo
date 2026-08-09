@@ -317,19 +317,6 @@ nmo_status_t nmo_place_remap_dependencies(
         return result;
     }
 
-    const uint32_t visibility_flags = state->base.base.base.base.base.visibility_flags;
-    if ((visibility_flags & NMO_CKOBJECT_VISIBLE) != 0) {
-        state->base.moveable_flags |= VX_MOVEABLE_VISIBLE;
-    } else {
-        state->base.moveable_flags &= ~VX_MOVEABLE_VISIBLE;
-    }
-
-    if ((visibility_flags & NMO_CKOBJECT_HIERARCHICAL) != 0) {
-        state->base.moveable_flags |= VX_MOVEABLE_HIERARCHICALHIDE;
-    } else {
-        state->base.moveable_flags &= ~VX_MOVEABLE_HIERARCHICALHIDE;
-    }
-
     if (state->portals.count > 0 && state->portals.data == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Place portals missing");
     }

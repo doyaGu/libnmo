@@ -30,6 +30,10 @@
 static void ckspritetext_init_defaults(
     nmo_spritetext_state_t *state,
     nmo_arena_t *arena);
+static nmo_status_t nmo_spritetext_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
 NMO_DEFINE_OBJECT_LIFECYCLE(
     spritetext,
@@ -300,12 +304,7 @@ static nmo_status_t ckspritetext_serialize_modern(
  *
  * Reference: RCKSpriteText::Load at 0x10062547 (calls Redraw at end)
  *
- * Post-Deserialization Setup:
- * - Validates and normalizes font properties
- * - Clamps font size to [6, 128] range
- * - Clamps font weight to [100, 900] range
- * - Ensures font name is not empty (sets "Arial" as fallback)
- * - Clears needs_redraw flag
+ * Clears the runtime-only redraw request after loading serialized state.
  */
 static nmo_status_t ckspritetext_normalize_state(
     nmo_spritetext_state_t *state,
@@ -332,7 +331,7 @@ nmo_status_t nmo_spritetext_remap_dependencies(
 
     nmo_spritetext_state_t *state = (nmo_spritetext_state_t *)instance;
     NMO_RETURN_IF_ERROR(nmo_sprite_remap_dependencies(&state->base, NULL, context));
-    return ckspritetext_normalize_state(state, NULL, NULL);
+    return nmo_spritetext_validate(state, NULL, context);
 }
 
 nmo_status_t nmo_spritetext_prepare_dependencies(
