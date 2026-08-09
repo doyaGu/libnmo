@@ -8,7 +8,6 @@
  */
 
 #include "object/builtin/nmo_parameterlocal_schemas.h"
-#include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
 #include "object/nmo_class_ids.h"
@@ -20,7 +19,6 @@
 #include "core/nmo_arena.h"
 #include "core/nmo_array.h"
 #include "format/nmo_object.h"
-#include "object/nmo_object_repository.h"
 #include "type/nmo_type_system.h"
 #include "type/nmo_reflection.h"
 #include "nmo_types.h"
@@ -46,8 +44,7 @@ static const nmo_type_field_t nmo_parameterlocal_fields[] = {
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD_REF_VALUE(nmo_parameterlocal_state_t, owner),
     NMO_FIELD(nmo_parameterlocal_state_t, is_myself, CKPGUID_UINT8),
-    NMO_FIELD(nmo_parameterlocal_state_t, is_setting, CKPGUID_UINT8),
-    NMO_FIELD(nmo_parameterlocal_state_t, has_owner, CKPGUID_UINT8)
+    NMO_FIELD(nmo_parameterlocal_state_t, is_setting, CKPGUID_UINT8)
 };
 
 /* =============================================================================
@@ -76,25 +73,8 @@ static nmo_status_t nmo_parameterlocal_deserialize_internal(
     nmo_status_t result = nmo_parameter_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;
 
-    size_t section_dwords = 0;
-    result = nmo_chunk_seek_identifier_with_size(
-        chunk, CK_STATESAVE_PARAMETEROUT_OWNER, &section_dwords);
-    if (result == NMO_OK) {
-        if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
-        if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
-        nmo_ref_t owner = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
-        NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &owner));
-        nmo_ref_check_class(
-            &owner,
-            (const nmo_object_repository_t *)
-                nmo_deserialize_context_get_repository(context),
-            nmo_deserialize_context_get_type_registry(context),
-            NMO_CID_BEHAVIOR);
-        out_state->owner = owner;
-        out_state->has_owner = 1;
-    } else if (result != NMO_ERR_NOT_FOUND) return result;
-
     /* Check if "myself" parameter */
+    size_t section_dwords = 0;
     result = nmo_chunk_seek_identifier_with_size(
         chunk, CK_STATESAVE_PARAMETEROUT_MYSELF, &section_dwords);
     if (result == NMO_OK) {
@@ -177,17 +157,6 @@ static nmo_status_t nmo_parameterlocal_serialize_internal(
 
     if (!is_file && save_flags == 0) {
         return NMO_OK;
-    }
-
-    const bool has_owner = in_state->has_owner ||
-        nmo_ref_serialized_id(&in_state->owner) != NMO_OBJECT_ID_NONE;
-    if ((is_file ||
-         (save_flags & CK_STATESAVE_PARAMETEROUT_OWNER) != 0) &&
-        has_owner) {
-        result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_PARAMETEROUT_OWNER);
-        if (result != NMO_OK) return result;
-        result = nmo_ref_write(out_chunk, &in_state->owner);
-        if (result != NMO_OK) return result;
     }
 
     /* Write "myself" flag if needed */
@@ -326,7 +295,6 @@ static nmo_status_t nmo_parameterlocal_copy(
     copied.owner = s->owner;
     copied.is_myself = s->is_myself;
     copied.is_setting = s->is_setting;
-    copied.has_owner = s->has_owner;
 
     if (s->base.buffer_data.data != NULL &&
         d->base.buffer_data.data == s->base.buffer_data.data) {
@@ -399,8 +367,7 @@ static bool nmo_parameterlocal_equals(const void *a, const void *b)
     return nmo_parameterlocal_base_equals(&lhs->base, &rhs->base) &&
         memcmp(&lhs->owner, &rhs->owner, sizeof(nmo_ref_t)) == 0 &&
         lhs->is_myself == rhs->is_myself &&
-        lhs->is_setting == rhs->is_setting &&
-        lhs->has_owner == rhs->has_owner;
+        lhs->is_setting == rhs->is_setting;
 }
 
 static uint32_t nmo_parameterlocal_hash_bytes(
@@ -459,8 +426,7 @@ static uint32_t nmo_parameterlocal_hash(const void *instance)
         hash, &state->is_myself, sizeof(state->is_myself));
     hash = nmo_parameterlocal_hash_bytes(
         hash, &state->is_setting, sizeof(state->is_setting));
-    return nmo_parameterlocal_hash_bytes(
-        hash, &state->has_owner, sizeof(state->has_owner));
+    return hash;
 }
 
 nmo_type_vtable_t nmo_parameterlocal_vtable = {
