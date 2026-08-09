@@ -10214,6 +10214,56 @@ TEST(chunk_id_remap, scene_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(899u, nmo_beobject_script_array_get_id(
         &failed_descs.base.scripts, 0));
 
+    nmo_chunk_t *missing_desc_count = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(missing_desc_count);
+    missing_desc_count->class_id = NMO_CID_SCENE;
+    missing_desc_count->data_version = 8;
+    missing_desc_count->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(missing_desc_count));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        missing_desc_count, CK_STATESAVE_SCENENEWDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_id(missing_desc_count, 945));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(missing_desc_count, 0));
+    nmo_chunk_close(missing_desc_count);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_scene_deserialize(
+        &failed_descs, missing_desc_count, NULL, &deserialize_context));
+    ASSERT_EQ(950u, failed_descs.level.raw_id);
+    ASSERT_EQ(1u, failed_descs.object_descs.count);
+    ASSERT_EQ(951u, NMO_ARRAY_DATA(
+        nmo_scene_object_desc_t, &failed_descs.object_descs)[0].ref.raw_id);
+
+    nmo_chunk_t *cross_section_subchunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(cross_section_subchunk);
+    cross_section_subchunk->class_id = NMO_CID_SCENE;
+    cross_section_subchunk->data_version = 8;
+    cross_section_subchunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(cross_section_subchunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_section_subchunk, CK_STATESAVE_SCENENEWDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_id(
+        cross_section_subchunk, 945));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(cross_section_subchunk, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(
+        cross_section_subchunk, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_item(
+        cross_section_subchunk, 946));
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_sub_chunk_sequence(
+        cross_section_subchunk, 2));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_sub_chunk_sequence(
+        cross_section_subchunk, NULL));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(cross_section_subchunk, 7));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(cross_section_subchunk, 0));
+    for (size_t i = 0; i < 6; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(cross_section_subchunk, 0));
+    }
+    nmo_chunk_close(cross_section_subchunk);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_scene_deserialize(
+        &failed_descs, cross_section_subchunk, NULL, &deserialize_context));
+    ASSERT_EQ(950u, failed_descs.level.raw_id);
+    ASSERT_EQ(1u, failed_descs.object_descs.count);
+    ASSERT_EQ(951u, NMO_ARRAY_DATA(
+        nmo_scene_object_desc_t, &failed_descs.object_descs)[0].ref.raw_id);
+
     nmo_chunk_t *truncated_render = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(truncated_render);
     truncated_render->class_id = NMO_CID_SCENE;
@@ -10230,6 +10280,8 @@ TEST(chunk_id_remap, scene_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(NMO_OK, nmo_chunk_write_float(truncated_render, 6.0f));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_float(truncated_render, 7.0f));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_object_id(truncated_render, 952));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        truncated_render, 0x11223344u));
     nmo_chunk_close(truncated_render);
 
     nmo_scene_state_t failed_render;

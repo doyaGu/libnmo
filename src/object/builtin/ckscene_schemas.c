@@ -143,7 +143,8 @@ static nmo_status_t nmo_scene_read_new_data(
     nmo_scene_state_t *out_state,
     nmo_chunk_t *chunk,
     void *context,
-    uint32_t data_version)
+    uint32_t data_version,
+    size_t section_end)
 {
     nmo_ref_t level = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     int32_t desc_count = 0;
@@ -227,6 +228,11 @@ static nmo_status_t nmo_scene_read_new_data(
                 descs[i].flags = converted;
             }
         }
+    }
+
+    if (nmo_chunk_get_position(chunk) > section_end) {
+        result = NMO_ERR_TRUNCATED_CHUNK;
+        goto fail;
     }
 
     nmo_ref_check_class(
@@ -331,15 +337,22 @@ static nmo_status_t nmo_scene_deserialize_internal(
     if (result != NMO_OK) return result;
 
     /* Section 1: SCENENEWDATA - Level + scene objects */
-    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SCENENEWDATA);
+    size_t section_dwords = 0;
+    result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_SCENENEWDATA, &section_dwords);
     if (result == NMO_OK) {
+        if (section_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
+        const size_t section_end =
+            nmo_chunk_get_position(chunk) + section_dwords;
         NMO_RETURN_IF_ERROR(nmo_scene_read_new_data(
-            out_state, chunk, context, data_version));
+            out_state, chunk, context, data_version, section_end));
     } else if (result != NMO_ERR_NOT_FOUND) return result;
 
     /* Section 2: SCENELAUNCHED - Environment settings */
-    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SCENELAUNCHED);
+    result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_SCENELAUNCHED, &section_dwords);
     if (result == NMO_OK) {
+        if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
         uint32_t environment_settings = 0;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(
             chunk, &environment_settings));
@@ -347,8 +360,10 @@ static nmo_status_t nmo_scene_deserialize_internal(
     } else if (result != NMO_ERR_NOT_FOUND) return result;
 
     /* Section 3: SCENERENDERSETTINGS - Rendering configuration */
-    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_SCENERENDERSETTINGS);
+    result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_SCENERENDERSETTINGS, &section_dwords);
     if (result == NMO_OK) {
+        if (section_dwords < 9u) return NMO_ERR_TRUNCATED_CHUNK;
         NMO_RETURN_IF_ERROR(nmo_scene_read_render_settings(
             out_state, chunk, context));
     } else if (result != NMO_ERR_NOT_FOUND) return result;
