@@ -117,11 +117,20 @@ static nmo_status_t nmo_grid_deserialize_internal(
     out_state->has_file_flag = 0;
     out_state->file_flag = 0;
 
-    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_GRIDDATA);
+    size_t section_dwords = 0;
+    result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_GRIDDATA, &section_dwords);
     if (result == NMO_ERR_NOT_FOUND) {
         NMO_RETURN_OK();
     }
     if (result != NMO_OK) return result;
+    const size_t section_end =
+        nmo_chunk_get_position(chunk) + section_dwords;
+    const size_t minimum_header_dwords =
+        nmo_chunk_is_file_mode(chunk) ? 7u : 6u;
+    if (section_dwords < minimum_header_dwords) {
+        return NMO_ERR_TRUNCATED_CHUNK;
+    }
     out_state->has_grid_data = 1;
 
     NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &out_state->width));
@@ -184,6 +193,10 @@ static nmo_status_t nmo_grid_deserialize_internal(
                 return result;
             }
         }
+    }
+    if (nmo_chunk_get_position(chunk) > section_end) {
+        nmo_array_dispose(&layers);
+        return NMO_ERR_TRUNCATED_CHUNK;
     }
     nmo_array_dispose(&out_state->layers);
     out_state->layers = layers;

@@ -5588,6 +5588,59 @@ TEST(chunk_id_remap, grid_failures_keep_state_and_target_chunk_atomic) {
     ASSERT_EQ(902u, NMO_ARRAY_DATA(
         nmo_grid_layer_t, &state.layers)[0].ref.raw_id);
 
+    nmo_chunk_t *missing_count = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(missing_count);
+    missing_count->class_id = NMO_CID_GRID;
+    missing_count->data_version = 7;
+    missing_count->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(missing_count));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        missing_count, CK_STATESAVE_GRIDDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(missing_count, 10));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(missing_count, 20));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(missing_count, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(missing_count, 30));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(missing_count, 40));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(missing_count, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(missing_count, 0));
+    nmo_chunk_close(missing_count);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_grid_deserialize(
+        &state, missing_count, NULL, &deserialize_context));
+    ASSERT_EQ(77, state.width);
+    ASSERT_EQ(88, state.length);
+    ASSERT_EQ(old_layers, state.layers.data);
+    ASSERT_EQ(1u, state.layers.count);
+
+    nmo_chunk_t *cross_section_subchunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(cross_section_subchunk);
+    cross_section_subchunk->class_id = NMO_CID_GRID;
+    cross_section_subchunk->data_version = 7;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(cross_section_subchunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_section_subchunk, CK_STATESAVE_GRIDDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(cross_section_subchunk, 10));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(cross_section_subchunk, 20));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(cross_section_subchunk, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(cross_section_subchunk, 30));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(cross_section_subchunk, 40));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_sequence_start(
+        cross_section_subchunk, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_sequence_item(
+        cross_section_subchunk, 903));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(cross_section_subchunk, 7));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        cross_section_subchunk, 0x11223344u));
+    for (size_t i = 0; i < 5; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(cross_section_subchunk, 0));
+    }
+    nmo_chunk_close(cross_section_subchunk);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_grid_deserialize(
+        &state, cross_section_subchunk, NULL, &deserialize_context));
+    ASSERT_EQ(77, state.width);
+    ASSERT_EQ(88, state.length);
+    ASSERT_EQ(old_layers, state.layers.data);
+    ASSERT_EQ(1u, state.layers.count);
+
     nmo_id_remap_t *runtime_to_file = nmo_id_remap_create(arena);
     ASSERT_NOT_NULL(runtime_to_file);
     nmo_chunk_file_context_t file_context = {
