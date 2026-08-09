@@ -26,12 +26,15 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
     animation,
     nmo_animation_state_t,
     do {
+        nmo_status_t result = nmo_sceneobject_vtable.create(
+            &state->base, NULL, context);
+        if (result != NMO_OK) return result;
         state->flags = CKANIMATION_LINKTOFRAMERATE | CKANIMATION_CANBEBREAK;
         state->frame_rate = 30.0f;
         state->length = 100.0f;
         state->current_step = 0.0f;
     } while (0),
-    ((void)0))
+    nmo_sceneobject_vtable.destroy(&state->base, NULL, context))
 
 NMO_DEFINE_OBJECT_LIFECYCLE(
     keyedanimation,
@@ -65,7 +68,7 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
 
 static const nmo_type_field_t nmo_animation_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_animation_state_t, base),
-                    sizeof(nmo_sceneobject_state_t), CKPGUID_NONE,
+                    sizeof(nmo_sceneobject_state_t), CKPGUID_SCENEOBJECT,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_animation_state_t, has_data, CKPGUID_UINT8),
     NMO_FIELD(nmo_animation_state_t, flags, CKPGUID_UINT32),
@@ -225,7 +228,12 @@ static nmo_status_t nmo_animation_copy(
     const nmo_type_descriptor_t *type,
     nmo_arena_t *arena)
 {
-    return nmo_object_default_copy(src, dst, type, arena);
+    (void)type;
+    (void)arena;
+    if (src == NULL || dst == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    if (src != dst) *(nmo_animation_state_t *)dst =
+        *(const nmo_animation_state_t *)src;
+    return NMO_OK;
 }
 
 static nmo_status_t nmo_animation_validate(
@@ -233,10 +241,10 @@ static nmo_status_t nmo_animation_validate(
     const nmo_type_descriptor_t *type,
     void *context)
 {
-    (void)instance;
     (void)type;
-    (void)context;
-    NMO_RETURN_OK();
+    if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    const nmo_animation_state_t *state = instance;
+    return nmo_sceneobject_vtable.validate(&state->base, NULL, context);
 }
 
 static nmo_status_t nmo_keyedanimation_copy(
@@ -584,7 +592,86 @@ static void nmo_objectanimation_post_delete(
  * Vtable + registration
  * ============================================================================ */
 
-NMO_DEFINE_OBJECT_STATE_OPS_CUSTOM(animation, nmo_animation_state_t)
+static bool nmo_animation_ref_equals(
+    const nmo_ref_t *lhs,
+    const nmo_ref_t *rhs)
+{
+    return lhs->raw_id == rhs->raw_id &&
+        lhs->id == rhs->id &&
+        lhs->state == rhs->state;
+}
+
+static bool nmo_animation_float_equals(float lhs, float rhs)
+{
+    return memcmp(&lhs, &rhs, sizeof(lhs)) == 0;
+}
+
+static bool nmo_animation_equals(const void *a, const void *b)
+{
+    if (a == b) return true;
+    if (a == NULL || b == NULL) return false;
+    const nmo_animation_state_t *lhs = a;
+    const nmo_animation_state_t *rhs = b;
+    return nmo_sceneobject_vtable.equals(&lhs->base, &rhs->base) &&
+        lhs->has_data == rhs->has_data &&
+        lhs->flags == rhs->flags &&
+        nmo_animation_float_equals(lhs->frame_rate, rhs->frame_rate) &&
+        lhs->has_length == rhs->has_length &&
+        nmo_animation_float_equals(lhs->length, rhs->length) &&
+        lhs->has_root_entity == rhs->has_root_entity &&
+        nmo_animation_ref_equals(&lhs->root_entity, &rhs->root_entity) &&
+        lhs->has_character == rhs->has_character &&
+        nmo_animation_ref_equals(&lhs->character, &rhs->character) &&
+        lhs->has_current_step == rhs->has_current_step &&
+        nmo_animation_float_equals(lhs->current_step, rhs->current_step);
+}
+
+static uint32_t nmo_animation_hash_bytes(
+    uint32_t hash,
+    const void *data,
+    size_t size)
+{
+    const uint8_t *bytes = data;
+    for (size_t i = 0; i < size; ++i) {
+        hash ^= bytes[i];
+        hash *= 16777619u;
+    }
+    return hash;
+}
+
+static uint32_t nmo_animation_hash_ref(
+    uint32_t hash,
+    const nmo_ref_t *ref)
+{
+    hash = nmo_animation_hash_bytes(
+        hash, &ref->raw_id, sizeof(ref->raw_id));
+    hash = nmo_animation_hash_bytes(hash, &ref->id, sizeof(ref->id));
+    return nmo_animation_hash_bytes(
+        hash, &ref->state, sizeof(ref->state));
+}
+
+static uint32_t nmo_animation_hash(const void *instance)
+{
+    if (instance == NULL) return 0;
+    const nmo_animation_state_t *state = instance;
+    uint32_t hash = nmo_sceneobject_vtable.hash(&state->base);
+#define NMO_ANIMATION_HASH_FIELD(field) \
+    hash = nmo_animation_hash_bytes( \
+        hash, &state->field, sizeof(state->field))
+    NMO_ANIMATION_HASH_FIELD(has_data);
+    NMO_ANIMATION_HASH_FIELD(flags);
+    NMO_ANIMATION_HASH_FIELD(frame_rate);
+    NMO_ANIMATION_HASH_FIELD(has_length);
+    NMO_ANIMATION_HASH_FIELD(length);
+    NMO_ANIMATION_HASH_FIELD(has_root_entity);
+    hash = nmo_animation_hash_ref(hash, &state->root_entity);
+    NMO_ANIMATION_HASH_FIELD(has_character);
+    hash = nmo_animation_hash_ref(hash, &state->character);
+    NMO_ANIMATION_HASH_FIELD(has_current_step);
+    NMO_ANIMATION_HASH_FIELD(current_step);
+#undef NMO_ANIMATION_HASH_FIELD
+    return hash;
+}
 
 static const nmo_object_serialize_pass_t nmo_keyedanimation_compare_pass = {
     .class_id = NMO_CID_KEYEDANIMATION,

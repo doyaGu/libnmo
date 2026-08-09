@@ -9144,10 +9144,21 @@ TEST(chunk_id_remap, animation_refs_round_trip_and_failure_is_atomic) {
 
     nmo_animation_state_t source;
     ASSERT_EQ(NMO_OK, nmo_animation_vtable.create(&source, NULL, NULL));
+    ASSERT_EQ(NMO_CKOBJECT_VISIBLE, source.base.base.visibility_flags);
     source.has_root_entity = 1;
     source.root_entity = nmo_ref_from_raw(901);
     source.has_character = 1;
     source.character = nmo_ref_from_raw(902);
+
+    nmo_animation_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_animation_vtable.create(&copied, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_animation_vtable.copy(
+        &source, &copied, NULL, NULL));
+    ASSERT_TRUE(nmo_animation_vtable.equals(&source, &copied));
+    ASSERT_EQ(nmo_animation_vtable.hash(&source),
+              nmo_animation_vtable.hash(&copied));
+    copied.character.raw_id++;
+    ASSERT_FALSE(nmo_animation_vtable.equals(&source, &copied));
 
     nmo_chunk_t *first = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(first);
@@ -9214,6 +9225,7 @@ TEST(chunk_id_remap, animation_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(NMO_REF_UNRESOLVED, failed.root_entity.state);
 
     nmo_animation_vtable.destroy(&source, NULL, NULL);
+    nmo_animation_vtable.destroy(&copied, NULL, NULL);
     nmo_animation_vtable.destroy(&loaded, NULL, NULL);
     nmo_animation_vtable.destroy(&reloaded, NULL, NULL);
     nmo_animation_vtable.destroy(&failed, NULL, NULL);
