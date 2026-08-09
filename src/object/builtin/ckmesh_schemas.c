@@ -225,6 +225,10 @@ static size_t nmo_mesh_identifier_remaining_dwords(nmo_chunk_t *chunk) {
     return next_pos - state->current_pos;
 }
 
+static bool nmo_mesh_size_mul_overflows(size_t count, size_t element_size) {
+    return count != 0u && element_size > SIZE_MAX / count;
+}
+
 static nmo_status_t nmo_mesh_seek_optional(
     nmo_chunk_t *chunk,
     uint32_t identifier,
@@ -504,14 +508,19 @@ static nmo_status_t nmo_mesh_deserialize_material_groups(
     int32_t group_count = 0;
     NMO_MESH_READ(nmo_chunk_read_int(chunk, &group_count),
                   "material group count");
-    if (group_count < 0 || group_count >= 10000) {
+    if (group_count < 0) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                          "Invalid mesh material group count %d", group_count);
     }
-    if ((size_t)group_count * 2u >
-        nmo_mesh_identifier_remaining_dwords(chunk)) {
+    if ((size_t)group_count >
+        nmo_mesh_identifier_remaining_dwords(chunk) / 2u) {
         NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                          "CKMesh material groups exceed remaining DWORDs");
+    }
+    if (nmo_mesh_size_mul_overflows(
+            (size_t)group_count, sizeof(nmo_material_group_t))) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "CKMesh material group allocation size overflows");
     }
     if (group_count == 0) return NMO_OK;
 
@@ -678,16 +687,23 @@ static nmo_status_t nmo_mesh_deserialize_modern(
             NMO_RETURN_ERROR(result, NMO_SEVERITY_ERROR,
                              "CKMesh modern channel count is truncated");
         }
-        if (channel_count < 0 || channel_count >= 100) {
+        if (channel_count < 0) {
             NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                              "Invalid mesh material channel count");
         }
         if (channel_count > 0) {
-            if ((size_t)channel_count * 5u >
-                nmo_mesh_identifier_remaining_dwords(chunk)) {
+            if ((size_t)channel_count >
+                nmo_mesh_identifier_remaining_dwords(chunk) / 5u) {
                 NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK,
                                  NMO_SEVERITY_ERROR,
                                  "Modern mesh channels exceed remaining DWORDs");
+            }
+            if (nmo_mesh_size_mul_overflows(
+                    (size_t)channel_count,
+                    sizeof(nmo_material_channel_t))) {
+                NMO_RETURN_ERROR(
+                    NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                    "Modern mesh channel allocation size overflows");
             }
             out_state->material_channel_count = (uint32_t)channel_count;
             out_state->material_channels = (nmo_material_channel_t *)nmo_arena_alloc(
@@ -711,19 +727,26 @@ static nmo_status_t nmo_mesh_deserialize_modern(
                     NMO_MESH_READ(nmo_chunk_read_int(chunk, &uv_count),
                                   "modern channel UV count");
                     
-                    if (uv_count < 0 || uv_count >= 1000000) {
+                    if (uv_count < 0) {
                         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT,
                                          NMO_SEVERITY_ERROR,
                                          "Invalid modern mesh UV count %d",
                                          uv_count);
                     }
                     if (uv_count > 0) {
-                        if ((size_t)uv_count * 2u >
-                            nmo_mesh_identifier_remaining_dwords(chunk)) {
+                        if ((size_t)uv_count >
+                            nmo_mesh_identifier_remaining_dwords(chunk) / 2u) {
                             NMO_RETURN_ERROR(
                                 NMO_ERR_TRUNCATED_CHUNK,
                                 NMO_SEVERITY_ERROR,
                                 "Modern mesh channel UVs exceed remaining DWORDs");
+                        }
+                        if (nmo_mesh_size_mul_overflows(
+                                (size_t)uv_count,
+                                sizeof(nmo_vector2_t))) {
+                            NMO_RETURN_ERROR(
+                                NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                "Modern mesh UV allocation size overflows");
                         }
                         ch->uv_count = (uint32_t)uv_count;
                         ch->uv_coords = (nmo_vector2_t *)nmo_arena_alloc(
@@ -1119,16 +1142,23 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
         int32_t channel_count;
         result = nmo_chunk_read_int(chunk, &channel_count);
         if (result != NMO_OK) return result;
-        if (channel_count < 0 || channel_count >= 100) {
+        if (channel_count < 0) {
             NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                              "Invalid legacy mesh channel count %d", channel_count);
         }
         if (channel_count > 0) {
-            if ((size_t)channel_count * 5u >
-                nmo_mesh_identifier_remaining_dwords(chunk)) {
+            if ((size_t)channel_count >
+                nmo_mesh_identifier_remaining_dwords(chunk) / 5u) {
                 NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK,
                                  NMO_SEVERITY_ERROR,
                                  "Legacy mesh channels exceed remaining DWORDs");
+            }
+            if (nmo_mesh_size_mul_overflows(
+                    (size_t)channel_count,
+                    sizeof(nmo_material_channel_t))) {
+                NMO_RETURN_ERROR(
+                    NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                    "Legacy mesh channel allocation size overflows");
             }
             out_state->material_channel_count = (uint32_t)channel_count;
             out_state->material_channels = (nmo_material_channel_t *)nmo_arena_alloc(
@@ -1148,18 +1178,25 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
 
                     int32_t uv_count;
                     NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &uv_count));
-                    if (uv_count < 0 || uv_count >= 1000000) {
+                    if (uv_count < 0) {
                         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                                          "Invalid legacy mesh UV count %d", uv_count);
                     }
 
                     if (uv_count > 0) {
-                        if ((size_t)uv_count * 2u >
-                            nmo_mesh_identifier_remaining_dwords(chunk)) {
+                        if ((size_t)uv_count >
+                            nmo_mesh_identifier_remaining_dwords(chunk) / 2u) {
                             NMO_RETURN_ERROR(
                                 NMO_ERR_TRUNCATED_CHUNK,
                                 NMO_SEVERITY_ERROR,
                                 "Legacy mesh channel UVs exceed remaining DWORDs");
+                        }
+                        if (nmo_mesh_size_mul_overflows(
+                                (size_t)uv_count,
+                                sizeof(nmo_vector2_t))) {
+                            NMO_RETURN_ERROR(
+                                NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                                "Legacy mesh UV allocation size overflows");
                         }
                         ch->uv_count = (uint32_t)uv_count;
                         ch->uv_coords = (nmo_vector2_t *)nmo_arena_alloc(
@@ -1942,17 +1979,25 @@ static nmo_status_t nmo_mesh_validate(
     void *context)
 {
     (void)type;
-    (void)context;
     const nmo_mesh_state_t *s = instance;
     if (!s) return NMO_ERR_INVALID_ARGUMENT;
+    NMO_RETURN_IF_ERROR(nmo_beobject_vtable.validate(
+        &s->beobject, NULL, context));
     if (s->face_count > UINT32_MAX / 3u ||
         s->line_count > UINT32_MAX / 2u ||
         s->face_count > INT32_MAX || s->line_count > INT32_MAX ||
         s->vertex_count > INT32_MAX || s->vertex_weight_count > INT32_MAX ||
-        s->material_group_count >= 10000u ||
-        s->material_channel_count >= 100u) {
+        s->material_group_count > INT32_MAX ||
+        s->material_channel_count > INT32_MAX) {
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
                          "CKMesh count exceeds serialized limits");
+    }
+    if (nmo_mesh_size_mul_overflows(
+            s->material_group_count, sizeof(*s->material_groups)) ||
+        nmo_mesh_size_mul_overflows(
+            s->material_channel_count, sizeof(*s->material_channels))) {
+        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                         "CKMesh material allocation size overflows");
     }
     NMO_VALIDATE_COUNT(s->faces, s->face_count, "faces");
     if (s->face_count > 0) {
@@ -1970,10 +2015,13 @@ static nmo_status_t nmo_mesh_validate(
     NMO_VALIDATE_COUNT(s->material_channels, s->material_channel_count, "material_channels");
     if (s->material_channels) {
         for (uint32_t i = 0; i < s->material_channel_count; ++i) {
-            if (s->material_channels[i].uv_count >= 1000000u) {
+            if (s->material_channels[i].uv_count > INT32_MAX ||
+                nmo_mesh_size_mul_overflows(
+                    s->material_channels[i].uv_count,
+                    sizeof(*s->material_channels[i].uv_coords))) {
                 NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED,
                                  NMO_SEVERITY_ERROR,
-                                 "CKMesh channel UV count exceeds limit");
+                                 "CKMesh channel UV count exceeds serialized limits");
             }
             if (s->material_channels[i].uv_count > 0) {
                 NMO_VALIDATE_COUNT(s->material_channels[i].uv_coords,

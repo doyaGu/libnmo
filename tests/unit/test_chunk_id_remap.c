@@ -9556,6 +9556,93 @@ TEST(chunk_id_remap, mesh_material_sections_and_failures_are_atomic) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, mesh_preserves_large_material_sections) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+    ASSERT_NOT_NULL(arena);
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+
+    nmo_mesh_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_mesh_vtable.create(&source, NULL, NULL));
+    const uint32_t group_count = 10000u;
+    source.has_material_groups = 1;
+    source.material_group_count = group_count;
+    source.material_groups = nmo_arena_alloc(
+        arena, sizeof(*source.material_groups) * group_count,
+        _Alignof(nmo_material_group_t));
+    ASSERT_NOT_NULL(source.material_groups);
+    memset(source.material_groups, 0,
+           sizeof(*source.material_groups) * group_count);
+    for (uint32_t i = 0; i < group_count; ++i) {
+        source.material_groups[i].material = nmo_ref_from_raw(
+            (nmo_object_id_t)(i + 1u));
+        source.material_groups[i].padding = (int32_t)i;
+    }
+
+    const uint32_t channel_count = 100u;
+    source.has_material_channels = 1;
+    source.material_channel_count = channel_count;
+    source.material_channels = nmo_arena_alloc(
+        arena, sizeof(*source.material_channels) * channel_count,
+        _Alignof(nmo_material_channel_t));
+    ASSERT_NOT_NULL(source.material_channels);
+    memset(source.material_channels, 0,
+           sizeof(*source.material_channels) * channel_count);
+    for (uint32_t i = 0; i < channel_count; ++i) {
+        source.material_channels[i].material = nmo_ref_from_raw(
+            (nmo_object_id_t)(group_count + i + 1u));
+        source.material_channels[i].flags = i;
+    }
+    const uint32_t uv_count = 1000000u;
+    source.material_channels[channel_count - 1u].uv_count = uv_count;
+    source.material_channels[channel_count - 1u].uv_coords = nmo_arena_alloc(
+        arena, sizeof(nmo_vector2_t) * uv_count, _Alignof(nmo_vector2_t));
+    ASSERT_NOT_NULL(
+        source.material_channels[channel_count - 1u].uv_coords);
+    memset(source.material_channels[channel_count - 1u].uv_coords, 0,
+           sizeof(nmo_vector2_t) * uv_count);
+    source.material_channels[channel_count - 1u]
+        .uv_coords[uv_count - 1u].x = 1.25f;
+    source.material_channels[channel_count - 1u]
+        .uv_coords[uv_count - 1u].y = 2.5f;
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    chunk->class_id = NMO_CID_MESH;
+    chunk->chunk_version = NMO_CHUNK_VERSION4;
+    chunk->data_version = 9;
+    chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_mesh_serialize(
+        &source, chunk, NULL, &serialize_context));
+    nmo_chunk_close(chunk);
+
+    nmo_mesh_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_mesh_vtable.create(&loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_mesh_deserialize(
+        &loaded, chunk, NULL, &deserialize_context));
+    ASSERT_EQ(group_count, loaded.material_group_count);
+    ASSERT_EQ(group_count,
+              loaded.material_groups[group_count - 1u].material.raw_id);
+    ASSERT_EQ((int32_t)(group_count - 1u),
+              loaded.material_groups[group_count - 1u].padding);
+    ASSERT_EQ(channel_count, loaded.material_channel_count);
+    ASSERT_EQ(group_count + channel_count,
+              loaded.material_channels[channel_count - 1u].material.raw_id);
+    ASSERT_EQ(uv_count,
+              loaded.material_channels[channel_count - 1u].uv_count);
+    ASSERT_EQ(1.25f, loaded.material_channels[channel_count - 1u]
+                         .uv_coords[uv_count - 1u].x);
+    ASSERT_EQ(2.5f, loaded.material_channels[channel_count - 1u]
+                        .uv_coords[uv_count - 1u].y);
+
+    nmo_mesh_vtable.destroy(&source, NULL, NULL);
+    nmo_mesh_vtable.destroy(&loaded, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, mesh_rejects_oversized_lines_before_allocation) {
     fail_after_allocator_state_t allocator_state = {
         .allocation_count = 0,
@@ -11049,6 +11136,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, character_rejects_cross_section_counts_before_allocation);
     REGISTER_TEST(chunk_id_remap, mesh_material_refs_round_trip_without_compaction);
     REGISTER_TEST(chunk_id_remap, mesh_material_sections_and_failures_are_atomic);
+    REGISTER_TEST(chunk_id_remap, mesh_preserves_large_material_sections);
     REGISTER_TEST(chunk_id_remap, mesh_copy_preserves_material_records);
     REGISTER_TEST(chunk_id_remap, mesh_rejects_oversized_lines_before_allocation);
     REGISTER_TEST(chunk_id_remap, patchmesh_data3_refs_round_trip_and_failure_is_atomic);
