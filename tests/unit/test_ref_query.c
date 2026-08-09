@@ -8,6 +8,7 @@
 #include "object/nmo_object_refs.h"
 #include "object/nmo_class_ids.h"
 #include "object/builtin/nmo_group_schemas.h"
+#include "object/builtin/nmo_place_schemas.h"
 #include "object/builtin/nmo_scene_schemas.h"
 #include "object/builtin/nmo_character_schemas.h"
 #include "object/nmo_object_repository.h"
@@ -386,6 +387,41 @@ TEST(ref_query, struct_array_uses_reflected_storage_stride) {
     nmo_context_release(ctx);
 }
 
+TEST(ref_query, rejects_malformed_struct_array_storage) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+
+    nmo_object_id_t place_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_PLACE, "place", NMO_NULL_GUID,
+        &place_id, NULL));
+    nmo_object_t *place_object =
+        nmo_object_repository_find_by_id(repo, place_id);
+    ASSERT_NOT_NULL(place_object);
+    nmo_place_state_t *place = (nmo_place_state_t *)place_object->state;
+    ASSERT_NOT_NULL(place);
+
+    const nmo_array_t saved_portals = place->portals;
+    nmo_place_portal_entry_t portal = {0};
+    place->portals.data = &portal;
+    place->portals.count = 1;
+    place->portals.capacity = 1;
+    place->portals.element_size = 1;
+
+    direct_ref_capture_t capture = {0};
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_ref_enumerate_object(
+        nmo_context_get_type_registry(ctx), place_object,
+        capture_direct_ref, &capture));
+    ASSERT_EQ(0u, capture.count);
+
+    place->portals = saved_portals;
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(ref_query, scene_base_references_are_enumerated_once) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
@@ -509,6 +545,7 @@ TEST(ref_query, character_part_reference_is_enumerated) {
 TEST_MAIN_BEGIN()
     REGISTER_TEST(ref_query, explicit_type_guid_drives_reference_enumeration);
     REGISTER_TEST(ref_query, struct_array_uses_reflected_storage_stride);
+    REGISTER_TEST(ref_query, rejects_malformed_struct_array_storage);
     REGISTER_TEST(ref_query, counts_session_references_without_graph_handles);
     REGISTER_TEST(ref_query, reports_broken_reference_count);
     REGISTER_TEST(ref_query, visits_edges_without_exposing_graph_handles);

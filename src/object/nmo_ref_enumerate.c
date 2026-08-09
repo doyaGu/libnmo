@@ -266,16 +266,25 @@ static nmo_status_t nmo_ref_enumerate_struct_arrays(
         if (!has_refs) continue;
 
         const void *field_ptr = nmo_field_get_ptr_const(instance, field);
-        if (!field_ptr) continue;
+        if (!field_ptr) return NMO_ERR_INVALID_STATE;
+
+        const size_t element_size =
+            nmo_field_resolve_element_size(field, elem_type);
+        if (element_size == 0) return NMO_ERR_VALIDATION_FAILED;
 
         /* nmo_array_t: inline dynamic array */
         if (field->size == sizeof(nmo_array_t)) {
             const nmo_array_t *arr = (const nmo_array_t *)field_ptr;
-            if (!arr->data || arr->count == 0 || arr->element_size == 0) continue;
+            if (((arr->element_size != 0 || arr->count > 0) &&
+                 arr->element_size != element_size) ||
+                (arr->count > 0 && arr->data == NULL)) {
+                return NMO_ERR_VALIDATION_FAILED;
+            }
+            if (arr->count == 0) continue;
 
             for (size_t k = 0; k < arr->count; ++k) {
                 const void *elem =
-                    (const char *)arr->data + k * arr->element_size;
+                    (const char *)arr->data + k * element_size;
                 nmo_status_t st = nmo_ref_enumerate_fields(
                     elem_type, elem, visitor, user_data);
                 if (st != NMO_OK) return st;
@@ -284,17 +293,17 @@ static nmo_status_t nmo_ref_enumerate_struct_arrays(
         /* T* pointer array with metadata-declared count field */
         else if (field->size == sizeof(void *)) {
             const void *ptr = *(const void *const *)field_ptr;
-            if (!ptr) continue;
 
             uint32_t count = 0;
-            if (nmo_field_resolve_count(type, field, instance, &count) != NMO_OK) {
-                continue;
+            nmo_status_t count_status = nmo_field_resolve_count(
+                type, field, instance, &count);
+            if (count_status != NMO_OK) {
+                return count_status;
             }
-            size_t element_size =
-                nmo_field_resolve_element_size(field, elem_type);
-            if (element_size == 0) {
-                continue;
+            if (count > 0 && ptr == NULL) {
+                return NMO_ERR_VALIDATION_FAILED;
             }
+            if (count == 0) continue;
 
             for (uint32_t k = 0; k < count; ++k) {
                 const void *elem =
