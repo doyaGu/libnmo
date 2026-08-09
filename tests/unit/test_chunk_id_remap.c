@@ -9615,8 +9615,6 @@ TEST(chunk_id_remap, curve_staging_initializes_inherited_arrays) {
 
     nmo_curve_state_t curve;
     ASSERT_EQ(NMO_OK, nmo_curve_vtable.create(&curve, NULL, NULL));
-    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(
-        &curve.base.base.base, NULL, NULL));
     nmo_ref_t old_curve_script = nmo_ref_from_raw(952);
     ASSERT_EQ(NMO_OK, nmo_array_append(
         &curve.base.base.base.scripts, &old_curve_script));
@@ -9644,8 +9642,6 @@ TEST(chunk_id_remap, curve_staging_initializes_inherited_arrays) {
 
     nmo_curvepoint_state_t point;
     ASSERT_EQ(NMO_OK, nmo_curvepoint_vtable.create(&point, NULL, NULL));
-    ASSERT_EQ(NMO_OK, nmo_beobject_vtable.create(
-        &point.base.base.base, NULL, NULL));
     nmo_ref_t old_point_script = nmo_ref_from_raw(954);
     ASSERT_EQ(NMO_OK, nmo_array_append(
         &point.base.base.base.scripts, &old_point_script));
@@ -9658,12 +9654,6 @@ TEST(chunk_id_remap, curve_staging_initializes_inherited_arrays) {
     ASSERT_NOT_NULL(point_scripts);
     ASSERT_EQ(953u, point_scripts[0].raw_id);
 
-    nmo_array_dispose(&curve.base.base.base.scripts);
-    nmo_array_dispose(&curve.base.base.base.attributes);
-    nmo_array_dispose(&curve.base.base.base.legacy_attributes);
-    nmo_array_dispose(&point.base.base.base.scripts);
-    nmo_array_dispose(&point.base.base.base.attributes);
-    nmo_array_dispose(&point.base.base.base.legacy_attributes);
     nmo_curve_vtable.destroy(&curve, NULL, NULL);
     nmo_curvepoint_vtable.destroy(&point, NULL, NULL);
     nmo_arena_destroy(arena);
@@ -9835,17 +9825,8 @@ TEST(chunk_id_remap, curve_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(0xCAFEBABEu, marker);
 
     nmo_curve_vtable.destroy(&source, NULL, NULL);
-    nmo_array_dispose(&loaded.base.base.base.scripts);
-    nmo_array_dispose(&loaded.base.base.base.attributes);
-    nmo_array_dispose(&loaded.base.base.base.legacy_attributes);
     nmo_curve_vtable.destroy(&loaded, NULL, NULL);
-    nmo_array_dispose(&copied.base.base.base.scripts);
-    nmo_array_dispose(&copied.base.base.base.attributes);
-    nmo_array_dispose(&copied.base.base.base.legacy_attributes);
     nmo_curve_vtable.destroy(&copied, NULL, NULL);
-    nmo_array_dispose(&reloaded.base.base.base.scripts);
-    nmo_array_dispose(&reloaded.base.base.base.attributes);
-    nmo_array_dispose(&reloaded.base.base.base.legacy_attributes);
     nmo_curve_vtable.destroy(&reloaded, NULL, NULL);
     nmo_curve_vtable.destroy(&failed, NULL, NULL);
     nmo_curve_vtable.destroy(&invalid, NULL, NULL);

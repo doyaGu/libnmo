@@ -85,56 +85,42 @@ static void nmo_curvepoint_set_defaults(nmo_curvepoint_state_t *state) {
     state->legacy_position = (nmo_vector_t){0.0f, 0.0f, 0.0f};
 }
 
-static nmo_status_t nmo_curve_staged_base_create(
-    nmo_3dentity_state_t *state,
-    void *context);
-static void nmo_curve_staged_base_destroy(nmo_3dentity_state_t *state);
+static void nmo_curve_dispose_state(nmo_curve_state_t *state);
 
 NMO_DEFINE_OBJECT_LIFECYCLE(
     curve,
     nmo_curve_state_t,
-    do { \
-        nmo_status_t result = nmo_curve_staged_base_create( \
-            &state->base, context); \
-        if (result != NMO_OK) return result; \
-        nmo_curve_set_defaults(state); \
+    do {
+        nmo_status_t result = nmo_3dentity_vtable.create(
+            &state->base, NULL, context);
+        if (result != NMO_OK) return result;
+        nmo_curve_set_defaults(state);
     } while (0),
-    nmo_curve_staged_base_destroy(&state->base))
+    nmo_curve_dispose_state(state))
 
 NMO_DEFINE_OBJECT_LIFECYCLE(
     curvepoint,
     nmo_curvepoint_state_t,
-    do { \
-        nmo_status_t result = nmo_curve_staged_base_create( \
-            &state->base, context); \
-        if (result != NMO_OK) return result; \
-        nmo_curvepoint_set_defaults(state); \
+    do {
+        nmo_status_t result = nmo_3dentity_vtable.create(
+            &state->base, NULL, context);
+        if (result != NMO_OK) return result;
+        nmo_curvepoint_set_defaults(state);
     } while (0),
-    nmo_curve_staged_base_destroy(&state->base))
+    nmo_3dentity_vtable.destroy(&state->base, NULL, context))
 
-static nmo_status_t nmo_curve_staged_base_create(
-    nmo_3dentity_state_t *state,
-    void *context)
+static void nmo_curve_dispose_state(nmo_curve_state_t *state)
 {
-    if (!state) return NMO_ERR_INVALID_ARGUMENT;
-    nmo_beobject_state_t *beobject = &state->base.base;
-    nmo_status_t result = nmo_beobject_vtable.create(
-        beobject, NULL, context);
-    if (result != NMO_OK) {
-        nmo_array_dispose(&beobject->scripts);
-        nmo_array_dispose(&beobject->attributes);
-        nmo_array_dispose(&beobject->legacy_attributes);
+    if (state == NULL) return;
+    if (state->sub_points != NULL) {
+        for (uint32_t i = 0; i < state->sub_point_count; ++i) {
+            if (state->sub_points[i].chunk != NULL) {
+                nmo_chunk_destroy(state->sub_points[i].chunk);
+                state->sub_points[i].chunk = NULL;
+            }
+        }
     }
-    return result;
-}
-
-static void nmo_curve_staged_base_destroy(nmo_3dentity_state_t *state)
-{
-    if (!state) return;
-    nmo_beobject_state_t *beobject = &state->base.base;
-    nmo_array_dispose(&beobject->scripts);
-    nmo_array_dispose(&beobject->attributes);
-    nmo_array_dispose(&beobject->legacy_attributes);
+    nmo_3dentity_vtable.destroy(&state->base, NULL, NULL);
 }
 
 static nmo_status_t read_object_sequence(
@@ -676,17 +662,18 @@ static nmo_status_t nmo_curve_deserialize_internal(
             if (!sub_points) {
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate curve subchunk array");
             }
+            memset(sub_points, 0,
+                   sizeof(nmo_curve_point_subchunk_t) * count);
+            out_state->sub_points = sub_points;
+            out_state->sub_point_count = count;
 
             for (uint32_t i = 0; i < count; ++i) {
                 sub_points[i].ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
-                sub_points[i].chunk = NULL;
                 NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &sub_points[i].ref));
                 NMO_RETURN_IF_ERROR(nmo_chunk_read_sub_chunk(
                     chunk, &sub_points[i].chunk));
                 nmo_curve_check_point_refs(&sub_points[i].ref, 1, context);
             }
-            out_state->sub_points = sub_points;
-            out_state->sub_point_count = count;
         }
     } else if (result != NMO_ERR_NOT_FOUND) return result;
 
@@ -1037,18 +1024,11 @@ nmo_status_t nmo_curve_deserialize(
     nmo_curve_state_t decoded;
     nmo_status_t result = nmo_curve_create(&decoded, NULL, context);
     if (result != NMO_OK) return result;
-    result = nmo_curve_staged_base_create(&decoded.base, context);
-    if (result != NMO_OK) {
-        nmo_curve_destroy(&decoded, NULL, context);
-        return result;
-    }
     result = nmo_curve_deserialize_internal(chunk, context, &decoded);
     if (result != NMO_OK) {
-        nmo_curve_staged_base_destroy(&decoded.base);
         nmo_curve_destroy(&decoded, NULL, context);
         return result;
     }
-    nmo_curve_staged_base_destroy(&out_state->base);
     nmo_curve_destroy(out_state, NULL, context);
     *out_state = decoded;
     return NMO_OK;
@@ -1093,18 +1073,11 @@ nmo_status_t nmo_curvepoint_deserialize(
     nmo_curvepoint_state_t decoded;
     nmo_status_t result = nmo_curvepoint_create(&decoded, NULL, context);
     if (result != NMO_OK) return result;
-    result = nmo_curve_staged_base_create(&decoded.base, context);
-    if (result != NMO_OK) {
-        nmo_curvepoint_destroy(&decoded, NULL, context);
-        return result;
-    }
     result = nmo_curvepoint_deserialize_internal(chunk, context, &decoded);
     if (result != NMO_OK) {
-        nmo_curve_staged_base_destroy(&decoded.base);
         nmo_curvepoint_destroy(&decoded, NULL, context);
         return result;
     }
-    nmo_curve_staged_base_destroy(&out_state->base);
     nmo_curvepoint_destroy(out_state, NULL, context);
     *out_state = decoded;
     return NMO_OK;
