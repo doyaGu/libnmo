@@ -488,6 +488,9 @@ static nmo_status_t nmo_light_serialize_internal(
     const uint32_t data_version = nmo_chunk_get_data_version(chunk);
     const bool write_legacy = is_file && data_version < 5u &&
         (data_version != 0u || state->light_data_is_legacy);
+    if (data_version == 0u && !write_legacy) {
+        chunk->data_version = 7u;
+    }
     const bool has_default_data =
         state->light_data.type == VX_LIGHTPOINT &&
         state->flags == 0x100u &&

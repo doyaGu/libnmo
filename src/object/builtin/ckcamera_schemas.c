@@ -266,6 +266,9 @@ static nmo_status_t nmo_camera_serialize_internal(
         in_state->has_planes_chunk;
     const bool write_legacy = is_file && data_version < 5u &&
         (data_version != 0u || has_legacy_layout);
+    if (data_version == 0u && !write_legacy) {
+        out_chunk->data_version = 7u;
+    }
     const bool has_default_values =
         in_state->projection_type == 1u && in_state->fov == 0.5f &&
         in_state->orthographic_zoom == 1.0f &&

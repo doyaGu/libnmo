@@ -1312,6 +1312,9 @@ static nmo_status_t nmo_texture_serialize_internal(
           state->has_current_slot));
     const bool legacy_file_layout = is_file && data_version < 5u &&
         (data_version != 0u || has_legacy_layout);
+    if (data_version == 0u && !legacy_file_layout) {
+        chunk->data_version = 7u;
+    }
     nmo_texture_state_t packed_layout = *state;
     if (packed_layout.transparent_color != 0u) {
         packed_layout.has_transparent_color = 1;
