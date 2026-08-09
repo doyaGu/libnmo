@@ -790,10 +790,12 @@ TEST(chunk_id_remap, behavior_unresolved_ref_round_trips_raw_id) {
     first->class_id = NMO_CID_BEHAVIOR;
     first->chunk_version = NMO_CHUNK_VERSION4;
     first->data_version = 7;
-    first->chunk_options |= NMO_CHUNK_OPTION_FILE;
     nmo_chunk_set_file_context(first, &write_context);
     nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
         arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
     ASSERT_EQ(NMO_OK, nmo_behavior_serialize(
         &source, first, NULL, &serialize_context));
     nmo_chunk_close(first);
@@ -804,7 +806,8 @@ TEST(chunk_id_remap, behavior_unresolved_ref_round_trips_raw_id) {
     nmo_chunk_set_file_context(first, &read_context);
     nmo_behavior_state_t loaded;
     ASSERT_EQ(NMO_OK, nmo_behavior_vtable.create(&loaded, NULL, NULL));
-    ASSERT_EQ(NMO_OK, nmo_behavior_deserialize(&loaded, first, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_behavior_deserialize(
+        &loaded, first, NULL, &deserialize_context));
     ASSERT_EQ(1u, loaded.inputs.count);
     const nmo_behavior_ref_t *loaded_refs = NMO_ARRAY_DATA(
         nmo_behavior_ref_t, &loaded.inputs);
@@ -822,7 +825,6 @@ TEST(chunk_id_remap, behavior_unresolved_ref_round_trips_raw_id) {
     second->class_id = NMO_CID_BEHAVIOR;
     second->chunk_version = NMO_CHUNK_VERSION4;
     second->data_version = 7;
-    second->chunk_options |= NMO_CHUNK_OPTION_FILE;
     nmo_chunk_set_file_context(second, &write_context);
     ASSERT_EQ(NMO_OK, nmo_behavior_serialize(
         &loaded, second, NULL, &serialize_context));
@@ -831,7 +833,8 @@ TEST(chunk_id_remap, behavior_unresolved_ref_round_trips_raw_id) {
 
     nmo_behavior_state_t reloaded;
     ASSERT_EQ(NMO_OK, nmo_behavior_vtable.create(&reloaded, NULL, NULL));
-    ASSERT_EQ(NMO_OK, nmo_behavior_deserialize(&reloaded, second, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_behavior_deserialize(
+        &reloaded, second, NULL, &deserialize_context));
     ASSERT_EQ(1u, reloaded.inputs.count);
     const nmo_behavior_ref_t *reloaded_refs = NMO_ARRAY_DATA(
         nmo_behavior_ref_t, &reloaded.inputs);
