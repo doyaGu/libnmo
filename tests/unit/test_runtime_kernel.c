@@ -1513,6 +1513,74 @@ TEST(runtime_kernel, copy_remap_updates_only_resolved_scene_members) {
     nmo_context_release(ctx);
 }
 
+TEST(runtime_kernel, safe_detach_removes_scene_members_atomically) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+
+    nmo_object_id_t scene_id = 0;
+    nmo_object_id_t deleted_id = 0;
+    nmo_object_id_t kept_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_SCENE, "scene", NMO_NULL_GUID,
+        &scene_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_OBJECT, "deleted", NMO_NULL_GUID,
+        &deleted_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_OBJECT, "kept", NMO_NULL_GUID,
+        &kept_id, NULL));
+
+    nmo_arena_t *chunk_arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(chunk_arena);
+    nmo_chunk_t *deleted_chunk = nmo_chunk_create(chunk_arena);
+    nmo_chunk_t *kept_chunk = nmo_chunk_create(chunk_arena);
+    ASSERT_NOT_NULL(deleted_chunk);
+    ASSERT_NOT_NULL(kept_chunk);
+    nmo_scene_object_desc_t descs[] = {
+        {
+            .ref = nmo_ref_from_id(deleted_id),
+            .initial_value = deleted_chunk,
+            .flags = 11,
+        },
+        {
+            .ref = nmo_ref_from_id(kept_id),
+            .initial_value = kept_chunk,
+            .flags = 22,
+        },
+        {
+            .ref = nmo_ref_from_raw(0x7FFFFF51u),
+            .flags = 33,
+        },
+    };
+    nmo_scene_state_t *scene = (nmo_scene_state_t *)
+        nmo_object_repository_find_by_id(repo, scene_id)->state;
+    ASSERT_EQ(NMO_OK, nmo_array_append_array(
+        &scene->object_descs, descs, 3));
+
+    nmo_runtime_report_t report = {0};
+    ASSERT_EQ(NMO_OK, nmo_session_destroy_objects(
+        session, &deleted_id, 1,
+        NMO_RUNTIME_REQUEST_STRICT | NMO_RUNTIME_REQUEST_SAFE_DETACH,
+        &report));
+    ASSERT_EQ(1u, report.deleted_objects);
+    ASSERT_EQ(2u, scene->object_descs.count);
+    nmo_scene_object_desc_t *remaining = NMO_ARRAY_DATA(
+        nmo_scene_object_desc_t, &scene->object_descs);
+    ASSERT_EQ(kept_id, nmo_ref_runtime_id(&remaining[0].ref));
+    ASSERT_EQ(kept_chunk, remaining[0].initial_value);
+    ASSERT_EQ(22u, remaining[0].flags);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, remaining[1].ref.state);
+    ASSERT_EQ(0x7FFFFF51u, remaining[1].ref.raw_id);
+    ASSERT_EQ(33u, remaining[1].flags);
+
+    nmo_session_destroy(session);
+    nmo_arena_destroy(chunk_arena);
+    nmo_context_release(ctx);
+}
+
 TEST(runtime_kernel, copy_remap_updates_only_resolved_behaviorlink_endpoints) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
@@ -3051,6 +3119,7 @@ REGISTER_TEST(runtime_kernel, normalize_clears_raw_scalar_class_mismatch);
 REGISTER_TEST(runtime_kernel, normalize_preserves_explicitly_typed_reference_targets);
 REGISTER_TEST(runtime_kernel, dependency_remap_preserves_invalid_references);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_scene_members);
+REGISTER_TEST(runtime_kernel, safe_detach_removes_scene_members_atomically);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_behaviorlink_endpoints);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_material_refs);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_keyedanimation_refs);

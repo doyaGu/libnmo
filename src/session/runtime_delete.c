@@ -23,6 +23,7 @@
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "object/builtin/nmo_patchmesh_schemas.h"
 #include "object/builtin/nmo_place_schemas.h"
+#include "object/builtin/nmo_scene_schemas.h"
 #include "object/nmo_object_guids.h"
 #include "type/nmo_reflection.h"
 #include "type/nmo_type_query.h"
@@ -629,6 +630,17 @@ static nmo_status_t runtime_delete_validate_atomic_refs(
             }
         }
     }
+
+    nmo_scene_state_t *scene = (nmo_scene_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            type_rt->types, obj, CKPGUID_SCENE);
+    if (scene != NULL &&
+        (scene->object_descs.element_size !=
+             sizeof(nmo_scene_object_desc_t) ||
+         (scene->object_descs.count > 0u &&
+          scene->object_descs.data == NULL))) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
     return NMO_OK;
 }
 
@@ -888,6 +900,23 @@ static nmo_status_t runtime_delete_detach_atomic_refs(
                         delete_set, nmo_ref_runtime_id(ref))) {
                     *ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
                 }
+            }
+        }
+    }
+
+    nmo_scene_state_t *scene = (nmo_scene_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            type_rt->types, obj, CKPGUID_SCENE);
+    if (scene != NULL) {
+        for (size_t i = scene->object_descs.count; i > 0u; --i) {
+            nmo_scene_object_desc_t *descs = NMO_ARRAY_DATA(
+                nmo_scene_object_desc_t, &scene->object_descs);
+            const size_t index = i - 1u;
+            if (runtime_id_set_contains(
+                    delete_set,
+                    nmo_ref_runtime_id(&descs[index].ref))) {
+                NMO_RETURN_IF_ERROR(nmo_array_remove(
+                    &scene->object_descs, index, NULL));
             }
         }
     }
