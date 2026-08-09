@@ -16992,6 +16992,7 @@ TEST(chunk_id_remap, mesh_fields_stay_in_identifier_sections) {
     }
 
     for (uint32_t data_version = 8u; data_version <= 9u; ++data_version) {
+        state.flags = 0x12345678u;
         nmo_chunk_t *oversized_masks = nmo_chunk_create(arena);
         ASSERT_NOT_NULL(oversized_masks);
         oversized_masks->class_id = NMO_CID_MESH;
@@ -17002,9 +17003,24 @@ TEST(chunk_id_remap, mesh_fields_stay_in_identifier_sections) {
             oversized_masks, CK_STATESAVE_MESHFACECHANMASK));
         ASSERT_EQ(NMO_OK, nmo_chunk_write_int(oversized_masks, 1));
         nmo_chunk_close(oversized_masks);
-        ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_mesh_deserialize(
+        ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_mesh_deserialize(
             &state, oversized_masks, NULL, &deserialize_context));
         ASSERT_EQ(0x12345678u, state.flags);
+
+        nmo_chunk_t *complete_oversized_masks = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(complete_oversized_masks);
+        complete_oversized_masks->class_id = NMO_CID_MESH;
+        complete_oversized_masks->data_version = data_version;
+        complete_oversized_masks->chunk_options |= NMO_CHUNK_OPTION_FILE;
+        ASSERT_EQ(NMO_OK, nmo_chunk_start_write(complete_oversized_masks));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+            complete_oversized_masks, CK_STATESAVE_MESHFACECHANMASK));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_int(complete_oversized_masks, 2));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+            complete_oversized_masks, 0xABCD1234u));
+        nmo_chunk_close(complete_oversized_masks);
+        ASSERT_EQ(NMO_OK, nmo_mesh_deserialize(
+            &state, complete_oversized_masks, NULL, &deserialize_context));
     }
 
     nmo_chunk_t *progressive = nmo_chunk_create(arena);

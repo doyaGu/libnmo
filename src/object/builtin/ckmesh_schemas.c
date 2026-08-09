@@ -975,21 +975,28 @@ static nmo_status_t nmo_mesh_deserialize_modern(
         }
         if (mask_face_count > 0) {
             uint32_t face_count = out_state->face_count;
-            if ((uint32_t)mask_face_count > face_count) {
-                NMO_RETURN_ERROR(
-                    NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                    "Modern mesh face-mask count exceeds face count");
+            const uint32_t serialized_pair_count =
+                (uint32_t)mask_face_count / 2u;
+            const uint32_t serialized_remainder =
+                (uint32_t)mask_face_count % 2u;
+            const size_t serialized_dwords =
+                (size_t)serialized_pair_count + serialized_remainder;
+            if (serialized_dwords >
+                nmo_mesh_identifier_remaining_dwords(chunk)) {
+                return NMO_ERR_TRUNCATED_CHUNK;
             }
-            uint32_t pair_count = (uint32_t)mask_face_count / 2u;
-            uint32_t remainder = (uint32_t)mask_face_count % 2u;
+            uint32_t pair_count = serialized_pair_count;
+            uint32_t remainder = serialized_remainder;
+            if ((uint32_t)mask_face_count > face_count) {
+                /* RCKMesh::Load clamps oversized mask arrays to complete
+                 * pairs that fit the allocated face array. */
+                pair_count = face_count / 2u;
+                remainder = 0u;
+            }
             if (face_count > 0u && out_state->faces == NULL) {
                 NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED,
                                  NMO_SEVERITY_ERROR,
                                  "Modern mesh faces missing for channel masks");
-            }
-            if ((size_t)pair_count + remainder >
-                nmo_mesh_identifier_remaining_dwords(chunk)) {
-                return NMO_ERR_TRUNCATED_CHUNK;
             }
 
             for (uint32_t i = 0; i < pair_count; i++) {
@@ -1014,6 +1021,10 @@ static nmo_status_t nmo_mesh_deserialize_modern(
                                      "CKMesh modern trailing face mask is truncated");
                 }
             }
+            const size_t consumed_dwords =
+                (size_t)pair_count + remainder;
+            NMO_RETURN_IF_ERROR(nmo_chunk_skip(
+                chunk, serialized_dwords - consumed_dwords));
         }
         NMO_RETURN_IF_ERROR(nmo_mesh_require_identifier_end(chunk));
     }
@@ -1387,21 +1398,26 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
         }
         if (mask_face_count > 0) {
             uint32_t face_count = out_state->face_count;
-            if ((uint32_t)mask_face_count > face_count) {
-                NMO_RETURN_ERROR(
-                    NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                    "Legacy mesh face-mask count exceeds face count");
+            const uint32_t serialized_pair_count =
+                (uint32_t)mask_face_count / 2u;
+            const uint32_t serialized_remainder =
+                (uint32_t)mask_face_count % 2u;
+            const size_t serialized_dwords =
+                (size_t)serialized_pair_count + serialized_remainder;
+            if (serialized_dwords >
+                nmo_mesh_identifier_remaining_dwords(chunk)) {
+                return NMO_ERR_TRUNCATED_CHUNK;
             }
-            uint32_t pair_count = (uint32_t)mask_face_count / 2u;
-            uint32_t remainder = (uint32_t)mask_face_count % 2u;
+            uint32_t pair_count = serialized_pair_count;
+            uint32_t remainder = serialized_remainder;
+            if ((uint32_t)mask_face_count > face_count) {
+                pair_count = face_count / 2u;
+                remainder = 0u;
+            }
             if (face_count > 0u && out_state->faces == NULL) {
                 NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED,
                                  NMO_SEVERITY_ERROR,
                                  "Legacy mesh faces missing for channel masks");
-            }
-            if ((size_t)pair_count + remainder >
-                nmo_mesh_identifier_remaining_dwords(chunk)) {
-                return NMO_ERR_TRUNCATED_CHUNK;
             }
 
             for (uint32_t i = 0; i < pair_count; i++) {
@@ -1420,6 +1436,10 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
                     &out_state->faces[(uint32_t)mask_face_count - 1u].channel_mask);
                 if (result != NMO_OK) return result;
             }
+            const size_t consumed_dwords =
+                (size_t)pair_count + remainder;
+            NMO_RETURN_IF_ERROR(nmo_chunk_skip(
+                chunk, serialized_dwords - consumed_dwords));
         }
         NMO_RETURN_IF_ERROR(nmo_mesh_require_identifier_end(chunk));
     }
