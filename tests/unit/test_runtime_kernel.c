@@ -1513,6 +1513,39 @@ TEST(runtime_kernel, copy_remap_updates_only_resolved_scene_members) {
     nmo_context_release(ctx);
 }
 
+TEST(runtime_kernel, copy_remap_rejects_malformed_reference_storage) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    const nmo_type_runtime_t *type_rt = nmo_context_get_type_runtime(ctx);
+    const nmo_type_descriptor_t *group_type =
+        nmo_type_registry_find_by_class_id(type_rt->types, NMO_CID_GROUP);
+    const nmo_type_descriptor_t *scene_type =
+        nmo_type_registry_find_by_class_id(type_rt->types, NMO_CID_SCENE);
+    ASSERT_NOT_NULL(group_type);
+    ASSERT_NOT_NULL(scene_type);
+
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_id_remap_t *remap = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(remap);
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, 101, 201));
+
+    nmo_group_state_t group = {0};
+    group.object_ids.element_size = sizeof(nmo_ref_t);
+    group.object_ids.count = 1;
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_runtime_remap_copy_refs(
+        type_rt, group_type, &group, remap));
+
+    nmo_scene_state_t scene = {0};
+    scene.object_descs.element_size = sizeof(nmo_scene_object_desc_t);
+    scene.object_descs.count = 1;
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_runtime_remap_copy_refs(
+        type_rt, scene_type, &scene, remap));
+
+    nmo_arena_destroy(arena);
+    nmo_context_release(ctx);
+}
+
 TEST(runtime_kernel, safe_detach_removes_scene_members_atomically) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
@@ -3317,6 +3350,7 @@ REGISTER_TEST(runtime_kernel, normalize_clears_raw_scalar_class_mismatch);
 REGISTER_TEST(runtime_kernel, normalize_preserves_explicitly_typed_reference_targets);
 REGISTER_TEST(runtime_kernel, dependency_remap_preserves_invalid_references);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_scene_members);
+REGISTER_TEST(runtime_kernel, copy_remap_rejects_malformed_reference_storage);
 REGISTER_TEST(runtime_kernel, safe_detach_removes_scene_members_atomically);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_behaviorlink_endpoints);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_behavior_records);

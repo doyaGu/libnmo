@@ -46,6 +46,7 @@ typedef struct runtime_ref_remap_ctx {
     const nmo_id_remap_t *remap;
     const nmo_type_descriptor_t *type;
     void *instance;
+    nmo_status_t status;
 } runtime_ref_remap_ctx_t;
 
 static bool runtime_remap_ref_field(
@@ -57,7 +58,8 @@ static bool runtime_remap_ref_field(
 
     runtime_ref_remap_ctx_t *ctx = (runtime_ref_remap_ctx_t *)user_data;
     if (ctx == NULL || field == NULL || ctx->instance == NULL) {
-        return true;
+        if (ctx != NULL) ctx->status = NMO_ERR_INVALID_ARGUMENT;
+        return false;
     }
 
     if (!nmo_field_is_ref(field)) {
@@ -90,11 +92,18 @@ static bool runtime_remap_ref_field(
 
     if (field->size == sizeof(nmo_array_t)) {
         nmo_array_t *arr = (nmo_array_t *)nmo_field_get_ptr(ctx->instance, field);
-        if (arr == NULL || arr->data == NULL || arr->count == 0) {
-            return true;
+        if (arr == NULL) {
+            ctx->status = NMO_ERR_INVALID_ARGUMENT;
+            return false;
         }
         if (nmo_field_uses_ref_records(field)) {
-            if (arr->element_size != sizeof(nmo_ref_t)) return true;
+            if (((arr->element_size != 0 || arr->count > 0) &&
+                 arr->element_size != sizeof(nmo_ref_t)) ||
+                (arr->count > 0 && arr->data == NULL)) {
+                ctx->status = NMO_ERR_VALIDATION_FAILED;
+                return false;
+            }
+            if (arr->count == 0) return true;
             nmo_ref_t *refs = (nmo_ref_t *)arr->data;
             for (size_t i = 0; i < arr->count; ++i) {
                 nmo_object_id_t mapped = NMO_OBJECT_ID_NONE;
@@ -105,7 +114,13 @@ static bool runtime_remap_ref_field(
             }
             return true;
         }
-        if (arr->element_size != sizeof(nmo_object_id_t)) return true;
+        if (((arr->element_size != 0 || arr->count > 0) &&
+             arr->element_size != sizeof(nmo_object_id_t)) ||
+            (arr->count > 0 && arr->data == NULL)) {
+            ctx->status = NMO_ERR_VALIDATION_FAILED;
+            return false;
+        }
+        if (arr->count == 0) return true;
 
         nmo_object_id_t *ids = (nmo_object_id_t *)arr->data;
         for (size_t i = 0; i < arr->count; i++) {
@@ -121,12 +136,21 @@ static bool runtime_remap_ref_field(
         if (nmo_field_uses_ref_records(field)) {
             nmo_ref_t **refs_ptr = (nmo_ref_t **)nmo_field_get_ptr(
                 ctx->instance, field);
-            if (refs_ptr == NULL || *refs_ptr == NULL) return true;
+            if (refs_ptr == NULL) {
+                ctx->status = NMO_ERR_INVALID_ARGUMENT;
+                return false;
+            }
             uint32_t count = 0;
             if (nmo_field_resolve_count(
                     ctx->type, field, ctx->instance, &count) != NMO_OK) {
-                return true;
+                ctx->status = NMO_ERR_VALIDATION_FAILED;
+                return false;
             }
+            if (count > 0 && *refs_ptr == NULL) {
+                ctx->status = NMO_ERR_VALIDATION_FAILED;
+                return false;
+            }
+            if (count == 0) return true;
             for (uint32_t i = 0; i < count; ++i) {
                 nmo_object_id_t mapped = NMO_OBJECT_ID_NONE;
                 if ((*refs_ptr)[i].state == NMO_REF_RESOLVED &&
@@ -138,14 +162,21 @@ static bool runtime_remap_ref_field(
             return true;
         }
         nmo_object_id_t **ids_ptr = (nmo_object_id_t **)nmo_field_get_ptr(ctx->instance, field);
-        if (ids_ptr == NULL || *ids_ptr == NULL) {
-            return true;
+        if (ids_ptr == NULL) {
+            ctx->status = NMO_ERR_INVALID_ARGUMENT;
+            return false;
         }
 
         uint32_t count = 0;
         if (nmo_field_resolve_count(ctx->type, field, ctx->instance, &count) != NMO_OK) {
-            return true;
+            ctx->status = NMO_ERR_VALIDATION_FAILED;
+            return false;
         }
+        if (count > 0 && *ids_ptr == NULL) {
+            ctx->status = NMO_ERR_VALIDATION_FAILED;
+            return false;
+        }
+        if (count == 0) return true;
 
         nmo_object_id_t *ids = *ids_ptr;
         for (uint32_t i = 0; i < count; i++) {
@@ -161,13 +192,15 @@ static bool runtime_remap_ref_field(
 
 /* 鈹€鈹€ Base-instance resolution 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
-static void runtime_remap_scene_objects(
+static nmo_status_t runtime_remap_scene_objects(
     nmo_scene_state_t *state,
     const nmo_id_remap_t *remap)
 {
-    if (state == NULL || state->object_descs.data == NULL ||
-        state->object_descs.element_size != sizeof(nmo_scene_object_desc_t)) {
-        return;
+    if (state == NULL) return NMO_OK;
+    if (state->object_descs.element_size != sizeof(nmo_scene_object_desc_t) ||
+        (state->object_descs.count > 0 &&
+         state->object_descs.data == NULL)) {
+        return NMO_ERR_VALIDATION_FAILED;
     }
     nmo_scene_object_desc_t *descs = NMO_ARRAY_DATA(
         nmo_scene_object_desc_t, &state->object_descs);
@@ -178,6 +211,7 @@ static void runtime_remap_scene_objects(
             descs[i].ref.id = mapped;
         }
     }
+    return NMO_OK;
 }
 
 static nmo_status_t runtime_remap_behavior_refs(
@@ -525,7 +559,8 @@ nmo_status_t nmo_runtime_remap_copy_refs(
         runtime_ref_remap_ctx_t remap_ctx = {
             .remap = remap,
             .type = current,
-            .instance = current_instance
+            .instance = current_instance,
+            .status = NMO_OK,
         };
 
         nmo_status_t remap_result = nmo_type_foreach_ref_field(
@@ -536,10 +571,13 @@ nmo_status_t nmo_runtime_remap_copy_refs(
         if (remap_result != NMO_OK) {
             return remap_result;
         }
+        if (remap_ctx.status != NMO_OK) {
+            return remap_ctx.status;
+        }
 
         if (nmo_guid_equals(current->guid, CKPGUID_SCENE)) {
-            runtime_remap_scene_objects(
-                (nmo_scene_state_t *)current_instance, remap);
+            NMO_RETURN_IF_ERROR(runtime_remap_scene_objects(
+                (nmo_scene_state_t *)current_instance, remap));
         }
         if (nmo_guid_equals(current->guid, CKPGUID_BEHAVIOR)) {
             NMO_RETURN_IF_ERROR(runtime_remap_behavior_refs(
