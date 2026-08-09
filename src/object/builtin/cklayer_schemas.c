@@ -82,11 +82,15 @@ static nmo_status_t nmo_layer_deserialize_internal(
     out_state->square_data_size = 0;
     out_state->grid = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
 
-    result = nmo_chunk_seek_identifier(chunk, CK_STATESAVE_LAYERDATA);
+    size_t section_dwords = 0;
+    result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_LAYERDATA, &section_dwords);
     if (result == NMO_ERR_NOT_FOUND) {
         NMO_RETURN_OK();
     }
     if (result != NMO_OK) return result;
+    const size_t section_end =
+        nmo_chunk_get_position(chunk) + section_dwords;
     out_state->has_layer_data = 1;
 
     nmo_ref_t grid = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
@@ -138,10 +142,17 @@ static nmo_status_t nmo_layer_deserialize_internal(
         out_state->has_flags = 1;
     }
 
+    if (nmo_chunk_get_position(chunk) > section_end) {
+        return NMO_ERR_TRUNCATED_CHUNK;
+    }
+
     if (out_state->format == 0) {
         void *raw = NULL;
         size_t raw_size = 0;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_buffer(chunk, &raw, &raw_size));
+        if (nmo_chunk_get_position(chunk) > section_end) {
+            return NMO_ERR_TRUNCATED_CHUNK;
+        }
         /* Convert LE DWORD array to host endianness (no-op on LE,
            matches reference CKConvertEndianArray32 call). */
         uint32_t *dwords = (uint32_t *)raw;

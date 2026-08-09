@@ -4799,6 +4799,53 @@ TEST(chunk_id_remap, layer_unresolved_grid_round_trips_raw_id) {
     ASSERT_EQ(77, loaded.format);
     ASSERT_EQ(88, loaded.version);
 
+    nmo_chunk_t *fixed_cross_section = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(fixed_cross_section);
+    fixed_cross_section->class_id = NMO_CID_LAYER;
+    fixed_cross_section->data_version = 7;
+    fixed_cross_section->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(fixed_cross_section));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        fixed_cross_section, CK_STATESAVE_LAYERDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(
+        fixed_cross_section, 999));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(fixed_cross_section, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(fixed_cross_section, 3));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        fixed_cross_section, 0xAABBCCDDu));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        fixed_cross_section, 0x11223344u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+        fixed_cross_section, 0x55667788u));
+    nmo_chunk_close(fixed_cross_section);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_layer_deserialize(
+        &loaded, fixed_cross_section, NULL, &deserialize_context));
+    ASSERT_EQ(444u, loaded.grid.raw_id);
+    ASSERT_EQ(77, loaded.format);
+    ASSERT_EQ(88, loaded.version);
+
+    nmo_chunk_t *buffer_cross_section = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(buffer_cross_section);
+    buffer_cross_section->class_id = NMO_CID_LAYER;
+    buffer_cross_section->data_version = 7;
+    buffer_cross_section->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(buffer_cross_section));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        buffer_cross_section, CK_STATESAVE_LAYERDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(
+        buffer_cross_section, 999));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(buffer_cross_section, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(buffer_cross_section, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(buffer_cross_section, 4));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        buffer_cross_section, 0xA1B2C3D4u));
+    nmo_chunk_close(buffer_cross_section);
+    ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_layer_deserialize(
+        &loaded, buffer_cross_section, NULL, &deserialize_context));
+    ASSERT_EQ(444u, loaded.grid.raw_id);
+    ASSERT_EQ(77, loaded.format);
+    ASSERT_EQ(88, loaded.version);
+
     source.grid = nmo_ref_from_id(123);
     nmo_chunk_t *target = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(target);
