@@ -1181,6 +1181,38 @@ TEST(runtime_kernel, normalize_removes_only_invalid_reference_records) {
     nmo_context_release(ctx);
 }
 
+TEST(runtime_kernel, behavior_normalize_validates_lanes_before_mutation) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+
+    nmo_object_id_t behavior_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_BEHAVIOR, "behavior", NMO_NULL_GUID,
+        &behavior_id, NULL));
+    nmo_behavior_state_t *behavior = (nmo_behavior_state_t *)
+        nmo_object_repository_find_by_id(repo, behavior_id)->state;
+    ASSERT_NOT_NULL(behavior);
+
+    behavior->owner = nmo_ref_from_raw(0x7FFFFF62u);
+    const size_t saved_element_size = behavior->outputs.element_size;
+    behavior->outputs.element_size = 1;
+
+    size_t changed = 0;
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,
+              nmo_behavior_normalize_references(
+                  behavior, repo, &changed));
+    ASSERT_EQ(0u, changed);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, behavior->owner.state);
+    ASSERT_EQ(0x7FFFFF62u, behavior->owner.raw_id);
+
+    behavior->outputs.element_size = saved_element_size;
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(runtime_kernel, normalize_clears_raw_scalar_class_mismatch) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
@@ -3460,6 +3492,7 @@ REGISTER_TEST(runtime_kernel, delete_safe_detach_prunes_behavior_links_with_dele
 REGISTER_TEST(runtime_kernel, delete_cascade_removes_referencing_group);
 REGISTER_TEST(runtime_kernel, deserialize_failure_does_not_publish_state_for_finalize);
 REGISTER_TEST(runtime_kernel, normalize_removes_only_invalid_reference_records);
+REGISTER_TEST(runtime_kernel, behavior_normalize_validates_lanes_before_mutation);
 REGISTER_TEST(runtime_kernel, normalize_clears_raw_scalar_class_mismatch);
 REGISTER_TEST(runtime_kernel, normalize_preserves_explicitly_typed_reference_targets);
 REGISTER_TEST(runtime_kernel, dependency_remap_preserves_invalid_references);

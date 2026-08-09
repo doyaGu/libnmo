@@ -1685,7 +1685,9 @@ static nmo_status_t normalize_behavior_array(
     size_t *out_changes)
 {
     if (!refs_array || !out_changes) return NMO_ERR_INVALID_ARGUMENT;
-    if (refs_array->count > 0 && !refs_array->data) {
+    if (((refs_array->element_size != 0 || refs_array->count > 0) &&
+         refs_array->element_size != sizeof(nmo_behavior_ref_t)) ||
+        (refs_array->count > 0 && !refs_array->data)) {
         return NMO_ERR_VALIDATION_FAILED;
     }
 
@@ -1710,6 +1712,7 @@ nmo_status_t nmo_behavior_normalize_references(
     size_t *out_change_count)
 {
     if (!state || !repository) return NMO_ERR_INVALID_ARGUMENT;
+    NMO_RETURN_IF_ERROR(nmo_behavior_validate(state, NULL, NULL));
     size_t changed = 0;
     const nmo_object_id_t owner_id = nmo_behavior_owner_id(state);
     if (state->owner.state != NMO_REF_NONE &&
