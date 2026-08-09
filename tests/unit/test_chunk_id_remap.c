@@ -9431,6 +9431,14 @@ TEST(chunk_id_remap, patchmesh_copy_preserves_atomic_records) {
     source.patches = &patch;
     source.channel_count = 1;
     source.channels = &channel;
+    nmo_material_group_t base_group = {
+        .material = nmo_ref_from_raw(804),
+        .padding = 43,
+    };
+    source.base.flags = 0x10293847u;
+    source.base.material_group_count = 1;
+    source.base.material_groups = &base_group;
+    source.base.has_material_groups = 1;
 
     nmo_beobject_legacy_attribute_t legacy_attribute = {
         .name = "LegacyName",
@@ -9453,6 +9461,10 @@ TEST(chunk_id_remap, patchmesh_copy_preserves_atomic_records) {
     ASSERT_TRUE(copied.channels[0].patches_raw !=
                 source.channels[0].patches_raw);
     ASSERT_TRUE(copied.channels[0].uvs != source.channels[0].uvs);
+    ASSERT_EQ(0x10293847u, copied.base.flags);
+    ASSERT_NE(source.base.material_groups, copied.base.material_groups);
+    ASSERT_EQ(804u, copied.base.material_groups[0].material.raw_id);
+    ASSERT_EQ(43, copied.base.material_groups[0].padding);
     ASSERT_EQ(801u, copied.patches[0].material.raw_id);
     ASSERT_EQ(17u, copied.patches[0].patch.type);
     ASSERT_EQ(802u, copied.channels[0].material.raw_id);
@@ -9469,9 +9481,38 @@ TEST(chunk_id_remap, patchmesh_copy_preserves_atomic_records) {
     ASSERT_EQ(nmo_patchmesh_vtable.hash(&source),
               nmo_patchmesh_vtable.hash(&copied));
 
+    fail_after_allocator_state_t allocator_state = {
+        .allocation_count = 0,
+        .allowed_allocations = 2,
+    };
+    nmo_allocator_t failing_allocator = nmo_allocator_custom(
+        fail_after_alloc, fail_after_free, &allocator_state);
+    nmo_arena_t *copy_arena = nmo_arena_create(&failing_allocator, 1);
+    ASSERT_NOT_NULL(copy_arena);
+    nmo_patchmesh_patch_record_t preserved_patch = {
+        .material = nmo_ref_from_raw(805),
+        .patch = {.type = 53, .smoothing_group = 59},
+    };
+    nmo_patchmesh_state_t failed_copy;
+    ASSERT_EQ(NMO_OK, nmo_patchmesh_vtable.create(
+        &failed_copy, NULL, NULL));
+    failed_copy.format = CKPATCHMESH_FORMAT_DATA3;
+    failed_copy.patch_flags = 0x12345678u;
+    failed_copy.patch_count = 1;
+    failed_copy.patches = &preserved_patch;
+    ASSERT_EQ(NMO_ERR_NOMEM, nmo_patchmesh_vtable.copy(
+        &source, &failed_copy, NULL, copy_arena));
+    ASSERT_EQ(CKPATCHMESH_FORMAT_DATA3, failed_copy.format);
+    ASSERT_EQ(0x12345678u, failed_copy.patch_flags);
+    ASSERT_EQ(1u, failed_copy.patch_count);
+    ASSERT_EQ(&preserved_patch, failed_copy.patches);
+    ASSERT_EQ(805u, failed_copy.patches[0].material.raw_id);
+
     copied.patches[0].patch.type = 99;
     ASSERT_FALSE(nmo_patchmesh_vtable.equals(&source, &copied));
 
+    nmo_patchmesh_vtable.destroy(&failed_copy, NULL, NULL);
+    nmo_arena_destroy(copy_arena);
     nmo_patchmesh_vtable.destroy(&source, NULL, NULL);
     nmo_patchmesh_vtable.destroy(&copied, NULL, NULL);
     nmo_arena_destroy(arena);

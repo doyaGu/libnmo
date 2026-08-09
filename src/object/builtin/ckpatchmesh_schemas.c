@@ -34,14 +34,13 @@ static nmo_status_t nmo_patchmesh_create(
     void *context)
 {
     (void)type;
-    (void)context;
     if (!instance) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "Invalid arguments to nmo_patchmesh_create");
     }
     nmo_patchmesh_state_t *state = instance;
     memset(state, 0, sizeof(*state));
-    return nmo_beobject_vtable.create(&state->base.beobject, NULL, NULL);
+    return nmo_mesh_vtable.create(&state->base, NULL, context);
 }
 
 static void nmo_patchmesh_destroy(
@@ -50,12 +49,9 @@ static void nmo_patchmesh_destroy(
     void *context)
 {
     (void)type;
-    (void)context;
     nmo_patchmesh_state_t *state = instance;
     if (!state) return;
-    nmo_array_dispose(&state->base.beobject.scripts);
-    nmo_array_dispose(&state->base.beobject.attributes);
-    nmo_array_dispose(&state->base.beobject.legacy_attributes);
+    nmo_mesh_vtable.destroy(&state->base, NULL, context);
     memset(state, 0, sizeof(*state));
 }
 
@@ -108,22 +104,6 @@ static nmo_status_t nmo_patchmesh_check_buffer_available(
                          "CKPatchMesh %s exceeds remaining DWORDs", label);
     }
     NMO_RETURN_OK();
-}
-
-static void nmo_patchmesh_dispose_beobject_arrays(nmo_patchmesh_state_t *state)
-{
-    if (!state) return;
-    nmo_array_dispose(&state->base.beobject.scripts);
-    nmo_array_dispose(&state->base.beobject.attributes);
-    nmo_array_dispose(&state->base.beobject.legacy_attributes);
-}
-
-static void nmo_patchmesh_publish_state(
-    nmo_patchmesh_state_t *out_state,
-    const nmo_patchmesh_state_t *decoded)
-{
-    nmo_patchmesh_dispose_beobject_arrays(out_state);
-    *out_state = *decoded;
 }
 
 /* =============================================================================
@@ -184,9 +164,8 @@ static nmo_status_t nmo_patchmesh_deserialize_internal(
     }
 
     nmo_patchmesh_state_t decoded;
-    memset(&decoded, 0, sizeof(decoded));
-    nmo_status_t init_result = nmo_beobject_vtable.create(
-        &decoded.base.beobject, NULL, NULL);
+    nmo_status_t init_result = nmo_patchmesh_create(
+        &decoded, NULL, context);
     if (init_result != NMO_OK) return init_result;
 
     {
@@ -194,7 +173,7 @@ static nmo_status_t nmo_patchmesh_deserialize_internal(
         if (result != NMO_OK) {
             char detail[256];
             size_t detail_len = nmo_last_error_message_copy(detail, sizeof(detail));
-            nmo_patchmesh_dispose_beobject_arrays(&decoded);
+            nmo_patchmesh_destroy(&decoded, NULL, context);
             NMO_RETURN_ERROR(result, NMO_SEVERITY_ERROR,
                              "CKPatchMesh base CKMesh data is invalid or truncated%s%s",
                              detail_len > 0u ? ": " : "",
@@ -205,10 +184,11 @@ static nmo_status_t nmo_patchmesh_deserialize_internal(
     nmo_status_t result = nmo_patchmesh_decode_payload(
         chunk, context, &decoded);
     if (result != NMO_OK) {
-        nmo_patchmesh_dispose_beobject_arrays(&decoded);
+        nmo_patchmesh_destroy(&decoded, NULL, context);
         return result;
     }
-    nmo_patchmesh_publish_state(out_state, &decoded);
+    nmo_patchmesh_destroy(out_state, NULL, context);
+    *out_state = decoded;
     NMO_RETURN_OK();
 }
 
@@ -639,85 +619,127 @@ static nmo_status_t nmo_patchmesh_decode_payload(
     NMO_RETURN_OK();
 }
 
+static nmo_status_t nmo_patchmesh_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
+
 static nmo_status_t nmo_patchmesh_copy(
     const void *src,
     void *dst,
     const nmo_type_descriptor_t *type,
     nmo_arena_t *arena)
 {
+    (void)type;
     const nmo_patchmesh_state_t *s = src;
     nmo_patchmesh_state_t *d = dst;
-    NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
-
-    const nmo_type_descriptor_t beobject_type = {
-        .size = sizeof(nmo_beobject_state_t),
-    };
-    NMO_RETURN_IF_ERROR(nmo_beobject_vtable.copy(
-        &s->base.beobject, &d->base.beobject, &beobject_type, arena));
-
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->base.faces,
-                                              s->base.faces, sizeof(nmo_face_t), s->base.face_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->base.face_vertex_indices,
-                                              s->base.face_vertex_indices, sizeof(uint16_t),
-                                              (uint32_t)(s->base.face_count * 3u)));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->base.line_indices,
-                                              s->base.line_indices, sizeof(uint16_t),
-                                              (uint32_t)(s->base.line_count * 2u)));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->base.vertices,
-                                              s->base.vertices, sizeof(nmo_vertex_t), s->base.vertex_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->base.vertex_colors,
-                                              s->base.vertex_colors, sizeof(uint32_t), s->base.vertex_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->base.vertex_specular,
-                                              s->base.vertex_specular, sizeof(uint32_t), s->base.vertex_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->base.vertex_weights,
-                                              s->base.vertex_weights, sizeof(float), s->base.vertex_weight_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->base.material_groups,
-                                              s->base.material_groups, sizeof(nmo_material_group_t),
-                                              s->base.material_group_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->base.material_channels,
-                                              s->base.material_channels, sizeof(nmo_material_channel_t),
-                                              s->base.material_channel_count));
-    for (uint32_t i = 0; i < s->base.material_channel_count; ++i) {
-        NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena,
-                                                  (void **)&d->base.material_channels[i].uv_coords,
-                                                  s->base.material_channels[i].uv_coords,
-                                                  sizeof(nmo_vector2_t),
-                                                  s->base.material_channels[i].uv_count));
+    if (s == NULL || d == NULL || arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
     }
-    NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, &d->base.pm_data, s->base.pm_data, s->base.pm_data_size));
+    NMO_RETURN_IF_ERROR(nmo_patchmesh_validate(s, NULL, NULL));
 
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->vectors,
-                                              s->vectors, sizeof(nmo_vector_t), s->total_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->patches,
-                                              s->patches, sizeof(nmo_patchmesh_patch_record_t),
-                                              s->patch_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->edge_data,
-                                              s->edge_data, s->edge_data_size));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->channels,
-                                              s->channels, sizeof(nmo_patchmesh_channel_t), s->channel_count));
+    nmo_patchmesh_state_t copied;
+    nmo_status_t result = nmo_patchmesh_create(&copied, NULL, NULL);
+    if (result != NMO_OK) return result;
+    result = nmo_mesh_vtable.copy(&s->base, &copied.base, NULL, arena);
+    if (result != NMO_OK) goto fail;
+
+    copied.format = s->format;
+    copied.patch_flags = s->patch_flags;
+    copied.iteration_count = s->iteration_count;
+    copied.vec_count = s->vec_count;
+    copied.total_count = s->total_count;
+    copied.patch_count = s->patch_count;
+    copied.edge_count = s->edge_count;
+    copied.edge_data_size = s->edge_data_size;
+    copied.channel_count = s->channel_count;
+    copied.legacy_default_material = s->legacy_default_material;
+    copied.legacy_patch_count = s->legacy_patch_count;
+    copied.legacy_patch_data_size = s->legacy_patch_data_size;
+    copied.legacy_edge_count = s->legacy_edge_count;
+    copied.legacy_edge_data_size = s->legacy_edge_data_size;
+    copied.legacy_tvpatch_count = s->legacy_tvpatch_count;
+    copied.legacy_tvpatch_data_size = s->legacy_tvpatch_data_size;
+    copied.legacy_uv_count = s->legacy_uv_count;
+    copied.legacy_uv_data_size = s->legacy_uv_data_size;
+    copied.legacy_smoothing_count = s->legacy_smoothing_count;
+    copied.has_legacy_smoothing = s->has_legacy_smoothing;
+    copied.legacy_material_count = s->legacy_material_count;
+    copied.has_legacy_materials = s->has_legacy_materials;
+
+    result = nmo_object_copy_array(arena, (void **)&copied.vectors,
+        s->vectors, sizeof(nmo_vector_t), s->total_count);
+    if (result != NMO_OK) goto fail;
+    result = nmo_object_copy_array(arena, (void **)&copied.patches,
+        s->patches, sizeof(nmo_patchmesh_patch_record_t), s->patch_count);
+    if (result != NMO_OK) goto fail;
+    result = nmo_object_copy_bytes(
+        arena, (void **)&copied.edge_data,
+        s->edge_data, s->edge_data_size);
+    if (result != NMO_OK) goto fail;
+    result = nmo_object_copy_array(arena, (void **)&copied.channels,
+        s->channels, sizeof(nmo_patchmesh_channel_t), s->channel_count);
+    if (result != NMO_OK) goto fail;
     for (uint32_t i = 0; i < s->channel_count; ++i) {
         size_t patch_bytes = (size_t)s->channels[i].patch_count * 8u;
-        NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->channels[i].patches_raw,
-                                                  s->channels[i].patches_raw, patch_bytes));
-        NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->channels[i].uvs,
-                                                  s->channels[i].uvs, sizeof(nmo_vector2_t),
-                                                  s->channels[i].uv_count));
+        result = nmo_object_copy_bytes(
+            arena, (void **)&copied.channels[i].patches_raw,
+            s->channels[i].patches_raw, patch_bytes);
+        if (result != NMO_OK) goto fail;
+        result = nmo_object_copy_array(
+            arena, (void **)&copied.channels[i].uvs,
+            s->channels[i].uvs, sizeof(nmo_vector2_t),
+            s->channels[i].uv_count);
+        if (result != NMO_OK) goto fail;
     }
-    NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->legacy_patch_data,
-                                              s->legacy_patch_data, s->legacy_patch_data_size));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->legacy_edge_data,
-                                              s->legacy_edge_data, s->legacy_edge_data_size));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->legacy_tvpatch_data,
-                                              s->legacy_tvpatch_data, s->legacy_tvpatch_data_size));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&d->legacy_uv_data,
-                                              s->legacy_uv_data, s->legacy_uv_data_size));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->legacy_smoothing_groups,
-                                              s->legacy_smoothing_groups, sizeof(uint32_t),
-                                              s->legacy_smoothing_count));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)&d->legacy_materials,
-                                              s->legacy_materials, sizeof(nmo_ref_t),
-                                              s->legacy_material_count));
-    NMO_RETURN_OK();
+    result = nmo_object_copy_bytes(
+        arena, (void **)&copied.legacy_patch_data,
+        s->legacy_patch_data, s->legacy_patch_data_size);
+    if (result != NMO_OK) goto fail;
+    result = nmo_object_copy_bytes(
+        arena, (void **)&copied.legacy_edge_data,
+        s->legacy_edge_data, s->legacy_edge_data_size);
+    if (result != NMO_OK) goto fail;
+    result = nmo_object_copy_bytes(
+        arena, (void **)&copied.legacy_tvpatch_data,
+        s->legacy_tvpatch_data, s->legacy_tvpatch_data_size);
+    if (result != NMO_OK) goto fail;
+    result = nmo_object_copy_bytes(
+        arena, (void **)&copied.legacy_uv_data,
+        s->legacy_uv_data, s->legacy_uv_data_size);
+    if (result != NMO_OK) goto fail;
+    result = nmo_object_copy_array(
+        arena, (void **)&copied.legacy_smoothing_groups,
+        s->legacy_smoothing_groups, sizeof(uint32_t),
+        s->legacy_smoothing_count);
+    if (result != NMO_OK) goto fail;
+    result = nmo_object_copy_array(
+        arena, (void **)&copied.legacy_materials,
+        s->legacy_materials, sizeof(nmo_ref_t),
+        s->legacy_material_count);
+    if (result != NMO_OK) goto fail;
+
+    if (d->base.beobject.scripts.data == s->base.beobject.scripts.data) {
+        memset(&d->base.beobject.scripts, 0,
+               sizeof(d->base.beobject.scripts));
+    }
+    if (d->base.beobject.attributes.data ==
+        s->base.beobject.attributes.data) {
+        memset(&d->base.beobject.attributes, 0,
+               sizeof(d->base.beobject.attributes));
+    }
+    if (d->base.beobject.legacy_attributes.data ==
+        s->base.beobject.legacy_attributes.data) {
+        memset(&d->base.beobject.legacy_attributes, 0,
+               sizeof(d->base.beobject.legacy_attributes));
+    }
+    nmo_patchmesh_destroy(d, NULL, NULL);
+    *d = copied;
+    return NMO_OK;
+
+fail:
+    nmo_patchmesh_destroy(&copied, NULL, NULL);
+    return result;
 }
 
 static nmo_status_t nmo_patchmesh_validate(
