@@ -271,9 +271,7 @@ static nmo_status_t nmo_level_deserialize_internal(
         result = nmo_chunk_read_object_sequence_start(chunk, &scene_count);
         if (result != NMO_OK) return result;
 
-        const uint32_t MAX_SCENES = 10000;
-        if (scene_count > MAX_SCENES ||
-            scene_count > SIZE_MAX / sizeof(nmo_ref_t)) {
+        if (scene_count > SIZE_MAX / sizeof(nmo_ref_t)) {
             NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
                              "Scene count exceeds maximum");
         }
@@ -678,7 +676,7 @@ static nmo_status_t nmo_level_validate(
         &s->base, NULL, context));
     NMO_VALIDATE_COUNT(s->scene_ids.data, s->scene_ids.count, "scene_ids");
     if (s->scene_ids.element_size != sizeof(nmo_ref_t) ||
-        s->scene_ids.count > 10000u) {
+        s->scene_ids.count > INT32_MAX) {
         return NMO_ERR_VALIDATION_FAILED;
     }
     NMO_VALIDATE_COUNT(s->inactive_manager_guids.data, s->inactive_manager_guids.count,
