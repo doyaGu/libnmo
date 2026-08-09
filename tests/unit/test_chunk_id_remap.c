@@ -14336,6 +14336,93 @@ TEST(chunk_id_remap, mesh_fields_stay_in_identifier_sections) {
         &state, short_legacy_vertices, NULL, &deserialize_context));
     ASSERT_EQ(0x12345678u, state.flags);
 
+    static const struct {
+        uint32_t identifier;
+        uint32_t data_version;
+        size_t payload_dwords;
+    } trailing_sections[] = {
+        {CK_STATESAVE_MESHFLAGS, 9u, 1u},
+        {CK_STATESAVE_MESHMATERIALS, 9u, 1u},
+        {CK_STATESAVE_MESHVERTICES, 9u, 1u},
+        {CK_STATESAVE_MESHFACES, 9u, 1u},
+        {CK_STATESAVE_MESHLINES, 9u, 1u},
+        {CK_STATESAVE_MESHCHANNELS, 9u, 1u},
+        {CK_STATESAVE_MESHWEIGHTS, 9u, 1u},
+        {CK_STATESAVE_MESHFACECHANMASK, 9u, 1u},
+        {CK_STATESAVE_MESHFLAGS, 8u, 1u},
+        {CK_STATESAVE_MESHMATERIALS, 8u, 1u},
+        {CK_STATESAVE_MESHVERTICES, 8u, 2u},
+        {CK_STATESAVE_MESHFACES, 8u, 1u},
+        {CK_STATESAVE_MESHLINES, 8u, 1u},
+        {CK_STATESAVE_MESHCHANNELS, 8u, 1u},
+        {CK_STATESAVE_MESHWEIGHTS, 8u, 1u},
+        {CK_STATESAVE_MESHFACECHANMASK, 8u, 1u},
+    };
+    for (size_t i = 0;
+         i < sizeof(trailing_sections) / sizeof(trailing_sections[0]);
+         ++i) {
+        nmo_chunk_t *trailing = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(trailing);
+        trailing->class_id = NMO_CID_MESH;
+        trailing->chunk_version = NMO_CHUNK_VERSION4;
+        trailing->data_version = trailing_sections[i].data_version;
+        trailing->chunk_options |= NMO_CHUNK_OPTION_FILE;
+        ASSERT_EQ(NMO_OK, nmo_chunk_start_write(trailing));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+            trailing, trailing_sections[i].identifier));
+        for (size_t j = 0; j < trailing_sections[i].payload_dwords; ++j) {
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing, 0u));
+        }
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing, 0x12345678u));
+        nmo_chunk_close(trailing);
+        ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_mesh_deserialize(
+            &state, trailing, NULL, &deserialize_context));
+        ASSERT_EQ(0x12345678u, state.flags);
+    }
+
+    for (uint32_t data_version = 8u; data_version <= 9u; ++data_version) {
+        nmo_chunk_t *oversized_masks = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(oversized_masks);
+        oversized_masks->class_id = NMO_CID_MESH;
+        oversized_masks->data_version = data_version;
+        oversized_masks->chunk_options |= NMO_CHUNK_OPTION_FILE;
+        ASSERT_EQ(NMO_OK, nmo_chunk_start_write(oversized_masks));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+            oversized_masks, CK_STATESAVE_MESHFACECHANMASK));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_int(oversized_masks, 1));
+        nmo_chunk_close(oversized_masks);
+        ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_mesh_deserialize(
+            &state, oversized_masks, NULL, &deserialize_context));
+        ASSERT_EQ(0x12345678u, state.flags);
+    }
+
+    nmo_chunk_t *progressive = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(progressive);
+    progressive->class_id = NMO_CID_MESH;
+    progressive->data_version = 9;
+    progressive->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(progressive));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        progressive, CK_STATESAVE_PROGRESSIVEMESH));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(progressive, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(progressive, 2));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(progressive, 3));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(progressive, 0x11223344u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(progressive, 0x55667788u));
+    nmo_chunk_close(progressive);
+    nmo_mesh_state_t progressive_state;
+    ASSERT_EQ(NMO_OK, nmo_mesh_vtable.create(
+        &progressive_state, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_mesh_deserialize(
+        &progressive_state, progressive, NULL, &deserialize_context));
+    ASSERT_TRUE(progressive_state.has_progressive_mesh);
+    ASSERT_EQ(8u, progressive_state.pm_data_size);
+    const uint32_t *progressive_data =
+        (const uint32_t *)progressive_state.pm_data;
+    ASSERT_EQ(0x11223344u, progressive_data[0]);
+    ASSERT_EQ(0x55667788u, progressive_data[1]);
+
+    nmo_mesh_vtable.destroy(&progressive_state, NULL, NULL);
     nmo_mesh_vtable.destroy(&state, NULL, NULL);
     nmo_arena_destroy(arena);
 }

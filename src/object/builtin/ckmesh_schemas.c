@@ -225,6 +225,11 @@ static size_t nmo_mesh_identifier_remaining_dwords(nmo_chunk_t *chunk) {
     return next_pos - state->current_pos;
 }
 
+static nmo_status_t nmo_mesh_require_identifier_end(nmo_chunk_t *chunk) {
+    return nmo_mesh_identifier_remaining_dwords(chunk) == 0u
+        ? NMO_OK : NMO_ERR_INVALID_FORMAT;
+}
+
 static bool nmo_mesh_size_mul_overflows(size_t count, size_t element_size) {
     return count != 0u && element_size > SIZE_MAX / count;
 }
@@ -371,7 +376,7 @@ static nmo_status_t nmo_mesh_deserialize_vertices(
     
     out_state->vertex_count = (uint32_t)vertex_count;
     if (vertex_count == 0) {
-        NMO_RETURN_OK();
+        return nmo_mesh_require_identifier_end(chunk);
     }
     
     // Read save flags
@@ -518,7 +523,7 @@ static nmo_status_t nmo_mesh_deserialize_vertices(
         }
     }
 
-    NMO_RETURN_OK();
+    return nmo_mesh_require_identifier_end(chunk);
 }
 
 static nmo_status_t nmo_mesh_deserialize_material_groups(
@@ -551,7 +556,7 @@ static nmo_status_t nmo_mesh_deserialize_material_groups(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                          "CKMesh material group allocation size overflows");
     }
-    if (group_count == 0) return NMO_OK;
+    if (group_count == 0) return nmo_mesh_require_identifier_end(chunk);
 
     nmo_material_group_t *groups = nmo_arena_alloc(
         arena, (size_t)group_count * sizeof(*groups),
@@ -566,7 +571,7 @@ static nmo_status_t nmo_mesh_deserialize_material_groups(
     }
     out_state->material_groups = groups;
     out_state->material_group_count = (uint32_t)group_count;
-    return NMO_OK;
+    return nmo_mesh_require_identifier_end(chunk);
 }
 
 static nmo_status_t nmo_mesh_deserialize_weights(
@@ -586,7 +591,7 @@ static nmo_status_t nmo_mesh_deserialize_weights(
                          "Invalid %s mesh weight count %d",
                          layout, weight_count);
     }
-    if (weight_count == 0) return NMO_OK;
+    if (weight_count == 0) return nmo_mesh_require_identifier_end(chunk);
 
     size_t allocation_size = 0u;
     if (!nmo_safe_mul_size(
@@ -650,7 +655,7 @@ static nmo_status_t nmo_mesh_deserialize_weights(
 
     out_state->vertex_weights = weights;
     out_state->vertex_weight_count = (uint32_t)weight_count;
-    return NMO_OK;
+    return nmo_mesh_require_identifier_end(chunk);
 }
 
 /**
@@ -682,6 +687,7 @@ static nmo_status_t nmo_mesh_deserialize_modern(
             return result;
         }
         out_state->flags = flags;
+        NMO_RETURN_IF_ERROR(nmo_mesh_require_identifier_end(chunk));
     }
     
     NMO_RETURN_IF_ERROR(nmo_mesh_deserialize_material_groups(
@@ -756,6 +762,7 @@ static nmo_status_t nmo_mesh_deserialize_modern(
                 out_state->faces[i].material_group_idx = mat_idx;
             }
         }
+        NMO_RETURN_IF_ERROR(nmo_mesh_require_identifier_end(chunk));
     }
     
     // Read lines (identifier CK_STATESAVE_MESHLINES, optional)
@@ -805,6 +812,7 @@ static nmo_status_t nmo_mesh_deserialize_modern(
                 NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Failed to read line indices buffer");
             }
         }
+        NMO_RETURN_IF_ERROR(nmo_mesh_require_identifier_end(chunk));
     }
     
     // Read material channels (identifier CK_STATESAVE_MESHCHANNELS, optional)
@@ -900,6 +908,7 @@ static nmo_status_t nmo_mesh_deserialize_modern(
                     }
             }
         }
+        NMO_RETURN_IF_ERROR(nmo_mesh_require_identifier_end(chunk));
     }
     
     // Read vertex weights (identifier CK_STATESAVE_MESHWEIGHTS, optional)
@@ -930,15 +939,14 @@ static nmo_status_t nmo_mesh_deserialize_modern(
         }
         if (mask_face_count > 0) {
             uint32_t face_count = out_state->face_count;
+            if ((uint32_t)mask_face_count > face_count) {
+                NMO_RETURN_ERROR(
+                    NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                    "Modern mesh face-mask count exceeds face count");
+            }
             uint32_t pair_count = (uint32_t)mask_face_count / 2u;
             uint32_t remainder = (uint32_t)mask_face_count % 2u;
-
-            /* CKMesh deliberately tolerates an oversized saved mask count.
-             * Only the masks backed by loaded faces are applied. */
-            if (face_count < (uint32_t)mask_face_count) {
-                pair_count = face_count / 2u;
-                remainder = 0u;
-            } else if (face_count > 0u && out_state->faces == NULL) {
+            if (face_count > 0u && out_state->faces == NULL) {
                 NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED,
                                  NMO_SEVERITY_ERROR,
                                  "Modern mesh faces missing for channel masks");
@@ -966,6 +974,7 @@ static nmo_status_t nmo_mesh_deserialize_modern(
                 }
             }
         }
+        NMO_RETURN_IF_ERROR(nmo_mesh_require_identifier_end(chunk));
     }
     
     // Read progressive mesh (identifier CK_STATESAVE_PROGRESSIVEMESH, optional)
@@ -994,6 +1003,7 @@ static nmo_status_t nmo_mesh_deserialize_modern(
             result = nmo_mesh_read_raw_bytes(chunk, out_state->pm_data, pm_bytes);
             if (result != NMO_OK) return result;
         }
+        NMO_RETURN_IF_ERROR(nmo_mesh_require_identifier_end(chunk));
     }
     
     NMO_RETURN_OK();
@@ -1024,6 +1034,7 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
         result = nmo_chunk_read_dword(chunk, &flags);
         if (result != NMO_OK) return result;
         out_state->flags = flags;
+        NMO_RETURN_IF_ERROR(nmo_mesh_require_identifier_end(chunk));
     }
 
     NMO_RETURN_IF_ERROR(nmo_mesh_deserialize_material_groups(
@@ -1114,6 +1125,7 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
                 }
             }
         }
+        NMO_RETURN_IF_ERROR(nmo_mesh_require_identifier_end(chunk));
     }
 
     NMO_RETURN_IF_ERROR(nmo_mesh_seek_optional(
@@ -1178,6 +1190,7 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
                 out_state->faces[i].material_group_idx = (uint16_t)mat_idx;
             }
         }
+        NMO_RETURN_IF_ERROR(nmo_mesh_require_identifier_end(chunk));
     }
 
     NMO_RETURN_IF_ERROR(nmo_mesh_seek_optional(
@@ -1223,6 +1236,7 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
                 out_state->line_indices[i * 2 + 1] = idx1;
             }
         }
+        NMO_RETURN_IF_ERROR(nmo_mesh_require_identifier_end(chunk));
     }
 
     NMO_RETURN_IF_ERROR(nmo_mesh_seek_optional(
@@ -1305,6 +1319,7 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
                     }
             }
         }
+        NMO_RETURN_IF_ERROR(nmo_mesh_require_identifier_end(chunk));
     }
 
     NMO_RETURN_IF_ERROR(nmo_mesh_seek_optional(
@@ -1330,13 +1345,14 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
         }
         if (mask_face_count > 0) {
             uint32_t face_count = out_state->face_count;
+            if ((uint32_t)mask_face_count > face_count) {
+                NMO_RETURN_ERROR(
+                    NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                    "Legacy mesh face-mask count exceeds face count");
+            }
             uint32_t pair_count = (uint32_t)mask_face_count / 2u;
             uint32_t remainder = (uint32_t)mask_face_count % 2u;
-
-            if (face_count < (uint32_t)mask_face_count) {
-                pair_count = face_count / 2u;
-                remainder = 0u;
-            } else if (face_count > 0u && out_state->faces == NULL) {
+            if (face_count > 0u && out_state->faces == NULL) {
                 NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED,
                                  NMO_SEVERITY_ERROR,
                                  "Legacy mesh faces missing for channel masks");
@@ -1358,6 +1374,7 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
                 if (result != NMO_OK) return result;
             }
         }
+        NMO_RETURN_IF_ERROR(nmo_mesh_require_identifier_end(chunk));
     }
 
     NMO_RETURN_IF_ERROR(nmo_mesh_seek_optional(
@@ -1385,6 +1402,7 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
             result = nmo_mesh_read_raw_bytes(chunk, out_state->pm_data, pm_bytes);
             if (result != NMO_OK) return result;
         }
+        NMO_RETURN_IF_ERROR(nmo_mesh_require_identifier_end(chunk));
     }
 
     NMO_RETURN_OK();
