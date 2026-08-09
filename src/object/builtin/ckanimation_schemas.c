@@ -15,6 +15,7 @@
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
+#include "core/nmo_utils.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_ref.h"
 #include "type/nmo_reflection.h"
@@ -51,10 +52,13 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
     objectanimation,
     nmo_objectanimation_state_t,
     do {
+        nmo_status_t result = nmo_sceneobject_vtable.create(
+            &state->base, NULL, context);
+        if (result != NMO_OK) return result;
         state->format = CKOBJANIM_FORMAT_NONE;
         state->merge_factor = 0.5f;
     } while (0),
-    ((void)0))
+    nmo_sceneobject_vtable.destroy(&state->base, NULL, context))
 
 /* CKAnimation flag bits (subset used during legacy load) */
 #define CKANIMATION_LINKTOFRAMERATE       0x00000001u
@@ -97,7 +101,7 @@ static const nmo_type_field_t nmo_keyedanimation_fields[] = {
 
 static const nmo_type_field_t nmo_objectanimation_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_objectanimation_state_t, base),
-                    sizeof(nmo_sceneobject_state_t), CKPGUID_NONE,
+                    sizeof(nmo_sceneobject_state_t), CKPGUID_SCENEOBJECT,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_objectanimation_state_t, format, NMO_GUID_ENUM_CK_OBJECTANIMATION_FORMAT),
     NMO_FIELD(nmo_objectanimation_state_t, root_pos, CKPGUID_VECTOR),
@@ -331,100 +335,89 @@ static nmo_status_t nmo_keyedanimation_enumerate_refs(
     return NMO_OK;
 }
 
+static nmo_status_t nmo_objectanimation_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
+
 static nmo_status_t nmo_objectanimation_copy(
     const void *src,
     void *dst,
     const nmo_type_descriptor_t *type,
     nmo_arena_t *arena)
 {
+    (void)type;
+    if (src == NULL || dst == NULL) return NMO_ERR_INVALID_ARGUMENT;
     const nmo_objectanimation_state_t *s = src;
     nmo_objectanimation_state_t *d = dst;
-    NMO_RETURN_IF_ERROR(nmo_object_default_copy(src, dst, type, arena));
+    NMO_RETURN_IF_ERROR(nmo_objectanimation_validate(s, NULL, NULL));
+    if (src == dst) return NMO_OK;
+
+    nmo_objectanimation_state_t copied = *s;
+    copied.controllers = NULL;
+    copied.morph_keys = NULL;
+    copied.morph_normals_sizes = NULL;
+    copied.morph_normals_data = NULL;
+    copied.raw_tail = NULL;
 
     /* Deep copy controllers */
-    if (s->controller_count > 0 && s->controllers != NULL) {
-        nmo_objanim_controller_t *controllers = nmo_arena_alloc(
-            arena, sizeof(nmo_objanim_controller_t) * s->controller_count,
-            _Alignof(nmo_objanim_controller_t));
-        if (!controllers) {
-            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                             "Failed to allocate controllers array for copy");
-        }
-        memcpy(controllers, s->controllers, sizeof(nmo_objanim_controller_t) * s->controller_count);
+    nmo_status_t result = nmo_object_copy_array(
+        arena, (void **)&copied.controllers,
+        s->controllers, sizeof(nmo_objanim_controller_t),
+        s->controller_count);
+    if (result != NMO_OK) return result;
+    if (s->controller_count > 0) {
         for (uint32_t i = 0; i < s->controller_count; ++i) {
-            if (s->controllers[i].data_size > 0 && s->controllers[i].data != NULL) {
-                void *data = nmo_arena_alloc(arena, s->controllers[i].data_size, 1);
-                if (!data) {
-                    NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                                     "Failed to allocate controller data for copy");
-                }
-                memcpy(data, s->controllers[i].data, s->controllers[i].data_size);
-                controllers[i].data = data;
-            }
+            copied.controllers[i].data = NULL;
+            result = nmo_object_copy_bytes(
+                arena, &copied.controllers[i].data,
+                s->controllers[i].data, s->controllers[i].data_size);
+            if (result != NMO_OK) return result;
         }
-        d->controllers = controllers;
     }
 
     /* Deep copy morph keys */
-    if (s->morph_key_parsed_count > 0 && s->morph_keys != NULL) {
-        nmo_objanim_morph_key_t *morph_keys = nmo_arena_alloc(
-            arena, sizeof(nmo_objanim_morph_key_t) * s->morph_key_parsed_count,
-            _Alignof(nmo_objanim_morph_key_t));
-        if (!morph_keys) {
-            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                             "Failed to allocate morph keys array for copy");
-        }
-        memcpy(morph_keys, s->morph_keys, sizeof(nmo_objanim_morph_key_t) * s->morph_key_parsed_count);
+    result = nmo_object_copy_array(
+        arena, (void **)&copied.morph_keys,
+        s->morph_keys, sizeof(nmo_objanim_morph_key_t),
+        s->morph_key_parsed_count);
+    if (result != NMO_OK) return result;
+    if (s->morph_key_parsed_count > 0) {
         for (uint32_t i = 0; i < s->morph_key_parsed_count; ++i) {
-            if (s->morph_keys[i].data_size > 0 && s->morph_keys[i].data != NULL) {
-                void *data = nmo_arena_alloc(arena, s->morph_keys[i].data_size, 1);
-                if (!data) {
-                    NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                                     "Failed to allocate morph key data for copy");
-                }
-                memcpy(data, s->morph_keys[i].data, s->morph_keys[i].data_size);
-                morph_keys[i].data = data;
-            }
+            copied.morph_keys[i].data = NULL;
+            result = nmo_object_copy_bytes(
+                arena, &copied.morph_keys[i].data,
+                s->morph_keys[i].data, s->morph_keys[i].data_size);
+            if (result != NMO_OK) return result;
         }
-        d->morph_keys = morph_keys;
     }
 
     /* Deep copy morph normals (both arrays must be present together) */
-    if (s->morph_normals_count > 0 &&
-        s->morph_normals_sizes != NULL && s->morph_normals_data != NULL) {
-        uint32_t *sizes = nmo_arena_alloc(arena, sizeof(uint32_t) * s->morph_normals_count,
-                                          _Alignof(uint32_t));
-        if (!sizes) {
-            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                             "Failed to allocate morph normals sizes for copy");
-        }
-        memcpy(sizes, s->morph_normals_sizes, sizeof(uint32_t) * s->morph_normals_count);
-        d->morph_normals_sizes = sizes;
-
-        void **data_ptrs = nmo_arena_alloc(arena, sizeof(void *) * s->morph_normals_count,
-                                           _Alignof(void *));
-        if (!data_ptrs) {
-            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                             "Failed to allocate morph normals data array for copy");
-        }
+    result = nmo_object_copy_array(
+        arena, (void **)&copied.morph_normals_sizes,
+        s->morph_normals_sizes, sizeof(uint32_t),
+        s->morph_normals_count);
+    if (result != NMO_OK) return result;
+    result = nmo_object_copy_array(
+        arena, (void **)&copied.morph_normals_data,
+        s->morph_normals_data, sizeof(void *), s->morph_normals_count);
+    if (result != NMO_OK) return result;
+    if (s->morph_normals_count > 0) {
         for (uint32_t i = 0; i < s->morph_normals_count; ++i) {
-            if (s->morph_normals_sizes[i] > 0 && s->morph_normals_data[i] != NULL) {
-                void *data = nmo_arena_alloc(arena, s->morph_normals_sizes[i], 4);
-                if (!data) {
-                    NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                                     "Failed to allocate morph normals data for copy");
-                }
-                memcpy(data, s->morph_normals_data[i], s->morph_normals_sizes[i]);
-                data_ptrs[i] = data;
-            } else {
-                data_ptrs[i] = NULL;
-            }
+            copied.morph_normals_data[i] = NULL;
+            result = nmo_object_copy_bytes(
+                arena, &copied.morph_normals_data[i],
+                s->morph_normals_data[i], s->morph_normals_sizes[i]);
+            if (result != NMO_OK) return result;
         }
-        d->morph_normals_data = data_ptrs;
     }
 
-    return nmo_object_copy_bytes(arena, (void **)&d->raw_tail,
-                                 s->raw_tail, s->raw_tail_size);
+    result = nmo_object_copy_bytes(
+        arena, (void **)&copied.raw_tail,
+        s->raw_tail, s->raw_tail_size);
+    if (result != NMO_OK) return result;
+    *d = copied;
+    return NMO_OK;
 }
 
 static nmo_status_t nmo_objectanimation_validate(
@@ -433,14 +426,45 @@ static nmo_status_t nmo_objectanimation_validate(
     void *context)
 {
     (void)type;
-    (void)context;
+    if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
     const nmo_objectanimation_state_t *s = instance;
     NMO_VALIDATE_COUNT(s->controllers, s->controller_count, "controllers");
     NMO_VALIDATE_COUNT(s->morph_keys, s->morph_key_parsed_count, "morph_keys");
     NMO_VALIDATE_COUNT(s->morph_normals_sizes, s->morph_normals_count, "morph_normals_sizes");
     NMO_VALIDATE_COUNT(s->morph_normals_data, s->morph_normals_count, "morph_normals_data");
     NMO_VALIDATE_BYTES(s->raw_tail, s->raw_tail_size, "raw_tail");
-    NMO_RETURN_OK();
+    size_t allocation_size = 0;
+    if (!nmo_safe_mul_size(
+            s->controller_count, sizeof(nmo_objanim_controller_t),
+            &allocation_size) ||
+        !nmo_safe_mul_size(
+            s->morph_key_parsed_count,
+            sizeof(nmo_objanim_morph_key_t), &allocation_size) ||
+        !nmo_safe_mul_size(
+            s->morph_normals_count, sizeof(uint32_t), &allocation_size) ||
+        !nmo_safe_mul_size(
+            s->morph_normals_count, sizeof(void *), &allocation_size)) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    for (uint32_t i = 0; i < s->controller_count; ++i) {
+        NMO_VALIDATE_BYTES(
+            s->controllers[i].data,
+            s->controllers[i].data_size,
+            "controller data");
+    }
+    for (uint32_t i = 0; i < s->morph_key_parsed_count; ++i) {
+        NMO_VALIDATE_BYTES(
+            s->morph_keys[i].data,
+            s->morph_keys[i].data_size,
+            "morph key data");
+    }
+    for (uint32_t i = 0; i < s->morph_normals_count; ++i) {
+        NMO_VALIDATE_BYTES(
+            s->morph_normals_data[i],
+            s->morph_normals_sizes[i],
+            "morph normal data");
+    }
+    return nmo_sceneobject_vtable.validate(&s->base, NULL, context);
 }
 
 nmo_status_t nmo_animation_prepare_dependencies(
@@ -824,26 +848,152 @@ static uint32_t nmo_keyedanimation_hash(const void *instance)
     return hash;
 }
 
-static const nmo_object_serialize_pass_t nmo_objectanimation_compare_pass = {
-    .class_id = NMO_CID_OBJECTANIMATION,
-    .data_version = 9,
-    .serialize_flags = NMO_SERIALIZE_FLAG_FILE_MODE,
-    .save_flags = UINT32_MAX,
-    .use_context = 1,
-};
+static bool nmo_animation_buffer_equals(
+    const void *lhs,
+    const void *rhs,
+    size_t size)
+{
+    if (size == 0) return true;
+    return lhs != NULL && rhs != NULL && memcmp(lhs, rhs, size) == 0;
+}
 
 static bool nmo_objectanimation_equals(const void *a, const void *b)
 {
-    return nmo_object_serialized_state_equals(
-        a, b, nmo_objectanimation_serialize,
-        &nmo_objectanimation_compare_pass, 1, 4096);
+    if (a == b) return true;
+    if (a == NULL || b == NULL) return false;
+    const nmo_objectanimation_state_t *lhs = a;
+    const nmo_objectanimation_state_t *rhs = b;
+    if (nmo_objectanimation_validate(lhs, NULL, NULL) != NMO_OK ||
+        nmo_objectanimation_validate(rhs, NULL, NULL) != NMO_OK ||
+        !nmo_sceneobject_vtable.equals(&lhs->base, &rhs->base) ||
+        lhs->format != rhs->format ||
+        !nmo_animation_float_equals(lhs->root_pos.x, rhs->root_pos.x) ||
+        !nmo_animation_float_equals(lhs->root_pos.y, rhs->root_pos.y) ||
+        !nmo_animation_float_equals(lhs->root_pos.z, rhs->root_pos.z) ||
+        lhs->has_root_pos != rhs->has_root_pos ||
+        lhs->flags != rhs->flags ||
+        !nmo_animation_ref_equals(&lhs->entity, &rhs->entity) ||
+        lhs->has_length != rhs->has_length ||
+        !nmo_animation_float_equals(lhs->length, rhs->length) ||
+        lhs->has_merge != rhs->has_merge ||
+        !nmo_animation_float_equals(
+            lhs->merge_factor, rhs->merge_factor) ||
+        !nmo_animation_ref_equals(&lhs->anim1, &rhs->anim1) ||
+        !nmo_animation_ref_equals(&lhs->anim2, &rhs->anim2) ||
+        lhs->has_shared_anim != rhs->has_shared_anim ||
+        !nmo_animation_ref_equals(
+            &lhs->shared_anim, &rhs->shared_anim) ||
+        lhs->has_morph_counts != rhs->has_morph_counts ||
+        lhs->morph_vertex_count != rhs->morph_vertex_count ||
+        lhs->morph_key_count != rhs->morph_key_count ||
+        lhs->controller_count != rhs->controller_count ||
+        lhs->morph_key_parsed_count != rhs->morph_key_parsed_count ||
+        lhs->morph_normals_id != rhs->morph_normals_id ||
+        lhs->morph_normals_count != rhs->morph_normals_count ||
+        lhs->raw_tail_size != rhs->raw_tail_size) {
+        return false;
+    }
+    for (uint32_t i = 0; i < lhs->controller_count; ++i) {
+        const nmo_objanim_controller_t *lhs_controller =
+            &lhs->controllers[i];
+        const nmo_objanim_controller_t *rhs_controller =
+            &rhs->controllers[i];
+        if (lhs_controller->type != rhs_controller->type ||
+            lhs_controller->key_count != rhs_controller->key_count ||
+            lhs_controller->data_size != rhs_controller->data_size ||
+            !nmo_animation_buffer_equals(
+                lhs_controller->data, rhs_controller->data,
+                lhs_controller->data_size)) {
+            return false;
+        }
+    }
+    for (uint32_t i = 0; i < lhs->morph_key_parsed_count; ++i) {
+        const nmo_objanim_morph_key_t *lhs_key = &lhs->morph_keys[i];
+        const nmo_objanim_morph_key_t *rhs_key = &rhs->morph_keys[i];
+        if (!nmo_animation_float_equals(
+                lhs_key->time_step, rhs_key->time_step) ||
+            lhs_key->data_size != rhs_key->data_size ||
+            !nmo_animation_buffer_equals(
+                lhs_key->data, rhs_key->data, lhs_key->data_size)) {
+            return false;
+        }
+    }
+    for (uint32_t i = 0; i < lhs->morph_normals_count; ++i) {
+        if (lhs->morph_normals_sizes[i] != rhs->morph_normals_sizes[i] ||
+            !nmo_animation_buffer_equals(
+                lhs->morph_normals_data[i], rhs->morph_normals_data[i],
+                lhs->morph_normals_sizes[i])) {
+            return false;
+        }
+    }
+    return nmo_animation_buffer_equals(
+        lhs->raw_tail, rhs->raw_tail, lhs->raw_tail_size);
 }
 
 static uint32_t nmo_objectanimation_hash(const void *instance)
 {
-    return nmo_object_serialized_state_hash(
-        instance, nmo_objectanimation_serialize,
-        &nmo_objectanimation_compare_pass, 1, 4096);
+    if (instance == NULL) return 0;
+    const nmo_objectanimation_state_t *state = instance;
+    if (nmo_objectanimation_validate(state, NULL, NULL) != NMO_OK) return 0;
+    uint32_t hash = nmo_sceneobject_vtable.hash(&state->base);
+#define NMO_OBJECTANIMATION_HASH_FIELD(field) \
+    hash = nmo_animation_hash_bytes( \
+        hash, &state->field, sizeof(state->field))
+    NMO_OBJECTANIMATION_HASH_FIELD(format);
+    NMO_OBJECTANIMATION_HASH_FIELD(root_pos.x);
+    NMO_OBJECTANIMATION_HASH_FIELD(root_pos.y);
+    NMO_OBJECTANIMATION_HASH_FIELD(root_pos.z);
+    NMO_OBJECTANIMATION_HASH_FIELD(has_root_pos);
+    NMO_OBJECTANIMATION_HASH_FIELD(flags);
+    hash = nmo_animation_hash_ref(hash, &state->entity);
+    NMO_OBJECTANIMATION_HASH_FIELD(has_length);
+    NMO_OBJECTANIMATION_HASH_FIELD(length);
+    NMO_OBJECTANIMATION_HASH_FIELD(has_merge);
+    NMO_OBJECTANIMATION_HASH_FIELD(merge_factor);
+    hash = nmo_animation_hash_ref(hash, &state->anim1);
+    hash = nmo_animation_hash_ref(hash, &state->anim2);
+    NMO_OBJECTANIMATION_HASH_FIELD(has_shared_anim);
+    hash = nmo_animation_hash_ref(hash, &state->shared_anim);
+    NMO_OBJECTANIMATION_HASH_FIELD(has_morph_counts);
+    NMO_OBJECTANIMATION_HASH_FIELD(morph_vertex_count);
+    NMO_OBJECTANIMATION_HASH_FIELD(morph_key_count);
+    NMO_OBJECTANIMATION_HASH_FIELD(controller_count);
+    for (uint32_t i = 0; i < state->controller_count; ++i) {
+        const nmo_objanim_controller_t *controller = &state->controllers[i];
+        hash = nmo_animation_hash_bytes(
+            hash, &controller->type, sizeof(controller->type));
+        hash = nmo_animation_hash_bytes(
+            hash, &controller->key_count, sizeof(controller->key_count));
+        hash = nmo_animation_hash_bytes(
+            hash, &controller->data_size, sizeof(controller->data_size));
+        hash = nmo_animation_hash_bytes(
+            hash, controller->data, controller->data_size);
+    }
+    NMO_OBJECTANIMATION_HASH_FIELD(morph_key_parsed_count);
+    for (uint32_t i = 0; i < state->morph_key_parsed_count; ++i) {
+        const nmo_objanim_morph_key_t *key = &state->morph_keys[i];
+        hash = nmo_animation_hash_bytes(
+            hash, &key->time_step, sizeof(key->time_step));
+        hash = nmo_animation_hash_bytes(
+            hash, &key->data_size, sizeof(key->data_size));
+        hash = nmo_animation_hash_bytes(
+            hash, key->data, key->data_size);
+    }
+    NMO_OBJECTANIMATION_HASH_FIELD(morph_normals_id);
+    NMO_OBJECTANIMATION_HASH_FIELD(morph_normals_count);
+    for (uint32_t i = 0; i < state->morph_normals_count; ++i) {
+        hash = nmo_animation_hash_bytes(
+            hash, &state->morph_normals_sizes[i],
+            sizeof(state->morph_normals_sizes[i]));
+        hash = nmo_animation_hash_bytes(
+            hash, state->morph_normals_data[i],
+            state->morph_normals_sizes[i]);
+    }
+    NMO_OBJECTANIMATION_HASH_FIELD(raw_tail_size);
+    hash = nmo_animation_hash_bytes(
+        hash, state->raw_tail, state->raw_tail_size);
+#undef NMO_OBJECTANIMATION_HASH_FIELD
+    return hash;
 }
 
 nmo_type_vtable_t nmo_animation_vtable = {

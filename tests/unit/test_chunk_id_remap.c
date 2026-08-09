@@ -9695,6 +9695,83 @@ TEST(chunk_id_remap, objectanimation_refs_round_trip_and_failure_is_atomic) {
     source.anim1 = nmo_ref_from_raw(953);
     source.anim2 = nmo_ref_from_raw(954);
 
+    uint8_t controller_data[] = {1, 2, 3, 4};
+    nmo_objanim_controller_t controller = {
+        .type = 0x637c4301u,
+        .key_count = 1,
+        .data_size = sizeof(controller_data),
+        .data = controller_data,
+    };
+    uint8_t morph_data[] = {5, 6, 7, 8};
+    nmo_objanim_morph_key_t morph_key = {
+        .time_step = 2.5f,
+        .data_size = sizeof(morph_data),
+        .data = morph_data,
+    };
+    uint8_t normal_data[] = {9, 10, 11, 12};
+    uint32_t normal_size = sizeof(normal_data);
+    void *normal_data_ptr = normal_data;
+    uint8_t raw_tail[] = {13, 14, 15, 16};
+    source.controller_count = 1;
+    source.controllers = &controller;
+    source.morph_key_parsed_count = 1;
+    source.morph_keys = &morph_key;
+    source.morph_normals_id = CK_STATESAVE_OBJANIMMORPHNORMALS;
+    source.morph_normals_count = 1;
+    source.morph_normals_sizes = &normal_size;
+    source.morph_normals_data = &normal_data_ptr;
+    source.raw_tail = raw_tail;
+    source.raw_tail_size = sizeof(raw_tail);
+    ASSERT_EQ(NMO_CKOBJECT_VISIBLE, source.base.base.visibility_flags);
+
+    nmo_objectanimation_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_vtable.create(
+        &copied, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_vtable.copy(
+        &source, &copied, NULL, arena));
+    ASSERT_NE(source.controllers, copied.controllers);
+    ASSERT_NE(source.controllers[0].data, copied.controllers[0].data);
+    ASSERT_NE(source.morph_keys, copied.morph_keys);
+    ASSERT_NE(source.morph_keys[0].data, copied.morph_keys[0].data);
+    ASSERT_NE(source.morph_normals_sizes, copied.morph_normals_sizes);
+    ASSERT_NE(source.morph_normals_data, copied.morph_normals_data);
+    ASSERT_NE(source.morph_normals_data[0], copied.morph_normals_data[0]);
+    ASSERT_NE(source.raw_tail, copied.raw_tail);
+    ASSERT_TRUE(nmo_objectanimation_vtable.equals(&source, &copied));
+    ASSERT_EQ(nmo_objectanimation_vtable.hash(&source),
+              nmo_objectanimation_vtable.hash(&copied));
+    ((uint8_t *)copied.controllers[0].data)[0]++;
+    ASSERT_FALSE(nmo_objectanimation_vtable.equals(&source, &copied));
+    ((uint8_t *)copied.controllers[0].data)[0]--;
+
+    fail_after_allocator_state_t copy_allocator_state = {
+        .allocation_count = 0,
+        .allowed_allocations = 2,
+    };
+    nmo_allocator_t copy_allocator = nmo_allocator_custom(
+        fail_after_alloc, fail_after_free, &copy_allocator_state);
+    nmo_arena_t *copy_arena = nmo_arena_create(&copy_allocator, 1);
+    ASSERT_NOT_NULL(copy_arena);
+    uint8_t previous_controller_data[] = {21, 22, 23, 24};
+    nmo_objanim_controller_t previous_controller = {
+        .type = 77,
+        .key_count = 1,
+        .data_size = sizeof(previous_controller_data),
+        .data = previous_controller_data,
+    };
+    nmo_objectanimation_state_t failed_copy;
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_vtable.create(
+        &failed_copy, NULL, NULL));
+    failed_copy.flags = 0x12345678u;
+    failed_copy.controller_count = 1;
+    failed_copy.controllers = &previous_controller;
+    ASSERT_EQ(NMO_ERR_NOMEM, nmo_objectanimation_vtable.copy(
+        &source, &failed_copy, NULL, copy_arena));
+    ASSERT_EQ(0x12345678u, failed_copy.flags);
+    ASSERT_EQ(1u, failed_copy.controller_count);
+    ASSERT_EQ(&previous_controller, failed_copy.controllers);
+    ASSERT_EQ(previous_controller_data, failed_copy.controllers[0].data);
+
     nmo_chunk_t *first = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(first);
     first->class_id = NMO_CID_OBJECTANIMATION;
@@ -9780,10 +9857,13 @@ TEST(chunk_id_remap, objectanimation_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(0xABCDEF01u, marker);
 
     nmo_objectanimation_vtable.destroy(&source, NULL, NULL);
+    nmo_objectanimation_vtable.destroy(&copied, NULL, NULL);
+    nmo_objectanimation_vtable.destroy(&failed_copy, NULL, NULL);
     nmo_objectanimation_vtable.destroy(&loaded, NULL, NULL);
     nmo_objectanimation_vtable.destroy(&reloaded, NULL, NULL);
     nmo_objectanimation_vtable.destroy(&failed, NULL, NULL);
     nmo_objectanimation_vtable.destroy(&invalid, NULL, NULL);
+    nmo_arena_destroy(copy_arena);
     nmo_arena_destroy(arena);
 }
 
