@@ -871,11 +871,17 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
         uint64_t data_read_start = load_perf_begin(ds);
         int read_result = nmo_io_read(io, packed_buffer, ds->header.data_pack_size, &bytes_read);
         load_perf_end(ds, NMO_LOAD_PERF_DATA_READ, data_read_start);
-        if (read_result != NMO_OK || bytes_read != ds->header.data_pack_size) {
+        if (read_result != NMO_OK) {
             nmo_log(logger, NMO_LOG_ERROR, "Failed to read data section");
             nmo_id_mapping_destroy(id_map);
             ds->id_mapping = NULL;
-            return NMO_ERR_INVALID_ARGUMENT;
+            return read_result;
+        }
+        if (bytes_read != ds->header.data_pack_size) {
+            nmo_log(logger, NMO_LOG_ERROR, "Truncated data section");
+            nmo_id_mapping_destroy(id_map);
+            ds->id_mapping = NULL;
+            return NMO_ERR_TRUNCATED_CHUNK;
         }
 
         /* Decompress if needed */
@@ -905,7 +911,7 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
                         uncompress_result);
                 nmo_id_mapping_destroy(id_map);
                 ds->id_mapping = NULL;
-                return NMO_ERR_INVALID_ARGUMENT;
+                return NMO_ERR_DECOMPRESSION_FAILED;
             }
 
             if (dest_len != ds->header.data_unpack_size) {
@@ -913,7 +919,7 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
                         ds->header.data_unpack_size, dest_len);
                 nmo_id_mapping_destroy(id_map);
                 ds->id_mapping = NULL;
-                return NMO_ERR_INVALID_ARGUMENT;
+                return NMO_ERR_DECOMPRESSION_FAILED;
             }
 
             data_size = dest_len;
