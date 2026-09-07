@@ -66,6 +66,7 @@ typedef struct nmo_session {
     /* Object index (Phase 5) */
     nmo_object_index_t *object_index;
     nmo_object_query_index_t *object_query_index;
+    bool edit_active;
 
     /* Reference resolver (initialised on demand) */
     nmo_reference_resolver_t *reference_resolver;
@@ -309,6 +310,30 @@ void nmo_workspace_destroy(nmo_workspace_t *workspace)
 nmo_document_t *nmo_workspace_get_document(nmo_workspace_t *workspace)
 {
     return workspace != NULL ? workspace->document : NULL;
+}
+
+nmo_status_t nmo_workspace_internal_acquire_edit(nmo_workspace_t *workspace)
+{
+    if (workspace == NULL || workspace->document == NULL ||
+        workspace->document->session == NULL) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    nmo_session_t *session = workspace->document->session;
+    if (session->edit_active) {
+        return NMO_ERR_INVALID_STATE;
+    }
+    session->edit_active = true;
+    return NMO_OK;
+}
+
+void nmo_workspace_internal_release_edit(nmo_workspace_t *workspace)
+{
+    if (workspace == NULL || workspace->document == NULL ||
+        workspace->document->session == NULL) {
+        return;
+    }
+    workspace->document->session->edit_active = false;
 }
 
 nmo_context_t *nmo_document_internal_context(const nmo_document_t *document)

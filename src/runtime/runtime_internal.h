@@ -322,6 +322,15 @@ nmo_status_t nmo_workspace_internal_preview_destroy(
     nmo_arena_t *arena,
     nmo_object_id_t **out_destroy_ids,
     size_t *out_destroy_count);
+nmo_status_t nmo_workspace_internal_acquire_edit(
+    nmo_workspace_t *workspace);
+void nmo_workspace_internal_release_edit(
+    nmo_workspace_t *workspace);
+nmo_status_t nmo_workspace_edit_defer_destroy_objects(
+    nmo_workspace_edit_t *edit,
+    const nmo_object_id_t *object_ids,
+    size_t object_count,
+    uint32_t flags);
 nmo_status_t nmo_workspace_internal_destroy_objects(
     nmo_workspace_t *workspace,
     const nmo_object_id_t *object_ids,

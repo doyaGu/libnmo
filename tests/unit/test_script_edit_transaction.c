@@ -1136,6 +1136,32 @@ TEST(script_edit_transaction, connects_parameters_across_explicit_parent_graph)
     nmo_context_release(ctx);
 }
 
+TEST(script_edit_transaction, failed_commit_preserves_deferred_destroy_objects)
+{
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_id_t object_id = 0;
+    create_object_or_fail(session, NMO_CID_OBJECT, "keep-on-failure", &object_id);
+
+    nmo_script_edit_tx_t *tx = NULL;
+    ASSERT_EQ(NMO_OK,
+              begin_test_script_edit(ctx, session, "failed commit", &tx));
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_defer_destroy_objects(tx, &object_id, 1u));
+    nmo_script_edit_mark(tx, 1u << 31);
+
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, nmo_script_edit_commit(tx));
+    ASSERT_NOT_NULL(nmo_object_repository_find_by_id(repo, object_id));
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(script_edit_transaction, add_node_rejects_cross_section_manager_strings)
 {
     for (size_t attribute_manager = 0u; attribute_manager < 2u;
@@ -1449,6 +1475,8 @@ TEST_MAIN_BEGIN()
                   behavior_edit_add_link_through_workspace_owner);
     REGISTER_TEST(script_edit_transaction,
                   rollback_restores_original_state_after_validation_failure);
+    REGISTER_TEST(script_edit_transaction,
+                  failed_commit_preserves_deferred_destroy_objects);
     REGISTER_TEST(script_edit_transaction,
                   add_node_keeps_ballance_script_edit_validation_green);
     REGISTER_TEST(script_edit_transaction,

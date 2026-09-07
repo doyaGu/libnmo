@@ -948,6 +948,42 @@ TEST(workspace_edit, parameter_write_resolves_message_manager_names_with_policy)
     nmo_context_release(ctx);
 }
 
+TEST(workspace_edit, rejects_overlapping_edits_for_same_document) {
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    nmo_document_t *document = NULL;
+    nmo_workspace_t *first_workspace = NULL;
+    nmo_workspace_t *second_workspace = NULL;
+    nmo_workspace_edit_t *first_edit = NULL;
+    nmo_workspace_edit_t *second_edit = NULL;
+    ASSERT_EQ(NMO_OK, nmo_session_borrow_document(session, &document));
+    ASSERT_EQ(NMO_OK, nmo_workspace_create(ctx, document, &first_workspace));
+    ASSERT_EQ(NMO_OK, nmo_workspace_create(ctx, document, &second_workspace));
+
+    ASSERT_EQ(NMO_OK,
+              nmo_workspace_edit_begin(
+                  first_workspace, "first edit", &first_edit));
+    ASSERT_EQ(NMO_ERR_INVALID_STATE,
+              nmo_workspace_edit_begin(
+                  second_workspace, "overlapping edit", &second_edit));
+    ASSERT_NULL(second_edit);
+
+    nmo_workspace_edit_rollback(first_edit);
+    ASSERT_EQ(NMO_OK,
+              nmo_workspace_edit_begin(
+                  second_workspace, "second edit", &second_edit));
+    nmo_workspace_edit_rollback(second_edit);
+
+    nmo_workspace_destroy(second_workspace);
+    nmo_workspace_destroy(first_workspace);
+    nmo_document_destroy(document);
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(workspace_edit, set_fields_uses_explicit_object_type) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
@@ -1927,6 +1963,32 @@ TEST(workspace_edit, apply_edit_flags_accepts_known_flags_and_rejects_unknown) {
     nmo_context_release(ctx);
 }
 
+TEST(workspace_edit, failed_commit_rolls_back_mutation) {
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    uint32_t direct_state = 0x11111111u;
+    workspace_edit_scope_t edit_scope = {0};
+    nmo_workspace_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK,
+              begin_workspace_edit_for_session(
+                  ctx, session, "failed commit", &edit_scope, &edit));
+    ASSERT_EQ(NMO_OK,
+              nmo_workspace_edit_snapshot_bytes(
+                  edit, &direct_state, sizeof(direct_state)));
+
+    direct_state = 0x22222222u;
+    nmo_workspace_edit_mark(edit, 1u << 31);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              commit_workspace_edit_scope(&edit_scope));
+    ASSERT_EQ(0x11111111u, direct_state);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(workspace_edit, snapshot_bytes_rollback_restores_direct_state) {
     nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
     ASSERT_NOT_NULL(ctx);
@@ -2074,6 +2136,7 @@ TEST(workspace_edit, snapshot_object_chunk_rollback_restores_null_chunk) {
 
 TEST_MAIN_BEGIN()
 REGISTER_TEST(workspace_edit, begin_commit_roundtrip);
+REGISTER_TEST(workspace_edit, rejects_overlapping_edits_for_same_document);
 REGISTER_TEST(workspace_edit, set_reference_field_commit_invalidates_ref_graph);
 REGISTER_TEST(workspace_edit, set_fields_uses_explicit_object_type);
 REGISTER_TEST(workspace_edit, set_reference_field_rollback_restores_without_invalidating_cache);
@@ -2109,6 +2172,7 @@ REGISTER_TEST(workspace_edit, dataarray_ref_graph_handles_missing_row_metadata);
 REGISTER_TEST(workspace_edit, behavior_graph_flag_rebuilds_behavior_index);
 REGISTER_TEST(workspace_edit, bind_script_uses_explicit_object_types);
 REGISTER_TEST(workspace_edit, apply_edit_flags_accepts_known_flags_and_rejects_unknown);
+REGISTER_TEST(workspace_edit, failed_commit_rolls_back_mutation);
 REGISTER_TEST(workspace_edit, snapshot_bytes_rollback_restores_direct_state);
 REGISTER_TEST(workspace_edit, track_created_object_rollback_removes_and_commit_keeps);
 REGISTER_TEST(workspace_edit, snapshot_object_chunk_rollback_restores_previous_chunk);

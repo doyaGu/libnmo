@@ -78,7 +78,16 @@ typedef struct nmo_workspace_edit_action {
 typedef struct workspace_edit_checkpoint {
     size_t rollback_count;
     size_t commit_count;
+    size_t cleanup_count;
+    uint32_t flags;
 } workspace_edit_checkpoint_t;
+
+static const uint32_t NMO_WORKSPACE_EDIT_KNOWN_FLAGS =
+    NMO_WORKSPACE_EDIT_OBJECT_STATE |
+    NMO_WORKSPACE_EDIT_REFERENCES |
+    NMO_WORKSPACE_EDIT_BEHAVIOR_GRAPH |
+    NMO_WORKSPACE_EDIT_NAMES |
+    NMO_WORKSPACE_EDIT_RESOURCES;
 
 struct nmo_workspace_edit {
     nmo_workspace_t *workspace;
@@ -95,6 +104,7 @@ struct nmo_workspace_edit {
     size_t cleanup_capacity;
     uint32_t flags;
     bool finished;
+    bool owns_active_edit;
 };
 
 typedef struct field_bytes_snapshot {
@@ -135,6 +145,12 @@ typedef struct array_id_action {
 typedef struct object_id_action {
     nmo_object_id_t id;
 } object_id_action_t;
+
+typedef struct destroy_objects_action {
+    nmo_object_id_t *ids;
+    size_t count;
+    uint32_t flags;
+} destroy_objects_action_t;
 
 typedef struct object_chunk_snapshot {
     nmo_object_id_t id;
@@ -181,6 +197,10 @@ static void workspace_edit_free(nmo_workspace_edit_t *edit)
 {
     if (edit == NULL) {
         return;
+    }
+    if (edit->owns_active_edit) {
+        nmo_workspace_internal_release_edit(edit->workspace);
+        edit->owns_active_edit = false;
     }
     free(edit->rollback_actions);
     free(edit->commit_actions);
@@ -271,12 +291,29 @@ static void workspace_edit_rollback_to(nmo_workspace_edit_t *edit, size_t checkp
     }
 }
 
+static void workspace_edit_cleanup_to(
+    nmo_workspace_edit_t *edit,
+    size_t checkpoint)
+{
+    if (edit == NULL) {
+        return;
+    }
+    while (edit->cleanup_count > checkpoint) {
+        edit->cleanup_count--;
+        nmo_workspace_edit_action_t action =
+            edit->cleanup_actions[edit->cleanup_count];
+        (void)action.fn(edit, action.payload);
+    }
+}
+
 static workspace_edit_checkpoint_t workspace_edit_checkpoint(
     const nmo_workspace_edit_t *edit)
 {
     return (workspace_edit_checkpoint_t){
         edit != NULL ? edit->rollback_count : 0u,
         edit != NULL ? edit->commit_count : 0u,
+        edit != NULL ? edit->cleanup_count : 0u,
+        edit != NULL ? edit->flags : 0u,
     };
 }
 
@@ -291,6 +328,8 @@ static void workspace_edit_abort_to(
     if (edit->commit_count > checkpoint.commit_count) {
         edit->commit_count = checkpoint.commit_count;
     }
+    workspace_edit_cleanup_to(edit, checkpoint.cleanup_count);
+    edit->flags = checkpoint.flags;
 }
 
 static nmo_status_t workspace_edit_abort_status(
@@ -334,12 +373,7 @@ static void workspace_edit_finish(nmo_workspace_edit_t *edit)
         return;
     }
     edit->finished = true;
-    while (edit->cleanup_count > 0u) {
-        edit->cleanup_count--;
-        nmo_workspace_edit_action_t action =
-            edit->cleanup_actions[edit->cleanup_count];
-        (void)action.fn(edit, action.payload);
-    }
+    workspace_edit_cleanup_to(edit, 0u);
     workspace_edit_free(edit);
 }
 
@@ -754,6 +788,19 @@ static nmo_status_t commit_destroy_object(nmo_workspace_edit_t *edit, void *payl
         &action->id,
         1,
         NMO_RUNTIME_REQUEST_STRICT | NMO_RUNTIME_REQUEST_DEFER_CACHE_INVALIDATION);
+}
+
+static nmo_status_t commit_destroy_objects(
+    nmo_workspace_edit_t *edit,
+    void *payload)
+{
+    destroy_objects_action_t *action = (destroy_objects_action_t *)payload;
+    if (edit == NULL || action == NULL || action->ids == NULL ||
+        action->count == 0u) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    return nmo_workspace_internal_destroy_objects(
+        edit->workspace, action->ids, action->count, action->flags);
 }
 
 static nmo_status_t workspace_edit_make_object_id_action(
@@ -1428,6 +1475,14 @@ static nmo_status_t workspace_edit_begin_for_workspace(
         }
         memcpy(edit->label, label, len + 1u);
     }
+
+    nmo_status_t acquire_result =
+        nmo_workspace_internal_acquire_edit(workspace);
+    if (acquire_result != NMO_OK) {
+        workspace_edit_free(edit);
+        return acquire_result;
+    }
+    edit->owns_active_edit = true;
 
     *out_edit = edit;
     return NMO_OK;
@@ -3906,6 +3961,11 @@ nmo_status_t nmo_workspace_edit_commit(nmo_workspace_edit_t *edit)
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
+    if ((edit->flags & ~NMO_WORKSPACE_EDIT_KNOWN_FLAGS) != 0u) {
+        return workspace_edit_finish_rollback_status(
+            edit, NMO_ERR_INVALID_ARGUMENT);
+    }
+
     nmo_status_t action_result = workspace_edit_run_commit_actions(edit);
     if (action_result != NMO_OK) {
         return workspace_edit_finish_rollback_status(edit, action_result);
@@ -4026,6 +4086,36 @@ nmo_status_t nmo_workspace_edit_track_created_object(
     return NMO_OK;
 }
 
+nmo_status_t nmo_workspace_edit_defer_destroy_objects(
+    nmo_workspace_edit_t *edit,
+    const nmo_object_id_t *object_ids,
+    size_t object_count,
+    uint32_t flags)
+{
+    if (edit == NULL || edit->finished || object_ids == NULL ||
+        object_count == 0u) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+
+    destroy_objects_action_t *action =
+        (destroy_objects_action_t *)nmo_workspace_edit_alloc(
+            edit, sizeof(*action), _Alignof(destroy_objects_action_t));
+    if (action == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    action->ids = (nmo_object_id_t *)nmo_workspace_edit_alloc(
+        edit,
+        object_count * sizeof(*action->ids),
+        _Alignof(nmo_object_id_t));
+    if (action->ids == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    memcpy(action->ids, object_ids, object_count * sizeof(*action->ids));
+    action->count = object_count;
+    action->flags = flags;
+    return workspace_edit_push_commit(edit, commit_destroy_objects, action);
+}
+
 nmo_status_t nmo_workspace_edit_snapshot_object_chunk(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t object_id)
@@ -4084,17 +4174,10 @@ void nmo_workspace_edit_mark(nmo_workspace_edit_t *edit, uint32_t flags)
 
 nmo_status_t nmo_runtime_apply_edit_flags(nmo_session_t *session, uint32_t flags)
 {
-    const uint32_t known_flags =
-        NMO_WORKSPACE_EDIT_OBJECT_STATE |
-        NMO_WORKSPACE_EDIT_REFERENCES |
-        NMO_WORKSPACE_EDIT_BEHAVIOR_GRAPH |
-        NMO_WORKSPACE_EDIT_NAMES |
-        NMO_WORKSPACE_EDIT_RESOURCES;
-
     if (session == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
-    if ((flags & ~known_flags) != 0u) {
+    if ((flags & ~NMO_WORKSPACE_EDIT_KNOWN_FLAGS) != 0u) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
     if (nmo_session_is_partial_load(session)) {

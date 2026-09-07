@@ -5521,8 +5521,8 @@ NMO_API nmo_status_t nmo_script_edit_commit(nmo_script_edit_tx_t *tx)
     }
 
     if (tx->deferred_destroy_count > 0u) {
-        rc = nmo_workspace_internal_destroy_objects(
-            tx->workspace,
+        rc = nmo_workspace_edit_defer_destroy_objects(
+            tx->edit,
             tx->deferred_destroy_ids,
             tx->deferred_destroy_count,
             NMO_RUNTIME_REQUEST_STRICT |
