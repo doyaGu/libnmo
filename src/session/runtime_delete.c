@@ -992,19 +992,6 @@ static nmo_status_t runtime_detach_deleted_references(
         }
         NMO_RETURN_IF_ERROR(runtime_delete_detach_atomic_refs(
             type_rt, obj, delete_set));
-        if (obj->class_id == NMO_CID_BEHAVIORLINK) {
-            nmo_behaviorlink_state_t *link =
-                (nmo_behaviorlink_state_t *)obj->state;
-            if (runtime_id_set_contains(
-                    delete_set, nmo_behaviorlink_in_io_id(link))) {
-                nmo_behaviorlink_set_in_io_id(link, NMO_OBJECT_ID_NONE);
-            }
-            if (runtime_id_set_contains(
-                    delete_set, nmo_behaviorlink_out_io_id(link))) {
-                nmo_behaviorlink_set_out_io_id(link, NMO_OBJECT_ID_NONE);
-            }
-            continue;
-        }
         if (!obj || obj->class_id != NMO_CID_BEHAVIOR || !obj->state ||
             runtime_id_set_contains(delete_set, obj->id)) {
             NMO_RETURN_IF_ERROR(runtime_delete_visit_ref_fields(

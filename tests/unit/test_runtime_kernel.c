@@ -970,6 +970,7 @@ TEST(runtime_kernel, delete_safe_detach_prunes_behavior_links_with_deleted_io) {
     nmo_object_id_t source_io_id = 0;
     nmo_object_id_t target_io_id = 0;
     nmo_object_id_t link_id = 0;
+    nmo_object_id_t raw_link_id = 0;
     ASSERT_EQ(
         NMO_OK,
         nmo_session_create_object(session, NMO_CID_BEHAVIOR, "behavior", (nmo_guid_t){0, 0}, &behavior_id, NULL));
@@ -982,19 +983,28 @@ TEST(runtime_kernel, delete_safe_detach_prunes_behavior_links_with_deleted_io) {
     ASSERT_EQ(
         NMO_OK,
         nmo_session_create_object(session, NMO_CID_BEHAVIORLINK, "link", (nmo_guid_t){0, 0}, &link_id, NULL));
+    ASSERT_EQ(
+        NMO_OK,
+        nmo_session_create_object(session, NMO_CID_BEHAVIORLINK, "raw-link", (nmo_guid_t){0, 0}, &raw_link_id, NULL));
 
     nmo_object_t *behavior_obj = nmo_object_repository_find_by_id(repo, behavior_id);
     nmo_object_t *link_obj = nmo_object_repository_find_by_id(repo, link_id);
+    nmo_object_t *raw_link_obj = nmo_object_repository_find_by_id(repo, raw_link_id);
     ASSERT_NOT_NULL(behavior_obj);
     ASSERT_NOT_NULL(link_obj);
+    ASSERT_NOT_NULL(raw_link_obj);
     nmo_behavior_state_t *behavior_state = (nmo_behavior_state_t *)behavior_obj->state;
     nmo_behaviorlink_state_t *link_state = (nmo_behaviorlink_state_t *)link_obj->state;
+    nmo_behaviorlink_state_t *raw_link_state =
+        (nmo_behaviorlink_state_t *)raw_link_obj->state;
     ASSERT_NOT_NULL(behavior_state);
     ASSERT_NOT_NULL(link_state);
+    ASSERT_NOT_NULL(raw_link_state);
     ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(
         &behavior_state->sub_behavior_links, link_id, NULL));
     nmo_behaviorlink_set_in_io_id(link_state, target_io_id);
     nmo_behaviorlink_set_out_io_id(link_state, source_io_id);
+    raw_link_state->in_io = nmo_ref_from_raw(target_io_id);
 
     nmo_runtime_report_t report = {0};
     ASSERT_EQ(
@@ -1009,15 +1019,20 @@ TEST(runtime_kernel, delete_safe_detach_prunes_behavior_links_with_deleted_io) {
 
     behavior_obj = nmo_object_repository_find_by_id(repo, behavior_id);
     link_obj = nmo_object_repository_find_by_id(repo, link_id);
+    raw_link_obj = nmo_object_repository_find_by_id(repo, raw_link_id);
     ASSERT_NOT_NULL(behavior_obj);
     ASSERT_NOT_NULL(link_obj);
+    ASSERT_NOT_NULL(raw_link_obj);
     behavior_state = (nmo_behavior_state_t *)behavior_obj->state;
     link_state = (nmo_behaviorlink_state_t *)link_obj->state;
+    raw_link_state = (nmo_behaviorlink_state_t *)raw_link_obj->state;
     ASSERT_NOT_NULL(behavior_state);
     ASSERT_NOT_NULL(link_state);
+    ASSERT_NOT_NULL(raw_link_state);
     ASSERT_EQ(0u, behavior_state->sub_behavior_links.count);
     ASSERT_EQ(0u, nmo_behaviorlink_in_io_id(link_state));
     ASSERT_EQ(source_io_id, nmo_behaviorlink_out_io_id(link_state));
+    ASSERT_EQ(target_io_id, nmo_ref_serialized_id(&raw_link_state->in_io));
 
     nmo_session_destroy(session);
     nmo_context_release(ctx);
