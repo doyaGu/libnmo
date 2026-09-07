@@ -1350,18 +1350,27 @@ static int object_create_mutate(
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    nmo_runtime_report_t report;
-    memset(&report, 0, sizeof(report));
-
-    int create_rc = nmo_tool_owner_create_object(
-        c->workspace,
-        args->class_id,
-        args->name,
-        args->type_guid,
-        &args->new_id,
-        &report);
+    nmo_workspace_edit_t *edit = NULL;
+    nmo_status_t create_rc =
+        nmo_workspace_edit_begin(c->workspace, "object.create", &edit);
+    if (create_rc == NMO_OK) {
+        const nmo_object_create_desc_t desc = {
+            .class_id = args->class_id,
+            .name = args->name,
+            .type_guid = args->type_guid,
+        };
+        create_rc = nmo_object_edit_create(edit, &desc, &args->new_id);
+    }
     if (create_rc != NMO_OK) {
+        nmo_workspace_edit_rollback(edit);
         fprintf(stderr, "Error: Failed to create object: %s\n",
+                nmo_error_string(create_rc));
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    create_rc = nmo_workspace_edit_commit(edit);
+    if (create_rc != NMO_OK) {
+        fprintf(stderr, "Error: Failed to commit object creation: %s\n",
                 nmo_error_string(create_rc));
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }

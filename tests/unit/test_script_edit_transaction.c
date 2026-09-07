@@ -689,6 +689,58 @@ TEST(script_edit_transaction, add_node_keeps_ballance_script_edit_validation_gre
     nmo_session_close_with_context(ctx, session);
 }
 
+TEST(script_edit_transaction, add_node_rollback_removes_all_created_objects)
+{
+    nmo_context_t *ctx = nmo_context_create(
+        &(nmo_context_desc_t){ .data_dir = NMO_TEST_DATA_DIR });
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session =
+        nmo_session_load(ctx, NMO_TEST_DATA_FILE("Ballance/base.cmo"));
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+    size_t before_count = nmo_object_repository_get_count(repo);
+
+    nmo_script_edit_tx_t *tx = NULL;
+    ASSERT_EQ(NMO_OK,
+              begin_test_script_edit(ctx, session, "rollback-created-node", &tx));
+    ASSERT_NOT_NULL(tx);
+
+    nmo_object_id_t node_id = 0u;
+    ASSERT_EQ(NMO_OK,
+              nmo_script_edit_add_node(
+                  tx,
+                  237u,
+                  nmo_guid_parse("055B29FE-662D5CA0"),
+                  "Transient 2D Text",
+                  &node_id));
+    ASSERT_TRUE(node_id != 0u);
+
+    const nmo_script_edit_report_t *report = nmo_script_edit_report(tx);
+    ASSERT_NOT_NULL(report);
+    ASSERT_TRUE(report->created_object_id_count > 0u);
+    ASSERT_NOT_NULL(report->created_object_ids);
+    ASSERT_EQ(before_count + report->created_object_id_count,
+              nmo_object_repository_get_count(repo));
+
+    nmo_object_id_t created_ids[64];
+    ASSERT_TRUE(report->created_object_id_count <=
+                sizeof(created_ids) / sizeof(created_ids[0]));
+    size_t created_count = report->created_object_id_count;
+    memcpy(created_ids,
+           report->created_object_ids,
+           created_count * sizeof(created_ids[0]));
+
+    nmo_script_edit_rollback(tx);
+
+    ASSERT_EQ(before_count, nmo_object_repository_get_count(repo));
+    for (size_t i = 0u; i < created_count; ++i) {
+        ASSERT_NULL(nmo_object_repository_find_by_id(repo, created_ids[i]));
+    }
+
+    nmo_session_close_with_context(ctx, session);
+}
+
 TEST(script_edit_transaction, add_node_rejects_unknown_building_block)
 {
     nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){ .data_dir = NMO_TEST_DATA_DIR });
@@ -1479,6 +1531,8 @@ TEST_MAIN_BEGIN()
                   failed_commit_preserves_deferred_destroy_objects);
     REGISTER_TEST(script_edit_transaction,
                   add_node_keeps_ballance_script_edit_validation_green);
+    REGISTER_TEST(script_edit_transaction,
+                  add_node_rollback_removes_all_created_objects);
     REGISTER_TEST(script_edit_transaction,
                   add_node_rejects_unknown_building_block);
     REGISTER_TEST(script_edit_transaction,

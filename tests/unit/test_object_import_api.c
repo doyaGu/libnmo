@@ -827,6 +827,53 @@ TEST(object_import_api, dry_run_create_missing_does_not_create_object_or_use_ses
     import_api_fixture_destroy(&fixture);
 }
 
+TEST(object_import_api, create_missing_commits_through_object_edit) {
+    import_api_fixture_t fixture;
+    ASSERT_TRUE(import_api_fixture_init(&fixture));
+
+    ASSERT_EQ(NMO_OK, nmo_type_registry_begin_update(fixture.registry));
+    ASSERT_TRUE(register_import_raw_array_type(fixture.registry));
+
+    nmo_object_repository_t *repo =
+        nmo_session_get_repository(fixture.session);
+    ASSERT_NOT_NULL(repo);
+    size_t before_count = nmo_object_repository_get_count(repo);
+
+    const char json[] =
+        "{\"objects\":[{\"class_name\":\"ImportRawArrayState\","
+        "\"name\":\"created_import\",\"fields\":["
+        "{\"name\":\"items\",\"kind\":\"array\","
+        "\"type_guid\":\"{4E4D4F03-00200000}\","
+        "\"count\":3,\"value\":[11,22,33],\"items\":[11,22,33]}]}]}";
+    nmo_import_result_t result = {0};
+    ASSERT_EQ(NMO_OK, nmo_object_edit_import_json(
+        fixture.workspace,
+        json,
+        0,
+        NMO_IMPORT_CREATE_MISSING,
+        &result));
+
+    ASSERT_EQ(1u, result.objects_created);
+    ASSERT_EQ(1u, result.objects_updated);
+    ASSERT_EQ(1u, result.fields_written);
+    ASSERT_EQ(0u, result.errors);
+    ASSERT_EQ(before_count + 1u, nmo_object_repository_get_count(repo));
+
+    nmo_object_t *created =
+        nmo_object_repository_find_by_name(repo, "created_import");
+    ASSERT_NOT_NULL(created);
+    import_raw_array_state_t *state =
+        (import_raw_array_state_t *)nmo_object_get_state(created);
+    ASSERT_NOT_NULL(state);
+    ASSERT_EQ(3u, state->item_count);
+    ASSERT_NOT_NULL(state->items);
+    ASSERT_EQ(11u, state->items[0]);
+    ASSERT_EQ(22u, state->items[1]);
+    ASSERT_EQ(33u, state->items[2]);
+
+    import_api_fixture_destroy(&fixture);
+}
+
 TEST(object_import_api, failed_create_missing_import_does_not_leave_object_or_use_session_arena) {
     import_api_fixture_t fixture;
     ASSERT_TRUE(import_api_fixture_init(&fixture));
@@ -919,6 +966,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_import_api, snapshot_disambiguates_inherited_fields);
     REGISTER_TEST(object_import_api, object_owner_import_wrapper_imports_snapshot);
     REGISTER_TEST(object_import_api, dry_run_create_missing_does_not_create_object_or_use_session_arena);
+    REGISTER_TEST(object_import_api, create_missing_commits_through_object_edit);
     REGISTER_TEST(object_import_api, failed_create_missing_import_does_not_leave_object_or_use_session_arena);
     REGISTER_TEST(object_import_api, dry_run_existing_pointer_array_does_not_use_session_arena);
 TEST_MAIN_END()

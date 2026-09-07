@@ -1433,7 +1433,6 @@ int nmo_cmd_animation_import(int argc, char **argv, const nmo_cli_global_opts_t 
 
     /* Find or create the target object */
     nmo_object_t *target = NULL;
-    nmo_object_id_t created_target_id = 0;
     if (do_replace) {
         nmo_core_object_selector_t selector = {
             .positional_id = replace_str,
@@ -1450,26 +1449,6 @@ int nmo_cmd_animation_import(int argc, char **argv, const nmo_cli_global_opts_t 
             fprintf(stderr, "Usage: nmo animation import <json-file> <nmo-file> -o <output> [--replace <id> | --replace-name <name>] [--dry-run]\n");
             return nmo_cmd_ctx_done(&c, resolve_rc);
         }
-    } else {
-        nmo_object_id_t new_id = 0;
-        nmo_runtime_report_t report;
-        memset(&report, 0, sizeof(report));
-        nmo_guid_t zero_guid;
-        memset(&zero_guid, 0, sizeof(zero_guid));
-        int cr = nmo_tool_owner_create_object(c.workspace, NMO_CID_OBJECTANIMATION,
-                                           "imported_anim", zero_guid,
-                                           &new_id, &report);
-        if (cr != 0) {
-            fprintf(stderr, "Error: Failed to create animation object: %d\n", cr);
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-        }
-        target = nmo_core_find_by_id(&c, new_id);
-        if (!target) {
-            fprintf(stderr, "Error: Created object %u not found\n", new_id);
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-        }
-        created_target_id = new_id;
-        fprintf(stderr, "Created CKObjectAnimation #%u\n", new_id);
     }
 
     nmo_workspace_edit_t *edit = NULL;
@@ -1479,14 +1458,28 @@ int nmo_cmd_animation_import(int argc, char **argv, const nmo_cli_global_opts_t 
                 nmo_error_string(edit_rc));
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
-    if (created_target_id != 0) {
-        edit_rc = nmo_workspace_edit_track_created_object(edit, created_target_id);
+
+    if (!do_replace) {
+        nmo_object_id_t new_id = 0;
+        const nmo_object_create_desc_t desc = {
+            .class_id = NMO_CID_OBJECTANIMATION,
+            .name = "imported_anim",
+            .type_guid = NMO_GUID_NULL,
+        };
+        edit_rc = nmo_object_edit_create(edit, &desc, &new_id);
         if (edit_rc != NMO_OK) {
             nmo_workspace_edit_rollback(edit);
-            fprintf(stderr, "Error: Failed to track created animation object: %s\n",
+            fprintf(stderr, "Error: Failed to create animation object: %s\n",
                     nmo_error_string(edit_rc));
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
+        target = nmo_core_find_by_id(&c, new_id);
+        if (!target) {
+            nmo_workspace_edit_rollback(edit);
+            fprintf(stderr, "Error: Created object %u not found\n", new_id);
+            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+        }
+        fprintf(stderr, "Created CKObjectAnimation #%u\n", new_id);
     }
 
     /* Update state */

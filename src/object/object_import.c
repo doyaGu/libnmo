@@ -1224,18 +1224,14 @@ static nmo_status_t object_edit_import_json_impl(
                         continue;
                     }
 
-                    nmo_guid_t null_guid;
-                    memset(&null_guid, 0, sizeof(null_guid));
-                    nmo_status_t create_st = nmo_workspace_internal_create_object(
-                        workspace, pending_create_cid, obj_name, null_guid, &created_id);
+                    const nmo_object_create_desc_t create_desc = {
+                        .class_id = pending_create_cid,
+                        .name = obj_name,
+                        .type_guid = NMO_GUID_NULL,
+                    };
+                    nmo_status_t create_st =
+                        nmo_object_edit_create(edit, &create_desc, &created_id);
                     if (create_st != NMO_OK || created_id == 0) {
-                        nmo_workspace_edit_rollback(edit);
-                        result->errors++;
-                        continue;
-                    }
-
-                    edit_st = nmo_workspace_edit_track_created_object(edit, created_id);
-                    if (edit_st != NMO_OK) {
                         nmo_workspace_edit_rollback(edit);
                         result->errors++;
                         continue;

@@ -47,13 +47,6 @@ void nmo_tool_owner_behavior_interface_diagnostics(
     nmo_workspace_t *workspace,
     nmo_tool_behavior_interface_diagnostics_t *out_diag);
 
-nmo_status_t nmo_tool_owner_create_object(
-    nmo_workspace_t *workspace,
-    nmo_class_id_t class_id,
-    const char *name,
-    nmo_guid_t type_guid,
-    nmo_object_id_t *out_created_id,
-    nmo_runtime_report_t *out_report);
 nmo_status_t nmo_tool_owner_copy_objects(
     nmo_workspace_t *workspace,
     const nmo_object_id_t *object_ids,

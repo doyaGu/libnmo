@@ -985,7 +985,6 @@ int nmo_cmd_mesh_import(int argc, char **argv, const nmo_cli_global_opts_t *glob
 
     /* Find or create mesh object */
     nmo_object_t *mesh_obj = NULL;
-    nmo_object_id_t created_mesh_id = 0;
 
     if (replace_str || replace_name) {
         nmo_core_object_selector_t selector = {
@@ -1001,6 +1000,14 @@ int nmo_cmd_mesh_import(int argc, char **argv, const nmo_cli_global_opts_t *glob
             fprintf(stderr, "Usage: nmo mesh import <obj-file> <nmo-file> -o <output> [--replace <id> | --replace-name <name>] [--dry-run]\n");
             return nmo_cmd_ctx_done(&c, resolve_rc);
         }
+    }
+
+    nmo_workspace_edit_t *edit = NULL;
+    nmo_status_t edit_rc = nmo_workspace_edit_begin(c.workspace, "mesh.import", &edit);
+    if (edit_rc != NMO_OK) {
+        fprintf(stderr, "Error: Failed to begin mesh edit: %s\n",
+                nmo_error_string(edit_rc));
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
     if (!mesh_obj) {
@@ -1027,12 +1034,14 @@ int nmo_cmd_mesh_import(int argc, char **argv, const nmo_cli_global_opts_t *glob
         }
 
         nmo_object_id_t new_id = 0;
-        nmo_runtime_report_t report;
-        memset(&report, 0, sizeof(report));
-        int create_rc = nmo_tool_owner_create_object(
-            c.workspace, NMO_CID_MESH, create_name, NMO_GUID_NULL,
-            &new_id, &report);
+        const nmo_object_create_desc_t desc = {
+            .class_id = NMO_CID_MESH,
+            .name = create_name,
+            .type_guid = NMO_GUID_NULL,
+        };
+        nmo_status_t create_rc = nmo_object_edit_create(edit, &desc, &new_id);
         if (create_rc != NMO_OK) {
+            nmo_workspace_edit_rollback(edit);
             fprintf(stderr, "Error: Failed to create mesh object: %s\n",
                     nmo_error_string(create_rc));
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
@@ -1040,25 +1049,8 @@ int nmo_cmd_mesh_import(int argc, char **argv, const nmo_cli_global_opts_t *glob
 
         mesh_obj = nmo_core_find_by_id(&c, new_id);
         if (!mesh_obj) {
-            fprintf(stderr, "Error: Created mesh object %u not found\n", new_id);
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-        }
-        created_mesh_id = new_id;
-    }
-
-    nmo_workspace_edit_t *edit = NULL;
-    nmo_status_t edit_rc = nmo_workspace_edit_begin(c.workspace, "mesh.import", &edit);
-    if (edit_rc != NMO_OK) {
-        fprintf(stderr, "Error: Failed to begin mesh edit: %s\n",
-                nmo_error_string(edit_rc));
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-    }
-    if (created_mesh_id != 0) {
-        edit_rc = nmo_workspace_edit_track_created_object(edit, created_mesh_id);
-        if (edit_rc != NMO_OK) {
             nmo_workspace_edit_rollback(edit);
-            fprintf(stderr, "Error: Failed to track created mesh object: %s\n",
-                    nmo_error_string(edit_rc));
+            fprintf(stderr, "Error: Created mesh object %u not found\n", new_id);
             return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
         }
     }

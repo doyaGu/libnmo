@@ -389,23 +389,6 @@ static nmo_status_t script_edit_append_removed_io_ref(
     return NMO_OK;
 }
 
-static nmo_status_t script_edit_track_created(
-    nmo_script_edit_tx_t *tx,
-    nmo_object_id_t object_id)
-{
-    nmo_status_t rc = NMO_OK;
-
-    if (!tx || !tx->edit || object_id == 0) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    rc = nmo_workspace_edit_track_created_object(tx->edit, object_id);
-    if (rc == NMO_OK) {
-        rc = script_edit_note_created_id(tx, object_id);
-    }
-    return rc;
-}
-
 static void *script_edit_get_object_state(
     const nmo_type_registry_t *registry,
     nmo_object_t *object,
@@ -656,32 +639,23 @@ static nmo_status_t script_edit_create_runtime_object(
     nmo_guid_t type_guid,
     nmo_object_id_t *out_object_id)
 {
-    nmo_runtime_request_t request;
-    nmo_runtime_report_t report;
-    nmo_status_t rc = NMO_OK;
     nmo_object_id_t object_id = 0;
 
-    if (!tx || !tx->session || !out_object_id) {
+    if (!tx || !tx->session || !tx->edit || !out_object_id) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    memset(&request, 0, sizeof(request));
-    memset(&report, 0, sizeof(report));
-    request.kind = NMO_RUNTIME_OP_CREATE;
-    request.payload.create.class_id = class_id;
-    request.payload.create.name = name;
-    request.payload.create.type_guid = type_guid;
-    request.payload.create.out_created_id = &object_id;
-
-    rc = nmo_workspace_internal_execute_runtime_request(
-        tx->workspace,
-        &request,
-        &report);
+    const nmo_object_create_desc_t desc = {
+        .class_id = class_id,
+        .name = name,
+        .type_guid = type_guid,
+    };
+    nmo_status_t rc = nmo_object_edit_create(tx->edit, &desc, &object_id);
     if (rc != NMO_OK) {
         return rc;
     }
 
-    rc = script_edit_track_created(tx, object_id);
+    rc = script_edit_note_created_id(tx, object_id);
     if (rc != NMO_OK) {
         return rc;
     }
