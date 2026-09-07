@@ -1002,6 +1002,8 @@ TEST(runtime_kernel, delete_safe_detach_prunes_behavior_links_with_deleted_io) {
     ASSERT_NOT_NULL(raw_link_state);
     ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(
         &behavior_state->sub_behavior_links, link_id, NULL));
+    nmo_behavior_set_owner_id(behavior_state, target_io_id);
+    behavior_state->target_parameter = nmo_ref_from_raw(target_io_id);
     nmo_behaviorlink_set_in_io_id(link_state, target_io_id);
     nmo_behaviorlink_set_out_io_id(link_state, source_io_id);
     raw_link_state->in_io = nmo_ref_from_raw(target_io_id);
@@ -1030,6 +1032,10 @@ TEST(runtime_kernel, delete_safe_detach_prunes_behavior_links_with_deleted_io) {
     ASSERT_NOT_NULL(link_state);
     ASSERT_NOT_NULL(raw_link_state);
     ASSERT_EQ(0u, behavior_state->sub_behavior_links.count);
+    ASSERT_EQ(0u, nmo_behavior_owner_id(behavior_state));
+    ASSERT_EQ(
+        target_io_id,
+        nmo_ref_serialized_id(&behavior_state->target_parameter));
     ASSERT_EQ(0u, nmo_behaviorlink_in_io_id(link_state));
     ASSERT_EQ(source_io_id, nmo_behaviorlink_out_io_id(link_state));
     ASSERT_EQ(target_io_id, nmo_ref_serialized_id(&raw_link_state->in_io));
