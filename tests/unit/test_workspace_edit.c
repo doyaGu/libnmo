@@ -1013,6 +1013,50 @@ TEST(workspace_edit, set_fields_uses_explicit_object_type) {
     nmo_context_release(ctx);
 }
 
+TEST(workspace_edit, set_fields_failure_reclaims_transaction_allocations) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    nmo_object_id_t object_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, 0, "typed-object", CKPGUID_OBJECT, &object_id, NULL));
+    nmo_object_t *object = nmo_object_repository_find_by_id(
+        nmo_session_get_repository(session), object_id);
+    ASSERT_NOT_NULL(object);
+    uint32_t original_visibility =
+        ((nmo_object_state_t *)nmo_object_get_state(object))->visibility_flags;
+
+    workspace_edit_scope_t edit_scope = {0};
+    nmo_workspace_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK, begin_workspace_edit_for_session(
+        ctx, session, "failed field batch", &edit_scope, &edit));
+    uint8_t *before = (uint8_t *)nmo_workspace_edit_alloc(edit, 1u, 1u);
+    ASSERT_NOT_NULL(before);
+
+    nmo_session_field_edit_t fields[] = {
+        {"visibility_flags", "123"},
+        {"missing_field", "456"},
+    };
+    nmo_session_field_edit_result_t result = {0};
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_object_edit_set_fields(
+        edit, object_id, fields, 2u, &result));
+    ASSERT_EQ(1u, result.applied);
+    ASSERT_EQ(1u, result.failed);
+
+    ASSERT_EQ(original_visibility,
+              ((nmo_object_state_t *)nmo_object_get_state(object))->visibility_flags);
+
+    uint8_t *after = (uint8_t *)nmo_workspace_edit_alloc(edit, 1u, 1u);
+    ASSERT_NOT_NULL(after);
+    ASSERT_TRUE(after == before + 1u);
+
+    rollback_workspace_edit_scope(&edit_scope);
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(workspace_edit, message_manager_edit_rejects_truncated_name) {
     nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
     ASSERT_NOT_NULL(ctx);
@@ -2139,6 +2183,7 @@ REGISTER_TEST(workspace_edit, begin_commit_roundtrip);
 REGISTER_TEST(workspace_edit, rejects_overlapping_edits_for_same_document);
 REGISTER_TEST(workspace_edit, set_reference_field_commit_invalidates_ref_graph);
 REGISTER_TEST(workspace_edit, set_fields_uses_explicit_object_type);
+REGISTER_TEST(workspace_edit, set_fields_failure_reclaims_transaction_allocations);
 REGISTER_TEST(workspace_edit, set_reference_field_rollback_restores_without_invalidating_cache);
 REGISTER_TEST(workspace_edit, add_behavior_link_rollback_removes_created_link);
 REGISTER_TEST(workspace_edit, add_behavior_link_commit_invalidates_ref_graph);

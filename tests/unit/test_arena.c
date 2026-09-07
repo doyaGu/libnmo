@@ -231,6 +231,28 @@ TEST(arena, mark_rewind_across_chunks) {
     nmo_arena_destroy(arena);
 }
 
+TEST(arena, release_mark_keeps_allocations) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 1024);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_arena_mark_t mark;
+    ASSERT_EQ(NMO_OK, nmo_arena_mark(arena, &mark));
+    void *kept = nmo_arena_alloc(arena, 128, 8);
+    ASSERT_NOT_NULL(kept);
+    size_t used_after_alloc = nmo_arena_bytes_used(arena);
+
+    ASSERT_EQ(NMO_OK, nmo_arena_release_mark(arena, &mark));
+    ASSERT_EQ(used_after_alloc, nmo_arena_bytes_used(arena));
+
+    nmo_arena_mark_t next_mark;
+    ASSERT_EQ(NMO_OK, nmo_arena_mark(arena, &next_mark));
+    ASSERT_NOT_NULL(nmo_arena_alloc(arena, 64, 8));
+    ASSERT_EQ(NMO_OK, nmo_arena_rewind(arena, &next_mark));
+    ASSERT_EQ(used_after_alloc, nmo_arena_bytes_used(arena));
+
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(arena, create_destroy);
     REGISTER_TEST(arena, create_with_custom_allocator);
@@ -246,4 +268,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(arena, allocation_data_integrity);
     REGISTER_TEST(arena, mark_rewind_bytes_used);
     REGISTER_TEST(arena, mark_rewind_across_chunks);
+    REGISTER_TEST(arena, release_mark_keeps_allocations);
 TEST_MAIN_END()

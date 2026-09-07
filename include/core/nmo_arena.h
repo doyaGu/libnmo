@@ -41,7 +41,7 @@ typedef struct nmo_arena nmo_arena_t;
  * @brief Arena scope marker for mark/rewind.
  *
  * Treat this as an opaque snapshot token. It is only valid for the arena that
- * produced it and must be rewound in strict LIFO order.
+ * produced it and must be released or rewound in strict LIFO order.
  */
 typedef struct nmo_arena_mark {
     const nmo_arena_t *arena;
@@ -149,13 +149,27 @@ NMO_API nmo_status_t nmo_arena_get_allocator(
 /**
  * @brief Capture current arena state for scoped rewinding.
  *
- * Marks must be rewound in strict LIFO order.
+ * Marks must be released or rewound in strict LIFO order.
  *
  * @param arena Arena allocator
  * @param out_mark Output marker snapshot
  * @return NMO_OK on success
  */
 NMO_API nmo_status_t nmo_arena_mark(nmo_arena_t *arena, nmo_arena_mark_t *out_mark);
+
+/**
+ * @brief Release an arena marker while keeping allocations made after it.
+ *
+ * Use this to close a successful allocation scope. Marks must be released in
+ * strict LIFO order.
+ *
+ * @param arena Arena allocator
+ * @param mark Current marker previously captured by nmo_arena_mark
+ * @return NMO_OK on success
+ */
+NMO_API nmo_status_t nmo_arena_release_mark(
+    nmo_arena_t *arena,
+    const nmo_arena_mark_t *mark);
 
 /**
  * @brief Rewind arena allocations back to a previous marker.

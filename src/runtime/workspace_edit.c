@@ -80,6 +80,8 @@ typedef struct workspace_edit_checkpoint {
     size_t commit_count;
     size_t cleanup_count;
     uint32_t flags;
+    nmo_arena_mark_t arena_mark;
+    bool arena_mark_active;
 } workspace_edit_checkpoint_t;
 
 static const uint32_t NMO_WORKSPACE_EDIT_KNOWN_FLAGS =
@@ -310,11 +312,35 @@ static workspace_edit_checkpoint_t workspace_edit_checkpoint(
     const nmo_workspace_edit_t *edit)
 {
     return (workspace_edit_checkpoint_t){
-        edit != NULL ? edit->rollback_count : 0u,
-        edit != NULL ? edit->commit_count : 0u,
-        edit != NULL ? edit->cleanup_count : 0u,
-        edit != NULL ? edit->flags : 0u,
+        .rollback_count = edit != NULL ? edit->rollback_count : 0u,
+        .commit_count = edit != NULL ? edit->commit_count : 0u,
+        .cleanup_count = edit != NULL ? edit->cleanup_count : 0u,
+        .flags = edit != NULL ? edit->flags : 0u,
     };
+}
+
+static nmo_status_t workspace_edit_checkpoint_mark_arena(
+    nmo_workspace_edit_t *edit,
+    workspace_edit_checkpoint_t *checkpoint)
+{
+    if (edit == NULL || checkpoint == NULL || checkpoint->arena_mark_active) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    nmo_status_t status = nmo_arena_mark(edit->arena, &checkpoint->arena_mark);
+    if (status == NMO_OK) {
+        checkpoint->arena_mark_active = true;
+    }
+    return status;
+}
+
+static nmo_status_t workspace_edit_checkpoint_release_arena(
+    nmo_workspace_edit_t *edit,
+    const workspace_edit_checkpoint_t *checkpoint)
+{
+    if (edit == NULL || checkpoint == NULL || !checkpoint->arena_mark_active) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    return nmo_arena_release_mark(edit->arena, &checkpoint->arena_mark);
 }
 
 static void workspace_edit_abort_to(
@@ -339,6 +365,20 @@ static nmo_status_t workspace_edit_abort_status(
 {
     workspace_edit_abort_to(edit, checkpoint);
     return status;
+}
+
+static nmo_status_t workspace_edit_abort_arena_status(
+    nmo_workspace_edit_t *edit,
+    workspace_edit_checkpoint_t checkpoint,
+    nmo_status_t status)
+{
+    workspace_edit_abort_to(edit, checkpoint);
+    if (!checkpoint.arena_mark_active) {
+        return status;
+    }
+    nmo_status_t rewind_status =
+        nmo_arena_rewind(edit->arena, &checkpoint.arena_mark);
+    return rewind_status == NMO_OK ? status : rewind_status;
 }
 
 static nmo_status_t workspace_edit_push_rollback_or_abort(
@@ -1584,12 +1624,18 @@ nmo_status_t nmo_scene_edit_add_object(
             return NMO_ERR_ALREADY_EXISTS;
         }
     }
+    nmo_status_t arena_mark_result =
+        workspace_edit_checkpoint_mark_arena(edit, &checkpoint);
+    if (arena_mark_result != NMO_OK) {
+        return arena_mark_result;
+    }
 
     scene_object_descs_snapshot_t *snapshot =
         (scene_object_descs_snapshot_t *)nmo_workspace_edit_alloc(
             edit, sizeof(*snapshot), _Alignof(scene_object_descs_snapshot_t));
     if (snapshot == NULL) {
-        return NMO_ERR_NOMEM;
+        return workspace_edit_abort_arena_status(
+            edit, checkpoint, NMO_ERR_NOMEM);
     }
     snapshot->object_descs = &scene_state->object_descs;
     snapshot->previous_count = existing_count;
@@ -1599,7 +1645,8 @@ nmo_status_t nmo_scene_edit_add_object(
         workspace_edit_push_rollback_or_abort(
             edit, checkpoint, rollback_scene_object_desc_append, snapshot);
     if (push_result != NMO_OK) {
-        return push_result;
+        return workspace_edit_abort_arena_status(
+            edit, checkpoint, push_result);
     }
 
     uint32_t scene_flags = 0;
@@ -1616,13 +1663,14 @@ nmo_status_t nmo_scene_edit_add_object(
     nmo_status_t append_result =
         nmo_array_append(&scene_state->object_descs, &scene_desc);
     if (append_result != NMO_OK) {
-        return workspace_edit_abort_status(edit, checkpoint, append_result);
+        return workspace_edit_abort_arena_status(
+            edit, checkpoint, append_result);
     }
 
     nmo_workspace_edit_mark(
         edit,
         NMO_WORKSPACE_EDIT_OBJECT_STATE | NMO_WORKSPACE_EDIT_REFERENCES);
-    return NMO_OK;
+    return workspace_edit_checkpoint_release_arena(edit, &checkpoint);
 }
 
 nmo_status_t nmo_scene_edit_set_environment(
@@ -1780,11 +1828,16 @@ nmo_status_t nmo_object_edit_bind_script(
     if (owner_state == NULL || behavior_state == NULL) {
         return NMO_ERR_INVALID_STATE;
     }
+    nmo_status_t arena_mark_result =
+        workspace_edit_checkpoint_mark_arena(edit, &checkpoint);
+    if (arena_mark_result != NMO_OK) {
+        return arena_mark_result;
+    }
 
     nmo_status_t status =
         nmo_workspace_edit_snapshot_behavior_state(edit, behavior_state);
     if (status != NMO_OK) {
-        return status;
+        return workspace_edit_abort_arena_status(edit, checkpoint, status);
     }
 
     size_t existing_index = 0u;
@@ -1793,7 +1846,7 @@ nmo_status_t nmo_object_edit_bind_script(
         status = nmo_beobject_script_array_append(
             &owner_state->scripts, behavior_id);
         if (status != NMO_OK) {
-            return workspace_edit_abort_status(edit, checkpoint, status);
+            return workspace_edit_abort_arena_status(edit, checkpoint, status);
         }
 
         array_id_action_t *rollback = NULL;
@@ -1804,12 +1857,12 @@ nmo_status_t nmo_object_edit_bind_script(
             owner_state->scripts.count - 1u,
             &rollback);
         if (status != NMO_OK) {
-            return workspace_edit_abort_status(edit, checkpoint, status);
+            return workspace_edit_abort_arena_status(edit, checkpoint, status);
         }
         status = workspace_edit_push_rollback_or_abort(
             edit, checkpoint, rollback_remove_array_id, rollback);
         if (status != NMO_OK) {
-            return status;
+            return workspace_edit_abort_arena_status(edit, checkpoint, status);
         }
     }
 
@@ -1827,7 +1880,7 @@ nmo_status_t nmo_object_edit_bind_script(
         NMO_WORKSPACE_EDIT_OBJECT_STATE |
             NMO_WORKSPACE_EDIT_REFERENCES |
             NMO_WORKSPACE_EDIT_BEHAVIOR_GRAPH);
-    return NMO_OK;
+    return workspace_edit_checkpoint_release_arena(edit, &checkpoint);
 }
 
 static nmo_status_t workspace_edit_find_typed_object(
@@ -4240,26 +4293,31 @@ nmo_status_t nmo_object_edit_set_fields(
     if (type == NULL) {
         return NMO_ERR_NOT_FOUND;
     }
+    nmo_status_t arena_mark_result =
+        workspace_edit_checkpoint_mark_arena(edit, &checkpoint);
+    if (arena_mark_result != NMO_OK) {
+        return arena_mark_result;
+    }
 
     for (size_t i = 0; i < field_count; i++) {
         if (fields[i].field_name == NULL || fields[i].value_str == NULL) {
             result.failed++;
-            workspace_edit_abort_to(edit, checkpoint);
             if (out_result != NULL) {
                 *out_result = result;
             }
-            return NMO_ERR_INVALID_ARGUMENT;
+            return workspace_edit_abort_arena_status(
+                edit, checkpoint, NMO_ERR_INVALID_ARGUMENT);
         }
 
         const nmo_type_field_t *field =
             nmo_type_get_field_by_name(type, fields[i].field_name);
         if (field == NULL) {
             result.failed++;
-            workspace_edit_abort_to(edit, checkpoint);
             if (out_result != NULL) {
                 *out_result = result;
             }
-            return NMO_ERR_NOT_FOUND;
+            return workspace_edit_abort_arena_status(
+                edit, checkpoint, NMO_ERR_NOT_FOUND);
         }
 
         void *field_ptr = (uint8_t *)state + field->offset;
@@ -4271,7 +4329,8 @@ nmo_status_t nmo_object_edit_set_fields(
             if (out_result != NULL) {
                 *out_result = result;
             }
-            return snapshot_result;
+            return workspace_edit_abort_arena_status(
+                edit, checkpoint, snapshot_result);
         }
 
         nmo_status_t set_result =
@@ -4279,11 +4338,11 @@ nmo_status_t nmo_object_edit_set_fields(
                 state, type, registry, fields[i].field_name, fields[i].value_str);
         if (set_result != NMO_OK) {
             result.failed++;
-            workspace_edit_abort_to(edit, checkpoint);
             if (out_result != NULL) {
                 *out_result = result;
             }
-            return set_result;
+            return workspace_edit_abort_arena_status(
+                edit, checkpoint, set_result);
         }
 
         result.applied++;
@@ -4299,7 +4358,7 @@ nmo_status_t nmo_object_edit_set_fields(
     if (out_result != NULL) {
         *out_result = result;
     }
-    return NMO_OK;
+    return workspace_edit_checkpoint_release_arena(edit, &checkpoint);
 }
 
 nmo_status_t nmo_object_edit_rename(
@@ -4321,6 +4380,11 @@ nmo_status_t nmo_object_edit_rename(
     if (object == NULL) {
         return NMO_ERR_NOT_FOUND;
     }
+    nmo_status_t arena_mark_result =
+        workspace_edit_checkpoint_mark_arena(edit, &checkpoint);
+    if (arena_mark_result != NMO_OK) {
+        return arena_mark_result;
+    }
 
     const char *old_name = nmo_object_get_name(object);
     const char *old_name_copy = NULL;
@@ -4328,7 +4392,8 @@ nmo_status_t nmo_object_edit_rename(
         size_t old_name_len = strlen(old_name) + 1u;
         char *copy = (char *)nmo_workspace_edit_alloc(edit, old_name_len, 1);
         if (copy == NULL) {
-            return NMO_ERR_NOMEM;
+            return workspace_edit_abort_arena_status(
+                edit, checkpoint, NMO_ERR_NOMEM);
         }
         memcpy(copy, old_name, old_name_len);
         old_name_copy = copy;
@@ -4338,7 +4403,8 @@ nmo_status_t nmo_object_edit_rename(
         (rename_object_action_t *)nmo_workspace_edit_alloc(
             edit, sizeof(*rollback), _Alignof(rename_object_action_t));
     if (rollback == NULL) {
-        return NMO_ERR_NOMEM;
+        return workspace_edit_abort_arena_status(
+            edit, checkpoint, NMO_ERR_NOMEM);
     }
     rollback->id = object_id;
     rollback->name = old_name_copy;
@@ -4347,17 +4413,19 @@ nmo_status_t nmo_object_edit_rename(
         workspace_edit_push_rollback_or_abort(
             edit, checkpoint, rollback_rename_object, rollback);
     if (push_result != NMO_OK) {
-        return push_result;
+        return workspace_edit_abort_arena_status(
+            edit, checkpoint, push_result);
     }
 
     nmo_status_t rename_result =
         nmo_object_repository_rename(repo, object_id, new_name);
     if (rename_result != NMO_OK) {
-        return workspace_edit_abort_status(edit, checkpoint, rename_result);
+        return workspace_edit_abort_arena_status(
+            edit, checkpoint, rename_result);
     }
 
     nmo_workspace_edit_mark(edit, NMO_WORKSPACE_EDIT_NAMES);
-    return NMO_OK;
+    return workspace_edit_checkpoint_release_arena(edit, &checkpoint);
 }
 
 static nmo_status_t workspace_edit_snapshot_parameter_buffer(
@@ -4441,24 +4509,31 @@ nmo_status_t nmo_object_edit_set_parameter_value_ex(
     if (state == NULL) {
         return NMO_ERR_INVALID_STATE;
     }
+    nmo_status_t arena_mark_result =
+        workspace_edit_checkpoint_mark_arena(edit, &checkpoint);
+    if (arena_mark_result != NMO_OK) {
+        return arena_mark_result;
+    }
 
     if (state->mode == CKPARAM_MODE_OBJECT) {
         nmo_status_t snapshot_result =
             workspace_edit_push_bytes_snapshot_or_abort(
                 edit, checkpoint, &state->object_ref, sizeof(state->object_ref));
         if (snapshot_result != NMO_OK) {
-            return snapshot_result;
+            return workspace_edit_abort_arena_status(
+                edit, checkpoint, snapshot_result);
         }
 
         nmo_object_id_t new_id = 0;
         nmo_status_t parse_result = parse_object_id_text(value_str, &new_id);
         if (parse_result != NMO_OK) {
-            return workspace_edit_abort_status(edit, checkpoint, parse_result);
+            return workspace_edit_abort_arena_status(
+                edit, checkpoint, parse_result);
         }
         state->object_ref = nmo_ref_from_id(new_id);
         nmo_workspace_edit_mark(
             edit, NMO_WORKSPACE_EDIT_OBJECT_STATE | NMO_WORKSPACE_EDIT_REFERENCES);
-        return NMO_OK;
+        return workspace_edit_checkpoint_release_arena(edit, &checkpoint);
     }
 
     if (state->mode == CKPARAM_MODE_MANAGER) {
@@ -4468,14 +4543,16 @@ nmo_status_t nmo_object_edit_set_parameter_value_ex(
             workspace_edit_prepare_manager_parameter_value(
                 edit, state, value_str, options, &new_guid, &new_value);
         if (parse_result != NMO_OK) {
-            return parse_result;
+            return workspace_edit_abort_arena_status(
+                edit, checkpoint, parse_result);
         }
 
         parameter_manager_snapshot_t *snapshot =
             (parameter_manager_snapshot_t *)nmo_workspace_edit_alloc(
                 edit, sizeof(*snapshot), _Alignof(parameter_manager_snapshot_t));
         if (snapshot == NULL) {
-            return workspace_edit_abort_status(edit, checkpoint, NMO_ERR_NOMEM);
+            return workspace_edit_abort_arena_status(
+                edit, checkpoint, NMO_ERR_NOMEM);
         }
         snapshot->state = state;
         snapshot->manager_guid = state->manager_guid;
@@ -4484,7 +4561,8 @@ nmo_status_t nmo_object_edit_set_parameter_value_ex(
             workspace_edit_push_rollback_or_abort(
                 edit, checkpoint, rollback_parameter_manager, snapshot);
         if (push_result != NMO_OK) {
-            return push_result;
+            return workspace_edit_abort_arena_status(
+                edit, checkpoint, push_result);
         }
 
         state->manager_guid = new_guid;
@@ -4492,53 +4570,60 @@ nmo_status_t nmo_object_edit_set_parameter_value_ex(
         nmo_workspace_edit_mark(
             edit, NMO_WORKSPACE_EDIT_OBJECT_STATE |
                   NMO_WORKSPACE_EDIT_REFERENCES);
-        return NMO_OK;
+        return workspace_edit_checkpoint_release_arena(edit, &checkpoint);
     }
 
     if (state->buffer_data.data == NULL || state->buffer_data.count == 0) {
-        return NMO_ERR_INVALID_STATE;
+        return workspace_edit_abort_arena_status(
+            edit, checkpoint, NMO_ERR_INVALID_STATE);
     }
 
     const nmo_type_descriptor_t *type =
         nmo_type_registry_find_by_guid(registry, state->type_guid);
     if (type == NULL) {
-        return NMO_ERR_NOT_FOUND;
+        return workspace_edit_abort_arena_status(
+            edit, checkpoint, NMO_ERR_NOT_FOUND);
     }
 
     if (nmo_guid_equals(state->type_guid, CKPGUID_STRING)) {
         size_t required_size = strlen(value_str) + 1u;
         bool allow_resize = (options == NULL) ? true : options->resize;
         if (required_size > state->buffer_data.count && !allow_resize) {
-            return NMO_ERR_OUT_OF_BOUNDS;
+            return workspace_edit_abort_arena_status(
+                edit, checkpoint, NMO_ERR_OUT_OF_BOUNDS);
         }
 
         nmo_status_t prepare_result =
             workspace_edit_prepare_parameter_buffer_write(
                 edit, state, checkpoint, required_size, true);
         if (prepare_result != NMO_OK) {
-            return prepare_result;
+            return workspace_edit_abort_arena_status(
+                edit, checkpoint, prepare_result);
         }
         memcpy(state->buffer_data.data, value_str, required_size);
         nmo_workspace_edit_mark(edit, NMO_WORKSPACE_EDIT_OBJECT_STATE);
-        return NMO_OK;
+        return workspace_edit_checkpoint_release_arena(edit, &checkpoint);
     }
 
     size_t buffer_size = type->size > 0 ? type->size : state->buffer_data.count;
     bool allow_resize = options != NULL && options->resize;
     if (buffer_size > state->buffer_data.count && !allow_resize) {
-        return NMO_ERR_OUT_OF_BOUNDS;
+        return workspace_edit_abort_arena_status(
+            edit, checkpoint, NMO_ERR_OUT_OF_BOUNDS);
     }
 
     nmo_status_t prepare_result =
         workspace_edit_prepare_parameter_buffer_write(
             edit, state, checkpoint, buffer_size, allow_resize);
     if (prepare_result != NMO_OK) {
-        return prepare_result;
+        return workspace_edit_abort_arena_status(
+            edit, checkpoint, prepare_result);
     }
 
     uint8_t *tmp = (uint8_t *)calloc(1, buffer_size);
     if (tmp == NULL) {
-        return workspace_edit_abort_status(edit, checkpoint, NMO_ERR_NOMEM);
+        return workspace_edit_abort_arena_status(
+            edit, checkpoint, NMO_ERR_NOMEM);
     }
 
     nmo_status_t parse_result =
@@ -4556,9 +4641,10 @@ nmo_status_t nmo_object_edit_set_parameter_value_ex(
     free(tmp);
 
     if (parse_result != NMO_OK) {
-        return workspace_edit_abort_status(edit, checkpoint, parse_result);
+        return workspace_edit_abort_arena_status(
+            edit, checkpoint, parse_result);
     }
-    return NMO_OK;
+    return workspace_edit_checkpoint_release_arena(edit, &checkpoint);
 }
 
 static nmo_status_t workspace_edit_read_message_manager_names(
@@ -5096,12 +5182,18 @@ nmo_status_t nmo_object_edit_set_parameter_bytes_ex(
     if (byte_count > state->buffer_data.count && !allow_resize) {
         return NMO_ERR_OUT_OF_BOUNDS;
     }
+    nmo_status_t arena_mark_result =
+        workspace_edit_checkpoint_mark_arena(edit, &checkpoint);
+    if (arena_mark_result != NMO_OK) {
+        return arena_mark_result;
+    }
 
     nmo_status_t prepare_result =
         workspace_edit_prepare_parameter_buffer_write(
             edit, state, checkpoint, byte_count, allow_resize);
     if (prepare_result != NMO_OK) {
-        return prepare_result;
+        return workspace_edit_abort_arena_status(
+            edit, checkpoint, prepare_result);
     }
 
     if (byte_count > 0) {
@@ -5113,7 +5205,7 @@ nmo_status_t nmo_object_edit_set_parameter_bytes_ex(
     }
 
     nmo_workspace_edit_mark(edit, NMO_WORKSPACE_EDIT_OBJECT_STATE | NMO_WORKSPACE_EDIT_REFERENCES);
-    return NMO_OK;
+    return workspace_edit_checkpoint_release_arena(edit, &checkpoint);
 }
 
 nmo_status_t nmo_object_edit_set_dataarray_cell(
@@ -5175,13 +5267,19 @@ nmo_status_t nmo_object_edit_set_dataarray_cell(
             }
         }
     }
+    nmo_status_t arena_mark_result =
+        workspace_edit_checkpoint_mark_arena(edit, &checkpoint);
+    if (arena_mark_result != NMO_OK) {
+        return arena_mark_result;
+    }
 
     nmo_dataarray_cell_t *target_cell = &state->rows[row].cells[col];
     dataarray_cell_snapshot_t *snapshot =
         (dataarray_cell_snapshot_t *)nmo_workspace_edit_alloc(
             edit, sizeof(*snapshot), _Alignof(dataarray_cell_snapshot_t));
     if (snapshot == NULL) {
-        return NMO_ERR_NOMEM;
+        return workspace_edit_abort_arena_status(
+            edit, checkpoint, NMO_ERR_NOMEM);
     }
     snapshot->cell = target_cell;
     snapshot->old_cell = *target_cell;
@@ -5190,7 +5288,8 @@ nmo_status_t nmo_object_edit_set_dataarray_cell(
         workspace_edit_push_rollback_or_abort(
             edit, checkpoint, rollback_dataarray_cell, snapshot);
     if (push_result != NMO_OK) {
-        return push_result;
+        return workspace_edit_abort_arena_status(
+            edit, checkpoint, push_result);
     }
 
     *target_cell = new_cell;
@@ -5198,7 +5297,7 @@ nmo_status_t nmo_object_edit_set_dataarray_cell(
     if (is_ref) {
         nmo_workspace_edit_mark(edit, NMO_WORKSPACE_EDIT_REFERENCES);
     }
-    return NMO_OK;
+    return workspace_edit_checkpoint_release_arena(edit, &checkpoint);
 }
 
 nmo_status_t nmo_behavior_edit_add_link(
@@ -5234,6 +5333,11 @@ nmo_status_t nmo_behavior_edit_add_link(
         nmo_object_repository_find_by_id(repo, to_io_id) == NULL) {
         return NMO_ERR_NOT_FOUND;
     }
+    nmo_status_t arena_mark_result =
+        workspace_edit_checkpoint_mark_arena(edit, &checkpoint);
+    if (arena_mark_result != NMO_OK) {
+        return arena_mark_result;
+    }
 
     nmo_object_id_t link_id = 0;
     nmo_runtime_request_t request;
@@ -5246,7 +5350,8 @@ nmo_status_t nmo_behavior_edit_add_link(
     nmo_status_t create_result =
         nmo_workspace_internal_execute_runtime_request(edit->workspace, &request, NULL);
     if (create_result != NMO_OK) {
-        return create_result;
+        return workspace_edit_abort_arena_status(
+            edit, checkpoint, create_result);
     }
 
     object_id_action_t *object_action = NULL;
@@ -5254,23 +5359,27 @@ nmo_status_t nmo_behavior_edit_add_link(
         workspace_edit_make_object_id_action(edit, link_id, &object_action);
     if (object_action_result != NMO_OK) {
         (void)nmo_object_repository_remove(repo, link_id);
-        return object_action_result;
+        return workspace_edit_abort_arena_status(
+            edit, checkpoint, object_action_result);
     }
     nmo_status_t push_object_result =
         workspace_edit_push_rollback(edit, action_remove_object, object_action);
     if (push_object_result != NMO_OK) {
         (void)nmo_object_repository_remove(repo, link_id);
-        return push_object_result;
+        return workspace_edit_abort_arena_status(
+            edit, checkpoint, push_object_result);
     }
 
     nmo_object_t *link_obj = nmo_object_repository_find_by_id(repo, link_id);
     if (link_obj == NULL) {
-        return workspace_edit_abort_status(edit, checkpoint, NMO_ERR_INTERNAL);
+        return workspace_edit_abort_arena_status(
+            edit, checkpoint, NMO_ERR_INTERNAL);
     }
     nmo_behaviorlink_state_t *link_state =
         (nmo_behaviorlink_state_t *)nmo_object_get_state(link_obj);
     if (link_state == NULL) {
-        return workspace_edit_abort_status(edit, checkpoint, NMO_ERR_INTERNAL);
+        return workspace_edit_abort_arena_status(
+            edit, checkpoint, NMO_ERR_INTERNAL);
     }
     nmo_behaviorlink_set_in_io_id(link_state, to_io_id);
     nmo_behaviorlink_set_out_io_id(link_state, from_io_id);
@@ -5283,13 +5392,15 @@ nmo_status_t nmo_behavior_edit_add_link(
         (nmo_behavior_state_t *)nmo_type_query_object_get_ancestor_state_by_guid(
             registry, parent_obj, CKPGUID_BEHAVIOR);
     if (parent_state == NULL) {
-        return workspace_edit_abort_status(edit, checkpoint, NMO_ERR_INTERNAL);
+        return workspace_edit_abort_arena_status(
+            edit, checkpoint, NMO_ERR_INTERNAL);
     }
     nmo_status_t append_result =
         nmo_behavior_ref_array_append(
             &parent_state->sub_behavior_links, link_id, NULL);
     if (append_result != NMO_OK) {
-        return workspace_edit_abort_status(edit, checkpoint, append_result);
+        return workspace_edit_abort_arena_status(
+            edit, checkpoint, append_result);
     }
 
     array_id_action_t *array_action = NULL;
@@ -5301,22 +5412,26 @@ nmo_status_t nmo_behavior_edit_add_link(
             parent_state->sub_behavior_links.count - 1u,
             &array_action);
     if (array_action_result != NMO_OK) {
-        return workspace_edit_abort_status(edit, checkpoint, array_action_result);
+        return workspace_edit_abort_arena_status(
+            edit, checkpoint, array_action_result);
     }
     nmo_status_t push_array_result =
         workspace_edit_push_rollback_or_abort(
             edit, checkpoint, rollback_remove_array_id, array_action);
     if (push_array_result != NMO_OK) {
-        return push_array_result;
+        return workspace_edit_abort_arena_status(
+            edit, checkpoint, push_array_result);
     }
 
-    if (out_link_id != NULL) {
-        *out_link_id = link_id;
-    }
     parent_state->save_flags |= CK_STATESAVE_BEHAVIORSUBLINKS;
     parent_state->has_save_flags = true;
     nmo_workspace_edit_mark(edit, NMO_WORKSPACE_EDIT_BEHAVIOR_GRAPH | NMO_WORKSPACE_EDIT_REFERENCES);
-    return NMO_OK;
+    nmo_status_t release_result =
+        workspace_edit_checkpoint_release_arena(edit, &checkpoint);
+    if (release_result == NMO_OK && out_link_id != NULL) {
+        *out_link_id = link_id;
+    }
+    return release_result;
 }
 
 nmo_status_t nmo_workspace_apply_edit_flags(nmo_workspace_t *workspace, uint32_t flags)
@@ -5374,6 +5489,11 @@ nmo_status_t nmo_behavior_edit_remove_link(
             &parent_state->sub_behavior_links, link_id, &index)) {
         return NMO_ERR_NOT_FOUND;
     }
+    nmo_status_t arena_mark_result =
+        workspace_edit_checkpoint_mark_arena(edit, &checkpoint);
+    if (arena_mark_result != NMO_OK) {
+        return arena_mark_result;
+    }
 
     array_id_action_t *array_action = NULL;
     nmo_status_t array_action_result =
@@ -5384,19 +5504,22 @@ nmo_status_t nmo_behavior_edit_remove_link(
             index,
             &array_action);
     if (array_action_result != NMO_OK) {
-        return array_action_result;
+        return workspace_edit_abort_arena_status(
+            edit, checkpoint, array_action_result);
     }
     object_id_action_t *object_action = NULL;
     nmo_status_t object_action_result =
         workspace_edit_make_object_id_action(edit, link_id, &object_action);
     if (object_action_result != NMO_OK) {
-        return object_action_result;
+        return workspace_edit_abort_arena_status(
+            edit, checkpoint, object_action_result);
     }
 
     nmo_status_t remove_result =
         nmo_array_remove(&parent_state->sub_behavior_links, index, NULL);
     if (remove_result != NMO_OK) {
-        return remove_result;
+        return workspace_edit_abort_arena_status(
+            edit, checkpoint, remove_result);
     }
     if (parent_state->sub_behavior_links.count == 0) {
         parent_state->save_flags &= ~CK_STATESAVE_BEHAVIORSUBLINKS;
@@ -5409,17 +5532,19 @@ nmo_status_t nmo_behavior_edit_remove_link(
         workspace_edit_push_rollback_or_abort(
             edit, checkpoint, rollback_insert_array_id, array_action);
     if (rollback_result != NMO_OK) {
-        return rollback_result;
+        return workspace_edit_abort_arena_status(
+            edit, checkpoint, rollback_result);
     }
     nmo_status_t commit_result =
         workspace_edit_push_commit_or_abort(
             edit, checkpoint, commit_destroy_object, object_action);
     if (commit_result != NMO_OK) {
-        return commit_result;
+        return workspace_edit_abort_arena_status(
+            edit, checkpoint, commit_result);
     }
 
     nmo_workspace_edit_mark(edit, NMO_WORKSPACE_EDIT_BEHAVIOR_GRAPH | NMO_WORKSPACE_EDIT_REFERENCES);
-    return NMO_OK;
+    return workspace_edit_checkpoint_release_arena(edit, &checkpoint);
 }
 
 nmo_status_t nmo_behavior_edit_mark_interface(

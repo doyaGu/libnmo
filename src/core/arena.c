@@ -331,7 +331,10 @@ nmo_status_t nmo_arena_mark(nmo_arena_t *arena, nmo_arena_mark_t *out_mark) {
     return NMO_OK;
 }
 
-nmo_status_t nmo_arena_rewind(nmo_arena_t *arena, const nmo_arena_mark_t *mark) {
+static nmo_status_t arena_validate_active_mark(
+    nmo_arena_t *arena,
+    const nmo_arena_mark_t *mark)
+{
     if (arena == NULL || mark == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
@@ -340,8 +343,28 @@ nmo_status_t nmo_arena_rewind(nmo_arena_t *arena, const nmo_arena_mark_t *mark) 
         mark->mark_epoch != arena->mark_epoch ||
         mark->mark_depth == 0 ||
         mark->mark_depth != arena->mark_depth) {
-        NMO_DEBUG_ASSERT(0 && "Invalid arena rewind mark (arena/epoch/LIFO mismatch)");
+        NMO_DEBUG_ASSERT(0 && "Invalid active arena mark (arena/epoch/LIFO mismatch)");
         return NMO_ERR_INVALID_STATE;
+    }
+    return NMO_OK;
+}
+
+nmo_status_t nmo_arena_release_mark(
+    nmo_arena_t *arena,
+    const nmo_arena_mark_t *mark)
+{
+    nmo_status_t status = arena_validate_active_mark(arena, mark);
+    if (status != NMO_OK) {
+        return status;
+    }
+    arena->mark_depth--;
+    return NMO_OK;
+}
+
+nmo_status_t nmo_arena_rewind(nmo_arena_t *arena, const nmo_arena_mark_t *mark) {
+    nmo_status_t status = arena_validate_active_mark(arena, mark);
+    if (status != NMO_OK) {
+        return status;
     }
 
     nmo_arena_chunk_t *target = (nmo_arena_chunk_t *)mark->chunk;
