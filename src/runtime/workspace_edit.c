@@ -13,6 +13,7 @@
 #include "behavior/nmo_behavior_edit.h"
 
 #include "runtime_internal.h"
+#include "workspace_edit_journal_internal.h"
 
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_defs.h"
@@ -68,20 +69,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-typedef nmo_status_t (*nmo_workspace_edit_action_fn)(nmo_workspace_edit_t *edit, void *payload);
-
-typedef struct nmo_workspace_edit_action {
-    nmo_workspace_edit_action_fn fn;
-    void *payload;
-} nmo_workspace_edit_action_t;
-
 typedef struct workspace_edit_checkpoint {
-    size_t rollback_count;
-    size_t commit_count;
-    size_t cleanup_count;
+    nmo_workspace_edit_journal_checkpoint_t journal;
     uint32_t flags;
-    nmo_arena_mark_t arena_mark;
-    bool arena_mark_active;
 } workspace_edit_checkpoint_t;
 
 static const uint32_t NMO_WORKSPACE_EDIT_KNOWN_FLAGS =
@@ -93,27 +83,12 @@ static const uint32_t NMO_WORKSPACE_EDIT_KNOWN_FLAGS =
 
 struct nmo_workspace_edit {
     nmo_workspace_t *workspace;
-    nmo_arena_t *arena;
+    nmo_workspace_edit_journal_t journal;
     char *label;
-    nmo_workspace_edit_action_t *rollback_actions;
-    size_t rollback_count;
-    size_t rollback_capacity;
-    nmo_workspace_edit_action_t *commit_actions;
-    size_t commit_count;
-    size_t commit_capacity;
-    nmo_workspace_edit_action_t *cleanup_actions;
-    size_t cleanup_count;
-    size_t cleanup_capacity;
     uint32_t flags;
     bool finished;
     bool owns_active_edit;
 };
-
-typedef struct field_bytes_snapshot {
-    void *field_ptr;
-    size_t size;
-    uint8_t bytes[];
-} field_bytes_snapshot_t;
 
 typedef struct parameter_buffer_snapshot {
     nmo_parameter_state_t *state;
@@ -204,42 +179,21 @@ static void workspace_edit_free(nmo_workspace_edit_t *edit)
         nmo_workspace_internal_release_edit(edit->workspace);
         edit->owns_active_edit = false;
     }
-    free(edit->rollback_actions);
-    free(edit->commit_actions);
-    free(edit->cleanup_actions);
+    nmo_workspace_edit_journal_dispose(&edit->journal);
     free(edit->label);
-    if (edit->arena != NULL) {
-        nmo_arena_destroy(edit->arena);
-    }
     free(edit);
 }
 
 static nmo_status_t workspace_edit_push_action(
-    nmo_workspace_edit_action_t **actions,
-    size_t *count,
-    size_t *capacity,
+    nmo_workspace_edit_t *edit,
+    nmo_workspace_edit_action_phase_t phase,
     nmo_workspace_edit_action_fn fn,
     void *payload)
 {
-    if (actions == NULL || count == NULL || capacity == NULL || fn == NULL) {
+    if (edit == NULL || edit->finished) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
-    if (*count == *capacity) {
-        size_t new_capacity = (*capacity == 0) ? 8u : (*capacity * 2u);
-        nmo_workspace_edit_action_t *new_actions =
-            (nmo_workspace_edit_action_t *)realloc(
-                *actions, new_capacity * sizeof(nmo_workspace_edit_action_t));
-        if (new_actions == NULL) {
-            return NMO_ERR_NOMEM;
-        }
-        *actions = new_actions;
-        *capacity = new_capacity;
-    }
-
-    (*actions)[*count].fn = fn;
-    (*actions)[*count].payload = payload;
-    (*count)++;
-    return NMO_OK;
+    return nmo_workspace_edit_journal_push(&edit->journal, phase, fn, payload);
 }
 
 static nmo_status_t workspace_edit_push_rollback(
@@ -248,9 +202,8 @@ static nmo_status_t workspace_edit_push_rollback(
     void *payload)
 {
     return workspace_edit_push_action(
-        &edit->rollback_actions,
-        &edit->rollback_count,
-        &edit->rollback_capacity,
+        edit,
+        NMO_WORKSPACE_EDIT_ACTION_ROLLBACK,
         fn,
         payload);
 }
@@ -261,60 +214,18 @@ static nmo_status_t workspace_edit_push_commit(
     void *payload)
 {
     return workspace_edit_push_action(
-        &edit->commit_actions,
-        &edit->commit_count,
-        &edit->commit_capacity,
+        edit,
+        NMO_WORKSPACE_EDIT_ACTION_COMMIT,
         fn,
         payload);
-}
-
-static nmo_status_t workspace_edit_push_cleanup(
-    nmo_workspace_edit_t *edit,
-    nmo_workspace_edit_action_fn fn,
-    void *payload)
-{
-    return workspace_edit_push_action(
-        &edit->cleanup_actions,
-        &edit->cleanup_count,
-        &edit->cleanup_capacity,
-        fn,
-        payload);
-}
-
-static void workspace_edit_rollback_to(nmo_workspace_edit_t *edit, size_t checkpoint)
-{
-    if (edit == NULL) {
-        return;
-    }
-    while (edit->rollback_count > checkpoint) {
-        edit->rollback_count--;
-        nmo_workspace_edit_action_t action = edit->rollback_actions[edit->rollback_count];
-        (void)action.fn(edit, action.payload);
-    }
-}
-
-static void workspace_edit_cleanup_to(
-    nmo_workspace_edit_t *edit,
-    size_t checkpoint)
-{
-    if (edit == NULL) {
-        return;
-    }
-    while (edit->cleanup_count > checkpoint) {
-        edit->cleanup_count--;
-        nmo_workspace_edit_action_t action =
-            edit->cleanup_actions[edit->cleanup_count];
-        (void)action.fn(edit, action.payload);
-    }
 }
 
 static workspace_edit_checkpoint_t workspace_edit_checkpoint(
     const nmo_workspace_edit_t *edit)
 {
     return (workspace_edit_checkpoint_t){
-        .rollback_count = edit != NULL ? edit->rollback_count : 0u,
-        .commit_count = edit != NULL ? edit->commit_count : 0u,
-        .cleanup_count = edit != NULL ? edit->cleanup_count : 0u,
+        .journal = nmo_workspace_edit_journal_checkpoint(
+            edit != NULL ? &edit->journal : NULL),
         .flags = edit != NULL ? edit->flags : 0u,
     };
 }
@@ -323,24 +234,22 @@ static nmo_status_t workspace_edit_checkpoint_mark_arena(
     nmo_workspace_edit_t *edit,
     workspace_edit_checkpoint_t *checkpoint)
 {
-    if (edit == NULL || checkpoint == NULL || checkpoint->arena_mark_active) {
+    if (edit == NULL || checkpoint == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
-    nmo_status_t status = nmo_arena_mark(edit->arena, &checkpoint->arena_mark);
-    if (status == NMO_OK) {
-        checkpoint->arena_mark_active = true;
-    }
-    return status;
+    return nmo_workspace_edit_journal_mark_arena(
+        &edit->journal, &checkpoint->journal);
 }
 
 static nmo_status_t workspace_edit_checkpoint_release_arena(
     nmo_workspace_edit_t *edit,
     const workspace_edit_checkpoint_t *checkpoint)
 {
-    if (edit == NULL || checkpoint == NULL || !checkpoint->arena_mark_active) {
+    if (edit == NULL || checkpoint == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
-    return nmo_arena_release_mark(edit->arena, &checkpoint->arena_mark);
+    return nmo_workspace_edit_journal_release_arena(
+        &edit->journal, &checkpoint->journal);
 }
 
 static void workspace_edit_abort_to(
@@ -350,11 +259,8 @@ static void workspace_edit_abort_to(
     if (edit == NULL) {
         return;
     }
-    workspace_edit_rollback_to(edit, checkpoint.rollback_count);
-    if (edit->commit_count > checkpoint.commit_count) {
-        edit->commit_count = checkpoint.commit_count;
-    }
-    workspace_edit_cleanup_to(edit, checkpoint.cleanup_count);
+    nmo_workspace_edit_journal_abort(
+        &edit->journal, edit, checkpoint.journal);
     edit->flags = checkpoint.flags;
 }
 
@@ -373,11 +279,12 @@ static nmo_status_t workspace_edit_abort_arena_status(
     nmo_status_t status)
 {
     workspace_edit_abort_to(edit, checkpoint);
-    if (!checkpoint.arena_mark_active) {
+    if (!checkpoint.journal.arena_mark_active) {
         return status;
     }
     nmo_status_t rewind_status =
-        nmo_arena_rewind(edit->arena, &checkpoint.arena_mark);
+        nmo_workspace_edit_journal_rewind_arena(
+            &edit->journal, &checkpoint.journal);
     return rewind_status == NMO_OK ? status : rewind_status;
 }
 
@@ -413,7 +320,7 @@ static void workspace_edit_finish(nmo_workspace_edit_t *edit)
         return;
     }
     edit->finished = true;
-    workspace_edit_cleanup_to(edit, 0u);
+    nmo_workspace_edit_journal_cleanup_all(&edit->journal, edit);
     workspace_edit_free(edit);
 }
 
@@ -429,34 +336,15 @@ static nmo_status_t workspace_edit_finish_rollback_status(
     nmo_workspace_edit_t *edit,
     nmo_status_t status)
 {
-    workspace_edit_rollback_to(edit, 0);
+    nmo_workspace_edit_journal_rollback_all(&edit->journal, edit);
     return workspace_edit_finish_status(edit, status);
 }
 
 static nmo_status_t workspace_edit_run_commit_actions(nmo_workspace_edit_t *edit)
 {
-    if (edit == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    for (size_t i = 0; i < edit->commit_count; i++) {
-        nmo_status_t status =
-            edit->commit_actions[i].fn(edit, edit->commit_actions[i].payload);
-        if (status != NMO_OK) {
-            return status;
-        }
-    }
-    return NMO_OK;
-}
-
-static nmo_status_t rollback_field_bytes(nmo_workspace_edit_t *edit, void *payload)
-{
-    (void)edit;
-    field_bytes_snapshot_t *snapshot = (field_bytes_snapshot_t *)payload;
-    if (snapshot == NULL || snapshot->field_ptr == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    memcpy(snapshot->field_ptr, snapshot->bytes, snapshot->size);
-    return NMO_OK;
+    return edit != NULL
+        ? nmo_workspace_edit_journal_run_commit(&edit->journal, edit)
+        : NMO_ERR_INVALID_ARGUMENT;
 }
 
 static nmo_status_t workspace_edit_push_bytes_snapshot(
@@ -464,23 +352,11 @@ static nmo_status_t workspace_edit_push_bytes_snapshot(
     void *target,
     size_t size)
 {
-    if (edit == NULL || target == NULL) {
+    if (edit == NULL || edit->finished || target == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
-
-    field_bytes_snapshot_t *snapshot =
-        (field_bytes_snapshot_t *)nmo_workspace_edit_alloc(
-            edit, sizeof(*snapshot) + size, _Alignof(field_bytes_snapshot_t));
-    if (snapshot == NULL) {
-        return NMO_ERR_NOMEM;
-    }
-    snapshot->field_ptr = target;
-    snapshot->size = size;
-    if (size > 0) {
-        memcpy(snapshot->bytes, target, size);
-    }
-
-    return workspace_edit_push_rollback(edit, rollback_field_bytes, snapshot);
+    return nmo_workspace_edit_journal_snapshot_bytes(
+        &edit->journal, edit, target, size);
 }
 
 static nmo_status_t workspace_edit_push_bytes_snapshot_or_abort(
@@ -1499,10 +1375,11 @@ static nmo_status_t workspace_edit_begin_for_workspace(
     if (edit == NULL) {
         return NMO_ERR_NOMEM;
     }
-    edit->arena = nmo_arena_create(NULL, 16u * 1024u);
-    if (edit->arena == NULL) {
+    nmo_status_t journal_result =
+        nmo_workspace_edit_journal_init(&edit->journal);
+    if (journal_result != NMO_OK) {
         free(edit);
-        return NMO_ERR_NOMEM;
+        return journal_result;
     }
     edit->workspace = workspace;
 
@@ -4042,10 +3919,10 @@ void *nmo_workspace_edit_alloc(
     size_t size,
     size_t align)
 {
-    if (edit == NULL || edit->arena == NULL || size == 0) {
+    if (edit == NULL || edit->finished || size == 0u) {
         return NULL;
     }
-    return nmo_arena_alloc(edit->arena, size, align);
+    return nmo_workspace_edit_journal_alloc(&edit->journal, size, align);
 }
 
 nmo_status_t nmo_workspace_edit_snapshot_bytes(
@@ -4086,21 +3963,12 @@ nmo_status_t nmo_workspace_edit_snapshot_behavior_state(
     }
     snapshot->owns_state = true;
 
-    status = workspace_edit_push_cleanup(
-        edit, cleanup_behavior_state_snapshot, snapshot);
-    if (status != NMO_OK) {
-        (void)cleanup_behavior_state_snapshot(edit, snapshot);
-        return status;
-    }
-
-    status = workspace_edit_push_rollback(
-        edit, rollback_behavior_state, snapshot);
-    if (status != NMO_OK) {
-        edit->cleanup_count--;
-        (void)cleanup_behavior_state_snapshot(edit, snapshot);
-        return status;
-    }
-    return NMO_OK;
+    return nmo_workspace_edit_journal_push_rollback_cleanup(
+        &edit->journal,
+        edit,
+        rollback_behavior_state,
+        cleanup_behavior_state_snapshot,
+        snapshot);
 }
 
 nmo_status_t nmo_workspace_edit_track_created_object(

@@ -278,6 +278,7 @@ set(NMO_RUNTIME_SOURCES
     src/runtime/context.c
     src/runtime/document_workspace.c
     src/runtime/session_util.c
+    src/runtime/workspace_edit_journal.c
     src/runtime/workspace_edit.c
     src/session/object_system.c
     src/session/deserializer.c
