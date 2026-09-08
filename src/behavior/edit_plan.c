@@ -5,6 +5,8 @@
 
 #include "behavior/nmo_edit_plan.h"
 
+#include "edit_op_kind_internal.h"
+
 #include "behavior/nmo_semantic_validator.h"
 #include "behavior/nmo_script_edit.h"
 #include "format/nmo_chunk_api.h"
@@ -4331,33 +4333,6 @@ static nmo_status_t edit_executor_apply_op(
     }
 }
 
-static const char *edit_op_result_handle_name(nmo_edit_op_kind_t kind)
-{
-    switch (kind) {
-    case NMO_EDIT_OP_ADD_NODE:
-        return "node";
-    case NMO_EDIT_OP_ADD_IO:
-        return "io";
-    case NMO_EDIT_OP_ADD_BEHAVIOR_LINK:
-        return "link";
-    case NMO_EDIT_OP_ADD_PARAMETER:
-        return "parameter";
-    case NMO_EDIT_OP_ADD_OPERATION:
-        return "operation";
-    default:
-        return "object";
-    }
-}
-
-static bool edit_op_creates_result(nmo_edit_op_kind_t kind)
-{
-    return kind == NMO_EDIT_OP_ADD_NODE ||
-           kind == NMO_EDIT_OP_ADD_IO ||
-           kind == NMO_EDIT_OP_ADD_BEHAVIOR_LINK ||
-           kind == NMO_EDIT_OP_ADD_PARAMETER ||
-           kind == NMO_EDIT_OP_ADD_OPERATION;
-}
-
 static nmo_status_t edit_report_add_named_handle(
     nmo_edit_report_t *report,
     size_t operation_index,
@@ -4796,11 +4771,11 @@ nmo_status_t nmo_edit_executor_execute_transaction(
         if (created_attribute_entry) {
             created_manager_index = created_attribute_index;
         }
-        if (result_id != 0u && edit_op_creates_result(op->kind)) {
+        if (result_id != 0u && nmo_edit_op_kind_creates_result(op->kind)) {
             nmo_status_t handle_rc = nmo_edit_report_add_operation_handle(
                 report,
                 i,
-                edit_op_result_handle_name(op->kind),
+                nmo_edit_op_kind_result_handle(op->kind),
                 result_id);
             if (handle_rc != NMO_OK) {
                 edit_plan_manager_snapshot_dispose(&manager_after);
@@ -4840,7 +4815,8 @@ nmo_status_t nmo_edit_executor_execute_transaction(
             }
             noted_created_objects = true;
         }
-        if (edit_op_creates_result(op->kind) && !noted_created_objects) {
+        if (nmo_edit_op_kind_creates_result(op->kind) &&
+            !noted_created_objects) {
             nmo_status_t report_rc = nmo_edit_report_add_created_object(
                 report, result_id, op->kind, "created");
             if (report_rc != NMO_OK) {

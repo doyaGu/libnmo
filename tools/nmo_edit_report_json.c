@@ -11,58 +11,6 @@
 #include <stdint.h>
 #include <string.h>
 
-const char *nmo_cli_edit_report_op_kind_string(nmo_edit_op_kind_t kind)
-{
-    switch (kind) {
-    case NMO_EDIT_OP_SET_PARAMETER_VALUE:
-        return "set_parameter_value";
-    case NMO_EDIT_OP_SET_PARAMETER_BYTES:
-        return "set_parameter_bytes";
-    case NMO_EDIT_OP_ADD_NODE:
-        return "add_node";
-    case NMO_EDIT_OP_REMOVE_NODE:
-        return "remove_node";
-    case NMO_EDIT_OP_ADD_IO:
-        return "add_io";
-    case NMO_EDIT_OP_RENAME_IO:
-        return "rename_io";
-    case NMO_EDIT_OP_REMOVE_IO:
-        return "remove_io";
-    case NMO_EDIT_OP_ADD_BEHAVIOR_LINK:
-        return "add_behavior_link";
-    case NMO_EDIT_OP_REWIRE_BEHAVIOR_LINK:
-        return "rewire_behavior_link";
-    case NMO_EDIT_OP_SET_BEHAVIOR_LINK_DELAY:
-        return "set_behavior_link_delay";
-    case NMO_EDIT_OP_REMOVE_BEHAVIOR_LINK:
-        return "remove_behavior_link";
-    case NMO_EDIT_OP_ADD_PARAMETER:
-        return "add_parameter";
-    case NMO_EDIT_OP_CONNECT_PARAMETER:
-        return "connect_parameter";
-    case NMO_EDIT_OP_DISCONNECT_PARAMETER:
-        return "disconnect_parameter";
-    case NMO_EDIT_OP_REMOVE_PARAMETER:
-        return "remove_parameter";
-    case NMO_EDIT_OP_ADD_OPERATION:
-        return "add_operation";
-    case NMO_EDIT_OP_REWIRE_OPERATION:
-        return "rewire_operation";
-    case NMO_EDIT_OP_REMOVE_OPERATION:
-        return "remove_operation";
-    case NMO_EDIT_OP_INTERFACE_POLICY:
-        return "interface_policy";
-    case NMO_EDIT_OP_SET_DATA_CELL:
-        return "set_data_cell";
-    case NMO_EDIT_OP_FOLD:
-        return "fold";
-    case NMO_EDIT_OP_REPLACE_BB:
-        return "replace_bb";
-    default:
-        return "unknown";
-    }
-}
-
 void nmo_cli_edit_report_add_schema_v2_json(
     yyjson_mut_doc *doc,
     yyjson_mut_val *obj,
@@ -289,7 +237,7 @@ void nmo_cli_edit_report_add_operations_json(
         const nmo_edit_operation_result_t *op = &report->operations[i];
         yyjson_mut_val *item = yyjson_mut_obj(doc);
         yyjson_mut_val *handles = yyjson_mut_arr(doc);
-        const char *kind = nmo_cli_edit_report_op_kind_string(op->kind);
+        const char *kind = nmo_edit_op_kind_name(op->kind);
         yyjson_mut_obj_add_uint(doc, item, "index", (uint64_t)(i + 1u));
         nmo_cli_json_add_str_safe(doc, item, "op", kind);
         nmo_cli_json_add_str_safe(doc, item, "kind", kind);
@@ -340,7 +288,7 @@ void nmo_cli_edit_report_add_impact_array_json(
         yyjson_mut_obj_add_uint(doc, item, "id", (uint64_t)items[i].id);
         nmo_cli_json_add_str_safe(
             doc, item, "cause",
-            nmo_cli_edit_report_op_kind_string(items[i].cause));
+            nmo_edit_op_kind_name(items[i].cause));
         nmo_cli_json_add_str_safe(doc, item, "role", items[i].role);
         yyjson_mut_arr_add_val(arr, item);
     }
@@ -360,7 +308,7 @@ static yyjson_mut_val *nmo_cli_edit_report_make_impact_array_json(
         yyjson_mut_obj_add_uint(doc, item, "id", (uint64_t)items[i].id);
         nmo_cli_json_add_str_safe(
             doc, item, "cause",
-            nmo_cli_edit_report_op_kind_string(items[i].cause));
+            nmo_edit_op_kind_name(items[i].cause));
         nmo_cli_json_add_str_safe(doc, item, "role", items[i].role);
         yyjson_mut_arr_add_val(arr, item);
     }
@@ -841,7 +789,7 @@ static yyjson_mut_val *nmo_cli_edit_report_make_filtered_impact_array_json(
         yyjson_mut_obj_add_uint(doc, item, "id", (uint64_t)items[i].id);
         nmo_cli_json_add_str_safe(
             doc, item, "cause",
-            nmo_cli_edit_report_op_kind_string(items[i].cause));
+            nmo_edit_op_kind_name(items[i].cause));
         nmo_cli_json_add_str_safe(doc, item, "role", items[i].role);
         nmo_cli_edit_report_add_impact_before_after_json(
             doc, item, &items[i]);

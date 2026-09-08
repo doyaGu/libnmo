@@ -1,5 +1,7 @@
 #include "behavior/nmo_semantic_validator.h"
 
+#include "edit_op_kind_internal.h"
+
 #include "behavior/nmo_behavior_edit.h"
 #include "behavior/nmo_behavior_registry.h"
 #include "behavior/nmo_edit_plan.h"
@@ -716,25 +718,6 @@ static nmo_status_t semantic_add_plan_activation_delay_risk(
         object_id);
 }
 
-static const char *semantic_static_result_handle_name(
-    nmo_edit_op_kind_t kind)
-{
-    switch (kind) {
-    case NMO_EDIT_OP_ADD_NODE:
-        return "node";
-    case NMO_EDIT_OP_ADD_IO:
-        return "io";
-    case NMO_EDIT_OP_ADD_BEHAVIOR_LINK:
-        return "link";
-    case NMO_EDIT_OP_ADD_PARAMETER:
-        return "parameter";
-    case NMO_EDIT_OP_ADD_OPERATION:
-        return "operation";
-    default:
-        return NULL;
-    }
-}
-
 static bool semantic_named_handle_matches(
     const char *handle_name,
     const char *prefix,
@@ -973,7 +956,7 @@ static nmo_status_t semantic_validate_handle_ref(
 
     const nmo_edit_op_t *ref_op = nmo_edit_plan_get(plan, ref_index);
     const char *expected = ref_op != NULL
-        ? semantic_static_result_handle_name(ref_op->kind)
+        ? nmo_edit_op_kind_result_handle(ref_op->kind)
         : NULL;
     if (expected == NULL) {
         return semantic_add_invalid_handle_ref_risk(

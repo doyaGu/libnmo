@@ -7,8 +7,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-const char *nmo_cli_edit_report_op_kind_string(nmo_edit_op_kind_t kind);
-
 void nmo_cli_edit_report_add_schema_v2_json(
     yyjson_mut_doc *doc,
     yyjson_mut_val *obj,

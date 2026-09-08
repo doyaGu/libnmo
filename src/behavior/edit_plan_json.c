@@ -41,58 +41,6 @@ static void add_optional_id_json(yyjson_mut_doc *doc,
     }
 }
 
-static const char *edit_op_kind_string(nmo_edit_op_kind_t kind)
-{
-    switch (kind) {
-        case NMO_EDIT_OP_SET_PARAMETER_VALUE:
-            return "set_parameter_value";
-        case NMO_EDIT_OP_SET_PARAMETER_BYTES:
-            return "set_parameter_bytes";
-        case NMO_EDIT_OP_ADD_NODE:
-            return "add_node";
-        case NMO_EDIT_OP_REMOVE_NODE:
-            return "remove_node";
-        case NMO_EDIT_OP_ADD_IO:
-            return "add_io";
-        case NMO_EDIT_OP_RENAME_IO:
-            return "rename_io";
-        case NMO_EDIT_OP_REMOVE_IO:
-            return "remove_io";
-        case NMO_EDIT_OP_ADD_BEHAVIOR_LINK:
-            return "add_behavior_link";
-        case NMO_EDIT_OP_REWIRE_BEHAVIOR_LINK:
-            return "rewire_behavior_link";
-        case NMO_EDIT_OP_SET_BEHAVIOR_LINK_DELAY:
-            return "set_behavior_link_delay";
-        case NMO_EDIT_OP_REMOVE_BEHAVIOR_LINK:
-            return "remove_behavior_link";
-        case NMO_EDIT_OP_ADD_PARAMETER:
-            return "add_parameter";
-        case NMO_EDIT_OP_CONNECT_PARAMETER:
-            return "connect_parameter";
-        case NMO_EDIT_OP_DISCONNECT_PARAMETER:
-            return "disconnect_parameter";
-        case NMO_EDIT_OP_REMOVE_PARAMETER:
-            return "remove_parameter";
-        case NMO_EDIT_OP_ADD_OPERATION:
-            return "add_operation";
-        case NMO_EDIT_OP_REWIRE_OPERATION:
-            return "rewire_operation";
-        case NMO_EDIT_OP_REMOVE_OPERATION:
-            return "remove_operation";
-        case NMO_EDIT_OP_INTERFACE_POLICY:
-            return "interface_policy";
-        case NMO_EDIT_OP_SET_DATA_CELL:
-            return "set_data_cell";
-        case NMO_EDIT_OP_FOLD:
-            return "fold";
-        case NMO_EDIT_OP_REPLACE_BB:
-            return "replace_bb";
-        default:
-            return "unknown";
-    }
-}
-
 static const char *io_kind_string(nmo_script_edit_io_kind_t kind)
 {
     return kind == NMO_SCRIPT_EDIT_IO_OUTPUT ? "output" : "input";
@@ -636,7 +584,7 @@ static yyjson_mut_val *edit_op_to_json(yyjson_mut_doc *doc,
         return obj;
     }
 
-    yyjson_mut_obj_add_str(doc, obj, "op", edit_op_kind_string(op->kind));
+    yyjson_mut_obj_add_str(doc, obj, "op", nmo_edit_op_kind_name(op->kind));
 
     switch (op->kind) {
         case NMO_EDIT_OP_SET_PARAMETER_VALUE:
@@ -2566,55 +2514,81 @@ static nmo_status_t parse_operations_array(yyjson_val *ops,
         if (!read_required_string(op_obj, "op", &op_name)) {
             return NMO_ERR_INVALID_FORMAT;
         }
-        if (strcmp(op_name, "set_parameter_value") == 0) {
+        nmo_edit_op_kind_t kind = (nmo_edit_op_kind_t)0;
+        st = nmo_edit_op_kind_parse(op_name, &kind);
+        if (st != NMO_OK) {
+            return st;
+        }
+        switch (kind) {
+        case NMO_EDIT_OP_SET_PARAMETER_VALUE:
             st = parse_set_parameter_value(op_obj, plan);
-        } else if (strcmp(op_name, "set_parameter_bytes") == 0) {
+            break;
+        case NMO_EDIT_OP_SET_PARAMETER_BYTES:
             st = parse_set_parameter_bytes(op_obj, plan);
-        } else if (strcmp(op_name, "add_node") == 0) {
+            break;
+        case NMO_EDIT_OP_ADD_NODE:
             st = parse_add_node(op_obj, plan);
-        } else if (strcmp(op_name, "remove_node") == 0) {
+            break;
+        case NMO_EDIT_OP_REMOVE_NODE:
             st = parse_remove_node(op_obj, plan);
-        } else if (strcmp(op_name, "add_io") == 0) {
+            break;
+        case NMO_EDIT_OP_ADD_IO:
             st = parse_add_io(op_obj, plan);
-        } else if (strcmp(op_name, "rename_io") == 0) {
+            break;
+        case NMO_EDIT_OP_RENAME_IO:
             st = parse_rename_io(op_obj, plan);
-        } else if (strcmp(op_name, "remove_io") == 0) {
+            break;
+        case NMO_EDIT_OP_REMOVE_IO:
             st = parse_remove_io(op_obj, plan);
-        } else if (strcmp(op_name, "add_behavior_link") == 0) {
+            break;
+        case NMO_EDIT_OP_ADD_BEHAVIOR_LINK:
             st = parse_add_behavior_link(op_obj, plan);
-        } else if (strcmp(op_name, "rewire_behavior_link") == 0) {
+            break;
+        case NMO_EDIT_OP_REWIRE_BEHAVIOR_LINK:
             st = parse_rewire_behavior_link(op_obj, plan);
-        } else if (strcmp(op_name, "set_behavior_link_delay") == 0) {
+            break;
+        case NMO_EDIT_OP_SET_BEHAVIOR_LINK_DELAY:
             st = parse_set_behavior_link_delay(op_obj, plan);
-        } else if (strcmp(op_name, "remove_behavior_link") == 0) {
+            break;
+        case NMO_EDIT_OP_REMOVE_BEHAVIOR_LINK:
             st = parse_remove_behavior_link(op_obj, plan);
-        } else if (strcmp(op_name, "add_parameter") == 0) {
+            break;
+        case NMO_EDIT_OP_ADD_PARAMETER:
             st = parse_add_parameter(op_obj, plan);
-        } else if (strcmp(op_name, "connect_parameter") == 0) {
+            break;
+        case NMO_EDIT_OP_CONNECT_PARAMETER:
             st = parse_connect_parameter(op_obj, plan);
-        } else if (strcmp(op_name, "disconnect_parameter") == 0) {
+            break;
+        case NMO_EDIT_OP_DISCONNECT_PARAMETER:
             st = parse_disconnect_parameter(op_obj, plan);
-        } else if (strcmp(op_name, "remove_parameter") == 0) {
+            break;
+        case NMO_EDIT_OP_REMOVE_PARAMETER:
             st = parse_remove_parameter(op_obj, plan);
-        } else if (strcmp(op_name, "add_operation") == 0) {
+            break;
+        case NMO_EDIT_OP_ADD_OPERATION:
             st = parse_add_operation(op_obj, plan);
-        } else if (strcmp(op_name, "rewire_operation") == 0) {
+            break;
+        case NMO_EDIT_OP_REWIRE_OPERATION:
             st = parse_rewire_operation(op_obj, plan);
-        } else if (strcmp(op_name, "remove_operation") == 0) {
+            break;
+        case NMO_EDIT_OP_REMOVE_OPERATION:
             st = parse_remove_operation(op_obj, plan);
-        } else if (strcmp(op_name, "interface_policy") == 0) {
+            break;
+        case NMO_EDIT_OP_INTERFACE_POLICY:
             st = parse_interface_policy(op_obj, plan);
-        } else if (strcmp(op_name, "set_data_cell") == 0) {
+            break;
+        case NMO_EDIT_OP_SET_DATA_CELL:
             st = parse_set_data_cell(op_obj, plan);
-        } else if (strcmp(op_name, "fold") == 0) {
+            break;
+        case NMO_EDIT_OP_FOLD:
             st = parse_fold(op_obj, plan);
-        } else if (strcmp(op_name, "replace_bb") == 0) {
+            break;
+        case NMO_EDIT_OP_REPLACE_BB:
             st = parse_replace_bb(op_obj, plan);
-        } else {
-            nmo_last_error_setf(NMO_ERR_NOT_SUPPORTED, NMO_SEVERITY_ERROR,
-                                __FILE__, __LINE__,
-                                "Unsupported edit plan op '%s'", op_name);
+            break;
+        default:
             st = NMO_ERR_NOT_SUPPORTED;
+            break;
         }
         if (st != NMO_OK) {
             return st;

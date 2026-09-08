@@ -337,6 +337,7 @@ set(NMO_BEHAVIOR_SOURCES
     src/behavior/behavior_query.c
     src/behavior/behavior_rewrite.c
     src/behavior/behavior_view.c
+    src/behavior/edit_op_kind.c
     src/behavior/edit_plan.c
     src/behavior/edit_plan_json.c
     src/behavior/probe_analyzer.c

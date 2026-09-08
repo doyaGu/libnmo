@@ -51,6 +51,11 @@ typedef enum nmo_edit_op_kind {
     NMO_EDIT_OP_REPLACE_BB = 22
 } nmo_edit_op_kind_t;
 
+NMO_API const char *nmo_edit_op_kind_name(nmo_edit_op_kind_t kind);
+NMO_API nmo_status_t nmo_edit_op_kind_parse(
+    const char *name,
+    nmo_edit_op_kind_t *out_kind);
+
 typedef struct nmo_add_node_options {
     nmo_manager_entry_options_t manager_entry;
 } nmo_add_node_options_t;

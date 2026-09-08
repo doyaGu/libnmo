@@ -91,6 +91,59 @@ static void assert_plan_invalid_contains(const char *operations_json,
     nmo_edit_plan_destroy(plan);
 }
 
+TEST(edit_plan_json, maps_all_operation_kind_names) {
+    static const struct {
+        nmo_edit_op_kind_t kind;
+        const char *name;
+    } cases[] = {
+        {NMO_EDIT_OP_SET_PARAMETER_VALUE, "set_parameter_value"},
+        {NMO_EDIT_OP_SET_PARAMETER_BYTES, "set_parameter_bytes"},
+        {NMO_EDIT_OP_ADD_NODE, "add_node"},
+        {NMO_EDIT_OP_REMOVE_NODE, "remove_node"},
+        {NMO_EDIT_OP_ADD_IO, "add_io"},
+        {NMO_EDIT_OP_RENAME_IO, "rename_io"},
+        {NMO_EDIT_OP_REMOVE_IO, "remove_io"},
+        {NMO_EDIT_OP_ADD_BEHAVIOR_LINK, "add_behavior_link"},
+        {NMO_EDIT_OP_REWIRE_BEHAVIOR_LINK, "rewire_behavior_link"},
+        {NMO_EDIT_OP_SET_BEHAVIOR_LINK_DELAY, "set_behavior_link_delay"},
+        {NMO_EDIT_OP_REMOVE_BEHAVIOR_LINK, "remove_behavior_link"},
+        {NMO_EDIT_OP_ADD_PARAMETER, "add_parameter"},
+        {NMO_EDIT_OP_CONNECT_PARAMETER, "connect_parameter"},
+        {NMO_EDIT_OP_DISCONNECT_PARAMETER, "disconnect_parameter"},
+        {NMO_EDIT_OP_REMOVE_PARAMETER, "remove_parameter"},
+        {NMO_EDIT_OP_ADD_OPERATION, "add_operation"},
+        {NMO_EDIT_OP_REWIRE_OPERATION, "rewire_operation"},
+        {NMO_EDIT_OP_REMOVE_OPERATION, "remove_operation"},
+        {NMO_EDIT_OP_INTERFACE_POLICY, "interface_policy"},
+        {NMO_EDIT_OP_SET_DATA_CELL, "set_data_cell"},
+        {NMO_EDIT_OP_FOLD, "fold"},
+        {NMO_EDIT_OP_REPLACE_BB, "replace_bb"},
+    };
+
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+        nmo_edit_op_kind_t parsed = 0;
+        ASSERT_STR_EQ(cases[i].name, nmo_edit_op_kind_name(cases[i].kind));
+        ASSERT_EQ(NMO_OK, nmo_edit_op_kind_parse(cases[i].name, &parsed));
+        ASSERT_EQ(cases[i].kind, parsed);
+    }
+
+    ASSERT_STR_EQ("unknown", nmo_edit_op_kind_name((nmo_edit_op_kind_t)-1));
+
+    nmo_edit_op_kind_t parsed = NMO_EDIT_OP_ADD_NODE;
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_edit_op_kind_parse(NULL, &parsed));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              nmo_edit_op_kind_parse("add_node", NULL));
+
+    nmo_last_error_clear();
+    parsed = NMO_EDIT_OP_ADD_NODE;
+    ASSERT_EQ(NMO_ERR_NOT_SUPPORTED,
+              nmo_edit_op_kind_parse("unknown_op", &parsed));
+    ASSERT_EQ(0, parsed);
+    ASSERT_STR_CONTAINS(nmo_last_error_message(),
+                        "Unsupported edit plan op 'unknown_op'");
+}
+
 TEST(edit_plan_json, writes_manifest_with_operation_handle_refs) {
     nmo_edit_plan_t *plan = NULL;
     char *json = NULL;
@@ -1226,6 +1279,7 @@ TEST(edit_plan_json, rejects_invalid_probe_selector_analysis_metadata) {
 }
 
 TEST_MAIN_BEGIN()
+REGISTER_TEST(edit_plan_json, maps_all_operation_kind_names);
 REGISTER_TEST(edit_plan_json, writes_manifest_with_operation_handle_refs);
 REGISTER_TEST(edit_plan_json, reads_manifest_with_operation_handle_refs);
     REGISTER_TEST(edit_plan_json, writes_structured_manager_entry_options);

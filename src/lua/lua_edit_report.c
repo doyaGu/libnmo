@@ -9,47 +9,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-const char *nmo_lua_edit_op_kind_string(nmo_edit_op_kind_t kind)
-{
-    switch (kind) {
-    case NMO_EDIT_OP_SET_PARAMETER_VALUE: return "set_parameter_value";
-    case NMO_EDIT_OP_SET_PARAMETER_BYTES: return "set_parameter_bytes";
-    case NMO_EDIT_OP_ADD_NODE: return "add_node";
-    case NMO_EDIT_OP_REMOVE_NODE: return "remove_node";
-    case NMO_EDIT_OP_ADD_IO: return "add_io";
-    case NMO_EDIT_OP_RENAME_IO: return "rename_io";
-    case NMO_EDIT_OP_REMOVE_IO: return "remove_io";
-    case NMO_EDIT_OP_ADD_BEHAVIOR_LINK: return "add_behavior_link";
-    case NMO_EDIT_OP_REWIRE_BEHAVIOR_LINK: return "rewire_behavior_link";
-    case NMO_EDIT_OP_SET_BEHAVIOR_LINK_DELAY: return "set_behavior_link_delay";
-    case NMO_EDIT_OP_REMOVE_BEHAVIOR_LINK: return "remove_behavior_link";
-    case NMO_EDIT_OP_ADD_PARAMETER: return "add_parameter";
-    case NMO_EDIT_OP_CONNECT_PARAMETER: return "connect_parameter";
-    case NMO_EDIT_OP_DISCONNECT_PARAMETER: return "disconnect_parameter";
-    case NMO_EDIT_OP_REMOVE_PARAMETER: return "remove_parameter";
-    case NMO_EDIT_OP_ADD_OPERATION: return "add_operation";
-    case NMO_EDIT_OP_REWIRE_OPERATION: return "rewire_operation";
-    case NMO_EDIT_OP_REMOVE_OPERATION: return "remove_operation";
-    case NMO_EDIT_OP_INTERFACE_POLICY: return "interface_policy";
-    case NMO_EDIT_OP_SET_DATA_CELL: return "set_data_cell";
-    case NMO_EDIT_OP_FOLD: return "fold";
-    case NMO_EDIT_OP_REPLACE_BB: return "replace_bb";
-    default: return "unknown";
-    }
-}
-
-const char *nmo_lua_edit_op_result_handle_name(nmo_edit_op_kind_t kind)
-{
-    switch (kind) {
-    case NMO_EDIT_OP_ADD_NODE: return "node";
-    case NMO_EDIT_OP_ADD_IO: return "io";
-    case NMO_EDIT_OP_ADD_BEHAVIOR_LINK: return "link";
-    case NMO_EDIT_OP_ADD_PARAMETER: return "parameter";
-    case NMO_EDIT_OP_ADD_OPERATION: return "operation";
-    default: return NULL;
-    }
-}
-
 static void nmo_lua_push_edit_impacts(lua_State *state,
                                       const nmo_edit_object_impact_t *items,
                                       size_t count)
@@ -60,7 +19,7 @@ static void nmo_lua_push_edit_impacts(lua_State *state,
         nmo_lua_set_integer_field(state, "object_id", (lua_Integer)items[i].id);
         nmo_lua_set_integer_field(state, "id", (lua_Integer)items[i].id);
         nmo_lua_set_string_field(
-            state, "cause", nmo_lua_edit_op_kind_string(items[i].cause));
+            state, "cause", nmo_edit_op_kind_name(items[i].cause));
         nmo_lua_set_string_field(
             state, "role", items[i].role != NULL ? items[i].role : "");
         lua_rawseti(state, -2, (lua_Integer)i + 1);
@@ -405,7 +364,7 @@ static void nmo_lua_push_filtered_edit_impacts(
         nmo_lua_set_integer_field(state, "object_id", (lua_Integer)items[i].id);
         nmo_lua_set_integer_field(state, "id", (lua_Integer)items[i].id);
         nmo_lua_set_string_field(
-            state, "cause", nmo_lua_edit_op_kind_string(items[i].cause));
+            state, "cause", nmo_edit_op_kind_name(items[i].cause));
         nmo_lua_set_string_field(
             state, "role", items[i].role != NULL ? items[i].role : "");
         nmo_lua_push_impact_before_after(state, &items[i]);
@@ -487,7 +446,7 @@ static void nmo_lua_push_edit_report_operations(lua_State *state,
     lua_createtable(state, (int)report->operation_count, 0);
     for (size_t i = 0; i < report->operation_count; ++i) {
         const nmo_edit_operation_result_t *operation = &report->operations[i];
-        const char *kind = nmo_lua_edit_op_kind_string(operation->kind);
+        const char *kind = nmo_edit_op_kind_name(operation->kind);
         lua_createtable(state, 0, 10);
         nmo_lua_set_integer_field(state, "index", (lua_Integer)i + 1);
         nmo_lua_set_string_field(state, "op", kind);

@@ -177,7 +177,7 @@ static int patch_apply_plan(patch_plan_t *plan,
         for (size_t i = 0; i < edit_report.operation_count; ++i) {
             const nmo_edit_operation_result_t *op = &edit_report.operations[i];
             fprintf(ctx.out, "%s #%u: result #%u, status %s\n",
-                    nmo_cli_edit_report_op_kind_string(op->kind),
+                    nmo_edit_op_kind_name(op->kind),
                     op->primary_id,
                     op->result_id,
                     nmo_error_string(op->status));
@@ -232,7 +232,7 @@ static int patch_apply_plan(patch_plan_t *plan,
                 : NULL;
         if (edit_op) {
             fprintf(stderr, "Error: %s #%u failed: %s",
-                    nmo_cli_edit_report_op_kind_string(edit_op->kind),
+                    nmo_edit_op_kind_name(edit_op->kind),
                     edit_op->primary_id,
                     nmo_error_string(st));
             if (failed_op && failed_op->diagnostic_code) {

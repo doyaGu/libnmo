@@ -7,6 +7,7 @@
 #include "behavior/nmo_script_edit_graph.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
+#include "../behavior/edit_op_kind_internal.h"
 
 #include "lauxlib.h"
 
@@ -417,7 +418,7 @@ static int nmo_lua_behavior_push_pending_handle(
     const nmo_edit_plan_t *plan,
     nmo_edit_op_kind_t kind)
 {
-    const char *handle_name = nmo_lua_edit_op_result_handle_name(kind);
+    const char *handle_name = nmo_edit_op_kind_result_handle(kind);
     if (handle_name == NULL) {
         return 0;
     }
