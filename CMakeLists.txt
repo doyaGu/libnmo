@@ -190,6 +190,7 @@ set(NMO_OBJECT_SOURCES
     src/object/object_summary.c
     src/object/object_import.c
     src/object/object_system.c
+    src/object/mutable_refs.c
     src/object/shadow_storage.c
     src/object/builtin/object_vtables.c
     src/object/builtin/ckobject_schemas.c

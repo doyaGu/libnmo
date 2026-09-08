@@ -2946,6 +2946,92 @@ TEST(runtime_kernel, copy_remap_updates_only_resolved_keyedanimation_refs) {
     nmo_context_release(ctx);
 }
 
+TEST(runtime_kernel, copy_remap_validates_mutable_lanes_before_mutation) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    const nmo_type_runtime_t *type_rt = nmo_context_get_type_runtime(ctx);
+    const nmo_type_descriptor_t *keyed_type =
+        nmo_type_registry_find_by_class_id(
+            type_rt->types, NMO_CID_KEYEDANIMATION);
+    ASSERT_NOT_NULL(keyed_type);
+
+    nmo_ref_t animation_id = nmo_ref_from_id(101);
+    nmo_keyedanimation_state_t state = {0};
+    state.animation_count = 1;
+    state.animation_ids = &animation_id;
+    state.subanim_count = 1;
+    state.subanims = NULL;
+
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_id_remap_t *remap = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(remap);
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, 101, 201));
+
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_runtime_remap_copy_refs(
+        type_rt, keyed_type, &state, remap));
+    ASSERT_EQ(101u, nmo_ref_runtime_id(&animation_id));
+    ASSERT_EQ(101u, animation_id.raw_id);
+
+    nmo_arena_destroy(arena);
+    nmo_context_release(ctx);
+}
+
+TEST(runtime_kernel, copy_remap_validates_array_adapter_storage_before_mutation) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    const nmo_type_runtime_t *type_rt = nmo_context_get_type_runtime(ctx);
+    const nmo_type_descriptor_t *scene_type =
+        nmo_type_registry_find_by_class_id(type_rt->types, NMO_CID_SCENE);
+    const nmo_type_descriptor_t *character_type =
+        nmo_type_registry_find_by_class_id(type_rt->types, NMO_CID_CHARACTER);
+    ASSERT_NOT_NULL(scene_type);
+    ASSERT_NOT_NULL(character_type);
+
+    nmo_scene_state_t state = {0};
+    state.level = nmo_ref_from_id(101);
+    nmo_scene_object_desc_t desc = {
+        .ref = nmo_ref_from_id(102),
+        .flags = 22,
+    };
+    state.object_descs.element_size = sizeof(desc);
+    state.object_descs.count = 1u;
+    state.object_descs.data = NULL;
+
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_id_remap_t *remap = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(remap);
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, 101, 201));
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, 102, 202));
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, 201, 301));
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, 202, 302));
+
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_runtime_remap_copy_refs(
+        type_rt, scene_type, &state, remap));
+    ASSERT_EQ(101u, nmo_ref_runtime_id(&state.level));
+
+    state.object_descs.data = &desc;
+    ASSERT_EQ(NMO_OK, nmo_runtime_remap_copy_refs(
+        type_rt, scene_type, &state, remap));
+    ASSERT_EQ(201u, nmo_ref_runtime_id(&state.level));
+    ASSERT_EQ(101u, state.level.raw_id);
+    ASSERT_EQ(202u, nmo_ref_runtime_id(&desc.ref));
+    ASSERT_EQ(102u, desc.ref.raw_id);
+    ASSERT_EQ(22u, desc.flags);
+
+    nmo_character_state_t character = {0};
+    ASSERT_EQ(NMO_OK, nmo_runtime_remap_copy_refs(
+        type_rt, character_type, &character, remap));
+
+    nmo_scene_state_t empty_scene = {0};
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_runtime_remap_copy_refs(
+        type_rt, scene_type, &empty_scene, remap));
+
+    nmo_arena_destroy(arena);
+    nmo_context_release(ctx);
+}
+
 TEST(runtime_kernel, copy_remap_updates_only_resolved_objectanimation_refs) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
@@ -3044,6 +3130,17 @@ TEST(runtime_kernel, safe_detach_keeps_keyedanimation_sections_independent) {
     ASSERT_EQ(animation_b,
               nmo_ref_runtime_id(&keyed->subanims[0].ref));
     ASSERT_EQ(chunk_b, keyed->subanims[0].chunk);
+
+    ASSERT_EQ(NMO_OK, nmo_session_destroy_objects(
+        session, &animation_b, 1,
+        NMO_RUNTIME_REQUEST_STRICT | NMO_RUNTIME_REQUEST_SAFE_DETACH,
+        &report));
+    keyed = (nmo_keyedanimation_state_t *)
+        nmo_object_repository_find_by_id(repo, keyed_id)->state;
+    ASSERT_EQ(0u, keyed->animation_count);
+    ASSERT(keyed->animation_ids == animation_ids);
+    ASSERT_EQ(0u, keyed->subanim_count);
+    ASSERT(keyed->subanims == subanims);
 
     nmo_session_destroy(session);
     nmo_context_release(ctx);
@@ -4026,6 +4123,159 @@ TEST(runtime_kernel, copy_remap_updates_only_resolved_patchmesh_refs) {
     nmo_context_release(ctx);
 }
 
+TEST(runtime_kernel, copy_remap_validates_patchmesh_adapter_hierarchy) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    const nmo_type_runtime_t *type_rt = nmo_context_get_type_runtime(ctx);
+    const nmo_type_descriptor_t *patchmesh_type =
+        nmo_type_registry_find_by_class_id(
+            type_rt->types, NMO_CID_PATCHMESH);
+    ASSERT_NOT_NULL(patchmesh_type);
+
+    nmo_material_group_t group = {
+        .material = nmo_ref_from_id(102),
+        .padding = 22,
+    };
+    nmo_patchmesh_patch_record_t patch = {
+        .material = nmo_ref_from_id(101),
+        .patch = {.type = 11},
+    };
+    nmo_patchmesh_state_t state = {0};
+    state.base.material_group_count = 1;
+    state.base.material_groups = &group;
+    state.patch_count = 1;
+    state.patches = &patch;
+    state.channel_count = 1;
+    state.channels = NULL;
+
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_id_remap_t *remap = nmo_id_remap_create(arena);
+    ASSERT_NOT_NULL(remap);
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, 101, 201));
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, 102, 202));
+    ASSERT_EQ(NMO_OK, nmo_id_remap_add(remap, 103, 203));
+
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_runtime_remap_copy_refs(
+        type_rt, patchmesh_type, &state, remap));
+    ASSERT_EQ(101u, nmo_ref_runtime_id(&patch.material));
+    ASSERT_EQ(102u, nmo_ref_runtime_id(&group.material));
+
+    nmo_patchmesh_channel_t channel = {
+        .material = nmo_ref_from_id(103),
+        .flags = 33,
+    };
+    state.channels = &channel;
+    ASSERT_EQ(NMO_OK, nmo_runtime_remap_copy_refs(
+        type_rt, patchmesh_type, &state, remap));
+    ASSERT_EQ(201u, nmo_ref_runtime_id(&patch.material));
+    ASSERT_EQ(11u, patch.patch.type);
+    ASSERT_EQ(202u, nmo_ref_runtime_id(&group.material));
+    ASSERT_EQ(22, group.padding);
+    ASSERT_EQ(203u, nmo_ref_runtime_id(&channel.material));
+    ASSERT_EQ(33u, channel.flags);
+
+    nmo_arena_destroy(arena);
+    nmo_context_release(ctx);
+}
+
+TEST(runtime_kernel, mesh_face_validation_precedes_reference_mutation) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_id_t mesh_id = 0;
+    nmo_object_id_t material_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_MESH, "mesh", (nmo_guid_t){0, 0},
+        &mesh_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_MATERIAL, "material", (nmo_guid_t){0, 0},
+        &material_id, NULL));
+    nmo_object_t *mesh_object =
+        nmo_object_repository_find_by_id(repo, mesh_id);
+    ASSERT_NOT_NULL(mesh_object);
+    nmo_mesh_state_t *mesh = (nmo_mesh_state_t *)mesh_object->state;
+    ASSERT_NOT_NULL(mesh);
+
+    nmo_material_group_t group = {
+        .material = nmo_ref_from_id(material_id),
+        .padding = 31,
+    };
+    mesh->material_group_count = 1;
+    mesh->material_groups = &group;
+    mesh->face_count = 1;
+    mesh->faces = NULL;
+
+    nmo_runtime_report_t report = {0};
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_session_destroy_objects(
+        session, &material_id, 1,
+        NMO_RUNTIME_REQUEST_STRICT | NMO_RUNTIME_REQUEST_SAFE_DETACH,
+        &report));
+    ASSERT_NOT_NULL(nmo_object_repository_find_by_id(repo, material_id));
+    ASSERT_EQ(material_id, nmo_ref_runtime_id(&group.material));
+    ASSERT_EQ(31, group.padding);
+
+    group.material = nmo_ref_from_raw(0x7FFFFF31u);
+    size_t changed = 0;
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED,
+              nmo_runtime_normalize_object_invalid_refs(
+                  repo, nmo_context_get_type_runtime(ctx), mesh_object,
+                  &changed));
+    ASSERT_EQ(0u, changed);
+    ASSERT_EQ(NMO_REF_UNRESOLVED, group.material.state);
+    ASSERT_EQ(0x7FFFFF31u, group.material.raw_id);
+    ASSERT_EQ(31, group.padding);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
+TEST(runtime_kernel, safe_detach_validates_patchmesh_legacy_before_mutation) {
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+
+    nmo_object_id_t patchmesh_id = 0;
+    nmo_object_id_t material_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_PATCHMESH, "patchmesh", (nmo_guid_t){0, 0},
+        &patchmesh_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_MATERIAL, "material", (nmo_guid_t){0, 0},
+        &material_id, NULL));
+
+    nmo_patchmesh_state_t *patchmesh = (nmo_patchmesh_state_t *)
+        nmo_object_repository_find_by_id(repo, patchmesh_id)->state;
+    ASSERT_NOT_NULL(patchmesh);
+    nmo_patchmesh_patch_record_t patch = {
+        .material = nmo_ref_from_id(material_id),
+        .patch = {.type = 41},
+    };
+    patchmesh->patch_count = 1;
+    patchmesh->patches = &patch;
+    patchmesh->legacy_material_count = 1;
+    patchmesh->legacy_materials = NULL;
+
+    nmo_runtime_report_t report = {0};
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_session_destroy_objects(
+        session, &material_id, 1,
+        NMO_RUNTIME_REQUEST_STRICT | NMO_RUNTIME_REQUEST_SAFE_DETACH,
+        &report));
+    ASSERT_NOT_NULL(nmo_object_repository_find_by_id(repo, material_id));
+    ASSERT_EQ(material_id, nmo_ref_runtime_id(&patch.material));
+    ASSERT_EQ(41u, patch.patch.type);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(runtime_kernel, normalize_and_safe_detach_keep_patchmesh_records_atomic) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
@@ -4798,6 +5048,7 @@ TEST(runtime_kernel, normalize_and_safe_detach_keep_curve_sections_independent) 
     curve = (nmo_curve_state_t *)
         nmo_object_repository_find_by_id(repo, curve_id)->state;
     ASSERT_EQ(0u, curve->control_point_count);
+    ASSERT(curve->control_point_ids == control_points);
     ASSERT_EQ(1u, curve->sub_point_count);
     ASSERT_EQ(point_b, nmo_ref_runtime_id(&curve->sub_points[0].ref));
     ASSERT_EQ(valid_chunk, curve->sub_points[0].chunk);
@@ -4852,6 +5103,8 @@ REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_behaviorlink_endp
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_behavior_records);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_material_refs);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_keyedanimation_refs);
+REGISTER_TEST(runtime_kernel, copy_remap_validates_mutable_lanes_before_mutation);
+REGISTER_TEST(runtime_kernel, copy_remap_validates_array_adapter_storage_before_mutation);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_objectanimation_refs);
 REGISTER_TEST(runtime_kernel, safe_detach_keeps_keyedanimation_sections_independent);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_beobject_attributes);
@@ -4870,6 +5123,9 @@ REGISTER_TEST(runtime_kernel, normalize_enforces_character_reference_classes);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_mesh_refs);
 REGISTER_TEST(runtime_kernel, normalize_and_safe_detach_keep_mesh_records_atomic);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_patchmesh_refs);
+REGISTER_TEST(runtime_kernel, copy_remap_validates_patchmesh_adapter_hierarchy);
+REGISTER_TEST(runtime_kernel, mesh_face_validation_precedes_reference_mutation);
+REGISTER_TEST(runtime_kernel, safe_detach_validates_patchmesh_legacy_before_mutation);
 REGISTER_TEST(runtime_kernel, normalize_and_safe_detach_keep_patchmesh_records_atomic);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_curve_refs);
 REGISTER_TEST(runtime_kernel, copy_remap_updates_only_resolved_place_portals);

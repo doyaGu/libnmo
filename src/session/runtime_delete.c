@@ -10,20 +10,17 @@
 #include "object/nmo_object_repository.h"
 #include "object/nmo_ref.h"
 #include "object/nmo_class_ids.h"
+#include "../object/mutable_refs_internal.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"
-#include "object/builtin/nmo_animation_schemas.h"
 #include "object/builtin/nmo_beobject_schemas.h"
-#include "object/builtin/nmo_character_schemas.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
-#include "object/builtin/nmo_curve_schemas.h"
 #include "object/builtin/nmo_dataarray_schemas.h"
 #include "object/builtin/nmo_grid_schemas.h"
 #include "object/builtin/nmo_group_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "object/builtin/nmo_patchmesh_schemas.h"
 #include "object/builtin/nmo_place_schemas.h"
-#include "object/builtin/nmo_scene_schemas.h"
 #include "object/nmo_object_guids.h"
 #include "type/nmo_reflection.h"
 #include "type/nmo_type_query.h"
@@ -50,6 +47,18 @@ static bool runtime_id_set_contains(const runtime_id_set_t *set, nmo_object_id_t
         return false;
     }
     return nmo_bit_array_test(&set->bits, (size_t)id) != 0;
+}
+
+static bool runtime_resolve_deleted_ref(
+    const void *context,
+    const nmo_ref_t *ref,
+    nmo_class_id_t expected_class_id,
+    nmo_object_id_t *out_replacement_id)
+{
+    (void)expected_class_id;
+    (void)out_replacement_id;
+    return ref != NULL && runtime_id_set_contains(
+        (const runtime_id_set_t *)context, nmo_ref_runtime_id(ref));
 }
 
 static int runtime_id_set_init(
@@ -304,16 +313,6 @@ static nmo_status_t runtime_remove_deleted_behavior_refs(
     return NMO_OK;
 }
 
-static bool runtime_delete_is_atomic_ref_field(
-    const nmo_type_descriptor_t *type,
-    const nmo_type_field_t *field)
-{
-    if (type == NULL || field == NULL || field->name == NULL) return false;
-    return strcmp(field->name, "control_point_ids") == 0 ||
-           (nmo_guid_equals(type->guid, CKPGUID_KEYEDANIMATION) &&
-            strcmp(field->name, "animation_ids") == 0);
-}
-
 typedef struct runtime_delete_ref_ctx {
     const runtime_id_set_t *delete_set;
     const nmo_type_descriptor_t *type;
@@ -333,8 +332,11 @@ static bool runtime_delete_ref_field(
         if (ctx != NULL) ctx->status = NMO_ERR_INVALID_ARGUMENT;
         return false;
     }
-    if (!nmo_field_is_ref(field) ||
-        runtime_delete_is_atomic_ref_field(ctx->type, field)) {
+    if (!nmo_field_is_ref(field)) {
+        return true;
+    }
+    if (!ctx->validate_only &&
+        nmo_mutable_refs_claims_remove_field(ctx->type, field)) {
         return true;
     }
     if (ctx->delete_set == NULL || ctx->type == NULL ||
@@ -522,6 +524,18 @@ static nmo_status_t runtime_delete_validate_atomic_refs(
     const nmo_type_runtime_t *type_rt,
     nmo_object_t *obj)
 {
+    const nmo_type_descriptor_t *derived =
+        runtime_find_type_for_object(type_rt, obj);
+    if (derived != NULL && obj->state != NULL) {
+        const nmo_mutable_ref_request_t validate_request = {
+            .operation = NMO_MUTABLE_REF_VALIDATE,
+            .resolve = NULL,
+            .context = NULL,
+        };
+        NMO_RETURN_IF_ERROR(nmo_mutable_refs_apply(
+            derived, obj->state, &validate_request, NULL));
+    }
+
     nmo_beobject_state_t *beobject = (nmo_beobject_state_t *)
         nmo_type_query_object_get_ancestor_state_by_guid(
             type_rt->types, obj, CKPGUID_BEOBJECT);
@@ -554,54 +568,15 @@ static nmo_status_t runtime_delete_validate_atomic_refs(
     nmo_patchmesh_state_t *patchmesh = (nmo_patchmesh_state_t *)
         nmo_type_query_object_get_ancestor_state_by_guid(
             type_rt->types, obj, CKPGUID_PATCHMESH);
-    if (patchmesh != NULL) {
-        if ((patchmesh->patch_count > 0u && patchmesh->patches == NULL) ||
-            (patchmesh->channel_count > 0u && patchmesh->channels == NULL) ||
-            (patchmesh->legacy_material_count > 0u &&
-             patchmesh->legacy_materials == NULL)) {
-            return NMO_ERR_VALIDATION_FAILED;
-        }
+    if (patchmesh != NULL && patchmesh->legacy_material_count > 0u &&
+        patchmesh->legacy_materials == NULL) {
+        return NMO_ERR_VALIDATION_FAILED;
     }
 
     nmo_mesh_state_t *mesh = (nmo_mesh_state_t *)
         nmo_type_query_object_get_ancestor_state_by_guid(
             type_rt->types, obj, CKPGUID_MESH);
-    if (mesh != NULL &&
-        ((mesh->material_group_count > 0u && mesh->material_groups == NULL) ||
-         (mesh->material_channel_count > 0u &&
-          mesh->material_channels == NULL) ||
-         (mesh->face_count > 0u && mesh->faces == NULL))) {
-        return NMO_ERR_VALIDATION_FAILED;
-    }
-
-    nmo_keyedanimation_state_t *keyed = (nmo_keyedanimation_state_t *)
-        nmo_type_query_object_get_ancestor_state_by_guid(
-            type_rt->types, obj, CKPGUID_KEYEDANIMATION);
-    if (keyed != NULL &&
-        ((keyed->animation_count > 0u && keyed->animation_ids == NULL) ||
-         (keyed->subanim_count > 0u && keyed->subanims == NULL))) {
-        return NMO_ERR_VALIDATION_FAILED;
-    }
-
-    nmo_character_state_t *character = (nmo_character_state_t *)
-        nmo_type_query_object_get_ancestor_state_by_guid(
-            type_rt->types, obj, CKPGUID_CHARACTER);
-    if (character != NULL &&
-        ((character->body_parts.element_size != 0u &&
-          character->body_parts.element_size != sizeof(nmo_character_part_t)) ||
-         (character->body_parts.count > 0u &&
-          (character->body_parts.data == NULL ||
-           character->body_parts.element_size !=
-               sizeof(nmo_character_part_t))))) {
-        return NMO_ERR_VALIDATION_FAILED;
-    }
-
-    nmo_curve_state_t *curve = (nmo_curve_state_t *)
-        nmo_type_query_object_get_ancestor_state_by_guid(
-            type_rt->types, obj, CKPGUID_CURVE);
-    if (curve != NULL &&
-        ((curve->control_point_count > 0u && curve->control_point_ids == NULL) ||
-         (curve->sub_point_count > 0u && curve->sub_points == NULL))) {
+    if (mesh != NULL && mesh->face_count > 0u && mesh->faces == NULL) {
         return NMO_ERR_VALIDATION_FAILED;
     }
 
@@ -656,16 +631,6 @@ static nmo_status_t runtime_delete_validate_atomic_refs(
         }
     }
 
-    nmo_scene_state_t *scene = (nmo_scene_state_t *)
-        nmo_type_query_object_get_ancestor_state_by_guid(
-            type_rt->types, obj, CKPGUID_SCENE);
-    if (scene != NULL &&
-        (scene->object_descs.element_size !=
-             sizeof(nmo_scene_object_desc_t) ||
-         (scene->object_descs.count > 0u &&
-          scene->object_descs.data == NULL))) {
-        return NMO_ERR_VALIDATION_FAILED;
-    }
     return NMO_OK;
 }
 
@@ -674,6 +639,18 @@ static nmo_status_t runtime_delete_detach_atomic_refs(
     nmo_object_t *obj,
     const runtime_id_set_t *delete_set)
 {
+    const nmo_type_descriptor_t *derived =
+        runtime_find_type_for_object(type_rt, obj);
+    if (derived != NULL && obj->state != NULL) {
+        const nmo_mutable_ref_request_t remove_request = {
+            .operation = NMO_MUTABLE_REF_REMOVE,
+            .resolve = runtime_resolve_deleted_ref,
+            .context = delete_set,
+        };
+        NMO_RETURN_IF_ERROR(nmo_mutable_refs_apply(
+            derived, obj->state, &remove_request, NULL));
+    }
+
     nmo_beobject_state_t *beobject = (nmo_beobject_state_t *)
         nmo_type_query_object_get_ancestor_state_by_guid(
             type_rt->types, obj, CKPGUID_BEOBJECT);
@@ -707,157 +684,16 @@ static nmo_status_t runtime_delete_detach_atomic_refs(
         nmo_type_query_object_get_ancestor_state_by_guid(
             type_rt->types, obj, CKPGUID_GRID);
     if (grid != NULL) {
-        nmo_grid_layer_t *layers = NMO_ARRAY_DATA(nmo_grid_layer_t, &grid->layers);
+        nmo_grid_layer_t *layers = NMO_ARRAY_DATA(
+            nmo_grid_layer_t, &grid->layers);
         for (size_t i = grid->layers.count; i > 0u; --i) {
             size_t index = i - 1u;
-            if (!runtime_id_set_contains(delete_set, layers[index].ref.id)) continue;
-            NMO_RETURN_IF_ERROR(nmo_array_remove(&grid->layers, index, NULL));
-        }
-    }
-
-    nmo_patchmesh_state_t *patchmesh = (nmo_patchmesh_state_t *)
-        nmo_type_query_object_get_ancestor_state_by_guid(
-            type_rt->types, obj, CKPGUID_PATCHMESH);
-    if (patchmesh != NULL) {
-        for (uint32_t i = 0u; i < patchmesh->patch_count; ++i) {
-            if (runtime_id_set_contains(
-                    delete_set,
-                    nmo_ref_runtime_id(&patchmesh->patches[i].material))) {
-                patchmesh->patches[i].material =
-                    nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
-            }
-        }
-        for (uint32_t i = 0u; i < patchmesh->channel_count; ++i) {
-            if (runtime_id_set_contains(
-                    delete_set,
-                    nmo_ref_runtime_id(&patchmesh->channels[i].material))) {
-                patchmesh->channels[i].material =
-                    nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
-            }
-        }
-    }
-
-    nmo_mesh_state_t *mesh = (nmo_mesh_state_t *)
-        nmo_type_query_object_get_ancestor_state_by_guid(
-            type_rt->types, obj, CKPGUID_MESH);
-    if (mesh != NULL) {
-        for (uint32_t i = 0u; i < mesh->material_group_count; ++i) {
-            if (runtime_id_set_contains(
-                    delete_set,
-                    nmo_ref_runtime_id(&mesh->material_groups[i].material))) {
-                mesh->material_groups[i].material =
-                    nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
-            }
-        }
-        for (uint32_t i = 0u; i < mesh->material_channel_count; ++i) {
-            if (runtime_id_set_contains(
-                    delete_set,
-                    nmo_ref_runtime_id(&mesh->material_channels[i].material))) {
-                mesh->material_channels[i].material =
-                    nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
-            }
-        }
-    }
-
-    nmo_keyedanimation_state_t *keyed = (nmo_keyedanimation_state_t *)
-        nmo_type_query_object_get_ancestor_state_by_guid(
-            type_rt->types, obj, CKPGUID_KEYEDANIMATION);
-    if (keyed != NULL) {
-        uint32_t count = keyed->animation_count;
-        for (uint32_t i = 0u; i < count;) {
             if (!runtime_id_set_contains(
-                    delete_set,
-                    nmo_ref_runtime_id(&keyed->animation_ids[i]))) {
-                ++i;
-                continue;
-            }
-            uint32_t remaining = count - i - 1u;
-            if (remaining > 0u) {
-                memmove(&keyed->animation_ids[i], &keyed->animation_ids[i + 1u],
-                        (size_t)remaining * sizeof(*keyed->animation_ids));
-            }
-            keyed->animation_count = --count;
-        }
-
-        count = keyed->subanim_count;
-        for (uint32_t i = 0u; i < count;) {
-            if (!runtime_id_set_contains(
-                    delete_set,
-                    nmo_ref_runtime_id(&keyed->subanims[i].ref))) {
-                ++i;
-                continue;
-            }
-            if (keyed->subanims[i].chunk != NULL) {
-                nmo_chunk_destroy(keyed->subanims[i].chunk);
-                keyed->subanims[i].chunk = NULL;
-            }
-            const uint32_t remaining = count - i - 1u;
-            if (remaining > 0u) {
-                memmove(&keyed->subanims[i], &keyed->subanims[i + 1u],
-                        (size_t)remaining * sizeof(*keyed->subanims));
-            }
-            keyed->subanim_count = --count;
-            keyed->subanims[count].chunk = NULL;
-        }
-    }
-
-    nmo_character_state_t *character = (nmo_character_state_t *)
-        nmo_type_query_object_get_ancestor_state_by_guid(
-            type_rt->types, obj, CKPGUID_CHARACTER);
-    if (character != NULL) {
-        for (size_t i = character->body_parts.count; i > 0u; --i) {
-            nmo_character_part_t *parts = NMO_ARRAY_DATA(
-                nmo_character_part_t, &character->body_parts);
-            size_t index = i - 1u;
-            if (!runtime_id_set_contains(
-                    delete_set, nmo_ref_runtime_id(&parts[index].ref))) {
+                    delete_set, layers[index].ref.id)) {
                 continue;
             }
             NMO_RETURN_IF_ERROR(nmo_array_remove(
-                &character->body_parts, index, NULL));
-        }
-    }
-
-    nmo_curve_state_t *curve = (nmo_curve_state_t *)
-        nmo_type_query_object_get_ancestor_state_by_guid(
-            type_rt->types, obj, CKPGUID_CURVE);
-    if (curve != NULL) {
-        uint32_t count = curve->control_point_count;
-        for (uint32_t i = 0u; i < count;) {
-            if (!runtime_id_set_contains(
-                    delete_set,
-                    nmo_ref_runtime_id(&curve->control_point_ids[i]))) {
-                ++i;
-                continue;
-            }
-            uint32_t remaining = count - i - 1u;
-            if (remaining > 0u) {
-                memmove(&curve->control_point_ids[i],
-                        &curve->control_point_ids[i + 1u],
-                        (size_t)remaining * sizeof(*curve->control_point_ids));
-            }
-            curve->control_point_count = --count;
-        }
-
-        count = curve->sub_point_count;
-        for (uint32_t i = 0u; i < count;) {
-            if (!runtime_id_set_contains(
-                    delete_set,
-                    nmo_ref_runtime_id(&curve->sub_points[i].ref))) {
-                ++i;
-                continue;
-            }
-            if (curve->sub_points[i].chunk != NULL) {
-                nmo_chunk_destroy(curve->sub_points[i].chunk);
-                curve->sub_points[i].chunk = NULL;
-            }
-            const uint32_t remaining = count - i - 1u;
-            if (remaining > 0u) {
-                memmove(&curve->sub_points[i], &curve->sub_points[i + 1u],
-                        (size_t)remaining * sizeof(*curve->sub_points));
-            }
-            curve->sub_point_count = --count;
-            curve->sub_points[count].chunk = NULL;
+                &grid->layers, index, NULL));
         }
     }
 
@@ -919,22 +755,6 @@ static nmo_status_t runtime_delete_detach_atomic_refs(
         }
     }
 
-    nmo_scene_state_t *scene = (nmo_scene_state_t *)
-        nmo_type_query_object_get_ancestor_state_by_guid(
-            type_rt->types, obj, CKPGUID_SCENE);
-    if (scene != NULL) {
-        for (size_t i = scene->object_descs.count; i > 0u; --i) {
-            nmo_scene_object_desc_t *descs = NMO_ARRAY_DATA(
-                nmo_scene_object_desc_t, &scene->object_descs);
-            const size_t index = i - 1u;
-            if (runtime_id_set_contains(
-                    delete_set,
-                    nmo_ref_runtime_id(&descs[index].ref))) {
-                NMO_RETURN_IF_ERROR(nmo_array_remove(
-                    &scene->object_descs, index, NULL));
-            }
-        }
-    }
     return NMO_OK;
 }
 

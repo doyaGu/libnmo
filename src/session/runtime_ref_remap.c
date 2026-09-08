@@ -4,20 +4,16 @@
 #include "format/nmo_object.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_class_ids.h"
+#include "../object/mutable_refs_internal.h"
 #include "object/builtin/nmo_behavior_schemas.h"
-#include "object/builtin/nmo_animation_schemas.h"
 #include "object/builtin/nmo_beobject_schemas.h"
-#include "object/builtin/nmo_character_schemas.h"
-#include "object/builtin/nmo_curve_schemas.h"
 #include "object/builtin/nmo_dataarray_schemas.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_grid_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "object/builtin/nmo_parameterin_schemas.h"
-#include "object/builtin/nmo_patchmesh_schemas.h"
 #include "object/builtin/nmo_place_schemas.h"
-#include "object/builtin/nmo_scene_schemas.h"
 #include "object/nmo_object_guids.h"
 #include "object/nmo_param_guids.h"
 #include "type/nmo_reflection.h"
@@ -40,6 +36,18 @@ static bool runtime_lookup_mapping(
         return false;
     }
     return nmo_id_remap_lookup_id(remap, old_id, out_new_id) == NMO_OK;
+}
+
+static bool runtime_resolve_remapped_ref(
+    const void *context,
+    const nmo_ref_t *ref,
+    nmo_class_id_t expected_class_id,
+    nmo_object_id_t *out_replacement_id)
+{
+    (void)expected_class_id;
+    if (ref == NULL || ref->state != NMO_REF_RESOLVED) return false;
+    return runtime_lookup_mapping(
+        (const nmo_id_remap_t *)context, ref->id, out_replacement_id);
 }
 
 /* 鈹€鈹€ Ref-field remap callback 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
@@ -194,28 +202,6 @@ static bool runtime_remap_ref_field(
 
 /* 鈹€鈹€ Base-instance resolution 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
 
-static nmo_status_t runtime_remap_scene_objects(
-    nmo_scene_state_t *state,
-    const nmo_id_remap_t *remap)
-{
-    if (state == NULL) return NMO_OK;
-    if (state->object_descs.element_size != sizeof(nmo_scene_object_desc_t) ||
-        (state->object_descs.count > 0 &&
-         state->object_descs.data == NULL)) {
-        return NMO_ERR_VALIDATION_FAILED;
-    }
-    nmo_scene_object_desc_t *descs = NMO_ARRAY_DATA(
-        nmo_scene_object_desc_t, &state->object_descs);
-    for (size_t i = 0; i < state->object_descs.count; ++i) {
-        nmo_object_id_t mapped = NMO_OBJECT_ID_NONE;
-        if (descs[i].ref.state == NMO_REF_RESOLVED &&
-            runtime_lookup_mapping(remap, descs[i].ref.id, &mapped)) {
-            descs[i].ref.id = mapped;
-        }
-    }
-    return NMO_OK;
-}
-
 static nmo_status_t runtime_remap_behavior_refs(
     nmo_behavior_state_t *state,
     const nmo_id_remap_t *remap)
@@ -314,126 +300,6 @@ static nmo_status_t runtime_remap_grid_layers(
         if (layers[i].ref.state == NMO_REF_RESOLVED &&
             runtime_lookup_mapping(remap, layers[i].ref.id, &mapped)) {
             layers[i].ref.id = mapped;
-        }
-    }
-    return NMO_OK;
-}
-
-static nmo_status_t runtime_remap_character_parts(
-    nmo_character_state_t *state,
-    const nmo_id_remap_t *remap)
-{
-    if (state == NULL) return NMO_OK;
-    if ((state->body_parts.element_size != 0 &&
-         state->body_parts.element_size != sizeof(nmo_character_part_t)) ||
-        (state->body_parts.count > 0 &&
-         (state->body_parts.data == NULL ||
-          state->body_parts.element_size != sizeof(nmo_character_part_t)))) {
-        return NMO_ERR_VALIDATION_FAILED;
-    }
-    nmo_character_part_t *parts = NMO_ARRAY_DATA(
-        nmo_character_part_t, &state->body_parts);
-    for (size_t i = 0; i < state->body_parts.count; ++i) {
-        nmo_object_id_t mapped = NMO_OBJECT_ID_NONE;
-        if (parts[i].ref.state == NMO_REF_RESOLVED &&
-            runtime_lookup_mapping(remap, parts[i].ref.id, &mapped)) {
-            parts[i].ref.id = mapped;
-        }
-    }
-    return NMO_OK;
-}
-
-static nmo_status_t runtime_remap_patchmesh_refs(
-    nmo_patchmesh_state_t *state,
-    const nmo_id_remap_t *remap)
-{
-    if (state == NULL) return NMO_OK;
-    if ((state->patch_count > 0 && state->patches == NULL) ||
-        (state->channel_count > 0 && state->channels == NULL)) {
-        return NMO_ERR_VALIDATION_FAILED;
-    }
-    for (uint32_t i = 0; i < state->patch_count; ++i) {
-        nmo_ref_t *ref = &state->patches[i].material;
-        nmo_object_id_t mapped = NMO_OBJECT_ID_NONE;
-        if (ref->state == NMO_REF_RESOLVED &&
-            runtime_lookup_mapping(remap, ref->id, &mapped)) {
-            ref->id = mapped;
-        }
-    }
-    for (uint32_t i = 0; i < state->channel_count; ++i) {
-        nmo_ref_t *ref = &state->channels[i].material;
-        nmo_object_id_t mapped = NMO_OBJECT_ID_NONE;
-        if (ref->state == NMO_REF_RESOLVED &&
-            runtime_lookup_mapping(remap, ref->id, &mapped)) {
-            ref->id = mapped;
-        }
-    }
-    return NMO_OK;
-}
-
-static nmo_status_t runtime_remap_mesh_refs(
-    nmo_mesh_state_t *state,
-    const nmo_id_remap_t *remap)
-{
-    if (!state) return NMO_OK;
-    if ((state->material_group_count > 0 && !state->material_groups) ||
-        (state->material_channel_count > 0 && !state->material_channels)) {
-        return NMO_ERR_VALIDATION_FAILED;
-    }
-    for (uint32_t i = 0; i < state->material_group_count; ++i) {
-        nmo_ref_t *ref = &state->material_groups[i].material;
-        nmo_object_id_t mapped = NMO_OBJECT_ID_NONE;
-        if (ref->state == NMO_REF_RESOLVED &&
-            runtime_lookup_mapping(remap, ref->id, &mapped)) {
-            ref->id = mapped;
-        }
-    }
-    for (uint32_t i = 0; i < state->material_channel_count; ++i) {
-        nmo_ref_t *ref = &state->material_channels[i].material;
-        nmo_object_id_t mapped = NMO_OBJECT_ID_NONE;
-        if (ref->state == NMO_REF_RESOLVED &&
-            runtime_lookup_mapping(remap, ref->id, &mapped)) {
-            ref->id = mapped;
-        }
-    }
-    return NMO_OK;
-}
-
-static nmo_status_t runtime_remap_keyedanimation_refs(
-    nmo_keyedanimation_state_t *state,
-    const nmo_id_remap_t *remap)
-{
-    if (!state) return NMO_OK;
-    if ((state->animation_count > 0 && !state->animation_ids) ||
-        (state->subanim_count > 0 && !state->subanims)) {
-        return NMO_ERR_VALIDATION_FAILED;
-    }
-    for (uint32_t i = 0; i < state->subanim_count; ++i) {
-        nmo_ref_t *ref = &state->subanims[i].ref;
-        nmo_object_id_t mapped = NMO_OBJECT_ID_NONE;
-        if (ref->state == NMO_REF_RESOLVED &&
-            runtime_lookup_mapping(remap, ref->id, &mapped)) {
-            ref->id = mapped;
-        }
-    }
-    return NMO_OK;
-}
-
-static nmo_status_t runtime_remap_curve_refs(
-    nmo_curve_state_t *state,
-    const nmo_id_remap_t *remap)
-{
-    if (!state) return NMO_OK;
-    if ((state->control_point_count > 0 && !state->control_point_ids) ||
-        (state->sub_point_count > 0 && !state->sub_points)) {
-        return NMO_ERR_VALIDATION_FAILED;
-    }
-    for (uint32_t i = 0; i < state->sub_point_count; ++i) {
-        nmo_ref_t *ref = &state->sub_points[i].ref;
-        nmo_object_id_t mapped = NMO_OBJECT_ID_NONE;
-        if (ref->state == NMO_REF_RESOLVED &&
-            runtime_lookup_mapping(remap, ref->id, &mapped)) {
-            ref->id = mapped;
         }
     }
     return NMO_OK;
@@ -567,6 +433,14 @@ nmo_status_t nmo_runtime_remap_copy_refs(
         return NMO_OK;
     }
 
+    const nmo_mutable_ref_request_t validate_request = {
+        .operation = NMO_MUTABLE_REF_VALIDATE,
+        .resolve = NULL,
+        .context = NULL,
+    };
+    NMO_RETURN_IF_ERROR(nmo_mutable_refs_apply(
+        type, instance, &validate_request, NULL));
+
     const nmo_type_descriptor_ext_t *layout = type->ext;
     const bool has_layout = layout != NULL && layout->hierarchy != NULL &&
                             layout->hierarchy_depth > 0;
@@ -600,10 +474,6 @@ nmo_status_t nmo_runtime_remap_copy_refs(
             return remap_ctx.status;
         }
 
-        if (nmo_guid_equals(current->guid, CKPGUID_SCENE)) {
-            NMO_RETURN_IF_ERROR(runtime_remap_scene_objects(
-                (nmo_scene_state_t *)current_instance, remap));
-        }
         if (nmo_guid_equals(current->guid, CKPGUID_BEHAVIOR)) {
             NMO_RETURN_IF_ERROR(runtime_remap_behavior_refs(
                 (nmo_behavior_state_t *)current_instance, remap));
@@ -615,26 +485,6 @@ nmo_status_t nmo_runtime_remap_copy_refs(
         if (nmo_guid_equals(current->guid, CKPGUID_GRID)) {
             NMO_RETURN_IF_ERROR(runtime_remap_grid_layers(
                 (nmo_grid_state_t *)current_instance, remap));
-        }
-        if (nmo_guid_equals(current->guid, CKPGUID_CHARACTER)) {
-            NMO_RETURN_IF_ERROR(runtime_remap_character_parts(
-                (nmo_character_state_t *)current_instance, remap));
-        }
-        if (nmo_guid_equals(current->guid, CKPGUID_PATCHMESH)) {
-            NMO_RETURN_IF_ERROR(runtime_remap_patchmesh_refs(
-                (nmo_patchmesh_state_t *)current_instance, remap));
-        }
-        if (nmo_guid_equals(current->guid, CKPGUID_MESH)) {
-            NMO_RETURN_IF_ERROR(runtime_remap_mesh_refs(
-                (nmo_mesh_state_t *)current_instance, remap));
-        }
-        if (nmo_guid_equals(current->guid, CKPGUID_KEYEDANIMATION)) {
-            NMO_RETURN_IF_ERROR(runtime_remap_keyedanimation_refs(
-                (nmo_keyedanimation_state_t *)current_instance, remap));
-        }
-        if (nmo_guid_equals(current->guid, CKPGUID_CURVE)) {
-            NMO_RETURN_IF_ERROR(runtime_remap_curve_refs(
-                (nmo_curve_state_t *)current_instance, remap));
         }
         if (nmo_guid_equals(current->guid, CKPGUID_PLACE)) {
             NMO_RETURN_IF_ERROR(runtime_remap_place_refs(
@@ -651,7 +501,12 @@ nmo_status_t nmo_runtime_remap_copy_refs(
 
     }
 
-    return NMO_OK;
+    const nmo_mutable_ref_request_t remap_request = {
+        .operation = NMO_MUTABLE_REF_REMAP,
+        .resolve = runtime_resolve_remapped_ref,
+        .context = remap,
+    };
+    return nmo_mutable_refs_apply(type, instance, &remap_request, NULL);
 }
 
 nmo_status_t nmo_runtime_remap_all_refs(
@@ -705,6 +560,28 @@ static bool normalize_id_has_wrong_class(
     const nmo_object_t *target = nmo_object_repository_find_by_id(repo, id);
     return target != NULL && !nmo_type_query_object_is_derived_from_class(
         types, target, expected_class_id);
+}
+
+typedef struct runtime_invalid_ref_context {
+    nmo_object_repository_t *repo;
+    const nmo_type_registry_t *types;
+} runtime_invalid_ref_context_t;
+
+static bool runtime_resolve_invalid_ref(
+    const void *context,
+    const nmo_ref_t *ref,
+    nmo_class_id_t expected_class_id,
+    nmo_object_id_t *out_replacement_id)
+{
+    (void)out_replacement_id;
+    if (context == NULL || ref == NULL) return false;
+    const runtime_invalid_ref_context_t *invalid =
+        (const runtime_invalid_ref_context_t *)context;
+    const nmo_object_id_t id = nmo_ref_runtime_id(ref);
+    return ref->state != NMO_REF_RESOLVED ||
+           normalize_id_is_invalid(invalid->repo, id) ||
+           normalize_id_has_wrong_class(
+               invalid->repo, invalid->types, id, expected_class_id);
 }
 
 static nmo_class_id_t normalize_expected_class_for_typed_field(
@@ -953,7 +830,8 @@ static nmo_status_t normalize_grid_layers(
         return NMO_ERR_VALIDATION_FAILED;
     }
     for (size_t i = 0; i < state->layers.count;) {
-        nmo_grid_layer_t *layers = NMO_ARRAY_DATA(nmo_grid_layer_t, &state->layers);
+        nmo_grid_layer_t *layers = NMO_ARRAY_DATA(
+            nmo_grid_layer_t, &state->layers);
         const nmo_ref_t *ref = &layers[i].ref;
         bool invalid = ref->state != NMO_REF_RESOLVED ||
                        normalize_id_is_invalid(repo, ref->id) ||
@@ -964,245 +842,6 @@ static nmo_status_t normalize_grid_layers(
             continue;
         }
         NMO_RETURN_IF_ERROR(nmo_array_remove(&state->layers, i, NULL));
-        (*changes)++;
-    }
-    return NMO_OK;
-}
-
-static nmo_status_t normalize_character_parts(
-    nmo_character_state_t *state,
-    nmo_object_repository_t *repo,
-    const nmo_type_registry_t *types,
-    size_t *changes)
-{
-    if (state == NULL) return NMO_OK;
-    if ((state->body_parts.element_size != 0 &&
-         state->body_parts.element_size != sizeof(nmo_character_part_t)) ||
-        (state->body_parts.count > 0 &&
-         (state->body_parts.data == NULL ||
-          state->body_parts.element_size != sizeof(nmo_character_part_t)))) {
-        return NMO_ERR_VALIDATION_FAILED;
-    }
-    for (size_t i = 0; i < state->body_parts.count;) {
-        nmo_character_part_t *parts = NMO_ARRAY_DATA(
-            nmo_character_part_t, &state->body_parts);
-        const nmo_object_id_t id = nmo_ref_runtime_id(&parts[i].ref);
-        if (parts[i].ref.state == NMO_REF_RESOLVED &&
-            !normalize_id_is_invalid(repo, id) &&
-            !normalize_id_has_wrong_class(
-                repo, types, id, NMO_CID_BODYPART)) {
-            ++i;
-            continue;
-        }
-        NMO_RETURN_IF_ERROR(nmo_array_remove(
-            &state->body_parts, i, NULL));
-        (*changes)++;
-    }
-    return NMO_OK;
-}
-
-static nmo_status_t normalize_scene_objects(
-    nmo_scene_state_t *state,
-    nmo_object_repository_t *repo,
-    const nmo_type_registry_t *types,
-    size_t *changes)
-{
-    if (state == NULL) return NMO_OK;
-    if (state->object_descs.element_size != sizeof(nmo_scene_object_desc_t) ||
-        (state->object_descs.count > 0 && state->object_descs.data == NULL)) {
-        return NMO_ERR_VALIDATION_FAILED;
-    }
-    for (size_t i = 0; i < state->object_descs.count;) {
-        nmo_scene_object_desc_t *descs = NMO_ARRAY_DATA(
-            nmo_scene_object_desc_t, &state->object_descs);
-        const nmo_object_id_t id = nmo_ref_runtime_id(&descs[i].ref);
-        if (descs[i].ref.state == NMO_REF_RESOLVED &&
-            !normalize_id_is_invalid(repo, id) &&
-            !normalize_id_has_wrong_class(
-                repo, types, id, NMO_CID_SCENEOBJECT)) {
-            ++i;
-            continue;
-        }
-        NMO_RETURN_IF_ERROR(nmo_array_remove(
-            &state->object_descs, i, NULL));
-        (*changes)++;
-    }
-    return NMO_OK;
-}
-
-static nmo_status_t normalize_patchmesh_patches(
-    nmo_patchmesh_state_t *state,
-    nmo_object_repository_t *repo,
-    const nmo_type_registry_t *types,
-    size_t *changes)
-{
-    if (!state) return NMO_OK;
-    if ((state->patch_count > 0 && !state->patches) ||
-        (state->channel_count > 0 && !state->channels)) {
-        return NMO_ERR_VALIDATION_FAILED;
-    }
-    for (uint32_t i = 0; i < state->patch_count; ++i) {
-        nmo_ref_t *ref = &state->patches[i].material;
-        const nmo_object_id_t id = nmo_ref_runtime_id(ref);
-        if (ref->state != NMO_REF_NONE &&
-            (ref->state != NMO_REF_RESOLVED ||
-             normalize_id_is_invalid(repo, id) ||
-             normalize_id_has_wrong_class(
-                 repo, types, id, NMO_CID_MATERIAL))) {
-            *ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
-            (*changes)++;
-        }
-    }
-    for (uint32_t i = 0; i < state->channel_count; ++i) {
-        nmo_ref_t *ref = &state->channels[i].material;
-        const nmo_object_id_t id = nmo_ref_runtime_id(ref);
-        if (ref->state != NMO_REF_NONE &&
-            (ref->state != NMO_REF_RESOLVED ||
-             normalize_id_is_invalid(repo, id) ||
-             normalize_id_has_wrong_class(
-                 repo, types, id, NMO_CID_MATERIAL))) {
-            *ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
-            (*changes)++;
-        }
-    }
-    return NMO_OK;
-}
-
-static nmo_status_t normalize_mesh_materials(
-    nmo_mesh_state_t *state,
-    nmo_object_repository_t *repo,
-    const nmo_type_registry_t *types,
-    size_t *changes)
-{
-    if (!state) return NMO_OK;
-    if ((state->material_group_count > 0 && !state->material_groups) ||
-        (state->material_channel_count > 0 && !state->material_channels) ||
-        (state->face_count > 0 && !state->faces)) {
-        return NMO_ERR_VALIDATION_FAILED;
-    }
-
-    for (uint32_t i = 0; i < state->material_group_count; ++i) {
-        nmo_ref_t *ref = &state->material_groups[i].material;
-        const nmo_object_id_t id = nmo_ref_runtime_id(ref);
-        if (ref->state != NMO_REF_NONE &&
-            (ref->state != NMO_REF_RESOLVED ||
-             normalize_id_is_invalid(repo, id) ||
-             normalize_id_has_wrong_class(
-                 repo, types, id, NMO_CID_MATERIAL))) {
-            *ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
-            (*changes)++;
-        }
-    }
-
-    for (uint32_t i = 0; i < state->material_channel_count; ++i) {
-        nmo_ref_t *ref = &state->material_channels[i].material;
-        const nmo_object_id_t id = nmo_ref_runtime_id(ref);
-        if (ref->state != NMO_REF_NONE &&
-            (ref->state != NMO_REF_RESOLVED ||
-             normalize_id_is_invalid(repo, id) ||
-             normalize_id_has_wrong_class(
-                 repo, types, id, NMO_CID_MATERIAL))) {
-            *ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
-            (*changes)++;
-        }
-    }
-    return NMO_OK;
-}
-
-static nmo_status_t normalize_keyed_animation(
-    nmo_keyedanimation_state_t *state,
-    nmo_object_repository_t *repo,
-    const nmo_type_registry_t *types,
-    size_t *changes)
-{
-    if (!state) return NMO_OK;
-    if (state->animation_count > 0 && !state->animation_ids) {
-        return NMO_ERR_VALIDATION_FAILED;
-    }
-    if (state->subanim_count > 0 && !state->subanims) {
-        return NMO_ERR_VALIDATION_FAILED;
-    }
-
-    uint32_t count = state->animation_count;
-    for (uint32_t i = 0; i < count;) {
-        const nmo_ref_t *ref = &state->animation_ids[i];
-        const nmo_object_id_t id = nmo_ref_runtime_id(ref);
-        if (ref->state == NMO_REF_RESOLVED &&
-            !normalize_id_is_invalid(repo, id) &&
-            !normalize_id_has_wrong_class(
-                repo, types, id, NMO_CID_OBJECTANIMATION)) {
-            ++i;
-            continue;
-        }
-        uint32_t remaining = count - i - 1;
-        if (remaining > 0) {
-            memmove(&state->animation_ids[i], &state->animation_ids[i + 1],
-                    (size_t)remaining * sizeof(*state->animation_ids));
-        }
-        state->animation_count = --count;
-        (*changes)++;
-    }
-
-    count = state->subanim_count;
-    for (uint32_t i = 0; i < count;) {
-        const nmo_ref_t *ref = &state->subanims[i].ref;
-        const nmo_object_id_t id = nmo_ref_runtime_id(ref);
-        if (ref->state == NMO_REF_RESOLVED &&
-            !normalize_id_is_invalid(repo, id) &&
-            !normalize_id_has_wrong_class(
-                repo, types, id, NMO_CID_OBJECTANIMATION)) {
-            ++i;
-            continue;
-        }
-        if (state->subanims[i].chunk != NULL) {
-            nmo_chunk_destroy(state->subanims[i].chunk);
-            state->subanims[i].chunk = NULL;
-        }
-        const uint32_t remaining = count - i - 1;
-        if (remaining > 0) {
-            memmove(&state->subanims[i], &state->subanims[i + 1],
-                    (size_t)remaining * sizeof(*state->subanims));
-        }
-        state->subanim_count = --count;
-        state->subanims[count].chunk = NULL;
-        (*changes)++;
-    }
-    return NMO_OK;
-}
-
-static nmo_status_t normalize_curve_sub_points(
-    nmo_curve_state_t *state,
-    nmo_object_repository_t *repo,
-    const nmo_type_registry_t *types,
-    size_t *changes)
-{
-    if (!state) return NMO_OK;
-    if ((state->control_point_count > 0 && !state->control_point_ids) ||
-        (state->sub_point_count > 0 && !state->sub_points)) {
-        return NMO_ERR_VALIDATION_FAILED;
-    }
-    uint32_t count = state->sub_point_count;
-    for (uint32_t i = 0; i < count;) {
-        const nmo_ref_t *ref = &state->sub_points[i].ref;
-        const nmo_object_id_t id = nmo_ref_runtime_id(ref);
-        if (ref->state == NMO_REF_RESOLVED &&
-            !normalize_id_is_invalid(repo, id) &&
-            !normalize_id_has_wrong_class(
-                repo, types, id, NMO_CID_CURVEPOINT)) {
-            ++i;
-            continue;
-        }
-        if (state->sub_points[i].chunk != NULL) {
-            nmo_chunk_destroy(state->sub_points[i].chunk);
-            state->sub_points[i].chunk = NULL;
-        }
-        const uint32_t remaining = count - i - 1u;
-        if (remaining > 0) {
-            memmove(&state->sub_points[i], &state->sub_points[i + 1u],
-                    (size_t)remaining * sizeof(*state->sub_points));
-        }
-        state->sub_point_count = --count;
-        state->sub_points[count].chunk = NULL;
         (*changes)++;
     }
     return NMO_OK;
@@ -1338,6 +977,10 @@ static bool normalize_ref_field(
         return false;
     }
     if (!nmo_field_is_ref(field)) return true;
+    if (!ctx->validate_only &&
+        nmo_mutable_refs_claims_remove_field(ctx->type, field)) {
+        return true;
+    }
     if (ctx->repo == NULL || ctx->types == NULL || ctx->type == NULL ||
         ctx->instance == NULL || ctx->changes == NULL) {
         ctx->status = NMO_ERR_INVALID_ARGUMENT;
@@ -1573,41 +1216,32 @@ nmo_status_t nmo_runtime_normalize_object_invalid_refs(
             type_rt->types, obj, CKPGUID_BEOBJECT);
     NMO_RETURN_IF_ERROR(normalize_beobject_attributes(
         beobject, repo, type_rt->types, &changed));
-    nmo_character_state_t *character = (nmo_character_state_t *)
-        nmo_type_query_object_get_ancestor_state_by_guid(
-            type_rt->types, obj, CKPGUID_CHARACTER);
-    NMO_RETURN_IF_ERROR(normalize_character_parts(
-        character, repo, type_rt->types, &changed));
     nmo_grid_state_t *grid = (nmo_grid_state_t *)
         nmo_type_query_object_get_ancestor_state_by_guid(
             type_rt->types, obj, CKPGUID_GRID);
     NMO_RETURN_IF_ERROR(normalize_grid_layers(
         grid, repo, type_rt->types, &changed));
-    nmo_scene_state_t *scene = (nmo_scene_state_t *)
-        nmo_type_query_object_get_ancestor_state_by_guid(
-            type_rt->types, obj, CKPGUID_SCENE);
-    NMO_RETURN_IF_ERROR(normalize_scene_objects(
-        scene, repo, type_rt->types, &changed));
-    nmo_patchmesh_state_t *patchmesh = (nmo_patchmesh_state_t *)
-        nmo_type_query_object_get_ancestor_state_by_guid(
-            type_rt->types, obj, CKPGUID_PATCHMESH);
-    NMO_RETURN_IF_ERROR(normalize_patchmesh_patches(
-        patchmesh, repo, type_rt->types, &changed));
     nmo_mesh_state_t *mesh = (nmo_mesh_state_t *)
         nmo_type_query_object_get_ancestor_state_by_guid(
             type_rt->types, obj, CKPGUID_MESH);
-    NMO_RETURN_IF_ERROR(normalize_mesh_materials(
-        mesh, repo, type_rt->types, &changed));
-    nmo_keyedanimation_state_t *keyed = (nmo_keyedanimation_state_t *)
-        nmo_type_query_object_get_ancestor_state_by_guid(
-            type_rt->types, obj, CKPGUID_KEYEDANIMATION);
-    NMO_RETURN_IF_ERROR(normalize_keyed_animation(
-        keyed, repo, type_rt->types, &changed));
-    nmo_curve_state_t *curve = (nmo_curve_state_t *)
-        nmo_type_query_object_get_ancestor_state_by_guid(
-            type_rt->types, obj, CKPGUID_CURVE);
-    NMO_RETURN_IF_ERROR(normalize_curve_sub_points(
-        curve, repo, type_rt->types, &changed));
+    if (mesh != NULL && mesh->face_count > 0u && mesh->faces == NULL) {
+        return NMO_ERR_VALIDATION_FAILED;
+    }
+    if (derived != NULL) {
+        const runtime_invalid_ref_context_t invalid_context = {
+            .repo = repo,
+            .types = type_rt->types,
+        };
+        const nmo_mutable_ref_request_t remove_request = {
+            .operation = NMO_MUTABLE_REF_REMOVE,
+            .resolve = runtime_resolve_invalid_ref,
+            .context = &invalid_context,
+        };
+        size_t atomic_changes = 0u;
+        NMO_RETURN_IF_ERROR(nmo_mutable_refs_apply(
+            derived, obj->state, &remove_request, &atomic_changes));
+        changed += atomic_changes;
+    }
     nmo_place_state_t *place = (nmo_place_state_t *)
         nmo_type_query_object_get_ancestor_state_by_guid(
             type_rt->types, obj, CKPGUID_PLACE);
