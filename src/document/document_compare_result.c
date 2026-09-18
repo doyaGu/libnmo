@@ -60,6 +60,9 @@ NMO_API nmo_status_t nmo_comparison_result_collect_stats(
             case NMO_DIFF_OBJECT_CHUNK_DATA:
                 out_stats->object_chunk_data_diffs++;
                 break;
+            case NMO_DIFF_OBJECT_CHUNK_METADATA:
+                out_stats->object_chunk_metadata_diffs++;
+                break;
             case NMO_DIFF_MANAGER_MISSING:
                 out_stats->manager_missing_diffs++;
                 break;
@@ -80,6 +83,9 @@ NMO_API nmo_status_t nmo_comparison_result_collect_stats(
                 break;
             case NMO_DIFF_SHADOW_DATA:
                 out_stats->shadow_data_diffs++;
+                break;
+            case NMO_DIFF_PLUGIN_DEPENDENCIES:
+                out_stats->plugin_dependency_diffs++;
                 break;
             case NMO_DIFF_NONE:
             default:

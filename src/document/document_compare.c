@@ -20,6 +20,7 @@
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_id_remap.h"
 #include "format/nmo_data.h"
+#include "format/nmo_header1.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_arena.h"
 #include <string.h>
@@ -252,6 +253,34 @@ int nmo_document_compare_file_info(const nmo_document_t *document1,
         }
         match = 0;
     }
+
+    const nmo_file_state_t *state1 = nmo_document_internal_file_state(document1);
+    const nmo_file_state_t *state2 = nmo_document_internal_file_state(document2);
+    uint32_t plugins1 = state1 != NULL ? state1->plugin_dep_count : 0;
+    uint32_t plugins2 = state2 != NULL ? state2->plugin_dep_count : 0;
+    bool plugin_match = plugins1 == plugins2;
+    if (plugin_match && plugins1 > 0) {
+        if (state1->plugin_deps == NULL || state2->plugin_deps == NULL) {
+            plugin_match = false;
+        } else {
+            for (uint32_t i = 0; i < plugins1; ++i) {
+                const nmo_plugin_dep_t *a = &state1->plugin_deps[i];
+                const nmo_plugin_dep_t *b = &state2->plugin_deps[i];
+                if (!nmo_guid_equals(a->guid, b->guid) ||
+                    a->category != b->category || a->version != b->version) {
+                    plugin_match = false;
+                    break;
+                }
+            }
+        }
+    }
+    if (!plugin_match) {
+        char ctx[NMO_DIFF_CONTEXT_MAX];
+        snprintf(ctx, sizeof(ctx), "plugin dependencies differ (%u vs %u entries)",
+                 plugins1, plugins2);
+        nmo_comparison_add_diff(result, NMO_DIFF_PLUGIN_DEPENDENCIES, 0, ctx);
+        match = 0;
+    }
     
     return match;
 }
@@ -341,6 +370,24 @@ static int compare_chunks_normalized(const nmo_chunk_t *chunk1,
         }
     }
 
+    int match = 1;
+    if (chunk1->class_id != compare_chunk2->class_id ||
+        chunk1->chunk_class_id != compare_chunk2->chunk_class_id ||
+        chunk1->data_version != compare_chunk2->data_version ||
+        chunk1->chunk_version != compare_chunk2->chunk_version ||
+        chunk1->chunk_options != compare_chunk2->chunk_options) {
+        char ctx[NMO_DIFF_CONTEXT_MAX];
+        snprintf(ctx, sizeof(ctx),
+                 "chunk metadata differs: class=%u/%u legacy_class=%u/%u dv=%u/%u cv=%u/%u opts=0x%X/0x%X",
+                 chunk1->class_id, compare_chunk2->class_id,
+                 chunk1->chunk_class_id, compare_chunk2->chunk_class_id,
+                 chunk1->data_version, compare_chunk2->data_version,
+                 chunk1->chunk_version, compare_chunk2->chunk_version,
+                 chunk1->chunk_options, compare_chunk2->chunk_options);
+        nmo_comparison_add_diff(result, NMO_DIFF_OBJECT_CHUNK_METADATA, object_id, ctx);
+        match = 0;
+    }
+
     size_t size1 = chunk1->data.count;
     size_t size2 = compare_chunk2->data.count;
     if (size1 != size2) {
@@ -380,7 +427,7 @@ static int compare_chunks_normalized(const nmo_chunk_t *chunk1,
         }
     }
 
-    return 1;
+    return match;
 }
 
 static int compare_objects(const nmo_object_t *obj1,
@@ -1064,6 +1111,7 @@ void nmo_comparison_result_format_report(nmo_comparison_result_t *result) {
                 case NMO_DIFF_OBJECT_REFERENCE_FLAG: type_str = "OBJECT_REFERENCE_FLAG"; break;
                 case NMO_DIFF_OBJECT_CHUNK_SIZE: type_str = "CHUNK_SIZE"; break;
                 case NMO_DIFF_OBJECT_CHUNK_DATA: type_str = "CHUNK_DATA"; break;
+                case NMO_DIFF_OBJECT_CHUNK_METADATA: type_str = "CHUNK_METADATA"; break;
                 case NMO_DIFF_MANAGER_MISSING:  type_str = "MANAGER_MISSING"; break;
                 case NMO_DIFF_MANAGER_GUID:     type_str = "MANAGER_GUID"; break;
                 case NMO_DIFF_MANAGER_CHUNK_SIZE: type_str = "MANAGER_CHUNK_SIZE"; break;
@@ -1071,6 +1119,7 @@ void nmo_comparison_result_format_report(nmo_comparison_result_t *result) {
                 case NMO_DIFF_FILE_VERSION:     type_str = "FILE_VERSION"; break;
                 case NMO_DIFF_CK_VERSION:       type_str = "CK_VERSION"; break;
                 case NMO_DIFF_SHADOW_DATA:      type_str = "SHADOW_DATA"; break;
+                case NMO_DIFF_PLUGIN_DEPENDENCIES: type_str = "PLUGIN_DEPENDENCIES"; break;
                 default: break;
             }
             

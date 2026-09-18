@@ -1850,6 +1850,11 @@ static bool chunk_equal(const nmo_object_t *obj1, const nmo_object_t *obj2)
     nmo_chunk_t *c1 = obj1 ? nmo_object_get_chunk(obj1) : NULL;
     nmo_chunk_t *c2 = obj2 ? nmo_object_get_chunk(obj2) : NULL;
     if (!c1 || !c2) return c1 == c2;
+    if (c1->class_id != c2->class_id ||
+        c1->chunk_class_id != c2->chunk_class_id ||
+        c1->data_version != c2->data_version ||
+        c1->chunk_version != c2->chunk_version ||
+        c1->chunk_options != c2->chunk_options) return false;
     size_t sz1 = 0, sz2 = 0;
     const void *d1 = nmo_chunk_get_data(c1, &sz1);
     const void *d2 = nmo_chunk_get_data(c2, &sz2);

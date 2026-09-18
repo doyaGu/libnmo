@@ -208,6 +208,8 @@ static const char *diff_type_name(nmo_diff_type_t type)
         case NMO_DIFF_OBJECT_REFERENCE_FLAG: return "object_reference_flag";
         case NMO_DIFF_OBJECT_CHUNK_SIZE: return "object_chunk_size";
         case NMO_DIFF_OBJECT_CHUNK_DATA: return "object_chunk_data";
+        case NMO_DIFF_OBJECT_CHUNK_METADATA: return "object_chunk_metadata";
+        case NMO_DIFF_PLUGIN_DEPENDENCIES: return "plugin_dependencies";
         case NMO_DIFF_MANAGER_MISSING: return "manager_missing";
         case NMO_DIFF_MANAGER_GUID: return "manager_guid";
         case NMO_DIFF_MANAGER_CHUNK_SIZE: return "manager_chunk_size";
@@ -262,7 +264,7 @@ int nmo_cmd_diff_summary(int argc, char **argv, const nmo_cli_global_opts_t *glo
         return open_result;
     }
     /* Compare sessions */
-    nmo_compare_flags_t flags = NMO_COMPARE_STRUCTURE | NMO_COMPARE_FILE_INFO;
+    nmo_compare_flags_t flags = NMO_COMPARE_STRUCTURE | NMO_COMPARE_FILE_INFO | NMO_COMPARE_CHUNKS;
     if (ignore_order) {
         flags |= NMO_COMPARE_IGNORE_ORDER;
     }
@@ -804,7 +806,8 @@ int nmo_cmd_diff_chunks(int argc, char **argv, const nmo_cli_global_opts_t *glob
                 /* Only include chunk-related diffs */
                 nmo_diff_type_t type = result.diffs[i].type;
                 if (type != NMO_DIFF_OBJECT_CHUNK_SIZE &&
-                    type != NMO_DIFF_OBJECT_CHUNK_DATA) {
+                    type != NMO_DIFF_OBJECT_CHUNK_DATA &&
+                    type != NMO_DIFF_OBJECT_CHUNK_METADATA) {
                     continue;
                 }
 
@@ -841,7 +844,8 @@ int nmo_cmd_diff_chunks(int argc, char **argv, const nmo_cli_global_opts_t *glob
             }
             nmo_diff_type_t type = result.diffs[i].type;
             if (type == NMO_DIFF_OBJECT_CHUNK_SIZE ||
-                type == NMO_DIFF_OBJECT_CHUNK_DATA) {
+                type == NMO_DIFF_OBJECT_CHUNK_DATA ||
+                type == NMO_DIFF_OBJECT_CHUNK_METADATA) {
                 chunk_diff_count++;
             }
         }
@@ -864,7 +868,8 @@ int nmo_cmd_diff_chunks(int argc, char **argv, const nmo_cli_global_opts_t *glob
                 }
                 nmo_diff_type_t type = result.diffs[i].type;
                 if (type == NMO_DIFF_OBJECT_CHUNK_SIZE ||
-                    type == NMO_DIFF_OBJECT_CHUNK_DATA) {
+                    type == NMO_DIFF_OBJECT_CHUNK_DATA ||
+                    type == NMO_DIFF_OBJECT_CHUNK_METADATA) {
                     fprintf(c.out, "  [%s] %s\n",
                             diff_type_name(type),
                             result.diffs[i].context);
@@ -1075,7 +1080,7 @@ static int nmo_cmd_diff_summary_in_session(nmo_cmd_ctx_t *ctx, int argc, char **
                                                 &ctx1, &doc1, &ws1, &owns1,
                                         &ctx2, &doc2, &ws2, &owns2);
     if (open_result != 0) return open_result;
-    nmo_compare_flags_t flags = NMO_COMPARE_STRUCTURE | NMO_COMPARE_FILE_INFO;
+    nmo_compare_flags_t flags = NMO_COMPARE_STRUCTURE | NMO_COMPARE_FILE_INFO | NMO_COMPARE_CHUNKS;
     if (ignore_order) flags |= NMO_COMPARE_IGNORE_ORDER;
     if (verbose) flags |= NMO_COMPARE_VERBOSE;
 
@@ -1298,7 +1303,8 @@ static int nmo_cmd_diff_chunks_in_session(nmo_cmd_ctx_t *ctx, int argc, char **a
         if (specific_object && result.diffs[i].object_id != object_id) continue;
         nmo_diff_type_t type = result.diffs[i].type;
         if (type == NMO_DIFF_OBJECT_CHUNK_SIZE ||
-            type == NMO_DIFF_OBJECT_CHUNK_DATA) {
+            type == NMO_DIFF_OBJECT_CHUNK_DATA ||
+            type == NMO_DIFF_OBJECT_CHUNK_METADATA) {
             chunk_diff_count++;
         }
     }

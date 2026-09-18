@@ -50,6 +50,8 @@ typedef enum nmo_diff_type {
     NMO_DIFF_FILE_VERSION,
     NMO_DIFF_CK_VERSION,
     NMO_DIFF_SHADOW_DATA,
+    NMO_DIFF_OBJECT_CHUNK_METADATA,
+    NMO_DIFF_PLUGIN_DEPENDENCIES,
 } nmo_diff_type_t;
 
 #define NMO_MAX_DIFFS 64
@@ -101,6 +103,7 @@ typedef struct nmo_comparison_result_stats {
     uint32_t object_reference_flag_diffs;
     uint32_t object_chunk_size_diffs;
     uint32_t object_chunk_data_diffs;
+    uint32_t object_chunk_metadata_diffs;
     uint32_t manager_missing_diffs;
     uint32_t manager_guid_diffs;
     uint32_t manager_chunk_size_diffs;
@@ -108,6 +111,7 @@ typedef struct nmo_comparison_result_stats {
     uint32_t file_version_diffs;
     uint32_t ck_version_diffs;
     uint32_t shadow_data_diffs;
+    uint32_t plugin_dependency_diffs;
 } nmo_comparison_result_stats_t;
 
 NMO_API void nmo_comparison_result_init(nmo_comparison_result_t *result);

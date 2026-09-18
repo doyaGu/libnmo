@@ -11,6 +11,9 @@
 #include "object/nmo_object_repository.h"
 #include "format/nmo_object.h"
 #include "format/nmo_data.h"
+#include "format/nmo_chunk.h"
+#include "format/nmo_header1.h"
+#include "../../src/runtime/runtime_internal.h"
 #include "core/nmo_guid.h"
 #include <string.h>
 
@@ -266,6 +269,63 @@ TEST(comparison, sessions_with_objects) {
     nmo_context_release(ctx);
 }
 
+TEST(comparison, chunk_class_metadata_is_compared) {
+    nmo_context_t *ctx = create_test_context();
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session1 = nmo_session_create(ctx);
+    nmo_session_t *session2 = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session1);
+    ASSERT_NOT_NULL(session2);
+
+    const nmo_allocator_t *allocator = nmo_context_get_allocator(ctx);
+    nmo_object_t *obj1 = create_test_object(allocator, 1, 41, "Box");
+    nmo_object_t *obj2 = create_test_object(allocator, 1, 41, "Box");
+    ASSERT_NOT_NULL(obj1);
+    ASSERT_NOT_NULL(obj2);
+    nmo_chunk_t *chunk1 = nmo_chunk_create(nmo_session_get_arena(session1));
+    nmo_chunk_t *chunk2 = nmo_chunk_create(nmo_session_get_arena(session2));
+    ASSERT_NOT_NULL(chunk1);
+    ASSERT_NOT_NULL(chunk2);
+    chunk1->class_id = 33;
+    chunk2->class_id = 41;
+    ASSERT_EQ(NMO_OK, nmo_object_set_chunk(obj1, chunk1));
+    ASSERT_EQ(NMO_OK, nmo_object_set_chunk(obj2, chunk2));
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(nmo_session_get_repository(session1), &obj1));
+    ASSERT_EQ(NMO_OK, nmo_object_repository_add(nmo_session_get_repository(session2), &obj2));
+
+    nmo_comparison_result_t result;
+    nmo_comparison_result_init(&result);
+    ASSERT_EQ(NMO_OK, compare_sessions(session1, session2, NMO_COMPARE_CHUNKS, &result));
+    ASSERT_FALSE(result.match);
+    ASSERT_TRUE(has_diff_type(&result, NMO_DIFF_OBJECT_CHUNK_METADATA));
+
+    nmo_session_destroy(session1);
+    nmo_session_destroy(session2);
+    nmo_context_release(ctx);
+}
+
+TEST(comparison, plugin_dependencies_are_compared) {
+    nmo_context_t *ctx = create_test_context();
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session1 = nmo_session_create(ctx);
+    nmo_session_t *session2 = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session1);
+    ASSERT_NOT_NULL(session2);
+    nmo_plugin_dep_t dep = {0};
+    dep.guid.d1 = 1;
+    ASSERT_EQ(NMO_OK, nmo_session_set_plugin_dependencies(session2, &dep, 1));
+
+    nmo_comparison_result_t result;
+    nmo_comparison_result_init(&result);
+    ASSERT_EQ(NMO_OK, compare_sessions(session1, session2, NMO_COMPARE_FILE_INFO, &result));
+    ASSERT_FALSE(result.match);
+    ASSERT_TRUE(has_diff_type(&result, NMO_DIFF_PLUGIN_DEPENDENCIES));
+
+    nmo_session_destroy(session1);
+    nmo_session_destroy(session2);
+    nmo_context_release(ctx);
+}
+
 TEST(comparison, different_object_names) {
     nmo_context_t *ctx = create_test_context();
     ASSERT_NOT_NULL(ctx);
@@ -486,6 +546,8 @@ TEST(comparison, compare_null_result) {
  * ============================================================================ */
 
 TEST_MAIN_BEGIN()
+    REGISTER_TEST(comparison, chunk_class_metadata_is_compared);
+    REGISTER_TEST(comparison, plugin_dependencies_are_compared);
     /* Result initialization */
     REGISTER_TEST(comparison, result_init);
     REGISTER_TEST(comparison, result_init_null_safe);
