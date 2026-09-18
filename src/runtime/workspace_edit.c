@@ -846,17 +846,7 @@ static bool session_is_parameter_reference_object(
     const nmo_type_registry_t *registry,
     const nmo_object_t *object)
 {
-    const nmo_class_id_t classes[] = {
-        NMO_CID_PARAMETER,
-        NMO_CID_PARAMETERIN,
-        NMO_CID_PARAMETEROUT,
-        NMO_CID_PARAMETERLOCAL,
-        NMO_CID_PARAMETEROPERATION,
-    };
-    for (size_t i = 0; i < sizeof(classes) / sizeof(classes[0]); ++i) {
-        if (session_object_derives(registry, object, classes[i])) return true;
-    }
-    return false;
+    return session_object_derives(registry, object, NMO_CID_PARAMETER);
 }
 
 static nmo_parameter_state_t *workspace_edit_parameter_state(
@@ -5132,7 +5122,15 @@ nmo_status_t nmo_object_edit_set_dataarray_cell(
             }
             if (col_type == CKARRAYTYPE_PARAMETER) {
                 if (!session_is_parameter_reference_object(registry, ref)) {
-                    return NMO_ERR_NOT_FOUND;
+                    return NMO_ERR_INVALID_ARGUMENT;
+                }
+                nmo_parameter_state_t *parameter_state =
+                    workspace_edit_parameter_state(registry, ref);
+                if (parameter_state == NULL ||
+                    (!nmo_guid_is_null(state->column_formats[col].parameter_type_guid) &&
+                     !nmo_guid_equals(parameter_state->type_guid,
+                                      state->column_formats[col].parameter_type_guid))) {
+                    return NMO_ERR_INVALID_ARGUMENT;
                 }
             }
         }

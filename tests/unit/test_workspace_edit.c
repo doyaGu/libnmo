@@ -1924,6 +1924,88 @@ TEST(workspace_edit, behavior_graph_flag_rebuilds_behavior_index) {
     nmo_context_release(ctx);
 }
 
+TEST(workspace_edit, dataarray_parameter_cell_requires_matching_parameter_type) {
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_arena_t *arena = nmo_session_get_arena(session);
+    ASSERT_NOT_NULL(repo);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_object_id_t dataarray_id = 0;
+    nmo_object_id_t output_id = 0;
+    nmo_object_id_t local_id = 0;
+    nmo_object_id_t wrong_type_id = 0;
+    nmo_object_id_t input_id = 0;
+    create_object_or_fail(session, NMO_CID_DATAARRAY, "data", &dataarray_id);
+    create_object_or_fail(session, NMO_CID_PARAMETEROUT, "float output", &output_id);
+    create_object_or_fail(session, NMO_CID_PARAMETERLOCAL, "float local", &local_id);
+    create_object_or_fail(session, NMO_CID_PARAMETEROUT, "bool output", &wrong_type_id);
+    create_object_or_fail(session, NMO_CID_PARAMETERIN, "input", &input_id);
+
+    nmo_parameterout_state_t *output = (nmo_parameterout_state_t *)nmo_object_get_state(
+        nmo_object_repository_find_by_id(repo, output_id));
+    nmo_parameterout_state_t *wrong_type = (nmo_parameterout_state_t *)nmo_object_get_state(
+        nmo_object_repository_find_by_id(repo, wrong_type_id));
+    nmo_parameter_state_t *local = (nmo_parameter_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            nmo_context_get_type_registry(ctx),
+            nmo_object_repository_find_by_id(repo, local_id), CKPGUID_PARAMETER);
+    ASSERT_NOT_NULL(output);
+    ASSERT_NOT_NULL(wrong_type);
+    ASSERT_NOT_NULL(local);
+    output->base.type_guid = CKPGUID_FLOAT;
+    local->type_guid = CKPGUID_FLOAT;
+    wrong_type->base.type_guid = CKPGUID_BOOL;
+
+    nmo_dataarray_state_t *state = (nmo_dataarray_state_t *)nmo_object_get_state(
+        nmo_object_repository_find_by_id(repo, dataarray_id));
+    ASSERT_NOT_NULL(state);
+    state->column_count = 1;
+    state->row_count = 1;
+    state->column_formats = (nmo_dataarray_column_format_t *)nmo_arena_alloc(
+        arena, sizeof(*state->column_formats), _Alignof(nmo_dataarray_column_format_t));
+    state->rows = (nmo_dataarray_row_t *)nmo_arena_alloc(
+        arena, sizeof(*state->rows), _Alignof(nmo_dataarray_row_t));
+    ASSERT_NOT_NULL(state->column_formats);
+    ASSERT_NOT_NULL(state->rows);
+    state->column_formats[0] = (nmo_dataarray_column_format_t){
+        .name = "value", .type = CKARRAYTYPE_PARAMETER,
+        .parameter_type_guid = CKPGUID_FLOAT,
+    };
+    state->rows[0].column_count = 1;
+    state->rows[0].cells = (nmo_dataarray_cell_t *)nmo_arena_alloc(
+        arena, sizeof(*state->rows[0].cells), _Alignof(nmo_dataarray_cell_t));
+    ASSERT_NOT_NULL(state->rows[0].cells);
+    memset(state->rows[0].cells, 0, sizeof(*state->rows[0].cells));
+
+    workspace_edit_scope_t scope = {0};
+    nmo_workspace_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK, begin_workspace_edit_for_session(
+        ctx, session, "parameter cell", &scope, &edit));
+    char id_text[32];
+    snprintf(id_text, sizeof(id_text), "%u", output_id);
+    ASSERT_EQ(NMO_OK, nmo_object_edit_set_dataarray_cell(
+        edit, dataarray_id, 0, 0, id_text));
+    snprintf(id_text, sizeof(id_text), "%u", local_id);
+    ASSERT_EQ(NMO_OK, nmo_object_edit_set_dataarray_cell(
+        edit, dataarray_id, 0, 0, id_text));
+    snprintf(id_text, sizeof(id_text), "%u", wrong_type_id);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, nmo_object_edit_set_dataarray_cell(
+        edit, dataarray_id, 0, 0, id_text));
+    snprintf(id_text, sizeof(id_text), "%u", input_id);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, nmo_object_edit_set_dataarray_cell(
+        edit, dataarray_id, 0, 0, id_text));
+    ASSERT_EQ(NMO_OK, commit_workspace_edit_scope(&scope));
+    ASSERT_EQ(local_id, nmo_ref_runtime_id(
+        &state->rows[0].cells[0].parameter.ref));
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(workspace_edit, bind_script_uses_explicit_object_types) {
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
@@ -2213,6 +2295,7 @@ REGISTER_TEST(workspace_edit, parameter_write_writes_enum_and_flag_parameter_val
 REGISTER_TEST(workspace_edit, parameter_bytes_commit_zero_fills_and_rollback_restores);
 REGISTER_TEST(workspace_edit, parameterout_object_mode_commit_sets_reference);
 REGISTER_TEST(workspace_edit, dataarray_object_cell_commit_and_rollback);
+REGISTER_TEST(workspace_edit, dataarray_parameter_cell_requires_matching_parameter_type);
 REGISTER_TEST(workspace_edit, dataarray_ref_graph_handles_missing_row_metadata);
 REGISTER_TEST(workspace_edit, behavior_graph_flag_rebuilds_behavior_index);
 REGISTER_TEST(workspace_edit, bind_script_uses_explicit_object_types);
