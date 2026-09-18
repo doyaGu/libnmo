@@ -681,7 +681,6 @@ typedef struct entity_set_position_args {
     float old_x;
     float old_y;
     float old_z;
-    char matrix_value[512];
 } entity_set_position_args_t;
 
 static int entity_set_position_mutate(
@@ -705,8 +704,9 @@ static int entity_set_position_mutate(
     }
     args->object_id = object_id;
 
-    nmo_3dentity_state_t *estate =
-        (nmo_3dentity_state_t *)nmo_object_get_state(obj);
+    nmo_3dentity_state_t *estate = (nmo_3dentity_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            nmo_context_get_type_registry(c->ctx), obj, CKPGUID_3DENTITY);
     if (!estate) {
         fprintf(stderr, "Error: Object #%u has no deserialized state\n", args->object_id);
         return NMO_CLI_EXIT_INTERNAL_ERROR;
@@ -719,27 +719,10 @@ static int entity_set_position_mutate(
     matrix[12] = args->new_x;
     matrix[13] = args->new_y;
     matrix[14] = args->new_z;
-    int wrote = snprintf(
-        args->matrix_value,
-        sizeof(args->matrix_value),
-        "(%.9g, %.9g, %.9g, %.9g; %.9g, %.9g, %.9g, %.9g; %.9g, %.9g, %.9g, %.9g; %.9g, %.9g, %.9g, %.9g)",
-        matrix[0], matrix[1], matrix[2], matrix[3],
-        matrix[4], matrix[5], matrix[6], matrix[7],
-        matrix[8], matrix[9], matrix[10], matrix[11],
-        matrix[12], matrix[13], matrix[14], matrix[15]);
-    if (wrote < 0 || (size_t)wrote >= sizeof(args->matrix_value)) {
-        fprintf(stderr, "Error: Position matrix string overflow\n");
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
-    }
-
     nmo_workspace_edit_t *edit = NULL;
     nmo_status_t rc = nmo_workspace_edit_begin(c->workspace, "entity set-position", &edit);
     if (rc == NMO_OK) {
-        nmo_tool_field_edit_t field = {
-            .field_name = "world_matrix",
-            .value_str = args->matrix_value,
-        };
-        rc = nmo_object_edit_set_fields(edit, args->object_id, &field, 1, NULL);
+        rc = nmo_entity_edit_set_world_matrix(edit, args->object_id, matrix);
     }
     if (rc != NMO_OK) {
         if (edit) {
@@ -867,14 +850,13 @@ int nmo_cmd_entity_set_position(int argc, char **argv,
 }
 
 /* ============================================================================
- * entity set-parent - Set parent entity via generic field setter
+ * entity set-parent - Set parent entity through session edit
  * ============================================================================ */
 
 typedef struct entity_set_parent_args {
     nmo_core_object_selector_t selector;
     uint32_t object_id;
     uint32_t parent_id;
-    const char *parent_id_str;
 } entity_set_parent_args_t;
 
 static int entity_set_parent_mutate(
@@ -885,7 +867,7 @@ static int entity_set_parent_mutate(
 {
     (void)output_path;
     entity_set_parent_args_t *args = (entity_set_parent_args_t *)user_data;
-    if (c == NULL || args == NULL || args->parent_id_str == NULL) {
+    if (c == NULL || args == NULL) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
@@ -912,9 +894,28 @@ static int entity_set_parent_mutate(
 
     fprintf(c->out, "Entity #%u:\n", args->object_id);
 
-    nmo_field_set_entry_t entry = { "parent", args->parent_id_str };
-    nmo_field_set_result_t result;
-    return nmo_core_set_fields(c, args->object_id, &entry, 1, dry_run, &result);
+    nmo_workspace_edit_t *edit = NULL;
+    nmo_status_t rc = nmo_workspace_edit_begin(c->workspace, "entity set-parent", &edit);
+    if (rc == NMO_OK) {
+        rc = nmo_entity_edit_set_parent(edit, args->object_id, args->parent_id);
+    }
+    if (rc != NMO_OK) {
+        if (edit != NULL) {
+            nmo_workspace_edit_rollback(edit);
+        }
+        fprintf(stderr, "Error: Failed to set parent: %s\n", nmo_error_string(rc));
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+    if (dry_run) {
+        nmo_workspace_edit_rollback(edit);
+    } else {
+        rc = nmo_workspace_edit_commit(edit);
+        if (rc != NMO_OK) {
+            fprintf(stderr, "Error: Failed to commit edit: %s\n", nmo_error_string(rc));
+            return NMO_CLI_EXIT_INTERNAL_ERROR;
+        }
+    }
+    return NMO_CLI_EXIT_SUCCESS;
 }
 
 static int entity_set_parent_report(
@@ -990,7 +991,6 @@ int nmo_cmd_entity_set_parent(int argc, char **argv,
             .type_label = "CK3dEntity",
         },
         .parent_id = parent_id,
-        .parent_id_str = parent_id_str,
     };
     const nmo_cli_write_spec_t spec = {
         .command_name = "entity.set-parent",

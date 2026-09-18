@@ -3275,7 +3275,7 @@ nmo_status_t nmo_entity_edit_set_parent(
     nmo_object_id_t parent_id)
 {
     if (edit == NULL || edit->finished || object_id == 0u ||
-        parent_id == 0u) {
+        parent_id == object_id) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
@@ -3285,13 +3285,14 @@ nmo_status_t nmo_entity_edit_set_parent(
         return NMO_ERR_INVALID_STATE;
     }
     nmo_object_t *object = nmo_object_repository_find_by_id(repo, object_id);
-    nmo_object_t *parent = nmo_object_repository_find_by_id(repo, parent_id);
-    if (object == NULL || parent == NULL) {
+    nmo_object_t *parent = parent_id != 0u
+        ? nmo_object_repository_find_by_id(repo, parent_id) : NULL;
+    if (object == NULL || (parent_id != 0u && parent == NULL)) {
         return NMO_ERR_NOT_FOUND;
     }
     const nmo_type_registry_t *registry = workspace_edit_type_registry(edit);
     if (!workspace_edit_object_is_entity_target(registry, object) ||
-        !workspace_edit_object_is_entity_target(registry, parent)) {
+        (parent != NULL && !workspace_edit_object_is_entity_target(registry, parent))) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
@@ -3307,7 +3308,8 @@ nmo_status_t nmo_entity_edit_set_parent(
         return status;
     }
 
-    state->parent = nmo_ref_from_id(parent_id);
+    state->parent = parent_id != 0u
+        ? nmo_ref_from_id(parent_id) : nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     nmo_workspace_edit_mark(
         edit,
         NMO_WORKSPACE_EDIT_OBJECT_STATE | NMO_WORKSPACE_EDIT_REFERENCES);
