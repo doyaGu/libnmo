@@ -22,6 +22,7 @@
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
 #include "object/builtin/nmo_dataarray_schemas.h"
+#include "object/builtin/nmo_parameter_schemas.h"
 #include "object/nmo_object_enum_defs.h"
 
 #include <stdio.h>
@@ -61,14 +62,6 @@ static const char *arraytype_name(CK_ARRAYTYPE type) {
         case CKARRAYTYPE_PARAMETER: return "parameter";
         default:                    return "unknown";
     }
-}
-
-static bool is_parameter_reference_class(nmo_class_id_t class_id) {
-    return class_id == NMO_CID_PARAMETER ||
-           class_id == NMO_CID_PARAMETERIN ||
-           class_id == NMO_CID_PARAMETEROUT ||
-           class_id == NMO_CID_PARAMETERLOCAL ||
-           class_id == NMO_CID_PARAMETEROPERATION;
 }
 
 static void format_cell(char *buf, size_t buf_size,
@@ -120,6 +113,7 @@ static void format_cell(char *buf, size_t buf_size,
 static int validate_dataarray_reference_value(
     const nmo_cmd_ctx_t *c,
     CK_ARRAYTYPE col_type,
+    nmo_guid_t parameter_type_guid,
     const char *value_str)
 {
     if (col_type != CKARRAYTYPE_OBJECT && col_type != CKARRAYTYPE_PARAMETER) {
@@ -141,11 +135,23 @@ static int validate_dataarray_reference_value(
                 ref_id);
         return NMO_CLI_EXIT_ARG_ERROR;
     }
-    (void)c;
-    if (col_type == CKARRAYTYPE_PARAMETER &&
-        !is_parameter_reference_class(nmo_object_get_class_id(ref))) {
-        fprintf(stderr, "Error: Referenced parameter #%u not found\n", ref_id);
-        return NMO_CLI_EXIT_ARG_ERROR;
+    if (col_type == CKARRAYTYPE_PARAMETER) {
+        const nmo_type_registry_t *registry = nmo_context_get_type_registry(c->ctx);
+        if (!nmo_type_query_object_is_derived_from_class(
+                registry, ref, NMO_CID_PARAMETER)) {
+            fprintf(stderr, "Error: Referenced object #%u is not a CKParameter\n", ref_id);
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
+        const nmo_parameter_state_t *parameter_state =
+            (const nmo_parameter_state_t *)
+                nmo_type_query_object_get_ancestor_state_by_guid(
+                    registry, ref, CKPGUID_PARAMETER);
+        if (parameter_state == NULL ||
+            (!nmo_guid_is_null(parameter_type_guid) &&
+             !nmo_guid_equals(parameter_state->type_guid, parameter_type_guid))) {
+            fprintf(stderr, "Error: Referenced parameter #%u has an incompatible type\n", ref_id);
+            return NMO_CLI_EXIT_ARG_ERROR;
+        }
     }
 
     return NMO_CLI_EXIT_SUCCESS;
@@ -752,7 +758,9 @@ static int data_set_cell_mutate(
     format_cell(args->old_buf, sizeof(args->old_buf),
                 &target_row->cells[args->col], col_type, c);
 
-    int ref_rc = validate_dataarray_reference_value(c, col_type, args->value_str);
+    int ref_rc = validate_dataarray_reference_value(
+        c, col_type, state->column_formats[args->col].parameter_type_guid,
+        args->value_str);
     if (ref_rc != NMO_CLI_EXIT_SUCCESS) {
         return ref_rc;
     }

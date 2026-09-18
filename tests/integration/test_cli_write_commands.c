@@ -981,8 +981,25 @@ TEST(cli_write, data_entity_material_texture_animation_save_and_validate) {
     write_probe_close(&data_object_probe);
 
     assert_cli_success(
-        "data set-cell --name CurrentLevel --row 0 --col 3 --value 520 "
+        "data set-cell --name CurrentLevel --row 0 --col 3 --value 0 "
         "\"" NMO_TEST_DATA_FILE("Ballance/Gameplay.nmo") "\" "
+        "-o \"test_cli_write_tmp/data_parameter_cleared_out.nmo\"",
+        "New:");
+    assert_validate_ok("test_cli_write_tmp/data_parameter_cleared_out.nmo");
+    write_semantic_probe_t data_parameter_cleared_probe;
+    assert_probe_open(&data_parameter_cleared_probe,
+                      "test_cli_write_tmp/data_parameter_cleared_out.nmo");
+    const nmo_dataarray_state_t *data_parameter_cleared_state =
+        (const nmo_dataarray_state_t *)write_probe_state(
+            &data_parameter_cleared_probe, 10703, CKPGUID_DATAARRAY);
+    ASSERT_NOT_NULL(data_parameter_cleared_state);
+    ASSERT_EQ(0u, nmo_ref_runtime_id(
+        &data_parameter_cleared_state->rows[0].cells[3].parameter.ref));
+    write_probe_close(&data_parameter_cleared_probe);
+
+    assert_cli_success(
+        "data set-cell --name CurrentLevel --row 0 --col 3 --value 10701 "
+        "\"test_cli_write_tmp/data_parameter_cleared_out.nmo\" "
         "-o \"test_cli_write_tmp/data_parameter_out.nmo\"",
         "New:");
     assert_validate_ok("test_cli_write_tmp/data_parameter_out.nmo");
@@ -997,7 +1014,7 @@ TEST(cli_write, data_entity_material_texture_animation_save_and_validate) {
     ASSERT_EQ(CKARRAYTYPE_PARAMETER, data_parameter_state->column_formats[3].type);
     ASSERT_EQ(0u, nmo_ref_runtime_id(
         &data_parameter_state->rows[0].cells[1].object_ref));
-    ASSERT_EQ(520u, nmo_ref_runtime_id(
+    ASSERT_EQ(10701u, nmo_ref_runtime_id(
         &data_parameter_state->rows[0].cells[3].parameter.ref));
     write_probe_close(&data_parameter_probe);
 
@@ -1022,8 +1039,24 @@ TEST(cli_write, data_entity_material_texture_animation_save_and_validate) {
         "data set-cell --name CurrentLevel --row 0 --col 3 --value 1 "
         "\"" NMO_TEST_DATA_FILE("Ballance/Gameplay.nmo") "\" "
         "-o \"test_cli_write_tmp/data_wrong_parameter_out.nmo\"",
-        "Referenced parameter #1 not found");
+        "Referenced object #1 is not a CKParameter");
     ASSERT_FALSE(file_exists("test_cli_write_tmp/data_wrong_parameter_out.nmo"));
+
+    remove("test_cli_write_tmp/data_input_parameter_out.nmo");
+    assert_cli_failure(
+        "data set-cell --name CurrentLevel --row 0 --col 3 --value 520 "
+        "\"" NMO_TEST_DATA_FILE("Ballance/Gameplay.nmo") "\" "
+        "-o \"test_cli_write_tmp/data_input_parameter_out.nmo\"",
+        "Referenced object #520 is not a CKParameter");
+    ASSERT_FALSE(file_exists("test_cli_write_tmp/data_input_parameter_out.nmo"));
+
+    remove("test_cli_write_tmp/data_mismatched_parameter_out.nmo");
+    assert_cli_failure(
+        "data set-cell --name CurrentLevel --row 0 --col 3 --value 10702 "
+        "\"" NMO_TEST_DATA_FILE("Ballance/Gameplay.nmo") "\" "
+        "-o \"test_cli_write_tmp/data_mismatched_parameter_out.nmo\"",
+        "Referenced parameter #10702 has an incompatible type");
+    ASSERT_FALSE(file_exists("test_cli_write_tmp/data_mismatched_parameter_out.nmo"));
 
     assert_cli_success(
         "entity set-position --name Cam_Pos 1 2 3 "
