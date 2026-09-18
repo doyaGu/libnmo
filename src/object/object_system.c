@@ -6,6 +6,7 @@
 #include "object/nmo_object_system.h"
 
 #include "object/nmo_object_repository.h"
+#include "object/nmo_class_ids.h"
 #include "object/nmo_shadow_storage.h"
 
 #include "format/nmo_object.h"
@@ -152,6 +153,11 @@ static void object_system_destroy_state_layers(
         uint8_t *layer_state = (uint8_t *)state + created_layers[i].offset;
         layer_type->vtable->destroy(layer_state, layer_type, deser_ctx);
     }
+}
+
+static nmo_class_id_t object_system_default_chunk_class_id(const nmo_object_t *obj) {
+    /* CK3dObject inherits CK3dEntity::Save and writes a CK3dEntity chunk. */
+    return obj->class_id == NMO_CID_3DOBJECT ? NMO_CID_3DENTITY : obj->class_id;
 }
 
 static void object_system_clear_failed_object_state(nmo_object_t *obj)
@@ -460,7 +466,7 @@ nmo_chunk_t *nmo_object_system_serialize_object_chunk(
         if (obj->chunk == NULL) {
             nmo_chunk_t *empty_chunk = nmo_chunk_create(arena);
             if (empty_chunk != NULL) {
-                empty_chunk->class_id = obj->class_id;
+                empty_chunk->class_id = object_system_default_chunk_class_id(obj);
                 empty_chunk->chunk_version = NMO_CHUNK_VERSION4;
                 empty_chunk->data_version = NMO_CHUNK_DATA_VERSION_CURRENT;
                 empty_chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
@@ -499,7 +505,10 @@ nmo_chunk_t *nmo_object_system_serialize_object_chunk(
 
     const nmo_chunk_t *old_chunk = obj->chunk;
 
-    new_chunk->class_id = obj->class_id;
+    new_chunk->class_id = old_chunk != NULL
+        ? old_chunk->class_id : object_system_default_chunk_class_id(obj);
+    new_chunk->chunk_class_id = old_chunk != NULL
+        ? old_chunk->chunk_class_id : 0;
     if (old_chunk != NULL) {
         new_chunk->chunk_version = old_chunk->chunk_version;
         new_chunk->data_version = old_chunk->data_version;
