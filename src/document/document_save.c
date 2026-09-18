@@ -1239,51 +1239,11 @@ static nmo_status_t save_build_header1(nmo_serializer_t *ctx) {
         uint32_t stored_plugin_count = dep_fstate ? dep_fstate->plugin_dep_count : 0;
         nmo_plugin_dep_t *stored_plugin_deps = dep_fstate ? dep_fstate->plugin_deps : NULL;
 
-        if (stored_plugin_deps != NULL && stored_plugin_count > 0) {
-            ctx->plugin_deps = stored_plugin_deps;
-            ctx->plugin_count = stored_plugin_count;
-        } else {
-            nmo_extension_registry_t *ext_registry = nmo_context_get_extension_registry(ctx->context);
-            size_t plugin_count = 0;
-            const nmo_extension_plugin_info_t *plugins =
-                (ext_registry != NULL)
-                    ? nmo_extension_registry_list(ext_registry, &plugin_count)
-                    : NULL;
-
-            if (plugins != NULL && plugin_count > 0) {
-                nmo_plugin_dep_t *deps = (nmo_plugin_dep_t *)nmo_arena_alloc(
-                    save_scratch(ctx),
-                    plugin_count * sizeof(nmo_plugin_dep_t),
-                    alignof(nmo_plugin_dep_t));
-                if (deps == NULL) {
-                    return SAVE_ERR(NMO_ERR_NOMEM, "Plugin dependency allocation failed");
-                }
-
-                size_t written = 0;
-                for (size_t i = 0; i < plugin_count; ++i) {
-                    const nmo_extension_plugin_info_t *plugin = &plugins[i];
-                    if (nmo_guid_is_null(plugin->guid)) {
-                        continue;
-                    }
-
-                    deps[written].guid = plugin->guid;
-                    deps[written].version = plugin->version;
-                    deps[written].category = plugin->category;
-                    written++;
-                }
-
-                if (written > 0) {
-                    ctx->plugin_deps = deps;
-                    ctx->plugin_count = written;
-                } else {
-                    ctx->plugin_deps = NULL;
-                    ctx->plugin_count = 0;
-                }
-            } else {
-                ctx->plugin_deps = NULL;
-                ctx->plugin_count = 0;
-            }
+        if (stored_plugin_count > 0 && stored_plugin_deps == NULL) {
+            return SAVE_ERR(NMO_ERR_INVALID_STATE, "Missing plugin dependencies");
         }
+        ctx->plugin_deps = stored_plugin_deps;
+        ctx->plugin_count = stored_plugin_count;
     }
 
     /* Build Header1 structure */
