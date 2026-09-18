@@ -9,6 +9,7 @@
 #include "../../tools/nmo_cli_common.h"
 
 #include "format/nmo_stb_adapter.h"
+#include "format/nmo_chunk.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_guids.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
@@ -1507,6 +1508,72 @@ TEST(cli_write, parameter_set_persists_typed_object_and_raw_values) {
     write_probe_close(&hex_probe);
 }
 
+TEST(cli_write, entity_position_preserves_3dobject_chunk_and_plugin_dependencies) {
+    make_dir("test_cli_write_tmp");
+    const char *input = NMO_TEST_DATA_FILE("Ballance/P_Box.nmo");
+    const char *output = "test_cli_write_tmp/box_position_out.nmo";
+
+    write_semantic_probe_t before;
+    assert_probe_open(&before, input);
+    nmo_object_t *before_object = write_probe_object_by_id(&before, 5);
+    ASSERT_NOT_NULL(before_object);
+    ASSERT_EQ(NMO_CID_3DOBJECT, nmo_object_get_class_id(before_object));
+    ASSERT_EQ(NMO_CID_3DENTITY, nmo_object_get_chunk(before_object)->class_id);
+    write_probe_close(&before);
+
+    assert_cli_success(
+        "entity set-position --id 5 1 2 3 \"" NMO_TEST_DATA_FILE("Ballance/P_Box.nmo")
+        "\" -o \"test_cli_write_tmp/box_position_out.nmo\"",
+        "position:");
+    assert_validate_ok(output);
+
+    write_semantic_probe_t after;
+    assert_probe_open(&after, output);
+    nmo_object_t *after_object = write_probe_object_by_id(&after, 5);
+    ASSERT_NOT_NULL(after_object);
+    ASSERT_EQ(NMO_CID_3DOBJECT, nmo_object_get_class_id(after_object));
+    ASSERT_EQ(NMO_CID_3DENTITY, nmo_object_get_chunk(after_object)->class_id);
+    const nmo_3dentity_state_t *state =
+        (const nmo_3dentity_state_t *)write_probe_state(&after, 5, CKPGUID_3DENTITY);
+    ASSERT_NOT_NULL(state);
+    ASSERT_FLOAT_EQ(1.0f, state->world_matrix[12], 0.0001f);
+    ASSERT_FLOAT_EQ(2.0f, state->world_matrix[13], 0.0001f);
+    ASSERT_FLOAT_EQ(3.0f, state->world_matrix[14], 0.0001f);
+    write_probe_close(&after);
+
+    assert_cli_success("file plugins \"test_cli_write_tmp/box_position_out.nmo\"",
+                       "Total Entries     : 0");
+
+    assert_cli_success(
+        "entity set-parent --id 5 0 \"test_cli_write_tmp/box_position_out.nmo\" "
+        "-o \"test_cli_write_tmp/box_parent_out.nmo\"",
+        "Saved to:");
+    assert_validate_ok("test_cli_write_tmp/box_parent_out.nmo");
+    write_semantic_probe_t unparented;
+    assert_probe_open(&unparented, "test_cli_write_tmp/box_parent_out.nmo");
+    const nmo_3dentity_state_t *unparented_state =
+        (const nmo_3dentity_state_t *)write_probe_state(&unparented, 5, CKPGUID_3DENTITY);
+    ASSERT_NOT_NULL(unparented_state);
+    ASSERT_EQ(0u, nmo_ref_runtime_id(&unparented_state->parent));
+    ASSERT_EQ(NMO_CID_3DENTITY,
+              nmo_object_get_chunk(write_probe_object_by_id(&unparented, 5))->class_id);
+    write_probe_close(&unparented);
+
+    assert_cli_success(
+        "object create --class CK3dObject --name NewBox \""
+        NMO_TEST_DATA_FILE("Ballance/P_Box.nmo")
+        "\" -o \"test_cli_write_tmp/box_created_out.nmo\"",
+        "Created object");
+    assert_validate_ok("test_cli_write_tmp/box_created_out.nmo");
+    write_semantic_probe_t created;
+    assert_probe_open(&created, "test_cli_write_tmp/box_created_out.nmo");
+    nmo_object_t *new_box = write_probe_object_by_name(&created, "NewBox");
+    ASSERT_NOT_NULL(new_box);
+    ASSERT_EQ(NMO_CID_3DOBJECT, nmo_object_get_class_id(new_box));
+    ASSERT_EQ(NMO_CID_3DENTITY, nmo_object_get_chunk(new_box)->class_id);
+    write_probe_close(&created);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(cli_write, object_data_entity_material_texture_parameter_dry_run_preserves_inputs);
     REGISTER_TEST(cli_write, resource_import_replace_dry_run_does_not_write_output);
@@ -1519,5 +1586,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli_write, object_export_import_snapshot_round_trips_mesh_and_matrix);
     REGISTER_TEST(cli_write, data_entity_material_texture_animation_save_and_validate);
     REGISTER_TEST(cli_write, parameter_set_persists_typed_object_and_raw_values);
+    REGISTER_TEST(cli_write, entity_position_preserves_3dobject_chunk_and_plugin_dependencies);
 TEST_MAIN_END()
 
