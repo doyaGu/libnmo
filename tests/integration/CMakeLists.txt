@@ -7,6 +7,7 @@ macro(add_integration_test name)
     add_executable(${name} ${name}.c)
     target_link_libraries(${name} PRIVATE nmo test_framework)
     add_test(NAME ${name} COMMAND ${name})
+    set_tests_properties(${name} PROPERTIES SKIP_RETURN_CODE 77)
 endmacro()
 
 # Integration tests
@@ -74,48 +75,56 @@ if(TARGET nmo_cli)
     add_dependencies(test_cli_behavior_graph nmo_cli)
     target_compile_definitions(test_cli_behavior_graph PRIVATE NMO_CLI_PATH="$<TARGET_FILE:nmo_cli>")
     add_test(NAME test_cli_behavior_graph COMMAND test_cli_behavior_graph)
+    set_tests_properties(test_cli_behavior_graph PROPERTIES SKIP_RETURN_CODE 77)
 
     add_executable(test_cli_behavior_rewrite test_cli_behavior_rewrite.c)
     target_link_libraries(test_cli_behavior_rewrite PRIVATE nmo test_framework yyjson)
     add_dependencies(test_cli_behavior_rewrite nmo_cli)
     target_compile_definitions(test_cli_behavior_rewrite PRIVATE NMO_CLI_PATH="$<TARGET_FILE:nmo_cli>")
     add_test(NAME test_cli_behavior_rewrite COMMAND test_cli_behavior_rewrite)
+    set_tests_properties(test_cli_behavior_rewrite PROPERTIES SKIP_RETURN_CODE 77)
 
     add_executable(test_cli_script_edit test_cli_script_edit.c)
     target_link_libraries(test_cli_script_edit PRIVATE nmo test_framework yyjson)
     add_dependencies(test_cli_script_edit nmo_cli)
     target_compile_definitions(test_cli_script_edit PRIVATE NMO_CLI_PATH="$<TARGET_FILE:nmo_cli>")
     add_test(NAME test_cli_script_edit COMMAND test_cli_script_edit)
+    set_tests_properties(test_cli_script_edit PROPERTIES SKIP_RETURN_CODE 77)
 
     add_executable(test_cli_script_run test_cli_script_run.c)
     target_link_libraries(test_cli_script_run PRIVATE nmo test_framework yyjson)
     add_dependencies(test_cli_script_run nmo_cli)
     target_compile_definitions(test_cli_script_run PRIVATE NMO_CLI_PATH="$<TARGET_FILE:nmo_cli>")
     add_test(NAME test_cli_script_run COMMAND test_cli_script_run)
+    set_tests_properties(test_cli_script_run PROPERTIES SKIP_RETURN_CODE 77)
 
     add_executable(test_lua_public_workflow test_lua_public_workflow.c)
     target_link_libraries(test_lua_public_workflow PRIVATE nmo test_framework yyjson)
     add_dependencies(test_lua_public_workflow nmo_cli)
     target_compile_definitions(test_lua_public_workflow PRIVATE NMO_CLI_PATH="$<TARGET_FILE:nmo_cli>")
     add_test(NAME test_lua_public_workflow COMMAND test_lua_public_workflow)
+    set_tests_properties(test_lua_public_workflow PROPERTIES SKIP_RETURN_CODE 77)
 
     add_executable(test_cli_patch_apply test_cli_patch_apply.c)
     target_link_libraries(test_cli_patch_apply PRIVATE nmo test_framework yyjson)
     add_dependencies(test_cli_patch_apply nmo_cli)
     target_compile_definitions(test_cli_patch_apply PRIVATE NMO_CLI_PATH="$<TARGET_FILE:nmo_cli>")
     add_test(NAME test_cli_patch_apply COMMAND test_cli_patch_apply)
+    set_tests_properties(test_cli_patch_apply PROPERTIES SKIP_RETURN_CODE 77)
 
     add_executable(test_generated_project_manifest test_generated_project_manifest.c)
     target_link_libraries(test_generated_project_manifest PRIVATE nmo test_framework yyjson)
     add_dependencies(test_generated_project_manifest nmo_cli)
     target_compile_definitions(test_generated_project_manifest PRIVATE NMO_CLI_PATH="$<TARGET_FILE:nmo_cli>")
     add_test(NAME test_generated_project_manifest COMMAND test_generated_project_manifest)
+    set_tests_properties(test_generated_project_manifest PROPERTIES SKIP_RETURN_CODE 77)
 
     add_executable(test_generated_project_acceptance test_generated_project_acceptance.c)
     target_link_libraries(test_generated_project_acceptance PRIVATE nmo test_framework)
     add_dependencies(test_generated_project_acceptance nmo_cli)
     target_compile_definitions(test_generated_project_acceptance PRIVATE NMO_CLI_PATH="$<TARGET_FILE:nmo_cli>")
     add_test(NAME test_generated_project_acceptance COMMAND test_generated_project_acceptance)
+    set_tests_properties(test_generated_project_acceptance PROPERTIES SKIP_RETURN_CODE 77)
     set_tests_properties(test_generated_project_acceptance PROPERTIES
         ENVIRONMENT "NMO_DATA_DIR=${PROJECT_SOURCE_DIR}/data"
     )
@@ -125,12 +134,14 @@ if(TARGET nmo_cli)
     add_dependencies(test_generated_advanced_subsystem_probes nmo_cli)
     target_compile_definitions(test_generated_advanced_subsystem_probes PRIVATE NMO_CLI_PATH="$<TARGET_FILE:nmo_cli>")
     add_test(NAME test_generated_advanced_subsystem_probes COMMAND test_generated_advanced_subsystem_probes)
+    set_tests_properties(test_generated_advanced_subsystem_probes PROPERTIES SKIP_RETURN_CODE 77)
 
     add_executable(test_ballance_script_edit_acceptance test_ballance_script_edit_acceptance.c)
     target_link_libraries(test_ballance_script_edit_acceptance PRIVATE nmo test_framework yyjson)
     add_dependencies(test_ballance_script_edit_acceptance nmo_cli)
     target_compile_definitions(test_ballance_script_edit_acceptance PRIVATE NMO_CLI_PATH="$<TARGET_FILE:nmo_cli>")
     add_test(NAME test_ballance_script_edit_acceptance COMMAND test_ballance_script_edit_acceptance)
+    set_tests_properties(test_ballance_script_edit_acceptance PROPERTIES SKIP_RETURN_CODE 77)
 
     add_executable(test_cli_commands test_cli_commands.c)
     target_link_libraries(test_cli_commands PRIVATE nmo test_framework yyjson)
@@ -140,6 +151,7 @@ if(TARGET nmo_cli)
         NMO_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
     )
     add_test(NAME test_cli_commands COMMAND test_cli_commands)
+    set_tests_properties(test_cli_commands PROPERTIES SKIP_RETURN_CODE 77)
     set_tests_properties(test_cli_commands PROPERTIES
         ENVIRONMENT "NMO_DATA_DIR=${PROJECT_SOURCE_DIR}/data"
     )
@@ -152,12 +164,14 @@ if(TARGET nmo_cli)
         NMO_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
     )
     add_test(NAME test_cli_diff_objects COMMAND test_cli_diff_objects)
+    set_tests_properties(test_cli_diff_objects PROPERTIES SKIP_RETURN_CODE 77)
 
     add_executable(test_cli_write_commands test_cli_write_commands.c write_semantic_probe.c)
     target_link_libraries(test_cli_write_commands PRIVATE nmo test_framework)
     add_dependencies(test_cli_write_commands nmo_cli)
     target_compile_definitions(test_cli_write_commands PRIVATE NMO_CLI_PATH="$<TARGET_FILE:nmo_cli>")
     add_test(NAME test_cli_write_commands COMMAND test_cli_write_commands)
+    set_tests_properties(test_cli_write_commands PROPERTIES SKIP_RETURN_CODE 77)
     set_tests_properties(test_cli_write_commands PROPERTIES
         ENVIRONMENT "NMO_DATA_DIR=${PROJECT_SOURCE_DIR}/data"
     )
@@ -220,6 +234,7 @@ if(TARGET nmo_cli)
     target_include_directories(test_repl_write_commands PRIVATE ${PROJECT_SOURCE_DIR}/tools)
     target_link_libraries(test_repl_write_commands PRIVATE nmo test_framework yyjson)
     add_test(NAME test_repl_write_commands COMMAND test_repl_write_commands)
+    set_tests_properties(test_repl_write_commands PROPERTIES SKIP_RETURN_CODE 77)
     set_tests_properties(test_repl_write_commands PROPERTIES
         ENVIRONMENT "NMO_DATA_DIR=${PROJECT_SOURCE_DIR}/data"
     )
@@ -234,6 +249,7 @@ if(TARGET nmo_cli)
     )
     target_link_libraries(test_repl_read_commands PRIVATE nmo test_framework yyjson)
     add_test(NAME test_repl_read_commands COMMAND test_repl_read_commands)
+    set_tests_properties(test_repl_read_commands PROPERTIES SKIP_RETURN_CODE 77)
     set_tests_properties(test_repl_read_commands PROPERTIES
         ENVIRONMENT "NMO_DATA_DIR=${PROJECT_SOURCE_DIR}/data"
     )

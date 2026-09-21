@@ -46,6 +46,7 @@ add_test(
     NAME test_interface_chunk_batch_oracle
     COMMAND batch_interface_oracle "${PROJECT_SOURCE_DIR}/data/BBSamples"
 )
+set_tests_properties(test_interface_chunk_batch_oracle PROPERTIES SKIP_RETURN_CODE 77)
 
 # Fuzz tests (optional)
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/fuzz/CMakeLists.txt)

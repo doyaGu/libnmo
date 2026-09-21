@@ -292,7 +292,7 @@ int main(int argc, char **argv) {
     }
     if (stats.behaviors_tested == 0) {
         printf("RESULT: NO DATA\n");
-        return 2;
+        return 77; /* CTest SKIP_RETURN_CODE: sample corpus not present */
     }
     printf("RESULT: PASS\n");
     return 0;

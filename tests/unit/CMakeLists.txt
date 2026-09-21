@@ -4,6 +4,7 @@ macro(add_unit_test name)
     target_link_libraries(${name} PRIVATE nmo test_framework)
     target_compile_definitions(${name} PRIVATE NMO_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
     add_test(NAME ${name} COMMAND ${name})
+    set_tests_properties(${name} PROPERTIES SKIP_RETURN_CODE 77)
 endmacro()
 
 # Core layer tests
