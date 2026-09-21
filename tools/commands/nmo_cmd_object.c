@@ -9,6 +9,7 @@
 #include "../nmo_cmd_ctx.h"
 #include "../nmo_cmd_core.h"
 #include "../nmo_cli_output.h"
+#include "../nmo_cli_record.h"
 #include "../nmo_cli_sort.h"
 #include "../nmo_opt.h"
 #include "../nmo_tool_common.h"
@@ -31,47 +32,67 @@
  * object list - visitor callbacks
  * ============================================================================ */
 
+/* Row sink shared by the list and find visitors: JSON array when doc is set,
+ * otherwise a text table. */
 typedef struct {
     yyjson_mut_doc *doc;
     yyjson_mut_val *arr;
-    const nmo_cmd_ctx_t *ctx;
-} list_json_data_t;
+    nmo_cli_table_t *table;
+} object_row_sink_t;
 
-static int list_json_visitor(size_t index, nmo_object_t *obj, const nmo_cmd_ctx_t *c, void *user) {
-    (void)index;
-    list_json_data_t *d = (list_json_data_t *)user;
-    yyjson_mut_val *item = yyjson_mut_obj(d->doc);
-    yyjson_mut_obj_add_uint(d->doc, item, "id", nmo_object_get_id(obj));
-    nmo_class_id_t class_id = nmo_object_get_class_id(obj);
-    yyjson_mut_obj_add_uint(d->doc, item, "class_id", class_id);
-    const char *class_name = nmo_core_class_name(c, class_id);
-    if (class_name) nmo_cli_json_add_str_safe(d->doc, item, "class_name", class_name);
-    const char *name = nmo_object_get_name(obj);
-    if (name && name[0]) nmo_cli_json_add_str_safe(d->doc, item, "name", name);
-    nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
-    uint64_t size = chunk ? (uint64_t)nmo_chunk_get_data_size(chunk) : 0;
-    yyjson_mut_obj_add_uint(d->doc, item, "size", size);
-    yyjson_mut_arr_add_val(d->arr, item);
-    return 0;
+static void object_row_emit(object_row_sink_t *sink, nmo_cli_record_t *rec,
+                            size_t cell_capacity)
+{
+    if (sink->doc) {
+        yyjson_mut_val *item = yyjson_mut_obj(sink->doc);
+        if (item && nmo_cli_record_to_json(rec, sink->doc, item)) {
+            yyjson_mut_arr_add_val(sink->arr, item);
+        }
+    } else if (sink->table) {
+        const char *cells[8];
+        size_t n = nmo_cli_record_cells(rec, cells,
+                                        cell_capacity < 8u ? cell_capacity : 8u);
+        nmo_cli_table_add_row(sink->table, cells, n);
+    }
 }
 
-typedef struct {
-    nmo_cli_table_t *table;
-    const nmo_cmd_ctx_t *ctx;
-} list_table_data_t;
-
-static int list_table_visitor(size_t index, nmo_object_t *obj, const nmo_cmd_ctx_t *c, void *user) {
-    (void)index;
-    list_table_data_t *d = (list_table_data_t *)user;
-    char id_buf[16];
-    snprintf(id_buf, sizeof(id_buf), "%u", nmo_object_get_id(obj));
-    const char *class_name = nmo_core_class_name(c, nmo_object_get_class_id(obj));
+/* Identity fields shared by list and find rows. JSON: id, class_id,
+ * class_name?, name?. Text: ID, <class_label>, and optionally <name_label>
+ * right away (the list row appends SIZE before NAME instead). */
+static bool object_row_identity(const nmo_cmd_ctx_t *c, nmo_object_t *obj,
+                                nmo_cli_record_t *rec, const char *class_label,
+                                const char *name_label, bool name_in_text_now)
+{
+    nmo_class_id_t class_id = nmo_object_get_class_id(obj);
+    const char *class_name = nmo_core_class_name(c, class_id);
     const char *name = nmo_object_get_name(obj);
-    char size_buf[32];
+    bool ok = nmo_cli_record_uint(rec, "id", "ID", nmo_object_get_id(obj));
+    ok = ok && nmo_cli_record_uint(rec, "class_id", NULL, class_id);
+    ok = ok && nmo_cli_record_str_opt(rec, "class_name", NULL, class_name, NULL);
+    ok = ok && nmo_cli_record_text(rec, class_label, class_name ? class_name : "-");
+    ok = ok && nmo_cli_record_str_opt(rec, "name", NULL, name, NULL);
+    if (name_in_text_now) {
+        ok = ok && nmo_cli_record_text(rec, name_label,
+                                       (name && name[0]) ? name : "-");
+    }
+    return ok;
+}
+
+static int object_list_visitor(size_t index, nmo_object_t *obj,
+                               const nmo_cmd_ctx_t *c, void *user)
+{
+    (void)index;
+    object_row_sink_t *sink = (object_row_sink_t *)user;
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    if (!rec) return 0;
     nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
-    snprintf(size_buf, sizeof(size_buf), "%zu", chunk ? nmo_chunk_get_data_size(chunk) : (size_t)0);
-    const char *cells[] = { id_buf, class_name ? class_name : "-", size_buf, (name && name[0]) ? name : "-" };
-    nmo_cli_table_add_row(d->table, cells, 4);
+    const char *name = nmo_object_get_name(obj);
+    bool ok = object_row_identity(c, obj, rec, "CLASS", "NAME", false);
+    ok = ok && nmo_cli_record_uint(rec, "size", "SIZE",
+                                   chunk ? (uint64_t)nmo_chunk_get_data_size(chunk) : 0u);
+    ok = ok && nmo_cli_record_text(rec, "NAME", (name && name[0]) ? name : "-");
+    if (ok) object_row_emit(sink, rec, 4);
+    nmo_cli_record_free(rec);
     return 0;
 }
 
@@ -254,8 +275,8 @@ static int object_list_single(const char *file_path,
         if (doc && data) {
             yyjson_mut_val *arr = yyjson_mut_arr(doc);
             for (size_t i = 0; i < output_count; ++i) {
-                list_json_data_t jd = { .doc = doc, .arr = arr, .ctx = &c };
-                list_json_visitor(i, col.objects[i], &c, &jd);
+                object_row_sink_t jd = { .doc = doc, .arr = arr };
+                object_list_visitor(i, col.objects[i], &c, &jd);
             }
             yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)output_count);
             yyjson_mut_obj_add_val(doc, data, "objects", arr);
@@ -269,8 +290,8 @@ static int object_list_single(const char *file_path,
             nmo_cli_table_t table;
             nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
             for (size_t i = 0; i < output_count; ++i) {
-                list_table_data_t td = { .table = &table, .ctx = &c };
-                list_table_visitor(i, col.objects[i], &c, &td);
+                object_row_sink_t td = { .table = &table };
+                object_list_visitor(i, col.objects[i], &c, &td);
             }
             fprintf(c.out, "Objects: %zu", result.matched);
             if (class_filter_str) fprintf(c.out, " (filtered by class: %s)", class_filter_str);
@@ -283,8 +304,8 @@ static int object_list_single(const char *file_path,
     } else {
         if (doc && data) {
             yyjson_mut_val *arr = yyjson_mut_arr(doc);
-            list_json_data_t jd = { .doc = doc, .arr = arr, .ctx = &c };
-            nmo_core_object_query_run(&c, &query, list_json_visitor, &jd, &result);
+            object_row_sink_t jd = { .doc = doc, .arr = arr };
+            nmo_core_object_query_run(&c, &query, object_list_visitor, &jd, &result);
             yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)result.matched);
             yyjson_mut_obj_add_val(doc, data, "objects", arr);
         } else {
@@ -296,8 +317,8 @@ static int object_list_single(const char *file_path,
             };
             nmo_cli_table_t table;
             nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
-            list_table_data_t td = { .table = &table, .ctx = &c };
-            nmo_core_object_query_run(&c, &query, list_table_visitor, &td, &result);
+            object_row_sink_t td = { .table = &table };
+            nmo_core_object_query_run(&c, &query, object_list_visitor, &td, &result);
             fprintf(c.out, "Objects: %zu", result.matched);
             if (class_filter_str) fprintf(c.out, " (filtered by class: %s)", class_filter_str);
             fprintf(c.out, "\n\n");
@@ -406,8 +427,8 @@ int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
             yyjson_mut_val *arr = yyjson_mut_arr(doc);
 
             for (size_t i = 0; i < output_count; ++i) {
-                list_json_data_t jd = { .doc = doc, .arr = arr, .ctx = &c };
-                list_json_visitor(i, col.objects[i], &c, &jd);
+                object_row_sink_t jd = { .doc = doc, .arr = arr };
+                object_list_visitor(i, col.objects[i], &c, &jd);
             }
 
             yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)output_count);
@@ -427,8 +448,8 @@ int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
             nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
 
             for (size_t i = 0; i < output_count; ++i) {
-                list_table_data_t td = { .table = &table, .ctx = &c };
-                list_table_visitor(i, col.objects[i], &c, &td);
+                object_row_sink_t td = { .table = &table };
+                object_list_visitor(i, col.objects[i], &c, &td);
             }
 
             fprintf(c.out, "Objects: %zu", result.matched);
@@ -452,8 +473,8 @@ int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
             yyjson_mut_val *data = yyjson_mut_obj(doc);
             yyjson_mut_val *arr = yyjson_mut_arr(doc);
 
-            list_json_data_t jd = { .doc = doc, .arr = arr, .ctx = &c };
-            nmo_core_object_query_run(&c, &query, list_json_visitor, &jd, &result);
+            object_row_sink_t jd = { .doc = doc, .arr = arr };
+            nmo_core_object_query_run(&c, &query, object_list_visitor, &jd, &result);
 
             yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)result.matched);
             yyjson_mut_obj_add_val(doc, data, "objects", arr);
@@ -471,8 +492,8 @@ int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
             nmo_cli_table_t table;
             nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
 
-            list_table_data_t td = { .table = &table, .ctx = &c };
-            nmo_core_object_query_run(&c, &query, list_table_visitor, &td, &result);
+            object_row_sink_t td = { .table = &table };
+            nmo_core_object_query_run(&c, &query, object_list_visitor, &td, &result);
 
             fprintf(c.out, "Objects: %zu", result.matched);
             if (class_filter_str) {
@@ -984,41 +1005,17 @@ int nmo_cmd_object_show_class_in_session(nmo_cmd_ctx_t *ctx,
  * object find - visitor callbacks
  * ============================================================================ */
 
-typedef struct {
-    yyjson_mut_doc *doc;
-    yyjson_mut_val *arr;
-    const nmo_cmd_ctx_t *ctx;
-} find_json_data_t;
-
-static int find_json_visitor(size_t index, nmo_object_t *obj, const nmo_cmd_ctx_t *c, void *user) {
+static int object_find_visitor(size_t index, nmo_object_t *obj,
+                               const nmo_cmd_ctx_t *c, void *user)
+{
     (void)index;
-    find_json_data_t *d = (find_json_data_t *)user;
-    yyjson_mut_val *item = yyjson_mut_obj(d->doc);
-    yyjson_mut_obj_add_uint(d->doc, item, "id", nmo_object_get_id(obj));
-    nmo_class_id_t class_id = nmo_object_get_class_id(obj);
-    yyjson_mut_obj_add_uint(d->doc, item, "class_id", class_id);
-    const char *class_name = nmo_core_class_name(c, class_id);
-    if (class_name) yyjson_mut_obj_add_str(d->doc, item, "class_name", class_name);
-    const char *name = nmo_object_get_name(obj);
-    if (name && name[0]) nmo_cli_json_add_str_safe(d->doc, item, "name", name);
-    yyjson_mut_arr_add_val(d->arr, item);
-    return 0;
-}
-
-typedef struct {
-    nmo_cli_table_t *table;
-    const nmo_cmd_ctx_t *ctx;
-} find_table_data_t;
-
-static int find_table_visitor(size_t index, nmo_object_t *obj, const nmo_cmd_ctx_t *c, void *user) {
-    (void)index;
-    find_table_data_t *d = (find_table_data_t *)user;
-    char id_buf[16];
-    snprintf(id_buf, sizeof(id_buf), "%u", nmo_object_get_id(obj));
-    const char *class_name = nmo_core_class_name(c, nmo_object_get_class_id(obj));
-    const char *name = nmo_object_get_name(obj);
-    const char *cells[] = { id_buf, class_name ? class_name : "-", (name && name[0]) ? name : "-" };
-    nmo_cli_table_add_row(d->table, cells, 3);
+    object_row_sink_t *sink = (object_row_sink_t *)user;
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    if (!rec) return 0;
+    if (object_row_identity(c, obj, rec, "Class", "Name", true)) {
+        object_row_emit(sink, rec, 3);
+    }
+    nmo_cli_record_free(rec);
     return 0;
 }
 
@@ -1074,8 +1071,8 @@ int nmo_cmd_object_find(int argc, char **argv, const nmo_cli_global_opts_t *glob
 
         yyjson_mut_val *matches = yyjson_mut_arr(doc);
 
-        find_json_data_t jd = { .doc = doc, .arr = matches, .ctx = &c };
-        nmo_core_object_query_run(&c, &query, find_json_visitor, &jd, &result);
+        object_row_sink_t jd = { .doc = doc, .arr = matches };
+        nmo_core_object_query_run(&c, &query, object_find_visitor, &jd, &result);
 
         yyjson_mut_obj_add_uint(doc, data, "match_count", (uint64_t)result.matched);
         yyjson_mut_obj_add_val(doc, data, "matches", matches);
@@ -1092,8 +1089,8 @@ int nmo_cmd_object_find(int argc, char **argv, const nmo_cli_global_opts_t *glob
         nmo_cli_table_t table;
         nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
 
-        find_table_data_t td = { .table = &table, .ctx = &c };
-        nmo_core_object_query_run(&c, &query, find_table_visitor, &td, &result);
+        object_row_sink_t td = { .table = &table };
+        nmo_core_object_query_run(&c, &query, object_find_visitor, &td, &result);
 
         fprintf(c.out, "Found: %zu objects", result.matched);
         if (class_filter_str) {
@@ -1428,8 +1425,8 @@ static int object_list_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
         size_t output_count = col.count;
         if (top_n > 0 && (size_t)top_n < output_count) output_count = (size_t)top_n;
         for (size_t i = 0; i < output_count; i++) {
-            list_json_data_t jd = { .doc = doc, .arr = arr, .ctx = ctx };
-            list_json_visitor(i, col.objects[i], ctx, &jd);
+            object_row_sink_t jd = { .doc = doc, .arr = arr };
+            object_list_visitor(i, col.objects[i], ctx, &jd);
         }
         free(col.objects);
         yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)output_count);
@@ -1444,8 +1441,8 @@ static int object_list_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
         };
         nmo_cli_table_t table;
         nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
-        list_table_data_t td = { .table = &table, .ctx = ctx };
-        nmo_core_object_query_run(ctx, &query, list_table_visitor, &td, &result);
+        object_row_sink_t td = { .table = &table };
+        nmo_core_object_query_run(ctx, &query, object_list_visitor, &td, &result);
         fprintf(ctx->out, "Objects: %zu", result.matched);
         if (top_n > 0) fprintf(ctx->out, " (showing top %u)", top_n);
         fprintf(ctx->out, "\n\n");
@@ -1515,8 +1512,8 @@ static int object_find_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
         yyjson_mut_val *matches = yyjson_mut_arr(doc);
-        find_json_data_t jd = { .doc = doc, .arr = matches, .ctx = ctx };
-        nmo_core_object_query_run(ctx, &query, find_json_visitor, &jd, &result);
+        object_row_sink_t jd = { .doc = doc, .arr = matches };
+        nmo_core_object_query_run(ctx, &query, object_find_visitor, &jd, &result);
         yyjson_mut_obj_add_uint(doc, data, "match_count", (uint64_t)result.matched);
         yyjson_mut_obj_add_val(doc, data, "matches", matches);
         return nmo_cmd_ctx_json_end(ctx, doc, data, "object.find");
@@ -1529,8 +1526,8 @@ static int object_find_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
     };
     nmo_cli_table_t table;
     nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
-    find_table_data_t td = { .table = &table, .ctx = ctx };
-    nmo_core_object_query_run(ctx, &query, find_table_visitor, &td, &result);
+    object_row_sink_t td = { .table = &table };
+    nmo_core_object_query_run(ctx, &query, object_find_visitor, &td, &result);
     fprintf(ctx->out, "Found: %zu objects\n\n", result.matched);
     nmo_cli_table_print(&table, ctx->out, ctx->colorize);
     nmo_cli_table_free(&table);
