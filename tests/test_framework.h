@@ -220,7 +220,9 @@ void test_format_error(char *buffer, size_t buffer_size, const char *format, ...
 /*
  * Assertion operands are evaluated exactly once. The comparison macros need
  * a type to hold each operand, so they rely on __typeof__, which GCC, Clang,
- * and MSVC 19.39+ (Visual Studio 2022 17.9) all provide in C17 mode.
+ * and MSVC 19.39+ (Visual Studio 2022 17.9) all provide in C17 mode. Compare
+ * function pointers as &fn rather than a bare function name: MSVC's
+ * __typeof__ does not decay a function designator to a pointer.
  */
 #if defined(__GNUC__) || defined(__clang__) || \
     (defined(_MSC_VER) && _MSC_VER >= 1939)

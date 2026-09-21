@@ -441,7 +441,7 @@ TEST(operation_registry, find_operation_success) {
     
     ASSERT_EQ(NMO_OK, result);
     ASSERT_NE(NULL, cell);
-    ASSERT_EQ(mock_add_int, cell->desc.function);
+    ASSERT_EQ(&mock_add_int, cell->desc.function);
     ASSERT_EQ(100, cell->desc.priority);
     
     teardown_context(ctx);
@@ -981,7 +981,7 @@ TEST(operation_registry, find_with_inheritance_exact_match) {
     
     ASSERT_EQ(NMO_OK, result);
     ASSERT_NE(NULL, cell);
-    ASSERT_EQ(mock_add_int, cell->desc.function);
+    ASSERT_EQ(&mock_add_int, cell->desc.function);
     
     teardown_context(ctx);
 }
@@ -1045,7 +1045,7 @@ TEST(operation_registry, find_with_inheritance_derived_type) {
     
     ASSERT_EQ(NMO_OK, result);
     ASSERT_NE(NULL, cell);
-    ASSERT_EQ(mock_add_int, cell->desc.function);
+    ASSERT_EQ(&mock_add_int, cell->desc.function);
     
     teardown_context(ctx);
 }
@@ -1119,7 +1119,7 @@ TEST(operation_registry, find_with_inheritance_multi_level) {
     
     ASSERT_EQ(NMO_OK, result);
     ASSERT_NE(NULL, cell);
-    ASSERT_EQ(mock_add_int, cell->desc.function);
+    ASSERT_EQ(&mock_add_int, cell->desc.function);
     
     teardown_context(ctx);
 }
@@ -1264,7 +1264,7 @@ TEST(operation_registry, find_with_inheritance_closest_match) {
     ASSERT_EQ(NMO_OK, result);
     ASSERT_NE(NULL, cell);
     /* Should match Middle (depth=1) instead of Root (depth=2) */
-    ASSERT_EQ(mock_negate_int, cell->desc.function);
+    ASSERT_EQ(&mock_negate_int, cell->desc.function);
     
     teardown_context(ctx);
 }

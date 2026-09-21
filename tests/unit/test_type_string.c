@@ -1997,8 +1997,8 @@ TEST(type_string, default_refresh_preserves_explicit_child_vtable) {
         nmo_type_registry_find_by_guid(registry, child_guid);
     ASSERT_NE(NULL, child);
     ASSERT_NE(NULL, child->vtable);
-    ASSERT_EQ(test_partial_validate, child->vtable->validate);
-    ASSERT_EQ(test_base_alias_from_string, child->vtable->from_string);
+    ASSERT_EQ(&test_partial_validate, child->vtable->validate);
+    ASSERT_EQ(&test_base_alias_from_string, child->vtable->from_string);
     ASSERT_NE(NULL, child->ext);
     ASSERT_EQ(NMO_TYPE_VTABLE_SOURCE_MERGED_DEFAULT, child->ext->vtable_source);
 
@@ -2228,7 +2228,7 @@ TEST(type_string, enum_metadata_registration_replaces_previous_default_filled_sl
         nmo_type_registry_find_by_guid(registry, enum_desc.guid);
     ASSERT_NE(NULL, registered);
     ASSERT_NE(NULL, registered->vtable);
-    ASSERT_EQ(test_base_alias_from_string, registered->vtable->from_string);
+    ASSERT_EQ(&test_base_alias_from_string, registered->vtable->from_string);
 
     nmo_enum_descriptor_t values[] = {
         { .name = "Named", .value = 7, .description = NULL, .flags = 0 },
@@ -2244,8 +2244,8 @@ TEST(type_string, enum_metadata_registration_replaces_previous_default_filled_sl
     registered = nmo_type_registry_find_by_guid(registry, enum_desc.guid);
     ASSERT_NE(NULL, registered);
     ASSERT_NE(NULL, registered->vtable);
-    ASSERT_EQ(test_partial_validate, registered->vtable->validate);
-    ASSERT_NE(test_base_alias_from_string, registered->vtable->from_string);
+    ASSERT_EQ(&test_partial_validate, registered->vtable->validate);
+    ASSERT_NE(&test_base_alias_from_string, registered->vtable->from_string);
 
     int32_t value = 0;
     ASSERT_EQ(NMO_OK, nmo_type_value_from_string(&value, registered, registry, "Named"));
@@ -2320,7 +2320,7 @@ TEST(type_string, metadata_unregister_recomputes_to_base_default) {
     registered = nmo_type_registry_find_by_guid(registry, enum_desc.guid);
     ASSERT_NE(NULL, registered);
     ASSERT_NE(NULL, registered->vtable);
-    ASSERT_EQ(test_base_alias_from_string, registered->vtable->from_string);
+    ASSERT_EQ(&test_base_alias_from_string, registered->vtable->from_string);
     ASSERT_NE(NULL, registered->ext);
     ASSERT_EQ(NMO_TYPE_VTABLE_SOURCE_BASE_DEFAULT, registered->ext->vtable_source);
 
@@ -2381,7 +2381,7 @@ TEST(type_string, metadata_unregister_recomputes_merged_default_slots) {
         nmo_type_registry_find_by_guid(registry, enum_desc.guid);
     ASSERT_NE(NULL, registered);
     ASSERT_NE(NULL, registered->vtable);
-    ASSERT_EQ(test_base_alias_from_string, registered->vtable->from_string);
+    ASSERT_EQ(&test_base_alias_from_string, registered->vtable->from_string);
 
     nmo_enum_descriptor_t values[] = {
         { .name = "Named", .value = 7, .description = NULL, .flags = 0 },
@@ -2404,8 +2404,8 @@ TEST(type_string, metadata_unregister_recomputes_merged_default_slots) {
     registered = nmo_type_registry_find_by_guid(registry, enum_desc.guid);
     ASSERT_NE(NULL, registered);
     ASSERT_NE(NULL, registered->vtable);
-    ASSERT_EQ(test_partial_validate, registered->vtable->validate);
-    ASSERT_EQ(test_base_alias_from_string, registered->vtable->from_string);
+    ASSERT_EQ(&test_partial_validate, registered->vtable->validate);
+    ASSERT_EQ(&test_base_alias_from_string, registered->vtable->from_string);
     ASSERT_NE(NULL, registered->ext);
     ASSERT_EQ(NMO_TYPE_VTABLE_SOURCE_MERGED_DEFAULT, registered->ext->vtable_source);
 
@@ -2462,7 +2462,7 @@ TEST(type_string, base_unregister_clears_inherited_default_vtable) {
     const nmo_type_descriptor_t *child =
         nmo_type_registry_find_by_guid(registry, child_guid);
     ASSERT_NE(NULL, child);
-    ASSERT_EQ(test_base_alias_from_string, child->vtable->from_string);
+    ASSERT_EQ(&test_base_alias_from_string, child->vtable->from_string);
 
     ASSERT_EQ(NMO_OK, nmo_type_registry_unregister(registry, base_guid));
 
@@ -2522,7 +2522,7 @@ TEST(type_string, merged_default_vtable_is_released_with_registry) {
     ASSERT_NE(NULL, registered);
     ASSERT_NE(&partial_vtable, registered->vtable);
     ASSERT_NE(NULL, registered->vtable);
-    ASSERT_EQ(test_partial_validate, registered->vtable->validate);
+    ASSERT_EQ(&test_partial_validate, registered->vtable->validate);
     ASSERT_NE(NULL, registered->vtable->from_string);
 
     nmo_type_registry_destroy(tracked_registry);
@@ -2795,8 +2795,8 @@ TEST(type_string, base_default_inheritance_only_fills_string_slots) {
         nmo_type_registry_find_by_guid(registry, child_guid);
     ASSERT_NE(NULL, child);
     ASSERT_NE(NULL, child->vtable);
-    ASSERT_EQ(test_base_alias_to_string, child->vtable->to_string);
-    ASSERT_EQ(test_base_alias_from_string, child->vtable->from_string);
+    ASSERT_EQ(&test_base_alias_to_string, child->vtable->to_string);
+    ASSERT_EQ(&test_base_alias_from_string, child->vtable->from_string);
     ASSERT_EQ(NULL, child->vtable->create);
     ASSERT_EQ(NULL, child->vtable->hash);
 
@@ -2839,7 +2839,7 @@ TEST(type_string, merged_category_default_only_fills_string_slots) {
         nmo_type_registry_find_by_guid(registry, desc.guid);
     ASSERT_NE(NULL, registered);
     ASSERT_NE(NULL, registered->vtable);
-    ASSERT_EQ(test_partial_validate, registered->vtable->validate);
+    ASSERT_EQ(&test_partial_validate, registered->vtable->validate);
     ASSERT_NE(NULL, registered->vtable->to_string);
     ASSERT_NE(NULL, registered->vtable->from_string);
     ASSERT_EQ(NULL, registered->vtable->create);

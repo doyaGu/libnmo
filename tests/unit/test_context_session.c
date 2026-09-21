@@ -110,13 +110,13 @@ TEST(context_session, create_custom) {
     ASSERT_EQ(&alloc_tag, ctx_allocator->user_data);
 
     /* Logger switching should replace the logger callback */
-    ASSERT_EQ(test_log_counter, ctx_logger->log);
+    ASSERT_EQ(&test_log_counter, ctx_logger->log);
     nmo_context_enable_logging(ctx, 0);
     ctx_logger = nmo_context_get_logger(ctx);
-    ASSERT_NE(test_log_counter, ctx_logger->log);
+    ASSERT_NE(&test_log_counter, ctx_logger->log);
     nmo_context_enable_logging(ctx, 1);
     ctx_logger = nmo_context_get_logger(ctx);
-    ASSERT_NE(test_log_counter, ctx_logger->log);
+    ASSERT_NE(&test_log_counter, ctx_logger->log);
 
     /* Setting log level should take effect */
     nmo_context_set_log_level(ctx, NMO_LOG_ERROR);
