@@ -301,7 +301,7 @@ TEST(reference_files, parse_all) {
     printf("========================================\n\n");
     
     // Only pass if majority (>50%) fully succeed
-    float success_rate = 100.0 * full_success / result_count;
+    float success_rate = (float)(100.0 * full_success / result_count);
     printf("Success rate: %.1f%%\n", success_rate);
     
     if (success_rate < 50.0) {

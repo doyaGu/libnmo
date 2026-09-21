@@ -380,7 +380,7 @@ TEST(cli_write, object_data_entity_material_texture_parameter_dry_run_preserves_
     ASSERT_NOT_NULL(param_before);
     ASSERT_TRUE(param_before->buffer_data.count <= 16u);
     uint8_t param_bytes_before[16] = {0};
-    uint32_t param_size_before = param_before->buffer_data.count;
+    uint32_t param_size_before = (uint32_t)param_before->buffer_data.count;
     if (param_size_before > 0u) {
         ASSERT_NOT_NULL(param_before->buffer_data.data);
         memcpy(param_bytes_before, param_before->buffer_data.data, param_size_before);

@@ -288,10 +288,10 @@ static void load_root_behavior_counts(const char *path,
         *out_behavior_id = script.script_id;
     }
     if (out_inputs != NULL) {
-        *out_inputs = behavior.input_count;
+        *out_inputs = (uint32_t)behavior.input_count;
     }
     if (out_outputs != NULL) {
-        *out_outputs = behavior.output_count;
+        *out_outputs = (uint32_t)behavior.output_count;
     }
 
     nmo_workspace_destroy(workspace);

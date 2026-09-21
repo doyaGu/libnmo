@@ -23,8 +23,8 @@ static void prepare_argb_image(nmo_image_desc_t *desc,
 }
 
 static uint16_t pack_rgb565(uint8_t r, uint8_t g, uint8_t b) {
-    uint16_t red = (uint16_t)(r >> 3) << 11;
-    uint16_t green = (uint16_t)(g >> 2) << 5;
+    uint16_t red = (uint16_t)((r >> 3) << 11);
+    uint16_t green = (uint16_t)((g >> 2) << 5);
     uint16_t blue = (uint16_t)(b >> 3);
     return (uint16_t)(red | green | blue);
 }
