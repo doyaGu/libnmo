@@ -120,7 +120,7 @@ TEST(object, child_growth) {
     ASSERT_NOT_NULL(parent);
 
     // Add more than initial capacity (4) to trigger growth
-    const int child_count = 10;
+    enum { child_count = 10 };
     nmo_object_t *children[child_count];
     for (int i = 0; i < child_count; i++) {
         nmo_object_t* child = nmo_object_create(NULL, (nmo_object_id_t)(200 + i), (nmo_class_id_t)300);

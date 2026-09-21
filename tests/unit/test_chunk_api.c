@@ -233,8 +233,8 @@ TEST(chunk_api, buffer_fill_errors_keep_position) {
     result = nmo_chunk_start_read(chunk);
     ASSERT_EQ(result, NMO_OK);
 
-    uint8_t small[4];
-    size_t read_size = nmo_chunk_read_and_fill_buffer(chunk, small, sizeof(small));
+    uint8_t small_buf[4];
+    size_t read_size = nmo_chunk_read_and_fill_buffer(chunk, small_buf, sizeof(small_buf));
     ASSERT_EQ(read_size, 0u);
     ASSERT_EQ(nmo_chunk_get_position(chunk), 0u);
 

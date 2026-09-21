@@ -164,7 +164,7 @@ TEST(app_util, json_util_sanitizes_invalid_utf8) {
     ASSERT_NOT_NULL(root);
     yyjson_mut_doc_set_root(doc, root);
 
-    const char invalid_name[] = { 'A', (char)0xFF, 'B', '\0' };
+    const char invalid_name[] = { 'A', '\xFF', 'B', '\0' };
     ASSERT_TRUE(nmo_json_add_str_safe(doc, root, "name", invalid_name));
 
     yyjson_mut_val *name = yyjson_mut_obj_get(root, "name");
@@ -196,7 +196,7 @@ TEST(app_util, text_escape_bytes) {
     ASSERT_STR_EQ("", copy);
     free(copy);
 
-    const char raw[] = {'A', '\n', 'B', (char)0xFF, '\0'};
+    const char raw[] = {'A', '\n', 'B', '\xFF', '\0'};
     char *escaped = nmo_text_escape_bytes(raw);
     ASSERT_NOT_NULL(escaped);
     ASSERT_STR_EQ("A\\x0AB\\xFF", escaped);

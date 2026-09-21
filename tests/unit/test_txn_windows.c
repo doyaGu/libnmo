@@ -171,7 +171,7 @@ TEST(txn_windows, implicit_rollback) {
 
 TEST(txn_windows, malformed_utf8_path_is_scanned_safely) {
     const char malformed_path[] = {
-        't', 'e', 's', 't', '_', (char)0xF0, '\0'
+        't', 'e', 's', 't', '_', '\xF0', '\0'
     };
     nmo_txn_desc_t desc = {
         .path = malformed_path,

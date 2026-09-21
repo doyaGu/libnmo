@@ -211,7 +211,7 @@ TEST(header1, size_overflow) {
     nmo_header1_t header;
     memset(&header, 0, sizeof(header));
     header.object_count = 0;
-    header.plugin_dep_count = (uint32_t)(SIZE_MAX / sizeof(uint32_t)) + 1u;
+    header.plugin_dep_count = UINT32_MAX;
     header.plugin_deps = NULL;
     header.included_file_count = 0;
 
