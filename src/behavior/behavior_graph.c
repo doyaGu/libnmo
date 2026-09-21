@@ -19,7 +19,7 @@
 #include <string.h>
 
 /* ============================================================================
- * Build context 芒鈧€?holds all mutable state for recursive graph construction
+ * Build context - holds all mutable state for recursive graph construction
  * ============================================================================ */
 
 typedef struct graph_build_ctx {
@@ -206,7 +206,7 @@ static void free_graph_nodes(nmo_behavior_graph_node_t *nodes, size_t count) {
     free(nodes);
 }
 
-/* Set depth/parent on a node by ID (reverse scan 芒鈧€?just-added is at end) */
+/* Set depth/parent on a node by ID (reverse scan - just-added is at end) */
 static void set_node_depth(nmo_behavior_graph_node_t *nodes, size_t count,
                            nmo_object_id_t id, uint32_t depth, nmo_object_id_t parent_id) {
     for (size_t j = count; j > 0; --j) {

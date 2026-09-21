@@ -1048,7 +1048,7 @@ nmo_status_t nmo_runtime_execute_delete(
         for (uint32_t fi = file_count; fi > 0; fi--) {
             nmo_included_file_t *f = &files[fi - 1];
             if (f->owner_ids.count == 0) {
-                continue; /* no owners recorded 鈥?not managed */
+                continue; /* no owners recorded - not managed */
             }
             const nmo_object_id_t *owners =
                 (const nmo_object_id_t *)f->owner_ids.data;

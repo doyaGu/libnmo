@@ -1,6 +1,6 @@
 /**
  * @file behavior_index.c
- * @brief Behavior ownership index 芒鈧?O(1) reverse lookup for IO/param/sub-behavior IDs
+ * @brief Behavior ownership index - O(1) reverse lookup for IO/param/sub-behavior IDs
  */
 
 #include "behavior/nmo_behavior_analyze.h"
@@ -80,7 +80,7 @@ static bool index_insert(
     uint32_t h = id_hash(key) % (uint32_t)idx->capacity;
     while (idx->slots[h].key != 0) {
         if (idx->slots[h].key == key) {
-            /* Already indexed 芒鈧?first registration wins (don't overwrite) */
+            /* Already indexed - first registration wins (don't overwrite) */
             return true;
         }
         h = (h + 1) % (uint32_t)idx->capacity;

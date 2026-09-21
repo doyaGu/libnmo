@@ -986,7 +986,7 @@ void nmo_session_invalidate_ref_graph(nmo_session_t *session) {
         nmo_ref_graph_destroy(session->cached_ref_graph);
         session->cached_ref_graph = NULL;
     }
-    /* Reset arena rather than destroy 脙垄芒鈥?avoids alloc/free churn and pointer
+    /* Reset arena rather than destroy - avoids alloc/free churn and pointer
      * reuse issues.  The arena is destroyed in nmo_session_destroy(). */
     if (session->ref_graph_arena != NULL) {
         nmo_arena_reset(session->ref_graph_arena);
