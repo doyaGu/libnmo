@@ -8,6 +8,7 @@
 #include "../nmo_cmd_ctx.h"
 #include "../nmo_cmd_core.h"
 #include "../nmo_cli_output.h"
+#include "../nmo_cli_record.h"
 #include "../nmo_cli_write.h"
 #include "../nmo_opt.h"
 #include "../nmo_tool_common.h"
@@ -86,110 +87,76 @@ static nmo_status_t parse_color_rgba(const char *text, nmo_color_t *out_color) {
     return NMO_OK;
 }
 
-typedef struct entity_list_json_data {
-    yyjson_mut_doc *doc;
+typedef struct entity_list_data {
+    yyjson_mut_doc *doc;    /* JSON sink when non-NULL */
     yyjson_mut_val *arr;
+    nmo_cli_table_t *table; /* text sink otherwise */
     uint32_t found;
-} entity_list_json_data_t;
+} entity_list_data_t;
 
-typedef struct entity_list_table_data {
-    nmo_cli_table_t *table;
-    uint32_t found;
-} entity_list_table_data_t;
-
-static int entity_list_json_visitor(size_t index,
-                                    nmo_object_t *obj,
-                                    const nmo_cmd_ctx_t *c,
-                                    void *user)
+static bool entity_list_build_record(const nmo_cmd_ctx_t *c,
+                                     nmo_object_t *obj,
+                                     nmo_cli_record_t *rec)
 {
-    (void)index;
-    entity_list_json_data_t *data = (entity_list_json_data_t *)user;
-    if (obj == NULL || data == NULL || data->doc == NULL || data->arr == NULL) {
-        return 0;
-    }
-
-    yyjson_mut_doc *doc = data->doc;
-    yyjson_mut_val *item = yyjson_mut_obj(doc);
-    nmo_object_id_t id = nmo_object_get_id(obj);
     nmo_class_id_t cid = nmo_object_get_class_id(obj);
-    yyjson_mut_obj_add_uint(doc, item, "id", id);
-
-    const char *cn = nmo_core_class_name(c, cid);
-    if (cn) yyjson_mut_obj_add_str(doc, item, "class", cn);
-
     const char *name = nmo_object_get_name(obj);
-    nmo_cli_json_add_str_safe(doc, item, "name",
-                              (name && name[0]) ? name : "");
+
+    bool ok = nmo_cli_record_uint(rec, "id", "ID", nmo_object_get_id(obj));
+    ok = ok && nmo_cli_record_str_opt(rec, "class", "CLASS",
+                                      nmo_core_class_name(c, cid), "-");
+    ok = ok && nmo_cli_record_str(rec, "name", "NAME", name);
+    if (ok && (!name || !name[0])) {
+        ok = nmo_cli_record_set_text(rec, "-");
+    }
 
     const nmo_3dentity_state_t *es =
         (const nmo_3dentity_state_t *)nmo_object_get_state(obj);
     if (es) {
-        yyjson_mut_val *pos_arr = yyjson_mut_arr(doc);
-        yyjson_mut_arr_add_real(doc, pos_arr, (double)es->world_matrix[12]);
-        yyjson_mut_arr_add_real(doc, pos_arr, (double)es->world_matrix[13]);
-        yyjson_mut_arr_add_real(doc, pos_arr, (double)es->world_matrix[14]);
-        yyjson_mut_obj_add_val(doc, item, "position", pos_arr);
-
+        char pos_buf[64];
+        const double pos[3] = {
+            (double)es->world_matrix[12],
+            (double)es->world_matrix[13],
+            (double)es->world_matrix[14],
+        };
+        format_position(pos_buf, sizeof(pos_buf), es->world_matrix);
+        ok = ok && nmo_cli_record_real_list(rec, "position", "POSITION", pos, 3, pos_buf);
         nmo_object_id_t mesh_id = nmo_ref_runtime_id(&es->current_mesh);
-        if (mesh_id) {
-            yyjson_mut_obj_add_uint(doc, item, "mesh_id", mesh_id);
-            const char *mn = resolve_name(c, mesh_id);
-            if (mn && mn[0]) {
-                nmo_cli_json_add_str_safe(doc, item, "mesh", mn);
-            }
-        }
+        ok = ok && nmo_cli_record_ref_opt(rec, "mesh_id", "mesh", "MESH", mesh_id,
+                                          resolve_name(c, mesh_id), "-");
+    } else {
+        ok = ok && nmo_cli_record_text(rec, "POSITION", "-");
+        ok = ok && nmo_cli_record_text(rec, "MESH", "-");
     }
-
-    yyjson_mut_arr_add_val(data->arr, item);
-    data->found++;
-    return 0;
+    return ok;
 }
 
-static int entity_list_table_visitor(size_t index,
-                                     nmo_object_t *obj,
-                                     const nmo_cmd_ctx_t *c,
-                                     void *user)
+static int entity_list_visitor(size_t index,
+                               nmo_object_t *obj,
+                               const nmo_cmd_ctx_t *c,
+                               void *user)
 {
     (void)index;
-    entity_list_table_data_t *data = (entity_list_table_data_t *)user;
-    if (obj == NULL || data == NULL || data->table == NULL) {
+    entity_list_data_t *data = (entity_list_data_t *)user;
+    if (obj == NULL || data == NULL) {
         return 0;
     }
 
-    char id_buf[16];
-    snprintf(id_buf, sizeof(id_buf), "%u", nmo_object_get_id(obj));
-
-    nmo_class_id_t cid = nmo_object_get_class_id(obj);
-    const char *cn = nmo_core_class_name(c, cid);
-    if (!cn) cn = "-";
-
-    const char *name = nmo_object_get_name(obj);
-    if (!name || !name[0]) name = "-";
-
-    char pos_buf[64];
-    char mesh_buf[64];
-    snprintf(pos_buf, sizeof(pos_buf), "-");
-    snprintf(mesh_buf, sizeof(mesh_buf), "-");
-
-    const nmo_3dentity_state_t *es =
-        (const nmo_3dentity_state_t *)nmo_object_get_state(obj);
-    if (es) {
-        format_position(pos_buf, sizeof(pos_buf), es->world_matrix);
-        nmo_object_id_t mesh_id = nmo_ref_runtime_id(&es->current_mesh);
-        if (mesh_id) {
-            const char *mn = resolve_name(c, mesh_id);
-            if (mn && mn[0]) {
-                snprintf(mesh_buf, sizeof(mesh_buf), "#%u (%s)",
-                         mesh_id, mn);
-            } else {
-                snprintf(mesh_buf, sizeof(mesh_buf), "#%u",
-                         mesh_id);
-            }
-        }
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    if (!rec || !entity_list_build_record(c, obj, rec)) {
+        nmo_cli_record_free(rec);
+        return 0;
     }
-
-    const char *cells[] = {id_buf, cn, name, pos_buf, mesh_buf};
-    nmo_cli_table_add_row(data->table, cells, 5);
+    if (data->doc) {
+        yyjson_mut_val *item = yyjson_mut_obj(data->doc);
+        if (item && nmo_cli_record_to_json(rec, data->doc, item)) {
+            yyjson_mut_arr_add_val(data->arr, item);
+        }
+    } else if (data->table) {
+        const char *cells[5];
+        size_t n = nmo_cli_record_cells(rec, cells, 5);
+        nmo_cli_table_add_row(data->table, cells, n);
+    }
+    nmo_cli_record_free(rec);
     data->found++;
     return 0;
 }
@@ -233,16 +200,16 @@ static int entity_list_run(nmo_cmd_ctx_t *c, const char *class_filter) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
         yyjson_mut_val *arr = yyjson_mut_arr(doc);
-        entity_list_json_data_t jd = { .doc = doc, .arr = arr };
+        entity_list_data_t ld = { .doc = doc, .arr = arr };
         if (class_filter_is_entity) {
             int rc = nmo_core_object_query_run(c, &entity_query,
-                                               entity_list_json_visitor, &jd, NULL);
+                                               entity_list_visitor, &ld, NULL);
             if (rc != NMO_CLI_EXIT_SUCCESS) {
                 return rc;
             }
         }
 
-        yyjson_mut_obj_add_uint(doc, data, "count", jd.found);
+        yyjson_mut_obj_add_uint(doc, data, "count", ld.found);
         yyjson_mut_obj_add_val(doc, data, "entities", arr);
         nmo_cmd_ctx_json_end(c, doc, data, "entity.list");
     } else {
@@ -256,17 +223,17 @@ static int entity_list_run(nmo_cmd_ctx_t *c, const char *class_filter) {
 
         nmo_cli_table_t table;
         nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
-        entity_list_table_data_t td = { .table = &table };
+        entity_list_data_t ld = { .table = &table };
         if (class_filter_is_entity) {
             int rc = nmo_core_object_query_run(c, &entity_query,
-                                               entity_list_table_visitor, &td, NULL);
+                                               entity_list_visitor, &ld, NULL);
             if (rc != NMO_CLI_EXIT_SUCCESS) {
                 nmo_cli_table_free(&table);
                 return rc;
             }
         }
 
-        fprintf(c->out, "3D Entities: %u\n\n", td.found);
+        fprintf(c->out, "3D Entities: %u\n\n", ld.found);
         nmo_cli_table_print(&table, c->out, c->colorize);
         nmo_cli_table_free(&table);
     }
@@ -333,301 +300,234 @@ static int entity_show_parse(int argc,
     return NMO_CLI_EXIT_SUCCESS;
 }
 
+/* "\n<Heading> (<count>):\n" plus one "  [i] #id (name)" line per valid reference. */
+static bool entity_append_ref_list_text(char **out, size_t *cap, size_t *len,
+                                        const char *text)
+{
+    size_t add = strlen(text);
+    if (*len + add + 1u > *cap) {
+        size_t new_cap = (*cap ? *cap * 2u : 256u);
+        while (new_cap < *len + add + 1u) new_cap *= 2u;
+        char *grown = (char *)realloc(*out, new_cap);
+        if (!grown) return false;
+        *out = grown;
+        *cap = new_cap;
+    }
+    memcpy(*out + *len, text, add + 1u);
+    *len += add;
+    return true;
+}
+
+/* JSON: array of valid ids. Text: heading with the raw count and named lines. */
+static bool entity_record_ref_list(const nmo_cmd_ctx_t *c,
+                                   nmo_cli_record_t *rec,
+                                   const char *key,
+                                   const char *heading,
+                                   const nmo_ref_t *refs,
+                                   uint32_t count)
+{
+    uint64_t *ids = (uint64_t *)malloc(count * sizeof(uint64_t));
+    char *text = NULL;
+    size_t cap = 0, len = 0, n = 0;
+    char line[192];
+    bool ok = ids != NULL;
+
+    snprintf(line, sizeof(line), "\n%s (%u):\n", heading, count);
+    ok = ok && entity_append_ref_list_text(&text, &cap, &len, line);
+    for (uint32_t i = 0; ok && i < count; ++i) {
+        const nmo_object_id_t id = nmo_ref_runtime_id(&refs[i]);
+        if (id == NMO_OBJECT_ID_NONE) continue;
+        ids[n++] = id;
+        const char *rn = resolve_name(c, id);
+        if (rn && rn[0]) {
+            snprintf(line, sizeof(line), "  [%u] #%u (%s)\n", i, id, rn);
+        } else {
+            snprintf(line, sizeof(line), "  [%u] #%u\n", i, id);
+        }
+        ok = entity_append_ref_list_text(&text, &cap, &len, line);
+    }
+    ok = ok && nmo_cli_record_uint_list(rec, key, NULL, ids, n, NULL);
+    ok = ok && nmo_cli_record_raw(rec, text);
+    free(ids);
+    free(text);
+    return ok;
+}
+
+static bool entity_show_build_record(const nmo_cmd_ctx_t *c,
+                                     nmo_cli_record_t *rec,
+                                     nmo_object_t *obj,
+                                     nmo_object_id_t obj_id)
+{
+    nmo_class_id_t class_id = nmo_object_get_class_id(obj);
+    const char *name = nmo_object_get_name(obj);
+    const char *class_name = nmo_core_class_name(c, class_id);
+    const nmo_3dentity_state_t *es =
+        (const nmo_3dentity_state_t *)nmo_object_get_state(obj);
+    char buf[128];
+
+    snprintf(buf, sizeof(buf), "#%u (%s)", obj_id,
+             (name && name[0]) ? name : "(unnamed)");
+    bool ok = nmo_cli_record_uint(rec, "id", NULL, obj_id);
+    ok = ok && nmo_cli_record_str(rec, "name", NULL, name);
+    ok = ok && nmo_cli_record_text(rec, "ID / Name", buf);
+    ok = ok && nmo_cli_record_str_opt(rec, "class", NULL, class_name, NULL);
+    snprintf(buf, sizeof(buf), "#%u (%s)", class_id, class_name ? class_name : "-");
+    ok = ok && nmo_cli_record_text(rec, "Class", buf);
+    if (!ok) {
+        return false;
+    }
+    if (!es) {
+        return nmo_cli_record_null(rec, "state", NULL, NULL);
+    }
+
+    const double pos[3] = {
+        (double)es->world_matrix[12],
+        (double)es->world_matrix[13],
+        (double)es->world_matrix[14],
+    };
+    format_position(buf, sizeof(buf), es->world_matrix);
+    ok = nmo_cli_record_real_list(rec, "position", "Position", pos, 3, buf);
+
+    double matrix[16];
+    for (int mi = 0; mi < 16; ++mi) {
+        matrix[mi] = (double)es->world_matrix[mi];
+    }
+    ok = ok && nmo_cli_record_real_list(rec, "world_matrix", NULL, matrix, 16, NULL);
+
+    ok = ok && nmo_cli_record_uint(rec, "entity_flags", "Entity Flags", es->entity_flags);
+    snprintf(buf, sizeof(buf), "0x%08X", es->entity_flags);
+    ok = ok && nmo_cli_record_set_text(rec, buf);
+    ok = ok && nmo_cli_record_uint(rec, "moveable_flags", "Moveable Flags",
+                                   es->moveable_flags);
+    snprintf(buf, sizeof(buf), "0x%08X", es->moveable_flags);
+    ok = ok && nmo_cli_record_set_text(rec, buf);
+
+    nmo_object_id_t mesh_id = nmo_ref_runtime_id(&es->current_mesh);
+    ok = ok && nmo_cli_record_ref(rec, "current_mesh_id", "current_mesh",
+                                  "Current Mesh", mesh_id, resolve_name(c, mesh_id),
+                                  "(none)");
+
+    if (ok && es->mesh_count > 0 && es->mesh_ids) {
+        ok = entity_record_ref_list(c, rec, "mesh_ids", "Meshes",
+                                    es->mesh_ids, es->mesh_count);
+    }
+    if (ok && es->animation_count > 0 && es->animation_ids) {
+        ok = entity_record_ref_list(c, rec, "animation_ids", "Animations",
+                                    es->animation_ids, es->animation_count);
+    }
+
+    nmo_object_id_t parent_id = nmo_ref_runtime_id(&es->parent);
+    ok = ok && nmo_cli_record_ref(rec, "parent_id", "parent", "Parent", parent_id,
+                                  resolve_name(c, parent_id), "(none)");
+
+    /* Text-only matrix block (JSON carries it as "world_matrix" above). */
+    {
+        char block[512];
+        int off = snprintf(block, sizeof(block), "\nWorld Matrix:\n");
+        for (int row = 0; row < 4 && off > 0 && (size_t)off < sizeof(block); ++row) {
+            off += snprintf(block + off, sizeof(block) - (size_t)off,
+                            "  [%8.4f %8.4f %8.4f %8.4f]\n",
+                            (double)es->world_matrix[row * 4 + 0],
+                            (double)es->world_matrix[row * 4 + 1],
+                            (double)es->world_matrix[row * 4 + 2],
+                            (double)es->world_matrix[row * 4 + 3]);
+        }
+        ok = ok && nmo_cli_record_raw(rec, block);
+    }
+
+    if (class_id == NMO_CID_CAMERA || class_id == NMO_CID_TARGETCAMERA) {
+        const nmo_camera_state_t *cs =
+            (const nmo_camera_state_t *)nmo_object_get_state(obj);
+        if (cs) {
+            ok = ok && nmo_cli_record_raw(rec, "\nCamera:\n");
+            ok = ok && nmo_cli_record_str(rec, "projection_type", "  Projection",
+                                          projection_type_str(cs->projection_type));
+            snprintf(buf, sizeof(buf), "%.4f rad (%.1f deg)",
+                     (double)cs->fov, (double)(cs->fov * 180.0f / 3.14159265f));
+            ok = ok && nmo_cli_record_real(rec, "fov", "  FOV", (double)cs->fov, NULL);
+            ok = ok && nmo_cli_record_set_text(rec, buf);
+            ok = ok && nmo_cli_record_real(rec, "near_plane", "  Near Plane",
+                                           (double)cs->near_plane, "%.4f");
+            ok = ok && nmo_cli_record_real(rec, "far_plane", "  Far Plane",
+                                           (double)cs->far_plane, "%.4f");
+            ok = ok && nmo_cli_record_int(rec, "width", NULL, cs->width);
+            ok = ok && nmo_cli_record_int(rec, "height", NULL, cs->height);
+            snprintf(buf, sizeof(buf), "%d x %d", cs->width, cs->height);
+            ok = ok && nmo_cli_record_text(rec, "  Viewport", buf);
+        }
+    }
+
+    if (class_id == NMO_CID_LIGHT || class_id == NMO_CID_TARGETLIGHT) {
+        const nmo_light_state_t *ls =
+            (const nmo_light_state_t *)nmo_object_get_state(obj);
+        if (ls) {
+            ok = ok && nmo_cli_record_raw(rec, "\nLight:\n");
+            ok = ok && nmo_cli_record_str(rec, "light_type", "  Type",
+                                          light_type_str(ls->light_data.type));
+            format_color_rgba(buf, sizeof(buf), &ls->light_data.diffuse);
+            ok = ok && nmo_cli_record_str(rec, "light_diffuse", "  Diffuse", buf);
+            format_color_rgba(buf, sizeof(buf), &ls->light_data.specular);
+            ok = ok && nmo_cli_record_str(rec, "light_specular", "  Specular", buf);
+            format_color_rgba(buf, sizeof(buf), &ls->light_data.ambient);
+            ok = ok && nmo_cli_record_str(rec, "light_ambient", "  Ambient", buf);
+            ok = ok && nmo_cli_record_real(rec, "light_range", "  Range",
+                                           (double)ls->light_data.range, "%.4f");
+            snprintf(buf, sizeof(buf), "(%.4f, %.4f, %.4f)",
+                     (double)ls->light_data.attenuation0,
+                     (double)ls->light_data.attenuation1,
+                     (double)ls->light_data.attenuation2);
+            ok = ok && nmo_cli_record_real(rec, "attenuation0", NULL,
+                                           (double)ls->light_data.attenuation0, NULL);
+            ok = ok && nmo_cli_record_real(rec, "attenuation1", NULL,
+                                           (double)ls->light_data.attenuation1, NULL);
+            ok = ok && nmo_cli_record_real(rec, "attenuation2", NULL,
+                                           (double)ls->light_data.attenuation2, NULL);
+            ok = ok && nmo_cli_record_text(rec, "  Attenuation", buf);
+            ok = ok && nmo_cli_record_real(rec, "light_power", "  Power",
+                                           (double)ls->light_power, "%.4f");
+        }
+    }
+    return ok;
+}
+
 static int entity_show_run(nmo_cmd_ctx_t *ctx, const entity_show_args_t *args)
 {
     if (ctx == NULL || args == NULL) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-#define c (*ctx)
     nmo_object_t *obj = NULL;
     nmo_object_id_t obj_id = 0;
-    int rc = nmo_core_resolve_one_object(&c, &args->selector, &obj, &obj_id);
+    int rc = nmo_core_resolve_one_object(ctx, &args->selector, &obj, &obj_id);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
         fprintf(stderr, "Usage: nmo entity show [--id <id> | --name <name> | <id>] <file>\n");
         return rc;
     }
 
-    nmo_class_id_t class_id = nmo_object_get_class_id(obj);
-
-    const char *name = nmo_object_get_name(obj);
-    const char *class_name = nmo_core_class_name(&c, class_id);
-
-    /* Get base 3D entity state -- always present for any derived type */
     const nmo_3dentity_state_t *es =
         (const nmo_3dentity_state_t *)nmo_object_get_state(obj);
 
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-
-        yyjson_mut_obj_add_uint(doc, data, "id", obj_id);
-        nmo_cli_json_add_str_safe(doc, data, "name",
-                                  (name && name[0]) ? name : "");
-        if (class_name)
-            yyjson_mut_obj_add_str(doc, data, "class", class_name);
-
-        if (es) {
-            /* Position */
-            yyjson_mut_val *pos_arr = yyjson_mut_arr(doc);
-            yyjson_mut_arr_add_real(doc, pos_arr, (double)es->world_matrix[12]);
-            yyjson_mut_arr_add_real(doc, pos_arr, (double)es->world_matrix[13]);
-            yyjson_mut_arr_add_real(doc, pos_arr, (double)es->world_matrix[14]);
-            yyjson_mut_obj_add_val(doc, data, "position", pos_arr);
-
-            /* Full matrix */
-            yyjson_mut_val *mat = yyjson_mut_arr(doc);
-            for (int mi = 0; mi < 16; ++mi) {
-                yyjson_mut_arr_add_real(doc, mat, (double)es->world_matrix[mi]);
-            }
-            yyjson_mut_obj_add_val(doc, data, "world_matrix", mat);
-
-            yyjson_mut_obj_add_uint(doc, data, "entity_flags", es->entity_flags);
-            yyjson_mut_obj_add_uint(doc, data, "moveable_flags", es->moveable_flags);
-
-            nmo_object_id_t mesh_id = nmo_ref_runtime_id(&es->current_mesh);
-            yyjson_mut_obj_add_uint(doc, data, "current_mesh_id", mesh_id);
-            if (mesh_id) {
-                const char *mn = resolve_name(&c, mesh_id);
-                if (mn && mn[0]) {
-                    nmo_cli_json_add_str_safe(doc, data, "current_mesh", mn);
-                }
-            }
-
-            /* Mesh IDs */
-            if (es->mesh_count > 0 && es->mesh_ids) {
-                yyjson_mut_val *mesh_arr = yyjson_mut_arr(doc);
-                for (uint32_t mi = 0; mi < es->mesh_count; ++mi) {
-                    const nmo_object_id_t id = nmo_ref_runtime_id(&es->mesh_ids[mi]);
-                    if (id != NMO_OBJECT_ID_NONE) {
-                        yyjson_mut_arr_add_uint(doc, mesh_arr, id);
-                    }
-                }
-                yyjson_mut_obj_add_val(doc, data, "mesh_ids", mesh_arr);
-            }
-
-            /* Animation IDs */
-            if (es->animation_count > 0 && es->animation_ids) {
-                yyjson_mut_val *anim_arr = yyjson_mut_arr(doc);
-                for (uint32_t ai = 0; ai < es->animation_count; ++ai) {
-                    const nmo_object_id_t id = nmo_ref_runtime_id(&es->animation_ids[ai]);
-                    if (id != NMO_OBJECT_ID_NONE) {
-                        yyjson_mut_arr_add_uint(doc, anim_arr, id);
-                    }
-                }
-                yyjson_mut_obj_add_val(doc, data, "animation_ids", anim_arr);
-            }
-
-            nmo_object_id_t parent_id = nmo_ref_runtime_id(&es->parent);
-            yyjson_mut_obj_add_uint(doc, data, "parent_id", parent_id);
-            if (parent_id) {
-                const char *pn = resolve_name(&c, parent_id);
-                if (pn && pn[0]) {
-                    nmo_cli_json_add_str_safe(doc, data, "parent", pn);
-                }
-            }
-
-            /* Camera-specific */
-            if (class_id == NMO_CID_CAMERA || class_id == NMO_CID_TARGETCAMERA) {
-                const nmo_camera_state_t *cs =
-                    (const nmo_camera_state_t *)nmo_object_get_state(obj);
-                if (cs) {
-                    yyjson_mut_obj_add_str(doc, data, "projection_type",
-                                           projection_type_str(cs->projection_type));
-                    yyjson_mut_obj_add_real(doc, data, "fov", (double)cs->fov);
-                    yyjson_mut_obj_add_real(doc, data, "near_plane", (double)cs->near_plane);
-                    yyjson_mut_obj_add_real(doc, data, "far_plane", (double)cs->far_plane);
-                    yyjson_mut_obj_add_int(doc, data, "width", cs->width);
-                    yyjson_mut_obj_add_int(doc, data, "height", cs->height);
-                }
-            }
-
-            /* Light-specific */
-            if (class_id == NMO_CID_LIGHT || class_id == NMO_CID_TARGETLIGHT) {
-                const nmo_light_state_t *ls =
-                    (const nmo_light_state_t *)nmo_object_get_state(obj);
-                if (ls) {
-                    yyjson_mut_obj_add_str(doc, data, "light_type",
-                                           light_type_str(ls->light_data.type));
-                    char cbuf[64];
-                    format_color_rgba(cbuf, sizeof(cbuf), &ls->light_data.diffuse);
-                    yyjson_mut_obj_add_strcpy(doc, data, "light_diffuse", cbuf);
-                    format_color_rgba(cbuf, sizeof(cbuf), &ls->light_data.specular);
-                    yyjson_mut_obj_add_strcpy(doc, data, "light_specular", cbuf);
-                    format_color_rgba(cbuf, sizeof(cbuf), &ls->light_data.ambient);
-                    yyjson_mut_obj_add_strcpy(doc, data, "light_ambient", cbuf);
-                    yyjson_mut_obj_add_real(doc, data, "light_range",
-                                           (double)ls->light_data.range);
-                    yyjson_mut_obj_add_real(doc, data, "attenuation0",
-                                           (double)ls->light_data.attenuation0);
-                    yyjson_mut_obj_add_real(doc, data, "attenuation1",
-                                           (double)ls->light_data.attenuation1);
-                    yyjson_mut_obj_add_real(doc, data, "attenuation2",
-                                           (double)ls->light_data.attenuation2);
-                    yyjson_mut_obj_add_real(doc, data, "light_power",
-                                           (double)ls->light_power);
-                }
-            }
-        } else {
-            yyjson_mut_obj_add_null(doc, data, "state");
-        }
-
-        nmo_cmd_ctx_json_end(&c, doc, data, "entity.show");
-    } else {
-        /* Text output */
-        nmo_cli_print_heading(c.out, "3D Entity Details", c.colorize);
-
-        char buf[128];
-        snprintf(buf, sizeof(buf), "#%u (%s)", obj_id,
-                 (name && name[0]) ? name : "(unnamed)");
-        nmo_cli_print_kv(c.out, "ID / Name", buf, 20, c.colorize);
-
-        snprintf(buf, sizeof(buf), "#%u (%s)", class_id,
-                 class_name ? class_name : "-");
-        nmo_cli_print_kv(c.out, "Class", buf, 20, c.colorize);
-
-        if (!es) {
-            fprintf(c.out, "\n  (no deserialized state)\n");
-            return NMO_CLI_EXIT_SUCCESS;
-        }
-
-        format_position(buf, sizeof(buf), es->world_matrix);
-        nmo_cli_print_kv(c.out, "Position", buf, 20, c.colorize);
-
-        snprintf(buf, sizeof(buf), "0x%08X", es->entity_flags);
-        nmo_cli_print_kv(c.out, "Entity Flags", buf, 20, c.colorize);
-
-        snprintf(buf, sizeof(buf), "0x%08X", es->moveable_flags);
-        nmo_cli_print_kv(c.out, "Moveable Flags", buf, 20, c.colorize);
-
-        /* Current mesh */
-        nmo_object_id_t mesh_id = nmo_ref_runtime_id(&es->current_mesh);
-        if (mesh_id) {
-            const char *mn = resolve_name(&c, mesh_id);
-            if (mn && mn[0]) {
-                snprintf(buf, sizeof(buf), "#%u (%s)", mesh_id, mn);
-            } else {
-                snprintf(buf, sizeof(buf), "#%u", mesh_id);
-            }
-        } else {
-            snprintf(buf, sizeof(buf), "(none)");
-        }
-        nmo_cli_print_kv(c.out, "Current Mesh", buf, 20, c.colorize);
-
-        /* Mesh list */
-        if (es->mesh_count > 0 && es->mesh_ids) {
-            fprintf(c.out, "\nMeshes (%u):\n", es->mesh_count);
-            for (uint32_t mi = 0; mi < es->mesh_count; ++mi) {
-                const nmo_object_id_t id = nmo_ref_runtime_id(&es->mesh_ids[mi]);
-                if (id == NMO_OBJECT_ID_NONE) continue;
-                const char *mn = resolve_name(&c, id);
-                if (mn && mn[0]) {
-                    fprintf(c.out, "  [%u] #%u (%s)\n", mi, id, mn);
-                } else {
-                    fprintf(c.out, "  [%u] #%u\n", mi, id);
-                }
-            }
-        }
-
-        /* Animation list */
-        if (es->animation_count > 0 && es->animation_ids) {
-            fprintf(c.out, "\nAnimations (%u):\n", es->animation_count);
-            for (uint32_t ai = 0; ai < es->animation_count; ++ai) {
-                const nmo_object_id_t id = nmo_ref_runtime_id(&es->animation_ids[ai]);
-                if (id == NMO_OBJECT_ID_NONE) continue;
-                const char *an = resolve_name(&c, id);
-                if (an && an[0]) {
-                    fprintf(c.out, "  [%u] #%u (%s)\n", ai, id, an);
-                } else {
-                    fprintf(c.out, "  [%u] #%u\n", ai, id);
-                }
-            }
-        }
-
-        /* Parent */
-        nmo_object_id_t parent_id = nmo_ref_runtime_id(&es->parent);
-        if (parent_id) {
-            const char *pn = resolve_name(&c, parent_id);
-            if (pn && pn[0]) {
-                snprintf(buf, sizeof(buf), "#%u (%s)", parent_id, pn);
-            } else {
-                snprintf(buf, sizeof(buf), "#%u", parent_id);
-            }
-        } else {
-            snprintf(buf, sizeof(buf), "(none)");
-        }
-        nmo_cli_print_kv(c.out, "Parent", buf, 20, c.colorize);
-
-        /* World matrix */
-        fprintf(c.out, "\nWorld Matrix:\n");
-        for (int row = 0; row < 4; ++row) {
-            fprintf(c.out, "  [%8.4f %8.4f %8.4f %8.4f]\n",
-                    (double)es->world_matrix[row * 4 + 0],
-                    (double)es->world_matrix[row * 4 + 1],
-                    (double)es->world_matrix[row * 4 + 2],
-                    (double)es->world_matrix[row * 4 + 3]);
-        }
-
-        /* Camera-specific section */
-        if (class_id == NMO_CID_CAMERA || class_id == NMO_CID_TARGETCAMERA) {
-            const nmo_camera_state_t *cs =
-                (const nmo_camera_state_t *)nmo_object_get_state(obj);
-            if (cs) {
-                fprintf(c.out, "\nCamera:\n");
-
-                nmo_cli_print_kv(c.out, "  Projection",
-                                 projection_type_str(cs->projection_type), 20, c.colorize);
-
-                snprintf(buf, sizeof(buf), "%.4f rad (%.1f deg)",
-                         (double)cs->fov, (double)(cs->fov * 180.0f / 3.14159265f));
-                nmo_cli_print_kv(c.out, "  FOV", buf, 20, c.colorize);
-
-                snprintf(buf, sizeof(buf), "%.4f", (double)cs->near_plane);
-                nmo_cli_print_kv(c.out, "  Near Plane", buf, 20, c.colorize);
-
-                snprintf(buf, sizeof(buf), "%.4f", (double)cs->far_plane);
-                nmo_cli_print_kv(c.out, "  Far Plane", buf, 20, c.colorize);
-
-                snprintf(buf, sizeof(buf), "%d x %d", cs->width, cs->height);
-                nmo_cli_print_kv(c.out, "  Viewport", buf, 20, c.colorize);
-            }
-        }
-
-        /* Light-specific section */
-        if (class_id == NMO_CID_LIGHT || class_id == NMO_CID_TARGETLIGHT) {
-            const nmo_light_state_t *ls =
-                (const nmo_light_state_t *)nmo_object_get_state(obj);
-            if (ls) {
-                fprintf(c.out, "\nLight:\n");
-
-                nmo_cli_print_kv(c.out, "  Type",
-                                 light_type_str(ls->light_data.type), 20, c.colorize);
-
-                format_color_rgba(buf, sizeof(buf), &ls->light_data.diffuse);
-                nmo_cli_print_kv(c.out, "  Diffuse", buf, 20, c.colorize);
-
-                format_color_rgba(buf, sizeof(buf), &ls->light_data.specular);
-                nmo_cli_print_kv(c.out, "  Specular", buf, 20, c.colorize);
-
-                format_color_rgba(buf, sizeof(buf), &ls->light_data.ambient);
-                nmo_cli_print_kv(c.out, "  Ambient", buf, 20, c.colorize);
-
-                snprintf(buf, sizeof(buf), "%.4f", (double)ls->light_data.range);
-                nmo_cli_print_kv(c.out, "  Range", buf, 20, c.colorize);
-
-                snprintf(buf, sizeof(buf), "(%.4f, %.4f, %.4f)",
-                         (double)ls->light_data.attenuation0,
-                         (double)ls->light_data.attenuation1,
-                         (double)ls->light_data.attenuation2);
-                nmo_cli_print_kv(c.out, "  Attenuation", buf, 20, c.colorize);
-
-                snprintf(buf, sizeof(buf), "%.4f", (double)ls->light_power);
-                nmo_cli_print_kv(c.out, "  Power", buf, 20, c.colorize);
-            }
-        }
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    if (!rec || !entity_show_build_record(ctx, rec, obj, obj_id)) {
+        nmo_cli_record_free(rec);
+        fprintf(stderr, "Error: Out of memory while describing entity %u\n", obj_id);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-#undef c
+    if (ctx->is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+        nmo_cli_record_to_json(rec, doc, data);
+        nmo_cli_record_free(rec);
+        return nmo_cmd_ctx_json_end(ctx, doc, data, "entity.show");
+    }
+
+    nmo_cli_print_heading(ctx->out, "3D Entity Details", ctx->colorize);
+    nmo_cli_record_print_kv(rec, ctx->out, 20, ctx->colorize);
+    if (!es) {
+        fprintf(ctx->out, "\n  (no deserialized state)\n");
+    }
+    nmo_cli_record_free(rec);
     return NMO_CLI_EXIT_SUCCESS;
 }
 
