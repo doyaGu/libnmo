@@ -126,40 +126,6 @@ static bool rewrite_array_ids_equal(const nmo_array_t *a,
     return true;
 }
 
-typedef struct rewrite_workspace_edit_scope {
-    nmo_workspace_t *workspace;
-    nmo_workspace_edit_t *edit;
-} rewrite_workspace_edit_scope_t;
-
-static void rewrite_workspace_edit_scope_reset(
-    rewrite_workspace_edit_scope_t *scope) {
-    if (!scope) {
-        return;
-    }
-    memset(scope, 0, sizeof(*scope));
-}
-
-static nmo_status_t rewrite_begin_workspace_edit(
-    nmo_context_t *ctx,
-    nmo_workspace_t *workspace,
-    const char *label,
-    rewrite_workspace_edit_scope_t *scope) {
-    nmo_status_t rc = NMO_OK;
-
-    if (!ctx || !workspace || !label || !scope) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    memset(scope, 0, sizeof(*scope));
-    scope->workspace = workspace;
-    rc = nmo_workspace_edit_begin(scope->workspace, label, &scope->edit);
-    if (rc != NMO_OK) {
-        rewrite_workspace_edit_scope_reset(scope);
-        return rc;
-    }
-    return NMO_OK;
-}
-
 static void rewrite_report_reject(nmo_behavior_replace_report_t *report,
                                   const char *code,
                                   const char *message) {
@@ -885,38 +851,6 @@ static nmo_status_t rewrite_fold_transform_anchor_in_edit(
     return NMO_OK;
 }
 
-static nmo_status_t rewrite_fold_transform_anchor(
-    nmo_context_t *ctx,
-    nmo_workspace_t *workspace,
-    const nmo_behavior_fold_desc_t *desc,
-    nmo_behavior_fold_report_t *report,
-    bool clear_graph_state) {
-    rewrite_workspace_edit_scope_t scope = {0};
-    nmo_status_t rc =
-        rewrite_begin_workspace_edit(ctx, workspace, "behavior fold anchor", &scope);
-    if (rc != NMO_OK) {
-        rewrite_fold_report_reject(report, "edit_begin_failed",
-                                   "Failed to begin behavior fold edit");
-        return rc;
-    }
-    rc = rewrite_fold_transform_anchor_in_edit(
-        ctx, scope.workspace, scope.edit, desc, report, clear_graph_state);
-    if (rc == NMO_OK) {
-        rc = nmo_workspace_edit_commit(scope.edit);
-        if (rc != NMO_OK) {
-            rewrite_fold_report_reject(report, "commit_failed",
-                                       "Failed to commit behavior fold");
-        }
-        scope.edit = NULL;
-    }
-    if (scope.edit) {
-        nmo_workspace_edit_rollback(scope.edit);
-        scope.edit = NULL;
-    }
-    rewrite_workspace_edit_scope_reset(&scope);
-    return rc;
-}
-
 static uint32_t rewrite_fold_mapped_new_index(
     const nmo_behavior_fold_map_t *maps,
     size_t map_count,
@@ -1220,36 +1154,6 @@ static nmo_status_t rewrite_fold_rewire_control_boundary_in_edit(
     return NMO_OK;
 }
 
-static nmo_status_t rewrite_fold_rewire_control_boundary(
-    nmo_context_t *ctx,
-    nmo_workspace_t *workspace,
-    nmo_behavior_fold_report_t *report) {
-    rewrite_workspace_edit_scope_t scope = {0};
-    nmo_status_t rc =
-        rewrite_begin_workspace_edit(ctx, workspace, "behavior fold boundary", &scope);
-    if (rc != NMO_OK) {
-        rewrite_fold_report_reject(report, "edit_begin_failed",
-                                   "Failed to begin fold boundary edit");
-        return rc;
-    }
-    rc = rewrite_fold_rewire_control_boundary_in_edit(
-        ctx, scope.workspace, scope.edit, report);
-    if (rc == NMO_OK) {
-        rc = nmo_workspace_edit_commit(scope.edit);
-        if (rc != NMO_OK) {
-            rewrite_fold_report_reject(report, "commit_failed",
-                                       "Failed to commit fold boundary edit");
-        }
-        scope.edit = NULL;
-    }
-    if (scope.edit) {
-        nmo_workspace_edit_rollback(scope.edit);
-        scope.edit = NULL;
-    }
-    rewrite_workspace_edit_scope_reset(&scope);
-    return rc;
-}
-
 static nmo_status_t rewrite_fold_rewire_parameter_boundary_in_edit(
     nmo_context_t *ctx,
     nmo_workspace_t *workspace,
@@ -1436,36 +1340,6 @@ static nmo_status_t rewrite_fold_rewire_parameter_boundary_in_edit(
 
     nmo_workspace_edit_mark(edit, NMO_WORKSPACE_EDIT_REFERENCES);
     return NMO_OK;
-}
-
-static nmo_status_t rewrite_fold_rewire_parameter_boundary(
-    nmo_context_t *ctx,
-    nmo_workspace_t *workspace,
-    nmo_behavior_fold_report_t *report) {
-    rewrite_workspace_edit_scope_t scope = {0};
-    nmo_status_t rc =
-        rewrite_begin_workspace_edit(ctx, workspace, "behavior fold parameters", &scope);
-    if (rc != NMO_OK) {
-        rewrite_fold_report_reject(report, "edit_begin_failed",
-                                   "Failed to begin fold parameter edit");
-        return rc;
-    }
-    rc = rewrite_fold_rewire_parameter_boundary_in_edit(
-        ctx, scope.workspace, scope.edit, report);
-    if (rc == NMO_OK) {
-        rc = nmo_workspace_edit_commit(scope.edit);
-        if (rc != NMO_OK) {
-            rewrite_fold_report_reject(report, "commit_failed",
-                                       "Failed to commit fold parameter edit");
-        }
-        scope.edit = NULL;
-    }
-    if (scope.edit) {
-        nmo_workspace_edit_rollback(scope.edit);
-        scope.edit = NULL;
-    }
-    rewrite_workspace_edit_scope_reset(&scope);
-    return rc;
 }
 
 static void rewrite_fold_report_reject(nmo_behavior_fold_report_t *report,
@@ -1668,162 +1542,45 @@ fail:
     return rc;
 }
 
+static nmo_status_t rewrite_fold_apply_script_tx(
+    nmo_script_edit_tx_t *tx,
+    nmo_context_t *ctx,
+    nmo_workspace_t *workspace,
+    nmo_workspace_edit_t *edit,
+    const nmo_behavior_fold_desc_t *desc,
+    nmo_behavior_fold_report_t *report);
+
+/* Workspace-level fold: one script edit transaction around the shared
+ * transactional implementation, so every mutation path goes through
+ * nmo_script_edit. */
 static nmo_status_t rewrite_fold_apply_workspace(
     nmo_context_t *ctx,
     nmo_workspace_t *workspace,
     const nmo_behavior_fold_desc_t *desc,
     nmo_behavior_fold_report_t *report) {
-    nmo_status_t rc = rewrite_fold_analyze_workspace(ctx, workspace, desc, report);
+    nmo_script_edit_tx_t *tx = NULL;
+    nmo_status_t rc = nmo_script_edit_begin(workspace, "behavior fold", &tx);
     if (rc != NMO_OK) {
+        if (report) {
+            memset(report, 0, sizeof(*report));
+        }
+        rewrite_fold_report_reject(report, "edit_begin_failed",
+                                   "Failed to begin behavior fold edit");
         return rc;
     }
-    if (!report->preserve_boundary) {
-        rewrite_fold_report_reject(
-            report, "preserve_boundary_required",
-            "Behavior fold write requires preserve-boundary");
-        return NMO_ERR_INVALID_ARGUMENT;
+    rc = rewrite_fold_apply_script_tx(
+        tx, ctx, nmo_script_edit_workspace(tx),
+        nmo_script_edit_workspace_edit(tx), desc, report);
+    if (rc != NMO_OK) {
+        nmo_script_edit_rollback(tx);
+        return rc;
     }
-    nmo_object_id_t missing_child_id = 0;
-    if (rewrite_fold_selection_has_unselected_child(
-            ctx, nmo_workspace_internal_repository(workspace), report,
-                                                    &missing_child_id)) {
-        (void)missing_child_id;
-        rewrite_fold_report_reject(
-            report, "selection_not_closed",
-            "Selected graph fold must include child behavior from every "
-            "selected graph or script");
-        return NMO_ERR_INVALID_ARGUMENT;
+    rc = nmo_script_edit_commit(tx);
+    if (rc != NMO_OK) {
+        rewrite_fold_report_reject(report, "commit_failed",
+                                   "Failed to commit behavior fold");
     }
-    if (rewrite_fold_report_is_single_anchor_only(report)) {
-        nmo_object_repository_t *repo = nmo_workspace_internal_repository(workspace);
-        nmo_object_t *anchor =
-            repo ? nmo_object_repository_find_by_id(repo, report->anchor_id)
-                 : NULL;
-        if (!anchor || !rewrite_is_behavior_object(ctx, anchor)) {
-            rewrite_fold_report_reject(report, "anchor_not_found",
-                                       "Fold anchor behavior was not found");
-            return NMO_ERR_NOT_FOUND;
-        }
-        nmo_behavior_state_t *state = rewrite_behavior_state(ctx, anchor);
-        if (!rewrite_behavior_state_is_leaf_bb(state)) {
-            rewrite_fold_report_reject(
-                report, "anchor_not_leaf",
-                "Single-node fold requires a leaf BB anchor");
-            return NMO_ERR_INVALID_ARGUMENT;
-        }
-
-        rewrite_workspace_edit_scope_t scope = {0};
-        nmo_workspace_edit_t *edit = NULL;
-        nmo_status_t edit_rc =
-            rewrite_begin_workspace_edit(ctx, workspace, "behavior fold anchor", &scope);
-        if (edit_rc != NMO_OK) {
-            rewrite_fold_report_reject(report, "edit_begin_failed",
-                                       "Failed to begin behavior fold edit");
-            return edit_rc;
-        }
-        edit = scope.edit;
-        edit_rc = nmo_workspace_edit_snapshot_behavior_state(edit, state);
-        if (edit_rc != NMO_OK) {
-            rewrite_fold_report_reject(report, "snapshot_failed",
-                                       "Failed to snapshot fold anchor");
-            nmo_workspace_edit_rollback(edit);
-            return edit_rc;
-        }
-
-        state->flags |= CKBEHAVIOR_BUILDINGBLOCK | CKBEHAVIOR_USEFUNCTION;
-        state->flags &= ~CKBEHAVIOR_SCRIPT;
-        state->priority = 0;
-        state->block_guid = desc->block_guid;
-        state->block_version =
-            desc->block_version != 0 ? desc->block_version : 65536u;
-        if (desc->name && desc->name[0] != '\0') {
-            edit_rc = nmo_object_edit_rename(
-                edit, report->anchor_id, desc->name);
-            if (edit_rc != NMO_OK) {
-                rewrite_fold_report_reject(report, "rename_failed",
-                                           "Failed to rename fold anchor");
-                nmo_workspace_edit_rollback(edit);
-                return edit_rc;
-            }
-        }
-        nmo_workspace_edit_mark(edit, NMO_WORKSPACE_EDIT_OBJECT_STATE);
-        edit_rc = nmo_workspace_edit_commit(edit);
-        if (edit_rc != NMO_OK) {
-            rewrite_fold_report_reject(report, "commit_failed",
-                                       "Failed to commit behavior fold");
-            rewrite_workspace_edit_scope_reset(&scope);
-            return edit_rc;
-        }
-        rewrite_workspace_edit_scope_reset(&scope);
-
-        rewrite_fold_report_clear_write_blockers(report);
-        report->analysis_only = false;
-        report->can_write = true;
-        return NMO_OK;
-    }
-    if (rewrite_fold_report_is_closed_graph_anchor(report) &&
-        report->can_write) {
-        nmo_status_t rewire_rc = rewrite_fold_rewire_control_boundary(
-            ctx, workspace, report);
-        if (rewire_rc != NMO_OK) {
-            return rewire_rc;
-        }
-        rewire_rc = rewrite_fold_rewire_parameter_boundary(
-            ctx, workspace, report);
-        if (rewire_rc != NMO_OK) {
-            return rewire_rc;
-        }
-
-        nmo_object_id_t *delete_ids = NULL;
-        size_t delete_count = 0;
-        nmo_status_t delete_rc = rewrite_fold_collect_delete_ids(
-            ctx, nmo_workspace_internal_repository(workspace), report,
-            &delete_ids, &delete_count);
-        if (delete_rc != NMO_OK) {
-            rewrite_fold_report_reject(report, "delete_plan_failed",
-                                       "Failed to build fold delete set");
-            return delete_rc;
-        }
-
-        delete_rc = nmo_workspace_internal_destroy_objects(
-            workspace,
-            delete_ids,
-            delete_count,
-            NMO_RUNTIME_REQUEST_STRICT | NMO_RUNTIME_REQUEST_SAFE_DETACH);
-        free(delete_ids);
-        if (delete_rc != NMO_OK) {
-            rewrite_fold_report_reject(report, "delete_failed",
-                                       "Failed to delete folded graph objects");
-            return delete_rc;
-        }
-
-        nmo_status_t transform_rc = rewrite_fold_transform_anchor(
-            ctx, workspace, desc, report, true);
-        if (transform_rc != NMO_OK) {
-            return transform_rc;
-        }
-
-        rewrite_fold_report_clear_write_blockers(report);
-        report->analysis_only = false;
-        report->can_write = true;
-        return NMO_OK;
-    }
-    if (!report->can_write) {
-        if (report->write_blocker_count > 0) {
-            rewrite_fold_report_reject(report,
-                                       report->write_blockers[0].code,
-                                       report->write_blockers[0].message);
-        } else {
-            rewrite_fold_report_reject(
-                report, "unsupported",
-                "Behavior fold write mode is not supported");
-        }
-        return NMO_ERR_INVALID_STATE;
-    }
-
-    rewrite_fold_report_reject(report, "unsupported",
-                               "Behavior fold write mode is not supported");
-    return NMO_ERR_NOT_IMPLEMENTED;
+    return rc;
 }
 
 static nmo_status_t rewrite_fold_apply_script_tx(
@@ -1941,14 +1698,6 @@ static nmo_status_t rewrite_fold_apply_script_tx(
     rewrite_fold_report_reject(report, "unsupported",
                                "Behavior fold write mode is not supported");
     return NMO_ERR_NOT_IMPLEMENTED;
-}
-
-static nmo_status_t rewrite_fold_workspace(
-    nmo_context_t *ctx,
-    nmo_workspace_t *workspace,
-    const nmo_behavior_fold_desc_t *desc,
-    nmo_behavior_fold_report_t *report) {
-    return rewrite_fold_apply_workspace(ctx, workspace, desc, report);
 }
 
 void nmo_behavior_edit_fold_report_free(nmo_behavior_fold_report_t *report) {
@@ -2162,12 +1911,14 @@ cleanup:
     return rc;
 }
 
+/* Workspace-level replace-bb: one script edit transaction around the shared
+ * in-edit implementation. */
 static nmo_status_t rewrite_replace_bb_workspace(
     nmo_context_t *ctx,
     nmo_workspace_t *workspace,
     const nmo_behavior_replace_bb_desc_t *desc,
     nmo_behavior_replace_report_t *report) {
-    rewrite_workspace_edit_scope_t scope = {0};
+    nmo_script_edit_tx_t *tx = NULL;
     nmo_status_t rc = NMO_OK;
     if (!ctx || !workspace) {
         if (report) {
@@ -2178,7 +1929,7 @@ static nmo_status_t rewrite_replace_bb_workspace(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    rc = rewrite_begin_workspace_edit(ctx, workspace, "behavior replace-bb", &scope);
+    rc = nmo_script_edit_begin(workspace, "behavior replace-bb", &tx);
     if (rc != NMO_OK) {
         if (report) {
             memset(report, 0, sizeof(*report));
@@ -2188,20 +1939,18 @@ static nmo_status_t rewrite_replace_bb_workspace(
         return rc;
     }
 
-    rc = rewrite_replace_bb_in_edit(ctx, scope.workspace, scope.edit, desc, report);
-    if (rc == NMO_OK) {
-        rc = nmo_workspace_edit_commit(scope.edit);
-        if (rc != NMO_OK) {
-            rewrite_report_reject(report, "commit_failed",
-                                  "Failed to commit behavior rewrite");
-        }
-        scope.edit = NULL;
+    rc = rewrite_replace_bb_in_edit(ctx, nmo_script_edit_workspace(tx),
+                                    nmo_script_edit_workspace_edit(tx), desc,
+                                    report);
+    if (rc != NMO_OK) {
+        nmo_script_edit_rollback(tx);
+        return rc;
     }
-    if (scope.edit) {
-        nmo_workspace_edit_rollback(scope.edit);
-        scope.edit = NULL;
+    rc = nmo_script_edit_commit(tx);
+    if (rc != NMO_OK) {
+        rewrite_report_reject(report, "commit_failed",
+                              "Failed to commit behavior rewrite");
     }
-    rewrite_workspace_edit_scope_reset(&scope);
     return rc;
 }
 
@@ -2250,7 +1999,7 @@ NMO_API nmo_status_t nmo_behavior_edit_fold(
         }
         return NMO_ERR_INVALID_ARGUMENT;
     }
-    return rewrite_fold_workspace(ctx, workspace, desc, report);
+    return rewrite_fold_apply_workspace(ctx, workspace, desc, report);
 }
 
 NMO_API nmo_status_t nmo_behavior_edit_fold_in_script_tx(
