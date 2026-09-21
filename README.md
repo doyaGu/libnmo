@@ -105,7 +105,7 @@ operations, and full compatibility with Virtools file format versions 2 through 
 
 ### Lua Scripting
 
-- Embedded Lua 5.4 runtime with full standard libraries
+- Embedded Lua 5.5 runtime with full standard libraries
 - Bindings covering: context, document, session, object, type, behavior, format,
   plan, workspace, and runtime layers
 - Fold-map parser for declarative Lua-driven automation
@@ -276,7 +276,7 @@ Project/Lua -> Behavior -> Object -> Extension -> Type -> Format -> IO -> Core
 | Chunk     | `src/chunk/`     | `include/chunk/`      | Chunk index and chunk inspection utilities                                       |
 | Behavior  | `src/behavior/`  | `include/behavior/`   | Behavior graph traversal, BB registry, parameter chains, script walker, edit plan, behavior execute |
 | Export    | `src/export/`    | `include/export/`     | DOT graph, JSON utilities, text export, ANSI, hex dump                          |
-| Lua       | `src/lua/`       | `include/lua/`        | Lua 5.4 runtime, module system, bindings for all layers, fold-map parser        |
+| Lua       | `src/lua/`       | `include/lua/`        | Lua 5.5 runtime, module system, bindings for all layers, fold-map parser        |
 | Project   | `src/project/`   | `include/project/`    | Project plan, asset/scene/script authoring, executor, manifest, validator       |
 
 ### Key Design Decisions
@@ -312,10 +312,16 @@ Project/Lua -> Behavior -> Object -> Extension -> Type -> Format -> IO -> Core
 | C compiler            | C17             | GCC, Clang, or MSVC                        |
 | miniz or zlib         | -               | Bundled miniz included as git submodule    |
 | yyjson                | -               | Bundled; required for JSON export          |
-| Lua 5.4               | -               | Bundled in `deps/lua/`                     |
-| isocline              | -               | Bundled in `deps/isocline/`; REPL readline |
+| Lua                   | 5.5.1           | Fetched from lua.org at configure time; see below |
+| isocline              | -               | Optional; place in `deps/isocline/` for REPL line editing |
 | stb                   | -               | Bundled; image decode                      |
 | Threads               | POSIX or Win32  | For atomic reference counting              |
+
+Lua is downloaded and SHA-256 verified by CMake `FetchContent` during the
+first configure. For offline builds, unpack the official tarball and either
+point CMake at it with `-DNMO_LUA_SOURCE_DIR=/path/to/lua-5.5.1` or place it at
+`deps/lua/` (so that `deps/lua/src/lua.h` exists). The CMake build description
+for Lua lives in `deps/lua-cmake/`.
 
 ### Recommended Build (Ninja)
 
