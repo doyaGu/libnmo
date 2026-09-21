@@ -322,8 +322,9 @@ bool nmo_json_add_str_safe_to_arr(yyjson_mut_doc *doc, yyjson_mut_val *arr,
     }
 
     if (!needs_sanitize) {
-        yyjson_mut_arr_add_str(doc, arr, str);
-        return true;
+        /* Copy into the document: callers may free the string before the
+         * document is written, as the object-key variant already allows. */
+        return yyjson_mut_arr_add_strcpy(doc, arr, str);
     }
 
     yyjson_mut_val *obj = yyjson_mut_obj(doc);
