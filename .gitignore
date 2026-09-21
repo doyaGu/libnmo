@@ -87,3 +87,6 @@ data/*
 
 # Locally unpacked Lua sources (optional offline override for FetchContent)
 deps/lua/
+
+# Claude Code local settings
+.claude/
