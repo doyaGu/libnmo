@@ -281,7 +281,7 @@ nmo_status_t nmo_register_vector_operations(
     }
 
     nmo_operation_desc_t operations[] = {
-        /* Vector2 â€?add/sub/mul/div are type variants of Virtools arithmetic ops */
+        /* Vector2 - add/sub/mul/div are type variants of Virtools arithmetic ops */
         {NMO_OP_GUID_ADD, CKPGUID_2DVECTOR, CKPGUID_2DVECTOR, CKPGUID_2DVECTOR,
          op_vector2_add, NULL, NMO_OP_BINARY, 100, "Addition", "Vector2 addition"},
         {NMO_OP_GUID_SUBTRACT, CKPGUID_2DVECTOR, CKPGUID_2DVECTOR, CKPGUID_2DVECTOR,

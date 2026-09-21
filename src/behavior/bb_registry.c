@@ -1,6 +1,6 @@
 /**
  * @file bb_registry.c
- * @brief Building block prototype registry â€?pure dynamic, no builtin data
+ * @brief Building block prototype registry - pure dynamic, no builtin data
  *
  * All data is loaded at runtime by external loaders (e.g. nmo_json virtools_loader).
  */
@@ -272,7 +272,7 @@ size_t nmo_behavior_registry_count(const nmo_behavior_registry_t *registry) {
 
 size_t nmo_behavior_registry_builtin_count(const nmo_behavior_registry_t *registry) {
     (void)registry;
-    return 0; /* no builtin data â€?all loaded at runtime */
+    return 0; /* no builtin data - all loaded at runtime */
 }
 
 /* ============================================================================
@@ -304,7 +304,7 @@ void nmo_behavior_registry_foreach(
     nmo_hash_table_iterate(registry->guid_map, bb_iterate_adapter, &ctx);
 }
 
-/* Static (no-instance) lookups â€?always return NULL in pure-dynamic mode */
+/* Static (no-instance) lookups - always return NULL in pure-dynamic mode */
 
 const char *nmo_behavior_builtin_get_name(nmo_guid_t guid) {
     (void)guid;

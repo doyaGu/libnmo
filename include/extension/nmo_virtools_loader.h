@@ -6,9 +6,9 @@
  * into the appropriate registries. Requires yyjson (via nmo_json target).
  *
  * This is the runtime equivalent of CK2's plugin initialization:
- * - Parameter types   â†?nmo_type_registry_t
- * - Operation types   â†?nmo_type_registry_t (NMO_TYPE_CATEGORY_OPERATION)
- * - BB prototypes     â†?nmo_behavior_registry_t
+ * - Parameter types   -> nmo_type_registry_t
+ * - Operation types   -> nmo_type_registry_t (NMO_TYPE_CATEGORY_OPERATION)
+ * - BB prototypes     -> nmo_behavior_registry_t
  */
 
 #ifndef NMO_VIRTOOLS_LOADER_H
