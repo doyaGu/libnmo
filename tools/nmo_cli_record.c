@@ -25,6 +25,7 @@ typedef enum record_kind {
     RECORD_RAW,
     RECORD_REAL_LIST,
     RECORD_UINT_LIST,
+    RECORD_STR_LIST,
     RECORD_ARRAY
 } record_kind_t;
 
@@ -50,6 +51,7 @@ typedef struct record_field {
     double v[3];      /* RECORD_VEC3 */
     double *reals;    /* RECORD_REAL_LIST */
     uint64_t *uints;  /* RECORD_UINT_LIST */
+    char **strs;      /* RECORD_STR_LIST (entries may be NULL) */
     size_t list_count;
     bool b;
     nmo_cli_record_array_t *array; /* RECORD_ARRAY; heap-allocated so the
@@ -126,6 +128,12 @@ static void field_dispose(record_field_t *field)
     free(field->str);
     free(field->reals);
     free(field->uints);
+    if (field->strs) {
+        for (size_t i = 0; i < field->list_count; ++i) {
+            free(field->strs[i]);
+        }
+        free(field->strs);
+    }
     if (field->array) {
         for (size_t i = 0; i < field->array->count; ++i) {
             nmo_cli_record_free(field->array->items[i]);
@@ -436,6 +444,33 @@ bool nmo_cli_record_uint_list(nmo_cli_record_t *record, const char *key,
     return true;
 }
 
+bool nmo_cli_record_str_list(nmo_cli_record_t *record, const char *key,
+                             const char *label, const char *const *values,
+                             size_t count, const char *text)
+{
+    record_field_t *field = field_append(record, RECORD_STR_LIST, key, label);
+    if (!field) {
+        return false;
+    }
+    if (count > 0u) {
+        field->strs = (char **)calloc(count, sizeof(char *));
+        if (!field->strs || !values) {
+            return field_fail(record);
+        }
+        field->list_count = count;
+        for (size_t i = 0; i < count; ++i) {
+            if (values[i] && !set_str(&field->strs[i], values[i])) {
+                return field_fail(record);
+            }
+        }
+    }
+    field->list_count = count;
+    if (text && !set_str(&field->text, text)) {
+        return field_fail(record);
+    }
+    return true;
+}
+
 bool nmo_cli_record_ref(nmo_cli_record_t *record, const char *id_key,
                         const char *name_key, const char *label,
                         uint64_t id, const char *name, const char *none_text)
@@ -612,6 +647,19 @@ bool nmo_cli_record_to_json(const nmo_cli_record_t *record,
             ok = arr != NULL;
             for (size_t j = 0; ok && j < field->list_count; ++j) {
                 ok = yyjson_mut_arr_add_uint(doc, arr, field->uints[j]);
+            }
+            ok = ok && nmo_cli_json_add_val_safe(doc, obj, field->key, arr);
+            break;
+        }
+        case RECORD_STR_LIST: {
+            yyjson_mut_val *arr = yyjson_mut_arr(doc);
+            ok = arr != NULL;
+            for (size_t j = 0; ok && j < field->list_count; ++j) {
+                if (field->strs[j]) {
+                    ok = nmo_cli_json_add_str_safe_to_arr(doc, arr, field->strs[j]);
+                } else {
+                    ok = yyjson_mut_arr_add_null(doc, arr);
+                }
             }
             ok = ok && nmo_cli_json_add_val_safe(doc, obj, field->key, arr);
             break;

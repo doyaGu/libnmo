@@ -90,6 +90,13 @@ bool nmo_cli_record_real_list(nmo_cli_record_t *record, const char *key,
                               const char *label, const double *values,
                               size_t count, const char *text);
 /**
+ * JSON array of strings; NULL entries become JSON null. Text shows `text`
+ * (NULL: omitted).
+ */
+bool nmo_cli_record_str_list(nmo_cli_record_t *record, const char *key,
+                             const char *label, const char *const *values,
+                             size_t count, const char *text);
+/**
  * JSON array of unsigned integers. Text shows `text` (NULL: omitted).
  */
 bool nmo_cli_record_uint_list(nmo_cli_record_t *record, const char *key,
