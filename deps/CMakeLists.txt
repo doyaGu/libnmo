@@ -30,32 +30,66 @@ else()
     message(FATAL_ERROR "Bundled yyjson not found at ${NMO_YYJSON_DIR}")
 endif()
 
-set(NMO_LUA_DIR "${NMO_DEPS_ROOT}/lua")
-if(EXISTS "${NMO_LUA_DIR}/CMakeLists.txt")
-    message(STATUS "Using bundled Lua from: ${NMO_LUA_DIR}")
-    if(NOT TARGET lua::lua)
-        set(LUA_BUILD_SHARED OFF CACHE BOOL "" FORCE)
-        set(LUA_BUILD_STATIC ON CACHE BOOL "" FORCE)
-        set(LUA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-        set(LUA_BUILD_READLINE OFF CACHE BOOL "" FORCE)
-        set(LUA_BUILD_LIBEDIT OFF CACHE BOOL "" FORCE)
-        add_subdirectory("${NMO_LUA_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/lua" EXCLUDE_FROM_ALL)
-    endif()
+# Lua: the official tarball has no CMake build, so deps/lua-cmake/ provides the
+# build description and the sources are resolved in this order:
+#   1. -DNMO_LUA_SOURCE_DIR=<dir>   explicit local tree (offline builds)
+#   2. deps/lua/src/lua.h          locally unpacked tarball
+#   3. FetchContent                 download from lua.org (default)
+set(NMO_LUA_VERSION "5.5.1")
+set(NMO_LUA_URL "https://www.lua.org/ftp/lua-${NMO_LUA_VERSION}.tar.gz")
+set(NMO_LUA_SHA256 "1c4b4068d67061f2a2231ad2b5422e77acea1487ea9890f6320af614f4373dce")
+set(NMO_LUA_SOURCE_DIR "" CACHE PATH
+    "Local Lua ${NMO_LUA_VERSION} source tree (containing src/lua.h); empty to download")
 
-    if(TARGET liblua_objects)
-        if(MSVC)
-            target_compile_options(liblua_objects PRIVATE /w)
-        else()
-            target_compile_options(liblua_objects PRIVATE -w)
-        endif()
-    endif()
-
-    if(NOT TARGET lua::lua)
+set(NMO_LUA_WRAPPER_DIR "${NMO_DEPS_ROOT}/lua-cmake")
+set(NMO_LUA_DIR "")
+if(NMO_LUA_SOURCE_DIR)
+    if(NOT EXISTS "${NMO_LUA_SOURCE_DIR}/src/lua.h")
         message(FATAL_ERROR
-            "Bundled Lua at ${NMO_LUA_DIR} did not export the expected lua::lua target")
+            "NMO_LUA_SOURCE_DIR=${NMO_LUA_SOURCE_DIR} does not contain src/lua.h")
     endif()
+    set(NMO_LUA_DIR "${NMO_LUA_SOURCE_DIR}")
+    message(STATUS "Using Lua sources from NMO_LUA_SOURCE_DIR: ${NMO_LUA_DIR}")
+elseif(EXISTS "${NMO_DEPS_ROOT}/lua/src/lua.h")
+    set(NMO_LUA_DIR "${NMO_DEPS_ROOT}/lua")
+    message(STATUS "Using bundled Lua from: ${NMO_LUA_DIR}")
 else()
-    message(FATAL_ERROR "Bundled Lua not found at ${NMO_LUA_DIR}")
+    include(FetchContent)
+    set(_nmo_lua_fetch_args
+        URL "${NMO_LUA_URL}"
+        URL_HASH "SHA256=${NMO_LUA_SHA256}"
+    )
+    if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.24")
+        list(APPEND _nmo_lua_fetch_args DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+    endif()
+    FetchContent_Declare(lua_upstream ${_nmo_lua_fetch_args})
+    # The tarball has no CMakeLists.txt, so MakeAvailable only populates it.
+    FetchContent_MakeAvailable(lua_upstream)
+    set(NMO_LUA_DIR "${lua_upstream_SOURCE_DIR}")
+    message(STATUS "Using Lua ${NMO_LUA_VERSION} fetched from ${NMO_LUA_URL}")
+endif()
+
+if(NOT TARGET lua::lua)
+    set(LUA_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+    set(LUA_BUILD_STATIC ON CACHE BOOL "" FORCE)
+    set(LUA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(LUA_BUILD_READLINE OFF CACHE BOOL "" FORCE)
+    set(LUA_BUILD_LIBEDIT OFF CACHE BOOL "" FORCE)
+    set(NMO_LUA_SOURCE_ROOT "${NMO_LUA_DIR}")
+    add_subdirectory("${NMO_LUA_WRAPPER_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/lua" EXCLUDE_FROM_ALL)
+endif()
+
+if(TARGET liblua_objects)
+    if(MSVC)
+        target_compile_options(liblua_objects PRIVATE /w)
+    else()
+        target_compile_options(liblua_objects PRIVATE -w)
+    endif()
+endif()
+
+if(NOT TARGET lua::lua)
+    message(FATAL_ERROR
+        "Lua wrapper at ${NMO_LUA_WRAPPER_DIR} did not export the expected lua::lua target")
 endif()
 
 set(NMO_MINIZ_DIR "${NMO_MINIZ_DIR}" PARENT_SCOPE)
