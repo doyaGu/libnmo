@@ -10,6 +10,7 @@
 #include "../nmo_cmd_core.h"
 #include "../nmo_cli_write.h"
 #include "../nmo_cli_output.h"
+#include "../nmo_cli_record.h"
 #include "../nmo_opt.h"
 #include "../nmo_tool_common.h"
 
@@ -24,6 +25,7 @@
 #include "core/nmo_arena.h"
 #include "document/nmo_document_save.h"
 
+#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -249,6 +251,48 @@ static int collect_texture_visitor(size_t index, nmo_object_t *obj,
     return 0;
 }
 
+/* One texture row. JSON key order and text column order differ historically
+ * (name is second in JSON, last in text), so name is added twice. */
+static bool texture_list_build_record(nmo_object_t *obj, nmo_cli_record_t *rec)
+{
+    const char *name = nmo_object_get_name(obj);
+    char buf[32];
+
+    bool ok = nmo_cli_record_uint(rec, "id", "ID", nmo_object_get_id(obj));
+    ok = ok && nmo_cli_record_str_opt(rec, "name", NULL, name, NULL);
+
+    nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
+    if (chunk) {
+        ok = ok && nmo_cli_record_uint(rec, "size", "SIZE",
+                                       (uint64_t)nmo_chunk_get_data_size(chunk));
+    } else {
+        ok = ok && nmo_cli_record_text(rec, "SIZE", "-");
+    }
+
+    const nmo_texture_state_t *ts =
+        (const nmo_texture_state_t *)nmo_object_get_state(obj);
+    if (ts) {
+        int32_t width = 0;
+        int32_t height = 0;
+        texture_display_dimensions(ts, &width, &height);
+        format_dims(buf, sizeof(buf), width, height);
+        ok = ok && nmo_cli_record_int(rec, "width", NULL, width);
+        ok = ok && nmo_cli_record_int(rec, "height", NULL, height);
+        ok = ok && nmo_cli_record_text(rec, "DIMS", buf);
+        ok = ok && nmo_cli_record_str(rec, "bitmap_kind", NULL,
+                                      bitmap_kind_str(ts->bitmap_kind));
+        ok = ok && nmo_cli_record_text(rec, "FORMAT", format_label(ts));
+        ok = ok && nmo_cli_record_uint(rec, "slot_count", "SLOTS", ts->slot_count);
+        ok = ok && nmo_cli_record_bool(rec, "is_external", NULL, is_external_texture(ts));
+    } else {
+        ok = ok && nmo_cli_record_text(rec, "DIMS", "-");
+        ok = ok && nmo_cli_record_text(rec, "FORMAT", "-");
+        ok = ok && nmo_cli_record_text(rec, "SLOTS", "-");
+    }
+    ok = ok && nmo_cli_record_text(rec, "NAME", (name && name[0]) ? name : "-");
+    return ok;
+}
+
 /* ============================================================================
  * texture list
  * ============================================================================ */
@@ -319,99 +363,53 @@ int nmo_cmd_texture_list(int argc, char **argv, const nmo_cli_global_opts_t *glo
         display_count = (size_t)top_n;
     }
 
+    static const nmo_cli_table_col_t columns[] = {
+        {"ID",     NMO_CLI_ALIGN_RIGHT, 5,  0},
+        {"SIZE",   NMO_CLI_ALIGN_RIGHT, 8,  0},
+        {"DIMS",   NMO_CLI_ALIGN_LEFT,  11, 0},
+        {"FORMAT", NMO_CLI_ALIGN_LEFT,  10, 0},
+        {"SLOTS",  NMO_CLI_ALIGN_RIGHT, 5,  0},
+        {"NAME",   NMO_CLI_ALIGN_LEFT,  20, 50},
+    };
+
+    yyjson_mut_doc *doc = NULL;
+    yyjson_mut_val *data = NULL;
+    yyjson_mut_val *arr = NULL;
+    nmo_cli_table_t table;
     if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
+        doc = nmo_cmd_ctx_json_begin(&c);
+        data = yyjson_mut_obj(doc);
         yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)display_count);
         yyjson_mut_obj_add_uint(doc, data, "total", (uint64_t)tl.count);
+        arr = yyjson_mut_arr(doc);
+    } else {
+        nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
+    }
 
-        yyjson_mut_val *arr = yyjson_mut_arr(doc);
-        for (size_t i = 0; i < display_count; ++i) {
-            nmo_object_t *obj = tl.objects[i];
-            yyjson_mut_val *item = yyjson_mut_obj(doc);
-
-            nmo_object_id_t id = nmo_object_get_id(obj);
-            yyjson_mut_obj_add_uint(doc, item, "id", id);
-
-            const char *name = nmo_object_get_name(obj);
-            if (name && name[0]) {
-                nmo_cli_json_add_str_safe(doc, item, "name", name);
-            }
-
-            nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
-            if (chunk) {
-                yyjson_mut_obj_add_uint(doc, item, "size", (uint64_t)nmo_chunk_get_data_size(chunk));
-            }
-
-            const nmo_texture_state_t *ts =
-                (const nmo_texture_state_t *)nmo_object_get_state(obj);
-            if (ts) {
-                int32_t width = 0;
-                int32_t height = 0;
-                texture_display_dimensions(ts, &width, &height);
-                yyjson_mut_obj_add_int(doc, item, "width", width);
-                yyjson_mut_obj_add_int(doc, item, "height", height);
-                yyjson_mut_obj_add_str(doc, item, "bitmap_kind", bitmap_kind_str(ts->bitmap_kind));
-                yyjson_mut_obj_add_uint(doc, item, "slot_count", ts->slot_count);
-                yyjson_mut_obj_add_bool(doc, item, "is_external", is_external_texture(ts));
-            }
-
-            yyjson_mut_arr_add_val(arr, item);
+    for (size_t i = 0; i < display_count; ++i) {
+        nmo_object_t *obj = tl.objects[i];
+        nmo_cli_record_t *rec = nmo_cli_record_new();
+        if (!rec) {
+            continue;
         }
+        bool ok = texture_list_build_record(obj, rec);
+        if (ok && doc) {
+            yyjson_mut_val *item = yyjson_mut_obj(doc);
+            if (item && nmo_cli_record_to_json(rec, doc, item)) {
+                yyjson_mut_arr_add_val(arr, item);
+            }
+        } else if (ok) {
+            const char *cells[6];
+            size_t n = nmo_cli_record_cells(rec, cells, 6);
+            nmo_cli_table_add_row(&table, cells, n);
+        }
+        nmo_cli_record_free(rec);
+    }
+
+    if (doc) {
         yyjson_mut_obj_add_val(doc, data, "textures", arr);
         nmo_cmd_ctx_json_end(&c, doc, data, "texture.list");
     } else {
-        static const nmo_cli_table_col_t columns[] = {
-            {"ID",     NMO_CLI_ALIGN_RIGHT, 5,  0},
-            {"SIZE",   NMO_CLI_ALIGN_RIGHT, 8,  0},
-            {"DIMS",   NMO_CLI_ALIGN_LEFT,  11, 0},
-            {"FORMAT", NMO_CLI_ALIGN_LEFT,  10, 0},
-            {"SLOTS",  NMO_CLI_ALIGN_RIGHT, 5,  0},
-            {"NAME",   NMO_CLI_ALIGN_LEFT,  20, 50},
-        };
-
-        nmo_cli_table_t table;
-        nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
-
-        for (size_t i = 0; i < display_count; ++i) {
-            nmo_object_t *obj = tl.objects[i];
-            char id_buf[16];
-            snprintf(id_buf, sizeof(id_buf), "%u", nmo_object_get_id(obj));
-
-            char size_buf[16];
-            nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
-            if (chunk) {
-                snprintf(size_buf, sizeof(size_buf), "%zu", nmo_chunk_get_data_size(chunk));
-            } else {
-                snprintf(size_buf, sizeof(size_buf), "-");
-            }
-
-            char dims_buf[32];
-            char slots_buf[16];
-            const char *fmt_label = "-";
-
-            const nmo_texture_state_t *ts =
-                (const nmo_texture_state_t *)nmo_object_get_state(obj);
-            if (ts) {
-                int32_t width = 0;
-                int32_t height = 0;
-                texture_display_dimensions(ts, &width, &height);
-                format_dims(dims_buf, sizeof(dims_buf), width, height);
-                snprintf(slots_buf, sizeof(slots_buf), "%u", ts->slot_count);
-                fmt_label = format_label(ts);
-            } else {
-                snprintf(dims_buf, sizeof(dims_buf), "-");
-                snprintf(slots_buf, sizeof(slots_buf), "-");
-            }
-
-            const char *name = nmo_object_get_name(obj);
-            const char *cells[] = {
-                id_buf, size_buf, dims_buf, fmt_label, slots_buf,
-                (name && name[0]) ? name : "-"
-            };
-            nmo_cli_table_add_row(&table, cells, 6);
-        }
-
         fprintf(c.out, "Textures: %zu", display_count);
         if (display_count < tl.count) {
             fprintf(c.out, " (of %zu total)", tl.count);
@@ -423,6 +421,215 @@ int nmo_cmd_texture_list(int argc, char **argv, const nmo_cli_global_opts_t *glo
 
     free(tl.objects);
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+}
+
+static bool texture_record_yes_no(nmo_cli_record_t *rec, const char *key,
+                                  const char *label, bool value)
+{
+    return nmo_cli_record_bool(rec, key, label, value) &&
+           nmo_cli_record_set_text(rec, value ? "yes" : "no");
+}
+
+/* Append to a growable text buffer; used for the raw slot sections. */
+static bool texture_text_append(char **out, size_t *cap, size_t *len,
+                                const char *fmt, ...)
+{
+    char piece[512];
+    va_list args;
+    va_start(args, fmt);
+    int n = vsnprintf(piece, sizeof(piece), fmt, args);
+    va_end(args);
+    if (n < 0) return false;
+    size_t add = (size_t)n < sizeof(piece) ? (size_t)n : sizeof(piece) - 1u;
+    if (*len + add + 1u > *cap) {
+        size_t new_cap = *cap ? *cap * 2u : 1024u;
+        while (new_cap < *len + add + 1u) new_cap *= 2u;
+        char *grown = (char *)realloc(*out, new_cap);
+        if (!grown) return false;
+        *out = grown;
+        *cap = new_cap;
+    }
+    memcpy(*out + *len, piece, add + 1u);
+    *len += add;
+    return true;
+}
+
+/* Per-slot details: JSON "slots" array, text "Slots:" block. */
+static bool texture_record_slots(nmo_cli_record_t *rec, const nmo_texture_state_t *ts)
+{
+    nmo_cli_record_array_t *slots = nmo_cli_record_array(rec, "slots", NULL);
+    char *text = NULL;
+    size_t cap = 0, len = 0;
+    bool ok = slots != NULL;
+    if (ok && ts->slot_count > 0) {
+        ok = texture_text_append(&text, &cap, &len, "\nSlots:\n");
+    }
+    for (uint32_t i = 0; ok && i < ts->slot_count; ++i) {
+        nmo_cli_record_t *slot = nmo_cli_record_new();
+        char mask[16];
+        ok = slot != NULL && nmo_cli_record_uint(slot, "index", NULL, i) &&
+             texture_text_append(&text, &cap, &len, "  Slot %u:\n", i);
+        if (!ok) {
+            nmo_cli_record_free(slot);
+            break;
+        }
+        switch (ts->bitmap_kind) {
+        case CKTEXTURE_BITMAP_READER:
+            if (ts->reader_slots) {
+                const nmo_texture_reader_slot_t *rs = &ts->reader_slots[i];
+                ok = nmo_cli_record_str(slot, "type", NULL, "reader") &&
+                     nmo_cli_record_uint(slot, "data_size", NULL, rs->data_size) &&
+                     nmo_cli_record_uint(slot, "format_type", NULL, rs->format_type) &&
+                     nmo_cli_record_uint(slot, "extension", NULL, rs->extension) &&
+                     texture_text_append(&text, &cap, &len,
+                                         "    type:       reader\n"
+                                         "    data_size:  %u\n"
+                                         "    format:     %u\n"
+                                         "    extension:  %u\n",
+                                         rs->data_size, rs->format_type, rs->extension);
+                if (ok && rs->alpha_plane_size > 0) {
+                    ok = nmo_cli_record_uint(slot, "alpha_plane_size", NULL,
+                                             rs->alpha_plane_size) &&
+                         texture_text_append(&text, &cap, &len,
+                                             "    alpha_size: %u\n", rs->alpha_plane_size);
+                }
+            }
+            break;
+        case CKTEXTURE_BITMAP_RAW:
+            if (ts->raw_slots) {
+                const nmo_texture_raw_slot_t *rs = &ts->raw_slots[i];
+                ok = nmo_cli_record_str(slot, "type", NULL, "raw") &&
+                     nmo_cli_record_int(slot, "width", NULL, rs->width) &&
+                     nmo_cli_record_int(slot, "height", NULL, rs->height) &&
+                     nmo_cli_record_int(slot, "bits_per_pixel", NULL, rs->bits_per_pixel);
+                snprintf(mask, sizeof(mask), "0x%08X", rs->red_mask);
+                ok = ok && nmo_cli_record_str(slot, "red_mask", NULL, mask);
+                snprintf(mask, sizeof(mask), "0x%08X", rs->green_mask);
+                ok = ok && nmo_cli_record_str(slot, "green_mask", NULL, mask);
+                snprintf(mask, sizeof(mask), "0x%08X", rs->blue_mask);
+                ok = ok && nmo_cli_record_str(slot, "blue_mask", NULL, mask);
+                snprintf(mask, sizeof(mask), "0x%08X", rs->alpha_mask);
+                ok = ok && nmo_cli_record_str(slot, "alpha_mask", NULL, mask);
+                ok = ok && nmo_cli_record_uint(slot, "red_size", NULL, rs->red_size) &&
+                     nmo_cli_record_uint(slot, "green_size", NULL, rs->green_size) &&
+                     nmo_cli_record_uint(slot, "blue_size", NULL, rs->blue_size) &&
+                     nmo_cli_record_uint(slot, "alpha_size", NULL, rs->alpha_size);
+                ok = ok && texture_text_append(&text, &cap, &len,
+                        "    type:       raw\n"
+                        "    dims:       %dx%d @ %d bpp\n"
+                        "    masks:      R=0x%08X G=0x%08X B=0x%08X A=0x%08X\n"
+                        "    channels:   R=%u G=%u B=%u A=%u bytes\n",
+                        rs->width, rs->height, rs->bits_per_pixel,
+                        rs->red_mask, rs->green_mask, rs->blue_mask, rs->alpha_mask,
+                        rs->red_size, rs->green_size, rs->blue_size, rs->alpha_size);
+            }
+            break;
+        case CKTEXTURE_BITMAP_BITMAP2:
+            if (ts->bitmap2_slots) {
+                const nmo_texture_bitmap2_slot_t *bs = &ts->bitmap2_slots[i];
+                ok = nmo_cli_record_str(slot, "type", NULL, "bitmap2") &&
+                     nmo_cli_record_uint(slot, "buffer_size", NULL, bs->buffer_size) &&
+                     texture_text_append(&text, &cap, &len,
+                                         "    type:       bitmap2\n"
+                                         "    buf_size:   %u\n", bs->buffer_size);
+            }
+            break;
+        default:
+            ok = nmo_cli_record_str(slot, "type", NULL, "none") &&
+                 texture_text_append(&text, &cap, &len, "    type:       none\n");
+            break;
+        }
+        ok = nmo_cli_record_array_add(slots, slot) && ok;
+    }
+    if (ok && text) {
+        ok = nmo_cli_record_raw(rec, text);
+    }
+    free(text);
+    return ok;
+}
+
+static bool texture_show_build_record(const nmo_cmd_ctx_t *c,
+                                      nmo_cli_record_t *rec,
+                                      nmo_object_id_t object_id,
+                                      nmo_class_id_t class_id,
+                                      const char *name,
+                                      const nmo_texture_state_t *ts)
+{
+    char buf[128];
+    const char *class_name = nmo_core_class_name(c, class_id);
+
+    snprintf(buf, sizeof(buf), "#%u (%s)", object_id,
+             (name && name[0]) ? name : "(unnamed)");
+    bool ok = nmo_cli_record_uint(rec, "id", NULL, object_id);
+    ok = ok && nmo_cli_record_str_opt(rec, "name", NULL, name, NULL);
+    ok = ok && nmo_cli_record_text(rec, "ID / Name", buf);
+    ok = ok && nmo_cli_record_uint(rec, "class_id", NULL, class_id);
+    ok = ok && nmo_cli_record_str_opt(rec, "class_name", NULL, class_name, NULL);
+    snprintf(buf, sizeof(buf), "#%u (%s)", class_id, class_name ? class_name : "-");
+    ok = ok && nmo_cli_record_text(rec, "Class", buf);
+    if (!ok) {
+        return false;
+    }
+    if (!ts) {
+        return nmo_cli_record_null(rec, "state", NULL, NULL);
+    }
+
+    format_dims(buf, sizeof(buf), ts->reader_width, ts->reader_height);
+    ok = nmo_cli_record_int(rec, "reader_width", NULL, ts->reader_width);
+    ok = ok && nmo_cli_record_int(rec, "reader_height", NULL, ts->reader_height);
+    ok = ok && nmo_cli_record_text(rec, "Dimensions", buf);
+    ok = ok && nmo_cli_record_int(rec, "reader_bpp", "BPP", ts->reader_bpp);
+    ok = ok && nmo_cli_record_str(rec, "bitmap_kind", "Bitmap Kind",
+                                  bitmap_kind_str(ts->bitmap_kind));
+    ok = ok && nmo_cli_record_uint(rec, "slot_count", NULL, ts->slot_count);
+    ok = ok && nmo_cli_record_str(rec, "save_options", "Save Options",
+                                  save_options_str(ts->save_options));
+    ok = ok && nmo_cli_record_uint(rec, "save_options_raw", NULL, ts->save_options);
+    snprintf(buf, sizeof(buf), "%u", ts->slot_count);
+    ok = ok && nmo_cli_record_text(rec, "Slot Count", buf);
+    ok = ok && nmo_cli_record_uint(rec, "mipmap_level", "Mipmap Level", ts->mipmap_level);
+    ok = ok && texture_record_yes_no(rec, "is_transparent", "Transparent",
+                                     ts->is_transparent != 0);
+    ok = ok && texture_record_yes_no(rec, "is_cubemap", "Cubemap", ts->is_cubemap != 0);
+    ok = ok && texture_record_yes_no(rec, "is_external", "External",
+                                     is_external_texture(ts));
+
+    if (ts->has_desired_video_format) {
+        ok = ok && nmo_cli_record_uint(rec, "desired_video_format", "Video Format",
+                                       ts->desired_video_format);
+    }
+    if (ts->has_transparent_color) {
+        ok = ok && nmo_cli_record_hex32(rec, "transparent_color", "Transp. Color",
+                                        ts->transparent_color);
+    }
+    if (ts->has_current_slot) {
+        ok = ok && nmo_cli_record_int(rec, "current_slot", "Current Slot", ts->current_slot);
+    }
+    if (ts->has_pick_threshold) {
+        ok = ok && nmo_cli_record_int(rec, "pick_threshold", "Pick Threshold",
+                                      ts->pick_threshold);
+    }
+    if (ts->has_movie_filename && ts->movie_filename) {
+        ok = ok && nmo_cli_record_str(rec, "movie_filename", "Movie File", ts->movie_filename);
+    }
+
+    if (ok && ts->has_slot_filenames && ts->slot_filenames) {
+        char *text = NULL;
+        size_t cap = 0, len = 0;
+        ok = texture_text_append(&text, &cap, &len, "\nSlot Filenames:\n");
+        for (uint32_t i = 0; ok && i < ts->slot_count; ++i) {
+            ok = texture_text_append(&text, &cap, &len, "  [%u] %s\n", i,
+                                     ts->slot_filenames[i] ? ts->slot_filenames[i] : "(null)");
+        }
+        ok = ok && nmo_cli_record_str_list(rec, "slot_filenames", NULL,
+                                           (const char *const *)ts->slot_filenames,
+                                           ts->slot_count, NULL);
+        ok = ok && nmo_cli_record_raw(rec, text);
+        free(text);
+    }
+
+    ok = ok && texture_record_slots(rec, ts);
+    return ok;
 }
 
 /* ============================================================================
@@ -468,246 +675,26 @@ int nmo_cmd_texture_show(int argc, char **argv, const nmo_cli_global_opts_t *glo
     const nmo_texture_state_t *ts =
         (const nmo_texture_state_t *)nmo_object_get_state(obj);
 
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    if (!rec || !texture_show_build_record(&c, rec, object_id, class_id, name, ts)) {
+        nmo_cli_record_free(rec);
+        fprintf(stderr, "Error: Out of memory while describing texture %u\n", object_id);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+    }
+
     if (c.is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
-
-        yyjson_mut_obj_add_uint(doc, data, "id", object_id);
-        if (name && name[0]) {
-            nmo_cli_json_add_str_safe(doc, data, "name", name);
-        }
-        yyjson_mut_obj_add_uint(doc, data, "class_id", class_id);
-        const char *class_name = nmo_core_class_name(&c, class_id);
-        if (class_name) {
-            yyjson_mut_obj_add_str(doc, data, "class_name", class_name);
-        }
-
-        if (ts) {
-            yyjson_mut_obj_add_int(doc, data, "reader_width", ts->reader_width);
-            yyjson_mut_obj_add_int(doc, data, "reader_height", ts->reader_height);
-            yyjson_mut_obj_add_int(doc, data, "reader_bpp", ts->reader_bpp);
-            yyjson_mut_obj_add_str(doc, data, "bitmap_kind",
-                                   bitmap_kind_str(ts->bitmap_kind));
-            yyjson_mut_obj_add_uint(doc, data, "slot_count", ts->slot_count);
-            yyjson_mut_obj_add_str(doc, data, "save_options",
-                                   save_options_str(ts->save_options));
-            yyjson_mut_obj_add_uint(doc, data, "save_options_raw", ts->save_options);
-            yyjson_mut_obj_add_uint(doc, data, "mipmap_level", ts->mipmap_level);
-            yyjson_mut_obj_add_bool(doc, data, "is_transparent", ts->is_transparent != 0);
-            yyjson_mut_obj_add_bool(doc, data, "is_cubemap", ts->is_cubemap != 0);
-            yyjson_mut_obj_add_bool(doc, data, "is_external", is_external_texture(ts));
-
-            if (ts->has_desired_video_format) {
-                yyjson_mut_obj_add_uint(doc, data, "desired_video_format",
-                                        ts->desired_video_format);
-            }
-            if (ts->has_transparent_color) {
-                char color_buf[16];
-                snprintf(color_buf, sizeof(color_buf), "0x%08X",
-                         ts->transparent_color);
-                yyjson_mut_obj_add_strcpy(doc, data, "transparent_color", color_buf);
-            }
-            if (ts->has_current_slot) {
-                yyjson_mut_obj_add_int(doc, data, "current_slot", ts->current_slot);
-            }
-            if (ts->has_pick_threshold) {
-                yyjson_mut_obj_add_int(doc, data, "pick_threshold", ts->pick_threshold);
-            }
-
-            if (ts->has_movie_filename && ts->movie_filename) {
-                nmo_cli_json_add_str_safe(doc, data, "movie_filename",
-                                          ts->movie_filename);
-            }
-
-            /* Slot filenames */
-            if (ts->has_slot_filenames && ts->slot_filenames) {
-                yyjson_mut_val *fnames = yyjson_mut_arr(doc);
-                for (uint32_t i = 0; i < ts->slot_count; ++i) {
-                    if (ts->slot_filenames[i]) {
-                        nmo_cli_json_add_str_safe_to_arr(doc, fnames,
-                                                         ts->slot_filenames[i]);
-                    } else {
-                        yyjson_mut_arr_add_null(doc, fnames);
-                    }
-                }
-                yyjson_mut_obj_add_val(doc, data, "slot_filenames", fnames);
-            }
-
-            /* Per-slot details */
-            yyjson_mut_val *slots = yyjson_mut_arr(doc);
-            for (uint32_t i = 0; i < ts->slot_count; ++i) {
-                yyjson_mut_val *slot = yyjson_mut_obj(doc);
-                yyjson_mut_obj_add_uint(doc, slot, "index", i);
-
-                switch (ts->bitmap_kind) {
-                case CKTEXTURE_BITMAP_READER:
-                    if (ts->reader_slots) {
-                        const nmo_texture_reader_slot_t *rs = &ts->reader_slots[i];
-                        yyjson_mut_obj_add_str(doc, slot, "type", "reader");
-                        yyjson_mut_obj_add_uint(doc, slot, "data_size", rs->data_size);
-                        yyjson_mut_obj_add_uint(doc, slot, "format_type", rs->format_type);
-                        yyjson_mut_obj_add_uint(doc, slot, "extension", rs->extension);
-                        if (rs->alpha_plane_size > 0) {
-                            yyjson_mut_obj_add_uint(doc, slot, "alpha_plane_size",
-                                                    rs->alpha_plane_size);
-                        }
-                    }
-                    break;
-                case CKTEXTURE_BITMAP_RAW:
-                    if (ts->raw_slots) {
-                        const nmo_texture_raw_slot_t *rs = &ts->raw_slots[i];
-                        yyjson_mut_obj_add_str(doc, slot, "type", "raw");
-                        yyjson_mut_obj_add_int(doc, slot, "width", rs->width);
-                        yyjson_mut_obj_add_int(doc, slot, "height", rs->height);
-                        yyjson_mut_obj_add_int(doc, slot, "bits_per_pixel", rs->bits_per_pixel);
-                        {
-                            char mask_buf[16];
-                            snprintf(mask_buf, sizeof(mask_buf), "0x%08X", rs->red_mask);
-                            yyjson_mut_obj_add_strcpy(doc, slot, "red_mask", mask_buf);
-                            snprintf(mask_buf, sizeof(mask_buf), "0x%08X", rs->green_mask);
-                            yyjson_mut_obj_add_strcpy(doc, slot, "green_mask", mask_buf);
-                            snprintf(mask_buf, sizeof(mask_buf), "0x%08X", rs->blue_mask);
-                            yyjson_mut_obj_add_strcpy(doc, slot, "blue_mask", mask_buf);
-                            snprintf(mask_buf, sizeof(mask_buf), "0x%08X", rs->alpha_mask);
-                            yyjson_mut_obj_add_strcpy(doc, slot, "alpha_mask", mask_buf);
-                        }
-                        yyjson_mut_obj_add_uint(doc, slot, "red_size", rs->red_size);
-                        yyjson_mut_obj_add_uint(doc, slot, "green_size", rs->green_size);
-                        yyjson_mut_obj_add_uint(doc, slot, "blue_size", rs->blue_size);
-                        yyjson_mut_obj_add_uint(doc, slot, "alpha_size", rs->alpha_size);
-                    }
-                    break;
-                case CKTEXTURE_BITMAP_BITMAP2:
-                    if (ts->bitmap2_slots) {
-                        const nmo_texture_bitmap2_slot_t *bs = &ts->bitmap2_slots[i];
-                        yyjson_mut_obj_add_str(doc, slot, "type", "bitmap2");
-                        yyjson_mut_obj_add_uint(doc, slot, "buffer_size", bs->buffer_size);
-                    }
-                    break;
-                default:
-                    yyjson_mut_obj_add_str(doc, slot, "type", "none");
-                    break;
-                }
-
-                yyjson_mut_arr_add_val(slots, slot);
-            }
-            yyjson_mut_obj_add_val(doc, data, "slots", slots);
-        } else {
-            yyjson_mut_obj_add_null(doc, data, "state");
-        }
-
+        nmo_cli_record_to_json(rec, doc, data);
+        nmo_cli_record_free(rec);
         nmo_cmd_ctx_json_end(&c, doc, data, "texture.show");
     } else {
-        /* Text output */
         nmo_cli_print_heading(c.out, "Texture Details", c.colorize);
-
-        char buf[128];
-        snprintf(buf, sizeof(buf), "#%u (%s)", object_id,
-                 (name && name[0]) ? name : "(unnamed)");
-        nmo_cli_print_kv(c.out, "ID / Name", buf, 18, c.colorize);
-
-        const char *class_name = nmo_core_class_name(&c, class_id);
-        snprintf(buf, sizeof(buf), "#%u (%s)", class_id, class_name ? class_name : "-");
-        nmo_cli_print_kv(c.out, "Class", buf, 18, c.colorize);
-
+        nmo_cli_record_print_kv(rec, c.out, 18, c.colorize);
         if (!ts) {
             fprintf(c.out, "\n  (no deserialized state)\n");
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
         }
-
-        format_dims(buf, sizeof(buf), ts->reader_width, ts->reader_height);
-        nmo_cli_print_kv(c.out, "Dimensions", buf, 18, c.colorize);
-
-        snprintf(buf, sizeof(buf), "%d", ts->reader_bpp);
-        nmo_cli_print_kv(c.out, "BPP", buf, 18, c.colorize);
-
-        nmo_cli_print_kv(c.out, "Bitmap Kind", bitmap_kind_str(ts->bitmap_kind), 18, c.colorize);
-        nmo_cli_print_kv(c.out, "Save Options", save_options_str(ts->save_options), 18, c.colorize);
-
-        snprintf(buf, sizeof(buf), "%u", ts->slot_count);
-        nmo_cli_print_kv(c.out, "Slot Count", buf, 18, c.colorize);
-
-        snprintf(buf, sizeof(buf), "%u", ts->mipmap_level);
-        nmo_cli_print_kv(c.out, "Mipmap Level", buf, 18, c.colorize);
-
-        nmo_cli_print_kv(c.out, "Transparent", ts->is_transparent ? "yes" : "no", 18, c.colorize);
-        nmo_cli_print_kv(c.out, "Cubemap", ts->is_cubemap ? "yes" : "no", 18, c.colorize);
-        nmo_cli_print_kv(c.out, "External", is_external_texture(ts) ? "yes" : "no", 18, c.colorize);
-
-        if (ts->has_desired_video_format) {
-            snprintf(buf, sizeof(buf), "%u", ts->desired_video_format);
-            nmo_cli_print_kv(c.out, "Video Format", buf, 18, c.colorize);
-        }
-        if (ts->has_transparent_color) {
-            snprintf(buf, sizeof(buf), "0x%08X", ts->transparent_color);
-            nmo_cli_print_kv(c.out, "Transp. Color", buf, 18, c.colorize);
-        }
-        if (ts->has_current_slot) {
-            snprintf(buf, sizeof(buf), "%d", ts->current_slot);
-            nmo_cli_print_kv(c.out, "Current Slot", buf, 18, c.colorize);
-        }
-        if (ts->has_pick_threshold) {
-            snprintf(buf, sizeof(buf), "%d", ts->pick_threshold);
-            nmo_cli_print_kv(c.out, "Pick Threshold", buf, 18, c.colorize);
-        }
-        if (ts->has_movie_filename && ts->movie_filename) {
-            nmo_cli_print_kv(c.out, "Movie File", ts->movie_filename, 18, c.colorize);
-        }
-
-        /* Slot filenames */
-        if (ts->has_slot_filenames && ts->slot_filenames) {
-            fprintf(c.out, "\nSlot Filenames:\n");
-            for (uint32_t i = 0; i < ts->slot_count; ++i) {
-                fprintf(c.out, "  [%u] %s\n", i,
-                        ts->slot_filenames[i] ? ts->slot_filenames[i] : "(null)");
-            }
-        }
-
-        /* Per-slot details */
-        if (ts->slot_count > 0) {
-            fprintf(c.out, "\nSlots:\n");
-            for (uint32_t i = 0; i < ts->slot_count; ++i) {
-                fprintf(c.out, "  Slot %u:\n", i);
-                switch (ts->bitmap_kind) {
-                case CKTEXTURE_BITMAP_READER:
-                    if (ts->reader_slots) {
-                        const nmo_texture_reader_slot_t *rs = &ts->reader_slots[i];
-                        fprintf(c.out, "    type:       reader\n");
-                        fprintf(c.out, "    data_size:  %u\n", rs->data_size);
-                        fprintf(c.out, "    format:     %u\n", rs->format_type);
-                        fprintf(c.out, "    extension:  %u\n", rs->extension);
-                        if (rs->alpha_plane_size > 0) {
-                            fprintf(c.out, "    alpha_size: %u\n", rs->alpha_plane_size);
-                        }
-                    }
-                    break;
-                case CKTEXTURE_BITMAP_RAW:
-                    if (ts->raw_slots) {
-                        const nmo_texture_raw_slot_t *rs = &ts->raw_slots[i];
-                        fprintf(c.out, "    type:       raw\n");
-                        fprintf(c.out, "    dims:       %dx%d @ %d bpp\n",
-                                rs->width, rs->height, rs->bits_per_pixel);
-                        fprintf(c.out, "    masks:      R=0x%08X G=0x%08X B=0x%08X A=0x%08X\n",
-                                rs->red_mask, rs->green_mask,
-                                rs->blue_mask, rs->alpha_mask);
-                        fprintf(c.out, "    channels:   R=%u G=%u B=%u A=%u bytes\n",
-                                rs->red_size, rs->green_size,
-                                rs->blue_size, rs->alpha_size);
-                    }
-                    break;
-                case CKTEXTURE_BITMAP_BITMAP2:
-                    if (ts->bitmap2_slots) {
-                        const nmo_texture_bitmap2_slot_t *bs = &ts->bitmap2_slots[i];
-                        fprintf(c.out, "    type:       bitmap2\n");
-                        fprintf(c.out, "    buf_size:   %u\n", bs->buffer_size);
-                    }
-                    break;
-                default:
-                    fprintf(c.out, "    type:       none\n");
-                    break;
-                }
-            }
-        }
+        nmo_cli_record_free(rec);
     }
 
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
