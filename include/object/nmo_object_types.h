@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file nmo_object_types.h
  * @brief Virtools object type definitions integrated with type system
  * 

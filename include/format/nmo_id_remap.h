@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file nmo_id_remap.h
  * @brief ID remapping for NeMo chunks
  * 

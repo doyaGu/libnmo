@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file nmo_io_file.h
  * @brief File IO operations
  */

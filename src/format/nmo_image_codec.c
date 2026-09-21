@@ -1,4 +1,4 @@
-﻿#include "format/nmo_image_codec.h"
+#include "format/nmo_image_codec.h"
 
 #include "format/nmo_stb_adapter.h"
 

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file arena_array.c
  * @brief Generic dynamic array implementation with arena-based memory management
  * 

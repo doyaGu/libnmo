@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file object_repository.c
  * @brief Object repository implementation with generic hash tables
  */

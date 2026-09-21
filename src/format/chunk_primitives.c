@@ -1,4 +1,4 @@
-﻿// chunk_primitives.c - Primitive type serialization for CKStateChunk
+// chunk_primitives.c - Primitive type serialization for CKStateChunk
 // Implements: byte, word, int, dword, float, GUID, string, buffer, object_id
 
 #include "format/nmo_chunk.h"

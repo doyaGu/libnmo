@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file header.c
  * @brief NMO file header parsing implementation
  */

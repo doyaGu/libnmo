@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file type_parser.c
  * @brief Type name string parser (Phase 6.2, Task 6.2.2)
  *

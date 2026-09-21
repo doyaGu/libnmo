@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file nmo_chunk.h
  * @brief CKStateChunk - Low-level chunk structure and core operations
  *

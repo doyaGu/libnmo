@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file type_registry_struct_values.c
  * @brief Reflected struct and object-ref value behavior
  */

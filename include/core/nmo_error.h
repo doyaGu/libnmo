@@ -1,4 +1,4 @@
-﻿#ifndef NMO_ERROR_H
+#ifndef NMO_ERROR_H
 #define NMO_ERROR_H
 
 #include "nmo_types.h"

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file nmo_id_remap.c
  * @brief ID remapping implementation
  */

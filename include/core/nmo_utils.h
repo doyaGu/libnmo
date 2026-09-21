@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file nmo_utils.h
  * @brief Common utility functions and macros for libnmo
  * 

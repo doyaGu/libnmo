@@ -1,4 +1,4 @@
-﻿// chunk_compression.c - Chunk compression/decompression helpers
+// chunk_compression.c - Chunk compression/decompression helpers
 
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_chunk.h"

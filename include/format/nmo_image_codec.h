@@ -1,4 +1,4 @@
-﻿#ifndef NMO_IMAGE_CODEC_H
+#ifndef NMO_IMAGE_CODEC_H
 #define NMO_IMAGE_CODEC_H
 
 #include <stdbool.h>

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file io_file.c
  * @brief File IO operations implementation
  */

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file nmo_array.h
  * @brief Generic dynamic array with allocator-based memory management
  * 

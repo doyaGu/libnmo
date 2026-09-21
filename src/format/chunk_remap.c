@@ -1,4 +1,4 @@
-﻿// chunk_remap.c - Object ID remapping
+// chunk_remap.c - Object ID remapping
 // Implements: remap_object_ids
 
 #include "format/nmo_chunk_api.h"

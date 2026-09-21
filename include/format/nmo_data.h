@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file nmo_data.h
  * @brief NMO Data section structures and parsing
  *

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file nmo_hash_table.h
  * @brief Generic hash table implementation with linear probing
  *

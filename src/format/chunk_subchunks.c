@@ -1,4 +1,4 @@
-﻿// chunk_subchunks.c - Sub-chunk operations
+// chunk_subchunks.c - Sub-chunk operations
 // Implements: write_sub_chunk, read_sub_chunk, start_sub_chunk_sequence
 
 #include "format/nmo_chunk_api.h"

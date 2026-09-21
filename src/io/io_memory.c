@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file io_memory.c
  * @brief Memory IO operations implementation
  */

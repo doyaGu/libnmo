@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file nmo_serializer.h
  * @brief Serializer pipeline API
  *

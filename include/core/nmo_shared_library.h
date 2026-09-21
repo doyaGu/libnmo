@@ -1,4 +1,4 @@
-﻿#ifndef NMO_SHARED_LIBRARY_H
+#ifndef NMO_SHARED_LIBRARY_H
 #define NMO_SHARED_LIBRARY_H
 
 /**

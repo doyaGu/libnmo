@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file type_registry_enum.c
  * @brief Enum and flags type registration implementation (Phase 6.2 Task 6.2.3)
  * 

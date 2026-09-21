@@ -1,4 +1,4 @@
-﻿// chunk_arrays.c - Array serialization for CKStateChunk
+// chunk_arrays.c - Array serialization for CKStateChunk
 // Implements: generic arrays, typed arrays (object_id, int, float, dword, byte, string)
 
 #include "format/nmo_chunk.h"

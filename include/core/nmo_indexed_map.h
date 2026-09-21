@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file nmo_indexed_map.h
  * @brief Generic indexed map (hash table + dense array for iteration)
  *

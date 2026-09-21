@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file object_index.c
  * @brief Object indexing system implementation (Phase 5)
  *

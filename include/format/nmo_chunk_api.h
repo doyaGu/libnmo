@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file nmo_chunk_api.h
  * @brief High-level CKStateChunk-compatible API
  * 

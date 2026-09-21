@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file chunk.c
  * @brief CKStateChunk handling implementation
  */

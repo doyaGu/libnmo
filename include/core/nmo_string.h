@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file nmo_string.h
  * @brief Dynamic UTF-8 string utilities mirroring Virtools XString behaviour.
  *

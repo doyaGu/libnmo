@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file nmo_object_type_common.h
  * @brief Common helpers for CKObject-derived type vtables
  */

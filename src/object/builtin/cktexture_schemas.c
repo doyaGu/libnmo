@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file cktexture_schemas.c
  * @brief CKTexture schema implementation
  * @author libnmo

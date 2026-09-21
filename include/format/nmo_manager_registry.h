@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file nmo_manager_registry.h
  * @brief Manager registry for managing object managers
  */

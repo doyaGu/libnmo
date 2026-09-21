@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file builtin_type_values.c
  * @brief Builtin type value behavior and vtables
  */

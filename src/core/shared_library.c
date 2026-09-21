@@ -1,4 +1,4 @@
-﻿#include "core/nmo_shared_library.h"
+#include "core/nmo_shared_library.h"
 
 #include "core/nmo_allocator.h"
 #include "core/nmo_error.h"

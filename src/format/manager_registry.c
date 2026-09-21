@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file manager_registry.c
  * @brief Manager registry implementation with indexed map
  */

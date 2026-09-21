@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file object_type_common.c
  * @brief Common helpers for CKObject-derived type vtables
  */

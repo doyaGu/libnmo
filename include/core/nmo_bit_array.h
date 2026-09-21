@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file nmo_bit_array.h
  * @brief Dynamic bitset primitive mirroring Virtools XBitArray.
  *

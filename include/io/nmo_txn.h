@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file nmo_txn.h
  * @brief Transactional IO operations for atomic file writes
  *

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file nmo_arena_array.h
  * @brief Generic dynamic array with arena-based memory management
  * 
