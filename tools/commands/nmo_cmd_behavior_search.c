@@ -795,16 +795,16 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
                     if (tgt_owner != 0) {
                         nmo_object_t *tgt_obj = nmo_object_repository_find_by_id(repo, tgt_owner);
                         if (tgt_obj && tgt_obj->state) {
-                            const nmo_behavior_state_t *tgt_bs =
+                            const nmo_behavior_state_t *tgt_state =
                                 (const nmo_behavior_state_t *)tgt_obj->state;
-                            if (tgt_bs->flags & CKBEHAVIOR_SCRIPT)
+                            if (tgt_state->flags & CKBEHAVIOR_SCRIPT)
                                 type_label = " [Script]";
-                            else if (tgt_bs->flags & CKBEHAVIOR_BUILDINGBLOCK) {
+                            else if (tgt_state->flags & CKBEHAVIOR_BUILDINGBLOCK) {
                                 type_label = " [BB]";
-                                if (!nmo_guid_is_null(tgt_bs->block_guid)) {
+                                if (!nmo_guid_is_null(tgt_state->block_guid)) {
                                     proto_name = nmo_behavior_registry_get_name(
                                         nmo_context_get_bb_registry(c.ctx),
-                                        tgt_bs->block_guid);
+                                        tgt_state->block_guid);
                                 }
                                 if (!proto_name) {
                                     proto_name = target_proto;

@@ -371,14 +371,14 @@ int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *glob
             return NMO_CLI_EXIT_ARG_ERROR;
         }
 
-        object_list_opts_t opts = {
+        object_list_opts_t list_opts = {
             .class_filter_str = class_filter_str,
             .sort_key_str = sort_key_str,
             .reverse = reverse,
             .top_n = top_n,
         };
         return nmo_tool_batch_run(paths, count, global, "object.list",
-                                  object_list_single, &opts);
+                                  object_list_single, &list_opts);
     }
 
     /* Single file mode */

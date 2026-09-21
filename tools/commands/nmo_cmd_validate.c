@@ -1901,9 +1901,9 @@ static int validate_orphans_run_in_ctx(nmo_cmd_ctx_t *c,
             return close_ctx ? nmo_cmd_ctx_done(c, exit_code) : exit_code;
         }
 
-        nmo_object_id_t *orphan_ids = (nmo_object_id_t *)malloc(
+        nmo_object_id_t *strip_ids = (nmo_object_id_t *)malloc(
             orphan_data.likely_orphans * sizeof(nmo_object_id_t));
-        if (!orphan_ids) {
+        if (!strip_ids) {
             fprintf(stderr, "Error: Out of memory for strip operation\n");
             if (arena) nmo_arena_destroy(arena);
             return close_ctx ? nmo_cmd_ctx_done(c, NMO_CLI_EXIT_INTERNAL_ERROR)
@@ -1911,7 +1911,7 @@ static int validate_orphans_run_in_ctx(nmo_cmd_ctx_t *c,
         }
         {
             for (size_t i = 0; i < orphan_data.likely_orphans && i < orphan_cap; i++)
-                orphan_ids[i] = nmo_object_get_id(orphan_list[i].obj);
+                strip_ids[i] = nmo_object_get_id(orphan_list[i].obj);
 
             /* Destroy arena before modifying session (arena owns mark-sweep data) */
             nmo_arena_destroy(arena);
@@ -1919,9 +1919,9 @@ static int validate_orphans_run_in_ctx(nmo_cmd_ctx_t *c,
 
             nmo_runtime_report_t report;
             memset(&report, 0, sizeof(report));
-            nmo_tool_owner_destroy_objects(c->workspace, orphan_ids,
+            nmo_tool_owner_destroy_objects(c->workspace, strip_ids,
                                         orphan_data.likely_orphans, 0, &report);
-            free(orphan_ids);
+            free(strip_ids);
 
             nmo_save_options_t save_opts = nmo_tool_owner_save_options_default();
             int save_rc = nmo_cli_save_document(c->document, output_path, &save_opts);
