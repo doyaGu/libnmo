@@ -120,6 +120,16 @@ static void nmo_stb_free(void *ptr) {
     }
 }
 
+/* stb is third-party code: keep its internal sprintf use out of -Werror
+ * (Apple SDKs mark sprintf deprecated in unfortified, -O0 builds). */
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#elif defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
+
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_NO_STDIO
 #define STBI_ASSERT(x) ((void)0)
@@ -133,6 +143,12 @@ static void nmo_stb_free(void *ptr) {
 #define STBIW_REALLOC(p,sz) nmo_stb_realloc(p,sz)
 #define STBIW_FREE(p) nmo_stb_free(p)
 #include "stb/stb_image_write.h"
+
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#elif defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
 
 uint8_t *nmo_stbi_load_from_memory(nmo_arena_t *arena,
                                    const uint8_t *buffer,
