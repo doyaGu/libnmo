@@ -64,6 +64,14 @@ bool nmo_cli_record_str_opt(nmo_cli_record_t *record, const char *key,
 /** "0x%08X" on both sides. */
 bool nmo_cli_record_hex32(nmo_cli_record_t *record, const char *key,
                           const char *label, uint32_t value);
+/**
+ * Three-component vector. JSON: an object with "x", "y", "z" reals. Text:
+ * "(x, y, z)" with each component printed using `component_format`
+ * (NULL: "%.4f").
+ */
+bool nmo_cli_record_vec3(nmo_cli_record_t *record, const char *key,
+                         const char *label, double x, double y, double z,
+                         const char *component_format);
 /** JSON null; text shows `text` (NULL: omitted). */
 bool nmo_cli_record_null(nmo_cli_record_t *record, const char *key,
                          const char *label, const char *text);
@@ -108,6 +116,14 @@ nmo_cli_record_array_t *nmo_cli_record_array(nmo_cli_record_t *record,
 bool nmo_cli_record_array_add(nmo_cli_record_array_t *array,
                               nmo_cli_record_t *item);
 size_t nmo_cli_record_array_count(const nmo_cli_record_array_t *array);
+/**
+ * Replace the default "\n<label> (<count>):\n" text heading with a literal
+ * line (printed as "\n<heading>\n").
+ */
+bool nmo_cli_record_array_set_heading(nmo_cli_record_array_t *array,
+                                      const char *heading);
+/** Emit nothing, in JSON or text, when the array has no items. */
+void nmo_cli_record_array_omit_empty(nmo_cli_record_array_t *array);
 /** One-line text used when this record is rendered as an array item. */
 bool nmo_cli_record_set_summary(nmo_cli_record_t *record, const char *text);
 

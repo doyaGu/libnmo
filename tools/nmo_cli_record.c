@@ -21,6 +21,7 @@ typedef enum record_kind {
     RECORD_STR,
     RECORD_NULL,
     RECORD_REF,
+    RECORD_VEC3,
     RECORD_ARRAY
 } record_kind_t;
 
@@ -28,6 +29,8 @@ struct nmo_cli_record_array {
     nmo_cli_record_t **items;
     size_t count;
     size_t capacity;
+    char *heading;
+    bool omit_empty;
 };
 
 typedef struct record_field {
@@ -40,6 +43,7 @@ typedef struct record_field {
     uint64_t u;
     int64_t i;
     double d;
+    double v[3];      /* RECORD_VEC3 */
     bool b;
     nmo_cli_record_array_t array; /* RECORD_ARRAY */
 } record_field_t;
@@ -116,6 +120,7 @@ static void field_dispose(record_field_t *field)
         nmo_cli_record_free(field->array.items[i]);
     }
     free(field->array.items);
+    free(field->array.heading);
     memset(field, 0, sizeof(*field));
 }
 
@@ -283,6 +288,28 @@ bool nmo_cli_record_hex32(nmo_cli_record_t *record, const char *key,
     return true;
 }
 
+bool nmo_cli_record_vec3(nmo_cli_record_t *record, const char *key,
+                         const char *label, double x, double y, double z,
+                         const char *component_format)
+{
+    record_field_t *field = field_append(record, RECORD_VEC3, key, label);
+    if (!field) {
+        return false;
+    }
+    field->v[0] = x;
+    field->v[1] = y;
+    field->v[2] = z;
+    const char *fmt = component_format ? component_format : "%.4f";
+    char cx[64], cy[64], cz[64];
+    snprintf(cx, sizeof(cx), fmt, x);
+    snprintf(cy, sizeof(cy), fmt, y);
+    snprintf(cz, sizeof(cz), fmt, z);
+    if (!set_formatted(&field->text, "(%s, %s, %s)", cx, cy, cz)) {
+        return field_fail(record);
+    }
+    return true;
+}
+
 bool nmo_cli_record_null(nmo_cli_record_t *record, const char *key,
                          const char *label, const char *text)
 {
@@ -412,6 +439,22 @@ size_t nmo_cli_record_array_count(const nmo_cli_record_array_t *array)
     return array ? array->count : 0u;
 }
 
+bool nmo_cli_record_array_set_heading(nmo_cli_record_array_t *array,
+                                      const char *heading)
+{
+    if (!array) {
+        return false;
+    }
+    return set_str(&array->heading, heading);
+}
+
+void nmo_cli_record_array_omit_empty(nmo_cli_record_array_t *array)
+{
+    if (array) {
+        array->omit_empty = true;
+    }
+}
+
 bool nmo_cli_record_set_summary(nmo_cli_record_t *record, const char *text)
 {
     if (!record) {
@@ -466,7 +509,19 @@ bool nmo_cli_record_to_json(const nmo_cli_record_t *record,
                                                field->str);
             }
             break;
+        case RECORD_VEC3: {
+            yyjson_mut_val *vec = yyjson_mut_obj(doc);
+            ok = vec != NULL &&
+                 nmo_cli_json_add_real_safe(doc, vec, "x", field->v[0]) &&
+                 nmo_cli_json_add_real_safe(doc, vec, "y", field->v[1]) &&
+                 nmo_cli_json_add_real_safe(doc, vec, "z", field->v[2]) &&
+                 nmo_cli_json_add_val_safe(doc, obj, field->key, vec);
+            break;
+        }
         case RECORD_ARRAY: {
+            if (field->array.omit_empty && field->array.count == 0u) {
+                break;
+            }
             yyjson_mut_val *arr = yyjson_mut_arr(doc);
             if (!arr) {
                 ok = false;
@@ -499,10 +554,17 @@ void nmo_cli_record_print_kv(const nmo_cli_record_t *record, FILE *out,
     for (size_t i = 0; i < record->count; ++i) {
         const record_field_t *field = &record->fields[i];
         if (field->kind == RECORD_ARRAY) {
-            if (!field->label) {
+            if (!field->label && !field->array.heading) {
                 continue;
             }
-            fprintf(out, "\n%s (%zu):\n", field->label, field->array.count);
+            if (field->array.omit_empty && field->array.count == 0u) {
+                continue;
+            }
+            if (field->array.heading) {
+                fprintf(out, "\n%s\n", field->array.heading);
+            } else {
+                fprintf(out, "\n%s (%zu):\n", field->label, field->array.count);
+            }
             for (size_t j = 0; j < field->array.count; ++j) {
                 const nmo_cli_record_t *item = field->array.items[j];
                 if (item && item->summary) {
