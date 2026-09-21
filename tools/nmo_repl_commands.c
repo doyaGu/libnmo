@@ -1276,11 +1276,16 @@ static int cmd_clear(nmo_repl_context_t *repl, int argc, char **argv) {
     (void)repl;
     (void)argc;
     (void)argv;
+    int rc;
 #if defined(_WIN32)
-    system("cls");
+    rc = system("cls");
 #else
-    system("clear");
+    rc = system("clear");
 #endif
+    if (rc != 0) {
+        /* Clearing the screen is cosmetic; fall back to a form feed. */
+        fputs("\033[2J\033[H", stdout);
+    }
     return 0;
 }
 
