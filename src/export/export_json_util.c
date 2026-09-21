@@ -88,10 +88,10 @@ static char *bytes_to_utf8_latin1(const unsigned char *bytes, size_t len) {
         if (c < 0x80) {
             out[pos++] = (char)c;
         } else if (c < 0xC0) {
-            out[pos++] = (char)0xC2;
+            out[pos++] = '\xC2';
             out[pos++] = (char)c;
         } else {
-            out[pos++] = (char)0xC3;
+            out[pos++] = '\xC3';
             out[pos++] = (char)(c - 0x40);
         }
     }
@@ -169,9 +169,9 @@ yyjson_mut_val *nmo_json_make_str_safe(yyjson_mut_doc *doc, const char *str) {
             if (c == '\t' || c == '\n' || c == '\r' || c >= 0x20) {
                 buf[out_len++] = (char)c;
             } else {
-                buf[out_len++] = (char)0xEF;
-                buf[out_len++] = (char)0xBF;
-                buf[out_len++] = (char)0xBD;
+                buf[out_len++] = '\xEF';
+                buf[out_len++] = '\xBF';
+                buf[out_len++] = '\xBD';
             }
             i++;
             continue;
@@ -212,9 +212,9 @@ yyjson_mut_val *nmo_json_make_str_safe(yyjson_mut_doc *doc, const char *str) {
             }
         }
 
-        buf[out_len++] = (char)0xEF;
-        buf[out_len++] = (char)0xBF;
-        buf[out_len++] = (char)0xBD;
+        buf[out_len++] = '\xEF';
+        buf[out_len++] = '\xBF';
+        buf[out_len++] = '\xBD';
         i++;
     }
 

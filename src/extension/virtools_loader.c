@@ -27,8 +27,9 @@
  * Helpers
  * ============================================================================ */
 
-static const yyjson_read_flag NMO_VIRTOOLS_JSON_READ_FLAGS =
-    YYJSON_READ_ALLOW_BOM;
+/* yyjson flags are static const objects, so this cannot be a static
+ * initializer in C. */
+#define NMO_VIRTOOLS_JSON_READ_FLAGS YYJSON_READ_ALLOW_BOM
 
 static nmo_guid_t read_guid(yyjson_val *arr) {
     if (!arr || !yyjson_is_arr(arr) || yyjson_arr_size(arr) != 2)

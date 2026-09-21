@@ -2233,10 +2233,10 @@ nmo_status_t nmo_project_plan_get_asset(
     memcpy(out_asset->has_material_texture_slots,
            asset->has_material_texture_slots,
            sizeof(out_asset->has_material_texture_slots));
-    memcpy(out_asset->material_texture_paths,
+    memcpy((void *)out_asset->material_texture_paths,
            asset->material_texture_paths,
            sizeof(out_asset->material_texture_paths));
-    memcpy(out_asset->material_texture_source_paths,
+    memcpy((void *)out_asset->material_texture_source_paths,
            asset->material_texture_source_paths,
            sizeof(out_asset->material_texture_source_paths));
     out_asset->has_material_render_flags = asset->has_material_render_flags;

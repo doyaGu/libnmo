@@ -179,5 +179,5 @@ nmo_status_t nmo_register_trigonometry_operations(
     };
 
     const size_t count = sizeof(operations) / sizeof(operations[0]);
-    return nmo_operation_registry_register_bulk(operation_registry, operations, count, type_registry, NULL);
+    return nmo_operation_registry_register_bulk(operation_registry, operations, (uint32_t)count, type_registry, NULL);
 }
