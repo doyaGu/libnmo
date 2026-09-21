@@ -73,7 +73,8 @@ static int run_repl_command_capture(nmo_repl_context_t *repl,
         NMO_TEST_CLOSE(saved_stdout);
         return -1;
     }
-    if (NMO_TEST_DUP2(NMO_TEST_FILENO(capture), NMO_TEST_FILENO(stdout)) != 0) {
+    /* _dup2 returns 0 on success; POSIX dup2 returns the new descriptor. */
+    if (NMO_TEST_DUP2(NMO_TEST_FILENO(capture), NMO_TEST_FILENO(stdout)) < 0) {
         NMO_TEST_CLOSE(saved_stdout);
         fclose(capture);
         return -1;
@@ -82,7 +83,7 @@ static int run_repl_command_capture(nmo_repl_context_t *repl,
     int rc = run_repl_command(repl, line);
 
     fflush(stdout);
-    if (NMO_TEST_DUP2(saved_stdout, NMO_TEST_FILENO(stdout)) != 0) {
+    if (NMO_TEST_DUP2(saved_stdout, NMO_TEST_FILENO(stdout)) < 0) {
         rc = -1;
     }
     NMO_TEST_CLOSE(saved_stdout);
