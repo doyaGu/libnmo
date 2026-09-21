@@ -83,7 +83,7 @@ jobs:
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
 
       - name: Build
-        run: cmake --build build --parallel
+        run: cmake --build build --parallel -- -k 0
 
       # Performance tests assert on wall-clock ratios and are not meaningful on
       # shared runners. The allocator test deliberately requests SIZE_MAX bytes
