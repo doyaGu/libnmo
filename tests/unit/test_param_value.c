@@ -284,7 +284,7 @@ TEST(param_value, decode_string) {
 
     char buf[256];
     nmo_status_t st = nmo_behavior_param_value_to_string(&p, reg, NULL, buf, sizeof(buf));
-    /* String type may succeed or fall through to hex éˆ?either is acceptable */
+    /* String type may succeed or fall through to hex - either is acceptable */
     ASSERT_EQ(NMO_OK, st);
     ASSERT_TRUE(buf[0] != '\0');
 
