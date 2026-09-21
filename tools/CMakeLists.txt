@@ -119,7 +119,12 @@ if(NMO_USE_ISOCLINE)
         endif()
     endforeach()
     if(TARGET isocline_shared)
-        set_target_properties(isocline_shared PROPERTIES EXCLUDE_FROM_ALL TRUE)
+        # Also rename its outputs: on MSVC the DLL import library would
+        # otherwise collide with the static isocline.lib.
+        set_target_properties(isocline_shared PROPERTIES
+            EXCLUDE_FROM_ALL TRUE
+            OUTPUT_NAME isocline_shared
+            ARCHIVE_OUTPUT_NAME isocline_shared)
     endif()
     target_link_libraries(nmo_cli PRIVATE isocline)
     target_compile_definitions(nmo_cli PRIVATE NMO_HAVE_ISOCLINE)
