@@ -935,6 +935,7 @@ TEST(cli, behavior_trace_text_mentions_current_graph) {
 
 TEST(cli, behavior_read_commands_accept_exact_name_selectors) {
     TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     char args[1024];
 
     snprintf(args, sizeof(args),
