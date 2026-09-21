@@ -183,6 +183,7 @@ static void run_json_command(
 
 TEST(ballance_acceptance, debug_probe_2d_text_dry_run)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "-f json debug probe 2d-text --behavior 237 "
@@ -203,6 +204,7 @@ TEST(ballance_acceptance, debug_probe_2d_text_dry_run)
 
 TEST(ballance_acceptance, patch_replay_dry_run)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     make_dir("test_ballance_acceptance_tmp");
     const char *patch = "test_ballance_acceptance_tmp/patch_replay.json";
     const char *output = "test_ballance_acceptance_tmp/patch_replay.cmo";
@@ -251,6 +253,7 @@ TEST(ballance_acceptance, patch_replay_dry_run)
 
 TEST(ballance_acceptance, validate_base)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[1024];
     snprintf(args, sizeof(args), "validate all \"%s\"",
              NMO_TEST_DATA_FILE("Ballance/base.cmo"));
@@ -263,6 +266,7 @@ TEST(ballance_acceptance, validate_base)
 
 TEST(ballance_acceptance, accepted_patch_save_load_validates)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     make_dir("test_ballance_acceptance_tmp");
     const char *patch = "test_ballance_acceptance_tmp/accepted_patch.json";
     const char *output = "test_ballance_acceptance_tmp/accepted_patch.cmo";
@@ -315,6 +319,7 @@ TEST(ballance_acceptance, accepted_patch_save_load_validates)
 
 TEST(ballance_acceptance, accepted_patch_report_manifest_replays)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     make_dir("test_ballance_acceptance_tmp");
     const char *patch = "test_ballance_acceptance_tmp/closed_loop_patch.json";
     const char *replay = "test_ballance_acceptance_tmp/closed_loop_replay.json";
@@ -394,6 +399,7 @@ TEST(ballance_acceptance, accepted_patch_report_manifest_replays)
 
 TEST(ballance_acceptance, failed_patch_chain_does_not_write_output)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     make_dir("test_ballance_acceptance_tmp");
     const char *patch = "test_ballance_acceptance_tmp/failed_chain.json";
     const char *output = "test_ballance_acceptance_tmp/failed_chain.cmo";
@@ -446,6 +452,7 @@ TEST(ballance_acceptance, failed_patch_chain_does_not_write_output)
 
 TEST(ballance_acceptance, accepted_message_probe_save_load_validates)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     make_dir("test_ballance_acceptance_tmp");
     const char *output = "test_ballance_acceptance_tmp/message_probe.cmo";
     remove(output);
@@ -487,6 +494,7 @@ TEST(ballance_acceptance, accepted_message_probe_save_load_validates)
 
 TEST(ballance_acceptance, accepted_data_probe_save_load_validates)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     make_dir("test_ballance_acceptance_tmp");
     const char *output = "test_ballance_acceptance_tmp/data_probe.cmo";
     remove(output);
@@ -530,6 +538,7 @@ TEST(ballance_acceptance, accepted_data_probe_save_load_validates)
 
 TEST(ballance_acceptance, accepted_auto_data_probe_save_load_validates)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     make_dir("test_ballance_acceptance_tmp");
     const char *output = "test_ballance_acceptance_tmp/auto_data_probe.cmo";
     remove(output);
@@ -580,6 +589,7 @@ TEST(ballance_acceptance, accepted_auto_data_probe_save_load_validates)
 
 TEST(ballance_acceptance, accepted_operation_data_probe_save_load_validates)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     make_dir("test_ballance_acceptance_tmp");
     const char *output = "test_ballance_acceptance_tmp/operation_data_probe.cmo";
     remove(output);
@@ -625,6 +635,7 @@ TEST(ballance_acceptance, accepted_operation_data_probe_save_load_validates)
 
 TEST(ballance_acceptance, accepted_manager_entry_save_load_validates)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     make_dir("test_ballance_acceptance_tmp");
     const char *output = "test_ballance_acceptance_tmp/manager_entry.cmo";
     remove(output);
@@ -670,6 +681,7 @@ TEST(ballance_acceptance, accepted_manager_entry_save_load_validates)
 
 TEST(ballance_acceptance, accepted_attribute_manager_entry_save_load_validates)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     make_dir("test_ballance_acceptance_tmp");
     const char *patch = "test_ballance_acceptance_tmp/attribute_manager_entry.json";
     const char *output = "test_ballance_acceptance_tmp/attribute_manager_entry.cmo";

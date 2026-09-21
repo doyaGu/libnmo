@@ -187,6 +187,8 @@ static void scan_plugin_dependency_directory(
 
 TEST(plugin_dependency_corpus, all_reference_files_resolve_plugin_dependencies)
 {
+    /* Corpus scan: skip when the gitignored Virtools sample set is absent. */
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     nmo_context_desc_t desc = {0};
     desc.data_dir = NMO_TEST_DATA_DIR;
 

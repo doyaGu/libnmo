@@ -106,6 +106,7 @@ static nmo_object_t *repl_object_by_id(nmo_repl_context_t *repl, nmo_object_id_t
 }
 
 TEST(repl_write, legacy_mutation_commands_are_removed) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     make_dir("test_repl_write_tmp");
     ASSERT_TRUE(copy_file_binary(
         NMO_TEST_DATA_FILE("Ballance/Camera.nmo"),
@@ -124,6 +125,7 @@ TEST(repl_write, legacy_mutation_commands_are_removed) {
 }
 
 TEST(repl_write, object_rename_uses_cli_shape) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     make_dir("test_repl_write_tmp");
     ASSERT_TRUE(copy_file_binary(
         NMO_TEST_DATA_FILE("Ballance/Camera.nmo"),
@@ -158,6 +160,7 @@ TEST(repl_write, object_rename_uses_cli_shape) {
 }
 
 TEST(repl_write, object_create_delete_and_copy_use_cli_filters) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     make_dir("test_repl_write_tmp");
     ASSERT_TRUE(copy_file_binary(
         NMO_TEST_DATA_FILE("Ballance/Camera.nmo"),
@@ -191,6 +194,7 @@ TEST(repl_write, object_create_delete_and_copy_use_cli_filters) {
 }
 
 TEST(repl_write, parameter_set_uses_cli_shape) {
+    TEST_REQUIRE_FIXTURE("Ballance/MenuLevel.nmo");
     make_dir("test_repl_write_tmp");
     ASSERT_TRUE(copy_file_binary(
         NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"),
@@ -226,6 +230,7 @@ TEST(repl_write, parameter_set_uses_cli_shape) {
 }
 
 TEST(repl_write, parameter_set_owner_selectors_save_and_reload) {
+    TEST_REQUIRE_FIXTURE("Ballance/MenuLevel.nmo");
     make_dir("test_repl_write_tmp");
     ASSERT_TRUE(copy_file_binary(
         NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"),
@@ -275,6 +280,7 @@ TEST(repl_write, parameter_set_owner_selectors_save_and_reload) {
 }
 
 TEST(repl_write, saved_mutation_reloads_as_mutable_session) {
+    TEST_REQUIRE_FIXTURE("Ballance/MenuLevel.nmo");
     make_dir("test_repl_write_tmp");
     ASSERT_TRUE(copy_file_binary(
         NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"),
@@ -333,6 +339,7 @@ TEST(repl_write, saved_mutation_reloads_as_mutable_session) {
 }
 
 TEST(repl_write, mutation_options_reject_output_and_unknown_options) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     make_dir("test_repl_write_tmp");
     ASSERT_TRUE(copy_file_binary(
         NMO_TEST_DATA_FILE("Ballance/Camera.nmo"),
@@ -352,6 +359,7 @@ TEST(repl_write, mutation_options_reject_output_and_unknown_options) {
 }
 
 TEST(repl_write, dry_run_mutations_do_not_change_session_or_dirty_flag) {
+    TEST_REQUIRE_FIXTURE("Ballance/MenuLevel.nmo");
     make_dir("test_repl_write_tmp");
     ASSERT_TRUE(copy_file_binary(
         NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"),

@@ -415,6 +415,7 @@ static void run_json_command(const char *args, const char *expected_command, yyj
 }
 
 TEST(cli, behavior_graph_json) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     const char *file_path = NMO_TEST_DATA_FILE("Ballance/base.cmo");
 
     char cmd[1024];
@@ -495,6 +496,7 @@ TEST(cli, behavior_graph_json) {
 }
 
 TEST(cli, behavior_graph_json_parity_metadata) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "-f json behavior graph --max-nodes 500 --max-edges 800 237 \"%s\"",
@@ -562,6 +564,7 @@ TEST(cli, behavior_graph_json_parity_metadata) {
 }
 
 TEST(cli, behavior_graph_json_truncation_counts) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "-f json behavior graph --max-nodes 5 --max-edges 5 237 \"%s\"",
@@ -588,6 +591,7 @@ TEST(cli, behavior_graph_json_truncation_counts) {
 }
 
 TEST(cli, behavior_graph_dot_labels_behavior_delay) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "behavior graph --dot 237 \"%s\"",
@@ -601,6 +605,8 @@ TEST(cli, behavior_graph_dot_labels_behavior_delay) {
 }
 
 TEST(cli, behavior_stats_json_distributions) {
+    TEST_REQUIRE_FIXTURE("Ballance/Menu.nmo");
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "-f json behavior stats \"%s\"",
@@ -676,6 +682,8 @@ TEST(cli, behavior_stats_json_distributions) {
 }
 
 TEST(cli, behavior_stats_json_survives_interface_parse_failures) {
+    TEST_REQUIRE_FIXTURE("Ballance/Balls.nmo");
+    TEST_REQUIRE_FIXTURE("Ballance/Menu.nmo");
     char args[1024];
 
     snprintf(args, sizeof(args),
@@ -696,6 +704,7 @@ TEST(cli, behavior_stats_json_survives_interface_parse_failures) {
 }
 
 TEST(cli, behavior_stats_json_marks_interface_unavailable_without_data) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "-f json behavior stats \"%s\"",
@@ -724,6 +733,7 @@ TEST(cli, behavior_stats_json_marks_interface_unavailable_without_data) {
 }
 
 TEST(cli, behavior_show_json_survives_interface_parse_failures) {
+    TEST_REQUIRE_FIXTURE("Ballance/Balls.nmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "-f json behavior show 11 \"%s\"",
@@ -742,6 +752,7 @@ TEST(cli, behavior_show_json_survives_interface_parse_failures) {
 }
 
 TEST(cli, behavior_show_json_p2_parity) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "-f json behavior show 237 \"%s\"",
@@ -810,6 +821,7 @@ TEST(cli, behavior_show_json_p2_parity) {
 }
 
 TEST(cli, behavior_show_text_formats_non_add_operations) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "behavior show 237 \"%s\"",
@@ -824,6 +836,7 @@ TEST(cli, behavior_show_text_formats_non_add_operations) {
 }
 
 TEST(cli, behavior_trace_json_p2_semantics) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "-f json behavior trace 237 \"%s\"",
@@ -868,6 +881,7 @@ TEST(cli, behavior_trace_json_p2_semantics) {
 }
 
 TEST(cli, behavior_trace_json_reports_depth_truncation) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "-f json behavior trace --depth 0 237 \"%s\"",
@@ -905,6 +919,7 @@ TEST(cli, behavior_trace_json_reports_depth_truncation) {
 }
 
 TEST(cli, behavior_trace_text_mentions_current_graph) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "behavior trace 237 \"%s\"",
@@ -919,6 +934,7 @@ TEST(cli, behavior_trace_text_mentions_current_graph) {
 }
 
 TEST(cli, behavior_read_commands_accept_exact_name_selectors) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[1024];
 
     snprintf(args, sizeof(args),
@@ -977,6 +993,7 @@ TEST(cli, behavior_dump_help_describes_tree_overview_options) {
 }
 
 TEST(cli, behavior_dump_text_flows_show_owner_endpoints) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "behavior dump --flows 237 \"%s\"",
@@ -992,6 +1009,7 @@ TEST(cli, behavior_dump_text_flows_show_owner_endpoints) {
 }
 
 TEST(cli, behavior_dump_all_rejects_flows) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "behavior dump --all --flows \"%s\"",
@@ -1029,6 +1047,7 @@ TEST(cli, behavior_dump_text_flows_show_empty_execution_section) {
 }
 
 TEST(cli, behavior_dump_text_values_show_decoded_values) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "behavior dump --values 237 \"%s\"",
@@ -1043,6 +1062,7 @@ TEST(cli, behavior_dump_text_values_show_decoded_values) {
 }
 
 TEST(cli, behavior_dump_json_flows_include_owner_names) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "-f json behavior dump --flows 237 \"%s\"",
@@ -1079,6 +1099,7 @@ TEST(cli, behavior_dump_json_flows_include_owner_names) {
 }
 
 TEST(cli, behavior_dump_json_values_include_decoded_values) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "-f json behavior dump --values 237 \"%s\"",
@@ -1116,6 +1137,7 @@ TEST(cli, behavior_dump_json_values_include_decoded_values) {
 }
 
 TEST(cli, behavior_list_json_sanitizes_gameplay_names) {
+    TEST_REQUIRE_FIXTURE("Ballance/Gameplay.nmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "-f json behavior list \"%s\"",
@@ -1134,6 +1156,8 @@ TEST(cli, behavior_list_json_sanitizes_gameplay_names) {
 }
 
 TEST(cli, behavior_json_smoke_real_samples) {
+    TEST_REQUIRE_FIXTURE("Ballance/2D Text.nmo");
+    TEST_REQUIRE_FIXTURE("Ballance/Gameplay.nmo");
     char args[1024];
 
     snprintf(args, sizeof(args),
@@ -1204,6 +1228,7 @@ TEST(cli, behavior_help_mentions_json_output) {
 }
 
 TEST(cli, behavior_graph_dot) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     const char *file_path = NMO_TEST_DATA_FILE("Ballance/base.cmo");
 
     char cmd[1024];
@@ -1393,6 +1418,7 @@ TEST(cli, behavior_add_link_json_dry_run) {
 }
 
 TEST(cli, behavior_interface_set_pos_requires_output_unless_dry_run) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "behavior interface set-pos %u %u 11 22 \"%s\"",
@@ -1407,6 +1433,7 @@ TEST(cli, behavior_interface_set_pos_requires_output_unless_dry_run) {
 }
 
 TEST(cli, behavior_interface_set_pos_dry_run_does_not_write_output) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     const char *output = "test_behavior_interface_set_pos_dry_output.cmo";
     remove(output);
 
@@ -1449,6 +1476,7 @@ TEST(cli, behavior_interface_set_pos_dry_run_does_not_write_output) {
 }
 
 TEST(cli, behavior_interface_set_pos_saves_output) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     const char *output = "test_behavior_interface_set_pos_output.cmo";
     remove(output);
 
@@ -1481,6 +1509,7 @@ TEST(cli, behavior_interface_set_pos_saves_output) {
 }
 
 TEST(cli, behavior_interface_set_pos_json_dry_run) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "-f json behavior interface set-pos --dry-run %u %u 11 22 \"%s\"",
@@ -1506,6 +1535,7 @@ TEST(cli, behavior_interface_set_pos_json_dry_run) {
 }
 
 TEST(cli, behavior_interface_edit_commands_accept_exact_name_target_selector) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     char args[1024];
 
     snprintf(args, sizeof(args),
@@ -1583,6 +1613,7 @@ TEST(cli, behavior_interface_edit_commands_accept_exact_name_target_selector) {
 }
 
 TEST(cli, behavior_interface_show_json_reports_format_root) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "-f json behavior interface show %u \"%s\"",
@@ -1616,6 +1647,7 @@ TEST(cli, behavior_interface_show_json_reports_format_root) {
 }
 
 TEST(cli, behavior_interface_show_brief_reports_root_kind) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "behavior interface show --brief %u \"%s\"",
@@ -1630,6 +1662,7 @@ TEST(cli, behavior_interface_show_brief_reports_root_kind) {
 }
 
 TEST(cli, behavior_interface_show_json_reports_sectioned_graph_root) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     const char *fixture = "test_behavior_interface_sectioned_graph_fixture.cmo";
     remove(fixture);
     ASSERT_TRUE(create_sectioned_graph_interface_fixture(fixture));
@@ -1672,6 +1705,7 @@ TEST(cli, behavior_interface_show_json_reports_sectioned_graph_root) {
 }
 
 TEST(cli, behavior_interface_canonicalize_json_saves_output) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     const char *output = "test_behavior_interface_canonicalize_output.cmo";
     remove(output);
 
@@ -1733,6 +1767,7 @@ TEST(cli, behavior_interface_canonicalize_json_saves_output) {
 }
 
 TEST(cli, behavior_interface_set_color_json_does_not_persist_sectioned_color) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     const char *fixture = "test_behavior_interface_set_color_sectioned_fixture.cmo";
     const char *output = "test_behavior_interface_set_color_sectioned_output.cmo";
     remove(fixture);
@@ -1794,6 +1829,7 @@ TEST(cli, behavior_interface_set_color_json_does_not_persist_sectioned_color) {
 }
 
 TEST(cli, behavior_interface_fold_dry_run_does_not_write_output) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     const char *output = "test_behavior_interface_fold_dry_output.cmo";
     remove(output);
 
@@ -1814,6 +1850,7 @@ TEST(cli, behavior_interface_fold_dry_run_does_not_write_output) {
 }
 
 TEST(cli, behavior_interface_unfold_saves_output) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     const char *output = "test_behavior_interface_unfold_output.cmo";
     remove(output);
 
@@ -1843,6 +1880,7 @@ TEST(cli, behavior_interface_unfold_saves_output) {
 }
 
 TEST(cli, behavior_interface_set_color_dry_run_does_not_write_output) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     const char *output = "test_behavior_interface_set_color_dry_output.cmo";
     remove(output);
 
@@ -1862,6 +1900,7 @@ TEST(cli, behavior_interface_set_color_dry_run_does_not_write_output) {
 }
 
 TEST(cli, behavior_interface_set_color_saves_output) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     const char *output = "test_behavior_interface_set_color_output.cmo";
     remove(output);
 
@@ -1890,6 +1929,7 @@ TEST(cli, behavior_interface_set_color_saves_output) {
 }
 
 TEST(cli, behavior_interface_add_comment_dry_run_does_not_write_output) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     const char *output = "test_behavior_interface_add_comment_dry_output.cmo";
     remove(output);
 
@@ -1909,6 +1949,7 @@ TEST(cli, behavior_interface_add_comment_dry_run_does_not_write_output) {
 }
 
 TEST(cli, behavior_interface_add_comment_saves_comment_state) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     const char *output = "test_behavior_interface_add_comment_output.cmo";
     remove(output);
 
@@ -1944,6 +1985,7 @@ TEST(cli, behavior_interface_add_comment_saves_comment_state) {
 }
 
 TEST(cli, behavior_interface_remove_comment_dry_run_does_not_write_output) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     const char *fixture = "test_behavior_interface_remove_comment_fixture.cmo";
     const char *output = "test_behavior_interface_remove_comment_dry_output.cmo";
     remove(output);
@@ -1966,6 +2008,7 @@ TEST(cli, behavior_interface_remove_comment_dry_run_does_not_write_output) {
 }
 
 TEST(cli, behavior_interface_set_comment_text_dry_run_does_not_write_output) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     const char *fixture = "test_behavior_interface_set_comment_text_fixture.cmo";
     const char *output = "test_behavior_interface_set_comment_text_dry_output.cmo";
     remove(output);
@@ -1988,6 +2031,7 @@ TEST(cli, behavior_interface_set_comment_text_dry_run_does_not_write_output) {
 }
 
 TEST(cli, behavior_interface_move_comment_dry_run_does_not_write_output) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     const char *fixture = "test_behavior_interface_move_comment_fixture.cmo";
     const char *output = "test_behavior_interface_move_comment_dry_output.cmo";
     remove(output);
@@ -2010,6 +2054,7 @@ TEST(cli, behavior_interface_move_comment_dry_run_does_not_write_output) {
 }
 
 TEST(cli, behavior_interface_set_comment_style_dry_run_does_not_write_output) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     const char *fixture = "test_behavior_interface_set_comment_style_fixture.cmo";
     const char *output = "test_behavior_interface_set_comment_style_dry_output.cmo";
     remove(output);
@@ -2032,6 +2077,7 @@ TEST(cli, behavior_interface_set_comment_style_dry_run_does_not_write_output) {
 }
 
 TEST(cli, behavior_interface_add_point_dry_run_does_not_write_output) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     const char *output = "test_behavior_interface_add_point_dry_output.cmo";
     remove(output);
 
@@ -2052,6 +2098,7 @@ TEST(cli, behavior_interface_add_point_dry_run_does_not_write_output) {
 }
 
 TEST(cli, behavior_interface_clear_points_dry_run_does_not_write_output) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     const char *output = "test_behavior_interface_clear_points_dry_output.cmo";
     remove(output);
 
@@ -2072,6 +2119,7 @@ TEST(cli, behavior_interface_clear_points_dry_run_does_not_write_output) {
 }
 
 TEST(cli, behavior_interface_remove_point_dry_run_does_not_write_output) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     const char *output = "test_behavior_interface_remove_point_dry_output.cmo";
     remove(output);
 
@@ -2092,6 +2140,7 @@ TEST(cli, behavior_interface_remove_point_dry_run_does_not_write_output) {
 }
 
 TEST(cli, behavior_interface_move_point_dry_run_does_not_write_output) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     const char *output = "test_behavior_interface_move_point_dry_output.cmo";
     remove(output);
 
@@ -2112,6 +2161,7 @@ TEST(cli, behavior_interface_move_point_dry_run_does_not_write_output) {
 }
 
 TEST(cli, behavior_interface_set_link_highlight_dry_run_does_not_write_output) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     const char *output = "test_behavior_interface_set_link_highlight_dry_output.cmo";
     remove(output);
 
@@ -2132,6 +2182,7 @@ TEST(cli, behavior_interface_set_link_highlight_dry_run_does_not_write_output) {
 }
 
 TEST(cli, behavior_interface_move_op_dry_run_reaches_operation_validation) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     const char *output = "test_behavior_interface_move_op_dry_output.cmo";
     remove(output);
 
@@ -2152,6 +2203,7 @@ TEST(cli, behavior_interface_move_op_dry_run_reaches_operation_validation) {
 }
 
 TEST(cli, behavior_interface_move_param_dry_run_does_not_write_output) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     const char *output = "test_behavior_interface_move_param_dry_output.cmo";
     remove(output);
 
@@ -2171,6 +2223,7 @@ TEST(cli, behavior_interface_move_param_dry_run_does_not_write_output) {
 }
 
 TEST(cli, behavior_interface_set_param_style_dry_run_does_not_write_output) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     const char *output = "test_behavior_interface_set_param_style_dry_output.cmo";
     remove(output);
 
@@ -2190,6 +2243,7 @@ TEST(cli, behavior_interface_set_param_style_dry_run_does_not_write_output) {
 }
 
 TEST(cli, behavior_interface_resize_dry_run_does_not_write_output) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     const char *output = "test_behavior_interface_resize_dry_output.cmo";
     remove(output);
 
@@ -2210,6 +2264,7 @@ TEST(cli, behavior_interface_resize_dry_run_does_not_write_output) {
 }
 
 TEST(cli, behavior_interface_set_expand_dry_run_does_not_write_output) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     const char *output = "test_behavior_interface_set_expand_dry_output.cmo";
     remove(output);
 
@@ -2230,6 +2285,7 @@ TEST(cli, behavior_interface_set_expand_dry_run_does_not_write_output) {
 }
 
 TEST(cli, behavior_interface_set_viewport_dry_run_does_not_write_output) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     const char *output = "test_behavior_interface_set_viewport_dry_output.cmo";
     remove(output);
 
@@ -2249,6 +2305,7 @@ TEST(cli, behavior_interface_set_viewport_dry_run_does_not_write_output) {
 }
 
 TEST(cli, behavior_interface_translate_dry_run_does_not_write_output) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     const char *output = "test_behavior_interface_translate_dry_output.cmo";
     remove(output);
 
@@ -2268,6 +2325,7 @@ TEST(cli, behavior_interface_translate_dry_run_does_not_write_output) {
 }
 
 TEST(cli, behavior_interface_set_graph_io_dry_run_does_not_write_output) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     const char *output = "test_behavior_interface_set_graph_io_dry_output.cmo";
     remove(output);
 

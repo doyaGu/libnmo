@@ -82,6 +82,8 @@ static int file_contains_text(const char *relative_path, const char *needle) {
 }
 
 TEST(reference_alignment_matrix, batch_samples_have_reference_and_runtime_remap_hooks) {
+    /* Needs the local Virtools reference sources, which are not part of the repository. */
+    TEST_REQUIRE_FILE(NMO_SOURCE_DIR "/reference/CK2/src/CKObject.cpp");
     ASSERT_NOT_NULL(g_context);
 
     nmo_type_registry_t *registry = nmo_context_get_type_registry(g_context);

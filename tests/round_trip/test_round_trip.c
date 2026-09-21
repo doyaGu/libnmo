@@ -537,6 +537,8 @@ static size_t get_env_size_value(const char *name, size_t fallback) {
 }
 
 TEST(round_trip, sample_files) {
+    /* Corpus scan: skip when the gitignored Virtools sample set is absent. */
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     sample_file_list_t files = {0};
     ASSERT_EQ(collect_sample_files(&files), 0);
     size_t discovered_count = files.count;

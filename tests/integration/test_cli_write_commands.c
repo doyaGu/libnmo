@@ -254,6 +254,10 @@ static void assert_file_payload_eq(const nmo_included_file_t *file, const char *
 }
 
 TEST(cli_write, object_data_entity_material_texture_parameter_dry_run_preserves_inputs) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Narratives/Open File Image.png");
+    TEST_REQUIRE_FIXTURE("Ballance/Balls.nmo");
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
+    TEST_REQUIRE_FIXTURE("Ballance/MenuLevel.nmo");
     make_dir("test_cli_write_tmp");
     remove("test_cli_write_tmp/object_create_dry.nmo");
     remove("test_cli_write_tmp/object_copy_dry.nmo");
@@ -424,6 +428,7 @@ TEST(cli_write, object_data_entity_material_texture_parameter_dry_run_preserves_
 }
 
 TEST(cli_write, resource_import_replace_dry_run_does_not_write_output) {
+    TEST_REQUIRE_FIXTURE("BBSamples/3D Transformations/Activate Link.cmo");
     make_dir("test_cli_write_tmp");
     ASSERT_TRUE(copy_file_binary(
         NMO_TEST_DATA_FILE("BBSamples/3D Transformations/Activate Link.cmo"),
@@ -456,6 +461,7 @@ TEST(cli_write, resource_import_replace_dry_run_does_not_write_output) {
 }
 
 TEST(cli_write, resource_import_replace_remove_save_and_validate) {
+    TEST_REQUIRE_FIXTURE("BBSamples/3D Transformations/Activate Link.cmo");
     make_dir("test_cli_write_tmp");
     ASSERT_TRUE(copy_file_binary(
         NMO_TEST_DATA_FILE("BBSamples/3D Transformations/Activate Link.cmo"),
@@ -508,6 +514,8 @@ TEST(cli_write, resource_import_replace_remove_save_and_validate) {
 }
 
 TEST(cli_write, resource_replace_warns_for_texture_named_payload) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Narratives/Open File Image.png");
+    TEST_REQUIRE_FIXTURE("Ballance/Balls.nmo");
     make_dir("test_cli_write_tmp");
     ASSERT_TRUE(copy_file_binary(
         NMO_TEST_DATA_FILE("Ballance/Balls.nmo"),
@@ -535,6 +543,7 @@ TEST(cli_write, resource_replace_warns_for_texture_named_payload) {
 }
 
 TEST(cli_write, behavior_interface_set_pos_saves_and_reloads) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     make_dir("test_cli_write_tmp");
     remove("test_cli_write_tmp/interface_set_pos.cmo");
     remove("test_cli_write_tmp/interface_set_color.cmo");
@@ -663,6 +672,8 @@ TEST(cli_write, behavior_interface_set_pos_saves_and_reloads) {
 }
 
 TEST(cli_write, mesh_animation_import_dry_run_does_not_write_output) {
+    TEST_REQUIRE_FIXTURE("Ballance/MenuLevel.nmo");
+    TEST_REQUIRE_FIXTURE("Ballance/P_Box.nmo");
     make_dir("test_cli_write_tmp");
     make_dir("test_cli_write_tmp/mesh_dry_export");
     make_dir("test_cli_write_tmp/anim_dry_export");
@@ -759,6 +770,7 @@ TEST(cli_write, type_specific_name_selector_skips_duplicate_wrong_class_name) {
 }
 
 TEST(cli_write, object_create_copy_import_delete_save_and_validate) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     make_dir("test_cli_write_tmp");
     ASSERT_TRUE(copy_file_binary(
         NMO_TEST_DATA_FILE("Ballance/Camera.nmo"),
@@ -826,6 +838,8 @@ TEST(cli_write, object_create_copy_import_delete_save_and_validate) {
 }
 
 TEST(cli_write, object_export_import_snapshot_round_trips_mesh_and_matrix) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
+    TEST_REQUIRE_FIXTURE("Ballance/P_Box.nmo");
     make_dir("test_cli_write_tmp");
 
     write_semantic_probe_t mesh_baseline;
@@ -889,6 +903,13 @@ TEST(cli_write, object_export_import_snapshot_round_trips_mesh_and_matrix) {
 }
 
 TEST(cli_write, data_entity_material_texture_animation_save_and_validate) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Narratives/Add To Scene-Remove From Scene.cmo");
+    TEST_REQUIRE_FIXTURE("BBSamples/Narratives/Open File Image.png");
+    TEST_REQUIRE_FIXTURE("Ballance/Balls.nmo");
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
+    TEST_REQUIRE_FIXTURE("Ballance/Gameplay.nmo");
+    TEST_REQUIRE_FIXTURE("Ballance/MenuLevel.nmo");
+    TEST_REQUIRE_FIXTURE("Ballance/P_Box.nmo");
     make_dir("test_cli_write_tmp");
 
     assert_cli_success(
@@ -1490,6 +1511,7 @@ TEST(cli_write, data_entity_material_texture_animation_save_and_validate) {
 }
 
 TEST(cli_write, parameter_set_persists_typed_object_and_raw_values) {
+    TEST_REQUIRE_FIXTURE("Ballance/MenuLevel.nmo");
     make_dir("test_cli_write_tmp");
 
     assert_cli_success(
@@ -1542,6 +1564,7 @@ TEST(cli_write, parameter_set_persists_typed_object_and_raw_values) {
 }
 
 TEST(cli_write, entity_position_preserves_3dobject_chunk_and_plugin_dependencies) {
+    TEST_REQUIRE_FIXTURE("Ballance/P_Box.nmo");
     make_dir("test_cli_write_tmp");
     const char *input = NMO_TEST_DATA_FILE("Ballance/P_Box.nmo");
     const char *output = "test_cli_write_tmp/box_position_out.nmo";

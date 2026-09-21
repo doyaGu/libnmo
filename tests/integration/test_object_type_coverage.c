@@ -175,6 +175,8 @@ static const cid_entry_t CORE_TYPES[] = {
 #define CORE_TYPE_COUNT (sizeof(CORE_TYPES) / sizeof(CORE_TYPES[0]))
 
 TEST(coverage, all_core_types_present) {
+    /* Corpus scan: skip when the gitignored Virtools sample set is absent. */
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     memset(g_cid_seen, 0, sizeof(g_cid_seen));
 
     const char *data_dir = NMO_TEST_DATA_DIR;

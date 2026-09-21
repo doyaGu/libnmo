@@ -276,6 +276,7 @@ static void assert_captured_read_ok_contains(nmo_repl_context_t *repl,
 }
 
 TEST(repl_read, object_grouped_read_commands_use_cli_shape) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     nmo_repl_context_t repl;
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
 
@@ -288,6 +289,7 @@ TEST(repl_read, object_grouped_read_commands_use_cli_shape) {
 }
 
 TEST(repl_read, object_list_fields_uses_full_session_core) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     nmo_repl_context_t repl;
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
 
@@ -306,6 +308,7 @@ TEST(repl_read, object_list_fields_uses_full_session_core) {
 }
 
 TEST(repl_read, object_refgraph_actions_use_session_core) {
+    TEST_REQUIRE_FIXTURE("Ballance/MenuLevel.nmo");
     nmo_repl_context_t repl;
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
 
@@ -334,6 +337,8 @@ TEST(repl_read, object_refgraph_actions_use_session_core) {
 }
 
 TEST(repl_read, behavior_read_actions_use_session_core) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
+    TEST_REQUIRE_FIXTURE("Ballance/MenuLevel.nmo");
     nmo_repl_context_t repl;
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
 
@@ -370,6 +375,7 @@ TEST(repl_read, behavior_read_actions_use_session_core) {
 }
 
 TEST(repl_read, cli_read_option_values_with_file_suffix_are_not_file_operands) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     nmo_repl_context_t repl;
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
 
@@ -400,6 +406,7 @@ TEST(repl_read, cli_read_option_values_with_file_suffix_are_not_file_operands) {
 }
 
 TEST(repl_read, domain_list_class_filter_cannot_be_overridden) {
+    TEST_REQUIRE_FIXTURE("Ballance/P_Box.nmo");
     nmo_repl_context_t repl;
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/P_Box.nmo"));
 
@@ -413,6 +420,8 @@ TEST(repl_read, domain_list_class_filter_cannot_be_overridden) {
 }
 
 TEST(repl_read, mesh_and_animation_exports_use_session_core) {
+    TEST_REQUIRE_FIXTURE("Ballance/MenuLevel.nmo");
+    TEST_REQUIRE_FIXTURE("Ballance/P_Box.nmo");
     nmo_repl_context_t repl;
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/P_Box.nmo"));
 
@@ -447,6 +456,8 @@ TEST(repl_read, mesh_and_animation_exports_use_session_core) {
 }
 
 TEST(repl_read, resource_and_texture_extract_use_session_core) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
+    TEST_REQUIRE_FIXTURE("Demo/Tunnel.cmo");
     nmo_repl_context_t repl;
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
 
@@ -483,6 +494,10 @@ TEST(repl_read, resource_and_texture_extract_use_session_core) {
 }
 
 TEST(repl_read, export_reads_reject_missing_output_directory) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
+    TEST_REQUIRE_FIXTURE("Ballance/MenuLevel.nmo");
+    TEST_REQUIRE_FIXTURE("Ballance/P_Box.nmo");
+    TEST_REQUIRE_FIXTURE("Demo/Tunnel.cmo");
     nmo_repl_context_t repl;
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/P_Box.nmo"));
 
@@ -504,6 +519,7 @@ TEST(repl_read, export_reads_reject_missing_output_directory) {
 }
 
 TEST(repl_read, domain_show_commands_enforce_family_type) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     nmo_repl_context_t repl;
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
 
@@ -517,6 +533,7 @@ TEST(repl_read, domain_show_commands_enforce_family_type) {
 }
 
 TEST(repl_read, entity_show_uses_entity_session_core) {
+    TEST_REQUIRE_FIXTURE("Ballance/MenuLevel.nmo");
     nmo_repl_context_t repl;
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
 
@@ -538,6 +555,7 @@ TEST(repl_read, entity_show_uses_entity_session_core) {
 }
 
 TEST(repl_read, parameter_grouped_read_commands_use_cli_shape) {
+    TEST_REQUIRE_FIXTURE("Ballance/MenuLevel.nmo");
     nmo_repl_context_t repl;
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
 
@@ -549,6 +567,7 @@ TEST(repl_read, parameter_grouped_read_commands_use_cli_shape) {
 }
 
 TEST(repl_read, parameter_dump_resolves_input_parameter_sources) {
+    TEST_REQUIRE_FIXTURE("Ballance/MenuLevel.nmo");
     nmo_repl_context_t repl;
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
 
@@ -570,6 +589,7 @@ TEST(repl_read, parameter_dump_resolves_input_parameter_sources) {
 }
 
 TEST(repl_read, parameter_dump_includes_local_parameter_values) {
+    TEST_REQUIRE_FIXTURE("Ballance/MenuLevel.nmo");
     nmo_repl_context_t repl;
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
 
@@ -592,6 +612,7 @@ TEST(repl_read, parameter_dump_includes_local_parameter_values) {
 }
 
 TEST(repl_read, parameter_dump_includes_operation_links) {
+    TEST_REQUIRE_FIXTURE("Ballance/AnimTrafo.nmo");
     nmo_repl_context_t repl;
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/AnimTrafo.nmo"));
 
@@ -615,6 +636,7 @@ TEST(repl_read, parameter_dump_includes_operation_links) {
 }
 
 TEST(repl_read, grouped_read_commands_reject_invalid_cli_shape) {
+    TEST_REQUIRE_FIXTURE("Ballance/MenuLevel.nmo");
     nmo_repl_context_t repl;
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
 
@@ -635,6 +657,8 @@ TEST(repl_read, grouped_read_commands_reject_invalid_cli_shape) {
 }
 
 TEST(repl_read, mirrored_cli_read_groups_are_available) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
+    TEST_REQUIRE_FIXTURE("Ballance/MenuLevel.nmo");
     nmo_repl_context_t repl;
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
     char diff_cmd[512];
@@ -676,6 +700,7 @@ TEST(repl_read, mirrored_cli_read_groups_are_available) {
 }
 
 TEST(repl_read, cli_read_mirror_does_not_expose_snapshot_paths) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     nmo_repl_context_t repl;
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
 
@@ -694,6 +719,7 @@ TEST(repl_read, cli_read_mirror_does_not_expose_snapshot_paths) {
 }
 
 TEST(repl_read, cli_wrapper_supports_global_options) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     nmo_repl_context_t repl;
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
 
@@ -721,6 +747,7 @@ TEST(repl_read, cli_wrapper_supports_global_options) {
 }
 
 TEST(repl_read, domain_cli_read_groups_are_available) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     nmo_repl_context_t repl;
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
 
@@ -749,6 +776,7 @@ TEST(repl_read, domain_cli_read_groups_are_available) {
 }
 
 TEST(repl_read, cli_read_mirror_uses_current_session_snapshot) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     nmo_repl_context_t repl;
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
 
@@ -765,6 +793,8 @@ TEST(repl_read, cli_read_mirror_uses_current_session_snapshot) {
 }
 
 TEST(repl_read, validate_all_reads_dirty_current_session) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
+    TEST_REQUIRE_FIXTURE("Ballance/MenuLevel.nmo");
     nmo_repl_context_t repl;
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
 
@@ -791,6 +821,7 @@ TEST(repl_read, validate_all_reads_dirty_current_session) {
 }
 
 TEST(repl_read, mutating_cli_actions_are_rejected_by_read_mirror) {
+    TEST_REQUIRE_FIXTURE("Ballance/MenuLevel.nmo");
     nmo_repl_context_t repl;
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
 
@@ -813,6 +844,7 @@ TEST(repl_read, mutating_cli_actions_are_rejected_by_read_mirror) {
 }
 
 TEST(repl_read, cli_batch_mode_is_rejected) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     nmo_repl_context_t repl;
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
 
@@ -824,6 +856,8 @@ TEST(repl_read, cli_batch_mode_is_rejected) {
 }
 
 TEST(repl_read, family_repl_read_cores_are_directly_callable) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
+    TEST_REQUIRE_FIXTURE("Ballance/MenuLevel.nmo");
     nmo_repl_context_t repl;
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
 
@@ -1401,6 +1435,7 @@ TEST(repl_read, diff_session_dispatch_does_not_use_ctx_dispatch_helper) {
 }
 
 TEST(repl_read, explicit_document_source_initializes_command_context) {
+    TEST_REQUIRE_FIXTURE("Ballance/MenuLevel.nmo");
     nmo_repl_context_t repl;
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
 
@@ -1427,6 +1462,7 @@ TEST(repl_read, explicit_document_source_initializes_command_context) {
 }
 
 TEST(repl_read, registry_dispatches_document_reads) {
+    TEST_REQUIRE_FIXTURE("Ballance/MenuLevel.nmo");
     nmo_repl_context_t repl;
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
 
@@ -1486,6 +1522,7 @@ TEST(repl_read, completion_group_does_not_require_session) {
 }
 
 TEST(repl_read, legacy_read_shortcuts_still_work) {
+    TEST_REQUIRE_FIXTURE("Ballance/MenuLevel.nmo");
     nmo_repl_context_t repl;
     open_repl(&repl, NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
 

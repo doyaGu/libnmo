@@ -179,6 +179,8 @@ static int benchmark_mmap_scan_ms(const char *path, size_t iterations, double *o
 }
 
 TEST(perf_baseline, load_save_mmap) {
+    TEST_REQUIRE_FIXTURE("Ballance/2D Text.nmo");
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     const size_t load_iterations = read_env_size_t("NMO_BENCH_LOAD_ITERS", 3);
     const size_t save_iterations = read_env_size_t("NMO_BENCH_SAVE_ITERS", 2);
     const size_t mmap_iterations = read_env_size_t("NMO_BENCH_MMAP_ITERS", 5);

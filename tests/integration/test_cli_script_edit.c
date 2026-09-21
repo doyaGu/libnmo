@@ -1368,6 +1368,7 @@ TEST(cli, script_edit_report_contract_is_checked_in)
 
 TEST(cli, script_graph_json_smoke)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     rewrite_manifest_t manifest;
     char args[1024];
 
@@ -1419,6 +1420,7 @@ TEST(cli, script_graph_json_smoke)
 
 TEST(cli, script_node_and_io_crud_roundtrip)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     rewrite_manifest_t manifest;
     cli_run_result_t result;
     yyjson_doc *doc = NULL;
@@ -1591,6 +1593,7 @@ TEST(cli, script_node_and_io_crud_roundtrip)
 
 TEST(cli, script_node_add_dry_run_reports_schema_v2)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     rewrite_manifest_t manifest;
     cli_run_result_t result;
     yyjson_doc *doc = NULL;
@@ -1685,6 +1688,7 @@ static void assert_parameter_show_layout(const char *path,
 
 TEST(cli, script_node_add_creates_missing_manager_entry_when_policy_allows)
 {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     cli_run_result_t result = {0};
     yyjson_doc *doc = NULL;
     yyjson_val *root = NULL;
@@ -1760,6 +1764,7 @@ TEST(cli, script_node_add_creates_missing_manager_entry_when_policy_allows)
 
 TEST(cli, script_io_add_dry_run_exposes_executor_validation_parity)
 {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     char args[1024];
     cli_run_result_t result;
     yyjson_doc *doc = NULL;
@@ -1821,6 +1826,7 @@ TEST(cli, script_io_add_dry_run_exposes_executor_validation_parity)
 
 TEST(cli, script_node_remove_canonicalizes_interface_refs)
 {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     cli_run_result_t result;
     yyjson_doc *doc = NULL;
     yyjson_val *root = NULL;
@@ -1938,6 +1944,7 @@ TEST(cli, script_node_remove_canonicalizes_interface_refs)
 
 TEST(cli, script_node_remove_preserve_rejects_stale_interface_refs)
 {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     cli_run_result_t result;
     yyjson_doc *doc = NULL;
     yyjson_val *data = NULL;
@@ -1990,6 +1997,7 @@ TEST(cli, script_node_remove_preserve_rejects_stale_interface_refs)
 
 TEST(cli, script_node_remove_remove_strips_interface_data)
 {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     cli_run_result_t result;
     yyjson_doc *doc = NULL;
     yyjson_val *root = NULL;
@@ -2060,6 +2068,7 @@ TEST(cli, script_node_remove_remove_strips_interface_data)
 
 TEST(cli, script_control_flow_crud_roundtrip)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     rewrite_manifest_t manifest;
     cli_run_result_t result;
     yyjson_doc *doc = NULL;
@@ -2440,6 +2449,7 @@ TEST(cli, script_control_flow_crud_roundtrip)
 
 TEST(cli, script_link_add_dry_run_reports_executor_validation)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     rewrite_manifest_t manifest;
     cli_run_result_t result;
     yyjson_doc *doc = NULL;
@@ -2576,6 +2586,7 @@ TEST(cli, script_link_add_dry_run_reports_executor_validation)
 
 TEST(cli, script_link_remove_canonicalizes_interface_refs)
 {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     cli_run_result_t result;
     yyjson_doc *doc = NULL;
     yyjson_val *root = NULL;
@@ -2758,6 +2769,7 @@ TEST(cli, script_link_remove_canonicalizes_interface_refs)
 
 TEST(cli, script_io_remove_canonicalizes_interface_refs)
 {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     cli_run_result_t result;
     yyjson_doc *doc = NULL;
     yyjson_val *root = NULL;
@@ -2851,6 +2863,7 @@ TEST(cli, script_io_remove_canonicalizes_interface_refs)
 
 TEST(cli, script_param_remove_canonicalizes_interface_refs)
 {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     cli_run_result_t result;
     yyjson_doc *doc = NULL;
     yyjson_val *root = NULL;
@@ -2939,6 +2952,7 @@ TEST(cli, script_param_remove_canonicalizes_interface_refs)
 
 TEST(cli, script_param_add_dry_run_reports_executor_validation)
 {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     cli_run_result_t result;
     yyjson_doc *doc = NULL;
     yyjson_val *root = NULL;
@@ -2995,6 +3009,7 @@ TEST(cli, script_param_add_dry_run_reports_executor_validation)
 
 TEST(cli, script_op_remove_canonicalizes_interface_refs)
 {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     cli_run_result_t result;
     yyjson_doc *doc = NULL;
     yyjson_val *root = NULL;
@@ -3146,6 +3161,7 @@ TEST(cli, script_op_remove_canonicalizes_interface_refs)
 
 TEST(cli, script_op_add_dry_run_reports_executor_validation)
 {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     cli_run_result_t result;
     yyjson_doc *doc = NULL;
     yyjson_val *root = NULL;
@@ -3271,6 +3287,7 @@ TEST(cli, script_op_add_dry_run_reports_executor_validation)
 
 TEST(cli, script_parameter_crud_roundtrip)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     rewrite_manifest_t manifest;
     cli_run_result_t result;
     yyjson_doc *doc = NULL;
@@ -3568,6 +3585,7 @@ TEST(cli, script_parameter_crud_roundtrip)
 
 TEST(cli, script_operation_crud_roundtrip)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     rewrite_manifest_t manifest;
     cli_run_result_t result;
     yyjson_doc *doc = NULL;
@@ -3888,6 +3906,7 @@ TEST(cli, script_operation_crud_roundtrip)
 
 TEST(cli, script_operation_rejects_invalid_signature)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     rewrite_manifest_t manifest;
     cli_run_result_t result;
     yyjson_doc *doc = NULL;

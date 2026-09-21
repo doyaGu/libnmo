@@ -301,6 +301,7 @@ static void load_root_behavior_counts(const char *path,
 }
 
 TEST(cli, script_run_dry_run_emits_frozen_json_contract) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     char script_path[1024];
     const char *input_path = NMO_TEST_DATA_FILE("BBSamples/Collisions/Prevent Collision.cmo");
     const char *output_path = "test_cli_script_run_dry_out.cmo";
@@ -409,6 +410,7 @@ TEST(cli, script_run_dry_run_emits_frozen_json_contract) {
 }
 
 TEST(cli, script_run_applies_changes_through_executor) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     char script_path[1024];
     const char *input_path = NMO_TEST_DATA_FILE("BBSamples/Collisions/Prevent Collision.cmo");
     const char *output_path = "test_cli_script_run_apply_out.cmo";
@@ -528,6 +530,7 @@ TEST(cli, script_run_applies_changes_through_executor) {
 }
 
 TEST(cli, script_run_lua_helpers_enqueue_until_script_end) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     char script_path[1024];
     const char *input_path = NMO_TEST_DATA_FILE("BBSamples/Collisions/Prevent Collision.cmo");
     const char *output_path = "test_cli_script_run_delayed_out.cmo";
@@ -568,6 +571,7 @@ TEST(cli, script_run_lua_helpers_enqueue_until_script_end) {
 }
 
 TEST(cli, script_run_executor_set_parameter_value_uses_edit_plan) {
+    TEST_REQUIRE_FIXTURE("Ballance/MenuLevel.nmo");
     char script_path[1024];
     const char *input_path = NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo");
     char args[2048];
@@ -616,6 +620,7 @@ TEST(cli, script_run_executor_set_parameter_value_uses_edit_plan) {
 }
 
 TEST(cli, script_run_executor_set_parameter_bytes_uses_edit_plan) {
+    TEST_REQUIRE_FIXTURE("Ballance/MenuLevel.nmo");
     char script_path[1024];
     const char *input_path = NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo");
     char args[2048];
@@ -664,6 +669,7 @@ TEST(cli, script_run_executor_set_parameter_bytes_uses_edit_plan) {
 }
 
 TEST(cli, script_run_executor_set_parameter_value_to_handle_uses_edit_plan) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char script_path[1024];
     const char *input_path = NMO_TEST_DATA_FILE("Ballance/base.cmo");
     char args[2048];
@@ -705,6 +711,7 @@ TEST(cli, script_run_executor_set_parameter_value_to_handle_uses_edit_plan) {
 }
 
 TEST(cli, script_run_executor_set_parameter_bytes_to_handle_uses_edit_plan) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char script_path[1024];
     const char *input_path = NMO_TEST_DATA_FILE("Ballance/base.cmo");
     char args[2048];
@@ -746,6 +753,7 @@ TEST(cli, script_run_executor_set_parameter_bytes_to_handle_uses_edit_plan) {
 }
 
 TEST(cli, script_run_executor_set_data_cell_uses_edit_plan) {
+    TEST_REQUIRE_FIXTURE("Ballance/Balls.nmo");
     char script_path[1024];
     const char *input_path = NMO_TEST_DATA_FILE("Ballance/Balls.nmo");
     char args[2048];
@@ -794,6 +802,7 @@ TEST(cli, script_run_executor_set_data_cell_uses_edit_plan) {
 }
 
 TEST(cli, script_run_executor_add_behavior_link_uses_edit_plan) {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     char script_path[1024];
     const char *input_path = NMO_TEST_DATA_FILE("Nop.cmo");
     char args[2048];
@@ -842,6 +851,7 @@ TEST(cli, script_run_executor_add_behavior_link_uses_edit_plan) {
 }
 
 TEST(cli, script_run_executor_add_behavior_link_accepts_pending_handles) {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     char script_path[1024];
     const char *input_path = NMO_TEST_DATA_FILE("Nop.cmo");
     char args[2048];
@@ -897,6 +907,7 @@ TEST(cli, script_run_executor_add_behavior_link_accepts_pending_handles) {
 }
 
 TEST(cli, script_run_executor_add_parameter_uses_edit_plan) {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     char script_path[1024];
     const char *input_path = NMO_TEST_DATA_FILE("Nop.cmo");
     char args[2048];
@@ -945,6 +956,7 @@ TEST(cli, script_run_executor_add_parameter_uses_edit_plan) {
 }
 
 TEST(cli, script_run_executor_add_operation_uses_edit_plan) {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     char script_path[1024];
     const char *input_path = NMO_TEST_DATA_FILE("Nop.cmo");
     char args[2048];
@@ -999,6 +1011,7 @@ TEST(cli, script_run_executor_add_operation_uses_edit_plan) {
 }
 
 TEST(cli, script_run_executor_rename_io_uses_edit_plan) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     char script_path[1024];
     const char *input_path = NMO_TEST_DATA_FILE("BBSamples/Collisions/Prevent Collision.cmo");
     char args[2048];
@@ -1047,6 +1060,7 @@ TEST(cli, script_run_executor_rename_io_uses_edit_plan) {
 }
 
 TEST(cli, script_run_executor_add_node_uses_edit_plan) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     char script_path[1024];
     const char *input_path = NMO_TEST_DATA_FILE("BBSamples/Collisions/Prevent Collision.cmo");
     char args[2048];
@@ -1092,6 +1106,7 @@ TEST(cli, script_run_executor_add_node_uses_edit_plan) {
 }
 
 TEST(cli, script_run_executor_add_node_accepts_manager_entry_policy) {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     char script_path[1024];
     const char *input_path = NMO_TEST_DATA_FILE("Nop.cmo");
     char args[2048];
@@ -1140,6 +1155,7 @@ TEST(cli, script_run_executor_add_node_accepts_manager_entry_policy) {
 }
 
 TEST(cli, script_run_executor_set_parameter_value_accepts_manager_entry_policy) {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     char script_path[1024];
     const char *input_path = NMO_TEST_DATA_FILE("Nop.cmo");
     char args[2048];
@@ -1190,6 +1206,7 @@ TEST(cli, script_run_executor_set_parameter_value_accepts_manager_entry_policy) 
 }
 
 TEST(cli, script_run_rejects_unknown_manager_entry_field) {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     char script_path[1024];
     const char *input_path = NMO_TEST_DATA_FILE("Nop.cmo");
     char args[2048];
@@ -1211,6 +1228,7 @@ TEST(cli, script_run_rejects_unknown_manager_entry_field) {
 }
 
 TEST(cli, script_run_executor_replace_bb_uses_edit_plan) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char script_path[1024];
     const char *input_path = NMO_TEST_DATA_FILE("Ballance/base.cmo");
     char args[2048];
@@ -1258,6 +1276,7 @@ TEST(cli, script_run_executor_replace_bb_uses_edit_plan) {
 }
 
 TEST(cli, script_run_carries_executor_semantic_risks) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char script_path[1024];
     const char *input_path = NMO_TEST_DATA_FILE("Ballance/base.cmo");
     char args[2048];
@@ -1304,6 +1323,7 @@ TEST(cli, script_run_carries_executor_semantic_risks) {
 }
 
 TEST(cli, script_run_executor_fold_uses_edit_plan) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char script_path[1024];
     const char *input_path = NMO_TEST_DATA_FILE("Ballance/base.cmo");
     char args[2048];
@@ -1348,6 +1368,7 @@ TEST(cli, script_run_executor_fold_uses_edit_plan) {
 }
 
 TEST(cli, script_run_executor_fold_accepts_maps) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char script_path[1024];
     const char *input_path = NMO_TEST_DATA_FILE("Ballance/base.cmo");
     char args[2048];
@@ -1387,6 +1408,7 @@ TEST(cli, script_run_executor_fold_accepts_maps) {
 }
 
 TEST(cli, script_run_executor_rewire_behavior_link_uses_edit_plan) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     char script_path[1024];
     const char *input_path = NMO_TEST_DATA_FILE("BBSamples/Collisions/Prevent Collision.cmo");
     char args[2048];
@@ -1436,6 +1458,7 @@ TEST(cli, script_run_executor_rewire_behavior_link_uses_edit_plan) {
 }
 
 TEST(cli, script_run_executor_set_behavior_link_delay_uses_edit_plan) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     char script_path[1024];
     const char *input_path = NMO_TEST_DATA_FILE("BBSamples/Collisions/Prevent Collision.cmo");
     char args[2048];
@@ -1481,6 +1504,7 @@ TEST(cli, script_run_executor_set_behavior_link_delay_uses_edit_plan) {
 }
 
 TEST(cli, script_run_executor_remove_behavior_link_uses_edit_plan) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     char script_path[1024];
     const char *input_path = NMO_TEST_DATA_FILE("BBSamples/Collisions/Prevent Collision.cmo");
     char args[2048];
@@ -1533,6 +1557,7 @@ TEST(cli, script_run_executor_remove_behavior_link_uses_edit_plan) {
 }
 
 TEST(cli, script_run_executor_connect_parameter_uses_edit_plan) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     char script_path[1024];
     const char *input_path = NMO_TEST_DATA_FILE("BBSamples/Collisions/Prevent Collision.cmo");
     char args[2048];
@@ -1580,6 +1605,7 @@ TEST(cli, script_run_executor_connect_parameter_uses_edit_plan) {
 }
 
 TEST(cli, script_run_executor_connect_parameter_to_handle_uses_edit_plan) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char script_path[1024];
     const char *input_path = NMO_TEST_DATA_FILE("Ballance/base.cmo");
     char args[2048];
@@ -1621,6 +1647,7 @@ TEST(cli, script_run_executor_connect_parameter_to_handle_uses_edit_plan) {
 }
 
 TEST(cli, script_run_executor_disconnect_parameter_uses_edit_plan) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     char script_path[1024];
     const char *input_path = NMO_TEST_DATA_FILE("BBSamples/Collisions/Prevent Collision.cmo");
     char args[2048];
@@ -1668,6 +1695,7 @@ TEST(cli, script_run_executor_disconnect_parameter_uses_edit_plan) {
 }
 
 TEST(cli, script_run_executor_remove_parameter_uses_edit_plan) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     char script_path[1024];
     const char *input_path = NMO_TEST_DATA_FILE("BBSamples/Collisions/Prevent Collision.cmo");
     char args[2048];
@@ -1713,6 +1741,7 @@ TEST(cli, script_run_executor_remove_parameter_uses_edit_plan) {
 }
 
 TEST(cli, script_run_executor_rewire_operation_uses_edit_plan) {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     char script_path[1024];
     const char *input_path = NMO_TEST_DATA_FILE("Nop.cmo");
     char args[2048];
@@ -1759,6 +1788,7 @@ TEST(cli, script_run_executor_rewire_operation_uses_edit_plan) {
 }
 
 TEST(cli, script_run_executor_remove_operation_uses_edit_plan) {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     char script_path[1024];
     const char *input_path = NMO_TEST_DATA_FILE("Nop.cmo");
     char args[2048];
@@ -1807,6 +1837,7 @@ TEST(cli, script_run_executor_remove_operation_uses_edit_plan) {
 }
 
 TEST(cli, script_run_reports_executor_operations) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     char script_path[1024];
     const char *input_path = NMO_TEST_DATA_FILE("BBSamples/Collisions/Prevent Collision.cmo");
     char args[2048];
@@ -1843,6 +1874,7 @@ TEST(cli, script_run_reports_executor_operations) {
 }
 
 TEST(cli, script_run_noop_emits_schema_v2_report) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     char script_path[1024];
     const char *input_path = NMO_TEST_DATA_FILE("BBSamples/Collisions/Prevent Collision.cmo");
     char args[2048];
@@ -1884,6 +1916,7 @@ TEST(cli, script_run_noop_emits_schema_v2_report) {
 
 TEST(cli, script_run_runtime_error_does_not_write_output)
 {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     char script_path[1024];
     const char *input_path = NMO_TEST_DATA_FILE("Nop.cmo");
     const char *output_path = "test_cli_script_run_runtime_error_out.cmo";
@@ -1910,6 +1943,7 @@ TEST(cli, script_run_runtime_error_does_not_write_output)
 
 TEST(cli, script_run_validation_failure_does_not_write_output)
 {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     char script_path[1024];
     const char *input_path = NMO_TEST_DATA_FILE("BBSamples/Collisions/Prevent Collision.cmo");
     const char *output_path = "test_cli_script_run_validation_error_out.cmo";

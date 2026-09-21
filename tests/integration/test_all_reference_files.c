@@ -231,6 +231,11 @@ static int test_parse_single_file(const char* filepath) {
 }
 
 TEST(reference_files, parse_all) {
+    TEST_REQUIRE_FIXTURE("Ballance/2D Text.nmo");
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
+    TEST_REQUIRE_FIXTURE("Nop1.cmo");
+    TEST_REQUIRE_FIXTURE("Nop2.cmo");
     const char* files[] = {
         NMO_TEST_DATA_FILE("Ballance/2D Text.nmo"),
         NMO_TEST_DATA_FILE("Ballance/base.cmo"),

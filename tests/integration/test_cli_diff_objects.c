@@ -219,6 +219,7 @@ TEST(cli_diff_objects, text_contains_renamed_section) {
 }
 
 TEST(cli_diff_objects, identical_dataarray_file_has_no_pointer_diffs) {
+    TEST_REQUIRE_FIXTURE("Ballance/Language.nmo");
     const char *fixture =
         NMO_SOURCE_DIR "/data/Ballance/Language.nmo";
     char args[2048];

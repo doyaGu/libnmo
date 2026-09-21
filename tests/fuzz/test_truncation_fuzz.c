@@ -245,6 +245,8 @@ static void collect_nmo_files(const char *dir, char ***out_files, size_t *out_co
 #endif
 
 TEST(truncation_fuzz, fuzz_all_nmo_files) {
+    /* Corpus scan: skip when the gitignored Virtools sample set is absent. */
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     const char *data_dir = NMO_TEST_DATA_DIR;
 
     char **files = NULL;

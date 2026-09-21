@@ -307,6 +307,7 @@ static bool semantic_risk_arrays_match(yyjson_val *left, yyjson_val *right) {
 }
 
 TEST(cli, behavior_graph_boundary_json_smoke) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     rewrite_manifest_t manifest;
     load_ballance_manifest_or_die(&manifest);
 
@@ -342,6 +343,7 @@ TEST(cli, behavior_graph_boundary_json_smoke) {
 }
 
 TEST(cli, behavior_replace_bb_dry_run_reports_leaf_preservation) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     rewrite_manifest_t manifest;
     char replace_guid[64];
 
@@ -395,6 +397,7 @@ TEST(cli, behavior_replace_bb_dry_run_reports_leaf_preservation) {
 }
 
 TEST(cli, behavior_replace_bb_rejects_non_leaf_script) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     rewrite_manifest_t manifest;
     char replace_guid[64];
 
@@ -427,6 +430,7 @@ TEST(cli, behavior_replace_bb_rejects_non_leaf_script) {
 }
 
 TEST(cli, behavior_replace_bb_saves_output) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     rewrite_manifest_t manifest;
     char replace_guid[64];
 
@@ -485,6 +489,7 @@ TEST(cli, behavior_replace_bb_saves_output) {
 }
 
 TEST(cli, behavior_replace_bb_write_json_reports_edit_plan_schema) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     rewrite_manifest_t manifest;
     char replace_guid[64];
 
@@ -542,6 +547,7 @@ TEST(cli, behavior_replace_bb_write_json_reports_edit_plan_schema) {
 }
 
 TEST(cli, behavior_fold_candidates_reports_parent_boundary) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[2048];
     snprintf(args, sizeof(args),
              "-f json behavior fold-candidates --parent 363 \"%s\"",
@@ -577,6 +583,7 @@ TEST(cli, behavior_fold_candidates_reports_parent_boundary) {
 }
 
 TEST(cli, behavior_fold_candidates_reports_direct_child_groups) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[2048];
     snprintf(args, sizeof(args),
              "-f json behavior fold-candidates --parent %u \"%s\"",
@@ -630,6 +637,7 @@ TEST(cli, behavior_fold_candidates_reports_direct_child_groups) {
 }
 
 TEST(cli, behavior_fold_candidates_reports_connected_components) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[2048];
     snprintf(args, sizeof(args),
              "-f json behavior fold-candidates --parent %u \"%s\"",
@@ -679,6 +687,7 @@ TEST(cli, behavior_fold_candidates_reports_connected_components) {
 }
 
 TEST(cli, behavior_fold_candidates_reports_semantic_risks) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[2048];
     snprintf(args, sizeof(args),
              "-f json behavior fold-candidates --parent 363 \"%s\"",
@@ -724,6 +733,7 @@ TEST(cli, behavior_fold_candidates_reports_semantic_risks) {
 }
 
 TEST(cli, behavior_fold_candidates_reports_message_semantic_risks) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[2048];
     snprintf(args, sizeof(args),
              "-f json behavior fold-candidates --parent 2364 \"%s\"",
@@ -766,6 +776,7 @@ TEST(cli, behavior_fold_candidates_reports_message_semantic_risks) {
 }
 
 TEST(cli, behavior_fold_candidates_match_fold_dry_run_semantic_risks) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[2048];
     snprintf(args, sizeof(args),
              "-f json behavior fold-candidates --parent 363 \"%s\"",
@@ -826,6 +837,7 @@ TEST(cli, behavior_fold_candidates_match_fold_dry_run_semantic_risks) {
 }
 
 TEST(cli, behavior_fold_candidates_reports_control_router_group) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     static const uint32_t router_ids[] = {
         2367u, 2370u, 2565u, 2568u, 2571u, 3032u,
         3043u, 3516u, 3519u, 3525u, 3528u, 3534u,
@@ -881,6 +893,7 @@ TEST(cli, behavior_fold_candidates_reports_control_router_group) {
 }
 
 TEST(cli, behavior_fold_candidates_text_reports_connected_component_counts) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[2048];
     snprintf(args, sizeof(args),
              "behavior fold-candidates --parent %u \"%s\"",
@@ -904,6 +917,7 @@ TEST(cli, behavior_fold_candidates_text_reports_connected_component_counts) {
 }
 
 TEST(cli, behavior_fold_dry_run_reports_boundary_plan) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     const char *output = "test_behavior_rewrite_tmp/fold_dry.cmo";
     remove(output);
     make_dir("test_behavior_rewrite_tmp");
@@ -978,6 +992,7 @@ TEST(cli, behavior_fold_dry_run_reports_boundary_plan) {
 }
 
 TEST(cli, behavior_fold_dry_run_reports_semantic_risks) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[2048];
     snprintf(args, sizeof(args),
              "-f json behavior fold --parent 363 --nodes 237,358 "
@@ -1009,6 +1024,7 @@ TEST(cli, behavior_fold_dry_run_reports_semantic_risks) {
 }
 
 TEST(cli, behavior_fold_dry_run_detects_renamed_message_bb_by_signature) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     const char *renamed = "test_behavior_rewrite_tmp/renamed_message.cmo";
     make_dir("test_behavior_rewrite_tmp");
     remove(renamed);
@@ -1048,6 +1064,7 @@ TEST(cli, behavior_fold_dry_run_detects_renamed_message_bb_by_signature) {
 }
 
 TEST(cli, behavior_fold_dry_run_rejects_event_handler_router_without_output_maps) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[2048];
     snprintf(args, sizeof(args),
              "-f json behavior fold --parent %u "
@@ -1091,6 +1108,7 @@ TEST(cli, behavior_fold_dry_run_rejects_event_handler_router_without_output_maps
 }
 
 TEST(cli, behavior_fold_dry_run_uses_explicit_node_set) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[2048];
     snprintf(args, sizeof(args),
              "-f json behavior fold --parent %u --nodes 2364,2178 "
@@ -1134,6 +1152,7 @@ TEST(cli, behavior_fold_dry_run_uses_explicit_node_set) {
 }
 
 TEST(cli, behavior_fold_dry_run_uses_explicit_anchor) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[2048];
     snprintf(args, sizeof(args),
              "-f json behavior fold --parent %u --nodes 2364,2208 "
@@ -1166,6 +1185,7 @@ TEST(cli, behavior_fold_dry_run_uses_explicit_anchor) {
 }
 
 TEST(cli, behavior_fold_dry_run_accepts_preserve_boundary) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[2048];
     snprintf(args, sizeof(args),
              "-f json behavior fold --parent %u --nodes 2364,2208 "
@@ -1193,6 +1213,7 @@ TEST(cli, behavior_fold_dry_run_accepts_preserve_boundary) {
 }
 
 TEST(cli, behavior_fold_dry_run_reports_maps) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[2048];
     snprintf(args, sizeof(args),
              "-f json behavior fold --parent %u --nodes 2364,2208 "
@@ -1240,6 +1261,7 @@ TEST(cli, behavior_fold_dry_run_reports_maps) {
 }
 
 TEST(cli, behavior_fold_dry_run_reports_interface_mode) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[2048];
     snprintf(args, sizeof(args),
              "-f json behavior fold --parent %u --nodes 2364,2208 "
@@ -1265,6 +1287,7 @@ TEST(cli, behavior_fold_dry_run_reports_interface_mode) {
 }
 
 TEST(cli, behavior_fold_dry_run_rejects_ambiguous_input_without_map) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[2048];
     snprintf(args, sizeof(args),
              "-f json behavior fold --parent %u --nodes 2364,2208 "
@@ -1306,6 +1329,7 @@ TEST(cli, behavior_fold_dry_run_rejects_ambiguous_input_without_map) {
 }
 
 TEST(cli, behavior_fold_dry_run_rejects_invalid_input_map_index) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[2048];
     snprintf(args, sizeof(args),
              "-f json behavior fold --parent %u --nodes 2364,2208 "
@@ -1348,6 +1372,7 @@ TEST(cli, behavior_fold_dry_run_rejects_invalid_input_map_index) {
 }
 
 TEST(cli, behavior_fold_dry_run_rejects_duplicate_input_map_target) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[2048];
     snprintf(args, sizeof(args),
              "-f json behavior fold --parent %u --nodes 2364,2208 "
@@ -1390,6 +1415,7 @@ TEST(cli, behavior_fold_dry_run_rejects_duplicate_input_map_target) {
 }
 
 TEST(cli, behavior_fold_dry_run_reports_control_rewire_plan) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[2048];
     snprintf(args, sizeof(args),
              "-f json behavior fold --parent %u --nodes 2364,2208 "
@@ -1438,6 +1464,7 @@ TEST(cli, behavior_fold_dry_run_reports_control_rewire_plan) {
 }
 
 TEST(cli, behavior_fold_dry_run_rejects_parent_in_selected_nodes) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[2048];
     snprintf(args, sizeof(args),
              "-f json behavior fold --parent 2378 --nodes 2378,2374 "
@@ -1456,6 +1483,7 @@ TEST(cli, behavior_fold_dry_run_rejects_parent_in_selected_nodes) {
 }
 
 TEST(cli, behavior_fold_write_rejects_with_analysis_blocker) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     const char *output = "test_behavior_rewrite_tmp/fold_write_reject.cmo";
     remove(output);
     make_dir("test_behavior_rewrite_tmp");
@@ -1484,6 +1512,7 @@ TEST(cli, behavior_fold_write_rejects_with_analysis_blocker) {
 }
 
 TEST(cli, behavior_fold_write_rejects_unclosed_graph_anchor) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     const char *output = "test_behavior_rewrite_tmp/fold_unclosed.cmo";
     remove(output);
     make_dir("test_behavior_rewrite_tmp");
@@ -1510,6 +1539,7 @@ TEST(cli, behavior_fold_write_rejects_unclosed_graph_anchor) {
 }
 
 TEST(cli, behavior_fold_dry_run_reports_single_leaf_anchor_writable) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[2048];
     snprintf(args, sizeof(args),
              "-f json behavior fold --parent %u --nodes 2367 "
@@ -1558,6 +1588,7 @@ TEST(cli, behavior_fold_dry_run_reports_single_leaf_anchor_writable) {
 }
 
 TEST(cli, behavior_fold_writes_single_leaf_anchor) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     const char *output = "test_behavior_rewrite_tmp/fold_single_anchor.cmo";
     remove(output);
     make_dir("test_behavior_rewrite_tmp");
@@ -1593,6 +1624,7 @@ TEST(cli, behavior_fold_writes_single_leaf_anchor) {
 }
 
 TEST(cli, behavior_fold_write_json_reports_edit_plan_schema) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     const char *output =
         "test_behavior_rewrite_tmp/fold_single_anchor_json.cmo";
     remove(output);
@@ -1643,6 +1675,7 @@ TEST(cli, behavior_fold_write_json_reports_edit_plan_schema) {
 }
 
 TEST(cli, behavior_fold_writes_closed_graph_anchor) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     rewrite_manifest_t manifest;
     char fold_nodes[256];
     const char *output = "test_behavior_rewrite_tmp/fold_closed_graph.cmo";
@@ -1688,6 +1721,7 @@ TEST(cli, behavior_fold_writes_closed_graph_anchor) {
 }
 
 TEST(cli, behavior_fold_writes_leaf_component_anchor) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     const char *output = "test_behavior_rewrite_tmp/fold_leaf_component.cmo";
     remove(output);
     make_dir("test_behavior_rewrite_tmp");

@@ -181,6 +181,7 @@ static void phase_stats_print_save_text(const nmo_save_perf_stats_t *stats, doub
 }
 
 TEST(phase_stats, load_records_required_phases) {
+    TEST_REQUIRE_FIXTURE("Ballance/Gameplay.nmo");
     const char *fixture = NMO_TEST_DATA_FILE("Ballance/Gameplay.nmo");
     if (!file_exists(fixture)) {
         printf("[phase_stats] skip missing fixture: %s\n", fixture);
@@ -222,6 +223,7 @@ TEST(phase_stats, load_records_required_phases) {
 }
 
 TEST(phase_stats, save_records_required_phases) {
+    TEST_REQUIRE_FIXTURE("Ballance/Gameplay.nmo");
     const char *fixture = NMO_TEST_DATA_FILE("Ballance/Gameplay.nmo");
     if (!file_exists(fixture)) {
         printf("[phase_stats] skip missing fixture: %s\n", fixture);
@@ -283,6 +285,7 @@ TEST(phase_stats, save_records_required_phases) {
 }
 
 TEST(phase_stats, save_fast_durability_records_transaction_phases) {
+    TEST_REQUIRE_FIXTURE("Ballance/Gameplay.nmo");
     const char *fixture = NMO_TEST_DATA_FILE("Ballance/Gameplay.nmo");
     if (!file_exists(fixture)) {
         printf("[phase_stats] skip missing fixture: %s\n", fixture);
@@ -324,6 +327,7 @@ TEST(phase_stats, save_fast_durability_records_transaction_phases) {
 }
 
 TEST(phase_stats, metadata_profile_skips_full_load_phases) {
+    TEST_REQUIRE_FIXTURE("Ballance/Gameplay.nmo");
     const char *fixture = NMO_TEST_DATA_FILE("Ballance/Gameplay.nmo");
     if (!file_exists(fixture)) {
         printf("[phase_stats] skip missing fixture: %s\n", fixture);

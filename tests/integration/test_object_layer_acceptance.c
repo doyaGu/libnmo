@@ -487,6 +487,8 @@ static void add_to_file_list(const char *filepath) {
 
 /* Main test function */
 TEST(object_layer_acceptance, deep_validation) {
+    /* Corpus scan: skip when the gitignored Virtools sample set is absent. */
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     printf("\n=== Deep Object Layer Acceptance ===\n\n");
 
     /* Reset statistics */

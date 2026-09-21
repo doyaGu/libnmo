@@ -416,6 +416,7 @@ TEST(cli, completion_powershell_alias_matches_generated_file) {
  * ============================================================================ */
 
 TEST(cli, file_info_text) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     char args[512];
     snprintf(args, sizeof(args), "file info \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     char *output = run_cli(args);
@@ -427,6 +428,7 @@ TEST(cli, file_info_text) {
 }
 
 TEST(cli, file_info_json) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     char args[512];
     snprintf(args, sizeof(args), "file info \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     yyjson_doc *doc = run_cli_json(args);
@@ -447,6 +449,7 @@ TEST(cli, file_info_json) {
 }
 
 TEST(cli, file_info_output_file_text) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     const char *report_path = "test_cli_file_info_output.txt";
     remove(report_path);
 
@@ -471,6 +474,7 @@ TEST(cli, file_info_output_file_text) {
 }
 
 TEST(cli, file_info_output_file_json) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     const char *report_path = "test_cli_file_info_output.json";
     remove(report_path);
 
@@ -500,6 +504,7 @@ TEST(cli, file_info_output_file_json) {
  * ============================================================================ */
 
 TEST(cli, file_stats_text) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     char args[512];
     snprintf(args, sizeof(args), "file stats \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     char *output = run_cli(args);
@@ -515,6 +520,7 @@ TEST(cli, file_stats_text) {
 }
 
 TEST(cli, file_stats_verbose) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     char args[512];
     snprintf(args, sizeof(args), "-v file stats \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     char *output = run_cli(args);
@@ -525,6 +531,7 @@ TEST(cli, file_stats_verbose) {
 }
 
 TEST(cli, file_stats_json) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     char args[512];
     snprintf(args, sizeof(args), "file stats \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     yyjson_doc *doc = run_cli_json(args);
@@ -550,6 +557,7 @@ TEST(cli, file_stats_json) {
 }
 
 TEST(cli, global_yaml_format_is_rejected) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     char args[512];
     snprintf(args, sizeof(args), "-f yaml file info \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     cli_run_result_t result = run_cli_capture(args);
@@ -560,6 +568,7 @@ TEST(cli, global_yaml_format_is_rejected) {
 }
 
 TEST(cli, file_space_reports_file_and_packed_sizes) {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     const char *path = NMO_TEST_DATA_FILE("Nop.cmo");
     char args[512];
     snprintf(args, sizeof(args), "file space \"%s\"", path);
@@ -591,6 +600,7 @@ TEST(cli, file_space_reports_file_and_packed_sizes) {
 }
 
 TEST(cli, file_plugins_resolves_known_behavior_dependencies) {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     char args[512];
     snprintf(args, sizeof(args), "file plugins \"%s\"", NMO_TEST_DATA_FILE("Nop.cmo"));
     yyjson_doc *doc = run_cli_json(args);
@@ -627,6 +637,7 @@ TEST(cli, file_plugins_resolves_known_behavior_dependencies) {
 }
 
 TEST(cli, file_plugins_resolves_known_manager_dependencies) {
+    TEST_REQUIRE_FIXTURE("Demo/Tunnel.cmo");
     char args[512];
     snprintf(args, sizeof(args), "file plugins \"%s\"", NMO_TEST_DATA_FILE("Demo/Tunnel.cmo"));
     yyjson_doc *doc = run_cli_json(args);
@@ -675,6 +686,7 @@ TEST(cli, file_plugins_resolves_known_manager_dependencies) {
 }
 
 TEST(cli, file_plugins_resolves_exported_plugin_dependencies) {
+    TEST_REQUIRE_FIXTURE("Demo/Tunnel.cmo");
     char args[512];
     snprintf(args, sizeof(args), "file plugins \"%s\"", NMO_TEST_DATA_FILE("Demo/Tunnel.cmo"));
     yyjson_doc *doc = run_cli_json(args);
@@ -729,6 +741,7 @@ TEST(cli, file_plugins_resolves_exported_plugin_dependencies) {
 }
 
 TEST(cli, file_plugins_resolves_bbsample_plugin_dependencies) {
+    TEST_REQUIRE_FIXTURE("BBSamples/3D Transformations/Activate Link.cmo");
     char args[512];
     snprintf(args, sizeof(args), "file plugins \"%s\"",
              NMO_TEST_DATA_FILE("BBSamples/3D Transformations/Activate Link.cmo"));
@@ -743,6 +756,7 @@ TEST(cli, file_plugins_resolves_bbsample_plugin_dependencies) {
 }
 
 TEST(cli, file_plugins_ignores_null_guid_placeholder_dependencies) {
+    TEST_REQUIRE_FIXTURE("Ballance/Balls.nmo");
     char args[512];
     snprintf(args, sizeof(args), "file plugins \"%s\"", NMO_TEST_DATA_FILE("Ballance/Balls.nmo"));
     yyjson_doc *doc = run_cli_json(args);
@@ -764,6 +778,7 @@ TEST(cli, file_plugins_ignores_null_guid_placeholder_dependencies) {
 }
 
 TEST(cli, object_list_fields_json_outputs_envelope) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     char args[512];
     snprintf(args, sizeof(args), "object list-fields 1 \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     yyjson_doc *doc = run_cli_json(args);
@@ -791,6 +806,7 @@ TEST(cli, object_list_fields_json_outputs_envelope) {
  * ============================================================================ */
 
 TEST(cli, object_list_text) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     char args[512];
     snprintf(args, sizeof(args), "object list \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     char *output = run_cli(args);
@@ -801,6 +817,7 @@ TEST(cli, object_list_text) {
 }
 
 TEST(cli, object_list_class_filter) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     char args[512];
     snprintf(args, sizeof(args), "object list --class CKGroup \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     char *output = run_cli(args);
@@ -811,6 +828,7 @@ TEST(cli, object_list_class_filter) {
 }
 
 TEST(cli, object_list_json) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     char args[512];
     snprintf(args, sizeof(args), "object list \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     yyjson_doc *doc = run_cli_json(args);
@@ -846,6 +864,7 @@ TEST(cli, object_list_json) {
  * ============================================================================ */
 
 TEST(cli, query_commands_are_not_available) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     cli_run_result_t result;
     char args[512];
 
@@ -885,6 +904,7 @@ TEST(cli, query_commands_are_not_available) {
 }
 
 TEST(cli, entity_list_class_filter_accepts_entity_derived_class) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     char args[512];
     snprintf(args, sizeof(args),
              "entity list --class CKCamera \"%s\"",
@@ -905,6 +925,7 @@ TEST(cli, entity_list_class_filter_accepts_entity_derived_class) {
 }
 
 TEST(cli, entity_list_class_filter_non_entity_class_returns_empty_result) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     char args[512];
     snprintf(args, sizeof(args),
              "entity list --class CKMaterial \"%s\"",
@@ -925,6 +946,7 @@ TEST(cli, entity_list_class_filter_non_entity_class_returns_empty_result) {
 }
 
 TEST(cli, validate_all_text) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     char args[512];
     snprintf(args, sizeof(args), "validate all \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     char *output = run_cli(args);
@@ -935,6 +957,7 @@ TEST(cli, validate_all_text) {
 }
 
 TEST(cli, validate_all_json) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     char args[512];
     snprintf(args, sizeof(args), "validate all \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     yyjson_doc *doc = run_cli_json(args);
@@ -951,6 +974,7 @@ TEST(cli, validate_all_json) {
 }
 
 TEST(cli, validate_all_output_file_text) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     const char *report_path = "test_cli_validate_all_output.txt";
     remove(report_path);
 
@@ -976,6 +1000,7 @@ TEST(cli, validate_all_output_file_text) {
 }
 
 TEST(cli, validate_all_output_file_json) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     const char *report_path = "test_cli_validate_all_output.json";
     remove(report_path);
 
@@ -1001,6 +1026,7 @@ TEST(cli, validate_all_output_file_json) {
 }
 
 TEST(cli, validate_structure_text) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     char args[512];
     snprintf(args, sizeof(args), "validate structure \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     char *output = run_cli(args);
@@ -1011,6 +1037,7 @@ TEST(cli, validate_structure_text) {
 }
 
 TEST(cli, validate_structure_fix) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     char args[512];
     snprintf(args, sizeof(args), "validate structure --fix \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     char *output = run_cli(args);
@@ -1021,6 +1048,7 @@ TEST(cli, validate_structure_fix) {
 }
 
 TEST(cli, validate_references_text) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     char args[512];
     snprintf(args, sizeof(args), "validate references \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     char *output = run_cli(args);
@@ -1031,6 +1059,7 @@ TEST(cli, validate_references_text) {
 }
 
 TEST(cli, validate_references_json) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     char args[512];
     snprintf(args, sizeof(args), "validate references \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     yyjson_doc *doc = run_cli_json(args);
@@ -1493,6 +1522,7 @@ TEST(cli, validate_references_normalize_saves_distinct_clean_output) {
 }
 
 TEST(cli, validate_references_normalize_preserves_clean_chunks) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     const char *fixture = NMO_TEST_DATA_FILE("Ballance/base.cmo");
     const char *output = "test_validate_refs_normalize_clean_output.cmo";
     remove(output);
@@ -1528,6 +1558,7 @@ TEST(cli, validate_references_normalize_preserves_clean_chunks) {
 }
 
 TEST(cli, validate_references_normalize_preserves_uncompressed_mode) {
+    TEST_REQUIRE_FIXTURE("TechnicalSamples/VSL/Documentation samples/Hello World.cmo");
     const char *fixture = NMO_TEST_DATA_FILE(
         "TechnicalSamples/VSL/Documentation samples/Hello World.cmo");
     const char *output = "test_validate_refs_normalize_uncompressed_output.cmo";
@@ -1635,6 +1666,7 @@ TEST(cli, validate_references_accepts_behavior_input_parameters) {
  * ============================================================================ */
 
 TEST(cli, type_list_text) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     char args[512];
     snprintf(args, sizeof(args), "type list \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     char *output = run_cli(args);
@@ -1645,6 +1677,7 @@ TEST(cli, type_list_text) {
 }
 
 TEST(cli, type_list_json) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     char args[512];
     snprintf(args, sizeof(args), "type list \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     yyjson_doc *doc = run_cli_json(args);
@@ -1672,6 +1705,8 @@ TEST(cli, type_class_tree_text) {
  * ============================================================================ */
 
 TEST(cli, batch_file_info) {
+    TEST_REQUIRE_FIXTURE("Ballance/Balls.nmo");
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "--batch file info \"%s\" \"%s\"",
@@ -1686,6 +1721,8 @@ TEST(cli, batch_file_info) {
 }
 
 TEST(cli, batch_file_info_json) {
+    TEST_REQUIRE_FIXTURE("Ballance/Balls.nmo");
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "--batch file info \"%s\" \"%s\"",
@@ -1715,6 +1752,8 @@ TEST(cli, batch_file_info_json) {
 }
 
 TEST(cli, batch_validate_all) {
+    TEST_REQUIRE_FIXTURE("Ballance/Balls.nmo");
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "--batch validate all \"%s\" \"%s\"",
@@ -1728,6 +1767,8 @@ TEST(cli, batch_validate_all) {
 }
 
 TEST(cli, batch_file_info_output_file_text) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
+    TEST_REQUIRE_FIXTURE("Ballance/Menu.nmo");
     const char *report_path = "test_cli_batch_file_info_output.txt";
     remove(report_path);
 
@@ -1752,6 +1793,8 @@ TEST(cli, batch_file_info_output_file_text) {
 }
 
 TEST(cli, batch_validate_all_output_file_text) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
+    TEST_REQUIRE_FIXTURE("Ballance/Menu.nmo");
     const char *report_path = "test_cli_batch_validate_all_output.txt";
     remove(report_path);
 
@@ -1776,6 +1819,7 @@ TEST(cli, batch_validate_all_output_file_text) {
 }
 
 TEST(cli, convert_version_output_file_text) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     const char *report_path = "test_cli_convert_version_output.txt";
     remove(report_path);
 
@@ -1799,6 +1843,7 @@ TEST(cli, convert_version_output_file_text) {
 }
 
 TEST(cli, convert_version_output_file_json) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     const char *report_path = "test_cli_convert_version_output.json";
     remove(report_path);
 
@@ -1824,6 +1869,7 @@ TEST(cli, convert_version_output_file_json) {
 }
 
 TEST(cli, convert_version_fast_save_json_reports_durability) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     const char *report_path = "test_cli_convert_version_fast_report.json";
     const char *save_path = "test_cli_convert_version_fast_output.nmo";
     remove(report_path);
@@ -1856,6 +1902,7 @@ TEST(cli, convert_version_fast_save_json_reports_durability) {
 }
 
 TEST(cli, convert_copy_output_and_report_files) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     const char *report_path = "test_cli_convert_copy_report.txt";
     const char *save_path = "test_cli_convert_copy_output.nmo";
     remove(report_path);
@@ -1882,6 +1929,7 @@ TEST(cli, convert_copy_output_and_report_files) {
 }
 
 TEST(cli, convert_copy_fast_save_json_reports_durability) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     const char *report_path = "test_cli_convert_copy_fast_report.json";
     const char *save_path = "test_cli_convert_copy_fast_output.nmo";
     remove(report_path);
@@ -1914,6 +1962,8 @@ TEST(cli, convert_copy_fast_save_json_reports_durability) {
 }
 
 TEST(cli, convert_merge_option_values_not_treated_as_files) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
+    TEST_REQUIRE_FIXTURE("Ballance/Menu.nmo");
     const char *report_path = "test_cli_convert_merge_report.txt";
     const char *save_path = "test_cli_convert_merge_output.nmo";
     remove(report_path);
@@ -1943,6 +1993,7 @@ TEST(cli, convert_merge_option_values_not_treated_as_files) {
 }
 
 TEST(cli, diff_chunks_object_option_value_not_treated_as_file) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "diff chunks --object 1 \"%s\" \"%s\"",
@@ -1958,6 +2009,7 @@ TEST(cli, diff_chunks_object_option_value_not_treated_as_file) {
 }
 
 TEST(cli, file_info_output_open_failure) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     const char *report_path = "test_cli_missing_dir_a8d74e/report.txt";
     char args[1024];
     snprintf(args, sizeof(args), "--output \"%s\" file info \"%s\"",
@@ -1970,6 +2022,7 @@ TEST(cli, file_info_output_open_failure) {
 }
 
 TEST(cli, validate_all_output_open_failure) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     const char *report_path = "test_cli_missing_dir_b19c52/report.txt";
     char args[1024];
     snprintf(args, sizeof(args), "--output \"%s\" validate all \"%s\"",
@@ -1982,6 +2035,7 @@ TEST(cli, validate_all_output_open_failure) {
 }
 
 TEST(cli, convert_copy_output_open_failure) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     const char *report_path = "test_cli_missing_dir_c27d1f/report.txt";
     const char *save_path = "test_cli_convert_copy_fail_output.nmo";
     remove(save_path);
@@ -2004,6 +2058,7 @@ TEST(cli, convert_copy_output_open_failure) {
  * ============================================================================ */
 
 TEST(cli, object_list_has_size_json) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     char args[512];
     snprintf(args, sizeof(args), "object list \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     yyjson_doc *doc = run_cli_json(args);
@@ -2025,6 +2080,7 @@ TEST(cli, object_list_has_size_json) {
 }
 
 TEST(cli, object_list_has_size_text) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     char args[512];
     snprintf(args, sizeof(args), "object list \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     char *output = run_cli(args);
@@ -2043,6 +2099,7 @@ TEST(cli, object_list_has_size_text) {
  * ============================================================================ */
 
 TEST(cli, object_list_sort_by_size_json) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     char args[512];
     snprintf(args, sizeof(args), "object list --sort=size --reverse \"%s\"",
              NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
@@ -2067,6 +2124,7 @@ TEST(cli, object_list_sort_by_size_json) {
 }
 
 TEST(cli, object_list_top_limits_output) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     char args[512];
     snprintf(args, sizeof(args), "object list --top 3 \"%s\"",
              NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
@@ -2081,6 +2139,7 @@ TEST(cli, object_list_top_limits_output) {
 }
 
 TEST(cli, object_list_sort_and_top_combined) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     char args[512];
     snprintf(args, sizeof(args), "object list --sort=size --reverse --top 5 \"%s\"",
              NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
@@ -2108,6 +2167,7 @@ TEST(cli, object_list_sort_and_top_combined) {
  * ============================================================================ */
 
 TEST(cli, file_classes_has_size_json) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     char args[512];
     snprintf(args, sizeof(args), "file classes \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     yyjson_doc *doc = run_cli_json(args);
@@ -2124,6 +2184,7 @@ TEST(cli, file_classes_has_size_json) {
 }
 
 TEST(cli, file_classes_sort_by_size) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     char args[512];
     snprintf(args, sizeof(args), "file classes --sort=size \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     yyjson_doc *doc = run_cli_json(args);
@@ -2148,6 +2209,7 @@ TEST(cli, file_classes_sort_by_size) {
  * ============================================================================ */
 
 TEST(cli, resource_list_sort_by_size) {
+    TEST_REQUIRE_FIXTURE("Ballance/Balls.nmo");
     char args[512];
     snprintf(args, sizeof(args), "resource list --sort=size \"%s\"", NMO_TEST_DATA_FILE("Ballance/Balls.nmo"));
     yyjson_doc *doc = run_cli_json(args);
@@ -2169,6 +2231,7 @@ TEST(cli, resource_list_sort_by_size) {
 }
 
 TEST(cli, texture_list_uses_slot_dimensions_when_reader_dimensions_missing) {
+    TEST_REQUIRE_FIXTURE("Demo/Tunnel.cmo");
     char args[512];
     snprintf(args, sizeof(args), "texture list \"%s\"", NMO_TEST_DATA_FILE("Demo/Tunnel.cmo"));
     yyjson_doc *doc = run_cli_json(args);
@@ -2195,6 +2258,7 @@ TEST(cli, texture_list_uses_slot_dimensions_when_reader_dimensions_missing) {
 }
 
 TEST(cli, texture_show_accepts_exact_name_selector) {
+    TEST_REQUIRE_FIXTURE("Ballance/Balls.nmo");
     char args[512];
     snprintf(args, sizeof(args),
              "texture show --name BallWood.bmp \"%s\"",
@@ -2211,6 +2275,7 @@ TEST(cli, texture_show_accepts_exact_name_selector) {
 }
 
 TEST(cli, texture_show_name_selector_reports_missing_texture) {
+    TEST_REQUIRE_FIXTURE("Ballance/Balls.nmo");
     char args[512];
     snprintf(args, sizeof(args),
              "texture show --name DefinitelyMissingTexture \"%s\"",
@@ -2223,6 +2288,7 @@ TEST(cli, texture_show_name_selector_reports_missing_texture) {
 }
 
 TEST(cli, texture_show_reports_raw_slot_channels) {
+    TEST_REQUIRE_FIXTURE("TechnicalSamples/VSL/Samples/MipMap.cmo");
     char args[512];
     snprintf(args, sizeof(args),
              "texture show --id 42 \"%s\"",
@@ -2255,6 +2321,7 @@ TEST(cli, texture_show_reports_raw_slot_channels) {
 }
 
 TEST(cli, texture_extract_decodes_raw_slot) {
+    TEST_REQUIRE_FIXTURE("TechnicalSamples/VSL/Samples/MipMap.cmo");
     make_dir("test_cli_tmp_raw_extract");
     remove("test_cli_tmp_raw_extract/CheckBoard1_42.png");
 
@@ -2286,6 +2353,7 @@ TEST(cli, texture_extract_decodes_raw_slot) {
 }
 
 TEST(cli, texture_external_raw_slot_extracts_from_real_fixture) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Controllers/Get Mouse Displacement.cmo");
     make_dir("test_cli_tmp_external_extract");
     remove("test_cli_tmp_external_extract/Wood_175.png");
 
@@ -2348,6 +2416,7 @@ TEST(cli, texture_external_raw_slot_extracts_from_real_fixture) {
 }
 
 TEST(cli, texture_external_reader_slot_reports_mipmap_and_extracts) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Controllers/Switch On Midi.cmo");
     make_dir("test_cli_tmp_reader_external_extract");
     remove("test_cli_tmp_reader_external_extract/Eva_609.png");
 
@@ -2412,6 +2481,7 @@ TEST(cli, texture_external_reader_slot_reports_mipmap_and_extracts) {
 }
 
 TEST(cli, texture_reader_alpha_plane_extracts_transparency) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Controllers/Switch On Midi.cmo");
     make_dir("test_cli_tmp_alpha_plane_extract");
     remove("test_cli_tmp_alpha_plane_extract/MaskNote_719.png");
 
@@ -2487,6 +2557,7 @@ TEST(cli, texture_reader_alpha_plane_extracts_transparency) {
 }
 
 TEST(cli, texture_extract_reports_unsupported_empty_raw_slot) {
+    TEST_REQUIRE_FIXTURE("BBSamples/3D Transformations/BillBoard.cmo");
     make_dir("test_cli_tmp_empty_raw_extract");
 
     char args[512];
@@ -2519,6 +2590,7 @@ TEST(cli, texture_extract_reports_unsupported_empty_raw_slot) {
 }
 
 TEST(cli, animation_real_sample_reports_keyed_and_object_controllers) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Characters/Share Character Animation Keys.cmo");
     const char *fixture = NMO_TEST_DATA_FILE("BBSamples/Characters/Share Character Animation Keys.cmo");
 
     char args[512];
@@ -2591,6 +2663,7 @@ TEST(cli, animation_real_sample_reports_keyed_and_object_controllers) {
 }
 
 TEST(cli, animation_export_real_sample_preserves_controller_metadata) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Characters/Share Character Animation Keys.cmo");
     make_dir("test_cli_tmp_anim_real_export");
     remove("test_cli_tmp_anim_real_export/Bip01_118.anim.json");
 
@@ -2634,6 +2707,7 @@ TEST(cli, animation_export_real_sample_preserves_controller_metadata) {
 }
 
 TEST(cli, animation_real_sample_reports_shared_format) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Characters/Share Character Animation Keys.cmo");
     make_dir("test_cli_tmp_anim_shared_export");
     remove("test_cli_tmp_anim_shared_export/FloorRef_255.anim.json");
 
@@ -2693,6 +2767,7 @@ TEST(cli, animation_real_sample_reports_shared_format) {
 }
 
 TEST(cli, mesh_real_sample_reports_material_groups_and_exports_obj_mtl) {
+    TEST_REQUIRE_FIXTURE("TechnicalSamples/ScriptedCameras/MouseCamera.cmo");
     const char *fixture = NMO_TEST_DATA_FILE("TechnicalSamples/ScriptedCameras/MouseCamera.cmo");
 
     char args[512];
@@ -2789,6 +2864,8 @@ TEST(cli, mesh_real_sample_reports_material_groups_and_exports_obj_mtl) {
 }
 
 TEST(cli, mesh_real_sample_reports_progressive_and_point_variants) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Optimizations/LOD.cmo");
+    TEST_REQUIRE_FIXTURE("Ballance/MenuLevel.nmo");
     make_dir("test_cli_tmp_mesh_variant_export");
     remove("test_cli_tmp_mesh_variant_export/Pot_Mesh_712.obj");
     remove("test_cli_tmp_mesh_variant_export/Pot_Mesh_712.mtl");
@@ -2871,6 +2948,11 @@ TEST(cli, mesh_real_sample_reports_progressive_and_point_variants) {
 }
 
 TEST(cli, specialized_read_commands_accept_exact_name_selectors) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Narratives/Add To Scene-Remove From Scene.cmo");
+    TEST_REQUIRE_FIXTURE("Ballance/Balls.nmo");
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
+    TEST_REQUIRE_FIXTURE("Ballance/MenuLevel.nmo");
+    TEST_REQUIRE_FIXTURE("Ballance/P_Box.nmo");
     char args[512];
 
     snprintf(args, sizeof(args),
@@ -2953,6 +3035,7 @@ TEST(cli, specialized_read_commands_accept_exact_name_selectors) {
 }
 
 TEST(cli, object_read_commands_accept_exact_name_selectors) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     char args[512];
 
     snprintf(args, sizeof(args),
@@ -2995,6 +3078,7 @@ TEST(cli, object_read_commands_accept_exact_name_selectors) {
 }
 
 TEST(cli, name_selectors_report_family_specific_missing_errors) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     char args[512];
 
     snprintf(args, sizeof(args),
@@ -3030,6 +3114,7 @@ TEST(cli, name_selectors_report_family_specific_missing_errors) {
  * ============================================================================ */
 
 TEST(cli, chunk_list_top_limits_output) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     char args[512];
     snprintf(args, sizeof(args), "chunk list --top 5 \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     yyjson_doc *doc = run_cli_json(args);
@@ -3046,6 +3131,7 @@ TEST(cli, chunk_list_top_limits_output) {
  * ============================================================================ */
 
 TEST(cli, json_schema_envelope) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     char args[512];
     snprintf(args, sizeof(args), "file info \"%s\"", NMO_TEST_DATA_FILE("Ballance/Camera.nmo"));
     yyjson_doc *doc = run_cli_json(args);
@@ -3474,6 +3560,7 @@ TEST(cli, parameter_set_hex_saves_output) {
  * ============================================================================ */
 
 TEST(cli, convert_strip_dry_run_json) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "convert strip --dry-run --name \"Cam_OrientRef\" \"%s\"",
@@ -3510,6 +3597,7 @@ TEST(cli, convert_strip_dry_run_json) {
 }
 
 TEST(cli, convert_strip_dry_run_no_file_written) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     const char *output = "test_strip_dry_run_no_write.nmo";
     remove(output);
 
@@ -3529,6 +3617,7 @@ TEST(cli, convert_strip_dry_run_no_file_written) {
 }
 
 TEST(cli, convert_strip_dry_run_no_output_required) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     /* --dry-run should not require -o */
     char args[1024];
     snprintf(args, sizeof(args),
@@ -3541,6 +3630,7 @@ TEST(cli, convert_strip_dry_run_no_output_required) {
 }
 
 TEST(cli, convert_strip_dry_run_text) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "convert strip --dry-run --name \"Cam_OrientRef\" \"%s\"",
@@ -3553,6 +3643,7 @@ TEST(cli, convert_strip_dry_run_text) {
 }
 
 TEST(cli, convert_strip_dry_run_no_matches_exit_0) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     /* --dry-run with no matches should still exit 0 */
     char args[1024];
     snprintf(args, sizeof(args),
@@ -3651,6 +3742,7 @@ TEST(cli, debug_probe_help_lists_probe_kinds) {
 }
 
 TEST(cli, debug_probe_2d_text_dry_run_reports_edit_plan) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     const char *output = "test_debug_probe_2d_text.cmo";
     remove(output);
 
@@ -3696,6 +3788,7 @@ TEST(cli, debug_probe_2d_text_dry_run_reports_edit_plan) {
 }
 
 TEST(cli, debug_probe_2d_text_text_option_uses_edit_plan) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "-f json debug probe 2d-text --behavior 237 "
@@ -3723,6 +3816,7 @@ TEST(cli, debug_probe_2d_text_text_option_uses_edit_plan) {
 }
 
 TEST(cli, debug_probe_from_io_links_probe_input) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "-f json debug probe 2d-text --behavior 237 --from-io 232 "
@@ -3749,6 +3843,7 @@ TEST(cli, debug_probe_from_io_links_probe_input) {
 }
 
 TEST(cli, debug_probe_to_io_links_probe_output) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "-f json debug probe 2d-text --behavior 237 --from-io 232 "
@@ -3776,6 +3871,7 @@ TEST(cli, debug_probe_to_io_links_probe_output) {
 }
 
 TEST(cli, debug_probe_remove_link_inserts_probe) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "-f json debug probe 2d-text --behavior 237 --remove-link 213 "
@@ -3805,6 +3901,7 @@ TEST(cli, debug_probe_remove_link_inserts_probe) {
 }
 
 TEST(cli, debug_probe_remove_link_infers_endpoints) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "-f json debug probe 2d-text --behavior 237 --remove-link 213 "
@@ -3830,6 +3927,7 @@ TEST(cli, debug_probe_remove_link_infers_endpoints) {
 }
 
 TEST(cli, debug_probe_delay_applies_to_inserted_input_link) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     const char *output = "test_debug_probe_delay_2d_text.cmo";
     remove(output);
 
@@ -3870,6 +3968,7 @@ TEST(cli, debug_probe_delay_applies_to_inserted_input_link) {
 }
 
 TEST(cli, debug_probe_remove_link_preserves_original_delay) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     const char *delayed_input = "test_debug_probe_source_delay.cmo";
     const char *output = "test_debug_probe_preserve_delay.cmo";
     remove(delayed_input);
@@ -3923,6 +4022,7 @@ TEST(cli, debug_probe_remove_link_preserves_original_delay) {
 }
 
 TEST(cli, debug_probe_report_created_ids_match_saved_file) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     const char *output = "test_debug_probe_report_saved_ids.cmo";
     remove(output);
 
@@ -3956,6 +4056,7 @@ TEST(cli, debug_probe_report_created_ids_match_saved_file) {
 }
 
 TEST(cli, debug_probe_console_dry_run_reports_edit_plan) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "-f json debug probe console --behavior 237 "
@@ -3976,6 +4077,7 @@ TEST(cli, debug_probe_console_dry_run_reports_edit_plan) {
 }
 
 TEST(cli, debug_probe_console_text_option_uses_edit_plan) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "-f json debug probe console --behavior 237 "
@@ -4001,6 +4103,7 @@ TEST(cli, debug_probe_console_text_option_uses_edit_plan) {
 }
 
 TEST(cli, debug_probe_debug_output_dry_run_reports_edit_plan) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "-f json debug probe debug-output --behavior 237 "
@@ -4025,6 +4128,7 @@ TEST(cli, debug_probe_debug_output_dry_run_reports_edit_plan) {
 }
 
 TEST(cli, debug_probe_debug_output_text_option_uses_edit_plan) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "-f json debug probe debug-output --behavior 237 "
@@ -4050,6 +4154,7 @@ TEST(cli, debug_probe_debug_output_text_option_uses_edit_plan) {
 }
 
 TEST(cli, debug_probe_message_logger_text_option_uses_edit_plan) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "-f json debug probe message-logger --behavior 2172 "
@@ -4124,6 +4229,7 @@ TEST(cli, debug_probe_message_logger_text_option_uses_edit_plan) {
 }
 
 TEST(cli, debug_probe_message_logger_analyzes_message_node_without_display_name) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "-f json debug probe message-logger --behavior 2172 "
@@ -4155,6 +4261,7 @@ TEST(cli, debug_probe_message_logger_analyzes_message_node_without_display_name)
 }
 
 TEST(cli, debug_probe_message_logger_inserts_on_selected_message_link) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "-f json debug probe message-logger --behavior 2172 "
@@ -4196,6 +4303,7 @@ TEST(cli, debug_probe_message_logger_inserts_on_selected_message_link) {
 }
 
 TEST(cli, debug_probe_parameter_logger_connects_source_parameter) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "-f json debug probe parameter-logger --behavior 237 "
@@ -4225,6 +4333,7 @@ TEST(cli, debug_probe_parameter_logger_connects_source_parameter) {
 }
 
 TEST(cli, debug_probe_data_cell_logger_uses_edit_plan) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "-f json debug probe data-cell-logger --behavior 5275 "
@@ -4262,6 +4371,7 @@ TEST(cli, debug_probe_data_cell_logger_uses_edit_plan) {
 }
 
 TEST(cli, debug_probe_data_cell_logger_reports_explicit_write_node) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "-f json debug probe data-cell-logger --behavior 3880 "
@@ -4331,6 +4441,7 @@ TEST(cli, debug_probe_data_cell_logger_reports_explicit_write_node) {
 }
 
 TEST(cli, debug_probe_data_cell_logger_inserts_on_selected_write_link) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "-f json debug probe data-cell-logger --behavior 3880 "
@@ -4374,6 +4485,7 @@ TEST(cli, debug_probe_data_cell_logger_inserts_on_selected_write_link) {
 }
 
 TEST(cli, debug_probe_data_cell_logger_rejects_cross_boundary_write_operation) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "-f json debug probe data-cell-logger --behavior 3880 "
@@ -4389,6 +4501,7 @@ TEST(cli, debug_probe_data_cell_logger_rejects_cross_boundary_write_operation) {
 }
 
 TEST(cli, debug_probe_data_cell_logger_accepts_operation_consumer_link) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "-f json debug probe data-cell-logger --behavior 3798 "
@@ -4446,6 +4559,7 @@ TEST(cli, debug_probe_data_cell_logger_accepts_operation_consumer_link) {
 }
 
 TEST(cli, debug_probe_data_cell_logger_auto_rejects_multi_link_write_node) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "-f json debug probe data-cell-logger --behavior 3880 "
@@ -4461,6 +4575,7 @@ TEST(cli, debug_probe_data_cell_logger_auto_rejects_multi_link_write_node) {
 }
 
 TEST(cli, debug_probe_control_marker_dry_run_reports_edit_plan) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     char args[1024];
     snprintf(args, sizeof(args),
              "-f json debug probe control-marker --behavior 237 "
@@ -4485,6 +4600,7 @@ TEST(cli, debug_probe_control_marker_dry_run_reports_edit_plan) {
 }
 
 TEST(cli, debug_probe_rejects_invalid_probe_options) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     struct probe_case {
         const char *args;
         const char *message;

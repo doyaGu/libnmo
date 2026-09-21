@@ -1070,6 +1070,7 @@ static yyjson_val *find_object_by_id_and_role(yyjson_val *arr,
 }
 
 TEST(cli, patch_apply_leaf_replace_bb_dry_run_and_apply) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     rewrite_manifest_t manifest;
     char replace_guid[64];
 
@@ -1121,6 +1122,7 @@ TEST(cli, patch_apply_leaf_replace_bb_dry_run_and_apply) {
 }
 
 TEST(cli, patch_apply_rejects_non_leaf_replace_bb) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     make_dir("test_patch_tmp");
     const char *patch = "test_patch_tmp/reject_non_leaf.json";
     const char *output = "test_patch_tmp/reject_non_leaf.cmo";
@@ -1142,6 +1144,7 @@ TEST(cli, patch_apply_rejects_non_leaf_replace_bb) {
 }
 
 TEST(cli, patch_apply_json_failure_reports_edit_report) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     make_dir("test_patch_tmp");
     const char *patch = "test_patch_tmp/reject_non_leaf_json.json";
     const char *output = "test_patch_tmp/reject_non_leaf_json.cmo";
@@ -1187,6 +1190,7 @@ TEST(cli, patch_apply_json_failure_reports_edit_report) {
 }
 
 TEST(cli, patch_apply_replace_bb_dry_run) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     make_dir("test_patch_tmp");
     const char *patch = "test_patch_tmp/replace_bb.json";
     const char *output = "test_patch_tmp/replace_bb.cmo";
@@ -1215,6 +1219,7 @@ TEST(cli, patch_apply_replace_bb_dry_run) {
 }
 
 TEST(cli, patch_apply_add_io_dry_run) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     make_dir("test_patch_tmp");
     const char *patch = "test_patch_tmp/add_io.json";
     const char *output = "test_patch_tmp/add_io.cmo";
@@ -1247,6 +1252,7 @@ TEST(cli, patch_apply_add_io_dry_run) {
 }
 
 TEST(cli, patch_apply_add_node_dry_run) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     make_dir("test_patch_tmp");
     const char *patch = "test_patch_tmp/add_node.json";
     const char *output = "test_patch_tmp/add_node.cmo";
@@ -1283,6 +1289,7 @@ TEST(cli, patch_apply_add_node_dry_run) {
 }
 
 TEST(cli, patch_apply_add_behavior_link_dry_run) {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     make_dir("test_patch_tmp");
     const char *patch = "test_patch_tmp/add_behavior_link.json";
     const char *output = "test_patch_tmp/add_behavior_link.cmo";
@@ -1345,6 +1352,7 @@ TEST(cli, patch_apply_add_behavior_link_dry_run) {
 }
 
 TEST(cli, patch_apply_add_parameter_dry_run) {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     make_dir("test_patch_tmp");
     const char *patch = "test_patch_tmp/add_parameter.json";
     const char *output = "test_patch_tmp/add_parameter.cmo";
@@ -1405,6 +1413,7 @@ TEST(cli, patch_apply_add_parameter_dry_run) {
 }
 
 TEST(cli, patch_apply_set_parameter_value_dry_run) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     make_dir("test_patch_tmp");
     const char *patch = "test_patch_tmp/set_parameter_value.json";
     const char *output = "test_patch_tmp/set_parameter_value.cmo";
@@ -1440,6 +1449,7 @@ TEST(cli, patch_apply_set_parameter_value_dry_run) {
 }
 
 TEST(cli, patch_apply_set_parameter_value_to_handle_dry_run) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     make_dir("test_patch_tmp");
     const char *patch = "test_patch_tmp/set_parameter_value_handle.json";
     const char *output = "test_patch_tmp/set_parameter_value_handle.cmo";
@@ -1473,6 +1483,7 @@ TEST(cli, patch_apply_set_parameter_value_to_handle_dry_run) {
 }
 
 TEST(cli, patch_diff_json_emits_normalized_manifest) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     make_dir("test_patch_tmp");
     const char *patch = "test_patch_tmp/normalized_manifest.json";
     const char *output = "test_patch_tmp/normalized_manifest.cmo";
@@ -1539,6 +1550,7 @@ TEST(cli, patch_diff_json_emits_normalized_manifest) {
 }
 
 TEST(cli, patch_apply_reports_probe_analysis_metadata) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     make_dir("test_patch_tmp");
     const char *patch = "test_patch_tmp/probe_analysis_manifest.json";
     const char *output = "test_patch_tmp/probe_analysis_manifest.cmo";
@@ -1592,6 +1604,7 @@ TEST(cli, patch_apply_reports_probe_analysis_metadata) {
 }
 
 TEST(cli, patch_diff_json_roundtrips_operation_handle_refs) {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     make_dir("test_patch_tmp");
     const char *patch = "test_patch_tmp/operation_handle_manifest.json";
     const char *output = "test_patch_tmp/operation_handle_manifest.cmo";
@@ -1659,6 +1672,7 @@ TEST(cli, patch_diff_json_roundtrips_operation_handle_refs) {
 }
 
 TEST(cli, patch_apply_set_parameter_bytes_dry_run) {
+    TEST_REQUIRE_FIXTURE("Ballance/MenuLevel.nmo");
     make_dir("test_patch_tmp");
     const char *patch = "test_patch_tmp/set_parameter_bytes.json";
     const char *output = "test_patch_tmp/set_parameter_bytes.nmo";
@@ -1694,6 +1708,7 @@ TEST(cli, patch_apply_set_parameter_bytes_dry_run) {
 }
 
 TEST(cli, patch_apply_set_parameter_bytes_to_handle_dry_run) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     make_dir("test_patch_tmp");
     const char *patch = "test_patch_tmp/set_parameter_bytes_handle.json";
     const char *output = "test_patch_tmp/set_parameter_bytes_handle.cmo";
@@ -1727,6 +1742,7 @@ TEST(cli, patch_apply_set_parameter_bytes_to_handle_dry_run) {
 }
 
 TEST(cli, patch_apply_set_data_cell_dry_run) {
+    TEST_REQUIRE_FIXTURE("Ballance/Balls.nmo");
     make_dir("test_patch_tmp");
     const char *patch = "test_patch_tmp/set_data_cell.json";
     const char *output = "test_patch_tmp/set_data_cell.cmo";
@@ -1783,6 +1799,7 @@ TEST(cli, patch_apply_set_data_cell_dry_run) {
 }
 
 TEST(cli, patch_apply_remove_parameter_dry_run) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     make_dir("test_patch_tmp");
     const char *patch = "test_patch_tmp/remove_parameter.json";
     const char *output = "test_patch_tmp/remove_parameter.cmo";
@@ -1818,6 +1835,7 @@ TEST(cli, patch_apply_remove_parameter_dry_run) {
 }
 
 TEST(cli, patch_apply_add_operation_dry_run) {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     make_dir("test_patch_tmp");
     const char *patch = "test_patch_tmp/add_operation.json";
     const char *output = "test_patch_tmp/add_operation.cmo";
@@ -1886,6 +1904,7 @@ TEST(cli, patch_apply_add_operation_dry_run) {
 }
 
 TEST(cli, patch_apply_rewire_operation_dry_run) {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     make_dir("test_patch_tmp");
     const char *patch = "test_patch_tmp/rewire_operation.json";
     const char *output = "test_patch_tmp/rewire_operation.cmo";
@@ -1951,6 +1970,7 @@ TEST(cli, patch_apply_rewire_operation_dry_run) {
 }
 
 TEST(cli, patch_apply_remove_operation_dry_run) {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     make_dir("test_patch_tmp");
     const char *patch = "test_patch_tmp/remove_operation.json";
     const char *output = "test_patch_tmp/remove_operation.cmo";
@@ -2016,6 +2036,7 @@ TEST(cli, patch_apply_remove_operation_dry_run) {
 }
 
 TEST(cli, patch_apply_connect_parameter_dry_run) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     make_dir("test_patch_tmp");
     const char *patch = "test_patch_tmp/connect_parameter.json";
     const char *output = "test_patch_tmp/connect_parameter.cmo";
@@ -2069,6 +2090,7 @@ TEST(cli, patch_apply_connect_parameter_dry_run) {
 }
 
 TEST(cli, patch_apply_connect_parameter_to_handle_dry_run) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     make_dir("test_patch_tmp");
     const char *patch = "test_patch_tmp/connect_parameter_handle.json";
     const char *output = "test_patch_tmp/connect_parameter_handle.cmo";
@@ -2102,6 +2124,7 @@ TEST(cli, patch_apply_connect_parameter_to_handle_dry_run) {
 }
 
 TEST(cli, patch_apply_disconnect_parameter_dry_run) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     make_dir("test_patch_tmp");
     const char *patch = "test_patch_tmp/disconnect_parameter.json";
     const char *output = "test_patch_tmp/disconnect_parameter.cmo";
@@ -2155,6 +2178,7 @@ TEST(cli, patch_apply_disconnect_parameter_dry_run) {
 }
 
 TEST(cli, patch_apply_rewire_behavior_link_dry_run) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     make_dir("test_patch_tmp");
     const char *patch = "test_patch_tmp/rewire_behavior_link.json";
     const char *output = "test_patch_tmp/rewire_behavior_link.cmo";
@@ -2209,6 +2233,7 @@ TEST(cli, patch_apply_rewire_behavior_link_dry_run) {
 }
 
 TEST(cli, patch_apply_set_behavior_link_delay_dry_run) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     make_dir("test_patch_tmp");
     const char *patch = "test_patch_tmp/set_behavior_link_delay.json";
     const char *output = "test_patch_tmp/set_behavior_link_delay.cmo";
@@ -2263,6 +2288,7 @@ TEST(cli, patch_apply_set_behavior_link_delay_dry_run) {
 }
 
 TEST(cli, patch_apply_remove_behavior_link_dry_run) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     make_dir("test_patch_tmp");
     const char *patch = "test_patch_tmp/remove_behavior_link.json";
     const char *output = "test_patch_tmp/remove_behavior_link.cmo";
@@ -2314,6 +2340,7 @@ TEST(cli, patch_apply_remove_behavior_link_dry_run) {
 }
 
 TEST(cli, patch_apply_remove_node_dry_run) {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     make_dir("test_patch_tmp");
     const char *patch = "test_patch_tmp/remove_node.json";
     const char *output = "test_patch_tmp/remove_node.cmo";
@@ -2349,6 +2376,7 @@ TEST(cli, patch_apply_remove_node_dry_run) {
 }
 
 TEST(cli, patch_apply_remove_io_dry_run) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     make_dir("test_patch_tmp");
     const char *patch = "test_patch_tmp/remove_io.json";
     const char *output = "test_patch_tmp/remove_io.cmo";
@@ -2384,6 +2412,7 @@ TEST(cli, patch_apply_remove_io_dry_run) {
 }
 
 TEST(cli, patch_apply_rename_io_dry_run) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     make_dir("test_patch_tmp");
     const char *patch = "test_patch_tmp/rename_io.json";
     const char *output = "test_patch_tmp/rename_io.cmo";
@@ -2419,6 +2448,7 @@ TEST(cli, patch_apply_rename_io_dry_run) {
 }
 
 TEST(cli, patch_apply_interface_policy_dry_run) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     make_dir("test_patch_tmp");
     const char *patch = "test_patch_tmp/interface_policy.json";
     const char *output = "test_patch_tmp/interface_policy.cmo";
@@ -2471,6 +2501,7 @@ TEST(cli, patch_apply_interface_policy_dry_run) {
 }
 
 TEST(cli, patch_apply_rejects_strict_manifest_edges) {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     struct invalid_case {
         const char *name;
         const char *operation_json;
@@ -2578,6 +2609,7 @@ TEST(cli, patch_apply_rejects_strict_manifest_edges) {
 }
 
 TEST(cli, patch_apply_fold_dry_run_reports_analysis) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     rewrite_manifest_t manifest;
 
     load_ballance_manifest_or_die(&manifest);
@@ -2617,6 +2649,7 @@ TEST(cli, patch_apply_fold_dry_run_reports_analysis) {
 }
 
 TEST(cli, patch_apply_fold_dry_run_reports_semantic_risks) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     make_dir("test_patch_tmp");
     const char *patch = "test_patch_tmp/fold_risky.json";
     const char *output = "test_patch_tmp/fold_risky.cmo";
@@ -2661,6 +2694,7 @@ TEST(cli, patch_apply_fold_dry_run_reports_semantic_risks) {
 }
 
 TEST(cli, patch_diff_json_reports_fold_delete_plan) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     rewrite_manifest_t manifest;
 
     load_ballance_manifest_or_die(&manifest);

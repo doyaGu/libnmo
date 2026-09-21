@@ -259,6 +259,8 @@ cleanup:
 }
 
 TEST(behavior_roundtrip_regression, nop_behavior_samples) {
+    TEST_REQUIRE_FIXTURE("Nop1.cmo");
+    TEST_REQUIRE_FIXTURE("Nop2.cmo");
     const char *samples[] = {
         NMO_TEST_DATA_FILE("Nop1.cmo"),
         NMO_TEST_DATA_FILE("Nop2.cmo"),
