@@ -79,6 +79,23 @@ bool nmo_cli_record_null(nmo_cli_record_t *record, const char *key,
 bool nmo_cli_record_text(nmo_cli_record_t *record, const char *label,
                          const char *text);
 /**
+ * Text-only block written verbatim (no label, no trailing newline added).
+ * Use for section headings and pre-formatted multi-line output.
+ */
+bool nmo_cli_record_raw(nmo_cli_record_t *record, const char *text);
+/**
+ * JSON array of reals. Text shows `text` (NULL: omitted).
+ */
+bool nmo_cli_record_real_list(nmo_cli_record_t *record, const char *key,
+                              const char *label, const double *values,
+                              size_t count, const char *text);
+/**
+ * JSON array of unsigned integers. Text shows `text` (NULL: omitted).
+ */
+bool nmo_cli_record_uint_list(nmo_cli_record_t *record, const char *key,
+                              const char *label, const uint64_t *values,
+                              size_t count, const char *text);
+/**
  * Object reference. JSON: `id_key` as an unsigned integer and, when `name`
  * is non-empty, `name_key` as a string (either key may be NULL to skip it).
  * Text: "#<id> (<name>)", "#<id>" when unnamed, or `none_text` when the id is
@@ -124,6 +141,9 @@ bool nmo_cli_record_array_set_heading(nmo_cli_record_array_t *array,
                                       const char *heading);
 /** Emit nothing, in JSON or text, when the array has no items. */
 void nmo_cli_record_array_omit_empty(nmo_cli_record_array_t *array);
+/** Text line printed under the heading when the array has no items. */
+bool nmo_cli_record_array_set_empty_text(nmo_cli_record_array_t *array,
+                                         const char *text);
 /** One-line text used when this record is rendered as an array item. */
 bool nmo_cli_record_set_summary(nmo_cli_record_t *record, const char *text);
 

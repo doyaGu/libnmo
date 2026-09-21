@@ -22,6 +22,9 @@ typedef enum record_kind {
     RECORD_NULL,
     RECORD_REF,
     RECORD_VEC3,
+    RECORD_RAW,
+    RECORD_REAL_LIST,
+    RECORD_UINT_LIST,
     RECORD_ARRAY
 } record_kind_t;
 
@@ -30,6 +33,7 @@ struct nmo_cli_record_array {
     size_t count;
     size_t capacity;
     char *heading;
+    char *empty_text;
     bool omit_empty;
 };
 
@@ -44,6 +48,9 @@ typedef struct record_field {
     int64_t i;
     double d;
     double v[3];      /* RECORD_VEC3 */
+    double *reals;    /* RECORD_REAL_LIST */
+    uint64_t *uints;  /* RECORD_UINT_LIST */
+    size_t list_count;
     bool b;
     nmo_cli_record_array_t array; /* RECORD_ARRAY */
 } record_field_t;
@@ -116,11 +123,14 @@ static void field_dispose(record_field_t *field)
     free(field->text);
     free(field->name_key);
     free(field->str);
+    free(field->reals);
+    free(field->uints);
     for (size_t i = 0; i < field->array.count; ++i) {
         nmo_cli_record_free(field->array.items[i]);
     }
     free(field->array.items);
     free(field->array.heading);
+    free(field->array.empty_text);
     memset(field, 0, sizeof(*field));
 }
 
@@ -366,6 +376,62 @@ static bool record_ref_impl(nmo_cli_record_t *record, const char *id_key,
     return true;
 }
 
+bool nmo_cli_record_raw(nmo_cli_record_t *record, const char *text)
+{
+    record_field_t *field = field_append(record, RECORD_RAW, NULL, NULL);
+    if (!field) {
+        return false;
+    }
+    if (!set_str(&field->text, text ? text : "")) {
+        return field_fail(record);
+    }
+    return true;
+}
+
+bool nmo_cli_record_real_list(nmo_cli_record_t *record, const char *key,
+                              const char *label, const double *values,
+                              size_t count, const char *text)
+{
+    record_field_t *field = field_append(record, RECORD_REAL_LIST, key, label);
+    if (!field) {
+        return false;
+    }
+    if (count > 0u) {
+        field->reals = (double *)malloc(count * sizeof(double));
+        if (!field->reals || !values) {
+            return field_fail(record);
+        }
+        memcpy(field->reals, values, count * sizeof(double));
+    }
+    field->list_count = count;
+    if (text && !set_str(&field->text, text)) {
+        return field_fail(record);
+    }
+    return true;
+}
+
+bool nmo_cli_record_uint_list(nmo_cli_record_t *record, const char *key,
+                              const char *label, const uint64_t *values,
+                              size_t count, const char *text)
+{
+    record_field_t *field = field_append(record, RECORD_UINT_LIST, key, label);
+    if (!field) {
+        return false;
+    }
+    if (count > 0u) {
+        field->uints = (uint64_t *)malloc(count * sizeof(uint64_t));
+        if (!field->uints || !values) {
+            return field_fail(record);
+        }
+        memcpy(field->uints, values, count * sizeof(uint64_t));
+    }
+    field->list_count = count;
+    if (text && !set_str(&field->text, text)) {
+        return field_fail(record);
+    }
+    return true;
+}
+
 bool nmo_cli_record_ref(nmo_cli_record_t *record, const char *id_key,
                         const char *name_key, const char *label,
                         uint64_t id, const char *name, const char *none_text)
@@ -455,6 +521,15 @@ void nmo_cli_record_array_omit_empty(nmo_cli_record_array_t *array)
     }
 }
 
+bool nmo_cli_record_array_set_empty_text(nmo_cli_record_array_t *array,
+                                         const char *text)
+{
+    if (!array) {
+        return false;
+    }
+    return set_str(&array->empty_text, text);
+}
+
 bool nmo_cli_record_set_summary(nmo_cli_record_t *record, const char *text)
 {
     if (!record) {
@@ -509,6 +584,26 @@ bool nmo_cli_record_to_json(const nmo_cli_record_t *record,
                                                field->str);
             }
             break;
+        case RECORD_RAW:
+            break;
+        case RECORD_REAL_LIST: {
+            yyjson_mut_val *arr = yyjson_mut_arr(doc);
+            ok = arr != NULL;
+            for (size_t j = 0; ok && j < field->list_count; ++j) {
+                ok = yyjson_mut_arr_add_real(doc, arr, field->reals[j]);
+            }
+            ok = ok && nmo_cli_json_add_val_safe(doc, obj, field->key, arr);
+            break;
+        }
+        case RECORD_UINT_LIST: {
+            yyjson_mut_val *arr = yyjson_mut_arr(doc);
+            ok = arr != NULL;
+            for (size_t j = 0; ok && j < field->list_count; ++j) {
+                ok = yyjson_mut_arr_add_uint(doc, arr, field->uints[j]);
+            }
+            ok = ok && nmo_cli_json_add_val_safe(doc, obj, field->key, arr);
+            break;
+        }
         case RECORD_VEC3: {
             yyjson_mut_val *vec = yyjson_mut_obj(doc);
             ok = vec != NULL &&
@@ -553,6 +648,12 @@ void nmo_cli_record_print_kv(const nmo_cli_record_t *record, FILE *out,
     }
     for (size_t i = 0; i < record->count; ++i) {
         const record_field_t *field = &record->fields[i];
+        if (field->kind == RECORD_RAW) {
+            if (field->text) {
+                fputs(field->text, out);
+            }
+            continue;
+        }
         if (field->kind == RECORD_ARRAY) {
             if (!field->label && !field->array.heading) {
                 continue;
@@ -570,6 +671,9 @@ void nmo_cli_record_print_kv(const nmo_cli_record_t *record, FILE *out,
                 if (item && item->summary) {
                     fprintf(out, "%s\n", item->summary);
                 }
+            }
+            if (field->array.count == 0u && field->array.empty_text) {
+                fprintf(out, "%s\n", field->array.empty_text);
             }
             continue;
         }
@@ -589,7 +693,8 @@ size_t nmo_cli_record_cells(const nmo_cli_record_t *record,
     }
     for (size_t i = 0; i < record->count && n < capacity; ++i) {
         const record_field_t *field = &record->fields[i];
-        if (field->kind == RECORD_ARRAY || !field->label || !field->text) {
+        if (field->kind == RECORD_ARRAY || field->kind == RECORD_RAW ||
+            !field->label || !field->text) {
             continue;
         }
         cells[n++] = field->text;
