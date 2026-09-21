@@ -10,6 +10,7 @@
 #include "../nmo_cmd_core.h"
 #include "../nmo_cli_write.h"
 #include "../nmo_cli_output.h"
+#include "../nmo_cli_record.h"
 #include "../nmo_opt.h"
 #include "../nmo_tool_common.h"
 
@@ -111,86 +112,65 @@ static void argb_to_rgb_float(uint32_t argb, float *r, float *g, float *b) {
     *b = (float)((argb)       & 0xFF) / 255.0f;
 }
 
-typedef struct mesh_list_json_data {
-    yyjson_mut_doc *doc;
+typedef struct mesh_list_data {
+    yyjson_mut_doc *doc;    /* JSON sink when non-NULL */
     yyjson_mut_val *arr;
+    nmo_cli_table_t *table; /* text sink otherwise */
     uint32_t found;
-} mesh_list_json_data_t;
+} mesh_list_data_t;
 
-typedef struct mesh_list_table_data {
-    nmo_cli_table_t *table;
-    uint32_t found;
-} mesh_list_table_data_t;
-
-static int mesh_list_json_visitor(size_t index,
-                                  nmo_object_t *obj,
-                                  const nmo_cmd_ctx_t *c,
-                                  void *user)
+static bool mesh_list_build_record(nmo_object_t *obj, nmo_cli_record_t *rec)
 {
-    (void)index;
-    (void)c;
-    mesh_list_json_data_t *data = (mesh_list_json_data_t *)user;
-    if (obj == NULL || data == NULL || data->doc == NULL || data->arr == NULL) {
-        return 0;
-    }
-
-    yyjson_mut_doc *doc = data->doc;
-    yyjson_mut_val *item = yyjson_mut_obj(doc);
-    nmo_object_id_t id = nmo_object_get_id(obj);
-    yyjson_mut_obj_add_uint(doc, item, "id", id);
-
     const char *name = nmo_object_get_name(obj);
-    nmo_cli_json_add_str_safe(doc, item, "name",
-                              (name && name[0]) ? name : "");
+    bool ok = nmo_cli_record_uint(rec, "id", "ID", nmo_object_get_id(obj));
+    ok = ok && nmo_cli_record_str(rec, "name", "NAME", name);
+    if (ok && (!name || !name[0])) {
+        ok = nmo_cli_record_set_text(rec, "-");
+    }
 
     const nmo_mesh_state_t *ms =
         (const nmo_mesh_state_t *)nmo_object_get_state(obj);
     if (ms) {
-        yyjson_mut_obj_add_uint(doc, item, "vertices", ms->vertex_count);
-        yyjson_mut_obj_add_uint(doc, item, "faces", ms->face_count);
-        yyjson_mut_obj_add_uint(doc, item, "materials",
-                                ms->material_group_count);
+        ok = ok && nmo_cli_record_uint(rec, "vertices", "VERTICES", ms->vertex_count);
+        ok = ok && nmo_cli_record_uint(rec, "faces", "FACES", ms->face_count);
+        ok = ok && nmo_cli_record_uint(rec, "materials", "MATERIALS",
+                                       ms->material_group_count);
+    } else {
+        ok = ok && nmo_cli_record_text(rec, "VERTICES", "-");
+        ok = ok && nmo_cli_record_text(rec, "FACES", "-");
+        ok = ok && nmo_cli_record_text(rec, "MATERIALS", "-");
     }
-
-    yyjson_mut_arr_add_val(data->arr, item);
-    data->found++;
-    return 0;
+    return ok;
 }
 
-static int mesh_list_table_visitor(size_t index,
-                                   nmo_object_t *obj,
-                                   const nmo_cmd_ctx_t *c,
-                                   void *user)
+static int mesh_list_visitor(size_t index,
+                             nmo_object_t *obj,
+                             const nmo_cmd_ctx_t *c,
+                             void *user)
 {
     (void)index;
     (void)c;
-    mesh_list_table_data_t *data = (mesh_list_table_data_t *)user;
-    if (obj == NULL || data == NULL || data->table == NULL) {
+    mesh_list_data_t *data = (mesh_list_data_t *)user;
+    if (obj == NULL || data == NULL) {
         return 0;
     }
 
-    char id_buf[16];
-    snprintf(id_buf, sizeof(id_buf), "%u", nmo_object_get_id(obj));
-
-    const char *name = nmo_object_get_name(obj);
-    if (!name || !name[0]) name = "-";
-
-    char vert_buf[16], face_buf[16], mat_buf[16];
-
-    const nmo_mesh_state_t *ms =
-        (const nmo_mesh_state_t *)nmo_object_get_state(obj);
-    if (ms) {
-        snprintf(vert_buf, sizeof(vert_buf), "%u", ms->vertex_count);
-        snprintf(face_buf, sizeof(face_buf), "%u", ms->face_count);
-        snprintf(mat_buf, sizeof(mat_buf), "%u", ms->material_group_count);
-    } else {
-        snprintf(vert_buf, sizeof(vert_buf), "-");
-        snprintf(face_buf, sizeof(face_buf), "-");
-        snprintf(mat_buf, sizeof(mat_buf), "-");
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    if (!rec || !mesh_list_build_record(obj, rec)) {
+        nmo_cli_record_free(rec);
+        return 0;
     }
-
-    const char *cells[] = {id_buf, name, vert_buf, face_buf, mat_buf};
-    nmo_cli_table_add_row(data->table, cells, 5);
+    if (data->doc) {
+        yyjson_mut_val *item = yyjson_mut_obj(data->doc);
+        if (item && nmo_cli_record_to_json(rec, data->doc, item)) {
+            yyjson_mut_arr_add_val(data->arr, item);
+        }
+    } else if (data->table) {
+        const char *cells[5];
+        size_t n = nmo_cli_record_cells(rec, cells, 5);
+        nmo_cli_table_add_row(data->table, cells, n);
+    }
+    nmo_cli_record_free(rec);
     data->found++;
     return 0;
 }
@@ -211,14 +191,14 @@ int nmo_cmd_mesh_list(int argc, char **argv, const nmo_cli_global_opts_t *global
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
         yyjson_mut_val *arr = yyjson_mut_arr(doc);
-        mesh_list_json_data_t jd = { .doc = doc, .arr = arr };
+        mesh_list_data_t ld = { .doc = doc, .arr = arr };
         rc = nmo_core_object_query_run(&c, &query,
-                                       mesh_list_json_visitor, &jd, NULL);
+                                       mesh_list_visitor, &ld, NULL);
         if (rc != NMO_CLI_EXIT_SUCCESS) {
             return nmo_cmd_ctx_done(&c, rc);
         }
 
-        yyjson_mut_obj_add_uint(doc, data, "count", jd.found);
+        yyjson_mut_obj_add_uint(doc, data, "count", ld.found);
         yyjson_mut_obj_add_val(doc, data, "meshes", arr);
         nmo_cmd_ctx_json_end(&c, doc, data, "mesh.list");
     } else {
@@ -232,15 +212,15 @@ int nmo_cmd_mesh_list(int argc, char **argv, const nmo_cli_global_opts_t *global
 
         nmo_cli_table_t table;
         nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
-        mesh_list_table_data_t td = { .table = &table };
+        mesh_list_data_t ld = { .table = &table };
         rc = nmo_core_object_query_run(&c, &query,
-                                       mesh_list_table_visitor, &td, NULL);
+                                       mesh_list_visitor, &ld, NULL);
         if (rc != NMO_CLI_EXIT_SUCCESS) {
             nmo_cli_table_free(&table);
             return nmo_cmd_ctx_done(&c, rc);
         }
 
-        fprintf(c.out, "Meshes: %u\n\n", td.found);
+        fprintf(c.out, "Meshes: %u\n\n", ld.found);
         nmo_cli_table_print(&table, c.out, c.colorize);
         nmo_cli_table_free(&table);
     }
@@ -291,134 +271,88 @@ int nmo_cmd_mesh_show(int argc, char **argv, const nmo_cli_global_opts_t *global
     const nmo_mesh_state_t *ms =
         (const nmo_mesh_state_t *)nmo_object_get_state(obj);
 
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL;
+    char buf[128];
+    snprintf(buf, sizeof(buf), "#%u (%s)", obj_id,
+             (name && name[0]) ? name : "(unnamed)");
+    ok = ok && nmo_cli_record_uint(rec, "id", NULL, obj_id);
+    ok = ok && nmo_cli_record_str(rec, "name", NULL, name);
+    ok = ok && nmo_cli_record_text(rec, "ID / Name", buf);
 
-        yyjson_mut_obj_add_uint(doc, data, "id", obj_id);
-        nmo_cli_json_add_str_safe(doc, data, "name",
-                                  (name && name[0]) ? name : "");
-
-        if (ms) {
-            yyjson_mut_obj_add_uint(doc, data, "vertex_count", ms->vertex_count);
-            yyjson_mut_obj_add_uint(doc, data, "face_count", ms->face_count);
-            yyjson_mut_obj_add_uint(doc, data, "line_count", ms->line_count);
-            yyjson_mut_obj_add_uint(doc, data, "material_group_count",
-                                    ms->material_group_count);
-            yyjson_mut_obj_add_uint(doc, data, "flags", ms->flags);
-            yyjson_mut_obj_add_bool(doc, data, "has_progressive_mesh",
-                                    ms->has_progressive_mesh);
-            yyjson_mut_obj_add_real(doc, data, "radius", (double)ms->radius);
-
-            /* Bary center */
-            yyjson_mut_val *bc = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_real(doc, bc, "x", (double)ms->bary_center.x);
-            yyjson_mut_obj_add_real(doc, bc, "y", (double)ms->bary_center.y);
-            yyjson_mut_obj_add_real(doc, bc, "z", (double)ms->bary_center.z);
-            yyjson_mut_obj_add_val(doc, data, "bary_center", bc);
-
-            /* Bounding box */
-            yyjson_mut_val *bmin = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_real(doc, bmin, "x", (double)ms->local_box_min.x);
-            yyjson_mut_obj_add_real(doc, bmin, "y", (double)ms->local_box_min.y);
-            yyjson_mut_obj_add_real(doc, bmin, "z", (double)ms->local_box_min.z);
-            yyjson_mut_obj_add_val(doc, data, "local_box_min", bmin);
-
-            yyjson_mut_val *bmax = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_real(doc, bmax, "x", (double)ms->local_box_max.x);
-            yyjson_mut_obj_add_real(doc, bmax, "y", (double)ms->local_box_max.y);
-            yyjson_mut_obj_add_real(doc, bmax, "z", (double)ms->local_box_max.z);
-            yyjson_mut_obj_add_val(doc, data, "local_box_max", bmax);
-
-            /* Material groups */
-            if (ms->material_group_count > 0 && ms->material_groups) {
-                yyjson_mut_val *mats = yyjson_mut_arr(doc);
-                for (uint32_t gi = 0; gi < ms->material_group_count; ++gi) {
-                    yyjson_mut_val *mg = yyjson_mut_obj(doc);
-                    nmo_object_id_t mid =
-                        nmo_ref_runtime_id(&ms->material_groups[gi].material);
-                    yyjson_mut_obj_add_uint(doc, mg, "material_id", mid);
-                    const char *mname = resolve_name(&c, mid);
-                    if (mname && mname[0]) {
-                        nmo_cli_json_add_str_safe(doc, mg, "material_name", mname);
-                    }
-                    yyjson_mut_arr_add_val(mats, mg);
-                }
-                yyjson_mut_obj_add_val(doc, data, "material_groups", mats);
-            }
-        } else {
-            yyjson_mut_obj_add_null(doc, data, "state");
-        }
-
-        nmo_cmd_ctx_json_end(&c, doc, data, "mesh.show");
-    } else {
-        nmo_cli_print_heading(c.out, "Mesh Details", c.colorize);
-
-        char buf[128];
-        snprintf(buf, sizeof(buf), "#%u (%s)", obj_id,
-                 (name && name[0]) ? name : "(unnamed)");
-        nmo_cli_print_kv(c.out, "ID / Name", buf, 22, c.colorize);
-
-        if (!ms) {
-            fprintf(c.out, "\n  (no deserialized state)\n");
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
-        }
-
-        snprintf(buf, sizeof(buf), "%u", ms->vertex_count);
-        nmo_cli_print_kv(c.out, "Vertices", buf, 22, c.colorize);
-
-        snprintf(buf, sizeof(buf), "%u", ms->face_count);
-        nmo_cli_print_kv(c.out, "Faces", buf, 22, c.colorize);
-
-        snprintf(buf, sizeof(buf), "%u", ms->line_count);
-        nmo_cli_print_kv(c.out, "Lines", buf, 22, c.colorize);
-
-        snprintf(buf, sizeof(buf), "%u", ms->material_group_count);
-        nmo_cli_print_kv(c.out, "Material Groups", buf, 22, c.colorize);
-
+    if (ok && !ms) {
+        ok = nmo_cli_record_null(rec, "state", NULL, NULL);
+    } else if (ok) {
+        ok = nmo_cli_record_uint(rec, "vertex_count", "Vertices", ms->vertex_count);
+        ok = ok && nmo_cli_record_uint(rec, "face_count", "Faces", ms->face_count);
+        ok = ok && nmo_cli_record_uint(rec, "line_count", "Lines", ms->line_count);
+        ok = ok && nmo_cli_record_uint(rec, "material_group_count", "Material Groups",
+                                       ms->material_group_count);
+        ok = ok && nmo_cli_record_uint(rec, "flags", "Flags", ms->flags);
         snprintf(buf, sizeof(buf), "0x%08X", ms->flags);
-        nmo_cli_print_kv(c.out, "Flags", buf, 22, c.colorize);
+        ok = ok && nmo_cli_record_set_text(rec, buf);
+        ok = ok && nmo_cli_record_bool(rec, "has_progressive_mesh", "Progressive Mesh",
+                                       ms->has_progressive_mesh);
+        ok = ok && nmo_cli_record_set_text(rec, ms->has_progressive_mesh ? "yes" : "no");
+        ok = ok && nmo_cli_record_real(rec, "radius", "Radius", (double)ms->radius, "%.4f");
+        ok = ok && nmo_cli_record_vec3(rec, "bary_center", "Bary Center",
+                                       (double)ms->bary_center.x,
+                                       (double)ms->bary_center.y,
+                                       (double)ms->bary_center.z, "%.4f");
+        ok = ok && nmo_cli_record_vec3(rec, "local_box_min", "Local Box Min",
+                                       (double)ms->local_box_min.x,
+                                       (double)ms->local_box_min.y,
+                                       (double)ms->local_box_min.z, "%.4f");
+        ok = ok && nmo_cli_record_vec3(rec, "local_box_max", "Local Box Max",
+                                       (double)ms->local_box_max.x,
+                                       (double)ms->local_box_max.y,
+                                       (double)ms->local_box_max.z, "%.4f");
 
-        nmo_cli_print_kv(c.out, "Progressive Mesh",
-                         ms->has_progressive_mesh ? "yes" : "no", 22, c.colorize);
-
-        snprintf(buf, sizeof(buf), "%.4f", (double)ms->radius);
-        nmo_cli_print_kv(c.out, "Radius", buf, 22, c.colorize);
-
-        snprintf(buf, sizeof(buf), "(%.4f, %.4f, %.4f)",
-                 (double)ms->bary_center.x,
-                 (double)ms->bary_center.y,
-                 (double)ms->bary_center.z);
-        nmo_cli_print_kv(c.out, "Bary Center", buf, 22, c.colorize);
-
-        snprintf(buf, sizeof(buf), "(%.4f, %.4f, %.4f)",
-                 (double)ms->local_box_min.x,
-                 (double)ms->local_box_min.y,
-                 (double)ms->local_box_min.z);
-        nmo_cli_print_kv(c.out, "Local Box Min", buf, 22, c.colorize);
-
-        snprintf(buf, sizeof(buf), "(%.4f, %.4f, %.4f)",
-                 (double)ms->local_box_max.x,
-                 (double)ms->local_box_max.y,
-                 (double)ms->local_box_max.z);
-        nmo_cli_print_kv(c.out, "Local Box Max", buf, 22, c.colorize);
-
-        /* Material groups */
-        if (ms->material_group_count > 0 && ms->material_groups) {
-            fprintf(c.out, "\nMaterial Groups:\n");
-            for (uint32_t gi = 0; gi < ms->material_group_count; ++gi) {
+        if (ok && ms->material_group_count > 0 && ms->material_groups) {
+            nmo_cli_record_array_t *mats =
+                nmo_cli_record_array(rec, "material_groups", NULL);
+            ok = mats != NULL &&
+                 nmo_cli_record_array_set_heading(mats, "Material Groups:");
+            for (uint32_t gi = 0; ok && gi < ms->material_group_count; ++gi) {
                 nmo_object_id_t mid =
                     nmo_ref_runtime_id(&ms->material_groups[gi].material);
                 const char *mname = resolve_name(&c, mid);
+                char line[160];
                 if (mid && mname && mname[0]) {
-                    fprintf(c.out, "  [%u] #%u (%s)\n", gi, mid, mname);
+                    snprintf(line, sizeof(line), "  [%u] #%u (%s)", gi, mid, mname);
                 } else if (mid) {
-                    fprintf(c.out, "  [%u] #%u\n", gi, mid);
+                    snprintf(line, sizeof(line), "  [%u] #%u", gi, mid);
                 } else {
-                    fprintf(c.out, "  [%u] (none)\n", gi);
+                    snprintf(line, sizeof(line), "  [%u] (none)", gi);
                 }
+                nmo_cli_record_t *entry = nmo_cli_record_new();
+                ok = entry != NULL &&
+                     nmo_cli_record_ref(entry, "material_id", "material_name",
+                                        NULL, mid, mname, NULL) &&
+                     nmo_cli_record_set_summary(entry, line) &&
+                     nmo_cli_record_array_add(mats, entry);
             }
         }
+    }
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        fprintf(stderr, "Error: Out of memory while describing mesh %u\n", obj_id);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+    }
+
+    if (c.is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+        nmo_cli_record_to_json(rec, doc, data);
+        nmo_cli_record_free(rec);
+        nmo_cmd_ctx_json_end(&c, doc, data, "mesh.show");
+    } else {
+        nmo_cli_print_heading(c.out, "Mesh Details", c.colorize);
+        nmo_cli_record_print_kv(rec, c.out, 22, c.colorize);
+        if (!ms) {
+            fprintf(c.out, "\n  (no deserialized state)\n");
+        }
+        nmo_cli_record_free(rec);
     }
 
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
