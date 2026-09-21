@@ -551,6 +551,11 @@ TEST(probe_analyzer, analyzes_explicit_operation_value_flow)
     ASSERT_TRUE(nmo_guid_equals(
         CKPGUID_FLOAT, result.candidates[0].column_type_guid));
 
+    /* The data array state does not own this heap buffer. */
+    free(dataarray->column_formats);
+    dataarray->column_formats = NULL;
+    dataarray->column_count = 0u;
+
     nmo_probe_analysis_dispose(&result);
     probe_fixture_dispose(&fixture);
 }
