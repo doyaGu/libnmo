@@ -8,6 +8,7 @@
 #include "../nmo_cmd_ctx.h"
 #include "../nmo_cmd_core.h"
 #include "../nmo_cli_output.h"
+#include "../nmo_cli_record.h"
 #include "../nmo_cli_write.h"
 #include "../nmo_opt.h"
 #include "../nmo_tool_common.h"
@@ -41,16 +42,14 @@ static const char *fog_mode_str(uint32_t mode) {
     }
 }
 
-typedef struct scene_list_json_data {
+typedef struct scene_list_data {
+    /* JSON sink (when doc is non-NULL) */
     yyjson_mut_doc *doc;
     yyjson_mut_val *arr;
-    uint32_t found;
-} scene_list_json_data_t;
-
-typedef struct scene_list_table_data {
+    /* Text sink */
     nmo_cli_table_t *table;
     uint32_t found;
-} scene_list_table_data_t;
+} scene_list_data_t;
 
 static bool scene_list_query_predicate(const nmo_object_t *object, void *user_data) {
     (void)user_data;
@@ -62,122 +61,80 @@ static bool scene_list_query_predicate(const nmo_object_t *object, void *user_da
     return cid == NMO_CID_SCENE || cid == NMO_CID_LEVEL;
 }
 
-static int scene_list_json_visitor(size_t index,
-                                   nmo_object_t *obj,
-                                   const nmo_cmd_ctx_t *c,
-                                   void *user)
+/* One description of a scene/level row, rendered as JSON or as table cells. */
+static bool scene_list_build_record(const nmo_cmd_ctx_t *c,
+                                    nmo_object_t *obj,
+                                    nmo_cli_record_t *rec)
 {
-    (void)index;
-    scene_list_json_data_t *data = (scene_list_json_data_t *)user;
-    if (obj == NULL || data == NULL || data->doc == NULL || data->arr == NULL) {
-        return 0;
-    }
-
-    yyjson_mut_doc *doc = data->doc;
-    yyjson_mut_val *item = yyjson_mut_obj(doc);
     nmo_object_id_t id = nmo_object_get_id(obj);
     nmo_class_id_t cid = nmo_object_get_class_id(obj);
-    yyjson_mut_obj_add_uint(doc, item, "id", id);
-
     const char *class_name = nmo_core_class_name(c, cid);
-    if (class_name) {
-        yyjson_mut_obj_add_str(doc, item, "class", class_name);
-    }
-
     const char *name = nmo_object_get_name(obj);
-    nmo_cli_json_add_str_safe(doc, item, "name",
-                              (name && name[0]) ? name : "");
+
+    bool ok = nmo_cli_record_uint(rec, "id", "ID", id);
+    ok = ok && nmo_cli_record_str_opt(rec, "class", "CLASS", class_name, "-");
+    ok = ok && nmo_cli_record_str(rec, "name", "NAME", name);
+    if (ok && (!name || !name[0])) {
+        ok = nmo_cli_record_set_text(rec, "-");
+    }
 
     if (cid == NMO_CID_SCENE) {
         const nmo_scene_state_t *ss =
             (const nmo_scene_state_t *)nmo_object_get_state(obj);
         if (ss) {
-            yyjson_mut_obj_add_uint(doc, item, "object_count",
-                                    (uint64_t)ss->object_descs.count);
+            ok = ok && nmo_cli_record_uint(rec, "object_count", "OBJECTS",
+                                           (uint64_t)ss->object_descs.count);
             const nmo_object_id_t starting_camera_id =
                 nmo_ref_runtime_id(&ss->starting_camera);
-            if (starting_camera_id) {
-                yyjson_mut_obj_add_uint(doc, item, "starting_camera_id",
-                                        starting_camera_id);
-                const char *cam_name = resolve_name(c, starting_camera_id);
-                if (cam_name && cam_name[0]) {
-                    nmo_cli_json_add_str_safe(doc, item, "starting_camera", cam_name);
-                }
-            }
+            ok = ok && nmo_cli_record_ref_opt(
+                rec, "starting_camera_id", "starting_camera", "CAMERA",
+                starting_camera_id, resolve_name(c, starting_camera_id), "-");
+        } else {
+            ok = ok && nmo_cli_record_text(rec, "OBJECTS", "-");
+            ok = ok && nmo_cli_record_text(rec, "CAMERA", "-");
         }
     } else {
         const nmo_level_state_t *ls =
             (const nmo_level_state_t *)nmo_object_get_state(obj);
         if (ls) {
-            yyjson_mut_obj_add_uint(doc, item, "scene_count",
-                                    (uint64_t)ls->scene_ids.count);
+            ok = ok && nmo_cli_record_uint(rec, "scene_count", "OBJECTS",
+                                           (uint64_t)ls->scene_ids.count);
+        } else {
+            ok = ok && nmo_cli_record_text(rec, "OBJECTS", "-");
         }
+        ok = ok && nmo_cli_record_text(rec, "CAMERA", "-");
     }
-
-    yyjson_mut_arr_add_val(data->arr, item);
-    data->found++;
-    return 0;
+    return ok;
 }
 
-static int scene_list_table_visitor(size_t index,
-                                    nmo_object_t *obj,
-                                    const nmo_cmd_ctx_t *c,
-                                    void *user)
+static int scene_list_visitor(size_t index,
+                              nmo_object_t *obj,
+                              const nmo_cmd_ctx_t *c,
+                              void *user)
 {
     (void)index;
-    scene_list_table_data_t *data = (scene_list_table_data_t *)user;
-    if (obj == NULL || data == NULL || data->table == NULL) {
+    scene_list_data_t *data = (scene_list_data_t *)user;
+    if (obj == NULL || data == NULL) {
         return 0;
     }
 
-    char id_buf[16];
-    snprintf(id_buf, sizeof(id_buf), "%u", nmo_object_get_id(obj));
-
-    nmo_class_id_t cid = nmo_object_get_class_id(obj);
-    const char *class_name = nmo_core_class_name(c, cid);
-    if (!class_name) class_name = "-";
-
-    const char *name = nmo_object_get_name(obj);
-    if (!name || !name[0]) name = "-";
-
-    char obj_count_buf[16];
-    char camera_buf[64];
-    snprintf(camera_buf, sizeof(camera_buf), "-");
-
-    if (cid == NMO_CID_SCENE) {
-        const nmo_scene_state_t *ss =
-            (const nmo_scene_state_t *)nmo_object_get_state(obj);
-        if (ss) {
-            snprintf(obj_count_buf, sizeof(obj_count_buf), "%zu",
-                     ss->object_descs.count);
-            const nmo_object_id_t starting_camera_id =
-                nmo_ref_runtime_id(&ss->starting_camera);
-            if (starting_camera_id) {
-                const char *cam_name = resolve_name(c, starting_camera_id);
-                if (cam_name && cam_name[0]) {
-                    snprintf(camera_buf, sizeof(camera_buf), "#%u (%s)",
-                             starting_camera_id, cam_name);
-                } else {
-                    snprintf(camera_buf, sizeof(camera_buf), "#%u",
-                             starting_camera_id);
-                }
-            }
-        } else {
-            snprintf(obj_count_buf, sizeof(obj_count_buf), "-");
-        }
-    } else {
-        const nmo_level_state_t *ls =
-            (const nmo_level_state_t *)nmo_object_get_state(obj);
-        if (ls) {
-            snprintf(obj_count_buf, sizeof(obj_count_buf), "%zu",
-                     ls->scene_ids.count);
-        } else {
-            snprintf(obj_count_buf, sizeof(obj_count_buf), "-");
-        }
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    if (!rec || !scene_list_build_record(c, obj, rec)) {
+        nmo_cli_record_free(rec);
+        return 0;
     }
 
-    const char *cells[] = {id_buf, class_name, name, obj_count_buf, camera_buf};
-    nmo_cli_table_add_row(data->table, cells, 5);
+    if (data->doc) {
+        yyjson_mut_val *item = yyjson_mut_obj(data->doc);
+        if (item && nmo_cli_record_to_json(rec, data->doc, item)) {
+            yyjson_mut_arr_add_val(data->arr, item);
+        }
+    } else if (data->table) {
+        const char *cells[5];
+        size_t n = nmo_cli_record_cells(rec, cells, 5);
+        nmo_cli_table_add_row(data->table, cells, n);
+    }
+    nmo_cli_record_free(rec);
     data->found++;
     return 0;
 }
@@ -191,14 +148,14 @@ static int scene_list_run(nmo_cmd_ctx_t *c) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
         yyjson_mut_val *arr = yyjson_mut_arr(doc);
-        scene_list_json_data_t jd = { .doc = doc, .arr = arr };
+        scene_list_data_t ld = { .doc = doc, .arr = arr };
         int rc = nmo_core_object_query_run(c, &query,
-                                           scene_list_json_visitor, &jd, NULL);
+                                           scene_list_visitor, &ld, NULL);
         if (rc != NMO_CLI_EXIT_SUCCESS) {
             return rc;
         }
 
-        yyjson_mut_obj_add_uint(doc, data, "count", jd.found);
+        yyjson_mut_obj_add_uint(doc, data, "count", ld.found);
         yyjson_mut_obj_add_val(doc, data, "scenes", arr);
         nmo_cmd_ctx_json_end(c, doc, data, "scene.list");
     } else {
@@ -212,15 +169,15 @@ static int scene_list_run(nmo_cmd_ctx_t *c) {
 
         nmo_cli_table_t table;
         nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
-        scene_list_table_data_t td = { .table = &table };
+        scene_list_data_t ld = { .table = &table };
         int rc = nmo_core_object_query_run(c, &query,
-                                           scene_list_table_visitor, &td, NULL);
+                                           scene_list_visitor, &ld, NULL);
         if (rc != NMO_CLI_EXIT_SUCCESS) {
             nmo_cli_table_free(&table);
             return rc;
         }
 
-        fprintf(c->out, "Scenes/Levels: %u\n\n", td.found);
+        fprintf(c->out, "Scenes/Levels: %u\n\n", ld.found);
         nmo_cli_table_print(&table, c->out, c->colorize);
         nmo_cli_table_free(&table);
     }
@@ -290,6 +247,97 @@ static int scene_show_parse(int argc,
     return NMO_CLI_EXIT_SUCCESS;
 }
 
+/* Fields shared by scene and level detail views. */
+static bool scene_show_build_header(const nmo_cmd_ctx_t *c,
+                                    nmo_cli_record_t *rec,
+                                    nmo_object_id_t obj_id,
+                                    const char *name,
+                                    const char *class_name)
+{
+    char buf[128];
+    snprintf(buf, sizeof(buf), "#%u (%s)", obj_id,
+             (name && name[0]) ? name : "(unnamed)");
+    (void)c;
+    bool ok = nmo_cli_record_uint(rec, "id", NULL, obj_id);
+    ok = ok && nmo_cli_record_str(rec, "name", NULL, name);
+    ok = ok && nmo_cli_record_text(rec, "ID / Name", buf);
+    ok = ok && nmo_cli_record_str_opt(rec, "class", "Class", class_name, "-");
+    return ok;
+}
+
+static bool scene_show_build_scene(const nmo_cmd_ctx_t *c,
+                                   nmo_cli_record_t *rec,
+                                   const nmo_scene_state_t *ss)
+{
+    char buf[32];
+    bool ok = nmo_cli_record_hex32(rec, "background_color", "Background Color",
+                                   ss->background_color);
+    ok = ok && nmo_cli_record_hex32(rec, "ambient_light_color", "Ambient Light",
+                                    ss->ambient_light_color);
+    ok = ok && nmo_cli_record_str(rec, "fog_mode", "Fog Mode",
+                                  fog_mode_str(ss->fog_mode));
+    ok = ok && nmo_cli_record_hex32(rec, "fog_color", "Fog Color", ss->fog_color);
+    ok = ok && nmo_cli_record_real(rec, "fog_start", "Fog Start",
+                                   (double)ss->fog_start, "%.3f");
+    ok = ok && nmo_cli_record_real(rec, "fog_end", "Fog End",
+                                   (double)ss->fog_end, "%.3f");
+    ok = ok && nmo_cli_record_real(rec, "fog_density", "Fog Density",
+                                   (double)ss->fog_density, "%.6g");
+
+    const nmo_object_id_t starting_camera_id =
+        nmo_ref_runtime_id(&ss->starting_camera);
+    ok = ok && nmo_cli_record_ref(rec, "starting_camera_id", "starting_camera",
+                                  "Starting Camera", starting_camera_id,
+                                  resolve_name(c, starting_camera_id), "(none)");
+
+    ok = ok && nmo_cli_record_uint(rec, "environment_settings", "Env Settings",
+                                   ss->environment_settings);
+    snprintf(buf, sizeof(buf), "0x%08X", ss->environment_settings);
+    ok = ok && nmo_cli_record_set_text(rec, buf);
+    ok = ok && nmo_cli_record_uint(rec, "object_count", "Objects",
+                                   (uint64_t)ss->object_descs.count);
+    return ok;
+}
+
+static bool scene_show_build_level(const nmo_cmd_ctx_t *c,
+                                   nmo_cli_record_t *rec,
+                                   const nmo_level_state_t *ls)
+{
+    const nmo_object_id_t current_scene_id =
+        nmo_ref_runtime_id(&ls->current_scene);
+    bool ok = nmo_cli_record_ref(rec, "current_scene_id", "current_scene",
+                                 "Current Scene", current_scene_id,
+                                 resolve_name(c, current_scene_id), "(none)");
+
+    const nmo_object_id_t level_scene_id =
+        nmo_ref_runtime_id(&ls->level_scene);
+    ok = ok && nmo_cli_record_ref(rec, "level_scene_id", "level_scene",
+                                  "Level Scene", level_scene_id,
+                                  resolve_name(c, level_scene_id), "(none)");
+
+    nmo_cli_record_array_t *scenes = nmo_cli_record_array(rec, "scenes", "Scenes");
+    ok = ok && scenes != NULL;
+    const nmo_ref_t *refs = NMO_ARRAY_DATA(nmo_ref_t, &ls->scene_ids);
+    for (size_t i = 0; ok && i < ls->scene_ids.count; ++i) {
+        const nmo_object_id_t id = nmo_ref_runtime_id(&refs[i]);
+        if (id == NMO_OBJECT_ID_NONE) continue;
+        nmo_cli_record_t *entry = nmo_cli_record_new();
+        const char *sn = resolve_name(c, id);
+        char line[160];
+        if (sn && sn[0]) {
+            snprintf(line, sizeof(line), "  [%zu] #%u (%s)", i, id, sn);
+        } else {
+            snprintf(line, sizeof(line), "  [%zu] #%u", i, id);
+        }
+        ok = entry != NULL &&
+             nmo_cli_record_uint(entry, "id", NULL, id) &&
+             nmo_cli_record_str_opt(entry, "name", NULL, sn, NULL) &&
+             nmo_cli_record_set_summary(entry, line) &&
+             nmo_cli_record_array_add(scenes, entry);
+    }
+    return ok;
+}
+
 static int scene_show_run(nmo_cmd_ctx_t *c, const scene_show_args_t *args) {
     nmo_object_t *obj = NULL;
     nmo_object_id_t obj_id = 0;
@@ -308,236 +356,41 @@ static int scene_show_run(nmo_cmd_ctx_t *c, const scene_show_args_t *args) {
 
     const char *name = nmo_object_get_name(obj);
     const char *class_name = nmo_core_class_name(c, class_id);
+    const void *state = nmo_object_get_state(obj);
+    const bool is_scene = class_id == NMO_CID_SCENE;
 
-    if (class_id == NMO_CID_SCENE) {
-        const nmo_scene_state_t *ss =
-            (const nmo_scene_state_t *)nmo_object_get_state(obj);
-
-        if (c->is_json) {
-            yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
-            yyjson_mut_val *data = yyjson_mut_obj(doc);
-
-            yyjson_mut_obj_add_uint(doc, data, "id", obj_id);
-            nmo_cli_json_add_str_safe(doc, data, "name",
-                                      (name && name[0]) ? name : "");
-            if (class_name)
-                yyjson_mut_obj_add_str(doc, data, "class", class_name);
-
-            if (ss) {
-                char color_buf[16];
-
-                snprintf(color_buf, sizeof(color_buf), "0x%08X", ss->background_color);
-                yyjson_mut_obj_add_strcpy(doc, data, "background_color", color_buf);
-
-                snprintf(color_buf, sizeof(color_buf), "0x%08X", ss->ambient_light_color);
-                yyjson_mut_obj_add_strcpy(doc, data, "ambient_light_color", color_buf);
-
-                yyjson_mut_obj_add_str(doc, data, "fog_mode",
-                                       fog_mode_str(ss->fog_mode));
-                snprintf(color_buf, sizeof(color_buf), "0x%08X", ss->fog_color);
-                yyjson_mut_obj_add_strcpy(doc, data, "fog_color", color_buf);
-                yyjson_mut_obj_add_real(doc, data, "fog_start", (double)ss->fog_start);
-                yyjson_mut_obj_add_real(doc, data, "fog_end", (double)ss->fog_end);
-                yyjson_mut_obj_add_real(doc, data, "fog_density", (double)ss->fog_density);
-
-                const nmo_object_id_t starting_camera_id =
-                    nmo_ref_runtime_id(&ss->starting_camera);
-                yyjson_mut_obj_add_uint(doc, data, "starting_camera_id",
-                                        starting_camera_id);
-                const char *cam_name = resolve_name(c, starting_camera_id);
-                if (cam_name && cam_name[0]) {
-                    nmo_cli_json_add_str_safe(doc, data, "starting_camera", cam_name);
-                }
-
-                yyjson_mut_obj_add_uint(doc, data, "environment_settings",
-                                        ss->environment_settings);
-                yyjson_mut_obj_add_uint(doc, data, "object_count",
-                                        (uint64_t)ss->object_descs.count);
-            } else {
-                yyjson_mut_obj_add_null(doc, data, "state");
-            }
-
-            nmo_cmd_ctx_json_end(c, doc, data, "scene.show");
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec && scene_show_build_header(c, rec, obj_id, name, class_name);
+    if (ok) {
+        if (!state) {
+            ok = nmo_cli_record_null(rec, "state", NULL, NULL);
+        } else if (is_scene) {
+            ok = scene_show_build_scene(c, rec, (const nmo_scene_state_t *)state);
         } else {
-            nmo_cli_print_heading(c->out, "Scene Details", c->colorize);
-
-            char buf[128];
-            snprintf(buf, sizeof(buf), "#%u (%s)", obj_id,
-                     (name && name[0]) ? name : "(unnamed)");
-            nmo_cli_print_kv(c->out, "ID / Name", buf, 20, c->colorize);
-
-            snprintf(buf, sizeof(buf), "%s", class_name ? class_name : "-");
-            nmo_cli_print_kv(c->out, "Class", buf, 20, c->colorize);
-
-            if (!ss) {
-                fprintf(c->out, "\n  (no deserialized state)\n");
-                return NMO_CLI_EXIT_SUCCESS;
-            }
-
-            snprintf(buf, sizeof(buf), "0x%08X", ss->background_color);
-            nmo_cli_print_kv(c->out, "Background Color", buf, 20, c->colorize);
-
-            snprintf(buf, sizeof(buf), "0x%08X", ss->ambient_light_color);
-            nmo_cli_print_kv(c->out, "Ambient Light", buf, 20, c->colorize);
-
-            snprintf(buf, sizeof(buf), "%s", fog_mode_str(ss->fog_mode));
-            nmo_cli_print_kv(c->out, "Fog Mode", buf, 20, c->colorize);
-
-            snprintf(buf, sizeof(buf), "0x%08X", ss->fog_color);
-            nmo_cli_print_kv(c->out, "Fog Color", buf, 20, c->colorize);
-
-            snprintf(buf, sizeof(buf), "%.3f", (double)ss->fog_start);
-            nmo_cli_print_kv(c->out, "Fog Start", buf, 20, c->colorize);
-
-            snprintf(buf, sizeof(buf), "%.3f", (double)ss->fog_end);
-            nmo_cli_print_kv(c->out, "Fog End", buf, 20, c->colorize);
-
-            snprintf(buf, sizeof(buf), "%.6g", (double)ss->fog_density);
-            nmo_cli_print_kv(c->out, "Fog Density", buf, 20, c->colorize);
-
-            const nmo_object_id_t starting_camera_id =
-                nmo_ref_runtime_id(&ss->starting_camera);
-            if (starting_camera_id) {
-                const char *cam_name = resolve_name(c, starting_camera_id);
-                if (cam_name && cam_name[0]) {
-                    snprintf(buf, sizeof(buf), "#%u (%s)",
-                             starting_camera_id, cam_name);
-                } else {
-                    snprintf(buf, sizeof(buf), "#%u", starting_camera_id);
-                }
-            } else {
-                snprintf(buf, sizeof(buf), "(none)");
-            }
-            nmo_cli_print_kv(c->out, "Starting Camera", buf, 20, c->colorize);
-
-            snprintf(buf, sizeof(buf), "0x%08X", ss->environment_settings);
-            nmo_cli_print_kv(c->out, "Env Settings", buf, 20, c->colorize);
-
-            snprintf(buf, sizeof(buf), "%zu", ss->object_descs.count);
-            nmo_cli_print_kv(c->out, "Objects", buf, 20, c->colorize);
-        }
-    } else { /* NMO_CID_LEVEL */
-        const nmo_level_state_t *ls =
-            (const nmo_level_state_t *)nmo_object_get_state(obj);
-
-        if (c->is_json) {
-            yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
-            yyjson_mut_val *data = yyjson_mut_obj(doc);
-
-            yyjson_mut_obj_add_uint(doc, data, "id", obj_id);
-            nmo_cli_json_add_str_safe(doc, data, "name",
-                                      (name && name[0]) ? name : "");
-            if (class_name)
-                yyjson_mut_obj_add_str(doc, data, "class", class_name);
-
-            if (ls) {
-                const nmo_object_id_t current_scene_id =
-                    nmo_ref_runtime_id(&ls->current_scene);
-                yyjson_mut_obj_add_uint(doc, data, "current_scene_id",
-                                        current_scene_id);
-                const char *cur_name = resolve_name(c, current_scene_id);
-                if (cur_name && cur_name[0]) {
-                    nmo_cli_json_add_str_safe(doc, data, "current_scene", cur_name);
-                }
-
-                const nmo_object_id_t level_scene_id =
-                    nmo_ref_runtime_id(&ls->level_scene);
-                yyjson_mut_obj_add_uint(doc, data, "level_scene_id",
-                                        level_scene_id);
-                const char *lvl_name = resolve_name(c, level_scene_id);
-                if (lvl_name && lvl_name[0]) {
-                    nmo_cli_json_add_str_safe(doc, data, "level_scene", lvl_name);
-                }
-
-                yyjson_mut_val *scene_arr = yyjson_mut_arr(doc);
-                const nmo_ref_t *refs = NMO_ARRAY_DATA(
-                    nmo_ref_t, &ls->scene_ids);
-                for (size_t i = 0; i < ls->scene_ids.count; ++i) {
-                    const nmo_object_id_t id = nmo_ref_runtime_id(&refs[i]);
-                    if (id == NMO_OBJECT_ID_NONE) continue;
-                    yyjson_mut_val *entry = yyjson_mut_obj(doc);
-                    yyjson_mut_obj_add_uint(doc, entry, "id", id);
-                    const char *sn = resolve_name(c, id);
-                    if (sn && sn[0]) {
-                        nmo_cli_json_add_str_safe(doc, entry, "name", sn);
-                    }
-                    yyjson_mut_arr_add_val(scene_arr, entry);
-                }
-                yyjson_mut_obj_add_val(doc, data, "scenes", scene_arr);
-            } else {
-                yyjson_mut_obj_add_null(doc, data, "state");
-            }
-
-            nmo_cmd_ctx_json_end(c, doc, data, "scene.show");
-        } else {
-            nmo_cli_print_heading(c->out, "Level Details", c->colorize);
-
-            char buf[128];
-            snprintf(buf, sizeof(buf), "#%u (%s)", obj_id,
-                     (name && name[0]) ? name : "(unnamed)");
-            nmo_cli_print_kv(c->out, "ID / Name", buf, 20, c->colorize);
-
-            snprintf(buf, sizeof(buf), "%s", class_name ? class_name : "-");
-            nmo_cli_print_kv(c->out, "Class", buf, 20, c->colorize);
-
-            if (!ls) {
-                fprintf(c->out, "\n  (no deserialized state)\n");
-                return NMO_CLI_EXIT_SUCCESS;
-            }
-
-            const nmo_object_id_t current_scene_id =
-                nmo_ref_runtime_id(&ls->current_scene);
-            if (current_scene_id) {
-                const char *sn = resolve_name(c, current_scene_id);
-                if (sn && sn[0]) {
-                    snprintf(buf, sizeof(buf), "#%u (%s)",
-                             current_scene_id, sn);
-                } else {
-                    snprintf(buf, sizeof(buf), "#%u", current_scene_id);
-                }
-            } else {
-                snprintf(buf, sizeof(buf), "(none)");
-            }
-            nmo_cli_print_kv(c->out, "Current Scene", buf, 20, c->colorize);
-
-            const nmo_object_id_t level_scene_id =
-                nmo_ref_runtime_id(&ls->level_scene);
-            if (level_scene_id) {
-                const char *sn = resolve_name(c, level_scene_id);
-                if (sn && sn[0]) {
-                    snprintf(buf, sizeof(buf), "#%u (%s)",
-                             level_scene_id, sn);
-                } else {
-                    snprintf(buf, sizeof(buf), "#%u", level_scene_id);
-                }
-            } else {
-                snprintf(buf, sizeof(buf), "(none)");
-            }
-            nmo_cli_print_kv(c->out, "Level Scene", buf, 20, c->colorize);
-
-            /* Scene list */
-            size_t valid_scene_count = 0;
-            const nmo_ref_t *refs = NMO_ARRAY_DATA(
-                nmo_ref_t, &ls->scene_ids);
-            for (size_t i = 0; i < ls->scene_ids.count; ++i) {
-                if (nmo_ref_runtime_id(&refs[i]) != NMO_OBJECT_ID_NONE) {
-                    valid_scene_count++;
-                }
-            }
-            fprintf(c->out, "\nScenes (%zu):\n", valid_scene_count);
-            for (size_t i = 0; i < ls->scene_ids.count; ++i) {
-                const nmo_object_id_t id = nmo_ref_runtime_id(&refs[i]);
-                if (id == NMO_OBJECT_ID_NONE) continue;
-                const char *sn = resolve_name(c, id);
-                if (sn && sn[0]) {
-                    fprintf(c->out, "  [%zu] #%u (%s)\n", i, id, sn);
-                } else {
-                    fprintf(c->out, "  [%zu] #%u\n", i, id);
-                }
-            }
+            ok = scene_show_build_level(c, rec, (const nmo_level_state_t *)state);
         }
     }
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        fprintf(stderr, "Error: Out of memory while describing object %u\n", obj_id);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
 
+    if (c->is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+        nmo_cli_record_to_json(rec, doc, data);
+        nmo_cli_record_free(rec);
+        return nmo_cmd_ctx_json_end(c, doc, data, "scene.show");
+    }
+
+    nmo_cli_print_heading(c->out, is_scene ? "Scene Details" : "Level Details",
+                          c->colorize);
+    nmo_cli_record_print_kv(rec, c->out, 20, c->colorize);
+    if (!state) {
+        fprintf(c->out, "\n  (no deserialized state)\n");
+    }
+    nmo_cli_record_free(rec);
     return NMO_CLI_EXIT_SUCCESS;
 }
 
