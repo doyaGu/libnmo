@@ -134,7 +134,7 @@ static nmo_status_t optional_seek_identifier(
     }
 
     nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
-    nmo_chunk_parser_state_t saved_state;
+    nmo_chunk_parser_state_t saved_state = {0};
     if (state) {
         saved_state = *state;
     }
