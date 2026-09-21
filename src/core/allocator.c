@@ -16,7 +16,7 @@ static void *default_alloc(void *user_data, size_t size, size_t alignment) {
     }
 
     if (alignment == 0) {
-        alignment = alignof(max_align_t);
+        alignment = NMO_MAX_ALIGN;
     }
 
     if (!NMO_IS_POWER_OF_TWO(alignment)) {
@@ -94,7 +94,7 @@ void *nmo_alloc(nmo_allocator_t *allocator, size_t size, size_t alignment) {
         return NULL;
     }
     if (alignment == 0) {
-        alignment = alignof(max_align_t);
+        alignment = NMO_MAX_ALIGN;
     }
     if (!NMO_IS_POWER_OF_TWO(alignment)) {
         return NULL;
@@ -132,7 +132,7 @@ static void *tracking_alloc(void *user_data, size_t size, size_t alignment) {
     }
 
     if (alignment == 0) {
-        alignment = alignof(max_align_t);
+        alignment = NMO_MAX_ALIGN;
     }
 
     if (!NMO_IS_POWER_OF_TWO(alignment)) {
@@ -145,7 +145,7 @@ static void *tracking_alloc(void *user_data, size_t size, size_t alignment) {
     }
     size_t total = size + header_size + (alignment - 1);
 
-    void *raw = tracking->base.alloc(tracking->base.user_data, total, alignof(max_align_t));
+    void *raw = tracking->base.alloc(tracking->base.user_data, total, NMO_MAX_ALIGN);
     if (raw == NULL) {
         return NULL;
     }
@@ -211,7 +211,7 @@ static void *debug_alloc(void *user_data, size_t size, size_t alignment) {
     }
 
     if (alignment == 0) {
-        alignment = alignof(max_align_t);
+        alignment = NMO_MAX_ALIGN;
     }
 
     if (!NMO_IS_POWER_OF_TWO(alignment)) {
@@ -224,7 +224,7 @@ static void *debug_alloc(void *user_data, size_t size, size_t alignment) {
     }
     size_t total = size + header_size + (alignment - 1);
 
-    void *raw = debug->base.alloc(debug->base.user_data, total, alignof(max_align_t));
+    void *raw = debug->base.alloc(debug->base.user_data, total, NMO_MAX_ALIGN);
     if (raw == NULL) {
         return NULL;
     }

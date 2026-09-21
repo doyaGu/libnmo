@@ -2,6 +2,14 @@
 #define NMO_TYPES_H
 
 #include <stdint.h>
+
+/* Maximum fundamental alignment. MSVC does not provide max_align_t when
+ * compiling C, so fall back to the 16-byte alignment its allocator gives. */
+#if defined(_MSC_VER) && !defined(__cplusplus)
+#define NMO_MAX_ALIGN ((size_t)16)
+#else
+#define NMO_MAX_ALIGN _Alignof(max_align_t)
+#endif
 #include <stddef.h>
 #include <stdbool.h>
 

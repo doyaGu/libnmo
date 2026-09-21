@@ -143,7 +143,7 @@ static void *diff_alloc(nmo_allocator_t *allocator, size_t size, size_t alignmen
 {
     if (!allocator || !allocator->alloc || !allocator->free || size == 0) return NULL;
 
-    if (alignment == 0) alignment = _Alignof(max_align_t);
+    if (alignment == 0) alignment = NMO_MAX_ALIGN;
     if (!diff_is_pow2(alignment)) return NULL;
 
     size_t hdr = sizeof(diff_alloc_header_t);
@@ -151,7 +151,7 @@ static void *diff_alloc(nmo_allocator_t *allocator, size_t size, size_t alignmen
     if (size > SIZE_MAX - hdr - extra) return NULL;
     size_t total = size + hdr + extra;
 
-    void *raw = nmo_alloc(allocator, total, _Alignof(max_align_t));
+    void *raw = nmo_alloc(allocator, total, NMO_MAX_ALIGN);
     if (!raw) return NULL;
 
     uintptr_t start = (uintptr_t)raw + hdr;

@@ -974,7 +974,7 @@ nmo_status_t nmo_type_registry_finalize_struct(
             void *default_copy = nmo_alloc(
                 &type_registry->type_allocator,
                 total_field_size,
-                _Alignof(max_align_t));
+                NMO_MAX_ALIGN);
             if (!default_copy) {
                 free_heap_type_fields(&type_registry->type_allocator, type_fields, i + 1u);
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,

@@ -1521,7 +1521,7 @@ static nmo_status_t nmo_interface_copy_array(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "Interface copy size overflow for %s", label);
     }
-    void *copy = nmo_arena_alloc(arena, elem_size * count, alignof(max_align_t));
+    void *copy = nmo_arena_alloc(arena, elem_size * count, NMO_MAX_ALIGN);
     if (!copy) {
         NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                          "Cannot allocate %s for interface copy", label);

@@ -1529,7 +1529,7 @@ nmo_status_t nmo_type_registry_register(
                 void *default_copy = nmo_alloc(
                     &registry->type_allocator,
                     fields_copy[i].size,
-                    _Alignof(max_align_t));
+                    NMO_MAX_ALIGN);
                 if (!default_copy) {
                     free_type_storage(registry, type, NMO_TYPE_ID_INVALID);
                     return NMO_ERR_NOMEM;

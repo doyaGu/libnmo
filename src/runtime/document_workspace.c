@@ -2031,7 +2031,7 @@ nmo_status_t nmo_session_set_file_header(
     void *stored_header = nmo_arena_alloc(
         session->arena,
         header_size,
-        alignof(max_align_t)
+        NMO_MAX_ALIGN
     );
     
     if (stored_header == NULL) {

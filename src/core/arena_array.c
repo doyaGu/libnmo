@@ -17,7 +17,7 @@
  * wasting too much space in small arenas.  We do NOT scale with element_size
  * because we only know the size, not the required type alignment. */
 #define NMO_ARENA_ARRAY_ALIGN ((size_t)( \
-    alignof(max_align_t) > 16u ? 16u : alignof(max_align_t)))
+    NMO_MAX_ALIGN > 16u ? 16u : NMO_MAX_ALIGN))
 
 static void nmo_arena_array_copy_range(nmo_arena_array_t *array,
                                        uint8_t *dest,
