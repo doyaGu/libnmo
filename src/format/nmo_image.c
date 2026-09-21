@@ -351,8 +351,8 @@ static void decode_dxt1_block(const uint8_t *src,
                                int dest_stride,
                                int bw, int bh,
                                bool has_alpha) {
-    uint16_t c0 = (uint16_t)src[0] | ((uint16_t)src[1] << 8);
-    uint16_t c1 = (uint16_t)src[2] | ((uint16_t)src[3] << 8);
+    uint16_t c0 = (uint16_t)(src[0] | (src[1] << 8));
+    uint16_t c1 = (uint16_t)(src[2] | (src[3] << 8));
 
     uint8_t colors[4][4]; /* [index][R,G,B,A] */
 
@@ -408,7 +408,7 @@ static void decode_dxt3_alpha_block(const uint8_t *src,
     for (int y = 0; y < bh; y++) {
         uint8_t *row = dest + y * dest_stride;
         /* 2 bytes per row of 4 pixels, each nibble is one alpha */
-        uint16_t row_alpha = (uint16_t)src[y * 2] | ((uint16_t)src[y * 2 + 1] << 8);
+        uint16_t row_alpha = (uint16_t)(src[y * 2] | (src[y * 2 + 1] << 8));
         for (int x = 0; x < bw; x++) {
             uint32_t a4 = (row_alpha >> (x * 4)) & 0xFu;
             /* Expand 4-bit to 8-bit: a * 255 / 15 = a * 17 */

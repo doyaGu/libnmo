@@ -232,11 +232,11 @@ void nmo_stats_print(
     fprintf(output, "\nMemory:\n");
     fprintf(output, "  Total Size:      %zu bytes (%.2f KB)\n", 
            stats->memory.total_size,
-           stats->memory.total_size / 1024.0);
+           (double)stats->memory.total_size / 1024.0);
     fprintf(output, "  Header Size:     %zu bytes\n", stats->memory.header_size);
     fprintf(output, "  Data Size:       %zu bytes (%.2f KB)\n",
            stats->memory.data_size,
-           stats->memory.data_size / 1024.0);
+           (double)stats->memory.data_size / 1024.0);
     fprintf(output, "  Chunk Data:      %zu bytes\n", stats->memory.chunk_data_size);
     fprintf(output, "  Chunk Overhead:  %zu bytes\n", stats->memory.chunk_overhead);
     fprintf(output, "  Compression:     %zu%%\n", stats->memory.compression_ratio);
@@ -247,7 +247,8 @@ void nmo_stats_print(
     fprintf(output, "  Compressed:      %zu (%.1f%%)\n",
            stats->chunks.compressed_chunks,
            stats->chunks.total_chunks > 0 
-               ? (stats->chunks.compressed_chunks * 100.0) / stats->chunks.total_chunks
+               ? ((double)stats->chunks.compressed_chunks * 100.0) /
+                     (double)stats->chunks.total_chunks
                : 0.0);
     fprintf(output, "  Max Size:        %zu bytes\n", stats->chunks.max_chunk_size);
     fprintf(output, "  Avg Size:        %zu bytes\n", stats->chunks.avg_chunk_size);
@@ -288,11 +289,12 @@ void nmo_stats_print_summary(
            "Objects: %zu | Classes: %zu | Size: %.2f KB | Chunks: %zu (%.1f%% compressed)\n",
            stats->objects.total_count,
            stats->objects.unique_classes,
-           stats->memory.total_size / 1024.0,
+           (double)stats->memory.total_size / 1024.0,
            stats->chunks.total_chunks,
            stats->chunks.total_chunks > 0
-               ? (stats->chunks.compressed_chunks * 100.0) / stats->chunks.total_chunks
-                : 0.0);
+               ? ((double)stats->chunks.compressed_chunks * 100.0) /
+                     (double)stats->chunks.total_chunks
+               : 0.0);
 }
 
 void nmo_export_text_document_stats_summary(

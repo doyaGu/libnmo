@@ -187,8 +187,7 @@ static inline void nmo_swap_16bit_words(void *data, size_t word_count) {
  * @brief Read uint16_t from little-endian byte buffer
  */
 static inline uint16_t nmo_read_u16_le(const uint8_t *data) {
-    return (uint16_t)data[0] |
-           ((uint16_t)data[1] << 8);
+    return (uint16_t)(data[0] | (data[1] << 8));
 }
 
 /**

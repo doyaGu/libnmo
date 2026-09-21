@@ -1250,7 +1250,7 @@ static nmo_status_t save_build_header1(nmo_serializer_t *ctx) {
     nmo_header1_t hdr1 = {0};
     hdr1.object_count = (uint32_t)ctx->object_count;
     hdr1.objects = ctx->obj_descs;
-    hdr1.plugin_dep_count = ctx->plugin_count;
+    hdr1.plugin_dep_count = (uint32_t)ctx->plugin_count;
     hdr1.plugin_deps = ctx->plugin_deps;
 
     /* Include files handling */

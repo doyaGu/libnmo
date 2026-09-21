@@ -640,7 +640,7 @@ static nmo_status_t register_enum_type(nmo_type_registry_t *reg,
     type_desc->name        = type_name;
     type_desc->size        = p->size;
     type_desc->alignment   = p->alignment;
-    type_desc->category    = p->category;
+    type_desc->category    = (uint16_t)p->category;
     type_desc->flags       = NMO_TYPE_FLAG_SERIALIZABLE | NMO_TYPE_FLAG_COPYABLE | NMO_TYPE_FLAG_POD;
     type_desc->fields      = NULL;
     type_desc->field_count = 0;
