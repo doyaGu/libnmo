@@ -143,8 +143,8 @@ static int test_parse_single_file(const char* filepath) {
         
         // Parse Data section if present
         if (header.data_pack_size > 0) {
-            uint8_t* packed_buffer = (uint8_t*)malloc(header.data_pack_size);
-            if (!packed_buffer) {
+            uint8_t* data_packed_buffer = (uint8_t*)malloc(header.data_pack_size);
+            if (!data_packed_buffer) {
                 error_msg = "Data buffer allocation failed";
                 nmo_arena_destroy(arena);
                 nmo_io_close(io);
@@ -153,11 +153,11 @@ static int test_parse_single_file(const char* filepath) {
             }
             
             size_t data_read = 0;
-            read_result = nmo_io_read(io, packed_buffer, header.data_pack_size, &data_read);
+            read_result = nmo_io_read(io, data_packed_buffer, header.data_pack_size, &data_read);
             
             if (read_result != NMO_OK || data_read != header.data_pack_size) {
                 error_msg = "Data section read failed";
-                free(packed_buffer);
+                free(data_packed_buffer);
                 nmo_arena_destroy(arena);
                 nmo_io_close(io);
                 record_result(filepath, success_flags, obj_count, mgr_count, version, error_msg);
@@ -172,7 +172,7 @@ static int test_parse_single_file(const char* filepath) {
                 data_buffer = (uint8_t*)malloc(header.data_unpack_size);
                 if (!data_buffer) {
                     error_msg = "Data decompression buffer allocation failed";
-                    free(packed_buffer);
+                    free(data_packed_buffer);
                     nmo_arena_destroy(arena);
                     nmo_io_close(io);
                     record_result(filepath, success_flags, obj_count, mgr_count, version, error_msg);

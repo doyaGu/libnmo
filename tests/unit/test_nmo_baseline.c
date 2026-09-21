@@ -170,12 +170,12 @@ static void test_parse_file(const char* filepath, const char* expected_signature
             printf("\n--- Parsing Data Section ---\n");
 
             /* Read packed data */
-            uint8_t* packed_buffer = (uint8_t*)malloc(header.data_pack_size);
-            ASSERT_NOT_NULL(packed_buffer);
+            uint8_t* data_packed_buffer = (uint8_t*)malloc(header.data_pack_size);
+            ASSERT_NOT_NULL(data_packed_buffer);
 
             size_t data_read = 0;
-            int read_result = nmo_io_read(io, packed_buffer, header.data_pack_size, &data_read);
-            ASSERT_EQ(0, read_result);
+            int data_read_result = nmo_io_read(io, data_packed_buffer, header.data_pack_size, &data_read);
+            ASSERT_EQ(0, data_read_result);
             ASSERT_EQ(header.data_pack_size, data_read);
             printf("  Data section read: %zu bytes\n", data_read);
 
@@ -192,17 +192,17 @@ static void test_parse_file(const char* filepath, const char* expected_signature
 
                 mz_ulong dest_len = header.data_unpack_size;
                 int uncompress_result = mz_uncompress((unsigned char*)data_buffer, &dest_len,
-                                                      (const unsigned char*)packed_buffer,
+                                                      (const unsigned char*)data_packed_buffer,
                                                       header.data_pack_size);
                 ASSERT_EQ(MZ_OK, uncompress_result);
                 ASSERT_EQ(header.data_unpack_size, dest_len);
 
                 data_size = dest_len;
-                free(packed_buffer);
+                free(data_packed_buffer);
                 printf("  Decompression successful: %lu bytes\n", dest_len);
             } else {
                 // Already uncompressed
-                data_buffer = packed_buffer;
+                data_buffer = data_packed_buffer;
                 data_size = header.data_pack_size;
             }
 
