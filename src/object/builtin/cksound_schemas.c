@@ -201,7 +201,7 @@ static nmo_status_t nmo_sound_deserialize_internal(
             nmo_chunk_get_position(chunk) + section_dwords;
         uint32_t save_options = CKSOUND_USEGLOBAL;
         char *file_name = NULL;
-        nmo_status_t result = nmo_chunk_read_dword(chunk, &save_options);
+        result = nmo_chunk_read_dword(chunk, &save_options);
         if (result != NMO_OK) {
             return result;
         }

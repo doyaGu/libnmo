@@ -1191,8 +1191,6 @@ static nmo_status_t nmo_behavior_serialize_internal(
                 NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
                                  "Cannot allocate InterfaceChunk output");
             }
-            const nmo_serialize_context_t *ser_ctx =
-                nmo_serialize_context_try(context);
             nmo_object_repository_t *repo = ser_ctx
                 ? (nmo_object_repository_t *)ser_ctx->repository
                 : NULL;

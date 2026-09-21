@@ -827,8 +827,6 @@ nmo_status_t nmo_chunk_serialize_version1(const nmo_chunk_t *chunk,
         }
     } else {
         /* VERSION3/VERSION4 compact layout */
-        uint32_t option_flags = chunk_compute_option_flags(chunk);
-
         uint8_t chunk_options = (uint8_t) (option_flags & 0xFFu);
         uint8_t data_version = (uint8_t) (chunk->data_version & 0xFFu);
         uint8_t class_id_byte = (chunk->chunk_class_id != 0) ?

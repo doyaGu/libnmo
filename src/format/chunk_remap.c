@@ -230,10 +230,10 @@ static nmo_status_t remap_embedded_subchunk_recursive(uint32_t *parent_data,
                         NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR, "Sub-chunk sequence truncated");
                     }
 
-                    uint32_t payload_dwords = parent_data[cursor];
-                    size_t total_dwords = 0;
-                    if (!nmo_safe_add_size(1u, (size_t) payload_dwords, &total_dwords) ||
-                        !dword_range_fits(cursor, total_dwords, data_end)) {
+                    uint32_t seq_payload_dwords = parent_data[cursor];
+                    size_t seq_total_dwords = 0;
+                    if (!nmo_safe_add_size(1u, (size_t) seq_payload_dwords, &seq_total_dwords) ||
+                        !dword_range_fits(cursor, seq_total_dwords, data_end)) {
                         NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR, "Sub-chunk sequence payload out of bounds");
                     }
 
@@ -244,7 +244,7 @@ static nmo_status_t remap_embedded_subchunk_recursive(uint32_t *parent_data,
                                                                             remap,
                                                                             remapped_count);
                     NMO_RETURN_IF_ERROR(result);
-                    cursor += total_dwords;
+                    cursor += seq_total_dwords;
                 }
 
                 continue;

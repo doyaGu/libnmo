@@ -730,7 +730,7 @@ static nmo_status_t nmo_beobject_deserialize_internal(
     /* If identifier not found, attributes section is optional - continue */
 
     if (is_file) {
-        size_t payload_dwords = 0;
+        payload_dwords = 0;
         result = nmo_chunk_seek_identifier_with_size(
             chunk, CK_STATESAVE_SINGLEACTIVITY, &payload_dwords);
         if (result == NMO_OK) {
@@ -891,7 +891,7 @@ static nmo_status_t nmo_beobject_serialize_internal(
             in_state->scripts_use_legacy_identifier
                 ? CK_STATESAVE_BEHAVIORS
                 : CK_STATESAVE_SCRIPTS;
-        nmo_status_t result = nmo_chunk_write_identifier(
+        result = nmo_chunk_write_identifier(
             out_chunk, identifier);
         if (result != NMO_OK) return result;
 
@@ -913,7 +913,7 @@ static nmo_status_t nmo_beobject_serialize_internal(
                 NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
                 "BeObject DATAS layout does not match the chunk data version");
         }
-        nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_DATAS);
+        result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_DATAS);
         if (result != NMO_OK) return result;
 
         const uint32_t data_flags = in_state->has_data_section
@@ -948,7 +948,7 @@ static nmo_status_t nmo_beobject_serialize_internal(
 
     /* Write legacy attributes if no modern attributes were decoded */
     if (write_legacy_attributes) {
-        nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_ATTRIBUTES);
+        result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_ATTRIBUTES);
         if (result != NMO_OK) return result;
 
         /* Write count */
@@ -995,7 +995,7 @@ static nmo_status_t nmo_beobject_serialize_internal(
 
     /* Write attributes if present, including a preserved empty section. */
     if (write_modern_attributes) {
-        nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_NEWATTRIBUTES);
+        result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_NEWATTRIBUTES);
         if (result != NMO_OK) return result;
 
         uint32_t attr_count = (uint32_t)in_state->attributes.count;
@@ -1037,7 +1037,7 @@ static nmo_status_t nmo_beobject_serialize_internal(
 
     /* Write single activity flags if present (file mode only) */
     if (is_file && in_state->has_single_activity) {
-        nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_SINGLEACTIVITY);
+        result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_SINGLEACTIVITY);
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_dword(out_chunk, in_state->single_activity_flags);
         if (result != NMO_OK) return result;

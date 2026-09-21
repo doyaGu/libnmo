@@ -599,7 +599,7 @@ static nmo_status_t nmo_place_serialize_internal(
 
     if (write_camera && (in_state->has_camera ||
                          in_state->camera.state != NMO_REF_NONE)) {
-        nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_PLACECAMERA);
+        result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_PLACECAMERA);
         if (result != NMO_OK) return result;
         result = nmo_ref_write(out_chunk, &in_state->camera);
         if (result != NMO_OK) return result;
@@ -607,7 +607,7 @@ static nmo_status_t nmo_place_serialize_internal(
 
     if (is_file && write_level && (in_state->has_level ||
                                    in_state->level.state != NMO_REF_NONE)) {
-        nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_PLACELEVEL);
+        result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_PLACELEVEL);
         if (result != NMO_OK) return result;
         result = nmo_ref_write(out_chunk, &in_state->level);
         if (result != NMO_OK) return result;
@@ -621,7 +621,7 @@ static nmo_status_t nmo_place_serialize_internal(
             in_state->portals.count > INT32_MAX) {
             return NMO_ERR_VALIDATION_FAILED;
         }
-        nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_PLACEPORTALS);
+        result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_PLACEPORTALS);
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_int(out_chunk, (int32_t)in_state->portals.count);
         if (result != NMO_OK) return result;

@@ -269,7 +269,7 @@ static nmo_status_t nmo_kinematicchain_serialize_internal(
     }
 
     {
-        nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_KINEMATICCHAINALL);
+        result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_KINEMATICCHAINALL);
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_dword(out_chunk, in_state->reserved_object_id);
         if (result != NMO_OK) return result;

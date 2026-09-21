@@ -1865,7 +1865,7 @@ nmo_status_t nmo_type_registry_add_name_alias(
 
     res = alias_list_append(registry, alias_list, alias_copy);
     if (res != NMO_OK) {
-        const char *alias_key = alias_copy;
+        alias_key = alias_copy;
         nmo_hash_table_remove(registry->name_map, &alias_key);
         nmo_free(&registry->type_allocator, alias_copy);
         return res;

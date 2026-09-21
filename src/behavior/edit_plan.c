@@ -262,7 +262,7 @@ static nmo_status_t edit_plan_read_manager_snapshot(
         snapshot->message_name_count = (uint32_t)count;
         for (int32_t index = 0; index < count; ++index) {
             char *name = NULL;
-            nmo_status_t status =
+            status =
                 nmo_chunk_read_string_checked(chunk, &name, NULL);
             if (status != NMO_OK) {
                 edit_plan_manager_snapshot_dispose(snapshot);

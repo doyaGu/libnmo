@@ -226,10 +226,10 @@ static nmo_status_t nmo_dataarray_deserialize_internal(
                 fmt->name = temp_name; /* Note: This relies on chunk's internal buffer */
 
                 /* Read column type */
-                int32_t type;
-                result = nmo_chunk_read_int(chunk, &type);
+                int32_t column_type;
+                result = nmo_chunk_read_int(chunk, &column_type);
                 if (result != NMO_OK) return result;
-                fmt->type = (nmo_arraytype_t)((uint32_t)type);
+                fmt->type = (nmo_arraytype_t)((uint32_t)column_type);
 
                 /* Read parameter type GUID for PARAMETER columns */
                 if (fmt->type == CKARRAYTYPE_PARAMETER) {

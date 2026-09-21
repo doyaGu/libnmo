@@ -118,7 +118,7 @@ static nmo_status_t nmo_parameterout_deserialize_internal(
         const size_t section_end =
             nmo_chunk_get_position(chunk) + section_dwords;
         int32_t count = 0;
-        nmo_status_t result = nmo_chunk_read_int(chunk, &count);
+        result = nmo_chunk_read_int(chunk, &count);
         if (result != NMO_OK) return result;
         if (count < 0) return NMO_ERR_INVALID_FORMAT;
         if ((size_t)count >

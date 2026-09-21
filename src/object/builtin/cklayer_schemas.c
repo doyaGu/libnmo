@@ -137,9 +137,9 @@ static nmo_status_t nmo_layer_deserialize_internal(
             }
         }
     } else {
-        int32_t type = 0;
-        NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &type));
-        out_state->type = type;
+        int32_t layer_type = 0;
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &layer_type));
+        out_state->type = layer_type;
         out_state->has_type = 1;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &out_state->format));
         NMO_RETURN_IF_ERROR(nmo_chunk_read_int(

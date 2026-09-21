@@ -1098,7 +1098,7 @@ static nmo_status_t nmo_patchmesh_serialize_internal(
     NMO_RETURN_IF_ERROR(nmo_patchmesh_validate(in_state, NULL, NULL));
 
     {
-        nmo_status_t result = nmo_mesh_serialize_ex(&in_state->base, out_chunk, NULL, context, true);
+        result = nmo_mesh_serialize_ex(&in_state->base, out_chunk, NULL, context, true);
         if (result != NMO_OK) {
             return result;
         }
