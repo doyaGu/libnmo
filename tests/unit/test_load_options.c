@@ -764,7 +764,10 @@ TEST(load_options, load_file_preserves_header_errors)
     };
     ASSERT_EQ(sizeof(invalid_signature),
               fwrite(invalid_signature, 1, sizeof(invalid_signature), file));
-    ASSERT_EQ(0, fclose(file));
+    /* Assertion macros re-evaluate their operands when reporting a
+     * failure, so never put fclose() inside one. */
+    int close_rc = fclose(file);
+    ASSERT_EQ(0, close_rc);
 
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
@@ -778,7 +781,8 @@ TEST(load_options, load_file_preserves_header_errors)
     static const uint8_t truncated[] = { 'N', 'e', 'm', 'o' };
     ASSERT_EQ(sizeof(truncated),
               fwrite(truncated, 1, sizeof(truncated), file));
-    ASSERT_EQ(0, fclose(file));
+    close_rc = fclose(file);
+    ASSERT_EQ(0, close_rc);
     ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK,
               nmo_load_file(session, path, NULL));
 
