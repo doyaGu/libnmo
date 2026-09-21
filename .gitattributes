@@ -1,0 +1,3 @@
+# Generated shell completions are compared byte-for-byte with CLI output in
+# tests; keep them LF on every platform.
+completions/** text eol=lf
