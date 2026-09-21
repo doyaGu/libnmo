@@ -17,6 +17,13 @@ add_test(
             -P ${CMAKE_CURRENT_SOURCE_DIR}/source_encoding_audit.cmake
 )
 
+add_test(
+    NAME test_layering_audit
+    COMMAND ${CMAKE_COMMAND}
+            -DSOURCE_DIR=${PROJECT_SOURCE_DIR}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/layering_audit.cmake
+)
+
 find_package(Python3 COMPONENTS Interpreter QUIET)
 if(Python3_Interpreter_FOUND)
     add_test(

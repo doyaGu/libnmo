@@ -1,0 +1,48 @@
+# Upward includes tolerated by tests/layering_audit.cmake.
+# Format: <source file> <included header>. One entry per line.
+# Each line is technical debt: the file depends on a layer above its own.
+# Remove the line once the dependency has been moved down the stack.
+src/behavior/behavior_execute.c lua/nmo_lua_bindings.h
+src/chunk/chunk_inspect.c export/nmo_ansi.h
+src/chunk/chunk_inspect.c export/nmo_export_json.h
+src/chunk/chunk_inspect.c export/nmo_export_text.h
+src/chunk/chunk_inspect.c export/nmo_hexdump.h
+src/document/document_stats.c export/nmo_export_json.h
+src/document/document_stats.c export/nmo_export_text.h
+src/extension/virtools_loader.c behavior/nmo_behavior_registry.h
+src/extension/virtools_loader.c object/nmo_object_guids.h
+src/extension/virtools_loader.c object/nmo_param_guids.h
+src/format/chunk.c object/nmo_object_repository.h
+src/format/chunk_arrays.c object/nmo_object_repository.h
+src/format/chunk_primitives.c object/nmo_object_repository.h
+src/format/interface_chunk_types.c type/nmo_reflection.h
+src/format/interface_chunk_types.c type/nmo_type_system.h
+src/format/interface_view.c object/builtin/nmo_behavior_schemas.h
+src/format/interface_view.c object/nmo_class_ids.h
+src/format/interface_view.c object/nmo_object_guids.h
+src/format/interface_view.c object/nmo_object_repository.h
+src/format/interface_view.c session/nmo_session.h
+src/format/interface_view.c session/nmo_session_pipeline.h
+src/format/interface_view.c type/nmo_type_query.h
+src/object/object_diff.c document/nmo_document.h
+src/object/object_hierarchy.c runtime/nmo_context.h
+src/object/object_hierarchy.c session/nmo_session.h
+src/object/object_hierarchy.c session/nmo_session_pipeline.h
+src/object/object_query.c runtime/nmo_context.h
+src/object/object_query.c session/nmo_session.h
+src/object/object_summary.c export/nmo_ansi.h
+src/runtime/context.c behavior/nmo_behavior_registry.h
+src/runtime/document_workspace.c behavior/nmo_behavior_analyze.h
+src/runtime/document_workspace.c behavior/nmo_behavior_registry.h
+src/runtime/document_workspace.c document/nmo_document.h
+src/runtime/document_workspace.c document/nmo_document_load.h
+src/runtime/document_workspace.c document/nmo_document_save.h
+src/runtime/runtime_internal.h document/nmo_document.h
+src/runtime/runtime_internal.h document/nmo_document_file_state.h
+src/runtime/workspace_edit.c behavior/nmo_behavior_edit.h
+src/session/deserializer.c runtime/nmo_context.h
+src/session/runtime_delete.c runtime/nmo_context.h
+src/session/runtime_kernel.c runtime/nmo_context.h
+src/session/runtime_kernel.c runtime/nmo_workspace.h
+src/type/builtin_types.c object/nmo_object_guids.h
+src/type/builtin_types.c object/nmo_param_guids.h
