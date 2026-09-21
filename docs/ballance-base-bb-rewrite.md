@@ -3,6 +3,9 @@
 This document records the current workflow for converting Ballance `base.cmo`
 behavior logic to Ballance-specific high-level building blocks with libnmo.
 
+Paths in angle brackets (`<GAME_ROOT>`, `<VIRTOOLS_SDK_ROOT>`,
+`<BALLANCED_BUILD_DIR>`) are placeholders for your local layout.
+
 ## Goal
 
 Generate a `base.cmo` variant that loads in the original Ballance runtime and
@@ -12,7 +15,7 @@ replaces selected behavior graph structure with building blocks from
 The current generated output is:
 
 ```text
-C:\Users\kakut\Games\Ballance\base_ballance_bb.cmo
+<GAME_ROOT>\base_ballance_bb.cmo
 ```
 
 ## Runtime Assumption
@@ -23,13 +26,13 @@ building block DLL.
 The game directory used for validation is:
 
 ```text
-C:\Users\kakut\Games\Ballance
+<GAME_ROOT>
 ```
 
 Build `Ballance.dll` with:
 
 ```text
-C:\Users\kakut\Works\Virtools\Virtools-SDK-2.1
+<VIRTOOLS_SDK_ROOT>
 ```
 
 Do not use the Ballanced CK2/VxMath build when testing original Ballance. The
@@ -77,8 +80,8 @@ From the libnmo repository:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\tools\ballance\build-base-ballance-bb.ps1 `
-  -InputCmo C:\Users\kakut\Games\Ballance\base_fold_loading_deletes.cmo `
-  -OutputCmo C:\Users\kakut\Games\Ballance\base_ballance_bb.cmo
+  -InputCmo <GAME_ROOT>\base_fold_loading_deletes.cmo `
+  -OutputCmo <GAME_ROOT>\base_ballance_bb.cmo
 ```
 
 The script:
@@ -104,21 +107,21 @@ GUID: {42414C07-10000007}
 Use the existing SDK 2.1 build directory:
 
 ```powershell
-cmake --build C:\Users\kakut\Works\Ballanced\build-virtools-sdk-bb `
+cmake --build <BALLANCED_BUILD_DIR> `
   --config Release `
   --target Ballance `
   -- /m
 
 Copy-Item `
-  C:\Users\kakut\Works\Ballanced\build-virtools-sdk-bb\bin\Release\Ballance.dll `
-  C:\Users\kakut\Games\Ballance\BuildingBlocks\Ballance.dll `
+  <BALLANCED_BUILD_DIR>\bin\Release\Ballance.dll `
+  <GAME_ROOT>\BuildingBlocks\Ballance.dll `
   -Force
 ```
 
 Confirm the CMake cache points at:
 
 ```text
-VIRTOOLS_SDK_PATH=C:/Users/kakut/Works/Virtools/Virtools-SDK-2.1
+VIRTOOLS_SDK_PATH=<VIRTOOLS_SDK_ROOT>
 CMAKE_GENERATOR_PLATFORM=Win32
 ```
 
@@ -127,7 +130,7 @@ CMAKE_GENERATOR_PLATFORM=Win32
 Run from the game `Bin` directory:
 
 ```powershell
-$game = 'C:\Users\kakut\Games\Ballance'
+$game = '<GAME_ROOT>'
 $log = 'Player-base-ballance-bb.log'
 
 Get-Process Player -ErrorAction SilentlyContinue | Stop-Process -Force
