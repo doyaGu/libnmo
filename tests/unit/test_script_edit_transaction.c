@@ -485,6 +485,7 @@ TEST(script_edit_transaction, behavior_edit_add_link_through_workspace_owner)
 
 TEST(script_edit_transaction, add_node_keeps_ballance_script_edit_validation_green)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
     nmo_document_t *document = NULL;
@@ -691,6 +692,7 @@ TEST(script_edit_transaction, add_node_keeps_ballance_script_edit_validation_gre
 
 TEST(script_edit_transaction, add_node_rollback_removes_all_created_objects)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     nmo_context_t *ctx = nmo_context_create(
         &(nmo_context_desc_t){ .data_dir = NMO_TEST_DATA_DIR });
     ASSERT_NOT_NULL(ctx);
@@ -1026,6 +1028,7 @@ TEST(script_edit_transaction,
 TEST(script_edit_transaction,
      reference_validation_allows_value_only_parameter_edit)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/MenuLevel.nmo");
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
     nmo_script_edit_tx_t *tx = NULL;
@@ -1057,6 +1060,7 @@ TEST(script_edit_transaction,
 TEST(script_edit_transaction,
      reference_validation_rejects_new_broken_ref_beyond_preexisting_baseline)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/MenuLevel.nmo");
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
     nmo_script_edit_tx_t *tx = NULL;
@@ -1079,6 +1083,7 @@ TEST(script_edit_transaction,
 TEST(script_edit_transaction,
      interface_validation_allows_preexisting_diagnostics_for_value_only_parameter_edit)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/MenuLevel.nmo");
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
     nmo_script_edit_tx_t *tx = NULL;

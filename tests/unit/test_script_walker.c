@@ -140,6 +140,7 @@ TEST(script_walker, dump_text_null_args) {
  * ============================================================================ */
 
 TEST(script_walker, find_scripts_with_file) {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
     char errbuf[256] = {0};
@@ -172,6 +173,7 @@ TEST(script_walker, find_scripts_with_file) {
 }
 
 TEST(script_walker, find_scripts_reports_append_oom) {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
     char errbuf[256] = {0};
@@ -199,6 +201,7 @@ TEST(script_walker, find_scripts_reports_append_oom) {
 }
 
 TEST(script_walker, walk_with_file) {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
     char errbuf[256] = {0};
@@ -239,6 +242,7 @@ TEST(script_walker, walk_with_file) {
 }
 
 TEST(script_walker, dump_text_with_file) {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
     char errbuf[256] = {0};

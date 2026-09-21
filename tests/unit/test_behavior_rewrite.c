@@ -505,6 +505,7 @@ static bool create_parameter_input_fold_fixture(
 
 TEST(beh_rewrite, fold_analyze_reports_selected_boundary_plan)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
     if (!open_test_file(NMO_TEST_DATA_FILE("Ballance/base.cmo"),
@@ -751,6 +752,7 @@ TEST(beh_rewrite, fold_analyze_blocks_write_for_missing_control_output_target)
 
 TEST(beh_rewrite, fold_write_rejects_until_supported)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
     if (!open_test_file(NMO_TEST_DATA_FILE("Ballance/base.cmo"),
@@ -812,6 +814,7 @@ TEST(beh_rewrite, fold_write_rejects_until_supported)
 
 TEST(beh_rewrite, fold_apply_rejects_until_supported)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
     if (!open_test_file(NMO_TEST_DATA_FILE("Ballance/base.cmo"),
@@ -874,6 +877,7 @@ TEST(beh_rewrite, fold_apply_rejects_until_supported)
 
 TEST(beh_rewrite, fold_apply_requires_preserve_boundary)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
     if (!open_test_file(NMO_TEST_DATA_FILE("Ballance/base.cmo"),
@@ -907,6 +911,7 @@ TEST(beh_rewrite, fold_apply_requires_preserve_boundary)
 
 TEST(beh_rewrite, fold_analyze_uses_explicit_anchor)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
     if (!open_test_file(NMO_TEST_DATA_FILE("Ballance/base.cmo"),
@@ -942,6 +947,7 @@ TEST(beh_rewrite, fold_analyze_uses_explicit_anchor)
 
 TEST(beh_rewrite, fold_analyze_preserve_boundary_enables_edges)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
     if (!open_test_file(NMO_TEST_DATA_FILE("Ballance/base.cmo"),
@@ -989,6 +995,7 @@ TEST(beh_rewrite, fold_analyze_preserve_boundary_enables_edges)
 
 TEST(beh_rewrite, fold_analyze_rejects_ambiguous_input_without_map)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
     if (!open_test_file(NMO_TEST_DATA_FILE("Ballance/base.cmo"),
@@ -1021,6 +1028,7 @@ TEST(beh_rewrite, fold_analyze_rejects_ambiguous_input_without_map)
 
 TEST(beh_rewrite, fold_analyze_reports_maps)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
     if (!open_test_file(NMO_TEST_DATA_FILE("Ballance/base.cmo"),
@@ -1088,6 +1096,7 @@ TEST(beh_rewrite, fold_analyze_reports_maps)
 
 TEST(beh_rewrite, fold_analyze_rejects_duplicate_input_map_target)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
     if (!open_test_file(NMO_TEST_DATA_FILE("Ballance/base.cmo"),
@@ -1134,6 +1143,7 @@ TEST(beh_rewrite, fold_analyze_rejects_duplicate_input_map_target)
 
 TEST(beh_rewrite, fold_analyze_reports_interface_mode)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
     if (!open_test_file(NMO_TEST_DATA_FILE("Ballance/base.cmo"),
@@ -1181,6 +1191,7 @@ TEST(beh_rewrite, fold_analyze_reports_interface_mode)
 
 TEST(beh_rewrite, fold_analyze_rejects_anchor_outside_selection)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
     if (!open_test_file(NMO_TEST_DATA_FILE("Ballance/base.cmo"),
@@ -1215,6 +1226,7 @@ TEST(beh_rewrite, fold_analyze_rejects_anchor_outside_selection)
 
 TEST(beh_rewrite, fold_analyze_rejects_parent_in_selected_nodes)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
     if (!open_test_file(NMO_TEST_DATA_FILE("Ballance/base.cmo"),

@@ -31,6 +31,7 @@ static nmo_object_id_t create_object_or_zero(
 
 TEST(behavior_query, count_scripts_through_owner_api)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     nmo_context_t *ctx = NULL;
     nmo_document_t *document = NULL;
     size_t count = 0u;
@@ -51,6 +52,7 @@ TEST(behavior_query, count_scripts_through_owner_api)
 
 TEST(behavior_query, script_at_uses_owner_view_type)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     nmo_context_t *ctx = NULL;
     nmo_document_t *document = NULL;
     nmo_behavior_script_view_t script = {0};
@@ -138,6 +140,7 @@ TEST(behavior_query, synthetic_document_exposes_owner_and_script_summary)
 
 TEST(behavior_query, missing_script_returns_not_found_and_clears_view)
 {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     nmo_context_t *ctx = NULL;
     nmo_document_t *document = NULL;
     size_t count = 0;

@@ -19,6 +19,7 @@ static void assert_lua_ok(nmo_lua_runtime_t *runtime, const char *script)
 
 TEST(lua_bindings_format, format_module_uses_document_handle_for_interface_views)
 {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
     ASSERT_NOT_NULL(runtime);
 

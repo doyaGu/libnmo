@@ -19,6 +19,7 @@ static void assert_lua_ok(nmo_lua_runtime_t *runtime, const char *script)
 
 TEST(lua_bindings_document, context_and_document_modules_expose_canonical_file_workflow)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
     ASSERT_NOT_NULL(runtime);
 
@@ -42,6 +43,7 @@ TEST(lua_bindings_document, context_and_document_modules_expose_canonical_file_w
 
 TEST(lua_bindings_document, document_module_exposes_compare_and_no_app_module)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
     ASSERT_NOT_NULL(runtime);
 
@@ -65,6 +67,7 @@ TEST(lua_bindings_document, document_module_exposes_compare_and_no_app_module)
 
 TEST(lua_bindings_document, document_module_exposes_load_state_and_diagnostics)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
     ASSERT_NOT_NULL(runtime);
 

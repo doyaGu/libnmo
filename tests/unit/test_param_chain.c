@@ -118,6 +118,7 @@ static void find_pins(nmo_document_t *document, nmo_workspace_t *workspace,
 
 TEST(param_chain, basic_chain_has_steps)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/Gameplay.nmo");
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
     nmo_document_t *document = NULL;
@@ -159,6 +160,7 @@ TEST(param_chain, basic_chain_has_steps)
 
 TEST(param_chain, shared_source_detected)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/Gameplay.nmo");
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
     nmo_document_t *document = NULL;
@@ -207,6 +209,7 @@ TEST(param_chain, shared_source_detected)
 
 TEST(param_chain, owner_id_populated)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/Gameplay.nmo");
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
     nmo_document_t *document = NULL;
@@ -247,6 +250,7 @@ TEST(param_chain, owner_id_populated)
 
 TEST(param_chain, max_depth_respected)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/Gameplay.nmo");
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
     nmo_document_t *document = NULL;

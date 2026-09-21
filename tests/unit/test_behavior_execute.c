@@ -733,6 +733,7 @@ static nmo_status_t failing_after_mutation_action(nmo_behavior_execution_t *exec
 }
 
 TEST(behavior_execute, executes_multiple_actions_and_saves_once) {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     const char *input_path = NMO_TEST_DATA_FILE("Nop.cmo");
     const char *output_path = "test_behavior_execute_apply.cmo";
     nmo_context_t *ctx =
@@ -775,6 +776,7 @@ TEST(behavior_execute, executes_multiple_actions_and_saves_once) {
 
 TEST(behavior_execute, reports_edit_schema)
 {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     const char *input_path = NMO_TEST_DATA_FILE("Nop.cmo");
     const char *output_path = "test_behavior_execute_v2.cmo";
     nmo_context_t *ctx =
@@ -818,6 +820,7 @@ TEST(behavior_execute, reports_edit_schema)
 
 TEST(behavior_execute, execute_plan_reports_schema_v2_operations)
 {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     const char *input_path = NMO_TEST_DATA_FILE("Nop.cmo");
     nmo_context_t *ctx =
         nmo_context_create(&(nmo_context_desc_t){ .data_dir = NMO_TEST_DATA_DIR });
@@ -858,6 +861,7 @@ TEST(behavior_execute, execute_plan_reports_schema_v2_operations)
 
 TEST(behavior_execute, execute_plan_reports_manager_entry_impacts)
 {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     const char *input_path = NMO_TEST_DATA_FILE("Nop.cmo");
     nmo_context_t *ctx =
         nmo_context_create(&(nmo_context_desc_t){ .data_dir = NMO_TEST_DATA_DIR });
@@ -907,6 +911,7 @@ TEST(behavior_execute, execute_plan_reports_manager_entry_impacts)
 
 TEST(behavior_execute, execute_plan_reports_probe_analysis_metadata)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     const char *input_path = NMO_TEST_DATA_FILE("Ballance/base.cmo");
     nmo_context_t *ctx =
         nmo_context_create(&(nmo_context_desc_t){ .data_dir = NMO_TEST_DATA_DIR });
@@ -954,6 +959,7 @@ TEST(behavior_execute, execute_plan_reports_probe_analysis_metadata)
 
 TEST(behavior_execute, failure_report_has_no_output_path)
 {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     const char *input_path = NMO_TEST_DATA_FILE("Nop.cmo");
     const char *output_path = "test_behavior_execute_v2_fail.cmo";
     nmo_context_t *ctx =
@@ -986,6 +992,7 @@ TEST(behavior_execute, failure_report_has_no_output_path)
 
 TEST(behavior_execute, save_failure_report_is_not_successful)
 {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     const char *input_path = NMO_TEST_DATA_FILE("Nop.cmo");
     const char *output_path = "missing_behavior_execute_dir/out.cmo";
     nmo_context_t *ctx =
@@ -1018,6 +1025,7 @@ TEST(behavior_execute, save_failure_report_is_not_successful)
 }
 
 TEST(behavior_execute, rolls_back_on_action_error_and_skips_output) {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     const char *input_path = NMO_TEST_DATA_FILE("Nop.cmo");
     const char *output_path = "test_behavior_execute_fail.cmo";
     nmo_context_t *ctx =
@@ -1044,6 +1052,7 @@ TEST(behavior_execute, rolls_back_on_action_error_and_skips_output) {
 }
 
 TEST(behavior_execute, dry_run_rolls_back_after_validation) {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     const char *input_path = NMO_TEST_DATA_FILE("Nop.cmo");
     const char *output_path = "test_behavior_execute_dry.cmo";
     nmo_context_t *ctx =
@@ -1079,6 +1088,7 @@ TEST(behavior_execute, dry_run_rolls_back_after_validation) {
 }
 
 TEST(behavior_execute, owner_surface_runs_behavior_actions) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     const char *input_path = NMO_SCRIPT_INTERFACE_FIXTURE;
     const char *output_path = "test_behavior_execute_owner.cmo";
     nmo_context_t *ctx = nmo_context_create(NULL);
@@ -1109,6 +1119,7 @@ TEST(behavior_execute, owner_surface_runs_behavior_actions) {
 }
 
 TEST(behavior_execute, remove_io_canonicalize_roundtrips_fixture) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     const char *io_add_path = "test_behavior_execute_interface_io_add.cmo";
     const char *iface_io_path = "test_behavior_execute_interface_io_present.cmo";
     const char *io_remove_path = "test_behavior_execute_interface_io_remove.cmo";
@@ -1203,6 +1214,7 @@ TEST(behavior_execute, remove_io_canonicalize_roundtrips_fixture) {
 }
 
 TEST(behavior_execute, remove_node_canonicalize_roundtrips_fixture) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     const char *node_add_path = "test_behavior_execute_interface_node_add.cmo";
     const char *iface_node_path = "test_behavior_execute_interface_node_present.cmo";
     const char *node_remove_path = "test_behavior_execute_interface_node_remove.cmo";

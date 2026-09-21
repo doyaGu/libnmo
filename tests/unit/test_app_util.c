@@ -19,6 +19,7 @@
 #include <string.h>
 
 TEST(app_util, session_open_close) {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
     char errbuf[256] = {0};
@@ -43,6 +44,7 @@ TEST(app_util, session_open_invalid_args) {
 }
 
 TEST(app_util, type_query_roundtrip) {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
 

@@ -43,6 +43,7 @@ TEST(lua_bindings, platform_modules_register_canonical_surface)
 
 TEST(lua_bindings, canonical_workflow_roundtrips_context_document_workspace_object)
 {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
     ASSERT_NOT_NULL(runtime);
 

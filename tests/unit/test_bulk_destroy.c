@@ -7,6 +7,7 @@
 #include <stdio.h>
 
 TEST(bulk_destroy, take_and_destroy_all) {
+    TEST_REQUIRE_FILE("data/Ballance/P_Modul_01.nmo");
     nmo_context_desc_t desc = {0};
     nmo_context_t *ctx = nmo_context_create(&desc);
     ASSERT_NOT_NULL(ctx);
@@ -52,6 +53,7 @@ TEST(bulk_destroy, take_and_destroy_all) {
 }
 
 TEST(bulk_destroy, session_destroy_objects_bulk) {
+    TEST_REQUIRE_FILE("data/Ballance/P_Modul_01.nmo");
     nmo_context_desc_t desc = {0};
     nmo_context_t *ctx = nmo_context_create(&desc);
     ASSERT_NOT_NULL(ctx);

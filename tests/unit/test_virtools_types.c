@@ -360,6 +360,7 @@ TEST(vt, unbased_json_u32_primitives_parse_from_string) {
 }
 
 TEST(vt, raw_json_loader_normalizes_unbased_u32_primitives_to_uint32_base) {
+    TEST_REQUIRE_FILE("data/virtools_parameter_types.json");
     nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
     ASSERT_TRUE(arena != NULL);
     nmo_type_registry_t *reg = nmo_type_registry_create(arena);
@@ -395,6 +396,7 @@ TEST(vt, raw_json_loader_normalizes_unbased_u32_primitives_to_uint32_base) {
 }
 
 TEST(vt, time_is_builtin_and_json_loader_does_not_override_it) {
+    TEST_REQUIRE_FILE("data/virtools_parameter_types.json");
     nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
     ASSERT_TRUE(arena != NULL);
     nmo_type_registry_t *reg = nmo_type_registry_create(arena);

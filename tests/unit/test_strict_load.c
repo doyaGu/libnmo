@@ -10,6 +10,7 @@
  * (well-formed files have no unresolved references).
  */
 TEST(strict_load, clean_file_succeeds) {
+    TEST_REQUIRE_FILE("data/Ballance/P_Modul_01.nmo");
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
 
@@ -44,6 +45,7 @@ TEST(strict_load, clean_file_succeeds) {
  * Non-strict loading with a valid file also succeeds (regression guard).
  */
 TEST(strict_load, non_strict_default_succeeds) {
+    TEST_REQUIRE_FILE("data/Ballance/P_Modul_01.nmo");
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
 

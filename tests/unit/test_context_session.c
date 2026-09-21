@@ -388,6 +388,7 @@ TEST(context_session, operation_registry_access) {
 }
 
 TEST(context_session, document_and_workspace_are_distinct_handles) {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     const char *path = NMO_TEST_DATA_FILE("Ballance/Camera.nmo");
     nmo_context_desc_t desc = {0};
     nmo_context_t *ctx = nmo_context_create(&desc);

@@ -72,6 +72,7 @@ static int load_fixture_with_profile(
 
 TEST(load_options, metadata_profile_stops_after_header_and_rejects_mutation)
 {
+    TEST_REQUIRE_FILE("data/Ballance/Gameplay.nmo");
     nmo_load_perf_stats_t stats = {0};
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
@@ -137,6 +138,8 @@ TEST(load_options, metadata_profile_stops_after_header_and_rejects_mutation)
 
 TEST(load_options, partial_profile_rejects_non_empty_session)
 {
+    TEST_REQUIRE_FILE("data/Ballance/Camera.nmo");
+    TEST_REQUIRE_FILE("data/Ballance/Gameplay.nmo");
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
     nmo_session_t *session = nmo_session_create(ctx);
@@ -166,6 +169,7 @@ TEST(load_options, partial_profile_rejects_non_empty_session)
 
 TEST(load_options, partial_profile_rejects_non_object_session_state)
 {
+    TEST_REQUIRE_FILE("data/Ballance/Camera.nmo");
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
     nmo_session_t *session = nmo_session_create(ctx);
@@ -195,6 +199,8 @@ TEST(load_options, partial_profile_rejects_non_object_session_state)
 
 TEST(load_options, phased_partial_profile_rejects_non_empty_session)
 {
+    TEST_REQUIRE_FILE("data/Ballance/Camera.nmo");
+    TEST_REQUIRE_FILE("data/Ballance/Gameplay.nmo");
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
     nmo_session_t *session = nmo_session_create(ctx);
@@ -230,6 +236,7 @@ TEST(load_options, phased_partial_profile_rejects_non_empty_session)
 
 TEST(load_options, phased_partial_profile_rejects_non_object_session_state)
 {
+    TEST_REQUIRE_FILE("data/Ballance/Camera.nmo");
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
     nmo_session_t *session = nmo_session_create(ctx);
@@ -265,6 +272,7 @@ TEST(load_options, phased_partial_profile_rejects_non_object_session_state)
 
 TEST(load_options, two_phase_serializer_rejects_partial_session)
 {
+    TEST_REQUIRE_FILE("data/Ballance/Gameplay.nmo");
     nmo_load_perf_stats_t stats = {0};
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
@@ -291,6 +299,7 @@ TEST(load_options, two_phase_serializer_rejects_partial_session)
 
 TEST(load_options, header_only_profile_stops_after_header)
 {
+    TEST_REQUIRE_FILE("data/Ballance/Gameplay.nmo");
     nmo_load_perf_stats_t stats = {0};
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
@@ -318,6 +327,7 @@ TEST(load_options, header_only_profile_stops_after_header)
 
 TEST(load_options, full_profile_is_default)
 {
+    TEST_REQUIRE_FILE("data/Ballance/Gameplay.nmo");
     nmo_load_perf_stats_t stats = {0};
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
@@ -609,6 +619,7 @@ TEST(load_options, diagnostics_capture_current_chunk_section)
 
 TEST(load_options, custom_allocator_controls_object_and_schema_storage)
 {
+    TEST_REQUIRE_FILE("data/Ballance/Gameplay.nmo");
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
     nmo_session_t *session = nmo_session_create(ctx);
@@ -633,6 +644,7 @@ TEST(load_options, custom_allocator_controls_object_and_schema_storage)
 
 TEST(load_options, changed_object_save_preserves_unlisted_chunks)
 {
+    TEST_REQUIRE_FILE("data/Ballance/Camera.nmo");
     const char *preserved_path = "test_changed_only_preserved.nmo";
     const char *default_path = "test_changed_only_default.nmo";
     remove(preserved_path);

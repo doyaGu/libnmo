@@ -101,6 +101,8 @@ static size_t find_level_roots(nmo_object_t **objects, size_t object_count,
 /* ---- all_reachable_from_root ---- */
 
 TEST(orphan_reach, all_reachable_from_root) {
+    TEST_REQUIRE_FILE("data/Balls.nmo");
+    TEST_REQUIRE_FILE("data/base.cmo");
     /* Try files that might contain CKLevel objects */
     static const char *candidates[] = {
         "data/base.cmo",
@@ -184,6 +186,8 @@ TEST(orphan_reach, all_reachable_from_root) {
 /* ---- reachable_superset_of_zero_incoming ---- */
 
 TEST(orphan_reach, reachable_superset_of_zero_incoming) {
+    TEST_REQUIRE_FILE("data/Balls.nmo");
+    TEST_REQUIRE_FILE("data/base.cmo");
     static const char *candidates[] = {
         "data/base.cmo",
         "data/Balls.nmo",

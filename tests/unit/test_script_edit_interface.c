@@ -261,6 +261,7 @@ static int body_contains_outward_input_index(const nmo_interface_body_t *body,
 
 TEST(script_edit_interface, remove_io_canonicalize_updates_interface_data_in_memory)
 {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     const char *io_add_path = "test_script_edit_interface_io_add.cmo";
     const char *iface_io_path = "test_script_edit_interface_io_present.cmo";
     nmo_context_t *ctx = NULL;
@@ -346,6 +347,7 @@ TEST(script_edit_interface, remove_io_canonicalize_updates_interface_data_in_mem
 
 TEST(script_edit_interface, remove_node_canonicalize_roundtrips_after_save)
 {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     const char *node_add_path = "test_script_edit_interface_node_add.cmo";
     const char *iface_node_path = "test_script_edit_interface_node_present.cmo";
     const char *node_remove_path = "test_script_edit_interface_node_remove.cmo";
@@ -435,6 +437,7 @@ TEST(script_edit_interface, remove_node_canonicalize_roundtrips_after_save)
 
 TEST(script_edit_interface, canonicalize_resolves_explicit_interface_objects)
 {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
     nmo_script_edit_tx_t *tx = NULL;

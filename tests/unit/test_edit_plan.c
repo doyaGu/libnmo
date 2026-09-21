@@ -1457,6 +1457,7 @@ TEST(edit_plan, executor_materializes_common_building_block_prototypes) {
 }
 
 TEST(edit_plan, executor_matches_authored_2d_text_golden_shape) {
+    TEST_REQUIRE_FIXTURE("Ballance/2D Text.nmo");
     nmo_context_t *golden_ctx = nmo_context_create(
         &(nmo_context_desc_t){.data_dir = NMO_TEST_DATA_DIR});
     ASSERT_NOT_NULL(golden_ctx);
@@ -4287,6 +4288,7 @@ TEST(edit_plan, executor_detaches_explicit_parameter_connections) {
 }
 
 TEST(edit_plan, executor_replaces_leaf_bb_in_transaction) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     nmo_context_t *ctx = nmo_context_create(
         &(nmo_context_desc_t){.data_dir = NMO_TEST_DATA_DIR});
     ASSERT_NOT_NULL(ctx);
@@ -4338,6 +4340,7 @@ TEST(edit_plan, executor_replaces_leaf_bb_in_transaction) {
 }
 
 TEST(edit_plan, executor_replace_bb_dry_run_rolls_back) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     nmo_context_t *ctx = nmo_context_create(
         &(nmo_context_desc_t){.data_dir = NMO_TEST_DATA_DIR});
     ASSERT_NOT_NULL(ctx);
@@ -4392,6 +4395,7 @@ TEST(edit_plan, executor_replace_bb_dry_run_rolls_back) {
 }
 
 TEST(edit_plan, executor_folds_closed_graph_in_transaction) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     nmo_context_t *ctx = nmo_context_create(
         &(nmo_context_desc_t){.data_dir = NMO_TEST_DATA_DIR});
     ASSERT_NOT_NULL(ctx);
@@ -4449,6 +4453,7 @@ TEST(edit_plan, executor_folds_closed_graph_in_transaction) {
 }
 
 TEST(edit_plan, executor_fold_dry_run_rolls_back) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     nmo_context_t *ctx = nmo_context_create(
         &(nmo_context_desc_t){.data_dir = NMO_TEST_DATA_DIR});
     ASSERT_NOT_NULL(ctx);
@@ -4510,6 +4515,7 @@ TEST(edit_plan, executor_fold_dry_run_rolls_back) {
 }
 
 TEST(edit_plan, executor_fold_dry_run_reports_semantic_risks) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     nmo_context_t *ctx = nmo_context_create(
         &(nmo_context_desc_t){.data_dir = NMO_TEST_DATA_DIR});
     ASSERT_NOT_NULL(ctx);
@@ -4601,6 +4607,7 @@ TEST(edit_plan, report_semantic_risk_merge_deduplicates) {
 }
 
 TEST(edit_plan, executor_merges_edit_plan_semantic_validation) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     nmo_context_t *ctx = nmo_context_create(
         &(nmo_context_desc_t){.data_dir = NMO_TEST_DATA_DIR});
     ASSERT_NOT_NULL(ctx);
@@ -4649,6 +4656,7 @@ TEST(edit_plan, executor_merges_edit_plan_semantic_validation) {
 }
 
 TEST(edit_plan, executor_reports_generic_activation_delay_risk) {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
     nmo_session_t *session =
@@ -4689,6 +4697,7 @@ TEST(edit_plan, executor_reports_generic_activation_delay_risk) {
 }
 
 TEST(edit_plan, executor_fold_failure_reports_operation_diagnostic) {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     nmo_context_t *ctx = nmo_context_create(
         &(nmo_context_desc_t){.data_dir = NMO_TEST_DATA_DIR});
     ASSERT_NOT_NULL(ctx);

@@ -110,6 +110,7 @@ static nmo_object_id_t probe_create_behavior(probe_fixture_t *fixture,
 
 TEST(probe_analyzer, selects_unique_message_candidate_and_link)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     probe_fixture_t fixture;
     probe_fixture_init(&fixture);
 
@@ -260,6 +261,7 @@ TEST(probe_analyzer, honors_explicit_behavior_type_precedence)
 
 TEST(probe_analyzer, resolves_explicit_operation_write_site)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     probe_fixture_t fixture;
     probe_fixture_init(&fixture);
 
@@ -301,6 +303,7 @@ TEST(probe_analyzer, resolves_explicit_operation_write_site)
 
 TEST(probe_analyzer, reports_operation_write_site_candidates)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     probe_fixture_t fixture;
     probe_fixture_init(&fixture);
 
@@ -346,6 +349,7 @@ TEST(probe_analyzer, reports_operation_write_site_candidates)
 
 TEST(probe_analyzer, infers_auto_data_writer_cell_metadata)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     probe_fixture_t fixture;
     probe_fixture_init(&fixture);
 
@@ -379,6 +383,7 @@ TEST(probe_analyzer, infers_auto_data_writer_cell_metadata)
 
 TEST(probe_analyzer, rejects_operation_data_writer_column_type_mismatch)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     probe_fixture_t fixture;
     probe_fixture_init(&fixture);
 
@@ -552,6 +557,7 @@ TEST(probe_analyzer, analyzes_explicit_operation_value_flow)
 
 TEST(probe_analyzer, rejects_operation_write_site_outside_boundary)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     probe_fixture_t fixture;
     probe_fixture_init(&fixture);
 
@@ -579,6 +585,7 @@ TEST(probe_analyzer, rejects_operation_write_site_outside_boundary)
 
 TEST(probe_analyzer, rejects_operation_write_site_unrelated_io_endpoints)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     probe_fixture_t fixture;
     probe_fixture_init(&fixture);
 

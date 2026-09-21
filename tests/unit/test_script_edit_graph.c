@@ -29,6 +29,7 @@ static bool open_test_file(const char *path,
 
 TEST(script_edit_graph, build_reports_edit_ready_graph_for_ballance_root)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
     nmo_document_t *document = NULL;

@@ -95,6 +95,7 @@ TEST(header, validate) {
 }
 
 TEST(header, compute_crc_matches_ck2_reference_fixture) {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     FILE *file = fopen(NMO_TEST_DATA_FILE("Nop.cmo"), "rb");
     ASSERT_NOT_NULL(file);
 

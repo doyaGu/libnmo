@@ -61,6 +61,7 @@ TEST(beh_idx, find_empty)
 
 TEST(beh_idx, build_from_file)
 {
+    TEST_REQUIRE_FILE("data/Ballance/Gameplay.nmo");
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_TRUE(ctx != NULL);
     nmo_session_t *session = nmo_session_create(ctx);
@@ -104,6 +105,7 @@ TEST(beh_idx, build_from_file)
 
 TEST(beh_idx, build_reports_index_insert_oom)
 {
+    TEST_REQUIRE_FILE("data/Ballance/Gameplay.nmo");
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_TRUE(ctx != NULL);
     nmo_session_t *session = nmo_session_create(ctx);
@@ -144,6 +146,7 @@ TEST(beh_idx, build_reports_index_insert_oom)
 
 TEST(beh_idx, load_defers_interface_parse_until_behavior_access)
 {
+    TEST_REQUIRE_FILE("data/BBSamples/3D Transformations/Look At.cmo");
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_TRUE(ctx != NULL);
     nmo_session_t *session = nmo_session_create(ctx);
@@ -283,6 +286,7 @@ TEST(beh_idx, ensure_reports_interface_parse_failure)
  */
 TEST(beh_idx, invalidated_after_create)
 {
+    TEST_REQUIRE_FILE("data/Ballance/P_Modul_01.nmo");
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_TRUE(ctx != NULL);
     nmo_session_t *session = nmo_session_create(ctx);
@@ -321,6 +325,7 @@ TEST(beh_idx, invalidated_after_create)
  */
 TEST(beh_idx, invalidated_after_delete)
 {
+    TEST_REQUIRE_FILE("data/Ballance/P_Modul_01.nmo");
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_TRUE(ctx != NULL);
     nmo_session_t *session = nmo_session_create(ctx);

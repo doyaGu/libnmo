@@ -19,6 +19,7 @@ static void assert_lua_ok(nmo_lua_runtime_t *runtime, const char *script)
 
 TEST(lua_bindings_object, object_module_exposes_document_scoped_queries_and_edges)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
     ASSERT_NOT_NULL(runtime);
 
@@ -63,6 +64,7 @@ TEST(lua_bindings_object, object_module_exposes_document_scoped_queries_and_edge
 
 TEST(lua_bindings_object, object_module_exposes_workspace_scoped_mutations)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
     ASSERT_NOT_NULL(runtime);
 
@@ -86,6 +88,7 @@ TEST(lua_bindings_object, object_module_exposes_workspace_scoped_mutations)
 
 TEST(lua_bindings_object, object_module_reports_deterministic_errors)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
     ASSERT_NOT_NULL(runtime);
 

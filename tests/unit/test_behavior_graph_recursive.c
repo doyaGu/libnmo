@@ -88,6 +88,7 @@ static nmo_object_id_t find_nested_graph_script(
 
 TEST(graph_rec, depth0_root_only)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/Gameplay.nmo");
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
     nmo_document_t *document = NULL;
@@ -116,6 +117,7 @@ TEST(graph_rec, depth0_root_only)
 
 TEST(graph_rec, depth1_has_more_nodes)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/Gameplay.nmo");
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
     nmo_document_t *document = NULL;
@@ -148,6 +150,7 @@ TEST(graph_rec, depth1_has_more_nodes)
 
 TEST(graph_rec, depth_field_set)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/Gameplay.nmo");
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
     nmo_document_t *document = NULL;
@@ -184,6 +187,7 @@ TEST(graph_rec, depth_field_set)
 
 TEST(graph_rec, unlimited_depth_no_crash)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/Gameplay.nmo");
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
     nmo_document_t *document = NULL;

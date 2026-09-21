@@ -30,6 +30,7 @@ static void assert_lua_error_contains(nmo_lua_runtime_t *runtime,
 
 TEST(lua_bindings_behavior, behavior_module_uses_document_and_workspace_handles)
 {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
     ASSERT_NOT_NULL(runtime);
 
@@ -65,6 +66,7 @@ TEST(lua_bindings_behavior, behavior_module_uses_document_and_workspace_handles)
 
 TEST(lua_bindings_behavior, behavior_module_exposes_nested_graph_helpers_and_no_raw_graph)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
     ASSERT_NOT_NULL(runtime);
 
@@ -95,6 +97,7 @@ TEST(lua_bindings_behavior, behavior_module_exposes_nested_graph_helpers_and_no_
 
 TEST(lua_bindings_behavior, begin_edit_requires_workspace_and_returns_tx)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
     ASSERT_NOT_NULL(runtime);
 
@@ -123,6 +126,7 @@ TEST(lua_bindings_behavior, begin_edit_requires_workspace_and_returns_tx)
 
 TEST(lua_bindings_behavior, behavior_edit_reports_pending_plan_and_commit_schema_v2)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
     ASSERT_NOT_NULL(runtime);
 
@@ -184,6 +188,7 @@ TEST(lua_bindings_behavior, behavior_edit_reports_pending_plan_and_commit_schema
 
 TEST(lua_bindings_behavior, behavior_edit_rollback_discards_pending_plan)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
     ASSERT_NOT_NULL(runtime);
 
@@ -213,6 +218,7 @@ TEST(lua_bindings_behavior, behavior_edit_rollback_discards_pending_plan)
 
 TEST(lua_bindings_behavior, behavior_edit_chains_pending_parameter_handles)
 {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
     ASSERT_NOT_NULL(runtime);
 
@@ -249,6 +255,7 @@ TEST(lua_bindings_behavior, behavior_edit_chains_pending_parameter_handles)
 
 TEST(lua_bindings_behavior, behavior_execute_returns_edit_report_schema_v2)
 {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
     ASSERT_NOT_NULL(runtime);
 
@@ -280,6 +287,7 @@ TEST(lua_bindings_behavior, behavior_execute_returns_edit_report_schema_v2)
 
 TEST(lua_bindings_behavior, behavior_add_node_accepts_manager_entry_policy)
 {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
     ASSERT_NOT_NULL(runtime);
 
@@ -306,6 +314,7 @@ TEST(lua_bindings_behavior, behavior_add_node_accepts_manager_entry_policy)
 
 TEST(lua_bindings_behavior, behavior_set_parameter_value_accepts_manager_entry_policy)
 {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
     ASSERT_NOT_NULL(runtime);
 
@@ -334,6 +343,7 @@ TEST(lua_bindings_behavior, behavior_set_parameter_value_accepts_manager_entry_p
 
 TEST(lua_bindings_behavior, behavior_manager_entry_reports_policy_path)
 {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
     ASSERT_NOT_NULL(runtime);
 
@@ -356,6 +366,7 @@ TEST(lua_bindings_behavior, behavior_manager_entry_reports_policy_path)
 
 TEST(lua_bindings_behavior, behavior_manager_entry_rejects_unknown_fields)
 {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
     ASSERT_NOT_NULL(runtime);
 
@@ -378,6 +389,7 @@ TEST(lua_bindings_behavior, behavior_manager_entry_rejects_unknown_fields)
 
 TEST(lua_bindings_behavior, behavior_execute_rollback_discards_queued_plan)
 {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
     ASSERT_NOT_NULL(runtime);
 

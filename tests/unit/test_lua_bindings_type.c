@@ -28,6 +28,7 @@ static void assert_lua_ok(nmo_lua_runtime_t *runtime, const char *script)
 
 TEST(lua_bindings_type, type_module_works_with_context_and_document_scoped_objects)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
     char float_guid[32];
     char script[2048];

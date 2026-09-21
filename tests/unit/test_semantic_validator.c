@@ -251,6 +251,7 @@ static const nmo_behavior_semantic_risk_t *find_risk(
 
 TEST(semantic_validator, boundary_reports_dangling_delay_and_shared_risks)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     semantic_fixture_t fixture;
     semantic_fixture_init(&fixture);
 
@@ -302,6 +303,7 @@ TEST(semantic_validator, boundary_reports_dangling_delay_and_shared_risks)
 
 TEST(semantic_validator, detects_message_flow_by_signature_metadata)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     semantic_fixture_t fixture;
     semantic_fixture_init(&fixture);
 
@@ -826,6 +828,7 @@ TEST(semantic_validator, detects_missing_symbolic_message_handle_value)
 
 TEST(semantic_validator, edit_plan_rejects_missing_replace_target)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     semantic_fixture_t fixture;
     semantic_fixture_init(&fixture);
 
@@ -854,6 +857,7 @@ TEST(semantic_validator, edit_plan_rejects_missing_replace_target)
 
 TEST(semantic_validator, edit_plan_reports_generic_op_risks)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     semantic_fixture_t fixture;
     semantic_fixture_init(&fixture);
 
@@ -885,6 +889,7 @@ TEST(semantic_validator, edit_plan_reports_generic_op_risks)
 
 TEST(semantic_validator, edit_plan_reports_invalid_handle_reference)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     semantic_fixture_t fixture;
     semantic_fixture_init(&fixture);
 
@@ -928,6 +933,7 @@ TEST(semantic_validator, edit_plan_reports_invalid_handle_reference)
 
 TEST(semantic_validator, edit_plan_rejects_missing_add_node_child_handle)
 {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     semantic_fixture_t fixture;
     semantic_fixture_init_path(&fixture, NMO_TEST_DATA_FILE("Nop.cmo"));
 
@@ -967,6 +973,7 @@ TEST(semantic_validator, edit_plan_rejects_missing_add_node_child_handle)
 
 TEST(semantic_validator, edit_plan_rejects_parameter_handle_as_control_endpoint)
 {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     semantic_fixture_t fixture;
     semantic_fixture_init_path(&fixture, NMO_TEST_DATA_FILE("Nop.cmo"));
 
@@ -1010,6 +1017,7 @@ TEST(semantic_validator, edit_plan_rejects_parameter_handle_as_control_endpoint)
 
 TEST(semantic_validator, edit_plan_rejects_control_handle_as_parameter_reference)
 {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     semantic_fixture_t fixture;
     semantic_fixture_init_path(&fixture, NMO_TEST_DATA_FILE("Nop.cmo"));
 
@@ -1049,6 +1057,7 @@ TEST(semantic_validator, edit_plan_rejects_control_handle_as_parameter_reference
 
 TEST(semantic_validator, edit_plan_reports_behavior_owner_type_mismatch)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     semantic_fixture_t fixture;
     semantic_fixture_init(&fixture);
 
@@ -1083,6 +1092,7 @@ TEST(semantic_validator, edit_plan_reports_behavior_owner_type_mismatch)
 
 TEST(semantic_validator, edit_plan_reports_behavior_io_type_mismatch)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     semantic_fixture_t fixture;
     semantic_fixture_init(&fixture);
 
@@ -1112,6 +1122,7 @@ TEST(semantic_validator, edit_plan_reports_behavior_io_type_mismatch)
 
 TEST(semantic_validator, edit_plan_reports_behavior_node_type_mismatch)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     semantic_fixture_t fixture;
     semantic_fixture_init(&fixture);
 
@@ -1144,6 +1155,7 @@ TEST(semantic_validator, edit_plan_reports_behavior_node_type_mismatch)
 
 TEST(semantic_validator, edit_plan_reports_control_endpoint_type_mismatch)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     semantic_fixture_t fixture;
     semantic_fixture_init(&fixture);
 
@@ -1183,6 +1195,7 @@ TEST(semantic_validator, edit_plan_reports_control_endpoint_type_mismatch)
 
 TEST(semantic_validator, edit_plan_reports_control_link_type_mismatch)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     semantic_fixture_t fixture;
     semantic_fixture_init(&fixture);
 
@@ -1219,6 +1232,7 @@ TEST(semantic_validator, edit_plan_reports_control_link_type_mismatch)
 
 TEST(semantic_validator, edit_plan_reports_nested_control_endpoint_scope)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     semantic_fixture_t fixture;
     semantic_fixture_init(&fixture);
 
@@ -1282,6 +1296,7 @@ TEST(semantic_validator, edit_plan_reports_nested_control_endpoint_scope)
 
 TEST(semantic_validator, edit_plan_reports_unowned_control_endpoint)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     semantic_fixture_t fixture;
     semantic_fixture_init(&fixture);
 
@@ -1330,6 +1345,7 @@ TEST(semantic_validator, edit_plan_reports_unowned_control_endpoint)
 
 TEST(semantic_validator, edit_plan_reports_rewire_control_endpoint_scope)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     semantic_fixture_t fixture;
     semantic_fixture_init(&fixture);
 
@@ -1402,6 +1418,7 @@ TEST(semantic_validator, edit_plan_reports_rewire_control_endpoint_scope)
 
 TEST(semantic_validator, edit_plan_reports_parameter_type_mismatch)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     semantic_fixture_t fixture;
     semantic_fixture_init(&fixture);
 
@@ -1647,6 +1664,7 @@ TEST(semantic_validator, edit_plan_honors_explicit_parameter_type_precedence)
 
 TEST(semantic_validator, edit_plan_reports_parameter_type_mismatch_with_target_handle)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     semantic_fixture_t fixture;
     semantic_fixture_init(&fixture);
 
@@ -1685,6 +1703,7 @@ TEST(semantic_validator, edit_plan_reports_parameter_type_mismatch_with_target_h
 
 TEST(semantic_validator, edit_plan_reports_parameter_object_type_mismatch)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     semantic_fixture_t fixture;
     semantic_fixture_init(&fixture);
 
@@ -1714,6 +1733,7 @@ TEST(semantic_validator, edit_plan_reports_parameter_object_type_mismatch)
 
 TEST(semantic_validator, edit_plan_reports_parameter_target_type_mismatch)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     semantic_fixture_t fixture;
     semantic_fixture_init(&fixture);
 
@@ -1745,6 +1765,7 @@ TEST(semantic_validator, edit_plan_reports_parameter_target_type_mismatch)
 
 TEST(semantic_validator, edit_plan_reports_disconnect_parameter_target_type_mismatch)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     semantic_fixture_t fixture;
     semantic_fixture_init(&fixture);
 
@@ -1774,6 +1795,7 @@ TEST(semantic_validator, edit_plan_reports_disconnect_parameter_target_type_mism
 
 TEST(semantic_validator, edit_plan_reports_value_parameter_type_mismatch)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     semantic_fixture_t fixture;
     semantic_fixture_init(&fixture);
 
@@ -1809,6 +1831,7 @@ TEST(semantic_validator, edit_plan_reports_value_parameter_type_mismatch)
 
 TEST(semantic_validator, edit_plan_reports_scene_sensitive_parameter_ref)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     semantic_fixture_t fixture;
     semantic_fixture_init(&fixture);
 
@@ -1857,6 +1880,7 @@ TEST(semantic_validator, edit_plan_reports_scene_sensitive_parameter_ref)
 
 TEST(semantic_validator, edit_plan_reports_operation_type_mismatch)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     semantic_fixture_t fixture;
     semantic_fixture_init(&fixture);
 
@@ -1961,6 +1985,7 @@ TEST(semantic_validator, edit_plan_validates_explicit_operation_state)
 
 TEST(semantic_validator, edit_plan_reports_operation_type_mismatch_with_handle_refs)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     semantic_fixture_t fixture;
     semantic_fixture_init(&fixture);
 
@@ -2006,6 +2031,7 @@ TEST(semantic_validator, edit_plan_reports_operation_type_mismatch_with_handle_r
 
 TEST(semantic_validator, edit_plan_reports_operation_type_mismatch_with_node_param_handle)
 {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     semantic_fixture_t fixture;
     semantic_fixture_init_path(&fixture, NMO_TEST_DATA_FILE("Nop.cmo"));
 
@@ -2049,6 +2075,7 @@ TEST(semantic_validator, edit_plan_reports_operation_type_mismatch_with_node_par
 
 TEST(semantic_validator, edit_plan_reports_operation_parent_type_mismatch)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     semantic_fixture_t fixture;
     semantic_fixture_init(&fixture);
 
@@ -2088,6 +2115,7 @@ TEST(semantic_validator, edit_plan_reports_operation_parent_type_mismatch)
 
 TEST(semantic_validator, edit_plan_reports_operation_object_type_mismatch)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     semantic_fixture_t fixture;
     semantic_fixture_init(&fixture);
 
@@ -2117,6 +2145,7 @@ TEST(semantic_validator, edit_plan_reports_operation_object_type_mismatch)
 
 TEST(semantic_validator, edit_plan_reports_rewire_operation_type_mismatch)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     semantic_fixture_t fixture;
     semantic_fixture_init(&fixture);
 
@@ -2179,6 +2208,7 @@ TEST(semantic_validator, edit_plan_reports_rewire_operation_type_mismatch)
 
 TEST(semantic_validator, edit_plan_reports_rewire_operation_existing_slot_dangling)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     semantic_fixture_t fixture;
     semantic_fixture_init(&fixture);
 
@@ -2236,6 +2266,7 @@ TEST(semantic_validator, edit_plan_reports_rewire_operation_existing_slot_dangli
 
 TEST(semantic_validator, edit_plan_reports_rewire_operation_type_mismatch_with_handle_refs)
 {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     semantic_fixture_t fixture;
     semantic_fixture_init_path(&fixture, NMO_TEST_DATA_FILE("Nop.cmo"));
 
@@ -2296,6 +2327,7 @@ TEST(semantic_validator, edit_plan_reports_rewire_operation_type_mismatch_with_h
 
 TEST(semantic_validator, edit_plan_reports_data_cell_bounds)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     semantic_fixture_t fixture;
     semantic_fixture_init(&fixture);
 
@@ -2323,6 +2355,7 @@ TEST(semantic_validator, edit_plan_reports_data_cell_bounds)
 
 TEST(semantic_validator, edit_plan_reports_data_cell_type_mismatch)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/Balls.nmo");
     semantic_fixture_t fixture;
     semantic_fixture_init_path(&fixture, NMO_TEST_DATA_FILE("Ballance/Balls.nmo"));
 
@@ -2447,6 +2480,7 @@ TEST(semantic_validator, edit_plan_reports_dangling_data_cell_reference)
 
 TEST(semantic_validator, edit_plan_reports_unknown_building_block)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     semantic_fixture_t fixture;
     semantic_fixture_init(&fixture);
 
@@ -2478,6 +2512,7 @@ TEST(semantic_validator, edit_plan_reports_unknown_building_block)
 
 TEST(semantic_validator, edit_plan_reports_unknown_replace_building_block)
 {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     semantic_fixture_t fixture;
     semantic_fixture_init_path(&fixture, NMO_TEST_DATA_FILE("Nop.cmo"));
 
@@ -2510,6 +2545,7 @@ TEST(semantic_validator, edit_plan_reports_unknown_replace_building_block)
 
 TEST(semantic_validator, edit_plan_reports_targetable_behavior_missing_target)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     semantic_fixture_t fixture;
     semantic_fixture_init(&fixture);
 
@@ -2559,6 +2595,7 @@ TEST(semantic_validator, edit_plan_reports_targetable_behavior_missing_target)
 
 TEST(semantic_validator, edit_plan_reports_target_parameter_class_mismatch)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     semantic_fixture_t fixture;
     semantic_fixture_init(&fixture);
 
@@ -2623,6 +2660,7 @@ TEST(semantic_validator, edit_plan_reports_target_parameter_class_mismatch)
 
 TEST(semantic_validator, edit_plan_reports_prototype_save_flags_mismatch)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     semantic_fixture_t fixture;
     semantic_fixture_init(&fixture);
 
@@ -2725,6 +2763,7 @@ TEST(semantic_validator, edit_plan_checks_explicit_behavior_prototype)
 
 TEST(semantic_validator, edit_plan_reports_replace_target_type_mismatch)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     semantic_fixture_t fixture;
     semantic_fixture_init(&fixture);
 
@@ -2760,6 +2799,7 @@ TEST(semantic_validator, edit_plan_reports_replace_target_type_mismatch)
 
 TEST(semantic_validator, edit_plan_reports_interface_policy_risk)
 {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     semantic_fixture_t fixture;
     semantic_fixture_init_path(
         &fixture,
@@ -2792,6 +2832,7 @@ TEST(semantic_validator, edit_plan_reports_interface_policy_risk)
 
 TEST(semantic_validator, edit_plan_reports_probe_analysis_safety_risk)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     semantic_fixture_t fixture;
     semantic_fixture_init(&fixture);
 
@@ -2838,6 +2879,7 @@ TEST(semantic_validator, edit_plan_reports_probe_analysis_safety_risk)
 
 TEST(semantic_validator, edit_plan_reports_probe_analysis_type_mismatch)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     semantic_fixture_t fixture;
     semantic_fixture_init(&fixture);
 
@@ -2887,6 +2929,7 @@ TEST(semantic_validator, edit_plan_reports_probe_analysis_type_mismatch)
 
 TEST(semantic_validator, edit_plan_rejects_conflicting_probe_safe_insertion)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     semantic_fixture_t fixture;
     semantic_fixture_init(&fixture);
 

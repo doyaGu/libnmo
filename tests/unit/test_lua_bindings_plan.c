@@ -71,6 +71,7 @@ TEST(lua_bindings_plan, plan_module_builds_edit_plan)
 
 TEST(lua_bindings_plan, plan_module_executes_dry_run)
 {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
     ASSERT_NOT_NULL(runtime);
 
@@ -112,6 +113,7 @@ TEST(lua_bindings_plan, plan_module_executes_dry_run)
 
 TEST(lua_bindings_plan, plan_module_executes_rename_io_dry_run)
 {
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
     ASSERT_NOT_NULL(runtime);
 
@@ -142,6 +144,7 @@ TEST(lua_bindings_plan, plan_module_executes_rename_io_dry_run)
 
 TEST(lua_bindings_plan, plan_execute_reports_probe_selector_analysis)
 {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
     ASSERT_NOT_NULL(runtime);
 
@@ -176,6 +179,7 @@ TEST(lua_bindings_plan, plan_execute_reports_probe_selector_analysis)
 
 TEST(lua_bindings_plan, plan_module_executes_behavior_link_dry_run)
 {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
     ASSERT_NOT_NULL(runtime);
 
@@ -217,6 +221,7 @@ TEST(lua_bindings_plan, plan_module_executes_behavior_link_dry_run)
 
 TEST(lua_bindings_plan, plan_module_executes_add_parameter_dry_run)
 {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
     ASSERT_NOT_NULL(runtime);
 
@@ -253,6 +258,7 @@ TEST(lua_bindings_plan, plan_module_executes_add_parameter_dry_run)
 
 TEST(lua_bindings_plan, plan_module_executes_add_operation_dry_run)
 {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
     ASSERT_NOT_NULL(runtime);
 
@@ -286,6 +292,7 @@ TEST(lua_bindings_plan, plan_module_executes_add_operation_dry_run)
 
 TEST(lua_bindings_plan, plan_module_executes_parameter_value_dry_run)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/MenuLevel.nmo");
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
     ASSERT_NOT_NULL(runtime);
 
@@ -316,6 +323,7 @@ TEST(lua_bindings_plan, plan_module_executes_parameter_value_dry_run)
 
 TEST(lua_bindings_plan, plan_module_executes_connect_parameter_to_handle_dry_run)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
     ASSERT_NOT_NULL(runtime);
 
@@ -347,6 +355,7 @@ TEST(lua_bindings_plan, plan_module_executes_connect_parameter_to_handle_dry_run
 
 TEST(lua_bindings_plan, plan_module_executes_parameter_writes_to_handle_dry_run)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
     ASSERT_NOT_NULL(runtime);
 
@@ -381,6 +390,7 @@ TEST(lua_bindings_plan, plan_module_executes_parameter_writes_to_handle_dry_run)
 
 TEST(lua_bindings_plan, plan_parameter_value_accepts_manager_entry_policy)
 {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
     ASSERT_NOT_NULL(runtime);
 
@@ -442,6 +452,7 @@ TEST(lua_bindings_plan, plan_manager_entry_rejects_unknown_fields)
 
 TEST(lua_bindings_plan, plan_module_executes_fold_dry_run)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
     ASSERT_NOT_NULL(runtime);
 
@@ -472,6 +483,7 @@ TEST(lua_bindings_plan, plan_module_executes_fold_dry_run)
 
 TEST(lua_bindings_plan, plan_module_executes_fold_with_maps_dry_run)
 {
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
     nmo_lua_runtime_t *runtime = nmo_lua_runtime_create();
     ASSERT_NOT_NULL(runtime);
 

@@ -63,6 +63,7 @@ static nmo_object_t *find_reflective_object(nmo_context_t *ctx, nmo_session_t *s
 }
 
 TEST(object_summary_api, summarize_to_text_and_json) {
+    TEST_REQUIRE_FIXTURE("Nop.cmo");
     nmo_context_t *ctx = NULL;
     nmo_session_t *session = NULL;
     char errbuf[256] = {0};

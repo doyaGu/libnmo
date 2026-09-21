@@ -1694,6 +1694,7 @@ TEST(interface_chunk, parse_extra_sub_with_id2_values) {
  * ============================================================================ */
 
 TEST(interface_chunk, integration_real_file) {
+    TEST_REQUIRE_FILE("data/BBSamples/3D Transformations/Look At.cmo");
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
 
@@ -1768,6 +1769,7 @@ TEST(interface_chunk, integration_real_file) {
 }
 
 TEST(interface_chunk, integration_prevent_collision_parses_all_interfaces) {
+    TEST_REQUIRE_FILE("data/BBSamples/Collisions/Prevent Collision.cmo");
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
 
@@ -2328,6 +2330,7 @@ TEST(interface_chunk, write_sectioned_sparse_body_emits_vsd_sections) {
  * ============================================================================ */
 
 TEST(interface_chunk, write_real_file_byte_level_oracle) {
+    TEST_REQUIRE_FILE("data/BBSamples/Collisions/Prevent Collision.cmo");
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
     nmo_session_t *session = nmo_session_create(ctx);
@@ -2735,6 +2738,7 @@ TEST(interface_chunk, extra_buffer_stays_in_section) {
  * ============================================================================ */
 
 TEST(interface_chunk, serialize_structured_write_round_trip) {
+    TEST_REQUIRE_FILE("data/BBSamples/Collisions/Prevent Collision.cmo");
     /* Load a real file, modify an interface_data field, save, reload,
      * verify the modification is present.  If the save path copied
      * the raw interface_chunk instead of using the structured writer,
