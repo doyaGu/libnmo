@@ -217,17 +217,39 @@ void test_format_error(char *buffer, size_t buffer_size, const char *format, ...
 /* Skip the current test when a file under the data directory is missing. */
 #define TEST_REQUIRE_FIXTURE(name) TEST_REQUIRE_FILE(NMO_TEST_DATA_FILE(name))
 
+/*
+ * Assertion operands are evaluated exactly once. The comparison macros need
+ * a type to hold each operand, so they rely on __typeof__, which GCC, Clang,
+ * and MSVC 19.39+ (Visual Studio 2022 17.9) all provide in C17 mode.
+ */
+#if defined(__GNUC__) || defined(__clang__) || \
+    (defined(_MSC_VER) && _MSC_VER >= 1939)
+#define TEST_TYPEOF(expr) __typeof__(expr)
+#else
+#error "test_framework.h needs __typeof__ for single-evaluation assertions"
+#endif
+/*
+ * The type both operands of a comparison convert to: arrays and functions
+ * decay to pointers, integer operands get the usual arithmetic conversions,
+ * and a NULL operand takes the other side's pointer type. Nothing here is
+ * evaluated.
+ */
+#define TEST_COMMON_TYPE(a, b) TEST_TYPEOF(1 ? (a) : (b))
+
 /* Basic assertion macros - enhanced with better error messages
  * Convention: ASSERT_* takes (expected, actual) where applicable.
+ * Every operand is evaluated once, so side effects in operands are safe.
  */
-#define ASSERT_EQ(a, b)                                                        \
+#define ASSERT_EQ(a, b)                                                       \
     do {                                                                       \
-        if (!((a) == (b))) {                                                  \
+        TEST_COMMON_TYPE(a, b) test_lhs_ = (a);                                \
+        TEST_COMMON_TYPE(a, b) test_rhs_ = (b);                                \
+        if (!(test_lhs_ == test_rhs_)) {                                      \
             char _msg[512];                                                   \
             test_format_error(_msg, sizeof(_msg),                             \
                              "Assertion failed: " #a " == " #b "\n"          \
                              "  Expected: %lld\n  Actual: %lld",              \
-                             (long long)(a), (long long)(b));               \
+                             (long long)test_lhs_, (long long)test_rhs_);     \
             test_add_result(__func__, __func__, 0, _msg, __FILE__, __LINE__); \
             return;                                                            \
         }                                                                      \
@@ -244,14 +266,16 @@ void test_format_error(char *buffer, size_t buffer_size, const char *format, ...
         }                                                                       \
     } while (0)
 
-#define ASSERT_NE(a, b)                                                        \
+#define ASSERT_NE(a, b)                                                       \
     do {                                                                       \
-        if (!((a) != (b))) {                                                  \
+        TEST_COMMON_TYPE(a, b) test_lhs_ = (a);                                \
+        TEST_COMMON_TYPE(a, b) test_rhs_ = (b);                                \
+        if (!(test_lhs_ != test_rhs_)) {                                      \
             char _msg[512];                                                   \
             test_format_error(_msg, sizeof(_msg),                             \
                              "Assertion failed: " #a " != " #b "\n"          \
                              "  Left: %lld\n  Right: %lld",                  \
-                             (long long)(a), (long long)(b));                 \
+                             (long long)test_lhs_, (long long)test_rhs_);     \
             test_add_result(__func__, __func__, 0, _msg, __FILE__, __LINE__); \
             return;                                                            \
         }                                                                      \
@@ -295,12 +319,13 @@ void test_format_error(char *buffer, size_t buffer_size, const char *format, ...
 
 #define ASSERT_NULL(ptr)                                                       \
     do {                                                                       \
-        if ((ptr) != NULL) {                                                  \
+        const void *test_ptr_ = (const void *)(ptr);                           \
+        if (test_ptr_ != NULL) {                                               \
             char _msg[512];                                                   \
             test_format_error(_msg, sizeof(_msg),                             \
                              "Assertion failed: " #ptr " is NULL\n"          \
                              "  Pointer is not NULL: %p",                     \
-                             (void*)(ptr));                                   \
+                             (void*)test_ptr_);                               \
             test_add_result(__func__, __func__, 0, _msg, __FILE__, __LINE__); \
             return;                                                            \
         }                                                                      \
@@ -315,14 +340,17 @@ static inline const char *test_safe_cstr(const char *str) {
 
 #define ASSERT_FLOAT_EQ(a, b, epsilon)                                         \
     do {                                                                       \
-        double _diff = fabs((double)(a) - (double)(b));                       \
-        if (_diff > (double)(epsilon)) {                                      \
+        double test_lhs_ = (double)(a);                                        \
+        double test_rhs_ = (double)(b);                                        \
+        double test_eps_ = (double)(epsilon);                                  \
+        double _diff = fabs(test_lhs_ - test_rhs_);                            \
+        if (_diff > test_eps_) {                                               \
             char _msg[512];                                                   \
             test_format_error(_msg, sizeof(_msg),                             \
                              "Float assertion failed: %s ≈ %s (±%g)\n"       \
                              "  Expected: %g\n  Actual: %g\n  Diff: %g",      \
-                             #a, #b, (double)(epsilon),                      \
-                             (double)(a), (double)(b), _diff);               \
+                             #a, #b, test_eps_,                               \
+                             test_lhs_, test_rhs_, _diff);                    \
             test_add_result(__func__, __func__, 0, _msg, __FILE__, __LINE__); \
             return;                                                            \
         }                                                                      \
@@ -360,61 +388,69 @@ static inline const char *test_safe_cstr(const char *str) {
         }                                                                      \
     } while (0)
 
-#define ASSERT_LT(a, b)                                                        \
+#define ASSERT_LT(a, b)                                                       \
     do {                                                                       \
-        if (!((a) < (b))) {                                                   \
+        TEST_COMMON_TYPE(a, b) test_lhs_ = (a);                                \
+        TEST_COMMON_TYPE(a, b) test_rhs_ = (b);                                \
+        if (!(test_lhs_ < test_rhs_)) {                                       \
             char _msg[512];                                                   \
             test_format_error(_msg, sizeof(_msg),                             \
                              "Assertion failed: " #a " < " #b "\n"           \
                              "  Expected: %lld < %lld\n"                      \
                              "  But got: %lld >= %lld",                       \
-                             (long long)(a), (long long)(b),                  \
-                             (long long)(a), (long long)(b));                \
+                             (long long)test_lhs_, (long long)test_rhs_,      \
+                             (long long)test_lhs_, (long long)test_rhs_);     \
             test_add_result(__func__, __func__, 0, _msg, __FILE__, __LINE__); \
             return;                                                            \
         }                                                                      \
     } while (0)
 
-#define ASSERT_LE(a, b)                                                        \
+#define ASSERT_LE(a, b)                                                       \
     do {                                                                       \
-        if (!((a) <= (b))) {                                                  \
+        TEST_COMMON_TYPE(a, b) test_lhs_ = (a);                                \
+        TEST_COMMON_TYPE(a, b) test_rhs_ = (b);                                \
+        if (!(test_lhs_ <= test_rhs_)) {                                      \
             char _msg[512];                                                   \
             test_format_error(_msg, sizeof(_msg),                             \
-                             "Assertion failed: " #a " <= " #b "\n"          \
-                             "  Expected: %lld <= %lld\n"                     \
-                             "  But got: %lld > %lld",                        \
-                             (long long)(a), (long long)(b),                  \
-                             (long long)(a), (long long)(b));                \
+                             "Assertion failed: " #a " <= " #b "\n"           \
+                             "  Expected: %lld <= %lld\n"                      \
+                             "  But got: %lld > %lld",                       \
+                             (long long)test_lhs_, (long long)test_rhs_,      \
+                             (long long)test_lhs_, (long long)test_rhs_);     \
             test_add_result(__func__, __func__, 0, _msg, __FILE__, __LINE__); \
             return;                                                            \
         }                                                                      \
     } while (0)
 
-#define ASSERT_GT(a, b)                                                        \
+#define ASSERT_GT(a, b)                                                       \
     do {                                                                       \
-        if (!((a) > (b))) {                                                   \
+        TEST_COMMON_TYPE(a, b) test_lhs_ = (a);                                \
+        TEST_COMMON_TYPE(a, b) test_rhs_ = (b);                                \
+        if (!(test_lhs_ > test_rhs_)) {                                       \
             char _msg[512];                                                   \
             test_format_error(_msg, sizeof(_msg),                             \
                              "Assertion failed: " #a " > " #b "\n"           \
                              "  Expected: %lld > %lld\n"                      \
                              "  But got: %lld <= %lld",                       \
-                             (long long)(a), (long long)(b),                  \
-                             (long long)(a), (long long)(b));                \
+                             (long long)test_lhs_, (long long)test_rhs_,      \
+                             (long long)test_lhs_, (long long)test_rhs_);     \
             test_add_result(__func__, __func__, 0, _msg, __FILE__, __LINE__); \
             return;                                                            \
         }                                                                      \
     } while (0)
 
-#define ASSERT_GE(a, b)                                                        \
+#define ASSERT_GE(a, b)                                                       \
     do {                                                                       \
-        if (!((a) >= (b))) {                                                  \
+        TEST_COMMON_TYPE(a, b) test_lhs_ = (a);                                \
+        TEST_COMMON_TYPE(a, b) test_rhs_ = (b);                                \
+        if (!(test_lhs_ >= test_rhs_)) {                                      \
             char _msg[512];                                                   \
             test_format_error(_msg, sizeof(_msg),                             \
-                             "Assertion failed: " #a " >= " #b "\n"          \
-                             "  Expected: %lld >= %lld\n"                     \
-                             "  But got: %lld < %lld",                        \
-                             (long long)(a), (long long)(b),                  \
-                             (long long)(a), (long long)(b));                \
+                             "Assertion failed: " #a " >= " #b "\n"           \
+                             "  Expected: %lld >= %lld\n"                      \
+                             "  But got: %lld < %lld",                       \
+                             (long long)test_lhs_, (long long)test_rhs_,      \
+                             (long long)test_lhs_, (long long)test_rhs_);     \
             test_add_result(__func__, __func__, 0, _msg, __FILE__, __LINE__); \
             return;                                                            \
         }                                                                      \
@@ -423,21 +459,24 @@ static inline const char *test_safe_cstr(const char *str) {
 /* New assertion types for enhanced testing */
 #define ASSERT_MEM_EQ(ptr1, ptr2, size)                                        \
     do {                                                                       \
-        if ((ptr1) == NULL || (ptr2) == NULL) {                              \
+        const void *test_p1_ = (const void *)(ptr1);                           \
+        const void *test_p2_ = (const void *)(ptr2);                           \
+        size_t test_size_ = (size_t)(size);                                    \
+        if (test_p1_ == NULL || test_p2_ == NULL) {                            \
             char _msg[512];                                                   \
             test_format_error(_msg, sizeof(_msg),                             \
                              "Memory assertion failed: NULL pointer\n"       \
                              "  ptr1: %p\n  ptr2: %p",                        \
-                             (void*)(ptr1), (void*)(ptr2));                  \
+                             (void*)test_p1_, (void*)test_p2_);               \
             test_add_result(__func__, __func__, 0, _msg, __FILE__, __LINE__); \
             return;                                                            \
         }                                                                      \
-        if (memcmp((ptr1), (ptr2), (size)) != 0) {                            \
+        if (memcmp(test_p1_, test_p2_, test_size_) != 0) {                      \
             char _msg[512];                                                   \
             test_format_error(_msg, sizeof(_msg),                             \
                              "Memory assertion failed: " #ptr1 " == " #ptr2 "\n" \
                              "  Size: %zu bytes\n  ptr1: %p\n  ptr2: %p",     \
-                             (size_t)(size), (void*)(ptr1), (void*)(ptr2));  \
+                             test_size_, (void*)test_p1_, (void*)test_p2_);   \
             test_add_result(__func__, __func__, 0, _msg, __FILE__, __LINE__); \
             return;                                                            \
         }                                                                      \
@@ -445,21 +484,24 @@ static inline const char *test_safe_cstr(const char *str) {
 
 #define ASSERT_MEM_NE(ptr1, ptr2, size)                                        \
     do {                                                                       \
-        if ((ptr1) == NULL || (ptr2) == NULL) {                              \
+        const void *test_p1_ = (const void *)(ptr1);                           \
+        const void *test_p2_ = (const void *)(ptr2);                           \
+        size_t test_size_ = (size_t)(size);                                    \
+        if (test_p1_ == NULL || test_p2_ == NULL) {                            \
             char _msg[512];                                                   \
             test_format_error(_msg, sizeof(_msg),                             \
                              "Memory assertion failed: NULL pointer\n"       \
                              "  ptr1: %p\n  ptr2: %p",                        \
-                             (void*)(ptr1), (void*)(ptr2));                  \
+                             (void*)test_p1_, (void*)test_p2_);               \
             test_add_result(__func__, __func__, 0, _msg, __FILE__, __LINE__); \
             return;                                                            \
         }                                                                      \
-        if (memcmp((ptr1), (ptr2), (size)) == 0) {                            \
+        if (memcmp(test_p1_, test_p2_, test_size_) == 0) {                      \
             char _msg[512];                                                   \
             test_format_error(_msg, sizeof(_msg),                             \
                              "Memory assertion failed: " #ptr1 " != " #ptr2 "\n" \
                              "  Size: %zu bytes\n  ptr1: %p\n  ptr2: %p",     \
-                             (size_t)(size), (void*)(ptr1), (void*)(ptr2));  \
+                             test_size_, (void*)test_p1_, (void*)test_p2_);   \
             test_add_result(__func__, __func__, 0, _msg, __FILE__, __LINE__); \
             return;                                                            \
         }                                                                      \
@@ -467,13 +509,17 @@ static inline const char *test_safe_cstr(const char *str) {
 
 #define ASSERT_IN_RANGE(value, min, max)                                        \
     do {                                                                       \
-        if ((value) < (min) || (value) > (max)) {                            \
+        TEST_COMMON_TYPE(value, min) test_val_ = (value);                      \
+        TEST_COMMON_TYPE(value, min) test_min_ = (min);                        \
+        TEST_COMMON_TYPE(value, max) test_max_ = (max);                        \
+        if (test_val_ < test_min_ || test_val_ > test_max_) {                  \
             char _msg[512];                                                   \
             test_format_error(_msg, sizeof(_msg),                             \
                              "Range assertion failed: %s in [%s, %s]\n"       \
                              "  Value: %lld\n  Expected range: [%lld, %lld]", \
                              #value, #min, #max,                              \
-                             (long long)(value), (long long)(min), (long long)(max)); \
+                             (long long)test_val_, (long long)test_min_,      \
+                             (long long)test_max_);                           \
             test_add_result(__func__, __func__, 0, _msg, __FILE__, __LINE__); \
             return;                                                            \
         }                                                                      \
@@ -484,12 +530,13 @@ static inline const char *test_safe_cstr(const char *str) {
         double _val = (double)(value);                                        \
         double _min = (double)(min);                                          \
         double _max = (double)(max);                                          \
-        if (_val < (_min - (double)(epsilon)) || _val > (_max + (double)(epsilon))) { \
+        double _eps = (double)(epsilon);                                      \
+        if (_val < (_min - _eps) || _val > (_max + _eps)) {                    \
             char _msg[512];                                                   \
             test_format_error(_msg, sizeof(_msg),                             \
                              "Float range assertion failed: %s in [%s, %s] (±%g)\n" \
                              "  Value: %g\n  Expected range: [%g, %g]",       \
-                             #value, #min, #max, (double)(epsilon),           \
+                             #value, #min, #max, _eps,                        \
                              _val, _min, _max);                               \
             test_add_result(__func__, __func__, 0, _msg, __FILE__, __LINE__); \
             return;                                                            \
@@ -498,24 +545,28 @@ static inline const char *test_safe_cstr(const char *str) {
 
 #define ASSERT_ARRAY_EQ(arr1, arr2, count)                                     \
     do {                                                                       \
-        if ((arr1) == NULL || (arr2) == NULL) {                              \
+        TEST_TYPEOF(&(arr1)[0]) test_a1_ = (arr1);                             \
+        TEST_TYPEOF(&(arr2)[0]) test_a2_ = (arr2);                             \
+        size_t test_count_ = (size_t)(count);                                  \
+        if (test_a1_ == NULL || test_a2_ == NULL) {                            \
             char _msg[512];                                                   \
             test_format_error(_msg, sizeof(_msg),                             \
                              "Array assertion failed: NULL array\n"         \
                              "  arr1: %p\n  arr2: %p",                       \
-                             (void*)(arr1), (void*)(arr2));                  \
+                             (void*)test_a1_, (void*)test_a2_);               \
             test_add_result(__func__, __func__, 0, _msg, __FILE__, __LINE__); \
             return;                                                            \
         }                                                                      \
-        for (size_t _i = 0; _i < (size_t)(count); _i++) {                    \
-            if ((arr1)[_i] != (arr2)[_i]) {                                  \
+        for (size_t _i = 0; _i < test_count_; _i++) {                          \
+            if (test_a1_[_i] != test_a2_[_i]) {                                \
                 char _msg[512];                                               \
                 test_format_error(_msg, sizeof(_msg),                         \
                                  "Array assertion failed: " #arr1 " == " #arr2 "\n" \
                                  "  Size: %zu elements\n  First mismatch at index %zu\n" \
                                  "  Expected[%zu] = %lld\n  Actual[%zu] = %lld", \
-                                 (size_t)(count), _i, _i,                    \
-                                 (long long)(arr2)[_i], _i, (long long)(arr1)[_i]); \
+                                 test_count_, _i, _i,                         \
+                                 (long long)test_a2_[_i], _i,                 \
+                                 (long long)test_a1_[_i]);                    \
                 test_add_result(__func__, __func__, 0, _msg, __FILE__, __LINE__); \
                 return;                                                        \
             }                                                                  \
