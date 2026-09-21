@@ -124,6 +124,14 @@ void test_add_result_with_time(const char *suite, const char *name, int passed,
                                const char *message, const char *file, int line,
                                double execution_time_ms);
 
+/* Skip support: a test may declare itself skipped (for example when an
+ * optional data fixture is absent). Skipped tests are neither passed nor
+ * failed. If every executed test in a binary is skipped, main() returns
+ * TEST_EXIT_CODE_SKIPPED so CTest can report the binary as skipped. */
+#define TEST_EXIT_CODE_SKIPPED 77
+void test_mark_skipped(const char *message, const char *file, int line);
+int test_file_exists(const char *path);
+
 /* Utility functions */
 double test_get_time_ms(void);
 int test_should_run_test(const char *suite, const char *name, test_category_t category);
@@ -185,6 +193,29 @@ void test_format_error(char *buffer, size_t buffer_size, const char *format, ...
 #define TEST_MAIN_END() \
         return test_framework_run(); \
     }
+
+/* Skip macros. Use inside a TEST body or a setup function. */
+#define TEST_SKIP(reason)                                                      \
+    do {                                                                       \
+        test_mark_skipped((reason), __FILE__, __LINE__);                       \
+        return;                                                                 \
+    } while (0)
+
+/* Skip the current test when an absolute or cwd-relative file is missing. */
+#define TEST_REQUIRE_FILE(path)                                                \
+    do {                                                                       \
+        const char *_req_path = (path);                                        \
+        if (!test_file_exists(_req_path)) {                                    \
+            char _msg[512];                                                    \
+            test_format_error(_msg, sizeof(_msg),                              \
+                             "Missing fixture: %s", _req_path);                 \
+            test_mark_skipped(_msg, __FILE__, __LINE__);                       \
+            return;                                                            \
+        }                                                                      \
+    } while (0)
+
+/* Skip the current test when a file under the data directory is missing. */
+#define TEST_REQUIRE_FIXTURE(name) TEST_REQUIRE_FILE(NMO_TEST_DATA_FILE(name))
 
 /* Basic assertion macros - enhanced with better error messages
  * Convention: ASSERT_* takes (expected, actual) where applicable.

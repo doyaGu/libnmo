@@ -31,6 +31,32 @@ static int g_test_count = 0;
 static int g_pass_count = 0;
 static int g_fail_count = 0;
 static int g_skip_count = 0;
+static int g_current_skipped = 0;
+static char g_current_skip_message[512];
+
+void test_mark_skipped(const char *message, const char *file, int line) {
+    (void)file;
+    (void)line;
+    g_current_skipped = 1;
+    if (message != NULL) {
+        snprintf(g_current_skip_message, sizeof(g_current_skip_message), "%s", message);
+    } else {
+        g_current_skip_message[0] = '\0';
+    }
+}
+
+int test_file_exists(const char *path) {
+    FILE *f;
+    if (path == NULL) {
+        return 0;
+    }
+    f = fopen(path, "rb");
+    if (f == NULL) {
+        return 0;
+    }
+    fclose(f);
+    return 1;
+}
 static double g_total_time = 0.0;
 
 /**
@@ -296,6 +322,8 @@ static int run_single_test(test_entry_t *entry) {
     
     /* Reset counters for this test */
     int before_count = g_test_suite->count;
+    g_current_skipped = 0;
+    g_current_skip_message[0] = '\0';
     
     /* Run setup function if provided */
     if (entry->setup) {
@@ -313,8 +341,10 @@ static int run_single_test(test_entry_t *entry) {
     /* Test isolation - begin */
     TEST_ISOLATE_BEGIN();
     
-    /* Execute the test function */
-    entry->func();
+    /* Execute the test function unless setup requested a skip */
+    if (!g_current_skipped) {
+        entry->func();
+    }
     
     /* Test isolation - end */
     TEST_ISOLATE_END();
@@ -341,6 +371,16 @@ static int run_single_test(test_entry_t *entry) {
         entry->teardown();
     }
     
+    /* A skip request with no recorded failure counts as skipped */
+    if (test_passed && g_current_skipped && g_test_suite->count == before_count) {
+        g_skip_count++;
+        printf("[SKIP] %s::%s\n", entry->suite_name, entry->test_name);
+        if (g_current_skip_message[0] != '\0') {
+            printf("       %s\n", g_current_skip_message);
+        }
+        return 2;
+    }
+
     /* Check if test passed (no failures recorded) */
     if (test_passed && g_test_suite->count == before_count) {
         /* No assertion failed, test passed */
@@ -432,7 +472,9 @@ int test_framework_run(void) {
             g_test_count++;
             int test_passed = run_single_test(entry);
             
-            if (test_passed) {
+            if (test_passed == 2) {
+                skipped++;
+            } else if (test_passed) {
                 passed++;
             } else {
                 failed++;
@@ -461,5 +503,12 @@ int test_framework_run(void) {
     printf("========================================\n\n");
 
     test_framework_cleanup();
-    return failed == 0 ? 0 : 1;
+    if (failed != 0) {
+        return 1;
+    }
+    /* Every executed test asked to be skipped: report as skipped, not passed */
+    if (passed == 0 && g_skip_count > 0) {
+        return TEST_EXIT_CODE_SKIPPED;
+    }
+    return 0;
 }
