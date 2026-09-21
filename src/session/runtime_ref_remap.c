@@ -25,7 +25,7 @@
 
 #include <string.h>
 
-/* 鈹€鈹€ ID remap lookup 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
+/* ---- ID remap lookup ------------------------------------------------------------------------------------------ */
 
 static bool runtime_lookup_mapping(
     const nmo_id_remap_t *remap,
@@ -50,7 +50,7 @@ static bool runtime_resolve_remapped_ref(
         (const nmo_id_remap_t *)context, ref->id, out_replacement_id);
 }
 
-/* 鈹€鈹€ Ref-field remap callback 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
+/* ---- Ref-field remap callback ------------------------------------------------------------------------ */
 
 typedef struct runtime_ref_remap_ctx {
     const nmo_id_remap_t *remap;
@@ -200,7 +200,7 @@ static bool runtime_remap_ref_field(
     return true;
 }
 
-/* 鈹€鈹€ Base-instance resolution 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
+/* ---- Base-instance resolution ------------------------------------------------------------------------ */
 
 static nmo_status_t runtime_remap_behavior_refs(
     nmo_behavior_state_t *state,
@@ -417,7 +417,7 @@ static nmo_status_t runtime_remap_dataarray_refs(
     return NMO_OK;
 }
 
-/* 鈹€鈹€ Public API 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
+/* ---- Public API ---------------------------------------------------------------------------------------------------- */
 
 nmo_status_t nmo_runtime_remap_copy_refs(
     const nmo_type_runtime_t *type_rt,

@@ -1,6 +1,6 @@
 /**
  * @file param_value.c
- * @brief Parameter value decoding 闁?type-aware buffer interpretation
+ * @brief Parameter value decoding - type-aware buffer interpretation
  *
  * Bridges the type system string converters (nmo_type_value_to_string)
  * with parameter buffer data (nmo_parameter_state_t.buffer_data) to
@@ -261,7 +261,7 @@ nmo_status_t nmo_behavior_param_value_to_string(
         nmo_type_registry_find_by_guid(registry, param->type_guid);
 
     if (!type) {
-        /* Unknown type 闁?hex fallback */
+        /* Unknown type - hex fallback */
         return format_hex_preview(data, data_size, buffer, buffer_size);
     }
 

@@ -30,7 +30,7 @@
 #include "../runtime/runtime_internal.h"
 #include <string.h>
 
-/* 鈹€鈹€ ID set (private) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
+/* ---- ID set (private) ---------------------------------------------------------------------------------------- */
 
 typedef struct runtime_id_set {
     nmo_arena_array_t ids;  /**< Ordered list of member IDs (for iteration) */
@@ -113,7 +113,7 @@ static int runtime_id_set_add(runtime_id_set_t *set, nmo_object_id_t id)
     return NMO_OK;
 }
 
-/* 鈹€鈹€ Delete-set collection 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
+/* ---- Delete-set collection ------------------------------------------------------------------------------ */
 
 static int runtime_collect_delete_set(
     nmo_object_repository_t *repo,
@@ -199,7 +199,7 @@ static int runtime_collect_delete_set(
     return NMO_OK;
 }
 
-/* 鈹€鈹€ Safe-detach pre-validation 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
+/* ---- Safe-detach pre-validation -------------------------------------------------------------------- */
 
 /**
  * @brief Validate that safe-detach supports every surviving referrer.
@@ -861,7 +861,7 @@ static nmo_status_t runtime_detach_deleted_references(
     return NMO_OK;
 }
 
-/* 鈹€鈹€ Public API 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ */
+/* ---- Public API ---------------------------------------------------------------------------------------------------- */
 
 nmo_status_t nmo_runtime_preview_delete(
     nmo_object_repository_t *repo,
