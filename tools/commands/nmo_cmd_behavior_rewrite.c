@@ -2043,7 +2043,7 @@ int nmo_cmd_behavior_fold(int argc,
 
     nmo_behavior_fold_report_t report = {0};
     nmo_edit_plan_t *edit_plan = NULL;
-    nmo_edit_report_t edit_report;
+    nmo_edit_report_t edit_report = {0};
     bool edit_report_ready = false;
     nmo_object_repository_t *repo = nmo_tool_owner_repository(c.workspace);
     const nmo_behavior_state_t *parent =
