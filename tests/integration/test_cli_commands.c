@@ -1545,13 +1545,24 @@ TEST(cli, validate_references_normalize_preserves_clean_chunks) {
     ASSERT_STR_CONTAINS(result.output, "Chunks are identical");
     free(result.output);
 
+    /* Normalization must keep the source file's write mode. The reference
+     * base.cmo is WHOLE_COMPRESSED; other builds of the same file also carry
+     * FOR_VIEWER, so compare against the source header instead of a constant. */
+    snprintf(args, sizeof(args), "-f json file header \"%s\"", fixture);
+    yyjson_doc *source_doc = run_cli_json(args);
+    ASSERT_NOT_NULL(source_doc);
+    yyjson_val *source_data = json_envelope_data(source_doc);
+    ASSERT_NOT_NULL(source_data);
+    uint64_t source_mode = yyjson_get_uint(yyjson_obj_get(source_data, "file_write_mode"));
+    ASSERT_TRUE((source_mode & NMO_FILE_WRITE_WHOLE_COMPRESSED) != 0);
+    yyjson_doc_free(source_doc);
+
     snprintf(args, sizeof(args), "-f json file header \"%s\"", output);
     yyjson_doc *doc = run_cli_json(args);
     ASSERT_NOT_NULL(doc);
     yyjson_val *data = json_envelope_data(doc);
     ASSERT_NOT_NULL(data);
-    ASSERT_EQ(NMO_FILE_WRITE_WHOLE_COMPRESSED,
-              yyjson_get_uint(yyjson_obj_get(data, "file_write_mode")));
+    ASSERT_EQ(source_mode, yyjson_get_uint(yyjson_obj_get(data, "file_write_mode")));
     yyjson_doc_free(doc);
 
     ASSERT_EQ(0, remove(output));
