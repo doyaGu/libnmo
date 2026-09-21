@@ -66,7 +66,7 @@ static char *run_cli(const char *args) {
 }
 
 static yyjson_doc *run_cli_json(const char *args) {
-    char full[2048];
+    char full[2048 + 16]; /* room for the prefix plus a 2047-byte args string */
     snprintf(full, sizeof(full), "-f json %s", args);
     char *out = run_cli(full);
     if (!out) return NULL;
