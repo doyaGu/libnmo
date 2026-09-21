@@ -70,28 +70,29 @@ jobs:
         if: matrix.msvc
         uses: ilammy/msvc-dev-cmd@v1
 
+      # Ninja everywhere: the MSVC job gets its toolchain from msvc-dev-cmd, so
+      # no Visual Studio generator version needs to be pinned.
       - name: Configure
         env:
           CC: ${{ matrix.cc }}
           CXX: ${{ matrix.cxx }}
-        run: |
-          if [ "${{ matrix.msvc }}" = "true" ]; then
-            cmake -S . -B build -G "Visual Studio 17 2022" -A x64
-          else
-            cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
-          fi
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
 
       - name: Build
-        run: cmake --build build --parallel --config ${{ matrix.build_type }}
+        run: cmake --build build --parallel
 
+      # Performance tests assert on wall-clock ratios and are not meaningful on
+      # shared runners. The allocator test deliberately requests SIZE_MAX bytes
+      # and expects NULL, which ASan must be told to allow.
       - name: Test
-        run: ctest --test-dir build --output-on-failure --parallel 4 -C ${{ matrix.build_type }}
+        env:
+          ASAN_OPTIONS: allocator_may_return_null=1:detect_leaks=1
+          UBSAN_OPTIONS: print_stacktrace=1
+        run: ctest --test-dir build --output-on-failure --parallel 4 --label-exclude performance
 
       - name: Smoke-run CLI
         run: |
-          if [ "${{ matrix.msvc }}" = "true" ]; then
-            ./build/tools/${{ matrix.build_type }}/nmo.exe --version
-          elif [ "${{ runner.os }}" = "Windows" ]; then
+          if [ "${{ runner.os }}" = "Windows" ]; then
             ./build/tools/nmo.exe --version
           else
             ./build/tools/nmo --version
