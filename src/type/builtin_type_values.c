@@ -28,7 +28,7 @@
 
 #define NMO_STORE_SCALAR(type, destination, expression) \
     do { \
-        const type nmo_stored_value = (expression); \
+        type const nmo_stored_value = (expression); \
         memcpy((destination), &nmo_stored_value, sizeof(nmo_stored_value)); \
     } while (0)
 
