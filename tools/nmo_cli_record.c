@@ -1,0 +1,536 @@
+/**
+ * @file nmo_cli_record.c
+ * @brief Format-neutral output records for CLI commands.
+ */
+#include "nmo_cli_record.h"
+
+#include "nmo_cli_json.h"
+#include "nmo_cli_output.h"
+
+#include <inttypes.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+typedef enum record_kind {
+    RECORD_UINT,
+    RECORD_INT,
+    RECORD_REAL,
+    RECORD_BOOL,
+    RECORD_STR,
+    RECORD_NULL,
+    RECORD_REF,
+    RECORD_ARRAY
+} record_kind_t;
+
+struct nmo_cli_record_array {
+    nmo_cli_record_t **items;
+    size_t count;
+    size_t capacity;
+};
+
+typedef struct record_field {
+    record_kind_t kind;
+    char *key;        /* JSON key, NULL when omitted from JSON */
+    char *label;      /* text label, NULL when omitted from text */
+    char *text;       /* rendered text value, NULL when omitted from text */
+    char *name_key;   /* RECORD_REF: JSON key for the name */
+    char *str;        /* RECORD_STR / RECORD_REF name */
+    uint64_t u;
+    int64_t i;
+    double d;
+    bool b;
+    nmo_cli_record_array_t array; /* RECORD_ARRAY */
+} record_field_t;
+
+struct nmo_cli_record {
+    record_field_t *fields;
+    size_t count;
+    size_t capacity;
+    char *summary;
+};
+
+static char *dup_str(const char *s)
+{
+    if (!s) {
+        return NULL;
+    }
+    size_t n = strlen(s) + 1u;
+    char *copy = (char *)malloc(n);
+    if (copy) {
+        memcpy(copy, s, n);
+    }
+    return copy;
+}
+
+static bool set_str(char **slot, const char *value)
+{
+    char *copy = dup_str(value);
+    if (value && !copy) {
+        return false;
+    }
+    free(*slot);
+    *slot = copy;
+    return true;
+}
+
+static bool set_formatted(char **slot, const char *format, ...)
+{
+    char buf[128];
+    va_list args;
+    va_start(args, format);
+    int n = vsnprintf(buf, sizeof(buf), format, args);
+    va_end(args);
+    if (n < 0) {
+        return false;
+    }
+    if ((size_t)n < sizeof(buf)) {
+        return set_str(slot, buf);
+    }
+    char *big = (char *)malloc((size_t)n + 1u);
+    if (!big) {
+        return false;
+    }
+    va_start(args, format);
+    vsnprintf(big, (size_t)n + 1u, format, args);
+    va_end(args);
+    free(*slot);
+    *slot = big;
+    return true;
+}
+
+nmo_cli_record_t *nmo_cli_record_new(void)
+{
+    return (nmo_cli_record_t *)calloc(1u, sizeof(nmo_cli_record_t));
+}
+
+static void field_dispose(record_field_t *field)
+{
+    free(field->key);
+    free(field->label);
+    free(field->text);
+    free(field->name_key);
+    free(field->str);
+    for (size_t i = 0; i < field->array.count; ++i) {
+        nmo_cli_record_free(field->array.items[i]);
+    }
+    free(field->array.items);
+    memset(field, 0, sizeof(*field));
+}
+
+void nmo_cli_record_free(nmo_cli_record_t *record)
+{
+    if (!record) {
+        return;
+    }
+    for (size_t i = 0; i < record->count; ++i) {
+        field_dispose(&record->fields[i]);
+    }
+    free(record->fields);
+    free(record->summary);
+    free(record);
+}
+
+size_t nmo_cli_record_field_count(const nmo_cli_record_t *record)
+{
+    return record ? record->count : 0u;
+}
+
+static record_field_t *field_append(nmo_cli_record_t *record,
+                                    record_kind_t kind,
+                                    const char *key,
+                                    const char *label)
+{
+    if (!record) {
+        return NULL;
+    }
+    if (record->count == record->capacity) {
+        size_t new_capacity = record->capacity ? record->capacity * 2u : 8u;
+        record_field_t *grown = (record_field_t *)realloc(
+            record->fields, new_capacity * sizeof(*grown));
+        if (!grown) {
+            return NULL;
+        }
+        record->fields = grown;
+        record->capacity = new_capacity;
+    }
+    record_field_t *field = &record->fields[record->count];
+    memset(field, 0, sizeof(*field));
+    field->kind = kind;
+    if (!set_str(&field->key, key) || !set_str(&field->label, label)) {
+        field_dispose(field);
+        return NULL;
+    }
+    record->count++;
+    return field;
+}
+
+static record_field_t *field_last(nmo_cli_record_t *record)
+{
+    if (!record || record->count == 0u) {
+        return NULL;
+    }
+    return &record->fields[record->count - 1u];
+}
+
+/* Undo a partially built trailing field after an allocation failure. */
+static bool field_fail(nmo_cli_record_t *record)
+{
+    record_field_t *field = field_last(record);
+    if (field) {
+        field_dispose(field);
+        record->count--;
+    }
+    return false;
+}
+
+bool nmo_cli_record_uint(nmo_cli_record_t *record, const char *key,
+                         const char *label, uint64_t value)
+{
+    record_field_t *field = field_append(record, RECORD_UINT, key, label);
+    if (!field) {
+        return false;
+    }
+    field->u = value;
+    if (!set_formatted(&field->text, "%" PRIu64, value)) {
+        return field_fail(record);
+    }
+    return true;
+}
+
+bool nmo_cli_record_int(nmo_cli_record_t *record, const char *key,
+                        const char *label, int64_t value)
+{
+    record_field_t *field = field_append(record, RECORD_INT, key, label);
+    if (!field) {
+        return false;
+    }
+    field->i = value;
+    if (!set_formatted(&field->text, "%" PRId64, value)) {
+        return field_fail(record);
+    }
+    return true;
+}
+
+bool nmo_cli_record_real(nmo_cli_record_t *record, const char *key,
+                         const char *label, double value,
+                         const char *text_format)
+{
+    record_field_t *field = field_append(record, RECORD_REAL, key, label);
+    if (!field) {
+        return false;
+    }
+    field->d = value;
+    if (!set_formatted(&field->text, text_format ? text_format : "%g", value)) {
+        return field_fail(record);
+    }
+    return true;
+}
+
+bool nmo_cli_record_bool(nmo_cli_record_t *record, const char *key,
+                         const char *label, bool value)
+{
+    record_field_t *field = field_append(record, RECORD_BOOL, key, label);
+    if (!field) {
+        return false;
+    }
+    field->b = value;
+    if (!set_str(&field->text, value ? "true" : "false")) {
+        return field_fail(record);
+    }
+    return true;
+}
+
+bool nmo_cli_record_str(nmo_cli_record_t *record, const char *key,
+                        const char *label, const char *value)
+{
+    record_field_t *field = field_append(record, RECORD_STR, key, label);
+    if (!field) {
+        return false;
+    }
+    const char *shown = value ? value : "";
+    if (!set_str(&field->str, shown) || !set_str(&field->text, shown)) {
+        return field_fail(record);
+    }
+    return true;
+}
+
+bool nmo_cli_record_str_opt(nmo_cli_record_t *record, const char *key,
+                            const char *label, const char *value,
+                            const char *text_fallback)
+{
+    if (value && value[0] != '\0') {
+        return nmo_cli_record_str(record, key, label, value);
+    }
+    if (!text_fallback || !label) {
+        return true;
+    }
+    return nmo_cli_record_text(record, label, text_fallback);
+}
+
+bool nmo_cli_record_hex32(nmo_cli_record_t *record, const char *key,
+                          const char *label, uint32_t value)
+{
+    record_field_t *field = field_append(record, RECORD_STR, key, label);
+    if (!field) {
+        return false;
+    }
+    if (!set_formatted(&field->str, "0x%08X", value) ||
+        !set_str(&field->text, field->str)) {
+        return field_fail(record);
+    }
+    return true;
+}
+
+bool nmo_cli_record_null(nmo_cli_record_t *record, const char *key,
+                         const char *label, const char *text)
+{
+    record_field_t *field = field_append(record, RECORD_NULL, key, label);
+    if (!field) {
+        return false;
+    }
+    if (text && !set_str(&field->text, text)) {
+        return field_fail(record);
+    }
+    return true;
+}
+
+bool nmo_cli_record_text(nmo_cli_record_t *record, const char *label,
+                         const char *text)
+{
+    record_field_t *field = field_append(record, RECORD_NULL, NULL, label);
+    if (!field) {
+        return false;
+    }
+    if (!set_str(&field->text, text ? text : "")) {
+        return field_fail(record);
+    }
+    return true;
+}
+
+static bool record_ref_impl(nmo_cli_record_t *record, const char *id_key,
+                            const char *name_key, const char *label,
+                            uint64_t id, const char *name,
+                            const char *none_text, bool omit_zero_json)
+{
+    record_field_t *field = field_append(record, RECORD_REF, id_key, label);
+    if (!field) {
+        return false;
+    }
+    field->u = id;
+    field->b = omit_zero_json;
+    bool ok = set_str(&field->name_key, name_key);
+    if (ok && name && name[0] != '\0') {
+        ok = set_str(&field->str, name);
+    }
+    if (ok) {
+        if (id == 0u) {
+            ok = none_text ? set_str(&field->text, none_text) : true;
+        } else if (field->str) {
+            ok = set_formatted(&field->text, "#%" PRIu64 " (%s)", id, field->str);
+        } else {
+            ok = set_formatted(&field->text, "#%" PRIu64, id);
+        }
+    }
+    if (!ok) {
+        return field_fail(record);
+    }
+    return true;
+}
+
+bool nmo_cli_record_ref(nmo_cli_record_t *record, const char *id_key,
+                        const char *name_key, const char *label,
+                        uint64_t id, const char *name, const char *none_text)
+{
+    return record_ref_impl(record, id_key, name_key, label, id, name,
+                           none_text, false);
+}
+
+bool nmo_cli_record_ref_opt(nmo_cli_record_t *record, const char *id_key,
+                            const char *name_key, const char *label,
+                            uint64_t id, const char *name,
+                            const char *none_text)
+{
+    return record_ref_impl(record, id_key, name_key, label, id, name,
+                           none_text, true);
+}
+
+bool nmo_cli_record_set_text(nmo_cli_record_t *record, const char *text)
+{
+    record_field_t *field = field_last(record);
+    if (!field) {
+        return false;
+    }
+    return set_str(&field->text, text);
+}
+
+void nmo_cli_record_text_only(nmo_cli_record_t *record)
+{
+    record_field_t *field = field_last(record);
+    if (!field) {
+        return;
+    }
+    free(field->key);
+    field->key = NULL;
+    free(field->name_key);
+    field->name_key = NULL;
+}
+
+nmo_cli_record_array_t *nmo_cli_record_array(nmo_cli_record_t *record,
+                                             const char *key,
+                                             const char *label)
+{
+    record_field_t *field = field_append(record, RECORD_ARRAY, key, label);
+    return field ? &field->array : NULL;
+}
+
+bool nmo_cli_record_array_add(nmo_cli_record_array_t *array,
+                              nmo_cli_record_t *item)
+{
+    if (!array || !item) {
+        nmo_cli_record_free(item);
+        return false;
+    }
+    if (array->count == array->capacity) {
+        size_t new_capacity = array->capacity ? array->capacity * 2u : 8u;
+        nmo_cli_record_t **grown = (nmo_cli_record_t **)realloc(
+            array->items, new_capacity * sizeof(*grown));
+        if (!grown) {
+            nmo_cli_record_free(item);
+            return false;
+        }
+        array->items = grown;
+        array->capacity = new_capacity;
+    }
+    array->items[array->count++] = item;
+    return true;
+}
+
+size_t nmo_cli_record_array_count(const nmo_cli_record_array_t *array)
+{
+    return array ? array->count : 0u;
+}
+
+bool nmo_cli_record_set_summary(nmo_cli_record_t *record, const char *text)
+{
+    if (!record) {
+        return false;
+    }
+    return set_str(&record->summary, text);
+}
+
+/* Rendering */
+
+bool nmo_cli_record_to_json(const nmo_cli_record_t *record,
+                            yyjson_mut_doc *doc, yyjson_mut_val *obj)
+{
+    if (!record || !doc || !obj) {
+        return false;
+    }
+    bool ok = true;
+    for (size_t i = 0; i < record->count && ok; ++i) {
+        const record_field_t *field = &record->fields[i];
+        if (!field->key && field->kind != RECORD_REF) {
+            continue;
+        }
+        switch (field->kind) {
+        case RECORD_UINT:
+            ok = nmo_cli_json_add_uint_safe(doc, obj, field->key, field->u);
+            break;
+        case RECORD_INT:
+            ok = nmo_cli_json_add_int_safe(doc, obj, field->key, field->i);
+            break;
+        case RECORD_REAL:
+            ok = nmo_cli_json_add_real_safe(doc, obj, field->key, field->d);
+            break;
+        case RECORD_BOOL:
+            ok = nmo_cli_json_add_bool_safe(doc, obj, field->key, field->b);
+            break;
+        case RECORD_STR:
+            ok = nmo_cli_json_add_str_safe(doc, obj, field->key,
+                                           field->str ? field->str : "");
+            break;
+        case RECORD_NULL:
+            ok = nmo_cli_json_add_null_safe(doc, obj, field->key);
+            break;
+        case RECORD_REF:
+            if (field->b && field->u == 0u) {
+                break; /* optional reference: absent in JSON when unset */
+            }
+            if (field->key) {
+                ok = nmo_cli_json_add_uint_safe(doc, obj, field->key, field->u);
+            }
+            if (ok && field->name_key && field->str) {
+                ok = nmo_cli_json_add_str_safe(doc, obj, field->name_key,
+                                               field->str);
+            }
+            break;
+        case RECORD_ARRAY: {
+            yyjson_mut_val *arr = yyjson_mut_arr(doc);
+            if (!arr) {
+                ok = false;
+                break;
+            }
+            for (size_t j = 0; j < field->array.count && ok; ++j) {
+                yyjson_mut_val *item = yyjson_mut_obj(doc);
+                if (!item ||
+                    !nmo_cli_record_to_json(field->array.items[j], doc, item) ||
+                    !yyjson_mut_arr_add_val(arr, item)) {
+                    ok = false;
+                }
+            }
+            if (ok) {
+                ok = nmo_cli_json_add_val_safe(doc, obj, field->key, arr);
+            }
+            break;
+        }
+        }
+    }
+    return ok;
+}
+
+void nmo_cli_record_print_kv(const nmo_cli_record_t *record, FILE *out,
+                             int key_width, bool colorize)
+{
+    if (!record || !out) {
+        return;
+    }
+    for (size_t i = 0; i < record->count; ++i) {
+        const record_field_t *field = &record->fields[i];
+        if (field->kind == RECORD_ARRAY) {
+            if (!field->label) {
+                continue;
+            }
+            fprintf(out, "\n%s (%zu):\n", field->label, field->array.count);
+            for (size_t j = 0; j < field->array.count; ++j) {
+                const nmo_cli_record_t *item = field->array.items[j];
+                if (item && item->summary) {
+                    fprintf(out, "%s\n", item->summary);
+                }
+            }
+            continue;
+        }
+        if (!field->label || !field->text) {
+            continue;
+        }
+        nmo_cli_print_kv(out, field->label, field->text, key_width, colorize);
+    }
+}
+
+size_t nmo_cli_record_cells(const nmo_cli_record_t *record,
+                            const char **cells, size_t capacity)
+{
+    size_t n = 0;
+    if (!record || !cells) {
+        return 0u;
+    }
+    for (size_t i = 0; i < record->count && n < capacity; ++i) {
+        const record_field_t *field = &record->fields[i];
+        if (field->kind == RECORD_ARRAY || !field->label || !field->text) {
+            continue;
+        }
+        cells[n++] = field->text;
+    }
+    return n;
+}

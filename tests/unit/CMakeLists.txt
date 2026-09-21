@@ -170,6 +170,7 @@ add_executable(test_batch_rename test_batch_rename.c
     ../../tools/nmo_cli_common.c
     ../../tools/nmo_cli_output.c
     ../../tools/nmo_cli_json.c
+    ../../tools/nmo_cli_record.c
 )
 target_link_libraries(test_batch_rename PRIVATE nmo test_framework yyjson)
 target_include_directories(test_batch_rename PRIVATE ../../tools)

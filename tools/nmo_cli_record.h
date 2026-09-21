@@ -1,0 +1,134 @@
+/**
+ * @file nmo_cli_record.h
+ * @brief Format-neutral output records for CLI commands.
+ *
+ * A command describes what it wants to show once, as an ordered list of typed
+ * fields, and the record renders itself either as a JSON object (yyjson) or as
+ * human-readable text (key/value lines or a table row). Each field carries a
+ * JSON key, a text label, and a value; either side may be omitted so that the
+ * two presentations can differ where they historically did (for example a
+ * combined "ID / Name" line in text next to separate "id" and "name" keys in
+ * JSON) without duplicating the value-gathering code.
+ */
+#ifndef NMO_CLI_RECORD_H
+#define NMO_CLI_RECORD_H
+
+#include "yyjson.h"
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef struct nmo_cli_record nmo_cli_record_t;
+
+/** Create an empty record. Returns NULL on allocation failure. */
+nmo_cli_record_t *nmo_cli_record_new(void);
+
+/** Free a record and every child record it owns. NULL is ignored. */
+void nmo_cli_record_free(nmo_cli_record_t *record);
+
+/** Number of fields added so far. */
+size_t nmo_cli_record_field_count(const nmo_cli_record_t *record);
+
+/*
+ * Field adders. `key` is the JSON key (NULL: not emitted in JSON); `label` is
+ * the text label (NULL: not emitted in text). Strings are copied. All adders
+ * return false on allocation failure; the record stays usable.
+ */
+bool nmo_cli_record_uint(nmo_cli_record_t *record, const char *key,
+                         const char *label, uint64_t value);
+bool nmo_cli_record_int(nmo_cli_record_t *record, const char *key,
+                        const char *label, int64_t value);
+/** `text_format` is the printf format used for the text side, e.g. "%.3f". */
+bool nmo_cli_record_real(nmo_cli_record_t *record, const char *key,
+                         const char *label, double value,
+                         const char *text_format);
+bool nmo_cli_record_bool(nmo_cli_record_t *record, const char *key,
+                         const char *label, bool value);
+/** Emits the string on both sides. `value` NULL is written as an empty string. */
+bool nmo_cli_record_str(nmo_cli_record_t *record, const char *key,
+                        const char *label, const char *value);
+/**
+ * Emits `value` when it is a non-empty string. Otherwise the JSON field is
+ * omitted and the text shows `text_fallback` (NULL: the text line is omitted
+ * too).
+ */
+bool nmo_cli_record_str_opt(nmo_cli_record_t *record, const char *key,
+                            const char *label, const char *value,
+                            const char *text_fallback);
+/** "0x%08X" on both sides. */
+bool nmo_cli_record_hex32(nmo_cli_record_t *record, const char *key,
+                          const char *label, uint32_t value);
+/** JSON null; text shows `text` (NULL: omitted). */
+bool nmo_cli_record_null(nmo_cli_record_t *record, const char *key,
+                         const char *label, const char *text);
+/** Text-only line. */
+bool nmo_cli_record_text(nmo_cli_record_t *record, const char *label,
+                         const char *text);
+/**
+ * Object reference. JSON: `id_key` as an unsigned integer and, when `name`
+ * is non-empty, `name_key` as a string (either key may be NULL to skip it).
+ * Text: "#<id> (<name>)", "#<id>" when unnamed, or `none_text` when the id is
+ * zero (NULL: the text line is omitted for a zero id).
+ */
+bool nmo_cli_record_ref(nmo_cli_record_t *record, const char *id_key,
+                        const char *name_key, const char *label,
+                        uint64_t id, const char *name, const char *none_text);
+/** Like nmo_cli_record_ref, but emits nothing in JSON when the id is zero. */
+bool nmo_cli_record_ref_opt(nmo_cli_record_t *record, const char *id_key,
+                            const char *name_key, const char *label,
+                            uint64_t id, const char *name,
+                            const char *none_text);
+/**
+ * Override the text of the most recently added field. Use when the text
+ * presentation has a shape the typed adders cannot express.
+ */
+bool nmo_cli_record_set_text(nmo_cli_record_t *record, const char *text);
+/** Drop the JSON side of the most recently added field. */
+void nmo_cli_record_text_only(nmo_cli_record_t *record);
+
+/**
+ * Nested array of records. The returned child list is owned by the record;
+ * add items with nmo_cli_record_array_add(). In JSON the field becomes an
+ * array of objects. In text, `label` (when non-NULL) is printed as
+ * "\n<label> (<count>):\n" followed by one line per item using the item's
+ * summary text (see nmo_cli_record_set_summary); items without a summary are
+ * skipped in text.
+ */
+typedef struct nmo_cli_record_array nmo_cli_record_array_t;
+nmo_cli_record_array_t *nmo_cli_record_array(nmo_cli_record_t *record,
+                                             const char *key,
+                                             const char *label);
+/** Append an item; the array takes ownership of `item`. */
+bool nmo_cli_record_array_add(nmo_cli_record_array_t *array,
+                              nmo_cli_record_t *item);
+size_t nmo_cli_record_array_count(const nmo_cli_record_array_t *array);
+/** One-line text used when this record is rendered as an array item. */
+bool nmo_cli_record_set_summary(nmo_cli_record_t *record, const char *text);
+
+/* Rendering */
+
+/** Add every JSON-visible field to `obj` in insertion order. */
+bool nmo_cli_record_to_json(const nmo_cli_record_t *record,
+                            yyjson_mut_doc *doc, yyjson_mut_val *obj);
+/** Print every text-visible field as "label: value" lines. */
+void nmo_cli_record_print_kv(const nmo_cli_record_t *record, FILE *out,
+                             int key_width, bool colorize);
+/**
+ * Collect the text of every text-visible field, in order, for use as table
+ * cells. `cells` must have room for `capacity` pointers; returns the number
+ * written. Pointers stay valid until the record is freed or modified.
+ */
+size_t nmo_cli_record_cells(const nmo_cli_record_t *record,
+                            const char **cells, size_t capacity);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* NMO_CLI_RECORD_H */
