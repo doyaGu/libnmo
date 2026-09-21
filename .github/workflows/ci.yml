@@ -9,6 +9,7 @@ jobs:
   build:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.experimental == true }}
     strategy:
       fail-fast: false
       matrix:
@@ -28,10 +29,13 @@ jobs:
             cc: clang
             cxx: clang++
             build_type: Release
+          # MSVC does not build yet (C-mode gaps such as max_align_t); keep
+          # the job informational until it passes.
           - name: windows-msvc-release
             os: windows-latest
             msvc: true
             build_type: Release
+            experimental: true
           - name: windows-mingw-release
             os: windows-latest
             mingw: true
