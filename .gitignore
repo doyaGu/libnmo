@@ -84,3 +84,6 @@ data/*
 !data/virtools_operation_types.json
 !data/virtools_parameter_types.json
 !data/virtools_plugins.json
+
+# Locally unpacked Lua sources (optional offline override for FetchContent)
+deps/lua/
