@@ -52,7 +52,8 @@ typedef struct record_field {
     uint64_t *uints;  /* RECORD_UINT_LIST */
     size_t list_count;
     bool b;
-    nmo_cli_record_array_t array; /* RECORD_ARRAY */
+    nmo_cli_record_array_t *array; /* RECORD_ARRAY; heap-allocated so the
+                                      handle survives parent growth */
 } record_field_t;
 
 struct nmo_cli_record {
@@ -125,12 +126,15 @@ static void field_dispose(record_field_t *field)
     free(field->str);
     free(field->reals);
     free(field->uints);
-    for (size_t i = 0; i < field->array.count; ++i) {
-        nmo_cli_record_free(field->array.items[i]);
+    if (field->array) {
+        for (size_t i = 0; i < field->array->count; ++i) {
+            nmo_cli_record_free(field->array->items[i]);
+        }
+        free(field->array->items);
+        free(field->array->heading);
+        free(field->array->empty_text);
+        free(field->array);
     }
-    free(field->array.items);
-    free(field->array.heading);
-    free(field->array.empty_text);
     memset(field, 0, sizeof(*field));
 }
 
@@ -475,7 +479,15 @@ nmo_cli_record_array_t *nmo_cli_record_array(nmo_cli_record_t *record,
                                              const char *label)
 {
     record_field_t *field = field_append(record, RECORD_ARRAY, key, label);
-    return field ? &field->array : NULL;
+    if (!field) {
+        return NULL;
+    }
+    field->array = (nmo_cli_record_array_t *)calloc(1u, sizeof(*field->array));
+    if (!field->array) {
+        field_fail(record);
+        return NULL;
+    }
+    return field->array;
 }
 
 bool nmo_cli_record_array_add(nmo_cli_record_array_t *array,
@@ -614,7 +626,7 @@ bool nmo_cli_record_to_json(const nmo_cli_record_t *record,
             break;
         }
         case RECORD_ARRAY: {
-            if (field->array.omit_empty && field->array.count == 0u) {
+            if (field->array->omit_empty && field->array->count == 0u) {
                 break;
             }
             yyjson_mut_val *arr = yyjson_mut_arr(doc);
@@ -622,10 +634,10 @@ bool nmo_cli_record_to_json(const nmo_cli_record_t *record,
                 ok = false;
                 break;
             }
-            for (size_t j = 0; j < field->array.count && ok; ++j) {
+            for (size_t j = 0; j < field->array->count && ok; ++j) {
                 yyjson_mut_val *item = yyjson_mut_obj(doc);
                 if (!item ||
-                    !nmo_cli_record_to_json(field->array.items[j], doc, item) ||
+                    !nmo_cli_record_to_json(field->array->items[j], doc, item) ||
                     !yyjson_mut_arr_add_val(arr, item)) {
                     ok = false;
                 }
@@ -655,25 +667,25 @@ void nmo_cli_record_print_kv(const nmo_cli_record_t *record, FILE *out,
             continue;
         }
         if (field->kind == RECORD_ARRAY) {
-            if (!field->label && !field->array.heading) {
+            if (!field->label && !field->array->heading) {
                 continue;
             }
-            if (field->array.omit_empty && field->array.count == 0u) {
+            if (field->array->omit_empty && field->array->count == 0u) {
                 continue;
             }
-            if (field->array.heading) {
-                fprintf(out, "\n%s\n", field->array.heading);
+            if (field->array->heading) {
+                fprintf(out, "\n%s\n", field->array->heading);
             } else {
-                fprintf(out, "\n%s (%zu):\n", field->label, field->array.count);
+                fprintf(out, "\n%s (%zu):\n", field->label, field->array->count);
             }
-            for (size_t j = 0; j < field->array.count; ++j) {
-                const nmo_cli_record_t *item = field->array.items[j];
+            for (size_t j = 0; j < field->array->count; ++j) {
+                const nmo_cli_record_t *item = field->array->items[j];
                 if (item && item->summary) {
                     fprintf(out, "%s\n", item->summary);
                 }
             }
-            if (field->array.count == 0u && field->array.empty_text) {
-                fprintf(out, "%s\n", field->array.empty_text);
+            if (field->array->count == 0u && field->array->empty_text) {
+                fprintf(out, "%s\n", field->array->empty_text);
             }
             continue;
         }
