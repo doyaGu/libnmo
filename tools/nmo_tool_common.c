@@ -78,51 +78,39 @@ bool nmo_tool_match_wildcard_ci(const char *pattern, const char *value) {
  * Wildcard capture (case-insensitive)
  * -------------------------------------------------------------------------- */
 
+/* Text matched by one '*': a view into the value being matched. */
+typedef struct capture_span {
+    const char *start;
+    size_t length;
+} capture_span_t;
+
+/*
+ * Recursive matcher. `spans` has one slot per '*' in the whole pattern;
+ * `index` is the slot owned by the next star encountered. Backtracking simply
+ * overwrites the slot, so no allocation happens while matching.
+ */
 static bool wildcard_capture_impl(const char *pattern, const char *value,
-                                  char captures[][256], size_t max_captures,
-                                  size_t *count) {
+                                  capture_span_t *spans, size_t index) {
     if (!*pattern) {
         return *value == '\0';
     }
 
     char pc = *pattern;
     if (pc == '*') {
-        /* Allocate a capture slot for this star */
-        size_t idx = *count;
-        if (idx >= max_captures) {
-            return false;
-        }
-        (*count)++;
         pattern++;
-
         /* Try matching star against 0..N characters */
-        const char *start = value;
         const char *end = value;
         while (1) {
-            /* Save captured text so far */
-            size_t len = (size_t)(end - start);
-            if (len >= 256) {
-                (*count) = idx;
-                return false;
-            }
-            memcpy(captures[idx], start, len);
-            captures[idx][len] = '\0';
-
-            size_t saved_count = *count;
-            if (wildcard_capture_impl(pattern, end,
-                                      captures, max_captures, count)) {
+            spans[index].start = value;
+            spans[index].length = (size_t)(end - value);
+            if (wildcard_capture_impl(pattern, end, spans, index + 1)) {
                 return true;
             }
-            /* Backtrack: restore capture count */
-            *count = saved_count;
-
             if (*end == '\0') {
                 break;
             }
             end++;
         }
-        /* No match found; undo capture slot */
-        *count = idx;
         return false;
     }
 
@@ -130,23 +118,22 @@ static bool wildcard_capture_impl(const char *pattern, const char *value,
         if (*value == '\0') {
             return false;
         }
-        return wildcard_capture_impl(pattern + 1, value + 1,
-                                     captures, max_captures, count);
+        return wildcard_capture_impl(pattern + 1, value + 1, spans, index);
     }
 
     if (tolower((unsigned char)pc) != tolower((unsigned char)*value)) {
         return false;
     }
-    return wildcard_capture_impl(pattern + 1, value + 1,
-                                 captures, max_captures, count);
+    return wildcard_capture_impl(pattern + 1, value + 1, spans, index);
 }
 
 bool nmo_tool_wildcard_capture_ci(const char *pattern, const char *value,
-                                  char captures[][256], size_t max_captures,
+                                  char ***out_captures,
                                   size_t *out_capture_count) {
-    if (!out_capture_count) {
+    if (!out_captures || !out_capture_count) {
         return false;
     }
+    *out_captures = NULL;
     *out_capture_count = 0;
 
     if (!pattern || !*pattern) {
@@ -156,45 +143,110 @@ bool nmo_tool_wildcard_capture_ci(const char *pattern, const char *value,
         value = "";
     }
 
-    size_t count = 0;
-    bool ok = wildcard_capture_impl(pattern, value,
-                                    captures, max_captures, &count);
-    if (ok) {
-        *out_capture_count = count;
+    size_t star_count = 0;
+    for (const char *p = pattern; *p; ++p) {
+        if (*p == '*') {
+            star_count++;
+        }
     }
+
+    capture_span_t *spans = NULL;
+    if (star_count > 0) {
+        spans = (capture_span_t *)calloc(star_count, sizeof(*spans));
+        if (!spans) {
+            return false;
+        }
+    }
+
+    bool ok = wildcard_capture_impl(pattern, value, spans, 0);
+    if (ok && star_count > 0) {
+        char **captures = (char **)calloc(star_count, sizeof(char *));
+        if (!captures) {
+            free(spans);
+            return false;
+        }
+        for (size_t i = 0; i < star_count; ++i) {
+            captures[i] = (char *)malloc(spans[i].length + 1u);
+            if (!captures[i]) {
+                nmo_tool_captures_free(captures, i);
+                free(spans);
+                return false;
+            }
+            memcpy(captures[i], spans[i].start, spans[i].length);
+            captures[i][spans[i].length] = '\0';
+        }
+        *out_captures = captures;
+        *out_capture_count = star_count;
+    }
+    free(spans);
     return ok;
+}
+
+void nmo_tool_captures_free(char **captures, size_t count) {
+    if (!captures) {
+        return;
+    }
+    for (size_t i = 0; i < count; ++i) {
+        free(captures[i]);
+    }
+    free(captures);
+}
+
+/* Growable byte string used by the template expander. */
+typedef struct text_builder {
+    char *data;
+    size_t length;
+    size_t capacity;
+} text_builder_t;
+
+static bool text_builder_append(text_builder_t *builder, const char *text, size_t length) {
+    if (builder->length + length + 1u > builder->capacity) {
+        size_t capacity = builder->capacity ? builder->capacity : 32u;
+        while (capacity < builder->length + length + 1u) {
+            capacity *= 2u;
+        }
+        char *grown = (char *)realloc(builder->data, capacity);
+        if (!grown) {
+            return false;
+        }
+        builder->data = grown;
+        builder->capacity = capacity;
+    }
+    memcpy(builder->data + builder->length, text, length);
+    builder->length += length;
+    builder->data[builder->length] = '\0';
+    return true;
 }
 
 /* ----------------------------------------------------------------------------
  * Template substitution
  * -------------------------------------------------------------------------- */
 
-int nmo_tool_apply_rename_template(const char *tmpl,
-                                   const char *full_match,
-                                   char captures[][256], size_t capture_count,
-                                   char *out, size_t out_size) {
-    if (!tmpl || !out || out_size == 0) {
-        return -1;
+char *nmo_tool_apply_rename_template(const char *tmpl,
+                                     const char *full_match,
+                                     const char *const *captures,
+                                     size_t capture_count) {
+    if (!tmpl) {
+        return NULL;
     }
 
-    size_t pos = 0;
+    text_builder_t out = {0};
     const char *p = tmpl;
+    bool ok = text_builder_append(&out, "", 0u);
 
-    while (*p) {
+    while (ok && *p) {
         if (*p == '{') {
             if (*(p + 1) == '{') {
                 /* Escaped literal brace: {{ -> { */
-                if (pos + 1 >= out_size) {
-                    return -1;
-                }
-                out[pos++] = '{';
+                ok = text_builder_append(&out, "{", 1u);
                 p += 2;
                 continue;
             }
             /* Parse placeholder: {N} */
             p++;
             if (*p < '0' || *p > '9') {
-                return -1;
+                ok = false;
+                break;
             }
             size_t ref = 0;
             while (*p >= '0' && *p <= '9') {
@@ -202,7 +254,8 @@ int nmo_tool_apply_rename_template(const char *tmpl,
                 p++;
             }
             if (*p != '}') {
-                return -1;
+                ok = false;
+                break;
             }
             p++; /* skip closing brace */
 
@@ -211,41 +264,34 @@ int nmo_tool_apply_rename_template(const char *tmpl,
             if (ref == 0) {
                 replacement = full_match ? full_match : "";
             } else {
-                if (ref > capture_count) {
-                    return -1;
+                if (ref > capture_count || !captures || !captures[ref - 1]) {
+                    ok = false;
+                    break;
                 }
                 replacement = captures[ref - 1];
             }
-
-            size_t rlen = strlen(replacement);
-            if (pos + rlen >= out_size) {
-                return -1;
-            }
-            memcpy(out + pos, replacement, rlen);
-            pos += rlen;
+            ok = text_builder_append(&out, replacement, strlen(replacement));
         } else if (*p == '}') {
             if (*(p + 1) == '}') {
                 /* Escaped literal brace: }} -> } */
-                if (pos + 1 >= out_size) {
-                    return -1;
-                }
-                out[pos++] = '}';
+                ok = text_builder_append(&out, "}", 1u);
                 p += 2;
                 continue;
             }
             /* Stray closing brace */
-            return -1;
+            ok = false;
+            break;
         } else {
-            if (pos + 1 >= out_size) {
-                return -1;
-            }
-            out[pos++] = *p;
+            ok = text_builder_append(&out, p, 1u);
             p++;
         }
     }
 
-    out[pos] = '\0';
-    return 0;
+    if (!ok) {
+        free(out.data);
+        return NULL;
+    }
+    return out.data;
 }
 
 char *nmo_tool_strdup(const char *src) {

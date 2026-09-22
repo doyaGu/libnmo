@@ -46,10 +46,22 @@ static int reject_in_session_output_option(bool present)
 typedef struct {
     nmo_object_id_t id;
     nmo_class_id_t class_id;
-    char old_name[256];
-    char new_name[256];
+    char *old_name; /**< malloc'd */
+    char *new_name; /**< malloc'd */
     bool collision;
 } rename_entry_t;
+
+static void rename_entries_free(rename_entry_t *entries, size_t count)
+{
+    if (!entries) {
+        return;
+    }
+    for (size_t i = 0; i < count; i++) {
+        free(entries[i].old_name);
+        free(entries[i].new_name);
+    }
+    free(entries);
+}
 
 typedef struct rename_collect_data {
     nmo_object_repository_t *repo;
@@ -83,7 +95,7 @@ static int collect_rename_entry(size_t index,
         return 0;
     }
 
-    char new_name_buf[256];
+    char *new_name = NULL;
     if (data->use_regex) {
         nmo_object_query_t name_query = {
             .name = data->name_pattern,
@@ -94,39 +106,34 @@ static int collect_rename_entry(size_t index,
             return 0;
         }
 
-        char no_captures[1][256];
-        if (nmo_tool_apply_rename_template(data->to_template, name,
-                                           no_captures, 0,
-                                           new_name_buf,
-                                           sizeof(new_name_buf)) < 0) {
-            fprintf(stderr, "Warning: Template expansion failed for '%s'\n",
-                    name);
-            return 0;
-        }
+        new_name = nmo_tool_apply_rename_template(data->to_template, name, NULL, 0);
     } else {
-        char captures[16][256];
+        char **captures = NULL;
         size_t cap_count = 0;
         if (!nmo_tool_wildcard_capture_ci(data->name_pattern, name,
-                                          captures, 16, &cap_count)) {
+                                          &captures, &cap_count)) {
             return 0;
         }
-        if (nmo_tool_apply_rename_template(data->to_template, name,
-                                           captures, cap_count,
-                                           new_name_buf,
-                                           sizeof(new_name_buf)) < 0) {
-            fprintf(stderr, "Warning: Template expansion failed for '%s'\n",
-                    name);
-            return 0;
-        }
+        new_name = nmo_tool_apply_rename_template(
+            data->to_template, name, (const char *const *)captures, cap_count);
+        nmo_tool_captures_free(captures, cap_count);
+    }
+    if (!new_name) {
+        fprintf(stderr, "Warning: Template expansion failed for '%s'\n", name);
+        return 0;
     }
 
-    if (strcmp(name, new_name_buf) == 0) return 0;
+    if (strcmp(name, new_name) == 0) {
+        free(new_name);
+        return 0;
+    }
 
     if (data->count >= data->capacity) {
         size_t new_capacity = data->capacity ? data->capacity * 2 : 32;
         rename_entry_t *new_entries = (rename_entry_t *)realloc(
             data->entries, new_capacity * sizeof(*new_entries));
         if (!new_entries) {
+            free(new_name);
             data->oom = true;
             return 1;
         }
@@ -134,14 +141,21 @@ static int collect_rename_entry(size_t index,
         data->capacity = new_capacity;
     }
 
+    char *old_name = nmo_tool_strdup(name);
+    if (!old_name) {
+        free(new_name);
+        data->oom = true;
+        return 1;
+    }
+
     rename_entry_t *entry = &data->entries[data->count++];
     entry->id = nmo_object_get_id(obj);
     entry->class_id = nmo_object_get_class_id(obj);
-    snprintf(entry->old_name, sizeof(entry->old_name), "%s", name);
-    snprintf(entry->new_name, sizeof(entry->new_name), "%s", new_name_buf);
+    entry->old_name = old_name;
+    entry->new_name = new_name;
 
     nmo_object_t *existing = nmo_object_repository_find_by_name(
-        data->repo, new_name_buf);
+        data->repo, new_name);
     entry->collision =
         (existing && nmo_object_get_id(existing) != entry->id);
     if (entry->collision) {
@@ -228,7 +242,7 @@ static int object_rename_batch_mutate(
                                    &rename_data, NULL);
     if (rc != NMO_CLI_EXIT_SUCCESS || rename_data.oom) {
         fprintf(stderr, "Error: Out of memory\n");
-        free(rename_data.entries);
+        rename_entries_free(rename_data.entries, rename_data.count);
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
@@ -414,7 +428,7 @@ static int nmo_cmd_object_rename_batch(
         object_rename_batch_mutate,
         object_rename_batch_report,
         &args);
-    free(args.entries);
+    rename_entries_free(args.entries, args.entry_count);
     return rc;
 }
 
@@ -429,7 +443,7 @@ static int nmo_cmd_object_rename_batch(
 typedef struct object_rename_single_args {
     uint32_t object_id;
     const char *new_name;
-    char old_name[256];
+    char *old_name; /**< malloc'd copy taken before the rename, NULL when unnamed */
     bool name_collision;
 } object_rename_single_args_t;
 
@@ -454,11 +468,8 @@ static int object_rename_single_mutate(
     }
 
     const char *old_name = nmo_object_get_name(obj);
-    if (old_name && old_name[0]) {
-        snprintf(args->old_name, sizeof(args->old_name), "%s", old_name);
-    } else {
-        args->old_name[0] = '\0';
-    }
+    free(args->old_name);
+    args->old_name = (old_name && old_name[0]) ? nmo_tool_strdup(old_name) : NULL;
 
     nmo_object_t *existing = nmo_object_repository_find_by_name(repo, args->new_name);
     args->name_collision =
@@ -500,7 +511,7 @@ static int object_rename_single_report(
         yyjson_mut_val *data = yyjson_mut_obj(doc);
         nmo_cli_json_add_uint_safe(doc, data, "id", (uint64_t)args->object_id);
         nmo_cli_json_add_str_safe(doc, data, "old_name",
-                                  args->old_name[0] ? args->old_name : "");
+                                  args->old_name ? args->old_name : "");
         nmo_cli_json_add_str_safe(doc, data, "new_name", args->new_name);
         nmo_cli_json_add_bool_safe(doc, data, "dry_run", dry_run);
         if (!dry_run && output_path != NULL) {
@@ -514,7 +525,7 @@ static int object_rename_single_report(
             fprintf(c->out, "[dry-run] ");
         }
         fprintf(c->out, "Renamed: %s -> %s (ID %u)\n",
-                args->old_name[0] ? args->old_name : "(unnamed)",
+                args->old_name ? args->old_name : "(unnamed)",
                 args->new_name,
                 args->object_id);
         if (!dry_run && output_path != NULL) {
@@ -595,7 +606,7 @@ int nmo_cmd_object_rename(int argc, char **argv, const nmo_cli_global_opts_t *gl
         .command_name = "object.rename",
         .output_required_unless_dry_run = true,
     };
-    return nmo_cli_run_write_command(
+    int rc = nmo_cli_run_write_command(
         file_path,
         output_path,
         false,
@@ -604,6 +615,8 @@ int nmo_cmd_object_rename(int argc, char **argv, const nmo_cli_global_opts_t *gl
         object_rename_single_mutate,
         object_rename_single_report,
         &args);
+    free(args.old_name);
+    return rc;
 }
 
 int nmo_cmd_object_rename_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
@@ -661,7 +674,7 @@ int nmo_cmd_object_rename_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
         if (result != NULL && rc == NMO_CLI_EXIT_SUCCESS && !dry_run) {
             result->changed = args.entry_count > args.rename_errors;
         }
-        free(args.entries);
+        rename_entries_free(args.entries, args.entry_count);
         return rc;
     }
 
@@ -687,6 +700,7 @@ int nmo_cmd_object_rename_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
     if (result != NULL && rc == NMO_CLI_EXIT_SUCCESS && !dry_run) {
         result->changed = true;
     }
+    free(args.old_name);
     return rc;
 }
 
