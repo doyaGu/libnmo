@@ -52,36 +52,6 @@ static const char *plugin_category_to_string(nmo_plugin_category_t category) {
     }
 }
 
-/* Helper: Format plugin flags as string */
-static void format_plugin_flags(uint32_t flags, char *buf, size_t buf_size) {
-    if (buf_size == 0) {
-        return;
-    }
-
-    buf[0] = '\0';
-    bool first = true;
-
-    if (flags & NMO_EXTENSION_FLAG_DYNAMIC) {
-        if (!first) {
-            strncat(buf, ", ", buf_size - strlen(buf) - 1);
-        }
-        strncat(buf, "Dynamic", buf_size - strlen(buf) - 1);
-        first = false;
-    }
-
-    if (flags & NMO_EXTENSION_FLAG_INITIALIZED) {
-        if (!first) {
-            strncat(buf, ", ", buf_size - strlen(buf) - 1);
-        }
-        strncat(buf, "Initialized", buf_size - strlen(buf) - 1);
-        first = false;
-    }
-
-    if (first) {
-        strncat(buf, "None", buf_size - strlen(buf) - 1);
-    }
-}
-
 /* ============================================================================
  * extension list
  * ============================================================================ */
@@ -90,28 +60,25 @@ static void format_plugin_flags(uint32_t flags, char *buf, size_t buf_size) {
 static bool extension_build_record(const nmo_extension_plugin_info_t *p,
                                    nmo_cli_record_t *rec)
 {
-    char guid_str[64];
-    char flags_str[64];
-    char counts_str[32];
-    nmo_guid_format(p->guid, guid_str, sizeof(guid_str));
-    format_plugin_flags(p->flags, flags_str, sizeof(flags_str));
-    snprintf(counts_str, sizeof(counts_str), "%zu/%zu", p->manager_count, p->type_count);
+    bool dynamic = (p->flags & NMO_EXTENSION_FLAG_DYNAMIC) != 0;
+    bool initialized = (p->flags & NMO_EXTENSION_FLAG_INITIALIZED) != 0;
 
-    bool ok = nmo_cli_record_str(rec, "guid", "GUID", guid_str) &&
+    bool ok = nmo_cli_record_guid(rec, "guid", "GUID", p->guid) &&
               nmo_cli_record_str(rec, "name", NULL, p->name ? p->name : "") &&
               nmo_cli_record_text(rec, "Name", p->name ? p->name : "(unnamed)") &&
               nmo_cli_record_uint(rec, "version", "Version", (uint64_t)p->version) &&
               nmo_cli_record_str(rec, "category", "Category",
                                  plugin_category_to_string(p->category)) &&
               nmo_cli_record_uint(rec, "flags", NULL, (uint64_t)p->flags) &&
-              nmo_cli_record_bool(rec, "dynamic", NULL,
-                                  (p->flags & NMO_EXTENSION_FLAG_DYNAMIC) != 0) &&
-              nmo_cli_record_bool(rec, "initialized", NULL,
-                                  (p->flags & NMO_EXTENSION_FLAG_INITIALIZED) != 0) &&
-              nmo_cli_record_text(rec, "Flags", flags_str) &&
+              nmo_cli_record_bool(rec, "dynamic", NULL, dynamic) &&
+              nmo_cli_record_bool(rec, "initialized", NULL, initialized) &&
+              nmo_cli_record_text_fmt(rec, "Flags", "%s%s%s",
+                                      dynamic ? "Dynamic" : "",
+                                      (dynamic && initialized) ? ", " : "",
+                                      initialized ? "Initialized" : (dynamic ? "" : "None")) &&
               nmo_cli_record_uint(rec, "manager_count", NULL, (uint64_t)p->manager_count) &&
               nmo_cli_record_uint(rec, "type_count", NULL, (uint64_t)p->type_count) &&
-              nmo_cli_record_text(rec, "Mgr/Type", counts_str);
+              nmo_cli_record_text_fmt(rec, "Mgr/Type", "%zu/%zu", p->manager_count, p->type_count);
     if (ok && p->library_path) {
         ok = nmo_cli_record_str(rec, "library_path", NULL, p->library_path);
     }

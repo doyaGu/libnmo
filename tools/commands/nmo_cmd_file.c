@@ -77,12 +77,10 @@ static bool file_info_build_record(const nmo_file_info_t *info,
     if (file_path) {
         ok = nmo_cli_record_text(rec, "File", file_path);
     }
-    char hex[16];
-    snprintf(hex, sizeof(hex), "0x%08X", info->ck_version);
     ok = ok && nmo_cli_record_uint(rec, "object_count", "Objects", info->object_count) &&
          nmo_cli_record_uint(rec, "manager_count", "Managers", info->manager_count) &&
          nmo_cli_record_uint(rec, "ck_version", "CK Version", info->ck_version) &&
-         nmo_cli_record_set_text(rec, hex);
+         nmo_cli_record_set_text_fmt(rec, "0x%08X", info->ck_version);
     if (ok && file_path) {
         ok = nmo_cli_record_str(rec, "file", NULL, file_path);
     }
@@ -233,46 +231,35 @@ int nmo_cmd_file_info(int argc, char **argv, const nmo_cli_global_opts_t *global
 static bool file_header_build_record(const nmo_file_header_t *header,
                                      nmo_cli_record_t *rec)
 {
-    char sig_buf[9];
-    memcpy(sig_buf, header->signature, 8);
-    sig_buf[8] = '\0';
-
-    char buf[64];
-    snprintf(buf, sizeof(buf), "%u (secondary %u)", header->file_version, header->file_version2);
-    bool ok = nmo_cli_record_str(rec, "signature", "Signature", sig_buf) &&
+    /* The signature is eight bytes without a terminator. */
+    bool ok = nmo_cli_record_str_fmt(rec, "signature", "Signature", "%.8s", header->signature) &&
               nmo_cli_record_uint(rec, "file_version", "File Version", header->file_version) &&
-              nmo_cli_record_set_text(rec, buf) &&
+              nmo_cli_record_set_text_fmt(rec, "%u (secondary %u)",
+                                          header->file_version, header->file_version2) &&
               nmo_cli_record_uint(rec, "file_version2", NULL, header->file_version2);
     /* JSON keeps these numeric; the text side shows them in hex. */
-    snprintf(buf, sizeof(buf), "0x%08X", header->ck_version);
     ok = ok && nmo_cli_record_uint(rec, "ck_version", "CK Version", header->ck_version) &&
-         nmo_cli_record_set_text(rec, buf);
-    snprintf(buf, sizeof(buf), "0x%08X", header->crc);
+         nmo_cli_record_set_text_fmt(rec, "0x%08X", header->ck_version);
     ok = ok && nmo_cli_record_uint(rec, "crc", "CRC", header->crc) &&
-         nmo_cli_record_set_text(rec, buf);
-    snprintf(buf, sizeof(buf), "0x%X", header->file_write_mode);
+         nmo_cli_record_set_text_fmt(rec, "0x%08X", header->crc);
     ok = ok && nmo_cli_record_uint(rec, "file_write_mode", "Write Mode", header->file_write_mode) &&
-         nmo_cli_record_set_text(rec, buf);
-    snprintf(buf, sizeof(buf), "%u bytes", header->hdr1_pack_size);
+         nmo_cli_record_set_text_fmt(rec, "0x%X", header->file_write_mode);
     ok = ok && nmo_cli_record_uint(rec, "hdr1_pack_size", "Header1 Packed", header->hdr1_pack_size) &&
-         nmo_cli_record_set_text(rec, buf);
+         nmo_cli_record_set_text_fmt(rec, "%u bytes", header->hdr1_pack_size);
     if (!ok || header->file_version < 5) {
         return ok;
     }
 
-    snprintf(buf, sizeof(buf), "%u bytes", header->data_pack_size);
     ok = nmo_cli_record_uint(rec, "data_pack_size", "Data Packed", header->data_pack_size) &&
-         nmo_cli_record_set_text(rec, buf);
-    snprintf(buf, sizeof(buf), "%u bytes", header->data_unpack_size);
+         nmo_cli_record_set_text_fmt(rec, "%u bytes", header->data_pack_size);
     ok = ok && nmo_cli_record_uint(rec, "data_unpack_size", "Data Unpacked", header->data_unpack_size) &&
-         nmo_cli_record_set_text(rec, buf);
+         nmo_cli_record_set_text_fmt(rec, "%u bytes", header->data_unpack_size);
     ok = ok && nmo_cli_record_uint(rec, "object_count", "Objects", header->object_count) &&
          nmo_cli_record_uint(rec, "manager_count", "Managers", header->manager_count) &&
          nmo_cli_record_uint(rec, "max_id_saved", "Max ID Saved", header->max_id_saved);
-    snprintf(buf, sizeof(buf), "%u / %u", header->product_version, header->product_build);
     return ok &&
            nmo_cli_record_uint(rec, "product_version", "Product Ver/Build", header->product_version) &&
-           nmo_cli_record_set_text(rec, buf) &&
+           nmo_cli_record_set_text_fmt(rec, "%u / %u", header->product_version, header->product_build) &&
            nmo_cli_record_uint(rec, "product_build", NULL, header->product_build) &&
            nmo_cli_record_uint(rec, "hdr1_unpack_size", NULL, header->hdr1_unpack_size);
 }

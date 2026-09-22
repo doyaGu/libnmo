@@ -314,19 +314,14 @@ static bool behavior_list_build_record(nmo_context_t *ctx, nmo_object_t *obj,
         else if (bs->flags & CKBEHAVIOR_BUILDINGBLOCK) type_str = "BB";
     }
 
-    char io_buf[16], pin_buf[16], pout_buf[16], sub_buf[16];
     size_t n_io = bs ? (bs->inputs.count + bs->outputs.count) : 0;
-    snprintf(io_buf, sizeof(io_buf), "%zu", n_io);
-    snprintf(pin_buf, sizeof(pin_buf), "%zu", bs ? bs->in_parameters.count : 0);
-    snprintf(pout_buf, sizeof(pout_buf), "%zu", bs ? bs->out_parameters.count : 0);
-    snprintf(sub_buf, sizeof(sub_buf), "%zu", bs ? bs->sub_behaviors.count : 0);
 
     bool ok = nmo_cli_record_uint(rec, "id", "ID", nmo_object_get_id(obj)) &&
               nmo_cli_record_text(rec, "TYPE", type_str) &&
-              nmo_cli_record_text(rec, "IO", io_buf) &&
-              nmo_cli_record_text(rec, "PIN", pin_buf) &&
-              nmo_cli_record_text(rec, "POUT", pout_buf) &&
-              nmo_cli_record_text(rec, "SUB", sub_buf) &&
+              nmo_cli_record_text_fmt(rec, "IO", "%zu", n_io) &&
+              nmo_cli_record_text_fmt(rec, "PIN", "%zu", bs ? bs->in_parameters.count : (size_t)0) &&
+              nmo_cli_record_text_fmt(rec, "POUT", "%zu", bs ? bs->out_parameters.count : (size_t)0) &&
+              nmo_cli_record_text_fmt(rec, "SUB", "%zu", bs ? bs->sub_behaviors.count : (size_t)0) &&
               nmo_cli_record_uint(rec, "class_id", NULL, class_id);
     if (ok && class_name) {
         ok = nmo_cli_record_str(rec, "class_name", NULL, class_name);
