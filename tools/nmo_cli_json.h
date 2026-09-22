@@ -6,6 +6,7 @@
 #ifndef NMO_CLI_JSON_H
 #define NMO_CLI_JSON_H
 
+#include "core/nmo_guid.h"
 #include "yyjson.h"
 
 #include <stdbool.h>
@@ -116,6 +117,17 @@ bool nmo_cli_json_add_str_safe(yyjson_mut_doc *doc, yyjson_mut_val *obj,
  */
 bool nmo_cli_json_add_str_safe_to_arr(yyjson_mut_doc *doc, yyjson_mut_val *arr,
                                       const char *str);
+
+/**
+ * @brief Add a printf-formatted string of any length (sanitized like
+ *        nmo_cli_json_add_str_safe)
+ */
+bool nmo_cli_json_add_str_fmt_safe(yyjson_mut_doc *doc, yyjson_mut_val *obj,
+                                   const char *key, const char *format, ...);
+
+/** @brief Add a GUID in nmo_guid_format's "{D1D1D1D1-D2D2D2D2}" form */
+bool nmo_cli_json_add_guid_safe(yyjson_mut_doc *doc, yyjson_mut_val *obj,
+                                const char *key, nmo_guid_t guid);
 
 /**
  * @brief Add integer value with copied key

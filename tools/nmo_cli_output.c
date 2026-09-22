@@ -5,6 +5,8 @@
 
 #include "nmo_cli_output.h"
 
+#include "nmo_tool_common.h"
+
 #include "core/nmo_utils.h"
 
 #include "format/nmo_chunk.h"
@@ -116,29 +118,14 @@ void nmo_cli_table_init(nmo_cli_table_t *table, const nmo_cli_table_col_t *colum
     table->column_count = column_count;
 }
 
-bool nmo_cli_table_add_row(nmo_cli_table_t *table, const char **cells, size_t cell_count) {
-    if (!table || !cells) {
+bool nmo_cli_table_begin_row(nmo_cli_table_t *table) {
+    if (!table) {
         return false;
     }
 
     nmo_cli_table_row_t *row = (nmo_cli_table_row_t *)calloc(1, sizeof(nmo_cli_table_row_t));
     if (!row) {
         return false;
-    }
-
-    row->cell_count = cell_count;
-    row->cells = (char **)calloc(cell_count, sizeof(char *));
-    if (!row->cells) {
-        free(row);
-        return false;
-    }
-
-    for (size_t i = 0; i < cell_count; ++i) {
-        if (cells[i]) {
-            row->cells[i] = nmo_text_escape_bytes(cells[i]);
-        } else {
-            row->cells[i] = nmo_text_strdup_or_empty("");
-        }
     }
 
     if (table->last_row) {
@@ -149,6 +136,55 @@ bool nmo_cli_table_add_row(nmo_cli_table_t *table, const char **cells, size_t ce
     table->last_row = row;
     table->row_count++;
 
+    return true;
+}
+
+bool nmo_cli_table_add_cell(nmo_cli_table_t *table, const char *text) {
+    if (!table || !table->last_row) {
+        return false;
+    }
+    nmo_cli_table_row_t *row = table->last_row;
+
+    char *copy = text ? nmo_text_escape_bytes(text) : nmo_text_strdup_or_empty("");
+    if (!copy) {
+        return false;
+    }
+
+    char **grown = (char **)realloc(row->cells, (row->cell_count + 1u) * sizeof(char *));
+    if (!grown) {
+        free(copy);
+        return false;
+    }
+    row->cells = grown;
+    row->cells[row->cell_count++] = copy;
+    return true;
+}
+
+bool nmo_cli_table_add_cell_fmt(nmo_cli_table_t *table, const char *format, ...) {
+    va_list args;
+    va_start(args, format);
+    char *text = nmo_tool_vstrdup_fmt(format, args);
+    va_end(args);
+    if (!text) {
+        return false;
+    }
+    bool ok = nmo_cli_table_add_cell(table, text);
+    free(text);
+    return ok;
+}
+
+bool nmo_cli_table_add_row(nmo_cli_table_t *table, const char **cells, size_t cell_count) {
+    if (!table || !cells) {
+        return false;
+    }
+    if (!nmo_cli_table_begin_row(table)) {
+        return false;
+    }
+    for (size_t i = 0; i < cell_count; ++i) {
+        if (!nmo_cli_table_add_cell(table, cells[i])) {
+            return false;
+        }
+    }
     return true;
 }
 
@@ -306,6 +342,17 @@ void nmo_cli_print_heading(FILE *out, const char *title, bool colorize) {
     }
 }
 
+void nmo_cli_print_heading_fmt(FILE *out, bool colorize, const char *format, ...) {
+    va_list args;
+    va_start(args, format);
+    char *title = nmo_tool_vstrdup_fmt(format, args);
+    va_end(args);
+    if (title) {
+        nmo_cli_print_heading(out, title, colorize);
+        free(title);
+    }
+}
+
 void nmo_cli_print_kv(FILE *out, const char *key, const char *value, int key_width, bool colorize) {
     if (!out) {
         return;
@@ -321,6 +368,16 @@ void nmo_cli_print_kv(FILE *out, const char *key, const char *value, int key_wid
         fprintf(out, "%-*s: %s\n", key_width, key ? key : "", escaped);
     }
     free(escaped);
+}
+
+void nmo_cli_print_kv_fmt(FILE *out, const char *key, int key_width, bool colorize,
+                          const char *format, ...) {
+    va_list args;
+    va_start(args, format);
+    char *value = nmo_tool_vstrdup_fmt(format, args);
+    va_end(args);
+    nmo_cli_print_kv(out, key, value ? value : "", key_width, colorize);
+    free(value);
 }
 
 void nmo_cli_print_error(FILE *out, const char *format, ...) {

@@ -4,8 +4,10 @@
  */
 
 #include "nmo_cli_json.h"
+#include "nmo_tool_common.h"
 #include "../src/export/export_json_util_internal.h"
 
+#include <stdarg.h>
 #include <stdlib.h>
 #include <time.h>
 
@@ -163,6 +165,27 @@ bool nmo_cli_json_write_enveloped_and_free(yyjson_mut_doc *doc,
 bool nmo_cli_json_add_str_safe(yyjson_mut_doc *doc, yyjson_mut_val *obj,
                                const char *key, const char *str) {
     return nmo_json_add_str_safe(doc, obj, key, str);
+}
+
+bool nmo_cli_json_add_str_fmt_safe(yyjson_mut_doc *doc, yyjson_mut_val *obj,
+                                   const char *key, const char *format, ...) {
+    va_list args;
+    va_start(args, format);
+    char *text = nmo_tool_vstrdup_fmt(format, args);
+    va_end(args);
+    if (!text) {
+        return false;
+    }
+    bool ok = nmo_json_add_str_safe(doc, obj, key, text);
+    free(text);
+    return ok;
+}
+
+bool nmo_cli_json_add_guid_safe(yyjson_mut_doc *doc, yyjson_mut_val *obj,
+                                const char *key, nmo_guid_t guid) {
+    char text[NMO_GUID_STRING_SIZE];
+    nmo_guid_format(guid, text, sizeof(text));
+    return nmo_json_add_str_safe(doc, obj, key, text);
 }
 
 bool nmo_cli_json_add_str_safe_to_arr(yyjson_mut_doc *doc, yyjson_mut_val *arr,

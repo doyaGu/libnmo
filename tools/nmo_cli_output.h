@@ -89,6 +89,27 @@ void nmo_cli_table_init(nmo_cli_table_t *table, const nmo_cli_table_col_t *colum
 bool nmo_cli_table_add_row(nmo_cli_table_t *table, const char **cells, size_t cell_count);
 
 /**
+ * @brief Start a new, empty row; fill it with nmo_cli_table_add_cell*()
+ *
+ * Cells are appended left to right. Missing trailing cells print as empty.
+ * @return true on success
+ */
+bool nmo_cli_table_begin_row(nmo_cli_table_t *table);
+
+/**
+ * @brief Append a cell to the row started by nmo_cli_table_begin_row
+ * @param text Cell text (copied; NULL prints as empty)
+ * @return true on success
+ */
+bool nmo_cli_table_add_cell(nmo_cli_table_t *table, const char *text);
+
+/**
+ * @brief Append a printf-formatted cell of any length to the current row
+ * @return true on success
+ */
+bool nmo_cli_table_add_cell_fmt(nmo_cli_table_t *table, const char *format, ...);
+
+/**
  * @brief Print table to stream
  * @param table Table to print
  * @param out Output stream
@@ -111,6 +132,11 @@ void nmo_cli_table_free(nmo_cli_table_t *table);
 void nmo_cli_print_heading(FILE *out, const char *title, bool colorize);
 
 /**
+ * @brief Print a printf-formatted heading of any length
+ */
+void nmo_cli_print_heading_fmt(FILE *out, bool colorize, const char *format, ...);
+
+/**
  * @brief Print a key-value pair
  * @param out Output stream
  * @param key Key name
@@ -119,6 +145,17 @@ void nmo_cli_print_heading(FILE *out, const char *title, bool colorize);
  * @param colorize Use ANSI colors
  */
 void nmo_cli_print_kv(FILE *out, const char *key, const char *value, int key_width, bool colorize);
+
+/**
+ * @brief Print a key with a printf-formatted value of any length
+ * @param out Output stream
+ * @param key Key name
+ * @param key_width Minimum width for key column (for alignment)
+ * @param colorize Use ANSI colors
+ * @param format Printf format string for the value
+ */
+void nmo_cli_print_kv_fmt(FILE *out, const char *key, int key_width, bool colorize,
+                          const char *format, ...);
 
 /**
  * @brief Print an error message

@@ -3,6 +3,7 @@
 #include "nmo_cli_json.h"
 #include "nmo_cli_output.h"
 #include "core/nmo_allocator.h"
+#include "core/nmo_error.h"
 #include "core/nmo_parse.h"
 #include "yyjson.h"
 
@@ -10,6 +11,7 @@
 #include <limits.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 int nmo_tool_stricmp(const char *a, const char *b) {
@@ -254,21 +256,35 @@ char *nmo_tool_strdup(const char *src) {
     return nmo_strdup(&alloc, src);
 }
 
-char *nmo_tool_strdup_fmt(const char *format, ...) {
-    va_list args;
+char *nmo_tool_vstrdup_fmt(const char *format, va_list args) {
     va_list copy;
-    va_start(args, format);
     va_copy(copy, args);
     int n = vsnprintf(NULL, 0, format, copy);
     va_end(copy);
-    char *text = NULL;
-    if (n >= 0) {
-        text = (char *)malloc((size_t)n + 1u);
-        if (text) {
-            vsnprintf(text, (size_t)n + 1u, format, args);
-        }
+    if (n < 0) {
+        return NULL;
     }
+    char *text = (char *)malloc((size_t)n + 1u);
+    if (text) {
+        vsnprintf(text, (size_t)n + 1u, format, args);
+    }
+    return text;
+}
+
+char *nmo_tool_strdup_fmt(const char *format, ...) {
+    va_list args;
+    va_start(args, format);
+    char *text = nmo_tool_vstrdup_fmt(format, args);
     va_end(args);
+    return text;
+}
+
+char *nmo_tool_last_error_chain_dup(void) {
+    size_t length = nmo_last_error_chain_copy(NULL, 0u);
+    char *text = (char *)malloc(length + 1u);
+    if (text) {
+        nmo_last_error_chain_copy(text, length + 1u);
+    }
     return text;
 }
 

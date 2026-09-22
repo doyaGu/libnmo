@@ -1,6 +1,7 @@
 #ifndef NMO_TOOL_COMMON_H
 #define NMO_TOOL_COMMON_H
 
+#include <stdarg.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -60,6 +61,15 @@ char *nmo_tool_strdup(const char *src);
 
 /** printf into a freshly malloc'd string of exactly the needed size. Returns NULL on OOM. */
 char *nmo_tool_strdup_fmt(const char *format, ...);
+
+/** va_list form of nmo_tool_strdup_fmt. */
+char *nmo_tool_vstrdup_fmt(const char *format, va_list args);
+
+/**
+ * malloc'd copy of the calling thread's last libnmo error chain (an empty
+ * string when none is recorded). Returns NULL on OOM; free with free().
+ */
+char *nmo_tool_last_error_chain_dup(void);
 
 /** Parse an unsigned 32-bit decimal integer. Returns false on failure. */
 bool nmo_tool_parse_u32_dec(const char *text, uint32_t *out);
