@@ -1,29 +1,15 @@
-#include "behavior/nmo_behavior_edit.h"
-#include "behavior/nmo_behavior_registry.h"
-#include "core/nmo_array.h"
-#include "core/nmo_error.h"
-#include "format/nmo_object.h"
-#include "object/builtin/nmo_behavior_schemas.h"
-#include "object/builtin/nmo_behaviorlink_schemas.h"
-#include "object/builtin/nmo_parameterin_schemas.h"
-#include "object/builtin/nmo_parameterout_schemas.h"
-#include "object/nmo_class_ids.h"
-#include "object/nmo_object_guids.h"
-#include "object/nmo_object_enum_defs.h"
-#include "object/nmo_object_repository.h"
-#include "object/nmo_statesave_ids.h"
-#include "../runtime/runtime_internal.h"
-#include "runtime/nmo_workspace.h"
-#include "runtime/nmo_context.h"
-#include "object/nmo_object_edit.h"
-#include "behavior/nmo_behavior_edit.h"
-#include "type/nmo_type_query.h"
+/**
+ * @file behavior_rewrite.c
+ * @brief Behavior graph fold: analysis, write-blocker checks, and the fold drivers.
+ */
 
-#include <stdio.h>
+#include "behavior_rewrite_internal.h"
+
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
-static bool rewrite_is_behavior_object(
+bool rewrite_is_behavior_object(
     nmo_context_t *ctx,
     const nmo_object_t *object) {
     const nmo_type_registry_t *registry =
@@ -32,7 +18,7 @@ static bool rewrite_is_behavior_object(
         registry, object, NMO_CID_BEHAVIOR);
 }
 
-static nmo_behavior_state_t *rewrite_behavior_state(
+nmo_behavior_state_t *rewrite_behavior_state(
     nmo_context_t *ctx,
     nmo_object_t *object) {
     const nmo_type_registry_t *registry =
@@ -40,61 +26,6 @@ static nmo_behavior_state_t *rewrite_behavior_state(
     return (nmo_behavior_state_t *)
         nmo_type_query_object_get_ancestor_state_by_guid(
             registry, object, CKPGUID_BEHAVIOR);
-}
-
-static bool rewrite_control_edges_equal(
-    const nmo_behavior_boundary_control_edge_t *a,
-    const nmo_behavior_boundary_control_edge_t *b) {
-    return a->link_id == b->link_id &&
-           a->source_owner_id == b->source_owner_id &&
-           a->source_io_id == b->source_io_id &&
-           a->target_owner_id == b->target_owner_id &&
-           a->target_io_id == b->target_io_id &&
-           a->activation_delay == b->activation_delay &&
-           a->initial_activation_delay == b->initial_activation_delay;
-}
-
-static bool rewrite_parameter_edges_equal(
-    const nmo_behavior_boundary_parameter_edge_t *a,
-    const nmo_behavior_boundary_parameter_edge_t *b) {
-    return a->source_parameter_id == b->source_parameter_id &&
-           a->target_parameter_id == b->target_parameter_id &&
-           a->source_owner_id == b->source_owner_id &&
-           a->target_owner_id == b->target_owner_id &&
-           nmo_guid_equals(a->type_guid, b->type_guid) &&
-           a->shared == b->shared;
-}
-
-static bool rewrite_control_edge_sets_equal(
-    const nmo_behavior_boundary_control_edge_t *a,
-    size_t a_count,
-    const nmo_behavior_boundary_control_edge_t *b,
-    size_t b_count) {
-    if (a_count != b_count) {
-        return false;
-    }
-    for (size_t i = 0; i < a_count; ++i) {
-        if (!rewrite_control_edges_equal(&a[i], &b[i])) {
-            return false;
-        }
-    }
-    return true;
-}
-
-static bool rewrite_parameter_edge_sets_equal(
-    const nmo_behavior_boundary_parameter_edge_t *a,
-    size_t a_count,
-    const nmo_behavior_boundary_parameter_edge_t *b,
-    size_t b_count) {
-    if (a_count != b_count) {
-        return false;
-    }
-    for (size_t i = 0; i < a_count; ++i) {
-        if (!rewrite_parameter_edges_equal(&a[i], &b[i])) {
-            return false;
-        }
-    }
-    return true;
 }
 
 static nmo_status_t rewrite_fold_add_semantic_risks(
@@ -107,34 +38,6 @@ static nmo_status_t rewrite_fold_add_semantic_risks(
         workspace, &report->boundary,
         report->selected_nodes, report->selected_node_count,
         &report->semantic_risks, &report->semantic_risk_count);
-}
-
-static bool rewrite_array_ids_equal(const nmo_array_t *a,
-                                    const nmo_array_t *b) {
-    if (!a || !b || a->count != b->count) {
-        return false;
-    }
-    if (a->count == 0) {
-        return true;
-    }
-    for (size_t i = 0; i < a->count; ++i) {
-        if (nmo_behavior_ref_array_get_id(a, i) !=
-            nmo_behavior_ref_array_get_id(b, i)) {
-            return false;
-        }
-    }
-    return true;
-}
-
-static void rewrite_report_reject(nmo_behavior_replace_report_t *report,
-                                  const char *code,
-                                  const char *message) {
-    if (!report) {
-        return;
-    }
-    report->diagnostic_code = code;
-    report->diagnostic_message = message;
-    report->diagnostics_count = 1;
 }
 
 static bool rewrite_id_in_set(const nmo_object_id_t *ids,
@@ -351,10 +254,6 @@ static nmo_status_t rewrite_build_delete_control_links(
     return rc;
 }
 
-static void rewrite_fold_report_reject(nmo_behavior_fold_report_t *report,
-                                       const char *code,
-                                       const char *message);
-
 static nmo_status_t rewrite_fold_validate_map_indices(
     nmo_behavior_fold_report_t *report,
     const nmo_behavior_fold_map_t *maps,
@@ -549,11 +448,6 @@ static void rewrite_fold_report_clear_write_blockers(
     report->write_blockers = NULL;
     report->write_blocker_count = 0;
 }
-
-static uint32_t rewrite_fold_mapped_new_index(
-    const nmo_behavior_fold_map_t *maps,
-    size_t map_count,
-    uint32_t old_index);
 
 static bool rewrite_fold_boundary_targets_are_writable(
     nmo_context_t *ctx,
@@ -781,77 +675,7 @@ static nmo_status_t rewrite_fold_collect_delete_ids(
     return NMO_OK;
 }
 
-static nmo_status_t rewrite_fold_transform_anchor_in_edit(
-    nmo_context_t *ctx,
-    nmo_workspace_t *workspace,
-    nmo_workspace_edit_t *edit,
-    const nmo_behavior_fold_desc_t *desc,
-    nmo_behavior_fold_report_t *report,
-    bool clear_graph_state) {
-    if (!edit) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    nmo_object_repository_t *repo = nmo_workspace_internal_repository(workspace);
-    nmo_object_t *anchor =
-        repo ? nmo_object_repository_find_by_id(repo, report->anchor_id)
-             : NULL;
-    if (!anchor || !rewrite_is_behavior_object(ctx, anchor)) {
-        rewrite_fold_report_reject(report, "anchor_not_found",
-                                   "Fold anchor behavior was not found");
-        return NMO_ERR_NOT_FOUND;
-    }
-    nmo_behavior_state_t *state = rewrite_behavior_state(ctx, anchor);
-    if (!state) {
-        rewrite_fold_report_reject(report, "anchor_invalid",
-                                   "Fold anchor behavior state is unavailable");
-        return NMO_ERR_INVALID_STATE;
-    }
-
-    nmo_status_t rc = NMO_OK;
-    rc = nmo_workspace_edit_snapshot_behavior_state(edit, state);
-    if (rc != NMO_OK) {
-        rewrite_fold_report_reject(report, "snapshot_failed",
-                                   "Failed to snapshot fold anchor");
-        return rc;
-    }
-
-    state->flags |= CKBEHAVIOR_BUILDINGBLOCK | CKBEHAVIOR_USEFUNCTION;
-    state->flags &= ~CKBEHAVIOR_SCRIPT;
-    state->priority = 0;
-    state->block_guid = desc->block_guid;
-    state->block_version =
-        desc->block_version != 0 ? desc->block_version : 65536u;
-
-    if (clear_graph_state) {
-        nmo_array_clear(&state->sub_behaviors);
-        nmo_array_clear(&state->sub_behavior_links);
-        nmo_array_clear(&state->operations);
-        nmo_array_clear(&state->local_parameters);
-        state->save_flags &= ~(CK_STATESAVE_BEHAVIORSUBBEHAV |
-                               CK_STATESAVE_BEHAVIORSUBLINKS |
-                               CK_STATESAVE_BEHAVIOROPERATIONS |
-                               CK_STATESAVE_BEHAVIORLOCALPARAMS);
-        state->has_save_flags = true;
-    }
-
-    if (desc->name && desc->name[0] != '\0') {
-        rc = nmo_object_edit_rename(edit, report->anchor_id, desc->name);
-        if (rc != NMO_OK) {
-            rewrite_fold_report_reject(report, "rename_failed",
-                                       "Failed to rename fold anchor");
-            return rc;
-        }
-    }
-
-    nmo_workspace_edit_mark(
-        edit, NMO_WORKSPACE_EDIT_OBJECT_STATE |
-              (clear_graph_state ? (NMO_WORKSPACE_EDIT_BEHAVIOR_GRAPH |
-                                    NMO_WORKSPACE_EDIT_REFERENCES)
-                                 : 0u));
-    return NMO_OK;
-}
-
-static uint32_t rewrite_fold_mapped_new_index(
+uint32_t rewrite_fold_mapped_new_index(
     const nmo_behavior_fold_map_t *maps,
     size_t map_count,
     uint32_t old_index) {
@@ -863,7 +687,7 @@ static uint32_t rewrite_fold_mapped_new_index(
     return old_index;
 }
 
-static nmo_status_t rewrite_fold_anchor_io_at(
+nmo_status_t rewrite_fold_anchor_io_at(
     nmo_context_t *ctx,
     nmo_object_repository_t *repo,
     nmo_object_id_t anchor_id,
@@ -892,7 +716,7 @@ static nmo_status_t rewrite_fold_anchor_io_at(
     return *out_io_id != 0 ? NMO_OK : NMO_ERR_NOT_FOUND;
 }
 
-static nmo_status_t rewrite_fold_anchor_parameter_at(
+nmo_status_t rewrite_fold_anchor_parameter_at(
     nmo_context_t *ctx,
     nmo_object_repository_t *repo,
     nmo_object_id_t anchor_id,
@@ -980,369 +804,7 @@ static bool rewrite_fold_boundary_targets_are_writable(
     return true;
 }
 
-static bool rewrite_parameterout_has_destination(
-    const nmo_parameterout_state_t *state,
-    nmo_object_id_t target_id) {
-    if (!state || !state->destination_ids || target_id == 0) {
-        return false;
-    }
-    for (uint32_t i = 0; i < state->destination_count; ++i) {
-        if (nmo_parameterout_destination_id(state, i) == target_id) {
-            return true;
-        }
-    }
-    return false;
-}
-
-static nmo_status_t rewrite_parameterout_add_destination(
-    nmo_parameterout_state_t *state,
-    nmo_arena_t *arena,
-    nmo_object_id_t target_id) {
-    if (!state || !arena || target_id == 0) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    if (rewrite_parameterout_has_destination(state, target_id)) {
-        return NMO_OK;
-    }
-    if (state->destination_count == UINT32_MAX) {
-        return NMO_ERR_INVALID_FORMAT;
-    }
-    nmo_ref_t *next = (nmo_ref_t *)nmo_arena_alloc(
-        arena,
-        (size_t)(state->destination_count + 1u) * sizeof(*next),
-        _Alignof(nmo_ref_t));
-    if (!next) {
-        return NMO_ERR_NOMEM;
-    }
-    if (state->destination_count > 0 && state->destination_ids != NULL) {
-        memcpy(next, state->destination_ids,
-               (size_t)state->destination_count * sizeof(*next));
-    }
-    next[state->destination_count] = nmo_ref_from_id(target_id);
-    state->destination_ids = next;
-    state->destination_count++;
-    return NMO_OK;
-}
-
-static void rewrite_parameterout_remove_destination(
-    nmo_parameterout_state_t *state,
-    nmo_object_id_t target_id) {
-    if (!state || !state->destination_ids || target_id == 0) {
-        return;
-    }
-    uint32_t kept = 0;
-    for (uint32_t i = 0; i < state->destination_count; ++i) {
-        if (nmo_parameterout_destination_id(state, i) != target_id) {
-            state->destination_ids[kept++] = state->destination_ids[i];
-        }
-    }
-    state->destination_count = kept;
-    if (kept == 0) {
-        state->destination_ids = NULL;
-    }
-}
-
-static nmo_status_t rewrite_fold_rewire_control_boundary_in_edit(
-    nmo_context_t *ctx,
-    nmo_workspace_t *workspace,
-    nmo_workspace_edit_t *edit,
-    nmo_behavior_fold_report_t *report) {
-    if (!workspace || !edit || !report) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    if (report->boundary.control_in_count == 0 &&
-        report->boundary.control_out_count == 0) {
-        return NMO_OK;
-    }
-
-    nmo_object_repository_t *repo = nmo_workspace_internal_repository(workspace);
-    const nmo_type_registry_t *registry =
-        nmo_workspace_internal_type_registry(workspace);
-    if (!repo || !registry) {
-        return NMO_ERR_INVALID_STATE;
-    }
-
-    nmo_status_t rc = NMO_OK;
-    for (size_t i = 0; i < report->boundary.control_in_count; ++i) {
-        const nmo_behavior_boundary_control_edge_t *edge =
-            &report->boundary.control_in[i];
-        uint32_t new_index = rewrite_fold_mapped_new_index(
-            report->input_maps, report->input_map_count, (uint32_t)i);
-        nmo_object_id_t new_io_id = 0;
-        rc = rewrite_fold_anchor_io_at(ctx, repo, report->anchor_id,
-                                       true, new_index, &new_io_id);
-        if (rc != NMO_OK) {
-            rewrite_fold_report_reject(
-                report, "input_map_target_missing",
-                "Fold input map does not resolve to an anchor input");
-            return rc;
-        }
-
-        nmo_object_t *link_obj =
-            nmo_object_repository_find_by_id(repo, edge->link_id);
-        nmo_behaviorlink_state_t *link_state = link_obj
-            ? (nmo_behaviorlink_state_t *)
-                nmo_type_query_object_get_ancestor_state_by_guid(
-                    registry, link_obj, CKPGUID_BEHAVIORLINK)
-            : NULL;
-        if (!link_state) {
-            rewrite_fold_report_reject(
-                report, "control_link_missing",
-                "Boundary control link was not found");
-            return NMO_ERR_NOT_FOUND;
-        }
-        rc = nmo_workspace_edit_snapshot_bytes(edit, link_state,
-                                               sizeof(*link_state));
-        if (rc != NMO_OK) {
-            rewrite_fold_report_reject(
-                report, "snapshot_failed",
-                "Failed to snapshot boundary control link");
-            return rc;
-        }
-
-        /* CK2/SDK naming is counterintuitive: link in_io_id is the source IO,
-         * and link out_io_id is the target IO. Keep graph edge direction
-         * source owner -> target owner. */
-        nmo_behaviorlink_set_out_io_id(link_state, new_io_id);
-    }
-
-    for (size_t i = 0; i < report->boundary.control_out_count; ++i) {
-        const nmo_behavior_boundary_control_edge_t *edge =
-            &report->boundary.control_out[i];
-        uint32_t new_index = rewrite_fold_mapped_new_index(
-            report->output_maps, report->output_map_count, (uint32_t)i);
-        nmo_object_id_t new_io_id = 0;
-        rc = rewrite_fold_anchor_io_at(ctx, repo, report->anchor_id,
-                                       false, new_index, &new_io_id);
-        if (rc != NMO_OK) {
-            rewrite_fold_report_reject(
-                report, "output_map_target_missing",
-                "Fold output map does not resolve to an anchor output");
-            return rc;
-        }
-
-        nmo_object_t *link_obj =
-            nmo_object_repository_find_by_id(repo, edge->link_id);
-        nmo_behaviorlink_state_t *link_state = link_obj
-            ? (nmo_behaviorlink_state_t *)
-                nmo_type_query_object_get_ancestor_state_by_guid(
-                    registry, link_obj, CKPGUID_BEHAVIORLINK)
-            : NULL;
-        if (!link_state) {
-            rewrite_fold_report_reject(
-                report, "control_link_missing",
-                "Boundary control link was not found");
-            return NMO_ERR_NOT_FOUND;
-        }
-        rc = nmo_workspace_edit_snapshot_bytes(edit, link_state,
-                                               sizeof(*link_state));
-        if (rc != NMO_OK) {
-            rewrite_fold_report_reject(
-                report, "snapshot_failed",
-                "Failed to snapshot boundary control link");
-            return rc;
-        }
-
-        /* CK2/SDK naming is counterintuitive: link in_io_id is the source IO,
-         * and link out_io_id is the target IO. Keep graph edge direction
-         * source owner -> target owner. */
-        nmo_behaviorlink_set_in_io_id(link_state, new_io_id);
-    }
-
-    nmo_workspace_edit_mark(edit, NMO_WORKSPACE_EDIT_BEHAVIOR_GRAPH |
-                                  NMO_WORKSPACE_EDIT_REFERENCES);
-    return NMO_OK;
-}
-
-static nmo_status_t rewrite_fold_rewire_parameter_boundary_in_edit(
-    nmo_context_t *ctx,
-    nmo_workspace_t *workspace,
-    nmo_workspace_edit_t *edit,
-    nmo_behavior_fold_report_t *report) {
-    if (!workspace || !edit || !report) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    if (report->boundary.parameter_in_count == 0 &&
-        report->boundary.parameter_out_count == 0) {
-        return NMO_OK;
-    }
-
-    nmo_object_repository_t *repo = nmo_workspace_internal_repository(workspace);
-    const nmo_type_registry_t *registry =
-        nmo_workspace_internal_type_registry(workspace);
-    if (!repo || !registry) {
-        return NMO_ERR_INVALID_STATE;
-    }
-
-    nmo_status_t rc = NMO_OK;
-    for (size_t i = 0; i < report->boundary.parameter_in_count; ++i) {
-        const nmo_behavior_boundary_parameter_edge_t *edge =
-            &report->boundary.parameter_in[i];
-        uint32_t new_index = rewrite_fold_mapped_new_index(
-            report->parameter_maps, report->parameter_map_count, (uint32_t)i);
-        nmo_object_id_t new_parameter_id = 0;
-        rc = rewrite_fold_anchor_parameter_at(
-            ctx, repo, report->anchor_id, true, new_index,
-            &new_parameter_id);
-        if (rc != NMO_OK) {
-            rewrite_fold_report_reject(
-                report, "parameter_map_target_missing",
-                "Fold parameter map does not resolve to an anchor input "
-                "parameter");
-            return rc;
-        }
-
-        nmo_object_t *new_target_obj =
-            nmo_object_repository_find_by_id(repo, new_parameter_id);
-        nmo_parameterin_state_t *new_target_in = new_target_obj
-            ? (nmo_parameterin_state_t *)
-                nmo_type_query_object_get_ancestor_state_by_guid(
-                    registry, new_target_obj, CKPGUID_PARAMETERIN)
-            : NULL;
-        if (!new_target_in) {
-            rewrite_fold_report_reject(
-                report, "parameter_target_missing",
-                "Fold anchor input parameter was not found");
-            return NMO_ERR_NOT_FOUND;
-        }
-        rc = nmo_workspace_edit_snapshot_bytes(edit, new_target_in,
-                                               sizeof(*new_target_in));
-        if (rc != NMO_OK) {
-            rewrite_fold_report_reject(
-                report, "snapshot_failed",
-                "Failed to snapshot fold anchor input parameter");
-            return rc;
-        }
-        nmo_parameterin_set_source_id(new_target_in,
-                                      edge->source_parameter_id);
-        new_target_in->is_shared = edge->shared ? 1u : 0u;
-
-        nmo_object_t *source_obj =
-            nmo_object_repository_find_by_id(repo, edge->source_parameter_id);
-        nmo_parameterout_state_t *source_out = source_obj
-            ? (nmo_parameterout_state_t *)
-                nmo_type_query_object_get_ancestor_state_by_guid(
-                    registry, source_obj, CKPGUID_PARAMETEROUT)
-            : NULL;
-        if (source_out) {
-            rc = nmo_workspace_edit_snapshot_bytes(edit, source_out,
-                                                   sizeof(*source_out));
-            if (rc != NMO_OK) {
-                rewrite_fold_report_reject(
-                    report, "snapshot_failed",
-                    "Failed to snapshot fold parameter source output");
-                return rc;
-            }
-            rc = rewrite_parameterout_add_destination(
-                source_out,
-                nmo_workspace_internal_document_arena(workspace),
-                new_parameter_id);
-            if (rc != NMO_OK) {
-                rewrite_fold_report_reject(
-                    report, "out_of_memory",
-                    "Failed to update fold source parameter destinations");
-                return rc;
-            }
-            rewrite_parameterout_remove_destination(source_out,
-                                                    edge->target_parameter_id);
-        }
-    }
-
-    for (size_t i = 0; i < report->boundary.parameter_out_count; ++i) {
-        const nmo_behavior_boundary_parameter_edge_t *edge =
-            &report->boundary.parameter_out[i];
-        uint32_t new_index = rewrite_fold_mapped_new_index(
-            report->parameter_maps, report->parameter_map_count, (uint32_t)i);
-        nmo_object_id_t new_parameter_id = 0;
-        rc = rewrite_fold_anchor_parameter_at(
-            ctx, repo, report->anchor_id, false, new_index,
-            &new_parameter_id);
-        if (rc != NMO_OK) {
-            rewrite_fold_report_reject(
-                report, "parameter_map_target_missing",
-                "Fold parameter map does not resolve to an anchor output "
-                "parameter");
-            return rc;
-        }
-
-        nmo_object_t *target_obj =
-            nmo_object_repository_find_by_id(repo, edge->target_parameter_id);
-        nmo_parameterin_state_t *target_in = target_obj
-            ? (nmo_parameterin_state_t *)
-                nmo_type_query_object_get_ancestor_state_by_guid(
-                    registry, target_obj, CKPGUID_PARAMETERIN)
-            : NULL;
-        if (!target_in) {
-            rewrite_fold_report_reject(
-                report, "parameter_target_missing",
-                "Fold parameter target input was not found");
-            return NMO_ERR_NOT_FOUND;
-        }
-        rc = nmo_workspace_edit_snapshot_bytes(edit, target_in,
-                                               sizeof(*target_in));
-        if (rc != NMO_OK) {
-            rewrite_fold_report_reject(
-                report, "snapshot_failed",
-                "Failed to snapshot fold parameter input");
-            return rc;
-        }
-        nmo_parameterin_set_source_id(target_in, new_parameter_id);
-        target_in->is_shared = edge->shared ? 1u : 0u;
-
-        nmo_object_t *new_source_obj =
-            nmo_object_repository_find_by_id(repo, new_parameter_id);
-        nmo_parameterout_state_t *new_source_out = new_source_obj
-            ? (nmo_parameterout_state_t *)
-                nmo_type_query_object_get_ancestor_state_by_guid(
-                    registry, new_source_obj, CKPGUID_PARAMETEROUT)
-            : NULL;
-        if (new_source_out) {
-            rc = nmo_workspace_edit_snapshot_bytes(edit, new_source_out,
-                                                   sizeof(*new_source_out));
-            if (rc != NMO_OK) {
-                rewrite_fold_report_reject(
-                    report, "snapshot_failed",
-                    "Failed to snapshot fold parameter output");
-                return rc;
-            }
-            rc = rewrite_parameterout_add_destination(
-                new_source_out,
-                nmo_workspace_internal_document_arena(workspace),
-                edge->target_parameter_id);
-            if (rc != NMO_OK) {
-                rewrite_fold_report_reject(
-                    report, "out_of_memory",
-                    "Failed to update fold parameter destinations");
-                return rc;
-            }
-        }
-
-        nmo_object_t *old_source_obj =
-            nmo_object_repository_find_by_id(repo, edge->source_parameter_id);
-        nmo_parameterout_state_t *old_source_out = old_source_obj
-            ? (nmo_parameterout_state_t *)
-                nmo_type_query_object_get_ancestor_state_by_guid(
-                    registry, old_source_obj, CKPGUID_PARAMETEROUT)
-            : NULL;
-        if (old_source_out && edge->source_parameter_id != new_parameter_id) {
-            rc = nmo_workspace_edit_snapshot_bytes(edit, old_source_out,
-                                                   sizeof(*old_source_out));
-            if (rc != NMO_OK) {
-                rewrite_fold_report_reject(
-                    report, "snapshot_failed",
-                    "Failed to snapshot old fold parameter output");
-                return rc;
-            }
-            rewrite_parameterout_remove_destination(
-                old_source_out, edge->target_parameter_id);
-        }
-    }
-
-    nmo_workspace_edit_mark(edit, NMO_WORKSPACE_EDIT_REFERENCES);
-    return NMO_OK;
-}
-
-static void rewrite_fold_report_reject(nmo_behavior_fold_report_t *report,
+void rewrite_fold_report_reject(nmo_behavior_fold_report_t *report,
                                        const char *code,
                                        const char *message) {
     if (!report) {
@@ -1716,244 +1178,6 @@ void nmo_behavior_edit_fold_report_free(nmo_behavior_fold_report_t *report) {
     memset(report, 0, sizeof(*report));
 }
 
-static nmo_status_t rewrite_replace_bb_in_edit(
-    nmo_context_t *ctx,
-    nmo_workspace_t *workspace,
-    nmo_workspace_edit_t *edit,
-    const nmo_behavior_replace_bb_desc_t *desc,
-    nmo_behavior_replace_report_t *report) {
-    if (report) {
-        memset(report, 0, sizeof(*report));
-    }
-    if (!ctx || !workspace || !desc || desc->behavior_id == 0 ||
-        nmo_guid_is_null(desc->block_guid) || !edit) {
-        rewrite_report_reject(report, "invalid_argument",
-                              "Invalid behavior replace-bb arguments");
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    nmo_object_repository_t *repo = nmo_workspace_internal_repository(workspace);
-    if (!repo) {
-        rewrite_report_reject(report, "invalid_state",
-                              "Object repository is unavailable");
-        return NMO_ERR_INVALID_STATE;
-    }
-
-    nmo_object_t *object =
-        nmo_object_repository_find_by_id(repo, desc->behavior_id);
-    if (!object) {
-        rewrite_report_reject(report, "not_found",
-                              "Behavior object was not found");
-        return NMO_ERR_NOT_FOUND;
-    }
-    if (!rewrite_is_behavior_object(ctx, object)) {
-        rewrite_report_reject(report, "not_behavior",
-                              "Object is not a CKBehavior");
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    nmo_behavior_state_t *state = rewrite_behavior_state(ctx, object);
-    if (!state) {
-        rewrite_report_reject(report, "invalid_state",
-                              "Behavior state is unavailable");
-        return NMO_ERR_INVALID_STATE;
-    }
-
-    if (report) {
-        report->behavior_id = desc->behavior_id;
-        report->before_flags = state->flags;
-        report->after_flags = state->flags;
-        report->before_guid = state->block_guid;
-        report->after_guid = desc->block_guid;
-        report->sub_behavior_count = state->sub_behaviors.count;
-        report->sub_behavior_link_count = state->sub_behavior_links.count;
-        report->operation_count = state->operations.count;
-        report->preserved_inputs = state->inputs.count;
-        report->preserved_outputs = state->outputs.count;
-        report->preserved_in_parameters = state->in_parameters.count;
-        report->preserved_out_parameters = state->out_parameters.count;
-        report->preserved_local_parameters = state->local_parameters.count;
-    }
-
-    bool is_bb = (state->flags & CKBEHAVIOR_BUILDINGBLOCK) != 0;
-    bool is_script = (state->flags & CKBEHAVIOR_SCRIPT) != 0;
-    bool is_leaf = is_bb && !is_script &&
-                   state->sub_behaviors.count == 0 &&
-                   state->sub_behavior_links.count == 0 &&
-                   state->operations.count == 0;
-    if (report) {
-        report->eligible_leaf = is_leaf;
-    }
-    if (!is_leaf) {
-        rewrite_report_reject(report, "not_leaf_replaceable",
-                              "Behavior is not leaf-replaceable");
-        return NMO_ERR_INVALID_STATE;
-    }
-
-    nmo_behavior_boundary_t before_boundary = {0};
-    nmo_behavior_boundary_t after_boundary = {0};
-    nmo_behavior_state_t before_state = *state;
-    nmo_status_t rc = NMO_OK;
-
-    if (!nmo_behavior_boundary_build(workspace, desc->behavior_id,
-                                     UINT32_MAX, &before_boundary)) {
-        rewrite_report_reject(report, "boundary_failed",
-                              "Failed to build original behavior boundary");
-        return NMO_ERR_INVALID_STATE;
-    }
-
-    if (report) {
-        nmo_object_id_t node_id = desc->behavior_id;
-        rc = nmo_behavior_edit_collect_semantic_risks(
-            workspace, &before_boundary, &node_id, 1u,
-            &report->semantic_risks, &report->semantic_risk_count);
-        if (rc != NMO_OK) {
-            rewrite_report_reject(report, "out_of_memory",
-                                  "Failed to build replace semantic risks");
-            goto cleanup;
-        }
-    }
-
-    rc = nmo_workspace_edit_snapshot_behavior_state(edit, state);
-    if (rc != NMO_OK) {
-        rewrite_report_reject(report, "snapshot_failed",
-                              "Failed to snapshot behavior state");
-        goto cleanup;
-    }
-
-    state->flags |= CKBEHAVIOR_BUILDINGBLOCK | CKBEHAVIOR_USEFUNCTION;
-    state->flags &= ~CKBEHAVIOR_SCRIPT;
-    state->priority = 0;
-    state->block_guid = desc->block_guid;
-    state->block_version =
-        desc->block_version != 0 ? desc->block_version : 65536u;
-
-    if (desc->name && desc->name[0] != '\0') {
-        rc = nmo_object_edit_rename(
-            edit, desc->behavior_id, desc->name);
-        if (rc != NMO_OK) {
-            rewrite_report_reject(report, "rename_failed",
-                                  "Failed to rename behavior");
-            goto cleanup;
-        }
-    }
-
-    nmo_workspace_edit_mark(edit, NMO_WORKSPACE_EDIT_OBJECT_STATE);
-
-    if (!rewrite_array_ids_equal(&before_state.inputs, &state->inputs) ||
-        !rewrite_array_ids_equal(&before_state.outputs, &state->outputs) ||
-        !rewrite_array_ids_equal(&before_state.in_parameters,
-                                 &state->in_parameters) ||
-        !rewrite_array_ids_equal(&before_state.out_parameters,
-                                 &state->out_parameters) ||
-        !rewrite_array_ids_equal(&before_state.local_parameters,
-                                 &state->local_parameters)) {
-        rewrite_report_reject(report, "ports_changed",
-                              "Behavior ports or parameters changed");
-        rc = NMO_ERR_INVALID_STATE;
-        goto cleanup;
-    }
-
-    if (!nmo_behavior_boundary_build(workspace, desc->behavior_id,
-                                     UINT32_MAX, &after_boundary)) {
-        rewrite_report_reject(report, "boundary_failed",
-                              "Failed to build rewritten behavior boundary");
-        rc = NMO_ERR_INVALID_STATE;
-        goto cleanup;
-    }
-
-    if (desc->preserve_links &&
-        (!rewrite_control_edge_sets_equal(before_boundary.control_in,
-                                          before_boundary.control_in_count,
-                                          after_boundary.control_in,
-                                          after_boundary.control_in_count) ||
-         !rewrite_control_edge_sets_equal(before_boundary.control_out,
-                                          before_boundary.control_out_count,
-                                          after_boundary.control_out,
-                                          after_boundary.control_out_count))) {
-        rewrite_report_reject(report, "control_boundary_changed",
-                              "Control boundary edges changed");
-        rc = NMO_ERR_INVALID_STATE;
-        goto cleanup;
-    }
-
-    if (desc->preserve_params &&
-        (!rewrite_parameter_edge_sets_equal(before_boundary.parameter_in,
-                                            before_boundary.parameter_in_count,
-                                            after_boundary.parameter_in,
-                                            after_boundary.parameter_in_count) ||
-         !rewrite_parameter_edge_sets_equal(before_boundary.parameter_out,
-                                            before_boundary.parameter_out_count,
-                                            after_boundary.parameter_out,
-                                            after_boundary.parameter_out_count))) {
-        rewrite_report_reject(report, "parameter_boundary_changed",
-                              "Parameter boundary edges changed");
-        rc = NMO_ERR_INVALID_STATE;
-        goto cleanup;
-    }
-
-    if (report) {
-        report->changed =
-            !nmo_guid_equals(report->before_guid, desc->block_guid) ||
-            report->before_flags != state->flags ||
-            (desc->name && desc->name[0] != '\0');
-        report->after_flags = state->flags;
-        report->after_guid = state->block_guid;
-        report->preserved_control_in = after_boundary.control_in_count;
-        report->preserved_control_out = after_boundary.control_out_count;
-        report->preserved_parameter_in = after_boundary.parameter_in_count;
-        report->preserved_parameter_out = after_boundary.parameter_out_count;
-    }
-
-cleanup:
-    nmo_behavior_boundary_free(&before_boundary);
-    nmo_behavior_boundary_free(&after_boundary);
-    return rc;
-}
-
-/* Workspace-level replace-bb: one script edit transaction around the shared
- * in-edit implementation. */
-static nmo_status_t rewrite_replace_bb_workspace(
-    nmo_context_t *ctx,
-    nmo_workspace_t *workspace,
-    const nmo_behavior_replace_bb_desc_t *desc,
-    nmo_behavior_replace_report_t *report) {
-    nmo_script_edit_tx_t *tx = NULL;
-    nmo_status_t rc = NMO_OK;
-    if (!ctx || !workspace) {
-        if (report) {
-            memset(report, 0, sizeof(*report));
-        }
-        rewrite_report_reject(report, "invalid_argument",
-                              "Invalid behavior replace-bb arguments");
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    rc = nmo_script_edit_begin(workspace, "behavior replace-bb", &tx);
-    if (rc != NMO_OK) {
-        if (report) {
-            memset(report, 0, sizeof(*report));
-        }
-        rewrite_report_reject(report, "edit_begin_failed",
-                              "Failed to begin behavior rewrite edit");
-        return rc;
-    }
-
-    rc = rewrite_replace_bb_in_edit(ctx, nmo_script_edit_workspace(tx),
-                                    nmo_script_edit_workspace_edit(tx), desc,
-                                    report);
-    if (rc != NMO_OK) {
-        nmo_script_edit_rollback(tx);
-        return rc;
-    }
-    rc = nmo_script_edit_commit(tx);
-    if (rc != NMO_OK) {
-        rewrite_report_reject(report, "commit_failed",
-                              "Failed to commit behavior rewrite");
-    }
-    return rc;
-}
-
 NMO_API nmo_status_t nmo_behavior_edit_fold_analyze(
     nmo_workspace_t *workspace,
     const nmo_behavior_fold_desc_t *desc,
@@ -2019,37 +1243,4 @@ NMO_API nmo_status_t nmo_behavior_edit_fold_in_script_tx(
         return NMO_ERR_INVALID_ARGUMENT;
     }
     return rewrite_fold_apply_script_tx(tx, ctx, workspace, edit, desc, report);
-}
-
-NMO_API nmo_status_t nmo_behavior_edit_replace_bb(
-    nmo_workspace_t *workspace,
-    const nmo_behavior_replace_bb_desc_t *desc,
-    nmo_behavior_replace_report_t *report) {
-    nmo_context_t *ctx = nmo_workspace_internal_context(workspace);
-    if (!workspace || !ctx) {
-        if (report) {
-            memset(report, 0, sizeof(*report));
-            rewrite_report_reject(report, "invalid_argument",
-                                  "Invalid behavior replace-bb arguments");
-        }
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    return rewrite_replace_bb_workspace(ctx, workspace, desc, report);
-}
-
-NMO_API nmo_status_t nmo_behavior_edit_replace_bb_in_edit(
-    nmo_workspace_t *workspace,
-    nmo_workspace_edit_t *edit,
-    const nmo_behavior_replace_bb_desc_t *desc,
-    nmo_behavior_replace_report_t *report) {
-    nmo_context_t *ctx = nmo_workspace_internal_context(workspace);
-    if (!workspace || !ctx || !edit) {
-        if (report) {
-            memset(report, 0, sizeof(*report));
-            rewrite_report_reject(report, "invalid_argument",
-                                  "Invalid behavior replace-bb arguments");
-        }
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    return rewrite_replace_bb_in_edit(ctx, workspace, edit, desc, report);
 }

@@ -337,6 +337,8 @@ set(NMO_BEHAVIOR_SOURCES
     src/behavior/behavior_index.c
     src/behavior/behavior_query.c
     src/behavior/behavior_rewrite.c
+    src/behavior/behavior_rewrite_apply.c
+    src/behavior/behavior_rewrite_replace.c
     src/behavior/behavior_view.c
     src/behavior/edit_op_kind.c
     src/behavior/edit_plan.c
