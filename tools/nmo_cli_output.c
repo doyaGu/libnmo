@@ -87,14 +87,6 @@ static size_t chunk_options_write(uint32_t options, char *buf, size_t buf_size) 
     return pos;
 }
 
-const char *nmo_cli_chunk_options_to_string(uint32_t options, char *buf, size_t buf_size) {
-    if (!buf || buf_size == 0) {
-        return "-";
-    }
-    (void)chunk_options_write(options, buf, buf_size);
-    return buf;
-}
-
 char *nmo_cli_chunk_options_dup(uint32_t options) {
     size_t len = chunk_options_write(options, NULL, 0);
     char *text = (char *)malloc(len + 1);

@@ -34,13 +34,6 @@ extern "C" {
 const char *nmo_core_class_name(const nmo_cmd_ctx_t *c, nmo_class_id_t id);
 
 /**
- * @brief Get class name, falling back to "Class#N" in caller buffer
- * @return Class name (never NULL if buf is valid)
- */
-const char *nmo_core_class_name_or(const nmo_cmd_ctx_t *c, nmo_class_id_t id,
-                                   char *buf, size_t sz);
-
-/**
  * @brief malloc'd class name, "Class#N" when the ID is unknown
  * @return String to free() (NULL only on OOM)
  */

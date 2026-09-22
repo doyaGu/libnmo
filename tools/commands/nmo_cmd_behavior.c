@@ -193,14 +193,6 @@ const nmo_interface_link_t *find_interface_link(
     return NULL;
 }
 
-const char *interface_color_to_hex(uint32_t color, char *buf, size_t size) {
-    uint8_t r = (color >> 16) & 0xFF;
-    uint8_t g = (color >> 8) & 0xFF;
-    uint8_t b = color & 0xFF;
-    snprintf(buf, size, "#%02X%02X%02X", r, g, b);
-    return buf;
-}
-
 void nmo_cmd_behavior_add_interface_diagnostics_json(
     yyjson_mut_doc *doc,
     yyjson_mut_val *data,

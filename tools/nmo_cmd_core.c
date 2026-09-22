@@ -38,14 +38,6 @@ const char *nmo_core_class_name(const nmo_cmd_ctx_t *c, nmo_class_id_t id) {
     return nmo_cli_class_name_from_id(c->ctx, id);
 }
 
-const char *nmo_core_class_name_or(const nmo_cmd_ctx_t *c, nmo_class_id_t id,
-                                   char *buf, size_t sz) {
-    const char *name = nmo_core_class_name(c, id);
-    if (name) return name;
-    snprintf(buf, sz, "Class#%u", (unsigned)id);
-    return buf;
-}
-
 char *nmo_core_class_name_dup(const nmo_cmd_ctx_t *c, nmo_class_id_t id) {
     const char *name = nmo_core_class_name(c, id);
     return name ? nmo_tool_strdup(name) : nmo_tool_strdup_fmt("Class#%u", (unsigned)id);

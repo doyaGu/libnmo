@@ -69,11 +69,6 @@ bool find_operation_position(const nmo_interface_data_t *idata,
 const nmo_interface_link_t *find_interface_link(
     const nmo_interface_data_t *idata, nmo_object_id_t link_id);
 
-/**
- * @brief Convert interface color uint32 to "#RRGGBB" hex string.
- */
-const char *interface_color_to_hex(uint32_t color, char *buf, size_t size);
-
 void nmo_cmd_behavior_add_interface_diagnostics_json(
     yyjson_mut_doc *doc,
     yyjson_mut_val *data,

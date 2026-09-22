@@ -201,19 +201,12 @@ void nmo_cli_print_tree(const nmo_cli_tree_node_t *root,
                         nmo_cli_tree_render_fn render_fn);
 
 /**
- * @brief Format chunk option flags as a compact string
+ * @brief Format chunk option flags as a malloc'd "A|B|C" string; free with free().
  *
- * Example: "IDS|CHN|PACKED" or "-".
+ * Example: "IDS|CHN|PACKED" or "-" when no option is set.
  * Unknown bits are appended as hex (e.g. "...|0x2000").
- *
- * @param options Chunk option bitfield
- * @param buf Output buffer
- * @param buf_size Output buffer size
- * @return buf on success, or "-" if buf is invalid
+ * Returns NULL on allocation failure.
  */
-const char *nmo_cli_chunk_options_to_string(uint32_t options, char *buf, size_t buf_size);
-
-/** Heap-allocated variant of nmo_cli_chunk_options_to_string; free with free(). */
 char *nmo_cli_chunk_options_dup(uint32_t options);
 
 #ifdef __cplusplus
