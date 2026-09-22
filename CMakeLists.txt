@@ -345,6 +345,11 @@ set(NMO_BEHAVIOR_SOURCES
     src/behavior/semantic_validator.c
     src/behavior/script_edit.c
     src/behavior/script_edit_graph.c
+    src/behavior/script_edit_interface.c
+    src/behavior/script_edit_link.c
+    src/behavior/script_edit_node.c
+    src/behavior/script_edit_operation.c
+    src/behavior/script_edit_parameter.c
     src/behavior/script_trace_view.c
     src/behavior/script_walker.c
     src/behavior/param_value.c
