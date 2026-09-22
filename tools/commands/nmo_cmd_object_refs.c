@@ -43,20 +43,13 @@ static bool cli_refs_build_record(const nmo_core_ref_info_t *info,
     nmo_object_id_t peer_id = in ? info->edge->from : info->edge->to;
     const char *field_name = info->edge->field_path ? info->edge->field_path : "unknown";
 
-    char field_buf[32];
-    if (info->edge->index > 0) {
-        snprintf(field_buf, sizeof(field_buf), "%s[%u]", field_name, info->edge->index);
-    } else {
-        snprintf(field_buf, sizeof(field_buf), "%s", field_name);
-    }
-
     bool ok = nmo_cli_record_uint(rec, in ? "source_id" : "target_id",
                                   in ? "Source" : "Target", peer_id) &&
               nmo_cli_record_str(rec, "kind", "Kind", nmo_ref_kind_name(info->edge->kind)) &&
-              nmo_cli_record_str(rec, "field", "Field", field_name) &&
-              nmo_cli_record_set_text(rec, field_buf);
+              nmo_cli_record_str(rec, "field", "Field", field_name);
     if (ok && info->edge->index > 0) {
-        ok = nmo_cli_record_uint(rec, "index", NULL, info->edge->index);
+        ok = nmo_cli_record_set_text_fmt(rec, "%s[%u]", field_name, info->edge->index) &&
+             nmo_cli_record_uint(rec, "index", NULL, info->edge->index);
     }
 
     const char *class_label = in ? "Source Class" : "Target Class";
@@ -563,6 +556,20 @@ static int object_orphans_parse(int argc, char **argv, bool expect_file_operand,
     return NMO_CLI_EXIT_SUCCESS;
 }
 
+/* One unreachable object: JSON id/class_id/class_name/name, text ID/Class/Name. */
+static bool object_orphan_build_record(const nmo_cmd_ctx_t *c, nmo_object_id_t id,
+                                       nmo_object_t *o, nmo_cli_record_t *rec)
+{
+    nmo_class_id_t cid = nmo_object_get_class_id(o);
+    char cbuf[32];
+    const char *cname = nmo_core_class_name_or(c, cid, cbuf, sizeof(cbuf));
+    const char *name = nmo_object_get_name(o);
+    return nmo_cli_record_uint(rec, "id", "ID", (uint64_t)id) &&
+           nmo_cli_record_uint(rec, "class_id", NULL, (uint64_t)cid) &&
+           nmo_cli_record_str(rec, "class_name", "Class", cname) &&
+           nmo_cli_record_str_opt(rec, "name", "Name", name, "-");
+}
+
 static int object_orphans_run(nmo_cmd_ctx_t *ctx, const object_orphans_args_t *args,
                               bool close_ctx) {
     nmo_cmd_ctx_t c = *ctx;
@@ -629,64 +636,55 @@ static int object_orphans_run(nmo_cmd_ctx_t *ctx, const object_orphans_args_t *a
     }
     orphan_count = filtered_count;
 
+    static const nmo_cli_table_col_t cols[] = {
+        {"ID",    NMO_CLI_ALIGN_RIGHT, 6, 0},
+        {"Class", NMO_CLI_ALIGN_LEFT, 18, 0},
+        {"Name",  NMO_CLI_ALIGN_LEFT, 24, 0},
+    };
+
+    yyjson_mut_doc *doc = NULL;
+    yyjson_mut_val *data = NULL;
+    yyjson_mut_val *arr = NULL;
+    nmo_cli_table_t table;
     if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-
-        yyjson_mut_obj_add_uint(doc, data, "total_objects",
-                                (uint64_t)object_count);
-        yyjson_mut_obj_add_uint(doc, data, "orphan_count",
-                                (uint64_t)orphan_count);
-
-        yyjson_mut_val *arr = yyjson_mut_arr(doc);
-        for (size_t i = 0; i < orphan_count; ++i) {
-            nmo_object_t *o = nmo_core_find_by_id(&c, orphan_ids[i]);
-            if (!o) continue;
-            yyjson_mut_val *entry = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_uint(doc, entry, "id",
-                                    (uint64_t)orphan_ids[i]);
-            nmo_class_id_t cid = nmo_object_get_class_id(o);
-            yyjson_mut_obj_add_uint(doc, entry, "class_id", (uint64_t)cid);
-            char cbuf[32];
-            const char *cname = nmo_core_class_name_or(&c, cid, cbuf, sizeof(cbuf));
-            yyjson_mut_obj_add_str(doc, entry, "class_name", cname);
-            const char *name = nmo_object_get_name(o);
-            if (name && name[0])
-                nmo_cli_json_add_str_safe(doc, entry, "name", name);
-            yyjson_mut_arr_add_val(arr, entry);
-        }
-        yyjson_mut_obj_add_val(doc, data, "orphans", arr);
-
-        nmo_cmd_ctx_json_end(&c, doc, data, "object.orphans");
+        doc = nmo_cmd_ctx_json_begin(&c);
+        data = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_uint(doc, data, "total_objects", (uint64_t)object_count);
+        yyjson_mut_obj_add_uint(doc, data, "orphan_count", (uint64_t)orphan_count);
+        arr = yyjson_mut_arr(doc);
     } else {
         fprintf(c.out, "Orphan Analysis: %zu unreachable object(s) (of %zu total)\n\n",
                 orphan_count, object_count);
+        nmo_cli_table_init(&table, cols, sizeof(cols) / sizeof(cols[0]));
+    }
 
-        if (orphan_count > 0) {
-            static const nmo_cli_table_col_t cols[] = {
-                {"ID",    NMO_CLI_ALIGN_RIGHT, 6, 0},
-                {"Class", NMO_CLI_ALIGN_LEFT, 18, 0},
-                {"Name",  NMO_CLI_ALIGN_LEFT, 24, 0},
-            };
-            nmo_cli_table_t table;
-            nmo_cli_table_init(&table, cols, sizeof(cols) / sizeof(cols[0]));
-
-            for (size_t i = 0; i < orphan_count; ++i) {
-                nmo_object_t *o = nmo_core_find_by_id(&c, orphan_ids[i]);
-                if (!o) continue;
-                char id_buf[16];
-                snprintf(id_buf, sizeof(id_buf), "%u", orphan_ids[i]);
-                char cbuf[32];
-                const char *cname = nmo_core_class_name_or(
-                    &c, nmo_object_get_class_id(o), cbuf, sizeof(cbuf));
-                const char *name = nmo_object_get_name(o);
-                const char *name_str = (name && name[0]) ? name : "-";
-                const char *cells[] = { id_buf, cname, name_str };
-                nmo_cli_table_add_row(&table, cells, 3);
+    for (size_t i = 0; i < orphan_count; ++i) {
+        nmo_object_t *o = nmo_core_find_by_id(&c, orphan_ids[i]);
+        if (!o) continue;
+        nmo_cli_record_t *rec = nmo_cli_record_new();
+        if (rec && object_orphan_build_record(&c, orphan_ids[i], o, rec)) {
+            if (doc) {
+                yyjson_mut_val *entry = yyjson_mut_obj(doc);
+                if (entry && nmo_cli_record_to_json(rec, doc, entry)) {
+                    yyjson_mut_arr_add_val(arr, entry);
+                }
+            } else {
+                const char *cells[3];
+                size_t n = nmo_cli_record_cells(rec, cells, 3);
+                nmo_cli_table_add_row(&table, cells, n);
             }
-            nmo_cli_table_print(&table, c.out, c.colorize);
-            nmo_cli_table_free(&table);
         }
+        nmo_cli_record_free(rec);
+    }
+
+    if (doc) {
+        yyjson_mut_obj_add_val(doc, data, "orphans", arr);
+        nmo_cmd_ctx_json_end(&c, doc, data, "object.orphans");
+    } else {
+        if (orphan_count > 0) {
+            nmo_cli_table_print(&table, c.out, c.colorize);
+        }
+        nmo_cli_table_free(&table);
     }
 
     nmo_arena_destroy(arena);
