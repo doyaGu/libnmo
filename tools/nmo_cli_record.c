@@ -94,27 +94,42 @@ static bool set_str(char **slot, const char *value)
     return true;
 }
 
-/* Format into `slot`, growing past the stack buffer when needed. */
-static bool set_vformatted(char **slot, const char *format, va_list args)
+/* printf into a fresh heap string of exactly the needed size. */
+static char *vformat_dup(const char *format, va_list args)
 {
-    char buf[128];
     va_list copy;
     va_copy(copy, args);
-    int n = vsnprintf(buf, sizeof(buf), format, copy);
+    int n = vsnprintf(NULL, 0u, format, copy);
     va_end(copy);
     if (n < 0) {
+        return NULL;
+    }
+    char *text = (char *)malloc((size_t)n + 1u);
+    if (!text) {
+        return NULL;
+    }
+    vsnprintf(text, (size_t)n + 1u, format, args);
+    return text;
+}
+
+static char *format_dup(const char *format, ...)
+{
+    va_list args;
+    va_start(args, format);
+    char *text = vformat_dup(format, args);
+    va_end(args);
+    return text;
+}
+
+/* Format into `slot`, replacing its previous value. */
+static bool set_vformatted(char **slot, const char *format, va_list args)
+{
+    char *text = vformat_dup(format, args);
+    if (!text) {
         return false;
     }
-    if ((size_t)n < sizeof(buf)) {
-        return set_str(slot, buf);
-    }
-    char *big = (char *)malloc((size_t)n + 1u);
-    if (!big) {
-        return false;
-    }
-    vsnprintf(big, (size_t)n + 1u, format, args);
     free(*slot);
-    *slot = big;
+    *slot = text;
     return true;
 }
 
@@ -336,11 +351,15 @@ bool nmo_cli_record_vec3(nmo_cli_record_t *record, const char *key,
     field->v[1] = y;
     field->v[2] = z;
     const char *fmt = component_format ? component_format : "%.4f";
-    char cx[64], cy[64], cz[64];
-    snprintf(cx, sizeof(cx), fmt, x);
-    snprintf(cy, sizeof(cy), fmt, y);
-    snprintf(cz, sizeof(cz), fmt, z);
-    if (!set_formatted(&field->text, "(%s, %s, %s)", cx, cy, cz)) {
+    char *cx = format_dup(fmt, x);
+    char *cy = format_dup(fmt, y);
+    char *cz = format_dup(fmt, z);
+    bool ok = cx && cy && cz &&
+              set_formatted(&field->text, "(%s, %s, %s)", cx, cy, cz);
+    free(cx);
+    free(cy);
+    free(cz);
+    if (!ok) {
         return field_fail(record);
     }
     return true;
@@ -814,10 +833,10 @@ static void record_print_bytes(const record_field_t *field, FILE *out,
         return;
     }
     if (field->list_count < (size_t)field->u) {
-        char note[64];
-        snprintf(note, sizeof(note), "showing %zu/%zu bytes",
-                 field->list_count, (size_t)field->u);
-        nmo_cli_print_kv(out, label, note, key_width, colorize);
+        char *note = format_dup("showing %zu/%zu bytes",
+                                field->list_count, (size_t)field->u);
+        nmo_cli_print_kv(out, label, note ? note : "", key_width, colorize);
+        free(note);
     }
     nmo_hexdump_options_t hd;
     nmo_hexdump_init_options(&hd);
