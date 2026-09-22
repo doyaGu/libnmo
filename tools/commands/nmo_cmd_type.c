@@ -482,9 +482,8 @@ int nmo_cmd_type_class_tree(int argc, char **argv, const nmo_cli_global_opts_t *
             }
         }
 
-        nmo_allocator_t label_alloc = nmo_allocator_default();
         for (size_t i = 0; i < class_count; ++i) {
-            nmo_free(&label_alloc, nodes[i].label);
+            free(nodes[i].label);
         }
         free(nodes);
     }
