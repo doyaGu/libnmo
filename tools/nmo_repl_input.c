@@ -1,5 +1,7 @@
 #include "nmo_repl_input.h"
 
+#include "nmo_tool_common.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,7 +18,11 @@
 #include "format/nmo_object.h"
 
 static const char *nmo_repl_get_history_path(void) {
-    static char path[512];
+    /* Resolved once; isocline keeps referencing it for the whole session. */
+    static char *path = NULL;
+    if (path) {
+        return path;
+    }
 
 #ifdef _WIN32
     const char *home = getenv("USERPROFILE");
@@ -27,7 +33,7 @@ static const char *nmo_repl_get_history_path(void) {
         return NULL;
     }
 
-    snprintf(path, sizeof(path), "%s/.nmo_history", home);
+    path = nmo_tool_strdup_fmt("%s/.nmo_history", home);
     return path;
 }
 
@@ -61,14 +67,28 @@ static const char *set_options[] = {
 static const char *set_color_values[] = { "on", "off", NULL };
 static const char *set_level_values[] = { "0", "1", "2", "3", NULL };
 
+/* malloc'd copy of `len` bytes starting at `start`. */
+static char *dup_word(const char *start, size_t len) {
+    char *word = (char *)malloc(len + 1u);
+    if (word) {
+        memcpy(word, start, len);
+        word[len] = '\0';
+    }
+    return word;
+}
+
 /**
  * Parse prefix to extract command name and determine argument position.
- * Returns number of words found (0 = no command yet).
+ * Returns number of words found (0 = no command yet, -1 on allocation
+ * failure). *cmd_out and *arg1_out receive malloc'd copies (NULL when the
+ * word is absent) that the caller frees.
  */
-static int parse_prefix_words(const char *prefix, char *cmd_buf, size_t cmd_size,
-                              char *arg1_buf, size_t arg1_size) {
+static int parse_prefix_words(const char *prefix, char **cmd_out, char **arg1_out) {
     const char *p = prefix;
     int word_count = 0;
+
+    *cmd_out = NULL;
+    *arg1_out = NULL;
 
     /* Skip leading whitespace */
     while (*p == ' ') p++;
@@ -78,9 +98,8 @@ static int parse_prefix_words(const char *prefix, char *cmd_buf, size_t cmd_size
     const char *word_start = p;
     while (*p && *p != ' ') p++;
     size_t len = (size_t)(p - word_start);
-    if (len >= cmd_size) len = cmd_size - 1;
-    memcpy(cmd_buf, word_start, len);
-    cmd_buf[len] = '\0';
+    *cmd_out = dup_word(word_start, len);
+    if (!*cmd_out) return -1;
     word_count = 1;
 
     /* Skip whitespace after command */
@@ -88,7 +107,6 @@ static int parse_prefix_words(const char *prefix, char *cmd_buf, size_t cmd_size
     if (*p == '\0') {
         /* Cursor is after command + space: completing first argument */
         if (p > word_start + len) {
-            arg1_buf[0] = '\0';
             return 2; /* signal: completing arg1 */
         }
         return 1;
@@ -98,9 +116,8 @@ static int parse_prefix_words(const char *prefix, char *cmd_buf, size_t cmd_size
     word_start = p;
     while (*p && *p != ' ') p++;
     len = (size_t)(p - word_start);
-    if (len >= arg1_size) len = arg1_size - 1;
-    memcpy(arg1_buf, word_start, len);
-    arg1_buf[len] = '\0';
+    *arg1_out = dup_word(word_start, len);
+    if (!*arg1_out) return -1;
     word_count = 2;
 
     /* Check if there's more after arg1 */
@@ -275,27 +292,9 @@ static void complete_object_names(ic_completion_env_t *cenv, const char *prefix)
     }
 }
 
-static void nmo_repl_completer(ic_completion_env_t *cenv, const char *prefix) {
-    /* prefix = full input up to cursor position */
-    const char *p = prefix;
-    while (*p && *p == ' ') p++;
-
-    /* Find end of first word */
-    const char *word_end = p;
-    while (*word_end && *word_end != ' ') word_end++;
-
-    /* If still on first word, complete command names */
-    if (*word_end == '\0') {
-        ic_complete_word(cenv, prefix, &complete_command_names, NULL);
-        return;
-    }
-
-    /* We have at least one complete word followed by space.
-     * Parse the prefix to determine context. */
-    char cmd[64] = {0};
-    char arg1[256] = {0};
-    int words = parse_prefix_words(prefix, cmd, sizeof(cmd), arg1, sizeof(arg1));
-
+/* Argument completion once the command word (`cmd`) is complete. */
+static void nmo_repl_complete_arguments(ic_completion_env_t *cenv, const char *prefix,
+                                        const char *cmd, const char *arg1, int words) {
     if (words < 2) {
         return;
     }
@@ -368,6 +367,33 @@ static void nmo_repl_completer(ic_completion_env_t *cenv, const char *prefix) {
     }
 }
 
+static void nmo_repl_completer(ic_completion_env_t *cenv, const char *prefix) {
+    /* prefix = full input up to cursor position */
+    const char *p = prefix;
+    while (*p && *p == ' ') p++;
+
+    /* Find end of first word */
+    const char *word_end = p;
+    while (*word_end && *word_end != ' ') word_end++;
+
+    /* If still on first word, complete command names */
+    if (*word_end == '\0') {
+        ic_complete_word(cenv, prefix, &complete_command_names, NULL);
+        return;
+    }
+
+    /* We have at least one complete word followed by space.
+     * Parse the prefix to determine context. */
+    char *cmd = NULL;
+    char *arg1 = NULL;
+    int words = parse_prefix_words(prefix, &cmd, &arg1);
+    if (words > 0) {
+        nmo_repl_complete_arguments(cenv, prefix, cmd ? cmd : "", arg1 ? arg1 : "", words);
+    }
+    free(cmd);
+    free(arg1);
+}
+
 void nmo_repl_input_init(nmo_repl_context_t *repl) {
     const char *hist = nmo_repl_get_history_path();
     if (hist) {
@@ -415,28 +441,43 @@ void nmo_repl_input_invalidate_name_cache(nmo_repl_context_t *repl) {
 }
 
 char *nmo_repl_readline_basic(const char *prompt) {
-    static char buf[4096];
-
     if (prompt && prompt[0]) {
         printf("%s", prompt);
         fflush(stdout);
     }
 
-    if (fgets(buf, sizeof(buf), stdin) == NULL) {
+    /* Read up to the newline into a buffer that grows with the line. */
+    size_t capacity = 256u;
+    size_t length = 0u;
+    char *line = (char *)malloc(capacity);
+    if (!line) {
         return NULL;
     }
-
-    size_t len = strlen(buf);
-    if (len > 0 && buf[len - 1] == '\n') {
-        buf[len - 1] = '\0';
-        len--;
+    for (;;) {
+        int ch = fgetc(stdin);
+        if (ch == EOF) {
+            if (length == 0u) {
+                free(line);
+                return NULL; /* EOF with no input, like fgets */
+            }
+            break;
+        }
+        if (ch == '\n') {
+            break;
+        }
+        if (length + 2u > capacity) {
+            capacity *= 2u;
+            char *grown = (char *)realloc(line, capacity);
+            if (!grown) {
+                free(line);
+                return NULL;
+            }
+            line = grown;
+        }
+        line[length++] = (char)ch;
     }
-
-    char *result = (char *)malloc(len + 1);
-    if (result) {
-        memcpy(result, buf, len + 1);
-    }
-    return result;
+    line[length] = '\0';
+    return line;
 }
 
 #endif /* NMO_HAVE_ISOCLINE */

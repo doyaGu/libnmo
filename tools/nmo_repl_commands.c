@@ -481,11 +481,11 @@ static int cmd_list(nmo_repl_context_t *repl, int argc, char **argv) {
                           repl_list_visitor, &ld, &result);
 
     if (query.class_id) {
-        char class_buf[64];
-        const char *class_name = nmo_core_class_name_or(&c, query.class_id,
-                                                         class_buf, sizeof(class_buf));
+        char *class_name = nmo_core_class_name_dup(&c, query.class_id);
         printf("\n%zu/%zu objects shown (class %" PRIu32 ", %s)\n",
-               ld.displayed, result.total, (uint32_t)query.class_id, class_name);
+               ld.displayed, result.total, (uint32_t)query.class_id,
+               class_name ? class_name : "?");
+        free(class_name);
     } else {
         printf("\n%zu/%zu objects shown\n", ld.displayed, result.total);
     }
@@ -542,18 +542,18 @@ static int cmd_show(nmo_repl_context_t *repl, int argc, char **argv) {
     nmo_cmd_ctx_t c;
     nmo_cmd_ctx_init_from_repl_document(
         &c, repl->ctx, repl->document, repl->workspace, false);
-    char class_buf[64];
-    const char *class_name = nmo_core_class_name_or(&c, class_id, class_buf, sizeof(class_buf));
+    char *class_name = nmo_core_class_name_dup(&c, class_id);
 
     printf("\nObject Details:\n");
     printf("  Index: %zu\n", index);
-    printf("  Class: %" PRIu32 " (%s)\n", (uint32_t)class_id, class_name);
+    printf("  Class: %" PRIu32 " (%s)\n", (uint32_t)class_id, class_name ? class_name : "?");
+    free(class_name);
     printf("  ID/Name: %u %s\n", obj_id, (name && name[0]) ? name : "(unnamed)");
     if (chunk) {
         printf("  Chunk Size: %zu bytes\n", nmo_chunk_get_data_size(chunk));
-        char opt_buf[128];
-        const char *opt = nmo_cli_chunk_options_to_string(chunk->chunk_options, opt_buf, sizeof(opt_buf));
-        printf("  Chunk Options: %s (0x%08X)\n", opt, (unsigned int)chunk->chunk_options);
+        char *opt = nmo_cli_chunk_options_dup(chunk->chunk_options);
+        printf("  Chunk Options: %s (0x%08X)\n", opt ? opt : "?", (unsigned int)chunk->chunk_options);
+        free(opt);
         printf("  Chunk Class: %u\n", chunk->class_id);
     } else {
         printf("  Chunk: (none)\n");
@@ -626,14 +626,18 @@ static int repl_find_visitor(size_t index, nmo_object_t *obj,
     return 0;
 }
 
+/*
+ * Build the query for `find`. A /regex/ token is copied without its slashes
+ * into *out_owned_name (malloc'd, freed by the caller) because the query
+ * only references the pattern text.
+ */
 static int repl_query_build_find(
     nmo_repl_context_t *repl,
     const nmo_cmd_ctx_t *c,
     int argc,
     char **argv,
     nmo_object_query_t *query,
-    char *regex_buf,
-    size_t regex_buf_size)
+    char **out_owned_name)
 {
     const char *token = argv[1];
 
@@ -652,12 +656,15 @@ static int repl_query_build_find(
     size_t len = strlen(token);
     if (len >= 2 && token[0] == '/' && token[len - 1] == '/') {
         len -= 2;
-        if (len >= regex_buf_size) {
-            len = regex_buf_size - 1;
+        char *pattern = (char *)malloc(len + 1u);
+        if (!pattern) {
+            fprintf(stderr, "Error: Out of memory\n");
+            return -1;
         }
-        memcpy(regex_buf, token + 1, len);
-        regex_buf[len] = '\0';
-        query->name = regex_buf;
+        memcpy(pattern, token + 1, len);
+        pattern[len] = '\0';
+        *out_owned_name = pattern;
+        query->name = pattern;
         query->name_mode = NMO_OBJECT_QUERY_NAME_REGEX;
         query->name_case_insensitive = repl->regex_icase;
     } else {
@@ -680,9 +687,8 @@ static int cmd_find(nmo_repl_context_t *repl, int argc, char **argv) {
         &c, repl->ctx, repl->document, repl->workspace, repl->colorize);
 
     nmo_object_query_t query = {0};
-    char regex_buf[256];
-    if (repl_query_build_find(
-            repl, &c, argc, argv, &query, regex_buf, sizeof(regex_buf)) != 0) {
+    char *owned_name = NULL;
+    if (repl_query_build_find(repl, &c, argc, argv, &query, &owned_name) != 0) {
         return -1;
     }
 
@@ -690,6 +696,7 @@ static int cmd_find(nmo_repl_context_t *repl, int argc, char **argv) {
 
     repl_find_data_t fd = { .repl = repl, .found = 0 };
     nmo_core_object_query_run(&c, &query, repl_find_visitor, &fd, NULL);
+    free(owned_name);
 
     if (!fd.found) {
         printf("No matches.\n");
@@ -824,13 +831,13 @@ static int cmd_param(nmo_repl_context_t *repl, int argc, char **argv) {
     nmo_cmd_ctx_t c;
     nmo_cmd_ctx_init_from_repl_document(
         &c, repl->ctx, repl->document, repl->workspace, false);
-    char class_buf[64];
-    const char *class_name = nmo_core_class_name_or(&c, class_id, class_buf, sizeof(class_buf));
+    char *class_name = nmo_core_class_name_dup(&c, class_id);
 
     printf("\nParameter Details:\n");
     printf("  Index: %zu\n", index);
     printf("  ID: %u\n", obj_id);
-    printf("  Class: %s\n", class_name);
+    printf("  Class: %s\n", class_name ? class_name : "?");
+    free(class_name);
     if (name && name[0]) {
         printf("  Name: %s\n", name);
     }
@@ -840,7 +847,7 @@ static int cmd_param(nmo_repl_context_t *repl, int argc, char **argv) {
         if (type_name && type_name[0]) {
             printf("  Type: %s\n", type_name);
         } else {
-            char guid_str[64];
+            char guid_str[NMO_GUID_STRING_SIZE];
             nmo_guid_format(pstate->type_guid, guid_str, sizeof(guid_str));
             printf("  Type: %s\n", guid_str);
         }
@@ -890,11 +897,12 @@ static int cmd_refs(nmo_repl_context_t *repl, int argc, char **argv) {
     nmo_cmd_ctx_t c;
     nmo_cmd_ctx_init_from_repl_document(
         &c, repl->ctx, repl->document, repl->workspace, repl->colorize);
-    char class_buf[64];
-    const char *class_name = nmo_core_class_name_or(&c, class_id, class_buf, sizeof(class_buf));
+    char *class_name = nmo_core_class_name_dup(&c, class_id);
 
     printf("\nReferences for [%zu] ID=%u %s (%s):\n", index, obj_id,
-           (obj_name && obj_name[0]) ? obj_name : "(unnamed)", class_name);
+           (obj_name && obj_name[0]) ? obj_name : "(unnamed)",
+           class_name ? class_name : "?");
+    free(class_name);
 
     nmo_core_ref_result_t ref_result = {0};
     nmo_core_iter_refs(&c, obj_id, NMO_CORE_REFS_BOTH,
@@ -1058,9 +1066,9 @@ static int cmd_meta(nmo_repl_context_t *repl, int argc, char **argv) {
     printf("  Compressed: %s\n",
            ((chunk->chunk_options & NMO_CHUNK_OPTION_PACKED) || chunk->is_compressed) ? "yes" : "no");
     {
-        char opt_buf[128];
-        const char *opt = nmo_cli_chunk_options_to_string(chunk->chunk_options, opt_buf, sizeof(opt_buf));
-        printf("  Options: %s (0x%08X)\n", opt, (unsigned int)chunk->chunk_options);
+        char *opt = nmo_cli_chunk_options_dup(chunk->chunk_options);
+        printf("  Options: %s (0x%08X)\n", opt ? opt : "?", (unsigned int)chunk->chunk_options);
+        free(opt);
     }
     printf("\n");
     return 0;

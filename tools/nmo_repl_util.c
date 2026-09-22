@@ -112,15 +112,15 @@ void nmo_repl_print_object_summary(const nmo_repl_context_t *repl, size_t index,
     nmo_cmd_ctx_init_from_repl_document(
         &c, repl->ctx, repl->document, repl->workspace, false);
 
-    char class_buf[64];
-    const char *class_name = nmo_core_class_name_or(&c, class_id, class_buf, sizeof(class_buf));
+    char *class_name = nmo_core_class_name_dup(&c, class_id);
 
     printf("  [%3zu] ID=%-5u Class=%-3" PRIu32 " %-24s %s\n",
            index,
            obj_id,
            (uint32_t)class_id,
-           class_name,
+           class_name ? class_name : "?",
            name ? name : "(unnamed)");
+    free(class_name);
 }
 
 void nmo_repl_print_object_summary_marked(const nmo_repl_context_t *repl,
@@ -135,16 +135,16 @@ void nmo_repl_print_object_summary_marked(const nmo_repl_context_t *repl,
     nmo_cmd_ctx_init_from_repl_document(
         &c, repl->ctx, repl->document, repl->workspace, false);
 
-    char class_buf[64];
-    const char *class_name = nmo_core_class_name_or(&c, class_id, class_buf, sizeof(class_buf));
+    char *class_name = nmo_core_class_name_dup(&c, class_id);
 
     printf("%c [%3zu] ID=%-5u Class=%-3" PRIu32 " %-24s %s\n",
            selected ? '>' : ' ',
            index,
            obj_id,
            (uint32_t)class_id,
-           class_name,
+           class_name ? class_name : "?",
            name ? name : "(unnamed)");
+    free(class_name);
 }
 
 bool nmo_repl_paginate_if_needed(nmo_repl_context_t *repl, size_t printed) {
@@ -257,11 +257,13 @@ int nmo_repl_resolve_object_index(nmo_repl_context_t *repl,
         nmo_object_t *match = NULL;
 
         if (name && name[0] == '/' && name[strlen(name) - 1] == '/') {
-            char pattern[256];
+            /* Regex text between the slashes, copied because the query only references it. */
             size_t len = strlen(name);
             size_t copy_len = len >= 2 ? len - 2 : 0;
-            if (copy_len >= sizeof(pattern)) {
-                copy_len = sizeof(pattern) - 1;
+            char *pattern = (char *)malloc(copy_len + 1u);
+            if (!pattern) {
+                fprintf(stderr, "Error: Out of memory\n");
+                return -1;
             }
             memcpy(pattern, name + 1, copy_len);
             pattern[copy_len] = '\0';
@@ -271,9 +273,11 @@ int nmo_repl_resolve_object_index(nmo_repl_context_t *repl,
             query.name_case_insensitive = repl->regex_icase;
             if (nmo_core_object_query_first(&c, &query, &match, out_index) ==
                 NMO_CLI_EXIT_SUCCESS) {
+                free(pattern);
                 return 0;
             }
             fprintf(stderr, "Error: No object name matches /%s/\n", pattern);
+            free(pattern);
             return -1;
         }
 
