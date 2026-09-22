@@ -64,6 +64,14 @@ char *nmo_core_type_value_dup(const void *value,
                               const nmo_type_registry_t *registry);
 
 /**
+ * @brief malloc'd decoded value of a parameter (nmo_behavior_param_value_to_string)
+ * @return String to free(), or NULL when the value cannot be formatted
+ */
+char *nmo_core_param_value_dup(const nmo_parameter_state_t *param,
+                               const nmo_type_registry_t *registry,
+                               const nmo_workspace_t *workspace);
+
+/**
  * @brief malloc'd text form of a named field of a state struct (nmo_type_get_field)
  * @return String to free(), or NULL when the field cannot be formatted
  */

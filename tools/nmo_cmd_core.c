@@ -8,6 +8,7 @@
 #include "nmo_tool_owner.h"
 #include "nmo_cli_common.h"
 #include "nmo_tool_common.h"
+#include "behavior/nmo_behavior_view.h"
 #include "document/nmo_document.h"
 #include "object/nmo_object_diff.h"
 #include "object/nmo_object_query.h"
@@ -60,11 +61,16 @@ char *nmo_core_object_path_dup(nmo_context_t *ctx, const nmo_object_t *obj) {
 }
 
 /*
- * The type system formats into a caller buffer and truncates (or rejects a
+ * The library formatters write into a caller buffer and truncate (or reject a
  * buffer below the type's minimum) without reporting the needed size. Retry
- * with a growing buffer until the text fits with room to spare, which proves
- * it was not cut off.
+ * with a growing buffer until the text ends well short of the capacity, which
+ * proves it was not cut off. The margin covers formatters that stop early
+ * when a multi-byte escape would not fit (format_raw_string_buffer stops up
+ * to five bytes before the end), so a one-byte check would accept a trimmed
+ * string.
  */
+#define CORE_TO_STRING_MARGIN 16u
+
 typedef nmo_status_t (*core_to_string_fn)(void *user, char *buffer, size_t buffer_size);
 
 static char *core_to_string_dup(core_to_string_fn to_string, void *user) {
@@ -76,11 +82,12 @@ static char *core_to_string_dup(core_to_string_fn to_string, void *user) {
         }
         buffer[0] = '\0';
         nmo_status_t status = to_string(user, buffer, capacity);
-        if (status == NMO_OK && strlen(buffer) + 1u < capacity) {
+        if (status == NMO_OK && strlen(buffer) + CORE_TO_STRING_MARGIN <= capacity) {
             return buffer;
         }
         free(buffer);
-        if (status != NMO_OK && status != NMO_ERR_INVALID_ARGUMENT) {
+        if (status != NMO_OK && status != NMO_ERR_INVALID_ARGUMENT &&
+            status != NMO_ERR_BUFFER_OVERRUN) {
             return NULL; /* not a size problem */
         }
         if (capacity >= ((size_t)1u << 24)) {
@@ -133,6 +140,28 @@ char *nmo_core_field_value_dup(const void *state,
     }
     core_field_to_string_args_t args = { state, type, registry, field_name };
     return core_to_string_dup(core_field_to_string, &args);
+}
+
+typedef struct core_param_to_string_args {
+    const nmo_parameter_state_t *param;
+    const nmo_type_registry_t *registry;
+    const nmo_workspace_t *workspace;
+} core_param_to_string_args_t;
+
+static nmo_status_t core_param_to_string(void *user, char *buffer, size_t buffer_size) {
+    const core_param_to_string_args_t *args = (const core_param_to_string_args_t *)user;
+    return nmo_behavior_param_value_to_string(args->param, args->registry, args->workspace,
+                                              buffer, buffer_size);
+}
+
+char *nmo_core_param_value_dup(const nmo_parameter_state_t *param,
+                               const nmo_type_registry_t *registry,
+                               const nmo_workspace_t *workspace) {
+    if (!param || !registry) {
+        return NULL;
+    }
+    core_param_to_string_args_t args = { param, registry, workspace };
+    return core_to_string_dup(core_param_to_string, &args);
 }
 
 nmo_class_id_t nmo_core_class_id(const nmo_cmd_ctx_t *c, const char *name) {
