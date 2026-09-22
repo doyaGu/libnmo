@@ -128,13 +128,12 @@ static bool animation_list_build_record(const nmo_cmd_ctx_t *c,
                                         nmo_cli_record_t *rec)
 {
     nmo_class_id_t cid = nmo_object_get_class_id(obj);
-    char cls_buf[32];
-    const char *cls = nmo_core_class_name_or(c, cid, cls_buf, sizeof(cls_buf));
+    const char *cls = nmo_core_class_name(c, cid);
     const char *name = nmo_object_get_name(obj);
-    char buf[32];
 
     bool ok = nmo_cli_record_uint(rec, "id", "ID", nmo_object_get_id(obj));
-    ok = ok && nmo_cli_record_str(rec, "class", "Class", cls);
+    ok = ok && (cls ? nmo_cli_record_str(rec, "class", "Class", cls)
+                    : nmo_cli_record_str_fmt(rec, "class", "Class", "Class#%u", (unsigned)cid));
     ok = ok && nmo_cli_record_str(rec, "name", "Name", name);
     if (ok && (!name || !name[0])) {
         ok = nmo_cli_record_set_text(rec, "-");
@@ -180,8 +179,7 @@ static bool animation_list_build_record(const nmo_cmd_ctx_t *c,
             }
             if (st->has_root_entity &&
                 st->root_entity.state == NMO_REF_RESOLVED) {
-                snprintf(buf, sizeof(buf), "%u", st->root_entity.id);
-                ok = ok && nmo_cli_record_text(rec, "Target", buf);
+                ok = ok && nmo_cli_record_text_fmt(rec, "Target", "%u", st->root_entity.id);
             } else {
                 ok = ok && nmo_cli_record_text(rec, "Target", "-");
             }
@@ -283,10 +281,8 @@ int nmo_cmd_animation_list(int argc, char **argv, const nmo_cli_global_opts_t *g
 /* Flags: unsigned in JSON, lowercase hex in text. */
 static bool animation_record_flags(nmo_cli_record_t *rec, uint32_t flags)
 {
-    char buf[16];
-    snprintf(buf, sizeof(buf), "0x%08x", flags);
     return nmo_cli_record_uint(rec, "flags", "Flags", flags) &&
-           nmo_cli_record_set_text(rec, buf);
+           nmo_cli_record_set_text_fmt(rec, "0x%08x", flags);
 }
 
 static bool animation_show_build_record(const nmo_cmd_ctx_t *c,
@@ -297,9 +293,9 @@ static bool animation_show_build_record(const nmo_cmd_ctx_t *c,
                                         const char *cls,
                                         const char *name)
 {
-    char buf[128];
     bool ok = nmo_cli_record_uint(rec, "id", "ID", obj_id);
-    ok = ok && nmo_cli_record_str(rec, "class", "Class", cls);
+    ok = ok && (cls ? nmo_cli_record_str(rec, "class", "Class", cls)
+                    : nmo_cli_record_str_fmt(rec, "class", "Class", "Class#%u", (unsigned)cid));
     ok = ok && nmo_cli_record_str(rec, "name", "Name", name);
     if (ok && (!name || !name[0])) {
         ok = nmo_cli_record_set_text(rec, "-");
@@ -327,19 +323,16 @@ static bool animation_show_build_record(const nmo_cmd_ctx_t *c,
                                        st->controller_count);
         for (uint32_t ci = 0; ok && ci < st->controller_count; ++ci) {
             const nmo_objanim_controller_t *ctrl = &st->controllers[ci];
-            char label[16];
-            snprintf(buf, sizeof(buf), "type=0x%08x (%s), keys=%u, data=%u bytes",
-                     ctrl->type, controller_type_name(ctrl->type),
-                     ctrl->key_count, ctrl->data_size);
-            snprintf(label, sizeof(label), "  [%u]", ci);
-            ok = nmo_cli_record_text(rec, label, buf);
+            ok = nmo_cli_record_text_fmt(rec, "", "type=0x%08x (%s), keys=%u, data=%u bytes",
+                                         ctrl->type, controller_type_name(ctrl->type),
+                                         ctrl->key_count, ctrl->data_size) &&
+                 nmo_cli_record_set_label_fmt(rec, "  [%u]", ci);
         }
         if (st->has_morph_counts) {
             ok = ok && nmo_cli_record_int(rec, "morph_vertex_count", NULL, st->morph_vertex_count);
             ok = ok && nmo_cli_record_int(rec, "morph_key_count", NULL, st->morph_key_count);
-            snprintf(buf, sizeof(buf), "%d vertices, %d keys",
-                     st->morph_vertex_count, st->morph_key_count);
-            ok = ok && nmo_cli_record_text(rec, "Morph", buf);
+            ok = ok && nmo_cli_record_text_fmt(rec, "Morph", "%d vertices, %d keys",
+                                               st->morph_vertex_count, st->morph_key_count);
         }
         if (st->has_merge) {
             const nmo_object_id_t anim1_id = nmo_ref_runtime_id(&st->anim1);
@@ -351,9 +344,8 @@ static bool animation_show_build_record(const nmo_cmd_ctx_t *c,
             if (anim2_id != NMO_OBJECT_ID_NONE) {
                 ok = ok && nmo_cli_record_uint(rec, "anim2_id", NULL, anim2_id);
             }
-            snprintf(buf, sizeof(buf), "factor=%.2f, anim1=%u, anim2=%u",
-                     (double)st->merge_factor, anim1_id, anim2_id);
-            ok = ok && nmo_cli_record_text(rec, "Merge", buf);
+            ok = ok && nmo_cli_record_text_fmt(rec, "Merge", "factor=%.2f, anim1=%u, anim2=%u",
+                                               (double)st->merge_factor, anim1_id, anim2_id);
         }
         return ok;
     }
@@ -389,22 +381,17 @@ static bool animation_show_build_record(const nmo_cmd_ctx_t *c,
                  (!aobj || nmo_cli_record_str(entry, "name", NULL, aname)) &&
                  nmo_cli_record_array_add(anims, entry);
             if (!ok) break;
-            char label[16];
-            if (aname && aname[0]) {
-                snprintf(buf, sizeof(buf), "#%u (%s)", animation_id, aname);
-            } else {
-                snprintf(buf, sizeof(buf), "#%u", animation_id);
-            }
-            snprintf(label, sizeof(label), "  [%u]", ai);
-            ok = nmo_cli_record_text(rec, label, buf);
+            ok = ((aname && aname[0])
+                      ? nmo_cli_record_text_fmt(rec, "", "#%u (%s)", animation_id, aname)
+                      : nmo_cli_record_text_fmt(rec, "", "#%u", animation_id)) &&
+                 nmo_cli_record_set_label_fmt(rec, "  [%u]", ai);
         }
         ok = ok && nmo_cli_record_uint(rec, "subanim_count", "Subanims", st->subanim_count);
         if (st->has_merge) {
             ok = ok && nmo_cli_record_int(rec, "merged", NULL, st->merged);
             ok = ok && nmo_cli_record_real(rec, "merge_factor", NULL, (double)st->merge_factor, NULL);
-            snprintf(buf, sizeof(buf), "merged=%d, factor=%.2f",
-                     st->merged, (double)st->merge_factor);
-            ok = ok && nmo_cli_record_text(rec, "Merge", buf);
+            ok = ok && nmo_cli_record_text_fmt(rec, "Merge", "merged=%d, factor=%.2f",
+                                               st->merged, (double)st->merge_factor);
         }
         return ok;
     }
@@ -479,8 +466,7 @@ int nmo_cmd_animation_show(int argc, char **argv, const nmo_cli_global_opts_t *g
     }
 
     const char *name = nmo_object_get_name(obj);
-    char cls_buf[32];
-    const char *cls = nmo_core_class_name_or(&c, cid, cls_buf, sizeof(cls_buf));
+    const char *cls = nmo_core_class_name(&c, cid);
 
     nmo_cli_record_t *rec = nmo_cli_record_new();
     if (!rec || !animation_show_build_record(&c, rec, obj, obj_id, cid, cls, name)) {

@@ -341,7 +341,6 @@ int nmo_cmd_data_show(int argc, char **argv, const nmo_cli_global_opts_t *global
     }
 
     const char *name = nmo_object_get_name(obj);
-    char buf[64];
 
     nmo_cli_record_t *rec = nmo_cli_record_new();
     bool ok = rec != NULL;
@@ -356,10 +355,10 @@ int nmo_cmd_data_show(int argc, char **argv, const nmo_cli_global_opts_t *global
     const char *order_label = "none";
     if (state->order == 1) order_label = "ascending";
     else if (state->order == 2) order_label = "descending";
-    snprintf(buf, sizeof(buf), "%s (column %u)", order_label, state->column_index);
     ok = ok && nmo_cli_record_int(rec, "sort_order", NULL, state->order);
     ok = ok && nmo_cli_record_uint(rec, "sort_column", NULL, state->column_index);
-    ok = ok && nmo_cli_record_text(rec, "Sort Order", buf);
+    ok = ok && nmo_cli_record_text_fmt(rec, "Sort Order", "%s (column %u)",
+                                       order_label, state->column_index);
 
     ok = ok && nmo_cli_record_int(rec, "key_column", "Key Column", state->key_column);
     if (ok && state->key_column < 0) {
@@ -409,16 +408,18 @@ int nmo_cmd_data_show(int argc, char **argv, const nmo_cli_global_opts_t *global
                                sizeof(col_defs) / sizeof(col_defs[0]));
 
             for (uint32_t i = 0; i < state->column_count; ++i) {
-                char idx_buf[16];
-                snprintf(idx_buf, sizeof(idx_buf), "%u", i);
-
                 const char *cname = state->column_formats[i].name;
                 if (!cname || !cname[0]) cname = "-";
 
                 const char *tname = arraytype_name(state->column_formats[i].type);
 
-                const char *cells[] = {idx_buf, cname, tname};
-                nmo_cli_table_add_row(&table, cells, 3);
+                nmo_cli_record_t *row = nmo_cli_record_new();
+                if (row && nmo_cli_record_uint(row, NULL, "Index", i) &&
+                    nmo_cli_record_str(row, NULL, "Name", cname) &&
+                    nmo_cli_record_str(row, NULL, "Type", tname)) {
+                    nmo_cli_record_add_table_row(row, &table);
+                }
+                nmo_cli_record_free(row);
             }
 
             nmo_cli_table_print(&table, c.out, c.colorize);

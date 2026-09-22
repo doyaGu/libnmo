@@ -89,14 +89,6 @@ static bool is_external_texture(const nmo_texture_state_t *ts) {
     return (ts->save_options & NMO_CKTEXTURE_EXTERNAL) != 0;
 }
 
-static void format_dims(char *buf, size_t buf_size, int32_t w, int32_t h) {
-    if (w > 0 && h > 0) {
-        snprintf(buf, buf_size, "%dx%d", w, h);
-    } else {
-        snprintf(buf, buf_size, "-");
-    }
-}
-
 static const char *format_label(const nmo_texture_state_t *ts) {
     switch (ts->bitmap_kind) {
     case CKTEXTURE_BITMAP_READER:  return "reader";
@@ -256,8 +248,6 @@ static int collect_texture_visitor(size_t index, nmo_object_t *obj,
 static bool texture_list_build_record(nmo_object_t *obj, nmo_cli_record_t *rec)
 {
     const char *name = nmo_object_get_name(obj);
-    char buf[32];
-
     bool ok = nmo_cli_record_uint(rec, "id", "ID", nmo_object_get_id(obj));
     ok = ok && nmo_cli_record_str_opt(rec, "name", NULL, name, NULL);
 
@@ -275,10 +265,11 @@ static bool texture_list_build_record(nmo_object_t *obj, nmo_cli_record_t *rec)
         int32_t width = 0;
         int32_t height = 0;
         texture_display_dimensions(ts, &width, &height);
-        format_dims(buf, sizeof(buf), width, height);
         ok = ok && nmo_cli_record_int(rec, "width", NULL, width);
         ok = ok && nmo_cli_record_int(rec, "height", NULL, height);
-        ok = ok && nmo_cli_record_text(rec, "DIMS", buf);
+        ok = ok && ((width > 0 && height > 0)
+                        ? nmo_cli_record_text_fmt(rec, "DIMS", "%dx%d", width, height)
+                        : nmo_cli_record_text(rec, "DIMS", "-"));
         ok = ok && nmo_cli_record_str(rec, "bitmap_kind", NULL,
                                       bitmap_kind_str(ts->bitmap_kind));
         ok = ok && nmo_cli_record_text(rec, "FORMAT", format_label(ts));
@@ -428,45 +419,18 @@ static bool texture_record_yes_no(nmo_cli_record_t *rec, const char *key,
            nmo_cli_record_set_text(rec, value ? "yes" : "no");
 }
 
-/* Append to a growable text buffer; used for the raw slot sections. */
-static bool texture_text_append(char **out, size_t *cap, size_t *len,
-                                const char *fmt, ...)
-{
-    char piece[512];
-    va_list args;
-    va_start(args, fmt);
-    int n = vsnprintf(piece, sizeof(piece), fmt, args);
-    va_end(args);
-    if (n < 0) return false;
-    size_t add = (size_t)n < sizeof(piece) ? (size_t)n : sizeof(piece) - 1u;
-    if (*len + add + 1u > *cap) {
-        size_t new_cap = *cap ? *cap * 2u : 1024u;
-        while (new_cap < *len + add + 1u) new_cap *= 2u;
-        char *grown = (char *)realloc(*out, new_cap);
-        if (!grown) return false;
-        *out = grown;
-        *cap = new_cap;
-    }
-    memcpy(*out + *len, piece, add + 1u);
-    *len += add;
-    return true;
-}
-
 /* Per-slot details: JSON "slots" array, text "Slots:" block. */
 static bool texture_record_slots(nmo_cli_record_t *rec, const nmo_texture_state_t *ts)
 {
     nmo_cli_record_array_t *slots = nmo_cli_record_array(rec, "slots", NULL);
-    char *text = NULL;
-    size_t cap = 0, len = 0;
     bool ok = slots != NULL;
     if (ok && ts->slot_count > 0) {
-        ok = texture_text_append(&text, &cap, &len, "\nSlots:\n");
+        ok = nmo_cli_record_raw(rec, "\nSlots:\n");
     }
     for (uint32_t i = 0; ok && i < ts->slot_count; ++i) {
         nmo_cli_record_t *slot = nmo_cli_record_new();
-        char mask[16];
         ok = slot != NULL && nmo_cli_record_uint(slot, "index", NULL, i) &&
-             texture_text_append(&text, &cap, &len, "  Slot %u:\n", i);
+             nmo_cli_record_raw_fmt(rec, "  Slot %u:\n", i);
         if (!ok) {
             nmo_cli_record_free(slot);
             break;
@@ -479,7 +443,7 @@ static bool texture_record_slots(nmo_cli_record_t *rec, const nmo_texture_state_
                      nmo_cli_record_uint(slot, "data_size", NULL, rs->data_size) &&
                      nmo_cli_record_uint(slot, "format_type", NULL, rs->format_type) &&
                      nmo_cli_record_uint(slot, "extension", NULL, rs->extension) &&
-                     texture_text_append(&text, &cap, &len,
+                     nmo_cli_record_raw_fmt(rec,
                                          "    type:       reader\n"
                                          "    data_size:  %u\n"
                                          "    format:     %u\n"
@@ -488,7 +452,7 @@ static bool texture_record_slots(nmo_cli_record_t *rec, const nmo_texture_state_
                 if (ok && rs->alpha_plane_size > 0) {
                     ok = nmo_cli_record_uint(slot, "alpha_plane_size", NULL,
                                              rs->alpha_plane_size) &&
-                         texture_text_append(&text, &cap, &len,
+                         nmo_cli_record_raw_fmt(rec,
                                              "    alpha_size: %u\n", rs->alpha_plane_size);
                 }
             }
@@ -500,19 +464,15 @@ static bool texture_record_slots(nmo_cli_record_t *rec, const nmo_texture_state_
                      nmo_cli_record_int(slot, "width", NULL, rs->width) &&
                      nmo_cli_record_int(slot, "height", NULL, rs->height) &&
                      nmo_cli_record_int(slot, "bits_per_pixel", NULL, rs->bits_per_pixel);
-                snprintf(mask, sizeof(mask), "0x%08X", rs->red_mask);
-                ok = ok && nmo_cli_record_str(slot, "red_mask", NULL, mask);
-                snprintf(mask, sizeof(mask), "0x%08X", rs->green_mask);
-                ok = ok && nmo_cli_record_str(slot, "green_mask", NULL, mask);
-                snprintf(mask, sizeof(mask), "0x%08X", rs->blue_mask);
-                ok = ok && nmo_cli_record_str(slot, "blue_mask", NULL, mask);
-                snprintf(mask, sizeof(mask), "0x%08X", rs->alpha_mask);
-                ok = ok && nmo_cli_record_str(slot, "alpha_mask", NULL, mask);
+                ok = ok && nmo_cli_record_hex32(slot, "red_mask", NULL, rs->red_mask) &&
+                     nmo_cli_record_hex32(slot, "green_mask", NULL, rs->green_mask) &&
+                     nmo_cli_record_hex32(slot, "blue_mask", NULL, rs->blue_mask) &&
+                     nmo_cli_record_hex32(slot, "alpha_mask", NULL, rs->alpha_mask);
                 ok = ok && nmo_cli_record_uint(slot, "red_size", NULL, rs->red_size) &&
                      nmo_cli_record_uint(slot, "green_size", NULL, rs->green_size) &&
                      nmo_cli_record_uint(slot, "blue_size", NULL, rs->blue_size) &&
                      nmo_cli_record_uint(slot, "alpha_size", NULL, rs->alpha_size);
-                ok = ok && texture_text_append(&text, &cap, &len,
+                ok = ok && nmo_cli_record_raw_fmt(rec,
                         "    type:       raw\n"
                         "    dims:       %dx%d @ %d bpp\n"
                         "    masks:      R=0x%08X G=0x%08X B=0x%08X A=0x%08X\n"
@@ -527,22 +487,18 @@ static bool texture_record_slots(nmo_cli_record_t *rec, const nmo_texture_state_
                 const nmo_texture_bitmap2_slot_t *bs = &ts->bitmap2_slots[i];
                 ok = nmo_cli_record_str(slot, "type", NULL, "bitmap2") &&
                      nmo_cli_record_uint(slot, "buffer_size", NULL, bs->buffer_size) &&
-                     texture_text_append(&text, &cap, &len,
+                     nmo_cli_record_raw_fmt(rec,
                                          "    type:       bitmap2\n"
                                          "    buf_size:   %u\n", bs->buffer_size);
             }
             break;
         default:
             ok = nmo_cli_record_str(slot, "type", NULL, "none") &&
-                 texture_text_append(&text, &cap, &len, "    type:       none\n");
+                 nmo_cli_record_raw_fmt(rec, "    type:       none\n");
             break;
         }
         ok = nmo_cli_record_array_add(slots, slot) && ok;
     }
-    if (ok && text) {
-        ok = nmo_cli_record_raw(rec, text);
-    }
-    free(text);
     return ok;
 }
 
@@ -553,18 +509,16 @@ static bool texture_show_build_record(const nmo_cmd_ctx_t *c,
                                       const char *name,
                                       const nmo_texture_state_t *ts)
 {
-    char buf[128];
     const char *class_name = nmo_core_class_name(c, class_id);
 
-    snprintf(buf, sizeof(buf), "#%u (%s)", object_id,
-             (name && name[0]) ? name : "(unnamed)");
     bool ok = nmo_cli_record_uint(rec, "id", NULL, object_id);
     ok = ok && nmo_cli_record_str_opt(rec, "name", NULL, name, NULL);
-    ok = ok && nmo_cli_record_text(rec, "ID / Name", buf);
+    ok = ok && nmo_cli_record_text_fmt(rec, "ID / Name", "#%u (%s)", object_id,
+                                       (name && name[0]) ? name : "(unnamed)");
     ok = ok && nmo_cli_record_uint(rec, "class_id", NULL, class_id);
     ok = ok && nmo_cli_record_str_opt(rec, "class_name", NULL, class_name, NULL);
-    snprintf(buf, sizeof(buf), "#%u (%s)", class_id, class_name ? class_name : "-");
-    ok = ok && nmo_cli_record_text(rec, "Class", buf);
+    ok = ok && nmo_cli_record_text_fmt(rec, "Class", "#%u (%s)", class_id,
+                                       class_name ? class_name : "-");
     if (!ok) {
         return false;
     }
@@ -572,10 +526,12 @@ static bool texture_show_build_record(const nmo_cmd_ctx_t *c,
         return nmo_cli_record_null(rec, "state", NULL, NULL);
     }
 
-    format_dims(buf, sizeof(buf), ts->reader_width, ts->reader_height);
     ok = nmo_cli_record_int(rec, "reader_width", NULL, ts->reader_width);
     ok = ok && nmo_cli_record_int(rec, "reader_height", NULL, ts->reader_height);
-    ok = ok && nmo_cli_record_text(rec, "Dimensions", buf);
+    ok = ok && ((ts->reader_width > 0 && ts->reader_height > 0)
+                    ? nmo_cli_record_text_fmt(rec, "Dimensions", "%dx%d",
+                                              ts->reader_width, ts->reader_height)
+                    : nmo_cli_record_text(rec, "Dimensions", "-"));
     ok = ok && nmo_cli_record_int(rec, "reader_bpp", "BPP", ts->reader_bpp);
     ok = ok && nmo_cli_record_str(rec, "bitmap_kind", "Bitmap Kind",
                                   bitmap_kind_str(ts->bitmap_kind));
@@ -583,8 +539,7 @@ static bool texture_show_build_record(const nmo_cmd_ctx_t *c,
     ok = ok && nmo_cli_record_str(rec, "save_options", "Save Options",
                                   save_options_str(ts->save_options));
     ok = ok && nmo_cli_record_uint(rec, "save_options_raw", NULL, ts->save_options);
-    snprintf(buf, sizeof(buf), "%u", ts->slot_count);
-    ok = ok && nmo_cli_record_text(rec, "Slot Count", buf);
+    ok = ok && nmo_cli_record_text_fmt(rec, "Slot Count", "%u", ts->slot_count);
     ok = ok && nmo_cli_record_uint(rec, "mipmap_level", "Mipmap Level", ts->mipmap_level);
     ok = ok && texture_record_yes_no(rec, "is_transparent", "Transparent",
                                      ts->is_transparent != 0);
@@ -612,18 +567,14 @@ static bool texture_show_build_record(const nmo_cmd_ctx_t *c,
     }
 
     if (ok && ts->has_slot_filenames && ts->slot_filenames) {
-        char *text = NULL;
-        size_t cap = 0, len = 0;
-        ok = texture_text_append(&text, &cap, &len, "\nSlot Filenames:\n");
+        ok = nmo_cli_record_raw(rec, "\nSlot Filenames:\n");
         for (uint32_t i = 0; ok && i < ts->slot_count; ++i) {
-            ok = texture_text_append(&text, &cap, &len, "  [%u] %s\n", i,
+            ok = nmo_cli_record_raw_fmt(rec, "  [%u] %s\n", i,
                                      ts->slot_filenames[i] ? ts->slot_filenames[i] : "(null)");
         }
         ok = ok && nmo_cli_record_str_list(rec, "slot_filenames", NULL,
                                            (const char *const *)ts->slot_filenames,
                                            ts->slot_count, NULL);
-        ok = ok && nmo_cli_record_raw(rec, text);
-        free(text);
     }
 
     ok = ok && texture_record_slots(rec, ts);
