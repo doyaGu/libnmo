@@ -302,6 +302,37 @@ int nmo_cmd_object_refs_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv) {
  * object impact - Show deletion impact analysis
  * ============================================================================ */
 
+/*
+ * One dependent or cascade entry for object impact. JSON: id, then name and
+ * class_name when the object resolves, then ref_kind when given. Text: ID,
+ * Class, Name (, Kind).
+ */
+static bool object_impact_build_record(const nmo_cmd_ctx_t *c, nmo_object_id_t id,
+                                       const char *ref_kind, nmo_cli_record_t *rec)
+{
+    nmo_object_t *peer = nmo_core_find_by_id(c, id);
+    const char *name = peer ? nmo_object_get_name(peer) : NULL;
+    char cbuf[32];
+    const char *cls = peer ? nmo_core_class_name_or(c, nmo_object_get_class_id(peer),
+                                                    cbuf, sizeof(cbuf))
+                           : NULL;
+
+    bool ok = nmo_cli_record_uint(rec, "id", "ID", id);
+    if (ok && peer && name && name[0]) {
+        ok = nmo_cli_record_str(rec, "name", NULL, name);
+    }
+    if (cls) {
+        ok = ok && nmo_cli_record_str(rec, "class_name", "Class", cls);
+    } else {
+        ok = ok && nmo_cli_record_text(rec, "Class", "-");
+    }
+    ok = ok && nmo_cli_record_text(rec, "Name", (name && name[0]) ? name : "-");
+    if (ok && ref_kind) {
+        ok = nmo_cli_record_str(rec, "ref_kind", "Kind", ref_kind);
+    }
+    return ok;
+}
+
 static int object_impact_run(nmo_cmd_ctx_t *ctx, const object_refs_args_t *args,
                              bool close_ctx, const char *usage) {
     nmo_cmd_ctx_t c = *ctx;
@@ -381,42 +412,29 @@ static int object_impact_run(nmo_cmd_ctx_t *ctx, const object_refs_args_t *args,
         /* Direct dependents */
         yyjson_mut_val *deps = yyjson_mut_arr(doc);
         for (size_t i = 0; i < in_count; ++i) {
-            yyjson_mut_val *dep = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_uint(doc, dep, "id", in_edges[i].from);
-
-            nmo_object_t *peer = nmo_core_find_by_id(&c, in_edges[i].from);
-            if (peer) {
-                const char *pname = nmo_object_get_name(peer);
-                if (pname && pname[0])
-                    nmo_cli_json_add_str_safe(doc, dep, "name", pname);
-                char cbuf[32];
-                const char *pcls = nmo_core_class_name_or(
-                    &c, nmo_object_get_class_id(peer), cbuf, sizeof(cbuf));
-                yyjson_mut_obj_add_str(doc, dep, "class_name", pcls);
+            nmo_cli_record_t *rec = nmo_cli_record_new();
+            if (rec && object_impact_build_record(&c, in_edges[i].from,
+                                                  nmo_ref_kind_name(in_edges[i].kind), rec)) {
+                yyjson_mut_val *dep = yyjson_mut_obj(doc);
+                if (dep && nmo_cli_record_to_json(rec, doc, dep)) {
+                    yyjson_mut_arr_add_val(deps, dep);
+                }
             }
-            yyjson_mut_obj_add_str(doc, dep, "ref_kind",
-                                   nmo_ref_kind_name(in_edges[i].kind));
-            yyjson_mut_arr_add_val(deps, dep);
+            nmo_cli_record_free(rec);
         }
         yyjson_mut_obj_add_val(doc, data, "direct_dependents", deps);
 
         /* Cascade set */
         yyjson_mut_val *cas = yyjson_mut_arr(doc);
         for (size_t i = 0; i < cascade_count; ++i) {
-            yyjson_mut_val *entry = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_uint(doc, entry, "id", cascade_ids[i]);
-
-            nmo_object_t *cobj = nmo_core_find_by_id(&c, cascade_ids[i]);
-            if (cobj) {
-                const char *cname = nmo_object_get_name(cobj);
-                if (cname && cname[0])
-                    nmo_cli_json_add_str_safe(doc, entry, "name", cname);
-                char cbuf[32];
-                const char *ccls = nmo_core_class_name_or(
-                    &c, nmo_object_get_class_id(cobj), cbuf, sizeof(cbuf));
-                yyjson_mut_obj_add_str(doc, entry, "class_name", ccls);
+            nmo_cli_record_t *rec = nmo_cli_record_new();
+            if (rec && object_impact_build_record(&c, cascade_ids[i], NULL, rec)) {
+                yyjson_mut_val *entry = yyjson_mut_obj(doc);
+                if (entry && nmo_cli_record_to_json(rec, doc, entry)) {
+                    yyjson_mut_arr_add_val(cas, entry);
+                }
             }
-            yyjson_mut_arr_add_val(cas, entry);
+            nmo_cli_record_free(rec);
         }
         yyjson_mut_obj_add_val(doc, data, "cascade_set", cas);
         yyjson_mut_obj_add_uint(doc, data, "cascade_count",
@@ -446,23 +464,14 @@ static int object_impact_run(nmo_cmd_ctx_t *ctx, const object_refs_args_t *args,
                                sizeof(dep_cols) / sizeof(dep_cols[0]));
 
             for (size_t i = 0; i < in_count; ++i) {
-                char id_buf[16];
-                snprintf(id_buf, sizeof(id_buf), "%u", in_edges[i].from);
-                const char *pcls = "-";
-                const char *pname = "-";
-                nmo_object_t *peer = nmo_core_find_by_id(&c, in_edges[i].from);
-                char cbuf[32];
-                if (peer) {
-                    pcls = nmo_core_class_name_or(
-                        &c, nmo_object_get_class_id(peer), cbuf, sizeof(cbuf));
-                    const char *n = nmo_object_get_name(peer);
-                    if (n && n[0]) pname = n;
+                nmo_cli_record_t *rec = nmo_cli_record_new();
+                if (rec && object_impact_build_record(&c, in_edges[i].from,
+                                                      nmo_ref_kind_name(in_edges[i].kind), rec)) {
+                    const char *cells[4];
+                    size_t n = nmo_cli_record_cells(rec, cells, 4);
+                    nmo_cli_table_add_row(&dep_table, cells, n);
                 }
-                const char *cells[] = {
-                    id_buf, pcls, pname,
-                    nmo_ref_kind_name(in_edges[i].kind)
-                };
-                nmo_cli_table_add_row(&dep_table, cells, 4);
+                nmo_cli_record_free(rec);
             }
             nmo_cli_table_print(&dep_table, c.out, c.colorize);
             nmo_cli_table_free(&dep_table);
@@ -484,20 +493,13 @@ static int object_impact_run(nmo_cmd_ctx_t *ctx, const object_refs_args_t *args,
                                sizeof(cas_cols) / sizeof(cas_cols[0]));
 
             for (size_t i = 0; i < cascade_count; ++i) {
-                char id_buf[16];
-                snprintf(id_buf, sizeof(id_buf), "%u", cascade_ids[i]);
-                const char *ccls = "-";
-                const char *cname_str = "-";
-                nmo_object_t *cobj = nmo_core_find_by_id(&c, cascade_ids[i]);
-                char cbuf[32];
-                if (cobj) {
-                    ccls = nmo_core_class_name_or(
-                        &c, nmo_object_get_class_id(cobj), cbuf, sizeof(cbuf));
-                    const char *n = nmo_object_get_name(cobj);
-                    if (n && n[0]) cname_str = n;
+                nmo_cli_record_t *rec = nmo_cli_record_new();
+                if (rec && object_impact_build_record(&c, cascade_ids[i], NULL, rec)) {
+                    const char *cells[3];
+                    size_t n = nmo_cli_record_cells(rec, cells, 3);
+                    nmo_cli_table_add_row(&cas_table, cells, n);
                 }
-                const char *cells[] = { id_buf, ccls, cname_str };
-                nmo_cli_table_add_row(&cas_table, cells, 3);
+                nmo_cli_record_free(rec);
             }
             nmo_cli_table_print(&cas_table, c.out, c.colorize);
             nmo_cli_table_free(&cas_table);
