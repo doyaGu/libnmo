@@ -102,7 +102,9 @@ static const char *format_label(const nmo_texture_state_t *ts) {
     }
 }
 
-static int tex_ensure_dir(const char *dir_path, char *errbuf, size_t errbuf_size) {
+/* Returns 0 when the directory exists or was created; otherwise -1 with a
+ * malloc'd message in *out_error (free with free()). */
+static int tex_ensure_dir(const char *dir_path, char **out_error) {
     if (!dir_path || !*dir_path) return -1;
 #ifdef _WIN32
     if (_mkdir(dir_path) == 0) return 0;
@@ -110,9 +112,9 @@ static int tex_ensure_dir(const char *dir_path, char *errbuf, size_t errbuf_size
     if (mkdir(dir_path, 0755) == 0) return 0;
 #endif
     if (errno == EEXIST) return 0;
-    if (errbuf && errbuf_size > 0) {
-        snprintf(errbuf, errbuf_size, "Failed to create directory '%s' (%s)",
-                 dir_path, strerror(errno));
+    if (out_error) {
+        *out_error = nmo_tool_strdup_fmt("Failed to create directory '%s' (%s)",
+                                         dir_path, strerror(errno));
     }
     return -1;
 }
@@ -142,29 +144,29 @@ static bool tex_file_exists(const char *path) {
 }
 
 /**
- * Sanitize texture name for filename: replace /\:*?"<>| with '_'
+ * Output file name for a texture: "<name>_<id>.<ext>" with /\\:*?"<>| and
+ * control characters replaced by '_', or "texture_<id>.<ext>" when unnamed.
+ * malloc'd to the exact length; NULL on OOM.
  */
-static void sanitize_tex_filename(char *dst, size_t dst_size,
-                                  const char *name, nmo_object_id_t id,
-                                  const char *ext) {
-    char safe[256];
-    if (name && name[0]) {
-        size_t i = 0;
-        for (; name[i] && i < sizeof(safe) - 1; ++i) {
-            unsigned char ch = (unsigned char)name[i];
-            if (ch == '/' || ch == '\\' || ch == ':' || ch == '*' ||
-                ch == '?' || ch == '"' || ch == '<' || ch == '>' ||
-                ch == '|' || ch < 0x20) {
-                safe[i] = '_';
-            } else {
-                safe[i] = (char)ch;
-            }
-        }
-        safe[i] = '\0';
-        snprintf(dst, dst_size, "%s_%u.%s", safe, id, ext);
-    } else {
-        snprintf(dst, dst_size, "texture_%u.%s", id, ext);
+static char *tex_filename_dup(const char *name, nmo_object_id_t id, const char *ext) {
+    if (!name || !name[0]) {
+        return nmo_tool_strdup_fmt("texture_%u.%s", id, ext);
     }
+    char *safe = nmo_tool_strdup(name);
+    if (!safe) {
+        return NULL;
+    }
+    for (unsigned char *p = (unsigned char *)safe; *p; ++p) {
+        unsigned char ch = *p;
+        if (ch == '/' || ch == '\\' || ch == ':' || ch == '*' ||
+            ch == '?' || ch == '"' || ch == '<' || ch == '>' ||
+            ch == '|' || ch < 0x20) {
+            *p = '_';
+        }
+    }
+    char *fname = nmo_tool_strdup_fmt("%s_%u.%s", safe, id, ext);
+    free(safe);
+    return fname;
 }
 
 static void texture_display_dimensions(const nmo_texture_state_t *ts,
@@ -873,9 +875,10 @@ static int texture_extract_run(nmo_cmd_ctx_t *ctx,
                                bool close_ctx) {
     nmo_cmd_ctx_t c = *ctx;
 
-    char dir_err[256];
-    if (tex_ensure_dir(args->out_dir, dir_err, sizeof(dir_err)) != 0) {
-        fprintf(stderr, "Error: %s\n", dir_err);
+    char *dir_error = NULL;
+    if (tex_ensure_dir(args->out_dir, &dir_error) != 0) {
+        fprintf(stderr, "Error: %s\n", dir_error ? dir_error : "Failed to create directory");
+        free(dir_error);
         return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR)
                          : NMO_CLI_EXIT_IO_ERROR;
     }
@@ -932,10 +935,6 @@ static int texture_extract_run(nmo_cmd_ctx_t *ctx,
 
         const nmo_texture_state_t *ts =
             (const nmo_texture_state_t *)nmo_object_get_state(obj);
-
-        /* Build output filename */
-        char fname[512];
-        sanitize_tex_filename(fname, sizeof(fname), name, id, args->ext);
 
         /* No state? */
         if (!ts) {
@@ -1110,8 +1109,10 @@ static int texture_extract_run(nmo_cmd_ctx_t *ctx,
         }
 
         /* Write to file */
-        char *path = tex_join_path(args->out_dir, fname);
+        char *fname = tex_filename_dup(name, id, args->ext);
+        char *path = fname ? tex_join_path(args->out_dir, fname) : NULL;
         if (!path) {
+            free(fname);
             warnings++;
             continue;
         }
@@ -1122,7 +1123,7 @@ static int texture_extract_run(nmo_cmd_ctx_t *ctx,
                 yyjson_mut_val *e = yyjson_mut_obj(doc);
                 yyjson_mut_obj_add_uint(doc, e, "id", id);
                 nmo_cli_json_add_str_safe(doc, e, "name", name ? name : "");
-                yyjson_mut_obj_add_str(doc, e, "path", path);
+                yyjson_mut_obj_add_strcpy(doc, e, "path", path);
                 yyjson_mut_obj_add_str(doc, e, "status", "skip");
                 yyjson_mut_obj_add_str(doc, e, "reason", "exists");
                 yyjson_mut_arr_add_val(entries, e);
@@ -1131,6 +1132,7 @@ static int texture_extract_run(nmo_cmd_ctx_t *ctx,
                         (name && name[0]) ? name : "(unnamed)");
             }
             free(path);
+            free(fname);
             continue;
         }
 
@@ -1141,7 +1143,7 @@ static int texture_extract_run(nmo_cmd_ctx_t *ctx,
                 yyjson_mut_val *e = yyjson_mut_obj(doc);
                 yyjson_mut_obj_add_uint(doc, e, "id", id);
                 nmo_cli_json_add_str_safe(doc, e, "name", name ? name : "");
-                yyjson_mut_obj_add_str(doc, e, "path", path);
+                yyjson_mut_obj_add_strcpy(doc, e, "path", path);
                 yyjson_mut_obj_add_str(doc, e, "status", "warn");
                 yyjson_mut_obj_add_str(doc, e, "reason", "open_failed");
                 yyjson_mut_arr_add_val(entries, e);
@@ -1150,6 +1152,7 @@ static int texture_extract_run(nmo_cmd_ctx_t *ctx,
                         (name && name[0]) ? name : "(unnamed)", strerror(errno));
             }
             free(path);
+            free(fname);
             continue;
         }
 
@@ -1162,7 +1165,7 @@ static int texture_extract_run(nmo_cmd_ctx_t *ctx,
                 yyjson_mut_val *e = yyjson_mut_obj(doc);
                 yyjson_mut_obj_add_uint(doc, e, "id", id);
                 nmo_cli_json_add_str_safe(doc, e, "name", name ? name : "");
-                yyjson_mut_obj_add_str(doc, e, "path", path);
+                yyjson_mut_obj_add_strcpy(doc, e, "path", path);
                 yyjson_mut_obj_add_str(doc, e, "status", "warn");
                 yyjson_mut_obj_add_str(doc, e, "reason", "write_failed");
                 yyjson_mut_arr_add_val(entries, e);
@@ -1171,6 +1174,7 @@ static int texture_extract_run(nmo_cmd_ctx_t *ctx,
                         (name && name[0]) ? name : "(unnamed)");
             }
             free(path);
+            free(fname);
             continue;
         }
 
@@ -1179,7 +1183,7 @@ static int texture_extract_run(nmo_cmd_ctx_t *ctx,
             yyjson_mut_val *e = yyjson_mut_obj(doc);
             yyjson_mut_obj_add_uint(doc, e, "id", id);
             nmo_cli_json_add_str_safe(doc, e, "name", name ? name : "");
-            yyjson_mut_obj_add_str(doc, e, "path", path);
+            yyjson_mut_obj_add_strcpy(doc, e, "path", path);
             yyjson_mut_obj_add_int(doc, e, "width", w);
             yyjson_mut_obj_add_int(doc, e, "height", h);
             yyjson_mut_obj_add_uint(doc, e, "file_size", (uint64_t)out_size);
@@ -1191,6 +1195,7 @@ static int texture_extract_run(nmo_cmd_ctx_t *ctx,
                     fname, w, h, out_size);
         }
         free(path);
+        free(fname);
     }
 
     int exit_code = (warnings > 0 && extracted == 0)

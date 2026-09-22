@@ -242,9 +242,7 @@ static void parameter_add_source_chain_json(
         nmo_object_t *obj = nmo_object_repository_find_by_id(repo, steps[i].id);
         nmo_guid_t type_guid = get_param_type_guid(obj);
         if (!nmo_guid_is_null(type_guid)) {
-            char guid_buf[64];
-            nmo_guid_format(type_guid, guid_buf, sizeof(guid_buf));
-            nmo_cli_json_add_str_safe(doc, step, "type_guid", guid_buf);
+            nmo_cli_json_add_guid_safe(doc, step, "type_guid", type_guid);
             nmo_cli_json_add_str_safe(doc, step, "type_name",
                                       resolve_type(registry, type_guid));
         }
@@ -287,9 +285,7 @@ static void parameter_add_resolved_source_json(
 
     nmo_guid_t type_guid = get_param_type_guid(resolved);
     if (!nmo_guid_is_null(type_guid)) {
-        char guid_buf[64];
-        nmo_guid_format(type_guid, guid_buf, sizeof(guid_buf));
-        nmo_cli_json_add_str_safe(doc, item, "resolved_type_guid", guid_buf);
+        nmo_cli_json_add_guid_safe(doc, item, "resolved_type_guid", type_guid);
         nmo_cli_json_add_str_safe(doc, item, "resolved_type_name",
                                   resolve_type(registry, type_guid));
     }
@@ -331,22 +327,31 @@ static void parameter_add_operation_param_json(
         return;
     }
 
-    char key[64];
-    snprintf(key, sizeof(key), "%s_id", prefix);
-    nmo_cli_json_add_uint_safe(doc, item, key, param_id);
+    char *key = nmo_tool_strdup_fmt("%s_id", prefix);
+    if (key) {
+        nmo_cli_json_add_uint_safe(doc, item, key, param_id);
+        free(key);
+    }
 
-    snprintf(key, sizeof(key), "%s_name", prefix);
-    nmo_cli_json_add_str_safe(doc, item, key, resolve_name(repo, param_id));
+    key = nmo_tool_strdup_fmt("%s_name", prefix);
+    if (key) {
+        nmo_cli_json_add_str_safe(doc, item, key, resolve_name(repo, param_id));
+        free(key);
+    }
 
     nmo_object_t *param = nmo_object_repository_find_by_id(repo, param_id);
     nmo_guid_t type_guid = get_param_type_guid(param);
     if (!nmo_guid_is_null(type_guid)) {
-        char guid_buf[64];
-        nmo_guid_format(type_guid, guid_buf, sizeof(guid_buf));
-        snprintf(key, sizeof(key), "%s_type_guid", prefix);
-        nmo_cli_json_add_str_safe(doc, item, key, guid_buf);
-        snprintf(key, sizeof(key), "%s_type_name", prefix);
-        nmo_cli_json_add_str_safe(doc, item, key, resolve_type(registry, type_guid));
+        key = nmo_tool_strdup_fmt("%s_type_guid", prefix);
+        if (key) {
+            nmo_cli_json_add_guid_safe(doc, item, key, type_guid);
+            free(key);
+        }
+        key = nmo_tool_strdup_fmt("%s_type_name", prefix);
+        if (key) {
+            nmo_cli_json_add_str_safe(doc, item, key, resolve_type(registry, type_guid));
+            free(key);
+        }
     }
 }
 
@@ -361,9 +366,7 @@ static void parameter_add_operation_json(
         return;
     }
 
-    char guid_buf[64];
-    nmo_guid_format(op->operation_guid, guid_buf, sizeof(guid_buf));
-    nmo_cli_json_add_str_safe(doc, item, "operation_guid", guid_buf);
+    nmo_cli_json_add_guid_safe(doc, item, "operation_guid", op->operation_guid);
 
     const char *operation_name =
         nmo_type_registry_guid_to_name(registry, op->operation_guid);
@@ -423,7 +426,7 @@ static void parameter_print_operation_text(
         return;
     }
 
-    char guid_buf[64];
+    char guid_buf[NMO_GUID_STRING_SIZE];
     nmo_guid_format(op->operation_guid, guid_buf, sizeof(guid_buf));
     fprintf(out, "Operation GUID: %s", guid_buf);
     const char *operation_name =
@@ -718,6 +721,28 @@ int nmo_cmd_parameter_list(int argc, char **argv, const nmo_cli_global_opts_t *g
     return nmo_cmd_ctx_done(&c, rc);
 }
 
+/*
+ * "xx xx xx" for every byte (the callers only pass buffers under 64 bytes, so
+ * nothing is elided), malloc'd to the exact length. NULL on OOM.
+ */
+static char *parameter_hex_dump_dup(const void *data, size_t len)
+{
+    const uint8_t *bytes = (const uint8_t *)data;
+    if (!bytes || len == 0) {
+        return NULL;
+    }
+    /* "xx " per byte plus the terminator each snprintf writes; the last space becomes the NUL. */
+    char *text = (char *)malloc(len * 3u + 1u);
+    if (!text) {
+        return NULL;
+    }
+    for (size_t i = 0; i < len; ++i) {
+        snprintf(text + i * 3u, 4u, "%02x ", bytes[i]);
+    }
+    text[len * 3u - 1u] = '\0';
+    return text;
+}
+
 static int parameter_show_run(nmo_cmd_ctx_t *ctx, uint32_t object_id,
                               int argc, char **argv,
                               const nmo_cli_global_opts_t *global,
@@ -812,13 +837,12 @@ static int parameter_show_run(nmo_cmd_ctx_t *ctx, uint32_t object_id,
     }
 
     /* Hex dump for small buffers */
-    char hex_dump[512];
-    hex_dump[0] = '\0';
+    char *hex_dump = NULL;
     if (pstate && pstate->mode == CKPARAM_MODE_BUFFER &&
         pstate->buffer_data.data != NULL &&
         pstate->buffer_data.count > 0 && pstate->buffer_data.count < 64) {
-        nmo_format_hex(pstate->buffer_data.data,
-                       pstate->buffer_data.count, 64, hex_dump, sizeof(hex_dump));
+        hex_dump = parameter_hex_dump_dup(pstate->buffer_data.data,
+                                          pstate->buffer_data.count);
     }
 
     if (c.is_json) {
@@ -850,7 +874,7 @@ static int parameter_show_run(nmo_cmd_ctx_t *ctx, uint32_t object_id,
                                         (uint64_t)pstate->buffer_data.count);
             }
 
-            if (hex_dump[0]) {
+            if (hex_dump && hex_dump[0]) {
                 yyjson_mut_obj_add_strcpy(doc, data, "hex", hex_dump);
             }
         }
@@ -929,11 +953,12 @@ static int parameter_show_run(nmo_cmd_ctx_t *ctx, uint32_t object_id,
             fprintf(c.out, "  Buffer: %zu bytes\n", pstate->buffer_data.count);
         }
 
-        if (hex_dump[0]) {
+        if (hex_dump && hex_dump[0]) {
             fprintf(c.out, "  Hex:   %s\n", hex_dump);
         }
     }
 
+    free(hex_dump);
     free(value_buf);
     free(summary_buf);
 
@@ -1050,7 +1075,7 @@ static void dump_parameter_details(nmo_object_t *obj,
     }
 
     if (!nmo_guid_is_null(type_guid)) {
-        char guid_str[64];
+        char guid_str[NMO_GUID_STRING_SIZE];
         nmo_guid_format(type_guid, guid_str, sizeof(guid_str));
         fprintf(out, "GUID:  %s\n", guid_str);
     }
@@ -1387,9 +1412,7 @@ static int parameter_dump_run(nmo_cmd_ctx_t *ctx, const parameter_dump_args_t *a
                 if (tn) nmo_cli_json_add_str_safe(doc, item, "type_name", tn);
 
                 if (!nmo_guid_is_null(tg)) {
-                    char gbuf[64];
-                    nmo_guid_format(tg, gbuf, sizeof(gbuf));
-                    nmo_cli_json_add_str_safe(doc, item, "type_guid", gbuf);
+                    nmo_cli_json_add_guid_safe(doc, item, "type_guid", tg);
                 }
 
                 if (pstate) {
@@ -1814,10 +1837,14 @@ static int parameter_set_mutate(
                 ref_id = nmo_object_get_id(ref_obj);
             }
         }
-        char ref_buf[32];
-        snprintf(ref_buf, sizeof(ref_buf), "%u", ref_id);
+        char *ref_text = nmo_tool_strdup_fmt("%u", ref_id);
+        if (!ref_text) {
+            fprintf(stderr, "Error: Out of memory\n");
+            return NMO_CLI_EXIT_INTERNAL_ERROR;
+        }
         plan_rc = nmo_edit_plan_add_set_parameter_value(
-            args->edit_plan, args->param_id, NULL, ref_buf, NULL);
+            args->edit_plan, args->param_id, NULL, ref_text, NULL);
+        free(ref_text);
         if (plan_rc != NMO_OK) {
             fprintf(stderr, "Error: Failed to add object reference write op: %s\n",
                     nmo_error_string(plan_rc));
@@ -1933,10 +1960,7 @@ int nmo_cmd_parameter_set(int argc, char **argv, const nmo_cli_global_opts_t *gl
     bool hex_mode           = vals[OPT_HEX].present && vals[OPT_HEX].val.flag;
     bool dry_run            = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
     bool has_direct_id      = vals[OPT_ID].present;
-    char direct_id_buf[32];
-    if (has_direct_id) {
-        snprintf(direct_id_buf, sizeof(direct_id_buf), "%u", vals[OPT_ID].val.u);
-    }
+    char *direct_id = NULL; /* --id rendered as text for the shared id_str path */
 
     /* Determine positional args layout */
     bool owner_mode = (owner_str != NULL);
@@ -1959,7 +1983,14 @@ int nmo_cmd_parameter_set(int argc, char **argv, const nmo_cli_global_opts_t *gl
             fprintf(stderr, "Usage: nmo parameter set [--id <param-id> | <param-id>] <value> <file> -o <output>\n");
             return NMO_CLI_EXIT_ARG_ERROR;
         }
-        id_str    = has_direct_id ? direct_id_buf : r.pos_args[0];
+        if (has_direct_id) {
+            direct_id = nmo_tool_strdup_fmt("%u", vals[OPT_ID].val.u);
+            if (!direct_id) {
+                fprintf(stderr, "Error: Out of memory\n");
+                return NMO_CLI_EXIT_INTERNAL_ERROR;
+            }
+        }
+        id_str    = has_direct_id ? direct_id : r.pos_args[0];
         value_str = has_direct_id ? r.pos_args[0] : r.pos_args[1];
         file_path = r.pos_args[r.pos_count - 1];
     }
@@ -1987,6 +2018,7 @@ int nmo_cmd_parameter_set(int argc, char **argv, const nmo_cli_global_opts_t *gl
         parameter_set_report,
         &args);
     parameter_set_args_cleanup(&args);
+    free(direct_id);
     return rc;
 }
 
@@ -2026,10 +2058,7 @@ int nmo_cmd_parameter_set_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
 
     const char *owner_str = vals[OPT_OWNER].present ? vals[OPT_OWNER].val.str : NULL;
     bool has_direct_id = vals[OPT_ID].present;
-    char direct_id_buf[32];
-    if (has_direct_id) {
-        snprintf(direct_id_buf, sizeof(direct_id_buf), "%u", vals[OPT_ID].val.u);
-    }
+    char *direct_id = NULL; /* --id rendered as text for the shared id_str path */
 
     const char *id_str = NULL;
     const char *value_str = NULL;
@@ -2046,7 +2075,14 @@ int nmo_cmd_parameter_set_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
             fprintf(stderr, "Usage: parameter set [--id <param-id> | <param-id>] <value>\n");
             return NMO_CLI_EXIT_ARG_ERROR;
         }
-        id_str = has_direct_id ? direct_id_buf : r.pos_args[0];
+        if (has_direct_id) {
+            direct_id = nmo_tool_strdup_fmt("%u", vals[OPT_ID].val.u);
+            if (!direct_id) {
+                fprintf(stderr, "Error: Out of memory\n");
+                return NMO_CLI_EXIT_INTERNAL_ERROR;
+            }
+        }
+        id_str = has_direct_id ? direct_id : r.pos_args[0];
         value_str = has_direct_id ? r.pos_args[0] : r.pos_args[1];
     }
 
@@ -2067,6 +2103,7 @@ int nmo_cmd_parameter_set_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
         result->changed = true;
     }
     parameter_set_args_cleanup(&args);
+    free(direct_id);
     return rc;
 }
 

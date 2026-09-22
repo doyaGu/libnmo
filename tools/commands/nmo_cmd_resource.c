@@ -117,7 +117,9 @@ int nmo_cmd_resource_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
     return NMO_CLI_EXIT_ARG_ERROR;
 }
 
-static int ensure_dir_exists(const char *dir_path, char *errbuf, size_t errbuf_size) {
+/* Returns 0 when the directory exists or was created; otherwise -1 with a
+ * malloc'd message in *out_error (free with free()). */
+static int ensure_dir_exists(const char *dir_path, char **out_error) {
     if (!dir_path || !*dir_path) {
         return -1;
     }
@@ -138,8 +140,8 @@ static int ensure_dir_exists(const char *dir_path, char *errbuf, size_t errbuf_s
     }
 #endif
 
-    if (errbuf && errbuf_size > 0) {
-        snprintf(errbuf, errbuf_size, "Failed to create directory '%s' (%s)", dir_path, strerror(errno));
+    if (out_error) {
+        *out_error = nmo_tool_strdup_fmt("Failed to create directory '%s' (%s)", dir_path, strerror(errno));
     }
     return -1;
 }
@@ -604,9 +606,10 @@ static int resource_extract_run(nmo_cmd_ctx_t *ctx,
                                 bool close_ctx) {
     nmo_cmd_ctx_t c = *ctx;
 
-    char dir_err[256];
-    if (ensure_dir_exists(args->out_dir, dir_err, sizeof(dir_err)) != 0) {
-        fprintf(stderr, "Error: %s\n", dir_err);
+    char *dir_error = NULL;
+    if (ensure_dir_exists(args->out_dir, &dir_error) != 0) {
+        fprintf(stderr, "Error: %s\n", dir_error ? dir_error : "Failed to create directory");
+        free(dir_error);
         return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR)
                          : NMO_CLI_EXIT_IO_ERROR;
     }
@@ -688,7 +691,7 @@ static int resource_extract_run(nmo_cmd_ctx_t *ctx,
                 yyjson_mut_val *e = yyjson_mut_obj(doc);
                 yyjson_mut_obj_add_uint(doc, e, "index", i);
                 nmo_cli_json_add_str_safe(doc, e, "name", res->name ? res->name : "");
-                yyjson_mut_obj_add_str(doc, e, "path", path);
+                yyjson_mut_obj_add_strcpy(doc, e, "path", path);
                 yyjson_mut_obj_add_uint(doc, e, "size", res->size);
                 yyjson_mut_obj_add_bool(doc, e, "extracted", false);
                 yyjson_mut_obj_add_str(doc, e, "reason", is_meta_only ? "metadata_only" : "no_payload");
@@ -707,7 +710,7 @@ static int resource_extract_run(nmo_cmd_ctx_t *ctx,
                 yyjson_mut_val *e = yyjson_mut_obj(doc);
                 yyjson_mut_obj_add_uint(doc, e, "index", i);
                 nmo_cli_json_add_str_safe(doc, e, "name", res->name ? res->name : "");
-                yyjson_mut_obj_add_str(doc, e, "path", path);
+                yyjson_mut_obj_add_strcpy(doc, e, "path", path);
                 yyjson_mut_obj_add_uint(doc, e, "size", res->size);
                 yyjson_mut_obj_add_bool(doc, e, "extracted", false);
                 yyjson_mut_obj_add_str(doc, e, "reason", "exists");
@@ -727,7 +730,7 @@ static int resource_extract_run(nmo_cmd_ctx_t *ctx,
                 yyjson_mut_val *e = yyjson_mut_obj(doc);
                 yyjson_mut_obj_add_uint(doc, e, "index", i);
                 nmo_cli_json_add_str_safe(doc, e, "name", res->name ? res->name : "");
-                yyjson_mut_obj_add_str(doc, e, "path", path);
+                yyjson_mut_obj_add_strcpy(doc, e, "path", path);
                 yyjson_mut_obj_add_uint(doc, e, "size", res->size);
                 yyjson_mut_obj_add_bool(doc, e, "extracted", false);
                 yyjson_mut_obj_add_str(doc, e, "reason", "open_failed");
@@ -749,7 +752,7 @@ static int resource_extract_run(nmo_cmd_ctx_t *ctx,
                 yyjson_mut_val *e = yyjson_mut_obj(doc);
                 yyjson_mut_obj_add_uint(doc, e, "index", i);
                 nmo_cli_json_add_str_safe(doc, e, "name", res->name ? res->name : "");
-                yyjson_mut_obj_add_str(doc, e, "path", path);
+                yyjson_mut_obj_add_strcpy(doc, e, "path", path);
                 yyjson_mut_obj_add_uint(doc, e, "size", res->size);
                 yyjson_mut_obj_add_bool(doc, e, "extracted", false);
                 yyjson_mut_obj_add_str(doc, e, "reason", "write_failed");
@@ -767,7 +770,7 @@ static int resource_extract_run(nmo_cmd_ctx_t *ctx,
             yyjson_mut_val *e = yyjson_mut_obj(doc);
             yyjson_mut_obj_add_uint(doc, e, "index", i);
             nmo_cli_json_add_str_safe(doc, e, "name", res->name ? res->name : "");
-            yyjson_mut_obj_add_str(doc, e, "path", path);
+            yyjson_mut_obj_add_strcpy(doc, e, "path", path);
             yyjson_mut_obj_add_uint(doc, e, "size", res->size);
             yyjson_mut_obj_add_bool(doc, e, "extracted", true);
             yyjson_mut_arr_add_val(entries, e);
@@ -957,16 +960,10 @@ static int resource_import_report(
         nmo_cmd_ctx_json_end(c, doc, data, "resource.import");
     } else {
         fprintf(c->out, "%sImported resource:\n", dry_run ? "Dry run: " : "");
-        char idx_buf[32];
-        snprintf(idx_buf, sizeof(idx_buf), "%u", args->new_index);
-        nmo_cli_print_kv(c->out, "Index", idx_buf, 12, c->colorize);
+        nmo_cli_print_kv_fmt(c->out, "Index", 12, c->colorize, "%u", args->new_index);
         nmo_cli_print_kv(c->out, "Name", args->res_name, 12, c->colorize);
-        char size_buf[32];
-        snprintf(size_buf, sizeof(size_buf), "%u", args->file_size);
-        nmo_cli_print_kv(c->out, "Size", size_buf, 12, c->colorize);
-        char own_buf[32];
-        snprintf(own_buf, sizeof(own_buf), "%u", args->owner_count);
-        nmo_cli_print_kv(c->out, "Owners", own_buf, 12, c->colorize);
+        nmo_cli_print_kv_fmt(c->out, "Size", 12, c->colorize, "%u", args->file_size);
+        nmo_cli_print_kv_fmt(c->out, "Owners", 12, c->colorize, "%u", args->owner_count);
         if (dry_run) {
             fprintf(c->out, "\n(dry run, no changes saved)\n");
         } else {
@@ -1027,19 +1024,25 @@ int nmo_cmd_resource_import(int argc, char **argv, const nmo_cli_global_opts_t *
 
     /* Parse owner IDs */
     if (owner_str && *owner_str) {
-        char buf[1024];
-        snprintf(buf, sizeof(buf), "%s", owner_str);
-        char *tok = strtok(buf, ",");
+        char *owners = nmo_tool_strdup(owner_str); /* strtok needs a writable copy */
+        if (!owners) {
+            fprintf(stderr, "Error: Out of memory\n");
+            free(file_data);
+            return NMO_CLI_EXIT_INTERNAL_ERROR;
+        }
+        char *tok = strtok(owners, ",");
         while (tok && args.owner_count < 64) {
             uint32_t id;
             if (!nmo_tool_parse_u32_dec(tok, &id)) {
                 fprintf(stderr, "Error: Invalid owner ID '%s'\n", tok);
+                free(owners);
                 free(file_data);
                 return NMO_CLI_EXIT_ARG_ERROR;
             }
             args.owner_ids[args.owner_count++] = id;
             tok = strtok(NULL, ",");
         }
+        free(owners);
     }
 
     const nmo_cli_write_spec_t spec = {
@@ -1069,7 +1072,7 @@ typedef struct resource_replace_args {
     const uint8_t *file_data;
     uint32_t file_size;
     uint32_t res_index;
-    char res_name[256];
+    char *res_name; /**< malloc'd copy of the resource name ("" when unnamed) */
     uint32_t old_size;
     bool warn_texture_bitmap;
 } resource_replace_args_t;
@@ -1126,7 +1129,12 @@ static int resource_replace_mutate(
 
     args->res_index = res_index;
     args->old_size = res->size;
-    snprintf(args->res_name, sizeof(args->res_name), "%s", res->name ? res->name : "");
+    free(args->res_name);
+    args->res_name = nmo_tool_strdup(res->name ? res->name : "");
+    if (!args->res_name) {
+        fprintf(stderr, "Error: Out of memory\n");
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
     args->warn_texture_bitmap =
         resource_name_is_image_like(args->res_name) &&
         (resource_has_texture_owner(c, res) ||
@@ -1178,13 +1186,9 @@ static int resource_replace_report(
         nmo_cmd_ctx_json_end(c, doc, data, "resource.replace");
     } else {
         fprintf(c->out, "%sReplaced resource:\n", dry_run ? "Dry run: " : "");
-        char idx_buf[32];
-        snprintf(idx_buf, sizeof(idx_buf), "%u", args->res_index);
-        nmo_cli_print_kv(c->out, "Index", idx_buf, 12, c->colorize);
+        nmo_cli_print_kv_fmt(c->out, "Index", 12, c->colorize, "%u", args->res_index);
         nmo_cli_print_kv(c->out, "Name", args->res_name[0] ? args->res_name : "-", 12, c->colorize);
-        char old_buf[32];
-        snprintf(old_buf, sizeof(old_buf), "%u -> %u", args->old_size, args->file_size);
-        nmo_cli_print_kv(c->out, "Size", old_buf, 12, c->colorize);
+        nmo_cli_print_kv_fmt(c->out, "Size", 12, c->colorize, "%u -> %u", args->old_size, args->file_size);
         if (args->warn_texture_bitmap) {
             fprintf(c->out,
                     "\nWarning: resource replace updated the included resource payload, "
@@ -1263,6 +1267,7 @@ int nmo_cmd_resource_replace(int argc, char **argv, const nmo_cli_global_opts_t 
         resource_replace_mutate,
         resource_replace_report,
         &args);
+    free(args.res_name);
     free(file_data);
     return rc;
 }
@@ -1275,7 +1280,7 @@ typedef struct resource_remove_args {
     const char *index_str;
     const char *name_str;
     uint32_t res_index;
-    char res_name[256];
+    char *res_name; /**< malloc'd copy of the resource name ("" when unnamed) */
     uint32_t res_size;
     uint32_t res_owner_count;
     uint32_t before_count;
@@ -1332,7 +1337,12 @@ static int resource_remove_mutate(
     }
 
     args->res_index = res_index;
-    snprintf(args->res_name, sizeof(args->res_name), "%s", res->name ? res->name : "");
+    free(args->res_name);
+    args->res_name = nmo_tool_strdup(res->name ? res->name : "");
+    if (!args->res_name) {
+        fprintf(stderr, "Error: Out of memory\n");
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
     args->res_size = res->size;
     args->res_owner_count = (uint32_t)res->owner_ids.count;
     args->before_count = count;
@@ -1378,16 +1388,10 @@ static int resource_remove_report(
             nmo_cmd_ctx_json_end(c, doc, data, "resource.remove");
         } else {
             fprintf(c->out, "Would remove resource:\n");
-            char idx_buf[32];
-            snprintf(idx_buf, sizeof(idx_buf), "%u", args->res_index);
-            nmo_cli_print_kv(c->out, "Index", idx_buf, 12, c->colorize);
+            nmo_cli_print_kv_fmt(c->out, "Index", 12, c->colorize, "%u", args->res_index);
             nmo_cli_print_kv(c->out, "Name", args->res_name[0] ? args->res_name : "-", 12, c->colorize);
-            char size_buf[32];
-            snprintf(size_buf, sizeof(size_buf), "%u", args->res_size);
-            nmo_cli_print_kv(c->out, "Size", size_buf, 12, c->colorize);
-            char own_buf[32];
-            snprintf(own_buf, sizeof(own_buf), "%u", args->res_owner_count);
-            nmo_cli_print_kv(c->out, "Owners", own_buf, 12, c->colorize);
+            nmo_cli_print_kv_fmt(c->out, "Size", 12, c->colorize, "%u", args->res_size);
+            nmo_cli_print_kv_fmt(c->out, "Owners", 12, c->colorize, "%u", args->res_owner_count);
             fprintf(c->out, "\n(dry run, no changes made)\n");
         }
         return NMO_CLI_EXIT_SUCCESS;
@@ -1405,13 +1409,9 @@ static int resource_remove_report(
         nmo_cmd_ctx_json_end(c, doc, data, "resource.remove");
     } else {
         fprintf(c->out, "Removed resource:\n");
-        char idx_buf[32];
-        snprintf(idx_buf, sizeof(idx_buf), "%u", args->res_index);
-        nmo_cli_print_kv(c->out, "Index", idx_buf, 12, c->colorize);
+        nmo_cli_print_kv_fmt(c->out, "Index", 12, c->colorize, "%u", args->res_index);
         nmo_cli_print_kv(c->out, "Name", args->res_name[0] ? args->res_name : "-", 12, c->colorize);
-        char cnt_buf[32];
-        snprintf(cnt_buf, sizeof(cnt_buf), "%u -> %u", args->before_count, args->after_count);
-        nmo_cli_print_kv(c->out, "Count", cnt_buf, 12, c->colorize);
+        nmo_cli_print_kv_fmt(c->out, "Count", 12, c->colorize, "%u -> %u", args->before_count, args->after_count);
         fprintf(c->out, "\nSaved to: %s\n", output_path);
     }
 
@@ -1461,7 +1461,7 @@ int nmo_cmd_resource_remove(int argc, char **argv, const nmo_cli_global_opts_t *
         .command_name = "resource.remove",
         .output_required_unless_dry_run = true,
     };
-    return nmo_cli_run_write_command(
+    int rc = nmo_cli_run_write_command(
         nmo_file,
         output_path,
         dry_run,
@@ -1470,6 +1470,8 @@ int nmo_cmd_resource_remove(int argc, char **argv, const nmo_cli_global_opts_t *
         resource_remove_mutate,
         resource_remove_report,
         &args);
+    free(args.res_name);
+    return rc;
 }
 
 /* ============================================================================
@@ -1646,17 +1648,14 @@ int nmo_cmd_resource_info(int argc, char **argv, const nmo_cli_global_opts_t *gl
         if (res_name) {
             nmo_cli_print_kv(c.out, "Name", res_name, 12, c.colorize);
         }
-        char size_buf[32];
-        snprintf(size_buf, sizeof(size_buf), "%u", payload_size);
-        nmo_cli_print_kv(c.out, "Size", size_buf, 12, c.colorize);
+        nmo_cli_print_kv_fmt(c.out, "Size", 12, c.colorize, "%u", payload_size);
         nmo_cli_print_kv(c.out, "Format", format, 12, c.colorize);
         if (ck_sig[0]) {
             nmo_cli_print_kv(c.out, "CK Signature", ck_sig, 12, c.colorize);
         }
         if (has_dims) {
-            char dim_buf[64];
-            snprintf(dim_buf, sizeof(dim_buf), "%dx%d (%d channels)", img_width, img_height, img_channels);
-            nmo_cli_print_kv(c.out, "Dimensions", dim_buf, 12, c.colorize);
+            nmo_cli_print_kv_fmt(c.out, "Dimensions", 12, c.colorize,
+                                 "%dx%d (%d channels)", img_width, img_height, img_channels);
         }
     }
 

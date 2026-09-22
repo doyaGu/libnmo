@@ -6,6 +6,7 @@
 #include "nmo_cmd_extension.h"
 #include "../nmo_cmd_ctx.h"
 #include "../nmo_cli_output.h"
+#include "../nmo_cli_json.h"
 #include "../nmo_cli_record.h"
 #include "../nmo_tool_common.h"
 #include "nmo.h"
@@ -243,9 +244,7 @@ int nmo_cmd_extension_load(int argc, char **argv, const nmo_cli_global_opts_t *g
             const nmo_extension_plugin_info_t *p = &plugins[i];
             yyjson_mut_val *plugin_obj = yyjson_mut_obj(doc);
 
-            char guid_str[64];
-            nmo_guid_format(p->guid, guid_str, sizeof(guid_str));
-            yyjson_mut_obj_add_str(doc, plugin_obj, "guid", guid_str);
+            nmo_cli_json_add_guid_safe(doc, plugin_obj, "guid", p->guid);
             nmo_cli_json_add_str_safe(doc, plugin_obj, "name", p->name ? p->name : "");
             yyjson_mut_obj_add_uint(doc, plugin_obj, "version", (uint64_t)p->version);
 
@@ -260,9 +259,7 @@ int nmo_cmd_extension_load(int argc, char **argv, const nmo_cli_global_opts_t *g
         fprintf(c.out, "\n");
         nmo_cli_print_kv(c.out, "Library", dll_path, 12, c.colorize);
 
-        char count_str[32];
-        snprintf(count_str, sizeof(count_str), "%zu", loaded_count);
-        nmo_cli_print_kv(c.out, "Loaded", count_str, 12, c.colorize);
+        nmo_cli_print_kv_fmt(c.out, "Loaded", 12, c.colorize, "%zu", loaded_count);
 
         if (loaded_count > 0) {
             fprintf(c.out, "\nLoaded plugins:\n");
@@ -272,7 +269,7 @@ int nmo_cmd_extension_load(int argc, char **argv, const nmo_cli_global_opts_t *g
 
             for (size_t i = count_before; i < total_count; ++i) {
                 const nmo_extension_plugin_info_t *p = &plugins[i];
-                char guid_str[64];
+                char guid_str[NMO_GUID_STRING_SIZE];
                 nmo_guid_format(p->guid, guid_str, sizeof(guid_str));
                 fprintf(c.out, "  - %s (%s, version %u)\n",
                         p->name ? p->name : "(unnamed)",
@@ -318,9 +315,7 @@ static int extension_info_run(nmo_cmd_ctx_t *c)
             const nmo_tool_plugin_dependency_status_t *p = &diag->entries[i];
             yyjson_mut_val *plugin_obj = yyjson_mut_obj(doc);
 
-            char guid_str[64];
-            nmo_guid_format(p->guid, guid_str, sizeof(guid_str));
-            yyjson_mut_obj_add_str(doc, plugin_obj, "guid", guid_str);
+            nmo_cli_json_add_guid_safe(doc, plugin_obj, "guid", p->guid);
             yyjson_mut_obj_add_str(doc, plugin_obj, "category", plugin_category_to_string(p->category));
             yyjson_mut_obj_add_uint(doc, plugin_obj, "required_version", (uint64_t)p->required_version);
             yyjson_mut_obj_add_uint(doc, plugin_obj, "resolved_version", (uint64_t)p->resolved_version);
@@ -347,15 +342,9 @@ static int extension_info_run(nmo_cmd_ctx_t *c)
         nmo_cli_print_kv(c->out, "File", c->file_path, 16, c->colorize);
         fprintf(c->out, "\n");
 
-        char count_str[32];
-        snprintf(count_str, sizeof(count_str), "%zu", diag->entry_count);
-        nmo_cli_print_kv(c->out, "Plugin Count", count_str, 16, c->colorize);
-
-        snprintf(count_str, sizeof(count_str), "%zu", diag->missing_count);
-        nmo_cli_print_kv(c->out, "Missing", count_str, 16, c->colorize);
-
-        snprintf(count_str, sizeof(count_str), "%zu", diag->outdated_count);
-        nmo_cli_print_kv(c->out, "Outdated", count_str, 16, c->colorize);
+        nmo_cli_print_kv_fmt(c->out, "Plugin Count", 16, c->colorize, "%zu", diag->entry_count);
+        nmo_cli_print_kv_fmt(c->out, "Missing", 16, c->colorize, "%zu", diag->missing_count);
+        nmo_cli_print_kv_fmt(c->out, "Outdated", 16, c->colorize, "%zu", diag->outdated_count);
 
         nmo_cli_print_kv(c->out, "Registry", diag->extension_registry_available ? "Available" : "Not Available", 16, c->colorize);
 
@@ -377,45 +366,34 @@ static int extension_info_run(nmo_cmd_ctx_t *c)
             for (size_t i = 0; i < diag->entry_count; ++i) {
                 const nmo_tool_plugin_dependency_status_t *p = &diag->entries[i];
 
-                char guid_str[64];
-                char req_ver_str[16];
-                char res_ver_str[16];
-                char status_str[64];
-
+                char guid_str[NMO_GUID_STRING_SIZE];
                 nmo_guid_format(p->guid, guid_str, sizeof(guid_str));
-                snprintf(req_ver_str, sizeof(req_ver_str), "%u", p->required_version);
 
-                if (p->resolved_version != 0) {
-                    snprintf(res_ver_str, sizeof(res_ver_str), "%u", p->resolved_version);
-                } else {
-                    snprintf(res_ver_str, sizeof(res_ver_str), "-");
-                }
-
-                status_str[0] = '\0';
+                const char *status;
                 if (p->status_flags & NMO_TOOL_PLUGIN_DEP_STATUS_MISSING) {
-                    strncat(status_str, "MISSING", sizeof(status_str) - strlen(status_str) - 1);
+                    status = "MISSING";
                 } else if (p->status_flags & NMO_TOOL_PLUGIN_DEP_STATUS_VERSION_TOO_OLD) {
-                    strncat(status_str, "VERSION_TOO_OLD", sizeof(status_str) - strlen(status_str) - 1);
+                    status = "VERSION_TOO_OLD";
                 } else if (p->status_flags & NMO_TOOL_PLUGIN_DEP_STATUS_MANAGER_UNAVAILABLE) {
-                    strncat(status_str, "MANAGER_UNAVAIL", sizeof(status_str) - strlen(status_str) - 1);
+                    status = "MANAGER_UNAVAIL";
                 } else {
-                    strncat(status_str, "OK", sizeof(status_str) - strlen(status_str) - 1);
+                    status = "OK";
                 }
 
+                nmo_cli_table_begin_row(&table);
+                nmo_cli_table_add_cell(&table, guid_str);
+                nmo_cli_table_add_cell(&table, plugin_category_to_string(p->category));
+                nmo_cli_table_add_cell_fmt(&table, "%u", p->required_version);
+                if (p->resolved_version != 0) {
+                    nmo_cli_table_add_cell_fmt(&table, "%u", p->resolved_version);
+                } else {
+                    nmo_cli_table_add_cell(&table, "-");
+                }
                 if (p->resolved_name && p->resolved_name[0] != '\0') {
-                    size_t len = strlen(status_str);
-                    snprintf(status_str + len, sizeof(status_str) - len, " (%s)", p->resolved_name);
+                    nmo_cli_table_add_cell_fmt(&table, "%s (%s)", status, p->resolved_name);
+                } else {
+                    nmo_cli_table_add_cell(&table, status);
                 }
-
-                const char *cells[] = {
-                    guid_str,
-                    plugin_category_to_string(p->category),
-                    req_ver_str,
-                    res_ver_str,
-                    status_str
-                };
-
-                nmo_cli_table_add_row(&table, cells, sizeof(cells) / sizeof(cells[0]));
             }
 
             nmo_cli_table_print(&table, c->out, c->colorize);
@@ -476,9 +454,7 @@ static int extension_check_run(nmo_cmd_ctx_t *c, bool strict_mode)
             if (p->status_flags != 0) {
                 yyjson_mut_val *issue_obj = yyjson_mut_obj(doc);
 
-                char guid_str[64];
-                nmo_guid_format(p->guid, guid_str, sizeof(guid_str));
-                yyjson_mut_obj_add_str(doc, issue_obj, "guid", guid_str);
+                nmo_cli_json_add_guid_safe(doc, issue_obj, "guid", p->guid);
                 yyjson_mut_obj_add_str(doc, issue_obj, "category", plugin_category_to_string(p->category));
                 yyjson_mut_obj_add_uint(doc, issue_obj, "required_version", (uint64_t)p->required_version);
 
@@ -503,15 +479,9 @@ static int extension_check_run(nmo_cmd_ctx_t *c, bool strict_mode)
         nmo_cli_print_kv(c->out, "File", c->file_path, 16, c->colorize);
         fprintf(c->out, "\n");
 
-        char count_str[32];
-        snprintf(count_str, sizeof(count_str), "%zu", diag->entry_count);
-        nmo_cli_print_kv(c->out, "Total", count_str, 16, c->colorize);
-
-        snprintf(count_str, sizeof(count_str), "%zu", diag->missing_count);
-        nmo_cli_print_kv(c->out, "Missing", count_str, 16, c->colorize);
-
-        snprintf(count_str, sizeof(count_str), "%zu", diag->outdated_count);
-        nmo_cli_print_kv(c->out, "Outdated", count_str, 16, c->colorize);
+        nmo_cli_print_kv_fmt(c->out, "Total", 16, c->colorize, "%zu", diag->entry_count);
+        nmo_cli_print_kv_fmt(c->out, "Missing", 16, c->colorize, "%zu", diag->missing_count);
+        nmo_cli_print_kv_fmt(c->out, "Outdated", 16, c->colorize, "%zu", diag->outdated_count);
 
         if (has_issues) {
             fprintf(c->out, "\nIssues Found:\n\n");
@@ -520,7 +490,7 @@ static int extension_check_run(nmo_cmd_ctx_t *c, bool strict_mode)
                 const nmo_tool_plugin_dependency_status_t *p = &diag->entries[i];
 
                 if (p->status_flags != 0) {
-                    char guid_str[64];
+                    char guid_str[NMO_GUID_STRING_SIZE];
                     nmo_guid_format(p->guid, guid_str, sizeof(guid_str));
 
                     fprintf(c->out, "  - %s (%s)\n", guid_str, plugin_category_to_string(p->category));

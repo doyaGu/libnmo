@@ -370,54 +370,36 @@ static int nmo_cmd_file_stats_in_session(nmo_cmd_ctx_t *c, int argc, char **argv
         fprintf(c->out, "\n");
 
         nmo_cli_print_heading(c->out, "Objects", c->colorize);
-        char buf[64];
-        snprintf(buf, sizeof(buf), "%zu", stats.objects.total_count);
-        nmo_cli_print_kv(c->out, "Total", buf, 20, c->colorize);
-        snprintf(buf, sizeof(buf), "%zu", stats.objects.unique_classes);
-        nmo_cli_print_kv(c->out, "Unique Classes", buf, 20, c->colorize);
+        nmo_cli_print_kv_fmt(c->out, "Total", 20, c->colorize, "%zu", stats.objects.total_count);
+        nmo_cli_print_kv_fmt(c->out, "Unique Classes", 20, c->colorize, "%zu", stats.objects.unique_classes);
         fprintf(c->out, "\n");
 
         nmo_cli_print_heading(c->out, "Chunks", c->colorize);
-        snprintf(buf, sizeof(buf), "%zu", stats.chunks.total_chunks);
-        nmo_cli_print_kv(c->out, "Total", buf, 20, c->colorize);
-        snprintf(buf, sizeof(buf), "%zu", stats.chunks.compressed_chunks);
-        nmo_cli_print_kv(c->out, "Compressed", buf, 20, c->colorize);
-        snprintf(buf, sizeof(buf), "%zu", stats.chunks.max_chunk_size);
-        nmo_cli_print_kv(c->out, "Max Size", buf, 20, c->colorize);
-        snprintf(buf, sizeof(buf), "%zu", stats.chunks.avg_chunk_size);
-        nmo_cli_print_kv(c->out, "Avg Size", buf, 20, c->colorize);
+        nmo_cli_print_kv_fmt(c->out, "Total", 20, c->colorize, "%zu", stats.chunks.total_chunks);
+        nmo_cli_print_kv_fmt(c->out, "Compressed", 20, c->colorize, "%zu", stats.chunks.compressed_chunks);
+        nmo_cli_print_kv_fmt(c->out, "Max Size", 20, c->colorize, "%zu", stats.chunks.max_chunk_size);
+        nmo_cli_print_kv_fmt(c->out, "Avg Size", 20, c->colorize, "%zu", stats.chunks.avg_chunk_size);
         fprintf(c->out, "\n");
 
         nmo_cli_print_heading(c->out, "Memory", c->colorize);
-        snprintf(buf, sizeof(buf), "%zu bytes", stats.memory.total_size);
-        nmo_cli_print_kv(c->out, "Total Size", buf, 20, c->colorize);
-        snprintf(buf, sizeof(buf), "%zu bytes", stats.memory.header_size);
-        nmo_cli_print_kv(c->out, "Header Size", buf, 20, c->colorize);
-        snprintf(buf, sizeof(buf), "%zu bytes", stats.memory.data_size);
-        nmo_cli_print_kv(c->out, "Data Size", buf, 20, c->colorize);
-        snprintf(buf, sizeof(buf), "%zu bytes", stats.memory.chunk_data_size);
-        nmo_cli_print_kv(c->out, "Chunk Data", buf, 20, c->colorize);
-        snprintf(buf, sizeof(buf), "%zu%%", stats.memory.compression_ratio);
-        nmo_cli_print_kv(c->out, "Compression", buf, 20, c->colorize);
+        nmo_cli_print_kv_fmt(c->out, "Total Size", 20, c->colorize, "%zu bytes", stats.memory.total_size);
+        nmo_cli_print_kv_fmt(c->out, "Header Size", 20, c->colorize, "%zu bytes", stats.memory.header_size);
+        nmo_cli_print_kv_fmt(c->out, "Data Size", 20, c->colorize, "%zu bytes", stats.memory.data_size);
+        nmo_cli_print_kv_fmt(c->out, "Chunk Data", 20, c->colorize, "%zu bytes", stats.memory.chunk_data_size);
+        nmo_cli_print_kv_fmt(c->out, "Compression", 20, c->colorize, "%zu%%", stats.memory.compression_ratio);
         fprintf(c->out, "\n");
 
         nmo_cli_print_heading(c->out, "References", c->colorize);
-        snprintf(buf, sizeof(buf), "%zu", stats.references.total_references);
-        nmo_cli_print_kv(c->out, "Total", buf, 20, c->colorize);
-        snprintf(buf, sizeof(buf), "%zu", stats.references.resolved);
-        nmo_cli_print_kv(c->out, "Resolved", buf, 20, c->colorize);
-        snprintf(buf, sizeof(buf), "%zu", stats.references.unresolved);
-        nmo_cli_print_kv(c->out, "Unresolved", buf, 20, c->colorize);
+        nmo_cli_print_kv_fmt(c->out, "Total", 20, c->colorize, "%zu", stats.references.total_references);
+        nmo_cli_print_kv_fmt(c->out, "Resolved", 20, c->colorize, "%zu", stats.references.resolved);
+        nmo_cli_print_kv_fmt(c->out, "Unresolved", 20, c->colorize, "%zu", stats.references.unresolved);
 
         if (c->global && c->global->verbosity > 0) {
             fprintf(c->out, "\n");
             nmo_cli_print_heading(c->out, "Performance", c->colorize);
-            snprintf(buf, sizeof(buf), "%.2f ms", stats.performance.load_time_ms);
-            nmo_cli_print_kv(c->out, "Load Time", buf, 20, c->colorize);
-            snprintf(buf, sizeof(buf), "%.2f ms", stats.performance.parse_time_ms);
-            nmo_cli_print_kv(c->out, "Parse Time", buf, 20, c->colorize);
-            snprintf(buf, sizeof(buf), "%.2f ms", stats.performance.remap_time_ms);
-            nmo_cli_print_kv(c->out, "Remap Time", buf, 20, c->colorize);
+            nmo_cli_print_kv_fmt(c->out, "Load Time", 20, c->colorize, "%.2f ms", stats.performance.load_time_ms);
+            nmo_cli_print_kv_fmt(c->out, "Parse Time", 20, c->colorize, "%.2f ms", stats.performance.parse_time_ms);
+            nmo_cli_print_kv_fmt(c->out, "Remap Time", 20, c->colorize, "%.2f ms", stats.performance.remap_time_ms);
         }
     }
 
@@ -710,9 +692,7 @@ static int nmo_cmd_file_plugins_in_session(nmo_cmd_ctx_t *c, int argc, char **ar
                 const nmo_tool_plugin_dependency_status_t *e = &diag->entries[i];
                 yyjson_mut_val *entry = yyjson_mut_obj(doc);
 
-                char guid_buf[64];
-                nmo_guid_format(e->guid, guid_buf, sizeof(guid_buf));
-                yyjson_mut_obj_add_strcpy(doc, entry, "guid", guid_buf);
+                nmo_cli_json_add_guid_safe(doc, entry, "guid", e->guid);
                 yyjson_mut_obj_add_uint(doc, entry, "category", (uint32_t)e->category);
                 yyjson_mut_obj_add_str(doc, entry, "category_name",
                                        file_plugin_category_name(e->category));
@@ -735,21 +715,17 @@ static int nmo_cmd_file_plugins_in_session(nmo_cmd_ctx_t *c, int argc, char **ar
         if (!diag) {
             fprintf(c->out, "Plugin diagnostics unavailable\n");
         } else {
-            char buf[64];
             nmo_cli_print_kv(c->out, "Registry Available",
                             diag->extension_registry_available ? "yes" : "no", 18, c->colorize);
-            snprintf(buf, sizeof(buf), "%zu", diag->missing_count);
-            nmo_cli_print_kv(c->out, "Missing", buf, 18, c->colorize);
-            snprintf(buf, sizeof(buf), "%zu", diag->outdated_count);
-            nmo_cli_print_kv(c->out, "Outdated", buf, 18, c->colorize);
-            snprintf(buf, sizeof(buf), "%zu", diag->entry_count);
-            nmo_cli_print_kv(c->out, "Total Entries", buf, 18, c->colorize);
+            nmo_cli_print_kv_fmt(c->out, "Missing", 18, c->colorize, "%zu", diag->missing_count);
+            nmo_cli_print_kv_fmt(c->out, "Outdated", 18, c->colorize, "%zu", diag->outdated_count);
+            nmo_cli_print_kv_fmt(c->out, "Total Entries", 18, c->colorize, "%zu", diag->entry_count);
 
             if (diag->entries && diag->entry_count > 0) {
                 fprintf(c->out, "\nEntries:\n");
                 for (size_t i = 0; i < diag->entry_count; ++i) {
                     const nmo_tool_plugin_dependency_status_t *e = &diag->entries[i];
-                    char guid_buf[64];
+                    char guid_buf[NMO_GUID_STRING_SIZE];
                     nmo_guid_format(e->guid, guid_buf, sizeof(guid_buf));
                     fprintf(c->out, "  %s [%s req=%u resolved=%u]",
                             guid_buf,
@@ -1021,23 +997,14 @@ static int nmo_cmd_file_space_in_session(nmo_cmd_ctx_t *c, int argc, char **argv
     } else {
         nmo_cli_print_heading(c->out, "Space Analysis", c->colorize);
 
-        char buf[128];
-        snprintf(buf, sizeof(buf), "%zu bytes", info.file_size);
-        nmo_cli_print_kv(c->out, "File Size", buf, 20, c->colorize);
-        snprintf(buf, sizeof(buf), "%zu", obj_count);
-        nmo_cli_print_kv(c->out, "Objects", buf, 20, c->colorize);
-        snprintf(buf, sizeof(buf), "%" PRIu64 " bytes", total_data);
-        nmo_cli_print_kv(c->out, "Total Data", buf, 20, c->colorize);
-        snprintf(buf, sizeof(buf), "%" PRIu64 " bytes", total_pack);
-        nmo_cli_print_kv(c->out, "Total Packed", buf, 20, c->colorize);
+        nmo_cli_print_kv_fmt(c->out, "File Size", 20, c->colorize, "%zu bytes", info.file_size);
+        nmo_cli_print_kv_fmt(c->out, "Objects", 20, c->colorize, "%zu", obj_count);
+        nmo_cli_print_kv_fmt(c->out, "Total Data", 20, c->colorize, "%" PRIu64 " bytes", total_data);
+        nmo_cli_print_kv_fmt(c->out, "Total Packed", 20, c->colorize, "%" PRIu64 " bytes", total_pack);
         if (total_data > 0) {
-            snprintf(buf, sizeof(buf), "%.1f%%",
-                     (double)total_pack / (double)total_data * 100.0);
-            nmo_cli_print_kv(c->out, "Compression", buf, 20, c->colorize);
+            nmo_cli_print_kv_fmt(c->out, "Compression", 20, c->colorize, "%.1f%%", (double)total_pack / (double)total_data * 100.0);
         }
-        snprintf(buf, sizeof(buf), "%" PRIu64 " / %zu",
-                 compressed_count, obj_count);
-        nmo_cli_print_kv(c->out, "Compressed", buf, 20, c->colorize);
+        nmo_cli_print_kv_fmt(c->out, "Compressed", 20, c->colorize, "%" PRIu64 " / %zu", compressed_count, obj_count);
 
         /* Per-class breakdown with cumulative % and ASCII bar */
         fprintf(c->out, "\n");
@@ -1074,8 +1041,7 @@ static int nmo_cmd_file_space_in_session(nmo_cmd_ctx_t *c, int argc, char **argv
         if (obj_entries && obj_count > 0) {
             size_t show_n = obj_count < top_n ? obj_count : top_n;
             fprintf(c->out, "\n");
-            snprintf(buf, sizeof(buf), "Top %zu Objects by Size", show_n);
-            nmo_cli_print_heading(c->out, buf, c->colorize);
+            nmo_cli_print_heading_fmt(c->out, c->colorize, "Top %zu Objects by Size", show_n);
             fprintf(c->out, "%5s  %-20s  %10s  %10s  %6s  %-s\n",
                     "ID", "CLASS", "DATA", "PACKED", "RATIO", "NAME");
             fprintf(c->out, "%5s  %-20s  %10s  %10s  %6s  %-s\n",

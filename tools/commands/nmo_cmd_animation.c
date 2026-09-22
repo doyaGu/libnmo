@@ -506,13 +506,11 @@ static void print_keys_text(FILE *out, const nmo_objanim_controller_t *ctrl,
 
     for (uint32_t k = 0; k < show; ++k) {
         const float *key = fp + k * (key_size / sizeof(float));
-        char line[256];
-        int off = snprintf(line, sizeof(line), "    t=%.4f", (double)key[0]);
+        fprintf(out, "    t=%.4f", (double)key[0]);
         for (uint32_t v = 1; v < floats_per_key && v < key_size / sizeof(float); ++v) {
-            off += snprintf(line + off, sizeof(line) - (size_t)off,
-                            " %.6g", (double)key[v]);
+            fprintf(out, " %.6g", (double)key[v]);
         }
-        fprintf(out, "%s\n", line);
+        fputc('\n', out);
     }
 
     if (ctrl->key_count > 20)
@@ -529,14 +527,13 @@ static void print_keys_hex(FILE *out, const nmo_objanim_controller_t *ctrl,
 
     for (uint32_t k = 0; k < show; ++k) {
         const uint8_t *key = bp + k * key_size;
-        char line[512];
-        int off = snprintf(line, sizeof(line), "    [%u] ", k);
+        fprintf(out, "    [%u] ", k);
         uint32_t bytes = key_size > 32 ? 32 : key_size;
         for (uint32_t b = 0; b < bytes; ++b)
-            off += snprintf(line + off, sizeof(line) - (size_t)off, "%02x", key[b]);
+            fprintf(out, "%02x", key[b]);
         if (key_size > 32)
-            off += snprintf(line + off, sizeof(line) - (size_t)off, "...");
-        fprintf(out, "%s\n", line);
+            fputs("...", out);
+        fputc('\n', out);
     }
 
     if (ctrl->key_count > 5)
@@ -652,9 +649,7 @@ int nmo_cmd_animation_keys(int argc, char **argv, const nmo_cli_global_opts_t *g
             const nmo_objanim_controller_t *ctrl = &st->controllers[ci];
             yyjson_mut_val *cobj = yyjson_mut_obj(doc);
 
-            char type_hex[16];
-            snprintf(type_hex, sizeof(type_hex), "0x%08x", ctrl->type);
-            yyjson_mut_obj_add_strcpy(doc, cobj, "type", type_hex);
+            nmo_cli_json_add_str_fmt_safe(doc, cobj, "type", "0x%08x", ctrl->type);
             yyjson_mut_obj_add_str(doc, cobj, "type_name",
                                    controller_type_name(ctrl->type));
             yyjson_mut_obj_add_uint(doc, cobj, "key_count", ctrl->key_count);
@@ -778,9 +773,7 @@ static int export_one_animation(nmo_objectanimation_state_t *st,
         const nmo_objanim_controller_t *ctrl = &st->controllers[ci];
         yyjson_mut_val *cobj = yyjson_mut_obj(doc);
 
-        char type_hex[16];
-        snprintf(type_hex, sizeof(type_hex), "0x%08x", ctrl->type);
-        yyjson_mut_obj_add_strcpy(doc, cobj, "type", type_hex);
+        nmo_cli_json_add_str_fmt_safe(doc, cobj, "type", "0x%08x", ctrl->type);
         yyjson_mut_obj_add_str(doc, cobj, "type_name",
                                controller_type_name(ctrl->type));
         yyjson_mut_obj_add_uint(doc, cobj, "key_count", ctrl->key_count);

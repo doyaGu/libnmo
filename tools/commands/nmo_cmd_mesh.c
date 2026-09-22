@@ -26,7 +26,6 @@
 #include "object/nmo_object_struct_defs.h"
 #include "format/nmo_obj_parser.h"
 #include "core/nmo_arena.h"
-#include "core/nmo_string.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -104,7 +103,32 @@ static char *mesh_join_path(const char *dir, const char *file) {
     return out;
 }
 
-/* Filename sanitization is provided by nmo_sanitize_filename() from core/nmo_string.h. */
+/*
+ * "<name>_<id>" with path separators, control characters, and spaces replaced
+ * by '_' ("unnamed_<id>" when the mesh has no name), malloc'd to the exact
+ * length. Mirrors nmo_sanitize_filename() from core/nmo_string.h without its
+ * fixed buffer. NULL on OOM.
+ */
+static char *mesh_export_basename_dup(const char *name, uint32_t id) {
+    if (!name || !name[0]) {
+        return nmo_tool_strdup_fmt("unnamed_%u", (unsigned)id);
+    }
+    char *safe = nmo_tool_strdup(name);
+    if (!safe) {
+        return NULL;
+    }
+    for (unsigned char *p = (unsigned char *)safe; *p; ++p) {
+        unsigned char ch = *p;
+        if (ch == '/' || ch == '\\' || ch == ':' || ch == '*' ||
+            ch == '?' || ch == '"' || ch == '<' || ch == '>' ||
+            ch == '|' || ch < 0x20 || ch == ' ') {
+            *p = '_';
+        }
+    }
+    char *base = nmo_tool_strdup_fmt("%s_%u", safe, (unsigned)id);
+    free(safe);
+    return base;
+}
 
 static void argb_to_rgb_float(uint32_t argb, float *r, float *g, float *b) {
     *r = (float)((argb >> 16) & 0xFF) / 255.0f;
@@ -379,9 +403,7 @@ static int write_mtl_file(const nmo_cmd_ctx_t *c,
         }
 
         if (!mat_name || !mat_name[0]) {
-            char fallback[32];
-            snprintf(fallback, sizeof(fallback), "material_%u", gi);
-            fprintf(f, "newmtl %s\n", fallback);
+            fprintf(f, "newmtl material_%u\n", gi);
         } else {
             fprintf(f, "newmtl %s\n", mat_name);
         }
@@ -525,18 +547,16 @@ static int export_single_mesh(const nmo_cmd_ctx_t *c,
         return 0;
     }
 
-    char safe_name[256];
-    nmo_sanitize_filename(safe_name, sizeof(safe_name), name, id);
-
     /* Build file paths */
-    char obj_fname[280];
-    char mtl_fname[280];
-    snprintf(obj_fname, sizeof(obj_fname), "%s.obj", safe_name);
-    snprintf(mtl_fname, sizeof(mtl_fname), "%s.mtl", safe_name);
-
-    char *obj_path = mesh_join_path(out_dir, obj_fname);
-    char *mtl_path = mesh_join_path(out_dir, mtl_fname);
+    char *safe_name = mesh_export_basename_dup(name, id);
+    char *obj_fname = safe_name ? nmo_tool_strdup_fmt("%s.obj", safe_name) : NULL;
+    char *mtl_fname = safe_name ? nmo_tool_strdup_fmt("%s.mtl", safe_name) : NULL;
+    free(safe_name);
+    char *obj_path = obj_fname ? mesh_join_path(out_dir, obj_fname) : NULL;
+    char *mtl_path = mtl_fname ? mesh_join_path(out_dir, mtl_fname) : NULL;
     if (!obj_path || !mtl_path) {
+        free(obj_fname);
+        free(mtl_fname);
         free(obj_path);
         free(mtl_path);
         return -1;
@@ -545,6 +565,8 @@ static int export_single_mesh(const nmo_cmd_ctx_t *c,
     /* Write MTL if material groups exist */
     if (ms->material_group_count > 0) {
         if (write_mtl_file(c, ms, mtl_path) < 0) {
+            free(obj_fname);
+            free(mtl_fname);
             free(obj_path);
             free(mtl_path);
             return -1;
@@ -554,6 +576,8 @@ static int export_single_mesh(const nmo_cmd_ctx_t *c,
     /* Write OBJ */
     const char *mtl_ref = ms->material_group_count > 0 ? mtl_fname : NULL;
     if (write_obj_file(c, ms, obj_path, mtl_ref) < 0) {
+        free(obj_fname);
+        free(mtl_fname);
         free(obj_path);
         free(mtl_path);
         return -1;
@@ -575,6 +599,8 @@ static int export_single_mesh(const nmo_cmd_ctx_t *c,
                 obj_fname, ms->vertex_count, ms->face_count);
     }
 
+    free(obj_fname);
+    free(mtl_fname);
     free(obj_path);
     free(mtl_path);
     return 0;
@@ -937,7 +963,7 @@ int nmo_cmd_mesh_import(int argc, char **argv, const nmo_cli_global_opts_t *glob
     if (!mesh_obj) {
         /* Derive name from --name option or OBJ filename */
         const char *create_name = mesh_name;
-        char name_buf[256];
+        char *derived_name = NULL; /* basename of the OBJ file when --name is absent */
         if (!create_name) {
             /* Extract basename without extension from OBJ path */
             const char *base = obj_file_path;
@@ -951,10 +977,13 @@ int nmo_cmd_mesh_import(int argc, char **argv, const nmo_cli_global_opts_t *glob
                 if (*(p - 1) == '.') { dot = p - 1; break; }
             }
             size_t namelen = dot ? (size_t)(dot - base) : blen;
-            if (namelen >= sizeof(name_buf)) namelen = sizeof(name_buf) - 1;
-            memcpy(name_buf, base, namelen);
-            name_buf[namelen] = '\0';
-            create_name = name_buf;
+            derived_name = nmo_tool_strdup_fmt("%.*s", (int)namelen, base);
+            if (!derived_name) {
+                nmo_workspace_edit_rollback(edit);
+                fprintf(stderr, "Error: Out of memory\n");
+                return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+            }
+            create_name = derived_name;
         }
 
         nmo_object_id_t new_id = 0;
@@ -964,6 +993,7 @@ int nmo_cmd_mesh_import(int argc, char **argv, const nmo_cli_global_opts_t *glob
             .type_guid = NMO_GUID_NULL,
         };
         nmo_status_t create_rc = nmo_object_edit_create(edit, &desc, &new_id);
+        free(derived_name); /* the created object owns its own copy of the name */
         if (create_rc != NMO_OK) {
             nmo_workspace_edit_rollback(edit);
             fprintf(stderr, "Error: Failed to create mesh object: %s\n",
