@@ -124,19 +124,23 @@ static int open_two_documents(const char *path1, const char *path2,
                               nmo_workspace_t **ws2,
                               bool *owns2)
 {
-    char errbuf[256];
+    char *open_error = NULL;
 
     *owns1 = true;
     *owns2 = true;
 
-    if (!nmo_tool_open_document(path1, ctx1, doc1, ws1, errbuf, sizeof(errbuf))) {
-        fprintf(stderr, "Error opening '%s': %s\n", path1, errbuf);
+    if (!nmo_tool_open_document(path1, ctx1, doc1, ws1, &open_error)) {
+        fprintf(stderr, "Error opening '%s': %s\n", path1,
+                open_error ? open_error : "Failed to open file");
+        free(open_error);
         return NMO_CLI_EXIT_IO_ERROR;
     }
 
     /* Open second file */
-    if (!nmo_tool_open_document(path2, ctx2, doc2, ws2, errbuf, sizeof(errbuf))) {
-        fprintf(stderr, "Error opening '%s': %s\n", path2, errbuf);
+    if (!nmo_tool_open_document(path2, ctx2, doc2, ws2, &open_error)) {
+        fprintf(stderr, "Error opening '%s': %s\n", path2,
+                open_error ? open_error : "Failed to open file");
+        free(open_error);
         if (*owns1) {
             nmo_tool_close_document(*ctx1, *doc1, *ws1);
         }
@@ -177,15 +181,17 @@ static int open_current_left_document(nmo_cmd_ctx_t *left, const char *right_pat
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    char errbuf[256];
+    char *open_error = NULL;
     *ctx1 = left->ctx;
     *doc1 = left->document;
     *ws1 = left->workspace;
     *owns1 = false;
     *owns2 = true;
 
-    if (!nmo_tool_open_document(right_path, ctx2, doc2, ws2, errbuf, sizeof(errbuf))) {
-        fprintf(stderr, "Error opening '%s': %s\n", right_path, errbuf);
+    if (!nmo_tool_open_document(right_path, ctx2, doc2, ws2, &open_error)) {
+        fprintf(stderr, "Error opening '%s': %s\n", right_path,
+                open_error ? open_error : "Failed to open file");
+        free(open_error);
         return NMO_CLI_EXIT_IO_ERROR;
     }
     return NMO_CLI_EXIT_SUCCESS;

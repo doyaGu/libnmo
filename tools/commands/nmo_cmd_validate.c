@@ -298,16 +298,17 @@ static int validate_all_single(const char *file_path,
     nmo_context_t *ctx = NULL;
     nmo_document_t *document = NULL;
     nmo_workspace_t *workspace = NULL;
-    char errbuf[256];
+    char *open_error = NULL;
 
     nmo_load_diagnostics_t diagnostics;
     nmo_load_diagnostics_init(&diagnostics);
     nmo_load_options_t options = nmo_load_options_default();
     options.diagnostics = &diagnostics;
     if (!nmo_tool_open_document_opts(file_path, &options, &ctx, &document, &workspace,
-                                     errbuf, sizeof(errbuf))) {
+                                     &open_error)) {
         nmo_load_diagnostics_destroy(&diagnostics);
-        fprintf(stderr, "Error: %s\n", errbuf);
+        fprintf(stderr, "Error: %s\n", open_error ? open_error : "Failed to open file");
+        free(open_error);
         return NMO_CLI_EXIT_IO_ERROR;
     }
 

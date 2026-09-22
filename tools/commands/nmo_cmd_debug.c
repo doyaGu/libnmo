@@ -1262,13 +1262,11 @@ static nmo_status_t debug_probe_reconcile_saved_link_ids(
     nmo_context_t *saved_ctx = NULL;
     nmo_document_t *saved_document = NULL;
     nmo_workspace_t *saved_workspace = NULL;
-    char errbuf[256];
     if (!nmo_tool_open_document(output_path,
                                 &saved_ctx,
                                 &saved_document,
                                 &saved_workspace,
-                                errbuf,
-                                sizeof(errbuf))) {
+                                NULL)) {
         return NMO_ERR_CANT_OPEN_FILE;
     }
 
@@ -2078,11 +2076,12 @@ int nmo_cmd_debug_load_phases(int argc, char **argv, const nmo_cli_global_opts_t
     load_opts.collect_perf_stats = true;
     load_opts.perf_stats = &phase_stats;
 
-    char errbuf[256];
+    char *open_error = NULL;
     if (!nmo_tool_open_document_opts(c.file_path, &load_opts,
                                      &c.ctx, &c.document, &c.workspace,
-                                     errbuf, sizeof(errbuf))) {
-        fprintf(stderr, "Error: %s\n", errbuf);
+                                     &open_error)) {
+        fprintf(stderr, "Error: %s\n", open_error ? open_error : "Failed to open file");
+        free(open_error);
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
     }
     c.owns_document = true;

@@ -490,10 +490,11 @@ int nmo_tool_batch_run(
     bool is_json = (global->format == NMO_CLI_FORMAT_JSON ||
                     global->format == NMO_CLI_FORMAT_JSON_PRETTY);
 
-    char out_err[128];
-    FILE *out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
+    char *out_error = NULL;
+    FILE *out = nmo_cli_get_output_stream(global, &out_error);
     if (!out) {
-        fprintf(stderr, "Error: %s\n", out_err);
+        fprintf(stderr, "Error: %s\n", out_error ? out_error : "Cannot open output");
+        free(out_error);
         return NMO_CLI_EXIT_IO_ERROR;
     }
 
@@ -657,10 +658,11 @@ int nmo_tool_batch_write_run(
     bool is_json = (global->format == NMO_CLI_FORMAT_JSON ||
                     global->format == NMO_CLI_FORMAT_JSON_PRETTY);
 
-    char out_err[128];
-    FILE *out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
+    char *out_error = NULL;
+    FILE *out = nmo_cli_get_output_stream(global, &out_error);
     if (!out) {
-        fprintf(stderr, "Error: %s\n", out_err);
+        fprintf(stderr, "Error: %s\n", out_error ? out_error : "Cannot open output");
+        free(out_error);
         return NMO_CLI_EXIT_IO_ERROR;
     }
 

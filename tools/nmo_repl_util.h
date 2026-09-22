@@ -10,7 +10,8 @@
 extern "C" {
 #endif
 
-const char *nmo_repl_format_prompt(const nmo_repl_context_t *repl);
+/** Rebuild and return repl->prompt (owned by the context; valid until the next call). */
+const char *nmo_repl_format_prompt(nmo_repl_context_t *repl);
 
 int nmo_repl_parse_command(char *line, char **argv, int max_args);
 

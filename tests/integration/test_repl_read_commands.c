@@ -16,6 +16,7 @@
 #include "../../tools/commands/nmo_cmd_object.h"
 #include "../../tools/commands/nmo_cmd_parameter.h"
 #include "../../tools/commands/nmo_cmd_validate.h"
+#include "../../tools/nmo_tool_common.h"
 #include "../../tools/nmo_tool_session.h"
 #include "document/nmo_document_file_state.h"
 
@@ -45,17 +46,20 @@
 #endif
 
 static int run_repl_command(nmo_repl_context_t *repl, const char *line) {
-    char copy[NMO_REPL_MAX_CMD_LEN];
     char *argv[NMO_REPL_MAX_ARGS];
-
-    strncpy(copy, line, sizeof(copy) - 1);
-    copy[sizeof(copy) - 1] = '\0';
+    char *copy = nmo_tool_strdup(line);
+    if (!copy) {
+        return -1;
+    }
 
     int argc = nmo_repl_parse_command(copy, argv, NMO_REPL_MAX_ARGS);
     if (argc <= 0) {
+        free(copy);
         return -1;
     }
-    return nmo_repl_dispatch_command(repl, argc, argv);
+    int rc = nmo_repl_dispatch_command(repl, argc, argv);
+    free(copy);
+    return rc;
 }
 
 static int run_repl_command_capture(nmo_repl_context_t *repl,
@@ -168,6 +172,7 @@ static void close_repl(nmo_repl_context_t *repl) {
         return;
     }
     nmo_tool_close_document(repl->ctx, repl->document, repl->workspace);
+    nmo_repl_session_cleanup(repl);
     repl->ctx = NULL;
     repl->document = NULL;
     repl->workspace = NULL;
@@ -175,8 +180,7 @@ static void close_repl(nmo_repl_context_t *repl) {
 
 static void open_repl(nmo_repl_context_t *repl, const char *path) {
     memset(repl, 0, sizeof(*repl));
-    char errbuf[256];
-    ASSERT_TRUE(nmo_repl_load_file(repl, path, errbuf, sizeof(errbuf)));
+    ASSERT_TRUE(nmo_repl_load_file(repl, path, NULL));
     ASSERT_FALSE(repl->dirty);
 }
 

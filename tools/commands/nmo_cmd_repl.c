@@ -11,12 +11,14 @@
 #include "../nmo_repl_types.h"
 #include "../nmo_repl_repl.h"
 #include "../nmo_repl_commands.h"
+#include "../nmo_repl_session.h"
 #include "../nmo_tool_session.h"
 #include "../nmo_tool_common.h"
 
 #include "nmo.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 int nmo_cmd_repl_start(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -31,11 +33,11 @@ int nmo_cmd_repl_start(int argc, char **argv, const nmo_cli_global_opts_t *globa
     nmo_context_t *ctx = NULL;
     nmo_document_t *document = NULL;
     nmo_workspace_t *workspace = NULL;
-    char errbuf[256];
+    char *open_error = NULL;
 
-    if (!nmo_tool_open_document(file_path, &ctx, &document, &workspace,
-                                errbuf, sizeof(errbuf))) {
-        fprintf(stderr, "Error: %s\n", errbuf);
+    if (!nmo_tool_open_document(file_path, &ctx, &document, &workspace, &open_error)) {
+        fprintf(stderr, "Error: %s\n", open_error ? open_error : "Failed to open file");
+        free(open_error);
         return NMO_CLI_EXIT_IO_ERROR;
     }
 
@@ -54,7 +56,8 @@ int nmo_cmd_repl_start(int argc, char **argv, const nmo_cli_global_opts_t *globa
     /* Enter REPL */
     nmo_repl_loop(&repl);
 
-    /* Cleanup */
-    nmo_tool_close_document(ctx, document, workspace);
+    /* Cleanup: the repl may have replaced the document via `open` */
+    nmo_tool_close_document(repl.ctx, repl.document, repl.workspace);
+    nmo_repl_session_cleanup(&repl);
     return NMO_CLI_EXIT_SUCCESS;
 }

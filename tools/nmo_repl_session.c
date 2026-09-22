@@ -1,38 +1,42 @@
 #include "nmo_repl_session.h"
 
+#include "nmo_tool_common.h"
 #include "nmo_tool_session.h"
 
+#include <stdlib.h>
 #include <string.h>
 
-static void set_err(char *errbuf, size_t errbuf_size, const char *msg) {
-    if (!errbuf || errbuf_size == 0) {
-        return;
+static void set_err(char **out_error, const char *msg) {
+    if (out_error) {
+        *out_error = nmo_tool_strdup(msg);
     }
-    if (!msg) {
-        errbuf[0] = '\0';
-        return;
-    }
-#if defined(_MSC_VER)
-    strncpy_s(errbuf, errbuf_size, msg, _TRUNCATE);
-#else
-    strncpy(errbuf, msg, errbuf_size - 1);
-    errbuf[errbuf_size - 1] = '\0';
-#endif
 }
 
-bool nmo_repl_load_file(nmo_repl_context_t *repl, const char *path, char *errbuf, size_t errbuf_size) {
+bool nmo_repl_load_file(nmo_repl_context_t *repl, const char *path, char **out_error) {
     if (!repl || !path || !path[0]) {
-        set_err(errbuf, errbuf_size, "Invalid arguments");
+        set_err(out_error, "Invalid arguments");
+        return false;
+    }
+
+    /* `path` may alias repl->filename (reload), so copy it before replacing. */
+    char *filename = nmo_tool_strdup(path);
+    if (!filename) {
+        set_err(out_error, "Out of memory");
         return false;
     }
 
     nmo_context_t *new_ctx = NULL;
     nmo_document_t *new_document = NULL;
     nmo_workspace_t *new_workspace = NULL;
-    char local_err[128];
+    char *open_error = NULL;
     if (!nmo_tool_open_document(path, &new_ctx, &new_document, &new_workspace,
-                                local_err, sizeof(local_err))) {
-        set_err(errbuf, errbuf_size, local_err[0] ? local_err : "Failed to open file");
+                                &open_error)) {
+        if (out_error) {
+            *out_error = open_error ? open_error : nmo_tool_strdup("Failed to open file");
+        } else {
+            free(open_error);
+        }
+        free(filename);
         return false;
     }
 
@@ -44,10 +48,19 @@ bool nmo_repl_load_file(nmo_repl_context_t *repl, const char *path, char *errbuf
     repl->has_selection = false;
     repl->selected_index = 0;
 
-    strncpy(repl->filename_storage, path, sizeof(repl->filename_storage) - 1);
-    repl->filename_storage[sizeof(repl->filename_storage) - 1] = '\0';
+    free(repl->filename_storage);
+    repl->filename_storage = filename;
     repl->filename = repl->filename_storage;
-
-    set_err(errbuf, errbuf_size, NULL);
     return true;
+}
+
+void nmo_repl_session_cleanup(nmo_repl_context_t *repl) {
+    if (!repl) {
+        return;
+    }
+    free(repl->filename_storage);
+    repl->filename_storage = NULL;
+    repl->filename = NULL;
+    free(repl->prompt);
+    repl->prompt = NULL;
 }

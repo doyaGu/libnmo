@@ -9,6 +9,7 @@
 #include "../../tools/nmo_repl_commands.h"
 #include "../../tools/nmo_repl_session.h"
 #include "../../tools/nmo_repl_util.h"
+#include "../../tools/nmo_tool_common.h"
 #include "../../tools/nmo_tool_owner.h"
 #include "../../tools/nmo_tool_session.h"
 
@@ -54,17 +55,20 @@ static int copy_file_binary(const char *src, const char *dst) {
 }
 
 static int run_repl_command(nmo_repl_context_t *repl, const char *line) {
-    char copy[NMO_REPL_MAX_CMD_LEN];
     char *argv[NMO_REPL_MAX_ARGS];
-
-    strncpy(copy, line, sizeof(copy) - 1);
-    copy[sizeof(copy) - 1] = '\0';
+    char *copy = nmo_tool_strdup(line);
+    if (!copy) {
+        return -1;
+    }
 
     int argc = nmo_repl_parse_command(copy, argv, NMO_REPL_MAX_ARGS);
     if (argc <= 0) {
+        free(copy);
         return -1;
     }
-    return nmo_repl_dispatch_command(repl, argc, argv);
+    int rc = nmo_repl_dispatch_command(repl, argc, argv);
+    free(copy);
+    return rc;
 }
 
 static void close_repl(nmo_repl_context_t *repl) {
@@ -72,6 +76,7 @@ static void close_repl(nmo_repl_context_t *repl) {
         return;
     }
     nmo_tool_close_document(repl->ctx, repl->document, repl->workspace);
+    nmo_repl_session_cleanup(repl);
     repl->ctx = NULL;
     repl->document = NULL;
     repl->workspace = NULL;
@@ -114,9 +119,8 @@ TEST(repl_write, legacy_mutation_commands_are_removed) {
 
     nmo_repl_context_t repl;
     memset(&repl, 0, sizeof(repl));
-    char errbuf[256];
     ASSERT_TRUE(nmo_repl_load_file(&repl, "test_repl_write_tmp/legacy_removed_input.nmo",
-                                   errbuf, sizeof(errbuf)));
+                                   NULL));
 
     ASSERT_NE(0, run_repl_command(&repl, "rename 2 ReplCamPos"));
     ASSERT_NE(0, run_repl_command(&repl, "set-param --id 46 520"));
@@ -134,9 +138,8 @@ TEST(repl_write, object_rename_uses_cli_shape) {
 
     nmo_repl_context_t repl;
     memset(&repl, 0, sizeof(repl));
-    char errbuf[256];
     ASSERT_TRUE(nmo_repl_load_file(&repl, "test_repl_write_tmp/rename_input.nmo",
-                                   errbuf, sizeof(errbuf)));
+                                   NULL));
 
     ASSERT_NE(0, run_repl_command(&repl, "object rename id:2 ReplCamPos"));
     ASSERT_FALSE(repl.dirty);
@@ -174,9 +177,8 @@ TEST(repl_write, object_create_delete_and_copy_use_cli_filters) {
 
     nmo_repl_context_t repl;
     memset(&repl, 0, sizeof(repl));
-    char errbuf[256];
     ASSERT_TRUE(nmo_repl_load_file(&repl, "test_repl_write_tmp/object_mutation_input.nmo",
-                                   errbuf, sizeof(errbuf)));
+                                   NULL));
 
     ASSERT_EQ(0, run_repl_command(&repl, "object create --class CKGroup --name ReplDeleteMe"));
     ASSERT_EQ(0, run_repl_command(&repl, "object delete --name ReplDeleteMe"));
@@ -203,9 +205,8 @@ TEST(repl_write, parameter_set_uses_cli_shape) {
 
     nmo_repl_context_t repl;
     memset(&repl, 0, sizeof(repl));
-    char errbuf[256];
     ASSERT_TRUE(nmo_repl_load_file(&repl, "test_repl_write_tmp/parameter_input.nmo",
-                                   errbuf, sizeof(errbuf)));
+                                   NULL));
 
     ASSERT_EQ(0, run_repl_command(&repl, "parameter set --id 46 520"));
     ASSERT_EQ(0, run_repl_command(&repl, "parameter set --hex --id 64 2A000000"));
@@ -239,9 +240,8 @@ TEST(repl_write, parameter_set_owner_selectors_save_and_reload) {
 
     nmo_repl_context_t repl;
     memset(&repl, 0, sizeof(repl));
-    char errbuf[256];
     ASSERT_TRUE(nmo_repl_load_file(&repl, "test_repl_write_tmp/parameter_owner_input.nmo",
-                                   errbuf, sizeof(errbuf)));
+                                   NULL));
 
     const nmo_parameter_state_t *before = repl_parameter_state(&repl, 46);
     ASSERT_NOT_NULL(before);
@@ -271,7 +271,7 @@ TEST(repl_write, parameter_set_owner_selectors_save_and_reload) {
     nmo_repl_context_t reloaded;
     memset(&reloaded, 0, sizeof(reloaded));
     ASSERT_TRUE(nmo_repl_load_file(&reloaded, "test_repl_write_tmp/parameter_owner_out.nmo",
-                                   errbuf, sizeof(errbuf)));
+                                   NULL));
     const nmo_parameter_state_t *reloaded_param = repl_parameter_state(&reloaded, 46);
     ASSERT_NOT_NULL(reloaded_param);
     ASSERT_EQ(521u, nmo_parameter_object_id(reloaded_param));
@@ -295,9 +295,8 @@ TEST(repl_write, saved_mutation_reloads_as_mutable_session) {
 
     nmo_repl_context_t repl;
     memset(&repl, 0, sizeof(repl));
-    char errbuf[256];
     ASSERT_TRUE(nmo_repl_load_file(&repl, "test_repl_write_tmp/reload_input.nmo",
-                                   errbuf, sizeof(errbuf)));
+                                   NULL));
 
     ASSERT_EQ(0, run_repl_command(&repl, "object create --class CKGroup --name ReplReloadGroup"));
     ASSERT_EQ(0, run_repl_command(&repl, "object copy 1"));
@@ -310,7 +309,7 @@ TEST(repl_write, saved_mutation_reloads_as_mutable_session) {
     nmo_repl_context_t reloaded;
     memset(&reloaded, 0, sizeof(reloaded));
     ASSERT_TRUE(nmo_repl_load_file(&reloaded, "test_repl_write_tmp/reload_once.nmo",
-                                   errbuf, sizeof(errbuf)));
+                                   NULL));
     ASSERT_FALSE(reloaded.dirty);
     ASSERT_EQ(baseline_count + 2u, nmo_repl_object_count(&reloaded));
     const nmo_parameter_state_t *loaded_param = repl_parameter_state(&reloaded, 46);
@@ -347,9 +346,8 @@ TEST(repl_write, mutation_options_reject_output_and_unknown_options) {
 
     nmo_repl_context_t repl;
     memset(&repl, 0, sizeof(repl));
-    char errbuf[256];
     ASSERT_TRUE(nmo_repl_load_file(&repl, "test_repl_write_tmp/reject_options_input.nmo",
-                                   errbuf, sizeof(errbuf)));
+                                   NULL));
 
     ASSERT_NE(0, run_repl_command(&repl, "object delete 1 --unknown"));
     ASSERT_NE(0, run_repl_command(&repl, "object copy 2 -o test_repl_write_tmp/nope.nmo"));
@@ -367,9 +365,8 @@ TEST(repl_write, dry_run_mutations_do_not_change_session_or_dirty_flag) {
 
     nmo_repl_context_t repl;
     memset(&repl, 0, sizeof(repl));
-    char errbuf[256];
     ASSERT_TRUE(nmo_repl_load_file(&repl, "test_repl_write_tmp/dry_run_input.nmo",
-                                   errbuf, sizeof(errbuf)));
+                                   NULL));
 
     size_t before_count = nmo_repl_object_count(&repl);
     const nmo_parameter_state_t *before_param = repl_parameter_state(&repl, 46);

@@ -1827,7 +1827,7 @@ static int behavior_execute_cli_run_write_command(
     }
     ctx.file_path = input_path;
 
-    if (!nmo_tool_open_context(&executor_ctx, NULL, 0u)) {
+    if (!nmo_tool_open_context(&executor_ctx, NULL)) {
         fprintf(stderr, "Error: Failed to create libnmo context\n");
         rc = NMO_CLI_EXIT_INTERNAL_ERROR;
         goto cleanup;

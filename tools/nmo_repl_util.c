@@ -14,35 +14,38 @@
 #include <stdlib.h>
 #include <string.h>
 
-const char *nmo_repl_format_prompt(const nmo_repl_context_t *repl) {
-    static char buf[256];
+const char *nmo_repl_format_prompt(nmo_repl_context_t *repl) {
+    if (!repl) {
+        return "nmo(repl)> ";
+    }
 
     const char *file_label = "";
-    if (repl && repl->filename && repl->filename[0] != '\0') {
+    if (repl->filename && repl->filename[0] != '\0') {
         file_label = nmo_path_basename(repl->filename);
     }
 
-    if (repl && repl->has_selection) {
-        size_t object_count = nmo_repl_object_count((nmo_repl_context_t *)repl);
-        nmo_object_t *selected =
-            nmo_repl_object_at((nmo_repl_context_t *)repl, repl->selected_index);
+    char *prompt = NULL;
+    if (repl->has_selection) {
+        size_t object_count = nmo_repl_object_count(repl);
+        nmo_object_t *selected = nmo_repl_object_at(repl, repl->selected_index);
         if (selected && repl->selected_index < object_count) {
             nmo_object_id_t id = nmo_object_get_id(selected);
-            if (file_label[0]) {
-                snprintf(buf, sizeof(buf), "nmo(repl:%s idx=%zu id=%u)> ", file_label, repl->selected_index, id);
-            } else {
-                snprintf(buf, sizeof(buf), "nmo(repl idx=%zu id=%u)> ", repl->selected_index, id);
-            }
-            return buf;
+            prompt = file_label[0]
+                ? nmo_tool_strdup_fmt("nmo(repl:%s idx=%zu id=%u)> ", file_label, repl->selected_index, id)
+                : nmo_tool_strdup_fmt("nmo(repl idx=%zu id=%u)> ", repl->selected_index, id);
         }
     }
-
-    if (file_label[0]) {
-        snprintf(buf, sizeof(buf), "nmo(repl:%s)> ", file_label);
-    } else {
-        snprintf(buf, sizeof(buf), "nmo(repl)> ");
+    if (!prompt) {
+        prompt = file_label[0]
+            ? nmo_tool_strdup_fmt("nmo(repl:%s)> ", file_label)
+            : nmo_tool_strdup("nmo(repl)> ");
     }
-    return buf;
+
+    if (prompt) {
+        free(repl->prompt);
+        repl->prompt = prompt;
+    }
+    return repl->prompt ? repl->prompt : "nmo(repl)> ";
 }
 
 int nmo_repl_parse_command(char *line, char **argv, int max_args) {

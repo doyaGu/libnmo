@@ -1215,9 +1215,10 @@ static int cmd_open(nmo_repl_context_t *repl, int argc, char **argv) {
         return -1;
     }
 
-    char errbuf[128];
-    if (!nmo_repl_load_file(repl, argv[1], errbuf, sizeof(errbuf))) {
-        fprintf(stderr, "Error: %s\n", errbuf);
+    char *load_error = NULL;
+    if (!nmo_repl_load_file(repl, argv[1], &load_error)) {
+        fprintf(stderr, "Error: %s\n", load_error ? load_error : "Failed to open file");
+        free(load_error);
         return -1;
     }
 
@@ -1235,9 +1236,10 @@ static int cmd_reload(nmo_repl_context_t *repl, int argc, char **argv) {
         return -1;
     }
 
-    char errbuf[128];
-    if (!nmo_repl_load_file(repl, repl->filename, errbuf, sizeof(errbuf))) {
-        fprintf(stderr, "Error: %s\n", errbuf);
+    char *load_error = NULL;
+    if (!nmo_repl_load_file(repl, repl->filename, &load_error)) {
+        fprintf(stderr, "Error: %s\n", load_error ? load_error : "Failed to open file");
+        free(load_error);
         return -1;
     }
 

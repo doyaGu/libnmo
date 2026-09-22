@@ -334,10 +334,10 @@ bool nmo_cli_should_colorize(const nmo_cli_global_opts_t *opts, FILE *stream) {
     }
 }
 
-FILE *nmo_cli_get_output_stream(const nmo_cli_global_opts_t *opts, char *errbuf, size_t errbuf_size) {
+FILE *nmo_cli_get_output_stream(const nmo_cli_global_opts_t *opts, char **out_error) {
     if (!opts) {
-        if (errbuf && errbuf_size > 0) {
-            snprintf(errbuf, errbuf_size, "Invalid options");
+        if (out_error) {
+            *out_error = nmo_tool_strdup("Invalid options");
         }
         return NULL;
     }
@@ -348,8 +348,8 @@ FILE *nmo_cli_get_output_stream(const nmo_cli_global_opts_t *opts, char *errbuf,
 
     FILE *fp = fopen(opts->output_path, "w");
     if (!fp) {
-        if (errbuf && errbuf_size > 0) {
-            snprintf(errbuf, errbuf_size, "Cannot open '%s' for writing", opts->output_path);
+        if (out_error) {
+            *out_error = nmo_tool_strdup_fmt("Cannot open '%s' for writing", opts->output_path);
         }
         return NULL;
     }

@@ -111,11 +111,10 @@ bool nmo_cli_should_colorize(const nmo_cli_global_opts_t *opts, FILE *stream);
  * Caller must close returned stream if output_path was set.
  *
  * @param opts Global options
- * @param errbuf Error buffer
- * @param errbuf_size Size of error buffer
+ * @param out_error Receives a malloc'd message on failure (may be NULL); free with free()
  * @return Output stream, or NULL on error
  */
-FILE *nmo_cli_get_output_stream(const nmo_cli_global_opts_t *opts, char *errbuf, size_t errbuf_size);
+FILE *nmo_cli_get_output_stream(const nmo_cli_global_opts_t *opts, char **out_error);
 
 /**
  * @brief Close output stream if it was opened by nmo_cli_get_output_stream

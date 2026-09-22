@@ -791,10 +791,12 @@ int nmo_cmd_convert_merge(int argc, char **argv, const nmo_cli_global_opts_t *gl
     nmo_context_t *src_ctx = NULL;
     nmo_document_t *src_document = NULL;
     nmo_workspace_t *src_workspace = NULL;
-    char errbuf[512];
+    char *open_error = NULL;
     if (!nmo_tool_open_document(source_path, &src_ctx, &src_document, &src_workspace,
-                                errbuf, sizeof(errbuf))) {
-        fprintf(stderr, "Error loading source file: %s\n", errbuf);
+                                &open_error)) {
+        fprintf(stderr, "Error loading source file: %s\n",
+                open_error ? open_error : "Failed to open file");
+        free(open_error);
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
     }
 
@@ -803,8 +805,10 @@ int nmo_cmd_convert_merge(int argc, char **argv, const nmo_cli_global_opts_t *gl
     nmo_document_t *tgt_document = NULL;
     nmo_workspace_t *tgt_workspace = NULL;
     if (!nmo_tool_open_document(target_path, &tgt_ctx, &tgt_document, &tgt_workspace,
-                                errbuf, sizeof(errbuf))) {
-        fprintf(stderr, "Error loading target file: %s\n", errbuf);
+                                &open_error)) {
+        fprintf(stderr, "Error loading target file: %s\n",
+                open_error ? open_error : "Failed to open file");
+        free(open_error);
         nmo_tool_close_document(src_ctx, src_document, src_workspace);
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_IO_ERROR);
     }

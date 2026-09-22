@@ -575,11 +575,11 @@ static int parameter_list_single(const char *file_path,
     nmo_context_t *ctx = NULL;
     nmo_document_t *document = NULL;
     nmo_workspace_t *workspace = NULL;
-    char errbuf[256];
+    char *open_error = NULL;
 
-    if (!nmo_tool_open_document(file_path, &ctx, &document, &workspace,
-                                errbuf, sizeof(errbuf))) {
-        fprintf(stderr, "Error: %s\n", errbuf);
+    if (!nmo_tool_open_document(file_path, &ctx, &document, &workspace, &open_error)) {
+        fprintf(stderr, "Error: %s\n", open_error ? open_error : "Failed to open file");
+        free(open_error);
         return NMO_CLI_EXIT_IO_ERROR;
     }
 

@@ -11,7 +11,6 @@
 extern "C" {
 #endif
 
-#define NMO_REPL_MAX_CMD_LEN 4096
 #define NMO_REPL_MAX_ARGS 64
 #define NMO_REPL_HISTORY_SIZE 256
 
@@ -20,7 +19,8 @@ typedef struct {
     nmo_document_t *document;
     nmo_workspace_t *workspace;
     const char *filename;
-    char filename_storage[512];
+    char *filename_storage;      /**< malloc'd copy backing `filename` when loaded via the repl */
+    char *prompt;                /**< malloc'd prompt text rebuilt by nmo_repl_format_prompt */
     bool colorize;
     nmo_dump_level_t dump_level;
     size_t selected_index;

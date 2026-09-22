@@ -130,10 +130,11 @@ int nmo_cmd_ctx_init_with_load_options(nmo_cmd_ctx_t *c, int argc, char **argv,
 }
 
 static int init_output(nmo_cmd_ctx_t *c, const nmo_cli_global_opts_t *global) {
-    char out_err[128];
-    c->out = nmo_cli_get_output_stream(global, out_err, sizeof(out_err));
+    char *out_error = NULL;
+    c->out = nmo_cli_get_output_stream(global, &out_error);
     if (!c->out) {
-        fprintf(stderr, "Error: %s\n", out_err);
+        fprintf(stderr, "Error: %s\n", out_error ? out_error : "Cannot open output");
+        free(out_error);
         return NMO_CLI_EXIT_IO_ERROR;
     }
     c->owns_output = true;
@@ -180,16 +181,17 @@ int nmo_cmd_ctx_init_from_source(nmo_cmd_ctx_t *c,
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    char errbuf[256];
+    char *open_error = NULL;
     bool opened = (source->load_options != NULL)
         ? nmo_tool_open_document_opts(c->file_path, source->load_options,
                                       &c->ctx, &c->document, &c->workspace,
-                                      errbuf, sizeof(errbuf))
+                                      &open_error)
         : nmo_tool_open_document(c->file_path,
                                  &c->ctx, &c->document, &c->workspace,
-                                 errbuf, sizeof(errbuf));
+                                 &open_error);
     if (!opened) {
-        fprintf(stderr, "Error: %s\n", errbuf);
+        fprintf(stderr, "Error: %s\n", open_error ? open_error : "Failed to open file");
+        free(open_error);
         return NMO_CLI_EXIT_IO_ERROR;
     }
     c->owns_document = true;

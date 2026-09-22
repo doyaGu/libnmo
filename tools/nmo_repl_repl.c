@@ -62,8 +62,7 @@ void nmo_repl_loop(nmo_repl_context_t *repl) {
     nmo_repl_print_banner(repl);
 
 #ifdef NMO_HAVE_ISOCLINE
-    static char last_command[NMO_REPL_MAX_CMD_LEN];
-    last_command[0] = '\0';
+    char *last_command = NULL;
 #endif
 
     while (true) {
@@ -87,7 +86,7 @@ void nmo_repl_loop(nmo_repl_context_t *repl) {
         if (*p == '!') {
 #ifdef NMO_HAVE_ISOCLINE
             if (p[1] == '!') {
-                if (last_command[0] != '\0') {
+                if (last_command != NULL) {
                     printf("%s\n", last_command);
                     ic_history_remove_last();
                     nmo_repl_free_line(line);
@@ -153,40 +152,50 @@ void nmo_repl_loop(nmo_repl_context_t *repl) {
 
 #ifdef NMO_HAVE_ISOCLINE
         /* Save last command for !! recall */
-        strncpy(last_command, p, sizeof(last_command) - 1);
-        last_command[sizeof(last_command) - 1] = '\0';
+        {
+            char *saved = nmo_tool_strdup(p);
+            if (saved) {
+                free(last_command);
+                last_command = saved;
+            }
+        }
 #else
         /* Add to ring buffer history before parsing (parse modifies buffer) */
         repl_history_add(repl, p);
 #endif
 
         /* Make a mutable copy for parsing */
-        char cmd_copy[NMO_REPL_MAX_CMD_LEN];
-        strncpy(cmd_copy, p, sizeof(cmd_copy) - 1);
-        cmd_copy[sizeof(cmd_copy) - 1] = '\0';
-
+        char *cmd_copy = nmo_tool_strdup(p);
         nmo_repl_free_line(line);
+        if (!cmd_copy) {
+            fprintf(stderr, "Out of memory.\n");
+            break;
+        }
 
         int argc = nmo_repl_parse_command(cmd_copy, argv, NMO_REPL_MAX_ARGS);
         if (argc == 0) {
+            free(cmd_copy);
             continue;
         }
 
         int result = nmo_repl_dispatch_command(repl, argc, argv);
+        free(cmd_copy);
         if (result < 0) {
             /* Command failed - display error chain if available */
-            char err_chain[1024];
-            size_t err_len = nmo_last_error_chain_copy(err_chain, sizeof(err_chain));
-            if (err_len > 0) {
+            char *err_chain = nmo_tool_last_error_chain_dup();
+            if (err_chain && err_chain[0]) {
                 fprintf(stderr, "  Error: %s\n", err_chain);
             }
+            free(err_chain);
         }
         if (result > 0) {
             break;
         }
     }
 
-#ifndef NMO_HAVE_ISOCLINE
+#ifdef NMO_HAVE_ISOCLINE
+    free(last_command);
+#else
     repl_history_free(repl);
 #endif
     nmo_repl_input_cleanup(repl);
