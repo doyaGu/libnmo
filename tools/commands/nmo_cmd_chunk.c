@@ -8,13 +8,13 @@
 #include "../nmo_cmd_core.h"
 #include "../nmo_cmd_ctx.h"
 #include "../nmo_cli_output.h"
+#include "../nmo_cli_record.h"
 #include "../nmo_tool_common.h"
 #include "../nmo_opt.h"
 
 #include "nmo.h"
 #include "chunk/nmo_chunk_index.h"
 #include "runtime/nmo_context.h"
-#include "export/nmo_hexdump.h"
 
 #include "format/nmo_chunk_api.h"
 
@@ -239,6 +239,25 @@ typedef struct nmo_cli_chunk_find_data {
     size_t match_count;
 } nmo_cli_chunk_find_data_t;
 
+/* One match: JSON id/class_name/name/data_size, text Object ID/Class/Object
+ * Name/Size. */
+static bool chunk_find_build_record(const nmo_cmd_ctx_t *c, nmo_object_t *obj,
+                                    nmo_chunk_t *chunk, nmo_cli_record_t *rec)
+{
+    const char *class_name = nmo_cli_class_name_from_id(c->ctx, chunk->class_id);
+    const char *name = nmo_object_get_name(obj);
+
+    bool ok = nmo_cli_record_uint(rec, "id", "Object ID", nmo_object_get_id(obj));
+    if (class_name) {
+        ok = ok && nmo_cli_record_str(rec, "class_name", "Class", class_name);
+    } else {
+        ok = ok && nmo_cli_record_text(rec, "Class", "-");
+    }
+    return ok && nmo_cli_record_str_opt(rec, "name", "Object Name", name, "-") &&
+           nmo_cli_record_uint(rec, "data_size", "Size",
+                               (uint64_t)nmo_chunk_get_data_size(chunk));
+}
+
 static int chunk_find_object(size_t index, nmo_object_t *obj,
                              const nmo_cmd_ctx_t *c, void *user)
 {
@@ -259,39 +278,20 @@ static int chunk_find_object(size_t index, nmo_object_t *obj,
         return 0;
     }
 
-    if (data->doc && data->matches) {
-        yyjson_mut_val *item = yyjson_mut_obj(data->doc);
-        yyjson_mut_obj_add_uint(data->doc, item, "id", nmo_object_get_id(obj));
-
-        const char *class_name = nmo_cli_class_name_from_id(c->ctx, chunk->class_id);
-        if (class_name) {
-            yyjson_mut_obj_add_str(data->doc, item, "class_name", class_name);
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    if (rec && chunk_find_build_record(c, obj, chunk, rec)) {
+        if (data->doc && data->matches) {
+            yyjson_mut_val *item = yyjson_mut_obj(data->doc);
+            if (item && nmo_cli_record_to_json(rec, data->doc, item)) {
+                yyjson_mut_arr_add_val(data->matches, item);
+            }
+        } else if (data->table) {
+            const char *cells[4];
+            size_t n = nmo_cli_record_cells(rec, cells, 4);
+            (void)nmo_cli_table_add_row(data->table, cells, n);
         }
-
-        const char *name = nmo_object_get_name(obj);
-        if (name && name[0]) {
-            nmo_cli_json_add_str_safe(data->doc, item, "name", name);
-        }
-
-        yyjson_mut_obj_add_uint(data->doc, item, "data_size",
-                                (uint64_t)nmo_chunk_get_data_size(chunk));
-        yyjson_mut_arr_add_val(data->matches, item);
-    } else if (data->table) {
-        char oid_buf[16], size_buf[16];
-        snprintf(oid_buf, sizeof(oid_buf), "%u", nmo_object_get_id(obj));
-        snprintf(size_buf, sizeof(size_buf), "%zu", nmo_chunk_get_data_size(chunk));
-
-        const char *class_name = nmo_cli_class_name_from_id(c->ctx, chunk->class_id);
-        const char *name = nmo_object_get_name(obj);
-
-        const char *cells[] = {
-            oid_buf,
-            class_name ? class_name : "-",
-            (name && name[0]) ? name : "-",
-            size_buf
-        };
-        (void)nmo_cli_table_add_row(data->table, cells, 4);
     }
+    nmo_cli_record_free(rec);
 
     data->match_count++;
     return 0;
@@ -300,6 +300,76 @@ static int chunk_find_object(size_t index, nmo_object_t *obj,
 /* ============================================================================
  * chunk list - List all chunks by iterating over objects
  * ============================================================================ */
+
+/*
+ * One flat chunk entry. Text columns are Idx, Parent, Class (indented by
+ * depth), Owner ("id name"), Opt, Size; the JSON keys keep their historical
+ * order, so the class, owner, options, and size values appear on both sides
+ * as separate fields.
+ */
+static bool chunk_list_build_record(const nmo_cmd_ctx_t *c, size_t index,
+                                    const nmo_cli_chunk_entry_t *e,
+                                    nmo_cli_record_t *rec)
+{
+    nmo_chunk_t *chunk = e->chunk;
+    const char *class_name = nmo_cli_class_name_from_id(c->ctx, chunk->class_id);
+    const char *owner_class_name = nmo_cli_class_name_from_id(c->ctx, e->owner_class_id);
+    const char *owner_name = e->owner_object_name;
+    size_t data_size = nmo_chunk_get_data_size(chunk);
+
+    char owner_buf[128];
+    if (owner_name && owner_name[0]) {
+        snprintf(owner_buf, sizeof(owner_buf), "%u %s", e->owner_object_id, owner_name);
+    } else {
+        snprintf(owner_buf, sizeof(owner_buf), "%u", e->owner_object_id);
+    }
+
+    char opt_buf[128];
+    (void)nmo_cli_chunk_options_to_string(chunk->chunk_options, opt_buf, sizeof(opt_buf));
+
+    char class_buf[128];
+    if (e->depth > 0) {
+        snprintf(class_buf, sizeof(class_buf), "%*s%s",
+                 (int)(e->depth * 2), "", class_name ? class_name : "-");
+    } else {
+        snprintf(class_buf, sizeof(class_buf), "%s", class_name ? class_name : "-");
+    }
+
+    char size_buf[32];
+    snprintf(size_buf, sizeof(size_buf), "%zu", data_size);
+
+    bool ok = nmo_cli_record_uint(rec, "index", "Idx", (uint64_t)index);
+    if (e->parent_index >= 0) {
+        ok = ok && nmo_cli_record_uint(rec, "parent_index", "Parent",
+                                       (uint64_t)e->parent_index);
+    } else {
+        ok = ok && nmo_cli_record_text(rec, "Parent", "-");
+    }
+    ok = ok && nmo_cli_record_uint(rec, "depth", NULL, (uint64_t)e->depth) &&
+         nmo_cli_record_text(rec, "Class", class_buf) &&
+         nmo_cli_record_text(rec, "Owner", owner_buf) &&
+         nmo_cli_record_text(rec, "Opt", opt_buf) &&
+         nmo_cli_record_text(rec, "Size", size_buf) &&
+         nmo_cli_record_uint(rec, "owner_object_id", NULL, e->owner_object_id);
+    if (ok && owner_name) {
+        ok = nmo_cli_record_str(rec, "owner_object_name", NULL, owner_name);
+    }
+    ok = ok && nmo_cli_record_uint(rec, "owner_class_id", NULL, e->owner_class_id);
+    if (ok && owner_class_name) {
+        ok = nmo_cli_record_str(rec, "owner_class_name", NULL, owner_class_name);
+    }
+    ok = ok && nmo_cli_record_uint(rec, "class_id", NULL, chunk->class_id);
+    if (ok && class_name) {
+        ok = nmo_cli_record_str(rec, "class_name", NULL, class_name);
+    }
+    return ok &&
+           nmo_cli_record_uint(rec, "data_size", NULL, (uint64_t)data_size) &&
+           nmo_cli_record_uint(rec, "options", NULL, chunk->chunk_options) &&
+           nmo_cli_record_uint(rec, "subchunk_count", NULL,
+                               (uint64_t)nmo_chunk_get_sub_chunk_count(chunk)) &&
+           nmo_cli_record_uint(rec, "data_version", NULL, chunk->data_version) &&
+           nmo_cli_record_uint(rec, "chunk_version", NULL, chunk->chunk_version);
+}
 
 static int chunk_list_run(nmo_cmd_ctx_t *ctx, uint32_t top_n)
 {
@@ -320,116 +390,51 @@ static int chunk_list_run(nmo_cmd_ctx_t *ctx, uint32_t top_n)
         emit_count = (size_t)top_n;
     }
 
+    static const nmo_cli_table_col_t columns[] = {
+        {"Idx", NMO_CLI_ALIGN_RIGHT, 5, 0},
+        {"Parent", NMO_CLI_ALIGN_RIGHT, 6, 0},
+        {"Class", NMO_CLI_ALIGN_LEFT, 20, 40},
+        {"Owner", NMO_CLI_ALIGN_LEFT, 24, 60},
+        {"Opt", NMO_CLI_ALIGN_LEFT, 14, 26},
+        {"Size", NMO_CLI_ALIGN_RIGHT, 10, 0},
+    };
+
+    yyjson_mut_doc *doc = NULL;
+    yyjson_mut_val *data = NULL;
+    yyjson_mut_val *chunks = NULL;
+    nmo_cli_table_t table;
     if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
+        doc = nmo_cmd_ctx_json_begin(&c);
+        data = yyjson_mut_obj(doc);
         yyjson_mut_obj_add_uint(doc, data, "total_objects", (uint64_t)object_count);
         yyjson_mut_obj_add_uint(doc, data, "total_chunks", (uint64_t)entry_count);
-
-        yyjson_mut_val *chunks = yyjson_mut_arr(doc);
-        for (size_t i = 0; i < emit_count; ++i) {
-            const nmo_cli_chunk_entry_t *e = &entries[i];
-            nmo_chunk_t *chunk = e->chunk;
-            yyjson_mut_val *item = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_uint(doc, item, "index", (uint64_t)i);
-            if (e->parent_index >= 0) {
-                yyjson_mut_obj_add_uint(doc, item, "parent_index", (uint64_t)e->parent_index);
-            }
-            yyjson_mut_obj_add_uint(doc, item, "depth", (uint64_t)e->depth);
-            yyjson_mut_obj_add_uint(doc, item, "owner_object_id", e->owner_object_id);
-            if (e->owner_object_name) {
-                nmo_cli_json_add_str_safe(doc, item, "owner_object_name", e->owner_object_name);
-            }
-
-            yyjson_mut_obj_add_uint(doc, item, "owner_class_id", e->owner_class_id);
-            {
-                const char *owner_class_name = nmo_cli_class_name_from_id(c.ctx, e->owner_class_id);
-                if (owner_class_name) {
-                    yyjson_mut_obj_add_str(doc, item, "owner_class_name", owner_class_name);
-                }
-            }
-
-            yyjson_mut_obj_add_uint(doc, item, "class_id", chunk->class_id);
-
-            const char *class_name = nmo_cli_class_name_from_id(c.ctx, chunk->class_id);
-            if (class_name) {
-                yyjson_mut_obj_add_str(doc, item, "class_name", class_name);
-            }
-
-            yyjson_mut_obj_add_uint(doc, item, "data_size", (uint64_t)nmo_chunk_get_data_size(chunk));
-            yyjson_mut_obj_add_uint(doc, item, "options", chunk->chunk_options);
-            yyjson_mut_obj_add_uint(doc, item, "subchunk_count",
-                                    (uint64_t)nmo_chunk_get_sub_chunk_count(chunk));
-
-            yyjson_mut_obj_add_uint(doc, item, "data_version", chunk->data_version);
-            yyjson_mut_obj_add_uint(doc, item, "chunk_version", chunk->chunk_version);
-
-            yyjson_mut_arr_add_val(chunks, item);
-        }
-        yyjson_mut_obj_add_val(doc, data, "chunks", chunks);
-
-        nmo_cmd_ctx_json_end(&c, doc, data, "chunk.list");
+        chunks = yyjson_mut_arr(doc);
     } else {
         fprintf(c.out, "Chunks: %zu (including sub-chunks; from %zu objects)\n\n", entry_count, object_count);
-
-        /* Table output */
-        static const nmo_cli_table_col_t columns[] = {
-            {"Idx", NMO_CLI_ALIGN_RIGHT, 5, 0},
-            {"Parent", NMO_CLI_ALIGN_RIGHT, 6, 0},
-            {"Class", NMO_CLI_ALIGN_LEFT, 20, 40},
-            {"Owner", NMO_CLI_ALIGN_LEFT, 24, 60},
-            {"Opt", NMO_CLI_ALIGN_LEFT, 14, 26},
-            {"Size", NMO_CLI_ALIGN_RIGHT, 10, 0},
-        };
-
-        nmo_cli_table_t table;
         nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
+    }
 
-        for (size_t i = 0; i < emit_count; ++i) {
-            const nmo_cli_chunk_entry_t *e = &entries[i];
-            nmo_chunk_t *chunk = e->chunk;
-
-            char idx_buf[32], parent_buf[32], size_buf[32];
-            snprintf(idx_buf, sizeof(idx_buf), "%zu", i);
-            if (e->parent_index >= 0) {
-                snprintf(parent_buf, sizeof(parent_buf), "%lld", (long long)e->parent_index);
+    for (size_t i = 0; i < emit_count; ++i) {
+        nmo_cli_record_t *rec = nmo_cli_record_new();
+        if (rec && chunk_list_build_record(&c, i, &entries[i], rec)) {
+            if (doc) {
+                yyjson_mut_val *item = yyjson_mut_obj(doc);
+                if (item && nmo_cli_record_to_json(rec, doc, item)) {
+                    yyjson_mut_arr_add_val(chunks, item);
+                }
             } else {
-                snprintf(parent_buf, sizeof(parent_buf), "-");
+                const char *cells[6];
+                size_t n = nmo_cli_record_cells(rec, cells, 6);
+                nmo_cli_table_add_row(&table, cells, n);
             }
-            snprintf(size_buf, sizeof(size_buf), "%zu", nmo_chunk_get_data_size(chunk));
-
-            const char *class_name = nmo_cli_class_name_from_id(c.ctx, chunk->class_id);
-            const char *owner_name = e->owner_object_name;
-
-            char owner_buf[128];
-            if (owner_name && owner_name[0]) {
-                snprintf(owner_buf, sizeof(owner_buf), "%u %s", e->owner_object_id, owner_name);
-            } else {
-                snprintf(owner_buf, sizeof(owner_buf), "%u", e->owner_object_id);
-            }
-
-            char opt_buf[128];
-            (void)nmo_cli_chunk_options_to_string(chunk->chunk_options, opt_buf, sizeof(opt_buf));
-
-            char class_buf[128];
-            if (e->depth > 0) {
-                snprintf(class_buf, sizeof(class_buf), "%*s%s",
-                         (int)(e->depth * 2), "", class_name ? class_name : "-");
-            } else {
-                snprintf(class_buf, sizeof(class_buf), "%s", class_name ? class_name : "-");
-            }
-
-            const char *cells[] = {
-                idx_buf,
-                parent_buf,
-                class_buf,
-                owner_buf,
-                opt_buf,
-                size_buf
-            };
-            nmo_cli_table_add_row(&table, cells, 6);
         }
+        nmo_cli_record_free(rec);
+    }
 
+    if (doc) {
+        yyjson_mut_obj_add_val(doc, data, "chunks", chunks);
+        nmo_cmd_ctx_json_end(&c, doc, data, "chunk.list");
+    } else {
         nmo_cli_table_print(&table, c.out, c.colorize);
         nmo_cli_table_free(&table);
     }
@@ -654,6 +659,99 @@ static int chunk_show_parse(int argc, char **argv, bool in_session, chunk_show_a
     return NMO_CLI_EXIT_SUCCESS;
 }
 
+/*
+ * Chunk details in four text sections (identity, Format, Size, References,
+ * plus Hexdump on request). JSON is one flat object in the same order.
+ */
+static bool chunk_show_build_record(const nmo_cmd_ctx_t *c,
+                                    const chunk_show_args_t *args,
+                                    nmo_chunk_t *chunk,
+                                    nmo_object_t *target,
+                                    uint32_t object_id,
+                                    bool flat_index_known,
+                                    uint32_t flat_index,
+                                    int64_t parent_index,
+                                    uint32_t depth,
+                                    nmo_cli_record_t *rec)
+{
+    char buf[128];
+    bool ok = true;
+
+    if (flat_index_known) {
+        ok = nmo_cli_record_uint(rec, "flat_index", "Flat Index", flat_index);
+    } else {
+        ok = nmo_cli_record_text(rec, "Flat Index", "-");
+    }
+    if (ok && parent_index >= 0) {
+        ok = nmo_cli_record_uint(rec, "parent_index", "Parent Index",
+                                 (uint64_t)parent_index);
+    }
+    ok = ok && nmo_cli_record_uint(rec, "depth", "Depth", depth);
+
+    /* JSON: id (+ name when known); text: one "Object" line. */
+    const char *obj_name = target ? nmo_object_get_name(target) : NULL;
+    if (target) {
+        snprintf(buf, sizeof(buf), "%u  %s", object_id,
+                 (obj_name && obj_name[0]) ? obj_name : "(unnamed)");
+    } else {
+        snprintf(buf, sizeof(buf), "%u", object_id);
+    }
+    ok = ok && nmo_cli_record_uint(rec, "id", NULL, object_id) &&
+         nmo_cli_record_text(rec, "Object", buf);
+    if (ok && obj_name && obj_name[0]) {
+        ok = nmo_cli_record_str(rec, "name", NULL, obj_name);
+    }
+
+    ok = ok && nmo_cli_record_uint(rec, "class_id", "Class ID", chunk->class_id);
+    const char *class_name = nmo_cli_class_name_from_id(c->ctx, chunk->class_id);
+    if (class_name) {
+        ok = ok && nmo_cli_record_str(rec, "class_name", "Class Name", class_name);
+    } else {
+        ok = ok && nmo_cli_record_text(rec, "Class Name", "-");
+    }
+
+    ok = ok && nmo_cli_record_heading(rec, "Format") &&
+         nmo_cli_record_uint(rec, "data_version", "Data Version", chunk->data_version) &&
+         nmo_cli_record_uint(rec, "chunk_version", "Chunk Version", chunk->chunk_version);
+    if (ok) {
+        char opt_flags[128];
+        const char *opt = nmo_cli_chunk_options_to_string(chunk->chunk_options,
+                                                          opt_flags,
+                                                          sizeof(opt_flags));
+        snprintf(buf, sizeof(buf), "%s (0x%04X)", opt, (unsigned int)chunk->chunk_options);
+        ok = nmo_cli_record_uint(rec, "options", "Options", chunk->chunk_options) &&
+             nmo_cli_record_set_text(rec, buf);
+    }
+
+    size_t data_size = nmo_chunk_get_data_size(chunk);
+    ok = ok && nmo_cli_record_heading(rec, "Size");
+    snprintf(buf, sizeof(buf), "%zu bytes", data_size);
+    ok = ok && nmo_cli_record_uint(rec, "data_size", "Data Size", (uint64_t)data_size) &&
+         nmo_cli_record_set_text(rec, buf);
+    snprintf(buf, sizeof(buf), "%zu bytes", chunk->compressed_size);
+    ok = ok && nmo_cli_record_uint(rec, "compressed_size", "Compressed Size",
+                                   (uint64_t)chunk->compressed_size) &&
+         nmo_cli_record_set_text(rec, buf);
+    snprintf(buf, sizeof(buf), "%zu bytes", chunk->uncompressed_size);
+    ok = ok && nmo_cli_record_uint(rec, "uncompressed_size", "Uncompressed Size",
+                                   (uint64_t)chunk->uncompressed_size) &&
+         nmo_cli_record_set_text(rec, buf);
+
+    if (ok && args->include_hexdump) {
+        size_t raw_size = 0;
+        const uint8_t *raw = (const uint8_t *)nmo_chunk_get_data(chunk, &raw_size);
+        ok = nmo_cli_record_heading(rec, "Hexdump") &&
+             nmo_cli_record_hex_bytes(rec, "Data", raw, raw_size, args->max_bytes);
+    }
+
+    return ok && nmo_cli_record_heading(rec, "References") &&
+           nmo_cli_record_uint(rec, "id_count", "Object IDs", (uint64_t)chunk->ids.count) &&
+           nmo_cli_record_uint(rec, "subchunk_count", "Sub-chunks",
+                               (uint64_t)nmo_chunk_get_sub_chunk_count(chunk)) &&
+           nmo_cli_record_uint(rec, "manager_count", "Manager Refs",
+                               (uint64_t)chunk->managers.count);
+}
+
 static int chunk_show_run(nmo_cmd_ctx_t *ctx, const chunk_show_args_t *args)
 {
     if (!ctx || !args) {
@@ -730,152 +828,27 @@ static int chunk_show_run(nmo_cmd_ctx_t *ctx, const chunk_show_args_t *args)
         }
     }
 
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL &&
+              chunk_show_build_record(&c, args, chunk, target, object_id,
+                                      flat_index_known, flat_index,
+                                      parent_index, depth, rec);
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        fprintf(stderr, "Error: Out of memory while describing chunk\n");
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
     if (c.is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
-
-        if (flat_index_known) {
-            yyjson_mut_obj_add_uint(doc, data, "flat_index", flat_index);
-        }
-        if (parent_index >= 0) {
-            yyjson_mut_obj_add_uint(doc, data, "parent_index", (uint64_t)parent_index);
-        }
-        yyjson_mut_obj_add_uint(doc, data, "depth", (uint64_t)depth);
-
-        yyjson_mut_obj_add_uint(doc, data, "id", object_id);
-
-        if (target) {
-            const char *obj_name = nmo_object_get_name(target);
-            if (obj_name && obj_name[0]) {
-                nmo_cli_json_add_str_safe(doc, data, "name", obj_name);
-            }
-        }
-
-        yyjson_mut_obj_add_uint(doc, data, "class_id", chunk->class_id);
-        const char *class_name = nmo_cli_class_name_from_id(c.ctx, chunk->class_id);
-        if (class_name) {
-            yyjson_mut_obj_add_str(doc, data, "class_name", class_name);
-        }
-
-        yyjson_mut_obj_add_uint(doc, data, "data_version", chunk->data_version);
-        yyjson_mut_obj_add_uint(doc, data, "chunk_version", chunk->chunk_version);
-        yyjson_mut_obj_add_uint(doc, data, "options", chunk->chunk_options);
-        yyjson_mut_obj_add_uint(doc, data, "data_size", (uint64_t)nmo_chunk_get_data_size(chunk));
-        yyjson_mut_obj_add_uint(doc, data, "compressed_size", (uint64_t)chunk->compressed_size);
-        yyjson_mut_obj_add_uint(doc, data, "uncompressed_size", (uint64_t)chunk->uncompressed_size);
-
-        if (args->include_hexdump) {
-            size_t data_size = 0;
-            const uint8_t *raw = (const uint8_t *)nmo_chunk_get_data(chunk, &data_size);
-            (void)nmo_cli_json_add_data_hex(doc, data, raw, data_size, args->max_bytes, false);
-        }
-
-        /* Count sub-chunks and IDs */
-        yyjson_mut_obj_add_uint(doc, data, "id_count", (uint64_t)chunk->ids.count);
-        yyjson_mut_obj_add_uint(doc, data, "subchunk_count", (uint64_t)nmo_chunk_get_sub_chunk_count(chunk));
-        yyjson_mut_obj_add_uint(doc, data, "manager_count", (uint64_t)chunk->managers.count);
-
+        nmo_cli_record_to_json(rec, doc, data);
         nmo_cmd_ctx_json_end(&c, doc, data, "chunk.show");
     } else {
         nmo_cli_print_heading(c.out, "Chunk Details", c.colorize);
-
-        char buf[64];
-        if (flat_index_known) {
-            snprintf(buf, sizeof(buf), "%u", flat_index);
-        } else {
-            snprintf(buf, sizeof(buf), "-");
-        }
-        nmo_cli_print_kv(c.out, "Flat Index", buf, 18, c.colorize);
-        if (parent_index >= 0) {
-            snprintf(buf, sizeof(buf), "%lld", (long long)parent_index);
-            nmo_cli_print_kv(c.out, "Parent Index", buf, 18, c.colorize);
-        }
-        snprintf(buf, sizeof(buf), "%u", depth);
-        nmo_cli_print_kv(c.out, "Depth", buf, 18, c.colorize);
-
-        if (target) {
-            const char *obj_name = nmo_object_get_name(target);
-            snprintf(buf, sizeof(buf), "%u  %s", object_id,
-                     (obj_name && obj_name[0]) ? obj_name : "(unnamed)");
-        } else {
-            snprintf(buf, sizeof(buf), "%u", object_id);
-        }
-        nmo_cli_print_kv(c.out, "Object", buf, 18, c.colorize);
-
-        snprintf(buf, sizeof(buf), "%u", chunk->class_id);
-        nmo_cli_print_kv(c.out, "Class ID", buf, 18, c.colorize);
-
-        const char *class_name = nmo_cli_class_name_from_id(c.ctx, chunk->class_id);
-        nmo_cli_print_kv(c.out, "Class Name", class_name ? class_name : "-", 18, c.colorize);
-
-        fprintf(c.out, "\n");
-        nmo_cli_print_heading(c.out, "Format", c.colorize);
-
-        snprintf(buf, sizeof(buf), "%u", chunk->data_version);
-        nmo_cli_print_kv(c.out, "Data Version", buf, 18, c.colorize);
-
-        snprintf(buf, sizeof(buf), "%u", chunk->chunk_version);
-        nmo_cli_print_kv(c.out, "Chunk Version", buf, 18, c.colorize);
-
-        {
-            char opt_flags[128];
-            const char *opt = nmo_cli_chunk_options_to_string(chunk->chunk_options,
-                                                              opt_flags,
-                                                              sizeof(opt_flags));
-            snprintf(buf, sizeof(buf), "%s (0x%04X)", opt, (unsigned int)chunk->chunk_options);
-            nmo_cli_print_kv(c.out, "Options", buf, 18, c.colorize);
-        }
-
-        fprintf(c.out, "\n");
-        nmo_cli_print_heading(c.out, "Size", c.colorize);
-
-        snprintf(buf, sizeof(buf), "%zu bytes", nmo_chunk_get_data_size(chunk));
-        nmo_cli_print_kv(c.out, "Data Size", buf, 18, c.colorize);
-
-        snprintf(buf, sizeof(buf), "%zu bytes", chunk->compressed_size);
-        nmo_cli_print_kv(c.out, "Compressed Size", buf, 18, c.colorize);
-
-        snprintf(buf, sizeof(buf), "%zu bytes", chunk->uncompressed_size);
-        nmo_cli_print_kv(c.out, "Uncompressed Size", buf, 18, c.colorize);
-
-        if (args->include_hexdump) {
-            size_t data_size = 0;
-            const uint8_t *raw = (const uint8_t *)nmo_chunk_get_data(chunk, &data_size);
-            fprintf(c.out, "\n");
-            nmo_cli_print_heading(c.out, "Hexdump", c.colorize);
-            if (!raw || data_size == 0) {
-                nmo_cli_print_kv(c.out, "Data", "(empty)", 18, c.colorize);
-            } else {
-                size_t emit_size = (args->max_bytes > 0 && data_size > args->max_bytes) ? args->max_bytes : data_size;
-                if (emit_size < data_size) {
-                    snprintf(buf, sizeof(buf), "showing %zu/%zu bytes", emit_size, data_size);
-                    nmo_cli_print_kv(c.out, "Data", buf, 18, c.colorize);
-                }
-
-                nmo_hexdump_options_t hd;
-                nmo_hexdump_init_options(&hd);
-                hd.colorize = c.colorize;
-                hd.ansi.offset = NMO_CLI_COLOR_DIM;
-                hd.ansi.hex = NMO_CLI_COLOR_CYAN;
-                hd.ansi.ascii = NMO_CLI_COLOR_GREEN;
-                hd.ansi.delim = NMO_CLI_COLOR_DIM;
-                hd.ansi.reset = NMO_CLI_COLOR_RESET;
-                nmo_hexdump_canonical(c.out, raw, emit_size, &hd);
-            }
-        }
-
-        fprintf(c.out, "\n");
-        nmo_cli_print_heading(c.out, "References", c.colorize);
-
-        snprintf(buf, sizeof(buf), "%zu", chunk->ids.count);
-        nmo_cli_print_kv(c.out, "Object IDs", buf, 18, c.colorize);
-
-        snprintf(buf, sizeof(buf), "%u", nmo_chunk_get_sub_chunk_count(chunk));
-        nmo_cli_print_kv(c.out, "Sub-chunks", buf, 18, c.colorize);
-
-        snprintf(buf, sizeof(buf), "%zu", chunk->managers.count);
-        nmo_cli_print_kv(c.out, "Manager Refs", buf, 18, c.colorize);
+        nmo_cli_record_print_kv(rec, c.out, 18, c.colorize);
     }
+    nmo_cli_record_free(rec);
 
     return NMO_CLI_EXIT_SUCCESS;
 }
