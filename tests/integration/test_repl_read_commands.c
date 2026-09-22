@@ -1173,9 +1173,9 @@ TEST(repl_read, lua_fold_maps_accept_patch_id_aliases) {
 TEST(repl_read, replace_bb_semantic_risks_merge_into_edit_report) {
     assert_source_contains("src/behavior/semantic_validator.c",
                            "nmo_semantic_validate_boundary(");
-    assert_source_contains("src/behavior/edit_plan.c",
+    assert_source_contains("src/behavior/edit_plan_executor.c",
                            "replace_report.semantic_risks");
-    assert_source_contains("src/behavior/edit_plan.c",
+    assert_source_contains("src/behavior/edit_plan_executor.c",
                            "nmo_edit_report_merge_semantic_risks(");
 }
 
