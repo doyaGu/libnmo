@@ -163,24 +163,27 @@ nmo_status_t nmo_type_get_field(
 
     out_buf[0] = '\0';
 
-    const nmo_type_field_t *field = NULL;
-    const nmo_type_descriptor_t *field_type = NULL;
-    void *field_ptr = NULL;
-    nmo_status_t status = resolve_field_access(
-        (void *)state, type, registry, field_name, &field, &field_type, &field_ptr);
-    if (status != NMO_OK) {
-        return status;
+    const nmo_type_field_t *field = nmo_type_get_field_by_name(type, field_name);
+    if (!field || !nmo_type_registry_find_by_guid(registry, field->type_guid)) {
+        return NMO_ERR_NOT_FOUND;
     }
 
-    if ((field->flags & NMO_FIELD_REFERENCE) != 0u &&
-        nmo_guid_equals(field->type_guid, CKPGUID_ID) &&
-        field->size == sizeof(nmo_ref_t)) {
-        const nmo_ref_t *ref = (const nmo_ref_t *)field_ptr;
-        const nmo_object_id_t id = ref->state == NMO_REF_RESOLVED
-            ? ref->id : ref->raw_id;
-        return nmo_type_value_to_string(
-            &id, field_type, registry, out_buf, buf_size);
-    }
+    return nmo_type_field_to_string_depth_internal(
+        state, type, field, registry, out_buf, buf_size, 0);
+}
 
-    return nmo_type_value_to_string(field_ptr, field_type, registry, out_buf, buf_size);
+nmo_status_t nmo_type_field_to_string(
+    const void *state,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_field_t *field,
+    const nmo_type_registry_t *registry,
+    char *out_buf,
+    size_t buf_size)
+{
+    if (!state || !type || !field || !registry || !out_buf || buf_size == 0) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    out_buf[0] = '\0';
+    return nmo_type_field_to_string_depth_internal(
+        state, type, field, registry, out_buf, buf_size, 0);
 }

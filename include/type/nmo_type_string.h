@@ -173,6 +173,33 @@ NMO_API nmo_status_t nmo_type_get_field(
     char *out_buf,
     size_t buf_size);
 
+/**
+ * @brief Format one reflected field of a typed state.
+ *
+ * Applies the field's storage flags the way a struct dump does: repeated
+ * fields print their element count ("[3]" or "[3 items]"), pointer fields
+ * are dereferenced ("(null)" when unset), object references print their
+ * runtime id, and pointer-typed scalars print "null" or "<type>". Field
+ * storage is never reinterpreted as the element type and no process address
+ * is printed, so the output is stable across runs.
+ *
+ * @param state    Typed state instance that owns the field
+ * @param type     Type descriptor of the state
+ * @param field    Field descriptor taken from `type` (or its hierarchy level)
+ * @param registry Type registry for field type resolution
+ * @param out_buf  Output buffer
+ * @param buf_size Buffer size
+ * @return NMO_OK on success, NMO_ERR_BUFFER_OVERRUN or NMO_ERR_INVALID_ARGUMENT
+ *         when the buffer is too small
+ */
+NMO_API nmo_status_t nmo_type_field_to_string(
+    const void *state,
+    const nmo_type_descriptor_t *type,
+    const nmo_type_field_t *field,
+    const nmo_type_registry_t *registry,
+    char *out_buf,
+    size_t buf_size);
+
 #ifdef __cplusplus
 }
 #endif

@@ -49,6 +49,15 @@ nmo_status_t nmo_reflected_struct_vt_to_string(
     char *buffer,
     size_t buffer_size,
     int depth);
+nmo_status_t nmo_type_field_to_string_depth_internal(
+    const void *instance,
+    const nmo_type_descriptor_t *owner,
+    const nmo_type_field_t *field,
+    const nmo_type_registry_t *registry,
+    char *buffer,
+    size_t buffer_size,
+    int depth);
+
 nmo_status_t nmo_reflected_struct_vt_from_string(
     void *value,
     const nmo_type_descriptor_t *type,

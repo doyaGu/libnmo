@@ -1453,6 +1453,158 @@ TEST(type_string, type_value_to_string_nmo_array_uses_array_count) {
     teardown();
 }
 
+TEST(type_string, type_field_to_string_reports_array_count_not_storage_bytes) {
+    setup();
+
+    ASSERT_EQ(NMO_OK, nmo_register_builtin_types(registry));
+    const nmo_type_descriptor_t *type = NULL;
+    ASSERT_EQ(NMO_OK, register_test_inline_array_type(&type));
+
+    uint32_t items[] = {11u, 22u};
+    test_inline_array_t value;
+    memset(&value, 0, sizeof(value));
+    value.total = 2;
+    value.values.data = items;
+    value.values.count = 2;
+    value.values.capacity = 2;
+    value.values.element_size = sizeof(items[0]);
+
+    const nmo_type_field_t *field = nmo_type_get_field_by_name(type, "values");
+    ASSERT_NOT_NULL(field);
+
+    char buffer[64];
+    ASSERT_EQ(NMO_OK, nmo_type_field_to_string(
+        &value, type, field, registry, buffer, sizeof(buffer)));
+    ASSERT_STR_EQ("[2]", buffer);
+
+    ASSERT_EQ(NMO_OK, nmo_type_get_field(
+        &value, type, registry, "values", buffer, sizeof(buffer)));
+    ASSERT_STR_EQ("[2]", buffer);
+
+    ASSERT_EQ(NMO_OK, nmo_type_get_field(
+        &value, type, registry, "total", buffer, sizeof(buffer)));
+    ASSERT_STR_EQ("2", buffer);
+
+    teardown();
+}
+
+TEST(type_string, type_field_to_string_pointer_array_uses_metadata_count) {
+    setup();
+
+    ASSERT_EQ(NMO_OK, nmo_register_builtin_types(registry));
+
+    typedef struct test_field_widget_array_t {
+        uint32_t widget_count;
+        uint32_t *widgets;
+    } test_field_widget_array_t;
+
+    static const nmo_type_field_t fields[] = {
+        NMO_FIELD(test_field_widget_array_t, widget_count, CKPGUID_UINT32),
+        NMO_FIELD_PTR_ARRAY(test_field_widget_array_t, widgets, widget_count, CKPGUID_UINT32),
+    };
+
+    nmo_type_descriptor_t desc = {
+        .guid = NMO_GUID(0xDEADBEEFu, 0x00000012u),
+        .id = NMO_TYPE_ID_INVALID,
+        .class_id = 0,
+        .category = NMO_TYPE_CATEGORY_STRUCT,
+        .flags = 0,
+        .name = "TestFieldWidgetArray",
+        .description = NULL,
+        .base_type = NMO_NULL_GUID,
+        .base_type_id = NMO_TYPE_ID_INVALID,
+        .size = (uint32_t)sizeof(test_field_widget_array_t),
+        .alignment = (uint32_t)alignof(test_field_widget_array_t),
+        .fields = fields,
+        .field_count = sizeof(fields) / sizeof(fields[0]),
+        .vtable = NULL,
+        .creator_plugin_guid = NMO_NULL_GUID,
+        .saver_manager = 0,
+        .specialized_index = NMO_SPECIALIZED_INDEX_INVALID,
+        .valid = true,
+        .version = 0,
+        .min_compatible_version = 0,
+        .ext = NULL
+    };
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &desc));
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, desc.guid);
+    ASSERT_NOT_NULL(type);
+
+    uint32_t widgets[] = {10u, 20u, 30u};
+    test_field_widget_array_t value = {
+        .widget_count = 3,
+        .widgets = widgets,
+    };
+
+    char buffer[64];
+    ASSERT_EQ(NMO_OK, nmo_type_get_field(
+        &value, type, registry, "widgets", buffer, sizeof(buffer)));
+    ASSERT_STR_EQ("[3 items]", buffer);
+
+    teardown();
+}
+
+TEST(type_string, type_field_to_string_describes_pointer_scalars_by_type) {
+    setup();
+
+    ASSERT_EQ(NMO_OK, nmo_register_builtin_types(registry));
+
+    typedef struct test_pointer_holder_t {
+        uint32_t tag;
+        void *chunk;
+    } test_pointer_holder_t;
+
+    static const nmo_type_field_t fields[] = {
+        NMO_FIELD(test_pointer_holder_t, tag, CKPGUID_UINT32),
+        NMO_FIELD(test_pointer_holder_t, chunk, CKPGUID_STATECHUNK),
+    };
+
+    nmo_type_descriptor_t desc = {
+        .guid = NMO_GUID(0xDEADBEEFu, 0x00000013u),
+        .id = NMO_TYPE_ID_INVALID,
+        .class_id = 0,
+        .category = NMO_TYPE_CATEGORY_STRUCT,
+        .flags = 0,
+        .name = "TestPointerHolder",
+        .description = NULL,
+        .base_type = NMO_NULL_GUID,
+        .base_type_id = NMO_TYPE_ID_INVALID,
+        .size = (uint32_t)sizeof(test_pointer_holder_t),
+        .alignment = (uint32_t)alignof(test_pointer_holder_t),
+        .fields = fields,
+        .field_count = sizeof(fields) / sizeof(fields[0]),
+        .vtable = NULL,
+        .creator_plugin_guid = NMO_NULL_GUID,
+        .saver_manager = 0,
+        .specialized_index = NMO_SPECIALIZED_INDEX_INVALID,
+        .valid = true,
+        .version = 0,
+        .min_compatible_version = 0,
+        .ext = NULL
+    };
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &desc));
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, desc.guid);
+    ASSERT_NOT_NULL(type);
+
+    int payload = 0;
+    test_pointer_holder_t value = { .tag = 7, .chunk = &payload };
+
+    char buffer[64];
+    ASSERT_EQ(NMO_OK, nmo_type_get_field(
+        &value, type, registry, "chunk", buffer, sizeof(buffer)));
+    ASSERT_STR_EQ("<chunk>", buffer);
+    ASSERT_EQ(NMO_OK, nmo_type_value_to_string(
+        &value, type, registry, buffer, sizeof(buffer)));
+    ASSERT_STR_EQ("{tag=7, chunk=<chunk>}", buffer);
+
+    value.chunk = NULL;
+    ASSERT_EQ(NMO_OK, nmo_type_get_field(
+        &value, type, registry, "chunk", buffer, sizeof(buffer)));
+    ASSERT_STR_EQ("null", buffer);
+
+    teardown();
+}
+
 TEST(type_string, type_value_to_string_empty_nmo_array_reports_zero_count) {
     setup();
 
@@ -2969,6 +3121,9 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(type_string, type_value_from_string_struct_with_reflected_fields);
     REGISTER_TEST(type_string, type_value_to_string_object_ref_with_fields);
     REGISTER_TEST(type_string, type_value_to_string_pointer_array_uses_metadata_count);
+    REGISTER_TEST(type_string, type_field_to_string_reports_array_count_not_storage_bytes);
+    REGISTER_TEST(type_string, type_field_to_string_pointer_array_uses_metadata_count);
+    REGISTER_TEST(type_string, type_field_to_string_describes_pointer_scalars_by_type);
     REGISTER_TEST(type_string, type_value_to_string_nmo_array_uses_array_count);
     REGISTER_TEST(type_string, type_value_to_string_empty_nmo_array_reports_zero_count);
     REGISTER_TEST(type_string, type_value_to_string_uint16);

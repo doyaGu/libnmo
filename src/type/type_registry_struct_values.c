@@ -185,80 +185,22 @@ static nmo_status_t nmo_struct_like_to_string(
 
     for (size_t i = 0; i < type->field_count; i++) {
         const nmo_type_field_t *field = &type->fields[i];
-        const nmo_type_descriptor_t *field_type = nmo_to_string_resolve_type(registry, field->type_guid);
-        const uint8_t *field_ptr = (const uint8_t *)value + field->offset;
 
         if (i > 0) {
             NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, ", "));
         }
         NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, "%s=", field->name ? field->name : "<unnamed>"));
 
-        if (!field_type) {
-            NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, "<unknown>"));
-            continue;
-        }
-
-        /* Handle pointer fields: dereference before formatting */
-        if (field->flags & NMO_FIELD_POINTER) {
-            if (!(field->flags & NMO_FIELD_REPEATED)) {
-                const void *ptr_val = field_ptr ? *(const void *const *)field_ptr : NULL;
-                if (!ptr_val) {
-                    NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, "(null)"));
-                    continue;
-                }
-                field_ptr = (const uint8_t *)ptr_val;
-            } else {
-                uint32_t cnt = 0;
-                if (nmo_field_resolve_count(type, field, value, &cnt) == NMO_OK) {
-                    NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, "[%u items]", cnt));
-                    continue;
-                }
-                NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, "[...]"));
-                continue;
-            }
-        }
-
-        if (field->flags & NMO_FIELD_REPEATED) {
-            uint64_t count = 0;
-            bool has_count = false;
-
-            if (field->size == sizeof(nmo_array_t)) {
-                const nmo_array_t *arr = (const nmo_array_t *)field_ptr;
-                count = arr->count;
-                has_count = true;
-            } else {
-                uint32_t resolved_count = 0;
-                if (nmo_field_resolve_count(type, field, value, &resolved_count) == NMO_OK) {
-                    count = resolved_count;
-                    has_count = true;
-                }
-            }
-
-            if (has_count) {
-                NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, "[%llu]", (unsigned long long)count));
-            } else {
-                NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, "[...]"));
-            }
-            continue;
-        }
-
         size_t saved = sb.len;
         size_t avail = sb.cap > sb.len ? sb.cap - sb.len : 0;
         if (avail == 0) break;
         char *slot = sb.buf + sb.len;
-        nmo_object_id_t ref_id = NMO_OBJECT_ID_NONE;
-        const void *format_value = field_ptr;
-        if ((field->flags & NMO_FIELD_REFERENCE) != 0u &&
-            nmo_guid_equals(field->type_guid, CKPGUID_ID) &&
-            field->size == sizeof(nmo_ref_t)) {
-            const nmo_ref_t *ref = (const nmo_ref_t *)field_ptr;
-            ref_id = ref->state == NMO_REF_RESOLVED ? ref->id : ref->raw_id;
-            format_value = &ref_id;
-        }
-        nmo_status_t r = nmo_type_value_to_string_depth_internal(
-            format_value, field_type, registry, slot, avail, depth + 1);
+        nmo_status_t r = nmo_type_field_to_string_depth_internal(
+            value, type, field, registry, slot, avail, depth + 1);
         if (r == NMO_OK) {
             sb.len += strlen(slot);
+        } else if (r == NMO_ERR_BUFFER_OVERRUN) {
+            return r; /* let the caller retry with a larger buffer */
         } else {
             sb.len = saved;
             NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, "<error>"));
@@ -267,6 +209,87 @@ static nmo_status_t nmo_struct_like_to_string(
 
     NMO_RETURN_IF_ERROR(nmo_sb_append(&sb, "}"));
     NMO_RETURN_OK();
+}
+
+/*
+ * Format one reflected field of `instance` the way a struct dump shows it:
+ * arrays by element count, pointer fields dereferenced, object references by
+ * runtime id, and pointer-typed scalars by type name. Field storage is never
+ * reinterpreted as the element type, and no process address is printed, so
+ * the text is the same from run to run.
+ */
+nmo_status_t nmo_type_field_to_string_depth_internal(
+    const void *instance,
+    const nmo_type_descriptor_t *owner,
+    const nmo_type_field_t *field,
+    const nmo_type_registry_t *registry,
+    char *buffer,
+    size_t buffer_size,
+    int depth)
+{
+    if (!instance || !owner || !field || !buffer) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments for field_to_string");
+    }
+    if (buffer_size == 0) {
+        NMO_RETURN_ERROR(NMO_ERR_BUFFER_OVERRUN, NMO_SEVERITY_ERROR, "Buffer too small");
+    }
+
+    nmo_string_builder_t sb = { .buf = buffer, .cap = buffer_size, .len = 0 };
+    buffer[0] = '\0';
+
+    const nmo_type_descriptor_t *field_type =
+        nmo_to_string_resolve_type(registry, field->type_guid);
+    if (!field_type) {
+        return nmo_sb_append(&sb, "<unknown>");
+    }
+
+    const uint8_t *field_ptr = (const uint8_t *)instance + field->offset;
+
+    if (field->flags & NMO_FIELD_POINTER) {
+        if (field->flags & NMO_FIELD_REPEATED) {
+            uint32_t count = 0;
+            if (nmo_field_resolve_count(owner, field, instance, &count) == NMO_OK) {
+                return nmo_sb_append(&sb, "[%u items]", count);
+            }
+            return nmo_sb_append(&sb, "[...]");
+        }
+        const void *pointee = *(const void *const *)field_ptr;
+        if (!pointee) {
+            return nmo_sb_append(&sb, "(null)");
+        }
+        field_ptr = (const uint8_t *)pointee;
+    } else if (field->flags & NMO_FIELD_REPEATED) {
+        if (field->size == sizeof(nmo_array_t)) {
+            const nmo_array_t *array = (const nmo_array_t *)field_ptr;
+            return nmo_sb_append(&sb, "[%llu]", (unsigned long long)array->count);
+        }
+        uint32_t count = 0;
+        if (nmo_field_resolve_count(owner, field, instance, &count) == NMO_OK) {
+            return nmo_sb_append(&sb, "[%llu]", (unsigned long long)count);
+        }
+        return nmo_sb_append(&sb, "[...]");
+    } else if (field_type->category == NMO_TYPE_CATEGORY_POINTER &&
+               field->size == sizeof(void *)) {
+        /* A stored pointer: its address is meaningless and unstable. */
+        const void *pointee = *(const void *const *)field_ptr;
+        if (!pointee) {
+            return nmo_sb_append(&sb, "null");
+        }
+        return nmo_sb_append(&sb, "<%s>", field_type->name ? field_type->name : "pointer");
+    }
+
+    nmo_object_id_t ref_id = NMO_OBJECT_ID_NONE;
+    const void *format_value = field_ptr;
+    if ((field->flags & NMO_FIELD_REFERENCE) != 0u &&
+        nmo_guid_equals(field->type_guid, CKPGUID_ID) &&
+        field->size == sizeof(nmo_ref_t)) {
+        const nmo_ref_t *ref = (const nmo_ref_t *)field_ptr;
+        ref_id = ref->state == NMO_REF_RESOLVED ? ref->id : ref->raw_id;
+        format_value = &ref_id;
+    }
+    return nmo_type_value_to_string_depth_internal(
+        format_value, field_type, registry, buffer, buffer_size, depth);
 }
 
 
