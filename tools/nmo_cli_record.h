@@ -131,11 +131,16 @@ bool nmo_cli_record_ref_opt(nmo_cli_record_t *record, const char *id_key,
                             const char *name_key, const char *label,
                             uint64_t id, const char *name,
                             const char *none_text);
+/** Text-only line with a printf-formatted value of any length. */
+bool nmo_cli_record_text_fmt(nmo_cli_record_t *record, const char *label,
+                             const char *format, ...);
 /**
  * Override the text of the most recently added field. Use when the text
  * presentation has a shape the typed adders cannot express.
  */
 bool nmo_cli_record_set_text(nmo_cli_record_t *record, const char *text);
+/** Like nmo_cli_record_set_text, formatted; the result may be any length. */
+bool nmo_cli_record_set_text_fmt(nmo_cli_record_t *record, const char *format, ...);
 /** Drop the JSON side of the most recently added field. */
 void nmo_cli_record_text_only(nmo_cli_record_t *record);
 
@@ -168,6 +173,9 @@ bool nmo_cli_record_array_set_empty_text(nmo_cli_record_array_t *array,
                                          const char *text);
 /** One-line text used when this record is rendered as an array item. */
 bool nmo_cli_record_set_summary(nmo_cli_record_t *record, const char *text);
+/** Formatted variant of nmo_cli_record_set_summary. */
+bool nmo_cli_record_set_summary_fmt(nmo_cli_record_t *record,
+                                    const char *format, ...);
 
 /* Rendering */
 

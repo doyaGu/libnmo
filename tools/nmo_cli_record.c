@@ -94,13 +94,14 @@ static bool set_str(char **slot, const char *value)
     return true;
 }
 
-static bool set_formatted(char **slot, const char *format, ...)
+/* Format into `slot`, growing past the stack buffer when needed. */
+static bool set_vformatted(char **slot, const char *format, va_list args)
 {
     char buf[128];
-    va_list args;
-    va_start(args, format);
-    int n = vsnprintf(buf, sizeof(buf), format, args);
-    va_end(args);
+    va_list copy;
+    va_copy(copy, args);
+    int n = vsnprintf(buf, sizeof(buf), format, copy);
+    va_end(copy);
     if (n < 0) {
         return false;
     }
@@ -111,12 +112,19 @@ static bool set_formatted(char **slot, const char *format, ...)
     if (!big) {
         return false;
     }
-    va_start(args, format);
     vsnprintf(big, (size_t)n + 1u, format, args);
-    va_end(args);
     free(*slot);
     *slot = big;
     return true;
+}
+
+static bool set_formatted(char **slot, const char *format, ...)
+{
+    va_list args;
+    va_start(args, format);
+    bool ok = set_vformatted(slot, format, args);
+    va_end(args);
+    return ok;
 }
 
 nmo_cli_record_t *nmo_cli_record_new(void)
@@ -362,6 +370,49 @@ bool nmo_cli_record_text(nmo_cli_record_t *record, const char *label,
         return field_fail(record);
     }
     return true;
+}
+
+bool nmo_cli_record_text_fmt(nmo_cli_record_t *record, const char *label,
+                             const char *format, ...)
+{
+    record_field_t *field = field_append(record, RECORD_NULL, NULL, label);
+    if (!field) {
+        return false;
+    }
+    va_list args;
+    va_start(args, format);
+    bool ok = set_vformatted(&field->text, format, args);
+    va_end(args);
+    if (!ok) {
+        return field_fail(record);
+    }
+    return true;
+}
+
+bool nmo_cli_record_set_text_fmt(nmo_cli_record_t *record, const char *format, ...)
+{
+    record_field_t *field = field_last(record);
+    if (!field) {
+        return false;
+    }
+    va_list args;
+    va_start(args, format);
+    bool ok = set_vformatted(&field->text, format, args);
+    va_end(args);
+    return ok;
+}
+
+bool nmo_cli_record_set_summary_fmt(nmo_cli_record_t *record,
+                                    const char *format, ...)
+{
+    if (!record) {
+        return false;
+    }
+    va_list args;
+    va_start(args, format);
+    bool ok = set_vformatted(&record->summary, format, args);
+    va_end(args);
+    return ok;
 }
 
 static bool record_ref_impl(nmo_cli_record_t *record, const char *id_key,
