@@ -1553,6 +1553,56 @@ static yyjson_mut_val *nmo_snapshot_build_fields(
     const void *owner_instance,
     const nmo_summary_config_t *config);
 
+/*
+ * True when the in-memory bytes of a value of this type contain process
+ * addresses (pointer fields, array storage pointers, nested structs holding
+ * either).  Such bytes differ from run to run, so raw_hex is not emitted for
+ * them.
+ */
+static bool nmo_snapshot_type_holds_addresses(
+    const nmo_type_registry_t *registry,
+    const nmo_type_descriptor_t *type,
+    size_t value_size,
+    unsigned depth)
+{
+    if (!type) {
+        return false;
+    }
+    if (type->category == NMO_TYPE_CATEGORY_POINTER) {
+        return value_size == sizeof(void *);
+    }
+    if (depth >= 8u || !nmo_type_has_reflection(type)) {
+        return false;
+    }
+    for (size_t i = 0; i < type->field_count; ++i) {
+        const nmo_type_field_t *field = &type->fields[i];
+        if (field->flags & (NMO_FIELD_POINTER | NMO_FIELD_REPEATED)) {
+            return true;
+        }
+        const nmo_type_descriptor_t *field_type =
+            registry ? nmo_type_registry_find_by_guid(registry, field->type_guid) : NULL;
+        if (nmo_snapshot_type_holds_addresses(registry, field_type, field->size,
+                                              depth + 1u)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static void nmo_snapshot_add_raw_hex_if_stable(
+    nmo_summary_output_t *out,
+    yyjson_mut_val *obj,
+    const nmo_type_registry_t *registry,
+    const nmo_type_descriptor_t *type,
+    const void *value_ptr,
+    size_t value_size)
+{
+    if (nmo_snapshot_type_holds_addresses(registry, type, value_size, 0u)) {
+        return;
+    }
+    nmo_snapshot_add_raw_hex(out->json_doc, obj, value_ptr, value_size);
+}
+
 static yyjson_mut_val *nmo_snapshot_value(
     nmo_summary_output_t *out,
     const nmo_type_registry_t *registry,
@@ -1571,7 +1621,8 @@ static yyjson_mut_val *nmo_snapshot_value(
         yyjson_mut_obj_add_val(
             out->json_doc, obj, "fields",
             nmo_snapshot_build_fields(out, registry, field_type, value_ptr, config));
-        nmo_snapshot_add_raw_hex(out->json_doc, obj, value_ptr, value_size);
+        nmo_snapshot_add_raw_hex_if_stable(out, obj, registry, field_type,
+                                           value_ptr, value_size);
         return obj;
     }
     return nmo_snapshot_scalar_value(out, registry, field_type, field_guid,
@@ -1623,7 +1674,8 @@ static void nmo_snapshot_add_array_payload(
     size_t byte_count = 0;
     if (array_ptr && count > 0 && elem_size > 0 &&
         count <= (uint64_t)SIZE_MAX &&
-        nmo_safe_mul_size((size_t)count, elem_size, &byte_count)) {
+        nmo_safe_mul_size((size_t)count, elem_size, &byte_count) &&
+        !nmo_snapshot_type_holds_addresses(registry, field_type, elem_size, 0u)) {
         nmo_snapshot_add_raw_hex(out->json_doc, item, array_ptr, byte_count);
     }
 }
@@ -1669,7 +1721,8 @@ static yyjson_mut_val *nmo_snapshot_field(
                 out->json_doc, item, "value",
                 nmo_snapshot_value(out, registry, field_type, field->type_guid,
                                    pointed, pointee_size, config));
-            nmo_snapshot_add_raw_hex(out->json_doc, item, pointed, pointee_size);
+            nmo_snapshot_add_raw_hex_if_stable(out, item, registry, field_type,
+                                               pointed, pointee_size);
         }
         return item;
     }
@@ -1693,7 +1746,8 @@ static yyjson_mut_val *nmo_snapshot_field(
         yyjson_mut_obj_add_val(
             out->json_doc, item, "value",
             nmo_snapshot_build_fields(out, registry, field_type, field_ptr, config));
-        nmo_snapshot_add_raw_hex(out->json_doc, item, field_ptr, field->size);
+        nmo_snapshot_add_raw_hex_if_stable(out, item, registry, field_type,
+                                           field_ptr, field->size);
         return item;
     }
 
@@ -1702,7 +1756,8 @@ static yyjson_mut_val *nmo_snapshot_field(
         out->json_doc, item, "value",
         nmo_snapshot_scalar_value(out, registry, field_type, field->type_guid,
                                   field_ptr, field->size));
-    nmo_snapshot_add_raw_hex(out->json_doc, item, field_ptr, field->size);
+    nmo_snapshot_add_raw_hex_if_stable(out, item, registry, field_type,
+                                       field_ptr, field->size);
     return item;
 }
 
