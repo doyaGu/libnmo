@@ -9,6 +9,7 @@
 #include "../nmo_cmd_core.h"
 #include "../nmo_cli_write.h"
 #include "../nmo_cli_output.h"
+#include "../nmo_cli_record.h"
 #include "../nmo_tool_common.h"
 #include "../nmo_opt.h"
 
@@ -243,29 +244,65 @@ static bool file_exists(const char *path) {
     return true;
 }
 
-static void add_resource_json(yyjson_mut_doc *doc, yyjson_mut_val *obj, const nmo_included_file_t *res,
-                              uint32_t index, bool include_owners) {
-    yyjson_mut_obj_add_uint(doc, obj, "index", index);
-    if (res->name) {
-        nmo_cli_json_add_str_safe(doc, obj, "name", res->name);
+/*
+ * One included file. JSON: index, name, size, attributes, borrowed,
+ * metadata_only, owner_count (+ owner_ids in detail mode). Text columns for
+ * the list: Index, Name, Size, Owners, Flags; key/value lines for show:
+ * Index, Name, Size, Attributes.
+ */
+static bool resource_build_record(const nmo_included_file_t *res, uint32_t index,
+                                  bool detail, nmo_cli_record_t *rec)
+{
+    const bool borrowed = (res->attributes & NMO_INCLUDED_FILE_ATTR_BORROWED) != 0;
+    const bool meta_only = (res->attributes & NMO_INCLUDED_FILE_ATTR_METADATA_ONLY) != 0;
+    const uint32_t owner_count = (uint32_t)res->owner_ids.count;
+
+    bool ok = nmo_cli_record_uint(rec, "index", "Index", index);
+    if (ok && res->name) {
+        ok = nmo_cli_record_str(rec, "name", NULL, res->name);
     }
-    yyjson_mut_obj_add_uint(doc, obj, "size", res->size);
-    yyjson_mut_obj_add_uint(doc, obj, "attributes", res->attributes);
-    yyjson_mut_obj_add_bool(doc, obj, "borrowed", (res->attributes & NMO_INCLUDED_FILE_ATTR_BORROWED) != 0);
-    yyjson_mut_obj_add_bool(doc, obj, "metadata_only",
-                            (res->attributes & NMO_INCLUDED_FILE_ATTR_METADATA_ONLY) != 0);
+    ok = ok && nmo_cli_record_text(rec, "Name", (res->name && res->name[0]) ? res->name : "-") &&
+         nmo_cli_record_uint(rec, "size", "Size", res->size);
+    if (detail) {
+        ok = ok && nmo_cli_record_hex32(rec, "attributes", "Attributes", res->attributes);
+    } else {
+        ok = ok && nmo_cli_record_uint(rec, "attributes", NULL, res->attributes);
+    }
+    ok = ok && nmo_cli_record_bool(rec, "borrowed", NULL, borrowed) &&
+         nmo_cli_record_bool(rec, "metadata_only", NULL, meta_only) &&
+         nmo_cli_record_uint(rec, "owner_count", detail ? NULL : "Owners", owner_count);
+    if (!ok) {
+        return false;
+    }
 
-    uint32_t owner_count = (uint32_t)res->owner_ids.count;
-    yyjson_mut_obj_add_uint(doc, obj, "owner_count", owner_count);
-
-    if (include_owners) {
-        yyjson_mut_val *owners = yyjson_mut_arr(doc);
-        const nmo_object_id_t *ids = (const nmo_object_id_t *)res->owner_ids.data;
-        for (uint32_t i = 0; i < owner_count; ++i) {
-            yyjson_mut_arr_add_uint(doc, owners, ids[i]);
+    if (detail) {
+        uint64_t *ids = NULL;
+        if (owner_count > 0) {
+            ids = (uint64_t *)malloc(owner_count * sizeof(uint64_t));
+            if (!ids) {
+                return false;
+            }
+            const nmo_object_id_t *src = (const nmo_object_id_t *)res->owner_ids.data;
+            for (uint32_t i = 0; i < owner_count; ++i) {
+                ids[i] = src[i];
+            }
         }
-        yyjson_mut_obj_add_val(doc, obj, "owner_ids", owners);
+        ok = nmo_cli_record_uint_list(rec, "owner_ids", NULL, ids, owner_count, NULL);
+        free(ids);
+        return ok;
     }
+
+    char flags_buf[64];
+    if (borrowed && meta_only) {
+        snprintf(flags_buf, sizeof(flags_buf), "BORROWED|META");
+    } else if (borrowed) {
+        snprintf(flags_buf, sizeof(flags_buf), "BORROWED");
+    } else if (meta_only) {
+        snprintf(flags_buf, sizeof(flags_buf), "META");
+    } else {
+        snprintf(flags_buf, sizeof(flags_buf), "-");
+    }
+    return nmo_cli_record_text(rec, "Flags", flags_buf);
 }
 
 /* ============================================================================
@@ -340,69 +377,49 @@ int nmo_cmd_resource_list(int argc, char **argv, const nmo_cli_global_opts_t *gl
         }
     }
 
+    static const nmo_cli_table_col_t columns[] = {
+        {"Index", NMO_CLI_ALIGN_RIGHT, 5, 0},
+        {"Name", NMO_CLI_ALIGN_LEFT, 20, 60},
+        {"Size", NMO_CLI_ALIGN_RIGHT, 10, 0},
+        {"Owners", NMO_CLI_ALIGN_RIGHT, 6, 0},
+        {"Flags", NMO_CLI_ALIGN_LEFT, 10, 0},
+    };
+
+    yyjson_mut_doc *doc = NULL;
+    yyjson_mut_val *data = NULL;
+    yyjson_mut_val *arr = NULL;
+    nmo_cli_table_t table;
     if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-
+        doc = nmo_cmd_ctx_json_begin(&c);
+        data = yyjson_mut_obj(doc);
         yyjson_mut_obj_add_uint(doc, data, "count", count);
-        yyjson_mut_val *arr = yyjson_mut_arr(doc);
+        arr = yyjson_mut_arr(doc);
+    } else {
+        nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
+    }
 
-        for (uint32_t k = 0; k < count; ++k) {
-            uint32_t i = indices[k];
-            yyjson_mut_val *item = yyjson_mut_obj(doc);
-            add_resource_json(doc, item, &files[i], i, false);
-            yyjson_mut_arr_add_val(arr, item);
+    for (uint32_t k = 0; k < count; ++k) {
+        uint32_t i = indices[k];
+        nmo_cli_record_t *rec = nmo_cli_record_new();
+        if (rec && resource_build_record(&files[i], i, false, rec)) {
+            if (doc) {
+                yyjson_mut_val *item = yyjson_mut_obj(doc);
+                if (item && nmo_cli_record_to_json(rec, doc, item)) {
+                    yyjson_mut_arr_add_val(arr, item);
+                }
+            } else {
+                const char *cells[5];
+                size_t n = nmo_cli_record_cells(rec, cells, 5);
+                nmo_cli_table_add_row(&table, cells, n);
+            }
         }
-        yyjson_mut_obj_add_val(doc, data, "resources", arr);
+        nmo_cli_record_free(rec);
+    }
 
+    if (doc) {
+        yyjson_mut_obj_add_val(doc, data, "resources", arr);
         nmo_cmd_ctx_json_end(&c, doc, data, "resource.list");
     } else {
-        static const nmo_cli_table_col_t columns[] = {
-            {"Index", NMO_CLI_ALIGN_RIGHT, 5, 0},
-            {"Name", NMO_CLI_ALIGN_LEFT, 20, 60},
-            {"Size", NMO_CLI_ALIGN_RIGHT, 10, 0},
-            {"Owners", NMO_CLI_ALIGN_RIGHT, 6, 0},
-            {"Flags", NMO_CLI_ALIGN_LEFT, 10, 0},
-        };
-
-        nmo_cli_table_t table;
-        nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
-
-        for (uint32_t k = 0; k < count; ++k) {
-            uint32_t i = indices[k];
-
-            char idx_buf[16];
-            snprintf(idx_buf, sizeof(idx_buf), "%u", i);
-
-            const char *name = (files[i].name && files[i].name[0]) ? files[i].name : "-";
-
-            char size_buf[32];
-            snprintf(size_buf, sizeof(size_buf), "%u", files[i].size);
-
-            char owner_buf[16];
-            snprintf(owner_buf, sizeof(owner_buf), "%zu", files[i].owner_ids.count);
-
-            char flags_buf[64];
-            flags_buf[0] = '\0';
-            bool first = true;
-            if (files[i].attributes & NMO_INCLUDED_FILE_ATTR_BORROWED) {
-                snprintf(flags_buf + strlen(flags_buf), sizeof(flags_buf) - strlen(flags_buf), "%sBORROWED",
-                         first ? "" : "|");
-                first = false;
-            }
-            if (files[i].attributes & NMO_INCLUDED_FILE_ATTR_METADATA_ONLY) {
-                snprintf(flags_buf + strlen(flags_buf), sizeof(flags_buf) - strlen(flags_buf), "%sMETA",
-                         first ? "" : "|");
-                first = false;
-            }
-            if (first) {
-                snprintf(flags_buf, sizeof(flags_buf), "-");
-            }
-
-            const char *cells[] = {idx_buf, name, size_buf, owner_buf, flags_buf};
-            nmo_cli_table_add_row(&table, cells, 5);
-        }
-
         fprintf(c.out, "Resources: %u\n\n", count);
         nmo_cli_table_print(&table, c.out, c.colorize);
         nmo_cli_table_free(&table);
@@ -480,78 +497,66 @@ int nmo_cmd_resource_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
     }
 
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
+    /* The resource itself (nested under "resource" in JSON) and its owners
+     * (top-level "owners" array; "Owners (n):" block in text). */
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    nmo_cli_record_t *owners_rec = nmo_cli_record_new();
+    bool ok = rec != NULL && owners_rec != NULL &&
+              resource_build_record(res, res_index, true, rec);
+    nmo_cli_record_array_t *owners =
+        ok ? nmo_cli_record_array(owners_rec, "owners", "Owners") : NULL;
+    ok = ok && owners != NULL;
+    const nmo_object_id_t *ids = (const nmo_object_id_t *)res->owner_ids.data;
+    for (size_t i = 0; ok && i < res->owner_ids.count; ++i) {
+        nmo_object_id_t oid = ids[i];
+        nmo_cli_record_t *owner = nmo_cli_record_new();
+        char line[512];
+        ok = owner != NULL && nmo_cli_record_uint(owner, "id", NULL, oid);
 
-        yyjson_mut_val *obj = yyjson_mut_obj(doc);
-        add_resource_json(doc, obj, res, res_index, true);
-        yyjson_mut_obj_add_val(doc, data, "resource", obj);
-
-        yyjson_mut_val *owners = yyjson_mut_arr(doc);
-        const nmo_object_id_t *ids = (const nmo_object_id_t *)res->owner_ids.data;
-        for (size_t i = 0; i < res->owner_ids.count; ++i) {
-            yyjson_mut_val *owner = yyjson_mut_obj(doc);
-            nmo_object_id_t oid = ids[i];
-            yyjson_mut_obj_add_uint(doc, owner, "id", oid);
-
-            nmo_object_t *o = nmo_core_find_by_id(&c, oid);
-            if (o) {
-                nmo_class_id_t class_id = nmo_object_get_class_id(o);
-                yyjson_mut_obj_add_uint(doc, owner, "class_id", class_id);
-
-                const char *class_name = nmo_cli_class_name_from_id(c.ctx, class_id);
-                if (class_name) {
-                    yyjson_mut_obj_add_str(doc, owner, "class_name", class_name);
-                }
-
-                const char *name = nmo_object_get_name(o);
-                if (name && name[0]) {
-                    nmo_cli_json_add_str_safe(doc, owner, "name", name);
-                }
-            }
-
-            yyjson_mut_arr_add_val(owners, owner);
-        }
-        yyjson_mut_obj_add_val(doc, data, "owners", owners);
-
-        nmo_cmd_ctx_json_end(&c, doc, data, "resource.show");
-    } else {
-        nmo_cli_print_heading(c.out, "Resource", c.colorize);
-
-        char idx_buf[32];
-        snprintf(idx_buf, sizeof(idx_buf), "%u", res_index);
-        nmo_cli_print_kv(c.out, "Index", idx_buf, 12, c.colorize);
-        nmo_cli_print_kv(c.out, "Name", (res->name && res->name[0]) ? res->name : "-", 12, c.colorize);
-
-        char size_buf[32];
-        snprintf(size_buf, sizeof(size_buf), "%u", res->size);
-        nmo_cli_print_kv(c.out, "Size", size_buf, 12, c.colorize);
-
-        char attr_buf[32];
-        snprintf(attr_buf, sizeof(attr_buf), "0x%08X", res->attributes);
-        nmo_cli_print_kv(c.out, "Attributes", attr_buf, 12, c.colorize);
-
-        fprintf(c.out, "\nOwners (%zu):\n", res->owner_ids.count);
-        const nmo_object_id_t *ids = (const nmo_object_id_t *)res->owner_ids.data;
-        for (size_t i = 0; i < res->owner_ids.count; ++i) {
-            nmo_object_id_t oid = ids[i];
-            nmo_object_t *o = nmo_core_find_by_id(&c, oid);
-            if (!o) {
-                fprintf(c.out, "  - %u\n", oid);
-                continue;
-            }
-
+        nmo_object_t *o = ok ? nmo_core_find_by_id(&c, oid) : NULL;
+        if (ok && o) {
             nmo_class_id_t class_id = nmo_object_get_class_id(o);
             const char *class_name = nmo_cli_class_name_from_id(c.ctx, class_id);
             const char *name = nmo_object_get_name(o);
-
-            fprintf(c.out, "  - %u  %s  %s\n",
-                    oid,
-                    class_name ? class_name : "-",
-                    (name && name[0]) ? name : "-");
+            ok = nmo_cli_record_uint(owner, "class_id", NULL, class_id);
+            if (ok && class_name) {
+                ok = nmo_cli_record_str(owner, "class_name", NULL, class_name);
+            }
+            ok = ok && nmo_cli_record_str_opt(owner, "name", NULL, name, NULL);
+            snprintf(line, sizeof(line), "  - %u  %s  %s", oid,
+                     class_name ? class_name : "-",
+                     (name && name[0]) ? name : "-");
+        } else if (ok) {
+            snprintf(line, sizeof(line), "  - %u", oid);
+        }
+        ok = ok && nmo_cli_record_set_summary(owner, line) &&
+             nmo_cli_record_array_add(owners, owner);
+        if (!ok) {
+            nmo_cli_record_free(owner);
         }
     }
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        nmo_cli_record_free(owners_rec);
+        fprintf(stderr, "Error: Out of memory while describing resource\n");
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+    }
+
+    if (c.is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
+        yyjson_mut_val *data = yyjson_mut_obj(doc);
+        yyjson_mut_val *obj = yyjson_mut_obj(doc);
+        nmo_cli_record_to_json(rec, doc, obj);
+        yyjson_mut_obj_add_val(doc, data, "resource", obj);
+        nmo_cli_record_to_json(owners_rec, doc, data);
+        nmo_cmd_ctx_json_end(&c, doc, data, "resource.show");
+    } else {
+        nmo_cli_print_heading(c.out, "Resource", c.colorize);
+        nmo_cli_record_print_kv(rec, c.out, 12, c.colorize);
+        nmo_cli_record_print_kv(owners_rec, c.out, 12, c.colorize);
+    }
+    nmo_cli_record_free(rec);
+    nmo_cli_record_free(owners_rec);
 
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
 }
