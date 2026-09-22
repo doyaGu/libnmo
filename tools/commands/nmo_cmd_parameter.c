@@ -12,6 +12,7 @@
 #include "../nmo_cmd_ctx.h"
 #include "../nmo_cmd_core.h"
 #include "../nmo_cli_output.h"
+#include "../nmo_cli_record.h"
 #include "../nmo_edit_report_json.h"
 #include "../nmo_cli_write.h"
 #include "../nmo_tool_common.h"
@@ -117,43 +118,22 @@ static nmo_object_t *find_behavior_parameter_by_name(
     return NULL;
 }
 
-static void parameter_list_add_json(yyjson_mut_doc *doc,
-                                    yyjson_mut_val *arr,
-                                    nmo_context_t *ctx,
-                                    nmo_object_t *obj)
+/* One parameter object: JSON id/class_id/class_name/name, text ID/Class/Name. */
+static bool parameter_list_build_record(nmo_context_t *ctx, nmo_object_t *obj,
+                                        nmo_cli_record_t *rec)
 {
     nmo_class_id_t class_id = nmo_object_get_class_id(obj);
-    yyjson_mut_val *item = yyjson_mut_obj(doc);
-    yyjson_mut_obj_add_uint(doc, item, "id", nmo_object_get_id(obj));
-    yyjson_mut_obj_add_uint(doc, item, "class_id", class_id);
-
-    const char *class_name = nmo_cli_class_name_from_id(ctx, class_id);
-    if (class_name) nmo_cli_json_add_str_safe(doc, item, "class_name", class_name);
-
-    const char *name = nmo_object_get_name(obj);
-    if (name && name[0]) nmo_cli_json_add_str_safe(doc, item, "name", name);
-
-    yyjson_mut_arr_add_val(arr, item);
-}
-
-static void parameter_list_add_table_row(nmo_cli_table_t *table,
-                                         nmo_context_t *ctx,
-                                         nmo_object_t *obj)
-{
-    nmo_class_id_t class_id = nmo_object_get_class_id(obj);
-
-    char id_buf[16];
-    snprintf(id_buf, sizeof(id_buf), "%u", nmo_object_get_id(obj));
-
     const char *class_name = nmo_cli_class_name_from_id(ctx, class_id);
     const char *name = nmo_object_get_name(obj);
 
-    const char *cells[] = {
-        id_buf,
-        class_name ? class_name : "-",
-        (name && name[0]) ? name : "-",
-    };
-    nmo_cli_table_add_row(table, cells, 3);
+    bool ok = nmo_cli_record_uint(rec, "id", "ID", nmo_object_get_id(obj)) &&
+              nmo_cli_record_uint(rec, "class_id", NULL, class_id);
+    if (class_name) {
+        ok = ok && nmo_cli_record_str(rec, "class_name", "Class", class_name);
+    } else {
+        ok = ok && nmo_cli_record_text(rec, "Class", "-");
+    }
+    return ok && nmo_cli_record_str_opt(rec, "name", "Name", name, "-");
 }
 
 typedef struct parameter_list_data {
@@ -172,11 +152,20 @@ static int parameter_list_core_visitor(size_t index,
     (void)index;
 
     parameter_list_data_t *data = (parameter_list_data_t *)user;
-    if (data->arr) {
-        parameter_list_add_json(data->doc, data->arr, c->ctx, obj);
-    } else if (data->table) {
-        parameter_list_add_table_row(data->table, c->ctx, obj);
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    if (rec && parameter_list_build_record(c->ctx, obj, rec)) {
+        if (data->arr) {
+            yyjson_mut_val *item = yyjson_mut_obj(data->doc);
+            if (item && nmo_cli_record_to_json(rec, data->doc, item)) {
+                yyjson_mut_arr_add_val(data->arr, item);
+            }
+        } else if (data->table) {
+            const char *cells[3];
+            size_t n = nmo_cli_record_cells(rec, cells, 3);
+            nmo_cli_table_add_row(data->table, cells, n);
+        }
     }
+    nmo_cli_record_free(rec);
     data->count++;
     return 0;
 }
