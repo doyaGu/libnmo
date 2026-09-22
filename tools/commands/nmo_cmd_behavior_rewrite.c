@@ -31,13 +31,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-static void rewrite_guid_to_string(nmo_guid_t guid, char *buf, size_t size) {
-    if (!buf || size == 0) {
-        return;
-    }
-    snprintf(buf, size, "%08X-%08X", guid.d1, guid.d2);
-}
-
 static bool parse_graph_boundary_args(int argc,
                                       char **argv,
                                       bool expect_file_operand,
@@ -151,9 +144,6 @@ static void add_parameter_edges_json(
     size_t count) {
     yyjson_mut_val *arr = yyjson_mut_arr(doc);
     for (size_t i = 0; i < count; ++i) {
-        char guid_buf[24];
-        rewrite_guid_to_string(edges[i].type_guid, guid_buf, sizeof(guid_buf));
-
         yyjson_mut_val *item = yyjson_mut_obj(doc);
         yyjson_mut_obj_add_uint(doc, item, "source_parameter_id",
                                 edges[i].source_parameter_id);
@@ -163,7 +153,8 @@ static void add_parameter_edges_json(
                                 edges[i].source_owner_id);
         yyjson_mut_obj_add_uint(doc, item, "target_owner_id",
                                 edges[i].target_owner_id);
-        nmo_cli_json_add_str_safe(doc, item, "type_guid", guid_buf);
+        nmo_cli_json_add_str_fmt_safe(doc, item, "type_guid", "%08X-%08X",
+                                      edges[i].type_guid.d1, edges[i].type_guid.d2);
         yyjson_mut_obj_add_bool(doc, item, "shared", edges[i].shared);
         yyjson_mut_arr_add_val(arr, item);
     }
@@ -245,11 +236,9 @@ static int graph_boundary_run(nmo_cmd_ctx_t *ctx,
 
     if (!nmo_behavior_boundary_build(c.workspace,
                                      behavior_id, depth, &boundary)) {
-        char detail[256];
-        size_t detail_len = nmo_last_error_message_copy(detail,
-                                                        sizeof(detail));
+        const char *detail = nmo_last_error_message();
         nmo_error_code_t code = nmo_last_error_code();
-        if (detail_len > 0) {
+        if (detail[0] != '\0') {
             fprintf(stderr, "Error: %s\n", detail);
         } else {
             fprintf(stderr, "Error: Failed to build behavior boundary\n");
@@ -767,12 +756,10 @@ static int fold_candidates_emit_control_router_groups(
             if (!nmo_behavior_boundary_build_for_nodes(
                     ctx->workspace, parent_id,
                     router_ids, router_count, &router_boundary)) {
-                char detail[256];
-                size_t detail_len = nmo_last_error_message_copy(
-                    detail, sizeof(detail));
+                const char *detail = nmo_last_error_message();
                 free(router_ids);
                 fprintf(stderr, "Error: %s\n",
-                        detail_len > 0 ? detail
+                        detail[0] != '\0' ? detail
                                        : "Failed to build control router boundary");
                 return NMO_CLI_EXIT_INTERNAL_ERROR;
             }
@@ -855,13 +842,11 @@ static int fold_candidates_emit_connected_components(
                     ctx->workspace, parent_id,
                     component_roots, component_root_count,
                     &component_boundary)) {
-                char detail[256];
-                size_t detail_len = nmo_last_error_message_copy(
-                    detail, sizeof(detail));
+                const char *detail = nmo_last_error_message();
                 free(component_roots);
                 free(parents);
                 fprintf(stderr, "Error: %s\n",
-                        detail_len > 0 ? detail
+                        detail[0] != '\0' ? detail
                                        : "Failed to build component boundary");
                 return NMO_CLI_EXIT_INTERNAL_ERROR;
             }
@@ -995,16 +980,13 @@ static void add_fold_retarget_parameter_edges_json(
     bool incoming) {
     yyjson_mut_val *arr = yyjson_mut_arr(doc);
     for (size_t i = 0; i < count; ++i) {
-        char guid_buf[24];
-        rewrite_guid_to_string(edges[i].type_guid, guid_buf,
-                               sizeof(guid_buf));
-
         yyjson_mut_val *item = yyjson_mut_obj(doc);
         yyjson_mut_obj_add_uint(doc, item, "source_parameter_id",
                                 edges[i].source_parameter_id);
         yyjson_mut_obj_add_uint(doc, item, "target_parameter_id",
                                 edges[i].target_parameter_id);
-        nmo_cli_json_add_str_safe(doc, item, "type_guid", guid_buf);
+        nmo_cli_json_add_str_fmt_safe(doc, item, "type_guid", "%08X-%08X",
+                                      edges[i].type_guid.d1, edges[i].type_guid.d2);
         yyjson_mut_obj_add_bool(doc, item, "shared", edges[i].shared);
         if (incoming) {
             yyjson_mut_obj_add_uint(doc, item, "source_owner_id",
@@ -1042,23 +1024,27 @@ static bool parse_fold_nodes(const char *text,
         if (*p == '\0') {
             break;
         }
-        char token[32];
-        size_t len = 0;
+        const char *field = p;
         while (*p != '\0' && *p != ',') {
-            if (*p != ' ' && *p != '\t') {
-                if (len + 1 >= sizeof(token)) {
-                    return false;
-                }
-                token[len++] = *p;
-            }
             ++p;
         }
-        token[len] = '\0';
-        if (len == 0 || *out_count >= out_capacity) {
+        /* Copy the field without its interior blanks, sized for the field. */
+        char *token = (char *)malloc((size_t)(p - field) + 1u);
+        if (!token) {
             return false;
         }
+        size_t len = 0;
+        for (const char *q = field; q != p; ++q) {
+            if (*q != ' ' && *q != '\t') {
+                token[len++] = *q;
+            }
+        }
+        token[len] = '\0';
         uint32_t id = 0;
-        if (nmo_parse_u32_range(token, 1, UINT32_MAX, &id) != NMO_OK) {
+        bool ok = len > 0 && *out_count < out_capacity &&
+                  nmo_parse_u32_range(token, 1, UINT32_MAX, &id) == NMO_OK;
+        free(token);
+        if (!ok) {
             return false;
         }
         out_nodes[(*out_count)++] = id;
@@ -1077,21 +1063,20 @@ static bool parse_fold_index_map(const char *text,
         return false;
     }
 
-    char left[32];
-    char right[32];
     size_t left_len = (size_t)(colon - text);
-    size_t right_len = strlen(colon + 1);
-    if (left_len >= sizeof(left) || right_len >= sizeof(right)) {
+    char *left = (char *)malloc(left_len + 1u);
+    if (!left) {
         return false;
     }
     memcpy(left, text, left_len);
     left[left_len] = '\0';
-    memcpy(right, colon + 1, right_len + 1);
 
     uint32_t old_index = 0;
     uint32_t new_index = 0;
-    if (nmo_parse_u32_range(left, 0, UINT32_MAX, &old_index) != NMO_OK ||
-        nmo_parse_u32_range(right, 0, UINT32_MAX, &new_index) != NMO_OK) {
+    bool ok = nmo_parse_u32_range(left, 0, UINT32_MAX, &old_index) == NMO_OK &&
+              nmo_parse_u32_range(colon + 1, 0, UINT32_MAX, &new_index) == NMO_OK;
+    free(left);
+    if (!ok) {
         return false;
     }
 
@@ -1253,11 +1238,9 @@ static int fold_candidates_emit(nmo_cmd_ctx_t *ctx,
         if (!nmo_behavior_boundary_build(ctx->workspace,
                                          child_id, depth,
                                          &children[i].boundary)) {
-            char detail[256];
-            size_t detail_len = nmo_last_error_message_copy(
-                detail, sizeof(detail));
+            const char *detail = nmo_last_error_message();
             fprintf(stderr, "Error: %s\n",
-                    detail_len > 0 ? detail
+                    detail[0] != '\0' ? detail
                                    : "Failed to build child fold boundary");
             for (size_t j = 0; j <= i; ++j) {
                 nmo_behavior_boundary_free(&children[j].boundary);
@@ -1458,13 +1441,11 @@ static int fold_candidates_emit(nmo_cmd_ctx_t *ctx,
                 if (!nmo_behavior_boundary_build_for_nodes(
                         ctx->workspace, boundary->behavior_id,
                         router_ids, router_count, &router_boundary)) {
-                    char detail[256];
-                    size_t detail_len = nmo_last_error_message_copy(
-                        detail, sizeof(detail));
+                    const char *detail = nmo_last_error_message();
                     free(router_ids);
                     free(parents);
                     fprintf(stderr, "Error: %s\n",
-                            detail_len > 0 ? detail
+                            detail[0] != '\0' ? detail
                                            : "Failed to build control router boundary");
                     exit_code = NMO_CLI_EXIT_INTERNAL_ERROR;
                     goto cleanup;
@@ -1512,13 +1493,11 @@ static int fold_candidates_emit(nmo_cmd_ctx_t *ctx,
                         ctx->workspace, boundary->behavior_id,
                         component_roots, root_count,
                         &component_boundary)) {
-                    char detail[256];
-                    size_t detail_len = nmo_last_error_message_copy(
-                        detail, sizeof(detail));
+                    const char *detail = nmo_last_error_message();
                     free(component_roots);
                     free(parents);
                     fprintf(stderr, "Error: %s\n",
-                            detail_len > 0 ? detail
+                            detail[0] != '\0' ? detail
                                            : "Failed to build component boundary");
                     exit_code = NMO_CLI_EXIT_INTERNAL_ERROR;
                     goto cleanup;
@@ -1591,11 +1570,9 @@ static int fold_candidates_run(nmo_cmd_ctx_t *ctx,
                                      args->parent_id,
                                      args->depth,
                                      &boundary)) {
-        char detail[256];
-        size_t detail_len = nmo_last_error_message_copy(detail,
-                                                        sizeof(detail));
+        const char *detail = nmo_last_error_message();
         fprintf(stderr, "Error: %s\n",
-                detail_len > 0 ? detail : "Failed to build fold boundary");
+                detail[0] != '\0' ? detail : "Failed to build fold boundary");
         exit_code = NMO_CLI_EXIT_INTERNAL_ERROR;
         goto cleanup;
     }
@@ -1840,11 +1817,9 @@ static int fold_emit_dry_run(nmo_cmd_ctx_t *ctx,
                            report->parameter_map_count);
         yyjson_mut_obj_add_val(doc, data, "maps", maps);
 
-        char guid_buf[24];
-        rewrite_guid_to_string(report->target_guid, guid_buf,
-                               sizeof(guid_buf));
         yyjson_mut_val *target = yyjson_mut_obj(doc);
-        nmo_cli_json_add_str_safe(doc, target, "guid", guid_buf);
+        nmo_cli_json_add_str_fmt_safe(doc, target, "guid", "%08X-%08X",
+                                      report->target_guid.d1, report->target_guid.d2);
         nmo_cli_json_add_str_safe(doc, target, "name", report->target_name);
         yyjson_mut_obj_add_uint(doc, target, "version",
                                 (uint64_t)report->target_version);

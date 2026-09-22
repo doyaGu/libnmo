@@ -559,13 +559,6 @@ static int uint32_cmp_asc(const void *a, const void *b) {
     return 0;
 }
 
-static void behavior_guid_to_string(nmo_guid_t guid, char *buf, size_t size) {
-    if (!buf || size == 0) {
-        return;
-    }
-    snprintf(buf, size, "%08X-%08X", guid.d1, guid.d2);
-}
-
 static nmo_cli_u32_distribution_t compute_u32_distribution(uint32_t *values,
                                                            size_t count)
 {
@@ -772,14 +765,14 @@ static void behavior_stats_add_guid_count_json(
     size_t top_n = count < 10 ? count : 10;
     for (size_t i = 0; i < top_n; i++) {
         yyjson_mut_val *item = yyjson_mut_obj(doc);
-        char guid_buf[24];
-        behavior_guid_to_string(items[i].guid, guid_buf, sizeof(guid_buf));
         if (items[i].name && items[i].name[0]) {
             nmo_cli_json_add_str_safe(doc, item, name_key, items[i].name);
         } else {
-            nmo_cli_json_add_str_safe(doc, item, name_key, guid_buf);
+            nmo_cli_json_add_str_fmt_safe(doc, item, name_key, "%08X-%08X",
+                                          items[i].guid.d1, items[i].guid.d2);
         }
-        nmo_cli_json_add_str_safe(doc, item, guid_key, guid_buf);
+        nmo_cli_json_add_str_fmt_safe(doc, item, guid_key, "%08X-%08X",
+                                      items[i].guid.d1, items[i].guid.d2);
         yyjson_mut_obj_add_uint(doc, item, "count", (uint64_t)items[i].count);
         yyjson_mut_arr_add_val(arr, item);
     }
@@ -824,17 +817,14 @@ static void behavior_stats_print_guid_count_table(FILE *out,
 
     size_t top_n = count < 10 ? count : 10;
     for (size_t i = 0; i < top_n; i++) {
-        char name_buf[80];
-        char count_buf[16];
+        nmo_cli_table_begin_row(&table);
         if (items[i].name && items[i].name[0]) {
-            snprintf(name_buf, sizeof(name_buf), "%s", items[i].name);
+            nmo_cli_table_add_cell(&table, items[i].name);
         } else {
-            snprintf(name_buf, sizeof(name_buf), "{%08X-%08X}",
-                     items[i].guid.d1, items[i].guid.d2);
+            nmo_cli_table_add_cell_fmt(&table, "{%08X-%08X}",
+                                       items[i].guid.d1, items[i].guid.d2);
         }
-        snprintf(count_buf, sizeof(count_buf), "%zu", items[i].count);
-        const char *cells[] = { name_buf, count_buf };
-        nmo_cli_table_add_row(&table, cells, 2);
+        nmo_cli_table_add_cell_fmt(&table, "%zu", items[i].count);
     }
 
     nmo_cli_table_print(&table, out, colorize);
@@ -1112,10 +1102,8 @@ static int behavior_stats_single(const char *file_path,
             yyjson_mut_val *item = yyjson_mut_obj(doc);
             if (protos[i].name)
                 nmo_cli_json_add_str_safe(doc, item, "name", protos[i].name);
-            char guid_buf[24];
-            snprintf(guid_buf, sizeof(guid_buf), "%08X-%08X",
-                     protos[i].guid.d1, protos[i].guid.d2);
-            nmo_cli_json_add_str_safe(doc, item, "guid", guid_buf);
+            nmo_cli_json_add_str_fmt_safe(doc, item, "guid", "%08X-%08X",
+                                          protos[i].guid.d1, protos[i].guid.d2);
             yyjson_mut_obj_add_uint(doc, item, "count", (uint64_t)protos[i].count);
             yyjson_mut_arr_add_val(proto_arr, item);
         }
@@ -1169,15 +1157,10 @@ static int behavior_stats_single(const char *file_path,
         nmo_cli_print_heading(out, "Behavior Statistics", colorize);
         fprintf(out, "\n");
 
-        char buf[64];
-        snprintf(buf, sizeof(buf), "%zu", total_behaviors);
-        nmo_cli_print_kv(out, "Total behaviors", buf, 22, colorize);
-        snprintf(buf, sizeof(buf), "%zu", n_scripts);
-        nmo_cli_print_kv(out, "Scripts", buf, 22, colorize);
-        snprintf(buf, sizeof(buf), "%zu", n_graphs);
-        nmo_cli_print_kv(out, "Graphs", buf, 22, colorize);
-        snprintf(buf, sizeof(buf), "%zu", n_bbs);
-        nmo_cli_print_kv(out, "Building Blocks", buf, 22, colorize);
+        nmo_cli_print_kv_fmt(out, "Total behaviors", 22, colorize, "%zu", total_behaviors);
+        nmo_cli_print_kv_fmt(out, "Scripts", 22, colorize, "%zu", n_scripts);
+        nmo_cli_print_kv_fmt(out, "Graphs", 22, colorize, "%zu", n_graphs);
+        nmo_cli_print_kv_fmt(out, "Building Blocks", 22, colorize, "%zu", n_bbs);
 
         if (proto_count > 0) {
             fprintf(out, "\n");
@@ -1194,16 +1177,13 @@ static int behavior_stats_single(const char *file_path,
 
             size_t top_n = proto_count < 10 ? proto_count : 10;
             for (size_t i = 0; i < top_n; i++) {
-                char count_buf[16];
-                snprintf(count_buf, sizeof(count_buf), "%zu", protos[i].count);
-                char name_buf[80];
+                nmo_cli_table_begin_row(&table);
                 if (protos[i].name)
-                    snprintf(name_buf, sizeof(name_buf), "%s", protos[i].name);
+                    nmo_cli_table_add_cell(&table, protos[i].name);
                 else
-                    snprintf(name_buf, sizeof(name_buf), "{%08X-%08X}",
-                             protos[i].guid.d1, protos[i].guid.d2);
-                const char *cells[] = { name_buf, count_buf };
-                nmo_cli_table_add_row(&table, cells, 2);
+                    nmo_cli_table_add_cell_fmt(&table, "{%08X-%08X}",
+                                               protos[i].guid.d1, protos[i].guid.d2);
+                nmo_cli_table_add_cell_fmt(&table, "%zu", protos[i].count);
             }
             nmo_cli_table_print(&table, out, colorize);
             nmo_cli_table_free(&table);
@@ -1218,53 +1198,42 @@ static int behavior_stats_single(const char *file_path,
                                               operation_type_count);
 
         fprintf(out, "\n");
-        snprintf(buf, sizeof(buf), "%zu", n_parameters);
-        nmo_cli_print_kv(out, "Parameters", buf, 22, colorize);
-        snprintf(buf, sizeof(buf), "%zu", n_links);
-        nmo_cli_print_kv(out, "Links", buf, 22, colorize);
-        snprintf(buf, sizeof(buf), "%zu", n_operations);
-        nmo_cli_print_kv(out, "Operations", buf, 22, colorize);
-        snprintf(buf, sizeof(buf), "%u", max_depth);
-        nmo_cli_print_kv(out, "Max tree depth", buf, 22, colorize);
-        snprintf(buf, sizeof(buf), "%.2f / %u",
-                 tree_depth_dist.avg, tree_depth_dist.p95);
-        nmo_cli_print_kv(out, "Tree depth avg/p95", buf, 22, colorize);
-        snprintf(buf, sizeof(buf), "%.2f / %u",
-                 script_sub_dist.avg, script_sub_dist.p95);
-        nmo_cli_print_kv(out, "Script sub avg/p95", buf, 22, colorize);
+        nmo_cli_print_kv_fmt(out, "Parameters", 22, colorize, "%zu" , n_parameters);
+        nmo_cli_print_kv_fmt(out, "Links", 22, colorize, "%zu" , n_links);
+        nmo_cli_print_kv_fmt(out, "Operations", 22, colorize, "%zu" , n_operations);
+        nmo_cli_print_kv_fmt(out, "Max tree depth", 22, colorize, "%u" , max_depth);
+        nmo_cli_print_kv_fmt(out, "Tree depth avg/p95", 22, colorize,
+                             "%.2f / %u", tree_depth_dist.avg, tree_depth_dist.p95);
+        nmo_cli_print_kv_fmt(out, "Script sub avg/p95", 22, colorize,
+                             "%.2f / %u", script_sub_dist.avg, script_sub_dist.p95);
 
         fprintf(out, "\n");
         nmo_cli_print_heading(out, "Link Delay Distribution", colorize);
         fprintf(out, "\n");
-        snprintf(buf, sizeof(buf), "%zu", stats.link_delay_zero);
-        nmo_cli_print_kv(out, "Zero delay", buf, 22, colorize);
-        snprintf(buf, sizeof(buf), "%zu", stats.link_delay_next_frame);
-        nmo_cli_print_kv(out, "Next frame", buf, 22, colorize);
-        snprintf(buf, sizeof(buf), "%zu", stats.link_delay_multi_frame);
-        nmo_cli_print_kv(out, "Multi frame", buf, 22, colorize);
+        nmo_cli_print_kv_fmt(out, "Zero delay", 22, colorize, "%zu" , stats.link_delay_zero);
+        nmo_cli_print_kv_fmt(out, "Next frame", 22, colorize, "%zu" , stats.link_delay_next_frame);
+        nmo_cli_print_kv_fmt(out, "Multi frame", 22, colorize,
+                             "%zu", stats.link_delay_multi_frame);
 
         fprintf(out, "\n");
         nmo_cli_print_heading(out, "Broken References", colorize);
         fprintf(out, "\n");
-        snprintf(buf, sizeof(buf), "%zu", stats.broken_behavior_links);
-        nmo_cli_print_kv(out, "Behavior links", buf, 22, colorize);
-        snprintf(buf, sizeof(buf), "%zu", stats.broken_sub_behaviors);
-        nmo_cli_print_kv(out, "Sub behaviors", buf, 22, colorize);
+        nmo_cli_print_kv_fmt(out, "Behavior links", 22, colorize,
+                             "%zu", stats.broken_behavior_links);
+        nmo_cli_print_kv_fmt(out, "Sub behaviors", 22, colorize,
+                             "%zu", stats.broken_sub_behaviors);
 
         if (n_with_interface > 0) {
             fprintf(out, "\n");
             nmo_cli_print_heading(out, "Interface Layout", colorize);
             fprintf(out, "\n");
-            snprintf(buf, sizeof(buf), "%zu / %zu", n_with_interface, total_behaviors);
-            nmo_cli_print_kv(out, "With interface data", buf, 22, colorize);
-            snprintf(buf, sizeof(buf), "%zu", n_total_comments);
-            nmo_cli_print_kv(out, "Comments", buf, 22, colorize);
-            snprintf(buf, sizeof(buf), "%zu", n_folded);
-            nmo_cli_print_kv(out, "Folded behaviors", buf, 22, colorize);
-            snprintf(buf, sizeof(buf), "%zu", n_total_routing_points);
-            nmo_cli_print_kv(out, "Link routing points", buf, 22, colorize);
-            snprintf(buf, sizeof(buf), "%zu", n_with_snapshot);
-            nmo_cli_print_kv(out, "With snapshot", buf, 22, colorize);
+            nmo_cli_print_kv_fmt(out, "With interface data", 22, colorize,
+                                 "%zu / %zu", n_with_interface, total_behaviors);
+            nmo_cli_print_kv_fmt(out, "Comments", 22, colorize, "%zu" , n_total_comments);
+            nmo_cli_print_kv_fmt(out, "Folded behaviors", 22, colorize, "%zu" , n_folded);
+            nmo_cli_print_kv_fmt(out, "Link routing points", 22, colorize,
+                                 "%zu", n_total_routing_points);
+            nmo_cli_print_kv_fmt(out, "With snapshot", 22, colorize, "%zu" , n_with_snapshot);
         }
     }
 
@@ -1404,10 +1373,8 @@ int nmo_cmd_behavior_stats(int argc, char **argv, const nmo_cli_global_opts_t *g
             if (protos[i].name) {
                 nmo_cli_json_add_str_safe(doc, item, "name", protos[i].name);
             }
-            char guid_buf[24];
-            snprintf(guid_buf, sizeof(guid_buf), "%08X-%08X",
-                     protos[i].guid.d1, protos[i].guid.d2);
-            nmo_cli_json_add_str_safe(doc, item, "guid", guid_buf);
+            nmo_cli_json_add_str_fmt_safe(doc, item, "guid", "%08X-%08X",
+                                          protos[i].guid.d1, protos[i].guid.d2);
             yyjson_mut_obj_add_uint(doc, item, "count",
                                     (uint64_t)protos[i].count);
             yyjson_mut_arr_add_val(proto_arr, item);
@@ -1464,15 +1431,10 @@ int nmo_cmd_behavior_stats(int argc, char **argv, const nmo_cli_global_opts_t *g
         nmo_cli_print_heading(c.out, "Behavior Statistics", c.colorize);
         fprintf(c.out, "\n");
 
-        char buf[64];
-        snprintf(buf, sizeof(buf), "%zu", total_behaviors);
-        nmo_cli_print_kv(c.out, "Total behaviors", buf, 22, c.colorize);
-        snprintf(buf, sizeof(buf), "%zu", n_scripts);
-        nmo_cli_print_kv(c.out, "Scripts", buf, 22, c.colorize);
-        snprintf(buf, sizeof(buf), "%zu", n_graphs);
-        nmo_cli_print_kv(c.out, "Graphs", buf, 22, c.colorize);
-        snprintf(buf, sizeof(buf), "%zu", n_bbs);
-        nmo_cli_print_kv(c.out, "Building Blocks", buf, 22, c.colorize);
+        nmo_cli_print_kv_fmt(c.out, "Total behaviors", 22, c.colorize, "%zu", total_behaviors);
+        nmo_cli_print_kv_fmt(c.out, "Scripts", 22, c.colorize, "%zu", n_scripts);
+        nmo_cli_print_kv_fmt(c.out, "Graphs", 22, c.colorize, "%zu", n_graphs);
+        nmo_cli_print_kv_fmt(c.out, "Building Blocks", 22, c.colorize, "%zu", n_bbs);
 
         /* Top BB prototypes */
         if (proto_count > 0) {
@@ -1490,17 +1452,14 @@ int nmo_cmd_behavior_stats(int argc, char **argv, const nmo_cli_global_opts_t *g
 
             size_t top_n = proto_count < 10 ? proto_count : 10;
             for (size_t i = 0; i < top_n; i++) {
-                char count_buf[16];
-                snprintf(count_buf, sizeof(count_buf), "%zu", protos[i].count);
-                char name_buf[80];
+                nmo_cli_table_begin_row(&table);
                 if (protos[i].name) {
-                    snprintf(name_buf, sizeof(name_buf), "%s", protos[i].name);
+                    nmo_cli_table_add_cell(&table, protos[i].name);
                 } else {
-                    snprintf(name_buf, sizeof(name_buf), "{%08X-%08X}",
-                             protos[i].guid.d1, protos[i].guid.d2);
+                    nmo_cli_table_add_cell_fmt(&table, "{%08X-%08X}",
+                                               protos[i].guid.d1, protos[i].guid.d2);
                 }
-                const char *cells[] = { name_buf, count_buf };
-                nmo_cli_table_add_row(&table, cells, 2);
+                nmo_cli_table_add_cell_fmt(&table, "%zu", protos[i].count);
             }
 
             nmo_cli_table_print(&table, c.out, c.colorize);
@@ -1516,53 +1475,43 @@ int nmo_cmd_behavior_stats(int argc, char **argv, const nmo_cli_global_opts_t *g
                                               operation_type_count);
 
         fprintf(c.out, "\n");
-        snprintf(buf, sizeof(buf), "%zu", n_parameters);
-        nmo_cli_print_kv(c.out, "Parameters", buf, 22, c.colorize);
-        snprintf(buf, sizeof(buf), "%zu", n_links);
-        nmo_cli_print_kv(c.out, "Links", buf, 22, c.colorize);
-        snprintf(buf, sizeof(buf), "%zu", n_operations);
-        nmo_cli_print_kv(c.out, "Operations", buf, 22, c.colorize);
-        snprintf(buf, sizeof(buf), "%u", max_depth);
-        nmo_cli_print_kv(c.out, "Max tree depth", buf, 22, c.colorize);
-        snprintf(buf, sizeof(buf), "%.2f / %u",
-                 tree_depth_dist.avg, tree_depth_dist.p95);
-        nmo_cli_print_kv(c.out, "Tree depth avg/p95", buf, 22, c.colorize);
-        snprintf(buf, sizeof(buf), "%.2f / %u",
-                 script_sub_dist.avg, script_sub_dist.p95);
-        nmo_cli_print_kv(c.out, "Script sub avg/p95", buf, 22, c.colorize);
+        nmo_cli_print_kv_fmt(c.out, "Parameters", 22, c.colorize, "%zu" , n_parameters);
+        nmo_cli_print_kv_fmt(c.out, "Links", 22, c.colorize, "%zu" , n_links);
+        nmo_cli_print_kv_fmt(c.out, "Operations", 22, c.colorize, "%zu" , n_operations);
+        nmo_cli_print_kv_fmt(c.out, "Max tree depth", 22, c.colorize, "%u" , max_depth);
+        nmo_cli_print_kv_fmt(c.out, "Tree depth avg/p95", 22, c.colorize,
+                             "%.2f / %u", tree_depth_dist.avg, tree_depth_dist.p95);
+        nmo_cli_print_kv_fmt(c.out, "Script sub avg/p95", 22, c.colorize,
+                             "%.2f / %u", script_sub_dist.avg, script_sub_dist.p95);
 
         fprintf(c.out, "\n");
         nmo_cli_print_heading(c.out, "Link Delay Distribution", c.colorize);
         fprintf(c.out, "\n");
-        snprintf(buf, sizeof(buf), "%zu", stats.link_delay_zero);
-        nmo_cli_print_kv(c.out, "Zero delay", buf, 22, c.colorize);
-        snprintf(buf, sizeof(buf), "%zu", stats.link_delay_next_frame);
-        nmo_cli_print_kv(c.out, "Next frame", buf, 22, c.colorize);
-        snprintf(buf, sizeof(buf), "%zu", stats.link_delay_multi_frame);
-        nmo_cli_print_kv(c.out, "Multi frame", buf, 22, c.colorize);
+        nmo_cli_print_kv_fmt(c.out, "Zero delay", 22, c.colorize, "%zu" , stats.link_delay_zero);
+        nmo_cli_print_kv_fmt(c.out, "Next frame", 22, c.colorize,
+                             "%zu", stats.link_delay_next_frame);
+        nmo_cli_print_kv_fmt(c.out, "Multi frame", 22, c.colorize,
+                             "%zu", stats.link_delay_multi_frame);
 
         fprintf(c.out, "\n");
         nmo_cli_print_heading(c.out, "Broken References", c.colorize);
         fprintf(c.out, "\n");
-        snprintf(buf, sizeof(buf), "%zu", stats.broken_behavior_links);
-        nmo_cli_print_kv(c.out, "Behavior links", buf, 22, c.colorize);
-        snprintf(buf, sizeof(buf), "%zu", stats.broken_sub_behaviors);
-        nmo_cli_print_kv(c.out, "Sub behaviors", buf, 22, c.colorize);
+        nmo_cli_print_kv_fmt(c.out, "Behavior links", 22, c.colorize,
+                             "%zu", stats.broken_behavior_links);
+        nmo_cli_print_kv_fmt(c.out, "Sub behaviors", 22, c.colorize,
+                             "%zu", stats.broken_sub_behaviors);
 
         if (n_with_interface > 0) {
             fprintf(c.out, "\n");
             nmo_cli_print_heading(c.out, "Interface Layout", c.colorize);
             fprintf(c.out, "\n");
-            snprintf(buf, sizeof(buf), "%zu / %zu", n_with_interface, total_behaviors);
-            nmo_cli_print_kv(c.out, "With interface data", buf, 22, c.colorize);
-            snprintf(buf, sizeof(buf), "%zu", n_total_comments);
-            nmo_cli_print_kv(c.out, "Comments", buf, 22, c.colorize);
-            snprintf(buf, sizeof(buf), "%zu", n_folded);
-            nmo_cli_print_kv(c.out, "Folded behaviors", buf, 22, c.colorize);
-            snprintf(buf, sizeof(buf), "%zu", n_total_routing_points);
-            nmo_cli_print_kv(c.out, "Link routing points", buf, 22, c.colorize);
-            snprintf(buf, sizeof(buf), "%zu", n_with_snapshot);
-            nmo_cli_print_kv(c.out, "With snapshot", buf, 22, c.colorize);
+            nmo_cli_print_kv_fmt(c.out, "With interface data", 22, c.colorize,
+                                 "%zu / %zu", n_with_interface, total_behaviors);
+            nmo_cli_print_kv_fmt(c.out, "Comments", 22, c.colorize, "%zu" , n_total_comments);
+            nmo_cli_print_kv_fmt(c.out, "Folded behaviors", 22, c.colorize, "%zu" , n_folded);
+            nmo_cli_print_kv_fmt(c.out, "Link routing points", 22, c.colorize,
+                                 "%zu", n_total_routing_points);
+            nmo_cli_print_kv_fmt(c.out, "With snapshot", 22, c.colorize, "%zu" , n_with_snapshot);
         }
     }
 

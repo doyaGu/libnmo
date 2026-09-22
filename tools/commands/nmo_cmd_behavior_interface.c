@@ -308,33 +308,23 @@ static void iface_print_body_text(FILE *out, const nmo_interface_body_t *body,
         return;
     }
     if (body->link_count > 0) {
-        char heading[128];
-        snprintf(heading, sizeof(heading), "%s Links (%zu)", label, body->link_count);
-        nmo_cli_print_heading(out, heading, colorize);
+        nmo_cli_print_heading_fmt(out, colorize, "%s Links (%zu)", label, body->link_count);
         iface_print_body_links(out, body);
     }
     if (body->operation_count > 0) {
-        char heading[128];
-        snprintf(heading, sizeof(heading), "%s Operations (%zu)", label, body->operation_count);
-        nmo_cli_print_heading(out, heading, colorize);
+        nmo_cli_print_heading_fmt(out, colorize, "%s Operations (%zu)", label, body->operation_count);
         iface_print_body_operations(out, body);
     }
     if (body->comment_count > 0) {
-        char heading[128];
-        snprintf(heading, sizeof(heading), "%s Comments (%zu)", label, body->comment_count);
-        nmo_cli_print_heading(out, heading, colorize);
+        nmo_cli_print_heading_fmt(out, colorize, "%s Comments (%zu)", label, body->comment_count);
         iface_print_body_comments(out, body);
     }
     if (body->has_params) {
-        char heading[128];
-        snprintf(heading, sizeof(heading), "%s Parameters", label);
-        nmo_cli_print_heading(out, heading, colorize);
+        nmo_cli_print_heading_fmt(out, colorize, "%s Parameters", label);
         iface_print_body_params(out, body);
     }
     if (body->has_graph_io && body->graph_io) {
-        char heading[128];
-        snprintf(heading, sizeof(heading), "%s Graph IO", label);
-        nmo_cli_print_heading(out, heading, colorize);
+        nmo_cli_print_heading_fmt(out, colorize, "%s Graph IO", label);
         iface_print_body_graph_io(out, body->graph_io);
     }
     if (body->has_unknown_flag_section) {
@@ -3315,15 +3305,19 @@ static bool parse_int32_list(const char *str, int32_t *out, size_t max_count, si
         }
 
         size_t len = (size_t)(end - start);
-        if (len == 0 || len >= 64) {
+        if (len == 0) {
             return false;
         }
 
-        char token[64];
+        char *token = (char *)malloc(len + 1u);
+        if (token == NULL) {
+            return false;
+        }
         memcpy(token, start, len);
         token[len] = '\0';
-
-        if (nmo_parse_i32_range(token, INT32_MIN, INT32_MAX, &out[count]) != NMO_OK) {
+        nmo_status_t parse_rc = nmo_parse_i32_range(token, INT32_MIN, INT32_MAX, &out[count]);
+        free(token);
+        if (parse_rc != NMO_OK) {
             return false;
         }
         count++;
@@ -3739,14 +3733,10 @@ static int behavior_iface_show_run(nmo_cmd_ctx_t *ctx,
 
     /* --- Brief output --- */
     if (args->brief) {
-        char buf[128];
-        char heading[256];
-        snprintf(heading, sizeof(heading), "Interface: Behavior #%u %s",
-                 target_id, (name && name[0]) ? name : "(unnamed)");
-        nmo_cli_print_heading(c.out, heading, c.colorize);
+        nmo_cli_print_heading_fmt(c.out, c.colorize, "Interface: Behavior #%u %s",
+                                  target_id, (name && name[0]) ? name : "(unnamed)");
 
-        snprintf(buf, sizeof(buf), "0x%02X", idata->version);
-        nmo_cli_print_kv(c.out, "Version", buf, 22, c.colorize);
+        nmo_cli_print_kv_fmt(c.out, "Version", 22, c.colorize, "0x%02X", idata->version);
 
         nmo_cli_print_kv(c.out, "Layout",
                          iface_is_sectioned(idata) ? "sectioned" : "inline",
@@ -3756,12 +3746,10 @@ static int behavior_iface_show_run(nmo_cmd_ctx_t *ctx,
                          22, c.colorize);
 
         if (idata->script.color) {
-            snprintf(buf, sizeof(buf), "0x%08X", idata->script.color);
-            nmo_cli_print_kv(c.out, "Color", buf, 22, c.colorize);
+            nmo_cli_print_kv_fmt(c.out, "Color", 22, c.colorize, "0x%08X", idata->script.color);
         }
 
-        snprintf(buf, sizeof(buf), "%zu", idata->sub_count);
-        nmo_cli_print_kv(c.out, "Sub-behaviors", buf, 22, c.colorize);
+        nmo_cli_print_kv_fmt(c.out, "Sub-behaviors", 22, c.colorize, "%zu", idata->sub_count);
 
         /* Count totals across all bodies */
         size_t total_links = idata->script.body.link_count;
@@ -3795,53 +3783,38 @@ static int behavior_iface_show_run(nmo_cmd_ctx_t *ctx,
                 folded_count++;
         }
 
-        snprintf(buf, sizeof(buf), "%zu", total_links);
-        nmo_cli_print_kv(c.out, "Total links", buf, 22, c.colorize);
-
-        snprintf(buf, sizeof(buf), "%zu", total_routing);
-        nmo_cli_print_kv(c.out, "Routing points", buf, 22, c.colorize);
-
-        snprintf(buf, sizeof(buf), "%zu", total_ops);
-        nmo_cli_print_kv(c.out, "Operations", buf, 22, c.colorize);
-
-        snprintf(buf, sizeof(buf), "%zu", total_comments);
-        nmo_cli_print_kv(c.out, "Comments", buf, 22, c.colorize);
-
-        snprintf(buf, sizeof(buf), "%zu local + %zu shared", total_local, total_shared);
-        nmo_cli_print_kv(c.out, "Params", buf, 22, c.colorize);
+        nmo_cli_print_kv_fmt(c.out, "Total links", 22, c.colorize, "%zu", total_links);
+        nmo_cli_print_kv_fmt(c.out, "Routing points", 22, c.colorize, "%zu", total_routing);
+        nmo_cli_print_kv_fmt(c.out, "Operations", 22, c.colorize, "%zu", total_ops);
+        nmo_cli_print_kv_fmt(c.out, "Comments", 22, c.colorize, "%zu", total_comments);
+        nmo_cli_print_kv_fmt(c.out, "Params", 22, c.colorize,
+                             "%zu local + %zu shared", total_local, total_shared);
 
         if (idata->script.has_snapshot) {
-            snprintf(buf, sizeof(buf), "%ux%u (%zu bytes)",
-                     idata->script.snapshot_desc.width,
-                     idata->script.snapshot_desc.height,
-                     idata->script.snapshot_size);
-            nmo_cli_print_kv(c.out, "Snapshot", buf, 22, c.colorize);
+            nmo_cli_print_kv_fmt(c.out, "Snapshot", 22, c.colorize, "%ux%u (%zu bytes)",
+                                 idata->script.snapshot_desc.width,
+                                 idata->script.snapshot_desc.height,
+                                 idata->script.snapshot_size);
         } else {
             nmo_cli_print_kv(c.out, "Snapshot", "(none)", 22, c.colorize);
         }
 
         if (idata->extra.present) {
-            snprintf(buf, sizeof(buf), "v%u, %zu entries",
-                     idata->extra.version, idata->extra.entry_count);
+            nmo_cli_print_kv_fmt(c.out, "Extra data", 22, c.colorize, "v%u, %zu entries",
+                                 idata->extra.version, idata->extra.entry_count);
         } else {
-            snprintf(buf, sizeof(buf), "(none)");
+            nmo_cli_print_kv(c.out, "Extra data", "(none)", 22, c.colorize);
         }
-        nmo_cli_print_kv(c.out, "Extra data", buf, 22, c.colorize);
 
-        snprintf(buf, sizeof(buf), "%zu", folded_count);
-        nmo_cli_print_kv(c.out, "Folded", buf, 22, c.colorize);
+        nmo_cli_print_kv_fmt(c.out, "Folded", 22, c.colorize, "%zu", folded_count);
 
         return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS)
                          : NMO_CLI_EXIT_SUCCESS;
     }
 
     /* --- Full text output --- */
-    {
-        char heading[256];
-        snprintf(heading, sizeof(heading), "Interface: Behavior #%u %s",
-                 target_id, (name && name[0]) ? name : "(unnamed)");
-        nmo_cli_print_heading(c.out, heading, c.colorize);
-    }
+    nmo_cli_print_heading_fmt(c.out, c.colorize, "Interface: Behavior #%u %s",
+                              target_id, (name && name[0]) ? name : "(unnamed)");
 
     /* Header */
     fprintf(c.out, "  version: 0x%02X  layout: %s  root: %s\n",
@@ -3873,9 +3846,7 @@ static int behavior_iface_show_run(nmo_cmd_ctx_t *ctx,
 
     /* Sub-behaviors */
     if (idata->sub_count > 0) {
-        char heading[128];
-        snprintf(heading, sizeof(heading), "Sub-behaviors (%zu)", idata->sub_count);
-        nmo_cli_print_heading(c.out, heading, c.colorize);
+        nmo_cli_print_heading_fmt(c.out, c.colorize, "Sub-behaviors (%zu)", idata->sub_count);
         for (size_t si = 0; si < idata->sub_count; si++) {
             const nmo_interface_behavior_t *sb = &idata->subs[si];
             fprintf(c.out, "  [%zu] id=%u depth=%u flags=0x%X",
@@ -3888,18 +3859,16 @@ static int behavior_iface_show_run(nmo_cmd_ctx_t *ctx,
                     sb->h_size, sb->v_size,
                     sb->h_expand_size, sb->v_expand_size);
 
-            char label[64];
-            snprintf(label, sizeof(label), "Sub[%zu]", si);
-            iface_print_body_text(c.out, &sb->body, label, c.colorize);
+            char *label = nmo_tool_strdup_fmt("Sub[%zu]", si);
+            iface_print_body_text(c.out, &sb->body, label ? label : "Sub", c.colorize);
+            free(label);
         }
     }
 
     /* Extra data */
     if (idata->extra.present) {
-        char heading[128];
-        snprintf(heading, sizeof(heading), "Extra Data (v%u, %zu entries)",
-                 idata->extra.version, idata->extra.entry_count);
-        nmo_cli_print_heading(c.out, heading, c.colorize);
+        nmo_cli_print_heading_fmt(c.out, c.colorize, "Extra Data (v%u, %zu entries)",
+                                  idata->extra.version, idata->extra.entry_count);
         for (size_t ei = 0; ei < idata->extra.entry_count; ei++) {
             const nmo_interface_extra_entry_t *ee = &idata->extra.entries[ei];
             fprintf(c.out, "  [%zu] type=%u id1=%u", ei, ee->type, ee->id1);

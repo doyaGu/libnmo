@@ -43,13 +43,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-static void behavior_show_guid_to_string(nmo_guid_t guid, char *buf, size_t size) {
-    if (!buf || size == 0) {
-        return;
-    }
-    snprintf(buf, size, "%08X-%08X", guid.d1, guid.d2);
-}
-
 static void behavior_show_add_decoded_value_json(
     yyjson_mut_doc *doc,
     yyjson_mut_val *item,
@@ -61,12 +54,11 @@ static void behavior_show_add_decoded_value_json(
         return;
     }
 
-    char value_buf[256];
-    if (nmo_behavior_param_value_to_string(param, registry, workspace,
-                                  value_buf, sizeof(value_buf)) == NMO_OK &&
-        value_buf[0] != '\0') {
-        nmo_cli_json_add_str_safe(doc, item, "decoded_value", value_buf);
+    char *value = nmo_core_param_value_dup(param, registry, workspace);
+    if (value && value[0] != '\0') {
+        nmo_cli_json_add_str_safe(doc, item, "decoded_value", value);
     }
+    free(value);
 }
 
 static void behavior_show_add_source_chain_json(
@@ -100,9 +92,8 @@ static void behavior_show_add_source_chain_json(
             nmo_object_t *obj =
                 nmo_object_repository_find_by_id(repo, steps[i].id);
             nmo_guid_t type_guid = get_param_type_guid(obj);
-            char guid_buf[24];
-            behavior_show_guid_to_string(type_guid, guid_buf, sizeof(guid_buf));
-            nmo_cli_json_add_str_safe(doc, step, "type_guid", guid_buf);
+            nmo_cli_json_add_str_fmt_safe(doc, step, "type_guid", "%08X-%08X",
+                                          type_guid.d1, type_guid.d2);
             nmo_cli_json_add_str_safe(doc, step, "type_name",
                                       resolve_type(registry, type_guid));
             bool is_shared = false;
@@ -152,9 +143,9 @@ static bool behavior_show_operation_is_copy_like(const char *op_name) {
          strcmp(op_name, "Set") == 0);
 }
 
-static void behavior_show_format_operation(
-    char *buf,
-    size_t size,
+/* Print one "  [op] in1 op in2 -> out  [type]" line. */
+static void behavior_show_print_operation(
+    FILE *out_stream,
     const char *op_name,
     const char *in1_name,
     bool has_in1,
@@ -164,10 +155,6 @@ static void behavior_show_format_operation(
     bool has_out,
     const char *out_type)
 {
-    if (!buf || size == 0) {
-        return;
-    }
-
     const char *op_token = behavior_show_operation_token(op_name);
     const char *in1 = (in1_name && in1_name[0]) ? in1_name : "[missing in1]";
     const char *in2 = (in2_name && in2_name[0]) ? in2_name : "[missing in2]";
@@ -175,21 +162,21 @@ static void behavior_show_format_operation(
     const char *otype = (out_type && out_type[0]) ? out_type : "?";
 
     if (behavior_show_operation_is_copy_like(op_name)) {
-        snprintf(buf, size, "[%s] %s -> %s [COPY]  [%s]",
-                 op_token, has_in1 ? in1 : "[missing in1]",
-                 has_out ? out : "[missing out]", otype);
+        fprintf(out_stream, "  [%s] %s -> %s [COPY]  [%s]\n",
+                op_token, has_in1 ? in1 : "[missing in1]",
+                has_out ? out : "[missing out]", otype);
     } else if (has_in1 && !has_in2) {
-        snprintf(buf, size, "[%s] %s %s -> %s  [%s]",
-                 op_token, op_token, in1,
-                 has_out ? out : "[missing out]", otype);
+        fprintf(out_stream, "  [%s] %s %s -> %s  [%s]\n",
+                op_token, op_token, in1,
+                has_out ? out : "[missing out]", otype);
     } else {
-        snprintf(buf, size, "[%s] %s %s %s -> %s  [%s]",
-                 op_token,
-                 has_in1 ? in1 : "[missing in1]",
-                 op_token,
-                 has_in2 ? in2 : "[missing in2]",
-                 has_out ? out : "[missing out]",
-                 otype);
+        fprintf(out_stream, "  [%s] %s %s %s -> %s  [%s]\n",
+                op_token,
+                has_in1 ? in1 : "[missing in1]",
+                op_token,
+                has_in2 ? in2 : "[missing in2]",
+                has_out ? out : "[missing out]",
+                otype);
     }
 }
 
@@ -233,10 +220,9 @@ static void behavior_show_add_operation_param_json(
 
     nmo_object_t *param_obj = nmo_object_repository_find_by_id(repo, param_id);
     nmo_guid_t type_guid = get_param_type_guid(param_obj);
-    char guid_buf[24];
-    behavior_show_guid_to_string(type_guid, guid_buf, sizeof(guid_buf));
 
-    nmo_cli_json_add_str_safe(doc, item, guid_key, guid_buf);
+    nmo_cli_json_add_str_fmt_safe(doc, item, guid_key, "%08X-%08X",
+                                  type_guid.d1, type_guid.d2);
     nmo_cli_json_add_str_safe(doc, item, type_key,
                               resolve_type(registry, type_guid));
 }
@@ -340,8 +326,6 @@ static void behavior_show_add_data_flow_json(
                 const char *src_owner_name = src ? src->owner_name : "(external)";
                 nmo_object_id_t src_owner_id = src ? src->owner_id : 0;
                 nmo_guid_t type_guid = get_param_type_guid(pin_obj);
-                char guid_buf[24];
-                behavior_show_guid_to_string(type_guid, guid_buf, sizeof(guid_buf));
 
                 yyjson_mut_val *flow = yyjson_mut_obj(doc);
                 yyjson_mut_obj_add_uint(doc, flow, "source_id", source_id);
@@ -355,7 +339,8 @@ static void behavior_show_add_data_flow_json(
                                           resolve_name(repo, param_id));
                 yyjson_mut_obj_add_uint(doc, flow, "target_owner_id", sub_id);
                 nmo_cli_json_add_str_safe(doc, flow, "target_owner_name", sub_name);
-                nmo_cli_json_add_str_safe(doc, flow, "type_guid", guid_buf);
+                nmo_cli_json_add_str_fmt_safe(doc, flow, "type_guid", "%08X-%08X",
+                                              type_guid.d1, type_guid.d2);
                 nmo_cli_json_add_str_safe(doc, flow, "type_name",
                                           resolve_type(registry, type_guid));
                 yyjson_mut_obj_add_bool(doc, flow, "is_shared", pin->is_shared != 0);
@@ -457,10 +442,8 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
         nmo_cmd_behavior_add_interface_diagnostics_json(doc, data, c.workspace);
 
         if (is_bb && !nmo_guid_is_null(bs->block_guid)) {
-            char guid_buf[24];
-            snprintf(guid_buf, sizeof(guid_buf), "%08X-%08X",
-                     bs->block_guid.d1, bs->block_guid.d2);
-            nmo_cli_json_add_str_safe(doc, data, "bb_guid", guid_buf);
+            nmo_cli_json_add_str_fmt_safe(doc, data, "bb_guid", "%08X-%08X",
+                                          bs->block_guid.d1, bs->block_guid.d2);
             yyjson_mut_obj_add_uint(doc, data, "bb_version",
                                     bs->block_version);
             const char *proto_name = nmo_behavior_registry_get_name(
@@ -622,11 +605,10 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
                         (const nmo_parameteroperation_state_t *)op_obj->state;
                     const char *op_name = behavior_show_operation_name(
                         c.registry, op_state->operation_guid);
-                    char guid_buf[24];
-                    behavior_show_guid_to_string(op_state->operation_guid,
-                                                 guid_buf, sizeof(guid_buf));
-                    nmo_cli_json_add_str_safe(doc, item, "operation_guid",
-                                              guid_buf);
+                    nmo_cli_json_add_str_fmt_safe(doc, item, "operation_guid",
+                                                  "%08X-%08X",
+                                                  op_state->operation_guid.d1,
+                                                  op_state->operation_guid.d2);
                     if (op_name) {
                         nmo_cli_json_add_str_safe(doc, item, "operation",
                                                   op_name);
@@ -761,10 +743,8 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
     }
 
     /* Text output: BB signature view */
-    char heading[256];
-    snprintf(heading, sizeof(heading), "Behavior #%u: %s",
-             target_id, (name && name[0]) ? name : "(unnamed)");
-    nmo_cli_print_heading(c.out, heading, c.colorize);
+    nmo_cli_print_heading_fmt(c.out, c.colorize, "Behavior #%u: %s",
+                              target_id, (name && name[0]) ? name : "(unnamed)");
 
     /* Flags and identity */
     bool is_bb = (bs->flags & CKBEHAVIOR_BUILDINGBLOCK) != 0;
@@ -886,12 +866,11 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
                 const nmo_parameter_state_t *ps =
                     (const nmo_parameter_state_t *)nmo_object_get_state(p);
                 if (ps && ps->has_state) {
-                    char val_buf[256];
-                    if (nmo_behavior_param_value_to_string(ps, c.registry, c.workspace,
-                                                  val_buf, sizeof(val_buf)) == NMO_OK
-                        && val_buf[0] != '\0') {
-                        fprintf(c.out, " = %s", val_buf);
+                    char *value = nmo_core_param_value_dup(ps, c.registry, c.workspace);
+                    if (value && value[0] != '\0') {
+                        fprintf(c.out, " = %s", value);
                     }
+                    free(value);
                 }
             }
             fprintf(c.out, "\n");
@@ -917,12 +896,11 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
                 const nmo_parameter_state_t *lps =
                     (const nmo_parameter_state_t *)nmo_object_get_state(p);
                 if (lps && lps->has_state) {
-                    char val_buf[256];
-                    if (nmo_behavior_param_value_to_string(lps, c.registry, c.workspace,
-                                                  val_buf, sizeof(val_buf)) == NMO_OK
-                        && val_buf[0] != '\0') {
-                        fprintf(c.out, " = %s", val_buf);
+                    char *value = nmo_core_param_value_dup(lps, c.registry, c.workspace);
+                    if (value && value[0] != '\0') {
+                        fprintf(c.out, " = %s", value);
                     }
+                    free(value);
                 }
             }
             if (bs->interface_data && bs->interface_data->script.body.has_params) {
@@ -974,12 +952,10 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
                 nmo_guid_t otg = get_param_type_guid(out_p);
                 out_type = resolve_type(c.registry, otg);
             }
-            char op_buf[512];
-            behavior_show_format_operation(
-                op_buf, sizeof(op_buf), op_name,
+            behavior_show_print_operation(
+                c.out, op_name,
                 n1, op_state->has_in1, n2, op_state->has_in2,
                 no, op_state->has_out, out_type);
-            fprintf(c.out, "  %s\n", op_buf);
         }
     }
 
