@@ -8,6 +8,7 @@
 #include "../nmo_cmd_ctx.h"
 #include "../nmo_cmd_core.h"
 #include "../nmo_cli_output.h"
+#include "../nmo_cli_record.h"
 #include "../nmo_cli_sort.h"
 #include "../nmo_opt.h"
 #include "../nmo_tool_common.h"
@@ -63,6 +64,31 @@ int nmo_cmd_file_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
  * file info (single-file core + batch support)
  * ============================================================================ */
 
+/*
+ * File summary. JSON: object_count, manager_count, ck_version, and "file"
+ * when a path is given; text: File (when given), Objects, Managers,
+ * CK Version.
+ */
+static bool file_info_build_record(const nmo_file_info_t *info,
+                                   const char *file_path,
+                                   nmo_cli_record_t *rec)
+{
+    bool ok = true;
+    if (file_path) {
+        ok = nmo_cli_record_text(rec, "File", file_path);
+    }
+    char hex[16];
+    snprintf(hex, sizeof(hex), "0x%08X", info->ck_version);
+    ok = ok && nmo_cli_record_uint(rec, "object_count", "Objects", info->object_count) &&
+         nmo_cli_record_uint(rec, "manager_count", "Managers", info->manager_count) &&
+         nmo_cli_record_uint(rec, "ck_version", "CK Version", info->ck_version) &&
+         nmo_cli_record_set_text(rec, hex);
+    if (ok && file_path) {
+        ok = nmo_cli_record_str(rec, "file", NULL, file_path);
+    }
+    return ok;
+}
+
 static int file_info_single(const char *file_path,
                              const nmo_cli_global_opts_t *global,
                              void *user_data,
@@ -87,21 +113,21 @@ static int file_info_single(const char *file_path,
 
     nmo_file_info_t info = nmo_document_get_file_info(document);
 
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    if (!rec || !file_info_build_record(&info, NULL, rec)) {
+        nmo_cli_record_free(rec);
+        nmo_tool_close_document(ctx, document, workspace);
+        fprintf(stderr, "Error: Out of memory\n");
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
     if (doc && data) {
-        yyjson_mut_obj_add_uint(doc, data, "object_count", info.object_count);
-        yyjson_mut_obj_add_uint(doc, data, "manager_count", info.manager_count);
-        yyjson_mut_obj_add_uint(doc, data, "ck_version", info.ck_version);
+        nmo_cli_record_to_json(rec, doc, data);
     } else {
         FILE *out = (text_ctx && text_ctx->out) ? text_ctx->out : stdout;
         bool colorize = (text_ctx != NULL) ? text_ctx->colorize : nmo_cli_should_colorize(global, out);
-        char buf[64];
-        snprintf(buf, sizeof(buf), "%u", info.object_count);
-        nmo_cli_print_kv(out, "Objects", buf, 14, colorize);
-        snprintf(buf, sizeof(buf), "%u", info.manager_count);
-        nmo_cli_print_kv(out, "Managers", buf, 14, colorize);
-        snprintf(buf, sizeof(buf), "0x%08X", info.ck_version);
-        nmo_cli_print_kv(out, "CK Version", buf, 14, colorize);
+        nmo_cli_record_print_kv(rec, out, 14, colorize);
     }
+    nmo_cli_record_free(rec);
 
     nmo_tool_close_document(ctx, document, workspace);
     return NMO_CLI_EXIT_SUCCESS;
@@ -112,31 +138,29 @@ static int nmo_cmd_file_info_in_session(nmo_cmd_ctx_t *c, int argc, char **argv)
     (void)argv;
 
     nmo_file_info_t info = nmo_document_get_file_info(c->document);
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    if (!rec || !file_info_build_record(&info, c->file_path, rec)) {
+        nmo_cli_record_free(rec);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
     if (c->is_json) {
         yyjson_mut_doc *doc = NULL;
         yyjson_mut_val *data = NULL;
         if (!nmo_cli_json_create_data_doc(&doc, &data)) {
+            nmo_cli_record_free(rec);
             return NMO_CLI_EXIT_INTERNAL_ERROR;
         }
-        yyjson_mut_obj_add_uint(doc, data, "object_count", info.object_count);
-        yyjson_mut_obj_add_uint(doc, data, "manager_count", info.manager_count);
-        yyjson_mut_obj_add_uint(doc, data, "ck_version", info.ck_version);
-        yyjson_mut_obj_add_str(doc, data, "file", c->file_path);
+        nmo_cli_record_to_json(rec, doc, data);
+        nmo_cli_record_free(rec);
         nmo_cli_json_write_enveloped_and_free(
             doc, data, "file.info", c->file_path, c->out,
             c->global && c->global->format == NMO_CLI_FORMAT_JSON_PRETTY);
         return NMO_CLI_EXIT_SUCCESS;
     }
 
-    char buf[64];
     nmo_cli_print_heading(c->out, "File Info", c->colorize);
-    nmo_cli_print_kv(c->out, "File", c->file_path, 14, c->colorize);
-    snprintf(buf, sizeof(buf), "%u", info.object_count);
-    nmo_cli_print_kv(c->out, "Objects", buf, 14, c->colorize);
-    snprintf(buf, sizeof(buf), "%u", info.manager_count);
-    nmo_cli_print_kv(c->out, "Managers", buf, 14, c->colorize);
-    snprintf(buf, sizeof(buf), "0x%08X", info.ck_version);
-    nmo_cli_print_kv(c->out, "CK Version", buf, 14, c->colorize);
+    nmo_cli_record_print_kv(rec, c->out, 14, c->colorize);
+    nmo_cli_record_free(rec);
     return NMO_CLI_EXIT_SUCCESS;
 }
 
@@ -201,6 +225,58 @@ int nmo_cmd_file_info(int argc, char **argv, const nmo_cli_global_opts_t *global
  * file header
  * ============================================================================ */
 
+/*
+ * Raw header fields. The text side folds the secondary version into "File
+ * Version" and product version/build into one line; hdr1_unpack_size is
+ * JSON-only.
+ */
+static bool file_header_build_record(const nmo_file_header_t *header,
+                                     nmo_cli_record_t *rec)
+{
+    char sig_buf[9];
+    memcpy(sig_buf, header->signature, 8);
+    sig_buf[8] = '\0';
+
+    char buf[64];
+    snprintf(buf, sizeof(buf), "%u (secondary %u)", header->file_version, header->file_version2);
+    bool ok = nmo_cli_record_str(rec, "signature", "Signature", sig_buf) &&
+              nmo_cli_record_uint(rec, "file_version", "File Version", header->file_version) &&
+              nmo_cli_record_set_text(rec, buf) &&
+              nmo_cli_record_uint(rec, "file_version2", NULL, header->file_version2);
+    /* JSON keeps these numeric; the text side shows them in hex. */
+    snprintf(buf, sizeof(buf), "0x%08X", header->ck_version);
+    ok = ok && nmo_cli_record_uint(rec, "ck_version", "CK Version", header->ck_version) &&
+         nmo_cli_record_set_text(rec, buf);
+    snprintf(buf, sizeof(buf), "0x%08X", header->crc);
+    ok = ok && nmo_cli_record_uint(rec, "crc", "CRC", header->crc) &&
+         nmo_cli_record_set_text(rec, buf);
+    snprintf(buf, sizeof(buf), "0x%X", header->file_write_mode);
+    ok = ok && nmo_cli_record_uint(rec, "file_write_mode", "Write Mode", header->file_write_mode) &&
+         nmo_cli_record_set_text(rec, buf);
+    snprintf(buf, sizeof(buf), "%u bytes", header->hdr1_pack_size);
+    ok = ok && nmo_cli_record_uint(rec, "hdr1_pack_size", "Header1 Packed", header->hdr1_pack_size) &&
+         nmo_cli_record_set_text(rec, buf);
+    if (!ok || header->file_version < 5) {
+        return ok;
+    }
+
+    snprintf(buf, sizeof(buf), "%u bytes", header->data_pack_size);
+    ok = nmo_cli_record_uint(rec, "data_pack_size", "Data Packed", header->data_pack_size) &&
+         nmo_cli_record_set_text(rec, buf);
+    snprintf(buf, sizeof(buf), "%u bytes", header->data_unpack_size);
+    ok = ok && nmo_cli_record_uint(rec, "data_unpack_size", "Data Unpacked", header->data_unpack_size) &&
+         nmo_cli_record_set_text(rec, buf);
+    ok = ok && nmo_cli_record_uint(rec, "object_count", "Objects", header->object_count) &&
+         nmo_cli_record_uint(rec, "manager_count", "Managers", header->manager_count) &&
+         nmo_cli_record_uint(rec, "max_id_saved", "Max ID Saved", header->max_id_saved);
+    snprintf(buf, sizeof(buf), "%u / %u", header->product_version, header->product_build);
+    return ok &&
+           nmo_cli_record_uint(rec, "product_version", "Product Ver/Build", header->product_version) &&
+           nmo_cli_record_set_text(rec, buf) &&
+           nmo_cli_record_uint(rec, "product_build", NULL, header->product_build) &&
+           nmo_cli_record_uint(rec, "hdr1_unpack_size", NULL, header->hdr1_unpack_size);
+}
+
 static int nmo_cmd_file_header_in_session(nmo_cmd_ctx_t *c, int argc, char **argv) {
     (void)argc;
     (void)argv;
@@ -213,76 +289,23 @@ static int nmo_cmd_file_header_in_session(nmo_cmd_ctx_t *c, int argc, char **arg
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    if (!rec || !file_header_build_record(header, rec)) {
+        nmo_cli_record_free(rec);
+        fprintf(stderr, "Error: Out of memory\n");
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
     if (c->is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
-
-        char sig_buf[9];
-        memcpy(sig_buf, header->signature, 8);
-        sig_buf[8] = '\0';
-        yyjson_mut_obj_add_strcpy(doc, data, "signature", sig_buf);
-        yyjson_mut_obj_add_uint(doc, data, "file_version", header->file_version);
-        yyjson_mut_obj_add_uint(doc, data, "file_version2", header->file_version2);
-        yyjson_mut_obj_add_uint(doc, data, "ck_version", header->ck_version);
-        yyjson_mut_obj_add_uint(doc, data, "crc", header->crc);
-        yyjson_mut_obj_add_uint(doc, data, "file_write_mode", header->file_write_mode);
-        yyjson_mut_obj_add_uint(doc, data, "hdr1_pack_size", header->hdr1_pack_size);
-        if (header->file_version >= 5) {
-            yyjson_mut_obj_add_uint(doc, data, "data_pack_size", header->data_pack_size);
-            yyjson_mut_obj_add_uint(doc, data, "data_unpack_size", header->data_unpack_size);
-            yyjson_mut_obj_add_uint(doc, data, "object_count", header->object_count);
-            yyjson_mut_obj_add_uint(doc, data, "manager_count", header->manager_count);
-            yyjson_mut_obj_add_uint(doc, data, "max_id_saved", header->max_id_saved);
-            yyjson_mut_obj_add_uint(doc, data, "product_version", header->product_version);
-            yyjson_mut_obj_add_uint(doc, data, "product_build", header->product_build);
-            yyjson_mut_obj_add_uint(doc, data, "hdr1_unpack_size", header->hdr1_unpack_size);
-        }
-
+        nmo_cli_record_to_json(rec, doc, data);
         nmo_cmd_ctx_json_end(c, doc, data, "file.header");
     } else {
         nmo_cli_print_heading(c->out, "File Header", c->colorize);
-
-        char sig_buf[9];
-        memcpy(sig_buf, header->signature, 8);
-        sig_buf[8] = '\0';
-        nmo_cli_print_kv(c->out, "Signature", sig_buf, 18, c->colorize);
-
-        char buf[64];
-        snprintf(buf, sizeof(buf), "%u (secondary %u)", header->file_version, header->file_version2);
-        nmo_cli_print_kv(c->out, "File Version", buf, 18, c->colorize);
-
-        snprintf(buf, sizeof(buf), "0x%08X", header->ck_version);
-        nmo_cli_print_kv(c->out, "CK Version", buf, 18, c->colorize);
-
-        snprintf(buf, sizeof(buf), "0x%08X", header->crc);
-        nmo_cli_print_kv(c->out, "CRC", buf, 18, c->colorize);
-
-        snprintf(buf, sizeof(buf), "0x%X", header->file_write_mode);
-        nmo_cli_print_kv(c->out, "Write Mode", buf, 18, c->colorize);
-
-        snprintf(buf, sizeof(buf), "%u bytes", header->hdr1_pack_size);
-        nmo_cli_print_kv(c->out, "Header1 Packed", buf, 18, c->colorize);
-
-        if (header->file_version >= 5) {
-            snprintf(buf, sizeof(buf), "%u bytes", header->data_pack_size);
-            nmo_cli_print_kv(c->out, "Data Packed", buf, 18, c->colorize);
-
-            snprintf(buf, sizeof(buf), "%u bytes", header->data_unpack_size);
-            nmo_cli_print_kv(c->out, "Data Unpacked", buf, 18, c->colorize);
-
-            snprintf(buf, sizeof(buf), "%u", header->object_count);
-            nmo_cli_print_kv(c->out, "Objects", buf, 18, c->colorize);
-
-            snprintf(buf, sizeof(buf), "%u", header->manager_count);
-            nmo_cli_print_kv(c->out, "Managers", buf, 18, c->colorize);
-
-            snprintf(buf, sizeof(buf), "%u", header->max_id_saved);
-            nmo_cli_print_kv(c->out, "Max ID Saved", buf, 18, c->colorize);
-
-            snprintf(buf, sizeof(buf), "%u / %u", header->product_version, header->product_build);
-            nmo_cli_print_kv(c->out, "Product Ver/Build", buf, 18, c->colorize);
-        }
+        nmo_cli_record_print_kv(rec, c->out, 18, c->colorize);
     }
+    nmo_cli_record_free(rec);
 
     return NMO_CLI_EXIT_SUCCESS;
 }
