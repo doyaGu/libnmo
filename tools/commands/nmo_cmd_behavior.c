@@ -11,6 +11,7 @@
 #include "../nmo_cmd_ctx.h"
 #include "../nmo_cmd_core.h"
 #include "../nmo_cli_output.h"
+#include "../nmo_cli_record.h"
 #include "../nmo_tool_common.h"
 #include "../nmo_opt.h"
 
@@ -294,31 +295,18 @@ typedef struct behavior_list_data {
     size_t count;
 } behavior_list_data_t;
 
-static void behavior_list_add_json(yyjson_mut_doc *doc,
-                                   yyjson_mut_val *arr,
-                                   nmo_context_t *ctx,
-                                   nmo_object_t *obj)
+/*
+ * One behavior: JSON id/class_id/class_name/name; text columns ID, TYPE, IO,
+ * PIN, POUT, SUB, NAME.
+ */
+static bool behavior_list_build_record(nmo_context_t *ctx, nmo_object_t *obj,
+                                       nmo_cli_record_t *rec)
 {
-    nmo_class_id_t class_id = nmo_object_get_class_id(obj);
-    yyjson_mut_val *item = yyjson_mut_obj(doc);
-    yyjson_mut_obj_add_uint(doc, item, "id", nmo_object_get_id(obj));
-    yyjson_mut_obj_add_uint(doc, item, "class_id", class_id);
-
-    const char *class_name = nmo_cli_class_name_from_id(ctx, class_id);
-    if (class_name) nmo_cli_json_add_str_safe(doc, item, "class_name", class_name);
-
-    const char *name = nmo_object_get_name(obj);
-    if (name && name[0]) nmo_cli_json_add_str_safe(doc, item, "name", name);
-
-    yyjson_mut_arr_add_val(arr, item);
-}
-
-static void behavior_list_add_table_row(nmo_cli_table_t *table, nmo_object_t *obj) {
     const nmo_behavior_state_t *bs =
         (const nmo_behavior_state_t *)nmo_object_get_state(obj);
-
-    char id_buf[16];
-    snprintf(id_buf, sizeof(id_buf), "%u", nmo_object_get_id(obj));
+    nmo_class_id_t class_id = nmo_object_get_class_id(obj);
+    const char *class_name = nmo_cli_class_name_from_id(ctx, class_id);
+    const char *name = nmo_object_get_name(obj);
 
     const char *type_str = "Graph";
     if (bs) {
@@ -333,12 +321,17 @@ static void behavior_list_add_table_row(nmo_cli_table_t *table, nmo_object_t *ob
     snprintf(pout_buf, sizeof(pout_buf), "%zu", bs ? bs->out_parameters.count : 0);
     snprintf(sub_buf, sizeof(sub_buf), "%zu", bs ? bs->sub_behaviors.count : 0);
 
-    const char *name = nmo_object_get_name(obj);
-    const char *cells[] = {
-        id_buf, type_str, io_buf, pin_buf, pout_buf, sub_buf,
-        (name && name[0]) ? name : "-",
-    };
-    nmo_cli_table_add_row(table, cells, 7);
+    bool ok = nmo_cli_record_uint(rec, "id", "ID", nmo_object_get_id(obj)) &&
+              nmo_cli_record_text(rec, "TYPE", type_str) &&
+              nmo_cli_record_text(rec, "IO", io_buf) &&
+              nmo_cli_record_text(rec, "PIN", pin_buf) &&
+              nmo_cli_record_text(rec, "POUT", pout_buf) &&
+              nmo_cli_record_text(rec, "SUB", sub_buf) &&
+              nmo_cli_record_uint(rec, "class_id", NULL, class_id);
+    if (ok && class_name) {
+        ok = nmo_cli_record_str(rec, "class_name", NULL, class_name);
+    }
+    return ok && nmo_cli_record_str_opt(rec, "name", "NAME", name, "-");
 }
 
 static int behavior_list_core_visitor(size_t index,
@@ -349,11 +342,20 @@ static int behavior_list_core_visitor(size_t index,
     (void)index;
 
     behavior_list_data_t *list = (behavior_list_data_t *)user;
-    if (list->arr) {
-        behavior_list_add_json(list->doc, list->arr, c->ctx, obj);
-    } else if (list->table) {
-        behavior_list_add_table_row(list->table, obj);
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    if (rec && behavior_list_build_record(c->ctx, obj, rec)) {
+        if (list->arr) {
+            yyjson_mut_val *item = yyjson_mut_obj(list->doc);
+            if (item && nmo_cli_record_to_json(rec, list->doc, item)) {
+                yyjson_mut_arr_add_val(list->arr, item);
+            }
+        } else if (list->table) {
+            const char *cells[7];
+            size_t n = nmo_cli_record_cells(rec, cells, 7);
+            nmo_cli_table_add_row(list->table, cells, n);
+        }
     }
+    nmo_cli_record_free(rec);
     list->count++;
     return 0;
 }
