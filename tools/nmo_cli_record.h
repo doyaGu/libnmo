@@ -13,6 +13,9 @@
 #ifndef NMO_CLI_RECORD_H
 #define NMO_CLI_RECORD_H
 
+#include "nmo_cli_output.h"
+
+#include "core/nmo_guid.h"
 #include "yyjson.h"
 
 #include <stdbool.h>
@@ -61,9 +64,15 @@ bool nmo_cli_record_str(nmo_cli_record_t *record, const char *key,
 bool nmo_cli_record_str_opt(nmo_cli_record_t *record, const char *key,
                             const char *label, const char *value,
                             const char *text_fallback);
+/** printf-formatted string on both sides; the result may be any length. */
+bool nmo_cli_record_str_fmt(nmo_cli_record_t *record, const char *key,
+                            const char *label, const char *format, ...);
 /** "0x%08X" on both sides. */
 bool nmo_cli_record_hex32(nmo_cli_record_t *record, const char *key,
                           const char *label, uint32_t value);
+/** GUID in nmo_guid_format's "{D1D1D1D1-D2D2D2D2}" form on both sides. */
+bool nmo_cli_record_guid(nmo_cli_record_t *record, const char *key,
+                         const char *label, nmo_guid_t guid);
 /**
  * Three-component vector. JSON: an object with "x", "y", "z" reals. Text:
  * "(x, y, z)" with each component printed using `component_format`
@@ -83,6 +92,8 @@ bool nmo_cli_record_text(nmo_cli_record_t *record, const char *label,
  * Use for pre-formatted multi-line output.
  */
 bool nmo_cli_record_raw(nmo_cli_record_t *record, const char *text);
+/** Formatted variant of nmo_cli_record_raw; the result may be any length. */
+bool nmo_cli_record_raw_fmt(nmo_cli_record_t *record, const char *format, ...);
 /**
  * Text-only section heading: a blank line followed by `title` in the heading
  * style (bold when colorized). Absent from JSON and from table cells.
@@ -141,6 +152,8 @@ bool nmo_cli_record_text_fmt(nmo_cli_record_t *record, const char *label,
 bool nmo_cli_record_set_text(nmo_cli_record_t *record, const char *text);
 /** Like nmo_cli_record_set_text, formatted; the result may be any length. */
 bool nmo_cli_record_set_text_fmt(nmo_cli_record_t *record, const char *format, ...);
+/** Replace the text label of the most recently added field with a formatted one. */
+bool nmo_cli_record_set_label_fmt(nmo_cli_record_t *record, const char *format, ...);
 /** Drop the JSON side of the most recently added field. */
 void nmo_cli_record_text_only(nmo_cli_record_t *record);
 

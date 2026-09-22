@@ -99,13 +99,16 @@ NMO_API uint32_t nmo_guid_hash(nmo_guid_t guid);
  */
 NMO_API nmo_guid_t nmo_guid_parse(const char *str);
 
+/** Buffer size nmo_guid_format needs: "{D1D1D1D1-D2D2D2D2}" plus the terminator. */
+#define NMO_GUID_STRING_SIZE 21
+
 /**
  * @brief Format GUID to string
  *
  * Format: {D1D1D1D1-D2D2D2D2}
  *
  * @param guid GUID to format
- * @param buffer Output buffer (must be at least 21 bytes)
+ * @param buffer Output buffer (at least NMO_GUID_STRING_SIZE bytes)
  * @param size Size of output buffer
  * @return Number of characters written (excluding null terminator)
  */

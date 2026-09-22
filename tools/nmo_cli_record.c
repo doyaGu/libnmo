@@ -325,18 +325,37 @@ bool nmo_cli_record_str_opt(nmo_cli_record_t *record, const char *key,
     return nmo_cli_record_text(record, label, text_fallback);
 }
 
-bool nmo_cli_record_hex32(nmo_cli_record_t *record, const char *key,
-                          const char *label, uint32_t value)
+bool nmo_cli_record_str_fmt(nmo_cli_record_t *record, const char *key,
+                            const char *label, const char *format, ...)
 {
     record_field_t *field = field_append(record, RECORD_STR, key, label);
     if (!field) {
         return false;
     }
-    if (!set_formatted(&field->str, "0x%08X", value) ||
-        !set_str(&field->text, field->str)) {
+    va_list args;
+    va_start(args, format);
+    bool ok = set_vformatted(&field->str, format, args);
+    va_end(args);
+    if (!ok || !set_str(&field->text, field->str)) {
         return field_fail(record);
     }
     return true;
+}
+
+bool nmo_cli_record_hex32(nmo_cli_record_t *record, const char *key,
+                          const char *label, uint32_t value)
+{
+    return nmo_cli_record_str_fmt(record, key, label, "0x%08X", value);
+}
+
+bool nmo_cli_record_guid(nmo_cli_record_t *record, const char *key,
+                         const char *label, nmo_guid_t guid)
+{
+    char text[NMO_GUID_STRING_SIZE];
+    if (nmo_guid_format(guid, text, sizeof(text)) < 0) {
+        return false;
+    }
+    return nmo_cli_record_str(record, key, label, text);
 }
 
 bool nmo_cli_record_vec3(nmo_cli_record_t *record, const char *key,
@@ -421,6 +440,19 @@ bool nmo_cli_record_set_text_fmt(nmo_cli_record_t *record, const char *format, .
     return ok;
 }
 
+bool nmo_cli_record_set_label_fmt(nmo_cli_record_t *record, const char *format, ...)
+{
+    record_field_t *field = field_last(record);
+    if (!field) {
+        return false;
+    }
+    va_list args;
+    va_start(args, format);
+    bool ok = set_vformatted(&field->label, format, args);
+    va_end(args);
+    return ok;
+}
+
 bool nmo_cli_record_set_summary_fmt(nmo_cli_record_t *record,
                                     const char *format, ...)
 {
@@ -471,6 +503,22 @@ bool nmo_cli_record_raw(nmo_cli_record_t *record, const char *text)
         return false;
     }
     if (!set_str(&field->text, text ? text : "")) {
+        return field_fail(record);
+    }
+    return true;
+}
+
+bool nmo_cli_record_raw_fmt(nmo_cli_record_t *record, const char *format, ...)
+{
+    record_field_t *field = field_append(record, RECORD_RAW, NULL, NULL);
+    if (!field) {
+        return false;
+    }
+    va_list args;
+    va_start(args, format);
+    bool ok = set_vformatted(&field->text, format, args);
+    va_end(args);
+    if (!ok) {
         return field_fail(record);
     }
     return true;

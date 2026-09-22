@@ -112,7 +112,7 @@ nmo_guid_t nmo_guid_parse(const char *str) {
 }
 
 int nmo_guid_format(nmo_guid_t guid, char *buffer, size_t size) {
-    if (buffer == NULL || size < 21) {
+    if (buffer == NULL || size < NMO_GUID_STRING_SIZE) {
         return -1;
     }
 
