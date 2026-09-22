@@ -399,9 +399,7 @@ int nmo_cmd_texture_list(int argc, char **argv, const nmo_cli_global_opts_t *glo
                 yyjson_mut_arr_add_val(arr, item);
             }
         } else if (ok) {
-            const char *cells[6];
-            size_t n = nmo_cli_record_cells(rec, cells, 6);
-            nmo_cli_table_add_row(&table, cells, n);
+            nmo_cli_record_add_table_row(rec, &table);
         }
         nmo_cli_record_free(rec);
     }

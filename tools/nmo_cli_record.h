@@ -199,12 +199,11 @@ bool nmo_cli_record_to_json(const nmo_cli_record_t *record,
 void nmo_cli_record_print_kv(const nmo_cli_record_t *record, FILE *out,
                              int key_width, bool colorize);
 /**
- * Collect the text of every text-visible field, in order, for use as table
- * cells. `cells` must have room for `capacity` pointers; returns the number
- * written. Pointers stay valid until the record is freed or modified.
+ * Append one table row holding the text of every text-visible field, in
+ * order. The table copies the cells.
  */
-size_t nmo_cli_record_cells(const nmo_cli_record_t *record,
-                            const char **cells, size_t capacity);
+bool nmo_cli_record_add_table_row(const nmo_cli_record_t *record,
+                                  nmo_cli_table_t *table);
 
 #ifdef __cplusplus
 }

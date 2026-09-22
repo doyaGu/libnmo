@@ -166,9 +166,7 @@ static int mesh_list_visitor(size_t index,
             yyjson_mut_arr_add_val(data->arr, item);
         }
     } else if (data->table) {
-        const char *cells[5];
-        size_t n = nmo_cli_record_cells(rec, cells, 5);
-        nmo_cli_table_add_row(data->table, cells, n);
+        nmo_cli_record_add_table_row(rec, data->table);
     }
     nmo_cli_record_free(rec);
     data->found++;

@@ -286,9 +286,7 @@ static int chunk_find_object(size_t index, nmo_object_t *obj,
                 yyjson_mut_arr_add_val(data->matches, item);
             }
         } else if (data->table) {
-            const char *cells[4];
-            size_t n = nmo_cli_record_cells(rec, cells, 4);
-            (void)nmo_cli_table_add_row(data->table, cells, n);
+            nmo_cli_record_add_table_row(rec, data->table);
         }
     }
     nmo_cli_record_free(rec);
@@ -410,9 +408,7 @@ static int chunk_list_run(nmo_cmd_ctx_t *ctx, uint32_t top_n)
                     yyjson_mut_arr_add_val(chunks, item);
                 }
             } else {
-                const char *cells[6];
-                size_t n = nmo_cli_record_cells(rec, cells, 6);
-                nmo_cli_table_add_row(&table, cells, n);
+                nmo_cli_record_add_table_row(rec, &table);
             }
         }
         nmo_cli_record_free(rec);

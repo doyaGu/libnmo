@@ -206,9 +206,7 @@ int nmo_cmd_type_list(int argc, char **argv, const nmo_cli_global_opts_t *global
                     yyjson_mut_arr_add_val(classes, item);
                 }
             } else {
-                const char *cells[3];
-                size_t n = nmo_cli_record_cells(rec, cells, 3);
-                nmo_cli_table_add_row(&table, cells, n);
+                nmo_cli_record_add_table_row(rec, &table);
             }
         }
         nmo_cli_record_free(rec);

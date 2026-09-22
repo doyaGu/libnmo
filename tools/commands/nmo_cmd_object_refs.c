@@ -94,9 +94,7 @@ static int cli_refs_visitor(const nmo_core_ref_info_t *info,
                 yyjson_mut_arr_add_val(info->is_incoming ? d->incoming : d->outgoing, edge);
             }
         } else {
-            const char *cells[5];
-            size_t n = nmo_cli_record_cells(rec, cells, 5);
-            nmo_cli_table_add_row(info->is_incoming ? d->in_table : d->out_table, cells, n);
+            nmo_cli_record_add_table_row(rec, info->is_incoming ? d->in_table : d->out_table);
         }
     }
     nmo_cli_record_free(rec);
@@ -467,9 +465,7 @@ static int object_impact_run(nmo_cmd_ctx_t *ctx, const object_refs_args_t *args,
                 nmo_cli_record_t *rec = nmo_cli_record_new();
                 if (rec && object_impact_build_record(&c, in_edges[i].from,
                                                       nmo_ref_kind_name(in_edges[i].kind), rec)) {
-                    const char *cells[4];
-                    size_t n = nmo_cli_record_cells(rec, cells, 4);
-                    nmo_cli_table_add_row(&dep_table, cells, n);
+                    nmo_cli_record_add_table_row(rec, &dep_table);
                 }
                 nmo_cli_record_free(rec);
             }
@@ -495,9 +491,7 @@ static int object_impact_run(nmo_cmd_ctx_t *ctx, const object_refs_args_t *args,
             for (size_t i = 0; i < cascade_count; ++i) {
                 nmo_cli_record_t *rec = nmo_cli_record_new();
                 if (rec && object_impact_build_record(&c, cascade_ids[i], NULL, rec)) {
-                    const char *cells[3];
-                    size_t n = nmo_cli_record_cells(rec, cells, 3);
-                    nmo_cli_table_add_row(&cas_table, cells, n);
+                    nmo_cli_record_add_table_row(rec, &cas_table);
                 }
                 nmo_cli_record_free(rec);
             }
@@ -671,9 +665,7 @@ static int object_orphans_run(nmo_cmd_ctx_t *ctx, const object_orphans_args_t *a
                     yyjson_mut_arr_add_val(arr, entry);
                 }
             } else {
-                const char *cells[3];
-                size_t n = nmo_cli_record_cells(rec, cells, 3);
-                nmo_cli_table_add_row(&table, cells, n);
+                nmo_cli_record_add_table_row(rec, &table);
             }
         }
         nmo_cli_record_free(rec);

@@ -950,14 +950,19 @@ void nmo_cli_record_print_kv(const nmo_cli_record_t *record, FILE *out,
     }
 }
 
-size_t nmo_cli_record_cells(const nmo_cli_record_t *record,
-                            const char **cells, size_t capacity)
+bool nmo_cli_record_add_table_row(const nmo_cli_record_t *record,
+                                  nmo_cli_table_t *table)
 {
-    size_t n = 0;
-    if (!record || !cells) {
-        return 0u;
+    if (!record || !table) {
+        return false;
     }
-    for (size_t i = 0; i < record->count && n < capacity; ++i) {
+    const char **cells = (const char **)calloc(record->count ? record->count : 1u,
+                                               sizeof(*cells));
+    if (!cells) {
+        return false;
+    }
+    size_t n = 0;
+    for (size_t i = 0; i < record->count; ++i) {
         const record_field_t *field = &record->fields[i];
         if (field->kind == RECORD_ARRAY || field->kind == RECORD_RAW ||
             field->kind == RECORD_HEADING || field->kind == RECORD_BYTES ||
@@ -966,5 +971,7 @@ size_t nmo_cli_record_cells(const nmo_cli_record_t *record,
         }
         cells[n++] = field->text;
     }
-    return n;
+    bool ok = nmo_cli_table_add_row(table, cells, n);
+    free(cells);
+    return ok;
 }

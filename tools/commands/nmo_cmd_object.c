@@ -40,8 +40,7 @@ typedef struct {
     nmo_cli_table_t *table;
 } object_row_sink_t;
 
-static void object_row_emit(object_row_sink_t *sink, nmo_cli_record_t *rec,
-                            size_t cell_capacity)
+static void object_row_emit(object_row_sink_t *sink, nmo_cli_record_t *rec)
 {
     if (sink->doc) {
         yyjson_mut_val *item = yyjson_mut_obj(sink->doc);
@@ -49,10 +48,7 @@ static void object_row_emit(object_row_sink_t *sink, nmo_cli_record_t *rec,
             yyjson_mut_arr_add_val(sink->arr, item);
         }
     } else if (sink->table) {
-        const char *cells[8];
-        size_t n = nmo_cli_record_cells(rec, cells,
-                                        cell_capacity < 8u ? cell_capacity : 8u);
-        nmo_cli_table_add_row(sink->table, cells, n);
+        nmo_cli_record_add_table_row(rec, sink->table);
     }
 }
 
@@ -91,7 +87,7 @@ static int object_list_visitor(size_t index, nmo_object_t *obj,
     ok = ok && nmo_cli_record_uint(rec, "size", "SIZE",
                                    chunk ? (uint64_t)nmo_chunk_get_data_size(chunk) : 0u);
     ok = ok && nmo_cli_record_text(rec, "NAME", (name && name[0]) ? name : "-");
-    if (ok) object_row_emit(sink, rec, 4);
+    if (ok) object_row_emit(sink, rec);
     nmo_cli_record_free(rec);
     return 0;
 }
@@ -1013,7 +1009,7 @@ static int object_find_visitor(size_t index, nmo_object_t *obj,
     nmo_cli_record_t *rec = nmo_cli_record_new();
     if (!rec) return 0;
     if (object_row_identity(c, obj, rec, "Class", "Name", true)) {
-        object_row_emit(sink, rec, 3);
+        object_row_emit(sink, rec);
     }
     nmo_cli_record_free(rec);
     return 0;

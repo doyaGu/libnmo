@@ -187,9 +187,7 @@ int nmo_cmd_extension_list(int argc, char **argv, const nmo_cli_global_opts_t *g
                     yyjson_mut_arr_append(plugins_arr, plugin_obj);
                 }
             } else {
-                const char *cells[6];
-                size_t n = nmo_cli_record_cells(rec, cells, 6);
-                nmo_cli_table_add_row(&table, cells, n);
+                nmo_cli_record_add_table_row(rec, &table);
             }
         }
         nmo_cli_record_free(rec);

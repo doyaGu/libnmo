@@ -350,9 +350,7 @@ static int behavior_list_core_visitor(size_t index,
                 yyjson_mut_arr_add_val(list->arr, item);
             }
         } else if (list->table) {
-            const char *cells[7];
-            size_t n = nmo_cli_record_cells(rec, cells, 7);
-            nmo_cli_table_add_row(list->table, cells, n);
+            nmo_cli_record_add_table_row(rec, list->table);
         }
     }
     nmo_cli_record_free(rec);
