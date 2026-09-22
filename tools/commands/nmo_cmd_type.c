@@ -13,6 +13,7 @@
 #include "nmo.h"
 #include "runtime/nmo_context.h"
 #include "type/nmo_type_system.h"
+#include "nmo_tool_common.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -435,9 +436,7 @@ int nmo_cmd_type_class_tree(int argc, char **argv, const nmo_cli_global_opts_t *
         }
 
         for (size_t i = 0; i < class_count; ++i) {
-            char label_buf[128];
-            snprintf(label_buf, sizeof(label_buf), "%s (%u)", entries[i].name, entries[i].class_id);
-            nodes[i].label = nmo_tool_strdup(label_buf);
+            nodes[i].label = nmo_tool_strdup_fmt("%s (%u)", entries[i].name, entries[i].class_id);
             nodes[i].node.label = nodes[i].label ? nodes[i].label : "(alloc failed)";
             nodes[i].node.user_data = (void *)&entries[i];
             nodes[i].node.first_child = NULL;

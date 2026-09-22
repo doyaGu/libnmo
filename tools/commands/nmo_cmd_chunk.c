@@ -315,8 +315,7 @@ static bool chunk_list_build_record(const nmo_cmd_ctx_t *c, size_t index,
     const char *owner_name = e->owner_object_name;
     size_t data_size = nmo_chunk_get_data_size(chunk);
 
-    char opt_buf[128];
-    (void)nmo_cli_chunk_options_to_string(chunk->chunk_options, opt_buf, sizeof(opt_buf));
+    char *opt_text = nmo_cli_chunk_options_dup(chunk->chunk_options);
 
     bool ok = nmo_cli_record_uint(rec, "index", "Idx", (uint64_t)index);
     if (e->parent_index >= 0) {
@@ -333,8 +332,9 @@ static bool chunk_list_build_record(const nmo_cmd_ctx_t *c, size_t index,
     } else if (ok) {
         ok = nmo_cli_record_text_fmt(rec, "Owner", "%u", e->owner_object_id);
     }
-    ok = ok && nmo_cli_record_text(rec, "Opt", opt_buf) &&
-         nmo_cli_record_text_fmt(rec, "Size", "%zu", data_size) &&
+    ok = ok && opt_text != NULL && nmo_cli_record_text(rec, "Opt", opt_text);
+    free(opt_text);
+    ok = ok && nmo_cli_record_text_fmt(rec, "Size", "%zu", data_size) &&
          nmo_cli_record_uint(rec, "owner_object_id", NULL, e->owner_object_id);
     if (ok && owner_name) {
         ok = nmo_cli_record_str(rec, "owner_object_name", NULL, owner_name);
@@ -657,7 +657,6 @@ static bool chunk_show_build_record(const nmo_cmd_ctx_t *c,
                                     uint32_t depth,
                                     nmo_cli_record_t *rec)
 {
-    char buf[128];
     bool ok = true;
 
     if (flat_index_known) {
@@ -696,28 +695,24 @@ static bool chunk_show_build_record(const nmo_cmd_ctx_t *c,
          nmo_cli_record_uint(rec, "data_version", "Data Version", chunk->data_version) &&
          nmo_cli_record_uint(rec, "chunk_version", "Chunk Version", chunk->chunk_version);
     if (ok) {
-        char opt_flags[128];
-        const char *opt = nmo_cli_chunk_options_to_string(chunk->chunk_options,
-                                                          opt_flags,
-                                                          sizeof(opt_flags));
-        ok = nmo_cli_record_uint(rec, "options", "Options", chunk->chunk_options) &&
+        char *opt = nmo_cli_chunk_options_dup(chunk->chunk_options);
+        ok = opt != NULL &&
+             nmo_cli_record_uint(rec, "options", "Options", chunk->chunk_options) &&
              nmo_cli_record_set_text_fmt(rec, "%s (0x%04X)", opt,
                                          (unsigned int)chunk->chunk_options);
+        free(opt);
     }
 
     size_t data_size = nmo_chunk_get_data_size(chunk);
     ok = ok && nmo_cli_record_heading(rec, "Size");
-    snprintf(buf, sizeof(buf), "%zu bytes", data_size);
     ok = ok && nmo_cli_record_uint(rec, "data_size", "Data Size", (uint64_t)data_size) &&
-         nmo_cli_record_set_text(rec, buf);
-    snprintf(buf, sizeof(buf), "%zu bytes", chunk->compressed_size);
+         nmo_cli_record_set_text_fmt(rec, "%zu bytes", data_size);
     ok = ok && nmo_cli_record_uint(rec, "compressed_size", "Compressed Size",
                                    (uint64_t)chunk->compressed_size) &&
-         nmo_cli_record_set_text(rec, buf);
-    snprintf(buf, sizeof(buf), "%zu bytes", chunk->uncompressed_size);
+         nmo_cli_record_set_text_fmt(rec, "%zu bytes", chunk->compressed_size);
     ok = ok && nmo_cli_record_uint(rec, "uncompressed_size", "Uncompressed Size",
                                    (uint64_t)chunk->uncompressed_size) &&
-         nmo_cli_record_set_text(rec, buf);
+         nmo_cli_record_set_text_fmt(rec, "%zu bytes", chunk->uncompressed_size);
 
     if (ok && args->include_hexdump) {
         size_t raw_size = 0;

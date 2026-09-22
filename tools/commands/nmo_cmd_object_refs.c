@@ -21,6 +21,7 @@
 #include "object/nmo_object_repository.h"
 #include "object/nmo_ref_graph.h"
 #include "export/nmo_export_dot.h"
+#include "nmo_tool_common.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -310,10 +311,8 @@ static bool object_impact_build_record(const nmo_cmd_ctx_t *c, nmo_object_id_t i
 {
     nmo_object_t *peer = nmo_core_find_by_id(c, id);
     const char *name = peer ? nmo_object_get_name(peer) : NULL;
-    char cbuf[32];
-    const char *cls = peer ? nmo_core_class_name_or(c, nmo_object_get_class_id(peer),
-                                                    cbuf, sizeof(cbuf))
-                           : NULL;
+    nmo_class_id_t cid = peer ? nmo_object_get_class_id(peer) : 0;
+    const char *cls = peer ? nmo_core_class_name(c, cid) : NULL;
 
     bool ok = nmo_cli_record_uint(rec, "id", "ID", id);
     if (ok && peer && name && name[0]) {
@@ -321,6 +320,8 @@ static bool object_impact_build_record(const nmo_cmd_ctx_t *c, nmo_object_id_t i
     }
     if (cls) {
         ok = ok && nmo_cli_record_str(rec, "class_name", "Class", cls);
+    } else if (peer) {
+        ok = ok && nmo_cli_record_str_fmt(rec, "class_name", "Class", "Class#%u", (unsigned)cid);
     } else {
         ok = ok && nmo_cli_record_text(rec, "Class", "-");
     }
@@ -352,13 +353,17 @@ static int object_impact_run(nmo_cmd_ctx_t *ctx, const object_refs_args_t *args,
 
     const char *obj_name = nmo_object_get_name(obj);
     nmo_class_id_t obj_cid = nmo_object_get_class_id(obj);
-    char obj_cbuf[32];
-    const char *obj_class = nmo_core_class_name_or(&c, obj_cid, obj_cbuf, sizeof(obj_cbuf));
+    const char *obj_class = nmo_core_class_name(&c, obj_cid);
+    char *obj_class_owned = obj_class ? NULL : nmo_tool_strdup_fmt("Class#%u", (unsigned)obj_cid);
+    if (!obj_class) {
+        obj_class = obj_class_owned ? obj_class_owned : "?";
+    }
 
     /* Get reference graph from session cache */
     nmo_ref_graph_t *graph = nmo_tool_owner_ref_graph(c.workspace);
     if (!graph) {
         fprintf(stderr, "Error: Failed to create reference graph\n");
+        free(obj_class_owned);
         return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR)
                          : NMO_CLI_EXIT_INTERNAL_ERROR;
     }
@@ -367,6 +372,7 @@ static int object_impact_run(nmo_cmd_ctx_t *ctx, const object_refs_args_t *args,
     nmo_arena_t *arena = nmo_arena_create(NULL, 0);
     if (!arena) {
         fprintf(stderr, "Error: Failed to create arena\n");
+        free(obj_class_owned);
         return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR)
                          : NMO_CLI_EXIT_INTERNAL_ERROR;
     }
@@ -501,6 +507,7 @@ static int object_impact_run(nmo_cmd_ctx_t *ctx, const object_refs_args_t *args,
     }
 
     nmo_arena_destroy(arena);
+    free(obj_class_owned);
     return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS)
                      : NMO_CLI_EXIT_SUCCESS;
 }
@@ -557,12 +564,12 @@ static bool object_orphan_build_record(const nmo_cmd_ctx_t *c, nmo_object_id_t i
                                        nmo_object_t *o, nmo_cli_record_t *rec)
 {
     nmo_class_id_t cid = nmo_object_get_class_id(o);
-    char cbuf[32];
-    const char *cname = nmo_core_class_name_or(c, cid, cbuf, sizeof(cbuf));
+    const char *cname = nmo_core_class_name(c, cid);
     const char *name = nmo_object_get_name(o);
     return nmo_cli_record_uint(rec, "id", "ID", (uint64_t)id) &&
            nmo_cli_record_uint(rec, "class_id", NULL, (uint64_t)cid) &&
-           nmo_cli_record_str(rec, "class_name", "Class", cname) &&
+           (cname ? nmo_cli_record_str(rec, "class_name", "Class", cname)
+                  : nmo_cli_record_str_fmt(rec, "class_name", "Class", "Class#%u", (unsigned)cid)) &&
            nmo_cli_record_str_opt(rec, "name", "Name", name, "-");
 }
 

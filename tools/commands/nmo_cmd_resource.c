@@ -292,17 +292,11 @@ static bool resource_build_record(const nmo_included_file_t *res, uint32_t index
         return ok;
     }
 
-    char flags_buf[64];
-    if (borrowed && meta_only) {
-        snprintf(flags_buf, sizeof(flags_buf), "BORROWED|META");
-    } else if (borrowed) {
-        snprintf(flags_buf, sizeof(flags_buf), "BORROWED");
-    } else if (meta_only) {
-        snprintf(flags_buf, sizeof(flags_buf), "META");
-    } else {
-        snprintf(flags_buf, sizeof(flags_buf), "-");
-    }
-    return nmo_cli_record_text(rec, "Flags", flags_buf);
+    const char *flags_text = (borrowed && meta_only) ? "BORROWED|META"
+                             : borrowed ? "BORROWED"
+                             : meta_only ? "META"
+                                         : "-";
+    return nmo_cli_record_text(rec, "Flags", flags_text);
 }
 
 /* ============================================================================
