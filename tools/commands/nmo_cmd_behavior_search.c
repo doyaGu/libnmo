@@ -39,9 +39,12 @@
  * ============================================================================ */
 
 static bool guid_str_match(nmo_guid_t guid, const char *pattern) {
-    char buf[32];
-    snprintf(buf, sizeof(buf), "%08X-%08X", guid.d1, guid.d2);
-    for (const char *p = buf; *p; p++) {
+    char *text = nmo_tool_strdup_fmt("%08X-%08X", guid.d1, guid.d2);
+    if (!text) {
+        return false;
+    }
+    bool found = false;
+    for (const char *p = text; *p && !found; p++) {
         const char *a = p, *b = pattern;
         while (*a && *b) {
             char ca = (*a >= 'a' && *a <= 'z') ? (char)(*a - 32) : *a;
@@ -49,9 +52,10 @@ static bool guid_str_match(nmo_guid_t guid, const char *pattern) {
             if (ca != cb) break;
             a++; b++;
         }
-        if (*b == '\0') return true;
+        found = (*b == '\0');
     }
-    return false;
+    free(text);
+    return found;
 }
 
 static bool behavior_has_param_type(
@@ -175,10 +179,8 @@ static int behavior_find_object(size_t index, nmo_object_t *obj,
         nmo_cli_json_add_str_safe(data->doc, item, "type",
             is_script ? "Script" : is_bb ? "BB" : "Graph");
         if (is_bb && !nmo_guid_is_null(bs->block_guid)) {
-            char guid_buf[24];
-            snprintf(guid_buf, sizeof(guid_buf), "%08X-%08X",
-                     bs->block_guid.d1, bs->block_guid.d2);
-            nmo_cli_json_add_str_safe(data->doc, item, "bb_guid", guid_buf);
+            nmo_cli_json_add_str_fmt_safe(data->doc, item, "bb_guid", "%08X-%08X",
+                                          bs->block_guid.d1, bs->block_guid.d2);
             const char *proto_name = nmo_behavior_registry_get_name(
                 nmo_context_get_bb_registry(c->ctx), bs->block_guid);
             if (proto_name) {
@@ -188,28 +190,23 @@ static int behavior_find_object(size_t index, nmo_object_t *obj,
         }
         yyjson_mut_arr_add_val(data->json_results, item);
     } else if (data->table) {
-        char id_buf[16];
-        snprintf(id_buf, sizeof(id_buf), "%u", nmo_object_get_id(obj));
-
-        char proto_buf[64] = "-";
+        nmo_cli_table_begin_row(data->table);
+        nmo_cli_table_add_cell_fmt(data->table, "%u", nmo_object_get_id(obj));
+        nmo_cli_table_add_cell(data->table,
+                               is_script ? "Script" : is_bb ? "BB" : "Graph");
         if (is_bb && !nmo_guid_is_null(bs->block_guid)) {
             const char *proto_name = nmo_behavior_registry_get_name(
                 nmo_context_get_bb_registry(c->ctx), bs->block_guid);
             if (proto_name) {
-                snprintf(proto_buf, sizeof(proto_buf), "%s", proto_name);
+                nmo_cli_table_add_cell(data->table, proto_name);
             } else {
-                snprintf(proto_buf, sizeof(proto_buf), "{%08X-%08X}",
-                         bs->block_guid.d1, bs->block_guid.d2);
+                nmo_cli_table_add_cell_fmt(data->table, "{%08X-%08X}",
+                                           bs->block_guid.d1, bs->block_guid.d2);
             }
+        } else {
+            nmo_cli_table_add_cell(data->table, "-");
         }
-
-        const char *cells[] = {
-            id_buf,
-            is_script ? "Script" : is_bb ? "BB" : "Graph",
-            proto_buf,
-            (name && name[0]) ? name : "-",
-        };
-        nmo_cli_table_add_row(data->table, cells, 4);
+        nmo_cli_table_add_cell(data->table, (name && name[0]) ? name : "-");
     }
 
     data->match_count++;
