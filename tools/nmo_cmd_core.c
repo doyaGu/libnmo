@@ -134,6 +134,31 @@ char *nmo_core_field_value_dup(const void *state,
     return core_to_string_dup(core_field_to_string, &args);
 }
 
+typedef struct core_field_desc_to_string_args {
+    const void *state;
+    const nmo_type_descriptor_t *type;
+    const nmo_type_field_t *field;
+    const nmo_type_registry_t *registry;
+} core_field_desc_to_string_args_t;
+
+static nmo_status_t core_field_desc_to_string(void *user, char *buffer, size_t buffer_size) {
+    const core_field_desc_to_string_args_t *args =
+        (const core_field_desc_to_string_args_t *)user;
+    return nmo_type_field_to_string(args->state, args->type, args->field, args->registry,
+                                    buffer, buffer_size);
+}
+
+char *nmo_core_field_dup(const void *state,
+                         const nmo_type_descriptor_t *type,
+                         const nmo_type_field_t *field,
+                         const nmo_type_registry_t *registry) {
+    if (!state || !type || !field || !registry) {
+        return NULL;
+    }
+    core_field_desc_to_string_args_t args = { state, type, field, registry };
+    return core_to_string_dup(core_field_desc_to_string, &args);
+}
+
 typedef struct core_param_to_string_args {
     const nmo_parameter_state_t *param;
     const nmo_type_registry_t *registry;

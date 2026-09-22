@@ -57,6 +57,18 @@ char *nmo_core_type_value_dup(const void *value,
                               const nmo_type_registry_t *registry);
 
 /**
+ * @brief malloc'd text of one reflected field (nmo_type_field_to_string)
+ *
+ * Unlike nmo_core_type_value_dup on the field storage, this honours the
+ * field's array, pointer, and reference flags.
+ * @return String to free(), or NULL when the field cannot be formatted
+ */
+char *nmo_core_field_dup(const void *state,
+                         const nmo_type_descriptor_t *type,
+                         const nmo_type_field_t *field,
+                         const nmo_type_registry_t *registry);
+
+/**
  * @brief malloc'd decoded value of a parameter (nmo_behavior_param_value_to_string)
  * @return String to free(), or NULL when the value cannot be formatted
  */

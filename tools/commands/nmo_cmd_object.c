@@ -1282,13 +1282,7 @@ static int object_list_fields_report(nmo_cmd_ctx_t *c,
                 nmo_type_registry_find_by_guid(
                     (nmo_type_registry_t *)c->registry, field->type_guid);
 
-            char *value = NULL;
-            if (state && ftype) {
-                const void *fptr = nmo_field_get_ptr_const(state, field);
-                if (fptr) {
-                    value = nmo_core_type_value_dup(fptr, ftype, c->registry);
-                }
-            }
+            char *value = ftype ? nmo_core_field_dup(state, type, field, c->registry) : NULL;
 
             yyjson_mut_val *item = yyjson_mut_obj(doc);
             yyjson_mut_obj_add_uint(doc, item, "index", i);
@@ -1316,13 +1310,7 @@ static int object_list_fields_report(nmo_cmd_ctx_t *c,
             nmo_type_registry_find_by_guid(
                 (nmo_type_registry_t *)c->registry, field->type_guid);
 
-        char *value = NULL;
-        if (state && ftype) {
-            const void *fptr = nmo_field_get_ptr_const(state, field);
-            if (fptr) {
-                value = nmo_core_type_value_dup(fptr, ftype, c->registry);
-            }
-        }
+        char *value = ftype ? nmo_core_field_dup(state, type, field, c->registry) : NULL;
 
         fprintf(c->out, "  %-30s %-20s = %s\n",
                 field->name ? field->name : "<unnamed>",
