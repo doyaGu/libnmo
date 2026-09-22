@@ -176,6 +176,9 @@ void nmo_cli_print_tree(const nmo_cli_tree_node_t *root,
  */
 const char *nmo_cli_chunk_options_to_string(uint32_t options, char *buf, size_t buf_size);
 
+/** Heap-allocated variant of nmo_cli_chunk_options_to_string; free with free(). */
+char *nmo_cli_chunk_options_dup(uint32_t options);
+
 #ifdef __cplusplus
 }
 #endif

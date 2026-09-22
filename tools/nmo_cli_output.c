@@ -14,86 +14,93 @@
 #include <string.h>
 #include <ctype.h>
 
-const char *nmo_cli_chunk_options_to_string(uint32_t options, char *buf, size_t buf_size) {
-    if (!buf || buf_size == 0) {
-        return "-";
-    }
+static const struct nmo_cli_chunk_option_name {
+    uint32_t bit;
+    const char *name;
+} nmo_cli_chunk_option_names[] = {
+    {(uint32_t)NMO_CHUNK_OPTION_IDS, "IDS"},
+    {(uint32_t)NMO_CHUNK_OPTION_MAN, "MAN"},
+    {(uint32_t)NMO_CHUNK_OPTION_CHN, "CHN"},
+    {(uint32_t)NMO_CHUNK_OPTION_FILE, "FILE"},
+    {(uint32_t)NMO_CHUNK_OPTION_ALLOWDYN, "ALLOWDYN"},
+    {(uint32_t)NMO_CHUNK_OPTION_LISTBIG, "LISTBIG"},
+    {(uint32_t)NMO_CHUNK_DONTDELETE_PTR, "DONTDELETE_PTR"},
+    {(uint32_t)NMO_CHUNK_DONTDELETE_PARSER, "DONTDELETE_PARSER"},
+    {(uint32_t)NMO_CHUNK_OPTION_PACKED, "PACKED"},
+};
 
-    buf[0] = '\0';
+/* Append `text` at `*pos`, truncating to the buffer. `*pos` tracks the
+ * untruncated length, so a NULL buffer with size 0 measures the output. */
+static void chunk_options_append(char *buf, size_t buf_size, size_t *pos, const char *text) {
+    size_t len = strlen(text);
+    if (buf_size > 0 && *pos < buf_size - 1) {
+        size_t room = buf_size - 1 - *pos;
+        size_t n = len < room ? len : room;
+        memcpy(buf + *pos, text, n);
+        buf[*pos + n] = '\0';
+    }
+    *pos += len;
+}
+
+/* Write "A|B|C" (plus "0x..." for unknown bits, or "-" when none are set).
+ * Returns the untruncated length. */
+static size_t chunk_options_write(uint32_t options, char *buf, size_t buf_size) {
     size_t pos = 0;
     bool first = true;
+    uint32_t known_mask = 0;
 
-    const uint32_t known_mask =
-        (uint32_t)NMO_CHUNK_OPTION_IDS |
-        (uint32_t)NMO_CHUNK_OPTION_MAN |
-        (uint32_t)NMO_CHUNK_OPTION_CHN |
-        (uint32_t)NMO_CHUNK_OPTION_FILE |
-        (uint32_t)NMO_CHUNK_OPTION_ALLOWDYN |
-        (uint32_t)NMO_CHUNK_OPTION_LISTBIG |
-        (uint32_t)NMO_CHUNK_DONTDELETE_PTR |
-        (uint32_t)NMO_CHUNK_DONTDELETE_PARSER |
-        (uint32_t)NMO_CHUNK_OPTION_PACKED;
-
-#define NMO_CLI_APPEND_FLAG(bit, name) \
-    do { \
-        if ((options & (uint32_t)(bit)) != 0) { \
-            const char *s__ = (name); \
-            size_t slen__ = strlen(s__); \
-            if (!first) { \
-                if (pos + 1 < buf_size) { \
-                    buf[pos++] = '|'; \
-                } \
-            } \
-            size_t to_copy__ = slen__; \
-            if (pos + to_copy__ >= buf_size) { \
-                to_copy__ = (buf_size > pos + 1) ? (buf_size - pos - 1) : 0; \
-            } \
-            if (to_copy__ > 0) { \
-                memcpy(buf + pos, s__, to_copy__); \
-                pos += to_copy__; \
-                buf[pos] = '\0'; \
-            } \
-            first = false; \
-        } \
-    } while (0)
-
-    NMO_CLI_APPEND_FLAG(NMO_CHUNK_OPTION_IDS, "IDS");
-    NMO_CLI_APPEND_FLAG(NMO_CHUNK_OPTION_MAN, "MAN");
-    NMO_CLI_APPEND_FLAG(NMO_CHUNK_OPTION_CHN, "CHN");
-    NMO_CLI_APPEND_FLAG(NMO_CHUNK_OPTION_FILE, "FILE");
-    NMO_CLI_APPEND_FLAG(NMO_CHUNK_OPTION_ALLOWDYN, "ALLOWDYN");
-    NMO_CLI_APPEND_FLAG(NMO_CHUNK_OPTION_LISTBIG, "LISTBIG");
-    NMO_CLI_APPEND_FLAG(NMO_CHUNK_DONTDELETE_PTR, "DONTDELETE_PTR");
-    NMO_CLI_APPEND_FLAG(NMO_CHUNK_DONTDELETE_PARSER, "DONTDELETE_PARSER");
-    NMO_CLI_APPEND_FLAG(NMO_CHUNK_OPTION_PACKED, "PACKED");
-
-#undef NMO_CLI_APPEND_FLAG
+    if (buf_size > 0) {
+        buf[0] = '\0';
+    }
+    for (size_t i = 0; i < sizeof(nmo_cli_chunk_option_names) / sizeof(nmo_cli_chunk_option_names[0]); ++i) {
+        known_mask |= nmo_cli_chunk_option_names[i].bit;
+        if ((options & nmo_cli_chunk_option_names[i].bit) == 0) {
+            continue;
+        }
+        if (!first) {
+            chunk_options_append(buf, buf_size, &pos, "|");
+        }
+        chunk_options_append(buf, buf_size, &pos, nmo_cli_chunk_option_names[i].name);
+        first = false;
+    }
 
     uint32_t unknown = options & ~known_mask;
     if (unknown != 0) {
-        char unknown_buf[32];
-        snprintf(unknown_buf, sizeof(unknown_buf), "0x%X", unknown);
-        if (!first && pos + 1 < buf_size) {
-            buf[pos++] = '|';
-            buf[pos] = '\0';
+        if (!first) {
+            chunk_options_append(buf, buf_size, &pos, "|");
         }
-        size_t slen = strlen(unknown_buf);
-        size_t to_copy = slen;
-        if (pos + to_copy >= buf_size) {
-            to_copy = (buf_size > pos + 1) ? (buf_size - pos - 1) : 0;
-        }
-        if (to_copy > 0) {
-            memcpy(buf + pos, unknown_buf, to_copy);
-            pos += to_copy;
-            buf[pos] = '\0';
+        int need = snprintf(NULL, 0, "0x%X", unknown);
+        if (need > 0) {
+            if (buf_size > 0 && pos < buf_size - 1) {
+                snprintf(buf + pos, buf_size - pos, "0x%X", unknown);
+            }
+            pos += (size_t)need;
         }
         first = false;
     }
 
     if (first) {
-        snprintf(buf, buf_size, "-");
+        chunk_options_append(buf, buf_size, &pos, "-");
     }
+    return pos;
+}
+
+const char *nmo_cli_chunk_options_to_string(uint32_t options, char *buf, size_t buf_size) {
+    if (!buf || buf_size == 0) {
+        return "-";
+    }
+    (void)chunk_options_write(options, buf, buf_size);
     return buf;
+}
+
+char *nmo_cli_chunk_options_dup(uint32_t options) {
+    size_t len = chunk_options_write(options, NULL, 0);
+    char *text = (char *)malloc(len + 1);
+    if (!text) {
+        return NULL;
+    }
+    (void)chunk_options_write(options, text, len + 1);
+    return text;
 }
 
 /* ============================================================================

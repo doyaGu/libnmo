@@ -8,6 +8,7 @@
 
 #include <ctype.h>
 #include <limits.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -251,6 +252,24 @@ char *nmo_tool_strdup(const char *src) {
     }
     nmo_allocator_t alloc = nmo_allocator_default();
     return nmo_strdup(&alloc, src);
+}
+
+char *nmo_tool_strdup_fmt(const char *format, ...) {
+    va_list args;
+    va_list copy;
+    va_start(args, format);
+    va_copy(copy, args);
+    int n = vsnprintf(NULL, 0, format, copy);
+    va_end(copy);
+    char *text = NULL;
+    if (n >= 0) {
+        text = (char *)malloc((size_t)n + 1u);
+        if (text) {
+            vsnprintf(text, (size_t)n + 1u, format, args);
+        }
+    }
+    va_end(args);
+    return text;
 }
 
 bool nmo_tool_parse_u32_dec(const char *text, uint32_t *out) {

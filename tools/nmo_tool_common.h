@@ -58,6 +58,9 @@ int nmo_tool_apply_rename_template(const char *tmpl,
 /** Heap-duplicate a string (malloc). Returns NULL on OOM or if src is NULL. */
 char *nmo_tool_strdup(const char *src);
 
+/** printf into a freshly malloc'd string of exactly the needed size. Returns NULL on OOM. */
+char *nmo_tool_strdup_fmt(const char *format, ...);
+
 /** Parse an unsigned 32-bit decimal integer. Returns false on failure. */
 bool nmo_tool_parse_u32_dec(const char *text, uint32_t *out);
 
