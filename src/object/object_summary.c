@@ -34,6 +34,7 @@
 #include "core/nmo_array.h"
 #include "core/nmo_color.h"
 #include "core/nmo_hex.h"
+#include "format/nmo_chunk_api.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -254,6 +255,24 @@ static bool nmo_summary_format_value_string(
     size_t buffer_size)
 {
     const nmo_type_descriptor_t *type = nmo_summary_resolve_value_type(registry, field_type, field_guid);
+    if (type && type->category == NMO_TYPE_CATEGORY_POINTER &&
+        value_size == sizeof(void *)) {
+        /*
+         * Raw pointers are process addresses: meaningless to the reader and
+         * different on every run. Describe what is referenced instead.
+         */
+        const void *pointed = NULL;
+        memcpy(&pointed, value_ptr, sizeof(pointed));
+        if (pointed == NULL) {
+            snprintf(buffer, buffer_size, "null");
+        } else if (nmo_guid_equals(type->guid, CKPGUID_STATECHUNK)) {
+            snprintf(buffer, buffer_size, "<chunk %zu bytes>",
+                     nmo_chunk_get_data_size((const nmo_chunk_t *)pointed));
+        } else {
+            snprintf(buffer, buffer_size, "<%s>", type->name ? type->name : "pointer");
+        }
+        return true;
+    }
     if (type) {
         if (nmo_guid_equals(field_guid, CKPGUID_COLOR) &&
             value_size == sizeof(uint32_t) && type->size == sizeof(nmo_color_t)) {
