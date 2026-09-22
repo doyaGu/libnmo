@@ -80,9 +80,24 @@ bool nmo_cli_record_text(nmo_cli_record_t *record, const char *label,
                          const char *text);
 /**
  * Text-only block written verbatim (no label, no trailing newline added).
- * Use for section headings and pre-formatted multi-line output.
+ * Use for pre-formatted multi-line output.
  */
 bool nmo_cli_record_raw(nmo_cli_record_t *record, const char *text);
+/**
+ * Text-only section heading: a blank line followed by `title` in the heading
+ * style (bold when colorized). Absent from JSON and from table cells.
+ */
+bool nmo_cli_record_heading(nmo_cli_record_t *record, const char *title);
+/**
+ * Hex dump of a byte buffer, limited to `max_bytes` (0: no limit). JSON: the
+ * "data_hex" / "data_emit_size" / "data_truncated" / "data_total_size" keys
+ * of nmo_cli_json_add_data_hex, nothing when `size` is zero. Text: a
+ * "<label>: (empty)" line for an empty buffer, a "<label>: showing N/M bytes"
+ * line when truncated, then a canonical hex dump. The bytes are copied.
+ */
+bool nmo_cli_record_hex_bytes(nmo_cli_record_t *record, const char *label,
+                              const void *bytes, size_t size,
+                              size_t max_bytes);
 /**
  * JSON array of reals. Text shows `text` (NULL: omitted).
  */

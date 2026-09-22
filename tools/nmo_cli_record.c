@@ -7,6 +7,8 @@
 #include "nmo_cli_json.h"
 #include "nmo_cli_output.h"
 
+#include "export/nmo_hexdump.h"
+
 #include <inttypes.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -23,6 +25,8 @@ typedef enum record_kind {
     RECORD_REF,
     RECORD_VEC3,
     RECORD_RAW,
+    RECORD_HEADING,
+    RECORD_BYTES,
     RECORD_REAL_LIST,
     RECORD_UINT_LIST,
     RECORD_STR_LIST,
@@ -52,6 +56,7 @@ typedef struct record_field {
     double *reals;    /* RECORD_REAL_LIST */
     uint64_t *uints;  /* RECORD_UINT_LIST */
     char **strs;      /* RECORD_STR_LIST (entries may be NULL) */
+    unsigned char *bytes; /* RECORD_BYTES: the emitted prefix; u = total size */
     size_t list_count;
     bool b;
     nmo_cli_record_array_t *array; /* RECORD_ARRAY; heap-allocated so the
@@ -128,6 +133,7 @@ static void field_dispose(record_field_t *field)
     free(field->str);
     free(field->reals);
     free(field->uints);
+    free(field->bytes);
     if (field->strs) {
         for (size_t i = 0; i < field->list_count; ++i) {
             free(field->strs[i]);
@@ -400,6 +406,45 @@ bool nmo_cli_record_raw(nmo_cli_record_t *record, const char *text)
     return true;
 }
 
+bool nmo_cli_record_heading(nmo_cli_record_t *record, const char *title)
+{
+    record_field_t *field = field_append(record, RECORD_HEADING, NULL, NULL);
+    if (!field) {
+        return false;
+    }
+    if (!set_str(&field->text, title ? title : "")) {
+        return field_fail(record);
+    }
+    return true;
+}
+
+bool nmo_cli_record_hex_bytes(nmo_cli_record_t *record, const char *label,
+                              const void *bytes, size_t size,
+                              size_t max_bytes)
+{
+    record_field_t *field = field_append(record, RECORD_BYTES, NULL, label);
+    if (!field) {
+        return false;
+    }
+    if (!bytes) {
+        size = 0u;
+    }
+    size_t emit = size;
+    if (max_bytes > 0u && emit > max_bytes) {
+        emit = max_bytes;
+    }
+    field->u = size;
+    field->list_count = emit;
+    if (emit > 0u) {
+        field->bytes = (unsigned char *)malloc(emit);
+        if (!field->bytes) {
+            return field_fail(record);
+        }
+        memcpy(field->bytes, bytes, emit);
+    }
+    return true;
+}
+
 bool nmo_cli_record_real_list(nmo_cli_record_t *record, const char *key,
                               const char *label, const double *values,
                               size_t count, const char *text)
@@ -596,7 +641,8 @@ bool nmo_cli_record_to_json(const nmo_cli_record_t *record,
     bool ok = true;
     for (size_t i = 0; i < record->count && ok; ++i) {
         const record_field_t *field = &record->fields[i];
-        if (!field->key && field->kind != RECORD_REF) {
+        if (!field->key && field->kind != RECORD_REF &&
+            field->kind != RECORD_BYTES) {
             continue;
         }
         switch (field->kind) {
@@ -632,6 +678,14 @@ bool nmo_cli_record_to_json(const nmo_cli_record_t *record,
             }
             break;
         case RECORD_RAW:
+        case RECORD_HEADING:
+            break;
+        case RECORD_BYTES:
+            /* The prefix is all that was kept; max_bytes = its length keeps
+             * the helper from reading past it. */
+            ok = nmo_cli_json_add_data_hex(doc, obj, field->bytes,
+                                           (size_t)field->u, field->list_count,
+                                           false);
             break;
         case RECORD_REAL_LIST: {
             yyjson_mut_val *arr = yyjson_mut_arr(doc);
@@ -700,6 +754,31 @@ bool nmo_cli_record_to_json(const nmo_cli_record_t *record,
     return ok;
 }
 
+static void record_print_bytes(const record_field_t *field, FILE *out,
+                               int key_width, bool colorize)
+{
+    const char *label = field->label ? field->label : "";
+    if (!field->bytes || field->list_count == 0u) {
+        nmo_cli_print_kv(out, label, "(empty)", key_width, colorize);
+        return;
+    }
+    if (field->list_count < (size_t)field->u) {
+        char note[64];
+        snprintf(note, sizeof(note), "showing %zu/%zu bytes",
+                 field->list_count, (size_t)field->u);
+        nmo_cli_print_kv(out, label, note, key_width, colorize);
+    }
+    nmo_hexdump_options_t hd;
+    nmo_hexdump_init_options(&hd);
+    hd.colorize = colorize;
+    hd.ansi.offset = NMO_CLI_COLOR_DIM;
+    hd.ansi.hex = NMO_CLI_COLOR_CYAN;
+    hd.ansi.ascii = NMO_CLI_COLOR_GREEN;
+    hd.ansi.delim = NMO_CLI_COLOR_DIM;
+    hd.ansi.reset = NMO_CLI_COLOR_RESET;
+    nmo_hexdump_canonical(out, field->bytes, field->list_count, &hd);
+}
+
 void nmo_cli_record_print_kv(const nmo_cli_record_t *record, FILE *out,
                              int key_width, bool colorize)
 {
@@ -712,6 +791,15 @@ void nmo_cli_record_print_kv(const nmo_cli_record_t *record, FILE *out,
             if (field->text) {
                 fputs(field->text, out);
             }
+            continue;
+        }
+        if (field->kind == RECORD_HEADING) {
+            fputc('\n', out);
+            nmo_cli_print_heading(out, field->text ? field->text : "", colorize);
+            continue;
+        }
+        if (field->kind == RECORD_BYTES) {
+            record_print_bytes(field, out, key_width, colorize);
             continue;
         }
         if (field->kind == RECORD_ARRAY) {
@@ -754,6 +842,7 @@ size_t nmo_cli_record_cells(const nmo_cli_record_t *record,
     for (size_t i = 0; i < record->count && n < capacity; ++i) {
         const record_field_t *field = &record->fields[i];
         if (field->kind == RECORD_ARRAY || field->kind == RECORD_RAW ||
+            field->kind == RECORD_HEADING || field->kind == RECORD_BYTES ||
             !field->label || !field->text) {
             continue;
         }
