@@ -7,6 +7,7 @@
 
 #include "../nmo_cmd_ctx.h"
 #include "../nmo_cli_output.h"
+#include "../nmo_cli_record.h"
 #include "../nmo_tool_common.h"
 
 #include "nmo.h"
@@ -142,6 +143,21 @@ static yyjson_mut_val *build_class_tree_node(yyjson_mut_doc *doc,
  * type list
  * ============================================================================ */
 
+/* One registered class for type list. */
+static bool type_class_build_record(const nmo_cli_class_entry_t *entry,
+                                    nmo_cli_record_t *rec)
+{
+    bool ok = nmo_cli_record_uint(rec, "id", "ID", entry->class_id) &&
+              nmo_cli_record_str(rec, "name", "Class Name", entry->name);
+    if (ok && entry->parent_id) {
+        ok = nmo_cli_record_uint(rec, "parent_id", NULL, entry->parent_id);
+        if (ok && entry->parent_name) {
+            return nmo_cli_record_str(rec, "parent_name", "Parent", entry->parent_name);
+        }
+    }
+    return ok && nmo_cli_record_text(rec, "Parent", "-");
+}
+
 int nmo_cmd_type_list(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     (void)argc;
     (void)argv;
@@ -160,53 +176,49 @@ int nmo_cmd_type_list(int argc, char **argv, const nmo_cli_global_opts_t *global
     size_t class_count = 0;
     nmo_cli_class_entry_t *entries = collect_class_entries(ctx, &class_count);
 
+    /* JSON: id, name, parent_id, parent_name; text: ID, Class Name, Parent. */
+    static const nmo_cli_table_col_t columns[] = {
+        {"ID", NMO_CLI_ALIGN_RIGHT, 4, 0},
+        {"Class Name", NMO_CLI_ALIGN_LEFT, 20, 30},
+        {"Parent", NMO_CLI_ALIGN_LEFT, 20, 30},
+    };
+
+    yyjson_mut_doc *doc = NULL;
+    yyjson_mut_val *data = NULL;
+    yyjson_mut_val *classes = NULL;
+    nmo_cli_table_t table;
     if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-
-        yyjson_mut_val *classes = yyjson_mut_arr(doc);
-
-        for (size_t i = 0; i < class_count; ++i) {
-            yyjson_mut_val *item = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_uint(doc, item, "id", entries[i].class_id);
-            yyjson_mut_obj_add_str(doc, item, "name", entries[i].name);
-
-            if (entries[i].parent_id) {
-                yyjson_mut_obj_add_uint(doc, item, "parent_id", entries[i].parent_id);
-                if (entries[i].parent_name) {
-                    yyjson_mut_obj_add_str(doc, item, "parent_name", entries[i].parent_name);
-                }
-            }
-
-            yyjson_mut_arr_add_val(classes, item);
-        }
-
-        yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)class_count);
-        yyjson_mut_obj_add_val(doc, data, "classes", classes);
-
-        nmo_cmd_ctx_json_end(&c, doc, data, "type.list");
+        doc = nmo_cmd_ctx_json_begin(&c);
+        data = yyjson_mut_obj(doc);
+        classes = yyjson_mut_arr(doc);
     } else {
         nmo_cli_print_heading(c.out, "Registered Classes", c.colorize);
         fprintf(c.out, "\n");
-
-        static const nmo_cli_table_col_t columns[] = {
-            {"ID", NMO_CLI_ALIGN_RIGHT, 4, 0},
-            {"Class Name", NMO_CLI_ALIGN_LEFT, 20, 30},
-            {"Parent", NMO_CLI_ALIGN_LEFT, 20, 30},
-        };
-
-        nmo_cli_table_t table;
         nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
+    }
 
-        for (size_t i = 0; i < class_count; ++i) {
-            char id_buf[16];
-            snprintf(id_buf, sizeof(id_buf), "%u", entries[i].class_id);
-
-            const char *parent_name = entries[i].parent_name ? entries[i].parent_name : "-";
-            const char *cells[] = {id_buf, entries[i].name, parent_name};
-            nmo_cli_table_add_row(&table, cells, 3);
+    for (size_t i = 0; i < class_count; ++i) {
+        nmo_cli_record_t *rec = nmo_cli_record_new();
+        if (rec && type_class_build_record(&entries[i], rec)) {
+            if (doc) {
+                yyjson_mut_val *item = yyjson_mut_obj(doc);
+                if (item && nmo_cli_record_to_json(rec, doc, item)) {
+                    yyjson_mut_arr_add_val(classes, item);
+                }
+            } else {
+                const char *cells[3];
+                size_t n = nmo_cli_record_cells(rec, cells, 3);
+                nmo_cli_table_add_row(&table, cells, n);
+            }
         }
+        nmo_cli_record_free(rec);
+    }
 
+    if (doc) {
+        yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)class_count);
+        yyjson_mut_obj_add_val(doc, data, "classes", classes);
+        nmo_cmd_ctx_json_end(&c, doc, data, "type.list");
+    } else {
         nmo_cli_table_print(&table, c.out, c.colorize);
         nmo_cli_table_free(&table);
     }
@@ -276,62 +288,62 @@ int nmo_cmd_type_show(int argc, char **argv, const nmo_cli_global_opts_t *global
     nmo_class_id_t parent_id = nmo_cli_class_get_parent(ctx, class_id);
     const char *parent_name = parent_id ? nmo_cli_class_name_from_id(ctx, parent_id) : NULL;
 
+    /* Inheritance chain, root last. */
+    const char *chain[64];
+    size_t chain_len = 0;
+    char chain_text[1024];
+    size_t chain_pos = 0;
+    chain_text[0] = '\0';
+    for (nmo_class_id_t cid = class_id; cid; cid = nmo_cli_class_get_parent(ctx, cid)) {
+        const char *n = nmo_cli_class_name_from_id(ctx, cid);
+        if (!n) {
+            continue;
+        }
+        if (chain_len < sizeof(chain) / sizeof(chain[0])) {
+            chain[chain_len++] = n;
+        }
+        int written = snprintf(chain_text + chain_pos, sizeof(chain_text) - chain_pos,
+                               "%s%s", chain_pos ? " -> " : "", n);
+        if (written > 0 && (size_t)written < sizeof(chain_text) - chain_pos) {
+            chain_pos += (size_t)written;
+        }
+    }
+
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL &&
+              nmo_cli_record_uint(rec, "id", "ID", class_id) &&
+              nmo_cli_record_str(rec, "name", "Name", class_name);
+    if (ok && parent_id) {
+        ok = nmo_cli_record_uint(rec, "parent_id", "Parent ID", parent_id);
+        if (ok && parent_name) {
+            ok = nmo_cli_record_str(rec, "parent_name", "Parent Name", parent_name);
+        } else if (ok) {
+            ok = nmo_cli_record_text(rec, "Parent Name", "-");
+        }
+    }
+    if (ok) {
+        char block[1100];
+        snprintf(block, sizeof(block), "\nInheritance Chain:\n  %s\n", chain_text);
+        ok = nmo_cli_record_str_list(rec, "inheritance_chain", NULL, chain, chain_len, NULL) &&
+             nmo_cli_record_raw(rec, block);
+    }
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        nmo_context_release(ctx);
+        fprintf(stderr, "Error: Out of memory while describing class\n");
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+    }
+
     if (c.is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
-
-        yyjson_mut_obj_add_uint(doc, data, "id", class_id);
-        yyjson_mut_obj_add_str(doc, data, "name", class_name);
-
-        if (parent_id) {
-            yyjson_mut_obj_add_uint(doc, data, "parent_id", parent_id);
-            if (parent_name) {
-                yyjson_mut_obj_add_str(doc, data, "parent_name", parent_name);
-            }
-        }
-
-        /* Build inheritance chain */
-        yyjson_mut_val *chain = yyjson_mut_arr(doc);
-        nmo_class_id_t cid = class_id;
-        while (cid) {
-            const char *n = nmo_cli_class_name_from_id(ctx, cid);
-            if (n) {
-                yyjson_mut_arr_add_str(doc, chain, n);
-            }
-            cid = nmo_cli_class_get_parent(ctx, cid);
-        }
-        yyjson_mut_obj_add_val(doc, data, "inheritance_chain", chain);
-
+        nmo_cli_record_to_json(rec, doc, data);
         nmo_cmd_ctx_json_end(&c, doc, data, "type.show");
     } else {
         nmo_cli_print_heading(c.out, "Class Details", c.colorize);
-
-        char buf[32];
-        snprintf(buf, sizeof(buf), "%u", class_id);
-        nmo_cli_print_kv(c.out, "ID", buf, 12, c.colorize);
-        nmo_cli_print_kv(c.out, "Name", class_name, 12, c.colorize);
-
-        if (parent_id) {
-            snprintf(buf, sizeof(buf), "%u", parent_id);
-            nmo_cli_print_kv(c.out, "Parent ID", buf, 12, c.colorize);
-            nmo_cli_print_kv(c.out, "Parent Name", parent_name ? parent_name : "-", 12, c.colorize);
-        }
-
-        /* Show inheritance chain */
-        fprintf(c.out, "\nInheritance Chain:\n  ");
-        nmo_class_id_t cid = class_id;
-        bool first = true;
-        while (cid) {
-            const char *n = nmo_cli_class_name_from_id(ctx, cid);
-            if (n) {
-                if (!first) fprintf(c.out, " -> ");
-                fprintf(c.out, "%s", n);
-                first = false;
-            }
-            cid = nmo_cli_class_get_parent(ctx, cid);
-        }
-        fprintf(c.out, "\n");
+        nmo_cli_record_print_kv(rec, c.out, 12, c.colorize);
     }
+    nmo_cli_record_free(rec);
 
     nmo_context_release(ctx);
     return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
