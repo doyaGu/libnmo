@@ -452,35 +452,23 @@ bool nmo_tool_has_flag(int argc, char **argv,
     return false;
 }
 
-void nmo_tool_sanitize_filename(char *dst, size_t dst_size,
-                                const char *name, uint32_t index) {
-    if (!dst || dst_size == 0) {
-        return;
-    }
-
+char *nmo_tool_sanitize_filename_dup(const char *name, uint32_t index) {
     if (!name || !*name) {
-        snprintf(dst, dst_size, "resource_%u.bin", index);
-        return;
+        return nmo_tool_strdup_fmt("resource_%u.bin", index);
     }
 
-    size_t pos = 0;
-    for (const unsigned char *p = (const unsigned char *)name;
-         *p && pos + 1 < dst_size; ++p) {
+    char *safe = nmo_tool_strdup(name);
+    if (!safe) {
+        return NULL;
+    }
+    for (unsigned char *p = (unsigned char *)safe; *p; ++p) {
         unsigned char c = *p;
         if (c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' ||
-            c == '"' || c == '<' || c == '>' || c == '|') {
-            dst[pos++] = '_';
-        } else if (c < 0x20) {
-            dst[pos++] = '_';
-        } else {
-            dst[pos++] = (char)c;
+            c == '"' || c == '<' || c == '>' || c == '|' || c < 0x20) {
+            *p = '_';
         }
     }
-    dst[pos] = '\0';
-
-    if (dst[0] == '\0') {
-        snprintf(dst, dst_size, "resource_%u.bin", index);
-    }
+    return safe;
 }
 
 /* ============================================================================
@@ -618,14 +606,18 @@ int nmo_tool_batch_run(
  * Batch write support
  * ============================================================================ */
 
-int nmo_tool_expand_output_template(
+char *nmo_tool_expand_output_template(
     const char *input_path,
-    const char *output_template,
-    char *out_buf,
-    size_t out_buf_size)
+    const char *output_template)
 {
-    if (!input_path || !output_template || !out_buf || out_buf_size == 0) {
-        return -1;
+    if (!input_path || !output_template) {
+        return NULL;
+    }
+
+    /* Find {} in template and replace */
+    const char *placeholder = strstr(output_template, "{}");
+    if (!placeholder) {
+        return nmo_tool_strdup(output_template);
     }
 
     /* Extract basename without extension */
@@ -634,25 +626,13 @@ int nmo_tool_expand_output_template(
     const char *base = input_path;
     if (slash && (!bslash || slash > bslash)) base = slash + 1;
     else if (bslash) base = bslash + 1;
+    const char *dot = strrchr(base, '.');
+    size_t base_len = dot ? (size_t)(dot - base) : strlen(base);
 
-    char basename[256];
-    snprintf(basename, sizeof(basename), "%s", base);
-    char *dot = strrchr(basename, '.');
-    if (dot) *dot = '\0';
-
-    /* Find {} in template and replace */
-    const char *placeholder = strstr(output_template, "{}");
-    if (!placeholder) {
-        snprintf(out_buf, out_buf_size, "%s", output_template);
-        return 0;
-    }
-
-    size_t prefix_len = (size_t)(placeholder - output_template);
-    snprintf(out_buf, out_buf_size, "%.*s%s%s",
-             (int)prefix_len, output_template,
-             basename,
-             placeholder + 2);
-    return 0;
+    return nmo_tool_strdup_fmt("%.*s%.*s%s",
+                               (int)(placeholder - output_template), output_template,
+                               (int)base_len, base,
+                               placeholder + 2);
 }
 
 int nmo_tool_batch_write_run(
@@ -704,13 +684,18 @@ int nmo_tool_batch_write_run(
         const char *path = file_paths[i];
 
         /* Expand output path from template */
-        char output_path[1024];
-        nmo_tool_expand_output_template(path, output_template, output_path, sizeof(output_path));
+        char *output_path = nmo_tool_expand_output_template(path, output_template);
+        if (!output_path) {
+            fprintf(stderr, "Error: Out of memory\n");
+            worst_exit = NMO_CLI_EXIT_INTERNAL_ERROR;
+            failed++;
+            continue;
+        }
 
         if (is_json) {
             yyjson_mut_val *result_obj = yyjson_mut_obj(doc);
             yyjson_mut_obj_add_str(doc, result_obj, "file", path);
-            yyjson_mut_obj_add_str(doc, result_obj, "output", output_path);
+            yyjson_mut_obj_add_strcpy(doc, result_obj, "output", output_path);
 
             yyjson_mut_val *data_obj = yyjson_mut_obj(doc);
             int rc = handler(path, output_path, global, user_data, doc, data_obj);
@@ -747,6 +732,7 @@ int nmo_tool_batch_write_run(
 
             if (rc > worst_exit) worst_exit = rc;
         }
+        free(output_path);
     }
 
     if (is_json) {

@@ -742,18 +742,20 @@ static int export_one_animation(nmo_objectanimation_state_t *st,
     uint32_t obj_id = nmo_object_get_id(obj);
 
     /* Build filename */
-    char safe_name[256];
-    if (name && name[0]) {
-        nmo_tool_sanitize_filename(safe_name, sizeof(safe_name), name, obj_id);
-    } else {
-        snprintf(safe_name, sizeof(safe_name), "anim_%u", obj_id);
-    }
-
-    char path[1024];
-    snprintf(path, sizeof(path), "%s/%s_%u.anim.json", out_dir, safe_name, obj_id);
+    char *safe_name = (name && name[0])
+        ? nmo_tool_sanitize_filename_dup(name, obj_id)
+        : nmo_tool_strdup_fmt("anim_%u", obj_id);
+    char *path = safe_name
+        ? nmo_tool_strdup_fmt("%s/%s_%u.anim.json", out_dir, safe_name, obj_id)
+        : NULL;
+    free(safe_name);
+    if (!path) return -1;
 
     yyjson_mut_doc *doc = yyjson_mut_doc_new(NULL);
-    if (!doc) return -1;
+    if (!doc) {
+        free(path);
+        return -1;
+    }
 
     yyjson_mut_val *root = yyjson_mut_obj(doc);
     yyjson_mut_doc_set_root(doc, root);
@@ -816,9 +818,11 @@ static int export_one_animation(nmo_objectanimation_state_t *st,
     if (!ok) {
         fprintf(stderr, "Error: Failed to write %s: %s\n", path,
                 err.msg ? err.msg : "unknown error");
+        free(path);
         return -1;
     }
 
+    free(path);
     return 0;
 }
 

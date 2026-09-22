@@ -664,10 +664,10 @@ static int resource_extract_run(nmo_cmd_ctx_t *ctx,
         const bool is_meta_only = (res->attributes & NMO_INCLUDED_FILE_ATTR_METADATA_ONLY) != 0;
         const bool has_payload = (res->data != NULL && res->size > 0);
 
-        char safe_name[260];
-        nmo_tool_sanitize_filename(safe_name, sizeof(safe_name), res->name, i);
-        char *path = join_path(args->out_dir, safe_name);
+        char *safe_name = nmo_tool_sanitize_filename_dup(res->name, i);
+        char *path = safe_name ? join_path(args->out_dir, safe_name) : NULL;
         if (!path) {
+            free(safe_name);
             errors++;
             if (c.is_json) {
                 yyjson_mut_val *e = yyjson_mut_obj(doc);
@@ -697,6 +697,7 @@ static int resource_extract_run(nmo_cmd_ctx_t *ctx,
                 fprintf(c.out, "  [%u] %s -> skipped (%s)\n", i, safe_name, is_meta_only ? "metadata_only" : "no_payload");
             }
             free(path);
+            free(safe_name);
             continue;
         }
 
@@ -715,6 +716,7 @@ static int resource_extract_run(nmo_cmd_ctx_t *ctx,
                 fprintf(c.out, "  [%u] %s -> skipped (exists; use --overwrite)\n", i, safe_name);
             }
             free(path);
+            free(safe_name);
             continue;
         }
 
@@ -734,6 +736,7 @@ static int resource_extract_run(nmo_cmd_ctx_t *ctx,
                 fprintf(c.out, "  [%u] %s -> failed to open (%s)\n", i, safe_name, strerror(errno));
             }
             free(path);
+            free(safe_name);
             continue;
         }
 
@@ -755,6 +758,7 @@ static int resource_extract_run(nmo_cmd_ctx_t *ctx,
                 fprintf(c.out, "  [%u] %s -> write failed\n", i, safe_name);
             }
             free(path);
+            free(safe_name);
             continue;
         }
 
@@ -771,6 +775,7 @@ static int resource_extract_run(nmo_cmd_ctx_t *ctx,
             fprintf(c.out, "  [%u] %s (%u bytes)\n", i, safe_name, res->size);
         }
         free(path);
+        free(safe_name);
     }
 
     int exit_code = (errors > 0) ? NMO_CLI_EXIT_IO_ERROR : NMO_CLI_EXIT_SUCCESS;

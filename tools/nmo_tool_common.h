@@ -133,12 +133,11 @@ bool nmo_tool_has_flag(int argc, char **argv,
                        const char *flag1, const char *flag2);
 
 /**
- * Sanitize a string for use as a file name.
- * Replaces path separators and control characters with '_'.
- * Falls back to "resource_<index>.bin" if the name is empty.
+ * malloc'd copy of `name` made safe for use as a file name: path separators
+ * and control characters become '_'. A NULL or empty name yields
+ * "resource_<index>.bin". Returns NULL on OOM; free with free().
  */
-void nmo_tool_sanitize_filename(char *dst, size_t dst_size,
-                                const char *name, uint32_t index);
+char *nmo_tool_sanitize_filename_dup(const char *name, uint32_t index);
 
 /* ============================================================================
  * Batch Processing Framework
@@ -211,13 +210,11 @@ typedef int (*nmo_batch_write_handler_t)(
  * Expand output template: replace {} with input basename (no extension).
  * E.g. input="dir/file.cmo", template="{}.stripped.cmo" -> "file.stripped.cmo"
  *
- * @return 0 on success, -1 if no {} in template with multiple files
+ * @return A malloc'd path (free with free()), or NULL on invalid arguments or OOM
  */
-int nmo_tool_expand_output_template(
+char *nmo_tool_expand_output_template(
     const char *input_path,
-    const char *output_template,
-    char *out_buf,
-    size_t out_buf_size);
+    const char *output_template);
 
 /**
  * Run a write command handler over multiple files with output template.
