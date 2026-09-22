@@ -779,10 +779,9 @@ static int object_cycles_run(nmo_cmd_ctx_t *ctx, bool close_ctx) {
                     const char *n = nmo_object_get_name(o);
                     if (n && n[0])
                         nmo_cli_json_add_str_safe(doc, entry, "name", n);
-                    char cbuf[32];
-                    const char *cls = nmo_core_class_name_or(
-                        &c, nmo_object_get_class_id(o), cbuf, sizeof(cbuf));
-                    yyjson_mut_obj_add_str(doc, entry, "class_name", cls);
+                    char *cls = nmo_core_class_name_dup(&c, nmo_object_get_class_id(o));
+                    nmo_cli_json_add_str_safe(doc, entry, "class_name", cls ? cls : "?");
+                    free(cls);
                 }
                 yyjson_mut_arr_add_val(objs, entry);
             }
@@ -818,10 +817,9 @@ static int object_cycles_run(nmo_cmd_ctx_t *ctx, bool close_ctx) {
                     if (j > 0) fprintf(c.out, " -> ");
                     nmo_object_t *o = nmo_core_find_by_id(&c, rec->ids[j]);
                     const char *n = o ? nmo_object_get_name(o) : NULL;
-                    char cbuf[32];
-                    const char *cls = o ? nmo_core_class_name_or(
-                        &c, nmo_object_get_class_id(o), cbuf, sizeof(cbuf)) : "?";
-                    fprintf(c.out, "#%u %s", rec->ids[j], cls);
+                    char *cls = o ? nmo_core_class_name_dup(&c, nmo_object_get_class_id(o)) : NULL;
+                    fprintf(c.out, "#%u %s", rec->ids[j], cls ? cls : "?");
+                    free(cls);
                     if (n && n[0]) fprintf(c.out, " \"%s\"", n);
                 }
                 fprintf(c.out, " -> #%u\n", rec->ids[0]);
@@ -994,10 +992,9 @@ static int object_graph_run(nmo_cmd_ctx_t *ctx, const object_graph_args_t *args,
 
             nmo_object_t *obj = nmo_core_find_by_id(&c, node_ids[i]);
             if (obj) {
-                char cbuf[32];
-                const char *cls = nmo_core_class_name_or(
-                    &c, nmo_object_get_class_id(obj), cbuf, sizeof(cbuf));
-                yyjson_mut_obj_add_str(doc, jn, "class_name", cls);
+                char *cls = nmo_core_class_name_dup(&c, nmo_object_get_class_id(obj));
+                nmo_cli_json_add_str_safe(doc, jn, "class_name", cls ? cls : "?");
+                free(cls);
                 const char *name = nmo_object_get_name(obj);
                 if (name && name[0])
                     nmo_cli_json_add_str_safe(doc, jn, "name", name);

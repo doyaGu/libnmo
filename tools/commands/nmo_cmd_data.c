@@ -65,49 +65,34 @@ static const char *arraytype_name(CK_ARRAYTYPE type) {
     }
 }
 
-static void format_cell(char *buf, size_t buf_size,
-                        const nmo_dataarray_cell_t *cell,
-                        CK_ARRAYTYPE type,
-                        const nmo_cmd_ctx_t *c) {
+/* malloc'd text for one cell (free with free()); NULL only on OOM. */
+static char *format_cell_dup(const nmo_dataarray_cell_t *cell,
+                             CK_ARRAYTYPE type,
+                             const nmo_cmd_ctx_t *c) {
     switch (type) {
         case CKARRAYTYPE_INT:
-            snprintf(buf, buf_size, "%d", cell->int_value);
-            break;
+            return nmo_tool_strdup_fmt("%d", cell->int_value);
         case CKARRAYTYPE_FLOAT:
-            snprintf(buf, buf_size, "%.6g", (double)cell->float_value);
-            break;
+            return nmo_tool_strdup_fmt("%.6g", (double)cell->float_value);
         case CKARRAYTYPE_STRING:
-            if (cell->string_value) {
-                snprintf(buf, buf_size, "%s", cell->string_value);
-            } else {
-                snprintf(buf, buf_size, "(null)");
-            }
-            break;
+            return nmo_tool_strdup(cell->string_value ? cell->string_value : "(null)");
         case CKARRAYTYPE_OBJECT: {
             const nmo_object_id_t runtime_id =
                 nmo_ref_runtime_id(&cell->object_ref);
             const nmo_object_id_t display_id =
                 nmo_ref_serialized_id(&cell->object_ref);
             nmo_object_t *obj = nmo_core_find_by_id(c, runtime_id);
-            if (obj) {
-                const char *name = nmo_object_get_name(obj);
-                if (name && name[0]) {
-                    snprintf(buf, buf_size, "#%u (%s)", display_id, name);
-                } else {
-                    snprintf(buf, buf_size, "#%u", display_id);
-                }
-            } else {
-                snprintf(buf, buf_size, "#%u", display_id);
+            const char *name = obj ? nmo_object_get_name(obj) : NULL;
+            if (name && name[0]) {
+                return nmo_tool_strdup_fmt("#%u (%s)", display_id, name);
             }
-            break;
+            return nmo_tool_strdup_fmt("#%u", display_id);
         }
         case CKARRAYTYPE_PARAMETER:
-            snprintf(buf, buf_size, "#%u",
-                     nmo_ref_serialized_id(&cell->parameter.ref));
-            break;
+            return nmo_tool_strdup_fmt("#%u",
+                                       nmo_ref_serialized_id(&cell->parameter.ref));
         default:
-            snprintf(buf, buf_size, "?");
-            break;
+            return nmo_tool_strdup("?");
     }
 }
 
@@ -537,10 +522,10 @@ int nmo_cmd_data_dump(int argc, char **argv, const nmo_cli_global_opts_t *global
             const char *cname = state->column_formats[ci].name;
             if (!cname || !cname[0]) cname = "(unnamed)";
 
-            char val_buf[256];
-            format_cell(val_buf, sizeof(val_buf), &row->cells[ci],
-                        state->column_formats[ci].type, &c);
-            nmo_cli_print_kv(c.out, cname, val_buf, 20, c.colorize);
+            char *value = format_cell_dup(&row->cells[ci],
+                                          state->column_formats[ci].type, &c);
+            nmo_cli_print_kv(c.out, cname, value ? value : "", 20, c.colorize);
+            free(value);
         }
     } else {
         /* All rows: table format */
@@ -577,52 +562,24 @@ int nmo_cmd_data_dump(int argc, char **argv, const nmo_cli_global_opts_t *global
         nmo_cli_table_t table;
         nmo_cli_table_init(&table, col_defs, ncols);
 
-        /* Temporary cell string array */
-        const char *cell_strs_stack[32];
-        const char **cell_strs = cell_strs_stack;
-        char (*cell_bufs_stack)[256] = NULL;
-        char (*cell_bufs)[256] = NULL;
-
-        /* Allocate buffers for cell formatting */
-        cell_bufs = (char (*)[256])malloc(ncols * 256);
-        if (!cell_bufs) {
-            fprintf(stderr, "Error: Out of memory\n");
-            nmo_cli_table_free(&table);
-            if (col_defs != col_defs_stack) free(col_defs);
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-        }
-        (void)cell_bufs_stack;
-
-        if (ncols > 32) {
-            cell_strs = (const char **)malloc(ncols * sizeof(const char *));
-            if (!cell_strs) {
-                fprintf(stderr, "Error: Out of memory\n");
-                free(cell_bufs);
-                nmo_cli_table_free(&table);
-                if (col_defs != col_defs_stack) free(col_defs);
-                return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-            }
-        }
-
         for (uint32_t ri = 0; ri < state->row_count; ++ri) {
             const nmo_dataarray_row_t *row = &state->rows[ri];
+            nmo_cli_table_begin_row(&table);
             for (size_t ci = 0; ci < ncols; ++ci) {
                 if (ci < row->column_count) {
-                    format_cell(cell_bufs[ci], 256, &row->cells[ci],
-                                state->column_formats[ci].type, &c);
+                    char *value = format_cell_dup(&row->cells[ci],
+                                                  state->column_formats[ci].type, &c);
+                    nmo_cli_table_add_cell(&table, value ? value : "");
+                    free(value);
                 } else {
-                    snprintf(cell_bufs[ci], 256, "-");
+                    nmo_cli_table_add_cell(&table, "-");
                 }
-                cell_strs[ci] = cell_bufs[ci];
             }
-            nmo_cli_table_add_row(&table, cell_strs, ncols);
         }
 
         nmo_cli_table_print(&table, c.out, c.colorize);
         nmo_cli_table_free(&table);
 
-        free(cell_bufs);
-        if (cell_strs != cell_strs_stack) free((void *)cell_strs);
         if (col_defs != col_defs_stack) free(col_defs);
     }
 
@@ -642,8 +599,8 @@ typedef struct data_set_cell_args {
     const char *name;
     const char *col_name;
     const char *col_type_name;
-    char old_buf[256];
-    char new_buf[256];
+    char *old_value; /**< malloc'd */
+    char *new_value; /**< malloc'd */
     nmo_edit_plan_t *edit_plan;
     nmo_edit_report_t edit_report;
     bool edit_report_ready;
@@ -660,6 +617,10 @@ static void data_set_cell_args_cleanup(data_set_cell_args_t *args)
         nmo_edit_report_dispose(&args->edit_report);
         args->edit_report_ready = false;
     }
+    free(args->old_value);
+    free(args->new_value);
+    args->old_value = NULL;
+    args->new_value = NULL;
 }
 
 static int data_set_cell_exit_code(nmo_status_t status)
@@ -725,8 +686,12 @@ static int data_set_cell_mutate(
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    format_cell(args->old_buf, sizeof(args->old_buf),
-                &target_row->cells[args->col], col_type, c);
+    free(args->old_value);
+    args->old_value = format_cell_dup(&target_row->cells[args->col], col_type, c);
+    if (args->old_value == NULL) {
+        fprintf(stderr, "Error: Out of memory\n");
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
 
     int ref_rc = validate_dataarray_reference_value(
         c, col_type, state->column_formats[args->col].parameter_type_guid,
@@ -756,11 +721,13 @@ static int data_set_cell_mutate(
         return data_set_cell_exit_code(set_rc);
     }
 
-    if (dry_run) {
-        snprintf(args->new_buf, sizeof(args->new_buf), "%s", args->value_str);
-    } else {
-        format_cell(args->new_buf, sizeof(args->new_buf),
-                    &target_row->cells[args->col], col_type, c);
+    free(args->new_value);
+    args->new_value = dry_run
+        ? nmo_tool_strdup(args->value_str)
+        : format_cell_dup(&target_row->cells[args->col], col_type, c);
+    if (args->new_value == NULL) {
+        fprintf(stderr, "Error: Out of memory\n");
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
     args->name = nmo_object_get_name(obj);
@@ -797,8 +764,8 @@ static int data_set_cell_report(
         yyjson_mut_obj_add_uint(doc, data, "col", args->col);
         nmo_cli_json_add_str_safe(doc, data, "column_name", args->col_name);
         yyjson_mut_obj_add_str(doc, data, "column_type", args->col_type_name);
-        nmo_cli_json_add_str_safe(doc, data, "old_value", args->old_buf);
-        nmo_cli_json_add_str_safe(doc, data, "new_value", args->new_buf);
+        nmo_cli_json_add_str_safe(doc, data, "old_value", args->old_value);
+        nmo_cli_json_add_str_safe(doc, data, "new_value", args->new_value);
         if (!dry_run && output_path) {
             nmo_cli_json_add_str_safe(doc, data, "output", output_path);
         }
@@ -810,8 +777,8 @@ static int data_set_cell_report(
         fprintf(c->out, "\n");
         fprintf(c->out, "  Cell:  [%u,%u] (column '%s', type %s)\n",
                 args->row, args->col, args->col_name, args->col_type_name);
-        fprintf(c->out, "  Old:   %s\n", args->old_buf);
-        fprintf(c->out, "  New:   %s\n", args->new_buf);
+        fprintf(c->out, "  Old:   %s\n", args->old_value);
+        fprintf(c->out, "  New:   %s\n", args->new_value);
 
         if (dry_run) {
             fprintf(c->out, "  (dry run - not saved)\n");

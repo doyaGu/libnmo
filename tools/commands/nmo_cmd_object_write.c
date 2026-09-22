@@ -343,17 +343,13 @@ static int object_rename_batch_report(
                 nmo_cli_table_init(&table, cols, 4);
 
                 for (size_t i = 0; i < args->entry_count; i++) {
-                    char id_buf[16];
-                    snprintf(id_buf, sizeof(id_buf), "%u", args->entries[i].id);
                     const char *cls = nmo_core_class_name(
                         c, args->entries[i].class_id);
-                    const char *cells[] = {
-                        id_buf,
-                        cls ? cls : "?",
-                        args->entries[i].old_name,
-                        args->entries[i].new_name
-                    };
-                    nmo_cli_table_add_row(&table, cells, 4);
+                    nmo_cli_table_begin_row(&table);
+                    nmo_cli_table_add_cell_fmt(&table, "%u", args->entries[i].id);
+                    nmo_cli_table_add_cell(&table, cls ? cls : "?");
+                    nmo_cli_table_add_cell(&table, args->entries[i].old_name);
+                    nmo_cli_table_add_cell(&table, args->entries[i].new_name);
                 }
 
                 nmo_cli_table_print(&table, c->out, c->colorize);
@@ -736,10 +732,10 @@ static int delete_collect_visitor(size_t index, nmo_object_t *obj,
     return 0;
 }
 
-/* Batch delete context -- stores copies of filter strings */
+/* Batch delete context -- filter strings point into argv */
 typedef struct {
-    char class_str[64];
-    char name_str[256];
+    const char *class_str;
+    const char *name_str;
     bool has_class;
     bool has_name;
     bool cascade;
@@ -827,8 +823,8 @@ static int delete_batch_handler(
 typedef struct object_delete_preview_entry {
     nmo_object_id_t id;
     bool has_object;
-    char class_name[32];
-    char *name;
+    char *class_name; /**< malloc'd; "-" when the object is missing */
+    char *name;       /**< malloc'd, NULL when unnamed */
 } object_delete_preview_entry_t;
 
 typedef struct object_delete_args {
@@ -857,9 +853,9 @@ static void object_delete_args_cleanup(object_delete_args_t *args)
     args->target_count = 0;
 
     if (args->preview_entries != NULL) {
-        nmo_allocator_t alloc = nmo_allocator_default();
         for (size_t i = 0; i < args->expanded_count; i++) {
-            nmo_free(&alloc, args->preview_entries[i].name);
+            free(args->preview_entries[i].name);
+            free(args->preview_entries[i].class_name);
         }
         free(args->preview_entries);
         args->preview_entries = NULL;
@@ -908,18 +904,20 @@ static int object_delete_collect_targets(nmo_cmd_ctx_t *c, object_delete_args_t 
         while (*s) {
             const char *comma = strchr(s, ',');
             size_t tok_len = comma ? (size_t)(comma - s) : strlen(s);
-            char tok[32];
-            if (tok_len >= sizeof(tok)) {
-                break;
+            char *tok = nmo_tool_strdup_fmt("%.*s", (int)tok_len, s);
+            if (tok == NULL) {
+                fprintf(stderr, "Error: Out of memory\n");
+                return NMO_CLI_EXIT_INTERNAL_ERROR;
             }
-            memcpy(tok, s, tok_len);
-            tok[tok_len] = '\0';
 
             uint32_t id;
-            if (!nmo_tool_parse_u32(tok, &id) || id == 0) {
+            bool valid = nmo_tool_parse_u32(tok, &id) && id != 0;
+            if (!valid) {
                 fprintf(stderr, "Error: Invalid object ID '%s'\n", tok);
+                free(tok);
                 return NMO_CLI_EXIT_ARG_ERROR;
             }
+            free(tok);
 
             if (args->target_count >= max_ids) {
                 max_ids *= 2;
@@ -998,18 +996,20 @@ static int object_delete_collect_preview(
     for (size_t i = 0; i < expanded_count; i++) {
         object_delete_preview_entry_t *entry = &args->preview_entries[i];
         entry->id = expanded_ids[i];
-        snprintf(entry->class_name, sizeof(entry->class_name), "%s", "-");
 
         nmo_object_t *obj = nmo_core_find_by_id(c, expanded_ids[i]);
+        entry->class_name = obj != NULL
+            ? nmo_core_class_name_dup(c, nmo_object_get_class_id(obj))
+            : nmo_tool_strdup("-");
+        if (entry->class_name == NULL) {
+            nmo_arena_destroy(arena);
+            return NMO_CLI_EXIT_INTERNAL_ERROR;
+        }
         if (obj == NULL) {
             continue;
         }
 
         entry->has_object = true;
-        char cbuf[32];
-        const char *cls = nmo_core_class_name_or(
-            c, nmo_object_get_class_id(obj), cbuf, sizeof(cbuf));
-        snprintf(entry->class_name, sizeof(entry->class_name), "%s", cls);
 
         const char *name = nmo_object_get_name(obj);
         if (name != NULL && name[0] != '\0') {
@@ -1160,11 +1160,10 @@ static int object_delete_report(
 
             for (size_t i = 0; i < args->expanded_count; i++) {
                 const object_delete_preview_entry_t *entry = &args->preview_entries[i];
-                char id_buf[16];
-                snprintf(id_buf, sizeof(id_buf), "%u", entry->id);
-                const char *name = entry->name != NULL ? entry->name : "-";
-                const char *cells[] = { id_buf, entry->class_name, name };
-                nmo_cli_table_add_row(&table, cells, 3);
+                nmo_cli_table_begin_row(&table);
+                nmo_cli_table_add_cell_fmt(&table, "%u", entry->id);
+                nmo_cli_table_add_cell(&table, entry->class_name);
+                nmo_cli_table_add_cell(&table, entry->name != NULL ? entry->name : "-");
             }
             nmo_cli_table_print(&table, c->out, c->colorize);
             nmo_cli_table_free(&table);
@@ -1225,11 +1224,11 @@ int nmo_cmd_object_delete(int argc, char **argv, const nmo_cli_global_opts_t *gl
         delete_batch_ctx_t batch_ctx;
         memset(&batch_ctx, 0, sizeof(batch_ctx));
         if (vals[OPT_CLASS].present) {
-            snprintf(batch_ctx.class_str, sizeof(batch_ctx.class_str), "%s", vals[OPT_CLASS].val.str);
+            batch_ctx.class_str = vals[OPT_CLASS].val.str;
             batch_ctx.has_class = true;
         }
         if (vals[OPT_NAME].present) {
-            snprintf(batch_ctx.name_str, sizeof(batch_ctx.name_str), "%s", vals[OPT_NAME].val.str);
+            batch_ctx.name_str = vals[OPT_NAME].val.str;
             batch_ctx.has_name = true;
         }
         batch_ctx.cascade = cascade;
@@ -1438,6 +1437,26 @@ static int object_create_report(
     return NMO_CLI_EXIT_SUCCESS;
 }
 
+/*
+ * Parse "<hex d1>,<hex d2>" (comma points at the separator inside guid_str).
+ * Returns false when either half is empty or not a 32-bit hex value.
+ */
+static bool parse_guid_hex_pair(const char *guid_str, const char *comma, nmo_guid_t *out_guid)
+{
+    size_t left_len = (size_t)(comma - guid_str);
+    if (left_len == 0 || comma[1] == '\0') {
+        return false;
+    }
+    char *left = nmo_tool_strdup_fmt("%.*s", (int)left_len, guid_str);
+    if (left == NULL) {
+        return false;
+    }
+    bool ok = nmo_parse_u32_range_base(left, 16, 0, UINT32_MAX, &out_guid->d1) == NMO_OK &&
+              nmo_parse_u32_range_base(comma + 1, 16, 0, UINT32_MAX, &out_guid->d2) == NMO_OK;
+    free(left);
+    return ok;
+}
+
 static int parse_object_type_guid_arg(const char *guid_str, nmo_guid_t *out_guid)
 {
     if (out_guid == NULL) {
@@ -1450,20 +1469,7 @@ static int parse_object_type_guid_arg(const char *guid_str, nmo_guid_t *out_guid
 
     const char *comma = strchr(guid_str, ',');
     if (comma != NULL) {
-        char left[16];
-        char right[16];
-        size_t left_len = (size_t)(comma - guid_str);
-        size_t right_len = strlen(comma + 1);
-        if (left_len == 0 || left_len >= sizeof(left) ||
-            right_len == 0 || right_len >= sizeof(right)) {
-            fprintf(stderr, "Error: Invalid GUID '%s'\n", guid_str);
-            return NMO_CLI_EXIT_ARG_ERROR;
-        }
-        memcpy(left, guid_str, left_len);
-        left[left_len] = '\0';
-        memcpy(right, comma + 1, right_len + 1);
-        if (nmo_parse_u32_range_base(left, 16, 0, UINT32_MAX, &out_guid->d1) != NMO_OK ||
-            nmo_parse_u32_range_base(right, 16, 0, UINT32_MAX, &out_guid->d2) != NMO_OK) {
+        if (!parse_guid_hex_pair(guid_str, comma, out_guid)) {
             fprintf(stderr, "Error: Invalid GUID '%s'\n", guid_str);
             return NMO_CLI_EXIT_ARG_ERROR;
         }
@@ -1521,20 +1527,7 @@ int nmo_cmd_object_create(int argc, char **argv, const nmo_cli_global_opts_t *gl
         const char *guid_str = vals[OPT_TYPE_GUID].val.str;
         const char *comma = strchr(guid_str, ',');
         if (comma != NULL) {
-            char left[16];
-            char right[16];
-            size_t left_len = (size_t)(comma - guid_str);
-            size_t right_len = strlen(comma + 1);
-            if (left_len == 0 || left_len >= sizeof(left) ||
-                right_len == 0 || right_len >= sizeof(right)) {
-                fprintf(stderr, "Error: Invalid GUID '%s'\n", guid_str);
-                return NMO_CLI_EXIT_ARG_ERROR;
-            }
-            memcpy(left, guid_str, left_len);
-            left[left_len] = '\0';
-            memcpy(right, comma + 1, right_len + 1);
-            if (nmo_parse_u32_range_base(left, 16, 0, UINT32_MAX, &type_guid.d1) != NMO_OK ||
-                nmo_parse_u32_range_base(right, 16, 0, UINT32_MAX, &type_guid.d2) != NMO_OK) {
+            if (!parse_guid_hex_pair(guid_str, comma, &type_guid)) {
                 fprintf(stderr, "Error: Invalid GUID '%s'\n", guid_str);
                 return NMO_CLI_EXIT_ARG_ERROR;
             }
@@ -1712,18 +1705,20 @@ static int object_copy_collect_targets(nmo_cmd_ctx_t *c, object_copy_args_t *arg
         while (*s) {
             const char *comma = strchr(s, ',');
             size_t tok_len = comma ? (size_t)(comma - s) : strlen(s);
-            char tok[32];
-            if (tok_len >= sizeof(tok)) {
-                break;
+            char *tok = nmo_tool_strdup_fmt("%.*s", (int)tok_len, s);
+            if (tok == NULL) {
+                fprintf(stderr, "Error: Out of memory\n");
+                return NMO_CLI_EXIT_INTERNAL_ERROR;
             }
-            memcpy(tok, s, tok_len);
-            tok[tok_len] = '\0';
 
             uint32_t id;
-            if (!nmo_tool_parse_u32(tok, &id) || id == 0) {
+            bool valid = nmo_tool_parse_u32(tok, &id) && id != 0;
+            if (!valid) {
                 fprintf(stderr, "Error: Invalid object ID '%s'\n", tok);
+                free(tok);
                 return NMO_CLI_EXIT_ARG_ERROR;
             }
+            free(tok);
 
             if (args->target_count >= max_ids) {
                 max_ids *= 2;

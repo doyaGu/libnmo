@@ -10,6 +10,7 @@
 #include "../nmo_cli_write.h"
 #include "../nmo_cmd_core.h"
 #include "../nmo_opt.h"
+#include "../nmo_tool_common.h"
 #include "../nmo_tool_owner.h"
 #include "../nmo_tool_session.h"
 
@@ -144,14 +145,6 @@ static const char *node_kind_name(nmo_script_edit_node_kind_t kind)
     default:
         return "unknown";
     }
-}
-
-static void guid_to_string(nmo_guid_t guid, char *buffer, size_t buffer_size)
-{
-    if (!buffer || buffer_size == 0u) {
-        return;
-    }
-    snprintf(buffer, buffer_size, "%08X-%08X", guid.d1, guid.d2);
 }
 
 static void dot_write_label(FILE *out, const char *label)
@@ -1758,8 +1751,6 @@ static nmo_status_t behavior_execute_cli_action_trampoline(
     behavior_execute_cli_action_state_t *state =
         (behavior_execute_cli_action_state_t *)user_data;
     nmo_status_t status = NMO_OK;
-    nmo_error_code_t error_code = NMO_OK;
-    char error_message[512] = {0};
 
     if (state == NULL || state->action == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
@@ -1768,19 +1759,19 @@ static nmo_status_t behavior_execute_cli_action_trampoline(
 
     status = state->action(executor, state->action_user_data);
     if (status != NMO_OK) {
-        error_code = nmo_last_error_code();
-        (void)nmo_last_error_message_copy(error_message, sizeof(error_message));
-    }
-    if (status != NMO_OK) {
+        nmo_error_code_t error_code = nmo_last_error_code();
+        /* Copy the message first: setting the error below overwrites it. */
+        const char *message = nmo_last_error_message();
+        char *error_message =
+            (message && message[0] != '\0') ? nmo_tool_strdup(message) : NULL;
         nmo_last_error_setf(
             error_code != NMO_OK ? error_code : (nmo_error_code_t)status,
             NMO_SEVERITY_ERROR,
             __FILE__,
             __LINE__,
             "%s",
-            error_message[0] != '\0'
-                ? error_message
-                : nmo_error_string(status));
+            error_message ? error_message : nmo_error_string(status));
+        free(error_message);
     }
     return status;
 }
@@ -2090,8 +2081,8 @@ static int script_graph_run(nmo_cmd_ctx_t *ctx,
     rc = (int)nmo_script_edit_graph_build(c.workspace, behavior_id,
                                           depth, &graph);
     if (rc != NMO_OK) {
-        char detail[256] = {0};
-        if (nmo_last_error_message_copy(detail, sizeof(detail)) > 0u) {
+        const char *detail = nmo_last_error_message();
+        if (detail && detail[0] != '\0') {
             fprintf(stderr, "Error: %s\n", detail);
         } else {
             fprintf(stderr, "Error: Failed to build script edit graph\n");
@@ -2125,10 +2116,13 @@ static int script_graph_run(nmo_cmd_ctx_t *ctx,
             if (node->name && node->name[0] != '\0') {
                 dot_write_label(c.out, node->name);
             } else {
-                char fallback[64];
-                snprintf(fallback, sizeof(fallback), "%s #%u",
-                         node_kind_name(node->kind), node->object_id);
-                dot_write_label(c.out, fallback);
+                char *fallback = nmo_tool_strdup_fmt("%s #%u",
+                                                     node_kind_name(node->kind),
+                                                     node->object_id);
+                if (fallback) {
+                    dot_write_label(c.out, fallback);
+                    free(fallback);
+                }
             }
             fprintf(c.out, "\"];\n");
         }
@@ -2223,7 +2217,6 @@ static int script_graph_run(nmo_cmd_ctx_t *ctx,
 
         for (i = 0; i < data_edge_count; ++i) {
             yyjson_mut_val *edge = yyjson_mut_obj(doc);
-            char guid_buffer[24];
             yyjson_mut_obj_add_uint(doc, edge, "source_parameter_id",
                                     data_edges[i].source_parameter_id);
             yyjson_mut_obj_add_uint(doc, edge, "target_parameter_id",
@@ -2232,9 +2225,9 @@ static int script_graph_run(nmo_cmd_ctx_t *ctx,
                                     data_edges[i].source_owner_id);
             yyjson_mut_obj_add_uint(doc, edge, "target_owner_id",
                                     data_edges[i].target_owner_id);
-            guid_to_string(data_edges[i].type_guid, guid_buffer,
-                           sizeof(guid_buffer));
-            nmo_cli_json_add_str_safe(doc, edge, "type_guid", guid_buffer);
+            nmo_cli_json_add_str_fmt_safe(doc, edge, "type_guid", "%08X-%08X",
+                                          data_edges[i].type_guid.d1,
+                                          data_edges[i].type_guid.d2);
             yyjson_mut_obj_add_bool(doc, edge, "shared", data_edges[i].shared);
             yyjson_mut_arr_add_val(data_edges_json, edge);
         }
@@ -2570,10 +2563,8 @@ static void script_add_manager_entry_json(
                            script_manager_entry_schema_name(
                                manager_entry->schema));
     if (!nmo_guid_is_null(manager_entry->manager_guid)) {
-        char guid_text[64];
-        nmo_guid_format(manager_entry->manager_guid, guid_text,
-                        sizeof(guid_text));
-        nmo_cli_json_add_str_safe(doc, entry, "manager_guid", guid_text);
+        nmo_cli_json_add_guid_safe(doc, entry, "manager_guid",
+                                   manager_entry->manager_guid);
     }
     nmo_cli_json_add_str_safe(doc, entry, "key", manager_entry->key);
     yyjson_mut_obj_add_val(doc, data, "manager_entry", entry);
@@ -2587,9 +2578,6 @@ static char *script_format_parameter_value_with_registry(
     nmo_object_repository_t *repo = NULL;
     nmo_object_t *object = NULL;
     const nmo_parameter_state_t *state = NULL;
-    size_t buffer_size = 512u;
-    char *buffer = NULL;
-    nmo_status_t rc = NMO_OK;
 
     if (!workspace || !registry || param_id == 0u) {
         return NULL;
@@ -2602,18 +2590,7 @@ static char *script_format_parameter_value_with_registry(
         return NULL;
     }
 
-    buffer = (char *)malloc(buffer_size);
-    if (!buffer) {
-        return NULL;
-    }
-
-    rc = nmo_behavior_param_value_to_string(state, registry, workspace, buffer,
-                                            buffer_size);
-    if (rc != NMO_OK) {
-        free(buffer);
-        return NULL;
-    }
-    return buffer;
+    return nmo_core_param_value_dup(state, registry, workspace);
 }
 
 static void script_param_set_args_cleanup(script_param_set_args_t *args)
@@ -2658,9 +2635,7 @@ static bool script_try_resolve_parameter_type_name(
     const char *type_name,
     nmo_guid_t *out_guid)
 {
-    char alias_buf[128];
     const char *lookup_name = type_name;
-    size_t alias_len = 0;
 
     if (!registry || !type_name || !out_guid) {
         return false;
@@ -2672,14 +2647,19 @@ static bool script_try_resolve_parameter_type_name(
 
     if (strncmp(type_name, "CKPGUID_", 8) == 0) {
         lookup_name = type_name + 8;
-        alias_len = strlen(lookup_name);
-        if (alias_len > 0 && alias_len < sizeof(alias_buf)) {
-            for (size_t i = 0; i < alias_len; i++) {
-                alias_buf[i] = (char)tolower((unsigned char)lookup_name[i]);
+        if (lookup_name[0] != '\0') {
+            char *alias = nmo_tool_strdup(lookup_name);
+            if (!alias) {
+                return false;
             }
-            alias_buf[alias_len] = '\0';
-            if (nmo_type_registry_name_to_guid(registry, alias_buf, out_guid) == NMO_OK ||
-                nmo_type_registry_name_to_guid(registry, lookup_name, out_guid) == NMO_OK) {
+            for (char *p = alias; *p; ++p) {
+                *p = (char)tolower((unsigned char)*p);
+            }
+            bool found =
+                nmo_type_registry_name_to_guid(registry, alias, out_guid) == NMO_OK ||
+                nmo_type_registry_name_to_guid(registry, lookup_name, out_guid) == NMO_OK;
+            free(alias);
+            if (found) {
                 return true;
             }
         }
@@ -4161,18 +4141,17 @@ static int script_op_add_report(
     void *user_data)
 {
     script_op_add_args_t *args = (script_op_add_args_t *)user_data;
-    char guid_buf[24];
     if (!ctx || !args) {
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
-    guid_to_string(args->op_guid, guid_buf, sizeof(guid_buf));
     if (ctx->is_json) {
         yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
         yyjson_mut_val *data = yyjson_mut_obj(doc);
         script_add_edit_report_json(doc, data, &args->common, dry_run, output_path);
         yyjson_mut_obj_add_uint(doc, data, "parent_id", args->parent_id);
         yyjson_mut_obj_add_uint(doc, data, "op_id", args->op_id);
-        nmo_cli_json_add_str_safe(doc, data, "operation_guid", guid_buf);
+        nmo_cli_json_add_str_fmt_safe(doc, data, "operation_guid", "%08X-%08X",
+                                      args->op_guid.d1, args->op_guid.d2);
         if (args->in1_id != 0u) yyjson_mut_obj_add_uint(doc, data, "in1_id", args->in1_id);
         if (args->in2_id != 0u) yyjson_mut_obj_add_uint(doc, data, "in2_id", args->in2_id);
         if (args->out_id != 0u) yyjson_mut_obj_add_uint(doc, data, "out_id", args->out_id);

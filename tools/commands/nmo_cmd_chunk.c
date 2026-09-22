@@ -59,18 +59,25 @@ static nmo_cli_tree_node_t *build_chunk_tree_node(nmo_context_t *ctx,
     const char *class_name = nmo_cli_class_name_from_id(ctx, chunk->class_id);
     uint32_t sub_count = nmo_chunk_get_sub_chunk_count(chunk);
 
-    char *label = nmo_arena_alloc(arena, 256, 1);
-    if (label) {
-        char opt_buf[96];
-        const char *opt = nmo_cli_chunk_options_to_string(chunk->chunk_options,
-                                                          opt_buf,
-                                                          sizeof(opt_buf));
-        snprintf(label, 256, "%s (cid=%u size=%zu opt=%s sub=%u)",
-                 class_name ? class_name : "(unknown)",
-                 chunk->class_id,
-                 nmo_chunk_get_data_size(chunk),
-                 opt,
-                 sub_count);
+    /* Format at full length, then keep an exact-size copy in the arena. */
+    char *label = NULL;
+    char *opt = nmo_cli_chunk_options_dup(chunk->chunk_options);
+    char *text = opt
+        ? nmo_tool_strdup_fmt("%s (cid=%u size=%zu opt=%s sub=%u)",
+                              class_name ? class_name : "(unknown)",
+                              chunk->class_id,
+                              nmo_chunk_get_data_size(chunk),
+                              opt,
+                              sub_count)
+        : NULL;
+    free(opt);
+    if (text) {
+        size_t text_size = strlen(text) + 1u;
+        label = nmo_arena_alloc(arena, text_size, 1);
+        if (label) {
+            memcpy(label, text, text_size);
+        }
+        free(text);
     }
 
     node->label = label ? label : "(alloc failed)";

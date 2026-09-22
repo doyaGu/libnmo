@@ -891,26 +891,21 @@ static int object_show_run(nmo_cmd_ctx_t *ctx, const object_show_args_t *args,
     } else {
         nmo_cli_print_heading(c.out, "Object Details", c.colorize);
 
-        char buf[128];
-        snprintf(buf, sizeof(buf), "#%u (%s)", object_id,
-                 (name && name[0]) ? name : "(unnamed)");
-        nmo_cli_print_kv(c.out, "ID / Name", buf, 14, c.colorize);
-
-        snprintf(buf, sizeof(buf), "#%u (%s)", class_id, class_name ? class_name : "-");
-        nmo_cli_print_kv(c.out, "Class", buf, 14, c.colorize);
-
-        snprintf(buf, sizeof(buf), "0x%08X", flags);
-        nmo_cli_print_kv(c.out, "Flags", buf, 14, c.colorize);
+        nmo_cli_print_kv_fmt(c.out, "ID / Name", 14, c.colorize, "#%u (%s)", object_id,
+                             (name && name[0]) ? name : "(unnamed)");
+        nmo_cli_print_kv_fmt(c.out, "Class", 14, c.colorize, "#%u (%s)", class_id,
+                             class_name ? class_name : "-");
+        nmo_cli_print_kv_fmt(c.out, "Flags", 14, c.colorize, "0x%08X", flags);
 
         /* Chunk info */
         nmo_chunk_t *chunk = nmo_object_get_chunk(target);
         if (chunk) {
             fprintf(c.out, "\n");
             nmo_cli_print_heading(c.out, "Chunk", c.colorize);
-            snprintf(buf, sizeof(buf), "%zu bytes", nmo_chunk_get_data_size(chunk));
-            nmo_cli_print_kv(c.out, "Data Size", buf, 14, c.colorize);
-            snprintf(buf, sizeof(buf), "%zu bytes", chunk->compressed_size);
-            nmo_cli_print_kv(c.out, "Pack Size", buf, 14, c.colorize);
+            nmo_cli_print_kv_fmt(c.out, "Data Size", 14, c.colorize, "%zu bytes",
+                                 nmo_chunk_get_data_size(chunk));
+            nmo_cli_print_kv_fmt(c.out, "Pack Size", 14, c.colorize, "%zu bytes",
+                                 chunk->compressed_size);
         }
 
         /* Semantic + reflection summary (text) */
@@ -1222,12 +1217,10 @@ int nmo_cmd_object_export(int argc, char **argv, const nmo_cli_global_opts_t *gl
 
             if (i > 0) fprintf(c.out, "\n");
 
-            char heading[256];
-            snprintf(heading, sizeof(heading), "[%zu/%zu] #%u %s (%s)",
-                     i + 1, col.count, oid,
-                     (oname && oname[0]) ? oname : "(unnamed)",
-                     cn ? cn : "?");
-            nmo_cli_print_heading(c.out, heading, c.colorize);
+            nmo_cli_print_heading_fmt(c.out, c.colorize, "[%zu/%zu] #%u %s (%s)",
+                                      i + 1, col.count, oid,
+                                      (oname && oname[0]) ? oname : "(unnamed)",
+                                      cn ? cn : "?");
 
             nmo_summary_output_t sum_out = {
                 .stream = c.out,
@@ -1289,13 +1282,11 @@ static int object_list_fields_report(nmo_cmd_ctx_t *c,
                 nmo_type_registry_find_by_guid(
                     (nmo_type_registry_t *)c->registry, field->type_guid);
 
-            char val_buf[256];
-            val_buf[0] = '\0';
+            char *value = NULL;
             if (state && ftype) {
                 const void *fptr = nmo_field_get_ptr_const(state, field);
                 if (fptr) {
-                    nmo_type_value_to_string(fptr, ftype,
-                        (nmo_type_registry_t *)c->registry, val_buf, sizeof(val_buf));
+                    value = nmo_core_type_value_dup(fptr, ftype, c->registry);
                 }
             }
 
@@ -1306,7 +1297,8 @@ static int object_list_fields_report(nmo_cmd_ctx_t *c,
             nmo_cli_json_add_str_safe(doc, item, "type",
                                       ftype && ftype->name ? ftype->name : "???");
             nmo_cli_json_add_str_safe(doc, item, "value",
-                                      val_buf[0] ? val_buf : "(empty)");
+                                      (value && value[0]) ? value : "(empty)");
+            free(value);
             yyjson_mut_arr_add_val(fields, item);
         }
         yyjson_mut_obj_add_val(doc, data, "fields", fields);
@@ -1324,20 +1316,19 @@ static int object_list_fields_report(nmo_cmd_ctx_t *c,
             nmo_type_registry_find_by_guid(
                 (nmo_type_registry_t *)c->registry, field->type_guid);
 
-        char val_buf[256];
-        val_buf[0] = '\0';
+        char *value = NULL;
         if (state && ftype) {
             const void *fptr = nmo_field_get_ptr_const(state, field);
             if (fptr) {
-                nmo_type_value_to_string(fptr, ftype,
-                    (nmo_type_registry_t *)c->registry, val_buf, sizeof(val_buf));
+                value = nmo_core_type_value_dup(fptr, ftype, c->registry);
             }
         }
 
         fprintf(c->out, "  %-30s %-20s = %s\n",
                 field->name ? field->name : "<unnamed>",
                 ftype && ftype->name ? ftype->name : "???",
-                val_buf[0] ? val_buf : "(empty)");
+                (value && value[0]) ? value : "(empty)");
+        free(value);
     }
 
     return NMO_CLI_EXIT_SUCCESS;
