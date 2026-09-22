@@ -510,7 +510,6 @@ int nmo_cmd_resource_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
     for (size_t i = 0; ok && i < res->owner_ids.count; ++i) {
         nmo_object_id_t oid = ids[i];
         nmo_cli_record_t *owner = nmo_cli_record_new();
-        char line[512];
         ok = owner != NULL && nmo_cli_record_uint(owner, "id", NULL, oid);
 
         nmo_object_t *o = ok ? nmo_core_find_by_id(&c, oid) : NULL;
@@ -522,15 +521,14 @@ int nmo_cmd_resource_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
             if (ok && class_name) {
                 ok = nmo_cli_record_str(owner, "class_name", NULL, class_name);
             }
-            ok = ok && nmo_cli_record_str_opt(owner, "name", NULL, name, NULL);
-            snprintf(line, sizeof(line), "  - %u  %s  %s", oid,
-                     class_name ? class_name : "-",
-                     (name && name[0]) ? name : "-");
+            ok = ok && nmo_cli_record_str_opt(owner, "name", NULL, name, NULL) &&
+                 nmo_cli_record_set_summary_fmt(owner, "  - %u  %s  %s", oid,
+                                                class_name ? class_name : "-",
+                                                (name && name[0]) ? name : "-");
         } else if (ok) {
-            snprintf(line, sizeof(line), "  - %u", oid);
+            ok = nmo_cli_record_set_summary_fmt(owner, "  - %u", oid);
         }
-        ok = ok && nmo_cli_record_set_summary(owner, line) &&
-             nmo_cli_record_array_add(owners, owner);
+        ok = ok && nmo_cli_record_array_add(owners, owner);
         if (!ok) {
             nmo_cli_record_free(owner);
         }

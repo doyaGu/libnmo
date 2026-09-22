@@ -288,31 +288,43 @@ int nmo_cmd_type_show(int argc, char **argv, const nmo_cli_global_opts_t *global
     nmo_class_id_t parent_id = nmo_cli_class_get_parent(ctx, class_id);
     const char *parent_name = parent_id ? nmo_cli_class_name_from_id(ctx, parent_id) : NULL;
 
-    /* Inheritance chain, root last. */
-    const char *chain[64];
+    /* Inheritance chain, root last: a JSON string list and one text line. */
     size_t chain_len = 0;
-    char chain_text[1024];
-    size_t chain_pos = 0;
-    chain_text[0] = '\0';
+    size_t chain_text_len = 0;
     for (nmo_class_id_t cid = class_id; cid; cid = nmo_cli_class_get_parent(ctx, cid)) {
         const char *n = nmo_cli_class_name_from_id(ctx, cid);
-        if (!n) {
-            continue;
-        }
-        if (chain_len < sizeof(chain) / sizeof(chain[0])) {
-            chain[chain_len++] = n;
-        }
-        int written = snprintf(chain_text + chain_pos, sizeof(chain_text) - chain_pos,
-                               "%s%s", chain_pos ? " -> " : "", n);
-        if (written > 0 && (size_t)written < sizeof(chain_text) - chain_pos) {
-            chain_pos += (size_t)written;
+        if (n) {
+            chain_text_len += strlen(n) + 4u; /* " -> " */
+            chain_len++;
         }
     }
+    const char **chain = (const char **)calloc(chain_len ? chain_len : 1u, sizeof(*chain));
+    char *chain_text = (char *)malloc(chain_text_len + 1u);
+    bool ok = chain != NULL && chain_text != NULL;
+    if (ok) {
+        size_t k = 0;
+        size_t pos = 0;
+        for (nmo_class_id_t cid = class_id; cid; cid = nmo_cli_class_get_parent(ctx, cid)) {
+            const char *n = nmo_cli_class_name_from_id(ctx, cid);
+            if (!n) {
+                continue;
+            }
+            chain[k++] = n;
+            if (pos > 0) {
+                memcpy(chain_text + pos, " -> ", 4u);
+                pos += 4u;
+            }
+            size_t len = strlen(n);
+            memcpy(chain_text + pos, n, len);
+            pos += len;
+        }
+        chain_text[pos] = '\0';
+    }
 
-    nmo_cli_record_t *rec = nmo_cli_record_new();
-    bool ok = rec != NULL &&
-              nmo_cli_record_uint(rec, "id", "ID", class_id) &&
-              nmo_cli_record_str(rec, "name", "Name", class_name);
+    nmo_cli_record_t *rec = ok ? nmo_cli_record_new() : NULL;
+    ok = rec != NULL &&
+         nmo_cli_record_uint(rec, "id", "ID", class_id) &&
+         nmo_cli_record_str(rec, "name", "Name", class_name);
     if (ok && parent_id) {
         ok = nmo_cli_record_uint(rec, "parent_id", "Parent ID", parent_id);
         if (ok && parent_name) {
@@ -321,12 +333,12 @@ int nmo_cmd_type_show(int argc, char **argv, const nmo_cli_global_opts_t *global
             ok = nmo_cli_record_text(rec, "Parent Name", "-");
         }
     }
-    if (ok) {
-        char block[1100];
-        snprintf(block, sizeof(block), "\nInheritance Chain:\n  %s\n", chain_text);
-        ok = nmo_cli_record_str_list(rec, "inheritance_chain", NULL, chain, chain_len, NULL) &&
-             nmo_cli_record_raw(rec, block);
-    }
+    ok = ok && nmo_cli_record_str_list(rec, "inheritance_chain", NULL, chain, chain_len, NULL) &&
+         nmo_cli_record_raw(rec, "\nInheritance Chain:\n  ") &&
+         nmo_cli_record_raw(rec, chain_text) &&
+         nmo_cli_record_raw(rec, "\n");
+    free(chain);
+    free(chain_text);
     if (!ok) {
         nmo_cli_record_free(rec);
         nmo_context_release(ctx);

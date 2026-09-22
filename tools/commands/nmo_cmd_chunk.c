@@ -317,26 +317,8 @@ static bool chunk_list_build_record(const nmo_cmd_ctx_t *c, size_t index,
     const char *owner_name = e->owner_object_name;
     size_t data_size = nmo_chunk_get_data_size(chunk);
 
-    char owner_buf[128];
-    if (owner_name && owner_name[0]) {
-        snprintf(owner_buf, sizeof(owner_buf), "%u %s", e->owner_object_id, owner_name);
-    } else {
-        snprintf(owner_buf, sizeof(owner_buf), "%u", e->owner_object_id);
-    }
-
     char opt_buf[128];
     (void)nmo_cli_chunk_options_to_string(chunk->chunk_options, opt_buf, sizeof(opt_buf));
-
-    char class_buf[128];
-    if (e->depth > 0) {
-        snprintf(class_buf, sizeof(class_buf), "%*s%s",
-                 (int)(e->depth * 2), "", class_name ? class_name : "-");
-    } else {
-        snprintf(class_buf, sizeof(class_buf), "%s", class_name ? class_name : "-");
-    }
-
-    char size_buf[32];
-    snprintf(size_buf, sizeof(size_buf), "%zu", data_size);
 
     bool ok = nmo_cli_record_uint(rec, "index", "Idx", (uint64_t)index);
     if (e->parent_index >= 0) {
@@ -346,10 +328,15 @@ static bool chunk_list_build_record(const nmo_cmd_ctx_t *c, size_t index,
         ok = ok && nmo_cli_record_text(rec, "Parent", "-");
     }
     ok = ok && nmo_cli_record_uint(rec, "depth", NULL, (uint64_t)e->depth) &&
-         nmo_cli_record_text(rec, "Class", class_buf) &&
-         nmo_cli_record_text(rec, "Owner", owner_buf) &&
-         nmo_cli_record_text(rec, "Opt", opt_buf) &&
-         nmo_cli_record_text(rec, "Size", size_buf) &&
+         nmo_cli_record_text_fmt(rec, "Class", "%*s%s", (int)(e->depth * 2), "",
+                                 class_name ? class_name : "-");
+    if (ok && owner_name && owner_name[0]) {
+        ok = nmo_cli_record_text_fmt(rec, "Owner", "%u %s", e->owner_object_id, owner_name);
+    } else if (ok) {
+        ok = nmo_cli_record_text_fmt(rec, "Owner", "%u", e->owner_object_id);
+    }
+    ok = ok && nmo_cli_record_text(rec, "Opt", opt_buf) &&
+         nmo_cli_record_text_fmt(rec, "Size", "%zu", data_size) &&
          nmo_cli_record_uint(rec, "owner_object_id", NULL, e->owner_object_id);
     if (ok && owner_name) {
         ok = nmo_cli_record_str(rec, "owner_object_name", NULL, owner_name);
@@ -690,14 +677,13 @@ static bool chunk_show_build_record(const nmo_cmd_ctx_t *c,
 
     /* JSON: id (+ name when known); text: one "Object" line. */
     const char *obj_name = target ? nmo_object_get_name(target) : NULL;
-    if (target) {
-        snprintf(buf, sizeof(buf), "%u  %s", object_id,
-                 (obj_name && obj_name[0]) ? obj_name : "(unnamed)");
-    } else {
-        snprintf(buf, sizeof(buf), "%u", object_id);
+    ok = ok && nmo_cli_record_uint(rec, "id", NULL, object_id);
+    if (ok && target) {
+        ok = nmo_cli_record_text_fmt(rec, "Object", "%u  %s", object_id,
+                                     (obj_name && obj_name[0]) ? obj_name : "(unnamed)");
+    } else if (ok) {
+        ok = nmo_cli_record_text_fmt(rec, "Object", "%u", object_id);
     }
-    ok = ok && nmo_cli_record_uint(rec, "id", NULL, object_id) &&
-         nmo_cli_record_text(rec, "Object", buf);
     if (ok && obj_name && obj_name[0]) {
         ok = nmo_cli_record_str(rec, "name", NULL, obj_name);
     }
@@ -718,9 +704,9 @@ static bool chunk_show_build_record(const nmo_cmd_ctx_t *c,
         const char *opt = nmo_cli_chunk_options_to_string(chunk->chunk_options,
                                                           opt_flags,
                                                           sizeof(opt_flags));
-        snprintf(buf, sizeof(buf), "%s (0x%04X)", opt, (unsigned int)chunk->chunk_options);
         ok = nmo_cli_record_uint(rec, "options", "Options", chunk->chunk_options) &&
-             nmo_cli_record_set_text(rec, buf);
+             nmo_cli_record_set_text_fmt(rec, "%s (0x%04X)", opt,
+                                         (unsigned int)chunk->chunk_options);
     }
 
     size_t data_size = nmo_chunk_get_data_size(chunk);
