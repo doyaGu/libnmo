@@ -9,6 +9,7 @@
 #include "../nmo_cmd_ctx.h"
 #include "../nmo_cmd_core.h"
 #include "../nmo_cli_output.h"
+#include "../nmo_cli_record.h"
 #include "../nmo_opt.h"
 #include "../nmo_tool_common.h"
 
@@ -29,99 +30,83 @@
  * object refs - visitor callbacks for nmo_core_iter_refs
  * ============================================================================ */
 
-/** Visitor data for JSON ref output */
-typedef struct {
-    yyjson_mut_doc *doc;
-    yyjson_mut_val *outgoing;
-    yyjson_mut_val *incoming;
-} cli_refs_json_data_t;
-
-static int cli_refs_json_visitor(const nmo_core_ref_info_t *info,
-                                 const nmo_cmd_ctx_t *c, void *user) {
-    (void)c;
-    cli_refs_json_data_t *d = (cli_refs_json_data_t *)user;
-    yyjson_mut_doc *doc = d->doc;
-
-    yyjson_mut_val *edge = yyjson_mut_obj(doc);
-
-    if (info->is_incoming) {
-        yyjson_mut_obj_add_uint(doc, edge, "source_id", info->edge->from);
-    } else {
-        yyjson_mut_obj_add_uint(doc, edge, "target_id", info->edge->to);
-    }
-
-    yyjson_mut_obj_add_str(doc, edge, "kind",
-                           nmo_ref_kind_name(info->edge->kind));
-    yyjson_mut_obj_add_str(doc, edge, "field",
-                           info->edge->field_path ? info->edge->field_path : "unknown");
-    if (info->edge->index > 0) {
-        yyjson_mut_obj_add_uint(doc, edge, "index", info->edge->index);
-    }
-
-    if (info->peer) {
-        if (info->peer_class_name) {
-            yyjson_mut_obj_add_str(doc, edge,
-                info->is_incoming ? "source_class" : "target_class",
-                info->peer_class_name);
-        }
-        if (info->peer_name && info->peer_name[0]) {
-            nmo_cli_json_add_str_safe(doc, edge,
-                info->is_incoming ? "source_name" : "target_name",
-                info->peer_name);
-        }
-    } else if (!info->is_incoming) {
-        yyjson_mut_obj_add_bool(doc, edge, "broken", true);
-    }
-
-    yyjson_mut_arr_add_val(
-        info->is_incoming ? d->incoming : d->outgoing, edge);
-    return 0;
-}
-
-/** Visitor data for text ref output */
-typedef struct {
-    nmo_cli_table_t *out_table;
-    nmo_cli_table_t *in_table;
-} cli_refs_text_data_t;
-
-static int cli_refs_text_visitor(const nmo_core_ref_info_t *info,
-                                 const nmo_cmd_ctx_t *c, void *user) {
-    (void)c;
-    cli_refs_text_data_t *d = (cli_refs_text_data_t *)user;
-
-    nmo_object_id_t peer_id = info->is_incoming ? info->edge->from : info->edge->to;
-    char id_buf[16];
-    snprintf(id_buf, sizeof(id_buf), "%u", peer_id);
+/*
+ * One reference edge. JSON: target_id or source_id, kind, field, index (when
+ * non-zero), target_/source_class and _name for a resolved peer, "broken"
+ * for an unresolved outgoing target. Text columns: peer id, Kind, Field
+ * (with "[index]"), peer class, peer name.
+ */
+static bool cli_refs_build_record(const nmo_core_ref_info_t *info,
+                                  nmo_cli_record_t *rec)
+{
+    const bool in = info->is_incoming;
+    nmo_object_id_t peer_id = in ? info->edge->from : info->edge->to;
+    const char *field_name = info->edge->field_path ? info->edge->field_path : "unknown";
 
     char field_buf[32];
-    const char *field_name = info->edge->field_path ? info->edge->field_path : "unknown";
     if (info->edge->index > 0) {
-        snprintf(field_buf, sizeof(field_buf), "%s[%u]",
-                 field_name, info->edge->index);
+        snprintf(field_buf, sizeof(field_buf), "%s[%u]", field_name, info->edge->index);
     } else {
         snprintf(field_buf, sizeof(field_buf), "%s", field_name);
     }
 
-    const char *peer_class = "-";
-    const char *peer_name = "-";
-
-    if (info->peer) {
-        if (info->peer_class_name) peer_class = info->peer_class_name;
-        if (info->peer_name && info->peer_name[0]) peer_name = info->peer_name;
-    } else if (!info->is_incoming) {
-        peer_name = "(BROKEN)";
+    bool ok = nmo_cli_record_uint(rec, in ? "source_id" : "target_id",
+                                  in ? "Source" : "Target", peer_id) &&
+              nmo_cli_record_str(rec, "kind", "Kind", nmo_ref_kind_name(info->edge->kind)) &&
+              nmo_cli_record_str(rec, "field", "Field", field_name) &&
+              nmo_cli_record_set_text(rec, field_buf);
+    if (ok && info->edge->index > 0) {
+        ok = nmo_cli_record_uint(rec, "index", NULL, info->edge->index);
     }
 
-    const char *cells[] = {
-        id_buf,
-        nmo_ref_kind_name(info->edge->kind),
-        field_buf,
-        peer_class,
-        peer_name
-    };
+    const char *class_label = in ? "Source Class" : "Target Class";
+    const char *name_label = in ? "Source Name" : "Target Name";
+    if (info->peer) {
+        if (info->peer_class_name) {
+            ok = ok && nmo_cli_record_str(rec, in ? "source_class" : "target_class",
+                                          class_label, info->peer_class_name);
+        } else {
+            ok = ok && nmo_cli_record_text(rec, class_label, "-");
+        }
+        return ok && nmo_cli_record_str_opt(rec, in ? "source_name" : "target_name",
+                                            name_label, info->peer_name, "-");
+    }
+    ok = ok && nmo_cli_record_text(rec, class_label, "-");
+    if (in) {
+        return ok && nmo_cli_record_text(rec, name_label, "-");
+    }
+    return ok && nmo_cli_record_text(rec, name_label, "(BROKEN)") &&
+           nmo_cli_record_bool(rec, "broken", NULL, true);
+}
 
-    nmo_cli_table_t *table = info->is_incoming ? d->in_table : d->out_table;
-    nmo_cli_table_add_row(table, cells, 5);
+/** Visitor data: JSON arrays or text tables for each direction. */
+typedef struct {
+    yyjson_mut_doc *doc;
+    yyjson_mut_val *outgoing;
+    yyjson_mut_val *incoming;
+    nmo_cli_table_t *out_table;
+    nmo_cli_table_t *in_table;
+} cli_refs_data_t;
+
+static int cli_refs_visitor(const nmo_core_ref_info_t *info,
+                            const nmo_cmd_ctx_t *c, void *user) {
+    (void)c;
+    cli_refs_data_t *d = (cli_refs_data_t *)user;
+
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    if (rec && cli_refs_build_record(info, rec)) {
+        if (d->doc) {
+            yyjson_mut_val *edge = yyjson_mut_obj(d->doc);
+            if (edge && nmo_cli_record_to_json(rec, d->doc, edge)) {
+                yyjson_mut_arr_add_val(info->is_incoming ? d->incoming : d->outgoing, edge);
+            }
+        } else {
+            const char *cells[5];
+            size_t n = nmo_cli_record_cells(rec, cells, 5);
+            nmo_cli_table_add_row(info->is_incoming ? d->in_table : d->out_table, cells, n);
+        }
+    }
+    nmo_cli_record_free(rec);
     return 0;
 }
 
@@ -212,7 +197,7 @@ static int object_refs_run(nmo_cmd_ctx_t *ctx, const object_refs_args_t *args,
             nmo_cli_json_add_str_safe(doc, data, "name", name);
         }
 
-        cli_refs_json_data_t jd = {
+        cli_refs_data_t jd = {
             .doc = doc,
             .outgoing = yyjson_mut_arr(doc),
             .incoming = yyjson_mut_arr(doc),
@@ -220,7 +205,7 @@ static int object_refs_run(nmo_cmd_ctx_t *ctx, const object_refs_args_t *args,
 
         nmo_core_ref_result_t ref_result = {0};
         nmo_core_iter_refs(&c, object_id, NMO_CORE_REFS_BOTH,
-                           cli_refs_json_visitor, &jd, &ref_result);
+                           cli_refs_visitor, &jd, &ref_result);
 
         yyjson_mut_obj_add_val(doc, data, "outgoing", jd.outgoing);
         yyjson_mut_obj_add_uint(doc, data, "outgoing_count",
@@ -261,14 +246,14 @@ static int object_refs_run(nmo_cmd_ctx_t *ctx, const object_refs_args_t *args,
         nmo_cli_table_init(&in_table, in_cols,
                            sizeof(in_cols) / sizeof(in_cols[0]));
 
-        cli_refs_text_data_t td = {
+        cli_refs_data_t td = {
             .out_table = &out_table,
             .in_table = &in_table,
         };
 
         nmo_core_ref_result_t ref_result = {0};
         nmo_core_iter_refs(&c, object_id, NMO_CORE_REFS_BOTH,
-                           cli_refs_text_visitor, &td, &ref_result);
+                           cli_refs_visitor, &td, &ref_result);
 
         /* Outgoing references */
         fprintf(c.out, "Outgoing references (%zu):\n", ref_result.outgoing);
