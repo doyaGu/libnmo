@@ -87,7 +87,13 @@ NMO_API nmo_status_t nmo_diff_objects(
 
 NMO_API void nmo_diff_result_destroy(nmo_diff_result_t *result);
 
-NMO_API void nmo_object_format_path(
+/**
+ * @brief Format "<Class>/<name>" for an object into buf (snprintf semantics).
+ *
+ * @return The full length of the path excluding the terminator, even when
+ *         truncated; pass buf = NULL, buf_size = 0 to measure.
+ */
+NMO_API size_t nmo_object_format_path(
     char *buf, size_t buf_size,
     nmo_context_t *ctx,
     const nmo_object_t *obj);

@@ -9,6 +9,7 @@
 #include "nmo_cli_common.h"
 #include "nmo_tool_common.h"
 #include "document/nmo_document.h"
+#include "object/nmo_object_diff.h"
 #include "object/nmo_object_query.h"
 #include "object/nmo_object_refs.h"
 #include "runtime/nmo_context.h"
@@ -42,6 +43,96 @@ const char *nmo_core_class_name_or(const nmo_cmd_ctx_t *c, nmo_class_id_t id,
     if (name) return name;
     snprintf(buf, sz, "Class#%u", (unsigned)id);
     return buf;
+}
+
+char *nmo_core_class_name_dup(const nmo_cmd_ctx_t *c, nmo_class_id_t id) {
+    const char *name = nmo_core_class_name(c, id);
+    return name ? nmo_tool_strdup(name) : nmo_tool_strdup_fmt("Class#%u", (unsigned)id);
+}
+
+char *nmo_core_object_path_dup(nmo_context_t *ctx, const nmo_object_t *obj) {
+    size_t length = nmo_object_format_path(NULL, 0u, ctx, obj);
+    char *path = (char *)malloc(length + 1u);
+    if (path) {
+        nmo_object_format_path(path, length + 1u, ctx, obj);
+    }
+    return path;
+}
+
+/*
+ * The type system formats into a caller buffer and truncates (or rejects a
+ * buffer below the type's minimum) without reporting the needed size. Retry
+ * with a growing buffer until the text fits with room to spare, which proves
+ * it was not cut off.
+ */
+typedef nmo_status_t (*core_to_string_fn)(void *user, char *buffer, size_t buffer_size);
+
+static char *core_to_string_dup(core_to_string_fn to_string, void *user) {
+    size_t capacity = 128u;
+    for (;;) {
+        char *buffer = (char *)malloc(capacity);
+        if (!buffer) {
+            return NULL;
+        }
+        buffer[0] = '\0';
+        nmo_status_t status = to_string(user, buffer, capacity);
+        if (status == NMO_OK && strlen(buffer) + 1u < capacity) {
+            return buffer;
+        }
+        free(buffer);
+        if (status != NMO_OK && status != NMO_ERR_INVALID_ARGUMENT) {
+            return NULL; /* not a size problem */
+        }
+        if (capacity >= ((size_t)1u << 24)) {
+            return NULL;
+        }
+        capacity *= 2u;
+    }
+}
+
+typedef struct core_value_to_string_args {
+    const void *value;
+    const nmo_type_descriptor_t *type;
+    const nmo_type_registry_t *registry;
+} core_value_to_string_args_t;
+
+static nmo_status_t core_value_to_string(void *user, char *buffer, size_t buffer_size) {
+    const core_value_to_string_args_t *args = (const core_value_to_string_args_t *)user;
+    return nmo_type_value_to_string(args->value, args->type, args->registry, buffer, buffer_size);
+}
+
+char *nmo_core_type_value_dup(const void *value,
+                              const nmo_type_descriptor_t *type,
+                              const nmo_type_registry_t *registry) {
+    if (!value || !type) {
+        return NULL;
+    }
+    core_value_to_string_args_t args = { value, type, registry };
+    return core_to_string_dup(core_value_to_string, &args);
+}
+
+typedef struct core_field_to_string_args {
+    const void *state;
+    const nmo_type_descriptor_t *type;
+    const nmo_type_registry_t *registry;
+    const char *field_name;
+} core_field_to_string_args_t;
+
+static nmo_status_t core_field_to_string(void *user, char *buffer, size_t buffer_size) {
+    const core_field_to_string_args_t *args = (const core_field_to_string_args_t *)user;
+    return nmo_type_get_field(args->state, args->type, args->registry, args->field_name,
+                              buffer, buffer_size);
+}
+
+char *nmo_core_field_value_dup(const void *state,
+                               const nmo_type_descriptor_t *type,
+                               const nmo_type_registry_t *registry,
+                               const char *field_name) {
+    if (!state || !type || !registry || !field_name) {
+        return NULL;
+    }
+    core_field_to_string_args_t args = { state, type, registry, field_name };
+    return core_to_string_dup(core_field_to_string, &args);
 }
 
 nmo_class_id_t nmo_core_class_id(const nmo_cmd_ctx_t *c, const char *name) {

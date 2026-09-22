@@ -288,14 +288,14 @@ bool nmo_object_ref_equal(nmo_object_id_t id1, nmo_object_id_t id2,
     return strcmp(norm_name(nmo_object_get_name(obj1)), norm_name(nmo_object_get_name(obj2))) == 0;
 }
 
-void nmo_object_format_path(char *buf, size_t buf_size,
-                            nmo_context_t *ctx,
-                            const nmo_object_t *obj)
+size_t nmo_object_format_path(char *buf, size_t buf_size,
+                              nmo_context_t *ctx,
+                              const nmo_object_t *obj)
 {
-    if (!buf || buf_size == 0) return;
+    if (!buf) buf_size = 0;
     if (!obj) {
-        snprintf(buf, buf_size, "(null)");
-        return;
+        int n = snprintf(buf, buf_size, "(null)");
+        return n < 0 ? 0u : (size_t)n;
     }
     const char *class_name = "Unknown";
     if (ctx) {
@@ -310,7 +310,8 @@ void nmo_object_format_path(char *buf, size_t buf_size,
     }
     const char *name = norm_name(nmo_object_get_name(obj));
     if (!name[0]) name = "(unnamed)";
-    snprintf(buf, buf_size, "%s/%s", class_name, name);
+    int n = snprintf(buf, buf_size, "%s/%s", class_name, name);
+    return n < 0 ? 0u : (size_t)n;
 }
 
 void nmo_object_format_ref(char *buf, size_t buf_size,

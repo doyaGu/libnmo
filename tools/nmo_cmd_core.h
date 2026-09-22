@@ -41,6 +41,38 @@ const char *nmo_core_class_name_or(const nmo_cmd_ctx_t *c, nmo_class_id_t id,
                                    char *buf, size_t sz);
 
 /**
+ * @brief malloc'd class name, "Class#N" when the ID is unknown
+ * @return String to free() (NULL only on OOM)
+ */
+char *nmo_core_class_name_dup(const nmo_cmd_ctx_t *c, nmo_class_id_t id);
+
+/**
+ * @brief malloc'd "<Class>/<name>" path for an object (see nmo_object_format_path)
+ * @return String to free() (NULL only on OOM)
+ */
+char *nmo_core_object_path_dup(nmo_context_t *ctx, const nmo_object_t *obj);
+
+/**
+ * @brief malloc'd text form of a value via the type system (nmo_type_value_to_string)
+ *
+ * Grows the buffer until the whole representation fits, so nothing is
+ * truncated.
+ * @return String to free(), or NULL when the value cannot be formatted
+ */
+char *nmo_core_type_value_dup(const void *value,
+                              const nmo_type_descriptor_t *type,
+                              const nmo_type_registry_t *registry);
+
+/**
+ * @brief malloc'd text form of a named field of a state struct (nmo_type_get_field)
+ * @return String to free(), or NULL when the field cannot be formatted
+ */
+char *nmo_core_field_value_dup(const void *state,
+                               const nmo_type_descriptor_t *type,
+                               const nmo_type_registry_t *registry,
+                               const char *field_name);
+
+/**
  * @brief Get class ID from class name
  * @return Class ID or 0 if not found
  */
