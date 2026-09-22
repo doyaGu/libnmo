@@ -127,20 +127,23 @@ static bool parse_flag(int argc, char **argv, const char *name)
 static bool paths_refer_same_file(const char *a, const char *b)
 {
     if (!a || !b) return false;
-    char full_a[4096];
-    char full_b[4096];
+    /* Both resolvers allocate the result when given a NULL buffer. */
 #ifdef _WIN32
-    if (!_fullpath(full_a, a, sizeof(full_a)) ||
-        !_fullpath(full_b, b, sizeof(full_b))) {
-        return nmo_tool_streq_ci(a, b);
-    }
-    return nmo_tool_streq_ci(full_a, full_b);
+    char *full_a = _fullpath(NULL, a, 0);
+    char *full_b = _fullpath(NULL, b, 0);
+    bool same = (full_a && full_b)
+        ? nmo_tool_streq_ci(full_a, full_b)
+        : nmo_tool_streq_ci(a, b);
 #else
-    if (!realpath(a, full_a) || !realpath(b, full_b)) {
-        return strcmp(a, b) == 0;
-    }
-    return strcmp(full_a, full_b) == 0;
+    char *full_a = realpath(a, NULL);
+    char *full_b = realpath(b, NULL);
+    bool same = (full_a && full_b)
+        ? strcmp(full_a, full_b) == 0
+        : strcmp(a, b) == 0;
 #endif
+    free(full_a);
+    free(full_b);
+    return same;
 }
 
 static int validate_all_object(size_t index, nmo_object_t *obj,
@@ -371,13 +374,9 @@ static int validate_all_run(nmo_cmd_ctx_t *cmd,
                                 (uint64_t)query_result.matched);
     } else {
         /* Text mode: output summary */
-        char buf[32];
-        snprintf(buf, sizeof(buf), "%zu", query_result.matched);
-        nmo_cli_print_kv(cmd->out, "Objects", buf, 12, cmd->colorize);
-        snprintf(buf, sizeof(buf), "%zu", validate_data.error_count);
-        nmo_cli_print_kv(cmd->out, "Errors", buf, 12, cmd->colorize);
-        snprintf(buf, sizeof(buf), "%zu", validate_data.warning_count);
-        nmo_cli_print_kv(cmd->out, "Warnings", buf, 12, cmd->colorize);
+        nmo_cli_print_kv_fmt(cmd->out, "Objects", 12, cmd->colorize, "%zu", query_result.matched);
+        nmo_cli_print_kv_fmt(cmd->out, "Errors", 12, cmd->colorize, "%zu", validate_data.error_count);
+        nmo_cli_print_kv_fmt(cmd->out, "Warnings", 12, cmd->colorize, "%zu", validate_data.warning_count);
         fprintf(cmd->out, "Result: %s\n",
                 validate_data.error_count == 0 ? "VALID" : "INVALID");
     }
@@ -553,15 +552,10 @@ static int nmo_cmd_validate_structure_in_session(nmo_cmd_ctx_t *c, int argc, cha
         nmo_cmd_ctx_json_end(c, doc, data, "validate.structure");
     } else {
         fprintf(c->out, "\nSummary:\n");
-        char buf[32];
-        snprintf(buf, sizeof(buf), "%zu", query_result.matched);
-        nmo_cli_print_kv(c->out, "Objects", buf, 14, c->colorize);
-        snprintf(buf, sizeof(buf), "%zu", structure_data.checked_count);
-        nmo_cli_print_kv(c->out, "Chunks", buf, 14, c->colorize);
-        snprintf(buf, sizeof(buf), "%zu", structure_data.error_count);
-        nmo_cli_print_kv(c->out, "Errors", buf, 14, c->colorize);
-        snprintf(buf, sizeof(buf), "%zu", structure_data.warning_count);
-        nmo_cli_print_kv(c->out, "Warnings", buf, 14, c->colorize);
+        nmo_cli_print_kv_fmt(c->out, "Objects", 14, c->colorize, "%zu", query_result.matched);
+        nmo_cli_print_kv_fmt(c->out, "Chunks", 14, c->colorize, "%zu", structure_data.checked_count);
+        nmo_cli_print_kv_fmt(c->out, "Errors", 14, c->colorize, "%zu", structure_data.error_count);
+        nmo_cli_print_kv_fmt(c->out, "Warnings", 14, c->colorize, "%zu", structure_data.warning_count);
     }
 
     return exit_code;
@@ -701,28 +695,113 @@ static bool validate_report_typed_ref(
     return true;
 }
 
-static void validate_build_ref_path(
-    char *out,
-    size_t out_size,
+/* malloc'd "<prefix>.<field>" style path of a reference field. */
+static char *validate_build_ref_path_dup(
     const char *prefix,
     size_t prefix_index,
     bool prefix_has_index,
     const char *field_name,
     bool materialize_prefix_index)
 {
+    const char *name = field_name != NULL ? field_name : "ref";
     const bool omit_ref_name = prefix != NULL && prefix[0] != '\0' &&
         field_name != NULL && strcmp(field_name, "ref") == 0;
     if (prefix == NULL || prefix[0] == '\0') {
-        snprintf(out, out_size, "%s", field_name != NULL ? field_name : "ref");
-    } else if (omit_ref_name) {
-        snprintf(out, out_size, "%s", prefix);
-    } else if (prefix_has_index && materialize_prefix_index) {
-        snprintf(out, out_size, "%s[%zu].%s", prefix, prefix_index,
-                 field_name != NULL ? field_name : "ref");
-    } else {
-        snprintf(out, out_size, "%s.%s", prefix,
-                 field_name != NULL ? field_name : "ref");
+        return nmo_tool_strdup(name);
     }
+    if (omit_ref_name) {
+        return nmo_tool_strdup(prefix);
+    }
+    if (prefix_has_index && materialize_prefix_index) {
+        return nmo_tool_strdup_fmt("%s[%zu].%s", prefix, prefix_index, name);
+    }
+    return nmo_tool_strdup_fmt("%s.%s", prefix, name);
+}
+
+static bool validate_visit_reflected_refs(
+    validate_ref_walk_ctx_t *ctx,
+    const nmo_type_descriptor_t *type,
+    const void *instance,
+    const char *prefix,
+    size_t prefix_index,
+    bool prefix_has_index,
+    unsigned depth);
+
+/* Visit one field of a reflected struct; false stops the whole walk. */
+static bool validate_visit_reflected_field(
+    validate_ref_walk_ctx_t *ctx,
+    const nmo_type_descriptor_t *type,
+    const void *instance,
+    const nmo_type_field_t *field,
+    const void *field_ptr,
+    const char *path,
+    size_t prefix_index,
+    bool prefix_has_index,
+    unsigned depth)
+{
+    if (nmo_field_is_ref(field)) {
+        if (!nmo_field_uses_ref_records(field)) return true;
+        if (!nmo_field_is_array(field)) {
+            if (field->size == sizeof(nmo_ref_t) &&
+                !validate_report_typed_ref(
+                    ctx, (const nmo_ref_t *)field_ptr, path,
+                    prefix_has_index ? prefix_index : 0u)) {
+                return false;
+            }
+            return true;
+        }
+
+        validate_repeated_view_t view;
+        if (!validate_get_repeated_view(
+                type, instance, field, ctx->types, &view) ||
+            view.element_size != sizeof(nmo_ref_t)) {
+            return true;
+        }
+        const nmo_ref_t *refs = (const nmo_ref_t *)view.data;
+        for (size_t i = 0; i < view.count; ++i) {
+            if (!validate_report_typed_ref(ctx, &refs[i], path, i)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    const nmo_type_descriptor_t *nested =
+        nmo_type_registry_find_by_guid(ctx->types, field->type_guid);
+    if (nested == NULL ||
+        (nested->category & NMO_TYPE_CATEGORY_STRUCT) == 0 ||
+        !nmo_type_has_reflection(nested)) {
+        return true;
+    }
+
+    if (nmo_field_is_array(field)) {
+        validate_repeated_view_t view;
+        if (!validate_get_repeated_view(
+                type, instance, field, ctx->types, &view) ||
+            view.element_size != nested->size) {
+            return true;
+        }
+        for (size_t i = 0; i < view.count; ++i) {
+            const void *element = (const unsigned char *)view.data +
+                i * view.element_size;
+            if (!validate_visit_reflected_refs(
+                    ctx, nested, element, path, i, true, depth + 1u)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    const void *nested_instance = field_ptr;
+    if ((field->flags & NMO_FIELD_POINTER) != 0) {
+        nested_instance = *(const void *const *)field_ptr;
+    }
+    if (nested_instance != NULL && !validate_visit_reflected_refs(
+            ctx, nested, nested_instance, path, prefix_index,
+            prefix_has_index, depth + 1u)) {
+        return false;
+    }
+    return true;
 }
 
 static bool validate_visit_reflected_refs(
@@ -748,71 +827,19 @@ static bool validate_visit_reflected_refs(
         const void *field_ptr = nmo_field_get_ptr_const(instance, field);
         if (field_ptr == NULL) continue;
 
-        char path[256];
-        validate_build_ref_path(
-            path, sizeof(path), prefix, prefix_index, prefix_has_index,
+        char *path = validate_build_ref_path_dup(
+            prefix, prefix_index, prefix_has_index,
             field->name, nmo_field_is_array(field));
-
-        if (nmo_field_is_ref(field)) {
-            if (!nmo_field_uses_ref_records(field)) continue;
-            if (!nmo_field_is_array(field)) {
-                if (field->size == sizeof(nmo_ref_t) &&
-                    !validate_report_typed_ref(
-                        ctx, (const nmo_ref_t *)field_ptr, path,
-                        prefix_has_index ? prefix_index : 0u)) {
-                    return false;
-                }
-                continue;
-            }
-
-            validate_repeated_view_t view;
-            if (!validate_get_repeated_view(
-                    type, instance, field, ctx->types, &view) ||
-                view.element_size != sizeof(nmo_ref_t)) {
-                continue;
-            }
-            const nmo_ref_t *refs = (const nmo_ref_t *)view.data;
-            for (size_t i = 0; i < view.count; ++i) {
-                if (!validate_report_typed_ref(ctx, &refs[i], path, i)) {
-                    return false;
-                }
-            }
-            continue;
+        if (path == NULL) {
+            /* Out of memory: stop the walk the same way a visitor would. */
+            ctx->keep_going = false;
+            return false;
         }
-
-        const nmo_type_descriptor_t *nested =
-            nmo_type_registry_find_by_guid(ctx->types, field->type_guid);
-        if (nested == NULL ||
-            (nested->category & NMO_TYPE_CATEGORY_STRUCT) == 0 ||
-            !nmo_type_has_reflection(nested)) {
-            continue;
-        }
-
-        if (nmo_field_is_array(field)) {
-            validate_repeated_view_t view;
-            if (!validate_get_repeated_view(
-                    type, instance, field, ctx->types, &view) ||
-                view.element_size != nested->size) {
-                continue;
-            }
-            for (size_t i = 0; i < view.count; ++i) {
-                const void *element = (const unsigned char *)view.data +
-                    i * view.element_size;
-                if (!validate_visit_reflected_refs(
-                        ctx, nested, element, path, i, true, depth + 1u)) {
-                    return false;
-                }
-            }
-            continue;
-        }
-
-        const void *nested_instance = field_ptr;
-        if ((field->flags & NMO_FIELD_POINTER) != 0) {
-            nested_instance = *(const void *const *)field_ptr;
-        }
-        if (nested_instance != NULL && !validate_visit_reflected_refs(
-                ctx, nested, nested_instance, path, prefix_index,
-                prefix_has_index, depth + 1u)) {
+        bool keep_going = validate_visit_reflected_field(
+            ctx, type, instance, field, field_ptr, path,
+            prefix_index, prefix_has_index, depth);
+        free(path);
+        if (!keep_going) {
             return false;
         }
     }
@@ -963,7 +990,8 @@ static bool validate_add_json_ref_issue(
     yyjson_mut_obj_add_uint(ctx->doc, issue, "target_id", ref->raw_id);
     yyjson_mut_obj_add_str(
         ctx->doc, issue, "state", validate_ref_state_name(ref->state));
-    yyjson_mut_obj_add_str(ctx->doc, issue, "field", field);
+    /* `field` is a per-visit heap path; copy it into the document. */
+    yyjson_mut_obj_add_strcpy(ctx->doc, issue, "field", field);
     yyjson_mut_obj_add_uint(ctx->doc, issue, "index", (uint64_t)index);
     const char *source_class = nmo_cli_class_name_from_id(
         ctx->command->ctx, nmo_object_get_class_id(source));
@@ -1281,13 +1309,10 @@ static int nmo_cmd_validate_references_in_session(nmo_cmd_ctx_t *c, int argc, ch
         fprintf(c->out, "\n");
 
         /* Summary */
-        char buf[32];
-        snprintf(buf, sizeof(buf), "%zu", stats.total_edges);
-        nmo_cli_print_kv(c->out, "Total references", buf, 16, c->colorize);
-        snprintf(buf, sizeof(buf), "%zu", stats.self_refs);
-        nmo_cli_print_kv(c->out, "Self-references", buf, 16, c->colorize);
-        snprintf(buf, sizeof(buf), "%zu", broken_count + typed_issue_count);
-        nmo_cli_print_kv(c->out, "Broken references", buf, 16, c->colorize);
+        nmo_cli_print_kv_fmt(c->out, "Total references", 16, c->colorize, "%zu", stats.total_edges);
+        nmo_cli_print_kv_fmt(c->out, "Self-references", 16, c->colorize, "%zu", stats.self_refs);
+        nmo_cli_print_kv_fmt(c->out, "Broken references", 16, c->colorize,
+                             "%zu", broken_count + typed_issue_count);
         fprintf(c->out, "\n");
 
         /* Status */
@@ -1310,20 +1335,9 @@ static int nmo_cmd_validate_references_in_session(nmo_cmd_ctx_t *c, int argc, ch
             nmo_cli_table_init(&table, cols, sizeof(cols) / sizeof(cols[0]));
 
             for (size_t i = 0; i < broken_count; ++i) {
-                char from_buf[16], to_buf[16];
-                snprintf(from_buf, sizeof(from_buf), "%u", broken_edges[i].from);
                 nmo_object_id_t target_id = validate_display_target_id(
                     repo, broken_edges[i].to, NULL);
-                snprintf(to_buf, sizeof(to_buf), "%u", target_id);
-
-                char field_buf[32];
                 const char *field_name = broken_edges[i].field_path ? broken_edges[i].field_path : "unknown";
-                if (broken_edges[i].index > 0) {
-                    snprintf(field_buf, sizeof(field_buf), "%s[%u]",
-                             field_name, broken_edges[i].index);
-                } else {
-                    snprintf(field_buf, sizeof(field_buf), "%s", field_name);
-                }
 
                 nmo_object_t *source = nmo_object_repository_find_by_id(repo, broken_edges[i].from);
                 const char *source_class = "-";
@@ -1336,15 +1350,18 @@ static int nmo_cmd_validate_references_in_session(nmo_cmd_ctx_t *c, int argc, ch
                     if (sn && sn[0]) source_name = sn;
                 }
 
-                const char *cells[] = {
-                    from_buf,
-                    to_buf,
-                    nmo_ref_kind_name(broken_edges[i].kind),
-                    field_buf,
-                    source_class,
-                    source_name
-                };
-                nmo_cli_table_add_row(&table, cells, 6);
+                nmo_cli_table_begin_row(&table);
+                nmo_cli_table_add_cell_fmt(&table, "%u", broken_edges[i].from);
+                nmo_cli_table_add_cell_fmt(&table, "%u", target_id);
+                nmo_cli_table_add_cell(&table, nmo_ref_kind_name(broken_edges[i].kind));
+                if (broken_edges[i].index > 0) {
+                    nmo_cli_table_add_cell_fmt(&table, "%s[%u]",
+                                               field_name, broken_edges[i].index);
+                } else {
+                    nmo_cli_table_add_cell(&table, field_name);
+                }
+                nmo_cli_table_add_cell(&table, source_class);
+                nmo_cli_table_add_cell(&table, source_name);
             }
 
             nmo_cli_table_print(&table, c->out, c->colorize);
@@ -1448,9 +1465,7 @@ static int nmo_cmd_validate_resources_in_session(nmo_cmd_ctx_t *c, int argc, cha
                 const nmo_tool_plugin_dependency_status_t *e = &diag->entries[i];
                 yyjson_mut_val *entry = yyjson_mut_obj(doc);
 
-                char guid_buf[64];
-                nmo_guid_format(e->guid, guid_buf, sizeof(guid_buf));
-                yyjson_mut_obj_add_strcpy(doc, entry, "guid", guid_buf);
+                nmo_cli_json_add_guid_safe(doc, entry, "guid", e->guid);
                 yyjson_mut_obj_add_uint(doc, entry, "category", (uint64_t)e->category);
                 yyjson_mut_obj_add_uint(doc, entry, "required_version", e->required_version);
                 yyjson_mut_obj_add_uint(doc, entry, "resolved_version", e->resolved_version);
@@ -1486,20 +1501,16 @@ static int nmo_cmd_validate_resources_in_session(nmo_cmd_ctx_t *c, int argc, cha
         } else {
             fprintf(c->out, "\n");
             nmo_cli_print_kv(c->out, "Registry", diag->extension_registry_available ? "available" : "unavailable", 18, c->colorize);
-            char buf[32];
-            snprintf(buf, sizeof(buf), "%zu", diag->entry_count);
-            nmo_cli_print_kv(c->out, "Entries", buf, 18, c->colorize);
-            snprintf(buf, sizeof(buf), "%zu", diag->missing_count);
-            nmo_cli_print_kv(c->out, "Missing", buf, 18, c->colorize);
-            snprintf(buf, sizeof(buf), "%zu", diag->outdated_count);
-            nmo_cli_print_kv(c->out, "Outdated", buf, 18, c->colorize);
+            nmo_cli_print_kv_fmt(c->out, "Entries", 18, c->colorize, "%zu", diag->entry_count);
+            nmo_cli_print_kv_fmt(c->out, "Missing", 18, c->colorize, "%zu", diag->missing_count);
+            nmo_cli_print_kv_fmt(c->out, "Outdated", 18, c->colorize, "%zu", diag->outdated_count);
 
             if (diag->entries && diag->entry_count > 0 &&
                 c->global && c->global->verbosity > 0) {
                 fprintf(c->out, "\nEntries:\n");
                 for (size_t i = 0; i < diag->entry_count; ++i) {
                     const nmo_tool_plugin_dependency_status_t *e = &diag->entries[i];
-                    char guid_buf[64];
+                    char guid_buf[NMO_GUID_STRING_SIZE];
                     nmo_guid_format(e->guid, guid_buf, sizeof(guid_buf));
                     fprintf(c->out, "  %s", guid_buf);
                     if (e->resolved_name) {
@@ -1796,14 +1807,9 @@ static int validate_orphans_run_in_ctx(nmo_cmd_ctx_t *c,
             yyjson_mut_obj_add_uint(doc, entry, "id",
                                     (uint64_t)nmo_object_get_id(obj));
 
-            nmo_class_id_t cid = nmo_object_get_class_id(obj);
-            const char *cname = nmo_core_class_name(c, cid);
-            char cbuf[32];
-            if (!cname) {
-                snprintf(cbuf, sizeof(cbuf), "Class#%u", cid);
-                cname = cbuf;
-            }
-            yyjson_mut_obj_add_str(doc, entry, "class_name", cname);
+            char *cname = nmo_core_class_name_dup(c, nmo_object_get_class_id(obj));
+            yyjson_mut_obj_add_strcpy(doc, entry, "class_name", cname ? cname : "");
+            free(cname);
             yyjson_mut_obj_add_uint(doc, entry, "size",
                                     (uint64_t)orphan_list[i].data_size);
             yyjson_mut_obj_add_uint(doc, entry, "outgoing",
@@ -1842,31 +1848,18 @@ static int validate_orphans_run_in_ctx(nmo_cmd_ctx_t *c,
 
             for (size_t i = 0; i < orphan_data.likely_orphans && i < orphan_cap; ++i) {
                 nmo_object_t *obj = orphan_list[i].obj;
-                char id_buf[16], size_buf[16], out_buf[16];
-                snprintf(id_buf, sizeof(id_buf), "%u",
-                         nmo_object_get_id(obj));
-                snprintf(size_buf, sizeof(size_buf), "%zu",
-                         orphan_list[i].data_size);
-                snprintf(out_buf, sizeof(out_buf), "%zu",
-                         orphan_list[i].outgoing);
-
-                nmo_class_id_t cid = nmo_object_get_class_id(obj);
-                const char *cname = nmo_core_class_name(c, cid);
-                char cbuf[32];
-                if (!cname) {
-                    snprintf(cbuf, sizeof(cbuf), "Class#%u", cid);
-                    cname = cbuf;
-                }
-
+                char *cname = nmo_core_class_name_dup(c, nmo_object_get_class_id(obj));
                 const char *kind = orphan_list[i].is_direct ? "direct" : "chain";
-
                 const char *name = nmo_object_get_name(obj);
-                const char *name_str = (name && name[0]) ? name : "-";
 
-                const char *cells[] = {
-                    id_buf, cname, size_buf, out_buf, kind, name_str
-                };
-                nmo_cli_table_add_row(&table, cells, 6);
+                nmo_cli_table_begin_row(&table);
+                nmo_cli_table_add_cell_fmt(&table, "%u", nmo_object_get_id(obj));
+                nmo_cli_table_add_cell(&table, cname ? cname : "");
+                nmo_cli_table_add_cell_fmt(&table, "%zu", orphan_list[i].data_size);
+                nmo_cli_table_add_cell_fmt(&table, "%zu", orphan_list[i].outgoing);
+                nmo_cli_table_add_cell(&table, kind);
+                nmo_cli_table_add_cell(&table, (name && name[0]) ? name : "-");
+                free(cname);
             }
 
             nmo_cli_table_print(&table, c->out, c->colorize);

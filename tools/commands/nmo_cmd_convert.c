@@ -623,21 +623,17 @@ int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *gl
                 uint64_t match_size = 0;
                 for (size_t i = 0; i < remove_count; ++i) {
                     nmo_object_t *obj = matched_objects[i];
-                    char id_buf[16];
-                    snprintf(id_buf, sizeof(id_buf), "%u", nmo_object_get_id(obj));
                     const char *cn = nmo_cli_class_name_from_id(c.ctx,
                                                                 nmo_object_get_class_id(obj));
                     const char *name = nmo_object_get_name(obj);
                     nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
                     uint64_t sz = chunk ? (uint64_t)nmo_chunk_get_data_size(chunk) : 0;
                     match_size += sz;
-                    char size_buf[32];
-                    snprintf(size_buf, sizeof(size_buf), "%" PRIu64, sz);
-                    const char *cells[] = {
-                        id_buf, cn ? cn : "-", size_buf,
-                        (name && name[0]) ? name : "-"
-                    };
-                    nmo_cli_table_add_row(&table, cells, 4);
+                    nmo_cli_table_begin_row(&table);
+                    nmo_cli_table_add_cell_fmt(&table, "%u", nmo_object_get_id(obj));
+                    nmo_cli_table_add_cell(&table, cn ? cn : "-");
+                    nmo_cli_table_add_cell_fmt(&table, "%" PRIu64, sz);
+                    nmo_cli_table_add_cell(&table, (name && name[0]) ? name : "-");
                 }
 
                 fprintf(c.out, "Matched %zu object(s):\n\n", remove_count);
@@ -656,9 +652,6 @@ int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *gl
                     uint64_t casc_size = 0;
                     for (size_t i = 0; i < cascade_count; ++i) {
                         nmo_object_t *obj = cascade_objects[i];
-                        char id_buf[16];
-                        snprintf(id_buf, sizeof(id_buf), "%u",
-                                 nmo_object_get_id(obj));
                         const char *cn = nmo_cli_class_name_from_id(
                             c.ctx, nmo_object_get_class_id(obj));
                         const char *name = nmo_object_get_name(obj);
@@ -666,13 +659,11 @@ int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *gl
                         uint64_t sz = chunk
                             ? (uint64_t)nmo_chunk_get_data_size(chunk) : 0;
                         casc_size += sz;
-                        char size_buf[32];
-                        snprintf(size_buf, sizeof(size_buf), "%" PRIu64, sz);
-                        const char *cells[] = {
-                            id_buf, cn ? cn : "-", size_buf,
-                            (name && name[0]) ? name : "-"
-                        };
-                        nmo_cli_table_add_row(&ctable, cells, 4);
+                        nmo_cli_table_begin_row(&ctable);
+                        nmo_cli_table_add_cell_fmt(&ctable, "%u", nmo_object_get_id(obj));
+                        nmo_cli_table_add_cell(&ctable, cn ? cn : "-");
+                        nmo_cli_table_add_cell_fmt(&ctable, "%" PRIu64, sz);
+                        nmo_cli_table_add_cell(&ctable, (name && name[0]) ? name : "-");
                     }
 
                     nmo_cli_table_print(&ctable, c.out, c.colorize);
