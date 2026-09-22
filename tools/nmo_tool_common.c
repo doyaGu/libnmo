@@ -2,7 +2,6 @@
 #include "nmo_cli_common.h"
 #include "nmo_cli_json.h"
 #include "nmo_cli_output.h"
-#include "core/nmo_allocator.h"
 #include "core/nmo_error.h"
 #include "core/nmo_parse.h"
 #include "yyjson.h"
@@ -298,8 +297,18 @@ char *nmo_tool_strdup(const char *src) {
     if (!src) {
         return NULL;
     }
-    nmo_allocator_t alloc = nmo_allocator_default();
-    return nmo_strdup(&alloc, src);
+    /*
+     * Plain malloc so the copy pairs with free() like every other string the
+     * tools own. The library allocator uses _aligned_malloc on Windows, and
+     * releasing one of its blocks with free() corrupts the heap.
+     */
+    size_t length = strlen(src) + 1u;
+    char *copy = (char *)malloc(length);
+    if (!copy) {
+        return NULL;
+    }
+    memcpy(copy, src, length);
+    return copy;
 }
 
 char *nmo_tool_vstrdup_fmt(const char *format, va_list args) {
