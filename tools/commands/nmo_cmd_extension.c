@@ -6,6 +6,7 @@
 #include "nmo_cmd_extension.h"
 #include "../nmo_cmd_ctx.h"
 #include "../nmo_cli_output.h"
+#include "../nmo_cli_record.h"
 #include "../nmo_tool_common.h"
 #include "nmo.h"
 #include "runtime/nmo_context.h"
@@ -85,6 +86,38 @@ static void format_plugin_flags(uint32_t flags, char *buf, size_t buf_size) {
  * extension list
  * ============================================================================ */
 
+/* One registered plugin for extension list. */
+static bool extension_build_record(const nmo_extension_plugin_info_t *p,
+                                   nmo_cli_record_t *rec)
+{
+    char guid_str[64];
+    char flags_str[64];
+    char counts_str[32];
+    nmo_guid_format(p->guid, guid_str, sizeof(guid_str));
+    format_plugin_flags(p->flags, flags_str, sizeof(flags_str));
+    snprintf(counts_str, sizeof(counts_str), "%zu/%zu", p->manager_count, p->type_count);
+
+    bool ok = nmo_cli_record_str(rec, "guid", "GUID", guid_str) &&
+              nmo_cli_record_str(rec, "name", NULL, p->name ? p->name : "") &&
+              nmo_cli_record_text(rec, "Name", p->name ? p->name : "(unnamed)") &&
+              nmo_cli_record_uint(rec, "version", "Version", (uint64_t)p->version) &&
+              nmo_cli_record_str(rec, "category", "Category",
+                                 plugin_category_to_string(p->category)) &&
+              nmo_cli_record_uint(rec, "flags", NULL, (uint64_t)p->flags) &&
+              nmo_cli_record_bool(rec, "dynamic", NULL,
+                                  (p->flags & NMO_EXTENSION_FLAG_DYNAMIC) != 0) &&
+              nmo_cli_record_bool(rec, "initialized", NULL,
+                                  (p->flags & NMO_EXTENSION_FLAG_INITIALIZED) != 0) &&
+              nmo_cli_record_text(rec, "Flags", flags_str) &&
+              nmo_cli_record_uint(rec, "manager_count", NULL, (uint64_t)p->manager_count) &&
+              nmo_cli_record_uint(rec, "type_count", NULL, (uint64_t)p->type_count) &&
+              nmo_cli_record_text(rec, "Mgr/Type", counts_str);
+    if (ok && p->library_path) {
+        ok = nmo_cli_record_str(rec, "library_path", NULL, p->library_path);
+    }
+    return ok;
+}
+
 int nmo_cmd_extension_list(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     (void)argc;
     (void)argv;
@@ -116,91 +149,59 @@ int nmo_cmd_extension_list(int argc, char **argv, const nmo_cli_global_opts_t *g
         return rc;
     }
 
-    /* Output in requested format */
+    /* Text columns: GUID, Name, Version, Category, Flags, Mgr/Type. */
+    static const nmo_cli_table_col_t columns[] = {
+        { "GUID",         NMO_CLI_ALIGN_LEFT,   36, 0 },
+        { "Name",         NMO_CLI_ALIGN_LEFT,   20, 0 },
+        { "Version",      NMO_CLI_ALIGN_RIGHT,   8, 0 },
+        { "Category",     NMO_CLI_ALIGN_LEFT,   12, 0 },
+        { "Flags",        NMO_CLI_ALIGN_LEFT,   16, 0 },
+        { "Mgr/Type",     NMO_CLI_ALIGN_RIGHT,   8, 0 },
+    };
+
+    yyjson_mut_doc *doc = NULL;
+    yyjson_mut_val *data = NULL;
+    yyjson_mut_val *plugins_arr = NULL;
+    nmo_cli_table_t table;
     if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-
+        doc = nmo_cmd_ctx_json_begin(&c);
+        data = yyjson_mut_obj(doc);
         yyjson_mut_obj_add_uint(doc, data, "plugin_count", (uint64_t)count);
-
-        yyjson_mut_val *plugins_arr = yyjson_mut_arr(doc);
-        for (size_t i = 0; i < count; ++i) {
-            const nmo_extension_plugin_info_t *p = &plugins[i];
-            yyjson_mut_val *plugin_obj = yyjson_mut_obj(doc);
-
-            char guid_str[64];
-            nmo_guid_format(p->guid, guid_str, sizeof(guid_str));
-            yyjson_mut_obj_add_str(doc, plugin_obj, "guid", guid_str);
-            nmo_cli_json_add_str_safe(doc, plugin_obj, "name", p->name ? p->name : "");
-            yyjson_mut_obj_add_uint(doc, plugin_obj, "version", (uint64_t)p->version);
-            yyjson_mut_obj_add_str(doc, plugin_obj, "category", plugin_category_to_string(p->category));
-            yyjson_mut_obj_add_uint(doc, plugin_obj, "flags", (uint64_t)p->flags);
-            yyjson_mut_obj_add_bool(doc, plugin_obj, "dynamic", (p->flags & NMO_EXTENSION_FLAG_DYNAMIC) != 0);
-            yyjson_mut_obj_add_bool(doc, plugin_obj, "initialized", (p->flags & NMO_EXTENSION_FLAG_INITIALIZED) != 0);
-            yyjson_mut_obj_add_uint(doc, plugin_obj, "manager_count", (uint64_t)p->manager_count);
-            yyjson_mut_obj_add_uint(doc, plugin_obj, "type_count", (uint64_t)p->type_count);
-
-            if (p->library_path) {
-                nmo_cli_json_add_str_safe(doc, plugin_obj, "library_path", p->library_path);
-            }
-
-            yyjson_mut_arr_append(plugins_arr, plugin_obj);
-        }
-        yyjson_mut_obj_add_val(doc, data, "plugins", plugins_arr);
-
-        nmo_cli_json_write_enveloped_and_free(doc, data, "extension.list", NULL, c.out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+        plugins_arr = yyjson_mut_arr(doc);
     } else {
-        /* Text output */
         nmo_cli_print_heading(c.out, "Registered Extensions", c.colorize);
         fprintf(c.out, "\n");
-
         if (count == 0) {
             fprintf(c.out, "No extensions loaded.\n");
         } else {
-            /* Build table */
-            nmo_cli_table_col_t columns[] = {
-                { "GUID",         NMO_CLI_ALIGN_LEFT,   36, 0 },
-                { "Name",         NMO_CLI_ALIGN_LEFT,   20, 0 },
-                { "Version",      NMO_CLI_ALIGN_RIGHT,   8, 0 },
-                { "Category",     NMO_CLI_ALIGN_LEFT,   12, 0 },
-                { "Flags",        NMO_CLI_ALIGN_LEFT,   16, 0 },
-                { "Mgr/Type",     NMO_CLI_ALIGN_RIGHT,   8, 0 },
-            };
-
-            nmo_cli_table_t table;
             nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
-
-            for (size_t i = 0; i < count; ++i) {
-                const nmo_extension_plugin_info_t *p = &plugins[i];
-
-                char guid_str[64];
-                char version_str[16];
-                char flags_str[64];
-                char counts_str[16];
-
-                nmo_guid_format(p->guid, guid_str, sizeof(guid_str));
-                snprintf(version_str, sizeof(version_str), "%u", p->version);
-                format_plugin_flags(p->flags, flags_str, sizeof(flags_str));
-                snprintf(counts_str, sizeof(counts_str), "%zu/%zu",
-                         p->manager_count, p->type_count);
-
-                const char *cells[] = {
-                    guid_str,
-                    p->name ? p->name : "(unnamed)",
-                    version_str,
-                    plugin_category_to_string(p->category),
-                    flags_str,
-                    counts_str
-                };
-
-                nmo_cli_table_add_row(&table, cells, sizeof(cells) / sizeof(cells[0]));
-            }
-
-            nmo_cli_table_print(&table, c.out, c.colorize);
-            nmo_cli_table_free(&table);
-
-            fprintf(c.out, "\nTotal: %zu extension(s)\n", count);
         }
+    }
+
+    for (size_t i = 0; i < count; ++i) {
+        nmo_cli_record_t *rec = nmo_cli_record_new();
+        if (rec && extension_build_record(&plugins[i], rec)) {
+            if (doc) {
+                yyjson_mut_val *plugin_obj = yyjson_mut_obj(doc);
+                if (plugin_obj && nmo_cli_record_to_json(rec, doc, plugin_obj)) {
+                    yyjson_mut_arr_append(plugins_arr, plugin_obj);
+                }
+            } else {
+                const char *cells[6];
+                size_t n = nmo_cli_record_cells(rec, cells, 6);
+                nmo_cli_table_add_row(&table, cells, n);
+            }
+        }
+        nmo_cli_record_free(rec);
+    }
+
+    if (doc) {
+        yyjson_mut_obj_add_val(doc, data, "plugins", plugins_arr);
+        nmo_cli_json_write_enveloped_and_free(doc, data, "extension.list", NULL, c.out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
+    } else if (count > 0) {
+        nmo_cli_table_print(&table, c.out, c.colorize);
+        nmo_cli_table_free(&table);
+        fprintf(c.out, "\nTotal: %zu extension(s)\n", count);
     }
 
     nmo_context_release(ctx);
