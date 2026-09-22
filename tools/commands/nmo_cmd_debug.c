@@ -67,9 +67,9 @@ typedef struct nmo_debug_probe_args {
     bool has_delay;
     const char *name;
     const char *text;
-    char selector_mode[24];
-    char selector_status[24];
-    char selector_rejection_code[64];
+    const char *selector_mode;          /**< static name; NULL or "" when unset */
+    const char *selector_status;        /**< static name; NULL or "" when unset */
+    char *selector_rejection_code;      /**< malloc'd; NULL or "" when unset */
     nmo_object_id_t selector_selected_node_id;
     nmo_object_id_t selector_selected_link_id;
     nmo_object_id_t selector_selected_operation_id;
@@ -89,9 +89,9 @@ typedef struct nmo_debug_probe_args {
         nmo_guid_t column_type_guid;
         double confidence;
         nmo_guid_t bb_guid;
-        char proto_name[96];
-        char role[24];
-        char rejection_code[64];
+        char *proto_name;               /**< malloc'd; NULL when unset */
+        const char *role;               /**< static role name */
+        char *rejection_code;           /**< malloc'd; NULL or "" when unset */
     } selector_candidates[64];
     size_t selector_candidate_count;
     nmo_probe_safe_insertion_t selector_safe_insertion;
@@ -559,6 +559,39 @@ static const char *debug_probe_message_role(const nmo_behavior_state_t *state)
     return "message";
 }
 
+static bool debug_probe_has_text(const char *text)
+{
+    return text != NULL && text[0] != '\0';
+}
+
+/* Release the candidate strings and reset the candidate count. */
+static void debug_probe_selector_clear_candidates(nmo_debug_probe_args_t *args)
+{
+    for (size_t i = 0; i < args->selector_candidate_count; ++i) {
+        free(args->selector_candidates[i].proto_name);
+        args->selector_candidates[i].proto_name = NULL;
+        free(args->selector_candidates[i].rejection_code);
+        args->selector_candidates[i].rejection_code = NULL;
+        args->selector_candidates[i].role = NULL;
+    }
+    args->selector_candidate_count = 0u;
+}
+
+/* Release every string the selector diagnostics own. */
+static void debug_probe_selector_dispose_strings(nmo_debug_probe_args_t *args)
+{
+    if (args == NULL) {
+        return;
+    }
+    debug_probe_selector_clear_candidates(args);
+    free(args->selector_rejection_code);
+    args->selector_rejection_code = NULL;
+}
+
+/*
+ * `mode` and `status` must be static strings (selector names or literals);
+ * `rejection_code` is copied because it comes from a transient result.
+ */
 static void debug_probe_selector_set_mode_status(
     nmo_debug_probe_args_t *args,
     const char *mode,
@@ -568,14 +601,13 @@ static void debug_probe_selector_set_mode_status(
     if (args == NULL) {
         return;
     }
-    snprintf(args->selector_mode, sizeof(args->selector_mode), "%s",
-             mode != NULL ? mode : "");
-    snprintf(args->selector_status, sizeof(args->selector_status), "%s",
-             status != NULL ? status : "");
-    snprintf(args->selector_rejection_code,
-             sizeof(args->selector_rejection_code),
-             "%s",
-             rejection_code != NULL ? rejection_code : "");
+    args->selector_mode = mode != NULL ? mode : "";
+    args->selector_status = status != NULL ? status : "";
+    char *copy = nmo_tool_strdup(rejection_code != NULL ? rejection_code : "");
+    if (copy != NULL) {
+        free(args->selector_rejection_code);
+        args->selector_rejection_code = copy;
+    }
 }
 
 static void debug_probe_selector_add_candidate(
@@ -603,15 +635,13 @@ static void debug_probe_selector_add_candidate(
     args->selector_candidates[index].parent_id = parent_id;
     args->selector_candidates[index].bb_guid =
         state != NULL ? state->block_guid : NMO_GUID_NULL;
-    snprintf(args->selector_candidates[index].proto_name,
-             sizeof(args->selector_candidates[index].proto_name),
-             "%s",
-             proto != NULL && proto->name != NULL ? proto->name : "");
-    snprintf(args->selector_candidates[index].role,
-             sizeof(args->selector_candidates[index].role),
-             "%s",
-             role_override != NULL ? role_override
-                                    : debug_probe_message_role(state));
+    free(args->selector_candidates[index].proto_name);
+    args->selector_candidates[index].proto_name = nmo_tool_strdup(
+        proto != NULL && proto->name != NULL ? proto->name : "");
+    args->selector_candidates[index].role =
+        role_override != NULL ? role_override : debug_probe_message_role(state);
+    free(args->selector_candidates[index].rejection_code);
+    args->selector_candidates[index].rejection_code = NULL;
 }
 
 static bool debug_probe_link_touches_behavior(
@@ -649,29 +679,29 @@ static bool debug_probe_link_touches_behavior(
                behavior, nmo_behaviorlink_in_io_id(link));
 }
 
-static void debug_probe_append_id(char *buffer,
-                                  size_t buffer_size,
-                                  size_t *buffer_len,
-                                  size_t index,
-                                  nmo_object_id_t id)
+/*
+ * Append ",<id>" (or "<id>" for the first entry) to the malloc'd list in
+ * *list, growing it to the exact length. The list stays unchanged on OOM.
+ */
+static void debug_probe_append_id(char **list, size_t index, nmo_object_id_t id)
 {
-    if (buffer == NULL || buffer_size == 0u || buffer_len == NULL ||
-        *buffer_len >= buffer_size - 1u) {
+    if (list == NULL) {
         return;
     }
-    int written = snprintf(buffer + *buffer_len,
-                           buffer_size - *buffer_len,
-                           "%s%u",
-                           index == 0u ? "" : ",",
-                           (unsigned)id);
-    if (written <= 0) {
-        return;
+    char *grown = nmo_tool_strdup_fmt("%s%s%u",
+                                      *list != NULL ? *list : "",
+                                      index == 0u ? "" : ",",
+                                      (unsigned)id);
+    if (grown != NULL) {
+        free(*list);
+        *list = grown;
     }
-    size_t append = (size_t)written;
-    size_t available = buffer_size - *buffer_len;
-    *buffer_len += append < available ? append : available - 1u;
 }
 
+/*
+ * `candidate_ids`, when non-NULL, receives a malloc'd comma-separated list of
+ * the touching link IDs (NULL when there are none); the caller frees it.
+ */
 static size_t debug_probe_collect_touching_links(
     nmo_object_repository_t *repo,
     const nmo_behavior_state_t *parent,
@@ -679,8 +709,7 @@ static size_t debug_probe_collect_touching_links(
     bool to_io_only,
     nmo_object_id_t *out_selected_link_id,
     const nmo_behaviorlink_state_t **out_selected_link,
-    char *candidate_ids,
-    size_t candidate_ids_size)
+    char **candidate_ids)
 {
     if (out_selected_link_id != NULL) {
         *out_selected_link_id = 0u;
@@ -688,15 +717,15 @@ static size_t debug_probe_collect_touching_links(
     if (out_selected_link != NULL) {
         *out_selected_link = NULL;
     }
-    if (candidate_ids != NULL && candidate_ids_size > 0u) {
-        candidate_ids[0] = '\0';
+    if (candidate_ids != NULL) {
+        free(*candidate_ids);
+        *candidate_ids = NULL;
     }
     if (repo == NULL || parent == NULL || target == NULL) {
         return 0u;
     }
 
     size_t candidate_count = 0u;
-    size_t candidate_ids_len = 0u;
     for (size_t i = 0; i < parent->sub_behavior_links.count; ++i) {
         nmo_object_id_t link_id = nmo_behavior_ref_array_get_id(
             &parent->sub_behavior_links, i);
@@ -712,11 +741,7 @@ static size_t debug_probe_collect_touching_links(
         if (!debug_probe_link_touches_behavior(target, link, to_io_only)) {
             continue;
         }
-        debug_probe_append_id(candidate_ids,
-                              candidate_ids_size,
-                              &candidate_ids_len,
-                              candidate_count,
-                              link_id);
+        debug_probe_append_id(candidate_ids, candidate_count, link_id);
         if (out_selected_link_id != NULL) {
             *out_selected_link_id = link_id;
         }
@@ -735,8 +760,7 @@ static size_t debug_probe_select_touching_links(
     debug_probe_link_touch_mode_t mode,
     nmo_object_id_t *out_selected_link_id,
     const nmo_behaviorlink_state_t **out_selected_link,
-    char *candidate_ids,
-    size_t candidate_ids_size)
+    char **candidate_ids)
 {
     size_t count = debug_probe_collect_touching_links(
         repo,
@@ -745,8 +769,7 @@ static size_t debug_probe_select_touching_links(
         mode == DEBUG_PROBE_LINK_TOUCH_TO_IO_FIRST,
         out_selected_link_id,
         out_selected_link,
-        candidate_ids,
-        candidate_ids_size);
+        candidate_ids);
     if (count == 0u && mode == DEBUG_PROBE_LINK_TOUCH_TO_IO_FIRST) {
         count = debug_probe_collect_touching_links(
             repo,
@@ -755,8 +778,7 @@ static size_t debug_probe_select_touching_links(
             false,
             out_selected_link_id,
             out_selected_link,
-            candidate_ids,
-            candidate_ids_size);
+            candidate_ids);
     }
     return count;
 }
@@ -783,7 +805,7 @@ static void debug_probe_apply_selector_result(
     args->selector_analysis.candidate_count = 0u;
     args->selector_analysis.candidate_capacity = 0u;
     args->has_selector_analysis = true;
-    args->selector_candidate_count = 0u;
+    debug_probe_selector_clear_candidates(args);
     for (size_t i = 0;
          i < result->candidate_count &&
          i < sizeof(args->selector_candidates) /
@@ -817,18 +839,12 @@ static void debug_probe_apply_selector_result(
         args->selector_candidates[i].confidence =
             result->candidates[i].confidence;
         args->selector_candidates[i].bb_guid = result->candidates[i].bb_guid;
-        snprintf(args->selector_candidates[i].proto_name,
-                 sizeof(args->selector_candidates[i].proto_name),
-                 "%s",
-                 result->candidates[i].proto_name);
-        snprintf(args->selector_candidates[i].role,
-                 sizeof(args->selector_candidates[i].role),
-                 "%s",
-                 nmo_probe_candidate_role_name(result->candidates[i].role));
-        snprintf(args->selector_candidates[i].rejection_code,
-                 sizeof(args->selector_candidates[i].rejection_code),
-                 "%s",
-                 result->candidates[i].rejection_code);
+        args->selector_candidates[i].proto_name =
+            nmo_tool_strdup(result->candidates[i].proto_name);
+        args->selector_candidates[i].role =
+            nmo_probe_candidate_role_name(result->candidates[i].role);
+        args->selector_candidates[i].rejection_code =
+            nmo_tool_strdup(result->candidates[i].rejection_code);
         ++args->selector_candidate_count;
     }
     if (result->selected_link_id != 0u && args->remove_link_id == 0u) {
@@ -949,15 +965,14 @@ static nmo_status_t debug_probe_validate_targets(
     }
 
     if (args->message_node_id != 0u) {
-        if (args->selector_mode[0] == '\0') {
+        if (!debug_probe_has_text(args->selector_mode)) {
             debug_probe_selector_set_mode_status(
                 args,
                 args->remove_link_id != 0u ? "explicit_link" : "explicit_node",
                 "selected",
                 NULL);
-        } else if (args->selector_status[0] == '\0') {
-            snprintf(args->selector_status, sizeof(args->selector_status),
-                     "%s", "selected");
+        } else if (!debug_probe_has_text(args->selector_status)) {
+            args->selector_status = "selected";
         }
         nmo_object_t *message_node =
             nmo_object_repository_find_by_id(repo, args->message_node_id);
@@ -1109,7 +1124,7 @@ static nmo_status_t debug_probe_select_data_write_link(
         return NMO_OK;
     }
 
-    char candidate_ids[256];
+    char *candidate_ids = NULL;
     nmo_object_id_t selected_link_id = 0u;
     const nmo_behaviorlink_state_t *selected_link = NULL;
     size_t candidate_count = debug_probe_select_touching_links(
@@ -1119,18 +1134,22 @@ static nmo_status_t debug_probe_select_data_write_link(
         DEBUG_PROBE_LINK_TOUCH_ANY,
         &selected_link_id,
         &selected_link,
-        candidate_ids,
-        sizeof(candidate_ids));
+        &candidate_ids);
 
     if (candidate_count != 1u || selected_link == NULL) {
         debug_probe_selector_set_mode_status(
             args, "explicit_node", "unsafe", "unsafe_probe_insertion");
-        NMO_RETURN_ERROR(
+        nmo_last_error_setf(
             NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR,
+            __FILE__,
+            __LINE__,
             "unsafe_probe_insertion: debug probe automatic data write insertion is unsafe (candidate links: [%s])",
-            candidate_ids);
+            candidate_ids != NULL ? candidate_ids : "");
+        free(candidate_ids);
+        return NMO_ERR_INVALID_ARGUMENT;
     }
+    free(candidate_ids);
 
     args->remove_link_id = selected_link_id;
     args->from_io_id = nmo_behaviorlink_in_io_id(selected_link);
@@ -1179,7 +1198,7 @@ static nmo_status_t debug_probe_select_message_link(
         return NMO_OK;
     }
 
-    char candidate_ids[256];
+    char *candidate_ids = NULL;
     nmo_object_id_t selected_link_id = 0u;
     const nmo_behaviorlink_state_t *selected_link = NULL;
     size_t candidate_count = debug_probe_select_touching_links(
@@ -1189,23 +1208,27 @@ static nmo_status_t debug_probe_select_message_link(
         DEBUG_PROBE_LINK_TOUCH_TO_IO_FIRST,
         &selected_link_id,
         &selected_link,
-        candidate_ids,
-        sizeof(candidate_ids));
+        &candidate_ids);
 
     if (candidate_count != 1u || selected_link == NULL) {
         debug_probe_selector_set_mode_status(
             args,
-            args->selector_mode[0] != '\0'
+            debug_probe_has_text(args->selector_mode)
                 ? args->selector_mode
                 : "explicit_node",
             "unsafe",
             "unsafe_probe_insertion");
-        NMO_RETURN_ERROR(
+        nmo_last_error_setf(
             NMO_ERR_INVALID_ARGUMENT,
             NMO_SEVERITY_ERROR,
+            __FILE__,
+            __LINE__,
             "debug probe automatic insertion is unsafe (candidate links: [%s])",
-            candidate_ids);
+            candidate_ids != NULL ? candidate_ids : "");
+        free(candidate_ids);
+        return NMO_ERR_INVALID_ARGUMENT;
     }
+    free(candidate_ids);
 
     args->remove_link_id = selected_link_id;
     args->from_io_id = nmo_behaviorlink_in_io_id(selected_link);
@@ -1217,7 +1240,7 @@ static nmo_status_t debug_probe_select_message_link(
     }
     debug_probe_selector_set_mode_status(
         args,
-        args->selector_mode[0] != '\0'
+        debug_probe_has_text(args->selector_mode)
             ? args->selector_mode
             : "explicit_node",
         "selected",
@@ -1312,7 +1335,7 @@ static int debug_probe_mutate(nmo_cmd_ctx_t *ctx,
     nmo_edit_plan_t *plan = NULL;
     nmo_status_t status = NMO_OK;
     size_t node_op_index = 0u;
-    char data_cell_text[128];
+    char *data_cell_text = NULL;
 
     if (ctx == NULL || args == NULL) {
         return NMO_CLI_EXIT_INTERNAL_ERROR;
@@ -1363,11 +1386,13 @@ static int debug_probe_mutate(nmo_cmd_ctx_t *ctx,
     }
     const char *probe_text = args->text;
     if (status == NMO_OK && spec->logs_data_cell && probe_text == NULL) {
-        snprintf(data_cell_text, sizeof(data_cell_text),
-                 "dataarray:%u[%u,%u]",
-                 (unsigned)args->dataarray_id,
-                 (unsigned)args->data_row,
-                 (unsigned)args->data_col);
+        data_cell_text = nmo_tool_strdup_fmt("dataarray:%u[%u,%u]",
+                                             (unsigned)args->dataarray_id,
+                                             (unsigned)args->data_row,
+                                             (unsigned)args->data_col);
+        if (data_cell_text == NULL) {
+            status = NMO_ERR_NOMEM;
+        }
         probe_text = data_cell_text;
     }
     if (status == NMO_OK && probe_text != NULL && spec->text_handle != NULL) {
@@ -1427,6 +1452,7 @@ static int debug_probe_mutate(nmo_cmd_ctx_t *ctx,
             ctx->workspace, plan, &options, &args->report);
     }
     nmo_edit_plan_destroy(plan);
+    free(data_cell_text);
     if (status != NMO_OK) {
         const char *message = nmo_last_error_message();
         fprintf(stderr, "Error: debug probe failed: %s\n",
@@ -1434,6 +1460,7 @@ static int debug_probe_mutate(nmo_cmd_ctx_t *ctx,
                     ? message
                     : nmo_error_string(status));
         nmo_probe_analysis_dispose(&args->selector_analysis);
+        debug_probe_selector_dispose_strings(args);
         return status == NMO_ERR_INVALID_ARGUMENT || status == NMO_ERR_NOT_FOUND
             ? NMO_CLI_EXIT_ARG_ERROR
             : NMO_CLI_EXIT_INTERNAL_ERROR;
@@ -1489,6 +1516,7 @@ static int debug_probe_report(nmo_cmd_ctx_t *ctx,
         int rc = nmo_cmd_ctx_json_end(ctx, doc, data, "debug.probe");
         nmo_edit_report_dispose(&args->report);
         nmo_probe_analysis_dispose(&args->selector_analysis);
+        debug_probe_selector_dispose_strings(args);
         return rc;
     }
 
@@ -1500,6 +1528,7 @@ static int debug_probe_report(nmo_cmd_ctx_t *ctx,
     }
     nmo_edit_report_dispose(&args->report);
     nmo_probe_analysis_dispose(&args->selector_analysis);
+    debug_probe_selector_dispose_strings(args);
     return NMO_CLI_EXIT_SUCCESS;
 }
 
@@ -1508,7 +1537,7 @@ static yyjson_mut_val *debug_probe_selector_diagnostics_json(
     const nmo_debug_probe_args_t *args)
 {
     if (doc == NULL || args == NULL ||
-        args->selector_mode[0] == '\0') {
+        !debug_probe_has_text(args->selector_mode)) {
         return NULL;
     }
     yyjson_mut_val *diag = yyjson_mut_obj(doc);
@@ -1516,7 +1545,8 @@ static yyjson_mut_val *debug_probe_selector_diagnostics_json(
         return NULL;
     }
     nmo_cli_json_add_str_safe(doc, diag, "mode", args->selector_mode);
-    nmo_cli_json_add_str_safe(doc, diag, "status", args->selector_status);
+    nmo_cli_json_add_str_safe(doc, diag, "status",
+                              args->selector_status != NULL ? args->selector_status : "");
     yyjson_mut_val *candidates = yyjson_mut_arr(doc);
     for (size_t i = 0; i < args->selector_candidate_count; ++i) {
         yyjson_mut_val *candidate = yyjson_mut_obj(doc);
@@ -1572,28 +1602,25 @@ static yyjson_mut_val *debug_probe_selector_diagnostics_json(
                 doc, candidate, "dataarray_id",
                 (uint64_t)args->selector_candidates[i].dataarray_id);
         }
-        char column_guid_text[32];
-        nmo_guid_format(args->selector_candidates[i].column_type_guid,
-                        column_guid_text,
-                        sizeof(column_guid_text));
         if (!nmo_guid_is_null(args->selector_candidates[i].column_type_guid)) {
-            nmo_cli_json_add_str_safe(
-                doc, candidate, "column_type_guid", column_guid_text);
+            nmo_cli_json_add_guid_safe(
+                doc, candidate, "column_type_guid",
+                args->selector_candidates[i].column_type_guid);
         }
         yyjson_mut_obj_add_real(
             doc, candidate, "confidence",
             args->selector_candidates[i].confidence);
-        char guid_text[32];
-        nmo_guid_format(args->selector_candidates[i].bb_guid,
-                        guid_text,
-                        sizeof(guid_text));
-        nmo_cli_json_add_str_safe(doc, candidate, "bb_guid", guid_text);
+        nmo_cli_json_add_guid_safe(doc, candidate, "bb_guid",
+                                   args->selector_candidates[i].bb_guid);
         nmo_cli_json_add_str_safe(
             doc, candidate, "proto_name",
-            args->selector_candidates[i].proto_name);
+            args->selector_candidates[i].proto_name != NULL
+                ? args->selector_candidates[i].proto_name : "");
         nmo_cli_json_add_str_safe(
-            doc, candidate, "role", args->selector_candidates[i].role);
-        if (args->selector_candidates[i].rejection_code[0] != '\0') {
+            doc, candidate, "role",
+            args->selector_candidates[i].role != NULL
+                ? args->selector_candidates[i].role : "");
+        if (debug_probe_has_text(args->selector_candidates[i].rejection_code)) {
             nmo_cli_json_add_str_safe(
                 doc,
                 candidate,
@@ -1618,7 +1645,7 @@ static yyjson_mut_val *debug_probe_selector_diagnostics_json(
             doc, diag, "selected_operation_id",
             (uint64_t)args->selector_selected_operation_id);
     }
-    if (args->selector_rejection_code[0] != '\0') {
+    if (debug_probe_has_text(args->selector_rejection_code)) {
         nmo_cli_json_add_str_safe(
             doc, diag, "rejection_code", args->selector_rejection_code);
     }
@@ -1803,26 +1830,22 @@ static int debug_chunks_object(size_t index, nmo_object_t *obj,
 
         yyjson_mut_arr_add_val(data->chunks, cv);
     } else if (data->table) {
-        char oid[16], cid[16], dsz[16], csz[16];
-        char opt_buf[64];
-        char opt_cell[96];
-        snprintf(oid, sizeof(oid), "%u", nmo_object_get_id(obj));
-        snprintf(cid, sizeof(cid), "%u", chunk->class_id);
-        snprintf(dsz, sizeof(dsz), "%zu", nmo_chunk_get_data_size(chunk));
-        snprintf(csz, sizeof(csz), "%zu", chunk->compressed_size);
-
-        const char *opt = nmo_cli_chunk_options_to_string(chunk->chunk_options,
-            opt_buf, sizeof(opt_buf));
-        if (chunk->chunk_options == 0) {
-            snprintf(opt_cell, sizeof(opt_cell), "-");
-        } else {
-            snprintf(opt_cell, sizeof(opt_cell), "%s (0x%04X)", opt, chunk->chunk_options);
-        }
-
         const char *class_name = nmo_cli_class_name_from_id(c->ctx, chunk->class_id);
 
-        const char *cells[] = {oid, cid, class_name ? class_name : "-", dsz, csz, opt_cell};
-        (void)nmo_cli_table_add_row(data->table, cells, 6);
+        (void)nmo_cli_table_begin_row(data->table);
+        (void)nmo_cli_table_add_cell_fmt(data->table, "%u", nmo_object_get_id(obj));
+        (void)nmo_cli_table_add_cell_fmt(data->table, "%u", chunk->class_id);
+        (void)nmo_cli_table_add_cell(data->table, class_name ? class_name : "-");
+        (void)nmo_cli_table_add_cell_fmt(data->table, "%zu", nmo_chunk_get_data_size(chunk));
+        (void)nmo_cli_table_add_cell_fmt(data->table, "%zu", chunk->compressed_size);
+        if (chunk->chunk_options == 0) {
+            (void)nmo_cli_table_add_cell(data->table, "-");
+        } else {
+            char *opt = nmo_cli_chunk_options_dup(chunk->chunk_options);
+            (void)nmo_cli_table_add_cell_fmt(data->table, "%s (0x%04X)",
+                                             opt ? opt : "", chunk->chunk_options);
+            free(opt);
+        }
     }
 
     data->chunk_count++;
@@ -1869,28 +1892,23 @@ static int debug_objects_object(size_t index, nmo_object_t *obj,
 
         yyjson_mut_arr_add_val(data->objects, o);
     } else if (data->table) {
-        char idx[24], id[16], flags[16], chunk_sz[24];
-        snprintf(idx, sizeof(idx), "%zu", index);
-        snprintf(id, sizeof(id), "%u", nmo_object_get_id(obj));
-        snprintf(flags, sizeof(flags), "0x%08X", nmo_object_get_flags(obj));
-
         nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
-        if (chunk) {
-            snprintf(chunk_sz, sizeof(chunk_sz), "%zu", nmo_chunk_get_data_size(chunk));
-        } else {
-            snprintf(chunk_sz, sizeof(chunk_sz), "-");
-        }
-
         const char *class_name = nmo_cli_class_name_from_id(c->ctx, nmo_object_get_class_id(obj));
         const char *name = nmo_object_get_name(obj);
 
-        const char *cells[] = {
-            idx, id, flags,
-            class_name ? class_name : "-",
-            (name && name[0]) ? name : "-",
-            chunk_sz
-        };
-        (void)nmo_cli_table_add_row(data->table, cells, 6);
+        bool ok = nmo_cli_table_begin_row(data->table);
+        ok = ok && nmo_cli_table_add_cell_fmt(data->table, "%zu", index);
+        ok = ok && nmo_cli_table_add_cell_fmt(data->table, "%u", nmo_object_get_id(obj));
+        ok = ok && nmo_cli_table_add_cell_fmt(data->table, "0x%08X", nmo_object_get_flags(obj));
+        ok = ok && nmo_cli_table_add_cell(data->table, class_name ? class_name : "-");
+        ok = ok && nmo_cli_table_add_cell(data->table, (name && name[0]) ? name : "-");
+        if (chunk) {
+            ok = ok && nmo_cli_table_add_cell_fmt(data->table, "%zu",
+                                                  nmo_chunk_get_data_size(chunk));
+        } else {
+            ok = ok && nmo_cli_table_add_cell(data->table, "-");
+        }
+        (void)ok;
     }
 
     return 0;
@@ -2014,35 +2032,34 @@ static int debug_load_phases_run_in_ctx(nmo_cmd_ctx_t *c,
         if (!has_stats) {
             fprintf(c->out, "\nLoad statistics unavailable\n");
         } else {
-            char buf[64];
             fprintf(c->out, "\n");
 
-            snprintf(buf, sizeof(buf), "%zu", stats.total_objects);
-            nmo_cli_print_kv(c->out, "Total Objects", buf, 16, c->colorize);
+            nmo_cli_print_kv_fmt(c->out, "Total Objects", 16, c->colorize,
+                                 "%zu", stats.total_objects);
 
             fprintf(c->out, "\nReferences:\n");
-            snprintf(buf, sizeof(buf), "%u", stats.references.total);
-            nmo_cli_print_kv(c->out, "  Total", buf, 14, c->colorize);
-            snprintf(buf, sizeof(buf), "%u", stats.references.resolved);
-            nmo_cli_print_kv(c->out, "  Resolved", buf, 14, c->colorize);
-            snprintf(buf, sizeof(buf), "%u", stats.references.unresolved);
-            nmo_cli_print_kv(c->out, "  Unresolved", buf, 14, c->colorize);
-            snprintf(buf, sizeof(buf), "%u", stats.references.ambiguous);
-            nmo_cli_print_kv(c->out, "  Ambiguous", buf, 14, c->colorize);
+            nmo_cli_print_kv_fmt(c->out, "  Total", 14, c->colorize,
+                                 "%u", stats.references.total);
+            nmo_cli_print_kv_fmt(c->out, "  Resolved", 14, c->colorize,
+                                 "%u", stats.references.resolved);
+            nmo_cli_print_kv_fmt(c->out, "  Unresolved", 14, c->colorize,
+                                 "%u", stats.references.unresolved);
+            nmo_cli_print_kv_fmt(c->out, "  Ambiguous", 14, c->colorize,
+                                 "%u", stats.references.ambiguous);
 
             fprintf(c->out, "\nIndexes:\n");
-            snprintf(buf, sizeof(buf), "%zu", stats.indexes.class_entries);
-            nmo_cli_print_kv(c->out, "  Classes", buf, 14, c->colorize);
-            snprintf(buf, sizeof(buf), "%zu", stats.indexes.name_entries);
-            nmo_cli_print_kv(c->out, "  Names", buf, 14, c->colorize);
-            snprintf(buf, sizeof(buf), "%zu", stats.indexes.guid_entries);
-            nmo_cli_print_kv(c->out, "  GUIDs", buf, 14, c->colorize);
-            snprintf(buf, sizeof(buf), "%zu bytes", stats.indexes.memory_usage);
-            nmo_cli_print_kv(c->out, "  Memory", buf, 14, c->colorize);
+            nmo_cli_print_kv_fmt(c->out, "  Classes", 14, c->colorize,
+                                 "%zu", stats.indexes.class_entries);
+            nmo_cli_print_kv_fmt(c->out, "  Names", 14, c->colorize,
+                                 "%zu", stats.indexes.name_entries);
+            nmo_cli_print_kv_fmt(c->out, "  GUIDs", 14, c->colorize,
+                                 "%zu", stats.indexes.guid_entries);
+            nmo_cli_print_kv_fmt(c->out, "  Memory", 14, c->colorize,
+                                 "%zu bytes", stats.indexes.memory_usage);
 
             fprintf(c->out, "\n");
-            snprintf(buf, sizeof(buf), "%u", stats.manager_errors);
-            nmo_cli_print_kv(c->out, "Manager Errors", buf, 16, c->colorize);
+            nmo_cli_print_kv_fmt(c->out, "Manager Errors", 16, c->colorize,
+                                 "%u", stats.manager_errors);
         }
         debug_print_load_phase_stats(c->out, phase_stats);
     }

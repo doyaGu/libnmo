@@ -614,10 +614,7 @@ int nmo_core_set_fields(nmo_cmd_ctx_t *c, nmo_object_id_t object_id,
         const char *vstr  = entries[i].value_str;
 
         /* Read old value */
-        char old_buf[256];
-        old_buf[0] = '\0';
-        nmo_type_get_field(state, type, c->registry, fname,
-                           old_buf, sizeof(old_buf));
+        char *old_value = nmo_core_field_value_dup(state, type, c->registry, fname);
 
         nmo_tool_field_edit_t field = {
             .field_name = fname,
@@ -629,18 +626,21 @@ int nmo_core_set_fields(nmo_cmd_ctx_t *c, nmo_object_id_t object_id,
             fprintf(stderr, "Error: Failed to set '%s' = '%s': %s\n",
                     fname, vstr, nmo_error_string(rc));
             result.failed++;
+            free(old_value);
             continue;
         }
 
         /* Read new value */
-        char new_buf[256];
-        new_buf[0] = '\0';
-        nmo_type_get_field(state, type, c->registry, fname,
-                           new_buf, sizeof(new_buf));
+        char *new_value = nmo_core_field_value_dup(state, type, c->registry, fname);
 
         /* Print change */
         fprintf(c->out, "  %s: %s -> %s%s\n",
-                fname, old_buf, new_buf, dry_run ? " (dry-run)" : "");
+                fname,
+                old_value ? old_value : "",
+                new_value ? new_value : "",
+                dry_run ? " (dry-run)" : "");
+        free(old_value);
+        free(new_value);
 
         result.applied++;
     }

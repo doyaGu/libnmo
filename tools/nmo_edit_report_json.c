@@ -143,16 +143,9 @@ yyjson_mut_val *nmo_cli_edit_report_probe_selector_diagnostics_json(
                 doc, item, "dataarray_id",
                 (uint64_t)candidate->dataarray_id);
         }
-        char guid_text[64];
-        if (nmo_guid_format(candidate->column_type_guid,
-                            guid_text, sizeof(guid_text)) > 0) {
-            nmo_cli_json_add_str_safe(
-                doc, item, "column_type_guid", guid_text);
-        }
-        if (nmo_guid_format(candidate->bb_guid,
-                            guid_text, sizeof(guid_text)) > 0) {
-            nmo_cli_json_add_str_safe(doc, item, "bb_guid", guid_text);
-        }
+        nmo_cli_json_add_guid_safe(
+            doc, item, "column_type_guid", candidate->column_type_guid);
+        nmo_cli_json_add_guid_safe(doc, item, "bb_guid", candidate->bb_guid);
         nmo_cli_json_add_str_safe(doc, item, "proto_name",
                                   candidate->proto_name);
         nmo_cli_json_add_str_safe(
@@ -354,10 +347,7 @@ static yyjson_mut_val *nmo_cli_edit_report_make_operation_slot_snapshot_json(
     nmo_object_id_t out_parameter_id)
 {
     yyjson_mut_val *snapshot = yyjson_mut_obj(doc);
-    char guid_text[32];
-    if (nmo_guid_format(operation_guid, guid_text, sizeof(guid_text)) > 0) {
-        yyjson_mut_obj_add_strcpy(doc, snapshot, "operation_guid", guid_text);
-    }
+    nmo_cli_json_add_guid_safe(doc, snapshot, "operation_guid", operation_guid);
     yyjson_mut_obj_add_bool(doc, snapshot, "has_in1", has_in1);
     yyjson_mut_obj_add_uint(doc, snapshot, "in1_parameter_id",
                             (uint64_t)in1_parameter_id);
@@ -472,10 +462,7 @@ static yyjson_mut_val *nmo_cli_edit_report_make_manager_entry_snapshot_json(
     bool manager_chunk_changed)
 {
     yyjson_mut_val *snapshot = yyjson_mut_obj(doc);
-    char guid_text[32];
-    if (nmo_guid_format(manager_guid, guid_text, sizeof(guid_text)) > 0) {
-        yyjson_mut_obj_add_strcpy(doc, snapshot, "manager_guid", guid_text);
-    }
+    nmo_cli_json_add_guid_safe(doc, snapshot, "manager_guid", manager_guid);
     nmo_cli_json_add_str_safe(
         doc, snapshot, "manager_kind",
         nmo_cli_edit_report_manager_kind(manager_guid));
@@ -487,12 +474,7 @@ static yyjson_mut_val *nmo_cli_edit_report_make_manager_entry_snapshot_json(
         nmo_cli_json_add_str_safe(doc, snapshot, "category", category);
     }
     if (!nmo_guid_is_null(type_guid)) {
-        char type_guid_text[32];
-        if (nmo_guid_format(type_guid, type_guid_text,
-                            sizeof(type_guid_text)) > 0) {
-            yyjson_mut_obj_add_strcpy(
-                doc, snapshot, "type_guid", type_guid_text);
-        }
+        nmo_cli_json_add_guid_safe(doc, snapshot, "type_guid", type_guid);
     }
     yyjson_mut_obj_add_uint(doc, snapshot, "entry_index",
                             (uint64_t)entry_index);
