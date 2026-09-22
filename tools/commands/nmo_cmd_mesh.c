@@ -271,12 +271,10 @@ int nmo_cmd_mesh_show(int argc, char **argv, const nmo_cli_global_opts_t *global
 
     nmo_cli_record_t *rec = nmo_cli_record_new();
     bool ok = rec != NULL;
-    char buf[128];
-    snprintf(buf, sizeof(buf), "#%u (%s)", obj_id,
-             (name && name[0]) ? name : "(unnamed)");
     ok = ok && nmo_cli_record_uint(rec, "id", NULL, obj_id);
     ok = ok && nmo_cli_record_str(rec, "name", NULL, name);
-    ok = ok && nmo_cli_record_text(rec, "ID / Name", buf);
+    ok = ok && nmo_cli_record_text_fmt(rec, "ID / Name", "#%u (%s)", obj_id,
+                                       (name && name[0]) ? name : "(unnamed)");
 
     if (ok && !ms) {
         ok = nmo_cli_record_null(rec, "state", NULL, NULL);
@@ -287,8 +285,7 @@ int nmo_cmd_mesh_show(int argc, char **argv, const nmo_cli_global_opts_t *global
         ok = ok && nmo_cli_record_uint(rec, "material_group_count", "Material Groups",
                                        ms->material_group_count);
         ok = ok && nmo_cli_record_uint(rec, "flags", "Flags", ms->flags);
-        snprintf(buf, sizeof(buf), "0x%08X", ms->flags);
-        ok = ok && nmo_cli_record_set_text(rec, buf);
+        ok = ok && nmo_cli_record_set_text_fmt(rec, "0x%08X", ms->flags);
         ok = ok && nmo_cli_record_bool(rec, "has_progressive_mesh", "Progressive Mesh",
                                        ms->has_progressive_mesh);
         ok = ok && nmo_cli_record_set_text(rec, ms->has_progressive_mesh ? "yes" : "no");
@@ -315,19 +312,14 @@ int nmo_cmd_mesh_show(int argc, char **argv, const nmo_cli_global_opts_t *global
                 nmo_object_id_t mid =
                     nmo_ref_runtime_id(&ms->material_groups[gi].material);
                 const char *mname = resolve_name(&c, mid);
-                char line[160];
-                if (mid && mname && mname[0]) {
-                    snprintf(line, sizeof(line), "  [%u] #%u (%s)", gi, mid, mname);
-                } else if (mid) {
-                    snprintf(line, sizeof(line), "  [%u] #%u", gi, mid);
-                } else {
-                    snprintf(line, sizeof(line), "  [%u] (none)", gi);
-                }
                 nmo_cli_record_t *entry = nmo_cli_record_new();
                 ok = entry != NULL &&
                      nmo_cli_record_ref(entry, "material_id", "material_name",
                                         NULL, mid, mname, NULL) &&
-                     nmo_cli_record_set_summary(entry, line) &&
+                     ((mid && mname && mname[0])
+                          ? nmo_cli_record_set_summary_fmt(entry, "  [%u] #%u (%s)", gi, mid, mname)
+                          : mid ? nmo_cli_record_set_summary_fmt(entry, "  [%u] #%u", gi, mid)
+                                : nmo_cli_record_set_summary_fmt(entry, "  [%u] (none)", gi)) &&
                      nmo_cli_record_array_add(mats, entry);
             }
         }

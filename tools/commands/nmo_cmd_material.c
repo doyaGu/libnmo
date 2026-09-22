@@ -31,18 +31,6 @@ static const char *resolve_name(const nmo_cmd_ctx_t *c, nmo_object_id_t id) {
     return nmo_object_get_name(obj);
 }
 
-static void format_argb(char *buf, size_t buf_size, uint32_t color) {
-    snprintf(buf, buf_size, "0x%08X", color);
-}
-
-static void format_color_components(char *buf, size_t buf_size, uint32_t argb) {
-    uint8_t a = (uint8_t)((argb >> 24) & 0xFF);
-    uint8_t r_c = (uint8_t)((argb >> 16) & 0xFF);
-    uint8_t g = (uint8_t)((argb >> 8) & 0xFF);
-    uint8_t b = (uint8_t)(argb & 0xFF);
-    snprintf(buf, buf_size, "(%u, %u, %u, %u)", r_c, g, b, a);
-}
-
 static uint32_t count_texture_refs(const nmo_material_state_t *state) {
     uint32_t n = 0;
     for (size_t i = 0; i < 4; ++i) {
@@ -215,14 +203,12 @@ static int material_show_parse(int argc,
 static bool material_record_color(nmo_cli_record_t *rec, const char *key,
                                   const char *label, uint32_t argb)
 {
-    char hex_buf[16];
-    char comp_buf[32];
-    char text[64];
-    format_argb(hex_buf, sizeof(hex_buf), argb);
-    format_color_components(comp_buf, sizeof(comp_buf), argb);
-    snprintf(text, sizeof(text), "%s  %s", hex_buf, comp_buf);
+    unsigned a = (argb >> 24) & 0xFFu;
+    unsigned r = (argb >> 16) & 0xFFu;
+    unsigned g = (argb >> 8) & 0xFFu;
+    unsigned b = argb & 0xFFu;
     return nmo_cli_record_hex32(rec, key, label, argb) &&
-           nmo_cli_record_set_text(rec, text);
+           nmo_cli_record_set_text_fmt(rec, "0x%08X  (%u, %u, %u, %u)", argb, r, g, b, a);
 }
 
 static bool material_show_build_record(const nmo_cmd_ctx_t *c,
@@ -231,12 +217,10 @@ static bool material_show_build_record(const nmo_cmd_ctx_t *c,
                                        const char *name,
                                        const nmo_material_state_t *ms)
 {
-    char buf[128];
-    snprintf(buf, sizeof(buf), "#%u (%s)", obj_id,
-             (name && name[0]) ? name : "(unnamed)");
     bool ok = nmo_cli_record_uint(rec, "id", NULL, obj_id);
     ok = ok && nmo_cli_record_str(rec, "name", NULL, name);
-    ok = ok && nmo_cli_record_text(rec, "ID / Name", buf);
+    ok = ok && nmo_cli_record_text_fmt(rec, "ID / Name", "#%u (%s)", obj_id,
+                                       (name && name[0]) ? name : "(unnamed)");
     if (!ok) {
         return false;
     }
@@ -261,17 +245,13 @@ static bool material_show_build_record(const nmo_cmd_ctx_t *c,
             continue;
         }
         const char *tn = resolve_name(c, texture_id);
-        char line[160];
-        if (tn && tn[0]) {
-            snprintf(line, sizeof(line), "  [%d] #%u (%s)", ti, texture_id, tn);
-        } else {
-            snprintf(line, sizeof(line), "  [%d] #%u", ti, texture_id);
-        }
         nmo_cli_record_t *entry = nmo_cli_record_new();
         ok = entry != NULL &&
              nmo_cli_record_uint(entry, "slot", NULL, (uint64_t)ti) &&
              nmo_cli_record_ref(entry, "id", "name", NULL, texture_id, tn, NULL) &&
-             nmo_cli_record_set_summary(entry, line) &&
+             ((tn && tn[0])
+                  ? nmo_cli_record_set_summary_fmt(entry, "  [%d] #%u (%s)", ti, texture_id, tn)
+                  : nmo_cli_record_set_summary_fmt(entry, "  [%d] #%u", ti, texture_id)) &&
              nmo_cli_record_array_add(textures, entry);
     }
 

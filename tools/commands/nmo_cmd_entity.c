@@ -57,15 +57,12 @@ static const char *projection_type_str(uint32_t type) {
     }
 }
 
-static void format_position(char *buf, size_t buf_size, const float *matrix) {
-    snprintf(buf, buf_size, "(%.2f, %.2f, %.2f)",
-             (double)matrix[12], (double)matrix[13], (double)matrix[14]);
-}
-
-static void format_color_rgba(char *buf, size_t buf_size, const nmo_color_t *color) {
-    snprintf(buf, buf_size, "(%.3f, %.3f, %.3f, %.3f)",
-             (double)color->r, (double)color->g,
-             (double)color->b, (double)color->a);
+/* RGBA colour as "(r, g, b, a)" on both sides. */
+static bool entity_record_color_rgba(nmo_cli_record_t *rec, const char *key,
+                                     const char *label, const nmo_color_t *color) {
+    return nmo_cli_record_str_fmt(rec, key, label, "(%.3f, %.3f, %.3f, %.3f)",
+                                  (double)color->r, (double)color->g,
+                                  (double)color->b, (double)color->a);
 }
 
 static nmo_status_t parse_color_rgba(const char *text, nmo_color_t *out_color) {
@@ -112,14 +109,13 @@ static bool entity_list_build_record(const nmo_cmd_ctx_t *c,
     const nmo_3dentity_state_t *es =
         (const nmo_3dentity_state_t *)nmo_object_get_state(obj);
     if (es) {
-        char pos_buf[64];
         const double pos[3] = {
             (double)es->world_matrix[12],
             (double)es->world_matrix[13],
             (double)es->world_matrix[14],
         };
-        format_position(pos_buf, sizeof(pos_buf), es->world_matrix);
-        ok = ok && nmo_cli_record_real_list(rec, "position", "POSITION", pos, 3, pos_buf);
+        ok = ok && nmo_cli_record_real_list(rec, "position", "POSITION", pos, 3, NULL) &&
+             nmo_cli_record_set_text_fmt(rec, "(%.2f, %.2f, %.2f)", pos[0], pos[1], pos[2]);
         nmo_object_id_t mesh_id = nmo_ref_runtime_id(&es->current_mesh);
         ok = ok && nmo_cli_record_ref_opt(rec, "mesh_id", "mesh", "MESH", mesh_id,
                                           resolve_name(c, mesh_id), "-");
@@ -299,23 +295,6 @@ static int entity_show_parse(int argc,
 }
 
 /* "\n<Heading> (<count>):\n" plus one "  [i] #id (name)" line per valid reference. */
-static bool entity_append_ref_list_text(char **out, size_t *cap, size_t *len,
-                                        const char *text)
-{
-    size_t add = strlen(text);
-    if (*len + add + 1u > *cap) {
-        size_t new_cap = (*cap ? *cap * 2u : 256u);
-        while (new_cap < *len + add + 1u) new_cap *= 2u;
-        char *grown = (char *)realloc(*out, new_cap);
-        if (!grown) return false;
-        *out = grown;
-        *cap = new_cap;
-    }
-    memcpy(*out + *len, text, add + 1u);
-    *len += add;
-    return true;
-}
-
 /* JSON: array of valid ids. Text: heading with the raw count and named lines. */
 static bool entity_record_ref_list(const nmo_cmd_ctx_t *c,
                                    nmo_cli_record_t *rec,
@@ -325,29 +304,21 @@ static bool entity_record_ref_list(const nmo_cmd_ctx_t *c,
                                    uint32_t count)
 {
     uint64_t *ids = (uint64_t *)malloc(count * sizeof(uint64_t));
-    char *text = NULL;
-    size_t cap = 0, len = 0, n = 0;
-    char line[192];
+    size_t n = 0;
     bool ok = ids != NULL;
 
-    snprintf(line, sizeof(line), "\n%s (%u):\n", heading, count);
-    ok = ok && entity_append_ref_list_text(&text, &cap, &len, line);
+    ok = ok && nmo_cli_record_raw_fmt(rec, "\n%s (%u):\n", heading, count);
     for (uint32_t i = 0; ok && i < count; ++i) {
         const nmo_object_id_t id = nmo_ref_runtime_id(&refs[i]);
         if (id == NMO_OBJECT_ID_NONE) continue;
         ids[n++] = id;
         const char *rn = resolve_name(c, id);
-        if (rn && rn[0]) {
-            snprintf(line, sizeof(line), "  [%u] #%u (%s)\n", i, id, rn);
-        } else {
-            snprintf(line, sizeof(line), "  [%u] #%u\n", i, id);
-        }
-        ok = entity_append_ref_list_text(&text, &cap, &len, line);
+        ok = (rn && rn[0])
+                 ? nmo_cli_record_raw_fmt(rec, "  [%u] #%u (%s)\n", i, id, rn)
+                 : nmo_cli_record_raw_fmt(rec, "  [%u] #%u\n", i, id);
     }
     ok = ok && nmo_cli_record_uint_list(rec, key, NULL, ids, n, NULL);
-    ok = ok && nmo_cli_record_raw(rec, text);
     free(ids);
-    free(text);
     return ok;
 }
 
@@ -361,16 +332,13 @@ static bool entity_show_build_record(const nmo_cmd_ctx_t *c,
     const char *class_name = nmo_core_class_name(c, class_id);
     const nmo_3dentity_state_t *es =
         (const nmo_3dentity_state_t *)nmo_object_get_state(obj);
-    char buf[128];
-
-    snprintf(buf, sizeof(buf), "#%u (%s)", obj_id,
-             (name && name[0]) ? name : "(unnamed)");
     bool ok = nmo_cli_record_uint(rec, "id", NULL, obj_id);
     ok = ok && nmo_cli_record_str(rec, "name", NULL, name);
-    ok = ok && nmo_cli_record_text(rec, "ID / Name", buf);
+    ok = ok && nmo_cli_record_text_fmt(rec, "ID / Name", "#%u (%s)", obj_id,
+                                       (name && name[0]) ? name : "(unnamed)");
     ok = ok && nmo_cli_record_str_opt(rec, "class", NULL, class_name, NULL);
-    snprintf(buf, sizeof(buf), "#%u (%s)", class_id, class_name ? class_name : "-");
-    ok = ok && nmo_cli_record_text(rec, "Class", buf);
+    ok = ok && nmo_cli_record_text_fmt(rec, "Class", "#%u (%s)", class_id,
+                                       class_name ? class_name : "-");
     if (!ok) {
         return false;
     }
@@ -383,8 +351,8 @@ static bool entity_show_build_record(const nmo_cmd_ctx_t *c,
         (double)es->world_matrix[13],
         (double)es->world_matrix[14],
     };
-    format_position(buf, sizeof(buf), es->world_matrix);
-    ok = nmo_cli_record_real_list(rec, "position", "Position", pos, 3, buf);
+    ok = nmo_cli_record_real_list(rec, "position", "Position", pos, 3, NULL) &&
+         nmo_cli_record_set_text_fmt(rec, "(%.2f, %.2f, %.2f)", pos[0], pos[1], pos[2]);
 
     double matrix[16];
     for (int mi = 0; mi < 16; ++mi) {
@@ -393,12 +361,10 @@ static bool entity_show_build_record(const nmo_cmd_ctx_t *c,
     ok = ok && nmo_cli_record_real_list(rec, "world_matrix", NULL, matrix, 16, NULL);
 
     ok = ok && nmo_cli_record_uint(rec, "entity_flags", "Entity Flags", es->entity_flags);
-    snprintf(buf, sizeof(buf), "0x%08X", es->entity_flags);
-    ok = ok && nmo_cli_record_set_text(rec, buf);
+    ok = ok && nmo_cli_record_set_text_fmt(rec, "0x%08X", es->entity_flags);
     ok = ok && nmo_cli_record_uint(rec, "moveable_flags", "Moveable Flags",
                                    es->moveable_flags);
-    snprintf(buf, sizeof(buf), "0x%08X", es->moveable_flags);
-    ok = ok && nmo_cli_record_set_text(rec, buf);
+    ok = ok && nmo_cli_record_set_text_fmt(rec, "0x%08X", es->moveable_flags);
 
     nmo_object_id_t mesh_id = nmo_ref_runtime_id(&es->current_mesh);
     ok = ok && nmo_cli_record_ref(rec, "current_mesh_id", "current_mesh",
@@ -419,18 +385,13 @@ static bool entity_show_build_record(const nmo_cmd_ctx_t *c,
                                   resolve_name(c, parent_id), "(none)");
 
     /* Text-only matrix block (JSON carries it as "world_matrix" above). */
-    {
-        char block[512];
-        int off = snprintf(block, sizeof(block), "\nWorld Matrix:\n");
-        for (int row = 0; row < 4 && off > 0 && (size_t)off < sizeof(block); ++row) {
-            off += snprintf(block + off, sizeof(block) - (size_t)off,
-                            "  [%8.4f %8.4f %8.4f %8.4f]\n",
-                            (double)es->world_matrix[row * 4 + 0],
-                            (double)es->world_matrix[row * 4 + 1],
-                            (double)es->world_matrix[row * 4 + 2],
-                            (double)es->world_matrix[row * 4 + 3]);
-        }
-        ok = ok && nmo_cli_record_raw(rec, block);
+    ok = ok && nmo_cli_record_raw(rec, "\nWorld Matrix:\n");
+    for (int row = 0; ok && row < 4; ++row) {
+        ok = nmo_cli_record_raw_fmt(rec, "  [%8.4f %8.4f %8.4f %8.4f]\n",
+                                    (double)es->world_matrix[row * 4 + 0],
+                                    (double)es->world_matrix[row * 4 + 1],
+                                    (double)es->world_matrix[row * 4 + 2],
+                                    (double)es->world_matrix[row * 4 + 3]);
     }
 
     if (class_id == NMO_CID_CAMERA || class_id == NMO_CID_TARGETCAMERA) {
@@ -440,18 +401,17 @@ static bool entity_show_build_record(const nmo_cmd_ctx_t *c,
             ok = ok && nmo_cli_record_raw(rec, "\nCamera:\n");
             ok = ok && nmo_cli_record_str(rec, "projection_type", "  Projection",
                                           projection_type_str(cs->projection_type));
-            snprintf(buf, sizeof(buf), "%.4f rad (%.1f deg)",
-                     (double)cs->fov, (double)(cs->fov * 180.0f / 3.14159265f));
             ok = ok && nmo_cli_record_real(rec, "fov", "  FOV", (double)cs->fov, NULL);
-            ok = ok && nmo_cli_record_set_text(rec, buf);
+            ok = ok && nmo_cli_record_set_text_fmt(rec, "%.4f rad (%.1f deg)",
+                                                   (double)cs->fov,
+                                                   (double)(cs->fov * 180.0f / 3.14159265f));
             ok = ok && nmo_cli_record_real(rec, "near_plane", "  Near Plane",
                                            (double)cs->near_plane, "%.4f");
             ok = ok && nmo_cli_record_real(rec, "far_plane", "  Far Plane",
                                            (double)cs->far_plane, "%.4f");
             ok = ok && nmo_cli_record_int(rec, "width", NULL, cs->width);
             ok = ok && nmo_cli_record_int(rec, "height", NULL, cs->height);
-            snprintf(buf, sizeof(buf), "%d x %d", cs->width, cs->height);
-            ok = ok && nmo_cli_record_text(rec, "  Viewport", buf);
+            ok = ok && nmo_cli_record_text_fmt(rec, "  Viewport", "%d x %d", cs->width, cs->height);
         }
     }
 
@@ -462,25 +422,24 @@ static bool entity_show_build_record(const nmo_cmd_ctx_t *c,
             ok = ok && nmo_cli_record_raw(rec, "\nLight:\n");
             ok = ok && nmo_cli_record_str(rec, "light_type", "  Type",
                                           light_type_str(ls->light_data.type));
-            format_color_rgba(buf, sizeof(buf), &ls->light_data.diffuse);
-            ok = ok && nmo_cli_record_str(rec, "light_diffuse", "  Diffuse", buf);
-            format_color_rgba(buf, sizeof(buf), &ls->light_data.specular);
-            ok = ok && nmo_cli_record_str(rec, "light_specular", "  Specular", buf);
-            format_color_rgba(buf, sizeof(buf), &ls->light_data.ambient);
-            ok = ok && nmo_cli_record_str(rec, "light_ambient", "  Ambient", buf);
+            ok = ok && entity_record_color_rgba(rec, "light_diffuse", "  Diffuse",
+                                                &ls->light_data.diffuse);
+            ok = ok && entity_record_color_rgba(rec, "light_specular", "  Specular",
+                                                &ls->light_data.specular);
+            ok = ok && entity_record_color_rgba(rec, "light_ambient", "  Ambient",
+                                                &ls->light_data.ambient);
             ok = ok && nmo_cli_record_real(rec, "light_range", "  Range",
                                            (double)ls->light_data.range, "%.4f");
-            snprintf(buf, sizeof(buf), "(%.4f, %.4f, %.4f)",
-                     (double)ls->light_data.attenuation0,
-                     (double)ls->light_data.attenuation1,
-                     (double)ls->light_data.attenuation2);
             ok = ok && nmo_cli_record_real(rec, "attenuation0", NULL,
                                            (double)ls->light_data.attenuation0, NULL);
             ok = ok && nmo_cli_record_real(rec, "attenuation1", NULL,
                                            (double)ls->light_data.attenuation1, NULL);
             ok = ok && nmo_cli_record_real(rec, "attenuation2", NULL,
                                            (double)ls->light_data.attenuation2, NULL);
-            ok = ok && nmo_cli_record_text(rec, "  Attenuation", buf);
+            ok = ok && nmo_cli_record_text_fmt(rec, "  Attenuation", "(%.4f, %.4f, %.4f)",
+                                               (double)ls->light_data.attenuation0,
+                                               (double)ls->light_data.attenuation1,
+                                               (double)ls->light_data.attenuation2);
             ok = ok && nmo_cli_record_real(rec, "light_power", "  Power",
                                            (double)ls->light_power, "%.4f");
         }

@@ -252,13 +252,11 @@ static bool scene_show_build_header(const nmo_cmd_ctx_t *c,
                                     const char *name,
                                     const char *class_name)
 {
-    char buf[128];
-    snprintf(buf, sizeof(buf), "#%u (%s)", obj_id,
-             (name && name[0]) ? name : "(unnamed)");
     (void)c;
     bool ok = nmo_cli_record_uint(rec, "id", NULL, obj_id);
     ok = ok && nmo_cli_record_str(rec, "name", NULL, name);
-    ok = ok && nmo_cli_record_text(rec, "ID / Name", buf);
+    ok = ok && nmo_cli_record_text_fmt(rec, "ID / Name", "#%u (%s)", obj_id,
+                                       (name && name[0]) ? name : "(unnamed)");
     ok = ok && nmo_cli_record_str_opt(rec, "class", "Class", class_name, "-");
     return ok;
 }
@@ -267,7 +265,6 @@ static bool scene_show_build_scene(const nmo_cmd_ctx_t *c,
                                    nmo_cli_record_t *rec,
                                    const nmo_scene_state_t *ss)
 {
-    char buf[32];
     bool ok = nmo_cli_record_hex32(rec, "background_color", "Background Color",
                                    ss->background_color);
     ok = ok && nmo_cli_record_hex32(rec, "ambient_light_color", "Ambient Light",
@@ -290,8 +287,7 @@ static bool scene_show_build_scene(const nmo_cmd_ctx_t *c,
 
     ok = ok && nmo_cli_record_uint(rec, "environment_settings", "Env Settings",
                                    ss->environment_settings);
-    snprintf(buf, sizeof(buf), "0x%08X", ss->environment_settings);
-    ok = ok && nmo_cli_record_set_text(rec, buf);
+    ok = ok && nmo_cli_record_set_text_fmt(rec, "0x%08X", ss->environment_settings);
     ok = ok && nmo_cli_record_uint(rec, "object_count", "Objects",
                                    (uint64_t)ss->object_descs.count);
     return ok;
@@ -321,16 +317,12 @@ static bool scene_show_build_level(const nmo_cmd_ctx_t *c,
         if (id == NMO_OBJECT_ID_NONE) continue;
         nmo_cli_record_t *entry = nmo_cli_record_new();
         const char *sn = resolve_name(c, id);
-        char line[160];
-        if (sn && sn[0]) {
-            snprintf(line, sizeof(line), "  [%zu] #%u (%s)", i, id, sn);
-        } else {
-            snprintf(line, sizeof(line), "  [%zu] #%u", i, id);
-        }
         ok = entry != NULL &&
              nmo_cli_record_uint(entry, "id", NULL, id) &&
              nmo_cli_record_str_opt(entry, "name", NULL, sn, NULL) &&
-             nmo_cli_record_set_summary(entry, line) &&
+             ((sn && sn[0])
+                  ? nmo_cli_record_set_summary_fmt(entry, "  [%zu] #%u (%s)", i, id, sn)
+                  : nmo_cli_record_set_summary_fmt(entry, "  [%zu] #%u", i, id)) &&
              nmo_cli_record_array_add(scenes, entry);
     }
     return ok;
