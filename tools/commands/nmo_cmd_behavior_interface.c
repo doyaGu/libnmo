@@ -66,44 +66,6 @@ static bool iface_color_is_present(const nmo_interface_data_t *idata) {
     return idata && (idata->format_flags & NMO_INTERFACE_FORMAT_COLOR_PRESENT);
 }
 
-static void iface_print_body_links(FILE *out, const nmo_interface_body_t *body) {
-    for (size_t li = 0; li < body->link_count; li++) {
-        const nmo_interface_link_t *lk = &body->links[li];
-        fprintf(out, "  #%u %s%s  %u:%d:%s -> %u:%d:%s",
-                lk->link_id,
-                lk->type == 1 ? "behavior" : lk->type == 2 ? "param" : "?",
-                lk->highlight ? " hl" : "",
-                lk->start.id, lk->start.index, iface_endpoint_type_name(lk->start.type),
-                lk->end.id, lk->end.index, iface_endpoint_type_name(lk->end.type));
-        if (lk->point_count > 0) {
-            fprintf(out, "  pts=%zu [", lk->point_count);
-            for (size_t pi = 0; pi < lk->point_count && pi < 4; pi++) {
-                if (pi > 0) fprintf(out, ", ");
-                fprintf(out, "(%.0f,%.0f)", lk->points[pi * 2], lk->points[pi * 2 + 1]);
-            }
-            if (lk->point_count > 4) fprintf(out, ", ...");
-            fprintf(out, "]");
-        }
-        fprintf(out, "\n");
-    }
-}
-
-static void iface_print_body_operations(FILE *out, const nmo_interface_body_t *body) {
-    for (size_t oi = 0; oi < body->operation_count; oi++) {
-        const nmo_interface_operation_t *op = &body->operations[oi];
-        fprintf(out, "  id=%u pos=(%.1f, %.1f)\n", op->id, op->h_pos, op->v_pos);
-    }
-}
-
-static void iface_print_body_comments(FILE *out, const nmo_interface_body_t *body) {
-    for (size_t ci = 0; ci < body->comment_count; ci++) {
-        const nmo_interface_comment_t *cm = &body->comments[ci];
-        fprintf(out, "  rect=(%.0f,%.0f,%.0f,%.0f)", cm->left, cm->top, cm->right, cm->bottom);
-        if (cm->style_flags) fprintf(out, " flags=0x%X", cm->style_flags);
-        fprintf(out, "\n    \"%s\"\n", cm->text ? cm->text : "");
-    }
-}
-
 static const char *iface_param_style_name(uint32_t style) {
     if (style & NMO_INTERFACE_PARAM_STYLE_COLLAPSED) return " [collapsed]";
     if (style & NMO_INTERFACE_PARAM_STYLE_NAMEVALUE) return " [name+value]";
@@ -112,224 +74,216 @@ static const char *iface_param_style_name(uint32_t style) {
     return "";
 }
 
-static void iface_print_body_params(FILE *out, const nmo_interface_body_t *body) {
-    if (!body->has_params) {
-        fprintf(out, "  (not parsed)\n");
-        return;
+/* Array of records rendered in text by each item's own raw lines. */
+static nmo_cli_record_array_t *iface_inline_array(nmo_cli_record_t *rec,
+                                                  const char *key) {
+    nmo_cli_record_array_t *arr = nmo_cli_record_array(rec, key, NULL);
+    if (arr != NULL) {
+        nmo_cli_record_array_omit_heading(arr);
+        nmo_cli_record_array_inline_items(arr);
     }
-    const nmo_interface_param_set_t *ps = &body->params;
-    fprintf(out, "  Local (%zu):", ps->local_count);
-    for (size_t pi = 0; pi < ps->local_count; pi++)
-        fprintf(out, " (%d,%d)%s", ps->locals[pi].h_pos, ps->locals[pi].v_pos,
-                iface_param_style_name(ps->locals[pi].style));
-    fprintf(out, "\n  Shared (%zu):", ps->shared_count);
-    for (size_t pi = 0; pi < ps->shared_count; pi++) {
-        fprintf(out, " (%d,%d)%s", ps->shared[pi].h_pos, ps->shared[pi].v_pos,
-                iface_param_style_name(ps->shared[pi].style));
-        if (ps->shared[pi].source_id)
-            fprintf(out, "->%u", ps->shared[pi].source_id);
-    }
-    fprintf(out, "\n");
+    return arr;
 }
 
-static void iface_print_body_graph_io(FILE *out, const nmo_interface_graph_io_t *gio) {
-    fprintf(out, "  inward_inputs (%zu):", gio->inward_input_count);
-    for (size_t i = 0; i < gio->inward_input_count; i++)
-        fprintf(out, " %d", gio->inward_inputs[i]);
-    fprintf(out, "\n  outward_inputs (%zu):", gio->outward_input_count);
-    for (size_t i = 0; i < gio->outward_input_count; i++)
-        fprintf(out, " %d", gio->outward_inputs[i]);
-    fprintf(out, "\n  inward_outputs (%zu):", gio->inward_output_count);
-    for (size_t i = 0; i < gio->inward_output_count; i++)
-        fprintf(out, " %d", gio->inward_outputs[i]);
-    fprintf(out, "\n  outward_outputs (%zu):", gio->outward_output_count);
-    for (size_t i = 0; i < gio->outward_output_count; i++)
-        fprintf(out, " %d", gio->outward_outputs[i]);
-    fprintf(out, "\n");
+static nmo_cli_record_t *iface_array_item(nmo_cli_record_array_t *arr) {
+    nmo_cli_record_t *item = nmo_cli_record_new();
+    return nmo_cli_record_array_add(arr, item) ? item : NULL;
 }
 
-static void iface_json_add_endpoint(yyjson_mut_doc *doc, yyjson_mut_val *obj,
-                                    const char *key, const nmo_interface_endpoint_t *ep) {
-    yyjson_mut_val *eo = yyjson_mut_obj(doc);
-    yyjson_mut_obj_add_uint(doc, eo, "id", ep->id);
-    yyjson_mut_obj_add_int(doc, eo, "index", ep->index);
-    yyjson_mut_obj_add_uint(doc, eo, "type", ep->type);
-    nmo_cli_json_add_str_safe(doc, eo, "type_name", iface_endpoint_type_name(ep->type));
-    yyjson_mut_obj_add_val(doc, obj, key, eo);
+static bool iface_add_endpoint(nmo_cli_record_t *rec, const char *key,
+                               const nmo_interface_endpoint_t *ep) {
+    nmo_cli_record_t *eo = nmo_cli_record_object(rec, key);
+    bool ok = eo != NULL;
+    ok = ok && nmo_cli_record_uint(eo, "id", NULL, ep->id);
+    ok = ok && nmo_cli_record_int(eo, "index", NULL, ep->index);
+    ok = ok && nmo_cli_record_uint(eo, "type", NULL, ep->type);
+    ok = ok && nmo_cli_record_str(eo, "type_name", NULL,
+                                  iface_endpoint_type_name(ep->type));
+    return ok;
 }
 
-static yyjson_mut_val *iface_json_body(yyjson_mut_doc *doc, const nmo_interface_body_t *body) {
-    yyjson_mut_val *bo = yyjson_mut_obj(doc);
-    yyjson_mut_obj_add_bool(doc, bo, "has_body", body->has_body);
-    if (!body->has_body) return bo;
-
-    /* Links */
-    {
-        yyjson_mut_val *arr = yyjson_mut_arr(doc);
-        for (size_t li = 0; li < body->link_count; li++) {
-            const nmo_interface_link_t *lk = &body->links[li];
-            yyjson_mut_val *lo = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_uint(doc, lo, "type", lk->type);
-            yyjson_mut_obj_add_bool(doc, lo, "highlight", lk->highlight);
-            yyjson_mut_obj_add_uint(doc, lo, "link_id", lk->link_id);
-            iface_json_add_endpoint(doc, lo, "start", &lk->start);
-            iface_json_add_endpoint(doc, lo, "end", &lk->end);
-            yyjson_mut_obj_add_uint(doc, lo, "point_count", (uint64_t)lk->point_count);
-            if (lk->point_count > 0) {
-                yyjson_mut_val *pts = yyjson_mut_arr(doc);
-                for (size_t pi = 0; pi < lk->point_count; pi++) {
-                    yyjson_mut_val *pt = yyjson_mut_obj(doc);
-                    yyjson_mut_obj_add_real(doc, pt, "h", (double)lk->points[pi * 2]);
-                    yyjson_mut_obj_add_real(doc, pt, "v", (double)lk->points[pi * 2 + 1]);
-                    yyjson_mut_arr_add_val(pts, pt);
-                }
-                yyjson_mut_obj_add_val(doc, lo, "points", pts);
-            }
-            yyjson_mut_arr_add_val(arr, lo);
-        }
-        yyjson_mut_obj_add_val(doc, bo, "links", arr);
-    }
-
-    /* Operations */
-    {
-        yyjson_mut_val *arr = yyjson_mut_arr(doc);
-        for (size_t oi = 0; oi < body->operation_count; oi++) {
-            const nmo_interface_operation_t *op = &body->operations[oi];
-            yyjson_mut_val *oo = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_uint(doc, oo, "id", op->id);
-            yyjson_mut_obj_add_real(doc, oo, "h_pos", (double)op->h_pos);
-            yyjson_mut_obj_add_real(doc, oo, "v_pos", (double)op->v_pos);
-            yyjson_mut_arr_add_val(arr, oo);
-        }
-        yyjson_mut_obj_add_val(doc, bo, "operations", arr);
-    }
-
-    /* Comments */
-    {
-        yyjson_mut_val *arr = yyjson_mut_arr(doc);
-        for (size_t ci = 0; ci < body->comment_count; ci++) {
-            const nmo_interface_comment_t *cm = &body->comments[ci];
-            yyjson_mut_val *co = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_real(doc, co, "left", (double)cm->left);
-            yyjson_mut_obj_add_real(doc, co, "top", (double)cm->top);
-            yyjson_mut_obj_add_real(doc, co, "right", (double)cm->right);
-            yyjson_mut_obj_add_real(doc, co, "bottom", (double)cm->bottom);
-            if (cm->text)
-                nmo_cli_json_add_str_safe(doc, co, "text", cm->text);
-            else
-                yyjson_mut_obj_add_null(doc, co, "text");
-            yyjson_mut_obj_add_uint(doc, co, "style_flags", cm->style_flags);
-            yyjson_mut_arr_add_val(arr, co);
-        }
-        yyjson_mut_obj_add_val(doc, bo, "comments", arr);
-    }
-
-    /* Params */
-    {
-        yyjson_mut_val *po = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_bool(doc, po, "has_params", body->has_params);
-        if (body->has_params) {
-            const nmo_interface_param_set_t *ps = &body->params;
-            yyjson_mut_obj_add_uint(doc, po, "local_count", (uint64_t)ps->local_count);
-            yyjson_mut_obj_add_uint(doc, po, "shared_count", (uint64_t)ps->shared_count);
-            {
-                yyjson_mut_val *arr = yyjson_mut_arr(doc);
-                for (size_t pi = 0; pi < ps->local_count; pi++) {
-                    yyjson_mut_val *p = yyjson_mut_obj(doc);
-                    yyjson_mut_obj_add_int(doc, p, "h_pos", ps->locals[pi].h_pos);
-                    yyjson_mut_obj_add_int(doc, p, "v_pos", ps->locals[pi].v_pos);
-                    yyjson_mut_obj_add_uint(doc, p, "style", ps->locals[pi].style);
-                    yyjson_mut_arr_add_val(arr, p);
-                }
-                yyjson_mut_obj_add_val(doc, po, "locals", arr);
-            }
-            {
-                yyjson_mut_val *arr = yyjson_mut_arr(doc);
-                for (size_t pi = 0; pi < ps->shared_count; pi++) {
-                    yyjson_mut_val *p = yyjson_mut_obj(doc);
-                    yyjson_mut_obj_add_int(doc, p, "h_pos", ps->shared[pi].h_pos);
-                    yyjson_mut_obj_add_int(doc, p, "v_pos", ps->shared[pi].v_pos);
-                    yyjson_mut_obj_add_uint(doc, p, "style", ps->shared[pi].style);
-                    yyjson_mut_obj_add_uint(doc, p, "source_id", ps->shared[pi].source_id);
-                    yyjson_mut_arr_add_val(arr, p);
-                }
-                yyjson_mut_obj_add_val(doc, po, "shared", arr);
+static bool iface_add_link(nmo_cli_record_array_t *arr, const nmo_interface_link_t *lk) {
+    nmo_cli_record_t *lo = iface_array_item(arr);
+    bool ok = lo != NULL;
+    ok = ok && nmo_cli_record_uint(lo, "type", NULL, lk->type);
+    ok = ok && nmo_cli_record_bool(lo, "highlight", NULL, lk->highlight);
+    ok = ok && nmo_cli_record_uint(lo, "link_id", NULL, lk->link_id);
+    ok = ok && iface_add_endpoint(lo, "start", &lk->start);
+    ok = ok && iface_add_endpoint(lo, "end", &lk->end);
+    ok = ok && nmo_cli_record_uint(lo, "point_count", NULL, lk->point_count);
+    ok = ok && nmo_cli_record_raw_fmt(lo, "  #%u %s%s  %u:%d:%s -> %u:%d:%s",
+                                      lk->link_id,
+                                      lk->type == 1 ? "behavior" : lk->type == 2 ? "param" : "?",
+                                      lk->highlight ? " hl" : "",
+                                      lk->start.id, lk->start.index,
+                                      iface_endpoint_type_name(lk->start.type),
+                                      lk->end.id, lk->end.index,
+                                      iface_endpoint_type_name(lk->end.type));
+    if (ok && lk->point_count > 0) {
+        ok = nmo_cli_record_raw_fmt(lo, "  pts=%zu [", lk->point_count);
+        nmo_cli_record_array_t *pts = nmo_cli_record_array(lo, "points", NULL);
+        ok = ok && pts != NULL;
+        for (size_t pi = 0; ok && pi < lk->point_count; pi++) {
+            double h = (double)lk->points[pi * 2];
+            double v = (double)lk->points[pi * 2 + 1];
+            nmo_cli_record_t *pt = iface_array_item(pts);
+            ok = pt != NULL &&
+                 nmo_cli_record_real(pt, "h", NULL, h, NULL) &&
+                 nmo_cli_record_real(pt, "v", NULL, v, NULL);
+            if (ok && pi < 4) {
+                ok = nmo_cli_record_raw_fmt(lo, "%s(%.0f,%.0f)", pi > 0 ? ", " : "", h, v);
             }
         }
-        yyjson_mut_obj_add_val(doc, bo, "params", po);
+        ok = ok && nmo_cli_record_raw(lo, lk->point_count > 4 ? ", ...]" : "]");
+    }
+    return ok && nmo_cli_record_raw(lo, "\n");
+}
+
+static bool iface_add_param_slots(nmo_cli_record_t *rec, const char *key,
+                                  const nmo_interface_param_t *params,
+                                  size_t count, bool shared) {
+    nmo_cli_record_array_t *arr = iface_inline_array(rec, key);
+    bool ok = arr != NULL;
+    for (size_t pi = 0; ok && pi < count; pi++) {
+        const nmo_interface_param_t *pm = &params[pi];
+        nmo_cli_record_t *item = iface_array_item(arr);
+        ok = item != NULL;
+        ok = ok && nmo_cli_record_int(item, "h_pos", NULL, pm->h_pos);
+        ok = ok && nmo_cli_record_int(item, "v_pos", NULL, pm->v_pos);
+        ok = ok && nmo_cli_record_uint(item, "style", NULL, pm->style);
+        ok = ok && nmo_cli_record_raw_fmt(item, " (%d,%d)%s", pm->h_pos, pm->v_pos,
+                                          iface_param_style_name(pm->style));
+        if (ok && shared) {
+            ok = nmo_cli_record_uint(item, "source_id", NULL, pm->source_id);
+            if (ok && pm->source_id) {
+                ok = nmo_cli_record_raw_fmt(item, "->%u", pm->source_id);
+            }
+        }
+    }
+    return ok;
+}
+
+static bool iface_add_port_list(nmo_cli_record_t *rec, const char *key,
+                                const int32_t *values, size_t count) {
+    int64_t *wide = count > 0 ? (int64_t *)malloc(count * sizeof(*wide)) : NULL;
+    bool ok = count == 0 || wide != NULL;
+    for (size_t i = 0; ok && i < count; i++) {
+        wide[i] = values[i];
+    }
+    ok = ok && nmo_cli_record_int_list(rec, key, NULL, wide, count, NULL);
+    free(wide);
+    ok = ok && nmo_cli_record_raw_fmt(rec, "  %s (%zu):", key, count);
+    for (size_t i = 0; ok && i < count; i++) {
+        ok = nmo_cli_record_raw_fmt(rec, " %d", values[i]);
+    }
+    return ok && nmo_cli_record_raw(rec, "\n");
+}
+
+/* Adds `body` under "body"; the text sections are headed with `label`. */
+static bool iface_add_body(nmo_cli_record_t *rec, const nmo_interface_body_t *body,
+                           const char *label) {
+    nmo_cli_record_t *bo = nmo_cli_record_object(rec, "body");
+    bool ok = bo != NULL;
+    ok = ok && nmo_cli_record_bool(bo, "has_body", NULL, body->has_body);
+    if (!body->has_body) {
+        return ok && nmo_cli_record_raw(bo, "  (header only)\n");
     }
 
-    /* Graph IO */
-    if (body->has_graph_io && body->graph_io) {
+    if (ok && body->link_count > 0) {
+        ok = nmo_cli_record_title_fmt(bo, "%s Links (%zu)", label, body->link_count);
+    }
+    nmo_cli_record_array_t *links = iface_inline_array(bo, "links");
+    ok = ok && links != NULL;
+    for (size_t li = 0; ok && li < body->link_count; li++) {
+        ok = iface_add_link(links, &body->links[li]);
+    }
+
+    if (ok && body->operation_count > 0) {
+        ok = nmo_cli_record_title_fmt(bo, "%s Operations (%zu)", label, body->operation_count);
+    }
+    nmo_cli_record_array_t *ops = iface_inline_array(bo, "operations");
+    ok = ok && ops != NULL;
+    for (size_t oi = 0; ok && oi < body->operation_count; oi++) {
+        const nmo_interface_operation_t *op = &body->operations[oi];
+        nmo_cli_record_t *oo = iface_array_item(ops);
+        ok = oo != NULL;
+        ok = ok && nmo_cli_record_uint(oo, "id", NULL, op->id);
+        ok = ok && nmo_cli_record_real(oo, "h_pos", NULL, (double)op->h_pos, NULL);
+        ok = ok && nmo_cli_record_real(oo, "v_pos", NULL, (double)op->v_pos, NULL);
+        ok = ok && nmo_cli_record_raw_fmt(oo, "  id=%u pos=(%.1f, %.1f)\n",
+                                          op->id, (double)op->h_pos, (double)op->v_pos);
+    }
+
+    if (ok && body->comment_count > 0) {
+        ok = nmo_cli_record_title_fmt(bo, "%s Comments (%zu)", label, body->comment_count);
+    }
+    nmo_cli_record_array_t *comments = iface_inline_array(bo, "comments");
+    ok = ok && comments != NULL;
+    for (size_t ci = 0; ok && ci < body->comment_count; ci++) {
+        const nmo_interface_comment_t *cm = &body->comments[ci];
+        nmo_cli_record_t *co = iface_array_item(comments);
+        ok = co != NULL;
+        ok = ok && nmo_cli_record_real(co, "left", NULL, (double)cm->left, NULL);
+        ok = ok && nmo_cli_record_real(co, "top", NULL, (double)cm->top, NULL);
+        ok = ok && nmo_cli_record_real(co, "right", NULL, (double)cm->right, NULL);
+        ok = ok && nmo_cli_record_real(co, "bottom", NULL, (double)cm->bottom, NULL);
+        ok = ok && (cm->text ? nmo_cli_record_str(co, "text", NULL, cm->text)
+                             : nmo_cli_record_null(co, "text", NULL, NULL));
+        ok = ok && nmo_cli_record_uint(co, "style_flags", NULL, cm->style_flags);
+        ok = ok && nmo_cli_record_raw_fmt(co, "  rect=(%.0f,%.0f,%.0f,%.0f)",
+                                          (double)cm->left, (double)cm->top,
+                                          (double)cm->right, (double)cm->bottom);
+        if (ok && cm->style_flags) {
+            ok = nmo_cli_record_raw_fmt(co, " flags=0x%X", cm->style_flags);
+        }
+        ok = ok && nmo_cli_record_raw_fmt(co, "\n    \"%s\"\n", cm->text ? cm->text : "");
+    }
+
+    if (ok && body->has_params) {
+        ok = nmo_cli_record_title_fmt(bo, "%s Parameters", label);
+    }
+    nmo_cli_record_t *po = ok ? nmo_cli_record_object(bo, "params") : NULL;
+    ok = ok && po != NULL;
+    ok = ok && nmo_cli_record_bool(po, "has_params", NULL, body->has_params);
+    if (ok && body->has_params) {
+        const nmo_interface_param_set_t *ps = &body->params;
+        ok = nmo_cli_record_uint(po, "local_count", NULL, ps->local_count) &&
+             nmo_cli_record_uint(po, "shared_count", NULL, ps->shared_count) &&
+             nmo_cli_record_raw_fmt(po, "  Local (%zu):", ps->local_count) &&
+             iface_add_param_slots(po, "locals", ps->locals, ps->local_count, false) &&
+             nmo_cli_record_raw_fmt(po, "\n  Shared (%zu):", ps->shared_count) &&
+             iface_add_param_slots(po, "shared", ps->shared, ps->shared_count, true) &&
+             nmo_cli_record_raw(po, "\n");
+    }
+
+    if (ok && body->has_graph_io && body->graph_io) {
         const nmo_interface_graph_io_t *gio = body->graph_io;
-        yyjson_mut_val *go = yyjson_mut_obj(doc);
-        {
-            yyjson_mut_val *arr = yyjson_mut_arr(doc);
-            for (size_t i = 0; i < gio->inward_input_count; i++)
-                yyjson_mut_arr_add_int(doc, arr, gio->inward_inputs[i]);
-            yyjson_mut_obj_add_val(doc, go, "inward_inputs", arr);
-        }
-        {
-            yyjson_mut_val *arr = yyjson_mut_arr(doc);
-            for (size_t i = 0; i < gio->outward_input_count; i++)
-                yyjson_mut_arr_add_int(doc, arr, gio->outward_inputs[i]);
-            yyjson_mut_obj_add_val(doc, go, "outward_inputs", arr);
-        }
-        {
-            yyjson_mut_val *arr = yyjson_mut_arr(doc);
-            for (size_t i = 0; i < gio->inward_output_count; i++)
-                yyjson_mut_arr_add_int(doc, arr, gio->inward_outputs[i]);
-            yyjson_mut_obj_add_val(doc, go, "inward_outputs", arr);
-        }
-        {
-            yyjson_mut_val *arr = yyjson_mut_arr(doc);
-            for (size_t i = 0; i < gio->outward_output_count; i++)
-                yyjson_mut_arr_add_int(doc, arr, gio->outward_outputs[i]);
-            yyjson_mut_obj_add_val(doc, go, "outward_outputs", arr);
-        }
-        yyjson_mut_obj_add_val(doc, bo, "graph_io", go);
+        nmo_cli_record_t *go = NULL;
+        ok = nmo_cli_record_title_fmt(bo, "%s Graph IO", label) &&
+             (go = nmo_cli_record_object(bo, "graph_io")) != NULL &&
+             iface_add_port_list(go, "inward_inputs",
+                                 gio->inward_inputs, gio->inward_input_count) &&
+             iface_add_port_list(go, "outward_inputs",
+                                 gio->outward_inputs, gio->outward_input_count) &&
+             iface_add_port_list(go, "inward_outputs",
+                                 gio->inward_outputs, gio->inward_output_count) &&
+             iface_add_port_list(go, "outward_outputs",
+                                 gio->outward_outputs, gio->outward_output_count);
     }
 
     /* Section presence flags */
-    yyjson_mut_obj_add_bool(doc, bo, "has_links_section", body->has_links_section);
-    yyjson_mut_obj_add_bool(doc, bo, "has_operations_section", body->has_operations_section);
-    yyjson_mut_obj_add_bool(doc, bo, "has_comments_section", body->has_comments_section);
-    yyjson_mut_obj_add_bool(doc, bo, "has_unknown_flag_section", body->has_unknown_flag_section);
-    if (body->has_unknown_flag_section)
-        yyjson_mut_obj_add_int(doc, bo, "unknown_flag", body->unknown_flag);
-
-    return bo;
-}
-
-static void iface_print_body_text(FILE *out, const nmo_interface_body_t *body,
-                                  const char *label, bool colorize) {
-    if (!body->has_body) {
-        fprintf(out, "  (header only)\n");
-        return;
+    ok = ok && nmo_cli_record_bool(bo, "has_links_section", NULL, body->has_links_section);
+    ok = ok && nmo_cli_record_bool(bo, "has_operations_section", NULL,
+                                   body->has_operations_section);
+    ok = ok && nmo_cli_record_bool(bo, "has_comments_section", NULL,
+                                   body->has_comments_section);
+    ok = ok && nmo_cli_record_bool(bo, "has_unknown_flag_section", NULL,
+                                   body->has_unknown_flag_section);
+    if (ok && body->has_unknown_flag_section) {
+        ok = nmo_cli_record_int(bo, "unknown_flag", NULL, body->unknown_flag) &&
+             nmo_cli_record_raw_fmt(bo, "  unknown_flag: %d\n", body->unknown_flag);
     }
-    if (body->link_count > 0) {
-        nmo_cli_print_heading_fmt(out, colorize, "%s Links (%zu)", label, body->link_count);
-        iface_print_body_links(out, body);
-    }
-    if (body->operation_count > 0) {
-        nmo_cli_print_heading_fmt(out, colorize, "%s Operations (%zu)", label, body->operation_count);
-        iface_print_body_operations(out, body);
-    }
-    if (body->comment_count > 0) {
-        nmo_cli_print_heading_fmt(out, colorize, "%s Comments (%zu)", label, body->comment_count);
-        iface_print_body_comments(out, body);
-    }
-    if (body->has_params) {
-        nmo_cli_print_heading_fmt(out, colorize, "%s Parameters", label);
-        iface_print_body_params(out, body);
-    }
-    if (body->has_graph_io && body->graph_io) {
-        nmo_cli_print_heading_fmt(out, colorize, "%s Graph IO", label);
-        iface_print_body_graph_io(out, body->graph_io);
-    }
-    if (body->has_unknown_flag_section) {
-        fprintf(out, "  unknown_flag: %d\n", body->unknown_flag);
-    }
+    return ok;
 }
 
 /* ================================================================
@@ -572,6 +526,43 @@ static int iface_mark_changed(nmo_cmd_ctx_t *c, nmo_object_id_t target_id)
     return NMO_CLI_EXIT_SUCCESS;
 }
 
+/*
+ * Write reports open with the JSON "dry_run" flag and the text "[dry-run] "
+ * prefix, and close with the output path.
+ */
+static nmo_cli_record_t *iface_report_new(bool dry_run)
+{
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL;
+    ok = ok && nmo_cli_record_bool(rec, "dry_run", NULL, dry_run);
+    ok = ok && (!dry_run || nmo_cli_record_raw(rec, "[dry-run] "));
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        return NULL;
+    }
+    return rec;
+}
+
+static int iface_report_emit(
+    nmo_cmd_ctx_t *c,
+    nmo_cli_record_t *rec,
+    bool ok,
+    bool dry_run,
+    const char *output_path,
+    const char *command)
+{
+    ok = ok && rec != NULL;
+    if (ok && !dry_run && output_path != NULL) {
+        ok = nmo_cli_record_str(rec, "output", NULL, output_path) &&
+             nmo_cli_record_raw_fmt(rec, "Saved to: %s\n", output_path);
+    }
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        rec = NULL;
+    }
+    return nmo_cmd_ctx_emit_record(c, rec, command, 0, false);
+}
+
 static int iface_set_pos_mutate(
     nmo_cmd_ctx_t *c,
     bool dry_run,
@@ -623,32 +614,16 @@ static int iface_set_pos_report(
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    if (c->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
-        if (doc == NULL) {
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
-        }
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        nmo_cli_json_add_bool_safe(doc, data, "dry_run", dry_run);
-        nmo_cli_json_add_uint_safe(doc, data, "target_id", (uint64_t)args->target_id);
-        nmo_cli_json_add_uint_safe(doc, data, "behavior_id", (uint64_t)args->beh_id);
-        yyjson_mut_obj_add_real(doc, data, "h_pos", (double)args->h);
-        yyjson_mut_obj_add_real(doc, data, "v_pos", (double)args->v);
-        if (!dry_run && output_path != NULL) {
-            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-        }
-        nmo_cmd_ctx_json_end(c, doc, data, "behavior.interface.set-pos");
-    } else {
-        if (dry_run) {
-            fprintf(c->out, "[dry-run] ");
-        }
-        fprintf(c->out, "Moved behavior %u to (%.1f, %.1f)\n",
-                args->beh_id, (double)args->h, (double)args->v);
-        if (!dry_run && output_path != NULL) {
-            fprintf(c->out, "Saved to: %s\n", output_path);
-        }
-    }
-    return NMO_CLI_EXIT_SUCCESS;
+    nmo_cli_record_t *rec = iface_report_new(dry_run);
+    bool ok = rec != NULL;
+    ok = ok && nmo_cli_record_uint(rec, "target_id", NULL, args->target_id);
+    ok = ok && nmo_cli_record_uint(rec, "behavior_id", NULL, args->beh_id);
+    ok = ok && nmo_cli_record_real(rec, "h_pos", NULL, (double)args->h, NULL);
+    ok = ok && nmo_cli_record_real(rec, "v_pos", NULL, (double)args->v, NULL);
+    ok = ok && nmo_cli_record_raw_fmt(rec, "Moved behavior %u to (%.1f, %.1f)\n",
+                                      args->beh_id, (double)args->h, (double)args->v);
+    return iface_report_emit(c, rec, ok, dry_run, output_path,
+                             "behavior.interface.set-pos");
 }
 
 static int iface_fold_mutate(
@@ -706,33 +681,18 @@ static int iface_fold_report(
     if (args == NULL) {
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
-    const char *verb = args->fold ? "Folded" : "Unfolded";
-    const char *command = args->fold ? "behavior.interface.fold" : "behavior.interface.unfold";
 
-    if (c->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
-        if (doc == NULL) {
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
-        }
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        nmo_cli_json_add_bool_safe(doc, data, "dry_run", dry_run);
-        nmo_cli_json_add_bool_safe(doc, data, "folded", args->fold);
-        nmo_cli_json_add_uint_safe(doc, data, "target_id", (uint64_t)args->target_id);
-        nmo_cli_json_add_uint_safe(doc, data, "behavior_id", (uint64_t)args->beh_id);
-        if (!dry_run && output_path != NULL) {
-            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-        }
-        nmo_cmd_ctx_json_end(c, doc, data, command);
-    } else {
-        if (dry_run) {
-            fprintf(c->out, "[dry-run] ");
-        }
-        fprintf(c->out, "%s behavior %u\n", verb, args->beh_id);
-        if (!dry_run && output_path != NULL) {
-            fprintf(c->out, "Saved to: %s\n", output_path);
-        }
-    }
-    return NMO_CLI_EXIT_SUCCESS;
+    nmo_cli_record_t *rec = iface_report_new(dry_run);
+    bool ok = rec != NULL;
+    ok = ok && nmo_cli_record_bool(rec, "folded", NULL, args->fold);
+    ok = ok && nmo_cli_record_uint(rec, "target_id", NULL, args->target_id);
+    ok = ok && nmo_cli_record_uint(rec, "behavior_id", NULL, args->beh_id);
+    ok = ok && nmo_cli_record_raw_fmt(rec, "%s behavior %u\n",
+                                      args->fold ? "Folded" : "Unfolded",
+                                      args->beh_id);
+    return iface_report_emit(c, rec, ok, dry_run, output_path,
+                             args->fold ? "behavior.interface.fold"
+                                        : "behavior.interface.unfold");
 }
 
 static int iface_set_color_mutate(
@@ -784,37 +744,20 @@ static int iface_set_color_report(
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    if (c->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
-        if (doc == NULL) {
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
-        }
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        nmo_cli_json_add_bool_safe(doc, data, "dry_run", dry_run);
-        nmo_cli_json_add_uint_safe(doc, data, "target_id", (uint64_t)args->target_id);
-        nmo_cli_json_add_uint_safe(doc, data, "color", (uint64_t)args->color);
-        nmo_cli_json_add_bool_safe(doc, data, "color_persisted",
+    nmo_cli_record_t *rec = iface_report_new(dry_run);
+    bool ok = rec != NULL;
+    ok = ok && nmo_cli_record_uint(rec, "target_id", NULL, args->target_id);
+    ok = ok && nmo_cli_record_uint(rec, "color", NULL, args->color);
+    ok = ok && nmo_cli_record_bool(rec, "color_persisted", NULL,
                                    args->color_persisted);
-        if (args->warning != NULL) {
-            nmo_cli_json_add_str_safe(doc, data, "warning", args->warning);
-        }
-        if (!dry_run && output_path != NULL) {
-            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-        }
-        nmo_cmd_ctx_json_end(c, doc, data, "behavior.interface.set-color");
-    } else {
-        if (dry_run) {
-            fprintf(c->out, "[dry-run] ");
-        }
-        fprintf(c->out, "Set script color to #%06X\n", (unsigned)args->color);
-        if (args->warning != NULL) {
-            fprintf(c->out, "Warning: %s\n", args->warning);
-        }
-        if (!dry_run && output_path != NULL) {
-            fprintf(c->out, "Saved to: %s\n", output_path);
-        }
+    ok = ok && nmo_cli_record_raw_fmt(rec, "Set script color to #%06X\n",
+                                      (unsigned)args->color);
+    if (args->warning != NULL) {
+        ok = ok && nmo_cli_record_str(rec, "warning", NULL, args->warning);
+        ok = ok && nmo_cli_record_raw_fmt(rec, "Warning: %s\n", args->warning);
     }
-    return NMO_CLI_EXIT_SUCCESS;
+    return iface_report_emit(c, rec, ok, dry_run, output_path,
+                             "behavior.interface.set-color");
 }
 
 static int iface_canonicalize_mutate(
@@ -858,41 +801,26 @@ static int iface_canonicalize_report(
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    if (c->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
-        if (doc == NULL) {
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
-        }
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        nmo_cli_json_add_bool_safe(doc, data, "dry_run", dry_run);
-        nmo_cli_json_add_uint_safe(doc, data, "target_id", (uint64_t)args->target_id);
-        nmo_cli_json_add_bool_safe(doc, data, "canonicalized", true);
-        nmo_cli_json_add_bool_safe(doc, data, "sectioned_layout",
+    const char *root_kind = args->root_kind ? args->root_kind : "script";
+    nmo_cli_record_t *rec = iface_report_new(dry_run);
+    bool ok = rec != NULL;
+    ok = ok && nmo_cli_record_uint(rec, "target_id", NULL, args->target_id);
+    ok = ok && nmo_cli_record_bool(rec, "canonicalized", NULL, true);
+    ok = ok && nmo_cli_record_bool(rec, "sectioned_layout", NULL,
                                    args->sectioned_layout);
-        nmo_cli_json_add_bool_safe(doc, data, "sectioned_root_is_graph",
+    ok = ok && nmo_cli_record_bool(rec, "sectioned_root_is_graph", NULL,
                                    args->sectioned_root_is_graph);
-        nmo_cli_json_add_str_safe(doc, data, "root_kind",
-                                  args->root_kind ? args->root_kind : "script");
-        nmo_cli_json_add_bool_safe(doc, data, "color_persisted",
+    ok = ok && nmo_cli_record_str(rec, "root_kind", NULL, root_kind);
+    ok = ok && nmo_cli_record_bool(rec, "color_persisted", NULL,
                                    args->color_persisted);
-        if (!dry_run && output_path != NULL) {
-            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-        }
-        nmo_cmd_ctx_json_end(c, doc, data, "behavior.interface.canonicalize");
-    } else {
-        if (dry_run) {
-            fprintf(c->out, "[dry-run] ");
-        }
-        fprintf(c->out, "Canonicalized interface chunk for behavior %u\n",
-                args->target_id);
-        fprintf(c->out, "Layout: %s  Root: %s\n",
-                args->sectioned_layout ? "sectioned" : "inline",
-                args->root_kind ? args->root_kind : "script");
-        if (!dry_run && output_path != NULL) {
-            fprintf(c->out, "Saved to: %s\n", output_path);
-        }
-    }
-    return NMO_CLI_EXIT_SUCCESS;
+    ok = ok && nmo_cli_record_raw_fmt(rec,
+                                      "Canonicalized interface chunk for behavior %u\n"
+                                      "Layout: %s  Root: %s\n",
+                                      args->target_id,
+                                      args->sectioned_layout ? "sectioned" : "inline",
+                                      root_kind);
+    return iface_report_emit(c, rec, ok, dry_run, output_path,
+                             "behavior.interface.canonicalize");
 }
 
 static const char *iface_comment_command_name(iface_comment_op_t op)
@@ -1007,62 +935,47 @@ static int iface_comment_report(
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    if (c->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
-        if (doc == NULL) {
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
-        }
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        nmo_cli_json_add_bool_safe(doc, data, "dry_run", dry_run);
-        nmo_cli_json_add_uint_safe(doc, data, "target_id", (uint64_t)args->target_id);
-        nmo_cli_json_add_uint_safe(doc, data, "body_id", (uint64_t)args->body_id);
-        if (args->op == IFACE_COMMENT_ADD) {
-            nmo_cli_json_add_uint_safe(doc, data, "index", (uint64_t)args->result_index);
-        } else {
-            nmo_cli_json_add_uint_safe(doc, data, "index", (uint64_t)args->index);
-        }
-        if (!dry_run && output_path != NULL) {
-            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-        }
-        nmo_cmd_ctx_json_end(c, doc, data, iface_comment_command_name(args->op));
-    } else {
-        if (dry_run) {
-            fprintf(c->out, "[dry-run] ");
-        }
-        switch (args->op) {
-        case IFACE_COMMENT_ADD:
-            fprintf(c->out, "Added comment at index %zu to behavior %u\n",
-                    args->result_index, args->body_id);
-            break;
-        case IFACE_COMMENT_REMOVE:
-            fprintf(c->out, "Removed comment %u from behavior %u\n",
-                    args->index, args->body_id);
-            break;
-        case IFACE_COMMENT_SET_TEXT:
-            fprintf(c->out, "Set comment %u text in behavior %u\n",
-                    args->index, args->body_id);
-            break;
-        case IFACE_COMMENT_MOVE:
-            fprintf(c->out, "Moved comment %u to (%.0f,%.0f,%.0f,%.0f) in behavior %u\n",
-                    args->index,
-                    (double)args->left,
-                    (double)args->top,
-                    (double)args->right,
-                    (double)args->bottom,
-                    args->body_id);
-            break;
-        case IFACE_COMMENT_SET_STYLE:
-            fprintf(c->out, "Set comment %u style to 0x%X in behavior %u\n",
-                    args->index, args->style, args->body_id);
-            break;
-        default:
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
-        }
-        if (!dry_run && output_path != NULL) {
-            fprintf(c->out, "Saved to: %s\n", output_path);
-        }
+    nmo_cli_record_t *rec = iface_report_new(dry_run);
+    bool ok = rec != NULL;
+    ok = ok && nmo_cli_record_uint(rec, "target_id", NULL, args->target_id);
+    ok = ok && nmo_cli_record_uint(rec, "body_id", NULL, args->body_id);
+    ok = ok && nmo_cli_record_uint(rec, "index", NULL,
+                                   args->op == IFACE_COMMENT_ADD
+                                       ? (uint64_t)args->result_index
+                                       : (uint64_t)args->index);
+    switch (args->op) {
+    case IFACE_COMMENT_ADD:
+        ok = ok && nmo_cli_record_raw_fmt(rec, "Added comment at index %zu to behavior %u\n",
+                                          args->result_index, args->body_id);
+        break;
+    case IFACE_COMMENT_REMOVE:
+        ok = ok && nmo_cli_record_raw_fmt(rec, "Removed comment %u from behavior %u\n",
+                                          args->index, args->body_id);
+        break;
+    case IFACE_COMMENT_SET_TEXT:
+        ok = ok && nmo_cli_record_raw_fmt(rec, "Set comment %u text in behavior %u\n",
+                                          args->index, args->body_id);
+        break;
+    case IFACE_COMMENT_MOVE:
+        ok = ok && nmo_cli_record_raw_fmt(rec,
+                                          "Moved comment %u to (%.0f,%.0f,%.0f,%.0f) in behavior %u\n",
+                                          args->index,
+                                          (double)args->left,
+                                          (double)args->top,
+                                          (double)args->right,
+                                          (double)args->bottom,
+                                          args->body_id);
+        break;
+    case IFACE_COMMENT_SET_STYLE:
+        ok = ok && nmo_cli_record_raw_fmt(rec, "Set comment %u style to 0x%X in behavior %u\n",
+                                          args->index, args->style, args->body_id);
+        break;
+    default:
+        ok = false;
+        break;
     }
-    return NMO_CLI_EXIT_SUCCESS;
+    return iface_report_emit(c, rec, ok, dry_run, output_path,
+                             iface_comment_command_name(args->op));
 }
 
 static const char *iface_link_command_name(iface_link_op_t op)
@@ -1154,54 +1067,41 @@ static int iface_link_report(
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    if (c->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
-        if (doc == NULL) {
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
-        }
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        nmo_cli_json_add_bool_safe(doc, data, "dry_run", dry_run);
-        nmo_cli_json_add_uint_safe(doc, data, "target_id", (uint64_t)args->target_id);
-        nmo_cli_json_add_uint_safe(doc, data, "link_id", (uint64_t)args->link_id);
-        if (args->op == IFACE_LINK_REMOVE_POINT || args->op == IFACE_LINK_MOVE_POINT) {
-            nmo_cli_json_add_uint_safe(doc, data, "point_index", (uint64_t)args->point_index);
-        }
-        if (!dry_run && output_path != NULL) {
-            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-        }
-        nmo_cmd_ctx_json_end(c, doc, data, iface_link_command_name(args->op));
-    } else {
-        if (dry_run) {
-            fprintf(c->out, "[dry-run] ");
-        }
-        switch (args->op) {
-        case IFACE_LINK_ADD_POINT:
-            fprintf(c->out, "Added point (%.1f, %.1f) to link %u\n",
-                    (double)args->h, (double)args->v, args->link_id);
-            break;
-        case IFACE_LINK_CLEAR_POINTS:
-            fprintf(c->out, "Cleared all routing points from link %u\n", args->link_id);
-            break;
-        case IFACE_LINK_REMOVE_POINT:
-            fprintf(c->out, "Removed point %u from link %u\n",
-                    args->point_index, args->link_id);
-            break;
-        case IFACE_LINK_MOVE_POINT:
-            fprintf(c->out, "Moved point %u of link %u to (%.1f, %.1f)\n",
-                    args->point_index, args->link_id, (double)args->h, (double)args->v);
-            break;
-        case IFACE_LINK_SET_HIGHLIGHT:
-            fprintf(c->out, "Set link %u highlight %s\n",
-                    args->link_id, args->highlight ? "on" : "off");
-            break;
-        default:
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
-        }
-        if (!dry_run && output_path != NULL) {
-            fprintf(c->out, "Saved to: %s\n", output_path);
-        }
+    nmo_cli_record_t *rec = iface_report_new(dry_run);
+    bool ok = rec != NULL;
+    ok = ok && nmo_cli_record_uint(rec, "target_id", NULL, args->target_id);
+    ok = ok && nmo_cli_record_uint(rec, "link_id", NULL, args->link_id);
+    if (args->op == IFACE_LINK_REMOVE_POINT || args->op == IFACE_LINK_MOVE_POINT) {
+        ok = ok && nmo_cli_record_uint(rec, "point_index", NULL, args->point_index);
     }
-    return NMO_CLI_EXIT_SUCCESS;
+    switch (args->op) {
+    case IFACE_LINK_ADD_POINT:
+        ok = ok && nmo_cli_record_raw_fmt(rec, "Added point (%.1f, %.1f) to link %u\n",
+                                          (double)args->h, (double)args->v, args->link_id);
+        break;
+    case IFACE_LINK_CLEAR_POINTS:
+        ok = ok && nmo_cli_record_raw_fmt(rec, "Cleared all routing points from link %u\n",
+                                          args->link_id);
+        break;
+    case IFACE_LINK_REMOVE_POINT:
+        ok = ok && nmo_cli_record_raw_fmt(rec, "Removed point %u from link %u\n",
+                                          args->point_index, args->link_id);
+        break;
+    case IFACE_LINK_MOVE_POINT:
+        ok = ok && nmo_cli_record_raw_fmt(rec, "Moved point %u of link %u to (%.1f, %.1f)\n",
+                                          args->point_index, args->link_id,
+                                          (double)args->h, (double)args->v);
+        break;
+    case IFACE_LINK_SET_HIGHLIGHT:
+        ok = ok && nmo_cli_record_raw_fmt(rec, "Set link %u highlight %s\n",
+                                          args->link_id, args->highlight ? "on" : "off");
+        break;
+    default:
+        ok = false;
+        break;
+    }
+    return iface_report_emit(c, rec, ok, dry_run, output_path,
+                             iface_link_command_name(args->op));
 }
 
 static int iface_move_op_mutate(
@@ -1247,32 +1147,16 @@ static int iface_move_op_report(
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    if (c->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
-        if (doc == NULL) {
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
-        }
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        nmo_cli_json_add_bool_safe(doc, data, "dry_run", dry_run);
-        nmo_cli_json_add_uint_safe(doc, data, "target_id", (uint64_t)args->target_id);
-        nmo_cli_json_add_uint_safe(doc, data, "operation_id", (uint64_t)args->op_id);
-        yyjson_mut_obj_add_real(doc, data, "h", (double)args->h);
-        yyjson_mut_obj_add_real(doc, data, "v", (double)args->v);
-        if (!dry_run && output_path != NULL) {
-            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-        }
-        nmo_cmd_ctx_json_end(c, doc, data, "behavior.interface.move-op");
-    } else {
-        if (dry_run) {
-            fprintf(c->out, "[dry-run] ");
-        }
-        fprintf(c->out, "Moved operation %u to (%.1f, %.1f)\n",
-                args->op_id, (double)args->h, (double)args->v);
-        if (!dry_run && output_path != NULL) {
-            fprintf(c->out, "Saved to: %s\n", output_path);
-        }
-    }
-    return NMO_CLI_EXIT_SUCCESS;
+    nmo_cli_record_t *rec = iface_report_new(dry_run);
+    bool ok = rec != NULL;
+    ok = ok && nmo_cli_record_uint(rec, "target_id", NULL, args->target_id);
+    ok = ok && nmo_cli_record_uint(rec, "operation_id", NULL, args->op_id);
+    ok = ok && nmo_cli_record_real(rec, "h", NULL, (double)args->h, NULL);
+    ok = ok && nmo_cli_record_real(rec, "v", NULL, (double)args->v, NULL);
+    ok = ok && nmo_cli_record_raw_fmt(rec, "Moved operation %u to (%.1f, %.1f)\n",
+                                      args->op_id, (double)args->h, (double)args->v);
+    return iface_report_emit(c, rec, ok, dry_run, output_path,
+                             "behavior.interface.move-op");
 }
 
 static const char *iface_param_command_name(iface_param_op_t op)
@@ -1361,49 +1245,30 @@ static int iface_param_report(
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    if (c->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
-        if (doc == NULL) {
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
-        }
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        nmo_cli_json_add_bool_safe(doc, data, "dry_run", dry_run);
-        nmo_cli_json_add_uint_safe(doc, data, "target_id", (uint64_t)args->target_id);
-        nmo_cli_json_add_uint_safe(doc, data, "body_id", (uint64_t)args->body_id);
-        nmo_cli_json_add_uint_safe(doc, data, "param_index", (uint64_t)args->param_index);
-        nmo_cli_json_add_bool_safe(doc, data, "shared", args->shared);
-        if (!dry_run && output_path != NULL) {
-            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-        }
-        nmo_cmd_ctx_json_end(c, doc, data, iface_param_command_name(args->op));
-    } else {
-        if (dry_run) {
-            fprintf(c->out, "[dry-run] ");
-        }
-        switch (args->op) {
-        case IFACE_PARAM_MOVE:
-            fprintf(c->out, "Moved %s param %u to (%d, %d) in behavior %u\n",
-                    args->shared ? "shared" : "local",
-                    args->param_index,
-                    args->h,
-                    args->v,
-                    args->body_id);
-            break;
-        case IFACE_PARAM_SET_STYLE:
-            fprintf(c->out, "Set %s param %u style to 0x%X in behavior %u\n",
-                    args->shared ? "shared" : "local",
-                    args->param_index,
-                    args->style,
-                    args->body_id);
-            break;
-        default:
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
-        }
-        if (!dry_run && output_path != NULL) {
-            fprintf(c->out, "Saved to: %s\n", output_path);
-        }
+    const char *scope = args->shared ? "shared" : "local";
+    nmo_cli_record_t *rec = iface_report_new(dry_run);
+    bool ok = rec != NULL;
+    ok = ok && nmo_cli_record_uint(rec, "target_id", NULL, args->target_id);
+    ok = ok && nmo_cli_record_uint(rec, "body_id", NULL, args->body_id);
+    ok = ok && nmo_cli_record_uint(rec, "param_index", NULL, args->param_index);
+    ok = ok && nmo_cli_record_bool(rec, "shared", NULL, args->shared);
+    switch (args->op) {
+    case IFACE_PARAM_MOVE:
+        ok = ok && nmo_cli_record_raw_fmt(rec, "Moved %s param %u to (%d, %d) in behavior %u\n",
+                                          scope, args->param_index,
+                                          args->h, args->v, args->body_id);
+        break;
+    case IFACE_PARAM_SET_STYLE:
+        ok = ok && nmo_cli_record_raw_fmt(rec, "Set %s param %u style to 0x%X in behavior %u\n",
+                                          scope, args->param_index,
+                                          args->style, args->body_id);
+        break;
+    default:
+        ok = false;
+        break;
     }
-    return NMO_CLI_EXIT_SUCCESS;
+    return iface_report_emit(c, rec, ok, dry_run, output_path,
+                             iface_param_command_name(args->op));
 }
 
 static const char *iface_sub_size_command_name(iface_sub_size_op_t op)
@@ -1469,37 +1334,19 @@ static int iface_sub_size_report(
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    if (c->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
-        if (doc == NULL) {
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
-        }
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        nmo_cli_json_add_bool_safe(doc, data, "dry_run", dry_run);
-        nmo_cli_json_add_uint_safe(doc, data, "target_id", (uint64_t)args->target_id);
-        nmo_cli_json_add_uint_safe(doc, data, "behavior_id", (uint64_t)args->beh_id);
-        yyjson_mut_obj_add_real(doc, data, "w", (double)args->w);
-        yyjson_mut_obj_add_real(doc, data, "h", (double)args->h);
-        if (!dry_run && output_path != NULL) {
-            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-        }
-        nmo_cmd_ctx_json_end(c, doc, data, iface_sub_size_command_name(args->op));
-    } else {
-        if (dry_run) {
-            fprintf(c->out, "[dry-run] ");
-        }
-        if (args->op == IFACE_SUB_RESIZE) {
-            fprintf(c->out, "Resized behavior %u to (%.1f, %.1f)\n",
-                    args->beh_id, (double)args->w, (double)args->h);
-        } else {
-            fprintf(c->out, "Set behavior %u expand size to (%.1f, %.1f)\n",
-                    args->beh_id, (double)args->w, (double)args->h);
-        }
-        if (!dry_run && output_path != NULL) {
-            fprintf(c->out, "Saved to: %s\n", output_path);
-        }
-    }
-    return NMO_CLI_EXIT_SUCCESS;
+    nmo_cli_record_t *rec = iface_report_new(dry_run);
+    bool ok = rec != NULL;
+    ok = ok && nmo_cli_record_uint(rec, "target_id", NULL, args->target_id);
+    ok = ok && nmo_cli_record_uint(rec, "behavior_id", NULL, args->beh_id);
+    ok = ok && nmo_cli_record_real(rec, "w", NULL, (double)args->w, NULL);
+    ok = ok && nmo_cli_record_real(rec, "h", NULL, (double)args->h, NULL);
+    ok = ok && nmo_cli_record_raw_fmt(rec,
+                                      args->op == IFACE_SUB_RESIZE
+                                          ? "Resized behavior %u to (%.1f, %.1f)\n"
+                                          : "Set behavior %u expand size to (%.1f, %.1f)\n",
+                                      args->beh_id, (double)args->w, (double)args->h);
+    return iface_report_emit(c, rec, ok, dry_run, output_path,
+                             iface_sub_size_command_name(args->op));
 }
 
 static const char *iface_layout_command_name(iface_layout_op_t op)
@@ -1561,34 +1408,18 @@ static int iface_layout_report(
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    if (c->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
-        if (doc == NULL) {
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
-        }
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        nmo_cli_json_add_bool_safe(doc, data, "dry_run", dry_run);
-        nmo_cli_json_add_uint_safe(doc, data, "target_id", (uint64_t)args->target_id);
-        if (!dry_run && output_path != NULL) {
-            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-        }
-        nmo_cmd_ctx_json_end(c, doc, data, iface_layout_command_name(args->op));
+    nmo_cli_record_t *rec = iface_report_new(dry_run);
+    bool ok = rec != NULL;
+    ok = ok && nmo_cli_record_uint(rec, "target_id", NULL, args->target_id);
+    if (args->op == IFACE_LAYOUT_SET_VIEWPORT) {
+        ok = ok && nmo_cli_record_raw_fmt(rec, "Set viewport to (%.1f, %.1f) height=%.1f\n",
+                                          (double)args->a, (double)args->b, (double)args->c);
     } else {
-        if (dry_run) {
-            fprintf(c->out, "[dry-run] ");
-        }
-        if (args->op == IFACE_LAYOUT_SET_VIEWPORT) {
-            fprintf(c->out, "Set viewport to (%.1f, %.1f) height=%.1f\n",
-                    (double)args->a, (double)args->b, (double)args->c);
-        } else {
-            fprintf(c->out, "Translated all positions by (%.1f, %.1f)\n",
-                    (double)args->a, (double)args->b);
-        }
-        if (!dry_run && output_path != NULL) {
-            fprintf(c->out, "Saved to: %s\n", output_path);
-        }
+        ok = ok && nmo_cli_record_raw_fmt(rec, "Translated all positions by (%.1f, %.1f)\n",
+                                          (double)args->a, (double)args->b);
     }
-    return NMO_CLI_EXIT_SUCCESS;
+    return iface_report_emit(c, rec, ok, dry_run, output_path,
+                             iface_layout_command_name(args->op));
 }
 
 static int iface_graph_io_mutate(
@@ -1695,31 +1526,15 @@ static int iface_graph_io_report(
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    if (c->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
-        if (doc == NULL) {
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
-        }
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        nmo_cli_json_add_bool_safe(doc, data, "dry_run", dry_run);
-        nmo_cli_json_add_uint_safe(doc, data, "target_id", (uint64_t)args->target_id);
-        nmo_cli_json_add_uint_safe(doc, data, "behavior_id", (uint64_t)args->resolved_body_id);
-        yyjson_mut_obj_add_int(doc, data, "arrays_set", args->arrays_set);
-        if (!dry_run && output_path != NULL) {
-            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-        }
-        nmo_cmd_ctx_json_end(c, doc, data, "behavior.interface.set-graph-io");
-    } else {
-        if (dry_run) {
-            fprintf(c->out, "[dry-run] ");
-        }
-        fprintf(c->out, "Set %d graph IO array(s) in behavior %u\n",
-                args->arrays_set, args->resolved_body_id);
-        if (!dry_run && output_path != NULL) {
-            fprintf(c->out, "Saved to: %s\n", output_path);
-        }
-    }
-    return NMO_CLI_EXIT_SUCCESS;
+    nmo_cli_record_t *rec = iface_report_new(dry_run);
+    bool ok = rec != NULL;
+    ok = ok && nmo_cli_record_uint(rec, "target_id", NULL, args->target_id);
+    ok = ok && nmo_cli_record_uint(rec, "behavior_id", NULL, args->resolved_body_id);
+    ok = ok && nmo_cli_record_int(rec, "arrays_set", NULL, args->arrays_set);
+    ok = ok && nmo_cli_record_raw_fmt(rec, "Set %d graph IO array(s) in behavior %u\n",
+                                      args->arrays_set, args->resolved_body_id);
+    return iface_report_emit(c, rec, ok, dry_run, output_path,
+                             "behavior.interface.set-graph-io");
 }
 
 /* ================================================================
@@ -3524,6 +3339,291 @@ typedef struct behavior_iface_show_args {
     nmo_core_object_selector_t selector;
 } behavior_iface_show_args_t;
 
+static const char *iface_flag_marks(uint32_t flags) {
+    if ((flags & NMO_INTERFACE_FLAG_FOLDED) && (flags & NMO_INTERFACE_FLAG_HEADER_ONLY))
+        return " [folded] [header-only]";
+    if (flags & NMO_INTERFACE_FLAG_FOLDED) return " [folded]";
+    if (flags & NMO_INTERFACE_FLAG_HEADER_ONLY) return " [header-only]";
+    return "";
+}
+
+static bool iface_add_diagnostics_json(yyjson_mut_doc *doc, yyjson_mut_val *obj,
+                                       const void *data) {
+    nmo_cmd_behavior_add_interface_diagnostics_json(doc, obj, (nmo_workspace_t *)data);
+    return true;
+}
+
+static bool iface_add_script(nmo_cli_record_t *rec, const nmo_interface_data_t *idata) {
+    const nmo_interface_script_header_t *sh = &idata->script;
+    nmo_cli_record_t *so = nmo_cli_record_object(rec, "script");
+    bool ok = so != NULL;
+    ok = ok && nmo_cli_record_uint(so, "behavior_id", NULL, sh->behavior_id);
+    ok = ok && nmo_cli_record_uint(so, "flags", NULL, sh->flags);
+    ok = ok && nmo_cli_record_uint(so, "script_index", NULL, sh->script_index);
+    ok = ok && nmo_cli_record_real(so, "h_pos", NULL, (double)sh->h_pos, NULL);
+    ok = ok && nmo_cli_record_real(so, "v_pos", NULL, (double)sh->v_pos, NULL);
+    ok = ok && nmo_cli_record_real(so, "h_start_pos", NULL, (double)sh->h_start_pos, NULL);
+    ok = ok && nmo_cli_record_real(so, "v_start_pos", NULL, (double)sh->v_start_pos, NULL);
+    ok = ok && nmo_cli_record_real(so, "v_size", NULL, (double)sh->v_size, NULL);
+    ok = ok && nmo_cli_record_uint(so, "color", NULL, sh->color);
+    ok = ok && nmo_cli_record_bool(so, "color_defaulted", NULL,
+                                   iface_is_sectioned(idata) &&
+                                   !iface_color_is_present(idata));
+    ok = ok && nmo_cli_record_bool(so, "has_snapshot", NULL, sh->has_snapshot);
+    if (ok && sh->has_snapshot) {
+        nmo_cli_record_t *snap = nmo_cli_record_object(so, "snapshot");
+        ok = snap != NULL &&
+             nmo_cli_record_uint(snap, "width", NULL, sh->snapshot_desc.width) &&
+             nmo_cli_record_uint(snap, "height", NULL, sh->snapshot_desc.height) &&
+             nmo_cli_record_uint(snap, "size", NULL, sh->snapshot_size);
+    }
+
+    ok = ok && nmo_cli_record_title(so, "Script Header");
+    ok = ok && nmo_cli_record_raw_fmt(so,
+                                      "  behavior_id: %u  flags: 0x%X%s\n"
+                                      "  pos: (%.1f, %.1f)  start: (%.1f, %.1f)  v_size: %.1f\n"
+                                      "  script_index: %u\n",
+                                      sh->behavior_id, sh->flags, iface_flag_marks(sh->flags),
+                                      (double)sh->h_pos, (double)sh->v_pos,
+                                      (double)sh->h_start_pos, (double)sh->v_start_pos,
+                                      (double)sh->v_size, sh->script_index);
+    if (ok && sh->has_snapshot) {
+        ok = nmo_cli_record_raw_fmt(so, "  snapshot: %ux%u (%zu bytes)\n",
+                                    sh->snapshot_desc.width, sh->snapshot_desc.height,
+                                    sh->snapshot_size);
+    }
+    if (ok && sh->color) {
+        ok = nmo_cli_record_raw_fmt(so, "  color: 0x%08X\n", sh->color);
+    }
+    return ok && iface_add_body(so, &sh->body, "Script");
+}
+
+static bool iface_add_subs(nmo_cli_record_t *rec, const nmo_interface_data_t *idata) {
+    bool ok = true;
+    if (idata->sub_count > 0) {
+        ok = nmo_cli_record_title_fmt(rec, "Sub-behaviors (%zu)", idata->sub_count);
+    }
+    nmo_cli_record_array_t *arr = ok ? iface_inline_array(rec, "subs") : NULL;
+    ok = ok && arr != NULL;
+    for (size_t si = 0; ok && si < idata->sub_count; si++) {
+        const nmo_interface_behavior_t *sb = &idata->subs[si];
+        nmo_cli_record_t *so = iface_array_item(arr);
+        ok = so != NULL;
+        ok = ok && nmo_cli_record_uint(so, "behavior_id", NULL, sb->behavior_id);
+        ok = ok && nmo_cli_record_uint(so, "flags", NULL, sb->flags);
+        ok = ok && nmo_cli_record_uint(so, "depth", NULL, sb->depth);
+        ok = ok && nmo_cli_record_real(so, "h_pos", NULL, (double)sb->h_pos, NULL);
+        ok = ok && nmo_cli_record_real(so, "v_pos", NULL, (double)sb->v_pos, NULL);
+        ok = ok && nmo_cli_record_real(so, "h_size", NULL, (double)sb->h_size, NULL);
+        ok = ok && nmo_cli_record_real(so, "v_size", NULL, (double)sb->v_size, NULL);
+        ok = ok && nmo_cli_record_real(so, "h_expand_size", NULL, (double)sb->h_expand_size, NULL);
+        ok = ok && nmo_cli_record_real(so, "v_expand_size", NULL, (double)sb->v_expand_size, NULL);
+        ok = ok && nmo_cli_record_raw_fmt(so,
+                                          "  [%zu] id=%u depth=%u flags=0x%X%s\n"
+                                          "      pos=(%.1f,%.1f) size=(%.1f,%.1f) expand=(%.1f,%.1f)\n",
+                                          si, sb->behavior_id, sb->depth, sb->flags,
+                                          iface_flag_marks(sb->flags),
+                                          (double)sb->h_pos, (double)sb->v_pos,
+                                          (double)sb->h_size, (double)sb->v_size,
+                                          (double)sb->h_expand_size, (double)sb->v_expand_size);
+        char *label = ok ? nmo_tool_strdup_fmt("Sub[%zu]", si) : NULL;
+        ok = ok && label != NULL && iface_add_body(so, &sb->body, label);
+        free(label);
+    }
+    return ok;
+}
+
+static bool iface_add_extra_entry(nmo_cli_record_array_t *arr, size_t ei,
+                                  const nmo_interface_extra_entry_t *ee) {
+    nmo_cli_record_t *eo = iface_array_item(arr);
+    bool ok = eo != NULL;
+    ok = ok && nmo_cli_record_uint(eo, "type", NULL, ee->type);
+    ok = ok && nmo_cli_record_uint(eo, "id1", NULL, ee->id1);
+    ok = ok && nmo_cli_record_raw_fmt(eo, "  [%zu] type=%u id1=%u", ei, ee->type, ee->id1);
+    if (ok && ee->type == 3) {
+        ok = nmo_cli_record_uint(eo, "id2", NULL, ee->id2) &&
+             nmo_cli_record_raw_fmt(eo, " id2=%u", ee->id2);
+    }
+    if (ok && ee->type == 4) {
+        ok = nmo_cli_record_int(eo, "value", NULL, ee->value) &&
+             nmo_cli_record_raw_fmt(eo, " value=%d", ee->value);
+    }
+    if (ok && ee->sub_count > 0) {
+        ok = nmo_cli_record_raw_fmt(eo, " sub_entries=%zu", ee->sub_count);
+    }
+    ok = ok && nmo_cli_record_raw(eo, "\n");
+    if (!ok || ee->sub_count == 0) {
+        return ok;
+    }
+    nmo_cli_record_array_t *subs = iface_inline_array(eo, "sub_entries");
+    ok = subs != NULL;
+    for (size_t si = 0; ok && si < ee->sub_count; si++) {
+        const nmo_interface_extra_sub_t *se = &ee->sub_entries[si];
+        nmo_cli_record_t *so = iface_array_item(subs);
+        ok = so != NULL;
+        ok = ok && nmo_cli_record_int(so, "value1", NULL, se->value1);
+        ok = ok && nmo_cli_record_int(so, "value2", NULL, se->value2);
+        ok = ok && nmo_cli_record_uint(so, "id1", NULL, se->id1);
+        ok = ok && nmo_cli_record_uint(so, "id2", NULL, se->id2);
+        ok = ok && nmo_cli_record_raw_fmt(so, "    val1=%d val2=%d id1=%u id2=%u",
+                                          se->value1, se->value2, se->id1, se->id2);
+        if (ok && se->data_size > 0) {
+            ok = nmo_cli_record_uint(so, "data_size", NULL, se->data_size) &&
+                 nmo_cli_record_raw_fmt(so, " data=%zu bytes", se->data_size);
+        }
+        ok = ok && nmo_cli_record_raw(so, "\n");
+    }
+    return ok;
+}
+
+static bool iface_add_extra(nmo_cli_record_t *rec, const nmo_interface_extra_t *ex) {
+    nmo_cli_record_t *eo = nmo_cli_record_object(rec, "extra");
+    bool ok = eo != NULL;
+    ok = ok && nmo_cli_record_bool(eo, "present", NULL, ex->present);
+    if (!ok || !ex->present) {
+        return ok;
+    }
+    ok = nmo_cli_record_uint(eo, "version", NULL, ex->version) &&
+         nmo_cli_record_uint(eo, "entry_count", NULL, ex->entry_count) &&
+         nmo_cli_record_title_fmt(eo, "Extra Data (v%u, %zu entries)",
+                                  ex->version, ex->entry_count);
+    nmo_cli_record_array_t *arr = ok ? iface_inline_array(eo, "entries") : NULL;
+    ok = ok && arr != NULL;
+    for (size_t ei = 0; ok && ei < ex->entry_count; ei++) {
+        ok = iface_add_extra_entry(arr, ei, &ex->entries[ei]);
+    }
+    return ok;
+}
+
+static bool iface_add_section_presence(nmo_cli_record_t *rec, const char *label,
+                                       const nmo_interface_body_t *b) {
+    return nmo_cli_record_raw_fmt(rec, "  %s: links=%s ops=%s comments=%s unknown_flag=%s\n",
+                                  label,
+                                  b->has_links_section ? "yes" : "no",
+                                  b->has_operations_section ? "yes" : "no",
+                                  b->has_comments_section ? "yes" : "no",
+                                  b->has_unknown_flag_section ? "yes" : "no");
+}
+
+static nmo_cli_record_t *iface_show_record(const nmo_interface_data_t *idata,
+                                           nmo_object_id_t target_id,
+                                           const char *name,
+                                           nmo_workspace_t *workspace) {
+    bool sectioned = iface_is_sectioned(idata);
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL;
+    ok = ok && nmo_cli_record_uint(rec, "behavior_id", NULL, target_id);
+    ok = ok && nmo_cli_record_str(rec, "name", NULL, (name && name[0]) ? name : "");
+    ok = ok && nmo_cli_record_uint(rec, "version", NULL, idata->version);
+    ok = ok && nmo_cli_record_uint(rec, "format_flags", NULL, idata->format_flags);
+    ok = ok && nmo_cli_record_bool(rec, "sectioned_layout", NULL, sectioned);
+    ok = ok && nmo_cli_record_bool(rec, "sectioned_root_is_graph", NULL,
+                                   sectioned &&
+                                   (idata->format_flags & NMO_INTERFACE_FORMAT_ROOT_GRAPH) != 0u);
+    ok = ok && nmo_cli_record_str(rec, "root_kind", NULL, iface_root_kind_name(idata));
+    ok = ok && nmo_cli_record_uint(rec, "sub_count", NULL, idata->sub_count);
+    ok = ok && nmo_cli_record_json(rec, iface_add_diagnostics_json, workspace);
+
+    ok = ok && nmo_cli_record_title_fmt(rec, "Interface: Behavior #%u %s", target_id,
+                                        (name && name[0]) ? name : "(unnamed)");
+    ok = ok && nmo_cli_record_raw_fmt(rec, "  version: 0x%02X  layout: %s  root: %s\n",
+                                      idata->version,
+                                      sectioned ? "sectioned" : "inline",
+                                      iface_root_kind_name(idata));
+    ok = ok && iface_add_script(rec, idata);
+    ok = ok && iface_add_subs(rec, idata);
+    ok = ok && iface_add_extra(rec, &idata->extra);
+
+    /* Section presence (only relevant for sectioned layout) */
+    if (ok && sectioned) {
+        ok = nmo_cli_record_title(rec, "Section Presence") &&
+             iface_add_section_presence(rec, "Script", &idata->script.body);
+        for (size_t si = 0; ok && si < idata->sub_count; si++) {
+            char *label = nmo_tool_strdup_fmt("Sub[%zu]", si);
+            ok = label != NULL &&
+                 iface_add_section_presence(rec, label, &idata->subs[si].body);
+            free(label);
+        }
+    }
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        return NULL;
+    }
+    return rec;
+}
+
+static void iface_count_body(const nmo_interface_body_t *body, size_t *links,
+                             size_t *routing, size_t *ops, size_t *comments,
+                             size_t *locals, size_t *shared) {
+    *links += body->link_count;
+    *ops += body->operation_count;
+    *comments += body->comment_count;
+    for (size_t li = 0; li < body->link_count; li++)
+        *routing += body->links[li].point_count;
+    if (body->has_params) {
+        *locals += body->params.local_count;
+        *shared += body->params.shared_count;
+    }
+}
+
+/* Text-only summary for --brief. */
+static nmo_cli_record_t *iface_brief_record(const nmo_interface_data_t *idata,
+                                            nmo_object_id_t target_id,
+                                            const char *name) {
+    /* Count totals across all bodies */
+    size_t total_links = 0, total_routing = 0, total_ops = 0, total_comments = 0;
+    size_t total_local = 0, total_shared = 0;
+    size_t folded_count = (idata->script.flags & NMO_INTERFACE_FLAG_FOLDED) ? 1 : 0;
+    iface_count_body(&idata->script.body, &total_links, &total_routing, &total_ops,
+                     &total_comments, &total_local, &total_shared);
+    for (size_t si = 0; si < idata->sub_count; si++) {
+        const nmo_interface_behavior_t *sb = &idata->subs[si];
+        iface_count_body(&sb->body, &total_links, &total_routing, &total_ops,
+                         &total_comments, &total_local, &total_shared);
+        if (sb->flags & NMO_INTERFACE_FLAG_FOLDED)
+            folded_count++;
+    }
+
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL;
+    ok = ok && nmo_cli_record_title_fmt(rec, "Interface: Behavior #%u %s", target_id,
+                                        (name && name[0]) ? name : "(unnamed)");
+    ok = ok && nmo_cli_record_text_fmt(rec, "Version", "0x%02X", idata->version);
+    ok = ok && nmo_cli_record_text(rec, "Layout",
+                                   iface_is_sectioned(idata) ? "sectioned" : "inline");
+    ok = ok && nmo_cli_record_text(rec, "Root kind", iface_root_kind_name(idata));
+    if (ok && idata->script.color) {
+        ok = nmo_cli_record_text_fmt(rec, "Color", "0x%08X", idata->script.color);
+    }
+    ok = ok && nmo_cli_record_text_fmt(rec, "Sub-behaviors", "%zu", idata->sub_count);
+    ok = ok && nmo_cli_record_text_fmt(rec, "Total links", "%zu", total_links);
+    ok = ok && nmo_cli_record_text_fmt(rec, "Routing points", "%zu", total_routing);
+    ok = ok && nmo_cli_record_text_fmt(rec, "Operations", "%zu", total_ops);
+    ok = ok && nmo_cli_record_text_fmt(rec, "Comments", "%zu", total_comments);
+    ok = ok && nmo_cli_record_text_fmt(rec, "Params", "%zu local + %zu shared",
+                                       total_local, total_shared);
+    if (ok && idata->script.has_snapshot) {
+        ok = nmo_cli_record_text_fmt(rec, "Snapshot", "%ux%u (%zu bytes)",
+                                     idata->script.snapshot_desc.width,
+                                     idata->script.snapshot_desc.height,
+                                     idata->script.snapshot_size);
+    } else if (ok) {
+        ok = nmo_cli_record_text(rec, "Snapshot", "(none)");
+    }
+    if (ok && idata->extra.present) {
+        ok = nmo_cli_record_text_fmt(rec, "Extra data", "v%u, %zu entries",
+                                     idata->extra.version, idata->extra.entry_count);
+    } else if (ok) {
+        ok = nmo_cli_record_text(rec, "Extra data", "(none)");
+    }
+    ok = ok && nmo_cli_record_text_fmt(rec, "Folded", "%zu", folded_count);
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        return NULL;
+    }
+    return rec;
+}
+
 static int behavior_iface_show_parse(int argc, char **argv,
                                      bool expect_file_operand,
                                      behavior_iface_show_args_t *args,
@@ -3615,300 +3715,12 @@ static int behavior_iface_show_run(nmo_cmd_ctx_t *ctx,
     }
 
     const char *name = nmo_object_get_name(beh);
-
-    /* --- JSON output --- */
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-
-        yyjson_mut_obj_add_uint(doc, data, "behavior_id", target_id);
-        nmo_cli_json_add_str_safe(doc, data, "name",
-                                  (name && name[0]) ? name : "");
-        yyjson_mut_obj_add_uint(doc, data, "version", idata->version);
-        yyjson_mut_obj_add_uint(doc, data, "format_flags", idata->format_flags);
-        yyjson_mut_obj_add_bool(doc, data, "sectioned_layout",
-                                iface_is_sectioned(idata));
-        yyjson_mut_obj_add_bool(doc, data, "sectioned_root_is_graph",
-                                iface_is_sectioned(idata) &&
-                                (idata->format_flags &
-                                 NMO_INTERFACE_FORMAT_ROOT_GRAPH) != 0u);
-        nmo_cli_json_add_str_safe(doc, data, "root_kind",
-                                  iface_root_kind_name(idata));
-        yyjson_mut_obj_add_uint(doc, data, "sub_count", (uint64_t)idata->sub_count);
-        nmo_cmd_behavior_add_interface_diagnostics_json(doc, data, c.workspace);
-
-        /* Script header */
-        {
-            const nmo_interface_script_header_t *sh = &idata->script;
-            yyjson_mut_val *so = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_uint(doc, so, "behavior_id", sh->behavior_id);
-            yyjson_mut_obj_add_uint(doc, so, "flags", sh->flags);
-            yyjson_mut_obj_add_uint(doc, so, "script_index", sh->script_index);
-            yyjson_mut_obj_add_real(doc, so, "h_pos", (double)sh->h_pos);
-            yyjson_mut_obj_add_real(doc, so, "v_pos", (double)sh->v_pos);
-            yyjson_mut_obj_add_real(doc, so, "h_start_pos", (double)sh->h_start_pos);
-            yyjson_mut_obj_add_real(doc, so, "v_start_pos", (double)sh->v_start_pos);
-            yyjson_mut_obj_add_real(doc, so, "v_size", (double)sh->v_size);
-            yyjson_mut_obj_add_uint(doc, so, "color", sh->color);
-            yyjson_mut_obj_add_bool(doc, so, "color_defaulted",
-                                    iface_is_sectioned(idata) &&
-                                    !iface_color_is_present(idata));
-            yyjson_mut_obj_add_bool(doc, so, "has_snapshot", sh->has_snapshot);
-            if (sh->has_snapshot) {
-                yyjson_mut_val *snap = yyjson_mut_obj(doc);
-                yyjson_mut_obj_add_uint(doc, snap, "width", sh->snapshot_desc.width);
-                yyjson_mut_obj_add_uint(doc, snap, "height", sh->snapshot_desc.height);
-                yyjson_mut_obj_add_uint(doc, snap, "size", (uint64_t)sh->snapshot_size);
-                yyjson_mut_obj_add_val(doc, so, "snapshot", snap);
-            }
-            yyjson_mut_obj_add_val(doc, so, "body", iface_json_body(doc, &sh->body));
-            yyjson_mut_obj_add_val(doc, data, "script", so);
-        }
-
-        /* Sub-behaviors */
-        {
-            yyjson_mut_val *arr = yyjson_mut_arr(doc);
-            for (size_t si = 0; si < idata->sub_count; si++) {
-                const nmo_interface_behavior_t *sb = &idata->subs[si];
-                yyjson_mut_val *so = yyjson_mut_obj(doc);
-                yyjson_mut_obj_add_uint(doc, so, "behavior_id", sb->behavior_id);
-                yyjson_mut_obj_add_uint(doc, so, "flags", sb->flags);
-                yyjson_mut_obj_add_uint(doc, so, "depth", sb->depth);
-                yyjson_mut_obj_add_real(doc, so, "h_pos", (double)sb->h_pos);
-                yyjson_mut_obj_add_real(doc, so, "v_pos", (double)sb->v_pos);
-                yyjson_mut_obj_add_real(doc, so, "h_size", (double)sb->h_size);
-                yyjson_mut_obj_add_real(doc, so, "v_size", (double)sb->v_size);
-                yyjson_mut_obj_add_real(doc, so, "h_expand_size", (double)sb->h_expand_size);
-                yyjson_mut_obj_add_real(doc, so, "v_expand_size", (double)sb->v_expand_size);
-                yyjson_mut_obj_add_val(doc, so, "body", iface_json_body(doc, &sb->body));
-                yyjson_mut_arr_add_val(arr, so);
-            }
-            yyjson_mut_obj_add_val(doc, data, "subs", arr);
-        }
-
-        /* Extra data */
-        {
-            const nmo_interface_extra_t *ex = &idata->extra;
-            yyjson_mut_val *eo = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_bool(doc, eo, "present", ex->present);
-            if (ex->present) {
-                yyjson_mut_obj_add_uint(doc, eo, "version", ex->version);
-                yyjson_mut_obj_add_uint(doc, eo, "entry_count", (uint64_t)ex->entry_count);
-                yyjson_mut_val *arr = yyjson_mut_arr(doc);
-                for (size_t ei = 0; ei < ex->entry_count; ei++) {
-                    const nmo_interface_extra_entry_t *ee = &ex->entries[ei];
-                    yyjson_mut_val *eobj = yyjson_mut_obj(doc);
-                    yyjson_mut_obj_add_uint(doc, eobj, "type", ee->type);
-                    yyjson_mut_obj_add_uint(doc, eobj, "id1", ee->id1);
-                    if (ee->type == 3)
-                        yyjson_mut_obj_add_uint(doc, eobj, "id2", ee->id2);
-                    if (ee->type == 4)
-                        yyjson_mut_obj_add_int(doc, eobj, "value", ee->value);
-                    if (ee->sub_count > 0) {
-                        yyjson_mut_val *sub_arr = yyjson_mut_arr(doc);
-                        for (size_t si = 0; si < ee->sub_count; si++) {
-                            const nmo_interface_extra_sub_t *se = &ee->sub_entries[si];
-                            yyjson_mut_val *sobj = yyjson_mut_obj(doc);
-                            yyjson_mut_obj_add_int(doc, sobj, "value1", se->value1);
-                            yyjson_mut_obj_add_int(doc, sobj, "value2", se->value2);
-                            yyjson_mut_obj_add_uint(doc, sobj, "id1", se->id1);
-                            yyjson_mut_obj_add_uint(doc, sobj, "id2", se->id2);
-                            if (se->data_size > 0)
-                                yyjson_mut_obj_add_uint(doc, sobj, "data_size", (uint64_t)se->data_size);
-                            yyjson_mut_arr_add_val(sub_arr, sobj);
-                        }
-                        yyjson_mut_obj_add_val(doc, eobj, "sub_entries", sub_arr);
-                    }
-                    yyjson_mut_arr_add_val(arr, eobj);
-                }
-                yyjson_mut_obj_add_val(doc, eo, "entries", arr);
-            }
-            yyjson_mut_obj_add_val(doc, data, "extra", eo);
-        }
-
-        nmo_cmd_ctx_json_end(&c, doc, data, "behavior.interface");
-        return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS)
-                         : NMO_CLI_EXIT_SUCCESS;
-    }
-
-    /* --- Brief output --- */
-    if (args->brief) {
-        nmo_cli_print_heading_fmt(c.out, c.colorize, "Interface: Behavior #%u %s",
-                                  target_id, (name && name[0]) ? name : "(unnamed)");
-
-        nmo_cli_print_kv_fmt(c.out, "Version", 22, c.colorize, "0x%02X", idata->version);
-
-        nmo_cli_print_kv(c.out, "Layout",
-                         iface_is_sectioned(idata) ? "sectioned" : "inline",
-                         22, c.colorize);
-
-        nmo_cli_print_kv(c.out, "Root kind", iface_root_kind_name(idata),
-                         22, c.colorize);
-
-        if (idata->script.color) {
-            nmo_cli_print_kv_fmt(c.out, "Color", 22, c.colorize, "0x%08X", idata->script.color);
-        }
-
-        nmo_cli_print_kv_fmt(c.out, "Sub-behaviors", 22, c.colorize, "%zu", idata->sub_count);
-
-        /* Count totals across all bodies */
-        size_t total_links = idata->script.body.link_count;
-        size_t total_routing = 0;
-        size_t total_ops = idata->script.body.operation_count;
-        size_t total_comments = idata->script.body.comment_count;
-        size_t total_local = 0, total_shared = 0;
-        size_t folded_count = 0;
-
-        for (size_t li = 0; li < idata->script.body.link_count; li++)
-            total_routing += idata->script.body.links[li].point_count;
-        if (idata->script.body.has_params) {
-            total_local += idata->script.body.params.local_count;
-            total_shared += idata->script.body.params.shared_count;
-        }
-        if (idata->script.flags & NMO_INTERFACE_FLAG_FOLDED)
-            folded_count++;
-
-        for (size_t si = 0; si < idata->sub_count; si++) {
-            const nmo_interface_behavior_t *sb = &idata->subs[si];
-            total_links += sb->body.link_count;
-            total_ops += sb->body.operation_count;
-            total_comments += sb->body.comment_count;
-            for (size_t li = 0; li < sb->body.link_count; li++)
-                total_routing += sb->body.links[li].point_count;
-            if (sb->body.has_params) {
-                total_local += sb->body.params.local_count;
-                total_shared += sb->body.params.shared_count;
-            }
-            if (sb->flags & NMO_INTERFACE_FLAG_FOLDED)
-                folded_count++;
-        }
-
-        nmo_cli_print_kv_fmt(c.out, "Total links", 22, c.colorize, "%zu", total_links);
-        nmo_cli_print_kv_fmt(c.out, "Routing points", 22, c.colorize, "%zu", total_routing);
-        nmo_cli_print_kv_fmt(c.out, "Operations", 22, c.colorize, "%zu", total_ops);
-        nmo_cli_print_kv_fmt(c.out, "Comments", 22, c.colorize, "%zu", total_comments);
-        nmo_cli_print_kv_fmt(c.out, "Params", 22, c.colorize,
-                             "%zu local + %zu shared", total_local, total_shared);
-
-        if (idata->script.has_snapshot) {
-            nmo_cli_print_kv_fmt(c.out, "Snapshot", 22, c.colorize, "%ux%u (%zu bytes)",
-                                 idata->script.snapshot_desc.width,
-                                 idata->script.snapshot_desc.height,
-                                 idata->script.snapshot_size);
-        } else {
-            nmo_cli_print_kv(c.out, "Snapshot", "(none)", 22, c.colorize);
-        }
-
-        if (idata->extra.present) {
-            nmo_cli_print_kv_fmt(c.out, "Extra data", 22, c.colorize, "v%u, %zu entries",
-                                 idata->extra.version, idata->extra.entry_count);
-        } else {
-            nmo_cli_print_kv(c.out, "Extra data", "(none)", 22, c.colorize);
-        }
-
-        nmo_cli_print_kv_fmt(c.out, "Folded", 22, c.colorize, "%zu", folded_count);
-
-        return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS)
-                         : NMO_CLI_EXIT_SUCCESS;
-    }
-
-    /* --- Full text output --- */
-    nmo_cli_print_heading_fmt(c.out, c.colorize, "Interface: Behavior #%u %s",
-                              target_id, (name && name[0]) ? name : "(unnamed)");
-
-    /* Header */
-    fprintf(c.out, "  version: 0x%02X  layout: %s  root: %s\n",
-            idata->version,
-            iface_is_sectioned(idata) ? "sectioned" : "inline",
-            iface_root_kind_name(idata));
-
-    /* Script header */
-    {
-        const nmo_interface_script_header_t *sh = &idata->script;
-        nmo_cli_print_heading(c.out, "Script Header", c.colorize);
-        fprintf(c.out, "  behavior_id: %u  flags: 0x%X", sh->behavior_id, sh->flags);
-        if (sh->flags & NMO_INTERFACE_FLAG_FOLDED) fprintf(c.out, " [folded]");
-        if (sh->flags & NMO_INTERFACE_FLAG_HEADER_ONLY) fprintf(c.out, " [header-only]");
-        fprintf(c.out, "\n");
-        fprintf(c.out, "  pos: (%.1f, %.1f)  start: (%.1f, %.1f)  v_size: %.1f\n",
-                sh->h_pos, sh->v_pos, sh->h_start_pos, sh->v_start_pos, sh->v_size);
-        fprintf(c.out, "  script_index: %u\n", sh->script_index);
-        if (sh->has_snapshot) {
-            fprintf(c.out, "  snapshot: %ux%u (%zu bytes)\n",
-                    sh->snapshot_desc.width, sh->snapshot_desc.height, sh->snapshot_size);
-        }
-        if (sh->color) {
-            fprintf(c.out, "  color: 0x%08X\n", sh->color);
-        }
-
-        iface_print_body_text(c.out, &sh->body, "Script", c.colorize);
-    }
-
-    /* Sub-behaviors */
-    if (idata->sub_count > 0) {
-        nmo_cli_print_heading_fmt(c.out, c.colorize, "Sub-behaviors (%zu)", idata->sub_count);
-        for (size_t si = 0; si < idata->sub_count; si++) {
-            const nmo_interface_behavior_t *sb = &idata->subs[si];
-            fprintf(c.out, "  [%zu] id=%u depth=%u flags=0x%X",
-                    si, sb->behavior_id, sb->depth, sb->flags);
-            if (sb->flags & NMO_INTERFACE_FLAG_FOLDED) fprintf(c.out, " [folded]");
-            if (sb->flags & NMO_INTERFACE_FLAG_HEADER_ONLY) fprintf(c.out, " [header-only]");
-            fprintf(c.out, "\n");
-            fprintf(c.out, "      pos=(%.1f,%.1f) size=(%.1f,%.1f) expand=(%.1f,%.1f)\n",
-                    sb->h_pos, sb->v_pos,
-                    sb->h_size, sb->v_size,
-                    sb->h_expand_size, sb->v_expand_size);
-
-            char *label = nmo_tool_strdup_fmt("Sub[%zu]", si);
-            iface_print_body_text(c.out, &sb->body, label ? label : "Sub", c.colorize);
-            free(label);
-        }
-    }
-
-    /* Extra data */
-    if (idata->extra.present) {
-        nmo_cli_print_heading_fmt(c.out, c.colorize, "Extra Data (v%u, %zu entries)",
-                                  idata->extra.version, idata->extra.entry_count);
-        for (size_t ei = 0; ei < idata->extra.entry_count; ei++) {
-            const nmo_interface_extra_entry_t *ee = &idata->extra.entries[ei];
-            fprintf(c.out, "  [%zu] type=%u id1=%u", ei, ee->type, ee->id1);
-            if (ee->type == 3) fprintf(c.out, " id2=%u", ee->id2);
-            if (ee->type == 4) fprintf(c.out, " value=%d", ee->value);
-            if (ee->sub_count > 0) fprintf(c.out, " sub_entries=%zu", ee->sub_count);
-            fprintf(c.out, "\n");
-            for (size_t si = 0; si < ee->sub_count; si++) {
-                const nmo_interface_extra_sub_t *se = &ee->sub_entries[si];
-                fprintf(c.out, "    val1=%d val2=%d id1=%u id2=%u",
-                        se->value1, se->value2, se->id1, se->id2);
-                if (se->data_size > 0)
-                    fprintf(c.out, " data=%zu bytes", se->data_size);
-                fprintf(c.out, "\n");
-            }
-        }
-    }
-
-    /* Section presence (only relevant for sectioned layout) */
-    if (iface_is_sectioned(idata)) {
-        nmo_cli_print_heading(c.out, "Section Presence", c.colorize);
-        const nmo_interface_body_t *sb = &idata->script.body;
-        fprintf(c.out, "  Script: links=%s ops=%s comments=%s unknown_flag=%s\n",
-                sb->has_links_section ? "yes" : "no",
-                sb->has_operations_section ? "yes" : "no",
-                sb->has_comments_section ? "yes" : "no",
-                sb->has_unknown_flag_section ? "yes" : "no");
-        for (size_t si = 0; si < idata->sub_count; si++) {
-            const nmo_interface_body_t *b = &idata->subs[si].body;
-            fprintf(c.out, "  Sub[%zu]: links=%s ops=%s comments=%s unknown_flag=%s\n",
-                    si,
-                    b->has_links_section ? "yes" : "no",
-                    b->has_operations_section ? "yes" : "no",
-                    b->has_comments_section ? "yes" : "no",
-                    b->has_unknown_flag_section ? "yes" : "no");
-        }
-    }
-
-    return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS)
-                     : NMO_CLI_EXIT_SUCCESS;
+    nmo_cli_record_t *rec = args->brief && !c.is_json
+        ? iface_brief_record(idata, target_id, name)
+        : iface_show_record(idata, target_id, name, c.workspace);
+    rc = nmo_cmd_ctx_emit_record(&c, rec, "behavior.interface",
+                                 args->brief ? 22 : 0, c.colorize);
+    return close_ctx ? nmo_cmd_ctx_done(&c, rc) : rc;
 }
 
 int nmo_cmd_behavior_iface_show(int argc, char **argv, const nmo_cli_global_opts_t *global) {
