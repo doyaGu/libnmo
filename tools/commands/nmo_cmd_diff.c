@@ -7,6 +7,7 @@
 #include "../nmo_cmd_core.h"
 #include "../nmo_cmd_ctx.h"
 #include "../nmo_cli_output.h"
+#include "../nmo_cli_record.h"
 #include "../nmo_opt.h"
 #include "../nmo_tool_common.h"
 #include "nmo.h"
@@ -229,6 +230,630 @@ static const char *diff_type_name(nmo_diff_type_t type)
 }
 
 /* ============================================================================
+ * Report records
+ *
+ * Every builder serves a CLI command and its in-session variant. The
+ * in-session reports have always been shorter; `details` selects the parts
+ * only the CLI commands print.
+ * ============================================================================ */
+
+typedef struct {
+    bool chunks_only;
+    bool by_object;
+    uint32_t object_id;
+} diff_entry_filter_t;
+
+static bool diff_entry_selected(const nmo_diff_entry_t *entry,
+                                const diff_entry_filter_t *filter)
+{
+    if (!filter) {
+        return true;
+    }
+    if (filter->by_object && entry->object_id != filter->object_id) {
+        return false;
+    }
+    return !filter->chunks_only ||
+           entry->type == NMO_DIFF_OBJECT_CHUNK_SIZE ||
+           entry->type == NMO_DIFF_OBJECT_CHUNK_DATA ||
+           entry->type == NMO_DIFF_OBJECT_CHUNK_METADATA;
+}
+
+static int diff_selected_count(const nmo_comparison_result_t *result,
+                               const diff_entry_filter_t *filter)
+{
+    int count = 0;
+    for (int i = 0; i < result->diff_count; i++) {
+        if (diff_entry_selected(&result->diffs[i], filter)) {
+            count++;
+        }
+    }
+    return count;
+}
+
+/* String field that stays JSON null when `value` is NULL. */
+static bool diff_record_str_or_null(nmo_cli_record_t *rec, const char *key,
+                                    const char *value)
+{
+    return value ? nmo_cli_record_str(rec, key, NULL, value)
+                 : nmo_cli_record_null(rec, key, NULL, NULL);
+}
+
+/* Title and the "File 1" / "File 2" lines shared by the keyed reports. */
+static nmo_cli_record_t *diff_report_new(const char *title,
+                                         const char *const paths[2])
+{
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL;
+    ok = ok && nmo_cli_record_title(rec, title);
+    ok = ok && nmo_cli_record_str(rec, "file1", "File 1", paths[0]);
+    ok = ok && nmo_cli_record_str(rec, "file2", "File 2", paths[1]);
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        return NULL;
+    }
+    return rec;
+}
+
+static bool diff_add_status(nmo_cli_record_t *rec,
+                            const nmo_comparison_result_t *result,
+                            bool note_overflow, bool colorize)
+{
+    if (result->match) {
+        return nmo_cli_record_raw_fmt(rec, "\n%sFiles are identical%s\n",
+                                      colorize ? NMO_CLI_COLOR_GREEN : "",
+                                      colorize ? NMO_CLI_COLOR_RESET : "");
+    }
+    bool ok = nmo_cli_record_raw_fmt(rec, "\n%sDifferences found: %d%s",
+                                     colorize ? NMO_CLI_COLOR_YELLOW : "",
+                                     result->diff_count,
+                                     colorize ? NMO_CLI_COLOR_RESET : "");
+    if (ok && note_overflow && result->diff_overflow) {
+        ok = nmo_cli_record_raw_fmt(rec, " %s(overflow, only first %d shown)%s",
+                                    colorize ? NMO_CLI_COLOR_RED : "",
+                                    NMO_MAX_DIFFS,
+                                    colorize ? NMO_CLI_COLOR_RESET : "");
+    }
+    return ok && nmo_cli_record_raw(rec, "\n");
+}
+
+static nmo_cli_record_t *diff_entry_record(const nmo_diff_entry_t *entry)
+{
+    const char *type = diff_type_name(entry->type);
+    nmo_cli_record_t *item = nmo_cli_record_new();
+    bool ok = item != NULL;
+    ok = ok && nmo_cli_record_str(item, "type", NULL, type);
+    ok = ok && nmo_cli_record_uint(item, "id", NULL, entry->object_id);
+    ok = ok && nmo_cli_record_str(item, "context", NULL, entry->context);
+    ok = ok && nmo_cli_record_set_summary_fmt(item, "  [%s] %s", type,
+                                              entry->context);
+    if (!ok) {
+        nmo_cli_record_free(item);
+        return NULL;
+    }
+    return item;
+}
+
+/*
+ * "diffs" array of the selected entries, present whenever the comparison
+ * found any difference. Text lists them under a "Differences" heading only
+ * when `show_text` is set.
+ */
+static bool diff_add_entries(nmo_cli_record_t *rec,
+                             const nmo_comparison_result_t *result,
+                             const diff_entry_filter_t *filter,
+                             bool show_text)
+{
+    if (result->diff_count <= 0) {
+        return true;
+    }
+    if (show_text && !nmo_cli_record_heading(rec, "Differences")) {
+        return false;
+    }
+    nmo_cli_record_array_t *diffs = nmo_cli_record_array(rec, "diffs", NULL);
+    if (!diffs) {
+        return false;
+    }
+    if (show_text) {
+        nmo_cli_record_array_omit_heading(diffs);
+    }
+    bool ok = true;
+    for (int i = 0; ok && i < result->diff_count; i++) {
+        if (diff_entry_selected(&result->diffs[i], filter)) {
+            ok = nmo_cli_record_array_add(diffs,
+                                          diff_entry_record(&result->diffs[i]));
+        }
+    }
+    return ok;
+}
+
+static bool diff_add_file_info(nmo_cli_record_t *rec, const char *key,
+                               const nmo_file_info_t *info)
+{
+    nmo_cli_record_t *obj = nmo_cli_record_object(rec, key);
+    return obj &&
+           nmo_cli_record_uint(obj, "object_count", NULL, info->object_count) &&
+           nmo_cli_record_uint(obj, "manager_count", NULL, info->manager_count) &&
+           nmo_cli_record_uint(obj, "file_version", NULL, info->file_version) &&
+           nmo_cli_record_uint(obj, "ck_version", NULL, info->ck_version);
+}
+
+/* One class breakdown entry; its summary is the text table row. */
+static nmo_cli_record_t *diff_class_record(const class_count_entry_t *e,
+                                           nmo_context_t *ctx1,
+                                           nmo_context_t *ctx2,
+                                           bool colorize)
+{
+    const char *cname = nmo_cli_class_name_from_id(ctx1, e->class_id);
+    if (!cname) cname = nmo_cli_class_name_from_id(ctx2, e->class_id);
+
+    nmo_cli_record_t *item = nmo_cli_record_new();
+    bool ok = item != NULL;
+    ok = ok && nmo_cli_record_uint(item, "class_id", NULL, e->class_id);
+    ok = ok && diff_record_str_or_null(item, "class_name", cname);
+    ok = ok && nmo_cli_record_uint(item, "count1", NULL, e->count1);
+    ok = ok && nmo_cli_record_uint(item, "count2", NULL, e->count2);
+    if (ok && e->count1 != e->count2) {
+        ok = nmo_cli_record_int(item, "delta", NULL,
+                                (int64_t)e->count2 - (int64_t)e->count1);
+    }
+
+    char *cname_owned = NULL;
+    if (!cname) {
+        cname_owned = nmo_tool_strdup_fmt("class#%u", e->class_id);
+        cname = cname_owned ? cname_owned : "class#?";
+    }
+    int delta = (int)e->count2 - (int)e->count1;
+    if (delta == 0) {
+        ok = ok && nmo_cli_record_set_summary_fmt(item, "  %-28s %6u  %6u",
+                                                  cname, e->count1, e->count2);
+    } else {
+        ok = ok && nmo_cli_record_set_summary_fmt(
+            item, "  %-28s %6u  %6u  %s%+d%s",
+            cname, e->count1, e->count2,
+            colorize ? (delta > 0 ? NMO_CLI_COLOR_GREEN : NMO_CLI_COLOR_RED) : "",
+            delta,
+            colorize ? NMO_CLI_COLOR_RESET : "");
+    }
+    free(cname_owned);
+    if (!ok) {
+        nmo_cli_record_free(item);
+        return NULL;
+    }
+    return item;
+}
+
+static nmo_cli_record_t *diff_summary_record(
+    const char *const paths[2],
+    const nmo_comparison_result_t *result,
+    const nmo_file_info_t *info1,
+    const nmo_file_info_t *info2,
+    const class_histogram_t *hist,
+    nmo_context_t *ctx1,
+    nmo_context_t *ctx2,
+    bool details,
+    bool verbose,
+    bool colorize)
+{
+    nmo_cli_record_t *rec = diff_report_new("Diff Summary", paths);
+    bool ok = rec != NULL;
+    ok = ok && nmo_cli_record_bool(rec, "identical", NULL, result->match != 0);
+    ok = ok && nmo_cli_record_int(rec, "diff_count", NULL, result->diff_count);
+    ok = ok && nmo_cli_record_uint(rec, "objects_compared", NULL,
+                                   result->objects_compared);
+    ok = ok && nmo_cli_record_uint(rec, "objects_matched", NULL,
+                                   result->objects_matched);
+    ok = ok && diff_add_status(rec, result, false, colorize);
+    ok = ok && nmo_cli_record_raw(rec, "\n");
+    ok = ok && diff_add_file_info(rec, "file1_info", info1);
+    ok = ok && diff_add_file_info(rec, "file2_info", info2);
+    ok = ok && nmo_cli_record_text_fmt(rec, "Object count", "%u / %u",
+                                       info1->object_count, info2->object_count);
+    ok = ok && nmo_cli_record_text_fmt(rec, "Manager count", "%u / %u",
+                                       info1->manager_count, info2->manager_count);
+    ok = ok && nmo_cli_record_text_fmt(rec, "CK version", "0x%08X / 0x%08X",
+                                       info1->ck_version, info2->ck_version);
+
+    if (ok && hist->count > 0) {
+        if (details) {
+            ok = nmo_cli_record_heading(rec, "Class Breakdown") &&
+                 nmo_cli_record_raw_fmt(rec, "  %-28s %6s  %6s  %s\n",
+                                        "Class", "File 1", "File 2", "Delta") &&
+                 nmo_cli_record_raw_fmt(rec, "  %-28s %6s  %6s  %s\n",
+                                        "----------------------------",
+                                        "------", "------", "-----");
+        }
+        nmo_cli_record_array_t *classes =
+            ok ? nmo_cli_record_array(rec, "class_breakdown", NULL) : NULL;
+        ok = classes != NULL;
+        if (ok && details) {
+            nmo_cli_record_array_omit_heading(classes);
+        }
+        for (size_t i = 0; ok && i < hist->count; i++) {
+            ok = nmo_cli_record_array_add(
+                classes, diff_class_record(&hist->entries[i], ctx1, ctx2, colorize));
+        }
+    }
+
+    if (ok && details) {
+        ok = diff_add_entries(rec, result, NULL, verbose);
+    }
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        return NULL;
+    }
+    return rec;
+}
+
+/* JSON file names and the bold text "diff a/... b/..." line. */
+static bool diff_add_unified_header(nmo_cli_record_t *rec,
+                                    const char *const paths[2],
+                                    bool colorize)
+{
+    return nmo_cli_record_str(rec, "file1", NULL, paths[0]) &&
+           nmo_cli_record_str(rec, "file2", NULL, paths[1]) &&
+           nmo_cli_record_raw_fmt(rec, "%sdiff a/%s b/%s%s\n",
+                                  colorize ? "\x1b[1m" : "",
+                                  paths[0], paths[1],
+                                  colorize ? "\x1b[0m" : "");
+}
+
+static bool diff_add_object_counts_line(nmo_cli_record_t *rec,
+                                        const nmo_diff_result_t *diff)
+{
+    return nmo_cli_record_raw_fmt(
+        rec, "\n%zu object(s) changed, %zu renamed, %zu removed, %zu added"
+             " (%zu identical)\n",
+        diff->changed_count, diff->renamed_count,
+        diff->removed_count, diff->added_count, diff->identical_count);
+}
+
+static nmo_cli_record_t *diff_field_record(const nmo_field_diff_t *fd,
+                                           bool colorize)
+{
+    nmo_cli_record_t *item = nmo_cli_record_new();
+    bool ok = item != NULL;
+    ok = ok && diff_record_str_or_null(item, "field", fd->field_name);
+    ok = ok && nmo_cli_record_str(item, "before", NULL, fd->before);
+    ok = ok && nmo_cli_record_str(item, "after", NULL, fd->after);
+    ok = ok && nmo_cli_record_set_summary_fmt(
+        item, "%s-  %-24s : %s%s\n%s+  %-24s : %s%s",
+        colorize ? NMO_CLI_COLOR_RED : "",
+        fd->field_name, fd->before,
+        colorize ? NMO_CLI_COLOR_RESET : "",
+        colorize ? NMO_CLI_COLOR_GREEN : "",
+        fd->field_name, fd->after,
+        colorize ? NMO_CLI_COLOR_RESET : "");
+    if (!ok) {
+        nmo_cli_record_free(item);
+        return NULL;
+    }
+    return item;
+}
+
+/* One changed object; its text is a unified diff hunk. */
+static nmo_cli_record_t *diff_changed_record(const nmo_object_diff_t *od,
+                                             nmo_context_t *ctx1,
+                                             nmo_context_t *ctx2,
+                                             bool colorize)
+{
+    char *path_a = nmo_core_object_path_dup(ctx1, od->obj1);
+    char *path_b = nmo_core_object_path_dup(ctx2, od->obj2);
+
+    nmo_cli_record_t *item = nmo_cli_record_new();
+    bool ok = item != NULL;
+    ok = ok && nmo_cli_record_raw_fmt(item, "\n%s--- a/%s%s\n%s+++ b/%s%s\n",
+                                      colorize ? NMO_CLI_COLOR_RED : "",
+                                      path_a ? path_a : "",
+                                      colorize ? NMO_CLI_COLOR_RESET : "",
+                                      colorize ? NMO_CLI_COLOR_GREEN : "",
+                                      path_b ? path_b : "",
+                                      colorize ? NMO_CLI_COLOR_RESET : "");
+    ok = ok && nmo_cli_record_str(item, "path", NULL, path_a ? path_a : "");
+    ok = ok && nmo_cli_record_uint(item, "changed_fields", NULL,
+                                   (uint64_t)od->field_diff_total);
+    free(path_a);
+    free(path_b);
+
+    nmo_cli_record_array_t *fields =
+        ok ? nmo_cli_record_array(item, "fields", NULL) : NULL;
+    ok = fields != NULL;
+    if (ok) {
+        nmo_cli_record_array_omit_heading(fields);
+    }
+    for (size_t fi = 0; ok && fi < od->field_diff_count; fi++) {
+        ok = nmo_cli_record_array_add(
+            fields, diff_field_record(&od->field_diffs[fi], colorize));
+    }
+    if (ok && od->field_diff_total > od->field_diff_count) {
+        ok = nmo_cli_record_raw_fmt(item, "%s   ... and %zu more field(s)%s\n",
+                                    colorize ? NMO_CLI_COLOR_YELLOW : "",
+                                    od->field_diff_total - od->field_diff_count,
+                                    colorize ? NMO_CLI_COLOR_RESET : "");
+    }
+    if (!ok) {
+        nmo_cli_record_free(item);
+        return NULL;
+    }
+    return item;
+}
+
+static nmo_cli_record_t *diff_rename_record(const nmo_rename_diff_t *rd,
+                                            nmo_context_t *ctx1,
+                                            nmo_context_t *ctx2)
+{
+    char *before_path = nmo_core_object_path_dup(ctx1, rd->obj1);
+    char *after_path = nmo_core_object_path_dup(ctx2, rd->obj2);
+
+    nmo_cli_record_t *item = nmo_cli_record_new();
+    bool ok = item != NULL;
+    ok = ok && nmo_cli_record_str(item, "before", NULL,
+                                  before_path ? before_path : "");
+    ok = ok && nmo_cli_record_str(item, "after", NULL,
+                                  after_path ? after_path : "");
+    ok = ok && diff_record_str_or_null(item, "before_name", rd->before_name);
+    ok = ok && diff_record_str_or_null(item, "after_name", rd->after_name);
+    ok = ok && nmo_cli_record_real(item, "similarity", NULL, rd->similarity, NULL);
+    ok = ok && nmo_cli_record_set_summary_fmt(item, "  %s -> %s (sim=%.3f)",
+                                              before_path ? before_path : "",
+                                              after_path ? after_path : "",
+                                              rd->similarity);
+    free(before_path);
+    free(after_path);
+    if (!ok) {
+        nmo_cli_record_free(item);
+        return NULL;
+    }
+    return item;
+}
+
+/*
+ * Object path list: `key` holds the paths in JSON, `count_key` their number.
+ * Text lists them, one "<sign> path" line each, under a "<title> (N):"
+ * heading, and prints nothing when the list is empty.
+ */
+static bool diff_add_path_list(nmo_cli_record_t *rec,
+                               const char *key,
+                               const char *count_key,
+                               nmo_context_t *ctx,
+                               const nmo_object_t *const *objects,
+                               size_t count,
+                               const char *title,
+                               char sign,
+                               const char *color,
+                               bool colorize)
+{
+    char **owned = count ? (char **)calloc(count, sizeof(*owned)) : NULL;
+    const char **values = count ? (const char **)calloc(count, sizeof(*values)) : NULL;
+    bool ok = count == 0 || (owned && values);
+    if (ok && count > 0) {
+        ok = nmo_cli_record_raw_fmt(rec, "\n%s%s (%zu):%s\n",
+                                    colorize ? color : "", title, count,
+                                    colorize ? NMO_CLI_COLOR_RESET : "");
+    }
+    for (size_t i = 0; ok && i < count; i++) {
+        owned[i] = nmo_core_object_path_dup(ctx, objects[i]);
+        values[i] = owned[i] ? owned[i] : "";
+        ok = nmo_cli_record_raw_fmt(rec, "%s  %c %s%s\n",
+                                    colorize ? color : "", sign, values[i],
+                                    colorize ? NMO_CLI_COLOR_RESET : "");
+    }
+    ok = ok && nmo_cli_record_str_list(rec, key, NULL, values, count, NULL);
+    ok = ok && nmo_cli_record_uint(rec, count_key, NULL, (uint64_t)count);
+    for (size_t i = 0; owned && i < count; i++) {
+        free(owned[i]);
+    }
+    free(owned);
+    free((void *)values);
+    return ok;
+}
+
+static nmo_cli_record_t *diff_objects_record(const char *const paths[2],
+                                             const nmo_diff_result_t *diff,
+                                             const nmo_diff_config_t *cfg,
+                                             nmo_context_t *ctx1,
+                                             nmo_context_t *ctx2,
+                                             uint32_t max_objects,
+                                             bool colorize)
+{
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL;
+    ok = ok && diff_add_unified_header(rec, paths, colorize);
+    ok = ok && nmo_cli_record_uint(rec, "objects_file1", NULL,
+                                   (uint64_t)diff->total_objects1);
+    ok = ok && nmo_cli_record_uint(rec, "objects_file2", NULL,
+                                   (uint64_t)diff->total_objects2);
+    ok = ok && nmo_cli_record_real(rec, "min_similarity", NULL,
+                                   cfg->min_similarity, NULL);
+    ok = ok && nmo_cli_record_real(rec, "rename_similarity", NULL,
+                                   cfg->rename_similarity, NULL);
+    ok = ok && nmo_cli_record_uint(rec, "identical_count", NULL,
+                                   (uint64_t)diff->identical_count);
+
+    nmo_cli_record_array_t *changed =
+        ok ? nmo_cli_record_array(rec, "changed", NULL) : NULL;
+    ok = changed != NULL;
+    if (ok) {
+        nmo_cli_record_array_omit_heading(changed);
+        nmo_cli_record_array_inline_items(changed);
+    }
+    for (size_t i = 0; ok && i < diff->changed_count; i++) {
+        if (max_objects > 0 && i >= max_objects) break;
+        ok = nmo_cli_record_array_add(
+            changed, diff_changed_record(&diff->changed[i], ctx1, ctx2, colorize));
+    }
+    ok = ok && nmo_cli_record_uint(rec, "changed_count", NULL,
+                                   (uint64_t)diff->changed_count);
+
+    nmo_cli_record_array_t *renamed =
+        ok ? nmo_cli_record_array(rec, "renamed", NULL) : NULL;
+    ok = renamed != NULL;
+    if (ok && diff->renamed_count > 0) {
+        char *heading = nmo_tool_strdup_fmt("%sRenamed (%zu):%s",
+                                            colorize ? NMO_CLI_COLOR_CYAN : "",
+                                            diff->renamed_count,
+                                            colorize ? NMO_CLI_COLOR_RESET : "");
+        ok = heading && nmo_cli_record_array_set_heading(renamed, heading);
+        free(heading);
+    }
+    for (size_t i = 0; ok && i < diff->renamed_count; i++) {
+        ok = nmo_cli_record_array_add(
+            renamed, diff_rename_record(&diff->renamed[i], ctx1, ctx2));
+    }
+    ok = ok && nmo_cli_record_uint(rec, "renamed_count", NULL,
+                                   (uint64_t)diff->renamed_count);
+
+    ok = ok && diff_add_path_list(rec, "removed", "removed_count", ctx1,
+                                  diff->removed, diff->removed_count,
+                                  "Removed", '-', NMO_CLI_COLOR_RED, colorize);
+    ok = ok && diff_add_path_list(rec, "added", "added_count", ctx2,
+                                  diff->added, diff->added_count,
+                                  "Added", '+', NMO_CLI_COLOR_GREEN, colorize);
+
+    if (ok && diff->changed_count == 0 && diff->renamed_count == 0 &&
+        diff->removed_count == 0 && diff->added_count == 0) {
+        ok = nmo_cli_record_raw_fmt(rec, "\n%sFiles are identical%s\n",
+                                    colorize ? NMO_CLI_COLOR_GREEN : "",
+                                    colorize ? NMO_CLI_COLOR_RESET : "");
+    } else if (ok) {
+        ok = diff_add_object_counts_line(rec, diff);
+        if (ok && max_objects > 0 && diff->changed_count > max_objects) {
+            ok = nmo_cli_record_raw_fmt(rec, "%s(showing first %u of %zu changed)%s\n",
+                                        colorize ? NMO_CLI_COLOR_YELLOW : "",
+                                        max_objects, diff->changed_count,
+                                        colorize ? NMO_CLI_COLOR_RESET : "");
+        }
+    }
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        return NULL;
+    }
+    return rec;
+}
+
+/* In-session objects report: counts only. */
+static nmo_cli_record_t *diff_object_counts_record(const char *const paths[2],
+                                                   const nmo_diff_result_t *diff,
+                                                   bool colorize)
+{
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL;
+    ok = ok && diff_add_unified_header(rec, paths, colorize);
+    ok = ok && nmo_cli_record_uint(rec, "objects_file1", NULL,
+                                   (uint64_t)diff->total_objects1);
+    ok = ok && nmo_cli_record_uint(rec, "objects_file2", NULL,
+                                   (uint64_t)diff->total_objects2);
+    ok = ok && nmo_cli_record_uint(rec, "changed_count", NULL,
+                                   (uint64_t)diff->changed_count);
+    ok = ok && nmo_cli_record_uint(rec, "renamed_count", NULL,
+                                   (uint64_t)diff->renamed_count);
+    ok = ok && nmo_cli_record_uint(rec, "removed_count", NULL,
+                                   (uint64_t)diff->removed_count);
+    ok = ok && nmo_cli_record_uint(rec, "added_count", NULL,
+                                   (uint64_t)diff->added_count);
+    ok = ok && nmo_cli_record_uint(rec, "identical_count", NULL,
+                                   (uint64_t)diff->identical_count);
+    ok = ok && diff_add_object_counts_line(rec, diff);
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        return NULL;
+    }
+    return rec;
+}
+
+/*
+ * The CLI report keys "identical" and "diff_count" to the whole comparison
+ * and lists the chunk differences; the in-session one keys them to the chunk
+ * differences alone.
+ */
+static nmo_cli_record_t *diff_chunks_record(const char *const paths[2],
+                                            const nmo_comparison_result_t *result,
+                                            const diff_entry_filter_t *filter,
+                                            bool details,
+                                            bool colorize)
+{
+    int chunk_diff_count = diff_selected_count(result, filter);
+
+    nmo_cli_record_t *rec = diff_report_new("Chunk Comparison", paths);
+    bool ok = rec != NULL;
+    if (ok && filter->by_object) {
+        ok = nmo_cli_record_uint(rec, "id", details ? "Object ID" : NULL,
+                                 filter->object_id);
+    }
+    ok = ok && nmo_cli_record_bool(rec, "identical", NULL,
+                                   details ? result->match != 0
+                                           : chunk_diff_count == 0);
+    ok = ok && nmo_cli_record_int(rec, "diff_count", NULL,
+                                  details ? result->diff_count : chunk_diff_count);
+    if (ok && details && chunk_diff_count == 0) {
+        ok = nmo_cli_record_raw_fmt(rec, "\n%sChunks are identical%s\n",
+                                    colorize ? NMO_CLI_COLOR_GREEN : "",
+                                    colorize ? NMO_CLI_COLOR_RESET : "");
+    } else if (ok) {
+        bool highlight = colorize && chunk_diff_count > 0;
+        ok = nmo_cli_record_raw_fmt(rec, "\n%sChunk differences: %d%s\n",
+                                    highlight ? NMO_CLI_COLOR_YELLOW : "",
+                                    chunk_diff_count,
+                                    highlight ? NMO_CLI_COLOR_RESET : "");
+    }
+    if (ok && details) {
+        ok = diff_add_entries(rec, result, filter, chunk_diff_count > 0);
+    }
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        return NULL;
+    }
+    return rec;
+}
+
+static nmo_cli_record_t *diff_full_record(const char *const paths[2],
+                                          const nmo_comparison_result_t *result,
+                                          bool details,
+                                          bool colorize)
+{
+    nmo_cli_record_t *rec = diff_report_new("Full Comparison Report", paths);
+    bool ok = rec != NULL;
+    ok = ok && nmo_cli_record_bool(rec, "identical", NULL, result->match != 0);
+    ok = ok && nmo_cli_record_int(rec, "diff_count", NULL, result->diff_count);
+    ok = ok && nmo_cli_record_bool(rec, "diff_overflow", NULL,
+                                   result->diff_overflow != 0);
+    ok = ok && nmo_cli_record_raw(rec, "\n");
+    ok = ok && nmo_cli_record_uint(rec, "objects_compared", "Objects compared",
+                                   result->objects_compared);
+    ok = ok && nmo_cli_record_uint(rec, "objects_matched", "Objects matched",
+                                   result->objects_matched);
+    if (ok && details) {
+        ok = nmo_cli_record_uint(rec, "managers_compared", "Managers compared",
+                                 result->managers_compared) &&
+             nmo_cli_record_uint(rec, "managers_matched", "Managers matched",
+                                 result->managers_matched) &&
+             diff_add_status(rec, result, true, colorize);
+        if (ok && result->report[0] != '\0') {
+            ok = nmo_cli_record_str(rec, "report", NULL, result->report) &&
+                 nmo_cli_record_heading(rec, "Detailed Report") &&
+                 nmo_cli_record_raw(rec, result->report);
+        }
+        ok = ok && diff_add_entries(rec, result, NULL, false);
+    }
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        return NULL;
+    }
+    return rec;
+}
+
+/*
+ * Diff reports name the left file as the JSON input file, which the output
+ * context of the two-file commands does not carry.
+ */
+static int diff_emit(const nmo_cmd_ctx_t *c, nmo_cli_record_t *rec,
+                     const char *command, const char *input_file)
+{
+    nmo_cmd_ctx_t out = *c;
+    out.file_path = input_file;
+    return nmo_cmd_ctx_emit_record(&out, rec, command, 18, c->colorize);
+}
+
+/* ============================================================================
  * diff summary
  * ============================================================================ */
 
@@ -308,145 +933,19 @@ int nmo_cmd_diff_summary(int argc, char **argv, const nmo_cli_global_opts_t *glo
         return out_rc;
     }
 
-    if (c.is_json) {
-        /* JSON output */
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-
-        yyjson_mut_obj_add_str(doc, data, "file1", paths[0]);
-        yyjson_mut_obj_add_str(doc, data, "file2", paths[1]);
-        yyjson_mut_obj_add_bool(doc, data, "identical", result.match != 0);
-        yyjson_mut_obj_add_int(doc, data, "diff_count", result.diff_count);
-        yyjson_mut_obj_add_uint(doc, data, "objects_compared", result.objects_compared);
-        yyjson_mut_obj_add_uint(doc, data, "objects_matched", result.objects_matched);
-
-        /* File info */
-        yyjson_mut_val *file1_info = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_uint(doc, file1_info, "object_count", info1.object_count);
-        yyjson_mut_obj_add_uint(doc, file1_info, "manager_count", info1.manager_count);
-        yyjson_mut_obj_add_uint(doc, file1_info, "file_version", info1.file_version);
-        yyjson_mut_obj_add_uint(doc, file1_info, "ck_version", info1.ck_version);
-        yyjson_mut_obj_add_val(doc, data, "file1_info", file1_info);
-
-        yyjson_mut_val *file2_info = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_uint(doc, file2_info, "object_count", info2.object_count);
-        yyjson_mut_obj_add_uint(doc, file2_info, "manager_count", info2.manager_count);
-        yyjson_mut_obj_add_uint(doc, file2_info, "file_version", info2.file_version);
-        yyjson_mut_obj_add_uint(doc, file2_info, "ck_version", info2.ck_version);
-        yyjson_mut_obj_add_val(doc, data, "file2_info", file2_info);
-
-        /* Per-class breakdown */
-        if (hist.count > 0) {
-            yyjson_mut_val *classes = yyjson_mut_arr(doc);
-            for (size_t i = 0; i < hist.count; i++) {
-                class_count_entry_t *e = &hist.entries[i];
-                yyjson_mut_val *cls = yyjson_mut_obj(doc);
-                yyjson_mut_obj_add_uint(doc, cls, "class_id", e->class_id);
-                const char *cname = nmo_cli_class_name_from_id(ctx1, e->class_id);
-                if (!cname) cname = nmo_cli_class_name_from_id(ctx2, e->class_id);
-                nmo_cli_json_add_str_safe(doc, cls, "class_name", cname);
-                yyjson_mut_obj_add_uint(doc, cls, "count1", e->count1);
-                yyjson_mut_obj_add_uint(doc, cls, "count2", e->count2);
-                if (e->count1 != e->count2) {
-                    yyjson_mut_obj_add_sint(doc, cls, "delta",
-                        (int64_t)e->count2 - (int64_t)e->count1);
-                }
-                yyjson_mut_arr_append(classes, cls);
-            }
-            yyjson_mut_obj_add_val(doc, data, "class_breakdown", classes);
-        }
-
-        /* Differences */
-        if (result.diff_count > 0) {
-            yyjson_mut_val *diffs = yyjson_mut_arr(doc);
-            for (int i = 0; i < result.diff_count; i++) {
-                yyjson_mut_val *diff = yyjson_mut_obj(doc);
-                yyjson_mut_obj_add_str(doc, diff, "type", diff_type_name(result.diffs[i].type));
-                yyjson_mut_obj_add_uint(doc, diff, "id", result.diffs[i].object_id);
-                nmo_cli_json_add_str_safe(doc, diff, "context", result.diffs[i].context);
-                yyjson_mut_arr_append(diffs, diff);
-            }
-            yyjson_mut_obj_add_val(doc, data, "diffs", diffs);
-        }
-
-        nmo_cli_json_write_enveloped_and_free(doc, data, "diff.summary", paths[0], c.out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-    } else {
-        /* Text output */
-        nmo_cli_print_heading(c.out, "Diff Summary", c.colorize);
-
-        nmo_cli_print_kv(c.out, "File 1", paths[0], 18, c.colorize);
-        nmo_cli_print_kv(c.out, "File 2", paths[1], 18, c.colorize);
-
-        if (result.match) {
-            fprintf(c.out, "\n%sFiles are identical%s\n",
-                    c.colorize ? NMO_CLI_COLOR_GREEN : "",
-                    c.colorize ? NMO_CLI_COLOR_RESET : "");
-        } else {
-            fprintf(c.out, "\n%sDifferences found: %d%s\n",
-                    c.colorize ? NMO_CLI_COLOR_YELLOW : "",
-                    result.diff_count,
-                    c.colorize ? NMO_CLI_COLOR_RESET : "");
-        }
-
-        fprintf(c.out, "\n");
-        nmo_cli_print_kv_fmt(c.out, "Object count", 18, c.colorize,
-                             "%u / %u", info1.object_count, info2.object_count);
-        nmo_cli_print_kv_fmt(c.out, "Manager count", 18, c.colorize,
-                             "%u / %u", info1.manager_count, info2.manager_count);
-        nmo_cli_print_kv_fmt(c.out, "CK version", 18, c.colorize,
-                             "0x%08X / 0x%08X", info1.ck_version, info2.ck_version);
-
-        /* Per-class breakdown */
-        if (hist.count > 0) {
-            fprintf(c.out, "\n");
-            nmo_cli_print_heading(c.out, "Class Breakdown", c.colorize);
-            fprintf(c.out, "  %-28s %6s  %6s  %s\n", "Class", "File 1", "File 2", "Delta");
-            fprintf(c.out, "  %-28s %6s  %6s  %s\n",
-                    "----------------------------", "------", "------", "-----");
-            for (size_t i = 0; i < hist.count; i++) {
-                class_count_entry_t *e = &hist.entries[i];
-                const char *cname = nmo_cli_class_name_from_id(ctx1, e->class_id);
-                if (!cname) cname = nmo_cli_class_name_from_id(ctx2, e->class_id);
-                char *cname_owned = NULL;
-                if (!cname) {
-                    cname_owned = nmo_tool_strdup_fmt("class#%u", e->class_id);
-                    cname = cname_owned ? cname_owned : "class#?";
-                }
-                int delta = (int)e->count2 - (int)e->count1;
-                if (delta == 0) {
-                    fprintf(c.out, "  %-28s %6u  %6u\n",
-                            cname, e->count1, e->count2);
-                } else {
-                    fprintf(c.out, "  %-28s %6u  %6u  %s%+d%s\n",
-                            cname, e->count1, e->count2,
-                            c.colorize ? (delta > 0 ? NMO_CLI_COLOR_GREEN
-                                                  : NMO_CLI_COLOR_RED) : "",
-                            delta,
-                            c.colorize ? NMO_CLI_COLOR_RESET : "");
-                }
-                free(cname_owned);
-            }
-        }
-
-        if (verbose && result.diff_count > 0) {
-            fprintf(c.out, "\n");
-            nmo_cli_print_heading(c.out, "Differences", c.colorize);
-            for (int i = 0; i < result.diff_count; i++) {
-                fprintf(c.out, "  [%s] %s\n",
-                        diff_type_name(result.diffs[i].type),
-                        result.diffs[i].context);
-            }
-        }
-    }
+    int rc = diff_emit(&c, diff_summary_record(paths, &result, &info1, &info2,
+                                              &hist, ctx1, ctx2, true,
+                                              verbose, c.colorize),
+                       "diff.summary", paths[0]);
 
     close_two_documents(ctx1, doc1, ws1, owns1, ctx2, doc2, ws2, owns2);
 
     /* Return strict failure if requested and diffs found */
-    if (strict && !result.match) {
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_STRICT_FAILURE);
+    if (rc == NMO_CLI_EXIT_SUCCESS && strict && !result.match) {
+        rc = NMO_CLI_EXIT_STRICT_FAILURE;
     }
 
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    return nmo_cmd_ctx_done(&c, rc);
 }
 
 /* ============================================================================
@@ -516,214 +1015,15 @@ int nmo_cmd_diff_objects(int argc, char **argv, const nmo_cli_global_opts_t *glo
         return out_rc;
     }
 
-    if (c.is_json) {
-        /* ---- JSON output ---- */
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-
-        yyjson_mut_obj_add_str(doc, data, "file1", paths[0]);
-        yyjson_mut_obj_add_str(doc, data, "file2", paths[1]);
-        yyjson_mut_obj_add_uint(doc, data, "objects_file1", (uint64_t)diff.total_objects1);
-        yyjson_mut_obj_add_uint(doc, data, "objects_file2", (uint64_t)diff.total_objects2);
-        yyjson_mut_obj_add_real(doc, data, "min_similarity", cfg.min_similarity);
-        yyjson_mut_obj_add_real(doc, data, "rename_similarity", cfg.rename_similarity);
-        yyjson_mut_obj_add_uint(doc, data, "identical_count", (uint64_t)diff.identical_count);
-
-        /* Changed objects */
-        yyjson_mut_val *changed_arr = yyjson_mut_arr(doc);
-        size_t emitted = 0;
-        for (size_t i = 0; i < diff.changed_count; i++) {
-            if (max_objects > 0 && emitted >= max_objects) break;
-            const nmo_object_diff_t *od = &diff.changed[i];
-            char *path = nmo_core_object_path_dup(ctx1, od->obj1);
-
-            yyjson_mut_val *obj_val = yyjson_mut_obj(doc);
-            nmo_cli_json_add_str_safe(doc, obj_val, "path", path ? path : "");
-            free(path);
-            yyjson_mut_obj_add_uint(doc, obj_val, "changed_fields",
-                                    (uint64_t)od->field_diff_total);
-
-            yyjson_mut_val *field_arr = yyjson_mut_arr(doc);
-            for (size_t fi = 0; fi < od->field_diff_count; fi++) {
-                const nmo_field_diff_t *fd = &od->field_diffs[fi];
-                yyjson_mut_val *field_obj = yyjson_mut_obj(doc);
-                nmo_cli_json_add_str_safe(doc, field_obj, "field", fd->field_name);
-                nmo_cli_json_add_str_safe(doc, field_obj, "before", fd->before);
-                nmo_cli_json_add_str_safe(doc, field_obj, "after", fd->after);
-                yyjson_mut_arr_add_val(field_arr, field_obj);
-            }
-            yyjson_mut_obj_add_val(doc, obj_val, "fields", field_arr);
-            yyjson_mut_arr_add_val(changed_arr, obj_val);
-            emitted++;
-        }
-        yyjson_mut_obj_add_val(doc, data, "changed", changed_arr);
-        yyjson_mut_obj_add_uint(doc, data, "changed_count", (uint64_t)diff.changed_count);
-
-        /* Renamed objects */
-        yyjson_mut_val *renamed_arr = yyjson_mut_arr(doc);
-        for (size_t i = 0; i < diff.renamed_count; i++) {
-            const nmo_rename_diff_t *rd = &diff.renamed[i];
-            char *before_path = nmo_core_object_path_dup(ctx1, rd->obj1);
-            char *after_path = nmo_core_object_path_dup(ctx2, rd->obj2);
-            yyjson_mut_val *v = yyjson_mut_obj(doc);
-            nmo_cli_json_add_str_safe(doc, v, "before", before_path ? before_path : "");
-            nmo_cli_json_add_str_safe(doc, v, "after", after_path ? after_path : "");
-            free(before_path);
-            free(after_path);
-            nmo_cli_json_add_str_safe(doc, v, "before_name", rd->before_name);
-            nmo_cli_json_add_str_safe(doc, v, "after_name", rd->after_name);
-            yyjson_mut_obj_add_real(doc, v, "similarity", rd->similarity);
-            yyjson_mut_arr_add_val(renamed_arr, v);
-        }
-        yyjson_mut_obj_add_val(doc, data, "renamed", renamed_arr);
-        yyjson_mut_obj_add_uint(doc, data, "renamed_count", (uint64_t)diff.renamed_count);
-
-        /* Removed objects */
-        yyjson_mut_val *removed_arr = yyjson_mut_arr(doc);
-        for (size_t i = 0; i < diff.removed_count; i++) {
-            char *path = nmo_core_object_path_dup(ctx1, diff.removed[i]);
-            yyjson_mut_val *v = yyjson_mut_strcpy(doc, path ? path : "");
-            free(path);
-            if (v) yyjson_mut_arr_append(removed_arr, v);
-        }
-        yyjson_mut_obj_add_val(doc, data, "removed", removed_arr);
-        yyjson_mut_obj_add_uint(doc, data, "removed_count", (uint64_t)diff.removed_count);
-
-        /* Added objects */
-        yyjson_mut_val *added_arr = yyjson_mut_arr(doc);
-        for (size_t i = 0; i < diff.added_count; i++) {
-            char *path = nmo_core_object_path_dup(ctx2, diff.added[i]);
-            yyjson_mut_val *v = yyjson_mut_strcpy(doc, path ? path : "");
-            free(path);
-            if (v) yyjson_mut_arr_append(added_arr, v);
-        }
-        yyjson_mut_obj_add_val(doc, data, "added", added_arr);
-        yyjson_mut_obj_add_uint(doc, data, "added_count", (uint64_t)diff.added_count);
-
-        nmo_cli_json_write_enveloped_and_free(doc, data, "diff.objects", paths[0], c.out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-    } else {
-        /* ---- Text output: Git-style unified diff ---- */
-        fprintf(c.out, "%sdiff a/%s b/%s%s\n",
-                c.colorize ? "\x1b[1m" : "",  /* bold */
-                paths[0], paths[1],
-                c.colorize ? "\x1b[0m" : "");
-
-        size_t emitted = 0;
-        for (size_t i = 0; i < diff.changed_count; i++) {
-            if (max_objects > 0 && emitted >= max_objects) break;
-            const nmo_object_diff_t *od = &diff.changed[i];
-
-            char *path_a = nmo_core_object_path_dup(ctx1, od->obj1);
-            char *path_b = nmo_core_object_path_dup(ctx2, od->obj2);
-
-            /* Emit unified diff header for this object */
-            fprintf(c.out, "\n%s--- a/%s%s\n",
-                    c.colorize ? NMO_CLI_COLOR_RED : "",
-                    path_a ? path_a : "",
-                    c.colorize ? NMO_CLI_COLOR_RESET : "");
-            fprintf(c.out, "%s+++ b/%s%s\n",
-                    c.colorize ? NMO_CLI_COLOR_GREEN : "",
-                    path_b ? path_b : "",
-                    c.colorize ? NMO_CLI_COLOR_RESET : "");
-            free(path_a);
-            free(path_b);
-
-            for (size_t fi = 0; fi < od->field_diff_count; fi++) {
-                const nmo_field_diff_t *fd = &od->field_diffs[fi];
-                fprintf(c.out, "%s-  %-24s : %s%s\n",
-                        c.colorize ? NMO_CLI_COLOR_RED : "",
-                        fd->field_name, fd->before,
-                        c.colorize ? NMO_CLI_COLOR_RESET : "");
-                fprintf(c.out, "%s+  %-24s : %s%s\n",
-                        c.colorize ? NMO_CLI_COLOR_GREEN : "",
-                        fd->field_name, fd->after,
-                        c.colorize ? NMO_CLI_COLOR_RESET : "");
-            }
-            /* Truncation notice */
-            if (od->field_diff_total > od->field_diff_count) {
-                fprintf(c.out, "%s   ... and %zu more field(s)%s\n",
-                        c.colorize ? NMO_CLI_COLOR_YELLOW : "",
-                        od->field_diff_total - od->field_diff_count,
-                        c.colorize ? NMO_CLI_COLOR_RESET : "");
-            }
-            emitted++;
-        }
-
-        /* List renamed objects */
-        if (diff.renamed_count > 0) {
-            fprintf(c.out, "\n%sRenamed (%zu):%s\n",
-                    c.colorize ? NMO_CLI_COLOR_CYAN : "",
-                    diff.renamed_count,
-                    c.colorize ? NMO_CLI_COLOR_RESET : "");
-            for (size_t i = 0; i < diff.renamed_count; i++) {
-                const nmo_rename_diff_t *rd = &diff.renamed[i];
-                char *before_path = nmo_core_object_path_dup(ctx1, rd->obj1);
-                char *after_path = nmo_core_object_path_dup(ctx2, rd->obj2);
-                fprintf(c.out, "  %s -> %s (sim=%.3f)\n",
-                        before_path ? before_path : "",
-                        after_path ? after_path : "", rd->similarity);
-                free(before_path);
-                free(after_path);
-            }
-        }
-
-        /* List removed objects */
-        if (diff.removed_count > 0) {
-            fprintf(c.out, "\n%sRemoved (%zu):%s\n",
-                    c.colorize ? NMO_CLI_COLOR_RED : "",
-                    diff.removed_count,
-                    c.colorize ? NMO_CLI_COLOR_RESET : "");
-            for (size_t i = 0; i < diff.removed_count; i++) {
-                char *path = nmo_core_object_path_dup(ctx1, diff.removed[i]);
-                fprintf(c.out, "%s  - %s%s\n",
-                        c.colorize ? NMO_CLI_COLOR_RED : "",
-                        path ? path : "",
-                        c.colorize ? NMO_CLI_COLOR_RESET : "");
-                free(path);
-            }
-        }
-
-        /* List added objects */
-        if (diff.added_count > 0) {
-            fprintf(c.out, "\n%sAdded (%zu):%s\n",
-                    c.colorize ? NMO_CLI_COLOR_GREEN : "",
-                    diff.added_count,
-                    c.colorize ? NMO_CLI_COLOR_RESET : "");
-            for (size_t i = 0; i < diff.added_count; i++) {
-                char *path = nmo_core_object_path_dup(ctx2, diff.added[i]);
-                fprintf(c.out, "%s  + %s%s\n",
-                        c.colorize ? NMO_CLI_COLOR_GREEN : "",
-                        path ? path : "",
-                        c.colorize ? NMO_CLI_COLOR_RESET : "");
-                free(path);
-            }
-        }
-
-        /* Summary */
-        if (diff.changed_count == 0 && diff.renamed_count == 0 &&
-            diff.removed_count == 0 && diff.added_count == 0) {
-            fprintf(c.out, "\n%sFiles are identical%s\n",
-                    c.colorize ? NMO_CLI_COLOR_GREEN : "",
-                    c.colorize ? NMO_CLI_COLOR_RESET : "");
-        } else {
-            fprintf(c.out, "\n%zu object(s) changed, %zu renamed, %zu removed, %zu added"
-                    " (%zu identical)\n",
-                    diff.changed_count, diff.renamed_count,
-                    diff.removed_count, diff.added_count, diff.identical_count);
-            if (max_objects > 0 && diff.changed_count > max_objects) {
-                fprintf(c.out, "%s(showing first %u of %zu changed)%s\n",
-                        c.colorize ? NMO_CLI_COLOR_YELLOW : "",
-                        max_objects, diff.changed_count,
-                        c.colorize ? NMO_CLI_COLOR_RESET : "");
-            }
-        }
-    }
+    int rc = diff_emit(&c, diff_objects_record(paths, &diff, &cfg, ctx1, ctx2,
+                                              max_objects, c.colorize),
+                       "diff.objects", paths[0]);
 
     /* Cleanup */
     nmo_diff_result_destroy(&diff);
     close_two_documents(ctx1, doc1, ws1, owns1, ctx2, doc2, ws2, owns2);
 
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    return nmo_cmd_ctx_done(&c, rc);
 }
 
 /* ============================================================================
@@ -789,101 +1089,18 @@ int nmo_cmd_diff_chunks(int argc, char **argv, const nmo_cli_global_opts_t *glob
         return out_rc;
     }
 
-    if (c.is_json) {
-        /* JSON output */
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-
-        yyjson_mut_obj_add_str(doc, data, "file1", paths[0]);
-        yyjson_mut_obj_add_str(doc, data, "file2", paths[1]);
-        if (specific_object) {
-            yyjson_mut_obj_add_uint(doc, data, "id", object_id);
-        }
-        yyjson_mut_obj_add_bool(doc, data, "identical", result.match != 0);
-        yyjson_mut_obj_add_int(doc, data, "diff_count", result.diff_count);
-
-        /* Chunk differences (filter by object_id if specified) */
-        if (result.diff_count > 0) {
-            yyjson_mut_val *diffs = yyjson_mut_arr(doc);
-            for (int i = 0; i < result.diff_count; i++) {
-                if (specific_object && result.diffs[i].object_id != object_id) {
-                    continue;
-                }
-
-                /* Only include chunk-related diffs */
-                nmo_diff_type_t type = result.diffs[i].type;
-                if (type != NMO_DIFF_OBJECT_CHUNK_SIZE &&
-                    type != NMO_DIFF_OBJECT_CHUNK_DATA &&
-                    type != NMO_DIFF_OBJECT_CHUNK_METADATA) {
-                    continue;
-                }
-
-                yyjson_mut_val *diff = yyjson_mut_obj(doc);
-                yyjson_mut_obj_add_str(doc, diff, "type", diff_type_name(type));
-                yyjson_mut_obj_add_uint(doc, diff, "id", result.diffs[i].object_id);
-                nmo_cli_json_add_str_safe(doc, diff, "context", result.diffs[i].context);
-                yyjson_mut_arr_append(diffs, diff);
-            }
-            yyjson_mut_obj_add_val(doc, data, "diffs", diffs);
-        }
-
-        nmo_cli_json_write_enveloped_and_free(doc, data, "diff.chunks", paths[0], c.out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-    } else {
-        /* Text output */
-        nmo_cli_print_heading(c.out, "Chunk Comparison", c.colorize);
-
-        nmo_cli_print_kv(c.out, "File 1", paths[0], 18, c.colorize);
-        nmo_cli_print_kv(c.out, "File 2", paths[1], 18, c.colorize);
-
-        if (specific_object) {
-            nmo_cli_print_kv_fmt(c.out, "Object ID", 18, c.colorize, "%u", object_id);
-        }
-
-        /* Count chunk-specific diffs */
-        int chunk_diff_count = 0;
-        for (int i = 0; i < result.diff_count; i++) {
-            if (specific_object && result.diffs[i].object_id != object_id) {
-                continue;
-            }
-            nmo_diff_type_t type = result.diffs[i].type;
-            if (type == NMO_DIFF_OBJECT_CHUNK_SIZE ||
-                type == NMO_DIFF_OBJECT_CHUNK_DATA ||
-                type == NMO_DIFF_OBJECT_CHUNK_METADATA) {
-                chunk_diff_count++;
-            }
-        }
-
-        if (chunk_diff_count == 0) {
-            fprintf(c.out, "\n%sChunks are identical%s\n",
-                    c.colorize ? NMO_CLI_COLOR_GREEN : "",
-                    c.colorize ? NMO_CLI_COLOR_RESET : "");
-        } else {
-            fprintf(c.out, "\n%sChunk differences: %d%s\n",
-                    c.colorize ? NMO_CLI_COLOR_YELLOW : "",
-                    chunk_diff_count,
-                    c.colorize ? NMO_CLI_COLOR_RESET : "");
-
-            fprintf(c.out, "\n");
-            nmo_cli_print_heading(c.out, "Differences", c.colorize);
-            for (int i = 0; i < result.diff_count; i++) {
-                if (specific_object && result.diffs[i].object_id != object_id) {
-                    continue;
-                }
-                nmo_diff_type_t type = result.diffs[i].type;
-                if (type == NMO_DIFF_OBJECT_CHUNK_SIZE ||
-                    type == NMO_DIFF_OBJECT_CHUNK_DATA ||
-                    type == NMO_DIFF_OBJECT_CHUNK_METADATA) {
-                    fprintf(c.out, "  [%s] %s\n",
-                            diff_type_name(type),
-                            result.diffs[i].context);
-                }
-            }
-        }
-    }
+    diff_entry_filter_t filter = {
+        .chunks_only = true,
+        .by_object = specific_object,
+        .object_id = object_id,
+    };
+    int rc = diff_emit(&c, diff_chunks_record(paths, &result, &filter, true,
+                                             c.colorize),
+                       "diff.chunks", paths[0]);
 
     close_two_documents(ctx1, doc1, ws1, owns1, ctx2, doc2, ws2, owns2);
 
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    return nmo_cmd_ctx_done(&c, rc);
 }
 
 /* ============================================================================
@@ -954,92 +1171,12 @@ int nmo_cmd_diff_full(int argc, char **argv, const nmo_cli_global_opts_t *global
         return out_rc;
     }
 
-    if (c.is_json) {
-        /* JSON output */
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-
-        yyjson_mut_obj_add_str(doc, data, "file1", paths[0]);
-        yyjson_mut_obj_add_str(doc, data, "file2", paths[1]);
-        yyjson_mut_obj_add_bool(doc, data, "identical", result.match != 0);
-        yyjson_mut_obj_add_int(doc, data, "diff_count", result.diff_count);
-        yyjson_mut_obj_add_bool(doc, data, "diff_overflow", result.diff_overflow != 0);
-        yyjson_mut_obj_add_uint(doc, data, "objects_compared", result.objects_compared);
-        yyjson_mut_obj_add_uint(doc, data, "objects_matched", result.objects_matched);
-        yyjson_mut_obj_add_uint(doc, data, "managers_compared", result.managers_compared);
-        yyjson_mut_obj_add_uint(doc, data, "managers_matched", result.managers_matched);
-
-        /* Full report */
-        if (result.report[0] != '\0') {
-            nmo_cli_json_add_str_safe(doc, data, "report", result.report);
-        }
-
-        /* All differences */
-        if (result.diff_count > 0) {
-            yyjson_mut_val *diffs = yyjson_mut_arr(doc);
-            for (int i = 0; i < result.diff_count; i++) {
-                yyjson_mut_val *diff = yyjson_mut_obj(doc);
-                yyjson_mut_obj_add_str(doc, diff, "type", diff_type_name(result.diffs[i].type));
-                yyjson_mut_obj_add_uint(doc, diff, "id", result.diffs[i].object_id);
-                nmo_cli_json_add_str_safe(doc, diff, "context", result.diffs[i].context);
-                yyjson_mut_arr_append(diffs, diff);
-            }
-            yyjson_mut_obj_add_val(doc, data, "diffs", diffs);
-        }
-
-        nmo_cli_json_write_enveloped_and_free(doc, data, "diff.full", paths[0], c.out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-    } else {
-        /* Text output - print the formatted report */
-        nmo_cli_print_heading(c.out, "Full Comparison Report", c.colorize);
-
-        nmo_cli_print_kv(c.out, "File 1", paths[0], 18, c.colorize);
-        nmo_cli_print_kv(c.out, "File 2", paths[1], 18, c.colorize);
-
-        fprintf(c.out, "\n");
-        nmo_cli_print_kv_fmt(c.out, "Objects compared", 18, c.colorize,
-                             "%u", result.objects_compared);
-        nmo_cli_print_kv_fmt(c.out, "Objects matched", 18, c.colorize,
-                             "%u", result.objects_matched);
-        nmo_cli_print_kv_fmt(c.out, "Managers compared", 18, c.colorize,
-                             "%u", result.managers_compared);
-        nmo_cli_print_kv_fmt(c.out, "Managers matched", 18, c.colorize,
-                             "%u", result.managers_matched);
-
-        if (result.match) {
-            fprintf(c.out, "\n%sFiles are identical%s\n",
-                    c.colorize ? NMO_CLI_COLOR_GREEN : "",
-                    c.colorize ? NMO_CLI_COLOR_RESET : "");
-        } else {
-            fprintf(c.out, "\n%sDifferences found: %d%s",
-                    c.colorize ? NMO_CLI_COLOR_YELLOW : "",
-                    result.diff_count,
-                    c.colorize ? NMO_CLI_COLOR_RESET : "");
-            if (result.diff_overflow) {
-                fprintf(c.out, " %s(overflow, only first %d shown)%s",
-                        c.colorize ? NMO_CLI_COLOR_RED : "",
-                        NMO_MAX_DIFFS,
-                        c.colorize ? NMO_CLI_COLOR_RESET : "");
-            }
-            fprintf(c.out, "\n");
-        }
-
-        /* Print the detailed report */
-        if (result.report[0] != '\0') {
-            fprintf(c.out, "\n");
-            nmo_cli_print_heading(c.out, "Detailed Report", c.colorize);
-            fprintf(c.out, "%s", result.report);
-        }
-    }
+    int rc = diff_emit(&c, diff_full_record(paths, &result, true, c.colorize),
+                       "diff.full", paths[0]);
 
     close_two_documents(ctx1, doc1, ws1, owns1, ctx2, doc2, ws2, owns2);
 
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
-}
-
-static bool diff_ctx_json_pretty(const nmo_cmd_ctx_t *ctx)
-{
-    return ctx && ctx->global &&
-           ctx->global->format == NMO_CLI_FORMAT_JSON_PRETTY;
+    return nmo_cmd_ctx_done(&c, rc);
 }
 
 static const char *diff_current_session_label(const nmo_cmd_ctx_t *ctx)
@@ -1103,79 +1240,16 @@ static int nmo_cmd_diff_summary_in_session(nmo_cmd_ctx_t *ctx, int argc, char **
     qsort(hist.entries, hist.count, sizeof(class_count_entry_t), class_entry_cmp);
 
     nmo_cmd_ctx_t c = *ctx;
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-
-        yyjson_mut_obj_add_str(doc, data, "file1", paths[0]);
-        yyjson_mut_obj_add_str(doc, data, "file2", paths[1]);
-        yyjson_mut_obj_add_bool(doc, data, "identical", result.match != 0);
-        yyjson_mut_obj_add_int(doc, data, "diff_count", result.diff_count);
-        yyjson_mut_obj_add_uint(doc, data, "objects_compared", result.objects_compared);
-        yyjson_mut_obj_add_uint(doc, data, "objects_matched", result.objects_matched);
-
-        yyjson_mut_val *file1_info = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_uint(doc, file1_info, "object_count", info1.object_count);
-        yyjson_mut_obj_add_uint(doc, file1_info, "manager_count", info1.manager_count);
-        yyjson_mut_obj_add_uint(doc, file1_info, "file_version", info1.file_version);
-        yyjson_mut_obj_add_uint(doc, file1_info, "ck_version", info1.ck_version);
-        yyjson_mut_obj_add_val(doc, data, "file1_info", file1_info);
-
-        yyjson_mut_val *file2_info = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_uint(doc, file2_info, "object_count", info2.object_count);
-        yyjson_mut_obj_add_uint(doc, file2_info, "manager_count", info2.manager_count);
-        yyjson_mut_obj_add_uint(doc, file2_info, "file_version", info2.file_version);
-        yyjson_mut_obj_add_uint(doc, file2_info, "ck_version", info2.ck_version);
-        yyjson_mut_obj_add_val(doc, data, "file2_info", file2_info);
-
-        if (hist.count > 0) {
-            yyjson_mut_val *classes = yyjson_mut_arr(doc);
-            for (size_t i = 0; i < hist.count; i++) {
-                class_count_entry_t *e = &hist.entries[i];
-                yyjson_mut_val *cls = yyjson_mut_obj(doc);
-                yyjson_mut_obj_add_uint(doc, cls, "class_id", e->class_id);
-                const char *cname = nmo_cli_class_name_from_id(ctx1, e->class_id);
-                if (!cname) cname = nmo_cli_class_name_from_id(ctx2, e->class_id);
-                nmo_cli_json_add_str_safe(doc, cls, "class_name", cname);
-                yyjson_mut_obj_add_uint(doc, cls, "count1", e->count1);
-                yyjson_mut_obj_add_uint(doc, cls, "count2", e->count2);
-                if (e->count1 != e->count2) {
-                    yyjson_mut_obj_add_sint(doc, cls, "delta",
-                        (int64_t)e->count2 - (int64_t)e->count1);
-                }
-                yyjson_mut_arr_append(classes, cls);
-            }
-            yyjson_mut_obj_add_val(doc, data, "class_breakdown", classes);
-        }
-
-        nmo_cli_json_write_enveloped_and_free(doc, data, "diff.summary",
-                                              paths[0], c.out,
-                                              diff_ctx_json_pretty(&c));
-    } else {
-        nmo_cli_print_heading(c.out, "Diff Summary", c.colorize);
-        nmo_cli_print_kv(c.out, "File 1", paths[0], 18, c.colorize);
-        nmo_cli_print_kv(c.out, "File 2", paths[1], 18, c.colorize);
-        if (result.match) {
-            fprintf(c.out, "\n%sFiles are identical%s\n",
-                    c.colorize ? NMO_CLI_COLOR_GREEN : "",
-                    c.colorize ? NMO_CLI_COLOR_RESET : "");
-        } else {
-            fprintf(c.out, "\n%sDifferences found: %d%s\n",
-                    c.colorize ? NMO_CLI_COLOR_YELLOW : "",
-                    result.diff_count,
-                    c.colorize ? NMO_CLI_COLOR_RESET : "");
-        }
-        fprintf(c.out, "\n");
-        nmo_cli_print_kv_fmt(c.out, "Object count", 18, c.colorize,
-                             "%u / %u", info1.object_count, info2.object_count);
-        nmo_cli_print_kv_fmt(c.out, "Manager count", 18, c.colorize,
-                             "%u / %u", info1.manager_count, info2.manager_count);
-        nmo_cli_print_kv_fmt(c.out, "CK version", 18, c.colorize,
-                             "0x%08X / 0x%08X", info1.ck_version, info2.ck_version);
-    }
+    int rc = diff_emit(&c, diff_summary_record(paths, &result, &info1, &info2,
+                                              &hist, ctx1, ctx2, false,
+                                              verbose, c.colorize),
+                       "diff.summary", paths[0]);
 
     close_two_documents(ctx1, doc1, ws1, owns1, ctx2, doc2, ws2, owns2);
-    return (strict && !result.match) ? NMO_CLI_EXIT_STRICT_FAILURE : NMO_CLI_EXIT_SUCCESS;
+    if (rc == NMO_CLI_EXIT_SUCCESS && strict && !result.match) {
+        rc = NMO_CLI_EXIT_STRICT_FAILURE;
+    }
+    return rc;
 }
 
 static int nmo_cmd_diff_objects_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
@@ -1227,35 +1301,12 @@ static int nmo_cmd_diff_objects_in_session(nmo_cmd_ctx_t *ctx, int argc, char **
     }
 
     nmo_cmd_ctx_t c = *ctx;
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_str(doc, data, "file1", paths[0]);
-        yyjson_mut_obj_add_str(doc, data, "file2", paths[1]);
-        yyjson_mut_obj_add_uint(doc, data, "objects_file1", (uint64_t)diff.total_objects1);
-        yyjson_mut_obj_add_uint(doc, data, "objects_file2", (uint64_t)diff.total_objects2);
-        yyjson_mut_obj_add_uint(doc, data, "changed_count", (uint64_t)diff.changed_count);
-        yyjson_mut_obj_add_uint(doc, data, "renamed_count", (uint64_t)diff.renamed_count);
-        yyjson_mut_obj_add_uint(doc, data, "removed_count", (uint64_t)diff.removed_count);
-        yyjson_mut_obj_add_uint(doc, data, "added_count", (uint64_t)diff.added_count);
-        yyjson_mut_obj_add_uint(doc, data, "identical_count", (uint64_t)diff.identical_count);
-        nmo_cli_json_write_enveloped_and_free(doc, data, "diff.objects",
-                                              paths[0], c.out,
-                                              diff_ctx_json_pretty(&c));
-    } else {
-        fprintf(c.out, "%sdiff a/%s b/%s%s\n",
-                c.colorize ? "\x1b[1m" : "",
-                paths[0], paths[1],
-                c.colorize ? "\x1b[0m" : "");
-        fprintf(c.out, "\n%zu object(s) changed, %zu renamed, %zu removed, %zu added"
-                " (%zu identical)\n",
-                diff.changed_count, diff.renamed_count,
-                diff.removed_count, diff.added_count, diff.identical_count);
-    }
+    int rc = diff_emit(&c, diff_object_counts_record(paths, &diff, c.colorize),
+                       "diff.objects", paths[0]);
 
     nmo_diff_result_destroy(&diff);
     close_two_documents(ctx1, doc1, ws1, owns1, ctx2, doc2, ws2, owns2);
-    return NMO_CLI_EXIT_SUCCESS;
+    return rc;
 }
 
 static int nmo_cmd_diff_chunks_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
@@ -1295,40 +1346,18 @@ static int nmo_cmd_diff_chunks_in_session(nmo_cmd_ctx_t *ctx, int argc, char **a
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    int chunk_diff_count = 0;
-    for (int i = 0; i < result.diff_count; i++) {
-        if (specific_object && result.diffs[i].object_id != object_id) continue;
-        nmo_diff_type_t type = result.diffs[i].type;
-        if (type == NMO_DIFF_OBJECT_CHUNK_SIZE ||
-            type == NMO_DIFF_OBJECT_CHUNK_DATA ||
-            type == NMO_DIFF_OBJECT_CHUNK_METADATA) {
-            chunk_diff_count++;
-        }
-    }
+    diff_entry_filter_t filter = {
+        .chunks_only = true,
+        .by_object = specific_object,
+        .object_id = object_id,
+    };
 
     nmo_cmd_ctx_t c = *ctx;
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_str(doc, data, "file1", paths[0]);
-        yyjson_mut_obj_add_str(doc, data, "file2", paths[1]);
-        if (specific_object) yyjson_mut_obj_add_uint(doc, data, "id", object_id);
-        yyjson_mut_obj_add_bool(doc, data, "identical", chunk_diff_count == 0);
-        yyjson_mut_obj_add_int(doc, data, "diff_count", chunk_diff_count);
-        nmo_cli_json_write_enveloped_and_free(doc, data, "diff.chunks",
-                                              paths[0], c.out,
-                                              diff_ctx_json_pretty(&c));
-    } else {
-        nmo_cli_print_heading(c.out, "Chunk Comparison", c.colorize);
-        nmo_cli_print_kv(c.out, "File 1", paths[0], 18, c.colorize);
-        nmo_cli_print_kv(c.out, "File 2", paths[1], 18, c.colorize);
-        fprintf(c.out, "\n%sChunk differences: %d%s\n",
-                chunk_diff_count ? (c.colorize ? NMO_CLI_COLOR_YELLOW : "") : "",
-                chunk_diff_count,
-                chunk_diff_count && c.colorize ? NMO_CLI_COLOR_RESET : "");
-    }
+    int rc = diff_emit(&c, diff_chunks_record(paths, &result, &filter, false,
+                                             c.colorize),
+                       "diff.chunks", paths[0]);
     close_two_documents(ctx1, doc1, ws1, owns1, ctx2, doc2, ws2, owns2);
-    return NMO_CLI_EXIT_SUCCESS;
+    return rc;
 }
 
 static int nmo_cmd_diff_full_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
@@ -1375,31 +1404,10 @@ static int nmo_cmd_diff_full_in_session(nmo_cmd_ctx_t *ctx, int argc, char **arg
     nmo_comparison_result_format_report(&result);
 
     nmo_cmd_ctx_t c = *ctx;
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_str(doc, data, "file1", paths[0]);
-        yyjson_mut_obj_add_str(doc, data, "file2", paths[1]);
-        yyjson_mut_obj_add_bool(doc, data, "identical", result.match != 0);
-        yyjson_mut_obj_add_int(doc, data, "diff_count", result.diff_count);
-        yyjson_mut_obj_add_bool(doc, data, "diff_overflow", result.diff_overflow != 0);
-        yyjson_mut_obj_add_uint(doc, data, "objects_compared", result.objects_compared);
-        yyjson_mut_obj_add_uint(doc, data, "objects_matched", result.objects_matched);
-        nmo_cli_json_write_enveloped_and_free(doc, data, "diff.full",
-                                              paths[0], c.out,
-                                              diff_ctx_json_pretty(&c));
-    } else {
-        nmo_cli_print_heading(c.out, "Full Comparison Report", c.colorize);
-        nmo_cli_print_kv(c.out, "File 1", paths[0], 18, c.colorize);
-        nmo_cli_print_kv(c.out, "File 2", paths[1], 18, c.colorize);
-        fprintf(c.out, "\n");
-        nmo_cli_print_kv_fmt(c.out, "Objects compared", 18, c.colorize,
-                             "%u", result.objects_compared);
-        nmo_cli_print_kv_fmt(c.out, "Objects matched", 18, c.colorize,
-                             "%u", result.objects_matched);
-    }
+    int rc = diff_emit(&c, diff_full_record(paths, &result, false, c.colorize),
+                       "diff.full", paths[0]);
     close_two_documents(ctx1, doc1, ws1, owns1, ctx2, doc2, ws2, owns2);
-    return NMO_CLI_EXIT_SUCCESS;
+    return rc;
 }
 
 int nmo_cmd_diff_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
