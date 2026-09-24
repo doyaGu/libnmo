@@ -20,6 +20,7 @@
 
 #include "nmo_cli_common.h"
 #include "nmo_cli_json.h"
+#include "nmo_cli_record.h"
 #include "nmo_tool_owner.h"
 #include "nmo_tool_session.h"
 
@@ -195,6 +196,23 @@ yyjson_mut_doc *nmo_cmd_ctx_json_begin(nmo_cmd_ctx_t *c);
  */
 int nmo_cmd_ctx_json_end(nmo_cmd_ctx_t *c, yyjson_mut_doc *doc,
                          yyjson_mut_val *data, const char *cmd_name);
+
+/**
+ * @brief Write a record as the command output and free it.
+ *
+ * JSON mode: the record's JSON fields become the envelope data. Text mode:
+ * nmo_cli_record_print_kv(rec, c->out, key_width, colorize).
+ *
+ * @param c          Command context
+ * @param rec        Record (freed by this call; NULL reports an internal error)
+ * @param cmd_name   Command name for the JSON envelope
+ * @param key_width  Text label column width
+ * @param colorize   Whether text labels are colored
+ * @return 0 on success, NMO_CLI_EXIT_INTERNAL_ERROR on failure
+ */
+int nmo_cmd_ctx_emit_record(nmo_cmd_ctx_t *c, nmo_cli_record_t *rec,
+                            const char *cmd_name, int key_width,
+                            bool colorize);
 
 #ifdef __cplusplus
 }

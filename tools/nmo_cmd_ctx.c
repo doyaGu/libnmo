@@ -324,3 +324,27 @@ int nmo_cmd_ctx_json_end(nmo_cmd_ctx_t *c, yyjson_mut_doc *doc,
         doc, data, cmd_name, c->file_path, c->out, pretty);
     return ok ? NMO_CLI_EXIT_SUCCESS : NMO_CLI_EXIT_INTERNAL_ERROR;
 }
+
+int nmo_cmd_ctx_emit_record(nmo_cmd_ctx_t *c, nmo_cli_record_t *rec,
+                            const char *cmd_name, int key_width,
+                            bool colorize)
+{
+    if (!rec) {
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+    int rc = NMO_CLI_EXIT_SUCCESS;
+    if (c->is_json) {
+        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
+        yyjson_mut_val *data = doc ? yyjson_mut_obj(doc) : NULL;
+        if (data && nmo_cli_record_to_json(rec, doc, data)) {
+            rc = nmo_cmd_ctx_json_end(c, doc, data, cmd_name);
+        } else {
+            yyjson_mut_doc_free(doc);
+            rc = NMO_CLI_EXIT_INTERNAL_ERROR;
+        }
+    } else {
+        nmo_cli_record_print_kv(rec, c->out, key_width, colorize);
+    }
+    nmo_cli_record_free(rec);
+    return rc;
+}
