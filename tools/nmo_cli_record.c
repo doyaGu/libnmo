@@ -30,7 +30,9 @@ typedef enum record_kind {
     RECORD_REAL_LIST,
     RECORD_UINT_LIST,
     RECORD_STR_LIST,
-    RECORD_ARRAY
+    RECORD_ARRAY,
+    RECORD_OBJECT,
+    RECORD_JSON
 } record_kind_t;
 
 struct nmo_cli_record_array {
@@ -40,6 +42,7 @@ struct nmo_cli_record_array {
     char *heading;
     char *empty_text;
     bool omit_empty;
+    bool omit_heading;
 };
 
 typedef struct record_field {
@@ -61,6 +64,9 @@ typedef struct record_field {
     bool b;
     nmo_cli_record_array_t *array; /* RECORD_ARRAY; heap-allocated so the
                                       handle survives parent growth */
+    nmo_cli_record_t *object;      /* RECORD_OBJECT; heap-allocated too */
+    nmo_cli_record_json_fn json_fn; /* RECORD_JSON */
+    const void *json_data;         /* RECORD_JSON; borrowed */
 } record_field_t;
 
 struct nmo_cli_record {
@@ -172,6 +178,7 @@ static void field_dispose(record_field_t *field)
         free(field->array->empty_text);
         free(field->array);
     }
+    nmo_cli_record_free(field->object);
     memset(field, 0, sizeof(*field));
 }
 
@@ -710,6 +717,36 @@ bool nmo_cli_record_array_add(nmo_cli_record_array_t *array,
     return true;
 }
 
+nmo_cli_record_t *nmo_cli_record_object(nmo_cli_record_t *record,
+                                        const char *key)
+{
+    record_field_t *field = field_append(record, RECORD_OBJECT, key, NULL);
+    if (!field) {
+        return NULL;
+    }
+    field->object = nmo_cli_record_new();
+    if (!field->object) {
+        field_fail(record);
+        return NULL;
+    }
+    return field->object;
+}
+
+bool nmo_cli_record_json(nmo_cli_record_t *record, nmo_cli_record_json_fn fn,
+                         const void *data)
+{
+    if (!fn) {
+        return false;
+    }
+    record_field_t *field = field_append(record, RECORD_JSON, NULL, NULL);
+    if (!field) {
+        return false;
+    }
+    field->json_fn = fn;
+    field->json_data = data;
+    return true;
+}
+
 size_t nmo_cli_record_array_count(const nmo_cli_record_array_t *array)
 {
     return array ? array->count : 0u;
@@ -728,6 +765,13 @@ void nmo_cli_record_array_omit_empty(nmo_cli_record_array_t *array)
 {
     if (array) {
         array->omit_empty = true;
+    }
+}
+
+void nmo_cli_record_array_omit_heading(nmo_cli_record_array_t *array)
+{
+    if (array) {
+        array->omit_heading = true;
     }
 }
 
@@ -760,7 +804,7 @@ bool nmo_cli_record_to_json(const nmo_cli_record_t *record,
     for (size_t i = 0; i < record->count && ok; ++i) {
         const record_field_t *field = &record->fields[i];
         if (!field->key && field->kind != RECORD_REF &&
-            field->kind != RECORD_BYTES) {
+            field->kind != RECORD_BYTES && field->kind != RECORD_JSON) {
             continue;
         }
         switch (field->kind) {
@@ -867,6 +911,16 @@ bool nmo_cli_record_to_json(const nmo_cli_record_t *record,
             }
             break;
         }
+        case RECORD_OBJECT: {
+            yyjson_mut_val *child = yyjson_mut_obj(doc);
+            ok = child != NULL &&
+                 nmo_cli_record_to_json(field->object, doc, child) &&
+                 nmo_cli_json_add_val_safe(doc, obj, field->key, child);
+            break;
+        }
+        case RECORD_JSON:
+            ok = field->json_fn(doc, obj, field->json_data);
+            break;
         }
     }
     return ok;
@@ -920,17 +974,28 @@ void nmo_cli_record_print_kv(const nmo_cli_record_t *record, FILE *out,
             record_print_bytes(field, out, key_width, colorize);
             continue;
         }
+        if (field->kind == RECORD_OBJECT) {
+            nmo_cli_record_print_kv(field->object, out, key_width, colorize);
+            continue;
+        }
+        if (field->kind == RECORD_JSON) {
+            continue;
+        }
         if (field->kind == RECORD_ARRAY) {
-            if (!field->label && !field->array->heading) {
+            if (!field->label && !field->array->heading &&
+                !field->array->omit_heading) {
                 continue;
             }
             if (field->array->omit_empty && field->array->count == 0u) {
                 continue;
             }
-            if (field->array->heading) {
-                fprintf(out, "\n%s\n", field->array->heading);
-            } else {
-                fprintf(out, "\n%s (%zu):\n", field->label, field->array->count);
+            if (!field->array->omit_heading) {
+                if (field->array->heading) {
+                    fprintf(out, "\n%s\n", field->array->heading);
+                } else {
+                    fprintf(out, "\n%s (%zu):\n", field->label,
+                            field->array->count);
+                }
             }
             for (size_t j = 0; j < field->array->count; ++j) {
                 const nmo_cli_record_t *item = field->array->items[j];
@@ -964,7 +1029,8 @@ bool nmo_cli_record_add_table_row(const nmo_cli_record_t *record,
     size_t n = 0;
     for (size_t i = 0; i < record->count; ++i) {
         const record_field_t *field = &record->fields[i];
-        if (field->kind == RECORD_ARRAY || field->kind == RECORD_RAW ||
+        if (field->kind == RECORD_ARRAY || field->kind == RECORD_OBJECT ||
+            field->kind == RECORD_JSON || field->kind == RECORD_RAW ||
             field->kind == RECORD_HEADING || field->kind == RECORD_BYTES ||
             !field->label || !field->text) {
             continue;

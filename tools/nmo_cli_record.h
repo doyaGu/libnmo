@@ -184,11 +184,33 @@ void nmo_cli_record_array_omit_empty(nmo_cli_record_array_t *array);
 /** Text line printed under the heading when the array has no items. */
 bool nmo_cli_record_array_set_empty_text(nmo_cli_record_array_t *array,
                                          const char *text);
+/** In text, print only the item summaries, without a heading line. */
+void nmo_cli_record_array_omit_heading(nmo_cli_record_array_t *array);
 /** One-line text used when this record is rendered as an array item. */
 bool nmo_cli_record_set_summary(nmo_cli_record_t *record, const char *text);
 /** Formatted variant of nmo_cli_record_set_summary. */
 bool nmo_cli_record_set_summary_fmt(nmo_cli_record_t *record,
                                     const char *format, ...);
+
+/**
+ * Nested record. The returned child is owned by `record`. In JSON the field
+ * becomes an object under `key` (NULL: omitted from JSON). In text the
+ * child's fields are printed inline, at this position.
+ */
+nmo_cli_record_t *nmo_cli_record_object(nmo_cli_record_t *record,
+                                        const char *key);
+
+/**
+ * JSON-only splice: while rendering JSON, `fn` is called to add fields to the
+ * object this record renders into. Use it to reuse an existing yyjson helper.
+ * `data` is borrowed and must stay valid until the record has been rendered.
+ * Absent from text and table cells.
+ */
+typedef bool (*nmo_cli_record_json_fn)(yyjson_mut_doc *doc,
+                                       yyjson_mut_val *obj,
+                                       const void *data);
+bool nmo_cli_record_json(nmo_cli_record_t *record, nmo_cli_record_json_fn fn,
+                         const void *data);
 
 /* Rendering */
 

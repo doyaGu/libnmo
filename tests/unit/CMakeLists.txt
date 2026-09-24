@@ -176,6 +176,18 @@ target_link_libraries(test_batch_rename PRIVATE nmo test_framework yyjson)
 target_include_directories(test_batch_rename PRIVATE ../../tools)
 add_test(NAME test_batch_rename COMMAND test_batch_rename)
 
+# CLI output records (nested objects, JSON splices, bare arrays)
+add_executable(test_cli_record test_cli_record.c
+    ../../tools/nmo_tool_common.c
+    ../../tools/nmo_cli_common.c
+    ../../tools/nmo_cli_output.c
+    ../../tools/nmo_cli_json.c
+    ../../tools/nmo_cli_record.c
+)
+target_link_libraries(test_cli_record PRIVATE nmo test_framework yyjson)
+target_include_directories(test_cli_record PRIVATE ../../tools)
+add_test(NAME test_cli_record COMMAND test_cli_record)
+
 # Parameter value decoding
 add_unit_test(test_param_value)
 
