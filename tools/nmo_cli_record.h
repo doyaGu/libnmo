@@ -100,6 +100,13 @@ bool nmo_cli_record_raw_fmt(nmo_cli_record_t *record, const char *format, ...);
  */
 bool nmo_cli_record_heading(nmo_cli_record_t *record, const char *title);
 /**
+ * Text-only heading line in the heading style (bold when colorized), without
+ * the blank line nmo_cli_record_heading prints first.
+ */
+bool nmo_cli_record_title(nmo_cli_record_t *record, const char *title);
+/** Formatted variant of nmo_cli_record_title; the result may be any length. */
+bool nmo_cli_record_title_fmt(nmo_cli_record_t *record, const char *format, ...);
+/**
  * Hex dump of a byte buffer, limited to `max_bytes` (0: no limit). JSON: the
  * "data_hex" / "data_emit_size" / "data_truncated" / "data_total_size" keys
  * of nmo_cli_json_add_data_hex, nothing when `size` is zero. Text: a
@@ -128,6 +135,12 @@ bool nmo_cli_record_str_list(nmo_cli_record_t *record, const char *key,
 bool nmo_cli_record_uint_list(nmo_cli_record_t *record, const char *key,
                               const char *label, const uint64_t *values,
                               size_t count, const char *text);
+/**
+ * JSON array of signed integers. Text shows `text` (NULL: omitted).
+ */
+bool nmo_cli_record_int_list(nmo_cli_record_t *record, const char *key,
+                             const char *label, const int64_t *values,
+                             size_t count, const char *text);
 /**
  * Object reference. JSON: `id_key` as an unsigned integer and, when `name`
  * is non-empty, `name_key` as a string (either key may be NULL to skip it).
@@ -186,6 +199,11 @@ bool nmo_cli_record_array_set_empty_text(nmo_cli_record_array_t *array,
                                          const char *text);
 /** In text, print only the item summaries, without a heading line. */
 void nmo_cli_record_array_omit_heading(nmo_cli_record_array_t *array);
+/**
+ * In text, print each item's own fields, inline, in place of its summary.
+ * Combine with nmo_cli_record_array_omit_heading for multi-line item text.
+ */
+void nmo_cli_record_array_inline_items(nmo_cli_record_array_t *array);
 /** One-line text used when this record is rendered as an array item. */
 bool nmo_cli_record_set_summary(nmo_cli_record_t *record, const char *text);
 /** Formatted variant of nmo_cli_record_set_summary. */

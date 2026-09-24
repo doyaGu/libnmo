@@ -29,6 +29,7 @@ typedef enum record_kind {
     RECORD_BYTES,
     RECORD_REAL_LIST,
     RECORD_UINT_LIST,
+    RECORD_INT_LIST,
     RECORD_STR_LIST,
     RECORD_ARRAY,
     RECORD_OBJECT,
@@ -43,6 +44,7 @@ struct nmo_cli_record_array {
     char *empty_text;
     bool omit_empty;
     bool omit_heading;
+    bool inline_items;
 };
 
 typedef struct record_field {
@@ -58,10 +60,11 @@ typedef struct record_field {
     double v[3];      /* RECORD_VEC3 */
     double *reals;    /* RECORD_REAL_LIST */
     uint64_t *uints;  /* RECORD_UINT_LIST */
+    int64_t *ints;    /* RECORD_INT_LIST */
     char **strs;      /* RECORD_STR_LIST (entries may be NULL) */
     unsigned char *bytes; /* RECORD_BYTES: the emitted prefix; u = total size */
     size_t list_count;
-    bool b;
+    bool b;           /* RECORD_HEADING: no leading blank line */
     nmo_cli_record_array_t *array; /* RECORD_ARRAY; heap-allocated so the
                                       handle survives parent growth */
     nmo_cli_record_t *object;      /* RECORD_OBJECT; heap-allocated too */
@@ -162,6 +165,7 @@ static void field_dispose(record_field_t *field)
     free(field->str);
     free(field->reals);
     free(field->uints);
+    free(field->ints);
     free(field->bytes);
     if (field->strs) {
         for (size_t i = 0; i < field->list_count; ++i) {
@@ -592,6 +596,35 @@ bool nmo_cli_record_real_list(nmo_cli_record_t *record, const char *key,
     return true;
 }
 
+static bool record_title_set(nmo_cli_record_t *record, char *title)
+{
+    if (!title) {
+        return false;
+    }
+    record_field_t *field = field_append(record, RECORD_HEADING, NULL, NULL);
+    if (!field) {
+        free(title);
+        return false;
+    }
+    field->text = title;
+    field->b = true;
+    return true;
+}
+
+bool nmo_cli_record_title(nmo_cli_record_t *record, const char *title)
+{
+    return record_title_set(record, dup_str(title ? title : ""));
+}
+
+bool nmo_cli_record_title_fmt(nmo_cli_record_t *record, const char *format, ...)
+{
+    va_list args;
+    va_start(args, format);
+    char *title = vformat_dup(format, args);
+    va_end(args);
+    return record_title_set(record, title);
+}
+
 bool nmo_cli_record_uint_list(nmo_cli_record_t *record, const char *key,
                               const char *label, const uint64_t *values,
                               size_t count, const char *text)
@@ -606,6 +639,28 @@ bool nmo_cli_record_uint_list(nmo_cli_record_t *record, const char *key,
             return field_fail(record);
         }
         memcpy(field->uints, values, count * sizeof(uint64_t));
+    }
+    field->list_count = count;
+    if (text && !set_str(&field->text, text)) {
+        return field_fail(record);
+    }
+    return true;
+}
+
+bool nmo_cli_record_int_list(nmo_cli_record_t *record, const char *key,
+                             const char *label, const int64_t *values,
+                             size_t count, const char *text)
+{
+    record_field_t *field = field_append(record, RECORD_INT_LIST, key, label);
+    if (!field) {
+        return false;
+    }
+    if (count > 0u) {
+        field->ints = (int64_t *)malloc(count * sizeof(int64_t));
+        if (!field->ints || !values) {
+            return field_fail(record);
+        }
+        memcpy(field->ints, values, count * sizeof(int64_t));
     }
     field->list_count = count;
     if (text && !set_str(&field->text, text)) {
@@ -775,6 +830,13 @@ void nmo_cli_record_array_omit_heading(nmo_cli_record_array_t *array)
     }
 }
 
+void nmo_cli_record_array_inline_items(nmo_cli_record_array_t *array)
+{
+    if (array) {
+        array->inline_items = true;
+    }
+}
+
 bool nmo_cli_record_array_set_empty_text(nmo_cli_record_array_t *array,
                                          const char *text)
 {
@@ -863,6 +925,15 @@ bool nmo_cli_record_to_json(const nmo_cli_record_t *record,
             ok = arr != NULL;
             for (size_t j = 0; ok && j < field->list_count; ++j) {
                 ok = yyjson_mut_arr_add_uint(doc, arr, field->uints[j]);
+            }
+            ok = ok && nmo_cli_json_add_val_safe(doc, obj, field->key, arr);
+            break;
+        }
+        case RECORD_INT_LIST: {
+            yyjson_mut_val *arr = yyjson_mut_arr(doc);
+            ok = arr != NULL;
+            for (size_t j = 0; ok && j < field->list_count; ++j) {
+                ok = yyjson_mut_arr_add_int(doc, arr, field->ints[j]);
             }
             ok = ok && nmo_cli_json_add_val_safe(doc, obj, field->key, arr);
             break;
@@ -966,7 +1037,9 @@ void nmo_cli_record_print_kv(const nmo_cli_record_t *record, FILE *out,
             continue;
         }
         if (field->kind == RECORD_HEADING) {
-            fputc('\n', out);
+            if (!field->b) {
+                fputc('\n', out);
+            }
             nmo_cli_print_heading(out, field->text ? field->text : "", colorize);
             continue;
         }
@@ -999,7 +1072,9 @@ void nmo_cli_record_print_kv(const nmo_cli_record_t *record, FILE *out,
             }
             for (size_t j = 0; j < field->array->count; ++j) {
                 const nmo_cli_record_t *item = field->array->items[j];
-                if (item && item->summary) {
+                if (item && field->array->inline_items) {
+                    nmo_cli_record_print_kv(item, out, key_width, colorize);
+                } else if (item && item->summary) {
                     fprintf(out, "%s\n", item->summary);
                 }
             }

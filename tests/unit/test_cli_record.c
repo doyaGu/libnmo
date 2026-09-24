@@ -1,6 +1,7 @@
 /**
  * @file test_cli_record.c
- * @brief Tests for nested objects, JSON splices, and bare arrays in CLI records
+ * @brief Tests for nested objects, JSON splices, arrays, titles, and integer lists
+ *        in CLI records
  */
 
 #include "test_framework.h"
@@ -145,10 +146,73 @@ TEST(cli_record, array_omit_heading_prints_summaries_only)
     nmo_cli_record_free(rec);
 }
 
+TEST(cli_record, array_inline_items_print_item_fields)
+{
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    ASSERT_NOT_NULL(rec);
+    nmo_cli_record_array_t *arr = nmo_cli_record_array(rec, "items", NULL);
+    ASSERT_NOT_NULL(arr);
+    nmo_cli_record_array_omit_heading(arr);
+    nmo_cli_record_array_inline_items(arr);
+    for (unsigned i = 0; i < 2u; ++i) {
+        nmo_cli_record_t *item = nmo_cli_record_new();
+        ASSERT_NOT_NULL(item);
+        ASSERT_TRUE(nmo_cli_record_uint(item, "id", NULL, i));
+        ASSERT_TRUE(nmo_cli_record_raw_fmt(item, "[%u]\n", i));
+        ASSERT_TRUE(nmo_cli_record_set_summary(item, "ignored"));
+        ASSERT_TRUE(nmo_cli_record_array_add(arr, item));
+    }
+
+    char *json = record_json(rec);
+    ASSERT_STR_EQ(json, "{\"items\":[{\"id\":0},{\"id\":1}]}");
+    char *text = record_text(rec, 0);
+    ASSERT_STR_EQ(text, "[0]\n[1]\n");
+    free(json);
+    free(text);
+    nmo_cli_record_free(rec);
+}
+
+TEST(cli_record, title_has_no_leading_blank_line)
+{
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    ASSERT_NOT_NULL(rec);
+    ASSERT_TRUE(nmo_cli_record_title(rec, "First"));
+    ASSERT_TRUE(nmo_cli_record_title_fmt(rec, "Second (%d)", 2));
+    ASSERT_TRUE(nmo_cli_record_heading(rec, "Third"));
+
+    char *json = record_json(rec);
+    ASSERT_STR_EQ(json, "{}");
+    char *text = record_text(rec, 0);
+    ASSERT_STR_EQ(text, "First\nSecond (2)\n\nThird\n");
+    free(json);
+    free(text);
+    nmo_cli_record_free(rec);
+}
+
+TEST(cli_record, int_list_keeps_sign)
+{
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    ASSERT_NOT_NULL(rec);
+    const int64_t values[] = {-1, 0, 7};
+    ASSERT_TRUE(nmo_cli_record_int_list(rec, "values", "Values", values, 3, "-1 0 7"));
+    ASSERT_TRUE(nmo_cli_record_int_list(rec, "empty", NULL, NULL, 0, NULL));
+
+    char *json = record_json(rec);
+    ASSERT_STR_EQ(json, "{\"values\":[-1,0,7],\"empty\":[]}");
+    char *text = record_text(rec, 0);
+    ASSERT_STR_EQ(text, "Values: -1 0 7\n");
+    free(json);
+    free(text);
+    nmo_cli_record_free(rec);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(cli_record, object_nests_json_and_inlines_text);
     REGISTER_TEST(cli_record, object_without_key_is_text_only);
     REGISTER_TEST(cli_record, json_splice_runs_in_order_and_skips_text);
     REGISTER_TEST(cli_record, json_splice_failure_fails_render);
     REGISTER_TEST(cli_record, array_omit_heading_prints_summaries_only);
+    REGISTER_TEST(cli_record, array_inline_items_print_item_fields);
+    REGISTER_TEST(cli_record, title_has_no_leading_blank_line);
+    REGISTER_TEST(cli_record, int_list_keeps_sign);
 TEST_MAIN_END()
