@@ -7,7 +7,7 @@
 
 #include "../nmo_cmd_core.h"
 #include "../nmo_cli_common.h"
-#include "../nmo_cli_json.h"
+#include "../nmo_cli_record.h"
 #include "../nmo_edit_report_json.h"
 #include "../nmo_cli_write.h"
 #include "../nmo_opt.h"
@@ -99,119 +99,186 @@ static bool parse_graph_boundary_args(int argc,
     return true;
 }
 
-static void add_internal_nodes_json(yyjson_mut_doc *doc,
-                                    yyjson_mut_val *data,
-                                    const nmo_behavior_boundary_t *boundary) {
-    yyjson_mut_val *arr = yyjson_mut_arr(doc);
-    for (size_t i = 0; i < boundary->internal_node_count; ++i) {
-        yyjson_mut_arr_add_uint(doc, arr, boundary->internal_nodes[i]);
-    }
-    yyjson_mut_obj_add_val(doc, data, "internal_nodes", arr);
+/* Append a new item to `array`; the array owns it. NULL on allocation failure. */
+static nmo_cli_record_t *array_add_item(nmo_cli_record_array_t *array) {
+    nmo_cli_record_t *item = nmo_cli_record_new();
+    return nmo_cli_record_array_add(array, item) ? item : NULL;
 }
 
-static void add_control_edges_json(
-    yyjson_mut_doc *doc,
-    yyjson_mut_val *data,
+/* JSON string, or JSON null when `value` is NULL. */
+static bool add_str_or_null(nmo_cli_record_t *rec,
+                            const char *key,
+                            const char *value) {
+    return value ? nmo_cli_record_str(rec, key, NULL, value)
+                 : nmo_cli_record_null(rec, key, NULL, NULL);
+}
+
+static bool add_id_list(nmo_cli_record_t *rec,
+                        const char *key,
+                        const nmo_object_id_t *ids,
+                        size_t count) {
+    if (!ids) {
+        count = 0;
+    }
+    uint64_t *values = count > 0
+        ? (uint64_t *)malloc(count * sizeof(*values))
+        : NULL;
+    if (count > 0 && !values) {
+        return false;
+    }
+    for (size_t i = 0; i < count; ++i) {
+        values[i] = ids[i];
+    }
+    bool ok = nmo_cli_record_uint_list(rec, key, NULL, values, count, NULL);
+    free(values);
+    return ok;
+}
+
+static bool add_control_edges(
+    nmo_cli_record_t *rec,
     const char *key,
     const nmo_behavior_boundary_control_edge_t *edges,
     size_t count) {
-    yyjson_mut_val *arr = yyjson_mut_arr(doc);
-    for (size_t i = 0; i < count; ++i) {
-        yyjson_mut_val *item = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_uint(doc, item, "link_id", edges[i].link_id);
-        yyjson_mut_obj_add_uint(doc, item, "source_owner_id",
-                                edges[i].source_owner_id);
-        yyjson_mut_obj_add_uint(doc, item, "source_io_id",
-                                edges[i].source_io_id);
-        yyjson_mut_obj_add_uint(doc, item, "target_owner_id",
-                                edges[i].target_owner_id);
-        yyjson_mut_obj_add_uint(doc, item, "target_io_id",
-                                edges[i].target_io_id);
-        yyjson_mut_obj_add_int(doc, item, "activation_delay",
-                               edges[i].activation_delay);
-        yyjson_mut_obj_add_int(doc, item, "initial_activation_delay",
-                               edges[i].initial_activation_delay);
-        yyjson_mut_arr_add_val(arr, item);
+    nmo_cli_record_array_t *arr = nmo_cli_record_array(rec, key, NULL);
+    bool ok = arr != NULL;
+    for (size_t i = 0; ok && i < count; ++i) {
+        const nmo_behavior_boundary_control_edge_t *edge = &edges[i];
+        nmo_cli_record_t *item = array_add_item(arr);
+        ok = item != NULL;
+        ok = ok && nmo_cli_record_uint(item, "link_id", NULL, edge->link_id);
+        ok = ok && nmo_cli_record_uint(item, "source_owner_id", NULL,
+                                       edge->source_owner_id);
+        ok = ok && nmo_cli_record_uint(item, "source_io_id", NULL,
+                                       edge->source_io_id);
+        ok = ok && nmo_cli_record_uint(item, "target_owner_id", NULL,
+                                       edge->target_owner_id);
+        ok = ok && nmo_cli_record_uint(item, "target_io_id", NULL,
+                                       edge->target_io_id);
+        ok = ok && nmo_cli_record_int(item, "activation_delay", NULL,
+                                      edge->activation_delay);
+        ok = ok && nmo_cli_record_int(item, "initial_activation_delay", NULL,
+                                      edge->initial_activation_delay);
     }
-    yyjson_mut_obj_add_val(doc, data, key, arr);
+    return ok;
 }
 
-static void add_parameter_edges_json(
-    yyjson_mut_doc *doc,
-    yyjson_mut_val *data,
+static bool add_parameter_edges(
+    nmo_cli_record_t *rec,
     const char *key,
     const nmo_behavior_boundary_parameter_edge_t *edges,
     size_t count) {
-    yyjson_mut_val *arr = yyjson_mut_arr(doc);
-    for (size_t i = 0; i < count; ++i) {
-        yyjson_mut_val *item = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_uint(doc, item, "source_parameter_id",
-                                edges[i].source_parameter_id);
-        yyjson_mut_obj_add_uint(doc, item, "target_parameter_id",
-                                edges[i].target_parameter_id);
-        yyjson_mut_obj_add_uint(doc, item, "source_owner_id",
-                                edges[i].source_owner_id);
-        yyjson_mut_obj_add_uint(doc, item, "target_owner_id",
-                                edges[i].target_owner_id);
-        nmo_cli_json_add_str_fmt_safe(doc, item, "type_guid", "%08X-%08X",
-                                      edges[i].type_guid.d1, edges[i].type_guid.d2);
-        yyjson_mut_obj_add_bool(doc, item, "shared", edges[i].shared);
-        yyjson_mut_arr_add_val(arr, item);
+    nmo_cli_record_array_t *arr = nmo_cli_record_array(rec, key, NULL);
+    bool ok = arr != NULL;
+    for (size_t i = 0; ok && i < count; ++i) {
+        const nmo_behavior_boundary_parameter_edge_t *edge = &edges[i];
+        nmo_cli_record_t *item = array_add_item(arr);
+        ok = item != NULL;
+        ok = ok && nmo_cli_record_uint(item, "source_parameter_id", NULL,
+                                       edge->source_parameter_id);
+        ok = ok && nmo_cli_record_uint(item, "target_parameter_id", NULL,
+                                       edge->target_parameter_id);
+        ok = ok && nmo_cli_record_uint(item, "source_owner_id", NULL,
+                                       edge->source_owner_id);
+        ok = ok && nmo_cli_record_uint(item, "target_owner_id", NULL,
+                                       edge->target_owner_id);
+        ok = ok && nmo_cli_record_str_fmt(item, "type_guid", NULL, "%08X-%08X",
+                                          edge->type_guid.d1,
+                                          edge->type_guid.d2);
+        ok = ok && nmo_cli_record_bool(item, "shared", NULL, edge->shared);
     }
-    yyjson_mut_obj_add_val(doc, data, key, arr);
+    return ok;
 }
 
-static void add_edit_report_json(yyjson_mut_doc *doc,
-                                 yyjson_mut_val *data,
-                                 nmo_edit_report_t *report,
-                                 const char *output_path) {
+/* "internal_nodes" followed by the four boundary edge arrays. */
+static bool add_boundary_edges(nmo_cli_record_t *rec,
+                               const nmo_behavior_boundary_t *boundary) {
+    return add_id_list(rec, "internal_nodes", boundary->internal_nodes,
+                       boundary->internal_node_count) &&
+           add_control_edges(rec, "control_in", boundary->control_in,
+                             boundary->control_in_count) &&
+           add_control_edges(rec, "control_out", boundary->control_out,
+                             boundary->control_out_count) &&
+           add_parameter_edges(rec, "parameter_in", boundary->parameter_in,
+                               boundary->parameter_in_count) &&
+           add_parameter_edges(rec, "parameter_out", boundary->parameter_out,
+                               boundary->parameter_out_count);
+}
+
+static bool add_boundary_counts(nmo_cli_record_t *rec,
+                                const nmo_behavior_boundary_t *boundary) {
+    return nmo_cli_record_uint(rec, "node_count", NULL,
+                               boundary->internal_node_count) &&
+           nmo_cli_record_uint(rec, "control_in_count", NULL,
+                               boundary->control_in_count) &&
+           nmo_cli_record_uint(rec, "control_out_count", NULL,
+                               boundary->control_out_count) &&
+           nmo_cli_record_uint(rec, "parameter_in_count", NULL,
+                               boundary->parameter_in_count) &&
+           nmo_cli_record_uint(rec, "parameter_out_count", NULL,
+                               boundary->parameter_out_count);
+}
+
+static bool edit_report_json(yyjson_mut_doc *doc,
+                             yyjson_mut_val *obj,
+                             const void *data) {
+    const nmo_edit_report_t *report = (const nmo_edit_report_t *)data;
+    nmo_cli_edit_report_add_schema_v2_json(
+        doc, obj, report, report != NULL && report->dry_run);
+    return true;
+}
+
+/* Splice the schema v2 edit report; `report` must outlive the record. */
+static bool add_edit_report(nmo_cli_record_t *rec,
+                            nmo_edit_report_t *report,
+                            const char *output_path) {
     if (report != NULL && output_path != NULL && report->output_path == NULL) {
         (void)nmo_edit_report_set_output_path(report, output_path);
     }
-    nmo_cli_edit_report_add_schema_v2_json(
-        doc, data, report, report != NULL && report->dry_run);
+    return nmo_cli_record_json(rec, edit_report_json, report);
+}
+
+/*
+ * Emit a record built by this file. The text side is written with raw lines,
+ * matching the plain fprintf output these commands have always produced. An
+ * incomplete record (`ok` false) is an internal error.
+ */
+static int emit_record(nmo_cmd_ctx_t *ctx,
+                       nmo_cli_record_t *rec,
+                       bool ok,
+                       const char *cmd_name) {
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        rec = NULL;
+    }
+    return nmo_cmd_ctx_emit_record(ctx, rec, cmd_name, 0, false);
 }
 
 static int graph_boundary_emit(nmo_cmd_ctx_t *ctx,
                                const nmo_behavior_boundary_t *boundary) {
-    if (ctx->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
-        if (!doc) {
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
-        }
-
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_uint(doc, data, "behavior_id",
-                                boundary->behavior_id);
-        add_internal_nodes_json(doc, data, boundary);
-        add_control_edges_json(doc, data, "control_in",
-                               boundary->control_in,
-                               boundary->control_in_count);
-        add_control_edges_json(doc, data, "control_out",
-                               boundary->control_out,
-                               boundary->control_out_count);
-        add_parameter_edges_json(doc, data, "parameter_in",
-                                 boundary->parameter_in,
-                                 boundary->parameter_in_count);
-        add_parameter_edges_json(doc, data, "parameter_out",
-                                 boundary->parameter_out,
-                                 boundary->parameter_out_count);
-        yyjson_mut_obj_add_uint(doc, data, "broken_links",
-                                (uint64_t)boundary->broken_links);
-        yyjson_mut_obj_add_uint(doc, data, "missing_nodes",
-                                (uint64_t)boundary->missing_nodes);
-        return nmo_cmd_ctx_json_end(ctx, doc, data,
-                                    "behavior.graph-boundary");
-    }
-
-    fprintf(ctx->out, "Behavior #%u boundary\n", boundary->behavior_id);
-    fprintf(ctx->out, "Internal nodes: %zu\n",
-            boundary->internal_node_count);
-    fprintf(ctx->out, "Control in: %zu\n", boundary->control_in_count);
-    fprintf(ctx->out, "Control out: %zu\n", boundary->control_out_count);
-    fprintf(ctx->out, "Parameter in: %zu\n", boundary->parameter_in_count);
-    fprintf(ctx->out, "Parameter out: %zu\n", boundary->parameter_out_count);
-    return NMO_CLI_EXIT_SUCCESS;
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL;
+    ok = ok && nmo_cli_record_uint(rec, "behavior_id", NULL,
+                                   boundary->behavior_id);
+    ok = ok && add_boundary_edges(rec, boundary);
+    ok = ok && nmo_cli_record_uint(rec, "broken_links", NULL,
+                                   boundary->broken_links);
+    ok = ok && nmo_cli_record_uint(rec, "missing_nodes", NULL,
+                                   boundary->missing_nodes);
+    ok = ok && nmo_cli_record_raw_fmt(
+        rec,
+        "Behavior #%u boundary\n"
+        "Internal nodes: %zu\n"
+        "Control in: %zu\n"
+        "Control out: %zu\n"
+        "Parameter in: %zu\n"
+        "Parameter out: %zu\n",
+        boundary->behavior_id,
+        boundary->internal_node_count,
+        boundary->control_in_count,
+        boundary->control_out_count,
+        boundary->parameter_in_count,
+        boundary->parameter_out_count);
+    return emit_record(ctx, rec, ok, "behavior.graph-boundary");
 }
 
 static int graph_boundary_run(nmo_cmd_ctx_t *ctx,
@@ -308,7 +375,11 @@ typedef struct fold_candidates_args {
     uint32_t depth;
 } fold_candidates_args_t;
 
-typedef struct fold_candidate_group_desc {
+/*
+ * One fold candidate group. Router and component groups own their roots and
+ * boundary (owned_* set); the parent and direct-child groups borrow them.
+ */
+typedef struct fold_candidate_group {
     const char *kind;
     nmo_workspace_t *workspace;
     nmo_object_id_t root_id;
@@ -316,7 +387,15 @@ typedef struct fold_candidate_group_desc {
     const nmo_object_id_t *roots;
     size_t root_count;
     const nmo_behavior_boundary_t *boundary;
-} fold_candidate_group_desc_t;
+    nmo_object_id_t *owned_roots;
+    nmo_behavior_boundary_t *owned_boundary;
+} fold_candidate_group_t;
+
+typedef struct fold_candidate_group_list {
+    fold_candidate_group_t *items;
+    size_t count;
+    size_t capacity;
+} fold_candidate_group_list_t;
 
 typedef struct fold_candidate_child {
     nmo_object_id_t root_id;
@@ -385,110 +464,154 @@ static const char *fold_interface_action(
     return "preserve_marker";
 }
 
-static void add_fold_interface_json(yyjson_mut_doc *doc,
-                                    yyjson_mut_val *group,
-                                    const nmo_behavior_state_t *state) {
-    yyjson_mut_val *interface_obj = yyjson_mut_obj(doc);
-    yyjson_mut_obj_add_bool(doc, interface_obj, "available",
-                            state && state->has_interface);
-    yyjson_mut_obj_add_bool(doc, interface_obj, "structured",
-                            state && state->interface_data != NULL);
-    yyjson_mut_obj_add_bool(doc, interface_obj, "raw",
-                            state && state->interface_chunk != NULL);
-    yyjson_mut_obj_add_bool(doc, interface_obj, "runtime_ids",
-                            state && state->interface_ids_are_runtime);
-    nmo_cli_json_add_str_safe(doc, interface_obj, "action",
-                              fold_interface_action(state));
-    yyjson_mut_obj_add_val(doc, group, "interface", interface_obj);
+static bool add_fold_interface(nmo_cli_record_t *rec,
+                               const nmo_behavior_state_t *state) {
+    nmo_cli_record_t *obj = nmo_cli_record_object(rec, "interface");
+    bool ok = obj != NULL;
+    ok = ok && nmo_cli_record_bool(obj, "available", NULL,
+                                   state && state->has_interface);
+    ok = ok && nmo_cli_record_bool(obj, "structured", NULL,
+                                   state && state->interface_data != NULL);
+    ok = ok && nmo_cli_record_bool(obj, "raw", NULL,
+                                   state && state->interface_chunk != NULL);
+    ok = ok && nmo_cli_record_bool(obj, "runtime_ids", NULL,
+                                   state && state->interface_ids_are_runtime);
+    ok = ok && nmo_cli_record_str(obj, "action", NULL,
+                                  fold_interface_action(state));
+    return ok;
 }
 
-static void add_id_list_json(yyjson_mut_doc *doc,
-                             yyjson_mut_val *obj,
-                             const char *key,
-                             const nmo_object_id_t *ids,
-                             size_t count);
-
-static void add_boundary_semantic_risks_json(
-    yyjson_mut_doc *doc,
-    yyjson_mut_val *data,
-    nmo_workspace_t *workspace,
-    const nmo_behavior_boundary_t *boundary) {
+static bool fold_group_semantic_risks_json(yyjson_mut_doc *doc,
+                                           yyjson_mut_val *obj,
+                                           const void *data) {
+    const fold_candidate_group_t *group = (const fold_candidate_group_t *)data;
     nmo_behavior_semantic_risk_t *risks = NULL;
     size_t risk_count = 0;
-    if (workspace && boundary) {
+    if (group->workspace) {
         (void)nmo_behavior_edit_collect_semantic_risks(
-            workspace, boundary,
-            boundary->internal_nodes, boundary->internal_node_count,
+            group->workspace, group->boundary,
+            group->boundary->internal_nodes,
+            group->boundary->internal_node_count,
             &risks, &risk_count);
     }
     nmo_cli_edit_report_add_semantic_risk_array_json(
-        doc, data, risks, risk_count);
+        doc, obj, risks, risk_count);
     nmo_behavior_edit_semantic_risks_free(risks);
+    return true;
 }
 
-static void add_fold_candidate_group_json(
-    yyjson_mut_doc *doc,
-    yyjson_mut_val *groups,
-    const fold_candidate_group_desc_t *desc) {
-    if (!doc || !groups || !desc || !desc->boundary) {
-        return;
+static bool fold_group_set_summary(nmo_cli_record_t *item,
+                                   const fold_candidate_group_t *group) {
+    const nmo_behavior_boundary_t *b = group->boundary;
+    if (strcmp(group->kind, "parent_recursive") == 0) {
+        return nmo_cli_record_set_summary_fmt(
+            item,
+            "Candidate %s: nodes=%zu control_in=%zu control_out=%zu parameter_in=%zu parameter_out=%zu",
+            group->kind, b->internal_node_count, b->control_in_count,
+            b->control_out_count, b->parameter_in_count,
+            b->parameter_out_count);
     }
-
-    yyjson_mut_val *group = yyjson_mut_obj(doc);
-    nmo_cli_json_add_str_safe(doc, group, "kind", desc->kind);
-    yyjson_mut_obj_add_uint(doc, group, "root_id", desc->root_id);
-    nmo_cli_json_add_str_safe(doc, group, "root_behavior_type",
-                              fold_behavior_type(desc->root_state));
-    add_id_list_json(doc, group, "roots", desc->roots, desc->root_count);
-
-    yyjson_mut_val *nodes = yyjson_mut_arr(doc);
-    for (size_t i = 0; i < desc->boundary->internal_node_count; ++i) {
-        yyjson_mut_arr_add_uint(doc, nodes, desc->boundary->internal_nodes[i]);
+    if (strcmp(group->kind, "direct_child") == 0) {
+        return nmo_cli_record_set_summary_fmt(
+            item,
+            "Candidate %s #%u (%s): nodes=%zu control_in=%zu control_out=%zu parameter_in=%zu parameter_out=%zu interface=%s",
+            group->kind, group->root_id, fold_behavior_type(group->root_state),
+            b->internal_node_count, b->control_in_count,
+            b->control_out_count, b->parameter_in_count,
+            b->parameter_out_count, fold_interface_action(group->root_state));
     }
-    yyjson_mut_obj_add_val(doc, group, "nodes", nodes);
-    add_internal_nodes_json(doc, group, desc->boundary);
-    add_control_edges_json(doc, group, "control_in",
-                           desc->boundary->control_in,
-                           desc->boundary->control_in_count);
-    add_control_edges_json(doc, group, "control_out",
-                           desc->boundary->control_out,
-                           desc->boundary->control_out_count);
-    add_parameter_edges_json(doc, group, "parameter_in",
-                             desc->boundary->parameter_in,
-                             desc->boundary->parameter_in_count);
-    add_parameter_edges_json(doc, group, "parameter_out",
-                             desc->boundary->parameter_out,
-                             desc->boundary->parameter_out_count);
-    add_fold_interface_json(doc, group, desc->root_state);
-    yyjson_mut_obj_add_uint(doc, group, "node_count",
-                            (uint64_t)desc->boundary->internal_node_count);
-    yyjson_mut_obj_add_uint(doc, group, "control_in_count",
-                            (uint64_t)desc->boundary->control_in_count);
-    yyjson_mut_obj_add_uint(doc, group, "control_out_count",
-                            (uint64_t)desc->boundary->control_out_count);
-    yyjson_mut_obj_add_uint(doc, group, "parameter_in_count",
-                            (uint64_t)desc->boundary->parameter_in_count);
-    yyjson_mut_obj_add_uint(doc, group, "parameter_out_count",
-                            (uint64_t)desc->boundary->parameter_out_count);
-    yyjson_mut_obj_add_uint(doc, group, "broken_links",
-                            (uint64_t)desc->boundary->broken_links);
-    yyjson_mut_obj_add_uint(doc, group, "missing_nodes",
-                            (uint64_t)desc->boundary->missing_nodes);
-    add_boundary_semantic_risks_json(
-        doc, group, desc->workspace, desc->boundary);
-    yyjson_mut_arr_add_val(groups, group);
+    return nmo_cli_record_set_summary_fmt(
+        item,
+        "Candidate %s #%u: roots=%zu nodes=%zu control_in=%zu control_out=%zu parameter_in=%zu parameter_out=%zu interface=%s",
+        group->kind, group->root_id, group->root_count,
+        b->internal_node_count, b->control_in_count, b->control_out_count,
+        b->parameter_in_count, b->parameter_out_count,
+        fold_interface_action(group->root_state));
 }
 
-static void add_id_list_json(yyjson_mut_doc *doc,
-                             yyjson_mut_val *obj,
-                             const char *key,
-                             const nmo_object_id_t *ids,
-                             size_t count) {
-    yyjson_mut_val *arr = yyjson_mut_arr(doc);
-    for (size_t i = 0; ids && i < count; ++i) {
-        yyjson_mut_arr_add_uint(doc, arr, ids[i]);
+/* `group` must outlive the record: its semantic risks are read at render time. */
+static bool add_fold_candidate_group(nmo_cli_record_array_t *groups,
+                                     const fold_candidate_group_t *group) {
+    const nmo_behavior_boundary_t *boundary = group->boundary;
+    nmo_cli_record_t *item = array_add_item(groups);
+    bool ok = item != NULL;
+    ok = ok && nmo_cli_record_str(item, "kind", NULL, group->kind);
+    ok = ok && nmo_cli_record_uint(item, "root_id", NULL, group->root_id);
+    ok = ok && nmo_cli_record_str(item, "root_behavior_type", NULL,
+                                  fold_behavior_type(group->root_state));
+    ok = ok && add_id_list(item, "roots", group->roots, group->root_count);
+    ok = ok && add_id_list(item, "nodes", boundary->internal_nodes,
+                           boundary->internal_node_count);
+    ok = ok && add_boundary_edges(item, boundary);
+    ok = ok && add_fold_interface(item, group->root_state);
+    ok = ok && add_boundary_counts(item, boundary);
+    ok = ok && nmo_cli_record_uint(item, "broken_links", NULL,
+                                   boundary->broken_links);
+    ok = ok && nmo_cli_record_uint(item, "missing_nodes", NULL,
+                                   boundary->missing_nodes);
+    ok = ok && nmo_cli_record_json(item, fold_group_semantic_risks_json, group);
+    ok = ok && fold_group_set_summary(item, group);
+    return ok;
+}
+
+static bool fold_group_list_push(fold_candidate_group_list_t *list,
+                                 const fold_candidate_group_t *group) {
+    if (list->count == list->capacity) {
+        size_t capacity = list->capacity ? list->capacity * 2u : 8u;
+        fold_candidate_group_t *items = (fold_candidate_group_t *)realloc(
+            list->items, capacity * sizeof(*items));
+        if (!items) {
+            return false;
+        }
+        list->items = items;
+        list->capacity = capacity;
     }
-    yyjson_mut_obj_add_val(doc, obj, key, arr);
+    list->items[list->count++] = *group;
+    return true;
+}
+
+static void fold_group_dispose(fold_candidate_group_t *group) {
+    free(group->owned_roots);
+    if (group->owned_boundary) {
+        nmo_behavior_boundary_free(group->owned_boundary);
+        free(group->owned_boundary);
+    }
+}
+
+static void fold_group_list_free(fold_candidate_group_list_t *list) {
+    for (size_t i = 0; i < list->count; ++i) {
+        fold_group_dispose(&list->items[i]);
+    }
+    free(list->items);
+}
+
+/*
+ * Push a group that owns `roots` and `boundary`. Ownership passes to the list
+ * even on failure.
+ */
+static bool fold_group_list_push_owned(fold_candidate_group_list_t *list,
+                                       nmo_cmd_ctx_t *ctx,
+                                       const char *kind,
+                                       const fold_candidate_child_t *root,
+                                       nmo_object_id_t *roots,
+                                       size_t root_count,
+                                       nmo_behavior_boundary_t *boundary) {
+    fold_candidate_group_t group = {
+        .kind = kind,
+        .workspace = ctx->workspace,
+        .root_id = root->root_id,
+        .root_state = root->root_state,
+        .roots = roots,
+        .root_count = root_count,
+        .boundary = boundary,
+        .owned_roots = roots,
+        .owned_boundary = boundary,
+    };
+    if (!fold_group_list_push(list, &group)) {
+        fold_group_dispose(&group);
+        return false;
+    }
+    return true;
 }
 
 static bool fold_candidate_contains_id(const nmo_behavior_boundary_t *boundary,
@@ -657,16 +780,37 @@ static void fold_candidates_union_connected_children(
     }
 }
 
-static int fold_candidates_emit_control_router_groups(
+/* Heap boundary for `nodes` under `parent_id`; NULL with the error reported. */
+static nmo_behavior_boundary_t *fold_build_group_boundary(
     nmo_cmd_ctx_t *ctx,
     nmo_object_id_t parent_id,
-    yyjson_mut_doc *doc,
-    yyjson_mut_val *groups,
+    const nmo_object_id_t *nodes,
+    size_t node_count,
+    const char *failure) {
+    nmo_behavior_boundary_t *boundary =
+        (nmo_behavior_boundary_t *)calloc(1u, sizeof(*boundary));
+    if (!boundary) {
+        fprintf(stderr, "Error: Out of memory\n");
+        return NULL;
+    }
+    if (!nmo_behavior_boundary_build_for_nodes(
+            ctx->workspace, parent_id, nodes, node_count, boundary)) {
+        const char *detail = nmo_last_error_message();
+        fprintf(stderr, "Error: %s\n", detail[0] != '\0' ? detail : failure);
+        free(boundary);
+        return NULL;
+    }
+    return boundary;
+}
+
+static int fold_candidates_collect_control_router_groups(
+    nmo_cmd_ctx_t *ctx,
+    nmo_object_id_t parent_id,
     const nmo_behavior_state_t *parent,
     const fold_candidate_child_t *children,
     size_t child_count,
-    size_t *inout_group_count) {
-    if (!ctx || !doc || !groups || !parent || !children || child_count == 0) {
+    fold_candidate_group_list_t *groups) {
+    if (!parent || !children || child_count == 0) {
         return NMO_CLI_EXIT_SUCCESS;
     }
 
@@ -751,51 +895,42 @@ static int fold_candidates_emit_control_router_groups(
             }
         }
 
-        if (router_count > 1u) {
-            nmo_behavior_boundary_t router_boundary = {0};
-            if (!nmo_behavior_boundary_build_for_nodes(
-                    ctx->workspace, parent_id,
-                    router_ids, router_count, &router_boundary)) {
-                const char *detail = nmo_last_error_message();
-                free(router_ids);
-                fprintf(stderr, "Error: %s\n",
-                        detail[0] != '\0' ? detail
-                                       : "Failed to build control router boundary");
-                return NMO_CLI_EXIT_INTERNAL_ERROR;
-            }
-
-            if (router_boundary.control_out_count > 1u) {
-                fold_candidate_group_desc_t desc = {
-                    .kind = "control_router",
-                    .workspace = ctx->workspace,
-                    .root_id = children[i].root_id,
-                    .root_state = children[i].root_state,
-                    .roots = router_ids,
-                    .root_count = router_count,
-                    .boundary = &router_boundary,
-                };
-                add_fold_candidate_group_json(doc, groups, &desc);
-                (*inout_group_count)++;
-            }
-            nmo_behavior_boundary_free(&router_boundary);
+        if (router_count <= 1u) {
+            free(router_ids);
+            continue;
         }
-
-        free(router_ids);
+        nmo_behavior_boundary_t *router_boundary = fold_build_group_boundary(
+            ctx, parent_id, router_ids, router_count,
+            "Failed to build control router boundary");
+        if (!router_boundary) {
+            free(router_ids);
+            return NMO_CLI_EXIT_INTERNAL_ERROR;
+        }
+        if (router_boundary->control_out_count <= 1u) {
+            nmo_behavior_boundary_free(router_boundary);
+            free(router_boundary);
+            free(router_ids);
+            continue;
+        }
+        if (!fold_group_list_push_owned(groups, ctx, "control_router",
+                                        &children[i], router_ids,
+                                        router_count, router_boundary)) {
+            fprintf(stderr, "Error: Out of memory\n");
+            return NMO_CLI_EXIT_INTERNAL_ERROR;
+        }
     }
 
     return NMO_CLI_EXIT_SUCCESS;
 }
 
-static int fold_candidates_emit_connected_components(
+static int fold_candidates_collect_connected_components(
     nmo_cmd_ctx_t *ctx,
     nmo_object_id_t parent_id,
-    yyjson_mut_doc *doc,
-    yyjson_mut_val *groups,
     const nmo_behavior_state_t *parent,
     const fold_candidate_child_t *children,
     size_t child_count,
-    size_t *inout_group_count) {
-    if (!ctx || !groups || !parent || !children || child_count == 0) {
+    fold_candidate_group_list_t *groups) {
+    if (!parent || !children || child_count == 0) {
         return NMO_CLI_EXIT_SUCCESS;
     }
 
@@ -811,7 +946,7 @@ static int fold_candidates_emit_connected_components(
     fold_candidates_union_connected_children(ctx, parent, children,
                                              child_count, parents);
 
-    bool saw_component = false;
+    int exit_code = NMO_CLI_EXIT_SUCCESS;
     for (size_t i = 0; i < child_count; ++i) {
         if (fold_component_find(parents, i) != i) {
             continue;
@@ -819,58 +954,45 @@ static int fold_candidates_emit_connected_components(
 
         nmo_object_id_t *component_roots = NULL;
         size_t component_root_count = 0;
-        const nmo_behavior_state_t *root_state = children[i].root_state;
-        nmo_object_id_t root_id = children[i].root_id;
-
-        for (size_t j = 0; j < child_count; ++j) {
-            if (fold_component_find(parents, j) != i) {
-                continue;
-            }
-            if (!fold_component_append_unique_id(
+        bool ok = true;
+        for (size_t j = 0; ok && j < child_count; ++j) {
+            if (fold_component_find(parents, j) == i) {
+                ok = fold_component_append_unique_id(
                     &component_roots, &component_root_count,
-                    children[j].root_id)) {
-                free(component_roots);
-                free(parents);
-                fprintf(stderr, "Error: Out of memory\n");
-                return NMO_CLI_EXIT_INTERNAL_ERROR;
+                    children[j].root_id);
             }
         }
-
-        if (component_root_count > 1u) {
-            nmo_behavior_boundary_t component_boundary = {0};
-            if (!nmo_behavior_boundary_build_for_nodes(
-                    ctx->workspace, parent_id,
-                    component_roots, component_root_count,
-                    &component_boundary)) {
-                const char *detail = nmo_last_error_message();
-                free(component_roots);
-                free(parents);
-                fprintf(stderr, "Error: %s\n",
-                        detail[0] != '\0' ? detail
-                                       : "Failed to build component boundary");
-                return NMO_CLI_EXIT_INTERNAL_ERROR;
-            }
-
-            fold_candidate_group_desc_t desc = {
-                .kind = "connected_component",
-                .workspace = ctx->workspace,
-                .root_id = root_id,
-                .root_state = root_state,
-                .roots = component_roots,
-                .root_count = component_root_count,
-                .boundary = &component_boundary,
-            };
-            add_fold_candidate_group_json(doc, groups, &desc);
-            nmo_behavior_boundary_free(&component_boundary);
-            (*inout_group_count)++;
-            saw_component = true;
+        if (!ok) {
+            free(component_roots);
+            fprintf(stderr, "Error: Out of memory\n");
+            exit_code = NMO_CLI_EXIT_INTERNAL_ERROR;
+            break;
+        }
+        if (component_root_count <= 1u) {
+            free(component_roots);
+            continue;
         }
 
-        free(component_roots);
+        nmo_behavior_boundary_t *component_boundary = fold_build_group_boundary(
+            ctx, parent_id, component_roots, component_root_count,
+            "Failed to build component boundary");
+        if (!component_boundary) {
+            free(component_roots);
+            exit_code = NMO_CLI_EXIT_INTERNAL_ERROR;
+            break;
+        }
+        if (!fold_group_list_push_owned(groups, ctx, "connected_component",
+                                        &children[i], component_roots,
+                                        component_root_count,
+                                        component_boundary)) {
+            fprintf(stderr, "Error: Out of memory\n");
+            exit_code = NMO_CLI_EXIT_INTERNAL_ERROR;
+            break;
+        }
     }
 
     free(parents);
-    return saw_component ? NMO_CLI_EXIT_SUCCESS : NMO_CLI_EXIT_SUCCESS;
+    return exit_code;
 }
 
 static const char *fold_map_kind_string(nmo_behavior_fold_map_kind_t kind) {
@@ -898,114 +1020,128 @@ static const char *fold_interface_mode_string(
     return "unknown";
 }
 
-static void add_fold_maps_json(yyjson_mut_doc *doc,
-                               yyjson_mut_val *obj,
-                               const char *key,
-                               const nmo_behavior_fold_map_t *maps,
-                               size_t count) {
-    yyjson_mut_val *arr = yyjson_mut_arr(doc);
-    for (size_t i = 0; i < count; ++i) {
-        yyjson_mut_val *item = yyjson_mut_obj(doc);
-        nmo_cli_json_add_str_safe(doc, item, "kind",
-                                  fold_map_kind_string(maps[i].kind));
-        yyjson_mut_obj_add_uint(doc, item, "old_index",
-                                (uint64_t)maps[i].old_index);
-        yyjson_mut_obj_add_uint(doc, item, "new_index",
-                                (uint64_t)maps[i].new_index);
-        if (maps[i].old_id != 0) {
-            yyjson_mut_obj_add_uint(doc, item, "old_id", maps[i].old_id);
+static bool add_fold_maps(nmo_cli_record_t *rec,
+                          const char *key,
+                          const nmo_behavior_fold_map_t *maps,
+                          size_t count) {
+    nmo_cli_record_array_t *arr = nmo_cli_record_array(rec, key, NULL);
+    bool ok = arr != NULL;
+    for (size_t i = 0; ok && i < count; ++i) {
+        const nmo_behavior_fold_map_t *map = &maps[i];
+        nmo_cli_record_t *item = array_add_item(arr);
+        ok = item != NULL;
+        ok = ok && nmo_cli_record_str(item, "kind", NULL,
+                                      fold_map_kind_string(map->kind));
+        ok = ok && nmo_cli_record_uint(item, "old_index", NULL, map->old_index);
+        ok = ok && nmo_cli_record_uint(item, "new_index", NULL, map->new_index);
+        if (map->old_id != 0) {
+            ok = ok && nmo_cli_record_uint(item, "old_id", NULL, map->old_id);
         }
-        if (maps[i].new_id != 0) {
-            yyjson_mut_obj_add_uint(doc, item, "new_id", maps[i].new_id);
+        if (map->new_id != 0) {
+            ok = ok && nmo_cli_record_uint(item, "new_id", NULL, map->new_id);
         }
-        if (maps[i].label) {
-            nmo_cli_json_add_str_safe(doc, item, "label", maps[i].label);
+        if (map->label) {
+            ok = ok && nmo_cli_record_str(item, "label", NULL, map->label);
         }
-        yyjson_mut_arr_add_val(arr, item);
     }
-    yyjson_mut_obj_add_val(doc, obj, key, arr);
+    return ok;
 }
 
-static void add_fold_retarget_control_edges_json(
-    yyjson_mut_doc *doc,
-    yyjson_mut_val *obj,
+static bool add_fold_all_maps(nmo_cli_record_t *rec,
+                              const nmo_behavior_fold_report_t *report) {
+    nmo_cli_record_t *maps = nmo_cli_record_object(rec, "maps");
+    return maps != NULL &&
+           add_fold_maps(maps, "inputs", report->input_maps,
+                         report->input_map_count) &&
+           add_fold_maps(maps, "outputs", report->output_maps,
+                         report->output_map_count) &&
+           add_fold_maps(maps, "parameters", report->parameter_maps,
+                         report->parameter_map_count);
+}
+
+static bool add_fold_retarget_control_edges(
+    nmo_cli_record_t *rec,
     const char *key,
     const nmo_behavior_boundary_control_edge_t *edges,
     size_t count,
     nmo_object_id_t representative_id,
     bool incoming) {
-    yyjson_mut_val *arr = yyjson_mut_arr(doc);
-    for (size_t i = 0; i < count; ++i) {
-        yyjson_mut_val *item = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_uint(doc, item, "link_id", edges[i].link_id);
-        yyjson_mut_obj_add_int(doc, item, "activation_delay",
-                               edges[i].activation_delay);
-        yyjson_mut_obj_add_int(doc, item, "initial_activation_delay",
-                               edges[i].initial_activation_delay);
+    nmo_cli_record_array_t *arr = nmo_cli_record_array(rec, key, NULL);
+    bool ok = arr != NULL;
+    for (size_t i = 0; ok && i < count; ++i) {
+        const nmo_behavior_boundary_control_edge_t *edge = &edges[i];
+        nmo_cli_record_t *item = array_add_item(arr);
+        ok = item != NULL;
+        ok = ok && nmo_cli_record_uint(item, "link_id", NULL, edge->link_id);
+        ok = ok && nmo_cli_record_int(item, "activation_delay", NULL,
+                                      edge->activation_delay);
+        ok = ok && nmo_cli_record_int(item, "initial_activation_delay", NULL,
+                                      edge->initial_activation_delay);
         if (incoming) {
-            yyjson_mut_obj_add_uint(doc, item, "source_owner_id",
-                                    edges[i].source_owner_id);
-            yyjson_mut_obj_add_uint(doc, item, "source_io_id",
-                                    edges[i].source_io_id);
-            yyjson_mut_obj_add_uint(doc, item, "old_target_owner_id",
-                                    edges[i].target_owner_id);
-            yyjson_mut_obj_add_uint(doc, item, "old_target_io_id",
-                                    edges[i].target_io_id);
-            yyjson_mut_obj_add_uint(doc, item, "new_target_owner_id",
-                                    representative_id);
+            ok = ok && nmo_cli_record_uint(item, "source_owner_id", NULL,
+                                           edge->source_owner_id);
+            ok = ok && nmo_cli_record_uint(item, "source_io_id", NULL,
+                                           edge->source_io_id);
+            ok = ok && nmo_cli_record_uint(item, "old_target_owner_id", NULL,
+                                           edge->target_owner_id);
+            ok = ok && nmo_cli_record_uint(item, "old_target_io_id", NULL,
+                                           edge->target_io_id);
+            ok = ok && nmo_cli_record_uint(item, "new_target_owner_id", NULL,
+                                           representative_id);
         } else {
-            yyjson_mut_obj_add_uint(doc, item, "old_source_owner_id",
-                                    edges[i].source_owner_id);
-            yyjson_mut_obj_add_uint(doc, item, "old_source_io_id",
-                                    edges[i].source_io_id);
-            yyjson_mut_obj_add_uint(doc, item, "new_source_owner_id",
-                                    representative_id);
-            yyjson_mut_obj_add_uint(doc, item, "target_owner_id",
-                                    edges[i].target_owner_id);
-            yyjson_mut_obj_add_uint(doc, item, "target_io_id",
-                                    edges[i].target_io_id);
+            ok = ok && nmo_cli_record_uint(item, "old_source_owner_id", NULL,
+                                           edge->source_owner_id);
+            ok = ok && nmo_cli_record_uint(item, "old_source_io_id", NULL,
+                                           edge->source_io_id);
+            ok = ok && nmo_cli_record_uint(item, "new_source_owner_id", NULL,
+                                           representative_id);
+            ok = ok && nmo_cli_record_uint(item, "target_owner_id", NULL,
+                                           edge->target_owner_id);
+            ok = ok && nmo_cli_record_uint(item, "target_io_id", NULL,
+                                           edge->target_io_id);
         }
-        yyjson_mut_arr_add_val(arr, item);
     }
-    yyjson_mut_obj_add_val(doc, obj, key, arr);
+    return ok;
 }
 
-static void add_fold_retarget_parameter_edges_json(
-    yyjson_mut_doc *doc,
-    yyjson_mut_val *obj,
+static bool add_fold_retarget_parameter_edges(
+    nmo_cli_record_t *rec,
     const char *key,
     const nmo_behavior_boundary_parameter_edge_t *edges,
     size_t count,
     nmo_object_id_t representative_id,
     bool incoming) {
-    yyjson_mut_val *arr = yyjson_mut_arr(doc);
-    for (size_t i = 0; i < count; ++i) {
-        yyjson_mut_val *item = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_uint(doc, item, "source_parameter_id",
-                                edges[i].source_parameter_id);
-        yyjson_mut_obj_add_uint(doc, item, "target_parameter_id",
-                                edges[i].target_parameter_id);
-        nmo_cli_json_add_str_fmt_safe(doc, item, "type_guid", "%08X-%08X",
-                                      edges[i].type_guid.d1, edges[i].type_guid.d2);
-        yyjson_mut_obj_add_bool(doc, item, "shared", edges[i].shared);
+    nmo_cli_record_array_t *arr = nmo_cli_record_array(rec, key, NULL);
+    bool ok = arr != NULL;
+    for (size_t i = 0; ok && i < count; ++i) {
+        const nmo_behavior_boundary_parameter_edge_t *edge = &edges[i];
+        nmo_cli_record_t *item = array_add_item(arr);
+        ok = item != NULL;
+        ok = ok && nmo_cli_record_uint(item, "source_parameter_id", NULL,
+                                       edge->source_parameter_id);
+        ok = ok && nmo_cli_record_uint(item, "target_parameter_id", NULL,
+                                       edge->target_parameter_id);
+        ok = ok && nmo_cli_record_str_fmt(item, "type_guid", NULL, "%08X-%08X",
+                                          edge->type_guid.d1,
+                                          edge->type_guid.d2);
+        ok = ok && nmo_cli_record_bool(item, "shared", NULL, edge->shared);
         if (incoming) {
-            yyjson_mut_obj_add_uint(doc, item, "source_owner_id",
-                                    edges[i].source_owner_id);
-            yyjson_mut_obj_add_uint(doc, item, "old_target_owner_id",
-                                    edges[i].target_owner_id);
-            yyjson_mut_obj_add_uint(doc, item, "new_target_owner_id",
-                                    representative_id);
+            ok = ok && nmo_cli_record_uint(item, "source_owner_id", NULL,
+                                           edge->source_owner_id);
+            ok = ok && nmo_cli_record_uint(item, "old_target_owner_id", NULL,
+                                           edge->target_owner_id);
+            ok = ok && nmo_cli_record_uint(item, "new_target_owner_id", NULL,
+                                           representative_id);
         } else {
-            yyjson_mut_obj_add_uint(doc, item, "old_source_owner_id",
-                                    edges[i].source_owner_id);
-            yyjson_mut_obj_add_uint(doc, item, "new_source_owner_id",
-                                    representative_id);
-            yyjson_mut_obj_add_uint(doc, item, "target_owner_id",
-                                    edges[i].target_owner_id);
+            ok = ok && nmo_cli_record_uint(item, "old_source_owner_id", NULL,
+                                           edge->source_owner_id);
+            ok = ok && nmo_cli_record_uint(item, "new_source_owner_id", NULL,
+                                           representative_id);
+            ok = ok && nmo_cli_record_uint(item, "target_owner_id", NULL,
+                                           edge->target_owner_id);
         }
-        yyjson_mut_arr_add_val(arr, item);
     }
-    yyjson_mut_obj_add_val(doc, obj, key, arr);
+    return ok;
 }
 
 static bool parse_fold_nodes(const char *text,
@@ -1214,6 +1350,56 @@ static bool parse_fold_candidates_args(int argc,
     return parent_id != 0;
 }
 
+/*
+ * Candidate groups in output order: the parent itself, control routers,
+ * connected components, then each direct child.
+ */
+static int fold_candidates_collect_groups(
+    nmo_cmd_ctx_t *ctx,
+    const nmo_behavior_state_t *parent,
+    const nmo_behavior_boundary_t *boundary,
+    const fold_candidate_child_t *children,
+    size_t child_count,
+    fold_candidate_group_list_t *groups) {
+    fold_candidate_group_t parent_group = {
+        .kind = "parent_recursive",
+        .workspace = ctx->workspace,
+        .root_id = boundary->behavior_id,
+        .root_state = parent,
+        .roots = &boundary->behavior_id,
+        .root_count = 1u,
+        .boundary = boundary,
+    };
+    if (!fold_group_list_push(groups, &parent_group)) {
+        fprintf(stderr, "Error: Out of memory\n");
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    int exit_code = fold_candidates_collect_control_router_groups(
+        ctx, boundary->behavior_id, parent, children, child_count, groups);
+    if (exit_code == NMO_CLI_EXIT_SUCCESS) {
+        exit_code = fold_candidates_collect_connected_components(
+            ctx, boundary->behavior_id, parent, children, child_count, groups);
+    }
+    for (size_t i = 0; exit_code == NMO_CLI_EXIT_SUCCESS && i < child_count;
+         ++i) {
+        fold_candidate_group_t child_group = {
+            .kind = "direct_child",
+            .workspace = ctx->workspace,
+            .root_id = children[i].root_id,
+            .root_state = children[i].root_state,
+            .roots = &children[i].root_id,
+            .root_count = 1u,
+            .boundary = &children[i].boundary,
+        };
+        if (!fold_group_list_push(groups, &child_group)) {
+            fprintf(stderr, "Error: Out of memory\n");
+            exit_code = NMO_CLI_EXIT_INTERNAL_ERROR;
+        }
+    }
+    return exit_code;
+}
+
 static int fold_candidates_emit(nmo_cmd_ctx_t *ctx,
                                 const nmo_behavior_state_t *parent,
                                 const nmo_behavior_boundary_t *boundary,
@@ -1250,287 +1436,54 @@ static int fold_candidates_emit(nmo_cmd_ctx_t *ctx,
         }
     }
 
-    int exit_code = NMO_CLI_EXIT_SUCCESS;
-    if (ctx->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
-        if (!doc) {
-            exit_code = NMO_CLI_EXIT_INTERNAL_ERROR;
-            goto cleanup;
-        }
-
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_uint(doc, data, "parent_id",
-                                boundary->behavior_id);
-
-        yyjson_mut_val *parent_obj = yyjson_mut_obj(doc);
-        nmo_cli_json_add_str_safe(doc, parent_obj, "behavior_type",
-                                  fold_behavior_type(parent));
-        yyjson_mut_obj_add_uint(doc, parent_obj, "flags",
-                                parent ? (uint64_t)parent->flags : 0u);
-        yyjson_mut_obj_add_bool(doc, parent_obj, "script",
-                                parent &&
-                                (parent->flags & CKBEHAVIOR_SCRIPT) != 0u);
-        yyjson_mut_obj_add_bool(doc, parent_obj, "building_block",
-                                parent &&
-                                (parent->flags & CKBEHAVIOR_BUILDINGBLOCK) != 0u);
-        yyjson_mut_obj_add_uint(doc, parent_obj, "sub_behaviors",
-                                parent ? (uint64_t)parent->sub_behaviors.count : 0u);
-        yyjson_mut_obj_add_uint(doc, parent_obj, "sub_behavior_links",
-                                parent ? (uint64_t)parent->sub_behavior_links.count : 0u);
-        yyjson_mut_obj_add_uint(doc, parent_obj, "operations",
-                                parent ? (uint64_t)parent->operations.count : 0u);
-        yyjson_mut_obj_add_val(doc, data, "parent", parent_obj);
-
-        yyjson_mut_val *groups = yyjson_mut_arr(doc);
-        size_t group_count = 0;
-        fold_candidate_group_desc_t parent_desc = {
-            .kind = "parent_recursive",
-            .workspace = ctx->workspace,
-            .root_id = boundary->behavior_id,
-            .root_state = parent,
-            .roots = &boundary->behavior_id,
-            .root_count = 1u,
-            .boundary = boundary,
-        };
-        add_fold_candidate_group_json(doc, groups, &parent_desc);
-        ++group_count;
-
-        exit_code = fold_candidates_emit_control_router_groups(
-            ctx, boundary->behavior_id, doc, groups, parent, children,
-            child_count, &group_count);
-        if (exit_code != NMO_CLI_EXIT_SUCCESS) {
-            yyjson_mut_doc_free(doc);
-            goto cleanup;
-        }
-
-        exit_code = fold_candidates_emit_connected_components(
-            ctx, boundary->behavior_id, doc, groups, parent, children,
-            child_count, &group_count);
-        if (exit_code != NMO_CLI_EXIT_SUCCESS) {
-            yyjson_mut_doc_free(doc);
-            goto cleanup;
-        }
-
-        for (size_t i = 0; i < child_count; ++i) {
-            fold_candidate_group_desc_t child_desc = {
-                .kind = "direct_child",
-                .workspace = ctx->workspace,
-                .root_id = children[i].root_id,
-                .root_state = children[i].root_state,
-                .roots = &children[i].root_id,
-                .root_count = 1u,
-                .boundary = &children[i].boundary,
-            };
-            add_fold_candidate_group_json(doc, groups, &child_desc);
-            ++group_count;
-        }
-        yyjson_mut_obj_add_uint(doc, data, "candidate_group_count",
-                                (uint64_t)group_count);
-        yyjson_mut_obj_add_val(doc, data, "candidate_groups", groups);
-
-        exit_code = nmo_cmd_ctx_json_end(ctx, doc, data,
-                                         "behavior.fold-candidates");
-        goto cleanup;
-    }
-
-    fprintf(ctx->out, "Fold candidates for behavior #%u (%s)\n",
+    fold_candidate_group_list_t groups = {0};
+    int exit_code = fold_candidates_collect_groups(
+        ctx, parent, boundary, children, child_count, &groups);
+    if (exit_code == NMO_CLI_EXIT_SUCCESS) {
+        nmo_cli_record_t *rec = nmo_cli_record_new();
+        bool ok = rec != NULL;
+        ok = ok && nmo_cli_record_raw_fmt(
+            rec, "Fold candidates for behavior #%u (%s)\n",
             boundary->behavior_id, fold_behavior_type(parent));
-    fprintf(ctx->out, "Candidate parent_recursive: nodes=%zu control_in=%zu control_out=%zu parameter_in=%zu parameter_out=%zu\n",
-            boundary->internal_node_count,
-            boundary->control_in_count,
-            boundary->control_out_count,
-            boundary->parameter_in_count,
-            boundary->parameter_out_count);
+        ok = ok && nmo_cli_record_uint(rec, "parent_id", NULL,
+                                       boundary->behavior_id);
 
-    size_t *parents = child_count > 0
-        ? (size_t *)malloc(child_count * sizeof(*parents))
-        : NULL;
-    if (child_count > 0 && !parents) {
-        fprintf(stderr, "Error: Out of memory\n");
-        exit_code = NMO_CLI_EXIT_INTERNAL_ERROR;
-        goto cleanup;
-    }
-    for (size_t i = 0; i < child_count; ++i) {
-        parents[i] = i;
-    }
-    if (child_count > 0) {
-        for (size_t i = 0; i < child_count; ++i) {
-            if (!fold_behavior_is_control_router_root(children[i].root_state)) {
-                continue;
-            }
-            nmo_object_id_t *router_ids = NULL;
-            size_t router_count = 0;
-            if (!fold_component_append_unique_id(&router_ids, &router_count,
-                                                 children[i].root_id)) {
-                free(router_ids);
-                free(parents);
-                fprintf(stderr, "Error: Out of memory\n");
-                exit_code = NMO_CLI_EXIT_INTERNAL_ERROR;
-                goto cleanup;
-            }
+        nmo_cli_record_t *parent_obj =
+            ok ? nmo_cli_record_object(rec, "parent") : NULL;
+        ok = parent_obj != NULL;
+        ok = ok && nmo_cli_record_str(parent_obj, "behavior_type", NULL,
+                                      fold_behavior_type(parent));
+        ok = ok && nmo_cli_record_uint(parent_obj, "flags", NULL,
+                                       parent ? parent->flags : 0u);
+        ok = ok && nmo_cli_record_bool(
+            parent_obj, "script", NULL,
+            parent && (parent->flags & CKBEHAVIOR_SCRIPT) != 0u);
+        ok = ok && nmo_cli_record_bool(
+            parent_obj, "building_block", NULL,
+            parent && (parent->flags & CKBEHAVIOR_BUILDINGBLOCK) != 0u);
+        ok = ok && nmo_cli_record_uint(
+            parent_obj, "sub_behaviors", NULL,
+            parent ? parent->sub_behaviors.count : 0u);
+        ok = ok && nmo_cli_record_uint(
+            parent_obj, "sub_behavior_links", NULL,
+            parent ? parent->sub_behavior_links.count : 0u);
+        ok = ok && nmo_cli_record_uint(
+            parent_obj, "operations", NULL,
+            parent ? parent->operations.count : 0u);
 
-            bool changed = true;
-            while (changed) {
-                changed = false;
-                const nmo_behavior_index_t *index =
-                    nmo_tool_owner_behavior_index(ctx->workspace);
-                for (size_t link_idx = 0;
-                     link_idx < parent->sub_behavior_links.count;
-                     ++link_idx) {
-                    nmo_object_id_t link_id = nmo_behavior_ref_array_get_id(
-                        &parent->sub_behavior_links, link_idx);
-                    if (link_id == 0) continue;
-                    nmo_object_t *link_obj = repo
-                        ? nmo_object_repository_find_by_id(repo, link_id)
-                        : NULL;
-                    const nmo_behaviorlink_state_t *link_state =
-                        link_obj &&
-                                nmo_object_get_class_id(link_obj) == NMO_CID_BEHAVIORLINK
-                            ? (const nmo_behaviorlink_state_t *)
-                                  nmo_object_get_state(link_obj)
-                            : NULL;
-                    if (!link_state || !index) {
-                        continue;
-                    }
-                    const nmo_port_owner_t *source_owner =
-                        nmo_behavior_index_find(
-                            index, nmo_behaviorlink_in_io_id(link_state));
-                    const nmo_port_owner_t *target_owner =
-                        nmo_behavior_index_find(
-                            index, nmo_behaviorlink_out_io_id(link_state));
-                    size_t from_index = source_owner
-                        ? fold_candidate_find_root_index(children, child_count,
-                                                         source_owner->owner_id)
-                        : SIZE_MAX;
-                    size_t to_index = target_owner
-                        ? fold_candidate_find_root_index(children, child_count,
-                                                         target_owner->owner_id)
-                        : SIZE_MAX;
-                    if (from_index == SIZE_MAX || to_index == SIZE_MAX) {
-                        continue;
-                    }
-                    bool from_selected =
-                        fold_id_in_list(router_ids, router_count,
-                                        children[from_index].root_id);
-                    bool to_selected =
-                        fold_id_in_list(router_ids, router_count,
-                                        children[to_index].root_id);
-                    if (from_selected == to_selected) {
-                        continue;
-                    }
-                    size_t candidate_index =
-                        from_selected ? to_index : from_index;
-                    if (!fold_behavior_is_control_router_bridge(
-                            children[candidate_index].root_state)) {
-                        continue;
-                    }
-                    if (!fold_component_append_unique_id(
-                            &router_ids, &router_count,
-                            children[candidate_index].root_id)) {
-                        free(router_ids);
-                        free(parents);
-                        fprintf(stderr, "Error: Out of memory\n");
-                        exit_code = NMO_CLI_EXIT_INTERNAL_ERROR;
-                        goto cleanup;
-                    }
-                    changed = true;
-                }
-            }
-            if (router_count > 1u) {
-                nmo_behavior_boundary_t router_boundary = {0};
-                if (!nmo_behavior_boundary_build_for_nodes(
-                        ctx->workspace, boundary->behavior_id,
-                        router_ids, router_count, &router_boundary)) {
-                    const char *detail = nmo_last_error_message();
-                    free(router_ids);
-                    free(parents);
-                    fprintf(stderr, "Error: %s\n",
-                            detail[0] != '\0' ? detail
-                                           : "Failed to build control router boundary");
-                    exit_code = NMO_CLI_EXIT_INTERNAL_ERROR;
-                    goto cleanup;
-                }
-                if (router_boundary.control_out_count > 1u) {
-                    fprintf(ctx->out,
-                            "Candidate control_router #%u: roots=%zu nodes=%zu control_in=%zu control_out=%zu parameter_in=%zu parameter_out=%zu interface=%s\n",
-                            children[i].root_id, router_count,
-                            router_boundary.internal_node_count,
-                            router_boundary.control_in_count,
-                            router_boundary.control_out_count,
-                            router_boundary.parameter_in_count,
-                            router_boundary.parameter_out_count,
-                            fold_interface_action(children[i].root_state));
-                }
-                nmo_behavior_boundary_free(&router_boundary);
-            }
-            free(router_ids);
+        ok = ok && nmo_cli_record_uint(rec, "candidate_group_count", NULL,
+                                       groups.count);
+        nmo_cli_record_array_t *group_arr =
+            ok ? nmo_cli_record_array(rec, "candidate_groups", NULL) : NULL;
+        ok = group_arr != NULL;
+        nmo_cli_record_array_omit_heading(group_arr);
+        for (size_t i = 0; ok && i < groups.count; ++i) {
+            ok = add_fold_candidate_group(group_arr, &groups.items[i]);
         }
-
-        fold_candidates_union_connected_children(ctx, parent, children,
-                                                 child_count, parents);
-        for (size_t i = 0; i < child_count; ++i) {
-            if (fold_component_find(parents, i) != i) {
-                continue;
-            }
-            nmo_object_id_t *component_roots = NULL;
-            size_t root_count = 0;
-            for (size_t j = 0; j < child_count; ++j) {
-                if (fold_component_find(parents, j) == i) {
-                    if (!fold_component_append_unique_id(
-                            &component_roots, &root_count,
-                            children[j].root_id)) {
-                        free(component_roots);
-                        free(parents);
-                        fprintf(stderr, "Error: Out of memory\n");
-                        exit_code = NMO_CLI_EXIT_INTERNAL_ERROR;
-                        goto cleanup;
-                    }
-                }
-            }
-            if (root_count > 1u) {
-                nmo_behavior_boundary_t component_boundary = {0};
-                if (!nmo_behavior_boundary_build_for_nodes(
-                        ctx->workspace, boundary->behavior_id,
-                        component_roots, root_count,
-                        &component_boundary)) {
-                    const char *detail = nmo_last_error_message();
-                    free(component_roots);
-                    free(parents);
-                    fprintf(stderr, "Error: %s\n",
-                            detail[0] != '\0' ? detail
-                                           : "Failed to build component boundary");
-                    exit_code = NMO_CLI_EXIT_INTERNAL_ERROR;
-                    goto cleanup;
-                }
-                fprintf(ctx->out,
-                        "Candidate connected_component #%u: roots=%zu nodes=%zu control_in=%zu control_out=%zu parameter_in=%zu parameter_out=%zu interface=%s\n",
-                        children[i].root_id, root_count,
-                        component_boundary.internal_node_count,
-                        component_boundary.control_in_count,
-                        component_boundary.control_out_count,
-                        component_boundary.parameter_in_count,
-                        component_boundary.parameter_out_count,
-                        fold_interface_action(children[i].root_state));
-                nmo_behavior_boundary_free(&component_boundary);
-            }
-            free(component_roots);
-        }
-        free(parents);
+        exit_code = emit_record(ctx, rec, ok, "behavior.fold-candidates");
     }
 
-    for (size_t i = 0; i < child_count; ++i) {
-        fprintf(ctx->out, "Candidate direct_child #%u (%s): nodes=%zu control_in=%zu control_out=%zu parameter_in=%zu parameter_out=%zu interface=%s\n",
-                children[i].root_id,
-                fold_behavior_type(children[i].root_state),
-                children[i].boundary.internal_node_count,
-                children[i].boundary.control_in_count,
-                children[i].boundary.control_out_count,
-                children[i].boundary.parameter_in_count,
-                children[i].boundary.parameter_out_count,
-                fold_interface_action(children[i].root_state));
-    }
-
-cleanup:
+    fold_group_list_free(&groups);
     for (size_t i = 0; i < child_count; ++i) {
         nmo_behavior_boundary_free(&children[i].boundary);
     }
@@ -1741,255 +1694,220 @@ static bool parse_fold_args(int argc,
     return true;
 }
 
+static bool add_fold_planned(nmo_cli_record_t *rec,
+                             const nmo_behavior_state_t *representative,
+                             const nmo_behavior_fold_report_t *report) {
+    const nmo_behavior_boundary_t *boundary = &report->boundary;
+    nmo_object_id_t representative_id = report->representative_id;
+    nmo_cli_record_t *planned = nmo_cli_record_object(rec, "planned");
+    nmo_cli_record_t *group = NULL;
+    bool ok = planned != NULL;
+    ok = ok && add_id_list(planned, "internal_nodes", boundary->internal_nodes,
+                           boundary->internal_node_count);
+    ok = ok && add_id_list(planned, "nodes_to_delete", report->nodes_to_delete,
+                           report->nodes_to_delete_count);
+
+    group = ok ? nmo_cli_record_object(planned, "links_to_delete") : NULL;
+    ok = group != NULL &&
+         add_control_edges(group, "control",
+                           report->control_links_to_delete,
+                           report->control_links_to_delete_count);
+
+    group = ok ? nmo_cli_record_object(planned, "links_to_move") : NULL;
+    ok = group != NULL &&
+         add_control_edges(group, "control_in", boundary->control_in,
+                           boundary->control_in_count) &&
+         add_control_edges(group, "control_out", boundary->control_out,
+                           boundary->control_out_count);
+
+    group = ok ? nmo_cli_record_object(planned, "links_to_retarget") : NULL;
+    ok = group != NULL &&
+         add_fold_retarget_control_edges(group, "control_in",
+                                         boundary->control_in,
+                                         boundary->control_in_count,
+                                         representative_id, true) &&
+         add_fold_retarget_control_edges(group, "control_out",
+                                         boundary->control_out,
+                                         boundary->control_out_count,
+                                         representative_id, false);
+
+    group = ok ? nmo_cli_record_object(planned, "parameters_to_preserve")
+               : NULL;
+    ok = group != NULL &&
+         add_parameter_edges(group, "parameter_in", boundary->parameter_in,
+                             boundary->parameter_in_count) &&
+         add_parameter_edges(group, "parameter_out", boundary->parameter_out,
+                             boundary->parameter_out_count);
+
+    group = ok ? nmo_cli_record_object(planned, "parameters_to_retarget")
+               : NULL;
+    ok = group != NULL &&
+         add_fold_retarget_parameter_edges(group, "parameter_in",
+                                           boundary->parameter_in,
+                                           boundary->parameter_in_count,
+                                           representative_id, true) &&
+         add_fold_retarget_parameter_edges(group, "parameter_out",
+                                           boundary->parameter_out,
+                                           boundary->parameter_out_count,
+                                           representative_id, false);
+
+    ok = ok && add_fold_interface(planned, representative);
+    ok = ok && add_boundary_counts(planned, boundary);
+    ok = ok && nmo_cli_record_uint(planned, "delete_link_count", NULL,
+                                   report->control_links_to_delete_count);
+    ok = ok && nmo_cli_record_raw_fmt(
+        planned,
+        "Planned: nodes=%zu delete=%zu control_in=%zu control_out=%zu parameter_in=%zu parameter_out=%zu interface=%s\n"
+        "Delete links: %zu\n",
+        boundary->internal_node_count,
+        boundary->internal_node_count > 0
+            ? boundary->internal_node_count - 1
+            : 0,
+        boundary->control_in_count,
+        boundary->control_out_count,
+        boundary->parameter_in_count,
+        boundary->parameter_out_count,
+        fold_interface_action(representative),
+        report->control_links_to_delete_count);
+    return ok;
+}
+
 static int fold_emit_dry_run(nmo_cmd_ctx_t *ctx,
                              const nmo_behavior_state_t *parent,
                              const nmo_behavior_state_t *representative,
                              const nmo_behavior_fold_report_t *report,
                              nmo_edit_report_t *edit_report) {
-    const nmo_behavior_boundary_t *boundary = &report->boundary;
     nmo_object_id_t representative_id = report->representative_id;
-    if (ctx->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
-        if (!doc) {
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
-        }
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        if (edit_report != NULL) {
-            add_edit_report_json(doc, data, edit_report, NULL);
-        } else {
-            nmo_edit_report_t analysis_report = {0};
-            analysis_report.ok = true;
-            analysis_report.dry_run = true;
-            analysis_report.semantic_risks = report->semantic_risks;
-            analysis_report.semantic_risk_count =
-                report->semantic_risk_count;
-            nmo_cli_edit_report_add_schema_v2_json(
-                doc, data, &analysis_report, true);
-        }
-        yyjson_mut_obj_add_bool(doc, data, "can_write",
-                                report->can_write);
-        yyjson_mut_obj_add_bool(doc, data, "write_supported",
-                                report->can_write);
-        nmo_cli_json_add_str_safe(doc, data, "status",
+    nmo_edit_report_t analysis_report = {0};
+    if (edit_report == NULL) {
+        analysis_report.ok = true;
+        analysis_report.dry_run = true;
+        analysis_report.semantic_risks = report->semantic_risks;
+        analysis_report.semantic_risk_count = report->semantic_risk_count;
+        edit_report = &analysis_report;
+    }
+
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL;
+    ok = ok && nmo_cli_record_raw_fmt(
+        rec,
+        "[dry-run] Fold behavior #%u into BB %08X-%08X\n"
+        "Parent #%u (%s), representative #%u (%s)\n",
+        representative_id, report->target_guid.d1, report->target_guid.d2,
+        report->parent_id, fold_behavior_type(parent),
+        representative_id, fold_behavior_type(representative));
+    ok = ok && add_edit_report(rec, edit_report, NULL);
+    ok = ok && nmo_cli_record_bool(rec, "can_write", NULL, report->can_write);
+    ok = ok && nmo_cli_record_bool(rec, "write_supported", NULL,
+                                   report->can_write);
+    ok = ok && nmo_cli_record_str(rec, "status", NULL,
                                   report->can_write ? "ready"
                                                     : "analysis_only");
-        yyjson_mut_val *write_blockers = yyjson_mut_arr(doc);
-        for (size_t i = 0; i < report->write_blocker_count; ++i) {
-            yyjson_mut_val *blocker = yyjson_mut_obj(doc);
-            nmo_cli_json_add_str_safe(doc, blocker, "code",
-                                      report->write_blockers[i].code);
-            nmo_cli_json_add_str_safe(doc, blocker, "message",
-                                      report->write_blockers[i].message);
-            yyjson_mut_arr_add_val(write_blockers, blocker);
-        }
-        yyjson_mut_obj_add_val(doc, data, "write_blockers",
-                               write_blockers);
-        yyjson_mut_obj_add_uint(doc, data, "parent_id", report->parent_id);
-        yyjson_mut_obj_add_uint(doc, data, "anchor_id", report->anchor_id);
-        nmo_cli_json_add_str_safe(doc, data, "parent_behavior_type",
+    nmo_cli_record_array_t *blockers =
+        ok ? nmo_cli_record_array(rec, "write_blockers", NULL) : NULL;
+    ok = blockers != NULL;
+    for (size_t i = 0; ok && i < report->write_blocker_count; ++i) {
+        nmo_cli_record_t *item = array_add_item(blockers);
+        ok = item != NULL;
+        ok = ok && add_str_or_null(item, "code",
+                                   report->write_blockers[i].code);
+        ok = ok && add_str_or_null(item, "message",
+                                   report->write_blockers[i].message);
+    }
+    ok = ok && nmo_cli_record_uint(rec, "parent_id", NULL, report->parent_id);
+    ok = ok && nmo_cli_record_uint(rec, "anchor_id", NULL, report->anchor_id);
+    ok = ok && nmo_cli_record_str(rec, "parent_behavior_type", NULL,
                                   fold_behavior_type(parent));
-        yyjson_mut_obj_add_uint(doc, data, "representative_id",
-                                representative_id);
-        nmo_cli_json_add_str_safe(doc, data,
-                                  "representative_behavior_type",
+    ok = ok && nmo_cli_record_uint(rec, "representative_id", NULL,
+                                   representative_id);
+    ok = ok && nmo_cli_record_str(rec, "representative_behavior_type", NULL,
                                   fold_behavior_type(representative));
-        add_id_list_json(doc, data, "selected_nodes",
-                         report->selected_nodes,
-                         report->selected_node_count);
-        yyjson_mut_obj_add_bool(doc, data, "preserve_boundary",
-                                report->preserve_boundary);
-        yyjson_mut_obj_add_bool(doc, data, "preserve_links",
-                                report->preserve_links);
-        yyjson_mut_obj_add_bool(doc, data, "preserve_params",
-                                report->preserve_params);
-        nmo_cli_json_add_str_safe(
-            doc, data, "interface_mode",
-            fold_interface_mode_string(report->interface_mode));
-        yyjson_mut_val *maps = yyjson_mut_obj(doc);
-        add_fold_maps_json(doc, maps, "inputs",
-                           report->input_maps,
-                           report->input_map_count);
-        add_fold_maps_json(doc, maps, "outputs",
-                           report->output_maps,
-                           report->output_map_count);
-        add_fold_maps_json(doc, maps, "parameters",
-                           report->parameter_maps,
-                           report->parameter_map_count);
-        yyjson_mut_obj_add_val(doc, data, "maps", maps);
+    ok = ok && add_id_list(rec, "selected_nodes", report->selected_nodes,
+                           report->selected_node_count);
+    ok = ok && nmo_cli_record_bool(rec, "preserve_boundary", NULL,
+                                   report->preserve_boundary);
+    ok = ok && nmo_cli_record_bool(rec, "preserve_links", NULL,
+                                   report->preserve_links);
+    ok = ok && nmo_cli_record_bool(rec, "preserve_params", NULL,
+                                   report->preserve_params);
+    ok = ok && nmo_cli_record_str(
+        rec, "interface_mode", NULL,
+        fold_interface_mode_string(report->interface_mode));
+    ok = ok && add_fold_all_maps(rec, report);
 
-        yyjson_mut_val *target = yyjson_mut_obj(doc);
-        nmo_cli_json_add_str_fmt_safe(doc, target, "guid", "%08X-%08X",
-                                      report->target_guid.d1, report->target_guid.d2);
-        nmo_cli_json_add_str_safe(doc, target, "name", report->target_name);
-        yyjson_mut_obj_add_uint(doc, target, "version",
-                                (uint64_t)report->target_version);
-        yyjson_mut_obj_add_val(doc, data, "target", target);
+    nmo_cli_record_t *target = ok ? nmo_cli_record_object(rec, "target") : NULL;
+    ok = target != NULL;
+    ok = ok && nmo_cli_record_str_fmt(target, "guid", NULL, "%08X-%08X",
+                                      report->target_guid.d1,
+                                      report->target_guid.d2);
+    ok = ok && add_str_or_null(target, "name", report->target_name);
+    ok = ok && nmo_cli_record_uint(target, "version", NULL,
+                                   report->target_version);
 
-        yyjson_mut_val *planned = yyjson_mut_obj(doc);
-        add_internal_nodes_json(doc, planned, boundary);
-        add_id_list_json(doc, planned, "nodes_to_delete",
-                         report->nodes_to_delete,
-                         report->nodes_to_delete_count);
-        yyjson_mut_val *delete_links = yyjson_mut_obj(doc);
-        add_control_edges_json(doc, delete_links, "control",
-                               report->control_links_to_delete,
-                               report->control_links_to_delete_count);
-        yyjson_mut_obj_add_val(doc, planned, "links_to_delete",
-                               delete_links);
-        yyjson_mut_val *links = yyjson_mut_obj(doc);
-        add_control_edges_json(doc, links, "control_in",
-                               boundary->control_in,
-                               boundary->control_in_count);
-        add_control_edges_json(doc, links, "control_out",
-                               boundary->control_out,
-                               boundary->control_out_count);
-        yyjson_mut_obj_add_val(doc, planned, "links_to_move", links);
-
-        yyjson_mut_val *retarget = yyjson_mut_obj(doc);
-        add_fold_retarget_control_edges_json(doc, retarget, "control_in",
-                                             boundary->control_in,
-                                             boundary->control_in_count,
-                                             representative_id, true);
-        add_fold_retarget_control_edges_json(doc, retarget, "control_out",
-                                             boundary->control_out,
-                                             boundary->control_out_count,
-                                             representative_id, false);
-        yyjson_mut_obj_add_val(doc, planned, "links_to_retarget",
-                               retarget);
-
-        yyjson_mut_val *params = yyjson_mut_obj(doc);
-        add_parameter_edges_json(doc, params, "parameter_in",
-                                 boundary->parameter_in,
-                                 boundary->parameter_in_count);
-        add_parameter_edges_json(doc, params, "parameter_out",
-                                 boundary->parameter_out,
-                                 boundary->parameter_out_count);
-        yyjson_mut_obj_add_val(doc, planned,
-                               "parameters_to_preserve", params);
-        yyjson_mut_val *param_retarget = yyjson_mut_obj(doc);
-        add_fold_retarget_parameter_edges_json(
-            doc, param_retarget, "parameter_in",
-            boundary->parameter_in, boundary->parameter_in_count,
-            representative_id, true);
-        add_fold_retarget_parameter_edges_json(
-            doc, param_retarget, "parameter_out",
-            boundary->parameter_out, boundary->parameter_out_count,
-            representative_id, false);
-        yyjson_mut_obj_add_val(doc, planned, "parameters_to_retarget",
-                               param_retarget);
-        add_fold_interface_json(doc, planned, representative);
-        yyjson_mut_obj_add_uint(doc, planned, "node_count",
-                                (uint64_t)boundary->internal_node_count);
-        yyjson_mut_obj_add_uint(doc, planned, "control_in_count",
-                                (uint64_t)boundary->control_in_count);
-        yyjson_mut_obj_add_uint(doc, planned, "control_out_count",
-                                (uint64_t)boundary->control_out_count);
-        yyjson_mut_obj_add_uint(doc, planned, "parameter_in_count",
-                                (uint64_t)boundary->parameter_in_count);
-        yyjson_mut_obj_add_uint(doc, planned, "parameter_out_count",
-                                (uint64_t)boundary->parameter_out_count);
-        yyjson_mut_obj_add_uint(doc, planned, "delete_link_count",
-                                (uint64_t)report->control_links_to_delete_count);
-        yyjson_mut_obj_add_val(doc, data, "planned", planned);
-
-        return nmo_cmd_ctx_json_end(ctx, doc, data, "behavior.fold");
+    ok = ok && add_fold_planned(rec, representative, report);
+    ok = ok && nmo_cli_record_raw_fmt(rec, "Can write: %s\n",
+                                      report->can_write ? "yes" : "no");
+    for (size_t i = 0; ok && i < report->write_blocker_count; ++i) {
+        const char *message = report->write_blockers[i].message;
+        ok = nmo_cli_record_raw_fmt(rec, "Write blocker: %s%s%s\n",
+                                    report->write_blockers[i].code,
+                                    message ? " - " : "",
+                                    message ? message : "");
     }
+    return emit_record(ctx, rec, ok, "behavior.fold");
+}
 
-    fprintf(ctx->out, "[dry-run] Fold behavior #%u into BB %08X-%08X\n",
-            representative_id, report->target_guid.d1,
-            report->target_guid.d2);
-    fprintf(ctx->out, "Parent #%u (%s), representative #%u (%s)\n",
-            report->parent_id, fold_behavior_type(parent),
-            representative_id, fold_behavior_type(representative));
-    fprintf(ctx->out,
-            "Planned: nodes=%zu delete=%zu control_in=%zu control_out=%zu parameter_in=%zu parameter_out=%zu interface=%s\n",
-            boundary->internal_node_count,
-            boundary->internal_node_count > 0
-                ? boundary->internal_node_count - 1
-                : 0,
-            boundary->control_in_count,
-            boundary->control_out_count,
-            boundary->parameter_in_count,
-            boundary->parameter_out_count,
-            fold_interface_action(representative));
-    fprintf(ctx->out, "Delete links: %zu\n",
-            report->control_links_to_delete_count);
-    fprintf(ctx->out, "Can write: %s\n", report->can_write ? "yes" : "no");
-    for (size_t i = 0; i < report->write_blocker_count; ++i) {
-        fprintf(ctx->out, "Write blocker: %s",
-                report->write_blockers[i].code);
-        if (report->write_blockers[i].message) {
-            fprintf(ctx->out, " - %s",
-                    report->write_blockers[i].message);
-        }
-        fputc('\n', ctx->out);
-    }
-    return NMO_CLI_EXIT_SUCCESS;
+static bool fold_report_semantic_risks_json(yyjson_mut_doc *doc,
+                                            yyjson_mut_val *obj,
+                                            const void *data) {
+    const nmo_behavior_fold_report_t *report =
+        (const nmo_behavior_fold_report_t *)data;
+    nmo_cli_edit_report_add_semantic_risk_array_json(
+        doc, obj, report->semantic_risks, report->semantic_risk_count);
+    return true;
 }
 
 static int fold_emit_rejection(nmo_cmd_ctx_t *ctx,
                                const nmo_behavior_fold_report_t *report,
                                int exit_code) {
-    if (ctx->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
-        if (!doc) {
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
+    if (!ctx->is_json) {
+        if (report->diagnostic_message) {
+            fprintf(stderr, "Error: behavior fold rejected");
+            if (report->diagnostic_code) {
+                fprintf(stderr, " (%s)", report->diagnostic_code);
+            }
+            fprintf(stderr, ": %s\n", report->diagnostic_message);
+        } else {
+            fprintf(stderr, "Error: Failed to analyze behavior fold\n");
         }
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_bool(doc, data, "ok", false);
-        yyjson_mut_obj_add_bool(doc, data, "dry_run",
-                                report->analysis_only);
-        yyjson_mut_obj_add_bool(doc, data, "rejected",
-                                report->rejected);
-        yyjson_mut_obj_add_bool(doc, data, "can_write",
-                                report->can_write);
-        yyjson_mut_obj_add_uint(doc, data, "parent_id",
-                                report->parent_id);
-        yyjson_mut_obj_add_uint(doc, data, "anchor_id",
-                                report->anchor_id);
-        add_id_list_json(doc, data, "selected_nodes",
-                         report->selected_nodes,
-                         report->selected_node_count);
-        nmo_cli_edit_report_add_semantic_risk_array_json(
-            doc, data, report->semantic_risks,
-            report->semantic_risk_count);
-
-        yyjson_mut_val *rejections = yyjson_mut_arr(doc);
-        yyjson_mut_val *rejection = yyjson_mut_obj(doc);
-        nmo_cli_json_add_str_safe(doc, rejection, "code",
-                                  report->diagnostic_code);
-        nmo_cli_json_add_str_safe(doc, rejection, "message",
-                                  report->diagnostic_message);
-        yyjson_mut_arr_add_val(rejections, rejection);
-        yyjson_mut_obj_add_val(doc, data, "rejections", rejections);
-
-        yyjson_mut_val *maps = yyjson_mut_obj(doc);
-        add_fold_maps_json(doc, maps, "inputs",
-                           report->input_maps,
-                           report->input_map_count);
-        add_fold_maps_json(doc, maps, "outputs",
-                           report->output_maps,
-                           report->output_map_count);
-        add_fold_maps_json(doc, maps, "parameters",
-                           report->parameter_maps,
-                           report->parameter_map_count);
-        yyjson_mut_obj_add_val(doc, data, "maps", maps);
-
-        int json_rc = nmo_cmd_ctx_json_end(ctx, doc, data,
-                                           "behavior.fold");
-        return json_rc == NMO_CLI_EXIT_SUCCESS ? exit_code : json_rc;
+        return exit_code;
     }
 
-    if (report->diagnostic_message) {
-        fprintf(stderr, "Error: behavior fold rejected");
-        if (report->diagnostic_code) {
-            fprintf(stderr, " (%s)", report->diagnostic_code);
-        }
-        fprintf(stderr, ": %s\n", report->diagnostic_message);
-    } else {
-        fprintf(stderr, "Error: Failed to analyze behavior fold\n");
-    }
-    return exit_code;
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL;
+    ok = ok && nmo_cli_record_bool(rec, "ok", NULL, false);
+    ok = ok && nmo_cli_record_bool(rec, "dry_run", NULL,
+                                   report->analysis_only);
+    ok = ok && nmo_cli_record_bool(rec, "rejected", NULL, report->rejected);
+    ok = ok && nmo_cli_record_bool(rec, "can_write", NULL, report->can_write);
+    ok = ok && nmo_cli_record_uint(rec, "parent_id", NULL, report->parent_id);
+    ok = ok && nmo_cli_record_uint(rec, "anchor_id", NULL, report->anchor_id);
+    ok = ok && add_id_list(rec, "selected_nodes", report->selected_nodes,
+                           report->selected_node_count);
+    ok = ok && nmo_cli_record_json(rec, fold_report_semantic_risks_json,
+                                   report);
+    nmo_cli_record_array_t *rejections =
+        ok ? nmo_cli_record_array(rec, "rejections", NULL) : NULL;
+    nmo_cli_record_t *rejection = rejections ? array_add_item(rejections)
+                                             : NULL;
+    ok = rejection != NULL;
+    ok = ok && add_str_or_null(rejection, "code", report->diagnostic_code);
+    ok = ok && add_str_or_null(rejection, "message",
+                               report->diagnostic_message);
+    ok = ok && add_fold_all_maps(rec, report);
+
+    int json_rc = emit_record(ctx, rec, ok, "behavior.fold");
+    return json_rc == NMO_CLI_EXIT_SUCCESS ? exit_code : json_rc;
 }
 
 int nmo_cmd_behavior_fold(int argc,
@@ -2096,20 +2014,16 @@ int nmo_cmd_behavior_fold(int argc,
         if (args.dry_run) {
             rc = fold_emit_rejection(&c, &report, rc);
         } else if (c.is_json) {
-            yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-            if (!doc) {
-                rc = NMO_CLI_EXIT_INTERNAL_ERROR;
-                goto cleanup;
-            }
-            yyjson_mut_val *data = yyjson_mut_obj(doc);
-            add_edit_report_json(
-                doc, data, edit_report_ready ? &edit_report : NULL,
+            nmo_cli_record_t *rec = nmo_cli_record_new();
+            bool ok = rec != NULL;
+            ok = ok && add_edit_report(
+                rec, edit_report_ready ? &edit_report : NULL,
                 args.output_path);
-            yyjson_mut_obj_add_uint(doc, data, "parent_id",
-                                    (uint64_t)args.parent_id);
-            yyjson_mut_obj_add_uint(doc, data, "anchor_id",
-                                    (uint64_t)args.anchor_id);
-            rc = nmo_cmd_ctx_json_end(&c, doc, data, "behavior.fold");
+            ok = ok && nmo_cli_record_uint(rec, "parent_id", NULL,
+                                           args.parent_id);
+            ok = ok && nmo_cli_record_uint(rec, "anchor_id", NULL,
+                                           args.anchor_id);
+            rc = emit_record(&c, rec, ok, "behavior.fold");
         } else {
             const nmo_edit_operation_result_t *failed_op =
                 edit_report_ready && edit_report.operation_count > 0u
@@ -2135,32 +2049,21 @@ int nmo_cmd_behavior_fold(int argc,
         nmo_save_options_t save_opts = nmo_tool_owner_save_options_default();
         rc = nmo_cli_save_document(c.document, args.output_path, &save_opts);
         if (rc == NMO_CLI_EXIT_SUCCESS) {
-            if (c.is_json) {
-                yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-                if (!doc) {
-                    rc = NMO_CLI_EXIT_INTERNAL_ERROR;
-                    goto cleanup;
-                }
-                yyjson_mut_val *data = yyjson_mut_obj(doc);
-                add_edit_report_json(doc, data, &edit_report,
-                                     args.output_path);
-                yyjson_mut_obj_add_bool(doc, data, "can_write",
-                                        true);
-                yyjson_mut_obj_add_uint(doc, data, "parent_id",
-                                        (uint64_t)args.parent_id);
-                yyjson_mut_obj_add_uint(doc, data, "anchor_id",
-                                        edit_report.operation_count > 0u
-                                            ? (uint64_t)edit_report
-                                                  .operations[0]
-                                                  .result_id
-                                            : (uint64_t)args.anchor_id);
-                nmo_cli_json_add_str_safe(doc, data, "output",
+            nmo_object_id_t anchor_id = edit_report.operation_count > 0u
+                ? edit_report.operations[0].result_id
+                : args.anchor_id;
+            nmo_cli_record_t *rec = nmo_cli_record_new();
+            bool ok = rec != NULL;
+            ok = ok && add_edit_report(rec, &edit_report, args.output_path);
+            ok = ok && nmo_cli_record_bool(rec, "can_write", NULL, true);
+            ok = ok && nmo_cli_record_uint(rec, "parent_id", NULL,
+                                           args.parent_id);
+            ok = ok && nmo_cli_record_uint(rec, "anchor_id", NULL, anchor_id);
+            ok = ok && nmo_cli_record_str(rec, "output", NULL,
                                           args.output_path);
-                rc = nmo_cmd_ctx_json_end(&c, doc, data,
-                                          "behavior.fold");
-            } else {
-                fprintf(c.out, "Saved to: %s\n", args.output_path);
-            }
+            ok = ok && nmo_cli_record_raw_fmt(rec, "Saved to: %s\n",
+                                              args.output_path);
+            rc = emit_record(&c, rec, ok, "behavior.fold");
         }
     }
 
@@ -2242,42 +2145,26 @@ static int replace_bb_report(nmo_cmd_ctx_t *c,
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    if (c->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
-        if (!doc) {
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
-        }
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        add_edit_report_json(doc, data, &args->edit_report, output_path);
-        if (output_path) {
-            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-        }
-        int json_rc = nmo_cmd_ctx_json_end(c, doc, data,
-                                           "behavior.replace-bb");
-        if (args->edit_report_ready) {
-            nmo_edit_report_dispose(&args->edit_report);
-            nmo_edit_plan_destroy(args->edit_plan);
-            args->edit_plan = NULL;
-            args->edit_report_ready = false;
-        }
-        return json_rc;
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL;
+    ok = ok && add_edit_report(rec, &args->edit_report, output_path);
+    if (output_path) {
+        ok = ok && nmo_cli_record_str(rec, "output", NULL, output_path);
     }
-
-    if (dry_run) {
-        fprintf(c->out, "[dry-run] ");
-    }
-    fprintf(c->out, "Replaced leaf BB #%u\n",
-            args->desc.behavior_id);
+    ok = ok && nmo_cli_record_raw_fmt(rec, "%sReplaced leaf BB #%u\n",
+                                      dry_run ? "[dry-run] " : "",
+                                      args->desc.behavior_id);
     if (!dry_run && output_path) {
-        fprintf(c->out, "Saved to: %s\n", output_path);
+        ok = ok && nmo_cli_record_raw_fmt(rec, "Saved to: %s\n", output_path);
     }
+    int rc = emit_record(c, rec, ok, "behavior.replace-bb");
     if (args->edit_report_ready) {
         nmo_edit_report_dispose(&args->edit_report);
         nmo_edit_plan_destroy(args->edit_plan);
         args->edit_plan = NULL;
         args->edit_report_ready = false;
     }
-    return NMO_CLI_EXIT_SUCCESS;
+    return rc;
 }
 
 int nmo_cmd_behavior_replace_bb(int argc,
