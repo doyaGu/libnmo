@@ -136,36 +136,79 @@ static bool parameter_list_build_record(nmo_context_t *ctx, nmo_object_t *obj,
     return ok && nmo_cli_record_str_opt(rec, "name", "Name", name, "-");
 }
 
-typedef struct parameter_list_data {
-    nmo_context_t *ctx;
-    yyjson_mut_doc *doc;
-    yyjson_mut_val *arr;
-    nmo_cli_table_t *table;
+typedef struct parameter_target_list {
+    nmo_object_t **items;
     size_t count;
-} parameter_list_data_t;
+    size_t capacity;
+    bool oom;
+} parameter_target_list_t;
 
-static int parameter_list_core_visitor(size_t index,
-                                       nmo_object_t *obj,
-                                       const nmo_cmd_ctx_t *c,
-                                       void *user)
+static int parameter_target_collect_visitor(size_t index,
+                                            nmo_object_t *obj,
+                                            const nmo_cmd_ctx_t *c,
+                                            void *user)
 {
     (void)index;
+    (void)c;
 
-    parameter_list_data_t *data = (parameter_list_data_t *)user;
-    nmo_cli_record_t *rec = nmo_cli_record_new();
-    if (rec && parameter_list_build_record(c->ctx, obj, rec)) {
-        if (data->arr) {
-            yyjson_mut_val *item = yyjson_mut_obj(data->doc);
-            if (item && nmo_cli_record_to_json(rec, data->doc, item)) {
-                yyjson_mut_arr_add_val(data->arr, item);
-            }
-        } else if (data->table) {
-            nmo_cli_record_add_table_row(rec, data->table);
+    parameter_target_list_t *list = (parameter_target_list_t *)user;
+    if (list->count == list->capacity) {
+        size_t new_capacity = list->capacity ? list->capacity * 2u : 64u;
+        nmo_object_t **new_items =
+            (nmo_object_t **)realloc(list->items, new_capacity * sizeof(*new_items));
+        if (!new_items) {
+            list->oom = true;
+            return 1;
+        }
+        list->items = new_items;
+        list->capacity = new_capacity;
+    }
+
+    list->items[list->count++] = obj;
+    return 0;
+}
+
+/* "Parameters: N" and a table of `objects`; JSON: count + objects. */
+static bool parameter_list_build(nmo_context_t *ctx,
+                                 nmo_object_t *const *objects,
+                                 size_t count,
+                                 nmo_cli_record_t *rec)
+{
+    static const nmo_cli_table_col_t columns[] = {
+        {"ID", NMO_CLI_ALIGN_RIGHT, 5, 0},
+        {"Class", NMO_CLI_ALIGN_LEFT, 20, 30},
+        {"Name", NMO_CLI_ALIGN_LEFT, 20, 50},
+    };
+
+    bool ok = nmo_cli_record_uint(rec, "count", NULL, (uint64_t)count) &&
+              nmo_cli_record_raw_fmt(rec, "Parameters: %zu\n\n", count);
+    nmo_cli_record_array_t *arr = ok ? nmo_cli_record_array(rec, "objects", NULL) : NULL;
+    ok = arr != NULL &&
+         nmo_cli_record_array_set_table(arr, columns,
+                                        sizeof(columns) / sizeof(columns[0]));
+    for (size_t i = 0; ok && i < count; ++i) {
+        nmo_cli_record_t *item = nmo_cli_record_new();
+        ok = item != NULL && parameter_list_build_record(ctx, objects[i], item);
+        if (!ok) {
+            nmo_cli_record_free(item);
+        } else {
+            ok = nmo_cli_record_array_add(arr, item);
         }
     }
-    nmo_cli_record_free(rec);
-    data->count++;
-    return 0;
+    return ok;
+}
+
+/* Emit a finished record, or report INTERNAL_ERROR when building it failed. */
+static int parameter_emit(nmo_cmd_ctx_t *c,
+                          nmo_cli_record_t *rec,
+                          bool ok,
+                          const char *cmd_name)
+{
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        rec = NULL;
+    }
+    return nmo_cmd_ctx_emit_record(c, rec, cmd_name, 0, c->colorize);
 }
 
 /**
@@ -213,355 +256,242 @@ static const char *parameter_trace_step_type_name(nmo_behavior_trace_step_type_t
     }
 }
 
-static void parameter_add_source_chain_json(
-    yyjson_mut_doc *doc,
-    yyjson_mut_val *item,
-    const nmo_array_t *chain,
-    nmo_object_repository_t *repo,
-    const nmo_type_registry_t *registry)
+/*
+ * The steps a ParameterIn's value is traced through. JSON: "source_chain".
+ * Text: a "Source Chain:" list, one numbered step per line.
+ */
+static bool parameter_add_source_chain(nmo_cli_record_t *rec,
+                                       const nmo_array_t *chain,
+                                       nmo_object_repository_t *repo,
+                                       const nmo_type_registry_t *registry)
 {
-    if (!doc || !item || !chain || chain->count == 0 || !repo) {
-        return;
-    }
-
-    yyjson_mut_val *arr = yyjson_mut_arr(doc);
     const nmo_behavior_trace_step_t *steps =
         (const nmo_behavior_trace_step_t *)chain->data;
 
-    for (size_t i = 0; i < chain->count; ++i) {
-        yyjson_mut_val *step = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_uint(doc, step, "id", steps[i].id);
-        yyjson_mut_obj_add_uint(doc, step, "class_id", steps[i].class_id);
-        nmo_cli_json_add_str_safe(doc, step, "step",
-                                  parameter_trace_step_type_name(steps[i].type));
-        nmo_cli_json_add_str_safe(doc, step, "name", resolve_name(repo, steps[i].id));
-        yyjson_mut_obj_add_uint(doc, step, "owner_id", steps[i].owner_id);
-        nmo_cli_json_add_str_safe(doc, step, "owner_name",
-                                  resolve_name(repo, steps[i].owner_id));
-
+    bool ok = nmo_cli_record_raw(rec, "Source Chain:\n");
+    nmo_cli_record_array_t *arr = ok ? nmo_cli_record_array(rec, "source_chain", NULL) : NULL;
+    ok = arr != NULL;
+    if (ok) {
+        nmo_cli_record_array_omit_heading(arr);
+    }
+    for (size_t i = 0; ok && i < chain->count; ++i) {
+        const char *step_name = parameter_trace_step_type_name(steps[i].type);
+        const char *name = resolve_name(repo, steps[i].id);
         nmo_object_t *obj = nmo_object_repository_find_by_id(repo, steps[i].id);
         nmo_guid_t type_guid = get_param_type_guid(obj);
-        if (!nmo_guid_is_null(type_guid)) {
-            nmo_cli_json_add_guid_safe(doc, step, "type_guid", type_guid);
-            nmo_cli_json_add_str_safe(doc, step, "type_name",
-                                      resolve_type(registry, type_guid));
+        bool has_type = !nmo_guid_is_null(type_guid);
+        const char *type_name = has_type ? resolve_type(registry, type_guid) : "";
+
+        nmo_cli_record_t *step = nmo_cli_record_new();
+        ok = step != NULL &&
+             nmo_cli_record_uint(step, "id", NULL, steps[i].id) &&
+             nmo_cli_record_uint(step, "class_id", NULL, steps[i].class_id) &&
+             nmo_cli_record_str(step, "step", NULL, step_name) &&
+             nmo_cli_record_str(step, "name", NULL, name) &&
+             nmo_cli_record_uint(step, "owner_id", NULL, steps[i].owner_id) &&
+             nmo_cli_record_str(step, "owner_name", NULL,
+                                resolve_name(repo, steps[i].owner_id));
+        if (has_type) {
+            ok = ok && nmo_cli_record_guid(step, "type_guid", NULL, type_guid) &&
+                 nmo_cli_record_str(step, "type_name", NULL, type_name);
         }
-
-        yyjson_mut_arr_add_val(arr, step);
+        ok = ok && nmo_cli_record_set_summary_fmt(
+            step, "  %zu. #%u %s%s%s%s (%s)", i, steps[i].id, name,
+            has_type ? " [" : "", type_name, has_type ? "]" : "", step_name);
+        if (!ok) {
+            nmo_cli_record_free(step);
+        } else {
+            ok = nmo_cli_record_array_add(arr, step);
+        }
     }
-
-    yyjson_mut_obj_add_val(doc, item, "source_chain", arr);
+    return ok;
 }
 
-static void parameter_add_resolved_source_json(
-    yyjson_mut_doc *doc,
-    yyjson_mut_val *item,
-    nmo_context_t *ctx,
-    nmo_object_t *resolved,
-    const nmo_type_registry_t *registry,
-    const nmo_workspace_t *workspace)
+/*
+ * The object a ParameterIn chain ends at. JSON: the resolved_* fields. Text:
+ * a "Resolved: #<id> <name> = <value>" line when the source has a value.
+ */
+static bool parameter_add_resolved_source(nmo_cli_record_t *rec,
+                                          nmo_context_t *ctx,
+                                          nmo_object_repository_t *repo,
+                                          nmo_object_t *resolved,
+                                          const nmo_type_registry_t *registry,
+                                          const nmo_workspace_t *workspace)
 {
-    if (!doc || !item || !resolved) {
-        return;
-    }
-
     nmo_object_id_t resolved_id = nmo_object_get_id(resolved);
     nmo_class_id_t resolved_class = nmo_object_get_class_id(resolved);
-    yyjson_mut_obj_add_uint(doc, item, "resolved_source_id", resolved_id);
-    yyjson_mut_obj_add_uint(doc, item, "resolved_class_id", resolved_class);
+    const char *class_name = ctx ? nmo_cli_class_name_from_id(ctx, resolved_class) : NULL;
 
-    const char *class_name = NULL;
-    if (ctx) {
-        class_name = nmo_cli_class_name_from_id(ctx, resolved_class);
-    }
+    bool ok = nmo_cli_record_uint(rec, "resolved_source_id", NULL, resolved_id) &&
+              nmo_cli_record_uint(rec, "resolved_class_id", NULL, resolved_class);
     if (class_name) {
-        nmo_cli_json_add_str_safe(doc, item, "resolved_class_name", class_name);
+        ok = ok && nmo_cli_record_str(rec, "resolved_class_name", NULL, class_name);
     }
-
-    const char *name = nmo_object_get_name(resolved);
-    if (name && name[0]) {
-        nmo_cli_json_add_str_safe(doc, item, "resolved_name", name);
-    }
+    ok = ok && nmo_cli_record_str_opt(rec, "resolved_name", NULL,
+                                      nmo_object_get_name(resolved), NULL);
 
     nmo_guid_t type_guid = get_param_type_guid(resolved);
     if (!nmo_guid_is_null(type_guid)) {
-        nmo_cli_json_add_guid_safe(doc, item, "resolved_type_guid", type_guid);
-        nmo_cli_json_add_str_safe(doc, item, "resolved_type_name",
-                                  resolve_type(registry, type_guid));
-    }
-
-    if (resolved_class == NMO_CID_PARAMETERIN) {
-        return;
+        ok = ok && nmo_cli_record_guid(rec, "resolved_type_guid", NULL, type_guid) &&
+             nmo_cli_record_str(rec, "resolved_type_name", NULL,
+                                resolve_type(registry, type_guid));
     }
 
     const nmo_parameter_state_t *pstate = nmo_parameter_get_state(resolved);
-    if (!pstate) {
-        return;
+    if (!ok || !pstate) {
+        return ok;
     }
 
-    nmo_cli_json_add_str_safe(doc, item, "resolved_mode",
-                              nmo_behavior_param_mode_to_string(pstate->mode));
+    ok = nmo_cli_record_str(rec, "resolved_mode", NULL,
+                            nmo_behavior_param_mode_to_string(pstate->mode));
     char *value = format_parameter_value(
         pstate, (nmo_type_registry_t *)registry, workspace, NULL);
     if (value) {
-        if (value[0]) {
-            nmo_cli_json_add_str_safe(doc, item, "resolved_value", value);
-        }
+        ok = ok && nmo_cli_record_str_opt(rec, "resolved_value", NULL, value, NULL) &&
+             nmo_cli_record_raw_fmt(rec, "Resolved: #%u %s = %s\n", resolved_id,
+                                    resolve_name(repo, resolved_id), value);
         free(value);
     }
     if (pstate->buffer_data.data) {
-        yyjson_mut_obj_add_uint(doc, item, "resolved_buffer_size",
-                                (uint64_t)pstate->buffer_data.count);
+        ok = ok && nmo_cli_record_uint(rec, "resolved_buffer_size", NULL,
+                                       (uint64_t)pstate->buffer_data.count);
     }
+    return ok;
 }
 
-static void parameter_add_operation_param_json(
-    yyjson_mut_doc *doc,
-    yyjson_mut_val *item,
-    nmo_object_repository_t *repo,
-    const nmo_type_registry_t *registry,
-    const char *prefix,
-    nmo_object_id_t param_id)
+/* JSON keys for one ParameterOperation operand. */
+typedef struct parameter_operand_keys {
+    const char *id;
+    const char *name;
+    const char *type_guid;
+    const char *type_name;
+} parameter_operand_keys_t;
+
+static const parameter_operand_keys_t parameter_in1_keys = {
+    "in1_id", "in1_name", "in1_type_guid", "in1_type_name"};
+static const parameter_operand_keys_t parameter_in2_keys = {
+    "in2_id", "in2_name", "in2_type_guid", "in2_type_name"};
+static const parameter_operand_keys_t parameter_out_keys = {
+    "out_id", "out_name", "out_type_guid", "out_type_name"};
+
+/* One operand. Text: "<label>: #<id> <name> [<type>]". */
+static bool parameter_add_operation_param(nmo_cli_record_t *rec,
+                                          nmo_object_repository_t *repo,
+                                          const nmo_type_registry_t *registry,
+                                          const parameter_operand_keys_t *keys,
+                                          const char *label,
+                                          nmo_object_id_t param_id)
 {
-    if (!doc || !item || !repo || !prefix || param_id == 0) {
-        return;
-    }
-
-    char *key = nmo_tool_strdup_fmt("%s_id", prefix);
-    if (key) {
-        nmo_cli_json_add_uint_safe(doc, item, key, param_id);
-        free(key);
-    }
-
-    key = nmo_tool_strdup_fmt("%s_name", prefix);
-    if (key) {
-        nmo_cli_json_add_str_safe(doc, item, key, resolve_name(repo, param_id));
-        free(key);
-    }
-
-    nmo_object_t *param = nmo_object_repository_find_by_id(repo, param_id);
-    nmo_guid_t type_guid = get_param_type_guid(param);
-    if (!nmo_guid_is_null(type_guid)) {
-        key = nmo_tool_strdup_fmt("%s_type_guid", prefix);
-        if (key) {
-            nmo_cli_json_add_guid_safe(doc, item, key, type_guid);
-            free(key);
-        }
-        key = nmo_tool_strdup_fmt("%s_type_name", prefix);
-        if (key) {
-            nmo_cli_json_add_str_safe(doc, item, key, resolve_type(registry, type_guid));
-            free(key);
-        }
-    }
-}
-
-static void parameter_add_operation_json(
-    yyjson_mut_doc *doc,
-    yyjson_mut_val *item,
-    nmo_object_repository_t *repo,
-    const nmo_type_registry_t *registry,
-    const nmo_parameteroperation_state_t *op)
-{
-    if (!doc || !item || !op) {
-        return;
-    }
-
-    nmo_cli_json_add_guid_safe(doc, item, "operation_guid", op->operation_guid);
-
-    const char *operation_name =
-        nmo_type_registry_guid_to_name(registry, op->operation_guid);
-    if (operation_name && operation_name[0]) {
-        nmo_cli_json_add_str_safe(doc, item, "operation_name", operation_name);
-    }
-
-    if (op->has_owner) {
-        yyjson_mut_obj_add_uint(doc, item, "owner_id", nmo_parameteroperation_owner_id(op));
-        if (repo) {
-            nmo_cli_json_add_str_safe(doc, item, "owner_name",
-                                      resolve_name(repo, nmo_parameteroperation_owner_id(op)));
-        }
-    }
-    if (op->has_in1) {
-        parameter_add_operation_param_json(doc, item, repo, registry, "in1", nmo_parameteroperation_in1_id(op));
-    }
-    if (op->has_in2) {
-        parameter_add_operation_param_json(doc, item, repo, registry, "in2", nmo_parameteroperation_in2_id(op));
-    }
-    if (op->has_out) {
-        parameter_add_operation_param_json(doc, item, repo, registry, "out", nmo_parameteroperation_out_id(op));
-    }
-}
-
-static void parameter_print_operation_param(
-    FILE *out,
-    nmo_object_repository_t *repo,
-    const nmo_type_registry_t *registry,
-    const char *label,
-    nmo_object_id_t param_id)
-{
-    if (!out || !label || param_id == 0) {
-        return;
-    }
-
-    fprintf(out, "%s: #%u", label, param_id);
-    if (repo) {
-        fprintf(out, " %s", resolve_name(repo, param_id));
+    if (param_id == 0) {
+        return true;
     }
 
     nmo_object_t *param = repo ? nmo_object_repository_find_by_id(repo, param_id) : NULL;
     nmo_guid_t type_guid = get_param_type_guid(param);
-    if (!nmo_guid_is_null(type_guid)) {
-        fprintf(out, " [%s]", resolve_type(registry, type_guid));
+    bool has_type = !nmo_guid_is_null(type_guid);
+    const char *name = repo ? resolve_name(repo, param_id) : "";
+    const char *type_name = has_type ? resolve_type(registry, type_guid) : "";
+
+    bool ok = true;
+    if (repo) {
+        ok = nmo_cli_record_uint(rec, keys->id, NULL, param_id) &&
+             nmo_cli_record_str(rec, keys->name, NULL, name);
+        if (has_type) {
+            ok = ok && nmo_cli_record_guid(rec, keys->type_guid, NULL, type_guid) &&
+                 nmo_cli_record_str(rec, keys->type_name, NULL, type_name);
+        }
     }
-    fprintf(out, "\n");
+    return ok && nmo_cli_record_raw_fmt(rec, "%s: #%u%s%s%s%s%s\n", label, param_id,
+                                        repo ? " " : "", name,
+                                        has_type ? " [" : "", type_name,
+                                        has_type ? "]" : "");
 }
 
-static void parameter_print_operation_text(
-    FILE *out,
-    nmo_object_repository_t *repo,
-    const nmo_type_registry_t *registry,
-    const nmo_parameteroperation_state_t *op)
+/* A ParameterOperation's GUID, owner, and operands. */
+static bool parameter_add_operation(nmo_cli_record_t *rec,
+                                    nmo_object_repository_t *repo,
+                                    const nmo_type_registry_t *registry,
+                                    const nmo_parameteroperation_state_t *op)
 {
-    if (!out || !op) {
-        return;
-    }
-
     char guid_buf[NMO_GUID_STRING_SIZE];
     nmo_guid_format(op->operation_guid, guid_buf, sizeof(guid_buf));
-    fprintf(out, "Operation GUID: %s", guid_buf);
     const char *operation_name =
         nmo_type_registry_guid_to_name(registry, op->operation_guid);
-    if (operation_name && operation_name[0]) {
-        fprintf(out, " (%s)", operation_name);
-    }
-    fprintf(out, "\n");
+    bool named = operation_name && operation_name[0];
+
+    bool ok = nmo_cli_record_guid(rec, "operation_guid", NULL, op->operation_guid) &&
+              nmo_cli_record_str_opt(rec, "operation_name", NULL, operation_name, NULL) &&
+              nmo_cli_record_raw_fmt(rec, "Operation GUID: %s%s%s%s\n", guid_buf,
+                                     named ? " (" : "", named ? operation_name : "",
+                                     named ? ")" : "");
 
     if (op->has_owner) {
-        fprintf(out, "Owner: #%u", nmo_parameteroperation_owner_id(op));
+        nmo_object_id_t owner_id = nmo_parameteroperation_owner_id(op);
+        const char *owner_name = repo ? resolve_name(repo, owner_id) : "";
+        ok = ok && nmo_cli_record_uint(rec, "owner_id", NULL, owner_id);
         if (repo) {
-            fprintf(out, " %s", resolve_name(repo, nmo_parameteroperation_owner_id(op)));
+            ok = ok && nmo_cli_record_str(rec, "owner_name", NULL, owner_name);
         }
-        fprintf(out, "\n");
+        ok = ok && nmo_cli_record_raw_fmt(rec, "Owner: #%u%s%s\n", owner_id,
+                                          repo ? " " : "", owner_name);
     }
     if (op->has_in1) {
-        parameter_print_operation_param(out, repo, registry, "Input 1", nmo_parameteroperation_in1_id(op));
+        ok = ok && parameter_add_operation_param(rec, repo, registry, &parameter_in1_keys,
+                                                 "Input 1", nmo_parameteroperation_in1_id(op));
     }
     if (op->has_in2) {
-        parameter_print_operation_param(out, repo, registry, "Input 2", nmo_parameteroperation_in2_id(op));
+        ok = ok && parameter_add_operation_param(rec, repo, registry, &parameter_in2_keys,
+                                                 "Input 2", nmo_parameteroperation_in2_id(op));
     }
     if (op->has_out) {
-        parameter_print_operation_param(out, repo, registry, "Output", nmo_parameteroperation_out_id(op));
+        ok = ok && parameter_add_operation_param(rec, repo, registry, &parameter_out_keys,
+                                                 "Output", nmo_parameteroperation_out_id(op));
     }
+    return ok;
 }
 
-static void parameter_add_resolved_source_text(
-    FILE *out,
-    const nmo_array_t *chain,
-    nmo_object_repository_t *repo,
-    const nmo_type_registry_t *registry,
-    const nmo_workspace_t *workspace)
+/*
+ * Where a ParameterIn gets its value: the source chain, then the resolved
+ * source or, in JSON, why the chain did not resolve.
+ */
+static bool parameter_add_parameterin_resolution(nmo_cli_record_t *rec,
+                                                 nmo_context_t *ctx,
+                                                 nmo_workspace_t *workspace,
+                                                 nmo_object_repository_t *repo,
+                                                 const nmo_type_registry_t *registry,
+                                                 nmo_object_id_t param_id)
 {
-    if (!out || !chain || chain->count == 0 || !repo) {
-        return;
-    }
-
-    const nmo_behavior_trace_step_t *steps =
-        (const nmo_behavior_trace_step_t *)chain->data;
-
-    fprintf(out, "Source Chain:\n");
-    for (size_t i = 0; i < chain->count; ++i) {
-        nmo_object_t *obj = nmo_object_repository_find_by_id(repo, steps[i].id);
-        nmo_guid_t type_guid = get_param_type_guid(obj);
-        fprintf(out, "  %zu. #%u %s", i, steps[i].id,
-                resolve_name(repo, steps[i].id));
-        if (!nmo_guid_is_null(type_guid)) {
-            fprintf(out, " [%s]", resolve_type(registry, type_guid));
-        }
-        fprintf(out, " (%s)\n", parameter_trace_step_type_name(steps[i].type));
-    }
-
-    const nmo_behavior_trace_step_t *last = &steps[chain->count - 1];
-    nmo_object_t *resolved = nmo_object_repository_find_by_id(repo, last->id);
-    if (!resolved || nmo_object_get_class_id(resolved) == NMO_CID_PARAMETERIN) {
-        return;
-    }
-
-    const nmo_parameter_state_t *pstate = nmo_parameter_get_state(resolved);
-    if (!pstate) {
-        return;
-    }
-
-    char *value = format_parameter_value(
-        pstate, (nmo_type_registry_t *)registry, workspace, NULL);
-    if (value) {
-        fprintf(out, "Resolved: #%u %s = %s\n", last->id,
-                resolve_name(repo, last->id), value);
-        free(value);
-    }
-}
-
-static void parameter_add_parameterin_resolution_json(
-    yyjson_mut_doc *doc,
-    yyjson_mut_val *item,
-    nmo_context_t *ctx,
-    nmo_workspace_t *workspace,
-    nmo_object_repository_t *repo,
-    const nmo_type_registry_t *registry,
-    nmo_object_id_t param_id)
-{
-    if (!doc || !item || !workspace || !repo || param_id == 0) {
-        return;
+    if (!workspace || !repo || param_id == 0) {
+        return true;
     }
 
     nmo_array_t chain;
     if (nmo_array_init(&chain, sizeof(nmo_behavior_trace_step_t), 8, NULL) != NMO_OK) {
-        return;
+        return true;
     }
 
+    bool ok = true;
     if (nmo_behavior_analyze_trace_param_chain(workspace, param_id,
                                                &chain, 32) == NMO_OK &&
         chain.count > 0) {
-        parameter_add_source_chain_json(doc, item, &chain, repo, registry);
+        ok = parameter_add_source_chain(rec, &chain, repo, registry);
 
         const nmo_behavior_trace_step_t *steps =
             (const nmo_behavior_trace_step_t *)chain.data;
         nmo_object_t *resolved =
             nmo_object_repository_find_by_id(repo, steps[chain.count - 1].id);
         if (resolved && nmo_object_get_class_id(resolved) != NMO_CID_PARAMETERIN) {
-            parameter_add_resolved_source_json(doc, item, ctx, resolved, registry, workspace);
+            ok = ok && parameter_add_resolved_source(rec, ctx, repo, resolved,
+                                                     registry, workspace);
         } else {
             const char *reason =
                 (chain.count == 1) ? "no_source" : "chain_ended_at_parameter_in";
-            nmo_cli_json_add_str_safe(doc, item, "unresolved_reason", reason);
+            ok = ok && nmo_cli_record_str(rec, "unresolved_reason", NULL, reason);
         }
     }
 
     nmo_array_dispose(&chain);
-}
-
-static void parameter_add_parameterin_resolution_text(
-    FILE *out,
-    nmo_workspace_t *workspace,
-    nmo_object_repository_t *repo,
-    const nmo_type_registry_t *registry,
-    nmo_object_id_t param_id)
-{
-    if (!out || !workspace || !repo || param_id == 0) {
-        return;
-    }
-
-    nmo_array_t chain;
-    if (nmo_array_init(&chain, sizeof(nmo_behavior_trace_step_t), 8, NULL) != NMO_OK) {
-        return;
-    }
-
-    if (nmo_behavior_analyze_trace_param_chain(workspace, param_id,
-                                               &chain, 32) == NMO_OK &&
-        chain.count > 0) {
-        parameter_add_resolved_source_text(out, &chain, repo, registry, workspace);
-    }
-
-    nmo_array_dispose(&chain);
+    return ok;
 }
 
 /* ---- parameter list: per-file handler for batch mode ---- */
@@ -601,47 +531,34 @@ static int parameter_list_single(const char *file_path,
     nmo_cmd_ctx_t cmd;
     nmo_cmd_ctx_init_from_repl_document(&cmd, ctx, document, workspace, false);
 
-    if (doc && data) {
-        yyjson_mut_val *arr = yyjson_mut_arr(doc);
-        parameter_list_data_t ld = { .ctx = ctx, .doc = doc, .arr = arr };
-        if (nmo_core_object_query_run(&cmd, &query,
-                                      parameter_list_core_visitor, &ld,
-                                      NULL) != NMO_CLI_EXIT_SUCCESS) {
-            fprintf(stderr, "Error: Failed to query objects\n");
-            nmo_tool_close_document(ctx, document, workspace);
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
-        }
-        yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)ld.count);
-        yyjson_mut_obj_add_val(doc, data, "objects", arr);
-    } else {
+    parameter_target_list_t list = {0};
+    if (nmo_core_object_query_run(&cmd, &query, parameter_target_collect_visitor,
+                                  &list, NULL) != NMO_CLI_EXIT_SUCCESS ||
+        list.oom) {
+        free(list.items);
+        fprintf(stderr, "Error: Failed to query objects\n");
+        nmo_tool_close_document(ctx, document, workspace);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL && parameter_list_build(ctx, list.items, list.count, rec);
+    free(list.items);
+    if (ok && doc && data) {
+        ok = nmo_cli_record_to_json(rec, doc, data);
+    } else if (ok) {
         FILE *out = (text_ctx && text_ctx->out) ? text_ctx->out : stdout;
         bool colorize = text_ctx ? text_ctx->colorize : false;
-
-        static const nmo_cli_table_col_t columns[] = {
-            {"ID", NMO_CLI_ALIGN_RIGHT, 5, 0},
-            {"Class", NMO_CLI_ALIGN_LEFT, 20, 30},
-            {"Name", NMO_CLI_ALIGN_LEFT, 20, 50},
-        };
-        nmo_cli_table_t table;
-        nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
-
-        parameter_list_data_t ld = { .ctx = ctx, .table = &table };
-        if (nmo_core_object_query_run(&cmd, &query,
-                                      parameter_list_core_visitor, &ld,
-                                      NULL) != NMO_CLI_EXIT_SUCCESS) {
-            fprintf(stderr, "Error: Failed to query objects\n");
-            nmo_cli_table_free(&table);
-            nmo_tool_close_document(ctx, document, workspace);
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
-        }
-
-        fprintf(out, "Parameters: %zu\n\n", ld.count);
-        nmo_cli_table_print(&table, out, colorize);
-        nmo_cli_table_free(&table);
+        nmo_cli_record_print_kv(rec, out, 0, colorize);
     }
+    nmo_cli_record_free(rec);
 
     (void)global;
     nmo_tool_close_document(ctx, document, workspace);
+    if (!ok) {
+        fprintf(stderr, "Error: Out of memory\n");
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
     return NMO_CLI_EXIT_SUCCESS;
 }
 
@@ -656,46 +573,22 @@ static int parameter_list_run(nmo_cmd_ctx_t *c) {
         .predicate_user_data = (void *)c->registry,
     };
 
-    if (c->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-
-        yyjson_mut_val *arr = yyjson_mut_arr(doc);
-        parameter_list_data_t ld = { .doc = doc, .arr = arr };
-        int rc = nmo_core_object_query_run(c, &query,
-                                           parameter_list_core_visitor, &ld, NULL);
-        if (rc != NMO_CLI_EXIT_SUCCESS) {
-            return rc;
-        }
-
-        yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)ld.count);
-        yyjson_mut_obj_add_val(doc, data, "objects", arr);
-
-        nmo_cmd_ctx_json_end(c, doc, data, "parameter.list");
-    } else {
-        static const nmo_cli_table_col_t columns[] = {
-            {"ID", NMO_CLI_ALIGN_RIGHT, 5, 0},
-            {"Class", NMO_CLI_ALIGN_LEFT, 20, 30},
-            {"Name", NMO_CLI_ALIGN_LEFT, 20, 50},
-        };
-
-        nmo_cli_table_t table;
-        nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
-
-        parameter_list_data_t ld = { .table = &table };
-        int rc = nmo_core_object_query_run(c, &query,
-                                           parameter_list_core_visitor, &ld, NULL);
-        if (rc != NMO_CLI_EXIT_SUCCESS) {
-            nmo_cli_table_free(&table);
-            return rc;
-        }
-
-        fprintf(c->out, "Parameters: %zu\n\n", ld.count);
-        nmo_cli_table_print(&table, c->out, c->colorize);
-        nmo_cli_table_free(&table);
+    parameter_target_list_t list = {0};
+    int rc = nmo_core_object_query_run(c, &query, parameter_target_collect_visitor,
+                                       &list, NULL);
+    if (rc == NMO_CLI_EXIT_SUCCESS && list.oom) {
+        fprintf(stderr, "Error: Out of memory\n");
+        rc = NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        free(list.items);
+        return rc;
     }
 
-    return NMO_CLI_EXIT_SUCCESS;
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL && parameter_list_build(c->ctx, list.items, list.count, rec);
+    free(list.items);
+    return parameter_emit(c, rec, ok, "parameter.list");
 }
 
 int nmo_cmd_parameter_list(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -845,124 +738,86 @@ static int parameter_show_run(nmo_cmd_ctx_t *ctx, uint32_t object_id,
                                           pstate->buffer_data.count);
     }
 
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
+    const char *type_name_display = type_name_override;
+    if (!type_name_display && pstate && cid != NMO_CID_PARAMETERLOCAL) {
+        type_name_display = nmo_behavior_param_type_name(pstate, (nmo_type_registry_t *)c.registry);
+    }
 
-        yyjson_mut_obj_add_uint(doc, data, "id", object_id);
-        yyjson_mut_obj_add_uint(doc, data, "class_id", cid);
-        if (class_name) yyjson_mut_obj_add_str(doc, data, "class_name", class_name);
-        if (name && name[0]) nmo_cli_json_add_str_safe(doc, data, "name", name);
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL &&
+              nmo_cli_record_raw_fmt(rec, "Parameter #%u\n", object_id) &&
+              nmo_cli_record_raw_fmt(rec, "  Class: %s (CID %u)\n",
+                                     class_name ? class_name : "?", cid) &&
+              nmo_cli_record_uint(rec, "id", NULL, object_id) &&
+              nmo_cli_record_uint(rec, "class_id", NULL, cid);
+    if (class_name) {
+        ok = ok && nmo_cli_record_str(rec, "class_name", NULL, class_name);
+    }
+    if (name && name[0]) {
+        ok = ok && nmo_cli_record_str(rec, "name", NULL, name) &&
+             nmo_cli_record_raw_fmt(rec, "  Name:  %s\n", name);
+    }
+    if (type_name_display) {
+        ok = ok && nmo_cli_record_str(rec, "type", NULL, type_name_display) &&
+             nmo_cli_record_raw_fmt(rec, "  Type:  %s\n", type_name_display);
+    }
 
-        /* Type information */
-        const char *type_name_display = type_name_override;
-        if (!type_name_display && pstate && cid != NMO_CID_PARAMETERLOCAL) {
-            type_name_display = nmo_behavior_param_type_name(pstate, (nmo_type_registry_t *)c.registry);
+    if (pstate) {
+        const char *mode = nmo_behavior_param_mode_to_string(pstate->mode);
+        ok = ok && nmo_cli_record_str(rec, "mode", NULL, mode) &&
+             nmo_cli_record_raw_fmt(rec, "  Mode:  %s\n", mode) &&
+             nmo_cli_record_str_opt(rec, "value", NULL, value_buf, NULL);
+        if (pstate->buffer_data.data) {
+            ok = ok && nmo_cli_record_uint(rec, "buffer_size", NULL,
+                                           (uint64_t)pstate->buffer_data.count);
         }
-        if (type_name_display) {
-            yyjson_mut_obj_add_str(doc, data, "type", type_name_display);
-        }
+        ok = ok && nmo_cli_record_str_opt(rec, "hex", NULL, hex_dump, NULL);
+    }
 
-        if (pstate) {
-            yyjson_mut_obj_add_str(doc, data, "mode",
-                                   nmo_behavior_param_mode_to_string(pstate->mode));
-            if (value_buf && value_buf[0]) {
-                nmo_cli_json_add_str_safe(doc, data, "value", value_buf);
-            }
-            if (pstate->buffer_data.data) {
-                yyjson_mut_obj_add_uint(doc, data, "buffer_size",
-                                        (uint64_t)pstate->buffer_data.count);
-            }
+    if (owner_id != 0) {
+        nmo_object_t *owner_obj = repo ? nmo_object_repository_find_by_id(repo, owner_id) : NULL;
+        const char *owner_name = owner_obj ? nmo_object_get_name(owner_obj) : NULL;
+        bool named = owner_name && owner_name[0];
+        ok = ok && nmo_cli_record_uint(rec, "owner_id", NULL, owner_id) &&
+             nmo_cli_record_raw_fmt(rec, "  Owner: #%u%s%s%s\n", owner_id,
+                                    named ? " (" : "", named ? owner_name : "",
+                                    named ? ")" : "");
+    }
+    if (source_id != 0) {
+        ok = ok && nmo_cli_record_uint(rec, "source_id", NULL, source_id) &&
+             nmo_cli_record_bool(rec, "is_shared", NULL, is_shared != 0) &&
+             nmo_cli_record_raw_fmt(rec, "  Source: #%u%s\n", source_id,
+                                    is_shared ? " (shared)" : " (direct)");
+    }
+    if (cid == NMO_CID_PARAMETERIN) {
+        ok = ok && parameter_add_parameterin_resolution(
+            rec, c.ctx, c.workspace, repo, c.registry, object_id);
+    }
+    if (op_state) {
+        ok = ok && parameter_add_operation(rec, repo, c.registry, op_state);
+    }
+    if (destination_count > 0) {
+        ok = ok && nmo_cli_record_uint(rec, "destination_count", NULL, destination_count) &&
+             nmo_cli_record_raw_fmt(rec, "  Destinations: %u\n", destination_count);
+    }
 
-            if (hex_dump && hex_dump[0]) {
-                yyjson_mut_obj_add_strcpy(doc, data, "hex", hex_dump);
-            }
-        }
-
-        if (owner_id != 0) {
-            yyjson_mut_obj_add_uint(doc, data, "owner_id", owner_id);
-        }
-        if (source_id != 0) {
-            yyjson_mut_obj_add_uint(doc, data, "source_id", source_id);
-            yyjson_mut_obj_add_bool(doc, data, "is_shared", is_shared != 0);
-        }
-        if (cid == NMO_CID_PARAMETERIN) {
-            parameter_add_parameterin_resolution_json(
-                doc, data, c.ctx, c.workspace, repo, c.registry, object_id);
-        }
-        if (op_state) {
-            parameter_add_operation_json(doc, data, repo, c.registry, op_state);
-        }
-        if (destination_count > 0) {
-            yyjson_mut_obj_add_uint(doc, data, "destination_count", destination_count);
-        }
-
-        nmo_cmd_ctx_json_end(&c, doc, data, "parameter.show");
-    } else {
-        fprintf(c.out, "Parameter #%u\n", object_id);
-        fprintf(c.out, "  Class: %s (CID %u)\n", class_name ? class_name : "?", cid);
-        if (name && name[0]) fprintf(c.out, "  Name:  %s\n", name);
-
-        /* Type information */
-        const char *type_name_display = type_name_override;
-        if (!type_name_display && pstate && cid != NMO_CID_PARAMETERLOCAL) {
-            type_name_display = nmo_behavior_param_type_name(pstate, (nmo_type_registry_t *)c.registry);
-        }
-        if (type_name_display) {
-            fprintf(c.out, "  Type:  %s\n", type_name_display);
-        }
-
-        if (pstate) {
-            fprintf(c.out, "  Mode:  %s\n", nmo_behavior_param_mode_to_string(pstate->mode));
-        }
-
-        if (owner_id != 0) {
-            nmo_object_t *owner_obj = repo ? nmo_object_repository_find_by_id(repo, owner_id) : NULL;
-            if (owner_obj) {
-                const char *owner_name = nmo_object_get_name(owner_obj);
-                fprintf(c.out, "  Owner: #%u", owner_id);
-                if (owner_name && owner_name[0]) {
-                    fprintf(c.out, " (%s)", owner_name);
-                }
-                fprintf(c.out, "\n");
-            } else {
-                fprintf(c.out, "  Owner: #%u\n", owner_id);
-            }
-        }
-
-        if (source_id != 0) {
-            fprintf(c.out, "  Source: #%u%s\n", source_id, is_shared ? " (shared)" : " (direct)");
-        }
-        if (cid == NMO_CID_PARAMETERIN) {
-            parameter_add_parameterin_resolution_text(
-                c.out, c.workspace, repo, c.registry, object_id);
-        }
-        if (op_state) {
-            parameter_print_operation_text(c.out, repo, c.registry, op_state);
-        }
-
-        if (destination_count > 0) {
-            fprintf(c.out, "  Destinations: %u\n", destination_count);
-        }
-
-        if (summary_buf && summary_buf[0]) {
-            fprintf(c.out, "  Value: %s\n", summary_buf);
-        }
-
-        if (pstate && pstate->buffer_data.data) {
-            fprintf(c.out, "  Buffer: %zu bytes\n", pstate->buffer_data.count);
-        }
-
-        if (hex_dump && hex_dump[0]) {
-            fprintf(c.out, "  Hex:   %s\n", hex_dump);
-        }
+    if (summary_buf[0]) {
+        ok = ok && nmo_cli_record_raw_fmt(rec, "  Value: %s\n", summary_buf);
+    }
+    if (pstate && pstate->buffer_data.data) {
+        ok = ok && nmo_cli_record_raw_fmt(rec, "  Buffer: %zu bytes\n",
+                                          pstate->buffer_data.count);
+    }
+    if (hex_dump && hex_dump[0]) {
+        ok = ok && nmo_cli_record_raw_fmt(rec, "  Hex:   %s\n", hex_dump);
     }
 
     free(hex_dump);
     free(value_buf);
     free(summary_buf);
 
-    return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS) : NMO_CLI_EXIT_SUCCESS;
+    int rc = parameter_emit(&c, rec, ok, "parameter.show");
+    return close_ctx ? nmo_cmd_ctx_done(&c, rc) : rc;
 }
 
 static int parameter_show_parse_id(int argc, char **argv, bool expect_file_operand,
@@ -1016,187 +871,161 @@ static int nmo_cmd_parameter_show_in_session(nmo_cmd_ctx_t *ctx, int argc, char 
     return parameter_show_run(ctx, object_id, argc, argv, NULL, false);
 }
 
-/**
- * @brief Dump parameter details with decoded value
+/*
+ * "Buffer mode" bytes as the dump shows them: "xx " per byte, 16 per line,
+ * at most 64 bytes, then a total when the buffer is longer.
  */
-static void dump_parameter_details(nmo_object_t *obj,
-                                     nmo_context_t *ctx,
-                                     const nmo_workspace_t *workspace,
-                                     FILE *out) {
-    if (!obj || !ctx || !out) {
-        return;
+static bool parameter_dump_add_hex(nmo_cli_record_t *rec, const uint8_t *data, size_t size)
+{
+    size_t display_len = size > 64 ? 64 : size;
+    bool ok = nmo_cli_record_raw(rec, "Hex:   ");
+    for (size_t row = 0; ok && row < display_len; row += 16) {
+        size_t n = display_len - row < 16 ? display_len - row : 16;
+        char *line = parameter_hex_dump_dup(data + row, n);
+        ok = line != NULL &&
+             nmo_cli_record_raw_fmt(rec, "%s%s ", row ? "\n       " : "", line);
+        free(line);
     }
+    if (ok && size > 64) {
+        ok = nmo_cli_record_raw_fmt(rec, "\n       ... (%zu bytes total)", size);
+    }
+    return ok && nmo_cli_record_raw(rec, "\n");
+}
 
-    nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
-    nmo_object_repository_t *repo =
-        nmo_tool_owner_repository((nmo_workspace_t *)workspace);
-
+/* One parameter with its decoded value, owner, and specialized fields. */
+static bool parameter_dump_build_record(const nmo_cmd_ctx_t *c,
+                                        nmo_object_repository_t *repo,
+                                        nmo_object_t *obj,
+                                        nmo_cli_record_t *rec)
+{
+    nmo_type_registry_t *registry = (nmo_type_registry_t *)c->registry;
     nmo_object_id_t object_id = nmo_object_get_id(obj);
-    nmo_class_id_t cid = nmo_object_get_class_id(obj);
-
+    nmo_class_id_t class_id = nmo_object_get_class_id(obj);
+    const char *class_name = nmo_cli_class_name_from_id(c->ctx, class_id);
     const char *name = nmo_object_get_name(obj);
-    const char *class_name = nmo_cli_class_name_from_id(ctx, cid);
 
-    fprintf(out, "=== Parameter #%u ===\n", object_id);
-    fprintf(out, "Class: %s (CID %u)\n", class_name ? class_name : "?", cid);
+    bool ok = nmo_cli_record_raw_fmt(rec, "=== Parameter #%u ===\n", object_id) &&
+              nmo_cli_record_raw_fmt(rec, "Class: %s (CID %u)\n",
+                                     class_name ? class_name : "?", class_id) &&
+              nmo_cli_record_uint(rec, "id", NULL, object_id) &&
+              nmo_cli_record_uint(rec, "class_id", NULL, class_id);
+    if (class_name) {
+        ok = ok && nmo_cli_record_str(rec, "class_name", NULL, class_name);
+    }
     if (name && name[0]) {
-        fprintf(out, "Name:  %s\n", name);
+        ok = ok && nmo_cli_record_str(rec, "name", NULL, name) &&
+             nmo_cli_record_raw_fmt(rec, "Name:  %s\n", name);
     }
 
     const void *state = nmo_object_get_state(obj);
     if (!state) {
-        fprintf(out, "No state available\n\n");
-        return;
+        return ok && nmo_cli_record_raw(rec, "No state available\n\n");
     }
 
     /* Parameter state is only valid for Parameter, ParameterLocal, ParameterOut */
     const nmo_parameter_state_t *pstate = NULL;
     nmo_guid_t type_guid = NMO_GUID_NULL;
-    const char *mode_str = "none";
+    nmo_object_id_t owner_id = 0;
+    nmo_object_id_t source_id = 0;
+    uint8_t is_shared = 0;
+    uint32_t destination_count = 0;
 
-    if (cid == NMO_CID_PARAMETERIN) {
-        const nmo_parameterin_state_t *pin_state = (const nmo_parameterin_state_t *)state;
-        type_guid = pin_state->type_guid;
-    } else if (cid != NMO_CID_PARAMETEROPERATION) {
+    if (class_id == NMO_CID_PARAMETERIN) {
+        const nmo_parameterin_state_t *pin = (const nmo_parameterin_state_t *)state;
+        type_guid = pin->type_guid;
+        owner_id = nmo_parameterin_owner_id(pin);
+        source_id = nmo_parameterin_source_id(pin);
+        is_shared = pin->is_shared;
+    } else if (class_id != NMO_CID_PARAMETEROPERATION) {
         pstate = (const nmo_parameter_state_t *)state;
         type_guid = pstate->type_guid;
-        mode_str = nmo_behavior_param_mode_to_string(pstate->mode);
+        if (class_id == NMO_CID_PARAMETEROUT) {
+            const nmo_parameterout_state_t *pout = (const nmo_parameterout_state_t *)state;
+            owner_id = nmo_parameterout_owner_id(pout);
+            destination_count = nmo_parameterout_valid_destination_count(pout);
+        } else if (class_id == NMO_CID_PARAMETERLOCAL) {
+            owner_id = nmo_parameterlocal_owner_id((const nmo_parameterlocal_state_t *)state);
+        }
     }
 
     const char *type_name = NULL;
-    if (cid == NMO_CID_PARAMETERIN && !nmo_guid_is_null(type_guid)) {
+    if (class_id == NMO_CID_PARAMETERIN && !nmo_guid_is_null(type_guid)) {
         type_name = nmo_type_registry_guid_to_name(registry, type_guid);
     } else if (pstate) {
         type_name = nmo_behavior_param_type_name(pstate, registry);
     }
-
     if (type_name) {
-        fprintf(out, "Type:  %s\n", type_name);
+        ok = ok && nmo_cli_record_str(rec, "type_name", NULL, type_name) &&
+             nmo_cli_record_raw_fmt(rec, "Type:  %s\n", type_name);
     }
-
     if (!nmo_guid_is_null(type_guid)) {
         char guid_str[NMO_GUID_STRING_SIZE];
         nmo_guid_format(type_guid, guid_str, sizeof(guid_str));
-        fprintf(out, "GUID:  %s\n", guid_str);
+        ok = ok && nmo_cli_record_guid(rec, "type_guid", NULL, type_guid) &&
+             nmo_cli_record_raw_fmt(rec, "GUID:  %s\n", guid_str);
     }
 
-    fprintf(out, "Mode:  %s\n", mode_str);
-
-    /* Owner and specialized info */
-    nmo_object_id_t owner_id = 0;
-    nmo_object_id_t source_id = 0;
-    uint32_t destination_count = 0;
-    uint8_t is_shared = 0;
-
-    if (cid == NMO_CID_PARAMETERIN) {
-        const nmo_parameterin_state_t *pin_state = (const nmo_parameterin_state_t *)state;
-        owner_id = nmo_parameterin_owner_id(pin_state);
-        source_id = nmo_parameterin_source_id(pin_state);
-        is_shared = pin_state->is_shared;
-    } else if (cid == NMO_CID_PARAMETEROUT) {
-        const nmo_parameterout_state_t *pout_state = (const nmo_parameterout_state_t *)state;
-        owner_id = nmo_parameterout_owner_id(pout_state);
-        destination_count =
-            nmo_parameterout_valid_destination_count(pout_state);
-    } else if (cid == NMO_CID_PARAMETERLOCAL) {
-        const nmo_parameterlocal_state_t *plocal_state = (const nmo_parameterlocal_state_t *)state;
-        owner_id = nmo_parameterlocal_owner_id(plocal_state);
+    const char *mode = pstate ? nmo_behavior_param_mode_to_string(pstate->mode) : "none";
+    ok = ok && nmo_cli_record_raw_fmt(rec, "Mode:  %s\n", mode);
+    char *value = NULL;
+    if (pstate) {
+        value = format_parameter_value(pstate, registry, c->workspace, NULL);
+        ok = ok && nmo_cli_record_str(rec, "mode", NULL, mode);
+        if (value) {
+            ok = ok && nmo_cli_record_str(rec, "value", NULL, value);
+        }
+        if (pstate->buffer_data.data) {
+            ok = ok && nmo_cli_record_uint(rec, "buffer_size", NULL,
+                                           (uint64_t)pstate->buffer_data.count);
+        }
     }
 
     if (owner_id != 0) {
         nmo_object_t *owner_obj = repo ? nmo_object_repository_find_by_id(repo, owner_id) : NULL;
-        if (owner_obj) {
-            const char *owner_name = nmo_object_get_name(owner_obj);
-            fprintf(out, "Owner: #%u", owner_id);
-            if (owner_name && owner_name[0]) {
-                fprintf(out, " (%s)", owner_name);
-            }
-            fprintf(out, "\n");
-        } else {
-            fprintf(out, "Owner: #%u\n", owner_id);
-        }
+        const char *owner_name = owner_obj ? nmo_object_get_name(owner_obj) : NULL;
+        bool named = owner_name && owner_name[0];
+        ok = ok && nmo_cli_record_uint(rec, "owner_id", NULL, owner_id) &&
+             nmo_cli_record_raw_fmt(rec, "Owner: #%u%s%s%s\n", owner_id,
+                                    named ? " (" : "", named ? owner_name : "",
+                                    named ? ")" : "");
     }
-
     if (source_id != 0) {
-        fprintf(out, "Source: #%u%s\n", source_id, is_shared ? " (shared)" : " (direct)");
+        ok = ok && nmo_cli_record_uint(rec, "source_id", NULL, source_id) &&
+             nmo_cli_record_bool(rec, "is_shared", NULL, is_shared != 0) &&
+             nmo_cli_record_raw_fmt(rec, "Source: #%u%s\n", source_id,
+                                    is_shared ? " (shared)" : " (direct)");
     }
-    if (cid == NMO_CID_PARAMETERIN) {
-        parameter_add_parameterin_resolution_text(
-            out, (nmo_workspace_t *)workspace, repo, registry, object_id);
+    if (class_id == NMO_CID_PARAMETERIN) {
+        ok = ok && parameter_add_parameterin_resolution(
+            rec, c->ctx, c->workspace, repo, registry, object_id);
     }
-    if (cid == NMO_CID_PARAMETEROPERATION) {
-        const nmo_parameteroperation_state_t *op =
-            (const nmo_parameteroperation_state_t *)state;
-        parameter_print_operation_text(out, repo, registry, op);
+    if (class_id == NMO_CID_PARAMETEROPERATION) {
+        ok = ok && parameter_add_operation(
+            rec, repo, registry, (const nmo_parameteroperation_state_t *)state);
     }
-
     if (destination_count > 0) {
-        fprintf(out, "Destinations: %u\n", destination_count);
+        ok = ok && nmo_cli_record_uint(rec, "destination_count", NULL, destination_count) &&
+             nmo_cli_record_raw_fmt(rec, "Destinations: %u\n", destination_count);
     }
 
     /* Decoded value - only available for Parameter-derived classes */
     if (pstate) {
-        char *value_buf = format_parameter_value(pstate, registry, workspace, NULL);
-        if (value_buf) {
-            fprintf(out, "Value: %s\n", value_buf);
-            free(value_buf);
+        if (value) {
+            ok = ok && nmo_cli_record_raw_fmt(rec, "Value: %s\n", value);
         }
-
         if (pstate->buffer_data.data) {
-            fprintf(out, "Buffer: %zu bytes\n", pstate->buffer_data.count);
+            ok = ok && nmo_cli_record_raw_fmt(rec, "Buffer: %zu bytes\n",
+                                              pstate->buffer_data.count);
         }
-
-        /* Raw hex dump (first 64 bytes) */
-        if (pstate->mode == CKPARAM_MODE_BUFFER && pstate->buffer_data.data && pstate->buffer_data.count > 0) {
-            fprintf(out, "Hex:   ");
-            const uint8_t *data = (const uint8_t *)pstate->buffer_data.data;
-            size_t display_len = (pstate->buffer_data.count > 64) ? 64 : pstate->buffer_data.count;
-            for (size_t i = 0; i < display_len; ++i) {
-                fprintf(out, "%02x ", data[i]);
-                if ((i + 1) % 16 == 0 && i + 1 < display_len) {
-                    fprintf(out, "\n       ");
-                }
-            }
-            if (pstate->buffer_data.count > 64) {
-                fprintf(out, "\n       ... (%zu bytes total)", pstate->buffer_data.count);
-            }
-            fprintf(out, "\n");
+        if (pstate->mode == CKPARAM_MODE_BUFFER && pstate->buffer_data.data &&
+            pstate->buffer_data.count > 0) {
+            ok = ok && parameter_dump_add_hex(rec, (const uint8_t *)pstate->buffer_data.data,
+                                              pstate->buffer_data.count);
         }
     }
+    free(value);
 
-    fprintf(out, "\n");
-}
-
-typedef struct parameter_target_list {
-    nmo_object_t **items;
-    size_t count;
-    size_t capacity;
-    bool oom;
-} parameter_target_list_t;
-
-static int parameter_target_collect_visitor(size_t index,
-                                            nmo_object_t *obj,
-                                            const nmo_cmd_ctx_t *c,
-                                            void *user)
-{
-    (void)index;
-    (void)c;
-
-    parameter_target_list_t *list = (parameter_target_list_t *)user;
-    if (list->count == list->capacity) {
-        size_t new_capacity = list->capacity ? list->capacity * 2u : 64u;
-        nmo_object_t **new_items =
-            (nmo_object_t **)realloc(list->items, new_capacity * sizeof(*new_items));
-        if (!new_items) {
-            list->oom = true;
-            return 1;
-        }
-        list->items = new_items;
-        list->capacity = new_capacity;
-    }
-
-    list->items[list->count++] = obj;
-    return 0;
+    return ok && nmo_cli_record_raw(rec, "\n");
 }
 
 typedef struct parameter_dump_args {
@@ -1277,18 +1106,6 @@ static int parameter_dump_run(nmo_cmd_ctx_t *ctx, const parameter_dump_args_t *a
     int rc = NMO_CLI_EXIT_SUCCESS;
     nmo_object_repository_t *repo = nmo_tool_owner_repository(c.workspace);
 
-    /* JSON setup */
-    yyjson_mut_doc *doc = NULL;
-    yyjson_mut_val *jdata = NULL;
-    yyjson_mut_val *jarr = NULL;
-    if (c.is_json) {
-        doc = nmo_cmd_ctx_json_begin(&c);
-        jdata = yyjson_mut_obj(doc);
-        jarr = yyjson_mut_arr(doc);
-    }
-
-    size_t dump_count = 0;
-
     parameter_target_list_t all_targets = {0};
     nmo_object_t *single_target = NULL;
     nmo_object_t **targets = NULL;
@@ -1328,6 +1145,8 @@ static int parameter_dump_run(nmo_cmd_ctx_t *ctx, const parameter_dump_args_t *a
         target_count = 1;
     }
 
+    /* Keep the targets that pass the class and type filters. */
+    size_t dump_count = 0;
     for (size_t i = 0; i < target_count; ++i) {
         nmo_object_t *obj = targets[i];
         nmo_class_id_t class_id = nmo_object_get_class_id(obj);
@@ -1360,108 +1179,31 @@ static int parameter_dump_run(nmo_cmd_ctx_t *ctx, const parameter_dump_args_t *a
             }
         }
 
-        if (c.is_json) {
-            /* Emit JSON object per parameter -- mirrors parameter show JSON */
-            yyjson_mut_val *item = yyjson_mut_obj(doc);
-            nmo_object_id_t oid = nmo_object_get_id(obj);
-            yyjson_mut_obj_add_uint(doc, item, "id", oid);
-            yyjson_mut_obj_add_uint(doc, item, "class_id", class_id);
-            const char *cn = nmo_cli_class_name_from_id(c.ctx, class_id);
-            if (cn) nmo_cli_json_add_str_safe(doc, item, "class_name", cn);
-            const char *nm = nmo_object_get_name(obj);
-            if (nm && nm[0]) nmo_cli_json_add_str_safe(doc, item, "name", nm);
-
-            const void *state = nmo_object_get_state(obj);
-            if (state) {
-                nmo_guid_t tg = NMO_GUID_NULL;
-                const nmo_parameter_state_t *pstate = NULL;
-                nmo_object_id_t owner_id = 0;
-                nmo_object_id_t source_id = 0;
-                uint8_t is_shared = 0;
-                uint32_t dest_count = 0;
-
-                if (class_id == NMO_CID_PARAMETERIN) {
-                    const nmo_parameterin_state_t *pin = (const nmo_parameterin_state_t *)state;
-                    tg = pin->type_guid;
-                    owner_id = nmo_parameterin_owner_id(pin);
-                    source_id = nmo_parameterin_source_id(pin);
-                    is_shared = pin->is_shared;
-                } else if (class_id == NMO_CID_PARAMETEROUT) {
-                    const nmo_parameterout_state_t *pout = (const nmo_parameterout_state_t *)state;
-                    pstate = (const nmo_parameter_state_t *)state;
-                    tg = pstate->type_guid;
-                    owner_id = nmo_parameterout_owner_id(pout);
-                    dest_count =
-                        nmo_parameterout_valid_destination_count(pout);
-                } else if (class_id == NMO_CID_PARAMETERLOCAL) {
-                    const nmo_parameterlocal_state_t *ploc = (const nmo_parameterlocal_state_t *)state;
-                    pstate = (const nmo_parameter_state_t *)state;
-                    tg = pstate->type_guid;
-                    owner_id = nmo_parameterlocal_owner_id(ploc);
-                } else if (class_id != NMO_CID_PARAMETEROPERATION) {
-                    pstate = (const nmo_parameter_state_t *)state;
-                    tg = pstate->type_guid;
-                }
-
-                const char *tn = NULL;
-                if (class_id == NMO_CID_PARAMETERIN && !nmo_guid_is_null(tg)) {
-                    tn = nmo_type_registry_guid_to_name(c.registry, tg);
-                } else if (pstate) {
-                    tn = nmo_behavior_param_type_name(pstate, c.registry);
-                }
-                if (tn) nmo_cli_json_add_str_safe(doc, item, "type_name", tn);
-
-                if (!nmo_guid_is_null(tg)) {
-                    nmo_cli_json_add_guid_safe(doc, item, "type_guid", tg);
-                }
-
-                if (pstate) {
-                    nmo_cli_json_add_str_safe(doc, item, "mode",
-                        nmo_behavior_param_mode_to_string(pstate->mode));
-                    char *vbuf = format_parameter_value(
-                        pstate, (nmo_type_registry_t *)c.registry, c.workspace, NULL);
-                    if (vbuf) {
-                        nmo_cli_json_add_str_safe(doc, item, "value", vbuf);
-                        free(vbuf);
-                    }
-                    if (pstate->buffer_data.data) {
-                        yyjson_mut_obj_add_uint(doc, item, "buffer_size",
-                            (uint64_t)pstate->buffer_data.count);
-                    }
-                }
-
-                if (owner_id) yyjson_mut_obj_add_uint(doc, item, "owner_id", owner_id);
-                if (source_id) {
-                    yyjson_mut_obj_add_uint(doc, item, "source_id", source_id);
-                    yyjson_mut_obj_add_bool(doc, item, "is_shared", is_shared != 0);
-                }
-                if (class_id == NMO_CID_PARAMETERIN) {
-                    parameter_add_parameterin_resolution_json(
-                        doc, item, c.ctx, c.workspace, repo, c.registry, oid);
-                }
-                if (class_id == NMO_CID_PARAMETEROPERATION) {
-                    const nmo_parameteroperation_state_t *op =
-                        (const nmo_parameteroperation_state_t *)state;
-                    parameter_add_operation_json(doc, item, repo, c.registry, op);
-                }
-                if (dest_count) yyjson_mut_obj_add_uint(doc, item, "destination_count", dest_count);
-            }
-
-            yyjson_mut_arr_add_val(jarr, item);
-        } else {
-            dump_parameter_details(obj, c.ctx, c.workspace, c.out);
-        }
-        dump_count++;
+        targets[dump_count++] = obj;
     }
 
-    if (c.is_json) {
-        yyjson_mut_obj_add_uint(doc, jdata, "count", (uint64_t)dump_count);
-        yyjson_mut_obj_add_val(doc, jdata, "parameters", jarr);
-        nmo_cmd_ctx_json_end(&c, doc, jdata, "parameter.dump");
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL &&
+              nmo_cli_record_uint(rec, "count", NULL, (uint64_t)dump_count);
+    nmo_cli_record_array_t *params = ok ? nmo_cli_record_array(rec, "parameters", NULL) : NULL;
+    ok = params != NULL;
+    if (ok) {
+        nmo_cli_record_array_omit_heading(params);
+        nmo_cli_record_array_inline_items(params);
+    }
+    for (size_t i = 0; ok && i < dump_count; ++i) {
+        nmo_cli_record_t *item = nmo_cli_record_new();
+        ok = item != NULL && parameter_dump_build_record(&c, repo, targets[i], item);
+        if (!ok) {
+            nmo_cli_record_free(item);
+        } else {
+            ok = nmo_cli_record_array_add(params, item);
+        }
     }
 
     free(all_targets.items);
-    return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS) : NMO_CLI_EXIT_SUCCESS;
+    rc = parameter_emit(&c, rec, ok, "parameter.dump");
+    return close_ctx ? nmo_cmd_ctx_done(&c, rc) : rc;
 }
 
 int nmo_cmd_parameter_dump(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -1873,6 +1615,21 @@ static int parameter_set_mutate(
     return NMO_CLI_EXIT_SUCCESS;
 }
 
+typedef struct parameter_set_report_json_ctx {
+    const nmo_edit_report_t *report;
+    bool dry_run;
+} parameter_set_report_json_ctx_t;
+
+static bool parameter_set_edit_report_json(yyjson_mut_doc *doc,
+                                           yyjson_mut_val *obj,
+                                           const void *data)
+{
+    const parameter_set_report_json_ctx_t *ctx =
+        (const parameter_set_report_json_ctx_t *)data;
+    nmo_cli_edit_report_add_schema_v2_json(doc, obj, ctx->report, ctx->dry_run);
+    return true;
+}
+
 static int parameter_set_report(
     nmo_cmd_ctx_t *c,
     bool dry_run,
@@ -1884,53 +1641,49 @@ static int parameter_set_report(
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    if (c->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
-        if (!doc) {
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
-        }
+    if (c->is_json && args->edit_report_ready && !dry_run && output_path != NULL) {
+        (void)nmo_edit_report_set_output_path(&args->edit_report, output_path);
+    }
+    parameter_set_report_json_ctx_t report_ctx = {
+        .report = args->edit_report_ready ? &args->edit_report : NULL,
+        .dry_run = dry_run,
+    };
+    bool named = args->param_name && args->param_name[0];
 
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        if (args->edit_report_ready && !dry_run && output_path != NULL) {
-            (void)nmo_edit_report_set_output_path(&args->edit_report, output_path);
-        }
-        nmo_cli_edit_report_add_schema_v2_json(
-            doc, data,
-            args->edit_report_ready ? &args->edit_report : NULL,
-            dry_run);
-        yyjson_mut_obj_add_uint(doc, data, "id", args->param_id);
-        if (args->param_name && args->param_name[0])
-            nmo_cli_json_add_str_safe(doc, data, "name", args->param_name);
-        if (args->type_name)
-            nmo_cli_json_add_str_safe(doc, data, "type", args->type_name);
-        nmo_cli_json_add_str_safe(doc, data, "mode", args->mode_name);
-        if (args->old_value_str)
-            nmo_cli_json_add_str_safe(doc, data, "old_value", args->old_value_str);
-        if (args->new_value_str)
-            nmo_cli_json_add_str_safe(doc, data, "new_value", args->new_value_str);
-        if (!dry_run && output_path) {
-            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-        }
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL &&
+              nmo_cli_record_json(rec, parameter_set_edit_report_json, &report_ctx) &&
+              nmo_cli_record_uint(rec, "id", NULL, args->param_id) &&
+              nmo_cli_record_raw_fmt(rec, "Parameter #%u%s%s%s\n", args->param_id,
+                                     named ? " (" : "", named ? args->param_name : "",
+                                     named ? ")" : "");
+    if (named) {
+        ok = ok && nmo_cli_record_str(rec, "name", NULL, args->param_name);
+    }
+    if (args->type_name) {
+        ok = ok && nmo_cli_record_str(rec, "type", NULL, args->type_name) &&
+             nmo_cli_record_raw_fmt(rec, "  Type:  %s\n", args->type_name);
+    }
+    ok = ok && nmo_cli_record_str(rec, "mode", NULL, args->mode_name);
+    if (args->old_value_str) {
+        ok = ok && nmo_cli_record_str(rec, "old_value", NULL, args->old_value_str);
+    }
+    if (args->new_value_str) {
+        ok = ok && nmo_cli_record_str(rec, "new_value", NULL, args->new_value_str);
+    }
+    ok = ok && nmo_cli_record_raw_fmt(rec, "  Old:   %s\n",
+                                      args->old_value_str ? args->old_value_str : "(none)") &&
+         nmo_cli_record_raw_fmt(rec, "  New:   %s\n",
+                                args->new_value_str ? args->new_value_str : "(none)");
 
-        nmo_cmd_ctx_json_end(c, doc, data, "parameter.set");
-    } else {
-        fprintf(c->out, "Parameter #%u", args->param_id);
-        if (args->param_name && args->param_name[0])
-            fprintf(c->out, " (%s)", args->param_name);
-        fprintf(c->out, "\n");
-        if (args->type_name)
-            fprintf(c->out, "  Type:  %s\n", args->type_name);
-        fprintf(c->out, "  Old:   %s\n", args->old_value_str ? args->old_value_str : "(none)");
-        fprintf(c->out, "  New:   %s\n", args->new_value_str ? args->new_value_str : "(none)");
-
-        if (dry_run) {
-            fprintf(c->out, "  (dry run - not saved)\n");
-        } else if (output_path) {
-            fprintf(c->out, "Saved to: %s\n", output_path);
-        }
+    if (dry_run) {
+        ok = ok && nmo_cli_record_raw(rec, "  (dry run - not saved)\n");
+    } else if (output_path) {
+        ok = ok && nmo_cli_record_str(rec, "output", NULL, output_path) &&
+             nmo_cli_record_raw_fmt(rec, "Saved to: %s\n", output_path);
     }
 
-    return NMO_CLI_EXIT_SUCCESS;
+    return parameter_emit(c, rec, ok, "parameter.set");
 }
 
 int nmo_cmd_parameter_set(int argc, char **argv, const nmo_cli_global_opts_t *global) {
