@@ -1869,24 +1869,63 @@ cleanup:
     return nmo_cmd_ctx_done(&ctx, rc);
 }
 
-static void script_add_edit_report_json(yyjson_mut_doc *doc,
-                                        yyjson_mut_val *data,
-                                        script_command_common_t *common,
-                                        bool dry_run,
-                                        const char *output_path)
+/* JSON only: `value` as a string, or null when it is NULL. */
+static bool script_record_str_or_null(nmo_cli_record_t *rec,
+                                      const char *key,
+                                      const char *value)
 {
-    nmo_edit_report_t *report =
-        common != NULL ? &common->edit_report : NULL;
+    return value != NULL ? nmo_cli_record_str(rec, key, NULL, value)
+                         : nmo_cli_record_null(rec, key, NULL, NULL);
+}
 
-    if (doc == NULL || data == NULL) {
-        return;
-    }
+static bool script_edit_report_json(yyjson_mut_doc *doc,
+                                    yyjson_mut_val *obj,
+                                    const void *data)
+{
+    const script_command_common_t *common = (const script_command_common_t *)data;
+    nmo_cli_edit_report_add_schema_v2_json(doc, obj, &common->edit_report,
+                                           common->dry_run);
+    return true;
+}
 
-    if (!dry_run && output_path != NULL && report != NULL &&
-        report->output_path == NULL) {
-        (void)nmo_edit_report_set_output_path(report, output_path);
+/*
+ * A script edit command report, opened with the schema v2 edit report.
+ * `common` must outlive the record. NULL on allocation failure.
+ */
+static nmo_cli_record_t *script_report_new(nmo_cmd_ctx_t *ctx,
+                                           script_command_common_t *common,
+                                           bool dry_run,
+                                           const char *output_path)
+{
+    if (ctx->is_json && !dry_run && output_path != NULL &&
+        common->edit_report.output_path == NULL) {
+        (void)nmo_edit_report_set_output_path(&common->edit_report, output_path);
     }
-    nmo_cli_edit_report_add_schema_v2_json(doc, data, report, dry_run);
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    if (rec != NULL && !nmo_cli_record_json(rec, script_edit_report_json, common)) {
+        nmo_cli_record_free(rec);
+        return NULL;
+    }
+    return rec;
+}
+
+/* Close a script command report with where it was saved, then write it. */
+static int script_report_emit(nmo_cmd_ctx_t *ctx,
+                              nmo_cli_record_t *rec,
+                              bool ok,
+                              bool dry_run,
+                              const char *output_path,
+                              const char *cmd_name)
+{
+    if (!dry_run && output_path) {
+        ok = ok && nmo_cli_record_str(rec, "output", NULL, output_path) &&
+             nmo_cli_record_raw_fmt(rec, "Saved to: %s\n", output_path);
+    }
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        rec = NULL;
+    }
+    return nmo_cmd_ctx_emit_record(ctx, rec, cmd_name, 0, false);
 }
 
 static nmo_status_t script_run_executor_action(nmo_behavior_execution_t *executor,
@@ -1993,6 +2032,17 @@ static int script_run_mutate(nmo_cmd_ctx_t *ctx,
     return NMO_CLI_EXIT_SUCCESS;
 }
 
+static bool script_run_edit_report_json(yyjson_mut_doc *doc,
+                                        yyjson_mut_val *obj,
+                                        const void *data)
+{
+    const script_run_args_t *args = (const script_run_args_t *)data;
+    nmo_cli_edit_report_add_schema_v2_json(
+        doc, obj, args->edit_report_ready ? &args->edit_report : NULL,
+        args->dry_run);
+    return true;
+}
+
 static int script_run_report(nmo_cmd_ctx_t *ctx,
                              bool dry_run,
                              const char *output_path,
@@ -2005,42 +2055,31 @@ static int script_run_report(nmo_cmd_ctx_t *ctx,
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    if (ctx->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        nmo_edit_report_t *edit_report =
-            args->edit_report_ready ? &args->edit_report : NULL;
-        if (!dry_run && output_path != NULL && edit_report != NULL &&
-            edit_report->output_path == NULL) {
-            (void)nmo_edit_report_set_output_path(edit_report, output_path);
-        }
-        nmo_cli_edit_report_add_schema_v2_json(
-            doc, data, edit_report, dry_run);
-        nmo_cli_json_add_str_safe(doc, data, "script_file", args->script_path);
-
-        if (!dry_run && output_path != NULL) {
-            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-        }
-        return nmo_cmd_ctx_json_end(ctx, doc, data, "script.run");
+    if (ctx->is_json && args->edit_report_ready && !dry_run && output_path != NULL &&
+        args->edit_report.output_path == NULL) {
+        (void)nmo_edit_report_set_output_path(&args->edit_report, output_path);
     }
-
-    fprintf(ctx->out, "Script: %s\n", args->script_path);
-    fprintf(ctx->out, "Operations: %zu\n",
-            args->edit_report_ready ? args->edit_report.operation_count : 0u);
     if (args->edit_report_ready) {
         final_status = args->edit_report.validation.final_status;
         if (final_status == NMO_OK && args->edit_report.status != NMO_OK) {
             final_status = args->edit_report.status;
         }
     }
-    fprintf(ctx->out, "Final status: %s\n",
-            nmo_error_string(final_status));
+
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL &&
+              nmo_cli_record_json(rec, script_run_edit_report_json, args) &&
+              script_record_str_or_null(rec, "script_file", args->script_path) &&
+              nmo_cli_record_raw_fmt(rec, "Script: %s\n", args->script_path) &&
+              nmo_cli_record_raw_fmt(rec, "Operations: %zu\n",
+                                     args->edit_report_ready ?
+                                         args->edit_report.operation_count : 0u) &&
+              nmo_cli_record_raw_fmt(rec, "Final status: %s\n",
+                                     nmo_error_string(final_status));
     if (dry_run) {
-        fprintf(ctx->out, "Dry-run: yes\n");
-    } else if (output_path != NULL) {
-        fprintf(ctx->out, "Saved to: %s\n", output_path);
+        ok = ok && nmo_cli_record_raw(rec, "Dry-run: yes\n");
     }
-    return NMO_CLI_EXIT_SUCCESS;
+    return script_report_emit(ctx, rec, ok, dry_run, output_path, "script.run");
 }
 
 static bool script_graph_add_item(nmo_cli_record_array_t *arr,
@@ -2576,27 +2615,21 @@ static bool script_parse_manager_entry_schema_cli(
     return false;
 }
 
-static void script_add_manager_entry_json(
-    yyjson_mut_doc *doc,
-    yyjson_mut_val *data,
+static bool script_add_manager_entry(
+    nmo_cli_record_t *rec,
     const nmo_manager_entry_options_t *manager_entry)
 {
-    if (doc == NULL || data == NULL || manager_entry == NULL) {
-        return;
-    }
-    yyjson_mut_val *entry = yyjson_mut_obj(doc);
-    yyjson_mut_obj_add_str(doc, entry, "policy",
-                           script_manager_entry_policy_name(
-                               manager_entry->policy));
-    yyjson_mut_obj_add_str(doc, entry, "schema",
-                           script_manager_entry_schema_name(
-                               manager_entry->schema));
+    nmo_cli_record_t *entry = nmo_cli_record_object(rec, "manager_entry");
+    bool ok = entry != NULL &&
+              nmo_cli_record_str(entry, "policy", NULL,
+                                 script_manager_entry_policy_name(manager_entry->policy)) &&
+              nmo_cli_record_str(entry, "schema", NULL,
+                                 script_manager_entry_schema_name(manager_entry->schema));
     if (!nmo_guid_is_null(manager_entry->manager_guid)) {
-        nmo_cli_json_add_guid_safe(doc, entry, "manager_guid",
-                                   manager_entry->manager_guid);
+        ok = ok && nmo_cli_record_guid(entry, "manager_guid", NULL,
+                                       manager_entry->manager_guid);
     }
-    nmo_cli_json_add_str_safe(doc, entry, "key", manager_entry->key);
-    yyjson_mut_obj_add_val(doc, data, "manager_entry", entry);
+    return ok && script_record_str_or_null(entry, "key", manager_entry->key);
 }
 
 static char *script_format_parameter_value_with_registry(
@@ -2874,27 +2907,16 @@ static int script_node_add_report(
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    if (ctx->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        script_add_edit_report_json(doc, data, &args->common, dry_run, output_path);
-        yyjson_mut_obj_add_uint(doc, data, "parent_id", args->parent_id);
-        yyjson_mut_obj_add_uint(doc, data, "node_id", args->node_id);
-        if (args->has_manager_entry) {
-            script_add_manager_entry_json(doc, data, &args->manager_entry);
-        }
-        if (!dry_run && output_path) {
-            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-        }
-        return nmo_cmd_ctx_json_end(ctx, doc, data, "script.node.add");
+    nmo_cli_record_t *rec = script_report_new(ctx, &args->common, dry_run, output_path);
+    bool ok = rec != NULL &&
+              nmo_cli_record_uint(rec, "parent_id", NULL, args->parent_id) &&
+              nmo_cli_record_uint(rec, "node_id", NULL, args->node_id);
+    if (args->has_manager_entry) {
+        ok = ok && script_add_manager_entry(rec, &args->manager_entry);
     }
-
-    fprintf(ctx->out, "Created script node #%u in behavior #%u\n",
-            args->node_id, args->parent_id);
-    if (!dry_run && output_path) {
-        fprintf(ctx->out, "Saved to: %s\n", output_path);
-    }
-    return NMO_CLI_EXIT_SUCCESS;
+    ok = ok && nmo_cli_record_raw_fmt(rec, "Created script node #%u in behavior #%u\n",
+                                      args->node_id, args->parent_id);
+    return script_report_emit(ctx, rec, ok, dry_run, output_path, "script.node.add");
 }
 
 static nmo_status_t script_node_remove_execute(
@@ -2947,29 +2969,18 @@ static int script_node_remove_report(
     if (!args) {
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
-    if (ctx->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        script_add_edit_report_json(doc, data, &args->common, dry_run, output_path);
-        yyjson_mut_obj_add_uint(doc, data, "parent_id", args->parent_id);
-        yyjson_mut_obj_add_uint(doc, data, "node_id", args->node_id);
-        nmo_cli_json_add_str_safe(doc, data, "interface_mode",
-                                  script_interface_mode_string(
-                                      args->interface_mode));
-        if (!dry_run && output_path) {
-            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-        }
-        return nmo_cmd_ctx_json_end(ctx, doc, data, "script.node.remove");
-    }
 
-    fprintf(ctx->out, "Removed script node #%u from behavior #%u\n",
-            args->node_id, args->parent_id);
-    fprintf(ctx->out, "Interface mode: %s\n",
-            script_interface_mode_string(args->interface_mode));
-    if (!dry_run && output_path) {
-        fprintf(ctx->out, "Saved to: %s\n", output_path);
-    }
-    return NMO_CLI_EXIT_SUCCESS;
+    nmo_cli_record_t *rec = script_report_new(ctx, &args->common, dry_run, output_path);
+    bool ok = rec != NULL &&
+              nmo_cli_record_uint(rec, "parent_id", NULL, args->parent_id) &&
+              nmo_cli_record_uint(rec, "node_id", NULL, args->node_id) &&
+              script_record_str_or_null(rec, "interface_mode",
+                                        script_interface_mode_string(args->interface_mode)) &&
+              nmo_cli_record_raw_fmt(rec, "Removed script node #%u from behavior #%u\n",
+                                     args->node_id, args->parent_id) &&
+              nmo_cli_record_raw_fmt(rec, "Interface mode: %s\n",
+                                     script_interface_mode_string(args->interface_mode));
+    return script_report_emit(ctx, rec, ok, dry_run, output_path, "script.node.remove");
 }
 
 static nmo_status_t script_io_add_execute(
@@ -3006,23 +3017,14 @@ static int script_io_add_report(
     if (!args) {
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
-    if (ctx->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        script_add_edit_report_json(doc, data, &args->common, dry_run, output_path);
-        yyjson_mut_obj_add_uint(doc, data, "behavior_id", args->behavior_id);
-        yyjson_mut_obj_add_uint(doc, data, "io_id", args->io_id);
-        if (!dry_run && output_path) {
-            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-        }
-        return nmo_cmd_ctx_json_end(ctx, doc, data, "script.io.add");
-    }
-    fprintf(ctx->out, "Created IO #%u on behavior #%u\n",
-            args->io_id, args->behavior_id);
-    if (!dry_run && output_path) {
-        fprintf(ctx->out, "Saved to: %s\n", output_path);
-    }
-    return NMO_CLI_EXIT_SUCCESS;
+
+    nmo_cli_record_t *rec = script_report_new(ctx, &args->common, dry_run, output_path);
+    bool ok = rec != NULL &&
+              nmo_cli_record_uint(rec, "behavior_id", NULL, args->behavior_id) &&
+              nmo_cli_record_uint(rec, "io_id", NULL, args->io_id) &&
+              nmo_cli_record_raw_fmt(rec, "Created IO #%u on behavior #%u\n",
+                                     args->io_id, args->behavior_id);
+    return script_report_emit(ctx, rec, ok, dry_run, output_path, "script.io.add");
 }
 
 static nmo_status_t script_io_rename_execute(
@@ -3057,21 +3059,12 @@ static int script_io_rename_report(
     if (!args) {
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
-    if (ctx->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        script_add_edit_report_json(doc, data, &args->common, dry_run, output_path);
-        yyjson_mut_obj_add_uint(doc, data, "io_id", args->io_id);
-        if (!dry_run && output_path) {
-            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-        }
-        return nmo_cmd_ctx_json_end(ctx, doc, data, "script.io.rename");
-    }
-    fprintf(ctx->out, "Renamed IO #%u\n", args->io_id);
-    if (!dry_run && output_path) {
-        fprintf(ctx->out, "Saved to: %s\n", output_path);
-    }
-    return NMO_CLI_EXIT_SUCCESS;
+
+    nmo_cli_record_t *rec = script_report_new(ctx, &args->common, dry_run, output_path);
+    bool ok = rec != NULL &&
+              nmo_cli_record_uint(rec, "io_id", NULL, args->io_id) &&
+              nmo_cli_record_raw_fmt(rec, "Renamed IO #%u\n", args->io_id);
+    return script_report_emit(ctx, rec, ok, dry_run, output_path, "script.io.rename");
 }
 
 static nmo_status_t script_io_remove_execute(
@@ -3122,26 +3115,16 @@ static int script_io_remove_report(
     if (!args) {
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
-    if (ctx->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        script_add_edit_report_json(doc, data, &args->common, dry_run, output_path);
-        yyjson_mut_obj_add_uint(doc, data, "io_id", args->io_id);
-        nmo_cli_json_add_str_safe(doc, data, "interface_mode",
-                                  script_interface_mode_string(
-                                      args->interface_mode));
-        if (!dry_run && output_path) {
-            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-        }
-        return nmo_cmd_ctx_json_end(ctx, doc, data, "script.io.remove");
-    }
-    fprintf(ctx->out, "Removed IO #%u\n", args->io_id);
-    fprintf(ctx->out, "Interface mode: %s\n",
-            script_interface_mode_string(args->interface_mode));
-    if (!dry_run && output_path) {
-        fprintf(ctx->out, "Saved to: %s\n", output_path);
-    }
-    return NMO_CLI_EXIT_SUCCESS;
+
+    nmo_cli_record_t *rec = script_report_new(ctx, &args->common, dry_run, output_path);
+    bool ok = rec != NULL &&
+              nmo_cli_record_uint(rec, "io_id", NULL, args->io_id) &&
+              script_record_str_or_null(rec, "interface_mode",
+                                        script_interface_mode_string(args->interface_mode)) &&
+              nmo_cli_record_raw_fmt(rec, "Removed IO #%u\n", args->io_id) &&
+              nmo_cli_record_raw_fmt(rec, "Interface mode: %s\n",
+                                     script_interface_mode_string(args->interface_mode));
+    return script_report_emit(ctx, rec, ok, dry_run, output_path, "script.io.remove");
 }
 
 static nmo_status_t script_link_add_execute(
@@ -3184,26 +3167,17 @@ static int script_link_add_report(
     if (!args) {
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
-    if (ctx->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        script_add_edit_report_json(doc, data, &args->common, dry_run, output_path);
-        yyjson_mut_obj_add_uint(doc, data, "parent_id", args->parent_id);
-        yyjson_mut_obj_add_uint(doc, data, "link_id", args->link_id);
-        yyjson_mut_obj_add_uint(doc, data, "from_id", args->from_id);
-        yyjson_mut_obj_add_uint(doc, data, "to_id", args->to_id);
-        yyjson_mut_obj_add_uint(doc, data, "delay", args->delay);
-        if (!dry_run && output_path) {
-            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-        }
-        return nmo_cmd_ctx_json_end(ctx, doc, data, "script.link.add");
-    }
-    fprintf(ctx->out, "Created link #%u: #%u -> #%u in behavior #%u\n",
-            args->link_id, args->from_id, args->to_id, args->parent_id);
-    if (!dry_run && output_path) {
-        fprintf(ctx->out, "Saved to: %s\n", output_path);
-    }
-    return NMO_CLI_EXIT_SUCCESS;
+
+    nmo_cli_record_t *rec = script_report_new(ctx, &args->common, dry_run, output_path);
+    bool ok = rec != NULL &&
+              nmo_cli_record_uint(rec, "parent_id", NULL, args->parent_id) &&
+              nmo_cli_record_uint(rec, "link_id", NULL, args->link_id) &&
+              nmo_cli_record_uint(rec, "from_id", NULL, args->from_id) &&
+              nmo_cli_record_uint(rec, "to_id", NULL, args->to_id) &&
+              nmo_cli_record_uint(rec, "delay", NULL, args->delay) &&
+              nmo_cli_record_raw_fmt(rec, "Created link #%u: #%u -> #%u in behavior #%u\n",
+                                     args->link_id, args->from_id, args->to_id, args->parent_id);
+    return script_report_emit(ctx, rec, ok, dry_run, output_path, "script.link.add");
 }
 
 static nmo_status_t script_link_rewire_execute(
@@ -3239,27 +3213,18 @@ static int script_link_rewire_report(
     if (!args) {
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
-    if (ctx->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        script_add_edit_report_json(doc, data, &args->common, dry_run, output_path);
-        yyjson_mut_obj_add_uint(doc, data, "link_id", args->link_id);
-        if (args->from_id != 0u) {
-            yyjson_mut_obj_add_uint(doc, data, "from_id", args->from_id);
-        }
-        if (args->to_id != 0u) {
-            yyjson_mut_obj_add_uint(doc, data, "to_id", args->to_id);
-        }
-        if (!dry_run && output_path) {
-            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-        }
-        return nmo_cmd_ctx_json_end(ctx, doc, data, "script.link.rewire");
+
+    nmo_cli_record_t *rec = script_report_new(ctx, &args->common, dry_run, output_path);
+    bool ok = rec != NULL &&
+              nmo_cli_record_uint(rec, "link_id", NULL, args->link_id);
+    if (args->from_id != 0u) {
+        ok = ok && nmo_cli_record_uint(rec, "from_id", NULL, args->from_id);
     }
-    fprintf(ctx->out, "Rewired link #%u\n", args->link_id);
-    if (!dry_run && output_path) {
-        fprintf(ctx->out, "Saved to: %s\n", output_path);
+    if (args->to_id != 0u) {
+        ok = ok && nmo_cli_record_uint(rec, "to_id", NULL, args->to_id);
     }
-    return NMO_CLI_EXIT_SUCCESS;
+    ok = ok && nmo_cli_record_raw_fmt(rec, "Rewired link #%u\n", args->link_id);
+    return script_report_emit(ctx, rec, ok, dry_run, output_path, "script.link.rewire");
 }
 
 static nmo_status_t script_link_set_delay_execute(
@@ -3297,22 +3262,14 @@ static int script_link_set_delay_report(
     if (!args) {
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
-    if (ctx->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        script_add_edit_report_json(doc, data, &args->common, dry_run, output_path);
-        yyjson_mut_obj_add_uint(doc, data, "link_id", args->link_id);
-        yyjson_mut_obj_add_uint(doc, data, "delay", args->delay);
-        if (!dry_run && output_path) {
-            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-        }
-        return nmo_cmd_ctx_json_end(ctx, doc, data, "script.link.set-delay");
-    }
-    fprintf(ctx->out, "Set link #%u delay to %u\n", args->link_id, args->delay);
-    if (!dry_run && output_path) {
-        fprintf(ctx->out, "Saved to: %s\n", output_path);
-    }
-    return NMO_CLI_EXIT_SUCCESS;
+
+    nmo_cli_record_t *rec = script_report_new(ctx, &args->common, dry_run, output_path);
+    bool ok = rec != NULL &&
+              nmo_cli_record_uint(rec, "link_id", NULL, args->link_id) &&
+              nmo_cli_record_uint(rec, "delay", NULL, args->delay) &&
+              nmo_cli_record_raw_fmt(rec, "Set link #%u delay to %u\n",
+                                     args->link_id, args->delay);
+    return script_report_emit(ctx, rec, ok, dry_run, output_path, "script.link.set-delay");
 }
 
 static nmo_status_t script_link_remove_execute(
@@ -3353,28 +3310,18 @@ static int script_link_remove_report(
     if (!args) {
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
-    if (ctx->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        script_add_edit_report_json(doc, data, &args->common, dry_run, output_path);
-        yyjson_mut_obj_add_uint(doc, data, "parent_id", args->parent_id);
-        yyjson_mut_obj_add_uint(doc, data, "link_id", args->link_id);
-        nmo_cli_json_add_str_safe(doc, data, "interface_mode",
-                                  script_interface_mode_string(
-                                      args->interface_mode));
-        if (!dry_run && output_path) {
-            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-        }
-        return nmo_cmd_ctx_json_end(ctx, doc, data, "script.link.remove");
-    }
-    fprintf(ctx->out, "Removed link #%u from behavior #%u\n",
-            args->link_id, args->parent_id);
-    fprintf(ctx->out, "Interface mode: %s\n",
-            script_interface_mode_string(args->interface_mode));
-    if (!dry_run && output_path) {
-        fprintf(ctx->out, "Saved to: %s\n", output_path);
-    }
-    return NMO_CLI_EXIT_SUCCESS;
+
+    nmo_cli_record_t *rec = script_report_new(ctx, &args->common, dry_run, output_path);
+    bool ok = rec != NULL &&
+              nmo_cli_record_uint(rec, "parent_id", NULL, args->parent_id) &&
+              nmo_cli_record_uint(rec, "link_id", NULL, args->link_id) &&
+              script_record_str_or_null(rec, "interface_mode",
+                                        script_interface_mode_string(args->interface_mode)) &&
+              nmo_cli_record_raw_fmt(rec, "Removed link #%u from behavior #%u\n",
+                                     args->link_id, args->parent_id) &&
+              nmo_cli_record_raw_fmt(rec, "Interface mode: %s\n",
+                                     script_interface_mode_string(args->interface_mode));
+    return script_report_emit(ctx, rec, ok, dry_run, output_path, "script.link.remove");
 }
 
 int nmo_cmd_script_node(int argc, char **argv, const nmo_cli_global_opts_t *global)
@@ -3849,26 +3796,17 @@ static int script_param_add_report(
     if (!ctx || !args) {
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
-    if (ctx->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        script_add_edit_report_json(doc, data, &args->common, dry_run, output_path);
-        yyjson_mut_obj_add_uint(doc, data, "owner_id", args->owner_id);
-        yyjson_mut_obj_add_uint(doc, data, "param_id", args->param_id);
-        nmo_cli_json_add_str_safe(doc, data, "kind", args->kind);
-        nmo_cli_json_add_str_safe(doc, data, "type", args->type_name);
-        nmo_cli_json_add_str_safe(doc, data, "name", args->name);
-        if (!dry_run && output_path) {
-            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-        }
-        return nmo_cmd_ctx_json_end(ctx, doc, data, "script.param.add");
-    }
-    fprintf(ctx->out, "Created script parameter #%u in behavior #%u\n",
-            args->param_id, args->owner_id);
-    if (!dry_run && output_path) {
-        fprintf(ctx->out, "Saved to: %s\n", output_path);
-    }
-    return NMO_CLI_EXIT_SUCCESS;
+
+    nmo_cli_record_t *rec = script_report_new(ctx, &args->common, dry_run, output_path);
+    bool ok = rec != NULL &&
+              nmo_cli_record_uint(rec, "owner_id", NULL, args->owner_id) &&
+              nmo_cli_record_uint(rec, "param_id", NULL, args->param_id) &&
+              script_record_str_or_null(rec, "kind", args->kind) &&
+              script_record_str_or_null(rec, "type", args->type_name) &&
+              script_record_str_or_null(rec, "name", args->name) &&
+              nmo_cli_record_raw_fmt(rec, "Created script parameter #%u in behavior #%u\n",
+                                     args->param_id, args->owner_id);
+    return script_report_emit(ctx, rec, ok, dry_run, output_path, "script.param.add");
 }
 
 static nmo_status_t script_param_set_execute(
@@ -3925,36 +3863,28 @@ static int script_param_set_report(
     if (!ctx || !args) {
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
-    if (ctx->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        script_add_edit_report_json(doc, data, &args->common, dry_run, output_path);
-        yyjson_mut_obj_add_uint(doc, data, "param_id", args->param_id);
-        if (args->has_manager_entry) {
-            script_add_manager_entry_json(doc, data, &args->manager_entry);
-        }
-        if (args->old_value) {
-            nmo_cli_json_add_str_safe(doc, data, "old_value", args->old_value);
-        }
-        if (args->new_value) {
-            nmo_cli_json_add_str_safe(doc, data, "new_value", args->new_value);
-        }
-        if (!dry_run && output_path) {
-            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-        }
-        return nmo_cmd_ctx_json_end(ctx, doc, data, "script.param.set");
+
+    nmo_cli_record_t *rec = script_report_new(ctx, &args->common, dry_run, output_path);
+    bool ok = rec != NULL &&
+              nmo_cli_record_uint(rec, "param_id", NULL, args->param_id);
+    if (args->has_manager_entry) {
+        ok = ok && script_add_manager_entry(rec, &args->manager_entry);
     }
-    fprintf(ctx->out, "Updated script parameter #%u\n", args->param_id);
     if (args->old_value) {
-        fprintf(ctx->out, "  Old: %s\n", args->old_value);
+        ok = ok && nmo_cli_record_str(rec, "old_value", NULL, args->old_value);
     }
     if (args->new_value) {
-        fprintf(ctx->out, "  New: %s\n", args->new_value);
+        ok = ok && nmo_cli_record_str(rec, "new_value", NULL, args->new_value);
     }
-    if (!dry_run && output_path) {
-        fprintf(ctx->out, "Saved to: %s\n", output_path);
+    ok = ok && nmo_cli_record_raw_fmt(rec, "Updated script parameter #%u\n",
+                                      args->param_id);
+    if (args->old_value) {
+        ok = ok && nmo_cli_record_raw_fmt(rec, "  Old: %s\n", args->old_value);
     }
-    return NMO_CLI_EXIT_SUCCESS;
+    if (args->new_value) {
+        ok = ok && nmo_cli_record_raw_fmt(rec, "  New: %s\n", args->new_value);
+    }
+    return script_report_emit(ctx, rec, ok, dry_run, output_path, "script.param.set");
 }
 
 static nmo_status_t script_param_connect_execute(
@@ -3990,23 +3920,14 @@ static int script_param_connect_report(
     if (!ctx || !args) {
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
-    if (ctx->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        script_add_edit_report_json(doc, data, &args->common, dry_run, output_path);
-        yyjson_mut_obj_add_uint(doc, data, "source_id", args->source_id);
-        yyjson_mut_obj_add_uint(doc, data, "target_id", args->target_id);
-        if (!dry_run && output_path) {
-            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-        }
-        return nmo_cmd_ctx_json_end(ctx, doc, data, "script.param.connect");
-    }
-    fprintf(ctx->out, "Connected parameter #%u -> #%u\n",
-            args->source_id, args->target_id);
-    if (!dry_run && output_path) {
-        fprintf(ctx->out, "Saved to: %s\n", output_path);
-    }
-    return NMO_CLI_EXIT_SUCCESS;
+
+    nmo_cli_record_t *rec = script_report_new(ctx, &args->common, dry_run, output_path);
+    bool ok = rec != NULL &&
+              nmo_cli_record_uint(rec, "source_id", NULL, args->source_id) &&
+              nmo_cli_record_uint(rec, "target_id", NULL, args->target_id) &&
+              nmo_cli_record_raw_fmt(rec, "Connected parameter #%u -> #%u\n",
+                                     args->source_id, args->target_id);
+    return script_report_emit(ctx, rec, ok, dry_run, output_path, "script.param.connect");
 }
 
 static nmo_status_t script_param_disconnect_execute(
@@ -4043,21 +3964,12 @@ static int script_param_disconnect_report(
     if (!ctx || !args) {
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
-    if (ctx->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        script_add_edit_report_json(doc, data, &args->common, dry_run, output_path);
-        yyjson_mut_obj_add_uint(doc, data, "target_id", args->target_id);
-        if (!dry_run && output_path) {
-            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-        }
-        return nmo_cmd_ctx_json_end(ctx, doc, data, "script.param.disconnect");
-    }
-    fprintf(ctx->out, "Disconnected parameter #%u\n", args->target_id);
-    if (!dry_run && output_path) {
-        fprintf(ctx->out, "Saved to: %s\n", output_path);
-    }
-    return NMO_CLI_EXIT_SUCCESS;
+
+    nmo_cli_record_t *rec = script_report_new(ctx, &args->common, dry_run, output_path);
+    bool ok = rec != NULL &&
+              nmo_cli_record_uint(rec, "target_id", NULL, args->target_id) &&
+              nmo_cli_record_raw_fmt(rec, "Disconnected parameter #%u\n", args->target_id);
+    return script_report_emit(ctx, rec, ok, dry_run, output_path, "script.param.disconnect");
 }
 
 static nmo_status_t script_param_remove_execute(
@@ -4108,27 +4020,18 @@ static int script_param_remove_report(
     if (!ctx || !args) {
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
-    if (ctx->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        script_add_edit_report_json(doc, data, &args->common, dry_run, output_path);
-        yyjson_mut_obj_add_uint(doc, data, "param_id", args->param_id);
-        yyjson_mut_obj_add_bool(doc, data, "detach", args->detach);
-        nmo_cli_json_add_str_safe(doc, data, "interface_mode",
-                                  script_interface_mode_string(
-                                      args->interface_mode));
-        if (!dry_run && output_path) {
-            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-        }
-        return nmo_cmd_ctx_json_end(ctx, doc, data, "script.param.remove");
-    }
-    fprintf(ctx->out, "Removed script parameter #%u\n", args->param_id);
-    fprintf(ctx->out, "Interface mode: %s\n",
-            script_interface_mode_string(args->interface_mode));
-    if (!dry_run && output_path) {
-        fprintf(ctx->out, "Saved to: %s\n", output_path);
-    }
-    return NMO_CLI_EXIT_SUCCESS;
+
+    nmo_cli_record_t *rec = script_report_new(ctx, &args->common, dry_run, output_path);
+    bool ok = rec != NULL &&
+              nmo_cli_record_uint(rec, "param_id", NULL, args->param_id) &&
+              nmo_cli_record_bool(rec, "detach", NULL, args->detach) &&
+              script_record_str_or_null(rec, "interface_mode",
+                                        script_interface_mode_string(args->interface_mode)) &&
+              nmo_cli_record_raw_fmt(rec, "Removed script parameter #%u\n",
+                                     args->param_id) &&
+              nmo_cli_record_raw_fmt(rec, "Interface mode: %s\n",
+                                     script_interface_mode_string(args->interface_mode));
+    return script_report_emit(ctx, rec, ok, dry_run, output_path, "script.param.remove");
 }
 
 static nmo_status_t script_op_add_execute(
@@ -4173,28 +4076,25 @@ static int script_op_add_report(
     if (!ctx || !args) {
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
-    if (ctx->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        script_add_edit_report_json(doc, data, &args->common, dry_run, output_path);
-        yyjson_mut_obj_add_uint(doc, data, "parent_id", args->parent_id);
-        yyjson_mut_obj_add_uint(doc, data, "op_id", args->op_id);
-        nmo_cli_json_add_str_fmt_safe(doc, data, "operation_guid", "%08X-%08X",
-                                      args->op_guid.d1, args->op_guid.d2);
-        if (args->in1_id != 0u) yyjson_mut_obj_add_uint(doc, data, "in1_id", args->in1_id);
-        if (args->in2_id != 0u) yyjson_mut_obj_add_uint(doc, data, "in2_id", args->in2_id);
-        if (args->out_id != 0u) yyjson_mut_obj_add_uint(doc, data, "out_id", args->out_id);
-        if (!dry_run && output_path) {
-            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-        }
-        return nmo_cmd_ctx_json_end(ctx, doc, data, "script.op.add");
+
+    nmo_cli_record_t *rec = script_report_new(ctx, &args->common, dry_run, output_path);
+    bool ok = rec != NULL &&
+              nmo_cli_record_uint(rec, "parent_id", NULL, args->parent_id) &&
+              nmo_cli_record_uint(rec, "op_id", NULL, args->op_id) &&
+              nmo_cli_record_str_fmt(rec, "operation_guid", NULL, "%08X-%08X",
+                                     args->op_guid.d1, args->op_guid.d2);
+    if (args->in1_id != 0u) {
+        ok = ok && nmo_cli_record_uint(rec, "in1_id", NULL, args->in1_id);
     }
-    fprintf(ctx->out, "Created script operation #%u in behavior #%u\n",
-            args->op_id, args->parent_id);
-    if (!dry_run && output_path) {
-        fprintf(ctx->out, "Saved to: %s\n", output_path);
+    if (args->in2_id != 0u) {
+        ok = ok && nmo_cli_record_uint(rec, "in2_id", NULL, args->in2_id);
     }
-    return NMO_CLI_EXIT_SUCCESS;
+    if (args->out_id != 0u) {
+        ok = ok && nmo_cli_record_uint(rec, "out_id", NULL, args->out_id);
+    }
+    ok = ok && nmo_cli_record_raw_fmt(rec, "Created script operation #%u in behavior #%u\n",
+                                      args->op_id, args->parent_id);
+    return script_report_emit(ctx, rec, ok, dry_run, output_path, "script.op.add");
 }
 
 static nmo_status_t script_op_rewire_execute(
@@ -4238,30 +4138,21 @@ static int script_op_rewire_report(
     if (!ctx || !args) {
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
-    if (ctx->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        script_add_edit_report_json(doc, data, &args->common, dry_run, output_path);
-        yyjson_mut_obj_add_uint(doc, data, "op_id", args->op_id);
-        if ((args->slot_flags & NMO_SCRIPT_EDIT_OP_SLOT_IN1) != 0u) {
-            yyjson_mut_obj_add_uint(doc, data, "in1_id", args->in1_id);
-        }
-        if ((args->slot_flags & NMO_SCRIPT_EDIT_OP_SLOT_IN2) != 0u) {
-            yyjson_mut_obj_add_uint(doc, data, "in2_id", args->in2_id);
-        }
-        if ((args->slot_flags & NMO_SCRIPT_EDIT_OP_SLOT_OUT) != 0u) {
-            yyjson_mut_obj_add_uint(doc, data, "out_id", args->out_id);
-        }
-        if (!dry_run && output_path) {
-            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-        }
-        return nmo_cmd_ctx_json_end(ctx, doc, data, "script.op.rewire");
+
+    nmo_cli_record_t *rec = script_report_new(ctx, &args->common, dry_run, output_path);
+    bool ok = rec != NULL &&
+              nmo_cli_record_uint(rec, "op_id", NULL, args->op_id);
+    if ((args->slot_flags & NMO_SCRIPT_EDIT_OP_SLOT_IN1) != 0u) {
+        ok = ok && nmo_cli_record_uint(rec, "in1_id", NULL, args->in1_id);
     }
-    fprintf(ctx->out, "Rewired script operation #%u\n", args->op_id);
-    if (!dry_run && output_path) {
-        fprintf(ctx->out, "Saved to: %s\n", output_path);
+    if ((args->slot_flags & NMO_SCRIPT_EDIT_OP_SLOT_IN2) != 0u) {
+        ok = ok && nmo_cli_record_uint(rec, "in2_id", NULL, args->in2_id);
     }
-    return NMO_CLI_EXIT_SUCCESS;
+    if ((args->slot_flags & NMO_SCRIPT_EDIT_OP_SLOT_OUT) != 0u) {
+        ok = ok && nmo_cli_record_uint(rec, "out_id", NULL, args->out_id);
+    }
+    ok = ok && nmo_cli_record_raw_fmt(rec, "Rewired script operation #%u\n", args->op_id);
+    return script_report_emit(ctx, rec, ok, dry_run, output_path, "script.op.rewire");
 }
 
 static nmo_status_t script_op_remove_execute(
@@ -4310,26 +4201,16 @@ static int script_op_remove_report(
     if (!ctx || !args) {
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
-    if (ctx->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        script_add_edit_report_json(doc, data, &args->common, dry_run, output_path);
-        yyjson_mut_obj_add_uint(doc, data, "op_id", args->op_id);
-        nmo_cli_json_add_str_safe(doc, data, "interface_mode",
-                                  script_interface_mode_string(
-                                      args->interface_mode));
-        if (!dry_run && output_path) {
-            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-        }
-        return nmo_cmd_ctx_json_end(ctx, doc, data, "script.op.remove");
-    }
-    fprintf(ctx->out, "Removed script operation #%u\n", args->op_id);
-    fprintf(ctx->out, "Interface mode: %s\n",
-            script_interface_mode_string(args->interface_mode));
-    if (!dry_run && output_path) {
-        fprintf(ctx->out, "Saved to: %s\n", output_path);
-    }
-    return NMO_CLI_EXIT_SUCCESS;
+
+    nmo_cli_record_t *rec = script_report_new(ctx, &args->common, dry_run, output_path);
+    bool ok = rec != NULL &&
+              nmo_cli_record_uint(rec, "op_id", NULL, args->op_id) &&
+              script_record_str_or_null(rec, "interface_mode",
+                                        script_interface_mode_string(args->interface_mode)) &&
+              nmo_cli_record_raw_fmt(rec, "Removed script operation #%u\n", args->op_id) &&
+              nmo_cli_record_raw_fmt(rec, "Interface mode: %s\n",
+                                     script_interface_mode_string(args->interface_mode));
+    return script_report_emit(ctx, rec, ok, dry_run, output_path, "script.op.remove");
 }
 
 int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *global)
