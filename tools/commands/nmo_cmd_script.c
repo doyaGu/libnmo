@@ -147,28 +147,34 @@ static const char *node_kind_name(nmo_script_edit_node_kind_t kind)
     }
 }
 
-static void dot_write_label(FILE *out, const char *label)
+/* DOT label text, escaped for a double-quoted DOT string; free() it. */
+static char *dot_label_dup(const char *label)
 {
-    const unsigned char *p = NULL;
-
-    if (!out || !label) {
-        return;
+    size_t len = label ? strlen(label) : 0;
+    char *out = (char *)malloc(len * 2u + 1u);
+    if (!out) {
+        return NULL;
     }
-
-    for (p = (const unsigned char *)label; *p; ++p) {
-        if (*p == '"' || *p == '\\') {
-            fputc('\\', out);
-            fputc((char)*p, out);
-        } else if (*p == '\n' || *p == '\r') {
-            fputs("\\n", out);
-        } else if (*p == '\t') {
-            fputs("\\t", out);
-        } else if (isprint(*p)) {
-            fputc((char)*p, out);
+    char *w = out;
+    for (size_t i = 0; i < len; ++i) {
+        unsigned char c = (unsigned char)label[i];
+        if (c == '"' || c == '\\') {
+            *w++ = '\\';
+            *w++ = (char)c;
+        } else if (c == '\n' || c == '\r') {
+            *w++ = '\\';
+            *w++ = 'n';
+        } else if (c == '\t') {
+            *w++ = '\\';
+            *w++ = 't';
+        } else if (isprint(c)) {
+            *w++ = (char)c;
         } else {
-            fputc('?', out);
+            *w++ = '?';
         }
     }
+    *w = '\0';
+    return out;
 }
 
 typedef struct script_command_common {
@@ -2037,19 +2043,184 @@ static int script_run_report(nmo_cmd_ctx_t *ctx,
     return NMO_CLI_EXIT_SUCCESS;
 }
 
-static void add_endpoint_json(yyjson_mut_doc *doc,
-                              yyjson_mut_val *parent,
-                              const char *key,
-                              const nmo_script_edit_endpoint_t *endpoint)
+static bool script_graph_add_item(nmo_cli_record_array_t *arr,
+                                  nmo_cli_record_t *item,
+                                  bool ok)
 {
-    yyjson_mut_val *value = yyjson_mut_obj(doc);
+    if (!ok) {
+        nmo_cli_record_free(item);
+        return false;
+    }
+    return nmo_cli_record_array_add(arr, item);
+}
 
-    yyjson_mut_obj_add_uint(doc, value, "object_id", endpoint->object_id);
-    yyjson_mut_obj_add_uint(doc, value, "owner_behavior_id",
-                            endpoint->owner_behavior_id);
-    yyjson_mut_obj_add_int(doc, value, "owner_index", endpoint->owner_index);
-    yyjson_mut_obj_add_uint(doc, value, "kind", endpoint->kind);
-    yyjson_mut_obj_add_val(doc, parent, key, value);
+static bool script_graph_add_endpoint(nmo_cli_record_t *parent,
+                                      const char *key,
+                                      const nmo_script_edit_endpoint_t *endpoint)
+{
+    nmo_cli_record_t *value = nmo_cli_record_object(parent, key);
+    return value != NULL &&
+           nmo_cli_record_uint(value, "object_id", NULL, endpoint->object_id) &&
+           nmo_cli_record_uint(value, "owner_behavior_id", NULL,
+                               endpoint->owner_behavior_id) &&
+           nmo_cli_record_int(value, "owner_index", NULL, endpoint->owner_index) &&
+           nmo_cli_record_uint(value, "kind", NULL, endpoint->kind);
+}
+
+/* JSON: "nodes", "control_edges" and "data_edges". Absent from text. */
+static bool script_graph_add_elements(nmo_cli_record_t *rec,
+                                      const nmo_script_edit_graph_t *graph)
+{
+    size_t node_count = 0;
+    size_t control_edge_count = 0;
+    size_t data_edge_count = 0;
+    const nmo_script_edit_node_t *nodes =
+        nmo_script_edit_graph_nodes(graph, &node_count);
+    const nmo_script_edit_control_edge_t *control_edges =
+        nmo_script_edit_graph_control_edges(graph, &control_edge_count);
+    const nmo_script_edit_data_edge_t *data_edges =
+        nmo_script_edit_graph_data_edges(graph, &data_edge_count);
+
+    nmo_cli_record_array_t *arr = nmo_cli_record_array(rec, "nodes", NULL);
+    bool ok = arr != NULL;
+    for (size_t i = 0; ok && i < node_count; ++i) {
+        const nmo_script_edit_node_t *node = &nodes[i];
+        nmo_cli_record_t *item = nmo_cli_record_new();
+        ok = script_graph_add_item(arr, item, item != NULL &&
+            nmo_cli_record_uint(item, "object_id", NULL, node->object_id) &&
+            nmo_cli_record_str(item, "kind", NULL, node_kind_name(node->kind)) &&
+            nmo_cli_record_str_opt(item, "name", NULL, node->name, NULL) &&
+            nmo_cli_record_str_opt(item, "class_name", NULL, node->class_name, NULL) &&
+            nmo_cli_record_uint(item, "class_id", NULL, node->class_id) &&
+            nmo_cli_record_uint(item, "depth", NULL, node->depth) &&
+            nmo_cli_record_uint(item, "parent_behavior_id", NULL,
+                                node->parent_behavior_id) &&
+            nmo_cli_record_uint(item, "owner_behavior_id", NULL,
+                                node->owner_behavior_id) &&
+            nmo_cli_record_int(item, "owner_slot_index", NULL,
+                               node->owner_slot_index) &&
+            nmo_cli_record_uint(item, "owner_slot_kind", NULL,
+                                node->owner_slot_kind));
+    }
+
+    arr = ok ? nmo_cli_record_array(rec, "control_edges", NULL) : NULL;
+    ok = arr != NULL;
+    for (size_t i = 0; ok && i < control_edge_count; ++i) {
+        const nmo_script_edit_control_edge_t *edge = &control_edges[i];
+        nmo_cli_record_t *item = nmo_cli_record_new();
+        ok = script_graph_add_item(arr, item, item != NULL &&
+            nmo_cli_record_uint(item, "link_id", NULL, edge->link_id) &&
+            script_graph_add_endpoint(item, "source", &edge->source) &&
+            script_graph_add_endpoint(item, "target", &edge->target) &&
+            nmo_cli_record_int(item, "activation_delay", NULL,
+                               edge->activation_delay) &&
+            nmo_cli_record_int(item, "initial_activation_delay", NULL,
+                               edge->initial_activation_delay));
+    }
+
+    arr = ok ? nmo_cli_record_array(rec, "data_edges", NULL) : NULL;
+    ok = arr != NULL;
+    for (size_t i = 0; ok && i < data_edge_count; ++i) {
+        const nmo_script_edit_data_edge_t *edge = &data_edges[i];
+        nmo_cli_record_t *item = nmo_cli_record_new();
+        ok = script_graph_add_item(arr, item, item != NULL &&
+            nmo_cli_record_uint(item, "source_parameter_id", NULL,
+                                edge->source_parameter_id) &&
+            nmo_cli_record_uint(item, "target_parameter_id", NULL,
+                                edge->target_parameter_id) &&
+            nmo_cli_record_uint(item, "source_owner_id", NULL, edge->source_owner_id) &&
+            nmo_cli_record_uint(item, "target_owner_id", NULL, edge->target_owner_id) &&
+            nmo_cli_record_str_fmt(item, "type_guid", NULL, "%08X-%08X",
+                                   edge->type_guid.d1, edge->type_guid.d2) &&
+            nmo_cli_record_bool(item, "shared", NULL, edge->shared));
+    }
+    return ok;
+}
+
+/* The graph summary: counts and reference validation. */
+static bool script_graph_add_summary(nmo_cli_record_t *rec,
+                                     const nmo_script_edit_graph_t *graph,
+                                     nmo_object_id_t behavior_id)
+{
+    size_t control_edge_count = 0;
+    size_t data_edge_count = 0;
+    size_t broken_ref_count = 0;
+    bool edit_ready = nmo_script_edit_graph_edit_ready(graph);
+    bool owner_index = nmo_script_edit_graph_owner_index_available(graph);
+    nmo_script_edit_graph_control_edges(graph, &control_edge_count);
+    nmo_script_edit_graph_data_edges(graph, &data_edge_count);
+    nmo_status_t ref_status = nmo_script_edit_graph_reference_validation_status(
+        graph, &broken_ref_count);
+
+    bool ok = nmo_cli_record_uint(rec, "root_behavior_id", NULL,
+                                  nmo_script_edit_graph_root_behavior_id(graph)) &&
+              nmo_cli_record_text_fmt(rec, "Script Graph", "%u", behavior_id) &&
+              nmo_cli_record_bool(rec, "edit_ready", "Edit ready", edit_ready) &&
+              nmo_cli_record_set_text(rec, edit_ready ? "yes" : "no") &&
+              nmo_cli_record_bool(rec, "owner_index_available", "Owner index",
+                                  owner_index) &&
+              nmo_cli_record_set_text(rec, owner_index ? "available" : "missing") &&
+              nmo_cli_record_uint(rec, "node_count", "Nodes",
+                                  (uint64_t)nmo_script_edit_graph_node_count(graph)) &&
+              nmo_cli_record_text_fmt(rec, "Control edges", "%zu", control_edge_count) &&
+              nmo_cli_record_text_fmt(rec, "Data edges", "%zu", data_edge_count);
+
+    nmo_cli_record_t *validation =
+        ok ? nmo_cli_record_object(rec, "reference_validation") : NULL;
+    return validation != NULL &&
+           nmo_cli_record_int(validation, "status", NULL, ref_status) &&
+           nmo_cli_record_str(validation, "status_name", NULL,
+                              nmo_error_string(ref_status)) &&
+           nmo_cli_record_uint(validation, "broken_count", NULL,
+                               (uint64_t)broken_ref_count) &&
+           nmo_cli_record_text_fmt(validation, "Reference validation", "%s (%zu broken)",
+                                   nmo_error_string(ref_status), broken_ref_count);
+}
+
+/* DOT digraph of the graph: its nodes, then control and data edges. */
+static bool script_graph_add_dot(nmo_cli_record_t *rec,
+                                 const nmo_script_edit_graph_t *graph,
+                                 nmo_object_id_t behavior_id)
+{
+    size_t node_count = 0;
+    size_t control_edge_count = 0;
+    size_t data_edge_count = 0;
+    const nmo_script_edit_node_t *nodes =
+        nmo_script_edit_graph_nodes(graph, &node_count);
+    const nmo_script_edit_control_edge_t *control_edges =
+        nmo_script_edit_graph_control_edges(graph, &control_edge_count);
+    const nmo_script_edit_data_edge_t *data_edges =
+        nmo_script_edit_graph_data_edges(graph, &data_edge_count);
+
+    bool ok = nmo_cli_record_raw_fmt(rec, "digraph script_%u {\n", behavior_id);
+    for (size_t i = 0; ok && i < node_count; ++i) {
+        const nmo_script_edit_node_t *node = &nodes[i];
+        char *label = NULL;
+        if (node->name && node->name[0] != '\0') {
+            label = dot_label_dup(node->name);
+        } else {
+            char *fallback = nmo_tool_strdup_fmt("%s #%u", node_kind_name(node->kind),
+                                                 node->object_id);
+            label = fallback ? dot_label_dup(fallback) : NULL;
+            free(fallback);
+        }
+        ok = label != NULL &&
+             nmo_cli_record_raw_fmt(rec, "  n%u [label=\"%s\"];\n",
+                                    node->object_id, label);
+        free(label);
+    }
+    for (size_t i = 0; ok && i < control_edge_count; ++i) {
+        ok = nmo_cli_record_raw_fmt(rec, "  n%u -> n%u [label=\"ctrl:%u\"];\n",
+                                    control_edges[i].source.object_id,
+                                    control_edges[i].target.object_id,
+                                    control_edges[i].link_id);
+    }
+    for (size_t i = 0; ok && i < data_edge_count; ++i) {
+        ok = nmo_cli_record_raw_fmt(rec, "  n%u -> n%u [style=dashed,label=\"data\"];\n",
+                                    data_edges[i].source_parameter_id,
+                                    data_edges[i].target_parameter_id);
+    }
+    return ok && nmo_cli_record_raw(rec, "}\n");
 }
 
 static int script_graph_run(nmo_cmd_ctx_t *ctx,
@@ -2063,11 +2234,6 @@ static int script_graph_run(nmo_cmd_ctx_t *ctx,
     nmo_object_t *behavior = NULL;
     nmo_object_id_t behavior_id = 0;
     nmo_script_edit_graph_t *graph = NULL;
-    size_t node_count = 0;
-    size_t control_edge_count = 0;
-    size_t data_edge_count = 0;
-    size_t broken_ref_count = 0;
-    nmo_status_t ref_status = NMO_OK;
     int exit_code = NMO_CLI_EXIT_SUCCESS;
     int rc = 0;
 
@@ -2090,163 +2256,26 @@ static int script_graph_run(nmo_cmd_ctx_t *ctx,
         exit_code = NMO_CLI_EXIT_INTERNAL_ERROR;
         goto cleanup;
     }
-
-    node_count = nmo_script_edit_graph_node_count(graph);
-    nmo_script_edit_graph_control_edges(graph, &control_edge_count);
-    nmo_script_edit_graph_data_edges(graph, &data_edge_count);
-    ref_status = nmo_script_edit_graph_reference_validation_status(
-        graph, &broken_ref_count);
     (void)behavior;
 
+    nmo_cli_record_t *rec = nmo_cli_record_new();
     if (emit_dot) {
-        const nmo_script_edit_node_t *nodes = NULL;
-        const nmo_script_edit_control_edge_t *control_edges = NULL;
-        const nmo_script_edit_data_edge_t *data_edges = NULL;
-        size_t i = 0;
-
-        nodes = nmo_script_edit_graph_nodes(graph, &node_count);
-        control_edges = nmo_script_edit_graph_control_edges(graph,
-                                                            &control_edge_count);
-        data_edges = nmo_script_edit_graph_data_edges(graph, &data_edge_count);
-
-        fprintf(c.out, "digraph script_%u {\n", behavior_id);
-        for (i = 0; i < node_count; ++i) {
-            const nmo_script_edit_node_t *node = &nodes[i];
-            fprintf(c.out, "  n%u [label=\"", node->object_id);
-            if (node->name && node->name[0] != '\0') {
-                dot_write_label(c.out, node->name);
-            } else {
-                char *fallback = nmo_tool_strdup_fmt("%s #%u",
-                                                     node_kind_name(node->kind),
-                                                     node->object_id);
-                if (fallback) {
-                    dot_write_label(c.out, fallback);
-                    free(fallback);
-                }
-            }
-            fprintf(c.out, "\"];\n");
+        /* DOT is written as is, in every output format */
+        if (rec && script_graph_add_dot(rec, graph, behavior_id)) {
+            nmo_cli_record_print_kv(rec, c.out, 0, false);
         }
-        for (i = 0; i < control_edge_count; ++i) {
-            fprintf(c.out,
-                    "  n%u -> n%u [label=\"ctrl:%u\"];\n",
-                    control_edges[i].source.object_id,
-                    control_edges[i].target.object_id,
-                    control_edges[i].link_id);
-        }
-        for (i = 0; i < data_edge_count; ++i) {
-            fprintf(c.out,
-                    "  n%u -> n%u [style=dashed,label=\"data\"];\n",
-                    data_edges[i].source_parameter_id,
-                    data_edges[i].target_parameter_id);
-        }
-        fprintf(c.out, "}\n");
+        nmo_cli_record_free(rec);
         goto cleanup;
     }
 
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        yyjson_mut_val *reference_validation = yyjson_mut_obj(doc);
-        yyjson_mut_val *nodes_json = yyjson_mut_arr(doc);
-        yyjson_mut_val *control_edges_json = yyjson_mut_arr(doc);
-        yyjson_mut_val *data_edges_json = yyjson_mut_arr(doc);
-        const nmo_script_edit_node_t *nodes = NULL;
-        const nmo_script_edit_control_edge_t *control_edges = NULL;
-        const nmo_script_edit_data_edge_t *data_edges = NULL;
-        size_t i = 0;
-
-        nodes = nmo_script_edit_graph_nodes(graph, &node_count);
-        control_edges = nmo_script_edit_graph_control_edges(graph,
-                                                            &control_edge_count);
-        data_edges = nmo_script_edit_graph_data_edges(graph, &data_edge_count);
-
-        yyjson_mut_obj_add_uint(doc, data, "root_behavior_id",
-                                nmo_script_edit_graph_root_behavior_id(graph));
-        yyjson_mut_obj_add_bool(doc, data, "edit_ready",
-                                nmo_script_edit_graph_edit_ready(graph));
-        yyjson_mut_obj_add_bool(doc, data, "owner_index_available",
-                                nmo_script_edit_graph_owner_index_available(graph));
-        yyjson_mut_obj_add_uint(doc, data, "node_count", (uint64_t)node_count);
-
-        yyjson_mut_obj_add_int(doc, reference_validation, "status", ref_status);
-        nmo_cli_json_add_str_safe(doc, reference_validation, "status_name",
-                                  nmo_error_string(ref_status));
-        yyjson_mut_obj_add_uint(doc, reference_validation, "broken_count",
-                                (uint64_t)broken_ref_count);
-        yyjson_mut_obj_add_val(doc, data, "reference_validation",
-                               reference_validation);
-
-        for (i = 0; i < node_count; ++i) {
-            yyjson_mut_val *node = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_uint(doc, node, "object_id", nodes[i].object_id);
-            nmo_cli_json_add_str_safe(doc, node, "kind",
-                                      node_kind_name(nodes[i].kind));
-            if (nodes[i].name && nodes[i].name[0] != '\0') {
-                nmo_cli_json_add_str_safe(doc, node, "name", nodes[i].name);
-            }
-            if (nodes[i].class_name && nodes[i].class_name[0] != '\0') {
-                nmo_cli_json_add_str_safe(doc, node, "class_name",
-                                          nodes[i].class_name);
-            }
-            yyjson_mut_obj_add_uint(doc, node, "class_id", nodes[i].class_id);
-            yyjson_mut_obj_add_uint(doc, node, "depth", nodes[i].depth);
-            yyjson_mut_obj_add_uint(doc, node, "parent_behavior_id",
-                                    nodes[i].parent_behavior_id);
-            yyjson_mut_obj_add_uint(doc, node, "owner_behavior_id",
-                                    nodes[i].owner_behavior_id);
-            yyjson_mut_obj_add_int(doc, node, "owner_slot_index",
-                                   nodes[i].owner_slot_index);
-            yyjson_mut_obj_add_uint(doc, node, "owner_slot_kind",
-                                    nodes[i].owner_slot_kind);
-            yyjson_mut_arr_add_val(nodes_json, node);
-        }
-        yyjson_mut_obj_add_val(doc, data, "nodes", nodes_json);
-
-        for (i = 0; i < control_edge_count; ++i) {
-            yyjson_mut_val *edge = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_uint(doc, edge, "link_id", control_edges[i].link_id);
-            add_endpoint_json(doc, edge, "source", &control_edges[i].source);
-            add_endpoint_json(doc, edge, "target", &control_edges[i].target);
-            yyjson_mut_obj_add_int(doc, edge, "activation_delay",
-                                   control_edges[i].activation_delay);
-            yyjson_mut_obj_add_int(doc, edge, "initial_activation_delay",
-                                   control_edges[i].initial_activation_delay);
-            yyjson_mut_arr_add_val(control_edges_json, edge);
-        }
-        yyjson_mut_obj_add_val(doc, data, "control_edges", control_edges_json);
-
-        for (i = 0; i < data_edge_count; ++i) {
-            yyjson_mut_val *edge = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_uint(doc, edge, "source_parameter_id",
-                                    data_edges[i].source_parameter_id);
-            yyjson_mut_obj_add_uint(doc, edge, "target_parameter_id",
-                                    data_edges[i].target_parameter_id);
-            yyjson_mut_obj_add_uint(doc, edge, "source_owner_id",
-                                    data_edges[i].source_owner_id);
-            yyjson_mut_obj_add_uint(doc, edge, "target_owner_id",
-                                    data_edges[i].target_owner_id);
-            nmo_cli_json_add_str_fmt_safe(doc, edge, "type_guid", "%08X-%08X",
-                                          data_edges[i].type_guid.d1,
-                                          data_edges[i].type_guid.d2);
-            yyjson_mut_obj_add_bool(doc, edge, "shared", data_edges[i].shared);
-            yyjson_mut_arr_add_val(data_edges_json, edge);
-        }
-        yyjson_mut_obj_add_val(doc, data, "data_edges", data_edges_json);
-
-        exit_code = nmo_cmd_ctx_json_end(&c, doc, data, "script.graph");
-        goto cleanup;
+    bool ok = rec != NULL &&
+              script_graph_add_summary(rec, graph, behavior_id) &&
+              script_graph_add_elements(rec, graph);
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        rec = NULL;
     }
-
-    fprintf(c.out, "Script Graph: %u\n", behavior_id);
-    fprintf(c.out, "Edit ready: %s\n",
-            nmo_script_edit_graph_edit_ready(graph) ? "yes" : "no");
-    fprintf(c.out, "Owner index: %s\n",
-            nmo_script_edit_graph_owner_index_available(graph) ? "available" : "missing");
-    fprintf(c.out, "Nodes: %zu\n", node_count);
-    fprintf(c.out, "Control edges: %zu\n", control_edge_count);
-    fprintf(c.out, "Data edges: %zu\n", data_edge_count);
-    fprintf(c.out, "Reference validation: %s (%zu broken)\n",
-            nmo_error_string(ref_status), broken_ref_count);
+    exit_code = nmo_cmd_ctx_emit_record(&c, rec, "script.graph", 0, false);
 
 cleanup:
     nmo_script_edit_graph_destroy(graph);
