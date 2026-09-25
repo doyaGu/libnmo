@@ -117,30 +117,6 @@ static bool node_id_in_set(const nmo_object_id_t *ids, size_t count, nmo_object_
     return false;
 }
 
-static void dot_write_label(FILE *out, const char *label) {
-    if (!out) {
-        return;
-    }
-    if (!label) {
-        return;
-    }
-    for (const unsigned char *p = (const unsigned char *)label; *p; ++p) {
-        unsigned char c = *p;
-        if (c == '"' || c == '\\') {
-            fputc('\\', out);
-            fputc((char)c, out);
-        } else if (c == '\n' || c == '\r') {
-            fputs("\\n", out);
-        } else if (c == '\t') {
-            fputs("\\t", out);
-        } else if (isprint(c)) {
-            fputc((char)c, out);
-        } else {
-            fputc('?', out);
-        }
-    }
-}
-
 static const nmo_cli_graph_node_t *find_graph_node(
     const nmo_cli_graph_node_t *nodes,
     size_t count,
@@ -265,6 +241,638 @@ static nmo_object_id_t graph_edge_parameter_id(const nmo_cli_graph_edge_t *edge)
     return edge->from_id;
 }
 
+/* Node and edge tallies by kind. */
+typedef struct behavior_graph_counts {
+    size_t node_behavior;
+    size_t node_parameter;
+    size_t node_operation;
+    size_t node_io;
+    size_t node_unknown;
+    size_t edge_behavior_link;
+    size_t edge_io_link;
+    size_t edge_param_in;
+    size_t edge_param_out;
+    size_t edge_param_local;
+    size_t edge_param_dest;
+    size_t edge_param_source;
+    size_t edge_op_in1;
+    size_t edge_op_in2;
+    size_t edge_op_out;
+} behavior_graph_counts_t;
+
+static void behavior_graph_count(const nmo_behavior_graph_t *graph,
+                                 behavior_graph_counts_t *counts)
+{
+    *counts = (behavior_graph_counts_t){0};
+    for (size_t i = 0; i < graph->node_count; ++i) {
+        const char *kind = graph->nodes[i].kind;
+        if (!kind) {
+            counts->node_unknown++;
+        } else if (strcmp(kind, "behavior") == 0) {
+            counts->node_behavior++;
+        } else if (strcmp(kind, "parameter") == 0) {
+            counts->node_parameter++;
+        } else if (strcmp(kind, "operation") == 0) {
+            counts->node_operation++;
+        } else if (strcmp(kind, "io") == 0) {
+            counts->node_io++;
+        } else {
+            counts->node_unknown++;
+        }
+    }
+
+    for (size_t i = 0; i < graph->edge_count; ++i) {
+        const char *kind = graph->edges[i].kind ? graph->edges[i].kind : "";
+        if (strcmp(kind, "behavior_link") == 0) {
+            counts->edge_behavior_link++;
+        } else if (strcmp(kind, "io_link") == 0) {
+            counts->edge_io_link++;
+        } else if (strcmp(kind, "param_in") == 0) {
+            counts->edge_param_in++;
+        } else if (strcmp(kind, "param_out") == 0) {
+            counts->edge_param_out++;
+        } else if (strcmp(kind, "param_local") == 0) {
+            counts->edge_param_local++;
+        } else if (strcmp(kind, "param_dest") == 0) {
+            counts->edge_param_dest++;
+        } else if (strcmp(kind, "param_source") == 0) {
+            counts->edge_param_source++;
+        } else if (strcmp(kind, "op_in1") == 0) {
+            counts->edge_op_in1++;
+        } else if (strcmp(kind, "op_in2") == 0) {
+            counts->edge_op_in2++;
+        } else if (strcmp(kind, "op_out") == 0) {
+            counts->edge_op_out++;
+        }
+    }
+}
+
+/* Everything the behavior graph report reads. */
+typedef struct behavior_graph_report {
+    nmo_cmd_ctx_t *c;
+    nmo_object_repository_t *repo;
+    const nmo_behavior_registry_t *bb_reg;
+    const nmo_behavior_graph_t *graph;
+    nmo_object_id_t behavior_id;
+    behavior_graph_counts_t counts;
+    size_t emit_node_count;
+    const size_t *emit_edge_indices;
+    size_t emit_edge_count;
+    bool nodes_truncated;
+    bool edges_truncated;
+} behavior_graph_report_t;
+
+static const nmo_cli_graph_edge_t *behavior_graph_emit_edge(
+    const behavior_graph_report_t *r,
+    size_t i)
+{
+    return &r->graph->edges[r->emit_edge_indices ? r->emit_edge_indices[i] : i];
+}
+
+/* The parameter whose type labels a parameter edge in text and DOT. */
+static nmo_object_id_t graph_edge_text_parameter_id(const nmo_cli_graph_edge_t *edge) {
+    if (strcmp(edge->kind, "param_out") == 0 ||
+        strcmp(edge->kind, "op_out") == 0) {
+        return edge->to_id;
+    }
+    return edge->from_id;
+}
+
+/* Registry name of an operation node's operation, or NULL. */
+static const char *graph_node_operation_type(const behavior_graph_report_t *r,
+                                             const nmo_cli_graph_node_t *node)
+{
+    if (!node->kind || strcmp(node->kind, "operation") != 0) {
+        return NULL;
+    }
+    nmo_object_t *op_obj = nmo_object_repository_find_by_id(r->repo, node->id);
+    if (!op_obj || !op_obj->state) {
+        return NULL;
+    }
+    const nmo_parameteroperation_state_t *op_state =
+        (const nmo_parameteroperation_state_t *)op_obj->state;
+    return nmo_type_registry_guid_to_name(r->c->registry, op_state->operation_guid);
+}
+
+/* Append `item` to `arr`, freeing it when building it failed. */
+static bool behavior_graph_add_item(nmo_cli_record_array_t *arr,
+                                    nmo_cli_record_t *item,
+                                    bool ok)
+{
+    if (!ok) {
+        nmo_cli_record_free(item);
+        return false;
+    }
+    return nmo_cli_record_array_add(arr, item);
+}
+
+/* Identity and node/edge tallies. */
+static bool behavior_graph_add_summary(nmo_cli_record_t *rec,
+                                       const behavior_graph_report_t *r)
+{
+    const nmo_behavior_graph_t *graph = r->graph;
+    const behavior_graph_counts_t *n = &r->counts;
+    const char *behavior_name = graph->behavior_name;
+    const char *behavior_class = graph->behavior_class_name;
+
+    bool ok = nmo_cli_record_title(rec, "Behavior Graph") &&
+              nmo_cli_record_raw_fmt(rec, "\nBehavior %u: %s [%s]\n\n",
+                                     r->behavior_id,
+                                     (behavior_name && behavior_name[0]) ? behavior_name : "(unnamed)",
+                                     behavior_class ? behavior_class : "?") &&
+              nmo_cli_record_uint(rec, "behavior_id", NULL, r->behavior_id) &&
+              nmo_cmd_behavior_add_interface_diagnostics(rec, r->c->workspace, false);
+    if (behavior_name && behavior_name[0]) {
+        ok = ok && nmo_cli_record_str(rec, "behavior_name", NULL, behavior_name);
+    }
+    if (graph->behavior_class_id != 0) {
+        ok = ok && nmo_cli_record_uint(rec, "behavior_class_id", NULL,
+                                       (uint64_t)graph->behavior_class_id);
+    }
+    if (behavior_class) {
+        ok = ok && nmo_cli_record_str(rec, "behavior_class", NULL, behavior_class);
+    }
+
+    nmo_cli_record_t *counts = ok ? nmo_cli_record_object(rec, "counts") : NULL;
+    ok = counts != NULL &&
+         nmo_cli_record_uint(counts, "nodes_total", NULL, (uint64_t)graph->node_count) &&
+         nmo_cli_record_uint(counts, "edges_total", NULL, (uint64_t)graph->edge_count) &&
+         nmo_cli_record_uint(counts, "broken_links", NULL, (uint64_t)graph->broken_links) &&
+         nmo_cli_record_uint(counts, "missing_nodes", NULL, (uint64_t)graph->missing_nodes) &&
+         nmo_cli_record_uint(counts, "cycles", NULL, (uint64_t)graph->cycle_count);
+
+    nmo_cli_record_t *nodes_by_kind = ok ? nmo_cli_record_object(counts, "nodes_by_kind") : NULL;
+    ok = nodes_by_kind != NULL &&
+         nmo_cli_record_uint(nodes_by_kind, "behavior", NULL, (uint64_t)n->node_behavior) &&
+         nmo_cli_record_uint(nodes_by_kind, "parameter", NULL, (uint64_t)n->node_parameter) &&
+         nmo_cli_record_uint(nodes_by_kind, "operation", NULL, (uint64_t)n->node_operation) &&
+         nmo_cli_record_uint(nodes_by_kind, "io", NULL, (uint64_t)n->node_io) &&
+         nmo_cli_record_uint(nodes_by_kind, "unknown", NULL, (uint64_t)n->node_unknown);
+
+    nmo_cli_record_t *edges_by_kind = ok ? nmo_cli_record_object(counts, "edges_by_kind") : NULL;
+    ok = edges_by_kind != NULL &&
+         nmo_cli_record_uint(edges_by_kind, "behavior_link", NULL, (uint64_t)n->edge_behavior_link) &&
+         nmo_cli_record_uint(edges_by_kind, "io_link", NULL, (uint64_t)n->edge_io_link) &&
+         nmo_cli_record_uint(edges_by_kind, "param_in", NULL, (uint64_t)n->edge_param_in) &&
+         nmo_cli_record_uint(edges_by_kind, "param_out", NULL, (uint64_t)n->edge_param_out) &&
+         nmo_cli_record_uint(edges_by_kind, "param_local", NULL, (uint64_t)n->edge_param_local) &&
+         nmo_cli_record_uint(edges_by_kind, "param_dest", NULL, (uint64_t)n->edge_param_dest) &&
+         nmo_cli_record_uint(edges_by_kind, "param_source", NULL, (uint64_t)n->edge_param_source) &&
+         nmo_cli_record_uint(edges_by_kind, "op_in1", NULL, (uint64_t)n->edge_op_in1) &&
+         nmo_cli_record_uint(edges_by_kind, "op_in2", NULL, (uint64_t)n->edge_op_in2) &&
+         nmo_cli_record_uint(edges_by_kind, "op_out", NULL, (uint64_t)n->edge_op_out);
+
+    ok = ok &&
+         nmo_cli_record_raw_fmt(rec, "Nodes: %zu (behavior %zu, parameter %zu, operation %zu, io %zu, unknown %zu)\n",
+                                graph->node_count, n->node_behavior, n->node_parameter,
+                                n->node_operation, n->node_io, n->node_unknown) &&
+         nmo_cli_record_raw_fmt(rec, "Edges: %zu (behavior links %zu, io links %zu, param %zu, op %zu)\n",
+                                graph->edge_count,
+                                n->edge_behavior_link,
+                                n->edge_io_link,
+                                (n->edge_param_in + n->edge_param_out + n->edge_param_local +
+                                 n->edge_param_dest + n->edge_param_source),
+                                (n->edge_op_in1 + n->edge_op_in2 + n->edge_op_out));
+    if (r->nodes_truncated) {
+        ok = ok && nmo_cli_record_raw_fmt(rec, "Note: Nodes truncated to %zu (use --max-nodes 0 to disable)\n",
+                                          r->emit_node_count);
+    }
+    if (r->edges_truncated) {
+        ok = ok && nmo_cli_record_raw_fmt(rec, "Note: Edges truncated to %zu (use --max-edges 0 to disable)\n",
+                                          r->emit_edge_count);
+    }
+    if (graph->broken_links > 0) {
+        ok = ok && nmo_cli_record_raw_fmt(rec, "Broken links: %zu\n", graph->broken_links);
+    }
+    if (graph->missing_nodes > 0) {
+        ok = ok && nmo_cli_record_raw_fmt(rec, "Missing objects: %zu\n", graph->missing_nodes);
+    }
+    if (graph->cycle_count > 0) {
+        ok = ok && nmo_cli_record_raw_fmt(rec, "Behavior cycles: %zu\n", graph->cycle_count);
+    }
+    return ok && nmo_cli_record_raw(rec, "\n");
+}
+
+/* One node: JSON details and an ID/D/Kind/Name/Class table row. */
+static bool behavior_graph_add_node(nmo_cli_record_array_t *arr,
+                                    const behavior_graph_report_t *r,
+                                    const nmo_cli_graph_node_t *node)
+{
+    nmo_cli_record_t *item = nmo_cli_record_new();
+    bool ok = item != NULL &&
+        nmo_cli_record_uint(item, "id", NULL, node->id) &&
+        nmo_cli_record_text_fmt(item, "ID", "%u", node->id) &&
+        nmo_cli_record_text_fmt(item, "D", "%u", node->depth) &&
+        nmo_cli_record_text(item, "Kind", node->kind ? node->kind : "-");
+    if (node->kind) {
+        ok = ok && nmo_cli_record_str(item, "kind", NULL, node->kind);
+    }
+    if (node->name && node->name[0]) {
+        ok = ok && nmo_cli_record_str(item, "name", NULL, node->name);
+    }
+
+    /* For operation nodes, resolve the operation name */
+    const char *text_name = (node->name && node->name[0]) ? node->name : "-";
+    const char *op_type = graph_node_operation_type(r, node);
+    if (op_type && strcmp(text_name, "-") != 0) {
+        ok = ok && nmo_cli_record_text_fmt(item, "Name", "%s (%s)", text_name, op_type);
+    } else {
+        ok = ok && nmo_cli_record_text(item, "Name", op_type ? op_type : text_name);
+    }
+    ok = ok && nmo_cli_record_text(item, "Class",
+                                   (node->class_name && node->class_name[0]) ? node->class_name : "-");
+
+    char *display_name = ok ? graph_node_display_name_dup(
+        r->repo, r->c->registry, r->bb_reg, node) : NULL;
+    if (display_name && display_name[0]) {
+        ok = ok && nmo_cli_record_str(item, "display_name", NULL, display_name);
+    }
+    free(display_name);
+    if (node->class_id != 0) {
+        ok = ok && nmo_cli_record_uint(item, "class_id", NULL, (uint64_t)node->class_id);
+    }
+    if (node->class_name && node->class_name[0]) {
+        ok = ok && nmo_cli_record_str(item, "class_name", NULL, node->class_name);
+    }
+    ok = ok && nmo_cli_record_uint(item, "depth", NULL, (uint64_t)node->depth);
+    if (node->parent_id != 0) {
+        ok = ok && nmo_cli_record_uint(item, "parent_id", NULL, (uint64_t)node->parent_id);
+    }
+
+    if (node->kind && strcmp(node->kind, "behavior") == 0) {
+        const nmo_behavior_state_t *bs = get_behavior_state_for_id(r->repo, node->id);
+        ok = ok && nmo_cli_record_str(item, "behavior_type", NULL, behavior_type_name(bs));
+        if (bs && (bs->flags & CKBEHAVIOR_BUILDINGBLOCK)) {
+            const char *proto = nmo_behavior_registry_get_name(r->bb_reg, bs->block_guid);
+            ok = ok &&
+                nmo_cli_record_str_fmt(item, "bb_guid", NULL, "%08X-%08X",
+                                       bs->block_guid.d1, bs->block_guid.d2) &&
+                nmo_cli_record_uint(item, "bb_version", NULL, (uint64_t)bs->block_version) &&
+                nmo_cli_record_str_opt(item, "bb_proto_name", NULL, proto, NULL);
+        }
+    } else if (node->kind && strcmp(node->kind, "operation") == 0) {
+        const nmo_parameteroperation_state_t *op_state =
+            get_operation_state_for_id(r->repo, node->id);
+        if (op_state) {
+            const nmo_guid_t op_guid = op_state->operation_guid;
+            const char *op_name = nmo_type_registry_guid_to_name(r->c->registry, op_guid);
+            ok = ok && nmo_cli_record_str_fmt(item, "operation_guid", NULL, "%08X-%08X",
+                                              op_guid.d1, op_guid.d2);
+            if (op_name && op_name[0]) {
+                ok = ok && nmo_cli_record_str(item, "operation_name", NULL, op_name);
+            } else {
+                ok = ok && nmo_cli_record_str_fmt(item, "operation_name", NULL, "%08X-%08X",
+                                                  op_guid.d1, op_guid.d2);
+            }
+            ok = ok &&
+                nmo_cli_record_uint(item, "in1_id", NULL,
+                                    op_state->has_in1 ? nmo_parameteroperation_in1_id(op_state) : 0) &&
+                nmo_cli_record_uint(item, "in2_id", NULL,
+                                    op_state->has_in2 ? nmo_parameteroperation_in2_id(op_state) : 0) &&
+                nmo_cli_record_uint(item, "out_id", NULL,
+                                    op_state->has_out ? nmo_parameteroperation_out_id(op_state) : 0);
+        }
+    }
+    return behavior_graph_add_item(arr, item, ok);
+}
+
+/* Text: the Meta column of an edge row. */
+static bool behavior_graph_add_edge_meta(nmo_cli_record_t *item,
+                                         const behavior_graph_report_t *r,
+                                         const nmo_cli_graph_edge_t *edge)
+{
+    /* in_io = source, out_io = target (Virtools SDK naming) */
+    if (edge->kind && strcmp(edge->kind, "behavior_link") == 0) {
+        const char *src_io = resolve_name(r->repo, edge->in_io_id);
+        const char *tgt_io = resolve_name(r->repo, edge->out_io_id);
+        if (edge->activation_delay != 0 || edge->initial_activation_delay != 0) {
+            return nmo_cli_record_text_fmt(item, "Meta", "%s->%s %d/%d",
+                                           src_io, tgt_io,
+                                           edge->activation_delay,
+                                           edge->initial_activation_delay);
+        }
+        return nmo_cli_record_text_fmt(item, "Meta", "%s->%s", src_io, tgt_io);
+    }
+    if (edge->kind && strcmp(edge->kind, "io_link") == 0) {
+        return nmo_cli_record_text_fmt(item, "Meta", "%s->%s",
+                                       resolve_name(r->repo, edge->in_io_id),
+                                       resolve_name(r->repo, edge->out_io_id));
+    }
+    if (graph_edge_is_parameter_kind(edge->kind)) {
+        /* Look up the parameter node to get its type name */
+        nmo_object_t *param_obj = nmo_object_repository_find_by_id(
+            r->repo, graph_edge_text_parameter_id(edge));
+        const char *tname = resolve_type(r->c->registry, get_param_type_guid(param_obj));
+        if (edge->is_shared) {
+            return nmo_cli_record_text_fmt(item, "Meta", "%s (shared)", tname);
+        }
+        return nmo_cli_record_text(item, "Meta", tname);
+    }
+    return nmo_cli_record_text(item, "Meta", "-");
+}
+
+/* Text: a From/To cell, "<id>:<name>" for a named node. */
+static bool behavior_graph_add_endpoint_cell(nmo_cli_record_t *item,
+                                             const char *label,
+                                             const nmo_cli_graph_node_t *node,
+                                             nmo_object_id_t id)
+{
+    if (node && node->name && node->name[0]) {
+        return nmo_cli_record_text_fmt(item, label, "%u:%s", node->id, node->name);
+    }
+    return nmo_cli_record_text_fmt(item, label, "%u", id);
+}
+
+/* One edge: JSON details and a From/To/Kind/Field/Link/Meta table row. */
+static bool behavior_graph_add_edge(nmo_cli_record_array_t *arr,
+                                    const behavior_graph_report_t *r,
+                                    const nmo_cli_graph_edge_t *edge)
+{
+    const nmo_behavior_graph_t *graph = r->graph;
+    const nmo_cli_graph_node_t *from_node =
+        find_graph_node(graph->nodes, graph->node_count, edge->from_id);
+    const nmo_cli_graph_node_t *to_node =
+        find_graph_node(graph->nodes, graph->node_count, edge->to_id);
+    char *from_name = graph_node_display_name_dup(r->repo, r->c->registry, r->bb_reg, from_node);
+    char *to_name = graph_node_display_name_dup(r->repo, r->c->registry, r->bb_reg, to_node);
+
+    nmo_cli_record_t *item = nmo_cli_record_new();
+    bool ok = item != NULL &&
+        nmo_cli_record_uint(item, "from", NULL, edge->from_id) &&
+        nmo_cli_record_uint(item, "to", NULL, edge->to_id) &&
+        behavior_graph_add_endpoint_cell(item, "From", from_node, edge->from_id) &&
+        behavior_graph_add_endpoint_cell(item, "To", to_node, edge->to_id) &&
+        nmo_cli_record_text(item, "Kind", edge->kind ? edge->kind : "-") &&
+        nmo_cli_record_text(item, "Field", edge->field_path ? edge->field_path : "-");
+    if (edge->link_id != 0) {
+        ok = ok && nmo_cli_record_text_fmt(item, "Link", "%u", edge->link_id);
+    } else {
+        ok = ok && nmo_cli_record_text(item, "Link", "-");
+    }
+    ok = ok && behavior_graph_add_edge_meta(item, r, edge);
+
+    ok = ok &&
+        nmo_cli_record_str_opt(item, "from_name", NULL, from_name, NULL) &&
+        nmo_cli_record_str_opt(item, "to_name", NULL, to_name, NULL);
+    if (edge->kind) {
+        ok = ok && nmo_cli_record_str(item, "kind", NULL, edge->kind);
+    }
+    if (edge->field_path) {
+        ok = ok && nmo_cli_record_str(item, "field_path", NULL, edge->field_path);
+    }
+    if (edge->link_id != 0) {
+        ok = ok && nmo_cli_record_uint(item, "link_id", NULL, edge->link_id);
+    }
+    if (edge->in_io_id != 0) {
+        ok = ok && nmo_cli_record_uint(item, "in_io_id", NULL, edge->in_io_id);
+    }
+    if (edge->out_io_id != 0) {
+        ok = ok && nmo_cli_record_uint(item, "out_io_id", NULL, edge->out_io_id);
+    }
+    if (edge->kind && strcmp(edge->kind, "behavior_link") == 0) {
+        ok = ok &&
+            nmo_cli_record_int(item, "activation_delay", NULL, edge->activation_delay) &&
+            nmo_cli_record_int(item, "initial_activation_delay", NULL,
+                               edge->initial_activation_delay) &&
+            nmo_cli_record_str(item, "source_io_name", NULL, resolve_name(r->repo, edge->in_io_id)) &&
+            nmo_cli_record_str(item, "target_io_name", NULL, resolve_name(r->repo, edge->out_io_id)) &&
+            nmo_cli_record_uint(item, "source_owner_id", NULL, edge->from_id) &&
+            nmo_cli_record_uint(item, "target_owner_id", NULL, edge->to_id) &&
+            nmo_cli_record_str_opt(item, "source_owner_name", NULL, from_name, NULL) &&
+            nmo_cli_record_str_opt(item, "target_owner_name", NULL, to_name, NULL);
+    }
+    if (graph_edge_is_parameter_kind(edge->kind)) {
+        nmo_object_id_t param_id = graph_edge_parameter_id(edge);
+        nmo_object_t *param_obj = nmo_object_repository_find_by_id(r->repo, param_id);
+        nmo_guid_t type_guid = get_param_type_guid(param_obj);
+        ok = ok &&
+            nmo_cli_record_uint(item, "parameter_id", NULL, param_id) &&
+            nmo_cli_record_str(item, "parameter_name", NULL, resolve_name(r->repo, param_id)) &&
+            nmo_cli_record_str_fmt(item, "type_guid", NULL, "%08X-%08X",
+                                   type_guid.d1, type_guid.d2) &&
+            nmo_cli_record_str(item, "type_name", NULL, resolve_type(r->c->registry, type_guid));
+    }
+    if (edge->is_shared) {
+        ok = ok && nmo_cli_record_bool(item, "is_shared", NULL, true);
+    }
+    free(from_name);
+    free(to_name);
+    return behavior_graph_add_item(arr, item, ok);
+}
+
+/* "graph": the emitted nodes and edges, shown in text as two tables. */
+static bool behavior_graph_add_tables(nmo_cli_record_t *rec,
+                                      const behavior_graph_report_t *r)
+{
+    static const nmo_cli_table_col_t node_columns[] = {
+        {"ID", NMO_CLI_ALIGN_RIGHT, 6, 0},
+        {"D", NMO_CLI_ALIGN_RIGHT, 2, 0},
+        {"Kind", NMO_CLI_ALIGN_LEFT, 12, 16},
+        {"Name", NMO_CLI_ALIGN_LEFT, 22, 50},
+        {"Class", NMO_CLI_ALIGN_LEFT, 20, 40},
+    };
+    static const nmo_cli_table_col_t edge_columns[] = {
+        {"From", NMO_CLI_ALIGN_LEFT, 18, 32},
+        {"To", NMO_CLI_ALIGN_LEFT, 18, 32},
+        {"Kind", NMO_CLI_ALIGN_LEFT, 14, 18},
+        {"Field", NMO_CLI_ALIGN_LEFT, 18, 24},
+        {"Link", NMO_CLI_ALIGN_RIGHT, 6, 0},
+        {"Meta", NMO_CLI_ALIGN_LEFT, 16, 32},
+    };
+
+    nmo_cli_record_t *graph_rec = nmo_cli_record_object(rec, "graph");
+    nmo_cli_record_array_t *nodes = graph_rec ? nmo_cli_record_array(graph_rec, "nodes", NULL) : NULL;
+    bool ok = nodes != NULL &&
+              nmo_cli_record_array_set_table(nodes, node_columns,
+                                             sizeof(node_columns) / sizeof(node_columns[0]));
+    for (size_t i = 0; ok && i < r->emit_node_count; ++i) {
+        ok = behavior_graph_add_node(nodes, r, &r->graph->nodes[i]);
+    }
+
+    ok = ok && nmo_cli_record_raw(graph_rec, "\n");
+    nmo_cli_record_array_t *edges = ok ? nmo_cli_record_array(graph_rec, "edges", NULL) : NULL;
+    ok = edges != NULL &&
+         nmo_cli_record_array_set_table(edges, edge_columns,
+                                        sizeof(edge_columns) / sizeof(edge_columns[0]));
+    for (size_t i = 0; ok && i < r->emit_edge_count; ++i) {
+        ok = behavior_graph_add_edge(edges, r, behavior_graph_emit_edge(r, i));
+    }
+
+    if (ok && (r->nodes_truncated || r->edges_truncated)) {
+        nmo_cli_record_t *truncated = nmo_cli_record_object(graph_rec, "truncated");
+        ok = truncated != NULL &&
+             nmo_cli_record_bool(truncated, "nodes", NULL, r->nodes_truncated) &&
+             nmo_cli_record_bool(truncated, "edges", NULL, r->edges_truncated) &&
+             nmo_cli_record_uint(truncated, "nodes_emitted", NULL, (uint64_t)r->emit_node_count) &&
+             nmo_cli_record_uint(truncated, "edges_emitted", NULL, (uint64_t)r->emit_edge_count) &&
+             nmo_cli_record_uint(truncated, "nodes_dropped", NULL,
+                                 (uint64_t)(r->graph->node_count - r->emit_node_count)) &&
+             nmo_cli_record_uint(truncated, "edges_dropped", NULL,
+                                 (uint64_t)(r->graph->edge_count - r->emit_edge_count));
+    }
+    return ok;
+}
+
+/* DOT label text, escaped for a double-quoted DOT string; free() it. */
+static char *dot_label_dup(const char *label) {
+    size_t len = label ? strlen(label) : 0;
+    char *out = (char *)malloc(len * 2u + 1u);
+    if (!out) {
+        return NULL;
+    }
+    char *w = out;
+    for (size_t i = 0; i < len; ++i) {
+        unsigned char c = (unsigned char)label[i];
+        if (c == '"' || c == '\\') {
+            *w++ = '\\';
+            *w++ = (char)c;
+        } else if (c == '\n' || c == '\r') {
+            *w++ = '\\';
+            *w++ = 'n';
+        } else if (c == '\t') {
+            *w++ = '\\';
+            *w++ = 't';
+        } else if (isprint(c)) {
+            *w++ = (char)c;
+        } else {
+            *w++ = '?';
+        }
+    }
+    *w = '\0';
+    return out;
+}
+
+/* Fill color of a DOT node, by kind. */
+static const char *behavior_graph_dot_fillcolor(const behavior_graph_report_t *r,
+                                                const nmo_cli_graph_node_t *node)
+{
+    if (!node->kind) {
+        return "white";
+    }
+    if (strcmp(node->kind, "behavior") == 0) {
+        nmo_object_t *bobj = nmo_object_repository_find_by_id(r->repo, node->id);
+        if (!bobj || !bobj->state) {
+            return "lightyellow";
+        }
+        const nmo_behavior_state_t *bst = (const nmo_behavior_state_t *)bobj->state;
+        if (bst->flags & CKBEHAVIOR_SCRIPT)
+            return "lightgreen";
+        if (bst->flags & CKBEHAVIOR_BUILDINGBLOCK)
+            return "lightblue";
+        return "lightyellow";
+    }
+    if (strcmp(node->kind, "parameter") == 0) {
+        return "lemonchiffon";
+    }
+    if (strcmp(node->kind, "operation") == 0) {
+        return "lightsalmon";
+    }
+    if (strcmp(node->kind, "io") == 0) {
+        return "lightgray";
+    }
+    return "white";
+}
+
+static bool behavior_graph_add_dot_node(nmo_cli_record_t *rec,
+                                        const behavior_graph_report_t *r,
+                                        const nmo_interface_data_t *idata,
+                                        const nmo_cli_graph_node_t *node)
+{
+    const char *label = (node->name && node->name[0]) ? node->name :
+        (node->class_name && node->class_name[0]) ? node->class_name :
+        (node->kind ? node->kind : "node");
+
+    /* Resolve operation type for operation nodes */
+    const char *op_type = graph_node_operation_type(r, node);
+    if (op_type) {
+        label = op_type;
+    }
+
+    char *escaped = dot_label_dup(label);
+    bool ok = escaped != NULL &&
+              nmo_cli_record_raw_fmt(rec, "  n%u [label=\"%s", node->id, escaped);
+    free(escaped);
+
+    /* Override color for script root from interface data */
+    if (idata && idata->script.color != 0 && idata->script.behavior_id == node->id) {
+        const uint32_t color = idata->script.color;
+        ok = ok && nmo_cli_record_raw_fmt(rec, "\", fillcolor=\"#%02X%02X%02X\"",
+                                          (unsigned)((color >> 16) & 0xFFu),
+                                          (unsigned)((color >> 8) & 0xFFu),
+                                          (unsigned)(color & 0xFFu));
+    } else {
+        ok = ok && nmo_cli_record_raw_fmt(rec, "\", fillcolor=\"%s\"",
+                                          behavior_graph_dot_fillcolor(r, node));
+    }
+
+    /* Position from interface data */
+    float px, py;
+    bool has_pos = false;
+    if (node->kind && strcmp(node->kind, "operation") == 0)
+        has_pos = find_operation_position(idata, node->id, &px, &py);
+    else
+        has_pos = find_interface_position(idata, node->id, &px, &py);
+    if (has_pos) {
+        ok = ok && nmo_cli_record_raw_fmt(rec, ", pos=\"%.0f,%.0f!\"", px, -py);
+    }
+    return ok && nmo_cli_record_raw(rec, "];\n");
+}
+
+static bool behavior_graph_add_dot_edge(nmo_cli_record_t *rec,
+                                        const behavior_graph_report_t *r,
+                                        const nmo_interface_data_t *idata,
+                                        const nmo_cli_graph_edge_t *edge)
+{
+    char *owned_label = NULL;
+    const char *dot_edge_label;
+    if (edge->kind && strcmp(edge->kind, "behavior_link") == 0) {
+        owned_label = nmo_tool_strdup_fmt("%s->%s delay=%d/%d",
+                                          resolve_name(r->repo, edge->in_io_id),
+                                          resolve_name(r->repo, edge->out_io_id),
+                                          edge->activation_delay,
+                                          edge->initial_activation_delay);
+        dot_edge_label = owned_label ? owned_label : "";
+    } else if (graph_edge_is_parameter_kind(edge->kind)) {
+        nmo_object_t *pobj = nmo_object_repository_find_by_id(
+            r->repo, graph_edge_text_parameter_id(edge));
+        dot_edge_label = resolve_type(r->c->registry, get_param_type_guid(pobj));
+    } else {
+        dot_edge_label = edge->kind ? edge->kind : "link";
+    }
+
+    const nmo_interface_link_t *ilink = find_interface_link(idata, edge->link_id);
+    char *escaped = dot_label_dup(dot_edge_label);
+    free(owned_label);
+    bool ok = escaped != NULL &&
+              nmo_cli_record_raw_fmt(rec, "  n%u -> n%u [label=\"%s\"%s];\n",
+                                     edge->from_id, edge->to_id, escaped,
+                                     (ilink && ilink->highlight) ? ", style=bold, color=red" : "");
+    free(escaped);
+    return ok;
+}
+
+/* Text: "DOT Graph", the emitted nodes and edges as a Graphviz digraph. */
+static bool behavior_graph_add_dot(nmo_cli_record_t *rec, const behavior_graph_report_t *r)
+{
+    /* Look up interface data for the root behavior */
+    const nmo_behavior_state_t *root_bs = get_behavior_state_for_id(r->repo, r->behavior_id);
+    const nmo_interface_data_t *idata = root_bs ? root_bs->interface_data : NULL;
+
+    bool ok = nmo_cli_record_heading(rec, "DOT Graph") &&
+              nmo_cli_record_raw(rec, "\ndigraph behavior_graph {\n");
+    if (idata) {
+        ok = ok && nmo_cli_record_raw(rec, "  graph [layout=neato, overlap=false];\n");
+    }
+    ok = ok && nmo_cli_record_raw(rec, "  node [shape=box, fontname=\"Courier\", style=filled];\n");
+    for (size_t i = 0; ok && i < r->emit_node_count; ++i) {
+        ok = behavior_graph_add_dot_node(rec, r, idata, &r->graph->nodes[i]);
+    }
+    for (size_t i = 0; ok && i < r->emit_edge_count; ++i) {
+        ok = behavior_graph_add_dot_edge(rec, r, idata, behavior_graph_emit_edge(r, i));
+    }
+    return ok && nmo_cli_record_raw(rec, "}\n");
+}
+
 static int behavior_graph_run(nmo_cmd_ctx_t *ctx,
                               const nmo_core_object_selector_t *selector,
                               bool emit_dot,
@@ -316,67 +924,6 @@ static int behavior_graph_run(nmo_cmd_ctx_t *ctx,
     size_t node_count = graph.node_count;
     const nmo_cli_graph_edge_t *edges = graph.edges;
     size_t edge_count = graph.edge_count;
-    size_t broken_links = graph.broken_links;
-    size_t missing_nodes = graph.missing_nodes;
-    size_t cycle_count = graph.cycle_count;
-
-    size_t node_behavior = 0;
-    size_t node_parameter = 0;
-    size_t node_operation = 0;
-    size_t node_io = 0;
-    size_t node_unknown = 0;
-
-    for (size_t i = 0; i < node_count; ++i) {
-        if (!nodes[i].kind) {
-            node_unknown++;
-        } else if (strcmp(nodes[i].kind, "behavior") == 0) {
-            node_behavior++;
-        } else if (strcmp(nodes[i].kind, "parameter") == 0) {
-            node_parameter++;
-        } else if (strcmp(nodes[i].kind, "operation") == 0) {
-            node_operation++;
-        } else if (strcmp(nodes[i].kind, "io") == 0) {
-            node_io++;
-        } else {
-            node_unknown++;
-        }
-    }
-
-    size_t edge_behavior_link = 0;
-    size_t edge_io_link = 0;
-    size_t edge_param_in = 0;
-    size_t edge_param_out = 0;
-    size_t edge_param_local = 0;
-    size_t edge_param_dest = 0;
-    size_t edge_param_source = 0;
-    size_t edge_op_in1 = 0;
-    size_t edge_op_in2 = 0;
-    size_t edge_op_out = 0;
-
-    for (size_t i = 0; i < edge_count; ++i) {
-        const char *kind = edges[i].kind ? edges[i].kind : "";
-        if (strcmp(kind, "behavior_link") == 0) {
-            edge_behavior_link++;
-        } else if (strcmp(kind, "io_link") == 0) {
-            edge_io_link++;
-        } else if (strcmp(kind, "param_in") == 0) {
-            edge_param_in++;
-        } else if (strcmp(kind, "param_out") == 0) {
-            edge_param_out++;
-        } else if (strcmp(kind, "param_local") == 0) {
-            edge_param_local++;
-        } else if (strcmp(kind, "param_dest") == 0) {
-            edge_param_dest++;
-        } else if (strcmp(kind, "param_source") == 0) {
-            edge_param_source++;
-        } else if (strcmp(kind, "op_in1") == 0) {
-            edge_op_in1++;
-        } else if (strcmp(kind, "op_in2") == 0) {
-            edge_op_in2++;
-        } else if (strcmp(kind, "op_out") == 0) {
-            edge_op_out++;
-        }
-    }
 
     size_t emit_node_count = node_count;
     bool nodes_truncated = false;
@@ -428,533 +975,30 @@ static int behavior_graph_run(nmo_cmd_ctx_t *ctx,
     }
 
     bool edges_truncated = edges_limited || nodes_truncated;
-    size_t nodes_dropped = node_count - emit_node_count;
-    size_t edges_dropped = edge_count - emit_edge_count;
-    nmo_object_repository_t *repo = nmo_tool_owner_repository(c.workspace);
-    const nmo_behavior_registry_t *bb_reg = nmo_context_get_bb_registry(c.ctx);
+    behavior_graph_report_t report = {
+        .c = &c,
+        .repo = nmo_tool_owner_repository(c.workspace),
+        .bb_reg = nmo_context_get_bb_registry(c.ctx),
+        .graph = &graph,
+        .behavior_id = behavior_id,
+        .emit_node_count = emit_node_count,
+        .emit_edge_indices = emit_edge_indices,
+        .emit_edge_count = emit_edge_count,
+        .nodes_truncated = nodes_truncated,
+        .edges_truncated = edges_truncated,
+    };
+    behavior_graph_count(&graph, &report.counts);
 
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-
-        yyjson_mut_obj_add_uint(doc, data, "behavior_id", behavior_id);
-        nmo_cmd_behavior_add_interface_diagnostics_json(doc, data, c.workspace);
-
-        const char *behavior_name = graph.behavior_name;
-        if (behavior_name && behavior_name[0]) {
-            nmo_cli_json_add_str_safe(doc, data, "behavior_name", behavior_name);
-        }
-        nmo_class_id_t behavior_class_id = graph.behavior_class_id;
-        const char *behavior_class = graph.behavior_class_name;
-        if (behavior_class_id != 0) {
-            yyjson_mut_obj_add_uint(doc, data, "behavior_class_id", (uint64_t)behavior_class_id);
-        }
-        if (behavior_class) {
-            nmo_cli_json_add_str_safe(doc, data, "behavior_class", behavior_class);
-        }
-
-        yyjson_mut_val *counts = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_uint(doc, counts, "nodes_total", (uint64_t)node_count);
-        yyjson_mut_obj_add_uint(doc, counts, "edges_total", (uint64_t)edge_count);
-        yyjson_mut_obj_add_uint(doc, counts, "broken_links", (uint64_t)broken_links);
-        yyjson_mut_obj_add_uint(doc, counts, "missing_nodes", (uint64_t)missing_nodes);
-        yyjson_mut_obj_add_uint(doc, counts, "cycles", (uint64_t)cycle_count);
-
-        yyjson_mut_val *nodes_by_kind = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_uint(doc, nodes_by_kind, "behavior", (uint64_t)node_behavior);
-        yyjson_mut_obj_add_uint(doc, nodes_by_kind, "parameter", (uint64_t)node_parameter);
-        yyjson_mut_obj_add_uint(doc, nodes_by_kind, "operation", (uint64_t)node_operation);
-        yyjson_mut_obj_add_uint(doc, nodes_by_kind, "io", (uint64_t)node_io);
-        yyjson_mut_obj_add_uint(doc, nodes_by_kind, "unknown", (uint64_t)node_unknown);
-        yyjson_mut_obj_add_val(doc, counts, "nodes_by_kind", nodes_by_kind);
-
-        yyjson_mut_val *edges_by_kind = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_uint(doc, edges_by_kind, "behavior_link", (uint64_t)edge_behavior_link);
-        yyjson_mut_obj_add_uint(doc, edges_by_kind, "io_link", (uint64_t)edge_io_link);
-        yyjson_mut_obj_add_uint(doc, edges_by_kind, "param_in", (uint64_t)edge_param_in);
-        yyjson_mut_obj_add_uint(doc, edges_by_kind, "param_out", (uint64_t)edge_param_out);
-        yyjson_mut_obj_add_uint(doc, edges_by_kind, "param_local", (uint64_t)edge_param_local);
-        yyjson_mut_obj_add_uint(doc, edges_by_kind, "param_dest", (uint64_t)edge_param_dest);
-        yyjson_mut_obj_add_uint(doc, edges_by_kind, "param_source", (uint64_t)edge_param_source);
-        yyjson_mut_obj_add_uint(doc, edges_by_kind, "op_in1", (uint64_t)edge_op_in1);
-        yyjson_mut_obj_add_uint(doc, edges_by_kind, "op_in2", (uint64_t)edge_op_in2);
-        yyjson_mut_obj_add_uint(doc, edges_by_kind, "op_out", (uint64_t)edge_op_out);
-        yyjson_mut_obj_add_val(doc, counts, "edges_by_kind", edges_by_kind);
-
-        yyjson_mut_obj_add_val(doc, data, "counts", counts);
-
-        yyjson_mut_val *graph_val = yyjson_mut_obj(doc);
-        yyjson_mut_val *nodes_arr = yyjson_mut_arr(doc);
-        yyjson_mut_val *edges_arr = yyjson_mut_arr(doc);
-
-        for (size_t i = 0; i < emit_node_count; ++i) {
-            yyjson_mut_val *node = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_uint(doc, node, "id", nodes[i].id);
-            if (nodes[i].kind) {
-                nmo_cli_json_add_str_safe(doc, node, "kind", nodes[i].kind);
-            }
-            if (nodes[i].name && nodes[i].name[0]) {
-                nmo_cli_json_add_str_safe(doc, node, "name", nodes[i].name);
-            }
-            char *display_name = graph_node_display_name_dup(
-                repo, c.registry, bb_reg, &nodes[i]);
-            if (display_name && display_name[0]) {
-                nmo_cli_json_add_str_safe(doc, node, "display_name", display_name);
-            }
-            free(display_name);
-            if (nodes[i].class_id != 0) {
-                yyjson_mut_obj_add_uint(doc, node, "class_id", (uint64_t)nodes[i].class_id);
-            }
-            if (nodes[i].class_name && nodes[i].class_name[0]) {
-                nmo_cli_json_add_str_safe(doc, node, "class_name", nodes[i].class_name);
-            }
-            yyjson_mut_obj_add_uint(doc, node, "depth", (uint64_t)nodes[i].depth);
-            if (nodes[i].parent_id != 0) {
-                yyjson_mut_obj_add_uint(doc, node, "parent_id", (uint64_t)nodes[i].parent_id);
-            }
-            if (nodes[i].kind && strcmp(nodes[i].kind, "behavior") == 0) {
-                const nmo_behavior_state_t *bs =
-                    get_behavior_state_for_id(repo, nodes[i].id);
-                nmo_cli_json_add_str_safe(doc, node, "behavior_type",
-                                          behavior_type_name(bs));
-                if (bs && (bs->flags & CKBEHAVIOR_BUILDINGBLOCK)) {
-                    nmo_cli_json_add_str_fmt_safe(doc, node, "bb_guid", "%08X-%08X",
-                                                  bs->block_guid.d1, bs->block_guid.d2);
-                    yyjson_mut_obj_add_uint(doc, node, "bb_version",
-                                            (uint64_t)bs->block_version);
-                    const char *proto =
-                        nmo_behavior_registry_get_name(bb_reg, bs->block_guid);
-                    if (proto && proto[0]) {
-                        nmo_cli_json_add_str_safe(doc, node,
-                                                  "bb_proto_name", proto);
-                    }
-                }
-            } else if (nodes[i].kind && strcmp(nodes[i].kind, "operation") == 0) {
-                const nmo_parameteroperation_state_t *op_state =
-                    get_operation_state_for_id(repo, nodes[i].id);
-                if (op_state) {
-                    const nmo_guid_t op_guid = op_state->operation_guid;
-                    nmo_cli_json_add_str_fmt_safe(doc, node, "operation_guid",
-                                                  "%08X-%08X", op_guid.d1, op_guid.d2);
-                    const char *op_name = nmo_type_registry_guid_to_name(
-                        c.registry, op_guid);
-                    if (op_name && op_name[0]) {
-                        nmo_cli_json_add_str_safe(doc, node, "operation_name", op_name);
-                    } else {
-                        nmo_cli_json_add_str_fmt_safe(doc, node, "operation_name",
-                                                      "%08X-%08X", op_guid.d1, op_guid.d2);
-                    }
-                    yyjson_mut_obj_add_uint(doc, node, "in1_id",
-                                            op_state->has_in1 ? nmo_parameteroperation_in1_id(op_state) : 0);
-                    yyjson_mut_obj_add_uint(doc, node, "in2_id",
-                                            op_state->has_in2 ? nmo_parameteroperation_in2_id(op_state) : 0);
-                    yyjson_mut_obj_add_uint(doc, node, "out_id",
-                                            op_state->has_out ? nmo_parameteroperation_out_id(op_state) : 0);
-                }
-            }
-            yyjson_mut_arr_add_val(nodes_arr, node);
-        }
-
-        for (size_t i = 0; i < emit_edge_count; ++i) {
-            size_t edge_index = emit_edge_indices ? emit_edge_indices[i] : i;
-            const nmo_cli_graph_edge_t edge_ref = edges[edge_index];
-            yyjson_mut_val *edge = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_uint(doc, edge, "from", edge_ref.from_id);
-            yyjson_mut_obj_add_uint(doc, edge, "to", edge_ref.to_id);
-            const nmo_cli_graph_node_t *from_node =
-                find_graph_node(nodes, node_count, edge_ref.from_id);
-            const nmo_cli_graph_node_t *to_node =
-                find_graph_node(nodes, node_count, edge_ref.to_id);
-            char *from_name = graph_node_display_name_dup(
-                repo, c.registry, bb_reg, from_node);
-            char *to_name = graph_node_display_name_dup(
-                repo, c.registry, bb_reg, to_node);
-            if (from_name && from_name[0]) {
-                nmo_cli_json_add_str_safe(doc, edge, "from_name", from_name);
-            }
-            if (to_name && to_name[0]) {
-                nmo_cli_json_add_str_safe(doc, edge, "to_name", to_name);
-            }
-            if (edge_ref.kind) {
-                nmo_cli_json_add_str_safe(doc, edge, "kind", edge_ref.kind);
-            }
-            if (edge_ref.field_path) {
-                nmo_cli_json_add_str_safe(doc, edge, "field_path", edge_ref.field_path);
-            }
-            if (edge_ref.link_id != 0) {
-                yyjson_mut_obj_add_uint(doc, edge, "link_id", edge_ref.link_id);
-            }
-            if (edge_ref.in_io_id != 0) {
-                yyjson_mut_obj_add_uint(doc, edge, "in_io_id", edge_ref.in_io_id);
-            }
-            if (edge_ref.out_io_id != 0) {
-                yyjson_mut_obj_add_uint(doc, edge, "out_io_id", edge_ref.out_io_id);
-            }
-            if (edge_ref.kind && strcmp(edge_ref.kind, "behavior_link") == 0) {
-                yyjson_mut_obj_add_int(doc, edge, "activation_delay", edge_ref.activation_delay);
-                yyjson_mut_obj_add_int(doc, edge, "initial_activation_delay", edge_ref.initial_activation_delay);
-                nmo_cli_json_add_str_safe(doc, edge, "source_io_name",
-                                          resolve_name(repo, edge_ref.in_io_id));
-                nmo_cli_json_add_str_safe(doc, edge, "target_io_name",
-                                          resolve_name(repo, edge_ref.out_io_id));
-                yyjson_mut_obj_add_uint(doc, edge, "source_owner_id",
-                                        edge_ref.from_id);
-                yyjson_mut_obj_add_uint(doc, edge, "target_owner_id",
-                                        edge_ref.to_id);
-                if (from_name && from_name[0]) {
-                    nmo_cli_json_add_str_safe(doc, edge, "source_owner_name",
-                                              from_name);
-                }
-                if (to_name && to_name[0]) {
-                    nmo_cli_json_add_str_safe(doc, edge, "target_owner_name",
-                                              to_name);
-                }
-            }
-            if (graph_edge_is_parameter_kind(edge_ref.kind)) {
-                nmo_object_id_t param_id = graph_edge_parameter_id(&edge_ref);
-                yyjson_mut_obj_add_uint(doc, edge, "parameter_id", param_id);
-                nmo_cli_json_add_str_safe(doc, edge, "parameter_name",
-                                          resolve_name(repo, param_id));
-                nmo_object_t *param_obj =
-                    nmo_object_repository_find_by_id(repo, param_id);
-                nmo_guid_t type_guid = get_param_type_guid(param_obj);
-                nmo_cli_json_add_str_fmt_safe(doc, edge, "type_guid", "%08X-%08X",
-                                              type_guid.d1, type_guid.d2);
-                nmo_cli_json_add_str_safe(doc, edge, "type_name",
-                                          resolve_type(c.registry, type_guid));
-            }
-            if (edge_ref.is_shared) {
-                yyjson_mut_obj_add_bool(doc, edge, "is_shared", true);
-            }
-            yyjson_mut_arr_add_val(edges_arr, edge);
-            free(from_name);
-            free(to_name);
-        }
-
-        yyjson_mut_obj_add_val(doc, graph_val, "nodes", nodes_arr);
-        yyjson_mut_obj_add_val(doc, graph_val, "edges", edges_arr);
-        if (nodes_truncated || edges_truncated) {
-            yyjson_mut_val *truncated = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_bool(doc, truncated, "nodes", nodes_truncated);
-            yyjson_mut_obj_add_bool(doc, truncated, "edges", edges_truncated);
-            yyjson_mut_obj_add_uint(doc, truncated, "nodes_emitted",
-                                    (uint64_t)emit_node_count);
-            yyjson_mut_obj_add_uint(doc, truncated, "edges_emitted",
-                                    (uint64_t)emit_edge_count);
-            yyjson_mut_obj_add_uint(doc, truncated, "nodes_dropped",
-                                    (uint64_t)nodes_dropped);
-            yyjson_mut_obj_add_uint(doc, truncated, "edges_dropped",
-                                    (uint64_t)edges_dropped);
-            yyjson_mut_obj_add_val(doc, graph_val, "truncated", truncated);
-        }
-        yyjson_mut_obj_add_val(doc, data, "graph", graph_val);
-
-        nmo_cmd_ctx_json_end(&c, doc, data, "behavior.graph");
-    } else {
-        nmo_cli_print_heading(c.out, "Behavior Graph", c.colorize);
-        fprintf(c.out, "\n");
-        const char *behavior_name = graph.behavior_name;
-        const char *behavior_class = graph.behavior_class_name;
-        fprintf(c.out, "Behavior %u: %s [%s]\n\n",
-                behavior_id,
-                (behavior_name && behavior_name[0]) ? behavior_name : "(unnamed)",
-                behavior_class ? behavior_class : "?");
-
-        fprintf(c.out, "Nodes: %zu (behavior %zu, parameter %zu, operation %zu, io %zu, unknown %zu)\n",
-                node_count, node_behavior, node_parameter, node_operation, node_io, node_unknown);
-        fprintf(c.out, "Edges: %zu (behavior links %zu, io links %zu, param %zu, op %zu)\n",
-                edge_count,
-                edge_behavior_link,
-                edge_io_link,
-                (edge_param_in + edge_param_out + edge_param_local + edge_param_dest + edge_param_source),
-                (edge_op_in1 + edge_op_in2 + edge_op_out));
-        if (nodes_truncated) {
-            fprintf(c.out, "Note: Nodes truncated to %zu (use --max-nodes 0 to disable)\n", emit_node_count);
-        }
-        if (edges_truncated) {
-            fprintf(c.out, "Note: Edges truncated to %zu (use --max-edges 0 to disable)\n", emit_edge_count);
-        }
-        if (broken_links > 0) {
-            fprintf(c.out, "Broken links: %zu\n", broken_links);
-        }
-        if (missing_nodes > 0) {
-            fprintf(c.out, "Missing objects: %zu\n", missing_nodes);
-        }
-        if (cycle_count > 0) {
-            fprintf(c.out, "Behavior cycles: %zu\n", cycle_count);
-        }
-        fprintf(c.out, "\n");
-
-        static const nmo_cli_table_col_t node_columns[] = {
-            {"ID", NMO_CLI_ALIGN_RIGHT, 6, 0},
-            {"D", NMO_CLI_ALIGN_RIGHT, 2, 0},
-            {"Kind", NMO_CLI_ALIGN_LEFT, 12, 16},
-            {"Name", NMO_CLI_ALIGN_LEFT, 22, 50},
-            {"Class", NMO_CLI_ALIGN_LEFT, 20, 40},
-        };
-        nmo_cli_table_t node_table;
-        nmo_cli_table_init(&node_table, node_columns, sizeof(node_columns) / sizeof(node_columns[0]));
-
-        for (size_t i = 0; i < emit_node_count; ++i) {
-            nmo_cli_table_begin_row(&node_table);
-            nmo_cli_table_add_cell_fmt(&node_table, "%u", nodes[i].id);
-            nmo_cli_table_add_cell_fmt(&node_table, "%u", nodes[i].depth);
-            nmo_cli_table_add_cell(&node_table, nodes[i].kind ? nodes[i].kind : "-");
-
-            /* For operation nodes, resolve the operation name */
-            const char *display_name = (nodes[i].name && nodes[i].name[0]) ? nodes[i].name : "-";
-            const char *op_type = NULL;
-            if (nodes[i].kind && strcmp(nodes[i].kind, "operation") == 0) {
-                nmo_object_t *op_obj = nmo_object_repository_find_by_id(repo, nodes[i].id);
-                if (op_obj && op_obj->state) {
-                    const nmo_parameteroperation_state_t *op_state =
-                        (const nmo_parameteroperation_state_t *)op_obj->state;
-                    op_type = nmo_type_registry_guid_to_name(
-                        c.registry, op_state->operation_guid);
-                }
-            }
-            if (op_type && strcmp(display_name, "-") != 0) {
-                nmo_cli_table_add_cell_fmt(&node_table, "%s (%s)", display_name, op_type);
-            } else {
-                nmo_cli_table_add_cell(&node_table, op_type ? op_type : display_name);
-            }
-
-            nmo_cli_table_add_cell(&node_table,
-                (nodes[i].class_name && nodes[i].class_name[0]) ? nodes[i].class_name : "-");
-        }
-
-        nmo_cli_table_print(&node_table, c.out, c.colorize);
-        nmo_cli_table_free(&node_table);
-        fprintf(c.out, "\n");
-
-        static const nmo_cli_table_col_t edge_columns[] = {
-            {"From", NMO_CLI_ALIGN_LEFT, 18, 32},
-            {"To", NMO_CLI_ALIGN_LEFT, 18, 32},
-            {"Kind", NMO_CLI_ALIGN_LEFT, 14, 18},
-            {"Field", NMO_CLI_ALIGN_LEFT, 18, 24},
-            {"Link", NMO_CLI_ALIGN_RIGHT, 6, 0},
-            {"Meta", NMO_CLI_ALIGN_LEFT, 16, 32},
-        };
-        nmo_cli_table_t edge_table;
-        nmo_cli_table_init(&edge_table, edge_columns, sizeof(edge_columns) / sizeof(edge_columns[0]));
-
-        for (size_t i = 0; i < emit_edge_count; ++i) {
-            size_t edge_index = emit_edge_indices ? emit_edge_indices[i] : i;
-            const nmo_cli_graph_edge_t edge_ref = edges[edge_index];
-            const nmo_cli_graph_node_t *from_node =
-                find_graph_node(nodes, node_count, edge_ref.from_id);
-            const nmo_cli_graph_node_t *to_node =
-                find_graph_node(nodes, node_count, edge_ref.to_id);
-
-            nmo_cli_table_begin_row(&edge_table);
-
-            if (from_node && from_node->name && from_node->name[0]) {
-                nmo_cli_table_add_cell_fmt(&edge_table, "%u:%s", from_node->id, from_node->name);
-            } else {
-                nmo_cli_table_add_cell_fmt(&edge_table, "%u", edge_ref.from_id);
-            }
-
-            if (to_node && to_node->name && to_node->name[0]) {
-                nmo_cli_table_add_cell_fmt(&edge_table, "%u:%s", to_node->id, to_node->name);
-            } else {
-                nmo_cli_table_add_cell_fmt(&edge_table, "%u", edge_ref.to_id);
-            }
-
-            nmo_cli_table_add_cell(&edge_table, edge_ref.kind ? edge_ref.kind : "-");
-            nmo_cli_table_add_cell(&edge_table, edge_ref.field_path ? edge_ref.field_path : "-");
-
-            if (edge_ref.link_id != 0) {
-                nmo_cli_table_add_cell_fmt(&edge_table, "%u", edge_ref.link_id);
-            } else {
-                nmo_cli_table_add_cell(&edge_table, "-");
-            }
-
-            /* in_io = source, out_io = target (Virtools SDK naming) */
-            if (edge_ref.kind && strcmp(edge_ref.kind, "behavior_link") == 0) {
-                const char *src_io = resolve_name(repo, edge_ref.in_io_id);
-                const char *tgt_io = resolve_name(repo, edge_ref.out_io_id);
-                if (edge_ref.activation_delay != 0 || edge_ref.initial_activation_delay != 0) {
-                    nmo_cli_table_add_cell_fmt(&edge_table, "%s->%s %d/%d",
-                                               src_io, tgt_io,
-                                               edge_ref.activation_delay,
-                                               edge_ref.initial_activation_delay);
-                } else {
-                    nmo_cli_table_add_cell_fmt(&edge_table, "%s->%s", src_io, tgt_io);
-                }
-            } else if (edge_ref.kind && strcmp(edge_ref.kind, "io_link") == 0) {
-                const char *src_io = resolve_name(repo, edge_ref.in_io_id);
-                const char *tgt_io = resolve_name(repo, edge_ref.out_io_id);
-                nmo_cli_table_add_cell_fmt(&edge_table, "%s->%s", src_io, tgt_io);
-            } else if (edge_ref.kind && (strcmp(edge_ref.kind, "param_local") == 0 ||
-                        strcmp(edge_ref.kind, "param_in") == 0 ||
-                        strcmp(edge_ref.kind, "param_out") == 0 ||
-                        strcmp(edge_ref.kind, "param_source") == 0 ||
-                        strcmp(edge_ref.kind, "param_dest") == 0 ||
-                        strcmp(edge_ref.kind, "op_in1") == 0 ||
-                        strcmp(edge_ref.kind, "op_in2") == 0 ||
-                        strcmp(edge_ref.kind, "op_out") == 0)) {
-                /* Look up the parameter node to get its type name */
-                nmo_object_id_t param_id = edge_ref.from_id;
-                if (strcmp(edge_ref.kind, "param_out") == 0 ||
-                    strcmp(edge_ref.kind, "op_out") == 0) {
-                    param_id = edge_ref.to_id;
-                }
-                nmo_object_t *param_obj = nmo_object_repository_find_by_id(repo, param_id);
-                nmo_guid_t tg = get_param_type_guid(param_obj);
-                const char *tname = resolve_type(c.registry, tg);
-                if (edge_ref.is_shared) {
-                    nmo_cli_table_add_cell_fmt(&edge_table, "%s (shared)", tname);
-                } else {
-                    nmo_cli_table_add_cell(&edge_table, tname);
-                }
-            } else {
-                nmo_cli_table_add_cell(&edge_table, "-");
-            }
-        }
-
-        nmo_cli_table_print(&edge_table, c.out, c.colorize);
-        nmo_cli_table_free(&edge_table);
-
-        if (emit_dot) {
-            fprintf(c.out, "\n");
-            nmo_cli_print_heading(c.out, "DOT Graph", c.colorize);
-            fprintf(c.out, "\n");
-            /* Look up interface data for the root behavior */
-            const nmo_interface_data_t *idata = NULL;
-            {
-                nmo_object_t *root_beh = nmo_object_repository_find_by_id(repo, behavior_id);
-                if (root_beh) {
-                    const nmo_behavior_state_t *root_bs =
-                        (const nmo_behavior_state_t *)nmo_object_get_state(root_beh);
-                    if (root_bs)
-                        idata = root_bs->interface_data;
-                }
-            }
-
-            fprintf(c.out, "digraph behavior_graph {\n");
-            if (idata)
-                fprintf(c.out, "  graph [layout=neato, overlap=false];\n");
-            fprintf(c.out, "  node [shape=box, fontname=\"Courier\", style=filled];\n");
-            for (size_t i = 0; i < emit_node_count; ++i) {
-                const char *label = (nodes[i].name && nodes[i].name[0]) ? nodes[i].name :
-                    (nodes[i].class_name && nodes[i].class_name[0]) ? nodes[i].class_name :
-                    (nodes[i].kind ? nodes[i].kind : "node");
-
-                /* Resolve operation type for operation nodes */
-                if (nodes[i].kind && strcmp(nodes[i].kind, "operation") == 0) {
-                    nmo_object_t *op_obj = nmo_object_repository_find_by_id(repo, nodes[i].id);
-                    if (op_obj && op_obj->state) {
-                        const nmo_parameteroperation_state_t *op_state =
-                            (const nmo_parameteroperation_state_t *)op_obj->state;
-                        const char *op_type = nmo_type_registry_guid_to_name(
-                            c.registry, op_state->operation_guid);
-                        if (op_type) {
-                            label = op_type;
-                        }
-                    }
-                }
-
-                /* Color by kind */
-                const char *fillcolor = "white";
-                if (nodes[i].kind) {
-                    if (strcmp(nodes[i].kind, "behavior") == 0) {
-                        nmo_object_t *bobj = nmo_object_repository_find_by_id(repo, nodes[i].id);
-                        if (bobj && bobj->state) {
-                            const nmo_behavior_state_t *bst =
-                                (const nmo_behavior_state_t *)bobj->state;
-                            if (bst->flags & CKBEHAVIOR_SCRIPT)
-                                fillcolor = "lightgreen";
-                            else if (bst->flags & CKBEHAVIOR_BUILDINGBLOCK)
-                                fillcolor = "lightblue";
-                            else
-                                fillcolor = "lightyellow";
-                        } else {
-                            fillcolor = "lightyellow";
-                        }
-                    } else if (strcmp(nodes[i].kind, "parameter") == 0) {
-                        fillcolor = "lemonchiffon";
-                    } else if (strcmp(nodes[i].kind, "operation") == 0) {
-                        fillcolor = "lightsalmon";
-                    } else if (strcmp(nodes[i].kind, "io") == 0) {
-                        fillcolor = "lightgray";
-                    }
-                }
-
-                /* Override color for script root from interface data */
-                const bool use_script_color =
-                    idata && idata->script.color != 0 && idata->script.behavior_id == nodes[i].id;
-
-                /* Position from interface data */
-                float px, py;
-                bool has_pos = false;
-                if (nodes[i].kind && strcmp(nodes[i].kind, "operation") == 0)
-                    has_pos = find_operation_position(idata, nodes[i].id, &px, &py);
-                else
-                    has_pos = find_interface_position(idata, nodes[i].id, &px, &py);
-
-                /* Write node with optional position */
-                fprintf(c.out, "  n%u [label=\"", nodes[i].id);
-                dot_write_label(c.out, label);
-                if (use_script_color) {
-                    const uint32_t color = idata->script.color;
-                    fprintf(c.out, "\", fillcolor=\"#%02X%02X%02X\"",
-                            (unsigned)((color >> 16) & 0xFFu),
-                            (unsigned)((color >> 8) & 0xFFu),
-                            (unsigned)(color & 0xFFu));
-                } else {
-                    fprintf(c.out, "\", fillcolor=\"%s\"", fillcolor);
-                }
-                if (has_pos)
-                    fprintf(c.out, ", pos=\"%.0f,%.0f!\"", px, -py);
-                fprintf(c.out, "];\n");
-            }
-            for (size_t i = 0; i < emit_edge_count; ++i) {
-                size_t edge_index = emit_edge_indices ? emit_edge_indices[i] : i;
-                const nmo_cli_graph_edge_t edge_ref = edges[edge_index];
-                char *owned_label = NULL;
-                const char *dot_edge_label;
-
-                if (edge_ref.kind && strcmp(edge_ref.kind, "behavior_link") == 0) {
-                    const char *src_io = resolve_name(repo, edge_ref.in_io_id);
-                    const char *tgt_io = resolve_name(repo, edge_ref.out_io_id);
-                    owned_label = nmo_tool_strdup_fmt("%s->%s delay=%d/%d",
-                                                      src_io, tgt_io,
-                                                      edge_ref.activation_delay,
-                                                      edge_ref.initial_activation_delay);
-                    dot_edge_label = owned_label ? owned_label : "";
-                } else if (edge_ref.kind && (strcmp(edge_ref.kind, "param_local") == 0 ||
-                            strcmp(edge_ref.kind, "param_in") == 0 ||
-                            strcmp(edge_ref.kind, "param_out") == 0 ||
-                            strcmp(edge_ref.kind, "param_source") == 0 ||
-                            strcmp(edge_ref.kind, "param_dest") == 0 ||
-                            strcmp(edge_ref.kind, "op_in1") == 0 ||
-                            strcmp(edge_ref.kind, "op_in2") == 0 ||
-                            strcmp(edge_ref.kind, "op_out") == 0)) {
-                    nmo_object_id_t pid = edge_ref.from_id;
-                    if (strcmp(edge_ref.kind, "param_out") == 0 ||
-                        strcmp(edge_ref.kind, "op_out") == 0) {
-                        pid = edge_ref.to_id;
-                    }
-                    nmo_object_t *pobj = nmo_object_repository_find_by_id(repo, pid);
-                    nmo_guid_t ptg = get_param_type_guid(pobj);
-                    dot_edge_label = resolve_type(c.registry, ptg);
-                } else {
-                    dot_edge_label = edge_ref.kind ? edge_ref.kind : "link";
-                }
-
-                const nmo_interface_link_t *ilink = find_interface_link(idata, edge_ref.link_id);
-
-                fprintf(c.out, "  n%u -> n%u [label=\"", edge_ref.from_id, edge_ref.to_id);
-                dot_write_label(c.out, dot_edge_label);
-                fprintf(c.out, "\"");
-                if (ilink && ilink->highlight)
-                    fprintf(c.out, ", style=bold, color=red");
-                fprintf(c.out, "];\n");
-                free(owned_label);
-            }
-            fprintf(c.out, "}\n");
-        }
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL &&
+              behavior_graph_add_summary(rec, &report) &&
+              behavior_graph_add_tables(rec, &report) &&
+              (!emit_dot || behavior_graph_add_dot(rec, &report));
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        rec = NULL;
     }
+    exit_code = nmo_cmd_ctx_emit_record(&c, rec, "behavior.graph", 0, c.colorize);
 
 cleanup:
     free(emit_edge_indices);
