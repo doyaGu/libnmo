@@ -52,6 +52,70 @@ static int behavior_link_exit_code(nmo_status_t status)
         : NMO_CLI_EXIT_INTERNAL_ERROR;
 }
 
+/* JSON splice for the edit report; `edit_report` NULL when it was not set up. */
+typedef struct behavior_link_report {
+    const nmo_edit_report_t *edit_report;
+    bool dry_run;
+} behavior_link_report_t;
+
+static bool behavior_link_report_json(yyjson_mut_doc *doc,
+                                      yyjson_mut_val *obj,
+                                      const void *data)
+{
+    const behavior_link_report_t *report = (const behavior_link_report_t *)data;
+    nmo_cli_edit_report_add_schema_v2_json(doc, obj, report->edit_report,
+                                           report->dry_run);
+    return true;
+}
+
+/*
+ * Start a link report: the edit report in JSON, then "[dry-run] " in text.
+ * `report` is borrowed by the record and must outlive it.
+ */
+static nmo_cli_record_t *behavior_link_report_new(nmo_cmd_ctx_t *c,
+                                                  behavior_link_report_t *report,
+                                                  nmo_edit_report_t *edit_report,
+                                                  bool edit_report_ready,
+                                                  bool dry_run,
+                                                  const char *output_path)
+{
+    if (c->is_json && edit_report_ready && !dry_run && output_path != NULL) {
+        (void)nmo_edit_report_set_output_path(edit_report, output_path);
+    }
+    report->edit_report = edit_report_ready ? edit_report : NULL;
+    report->dry_run = dry_run;
+
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL && nmo_cli_record_json(rec, behavior_link_report_json, report);
+    if (ok && dry_run) {
+        ok = nmo_cli_record_raw(rec, "[dry-run] ");
+    }
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        return NULL;
+    }
+    return rec;
+}
+
+/* Finish with "output" / "Saved to:" and emit; frees `rec`. */
+static int behavior_link_report_emit(nmo_cmd_ctx_t *c,
+                                     nmo_cli_record_t *rec,
+                                     bool ok,
+                                     bool dry_run,
+                                     const char *output_path,
+                                     const char *cmd_name)
+{
+    if (!dry_run && output_path != NULL) {
+        ok = ok && nmo_cli_record_str(rec, "output", NULL, output_path) &&
+             nmo_cli_record_raw_fmt(rec, "Saved to: %s\n", output_path);
+    }
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        rec = NULL;
+    }
+    return nmo_cmd_ctx_emit_record(c, rec, cmd_name, 0, false);
+}
+
 static int behavior_add_link_mutate(
     nmo_cmd_ctx_t *c,
     bool dry_run,
@@ -120,45 +184,26 @@ static int behavior_add_link_report(
     if (args == NULL) {
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
-    if (c->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
-        if (doc == NULL) {
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
-        }
-
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        if (args->edit_report_ready && !dry_run && output_path != NULL) {
-            (void)nmo_edit_report_set_output_path(&args->edit_report, output_path);
-        }
-        nmo_cli_edit_report_add_schema_v2_json(
-            doc, data,
-            args->edit_report_ready ? &args->edit_report : NULL,
-            dry_run);
-        nmo_cli_json_add_uint_safe(doc, data, "link_id", (uint64_t)args->link_id);
-        nmo_cli_json_add_uint_safe(doc, data, "parent_id", (uint64_t)args->parent_id);
-        nmo_cli_json_add_uint_safe(doc, data, "from_id", (uint64_t)args->from_id);
-        nmo_cli_json_add_uint_safe(doc, data, "to_id", (uint64_t)args->to_id);
-        nmo_cli_json_add_uint_safe(doc, data, "delay", (uint64_t)args->delay);
-        if (!dry_run && output_path != NULL) {
-            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-        }
-
-        nmo_cmd_ctx_json_end(c, doc, data, "behavior.add-link");
-    } else {
-        if (dry_run) {
-            fprintf(c->out, "[dry-run] ");
-        }
-        fprintf(c->out, "Created link #%u: #%u -> #%u (delay: %u) in behavior #%u\n",
-                args->link_id, args->from_id, args->to_id, args->delay, args->parent_id);
-        if (!dry_run && output_path != NULL) {
-            fprintf(c->out, "Saved to: %s\n", output_path);
-        }
-    }
+    behavior_link_report_t report;
+    nmo_cli_record_t *rec = behavior_link_report_new(
+        c, &report, &args->edit_report, args->edit_report_ready, dry_run, output_path);
+    bool ok = rec != NULL &&
+              nmo_cli_record_uint(rec, "link_id", NULL, (uint64_t)args->link_id) &&
+              nmo_cli_record_uint(rec, "parent_id", NULL, (uint64_t)args->parent_id) &&
+              nmo_cli_record_uint(rec, "from_id", NULL, (uint64_t)args->from_id) &&
+              nmo_cli_record_uint(rec, "to_id", NULL, (uint64_t)args->to_id) &&
+              nmo_cli_record_uint(rec, "delay", NULL, (uint64_t)args->delay) &&
+              nmo_cli_record_raw_fmt(rec,
+                                     "Created link #%u: #%u -> #%u (delay: %u) in behavior #%u\n",
+                                     args->link_id, args->from_id, args->to_id,
+                                     args->delay, args->parent_id);
+    int rc = behavior_link_report_emit(c, rec, ok, dry_run, output_path,
+                                       "behavior.add-link");
     if (args->edit_report_ready) {
         nmo_edit_report_dispose(&args->edit_report);
         args->edit_report_ready = false;
     }
-    return NMO_CLI_EXIT_SUCCESS;
+    return rc;
 }
 
 static int behavior_remove_link_mutate(
@@ -231,44 +276,24 @@ static int behavior_remove_link_report(
     if (args == NULL) {
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
-    if (c->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
-        if (doc == NULL) {
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
-        }
-
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        if (args->edit_report_ready && !dry_run && output_path != NULL) {
-            (void)nmo_edit_report_set_output_path(&args->edit_report, output_path);
-        }
-        nmo_cli_edit_report_add_schema_v2_json(
-            doc, data,
-            args->edit_report_ready ? &args->edit_report : NULL,
-            dry_run);
-        nmo_cli_json_add_uint_safe(doc, data, "link_id", (uint64_t)args->link_id);
-        nmo_cli_json_add_uint_safe(doc, data, "parent_id", (uint64_t)args->parent_id);
-        nmo_cli_json_add_uint_safe(doc, data, "from_id", (uint64_t)args->from_id);
-        nmo_cli_json_add_uint_safe(doc, data, "to_id", (uint64_t)args->to_id);
-        if (!dry_run && output_path != NULL) {
-            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-        }
-
-        nmo_cmd_ctx_json_end(c, doc, data, "behavior.remove-link");
-    } else {
-        if (dry_run) {
-            fprintf(c->out, "[dry-run] ");
-        }
-        fprintf(c->out, "Removed link #%u (#%u -> #%u) from behavior #%u\n",
-                args->link_id, args->from_id, args->to_id, args->parent_id);
-        if (!dry_run && output_path != NULL) {
-            fprintf(c->out, "Saved to: %s\n", output_path);
-        }
-    }
+    behavior_link_report_t report;
+    nmo_cli_record_t *rec = behavior_link_report_new(
+        c, &report, &args->edit_report, args->edit_report_ready, dry_run, output_path);
+    bool ok = rec != NULL &&
+              nmo_cli_record_uint(rec, "link_id", NULL, (uint64_t)args->link_id) &&
+              nmo_cli_record_uint(rec, "parent_id", NULL, (uint64_t)args->parent_id) &&
+              nmo_cli_record_uint(rec, "from_id", NULL, (uint64_t)args->from_id) &&
+              nmo_cli_record_uint(rec, "to_id", NULL, (uint64_t)args->to_id) &&
+              nmo_cli_record_raw_fmt(rec, "Removed link #%u (#%u -> #%u) from behavior #%u\n",
+                                     args->link_id, args->from_id, args->to_id,
+                                     args->parent_id);
+    int rc = behavior_link_report_emit(c, rec, ok, dry_run, output_path,
+                                       "behavior.remove-link");
     if (args->edit_report_ready) {
         nmo_edit_report_dispose(&args->edit_report);
         args->edit_report_ready = false;
     }
-    return NMO_CLI_EXIT_SUCCESS;
+    return rc;
 }
 
 /* ============================================================================
