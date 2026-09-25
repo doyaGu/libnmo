@@ -8,6 +8,7 @@
 #include "../nmo_cmd_core.h"
 #include "../nmo_cli_write.h"
 #include "../nmo_cli_output.h"
+#include "../nmo_cli_record.h"
 #include "../nmo_opt.h"
 #include "../nmo_tool_common.h"
 #include "nmo.h"
@@ -157,54 +158,56 @@ static const char *convert_save_durability_name(nmo_save_durability_t durability
     }
 }
 
-static void convert_add_save_phase_stats_json(yyjson_mut_doc *doc,
-                                              yyjson_mut_val *data,
-                                              const nmo_save_perf_stats_t *stats) {
-    if (doc == NULL || data == NULL || stats == NULL) {
-        return;
-    }
+static void convert_add_save_phase_stats(nmo_cli_record_t *rec,
+                                         const nmo_save_perf_stats_t *stats)
+{
+    nmo_cli_record_t *phase_stats = nmo_cli_record_object(rec, "save_phase_stats");
+    nmo_cli_record_uint(phase_stats, "planned_chunk_bytes", NULL, (uint64_t)stats->planned_chunk_bytes);
+    nmo_cli_record_uint(phase_stats, "header1_unpacked_bytes", NULL, (uint64_t)stats->header1_unpacked_bytes);
+    nmo_cli_record_uint(phase_stats, "data_unpacked_bytes", NULL, (uint64_t)stats->data_unpacked_bytes);
+    nmo_cli_record_uint(phase_stats, "header1_packed_bytes", NULL, (uint64_t)stats->header1_packed_bytes);
+    nmo_cli_record_uint(phase_stats, "data_packed_bytes", NULL, (uint64_t)stats->data_packed_bytes);
 
-    yyjson_mut_val *phase_stats = yyjson_mut_obj(doc);
-    yyjson_mut_obj_add_uint(doc, phase_stats, "planned_chunk_bytes", (uint64_t)stats->planned_chunk_bytes);
-    yyjson_mut_obj_add_uint(doc, phase_stats, "header1_unpacked_bytes", (uint64_t)stats->header1_unpacked_bytes);
-    yyjson_mut_obj_add_uint(doc, phase_stats, "data_unpacked_bytes", (uint64_t)stats->data_unpacked_bytes);
-    yyjson_mut_obj_add_uint(doc, phase_stats, "header1_packed_bytes", (uint64_t)stats->header1_packed_bytes);
-    yyjson_mut_obj_add_uint(doc, phase_stats, "data_packed_bytes", (uint64_t)stats->data_packed_bytes);
-
-    yyjson_mut_val *phases = yyjson_mut_obj(doc);
+    nmo_cli_record_t *phases = nmo_cli_record_object(phase_stats, "phases");
+    nmo_cli_record_raw(rec, "\nSave Phase Timings:\n");
+    nmo_cli_record_raw_fmt(rec, "  %-28s %8s %12s\n", "phase", "calls", "ms");
     for (int i = 0; i < NMO_SAVE_PERF_PHASE_COUNT; i++) {
         const nmo_phase_time_t *phase = &stats->phases[i];
-        yyjson_mut_val *entry = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_uint(doc, entry, "calls", phase->calls);
-        yyjson_mut_obj_add_real(doc, entry, "milliseconds", phase->milliseconds);
-        yyjson_mut_obj_add_val(doc, phases, nmo_save_perf_phase_name((nmo_save_perf_phase_t)i), entry);
+        const char *phase_name = nmo_save_perf_phase_name((nmo_save_perf_phase_t)i);
+        nmo_cli_record_t *entry = nmo_cli_record_object(phases, phase_name);
+        nmo_cli_record_uint(entry, "calls", NULL, phase->calls);
+        nmo_cli_record_real(entry, "milliseconds", NULL, phase->milliseconds, NULL);
+        nmo_cli_record_raw_fmt(rec, "  %-28s %8llu %12.3f\n",
+                               phase_name,
+                               (unsigned long long)phase->calls,
+                               phase->milliseconds);
     }
-    yyjson_mut_obj_add_val(doc, phase_stats, "phases", phases);
-    yyjson_mut_obj_add_val(doc, data, "save_phase_stats", phase_stats);
+
+    nmo_cli_record_raw(rec, "\nSave Section Bytes:\n");
+    nmo_cli_record_raw_fmt(rec, "  Header1: packed=%zu unpacked=%zu\n",
+                           stats->header1_packed_bytes,
+                           stats->header1_unpacked_bytes);
+    nmo_cli_record_raw_fmt(rec, "  Data:    packed=%zu unpacked=%zu\n",
+                           stats->data_packed_bytes,
+                           stats->data_unpacked_bytes);
 }
 
-static void convert_print_save_phase_stats(FILE *out, const nmo_save_perf_stats_t *stats) {
-    if (out == NULL || stats == NULL) {
-        return;
-    }
+static void convert_add_saved_text(nmo_cli_record_t *rec, const char *output_path,
+                                   nmo_save_durability_t durability)
+{
+    nmo_cli_record_raw_fmt(rec, "Saved to %s\n", output_path);
+    nmo_cli_record_raw_fmt(rec, "Durability: %s\n", convert_save_durability_name(durability));
+}
 
-    fprintf(out, "\nSave Phase Timings:\n");
-    fprintf(out, "  %-28s %8s %12s\n", "phase", "calls", "ms");
-    for (int i = 0; i < NMO_SAVE_PERF_PHASE_COUNT; i++) {
-        const nmo_phase_time_t *phase = &stats->phases[i];
-        fprintf(out, "  %-28s %8llu %12.3f\n",
-                nmo_save_perf_phase_name((nmo_save_perf_phase_t)i),
-                (unsigned long long)phase->calls,
-                phase->milliseconds);
+static void convert_add_filters(nmo_cli_record_t *rec, const char *class_name,
+                                const char *name_pattern)
+{
+    if (class_name) {
+        nmo_cli_record_str(rec, "filter_class", NULL, class_name);
     }
-
-    fprintf(out, "\nSave Section Bytes:\n");
-    fprintf(out, "  Header1: packed=%zu unpacked=%zu\n",
-            stats->header1_packed_bytes,
-            stats->header1_unpacked_bytes);
-    fprintf(out, "  Data:    packed=%zu unpacked=%zu\n",
-            stats->data_packed_bytes,
-            stats->data_unpacked_bytes);
+    if (name_pattern) {
+        nmo_cli_record_str(rec, "filter_name", NULL, name_pattern);
+    }
 }
 
 /* ============================================================================
@@ -289,34 +292,31 @@ int nmo_cmd_convert_copy(int argc, char **argv, const nmo_cli_global_opts_t *glo
     }
 
     /* Output results */
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        if (!doc) {
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-        }
-
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        nmo_cli_json_add_str_safe(doc, data, "input_file", c.file_path);
-        nmo_cli_json_add_str_safe(doc, data, "output_file", output_path);
-        nmo_cli_json_add_uint_safe(doc, data, "flags", save_opts.flags);
-        nmo_cli_json_add_int_safe(doc, data, "compression_level", save_opts.compression_level);
-        nmo_cli_json_add_str_safe(doc, data, "save_durability",
-                                  convert_save_durability_name(save_opts.durability));
-        convert_add_save_phase_stats_json(doc, data, &save_phase_stats);
-
-        nmo_cmd_ctx_json_end(&c, doc, data, "convert.copy");
-    } else {
-        fprintf(c.out, "Saved to %s\n", output_path);
-        fprintf(c.out, "Durability: %s\n", convert_save_durability_name(save_opts.durability));
-        convert_print_save_phase_stats(c.out, &save_phase_stats);
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    if (rec) {
+        nmo_cli_record_str(rec, "input_file", NULL, c.file_path);
+        nmo_cli_record_str(rec, "output_file", NULL, output_path);
+        nmo_cli_record_uint(rec, "flags", NULL, save_opts.flags);
+        nmo_cli_record_int(rec, "compression_level", NULL, save_opts.compression_level);
+        nmo_cli_record_str(rec, "save_durability", NULL,
+                           convert_save_durability_name(save_opts.durability));
+        convert_add_saved_text(rec, output_path, save_opts.durability);
+        convert_add_save_phase_stats(rec, &save_phase_stats);
     }
 
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    return nmo_cmd_ctx_done(&c, nmo_cmd_ctx_emit_record(&c, rec, "convert.copy", 0, false));
 }
 
 /* ============================================================================
  * nmo convert version - Show/modify file version metadata
  * ============================================================================ */
+
+static void convert_add_version_field(nmo_cli_record_t *rec, const char *key,
+                                      const char *label, uint32_t value)
+{
+    nmo_cli_record_uint(rec, key, NULL, value);
+    nmo_cli_record_raw_fmt(rec, "%-17s%u\n", label, value);
+}
 
 int nmo_cmd_convert_version(int argc, char **argv, const nmo_cli_global_opts_t *global)
 {
@@ -342,33 +342,18 @@ int nmo_cmd_convert_version(int argc, char **argv, const nmo_cli_global_opts_t *
 
     /* If no output, just show version info */
     if (!output_path) {
-        if (c.is_json) {
-            yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-            if (!doc) {
-                return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-            }
-
-            yyjson_mut_val *data = yyjson_mut_obj(doc);
-            nmo_cli_json_add_uint_safe(doc, data, "file_version", info.file_version);
-            nmo_cli_json_add_uint_safe(doc, data, "file_version2", info.file_version2);
-            nmo_cli_json_add_uint_safe(doc, data, "ck_version", info.ck_version);
-            nmo_cli_json_add_uint_safe(doc, data, "product_version", info.product_version);
-            nmo_cli_json_add_uint_safe(doc, data, "product_build", info.product_build);
-            nmo_cli_json_add_uint_safe(doc, data, "object_count", (uint64_t)info.object_count);
-            nmo_cli_json_add_uint_safe(doc, data, "manager_count", (uint64_t)info.manager_count);
-
-            nmo_cmd_ctx_json_end(&c, doc, data, "convert.version");
-        } else {
-            fprintf(c.out, "File version:    %u\n", info.file_version);
-            fprintf(c.out, "File version2:   %u\n", info.file_version2);
-            fprintf(c.out, "CK version:      %u\n", info.ck_version);
-            fprintf(c.out, "Product version: %u\n", info.product_version);
-            fprintf(c.out, "Product build:   %u\n", info.product_build);
-            fprintf(c.out, "Object count:    %u\n", info.object_count);
-            fprintf(c.out, "Manager count:   %u\n", info.manager_count);
+        nmo_cli_record_t *rec = nmo_cli_record_new();
+        if (rec) {
+            convert_add_version_field(rec, "file_version", "File version:", info.file_version);
+            convert_add_version_field(rec, "file_version2", "File version2:", info.file_version2);
+            convert_add_version_field(rec, "ck_version", "CK version:", info.ck_version);
+            convert_add_version_field(rec, "product_version", "Product version:", info.product_version);
+            convert_add_version_field(rec, "product_build", "Product build:", info.product_build);
+            convert_add_version_field(rec, "object_count", "Object count:", info.object_count);
+            convert_add_version_field(rec, "manager_count", "Manager count:", info.manager_count);
         }
 
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+        return nmo_cmd_ctx_done(&c, nmo_cmd_ctx_emit_record(&c, rec, "convert.version", 0, false));
     }
 
     /* If output specified, save the file (equivalent to copy) */
@@ -381,30 +366,77 @@ int nmo_cmd_convert_version(int argc, char **argv, const nmo_cli_global_opts_t *
         return nmo_cmd_ctx_done(&c, result);
     }
 
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        if (!doc) {
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-        }
-
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        nmo_cli_json_add_str_safe(doc, data, "input_file", c.file_path);
-        nmo_cli_json_add_str_safe(doc, data, "output_file", output_path);
-        nmo_cli_json_add_str_safe(doc, data, "save_durability",
-                                  convert_save_durability_name(save_opts.durability));
-
-        nmo_cmd_ctx_json_end(&c, doc, data, "convert.version");
-    } else {
-        fprintf(c.out, "Saved to %s\n", output_path);
-        fprintf(c.out, "Durability: %s\n", convert_save_durability_name(save_opts.durability));
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    if (rec) {
+        nmo_cli_record_str(rec, "input_file", NULL, c.file_path);
+        nmo_cli_record_str(rec, "output_file", NULL, output_path);
+        nmo_cli_record_str(rec, "save_durability", NULL,
+                           convert_save_durability_name(save_opts.durability));
+        convert_add_saved_text(rec, output_path, save_opts.durability);
     }
 
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    return nmo_cmd_ctx_done(&c, nmo_cmd_ctx_emit_record(&c, rec, "convert.version", 0, false));
 }
 
 /* ============================================================================
  * nmo convert strip - Remove objects by class/name pattern
  * ============================================================================ */
+
+static const nmo_cli_table_col_t convert_strip_columns[] = {
+    {"ID", NMO_CLI_ALIGN_RIGHT, 5, 0},
+    {"CLASS", NMO_CLI_ALIGN_LEFT, 20, 30},
+    {"SIZE", NMO_CLI_ALIGN_RIGHT, 10, 0},
+    {"NAME", NMO_CLI_ALIGN_LEFT, 20, 50},
+};
+
+/*
+ * Add `objects` as the `key` array, shown as a table in text when non-empty.
+ * Returns the summed chunk data size.
+ */
+static uint64_t convert_strip_add_objects(const nmo_cmd_ctx_t *c,
+                                          nmo_cli_record_t *rec,
+                                          const char *key,
+                                          nmo_object_t *const *objects,
+                                          size_t count,
+                                          bool with_class_id)
+{
+    nmo_cli_record_array_t *arr = nmo_cli_record_array(rec, key, NULL);
+    if (arr && count > 0) {
+        nmo_cli_record_array_set_table(
+            arr, convert_strip_columns,
+            sizeof(convert_strip_columns) / sizeof(convert_strip_columns[0]));
+    }
+
+    uint64_t total_size = 0;
+    for (size_t i = 0; i < count; ++i) {
+        nmo_object_t *obj = objects[i];
+        nmo_class_id_t cid = nmo_object_get_class_id(obj);
+        const char *cn = nmo_cli_class_name_from_id(c->ctx, cid);
+        nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
+        uint64_t sz = chunk ? (uint64_t)nmo_chunk_get_data_size(chunk) : 0;
+        total_size += sz;
+
+        nmo_cli_record_t *item = nmo_cli_record_new();
+        if (!item) {
+            continue;
+        }
+        nmo_cli_record_uint(item, "id", "ID", (uint64_t)nmo_object_get_id(obj));
+        if (with_class_id) {
+            nmo_cli_record_uint(item, "class_id", NULL, (uint64_t)cid);
+        }
+        if (cn) {
+            nmo_cli_record_str(item, "class_name", "CLASS", cn);
+        } else {
+            nmo_cli_record_text(item, "CLASS", "-");
+        }
+        nmo_cli_record_uint(item, "size", "SIZE", sz);
+        nmo_cli_record_str_opt(item, "name", "NAME", nmo_object_get_name(obj), "-");
+        if (!nmo_cli_record_array_add(arr, item)) {
+            nmo_cli_record_free(item);
+        }
+    }
+    return total_size;
+}
 
 int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *global)
 {
@@ -528,162 +560,44 @@ int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *gl
             }
         }
 
-        if (c.is_json) {
-            yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-            if (!doc) {
-                free(cascade_objects);
-                nmo_arena_destroy(preview_arena);
-                free(ids_to_remove);
-                free(matched_objects);
-                return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-            }
-
-            yyjson_mut_val *data = yyjson_mut_obj(doc);
-            nmo_cli_json_add_bool_safe(doc, data, "dry_run", true);
-            nmo_cli_json_add_uint_safe(doc, data, "match_count", (uint64_t)remove_count);
-
-            yyjson_mut_val *matches = yyjson_mut_arr(doc);
-            uint64_t total_match_size = 0;
-            for (size_t i = 0; i < remove_count; ++i) {
-                nmo_object_t *obj = matched_objects[i];
-                yyjson_mut_val *item = yyjson_mut_obj(doc);
-                nmo_cli_json_add_uint_safe(doc, item, "id",
-                                           (uint64_t)nmo_object_get_id(obj));
-                nmo_class_id_t cid = nmo_object_get_class_id(obj);
-                nmo_cli_json_add_uint_safe(doc, item, "class_id", (uint64_t)cid);
-                const char *cn = nmo_cli_class_name_from_id(c.ctx, cid);
-                if (cn) {
-                    nmo_cli_json_add_str_safe(doc, item, "class_name", cn);
-                }
-                nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
-                uint64_t sz = chunk ? (uint64_t)nmo_chunk_get_data_size(chunk) : 0;
-                nmo_cli_json_add_uint_safe(doc, item, "size", sz);
-                total_match_size += sz;
-                const char *name = nmo_object_get_name(obj);
-                if (name && name[0]) {
-                    nmo_cli_json_add_str_safe(doc, item, "name", name);
-                }
-                yyjson_mut_arr_add_val(matches, item);
-            }
-            yyjson_mut_obj_add_val(doc, data, "matches", matches);
-            nmo_cli_json_add_uint_safe(doc, data, "total_match_size", total_match_size);
-
-            /* Cascade objects */
-            nmo_cli_json_add_uint_safe(doc, data, "cascade_count", (uint64_t)cascade_count);
-            yyjson_mut_val *cascade_arr = yyjson_mut_arr(doc);
-            uint64_t cascade_size = 0;
-            for (size_t i = 0; i < cascade_count; ++i) {
-                nmo_object_t *obj = cascade_objects[i];
-                yyjson_mut_val *item = yyjson_mut_obj(doc);
-                nmo_cli_json_add_uint_safe(doc, item, "id",
-                                           (uint64_t)nmo_object_get_id(obj));
-                nmo_class_id_t cid = nmo_object_get_class_id(obj);
-                const char *cn = nmo_cli_class_name_from_id(c.ctx, cid);
-                if (cn) {
-                    nmo_cli_json_add_str_safe(doc, item, "class_name", cn);
-                }
-                nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
-                uint64_t sz = chunk ? (uint64_t)nmo_chunk_get_data_size(chunk) : 0;
-                nmo_cli_json_add_uint_safe(doc, item, "size", sz);
-                cascade_size += sz;
-                const char *name = nmo_object_get_name(obj);
-                if (name && name[0]) {
-                    nmo_cli_json_add_str_safe(doc, item, "name", name);
-                }
-                yyjson_mut_arr_add_val(cascade_arr, item);
-            }
-            yyjson_mut_obj_add_val(doc, data, "cascade_objects", cascade_arr);
-            nmo_cli_json_add_uint_safe(doc, data, "cascade_size", cascade_size);
-            nmo_cli_json_add_uint_safe(doc, data, "total_size", total_match_size + cascade_size);
-
-            if (class_name) {
-                nmo_cli_json_add_str_safe(doc, data, "filter_class", class_name);
-            }
-            if (name_pattern) {
-                nmo_cli_json_add_str_safe(doc, data, "filter_name", name_pattern);
-            }
-
-            nmo_cmd_ctx_json_end(&c, doc, data, "convert.strip");
-        } else {
-            fprintf(c.out, "=== Dry Run: Strip Preview ===\n\n");
+        nmo_cli_record_t *rec = nmo_cli_record_new();
+        if (rec) {
+            nmo_cli_record_bool(rec, "dry_run", NULL, true);
+            nmo_cli_record_uint(rec, "match_count", NULL, (uint64_t)remove_count);
+            nmo_cli_record_raw(rec, "=== Dry Run: Strip Preview ===\n\n");
             if (remove_count == 0) {
-                fprintf(c.out, "No objects matched the filter.\n");
+                nmo_cli_record_raw(rec, "No objects matched the filter.\n");
             } else {
-                static const nmo_cli_table_col_t columns[] = {
-                    {"ID", NMO_CLI_ALIGN_RIGHT, 5, 0},
-                    {"CLASS", NMO_CLI_ALIGN_LEFT, 20, 30},
-                    {"SIZE", NMO_CLI_ALIGN_RIGHT, 10, 0},
-                    {"NAME", NMO_CLI_ALIGN_LEFT, 20, 50},
-                };
-
-                /* Matched objects table */
-                nmo_cli_table_t table;
-                nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
-
-                uint64_t match_size = 0;
-                for (size_t i = 0; i < remove_count; ++i) {
-                    nmo_object_t *obj = matched_objects[i];
-                    const char *cn = nmo_cli_class_name_from_id(c.ctx,
-                                                                nmo_object_get_class_id(obj));
-                    const char *name = nmo_object_get_name(obj);
-                    nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
-                    uint64_t sz = chunk ? (uint64_t)nmo_chunk_get_data_size(chunk) : 0;
-                    match_size += sz;
-                    nmo_cli_table_begin_row(&table);
-                    nmo_cli_table_add_cell_fmt(&table, "%u", nmo_object_get_id(obj));
-                    nmo_cli_table_add_cell(&table, cn ? cn : "-");
-                    nmo_cli_table_add_cell_fmt(&table, "%" PRIu64, sz);
-                    nmo_cli_table_add_cell(&table, (name && name[0]) ? name : "-");
-                }
-
-                fprintf(c.out, "Matched %zu object(s):\n\n", remove_count);
-                nmo_cli_table_print(&table, c.out, c.colorize);
-                nmo_cli_table_free(&table);
-
-                /* Cascade impact section */
-                if (cascade_count > 0) {
-                    fprintf(c.out, "\nCascade impact: %zu additional object(s):\n",
-                            cascade_count);
-
-                    nmo_cli_table_t ctable;
-                    nmo_cli_table_init(&ctable, columns,
-                                       sizeof(columns) / sizeof(columns[0]));
-
-                    uint64_t casc_size = 0;
-                    for (size_t i = 0; i < cascade_count; ++i) {
-                        nmo_object_t *obj = cascade_objects[i];
-                        const char *cn = nmo_cli_class_name_from_id(
-                            c.ctx, nmo_object_get_class_id(obj));
-                        const char *name = nmo_object_get_name(obj);
-                        nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
-                        uint64_t sz = chunk
-                            ? (uint64_t)nmo_chunk_get_data_size(chunk) : 0;
-                        casc_size += sz;
-                        nmo_cli_table_begin_row(&ctable);
-                        nmo_cli_table_add_cell_fmt(&ctable, "%u", nmo_object_get_id(obj));
-                        nmo_cli_table_add_cell(&ctable, cn ? cn : "-");
-                        nmo_cli_table_add_cell_fmt(&ctable, "%" PRIu64, sz);
-                        nmo_cli_table_add_cell(&ctable, (name && name[0]) ? name : "-");
-                    }
-
-                    nmo_cli_table_print(&ctable, c.out, c.colorize);
-                    nmo_cli_table_free(&ctable);
-
-                    fprintf(c.out, "\nTotal: %zu objects, %" PRIu64 " bytes\n",
-                            remove_count + cascade_count,
-                            match_size + casc_size);
-                } else {
-                    fprintf(c.out, "\nTotal: %zu objects, %" PRIu64 " bytes\n",
-                            remove_count, match_size);
-                }
+                nmo_cli_record_raw_fmt(rec, "Matched %zu object(s):\n\n", remove_count);
             }
+
+            uint64_t match_size = convert_strip_add_objects(
+                &c, rec, "matches", matched_objects, remove_count, true);
+            nmo_cli_record_uint(rec, "total_match_size", NULL, match_size);
+
+            nmo_cli_record_uint(rec, "cascade_count", NULL, (uint64_t)cascade_count);
+            if (cascade_count > 0) {
+                nmo_cli_record_raw_fmt(rec, "\nCascade impact: %zu additional object(s):\n",
+                                       cascade_count);
+            }
+            uint64_t cascade_size = convert_strip_add_objects(
+                &c, rec, "cascade_objects", cascade_objects, cascade_count, false);
+            nmo_cli_record_uint(rec, "cascade_size", NULL, cascade_size);
+            nmo_cli_record_uint(rec, "total_size", NULL, match_size + cascade_size);
+            if (remove_count > 0) {
+                nmo_cli_record_raw_fmt(rec, "\nTotal: %zu objects, %" PRIu64 " bytes\n",
+                                       remove_count + cascade_count,
+                                       match_size + cascade_size);
+            }
+            convert_add_filters(rec, class_name, name_pattern);
         }
+        rc = nmo_cmd_ctx_emit_record(&c, rec, "convert.strip", 0, c.colorize);
 
         free(cascade_objects);
         nmo_arena_destroy(preview_arena);
         free(ids_to_remove);
         free(matched_objects);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+        return nmo_cmd_ctx_done(&c, rc);
     }
 
     free(matched_objects);
@@ -715,33 +629,19 @@ int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *gl
     }
 
     /* Output results */
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        if (!doc) {
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-        }
-
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        nmo_cli_json_add_str_safe(doc, data, "input_file", c.file_path);
-        nmo_cli_json_add_str_safe(doc, data, "output_file", output_path);
-        nmo_cli_json_add_str_safe(doc, data, "save_durability",
-                                  convert_save_durability_name(save_opts.durability));
-        nmo_cli_json_add_uint_safe(doc, data, "objects_removed", (uint64_t)report.deleted_objects);
-        if (class_name) {
-            nmo_cli_json_add_str_safe(doc, data, "filter_class", class_name);
-        }
-        if (name_pattern) {
-            nmo_cli_json_add_str_safe(doc, data, "filter_name", name_pattern);
-        }
-
-        nmo_cmd_ctx_json_end(&c, doc, data, "convert.strip");
-    } else {
-        fprintf(c.out, "Removed %zu object(s)\n", report.deleted_objects);
-        fprintf(c.out, "Saved to %s\n", output_path);
-        fprintf(c.out, "Durability: %s\n", convert_save_durability_name(save_opts.durability));
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    if (rec) {
+        nmo_cli_record_str(rec, "input_file", NULL, c.file_path);
+        nmo_cli_record_str(rec, "output_file", NULL, output_path);
+        nmo_cli_record_str(rec, "save_durability", NULL,
+                           convert_save_durability_name(save_opts.durability));
+        nmo_cli_record_uint(rec, "objects_removed", NULL, (uint64_t)report.deleted_objects);
+        convert_add_filters(rec, class_name, name_pattern);
+        nmo_cli_record_raw_fmt(rec, "Removed %zu object(s)\n", report.deleted_objects);
+        convert_add_saved_text(rec, output_path, save_opts.durability);
     }
 
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    return nmo_cmd_ctx_done(&c, nmo_cmd_ctx_emit_record(&c, rec, "convert.strip", 0, false));
 }
 
 /* ============================================================================
@@ -852,34 +752,26 @@ int nmo_cmd_convert_merge(int argc, char **argv, const nmo_cli_global_opts_t *gl
     }
 
     /* Output results */
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        if (!doc) {
-            nmo_tool_close_document(src_ctx, src_document, src_workspace);
-            nmo_tool_close_document(tgt_ctx, tgt_document, tgt_workspace);
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-        }
-
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        nmo_cli_json_add_str_safe(doc, data, "source_file", source_path);
-        nmo_cli_json_add_str_safe(doc, data, "target_file", target_path);
-        nmo_cli_json_add_str_safe(doc, data, "output_file", output_path);
-        nmo_cli_json_add_str_safe(doc, data, "save_durability",
-                                  convert_save_durability_name(save_opts.durability));
-        nmo_cli_json_add_uint_safe(doc, data, "objects_copied", (uint64_t)report.copied_objects);
-
-        /* Use manual write since c.file_path is NULL for no_file init */
-        nmo_cli_json_write_enveloped_and_free(doc, data, "convert.merge", source_path,
-                                              c.out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-    } else {
-        fprintf(c.out, "Copied %zu object(s) from source to target\n", report.copied_objects);
-        fprintf(c.out, "Saved to %s\n", output_path);
-        fprintf(c.out, "Durability: %s\n", convert_save_durability_name(save_opts.durability));
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    if (rec) {
+        nmo_cli_record_str(rec, "source_file", NULL, source_path);
+        nmo_cli_record_str(rec, "target_file", NULL, target_path);
+        nmo_cli_record_str(rec, "output_file", NULL, output_path);
+        nmo_cli_record_str(rec, "save_durability", NULL,
+                           convert_save_durability_name(save_opts.durability));
+        nmo_cli_record_uint(rec, "objects_copied", NULL, (uint64_t)report.copied_objects);
+        nmo_cli_record_raw_fmt(rec, "Copied %zu object(s) from source to target\n",
+                               report.copied_objects);
+        convert_add_saved_text(rec, output_path, save_opts.durability);
     }
+
+    /* The envelope names the source file, since no_file init leaves it unset */
+    c.file_path = source_path;
+    rc = nmo_cmd_ctx_emit_record(&c, rec, "convert.merge", 0, false);
 
     nmo_tool_close_document(src_ctx, src_document, src_workspace);
     nmo_tool_close_document(tgt_ctx, tgt_document, tgt_workspace);
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    return nmo_cmd_ctx_done(&c, rc);
 }
 
 /* ============================================================================
@@ -1086,61 +978,56 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
 
     /* Dry-run: just list what would be exported */
     if (dry_run) {
-        if (c.is_json) {
-            yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-            if (doc) {
-                yyjson_mut_val *data = yyjson_mut_obj(doc);
-                nmo_cli_json_add_str_safe(doc, data, "input_file", c.file_path);
-                nmo_cli_json_add_bool_safe(doc, data, "dry_run", true);
-                nmo_cli_json_add_uint_safe(doc, data, "matched", (uint64_t)seed_count);
-                if (include_deps) {
-                    nmo_cli_json_add_bool_safe(doc, data, "deps", true);
-                    nmo_cli_json_add_uint_safe(doc, data, "deps_resolved", (uint64_t)dep_count);
-                }
-                nmo_cli_json_add_uint_safe(doc, data, "total", (uint64_t)final_count);
-
-                yyjson_mut_val *arr = yyjson_mut_arr(doc);
-                for (size_t i = 0; i < final_count; i++) {
-                    yyjson_mut_val *entry = yyjson_mut_obj(doc);
-                    nmo_cli_json_add_uint_safe(doc, entry, "id",
-                        (uint64_t)nmo_object_get_id(final_objects[i]));
-                    const char *cn = nmo_core_class_name(&c,
-                        nmo_object_get_class_id(final_objects[i]));
-                    if (cn) nmo_cli_json_add_str_safe(doc, entry, "class_name", cn);
-                    const char *nm = nmo_object_get_name(final_objects[i]);
-                    if (nm && nm[0]) nmo_cli_json_add_str_safe(doc, entry, "name", nm);
-                    nmo_cli_json_add_bool_safe(doc, entry, "is_dep", i < dep_count);
-                    yyjson_mut_arr_add_val(arr, entry);
-                }
-                yyjson_mut_obj_add_val(doc, data, "objects", arr);
-                nmo_cmd_ctx_json_end(&c, doc, data, "convert.export");
+        nmo_cli_record_t *rec = nmo_cli_record_new();
+        if (rec) {
+            nmo_cli_record_str(rec, "input_file", NULL, c.file_path);
+            nmo_cli_record_bool(rec, "dry_run", NULL, true);
+            nmo_cli_record_uint(rec, "matched", NULL, (uint64_t)seed_count);
+            if (include_deps) {
+                nmo_cli_record_bool(rec, "deps", NULL, true);
+                nmo_cli_record_uint(rec, "deps_resolved", NULL, (uint64_t)dep_count);
             }
-        } else {
-            fprintf(c.out, "Dry run: would export %zu object(s)\n", final_count);
+            nmo_cli_record_uint(rec, "total", NULL, (uint64_t)final_count);
+
+            nmo_cli_record_raw_fmt(rec, "Dry run: would export %zu object(s)\n", final_count);
             if (include_deps && dep_count > 0)
-                fprintf(c.out, "  Matched: %zu, Dependencies: %zu\n", seed_count, dep_count);
-            fprintf(c.out, "\n");
-            fprintf(c.out, "   %5s  %-20s  %10s  %-4s  %s\n",
-                    "ID", "CLASS", "SIZE", "DEP", "NAME");
-            fprintf(c.out, "   %5s  %-20s  %10s  %-4s  %s\n",
-                    "-----", "--------------------", "----------", "----", "--------------------");
+                nmo_cli_record_raw_fmt(rec, "  Matched: %zu, Dependencies: %zu\n",
+                                       seed_count, dep_count);
+            nmo_cli_record_raw(rec, "\n");
+            nmo_cli_record_raw_fmt(rec, "   %5s  %-20s  %10s  %-4s  %s\n",
+                                   "ID", "CLASS", "SIZE", "DEP", "NAME");
+            nmo_cli_record_raw_fmt(rec, "   %5s  %-20s  %10s  %-4s  %s\n",
+                                   "-----", "--------------------", "----------", "----",
+                                   "--------------------");
+
+            nmo_cli_record_array_t *arr = nmo_cli_record_array(rec, "objects", NULL);
+            nmo_cli_record_array_omit_heading(arr);
             for (size_t i = 0; i < final_count; i++) {
                 nmo_object_t *obj = final_objects[i];
+                nmo_cli_record_t *item = nmo_cli_record_new();
+                if (!item) continue;
                 nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
                 size_t sz = chunk ? nmo_chunk_get_data_size(chunk) : 0;
                 const char *cn = nmo_core_class_name(&c, nmo_object_get_class_id(obj));
                 const char *nm = nmo_object_get_name(obj);
-                fprintf(c.out, "   %5u  %-20s  %10zu  %-4s  %s\n",
-                        nmo_object_get_id(obj),
-                        cn ? cn : "?",
-                        sz,
-                        i < dep_count ? "yes" : "",
-                        nm ? nm : "");
+                nmo_cli_record_uint(item, "id", NULL, (uint64_t)nmo_object_get_id(obj));
+                if (cn) nmo_cli_record_str(item, "class_name", NULL, cn);
+                nmo_cli_record_str_opt(item, "name", NULL, nm, NULL);
+                nmo_cli_record_bool(item, "is_dep", NULL, i < dep_count);
+                nmo_cli_record_set_summary_fmt(item, "   %5u  %-20s  %10zu  %-4s  %s",
+                                               nmo_object_get_id(obj),
+                                               cn ? cn : "?",
+                                               sz,
+                                               i < dep_count ? "yes" : "",
+                                               nm ? nm : "");
+                if (!nmo_cli_record_array_add(arr, item))
+                    nmo_cli_record_free(item);
             }
         }
+        rc = nmo_cmd_ctx_emit_record(&c, rec, "convert.export", 0, false);
         free(final_objects);
         free(col.objects);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+        return nmo_cmd_ctx_done(&c, rc);
     }
 
     /* Build include list for saver filter (no repository mutation needed) */
@@ -1174,37 +1061,33 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
     }
 
     /* Output results */
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        if (doc) {
-            yyjson_mut_val *data = yyjson_mut_obj(doc);
-            nmo_cli_json_add_str_safe(doc, data, "input_file", c.file_path);
-            nmo_cli_json_add_str_safe(doc, data, "output_file", output_path);
-            nmo_cli_json_add_str_safe(doc, data, "save_durability",
-                                      convert_save_durability_name(save_opts.durability));
-            nmo_cli_json_add_uint_safe(doc, data, "matched", (uint64_t)seed_count);
-            if (include_deps) {
-                nmo_cli_json_add_bool_safe(doc, data, "deps", true);
-                nmo_cli_json_add_uint_safe(doc, data, "deps_resolved", (uint64_t)dep_count);
-            }
-            nmo_cli_json_add_uint_safe(doc, data, "exported", (uint64_t)final_count);
-            if (class_filter_str) nmo_cli_json_add_str_safe(doc, data, "filter_class", class_filter_str);
-            if (name_pattern) nmo_cli_json_add_str_safe(doc, data, "filter_name", name_pattern);
-            nmo_cmd_ctx_json_end(&c, doc, data, "convert.export");
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    if (rec) {
+        nmo_cli_record_str(rec, "input_file", NULL, c.file_path);
+        nmo_cli_record_str(rec, "output_file", NULL, output_path);
+        nmo_cli_record_str(rec, "save_durability", NULL,
+                           convert_save_durability_name(save_opts.durability));
+        nmo_cli_record_uint(rec, "matched", NULL, (uint64_t)seed_count);
+        if (include_deps) {
+            nmo_cli_record_bool(rec, "deps", NULL, true);
+            nmo_cli_record_uint(rec, "deps_resolved", NULL, (uint64_t)dep_count);
         }
-    } else {
+        nmo_cli_record_uint(rec, "exported", NULL, (uint64_t)final_count);
+        convert_add_filters(rec, class_filter_str, name_pattern);
         if (include_deps && dep_count > 0) {
-            fprintf(c.out, "Matched %zu, resolved %zu dep(s), exported %zu object(s) to %s\n",
-                    seed_count, dep_count, final_count, output_path);
+            nmo_cli_record_raw_fmt(rec, "Matched %zu, resolved %zu dep(s), exported %zu object(s) to %s\n",
+                                   seed_count, dep_count, final_count, output_path);
         } else {
-            fprintf(c.out, "Exported %zu object(s) to %s\n", final_count, output_path);
+            nmo_cli_record_raw_fmt(rec, "Exported %zu object(s) to %s\n", final_count, output_path);
         }
-        fprintf(c.out, "Durability: %s\n", convert_save_durability_name(save_opts.durability));
+        nmo_cli_record_raw_fmt(rec, "Durability: %s\n",
+                               convert_save_durability_name(save_opts.durability));
     }
+    rc = nmo_cmd_ctx_emit_record(&c, rec, "convert.export", 0, false);
 
     free(include_ids);
     free(final_objects);
     free(col.objects);
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    return nmo_cmd_ctx_done(&c, rc);
 }
 
