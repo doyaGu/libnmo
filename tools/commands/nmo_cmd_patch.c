@@ -7,6 +7,7 @@
 
 #include "../nmo_cmd_ctx.h"
 #include "../nmo_cli_json.h"
+#include "../nmo_cli_record.h"
 #include "../nmo_edit_report_json.h"
 #include "../nmo_cli_write.h"
 #include "../nmo_opt.h"
@@ -86,6 +87,42 @@ static void patch_add_edit_report_json(
     }
 }
 
+typedef struct patch_edit_report_splice {
+    const patch_plan_t *plan;
+    nmo_edit_report_t *report;
+    bool dry_run;
+} patch_edit_report_splice_t;
+
+static bool patch_edit_report_json(yyjson_mut_doc *doc,
+                                   yyjson_mut_val *obj,
+                                   const void *data) {
+    const patch_edit_report_splice_t *splice =
+        (const patch_edit_report_splice_t *)data;
+    patch_add_edit_report_json(doc, obj, splice->plan, splice->report,
+                               splice->dry_run);
+    return true;
+}
+
+/*
+ * The edit report record: the schema v2 report in JSON; the caller adds the
+ * text lines. `splice` must outlive the record.
+ */
+static nmo_cli_record_t *patch_edit_report_record_new(
+    patch_edit_report_splice_t *splice,
+    const patch_plan_t *plan,
+    nmo_edit_report_t *report,
+    bool dry_run) {
+    splice->plan = plan;
+    splice->report = report;
+    splice->dry_run = dry_run;
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    if (rec && !nmo_cli_record_json(rec, patch_edit_report_json, splice)) {
+        nmo_cli_record_free(rec);
+        return NULL;
+    }
+    return rec;
+}
+
 static void patch_plan_free(patch_plan_t *plan) {
     if (!plan) {
         return;
@@ -159,31 +196,20 @@ static int patch_apply_plan(patch_plan_t *plan,
             return nmo_cmd_ctx_done(&ctx, exit_code);
         }
 
-        if (ctx.is_json) {
-            yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&ctx);
-            if (!doc) {
-                nmo_edit_report_dispose(&edit_report);
-                return nmo_cmd_ctx_done(&ctx,
-                                        NMO_CLI_EXIT_INTERNAL_ERROR);
-            }
-            yyjson_mut_val *data = yyjson_mut_obj(doc);
-            patch_add_edit_report_json(doc, data, plan, &edit_report, true);
-            int json_rc = nmo_cmd_ctx_json_end(&ctx, doc, data,
-                                               "patch.diff");
-            nmo_edit_report_dispose(&edit_report);
-            return nmo_cmd_ctx_done(&ctx, json_rc);
-        }
-
-        for (size_t i = 0; i < edit_report.operation_count; ++i) {
+        patch_edit_report_splice_t splice;
+        nmo_cli_record_t *rec = patch_edit_report_record_new(
+            &splice, plan, &edit_report, true);
+        for (size_t i = 0; rec && i < edit_report.operation_count; ++i) {
             const nmo_edit_operation_result_t *op = &edit_report.operations[i];
-            fprintf(ctx.out, "%s #%u: result #%u, status %s\n",
-                    nmo_edit_op_kind_name(op->kind),
-                    op->primary_id,
-                    op->result_id,
-                    nmo_error_string(op->status));
+            nmo_cli_record_raw_fmt(rec, "%s #%u: result #%u, status %s\n",
+                                   nmo_edit_op_kind_name(op->kind),
+                                   op->primary_id,
+                                   op->result_id,
+                                   nmo_error_string(op->status));
         }
+        rc = nmo_cmd_ctx_emit_record(&ctx, rec, "patch.diff", 0, false);
         nmo_edit_report_dispose(&edit_report);
-        return nmo_cmd_ctx_done(&ctx, NMO_CLI_EXIT_SUCCESS);
+        return nmo_cmd_ctx_done(&ctx, rc);
     }
 
     nmo_edit_report_t edit_report;
@@ -202,20 +228,15 @@ static int patch_apply_plan(patch_plan_t *plan,
             ? NMO_CLI_EXIT_ARG_ERROR
             : NMO_CLI_EXIT_INTERNAL_ERROR;
         if (ctx.is_json) {
-            yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&ctx);
-            if (!doc) {
-                nmo_edit_report_dispose(&edit_report);
-                return nmo_cmd_ctx_done(&ctx,
-                                        NMO_CLI_EXIT_INTERNAL_ERROR);
-            }
-            yyjson_mut_val *data = yyjson_mut_obj(doc);
-            patch_add_edit_report_json(doc, data, plan, &edit_report,
-                                       dry_run);
-            int json_rc = nmo_cmd_ctx_json_end(&ctx, doc, data,
-                                               "patch.apply");
+            patch_edit_report_splice_t splice;
+            nmo_cli_record_t *rec = patch_edit_report_record_new(
+                &splice, plan, &edit_report, dry_run);
+            int json_rc = nmo_cmd_ctx_emit_record(&ctx, rec, "patch.apply",
+                                                  0, false);
             nmo_edit_report_dispose(&edit_report);
-            (void)json_rc;
-            return nmo_cmd_ctx_done(&ctx, exit_code);
+            return nmo_cmd_ctx_done(&ctx, json_rc == NMO_CLI_EXIT_SUCCESS
+                                              ? exit_code
+                                              : json_rc);
         }
         size_t failed_index = 0;
         for (size_t i = 0; i < edit_report.operation_count; ++i) {
@@ -260,29 +281,18 @@ static int patch_apply_plan(patch_plan_t *plan,
         }
     }
 
-    if (ctx.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&ctx);
-        if (!doc) {
-            nmo_edit_report_dispose(&edit_report);
-            return nmo_cmd_ctx_done(&ctx, NMO_CLI_EXIT_INTERNAL_ERROR);
-        }
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        patch_add_edit_report_json(doc, data, plan, &edit_report, dry_run);
-        int json_rc = nmo_cmd_ctx_json_end(&ctx, doc, data, "patch.apply");
-        nmo_edit_report_dispose(&edit_report);
-        return nmo_cmd_ctx_done(&ctx, json_rc);
+    patch_edit_report_splice_t splice;
+    nmo_cli_record_t *rec = patch_edit_report_record_new(
+        &splice, plan, &edit_report, dry_run);
+    nmo_cli_record_raw_fmt(rec, "%sApplied %zu operation(s)\n",
+                           dry_run ? "[dry-run] " : "",
+                           nmo_edit_plan_count(plan->edit_plan));
+    if (!dry_run) {
+        nmo_cli_record_raw_fmt(rec, "Saved to: %s\n", plan->output);
     }
-
-    if (dry_run) {
-        fprintf(ctx.out, "[dry-run] Applied %zu operation(s)\n",
-                nmo_edit_plan_count(plan->edit_plan));
-    } else {
-        fprintf(ctx.out, "Applied %zu operation(s)\n",
-                nmo_edit_plan_count(plan->edit_plan));
-        fprintf(ctx.out, "Saved to: %s\n", plan->output);
-    }
+    rc = nmo_cmd_ctx_emit_record(&ctx, rec, "patch.apply", 0, false);
     nmo_edit_report_dispose(&edit_report);
-    return nmo_cmd_ctx_done(&ctx, NMO_CLI_EXIT_SUCCESS);
+    return nmo_cmd_ctx_done(&ctx, rc);
 }
 
 static int patch_read_file(const char *path, char **out_text, size_t *out_size)
@@ -978,25 +988,61 @@ static void patch_add_project_report_json(
         report ? &report->evidence : NULL);
 }
 
-static int patch_emit_project_report_json(
+typedef struct patch_project_report_splice {
+    const nmo_project_report_t *report;
+    bool requested_dry_run;
+    const char *manifest_path;
+    const char *output_path;
+} patch_project_report_splice_t;
+
+static bool patch_project_report_json(yyjson_mut_doc *doc,
+                                      yyjson_mut_val *obj,
+                                      const void *data)
+{
+    const patch_project_report_splice_t *splice =
+        (const patch_project_report_splice_t *)data;
+    patch_add_project_report_json(doc,
+                                  obj,
+                                  splice->report,
+                                  splice->requested_dry_run,
+                                  splice->manifest_path,
+                                  splice->output_path);
+    return true;
+}
+
+/*
+ * Emit the project report: the full report in JSON; in text, the generated
+ * and saved lines when `show_text` (a failed run reports on stderr instead).
+ */
+static int patch_emit_project_report(
     nmo_cmd_ctx_t *ctx,
     const nmo_project_report_t *report,
     bool requested_dry_run,
     const char *manifest_path,
-    const char *output_path)
+    const char *output_path,
+    bool show_text)
 {
-    yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
-    if (!doc) {
-        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    patch_project_report_splice_t splice = {
+        .report = report,
+        .requested_dry_run = requested_dry_run,
+        .manifest_path = manifest_path,
+        .output_path = output_path,
+    };
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    if (rec && !nmo_cli_record_json(rec, patch_project_report_json, &splice)) {
+        nmo_cli_record_free(rec);
+        rec = NULL;
     }
-    yyjson_mut_val *data = yyjson_mut_obj(doc);
-    patch_add_project_report_json(doc,
-                                  data,
-                                  report,
-                                  requested_dry_run,
-                                  manifest_path,
-                                  output_path);
-    return nmo_cmd_ctx_json_end(ctx, doc, data, "patch.apply");
+    if (show_text) {
+        nmo_cli_record_raw_fmt(rec, "Generated project from: %s\n", manifest_path);
+        if (requested_dry_run) {
+            nmo_cli_record_raw_fmt(rec, "[dry-run] Output not written: %s\n",
+                                   output_path);
+        } else {
+            nmo_cli_record_raw_fmt(rec, "Saved to: %s\n", output_path);
+        }
+    }
+    return nmo_cmd_ctx_emit_record(ctx, rec, "patch.apply", 0, false);
 }
 
 static void patch_print_project_validation_issues(
@@ -1124,12 +1170,12 @@ static int patch_apply_project_manifest(
                             ? NMO_CLI_EXIT_ARG_ERROR
                             : NMO_CLI_EXIT_INTERNAL_ERROR;
         if (ctx.is_json) {
-            int json_rc = patch_emit_project_report_json(&ctx,
-                                                         &report,
-                                                         args->dry_run,
-                                                         args->project_path,
-                                                         output_path);
-            (void)json_rc;
+            (void)patch_emit_project_report(&ctx,
+                                            &report,
+                                            args->dry_run,
+                                            args->project_path,
+                                            output_path,
+                                            false);
         } else {
             const char *message = nmo_last_error_message();
             fprintf(stderr, "Error: %s\n",
@@ -1143,22 +1189,12 @@ static int patch_apply_project_manifest(
         return nmo_cmd_ctx_done(&ctx, exit_code);
     }
 
-    if (ctx.is_json) {
-        rc = patch_emit_project_report_json(&ctx,
-                                            &report,
-                                            args->dry_run,
-                                            args->project_path,
-                                            output_path);
-    } else {
-        fprintf(ctx.out, "Generated project from: %s\n", args->project_path);
-        if (args->dry_run) {
-            fprintf(ctx.out, "[dry-run] Output not written: %s\n",
-                    output_path);
-        } else {
-            fprintf(ctx.out, "Saved to: %s\n", output_path);
-        }
-        rc = NMO_CLI_EXIT_SUCCESS;
-    }
+    rc = patch_emit_project_report(&ctx,
+                                   &report,
+                                   args->dry_run,
+                                   args->project_path,
+                                   output_path,
+                                   true);
 
     nmo_project_report_dispose(&report);
     free(resolved_manifest_output);
