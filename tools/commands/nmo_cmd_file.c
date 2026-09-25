@@ -278,24 +278,14 @@ static int nmo_cmd_file_header_in_session(nmo_cmd_ctx_t *c, int argc, char **arg
     }
 
     nmo_cli_record_t *rec = nmo_cli_record_new();
-    if (!rec || !file_header_build_record(header, rec)) {
+    bool ok = rec != NULL;
+    ok = ok && nmo_cli_record_title(rec, "File Header");
+    if (!ok || !file_header_build_record(header, rec)) {
         nmo_cli_record_free(rec);
         fprintf(stderr, "Error: Out of memory\n");
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
-
-    if (c->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        nmo_cli_record_to_json(rec, doc, data);
-        nmo_cmd_ctx_json_end(c, doc, data, "file.header");
-    } else {
-        nmo_cli_print_heading(c->out, "File Header", c->colorize);
-        nmo_cli_record_print_kv(rec, c->out, 18, c->colorize);
-    }
-    nmo_cli_record_free(rec);
-
-    return NMO_CLI_EXIT_SUCCESS;
+    return nmo_cmd_ctx_emit_record(c, rec, "file.header", 18, c->colorize);
 }
 
 int nmo_cmd_file_header(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -307,6 +297,20 @@ int nmo_cmd_file_header(int argc, char **argv, const nmo_cli_global_opts_t *glob
     if (rc) return rc;
     rc = nmo_cmd_file_header_in_session(&c, argc, argv);
     return nmo_cmd_ctx_done(&c, rc);
+}
+
+/* Emit a finished record, or report INTERNAL_ERROR when building it failed. */
+static int file_emit(nmo_cmd_ctx_t *c,
+                     nmo_cli_record_t *rec,
+                     bool ok,
+                     const char *cmd_name,
+                     int key_width)
+{
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        rec = NULL;
+    }
+    return nmo_cmd_ctx_emit_record(c, rec, cmd_name, key_width, c->colorize);
 }
 
 /* ============================================================================
@@ -323,87 +327,85 @@ static int nmo_cmd_file_stats_in_session(nmo_cmd_ctx_t *c, int argc, char **argv
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    if (c->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
+    /* Performance timings are always in JSON, in text only when verbose. */
+    bool verbose = c->global && c->global->verbosity > 0;
 
-        /* Objects stats */
-        yyjson_mut_val *obj_stats = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_uint(doc, obj_stats, "total", stats.objects.total_count);
-        yyjson_mut_obj_add_uint(doc, obj_stats, "unique_classes", (uint64_t)stats.objects.unique_classes);
-        yyjson_mut_obj_add_val(doc, data, "objects", obj_stats);
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL;
+    ok = ok && nmo_cli_record_title(rec, "File Statistics");
 
-        /* Chunks stats */
-        yyjson_mut_val *chunk_stats = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_uint(doc, chunk_stats, "total", stats.chunks.total_chunks);
-        yyjson_mut_obj_add_uint(doc, chunk_stats, "compressed", stats.chunks.compressed_chunks);
-        yyjson_mut_obj_add_uint(doc, chunk_stats, "max_size", stats.chunks.max_chunk_size);
-        yyjson_mut_obj_add_val(doc, data, "chunks", chunk_stats);
+    nmo_cli_record_t *objects = ok ? nmo_cli_record_object(rec, "objects") : NULL;
+    ok = objects != NULL;
+    ok = ok && nmo_cli_record_heading(objects, "Objects");
+    ok = ok && nmo_cli_record_uint(objects, "total", "Total",
+                                   stats.objects.total_count);
+    ok = ok && nmo_cli_record_uint(objects, "unique_classes", "Unique Classes",
+                                   stats.objects.unique_classes);
 
-        /* Memory stats */
-        yyjson_mut_val *mem_stats = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_uint(doc, mem_stats, "total_size", stats.memory.total_size);
-        yyjson_mut_obj_add_uint(doc, mem_stats, "header_size", stats.memory.header_size);
-        yyjson_mut_obj_add_uint(doc, mem_stats, "data_size", stats.memory.data_size);
-        yyjson_mut_obj_add_uint(doc, mem_stats, "chunk_data_size", stats.memory.chunk_data_size);
-        yyjson_mut_obj_add_uint(doc, mem_stats, "chunk_overhead", stats.memory.chunk_overhead);
-        yyjson_mut_obj_add_uint(doc, mem_stats, "compression_ratio", stats.memory.compression_ratio);
-        yyjson_mut_obj_add_val(doc, data, "memory", mem_stats);
+    nmo_cli_record_t *chunks = ok ? nmo_cli_record_object(rec, "chunks") : NULL;
+    ok = chunks != NULL;
+    ok = ok && nmo_cli_record_heading(chunks, "Chunks");
+    ok = ok && nmo_cli_record_uint(chunks, "total", "Total",
+                                   stats.chunks.total_chunks);
+    ok = ok && nmo_cli_record_uint(chunks, "compressed", "Compressed",
+                                   stats.chunks.compressed_chunks);
+    ok = ok && nmo_cli_record_uint(chunks, "max_size", "Max Size",
+                                   stats.chunks.max_chunk_size);
+    ok = ok && nmo_cli_record_text_fmt(chunks, "Avg Size", "%zu",
+                                       stats.chunks.avg_chunk_size);
 
-        /* Reference stats */
-        yyjson_mut_val *ref_stats = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_uint(doc, ref_stats, "total", stats.references.total_references);
-        yyjson_mut_obj_add_uint(doc, ref_stats, "resolved", stats.references.resolved);
-        yyjson_mut_obj_add_uint(doc, ref_stats, "unresolved", stats.references.unresolved);
-        yyjson_mut_obj_add_val(doc, data, "references", ref_stats);
+    nmo_cli_record_t *memory = ok ? nmo_cli_record_object(rec, "memory") : NULL;
+    ok = memory != NULL;
+    ok = ok && nmo_cli_record_heading(memory, "Memory");
+    ok = ok && nmo_cli_record_uint(memory, "total_size", "Total Size",
+                                   stats.memory.total_size);
+    ok = ok && nmo_cli_record_set_text_fmt(memory, "%zu bytes",
+                                           stats.memory.total_size);
+    ok = ok && nmo_cli_record_uint(memory, "header_size", "Header Size",
+                                   stats.memory.header_size);
+    ok = ok && nmo_cli_record_set_text_fmt(memory, "%zu bytes",
+                                           stats.memory.header_size);
+    ok = ok && nmo_cli_record_uint(memory, "data_size", "Data Size",
+                                   stats.memory.data_size);
+    ok = ok && nmo_cli_record_set_text_fmt(memory, "%zu bytes",
+                                           stats.memory.data_size);
+    ok = ok && nmo_cli_record_uint(memory, "chunk_data_size", "Chunk Data",
+                                   stats.memory.chunk_data_size);
+    ok = ok && nmo_cli_record_set_text_fmt(memory, "%zu bytes",
+                                           stats.memory.chunk_data_size);
+    ok = ok && nmo_cli_record_uint(memory, "chunk_overhead", NULL,
+                                   stats.memory.chunk_overhead);
+    ok = ok && nmo_cli_record_uint(memory, "compression_ratio", "Compression",
+                                   stats.memory.compression_ratio);
+    ok = ok && nmo_cli_record_set_text_fmt(memory, "%zu%%",
+                                           stats.memory.compression_ratio);
 
-        /* Performance stats */
-        yyjson_mut_val *perf_stats = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_real(doc, perf_stats, "load_time_ms", stats.performance.load_time_ms);
-        yyjson_mut_obj_add_real(doc, perf_stats, "parse_time_ms", stats.performance.parse_time_ms);
-        yyjson_mut_obj_add_real(doc, perf_stats, "remap_time_ms", stats.performance.remap_time_ms);
-        yyjson_mut_obj_add_val(doc, data, "performance", perf_stats);
+    nmo_cli_record_t *refs = ok ? nmo_cli_record_object(rec, "references") : NULL;
+    ok = refs != NULL;
+    ok = ok && nmo_cli_record_heading(refs, "References");
+    ok = ok && nmo_cli_record_uint(refs, "total", "Total",
+                                   stats.references.total_references);
+    ok = ok && nmo_cli_record_uint(refs, "resolved", "Resolved",
+                                   stats.references.resolved);
+    ok = ok && nmo_cli_record_uint(refs, "unresolved", "Unresolved",
+                                   stats.references.unresolved);
 
-        nmo_cmd_ctx_json_end(c, doc, data, "file.stats");
-    } else {
-        nmo_cli_print_heading(c->out, "File Statistics", c->colorize);
-        fprintf(c->out, "\n");
-
-        nmo_cli_print_heading(c->out, "Objects", c->colorize);
-        nmo_cli_print_kv_fmt(c->out, "Total", 20, c->colorize, "%zu", stats.objects.total_count);
-        nmo_cli_print_kv_fmt(c->out, "Unique Classes", 20, c->colorize, "%zu", stats.objects.unique_classes);
-        fprintf(c->out, "\n");
-
-        nmo_cli_print_heading(c->out, "Chunks", c->colorize);
-        nmo_cli_print_kv_fmt(c->out, "Total", 20, c->colorize, "%zu", stats.chunks.total_chunks);
-        nmo_cli_print_kv_fmt(c->out, "Compressed", 20, c->colorize, "%zu", stats.chunks.compressed_chunks);
-        nmo_cli_print_kv_fmt(c->out, "Max Size", 20, c->colorize, "%zu", stats.chunks.max_chunk_size);
-        nmo_cli_print_kv_fmt(c->out, "Avg Size", 20, c->colorize, "%zu", stats.chunks.avg_chunk_size);
-        fprintf(c->out, "\n");
-
-        nmo_cli_print_heading(c->out, "Memory", c->colorize);
-        nmo_cli_print_kv_fmt(c->out, "Total Size", 20, c->colorize, "%zu bytes", stats.memory.total_size);
-        nmo_cli_print_kv_fmt(c->out, "Header Size", 20, c->colorize, "%zu bytes", stats.memory.header_size);
-        nmo_cli_print_kv_fmt(c->out, "Data Size", 20, c->colorize, "%zu bytes", stats.memory.data_size);
-        nmo_cli_print_kv_fmt(c->out, "Chunk Data", 20, c->colorize, "%zu bytes", stats.memory.chunk_data_size);
-        nmo_cli_print_kv_fmt(c->out, "Compression", 20, c->colorize, "%zu%%", stats.memory.compression_ratio);
-        fprintf(c->out, "\n");
-
-        nmo_cli_print_heading(c->out, "References", c->colorize);
-        nmo_cli_print_kv_fmt(c->out, "Total", 20, c->colorize, "%zu", stats.references.total_references);
-        nmo_cli_print_kv_fmt(c->out, "Resolved", 20, c->colorize, "%zu", stats.references.resolved);
-        nmo_cli_print_kv_fmt(c->out, "Unresolved", 20, c->colorize, "%zu", stats.references.unresolved);
-
-        if (c->global && c->global->verbosity > 0) {
-            fprintf(c->out, "\n");
-            nmo_cli_print_heading(c->out, "Performance", c->colorize);
-            nmo_cli_print_kv_fmt(c->out, "Load Time", 20, c->colorize, "%.2f ms", stats.performance.load_time_ms);
-            nmo_cli_print_kv_fmt(c->out, "Parse Time", 20, c->colorize, "%.2f ms", stats.performance.parse_time_ms);
-            nmo_cli_print_kv_fmt(c->out, "Remap Time", 20, c->colorize, "%.2f ms", stats.performance.remap_time_ms);
-        }
+    nmo_cli_record_t *perf = ok ? nmo_cli_record_object(rec, "performance") : NULL;
+    ok = perf != NULL;
+    if (verbose) {
+        ok = ok && nmo_cli_record_heading(perf, "Performance");
     }
+    ok = ok && nmo_cli_record_real(perf, "load_time_ms",
+                                   verbose ? "Load Time" : NULL,
+                                   stats.performance.load_time_ms, "%.2f ms");
+    ok = ok && nmo_cli_record_real(perf, "parse_time_ms",
+                                   verbose ? "Parse Time" : NULL,
+                                   stats.performance.parse_time_ms, "%.2f ms");
+    ok = ok && nmo_cli_record_real(perf, "remap_time_ms",
+                                   verbose ? "Remap Time" : NULL,
+                                   stats.performance.remap_time_ms, "%.2f ms");
 
-    return NMO_CLI_EXIT_SUCCESS;
+    return file_emit(c, rec, ok, "file.stats", 20);
 }
 
 int nmo_cmd_file_stats(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -581,63 +583,59 @@ static int nmo_cmd_file_classes_in_session(nmo_cmd_ctx_t *c, int argc, char **ar
         qsort(entries, entry_count, sizeof(nmo_class_count_entry_t), cmp);
     }
 
-    if (c->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        yyjson_mut_val *classes = yyjson_mut_arr(doc);
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL;
+    ok = ok && nmo_cli_record_title(rec, "File Class IDs");
+    ok = ok && nmo_cli_record_text(rec, "File", c->file_path);
+    ok = ok && nmo_cli_record_raw_fmt(
+        rec, "\n%-12s %-8s %-12s %-10s %-6s %s\n"
+             "--------------------------------------------------------------\n",
+        "CLASS ID", "COUNT", "TOTAL SIZE", "AVG SIZE", "%", "NAME");
 
-        for (size_t i = 0; i < entry_count; i++) {
-            const nmo_class_count_entry_t *entry = &entries[i];
-            const nmo_type_descriptor_t *type_desc =
-                (c->registry != NULL)
-                    ? nmo_type_registry_find_by_class_id(c->registry, entry->class_id)
-                    : NULL;
-            yyjson_mut_val *item = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_uint(doc, item, "class_id", entry->class_id);
-            yyjson_mut_obj_add_uint(doc, item, "count", (uint64_t)entry->count);
-            yyjson_mut_obj_add_uint(doc, item, "total_size", (uint64_t)entry->total_size);
-            size_t avg = (entry->count > 0) ? entry->total_size / entry->count : 0;
-            yyjson_mut_obj_add_uint(doc, item, "avg_size", (uint64_t)avg);
-            double pct = (grand_total_size > 0)
-                ? (double)entry->total_size * 100.0 / (double)grand_total_size
-                : 0.0;
-            yyjson_mut_obj_add_real(doc, item, "percentage", pct);
-            if (type_desc != NULL && type_desc->name != NULL) {
-                yyjson_mut_obj_add_str(doc, item, "name", type_desc->name);
-            }
-            yyjson_mut_arr_append(classes, item);
-        }
-
-        yyjson_mut_obj_add_val(doc, data, "classes", classes);
-        yyjson_mut_obj_add_uint(doc, data, "grand_total_size", (uint64_t)grand_total_size);
-        nmo_cmd_ctx_json_end(c, doc, data, "file.classes");
-    } else {
-        nmo_cli_print_heading(c->out, "File Class IDs", c->colorize);
-        nmo_cli_print_kv(c->out, "File", c->file_path, 8, c->colorize);
-        fprintf(c->out, "\n");
-
-        fprintf(c->out, "%-12s %-8s %-12s %-10s %-6s %s\n",
-                "CLASS ID", "COUNT", "TOTAL SIZE", "AVG SIZE", "%", "NAME");
-        fprintf(c->out, "--------------------------------------------------------------\n");
-        for (size_t i = 0; i < entry_count; i++) {
-            const nmo_class_count_entry_t *entry = &entries[i];
-            const nmo_type_descriptor_t *type_desc =
-                (c->registry != NULL)
-                    ? nmo_type_registry_find_by_class_id(c->registry, entry->class_id)
-                    : NULL;
-            const char *name = (type_desc != NULL && type_desc->name != NULL) ? type_desc->name : "";
-            size_t avg = (entry->count > 0) ? entry->total_size / entry->count : 0;
-            double pct = (grand_total_size > 0)
-                ? (double)entry->total_size * 100.0 / (double)grand_total_size
-                : 0.0;
-            fprintf(c->out, "0x%08X %-8zu %-12zu %-10zu %5.1f%% %s\n",
-                    entry->class_id, entry->count, entry->total_size, avg, pct, name);
-        }
-        fprintf(c->out, "\nTotal data size: %zu bytes\n", grand_total_size);
+    nmo_cli_record_array_t *classes =
+        ok ? nmo_cli_record_array(rec, "classes", NULL) : NULL;
+    ok = classes != NULL;
+    if (ok) {
+        nmo_cli_record_array_omit_heading(classes);
     }
+    for (size_t i = 0; ok && i < entry_count; i++) {
+        const nmo_class_count_entry_t *entry = &entries[i];
+        const nmo_type_descriptor_t *type_desc =
+            (c->registry != NULL)
+                ? nmo_type_registry_find_by_class_id(c->registry, entry->class_id)
+                : NULL;
+        const char *name = (type_desc != NULL) ? type_desc->name : NULL;
+        size_t avg = (entry->count > 0) ? entry->total_size / entry->count : 0;
+        double pct = (grand_total_size > 0)
+            ? (double)entry->total_size * 100.0 / (double)grand_total_size
+            : 0.0;
+
+        nmo_cli_record_t *item = nmo_cli_record_new();
+        ok = item != NULL;
+        ok = ok && nmo_cli_record_uint(item, "class_id", NULL, entry->class_id);
+        ok = ok && nmo_cli_record_uint(item, "count", NULL, entry->count);
+        ok = ok && nmo_cli_record_uint(item, "total_size", NULL, entry->total_size);
+        ok = ok && nmo_cli_record_uint(item, "avg_size", NULL, avg);
+        ok = ok && nmo_cli_record_real(item, "percentage", NULL, pct, NULL);
+        if (name != NULL) {
+            ok = ok && nmo_cli_record_str(item, "name", NULL, name);
+        }
+        ok = ok && nmo_cli_record_set_summary_fmt(
+            item, "0x%08X %-8zu %-12zu %-10zu %5.1f%% %s",
+            entry->class_id, entry->count, entry->total_size, avg, pct,
+            name != NULL ? name : "");
+        if (!ok) {
+            nmo_cli_record_free(item);
+        } else {
+            ok = nmo_cli_record_array_add(classes, item);
+        }
+    }
+    ok = ok && nmo_cli_record_uint(rec, "grand_total_size", NULL, grand_total_size);
+    ok = ok && nmo_cli_record_raw_fmt(rec, "\nTotal data size: %zu bytes\n",
+                                      grand_total_size);
 
     free(entries);
-    return NMO_CLI_EXIT_SUCCESS;
+    return file_emit(c, rec, ok, "file.classes", 8);
 }
 
 int nmo_cmd_file_classes(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -675,76 +673,81 @@ static int nmo_cmd_file_plugins_in_session(nmo_cmd_ctx_t *c, int argc, char **ar
     const nmo_tool_plugin_diagnostics_t *diag =
         nmo_document_get_plugin_diagnostics(c->document);
 
-    if (c->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-
-        yyjson_mut_obj_add_bool(doc, data, "extension_registry_available",
-                                diag ? diag->extension_registry_available : false);
-        yyjson_mut_obj_add_uint(doc, data, "missing_count", diag ? diag->missing_count : 0);
-        yyjson_mut_obj_add_uint(doc, data, "outdated_count", diag ? diag->outdated_count : 0);
-        yyjson_mut_obj_add_uint(doc, data, "entry_count", diag ? diag->entry_count : 0);
-
-        /* Plugin entries */
-        yyjson_mut_val *entries = yyjson_mut_arr(doc);
-        if (diag && diag->entries) {
-            for (size_t i = 0; i < diag->entry_count; ++i) {
-                const nmo_tool_plugin_dependency_status_t *e = &diag->entries[i];
-                yyjson_mut_val *entry = yyjson_mut_obj(doc);
-
-                nmo_cli_json_add_guid_safe(doc, entry, "guid", e->guid);
-                yyjson_mut_obj_add_uint(doc, entry, "category", (uint32_t)e->category);
-                yyjson_mut_obj_add_str(doc, entry, "category_name",
-                                       file_plugin_category_name(e->category));
-                yyjson_mut_obj_add_uint(doc, entry, "required_version", e->required_version);
-                yyjson_mut_obj_add_uint(doc, entry, "resolved_version", e->resolved_version);
-                if (e->resolved_name) {
-                    yyjson_mut_obj_add_str(doc, entry, "name", e->resolved_name);
-                }
-                yyjson_mut_obj_add_uint(doc, entry, "status_flags", e->status_flags);
-
-                yyjson_mut_arr_add_val(entries, entry);
-            }
-        }
-        yyjson_mut_obj_add_val(doc, data, "entries", entries);
-
-        nmo_cmd_ctx_json_end(c, doc, data, "file.plugins");
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL;
+    ok = ok && nmo_cli_record_title(rec, "Plugin Dependencies");
+    if (!diag) {
+        ok = ok && nmo_cli_record_bool(rec, "extension_registry_available", NULL, false);
+        ok = ok && nmo_cli_record_uint(rec, "missing_count", NULL, 0);
+        ok = ok && nmo_cli_record_uint(rec, "outdated_count", NULL, 0);
+        ok = ok && nmo_cli_record_uint(rec, "entry_count", NULL, 0);
+        ok = ok && nmo_cli_record_raw(rec, "Plugin diagnostics unavailable\n");
     } else {
-        nmo_cli_print_heading(c->out, "Plugin Dependencies", c->colorize);
+        ok = ok && nmo_cli_record_bool(rec, "extension_registry_available",
+                                       "Registry Available",
+                                       diag->extension_registry_available);
+        ok = ok && nmo_cli_record_set_text(
+            rec, diag->extension_registry_available ? "yes" : "no");
+        ok = ok && nmo_cli_record_uint(rec, "missing_count", "Missing",
+                                       diag->missing_count);
+        ok = ok && nmo_cli_record_uint(rec, "outdated_count", "Outdated",
+                                       diag->outdated_count);
+        ok = ok && nmo_cli_record_uint(rec, "entry_count", "Total Entries",
+                                       diag->entry_count);
+    }
 
-        if (!diag) {
-            fprintf(c->out, "Plugin diagnostics unavailable\n");
+    nmo_cli_record_array_t *entries =
+        ok ? nmo_cli_record_array(rec, "entries", NULL) : NULL;
+    ok = entries != NULL;
+    size_t entry_count = (diag && diag->entries) ? diag->entry_count : 0;
+    if (ok && entry_count > 0) {
+        ok = nmo_cli_record_array_set_heading(entries, "Entries:");
+    } else if (ok) {
+        nmo_cli_record_array_omit_heading(entries);
+    }
+    for (size_t i = 0; ok && i < entry_count; ++i) {
+        const nmo_tool_plugin_dependency_status_t *e = &diag->entries[i];
+        const char *category_name = file_plugin_category_name(e->category);
+        char guid_buf[NMO_GUID_STRING_SIZE];
+        nmo_guid_format(e->guid, guid_buf, sizeof(guid_buf));
+
+        nmo_cli_record_t *item = nmo_cli_record_new();
+        ok = item != NULL;
+        ok = ok && nmo_cli_record_guid(item, "guid", NULL, e->guid);
+        ok = ok && nmo_cli_record_uint(item, "category", NULL, (uint32_t)e->category);
+        ok = ok && nmo_cli_record_str(item, "category_name", NULL, category_name);
+        ok = ok && nmo_cli_record_uint(item, "required_version", NULL,
+                                       e->required_version);
+        ok = ok && nmo_cli_record_uint(item, "resolved_version", NULL,
+                                       e->resolved_version);
+        if (e->resolved_name) {
+            ok = ok && nmo_cli_record_str(item, "name", NULL, e->resolved_name);
+        }
+        ok = ok && nmo_cli_record_uint(item, "status_flags", NULL, e->status_flags);
+
+        const char *name_open = e->resolved_name ? " (" : "";
+        const char *name = e->resolved_name ? e->resolved_name : "";
+        const char *name_close = e->resolved_name ? ")" : "";
+        if (e->status_flags) {
+            ok = ok && nmo_cli_record_set_summary_fmt(
+                item, "  %s [%s req=%u resolved=%u]%s%s%s [flags=0x%X]",
+                guid_buf, category_name, e->required_version,
+                e->resolved_version, name_open, name, name_close,
+                e->status_flags);
         } else {
-            nmo_cli_print_kv(c->out, "Registry Available",
-                            diag->extension_registry_available ? "yes" : "no", 18, c->colorize);
-            nmo_cli_print_kv_fmt(c->out, "Missing", 18, c->colorize, "%zu", diag->missing_count);
-            nmo_cli_print_kv_fmt(c->out, "Outdated", 18, c->colorize, "%zu", diag->outdated_count);
-            nmo_cli_print_kv_fmt(c->out, "Total Entries", 18, c->colorize, "%zu", diag->entry_count);
-
-            if (diag->entries && diag->entry_count > 0) {
-                fprintf(c->out, "\nEntries:\n");
-                for (size_t i = 0; i < diag->entry_count; ++i) {
-                    const nmo_tool_plugin_dependency_status_t *e = &diag->entries[i];
-                    char guid_buf[NMO_GUID_STRING_SIZE];
-                    nmo_guid_format(e->guid, guid_buf, sizeof(guid_buf));
-                    fprintf(c->out, "  %s [%s req=%u resolved=%u]",
-                            guid_buf,
-                            file_plugin_category_name(e->category),
-                            e->required_version,
-                            e->resolved_version);
-                    if (e->resolved_name) {
-                        fprintf(c->out, " (%s)", e->resolved_name);
-                    }
-                    if (e->status_flags) {
-                        fprintf(c->out, " [flags=0x%X]", e->status_flags);
-                    }
-                    fprintf(c->out, "\n");
-                }
-            }
+            ok = ok && nmo_cli_record_set_summary_fmt(
+                item, "  %s [%s req=%u resolved=%u]%s%s%s",
+                guid_buf, category_name, e->required_version,
+                e->resolved_version, name_open, name, name_close);
+        }
+        if (!ok) {
+            nmo_cli_record_free(item);
+        } else {
+            ok = nmo_cli_record_array_add(entries, item);
         }
     }
 
-    return NMO_CLI_EXIT_SUCCESS;
+    return file_emit(c, rec, ok, "file.plugins", 18);
 }
 
 int nmo_cmd_file_plugins(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -939,136 +942,136 @@ static int nmo_cmd_file_space_in_session(nmo_cmd_ctx_t *c, int argc, char **argv
         }
     }
 
-    if (c->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
-        if (!doc) {
-            free(obj_entries);
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
+    static const char bar_fill[] = "####################";
+
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL;
+    ok = ok && nmo_cli_record_title(rec, "Space Analysis");
+    ok = ok && nmo_cli_record_uint(rec, "file_size", "File Size", info.file_size);
+    ok = ok && nmo_cli_record_set_text_fmt(rec, "%zu bytes", info.file_size);
+    ok = ok && nmo_cli_record_uint(rec, "object_count", "Objects", obj_count);
+    ok = ok && nmo_cli_record_uint(rec, "total_data_size", "Total Data", total_data);
+    ok = ok && nmo_cli_record_set_text_fmt(rec, "%" PRIu64 " bytes", total_data);
+    ok = ok && nmo_cli_record_uint(rec, "total_pack_size", "Total Packed", total_pack);
+    ok = ok && nmo_cli_record_set_text_fmt(rec, "%" PRIu64 " bytes", total_pack);
+    if (total_data > 0) {
+        ok = ok && nmo_cli_record_text_fmt(
+            rec, "Compression", "%.1f%%",
+            (double)total_pack / (double)total_data * 100.0);
+    }
+    ok = ok && nmo_cli_record_uint(rec, "compressed_objects", "Compressed",
+                                   compressed_count);
+    ok = ok && nmo_cli_record_set_text_fmt(rec, "%" PRIu64 " / %zu",
+                                           compressed_count, obj_count);
+
+    /* Per-class breakdown with cumulative % and ASCII bar */
+    ok = ok && nmo_cli_record_heading(rec, "Space by Class");
+    ok = ok && nmo_cli_record_raw_fmt(
+        rec, "%-20s  %5s  %10s  %10s  %6s  %6s  %s\n"
+             "%-20s  %5s  %10s  %10s  %6s  %6s  %s\n",
+        "CLASS", "COUNT", "DATA", "PACKED", "%", "CUM%", "BAR",
+        "--------------------", "-----", "----------", "----------",
+        "------", "------", "--------------------");
+
+    nmo_cli_record_array_t *cls_arr =
+        ok ? nmo_cli_record_array(rec, "classes", NULL) : NULL;
+    ok = cls_arr != NULL;
+    if (ok) {
+        nmo_cli_record_array_omit_heading(cls_arr);
+    }
+    uint64_t cumul = 0;
+    for (size_t i = 0; ok && i < class_count; i++) {
+        cumul += classes[i].data_size;
+        double pct = total_data > 0
+            ? (double)classes[i].data_size / (double)total_data * 100.0 : 0.0;
+        double cum_pct = total_data > 0
+            ? (double)cumul / (double)total_data * 100.0 : 0.0;
+        int bar_len = (int)(pct / 5.0 + 0.5);
+        if (bar_len > 20) bar_len = 20;
+
+        nmo_cli_record_t *item = nmo_cli_record_new();
+        ok = item != NULL;
+        if (classes[i].class_name) {
+            ok = ok && nmo_cli_record_str(item, "class_name", NULL,
+                                          classes[i].class_name);
         }
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-
-        nmo_cli_json_add_uint_safe(doc, data, "file_size", (uint64_t)info.file_size);
-        nmo_cli_json_add_uint_safe(doc, data, "object_count", (uint64_t)obj_count);
-        nmo_cli_json_add_uint_safe(doc, data, "total_data_size", total_data);
-        nmo_cli_json_add_uint_safe(doc, data, "total_pack_size", total_pack);
-        nmo_cli_json_add_uint_safe(doc, data, "compressed_objects", compressed_count);
-
-        yyjson_mut_val *cls_arr = yyjson_mut_arr(doc);
-        uint64_t cumul = 0;
-        for (size_t i = 0; i < class_count; i++) {
-            cumul += classes[i].data_size;
-            yyjson_mut_val *e = yyjson_mut_obj(doc);
-            if (classes[i].class_name)
-                nmo_cli_json_add_str_safe(doc, e, "class_name", classes[i].class_name);
-            nmo_cli_json_add_uint_safe(doc, e, "count", classes[i].count);
-            nmo_cli_json_add_uint_safe(doc, e, "data_size", classes[i].data_size);
-            nmo_cli_json_add_uint_safe(doc, e, "pack_size", classes[i].pack_size);
-            if (total_data > 0) {
-                double pct = (double)classes[i].data_size / (double)total_data * 100.0;
-                double cum_pct = (double)cumul / (double)total_data * 100.0;
-                yyjson_mut_obj_add_real(doc, e, "percent", pct);
-                yyjson_mut_obj_add_real(doc, e, "cumulative_percent", cum_pct);
-            }
-            yyjson_mut_arr_add_val(cls_arr, e);
-        }
-        yyjson_mut_obj_add_val(doc, data, "classes", cls_arr);
-
-        /* Top objects (already sorted above) */
-        if (obj_entries && obj_count > 0) {
-            size_t show_n = obj_count < top_n ? obj_count : top_n;
-            yyjson_mut_val *top_arr = yyjson_mut_arr(doc);
-            for (size_t i = 0; i < show_n; i++) {
-                yyjson_mut_val *e = yyjson_mut_obj(doc);
-                nmo_cli_json_add_uint_safe(doc, e, "id",
-                    (uint64_t)nmo_object_get_id(obj_entries[i].obj));
-                const char *cn = nmo_core_class_name(c,
-                    nmo_object_get_class_id(obj_entries[i].obj));
-                if (cn) nmo_cli_json_add_str_safe(doc, e, "class_name", cn);
-                const char *nm = nmo_object_get_name(obj_entries[i].obj);
-                if (nm && nm[0]) nmo_cli_json_add_str_safe(doc, e, "name", nm);
-                nmo_cli_json_add_uint_safe(doc, e, "data_size", obj_entries[i].data_sz);
-                nmo_cli_json_add_uint_safe(doc, e, "pack_size", obj_entries[i].pack_sz);
-                yyjson_mut_arr_add_val(top_arr, e);
-            }
-            yyjson_mut_obj_add_val(doc, data, "top_objects", top_arr);
-        }
-
-        nmo_cmd_ctx_json_end(c, doc, data, "file.space");
-    } else {
-        nmo_cli_print_heading(c->out, "Space Analysis", c->colorize);
-
-        nmo_cli_print_kv_fmt(c->out, "File Size", 20, c->colorize, "%zu bytes", info.file_size);
-        nmo_cli_print_kv_fmt(c->out, "Objects", 20, c->colorize, "%zu", obj_count);
-        nmo_cli_print_kv_fmt(c->out, "Total Data", 20, c->colorize, "%" PRIu64 " bytes", total_data);
-        nmo_cli_print_kv_fmt(c->out, "Total Packed", 20, c->colorize, "%" PRIu64 " bytes", total_pack);
+        ok = ok && nmo_cli_record_uint(item, "count", NULL, classes[i].count);
+        ok = ok && nmo_cli_record_uint(item, "data_size", NULL, classes[i].data_size);
+        ok = ok && nmo_cli_record_uint(item, "pack_size", NULL, classes[i].pack_size);
         if (total_data > 0) {
-            nmo_cli_print_kv_fmt(c->out, "Compression", 20, c->colorize, "%.1f%%", (double)total_pack / (double)total_data * 100.0);
+            ok = ok && nmo_cli_record_real(item, "percent", NULL, pct, NULL);
+            ok = ok && nmo_cli_record_real(item, "cumulative_percent", NULL,
+                                           cum_pct, NULL);
         }
-        nmo_cli_print_kv_fmt(c->out, "Compressed", 20, c->colorize, "%" PRIu64 " / %zu", compressed_count, obj_count);
-
-        /* Per-class breakdown with cumulative % and ASCII bar */
-        fprintf(c->out, "\n");
-        nmo_cli_print_heading(c->out, "Space by Class", c->colorize);
-        fprintf(c->out, "%-20s  %5s  %10s  %10s  %6s  %6s  %s\n",
-                "CLASS", "COUNT", "DATA", "PACKED", "%", "CUM%", "BAR");
-        fprintf(c->out, "%-20s  %5s  %10s  %10s  %6s  %6s  %s\n",
-                "--------------------", "-----", "----------", "----------",
-                "------", "------", "--------------------");
-
-        uint64_t cumul = 0;
-        for (size_t i = 0; i < class_count; i++) {
-            cumul += classes[i].data_size;
-            double pct = total_data > 0
-                ? (double)classes[i].data_size / (double)total_data * 100.0 : 0.0;
-            double cum_pct = total_data > 0
-                ? (double)cumul / (double)total_data * 100.0 : 0.0;
-
-            int bar_len = (int)(pct / 5.0 + 0.5);
-            if (bar_len > 20) bar_len = 20;
-            char bar[21];
-            for (int b = 0; b < bar_len; b++) bar[b] = '#';
-            bar[bar_len] = '\0';
-
-            fprintf(c->out, "%-20s  %5u  %10" PRIu64 "  %10" PRIu64 "  %5.1f%%  %5.1f%%  %s\n",
-                    classes[i].class_name ? classes[i].class_name : "?",
-                    classes[i].count,
-                    classes[i].data_size,
-                    classes[i].pack_size,
-                    pct, cum_pct, bar);
+        ok = ok && nmo_cli_record_set_summary_fmt(
+            item, "%-20s  %5u  %10" PRIu64 "  %10" PRIu64 "  %5.1f%%  %5.1f%%  %.*s",
+            classes[i].class_name ? classes[i].class_name : "?",
+            classes[i].count,
+            classes[i].data_size,
+            classes[i].pack_size,
+            pct, cum_pct, bar_len, bar_fill);
+        if (!ok) {
+            nmo_cli_record_free(item);
+        } else {
+            ok = nmo_cli_record_array_add(cls_arr, item);
         }
+    }
 
-        /* Top N objects (already sorted above) */
-        if (obj_entries && obj_count > 0) {
-            size_t show_n = obj_count < top_n ? obj_count : top_n;
-            fprintf(c->out, "\n");
-            nmo_cli_print_heading_fmt(c->out, c->colorize, "Top %zu Objects by Size", show_n);
-            fprintf(c->out, "%5s  %-20s  %10s  %10s  %6s  %-s\n",
-                    "ID", "CLASS", "DATA", "PACKED", "RATIO", "NAME");
-            fprintf(c->out, "%5s  %-20s  %10s  %10s  %6s  %-s\n",
-                    "-----", "--------------------", "----------", "----------",
-                    "------", "--------------------");
+    /* Top N objects (already sorted above) */
+    if (obj_entries && obj_count > 0) {
+        size_t show_n = obj_count < top_n ? obj_count : top_n;
+        ok = ok && nmo_cli_record_raw(rec, "\n");
+        ok = ok && nmo_cli_record_title_fmt(rec, "Top %zu Objects by Size", show_n);
+        ok = ok && nmo_cli_record_raw_fmt(
+            rec, "%5s  %-20s  %10s  %10s  %6s  %-s\n"
+                 "%5s  %-20s  %10s  %10s  %6s  %-s\n",
+            "ID", "CLASS", "DATA", "PACKED", "RATIO", "NAME",
+            "-----", "--------------------", "----------", "----------",
+            "------", "--------------------");
 
-            for (size_t i = 0; i < show_n; i++) {
-                nmo_object_t *obj = obj_entries[i].obj;
-                const char *cn = nmo_core_class_name(c, nmo_object_get_class_id(obj));
-                const char *nm = nmo_object_get_name(obj);
-                double ratio = obj_entries[i].data_sz > 0
-                    ? (double)obj_entries[i].pack_sz / (double)obj_entries[i].data_sz * 100.0
-                    : 0.0;
+        nmo_cli_record_array_t *top_arr =
+            ok ? nmo_cli_record_array(rec, "top_objects", NULL) : NULL;
+        ok = top_arr != NULL;
+        if (ok) {
+            nmo_cli_record_array_omit_heading(top_arr);
+        }
+        for (size_t i = 0; ok && i < show_n; i++) {
+            nmo_object_t *obj = obj_entries[i].obj;
+            const char *cn = nmo_core_class_name(c, nmo_object_get_class_id(obj));
+            const char *nm = nmo_object_get_name(obj);
+            double ratio = obj_entries[i].data_sz > 0
+                ? (double)obj_entries[i].pack_sz / (double)obj_entries[i].data_sz * 100.0
+                : 0.0;
 
-                fprintf(c->out, "%5u  %-20s  %10" PRIu64 "  %10" PRIu64 "  %5.1f%%  %s\n",
-                        nmo_object_get_id(obj),
-                        cn ? cn : "?",
-                        obj_entries[i].data_sz,
-                        obj_entries[i].pack_sz,
-                        ratio,
-                        (nm && nm[0]) ? nm : "(unnamed)");
+            nmo_cli_record_t *item = nmo_cli_record_new();
+            ok = item != NULL;
+            ok = ok && nmo_cli_record_uint(item, "id", NULL, nmo_object_get_id(obj));
+            if (cn) {
+                ok = ok && nmo_cli_record_str(item, "class_name", NULL, cn);
+            }
+            ok = ok && nmo_cli_record_str_opt(item, "name", NULL, nm, NULL);
+            ok = ok && nmo_cli_record_uint(item, "data_size", NULL,
+                                           obj_entries[i].data_sz);
+            ok = ok && nmo_cli_record_uint(item, "pack_size", NULL,
+                                           obj_entries[i].pack_sz);
+            ok = ok && nmo_cli_record_set_summary_fmt(
+                item, "%5u  %-20s  %10" PRIu64 "  %10" PRIu64 "  %5.1f%%  %s",
+                nmo_object_get_id(obj),
+                cn ? cn : "?",
+                obj_entries[i].data_sz,
+                obj_entries[i].pack_sz,
+                ratio,
+                (nm && nm[0]) ? nm : "(unnamed)");
+            if (!ok) {
+                nmo_cli_record_free(item);
+            } else {
+                ok = nmo_cli_record_array_add(top_arr, item);
             }
         }
     }
 
     free(obj_entries);
-    return NMO_CLI_EXIT_SUCCESS;
+    return file_emit(c, rec, ok, "file.space", 20);
 }
 
 int nmo_cmd_file_space(int argc, char **argv, const nmo_cli_global_opts_t *global) {
