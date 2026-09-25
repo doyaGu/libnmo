@@ -7,8 +7,8 @@
 
 #include "../nmo_cmd_core.h"
 #include "../nmo_cmd_ctx.h"
-#include "../nmo_cli_json.h"
 #include "../nmo_cli_output.h"
+#include "../nmo_cli_record.h"
 #include "../nmo_edit_report_json.h"
 #include "../nmo_cli_write.h"
 #include "../nmo_tool_common.h"
@@ -40,12 +40,13 @@
 #include <stdlib.h>
 #include <errno.h>
 
-typedef struct nmo_debug_chunks_data {
-    yyjson_mut_doc *doc;
-    yyjson_mut_val *chunks;
-    nmo_cli_table_t *table;
-    size_t chunk_count;
-} nmo_debug_chunks_data_t;
+/* Records built while iterating objects, before the report around them. */
+typedef struct debug_item_list {
+    nmo_cli_record_t **items;
+    size_t count;
+    size_t capacity;
+    bool out_of_memory;
+} debug_item_list_t;
 
 typedef struct nmo_debug_probe_args {
     const char *kind;
@@ -73,7 +74,7 @@ typedef struct nmo_debug_probe_args {
     nmo_object_id_t selector_selected_node_id;
     nmo_object_id_t selector_selected_link_id;
     nmo_object_id_t selector_selected_operation_id;
-    struct {
+    struct debug_probe_selector_candidate {
         nmo_object_id_t node_id;
         nmo_object_id_t parent_id;
         nmo_object_id_t boundary_behavior_id;
@@ -185,9 +186,93 @@ static nmo_status_t debug_probe_reconcile_saved_link_ids(
     nmo_cmd_ctx_t *ctx,
     const char *output_path,
     nmo_debug_probe_args_t *args);
-static yyjson_mut_val *debug_probe_selector_diagnostics_json(
-    yyjson_mut_doc *doc,
+static bool debug_probe_add_selector_diagnostics(
+    nmo_cli_record_t *rec,
     const nmo_debug_probe_args_t *args);
+
+/*
+ * Emit a record built by this file. An incomplete record (`ok` false) is an
+ * internal error.
+ */
+static int debug_emit(nmo_cmd_ctx_t *c,
+                      nmo_cli_record_t *rec,
+                      bool ok,
+                      const char *cmd_name,
+                      int key_width)
+{
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        rec = NULL;
+    }
+    return nmo_cmd_ctx_emit_record(c, rec, cmd_name, key_width, c->colorize);
+}
+
+typedef struct debug_probe_report_json_ctx {
+    const nmo_edit_report_t *report;
+    bool dry_run;
+} debug_probe_report_json_ctx_t;
+
+static bool debug_probe_edit_report_json(yyjson_mut_doc *doc,
+                                         yyjson_mut_val *obj,
+                                         const void *data)
+{
+    const debug_probe_report_json_ctx_t *ctx =
+        (const debug_probe_report_json_ctx_t *)data;
+    nmo_cli_edit_report_add_schema_v2_json(doc, obj, ctx->report, ctx->dry_run);
+    return true;
+}
+
+static void debug_item_list_push(debug_item_list_t *list,
+                                 nmo_cli_record_t *item,
+                                 bool ok)
+{
+    if (!ok) {
+        nmo_cli_record_free(item);
+        list->out_of_memory = true;
+        return;
+    }
+    if (list->count == list->capacity) {
+        size_t capacity = list->capacity ? list->capacity * 2u : 64u;
+        nmo_cli_record_t **grown = (nmo_cli_record_t **)realloc(
+            list->items, capacity * sizeof(*grown));
+        if (!grown) {
+            nmo_cli_record_free(item);
+            list->out_of_memory = true;
+            return;
+        }
+        list->items = grown;
+        list->capacity = capacity;
+    }
+    list->items[list->count++] = item;
+}
+
+/*
+ * Move every item into a new `key` array on `rec`, printed in text as a table
+ * with `columns`. The list is emptied either way; `rec` NULL just frees it.
+ */
+static bool debug_item_list_to_array(debug_item_list_t *list,
+                                     nmo_cli_record_t *rec,
+                                     const char *key,
+                                     const nmo_cli_table_col_t *columns,
+                                     size_t column_count)
+{
+    nmo_cli_record_array_t *array =
+        rec ? nmo_cli_record_array(rec, key, NULL) : NULL;
+    bool ok = array != NULL && !list->out_of_memory;
+    if (ok && columns) {
+        ok = nmo_cli_record_array_set_table(array, columns, column_count);
+    }
+    for (size_t i = 0; i < list->count; ++i) {
+        if (ok) {
+            ok = nmo_cli_record_array_add(array, list->items[i]);
+        } else {
+            nmo_cli_record_free(list->items[i]);
+        }
+    }
+    free(list->items);
+    memset(list, 0, sizeof(*list));
+    return ok;
+}
 
 static int debug_probe_parse(int argc,
                              char **argv,
@@ -1479,266 +1564,211 @@ static int debug_probe_report(nmo_cmd_ctx_t *ctx,
     }
     const debug_probe_kind_spec_t *spec = debug_probe_find_kind(args->kind);
 
-    if (ctx->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
-        if (doc == NULL) {
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
-        }
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        if (!dry_run && output_path != NULL) {
-            (void)debug_probe_reconcile_saved_link_ids(
-                ctx, output_path, args);
-        }
-        if (!dry_run && output_path != NULL && args->report.output_path == NULL) {
+    if (ctx->is_json && !dry_run && output_path != NULL) {
+        (void)debug_probe_reconcile_saved_link_ids(ctx, output_path, args);
+        if (args->report.output_path == NULL) {
             (void)nmo_edit_report_set_output_path(&args->report, output_path);
         }
-        nmo_cli_edit_report_add_schema_v2_json(
-            doc, data, &args->report, dry_run);
-        nmo_cli_json_add_str_safe(doc, data, "probe_kind", args->kind);
-        yyjson_mut_obj_add_uint(doc, data, "behavior_id",
-                                (uint64_t)args->behavior_id);
-        if (args->message_node_id != 0u) {
-            yyjson_mut_obj_add_uint(doc, data, "message_node_id",
-                                    (uint64_t)args->message_node_id);
-            nmo_cli_json_add_str_safe(
-                doc, data, "probe_selector", "message_flow");
-        } else if (spec != NULL && spec->logs_data_cell) {
-            nmo_cli_json_add_str_safe(
-                doc, data, "probe_selector", "data_cell_write");
-        }
-        yyjson_mut_val *selector_diag = args->report.has_probe_selector_analysis
-            ? NULL
-            : debug_probe_selector_diagnostics_json(doc, args);
-        if (selector_diag != NULL) {
-            yyjson_mut_obj_add_val(
-                doc, data, "probe_selector_diagnostics", selector_diag);
-        }
-        int rc = nmo_cmd_ctx_json_end(ctx, doc, data, "debug.probe");
-        nmo_edit_report_dispose(&args->report);
-        nmo_probe_analysis_dispose(&args->selector_analysis);
-        debug_probe_selector_dispose_strings(args);
-        return rc;
     }
 
-    fprintf(ctx->out, "%sInjected %zu debug probe operation(s)\n",
-            dry_run ? "[dry-run] " : "",
-            args->report.operation_count);
-    if (!dry_run && output_path != NULL) {
-        fprintf(ctx->out, "Saved to: %s\n", output_path);
+    const debug_probe_report_json_ctx_t report_json = {
+        .report = &args->report,
+        .dry_run = dry_run,
+    };
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL;
+    ok = ok && nmo_cli_record_json(rec, debug_probe_edit_report_json,
+                                   &report_json);
+    if (args->kind != NULL) {
+        ok = ok && nmo_cli_record_str(rec, "probe_kind", NULL, args->kind);
+    } else {
+        ok = ok && nmo_cli_record_null(rec, "probe_kind", NULL, NULL);
     }
+    ok = ok && nmo_cli_record_uint(rec, "behavior_id", NULL, args->behavior_id);
+    if (args->message_node_id != 0u) {
+        ok = ok && nmo_cli_record_uint(rec, "message_node_id", NULL,
+                                       args->message_node_id);
+        ok = ok && nmo_cli_record_str(rec, "probe_selector", NULL,
+                                      "message_flow");
+    } else if (spec != NULL && spec->logs_data_cell) {
+        ok = ok && nmo_cli_record_str(rec, "probe_selector", NULL,
+                                      "data_cell_write");
+    }
+    if (!args->report.has_probe_selector_analysis) {
+        ok = ok && debug_probe_add_selector_diagnostics(rec, args);
+    }
+    ok = ok && nmo_cli_record_raw_fmt(
+        rec, "%sInjected %zu debug probe operation(s)\n",
+        dry_run ? "[dry-run] " : "", args->report.operation_count);
+    if (!dry_run && output_path != NULL) {
+        ok = ok && nmo_cli_record_raw_fmt(rec, "Saved to: %s\n", output_path);
+    }
+
+    int rc = debug_emit(ctx, rec, ok, "debug.probe", 0);
     nmo_edit_report_dispose(&args->report);
     nmo_probe_analysis_dispose(&args->selector_analysis);
     debug_probe_selector_dispose_strings(args);
-    return NMO_CLI_EXIT_SUCCESS;
+    return rc;
+}
+/* Add `key` as an unsigned integer unless `value` is zero. */
+static bool debug_add_uint_nonzero(nmo_cli_record_t *rec, const char *key,
+                                   uint64_t value)
+{
+    return value == 0u || nmo_cli_record_uint(rec, key, NULL, value);
 }
 
-static yyjson_mut_val *debug_probe_selector_diagnostics_json(
-    yyjson_mut_doc *doc,
+static bool debug_probe_add_selector_candidate(
+    nmo_cli_record_array_t *candidates,
+    const struct debug_probe_selector_candidate *candidate)
+{
+    nmo_cli_record_t *item = nmo_cli_record_new();
+    bool ok = item != NULL;
+    ok = ok && nmo_cli_record_uint(item, "node_id", NULL, candidate->node_id);
+    ok = ok && nmo_cli_record_uint(item, "parent_id", NULL,
+                                   candidate->parent_id);
+    ok = ok && nmo_cli_record_uint(item, "boundary_behavior_id", NULL,
+                                   candidate->boundary_behavior_id);
+    ok = ok && debug_add_uint_nonzero(item, "link_id", candidate->link_id);
+    ok = ok && debug_add_uint_nonzero(item, "operation_id",
+                                      candidate->operation_id);
+    ok = ok && debug_add_uint_nonzero(item, "from_io_id",
+                                      candidate->from_io_id);
+    ok = ok && debug_add_uint_nonzero(item, "to_io_id", candidate->to_io_id);
+    if (candidate->has_delay) {
+        ok = ok && nmo_cli_record_uint(item, "delay", NULL, candidate->delay);
+    }
+    ok = ok && debug_add_uint_nonzero(item, "source_parameter_id",
+                                      candidate->source_parameter_id);
+    ok = ok && debug_add_uint_nonzero(item, "value_parameter_id",
+                                      candidate->value_parameter_id);
+    ok = ok && debug_add_uint_nonzero(item, "dataarray_id",
+                                      candidate->dataarray_id);
+    if (!nmo_guid_is_null(candidate->column_type_guid)) {
+        ok = ok && nmo_cli_record_guid(item, "column_type_guid", NULL,
+                                       candidate->column_type_guid);
+    }
+    ok = ok && nmo_cli_record_real(item, "confidence", NULL,
+                                   candidate->confidence, NULL);
+    ok = ok && nmo_cli_record_guid(item, "bb_guid", NULL, candidate->bb_guid);
+    ok = ok && nmo_cli_record_str(item, "proto_name", NULL,
+                                  candidate->proto_name);
+    ok = ok && nmo_cli_record_str(item, "role", NULL, candidate->role);
+    if (debug_probe_has_text(candidate->rejection_code)) {
+        ok = ok && nmo_cli_record_str(item, "rejection_code", NULL,
+                                      candidate->rejection_code);
+    }
+    if (!ok) {
+        nmo_cli_record_free(item);
+        return false;
+    }
+    return nmo_cli_record_array_add(candidates, item);
+}
+
+static bool debug_probe_add_safe_insertion(
+    nmo_cli_record_t *diag,
+    const nmo_probe_safe_insertion_t *safe_insertion)
+{
+    nmo_cli_record_t *safe = nmo_cli_record_object(diag, "safe_insertion");
+    bool ok = safe != NULL;
+    ok = ok && nmo_cli_record_bool(safe, "selected", NULL, true);
+    ok = ok && debug_add_uint_nonzero(safe, "selected_node_id",
+                                      safe_insertion->selected_node_id);
+    ok = ok && debug_add_uint_nonzero(safe, "selected_link_id",
+                                      safe_insertion->selected_link_id);
+    ok = ok && debug_add_uint_nonzero(safe, "selected_operation_id",
+                                      safe_insertion->selected_operation_id);
+    ok = ok && debug_add_uint_nonzero(safe, "remove_link_id",
+                                      safe_insertion->remove_link_id);
+    ok = ok && debug_add_uint_nonzero(safe, "insert_from_io_id",
+                                      safe_insertion->insert_from_io_id);
+    ok = ok && debug_add_uint_nonzero(safe, "insert_to_io_id",
+                                      safe_insertion->insert_to_io_id);
+    if (safe_insertion->has_preserved_delay) {
+        ok = ok && nmo_cli_record_uint(safe, "preserved_delay", NULL,
+                                       safe_insertion->preserved_delay);
+    }
+    return ok;
+}
+
+/* JSON-only "probe_selector_diagnostics", when a selector mode was recorded. */
+static bool debug_probe_add_selector_diagnostics(
+    nmo_cli_record_t *rec,
     const nmo_debug_probe_args_t *args)
 {
-    if (doc == NULL || args == NULL ||
-        !debug_probe_has_text(args->selector_mode)) {
-        return NULL;
+    if (!debug_probe_has_text(args->selector_mode)) {
+        return true;
     }
-    yyjson_mut_val *diag = yyjson_mut_obj(doc);
-    if (diag == NULL) {
-        return NULL;
+    nmo_cli_record_t *diag =
+        nmo_cli_record_object(rec, "probe_selector_diagnostics");
+    bool ok = diag != NULL;
+    ok = ok && nmo_cli_record_str(diag, "mode", NULL, args->selector_mode);
+    ok = ok && nmo_cli_record_str(diag, "status", NULL, args->selector_status);
+    nmo_cli_record_array_t *candidates =
+        ok ? nmo_cli_record_array(diag, "candidates", NULL) : NULL;
+    ok = candidates != NULL;
+    for (size_t i = 0; ok && i < args->selector_candidate_count; ++i) {
+        ok = debug_probe_add_selector_candidate(
+            candidates, &args->selector_candidates[i]);
     }
-    nmo_cli_json_add_str_safe(doc, diag, "mode", args->selector_mode);
-    nmo_cli_json_add_str_safe(doc, diag, "status",
-                              args->selector_status != NULL ? args->selector_status : "");
-    yyjson_mut_val *candidates = yyjson_mut_arr(doc);
-    for (size_t i = 0; i < args->selector_candidate_count; ++i) {
-        yyjson_mut_val *candidate = yyjson_mut_obj(doc);
-        if (candidate == NULL) {
-            continue;
-        }
-        yyjson_mut_obj_add_uint(
-            doc, candidate, "node_id",
-            (uint64_t)args->selector_candidates[i].node_id);
-        yyjson_mut_obj_add_uint(
-            doc, candidate, "parent_id",
-            (uint64_t)args->selector_candidates[i].parent_id);
-        yyjson_mut_obj_add_uint(
-            doc, candidate, "boundary_behavior_id",
-            (uint64_t)args->selector_candidates[i].boundary_behavior_id);
-        if (args->selector_candidates[i].link_id != 0u) {
-            yyjson_mut_obj_add_uint(
-                doc, candidate, "link_id",
-                (uint64_t)args->selector_candidates[i].link_id);
-        }
-        if (args->selector_candidates[i].operation_id != 0u) {
-            yyjson_mut_obj_add_uint(
-                doc, candidate, "operation_id",
-                (uint64_t)args->selector_candidates[i].operation_id);
-        }
-        if (args->selector_candidates[i].from_io_id != 0u) {
-            yyjson_mut_obj_add_uint(
-                doc, candidate, "from_io_id",
-                (uint64_t)args->selector_candidates[i].from_io_id);
-        }
-        if (args->selector_candidates[i].to_io_id != 0u) {
-            yyjson_mut_obj_add_uint(
-                doc, candidate, "to_io_id",
-                (uint64_t)args->selector_candidates[i].to_io_id);
-        }
-        if (args->selector_candidates[i].has_delay) {
-            yyjson_mut_obj_add_uint(
-                doc, candidate, "delay",
-                (uint64_t)args->selector_candidates[i].delay);
-        }
-        if (args->selector_candidates[i].source_parameter_id != 0u) {
-            yyjson_mut_obj_add_uint(
-                doc, candidate, "source_parameter_id",
-                (uint64_t)args->selector_candidates[i].source_parameter_id);
-        }
-        if (args->selector_candidates[i].value_parameter_id != 0u) {
-            yyjson_mut_obj_add_uint(
-                doc, candidate, "value_parameter_id",
-                (uint64_t)args->selector_candidates[i].value_parameter_id);
-        }
-        if (args->selector_candidates[i].dataarray_id != 0u) {
-            yyjson_mut_obj_add_uint(
-                doc, candidate, "dataarray_id",
-                (uint64_t)args->selector_candidates[i].dataarray_id);
-        }
-        if (!nmo_guid_is_null(args->selector_candidates[i].column_type_guid)) {
-            nmo_cli_json_add_guid_safe(
-                doc, candidate, "column_type_guid",
-                args->selector_candidates[i].column_type_guid);
-        }
-        yyjson_mut_obj_add_real(
-            doc, candidate, "confidence",
-            args->selector_candidates[i].confidence);
-        nmo_cli_json_add_guid_safe(doc, candidate, "bb_guid",
-                                   args->selector_candidates[i].bb_guid);
-        nmo_cli_json_add_str_safe(
-            doc, candidate, "proto_name",
-            args->selector_candidates[i].proto_name != NULL
-                ? args->selector_candidates[i].proto_name : "");
-        nmo_cli_json_add_str_safe(
-            doc, candidate, "role",
-            args->selector_candidates[i].role != NULL
-                ? args->selector_candidates[i].role : "");
-        if (debug_probe_has_text(args->selector_candidates[i].rejection_code)) {
-            nmo_cli_json_add_str_safe(
-                doc,
-                candidate,
-                "rejection_code",
-                args->selector_candidates[i].rejection_code);
-        }
-        yyjson_mut_arr_add_val(candidates, candidate);
-    }
-    yyjson_mut_obj_add_val(doc, diag, "candidates", candidates);
-    if (args->selector_selected_node_id != 0u) {
-        yyjson_mut_obj_add_uint(
-            doc, diag, "selected_node_id",
-            (uint64_t)args->selector_selected_node_id);
-    }
-    if (args->selector_selected_link_id != 0u) {
-        yyjson_mut_obj_add_uint(
-            doc, diag, "selected_link_id",
-            (uint64_t)args->selector_selected_link_id);
-    }
-    if (args->selector_selected_operation_id != 0u) {
-        yyjson_mut_obj_add_uint(
-            doc, diag, "selected_operation_id",
-            (uint64_t)args->selector_selected_operation_id);
-    }
+    ok = ok && debug_add_uint_nonzero(diag, "selected_node_id",
+                                      args->selector_selected_node_id);
+    ok = ok && debug_add_uint_nonzero(diag, "selected_link_id",
+                                      args->selector_selected_link_id);
+    ok = ok && debug_add_uint_nonzero(diag, "selected_operation_id",
+                                      args->selector_selected_operation_id);
     if (debug_probe_has_text(args->selector_rejection_code)) {
-        nmo_cli_json_add_str_safe(
-            doc, diag, "rejection_code", args->selector_rejection_code);
+        ok = ok && nmo_cli_record_str(diag, "rejection_code", NULL,
+                                      args->selector_rejection_code);
     }
     if (args->selector_safe_insertion.selected) {
-        yyjson_mut_val *safe = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_bool(doc, safe, "selected", true);
-        if (args->selector_safe_insertion.selected_node_id != 0u) {
-            yyjson_mut_obj_add_uint(
-                doc, safe, "selected_node_id",
-                (uint64_t)args->selector_safe_insertion.selected_node_id);
-        }
-        if (args->selector_safe_insertion.selected_link_id != 0u) {
-            yyjson_mut_obj_add_uint(
-                doc, safe, "selected_link_id",
-                (uint64_t)args->selector_safe_insertion.selected_link_id);
-        }
-        if (args->selector_safe_insertion.selected_operation_id != 0u) {
-            yyjson_mut_obj_add_uint(
-                doc, safe, "selected_operation_id",
-                (uint64_t)args->selector_safe_insertion.selected_operation_id);
-        }
-        if (args->selector_safe_insertion.remove_link_id != 0u) {
-            yyjson_mut_obj_add_uint(
-                doc, safe, "remove_link_id",
-                (uint64_t)args->selector_safe_insertion.remove_link_id);
-        }
-        if (args->selector_safe_insertion.insert_from_io_id != 0u) {
-            yyjson_mut_obj_add_uint(
-                doc, safe, "insert_from_io_id",
-                (uint64_t)args->selector_safe_insertion.insert_from_io_id);
-        }
-        if (args->selector_safe_insertion.insert_to_io_id != 0u) {
-            yyjson_mut_obj_add_uint(
-                doc, safe, "insert_to_io_id",
-                (uint64_t)args->selector_safe_insertion.insert_to_io_id);
-        }
-        if (args->selector_safe_insertion.has_preserved_delay) {
-            yyjson_mut_obj_add_uint(
-                doc, safe, "preserved_delay",
-                (uint64_t)args->selector_safe_insertion.preserved_delay);
-        }
-        yyjson_mut_obj_add_val(doc, diag, "safe_insertion", safe);
+        ok = ok && debug_probe_add_safe_insertion(
+            diag, &args->selector_safe_insertion);
     }
-    return diag;
+    return ok;
 }
+static bool debug_add_load_phase_stats(nmo_cli_record_t *rec,
+                                       const nmo_load_perf_stats_t *stats)
+{
+    nmo_cli_record_t *phase_stats = nmo_cli_record_object(rec, "phase_stats");
+    bool ok = phase_stats != NULL;
+    ok = ok && nmo_cli_record_uint(phase_stats, "packed_header1_bytes", NULL,
+                                   stats->packed_header1_bytes);
+    ok = ok && nmo_cli_record_uint(phase_stats, "unpacked_header1_bytes", NULL,
+                                   stats->unpacked_header1_bytes);
+    ok = ok && nmo_cli_record_uint(phase_stats, "packed_data_bytes", NULL,
+                                   stats->packed_data_bytes);
+    ok = ok && nmo_cli_record_uint(phase_stats, "unpacked_data_bytes", NULL,
+                                   stats->unpacked_data_bytes);
+    ok = ok && nmo_cli_record_raw_fmt(phase_stats,
+                                      "\nPhase Timings:\n  %-28s %8s %12s\n",
+                                      "phase", "calls", "ms");
 
-static void debug_add_load_phase_stats_json(yyjson_mut_doc *doc,
-                                            yyjson_mut_val *data,
-                                            const nmo_load_perf_stats_t *stats) {
-    if (doc == NULL || data == NULL || stats == NULL) {
-        return;
-    }
-
-    yyjson_mut_val *phase_stats = yyjson_mut_obj(doc);
-    yyjson_mut_obj_add_uint(doc, phase_stats, "packed_header1_bytes", (uint64_t)stats->packed_header1_bytes);
-    yyjson_mut_obj_add_uint(doc, phase_stats, "unpacked_header1_bytes", (uint64_t)stats->unpacked_header1_bytes);
-    yyjson_mut_obj_add_uint(doc, phase_stats, "packed_data_bytes", (uint64_t)stats->packed_data_bytes);
-    yyjson_mut_obj_add_uint(doc, phase_stats, "unpacked_data_bytes", (uint64_t)stats->unpacked_data_bytes);
-
-    yyjson_mut_val *phases = yyjson_mut_obj(doc);
-    for (int i = 0; i < NMO_LOAD_PERF_PHASE_COUNT; i++) {
+    nmo_cli_record_t *phases =
+        ok ? nmo_cli_record_object(phase_stats, "phases") : NULL;
+    ok = phases != NULL;
+    for (int i = 0; ok && i < NMO_LOAD_PERF_PHASE_COUNT; i++) {
         const nmo_phase_time_t *phase = &stats->phases[i];
-        yyjson_mut_val *entry = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_uint(doc, entry, "calls", phase->calls);
-        yyjson_mut_obj_add_real(doc, entry, "milliseconds", phase->milliseconds);
-        yyjson_mut_obj_add_val(doc, phases, nmo_load_perf_phase_name((nmo_load_perf_phase_t)i), entry);
-    }
-    yyjson_mut_obj_add_val(doc, phase_stats, "phases", phases);
-    yyjson_mut_obj_add_val(doc, data, "phase_stats", phase_stats);
-}
-
-static void debug_print_load_phase_stats(FILE *out, const nmo_load_perf_stats_t *stats) {
-    if (out == NULL || stats == NULL) {
-        return;
+        const char *name = nmo_load_perf_phase_name((nmo_load_perf_phase_t)i);
+        nmo_cli_record_t *entry = nmo_cli_record_object(phases, name);
+        ok = entry != NULL;
+        ok = ok && nmo_cli_record_uint(entry, "calls", NULL, phase->calls);
+        ok = ok && nmo_cli_record_real(entry, "milliseconds", NULL,
+                                       phase->milliseconds, NULL);
+        ok = ok && nmo_cli_record_raw_fmt(entry, "  %-28s %8llu %12.3f\n",
+                                          name,
+                                          (unsigned long long)phase->calls,
+                                          phase->milliseconds);
     }
 
-    fprintf(out, "\nPhase Timings:\n");
-    fprintf(out, "  %-28s %8s %12s\n", "phase", "calls", "ms");
-    for (int i = 0; i < NMO_LOAD_PERF_PHASE_COUNT; i++) {
-        const nmo_phase_time_t *phase = &stats->phases[i];
-        fprintf(out, "  %-28s %8llu %12.3f\n",
-                nmo_load_perf_phase_name((nmo_load_perf_phase_t)i),
-                (unsigned long long)phase->calls,
-                phase->milliseconds);
-    }
-
-    fprintf(out, "\nSection Bytes:\n");
-    fprintf(out, "  Header1: packed=%zu unpacked=%zu\n",
-            stats->packed_header1_bytes,
-            stats->unpacked_header1_bytes);
-    fprintf(out, "  Data:    packed=%zu unpacked=%zu\n",
-            stats->packed_data_bytes,
-            stats->unpacked_data_bytes);
+    ok = ok && nmo_cli_record_raw_fmt(phase_stats,
+                                      "\nSection Bytes:\n"
+                                      "  Header1: packed=%zu unpacked=%zu\n"
+                                      "  Data:    packed=%zu unpacked=%zu\n",
+                                      stats->packed_header1_bytes,
+                                      stats->unpacked_header1_bytes,
+                                      stats->packed_data_bytes,
+                                      stats->unpacked_data_bytes);
+    return ok;
 }
 
 static bool debug_load_profile_from_arg(const char *arg, nmo_load_profile_t *out_profile) {
@@ -1798,8 +1828,8 @@ static int debug_chunks_object(size_t index, nmo_object_t *obj,
 {
     (void)index;
 
-    nmo_debug_chunks_data_t *data = (nmo_debug_chunks_data_t *)user;
-    if (!data || !obj) {
+    debug_item_list_t *items = (debug_item_list_t *)user;
+    if (!items || !obj) {
         return 0;
     }
 
@@ -1808,115 +1838,76 @@ static int debug_chunks_object(size_t index, nmo_object_t *obj,
         return 0;
     }
 
-    if (data->doc && data->chunks) {
-        yyjson_mut_val *cv = yyjson_mut_obj(data->doc);
-        yyjson_mut_obj_add_uint(data->doc, cv, "id", nmo_object_get_id(obj));
-        yyjson_mut_obj_add_uint(data->doc, cv, "class_id", chunk->class_id);
-        yyjson_mut_obj_add_uint(data->doc, cv, "data_size",
-                                (uint64_t)nmo_chunk_get_data_size(chunk));
-        yyjson_mut_obj_add_uint(data->doc, cv, "compressed_size",
-                                (uint64_t)chunk->compressed_size);
-        yyjson_mut_obj_add_uint(data->doc, cv, "options", chunk->chunk_options);
-
-        const char *class_name = nmo_cli_class_name_from_id(c->ctx, chunk->class_id);
-        if (class_name) {
-            yyjson_mut_obj_add_str(data->doc, cv, "class_name", class_name);
-        }
-
-        const char *name = nmo_object_get_name(obj);
-        if (name && name[0]) {
-            nmo_cli_json_add_str_safe(data->doc, cv, "name", name);
-        }
-
-        yyjson_mut_arr_add_val(data->chunks, cv);
-    } else if (data->table) {
-        const char *class_name = nmo_cli_class_name_from_id(c->ctx, chunk->class_id);
-
-        (void)nmo_cli_table_begin_row(data->table);
-        (void)nmo_cli_table_add_cell_fmt(data->table, "%u", nmo_object_get_id(obj));
-        (void)nmo_cli_table_add_cell_fmt(data->table, "%u", chunk->class_id);
-        (void)nmo_cli_table_add_cell(data->table, class_name ? class_name : "-");
-        (void)nmo_cli_table_add_cell_fmt(data->table, "%zu", nmo_chunk_get_data_size(chunk));
-        (void)nmo_cli_table_add_cell_fmt(data->table, "%zu", chunk->compressed_size);
-        if (chunk->chunk_options == 0) {
-            (void)nmo_cli_table_add_cell(data->table, "-");
-        } else {
-            char *opt = nmo_cli_chunk_options_dup(chunk->chunk_options);
-            (void)nmo_cli_table_add_cell_fmt(data->table, "%s (0x%04X)",
-                                             opt ? opt : "", chunk->chunk_options);
-            free(opt);
-        }
+    const char *class_name = nmo_cli_class_name_from_id(c->ctx, chunk->class_id);
+    nmo_cli_record_t *item = nmo_cli_record_new();
+    bool ok = item != NULL;
+    ok = ok && nmo_cli_record_uint(item, "id", "ObjectID", nmo_object_get_id(obj));
+    ok = ok && nmo_cli_record_uint(item, "class_id", "ClassID", chunk->class_id);
+    ok = ok && nmo_cli_record_text(item, "Class", class_name ? class_name : "-");
+    ok = ok && nmo_cli_record_uint(item, "data_size", "DataSize",
+                                   nmo_chunk_get_data_size(chunk));
+    ok = ok && nmo_cli_record_uint(item, "compressed_size", "PackSize",
+                                   chunk->compressed_size);
+    ok = ok && nmo_cli_record_uint(item, "options", "Options",
+                                   chunk->chunk_options);
+    if (ok && chunk->chunk_options == 0) {
+        ok = nmo_cli_record_set_text(item, "-");
+    } else if (ok) {
+        char *opt = nmo_cli_chunk_options_dup(chunk->chunk_options);
+        ok = nmo_cli_record_set_text_fmt(item, "%s (0x%04X)", opt ? opt : "",
+                                         chunk->chunk_options);
+        free(opt);
     }
-
-    data->chunk_count++;
+    if (class_name) {
+        ok = ok && nmo_cli_record_str(item, "class_name", NULL, class_name);
+    }
+    ok = ok && nmo_cli_record_str_opt(item, "name", NULL,
+                                      nmo_object_get_name(obj), NULL);
+    debug_item_list_push(items, item, ok);
     return 0;
 }
-
-typedef struct nmo_debug_objects_data {
-    yyjson_mut_doc *doc;
-    yyjson_mut_val *objects;
-    nmo_cli_table_t *table;
-} nmo_debug_objects_data_t;
 
 static int debug_objects_object(size_t index, nmo_object_t *obj,
                                 const nmo_cmd_ctx_t *c, void *user)
 {
-    nmo_debug_objects_data_t *data = (nmo_debug_objects_data_t *)user;
-    if (!data || !obj) {
+    debug_item_list_t *items = (debug_item_list_t *)user;
+    if (!items || !obj) {
         return 0;
     }
 
-    if (data->doc && data->objects) {
-        yyjson_mut_val *o = yyjson_mut_obj(data->doc);
-        yyjson_mut_obj_add_uint(data->doc, o, "index", (uint64_t)index);
-        yyjson_mut_obj_add_uint(data->doc, o, "id", nmo_object_get_id(obj));
-        yyjson_mut_obj_add_uint(data->doc, o, "class_id", nmo_object_get_class_id(obj));
-        yyjson_mut_obj_add_uint(data->doc, o, "flags", nmo_object_get_flags(obj));
+    nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
+    const char *class_name = nmo_cli_class_name_from_id(c->ctx, nmo_object_get_class_id(obj));
+    const char *name = nmo_object_get_name(obj);
 
-        const char *name = nmo_object_get_name(obj);
-        if (name && name[0]) {
-            nmo_cli_json_add_str_safe(data->doc, o, "name", name);
-        }
-
-        const char *class_name = nmo_cli_class_name_from_id(c->ctx, nmo_object_get_class_id(obj));
-        if (class_name) {
-            yyjson_mut_obj_add_str(data->doc, o, "class_name", class_name);
-        }
-
-        nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
-        yyjson_mut_obj_add_bool(data->doc, o, "has_chunk", chunk != NULL);
-        if (chunk) {
-            yyjson_mut_obj_add_uint(data->doc, o, "chunk_size",
-                                    (uint64_t)nmo_chunk_get_data_size(chunk));
-        }
-
-        yyjson_mut_arr_add_val(data->objects, o);
-    } else if (data->table) {
-        nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
-        const char *class_name = nmo_cli_class_name_from_id(c->ctx, nmo_object_get_class_id(obj));
-        const char *name = nmo_object_get_name(obj);
-
-        bool ok = nmo_cli_table_begin_row(data->table);
-        ok = ok && nmo_cli_table_add_cell_fmt(data->table, "%zu", index);
-        ok = ok && nmo_cli_table_add_cell_fmt(data->table, "%u", nmo_object_get_id(obj));
-        ok = ok && nmo_cli_table_add_cell_fmt(data->table, "0x%08X", nmo_object_get_flags(obj));
-        ok = ok && nmo_cli_table_add_cell(data->table, class_name ? class_name : "-");
-        ok = ok && nmo_cli_table_add_cell(data->table, (name && name[0]) ? name : "-");
-        if (chunk) {
-            ok = ok && nmo_cli_table_add_cell_fmt(data->table, "%zu",
-                                                  nmo_chunk_get_data_size(chunk));
-        } else {
-            ok = ok && nmo_cli_table_add_cell(data->table, "-");
-        }
-        (void)ok;
+    nmo_cli_record_t *item = nmo_cli_record_new();
+    bool ok = item != NULL;
+    ok = ok && nmo_cli_record_uint(item, "index", "Idx", index);
+    ok = ok && nmo_cli_record_uint(item, "id", "ID", nmo_object_get_id(obj));
+    ok = ok && nmo_cli_record_uint(item, "class_id", NULL,
+                                   nmo_object_get_class_id(obj));
+    ok = ok && nmo_cli_record_uint(item, "flags", "Flags",
+                                   nmo_object_get_flags(obj));
+    ok = ok && nmo_cli_record_set_text_fmt(item, "0x%08X",
+                                           nmo_object_get_flags(obj));
+    ok = ok && nmo_cli_record_str_opt(item, "name", NULL, name, NULL);
+    if (class_name) {
+        ok = ok && nmo_cli_record_str(item, "class_name", NULL, class_name);
     }
-
+    ok = ok && nmo_cli_record_text(item, "Class", class_name ? class_name : "-");
+    ok = ok && nmo_cli_record_text(item, "Name", (name && name[0]) ? name : "-");
+    ok = ok && nmo_cli_record_bool(item, "has_chunk", NULL, chunk != NULL);
+    if (chunk) {
+        ok = ok && nmo_cli_record_uint(item, "chunk_size", "Chunk",
+                                       nmo_chunk_get_data_size(chunk));
+    } else {
+        ok = ok && nmo_cli_record_text(item, "Chunk", "-");
+    }
+    debug_item_list_push(items, item, ok);
     return 0;
 }
 
 typedef struct nmo_debug_export_data {
-    yyjson_mut_doc *doc;
-    yyjson_mut_val *objects;
+    debug_item_list_t items;
     bool include_data;
     size_t max_bytes;
 } nmo_debug_export_data_t;
@@ -1925,53 +1916,53 @@ static int debug_export_object(size_t index, nmo_object_t *obj,
                                const nmo_cmd_ctx_t *c, void *user)
 {
     nmo_debug_export_data_t *data = (nmo_debug_export_data_t *)user;
-    if (!data || !data->doc || !data->objects || !obj) {
+    if (!data || !obj) {
         return 0;
     }
 
-    yyjson_mut_val *o = yyjson_mut_obj(data->doc);
-    yyjson_mut_obj_add_uint(data->doc, o, "index", (uint64_t)index);
-    yyjson_mut_obj_add_uint(data->doc, o, "id", nmo_object_get_id(obj));
-    yyjson_mut_obj_add_uint(data->doc, o, "class_id", nmo_object_get_class_id(obj));
-    yyjson_mut_obj_add_uint(data->doc, o, "flags", nmo_object_get_flags(obj));
-
-    const char *name = nmo_object_get_name(obj);
-    if (name && name[0]) {
-        nmo_cli_json_add_str_safe(data->doc, o, "name", name);
-    }
+    nmo_cli_record_t *item = nmo_cli_record_new();
+    bool ok = item != NULL;
+    ok = ok && nmo_cli_record_uint(item, "index", NULL, index);
+    ok = ok && nmo_cli_record_uint(item, "id", NULL, nmo_object_get_id(obj));
+    ok = ok && nmo_cli_record_uint(item, "class_id", NULL,
+                                   nmo_object_get_class_id(obj));
+    ok = ok && nmo_cli_record_uint(item, "flags", NULL,
+                                   nmo_object_get_flags(obj));
+    ok = ok && nmo_cli_record_str_opt(item, "name", NULL,
+                                      nmo_object_get_name(obj), NULL);
 
     const char *class_name = nmo_cli_class_name_from_id(c->ctx, nmo_object_get_class_id(obj));
     if (class_name) {
-        yyjson_mut_obj_add_str(data->doc, o, "class_name", class_name);
+        ok = ok && nmo_cli_record_str(item, "class_name", NULL, class_name);
     }
 
     nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
     if (chunk) {
-        yyjson_mut_val *cv = yyjson_mut_obj(data->doc);
-        yyjson_mut_obj_add_uint(data->doc, cv, "class_id", chunk->class_id);
-        yyjson_mut_obj_add_uint(data->doc, cv, "data_size",
-                                (uint64_t)nmo_chunk_get_data_size(chunk));
-        yyjson_mut_obj_add_uint(data->doc, cv, "compressed_size",
-                                (uint64_t)chunk->compressed_size);
-        yyjson_mut_obj_add_uint(data->doc, cv, "uncompressed_size",
-                                (uint64_t)chunk->uncompressed_size);
-        yyjson_mut_obj_add_uint(data->doc, cv, "options", (uint64_t)chunk->chunk_options);
-        yyjson_mut_obj_add_uint(data->doc, cv, "id_count",
-                                (uint64_t)nmo_chunk_get_id_count(chunk));
-        yyjson_mut_obj_add_uint(data->doc, cv, "subchunk_count",
-                                (uint64_t)nmo_chunk_get_sub_chunk_count(chunk));
+        nmo_cli_record_t *cv = ok ? nmo_cli_record_object(item, "chunk") : NULL;
+        ok = cv != NULL;
+        ok = ok && nmo_cli_record_uint(cv, "class_id", NULL, chunk->class_id);
+        ok = ok && nmo_cli_record_uint(cv, "data_size", NULL,
+                                       nmo_chunk_get_data_size(chunk));
+        ok = ok && nmo_cli_record_uint(cv, "compressed_size", NULL,
+                                       chunk->compressed_size);
+        ok = ok && nmo_cli_record_uint(cv, "uncompressed_size", NULL,
+                                       chunk->uncompressed_size);
+        ok = ok && nmo_cli_record_uint(cv, "options", NULL,
+                                       chunk->chunk_options);
+        ok = ok && nmo_cli_record_uint(cv, "id_count", NULL,
+                                       nmo_chunk_get_id_count(chunk));
+        ok = ok && nmo_cli_record_uint(cv, "subchunk_count", NULL,
+                                       nmo_chunk_get_sub_chunk_count(chunk));
 
         if (data->include_data) {
             size_t data_size = 0;
-            const uint8_t *chunk_data = (const uint8_t *)nmo_chunk_get_data(chunk, &data_size);
-            (void)nmo_cli_json_add_data_hex(data->doc, cv, chunk_data,
-                                            data_size, data->max_bytes, false);
+            const void *chunk_data = nmo_chunk_get_data(chunk, &data_size);
+            ok = ok && nmo_cli_record_hex_bytes(cv, NULL, chunk_data,
+                                                data_size, data->max_bytes);
         }
-
-        yyjson_mut_obj_add_val(data->doc, o, "chunk", cv);
     }
 
-    yyjson_mut_arr_add_val(data->objects, o);
+    debug_item_list_push(&data->items, item, ok);
     return 0;
 }
 
@@ -1994,78 +1985,61 @@ static int debug_load_phases_run_in_ctx(nmo_cmd_ctx_t *c,
     nmo_runtime_load_stats_t stats;
     bool has_stats = (nmo_document_get_runtime_load_stats(c->document, &stats) == NMO_OK);
 
-    if (c->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL;
+    ok = ok && nmo_cli_record_title(rec, "Load Phases");
+    ok = ok && nmo_cli_record_str(rec, "file", "File", c->file_path);
+    ok = ok && nmo_cli_record_str(rec, "profile", "Profile",
+                                  debug_load_profile_name(profile));
+    ok = ok && nmo_cli_record_bool(rec, "stats_available", NULL, has_stats);
 
-        yyjson_mut_obj_add_str(doc, data, "file", c->file_path);
-        yyjson_mut_obj_add_str(doc, data, "profile", debug_load_profile_name(profile));
-        yyjson_mut_obj_add_bool(doc, data, "stats_available", has_stats);
-
-        if (has_stats) {
-            yyjson_mut_obj_add_uint(doc, data, "total_objects", (uint64_t)stats.total_objects);
-
-            yyjson_mut_val *refs = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_uint(doc, refs, "total", stats.references.total);
-            yyjson_mut_obj_add_uint(doc, refs, "resolved", stats.references.resolved);
-            yyjson_mut_obj_add_uint(doc, refs, "unresolved", stats.references.unresolved);
-            yyjson_mut_obj_add_uint(doc, refs, "ambiguous", stats.references.ambiguous);
-            yyjson_mut_obj_add_val(doc, data, "references", refs);
-
-            yyjson_mut_val *idx = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_uint(doc, idx, "class_entries", (uint64_t)stats.indexes.class_entries);
-            yyjson_mut_obj_add_uint(doc, idx, "name_entries", (uint64_t)stats.indexes.name_entries);
-            yyjson_mut_obj_add_uint(doc, idx, "guid_entries", (uint64_t)stats.indexes.guid_entries);
-            yyjson_mut_obj_add_uint(doc, idx, "memory_usage", (uint64_t)stats.indexes.memory_usage);
-            yyjson_mut_obj_add_val(doc, data, "indexes", idx);
-
-            yyjson_mut_obj_add_uint(doc, data, "manager_errors", stats.manager_errors);
-        }
-        debug_add_load_phase_stats_json(doc, data, phase_stats);
-
-        nmo_cmd_ctx_json_end(c, doc, data, "debug.load-phases");
+    if (!has_stats) {
+        ok = ok && nmo_cli_record_raw(rec, "\nLoad statistics unavailable\n");
     } else {
-        nmo_cli_print_heading(c->out, "Load Phases", c->colorize);
-        nmo_cli_print_kv(c->out, "File", c->file_path, 16, c->colorize);
-        nmo_cli_print_kv(c->out, "Profile", debug_load_profile_name(profile), 16, c->colorize);
+        ok = ok && nmo_cli_record_raw(rec, "\n");
+        ok = ok && nmo_cli_record_uint(rec, "total_objects", "Total Objects",
+                                       stats.total_objects);
 
-        if (!has_stats) {
-            fprintf(c->out, "\nLoad statistics unavailable\n");
-        } else {
-            fprintf(c->out, "\n");
-
-            nmo_cli_print_kv_fmt(c->out, "Total Objects", 16, c->colorize,
-                                 "%zu", stats.total_objects);
-
-            fprintf(c->out, "\nReferences:\n");
-            nmo_cli_print_kv_fmt(c->out, "  Total", 14, c->colorize,
-                                 "%u", stats.references.total);
-            nmo_cli_print_kv_fmt(c->out, "  Resolved", 14, c->colorize,
-                                 "%u", stats.references.resolved);
-            nmo_cli_print_kv_fmt(c->out, "  Unresolved", 14, c->colorize,
-                                 "%u", stats.references.unresolved);
-            nmo_cli_print_kv_fmt(c->out, "  Ambiguous", 14, c->colorize,
-                                 "%u", stats.references.ambiguous);
-
-            fprintf(c->out, "\nIndexes:\n");
-            nmo_cli_print_kv_fmt(c->out, "  Classes", 14, c->colorize,
-                                 "%zu", stats.indexes.class_entries);
-            nmo_cli_print_kv_fmt(c->out, "  Names", 14, c->colorize,
-                                 "%zu", stats.indexes.name_entries);
-            nmo_cli_print_kv_fmt(c->out, "  GUIDs", 14, c->colorize,
-                                 "%zu", stats.indexes.guid_entries);
-            nmo_cli_print_kv_fmt(c->out, "  Memory", 14, c->colorize,
-                                 "%zu bytes", stats.indexes.memory_usage);
-
-            fprintf(c->out, "\n");
-            nmo_cli_print_kv_fmt(c->out, "Manager Errors", 16, c->colorize,
-                                 "%u", stats.manager_errors);
+        ok = ok && nmo_cli_record_raw(rec, "\nReferences:\n");
+        nmo_cli_record_t *refs = ok ? nmo_cli_record_object(rec, "references") : NULL;
+        ok = refs != NULL;
+        if (ok) {
+            nmo_cli_record_set_key_width(refs, 14);
         }
-        debug_print_load_phase_stats(c->out, phase_stats);
-    }
+        ok = ok && nmo_cli_record_uint(refs, "total", "  Total",
+                                       stats.references.total);
+        ok = ok && nmo_cli_record_uint(refs, "resolved", "  Resolved",
+                                       stats.references.resolved);
+        ok = ok && nmo_cli_record_uint(refs, "unresolved", "  Unresolved",
+                                       stats.references.unresolved);
+        ok = ok && nmo_cli_record_uint(refs, "ambiguous", "  Ambiguous",
+                                       stats.references.ambiguous);
 
-    return close_ctx ? nmo_cmd_ctx_done(c, NMO_CLI_EXIT_SUCCESS)
-                     : NMO_CLI_EXIT_SUCCESS;
+        ok = ok && nmo_cli_record_raw(rec, "\nIndexes:\n");
+        nmo_cli_record_t *idx = ok ? nmo_cli_record_object(rec, "indexes") : NULL;
+        ok = idx != NULL;
+        if (ok) {
+            nmo_cli_record_set_key_width(idx, 14);
+        }
+        ok = ok && nmo_cli_record_uint(idx, "class_entries", "  Classes",
+                                       stats.indexes.class_entries);
+        ok = ok && nmo_cli_record_uint(idx, "name_entries", "  Names",
+                                       stats.indexes.name_entries);
+        ok = ok && nmo_cli_record_uint(idx, "guid_entries", "  GUIDs",
+                                       stats.indexes.guid_entries);
+        ok = ok && nmo_cli_record_uint(idx, "memory_usage", "  Memory",
+                                       stats.indexes.memory_usage);
+        ok = ok && nmo_cli_record_set_text_fmt(idx, "%zu bytes",
+                                               stats.indexes.memory_usage);
+
+        ok = ok && nmo_cli_record_raw(rec, "\n");
+        ok = ok && nmo_cli_record_uint(rec, "manager_errors", "Manager Errors",
+                                       stats.manager_errors);
+    }
+    ok = ok && debug_add_load_phase_stats(rec, phase_stats);
+
+    int rc = debug_emit(c, rec, ok, "debug.load-phases", 16);
+    return close_ctx ? nmo_cmd_ctx_done(c, rc) : rc;
 }
 
 int nmo_cmd_debug_load_phases(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -2125,67 +2099,39 @@ static int nmo_cmd_debug_load_phases_in_session(nmo_cmd_ctx_t *ctx, int argc, ch
 
 static int debug_chunks_run_in_ctx(nmo_cmd_ctx_t *c, bool close_ctx)
 {
-    int rc = NMO_CLI_EXIT_SUCCESS;
-    if (c->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
+    static const nmo_cli_table_col_t columns[] = {
+        {"ObjectID", NMO_CLI_ALIGN_RIGHT, 5, 0},
+        {"ClassID", NMO_CLI_ALIGN_RIGHT, 5, 0},
+        {"Class", NMO_CLI_ALIGN_LEFT, 15, 25},
+        {"DataSize", NMO_CLI_ALIGN_RIGHT, 8, 0},
+        {"PackSize", NMO_CLI_ALIGN_RIGHT, 8, 0},
+        {"Options", NMO_CLI_ALIGN_LEFT, 8, 32},
+    };
 
-        yyjson_mut_val *chunks = yyjson_mut_arr(doc);
-        nmo_debug_chunks_data_t chunks_data = {
-            .doc = doc,
-            .chunks = chunks,
-        };
-        nmo_core_iter_result_t result = {0};
-        rc = nmo_core_object_query_run(c, NULL, debug_chunks_object,
-                                       &chunks_data, &result);
-        if (rc != NMO_CLI_EXIT_SUCCESS) {
-            yyjson_mut_doc_free(doc);
-            fprintf(stderr, "Error: Failed to query objects\n");
-            return close_ctx ? nmo_cmd_ctx_done(c, NMO_CLI_EXIT_INTERNAL_ERROR)
-                             : NMO_CLI_EXIT_INTERNAL_ERROR;
-        }
-        yyjson_mut_obj_add_uint(doc, data, "object_count", (uint64_t)result.matched);
-        yyjson_mut_obj_add_uint(doc, data, "chunk_count",
-                                (uint64_t)chunks_data.chunk_count);
-        yyjson_mut_obj_add_val(doc, data, "chunks", chunks);
-
-        nmo_cmd_ctx_json_end(c, doc, data, "debug.chunks");
-    } else {
-        nmo_cli_print_heading(c->out, "Chunk Debug Info", c->colorize);
-
-        static const nmo_cli_table_col_t columns[] = {
-            {"ObjectID", NMO_CLI_ALIGN_RIGHT, 5, 0},
-            {"ClassID", NMO_CLI_ALIGN_RIGHT, 5, 0},
-            {"Class", NMO_CLI_ALIGN_LEFT, 15, 25},
-            {"DataSize", NMO_CLI_ALIGN_RIGHT, 8, 0},
-            {"PackSize", NMO_CLI_ALIGN_RIGHT, 8, 0},
-            {"Options", NMO_CLI_ALIGN_LEFT, 8, 32},
-        };
-
-        nmo_cli_table_t table;
-        nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
-
-        nmo_debug_chunks_data_t chunks_data = {
-            .table = &table,
-        };
-        nmo_core_iter_result_t result = {0};
-        rc = nmo_core_object_query_run(c, NULL, debug_chunks_object,
-                                       &chunks_data, &result);
-        if (rc != NMO_CLI_EXIT_SUCCESS) {
-            nmo_cli_table_free(&table);
-            fprintf(stderr, "Error: Failed to query objects\n");
-            return close_ctx ? nmo_cmd_ctx_done(c, NMO_CLI_EXIT_INTERNAL_ERROR)
-                             : NMO_CLI_EXIT_INTERNAL_ERROR;
-        }
-
-        fprintf(c->out, "Chunks: %zu (from %zu objects)\n\n",
-                chunks_data.chunk_count, result.matched);
-        nmo_cli_table_print(&table, c->out, c->colorize);
-        nmo_cli_table_free(&table);
+    debug_item_list_t items = {0};
+    nmo_core_iter_result_t result = {0};
+    int rc = nmo_core_object_query_run(c, NULL, debug_chunks_object,
+                                       &items, &result);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        (void)debug_item_list_to_array(&items, NULL, NULL, NULL, 0);
+        fprintf(stderr, "Error: Failed to query objects\n");
+        return close_ctx ? nmo_cmd_ctx_done(c, NMO_CLI_EXIT_INTERNAL_ERROR)
+                         : NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    return close_ctx ? nmo_cmd_ctx_done(c, NMO_CLI_EXIT_SUCCESS)
-                     : NMO_CLI_EXIT_SUCCESS;
+    size_t chunk_count = items.count;
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL;
+    ok = ok && nmo_cli_record_title(rec, "Chunk Debug Info");
+    ok = ok && nmo_cli_record_uint(rec, "object_count", NULL, result.matched);
+    ok = ok && nmo_cli_record_uint(rec, "chunk_count", NULL, chunk_count);
+    ok = ok && nmo_cli_record_raw_fmt(rec, "Chunks: %zu (from %zu objects)\n\n",
+                                      chunk_count, result.matched);
+    ok = debug_item_list_to_array(&items, ok ? rec : NULL, "chunks", columns,
+                                  sizeof(columns) / sizeof(columns[0]));
+
+    rc = debug_emit(c, rec, ok, "debug.chunks", 0);
+    return close_ctx ? nmo_cmd_ctx_done(c, rc) : rc;
 }
 
 int nmo_cmd_debug_chunks(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -2211,64 +2157,36 @@ static int nmo_cmd_debug_chunks_in_session(nmo_cmd_ctx_t *ctx, int argc, char **
 
 static int debug_objects_run_in_ctx(nmo_cmd_ctx_t *c, bool close_ctx)
 {
-    int rc = NMO_CLI_EXIT_SUCCESS;
-    if (c->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
+    static const nmo_cli_table_col_t columns[] = {
+        {"Idx", NMO_CLI_ALIGN_RIGHT, 4, 0},
+        {"ID", NMO_CLI_ALIGN_RIGHT, 5, 0},
+        {"Flags", NMO_CLI_ALIGN_RIGHT, 10, 0},
+        {"Class", NMO_CLI_ALIGN_LEFT, 15, 25},
+        {"Name", NMO_CLI_ALIGN_LEFT, 20, 40},
+        {"Chunk", NMO_CLI_ALIGN_RIGHT, 8, 0},
+    };
 
-        yyjson_mut_val *objs = yyjson_mut_arr(doc);
-        nmo_debug_objects_data_t objects_data = {
-            .doc = doc,
-            .objects = objs,
-        };
-        nmo_core_iter_result_t result = {0};
-        rc = nmo_core_object_query_run(c, NULL, debug_objects_object,
-                                       &objects_data, &result);
-        if (rc != NMO_CLI_EXIT_SUCCESS) {
-            yyjson_mut_doc_free(doc);
-            fprintf(stderr, "Error: Failed to query objects\n");
-            return close_ctx ? nmo_cmd_ctx_done(c, NMO_CLI_EXIT_INTERNAL_ERROR)
-                             : NMO_CLI_EXIT_INTERNAL_ERROR;
-        }
-        yyjson_mut_obj_add_uint(doc, data, "object_count", (uint64_t)result.matched);
-        yyjson_mut_obj_add_val(doc, data, "objects", objs);
-
-        nmo_cmd_ctx_json_end(c, doc, data, "debug.objects");
-    } else {
-        nmo_cli_print_heading(c->out, "Object Debug Info", c->colorize);
-
-        static const nmo_cli_table_col_t columns[] = {
-            {"Idx", NMO_CLI_ALIGN_RIGHT, 4, 0},
-            {"ID", NMO_CLI_ALIGN_RIGHT, 5, 0},
-            {"Flags", NMO_CLI_ALIGN_RIGHT, 10, 0},
-            {"Class", NMO_CLI_ALIGN_LEFT, 15, 25},
-            {"Name", NMO_CLI_ALIGN_LEFT, 20, 40},
-            {"Chunk", NMO_CLI_ALIGN_RIGHT, 8, 0},
-        };
-
-        nmo_cli_table_t table;
-        nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
-
-        nmo_debug_objects_data_t objects_data = {
-            .table = &table,
-        };
-        nmo_core_iter_result_t result = {0};
-        rc = nmo_core_object_query_run(c, NULL, debug_objects_object,
-                                       &objects_data, &result);
-        if (rc != NMO_CLI_EXIT_SUCCESS) {
-            nmo_cli_table_free(&table);
-            fprintf(stderr, "Error: Failed to query objects\n");
-            return close_ctx ? nmo_cmd_ctx_done(c, NMO_CLI_EXIT_INTERNAL_ERROR)
-                             : NMO_CLI_EXIT_INTERNAL_ERROR;
-        }
-
-        fprintf(c->out, "Objects: %zu\n\n", result.matched);
-        nmo_cli_table_print(&table, c->out, c->colorize);
-        nmo_cli_table_free(&table);
+    debug_item_list_t items = {0};
+    nmo_core_iter_result_t result = {0};
+    int rc = nmo_core_object_query_run(c, NULL, debug_objects_object,
+                                       &items, &result);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        (void)debug_item_list_to_array(&items, NULL, NULL, NULL, 0);
+        fprintf(stderr, "Error: Failed to query objects\n");
+        return close_ctx ? nmo_cmd_ctx_done(c, NMO_CLI_EXIT_INTERNAL_ERROR)
+                         : NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    return close_ctx ? nmo_cmd_ctx_done(c, NMO_CLI_EXIT_SUCCESS)
-                     : NMO_CLI_EXIT_SUCCESS;
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL;
+    ok = ok && nmo_cli_record_title(rec, "Object Debug Info");
+    ok = ok && nmo_cli_record_uint(rec, "object_count", NULL, result.matched);
+    ok = ok && nmo_cli_record_raw_fmt(rec, "Objects: %zu\n\n", result.matched);
+    ok = debug_item_list_to_array(&items, ok ? rec : NULL, "objects", columns,
+                                  sizeof(columns) / sizeof(columns[0]));
+
+    rc = debug_emit(c, rec, ok, "debug.objects", 0);
+    return close_ctx ? nmo_cmd_ctx_done(c, rc) : rc;
 }
 
 int nmo_cmd_debug_objects(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -2315,16 +2233,7 @@ static int debug_export_run_in_ctx(nmo_cmd_ctx_t *c,
                                    size_t max_bytes,
                                    bool close_ctx)
 {
-    yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
-    yyjson_mut_val *data = yyjson_mut_obj(doc);
-    yyjson_mut_obj_add_str(doc, data, "file", c->file_path);
-    yyjson_mut_obj_add_bool(doc, data, "include_data", include_data);
-    yyjson_mut_obj_add_uint(doc, data, "max_bytes", (uint64_t)max_bytes);
-
-    yyjson_mut_val *objs = yyjson_mut_arr(doc);
     nmo_debug_export_data_t export_data = {
-        .doc = doc,
-        .objects = objs,
         .include_data = include_data,
         .max_bytes = max_bytes,
     };
@@ -2332,22 +2241,32 @@ static int debug_export_run_in_ctx(nmo_cmd_ctx_t *c,
     int rc = nmo_core_object_query_run(c, NULL, debug_export_object,
                                        &export_data, &result);
     if (rc != NMO_CLI_EXIT_SUCCESS) {
-        yyjson_mut_doc_free(doc);
+        (void)debug_item_list_to_array(&export_data.items, NULL, NULL, NULL, 0);
         fprintf(stderr, "Error: Failed to query objects\n");
         return close_ctx ? nmo_cmd_ctx_done(c, NMO_CLI_EXIT_INTERNAL_ERROR)
                          : NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    yyjson_mut_obj_add_uint(doc, data, "object_count", (uint64_t)result.matched);
-    yyjson_mut_obj_add_val(doc, data, "objects", objs);
-    nmo_cmd_ctx_json_end(c, doc, data, "debug.export");
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL;
+    ok = ok && nmo_cli_record_str(rec, "file", NULL, c->file_path);
+    ok = ok && nmo_cli_record_bool(rec, "include_data", NULL, include_data);
+    ok = ok && nmo_cli_record_uint(rec, "max_bytes", NULL, max_bytes);
+    ok = ok && nmo_cli_record_uint(rec, "object_count", NULL, result.matched);
+    ok = debug_item_list_to_array(&export_data.items, ok ? rec : NULL,
+                                  "objects", NULL, 0);
 
-    if (!c->is_json && c->global && c->global->output_path) {
+    /* The snapshot is JSON in every output format. */
+    nmo_cmd_ctx_t json_ctx = *c;
+    json_ctx.is_json = true;
+    rc = debug_emit(&json_ctx, rec, ok, "debug.export", 0);
+
+    if (rc == NMO_CLI_EXIT_SUCCESS && !c->is_json && c->global &&
+        c->global->output_path) {
         fprintf(stdout, "Exported %zu objects to %s\n", result.matched, c->global->output_path);
     }
 
-    return close_ctx ? nmo_cmd_ctx_done(c, NMO_CLI_EXIT_SUCCESS)
-                     : NMO_CLI_EXIT_SUCCESS;
+    return close_ctx ? nmo_cmd_ctx_done(c, rc) : rc;
 }
 
 int nmo_cmd_debug_export(int argc, char **argv, const nmo_cli_global_opts_t *global) {
