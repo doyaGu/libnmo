@@ -80,6 +80,8 @@ struct nmo_cli_record {
     size_t capacity;
     char *summary;
     bool omit_json; /* as an array item: text only */
+    bool has_key_width; /* text: key_width overrides the caller's width */
+    int key_width;
 };
 
 static char *dup_str(const char *s)
@@ -868,6 +870,14 @@ void nmo_cli_record_omit_json(nmo_cli_record_t *record)
     }
 }
 
+void nmo_cli_record_set_key_width(nmo_cli_record_t *record, int key_width)
+{
+    if (record) {
+        record->has_key_width = true;
+        record->key_width = key_width;
+    }
+}
+
 bool nmo_cli_record_set_summary(nmo_cli_record_t *record, const char *text)
 {
     if (!record) {
@@ -1076,6 +1086,9 @@ void nmo_cli_record_print_kv(const nmo_cli_record_t *record, FILE *out,
 {
     if (!record || !out) {
         return;
+    }
+    if (record->has_key_width) {
+        key_width = record->key_width;
     }
     for (size_t i = 0; i < record->count; ++i) {
         const record_field_t *field = &record->fields[i];

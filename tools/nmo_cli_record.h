@@ -219,6 +219,12 @@ bool nmo_cli_record_array_set_table(nmo_cli_record_array_t *array,
  * it still prints its summary. Use for text-only lines between items.
  */
 void nmo_cli_record_omit_json(nmo_cli_record_t *record);
+/**
+ * In text, print this record's own fields "label: value" lines with
+ * `key_width` in place of the width passed down by the caller. Use for a
+ * nested object whose lines are aligned differently from its parent's.
+ */
+void nmo_cli_record_set_key_width(nmo_cli_record_t *record, int key_width);
 /** One-line text used when this record is rendered as an array item. */
 bool nmo_cli_record_set_summary(nmo_cli_record_t *record, const char *text);
 /** Formatted variant of nmo_cli_record_set_summary. */

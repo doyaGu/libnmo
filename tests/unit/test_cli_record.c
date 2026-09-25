@@ -1,7 +1,7 @@
 /**
  * @file test_cli_record.c
- * @brief Tests for nested objects, JSON splices, arrays, tables, titles, and
- *        integer lists in CLI records
+ * @brief Tests for nested objects, JSON splices, arrays, tables, titles,
+ *        integer lists, and key widths in CLI records
  */
 
 #include "test_framework.h"
@@ -272,6 +272,23 @@ TEST(cli_record, omit_json_item_is_text_only)
     nmo_cli_record_free(rec);
 }
 
+TEST(cli_record, object_key_width_overrides_parent)
+{
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    ASSERT_NOT_NULL(rec);
+    ASSERT_TRUE(nmo_cli_record_uint(rec, "a", "A", 1));
+    nmo_cli_record_t *child = nmo_cli_record_object(rec, "child");
+    ASSERT_NOT_NULL(child);
+    nmo_cli_record_set_key_width(child, 3);
+    ASSERT_TRUE(nmo_cli_record_uint(child, "b", "B", 2));
+    ASSERT_TRUE(nmo_cli_record_uint(rec, "c", "C", 3));
+
+    char *text = record_text(rec, 5);
+    ASSERT_STR_EQ(text, "A    : 1\nB  : 2\nC    : 3\n");
+    free(text);
+    nmo_cli_record_free(rec);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(cli_record, object_nests_json_and_inlines_text);
     REGISTER_TEST(cli_record, object_without_key_is_text_only);
@@ -283,4 +300,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli_record, int_list_keeps_sign);
     REGISTER_TEST(cli_record, array_table_prints_item_rows);
     REGISTER_TEST(cli_record, omit_json_item_is_text_only);
+    REGISTER_TEST(cli_record, object_key_width_overrides_parent);
 TEST_MAIN_END()
