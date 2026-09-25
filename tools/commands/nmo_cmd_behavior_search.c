@@ -116,10 +116,10 @@ typedef struct behavior_find_data {
     const char *optype_pat;
     bool only_scripts;
     bool only_bbs;
-    yyjson_mut_doc *doc;
-    yyjson_mut_val *json_results;
-    nmo_cli_table_t *table;
+    nmo_object_t **matches;
     size_t match_count;
+    size_t match_capacity;
+    bool ok;
 } behavior_find_data_t;
 
 static int behavior_find_object(size_t index, nmo_object_t *obj,
@@ -128,7 +128,7 @@ static int behavior_find_object(size_t index, nmo_object_t *obj,
     (void)index;
 
     behavior_find_data_t *data = (behavior_find_data_t *)user;
-    if (!data || !obj) {
+    if (!data || !obj || !data->ok) {
         return 0;
     }
 
@@ -171,46 +171,59 @@ static int behavior_find_object(size_t index, nmo_object_t *obj,
         return 0;
     }
 
-    if (data->doc && data->json_results) {
-        yyjson_mut_val *item = yyjson_mut_obj(data->doc);
-        yyjson_mut_obj_add_uint(data->doc, item, "id", nmo_object_get_id(obj));
-        nmo_cli_json_add_str_safe(data->doc, item, "name",
-            (name && name[0]) ? name : "");
-        nmo_cli_json_add_str_safe(data->doc, item, "type",
-            is_script ? "Script" : is_bb ? "BB" : "Graph");
-        if (is_bb && !nmo_guid_is_null(bs->block_guid)) {
-            nmo_cli_json_add_str_fmt_safe(data->doc, item, "bb_guid", "%08X-%08X",
-                                          bs->block_guid.d1, bs->block_guid.d2);
-            const char *proto_name = nmo_behavior_registry_get_name(
-                nmo_context_get_bb_registry(c->ctx), bs->block_guid);
-            if (proto_name) {
-                nmo_cli_json_add_str_safe(data->doc, item, "proto_name",
-                                          proto_name);
-            }
+    if (data->match_count == data->match_capacity) {
+        size_t new_capacity = data->match_capacity ? data->match_capacity * 2u : 64u;
+        nmo_object_t **new_matches = (nmo_object_t **)realloc(
+            data->matches, new_capacity * sizeof(*new_matches));
+        if (!new_matches) {
+            data->ok = false;
+            return 0;
         }
-        yyjson_mut_arr_add_val(data->json_results, item);
-    } else if (data->table) {
-        nmo_cli_table_begin_row(data->table);
-        nmo_cli_table_add_cell_fmt(data->table, "%u", nmo_object_get_id(obj));
-        nmo_cli_table_add_cell(data->table,
-                               is_script ? "Script" : is_bb ? "BB" : "Graph");
-        if (is_bb && !nmo_guid_is_null(bs->block_guid)) {
-            const char *proto_name = nmo_behavior_registry_get_name(
-                nmo_context_get_bb_registry(c->ctx), bs->block_guid);
-            if (proto_name) {
-                nmo_cli_table_add_cell(data->table, proto_name);
-            } else {
-                nmo_cli_table_add_cell_fmt(data->table, "{%08X-%08X}",
-                                           bs->block_guid.d1, bs->block_guid.d2);
-            }
-        } else {
-            nmo_cli_table_add_cell(data->table, "-");
-        }
-        nmo_cli_table_add_cell(data->table, (name && name[0]) ? name : "-");
+        data->matches = new_matches;
+        data->match_capacity = new_capacity;
     }
-
-    data->match_count++;
+    data->matches[data->match_count++] = obj;
     return 0;
+}
+
+/* One "results" item; in text, a table row. */
+static bool behavior_find_add_result(nmo_cli_record_array_t *arr,
+                                     const nmo_cmd_ctx_t *c,
+                                     nmo_object_t *obj)
+{
+    const nmo_behavior_state_t *bs =
+        (const nmo_behavior_state_t *)nmo_object_get_state(obj);
+    bool is_script = (bs->flags & CKBEHAVIOR_SCRIPT) != 0;
+    bool is_bb = (bs->flags & CKBEHAVIOR_BUILDINGBLOCK) != 0;
+    const char *name = nmo_object_get_name(obj);
+
+    nmo_cli_record_t *item = nmo_cli_record_new();
+    bool ok = item != NULL &&
+              nmo_cli_record_uint(item, "id", "ID", nmo_object_get_id(obj)) &&
+              nmo_cli_record_str(item, "name", NULL, (name && name[0]) ? name : "") &&
+              nmo_cli_record_str(item, "type", "TYPE",
+                                 is_script ? "Script" : is_bb ? "BB" : "Graph");
+    if (is_bb && !nmo_guid_is_null(bs->block_guid)) {
+        const char *proto_name = nmo_behavior_registry_get_name(
+            nmo_context_get_bb_registry(c->ctx), bs->block_guid);
+        ok = ok && nmo_cli_record_str_fmt(item, "bb_guid", NULL, "%08X-%08X",
+                                          bs->block_guid.d1, bs->block_guid.d2);
+        if (proto_name) {
+            ok = ok && nmo_cli_record_str(item, "proto_name", NULL, proto_name) &&
+                 nmo_cli_record_text(item, "PROTOTYPE", proto_name);
+        } else {
+            ok = ok && nmo_cli_record_text_fmt(item, "PROTOTYPE", "{%08X-%08X}",
+                                               bs->block_guid.d1, bs->block_guid.d2);
+        }
+    } else {
+        ok = ok && nmo_cli_record_text(item, "PROTOTYPE", "-");
+    }
+    ok = ok && nmo_cli_record_text(item, "NAME", (name && name[0]) ? name : "-");
+    if (!ok) {
+        nmo_cli_record_free(item);
+        return false;
+    }
+    return nmo_cli_record_array_add(arr, item);
 }
 
 int nmo_cmd_behavior_find(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -250,17 +263,15 @@ int nmo_cmd_behavior_find(int argc, char **argv, const nmo_cli_global_opts_t *gl
         .optype_pat = optype_pat,
         .only_scripts = only_scripts,
         .only_bbs = only_bbs,
+        .ok = true,
     };
 
-    yyjson_mut_doc *doc = NULL;
-    yyjson_mut_val *json_data = NULL;
-    yyjson_mut_val *json_results = NULL;
-    if (c.is_json) {
-        doc = nmo_cmd_ctx_json_begin(&c);
-        json_data = yyjson_mut_obj(doc);
-        json_results = yyjson_mut_arr(doc);
-        find_data.doc = doc;
-        find_data.json_results = json_results;
+    rc = nmo_core_object_query_run(&c, NULL, behavior_find_object,
+                                   &find_data, NULL);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        free(find_data.matches);
+        fprintf(stderr, "Error: Failed to query objects\n");
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
     static const nmo_cli_table_col_t columns[] = {
@@ -269,33 +280,28 @@ int nmo_cmd_behavior_find(int argc, char **argv, const nmo_cli_global_opts_t *gl
         {"PROTOTYPE", NMO_CLI_ALIGN_LEFT, 28, 0},
         {"NAME", NMO_CLI_ALIGN_LEFT, 28, 50},
     };
-    nmo_cli_table_t table;
-    if (!c.is_json) {
-        nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
-        find_data.table = &table;
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL && find_data.ok &&
+              nmo_cli_record_uint(rec, "match_count", NULL,
+                                  (uint64_t)find_data.match_count) &&
+              nmo_cli_record_raw_fmt(rec, "Found: %zu behavior(s)\n\n",
+                                     find_data.match_count);
+    nmo_cli_record_array_t *results =
+        ok ? nmo_cli_record_array(rec, "results", NULL) : NULL;
+    ok = results != NULL &&
+         nmo_cli_record_array_set_table(results, columns,
+                                        sizeof(columns) / sizeof(columns[0]));
+    for (size_t i = 0; ok && i < find_data.match_count; i++) {
+        ok = behavior_find_add_result(results, &c, find_data.matches[i]);
     }
+    free(find_data.matches);
 
-    rc = nmo_core_object_query_run(&c, NULL, behavior_find_object,
-                                   &find_data, NULL);
-    if (rc != NMO_CLI_EXIT_SUCCESS) {
-        if (doc) yyjson_mut_doc_free(doc);
-        if (!c.is_json) nmo_cli_table_free(&table);
-        fprintf(stderr, "Error: Failed to query objects\n");
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        rec = NULL;
     }
-
-    if (c.is_json) {
-        yyjson_mut_obj_add_uint(doc, json_data, "match_count",
-                                (uint64_t)find_data.match_count);
-        yyjson_mut_obj_add_val(doc, json_data, "results", json_results);
-        nmo_cmd_ctx_json_end(&c, doc, json_data, "behavior.find");
-    } else {
-        fprintf(c.out, "Found: %zu behavior(s)\n\n", find_data.match_count);
-        nmo_cli_table_print(&table, c.out, c.colorize);
-        nmo_cli_table_free(&table);
-    }
-
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    rc = nmo_cmd_ctx_emit_record(&c, rec, "behavior.find", 0, c.colorize);
+    return nmo_cmd_ctx_done(&c, rc);
 }
 
 /* ============================================================================
@@ -419,6 +425,169 @@ static const char *trace_transition_name(
     return "same_graph";
 }
 
+typedef struct {
+    uint32_t depth;
+    nmo_object_id_t source_io;
+    nmo_object_id_t source_owner;
+    const char *source_owner_name;
+    nmo_object_id_t target_io;
+    const char *target_io_name;
+    nmo_object_id_t target_owner;
+    const char *target_owner_name;
+    const nmo_behavior_state_t *target_bs;
+    const char *target_type;
+    const char *target_proto;
+    const char *transition;
+    int16_t delay;
+    const char *truncated_reason;
+    bool loop_detected;
+    nmo_object_id_t loop_io;
+} trace_step_t;
+
+/* Top-level fields shared by the empty and the full trace report. */
+static nmo_cli_record_t *trace_record_new(nmo_object_id_t beh_id,
+                                          const char *beh_name,
+                                          size_t entry_count,
+                                          size_t link_count)
+{
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL &&
+              nmo_cli_record_uint(rec, "behavior_id", NULL, beh_id) &&
+              nmo_cli_record_str(rec, "behavior_name", NULL,
+                                 (beh_name && beh_name[0]) ? beh_name : "") &&
+              nmo_cli_record_uint(rec, "entry_count", NULL,
+                                  (uint64_t)entry_count) &&
+              nmo_cli_record_uint(rec, "link_count", NULL,
+                                  (uint64_t)link_count);
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        return NULL;
+    }
+    return rec;
+}
+
+static bool trace_add_step_text(nmo_cli_record_t *item, nmo_context_t *ctx,
+                                const trace_step_t *step)
+{
+    /* Resolve type label and prototype name */
+    const char *type_label = "";
+    const char *proto_name = NULL;
+    bool entering_subgraph = false;
+    const nmo_behavior_state_t *tgt_state = step->target_bs;
+    if (tgt_state) {
+        if (tgt_state->flags & CKBEHAVIOR_SCRIPT) {
+            type_label = " [Script]";
+        } else if (tgt_state->flags & CKBEHAVIOR_BUILDINGBLOCK) {
+            type_label = " [BB]";
+            if (!nmo_guid_is_null(tgt_state->block_guid)) {
+                proto_name = nmo_behavior_registry_get_name(
+                    nmo_context_get_bb_registry(ctx), tgt_state->block_guid);
+            }
+            if (!proto_name) {
+                proto_name = step->target_proto;
+            }
+        } else {
+            type_label = " [Graph]";
+            entering_subgraph = true;
+        }
+    }
+
+    bool ok = nmo_cli_record_raw_fmt(item, "%*s%s%s",
+                                     (int)(2u * (step->depth + 1u)), "",
+                                     entering_subgraph ? "\xe2\x96\xb6 "
+                                                       : "\xe2\x86\x92 ",
+                                     step->target_owner_name);
+    if (proto_name) {
+        ok = ok && nmo_cli_record_raw_fmt(item, " [%s]", proto_name);
+    }
+    ok = ok && nmo_cli_record_raw_fmt(item, ".%s%s  (transition: %s)",
+                                      step->target_io_name ? step->target_io_name : "?",
+                                      type_label, step->transition);
+    if (step->delay != 0) {
+        ok = ok && nmo_cli_record_raw_fmt(item, "  (delay: %d)", step->delay);
+    }
+    if (step->truncated_reason) {
+        ok = ok && nmo_cli_record_raw_fmt(item, "  (truncated: %s)",
+                                          step->truncated_reason);
+    }
+    if (step->loop_detected) {
+        ok = ok && nmo_cli_record_raw_fmt(item, "  (loop path: #%u -> #%u",
+                                          step->source_io, step->target_io);
+        if (step->loop_io != 0) {
+            ok = ok && nmo_cli_record_raw_fmt(item, " -> #%u", step->loop_io);
+        }
+        ok = ok && nmo_cli_record_raw(item, ")");
+    }
+    return ok && nmo_cli_record_raw(item, "\n");
+}
+
+/* One "steps" item; in text, one indented trace line. */
+static bool trace_add_step(nmo_cli_record_array_t *steps, nmo_context_t *ctx,
+                           const trace_step_t *step)
+{
+    nmo_cli_record_t *item = nmo_cli_record_new();
+    bool ok = item != NULL &&
+              nmo_cli_record_uint(item, "depth", NULL, step->depth) &&
+              nmo_cli_record_uint(item, "source_io_id", NULL, step->source_io);
+    if (step->source_owner != 0) {
+        ok = ok &&
+             nmo_cli_record_uint(item, "source_owner_id", NULL,
+                                 step->source_owner) &&
+             nmo_cli_record_str(item, "source_owner_name", NULL,
+                                step->source_owner_name);
+    }
+    ok = ok &&
+         nmo_cli_record_uint(item, "target_io_id", NULL, step->target_io) &&
+         nmo_cli_record_str(item, "target_io_name", NULL,
+                            step->target_io_name ? step->target_io_name : "");
+    if (step->target_owner != 0) {
+        ok = ok &&
+             nmo_cli_record_uint(item, "target_owner_id", NULL,
+                                 step->target_owner) &&
+             nmo_cli_record_str(item, "target_owner_name", NULL,
+                                step->target_owner_name);
+    }
+    ok = ok && nmo_cli_record_str(item, "target_behavior_type", NULL,
+                                  step->target_type);
+    if (step->target_proto) {
+        ok = ok && nmo_cli_record_str(item, "target_bb_proto_name", NULL,
+                                      step->target_proto);
+    }
+    ok = ok && nmo_cli_record_str(item, "transition", NULL, step->transition);
+    if (step->delay != 0) {
+        ok = ok && nmo_cli_record_int(item, "delay", NULL, step->delay);
+    }
+    if (step->truncated_reason) {
+        ok = ok && nmo_cli_record_str(item, "truncated_reason", NULL,
+                                      step->truncated_reason);
+    }
+    if (step->loop_detected) {
+        uint64_t loop_path[3] = {step->source_io, step->target_io, step->loop_io};
+        ok = ok &&
+             nmo_cli_record_bool(item, "loop_detected", NULL, true) &&
+             nmo_cli_record_uint_list(item, "loop_path_io_ids", NULL, loop_path,
+                                      step->loop_io != 0 ? 3u : 2u, NULL);
+    }
+    ok = ok && trace_add_step_text(item, ctx, step);
+    if (!ok) {
+        nmo_cli_record_free(item);
+        return false;
+    }
+    return nmo_cli_record_array_add(steps, item);
+}
+
+/* Array whose items print their own text lines, without a heading. */
+static nmo_cli_record_array_t *trace_inline_array(nmo_cli_record_t *rec,
+                                                  const char *key)
+{
+    nmo_cli_record_array_t *arr = nmo_cli_record_array(rec, key, NULL);
+    if (arr) {
+        nmo_cli_record_array_omit_heading(arr);
+        nmo_cli_record_array_inline_items(arr);
+    }
+    return arr;
+}
+
 int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
         {"--from",  NULL, NMO_OPT_STRING, "Start IO name (default: first bIn)"},
@@ -482,22 +651,17 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
     }
 
     if (link_count == 0) {
-        if (c.is_json) {
-            yyjson_mut_doc *doc0 = nmo_cmd_ctx_json_begin(&c);
-            yyjson_mut_val *d0 = yyjson_mut_obj(doc0);
-            yyjson_mut_obj_add_uint(doc0, d0, "behavior_id", beh_id);
-            nmo_cli_json_add_str_safe(doc0, d0, "behavior_name",
-                (beh_name && beh_name[0]) ? beh_name : "");
-            yyjson_mut_obj_add_uint(doc0, d0, "entry_count", 0);
-            yyjson_mut_obj_add_uint(doc0, d0, "link_count", 0);
-            yyjson_mut_obj_add_val(doc0, d0, "entries",
-                                   yyjson_mut_arr(doc0));
-            nmo_cmd_ctx_json_end(&c, doc0, d0, "behavior.trace");
-        } else {
-            fprintf(c.out, "No behavior links to trace.\n");
+        nmo_cli_record_t *rec = trace_record_new(beh_id, beh_name, 0, 0);
+        bool ok = rec != NULL &&
+                  nmo_cli_record_raw(rec, "No behavior links to trace.\n") &&
+                  trace_inline_array(rec, "entries") != NULL;
+        if (!ok) {
+            nmo_cli_record_free(rec);
+            rec = NULL;
         }
         free(links);
-        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+        rc = nmo_cmd_ctx_emit_record(&c, rec, "behavior.trace", 0, false);
+        return nmo_cmd_ctx_done(&c, rc);
     }
 
     /* Use behavior_index for O(1) IO owner lookups */
@@ -572,36 +736,26 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
-    yyjson_mut_doc *doc = NULL;
-    yyjson_mut_val *json_data = NULL;
-    yyjson_mut_val *json_entries = NULL;
-    if (c.is_json) {
-        doc = nmo_cmd_ctx_json_begin(&c);
-        json_data = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_uint(doc, json_data, "behavior_id", beh_id);
-        nmo_cli_json_add_str_safe(doc, json_data, "behavior_name",
-            (beh_name && beh_name[0]) ? beh_name : "");
-        yyjson_mut_obj_add_uint(doc, json_data, "entry_count",
-                                (uint64_t)entry_count);
-        yyjson_mut_obj_add_uint(doc, json_data, "link_count",
-                                (uint64_t)link_count);
-        json_entries = yyjson_mut_arr(doc);
-    } else {
-        /* Type label for root behavior */
-        const char *root_label = "[Graph]";
-        if (bs->flags & CKBEHAVIOR_SCRIPT) root_label = "[Script]";
-        else if (bs->flags & CKBEHAVIOR_BUILDINGBLOCK) root_label = "[BB]";
-        fprintf(c.out, "Execution Trace: %s %s [#%u]\n",
-                (beh_name && beh_name[0]) ? beh_name : "(unnamed)",
-                root_label, beh_id);
-        fprintf(c.out, "Current graph: %s [#%u]\n",
-                (beh_name && beh_name[0]) ? beh_name : "(unnamed)",
-                beh_id);
-        fprintf(c.out, "Entry points: %zu, Links: %zu\n\n",
-                entry_count, link_count);
-    }
+    nmo_cli_record_t *rec = trace_record_new(beh_id, beh_name, entry_count,
+                                             link_count);
+    /* Type label for root behavior */
+    const char *root_label = "[Graph]";
+    if (bs->flags & CKBEHAVIOR_SCRIPT) root_label = "[Script]";
+    else if (bs->flags & CKBEHAVIOR_BUILDINGBLOCK) root_label = "[BB]";
+    const char *root_name = (beh_name && beh_name[0]) ? beh_name : "(unnamed)";
+    bool ok = rec != NULL &&
+              nmo_cli_record_raw_fmt(rec,
+                                     "Execution Trace: %s %s [#%u]\n"
+                                     "Current graph: %s [#%u]\n"
+                                     "Entry points: %zu, Links: %zu\n\n",
+                                     root_name, root_label, beh_id,
+                                     root_name, beh_id,
+                                     entry_count, link_count);
+    nmo_cli_record_array_t *entries =
+        ok ? trace_inline_array(rec, "entries") : NULL;
+    ok = entries != NULL;
 
-    for (size_t ei = 0; ei < entry_count; ei++) {
+    for (size_t ei = 0; ok && ei < entry_count; ei++) {
         nmo_object_id_t entry = entry_ios[ei];
 
         /* Resolve entry owner via behavior_index */
@@ -616,23 +770,21 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
             }
         }
 
-        yyjson_mut_val *json_entry = NULL;
-        yyjson_mut_val *json_steps = NULL;
-        if (c.is_json) {
-            json_entry = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_uint(doc, json_entry, "entry_io_id", entry);
-            nmo_cli_json_add_str_safe(doc, json_entry, "entry_io_name",
-                                      resolve_name(repo, entry));
-            yyjson_mut_obj_add_uint(doc, json_entry, "entry_owner_id",
-                                    entry_owner_id);
-            nmo_cli_json_add_str_safe(doc, json_entry, "entry_owner_name",
-                (eowner && eowner[0]) ? eowner : "");
-            json_steps = yyjson_mut_arr(doc);
-        } else {
-            fprintf(c.out, "%s.%s\n",
-                    (eowner && eowner[0]) ? eowner : "?",
-                    resolve_name(repo, entry));
-        }
+        nmo_cli_record_t *entry_item = nmo_cli_record_new();
+        const char *entry_name = resolve_name(repo, entry);
+        ok = entry_item != NULL &&
+             nmo_cli_record_uint(entry_item, "entry_io_id", NULL, entry) &&
+             nmo_cli_record_str(entry_item, "entry_io_name", NULL, entry_name) &&
+             nmo_cli_record_uint(entry_item, "entry_owner_id", NULL,
+                                 entry_owner_id) &&
+             nmo_cli_record_str(entry_item, "entry_owner_name", NULL,
+                                (eowner && eowner[0]) ? eowner : "") &&
+             nmo_cli_record_raw_fmt(entry_item, "%s.%s\n",
+                                    (eowner && eowner[0]) ? eowner : "?",
+                                    entry_name);
+        nmo_cli_record_array_t *steps =
+            ok ? trace_inline_array(entry_item, "steps") : NULL;
+        ok = steps != NULL;
 
         size_t sp = 0, vis_count = 0;
         stack[sp].io = entry;
@@ -640,11 +792,11 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
         sp++;
         visited[vis_count++] = entry;
 
-        while (sp > 0) {
+        while (ok && sp > 0) {
             stack_entry_t cur = stack[--sp];
             if (cur.depth > max_trace_depth) continue;
 
-            for (size_t li = 0; li < link_count; li++) {
+            for (size_t li = 0; ok && li < link_count; li++) {
                 if (links[li].source_io != cur.io) continue;
 
                 nmo_object_id_t tgt = links[li].target_io;
@@ -727,113 +879,25 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
                     truncated_reason = "loop";
                 }
 
-                if (c.is_json) {
-                    yyjson_mut_val *step = yyjson_mut_obj(doc);
-                    yyjson_mut_obj_add_uint(doc, step, "depth", cur.depth);
-                    yyjson_mut_obj_add_uint(doc, step, "source_io_id",
-                                            cur.io);
-                    if (src_owner != 0) {
-                        yyjson_mut_obj_add_uint(doc, step,
-                                                "source_owner_id",
-                                                src_owner);
-                        nmo_cli_json_add_str_safe(doc, step,
-                            "source_owner_name", sname);
-                    }
-                    yyjson_mut_obj_add_uint(doc, step, "target_io_id", tgt);
-                    nmo_cli_json_add_str_safe(doc, step, "target_io_name",
-                        tio ? tio : "");
-                    if (tgt_owner != 0) {
-                        yyjson_mut_obj_add_uint(doc, step,
-                                                "target_owner_id",
-                                                tgt_owner);
-                        nmo_cli_json_add_str_safe(doc, step,
-                            "target_owner_name", tname);
-                    }
-                    nmo_cli_json_add_str_safe(doc, step,
-                                              "target_behavior_type",
-                                              target_type);
-                    if (target_proto) {
-                        nmo_cli_json_add_str_safe(doc, step,
-                                                  "target_bb_proto_name",
-                                                  target_proto);
-                    }
-                    nmo_cli_json_add_str_safe(doc, step, "transition",
-                                              transition);
-                    if (links[li].delay != 0) {
-                        yyjson_mut_obj_add_int(doc, step, "delay",
-                                               links[li].delay);
-                    }
-                    if (truncated_reason) {
-                        nmo_cli_json_add_str_safe(doc, step,
-                                                  "truncated_reason",
-                                                  truncated_reason);
-                    }
-                    if (loop_detected) {
-                        yyjson_mut_obj_add_bool(doc, step, "loop_detected",
-                                                true);
-                        yyjson_mut_val *loop_path = yyjson_mut_arr(doc);
-                        yyjson_mut_arr_add_uint(doc, loop_path, cur.io);
-                        yyjson_mut_arr_add_uint(doc, loop_path, tgt);
-                        if (loop_io != 0) {
-                            yyjson_mut_arr_add_uint(doc, loop_path, loop_io);
-                        }
-                        yyjson_mut_obj_add_val(doc, step,
-                                               "loop_path_io_ids",
-                                               loop_path);
-                    }
-                    yyjson_mut_arr_add_val(json_steps, step);
-                } else {
-                    for (uint32_t dd = 0; dd <= cur.depth; dd++)
-                        fprintf(c.out, "  ");
-                    /* Resolve type label and prototype name */
-                    const char *type_label = "";
-                    const char *proto_name = NULL;
-                    bool entering_subgraph = false;
-                    if (tgt_owner != 0) {
-                        nmo_object_t *tgt_obj = nmo_object_repository_find_by_id(repo, tgt_owner);
-                        if (tgt_obj && tgt_obj->state) {
-                            const nmo_behavior_state_t *tgt_state =
-                                (const nmo_behavior_state_t *)tgt_obj->state;
-                            if (tgt_state->flags & CKBEHAVIOR_SCRIPT)
-                                type_label = " [Script]";
-                            else if (tgt_state->flags & CKBEHAVIOR_BUILDINGBLOCK) {
-                                type_label = " [BB]";
-                                if (!nmo_guid_is_null(tgt_state->block_guid)) {
-                                    proto_name = nmo_behavior_registry_get_name(
-                                        nmo_context_get_bb_registry(c.ctx),
-                                        tgt_state->block_guid);
-                                }
-                                if (!proto_name) {
-                                    proto_name = target_proto;
-                                }
-                            } else {
-                                type_label = " [Graph]";
-                                entering_subgraph = true;
-                            }
-                        }
-                    }
-                    if (entering_subgraph)
-                        fprintf(c.out, "\xe2\x96\xb6 ");
-                    else
-                        fprintf(c.out, "\xe2\x86\x92 ");
-                    fprintf(c.out, "%s", tname);
-                    if (proto_name)
-                        fprintf(c.out, " [%s]", proto_name);
-                    fprintf(c.out, ".%s%s", tio ? tio : "?", type_label);
-                    fprintf(c.out, "  (transition: %s)", transition);
-                    if (links[li].delay != 0)
-                        fprintf(c.out, "  (delay: %d)", links[li].delay);
-                    if (truncated_reason)
-                        fprintf(c.out, "  (truncated: %s)", truncated_reason);
-                    if (loop_detected)
-                        fprintf(c.out, "  (loop path: #%u -> #%u",
-                                cur.io, tgt);
-                    if (loop_detected && loop_io != 0)
-                        fprintf(c.out, " -> #%u", loop_io);
-                    if (loop_detected)
-                        fprintf(c.out, ")");
-                    fprintf(c.out, "\n");
-                }
+                trace_step_t step = {
+                    .depth = cur.depth,
+                    .source_io = cur.io,
+                    .source_owner = src_owner,
+                    .source_owner_name = sname,
+                    .target_io = tgt,
+                    .target_io_name = tio,
+                    .target_owner = tgt_owner,
+                    .target_owner_name = tname,
+                    .target_bs = tgt_bs,
+                    .target_type = target_type,
+                    .target_proto = target_proto,
+                    .transition = transition,
+                    .delay = links[li].delay,
+                    .truncated_reason = truncated_reason,
+                    .loop_detected = loop_detected,
+                    .loop_io = loop_io,
+                };
+                ok = trace_add_step(steps, c.ctx, &step);
 
                 /* Continue through: add target owner's outputs to stack */
                 if (tgt_owner != 0 && cur.depth < max_trace_depth) {
@@ -861,22 +925,21 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
             }
         }
 
-        if (c.is_json) {
-            yyjson_mut_obj_add_val(doc, json_entry, "steps", json_steps);
-            yyjson_mut_arr_add_val(json_entries, json_entry);
+        ok = ok && nmo_cli_record_raw(entry_item, "\n");
+        if (!ok) {
+            nmo_cli_record_free(entry_item);
         } else {
-            fprintf(c.out, "\n");
+            ok = nmo_cli_record_array_add(entries, entry_item);
         }
-    }
-
-    if (c.is_json) {
-        yyjson_mut_obj_add_val(doc, json_data, "entries", json_entries);
-        nmo_cmd_ctx_json_end(&c, doc, json_data, "behavior.trace");
     }
 
     free(stack);
     free(visited);
     free(links);
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        rec = NULL;
+    }
+    rc = nmo_cmd_ctx_emit_record(&c, rec, "behavior.trace", 0, false);
+    return nmo_cmd_ctx_done(&c, rc);
 }
-
