@@ -43,127 +43,95 @@ static bool lookup_chunk_index(const nmo_cli_chunk_ptr_index_t *map,
     return nmo_chunk_index_lookup(map, map_count, chunk, out_index);
 }
 
-static nmo_cli_tree_node_t *build_chunk_tree_node(nmo_context_t *ctx,
-                                                  nmo_chunk_t *chunk,
-                                                  nmo_arena_t *arena)
+/*
+ * One chunk tree node. JSON: the chunk fields plus a "children" array when the
+ * chunk has sub-chunks. Text: one tree line ("<prefix>|-- <label>", or the bare
+ * label for a root, whose `prefix` is NULL), then the children's lines.
+ */
+static bool chunk_tree_build_node(const nmo_cmd_ctx_t *c,
+                                  nmo_chunk_t *chunk,
+                                  const nmo_cli_chunk_ptr_index_t *index_map,
+                                  size_t index_map_count,
+                                  const char *prefix,
+                                  bool is_last,
+                                  nmo_cli_record_t *node)
 {
-    if (!chunk || !arena) {
-        return NULL;
-    }
-
-    nmo_cli_tree_node_t *node = nmo_arena_alloc(arena, sizeof(*node), _Alignof(nmo_cli_tree_node_t));
-    if (!node) {
-        return NULL;
-    }
-
-    const char *class_name = nmo_cli_class_name_from_id(ctx, chunk->class_id);
+    const char *class_name = nmo_cli_class_name_from_id(c->ctx, chunk->class_id);
     uint32_t sub_count = nmo_chunk_get_sub_chunk_count(chunk);
+    const char *color = c->colorize ? NMO_CLI_COLOR_CYAN : "";
+    const char *reset = c->colorize ? NMO_CLI_COLOR_RESET : "";
 
-    /* Format at full length, then keep an exact-size copy in the arena. */
-    char *label = NULL;
     char *opt = nmo_cli_chunk_options_dup(chunk->chunk_options);
-    char *text = opt
-        ? nmo_tool_strdup_fmt("%s (cid=%u size=%zu opt=%s sub=%u)",
-                              class_name ? class_name : "(unknown)",
-                              chunk->class_id,
-                              nmo_chunk_get_data_size(chunk),
-                              opt,
-                              sub_count)
-        : NULL;
+    bool ok = opt != NULL &&
+              nmo_cli_record_raw_fmt(node, "%s%s%s%s (cid=%u size=%zu opt=%s sub=%u)%s\n",
+                                     prefix ? prefix : "",
+                                     prefix ? (is_last ? "`-- " : "|-- ") : "",
+                                     color,
+                                     class_name ? class_name : "(unknown)",
+                                     chunk->class_id,
+                                     nmo_chunk_get_data_size(chunk),
+                                     opt,
+                                     sub_count,
+                                     reset);
     free(opt);
-    if (text) {
-        size_t text_size = strlen(text) + 1u;
-        label = nmo_arena_alloc(arena, text_size, 1);
-        if (label) {
-            memcpy(label, text, text_size);
-        }
-        free(text);
+
+    ok = ok && nmo_cli_record_uint(node, "class_id", NULL, chunk->class_id);
+    if (class_name) {
+        ok = ok && nmo_cli_record_str(node, "class_name", NULL, class_name);
+    }
+    ok = ok && nmo_cli_record_uint(node, "data_version", NULL, chunk->data_version) &&
+         nmo_cli_record_uint(node, "chunk_version", NULL, chunk->chunk_version) &&
+         nmo_cli_record_uint(node, "options", NULL, chunk->chunk_options) &&
+         nmo_cli_record_uint(node, "data_size", NULL,
+                             (uint64_t)nmo_chunk_get_data_size(chunk)) &&
+         nmo_cli_record_uint(node, "compressed_size", NULL,
+                             (uint64_t)chunk->compressed_size) &&
+         nmo_cli_record_uint(node, "uncompressed_size", NULL,
+                             (uint64_t)chunk->uncompressed_size);
+
+    uint32_t flat_index = 0;
+    if (index_map && lookup_chunk_index(index_map, index_map_count, chunk, &flat_index)) {
+        ok = ok && nmo_cli_record_uint(node, "flat_index", NULL, flat_index);
+    }
+    ok = ok && nmo_cli_record_uint(node, "subchunk_count", NULL, (uint64_t)sub_count);
+    if (!ok || sub_count == 0) {
+        return ok;
     }
 
-    node->label = label ? label : "(alloc failed)";
-    node->user_data = chunk;
-    node->first_child = NULL;
-    node->next_sibling = NULL;
+    nmo_cli_record_array_t *children = nmo_cli_record_array(node, "children", NULL);
+    if (!children) {
+        return false;
+    }
+    nmo_cli_record_array_omit_heading(children);
+    nmo_cli_record_array_inline_items(children);
 
-    nmo_cli_tree_node_t *prev_child = NULL;
+    /* The last present sub-chunk takes the closing connector. */
+    uint32_t last = 0;
     for (uint32_t i = 0; i < sub_count; ++i) {
+        if (nmo_chunk_get_sub_chunk(chunk, i)) {
+            last = i;
+        }
+    }
+    char *child_prefix = nmo_tool_strdup_fmt("%s%s", prefix ? prefix : "",
+                                             prefix ? (is_last ? "    " : "|   ") : "");
+    ok = child_prefix != NULL;
+    for (uint32_t i = 0; ok && i < sub_count; ++i) {
         nmo_chunk_t *sub = nmo_chunk_get_sub_chunk(chunk, i);
         if (!sub) {
             continue;
         }
-
-        nmo_cli_tree_node_t *child = build_chunk_tree_node(ctx, sub, arena);
-        if (!child) {
-            continue;
-        }
-
-        if (!node->first_child) {
-            node->first_child = child;
-        } else if (prev_child) {
-            prev_child->next_sibling = child;
-        }
-        prev_child = child;
-    }
-
-    return node;
-}
-
-static yyjson_mut_val *build_chunk_json_tree(yyjson_mut_doc *doc,
-                                             nmo_context_t *ctx,
-                                             nmo_chunk_t *chunk,
-                                             const nmo_cli_chunk_ptr_index_t *index_map,
-                                             size_t index_map_count)
-{
-    if (!doc || !chunk) {
-        return yyjson_mut_null(doc);
-    }
-
-    yyjson_mut_val *node = yyjson_mut_obj(doc);
-    yyjson_mut_obj_add_uint(doc, node, "class_id", chunk->class_id);
-    const char *class_name = nmo_cli_class_name_from_id(ctx, chunk->class_id);
-    if (class_name) {
-        yyjson_mut_obj_add_str(doc, node, "class_name", class_name);
-    }
-
-    yyjson_mut_obj_add_uint(doc, node, "data_version", chunk->data_version);
-    yyjson_mut_obj_add_uint(doc, node, "chunk_version", chunk->chunk_version);
-    yyjson_mut_obj_add_uint(doc, node, "options", chunk->chunk_options);
-    yyjson_mut_obj_add_uint(doc, node, "data_size", (uint64_t)nmo_chunk_get_data_size(chunk));
-    yyjson_mut_obj_add_uint(doc, node, "compressed_size", (uint64_t)chunk->compressed_size);
-    yyjson_mut_obj_add_uint(doc, node, "uncompressed_size", (uint64_t)chunk->uncompressed_size);
-
-    if (index_map) {
-        uint32_t flat_index = 0;
-        if (lookup_chunk_index(index_map, index_map_count, chunk, &flat_index)) {
-            yyjson_mut_obj_add_uint(doc, node, "flat_index", flat_index);
+        nmo_cli_record_t *child = nmo_cli_record_new();
+        ok = child != NULL &&
+             chunk_tree_build_node(c, sub, index_map, index_map_count,
+                                   child_prefix, i == last, child);
+        if (!ok) {
+            nmo_cli_record_free(child);
+        } else {
+            ok = nmo_cli_record_array_add(children, child);
         }
     }
-
-    uint32_t sub_count = nmo_chunk_get_sub_chunk_count(chunk);
-    yyjson_mut_obj_add_uint(doc, node, "subchunk_count", (uint64_t)sub_count);
-
-    if (sub_count > 0) {
-        yyjson_mut_val *children = yyjson_mut_arr(doc);
-        for (uint32_t i = 0; i < sub_count; ++i) {
-            nmo_chunk_t *sub = nmo_chunk_get_sub_chunk(chunk, i);
-            if (!sub) {
-                continue;
-            }
-            yyjson_mut_arr_add_val(children,
-                                   build_chunk_json_tree(doc, ctx, sub, index_map, index_map_count));
-        }
-        yyjson_mut_obj_add_val(doc, node, "children", children);
-    }
-
-    return node;
-}
-
-static void chunk_tree_render(FILE *out, const nmo_cli_tree_node_t *node, bool colorize) {
-    if (colorize) {
-        fprintf(out, "%s%s%s", NMO_CLI_COLOR_CYAN, node->label, NMO_CLI_COLOR_RESET);
-    } else {
-        fprintf(out, "%s", node->label);
-    }
+    free(child_prefix);
+    return ok;
 }
 
 static bool collect_all_chunk_entries(nmo_workspace_t *workspace,
@@ -172,6 +140,20 @@ static bool collect_all_chunk_entries(nmo_workspace_t *workspace,
                                       size_t *out_object_count)
 {
     return nmo_tool_owner_chunk_entries(workspace, out_entries, out_count, out_object_count);
+}
+
+/* Emit a finished record, or report INTERNAL_ERROR when building it failed. */
+static int chunk_emit(nmo_cmd_ctx_t *c,
+                      nmo_cli_record_t *rec,
+                      bool ok,
+                      const char *cmd_name,
+                      int key_width)
+{
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        rec = NULL;
+    }
+    return nmo_cmd_ctx_emit_record(c, rec, cmd_name, key_width, c->colorize);
 }
 
 typedef struct nmo_cli_object_collect {
@@ -240,10 +222,7 @@ static bool chunk_collect_objects(const nmo_cmd_ctx_t *c,
 
 typedef struct nmo_cli_chunk_find_data {
     nmo_class_id_t filter_class_id;
-    yyjson_mut_doc *doc;
-    yyjson_mut_val *matches;
-    nmo_cli_table_t *table;
-    size_t match_count;
+    nmo_cli_object_collect_t matches;
 } nmo_cli_chunk_find_data_t;
 
 /* One match: JSON id/class_name/name/data_size, text Object ID/Class/Object
@@ -268,8 +247,6 @@ static bool chunk_find_build_record(const nmo_cmd_ctx_t *c, nmo_object_t *obj,
 static int chunk_find_object(size_t index, nmo_object_t *obj,
                              const nmo_cmd_ctx_t *c, void *user)
 {
-    (void)index;
-
     nmo_cli_chunk_find_data_t *data = (nmo_cli_chunk_find_data_t *)user;
     if (!data || !obj) {
         return 0;
@@ -285,21 +262,7 @@ static int chunk_find_object(size_t index, nmo_object_t *obj,
         return 0;
     }
 
-    nmo_cli_record_t *rec = nmo_cli_record_new();
-    if (rec && chunk_find_build_record(c, obj, chunk, rec)) {
-        if (data->doc && data->matches) {
-            yyjson_mut_val *item = yyjson_mut_obj(data->doc);
-            if (item && nmo_cli_record_to_json(rec, data->doc, item)) {
-                yyjson_mut_arr_add_val(data->matches, item);
-            }
-        } else if (data->table) {
-            nmo_cli_record_add_table_row(rec, data->table);
-        }
-    }
-    nmo_cli_record_free(rec);
-
-    data->match_count++;
-    return 0;
+    return chunk_collect_object(index, obj, c, &data->matches);
 }
 
 /* ============================================================================
@@ -391,47 +354,30 @@ static int chunk_list_run(nmo_cmd_ctx_t *ctx, uint32_t top_n)
         {"Size", NMO_CLI_ALIGN_RIGHT, 10, 0},
     };
 
-    yyjson_mut_doc *doc = NULL;
-    yyjson_mut_val *data = NULL;
-    yyjson_mut_val *chunks = NULL;
-    nmo_cli_table_t table;
-    if (c.is_json) {
-        doc = nmo_cmd_ctx_json_begin(&c);
-        data = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_uint(doc, data, "total_objects", (uint64_t)object_count);
-        yyjson_mut_obj_add_uint(doc, data, "total_chunks", (uint64_t)entry_count);
-        chunks = yyjson_mut_arr(doc);
-    } else {
-        fprintf(c.out, "Chunks: %zu (including sub-chunks; from %zu objects)\n\n", entry_count, object_count);
-        nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
-    }
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL;
+    ok = ok && nmo_cli_record_raw_fmt(rec, "Chunks: %zu (including sub-chunks; from %zu objects)\n\n",
+                                      entry_count, object_count) &&
+         nmo_cli_record_uint(rec, "total_objects", NULL, (uint64_t)object_count) &&
+         nmo_cli_record_uint(rec, "total_chunks", NULL, (uint64_t)entry_count);
 
-    for (size_t i = 0; i < emit_count; ++i) {
-        nmo_cli_record_t *rec = nmo_cli_record_new();
-        if (rec && chunk_list_build_record(&c, i, &entries[i], rec)) {
-            if (doc) {
-                yyjson_mut_val *item = yyjson_mut_obj(doc);
-                if (item && nmo_cli_record_to_json(rec, doc, item)) {
-                    yyjson_mut_arr_add_val(chunks, item);
-                }
-            } else {
-                nmo_cli_record_add_table_row(rec, &table);
-            }
+    nmo_cli_record_array_t *chunks = ok ? nmo_cli_record_array(rec, "chunks", NULL) : NULL;
+    ok = chunks != NULL &&
+         nmo_cli_record_array_set_table(chunks, columns,
+                                        sizeof(columns) / sizeof(columns[0]));
+    for (size_t i = 0; ok && i < emit_count; ++i) {
+        nmo_cli_record_t *item = nmo_cli_record_new();
+        ok = item != NULL && chunk_list_build_record(&c, i, &entries[i], item);
+        if (!ok) {
+            nmo_cli_record_free(item);
+        } else {
+            ok = nmo_cli_record_array_add(chunks, item);
         }
-        nmo_cli_record_free(rec);
-    }
-
-    if (doc) {
-        yyjson_mut_obj_add_val(doc, data, "chunks", chunks);
-        nmo_cmd_ctx_json_end(&c, doc, data, "chunk.list");
-    } else {
-        nmo_cli_table_print(&table, c.out, c.colorize);
-        nmo_cli_table_free(&table);
     }
 
     nmo_chunk_index_free_entries(entries);
 
-    return NMO_CLI_EXIT_SUCCESS;
+    return chunk_emit(&c, rec, ok, "chunk.list", 0);
 }
 
 int nmo_cmd_chunk_list(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -478,70 +424,52 @@ static int chunk_tree_run(nmo_cmd_ctx_t *ctx)
         (void)build_chunk_index_map(flat_entries, flat_count, &index_map, &index_map_count);
     }
 
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL;
+    ok = ok && nmo_cli_record_raw_fmt(rec, "Chunk Tree (sub-chunks): %zu objects\n\n",
+                                      object_count) &&
+         nmo_cli_record_uint(rec, "total_objects", NULL, (uint64_t)object_count) &&
+         nmo_cli_record_uint(rec, "flat_chunk_count", NULL, (uint64_t)flat_count);
 
-        yyjson_mut_obj_add_uint(doc, data, "total_objects", (uint64_t)object_count);
-        yyjson_mut_obj_add_uint(doc, data, "flat_chunk_count", (uint64_t)flat_count);
-
-        yyjson_mut_val *roots = yyjson_mut_arr(doc);
-
-        for (size_t i = 0; i < object_count; ++i) {
-            nmo_object_t *obj = objects[i];
-            nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
-            if (!chunk) {
-                continue;
-            }
-
-            /* Root wrapper: owner + chunk tree */
-            yyjson_mut_val *root = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_uint(doc, root, "owner_object_id", nmo_object_get_id(obj));
-            const char *owner_name = nmo_object_get_name(obj);
-            if (owner_name && owner_name[0]) {
-                nmo_cli_json_add_str_safe(doc, root, "owner_object_name", owner_name);
-            }
-
-            const char *owner_class = nmo_cli_class_name_from_id(c.ctx, nmo_object_get_class_id(obj));
-            if (owner_class) {
-                yyjson_mut_obj_add_str(doc, root, "owner_class_name", owner_class);
-            }
-            yyjson_mut_obj_add_uint(doc, root, "owner_class_id", nmo_object_get_class_id(obj));
-
-            yyjson_mut_obj_add_val(doc, root, "chunk",
-                                   build_chunk_json_tree(doc, c.ctx, chunk, index_map, index_map_count));
-            yyjson_mut_arr_add_val(roots, root);
+    nmo_cli_record_array_t *roots = ok ? nmo_cli_record_array(rec, "roots", NULL) : NULL;
+    ok = roots != NULL;
+    if (ok) {
+        nmo_cli_record_array_omit_heading(roots);
+        nmo_cli_record_array_inline_items(roots);
+    }
+    for (size_t i = 0; ok && i < object_count; ++i) {
+        nmo_object_t *obj = objects[i];
+        nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
+        if (!chunk) {
+            continue;
         }
 
-        yyjson_mut_obj_add_val(doc, data, "roots", roots);
+        /* Root wrapper: owner + chunk tree */
+        const char *owner_name = nmo_object_get_name(obj);
+        nmo_class_id_t owner_class_id = nmo_object_get_class_id(obj);
+        const char *owner_class = nmo_cli_class_name_from_id(c.ctx, owner_class_id);
+        nmo_cli_record_t *root = nmo_cli_record_new();
+        ok = root != NULL &&
+             nmo_cli_record_raw_fmt(root, "Object %u: %s [%s]\n",
+                                    nmo_object_get_id(obj),
+                                    (owner_name && owner_name[0]) ? owner_name : "(unnamed)",
+                                    owner_class ? owner_class : "?") &&
+             nmo_cli_record_uint(root, "owner_object_id", NULL, nmo_object_get_id(obj)) &&
+             nmo_cli_record_str_opt(root, "owner_object_name", NULL, owner_name, NULL);
+        if (owner_class) {
+            ok = ok && nmo_cli_record_str(root, "owner_class_name", NULL, owner_class);
+        }
+        ok = ok && nmo_cli_record_uint(root, "owner_class_id", NULL, owner_class_id);
 
-        nmo_cmd_ctx_json_end(&c, doc, data, "chunk.tree");
-    } else {
-        fprintf(c.out, "Chunk Tree (sub-chunks): %zu objects\n\n", object_count);
-
-        nmo_arena_t *arena = nmo_tool_owner_arena(c.workspace);
-        for (size_t i = 0; i < object_count; ++i) {
-            nmo_object_t *obj = objects[i];
-            nmo_chunk_t *chunk = nmo_object_get_chunk(obj);
-            if (!chunk) {
-                continue;
-            }
-
-            const char *owner_name = nmo_object_get_name(obj);
-            const char *owner_class = nmo_cli_class_name_from_id(c.ctx, nmo_object_get_class_id(obj));
-            fprintf(c.out, "Object %u: %s [%s]\n",
-                    nmo_object_get_id(obj),
-                    (owner_name && owner_name[0]) ? owner_name : "(unnamed)",
-                    owner_class ? owner_class : "?");
-
-            nmo_cli_tree_node_t *tree = build_chunk_tree_node(c.ctx, chunk, arena);
-            if (!tree) {
-                fprintf(c.out, "  (alloc failed)\n\n");
-                continue;
-            }
-
-            nmo_cli_print_tree(tree, c.out, c.colorize, chunk_tree_render);
-            fprintf(c.out, "\n");
+        nmo_cli_record_t *node = ok ? nmo_cli_record_object(root, "chunk") : NULL;
+        ok = node != NULL &&
+             chunk_tree_build_node(&c, chunk, index_map, index_map_count,
+                                   NULL, true, node) &&
+             nmo_cli_record_raw(root, "\n");
+        if (!ok) {
+            nmo_cli_record_free(root);
+        } else {
+            ok = nmo_cli_record_array_add(roots, root);
         }
     }
 
@@ -549,7 +477,7 @@ static int chunk_tree_run(nmo_cmd_ctx_t *ctx)
     nmo_chunk_index_free_entries(flat_entries);
     free(objects);
 
-    return NMO_CLI_EXIT_SUCCESS;
+    return chunk_emit(&c, rec, ok, "chunk.tree", 0);
 }
 
 int nmo_cmd_chunk_tree(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -814,6 +742,7 @@ static int chunk_show_run(nmo_cmd_ctx_t *ctx, const chunk_show_args_t *args)
 
     nmo_cli_record_t *rec = nmo_cli_record_new();
     bool ok = rec != NULL &&
+              nmo_cli_record_title(rec, "Chunk Details") &&
               chunk_show_build_record(&c, args, chunk, target, object_id,
                                       flat_index_known, flat_index,
                                       parent_index, depth, rec);
@@ -822,19 +751,7 @@ static int chunk_show_run(nmo_cmd_ctx_t *ctx, const chunk_show_args_t *args)
         fprintf(stderr, "Error: Out of memory while describing chunk\n");
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
-
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        nmo_cli_record_to_json(rec, doc, data);
-        nmo_cmd_ctx_json_end(&c, doc, data, "chunk.show");
-    } else {
-        nmo_cli_print_heading(c.out, "Chunk Details", c.colorize);
-        nmo_cli_record_print_kv(rec, c.out, 18, c.colorize);
-    }
-    nmo_cli_record_free(rec);
-
-    return NMO_CLI_EXIT_SUCCESS;
+    return nmo_cmd_ctx_emit_record(&c, rec, "chunk.show", 18, c.colorize);
 }
 
 int nmo_cmd_chunk_show(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -869,62 +786,50 @@ static int chunk_find_run(nmo_cmd_ctx_t *ctx, const char *class_filter)
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-
-        yyjson_mut_obj_add_str(doc, data, "class_filter", class_filter);
-
-        yyjson_mut_val *matches = yyjson_mut_arr(doc);
-        nmo_cli_chunk_find_data_t find_data = {
-            .filter_class_id = filter_class_id,
-            .doc = doc,
-            .matches = matches,
-        };
-        int rc = nmo_core_object_query_run(&c, NULL, chunk_find_object,
-                                           &find_data, NULL);
-        if (rc != NMO_CLI_EXIT_SUCCESS) {
-            yyjson_mut_doc_free(doc);
-            fprintf(stderr, "Error: Failed to query objects\n");
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
-        }
-
-        yyjson_mut_obj_add_uint(doc, data, "match_count",
-                                (uint64_t)find_data.match_count);
-        yyjson_mut_obj_add_val(doc, data, "matches", matches);
-
-        nmo_cmd_ctx_json_end(&c, doc, data, "chunk.find");
-    } else {
-        /* Table output */
-        static const nmo_cli_table_col_t columns[] = {
-            {"Object ID", NMO_CLI_ALIGN_RIGHT, 6, 0},
-            {"Class", NMO_CLI_ALIGN_LEFT, 20, 40},
-            {"Object Name", NMO_CLI_ALIGN_LEFT, 20, 40},
-            {"Size", NMO_CLI_ALIGN_RIGHT, 10, 0},
-        };
-
-        nmo_cli_table_t table;
-        nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
-
-        nmo_cli_chunk_find_data_t find_data = {
-            .filter_class_id = filter_class_id,
-            .table = &table,
-        };
-        int rc = nmo_core_object_query_run(&c, NULL, chunk_find_object,
-                                           &find_data, NULL);
-        if (rc != NMO_CLI_EXIT_SUCCESS) {
-            nmo_cli_table_free(&table);
-            fprintf(stderr, "Error: Failed to query objects\n");
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
-        }
-
-        fprintf(c.out, "Found: %zu chunks (class: %s)\n\n",
-                find_data.match_count, class_filter);
-        nmo_cli_table_print(&table, c.out, c.colorize);
-        nmo_cli_table_free(&table);
+    nmo_cli_chunk_find_data_t find_data = {
+        .filter_class_id = filter_class_id,
+    };
+    int rc = nmo_core_object_query_run(&c, NULL, chunk_find_object,
+                                       &find_data, NULL);
+    if (rc != NMO_CLI_EXIT_SUCCESS || find_data.matches.allocation_failed) {
+        free(find_data.matches.objects);
+        fprintf(stderr, "Error: Failed to query objects\n");
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
+    size_t match_count = find_data.matches.count;
 
-    return NMO_CLI_EXIT_SUCCESS;
+    static const nmo_cli_table_col_t columns[] = {
+        {"Object ID", NMO_CLI_ALIGN_RIGHT, 6, 0},
+        {"Class", NMO_CLI_ALIGN_LEFT, 20, 40},
+        {"Object Name", NMO_CLI_ALIGN_LEFT, 20, 40},
+        {"Size", NMO_CLI_ALIGN_RIGHT, 10, 0},
+    };
+
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL;
+    ok = ok && nmo_cli_record_str(rec, "class_filter", NULL, class_filter) &&
+         nmo_cli_record_uint(rec, "match_count", NULL, (uint64_t)match_count) &&
+         nmo_cli_record_raw_fmt(rec, "Found: %zu chunks (class: %s)\n\n",
+                                match_count, class_filter);
+
+    nmo_cli_record_array_t *matches = ok ? nmo_cli_record_array(rec, "matches", NULL) : NULL;
+    ok = matches != NULL &&
+         nmo_cli_record_array_set_table(matches, columns,
+                                        sizeof(columns) / sizeof(columns[0]));
+    for (size_t i = 0; ok && i < match_count; ++i) {
+        nmo_object_t *obj = find_data.matches.objects[i];
+        nmo_cli_record_t *item = nmo_cli_record_new();
+        ok = item != NULL &&
+             chunk_find_build_record(&c, obj, nmo_object_get_chunk(obj), item);
+        if (!ok) {
+            nmo_cli_record_free(item);
+        } else {
+            ok = nmo_cli_record_array_add(matches, item);
+        }
+    }
+    free(find_data.matches.objects);
+
+    return chunk_emit(&c, rec, ok, "chunk.find", 0);
 }
 
 int nmo_cmd_chunk_find(int argc, char **argv, const nmo_cli_global_opts_t *global) {
