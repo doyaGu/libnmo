@@ -7,6 +7,7 @@
 #define NMO_CMD_BEHAVIOR_INTERNAL_H
 
 #include "../nmo_cmd_ctx.h"
+#include "../nmo_cli_record.h"
 #include "format/nmo_interface_chunk.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_types.h"
@@ -77,6 +78,14 @@ void nmo_cmd_behavior_add_interface_diagnostics_json(
 void nmo_cmd_behavior_print_interface_diagnostics(
     FILE *out,
     nmo_workspace_t *workspace);
+
+/*
+ * JSON: the interface_available / interface_parse fields. Text (when
+ * `show_text`): the failed-parse summary line, if an interface parse failed.
+ */
+bool nmo_cmd_behavior_add_interface_diagnostics(nmo_cli_record_t *rec,
+                                                nmo_workspace_t *workspace,
+                                                bool show_text);
 
 int nmo_cmd_behavior_graph_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
 int nmo_cmd_behavior_graph_boundary_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);

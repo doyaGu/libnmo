@@ -241,6 +241,56 @@ void nmo_cmd_behavior_add_interface_diagnostics_json(
     yyjson_mut_obj_add_val(doc, data, "interface_parse", obj);
 }
 
+/* Text: the failed-parse summary line, when an interface parse failed. */
+static bool behavior_add_interface_diagnostics_text(nmo_cli_record_t *rec,
+                                                    nmo_workspace_t *workspace)
+{
+    nmo_tool_behavior_interface_diagnostics_t diag;
+    nmo_tool_owner_behavior_interface_diagnostics(workspace, &diag);
+    if (!diag.attempted || diag.status == NMO_OK) {
+        return true;
+    }
+
+    bool ok = nmo_cli_record_raw_fmt(
+        rec, "Interface parse diagnostics: status=%s(%d), parsed=%zu/%zu, failed=%zu",
+        nmo_error_string(diag.status),
+        diag.status,
+        diag.parsed_count,
+        diag.attempted_count,
+        diag.failed_count);
+    if (diag.first_error_object_id != 0 || diag.first_error_file_id != 0) {
+        ok = ok && nmo_cli_record_raw_fmt(
+            rec,
+            ", first_error_object=%u, file_id=%u, chunk_version=%u, data_version=%u, offset=%zu/%zu dwords",
+            diag.first_error_object_id,
+            diag.first_error_file_id,
+            diag.first_error_chunk_version,
+            diag.first_error_data_version,
+            diag.first_error_reader_offset,
+            diag.first_error_chunk_dwords);
+    }
+    return ok && nmo_cli_record_raw(rec, "\n");
+}
+
+static bool behavior_interface_diagnostics_json(yyjson_mut_doc *doc,
+                                                yyjson_mut_val *obj,
+                                                const void *data)
+{
+    nmo_cmd_behavior_add_interface_diagnostics_json(doc, obj, (nmo_workspace_t *)data);
+    return true;
+}
+
+bool nmo_cmd_behavior_add_interface_diagnostics(nmo_cli_record_t *rec,
+                                                nmo_workspace_t *workspace,
+                                                bool show_text)
+{
+    if (!rec || !workspace) {
+        return rec != NULL;
+    }
+    bool ok = nmo_cli_record_json(rec, behavior_interface_diagnostics_json, workspace);
+    return ok && (!show_text || behavior_add_interface_diagnostics_text(rec, workspace));
+}
+
 void nmo_cmd_behavior_print_interface_diagnostics(
     FILE *out,
     nmo_workspace_t *workspace)
@@ -249,30 +299,11 @@ void nmo_cmd_behavior_print_interface_diagnostics(
         return;
     }
 
-    nmo_tool_behavior_interface_diagnostics_t diag;
-    nmo_tool_owner_behavior_interface_diagnostics(workspace, &diag);
-    if (!diag.attempted || diag.status == NMO_OK) {
-        return;
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    if (rec && behavior_add_interface_diagnostics_text(rec, workspace)) {
+        nmo_cli_record_print_kv(rec, out, 0, false);
     }
-
-    fprintf(out,
-            "Interface parse diagnostics: status=%s(%d), parsed=%zu/%zu, failed=%zu",
-            nmo_error_string(diag.status),
-            diag.status,
-            diag.parsed_count,
-            diag.attempted_count,
-            diag.failed_count);
-    if (diag.first_error_object_id != 0 || diag.first_error_file_id != 0) {
-        fprintf(out,
-                ", first_error_object=%u, file_id=%u, chunk_version=%u, data_version=%u, offset=%zu/%zu dwords",
-                diag.first_error_object_id,
-                diag.first_error_file_id,
-                diag.first_error_chunk_version,
-                diag.first_error_data_version,
-                diag.first_error_reader_offset,
-                diag.first_error_chunk_dwords);
-    }
-    fputc('\n', out);
+    nmo_cli_record_free(rec);
 }
 
 /* ============================================================================
