@@ -204,6 +204,21 @@ void nmo_cli_record_array_omit_heading(nmo_cli_record_array_t *array);
  * Combine with nmo_cli_record_array_omit_heading for multi-line item text.
  */
 void nmo_cli_record_array_inline_items(nmo_cli_record_array_t *array);
+/**
+ * In text, print the items as a table with `columns` (borrowed: they must
+ * outlive the record), one row per item from its text-visible fields (see
+ * nmo_cli_record_add_table_row), under the heading when the array has one.
+ * The header row is printed even for an empty array. A table array is shown
+ * in text even without a label.
+ */
+bool nmo_cli_record_array_set_table(nmo_cli_record_array_t *array,
+                                    const nmo_cli_table_col_t *columns,
+                                    size_t column_count);
+/**
+ * Keep this record out of JSON when it is rendered as an array item; in text
+ * it still prints its summary. Use for text-only lines between items.
+ */
+void nmo_cli_record_omit_json(nmo_cli_record_t *record);
 /** One-line text used when this record is rendered as an array item. */
 bool nmo_cli_record_set_summary(nmo_cli_record_t *record, const char *text);
 /** Formatted variant of nmo_cli_record_set_summary. */

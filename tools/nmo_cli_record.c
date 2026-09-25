@@ -45,6 +45,8 @@ struct nmo_cli_record_array {
     bool omit_empty;
     bool omit_heading;
     bool inline_items;
+    const nmo_cli_table_col_t *table_columns; /* borrowed; NULL: no table */
+    size_t table_column_count;
 };
 
 typedef struct record_field {
@@ -77,6 +79,7 @@ struct nmo_cli_record {
     size_t count;
     size_t capacity;
     char *summary;
+    bool omit_json; /* as an array item: text only */
 };
 
 static char *dup_str(const char *s)
@@ -846,6 +849,25 @@ bool nmo_cli_record_array_set_empty_text(nmo_cli_record_array_t *array,
     return set_str(&array->empty_text, text);
 }
 
+bool nmo_cli_record_array_set_table(nmo_cli_record_array_t *array,
+                                    const nmo_cli_table_col_t *columns,
+                                    size_t column_count)
+{
+    if (!array || !columns || column_count == 0u) {
+        return false;
+    }
+    array->table_columns = columns;
+    array->table_column_count = column_count;
+    return true;
+}
+
+void nmo_cli_record_omit_json(nmo_cli_record_t *record)
+{
+    if (record) {
+        record->omit_json = true;
+    }
+}
+
 bool nmo_cli_record_set_summary(nmo_cli_record_t *record, const char *text)
 {
     if (!record) {
@@ -970,6 +992,9 @@ bool nmo_cli_record_to_json(const nmo_cli_record_t *record,
                 break;
             }
             for (size_t j = 0; j < field->array->count && ok; ++j) {
+                if (field->array->items[j]->omit_json) {
+                    continue;
+                }
                 yyjson_mut_val *item = yyjson_mut_obj(doc);
                 if (!item ||
                     !nmo_cli_record_to_json(field->array->items[j], doc, item) ||
@@ -1022,6 +1047,30 @@ static void record_print_bytes(const record_field_t *field, FILE *out,
     nmo_hexdump_canonical(out, field->bytes, field->list_count, &hd);
 }
 
+/* A table array: the optional heading, then one table row per item. */
+static void record_print_table(const record_field_t *field, FILE *out,
+                               bool colorize)
+{
+    const nmo_cli_record_array_t *array = field->array;
+    if (!array->omit_heading) {
+        if (array->heading) {
+            fprintf(out, "\n%s\n", array->heading);
+        } else if (field->label) {
+            fprintf(out, "\n%s (%zu):\n", field->label, array->count);
+        }
+    }
+    nmo_cli_table_t table;
+    nmo_cli_table_init(&table, array->table_columns,
+                       array->table_column_count);
+    for (size_t j = 0; j < array->count; ++j) {
+        if (array->items[j]) {
+            (void)nmo_cli_record_add_table_row(array->items[j], &table);
+        }
+    }
+    nmo_cli_table_print(&table, out, colorize);
+    nmo_cli_table_free(&table);
+}
+
 void nmo_cli_record_print_kv(const nmo_cli_record_t *record, FILE *out,
                              int key_width, bool colorize)
 {
@@ -1056,10 +1105,14 @@ void nmo_cli_record_print_kv(const nmo_cli_record_t *record, FILE *out,
         }
         if (field->kind == RECORD_ARRAY) {
             if (!field->label && !field->array->heading &&
-                !field->array->omit_heading) {
+                !field->array->omit_heading && !field->array->table_columns) {
                 continue;
             }
             if (field->array->omit_empty && field->array->count == 0u) {
+                continue;
+            }
+            if (field->array->table_columns) {
+                record_print_table(field, out, colorize);
                 continue;
             }
             if (!field->array->omit_heading) {
