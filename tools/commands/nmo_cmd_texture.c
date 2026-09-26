@@ -365,53 +365,32 @@ int nmo_cmd_texture_list(int argc, char **argv, const nmo_cli_global_opts_t *glo
         {"NAME",   NMO_CLI_ALIGN_LEFT,  20, 50},
     };
 
-    yyjson_mut_doc *doc = NULL;
-    yyjson_mut_val *data = NULL;
-    yyjson_mut_val *arr = NULL;
-    nmo_cli_table_t table;
-    if (c.is_json) {
-        doc = nmo_cmd_ctx_json_begin(&c);
-        data = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)display_count);
-        yyjson_mut_obj_add_uint(doc, data, "total", (uint64_t)tl.count);
-        arr = yyjson_mut_arr(doc);
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    nmo_cli_record_uint(rec, "count", NULL, (uint64_t)display_count);
+    nmo_cli_record_uint(rec, "total", NULL, (uint64_t)tl.count);
+    if (display_count < tl.count) {
+        nmo_cli_record_raw_fmt(rec, "Textures: %zu (of %zu total)\n\n",
+                               display_count, tl.count);
     } else {
-        nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
+        nmo_cli_record_raw_fmt(rec, "Textures: %zu\n\n", display_count);
     }
+    nmo_cli_record_array_t *arr = nmo_cli_record_array(rec, "textures", NULL);
+    nmo_cli_record_array_set_table(arr, columns, sizeof(columns) / sizeof(columns[0]));
 
     for (size_t i = 0; i < display_count; ++i) {
-        nmo_object_t *obj = tl.objects[i];
-        nmo_cli_record_t *rec = nmo_cli_record_new();
-        if (!rec) {
+        nmo_cli_record_t *item = nmo_cli_record_new();
+        if (!item) {
             continue;
         }
-        bool ok = texture_list_build_record(obj, rec);
-        if (ok && doc) {
-            yyjson_mut_val *item = yyjson_mut_obj(doc);
-            if (item && nmo_cli_record_to_json(rec, doc, item)) {
-                yyjson_mut_arr_add_val(arr, item);
-            }
-        } else if (ok) {
-            nmo_cli_record_add_table_row(rec, &table);
+        if (!texture_list_build_record(tl.objects[i], item) ||
+            !nmo_cli_record_array_add(arr, item)) {
+            nmo_cli_record_free(item);
         }
-        nmo_cli_record_free(rec);
-    }
-
-    if (doc) {
-        yyjson_mut_obj_add_val(doc, data, "textures", arr);
-        nmo_cmd_ctx_json_end(&c, doc, data, "texture.list");
-    } else {
-        fprintf(c.out, "Textures: %zu", display_count);
-        if (display_count < tl.count) {
-            fprintf(c.out, " (of %zu total)", tl.count);
-        }
-        fprintf(c.out, "\n\n");
-        nmo_cli_table_print(&table, c.out, c.colorize);
-        nmo_cli_table_free(&table);
     }
 
     free(tl.objects);
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    rc = nmo_cmd_ctx_emit_record(&c, rec, "texture.list", 0, c.colorize);
+    return nmo_cmd_ctx_done(&c, rc);
 }
 
 static bool texture_record_yes_no(nmo_cli_record_t *rec, const char *key,
@@ -627,28 +606,18 @@ int nmo_cmd_texture_show(int argc, char **argv, const nmo_cli_global_opts_t *glo
         (const nmo_texture_state_t *)nmo_object_get_state(obj);
 
     nmo_cli_record_t *rec = nmo_cli_record_new();
-    if (!rec || !texture_show_build_record(&c, rec, object_id, class_id, name, ts)) {
+    if (!rec || !nmo_cli_record_title(rec, "Texture Details") ||
+        !texture_show_build_record(&c, rec, object_id, class_id, name, ts)) {
         nmo_cli_record_free(rec);
         fprintf(stderr, "Error: Out of memory while describing texture %u\n", object_id);
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
-
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        nmo_cli_record_to_json(rec, doc, data);
-        nmo_cli_record_free(rec);
-        nmo_cmd_ctx_json_end(&c, doc, data, "texture.show");
-    } else {
-        nmo_cli_print_heading(c.out, "Texture Details", c.colorize);
-        nmo_cli_record_print_kv(rec, c.out, 18, c.colorize);
-        if (!ts) {
-            fprintf(c.out, "\n  (no deserialized state)\n");
-        }
-        nmo_cli_record_free(rec);
+    if (!ts) {
+        nmo_cli_record_raw(rec, "\n  (no deserialized state)\n");
     }
 
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    rc = nmo_cmd_ctx_emit_record(&c, rec, "texture.show", 18, c.colorize);
+    return nmo_cmd_ctx_done(&c, rc);
 }
 
 /* ============================================================================
@@ -870,6 +839,27 @@ static int texture_extract_parse(int argc, char **argv,
     return NMO_CLI_EXIT_SUCCESS;
 }
 
+/* Start an extract entry holding the id, name and (when known) output path. */
+static nmo_cli_record_t *texture_extract_entry_new(nmo_object_id_t id,
+                                                   const char *name,
+                                                   const char *path)
+{
+    nmo_cli_record_t *e = nmo_cli_record_new();
+    nmo_cli_record_uint(e, "id", NULL, id);
+    nmo_cli_record_str(e, "name", NULL, name ? name : "");
+    if (path) {
+        nmo_cli_record_str(e, "path", NULL, path);
+    }
+    return e;
+}
+
+static void texture_extract_entry_status(nmo_cli_record_t *e, const char *status,
+                                         const char *reason)
+{
+    nmo_cli_record_str(e, "status", NULL, status);
+    nmo_cli_record_str(e, "reason", NULL, reason);
+}
+
 static int texture_extract_run(nmo_cmd_ctx_t *ctx,
                                const texture_extract_args_t *args,
                                bool close_ctx) {
@@ -914,24 +904,20 @@ static int texture_extract_run(nmo_cmd_ctx_t *ctx,
     uint32_t skipped = 0;
     uint32_t warnings = 0;
 
-    yyjson_mut_doc *doc = NULL;
-    yyjson_mut_val *data = NULL;
-    yyjson_mut_val *entries = NULL;
-    if (c.is_json) {
-        doc = nmo_cmd_ctx_json_begin(&c);
-        data = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_str(doc, data, "out_dir", args->out_dir);
-        yyjson_mut_obj_add_str(doc, data, "format", args->ext);
-        entries = yyjson_mut_arr(doc);
-    } else {
-        fprintf(c.out, "Extracting textures to: %s (format: %s)\n",
-                args->out_dir, args->ext);
+    nmo_cli_record_t **entries =
+        (nmo_cli_record_t **)calloc(tl.count, sizeof(*entries));
+    if (!entries) {
+        fprintf(stderr, "Error: Out of memory\n");
+        free(tl.objects);
+        return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR)
+                         : NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
     for (size_t ti = 0; ti < tl.count; ++ti) {
         nmo_object_t *obj = tl.objects[ti];
         nmo_object_id_t id = nmo_object_get_id(obj);
         const char *name = nmo_object_get_name(obj);
+        const char *label = (name && name[0]) ? name : "(unnamed)";
 
         const nmo_texture_state_t *ts =
             (const nmo_texture_state_t *)nmo_object_get_state(obj);
@@ -939,51 +925,30 @@ static int texture_extract_run(nmo_cmd_ctx_t *ctx,
         /* No state? */
         if (!ts) {
             skipped++;
-            if (c.is_json) {
-                yyjson_mut_val *e = yyjson_mut_obj(doc);
-                yyjson_mut_obj_add_uint(doc, e, "id", id);
-                nmo_cli_json_add_str_safe(doc, e, "name", name ? name : "");
-                yyjson_mut_obj_add_str(doc, e, "status", "skip");
-                yyjson_mut_obj_add_str(doc, e, "reason", "no_state");
-                yyjson_mut_arr_add_val(entries, e);
-            } else {
-                fprintf(c.out, "  [SKIP] %u %s -> no state\n", id,
-                        (name && name[0]) ? name : "(unnamed)");
-            }
+            nmo_cli_record_t *e = texture_extract_entry_new(id, name, NULL);
+            entries[ti] = e;
+            texture_extract_entry_status(e, "skip", "no_state");
+            nmo_cli_record_set_summary_fmt(e, "  [SKIP] %u %s -> no state", id, label);
             continue;
         }
 
         /* External textures */
         if (ts->bitmap_kind == CKTEXTURE_BITMAP_NONE && is_external_texture(ts)) {
             skipped++;
-            if (c.is_json) {
-                yyjson_mut_val *e = yyjson_mut_obj(doc);
-                yyjson_mut_obj_add_uint(doc, e, "id", id);
-                nmo_cli_json_add_str_safe(doc, e, "name", name ? name : "");
-                yyjson_mut_obj_add_str(doc, e, "status", "skip");
-                yyjson_mut_obj_add_str(doc, e, "reason", "external");
-                yyjson_mut_arr_add_val(entries, e);
-            } else {
-                fprintf(c.out, "  [SKIP] %u %s -> external texture\n", id,
-                        (name && name[0]) ? name : "(unnamed)");
-            }
+            nmo_cli_record_t *e = texture_extract_entry_new(id, name, NULL);
+            entries[ti] = e;
+            texture_extract_entry_status(e, "skip", "external");
+            nmo_cli_record_set_summary_fmt(e, "  [SKIP] %u %s -> external texture", id, label);
             continue;
         }
 
         /* No slots */
         if (ts->slot_count == 0) {
             skipped++;
-            if (c.is_json) {
-                yyjson_mut_val *e = yyjson_mut_obj(doc);
-                yyjson_mut_obj_add_uint(doc, e, "id", id);
-                nmo_cli_json_add_str_safe(doc, e, "name", name ? name : "");
-                yyjson_mut_obj_add_str(doc, e, "status", "skip");
-                yyjson_mut_obj_add_str(doc, e, "reason", "no_slots");
-                yyjson_mut_arr_add_val(entries, e);
-            } else {
-                fprintf(c.out, "  [SKIP] %u %s -> no slots\n", id,
-                        (name && name[0]) ? name : "(unnamed)");
-            }
+            nmo_cli_record_t *e = texture_extract_entry_new(id, name, NULL);
+            entries[ti] = e;
+            texture_extract_entry_status(e, "skip", "no_slots");
+            nmo_cli_record_set_summary_fmt(e, "  [SKIP] %u %s -> no slots", id, label);
             continue;
         }
 
@@ -1073,17 +1038,11 @@ static int texture_extract_run(nmo_cmd_ctx_t *ctx,
         if (!pixels || w <= 0 || h <= 0) {
             if (!skip_reason) skip_reason = "decode_failed";
             warnings++;
-            if (c.is_json) {
-                yyjson_mut_val *e = yyjson_mut_obj(doc);
-                yyjson_mut_obj_add_uint(doc, e, "id", id);
-                nmo_cli_json_add_str_safe(doc, e, "name", name ? name : "");
-                yyjson_mut_obj_add_str(doc, e, "status", "warn");
-                yyjson_mut_obj_add_str(doc, e, "reason", skip_reason);
-                yyjson_mut_arr_add_val(entries, e);
-            } else {
-                fprintf(c.out, "  [WARN] %u %s -> %s\n", id,
-                        (name && name[0]) ? name : "(unnamed)", skip_reason);
-            }
+            nmo_cli_record_t *e = texture_extract_entry_new(id, name, NULL);
+            entries[ti] = e;
+            texture_extract_entry_status(e, "warn", skip_reason);
+            nmo_cli_record_set_summary_fmt(e, "  [WARN] %u %s -> %s", id, label,
+                                           skip_reason);
             continue;
         }
 
@@ -1094,17 +1053,10 @@ static int texture_extract_run(nmo_cmd_ctx_t *ctx,
 
         if (!encoded || out_size == 0) {
             warnings++;
-            if (c.is_json) {
-                yyjson_mut_val *e = yyjson_mut_obj(doc);
-                yyjson_mut_obj_add_uint(doc, e, "id", id);
-                nmo_cli_json_add_str_safe(doc, e, "name", name ? name : "");
-                yyjson_mut_obj_add_str(doc, e, "status", "warn");
-                yyjson_mut_obj_add_str(doc, e, "reason", "encode_failed");
-                yyjson_mut_arr_add_val(entries, e);
-            } else {
-                fprintf(c.out, "  [WARN] %u %s -> encode failed\n", id,
-                        (name && name[0]) ? name : "(unnamed)");
-            }
+            nmo_cli_record_t *e = texture_extract_entry_new(id, name, NULL);
+            entries[ti] = e;
+            texture_extract_entry_status(e, "warn", "encode_failed");
+            nmo_cli_record_set_summary_fmt(e, "  [WARN] %u %s -> encode failed", id, label);
             continue;
         }
 
@@ -1119,18 +1071,10 @@ static int texture_extract_run(nmo_cmd_ctx_t *ctx,
 
         if (!args->overwrite && tex_file_exists(path)) {
             skipped++;
-            if (c.is_json) {
-                yyjson_mut_val *e = yyjson_mut_obj(doc);
-                yyjson_mut_obj_add_uint(doc, e, "id", id);
-                nmo_cli_json_add_str_safe(doc, e, "name", name ? name : "");
-                yyjson_mut_obj_add_strcpy(doc, e, "path", path);
-                yyjson_mut_obj_add_str(doc, e, "status", "skip");
-                yyjson_mut_obj_add_str(doc, e, "reason", "exists");
-                yyjson_mut_arr_add_val(entries, e);
-            } else {
-                fprintf(c.out, "  [SKIP] %u %s -> exists (use --overwrite)\n", id,
-                        (name && name[0]) ? name : "(unnamed)");
-            }
+            nmo_cli_record_t *e = texture_extract_entry_new(id, name, path);
+            entries[ti] = e;
+            texture_extract_entry_status(e, "skip", "exists");
+            nmo_cli_record_set_summary_fmt(e, "  [SKIP] %u %s -> exists (use --overwrite)", id, label);
             free(path);
             free(fname);
             continue;
@@ -1139,18 +1083,10 @@ static int texture_extract_run(nmo_cmd_ctx_t *ctx,
         FILE *fp = fopen(path, "wb");
         if (!fp) {
             warnings++;
-            if (c.is_json) {
-                yyjson_mut_val *e = yyjson_mut_obj(doc);
-                yyjson_mut_obj_add_uint(doc, e, "id", id);
-                nmo_cli_json_add_str_safe(doc, e, "name", name ? name : "");
-                yyjson_mut_obj_add_strcpy(doc, e, "path", path);
-                yyjson_mut_obj_add_str(doc, e, "status", "warn");
-                yyjson_mut_obj_add_str(doc, e, "reason", "open_failed");
-                yyjson_mut_arr_add_val(entries, e);
-            } else {
-                fprintf(c.out, "  [WARN] %u %s -> open failed (%s)\n", id,
-                        (name && name[0]) ? name : "(unnamed)", strerror(errno));
-            }
+            nmo_cli_record_t *e = texture_extract_entry_new(id, name, path);
+            entries[ti] = e;
+            texture_extract_entry_status(e, "warn", "open_failed");
+            nmo_cli_record_set_summary_fmt(e, "  [WARN] %u %s -> open failed (%s)", id, label, strerror(errno));
             free(path);
             free(fname);
             continue;
@@ -1161,39 +1097,24 @@ static int texture_extract_run(nmo_cmd_ctx_t *ctx,
 
         if (written != out_size) {
             warnings++;
-            if (c.is_json) {
-                yyjson_mut_val *e = yyjson_mut_obj(doc);
-                yyjson_mut_obj_add_uint(doc, e, "id", id);
-                nmo_cli_json_add_str_safe(doc, e, "name", name ? name : "");
-                yyjson_mut_obj_add_strcpy(doc, e, "path", path);
-                yyjson_mut_obj_add_str(doc, e, "status", "warn");
-                yyjson_mut_obj_add_str(doc, e, "reason", "write_failed");
-                yyjson_mut_arr_add_val(entries, e);
-            } else {
-                fprintf(c.out, "  [WARN] %u %s -> write failed\n", id,
-                        (name && name[0]) ? name : "(unnamed)");
-            }
+            nmo_cli_record_t *e = texture_extract_entry_new(id, name, path);
+            entries[ti] = e;
+            texture_extract_entry_status(e, "warn", "write_failed");
+            nmo_cli_record_set_summary_fmt(e, "  [WARN] %u %s -> write failed", id, label);
             free(path);
             free(fname);
             continue;
         }
 
         extracted++;
-        if (c.is_json) {
-            yyjson_mut_val *e = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_uint(doc, e, "id", id);
-            nmo_cli_json_add_str_safe(doc, e, "name", name ? name : "");
-            yyjson_mut_obj_add_strcpy(doc, e, "path", path);
-            yyjson_mut_obj_add_int(doc, e, "width", w);
-            yyjson_mut_obj_add_int(doc, e, "height", h);
-            yyjson_mut_obj_add_uint(doc, e, "file_size", (uint64_t)out_size);
-            yyjson_mut_obj_add_str(doc, e, "status", "ok");
-            yyjson_mut_arr_add_val(entries, e);
-        } else {
-            fprintf(c.out, "  [OK]   %u %s -> %s (%dx%d, %zu bytes)\n",
-                    id, (name && name[0]) ? name : "(unnamed)",
-                    fname, w, h, out_size);
-        }
+        nmo_cli_record_t *e = texture_extract_entry_new(id, name, path);
+        entries[ti] = e;
+        nmo_cli_record_int(e, "width", NULL, w);
+        nmo_cli_record_int(e, "height", NULL, h);
+        nmo_cli_record_uint(e, "file_size", NULL, (uint64_t)out_size);
+        nmo_cli_record_str(e, "status", NULL, "ok");
+        nmo_cli_record_set_summary_fmt(e, "  [OK]   %u %s -> %s (%dx%d, %zu bytes)",
+                                       id, label, fname, w, h, out_size);
         free(path);
         free(fname);
     }
@@ -1201,15 +1122,28 @@ static int texture_extract_run(nmo_cmd_ctx_t *ctx,
     int exit_code = (warnings > 0 && extracted == 0)
         ? NMO_CLI_EXIT_IO_ERROR : NMO_CLI_EXIT_SUCCESS;
 
-    if (c.is_json) {
-        yyjson_mut_obj_add_uint(doc, data, "extracted", extracted);
-        yyjson_mut_obj_add_uint(doc, data, "skipped", skipped);
-        yyjson_mut_obj_add_uint(doc, data, "warnings", warnings);
-        yyjson_mut_obj_add_val(doc, data, "entries", entries);
-        nmo_cmd_ctx_json_end(&c, doc, data, "texture.extract");
-    } else {
-        fprintf(c.out, "\nExtracted: %u, Skipped: %u, Warnings: %u\n",
-                extracted, skipped, warnings);
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    nmo_cli_record_str(rec, "out_dir", NULL, args->out_dir);
+    nmo_cli_record_str(rec, "format", NULL, args->ext);
+    nmo_cli_record_raw_fmt(rec, "Extracting textures to: %s (format: %s)\n",
+                           args->out_dir, args->ext);
+    nmo_cli_record_uint(rec, "extracted", NULL, extracted);
+    nmo_cli_record_uint(rec, "skipped", NULL, skipped);
+    nmo_cli_record_uint(rec, "warnings", NULL, warnings);
+    nmo_cli_record_array_t *arr = nmo_cli_record_array(rec, "entries", NULL);
+    nmo_cli_record_array_omit_heading(arr);
+    for (size_t k = 0; k < tl.count; ++k) {
+        if (entries[k] && !nmo_cli_record_array_add(arr, entries[k])) {
+            nmo_cli_record_free(entries[k]);
+        }
+    }
+    free(entries);
+    nmo_cli_record_raw_fmt(rec, "\nExtracted: %u, Skipped: %u, Warnings: %u\n",
+                           extracted, skipped, warnings);
+
+    int emit_rc = nmo_cmd_ctx_emit_record(&c, rec, "texture.extract", 0, false);
+    if (emit_rc != NMO_CLI_EXIT_SUCCESS) {
+        exit_code = emit_rc;
     }
 
     free(tl.objects);
@@ -1402,61 +1336,58 @@ int nmo_cmd_texture_replace(int argc, char **argv, const nmo_cli_global_opts_t *
     const char *name = nmo_object_get_name(obj);
     int exit_code = NMO_CLI_EXIT_SUCCESS;
 
-    /* Output */
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        if (!doc) return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_uint(doc, data, "id", object_id);
-        nmo_cli_json_add_str_safe(doc, data, "name",
-                                  (name && name[0]) ? name : "");
-        nmo_cli_json_add_str_safe(doc, data, "image_file", image_path);
-
-        yyjson_mut_val *old_dims = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_int(doc, old_dims, "width", old_w);
-        yyjson_mut_obj_add_int(doc, old_dims, "height", old_h);
-        yyjson_mut_obj_add_str(doc, old_dims, "bitmap_kind",
-                               bitmap_kind_str(old_kind));
-        yyjson_mut_obj_add_val(doc, data, "old", old_dims);
-
-        yyjson_mut_val *new_dims = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_int(doc, new_dims, "width", img_w);
-        yyjson_mut_obj_add_int(doc, new_dims, "height", img_h);
-        yyjson_mut_obj_add_uint(doc, new_dims, "encoded_size",
-                                (uint64_t)encoded_size);
-        yyjson_mut_obj_add_str(doc, new_dims, "bitmap_kind", "reader");
-        yyjson_mut_obj_add_val(doc, data, "new", new_dims);
-
-        nmo_cli_json_add_bool_safe(doc, data, "dry_run", dry_run);
-        if (!dry_run && output_path)
-            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-
-        nmo_cmd_ctx_json_end(&c, doc, data, "texture.replace");
-    } else {
-        fprintf(c.out, "Texture #%u", object_id);
-        if (name && name[0]) fprintf(c.out, " (%s)", name);
-        fprintf(c.out, "\n");
-        fprintf(c.out, "  Image:    %s\n", image_path);
-        fprintf(c.out, "  Old dims: %dx%d (%s)\n", old_w, old_h,
-                bitmap_kind_str(old_kind));
-        fprintf(c.out, "  New dims: %dx%d (reader, %zu bytes PNG)\n",
-                img_w, img_h, encoded_size);
-
-        if (dry_run) {
-            fprintf(c.out, "  (dry run - not saved)\n");
-        }
-    }
-
     /* Save */
+    bool saved = false;
     if (!dry_run && output_path) {
         nmo_save_options_t save_opts = nmo_tool_owner_save_options_default();
         int save_rc = nmo_cli_save_document(c.document, output_path, &save_opts);
         if (save_rc != NMO_CLI_EXIT_SUCCESS) {
             exit_code = save_rc;
-        } else if (!c.is_json) {
-            fprintf(c.out, "Saved to: %s\n", output_path);
+        } else {
+            saved = true;
         }
+    }
+
+    /* Output */
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    nmo_cli_record_uint(rec, "id", NULL, object_id);
+    nmo_cli_record_str(rec, "name", NULL, name);
+    if (name && name[0]) {
+        nmo_cli_record_raw_fmt(rec, "Texture #%u (%s)\n", object_id, name);
+    } else {
+        nmo_cli_record_raw_fmt(rec, "Texture #%u\n", object_id);
+    }
+    nmo_cli_record_str(rec, "image_file", NULL, image_path);
+    nmo_cli_record_raw_fmt(rec, "  Image:    %s\n", image_path);
+
+    nmo_cli_record_t *old_dims = nmo_cli_record_object(rec, "old");
+    nmo_cli_record_int(old_dims, "width", NULL, old_w);
+    nmo_cli_record_int(old_dims, "height", NULL, old_h);
+    nmo_cli_record_str(old_dims, "bitmap_kind", NULL, bitmap_kind_str(old_kind));
+    nmo_cli_record_raw_fmt(rec, "  Old dims: %dx%d (%s)\n", old_w, old_h,
+                           bitmap_kind_str(old_kind));
+
+    nmo_cli_record_t *new_dims = nmo_cli_record_object(rec, "new");
+    nmo_cli_record_int(new_dims, "width", NULL, img_w);
+    nmo_cli_record_int(new_dims, "height", NULL, img_h);
+    nmo_cli_record_uint(new_dims, "encoded_size", NULL, (uint64_t)encoded_size);
+    nmo_cli_record_str(new_dims, "bitmap_kind", NULL, "reader");
+    nmo_cli_record_raw_fmt(rec, "  New dims: %dx%d (reader, %zu bytes PNG)\n",
+                           img_w, img_h, encoded_size);
+
+    nmo_cli_record_bool(rec, "dry_run", NULL, dry_run);
+    if (dry_run) {
+        nmo_cli_record_raw(rec, "  (dry run - not saved)\n");
+    } else if (output_path) {
+        nmo_cli_record_str(rec, "output", NULL, output_path);
+    }
+    if (saved) {
+        nmo_cli_record_raw_fmt(rec, "Saved to: %s\n", output_path);
+    }
+
+    int emit_rc = nmo_cmd_ctx_emit_record(&c, rec, "texture.replace", 0, false);
+    if (emit_rc != NMO_CLI_EXIT_SUCCESS && exit_code == NMO_CLI_EXIT_SUCCESS) {
+        exit_code = emit_rc;
     }
 
     return nmo_cmd_ctx_done(&c, exit_code);
