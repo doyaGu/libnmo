@@ -208,8 +208,9 @@ void nmo_cli_record_array_inline_items(nmo_cli_record_array_t *array);
  * In text, print the items as a table with `columns` (borrowed: they must
  * outlive the record), one row per item from its text-visible fields (see
  * nmo_cli_record_add_table_row), under the heading when the array has one.
- * The header row is printed even for an empty array. A table array is shown
- * in text even without a label.
+ * The header row is printed even for an empty array, unless the array has
+ * an empty text, which then replaces the table. A table array is shown in
+ * text even without a label.
  */
 bool nmo_cli_record_array_set_table(nmo_cli_record_array_t *array,
                                     const nmo_cli_table_col_t *columns,

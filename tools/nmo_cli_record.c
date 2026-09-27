@@ -1087,6 +1087,10 @@ static void record_print_table(const record_field_t *field, FILE *out,
             fprintf(out, "\n%s (%zu):\n", field->label, array->count);
         }
     }
+    if (array->count == 0u && array->empty_text) {
+        fprintf(out, "%s\n", array->empty_text);
+        return;
+    }
     nmo_cli_table_t table;
     nmo_cli_table_init(&table, array->table_columns,
                        array->table_column_count);

@@ -267,6 +267,35 @@ TEST(cli_record, array_table_prints_item_rows)
     nmo_cli_record_free(empty);
 }
 
+TEST(cli_record, empty_table_prints_empty_text)
+{
+    static const nmo_cli_table_col_t cols[] = {
+        {"ID", NMO_CLI_ALIGN_RIGHT, 0, 0},
+    };
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    ASSERT_NOT_NULL(rec);
+    nmo_cli_record_array_t *arr = nmo_cli_record_array(rec, "items", "Items");
+    ASSERT_NOT_NULL(arr);
+    ASSERT_TRUE(nmo_cli_record_array_set_table(arr, cols, 1));
+    ASSERT_TRUE(nmo_cli_record_array_set_empty_text(arr, "  (none)"));
+
+    char *json = record_json(rec);
+    ASSERT_STR_EQ(json, "{\"items\":[]}");
+    char *text = record_text(rec, 0);
+    ASSERT_STR_EQ(text, "\nItems (0):\n  (none)\n");
+    free(json);
+    free(text);
+
+    nmo_cli_record_t *item = nmo_cli_record_new();
+    ASSERT_NOT_NULL(item);
+    ASSERT_TRUE(nmo_cli_record_uint(item, "id", "ID", 7));
+    ASSERT_TRUE(nmo_cli_record_array_add(arr, item));
+    text = record_text(rec, 0);
+    ASSERT_STR_EQ(text, "\nItems (1):\nID\n--\n 7\n");
+    free(text);
+    nmo_cli_record_free(rec);
+}
+
 TEST(cli_record, omit_json_item_is_text_only)
 {
     nmo_cli_record_t *rec = nmo_cli_record_new();
@@ -322,6 +351,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli_record, title_has_no_leading_blank_line);
     REGISTER_TEST(cli_record, int_list_keeps_sign);
     REGISTER_TEST(cli_record, array_table_prints_item_rows);
+    REGISTER_TEST(cli_record, empty_table_prints_empty_text);
     REGISTER_TEST(cli_record, omit_json_item_is_text_only);
     REGISTER_TEST(cli_record, object_key_width_overrides_parent);
 TEST_MAIN_END()
