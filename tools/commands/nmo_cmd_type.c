@@ -159,6 +159,13 @@ static bool type_class_build_record(const nmo_cli_class_entry_t *entry,
     return ok && nmo_cli_record_text(rec, "Parent", "-");
 }
 
+/* JSON: id, name, parent_id, parent_name; text: ID, Class Name, Parent. */
+static const nmo_cli_table_col_t type_list_columns[] = {
+    {"ID", NMO_CLI_ALIGN_RIGHT, 4, 0},
+    {"Class Name", NMO_CLI_ALIGN_LEFT, 20, 30},
+    {"Parent", NMO_CLI_ALIGN_LEFT, 20, 30},
+};
+
 int nmo_cmd_type_list(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     (void)argc;
     (void)argv;
@@ -177,54 +184,35 @@ int nmo_cmd_type_list(int argc, char **argv, const nmo_cli_global_opts_t *global
     size_t class_count = 0;
     nmo_cli_class_entry_t *entries = collect_class_entries(ctx, &class_count);
 
-    /* JSON: id, name, parent_id, parent_name; text: ID, Class Name, Parent. */
-    static const nmo_cli_table_col_t columns[] = {
-        {"ID", NMO_CLI_ALIGN_RIGHT, 4, 0},
-        {"Class Name", NMO_CLI_ALIGN_LEFT, 20, 30},
-        {"Parent", NMO_CLI_ALIGN_LEFT, 20, 30},
-    };
-
-    yyjson_mut_doc *doc = NULL;
-    yyjson_mut_val *data = NULL;
-    yyjson_mut_val *classes = NULL;
-    nmo_cli_table_t table;
-    if (c.is_json) {
-        doc = nmo_cmd_ctx_json_begin(&c);
-        data = yyjson_mut_obj(doc);
-        classes = yyjson_mut_arr(doc);
-    } else {
-        nmo_cli_print_heading(c.out, "Registered Classes", c.colorize);
-        fprintf(c.out, "\n");
-        nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
-    }
-
-    for (size_t i = 0; i < class_count; ++i) {
-        nmo_cli_record_t *rec = nmo_cli_record_new();
-        if (rec && type_class_build_record(&entries[i], rec)) {
-            if (doc) {
-                yyjson_mut_val *item = yyjson_mut_obj(doc);
-                if (item && nmo_cli_record_to_json(rec, doc, item)) {
-                    yyjson_mut_arr_add_val(classes, item);
-                }
-            } else {
-                nmo_cli_record_add_table_row(rec, &table);
-            }
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL &&
+              nmo_cli_record_title(rec, "Registered Classes") &&
+              nmo_cli_record_raw(rec, "\n") &&
+              nmo_cli_record_uint(rec, "count", NULL, class_count);
+    nmo_cli_record_array_t *classes =
+        ok ? nmo_cli_record_array(rec, "classes", NULL) : NULL;
+    ok = ok && classes != NULL &&
+         nmo_cli_record_array_set_table(
+             classes, type_list_columns,
+             sizeof(type_list_columns) / sizeof(type_list_columns[0]));
+    for (size_t i = 0; ok && i < class_count; ++i) {
+        nmo_cli_record_t *item = nmo_cli_record_new();
+        ok = item != NULL && type_class_build_record(&entries[i], item);
+        if (!ok) {
+            nmo_cli_record_free(item);
+        } else {
+            ok = nmo_cli_record_array_add(classes, item);
         }
+    }
+    if (!ok) {
         nmo_cli_record_free(rec);
+        rec = NULL;
     }
-
-    if (doc) {
-        yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)class_count);
-        yyjson_mut_obj_add_val(doc, data, "classes", classes);
-        nmo_cmd_ctx_json_end(&c, doc, data, "type.list");
-    } else {
-        nmo_cli_table_print(&table, c.out, c.colorize);
-        nmo_cli_table_free(&table);
-    }
+    rc = nmo_cmd_ctx_emit_record(&c, rec, "type.list", 0, c.colorize);
 
     free(entries);
     nmo_context_release(ctx);
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    return nmo_cmd_ctx_done(&c, rc);
 }
 
 /* ============================================================================
@@ -322,6 +310,7 @@ int nmo_cmd_type_show(int argc, char **argv, const nmo_cli_global_opts_t *global
 
     nmo_cli_record_t *rec = ok ? nmo_cli_record_new() : NULL;
     ok = rec != NULL &&
+         nmo_cli_record_title(rec, "Class Details") &&
          nmo_cli_record_uint(rec, "id", "ID", class_id) &&
          nmo_cli_record_str(rec, "name", "Name", class_name);
     if (ok && parent_id) {
@@ -345,24 +334,103 @@ int nmo_cmd_type_show(int argc, char **argv, const nmo_cli_global_opts_t *global
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        nmo_cli_record_to_json(rec, doc, data);
-        nmo_cmd_ctx_json_end(&c, doc, data, "type.show");
-    } else {
-        nmo_cli_print_heading(c.out, "Class Details", c.colorize);
-        nmo_cli_record_print_kv(rec, c.out, 12, c.colorize);
-    }
-    nmo_cli_record_free(rec);
+    rc = nmo_cmd_ctx_emit_record(&c, rec, "type.show", 12, c.colorize);
 
     nmo_context_release(ctx);
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    return nmo_cmd_ctx_done(&c, rc);
 }
 
 /* ============================================================================
  * type class-tree
  * ============================================================================ */
+
+typedef struct {
+    nmo_cli_tree_node_t node;
+    char *label;
+} class_node_t;
+
+typedef struct {
+    const nmo_cli_class_entry_t *entries;
+    size_t count;
+    class_node_t *nodes;
+} class_tree_t;
+
+/* A root is a class whose parent is not registered. */
+static bool class_tree_is_root(const class_tree_t *tree, size_t i)
+{
+    if (!tree->entries[i].parent_id) {
+        return true;
+    }
+    for (size_t j = 0; j < tree->count; ++j) {
+        if (tree->entries[j].class_id == tree->entries[i].parent_id) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static void class_tree_link(class_tree_t *tree)
+{
+    for (size_t i = 0; i < tree->count; ++i) {
+        const nmo_cli_class_entry_t *entry = &tree->entries[i];
+        tree->nodes[i].label = nmo_tool_strdup_fmt("%s (%u)", entry->name, entry->class_id);
+        tree->nodes[i].node.label = tree->nodes[i].label ? tree->nodes[i].label : "(alloc failed)";
+        tree->nodes[i].node.user_data = (void *)entry;
+    }
+
+    for (size_t i = 0; i < tree->count; ++i) {
+        if (!tree->entries[i].parent_id) {
+            continue;
+        }
+        for (size_t j = 0; j < tree->count; ++j) {
+            if (tree->entries[j].class_id == tree->entries[i].parent_id) {
+                nmo_cli_tree_node_t *parent = &tree->nodes[j].node;
+                nmo_cli_tree_node_t *child = &tree->nodes[i].node;
+                if (!parent->first_child) {
+                    parent->first_child = child;
+                } else {
+                    nmo_cli_tree_node_t *cursor = parent->first_child;
+                    while (cursor->next_sibling) {
+                        cursor = cursor->next_sibling;
+                    }
+                    cursor->next_sibling = child;
+                }
+                break;
+            }
+        }
+    }
+}
+
+static bool class_tree_roots_json(yyjson_mut_doc *doc, yyjson_mut_val *obj,
+                                  const void *data)
+{
+    const class_tree_t *tree = (const class_tree_t *)data;
+    yyjson_mut_val *roots = yyjson_mut_arr(doc);
+    if (!roots) {
+        return false;
+    }
+    for (size_t i = 0; i < tree->count; ++i) {
+        if (class_tree_is_root(tree, i)) {
+            yyjson_mut_val *node = build_class_tree_node(doc, tree->entries, tree->count,
+                                                         tree->entries[i].class_id);
+            if (node) {
+                yyjson_mut_arr_add_val(roots, node);
+            }
+        }
+    }
+    return yyjson_mut_obj_add_val(doc, obj, "roots", roots);
+}
+
+static void class_tree_print(FILE *out, bool colorize, const void *data)
+{
+    const class_tree_t *tree = (const class_tree_t *)data;
+    for (size_t i = 0; i < tree->count; ++i) {
+        if (class_tree_is_root(tree, i)) {
+            nmo_cli_print_tree(&tree->nodes[i].node, out, colorize, NULL);
+            fprintf(out, "\n");
+        }
+    }
+}
 
 int nmo_cmd_type_class_tree(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     (void)argc;
@@ -390,106 +458,36 @@ int nmo_cmd_type_class_tree(int argc, char **argv, const nmo_cli_global_opts_t *
         return rc;
     }
 
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_uint(doc, data, "count", (uint64_t)class_count);
-
-        yyjson_mut_val *roots = yyjson_mut_arr(doc);
-
-        for (size_t i = 0; i < class_count; ++i) {
-            bool has_parent = false;
-            if (entries[i].parent_id) {
-                for (size_t j = 0; j < class_count; ++j) {
-                    if (entries[j].class_id == entries[i].parent_id) {
-                        has_parent = true;
-                        break;
-                    }
-                }
-            }
-
-            if (!has_parent) {
-                /* Build JSON subtree */
-                yyjson_mut_val *node = build_class_tree_node(doc, entries, class_count, entries[i].class_id);
-                if (node) {
-                    yyjson_mut_arr_add_val(roots, node);
-                }
-            }
-        }
-
-        yyjson_mut_obj_add_val(doc, data, "roots", roots);
-        nmo_cmd_ctx_json_end(&c, doc, data, "type.class-tree");
-    } else {
-        fprintf(c.out, "Class Tree: %zu classes\n\n", class_count);
-
-        typedef struct {
-            nmo_cli_tree_node_t node;
-            char *label;
-        } class_node_t;
-
-        class_node_t *nodes = (class_node_t *)calloc(class_count, sizeof(*nodes));
-        if (!nodes) {
-            free(entries);
-            nmo_context_release(ctx);
-            fprintf(stderr, "Error: Out of memory\n");
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-        }
-
-        for (size_t i = 0; i < class_count; ++i) {
-            nodes[i].label = nmo_tool_strdup_fmt("%s (%u)", entries[i].name, entries[i].class_id);
-            nodes[i].node.label = nodes[i].label ? nodes[i].label : "(alloc failed)";
-            nodes[i].node.user_data = (void *)&entries[i];
-            nodes[i].node.first_child = NULL;
-            nodes[i].node.next_sibling = NULL;
-        }
-
-        /* Link children */
-        for (size_t i = 0; i < class_count; ++i) {
-            if (!entries[i].parent_id) {
-                continue;
-            }
-            for (size_t j = 0; j < class_count; ++j) {
-                if (entries[j].class_id == entries[i].parent_id) {
-                    nmo_cli_tree_node_t *parent = &nodes[j].node;
-                    nmo_cli_tree_node_t *child = &nodes[i].node;
-                    if (!parent->first_child) {
-                        parent->first_child = child;
-                    } else {
-                        nmo_cli_tree_node_t *cursor = parent->first_child;
-                        while (cursor->next_sibling) {
-                            cursor = cursor->next_sibling;
-                        }
-                        cursor->next_sibling = child;
-                    }
-                    break;
-                }
-            }
-        }
-
-        for (size_t i = 0; i < class_count; ++i) {
-            bool has_parent = false;
-            if (entries[i].parent_id) {
-                for (size_t j = 0; j < class_count; ++j) {
-                    if (entries[j].class_id == entries[i].parent_id) {
-                        has_parent = true;
-                        break;
-                    }
-                }
-            }
-            if (!has_parent) {
-                nmo_cli_print_tree(&nodes[i].node, c.out, c.colorize, NULL);
-                fprintf(c.out, "\n");
-            }
-        }
-
-        for (size_t i = 0; i < class_count; ++i) {
-            free(nodes[i].label);
-        }
-        free(nodes);
+    class_tree_t tree = {
+        .entries = entries,
+        .count = class_count,
+        .nodes = (class_node_t *)calloc(class_count, sizeof(*tree.nodes)),
+    };
+    if (!tree.nodes) {
+        free(entries);
+        nmo_context_release(ctx);
+        fprintf(stderr, "Error: Out of memory\n");
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
+    class_tree_link(&tree);
 
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL &&
+              nmo_cli_record_uint(rec, "count", NULL, class_count) &&
+              nmo_cli_record_json(rec, class_tree_roots_json, &tree) &&
+              nmo_cli_record_raw_fmt(rec, "Class Tree: %zu classes\n\n", class_count) &&
+              nmo_cli_record_text_splice(rec, class_tree_print, &tree);
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        rec = NULL;
+    }
+    rc = nmo_cmd_ctx_emit_record(&c, rec, "type.class-tree", 0, c.colorize);
+
+    for (size_t i = 0; i < class_count; ++i) {
+        free(tree.nodes[i].label);
+    }
+    free(tree.nodes);
     free(entries);
     nmo_context_release(ctx);
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    return nmo_cmd_ctx_done(&c, rc);
 }
-
