@@ -2099,14 +2099,15 @@ static int object_set_field_mutate(
     }
     args->object_id = object_id;
 
-    fprintf(c->out, "Object #%u:\n", args->object_id);
-
     nmo_field_set_entry_t entry = {
         .field_name = args->field_name,
         .value_str = args->value_str,
     };
-    args->result = (nmo_field_set_result_t){0, 0};
-    return nmo_core_set_fields(c, args->object_id, &entry, 1, dry_run, &args->result);
+    int rc = nmo_core_set_fields(c, args->object_id, &entry, 1, dry_run,
+                                 &args->result);
+    nmo_core_field_set_preview(c, "Object", args->object_id, &args->result,
+                               dry_run);
+    return rc;
 }
 
 static int object_set_field_report(
@@ -2115,11 +2116,12 @@ static int object_set_field_report(
     const char *output_path,
     void *user_data)
 {
-    (void)user_data;
-    if (!dry_run && output_path != NULL) {
-        fprintf(c->out, "Saved to: %s\n", output_path);
+    object_set_field_args_t *args = (object_set_field_args_t *)user_data;
+    if (args == NULL) {
+        return NMO_CLI_EXIT_ARG_ERROR;
     }
-    return NMO_CLI_EXIT_SUCCESS;
+    return nmo_core_field_set_report(c, "object.set-field", args->object_id,
+                                     &args->result, dry_run, output_path);
 }
 
 int nmo_cmd_object_set_field(int argc, char **argv,
@@ -2183,7 +2185,7 @@ int nmo_cmd_object_set_field(int argc, char **argv,
         .command_name = "object.set-field",
         .output_required_unless_dry_run = true,
     };
-    return nmo_cli_run_write_command(
+    int rc = nmo_cli_run_write_command(
         file_path,
         output,
         dry_run,
@@ -2192,5 +2194,7 @@ int nmo_cmd_object_set_field(int argc, char **argv,
         object_set_field_mutate,
         object_set_field_report,
         &args);
+    nmo_field_set_result_free(&args.result);
+    return rc;
 }
 

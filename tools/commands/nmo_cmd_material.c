@@ -344,6 +344,7 @@ typedef struct material_set_args {
     nmo_object_id_t object_id;
     nmo_field_set_entry_t entries[5];
     size_t entry_count;
+    nmo_field_set_result_t result;
 } material_set_args_t;
 
 static int material_set_mutate(
@@ -367,16 +368,16 @@ static int material_set_mutate(
     }
     args->object_id = object_id;
 
-    fprintf(c->out, "Material #%u:\n", args->object_id);
-
-    nmo_field_set_result_t result;
-    return nmo_core_set_fields(
+    rc = nmo_core_set_fields(
         c,
         args->object_id,
         args->entries,
         args->entry_count,
         dry_run,
-        &result);
+        &args->result);
+    nmo_core_field_set_preview(c, "Material", args->object_id, &args->result,
+                               dry_run);
+    return rc;
 }
 
 static int material_set_report(
@@ -385,14 +386,12 @@ static int material_set_report(
     const char *output_path,
     void *user_data)
 {
-    (void)user_data;
-    if (c == NULL) {
+    material_set_args_t *args = (material_set_args_t *)user_data;
+    if (c == NULL || args == NULL) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }
-    if (!dry_run && output_path != NULL) {
-        fprintf(c->out, "Saved to: %s\n", output_path);
-    }
-    return NMO_CLI_EXIT_SUCCESS;
+    return nmo_core_field_set_report(c, "material.set", args->object_id,
+                                     &args->result, dry_run, output_path);
 }
 
 int nmo_cmd_material_set(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -474,7 +473,7 @@ int nmo_cmd_material_set(int argc, char **argv, const nmo_cli_global_opts_t *glo
         .command_name = "material.set",
         .output_required_unless_dry_run = true,
     };
-    return nmo_cli_run_write_command(
+    int rc = nmo_cli_run_write_command(
         file_path,
         output,
         dry_run,
@@ -483,4 +482,6 @@ int nmo_cmd_material_set(int argc, char **argv, const nmo_cli_global_opts_t *glo
         material_set_mutate,
         material_set_report,
         &args);
+    nmo_field_set_result_free(&args.result);
+    return rc;
 }

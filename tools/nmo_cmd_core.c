@@ -582,7 +582,7 @@ int nmo_core_set_fields(nmo_cmd_ctx_t *c, nmo_object_id_t object_id,
                         const nmo_field_set_entry_t *entries, size_t entry_count,
                         bool dry_run, nmo_field_set_result_t *out_result)
 {
-    nmo_field_set_result_t result = {0, 0};
+    nmo_field_set_result_t result = {0};
 
     /* Resolve object -> state + type descriptor once */
     nmo_object_repository_t *repo = nmo_tool_owner_repository(c->workspace);
@@ -626,6 +626,15 @@ int nmo_core_set_fields(nmo_cmd_ctx_t *c, nmo_object_id_t object_id,
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
+    result.changes = entry_count > 0
+        ? (nmo_field_set_change_t *)calloc(entry_count, sizeof(*result.changes))
+        : NULL;
+    if (entry_count > 0 && result.changes == NULL) {
+        fprintf(stderr, "Error: Out of memory\n");
+        nmo_workspace_edit_rollback(edit);
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
     for (size_t i = 0; i < entry_count; i++) {
         const char *fname = entries[i].field_name;
         const char *vstr  = entries[i].value_str;
@@ -650,16 +659,11 @@ int nmo_core_set_fields(nmo_cmd_ctx_t *c, nmo_object_id_t object_id,
         /* Read new value */
         char *new_value = nmo_core_field_value_dup(state, type, c->registry, fname);
 
-        /* Print change */
-        fprintf(c->out, "  %s: %s -> %s%s\n",
-                fname,
-                old_value ? old_value : "",
-                new_value ? new_value : "",
-                dry_run ? " (dry-run)" : "");
-        free(old_value);
-        free(new_value);
-
-        result.applied++;
+        result.changes[result.applied++] = (nmo_field_set_change_t){
+            .field_name = fname,
+            .old_value = old_value,
+            .new_value = new_value,
+        };
     }
 
     if (dry_run || result.failed > 0) {
@@ -675,5 +679,105 @@ int nmo_core_set_fields(nmo_cmd_ctx_t *c, nmo_object_id_t object_id,
 
     if (out_result) *out_result = result;
     return result.failed > 0 ? NMO_CLI_EXIT_INTERNAL_ERROR : NMO_CLI_EXIT_SUCCESS;
+}
+
+void nmo_field_set_result_free(nmo_field_set_result_t *result)
+{
+    if (result == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < result->applied && result->changes != NULL; i++) {
+        free(result->changes[i].old_value);
+        free(result->changes[i].new_value);
+    }
+    free(result->changes);
+    *result = (nmo_field_set_result_t){0};
+}
+
+/* "id", "dry_run" and "changes" in JSON; "<label> #<id>:" and the change
+ * lines in text. */
+static nmo_cli_record_t *nmo_core_field_set_record(
+    const char *label, nmo_object_id_t object_id,
+    const nmo_field_set_result_t *result, bool dry_run)
+{
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL &&
+              nmo_cli_record_uint(rec, "id", NULL, (uint64_t)object_id) &&
+              nmo_cli_record_bool(rec, "dry_run", NULL, dry_run) &&
+              (label == NULL ||
+               nmo_cli_record_raw_fmt(rec, "%s #%u:\n", label, object_id));
+    nmo_cli_record_array_t *changes =
+        ok ? nmo_cli_record_array(rec, "changes", NULL) : NULL;
+    ok = changes != NULL;
+    if (ok) {
+        nmo_cli_record_array_omit_heading(changes);
+        nmo_cli_record_array_inline_items(changes);
+    }
+    for (size_t i = 0; ok && i < result->applied; i++) {
+        const nmo_field_set_change_t *change = &result->changes[i];
+        const char *old_value = change->old_value ? change->old_value : "";
+        const char *new_value = change->new_value ? change->new_value : "";
+        nmo_cli_record_t *item = nmo_cli_record_new();
+        ok = item != NULL &&
+             nmo_cli_record_str(item, "field", NULL, change->field_name) &&
+             nmo_cli_record_str(item, "old", NULL, old_value) &&
+             nmo_cli_record_str(item, "new", NULL, new_value) &&
+             nmo_cli_record_raw_fmt(item, "  %s: %s -> %s%s\n",
+                                    change->field_name, old_value, new_value,
+                                    dry_run ? " (dry-run)" : "");
+        if (!ok) {
+            nmo_cli_record_free(item);
+        } else {
+            ok = nmo_cli_record_array_add(changes, item);
+        }
+    }
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        return NULL;
+    }
+    return rec;
+}
+
+void nmo_core_field_set_preview(nmo_cmd_ctx_t *c, const char *label,
+                                nmo_object_id_t object_id,
+                                const nmo_field_set_result_t *result,
+                                bool dry_run)
+{
+    if (c == NULL || c->is_json || result == NULL) {
+        return;
+    }
+    nmo_cli_record_t *rec =
+        nmo_core_field_set_record(label, object_id, result, dry_run);
+    if (rec == NULL) {
+        fprintf(stderr, "Error: Out of memory\n");
+        return;
+    }
+    nmo_cli_record_print_kv(rec, c->out, 0, c->colorize);
+    nmo_cli_record_free(rec);
+}
+
+int nmo_core_field_set_report(nmo_cmd_ctx_t *c, const char *cmd_name,
+                              nmo_object_id_t object_id,
+                              const nmo_field_set_result_t *result,
+                              bool dry_run, const char *output_path)
+{
+    if (c == NULL || result == NULL) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    bool saved = !dry_run && output_path != NULL;
+    if (!c->is_json) {
+        if (saved) {
+            fprintf(c->out, "Saved to: %s\n", output_path);
+        }
+        return NMO_CLI_EXIT_SUCCESS;
+    }
+    nmo_cli_record_t *rec =
+        nmo_core_field_set_record(NULL, object_id, result, dry_run);
+    if (rec != NULL && saved &&
+        !nmo_cli_record_str(rec, "output", NULL, output_path)) {
+        nmo_cli_record_free(rec);
+        rec = NULL;
+    }
+    return nmo_cmd_ctx_emit_record(c, rec, cmd_name, 0, c->colorize);
 }
 

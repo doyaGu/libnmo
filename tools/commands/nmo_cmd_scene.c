@@ -425,6 +425,7 @@ typedef struct scene_set_args {
     nmo_object_id_t object_id;
     nmo_field_set_entry_t entries[4];
     size_t entry_count;
+    nmo_field_set_result_t result;
 } scene_set_args_t;
 
 static int scene_set_mutate(
@@ -448,16 +449,16 @@ static int scene_set_mutate(
     }
     args->object_id = object_id;
 
-    fprintf(c->out, "Scene #%u:\n", args->object_id);
-
-    nmo_field_set_result_t result;
-    return nmo_core_set_fields(
+    rc = nmo_core_set_fields(
         c,
         args->object_id,
         args->entries,
         args->entry_count,
         dry_run,
-        &result);
+        &args->result);
+    nmo_core_field_set_preview(c, "Scene", args->object_id, &args->result,
+                               dry_run);
+    return rc;
 }
 
 static int scene_set_report(
@@ -466,14 +467,12 @@ static int scene_set_report(
     const char *output_path,
     void *user_data)
 {
-    (void)user_data;
-    if (c == NULL) {
+    scene_set_args_t *args = (scene_set_args_t *)user_data;
+    if (c == NULL || args == NULL) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }
-    if (!dry_run && output_path != NULL) {
-        fprintf(c->out, "Saved to: %s\n", output_path);
-    }
-    return NMO_CLI_EXIT_SUCCESS;
+    return nmo_core_field_set_report(c, "scene.set", args->object_id,
+                                     &args->result, dry_run, output_path);
 }
 
 int nmo_cmd_scene_set(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -551,7 +550,7 @@ int nmo_cmd_scene_set(int argc, char **argv, const nmo_cli_global_opts_t *global
         .command_name = "scene.set",
         .output_required_unless_dry_run = true,
     };
-    return nmo_cli_run_write_command(
+    int rc = nmo_cli_run_write_command(
         file_path,
         output,
         dry_run,
@@ -560,4 +559,6 @@ int nmo_cmd_scene_set(int argc, char **argv, const nmo_cli_global_opts_t *global
         scene_set_mutate,
         scene_set_report,
         &args);
+    nmo_field_set_result_free(&args.result);
+    return rc;
 }

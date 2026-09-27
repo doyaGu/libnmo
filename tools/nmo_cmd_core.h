@@ -298,9 +298,16 @@ typedef struct nmo_field_set_entry {
     const char *value_str;
 } nmo_field_set_entry_t;
 
+typedef struct nmo_field_set_change {
+    const char *field_name;  /**< Borrowed from the entry */
+    char *old_value;         /**< Owned; NULL when unreadable */
+    char *new_value;         /**< Owned; NULL when unreadable */
+} nmo_field_set_change_t;
+
 typedef struct nmo_field_set_result {
     size_t applied;
     size_t failed;
+    nmo_field_set_change_t *changes;  /**< `applied` changes, owned */
 } nmo_field_set_result_t;
 
 /**
@@ -308,7 +315,8 @@ typedef struct nmo_field_set_result {
  *
  * For each entry, looks up the field by name in the object's type descriptor,
  * parses the value string via nmo_type_value_from_string, and writes it.
- * Prints old->new for each field.
+ * Records old->new for each applied field in out_result, which the caller
+ * releases with nmo_field_set_result_free().
  *
  * @return NMO_CLI_EXIT_SUCCESS on success
  */
@@ -319,6 +327,31 @@ int nmo_core_set_fields(
     size_t entry_count,
     bool dry_run,
     nmo_field_set_result_t *out_result);
+
+void nmo_field_set_result_free(nmo_field_set_result_t *result);
+
+/**
+ * @brief Text preview of a field set: "<label> #<id>:" and one
+ * "  field: old -> new" line per applied change. Prints nothing in JSON mode.
+ *
+ * Call it right after nmo_core_set_fields(), before the file is saved, so
+ * the preview is shown even when the command fails later.
+ */
+void nmo_core_field_set_preview(nmo_cmd_ctx_t *c, const char *label,
+                                nmo_object_id_t object_id,
+                                const nmo_field_set_result_t *result,
+                                bool dry_run);
+
+/**
+ * @brief Final field set report.
+ *
+ * JSON mode: the whole report (id, dry_run, changes and output when saved).
+ * Text mode: only the "Saved to:" line, after nmo_core_field_set_preview().
+ */
+int nmo_core_field_set_report(nmo_cmd_ctx_t *c, const char *cmd_name,
+                              nmo_object_id_t object_id,
+                              const nmo_field_set_result_t *result,
+                              bool dry_run, const char *output_path);
 
 #ifdef __cplusplus
 }
