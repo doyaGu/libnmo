@@ -90,3 +90,7 @@ deps/lua/
 
 # Claude Code local settings
 .claude/
+
+# Release packaging (tools/scripts/package_release.py)
+/build-package/
+/dist/

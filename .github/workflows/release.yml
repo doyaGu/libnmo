@@ -1,0 +1,157 @@
+name: Release
+
+# Pushing a tag vX.Y.Z builds, tests and packages every platform, then
+# publishes a GitHub release with the packages. A manual run builds the same
+# packages as workflow artifacts without publishing anything.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    name: check-version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # The version lives in both nmo_types.h and project(); a tag must match
+      # them and have a CHANGELOG section to use as release notes.
+      - name: Check version
+        id: version
+        run: |
+          version=$(awk '/^#define NMO_VERSION_(MAJOR|MINOR|PATCH) / {
+            v = v (v == "" ? "" : ".") $3 } END { print v }' include/nmo_types.h)
+          project_version=$(awk '/^project\(libnmo/ { p = 1 }
+            p && $1 == "VERSION" { print $2; exit }' CMakeLists.txt)
+          if [ "$version" != "$project_version" ]; then
+            echo "::error::nmo_types.h says $version but CMakeLists.txt says $project_version"
+            exit 1
+          fi
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+              echo "::error::tag $GITHUB_REF_NAME does not match version $version"
+              exit 1
+            fi
+            if ! grep -q "^## \[$version\]" CHANGELOG.md; then
+              echo "::error::CHANGELOG.md has no section for $version"
+              exit 1
+            fi
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  package:
+    name: ${{ matrix.platform }}
+    needs: version
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The oldest supported runner, so the binaries need the oldest glibc.
+          - platform: linux-x64
+            os: ubuntu-22.04
+          - platform: macos-universal
+            os: macos-latest
+            cmake_args: -DCMAKE_OSX_ARCHITECTURES=arm64;x86_64 -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+          - platform: windows-msvc-x64
+            os: windows-latest
+            msvc: true
+          # Statically linked runtime: nmo.exe runs without MSYS2 DLLs.
+          - platform: windows-mingw-x64
+            os: windows-latest
+            mingw: true
+            cmake_args: -DNMO_MINGW_STATIC_RUNTIME=ON
+            package_args: --forbid-import libwinpthread
+
+    defaults:
+      run:
+        shell: ${{ matrix.mingw && 'msys2 {0}' || 'bash' }}
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-python@v7
+        if: ${{ !matrix.mingw }}
+        with:
+          python-version: '3.x'
+
+      - name: Install Ninja (Ubuntu)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      - name: Install Ninja (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ninja
+
+      - name: Set up MSYS2 (MinGW)
+        if: matrix.mingw
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-python
+
+      - name: Set up MSVC
+        if: matrix.msvc
+        uses: ./.github/actions/setup-msvc
+
+      - name: Build, test and package
+        env:
+          CMAKE_ARGS: ${{ matrix.cmake_args }}
+          PACKAGE_ARGS: ${{ matrix.package_args }}
+        run: |
+          python tools/scripts/package_release.py --platform ${{ matrix.platform }} \
+            $PACKAGE_ARGS -- $CMAKE_ARGS
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: libnmo-${{ needs.version.outputs.version }}-${{ matrix.platform }}
+          path: |
+            dist/*.zip
+            dist/*.tar.gz
+            dist/*.sha256
+          if-no-files-found: error
+
+  publish:
+    name: publish-release
+    needs: [version, package]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          awk -v heading="## [$VERSION]" '
+            index($0, heading) == 1 { found = 1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+          (cd dist && cat *.sha256 > SHA256SUMS)
+          gh release create "$GITHUB_REF_NAME" \
+            --verify-tag \
+            --title "libnmo $VERSION" \
+            --notes-file release-notes.md \
+            dist/*.zip dist/*.tar.gz dist/SHA256SUMS
