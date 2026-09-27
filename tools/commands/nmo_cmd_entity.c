@@ -65,23 +65,15 @@ static bool entity_record_color_rgba(nmo_cli_record_t *rec, const char *key,
                                   (double)color->b, (double)color->a);
 }
 
-static nmo_status_t parse_color_rgba(const char *text, nmo_color_t *out_color) {
-    if (!text || !out_color) {
+/* "(r, g, b, a)" or ARGB hex, through the color type's parser. */
+static nmo_status_t parse_color_rgba(const nmo_type_registry_t *registry,
+                                     const char *text, nmo_color_t *out_color) {
+    const nmo_type_descriptor_t *type =
+        nmo_type_registry_find_by_guid(registry, CKPGUID_COLOR);
+    if (!text || !out_color || !type) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
-
-    float values[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-    nmo_status_t status =
-        nmo_parse_f32_parenthesized_tuple(text, ",;", values, 4u);
-    if (status != NMO_OK) {
-        return status;
-    }
-
-    out_color->r = values[0];
-    out_color->g = values[1];
-    out_color->b = values[2];
-    out_color->a = values[3];
-    return NMO_OK;
+    return nmo_type_value_from_string(out_color, type, registry, text);
 }
 
 typedef struct entity_list_data {
@@ -950,7 +942,8 @@ static int entity_apply_camera_fields(entity_set_fields_args_t *args,
     return NMO_CLI_EXIT_SUCCESS;
 }
 
-static int entity_apply_light_fields(entity_set_fields_args_t *args,
+static int entity_apply_light_fields(const nmo_cmd_ctx_t *c,
+                                     entity_set_fields_args_t *args,
                                      nmo_class_id_t class_id, void *state,
                                      bool dry_run)
 {
@@ -965,7 +958,7 @@ static int entity_apply_light_fields(entity_set_fields_args_t *args,
         char *new_text;
         if (strcmp(field, "diffuse_color") == 0) {
             nmo_color_t parsed;
-            if (parse_color_rgba(value, &parsed) != NMO_OK) {
+            if (parse_color_rgba(c->registry, value, &parsed) != NMO_OK) {
                 fprintf(stderr, "Error: Failed to set '%s' = '%s'\n", field, value);
                 return NMO_CLI_EXIT_ARG_ERROR;
             }
@@ -1051,7 +1044,7 @@ static int entity_set_fields_mutate(
 
     int rc = args->target == ENTITY_FIELD_TARGET_CAMERA
         ? entity_apply_camera_fields(args, class_id, state, dry_run)
-        : entity_apply_light_fields(args, class_id, state, dry_run);
+        : entity_apply_light_fields(c, args, class_id, state, dry_run);
     nmo_core_field_set_preview(c, label, args->object_id, &args->result, dry_run);
     return rc;
 }
@@ -1169,7 +1162,7 @@ int nmo_cmd_entity_set_light(int argc, char **argv,
 {
     static const nmo_opt_def_t opts[] = {
         NMO_OPT_DEF_OUTPUT,
-        {"--diffuse", NULL, NMO_OPT_STRING, "Diffuse color"},
+        {"--diffuse", NULL, NMO_OPT_STRING, "Diffuse color (ARGB hex or (r, g, b, a))"},
         {"--range",   NULL, NMO_OPT_STRING, "Light range"},
         NMO_OPT_DEF_DRY_RUN,
         {"--id",      NULL, NMO_OPT_UINT,   "Light object ID"},

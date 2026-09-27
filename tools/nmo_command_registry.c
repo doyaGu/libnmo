@@ -941,7 +941,7 @@ static void entity_set_light_usage(FILE *out) {
     fprintf(out, "Set light properties on a CKLight or CKTargetLight.\n\n");
     fprintf(out, "Options:\n");
     fprintf(out, "  -o, --output <path>    Output file (required unless --dry-run)\n");
-    fprintf(out, "  --diffuse <color>      Diffuse color\n");
+    fprintf(out, "  --diffuse <color>      Diffuse color (ARGB hex or (r, g, b, a))\n");
     fprintf(out, "  --range <float>        Light range\n");
     fprintf(out, "  --dry-run              Preview without saving\n");
 }
