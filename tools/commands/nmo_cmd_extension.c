@@ -86,6 +86,53 @@ static bool extension_build_record(const nmo_extension_plugin_info_t *p,
     return ok;
 }
 
+/* Text columns: GUID, Name, Version, Category, Flags, Mgr/Type. */
+static const nmo_cli_table_col_t extension_list_columns[] = {
+    { "GUID",         NMO_CLI_ALIGN_LEFT,   36, 0 },
+    { "Name",         NMO_CLI_ALIGN_LEFT,   20, 0 },
+    { "Version",      NMO_CLI_ALIGN_RIGHT,   8, 0 },
+    { "Category",     NMO_CLI_ALIGN_LEFT,   12, 0 },
+    { "Flags",        NMO_CLI_ALIGN_LEFT,   16, 0 },
+    { "Mgr/Type",     NMO_CLI_ALIGN_RIGHT,   8, 0 },
+};
+
+static nmo_cli_record_t *extension_list_record_new(
+    const nmo_extension_plugin_info_t *plugins,
+    size_t count)
+{
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL &&
+              nmo_cli_record_title(rec, "Registered Extensions") &&
+              nmo_cli_record_raw(rec, "\n") &&
+              nmo_cli_record_uint(rec, "plugin_count", NULL, (uint64_t)count);
+    nmo_cli_record_array_t *arr = ok ? nmo_cli_record_array(rec, "plugins", NULL) : NULL;
+    ok = ok && arr != NULL;
+    if (ok && count > 0) {
+        ok = nmo_cli_record_array_set_table(
+            arr, extension_list_columns,
+            sizeof(extension_list_columns) / sizeof(extension_list_columns[0]));
+    }
+    for (size_t i = 0; ok && i < count; ++i) {
+        nmo_cli_record_t *item = nmo_cli_record_new();
+        ok = item != NULL && extension_build_record(&plugins[i], item);
+        if (!ok) {
+            nmo_cli_record_free(item);
+        } else {
+            ok = nmo_cli_record_array_add(arr, item);
+        }
+    }
+    if (ok) {
+        ok = count == 0
+            ? nmo_cli_record_raw(rec, "No extensions loaded.\n")
+            : nmo_cli_record_raw_fmt(rec, "\nTotal: %zu extension(s)\n", count);
+    }
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        return NULL;
+    }
+    return rec;
+}
+
 int nmo_cmd_extension_list(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     (void)argc;
     (void)argv;
@@ -117,66 +164,67 @@ int nmo_cmd_extension_list(int argc, char **argv, const nmo_cli_global_opts_t *g
         return rc;
     }
 
-    /* Text columns: GUID, Name, Version, Category, Flags, Mgr/Type. */
-    static const nmo_cli_table_col_t columns[] = {
-        { "GUID",         NMO_CLI_ALIGN_LEFT,   36, 0 },
-        { "Name",         NMO_CLI_ALIGN_LEFT,   20, 0 },
-        { "Version",      NMO_CLI_ALIGN_RIGHT,   8, 0 },
-        { "Category",     NMO_CLI_ALIGN_LEFT,   12, 0 },
-        { "Flags",        NMO_CLI_ALIGN_LEFT,   16, 0 },
-        { "Mgr/Type",     NMO_CLI_ALIGN_RIGHT,   8, 0 },
-    };
-
-    yyjson_mut_doc *doc = NULL;
-    yyjson_mut_val *data = NULL;
-    yyjson_mut_val *plugins_arr = NULL;
-    nmo_cli_table_t table;
-    if (c.is_json) {
-        doc = nmo_cmd_ctx_json_begin(&c);
-        data = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_uint(doc, data, "plugin_count", (uint64_t)count);
-        plugins_arr = yyjson_mut_arr(doc);
-    } else {
-        nmo_cli_print_heading(c.out, "Registered Extensions", c.colorize);
-        fprintf(c.out, "\n");
-        if (count == 0) {
-            fprintf(c.out, "No extensions loaded.\n");
-        } else {
-            nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
-        }
-    }
-
-    for (size_t i = 0; i < count; ++i) {
-        nmo_cli_record_t *rec = nmo_cli_record_new();
-        if (rec && extension_build_record(&plugins[i], rec)) {
-            if (doc) {
-                yyjson_mut_val *plugin_obj = yyjson_mut_obj(doc);
-                if (plugin_obj && nmo_cli_record_to_json(rec, doc, plugin_obj)) {
-                    yyjson_mut_arr_append(plugins_arr, plugin_obj);
-                }
-            } else {
-                nmo_cli_record_add_table_row(rec, &table);
-            }
-        }
-        nmo_cli_record_free(rec);
-    }
-
-    if (doc) {
-        yyjson_mut_obj_add_val(doc, data, "plugins", plugins_arr);
-        nmo_cli_json_write_enveloped_and_free(doc, data, "extension.list", NULL, c.out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-    } else if (count > 0) {
-        nmo_cli_table_print(&table, c.out, c.colorize);
-        nmo_cli_table_free(&table);
-        fprintf(c.out, "\nTotal: %zu extension(s)\n", count);
-    }
-
+    nmo_cli_record_t *rec = extension_list_record_new(plugins, count);
+    rc = nmo_cmd_ctx_emit_record(&c, rec, "extension.list", 0, c.colorize);
     nmo_context_release(ctx);
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    return nmo_cmd_ctx_done(&c, rc);
 }
 
 /* ============================================================================
  * extension load
  * ============================================================================ */
+
+/* Newly loaded plugins are assumed to be at the end of the registry list. */
+static nmo_cli_record_t *extension_load_record_new(
+    const char *dll_path,
+    size_t loaded_count,
+    const nmo_extension_plugin_info_t *plugins,
+    size_t first,
+    size_t total_count)
+{
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL &&
+              nmo_cli_record_title(rec, "Extension Load Result") &&
+              nmo_cli_record_raw(rec, "\n") &&
+              nmo_cli_record_str(rec, "library_path", "Library", dll_path) &&
+              nmo_cli_record_bool(rec, "success", NULL, true) &&
+              nmo_cli_record_uint(rec, "loaded_count", "Loaded", (uint64_t)loaded_count);
+    if (ok && loaded_count > 0) {
+        ok = nmo_cli_record_raw(rec, "\nLoaded plugins:\n");
+    }
+    nmo_cli_record_array_t *arr = ok ? nmo_cli_record_array(rec, "plugins", NULL) : NULL;
+    ok = ok && arr != NULL;
+    if (ok) {
+        nmo_cli_record_array_omit_heading(arr);
+        nmo_cli_record_array_inline_items(arr);
+    }
+    for (size_t i = first; ok && i < total_count; ++i) {
+        const nmo_extension_plugin_info_t *p = &plugins[i];
+        char guid_str[NMO_GUID_STRING_SIZE];
+        nmo_guid_format(p->guid, guid_str, sizeof(guid_str));
+        nmo_cli_record_t *item = nmo_cli_record_new();
+        ok = item != NULL &&
+             nmo_cli_record_str(item, "guid", NULL, guid_str) &&
+             nmo_cli_record_str(item, "name", NULL, p->name ? p->name : "") &&
+             nmo_cli_record_uint(item, "version", NULL, (uint64_t)p->version);
+        if (ok && loaded_count > 0) {
+            ok = nmo_cli_record_raw_fmt(item, "  - %s (%s, version %u)\n",
+                                        p->name ? p->name : "(unnamed)",
+                                        guid_str, p->version);
+        }
+        if (!ok) {
+            nmo_cli_record_free(item);
+        } else {
+            ok = nmo_cli_record_array_add(arr, item);
+        }
+    }
+    ok = ok && nmo_cli_record_raw(rec, "\nStatus: SUCCESS\n");
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        return NULL;
+    }
+    return rec;
+}
 
 int nmo_cmd_extension_load(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     const char *dll_path = nmo_tool_find_file_arg(argc, argv);
@@ -225,69 +273,114 @@ int nmo_cmd_extension_load(int argc, char **argv, const nmo_cli_global_opts_t *g
         return rc;
     }
 
-    /* Output in requested format */
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-
-        nmo_cli_json_add_str_safe(doc, data, "library_path", dll_path);
-        yyjson_mut_obj_add_bool(doc, data, "success", true);
-        yyjson_mut_obj_add_uint(doc, data, "loaded_count", (uint64_t)loaded_count);
-
-        /* List newly loaded plugins */
-        yyjson_mut_val *plugins_arr = yyjson_mut_arr(doc);
-        size_t total_count = 0;
-        const nmo_extension_plugin_info_t *plugins = nmo_extension_registry_list(registry, &total_count);
-
-        /* Assume newly loaded plugins are at the end */
-        for (size_t i = count_before; i < total_count; ++i) {
-            const nmo_extension_plugin_info_t *p = &plugins[i];
-            yyjson_mut_val *plugin_obj = yyjson_mut_obj(doc);
-
-            nmo_cli_json_add_guid_safe(doc, plugin_obj, "guid", p->guid);
-            nmo_cli_json_add_str_safe(doc, plugin_obj, "name", p->name ? p->name : "");
-            yyjson_mut_obj_add_uint(doc, plugin_obj, "version", (uint64_t)p->version);
-
-            yyjson_mut_arr_append(plugins_arr, plugin_obj);
-        }
-        yyjson_mut_obj_add_val(doc, data, "plugins", plugins_arr);
-
-        nmo_cli_json_write_enveloped_and_free(doc, data, "extension.load", dll_path, c.out, global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-    } else {
-        /* Text output */
-        nmo_cli_print_heading(c.out, "Extension Load Result", c.colorize);
-        fprintf(c.out, "\n");
-        nmo_cli_print_kv(c.out, "Library", dll_path, 12, c.colorize);
-
-        nmo_cli_print_kv_fmt(c.out, "Loaded", 12, c.colorize, "%zu", loaded_count);
-
-        if (loaded_count > 0) {
-            fprintf(c.out, "\nLoaded plugins:\n");
-
-            size_t total_count = 0;
-            const nmo_extension_plugin_info_t *plugins = nmo_extension_registry_list(registry, &total_count);
-
-            for (size_t i = count_before; i < total_count; ++i) {
-                const nmo_extension_plugin_info_t *p = &plugins[i];
-                char guid_str[NMO_GUID_STRING_SIZE];
-                nmo_guid_format(p->guid, guid_str, sizeof(guid_str));
-                fprintf(c.out, "  - %s (%s, version %u)\n",
-                        p->name ? p->name : "(unnamed)",
-                        guid_str,
-                        p->version);
-            }
-        }
-
-        fprintf(c.out, "\nStatus: SUCCESS\n");
-    }
-
+    size_t total_count = 0;
+    const nmo_extension_plugin_info_t *plugins =
+        nmo_extension_registry_list(registry, &total_count);
+    nmo_cli_record_t *rec = extension_load_record_new(
+        dll_path, loaded_count, plugins, count_before, total_count);
+    c.file_path = dll_path;
+    rc = nmo_cmd_ctx_emit_record(&c, rec, "extension.load", 12, c.colorize);
     nmo_context_release(ctx);
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    return nmo_cmd_ctx_done(&c, rc);
 }
 
 /* ============================================================================
  * extension info
  * ============================================================================ */
+
+static const nmo_cli_table_col_t extension_info_columns[] = {
+    { "GUID",         NMO_CLI_ALIGN_LEFT,   36, 0 },
+    { "Category",     NMO_CLI_ALIGN_LEFT,   12, 0 },
+    { "Req Ver",      NMO_CLI_ALIGN_RIGHT,   8, 0 },
+    { "Resolved Ver", NMO_CLI_ALIGN_RIGHT,  12, 0 },
+    { "Status",       NMO_CLI_ALIGN_LEFT,   20, 0 },
+};
+
+static bool extension_info_build_item(const nmo_tool_plugin_dependency_status_t *p,
+                                      nmo_cli_record_t *item)
+{
+    const char *status;
+    if (p->status_flags & NMO_TOOL_PLUGIN_DEP_STATUS_MISSING) {
+        status = "MISSING";
+    } else if (p->status_flags & NMO_TOOL_PLUGIN_DEP_STATUS_VERSION_TOO_OLD) {
+        status = "VERSION_TOO_OLD";
+    } else if (p->status_flags & NMO_TOOL_PLUGIN_DEP_STATUS_MANAGER_UNAVAILABLE) {
+        status = "MANAGER_UNAVAIL";
+    } else {
+        status = "OK";
+    }
+
+    bool ok = nmo_cli_record_guid(item, "guid", "GUID", p->guid) &&
+              nmo_cli_record_str(item, "category", "Category",
+                                 plugin_category_to_string(p->category)) &&
+              nmo_cli_record_uint(item, "required_version", "Req Ver",
+                                  (uint64_t)p->required_version) &&
+              nmo_cli_record_uint(item, "resolved_version", "Resolved Ver",
+                                  (uint64_t)p->resolved_version);
+    if (ok && p->resolved_version == 0) {
+        ok = nmo_cli_record_set_text(item, "-");
+    }
+    if (ok && p->resolved_name) {
+        ok = nmo_cli_record_str(item, "resolved_name", NULL, p->resolved_name);
+    }
+    ok = ok &&
+         nmo_cli_record_bool(item, "missing", NULL,
+             (p->status_flags & NMO_TOOL_PLUGIN_DEP_STATUS_MISSING) != 0) &&
+         nmo_cli_record_bool(item, "version_too_old", NULL,
+             (p->status_flags & NMO_TOOL_PLUGIN_DEP_STATUS_VERSION_TOO_OLD) != 0) &&
+         nmo_cli_record_bool(item, "manager_unavailable", NULL,
+             (p->status_flags & NMO_TOOL_PLUGIN_DEP_STATUS_MANAGER_UNAVAILABLE) != 0);
+    if (ok && p->resolved_name && p->resolved_name[0] != '\0') {
+        ok = nmo_cli_record_text_fmt(item, "Status", "%s (%s)", status, p->resolved_name);
+    } else if (ok) {
+        ok = nmo_cli_record_text(item, "Status", status);
+    }
+    return ok;
+}
+
+static nmo_cli_record_t *extension_info_record_new(
+    const char *file_path,
+    const nmo_tool_plugin_diagnostics_t *diag)
+{
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL &&
+              nmo_cli_record_title(rec, "Extension Metadata") &&
+              nmo_cli_record_str_opt(rec, "file", "File", file_path, "") &&
+              nmo_cli_record_raw(rec, "\n") &&
+              nmo_cli_record_uint(rec, "plugin_count", "Plugin Count",
+                                  (uint64_t)diag->entry_count) &&
+              nmo_cli_record_uint(rec, "missing_count", "Missing",
+                                  (uint64_t)diag->missing_count) &&
+              nmo_cli_record_uint(rec, "outdated_count", "Outdated",
+                                  (uint64_t)diag->outdated_count) &&
+              nmo_cli_record_bool(rec, "extension_registry_available", NULL,
+                                  diag->extension_registry_available != 0) &&
+              nmo_cli_record_text(rec, "Registry",
+                                  diag->extension_registry_available
+                                      ? "Available" : "Not Available");
+    nmo_cli_record_array_t *arr = ok ? nmo_cli_record_array(rec, "plugins", NULL) : NULL;
+    ok = ok && arr != NULL;
+    if (ok && diag->entry_count > 0) {
+        ok = nmo_cli_record_array_set_heading(arr, "Plugin Dependencies:\n") &&
+             nmo_cli_record_array_set_table(
+                 arr, extension_info_columns,
+                 sizeof(extension_info_columns) / sizeof(extension_info_columns[0]));
+    }
+    for (size_t i = 0; ok && i < diag->entry_count; ++i) {
+        nmo_cli_record_t *item = nmo_cli_record_new();
+        ok = item != NULL && extension_info_build_item(&diag->entries[i], item);
+        if (!ok) {
+            nmo_cli_record_free(item);
+        } else {
+            ok = nmo_cli_record_array_add(arr, item);
+        }
+    }
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        return NULL;
+    }
+    return rec;
+}
 
 static int extension_info_run(nmo_cmd_ctx_t *c)
 {
@@ -299,109 +392,8 @@ static int extension_info_run(nmo_cmd_ctx_t *c)
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    /* Output in requested format */
-    if (c->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-
-        yyjson_mut_obj_add_str(doc, data, "file", c->file_path);
-        yyjson_mut_obj_add_uint(doc, data, "plugin_count", (uint64_t)diag->entry_count);
-        yyjson_mut_obj_add_uint(doc, data, "missing_count", (uint64_t)diag->missing_count);
-        yyjson_mut_obj_add_uint(doc, data, "outdated_count", (uint64_t)diag->outdated_count);
-        yyjson_mut_obj_add_bool(doc, data, "extension_registry_available", diag->extension_registry_available != 0);
-
-        yyjson_mut_val *plugins_arr = yyjson_mut_arr(doc);
-        for (size_t i = 0; i < diag->entry_count; ++i) {
-            const nmo_tool_plugin_dependency_status_t *p = &diag->entries[i];
-            yyjson_mut_val *plugin_obj = yyjson_mut_obj(doc);
-
-            nmo_cli_json_add_guid_safe(doc, plugin_obj, "guid", p->guid);
-            yyjson_mut_obj_add_str(doc, plugin_obj, "category", plugin_category_to_string(p->category));
-            yyjson_mut_obj_add_uint(doc, plugin_obj, "required_version", (uint64_t)p->required_version);
-            yyjson_mut_obj_add_uint(doc, plugin_obj, "resolved_version", (uint64_t)p->resolved_version);
-
-            if (p->resolved_name) {
-                nmo_cli_json_add_str_safe(doc, plugin_obj, "resolved_name", p->resolved_name);
-            }
-
-            yyjson_mut_obj_add_bool(doc, plugin_obj, "missing",
-                (p->status_flags & NMO_TOOL_PLUGIN_DEP_STATUS_MISSING) != 0);
-            yyjson_mut_obj_add_bool(doc, plugin_obj, "version_too_old",
-                (p->status_flags & NMO_TOOL_PLUGIN_DEP_STATUS_VERSION_TOO_OLD) != 0);
-            yyjson_mut_obj_add_bool(doc, plugin_obj, "manager_unavailable",
-                (p->status_flags & NMO_TOOL_PLUGIN_DEP_STATUS_MANAGER_UNAVAILABLE) != 0);
-
-            yyjson_mut_arr_append(plugins_arr, plugin_obj);
-        }
-        yyjson_mut_obj_add_val(doc, data, "plugins", plugins_arr);
-
-        nmo_cmd_ctx_json_end(c, doc, data, "extension.info");
-    } else {
-        /* Text output */
-        nmo_cli_print_heading(c->out, "Extension Metadata", c->colorize);
-        nmo_cli_print_kv(c->out, "File", c->file_path, 16, c->colorize);
-        fprintf(c->out, "\n");
-
-        nmo_cli_print_kv_fmt(c->out, "Plugin Count", 16, c->colorize, "%zu", diag->entry_count);
-        nmo_cli_print_kv_fmt(c->out, "Missing", 16, c->colorize, "%zu", diag->missing_count);
-        nmo_cli_print_kv_fmt(c->out, "Outdated", 16, c->colorize, "%zu", diag->outdated_count);
-
-        nmo_cli_print_kv(c->out, "Registry", diag->extension_registry_available ? "Available" : "Not Available", 16, c->colorize);
-
-        if (diag->entry_count > 0) {
-            fprintf(c->out, "\nPlugin Dependencies:\n\n");
-
-            /* Build table */
-            nmo_cli_table_col_t columns[] = {
-                { "GUID",         NMO_CLI_ALIGN_LEFT,   36, 0 },
-                { "Category",     NMO_CLI_ALIGN_LEFT,   12, 0 },
-                { "Req Ver",      NMO_CLI_ALIGN_RIGHT,   8, 0 },
-                { "Resolved Ver", NMO_CLI_ALIGN_RIGHT,  12, 0 },
-                { "Status",       NMO_CLI_ALIGN_LEFT,   20, 0 },
-            };
-
-            nmo_cli_table_t table;
-            nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
-
-            for (size_t i = 0; i < diag->entry_count; ++i) {
-                const nmo_tool_plugin_dependency_status_t *p = &diag->entries[i];
-
-                char guid_str[NMO_GUID_STRING_SIZE];
-                nmo_guid_format(p->guid, guid_str, sizeof(guid_str));
-
-                const char *status;
-                if (p->status_flags & NMO_TOOL_PLUGIN_DEP_STATUS_MISSING) {
-                    status = "MISSING";
-                } else if (p->status_flags & NMO_TOOL_PLUGIN_DEP_STATUS_VERSION_TOO_OLD) {
-                    status = "VERSION_TOO_OLD";
-                } else if (p->status_flags & NMO_TOOL_PLUGIN_DEP_STATUS_MANAGER_UNAVAILABLE) {
-                    status = "MANAGER_UNAVAIL";
-                } else {
-                    status = "OK";
-                }
-
-                nmo_cli_table_begin_row(&table);
-                nmo_cli_table_add_cell(&table, guid_str);
-                nmo_cli_table_add_cell(&table, plugin_category_to_string(p->category));
-                nmo_cli_table_add_cell_fmt(&table, "%u", p->required_version);
-                if (p->resolved_version != 0) {
-                    nmo_cli_table_add_cell_fmt(&table, "%u", p->resolved_version);
-                } else {
-                    nmo_cli_table_add_cell(&table, "-");
-                }
-                if (p->resolved_name && p->resolved_name[0] != '\0') {
-                    nmo_cli_table_add_cell_fmt(&table, "%s (%s)", status, p->resolved_name);
-                } else {
-                    nmo_cli_table_add_cell(&table, status);
-                }
-            }
-
-            nmo_cli_table_print(&table, c->out, c->colorize);
-            nmo_cli_table_free(&table);
-        }
-    }
-
-    return NMO_CLI_EXIT_SUCCESS;
+    return nmo_cmd_ctx_emit_record(c, extension_info_record_new(c->file_path, diag),
+                                   "extension.info", 16, c->colorize);
 }
 
 int nmo_cmd_extension_info(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -416,6 +408,97 @@ int nmo_cmd_extension_info(int argc, char **argv, const nmo_cli_global_opts_t *g
 /* ============================================================================
  * extension check
  * ============================================================================ */
+
+/* Issue lines are shown in text only when some dependency is missing or outdated. */
+static bool extension_check_build_issue(const nmo_tool_plugin_dependency_status_t *p,
+                                        bool show_text,
+                                        nmo_cli_record_t *item)
+{
+    char guid_str[NMO_GUID_STRING_SIZE];
+    nmo_guid_format(p->guid, guid_str, sizeof(guid_str));
+    const char *category = plugin_category_to_string(p->category);
+
+    bool ok = nmo_cli_record_str(item, "guid", NULL, guid_str) &&
+              nmo_cli_record_str(item, "category", NULL, category) &&
+              nmo_cli_record_uint(item, "required_version", NULL,
+                                  (uint64_t)p->required_version);
+    if (ok && show_text) {
+        ok = nmo_cli_record_raw_fmt(item, "  - %s (%s)\n", guid_str, category);
+    }
+    if (p->status_flags & NMO_TOOL_PLUGIN_DEP_STATUS_MISSING) {
+        ok = ok && nmo_cli_record_str(item, "issue", NULL, "missing");
+        if (ok && show_text) {
+            ok = nmo_cli_record_raw_fmt(item, "    Status: MISSING (required version %u)\n",
+                                        p->required_version);
+        }
+    } else if (p->status_flags & NMO_TOOL_PLUGIN_DEP_STATUS_VERSION_TOO_OLD) {
+        ok = ok && nmo_cli_record_str(item, "issue", NULL, "version_too_old") &&
+             nmo_cli_record_uint(item, "resolved_version", NULL,
+                                 (uint64_t)p->resolved_version);
+        if (ok && show_text) {
+            ok = nmo_cli_record_raw_fmt(item, "    Status: VERSION_TOO_OLD (required: %u, found: %u)\n",
+                                        p->required_version, p->resolved_version);
+        }
+    } else if (p->status_flags & NMO_TOOL_PLUGIN_DEP_STATUS_MANAGER_UNAVAILABLE) {
+        ok = ok && nmo_cli_record_str(item, "issue", NULL, "manager_unavailable");
+        if (ok && show_text) {
+            ok = nmo_cli_record_raw(item, "    Status: MANAGER_UNAVAILABLE\n");
+        }
+    }
+    if (ok && show_text && p->resolved_name && p->resolved_name[0] != '\0') {
+        ok = nmo_cli_record_raw_fmt(item, "    Name: %s\n", p->resolved_name);
+    }
+    return ok;
+}
+
+static nmo_cli_record_t *extension_check_record_new(
+    const char *file_path,
+    const nmo_tool_plugin_diagnostics_t *diag,
+    bool has_issues)
+{
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL &&
+              nmo_cli_record_title(rec, "Plugin Dependency Check") &&
+              nmo_cli_record_str_opt(rec, "file", "File", file_path, "") &&
+              nmo_cli_record_raw(rec, "\n") &&
+              nmo_cli_record_bool(rec, "all_dependencies_satisfied", NULL, !has_issues) &&
+              nmo_cli_record_uint(rec, "total_dependencies", "Total",
+                                  (uint64_t)diag->entry_count) &&
+              nmo_cli_record_uint(rec, "missing_count", "Missing",
+                                  (uint64_t)diag->missing_count) &&
+              nmo_cli_record_uint(rec, "outdated_count", "Outdated",
+                                  (uint64_t)diag->outdated_count);
+    if (ok && has_issues) {
+        ok = nmo_cli_record_raw(rec, "\nIssues Found:\n\n");
+    }
+    nmo_cli_record_array_t *arr = ok ? nmo_cli_record_array(rec, "issues", NULL) : NULL;
+    ok = ok && arr != NULL;
+    if (ok) {
+        nmo_cli_record_array_omit_heading(arr);
+        nmo_cli_record_array_inline_items(arr);
+    }
+    for (size_t i = 0; ok && i < diag->entry_count; ++i) {
+        const nmo_tool_plugin_dependency_status_t *p = &diag->entries[i];
+        if (p->status_flags == 0) {
+            continue;
+        }
+        nmo_cli_record_t *item = nmo_cli_record_new();
+        ok = item != NULL && extension_check_build_issue(p, has_issues, item);
+        if (!ok) {
+            nmo_cli_record_free(item);
+        } else {
+            ok = nmo_cli_record_array_add(arr, item);
+        }
+    }
+    ok = ok && nmo_cli_record_raw(rec, has_issues
+                                           ? "\nResult: ISSUES FOUND\n"
+                                           : "\nResult: ALL DEPENDENCIES SATISFIED\n");
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        return NULL;
+    }
+    return rec;
+}
 
 static int extension_check_run(nmo_cmd_ctx_t *c, bool strict_mode)
 {
@@ -435,88 +518,10 @@ static int extension_check_run(nmo_cmd_ctx_t *c, bool strict_mode)
         exit_code = NMO_CLI_EXIT_STRICT_FAILURE;
     }
 
-    /* Output in requested format */
-    if (c->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-
-        yyjson_mut_obj_add_str(doc, data, "file", c->file_path);
-        yyjson_mut_obj_add_bool(doc, data, "all_dependencies_satisfied", !has_issues);
-        yyjson_mut_obj_add_uint(doc, data, "total_dependencies", (uint64_t)diag->entry_count);
-        yyjson_mut_obj_add_uint(doc, data, "missing_count", (uint64_t)diag->missing_count);
-        yyjson_mut_obj_add_uint(doc, data, "outdated_count", (uint64_t)diag->outdated_count);
-
-        /* List issues */
-        yyjson_mut_val *issues_arr = yyjson_mut_arr(doc);
-        for (size_t i = 0; i < diag->entry_count; ++i) {
-            const nmo_tool_plugin_dependency_status_t *p = &diag->entries[i];
-
-            if (p->status_flags != 0) {
-                yyjson_mut_val *issue_obj = yyjson_mut_obj(doc);
-
-                nmo_cli_json_add_guid_safe(doc, issue_obj, "guid", p->guid);
-                yyjson_mut_obj_add_str(doc, issue_obj, "category", plugin_category_to_string(p->category));
-                yyjson_mut_obj_add_uint(doc, issue_obj, "required_version", (uint64_t)p->required_version);
-
-                if (p->status_flags & NMO_TOOL_PLUGIN_DEP_STATUS_MISSING) {
-                    yyjson_mut_obj_add_str(doc, issue_obj, "issue", "missing");
-                } else if (p->status_flags & NMO_TOOL_PLUGIN_DEP_STATUS_VERSION_TOO_OLD) {
-                    yyjson_mut_obj_add_str(doc, issue_obj, "issue", "version_too_old");
-                    yyjson_mut_obj_add_uint(doc, issue_obj, "resolved_version", (uint64_t)p->resolved_version);
-                } else if (p->status_flags & NMO_TOOL_PLUGIN_DEP_STATUS_MANAGER_UNAVAILABLE) {
-                    yyjson_mut_obj_add_str(doc, issue_obj, "issue", "manager_unavailable");
-                }
-
-                yyjson_mut_arr_append(issues_arr, issue_obj);
-            }
-        }
-        yyjson_mut_obj_add_val(doc, data, "issues", issues_arr);
-
-        nmo_cmd_ctx_json_end(c, doc, data, "extension.check");
-    } else {
-        /* Text output */
-        nmo_cli_print_heading(c->out, "Plugin Dependency Check", c->colorize);
-        nmo_cli_print_kv(c->out, "File", c->file_path, 16, c->colorize);
-        fprintf(c->out, "\n");
-
-        nmo_cli_print_kv_fmt(c->out, "Total", 16, c->colorize, "%zu", diag->entry_count);
-        nmo_cli_print_kv_fmt(c->out, "Missing", 16, c->colorize, "%zu", diag->missing_count);
-        nmo_cli_print_kv_fmt(c->out, "Outdated", 16, c->colorize, "%zu", diag->outdated_count);
-
-        if (has_issues) {
-            fprintf(c->out, "\nIssues Found:\n\n");
-
-            for (size_t i = 0; i < diag->entry_count; ++i) {
-                const nmo_tool_plugin_dependency_status_t *p = &diag->entries[i];
-
-                if (p->status_flags != 0) {
-                    char guid_str[NMO_GUID_STRING_SIZE];
-                    nmo_guid_format(p->guid, guid_str, sizeof(guid_str));
-
-                    fprintf(c->out, "  - %s (%s)\n", guid_str, plugin_category_to_string(p->category));
-
-                    if (p->status_flags & NMO_TOOL_PLUGIN_DEP_STATUS_MISSING) {
-                        fprintf(c->out, "    Status: MISSING (required version %u)\n", p->required_version);
-                    } else if (p->status_flags & NMO_TOOL_PLUGIN_DEP_STATUS_VERSION_TOO_OLD) {
-                        fprintf(c->out, "    Status: VERSION_TOO_OLD (required: %u, found: %u)\n",
-                                p->required_version, p->resolved_version);
-                    } else if (p->status_flags & NMO_TOOL_PLUGIN_DEP_STATUS_MANAGER_UNAVAILABLE) {
-                        fprintf(c->out, "    Status: MANAGER_UNAVAILABLE\n");
-                    }
-
-                    if (p->resolved_name && p->resolved_name[0] != '\0') {
-                        fprintf(c->out, "    Name: %s\n", p->resolved_name);
-                    }
-                }
-            }
-
-            fprintf(c->out, "\nResult: ISSUES FOUND\n");
-        } else {
-            fprintf(c->out, "\nResult: ALL DEPENDENCIES SATISFIED\n");
-        }
-    }
-
-    return exit_code;
+    int rc = nmo_cmd_ctx_emit_record(
+        c, extension_check_record_new(c->file_path, diag, has_issues),
+        "extension.check", 16, c->colorize);
+    return rc != NMO_CLI_EXIT_SUCCESS ? rc : exit_code;
 }
 
 int nmo_cmd_extension_check(int argc, char **argv, const nmo_cli_global_opts_t *global) {
