@@ -65,6 +65,62 @@ typedef struct {
 } nmo_opt_result_t;
 
 /**
+ * @brief Shared option definitions
+ *
+ * Common options spelled the same way across commands. Use them as
+ * elements of a command's nmo_opt_def_t table.
+ */
+#define NMO_OPT_DEF_OUTPUT \
+    {"--output", "-o", NMO_OPT_STRING, "Output file path"}
+#define NMO_OPT_DEF_WRITE_OUTPUT \
+    {"--output", "-o", NMO_OPT_STRING, "Output file (required unless --dry-run)"}
+#define NMO_OPT_DEF_DRY_RUN \
+    {"--dry-run", NULL, NMO_OPT_FLAG, "Preview without saving"}
+#define NMO_OPT_DEF_JSON \
+    {"--json", "-j", NMO_OPT_FLAG, "JSON output"}
+#define NMO_OPT_DEF_CLASS_FILTER \
+    {"--class", "-c", NMO_OPT_STRING, "Filter by class name"}
+#define NMO_OPT_DEF_DEPTH \
+    {"--depth", "-d", NMO_OPT_UINT, "Recursion depth (default: unlimited)"}
+#define NMO_OPT_DEF_FAST_SAVE \
+    {"--fast-save", NULL, NMO_OPT_FLAG, "Skip explicit save flush/write-through"}
+#define NMO_OPT_DEF_IGNORE_ORDER \
+    {"--ignore-order", NULL, NMO_OPT_FLAG, "Ignore object order"}
+
+/**
+ * @brief Initialize a parse result over caller-owned arrays.
+ *
+ * @p pos must be an array (not a pointer) so its capacity can be derived.
+ */
+#define NMO_OPT_RESULT(vals_, pos_) \
+    { .vals = (vals_), .pos_args = (pos_), \
+      .pos_capacity = sizeof(pos_) / sizeof((pos_)[0]) }
+
+/** @brief String value, or NULL when the option is absent. */
+static inline const char *nmo_opt_str(const nmo_opt_val_t *v)
+{
+    return v->present ? v->val.str : NULL;
+}
+
+/** @brief True when a flag option is present and set. */
+static inline bool nmo_opt_flag(const nmo_opt_val_t *v)
+{
+    return v->present && v->val.flag;
+}
+
+/** @brief Unsigned value, or @p fallback when the option is absent. */
+static inline uint32_t nmo_opt_uint_or(const nmo_opt_val_t *v, uint32_t fallback)
+{
+    return v->present ? v->val.u : fallback;
+}
+
+/** @brief Float value, or @p fallback when the option is absent. */
+static inline float nmo_opt_float_or(const nmo_opt_val_t *v, float fallback)
+{
+    return v->present ? v->val.f : fallback;
+}
+
+/**
  * @brief Parse command-local argv against option definitions.
  *
  * Scans argv[1..argc-1] (argv[0] is the action name).
