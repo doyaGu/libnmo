@@ -342,20 +342,20 @@ static int object_list_single(const char *file_path,
 
 int nmo_cmd_object_list(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--class",   "-c", NMO_OPT_STRING, "Filter by class name"},
+        NMO_OPT_DEF_CLASS_FILTER,
         {"--sort",    "-s",  NMO_OPT_STRING, "Sort by: id, name, class, size"},
         {"--reverse", "-r",  NMO_OPT_FLAG,   "Reverse sort direction"},
         {"--top",     NULL,  NMO_OPT_UINT,   "Show only first N results"},
     };
     nmo_opt_val_t vals[4];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, 4, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *class_filter_str = vals[0].present ? vals[0].val.str : NULL;
-    const char *sort_key_str     = vals[1].present ? vals[1].val.str : NULL;
-    bool reverse                 = vals[2].present && vals[2].val.flag;
-    uint32_t top_n               = vals[3].present ? vals[3].val.u : 0;
+    const char *class_filter_str = nmo_opt_str(&vals[0]);
+    const char *sort_key_str     = nmo_opt_str(&vals[1]);
+    bool reverse                 = nmo_opt_flag(&vals[2]);
+    uint32_t top_n               = nmo_opt_uint_or(&vals[3], 0);
 
     /* Validate sort key early */
     nmo_cli_sort_key_t sort_key = nmo_cli_parse_sort_key(sort_key_str);
@@ -654,7 +654,7 @@ static int object_show_parse(int argc, char **argv, bool expect_file_operand,
 
     /* Pass 2: nmo_opt for --depth and --full on cleaned argv */
     static const nmo_opt_def_t opts[] = {
-        {"--depth", "-d", NMO_OPT_UINT, "Recursion depth (default: unlimited)"},
+        NMO_OPT_DEF_DEPTH,
         {"--full",  NULL, NMO_OPT_FLAG, "Full detail mode"},
         {"--id",    "-i", NMO_OPT_UINT, "Object ID"},
         {"--name",  "-n", NMO_OPT_STRING, "Object name"},
@@ -662,7 +662,7 @@ static int object_show_parse(int argc, char **argv, bool expect_file_operand,
     enum { OPT_DEPTH, OPT_FULL, OPT_ID, OPT_NAME, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(clean_argc, clean_argv, opts, OPT_COUNT, &r) < 0) {
         free(clean_argv);
         return NMO_CLI_EXIT_ARG_ERROR;
@@ -670,10 +670,10 @@ static int object_show_parse(int argc, char **argv, bool expect_file_operand,
     free(clean_argv);
 
     args->depth = vals[OPT_DEPTH].present ? (int)vals[OPT_DEPTH].val.u : -1;
-    args->full_mode = vals[OPT_FULL].present && vals[OPT_FULL].val.flag;
+    args->full_mode = nmo_opt_flag(&vals[OPT_FULL]);
     args->has_id = vals[OPT_ID].present;
-    args->id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0;
-    args->name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL;
+    args->id = nmo_opt_uint_or(&vals[OPT_ID], 0);
+    args->name = nmo_opt_str(&vals[OPT_NAME]);
     bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
     if (expect_file_operand) {
         args->positional_id = (!has_selector_opt && r.pos_count >= 2) ? r.pos_args[0] : NULL;
@@ -932,16 +932,16 @@ static nmo_cli_record_t *object_find_record_new(const nmo_cmd_ctx_t *c,
 
 int nmo_cmd_object_find(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--class", "-c", NMO_OPT_STRING, "Filter by class name"},
+        NMO_OPT_DEF_CLASS_FILTER,
         {"--name",  "-n", NMO_OPT_STRING, "Filter by name pattern"},
     };
     nmo_opt_val_t vals[2];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, 2, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *class_filter_str = vals[0].present ? vals[0].val.str : NULL;
-    const char *name_filter      = vals[1].present ? vals[1].val.str : NULL;
+    const char *class_filter_str = nmo_opt_str(&vals[0]);
+    const char *name_filter      = nmo_opt_str(&vals[1]);
 
     if (!class_filter_str && !name_filter) {
         fprintf(stderr, "Error: At least one filter required (--name or --class)\n");
@@ -1021,7 +1021,7 @@ static void object_export_summary_text(FILE *out, bool colorize, const void *dat
 
 int nmo_cmd_object_export(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--class",  "-c", NMO_OPT_STRING, "Filter by class name"},
+        NMO_OPT_DEF_CLASS_FILTER,
         {"--name",   "-n", NMO_OPT_STRING, "Filter by name pattern"},
         {"--depth",  "-d", NMO_OPT_UINT,   "Recursion depth (default: 4)"},
         {"--full",   NULL, NMO_OPT_FLAG,   "Full detail mode for text output (depth 8)"},
@@ -1030,14 +1030,14 @@ int nmo_cmd_object_export(int argc, char **argv, const nmo_cli_global_opts_t *gl
     enum { OPT_CLASS, OPT_NAME, OPT_DEPTH, OPT_FULL, OPT_ID, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *class_filter_str = vals[OPT_CLASS].present ? vals[OPT_CLASS].val.str : NULL;
-    const char *name_pattern     = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL;
+    const char *class_filter_str = nmo_opt_str(&vals[OPT_CLASS]);
+    const char *name_pattern     = nmo_opt_str(&vals[OPT_NAME]);
     int depth                    = vals[OPT_DEPTH].present ? (int)vals[OPT_DEPTH].val.u : -1;
-    bool full_mode               = vals[OPT_FULL].present && vals[OPT_FULL].val.flag;
-    uint32_t id_filter           = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0;
+    bool full_mode               = nmo_opt_flag(&vals[OPT_FULL]);
+    uint32_t id_filter           = nmo_opt_uint_or(&vals[OPT_ID], 0);
 
     nmo_cmd_ctx_t c;
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
@@ -1194,7 +1194,7 @@ int nmo_cmd_object_list_fields(int argc, char **argv,
     enum { OPT_ID, OPT_NAME, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
         return NMO_CLI_EXIT_ARG_ERROR;
 
@@ -1210,9 +1210,9 @@ int nmo_cmd_object_list_fields(int argc, char **argv,
 
     nmo_core_object_selector_t selector = {
         .has_id = vals[OPT_ID].present,
-        .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+        .id = nmo_opt_uint_or(&vals[OPT_ID], 0),
         .positional_id = positional_id,
-        .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+        .name = nmo_opt_str(&vals[OPT_NAME]),
         .selector_label = "Object",
         .type_label = "object",
     };
@@ -1231,19 +1231,19 @@ int nmo_cmd_object_list_fields(int argc, char **argv,
 static int object_list_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
 {
     static const nmo_opt_def_t opts[] = {
-        {"--class",   "-c", NMO_OPT_STRING, "Filter by class name"},
+        NMO_OPT_DEF_CLASS_FILTER,
         {"--sort",    "-s", NMO_OPT_STRING, "Sort by: id, name, class, size"},
         {"--reverse", "-r", NMO_OPT_FLAG,   "Reverse sort direction"},
         {"--top",     NULL, NMO_OPT_UINT,   "Show only first N results"},
     };
     nmo_opt_val_t vals[4];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, 4, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
     object_list_opts_t list_opts = {
-        .class_filter_str = vals[0].present ? vals[0].val.str : NULL,
-        .top_n = vals[3].present ? vals[3].val.u : 0,
+        .class_filter_str = nmo_opt_str(&vals[0]),
+        .top_n = nmo_opt_uint_or(&vals[3], 0),
     };
 
     nmo_object_query_t query = {0};
@@ -1288,16 +1288,16 @@ int nmo_cmd_object_list_class_in_session(nmo_cmd_ctx_t *ctx,
 static int object_find_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
 {
     static const nmo_opt_def_t opts[] = {
-        {"--class", "-c", NMO_OPT_STRING, "Filter by class name"},
+        NMO_OPT_DEF_CLASS_FILTER,
         {"--name",  "-n", NMO_OPT_STRING, "Filter by name pattern"},
     };
     nmo_opt_val_t vals[2];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, 2, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *class_filter_str = vals[0].present ? vals[0].val.str : NULL;
-    const char *name_filter      = vals[1].present ? vals[1].val.str : NULL;
+    const char *class_filter_str = nmo_opt_str(&vals[0]);
+    const char *name_filter      = nmo_opt_str(&vals[1]);
     if (!class_filter_str && !name_filter) {
         fprintf(stderr, "Error: At least one filter required (--name or --class)\n");
         return NMO_CLI_EXIT_ARG_ERROR;
@@ -1358,16 +1358,16 @@ static int object_selector_only_in_session(nmo_cmd_ctx_t *ctx,
     enum { OPT_ID, OPT_NAME, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
     bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
     const char *positional_id = (!has_selector_opt && r.pos_count == 1) ? r.pos_args[0] : NULL;
     nmo_core_object_selector_t selector = {
         .has_id = vals[OPT_ID].present,
-        .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+        .id = nmo_opt_uint_or(&vals[OPT_ID], 0),
         .positional_id = positional_id,
-        .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+        .name = nmo_opt_str(&vals[OPT_NAME]),
         .selector_label = label,
         .type_label = "object",
     };

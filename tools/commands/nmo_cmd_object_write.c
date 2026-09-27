@@ -532,13 +532,13 @@ int nmo_cmd_object_rename(int argc, char **argv, const nmo_cli_global_opts_t *gl
         {"--regex",   NULL, NMO_OPT_FLAG,   "Treat --name as POSIX regex instead of glob"},
         {"--class",   "-c", NMO_OPT_STRING, "Restrict to objects of this class"},
         {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview renames without saving"},
-        {"--output",  "-o", NMO_OPT_STRING, "Output file path"},
+        NMO_OPT_DEF_OUTPUT,
     };
     enum { OPT_NAME, OPT_TO, OPT_REGEX, OPT_CLASS, OPT_DRY_RUN, OPT_OUTPUT, OPT_COUNT };
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
         return NMO_CLI_EXIT_ARG_ERROR;
 
@@ -548,18 +548,17 @@ int nmo_cmd_object_rename(int argc, char **argv, const nmo_cli_global_opts_t *gl
             ? r.pos_args[r.pos_count - 1] : NULL;
         return nmo_cmd_object_rename_batch(
             vals[OPT_NAME].val.str,
-            vals[OPT_TO].present ? vals[OPT_TO].val.str : NULL,
-            vals[OPT_REGEX].present && vals[OPT_REGEX].val.flag,
-            vals[OPT_CLASS].present ? vals[OPT_CLASS].val.str : NULL,
-            vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
-            vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
+            nmo_opt_str(&vals[OPT_TO]),
+            nmo_opt_flag(&vals[OPT_REGEX]),
+            nmo_opt_str(&vals[OPT_CLASS]),
+            nmo_opt_flag(&vals[OPT_DRY_RUN]),
+            nmo_opt_str(&vals[OPT_OUTPUT]),
             file_path,
             global);
     }
 
     /* Single mode: <id> <new_name> <file> -o <output> */
-    const char *output_path = vals[OPT_OUTPUT].present
-        ? vals[OPT_OUTPUT].val.str : NULL;
+    const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
     if (!output_path) {
         fprintf(stderr, "Error: Output file not specified (use -o or --output)\n");
         return NMO_CLI_EXIT_ARG_ERROR;
@@ -612,7 +611,7 @@ int nmo_cmd_object_rename_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
         {"--regex",   NULL, NMO_OPT_FLAG,   "Treat --name as POSIX regex instead of glob"},
         {"--class",   "-c", NMO_OPT_STRING, "Restrict to objects of this class"},
         {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview renames without saving"},
-        {"--output",  "-o", NMO_OPT_STRING, "Output file path"},
+        NMO_OPT_DEF_OUTPUT,
     };
     enum { OPT_NAME, OPT_TO, OPT_REGEX, OPT_CLASS, OPT_DRY_RUN, OPT_OUTPUT, OPT_COUNT };
 
@@ -622,7 +621,7 @@ int nmo_cmd_object_rename_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }
@@ -630,7 +629,7 @@ int nmo_cmd_object_rename_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    bool dry_run = vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag;
+    bool dry_run = nmo_opt_flag(&vals[OPT_DRY_RUN]);
     if (result != NULL) {
         result->dry_run = dry_run;
     }
@@ -648,8 +647,8 @@ int nmo_cmd_object_rename_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
         object_rename_batch_args_t args = {
             .name_pattern = vals[OPT_NAME].val.str,
             .to_template = vals[OPT_TO].val.str,
-            .use_regex = vals[OPT_REGEX].present && vals[OPT_REGEX].val.flag,
-            .class_filter = vals[OPT_CLASS].present ? vals[OPT_CLASS].val.str : NULL,
+            .use_regex = nmo_opt_flag(&vals[OPT_REGEX]),
+            .class_filter = nmo_opt_str(&vals[OPT_CLASS]),
         };
         int rc = object_rename_batch_mutate(ctx, dry_run, NULL, &args);
         if (rc == NMO_CLI_EXIT_SUCCESS) {
@@ -1154,11 +1153,11 @@ static int object_delete_report(
 int nmo_cmd_object_delete(int argc, char **argv, const nmo_cli_global_opts_t *global)
 {
     static const nmo_opt_def_t opts[] = {
-        {"--output",  "-o", NMO_OPT_STRING, "Output file (required unless --dry-run)"},
+        NMO_OPT_DEF_WRITE_OUTPUT,
         {"--class",   "-c", NMO_OPT_STRING, "Filter by class (includes derived)"},
         {"--name",    "-n", NMO_OPT_STRING, "Filter by name wildcard pattern"},
         {"--cascade", NULL, NMO_OPT_FLAG,   "Delete dependents (default: safe-detach)"},
-        {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview only, do not save"},
+        NMO_OPT_DEF_DRY_RUN,
         {"--strict",  NULL, NMO_OPT_FLAG,   "Fail if any ID not found"},
     };
     enum { OPT_OUTPUT, OPT_CLASS, OPT_NAME, OPT_CASCADE,
@@ -1166,14 +1165,14 @@ int nmo_cmd_object_delete(int argc, char **argv, const nmo_cli_global_opts_t *gl
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
         return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
-    bool cascade  = vals[OPT_CASCADE].present && vals[OPT_CASCADE].val.flag;
-    bool dry_run  = vals[OPT_DRYRUN].present  && vals[OPT_DRYRUN].val.flag;
-    bool strict   = vals[OPT_STRICT].present  && vals[OPT_STRICT].val.flag;
+    const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
+    bool cascade  = nmo_opt_flag(&vals[OPT_CASCADE]);
+    bool dry_run  = nmo_opt_flag(&vals[OPT_DRYRUN]);
+    bool strict   = nmo_opt_flag(&vals[OPT_STRICT]);
     bool use_filter = vals[OPT_CLASS].present || vals[OPT_NAME].present;
 
     if (!dry_run && !output_path) {
@@ -1208,8 +1207,8 @@ int nmo_cmd_object_delete(int argc, char **argv, const nmo_cli_global_opts_t *gl
     }
 
     object_delete_args_t args = {
-        .class_name = vals[OPT_CLASS].present ? vals[OPT_CLASS].val.str : NULL,
-        .name_wildcard = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+        .class_name = nmo_opt_str(&vals[OPT_CLASS]),
+        .name_wildcard = nmo_opt_str(&vals[OPT_NAME]),
         .id_args = r.pos_args,
         .id_arg_count = r.pos_count > 0 ? r.pos_count - 1 : 0,
         .use_filter = use_filter,
@@ -1238,11 +1237,11 @@ int nmo_cmd_object_delete_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
                                      nmo_cmd_in_session_result_t *result)
 {
     static const nmo_opt_def_t opts[] = {
-        {"--output",  "-o", NMO_OPT_STRING, "Output file (required unless --dry-run)"},
+        NMO_OPT_DEF_WRITE_OUTPUT,
         {"--class",   "-c", NMO_OPT_STRING, "Filter by class (includes derived)"},
         {"--name",    "-n", NMO_OPT_STRING, "Filter by name wildcard pattern"},
         {"--cascade", NULL, NMO_OPT_FLAG,   "Delete dependents (default: safe-detach)"},
-        {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview only, do not save"},
+        NMO_OPT_DEF_DRY_RUN,
         {"--strict",  NULL, NMO_OPT_FLAG,   "Fail if any ID not found"},
     };
     enum { OPT_OUTPUT, OPT_CLASS, OPT_NAME, OPT_CASCADE,
@@ -1254,7 +1253,7 @@ int nmo_cmd_object_delete_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }
@@ -1262,7 +1261,7 @@ int nmo_cmd_object_delete_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
     bool use_filter = vals[OPT_CLASS].present || vals[OPT_NAME].present;
     if (!use_filter && r.pos_count == 0) {
         fprintf(stderr, "Usage: object delete [options] <id>[,<id>,...]\n");
@@ -1273,13 +1272,13 @@ int nmo_cmd_object_delete_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
     }
 
     object_delete_args_t args = {
-        .class_name = vals[OPT_CLASS].present ? vals[OPT_CLASS].val.str : NULL,
-        .name_wildcard = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+        .class_name = nmo_opt_str(&vals[OPT_CLASS]),
+        .name_wildcard = nmo_opt_str(&vals[OPT_NAME]),
         .id_args = r.pos_args,
         .id_arg_count = r.pos_count,
         .use_filter = use_filter,
-        .cascade = vals[OPT_CASCADE].present && vals[OPT_CASCADE].val.flag,
-        .strict = vals[OPT_STRICT].present && vals[OPT_STRICT].val.flag,
+        .cascade = nmo_opt_flag(&vals[OPT_CASCADE]),
+        .strict = nmo_opt_flag(&vals[OPT_STRICT]),
     };
     int rc = object_delete_mutate(ctx, dry_run, NULL, &args);
     if (rc == NMO_CLI_EXIT_SUCCESS) {
@@ -1432,24 +1431,24 @@ static int parse_object_type_guid_arg(const char *guid_str, nmo_guid_t *out_guid
 int nmo_cmd_object_create(int argc, char **argv, const nmo_cli_global_opts_t *global)
 {
     static const nmo_opt_def_t opts[] = {
-        {"--output",    "-o", NMO_OPT_STRING, "Output file (required unless --dry-run)"},
+        NMO_OPT_DEF_WRITE_OUTPUT,
         {"--class",     "-c", NMO_OPT_STRING, "Class name (required)"},
         {"--name",      "-n", NMO_OPT_STRING, "Object name"},
         {"--type-guid", NULL, NMO_OPT_STRING, "Type GUID (d1,d2 format)"},
-        {"--dry-run",   NULL, NMO_OPT_FLAG,   "Preview without saving"},
+        NMO_OPT_DEF_DRY_RUN,
     };
     enum { OPT_OUTPUT, OPT_CLASS, OPT_NAME, OPT_TYPE_GUID, OPT_DRYRUN, OPT_COUNT };
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
         return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
-    const char *class_str   = vals[OPT_CLASS].present  ? vals[OPT_CLASS].val.str  : NULL;
-    const char *name        = vals[OPT_NAME].present   ? vals[OPT_NAME].val.str   : NULL;
-    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
+    const char *class_str   = nmo_opt_str(&vals[OPT_CLASS]);
+    const char *name        = nmo_opt_str(&vals[OPT_NAME]);
+    bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
 
     if (!dry_run && !output_path) {
         fprintf(stderr, "Error: -o/--output is required (or use --dry-run)\n");
@@ -1509,11 +1508,11 @@ int nmo_cmd_object_create_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
                                      nmo_cmd_in_session_result_t *result)
 {
     static const nmo_opt_def_t opts[] = {
-        {"--output",    "-o", NMO_OPT_STRING, "Output file (required unless --dry-run)"},
+        NMO_OPT_DEF_WRITE_OUTPUT,
         {"--class",     "-c", NMO_OPT_STRING, "Class name (required)"},
         {"--name",      "-n", NMO_OPT_STRING, "Object name"},
         {"--type-guid", NULL, NMO_OPT_STRING, "Type GUID (d1,d2 format)"},
-        {"--dry-run",   NULL, NMO_OPT_FLAG,   "Preview without saving"},
+        NMO_OPT_DEF_DRY_RUN,
     };
     enum { OPT_OUTPUT, OPT_CLASS, OPT_NAME, OPT_TYPE_GUID, OPT_DRYRUN, OPT_COUNT };
 
@@ -1523,7 +1522,7 @@ int nmo_cmd_object_create_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }
@@ -1535,7 +1534,7 @@ int nmo_cmd_object_create_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    const char *class_str = vals[OPT_CLASS].present ? vals[OPT_CLASS].val.str : NULL;
+    const char *class_str = nmo_opt_str(&vals[OPT_CLASS]);
     if (class_str == NULL) {
         fprintf(stderr, "Error: --class/-c is required\n");
         return NMO_CLI_EXIT_ARG_ERROR;
@@ -1543,20 +1542,20 @@ int nmo_cmd_object_create_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
 
     nmo_guid_t type_guid = NMO_GUID_NULL;
     int guid_rc = parse_object_type_guid_arg(
-        vals[OPT_TYPE_GUID].present ? vals[OPT_TYPE_GUID].val.str : NULL,
+        nmo_opt_str(&vals[OPT_TYPE_GUID]),
         &type_guid);
     if (guid_rc != NMO_CLI_EXIT_SUCCESS) {
         return guid_rc;
     }
 
-    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
     if (result != NULL) {
         result->dry_run = dry_run;
     }
 
     object_create_args_t args = {
         .class_str = class_str,
-        .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+        .name = nmo_opt_str(&vals[OPT_NAME]),
         .type_guid = type_guid,
     };
     if (dry_run) {
@@ -1776,23 +1775,23 @@ static int object_copy_report(
 int nmo_cmd_object_copy(int argc, char **argv, const nmo_cli_global_opts_t *global)
 {
     static const nmo_opt_def_t opts[] = {
-        {"--output",  "-o", NMO_OPT_STRING, "Output file (required unless --dry-run)"},
+        NMO_OPT_DEF_WRITE_OUTPUT,
         {"--class",   "-c", NMO_OPT_STRING, "Filter by class (includes derived)"},
         {"--name",    "-n", NMO_OPT_STRING, "Filter by name wildcard pattern"},
         {"--cascade", NULL, NMO_OPT_FLAG,   "Copy dependents"},
-        {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview without saving"},
+        NMO_OPT_DEF_DRY_RUN,
     };
     enum { OPT_OUTPUT, OPT_CLASS, OPT_NAME, OPT_CASCADE, OPT_DRYRUN, OPT_COUNT };
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
         return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
-    bool cascade   = vals[OPT_CASCADE].present && vals[OPT_CASCADE].val.flag;
-    bool dry_run   = vals[OPT_DRYRUN].present  && vals[OPT_DRYRUN].val.flag;
+    const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
+    bool cascade   = nmo_opt_flag(&vals[OPT_CASCADE]);
+    bool dry_run   = nmo_opt_flag(&vals[OPT_DRYRUN]);
     bool use_filter = vals[OPT_CLASS].present || vals[OPT_NAME].present;
 
     if (!dry_run && !output_path) {
@@ -1807,8 +1806,8 @@ int nmo_cmd_object_copy(int argc, char **argv, const nmo_cli_global_opts_t *glob
     }
 
     object_copy_args_t args = {
-        .class_name = vals[OPT_CLASS].present ? vals[OPT_CLASS].val.str : NULL,
-        .name_wildcard = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+        .class_name = nmo_opt_str(&vals[OPT_CLASS]),
+        .name_wildcard = nmo_opt_str(&vals[OPT_NAME]),
         .id_args = r.pos_args,
         .id_arg_count = r.pos_count > 0 ? r.pos_count - 1 : 0,
         .use_filter = use_filter,
@@ -1836,11 +1835,11 @@ int nmo_cmd_object_copy_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
                                    nmo_cmd_in_session_result_t *result)
 {
     static const nmo_opt_def_t opts[] = {
-        {"--output",  "-o", NMO_OPT_STRING, "Output file (required unless --dry-run)"},
+        NMO_OPT_DEF_WRITE_OUTPUT,
         {"--class",   "-c", NMO_OPT_STRING, "Filter by class (includes derived)"},
         {"--name",    "-n", NMO_OPT_STRING, "Filter by name wildcard pattern"},
         {"--cascade", NULL, NMO_OPT_FLAG,   "Copy dependents"},
-        {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview without saving"},
+        NMO_OPT_DEF_DRY_RUN,
     };
     enum { OPT_OUTPUT, OPT_CLASS, OPT_NAME, OPT_CASCADE, OPT_DRYRUN, OPT_COUNT };
 
@@ -1850,7 +1849,7 @@ int nmo_cmd_object_copy_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }
@@ -1858,7 +1857,7 @@ int nmo_cmd_object_copy_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
     bool use_filter = vals[OPT_CLASS].present || vals[OPT_NAME].present;
     if (!use_filter && r.pos_count == 0) {
         fprintf(stderr, "Usage: object copy [options] <id>[,<id>,...]\n");
@@ -1869,12 +1868,12 @@ int nmo_cmd_object_copy_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
     }
 
     object_copy_args_t args = {
-        .class_name = vals[OPT_CLASS].present ? vals[OPT_CLASS].val.str : NULL,
-        .name_wildcard = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+        .class_name = nmo_opt_str(&vals[OPT_CLASS]),
+        .name_wildcard = nmo_opt_str(&vals[OPT_NAME]),
         .id_args = r.pos_args,
         .id_arg_count = r.pos_count,
         .use_filter = use_filter,
-        .cascade = vals[OPT_CASCADE].present && vals[OPT_CASCADE].val.flag,
+        .cascade = nmo_opt_flag(&vals[OPT_CASCADE]),
     };
 
     int rc = NMO_CLI_EXIT_SUCCESS;
@@ -1979,7 +1978,7 @@ int nmo_cmd_object_import(int argc, char **argv, const nmo_cli_global_opts_t *gl
 {
     static const nmo_opt_def_t opts[] = {
         {"--format",  "-f", NMO_OPT_STRING, "Input format (json)"},
-        {"--output",  "-o", NMO_OPT_STRING, "Output file (required unless --dry-run)"},
+        NMO_OPT_DEF_WRITE_OUTPUT,
         {"--create",  NULL, NMO_OPT_FLAG,   "Create objects not found by ID"},
         {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview changes without saving"},
     };
@@ -1987,14 +1986,14 @@ int nmo_cmd_object_import(int argc, char **argv, const nmo_cli_global_opts_t *gl
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
         return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
-    const char *input_format = vals[OPT_FORMAT].present ? vals[OPT_FORMAT].val.str : NULL;
-    bool create  = vals[OPT_CREATE].present && vals[OPT_CREATE].val.flag;
-    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
+    const char *input_format = nmo_opt_str(&vals[OPT_FORMAT]);
+    bool create  = nmo_opt_flag(&vals[OPT_CREATE]);
+    bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
 
     if (!input_format ||
         (!nmo_tool_streq_ci(input_format, "json") &&
@@ -2127,8 +2126,8 @@ int nmo_cmd_object_set_field(int argc, char **argv,
                              const nmo_cli_global_opts_t *global)
 {
     static const nmo_opt_def_t opts[] = {
-        {"--output",  "-o", NMO_OPT_STRING, "Output file"},
-        {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview without saving"},
+        NMO_OPT_DEF_OUTPUT,
+        NMO_OPT_DEF_DRY_RUN,
         {"--id",      "-i", NMO_OPT_UINT,   "Object ID"},
         {"--name",    "-n", NMO_OPT_STRING, "Object name"},
     };
@@ -2136,12 +2135,12 @@ int nmo_cmd_object_set_field(int argc, char **argv,
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
         return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *output = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
-    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    const char *output = nmo_opt_str(&vals[OPT_OUTPUT]);
+    bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
 
     if (!dry_run && !output) {
         fprintf(stderr, "Error: -o required (or use --dry-run)\n");
@@ -2171,9 +2170,9 @@ int nmo_cmd_object_set_field(int argc, char **argv,
     object_set_field_args_t args = {
         .selector = {
             .has_id = vals[OPT_ID].present,
-            .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+            .id = nmo_opt_uint_or(&vals[OPT_ID], 0),
             .positional_id = positional_id,
-            .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+            .name = nmo_opt_str(&vals[OPT_NAME]),
             .selector_label = "Object",
             .type_label = "object",
         },

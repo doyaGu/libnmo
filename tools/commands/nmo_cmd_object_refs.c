@@ -195,7 +195,7 @@ static int object_refs_parse(int argc, char **argv, bool expect_file_operand,
     enum { OPT_ID, OPT_NAME, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
     bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
@@ -222,8 +222,8 @@ static int object_refs_parse(int argc, char **argv, bool expect_file_operand,
     }
 
     args->has_id = vals[OPT_ID].present;
-    args->id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0;
-    args->name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL;
+    args->id = nmo_opt_uint_or(&vals[OPT_ID], 0);
+    args->name = nmo_opt_str(&vals[OPT_NAME]);
     return NMO_CLI_EXIT_SUCCESS;
 }
 
@@ -512,12 +512,12 @@ static int object_orphans_parse(int argc, char **argv, bool expect_file_operand,
     memset(args, 0, sizeof(*args));
 
     static const nmo_opt_def_t opts[] = {
-        {"--class", "-c", NMO_OPT_STRING, "Filter by class name"},
+        NMO_OPT_DEF_CLASS_FILTER,
     };
     enum { OPT_CLASS };
     nmo_opt_val_t vals[1];
     const char *pos_arr[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos_arr, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos_arr);
     if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
     if (!expect_file_operand && r.pos_count != 0) {
@@ -526,7 +526,7 @@ static int object_orphans_parse(int argc, char **argv, bool expect_file_operand,
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    args->class_filter_str = vals[OPT_CLASS].present ? vals[OPT_CLASS].val.str : NULL;
+    args->class_filter_str = nmo_opt_str(&vals[OPT_CLASS]);
     return NMO_CLI_EXIT_SUCCESS;
 }
 
@@ -670,7 +670,7 @@ static int object_cycles_parse(int argc, char **argv, bool expect_file_operand,
                                const char *usage) {
     nmo_opt_val_t vals[1];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, NULL, 0, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
     if (!expect_file_operand && r.pos_count != 0) {
@@ -867,7 +867,7 @@ static int object_graph_parse(int argc, char **argv, bool expect_file_operand,
     enum { OPT_DOT, OPT_KIND };
     nmo_opt_val_t vals[2];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, 2, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
     if (!expect_file_operand && r.pos_count != 0) {
@@ -876,8 +876,8 @@ static int object_graph_parse(int argc, char **argv, bool expect_file_operand,
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    args->dot_mode = vals[OPT_DOT].present && vals[OPT_DOT].val.flag;
-    args->kind_str = vals[OPT_KIND].present ? vals[OPT_KIND].val.str : NULL;
+    args->dot_mode = nmo_opt_flag(&vals[OPT_DOT]);
+    args->kind_str = nmo_opt_str(&vals[OPT_KIND]);
     return NMO_CLI_EXIT_SUCCESS;
 }
 
