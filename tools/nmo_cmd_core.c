@@ -694,6 +694,29 @@ void nmo_field_set_result_free(nmo_field_set_result_t *result)
     *result = (nmo_field_set_result_t){0};
 }
 
+bool nmo_field_set_result_add(nmo_field_set_result_t *result,
+                              const char *field_name,
+                              char *old_value, char *new_value)
+{
+    nmo_field_set_change_t *changes = NULL;
+    if (result != NULL && old_value != NULL && new_value != NULL) {
+        changes = (nmo_field_set_change_t *)realloc(
+            result->changes, (result->applied + 1) * sizeof(*changes));
+    }
+    if (changes == NULL) {
+        free(old_value);
+        free(new_value);
+        return false;
+    }
+    result->changes = changes;
+    changes[result->applied++] = (nmo_field_set_change_t){
+        .field_name = field_name,
+        .old_value = old_value,
+        .new_value = new_value,
+    };
+    return true;
+}
+
 /* "id", "dry_run" and "changes" in JSON; "<label> #<id>:" and the change
  * lines in text. */
 static nmo_cli_record_t *nmo_core_field_set_record(

@@ -331,6 +331,16 @@ int nmo_core_set_fields(
 void nmo_field_set_result_free(nmo_field_set_result_t *result);
 
 /**
+ * @brief Append one applied change to a result.
+ *
+ * Takes ownership of @p old_value and @p new_value. Fails, freeing both,
+ * when either is NULL or on out of memory.
+ */
+bool nmo_field_set_result_add(nmo_field_set_result_t *result,
+                              const char *field_name,
+                              char *old_value, char *new_value);
+
+/**
  * @brief Text preview of a field set: "<label> #<id>:" and one
  * "  field: old -> new" line per applied change. Prints nothing in JSON mode.
  *
