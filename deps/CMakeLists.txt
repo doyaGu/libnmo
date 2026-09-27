@@ -3,15 +3,31 @@ set(NMO_DEPS_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
 set(NMO_MINIZ_DIR "${NMO_DEPS_ROOT}/miniz")
 if(EXISTS "${NMO_MINIZ_DIR}/miniz.h")
     message(STATUS "Using bundled miniz from: ${NMO_MINIZ_DIR}")
-    if(NOT TARGET miniz)
-        add_subdirectory("${NMO_MINIZ_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/miniz" EXCLUDE_FROM_ALL)
-    endif()
-    if(TARGET miniz)
-        if(MSVC)
-            target_compile_options(miniz PRIVATE /w)
-        else()
-            target_compile_options(miniz PRIVATE -w)
-        endif()
+    # miniz is compiled into libnmo like yyjson and Lua, so an installed libnmo
+    # needs no separate miniz archive. miniz.h includes the export header its
+    # own CMake project would generate; linked in-tree, the macro is empty.
+    set(NMO_MINIZ_EXPORT_DIR "${CMAKE_CURRENT_BINARY_DIR}/miniz")
+    file(WRITE "${NMO_MINIZ_EXPORT_DIR}/miniz_export.h.in"
+        "#ifndef MINIZ_EXPORT_H\n#define MINIZ_EXPORT_H\n#define MINIZ_EXPORT\n#endif\n")
+    configure_file("${NMO_MINIZ_EXPORT_DIR}/miniz_export.h.in"
+        "${NMO_MINIZ_EXPORT_DIR}/miniz_export.h" COPYONLY)
+    add_library(nmo_miniz_objects OBJECT
+        "${NMO_MINIZ_DIR}/miniz.c"
+        "${NMO_MINIZ_DIR}/miniz_tdef.c"
+        "${NMO_MINIZ_DIR}/miniz_tinfl.c"
+        "${NMO_MINIZ_DIR}/miniz_zip.c"
+    )
+    target_include_directories(nmo_miniz_objects PUBLIC
+        "${NMO_MINIZ_DIR}"
+        "${NMO_MINIZ_EXPORT_DIR}"
+    )
+    target_compile_definitions(nmo_miniz_objects PRIVATE $<$<C_COMPILER_ID:GNU>:_GNU_SOURCE>)
+    set_target_properties(nmo_miniz_objects PROPERTIES
+        POSITION_INDEPENDENT_CODE ${NMO_BUILD_SHARED})
+    if(MSVC)
+        target_compile_options(nmo_miniz_objects PRIVATE /w)
+    else()
+        target_compile_options(nmo_miniz_objects PRIVATE -w)
     endif()
 else()
     message(FATAL_ERROR "Bundled miniz not found at ${NMO_MINIZ_DIR}")
@@ -93,5 +109,6 @@ if(NOT TARGET lua::lua)
 endif()
 
 set(NMO_MINIZ_DIR "${NMO_MINIZ_DIR}" PARENT_SCOPE)
+set(NMO_MINIZ_EXPORT_DIR "${NMO_MINIZ_EXPORT_DIR}" PARENT_SCOPE)
 set(NMO_YYJSON_DIR "${NMO_YYJSON_DIR}" PARENT_SCOPE)
 set(NMO_LUA_DIR "${NMO_LUA_DIR}" PARENT_SCOPE)

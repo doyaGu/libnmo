@@ -92,8 +92,7 @@ endif()
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/deps" "${CMAKE_CURRENT_BINARY_DIR}/deps" EXCLUDE_FROM_ALL)
 
 set(ZLIB_FOUND TRUE)
-set(ZLIB_INCLUDE_DIRS "${NMO_MINIZ_DIR}")
-set(ZLIB_LIBRARIES miniz)
+set(ZLIB_INCLUDE_DIRS "${NMO_MINIZ_DIR}" "${NMO_MINIZ_EXPORT_DIR}")
 
 set(YYJSON_FOUND TRUE)
 set(YYJSON_INCLUDE_DIRS "${NMO_YYJSON_DIR}/src")
@@ -412,8 +411,8 @@ endif()
 
 target_compile_definitions(nmo PUBLIC $<$<CONFIG:Debug>:NMO_ENABLE_DEBUG_ASSERTS>)
 
-# Link dependencies
-target_link_libraries(nmo PUBLIC ${ZLIB_LIBRARIES})
+# Link dependencies: miniz is compiled into the library itself.
+target_sources(nmo PRIVATE $<TARGET_OBJECTS:nmo_miniz_objects>)
 if(NMO_BUILD_SHARED)
     target_link_libraries(nmo PRIVATE lua::lua)
 endif()
