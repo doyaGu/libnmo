@@ -33,7 +33,8 @@ typedef enum record_kind {
     RECORD_STR_LIST,
     RECORD_ARRAY,
     RECORD_OBJECT,
-    RECORD_JSON
+    RECORD_JSON,
+    RECORD_TEXT_FN
 } record_kind_t;
 
 struct nmo_cli_record_array {
@@ -72,6 +73,7 @@ typedef struct record_field {
     nmo_cli_record_t *object;      /* RECORD_OBJECT; heap-allocated too */
     nmo_cli_record_json_fn json_fn; /* RECORD_JSON */
     const void *json_data;         /* RECORD_JSON; borrowed */
+    nmo_cli_record_text_fn text_fn; /* RECORD_TEXT_FN; data in json_data */
 } record_field_t;
 
 struct nmo_cli_record {
@@ -807,6 +809,21 @@ bool nmo_cli_record_json(nmo_cli_record_t *record, nmo_cli_record_json_fn fn,
     return true;
 }
 
+bool nmo_cli_record_text_splice(nmo_cli_record_t *record,
+                                nmo_cli_record_text_fn fn, const void *data)
+{
+    if (!fn) {
+        return false;
+    }
+    record_field_t *field = field_append(record, RECORD_TEXT_FN, NULL, NULL);
+    if (!field) {
+        return false;
+    }
+    field->text_fn = fn;
+    field->json_data = data;
+    return true;
+}
+
 size_t nmo_cli_record_array_count(const nmo_cli_record_array_t *array)
 {
     return array ? array->count : 0u;
@@ -935,6 +952,7 @@ bool nmo_cli_record_to_json(const nmo_cli_record_t *record,
             break;
         case RECORD_RAW:
         case RECORD_HEADING:
+        case RECORD_TEXT_FN:
             break;
         case RECORD_BYTES:
             /* The prefix is all that was kept; max_bytes = its length keeps
@@ -1114,6 +1132,10 @@ void nmo_cli_record_print_kv(const nmo_cli_record_t *record, FILE *out,
             continue;
         }
         if (field->kind == RECORD_JSON) {
+            continue;
+        }
+        if (field->kind == RECORD_TEXT_FN) {
+            field->text_fn(out, colorize, field->json_data);
             continue;
         }
         if (field->kind == RECORD_ARRAY) {

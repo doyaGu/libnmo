@@ -1,7 +1,7 @@
 /**
  * @file test_cli_record.c
- * @brief Tests for nested objects, JSON splices, arrays, tables, titles,
- *        integer lists, and key widths in CLI records
+ * @brief Tests for nested objects, JSON and text splices, arrays, tables,
+ *        titles, integer lists, and key widths in CLI records
  */
 
 #include "test_framework.h"
@@ -58,6 +58,11 @@ static bool splice_fail(yyjson_mut_doc *doc, yyjson_mut_val *obj,
     (void)obj;
     (void)data;
     return false;
+}
+
+static void splice_text(FILE *out, bool colorize, const void *data)
+{
+    fprintf(out, "[%s%s]\n", (const char *)data, colorize ? " color" : "");
 }
 
 TEST(cli_record, object_nests_json_and_inlines_text)
@@ -120,6 +125,23 @@ TEST(cli_record, json_splice_failure_fails_render)
     ASSERT_TRUE(nmo_cli_record_json(rec, splice_fail, NULL));
     char *json = record_json(rec);
     ASSERT_NULL(json);
+    nmo_cli_record_free(rec);
+}
+
+TEST(cli_record, text_splice_runs_in_order_and_skips_json)
+{
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    ASSERT_TRUE(nmo_cli_record_uint(rec, "first", "First", 1));
+    ASSERT_TRUE(nmo_cli_record_text_splice(rec, splice_text, "mid"));
+    ASSERT_TRUE(nmo_cli_record_uint(rec, "last", "Last", 2));
+    ASSERT_FALSE(nmo_cli_record_text_splice(rec, NULL, NULL));
+
+    char *json = record_json(rec);
+    ASSERT_STR_EQ(json, "{\"first\":1,\"last\":2}");
+    char *text = record_text(rec, 0);
+    ASSERT_STR_EQ(text, "First: 1\n[mid]\nLast: 2\n");
+    free(json);
+    free(text);
     nmo_cli_record_free(rec);
 }
 
@@ -294,6 +316,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli_record, object_without_key_is_text_only);
     REGISTER_TEST(cli_record, json_splice_runs_in_order_and_skips_text);
     REGISTER_TEST(cli_record, json_splice_failure_fails_render);
+    REGISTER_TEST(cli_record, text_splice_runs_in_order_and_skips_json);
     REGISTER_TEST(cli_record, array_omit_heading_prints_summaries_only);
     REGISTER_TEST(cli_record, array_inline_items_print_item_fields);
     REGISTER_TEST(cli_record, title_has_no_leading_blank_line);

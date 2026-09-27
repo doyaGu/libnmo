@@ -251,6 +251,17 @@ typedef bool (*nmo_cli_record_json_fn)(yyjson_mut_doc *doc,
 bool nmo_cli_record_json(nmo_cli_record_t *record, nmo_cli_record_json_fn fn,
                          const void *data);
 
+/**
+ * Text-only splice: while printing text, `fn` is called to write to `out` at
+ * this position. Use it for output that an existing helper streams itself.
+ * `data` is borrowed and must stay valid until the record has been rendered.
+ * Absent from JSON and table cells.
+ */
+typedef void (*nmo_cli_record_text_fn)(FILE *out, bool colorize,
+                                       const void *data);
+bool nmo_cli_record_text_splice(nmo_cli_record_t *record,
+                                nmo_cli_record_text_fn fn, const void *data);
+
 /* Rendering */
 
 /** Add every JSON-visible field to `obj` in insertion order. */
