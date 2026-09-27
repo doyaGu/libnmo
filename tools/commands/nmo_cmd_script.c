@@ -66,18 +66,14 @@ static bool parse_script_graph_args(int argc,
 {
     static const nmo_opt_def_t opts[] = {
         {"--dot", NULL, NMO_OPT_FLAG, "Emit DOT graph output"},
-        {"--depth", "-d", NMO_OPT_UINT, "Recursion depth (default: unlimited)"},
+        NMO_OPT_DEF_DEPTH,
         {"--id", "-i", NMO_OPT_UINT, "Script root behavior object ID"},
         {"--name", "-n", NMO_OPT_STRING, "Script root behavior name"},
     };
     enum { OPT_DOT, OPT_DEPTH, OPT_ID, OPT_NAME, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t result = {
-        .vals = vals,
-        .pos_args = pos,
-        .pos_capacity = 16
-    };
+    nmo_opt_result_t result = NMO_OPT_RESULT(vals, pos);
     bool has_selector_opt = false;
     const char *positional_id = NULL;
     const char *file_path = NULL;
@@ -108,9 +104,9 @@ static bool parse_script_graph_args(int argc,
     if (out_selector) {
         *out_selector = (nmo_core_object_selector_t){
             .has_id = vals[OPT_ID].present,
-            .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+            .id = nmo_opt_uint_or(&vals[OPT_ID], 0),
             .positional_id = positional_id,
-            .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+            .name = nmo_opt_str(&vals[OPT_NAME]),
             .required_base_class = NMO_CID_BEHAVIOR,
             .selector_label = "Script root",
             .type_label = "CKBehavior"
@@ -123,7 +119,7 @@ static bool parse_script_graph_args(int argc,
         *out_dot = vals[OPT_DOT].val.flag;
     }
     if (out_depth) {
-        *out_depth = vals[OPT_DEPTH].present ? vals[OPT_DEPTH].val.u : UINT32_MAX;
+        *out_depth = nmo_opt_uint_or(&vals[OPT_DEPTH], UINT32_MAX);
     }
 
     return true;
@@ -2388,17 +2384,13 @@ int nmo_cmd_script_run(int argc,
         .should_save = script_run_should_save,
     };
     static const nmo_opt_def_t opts[] = {
-        {"--output", "-o", NMO_OPT_STRING, "Output file"},
-        {"--dry-run", NULL, NMO_OPT_FLAG, "Preview only"},
+        NMO_OPT_DEF_OUTPUT,
+        NMO_OPT_DEF_DRY_RUN,
     };
     enum { OPT_OUTPUT, OPT_DRY_RUN, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t result = {
-        .vals = vals,
-        .pos_args = pos,
-        .pos_capacity = 16
-    };
+    nmo_opt_result_t result = NMO_OPT_RESULT(vals, pos);
     script_run_args_t args = {0};
     int rc = 0;
 
@@ -2412,8 +2404,8 @@ int nmo_cmd_script_run(int argc,
 
     args.script_path = result.pos_args[0];
     rc = nmo_cli_run_write_command(result.pos_args[1],
-                                   vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
-                                   vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
+                                   nmo_opt_str(&vals[OPT_OUTPUT]),
+                                   nmo_opt_flag(&vals[OPT_DRY_RUN]),
                                    global,
                                    &spec,
                                    script_run_mutate,
@@ -3347,8 +3339,8 @@ int nmo_cmd_script_node(int argc, char **argv, const nmo_cli_global_opts_t *glob
              "Explicit manager GUID for manager entry lookup"},
             {"--manager-entry-key", NULL, NMO_OPT_STRING,
              "Manager entry lookup/create key"},
-            {"--output", "-o", NMO_OPT_STRING, "Output file"},
-            {"--dry-run", NULL, NMO_OPT_FLAG, "Preview only"},
+            NMO_OPT_DEF_OUTPUT,
+            NMO_OPT_DEF_DRY_RUN,
         };
         enum {
             OPT_PARENT,
@@ -3364,7 +3356,7 @@ int nmo_cmd_script_node(int argc, char **argv, const nmo_cli_global_opts_t *glob
         };
         nmo_opt_val_t vals[OPT_COUNT];
         const char *pos[16];
-        nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+        nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
         script_node_add_args_t args = {0};
         if (nmo_opt_parse(argc - 1, argv + 1, opts, OPT_COUNT, &r) < 0 ||
             !vals[OPT_PARENT].present || !vals[OPT_BB_GUID].present ||
@@ -3373,7 +3365,7 @@ int nmo_cmd_script_node(int argc, char **argv, const nmo_cli_global_opts_t *glob
         }
         args.parent_id = vals[OPT_PARENT].val.u;
         args.bb_guid = nmo_guid_parse(vals[OPT_BB_GUID].val.str);
-        args.name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL;
+        args.name = nmo_opt_str(&vals[OPT_NAME]);
         args.manager_entry = nmo_manager_entry_options_default();
         args.has_manager_entry =
             vals[OPT_MANAGER_ENTRY_POLICY].present ||
@@ -3407,8 +3399,8 @@ int nmo_cmd_script_node(int argc, char **argv, const nmo_cli_global_opts_t *glob
         }
         return behavior_execute_cli_run_write_command(
             r.pos_args[0],
-            vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
-            vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
+            nmo_opt_str(&vals[OPT_OUTPUT]),
+            nmo_opt_flag(&vals[OPT_DRY_RUN]),
             global,
             &spec,
             "script node add",
@@ -3425,13 +3417,13 @@ int nmo_cmd_script_node(int argc, char **argv, const nmo_cli_global_opts_t *glob
             {"--node", NULL, NMO_OPT_UINT, "Node ID"},
             {"--interface", NULL, NMO_OPT_STRING,
              "Interface mode: preserve|canonicalize|remove"},
-            {"--output", "-o", NMO_OPT_STRING, "Output file"},
-            {"--dry-run", NULL, NMO_OPT_FLAG, "Preview only"},
+            NMO_OPT_DEF_OUTPUT,
+            NMO_OPT_DEF_DRY_RUN,
         };
         enum { OPT_PARENT, OPT_NODE, OPT_INTERFACE, OPT_OUTPUT, OPT_DRY_RUN, OPT_COUNT };
         nmo_opt_val_t vals[OPT_COUNT];
         const char *pos[16];
-        nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+        nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
         script_node_remove_args_t args = {
             .interface_mode = NMO_SCRIPT_EDIT_INTERFACE_PRESERVE
         };
@@ -3449,8 +3441,8 @@ int nmo_cmd_script_node(int argc, char **argv, const nmo_cli_global_opts_t *glob
         }
         return behavior_execute_cli_run_write_command(
             r.pos_args[0],
-            vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
-            vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
+            nmo_opt_str(&vals[OPT_OUTPUT]),
+            nmo_opt_flag(&vals[OPT_DRY_RUN]),
             global,
             &spec,
             "script node remove",
@@ -3479,13 +3471,13 @@ int nmo_cmd_script_io(int argc, char **argv, const nmo_cli_global_opts_t *global
             {"--behavior", NULL, NMO_OPT_UINT, "Owner behavior ID"},
             {"--kind", NULL, NMO_OPT_STRING, "input|output"},
             {"--name", NULL, NMO_OPT_STRING, "IO name"},
-            {"--output", "-o", NMO_OPT_STRING, "Output file"},
-            {"--dry-run", NULL, NMO_OPT_FLAG, "Preview only"},
+            NMO_OPT_DEF_OUTPUT,
+            NMO_OPT_DEF_DRY_RUN,
         };
         enum { OPT_BEHAVIOR, OPT_KIND, OPT_NAME, OPT_OUTPUT, OPT_DRY_RUN, OPT_COUNT };
         nmo_opt_val_t vals[OPT_COUNT];
         const char *pos[16];
-        nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+        nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
         script_io_add_args_t args = {0};
         if (nmo_opt_parse(argc - 1, argv + 1, opts, OPT_COUNT, &r) < 0 ||
             !vals[OPT_BEHAVIOR].present || !vals[OPT_KIND].present ||
@@ -3499,8 +3491,8 @@ int nmo_cmd_script_io(int argc, char **argv, const nmo_cli_global_opts_t *global
         args.name = vals[OPT_NAME].val.str;
         return behavior_execute_cli_run_write_command(
             r.pos_args[0],
-            vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
-            vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
+            nmo_opt_str(&vals[OPT_OUTPUT]),
+            nmo_opt_flag(&vals[OPT_DRY_RUN]),
             global,
             &spec,
             "script io add",
@@ -3515,13 +3507,13 @@ int nmo_cmd_script_io(int argc, char **argv, const nmo_cli_global_opts_t *global
         static const nmo_opt_def_t opts[] = {
             {"--io", NULL, NMO_OPT_UINT, "IO ID"},
             {"--name", NULL, NMO_OPT_STRING, "New IO name"},
-            {"--output", "-o", NMO_OPT_STRING, "Output file"},
-            {"--dry-run", NULL, NMO_OPT_FLAG, "Preview only"},
+            NMO_OPT_DEF_OUTPUT,
+            NMO_OPT_DEF_DRY_RUN,
         };
         enum { OPT_IO, OPT_NAME, OPT_OUTPUT, OPT_DRY_RUN, OPT_COUNT };
         nmo_opt_val_t vals[OPT_COUNT];
         const char *pos[16];
-        nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+        nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
         script_io_rename_args_t args = {0};
         if (nmo_opt_parse(argc - 1, argv + 1, opts, OPT_COUNT, &r) < 0 ||
             !vals[OPT_IO].present || !vals[OPT_NAME].present ||
@@ -3532,8 +3524,8 @@ int nmo_cmd_script_io(int argc, char **argv, const nmo_cli_global_opts_t *global
         args.name = vals[OPT_NAME].val.str;
         return behavior_execute_cli_run_write_command(
             r.pos_args[0],
-            vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
-            vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
+            nmo_opt_str(&vals[OPT_OUTPUT]),
+            nmo_opt_flag(&vals[OPT_DRY_RUN]),
             global,
             &spec,
             "script io rename",
@@ -3549,13 +3541,13 @@ int nmo_cmd_script_io(int argc, char **argv, const nmo_cli_global_opts_t *global
             {"--io", NULL, NMO_OPT_UINT, "IO ID"},
             {"--interface", NULL, NMO_OPT_STRING,
              "Interface mode: preserve|canonicalize|remove"},
-            {"--output", "-o", NMO_OPT_STRING, "Output file"},
-            {"--dry-run", NULL, NMO_OPT_FLAG, "Preview only"},
+            NMO_OPT_DEF_OUTPUT,
+            NMO_OPT_DEF_DRY_RUN,
         };
         enum { OPT_IO, OPT_INTERFACE, OPT_OUTPUT, OPT_DRY_RUN, OPT_COUNT };
         nmo_opt_val_t vals[OPT_COUNT];
         const char *pos[16];
-        nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+        nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
         script_io_remove_args_t args = {
             .interface_mode = NMO_SCRIPT_EDIT_INTERFACE_PRESERVE
         };
@@ -3571,8 +3563,8 @@ int nmo_cmd_script_io(int argc, char **argv, const nmo_cli_global_opts_t *global
         args.io_id = vals[OPT_IO].val.u;
         return behavior_execute_cli_run_write_command(
             r.pos_args[0],
-            vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
-            vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
+            nmo_opt_str(&vals[OPT_OUTPUT]),
+            nmo_opt_flag(&vals[OPT_DRY_RUN]),
             global,
             &spec,
             "script io remove",
@@ -3602,8 +3594,8 @@ int nmo_cmd_script_link(int argc, char **argv, const nmo_cli_global_opts_t *glob
             {"--from", NULL, NMO_OPT_UINT, "Source IO ID"},
             {"--to", NULL, NMO_OPT_UINT, "Target IO ID"},
             {"--delay", NULL, NMO_OPT_UINT, "Activation delay"},
-            {"--output", "-o", NMO_OPT_STRING, "Output file"},
-            {"--dry-run", NULL, NMO_OPT_FLAG, "Preview only"},
+            NMO_OPT_DEF_OUTPUT,
+            NMO_OPT_DEF_DRY_RUN,
         };
         enum {
             OPT_PARENT, OPT_FROM, OPT_TO, OPT_DELAY, OPT_OUTPUT, OPT_DRY_RUN,
@@ -3611,7 +3603,7 @@ int nmo_cmd_script_link(int argc, char **argv, const nmo_cli_global_opts_t *glob
         };
         nmo_opt_val_t vals[OPT_COUNT];
         const char *pos[16];
-        nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+        nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
         script_link_add_args_t args = {0};
         if (nmo_opt_parse(argc - 1, argv + 1, opts, OPT_COUNT, &r) < 0 ||
             !vals[OPT_PARENT].present || !vals[OPT_FROM].present ||
@@ -3621,11 +3613,11 @@ int nmo_cmd_script_link(int argc, char **argv, const nmo_cli_global_opts_t *glob
         args.parent_id = vals[OPT_PARENT].val.u;
         args.from_id = vals[OPT_FROM].val.u;
         args.to_id = vals[OPT_TO].val.u;
-        args.delay = vals[OPT_DELAY].present ? vals[OPT_DELAY].val.u : 1u;
+        args.delay = nmo_opt_uint_or(&vals[OPT_DELAY], 1u);
         return behavior_execute_cli_run_write_command(
             r.pos_args[0],
-            vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
-            vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
+            nmo_opt_str(&vals[OPT_OUTPUT]),
+            nmo_opt_flag(&vals[OPT_DRY_RUN]),
             global,
             &spec,
             "script link add",
@@ -3641,13 +3633,13 @@ int nmo_cmd_script_link(int argc, char **argv, const nmo_cli_global_opts_t *glob
             {"--link", NULL, NMO_OPT_UINT, "Link ID"},
             {"--from", NULL, NMO_OPT_UINT, "Source IO ID"},
             {"--to", NULL, NMO_OPT_UINT, "Target IO ID"},
-            {"--output", "-o", NMO_OPT_STRING, "Output file"},
-            {"--dry-run", NULL, NMO_OPT_FLAG, "Preview only"},
+            NMO_OPT_DEF_OUTPUT,
+            NMO_OPT_DEF_DRY_RUN,
         };
         enum { OPT_LINK, OPT_FROM, OPT_TO, OPT_OUTPUT, OPT_DRY_RUN, OPT_COUNT };
         nmo_opt_val_t vals[OPT_COUNT];
         const char *pos[16];
-        nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+        nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
         script_link_rewire_args_t args = {0};
         if (nmo_opt_parse(argc - 1, argv + 1, opts, OPT_COUNT, &r) < 0 ||
             !vals[OPT_LINK].present ||
@@ -3656,12 +3648,12 @@ int nmo_cmd_script_link(int argc, char **argv, const nmo_cli_global_opts_t *glob
             return NMO_CLI_EXIT_ARG_ERROR;
         }
         args.link_id = vals[OPT_LINK].val.u;
-        args.from_id = vals[OPT_FROM].present ? vals[OPT_FROM].val.u : 0u;
-        args.to_id = vals[OPT_TO].present ? vals[OPT_TO].val.u : 0u;
+        args.from_id = nmo_opt_uint_or(&vals[OPT_FROM], 0u);
+        args.to_id = nmo_opt_uint_or(&vals[OPT_TO], 0u);
         return behavior_execute_cli_run_write_command(
             r.pos_args[0],
-            vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
-            vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
+            nmo_opt_str(&vals[OPT_OUTPUT]),
+            nmo_opt_flag(&vals[OPT_DRY_RUN]),
             global,
             &spec,
             "script link rewire",
@@ -3676,13 +3668,13 @@ int nmo_cmd_script_link(int argc, char **argv, const nmo_cli_global_opts_t *glob
         static const nmo_opt_def_t opts[] = {
             {"--link", NULL, NMO_OPT_UINT, "Link ID"},
             {"--delay", NULL, NMO_OPT_UINT, "Activation delay"},
-            {"--output", "-o", NMO_OPT_STRING, "Output file"},
-            {"--dry-run", NULL, NMO_OPT_FLAG, "Preview only"},
+            NMO_OPT_DEF_OUTPUT,
+            NMO_OPT_DEF_DRY_RUN,
         };
         enum { OPT_LINK, OPT_DELAY, OPT_OUTPUT, OPT_DRY_RUN, OPT_COUNT };
         nmo_opt_val_t vals[OPT_COUNT];
         const char *pos[16];
-        nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+        nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
         script_link_set_delay_args_t args = {0};
         if (nmo_opt_parse(argc - 1, argv + 1, opts, OPT_COUNT, &r) < 0 ||
             !vals[OPT_LINK].present || !vals[OPT_DELAY].present ||
@@ -3693,8 +3685,8 @@ int nmo_cmd_script_link(int argc, char **argv, const nmo_cli_global_opts_t *glob
         args.delay = vals[OPT_DELAY].val.u;
         return behavior_execute_cli_run_write_command(
             r.pos_args[0],
-            vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
-            vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
+            nmo_opt_str(&vals[OPT_OUTPUT]),
+            nmo_opt_flag(&vals[OPT_DRY_RUN]),
             global,
             &spec,
             "script link set-delay",
@@ -3711,13 +3703,13 @@ int nmo_cmd_script_link(int argc, char **argv, const nmo_cli_global_opts_t *glob
             {"--link", NULL, NMO_OPT_UINT, "Link ID"},
             {"--interface", NULL, NMO_OPT_STRING,
              "Interface mode: preserve|canonicalize|remove"},
-            {"--output", "-o", NMO_OPT_STRING, "Output file"},
-            {"--dry-run", NULL, NMO_OPT_FLAG, "Preview only"},
+            NMO_OPT_DEF_OUTPUT,
+            NMO_OPT_DEF_DRY_RUN,
         };
         enum { OPT_PARENT, OPT_LINK, OPT_INTERFACE, OPT_OUTPUT, OPT_DRY_RUN, OPT_COUNT };
         nmo_opt_val_t vals[OPT_COUNT];
         const char *pos[16];
-        nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+        nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
         script_link_remove_args_t args = {
             .interface_mode = NMO_SCRIPT_EDIT_INTERFACE_PRESERVE
         };
@@ -3735,8 +3727,8 @@ int nmo_cmd_script_link(int argc, char **argv, const nmo_cli_global_opts_t *glob
         args.link_id = vals[OPT_LINK].val.u;
         return behavior_execute_cli_run_write_command(
             r.pos_args[0],
-            vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
-            vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
+            nmo_opt_str(&vals[OPT_OUTPUT]),
+            nmo_opt_flag(&vals[OPT_DRY_RUN]),
             global,
             &spec,
             "script link remove",
@@ -4229,13 +4221,13 @@ int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *glo
             {"--kind", NULL, NMO_OPT_STRING, "in|out|local|shared"},
             {"--type", NULL, NMO_OPT_STRING, "Parameter type name or GUID"},
             {"--name", NULL, NMO_OPT_STRING, "Parameter name"},
-            {"--output", "-o", NMO_OPT_STRING, "Output file"},
-            {"--dry-run", NULL, NMO_OPT_FLAG, "Preview only"},
+            NMO_OPT_DEF_OUTPUT,
+            NMO_OPT_DEF_DRY_RUN,
         };
         enum { OPT_OWNER, OPT_KIND, OPT_TYPE, OPT_NAME, OPT_OUTPUT, OPT_DRY_RUN, OPT_COUNT };
         nmo_opt_val_t vals[OPT_COUNT];
         const char *pos[16];
-        nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+        nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
         script_param_add_args_t args = {0};
         if (nmo_opt_parse(argc - 1, argv + 1, opts, OPT_COUNT, &r) < 0 ||
             !vals[OPT_OWNER].present || !vals[OPT_KIND].present ||
@@ -4249,8 +4241,8 @@ int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *glo
         args.name = vals[OPT_NAME].val.str;
         return behavior_execute_cli_run_write_command(
             r.pos_args[0],
-            vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
-            vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
+            nmo_opt_str(&vals[OPT_OUTPUT]),
+            nmo_opt_flag(&vals[OPT_DRY_RUN]),
             global,
             &spec,
             "script param add",
@@ -4273,8 +4265,8 @@ int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *glo
              "Explicit manager GUID for manager entry lookup"},
             {"--manager-entry-key", NULL, NMO_OPT_STRING,
              "Manager entry lookup/create key"},
-            {"--output", "-o", NMO_OPT_STRING, "Output file"},
-            {"--dry-run", NULL, NMO_OPT_FLAG, "Preview only"},
+            NMO_OPT_DEF_OUTPUT,
+            NMO_OPT_DEF_DRY_RUN,
         };
         enum {
             OPT_PARAM,
@@ -4289,7 +4281,7 @@ int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *glo
         };
         nmo_opt_val_t vals[OPT_COUNT];
         const char *pos[16];
-        nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+        nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
         script_param_set_args_t args = {0};
         if (nmo_opt_parse(argc - 1, argv + 1, opts, OPT_COUNT, &r) < 0 ||
             !vals[OPT_PARAM].present || !vals[OPT_VALUE].present ||
@@ -4329,8 +4321,8 @@ int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *glo
         {
             int rc = behavior_execute_cli_run_write_command(
                 r.pos_args[0],
-                vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
-                vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
+                nmo_opt_str(&vals[OPT_OUTPUT]),
+                nmo_opt_flag(&vals[OPT_DRY_RUN]),
                 global,
                 &spec,
                 "script param set",
@@ -4348,13 +4340,13 @@ int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *glo
         static const nmo_opt_def_t opts[] = {
             {"--from", NULL, NMO_OPT_UINT, "Source parameter ID"},
             {"--to", NULL, NMO_OPT_UINT, "Target ParameterIn ID"},
-            {"--output", "-o", NMO_OPT_STRING, "Output file"},
-            {"--dry-run", NULL, NMO_OPT_FLAG, "Preview only"},
+            NMO_OPT_DEF_OUTPUT,
+            NMO_OPT_DEF_DRY_RUN,
         };
         enum { OPT_FROM, OPT_TO, OPT_OUTPUT, OPT_DRY_RUN, OPT_COUNT };
         nmo_opt_val_t vals[OPT_COUNT];
         const char *pos[16];
-        nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+        nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
         script_param_connect_args_t args = {0};
         if (nmo_opt_parse(argc - 1, argv + 1, opts, OPT_COUNT, &r) < 0 ||
             !vals[OPT_FROM].present || !vals[OPT_TO].present || r.pos_count != 1) {
@@ -4364,8 +4356,8 @@ int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *glo
         args.target_id = vals[OPT_TO].val.u;
         return behavior_execute_cli_run_write_command(
             r.pos_args[0],
-            vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
-            vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
+            nmo_opt_str(&vals[OPT_OUTPUT]),
+            nmo_opt_flag(&vals[OPT_DRY_RUN]),
             global,
             &spec,
             "script param connect",
@@ -4379,13 +4371,13 @@ int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *glo
     if (strcmp(argv[1], "disconnect") == 0) {
         static const nmo_opt_def_t opts[] = {
             {"--to", NULL, NMO_OPT_UINT, "Target ParameterIn ID"},
-            {"--output", "-o", NMO_OPT_STRING, "Output file"},
-            {"--dry-run", NULL, NMO_OPT_FLAG, "Preview only"},
+            NMO_OPT_DEF_OUTPUT,
+            NMO_OPT_DEF_DRY_RUN,
         };
         enum { OPT_TO, OPT_OUTPUT, OPT_DRY_RUN, OPT_COUNT };
         nmo_opt_val_t vals[OPT_COUNT];
         const char *pos[16];
-        nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+        nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
         script_param_disconnect_args_t args = {0};
         if (nmo_opt_parse(argc - 1, argv + 1, opts, OPT_COUNT, &r) < 0 ||
             !vals[OPT_TO].present || r.pos_count != 1) {
@@ -4394,8 +4386,8 @@ int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *glo
         args.target_id = vals[OPT_TO].val.u;
         return behavior_execute_cli_run_write_command(
             r.pos_args[0],
-            vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
-            vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
+            nmo_opt_str(&vals[OPT_OUTPUT]),
+            nmo_opt_flag(&vals[OPT_DRY_RUN]),
             global,
             &spec,
             "script param disconnect",
@@ -4412,13 +4404,13 @@ int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *glo
             {"--detach", NULL, NMO_OPT_FLAG, "Detach data-flow references first"},
             {"--interface", NULL, NMO_OPT_STRING,
              "Interface mode: preserve|canonicalize|remove"},
-            {"--output", "-o", NMO_OPT_STRING, "Output file"},
-            {"--dry-run", NULL, NMO_OPT_FLAG, "Preview only"},
+            NMO_OPT_DEF_OUTPUT,
+            NMO_OPT_DEF_DRY_RUN,
         };
         enum { OPT_PARAM, OPT_DETACH, OPT_INTERFACE, OPT_OUTPUT, OPT_DRY_RUN, OPT_COUNT };
         nmo_opt_val_t vals[OPT_COUNT];
         const char *pos[16];
-        nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+        nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
         script_param_remove_args_t args = {
             .interface_mode = NMO_SCRIPT_EDIT_INTERFACE_PRESERVE
         };
@@ -4432,11 +4424,11 @@ int nmo_cmd_script_param(int argc, char **argv, const nmo_cli_global_opts_t *glo
             return NMO_CLI_EXIT_ARG_ERROR;
         }
         args.param_id = vals[OPT_PARAM].val.u;
-        args.detach = vals[OPT_DETACH].present && vals[OPT_DETACH].val.flag;
+        args.detach = nmo_opt_flag(&vals[OPT_DETACH]);
         return behavior_execute_cli_run_write_command(
             r.pos_args[0],
-            vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
-            vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
+            nmo_opt_str(&vals[OPT_OUTPUT]),
+            nmo_opt_flag(&vals[OPT_DRY_RUN]),
             global,
             &spec,
             "script param remove",
@@ -4467,13 +4459,13 @@ int nmo_cmd_script_op(int argc, char **argv, const nmo_cli_global_opts_t *global
             {"--in1", NULL, NMO_OPT_UINT, "Input 1 parameter ID"},
             {"--in2", NULL, NMO_OPT_UINT, "Input 2 parameter ID"},
             {"--out", NULL, NMO_OPT_UINT, "Output parameter ID"},
-            {"--output", "-o", NMO_OPT_STRING, "Output file"},
-            {"--dry-run", NULL, NMO_OPT_FLAG, "Preview only"},
+            NMO_OPT_DEF_OUTPUT,
+            NMO_OPT_DEF_DRY_RUN,
         };
         enum { OPT_PARENT, OPT_OP_GUID, OPT_IN1, OPT_IN2, OPT_OUT, OPT_OUTPUT, OPT_DRY_RUN, OPT_COUNT };
         nmo_opt_val_t vals[OPT_COUNT];
         const char *pos[16];
-        nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+        nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
         script_op_add_args_t args = {0};
         if (nmo_opt_parse(argc - 1, argv + 1, opts, OPT_COUNT, &r) < 0 ||
             !vals[OPT_PARENT].present || !vals[OPT_OP_GUID].present ||
@@ -4485,13 +4477,13 @@ int nmo_cmd_script_op(int argc, char **argv, const nmo_cli_global_opts_t *global
         if (nmo_guid_is_null(args.op_guid)) {
             return NMO_CLI_EXIT_ARG_ERROR;
         }
-        args.in1_id = vals[OPT_IN1].present ? vals[OPT_IN1].val.u : 0u;
-        args.in2_id = vals[OPT_IN2].present ? vals[OPT_IN2].val.u : 0u;
-        args.out_id = vals[OPT_OUT].present ? vals[OPT_OUT].val.u : 0u;
+        args.in1_id = nmo_opt_uint_or(&vals[OPT_IN1], 0u);
+        args.in2_id = nmo_opt_uint_or(&vals[OPT_IN2], 0u);
+        args.out_id = nmo_opt_uint_or(&vals[OPT_OUT], 0u);
         return behavior_execute_cli_run_write_command(
             r.pos_args[0],
-            vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
-            vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
+            nmo_opt_str(&vals[OPT_OUTPUT]),
+            nmo_opt_flag(&vals[OPT_DRY_RUN]),
             global,
             &spec,
             "script op add",
@@ -4508,13 +4500,13 @@ int nmo_cmd_script_op(int argc, char **argv, const nmo_cli_global_opts_t *global
             {"--in1", NULL, NMO_OPT_UINT, "Input 1 parameter ID (0 clears)"},
             {"--in2", NULL, NMO_OPT_UINT, "Input 2 parameter ID (0 clears)"},
             {"--out", NULL, NMO_OPT_UINT, "Output parameter ID (0 clears)"},
-            {"--output", "-o", NMO_OPT_STRING, "Output file"},
-            {"--dry-run", NULL, NMO_OPT_FLAG, "Preview only"},
+            NMO_OPT_DEF_OUTPUT,
+            NMO_OPT_DEF_DRY_RUN,
         };
         enum { OPT_OP, OPT_IN1, OPT_IN2, OPT_OUT, OPT_OUTPUT, OPT_DRY_RUN, OPT_COUNT };
         nmo_opt_val_t vals[OPT_COUNT];
         const char *pos[16];
-        nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+        nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
         script_op_rewire_args_t args = {0};
         if (nmo_opt_parse(argc - 1, argv + 1, opts, OPT_COUNT, &r) < 0 ||
             !vals[OPT_OP].present ||
@@ -4537,8 +4529,8 @@ int nmo_cmd_script_op(int argc, char **argv, const nmo_cli_global_opts_t *global
         }
         return behavior_execute_cli_run_write_command(
             r.pos_args[0],
-            vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
-            vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
+            nmo_opt_str(&vals[OPT_OUTPUT]),
+            nmo_opt_flag(&vals[OPT_DRY_RUN]),
             global,
             &spec,
             "script op rewire",
@@ -4554,13 +4546,13 @@ int nmo_cmd_script_op(int argc, char **argv, const nmo_cli_global_opts_t *global
             {"--op", NULL, NMO_OPT_UINT, "Operation ID"},
             {"--interface", NULL, NMO_OPT_STRING,
              "Interface mode: preserve|canonicalize|remove"},
-            {"--output", "-o", NMO_OPT_STRING, "Output file"},
-            {"--dry-run", NULL, NMO_OPT_FLAG, "Preview only"},
+            NMO_OPT_DEF_OUTPUT,
+            NMO_OPT_DEF_DRY_RUN,
         };
         enum { OPT_OP, OPT_INTERFACE, OPT_OUTPUT, OPT_DRY_RUN, OPT_COUNT };
         nmo_opt_val_t vals[OPT_COUNT];
         const char *pos[16];
-        nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+        nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
         script_op_remove_args_t args = {
             .interface_mode = NMO_SCRIPT_EDIT_INTERFACE_PRESERVE
         };
@@ -4576,8 +4568,8 @@ int nmo_cmd_script_op(int argc, char **argv, const nmo_cli_global_opts_t *global
         args.op_id = vals[OPT_OP].val.u;
         return behavior_execute_cli_run_write_command(
             r.pos_args[0],
-            vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL,
-            vals[OPT_DRY_RUN].present && vals[OPT_DRY_RUN].val.flag,
+            nmo_opt_str(&vals[OPT_OUTPUT]),
+            nmo_opt_flag(&vals[OPT_DRY_RUN]),
             global,
             &spec,
             "script op remove",
