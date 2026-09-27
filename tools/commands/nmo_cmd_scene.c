@@ -225,7 +225,7 @@ static int scene_show_parse(int argc,
     enum { OPT_ID, OPT_NAME, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
     bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
@@ -243,9 +243,9 @@ static int scene_show_parse(int argc,
     *args = (scene_show_args_t){
         .selector = {
             .has_id = vals[OPT_ID].present,
-            .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+            .id = nmo_opt_uint_or(&vals[OPT_ID], 0),
             .positional_id = positional_id,
-            .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+            .name = nmo_opt_str(&vals[OPT_NAME]),
             .allowed_class_ids = scene_classes,
             .allowed_class_count = sizeof(scene_classes) / sizeof(scene_classes[0]),
             .selector_label = "Scene",
@@ -478,12 +478,12 @@ static int scene_set_report(
 
 int nmo_cmd_scene_set(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--output",    "-o", NMO_OPT_STRING, "Output file"},
+        NMO_OPT_DEF_OUTPUT,
         {"--bg-color",  NULL, NMO_OPT_STRING, "Background color (ARGB hex)"},
         {"--ambient",   NULL, NMO_OPT_STRING, "Ambient light color (ARGB hex)"},
         {"--fog-color", NULL, NMO_OPT_STRING, "Fog color (ARGB hex)"},
         {"--camera",    NULL, NMO_OPT_STRING, "Starting camera ID"},
-        {"--dry-run",   NULL, NMO_OPT_FLAG,   "Preview without saving"},
+        NMO_OPT_DEF_DRY_RUN,
         {"--id",        NULL, NMO_OPT_UINT,   "Scene object ID"},
         {"--name",      "-n", NMO_OPT_STRING, "Scene object name"},
     };
@@ -492,12 +492,12 @@ int nmo_cmd_scene_set(int argc, char **argv, const nmo_cli_global_opts_t *global
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
         return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *output = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
-    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    const char *output = nmo_opt_str(&vals[OPT_OUTPUT]);
+    bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
 
     bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
     const char *positional_id = NULL;
@@ -519,9 +519,9 @@ int nmo_cmd_scene_set(int argc, char **argv, const nmo_cli_global_opts_t *global
     scene_set_args_t args = {
         .selector = {
             .has_id = vals[OPT_ID].present,
-            .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+            .id = nmo_opt_uint_or(&vals[OPT_ID], 0),
             .positional_id = positional_id,
-            .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+            .name = nmo_opt_str(&vals[OPT_NAME]),
             .required_base_class = NMO_CID_SCENE,
             .selector_label = "Scene",
             .type_label = "CKScene",

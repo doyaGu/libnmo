@@ -205,10 +205,10 @@ static int entity_list_parse(int argc, char **argv, const char **class_filter) {
     };
     nmo_opt_val_t vals[1];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    *class_filter = vals[0].present ? vals[0].val.str : NULL;
+    *class_filter = nmo_opt_str(&vals[0]);
     return NMO_CLI_EXIT_SUCCESS;
 }
 
@@ -280,7 +280,7 @@ static int entity_show_parse(int argc,
     enum { OPT_ID, OPT_NAME, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
     bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
@@ -295,9 +295,9 @@ static int entity_show_parse(int argc,
     *args = (entity_show_args_t) {
         .selector = {
             .has_id = vals[OPT_ID].present,
-            .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+            .id = nmo_opt_uint_or(&vals[OPT_ID], 0),
             .positional_id = positional_id,
-            .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+            .name = nmo_opt_str(&vals[OPT_NAME]),
             .required_base_class = NMO_CID_3DENTITY,
             .selector_label = "Entity",
             .type_label = "CK3dEntity",
@@ -625,8 +625,8 @@ int nmo_cmd_entity_set_position(int argc, char **argv,
                                 const nmo_cli_global_opts_t *global)
 {
     static const nmo_opt_def_t opts[] = {
-        {"--output",  "-o", NMO_OPT_STRING, "Output file"},
-        {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview without saving"},
+        NMO_OPT_DEF_OUTPUT,
+        NMO_OPT_DEF_DRY_RUN,
         {"--id",      NULL, NMO_OPT_UINT,   "Entity object ID"},
         {"--name",    "-n", NMO_OPT_STRING, "Entity object name"},
     };
@@ -634,12 +634,12 @@ int nmo_cmd_entity_set_position(int argc, char **argv,
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
         return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *output = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
-    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    const char *output = nmo_opt_str(&vals[OPT_OUTPUT]);
+    bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
 
     bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
     const char *positional_id = NULL;
@@ -677,9 +677,9 @@ int nmo_cmd_entity_set_position(int argc, char **argv,
     entity_set_position_args_t args = {
         .selector = {
             .has_id = vals[OPT_ID].present,
-            .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+            .id = nmo_opt_uint_or(&vals[OPT_ID], 0),
             .positional_id = positional_id,
-            .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+            .name = nmo_opt_str(&vals[OPT_NAME]),
             .required_base_class = NMO_CID_3DENTITY,
             .selector_label = "Entity",
             .type_label = "CK3dEntity",
@@ -792,8 +792,8 @@ int nmo_cmd_entity_set_parent(int argc, char **argv,
                               const nmo_cli_global_opts_t *global)
 {
     static const nmo_opt_def_t opts[] = {
-        {"--output",  "-o", NMO_OPT_STRING, "Output file"},
-        {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview without saving"},
+        NMO_OPT_DEF_OUTPUT,
+        NMO_OPT_DEF_DRY_RUN,
         {"--id",      NULL, NMO_OPT_UINT,   "Entity object ID"},
         {"--name",    "-n", NMO_OPT_STRING, "Entity object name"},
     };
@@ -801,12 +801,12 @@ int nmo_cmd_entity_set_parent(int argc, char **argv,
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
         return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *output = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
-    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    const char *output = nmo_opt_str(&vals[OPT_OUTPUT]);
+    bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
 
     bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
     const char *positional_id = NULL;
@@ -837,9 +837,9 @@ int nmo_cmd_entity_set_parent(int argc, char **argv,
     entity_set_parent_args_t args = {
         .selector = {
             .has_id = vals[OPT_ID].present,
-            .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+            .id = nmo_opt_uint_or(&vals[OPT_ID], 0),
             .positional_id = positional_id,
-            .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+            .name = nmo_opt_str(&vals[OPT_NAME]),
             .required_base_class = NMO_CID_3DENTITY,
             .selector_label = "Entity",
             .type_label = "CK3dEntity",
@@ -1015,11 +1015,11 @@ int nmo_cmd_entity_set_camera(int argc, char **argv,
                               const nmo_cli_global_opts_t *global)
 {
     static const nmo_opt_def_t opts[] = {
-        {"--output",  "-o", NMO_OPT_STRING, "Output file"},
+        NMO_OPT_DEF_OUTPUT,
         {"--fov",     NULL, NMO_OPT_STRING, "Field of view (radians)"},
         {"--near",    NULL, NMO_OPT_STRING, "Near clipping plane"},
         {"--far",     NULL, NMO_OPT_STRING, "Far clipping plane"},
-        {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview without saving"},
+        NMO_OPT_DEF_DRY_RUN,
         {"--id",      NULL, NMO_OPT_UINT,   "Camera object ID"},
         {"--name",    "-n", NMO_OPT_STRING, "Camera object name"},
     };
@@ -1028,12 +1028,12 @@ int nmo_cmd_entity_set_camera(int argc, char **argv,
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
         return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *output = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
-    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    const char *output = nmo_opt_str(&vals[OPT_OUTPUT]);
+    bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
 
     bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
     const char *positional_id = NULL;
@@ -1055,9 +1055,9 @@ int nmo_cmd_entity_set_camera(int argc, char **argv,
     entity_set_fields_args_t args = {
         .selector = {
             .has_id = vals[OPT_ID].present,
-            .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+            .id = nmo_opt_uint_or(&vals[OPT_ID], 0),
             .positional_id = positional_id,
-            .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+            .name = nmo_opt_str(&vals[OPT_NAME]),
             .required_base_class = NMO_CID_CAMERA,
             .selector_label = "Camera",
             .type_label = "CKCamera",
@@ -1104,10 +1104,10 @@ int nmo_cmd_entity_set_light(int argc, char **argv,
                              const nmo_cli_global_opts_t *global)
 {
     static const nmo_opt_def_t opts[] = {
-        {"--output",  "-o", NMO_OPT_STRING, "Output file"},
+        NMO_OPT_DEF_OUTPUT,
         {"--diffuse", NULL, NMO_OPT_STRING, "Diffuse color"},
         {"--range",   NULL, NMO_OPT_STRING, "Light range"},
-        {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview without saving"},
+        NMO_OPT_DEF_DRY_RUN,
         {"--id",      NULL, NMO_OPT_UINT,   "Light object ID"},
         {"--name",    "-n", NMO_OPT_STRING, "Light object name"},
     };
@@ -1116,12 +1116,12 @@ int nmo_cmd_entity_set_light(int argc, char **argv,
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
         return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *output = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
-    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    const char *output = nmo_opt_str(&vals[OPT_OUTPUT]);
+    bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
 
     bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
     const char *positional_id = NULL;
@@ -1143,9 +1143,9 @@ int nmo_cmd_entity_set_light(int argc, char **argv,
     entity_set_fields_args_t args = {
         .selector = {
             .has_id = vals[OPT_ID].present,
-            .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+            .id = nmo_opt_uint_or(&vals[OPT_ID], 0),
             .positional_id = positional_id,
-            .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+            .name = nmo_opt_str(&vals[OPT_NAME]),
             .required_base_class = NMO_CID_LIGHT,
             .selector_label = "Light",
             .type_label = "CKLight",

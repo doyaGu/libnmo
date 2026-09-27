@@ -298,11 +298,11 @@ int nmo_cmd_texture_list(int argc, char **argv, const nmo_cli_global_opts_t *glo
     };
     nmo_opt_val_t vals[3];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, 3, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *sort_by = vals[0].present ? vals[0].val.str : NULL;
-    uint32_t top_n = vals[1].present ? vals[1].val.u : 0;
+    const char *sort_by = nmo_opt_str(&vals[0]);
+    uint32_t top_n = nmo_opt_uint_or(&vals[1], 0);
     bool reverse = vals[2].val.flag;
 
     nmo_cmd_ctx_t c;
@@ -574,7 +574,7 @@ int nmo_cmd_texture_show(int argc, char **argv, const nmo_cli_global_opts_t *glo
     enum { OPT_ID, OPT_NAME, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
     nmo_cmd_ctx_t c;
@@ -585,11 +585,11 @@ int nmo_cmd_texture_show(int argc, char **argv, const nmo_cli_global_opts_t *glo
     nmo_object_id_t object_id = 0;
     nmo_core_object_selector_t selector = {
         .has_id = vals[OPT_ID].present,
-        .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+        .id = nmo_opt_uint_or(&vals[OPT_ID], 0),
         .positional_id = (!vals[OPT_ID].present && !vals[OPT_NAME].present && r.pos_count >= 1)
             ? r.pos_args[0]
             : NULL,
-        .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+        .name = nmo_opt_str(&vals[OPT_NAME]),
         .required_base_class = NMO_CID_TEXTURE,
         .selector_label = "Texture",
         .type_label = "CKTexture",
@@ -807,7 +807,7 @@ static int texture_extract_parse(int argc, char **argv,
     };
     nmo_opt_val_t vals[6];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, 6, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
     if (!expect_file_operand && r.pos_count != 0) {
@@ -816,13 +816,13 @@ static int texture_extract_parse(int argc, char **argv,
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    args->out_dir = vals[0].present ? vals[0].val.str : NULL;
+    args->out_dir = nmo_opt_str(&vals[0]);
     args->has_id = vals[1].present;
-    args->id = vals[1].present ? vals[1].val.u : 0;
-    args->name_pat = vals[2].present ? vals[2].val.str : NULL;
-    const char *fmt_str   = vals[3].present ? vals[3].val.str : NULL;
-    args->quality = vals[4].present ? vals[4].val.u : 90;
-    args->overwrite = vals[5].present && vals[5].val.flag;
+    args->id = nmo_opt_uint_or(&vals[1], 0);
+    args->name_pat = nmo_opt_str(&vals[2]);
+    const char *fmt_str   = nmo_opt_str(&vals[3]);
+    args->quality = nmo_opt_uint_or(&vals[4], 90);
+    args->overwrite = nmo_opt_flag(&vals[5]);
 
     if (!args->out_dir || !*args->out_dir) {
         fprintf(stderr, "Error: Missing --out-dir\n");
@@ -1179,8 +1179,8 @@ static int nmo_cmd_texture_extract_in_session(nmo_cmd_ctx_t *ctx, int argc, char
 int nmo_cmd_texture_replace(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
         {"--file",    "-f", NMO_OPT_STRING, "Image file to load"},
-        {"--output",  "-o", NMO_OPT_STRING, "Output file (required unless --dry-run)"},
-        {"--dry-run", NULL,  NMO_OPT_FLAG,   "Preview without saving"},
+        NMO_OPT_DEF_WRITE_OUTPUT,
+        NMO_OPT_DEF_DRY_RUN,
         {"--id",      NULL,  NMO_OPT_UINT,   "Texture object ID"},
         {"--name",    "-n", NMO_OPT_STRING, "Texture object name"},
     };
@@ -1188,13 +1188,13 @@ int nmo_cmd_texture_replace(int argc, char **argv, const nmo_cli_global_opts_t *
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
         return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *image_path  = vals[OPT_FILE].present   ? vals[OPT_FILE].val.str   : NULL;
-    const char *output_path = vals[OPT_OUTPUT].present  ? vals[OPT_OUTPUT].val.str : NULL;
-    bool dry_run            = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    const char *image_path  = nmo_opt_str(&vals[OPT_FILE]);
+    const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
+    bool dry_run            = nmo_opt_flag(&vals[OPT_DRYRUN]);
 
     /* Positional: <id> <nmo-file>, or just <nmo-file> with --id/--name. */
     const char *positional_id = NULL;
@@ -1281,9 +1281,9 @@ int nmo_cmd_texture_replace(int argc, char **argv, const nmo_cli_global_opts_t *
     nmo_object_id_t object_id = 0;
     nmo_core_object_selector_t selector = {
         .has_id = vals[OPT_ID].present,
-        .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+        .id = nmo_opt_uint_or(&vals[OPT_ID], 0),
         .positional_id = positional_id,
-        .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+        .name = nmo_opt_str(&vals[OPT_NAME]),
         .required_base_class = NMO_CID_TEXTURE,
         .selector_label = "Texture",
         .type_label = "CKTexture",

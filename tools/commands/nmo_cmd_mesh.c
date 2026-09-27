@@ -276,7 +276,7 @@ int nmo_cmd_mesh_show(int argc, char **argv, const nmo_cli_global_opts_t *global
     enum { OPT_ID, OPT_NAME, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
     bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
@@ -288,9 +288,9 @@ int nmo_cmd_mesh_show(int argc, char **argv, const nmo_cli_global_opts_t *global
 
     nmo_core_object_selector_t selector = {
         .has_id = vals[OPT_ID].present,
-        .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+        .id = nmo_opt_uint_or(&vals[OPT_ID], 0),
         .positional_id = positional_id,
-        .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+        .name = nmo_opt_str(&vals[OPT_NAME]),
         .required_base_class = NMO_CID_MESH,
         .selector_label = "Mesh",
         .type_label = "CKMesh",
@@ -637,14 +637,14 @@ static int mesh_export_parse(int argc, char **argv, bool expect_file_operand,
     enum { OPT_OUT_DIR, OPT_ID, OPT_NAME, OPT_ALL, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    args->out_dir = vals[OPT_OUT_DIR].present ? vals[OPT_OUT_DIR].val.str : NULL;
+    args->out_dir = nmo_opt_str(&vals[OPT_OUT_DIR]);
     args->has_id = vals[OPT_ID].present;
-    args->id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0;
-    args->name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL;
-    args->export_all = vals[OPT_ALL].present && vals[OPT_ALL].val.flag;
+    args->id = nmo_opt_uint_or(&vals[OPT_ID], 0);
+    args->name = nmo_opt_str(&vals[OPT_NAME]);
+    args->export_all = nmo_opt_flag(&vals[OPT_ALL]);
 
     bool has_selector_opt = args->has_id || args->name != NULL;
     if (!has_selector_opt && !args->export_all) {
@@ -841,19 +841,19 @@ int nmo_cmd_mesh_import(int argc, char **argv, const nmo_cli_global_opts_t *glob
         {"--replace", NULL,  NMO_OPT_STRING, "Replace existing mesh by ID"},
         {"--replace-name", NULL, NMO_OPT_STRING, "Replace existing mesh by exact name"},
         {"--name",    "-n", NMO_OPT_STRING, "Mesh name (default: filename)"},
-        {"--dry-run", NULL,  NMO_OPT_FLAG,   "Preview without saving"},
+        NMO_OPT_DEF_DRY_RUN,
     };
     enum { OPT_OUTPUT, OPT_REPLACE, OPT_REPLACE_NAME, OPT_NAME, OPT_DRYRUN, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *output_path  = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
-    const char *replace_str  = vals[OPT_REPLACE].present ? vals[OPT_REPLACE].val.str : NULL;
-    const char *replace_name = vals[OPT_REPLACE_NAME].present ? vals[OPT_REPLACE_NAME].val.str : NULL;
-    const char *mesh_name    = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL;
-    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    const char *output_path  = nmo_opt_str(&vals[OPT_OUTPUT]);
+    const char *replace_str  = nmo_opt_str(&vals[OPT_REPLACE]);
+    const char *replace_name = nmo_opt_str(&vals[OPT_REPLACE_NAME]);
+    const char *mesh_name    = nmo_opt_str(&vals[OPT_NAME]);
+    bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
 
     /* Positional: <obj-file> <nmo-file> */
     const char *obj_file_path = NULL;

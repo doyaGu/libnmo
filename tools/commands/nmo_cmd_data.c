@@ -370,7 +370,7 @@ int nmo_cmd_data_show(int argc, char **argv, const nmo_cli_global_opts_t *global
     enum { OPT_ID, OPT_NAME, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
     bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
@@ -382,9 +382,9 @@ int nmo_cmd_data_show(int argc, char **argv, const nmo_cli_global_opts_t *global
 
     nmo_core_object_selector_t selector = {
         .has_id = vals[OPT_ID].present,
-        .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+        .id = nmo_opt_uint_or(&vals[OPT_ID], 0),
         .positional_id = positional_id,
-        .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+        .name = nmo_opt_str(&vals[OPT_NAME]),
         .required_base_class = NMO_CID_DATAARRAY,
         .selector_label = "Data array",
         .type_label = "CKDataArray",
@@ -544,10 +544,10 @@ int nmo_cmd_data_dump(int argc, char **argv, const nmo_cli_global_opts_t *global
     enum { OPT_ID, OPT_NAME, OPT_ROW, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *row_str = vals[OPT_ROW].present ? vals[OPT_ROW].val.str : NULL;
+    const char *row_str = nmo_opt_str(&vals[OPT_ROW]);
     bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
     const char *positional_id = (!has_selector_opt && r.pos_count >= 2) ? r.pos_args[0] : NULL;
 
@@ -567,9 +567,9 @@ int nmo_cmd_data_dump(int argc, char **argv, const nmo_cli_global_opts_t *global
 
     nmo_core_object_selector_t selector = {
         .has_id = vals[OPT_ID].present,
-        .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+        .id = nmo_opt_uint_or(&vals[OPT_ID], 0),
         .positional_id = positional_id,
-        .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+        .name = nmo_opt_str(&vals[OPT_NAME]),
         .required_base_class = NMO_CID_DATAARRAY,
         .selector_label = "Data array",
         .type_label = "CKDataArray",
@@ -843,11 +843,11 @@ static int data_set_cell_report(
 
 int nmo_cmd_data_set_cell(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--output",  "-o", NMO_OPT_STRING, "Output file (required unless --dry-run)"},
+        NMO_OPT_DEF_WRITE_OUTPUT,
         {"--row",     "-r", NMO_OPT_UINT,   "Row index (0-based)"},
         {"--col",     "-c", NMO_OPT_UINT,   "Column index (0-based)"},
         {"--value",   "-v", NMO_OPT_STRING, "New cell value"},
-        {"--dry-run", NULL,  NMO_OPT_FLAG,   "Preview without saving"},
+        NMO_OPT_DEF_DRY_RUN,
         {"--id",      NULL,  NMO_OPT_UINT,   "Data array object ID"},
         {"--name",    "-n",  NMO_OPT_STRING, "Data array object name"},
     };
@@ -856,17 +856,17 @@ int nmo_cmd_data_set_cell(int argc, char **argv, const nmo_cli_global_opts_t *gl
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
         return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
+    const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
     bool has_row   = vals[OPT_ROW].present;
     uint32_t row   = has_row ? vals[OPT_ROW].val.u : 0;
     bool has_col   = vals[OPT_COL].present;
     uint32_t col   = has_col ? vals[OPT_COL].val.u : 0;
-    const char *value_str = vals[OPT_VALUE].present ? vals[OPT_VALUE].val.str : NULL;
-    bool dry_run   = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    const char *value_str = nmo_opt_str(&vals[OPT_VALUE]);
+    bool dry_run   = nmo_opt_flag(&vals[OPT_DRYRUN]);
 
     bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
     const char *positional_id = NULL;
@@ -898,9 +898,9 @@ int nmo_cmd_data_set_cell(int argc, char **argv, const nmo_cli_global_opts_t *gl
     data_set_cell_args_t args = {
         .selector = {
             .has_id = vals[OPT_ID].present,
-            .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+            .id = nmo_opt_uint_or(&vals[OPT_ID], 0),
             .positional_id = positional_id,
-            .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+            .name = nmo_opt_str(&vals[OPT_NAME]),
             .required_base_class = NMO_CID_DATAARRAY,
             .selector_label = "Data array",
             .type_label = "CKDataArray",

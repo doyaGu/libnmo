@@ -1044,15 +1044,15 @@ static int parameter_dump_parse(int argc, char **argv, bool expect_file_operand,
     static const nmo_opt_def_t opts[] = {
         {"--all",  "-a", NMO_OPT_FLAG,   "Dump all parameters"},
         {"--type", NULL, NMO_OPT_STRING, "Filter by type GUID"},
-        {"--json", "-j", NMO_OPT_FLAG,   "JSON output"},
+        NMO_OPT_DEF_JSON,
     };
     nmo_opt_val_t vals[3];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, 3, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    bool dump_all = vals[0].present && vals[0].val.flag;
-    const char *type_guid_str = vals[1].present ? vals[1].val.str : NULL;
+    bool dump_all = nmo_opt_flag(&vals[0]);
+    const char *type_guid_str = nmo_opt_str(&vals[1]);
     const char *id_str = NULL;
     args->dump_all = dump_all;
 
@@ -1688,7 +1688,7 @@ static int parameter_set_report(
 
 int nmo_cmd_parameter_set(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--output",  "-o", NMO_OPT_STRING, "Output file (required unless --dry-run)"},
+        NMO_OPT_DEF_WRITE_OUTPUT,
         {"--owner",   "-b", NMO_OPT_STRING, "Owner behavior/object ID"},
         {"--name",    "-n", NMO_OPT_STRING, "Parameter name within owner"},
         {"--index",   "-i", NMO_OPT_UINT,   "Parameter index within owner"},
@@ -1701,17 +1701,17 @@ int nmo_cmd_parameter_set(int argc, char **argv, const nmo_cli_global_opts_t *gl
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
         return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
-    const char *owner_str   = vals[OPT_OWNER].present  ? vals[OPT_OWNER].val.str  : NULL;
-    const char *name_str    = vals[OPT_NAME].present   ? vals[OPT_NAME].val.str   : NULL;
+    const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
+    const char *owner_str   = nmo_opt_str(&vals[OPT_OWNER]);
+    const char *name_str    = nmo_opt_str(&vals[OPT_NAME]);
     bool has_index          = vals[OPT_INDEX].present;
     uint32_t param_index    = has_index ? vals[OPT_INDEX].val.u : 0;
-    bool hex_mode           = vals[OPT_HEX].present && vals[OPT_HEX].val.flag;
-    bool dry_run            = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    bool hex_mode           = nmo_opt_flag(&vals[OPT_HEX]);
+    bool dry_run            = nmo_opt_flag(&vals[OPT_DRYRUN]);
     bool has_direct_id      = vals[OPT_ID].present;
     char *direct_id = NULL; /* --id rendered as text for the shared id_str path */
 
@@ -1779,7 +1779,7 @@ int nmo_cmd_parameter_set_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
                                      nmo_cmd_in_session_result_t *result)
 {
     static const nmo_opt_def_t opts[] = {
-        {"--output",  "-o", NMO_OPT_STRING, "Output file (required unless --dry-run)"},
+        NMO_OPT_DEF_WRITE_OUTPUT,
         {"--owner",   "-b", NMO_OPT_STRING, "Owner behavior/object ID"},
         {"--name",    "-n", NMO_OPT_STRING, "Parameter name within owner"},
         {"--index",   "-i", NMO_OPT_UINT,   "Parameter index within owner"},
@@ -1796,7 +1796,7 @@ int nmo_cmd_parameter_set_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }
@@ -1804,12 +1804,12 @@ int nmo_cmd_parameter_set_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
     if (result != NULL) {
         result->dry_run = dry_run;
     }
 
-    const char *owner_str = vals[OPT_OWNER].present ? vals[OPT_OWNER].val.str : NULL;
+    const char *owner_str = nmo_opt_str(&vals[OPT_OWNER]);
     bool has_direct_id = vals[OPT_ID].present;
     char *direct_id = NULL; /* --id rendered as text for the shared id_str path */
 
@@ -1842,11 +1842,11 @@ int nmo_cmd_parameter_set_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv,
     parameter_set_args_t args = {
         .id_str = id_str,
         .owner_str = owner_str,
-        .name_str = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+        .name_str = nmo_opt_str(&vals[OPT_NAME]),
         .value_str = value_str,
-        .param_index = vals[OPT_INDEX].present ? vals[OPT_INDEX].val.u : 0,
+        .param_index = nmo_opt_uint_or(&vals[OPT_INDEX], 0),
         .has_index = vals[OPT_INDEX].present,
-        .hex_mode = vals[OPT_HEX].present && vals[OPT_HEX].val.flag,
+        .hex_mode = nmo_opt_flag(&vals[OPT_HEX]),
     };
     int rc = parameter_set_mutate(ctx, dry_run, NULL, &args);
     if (rc == NMO_CLI_EXIT_SUCCESS) {

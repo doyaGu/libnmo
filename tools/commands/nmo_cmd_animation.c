@@ -444,7 +444,7 @@ int nmo_cmd_animation_show(int argc, char **argv, const nmo_cli_global_opts_t *g
     enum { OPT_ID, OPT_NAME, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
     bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
@@ -456,9 +456,9 @@ int nmo_cmd_animation_show(int argc, char **argv, const nmo_cli_global_opts_t *g
 
     nmo_core_object_selector_t selector = {
         .has_id = vals[OPT_ID].present,
-        .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+        .id = nmo_opt_uint_or(&vals[OPT_ID], 0),
         .positional_id = positional_id,
-        .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+        .name = nmo_opt_str(&vals[OPT_NAME]),
         .allowed_class_ids = animation_class_ids,
         .allowed_class_count = sizeof(animation_class_ids) /
                                sizeof(animation_class_ids[0]),
@@ -723,7 +723,7 @@ int nmo_cmd_animation_keys(int argc, char **argv, const nmo_cli_global_opts_t *g
     enum { OPT_ID, OPT_NAME, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
     bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
@@ -735,9 +735,9 @@ int nmo_cmd_animation_keys(int argc, char **argv, const nmo_cli_global_opts_t *g
 
     nmo_core_object_selector_t selector = {
         .has_id = vals[OPT_ID].present,
-        .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+        .id = nmo_opt_uint_or(&vals[OPT_ID], 0),
         .positional_id = positional_id,
-        .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+        .name = nmo_opt_str(&vals[OPT_NAME]),
         .allowed_class_ids = object_animation_class_ids,
         .allowed_class_count = sizeof(object_animation_class_ids) /
                                sizeof(object_animation_class_ids[0]),
@@ -891,14 +891,14 @@ static int animation_export_parse(int argc, char **argv,
     enum { OPT_ID, OPT_NAME, OPT_OUT_DIR, OPT_ALL, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
     args->has_id = vals[OPT_ID].present;
-    args->id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0;
-    args->name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL;
-    args->out_dir = vals[OPT_OUT_DIR].present ? vals[OPT_OUT_DIR].val.str : NULL;
-    args->export_all = vals[OPT_ALL].present && vals[OPT_ALL].val.flag;
+    args->id = nmo_opt_uint_or(&vals[OPT_ID], 0);
+    args->name = nmo_opt_str(&vals[OPT_NAME]);
+    args->out_dir = nmo_opt_str(&vals[OPT_OUT_DIR]);
+    args->export_all = nmo_opt_flag(&vals[OPT_ALL]);
 
     bool has_selector_opt = args->has_id || args->name != NULL;
     if (!has_selector_opt && !args->export_all) {
@@ -1074,21 +1074,21 @@ static double animation_json_get_number(yyjson_val *val) {
 
 int nmo_cmd_animation_import(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--output",  "-o", NMO_OPT_STRING, "Output file (required unless --dry-run)"},
+        NMO_OPT_DEF_WRITE_OUTPUT,
         {"--replace", NULL, NMO_OPT_STRING, "Replace existing animation by ID"},
         {"--replace-name", NULL, NMO_OPT_STRING, "Replace existing animation by exact name"},
-        {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview without saving"},
+        NMO_OPT_DEF_DRY_RUN,
     };
     enum { OPT_OUTPUT, OPT_REPLACE, OPT_REPLACE_NAME, OPT_DRYRUN, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
-    const char *replace_str = vals[OPT_REPLACE].present ? vals[OPT_REPLACE].val.str : NULL;
-    const char *replace_name = vals[OPT_REPLACE_NAME].present ? vals[OPT_REPLACE_NAME].val.str : NULL;
-    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
+    const char *replace_str = nmo_opt_str(&vals[OPT_REPLACE]);
+    const char *replace_name = nmo_opt_str(&vals[OPT_REPLACE_NAME]);
+    bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
 
     if (!dry_run && !output_path) {
         fprintf(stderr, "Error: --output/-o is required (or use --dry-run)\n");
