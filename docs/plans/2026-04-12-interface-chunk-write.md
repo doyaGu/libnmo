@@ -993,6 +993,6 @@ Expected:
 
 ## Execution Handoff
 
-Plan revised and saved to `docs/superpowers/plans/2026-04-12-interface-chunk-write.md`.
+Plan revised and saved to `docs/plans/2026-04-12-interface-chunk-write.md`.
 
 Recommended execution: use `superpowers:executing-plans` in this workspace and complete tasks in order. Do not skip the byte-level oracle tasks; they are the guardrail that prevents the writer from becoming a parse-equivalent but Dev-incompatible serializer.
