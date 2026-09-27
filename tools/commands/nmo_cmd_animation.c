@@ -117,10 +117,9 @@ static bool animation_query_predicate(const nmo_object_t *obj, void *user_data) 
  * ============================================================================ */
 
 typedef struct animation_list_data {
-    yyjson_mut_doc *doc;    /* JSON sink when non-NULL */
-    yyjson_mut_val *arr;
-    nmo_cli_table_t *table; /* text sink otherwise */
-    uint32_t found;
+    nmo_cli_record_t **items;
+    size_t count;
+    size_t capacity;
 } animation_list_data_t;
 
 static bool animation_list_build_record(const nmo_cmd_ctx_t *c,
@@ -205,21 +204,63 @@ static int animation_list_visitor(size_t index,
     }
 
     nmo_cli_record_t *rec = nmo_cli_record_new();
-    if (!rec || !animation_list_build_record(c, obj, rec)) {
+    bool ok = rec != NULL && animation_list_build_record(c, obj, rec);
+    if (ok && data->count == data->capacity) {
+        size_t capacity = data->capacity ? data->capacity * 2u : 16u;
+        nmo_cli_record_t **grown = (nmo_cli_record_t **)realloc(
+            data->items, capacity * sizeof(*grown));
+        ok = grown != NULL;
+        if (ok) {
+            data->items = grown;
+            data->capacity = capacity;
+        }
+    }
+    if (!ok) {
         nmo_cli_record_free(rec);
         return 0;
     }
-    if (data->doc) {
-        yyjson_mut_val *item = yyjson_mut_obj(data->doc);
-        if (item && nmo_cli_record_to_json(rec, data->doc, item)) {
-            yyjson_mut_arr_add_val(data->arr, item);
-        }
-    } else if (data->table) {
-        nmo_cli_record_add_table_row(rec, data->table);
-    }
-    nmo_cli_record_free(rec);
-    data->found++;
+    data->items[data->count++] = rec;
     return 0;
+}
+
+static const nmo_cli_table_col_t animation_list_columns[] = {
+    {"ID",     NMO_CLI_ALIGN_RIGHT, 6,  0},
+    {"Class",  NMO_CLI_ALIGN_LEFT,  18, 0},
+    {"Name",   NMO_CLI_ALIGN_LEFT,  20, 50},
+    {"Length",  NMO_CLI_ALIGN_RIGHT, 8,  0},
+    {"FPS",    NMO_CLI_ALIGN_RIGHT, 6,  0},
+    {"Target", NMO_CLI_ALIGN_RIGHT, 8,  0},
+};
+
+/* Takes ownership of the collected items. */
+static nmo_cli_record_t *animation_list_record_new(animation_list_data_t *data)
+{
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL &&
+              nmo_cli_record_uint(rec, "count", NULL, data->count) &&
+              nmo_cli_record_raw_fmt(rec, "Animations: %zu\n\n", data->count);
+    nmo_cli_record_array_t *animations =
+        ok ? nmo_cli_record_array(rec, "animations", NULL) : NULL;
+    ok = ok && animations != NULL &&
+         nmo_cli_record_array_set_table(
+             animations, animation_list_columns,
+             sizeof(animation_list_columns) / sizeof(animation_list_columns[0]));
+    for (size_t i = 0; i < data->count; ++i) {
+        if (ok) {
+            ok = nmo_cli_record_array_add(animations, data->items[i]);
+        } else {
+            nmo_cli_record_free(data->items[i]);
+        }
+    }
+    free(data->items);
+    data->items = NULL;
+    data->count = 0;
+    data->capacity = 0;
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        return NULL;
+    }
+    return rec;
 }
 
 int nmo_cmd_animation_list(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -232,46 +273,19 @@ int nmo_cmd_animation_list(int argc, char **argv, const nmo_cli_global_opts_t *g
         .predicate_user_data = &c,
     };
 
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        yyjson_mut_val *arr = yyjson_mut_arr(doc);
-        animation_list_data_t ld = { .doc = doc, .arr = arr };
-        rc = nmo_core_object_query_run(&c, &query,
-                                       animation_list_visitor, &ld, NULL);
-        if (rc != NMO_CLI_EXIT_SUCCESS) {
-            return nmo_cmd_ctx_done(&c, rc);
+    animation_list_data_t ld = {0};
+    rc = nmo_core_object_query_run(&c, &query, animation_list_visitor, &ld, NULL);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        for (size_t i = 0; i < ld.count; ++i) {
+            nmo_cli_record_free(ld.items[i]);
         }
-
-        yyjson_mut_obj_add_uint(doc, data, "count", ld.found);
-        yyjson_mut_obj_add_val(doc, data, "animations", arr);
-        nmo_cmd_ctx_json_end(&c, doc, data, "animation.list");
-    } else {
-        static const nmo_cli_table_col_t columns[] = {
-            {"ID",     NMO_CLI_ALIGN_RIGHT, 6,  0},
-            {"Class",  NMO_CLI_ALIGN_LEFT,  18, 0},
-            {"Name",   NMO_CLI_ALIGN_LEFT,  20, 50},
-            {"Length",  NMO_CLI_ALIGN_RIGHT, 8,  0},
-            {"FPS",    NMO_CLI_ALIGN_RIGHT, 6,  0},
-            {"Target", NMO_CLI_ALIGN_RIGHT, 8,  0},
-        };
-
-        nmo_cli_table_t table;
-        nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
-        animation_list_data_t ld = { .table = &table };
-        rc = nmo_core_object_query_run(&c, &query,
-                                       animation_list_visitor, &ld, NULL);
-        if (rc != NMO_CLI_EXIT_SUCCESS) {
-            nmo_cli_table_free(&table);
-            return nmo_cmd_ctx_done(&c, rc);
-        }
-
-        fprintf(c.out, "Animations: %u\n\n", ld.found);
-        nmo_cli_table_print(&table, c.out, c.colorize);
-        nmo_cli_table_free(&table);
+        free(ld.items);
+        return nmo_cmd_ctx_done(&c, rc);
     }
 
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    rc = nmo_cmd_ctx_emit_record(&c, animation_list_record_new(&ld),
+                                 "animation.list", 0, c.colorize);
+    return nmo_cmd_ctx_done(&c, rc);
 }
 
 /* ============================================================================
@@ -469,25 +483,15 @@ int nmo_cmd_animation_show(int argc, char **argv, const nmo_cli_global_opts_t *g
     const char *cls = nmo_core_class_name(&c, cid);
 
     nmo_cli_record_t *rec = nmo_cli_record_new();
-    if (!rec || !animation_show_build_record(&c, rec, obj, obj_id, cid, cls, name)) {
+    if (!rec || !nmo_cli_record_title(rec, "Animation") ||
+        !animation_show_build_record(&c, rec, obj, obj_id, cid, cls, name)) {
         nmo_cli_record_free(rec);
         fprintf(stderr, "Error: Out of memory while describing animation %u\n", obj_id);
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        nmo_cli_record_to_json(rec, doc, data);
-        nmo_cli_record_free(rec);
-        nmo_cmd_ctx_json_end(&c, doc, data, "animation.show");
-    } else {
-        nmo_cli_print_heading(c.out, "Animation", c.colorize);
-        nmo_cli_record_print_kv(rec, c.out, 18, c.colorize);
-        nmo_cli_record_free(rec);
-    }
-
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    rc = nmo_cmd_ctx_emit_record(&c, rec, "animation.show", 18, c.colorize);
+    return nmo_cmd_ctx_done(&c, rc);
 }
 
 /* ============================================================================
@@ -593,6 +597,124 @@ static void add_keys_json(yyjson_mut_doc *doc, yyjson_mut_val *keys_arr,
     }
 }
 
+/* Text splice: the decoded keys of one controller. */
+static void animation_keys_text(FILE *out, bool colorize, const void *data)
+{
+    const nmo_objanim_controller_t *ctrl = (const nmo_objanim_controller_t *)data;
+    uint32_t key_size = nmo_objanim_controller_key_size(ctrl->type);
+    if (key_size == 16) {
+        print_keys_text(out, ctrl, key_size, 4, colorize);
+    } else if (key_size == 20) {
+        print_keys_text(out, ctrl, key_size, 5, colorize);
+    } else if (key_size > 0 && key_size % sizeof(float) == 0) {
+        print_keys_text(out, ctrl, key_size,
+                        key_size / (uint32_t)sizeof(float), colorize);
+    } else if (key_size > 0) {
+        print_keys_hex(out, ctrl, key_size);
+    }
+}
+
+/* JSON splice: the "keys" array of one controller. */
+static bool animation_keys_json(yyjson_mut_doc *doc, yyjson_mut_val *obj,
+                                const void *data)
+{
+    const nmo_objanim_controller_t *ctrl = (const nmo_objanim_controller_t *)data;
+    yyjson_mut_val *keys_arr = yyjson_mut_arr(doc);
+    if (!keys_arr) {
+        return false;
+    }
+    add_keys_json(doc, keys_arr, ctrl, nmo_objanim_controller_key_size(ctrl->type));
+    return yyjson_mut_obj_add_val(doc, obj, "keys", keys_arr);
+}
+
+static nmo_cli_record_t *animation_keys_record_new(
+    nmo_object_id_t obj_id,
+    const char *name,
+    const nmo_objectanimation_state_t *st)
+{
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL &&
+              nmo_cli_record_uint(rec, "id", NULL, obj_id) &&
+              nmo_cli_record_uint(rec, "controller_count", NULL,
+                                  st->controller_count) &&
+              nmo_cli_record_raw_fmt(rec, "Animation keys for #%u", obj_id) &&
+              (name && name[0] ? nmo_cli_record_raw_fmt(rec, " (%s)", name) : true) &&
+              nmo_cli_record_raw_fmt(rec, " - %u controllers\n\n",
+                                     st->controller_count);
+
+    nmo_cli_record_array_t *ctrls =
+        ok ? nmo_cli_record_array(rec, "controllers", NULL) : NULL;
+    ok = ok && ctrls != NULL;
+    if (ok) {
+        nmo_cli_record_array_omit_heading(ctrls);
+        nmo_cli_record_array_inline_items(ctrls);
+    }
+    for (uint32_t ci = 0; ok && ci < st->controller_count; ++ci) {
+        const nmo_objanim_controller_t *ctrl = &st->controllers[ci];
+        uint32_t key_size = nmo_objanim_controller_key_size(ctrl->type);
+        nmo_cli_record_t *item = nmo_cli_record_new();
+        ok = item != NULL &&
+             nmo_cli_record_str_fmt(item, "type", NULL, "0x%08x", ctrl->type) &&
+             nmo_cli_record_str(item, "type_name", NULL,
+                                controller_type_name(ctrl->type)) &&
+             nmo_cli_record_uint(item, "key_count", NULL, ctrl->key_count) &&
+             nmo_cli_record_uint(item, "key_size", NULL, key_size) &&
+             nmo_cli_record_uint(item, "data_size", NULL, ctrl->data_size) &&
+             nmo_cli_record_json(item, animation_keys_json, ctrl) &&
+             nmo_cli_record_raw_fmt(item, "Controller [%u]: type=0x%08x (%s), keys=%u, "
+                                    "key_size=%u, data=%u bytes\n",
+                                    ci, ctrl->type, controller_type_name(ctrl->type),
+                                    ctrl->key_count, key_size, ctrl->data_size) &&
+             nmo_cli_record_text_splice(item, animation_keys_text, ctrl) &&
+             nmo_cli_record_raw(item, "\n");
+        if (!ok) {
+            nmo_cli_record_free(item);
+        } else {
+            ok = nmo_cli_record_array_add(ctrls, item);
+        }
+    }
+
+    if (ok && st->morph_key_parsed_count > 0) {
+        ok = nmo_cli_record_raw_fmt(rec, "Morph keys: %u\n",
+                                    st->morph_key_parsed_count);
+        nmo_cli_record_array_t *morphs =
+            ok ? nmo_cli_record_array(rec, "morph_keys", NULL) : NULL;
+        ok = ok && morphs != NULL;
+        if (ok) {
+            nmo_cli_record_array_omit_heading(morphs);
+            nmo_cli_record_array_inline_items(morphs);
+        }
+        for (uint32_t mi = 0; ok && mi < st->morph_key_parsed_count; ++mi) {
+            const nmo_objanim_morph_key_t *mk = &st->morph_keys[mi];
+            nmo_cli_record_t *item = nmo_cli_record_new();
+            ok = item != NULL &&
+                 nmo_cli_record_real(item, "time_step", NULL,
+                                     (double)mk->time_step, NULL) &&
+                 nmo_cli_record_uint(item, "data_size", NULL, mk->data_size) &&
+                 (mi < 20
+                      ? nmo_cli_record_raw_fmt(item, "  [%u] time=%.4f, data_size=%u\n",
+                                               mi, (double)mk->time_step,
+                                               mk->data_size)
+                      : true);
+            if (!ok) {
+                nmo_cli_record_free(item);
+            } else {
+                ok = nmo_cli_record_array_add(morphs, item);
+            }
+        }
+        if (ok && st->morph_key_parsed_count > 20) {
+            ok = nmo_cli_record_raw_fmt(rec, "  ... (%u more)\n",
+                                        st->morph_key_parsed_count - 20);
+        }
+    }
+
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        return NULL;
+    }
+    return rec;
+}
+
 int nmo_cmd_animation_keys(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
         {"--id",   "-i", NMO_OPT_UINT,   "Object animation ID"},
@@ -637,93 +759,14 @@ int nmo_cmd_animation_keys(int argc, char **argv, const nmo_cli_global_opts_t *g
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-
-        yyjson_mut_obj_add_uint(doc, data, "id", obj_id);
-        yyjson_mut_obj_add_uint(doc, data, "controller_count", st->controller_count);
-
-        yyjson_mut_val *ctrl_arr = yyjson_mut_arr(doc);
-        for (uint32_t ci = 0; ci < st->controller_count; ++ci) {
-            const nmo_objanim_controller_t *ctrl = &st->controllers[ci];
-            yyjson_mut_val *cobj = yyjson_mut_obj(doc);
-
-            nmo_cli_json_add_str_fmt_safe(doc, cobj, "type", "0x%08x", ctrl->type);
-            yyjson_mut_obj_add_str(doc, cobj, "type_name",
-                                   controller_type_name(ctrl->type));
-            yyjson_mut_obj_add_uint(doc, cobj, "key_count", ctrl->key_count);
-
-            uint32_t key_size = nmo_objanim_controller_key_size(ctrl->type);
-            yyjson_mut_obj_add_uint(doc, cobj, "key_size", key_size);
-            yyjson_mut_obj_add_uint(doc, cobj, "data_size", ctrl->data_size);
-
-            yyjson_mut_val *keys_arr = yyjson_mut_arr(doc);
-            add_keys_json(doc, keys_arr, ctrl, key_size);
-            yyjson_mut_obj_add_val(doc, cobj, "keys", keys_arr);
-
-            yyjson_mut_arr_add_val(ctrl_arr, cobj);
-        }
-        yyjson_mut_obj_add_val(doc, data, "controllers", ctrl_arr);
-
-        /* Morph keys */
-        if (st->morph_key_parsed_count > 0) {
-            yyjson_mut_val *morph_arr = yyjson_mut_arr(doc);
-            for (uint32_t mi = 0; mi < st->morph_key_parsed_count; ++mi) {
-                const nmo_objanim_morph_key_t *mk = &st->morph_keys[mi];
-                yyjson_mut_val *mobj = yyjson_mut_obj(doc);
-                yyjson_mut_obj_add_real(doc, mobj, "time_step", (double)mk->time_step);
-                yyjson_mut_obj_add_uint(doc, mobj, "data_size", mk->data_size);
-                yyjson_mut_arr_add_val(morph_arr, mobj);
-            }
-            yyjson_mut_obj_add_val(doc, data, "morph_keys", morph_arr);
-        }
-
-        nmo_cmd_ctx_json_end(&c, doc, data, "animation.keys");
-    } else {
-        const char *name = nmo_object_get_name(obj);
-        fprintf(c.out, "Animation keys for #%u", obj_id);
-        if (name && name[0])
-            fprintf(c.out, " (%s)", name);
-        fprintf(c.out, " - %u controllers\n\n", st->controller_count);
-
-        for (uint32_t ci = 0; ci < st->controller_count; ++ci) {
-            const nmo_objanim_controller_t *ctrl = &st->controllers[ci];
-            uint32_t key_size = nmo_objanim_controller_key_size(ctrl->type);
-
-            fprintf(c.out, "Controller [%u]: type=0x%08x (%s), keys=%u, "
-                    "key_size=%u, data=%u bytes\n",
-                    ci, ctrl->type, controller_type_name(ctrl->type),
-                    ctrl->key_count, key_size, ctrl->data_size);
-
-            if (key_size == 16) {
-                print_keys_text(c.out, ctrl, key_size, 4, c.colorize);
-            } else if (key_size == 20) {
-                print_keys_text(c.out, ctrl, key_size, 5, c.colorize);
-            } else if (key_size > 0 && key_size % sizeof(float) == 0) {
-                print_keys_text(c.out, ctrl, key_size,
-                                key_size / (uint32_t)sizeof(float), c.colorize);
-            } else if (key_size > 0) {
-                print_keys_hex(c.out, ctrl, key_size);
-            }
-            fprintf(c.out, "\n");
-        }
-
-        /* Morph keys */
-        if (st->morph_key_parsed_count > 0) {
-            fprintf(c.out, "Morph keys: %u\n", st->morph_key_parsed_count);
-            uint32_t show = st->morph_key_parsed_count > 20 ? 20 : st->morph_key_parsed_count;
-            for (uint32_t mi = 0; mi < show; ++mi) {
-                const nmo_objanim_morph_key_t *mk = &st->morph_keys[mi];
-                fprintf(c.out, "  [%u] time=%.4f, data_size=%u\n",
-                        mi, (double)mk->time_step, mk->data_size);
-            }
-            if (st->morph_key_parsed_count > 20)
-                fprintf(c.out, "  ... (%u more)\n", st->morph_key_parsed_count - 20);
-        }
+    nmo_cli_record_t *rec =
+        animation_keys_record_new(obj_id, nmo_object_get_name(obj), st);
+    if (!rec) {
+        fprintf(stderr, "Error: Out of memory while describing animation %u\n", obj_id);
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
-
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    rc = nmo_cmd_ctx_emit_record(&c, rec, "animation.keys", 0, c.colorize);
+    return nmo_cmd_ctx_done(&c, rc);
 }
 
 /* ============================================================================
