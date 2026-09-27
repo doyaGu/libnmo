@@ -36,6 +36,19 @@ if(Python3_Interpreter_FOUND)
         WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
     )
     add_test(
+        NAME test_object_enums_generated
+        COMMAND ${Python3_EXECUTABLE}
+                ${PROJECT_SOURCE_DIR}/tools/scripts/gen_object_enums.py
+                --input include/object/nmo_object_enum_defs.h
+                --overrides tools/scripts/enum_overrides.json
+                --emit-register
+                --output src/object/object_enums.generated.h
+                --check
+    )
+    set_tests_properties(test_object_enums_generated PROPERTIES
+        WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
+    )
+    add_test(
         NAME test_lua_pushers_generated
         COMMAND ${Python3_EXECUTABLE}
                 ${PROJECT_SOURCE_DIR}/tools/scripts/gen_lua_pushers.py

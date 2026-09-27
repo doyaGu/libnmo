@@ -31,6 +31,7 @@ import argparse
 import ast
 import json
 import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
@@ -367,7 +368,11 @@ def main() -> int:
     parser.add_argument("--overrides", help="JSON overrides file")
     parser.add_argument("--emit-register", action="store_true", help="Emit registration calls")
     parser.add_argument("--header-guard", help="Wrap output with a header guard")
+    parser.add_argument("--check", action="store_true",
+                        help="Verify --output matches the generated content instead of writing it")
     args = parser.parse_args()
+    if args.check and not args.output:
+        parser.error("--check requires --output")
 
     overrides = load_overrides(Path(args.overrides)) if args.overrides else {}
 
@@ -384,7 +389,14 @@ def main() -> int:
         emit_header_guard(lines, args.header_guard, body)
         output = "\n".join(lines)
 
-    if args.output:
+    if args.check:
+        output_path = Path(args.output)
+        actual = output_path.read_text(encoding="utf-8") if output_path.exists() else ""
+        if actual != output:
+            print(f"{args.output} is out of date; regenerate with tools/scripts/gen_object_enums.py",
+                  file=sys.stderr)
+            return 1
+    elif args.output:
         Path(args.output).write_text(output, encoding="utf-8")
     else:
         print(output)
