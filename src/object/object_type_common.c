@@ -358,7 +358,7 @@ nmo_status_t nmo_object_layout_copy(
     void *dst,
     nmo_arena_t *arena)
 {
-    if (layout == NULL || src == NULL || dst == NULL || arena == NULL) {
+    if (layout == NULL || src == NULL || dst == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
     if (layout->validate != NULL) {
@@ -507,9 +507,7 @@ uint32_t nmo_object_layout_hash(
     const void *instance)
 {
     if (layout == NULL || instance == NULL) return 0;
-    uint32_t hash = 2166136261u;
-    const uint32_t base_hash = layout->base_vtable->hash(instance);
-    hash = layout_hash_bytes(hash, &base_hash, sizeof(base_hash));
+    uint32_t hash = layout->base_vtable->hash(instance);
 
     for (size_t i = 0; i < layout->member_count; ++i) {
         const nmo_object_state_member_t *member = &layout->members[i];

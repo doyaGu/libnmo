@@ -10,6 +10,7 @@
 #include "object/builtin/nmo_group_schemas.h"
 #include "object/builtin/nmo_layer_schemas.h"
 #include "object/builtin/nmo_place_schemas.h"
+#include "object/builtin/nmo_targetlight_schemas.h"
 #include <string.h>
 
 TEST(object_state_layout, place_copy_equals_hash) {
@@ -108,8 +109,35 @@ TEST(object_state_layout, layer_defaults_and_square_data_copy) {
     nmo_arena_destroy(arena);
 }
 
+TEST(object_state_layout, targetlight_defaults_and_value_copy) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_targetlight_state_t source;
+    nmo_targetlight_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_targetlight_vtable.create(&source, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_targetlight_vtable.create(&copied, NULL, NULL));
+    ASSERT_EQ(NMO_REF_NONE, source.target.state);
+    ASSERT_TRUE(nmo_targetlight_vtable.equals(&source, &copied));
+
+    source.has_target = 1;
+    source.target = nmo_ref_from_raw(50);
+    source.base.light_power = 2.5f;
+    ASSERT_FALSE(nmo_targetlight_vtable.equals(&source, &copied));
+    ASSERT_EQ(NMO_OK,
+              nmo_targetlight_vtable.copy(&source, &copied, NULL, arena));
+    ASSERT_TRUE(nmo_targetlight_vtable.equals(&source, &copied));
+    ASSERT_EQ(nmo_targetlight_vtable.hash(&source),
+              nmo_targetlight_vtable.hash(&copied));
+    ASSERT_EQ(50u, copied.target.raw_id);
+
+    nmo_targetlight_vtable.destroy(&source, NULL, NULL);
+    nmo_targetlight_vtable.destroy(&copied, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(object_state_layout, place_copy_equals_hash);
     REGISTER_TEST(object_state_layout, copy_into_shallow_alias_detaches_arrays);
     REGISTER_TEST(object_state_layout, layer_defaults_and_square_data_copy);
+    REGISTER_TEST(object_state_layout, targetlight_defaults_and_value_copy);
 TEST_MAIN_END()

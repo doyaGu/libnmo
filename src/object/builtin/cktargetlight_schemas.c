@@ -16,16 +16,28 @@
 #include "type/nmo_reflection.h"
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE(
-    targetlight,
-    nmo_targetlight_state_t,
-    do {
-        nmo_status_t result = nmo_light_vtable.create(
-            &state->base, NULL, context);
-        if (result != NMO_OK) return result;
-        state->target = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
-    } while (0),
-    nmo_light_vtable.destroy(&state->base, NULL, context))
+static void nmo_targetlight_set_defaults(void *instance)
+{
+    nmo_targetlight_state_t *state = instance;
+    state->target = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+}
+
+static const nmo_object_state_member_t nmo_targetlight_members[] = {
+    NMO_STATE_VALUE(nmo_targetlight_state_t, has_target),
+    NMO_STATE_VALUE(nmo_targetlight_state_t, target)
+};
+
+static const nmo_object_state_layout_t nmo_targetlight_layout = {
+    .size = sizeof(nmo_targetlight_state_t),
+    .base_vtable = &nmo_light_vtable,
+    .base_size = sizeof(nmo_light_state_t),
+    .members = nmo_targetlight_members,
+    .member_count =
+        sizeof(nmo_targetlight_members) / sizeof(nmo_targetlight_members[0]),
+    .set_defaults = nmo_targetlight_set_defaults,
+};
+
+NMO_DEFINE_OBJECT_LAYOUT_OPS(targetlight, nmo_targetlight_layout)
 
 static void nmo_targetlight_dispose_base_arrays(nmo_targetlight_state_t *state)
 {
@@ -145,28 +157,6 @@ static void nmo_targetlight_post_delete(
     (void)context;
 }
 
-static nmo_status_t nmo_targetlight_copy(
-    const void *src,
-    void *dst,
-    const nmo_type_descriptor_t *type,
-    nmo_arena_t *arena)
-{
-    (void)type;
-    if (src == NULL || dst == NULL || arena == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    const nmo_targetlight_state_t *source = src;
-    nmo_targetlight_state_t *target = dst;
-    nmo_type_descriptor_t base_type = {
-        .size = sizeof(nmo_light_state_t),
-    };
-    NMO_RETURN_IF_ERROR(nmo_light_vtable.copy(
-        &source->base, &target->base, &base_type, arena));
-    target->has_target = source->has_target;
-    target->target = source->target;
-    return NMO_OK;
-}
-
 static nmo_status_t nmo_targetlight_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
@@ -176,47 +166,6 @@ static nmo_status_t nmo_targetlight_validate(
     if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
     const nmo_targetlight_state_t *state = instance;
     return nmo_light_vtable.validate(&state->base, NULL, context);
-}
-
-static bool nmo_targetlight_equals(const void *a, const void *b)
-{
-    if (a == b) return true;
-    if (a == NULL || b == NULL) return false;
-    const nmo_targetlight_state_t *lhs = a;
-    const nmo_targetlight_state_t *rhs = b;
-    return nmo_light_vtable.equals(&lhs->base, &rhs->base) &&
-        lhs->has_target == rhs->has_target &&
-        lhs->target.raw_id == rhs->target.raw_id &&
-        lhs->target.id == rhs->target.id &&
-        lhs->target.state == rhs->target.state;
-}
-
-static uint32_t nmo_targetlight_hash_bytes(
-    uint32_t hash,
-    const void *data,
-    size_t size)
-{
-    const uint8_t *bytes = data;
-    for (size_t i = 0; i < size; ++i) {
-        hash ^= bytes[i];
-        hash *= 16777619u;
-    }
-    return hash;
-}
-
-static uint32_t nmo_targetlight_hash(const void *instance)
-{
-    if (instance == NULL) return 0;
-    const nmo_targetlight_state_t *state = instance;
-    uint32_t hash = nmo_light_vtable.hash(&state->base);
-    hash = nmo_targetlight_hash_bytes(
-        hash, &state->has_target, sizeof(state->has_target));
-    hash = nmo_targetlight_hash_bytes(
-        hash, &state->target.raw_id, sizeof(state->target.raw_id));
-    hash = nmo_targetlight_hash_bytes(
-        hash, &state->target.id, sizeof(state->target.id));
-    return nmo_targetlight_hash_bytes(
-        hash, &state->target.state, sizeof(state->target.state));
 }
 
 nmo_type_vtable_t nmo_targetlight_vtable = {

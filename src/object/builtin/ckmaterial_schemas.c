@@ -28,8 +28,9 @@
 #include <stddef.h>
 #include <stdalign.h>
 
-static void nmo_material_set_defaults(nmo_material_state_t *state)
+static void nmo_material_set_defaults(void *instance)
 {
+    nmo_material_state_t *state = instance;
     if (state == NULL) return;
 
     state->diffuse_color = nmo_color_to_argb32(
@@ -67,16 +68,36 @@ static void nmo_material_dispose_base_arrays(nmo_material_state_t *state)
     nmo_array_dispose(&state->base.legacy_attributes);
 }
 
-NMO_DEFINE_OBJECT_LIFECYCLE(
-    material,
-    nmo_material_state_t,
-    do {
-        nmo_status_t result = nmo_beobject_vtable.create(
-            &state->base, NULL, context);
-        if (result != NMO_OK) return result;
-        nmo_material_set_defaults(state);
-    } while (0),
-    nmo_beobject_vtable.destroy(&state->base, NULL, context))
+static const nmo_object_state_member_t nmo_material_members[] = {
+    NMO_STATE_VALUE(nmo_material_state_t, diffuse_color),
+    NMO_STATE_VALUE(nmo_material_state_t, ambient_color),
+    NMO_STATE_VALUE(nmo_material_state_t, specular_color),
+    NMO_STATE_VALUE(nmo_material_state_t, emissive_color),
+    NMO_STATE_VALUE(nmo_material_state_t, specular_power),
+    NMO_STATE_VALUE(nmo_material_state_t, textures),
+    NMO_STATE_VALUE(nmo_material_state_t, texture_border_color),
+    NMO_STATE_VALUE(nmo_material_state_t, packed_modes),
+    NMO_STATE_VALUE(nmo_material_state_t, packed_flags),
+    NMO_STATE_VALUE(nmo_material_state_t, effect),
+    NMO_STATE_VALUE(nmo_material_state_t, effect_parameter),
+    NMO_STATE_VALUE(nmo_material_state_t, has_material_data),
+    NMO_STATE_VALUE(nmo_material_state_t, material_data_is_legacy),
+    NMO_STATE_VALUE(nmo_material_state_t, has_effect),
+    NMO_STATE_VALUE(nmo_material_state_t, has_effect_param),
+    NMO_STATE_VALUE(nmo_material_state_t, has_additional_textures)
+};
+
+static const nmo_object_state_layout_t nmo_material_layout = {
+    .size = sizeof(nmo_material_state_t),
+    .base_vtable = &nmo_beobject_vtable,
+    .base_size = sizeof(nmo_beobject_state_t),
+    .members = nmo_material_members,
+    .member_count =
+        sizeof(nmo_material_members) / sizeof(nmo_material_members[0]),
+    .set_defaults = nmo_material_set_defaults,
+};
+
+NMO_DEFINE_OBJECT_LAYOUT_OPS(material, nmo_material_layout)
 
 static nmo_status_t nmo_material_validate(
     const void *instance,
@@ -487,42 +508,6 @@ static void nmo_material_post_delete(
  * Vtable + registration
  * ============================================================================ */
 
-static nmo_status_t nmo_material_copy(
-    const void *src,
-    void *dst,
-    const nmo_type_descriptor_t *type,
-    nmo_arena_t *arena)
-{
-    (void)type;
-    if (src == NULL || dst == NULL || arena == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    const nmo_material_state_t *source = src;
-    nmo_material_state_t *target = dst;
-    nmo_type_descriptor_t base_type = {
-        .size = sizeof(nmo_beobject_state_t),
-    };
-    NMO_RETURN_IF_ERROR(nmo_beobject_vtable.copy(
-        &source->base, &target->base, &base_type, arena));
-    target->diffuse_color = source->diffuse_color;
-    target->ambient_color = source->ambient_color;
-    target->specular_color = source->specular_color;
-    target->emissive_color = source->emissive_color;
-    target->specular_power = source->specular_power;
-    memcpy(target->textures, source->textures, sizeof(target->textures));
-    target->texture_border_color = source->texture_border_color;
-    target->packed_modes = source->packed_modes;
-    target->packed_flags = source->packed_flags;
-    target->effect = source->effect;
-    target->effect_parameter = source->effect_parameter;
-    target->has_material_data = source->has_material_data;
-    target->material_data_is_legacy = source->material_data_is_legacy;
-    target->has_effect = source->has_effect;
-    target->has_effect_param = source->has_effect_param;
-    target->has_additional_textures = source->has_additional_textures;
-    return NMO_OK;
-}
-
 static nmo_status_t nmo_material_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
@@ -541,100 +526,6 @@ static nmo_status_t nmo_material_validate(
             "Material state cannot be serialized losslessly");
     }
     NMO_RETURN_OK();
-}
-
-static bool nmo_material_ref_equals(
-    const nmo_ref_t *lhs,
-    const nmo_ref_t *rhs)
-{
-    return lhs->raw_id == rhs->raw_id &&
-        lhs->id == rhs->id &&
-        lhs->state == rhs->state;
-}
-
-static bool nmo_material_equals(const void *a, const void *b)
-{
-    if (a == b) return true;
-    if (a == NULL || b == NULL) return false;
-    const nmo_material_state_t *lhs = a;
-    const nmo_material_state_t *rhs = b;
-    if (!nmo_beobject_vtable.equals(&lhs->base, &rhs->base) ||
-        lhs->diffuse_color != rhs->diffuse_color ||
-        lhs->ambient_color != rhs->ambient_color ||
-        lhs->specular_color != rhs->specular_color ||
-        lhs->emissive_color != rhs->emissive_color ||
-        memcmp(&lhs->specular_power, &rhs->specular_power,
-               sizeof(lhs->specular_power)) != 0) {
-        return false;
-    }
-    for (size_t i = 0; i < 4; ++i) {
-        if (!nmo_material_ref_equals(
-                &lhs->textures[i], &rhs->textures[i])) {
-            return false;
-        }
-    }
-    return lhs->texture_border_color == rhs->texture_border_color &&
-        lhs->packed_modes == rhs->packed_modes &&
-        lhs->packed_flags == rhs->packed_flags &&
-        lhs->effect == rhs->effect &&
-        nmo_material_ref_equals(
-            &lhs->effect_parameter, &rhs->effect_parameter) &&
-        lhs->has_material_data == rhs->has_material_data &&
-        lhs->material_data_is_legacy == rhs->material_data_is_legacy &&
-        lhs->has_effect == rhs->has_effect &&
-        lhs->has_effect_param == rhs->has_effect_param &&
-        lhs->has_additional_textures == rhs->has_additional_textures;
-}
-
-static uint32_t nmo_material_hash_bytes(
-    uint32_t hash,
-    const void *data,
-    size_t size)
-{
-    const uint8_t *bytes = data;
-    for (size_t i = 0; i < size; ++i) {
-        hash ^= bytes[i];
-        hash *= 16777619u;
-    }
-    return hash;
-}
-
-static uint32_t nmo_material_hash_ref(
-    uint32_t hash,
-    const nmo_ref_t *ref)
-{
-    hash = nmo_material_hash_bytes(hash, &ref->raw_id, sizeof(ref->raw_id));
-    hash = nmo_material_hash_bytes(hash, &ref->id, sizeof(ref->id));
-    return nmo_material_hash_bytes(hash, &ref->state, sizeof(ref->state));
-}
-
-static uint32_t nmo_material_hash(const void *instance)
-{
-    if (instance == NULL) return 0;
-    const nmo_material_state_t *state = instance;
-    uint32_t hash = nmo_beobject_vtable.hash(&state->base);
-#define NMO_MATERIAL_HASH_FIELD(field) \
-    hash = nmo_material_hash_bytes(hash, &state->field, sizeof(state->field))
-    NMO_MATERIAL_HASH_FIELD(diffuse_color);
-    NMO_MATERIAL_HASH_FIELD(ambient_color);
-    NMO_MATERIAL_HASH_FIELD(specular_color);
-    NMO_MATERIAL_HASH_FIELD(emissive_color);
-    NMO_MATERIAL_HASH_FIELD(specular_power);
-    for (size_t i = 0; i < 4; ++i) {
-        hash = nmo_material_hash_ref(hash, &state->textures[i]);
-    }
-    NMO_MATERIAL_HASH_FIELD(texture_border_color);
-    NMO_MATERIAL_HASH_FIELD(packed_modes);
-    NMO_MATERIAL_HASH_FIELD(packed_flags);
-    NMO_MATERIAL_HASH_FIELD(effect);
-    hash = nmo_material_hash_ref(hash, &state->effect_parameter);
-    NMO_MATERIAL_HASH_FIELD(has_material_data);
-    NMO_MATERIAL_HASH_FIELD(material_data_is_legacy);
-    NMO_MATERIAL_HASH_FIELD(has_effect);
-    NMO_MATERIAL_HASH_FIELD(has_effect_param);
-    NMO_MATERIAL_HASH_FIELD(has_additional_textures);
-#undef NMO_MATERIAL_HASH_FIELD
-    return hash;
 }
 
 nmo_type_vtable_t nmo_material_vtable = {

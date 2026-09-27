@@ -34,15 +34,32 @@
 #include <stddef.h>
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE(
-    2dentity,
-    nmo_2dentity_state_t,
-    do {
-        nmo_status_t result = nmo_renderobject_vtable.create(
-            &state->base, NULL, context);
-        if (result != NMO_OK) return result;
-    } while (0),
-    nmo_renderobject_vtable.destroy(&state->base, NULL, context))
+static const nmo_object_state_member_t nmo_2dentity_members[] = {
+    NMO_STATE_VALUE(nmo_2dentity_state_t, data_is_legacy),
+    NMO_STATE_VALUE(nmo_2dentity_state_t, rect),
+    NMO_STATE_VALUE(nmo_2dentity_state_t, has_homogeneous_rect),
+    NMO_STATE_VALUE(nmo_2dentity_state_t, homogeneous_rect),
+    NMO_STATE_VALUE(nmo_2dentity_state_t, has_source_rect),
+    NMO_STATE_VALUE(nmo_2dentity_state_t, source_rect),
+    NMO_STATE_VALUE(nmo_2dentity_state_t, has_z_order),
+    NMO_STATE_VALUE(nmo_2dentity_state_t, z_order),
+    NMO_STATE_VALUE(nmo_2dentity_state_t, has_parent),
+    NMO_STATE_VALUE(nmo_2dentity_state_t, parent),
+    NMO_STATE_VALUE(nmo_2dentity_state_t, has_material),
+    NMO_STATE_VALUE(nmo_2dentity_state_t, material),
+    NMO_STATE_VALUE(nmo_2dentity_state_t, flags)
+};
+
+static const nmo_object_state_layout_t nmo_2dentity_layout = {
+    .size = sizeof(nmo_2dentity_state_t),
+    .base_vtable = &nmo_renderobject_vtable,
+    .base_size = sizeof(nmo_renderobject_state_t),
+    .members = nmo_2dentity_members,
+    .member_count =
+        sizeof(nmo_2dentity_members) / sizeof(nmo_2dentity_members[0]),
+};
+
+NMO_DEFINE_OBJECT_LAYOUT_OPS(2dentity, nmo_2dentity_layout)
 
 static void nmo_2dentity_dispose_base_arrays(nmo_2dentity_state_t *state)
 {
@@ -816,39 +833,6 @@ static void nmo_2dentity_post_delete(
     (void)context;
 }
 
-static nmo_status_t nmo_2dentity_copy(
-    const void *src,
-    void *dst,
-    const nmo_type_descriptor_t *type,
-    nmo_arena_t *arena)
-{
-    (void)type;
-    if (src == NULL || dst == NULL || arena == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    const nmo_2dentity_state_t *source = src;
-    nmo_2dentity_state_t *target = dst;
-    nmo_type_descriptor_t base_type = {
-        .size = sizeof(nmo_renderobject_state_t),
-    };
-    NMO_RETURN_IF_ERROR(nmo_renderobject_vtable.copy(
-        &source->base, &target->base, &base_type, arena));
-    target->data_is_legacy = source->data_is_legacy;
-    target->rect = source->rect;
-    target->has_homogeneous_rect = source->has_homogeneous_rect;
-    target->homogeneous_rect = source->homogeneous_rect;
-    target->has_source_rect = source->has_source_rect;
-    target->source_rect = source->source_rect;
-    target->has_z_order = source->has_z_order;
-    target->z_order = source->z_order;
-    target->has_parent = source->has_parent;
-    target->parent = source->parent;
-    target->has_material = source->has_material;
-    target->material = source->material;
-    target->flags = source->flags;
-    return NMO_OK;
-}
-
 static nmo_status_t nmo_2dentity_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
@@ -858,92 +842,6 @@ static nmo_status_t nmo_2dentity_validate(
     if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
     const nmo_2dentity_state_t *state = instance;
     return nmo_renderobject_vtable.validate(&state->base, NULL, context);
-}
-
-static bool nmo_2dentity_ref_equals(
-    const nmo_ref_t *lhs,
-    const nmo_ref_t *rhs)
-{
-    return lhs->raw_id == rhs->raw_id &&
-        lhs->id == rhs->id &&
-        lhs->state == rhs->state;
-}
-
-static bool nmo_2dentity_equals(const void *a, const void *b)
-{
-    if (a == b) return true;
-    if (a == NULL || b == NULL) return false;
-    const nmo_2dentity_state_t *lhs = a;
-    const nmo_2dentity_state_t *rhs = b;
-    return nmo_renderobject_vtable.equals(&lhs->base, &rhs->base) &&
-        lhs->data_is_legacy == rhs->data_is_legacy &&
-        memcmp(&lhs->rect, &rhs->rect, sizeof(lhs->rect)) == 0 &&
-        lhs->has_homogeneous_rect == rhs->has_homogeneous_rect &&
-        memcmp(&lhs->homogeneous_rect, &rhs->homogeneous_rect,
-               sizeof(lhs->homogeneous_rect)) == 0 &&
-        lhs->has_source_rect == rhs->has_source_rect &&
-        memcmp(&lhs->source_rect, &rhs->source_rect,
-               sizeof(lhs->source_rect)) == 0 &&
-        lhs->has_z_order == rhs->has_z_order &&
-        lhs->z_order == rhs->z_order &&
-        lhs->has_parent == rhs->has_parent &&
-        nmo_2dentity_ref_equals(&lhs->parent, &rhs->parent) &&
-        lhs->has_material == rhs->has_material &&
-        nmo_2dentity_ref_equals(&lhs->material, &rhs->material) &&
-        lhs->flags == rhs->flags;
-}
-
-static uint32_t nmo_2dentity_hash_bytes(
-    uint32_t hash,
-    const void *data,
-    size_t size)
-{
-    const uint8_t *bytes = data;
-    for (size_t i = 0; i < size; ++i) {
-        hash ^= bytes[i];
-        hash *= 16777619u;
-    }
-    return hash;
-}
-
-static uint32_t nmo_2dentity_hash_ref(
-    uint32_t hash,
-    const nmo_ref_t *ref)
-{
-    hash = nmo_2dentity_hash_bytes(hash, &ref->raw_id, sizeof(ref->raw_id));
-    hash = nmo_2dentity_hash_bytes(hash, &ref->id, sizeof(ref->id));
-    return nmo_2dentity_hash_bytes(hash, &ref->state, sizeof(ref->state));
-}
-
-static uint32_t nmo_2dentity_hash(const void *instance)
-{
-    if (instance == NULL) return 0;
-    const nmo_2dentity_state_t *state = instance;
-    uint32_t hash = nmo_renderobject_vtable.hash(&state->base);
-    hash = nmo_2dentity_hash_bytes(
-        hash, &state->data_is_legacy, sizeof(state->data_is_legacy));
-    hash = nmo_2dentity_hash_bytes(hash, &state->rect, sizeof(state->rect));
-    hash = nmo_2dentity_hash_bytes(
-        hash, &state->has_homogeneous_rect,
-        sizeof(state->has_homogeneous_rect));
-    hash = nmo_2dentity_hash_bytes(
-        hash, &state->homogeneous_rect, sizeof(state->homogeneous_rect));
-    hash = nmo_2dentity_hash_bytes(
-        hash, &state->has_source_rect, sizeof(state->has_source_rect));
-    hash = nmo_2dentity_hash_bytes(
-        hash, &state->source_rect, sizeof(state->source_rect));
-    hash = nmo_2dentity_hash_bytes(
-        hash, &state->has_z_order, sizeof(state->has_z_order));
-    hash = nmo_2dentity_hash_bytes(
-        hash, &state->z_order, sizeof(state->z_order));
-    hash = nmo_2dentity_hash_bytes(
-        hash, &state->has_parent, sizeof(state->has_parent));
-    hash = nmo_2dentity_hash_ref(hash, &state->parent);
-    hash = nmo_2dentity_hash_bytes(
-        hash, &state->has_material, sizeof(state->has_material));
-    hash = nmo_2dentity_hash_ref(hash, &state->material);
-    return nmo_2dentity_hash_bytes(
-        hash, &state->flags, sizeof(state->flags));
 }
 
 nmo_type_vtable_t nmo_2dentity_vtable = {

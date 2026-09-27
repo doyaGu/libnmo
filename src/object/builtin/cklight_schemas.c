@@ -52,7 +52,9 @@
 #include <stdalign.h>
 #include <string.h>
 
-static void nmo_light_set_defaults(nmo_light_state_t *state) {
+static void nmo_light_set_defaults(void *instance)
+{
+    nmo_light_state_t *state = instance;
     if (state == NULL) {
         return;
     }
@@ -102,16 +104,27 @@ static void nmo_light_apply_nonspot_defaults(nmo_light_state_t *state) {
     state->light_data.falloff = 1.0f;
 }
 
-NMO_DEFINE_OBJECT_LIFECYCLE(
-    light,
-    nmo_light_state_t,
-    do {
-        nmo_status_t result = nmo_3dentity_vtable.create(
-            &state->entity, NULL, context);
-        if (result != NMO_OK) return result;
-        nmo_light_set_defaults(state);
-    } while (0),
-    nmo_3dentity_vtable.destroy(&state->entity, NULL, context))
+static const nmo_object_state_member_t nmo_light_members[] = {
+    NMO_STATE_VALUE(nmo_light_state_t, light_data),
+    NMO_STATE_VALUE(nmo_light_state_t, flags),
+    NMO_STATE_VALUE(nmo_light_state_t, light_power),
+    NMO_STATE_VALUE(nmo_light_state_t, has_light_data_chunk),
+    NMO_STATE_VALUE(nmo_light_state_t, has_light_power_chunk),
+    NMO_STATE_VALUE(nmo_light_state_t, light_data_is_legacy),
+    NMO_STATE_VALUE(nmo_light_state_t, legacy_diffuse_alpha)
+};
+
+static const nmo_object_state_layout_t nmo_light_layout = {
+    .size = sizeof(nmo_light_state_t),
+    .base_vtable = &nmo_3dentity_vtable,
+    .base_size = sizeof(nmo_3dentity_state_t),
+    .members = nmo_light_members,
+    .member_count =
+        sizeof(nmo_light_members) / sizeof(nmo_light_members[0]),
+    .set_defaults = nmo_light_set_defaults,
+};
+
+NMO_DEFINE_OBJECT_LAYOUT_OPS(light, nmo_light_layout)
 
 static nmo_status_t nmo_light_validate(
     const void *instance,
@@ -746,33 +759,6 @@ static void nmo_light_post_delete(
  * Vtable + registration
  * ============================================================================ */
 
-static nmo_status_t nmo_light_copy(
-    const void *src,
-    void *dst,
-    const nmo_type_descriptor_t *type,
-    nmo_arena_t *arena)
-{
-    (void)type;
-    if (src == NULL || dst == NULL || arena == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    const nmo_light_state_t *source = src;
-    nmo_light_state_t *target = dst;
-    nmo_type_descriptor_t base_type = {
-        .size = sizeof(nmo_3dentity_state_t),
-    };
-    NMO_RETURN_IF_ERROR(nmo_3dentity_vtable.copy(
-        &source->entity, &target->entity, &base_type, arena));
-    target->light_data = source->light_data;
-    target->flags = source->flags;
-    target->light_power = source->light_power;
-    target->has_light_data_chunk = source->has_light_data_chunk;
-    target->has_light_power_chunk = source->has_light_power_chunk;
-    target->light_data_is_legacy = source->light_data_is_legacy;
-    target->legacy_diffuse_alpha = source->legacy_diffuse_alpha;
-    return NMO_OK;
-}
-
 static nmo_status_t nmo_light_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
@@ -790,62 +776,6 @@ static nmo_status_t nmo_light_validate(
             "Light data cannot be serialized losslessly");
     }
     NMO_RETURN_OK();
-}
-
-static bool nmo_light_equals(const void *a, const void *b)
-{
-    if (a == b) return true;
-    if (a == NULL || b == NULL) return false;
-    const nmo_light_state_t *lhs = a;
-    const nmo_light_state_t *rhs = b;
-    return nmo_3dentity_vtable.equals(&lhs->entity, &rhs->entity) &&
-        memcmp(&lhs->light_data, &rhs->light_data,
-               sizeof(lhs->light_data)) == 0 &&
-        lhs->flags == rhs->flags &&
-        memcmp(&lhs->light_power, &rhs->light_power,
-               sizeof(lhs->light_power)) == 0 &&
-        lhs->has_light_data_chunk == rhs->has_light_data_chunk &&
-        lhs->has_light_power_chunk == rhs->has_light_power_chunk &&
-        lhs->light_data_is_legacy == rhs->light_data_is_legacy &&
-        memcmp(&lhs->legacy_diffuse_alpha, &rhs->legacy_diffuse_alpha,
-               sizeof(lhs->legacy_diffuse_alpha)) == 0;
-}
-
-static uint32_t nmo_light_hash_bytes(
-    uint32_t hash,
-    const void *data,
-    size_t size)
-{
-    const uint8_t *bytes = data;
-    for (size_t i = 0; i < size; ++i) {
-        hash ^= bytes[i];
-        hash *= 16777619u;
-    }
-    return hash;
-}
-
-static uint32_t nmo_light_hash(const void *instance)
-{
-    if (instance == NULL) return 0;
-    const nmo_light_state_t *state = instance;
-    uint32_t hash = nmo_3dentity_vtable.hash(&state->entity);
-    hash = nmo_light_hash_bytes(
-        hash, &state->light_data, sizeof(state->light_data));
-    hash = nmo_light_hash_bytes(hash, &state->flags, sizeof(state->flags));
-    hash = nmo_light_hash_bytes(
-        hash, &state->light_power, sizeof(state->light_power));
-    hash = nmo_light_hash_bytes(
-        hash, &state->has_light_data_chunk,
-        sizeof(state->has_light_data_chunk));
-    hash = nmo_light_hash_bytes(
-        hash, &state->has_light_power_chunk,
-        sizeof(state->has_light_power_chunk));
-    hash = nmo_light_hash_bytes(
-        hash, &state->light_data_is_legacy,
-        sizeof(state->light_data_is_legacy));
-    return nmo_light_hash_bytes(
-        hash, &state->legacy_diffuse_alpha,
-        sizeof(state->legacy_diffuse_alpha));
 }
 
 nmo_type_vtable_t nmo_light_vtable = {

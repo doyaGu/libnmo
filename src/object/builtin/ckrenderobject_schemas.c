@@ -27,15 +27,12 @@
 #include <stdalign.h>
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE(
-    renderobject,
-    nmo_renderobject_state_t,
-    do {
-        nmo_status_t result = nmo_beobject_vtable.create(
-            &state->base, NULL, context);
-        if (result != NMO_OK) return result;
-    } while (0),
-    nmo_beobject_vtable.destroy(&state->base, NULL, context))
+static const nmo_object_state_layout_t nmo_renderobject_layout = {
+    .size = sizeof(nmo_renderobject_state_t),
+    .base_vtable = &nmo_beobject_vtable,
+};
+
+NMO_DEFINE_OBJECT_LAYOUT_OPS(renderobject, nmo_renderobject_layout)
 
 /* =============================================================================
  * REFLECTION FIELDS
@@ -125,20 +122,6 @@ nmo_status_t nmo_renderobject_serialize(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t nmo_renderobject_copy(
-    const void *src,
-    void *dst,
-    const nmo_type_descriptor_t *type,
-    nmo_arena_t *arena)
-{
-    (void)type;
-    if (src == NULL || dst == NULL) return NMO_ERR_INVALID_ARGUMENT;
-    const nmo_renderobject_state_t *source = src;
-    nmo_renderobject_state_t *target = dst;
-    return nmo_beobject_vtable.copy(
-        &source->base, &target->base, NULL, arena);
-}
-
 static nmo_status_t nmo_renderobject_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
@@ -204,22 +187,6 @@ static void nmo_renderobject_post_delete(
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
-
-static bool nmo_renderobject_equals(const void *a, const void *b)
-{
-    if (a == b) return true;
-    if (a == NULL || b == NULL) return false;
-    const nmo_renderobject_state_t *lhs = a;
-    const nmo_renderobject_state_t *rhs = b;
-    return nmo_beobject_vtable.equals(&lhs->base, &rhs->base);
-}
-
-static uint32_t nmo_renderobject_hash(const void *instance)
-{
-    if (instance == NULL) return 0;
-    const nmo_renderobject_state_t *state = instance;
-    return nmo_beobject_vtable.hash(&state->base);
-}
 
 nmo_type_vtable_t nmo_renderobject_vtable = {
     .prepare_dependencies = nmo_renderobject_prepare_dependencies,
