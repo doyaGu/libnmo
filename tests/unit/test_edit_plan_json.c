@@ -1052,8 +1052,54 @@ TEST(edit_plan_json, rejects_invalid_operations_with_stable_diagnostics) {
         "rewire_operation operation requires either in1_id or in1_operation plus in1_handle");
 
     assert_manifest_invalid_contains(
+        "{\"op\":\"add_io\",\"behavior_id\":1,\"kind\":\"sideways\","
+        "\"name\":\"In\"}",
+        "Invalid kind");
+
+    assert_manifest_invalid_contains(
+        "{\"op\":\"add_parameter\",\"owner_id\":1,\"kind\":\"in\","
+        "\"type_guid\":\"not-a-guid\",\"name\":\"Text\"}",
+        "Invalid type_guid");
+
+    assert_manifest_invalid_contains(
+        "{\"op\":\"remove_parameter\",\"parameter_id\":1,\"detach\":1}",
+        "Invalid detach");
+
+    assert_manifest_invalid_contains(
+        "{\"op\":\"remove_node\",\"parent_id\":1,\"node_id\":0}",
+        "Missing or invalid node_id");
+
+    assert_manifest_invalid_contains(
         "{\"op\":\"unknown_edit\"}",
         "Unsupported edit plan op 'unknown_edit'");
+}
+
+TEST(edit_plan_json, reads_enum_aliases_and_writes_canonical_names) {
+    const char *input =
+        "{\"version\":2,\"operations\":["
+        "{\"op\":\"add_io\",\"behavior_id\":7,\"kind\":\"out\","
+        "\"name\":\"Exit\"},"
+        "{\"op\":\"add_parameter\",\"owner_id\":7,\"kind\":\"output\","
+        "\"type_guid\":\"6BD010E2-115617EA\",\"name\":\"Result\"}"
+        "]}";
+    nmo_edit_plan_t *plan = NULL;
+    char *json = NULL;
+
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_json_read(input, strlen(input), &plan));
+    ASSERT_EQ(2u, nmo_edit_plan_count(plan));
+    const nmo_edit_op_t *add_io = nmo_edit_plan_get(plan, 0u);
+    ASSERT_EQ(NMO_SCRIPT_EDIT_IO_OUTPUT, add_io->data.add_io.kind);
+    ASSERT_EQ(7u, add_io->data.add_io.behavior_id);
+    const nmo_edit_op_t *add_parameter = nmo_edit_plan_get(plan, 1u);
+    ASSERT_EQ(NMO_SCRIPT_EDIT_PARAM_OUT, add_parameter->data.add_parameter.kind);
+
+    ASSERT_EQ(NMO_OK, nmo_edit_plan_json_write(plan, &json));
+    ASSERT_NOT_NULL(json);
+    ASSERT_STR_CONTAINS(json, "\"kind\":\"output\"");
+    ASSERT_STR_CONTAINS(json, "\"kind\":\"out\"");
+
+    nmo_edit_plan_manifest_json_free(json);
+    nmo_edit_plan_destroy(plan);
 }
 
 TEST(edit_plan_json, rejects_plan_roots_with_generic_operation_diagnostics) {
@@ -1301,6 +1347,7 @@ REGISTER_TEST(edit_plan_json,
 REGISTER_TEST(edit_plan_json,
               rejects_non_object_manifest_with_generic_diagnostic);
 REGISTER_TEST(edit_plan_json, rejects_invalid_operations_with_stable_diagnostics);
+REGISTER_TEST(edit_plan_json, reads_enum_aliases_and_writes_canonical_names);
 REGISTER_TEST(edit_plan_json,
               rejects_plan_roots_with_generic_operation_diagnostics);
 REGISTER_TEST(edit_plan_json, rejects_strict_replay_manifest_errors);
