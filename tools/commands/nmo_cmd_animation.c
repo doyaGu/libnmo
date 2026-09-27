@@ -970,6 +970,7 @@ static int animation_export_run(nmo_cmd_ctx_t *ctx,
                          : NMO_CLI_EXIT_IO_ERROR;
     }
 
+    uint32_t exported = 0;
     if (args->export_all) {
         nmo_object_query_t query = {0};
         nmo_core_query_set_class_id(&query, NMO_CID_OBJECTANIMATION, false);
@@ -980,8 +981,7 @@ static int animation_export_run(nmo_cmd_ctx_t *ctx,
         if (rc != NMO_CLI_EXIT_SUCCESS) {
             return close_ctx ? nmo_cmd_ctx_done(&c, rc) : rc;
         }
-        fprintf(c.out, "Exported %u animations to %s\n",
-                export_data.exported, args->out_dir);
+        exported = export_data.exported;
     } else {
         nmo_core_object_selector_t selector = {
             .has_id = args->has_id,
@@ -1013,10 +1013,23 @@ static int animation_export_run(nmo_cmd_ctx_t *ctx,
         if (export_one_animation(st, obj, args->out_dir) != 0)
             return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR)
                              : NMO_CLI_EXIT_INTERNAL_ERROR;
+        exported = 1;
     }
 
-    return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS)
-                     : NMO_CLI_EXIT_SUCCESS;
+    /* Only --all reports in text; JSON always gets the summary. */
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL &&
+              nmo_cli_record_str(rec, "out_dir", NULL, args->out_dir) &&
+              nmo_cli_record_uint(rec, "exported", NULL, exported) &&
+              (!args->export_all ||
+               nmo_cli_record_raw_fmt(rec, "Exported %u animations to %s\n",
+                                      exported, args->out_dir));
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        rec = NULL;
+    }
+    int rc = nmo_cmd_ctx_emit_record(&c, rec, "animation.export", 0, c.colorize);
+    return close_ctx ? nmo_cmd_ctx_done(&c, rc) : rc;
 }
 
 int nmo_cmd_animation_export(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -1477,11 +1490,24 @@ int nmo_cmd_animation_import(int argc, char **argv, const nmo_cli_global_opts_t 
         }
     }
 
-    if (dry_run) {
-        fprintf(c.out, "[dry-run] Imported animation data; no output written\n");
-    } else {
+    if (!dry_run) {
         fprintf(stderr, "Saved: %s\n", output_path);
     }
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL &&
+              nmo_cli_record_uint(rec, "id", NULL, nmo_object_get_id(target)) &&
+              nmo_cli_record_bool(rec, "created", NULL, !do_replace) &&
+              nmo_cli_record_uint(rec, "controllers", NULL, ctrl_count) &&
+              nmo_cli_record_bool(rec, "dry_run", NULL, dry_run) &&
+              (dry_run
+                   ? nmo_cli_record_raw_fmt(
+                         rec, "[dry-run] Imported animation data; no output written\n")
+                   : nmo_cli_record_str(rec, "output", NULL, output_path));
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        rec = NULL;
+    }
+    rc = nmo_cmd_ctx_emit_record(&c, rec, "animation.import", 0, c.colorize);
+    return nmo_cmd_ctx_done(&c, rc);
 }
 
