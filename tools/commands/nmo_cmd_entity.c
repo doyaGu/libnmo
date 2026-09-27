@@ -85,10 +85,9 @@ static nmo_status_t parse_color_rgba(const char *text, nmo_color_t *out_color) {
 }
 
 typedef struct entity_list_data {
-    yyjson_mut_doc *doc;    /* JSON sink when non-NULL */
-    yyjson_mut_val *arr;
-    nmo_cli_table_t *table; /* text sink otherwise */
-    uint32_t found;
+    nmo_cli_record_t **items;
+    size_t count;
+    size_t capacity;
 } entity_list_data_t;
 
 static bool entity_list_build_record(const nmo_cmd_ctx_t *c,
@@ -138,21 +137,62 @@ static int entity_list_visitor(size_t index,
     }
 
     nmo_cli_record_t *rec = nmo_cli_record_new();
-    if (!rec || !entity_list_build_record(c, obj, rec)) {
+    bool ok = rec != NULL && entity_list_build_record(c, obj, rec);
+    if (ok && data->count == data->capacity) {
+        size_t capacity = data->capacity ? data->capacity * 2u : 16u;
+        nmo_cli_record_t **grown = (nmo_cli_record_t **)realloc(
+            data->items, capacity * sizeof(*grown));
+        ok = grown != NULL;
+        if (ok) {
+            data->items = grown;
+            data->capacity = capacity;
+        }
+    }
+    if (!ok) {
         nmo_cli_record_free(rec);
         return 0;
     }
-    if (data->doc) {
-        yyjson_mut_val *item = yyjson_mut_obj(data->doc);
-        if (item && nmo_cli_record_to_json(rec, data->doc, item)) {
-            yyjson_mut_arr_add_val(data->arr, item);
-        }
-    } else if (data->table) {
-        nmo_cli_record_add_table_row(rec, data->table);
-    }
-    nmo_cli_record_free(rec);
-    data->found++;
+    data->items[data->count++] = rec;
     return 0;
+}
+
+static const nmo_cli_table_col_t entity_list_columns[] = {
+    {"ID",       NMO_CLI_ALIGN_RIGHT, 6,  0},
+    {"CLASS",    NMO_CLI_ALIGN_LEFT,  14, 0},
+    {"NAME",     NMO_CLI_ALIGN_LEFT,  20, 40},
+    {"POSITION", NMO_CLI_ALIGN_LEFT,  24, 0},
+    {"MESH",     NMO_CLI_ALIGN_LEFT,  20, 40},
+};
+
+/* Takes ownership of the collected items. */
+static nmo_cli_record_t *entity_list_record_new(entity_list_data_t *data)
+{
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL &&
+              nmo_cli_record_uint(rec, "count", NULL, data->count) &&
+              nmo_cli_record_raw_fmt(rec, "3D Entities: %zu\n\n", data->count);
+    nmo_cli_record_array_t *entities =
+        ok ? nmo_cli_record_array(rec, "entities", NULL) : NULL;
+    ok = ok && entities != NULL &&
+         nmo_cli_record_array_set_table(
+             entities, entity_list_columns,
+             sizeof(entity_list_columns) / sizeof(entity_list_columns[0]));
+    for (size_t i = 0; i < data->count; ++i) {
+        if (ok) {
+            ok = nmo_cli_record_array_add(entities, data->items[i]);
+        } else {
+            nmo_cli_record_free(data->items[i]);
+        }
+    }
+    free(data->items);
+    data->items = NULL;
+    data->count = 0;
+    data->capacity = 0;
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        return NULL;
+    }
+    return rec;
 }
 
 /* ============================================================================
@@ -190,49 +230,21 @@ static int entity_list_run(nmo_cmd_ctx_t *c, const char *class_filter) {
             nmo_core_class_derives(c, entity_query.class_id, NMO_CID_3DENTITY);
     }
 
-    if (c->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        yyjson_mut_val *arr = yyjson_mut_arr(doc);
-        entity_list_data_t ld = { .doc = doc, .arr = arr };
-        if (class_filter_is_entity) {
-            int rc = nmo_core_object_query_run(c, &entity_query,
-                                               entity_list_visitor, &ld, NULL);
-            if (rc != NMO_CLI_EXIT_SUCCESS) {
-                return rc;
+    entity_list_data_t ld = {0};
+    if (class_filter_is_entity) {
+        int rc = nmo_core_object_query_run(c, &entity_query,
+                                           entity_list_visitor, &ld, NULL);
+        if (rc != NMO_CLI_EXIT_SUCCESS) {
+            for (size_t i = 0; i < ld.count; ++i) {
+                nmo_cli_record_free(ld.items[i]);
             }
+            free(ld.items);
+            return rc;
         }
-
-        yyjson_mut_obj_add_uint(doc, data, "count", ld.found);
-        yyjson_mut_obj_add_val(doc, data, "entities", arr);
-        nmo_cmd_ctx_json_end(c, doc, data, "entity.list");
-    } else {
-        static const nmo_cli_table_col_t columns[] = {
-            {"ID",       NMO_CLI_ALIGN_RIGHT, 6,  0},
-            {"CLASS",    NMO_CLI_ALIGN_LEFT,  14, 0},
-            {"NAME",     NMO_CLI_ALIGN_LEFT,  20, 40},
-            {"POSITION", NMO_CLI_ALIGN_LEFT,  24, 0},
-            {"MESH",     NMO_CLI_ALIGN_LEFT,  20, 40},
-        };
-
-        nmo_cli_table_t table;
-        nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
-        entity_list_data_t ld = { .table = &table };
-        if (class_filter_is_entity) {
-            int rc = nmo_core_object_query_run(c, &entity_query,
-                                               entity_list_visitor, &ld, NULL);
-            if (rc != NMO_CLI_EXIT_SUCCESS) {
-                nmo_cli_table_free(&table);
-                return rc;
-            }
-        }
-
-        fprintf(c->out, "3D Entities: %u\n\n", ld.found);
-        nmo_cli_table_print(&table, c->out, c->colorize);
-        nmo_cli_table_free(&table);
     }
 
-    return NMO_CLI_EXIT_SUCCESS;
+    return nmo_cmd_ctx_emit_record(c, entity_list_record_new(&ld), "entity.list",
+                                   0, c->colorize);
 }
 
 int nmo_cmd_entity_list(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -332,7 +344,8 @@ static bool entity_show_build_record(const nmo_cmd_ctx_t *c,
     const char *class_name = nmo_core_class_name(c, class_id);
     const nmo_3dentity_state_t *es =
         (const nmo_3dentity_state_t *)nmo_object_get_state(obj);
-    bool ok = nmo_cli_record_uint(rec, "id", NULL, obj_id);
+    bool ok = nmo_cli_record_title(rec, "3D Entity Details");
+    ok = ok && nmo_cli_record_uint(rec, "id", NULL, obj_id);
     ok = ok && nmo_cli_record_str(rec, "name", NULL, name);
     ok = ok && nmo_cli_record_text_fmt(rec, "ID / Name", "#%u (%s)", obj_id,
                                        (name && name[0]) ? name : "(unnamed)");
@@ -343,7 +356,8 @@ static bool entity_show_build_record(const nmo_cmd_ctx_t *c,
         return false;
     }
     if (!es) {
-        return nmo_cli_record_null(rec, "state", NULL, NULL);
+        return nmo_cli_record_null(rec, "state", NULL, NULL) &&
+               nmo_cli_record_raw(rec, "\n  (no deserialized state)\n");
     }
 
     const double pos[3] = {
@@ -461,9 +475,6 @@ static int entity_show_run(nmo_cmd_ctx_t *ctx, const entity_show_args_t *args)
         return rc;
     }
 
-    const nmo_3dentity_state_t *es =
-        (const nmo_3dentity_state_t *)nmo_object_get_state(obj);
-
     nmo_cli_record_t *rec = nmo_cli_record_new();
     if (!rec || !entity_show_build_record(ctx, rec, obj, obj_id)) {
         nmo_cli_record_free(rec);
@@ -471,21 +482,7 @@ static int entity_show_run(nmo_cmd_ctx_t *ctx, const entity_show_args_t *args)
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    if (ctx->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(ctx);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        nmo_cli_record_to_json(rec, doc, data);
-        nmo_cli_record_free(rec);
-        return nmo_cmd_ctx_json_end(ctx, doc, data, "entity.show");
-    }
-
-    nmo_cli_print_heading(ctx->out, "3D Entity Details", ctx->colorize);
-    nmo_cli_record_print_kv(rec, ctx->out, 20, ctx->colorize);
-    if (!es) {
-        fprintf(ctx->out, "\n  (no deserialized state)\n");
-    }
-    nmo_cli_record_free(rec);
-    return NMO_CLI_EXIT_SUCCESS;
+    return nmo_cmd_ctx_emit_record(ctx, rec, "entity.show", 20, ctx->colorize);
 }
 
 int nmo_cmd_entity_show(int argc, char **argv, const nmo_cli_global_opts_t *global) {
