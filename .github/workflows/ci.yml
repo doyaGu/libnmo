@@ -1,41 +1,71 @@
 name: CI
 
+# Every run builds, tests and packages each release platform and keeps the
+# packages as artifacts. A tag vX.Y.Z also publishes them as a GitHub release.
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  build:
-    name: ${{ matrix.name }}
+  # Performance tests assert on wall-clock ratios and are not meaningful on
+  # shared runners. The allocator test deliberately requests SIZE_MAX bytes
+  # and expects NULL, which ASan must be told to allow.
+  sanitizers:
+    name: ubuntu-clang-debug-sanitizers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Install Ninja
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      - name: Configure
+        env:
+          CC: clang
+          CXX: clang++
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+
+      - name: Build
+        run: cmake --build build --parallel -- -k 0
+
+      - name: Test
+        env:
+          ASAN_OPTIONS: allocator_may_return_null=1:detect_leaks=1
+          UBSAN_OPTIONS: print_stacktrace=1
+        run: ctest --test-dir build --output-on-failure --parallel 4 --label-exclude performance
+
+  # Release builds: tools/scripts/package_release.py runs the test suite,
+  # installs the package, checks it from the outside and archives it.
+  package:
+    name: ${{ matrix.platform }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: ubuntu-gcc-release
-            os: ubuntu-latest
-            cc: gcc
-            cxx: g++
-            build_type: Release
-          - name: ubuntu-clang-debug-sanitizers
-            os: ubuntu-latest
-            cc: clang
-            cxx: clang++
-            build_type: Debug
-          - name: macos-clang-release
+          # The oldest supported runner, so the binaries need the oldest glibc.
+          - platform: linux-x64
+            os: ubuntu-22.04
+          - platform: macos-universal
             os: macos-latest
-            cc: clang
-            cxx: clang++
-            build_type: Release
-          - name: windows-msvc-release
+            cmake_args: -DCMAKE_OSX_ARCHITECTURES=arm64;x86_64 -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+          - platform: windows-msvc-x64
             os: windows-latest
             msvc: true
-            build_type: Release
-          - name: windows-mingw-release
+          # Statically linked runtime: nmo.exe runs without MSYS2 DLLs.
+          - platform: windows-mingw-x64
             os: windows-latest
             mingw: true
-            build_type: Release
+            cmake_args: -DNMO_MINGW_STATIC_RUNTIME=ON
+            package_args: --forbid-import libwinpthread
 
     defaults:
       run:
@@ -45,6 +75,11 @@ jobs:
       - uses: actions/checkout@v7
         with:
           submodules: recursive
+
+      - uses: actions/setup-python@v7
+        if: ${{ !matrix.mingw }}
+        with:
+          python-version: '3.x'
 
       - name: Install Ninja (Ubuntu)
         if: runner.os == 'Linux'
@@ -66,34 +101,80 @@ jobs:
             mingw-w64-ucrt-x86_64-ninja
             mingw-w64-ucrt-x86_64-python
 
+      # Ninja everywhere: the MSVC job gets its toolchain from vcvars64.bat, so
+      # no Visual Studio generator version needs to be pinned.
       - name: Set up MSVC
         if: matrix.msvc
         uses: ./.github/actions/setup-msvc
 
-      # Ninja everywhere: the MSVC job gets its toolchain from vcvars64.bat, so
-      # no Visual Studio generator version needs to be pinned.
-      - name: Configure
+      - name: Build, test and package
         env:
-          CC: ${{ matrix.cc }}
-          CXX: ${{ matrix.cxx }}
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
-
-      - name: Build
-        run: cmake --build build --parallel -- -k 0
-
-      # Performance tests assert on wall-clock ratios and are not meaningful on
-      # shared runners. The allocator test deliberately requests SIZE_MAX bytes
-      # and expects NULL, which ASan must be told to allow.
-      - name: Test
-        env:
-          ASAN_OPTIONS: allocator_may_return_null=1:detect_leaks=1
-          UBSAN_OPTIONS: print_stacktrace=1
-        run: ctest --test-dir build --output-on-failure --parallel 4 --label-exclude performance
-
-      - name: Smoke-run CLI
+          CMAKE_ARGS: ${{ matrix.cmake_args }}
+          PACKAGE_ARGS: ${{ matrix.package_args }}
         run: |
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            ./build/tools/nmo.exe --version
-          else
-            ./build/tools/nmo --version
+          python tools/scripts/package_release.py --platform ${{ matrix.platform }} \
+            $PACKAGE_ARGS -- $CMAKE_ARGS
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: libnmo-${{ matrix.platform }}
+          path: |
+            dist/*.zip
+            dist/*.tar.gz
+            dist/*.sha256
+          if-no-files-found: error
+
+  publish:
+    name: publish-release
+    needs: [sanitizers, package]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      # The version lives in both nmo_types.h and project(); the tag must
+      # match them and have a CHANGELOG section to use as release notes.
+      - name: Check version
+        id: version
+        run: |
+          version=$(awk '/^#define NMO_VERSION_(MAJOR|MINOR|PATCH) / {
+            v = v (v == "" ? "" : ".") $3 } END { print v }' include/nmo_types.h)
+          project_version=$(awk '/^project\(libnmo/ { p = 1 }
+            p && $1 == "VERSION" { print $2; exit }' CMakeLists.txt)
+          if [ "$version" != "$project_version" ]; then
+            echo "::error::nmo_types.h says $version but CMakeLists.txt says $project_version"
+            exit 1
           fi
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match version $version"
+            exit 1
+          fi
+          if ! grep -q "^## \[$version\]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no section for $version"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          awk -v heading="## [$VERSION]" '
+            index($0, heading) == 1 { found = 1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+          (cd dist && cat *.sha256 > SHA256SUMS)
+          gh release create "$GITHUB_REF_NAME" \
+            --verify-tag \
+            --title "libnmo $VERSION" \
+            --notes-file release-notes.md \
+            dist/*.zip dist/*.tar.gz dist/SHA256SUMS
