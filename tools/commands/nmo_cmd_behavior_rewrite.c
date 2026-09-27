@@ -38,8 +38,8 @@ static bool parse_graph_boundary_args(int argc,
                                       const char **out_file,
                                       uint32_t *out_depth) {
     static const nmo_opt_def_t opts[] = {
-        {"--depth", "-d", NMO_OPT_UINT, "Recursion depth (default: unlimited)"},
-        {"--json",  "-j", NMO_OPT_FLAG, "JSON output"},
+        NMO_OPT_DEF_DEPTH,
+        NMO_OPT_DEF_JSON,
         {"--id",    "-i", NMO_OPT_UINT, "Behavior object ID"},
         {"--name",  "-n", NMO_OPT_STRING, "Behavior object name"},
     };
@@ -47,11 +47,7 @@ static bool parse_graph_boundary_args(int argc,
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t result = {
-        .vals = vals,
-        .pos_args = pos,
-        .pos_capacity = 16,
-    };
+    nmo_opt_result_t result = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &result) < 0) {
         return false;
     }
@@ -81,9 +77,9 @@ static bool parse_graph_boundary_args(int argc,
     if (out_selector) {
         *out_selector = (nmo_core_object_selector_t){
             .has_id = vals[OPT_ID].present,
-            .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+            .id = nmo_opt_uint_or(&vals[OPT_ID], 0),
             .positional_id = positional_id,
-            .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+            .name = nmo_opt_str(&vals[OPT_NAME]),
             .required_base_class = NMO_CID_BEHAVIOR,
             .selector_label = "Behavior",
             .type_label = "CKBehavior",
@@ -93,8 +89,7 @@ static bool parse_graph_boundary_args(int argc,
         *out_file = file_path;
     }
     if (out_depth) {
-        *out_depth = vals[OPT_DEPTH].present ?
-            vals[OPT_DEPTH].val.u : UINT32_MAX;
+        *out_depth = nmo_opt_uint_or(&vals[OPT_DEPTH], UINT32_MAX);
     }
     return true;
 }
@@ -1288,18 +1283,14 @@ static bool parse_fold_candidates_args(int argc,
                                        const char **out_file) {
     static const nmo_opt_def_t opts[] = {
         {"--parent", "-p", NMO_OPT_UINT, "Parent behavior ID"},
-        {"--depth",  "-d", NMO_OPT_UINT, "Recursion depth (default: unlimited)"},
-        {"--json",   "-j", NMO_OPT_FLAG, "JSON output"},
+        NMO_OPT_DEF_DEPTH,
+        NMO_OPT_DEF_JSON,
     };
     enum { OPT_PARENT, OPT_DEPTH, OPT_JSON, OPT_COUNT };
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t result = {
-        .vals = vals,
-        .pos_args = pos,
-        .pos_capacity = 16,
-    };
+    nmo_opt_result_t result = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &result) < 0) {
         return false;
     }
@@ -1340,9 +1331,7 @@ static bool parse_fold_candidates_args(int argc,
 
     if (out_args) {
         out_args->parent_id = parent_id;
-        out_args->depth = vals[OPT_DEPTH].present
-            ? vals[OPT_DEPTH].val.u
-            : UINT32_MAX;
+        out_args->depth = nmo_opt_uint_or(&vals[OPT_DEPTH], UINT32_MAX);
     }
     if (out_file) {
         *out_file = file_path;
@@ -1596,8 +1585,8 @@ static bool parse_fold_args(int argc,
         {"--map-output",      NULL, NMO_OPT_STRING, "Map output old_index:new_index"},
         {"--map-param",       NULL, NMO_OPT_STRING, "Map parameter old_index:new_index"},
         {"--interface",       NULL, NMO_OPT_STRING, "Interface mode: preserve|canonicalize|remove"},
-        {"--output",          "-o", NMO_OPT_STRING, "Output file"},
-        {"--dry-run",         NULL, NMO_OPT_FLAG,   "Preview without saving"},
+        NMO_OPT_DEF_OUTPUT,
+        NMO_OPT_DEF_DRY_RUN,
     };
     enum {
         OPT_PARENT,
@@ -1620,11 +1609,7 @@ static bool parse_fold_args(int argc,
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t r = {
-        .vals = vals,
-        .pos_args = pos,
-        .pos_capacity = 16,
-    };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) {
         return false;
     }
@@ -1636,26 +1621,18 @@ static bool parse_fold_args(int argc,
 
     fold_args_t args = {0};
     args.parent_id = vals[OPT_PARENT].val.u;
-    args.anchor_id = vals[OPT_ANCHOR].present ? vals[OPT_ANCHOR].val.u : 0;
+    args.anchor_id = nmo_opt_uint_or(&vals[OPT_ANCHOR], 0);
     args.block_guid = nmo_guid_parse(vals[OPT_GUID].val.str);
     args.name = vals[OPT_NAME].val.str;
-    args.block_version = vals[OPT_VERSION].present
-        ? vals[OPT_VERSION].val.u
-        : 65536u;
+    args.block_version = nmo_opt_uint_or(&vals[OPT_VERSION], 65536u);
     args.interface_mode = NMO_BEHAVIOR_FOLD_INTERFACE_PRESERVE;
-    args.preserve_boundary = vals[OPT_PRESERVE_BOUNDARY].present &&
-                             vals[OPT_PRESERVE_BOUNDARY].val.flag;
+    args.preserve_boundary = nmo_opt_flag(&vals[OPT_PRESERVE_BOUNDARY]);
     args.preserve_links = args.preserve_boundary ||
-                          (vals[OPT_PRESERVE_LINKS].present &&
-                           vals[OPT_PRESERVE_LINKS].val.flag);
+                          nmo_opt_flag(&vals[OPT_PRESERVE_LINKS]);
     args.preserve_params = args.preserve_boundary ||
-                           (vals[OPT_PRESERVE_PARAMS].present &&
-                            vals[OPT_PRESERVE_PARAMS].val.flag);
-    args.dry_run = vals[OPT_DRY_RUN].present &&
-                   vals[OPT_DRY_RUN].val.flag;
-    args.output_path = vals[OPT_OUTPUT].present
-        ? vals[OPT_OUTPUT].val.str
-        : NULL;
+                           nmo_opt_flag(&vals[OPT_PRESERVE_PARAMS]);
+    args.dry_run = nmo_opt_flag(&vals[OPT_DRY_RUN]);
+    args.output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
     if (!parse_fold_maps_from_argv(
             argc, argv, "--map-input", NMO_BEHAVIOR_FOLD_MAP_INPUT,
             args.input_maps,
@@ -2176,8 +2153,8 @@ int nmo_cmd_behavior_replace_bb(int argc,
         {"--version",         NULL, NMO_OPT_UINT,   "Replacement BB version"},
         {"--preserve-links",  NULL, NMO_OPT_FLAG,   "Require unchanged control boundary"},
         {"--preserve-params", NULL, NMO_OPT_FLAG,   "Require unchanged parameter boundary"},
-        {"--output",          "-o", NMO_OPT_STRING, "Output file"},
-        {"--dry-run",         NULL, NMO_OPT_FLAG,   "Preview without saving"},
+        NMO_OPT_DEF_OUTPUT,
+        NMO_OPT_DEF_DRY_RUN,
     };
     enum {
         OPT_GUID,
@@ -2192,11 +2169,7 @@ int nmo_cmd_behavior_replace_bb(int argc,
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t r = {
-        .vals = vals,
-        .pos_args = pos,
-        .pos_capacity = 16,
-    };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) {
         return NMO_CLI_EXIT_ARG_ERROR;
     }
@@ -2227,24 +2200,17 @@ int nmo_cmd_behavior_replace_bb(int argc,
     }
 
     const char *file_path = r.pos_args[r.pos_count - 1];
-    const char *output_path = vals[OPT_OUTPUT].present
-        ? vals[OPT_OUTPUT].val.str
-        : NULL;
-    bool dry_run = vals[OPT_DRY_RUN].present &&
-                   vals[OPT_DRY_RUN].val.flag;
+    const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
+    bool dry_run = nmo_opt_flag(&vals[OPT_DRY_RUN]);
 
     replace_bb_args_t args = {
         .desc = {
             .behavior_id = behavior_id,
             .block_guid = guid,
-            .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
-            .block_version = vals[OPT_VERSION].present
-                ? vals[OPT_VERSION].val.u
-                : 65536u,
-            .preserve_links = vals[OPT_PRESERVE_LINKS].present &&
-                              vals[OPT_PRESERVE_LINKS].val.flag,
-            .preserve_params = vals[OPT_PRESERVE_PARAMS].present &&
-                               vals[OPT_PRESERVE_PARAMS].val.flag,
+            .name = nmo_opt_str(&vals[OPT_NAME]),
+            .block_version = nmo_opt_uint_or(&vals[OPT_VERSION], 65536u),
+            .preserve_links = nmo_opt_flag(&vals[OPT_PRESERVE_LINKS]),
+            .preserve_params = nmo_opt_flag(&vals[OPT_PRESERVE_PARAMS]),
         },
     };
     const nmo_cli_write_spec_t spec = {

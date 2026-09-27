@@ -925,17 +925,17 @@ static bool behavior_show_add_comments(nmo_cli_record_t *rec, const behavior_sho
 int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
         {"--raw",  NULL, NMO_OPT_FLAG, "Show raw reflection (like object show)"},
-        {"--json", "-j", NMO_OPT_FLAG, "JSON output"},
+        NMO_OPT_DEF_JSON,
         {"--id",   "-i", NMO_OPT_UINT, "Behavior object ID"},
         {"--name", "-n", NMO_OPT_STRING, "Behavior object name"},
     };
     enum { OPT_RAW, OPT_JSON, OPT_ID, OPT_NAME, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    bool raw_mode = vals[OPT_RAW].present && vals[OPT_RAW].val.flag;
+    bool raw_mode = nmo_opt_flag(&vals[OPT_RAW]);
     if (raw_mode) {
         return nmo_cmd_object_show(argc, argv, global);
     }
@@ -959,9 +959,9 @@ int nmo_cmd_behavior_show(int argc, char **argv, const nmo_cli_global_opts_t *gl
     nmo_object_repository_t *repo = nmo_tool_owner_repository(c.workspace);
     nmo_core_object_selector_t selector = {
         .has_id = vals[OPT_ID].present,
-        .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+        .id = nmo_opt_uint_or(&vals[OPT_ID], 0),
         .positional_id = positional_id,
-        .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+        .name = nmo_opt_str(&vals[OPT_NAME]),
         .required_base_class = NMO_CID_BEHAVIOR,
         .selector_label = "Behavior",
         .type_label = "CKBehavior",

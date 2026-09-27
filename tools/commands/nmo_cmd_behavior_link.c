@@ -311,14 +311,14 @@ int nmo_cmd_behavior_add_link(int argc, char **argv,
         {"--from",    NULL,  NMO_OPT_UINT,   "Source IO port ID (required)"},
         {"--to",      NULL,  NMO_OPT_UINT,   "Target IO port ID (required)"},
         {"--delay",   "-d", NMO_OPT_UINT,   "Activation delay in frames (default: 1)"},
-        {"--output",  "-o", NMO_OPT_STRING, "Output file (required unless --dry-run)"},
-        {"--dry-run", NULL,  NMO_OPT_FLAG,   "Preview without saving"},
+        NMO_OPT_DEF_WRITE_OUTPUT,
+        NMO_OPT_DEF_DRY_RUN,
     };
     enum { OPT_PARENT, OPT_FROM, OPT_TO, OPT_DELAY, OPT_OUTPUT, OPT_DRYRUN, OPT_COUNT };
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
         return NMO_CLI_EXIT_ARG_ERROR;
 
@@ -338,9 +338,9 @@ int nmo_cmd_behavior_add_link(int argc, char **argv,
     uint32_t parent_id = vals[OPT_PARENT].val.u;
     uint32_t from_id   = vals[OPT_FROM].val.u;
     uint32_t to_id     = vals[OPT_TO].val.u;
-    uint32_t delay     = vals[OPT_DELAY].present ? vals[OPT_DELAY].val.u : 1;
-    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
-    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    uint32_t delay     = nmo_opt_uint_or(&vals[OPT_DELAY], 1);
+    const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
+    bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
 
     const char *file_path = r.pos_count > 0 ? r.pos_args[r.pos_count - 1] : NULL;
     if (!file_path) {
@@ -382,14 +382,14 @@ int nmo_cmd_behavior_remove_link(int argc, char **argv,
 {
     static const nmo_opt_def_t opts[] = {
         {"--parent",  "-p", NMO_OPT_UINT,   "Parent behavior ID (required)"},
-        {"--output",  "-o", NMO_OPT_STRING, "Output file (required unless --dry-run)"},
-        {"--dry-run", NULL,  NMO_OPT_FLAG,   "Preview without saving"},
+        NMO_OPT_DEF_WRITE_OUTPUT,
+        NMO_OPT_DEF_DRY_RUN,
     };
     enum { OPT_PARENT, OPT_OUTPUT, OPT_DRYRUN, OPT_COUNT };
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0)
         return NMO_CLI_EXIT_ARG_ERROR;
 
@@ -411,8 +411,8 @@ int nmo_cmd_behavior_remove_link(int argc, char **argv,
     }
 
     uint32_t parent_id  = vals[OPT_PARENT].val.u;
-    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
-    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
+    bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
 
     const char *file_path = r.pos_args[r.pos_count - 1];
 

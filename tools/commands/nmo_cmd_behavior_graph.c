@@ -54,8 +54,8 @@ static bool parse_behavior_graph_args(int argc, char **argv,
         {"--dot",       NULL, NMO_OPT_FLAG, "Emit DOT graph output"},
         {"--max-nodes", NULL, NMO_OPT_UINT, "Max nodes to display"},
         {"--max-edges", NULL, NMO_OPT_UINT, "Max edges to display"},
-        {"--depth",     "-d", NMO_OPT_UINT, "Recursion depth (default: unlimited)"},
-        {"--json",      "-j", NMO_OPT_FLAG, "JSON output"},
+        NMO_OPT_DEF_DEPTH,
+        NMO_OPT_DEF_JSON,
         {"--id",        "-i", NMO_OPT_UINT, "Behavior object ID"},
         {"--name",      "-n", NMO_OPT_STRING, "Behavior object name"},
     };
@@ -63,7 +63,7 @@ static bool parse_behavior_graph_args(int argc, char **argv,
            OPT_ID, OPT_NAME, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return false;
 
     bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
@@ -89,9 +89,9 @@ static bool parse_behavior_graph_args(int argc, char **argv,
     if (out_selector) {
         *out_selector = (nmo_core_object_selector_t){
             .has_id = vals[OPT_ID].present,
-            .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+            .id = nmo_opt_uint_or(&vals[OPT_ID], 0),
             .positional_id = positional_id,
-            .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+            .name = nmo_opt_str(&vals[OPT_NAME]),
             .required_base_class = NMO_CID_BEHAVIOR,
             .selector_label = "Behavior",
             .type_label = "CKBehavior",
@@ -101,7 +101,7 @@ static bool parse_behavior_graph_args(int argc, char **argv,
     if (out_dot) *out_dot = vals[OPT_DOT].val.flag;
     if (out_max_nodes) *out_max_nodes = vals[OPT_MAX_NODES].present ? (size_t)vals[OPT_MAX_NODES].val.u : 0;
     if (out_max_edges) *out_max_edges = vals[OPT_MAX_EDGES].present ? (size_t)vals[OPT_MAX_EDGES].val.u : 0;
-    if (out_depth) *out_depth = vals[OPT_DEPTH].present ? vals[OPT_DEPTH].val.u : UINT32_MAX;
+    if (out_depth) *out_depth = nmo_opt_uint_or(&vals[OPT_DEPTH], UINT32_MAX);
     return true;
 }
 
@@ -1663,19 +1663,19 @@ int nmo_cmd_behavior_dump(int argc, char **argv, const nmo_cli_global_opts_t *gl
         {"--all",    "-a", NMO_OPT_FLAG, "Dump all script behaviors as trees"},
         {"--flows",  NULL, NMO_OPT_FLAG, "Include execution/data flow summaries for one behavior"},
         {"--values", NULL, NMO_OPT_FLAG, "Include decoded local/output values"},
-        {"--json",   "-j", NMO_OPT_FLAG, "JSON output"},
+        NMO_OPT_DEF_JSON,
         {"--id",     "-i", NMO_OPT_UINT, "Behavior object ID"},
         {"--name",   "-n", NMO_OPT_STRING, "Behavior object name"},
     };
     enum { OPT_ALL, OPT_FLOWS, OPT_VALUES, OPT_JSON, OPT_ID, OPT_NAME, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    bool dump_all = vals[OPT_ALL].present && vals[OPT_ALL].val.flag;
-    bool include_flows = vals[OPT_FLOWS].present && vals[OPT_FLOWS].val.flag;
-    bool include_values = vals[OPT_VALUES].present && vals[OPT_VALUES].val.flag;
+    bool dump_all = nmo_opt_flag(&vals[OPT_ALL]);
+    bool include_flows = nmo_opt_flag(&vals[OPT_FLOWS]);
+    bool include_values = nmo_opt_flag(&vals[OPT_VALUES]);
 
     if (dump_all && include_flows) {
         fprintf(stderr, "Error: --flows cannot be used with --all; specify one behavior id.\n");
@@ -1691,9 +1691,9 @@ int nmo_cmd_behavior_dump(int argc, char **argv, const nmo_cli_global_opts_t *gl
         }
         selector = (nmo_core_object_selector_t){
             .has_id = vals[OPT_ID].present,
-            .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+            .id = nmo_opt_uint_or(&vals[OPT_ID], 0),
             .positional_id = has_selector_opt ? NULL : r.pos_args[0],
-            .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+            .name = nmo_opt_str(&vals[OPT_NAME]),
             .required_base_class = NMO_CID_BEHAVIOR,
             .selector_label = "Behavior",
             .type_label = "CKBehavior",

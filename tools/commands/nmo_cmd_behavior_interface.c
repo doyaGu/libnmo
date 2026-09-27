@@ -1776,18 +1776,18 @@ static int iface_run_resolved_write_command(
 
 int nmo_cmd_behavior_iface_set_pos(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--output", "-o", NMO_OPT_STRING, "Output file path"},
-        {"--dry-run", NULL, NMO_OPT_FLAG, "Preview without saving"},
+        NMO_OPT_DEF_OUTPUT,
+        NMO_OPT_DEF_DRY_RUN,
     };
     enum { OPT_OUTPUT, OPT_DRYRUN, OPT_COUNT };
     IFACE_STRIP_TARGET_SELECTOR_ARGS();
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
-    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
+    bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
     const char *usage = "Usage: nmo behavior interface set-pos [--id <id> | --name <name> | <id>] <beh_id> <h> <v> <file> -o <out>";
 
     nmo_core_object_selector_t target_selector = {0};
@@ -1839,18 +1839,18 @@ int nmo_cmd_behavior_iface_set_pos(int argc, char **argv, const nmo_cli_global_o
 
 static int iface_cmd_fold_impl(int argc, char **argv, const nmo_cli_global_opts_t *global, bool fold) {
     static const nmo_opt_def_t opts[] = {
-        {"--output", "-o", NMO_OPT_STRING, "Output file path"},
-        {"--dry-run", NULL, NMO_OPT_FLAG, "Preview without saving"},
+        NMO_OPT_DEF_OUTPUT,
+        NMO_OPT_DEF_DRY_RUN,
     };
     enum { OPT_OUTPUT, OPT_DRYRUN, OPT_COUNT };
     IFACE_STRIP_TARGET_SELECTOR_ARGS();
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
-    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
+    bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
     const char *usage = fold
         ? "Usage: nmo behavior interface fold [--id <id> | --name <name> | <id>] <beh_id> <file> -o <out>"
         : "Usage: nmo behavior interface unfold [--id <id> | --name <name> | <id>] <beh_id> <file> -o <out>";
@@ -1902,18 +1902,18 @@ int nmo_cmd_behavior_iface_unfold(int argc, char **argv, const nmo_cli_global_op
 
 int nmo_cmd_behavior_iface_set_color(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--output", "-o", NMO_OPT_STRING, "Output file path"},
-        {"--dry-run", NULL, NMO_OPT_FLAG, "Preview without saving"},
+        NMO_OPT_DEF_OUTPUT,
+        NMO_OPT_DEF_DRY_RUN,
     };
     enum { OPT_OUTPUT, OPT_DRYRUN, OPT_COUNT };
     IFACE_STRIP_TARGET_SELECTOR_ARGS();
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
-    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
+    bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
     const char *usage = "Usage: nmo behavior interface set-color [--id <id> | --name <name> | <id>] <color> <file> -o <out>";
 
     nmo_core_object_selector_t target_selector = {0};
@@ -1955,18 +1955,18 @@ int nmo_cmd_behavior_iface_set_color(int argc, char **argv, const nmo_cli_global
 
 int nmo_cmd_behavior_iface_canonicalize(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--output", "-o", NMO_OPT_STRING, "Output file path"},
-        {"--dry-run", NULL, NMO_OPT_FLAG, "Preview without saving"},
+        NMO_OPT_DEF_OUTPUT,
+        NMO_OPT_DEF_DRY_RUN,
     };
     enum { OPT_OUTPUT, OPT_DRYRUN, OPT_COUNT };
     IFACE_STRIP_TARGET_SELECTOR_ARGS();
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[4];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 4 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
-    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
+    bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
     const char *usage = "Usage: nmo behavior interface canonicalize [--id <id> | --name <name> | <id>] <file> -o <out>";
 
     nmo_core_object_selector_t target_selector = {0};
@@ -2002,21 +2002,21 @@ int nmo_cmd_behavior_iface_canonicalize(int argc, char **argv, const nmo_cli_glo
 
 int nmo_cmd_behavior_iface_add_comment(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--output", "-o",    NMO_OPT_STRING, "Output file path"},
+        NMO_OPT_DEF_OUTPUT,
         {"--body",   NULL,    NMO_OPT_STRING, "Target behavior ID (default: script)"},
         {"--text",   "-t",    NMO_OPT_STRING, "Comment text"},
         {"--rect",   "-r",    NMO_OPT_STRING, "Rectangle L,T,R,B"},
-        {"--dry-run", NULL,    NMO_OPT_FLAG,   "Preview without saving"},
+        NMO_OPT_DEF_DRY_RUN,
     };
     enum { OPT_OUTPUT, OPT_BODY, OPT_TEXT, OPT_RECT, OPT_DRYRUN, OPT_COUNT };
     IFACE_STRIP_TARGET_SELECTOR_ARGS();
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos_arr, .pos_capacity = 8 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos_arr);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
-    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
+    bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
     if (!vals[OPT_TEXT].present) {
         fprintf(stderr, "Error: --text required\n");
         return NMO_CLI_EXIT_ARG_ERROR;
@@ -2079,19 +2079,19 @@ int nmo_cmd_behavior_iface_add_comment(int argc, char **argv, const nmo_cli_glob
 
 int nmo_cmd_behavior_iface_remove_comment(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--output", "-o",    NMO_OPT_STRING, "Output file path"},
+        NMO_OPT_DEF_OUTPUT,
         {"--body",   NULL,    NMO_OPT_STRING, "Target behavior ID (default: script)"},
-        {"--dry-run", NULL,    NMO_OPT_FLAG,   "Preview without saving"},
+        NMO_OPT_DEF_DRY_RUN,
     };
     enum { OPT_OUTPUT, OPT_BODY, OPT_DRYRUN, OPT_COUNT };
     IFACE_STRIP_TARGET_SELECTOR_ARGS();
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos_arr, .pos_capacity = 8 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos_arr);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
-    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
+    bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
     const char *usage =
         "Usage: nmo behavior interface remove-comment [--id <id> | --name <name> | <id>] <index> [--body <beh_id>] <file> -o <out>";
 
@@ -2145,20 +2145,20 @@ int nmo_cmd_behavior_iface_remove_comment(int argc, char **argv, const nmo_cli_g
 
 int nmo_cmd_behavior_iface_set_comment_text(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--output", "-o",  NMO_OPT_STRING, "Output file path"},
+        NMO_OPT_DEF_OUTPUT,
         {"--body",   NULL,  NMO_OPT_STRING, "Target behavior ID (default: script)"},
         {"--text",   "-t",  NMO_OPT_STRING, "New comment text"},
-        {"--dry-run", NULL,  NMO_OPT_FLAG,   "Preview without saving"},
+        NMO_OPT_DEF_DRY_RUN,
     };
     enum { OPT_OUTPUT, OPT_BODY, OPT_TEXT, OPT_DRYRUN, OPT_COUNT };
     IFACE_STRIP_TARGET_SELECTOR_ARGS();
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos_arr, .pos_capacity = 8 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos_arr);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
-    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
+    bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
     if (!vals[OPT_TEXT].present) {
         fprintf(stderr, "Error: --text required\n");
         return NMO_CLI_EXIT_ARG_ERROR;
@@ -2212,20 +2212,20 @@ int nmo_cmd_behavior_iface_set_comment_text(int argc, char **argv, const nmo_cli
 
 int nmo_cmd_behavior_iface_move_comment(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--output", "-o",  NMO_OPT_STRING, "Output file path"},
+        NMO_OPT_DEF_OUTPUT,
         {"--body",   NULL,  NMO_OPT_STRING, "Target behavior ID (default: script)"},
         {"--rect",   "-r",  NMO_OPT_STRING, "Rectangle L,T,R,B"},
-        {"--dry-run", NULL,  NMO_OPT_FLAG,   "Preview without saving"},
+        NMO_OPT_DEF_DRY_RUN,
     };
     enum { OPT_OUTPUT, OPT_BODY, OPT_RECT, OPT_DRYRUN, OPT_COUNT };
     IFACE_STRIP_TARGET_SELECTOR_ARGS();
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos_arr, .pos_capacity = 8 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos_arr);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
-    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
+    bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
     if (!vals[OPT_RECT].present) {
         fprintf(stderr, "Error: --rect required (L,T,R,B)\n");
         return NMO_CLI_EXIT_ARG_ERROR;
@@ -2287,20 +2287,20 @@ int nmo_cmd_behavior_iface_move_comment(int argc, char **argv, const nmo_cli_glo
 
 int nmo_cmd_behavior_iface_set_comment_style(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--output", "-o",    NMO_OPT_STRING, "Output file path"},
+        NMO_OPT_DEF_OUTPUT,
         {"--body",   NULL,    NMO_OPT_STRING, "Target behavior ID (default: script)"},
         {"--style",  "-s",    NMO_OPT_STRING, "Style flags value"},
-        {"--dry-run", NULL,    NMO_OPT_FLAG,   "Preview without saving"},
+        NMO_OPT_DEF_DRY_RUN,
     };
     enum { OPT_OUTPUT, OPT_BODY, OPT_STYLE, OPT_DRYRUN, OPT_COUNT };
     IFACE_STRIP_TARGET_SELECTOR_ARGS();
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos_arr, .pos_capacity = 8 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos_arr);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
-    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
+    bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
     if (!vals[OPT_STYLE].present) {
         fprintf(stderr, "Error: --style required\n");
         return NMO_CLI_EXIT_ARG_ERROR;
@@ -2363,18 +2363,18 @@ int nmo_cmd_behavior_iface_set_comment_style(int argc, char **argv, const nmo_cl
 
 int nmo_cmd_behavior_iface_add_point(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--output", "-o",  NMO_OPT_STRING, "Output file path"},
-        {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview without saving"},
+        NMO_OPT_DEF_OUTPUT,
+        NMO_OPT_DEF_DRY_RUN,
     };
     enum { OPT_OUTPUT, OPT_DRYRUN, OPT_COUNT };
     IFACE_STRIP_TARGET_SELECTOR_ARGS();
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos_arr, .pos_capacity = 8 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos_arr);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
-    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
+    bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
     const char *usage =
         "Usage: nmo behavior interface add-point [--id <id> | --name <name> | <id>] <link_id> <h> <v> <file> -o <out>";
 
@@ -2427,18 +2427,18 @@ int nmo_cmd_behavior_iface_add_point(int argc, char **argv, const nmo_cli_global
 
 int nmo_cmd_behavior_iface_clear_points(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--output", "-o",  NMO_OPT_STRING, "Output file path"},
-        {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview without saving"},
+        NMO_OPT_DEF_OUTPUT,
+        NMO_OPT_DEF_DRY_RUN,
     };
     enum { OPT_OUTPUT, OPT_DRYRUN, OPT_COUNT };
     IFACE_STRIP_TARGET_SELECTOR_ARGS();
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos_arr, .pos_capacity = 8 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos_arr);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
-    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
+    bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
     const char *usage =
         "Usage: nmo behavior interface clear-points [--id <id> | --name <name> | <id>] <link_id> <file> -o <out>";
 
@@ -2480,18 +2480,18 @@ int nmo_cmd_behavior_iface_clear_points(int argc, char **argv, const nmo_cli_glo
 
 int nmo_cmd_behavior_iface_remove_point(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--output", "-o",  NMO_OPT_STRING, "Output file path"},
-        {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview without saving"},
+        NMO_OPT_DEF_OUTPUT,
+        NMO_OPT_DEF_DRY_RUN,
     };
     enum { OPT_OUTPUT, OPT_DRYRUN, OPT_COUNT };
     IFACE_STRIP_TARGET_SELECTOR_ARGS();
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos_arr, .pos_capacity = 8 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos_arr);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
-    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
+    bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
     const char *usage =
         "Usage: nmo behavior interface remove-point [--id <id> | --name <name> | <id>] <link_id> <point_index> <file> -o <out>";
 
@@ -2539,18 +2539,18 @@ int nmo_cmd_behavior_iface_remove_point(int argc, char **argv, const nmo_cli_glo
 
 int nmo_cmd_behavior_iface_move_point(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--output", "-o",  NMO_OPT_STRING, "Output file path"},
-        {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview without saving"},
+        NMO_OPT_DEF_OUTPUT,
+        NMO_OPT_DEF_DRY_RUN,
     };
     enum { OPT_OUTPUT, OPT_DRYRUN, OPT_COUNT };
     IFACE_STRIP_TARGET_SELECTOR_ARGS();
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos_arr, .pos_capacity = 8 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos_arr);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
-    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
+    bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
     const char *usage =
         "Usage: nmo behavior interface move-point [--id <id> | --name <name> | <id>] <link_id> <point_index> <h> <v> <file> -o <out>";
 
@@ -2609,18 +2609,18 @@ int nmo_cmd_behavior_iface_move_point(int argc, char **argv, const nmo_cli_globa
 
 int nmo_cmd_behavior_iface_set_link_highlight(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--output", "-o",  NMO_OPT_STRING, "Output file path"},
-        {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview without saving"},
+        NMO_OPT_DEF_OUTPUT,
+        NMO_OPT_DEF_DRY_RUN,
     };
     enum { OPT_OUTPUT, OPT_DRYRUN, OPT_COUNT };
     IFACE_STRIP_TARGET_SELECTOR_ARGS();
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos_arr, .pos_capacity = 8 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos_arr);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
-    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
+    bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
     const char *usage =
         "Usage: nmo behavior interface set-link-highlight [--id <id> | --name <name> | <id>] <link_id> on|off <file> -o <out>";
 
@@ -2678,18 +2678,18 @@ int nmo_cmd_behavior_iface_set_link_highlight(int argc, char **argv, const nmo_c
 
 int nmo_cmd_behavior_iface_move_op(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--output", "-o",  NMO_OPT_STRING, "Output file path"},
-        {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview without saving"},
+        NMO_OPT_DEF_OUTPUT,
+        NMO_OPT_DEF_DRY_RUN,
     };
     enum { OPT_OUTPUT, OPT_DRYRUN, OPT_COUNT };
     IFACE_STRIP_TARGET_SELECTOR_ARGS();
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos_arr, .pos_capacity = 8 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos_arr);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
-    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
+    bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
     const char *usage =
         "Usage: nmo behavior interface move-op [--id <id> | --name <name> | <id>] <op_id> <h> <v> <file> -o <out>";
 
@@ -2745,21 +2745,21 @@ int nmo_cmd_behavior_iface_move_op(int argc, char **argv, const nmo_cli_global_o
 
 int nmo_cmd_behavior_iface_move_param(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--output",      "-o",  NMO_OPT_STRING, "Output file path"},
+        NMO_OPT_DEF_OUTPUT,
         {"--body",        NULL,  NMO_OPT_STRING, "Target behavior ID (default: script)"},
         {"--param-index", NULL,  NMO_OPT_UINT,   "Parameter index"},
         {"--shared",      NULL,  NMO_OPT_FLAG,   "Target shared params instead of local"},
-        {"--dry-run",     NULL,  NMO_OPT_FLAG,   "Preview without saving"},
+        NMO_OPT_DEF_DRY_RUN,
     };
     enum { OPT_OUTPUT, OPT_BODY, OPT_PARAM_INDEX, OPT_SHARED, OPT_DRYRUN, OPT_COUNT };
     IFACE_STRIP_TARGET_SELECTOR_ARGS();
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos_arr, .pos_capacity = 8 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos_arr);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
-    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
+    bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
     if (!vals[OPT_PARAM_INDEX].present) {
         fprintf(stderr, "Error: --param-index required\n");
         return NMO_CLI_EXIT_ARG_ERROR;
@@ -2786,7 +2786,7 @@ int nmo_cmd_behavior_iface_move_param(int argc, char **argv, const nmo_cli_globa
     }
 
     uint32_t param_index = vals[OPT_PARAM_INDEX].val.u;
-    bool shared = vals[OPT_SHARED].present && vals[OPT_SHARED].val.flag;
+    bool shared = nmo_opt_flag(&vals[OPT_SHARED]);
 
     iface_param_args_t args = {
         .op = IFACE_PARAM_MOVE,
@@ -2822,22 +2822,22 @@ int nmo_cmd_behavior_iface_move_param(int argc, char **argv, const nmo_cli_globa
 
 int nmo_cmd_behavior_iface_set_param_style(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--output",      "-o",  NMO_OPT_STRING, "Output file path"},
+        NMO_OPT_DEF_OUTPUT,
         {"--body",        NULL,  NMO_OPT_STRING, "Target behavior ID (default: script)"},
         {"--param-index", NULL,  NMO_OPT_UINT,   "Parameter index"},
         {"--shared",      NULL,  NMO_OPT_FLAG,   "Target shared params instead of local"},
         {"--style",       "-s",  NMO_OPT_STRING, "Style value"},
-        {"--dry-run",     NULL,  NMO_OPT_FLAG,   "Preview without saving"},
+        NMO_OPT_DEF_DRY_RUN,
     };
     enum { OPT_OUTPUT, OPT_BODY, OPT_PARAM_INDEX, OPT_SHARED, OPT_STYLE, OPT_DRYRUN, OPT_COUNT };
     IFACE_STRIP_TARGET_SELECTOR_ARGS();
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos_arr, .pos_capacity = 8 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos_arr);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
-    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
+    bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
     if (!vals[OPT_PARAM_INDEX].present) {
         fprintf(stderr, "Error: --param-index required\n");
         return NMO_CLI_EXIT_ARG_ERROR;
@@ -2866,7 +2866,7 @@ int nmo_cmd_behavior_iface_set_param_style(int argc, char **argv, const nmo_cli_
     }
 
     uint32_t param_index = vals[OPT_PARAM_INDEX].val.u;
-    bool shared = vals[OPT_SHARED].present && vals[OPT_SHARED].val.flag;
+    bool shared = nmo_opt_flag(&vals[OPT_SHARED]);
 
     iface_param_args_t args = {
         .op = IFACE_PARAM_SET_STYLE,
@@ -2905,18 +2905,18 @@ int nmo_cmd_behavior_iface_set_param_style(int argc, char **argv, const nmo_cli_
 
 int nmo_cmd_behavior_iface_resize(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--output", "-o",  NMO_OPT_STRING, "Output file path"},
-        {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview without saving"},
+        NMO_OPT_DEF_OUTPUT,
+        NMO_OPT_DEF_DRY_RUN,
     };
     enum { OPT_OUTPUT, OPT_DRYRUN, OPT_COUNT };
     IFACE_STRIP_TARGET_SELECTOR_ARGS();
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos_arr, .pos_capacity = 8 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos_arr);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
-    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
+    bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
     const char *usage =
         "Usage: nmo behavior interface resize [--id <id> | --name <name> | <id>] <beh_id> <w> <h> <file> -o <out>";
 
@@ -2969,18 +2969,18 @@ int nmo_cmd_behavior_iface_resize(int argc, char **argv, const nmo_cli_global_op
 
 int nmo_cmd_behavior_iface_set_expand(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--output", "-o",  NMO_OPT_STRING, "Output file path"},
-        {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview without saving"},
+        NMO_OPT_DEF_OUTPUT,
+        NMO_OPT_DEF_DRY_RUN,
     };
     enum { OPT_OUTPUT, OPT_DRYRUN, OPT_COUNT };
     IFACE_STRIP_TARGET_SELECTOR_ARGS();
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos_arr, .pos_capacity = 8 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos_arr);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
-    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
+    bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
     const char *usage =
         "Usage: nmo behavior interface set-expand [--id <id> | --name <name> | <id>] <beh_id> <w> <h> <file> -o <out>";
 
@@ -3037,18 +3037,18 @@ int nmo_cmd_behavior_iface_set_expand(int argc, char **argv, const nmo_cli_globa
 
 int nmo_cmd_behavior_iface_set_viewport(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--output", "-o",  NMO_OPT_STRING, "Output file path"},
-        {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview without saving"},
+        NMO_OPT_DEF_OUTPUT,
+        NMO_OPT_DEF_DRY_RUN,
     };
     enum { OPT_OUTPUT, OPT_DRYRUN, OPT_COUNT };
     IFACE_STRIP_TARGET_SELECTOR_ARGS();
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos_arr, .pos_capacity = 8 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos_arr);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
-    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
+    bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
     const char *usage =
         "Usage: nmo behavior interface set-viewport [--id <id> | --name <name> | <id>] <h> <v> <height> <file> -o <out>";
 
@@ -3149,23 +3149,23 @@ static bool parse_int32_list(const char *str, int32_t *out, size_t max_count, si
 
 int nmo_cmd_behavior_iface_set_graph_io(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--output",  "-o",  NMO_OPT_STRING, "Output file path"},
+        NMO_OPT_DEF_OUTPUT,
         {"--body",    NULL,  NMO_OPT_STRING, "Target behavior ID (default: script)"},
         {"--in-in",   NULL,  NMO_OPT_STRING, "Inward input array (comma-separated ints)"},
         {"--in-out",  NULL,  NMO_OPT_STRING, "Inward output array (comma-separated ints)"},
         {"--out-in",  NULL,  NMO_OPT_STRING, "Outward input array (comma-separated ints)"},
         {"--out-out", NULL,  NMO_OPT_STRING, "Outward output array (comma-separated ints)"},
-        {"--dry-run", NULL,  NMO_OPT_FLAG,   "Preview without saving"},
+        NMO_OPT_DEF_DRY_RUN,
     };
     enum { OPT_OUTPUT, OPT_BODY, OPT_IN_IN, OPT_IN_OUT, OPT_OUT_IN, OPT_OUT_OUT, OPT_DRYRUN, OPT_COUNT };
     IFACE_STRIP_TARGET_SELECTOR_ARGS();
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos_arr, .pos_capacity = 8 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos_arr);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
-    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
+    bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
     if (!vals[OPT_IN_IN].present && !vals[OPT_IN_OUT].present &&
         !vals[OPT_OUT_IN].present && !vals[OPT_OUT_OUT].present) {
         fprintf(stderr, "Error: At least one of --in-in, --in-out, --out-in, --out-out required\n");
@@ -3274,18 +3274,18 @@ static void translate_body(nmo_interface_body_t *body, float dx, float dy) {
 
 int nmo_cmd_behavior_iface_translate(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
-        {"--output", "-o",  NMO_OPT_STRING, "Output file path"},
-        {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview without saving"},
+        NMO_OPT_DEF_OUTPUT,
+        NMO_OPT_DEF_DRY_RUN,
     };
     enum { OPT_OUTPUT, OPT_DRYRUN, OPT_COUNT };
     IFACE_STRIP_TARGET_SELECTOR_ARGS();
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos_arr[8];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos_arr, .pos_capacity = 8 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos_arr);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
-    bool dry_run = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
+    const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
+    bool dry_run = nmo_opt_flag(&vals[OPT_DRYRUN]);
     const char *usage =
         "Usage: nmo behavior interface translate [--id <id> | --name <name> | <id>] <dx> <dy> <file> -o <out>";
 
@@ -3632,14 +3632,14 @@ static int behavior_iface_show_parse(int argc, char **argv,
 
     static const nmo_opt_def_t opts[] = {
         {"--brief", "-b", NMO_OPT_FLAG, "Brief summary output"},
-        {"--json",  "-j", NMO_OPT_FLAG, "JSON output"},
+        NMO_OPT_DEF_JSON,
         {"--id",    "-i", NMO_OPT_UINT, "Behavior object ID"},
         {"--name",  "-n", NMO_OPT_STRING, "Behavior object name"},
     };
     enum { OPT_BRIEF, OPT_JSON, OPT_ID, OPT_NAME, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
     bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
@@ -3666,12 +3666,12 @@ static int behavior_iface_show_parse(int argc, char **argv,
         positional_id = r.pos_args[0];
     }
 
-    args->brief = vals[OPT_BRIEF].present && vals[OPT_BRIEF].val.flag;
+    args->brief = nmo_opt_flag(&vals[OPT_BRIEF]);
     args->selector = (nmo_core_object_selector_t){
         .has_id = vals[OPT_ID].present,
-        .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+        .id = nmo_opt_uint_or(&vals[OPT_ID], 0),
         .positional_id = positional_id,
-        .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+        .name = nmo_opt_str(&vals[OPT_NAME]),
         .required_base_class = NMO_CID_BEHAVIOR,
         .selector_label = "Behavior",
         .type_label = "CKBehavior",

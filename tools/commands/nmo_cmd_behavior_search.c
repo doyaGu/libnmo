@@ -234,20 +234,20 @@ int nmo_cmd_behavior_find(int argc, char **argv, const nmo_cli_global_opts_t *gl
         {"--op-type",    "-o", NMO_OPT_STRING, "Filter by operation type name"},
         {"--scripts",    NULL, NMO_OPT_FLAG,   "Show only scripts"},
         {"--bbs",        NULL, NMO_OPT_FLAG,   "Show only building blocks"},
-        {"--json",       "-j", NMO_OPT_FLAG,   "JSON output"},
+        NMO_OPT_DEF_JSON,
     };
     enum { OPT_NAME, OPT_GUID, OPT_PTYPE, OPT_OPTYPE, OPT_SCRIPTS, OPT_BBS, OPT_JSON, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *name_pat  = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL;
-    const char *guid_pat  = vals[OPT_GUID].present ? vals[OPT_GUID].val.str : NULL;
-    const char *ptype_pat = vals[OPT_PTYPE].present ? vals[OPT_PTYPE].val.str : NULL;
-    const char *optype_pat = vals[OPT_OPTYPE].present ? vals[OPT_OPTYPE].val.str : NULL;
-    bool only_scripts     = vals[OPT_SCRIPTS].present && vals[OPT_SCRIPTS].val.flag;
-    bool only_bbs         = vals[OPT_BBS].present && vals[OPT_BBS].val.flag;
+    const char *name_pat  = nmo_opt_str(&vals[OPT_NAME]);
+    const char *guid_pat  = nmo_opt_str(&vals[OPT_GUID]);
+    const char *ptype_pat = nmo_opt_str(&vals[OPT_PTYPE]);
+    const char *optype_pat = nmo_opt_str(&vals[OPT_OPTYPE]);
+    bool only_scripts     = nmo_opt_flag(&vals[OPT_SCRIPTS]);
+    bool only_bbs         = nmo_opt_flag(&vals[OPT_BBS]);
 
     nmo_cmd_ctx_t c;
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
@@ -592,18 +592,18 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
     static const nmo_opt_def_t opts[] = {
         {"--from",  NULL, NMO_OPT_STRING, "Start IO name (default: first bIn)"},
         {"--depth", "-d", NMO_OPT_UINT,   "Max trace depth (default: unlimited)"},
-        {"--json",  "-j", NMO_OPT_FLAG,   "JSON output"},
+        NMO_OPT_DEF_JSON,
         {"--id",    "-i", NMO_OPT_UINT,   "Behavior object ID"},
         {"--name",  "-n", NMO_OPT_STRING, "Behavior object name"},
     };
     enum { OPT_FROM, OPT_DEPTH, OPT_JSON, OPT_ID, OPT_NAME, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *from_name = vals[OPT_FROM].present ? vals[OPT_FROM].val.str : NULL;
-    uint32_t max_trace_depth = vals[OPT_DEPTH].present ? vals[OPT_DEPTH].val.u : 64;
+    const char *from_name = nmo_opt_str(&vals[OPT_FROM]);
+    uint32_t max_trace_depth = nmo_opt_uint_or(&vals[OPT_DEPTH], 64);
 
     bool has_selector_opt = vals[OPT_ID].present || vals[OPT_NAME].present;
     const char *positional_id = has_selector_opt ? NULL : (r.pos_count >= 2 ? r.pos_args[0] : NULL);
@@ -619,9 +619,9 @@ int nmo_cmd_behavior_trace(int argc, char **argv, const nmo_cli_global_opts_t *g
     nmo_object_repository_t *repo = nmo_tool_owner_repository(c.workspace);
     nmo_core_object_selector_t selector = {
         .has_id = vals[OPT_ID].present,
-        .id = vals[OPT_ID].present ? vals[OPT_ID].val.u : 0,
+        .id = nmo_opt_uint_or(&vals[OPT_ID], 0),
         .positional_id = positional_id,
-        .name = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL,
+        .name = nmo_opt_str(&vals[OPT_NAME]),
         .required_base_class = NMO_CID_BEHAVIOR,
         .selector_label = "Behavior",
         .type_label = "CKBehavior",
