@@ -41,18 +41,11 @@ static const nmo_object_state_member_t nmo_group_members[] = {
     NMO_STATE_VALUE(nmo_group_state_t, has_group_data)
 };
 
-static const size_t nmo_group_base_arrays[] = {
-    NMO_BEOBJECT_STATE_ARRAY_OFFSETS
-};
-
 static const nmo_object_state_layout_t nmo_group_layout = {
     .size = sizeof(nmo_group_state_t),
     .base_vtable = &nmo_beobject_vtable,
     .members = nmo_group_members,
     .member_count = sizeof(nmo_group_members) / sizeof(nmo_group_members[0]),
-    .base_arrays = nmo_group_base_arrays,
-    .base_array_count =
-        sizeof(nmo_group_base_arrays) / sizeof(nmo_group_base_arrays[0]),
     .validate = nmo_group_validate,
 };
 

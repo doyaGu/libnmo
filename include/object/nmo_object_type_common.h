@@ -132,8 +132,6 @@ typedef struct nmo_object_state_layout {
     size_t base_size;        /**< Type size handed to the base copy; 0 hands no type */
     const nmo_object_state_member_t *members;
     size_t member_count;
-    const size_t *base_arrays; /**< Base-owned nmo_array_t offsets, detached when dst aliases src */
-    size_t base_array_count;
     void (*set_defaults)(void *state);
     nmo_status_t (*validate)(const void *instance,
                              const nmo_type_descriptor_t *type,

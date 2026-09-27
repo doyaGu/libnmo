@@ -291,18 +291,6 @@ static const void *layout_bytes_data(
     return data;
 }
 
-static void layout_detach_shared_array(
-    void *dst,
-    const void *src,
-    size_t offset)
-{
-    nmo_array_t *d = layout_member_ptr(dst, offset);
-    const nmo_array_t *s = layout_member_ptr_const(src, offset);
-    if (d->data == s->data) {
-        memset(d, 0, sizeof(*d));
-    }
-}
-
 nmo_status_t nmo_object_layout_create(
     const nmo_object_state_layout_t *layout,
     void *instance,
@@ -347,6 +335,23 @@ void nmo_object_layout_destroy(
     memset(instance, 0, layout->size);
 }
 
+typedef union layout_staged_member {
+    nmo_array_t array;
+    void *bytes;
+} layout_staged_member_t;
+
+static void layout_dispose_staged(
+    const nmo_object_state_layout_t *layout,
+    layout_staged_member_t *staged)
+{
+    for (size_t i = 0; i < layout->member_count; ++i) {
+        if (layout->members[i].kind == NMO_OBJECT_STATE_MEMBER_ARRAY) {
+            nmo_array_dispose(&staged[i].array);
+        }
+    }
+    free(staged);
+}
+
 nmo_status_t nmo_object_layout_copy(
     const nmo_object_state_layout_t *layout,
     const void *src,
@@ -360,56 +365,62 @@ nmo_status_t nmo_object_layout_copy(
         NMO_RETURN_IF_ERROR(layout->validate(src, NULL, NULL));
     }
 
-    void *copied = malloc(layout->size);
-    if (copied == NULL) return NMO_ERR_NOMEM;
-    nmo_status_t result = nmo_object_layout_create(layout, copied, NULL);
-    if (result != NMO_OK) {
-        free(copied);
-        return result;
+    /* Clone owned members first and copy the base in place, which each
+     * base vtable does atomically, so a failure leaves dst untouched. */
+    layout_staged_member_t *staged = NULL;
+    if (layout->member_count > 0) {
+        staged = calloc(layout->member_count, sizeof(*staged));
+        if (staged == NULL) return NMO_ERR_NOMEM;
     }
-    const nmo_type_descriptor_t base_type = {
-        .size = (uint32_t)layout->base_size,
-    };
-    result = layout->base_vtable->copy(
-        src, copied, layout->base_size != 0 ? &base_type : NULL, arena);
-
+    nmo_status_t result = NMO_OK;
     for (size_t i = 0; result == NMO_OK && i < layout->member_count; ++i) {
         const nmo_object_state_member_t *member = &layout->members[i];
-        void *to = layout_member_ptr(copied, member->offset);
-        const void *from = layout_member_ptr_const(src, member->offset);
-        switch (member->kind) {
-        case NMO_OBJECT_STATE_MEMBER_VALUE:
-            memcpy(to, from, member->size);
-            break;
-        case NMO_OBJECT_STATE_MEMBER_ARRAY:
-            nmo_array_dispose(to);
-            result = nmo_array_clone(
-                from, to, &((const nmo_array_t *)from)->allocator);
-            break;
-        case NMO_OBJECT_STATE_MEMBER_BYTES:
+        if (member->kind == NMO_OBJECT_STATE_MEMBER_ARRAY) {
+            const nmo_array_t *from =
+                layout_member_ptr_const(src, member->offset);
+            result = nmo_array_clone(from, &staged[i].array, &from->allocator);
+        } else if (member->kind == NMO_OBJECT_STATE_MEMBER_BYTES) {
             result = nmo_object_copy_bytes(
-                arena, to, layout_bytes_data(src, member),
+                arena, &staged[i].bytes, layout_bytes_data(src, member),
                 layout_bytes_size(src, member));
-            break;
         }
     }
+    if (result == NMO_OK) {
+        const nmo_type_descriptor_t base_type = {
+            .size = (uint32_t)layout->base_size,
+        };
+        result = layout->base_vtable->copy(
+            src, dst, layout->base_size != 0 ? &base_type : NULL, arena);
+    }
     if (result != NMO_OK) {
-        nmo_object_layout_destroy(layout, copied, NULL);
-        free(copied);
+        layout_dispose_staged(layout, staged);
         return result;
     }
 
-    for (size_t i = 0; i < layout->base_array_count; ++i) {
-        layout_detach_shared_array(dst, src, layout->base_arrays[i]);
-    }
     for (size_t i = 0; i < layout->member_count; ++i) {
-        if (layout->members[i].kind == NMO_OBJECT_STATE_MEMBER_ARRAY) {
-            layout_detach_shared_array(dst, src, layout->members[i].offset);
+        const nmo_object_state_member_t *member = &layout->members[i];
+        void *to = layout_member_ptr(dst, member->offset);
+        switch (member->kind) {
+        case NMO_OBJECT_STATE_MEMBER_VALUE:
+            memmove(to, layout_member_ptr_const(src, member->offset),
+                    member->size);
+            break;
+        case NMO_OBJECT_STATE_MEMBER_ARRAY: {
+            nmo_array_t *array = to;
+            const nmo_array_t *from =
+                layout_member_ptr_const(src, member->offset);
+            if (array->data != from->data) {
+                nmo_array_dispose(array);
+            }
+            *array = staged[i].array;
+            break;
+        }
+        case NMO_OBJECT_STATE_MEMBER_BYTES:
+            memcpy(to, &staged[i].bytes, sizeof(staged[i].bytes));
+            break;
         }
     }
-    nmo_object_layout_destroy(layout, dst, NULL);
-    memcpy(dst, copied, layout->size);
-    free(copied);
+    free(staged);
     return NMO_OK;
 }
 

@@ -37,18 +37,11 @@ static const nmo_object_state_member_t nmo_place_members[] = {
     NMO_STATE_ARRAY(nmo_place_state_t, references, nmo_ref_t)
 };
 
-static const size_t nmo_place_base_arrays[] = {
-    NMO_BEOBJECT_STATE_ARRAY_OFFSETS
-};
-
 static const nmo_object_state_layout_t nmo_place_layout = {
     .size = sizeof(nmo_place_state_t),
     .base_vtable = &nmo_3dentity_vtable,
     .members = nmo_place_members,
     .member_count = sizeof(nmo_place_members) / sizeof(nmo_place_members[0]),
-    .base_arrays = nmo_place_base_arrays,
-    .base_array_count =
-        sizeof(nmo_place_base_arrays) / sizeof(nmo_place_base_arrays[0]),
     .validate = nmo_place_validate,
 };
 
