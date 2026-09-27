@@ -42,6 +42,39 @@ static int reject_in_session_output_option(bool present)
  *   Batch:   nmo object rename --name <pattern> --to <template> [opts] <file> -o <output>
  * ============================================================================ */
 
+/* "output" in JSON and "Saved to: <path>" in text, once a save happened. */
+static bool object_write_add_output(nmo_cli_record_t *rec, bool dry_run,
+                                    const char *output_path)
+{
+    if (dry_run || output_path == NULL) {
+        return true;
+    }
+    return nmo_cli_record_str(rec, "output", NULL, output_path) &&
+           nmo_cli_record_raw_fmt(rec, "Saved to: %s\n", output_path);
+}
+
+/* Emit a write report; frees `rec`, which is dropped when `ok` is false. */
+static int object_write_emit(nmo_cmd_ctx_t *c, nmo_cli_record_t *rec, bool ok,
+                             const char *cmd_name)
+{
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        rec = NULL;
+    }
+    return nmo_cmd_ctx_emit_record(c, rec, cmd_name, 0, c->colorize);
+}
+
+/* Text-only "No objects matched." report; JSON prints nothing. */
+static int object_write_emit_no_match(nmo_cmd_ctx_t *c, const char *cmd_name)
+{
+    if (c->is_json) {
+        return NMO_CLI_EXIT_SUCCESS;
+    }
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL && nmo_cli_record_raw(rec, "No objects matched.\n");
+    return object_write_emit(c, rec, ok, cmd_name);
+}
+
 /** Rename entry used by both batch text and JSON output */
 typedef struct {
     nmo_object_id_t id;
@@ -291,82 +324,57 @@ static int object_rename_batch_report(
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    if (c->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
-        if (!doc) {
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
+    static const nmo_cli_table_col_t cols[] = {
+        {"ID",       NMO_CLI_ALIGN_RIGHT, 5,  0},
+        {"CLASS",    NMO_CLI_ALIGN_LEFT,  15, 25},
+        {"OLD NAME", NMO_CLI_ALIGN_LEFT,  20, 40},
+        {"NEW NAME", NMO_CLI_ALIGN_LEFT,  20, 40},
+    };
+    const bool table = dry_run && args->entry_count > 0;
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL &&
+              nmo_cli_record_bool(rec, "dry_run", NULL, dry_run) &&
+              nmo_cli_record_uint(rec, "match_count", NULL, (uint64_t)args->entry_count) &&
+              nmo_cli_record_uint(rec, "collision_count", NULL,
+                                  (uint64_t)args->collision_count);
+    if (ok && dry_run) {
+        ok = nmo_cli_record_raw(rec, "=== Dry Run: Batch Rename ===\n\n");
+    }
+    nmo_cli_record_array_t *arr = ok ? nmo_cli_record_array(rec, "renames", NULL) : NULL;
+    ok = arr != NULL && (!table || nmo_cli_record_array_set_table(arr, cols, 4));
+    for (size_t i = 0; ok && i < args->entry_count; i++) {
+        const rename_entry_t *entry = &args->entries[i];
+        const char *cls = nmo_core_class_name(c, entry->class_id);
+        nmo_cli_record_t *item = nmo_cli_record_new();
+        ok = item != NULL &&
+             nmo_cli_record_uint(item, "id", "ID", (uint64_t)entry->id) &&
+             nmo_cli_record_str(item, "class_name", "CLASS", cls ? cls : "?") &&
+             nmo_cli_record_str(item, "old_name", "OLD NAME", entry->old_name) &&
+             nmo_cli_record_str(item, "new_name", "NEW NAME", entry->new_name);
+        if (ok && entry->collision) {
+            ok = nmo_cli_record_bool(item, "collision", NULL, true);
         }
-
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        nmo_cli_json_add_bool_safe(doc, data, "dry_run", dry_run);
-        nmo_cli_json_add_uint_safe(doc, data, "match_count",
-                                   (uint64_t)args->entry_count);
-        nmo_cli_json_add_uint_safe(doc, data, "collision_count",
-                                   (uint64_t)args->collision_count);
-
-        yyjson_mut_val *arr = yyjson_mut_arr(doc);
-        for (size_t i = 0; i < args->entry_count; i++) {
-            yyjson_mut_val *item = yyjson_mut_obj(doc);
-            nmo_cli_json_add_uint_safe(doc, item, "id",
-                                       (uint64_t)args->entries[i].id);
-            const char *cls = nmo_core_class_name(c, args->entries[i].class_id);
-            nmo_cli_json_add_str_safe(doc, item, "class_name",
-                                      cls ? cls : "?");
-            nmo_cli_json_add_str_safe(doc, item, "old_name",
-                                      args->entries[i].old_name);
-            nmo_cli_json_add_str_safe(doc, item, "new_name",
-                                      args->entries[i].new_name);
-            if (args->entries[i].collision) {
-                nmo_cli_json_add_bool_safe(doc, item, "collision", true);
-            }
-            yyjson_mut_arr_add_val(arr, item);
-        }
-        yyjson_mut_obj_add_val(doc, data, "renames", arr);
-
-        if (!dry_run && output_path) {
-            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-        }
-
-        nmo_cmd_ctx_json_end(c, doc, data, "object.rename");
-    } else {
-        if (dry_run) {
-            fprintf(c->out, "=== Dry Run: Batch Rename ===\n\n");
-
-            if (args->entry_count > 0) {
-                static const nmo_cli_table_col_t cols[] = {
-                    {"ID",       NMO_CLI_ALIGN_RIGHT, 5,  0},
-                    {"CLASS",    NMO_CLI_ALIGN_LEFT,  15, 25},
-                    {"OLD NAME", NMO_CLI_ALIGN_LEFT,  20, 40},
-                    {"NEW NAME", NMO_CLI_ALIGN_LEFT,  20, 40},
-                };
-                nmo_cli_table_t table;
-                nmo_cli_table_init(&table, cols, 4);
-
-                for (size_t i = 0; i < args->entry_count; i++) {
-                    const char *cls = nmo_core_class_name(
-                        c, args->entries[i].class_id);
-                    nmo_cli_table_begin_row(&table);
-                    nmo_cli_table_add_cell_fmt(&table, "%u", args->entries[i].id);
-                    nmo_cli_table_add_cell(&table, cls ? cls : "?");
-                    nmo_cli_table_add_cell(&table, args->entries[i].old_name);
-                    nmo_cli_table_add_cell(&table, args->entries[i].new_name);
-                }
-
-                nmo_cli_table_print(&table, c->out, c->colorize);
-                nmo_cli_table_free(&table);
-                fprintf(c->out, "\n");
-            }
-
-            fprintf(c->out, "%zu object(s) would be renamed, %zu collisions\n",
-                    args->entry_count, args->collision_count);
-        } else {
-            fprintf(c->out, "%zu object(s) renamed, %zu collisions\n",
-                    args->entry_count, args->collision_count);
-            if (args->entry_count > 0 && output_path) {
-                fprintf(c->out, "Saved to: %s\n", output_path);
+        ok = nmo_cli_record_array_add(ok ? arr : NULL, item) && ok;
+    }
+    if (ok && table) {
+        ok = nmo_cli_record_raw(rec, "\n");
+    }
+    if (ok && dry_run) {
+        ok = nmo_cli_record_raw_fmt(rec, "%zu object(s) would be renamed, %zu collisions\n",
+                                    args->entry_count, args->collision_count);
+    } else if (ok) {
+        ok = nmo_cli_record_raw_fmt(rec, "%zu object(s) renamed, %zu collisions\n",
+                                    args->entry_count, args->collision_count);
+        if (ok && output_path) {
+            ok = nmo_cli_record_str(rec, "output", NULL, output_path);
+            if (ok && args->entry_count > 0) {
+                ok = nmo_cli_record_raw_fmt(rec, "Saved to: %s\n", output_path);
             }
         }
+    }
+    int rc = object_write_emit(c, rec, ok, "object.rename");
 
+    if (!c->is_json) {
         for (size_t i = 0; i < args->entry_count; i++) {
             if (args->entries[i].collision) {
                 fprintf(stderr, "Warning: Name '%s' collides with existing object\n",
@@ -375,9 +383,7 @@ static int object_rename_batch_report(
         }
     }
 
-    return args->rename_errors > 0
-        ? NMO_CLI_EXIT_INTERNAL_ERROR
-        : NMO_CLI_EXIT_SUCCESS;
+    return args->rename_errors > 0 ? NMO_CLI_EXIT_INTERNAL_ERROR : rc;
 }
 
 static int nmo_cmd_object_rename_batch(
@@ -498,41 +504,23 @@ static int object_rename_single_report(
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    if (c->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
-        if (!doc) {
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
-        }
-
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        nmo_cli_json_add_uint_safe(doc, data, "id", (uint64_t)args->object_id);
-        nmo_cli_json_add_str_safe(doc, data, "old_name",
-                                  args->old_name ? args->old_name : "");
-        nmo_cli_json_add_str_safe(doc, data, "new_name", args->new_name);
-        nmo_cli_json_add_bool_safe(doc, data, "dry_run", dry_run);
-        if (!dry_run && output_path != NULL) {
-            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-        }
-        nmo_cli_json_add_bool_safe(doc, data, "name_collision", args->name_collision);
-
-        nmo_cmd_ctx_json_end(c, doc, data, "object.rename");
-    } else {
-        if (dry_run) {
-            fprintf(c->out, "[dry-run] ");
-        }
-        fprintf(c->out, "Renamed: %s -> %s (ID %u)\n",
-                args->old_name ? args->old_name : "(unnamed)",
-                args->new_name,
-                args->object_id);
-        if (!dry_run && output_path != NULL) {
-            fprintf(c->out, "Saved to: %s\n", output_path);
-        }
-        if (args->name_collision) {
-            fprintf(c->out, "Warning: Name collision with existing object\n");
-        }
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL &&
+              nmo_cli_record_uint(rec, "id", NULL, (uint64_t)args->object_id) &&
+              nmo_cli_record_str(rec, "old_name", NULL,
+                                 args->old_name ? args->old_name : "") &&
+              nmo_cli_record_str(rec, "new_name", NULL, args->new_name) &&
+              nmo_cli_record_bool(rec, "dry_run", NULL, dry_run) &&
+              nmo_cli_record_raw_fmt(rec, "%sRenamed: %s -> %s (ID %u)\n",
+                                     dry_run ? "[dry-run] " : "",
+                                     args->old_name ? args->old_name : "(unnamed)",
+                                     args->new_name, args->object_id) &&
+              object_write_add_output(rec, dry_run, output_path) &&
+              nmo_cli_record_bool(rec, "name_collision", NULL, args->name_collision);
+    if (ok && args->name_collision) {
+        ok = nmo_cli_record_raw(rec, "Warning: Name collision with existing object\n");
     }
-
-    return NMO_CLI_EXIT_SUCCESS;
+    return object_write_emit(c, rec, ok, "object.rename");
 }
 
 int nmo_cmd_object_rename(int argc, char **argv, const nmo_cli_global_opts_t *global)
@@ -1104,89 +1092,63 @@ static int object_delete_report(
     }
 
     if (args->target_count == 0) {
-        if (!c->is_json) {
-            fprintf(c->out, "No objects matched.\n");
-        }
-        return NMO_CLI_EXIT_SUCCESS;
+        return object_write_emit_no_match(c, "object.delete");
     }
 
-    if (c->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
-        if (doc == NULL) {
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
-        }
-
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        nmo_cli_json_add_bool_safe(doc, data, "dry_run", dry_run);
-        yyjson_mut_obj_add_str(doc, data, "mode", args->cascade ? "cascade" : "safe_detach");
-        nmo_cli_json_add_uint_safe(doc, data, "requested_count", (uint64_t)args->target_count);
-        nmo_cli_json_add_uint_safe(doc, data, "expanded_count", (uint64_t)args->expanded_count);
-        nmo_cli_json_add_uint_safe(doc, data, "total_size", (uint64_t)args->total_size);
-
-        yyjson_mut_val *arr = yyjson_mut_arr(doc);
-        for (size_t i = 0; i < args->expanded_count; i++) {
-            const object_delete_preview_entry_t *entry = &args->preview_entries[i];
-            yyjson_mut_val *item = yyjson_mut_obj(doc);
-            nmo_cli_json_add_uint_safe(doc, item, "id", (uint64_t)entry->id);
-            if (entry->has_object) {
-                if (entry->name != NULL && entry->name[0] != '\0') {
-                    nmo_cli_json_add_str_safe(doc, item, "name", entry->name);
-                }
-                nmo_cli_json_add_str_safe(doc, item, "class_name", entry->class_name);
-            }
-            yyjson_mut_arr_add_val(arr, item);
-        }
-        yyjson_mut_obj_add_val(doc, data, "objects", arr);
-
-        if (!dry_run && output_path != NULL) {
-            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-        }
-
-        nmo_cmd_ctx_json_end(c, doc, data, "object.delete");
-    } else {
-        const char *mode_str = args->cascade ? "cascade" : "safe-detach";
-        if (dry_run) {
-            fprintf(c->out, "=== Dry Run: Delete (%s mode) ===\n\n", mode_str);
-        }
-
-        if (args->expanded_count > 0) {
-            static const nmo_cli_table_col_t cols[] = {
-                {"ID",    NMO_CLI_ALIGN_RIGHT, 6, 0},
-                {"Class", NMO_CLI_ALIGN_LEFT, 18, 0},
-                {"Name",  NMO_CLI_ALIGN_LEFT, 30, 0},
-            };
-            nmo_cli_table_t table;
-            nmo_cli_table_init(&table, cols, 3);
-
-            for (size_t i = 0; i < args->expanded_count; i++) {
-                const object_delete_preview_entry_t *entry = &args->preview_entries[i];
-                nmo_cli_table_begin_row(&table);
-                nmo_cli_table_add_cell_fmt(&table, "%u", entry->id);
-                nmo_cli_table_add_cell(&table, entry->class_name);
-                nmo_cli_table_add_cell(&table, entry->name != NULL ? entry->name : "-");
-            }
-            nmo_cli_table_print(&table, c->out, c->colorize);
-            nmo_cli_table_free(&table);
-        }
-
-        if (args->cascade && args->expanded_count > args->target_count) {
-            fprintf(c->out, "\nRequested: %zu, cascade expanded to: %zu object(s)\n",
-                    args->target_count, args->expanded_count);
-        } else {
-            fprintf(c->out, "\n%zu object(s)", args->expanded_count);
-        }
-        fprintf(c->out, " (%zu bytes)\n", args->total_size);
-
-        if (!dry_run && output_path != NULL) {
-            fprintf(c->out, "Deleted %zu object(s), saved to: %s\n",
-                    args->report.deleted_objects, output_path);
-        } else if (!dry_run) {
-            fprintf(c->out, "Deleted %zu object(s)\n",
-                    args->report.deleted_objects);
-        }
+    static const nmo_cli_table_col_t cols[] = {
+        {"ID",    NMO_CLI_ALIGN_RIGHT, 6, 0},
+        {"Class", NMO_CLI_ALIGN_LEFT, 18, 0},
+        {"Name",  NMO_CLI_ALIGN_LEFT, 30, 0},
+    };
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL &&
+              nmo_cli_record_bool(rec, "dry_run", NULL, dry_run) &&
+              nmo_cli_record_str(rec, "mode", NULL, args->cascade ? "cascade" : "safe_detach") &&
+              nmo_cli_record_uint(rec, "requested_count", NULL, (uint64_t)args->target_count) &&
+              nmo_cli_record_uint(rec, "expanded_count", NULL, (uint64_t)args->expanded_count) &&
+              nmo_cli_record_uint(rec, "total_size", NULL, (uint64_t)args->total_size);
+    if (ok && dry_run) {
+        ok = nmo_cli_record_raw_fmt(rec, "=== Dry Run: Delete (%s mode) ===\n\n",
+                                    args->cascade ? "cascade" : "safe-detach");
     }
 
-    return NMO_CLI_EXIT_SUCCESS;
+    /* Rows: ID, Class ("-" when missing), Name ("-" when unnamed). */
+    nmo_cli_record_array_t *arr = ok ? nmo_cli_record_array(rec, "objects", NULL) : NULL;
+    ok = arr != NULL &&
+         (args->expanded_count == 0 ||
+          nmo_cli_record_array_set_table(arr, cols, sizeof(cols) / sizeof(cols[0])));
+    for (size_t i = 0; ok && i < args->expanded_count; i++) {
+        const object_delete_preview_entry_t *entry = &args->preview_entries[i];
+        nmo_cli_record_t *item = nmo_cli_record_new();
+        ok = item != NULL && nmo_cli_record_uint(item, "id", "ID", (uint64_t)entry->id);
+        if (ok && entry->has_object && entry->name != NULL && entry->name[0] != '\0') {
+            ok = nmo_cli_record_str(item, "name", NULL, entry->name);
+        }
+        if (ok && entry->has_object) {
+            ok = nmo_cli_record_str(item, "class_name", "Class", entry->class_name);
+        } else if (ok) {
+            ok = nmo_cli_record_text(item, "Class", entry->class_name);
+        }
+        ok = ok && nmo_cli_record_text(item, "Name", entry->name != NULL ? entry->name : "-");
+        ok = nmo_cli_record_array_add(ok ? arr : NULL, item) && ok;
+    }
+
+    if (ok && args->cascade && args->expanded_count > args->target_count) {
+        ok = nmo_cli_record_raw_fmt(rec, "\nRequested: %zu, cascade expanded to: %zu object(s)\n",
+                                    args->target_count, args->expanded_count);
+    } else if (ok) {
+        ok = nmo_cli_record_raw_fmt(rec, "\n%zu object(s)", args->expanded_count);
+    }
+    ok = ok && nmo_cli_record_raw_fmt(rec, " (%zu bytes)\n", args->total_size);
+    if (ok && !dry_run && output_path != NULL) {
+        ok = nmo_cli_record_str(rec, "output", NULL, output_path) &&
+             nmo_cli_record_raw_fmt(rec, "Deleted %zu object(s), saved to: %s\n",
+                                    args->report.deleted_objects, output_path);
+    } else if (ok && !dry_run) {
+        ok = nmo_cli_record_raw_fmt(rec, "Deleted %zu object(s)\n",
+                                    args->report.deleted_objects);
+    }
+    return object_write_emit(c, rec, ok, "object.delete");
 }
 
 int nmo_cmd_object_delete(int argc, char **argv, const nmo_cli_global_opts_t *global)
@@ -1403,38 +1365,21 @@ static int object_create_report(
     }
 
     const char *cls = nmo_core_class_name(c, args->class_id);
-    if (c->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
-        if (!doc) {
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
-        }
-
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        nmo_cli_json_add_bool_safe(doc, data, "dry_run", dry_run);
-        nmo_cli_json_add_uint_safe(doc, data, "id", (uint64_t)args->new_id);
-        nmo_cli_json_add_str_safe(doc, data, "class_name", cls ? cls : args->class_str);
-        nmo_cli_json_add_str_safe(doc, data, "name", args->name ? args->name : "");
-        if (!dry_run && output_path) {
-            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-        }
-
-        nmo_cmd_ctx_json_end(c, doc, data, "object.create");
-    } else {
-        if (dry_run) {
-            fprintf(c->out, "[dry-run] ");
-        }
-        fprintf(c->out, "Created object #%u (%s)",
-                args->new_id, cls ? cls : args->class_str);
-        if (args->name && args->name[0]) {
-            fprintf(c->out, " [name: %s]", args->name);
-        }
-        fprintf(c->out, "\n");
-        if (!dry_run && output_path) {
-            fprintf(c->out, "Saved to: %s\n", output_path);
-        }
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL &&
+              nmo_cli_record_bool(rec, "dry_run", NULL, dry_run) &&
+              nmo_cli_record_uint(rec, "id", NULL, (uint64_t)args->new_id) &&
+              nmo_cli_record_str(rec, "class_name", NULL, cls ? cls : args->class_str) &&
+              nmo_cli_record_str(rec, "name", NULL, args->name ? args->name : "") &&
+              nmo_cli_record_raw_fmt(rec, "%sCreated object #%u (%s)",
+                                     dry_run ? "[dry-run] " : "",
+                                     args->new_id, cls ? cls : args->class_str);
+    if (ok && args->name && args->name[0]) {
+        ok = nmo_cli_record_raw_fmt(rec, " [name: %s]", args->name);
     }
-
-    return NMO_CLI_EXIT_SUCCESS;
+    ok = ok && nmo_cli_record_raw(rec, "\n") &&
+         object_write_add_output(rec, dry_run, output_path);
+    return object_write_emit(c, rec, ok, "object.create");
 }
 
 /*
@@ -1810,43 +1755,22 @@ static int object_copy_report(
     }
 
     if (args->target_count == 0) {
-        if (!c->is_json) {
-            fprintf(c->out, "No objects matched.\n");
-        }
-        return NMO_CLI_EXIT_SUCCESS;
+        return object_write_emit_no_match(c, "object.copy");
     }
 
-    if (c->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
-        if (doc == NULL) {
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
-        }
-
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        nmo_cli_json_add_bool_safe(doc, data, "dry_run", dry_run);
-        nmo_cli_json_add_uint_safe(doc, data, "copied_objects",
-                                   (uint64_t)args->report.copied_objects);
-        nmo_cli_json_add_uint_safe(doc, data, "count_before",
-                                   (uint64_t)args->count_before);
-        nmo_cli_json_add_uint_safe(doc, data, "count_after",
-                                   (uint64_t)args->count_after);
-        if (!dry_run && output_path != NULL) {
-            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-        }
-
-        nmo_cmd_ctx_json_end(c, doc, data, "object.copy");
-    } else {
-        if (dry_run) {
-            fprintf(c->out, "[dry-run] ");
-        }
-        fprintf(c->out, "Copied %zu object(s) (%zu -> %zu)\n",
-                args->report.copied_objects, args->count_before, args->count_after);
-        if (!dry_run && output_path != NULL) {
-            fprintf(c->out, "Saved to: %s\n", output_path);
-        }
-    }
-
-    return NMO_CLI_EXIT_SUCCESS;
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL &&
+              nmo_cli_record_bool(rec, "dry_run", NULL, dry_run) &&
+              nmo_cli_record_uint(rec, "copied_objects", NULL,
+                                  (uint64_t)args->report.copied_objects) &&
+              nmo_cli_record_uint(rec, "count_before", NULL, (uint64_t)args->count_before) &&
+              nmo_cli_record_uint(rec, "count_after", NULL, (uint64_t)args->count_after) &&
+              nmo_cli_record_raw_fmt(rec, "%sCopied %zu object(s) (%zu -> %zu)\n",
+                                     dry_run ? "[dry-run] " : "",
+                                     args->report.copied_objects, args->count_before,
+                                     args->count_after) &&
+              object_write_add_output(rec, dry_run, output_path);
+    return object_write_emit(c, rec, ok, "object.copy");
 }
 
 int nmo_cmd_object_copy(int argc, char **argv, const nmo_cli_global_opts_t *global)
@@ -2029,44 +1953,26 @@ static int object_import_report(
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    if (c->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
-        if (!doc) {
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
-        }
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        nmo_cli_json_add_bool_safe(doc, data, "dry_run", dry_run);
-        nmo_cli_json_add_uint_safe(doc, data, "objects_updated",
-                                   (uint64_t)args->result.objects_updated);
-        nmo_cli_json_add_uint_safe(doc, data, "objects_created",
-                                   (uint64_t)args->result.objects_created);
-        nmo_cli_json_add_uint_safe(doc, data, "fields_written",
-                                   (uint64_t)args->result.fields_written);
-        nmo_cli_json_add_uint_safe(doc, data, "fields_skipped",
-                                   (uint64_t)args->result.fields_skipped);
-        nmo_cli_json_add_uint_safe(doc, data, "errors",
-                                   (uint64_t)args->result.errors);
-        if (!dry_run && output_path) {
-            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-        }
-        nmo_cmd_ctx_json_end(c, doc, data, "object.import");
-    } else {
-        if (dry_run) {
-            fprintf(c->out, "=== Dry Run: Import JSON ===\n");
-        }
-        fprintf(c->out, "Objects updated : %zu\n", args->result.objects_updated);
-        fprintf(c->out, "Objects created : %zu\n", args->result.objects_created);
-        fprintf(c->out, "Fields written  : %zu\n", args->result.fields_written);
-        fprintf(c->out, "Fields skipped  : %zu\n", args->result.fields_skipped);
-        fprintf(c->out, "Errors          : %zu\n", args->result.errors);
-        if (!dry_run && output_path) {
-            fprintf(c->out, "Saved to: %s\n", output_path);
-        }
+    const nmo_import_result_t *result = &args->result;
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL && nmo_cli_record_bool(rec, "dry_run", NULL, dry_run);
+    if (ok && dry_run) {
+        ok = nmo_cli_record_raw(rec, "=== Dry Run: Import JSON ===\n");
     }
-
-    return args->result.errors > 0
-        ? NMO_CLI_EXIT_INTERNAL_ERROR
-        : NMO_CLI_EXIT_SUCCESS;
+    ok = ok &&
+         nmo_cli_record_uint(rec, "objects_updated", NULL, (uint64_t)result->objects_updated) &&
+         nmo_cli_record_raw_fmt(rec, "Objects updated : %zu\n", result->objects_updated) &&
+         nmo_cli_record_uint(rec, "objects_created", NULL, (uint64_t)result->objects_created) &&
+         nmo_cli_record_raw_fmt(rec, "Objects created : %zu\n", result->objects_created) &&
+         nmo_cli_record_uint(rec, "fields_written", NULL, (uint64_t)result->fields_written) &&
+         nmo_cli_record_raw_fmt(rec, "Fields written  : %zu\n", result->fields_written) &&
+         nmo_cli_record_uint(rec, "fields_skipped", NULL, (uint64_t)result->fields_skipped) &&
+         nmo_cli_record_raw_fmt(rec, "Fields skipped  : %zu\n", result->fields_skipped) &&
+         nmo_cli_record_uint(rec, "errors", NULL, (uint64_t)result->errors) &&
+         nmo_cli_record_raw_fmt(rec, "Errors          : %zu\n", result->errors) &&
+         object_write_add_output(rec, dry_run, output_path);
+    int rc = object_write_emit(c, rec, ok, "object.import");
+    return result->errors > 0 ? NMO_CLI_EXIT_INTERNAL_ERROR : rc;
 }
 
 int nmo_cmd_object_import(int argc, char **argv, const nmo_cli_global_opts_t *global)
