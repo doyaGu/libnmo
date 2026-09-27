@@ -368,7 +368,12 @@ nmo_status_t nmo_object_layout_copy(
     /* Clone owned members first and copy the base in place, which each
      * base vtable does atomically, so a failure leaves dst untouched. */
     layout_staged_member_t *staged = NULL;
-    if (layout->member_count > 0) {
+    bool owns_members = false;
+    for (size_t i = 0; i < layout->member_count; ++i) {
+        owns_members = owns_members ||
+            layout->members[i].kind != NMO_OBJECT_STATE_MEMBER_VALUE;
+    }
+    if (owns_members) {
         staged = calloc(layout->member_count, sizeof(*staged));
         if (staged == NULL) return NMO_ERR_NOMEM;
     }
