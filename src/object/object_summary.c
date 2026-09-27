@@ -1553,10 +1553,26 @@ static yyjson_mut_val *nmo_snapshot_build_fields(
     const void *owner_instance,
     const nmo_summary_config_t *config);
 
+/* Strings are scalars stored as a char pointer. */
+static bool nmo_snapshot_type_is_string(const nmo_type_registry_t *registry,
+                                        const nmo_type_descriptor_t *type)
+{
+    for (unsigned depth = 0; type && depth < 8u; ++depth) {
+        if (nmo_guid_equals(type->guid, CKPGUID_STRING)) {
+            return true;
+        }
+        if (!registry || nmo_guid_is_null(type->base_type)) {
+            return false;
+        }
+        type = nmo_type_registry_find_by_guid(registry, type->base_type);
+    }
+    return false;
+}
+
 /*
  * True when the in-memory bytes of a value of this type contain process
- * addresses (pointer fields, array storage pointers, nested structs holding
- * either).  Such bytes differ from run to run, so raw_hex is not emitted for
+ * addresses (pointer fields, strings, array storage pointers, nested structs
+ * holding any of them).  Such bytes differ from run to run, so raw_hex is not emitted for
  * them.
  */
 static bool nmo_snapshot_type_holds_addresses(
@@ -1568,7 +1584,8 @@ static bool nmo_snapshot_type_holds_addresses(
     if (!type) {
         return false;
     }
-    if (type->category == NMO_TYPE_CATEGORY_POINTER) {
+    if (type->category == NMO_TYPE_CATEGORY_POINTER ||
+        nmo_snapshot_type_is_string(registry, type)) {
         return value_size == sizeof(void *);
     }
     if (depth >= 8u || !nmo_type_has_reflection(type)) {
