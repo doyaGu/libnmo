@@ -905,33 +905,30 @@ static int entity_add_change(entity_set_fields_args_t *args, const char *field,
 }
 
 static int entity_apply_camera_fields(entity_set_fields_args_t *args,
-                                      nmo_class_id_t class_id, void *state,
-                                      bool dry_run)
+                                      const nmo_camera_state_t *camera,
+                                      nmo_entity_camera_settings_t *settings)
 {
-    nmo_camera_state_t *camera =
-        (class_id == NMO_CID_TARGETCAMERA)
-            ? &((nmo_targetcamera_state_t *)state)->base
-            : (nmo_camera_state_t *)state;
+    settings->fov = camera->fov;
+    settings->near_plane = camera->near_plane;
+    settings->far_plane = camera->far_plane;
     for (size_t i = 0; i < args->entry_count; ++i) {
         const char *field = args->entries[i].field_name;
         const char *value = args->entries[i].value_str;
         float parsed;
         float *target = NULL;
         if (strcmp(field, "fov") == 0) {
-            target = &camera->fov;
+            target = &settings->fov;
         } else if (strcmp(field, "near_plane") == 0) {
-            target = &camera->near_plane;
+            target = &settings->near_plane;
         } else if (strcmp(field, "far_plane") == 0) {
-            target = &camera->far_plane;
+            target = &settings->far_plane;
         }
         if (target == NULL || nmo_parse_f32(value, &parsed) != NMO_OK) {
             fprintf(stderr, "Error: Failed to set '%s' = '%s'\n", field, value);
             return NMO_CLI_EXIT_ARG_ERROR;
         }
         float old_value = *target;
-        if (!dry_run) {
-            *target = parsed;
-        }
+        *target = parsed;
         int rc = entity_add_change(args, field,
                                    nmo_tool_strdup_fmt("%.9g", old_value),
                                    nmo_tool_strdup_fmt("%.9g", parsed));
@@ -944,13 +941,12 @@ static int entity_apply_camera_fields(entity_set_fields_args_t *args,
 
 static int entity_apply_light_fields(const nmo_cmd_ctx_t *c,
                                      entity_set_fields_args_t *args,
-                                     nmo_class_id_t class_id, void *state,
-                                     bool dry_run)
+                                     const nmo_light_state_t *light,
+                                     nmo_entity_light_settings_t *settings)
 {
-    nmo_light_state_t *light =
-        (class_id == NMO_CID_TARGETLIGHT)
-            ? &((nmo_targetlight_state_t *)state)->base
-            : (nmo_light_state_t *)state;
+    nmo_color_t diffuse = light->light_data.diffuse;
+    settings->range = light->light_data.range;
+    settings->type = light->light_data.type;
     for (size_t i = 0; i < args->entry_count; ++i) {
         const char *field = args->entries[i].field_name;
         const char *value = args->entries[i].value_str;
@@ -962,25 +958,18 @@ static int entity_apply_light_fields(const nmo_cmd_ctx_t *c,
                 fprintf(stderr, "Error: Failed to set '%s' = '%s'\n", field, value);
                 return NMO_CLI_EXIT_ARG_ERROR;
             }
-            uint32_t old_value = nmo_color_to_argb32_opaque(&light->light_data.diffuse);
-            uint32_t new_value = nmo_color_to_argb32_opaque(&parsed);
-            if (!dry_run) {
-                light->light_data.diffuse = parsed;
-            }
-            old_text = nmo_tool_strdup_fmt("0x%08X", old_value);
-            new_text = nmo_tool_strdup_fmt("0x%08X", new_value);
+            old_text = nmo_tool_strdup_fmt("0x%08X", nmo_color_to_argb32_opaque(&diffuse));
+            new_text = nmo_tool_strdup_fmt("0x%08X", nmo_color_to_argb32_opaque(&parsed));
+            diffuse = parsed;
         } else if (strcmp(field, "range") == 0) {
             float parsed;
             if (nmo_parse_f32(value, &parsed) != NMO_OK) {
                 fprintf(stderr, "Error: Failed to set '%s' = '%s'\n", field, value);
                 return NMO_CLI_EXIT_ARG_ERROR;
             }
-            float old_value = light->light_data.range;
-            if (!dry_run) {
-                light->light_data.range = parsed;
-            }
-            old_text = nmo_tool_strdup_fmt("%.9g", old_value);
+            old_text = nmo_tool_strdup_fmt("%.9g", settings->range);
             new_text = nmo_tool_strdup_fmt("%.9g", parsed);
+            settings->range = parsed;
         } else {
             fprintf(stderr, "Error: Unsupported light field '%s'\n", field);
             return NMO_CLI_EXIT_ARG_ERROR;
@@ -990,6 +979,10 @@ static int entity_apply_light_fields(const nmo_cmd_ctx_t *c,
             return rc;
         }
     }
+    settings->diffuse[0] = diffuse.r;
+    settings->diffuse[1] = diffuse.g;
+    settings->diffuse[2] = diffuse.b;
+    settings->diffuse[3] = diffuse.a;
     return NMO_CLI_EXIT_SUCCESS;
 }
 
@@ -1042,11 +1035,58 @@ static int entity_set_fields_mutate(
         label = "Light";
     }
 
-    int rc = args->target == ENTITY_FIELD_TARGET_CAMERA
-        ? entity_apply_camera_fields(args, class_id, state, dry_run)
-        : entity_apply_light_fields(c, args, class_id, state, dry_run);
+    nmo_entity_camera_settings_t camera_settings;
+    nmo_entity_light_settings_t light_settings;
+    int rc;
+    if (args->target == ENTITY_FIELD_TARGET_CAMERA) {
+        const nmo_camera_state_t *camera =
+            (class_id == NMO_CID_TARGETCAMERA)
+                ? &((const nmo_targetcamera_state_t *)state)->base
+                : (const nmo_camera_state_t *)state;
+        rc = entity_apply_camera_fields(args, camera, &camera_settings);
+    } else {
+        const nmo_light_state_t *light =
+            (class_id == NMO_CID_TARGETLIGHT)
+                ? &((const nmo_targetlight_state_t *)state)->base
+                : (const nmo_light_state_t *)state;
+        rc = entity_apply_light_fields(c, args, light, &light_settings);
+    }
     nmo_core_field_set_preview(c, label, args->object_id, &args->result, dry_run);
-    return rc;
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        return rc;
+    }
+
+    nmo_workspace_edit_t *edit = NULL;
+    nmo_status_t status = nmo_workspace_edit_begin(
+        c->workspace,
+        args->target == ENTITY_FIELD_TARGET_CAMERA ? "entity set-camera"
+                                                   : "entity set-light",
+        &edit);
+    if (status == NMO_OK) {
+        status = args->target == ENTITY_FIELD_TARGET_CAMERA
+            ? nmo_entity_edit_set_camera_settings(edit, args->object_id, &camera_settings)
+            : nmo_entity_edit_set_light_settings(edit, args->object_id, &light_settings);
+    }
+    if (status != NMO_OK) {
+        if (edit) {
+            nmo_workspace_edit_rollback(edit);
+        }
+        fprintf(stderr, "Error: Failed to set %s fields: %s\n",
+                args->target == ENTITY_FIELD_TARGET_CAMERA ? "camera" : "light",
+                nmo_error_string(status));
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    if (dry_run) {
+        nmo_workspace_edit_rollback(edit);
+    } else {
+        status = nmo_workspace_edit_commit(edit);
+        if (status != NMO_OK) {
+            fprintf(stderr, "Error: Failed to commit edit: %s\n", nmo_error_string(status));
+            return NMO_CLI_EXIT_INTERNAL_ERROR;
+        }
+    }
+    return NMO_CLI_EXIT_SUCCESS;
 }
 
 static int entity_set_fields_report(
