@@ -444,10 +444,12 @@ set_target_properties(nmo PROPERTIES
 # Installation rules
 include(GNUInstallDirs)
 
-install(TARGETS nmo
+install(TARGETS nmo EXPORT libnmoTargets
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 
 install(DIRECTORY include/
@@ -468,6 +470,59 @@ install(DIRECTORY include/
     PATTERN "session/nmo_reference_resolver.h" EXCLUDE
     PATTERN "session/nmo_ref_graph.h" EXCLUDE
     PATTERN "session/nmo_ref_enumerate.h" EXCLUDE
+)
+
+# The Lua headers of include/lua/ include "lua.h". Installing Lua's public
+# headers beside them lets that same-directory lookup succeed without an extra
+# include path for consumers.
+install(FILES
+    "${LUA_RESOLVED_SOURCE_ROOT}/src/lua.h"
+    "${LUA_RESOLVED_SOURCE_ROOT}/src/luaconf.h"
+    "${LUA_RESOLVED_SOURCE_ROOT}/src/lualib.h"
+    "${LUA_RESOLVED_SOURCE_ROOT}/src/lauxlib.h"
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/lua
+)
+
+# CMake package: find_package(libnmo) provides the nmo::nmo target.
+include(CMakePackageConfigHelpers)
+set(NMO_CMAKE_INSTALL_DIR "${CMAKE_INSTALL_LIBDIR}/cmake/libnmo")
+install(EXPORT libnmoTargets
+    NAMESPACE nmo::
+    DESTINATION ${NMO_CMAKE_INSTALL_DIR}
+)
+configure_package_config_file(
+    "${PROJECT_SOURCE_DIR}/cmake/libnmoConfig.cmake.in"
+    "${PROJECT_BINARY_DIR}/libnmoConfig.cmake"
+    INSTALL_DESTINATION ${NMO_CMAKE_INSTALL_DIR}
+)
+# Minor releases may break the API before 1.0 (see docs/api-tiers.md).
+write_basic_package_version_file(
+    "${PROJECT_BINARY_DIR}/libnmoConfigVersion.cmake"
+    COMPATIBILITY SameMinorVersion
+)
+install(FILES
+    "${PROJECT_BINARY_DIR}/libnmoConfig.cmake"
+    "${PROJECT_BINARY_DIR}/libnmoConfigVersion.cmake"
+    DESTINATION ${NMO_CMAKE_INSTALL_DIR}
+)
+
+# pkg-config: the prefix is derived from the .pc location, so an unpacked
+# release archive works wherever it is extracted.
+set(_nmo_pc_system_libs ${CMAKE_THREAD_LIBS_INIT})
+if(UNIX)
+    list(APPEND _nmo_pc_system_libs -lm)
+endif()
+string(REPLACE ";" " " _nmo_pc_system_libs "${_nmo_pc_system_libs}")
+if(NMO_BUILD_SHARED)
+    set(NMO_PC_LIBS "")
+    set(NMO_PC_LIBS_PRIVATE "${_nmo_pc_system_libs}")
+else()
+    set(NMO_PC_LIBS "${_nmo_pc_system_libs}")
+    set(NMO_PC_LIBS_PRIVATE "")
+endif()
+configure_file("${PROJECT_SOURCE_DIR}/cmake/libnmo.pc.in" "${PROJECT_BINARY_DIR}/libnmo.pc" @ONLY)
+install(FILES "${PROJECT_BINARY_DIR}/libnmo.pc"
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
 )
 
 set(NMO_RUNTIME_DATA_FILES
