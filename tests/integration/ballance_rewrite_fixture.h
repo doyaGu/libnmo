@@ -193,11 +193,14 @@ static void rewrite_manifest_cli_guid(const char *manifest_guid,
     len = strlen(manifest_guid);
     if (len >= 2u && manifest_guid[0] == '{' &&
         manifest_guid[len - 1u] == '}') {
-        snprintf(buffer, buffer_size, "%.*s",
-                 (int)(len - 2u), manifest_guid + 1);
-        return;
+        ++manifest_guid;
+        len -= 2u;
     }
-    snprintf(buffer, buffer_size, "%s", manifest_guid);
+    if (len >= buffer_size) {
+        len = buffer_size - 1u;
+    }
+    memcpy(buffer, manifest_guid, len);
+    buffer[len] = '\0';
 }
 
 static int rewrite_manifest_fold_nodes_csv(const rewrite_manifest_t *manifest,
