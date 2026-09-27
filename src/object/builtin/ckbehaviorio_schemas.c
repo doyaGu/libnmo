@@ -27,16 +27,28 @@
 #include <stdalign.h>
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE(
-    behaviorio,
-    nmo_behaviorio_state_t,
-    do {
-        nmo_status_t result = nmo_object_vtable.create(
-            &state->base, NULL, context);
-        if (result != NMO_OK) return result;
-        state->has_flags = true;
-    } while (0),
-    nmo_object_vtable.destroy(&state->base, NULL, context))
+static void nmo_behaviorio_set_defaults(void *instance)
+{
+    nmo_behaviorio_state_t *state = instance;
+    state->has_flags = true;
+}
+
+static const nmo_object_state_member_t nmo_behaviorio_members[] = {
+    NMO_STATE_VALUE(nmo_behaviorio_state_t, old_flags),
+    NMO_STATE_VALUE(nmo_behaviorio_state_t, has_flags)
+};
+
+static const nmo_object_state_layout_t nmo_behaviorio_layout = {
+    .size = sizeof(nmo_behaviorio_state_t),
+    .base_vtable = &nmo_object_vtable,
+    .base_size = sizeof(nmo_object_state_t),
+    .members = nmo_behaviorio_members,
+    .member_count =
+        sizeof(nmo_behaviorio_members) / sizeof(nmo_behaviorio_members[0]),
+    .set_defaults = nmo_behaviorio_set_defaults,
+};
+
+NMO_DEFINE_OBJECT_LAYOUT_OPS(behaviorio, nmo_behaviorio_layout)
 
 static nmo_status_t nmo_behaviorio_validate(
     const void *instance,
@@ -281,20 +293,6 @@ static void nmo_behaviorio_post_delete(
  * Vtable + registration
  * ============================================================================ */
 
-static nmo_status_t nmo_behaviorio_copy(
-    const void *src,
-    void *dst,
-    const nmo_type_descriptor_t *type,
-    nmo_arena_t *arena)
-{
-    (void)type;
-    (void)arena;
-    if (src == NULL || dst == NULL) return NMO_ERR_INVALID_ARGUMENT;
-    if (src != dst) *(nmo_behaviorio_state_t *)dst =
-        *(const nmo_behaviorio_state_t *)src;
-    return NMO_OK;
-}
-
 static nmo_status_t nmo_behaviorio_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
@@ -311,30 +309,6 @@ static nmo_status_t nmo_behaviorio_validate(
             "BehaviorIO flags are present without their section");
     }
     NMO_RETURN_OK();
-}
-
-static bool nmo_behaviorio_equals(const void *a, const void *b)
-{
-    if (a == b) return true;
-    if (a == NULL || b == NULL) return false;
-    const nmo_behaviorio_state_t *lhs = a;
-    const nmo_behaviorio_state_t *rhs = b;
-    return nmo_object_vtable.equals(&lhs->base, &rhs->base) &&
-        lhs->old_flags == rhs->old_flags &&
-        lhs->has_flags == rhs->has_flags;
-}
-
-static uint32_t nmo_behaviorio_hash(const void *instance)
-{
-    if (instance == NULL) return 0;
-    const nmo_behaviorio_state_t *state = instance;
-    uint32_t hash = nmo_object_vtable.hash(&state->base);
-    hash ^= (uint32_t)nmo_hash_fnv1a(
-        &state->old_flags, sizeof(state->old_flags));
-    hash *= 16777619u;
-    hash ^= (uint32_t)nmo_hash_fnv1a(
-        &state->has_flags, sizeof(state->has_flags));
-    return hash;
 }
 
 nmo_type_vtable_t nmo_behaviorio_vtable = {

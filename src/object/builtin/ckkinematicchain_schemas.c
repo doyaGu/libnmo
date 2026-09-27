@@ -18,15 +18,24 @@
 #include "object/nmo_object_repository.h"
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE(
-    kinematicchain,
-    nmo_kinematicchain_state_t,
-    do {
-        nmo_status_t result = nmo_object_vtable.create(
-            &state->base, NULL, context);
-        if (result != NMO_OK) return result;
-    } while (0),
-    nmo_object_vtable.destroy(&state->base, NULL, context))
+static const nmo_object_state_member_t nmo_kinematicchain_members[] = {
+    NMO_STATE_VALUE(nmo_kinematicchain_state_t, has_chain_data),
+    NMO_STATE_VALUE(nmo_kinematicchain_state_t, reserved_object_id),
+    NMO_STATE_VALUE(nmo_kinematicchain_state_t, start_effector),
+    NMO_STATE_VALUE(nmo_kinematicchain_state_t, end_effector)
+};
+
+static const nmo_object_state_layout_t nmo_kinematicchain_layout = {
+    .size = sizeof(nmo_kinematicchain_state_t),
+    .base_vtable = &nmo_object_vtable,
+    .base_size = sizeof(nmo_object_state_t),
+    .members = nmo_kinematicchain_members,
+    .member_count =
+        sizeof(nmo_kinematicchain_members) / sizeof(nmo_kinematicchain_members[0]),
+};
+
+NMO_DEFINE_OBJECT_LAYOUT_OPS(kinematicchain, nmo_kinematicchain_layout)
+
 #include <stddef.h>
 #include <stdalign.h>
 
@@ -149,20 +158,6 @@ static void nmo_kinematicchain_post_delete(
  * Vtable + registration
  * ============================================================================ */
 
-static nmo_status_t nmo_kinematicchain_copy(
-    const void *src,
-    void *dst,
-    const nmo_type_descriptor_t *type,
-    nmo_arena_t *arena)
-{
-    (void)type;
-    (void)arena;
-    if (src == NULL || dst == NULL) return NMO_ERR_INVALID_ARGUMENT;
-    if (src != dst) *(nmo_kinematicchain_state_t *)dst =
-        *(const nmo_kinematicchain_state_t *)src;
-    return NMO_OK;
-}
-
 static nmo_status_t nmo_kinematicchain_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
@@ -172,53 +167,6 @@ static nmo_status_t nmo_kinematicchain_validate(
     if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
     const nmo_kinematicchain_state_t *state = instance;
     return nmo_object_vtable.validate(&state->base, NULL, context);
-}
-
-static bool nmo_kinematicchain_ref_equals(
-    const nmo_ref_t *lhs,
-    const nmo_ref_t *rhs)
-{
-    return lhs->raw_id == rhs->raw_id &&
-        lhs->id == rhs->id &&
-        lhs->state == rhs->state;
-}
-
-static bool nmo_kinematicchain_equals(const void *a, const void *b)
-{
-    if (a == b) return true;
-    if (a == NULL || b == NULL) return false;
-    const nmo_kinematicchain_state_t *lhs = a;
-    const nmo_kinematicchain_state_t *rhs = b;
-    return nmo_object_vtable.equals(&lhs->base, &rhs->base) &&
-        lhs->has_chain_data == rhs->has_chain_data &&
-        lhs->reserved_object_id == rhs->reserved_object_id &&
-        nmo_kinematicchain_ref_equals(
-            &lhs->start_effector, &rhs->start_effector) &&
-        nmo_kinematicchain_ref_equals(
-            &lhs->end_effector, &rhs->end_effector);
-}
-
-static uint32_t nmo_kinematicchain_hash(const void *instance)
-{
-    if (instance == NULL) return 0;
-    const nmo_kinematicchain_state_t *state = instance;
-    uint32_t hash = nmo_object_vtable.hash(&state->base);
-#define NMO_KINEMATICCHAIN_HASH_FIELD(field) \
-    do { \
-        hash ^= (uint32_t)nmo_hash_fnv1a( \
-            &state->field, sizeof(state->field)); \
-        hash *= 16777619u; \
-    } while (0)
-    NMO_KINEMATICCHAIN_HASH_FIELD(has_chain_data);
-    NMO_KINEMATICCHAIN_HASH_FIELD(reserved_object_id);
-    NMO_KINEMATICCHAIN_HASH_FIELD(start_effector.raw_id);
-    NMO_KINEMATICCHAIN_HASH_FIELD(start_effector.id);
-    NMO_KINEMATICCHAIN_HASH_FIELD(start_effector.state);
-    NMO_KINEMATICCHAIN_HASH_FIELD(end_effector.raw_id);
-    NMO_KINEMATICCHAIN_HASH_FIELD(end_effector.id);
-    NMO_KINEMATICCHAIN_HASH_FIELD(end_effector.state);
-#undef NMO_KINEMATICCHAIN_HASH_FIELD
-    return hash;
 }
 
 nmo_type_vtable_t nmo_kinematicchain_vtable = {
