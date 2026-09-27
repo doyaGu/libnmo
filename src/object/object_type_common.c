@@ -281,7 +281,7 @@ static size_t layout_bytes_size(
     return size;
 }
 
-static const void *layout_bytes_data(
+static const void *layout_pointer_member(
     const void *instance,
     const nmo_object_state_member_t *member)
 {
@@ -386,8 +386,19 @@ nmo_status_t nmo_object_layout_copy(
             result = nmo_array_clone(from, &staged[i].array, &from->allocator);
         } else if (member->kind == NMO_OBJECT_STATE_MEMBER_BYTES) {
             result = nmo_object_copy_bytes(
-                arena, &staged[i].bytes, layout_bytes_data(src, member),
+                arena, &staged[i].bytes, layout_pointer_member(src, member),
                 layout_bytes_size(src, member));
+        } else if (member->kind == NMO_OBJECT_STATE_MEMBER_STRING) {
+            char *string = NULL;
+            result = nmo_object_copy_string(
+                arena, &string, layout_pointer_member(src, member));
+            staged[i].bytes = string;
+        } else if (member->kind == NMO_OBJECT_STATE_MEMBER_CHUNK) {
+            nmo_chunk_t *chunk = NULL;
+            result = nmo_object_copy_chunk(
+                arena, &chunk,
+                (nmo_chunk_t *)layout_pointer_member(src, member));
+            staged[i].bytes = chunk;
         }
     }
     if (result == NMO_OK) {
@@ -421,6 +432,8 @@ nmo_status_t nmo_object_layout_copy(
             break;
         }
         case NMO_OBJECT_STATE_MEMBER_BYTES:
+        case NMO_OBJECT_STATE_MEMBER_STRING:
+        case NMO_OBJECT_STATE_MEMBER_CHUNK:
             memcpy(to, &staged[i].bytes, sizeof(staged[i].bytes));
             break;
         }
@@ -449,6 +462,28 @@ static bool layout_array_bytes(
     }
     *out_size = array->count * array->element_size;
     return true;
+}
+
+static bool layout_string_equal(
+    const char *lhs,
+    const char *rhs)
+{
+    if (lhs == rhs) return true;
+    return lhs != NULL && rhs != NULL && strcmp(lhs, rhs) == 0;
+}
+
+static bool layout_chunk_equal(
+    const nmo_chunk_t *lhs,
+    const nmo_chunk_t *rhs)
+{
+    if (lhs == rhs) return true;
+    if (lhs == NULL || rhs == NULL) return false;
+    size_t lhs_size = 0;
+    size_t rhs_size = 0;
+    const void *lhs_data = nmo_chunk_get_data(lhs, &lhs_size);
+    const void *rhs_data = nmo_chunk_get_data(rhs, &rhs_size);
+    return lhs_size == rhs_size &&
+        layout_bytes_equal(lhs_data, rhs_data, lhs_size);
 }
 
 bool nmo_object_layout_equals(
@@ -483,12 +518,24 @@ bool nmo_object_layout_equals(
         case NMO_OBJECT_STATE_MEMBER_BYTES: {
             const size_t size = layout_bytes_size(a, member);
             if (size != layout_bytes_size(b, member) ||
-                !layout_bytes_equal(layout_bytes_data(a, member),
-                                    layout_bytes_data(b, member), size)) {
+                !layout_bytes_equal(layout_pointer_member(a, member),
+                                    layout_pointer_member(b, member), size)) {
                 return false;
             }
             break;
         }
+        case NMO_OBJECT_STATE_MEMBER_STRING:
+            if (!layout_string_equal(layout_pointer_member(a, member),
+                                     layout_pointer_member(b, member))) {
+                return false;
+            }
+            break;
+        case NMO_OBJECT_STATE_MEMBER_CHUNK:
+            if (!layout_chunk_equal(layout_pointer_member(a, member),
+                                    layout_pointer_member(b, member))) {
+                return false;
+            }
+            break;
         }
     }
     return true;
@@ -532,10 +579,33 @@ uint32_t nmo_object_layout_hash(
         }
         case NMO_OBJECT_STATE_MEMBER_BYTES: {
             const size_t size = layout_bytes_size(instance, member);
-            const void *data = layout_bytes_data(instance, member);
+            const void *data = layout_pointer_member(instance, member);
             hash = layout_hash_bytes(hash, &size, sizeof(size));
             if (data != NULL) {
                 hash = layout_hash_bytes(hash, data, size);
+            }
+            break;
+        }
+        case NMO_OBJECT_STATE_MEMBER_STRING: {
+            const char *string = layout_pointer_member(instance, member);
+            const uint8_t present = string != NULL;
+            hash = layout_hash_bytes(hash, &present, sizeof(present));
+            if (string != NULL) {
+                hash = layout_hash_bytes(hash, string, strlen(string));
+            }
+            break;
+        }
+        case NMO_OBJECT_STATE_MEMBER_CHUNK: {
+            const nmo_chunk_t *chunk = layout_pointer_member(instance, member);
+            const uint8_t present = chunk != NULL;
+            hash = layout_hash_bytes(hash, &present, sizeof(present));
+            if (chunk != NULL) {
+                size_t size = 0;
+                const void *data = nmo_chunk_get_data(chunk, &size);
+                hash = layout_hash_bytes(hash, &size, sizeof(size));
+                if (data != NULL) {
+                    hash = layout_hash_bytes(hash, data, size);
+                }
             }
             break;
         }

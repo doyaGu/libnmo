@@ -100,7 +100,9 @@ NMO_API uint32_t nmo_object_serialized_state_hash(
 typedef enum nmo_object_state_member_kind {
     NMO_OBJECT_STATE_MEMBER_VALUE, /**< Trivially copyable bytes */
     NMO_OBJECT_STATE_MEMBER_ARRAY, /**< Owned nmo_array_t of trivially copyable elements */
-    NMO_OBJECT_STATE_MEMBER_BYTES  /**< Arena-owned buffer sized by a size_t member */
+    NMO_OBJECT_STATE_MEMBER_BYTES, /**< Arena-owned buffer sized by a size_t member */
+    NMO_OBJECT_STATE_MEMBER_STRING, /**< Arena-owned NUL-terminated string, compared by content */
+    NMO_OBJECT_STATE_MEMBER_CHUNK  /**< Arena-owned nmo_chunk_t *, compared by chunk data */
 } nmo_object_state_member_kind_t;
 
 typedef struct nmo_object_state_member {
@@ -119,6 +121,10 @@ typedef struct nmo_object_state_member {
 #define NMO_STATE_BYTES(_state_t, _member, _size_member) \
     {NMO_OBJECT_STATE_MEMBER_BYTES, offsetof(_state_t, _member), 0, \
      offsetof(_state_t, _size_member)}
+#define NMO_STATE_STRING(_state_t, _member) \
+    {NMO_OBJECT_STATE_MEMBER_STRING, offsetof(_state_t, _member), 0, 0}
+#define NMO_STATE_CHUNK(_state_t, _member) \
+    {NMO_OBJECT_STATE_MEMBER_CHUNK, offsetof(_state_t, _member), 0, 0}
 
 /**
  * @brief State layout of a class whose own members need no custom logic.
