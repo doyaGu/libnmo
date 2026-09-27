@@ -54,10 +54,9 @@ nmo_status_t rewrite_fold_anchor_parameter_at(
     uint32_t index,
     nmo_object_id_t *out_parameter_id);
 
-nmo_status_t rewrite_fold_rewire_control_boundary_in_edit(
+nmo_status_t rewrite_fold_rewire_control_boundary_in_tx(
+    nmo_script_edit_tx_t *tx,
     nmo_context_t *ctx,
-    nmo_workspace_t *workspace,
-    nmo_workspace_edit_t *edit,
     nmo_behavior_fold_report_t *report);
 
 nmo_status_t rewrite_fold_rewire_parameter_boundary_in_edit(

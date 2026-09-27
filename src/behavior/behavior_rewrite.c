@@ -1103,8 +1103,7 @@ static nmo_status_t rewrite_fold_apply_script_tx(
     }
     if (rewrite_fold_report_is_closed_graph_anchor(report) &&
         report->can_write) {
-        rc = rewrite_fold_rewire_control_boundary_in_edit(
-            ctx, workspace, edit, report);
+        rc = rewrite_fold_rewire_control_boundary_in_tx(tx, ctx, report);
         if (rc != NMO_OK) {
             return rc;
         }

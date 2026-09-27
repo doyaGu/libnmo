@@ -140,12 +140,30 @@ static void rewrite_parameterout_remove_destination(
     }
 }
 
-nmo_status_t rewrite_fold_rewire_control_boundary_in_edit(
+static nmo_status_t rewrite_fold_rewire_control_link(
+    nmo_script_edit_tx_t *tx,
+    nmo_behavior_fold_report_t *report,
+    nmo_object_id_t link_id,
+    nmo_object_id_t from_io_id,
+    nmo_object_id_t to_io_id) {
+    nmo_status_t rc =
+        nmo_script_edit_rewire_behavior_link(tx, link_id, from_io_id, to_io_id);
+    if (rc == NMO_ERR_NOT_FOUND) {
+        rewrite_fold_report_reject(report, "control_link_missing",
+                                   "Boundary control link was not found");
+    } else if (rc != NMO_OK) {
+        rewrite_fold_report_reject(report, "control_rewire_failed",
+                                   "Failed to rewire boundary control link");
+    }
+    return rc;
+}
+
+nmo_status_t rewrite_fold_rewire_control_boundary_in_tx(
+    nmo_script_edit_tx_t *tx,
     nmo_context_t *ctx,
-    nmo_workspace_t *workspace,
-    nmo_workspace_edit_t *edit,
     nmo_behavior_fold_report_t *report) {
-    if (!workspace || !edit || !report) {
+    nmo_workspace_t *workspace = nmo_script_edit_workspace(tx);
+    if (!workspace || !report) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
     if (report->boundary.control_in_count == 0 &&
@@ -154,9 +172,7 @@ nmo_status_t rewrite_fold_rewire_control_boundary_in_edit(
     }
 
     nmo_object_repository_t *repo = nmo_workspace_internal_repository(workspace);
-    const nmo_type_registry_t *registry =
-        nmo_workspace_internal_type_registry(workspace);
-    if (!repo || !registry) {
+    if (!repo) {
         return NMO_ERR_INVALID_STATE;
     }
 
@@ -175,33 +191,12 @@ nmo_status_t rewrite_fold_rewire_control_boundary_in_edit(
                 "Fold input map does not resolve to an anchor input");
             return rc;
         }
-
-        nmo_object_t *link_obj =
-            nmo_object_repository_find_by_id(repo, edge->link_id);
-        nmo_behaviorlink_state_t *link_state = link_obj
-            ? (nmo_behaviorlink_state_t *)
-                nmo_type_query_object_get_ancestor_state_by_guid(
-                    registry, link_obj, CKPGUID_BEHAVIORLINK)
-            : NULL;
-        if (!link_state) {
-            rewrite_fold_report_reject(
-                report, "control_link_missing",
-                "Boundary control link was not found");
-            return NMO_ERR_NOT_FOUND;
-        }
-        rc = nmo_workspace_edit_snapshot_bytes(edit, link_state,
-                                               sizeof(*link_state));
+        /* The anchor input becomes the link target. */
+        rc = rewrite_fold_rewire_control_link(tx, report, edge->link_id,
+                                              0, new_io_id);
         if (rc != NMO_OK) {
-            rewrite_fold_report_reject(
-                report, "snapshot_failed",
-                "Failed to snapshot boundary control link");
             return rc;
         }
-
-        /* CK2/SDK naming is counterintuitive: link in_io_id is the source IO,
-         * and link out_io_id is the target IO. Keep graph edge direction
-         * source owner -> target owner. */
-        nmo_behaviorlink_set_out_io_id(link_state, new_io_id);
     }
 
     for (size_t i = 0; i < report->boundary.control_out_count; ++i) {
@@ -218,37 +213,13 @@ nmo_status_t rewrite_fold_rewire_control_boundary_in_edit(
                 "Fold output map does not resolve to an anchor output");
             return rc;
         }
-
-        nmo_object_t *link_obj =
-            nmo_object_repository_find_by_id(repo, edge->link_id);
-        nmo_behaviorlink_state_t *link_state = link_obj
-            ? (nmo_behaviorlink_state_t *)
-                nmo_type_query_object_get_ancestor_state_by_guid(
-                    registry, link_obj, CKPGUID_BEHAVIORLINK)
-            : NULL;
-        if (!link_state) {
-            rewrite_fold_report_reject(
-                report, "control_link_missing",
-                "Boundary control link was not found");
-            return NMO_ERR_NOT_FOUND;
-        }
-        rc = nmo_workspace_edit_snapshot_bytes(edit, link_state,
-                                               sizeof(*link_state));
+        /* The anchor output becomes the link source. */
+        rc = rewrite_fold_rewire_control_link(tx, report, edge->link_id,
+                                              new_io_id, 0);
         if (rc != NMO_OK) {
-            rewrite_fold_report_reject(
-                report, "snapshot_failed",
-                "Failed to snapshot boundary control link");
             return rc;
         }
-
-        /* CK2/SDK naming is counterintuitive: link in_io_id is the source IO,
-         * and link out_io_id is the target IO. Keep graph edge direction
-         * source owner -> target owner. */
-        nmo_behaviorlink_set_in_io_id(link_state, new_io_id);
     }
-
-    nmo_workspace_edit_mark(edit, NMO_WORKSPACE_EDIT_BEHAVIOR_GRAPH |
-                                  NMO_WORKSPACE_EDIT_REFERENCES);
     return NMO_OK;
 }
 
