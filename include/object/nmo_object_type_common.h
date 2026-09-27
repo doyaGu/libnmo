@@ -94,6 +94,116 @@ NMO_API uint32_t nmo_object_serialized_state_hash(
     size_t pass_count,
     size_t arena_block_size);
 
+/* ============================================================================
+ * Layout-Driven State Ops
+ * ============================================================================ */
+typedef enum nmo_object_state_member_kind {
+    NMO_OBJECT_STATE_MEMBER_VALUE, /**< Trivially copyable bytes */
+    NMO_OBJECT_STATE_MEMBER_ARRAY, /**< Owned nmo_array_t of trivially copyable elements */
+    NMO_OBJECT_STATE_MEMBER_BYTES  /**< Arena-owned buffer sized by a size_t member */
+} nmo_object_state_member_kind_t;
+
+typedef struct nmo_object_state_member {
+    nmo_object_state_member_kind_t kind;
+    size_t offset;
+    size_t size;        /**< VALUE: member size; ARRAY: element size */
+    size_t size_offset; /**< BYTES: offset of the size_t byte count */
+} nmo_object_state_member_t;
+
+#define NMO_STATE_VALUE(_state_t, _member) \
+    {NMO_OBJECT_STATE_MEMBER_VALUE, offsetof(_state_t, _member), \
+     sizeof(((_state_t *)0)->_member), 0}
+#define NMO_STATE_ARRAY(_state_t, _member, _element_t) \
+    {NMO_OBJECT_STATE_MEMBER_ARRAY, offsetof(_state_t, _member), \
+     sizeof(_element_t), 0}
+#define NMO_STATE_BYTES(_state_t, _member, _size_member) \
+    {NMO_OBJECT_STATE_MEMBER_BYTES, offsetof(_state_t, _member), 0, \
+     offsetof(_state_t, _size_member)}
+
+/**
+ * @brief State layout of a class whose own members need no custom logic.
+ *
+ * The base state is embedded at offset 0 and handled by its vtable; the
+ * members after it are handled by the generic ops below.
+ */
+typedef struct nmo_object_state_layout {
+    size_t size;
+    const nmo_type_vtable_t *base_vtable;
+    size_t base_size;        /**< Type size handed to the base copy; 0 hands no type */
+    const nmo_object_state_member_t *members;
+    size_t member_count;
+    const size_t *base_arrays; /**< Base-owned nmo_array_t offsets, detached when dst aliases src */
+    size_t base_array_count;
+    void (*set_defaults)(void *state);
+    nmo_status_t (*validate)(const void *instance,
+                             const nmo_type_descriptor_t *type,
+                             void *context);
+} nmo_object_state_layout_t;
+
+NMO_API nmo_status_t nmo_object_layout_create(
+    const nmo_object_state_layout_t *layout,
+    void *instance,
+    void *context);
+
+NMO_API void nmo_object_layout_destroy(
+    const nmo_object_state_layout_t *layout,
+    void *instance,
+    void *context);
+
+NMO_API nmo_status_t nmo_object_layout_copy(
+    const nmo_object_state_layout_t *layout,
+    const void *src,
+    void *dst,
+    nmo_arena_t *arena);
+
+NMO_API bool nmo_object_layout_equals(
+    const nmo_object_state_layout_t *layout,
+    const void *a,
+    const void *b);
+
+NMO_API uint32_t nmo_object_layout_hash(
+    const nmo_object_state_layout_t *layout,
+    const void *instance);
+
+/* Vtable hooks over a layout: nmo_<prefix>_create/_destroy, _copy, _equals/_hash */
+#define NMO_DEFINE_OBJECT_LAYOUT_LIFECYCLE(_prefix, _layout) \
+    static nmo_status_t nmo_##_prefix##_create( \
+        void *instance, const nmo_type_descriptor_t *type, void *context) \
+    { \
+        (void)type; \
+        return nmo_object_layout_create(&(_layout), instance, context); \
+    } \
+    static void nmo_##_prefix##_destroy( \
+        void *instance, const nmo_type_descriptor_t *type, void *context) \
+    { \
+        (void)type; \
+        nmo_object_layout_destroy(&(_layout), instance, context); \
+    }
+
+#define NMO_DEFINE_OBJECT_LAYOUT_COPY(_prefix, _layout) \
+    static nmo_status_t nmo_##_prefix##_copy( \
+        const void *src, void *dst, const nmo_type_descriptor_t *type, \
+        nmo_arena_t *arena) \
+    { \
+        (void)type; \
+        return nmo_object_layout_copy(&(_layout), src, dst, arena); \
+    }
+
+#define NMO_DEFINE_OBJECT_LAYOUT_COMPARE(_prefix, _layout) \
+    static bool nmo_##_prefix##_equals(const void *a, const void *b) \
+    { \
+        return nmo_object_layout_equals(&(_layout), a, b); \
+    } \
+    static uint32_t nmo_##_prefix##_hash(const void *instance) \
+    { \
+        return nmo_object_layout_hash(&(_layout), instance); \
+    }
+
+#define NMO_DEFINE_OBJECT_LAYOUT_OPS(_prefix, _layout) \
+    NMO_DEFINE_OBJECT_LAYOUT_LIFECYCLE(_prefix, _layout) \
+    NMO_DEFINE_OBJECT_LAYOUT_COPY(_prefix, _layout) \
+    NMO_DEFINE_OBJECT_LAYOUT_COMPARE(_prefix, _layout)
+
 
 /* ============================================================================
  * Generic Deep-Copy Helpers

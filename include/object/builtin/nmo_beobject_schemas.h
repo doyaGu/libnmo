@@ -90,6 +90,16 @@ typedef struct nmo_beobject_state {
     uint8_t legacy_attr_old_version;           /**< Very old format has no compatible class ID */
 } nmo_beobject_state_t;
 
+/**
+ * Offsets of the arrays a CKBeObject state owns, for
+ * nmo_object_state_layout_t::base_arrays. Derived states embed their base
+ * first, so the offsets hold for them too.
+ */
+#define NMO_BEOBJECT_STATE_ARRAY_OFFSETS \
+    offsetof(nmo_beobject_state_t, scripts), \
+    offsetof(nmo_beobject_state_t, attributes), \
+    offsetof(nmo_beobject_state_t, legacy_attributes)
+
 /* =============================================================================
  * SERIALIZATION API (Type System)
  * ============================================================================= */
