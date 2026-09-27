@@ -9,6 +9,7 @@
 #include "type/nmo_type_guids.h"
 #include "type_value_internal.h"
 #include "core/nmo_array.h"
+#include "core/nmo_color.h"
 #include "core/nmo_error.h"
 #include <stdarg.h>
 #include <stdio.h>
@@ -277,6 +278,15 @@ nmo_status_t nmo_type_field_to_string_depth_internal(
             return nmo_sb_append(&sb, "null");
         }
         return nmo_sb_append(&sb, "<%s>", field_type->name ? field_type->name : "pointer");
+    }
+
+    if (nmo_guid_equals(field->type_guid, CKPGUID_COLOR) &&
+        field->size == sizeof(uint32_t) &&
+        field_type->size == sizeof(nmo_color_t)) {
+        /* Packed ARGB storage, narrower than the color type itself. */
+        uint32_t argb;
+        memcpy(&argb, field_ptr, sizeof(argb));
+        return nmo_sb_append(&sb, "0x%08X", argb);
     }
 
     nmo_object_id_t ref_id = NMO_OBJECT_ID_NONE;

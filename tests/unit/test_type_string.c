@@ -1185,6 +1185,66 @@ TEST(type_string, reflected_ref_field_get_set_is_atomic) {
     teardown();
 }
 
+TEST(type_string, packed_color_field_uses_argb_hex) {
+    setup();
+    ASSERT_EQ(NMO_OK, nmo_register_builtin_types(registry));
+
+    typedef struct test_packed_color_holder {
+        uint32_t color;
+    } test_packed_color_holder_t;
+
+    static const nmo_type_field_t fields[] = {
+        NMO_FIELD_NAMED("color", offsetof(test_packed_color_holder_t, color),
+                        sizeof(uint32_t), CKPGUID_COLOR, 0, 0),
+    };
+    nmo_type_descriptor_t desc = {
+        .guid = NMO_GUID(0xDEADBEEFu, 0x00000006u),
+        .id = NMO_TYPE_ID_INVALID,
+        .class_id = 0,
+        .category = NMO_TYPE_CATEGORY_STRUCT,
+        .name = "TestPackedColorHolder",
+        .base_type = NMO_NULL_GUID,
+        .base_type_id = NMO_TYPE_ID_INVALID,
+        .size = (uint32_t)sizeof(test_packed_color_holder_t),
+        .alignment = (uint32_t)alignof(test_packed_color_holder_t),
+        .fields = fields,
+        .field_count = sizeof(fields) / sizeof(fields[0]),
+        .specialized_index = NMO_SPECIALIZED_INDEX_INVALID,
+        .valid = true,
+    };
+    ASSERT_EQ(NMO_OK, nmo_type_registry_register(registry, &desc));
+    const nmo_type_descriptor_t *type =
+        nmo_type_registry_find_by_guid(registry, desc.guid);
+    ASSERT_NOT_NULL(type);
+
+    test_packed_color_holder_t value = {.color = 0x80112233u};
+    char buffer[64];
+    ASSERT_EQ(NMO_OK, nmo_type_get_field(
+        &value, type, registry, "color", buffer, sizeof(buffer)));
+    ASSERT_STR_EQ("0x80112233", buffer);
+
+    ASSERT_EQ(NMO_OK, nmo_type_set_field(
+        &value, type, registry, "color", "0xFF445566"));
+    ASSERT_EQ(0xFF445566u, value.color);
+    ASSERT_EQ(NMO_OK, nmo_type_set_field(
+        &value, type, registry, "color", "#40AABBCC"));
+    ASSERT_EQ(0x40AABBCCu, value.color);
+    ASSERT_EQ(NMO_OK, nmo_type_set_field(
+        &value, type, registry, "color", "#102030"));
+    ASSERT_EQ(0xFF102030u, value.color);
+    ASSERT_EQ(NMO_OK, nmo_type_set_field(
+        &value, type, registry, "color", "(1, 0, 0, 1)"));
+    ASSERT_EQ(0xFFFF0000u, value.color);
+
+    ASSERT_NE(NMO_OK, nmo_type_set_field(
+        &value, type, registry, "color", "0xFF44556"));
+    ASSERT_NE(NMO_OK, nmo_type_set_field(
+        &value, type, registry, "color", "#FF445566zz"));
+    ASSERT_EQ(0xFFFF0000u, value.color);
+
+    teardown();
+}
+
 TEST(type_string, type_value_to_string_object_id) {
     setup();
 
@@ -3116,6 +3176,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(type_string, object_id_from_string);
     REGISTER_TEST(type_string, object_id_roundtrip);
     REGISTER_TEST(type_string, reflected_ref_field_get_set_is_atomic);
+    REGISTER_TEST(type_string, packed_color_field_uses_argb_hex);
     REGISTER_TEST(type_string, type_value_to_string_object_id);
     REGISTER_TEST(type_string, type_value_to_string_struct_with_object_id_field);
     REGISTER_TEST(type_string, type_value_from_string_struct_with_reflected_fields);

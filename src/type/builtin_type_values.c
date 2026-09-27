@@ -891,10 +891,54 @@ nmo_status_t nmo_type_color_to_string(
         "Invalid arguments for color_to_string");
 }
 
+/*
+ * "#AARRGGBB" / "0xAARRGGBB" (or 6 digits, opaque). Returns false when the
+ * text has no hex prefix so the caller can try the float tuple form.
+ */
+static bool nmo_parse_argb_hex(const char *string, uint32_t *out_argb, bool *out_valid)
+{
+    const char *p = string;
+    while (isspace((unsigned char)*p)) {
+        p++;
+    }
+    if (*p == '#') {
+        p++;
+    } else if (p[0] == '0' && (p[1] == 'x' || p[1] == 'X')) {
+        p += 2;
+    } else {
+        return false;
+    }
+
+    size_t digits = 0;
+    while (isxdigit((unsigned char)p[digits])) {
+        digits++;
+    }
+    const char *end = p + digits;
+    while (isspace((unsigned char)*end)) {
+        end++;
+    }
+    *out_valid = (digits == 8 || digits == 6) && *end == '\0';
+    if (*out_valid) {
+        uint32_t argb = (uint32_t)strtoul(p, NULL, 16);
+        *out_argb = digits == 6 ? (0xFF000000u | argb) : argb;
+    }
+    return true;
+}
+
 nmo_status_t nmo_type_color_from_string(
     void *value,
     const char *string)
 {
+    uint32_t argb = 0;
+    bool valid = false;
+    if (value && string && nmo_parse_argb_hex(string, &argb, &valid)) {
+        if (!valid) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Invalid Color hex value");
+        }
+        nmo_color_from_argb32(argb, (nmo_color_t *)value);
+        NMO_RETURN_OK();
+    }
     return nmo_float_tuple_from_string(
         value, string, "Color", 4,
         "Invalid arguments for color_from_string");
