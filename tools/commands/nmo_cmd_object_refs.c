@@ -73,33 +73,107 @@ static bool cli_refs_build_record(const nmo_core_ref_info_t *info,
            nmo_cli_record_bool(rec, "broken", NULL, true);
 }
 
-/** Visitor data: JSON arrays or text tables for each direction. */
+/** Visitor data: the edge records of each direction, in visit order. */
 typedef struct {
-    yyjson_mut_doc *doc;
-    yyjson_mut_val *outgoing;
-    yyjson_mut_val *incoming;
-    nmo_cli_table_t *out_table;
-    nmo_cli_table_t *in_table;
+    nmo_cli_record_t **items[2]; /* [0] outgoing, [1] incoming */
+    size_t counts[2];
+    size_t caps[2];
 } cli_refs_data_t;
 
 static int cli_refs_visitor(const nmo_core_ref_info_t *info,
                             const nmo_cmd_ctx_t *c, void *user) {
     (void)c;
     cli_refs_data_t *d = (cli_refs_data_t *)user;
+    const size_t dir = info->is_incoming ? 1u : 0u;
 
     nmo_cli_record_t *rec = nmo_cli_record_new();
-    if (rec && cli_refs_build_record(info, rec)) {
-        if (d->doc) {
-            yyjson_mut_val *edge = yyjson_mut_obj(d->doc);
-            if (edge && nmo_cli_record_to_json(rec, d->doc, edge)) {
-                yyjson_mut_arr_add_val(info->is_incoming ? d->incoming : d->outgoing, edge);
-            }
-        } else {
-            nmo_cli_record_add_table_row(rec, info->is_incoming ? d->in_table : d->out_table);
-        }
+    if (!rec || !cli_refs_build_record(info, rec)) {
+        nmo_cli_record_free(rec);
+        return 0;
     }
-    nmo_cli_record_free(rec);
+    if (d->counts[dir] == d->caps[dir]) {
+        size_t cap = d->caps[dir] ? d->caps[dir] * 2u : 16u;
+        nmo_cli_record_t **grown = (nmo_cli_record_t **)realloc(
+            d->items[dir], cap * sizeof(*grown));
+        if (!grown) {
+            nmo_cli_record_free(rec);
+            return 0;
+        }
+        d->items[dir] = grown;
+        d->caps[dir] = cap;
+    }
+    d->items[dir][d->counts[dir]++] = rec;
     return 0;
+}
+
+static const nmo_cli_table_col_t object_refs_out_columns[] = {
+    {"Target", NMO_CLI_ALIGN_RIGHT, 8, 0},
+    {"Kind", NMO_CLI_ALIGN_LEFT, 15, 0},
+    {"Field", NMO_CLI_ALIGN_LEFT, 20, 0},
+    {"Target Class", NMO_CLI_ALIGN_LEFT, 18, 0},
+    {"Target Name", NMO_CLI_ALIGN_LEFT, 25, 0},
+};
+static const nmo_cli_table_col_t object_refs_in_columns[] = {
+    {"Source", NMO_CLI_ALIGN_RIGHT, 8, 0},
+    {"Kind", NMO_CLI_ALIGN_LEFT, 15, 0},
+    {"Field", NMO_CLI_ALIGN_LEFT, 20, 0},
+    {"Source Class", NMO_CLI_ALIGN_LEFT, 18, 0},
+    {"Source Name", NMO_CLI_ALIGN_LEFT, 25, 0},
+};
+
+/*
+ * object refs report. JSON: id, class_name, name, then outgoing/incoming edge
+ * arrays each followed by its count. Text: a title line, then one table per
+ * direction, "  (none)" when it is empty. Takes ownership of the edge
+ * records in `refs`.
+ */
+static nmo_cli_record_t *object_refs_record_new(const nmo_cmd_ctx_t *c,
+                                                nmo_object_t *obj,
+                                                nmo_object_id_t object_id,
+                                                cli_refs_data_t *refs,
+                                                const nmo_core_ref_result_t *result)
+{
+    static const char *const keys[2] = {"outgoing", "incoming"};
+    static const char *const count_keys[2] = {"outgoing_count", "incoming_count"};
+    static const char *const labels[2] = {"Outgoing references", "Incoming references"};
+    static const nmo_cli_table_col_t *const columns[2] = {
+        object_refs_out_columns, object_refs_in_columns,
+    };
+    const size_t totals[2] = {result->outgoing, result->incoming};
+
+    const char *name = nmo_object_get_name(obj);
+    const char *class_name = nmo_core_class_name(c, nmo_object_get_class_id(obj));
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL && nmo_cli_record_uint(rec, "id", NULL, object_id);
+    if (ok && class_name) {
+        ok = nmo_cli_record_str(rec, "class_name", NULL, class_name);
+    }
+    if (ok && name && name[0]) {
+        ok = nmo_cli_record_str(rec, "name", NULL, name);
+    }
+    ok = ok && nmo_cli_record_raw_fmt(rec, "References for object #%u: %s [%s]\n",
+                                      object_id,
+                                      (name && name[0]) ? name : "(unnamed)",
+                                      class_name ? class_name : "?");
+    for (size_t dir = 0; dir < 2u; ++dir) {
+        nmo_cli_record_array_t *arr =
+            ok ? nmo_cli_record_array(rec, keys[dir], labels[dir]) : NULL;
+        ok = arr != NULL &&
+             nmo_cli_record_array_set_table(arr, columns[dir], 5) &&
+             nmo_cli_record_array_set_empty_text(arr, "  (none)");
+        for (size_t i = 0; i < refs->counts[dir]; ++i) {
+            ok = nmo_cli_record_array_add(ok ? arr : NULL, refs->items[dir][i]) && ok;
+        }
+        free(refs->items[dir]);
+        refs->items[dir] = NULL;
+        refs->counts[dir] = 0;
+        ok = ok && nmo_cli_record_uint(rec, count_keys[dir], NULL, (uint64_t)totals[dir]);
+    }
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        return NULL;
+    }
+    return rec;
 }
 
 typedef struct object_refs_args {
@@ -174,101 +248,14 @@ static int object_refs_run(nmo_cmd_ctx_t *ctx, const object_refs_args_t *args,
         return close_ctx ? nmo_cmd_ctx_done(&c, rc) : rc;
     }
 
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-
-        /* Object info */
-        yyjson_mut_obj_add_uint(doc, data, "id", object_id);
-        const char *class_name = nmo_core_class_name(&c, nmo_object_get_class_id(obj));
-        if (class_name) {
-            yyjson_mut_obj_add_str(doc, data, "class_name", class_name);
-        }
-        const char *name = nmo_object_get_name(obj);
-        if (name && name[0]) {
-            nmo_cli_json_add_str_safe(doc, data, "name", name);
-        }
-
-        cli_refs_data_t jd = {
-            .doc = doc,
-            .outgoing = yyjson_mut_arr(doc),
-            .incoming = yyjson_mut_arr(doc),
-        };
-
-        nmo_core_ref_result_t ref_result = {0};
-        nmo_core_iter_refs(&c, object_id, NMO_CORE_REFS_BOTH,
-                           cli_refs_visitor, &jd, &ref_result);
-
-        yyjson_mut_obj_add_val(doc, data, "outgoing", jd.outgoing);
-        yyjson_mut_obj_add_uint(doc, data, "outgoing_count",
-                                (uint64_t)ref_result.outgoing);
-        yyjson_mut_obj_add_val(doc, data, "incoming", jd.incoming);
-        yyjson_mut_obj_add_uint(doc, data, "incoming_count",
-                                (uint64_t)ref_result.incoming);
-
-        nmo_cmd_ctx_json_end(&c, doc, data, "object.refs");
-    } else {
-        /* Text output */
-        const char *obj_name = nmo_object_get_name(obj);
-        const char *obj_class = nmo_core_class_name(&c, nmo_object_get_class_id(obj));
-        fprintf(c.out, "References for object #%u: %s [%s]\n\n",
-                object_id,
-                (obj_name && obj_name[0]) ? obj_name : "(unnamed)",
-                obj_class ? obj_class : "?");
-
-        static const nmo_cli_table_col_t out_cols[] = {
-            {"Target", NMO_CLI_ALIGN_RIGHT, 8, 0},
-            {"Kind", NMO_CLI_ALIGN_LEFT, 15, 0},
-            {"Field", NMO_CLI_ALIGN_LEFT, 20, 0},
-            {"Target Class", NMO_CLI_ALIGN_LEFT, 18, 0},
-            {"Target Name", NMO_CLI_ALIGN_LEFT, 25, 0},
-        };
-        static const nmo_cli_table_col_t in_cols[] = {
-            {"Source", NMO_CLI_ALIGN_RIGHT, 8, 0},
-            {"Kind", NMO_CLI_ALIGN_LEFT, 15, 0},
-            {"Field", NMO_CLI_ALIGN_LEFT, 20, 0},
-            {"Source Class", NMO_CLI_ALIGN_LEFT, 18, 0},
-            {"Source Name", NMO_CLI_ALIGN_LEFT, 25, 0},
-        };
-
-        nmo_cli_table_t out_table;
-        nmo_cli_table_init(&out_table, out_cols,
-                           sizeof(out_cols) / sizeof(out_cols[0]));
-        nmo_cli_table_t in_table;
-        nmo_cli_table_init(&in_table, in_cols,
-                           sizeof(in_cols) / sizeof(in_cols[0]));
-
-        cli_refs_data_t td = {
-            .out_table = &out_table,
-            .in_table = &in_table,
-        };
-
-        nmo_core_ref_result_t ref_result = {0};
-        nmo_core_iter_refs(&c, object_id, NMO_CORE_REFS_BOTH,
-                           cli_refs_visitor, &td, &ref_result);
-
-        /* Outgoing references */
-        fprintf(c.out, "Outgoing references (%zu):\n", ref_result.outgoing);
-        if (ref_result.outgoing == 0) {
-            fprintf(c.out, "  (none)\n");
-        } else {
-            nmo_cli_table_print(&out_table, c.out, c.colorize);
-        }
-        nmo_cli_table_free(&out_table);
-
-        fprintf(c.out, "\n");
-
-        /* Incoming references */
-        fprintf(c.out, "Incoming references (%zu):\n", ref_result.incoming);
-        if (ref_result.incoming == 0) {
-            fprintf(c.out, "  (none)\n");
-        } else {
-            nmo_cli_table_print(&in_table, c.out, c.colorize);
-        }
-        nmo_cli_table_free(&in_table);
-    }
-
-    return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS) : NMO_CLI_EXIT_SUCCESS;
+    cli_refs_data_t refs = {0};
+    nmo_core_ref_result_t ref_result = {0};
+    nmo_core_iter_refs(&c, object_id, NMO_CORE_REFS_BOTH,
+                       cli_refs_visitor, &refs, &ref_result);
+    rc = nmo_cmd_ctx_emit_record(&c, object_refs_record_new(&c, obj, object_id,
+                                                            &refs, &ref_result),
+                                 "object.refs", 0, c.colorize);
+    return close_ctx ? nmo_cmd_ctx_done(&c, rc) : rc;
 }
 
 int nmo_cmd_object_refs(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -330,6 +317,91 @@ static bool object_impact_build_record(const nmo_cmd_ctx_t *c, nmo_object_id_t i
         ok = nmo_cli_record_str(rec, "ref_kind", "Kind", ref_kind);
     }
     return ok;
+}
+
+static const nmo_cli_table_col_t object_impact_dep_columns[] = {
+    {"ID",    NMO_CLI_ALIGN_RIGHT, 6, 0},
+    {"Class", NMO_CLI_ALIGN_LEFT, 18, 0},
+    {"Name",  NMO_CLI_ALIGN_LEFT, 24, 0},
+    {"Kind",  NMO_CLI_ALIGN_LEFT, 15, 0},
+};
+static const nmo_cli_table_col_t object_impact_cascade_columns[] = {
+    {"ID",    NMO_CLI_ALIGN_RIGHT, 6, 0},
+    {"Class", NMO_CLI_ALIGN_LEFT, 18, 0},
+    {"Name",  NMO_CLI_ALIGN_LEFT, 24, 0},
+};
+
+/* Add one object_impact_build_record() item to `arr`. */
+static bool object_impact_add(const nmo_cmd_ctx_t *c, nmo_cli_record_array_t *arr,
+                              nmo_object_id_t id, const char *ref_kind)
+{
+    nmo_cli_record_t *item = nmo_cli_record_new();
+    if (!item || !object_impact_build_record(c, id, ref_kind, item)) {
+        nmo_cli_record_free(item);
+        return true;
+    }
+    return nmo_cli_record_array_add(arr, item);
+}
+
+/*
+ * object impact report. JSON: target {id, name, class_name},
+ * direct_dependents, cascade_set, cascade_count. Text: a title line, then
+ * the dependents and cascade tables, "  (none)" when empty.
+ */
+static nmo_cli_record_t *object_impact_record_new(const nmo_cmd_ctx_t *c,
+                                                  nmo_object_id_t object_id,
+                                                  const char *obj_name,
+                                                  const char *obj_class,
+                                                  const nmo_ref_edge_t *in_edges,
+                                                  size_t in_count,
+                                                  const nmo_object_id_t *cascade_ids,
+                                                  size_t cascade_count)
+{
+    const bool named = obj_name && obj_name[0];
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    nmo_cli_record_t *target = rec ? nmo_cli_record_object(rec, "target") : NULL;
+    bool ok = target != NULL && nmo_cli_record_uint(target, "id", NULL, object_id);
+    if (ok && named) {
+        ok = nmo_cli_record_str(target, "name", NULL, obj_name);
+    }
+    ok = ok && nmo_cli_record_str(target, "class_name", NULL, obj_class) &&
+         nmo_cli_record_raw_fmt(rec, "Impact Analysis: Object #%u%s%s%s (%s)\n",
+                                object_id, named ? " \"" : "",
+                                named ? obj_name : "", named ? "\"" : "",
+                                obj_class);
+
+    nmo_cli_record_array_t *deps =
+        ok ? nmo_cli_record_array(rec, "direct_dependents", "Direct dependents") : NULL;
+    ok = deps != NULL &&
+         nmo_cli_record_array_set_table(deps, object_impact_dep_columns,
+                                        sizeof(object_impact_dep_columns) /
+                                            sizeof(object_impact_dep_columns[0])) &&
+         nmo_cli_record_array_set_empty_text(deps, "  (none)");
+    for (size_t i = 0; ok && i < in_count; ++i) {
+        ok = object_impact_add(c, deps, in_edges[i].from,
+                               nmo_ref_kind_name(in_edges[i].kind));
+    }
+
+    nmo_cli_record_array_t *cas =
+        ok ? nmo_cli_record_array(rec, "cascade_set", NULL) : NULL;
+    char *heading = cas ? nmo_tool_strdup_fmt("Cascade deletion would remove %zu object(s):",
+                                              cascade_count)
+                        : NULL;
+    ok = heading != NULL && nmo_cli_record_array_set_heading(cas, heading) &&
+         nmo_cli_record_array_set_table(cas, object_impact_cascade_columns,
+                                        sizeof(object_impact_cascade_columns) /
+                                            sizeof(object_impact_cascade_columns[0])) &&
+         nmo_cli_record_array_set_empty_text(cas, "  (none)");
+    free(heading);
+    for (size_t i = 0; ok && i < cascade_count; ++i) {
+        ok = object_impact_add(c, cas, cascade_ids[i], NULL);
+    }
+    ok = ok && nmo_cli_record_uint(rec, "cascade_count", NULL, (uint64_t)cascade_count);
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        return NULL;
+    }
+    return rec;
 }
 
 static int object_impact_run(nmo_cmd_ctx_t *ctx, const object_refs_args_t *args,
@@ -401,115 +473,14 @@ static int object_impact_run(nmo_cmd_ctx_t *ctx, const object_refs_args_t *args,
         cascade_count = 0;
     }
 
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-
-        /* Target info */
-        yyjson_mut_val *target = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_uint(doc, target, "id", object_id);
-        if (obj_name && obj_name[0])
-            nmo_cli_json_add_str_safe(doc, target, "name", obj_name);
-        yyjson_mut_obj_add_str(doc, target, "class_name", obj_class);
-        yyjson_mut_obj_add_val(doc, data, "target", target);
-
-        /* Direct dependents */
-        yyjson_mut_val *deps = yyjson_mut_arr(doc);
-        for (size_t i = 0; i < in_count; ++i) {
-            nmo_cli_record_t *rec = nmo_cli_record_new();
-            if (rec && object_impact_build_record(&c, in_edges[i].from,
-                                                  nmo_ref_kind_name(in_edges[i].kind), rec)) {
-                yyjson_mut_val *dep = yyjson_mut_obj(doc);
-                if (dep && nmo_cli_record_to_json(rec, doc, dep)) {
-                    yyjson_mut_arr_add_val(deps, dep);
-                }
-            }
-            nmo_cli_record_free(rec);
-        }
-        yyjson_mut_obj_add_val(doc, data, "direct_dependents", deps);
-
-        /* Cascade set */
-        yyjson_mut_val *cas = yyjson_mut_arr(doc);
-        for (size_t i = 0; i < cascade_count; ++i) {
-            nmo_cli_record_t *rec = nmo_cli_record_new();
-            if (rec && object_impact_build_record(&c, cascade_ids[i], NULL, rec)) {
-                yyjson_mut_val *entry = yyjson_mut_obj(doc);
-                if (entry && nmo_cli_record_to_json(rec, doc, entry)) {
-                    yyjson_mut_arr_add_val(cas, entry);
-                }
-            }
-            nmo_cli_record_free(rec);
-        }
-        yyjson_mut_obj_add_val(doc, data, "cascade_set", cas);
-        yyjson_mut_obj_add_uint(doc, data, "cascade_count",
-                                (uint64_t)cascade_count);
-
-        nmo_cmd_ctx_json_end(&c, doc, data, "object.impact");
-    } else {
-        /* Text output */
-        fprintf(c.out, "Impact Analysis: Object #%u", object_id);
-        if (obj_name && obj_name[0])
-            fprintf(c.out, " \"%s\"", obj_name);
-        fprintf(c.out, " (%s)\n\n", obj_class);
-
-        /* Direct dependents */
-        fprintf(c.out, "Direct dependents (%zu):\n", in_count);
-        if (in_count == 0) {
-            fprintf(c.out, "  (none)\n");
-        } else {
-            static const nmo_cli_table_col_t dep_cols[] = {
-                {"ID",    NMO_CLI_ALIGN_RIGHT, 6, 0},
-                {"Class", NMO_CLI_ALIGN_LEFT, 18, 0},
-                {"Name",  NMO_CLI_ALIGN_LEFT, 24, 0},
-                {"Kind",  NMO_CLI_ALIGN_LEFT, 15, 0},
-            };
-            nmo_cli_table_t dep_table;
-            nmo_cli_table_init(&dep_table, dep_cols,
-                               sizeof(dep_cols) / sizeof(dep_cols[0]));
-
-            for (size_t i = 0; i < in_count; ++i) {
-                nmo_cli_record_t *rec = nmo_cli_record_new();
-                if (rec && object_impact_build_record(&c, in_edges[i].from,
-                                                      nmo_ref_kind_name(in_edges[i].kind), rec)) {
-                    nmo_cli_record_add_table_row(rec, &dep_table);
-                }
-                nmo_cli_record_free(rec);
-            }
-            nmo_cli_table_print(&dep_table, c.out, c.colorize);
-            nmo_cli_table_free(&dep_table);
-        }
-
-        /* Cascade set */
-        fprintf(c.out, "\nCascade deletion would remove %zu object(s):\n",
-                cascade_count);
-        if (cascade_count == 0) {
-            fprintf(c.out, "  (none)\n");
-        } else {
-            static const nmo_cli_table_col_t cas_cols[] = {
-                {"ID",    NMO_CLI_ALIGN_RIGHT, 6, 0},
-                {"Class", NMO_CLI_ALIGN_LEFT, 18, 0},
-                {"Name",  NMO_CLI_ALIGN_LEFT, 24, 0},
-            };
-            nmo_cli_table_t cas_table;
-            nmo_cli_table_init(&cas_table, cas_cols,
-                               sizeof(cas_cols) / sizeof(cas_cols[0]));
-
-            for (size_t i = 0; i < cascade_count; ++i) {
-                nmo_cli_record_t *rec = nmo_cli_record_new();
-                if (rec && object_impact_build_record(&c, cascade_ids[i], NULL, rec)) {
-                    nmo_cli_record_add_table_row(rec, &cas_table);
-                }
-                nmo_cli_record_free(rec);
-            }
-            nmo_cli_table_print(&cas_table, c.out, c.colorize);
-            nmo_cli_table_free(&cas_table);
-        }
-    }
+    rc = nmo_cmd_ctx_emit_record(&c, object_impact_record_new(&c, object_id, obj_name,
+                                                              obj_class, in_edges, in_count,
+                                                              cascade_ids, cascade_count),
+                                 "object.impact", 0, c.colorize);
 
     nmo_arena_destroy(arena);
     free(obj_class_owned);
-    return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS)
-                     : NMO_CLI_EXIT_SUCCESS;
+    return close_ctx ? nmo_cmd_ctx_done(&c, rc) : rc;
 }
 
 int nmo_cmd_object_impact(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -645,52 +616,37 @@ static int object_orphans_run(nmo_cmd_ctx_t *ctx, const object_orphans_args_t *a
         {"Name",  NMO_CLI_ALIGN_LEFT, 24, 0},
     };
 
-    yyjson_mut_doc *doc = NULL;
-    yyjson_mut_val *data = NULL;
-    yyjson_mut_val *arr = NULL;
-    nmo_cli_table_t table;
-    if (c.is_json) {
-        doc = nmo_cmd_ctx_json_begin(&c);
-        data = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_uint(doc, data, "total_objects", (uint64_t)object_count);
-        yyjson_mut_obj_add_uint(doc, data, "orphan_count", (uint64_t)orphan_count);
-        arr = yyjson_mut_arr(doc);
-    } else {
-        fprintf(c.out, "Orphan Analysis: %zu unreachable object(s) (of %zu total)\n\n",
-                orphan_count, object_count);
-        nmo_cli_table_init(&table, cols, sizeof(cols) / sizeof(cols[0]));
+    /* Text: a title line, then the table only when something is unreachable. */
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL &&
+              nmo_cli_record_uint(rec, "total_objects", NULL, (uint64_t)object_count) &&
+              nmo_cli_record_uint(rec, "orphan_count", NULL, (uint64_t)orphan_count) &&
+              nmo_cli_record_raw_fmt(rec, "Orphan Analysis: %zu unreachable object(s) "
+                                          "(of %zu total)\n\n",
+                                     orphan_count, object_count);
+    nmo_cli_record_array_t *arr = ok ? nmo_cli_record_array(rec, "orphans", NULL) : NULL;
+    ok = arr != NULL;
+    if (ok && orphan_count > 0) {
+        ok = nmo_cli_record_array_set_table(arr, cols, sizeof(cols) / sizeof(cols[0]));
     }
-
-    for (size_t i = 0; i < orphan_count; ++i) {
+    for (size_t i = 0; ok && i < orphan_count; ++i) {
         nmo_object_t *o = nmo_core_find_by_id(&c, orphan_ids[i]);
         if (!o) continue;
-        nmo_cli_record_t *rec = nmo_cli_record_new();
-        if (rec && object_orphan_build_record(&c, orphan_ids[i], o, rec)) {
-            if (doc) {
-                yyjson_mut_val *entry = yyjson_mut_obj(doc);
-                if (entry && nmo_cli_record_to_json(rec, doc, entry)) {
-                    yyjson_mut_arr_add_val(arr, entry);
-                }
-            } else {
-                nmo_cli_record_add_table_row(rec, &table);
-            }
+        nmo_cli_record_t *item = nmo_cli_record_new();
+        if (item && object_orphan_build_record(&c, orphan_ids[i], o, item)) {
+            ok = nmo_cli_record_array_add(arr, item);
+        } else {
+            nmo_cli_record_free(item);
         }
+    }
+    if (!ok) {
         nmo_cli_record_free(rec);
+        rec = NULL;
     }
-
-    if (doc) {
-        yyjson_mut_obj_add_val(doc, data, "orphans", arr);
-        nmo_cmd_ctx_json_end(&c, doc, data, "object.orphans");
-    } else {
-        if (orphan_count > 0) {
-            nmo_cli_table_print(&table, c.out, c.colorize);
-        }
-        nmo_cli_table_free(&table);
-    }
+    rc = nmo_cmd_ctx_emit_record(&c, rec, "object.orphans", 0, c.colorize);
 
     nmo_arena_destroy(arena);
-    return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS)
-                     : NMO_CLI_EXIT_SUCCESS;
+    return close_ctx ? nmo_cmd_ctx_done(&c, rc) : rc;
 }
 
 int nmo_cmd_object_orphans(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -726,6 +682,92 @@ static int object_cycles_parse(int argc, char **argv, bool expect_file_operand,
     return NMO_CLI_EXIT_SUCCESS;
 }
 
+/*
+ * One cycle. JSON: length, objects [{id, name, class_name}], ref_kinds.
+ * Text: "Cycle N (M objects):", the id chain back to its first object, and
+ * the chain of reference kinds.
+ */
+static bool object_cycle_build_record(const nmo_cmd_ctx_t *c, size_t index,
+                                      const nmo_ref_cycle_t *cycle,
+                                      nmo_cli_record_t *rec)
+{
+    bool ok = nmo_cli_record_uint(rec, "length", NULL, (uint64_t)cycle->count) &&
+              nmo_cli_record_raw_fmt(rec, "\nCycle %zu (%zu object%s):\n  ",
+                                     index + 1, cycle->count,
+                                     cycle->count == 1 ? "" : "s");
+    nmo_cli_record_array_t *objs = ok ? nmo_cli_record_array(rec, "objects", NULL) : NULL;
+    ok = objs != NULL;
+    for (size_t j = 0; ok && j < cycle->count; ++j) {
+        nmo_object_t *o = nmo_core_find_by_id(c, cycle->ids[j]);
+        const char *n = o ? nmo_object_get_name(o) : NULL;
+        char *cls = o ? nmo_core_class_name_dup(c, nmo_object_get_class_id(o)) : NULL;
+        nmo_cli_record_t *entry = nmo_cli_record_new();
+        ok = entry != NULL && nmo_cli_record_uint(entry, "id", NULL, cycle->ids[j]);
+        if (ok && o && n && n[0]) {
+            ok = nmo_cli_record_str(entry, "name", NULL, n);
+        }
+        if (ok && o) {
+            ok = nmo_cli_record_str(entry, "class_name", NULL, cls ? cls : "?");
+        }
+        ok = nmo_cli_record_array_add(ok ? objs : NULL, entry) && ok;
+        ok = ok && nmo_cli_record_raw_fmt(rec, "%s#%u %s", j > 0 ? " -> " : "",
+                                          cycle->ids[j], cls ? cls : "?");
+        if (ok && n && n[0]) {
+            ok = nmo_cli_record_raw_fmt(rec, " \"%s\"", n);
+        }
+        free(cls);
+    }
+    ok = ok && nmo_cli_record_raw_fmt(rec, " -> #%u\n  Reference kinds: ", cycle->ids[0]);
+
+    const char **kinds = ok ? (const char **)calloc(cycle->count ? cycle->count : 1u,
+                                                    sizeof(*kinds))
+                            : NULL;
+    ok = kinds != NULL;
+    for (size_t j = 0; ok && j < cycle->count; ++j) {
+        kinds[j] = nmo_ref_kind_name(cycle->kinds[j]);
+        ok = nmo_cli_record_raw_fmt(rec, "%s%s", j > 0 ? " -> " : "", kinds[j]);
+    }
+    ok = ok && nmo_cli_record_str_list(rec, "ref_kinds", NULL, kinds, cycle->count, NULL) &&
+         nmo_cli_record_raw(rec, "\n");
+    free(kinds);
+    return ok;
+}
+
+/*
+ * object cycles report. JSON: cycle_count, cycles. Text: a summary line,
+ * then each cycle.
+ */
+static nmo_cli_record_t *object_cycles_record_new(const nmo_cmd_ctx_t *c,
+                                                  const nmo_ref_cycle_t *cycles,
+                                                  size_t cycle_count)
+{
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL &&
+              nmo_cli_record_uint(rec, "cycle_count", NULL, (uint64_t)cycle_count);
+    if (ok && cycle_count == 0) {
+        ok = nmo_cli_record_raw(rec, "No circular references detected.\n");
+    } else if (ok) {
+        ok = nmo_cli_record_raw_fmt(rec, "Cycle Detection: %zu cycle(s) found\n",
+                                    cycle_count);
+    }
+    nmo_cli_record_array_t *arr = ok ? nmo_cli_record_array(rec, "cycles", NULL) : NULL;
+    ok = arr != NULL;
+    if (ok) {
+        nmo_cli_record_array_omit_heading(arr);
+        nmo_cli_record_array_inline_items(arr);
+    }
+    for (size_t ci = 0; ok && ci < cycle_count; ++ci) {
+        nmo_cli_record_t *item = nmo_cli_record_new();
+        ok = item != NULL && object_cycle_build_record(c, ci, &cycles[ci], item);
+        ok = nmo_cli_record_array_add(ok ? arr : NULL, item) && ok;
+    }
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        return NULL;
+    }
+    return rec;
+}
+
 static int object_cycles_run(nmo_cmd_ctx_t *ctx, bool close_ctx) {
     nmo_cmd_ctx_t c = *ctx;
     /* Get reference graph from session cache */
@@ -756,87 +798,10 @@ static int object_cycles_run(nmo_cmd_ctx_t *ctx, bool close_ctx) {
                          : NMO_CLI_EXIT_INTERNAL_ERROR;
     }
 
-    /* Output results */
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-
-        yyjson_mut_obj_add_uint(doc, data, "cycle_count",
-                                (uint64_t)cycle_count);
-
-        yyjson_mut_val *arr = yyjson_mut_arr(doc);
-        for (size_t ci = 0; ci < cycle_count; ++ci) {
-            nmo_ref_cycle_t *rec = &cycles[ci];
-            yyjson_mut_val *cyc = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_uint(doc, cyc, "length", (uint64_t)rec->count);
-
-            yyjson_mut_val *objs = yyjson_mut_arr(doc);
-            for (size_t j = 0; j < rec->count; ++j) {
-                yyjson_mut_val *entry = yyjson_mut_obj(doc);
-                yyjson_mut_obj_add_uint(doc, entry, "id", rec->ids[j]);
-                nmo_object_t *o = nmo_core_find_by_id(&c, rec->ids[j]);
-                if (o) {
-                    const char *n = nmo_object_get_name(o);
-                    if (n && n[0])
-                        nmo_cli_json_add_str_safe(doc, entry, "name", n);
-                    char *cls = nmo_core_class_name_dup(&c, nmo_object_get_class_id(o));
-                    nmo_cli_json_add_str_safe(doc, entry, "class_name", cls ? cls : "?");
-                    free(cls);
-                }
-                yyjson_mut_arr_add_val(objs, entry);
-            }
-            yyjson_mut_obj_add_val(doc, cyc, "objects", objs);
-
-            yyjson_mut_val *kinds = yyjson_mut_arr(doc);
-            for (size_t j = 0; j < rec->count; ++j) {
-                yyjson_mut_arr_add_str(doc, kinds,
-                                       nmo_ref_kind_name(rec->kinds[j]));
-            }
-            yyjson_mut_obj_add_val(doc, cyc, "ref_kinds", kinds);
-
-            yyjson_mut_arr_add_val(arr, cyc);
-        }
-        yyjson_mut_obj_add_val(doc, data, "cycles", arr);
-
-        nmo_cmd_ctx_json_end(&c, doc, data, "object.cycles");
-    } else {
-        if (cycle_count == 0) {
-            fprintf(c.out, "No circular references detected.\n");
-        } else {
-            fprintf(c.out, "Cycle Detection: %zu cycle(s) found\n",
-                    cycle_count);
-
-            for (size_t ci = 0; ci < cycle_count; ++ci) {
-                nmo_ref_cycle_t *rec = &cycles[ci];
-                fprintf(c.out, "\nCycle %zu (%zu object%s):\n",
-                        ci + 1, rec->count,
-                        rec->count == 1 ? "" : "s");
-
-                fprintf(c.out, "  ");
-                for (size_t j = 0; j < rec->count; ++j) {
-                    if (j > 0) fprintf(c.out, " -> ");
-                    nmo_object_t *o = nmo_core_find_by_id(&c, rec->ids[j]);
-                    const char *n = o ? nmo_object_get_name(o) : NULL;
-                    char *cls = o ? nmo_core_class_name_dup(&c, nmo_object_get_class_id(o)) : NULL;
-                    fprintf(c.out, "#%u %s", rec->ids[j], cls ? cls : "?");
-                    free(cls);
-                    if (n && n[0]) fprintf(c.out, " \"%s\"", n);
-                }
-                fprintf(c.out, " -> #%u\n", rec->ids[0]);
-
-                fprintf(c.out, "  Reference kinds: ");
-                for (size_t j = 0; j < rec->count; ++j) {
-                    if (j > 0) fprintf(c.out, " -> ");
-                    fprintf(c.out, "%s", nmo_ref_kind_name(rec->kinds[j]));
-                }
-                fprintf(c.out, "\n");
-            }
-        }
-    }
-
+    int rc = nmo_cmd_ctx_emit_record(&c, object_cycles_record_new(&c, cycles, cycle_count),
+                                     "object.cycles", 0, false);
     nmo_arena_destroy(arena);
-    return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS)
-                     : NMO_CLI_EXIT_SUCCESS;
+    return close_ctx ? nmo_cmd_ctx_done(&c, rc) : rc;
 }
 
 int nmo_cmd_object_cycles(int argc, char **argv, const nmo_cli_global_opts_t *global) {
@@ -916,6 +881,77 @@ static int object_graph_parse(int argc, char **argv, bool expect_file_operand,
     return NMO_CLI_EXIT_SUCCESS;
 }
 
+/*
+ * object graph report. JSON: node_count, edge_count, nodes, edges and a
+ * per-kind edge count object. Text: the counts and the per-kind lines.
+ */
+static nmo_cli_record_t *object_graph_record_new(const nmo_cmd_ctx_t *c,
+                                                 const nmo_object_id_t *node_ids,
+                                                 size_t node_count,
+                                                 const nmo_ref_edge_t *edges,
+                                                 size_t edge_count,
+                                                 const size_t *kind_counts)
+{
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL &&
+              nmo_cli_record_uint(rec, "node_count", NULL, (uint64_t)node_count) &&
+              nmo_cli_record_uint(rec, "edge_count", NULL, (uint64_t)edge_count) &&
+              nmo_cli_record_raw_fmt(rec, "Reference Graph: %zu nodes, %zu edges\n\n"
+                                          "Edges by kind:\n",
+                                     node_count, edge_count);
+
+    nmo_cli_record_array_t *nodes = ok ? nmo_cli_record_array(rec, "nodes", NULL) : NULL;
+    ok = nodes != NULL;
+    for (size_t i = 0; ok && i < node_count; ++i) {
+        nmo_cli_record_t *node = nmo_cli_record_new();
+        ok = node != NULL && nmo_cli_record_uint(node, "id", NULL, node_ids[i]);
+        nmo_object_t *obj = ok ? nmo_core_find_by_id(c, node_ids[i]) : NULL;
+        if (obj) {
+            char *cls = nmo_core_class_name_dup(c, nmo_object_get_class_id(obj));
+            ok = nmo_cli_record_str(node, "class_name", NULL, cls ? cls : "?");
+            free(cls);
+            const char *name = nmo_object_get_name(obj);
+            if (ok && name && name[0]) {
+                ok = nmo_cli_record_str(node, "name", NULL, name);
+            }
+        }
+        ok = nmo_cli_record_array_add(ok ? nodes : NULL, node) && ok;
+    }
+
+    nmo_cli_record_array_t *arr = ok ? nmo_cli_record_array(rec, "edges", NULL) : NULL;
+    ok = arr != NULL;
+    for (size_t i = 0; ok && i < edge_count; ++i) {
+        nmo_cli_record_t *edge = nmo_cli_record_new();
+        ok = edge != NULL &&
+             nmo_cli_record_uint(edge, "from", NULL, edges[i].from) &&
+             nmo_cli_record_uint(edge, "to", NULL, edges[i].to) &&
+             nmo_cli_record_str(edge, "kind", NULL, nmo_ref_kind_name(edges[i].kind)) &&
+             nmo_cli_record_str(edge, "field", NULL,
+                                edges[i].field_path ? edges[i].field_path : "unknown");
+        ok = nmo_cli_record_array_add(ok ? arr : NULL, edge) && ok;
+    }
+
+    nmo_cli_record_t *summary = ok ? nmo_cli_record_object(rec, "kind_summary") : NULL;
+    ok = summary != NULL;
+    bool any_kind = false;
+    for (int k = 0; ok && k < NMO_REF_KIND_MAX; ++k) {
+        if (kind_counts[k] > 0) {
+            const char *kind = nmo_ref_kind_name((nmo_ref_kind_t)k);
+            ok = nmo_cli_record_uint(summary, kind, NULL, (uint64_t)kind_counts[k]) &&
+                 nmo_cli_record_raw_fmt(summary, "  %-16s: %4zu\n", kind, kind_counts[k]);
+            any_kind = true;
+        }
+    }
+    if (ok && !any_kind) {
+        ok = nmo_cli_record_raw(summary, "  (none)\n");
+    }
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        return NULL;
+    }
+    return rec;
+}
+
 static int object_graph_run(nmo_cmd_ctx_t *ctx, const object_graph_args_t *args,
                             bool close_ctx) {
     nmo_cmd_ctx_t c = *ctx;
@@ -976,60 +1012,8 @@ static int object_graph_run(nmo_cmd_ctx_t *ctx, const object_graph_args_t *args,
             kind_counts[edges[i].kind]++;
     }
 
-    if (c.is_json) {
-        /* ---- JSON output ---- */
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-
-        yyjson_mut_obj_add_uint(doc, data, "node_count", (uint64_t)node_count);
-        yyjson_mut_obj_add_uint(doc, data, "edge_count", (uint64_t)edge_count);
-
-        /* Nodes */
-        yyjson_mut_val *jarr_nodes = yyjson_mut_arr(doc);
-        for (size_t i = 0; i < node_count; ++i) {
-            yyjson_mut_val *jn = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_uint(doc, jn, "id", node_ids[i]);
-
-            nmo_object_t *obj = nmo_core_find_by_id(&c, node_ids[i]);
-            if (obj) {
-                char *cls = nmo_core_class_name_dup(&c, nmo_object_get_class_id(obj));
-                nmo_cli_json_add_str_safe(doc, jn, "class_name", cls ? cls : "?");
-                free(cls);
-                const char *name = nmo_object_get_name(obj);
-                if (name && name[0])
-                    nmo_cli_json_add_str_safe(doc, jn, "name", name);
-            }
-            yyjson_mut_arr_add_val(jarr_nodes, jn);
-        }
-        yyjson_mut_obj_add_val(doc, data, "nodes", jarr_nodes);
-
-        /* Edges */
-        yyjson_mut_val *jarr_edges = yyjson_mut_arr(doc);
-        for (size_t i = 0; i < edge_count; ++i) {
-            yyjson_mut_val *je = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_uint(doc, je, "from", edges[i].from);
-            yyjson_mut_obj_add_uint(doc, je, "to", edges[i].to);
-            yyjson_mut_obj_add_str(doc, je, "kind",
-                                   nmo_ref_kind_name(edges[i].kind));
-            yyjson_mut_obj_add_str(doc, je, "field",
-                                   edges[i].field_path ? edges[i].field_path : "unknown");
-            yyjson_mut_arr_add_val(jarr_edges, je);
-        }
-        yyjson_mut_obj_add_val(doc, data, "edges", jarr_edges);
-
-        /* Kind summary */
-        yyjson_mut_val *jsummary = yyjson_mut_obj(doc);
-        for (int k = 0; k < NMO_REF_KIND_MAX; ++k) {
-            if (kind_counts[k] > 0) {
-                yyjson_mut_obj_add_uint(doc, jsummary,
-                    nmo_ref_kind_name((nmo_ref_kind_t)k),
-                    (uint64_t)kind_counts[k]);
-            }
-        }
-        yyjson_mut_obj_add_val(doc, data, "kind_summary", jsummary);
-
-        nmo_cmd_ctx_json_end(&c, doc, data, "object.graph");
-    } else if (args->dot_mode) {
+    int rc = NMO_CLI_EXIT_SUCCESS;
+    if (!c.is_json && args->dot_mode) {
         /* ---- DOT output via library ---- */
         uint32_t kind_mask = 0;
         if (args->kind_str) {
@@ -1046,28 +1030,15 @@ static int object_graph_run(nmo_cmd_ctx_t *ctx, const object_graph_args_t *args,
         nmo_ref_graph_to_dot(graph, repo, c.registry, kind_mask, dot_arena, c.out);
         nmo_arena_destroy(dot_arena);
     } else {
-        /* ---- Text summary ---- */
-        fprintf(c.out, "Reference Graph: %zu nodes, %zu edges\n\n",
-                node_count, edge_count);
-
-        fprintf(c.out, "Edges by kind:\n");
-        bool any_kind = false;
-        for (int k = 0; k < NMO_REF_KIND_MAX; ++k) {
-            if (kind_counts[k] > 0) {
-                fprintf(c.out, "  %-16s: %4zu\n",
-                        nmo_ref_kind_name((nmo_ref_kind_t)k),
-                        kind_counts[k]);
-                any_kind = true;
-            }
-        }
-        if (!any_kind)
-            fprintf(c.out, "  (none)\n");
+        rc = nmo_cmd_ctx_emit_record(&c, object_graph_record_new(&c, node_ids, node_count,
+                                                                 edges, edge_count,
+                                                                 kind_counts),
+                                     "object.graph", 0, false);
     }
 
     free(node_ids);
     free(filtered);
-    return close_ctx ? nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS)
-                     : NMO_CLI_EXIT_SUCCESS;
+    return close_ctx ? nmo_cmd_ctx_done(&c, rc) : rc;
 }
 
 int nmo_cmd_object_graph(int argc, char **argv, const nmo_cli_global_opts_t *global) {
