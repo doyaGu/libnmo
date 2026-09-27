@@ -125,6 +125,10 @@ if(NMO_USE_ISOCLINE)
         target_compile_options(isocline PRIVATE -w)
     endif()
     target_link_libraries(nmo_cli PRIVATE isocline)
+    install(FILES "${NMO_ISOCLINE_DIR}/LICENSE"
+        DESTINATION ${NMO_THIRD_PARTY_DOCDIR}
+        RENAME isocline-LICENSE
+    )
     target_compile_definitions(nmo_cli PRIVATE NMO_HAVE_ISOCLINE)
 else()
     message(STATUS "isocline disabled, REPL will use basic fgets input")
