@@ -175,10 +175,9 @@ static void add_cell_json(yyjson_mut_doc *doc, yyjson_mut_val *arr,
 }
 
 typedef struct data_list_data {
-    yyjson_mut_doc *doc;    /* JSON sink when non-NULL */
-    yyjson_mut_val *arr;
-    nmo_cli_table_t *table; /* text sink otherwise */
-    uint32_t found;
+    nmo_cli_record_t **items;
+    size_t count;
+    size_t capacity;
 } data_list_data_t;
 
 static int data_list_visitor(size_t index,
@@ -209,22 +208,60 @@ static int data_list_visitor(size_t index,
     }
     ok = ok && nmo_cli_record_uint(rec, "column_count", "Columns", state->column_count);
     ok = ok && nmo_cli_record_uint(rec, "row_count", "Rows", state->row_count);
+    if (ok && data->count == data->capacity) {
+        size_t capacity = data->capacity ? data->capacity * 2u : 16u;
+        nmo_cli_record_t **grown = (nmo_cli_record_t **)realloc(
+            data->items, capacity * sizeof(*grown));
+        ok = grown != NULL;
+        if (ok) {
+            data->items = grown;
+            data->capacity = capacity;
+        }
+    }
     if (!ok) {
         nmo_cli_record_free(rec);
         return 0;
     }
-
-    if (data->doc) {
-        yyjson_mut_val *item = yyjson_mut_obj(data->doc);
-        if (item && nmo_cli_record_to_json(rec, data->doc, item)) {
-            yyjson_mut_arr_add_val(data->arr, item);
-        }
-    } else if (data->table) {
-        nmo_cli_record_add_table_row(rec, data->table);
-    }
-    nmo_cli_record_free(rec);
-    data->found++;
+    data->items[data->count++] = rec;
     return 0;
+}
+
+static const nmo_cli_table_col_t data_list_columns[] = {
+    {"ID",      NMO_CLI_ALIGN_RIGHT, 6,  0},
+    {"Name",    NMO_CLI_ALIGN_LEFT,  20, 60},
+    {"Columns", NMO_CLI_ALIGN_RIGHT, 7,  0},
+    {"Rows",    NMO_CLI_ALIGN_RIGHT, 6,  0},
+};
+
+/* Takes ownership of the collected items. */
+static nmo_cli_record_t *data_list_record_new(data_list_data_t *data)
+{
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL &&
+              nmo_cli_record_uint(rec, "count", NULL, data->count) &&
+              nmo_cli_record_raw_fmt(rec, "Data arrays: %zu\n\n", data->count);
+    nmo_cli_record_array_t *arrays =
+        ok ? nmo_cli_record_array(rec, "arrays", NULL) : NULL;
+    ok = ok && arrays != NULL &&
+         nmo_cli_record_array_set_table(
+             arrays, data_list_columns,
+             sizeof(data_list_columns) / sizeof(data_list_columns[0]));
+    for (size_t i = 0; i < data->count; ++i) {
+        if (ok) {
+            ok = nmo_cli_record_array_add(arrays, data->items[i]);
+        } else {
+            nmo_cli_record_free(data->items[i]);
+        }
+    }
+    free(data->items);
+    data->items = NULL;
+    data->count = 0;
+    data->capacity = 0;
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        return NULL;
+    }
+    return rec;
 }
 
 /* ============================================================================
@@ -239,49 +276,91 @@ int nmo_cmd_data_list(int argc, char **argv, const nmo_cli_global_opts_t *global
     nmo_object_query_t query = {0};
     nmo_core_query_set_class_id(&query, NMO_CID_DATAARRAY, false);
 
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        yyjson_mut_val *arr = yyjson_mut_arr(doc);
-        data_list_data_t ld = { .doc = doc, .arr = arr };
-        rc = nmo_core_object_query_run(&c, &query,
-                                       data_list_visitor, &ld, NULL);
-        if (rc != NMO_CLI_EXIT_SUCCESS) {
-            return nmo_cmd_ctx_done(&c, rc);
+    data_list_data_t ld = {0};
+    rc = nmo_core_object_query_run(&c, &query, data_list_visitor, &ld, NULL);
+    if (rc != NMO_CLI_EXIT_SUCCESS) {
+        for (size_t i = 0; i < ld.count; ++i) {
+            nmo_cli_record_free(ld.items[i]);
         }
-
-        yyjson_mut_obj_add_uint(doc, data, "count", ld.found);
-        yyjson_mut_obj_add_val(doc, data, "arrays", arr);
-        nmo_cmd_ctx_json_end(&c, doc, data, "data.list");
-    } else {
-        static const nmo_cli_table_col_t columns[] = {
-            {"ID",      NMO_CLI_ALIGN_RIGHT, 6,  0},
-            {"Name",    NMO_CLI_ALIGN_LEFT,  20, 60},
-            {"Columns", NMO_CLI_ALIGN_RIGHT, 7,  0},
-            {"Rows",    NMO_CLI_ALIGN_RIGHT, 6,  0},
-        };
-
-        nmo_cli_table_t table;
-        nmo_cli_table_init(&table, columns, sizeof(columns) / sizeof(columns[0]));
-        data_list_data_t ld = { .table = &table };
-        rc = nmo_core_object_query_run(&c, &query,
-                                       data_list_visitor, &ld, NULL);
-        if (rc != NMO_CLI_EXIT_SUCCESS) {
-            nmo_cli_table_free(&table);
-            return nmo_cmd_ctx_done(&c, rc);
-        }
-
-        fprintf(c.out, "Data arrays: %u\n\n", ld.found);
-        nmo_cli_table_print(&table, c.out, c.colorize);
-        nmo_cli_table_free(&table);
+        free(ld.items);
+        return nmo_cmd_ctx_done(&c, rc);
     }
 
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    rc = nmo_cmd_ctx_emit_record(&c, data_list_record_new(&ld), "data.list",
+                                 0, c.colorize);
+    return nmo_cmd_ctx_done(&c, rc);
 }
 
 /* ============================================================================
  * data show
  * ============================================================================ */
+
+static const nmo_cli_table_col_t data_show_columns[] = {
+    {"Index", NMO_CLI_ALIGN_RIGHT, 5,  0},
+    {"Name",  NMO_CLI_ALIGN_LEFT,  20, 60},
+    {"Type",  NMO_CLI_ALIGN_LEFT,  10, 0},
+};
+
+static nmo_cli_record_t *data_show_record_new(nmo_object_id_t obj_id,
+                                              const char *name,
+                                              const nmo_dataarray_state_t *state)
+{
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL && nmo_cli_record_title(rec, "Data Array");
+    ok = ok && nmo_cli_record_uint(rec, "id", "ID", obj_id);
+    ok = ok && nmo_cli_record_str(rec, "name", "Name", name);
+    if (ok && (!name || !name[0])) {
+        ok = nmo_cli_record_set_text(rec, "-");
+    }
+    ok = ok && nmo_cli_record_uint(rec, "column_count", "Columns", state->column_count);
+    ok = ok && nmo_cli_record_uint(rec, "row_count", "Rows", state->row_count);
+
+    const char *order_label = "none";
+    if (state->order == 1) order_label = "ascending";
+    else if (state->order == 2) order_label = "descending";
+    ok = ok && nmo_cli_record_int(rec, "sort_order", NULL, state->order);
+    ok = ok && nmo_cli_record_uint(rec, "sort_column", NULL, state->column_index);
+    ok = ok && nmo_cli_record_text_fmt(rec, "Sort Order", "%s (column %u)",
+                                       order_label, state->column_index);
+
+    ok = ok && nmo_cli_record_int(rec, "key_column", "Key Column", state->key_column);
+    if (ok && state->key_column < 0) {
+        ok = nmo_cli_record_set_text(rec, "none");
+    }
+
+    /* Column schema; the text view shows it as a table when non-empty. */
+    if (ok && state->column_count > 0) {
+        ok = nmo_cli_record_raw(rec, "\n");
+    }
+    nmo_cli_record_array_t *cols =
+        ok ? nmo_cli_record_array(rec, "columns", NULL) : NULL;
+    ok = ok && cols != NULL;
+    if (ok && state->column_count > 0) {
+        ok = nmo_cli_record_array_set_table(
+            cols, data_show_columns,
+            sizeof(data_show_columns) / sizeof(data_show_columns[0]));
+    }
+    for (uint32_t i = 0; ok && i < state->column_count; ++i) {
+        const char *cname = state->column_formats[i].name;
+        nmo_cli_record_t *col = nmo_cli_record_new();
+        ok = col != NULL &&
+             nmo_cli_record_uint(col, "index", "Index", i) &&
+             nmo_cli_record_str(col, "name", "Name", cname) &&
+             (cname && cname[0] ? true : nmo_cli_record_set_text(col, "-")) &&
+             nmo_cli_record_str(col, "type", "Type",
+                                arraytype_name(state->column_formats[i].type));
+        if (!ok) {
+            nmo_cli_record_free(col);
+        } else {
+            ok = nmo_cli_record_array_add(cols, col);
+        }
+    }
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        return NULL;
+    }
+    return rec;
+}
 
 int nmo_cmd_data_show(int argc, char **argv, const nmo_cli_global_opts_t *global) {
     static const nmo_opt_def_t opts[] = {
@@ -325,94 +404,131 @@ int nmo_cmd_data_show(int argc, char **argv, const nmo_cli_global_opts_t *global
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
 
-    const char *name = nmo_object_get_name(obj);
-
-    nmo_cli_record_t *rec = nmo_cli_record_new();
-    bool ok = rec != NULL;
-    ok = ok && nmo_cli_record_uint(rec, "id", "ID", obj_id);
-    ok = ok && nmo_cli_record_str(rec, "name", "Name", name);
-    if (ok && (!name || !name[0])) {
-        ok = nmo_cli_record_set_text(rec, "-");
-    }
-    ok = ok && nmo_cli_record_uint(rec, "column_count", "Columns", state->column_count);
-    ok = ok && nmo_cli_record_uint(rec, "row_count", "Rows", state->row_count);
-
-    const char *order_label = "none";
-    if (state->order == 1) order_label = "ascending";
-    else if (state->order == 2) order_label = "descending";
-    ok = ok && nmo_cli_record_int(rec, "sort_order", NULL, state->order);
-    ok = ok && nmo_cli_record_uint(rec, "sort_column", NULL, state->column_index);
-    ok = ok && nmo_cli_record_text_fmt(rec, "Sort Order", "%s (column %u)",
-                                       order_label, state->column_index);
-
-    ok = ok && nmo_cli_record_int(rec, "key_column", "Key Column", state->key_column);
-    if (ok && state->key_column < 0) {
-        ok = nmo_cli_record_set_text(rec, "none");
-    }
-
-    /* Column schema: JSON array here; the text view prints it as a table below. */
-    nmo_cli_record_array_t *cols = nmo_cli_record_array(rec, "columns", NULL);
-    ok = ok && cols != NULL;
-    for (uint32_t i = 0; ok && i < state->column_count; ++i) {
-        nmo_cli_record_t *col = nmo_cli_record_new();
-        ok = col != NULL &&
-             nmo_cli_record_uint(col, "index", NULL, i) &&
-             nmo_cli_record_str(col, "name", NULL, state->column_formats[i].name) &&
-             nmo_cli_record_str(col, "type", NULL,
-                                arraytype_name(state->column_formats[i].type)) &&
-             nmo_cli_record_array_add(cols, col);
-    }
-    if (!ok) {
-        nmo_cli_record_free(rec);
+    nmo_cli_record_t *rec =
+        data_show_record_new(obj_id, nmo_object_get_name(obj), state);
+    if (!rec) {
         fprintf(stderr, "Error: Out of memory while describing data array %u\n", obj_id);
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
     }
+    rc = nmo_cmd_ctx_emit_record(&c, rec, "data.show", 14, c.colorize);
+    return nmo_cmd_ctx_done(&c, rc);
+}
 
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        nmo_cli_record_to_json(rec, doc, data);
-        nmo_cli_record_free(rec);
-        nmo_cmd_ctx_json_end(&c, doc, data, "data.show");
-    } else {
-        nmo_cli_print_heading(c.out, "Data Array", c.colorize);
-        nmo_cli_record_print_kv(rec, c.out, 14, c.colorize);
-        nmo_cli_record_free(rec);
+typedef struct data_dump_rows {
+    const nmo_dataarray_state_t *state;
+    uint32_t row_start;
+    uint32_t row_end;
+} data_dump_rows_t;
 
-        if (state->column_count > 0) {
-            fprintf(c.out, "\n");
+static bool data_dump_rows_json(yyjson_mut_doc *doc, yyjson_mut_val *obj,
+                                const void *data)
+{
+    const data_dump_rows_t *rows = (const data_dump_rows_t *)data;
+    const nmo_dataarray_state_t *state = rows->state;
+    yyjson_mut_val *rows_arr = yyjson_mut_arr(doc);
+    if (!rows_arr) {
+        return false;
+    }
+    for (uint32_t ri = rows->row_start; ri < rows->row_end; ++ri) {
+        const nmo_dataarray_row_t *row = &state->rows[ri];
+        yyjson_mut_val *row_arr = yyjson_mut_arr(doc);
+        if (!row_arr) {
+            return false;
+        }
+        for (uint32_t ci = 0; ci < state->column_count && ci < row->column_count; ++ci) {
+            add_cell_json(doc, row_arr, &row->cells[ci],
+                          state->column_formats[ci].type);
+        }
+        yyjson_mut_arr_add_val(rows_arr, row_arr);
+    }
+    return yyjson_mut_obj_add_val(doc, obj, "rows", rows_arr);
+}
 
-            static const nmo_cli_table_col_t col_defs[] = {
-                {"Index", NMO_CLI_ALIGN_RIGHT, 5,  0},
-                {"Name",  NMO_CLI_ALIGN_LEFT,  20, 60},
-                {"Type",  NMO_CLI_ALIGN_LEFT,  10, 0},
-            };
-
-            nmo_cli_table_t table;
-            nmo_cli_table_init(&table, col_defs,
-                               sizeof(col_defs) / sizeof(col_defs[0]));
-
-            for (uint32_t i = 0; i < state->column_count; ++i) {
-                const char *cname = state->column_formats[i].name;
-                if (!cname || !cname[0]) cname = "-";
-
-                const char *tname = arraytype_name(state->column_formats[i].type);
-
-                nmo_cli_record_t *row = nmo_cli_record_new();
-                if (row && nmo_cli_record_uint(row, NULL, "Index", i) &&
-                    nmo_cli_record_str(row, NULL, "Name", cname) &&
-                    nmo_cli_record_str(row, NULL, "Type", tname)) {
-                    nmo_cli_record_add_table_row(row, &table);
-                }
-                nmo_cli_record_free(row);
+/*
+ * One text-only field per cell, labelled by its column header. Cells missing
+ * from a short row show `missing` (NULL: skipped).
+ */
+static bool data_dump_add_cells(nmo_cli_record_t *rec,
+                                const nmo_dataarray_state_t *state,
+                                const nmo_dataarray_row_t *row,
+                                const char *const *headers,
+                                const char *missing,
+                                const nmo_cmd_ctx_t *c)
+{
+    bool ok = true;
+    for (uint32_t ci = 0; ok && ci < state->column_count; ++ci) {
+        if (ci >= row->column_count) {
+            if (missing) {
+                ok = nmo_cli_record_text(rec, headers[ci], missing);
             }
+            continue;
+        }
+        char *value = format_cell_dup(&row->cells[ci],
+                                      state->column_formats[ci].type, c);
+        ok = nmo_cli_record_text(rec, headers[ci], value ? value : "");
+        free(value);
+    }
+    return ok;
+}
 
-            nmo_cli_table_print(&table, c.out, c.colorize);
-            nmo_cli_table_free(&table);
+/*
+ * JSON: the column names and the rows. Text: the single row as "column: value"
+ * lines, or every row as a table over `col_defs` (borrowed).
+ */
+static nmo_cli_record_t *data_dump_record_new(const nmo_cmd_ctx_t *c,
+                                              nmo_object_id_t obj_id,
+                                              const char *name,
+                                              const nmo_dataarray_state_t *state,
+                                              const data_dump_rows_t *rows,
+                                              bool has_single_row,
+                                              const nmo_cli_table_col_t *col_defs)
+{
+    const size_t ncols = state->column_count;
+    const char **names = (const char **)calloc(ncols ? ncols : 1u, sizeof(*names));
+    const char **labels = (const char **)calloc(ncols ? ncols : 1u, sizeof(*labels));
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = names != NULL && labels != NULL && rec != NULL;
+    for (size_t ci = 0; ok && ci < ncols; ++ci) {
+        const char *cname = state->column_formats[ci].name;
+        names[ci] = cname ? cname : "";
+        labels[ci] = (cname && cname[0]) ? cname : "(unnamed)";
+    }
+    ok = ok && nmo_cli_record_str_list(rec, "columns", NULL, names, ncols, NULL);
+    ok = ok && nmo_cli_record_json(rec, data_dump_rows_json, rows);
+
+    if (ok && has_single_row) {
+        ok = nmo_cli_record_raw_fmt(rec, "Data array #%u", obj_id) &&
+             (name && name[0] ? nmo_cli_record_raw_fmt(rec, " (%s)", name) : true) &&
+             nmo_cli_record_raw_fmt(rec, "\nRow %u:\n", rows->row_start) &&
+             data_dump_add_cells(rec, state, &state->rows[rows->row_start],
+                                 labels, NULL, c);
+    } else if (ok && ncols == 0) {
+        ok = nmo_cli_record_raw(rec, "(no columns)\n");
+    } else if (ok) {
+        for (size_t ci = 0; ci < ncols; ++ci) {
+            labels[ci] = col_defs[ci].header;
+        }
+        nmo_cli_record_array_t *table = nmo_cli_record_array(rec, NULL, NULL);
+        ok = table != NULL && nmo_cli_record_array_set_table(table, col_defs, ncols);
+        for (uint32_t ri = 0; ok && ri < state->row_count; ++ri) {
+            nmo_cli_record_t *item = nmo_cli_record_new();
+            ok = item != NULL &&
+                 data_dump_add_cells(item, state, &state->rows[ri], labels,
+                                     "-", c);
+            if (!ok) {
+                nmo_cli_record_free(item);
+            } else {
+                ok = nmo_cli_record_array_add(table, item);
+            }
         }
     }
-
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    free(names);
+    free(labels);
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        return NULL;
+    }
+    return rec;
 }
 
 /* ============================================================================
@@ -479,111 +595,38 @@ int nmo_cmd_data_dump(int argc, char **argv, const nmo_cli_global_opts_t *global
         return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_ARG_ERROR);
     }
 
-    if (c.is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(&c);
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-
-        /* Column names */
-        yyjson_mut_val *col_names = yyjson_mut_arr(doc);
-        for (uint32_t ci = 0; ci < state->column_count; ++ci) {
-            const char *cname = state->column_formats[ci].name;
-            nmo_cli_json_add_str_safe_to_arr(doc, col_names,
-                                             cname ? cname : "");
-        }
-        yyjson_mut_obj_add_val(doc, data, "columns", col_names);
-
-        /* Rows */
-        yyjson_mut_val *rows_arr = yyjson_mut_arr(doc);
-        uint32_t row_start = has_single_row ? single_row : 0;
-        uint32_t row_end = has_single_row ? single_row + 1 : state->row_count;
-
-        for (uint32_t ri = row_start; ri < row_end; ++ri) {
-            const nmo_dataarray_row_t *row = &state->rows[ri];
-            yyjson_mut_val *row_arr = yyjson_mut_arr(doc);
-            for (uint32_t ci = 0; ci < state->column_count && ci < row->column_count; ++ci) {
-                add_cell_json(doc, row_arr, &row->cells[ci],
-                              state->column_formats[ci].type);
-            }
-            yyjson_mut_arr_add_val(rows_arr, row_arr);
-        }
-        yyjson_mut_obj_add_val(doc, data, "rows", rows_arr);
-
-        nmo_cmd_ctx_json_end(&c, doc, data, "data.dump");
-    } else if (has_single_row) {
-        /* Single row: key-value format */
-        const nmo_dataarray_row_t *row = &state->rows[single_row];
-        const char *name = nmo_object_get_name(obj);
-        fprintf(c.out, "Data array #%u", obj_id);
-        if (name && name[0]) fprintf(c.out, " (%s)", name);
-        fprintf(c.out, "\n");
-        fprintf(c.out, "Row %u:\n", single_row);
-
-        for (uint32_t ci = 0; ci < state->column_count && ci < row->column_count; ++ci) {
-            const char *cname = state->column_formats[ci].name;
-            if (!cname || !cname[0]) cname = "(unnamed)";
-
-            char *value = format_cell_dup(&row->cells[ci],
-                                          state->column_formats[ci].type, &c);
-            nmo_cli_print_kv(c.out, cname, value ? value : "", 20, c.colorize);
-            free(value);
-        }
-    } else {
-        /* All rows: table format */
-
-        /* Build dynamic column definitions */
-        size_t ncols = state->column_count;
-        if (ncols == 0) {
-            fprintf(c.out, "(no columns)\n");
-            return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
-        }
-
-        /* Use stack allocation for reasonable column counts, heap for large */
-        nmo_cli_table_col_t col_defs_stack[32];
-        nmo_cli_table_col_t *col_defs = col_defs_stack;
-        if (ncols > 32) {
-            col_defs = (nmo_cli_table_col_t *)malloc(
-                ncols * sizeof(nmo_cli_table_col_t));
-            if (!col_defs) {
-                fprintf(stderr, "Error: Out of memory\n");
-                return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
-            }
-        }
-
-        for (size_t ci = 0; ci < ncols; ++ci) {
-            const char *cname = state->column_formats[ci].name;
-            col_defs[ci].header = (cname && cname[0]) ? cname : "-";
-            col_defs[ci].align = (state->column_formats[ci].type == CKARRAYTYPE_INT ||
-                                  state->column_formats[ci].type == CKARRAYTYPE_FLOAT)
-                                 ? NMO_CLI_ALIGN_RIGHT : NMO_CLI_ALIGN_LEFT;
-            col_defs[ci].min_width = 8;
-            col_defs[ci].max_width = 40;
-        }
-
-        nmo_cli_table_t table;
-        nmo_cli_table_init(&table, col_defs, ncols);
-
-        for (uint32_t ri = 0; ri < state->row_count; ++ri) {
-            const nmo_dataarray_row_t *row = &state->rows[ri];
-            nmo_cli_table_begin_row(&table);
-            for (size_t ci = 0; ci < ncols; ++ci) {
-                if (ci < row->column_count) {
-                    char *value = format_cell_dup(&row->cells[ci],
-                                                  state->column_formats[ci].type, &c);
-                    nmo_cli_table_add_cell(&table, value ? value : "");
-                    free(value);
-                } else {
-                    nmo_cli_table_add_cell(&table, "-");
-                }
-            }
-        }
-
-        nmo_cli_table_print(&table, c.out, c.colorize);
-        nmo_cli_table_free(&table);
-
-        if (col_defs != col_defs_stack) free(col_defs);
+    /* Table columns for the all-rows text view. */
+    const size_t ncols = state->column_count;
+    nmo_cli_table_col_t *col_defs = (nmo_cli_table_col_t *)calloc(
+        ncols ? ncols : 1u, sizeof(*col_defs));
+    if (!col_defs) {
+        fprintf(stderr, "Error: Out of memory\n");
+        return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_INTERNAL_ERROR);
+    }
+    for (size_t ci = 0; ci < ncols; ++ci) {
+        const char *cname = state->column_formats[ci].name;
+        col_defs[ci].header = (cname && cname[0]) ? cname : "-";
+        col_defs[ci].align = (state->column_formats[ci].type == CKARRAYTYPE_INT ||
+                              state->column_formats[ci].type == CKARRAYTYPE_FLOAT)
+                             ? NMO_CLI_ALIGN_RIGHT : NMO_CLI_ALIGN_LEFT;
+        col_defs[ci].min_width = 8;
+        col_defs[ci].max_width = 40;
     }
 
-    return nmo_cmd_ctx_done(&c, NMO_CLI_EXIT_SUCCESS);
+    const data_dump_rows_t rows = {
+        .state = state,
+        .row_start = has_single_row ? single_row : 0,
+        .row_end = has_single_row ? single_row + 1 : state->row_count,
+    };
+    nmo_cli_record_t *rec = data_dump_record_new(
+        &c, obj_id, nmo_object_get_name(obj), state, &rows, has_single_row,
+        col_defs);
+    if (!rec) {
+        fprintf(stderr, "Error: Out of memory\n");
+    }
+    rc = nmo_cmd_ctx_emit_record(&c, rec, "data.dump", 20, c.colorize);
+    free(col_defs);
+    return nmo_cmd_ctx_done(&c, rc);
 }
 
 /* ============================================================================
@@ -734,6 +777,20 @@ static int data_set_cell_mutate(
     return NMO_CLI_EXIT_SUCCESS;
 }
 
+typedef struct data_set_cell_report_json {
+    const nmo_edit_report_t *report;
+    bool dry_run;
+} data_set_cell_report_json_t;
+
+static bool data_set_cell_report_json(yyjson_mut_doc *doc, yyjson_mut_val *obj,
+                                      const void *data)
+{
+    const data_set_cell_report_json_t *ctx =
+        (const data_set_cell_report_json_t *)data;
+    nmo_cli_edit_report_add_schema_v2_json(doc, obj, ctx->report, ctx->dry_run);
+    return true;
+}
+
 static int data_set_cell_report(
     nmo_cmd_ctx_t *c,
     bool dry_run,
@@ -745,49 +802,43 @@ static int data_set_cell_report(
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    if (c->is_json) {
-        yyjson_mut_doc *doc = nmo_cmd_ctx_json_begin(c);
-        if (!doc) return NMO_CLI_EXIT_INTERNAL_ERROR;
-
-        yyjson_mut_val *data = yyjson_mut_obj(doc);
-        if (args->edit_report_ready && !dry_run && output_path != NULL) {
-            (void)nmo_edit_report_set_output_path(&args->edit_report, output_path);
-        }
-        nmo_cli_edit_report_add_schema_v2_json(
-            doc, data,
-            args->edit_report_ready ? &args->edit_report : NULL,
-            dry_run);
-        yyjson_mut_obj_add_uint(doc, data, "id", args->obj_id);
-        nmo_cli_json_add_str_safe(doc, data, "name",
-                                  (args->name && args->name[0]) ? args->name : "");
-        yyjson_mut_obj_add_uint(doc, data, "row", args->row);
-        yyjson_mut_obj_add_uint(doc, data, "col", args->col);
-        nmo_cli_json_add_str_safe(doc, data, "column_name", args->col_name);
-        yyjson_mut_obj_add_str(doc, data, "column_type", args->col_type_name);
-        nmo_cli_json_add_str_safe(doc, data, "old_value", args->old_value);
-        nmo_cli_json_add_str_safe(doc, data, "new_value", args->new_value);
-        if (!dry_run && output_path) {
-            nmo_cli_json_add_str_safe(doc, data, "output", output_path);
-        }
-
-        nmo_cmd_ctx_json_end(c, doc, data, "data.set-cell");
-    } else {
-        fprintf(c->out, "Data array #%u", args->obj_id);
-        if (args->name && args->name[0]) fprintf(c->out, " (%s)", args->name);
-        fprintf(c->out, "\n");
-        fprintf(c->out, "  Cell:  [%u,%u] (column '%s', type %s)\n",
-                args->row, args->col, args->col_name, args->col_type_name);
-        fprintf(c->out, "  Old:   %s\n", args->old_value);
-        fprintf(c->out, "  New:   %s\n", args->new_value);
-
-        if (dry_run) {
-            fprintf(c->out, "  (dry run - not saved)\n");
-        } else if (output_path) {
-            fprintf(c->out, "Saved to: %s\n", output_path);
-        }
+    if (args->edit_report_ready && !dry_run && output_path != NULL) {
+        (void)nmo_edit_report_set_output_path(&args->edit_report, output_path);
     }
-
-    return NMO_CLI_EXIT_SUCCESS;
+    const data_set_cell_report_json_t report = {
+        .report = args->edit_report_ready ? &args->edit_report : NULL,
+        .dry_run = dry_run,
+    };
+    const bool named = args->name && args->name[0];
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    bool ok = rec != NULL &&
+              nmo_cli_record_json(rec, data_set_cell_report_json, &report) &&
+              nmo_cli_record_uint(rec, "id", NULL, args->obj_id) &&
+              nmo_cli_record_str(rec, "name", NULL, named ? args->name : "") &&
+              nmo_cli_record_uint(rec, "row", NULL, args->row) &&
+              nmo_cli_record_uint(rec, "col", NULL, args->col) &&
+              nmo_cli_record_str(rec, "column_name", NULL, args->col_name) &&
+              nmo_cli_record_str(rec, "column_type", NULL, args->col_type_name) &&
+              nmo_cli_record_str(rec, "old_value", NULL, args->old_value) &&
+              nmo_cli_record_str(rec, "new_value", NULL, args->new_value) &&
+              nmo_cli_record_raw_fmt(rec, "Data array #%u", args->obj_id) &&
+              (named ? nmo_cli_record_raw_fmt(rec, " (%s)", args->name) : true) &&
+              nmo_cli_record_raw_fmt(rec, "\n  Cell:  [%u,%u] (column '%s', type %s)\n",
+                                     args->row, args->col, args->col_name,
+                                     args->col_type_name) &&
+              nmo_cli_record_raw_fmt(rec, "  Old:   %s\n", args->old_value) &&
+              nmo_cli_record_raw_fmt(rec, "  New:   %s\n", args->new_value);
+    if (ok && dry_run) {
+        ok = nmo_cli_record_raw(rec, "  (dry run - not saved)\n");
+    } else if (ok && output_path) {
+        ok = nmo_cli_record_str(rec, "output", NULL, output_path) &&
+             nmo_cli_record_raw_fmt(rec, "Saved to: %s\n", output_path);
+    }
+    if (!ok) {
+        nmo_cli_record_free(rec);
+        rec = NULL;
+    }
+    return nmo_cmd_ctx_emit_record(c, rec, "data.set-cell", 0, c->colorize);
 }
 
 int nmo_cmd_data_set_cell(int argc, char **argv, const nmo_cli_global_opts_t *global) {
