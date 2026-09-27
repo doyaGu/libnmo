@@ -6,10 +6,14 @@
 #include "../test_framework.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_array.h"
+#include "format/nmo_chunk.h"
+#include "format/nmo_chunk_api.h"
 #include "object/nmo_ref.h"
 #include "object/builtin/nmo_group_schemas.h"
 #include "object/builtin/nmo_layer_schemas.h"
+#include "object/builtin/nmo_parameteroperation_schemas.h"
 #include "object/builtin/nmo_place_schemas.h"
+#include "object/builtin/nmo_spritetext_schemas.h"
 #include "object/builtin/nmo_targetlight_schemas.h"
 #include <string.h>
 
@@ -135,9 +139,79 @@ TEST(object_state_layout, targetlight_defaults_and_value_copy) {
     nmo_arena_destroy(arena);
 }
 
+TEST(object_state_layout, spritetext_strings_copy_by_content) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_spritetext_state_t source;
+    nmo_spritetext_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_spritetext_vtable.create(&source, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_spritetext_vtable.create(&copied, NULL, NULL));
+    ASSERT_EQ(0xFFFFFFFFu, source.font_color);
+
+    char text[] = "Hello";
+    source.text_content = text;
+    source.font.font_name = "Arial";
+    source.font.size = 12;
+    ASSERT_EQ(NMO_OK,
+              nmo_spritetext_vtable.copy(&source, &copied, NULL, arena));
+    ASSERT_TRUE(copied.text_content != source.text_content);
+    ASSERT_EQ(0, strcmp("Hello", copied.text_content));
+    ASSERT_EQ(0, strcmp("Arial", copied.font.font_name));
+    ASSERT_EQ(12, copied.font.size);
+    ASSERT_TRUE(nmo_spritetext_vtable.equals(&source, &copied));
+    ASSERT_EQ(nmo_spritetext_vtable.hash(&source),
+              nmo_spritetext_vtable.hash(&copied));
+
+    text[0] = 'J';
+    ASSERT_FALSE(nmo_spritetext_vtable.equals(&source, &copied));
+    source.text_content = NULL;
+    ASSERT_FALSE(nmo_spritetext_vtable.equals(&source, &copied));
+
+    nmo_spritetext_vtable.destroy(&source, NULL, NULL);
+    nmo_spritetext_vtable.destroy(&copied, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
+TEST(object_state_layout, parameteroperation_chunks_copy_by_content) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_parameteroperation_state_t source;
+    nmo_parameteroperation_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_parameteroperation_vtable.create(&source, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_parameteroperation_vtable.create(&copied, NULL, NULL));
+    ASSERT_EQ(1u, source.has_in1);
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    nmo_chunk_start_write(chunk);
+    nmo_chunk_write_dword(chunk, 0xDEADBEEFu);
+    nmo_chunk_close(chunk);
+    source.in1.ref = nmo_ref_from_raw(60);
+    source.in1.chunk = chunk;
+
+    ASSERT_EQ(NMO_OK,
+              nmo_parameteroperation_vtable.copy(&source, &copied, NULL, arena));
+    ASSERT_NOT_NULL(copied.in1.chunk);
+    ASSERT_TRUE(copied.in1.chunk != source.in1.chunk);
+    ASSERT_NULL(copied.in2.chunk);
+    ASSERT_EQ(60u, copied.in1.ref.raw_id);
+    ASSERT_TRUE(nmo_parameteroperation_vtable.equals(&source, &copied));
+    ASSERT_EQ(nmo_parameteroperation_vtable.hash(&source),
+              nmo_parameteroperation_vtable.hash(&copied));
+
+    copied.in1.chunk = NULL;
+    ASSERT_FALSE(nmo_parameteroperation_vtable.equals(&source, &copied));
+
+    nmo_parameteroperation_vtable.destroy(&source, NULL, NULL);
+    nmo_parameteroperation_vtable.destroy(&copied, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(object_state_layout, place_copy_equals_hash);
     REGISTER_TEST(object_state_layout, copy_into_shallow_alias_detaches_arrays);
     REGISTER_TEST(object_state_layout, layer_defaults_and_square_data_copy);
     REGISTER_TEST(object_state_layout, targetlight_defaults_and_value_copy);
+    REGISTER_TEST(object_state_layout, spritetext_strings_copy_by_content);
+    REGISTER_TEST(object_state_layout, parameteroperation_chunks_copy_by_content);
 TEST_MAIN_END()

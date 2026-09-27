@@ -18,18 +18,45 @@
 #include "type/nmo_reflection.h"
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE(
-    parameteroperation,
-    nmo_parameteroperation_state_t,
-    do {
-        NMO_RETURN_IF_ERROR(nmo_object_vtable.create(
-            &state->base, NULL, context));
-        state->has_new_data = 1;
-        state->has_in1 = 1;
-        state->has_in2 = 1;
-        state->has_out = 1;
-    } while (0),
-    nmo_object_vtable.destroy(&state->base, NULL, context))
+static void nmo_parameteroperation_set_defaults(void *instance)
+{
+    nmo_parameteroperation_state_t *state = instance;
+    state->has_new_data = 1;
+    state->has_in1 = 1;
+    state->has_in2 = 1;
+    state->has_out = 1;
+}
+
+static const nmo_object_state_member_t nmo_parameteroperation_members[] = {
+    NMO_STATE_VALUE(nmo_parameteroperation_state_t, operation_guid),
+    NMO_STATE_VALUE(nmo_parameteroperation_state_t, legacy_prefix_ref),
+    NMO_STATE_VALUE(nmo_parameteroperation_state_t, owner),
+    NMO_STATE_VALUE(nmo_parameteroperation_state_t, in1.ref),
+    NMO_STATE_CHUNK(nmo_parameteroperation_state_t, in1.chunk),
+    NMO_STATE_VALUE(nmo_parameteroperation_state_t, in2.ref),
+    NMO_STATE_CHUNK(nmo_parameteroperation_state_t, in2.chunk),
+    NMO_STATE_VALUE(nmo_parameteroperation_state_t, out.ref),
+    NMO_STATE_CHUNK(nmo_parameteroperation_state_t, out.chunk),
+    NMO_STATE_VALUE(nmo_parameteroperation_state_t, has_new_data),
+    NMO_STATE_VALUE(nmo_parameteroperation_state_t, has_legacy_prefix),
+    NMO_STATE_VALUE(nmo_parameteroperation_state_t, has_operation),
+    NMO_STATE_VALUE(nmo_parameteroperation_state_t, has_owner),
+    NMO_STATE_VALUE(nmo_parameteroperation_state_t, has_in1),
+    NMO_STATE_VALUE(nmo_parameteroperation_state_t, has_in2),
+    NMO_STATE_VALUE(nmo_parameteroperation_state_t, has_out)
+};
+
+static const nmo_object_state_layout_t nmo_parameteroperation_layout = {
+    .size = sizeof(nmo_parameteroperation_state_t),
+    .base_vtable = &nmo_object_vtable,
+    .base_size = sizeof(nmo_object_state_t),
+    .members = nmo_parameteroperation_members,
+    .member_count =
+        sizeof(nmo_parameteroperation_members) / sizeof(nmo_parameteroperation_members[0]),
+    .set_defaults = nmo_parameteroperation_set_defaults,
+};
+
+NMO_DEFINE_OBJECT_LAYOUT_OPS(parameteroperation, nmo_parameteroperation_layout)
 
 /* =============================================================================
  * REFLECTION FIELDS
@@ -317,30 +344,6 @@ nmo_status_t nmo_parameteroperation_deserialize(
     return NMO_OK;
 }
 
-static nmo_status_t nmo_parameteroperation_copy(
-    const void *src,
-    void *dst,
-    const nmo_type_descriptor_t *type,
-    nmo_arena_t *arena)
-{
-    (void)type;
-    if (src == NULL || dst == NULL) return NMO_ERR_INVALID_ARGUMENT;
-    if (src == dst) return NMO_OK;
-    const nmo_parameteroperation_state_t *s = src;
-    nmo_parameteroperation_state_t *d = dst;
-    nmo_chunk_t *in1_chunk = NULL;
-    nmo_chunk_t *in2_chunk = NULL;
-    nmo_chunk_t *out_chunk = NULL;
-    NMO_RETURN_IF_ERROR(nmo_object_copy_chunk(arena, &in1_chunk, s->in1.chunk));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_chunk(arena, &in2_chunk, s->in2.chunk));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_chunk(arena, &out_chunk, s->out.chunk));
-    *d = *s;
-    d->in1.chunk = in1_chunk;
-    d->in2.chunk = in2_chunk;
-    d->out.chunk = out_chunk;
-    NMO_RETURN_OK();
-}
-
 static nmo_status_t nmo_parameteroperation_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
@@ -602,107 +605,6 @@ nmo_status_t nmo_parameteroperation_serialize(
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
-
-static bool nmo_parameteroperation_chunk_equals(
-    const nmo_chunk_t *lhs,
-    const nmo_chunk_t *rhs)
-{
-    if (lhs == rhs) return true;
-    if (lhs == NULL || rhs == NULL) return false;
-    size_t lhs_size = 0;
-    size_t rhs_size = 0;
-    const void *lhs_data = nmo_chunk_get_data(lhs, &lhs_size);
-    const void *rhs_data = nmo_chunk_get_data(rhs, &rhs_size);
-    return lhs_size == rhs_size &&
-        (lhs_size == 0 ||
-         (lhs_data != NULL && rhs_data != NULL &&
-          memcmp(lhs_data, rhs_data, lhs_size) == 0));
-}
-
-static bool nmo_parameteroperation_equals(const void *a, const void *b)
-{
-    if (a == b) return true;
-    if (a == NULL || b == NULL) return false;
-    const nmo_parameteroperation_state_t *lhs =
-        (const nmo_parameteroperation_state_t *)a;
-    const nmo_parameteroperation_state_t *rhs =
-        (const nmo_parameteroperation_state_t *)b;
-    return lhs->base.visibility_flags == rhs->base.visibility_flags &&
-        nmo_guid_equals(lhs->operation_guid, rhs->operation_guid) &&
-        memcmp(&lhs->legacy_prefix_ref, &rhs->legacy_prefix_ref,
-               sizeof(nmo_ref_t)) == 0 &&
-        memcmp(&lhs->owner, &rhs->owner, sizeof(nmo_ref_t)) == 0 &&
-        memcmp(&lhs->in1.ref, &rhs->in1.ref, sizeof(nmo_ref_t)) == 0 &&
-        memcmp(&lhs->in2.ref, &rhs->in2.ref, sizeof(nmo_ref_t)) == 0 &&
-        memcmp(&lhs->out.ref, &rhs->out.ref, sizeof(nmo_ref_t)) == 0 &&
-        lhs->has_new_data == rhs->has_new_data &&
-        lhs->has_legacy_prefix == rhs->has_legacy_prefix &&
-        lhs->has_operation == rhs->has_operation &&
-        lhs->has_owner == rhs->has_owner &&
-        lhs->has_in1 == rhs->has_in1 &&
-        lhs->has_in2 == rhs->has_in2 &&
-        lhs->has_out == rhs->has_out &&
-        nmo_parameteroperation_chunk_equals(lhs->in1.chunk, rhs->in1.chunk) &&
-        nmo_parameteroperation_chunk_equals(lhs->in2.chunk, rhs->in2.chunk) &&
-        nmo_parameteroperation_chunk_equals(lhs->out.chunk, rhs->out.chunk);
-}
-
-static uint32_t nmo_parameteroperation_hash_bytes(
-    uint32_t hash,
-    const void *data,
-    size_t size)
-{
-    const uint8_t *bytes = (const uint8_t *)data;
-    for (size_t i = 0; i < size; ++i) {
-        hash ^= bytes[i];
-        hash *= 16777619u;
-    }
-    return hash;
-}
-
-static uint32_t nmo_parameteroperation_hash_chunk(
-    uint32_t hash,
-    const nmo_chunk_t *chunk)
-{
-    const uint8_t present = chunk != NULL;
-    hash = nmo_parameteroperation_hash_bytes(
-        hash, &present, sizeof(present));
-    if (chunk == NULL) return hash;
-    size_t size = 0;
-    const void *data = nmo_chunk_get_data(chunk, &size);
-    hash = nmo_parameteroperation_hash_bytes(hash, &size, sizeof(size));
-    return data != NULL && size > 0
-        ? nmo_parameteroperation_hash_bytes(hash, data, size)
-        : hash;
-}
-
-static uint32_t nmo_parameteroperation_hash(const void *instance)
-{
-    if (instance == NULL) return 0;
-    const nmo_parameteroperation_state_t *state =
-        (const nmo_parameteroperation_state_t *)instance;
-    uint32_t hash = 2166136261u;
-#define NMO_PARAMETEROPERATION_HASH_FIELD(field) \
-    hash = nmo_parameteroperation_hash_bytes(hash, &(field), sizeof(field))
-    NMO_PARAMETEROPERATION_HASH_FIELD(state->base.visibility_flags);
-    NMO_PARAMETEROPERATION_HASH_FIELD(state->operation_guid);
-    NMO_PARAMETEROPERATION_HASH_FIELD(state->legacy_prefix_ref);
-    NMO_PARAMETEROPERATION_HASH_FIELD(state->owner);
-    NMO_PARAMETEROPERATION_HASH_FIELD(state->in1.ref);
-    NMO_PARAMETEROPERATION_HASH_FIELD(state->in2.ref);
-    NMO_PARAMETEROPERATION_HASH_FIELD(state->out.ref);
-    NMO_PARAMETEROPERATION_HASH_FIELD(state->has_new_data);
-    NMO_PARAMETEROPERATION_HASH_FIELD(state->has_legacy_prefix);
-    NMO_PARAMETEROPERATION_HASH_FIELD(state->has_operation);
-    NMO_PARAMETEROPERATION_HASH_FIELD(state->has_owner);
-    NMO_PARAMETEROPERATION_HASH_FIELD(state->has_in1);
-    NMO_PARAMETEROPERATION_HASH_FIELD(state->has_in2);
-    NMO_PARAMETEROPERATION_HASH_FIELD(state->has_out);
-#undef NMO_PARAMETEROPERATION_HASH_FIELD
-    hash = nmo_parameteroperation_hash_chunk(hash, state->in1.chunk);
-    hash = nmo_parameteroperation_hash_chunk(hash, state->in2.chunk);
-    return nmo_parameteroperation_hash_chunk(hash, state->out.chunk);
-}
 
 nmo_type_vtable_t nmo_parameteroperation_vtable = {
     .prepare_dependencies = nmo_parameteroperation_prepare_dependencies,
