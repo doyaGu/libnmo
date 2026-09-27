@@ -138,29 +138,12 @@ static int nmo_cmd_file_info_in_session(nmo_cmd_ctx_t *c, int argc, char **argv)
 
     nmo_file_info_t info = nmo_document_get_file_info(c->document);
     nmo_cli_record_t *rec = nmo_cli_record_new();
-    if (!rec || !file_info_build_record(&info, c->file_path, rec)) {
+    if (!rec || !nmo_cli_record_title(rec, "File Info") ||
+        !file_info_build_record(&info, c->file_path, rec)) {
         nmo_cli_record_free(rec);
         return NMO_CLI_EXIT_INTERNAL_ERROR;
     }
-    if (c->is_json) {
-        yyjson_mut_doc *doc = NULL;
-        yyjson_mut_val *data = NULL;
-        if (!nmo_cli_json_create_data_doc(&doc, &data)) {
-            nmo_cli_record_free(rec);
-            return NMO_CLI_EXIT_INTERNAL_ERROR;
-        }
-        nmo_cli_record_to_json(rec, doc, data);
-        nmo_cli_record_free(rec);
-        nmo_cli_json_write_enveloped_and_free(
-            doc, data, "file.info", c->file_path, c->out,
-            c->global && c->global->format == NMO_CLI_FORMAT_JSON_PRETTY);
-        return NMO_CLI_EXIT_SUCCESS;
-    }
-
-    nmo_cli_print_heading(c->out, "File Info", c->colorize);
-    nmo_cli_record_print_kv(rec, c->out, 14, c->colorize);
-    nmo_cli_record_free(rec);
-    return NMO_CLI_EXIT_SUCCESS;
+    return nmo_cmd_ctx_emit_record(c, rec, "file.info", 14, c->colorize);
 }
 
 int nmo_cmd_file_info(int argc, char **argv, const nmo_cli_global_opts_t *global) {
