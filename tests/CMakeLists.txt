@@ -35,6 +35,12 @@ if(Python3_Interpreter_FOUND)
     set_tests_properties(test_completions_manifest PROPERTIES
         WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
     )
+    add_test(
+        NAME test_lua_pushers_generated
+        COMMAND ${Python3_EXECUTABLE}
+                ${PROJECT_SOURCE_DIR}/tools/scripts/gen_lua_pushers.py
+                --check
+    )
 endif()
 
 # Unit tests

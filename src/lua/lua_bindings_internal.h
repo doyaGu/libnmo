@@ -16,6 +16,7 @@
 #include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "../runtime/runtime_internal.h"
+#include "lua_pushers_generated.h"
 
 typedef struct nmo_lua_object_handle_data {
     nmo_document_t *document;
@@ -138,11 +139,6 @@ nmo_status_t nmo_lua_parse_object_query(lua_State *state,
                                         int index,
                                         nmo_object_query_t *out_query);
 void nmo_lua_push_object_query_name_modes(lua_State *state);
-
-void nmo_lua_push_interface_body_view(lua_State *state,
-                                      const nmo_interface_body_view_t *body);
-void nmo_lua_push_interface_view(lua_State *state,
-                                 const nmo_interface_view_t *view);
 
 lua_State *nmo_lua_runtime_state(nmo_lua_runtime_t *runtime);
 

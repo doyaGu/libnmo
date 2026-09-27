@@ -33,19 +33,6 @@ typedef struct nmo_lua_behavior_workspace_scope {
     nmo_workspace_t *workspace;
 } nmo_lua_behavior_workspace_scope_t;
 
-static void nmo_lua_behavior_push_script_view(lua_State *state,
-                                              const nmo_behavior_script_view_t *view)
-{
-    lua_createtable(state, 0, 5);
-
-    nmo_lua_set_integer_field(state, "script_id", (lua_Integer)view->script_id);
-    nmo_lua_set_integer_field(state, "owner_id", (lua_Integer)view->owner_id);
-    nmo_lua_set_optional_string_field(state, "script_name", view->script_name);
-    nmo_lua_set_optional_string_field(state, "owner_name", view->owner_name);
-    nmo_lua_set_integer_field(
-        state, "owner_class_id", (lua_Integer)view->owner_class_id);
-}
-
 static nmo_status_t nmo_lua_behavior_query_count_scripts(
     nmo_document_t *document,
     size_t *out_count)
@@ -81,72 +68,6 @@ static nmo_session_t *nmo_lua_behavior_execution_session(
     nmo_workspace_t *workspace =
         nmo_behavior_execution_workspace(execution);
     return workspace != NULL ? nmo_workspace_internal_session(workspace) : NULL;
-}
-
-static void nmo_lua_behavior_push_view(lua_State *state,
-                                       const nmo_behavior_view_t *view)
-{
-    lua_createtable(state, 0, 22);
-
-    nmo_lua_set_integer_field(state, "behavior_id", (lua_Integer)view->behavior_id);
-    nmo_lua_set_integer_field(state, "class_id", (lua_Integer)view->class_id);
-    nmo_lua_set_optional_string_field(state, "name", view->name);
-    nmo_lua_set_integer_field(state, "flags", (lua_Integer)view->flags);
-    nmo_lua_set_boolean_field(state, "is_building_block", view->is_building_block);
-    nmo_lua_set_boolean_field(
-        state, "has_target_parameter", view->has_target_parameter);
-    nmo_lua_set_integer_field(
-        state, "target_parameter_id", (lua_Integer)view->target_parameter_id);
-    nmo_lua_set_integer_field(
-        state, "sub_behavior_count", (lua_Integer)view->sub_behavior_count);
-    nmo_lua_set_integer_field(state, "link_count", (lua_Integer)view->link_count);
-    nmo_lua_set_integer_field(
-        state, "operation_count", (lua_Integer)view->operation_count);
-    nmo_lua_set_integer_field(state, "input_count", (lua_Integer)view->input_count);
-    nmo_lua_set_integer_field(state, "output_count", (lua_Integer)view->output_count);
-    nmo_lua_set_integer_field(
-        state, "in_parameter_count", (lua_Integer)view->in_parameter_count);
-    nmo_lua_set_integer_field(
-        state, "out_parameter_count", (lua_Integer)view->out_parameter_count);
-    nmo_lua_set_integer_field(
-        state, "local_parameter_count", (lua_Integer)view->local_parameter_count);
-    nmo_lua_set_boolean_field(
-        state, "owner_index_available", view->owner_index_available);
-    nmo_lua_set_boolean_field(state, "edit_ready", view->edit_ready);
-    nmo_lua_set_integer_field(
-        state, "edit_graph_status", (lua_Integer)view->edit_graph_status);
-    nmo_lua_set_boolean_field(state, "has_interface", view->has_interface);
-    nmo_lua_set_boolean_field(
-        state, "interface_available", view->interface_available);
-    nmo_lua_set_integer_field(
-        state, "interface_status", (lua_Integer)view->interface_status);
-    if (view->interface_available) {
-        nmo_lua_push_interface_view(state, &view->interface_view);
-    } else {
-        lua_pushnil(state);
-    }
-    lua_setfield(state, -2, "interface");
-}
-
-static void nmo_lua_behavior_push_boundary_view(
-    lua_State *state,
-    const nmo_behavior_boundary_view_t *view)
-{
-    lua_createtable(state, 0, 8);
-
-    nmo_lua_set_integer_field(state, "behavior_id", (lua_Integer)view->behavior_id);
-    nmo_lua_set_integer_field(
-        state, "internal_node_count", (lua_Integer)view->internal_node_count);
-    nmo_lua_set_integer_field(
-        state, "control_in_count", (lua_Integer)view->control_in_count);
-    nmo_lua_set_integer_field(
-        state, "control_out_count", (lua_Integer)view->control_out_count);
-    nmo_lua_set_integer_field(
-        state, "parameter_in_count", (lua_Integer)view->parameter_in_count);
-    nmo_lua_set_integer_field(
-        state, "parameter_out_count", (lua_Integer)view->parameter_out_count);
-    nmo_lua_set_integer_field(state, "broken_links", (lua_Integer)view->broken_links);
-    nmo_lua_set_integer_field(state, "missing_nodes", (lua_Integer)view->missing_nodes);
 }
 
 static void nmo_lua_behavior_push_guid_string(lua_State *state, nmo_guid_t guid)
@@ -1077,7 +998,7 @@ static int nmo_lua_behavior_script_at(lua_State *state)
         return nmo_lua_raise_last_error(state, status, "Failed to inspect script");
     }
 
-    nmo_lua_behavior_push_script_view(state, &view);
+    nmo_lua_push_behavior_script_view(state, &view);
     return 1;
 }
 
@@ -1124,7 +1045,7 @@ static int nmo_lua_behavior_script_from_id(lua_State *state)
         return nmo_lua_raise_last_error(state, status, "Failed to inspect script");
     }
 
-    nmo_lua_behavior_push_script_view(state, &view);
+    nmo_lua_push_behavior_script_view(state, &view);
     return 1;
 }
 
@@ -1148,7 +1069,7 @@ static int nmo_lua_behavior_view(lua_State *state)
         return nmo_lua_raise_last_error(state, status, "Failed to inspect behavior");
     }
 
-    nmo_lua_behavior_push_view(state, &view);
+    nmo_lua_push_behavior_view(state, &view);
     return 1;
 }
 
@@ -1201,9 +1122,9 @@ static int nmo_lua_behavior_inspect(lua_State *state)
     }
 
     lua_createtable(state, 0, 4);
-    nmo_lua_behavior_push_view(state, &behavior_view);
+    nmo_lua_push_behavior_view(state, &behavior_view);
     lua_setfield(state, -2, "view");
-    nmo_lua_behavior_push_boundary_view(state, &boundary_view);
+    nmo_lua_push_behavior_boundary_view(state, &boundary_view);
     lua_setfield(state, -2, "boundary");
     if (behavior_view.interface_available) {
         nmo_lua_push_interface_view(state, &behavior_view.interface_view);
@@ -2009,7 +1930,7 @@ static int nmo_lua_behavior_describe_boundary(lua_State *state)
         return nmo_lua_raise_last_error(state, status, "Failed to inspect behavior boundary");
     }
 
-    nmo_lua_behavior_push_boundary_view(state, &view);
+    nmo_lua_push_behavior_boundary_view(state, &view);
     return 1;
 }
 

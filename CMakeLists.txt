@@ -378,6 +378,7 @@ set(NMO_LUA_SOURCES
     src/lua/lua_fold_map_parser.c
     src/lua/lua_handles.c
     src/lua/lua_module.c
+    src/lua/lua_pushers_generated.c
     src/lua/lua_runtime.c
 )
 

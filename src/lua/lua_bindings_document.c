@@ -24,63 +24,6 @@ static void nmo_lua_document_push_guid_string(lua_State *state, nmo_guid_t guid)
     lua_pushstring(state, guid_buffer);
 }
 
-static void nmo_lua_document_push_stats(lua_State *state,
-                                        const nmo_file_stats_t *stats)
-{
-    lua_createtable(state, 0, 5);
-
-    lua_createtable(state, 0, 4);
-    nmo_lua_set_integer_field(
-        state, "total_count", (lua_Integer)stats->objects.total_count);
-    nmo_lua_set_integer_field(
-        state, "max_class_id", (lua_Integer)stats->objects.max_class_id);
-    nmo_lua_set_integer_field(
-        state, "unique_classes", (lua_Integer)stats->objects.unique_classes);
-    lua_setfield(state, -2, "objects");
-
-    lua_createtable(state, 0, 6);
-    nmo_lua_set_integer_field(
-        state, "total_size", (lua_Integer)stats->memory.total_size);
-    nmo_lua_set_integer_field(
-        state, "header_size", (lua_Integer)stats->memory.header_size);
-    nmo_lua_set_integer_field(state, "data_size", (lua_Integer)stats->memory.data_size);
-    nmo_lua_set_integer_field(
-        state, "chunk_data_size", (lua_Integer)stats->memory.chunk_data_size);
-    nmo_lua_set_integer_field(
-        state, "chunk_overhead", (lua_Integer)stats->memory.chunk_overhead);
-    nmo_lua_set_integer_field(
-        state, "compression_ratio", (lua_Integer)stats->memory.compression_ratio);
-    lua_setfield(state, -2, "memory");
-
-    lua_createtable(state, 0, 3);
-    nmo_lua_set_number_field(state, "load_time_ms", stats->performance.load_time_ms);
-    nmo_lua_set_number_field(state, "parse_time_ms", stats->performance.parse_time_ms);
-    nmo_lua_set_number_field(state, "remap_time_ms", stats->performance.remap_time_ms);
-    lua_setfield(state, -2, "performance");
-
-    lua_createtable(state, 0, 3);
-    nmo_lua_set_integer_field(
-        state,
-        "total_references",
-        (lua_Integer)stats->references.total_references);
-    nmo_lua_set_integer_field(
-        state, "resolved", (lua_Integer)stats->references.resolved);
-    nmo_lua_set_integer_field(
-        state, "unresolved", (lua_Integer)stats->references.unresolved);
-    lua_setfield(state, -2, "references");
-
-    lua_createtable(state, 0, 4);
-    nmo_lua_set_integer_field(
-        state, "total_chunks", (lua_Integer)stats->chunks.total_chunks);
-    nmo_lua_set_integer_field(
-        state, "compressed_chunks", (lua_Integer)stats->chunks.compressed_chunks);
-    nmo_lua_set_integer_field(
-        state, "max_chunk_size", (lua_Integer)stats->chunks.max_chunk_size);
-    nmo_lua_set_integer_field(
-        state, "avg_chunk_size", (lua_Integer)stats->chunks.avg_chunk_size);
-    lua_setfield(state, -2, "chunks");
-}
-
 static void nmo_lua_document_push_compare_stats(
     lua_State *state,
     const nmo_comparison_result_stats_t *stats)
@@ -301,7 +244,7 @@ static int nmo_lua_document_stats(lua_State *state)
         return nmo_lua_raise_last_error(state, status, "Failed to collect document stats");
     }
 
-    nmo_lua_document_push_stats(state, &stats);
+    nmo_lua_push_file_stats(state, &stats);
     return 1;
 }
 
