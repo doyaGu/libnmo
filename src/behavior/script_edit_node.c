@@ -9,6 +9,7 @@
 #include "behavior/nmo_behavior_edit.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_guids.h"
+#include "object/nmo_statesave_ids.h"
 #include "object/builtin/nmo_parameterlocal_schemas.h"
 
 #include <stdlib.h>
@@ -770,5 +771,48 @@ NMO_API nmo_status_t nmo_script_edit_remove_io(
         NMO_WORKSPACE_EDIT_OBJECT_STATE |
             NMO_WORKSPACE_EDIT_REFERENCES |
             NMO_WORKSPACE_EDIT_BEHAVIOR_GRAPH);
+    return NMO_OK;
+}
+
+nmo_status_t script_edit_make_building_block(
+    nmo_workspace_edit_t *edit,
+    nmo_behavior_state_t *state,
+    nmo_guid_t block_guid,
+    uint32_t block_version,
+    bool clear_graph)
+{
+    nmo_status_t rc = NMO_OK;
+
+    if (!edit || !state) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    rc = nmo_workspace_edit_snapshot_behavior_state(edit, state);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+
+    state->flags |= CKBEHAVIOR_BUILDINGBLOCK | CKBEHAVIOR_USEFUNCTION;
+    state->flags &= ~CKBEHAVIOR_SCRIPT;
+    state->priority = 0;
+    state->block_guid = block_guid;
+    state->block_version = block_version != 0u ? block_version : 65536u;
+
+    if (clear_graph) {
+        nmo_array_clear(&state->sub_behaviors);
+        nmo_array_clear(&state->sub_behavior_links);
+        nmo_array_clear(&state->operations);
+        nmo_array_clear(&state->local_parameters);
+        state->save_flags &= ~(CK_STATESAVE_BEHAVIORSUBBEHAV |
+                               CK_STATESAVE_BEHAVIORSUBLINKS |
+                               CK_STATESAVE_BEHAVIOROPERATIONS |
+                               CK_STATESAVE_BEHAVIORLOCALPARAMS);
+        state->has_save_flags = true;
+    }
+
+    nmo_workspace_edit_mark(
+        edit, NMO_WORKSPACE_EDIT_OBJECT_STATE |
+              (clear_graph ? (NMO_WORKSPACE_EDIT_BEHAVIOR_GRAPH |
+                              NMO_WORKSPACE_EDIT_REFERENCES)
+                           : 0u));
     return NMO_OK;
 }

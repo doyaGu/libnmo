@@ -194,6 +194,16 @@ bool script_edit_parameterout_has_destination(
     const nmo_parameterout_state_t *state,
     nmo_object_id_t destination_id);
 
+/* Turns a behavior into a function building block with the given
+ * prototype. With clear_graph, sub-behaviors, links, operations and local
+ * parameters are dropped too. */
+nmo_status_t script_edit_make_building_block(
+    nmo_workspace_edit_t *edit,
+    nmo_behavior_state_t *state,
+    nmo_guid_t block_guid,
+    uint32_t block_version,
+    bool clear_graph);
+
 nmo_status_t script_edit_parameterout_append_destination(
     nmo_script_edit_tx_t *tx,
     nmo_parameterout_state_t *state,

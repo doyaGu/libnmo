@@ -4,6 +4,7 @@
  */
 
 #include "behavior_rewrite_internal.h"
+#include "script_edit_internal.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -189,19 +190,13 @@ static nmo_status_t rewrite_replace_bb_in_edit(
         }
     }
 
-    rc = nmo_workspace_edit_snapshot_behavior_state(edit, state);
+    rc = script_edit_make_building_block(
+        edit, state, desc->block_guid, desc->block_version, false);
     if (rc != NMO_OK) {
         rewrite_report_reject(report, "snapshot_failed",
                               "Failed to snapshot behavior state");
         goto cleanup;
     }
-
-    state->flags |= CKBEHAVIOR_BUILDINGBLOCK | CKBEHAVIOR_USEFUNCTION;
-    state->flags &= ~CKBEHAVIOR_SCRIPT;
-    state->priority = 0;
-    state->block_guid = desc->block_guid;
-    state->block_version =
-        desc->block_version != 0 ? desc->block_version : 65536u;
 
     if (desc->name && desc->name[0] != '\0') {
         rc = nmo_object_edit_rename(
@@ -212,8 +207,6 @@ static nmo_status_t rewrite_replace_bb_in_edit(
             goto cleanup;
         }
     }
-
-    nmo_workspace_edit_mark(edit, NMO_WORKSPACE_EDIT_OBJECT_STATE);
 
     if (!rewrite_array_ids_equal(&before_state.inputs, &state->inputs) ||
         !rewrite_array_ids_equal(&before_state.outputs, &state->outputs) ||

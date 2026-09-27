@@ -35,31 +35,12 @@ nmo_status_t rewrite_fold_transform_anchor_in_edit(
         return NMO_ERR_INVALID_STATE;
     }
 
-    nmo_status_t rc = NMO_OK;
-    rc = nmo_workspace_edit_snapshot_behavior_state(edit, state);
+    nmo_status_t rc = script_edit_make_building_block(
+        edit, state, desc->block_guid, desc->block_version, clear_graph_state);
     if (rc != NMO_OK) {
         rewrite_fold_report_reject(report, "snapshot_failed",
                                    "Failed to snapshot fold anchor");
         return rc;
-    }
-
-    state->flags |= CKBEHAVIOR_BUILDINGBLOCK | CKBEHAVIOR_USEFUNCTION;
-    state->flags &= ~CKBEHAVIOR_SCRIPT;
-    state->priority = 0;
-    state->block_guid = desc->block_guid;
-    state->block_version =
-        desc->block_version != 0 ? desc->block_version : 65536u;
-
-    if (clear_graph_state) {
-        nmo_array_clear(&state->sub_behaviors);
-        nmo_array_clear(&state->sub_behavior_links);
-        nmo_array_clear(&state->operations);
-        nmo_array_clear(&state->local_parameters);
-        state->save_flags &= ~(CK_STATESAVE_BEHAVIORSUBBEHAV |
-                               CK_STATESAVE_BEHAVIORSUBLINKS |
-                               CK_STATESAVE_BEHAVIOROPERATIONS |
-                               CK_STATESAVE_BEHAVIORLOCALPARAMS);
-        state->has_save_flags = true;
     }
 
     if (desc->name && desc->name[0] != '\0') {
@@ -70,12 +51,6 @@ nmo_status_t rewrite_fold_transform_anchor_in_edit(
             return rc;
         }
     }
-
-    nmo_workspace_edit_mark(
-        edit, NMO_WORKSPACE_EDIT_OBJECT_STATE |
-              (clear_graph_state ? (NMO_WORKSPACE_EDIT_BEHAVIOR_GRAPH |
-                                    NMO_WORKSPACE_EDIT_REFERENCES)
-                                 : 0u));
     return NMO_OK;
 }
 
