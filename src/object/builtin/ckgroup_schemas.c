@@ -31,34 +31,32 @@
 #include <stdalign.h>
 #include <string.h>
 
-static void nmo_group_dispose_state_arrays(nmo_group_state_t *state);
 static nmo_status_t nmo_group_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_DEFINE_OBJECT_LIFECYCLE(
-    group,
-    nmo_group_state_t,
-    do {
-        nmo_status_t result = nmo_beobject_vtable.create(
-            &state->base, NULL, context);
-        if (result != NMO_OK) return result;
-        result = nmo_array_init(
-            &state->object_ids, sizeof(nmo_ref_t), 0, NULL);
-        if (result != NMO_OK) {
-            nmo_group_dispose_state_arrays(state);
-            return result;
-        }
-    } while (0),
-    nmo_group_dispose_state_arrays(state))
+static const nmo_object_state_member_t nmo_group_members[] = {
+    NMO_STATE_ARRAY(nmo_group_state_t, object_ids, nmo_ref_t),
+    NMO_STATE_VALUE(nmo_group_state_t, has_group_data)
+};
 
-static void nmo_group_dispose_state_arrays(nmo_group_state_t *state)
-{
-    if (state == NULL) return;
-    nmo_array_dispose(&state->object_ids);
-    nmo_beobject_vtable.destroy(&state->base, NULL, NULL);
-}
+static const size_t nmo_group_base_arrays[] = {
+    NMO_BEOBJECT_STATE_ARRAY_OFFSETS
+};
+
+static const nmo_object_state_layout_t nmo_group_layout = {
+    .size = sizeof(nmo_group_state_t),
+    .base_vtable = &nmo_beobject_vtable,
+    .members = nmo_group_members,
+    .member_count = sizeof(nmo_group_members) / sizeof(nmo_group_members[0]),
+    .base_arrays = nmo_group_base_arrays,
+    .base_array_count =
+        sizeof(nmo_group_base_arrays) / sizeof(nmo_group_base_arrays[0]),
+    .validate = nmo_group_validate,
+};
+
+NMO_DEFINE_OBJECT_LAYOUT_OPS(group, nmo_group_layout)
 
 static size_t nmo_group_identifier_remaining_dwords(
     const nmo_chunk_t *chunk)
@@ -227,10 +225,10 @@ nmo_status_t nmo_group_deserialize(
     result = nmo_group_deserialize_internal(
         &decoded, chunk, type, context);
     if (result != NMO_OK) {
-        nmo_group_dispose_state_arrays(&decoded);
+        nmo_group_destroy(&decoded, NULL, NULL);
         return result;
     }
-    nmo_group_dispose_state_arrays(out_state);
+    nmo_group_destroy(out_state, NULL, NULL);
     *out_state = decoded;
     return NMO_OK;
 }
@@ -331,94 +329,6 @@ nmo_status_t nmo_group_serialize(
     if (result != NMO_OK) return result;
     *out_chunk = *staged;
     return NMO_OK;
-}
-
-static nmo_status_t nmo_group_copy(
-    const void *src,
-    void *dst,
-    const nmo_type_descriptor_t *type,
-    nmo_arena_t *arena)
-{
-    const nmo_group_state_t *s = src;
-    nmo_group_state_t *d = dst;
-    (void)type;
-    if (s == NULL || d == NULL || arena == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    NMO_RETURN_IF_ERROR(nmo_group_validate(s, NULL, NULL));
-
-    nmo_group_state_t copied;
-    nmo_status_t result = nmo_group_create(&copied, NULL, NULL);
-    if (result != NMO_OK) return result;
-    result = nmo_beobject_vtable.copy(
-        &s->base, &copied.base, NULL, arena);
-    if (result != NMO_OK) goto fail;
-    nmo_array_dispose(&copied.object_ids);
-    result = nmo_array_clone(
-        &s->object_ids, &copied.object_ids, &s->object_ids.allocator);
-    if (result != NMO_OK) goto fail;
-    copied.has_group_data = s->has_group_data;
-
-    if (d->base.scripts.data == s->base.scripts.data) {
-        memset(&d->base.scripts, 0, sizeof(d->base.scripts));
-    }
-    if (d->base.attributes.data == s->base.attributes.data) {
-        memset(&d->base.attributes, 0, sizeof(d->base.attributes));
-    }
-    if (d->base.legacy_attributes.data == s->base.legacy_attributes.data) {
-        memset(&d->base.legacy_attributes, 0,
-               sizeof(d->base.legacy_attributes));
-    }
-    if (d->object_ids.data == s->object_ids.data) {
-        memset(&d->object_ids, 0, sizeof(d->object_ids));
-    }
-    nmo_group_destroy(d, NULL, NULL);
-    *d = copied;
-    return NMO_OK;
-
-fail:
-    nmo_group_destroy(&copied, NULL, NULL);
-    return result;
-}
-
-static bool nmo_group_equals(const void *a, const void *b)
-{
-    if (a == b) return true;
-    if (a == NULL || b == NULL) return false;
-    const nmo_group_state_t *lhs = (const nmo_group_state_t *)a;
-    const nmo_group_state_t *rhs = (const nmo_group_state_t *)b;
-    if (!nmo_beobject_vtable.equals(&lhs->base, &rhs->base) ||
-        lhs->has_group_data != rhs->has_group_data ||
-        lhs->object_ids.count != rhs->object_ids.count ||
-        lhs->object_ids.element_size != rhs->object_ids.element_size) {
-        return false;
-    }
-    if (lhs->object_ids.count == 0) return true;
-    if (lhs->object_ids.data == NULL || rhs->object_ids.data == NULL ||
-        lhs->object_ids.element_size != sizeof(nmo_ref_t)) {
-        return false;
-    }
-    return memcmp(lhs->object_ids.data, rhs->object_ids.data,
-                  lhs->object_ids.count * sizeof(nmo_ref_t)) == 0;
-}
-
-static uint32_t nmo_group_hash(const void *instance)
-{
-    if (instance == NULL) return 0;
-    const nmo_group_state_t *state = (const nmo_group_state_t *)instance;
-    uint32_t hash = nmo_beobject_vtable.hash(&state->base);
-    hash ^= (uint32_t)nmo_hash_fnv1a(
-        &state->has_group_data, sizeof(state->has_group_data));
-    hash ^= (uint32_t)nmo_hash_fnv1a(
-        &state->object_ids.count, sizeof(state->object_ids.count));
-    if (state->object_ids.data != NULL &&
-        state->object_ids.element_size == sizeof(nmo_ref_t) &&
-        state->object_ids.count > 0) {
-        hash ^= (uint32_t)nmo_hash_fnv1a(
-            state->object_ids.data,
-            state->object_ids.count * sizeof(nmo_ref_t));
-    }
-    return hash;
 }
 
 static nmo_status_t nmo_group_validate(

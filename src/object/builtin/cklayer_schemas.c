@@ -18,7 +18,8 @@
 #include "object/nmo_object_repository.h"
 #include <string.h>
 
-static void nmo_layer_set_defaults(nmo_layer_state_t *state) {
+static void nmo_layer_set_defaults(void *instance) {
+    nmo_layer_state_t *state = instance;
     if (state == NULL) {
         return;
     }
@@ -44,16 +45,42 @@ static void nmo_layer_set_defaults(nmo_layer_state_t *state) {
     state->square_data_size = 0;
 }
 
-NMO_DEFINE_OBJECT_LIFECYCLE(
-    layer,
-    nmo_layer_state_t,
-    do {
-        nmo_status_t result = nmo_object_vtable.create(
-            &state->base, NULL, context);
-        if (result != NMO_OK) return result;
-        nmo_layer_set_defaults(state);
-    } while (0),
-    nmo_object_vtable.destroy(&state->base, NULL, context))
+static nmo_status_t nmo_layer_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+static const nmo_object_state_member_t nmo_layer_members[] = {
+    NMO_STATE_VALUE(nmo_layer_state_t, grid),
+    NMO_STATE_VALUE(nmo_layer_state_t, type),
+    NMO_STATE_VALUE(nmo_layer_state_t, format),
+    NMO_STATE_VALUE(nmo_layer_state_t, version),
+    NMO_STATE_VALUE(nmo_layer_state_t, color_rgba),
+    NMO_STATE_VALUE(nmo_layer_state_t, param_guid),
+    NMO_STATE_VALUE(nmo_layer_state_t, flags),
+    NMO_STATE_VALUE(nmo_layer_state_t, has_layer_data),
+    NMO_STATE_VALUE(nmo_layer_state_t, has_type),
+    NMO_STATE_VALUE(nmo_layer_state_t, has_version),
+    NMO_STATE_VALUE(nmo_layer_state_t, has_color),
+    NMO_STATE_VALUE(nmo_layer_state_t, has_param_guid),
+    NMO_STATE_VALUE(nmo_layer_state_t, has_flags),
+    NMO_STATE_VALUE(nmo_layer_state_t, has_square_data),
+    NMO_STATE_VALUE(nmo_layer_state_t, square_data_size),
+    NMO_STATE_BYTES(nmo_layer_state_t, square_data, square_data_size)
+};
+
+static const nmo_object_state_layout_t nmo_layer_layout = {
+    .size = sizeof(nmo_layer_state_t),
+    .base_vtable = &nmo_object_vtable,
+    .base_size = sizeof(nmo_object_state_t),
+    .members = nmo_layer_members,
+    .member_count = sizeof(nmo_layer_members) / sizeof(nmo_layer_members[0]),
+    .set_defaults = nmo_layer_set_defaults,
+    .validate = nmo_layer_validate,
+};
+
+NMO_DEFINE_OBJECT_LAYOUT_LIFECYCLE(layer, nmo_layer_layout)
+NMO_DEFINE_OBJECT_LAYOUT_COPY(layer, nmo_layer_layout)
 
 static nmo_status_t nmo_layer_deserialize_internal(
     void *instance,
@@ -320,64 +347,6 @@ static const nmo_type_field_t nmo_layer_fields[] = {
     NMO_FIELD_OPT(nmo_layer_state_t, square_data, CKPGUID_POINTER),
     NMO_FIELD(nmo_layer_state_t, square_data_size, CKPGUID_UINT64)
 };
-
-static nmo_status_t nmo_layer_validate(
-    const void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context);
-
-static nmo_status_t nmo_layer_copy(
-    const void *src,
-    void *dst,
-    const nmo_type_descriptor_t *type,
-    nmo_arena_t *arena)
-{
-    (void)type;
-    const nmo_layer_state_t *s = src;
-    nmo_layer_state_t *d = dst;
-    if (s == NULL || d == NULL || arena == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    NMO_RETURN_IF_ERROR(nmo_layer_validate(s, NULL, NULL));
-
-    nmo_layer_state_t copied;
-    nmo_status_t result = nmo_layer_create(&copied, NULL, NULL);
-    if (result != NMO_OK) return result;
-    nmo_type_descriptor_t base_type = {
-        .size = sizeof(nmo_object_state_t),
-    };
-    result = nmo_object_vtable.copy(
-        &s->base, &copied.base, &base_type, arena);
-    if (result != NMO_OK) goto fail;
-
-    copied.grid = s->grid;
-    copied.type = s->type;
-    copied.format = s->format;
-    copied.version = s->version;
-    copied.color_rgba = s->color_rgba;
-    copied.param_guid = s->param_guid;
-    copied.flags = s->flags;
-    copied.has_layer_data = s->has_layer_data;
-    copied.has_type = s->has_type;
-    copied.has_version = s->has_version;
-    copied.has_color = s->has_color;
-    copied.has_param_guid = s->has_param_guid;
-    copied.has_flags = s->has_flags;
-    copied.has_square_data = s->has_square_data;
-    copied.square_data_size = s->square_data_size;
-    result = nmo_object_copy_bytes(
-        arena, &copied.square_data,
-        s->square_data, s->square_data_size);
-    if (result != NMO_OK) goto fail;
-
-    nmo_layer_destroy(d, NULL, NULL);
-    *d = copied;
-    return NMO_OK;
-
-fail:
-    nmo_layer_destroy(&copied, NULL, NULL);
-    return result;
-}
 
 static nmo_status_t nmo_layer_validate(
     const void *instance,
