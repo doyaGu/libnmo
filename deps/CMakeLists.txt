@@ -21,7 +21,11 @@ if(EXISTS "${NMO_MINIZ_DIR}/miniz.h")
         "${NMO_MINIZ_DIR}"
         "${NMO_MINIZ_EXPORT_DIR}"
     )
-    target_compile_definitions(nmo_miniz_objects PRIVATE $<$<C_COMPILER_ID:GNU>:_GNU_SOURCE>)
+    # miniz_zip.c calls fseeko/ftello, which glibc hides under -std=c17. The
+    # upstream GCC-only define misses Clang on Linux.
+    if(NOT MSVC)
+        target_compile_definitions(nmo_miniz_objects PRIVATE _GNU_SOURCE)
+    endif()
     set_target_properties(nmo_miniz_objects PROPERTIES
         POSITION_INDEPENDENT_CODE ${NMO_BUILD_SHARED})
     if(MSVC)
