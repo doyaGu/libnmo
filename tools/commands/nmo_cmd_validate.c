@@ -1826,28 +1826,22 @@ static int validate_orphans_run_in_ctx(nmo_cmd_ctx_t *c,
         rec, "  Chain orphans (reachable only from other orphans): %zu\n",
         orphan_data.chain_orphan_count);
 
-    exit_code = validate_emit(c, rec, "validate.orphans", c->file_path, 18,
-                              exit_code);
-
-    /* --strip: remove orphan objects and save cleaned file */
+    /* --strip: remove orphan objects and save cleaned file. The strip
+     * result joins the report, so it is emitted after the save. */
     if (do_strip && orphan_data.likely_orphans > 0) {
         if (orphan_data.likely_orphans >= object_count) {
-            if (!c->is_json) {
-                fprintf(c->out, "\nAll objects are orphans - nothing to save.\n");
+            nmo_cli_record_uint(rec, "stripped", NULL, 0);
+            nmo_cli_record_raw_fmt(rec, "\nAll objects are orphans - nothing to save.\n");
+        } else {
+            nmo_object_id_t *strip_ids = (nmo_object_id_t *)malloc(
+                orphan_data.likely_orphans * sizeof(nmo_object_id_t));
+            if (!strip_ids) {
+                validate_emit(c, rec, "validate.orphans", c->file_path, 18, exit_code);
+                fprintf(stderr, "Error: Out of memory for strip operation\n");
+                if (arena) nmo_arena_destroy(arena);
+                return close_ctx ? nmo_cmd_ctx_done(c, NMO_CLI_EXIT_INTERNAL_ERROR)
+                                 : NMO_CLI_EXIT_INTERNAL_ERROR;
             }
-            if (arena) nmo_arena_destroy(arena);
-            return close_ctx ? nmo_cmd_ctx_done(c, exit_code) : exit_code;
-        }
-
-        nmo_object_id_t *strip_ids = (nmo_object_id_t *)malloc(
-            orphan_data.likely_orphans * sizeof(nmo_object_id_t));
-        if (!strip_ids) {
-            fprintf(stderr, "Error: Out of memory for strip operation\n");
-            if (arena) nmo_arena_destroy(arena);
-            return close_ctx ? nmo_cmd_ctx_done(c, NMO_CLI_EXIT_INTERNAL_ERROR)
-                             : NMO_CLI_EXIT_INTERNAL_ERROR;
-        }
-        {
             for (size_t i = 0; i < orphan_data.likely_orphans && i < orphan_cap; i++)
                 strip_ids[i] = nmo_object_get_id(orphan_list[i].obj);
 
@@ -1864,16 +1858,19 @@ static int validate_orphans_run_in_ctx(nmo_cmd_ctx_t *c,
             nmo_save_options_t save_opts = nmo_tool_owner_save_options_default();
             int save_rc = nmo_cli_save_document(c->document, output_path, &save_opts);
             if (save_rc != NMO_CLI_EXIT_SUCCESS) {
+                validate_emit(c, rec, "validate.orphans", c->file_path, 18, exit_code);
                 return close_ctx ? nmo_cmd_ctx_done(c, save_rc) : save_rc;
             }
 
-            if (!c->is_json) {
-                fprintf(c->out, "\nStripped %zu orphan(s), saved to %s\n",
-                        report.deleted_objects, output_path);
-            }
+            nmo_cli_record_uint(rec, "stripped", NULL, report.deleted_objects);
+            nmo_cli_record_str(rec, "output", NULL, output_path);
+            nmo_cli_record_raw_fmt(rec, "\nStripped %zu orphan(s), saved to %s\n",
+                                   report.deleted_objects, output_path);
         }
     }
 
+    exit_code = validate_emit(c, rec, "validate.orphans", c->file_path, 18,
+                              exit_code);
     if (arena) nmo_arena_destroy(arena);
     return close_ctx ? nmo_cmd_ctx_done(c, exit_code) : exit_code;
 }
