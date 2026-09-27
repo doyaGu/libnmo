@@ -53,7 +53,6 @@ $env:VIRTOOLS_DATA_EXPORTER = "path\to\VirtoolsDataExporter.exe"
 $env:VIRTOOLS_GAME_ROOT = "path\to\Ballance"
 powershell -ExecutionPolicy Bypass -File tools\scripts\export_virtools_data.ps1 `
   -ExtraPluginDirs "path\to\extra\BuildingBlocks"
-python tools/scripts/gen_virtools_data.py
 ```
 
 The exporter must support `-g plugins.json`; older exporter builds only produce
@@ -64,7 +63,6 @@ committing a data refresh, verify the generated files are current:
 powershell -ExecutionPolicy Bypass -File tools\scripts\export_virtools_data.ps1 `
   -ExtraPluginDirs "path\to\extra\BuildingBlocks" `
   -Check
-python tools/scripts/gen_virtools_data.py
 ```
 
 ## Coding Standards
