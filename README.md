@@ -315,16 +315,19 @@ cmake -B cmake-build-release -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build cmake-build-release
 ```
 
-### Windows MinGW Release Package
+### Release Packages
 
-```powershell
-pwsh tools/scripts/package_release.ps1 -Version 1.0.0 -BuildDir build_package_release_static -DistDir dist
+Each GitHub release has prebuilt packages for Linux (x64), macOS (universal),
+Windows MSVC and Windows MinGW. A package holds the `nmo` CLI, the static
+library with its headers, CMake and pkg-config files, runtime data, and shell
+completions. To build one locally:
+
+```sh
+python tools/scripts/package_release.py --platform linux-x64
 ```
 
-The release script builds with `NMO_MINGW_STATIC_RUNTIME=ON`, runs the test
-suite, stages the install tree, verifies shell completions, checks that
-`nmo.exe` does not import `libwinpthread`, runs an external static-link smoke
-test, and writes `dist/libnmo-<version>-windows-mingw-x64.zip`.
+This writes `dist/libnmo-<version>-<platform>.tar.gz` (`.zip` for
+`windows-*` platforms) and its `.sha256`.
 
 ### Windows (MSVC)
 
@@ -366,7 +369,17 @@ Run individual test binaries:
 cmake --install cmake-build-release --prefix /usr/local
 ```
 
-This installs the library, public headers, and pkg-config files.
+This installs the `nmo` CLI, the static library and public headers, runtime
+data, and shell completions. Consumers can use either CMake or pkg-config:
+
+```cmake
+find_package(libnmo CONFIG REQUIRED)
+target_link_libraries(app PRIVATE nmo::nmo)
+```
+
+```sh
+cc app.c $(pkg-config --cflags --libs libnmo)
+```
 
 ---
 

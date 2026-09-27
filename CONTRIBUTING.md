@@ -212,20 +212,6 @@ significant internal change.
    - Check for memory leaks: valgrind (Linux) or DrMemory (Windows)
    - Update `CHANGELOG.md` under `[Unreleased]`
 
-## Release Packaging
-
-Windows MinGW release packages are produced with:
-
-```powershell
-pwsh tools/scripts/package_release.ps1 -Version 1.0.0 -BuildDir build_package_release_static -DistDir dist
-```
-
-The script configures a static-runtime Release build, runs CTest, installs into
-a staging tree, copies documentation and third-party licenses, verifies
-`nmo completion <shell>` against installed completion files, rejects packaged or
-import-table `libwinpthread` dependencies, runs an external static-link smoke
-test, and creates the final zip in `dist/`.
-
 2. PR description should include:
    - What changed and why
    - Which issue(s) this addresses (if any)
@@ -235,6 +221,22 @@ test, and creates the final zip in `dist/`.
    - At least one maintainer approval required
    - All CI checks must pass
    - Address all review comments before merge
+
+## Releases
+
+1. Update the version in `include/nmo_types.h` and in `project()` in
+   `CMakeLists.txt`, and turn the `CHANGELOG.md` notes into a
+   `## [X.Y.Z] - YYYY-MM-DD` section.
+2. Check the packages that CI attaches as artifacts to that commit's run.
+3. Push a tag `vX.Y.Z` on that commit. CI checks that the tag matches both
+   versions, builds and tests the packages, and publishes a GitHub release with
+   them, a `SHA256SUMS` file, and the `CHANGELOG.md` section as notes.
+
+`tools/scripts/package_release.py` builds one package locally. It runs the
+test suite, installs into `dist/`, checks the CLI, its completions and data
+lookup, builds `tests/package_consumer` against the package, and writes the
+archive. Pass `--sample <file>` to also check that every plugin dependency of
+a Virtools file resolves from the packaged data.
 
 ## Commit Messages
 
