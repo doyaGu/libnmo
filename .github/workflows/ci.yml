@@ -97,30 +97,3 @@ jobs:
           else
             ./build/tools/nmo --version
           fi
-
-  line-count:
-    name: line-count-report
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      # Pull requests compare against the merge base so the delta column shows
-      # only what the PR adds; pushes compare against the previous commit.
-      - name: Report lines per directory
-        env:
-          BASE_REF: ${{ github.base_ref }}
-        run: |
-          if [ -n "$BASE_REF" ]; then
-            base=$(git merge-base HEAD "origin/$BASE_REF")
-          elif git rev-parse --verify --quiet HEAD~1 >/dev/null; then
-            base=HEAD~1
-          else
-            base=
-          fi
-          {
-            echo "## Lines per directory"
-            echo
-            python3 tools/scripts/line_count_report.py ${base:+--base "$base"}
-          } >> "$GITHUB_STEP_SUMMARY"
