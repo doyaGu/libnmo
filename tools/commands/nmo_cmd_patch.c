@@ -1207,7 +1207,7 @@ static int patch_parse_apply_args(int argc,
                                   char **argv,
                                   patch_apply_args_t *out_args) {
     static const nmo_opt_def_t opts[] = {
-        {"--dry-run", NULL, NMO_OPT_FLAG, "Preview without saving"},
+        NMO_OPT_DEF_DRY_RUN,
         {"--project", NULL, NMO_OPT_STRING, "Project manifest to generate"},
         {"--output", "-o", NMO_OPT_STRING, "Output file for project generation"},
     };
@@ -1215,11 +1215,7 @@ static int patch_parse_apply_args(int argc,
 
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[4];
-    nmo_opt_result_t r = {
-        .vals = vals,
-        .pos_args = pos,
-        .pos_capacity = 4,
-    };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0 ||
         ((vals[OPT_PROJECT].present && r.pos_count != 0) ||
          (!vals[OPT_PROJECT].present && r.pos_count != 1)) ||
@@ -1231,15 +1227,10 @@ static int patch_parse_apply_args(int argc,
     }
 
     memset(out_args, 0, sizeof(*out_args));
-    out_args->dry_run = vals[OPT_DRY_RUN].present &&
-                        vals[OPT_DRY_RUN].val.flag;
+    out_args->dry_run = nmo_opt_flag(&vals[OPT_DRY_RUN]);
     out_args->patch_path = r.pos_count == 1 ? r.pos_args[0] : NULL;
-    out_args->project_path = vals[OPT_PROJECT].present
-        ? vals[OPT_PROJECT].val.str
-        : NULL;
-    out_args->output_path = vals[OPT_OUTPUT].present
-        ? vals[OPT_OUTPUT].val.str
-        : NULL;
+    out_args->project_path = nmo_opt_str(&vals[OPT_PROJECT]);
+    out_args->output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
     return NMO_CLI_EXIT_SUCCESS;
 }
 

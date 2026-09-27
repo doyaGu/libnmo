@@ -533,10 +533,10 @@ static int nmo_cmd_file_classes_in_session(nmo_cmd_ctx_t *c, int argc, char **ar
     };
     nmo_opt_val_t vals[1];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *sort_key_str = vals[0].present ? vals[0].val.str : NULL;
+    const char *sort_key_str = nmo_opt_str(&vals[0]);
 
     /* Validate sort key early */
     nmo_cli_sort_key_t sort_key = nmo_cli_parse_sort_key(sort_key_str);
@@ -878,10 +878,10 @@ static int nmo_cmd_file_space_in_session(nmo_cmd_ctx_t *c, int argc, char **argv
     enum { OPT_TOP, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    uint32_t top_n = vals[OPT_TOP].present ? vals[OPT_TOP].val.u : 15;
+    uint32_t top_n = nmo_opt_uint_or(&vals[OPT_TOP], 15);
 
     nmo_file_info_t info = nmo_document_get_file_info(c->document);
 

@@ -1648,7 +1648,7 @@ static int validate_orphans_run_in_ctx(nmo_cmd_ctx_t *c,
                                        bool close_ctx)
 {
     static const nmo_opt_def_t opts[] = {
-        {"--class",   "-c", NMO_OPT_STRING, "Filter by class name"},
+        NMO_OPT_DEF_CLASS_FILTER,
         {"--strict",  NULL,  NMO_OPT_FLAG,   "Exit code 3 if orphans found"},
         {"--summary", NULL,  NMO_OPT_FLAG,   "Summary only (no per-object listing)"},
         {"--strip",   NULL,  NMO_OPT_FLAG,   "Remove orphans and save to --output"},
@@ -1657,17 +1657,17 @@ static int validate_orphans_run_in_ctx(nmo_cmd_ctx_t *c,
     enum { OPT_CLASS, OPT_STRICT, OPT_SUMMARY, OPT_STRIP, OPT_OUTPUT };
     nmo_opt_val_t vals[5];
     const char *pos_arr[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos_arr, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos_arr);
     if (nmo_opt_parse(argc, argv, opts, 5, &r) < 0) {
         return close_ctx ? nmo_cmd_ctx_done(c, NMO_CLI_EXIT_ARG_ERROR)
                          : NMO_CLI_EXIT_ARG_ERROR;
     }
 
-    const char *class_filter_str = vals[OPT_CLASS].present ? vals[OPT_CLASS].val.str : NULL;
+    const char *class_filter_str = nmo_opt_str(&vals[OPT_CLASS]);
     bool strict = vals[OPT_STRICT].present || (global && global->strict_mode);
-    bool summary_only = vals[OPT_SUMMARY].present && vals[OPT_SUMMARY].val.flag;
-    bool do_strip = vals[OPT_STRIP].present && vals[OPT_STRIP].val.flag;
-    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
+    bool summary_only = nmo_opt_flag(&vals[OPT_SUMMARY]);
+    bool do_strip = nmo_opt_flag(&vals[OPT_STRIP]);
+    const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
 
     if (!allow_strip && (do_strip || vals[OPT_OUTPUT].present)) {
         fprintf(stderr, "Validation write/fix options are not supported in in-session read mode.\n");

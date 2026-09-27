@@ -386,10 +386,10 @@ int nmo_cmd_chunk_list(int argc, char **argv, const nmo_cli_global_opts_t *globa
     };
     nmo_opt_val_t vals[1];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    uint32_t top_n = vals[0].present ? vals[0].val.u : 0;
+    uint32_t top_n = nmo_opt_uint_or(&vals[0], 0);
 
     nmo_cmd_ctx_t c;
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
@@ -516,10 +516,10 @@ static int chunk_show_parse(int argc, char **argv, bool in_session, chunk_show_a
     };
     nmo_opt_val_t vals[3];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, 3, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *index_str = vals[0].present ? vals[0].val.str : NULL;
+    const char *index_str = nmo_opt_str(&vals[0]);
     args->include_hexdump = vals[1].val.flag;
     args->max_bytes = vals[2].present ? (size_t)vals[2].val.u : 256;
 
@@ -838,10 +838,10 @@ int nmo_cmd_chunk_find(int argc, char **argv, const nmo_cli_global_opts_t *globa
     };
     nmo_opt_val_t vals[1];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *class_filter = vals[0].present ? vals[0].val.str : NULL;
+    const char *class_filter = nmo_opt_str(&vals[0]);
     if (!class_filter) {
         fprintf(stderr, "Error: --class filter required\n");
         fprintf(stderr, "Usage: nmo chunk find --class <name> <file>\n");
@@ -869,11 +869,11 @@ int nmo_cmd_chunk_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
         };
         nmo_opt_val_t vals[1];
         const char *pos[16];
-        nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+        nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
         if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) {
             return NMO_CLI_EXIT_ARG_ERROR;
         }
-        uint32_t top_n = vals[0].present ? vals[0].val.u : 0;
+        uint32_t top_n = nmo_opt_uint_or(&vals[0], 0);
         return chunk_list_run(ctx, top_n);
     }
     if (strcmp(argv[0], "tree") == 0 || strcmp(argv[0], "t") == 0) {
@@ -893,11 +893,11 @@ int nmo_cmd_chunk_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
         };
         nmo_opt_val_t vals[1];
         const char *pos[16];
-        nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+        nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
         if (nmo_opt_parse(argc, argv, opts, 1, &r) < 0) {
             return NMO_CLI_EXIT_ARG_ERROR;
         }
-        const char *class_filter = vals[0].present ? vals[0].val.str : NULL;
+        const char *class_filter = nmo_opt_str(&vals[0]);
         if (!class_filter) {
             fprintf(stderr, "Error: --class filter required\n");
             fprintf(stderr, "Usage: chunk find --class <name>\n");

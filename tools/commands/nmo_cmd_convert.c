@@ -217,27 +217,27 @@ static void convert_add_filters(nmo_cli_record_t *rec, const char *class_name,
 int nmo_cmd_convert_copy(int argc, char **argv, const nmo_cli_global_opts_t *global)
 {
     static const nmo_opt_def_t opts[] = {
-        {"--output",          "-o", NMO_OPT_STRING, "Output file path"},
+        NMO_OPT_DEF_OUTPUT,
         {"--compress",        NULL, NMO_OPT_STRING, "Compression level (0-9)"},
         {"--sequential-ids",  NULL, NMO_OPT_FLAG,   "Renumber object IDs sequentially"},
         {"--no-managers",     NULL, NMO_OPT_FLAG,   "Strip manager data"},
         {"--strip-resources", NULL, NMO_OPT_FLAG,   "Strip embedded resources"},
         {"--validate",        NULL, NMO_OPT_FLAG,   "Validate after copy"},
-        {"--fast-save",       NULL, NMO_OPT_FLAG,   "Skip explicit save flush/write-through"},
+        NMO_OPT_DEF_FAST_SAVE,
     };
     enum { OPT_OUTPUT, OPT_COMPRESS, OPT_SEQIDS, OPT_NOMGR, OPT_STRIPRES, OPT_VALIDATE, OPT_FAST_SAVE, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *output_path   = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
-    const char *compress_str  = vals[OPT_COMPRESS].present ? vals[OPT_COMPRESS].val.str : NULL;
-    bool sequential_ids       = vals[OPT_SEQIDS].present && vals[OPT_SEQIDS].val.flag;
-    bool no_managers          = vals[OPT_NOMGR].present && vals[OPT_NOMGR].val.flag;
-    bool strip_resources      = vals[OPT_STRIPRES].present && vals[OPT_STRIPRES].val.flag;
-    bool validate             = vals[OPT_VALIDATE].present && vals[OPT_VALIDATE].val.flag;
-    bool fast_save            = vals[OPT_FAST_SAVE].present && vals[OPT_FAST_SAVE].val.flag;
+    const char *output_path   = nmo_opt_str(&vals[OPT_OUTPUT]);
+    const char *compress_str  = nmo_opt_str(&vals[OPT_COMPRESS]);
+    bool sequential_ids       = nmo_opt_flag(&vals[OPT_SEQIDS]);
+    bool no_managers          = nmo_opt_flag(&vals[OPT_NOMGR]);
+    bool strip_resources      = nmo_opt_flag(&vals[OPT_STRIPRES]);
+    bool validate             = nmo_opt_flag(&vals[OPT_VALIDATE]);
+    bool fast_save            = nmo_opt_flag(&vals[OPT_FAST_SAVE]);
 
     if (!output_path) {
         fprintf(stderr, "Error: Output file not specified (use -o or --output)\n");
@@ -321,17 +321,17 @@ static void convert_add_version_field(nmo_cli_record_t *rec, const char *key,
 int nmo_cmd_convert_version(int argc, char **argv, const nmo_cli_global_opts_t *global)
 {
     static const nmo_opt_def_t opts[] = {
-        {"--output", "-o", NMO_OPT_STRING, "Output file path"},
-        {"--fast-save", NULL, NMO_OPT_FLAG, "Skip explicit save flush/write-through"},
+        NMO_OPT_DEF_OUTPUT,
+        NMO_OPT_DEF_FAST_SAVE,
     };
     enum { OPT_VERSION_OUTPUT, OPT_VERSION_FAST_SAVE, OPT_VERSION_COUNT };
     nmo_opt_val_t vals[OPT_VERSION_COUNT];
     const char *pos[8];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_VERSION_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *output_path = vals[OPT_VERSION_OUTPUT].present ? vals[OPT_VERSION_OUTPUT].val.str : NULL;
-    bool fast_save = vals[OPT_VERSION_FAST_SAVE].present && vals[OPT_VERSION_FAST_SAVE].val.flag;
+    const char *output_path = nmo_opt_str(&vals[OPT_VERSION_OUTPUT]);
+    bool fast_save = nmo_opt_flag(&vals[OPT_VERSION_FAST_SAVE]);
 
     nmo_cmd_ctx_t c;
     int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
@@ -441,23 +441,23 @@ static uint64_t convert_strip_add_objects(const nmo_cmd_ctx_t *c,
 int nmo_cmd_convert_strip(int argc, char **argv, const nmo_cli_global_opts_t *global)
 {
     static const nmo_opt_def_t opts[] = {
-        {"--output",  "-o", NMO_OPT_STRING, "Output file path"},
-        {"--class",   "-c", NMO_OPT_STRING, "Filter by class name"},
+        NMO_OPT_DEF_OUTPUT,
+        NMO_OPT_DEF_CLASS_FILTER,
         {"--name",    "-n", NMO_OPT_STRING, "Filter by name pattern"},
         {"--dry-run", NULL, NMO_OPT_FLAG,   "Preview without modifying"},
-        {"--fast-save", NULL, NMO_OPT_FLAG, "Skip explicit save flush/write-through"},
+        NMO_OPT_DEF_FAST_SAVE,
     };
     enum { OPT_OUTPUT, OPT_CLASS, OPT_NAME, OPT_DRYRUN, OPT_FAST_SAVE, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[8];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 8 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *output_path = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
-    const char *class_name  = vals[OPT_CLASS].present ? vals[OPT_CLASS].val.str : NULL;
-    const char *name_pattern = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL;
-    bool dry_run            = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
-    bool fast_save          = vals[OPT_FAST_SAVE].present && vals[OPT_FAST_SAVE].val.flag;
+    const char *output_path = nmo_opt_str(&vals[OPT_OUTPUT]);
+    const char *class_name  = nmo_opt_str(&vals[OPT_CLASS]);
+    const char *name_pattern = nmo_opt_str(&vals[OPT_NAME]);
+    bool dry_run            = nmo_opt_flag(&vals[OPT_DRYRUN]);
+    bool fast_save          = nmo_opt_flag(&vals[OPT_FAST_SAVE]);
 
     if (!output_path && !dry_run) {
         fprintf(stderr, "Error: Output file not specified (use -o or --output)\n");
@@ -822,29 +822,29 @@ int nmo_cmd_convert_export(int argc, char **argv, const nmo_cli_global_opts_t *g
 {
     static const nmo_opt_def_t opts[] = {
         {"--output",   "-o", NMO_OPT_STRING, "Output file path (required)"},
-        {"--class",    "-c", NMO_OPT_STRING, "Filter by class name"},
+        NMO_OPT_DEF_CLASS_FILTER,
         {"--name",     "-n", NMO_OPT_STRING, "Filter by name pattern"},
         {"--deps",     NULL, NMO_OPT_FLAG,   "Include transitive dependencies"},
         {"--all",      NULL, NMO_OPT_FLAG,   "Export all objects (no filter required)"},
         {"--dry-run",  NULL, NMO_OPT_FLAG,   "Preview matching objects without writing"},
         {"--compress", NULL, NMO_OPT_STRING, "Compression level (0-9)"},
-        {"--fast-save", NULL, NMO_OPT_FLAG,  "Skip explicit save flush/write-through"},
+        NMO_OPT_DEF_FAST_SAVE,
     };
     enum { OPT_OUTPUT, OPT_CLASS, OPT_NAME, OPT_DEPS,
            OPT_ALL, OPT_DRYRUN, OPT_COMPRESS, OPT_FAST_SAVE, OPT_COUNT };
     nmo_opt_val_t vals[OPT_COUNT];
     const char *pos[16];
-    nmo_opt_result_t r = { .vals = vals, .pos_args = pos, .pos_capacity = 16 };
+    nmo_opt_result_t r = NMO_OPT_RESULT(vals, pos);
     if (nmo_opt_parse(argc, argv, opts, OPT_COUNT, &r) < 0) return NMO_CLI_EXIT_ARG_ERROR;
 
-    const char *output_path      = vals[OPT_OUTPUT].present ? vals[OPT_OUTPUT].val.str : NULL;
-    const char *class_filter_str = vals[OPT_CLASS].present ? vals[OPT_CLASS].val.str : NULL;
-    const char *name_pattern     = vals[OPT_NAME].present ? vals[OPT_NAME].val.str : NULL;
-    bool include_deps            = vals[OPT_DEPS].present && vals[OPT_DEPS].val.flag;
-    bool export_all              = vals[OPT_ALL].present && vals[OPT_ALL].val.flag;
-    bool dry_run                 = vals[OPT_DRYRUN].present && vals[OPT_DRYRUN].val.flag;
-    const char *compress_str     = vals[OPT_COMPRESS].present ? vals[OPT_COMPRESS].val.str : NULL;
-    bool fast_save               = vals[OPT_FAST_SAVE].present && vals[OPT_FAST_SAVE].val.flag;
+    const char *output_path      = nmo_opt_str(&vals[OPT_OUTPUT]);
+    const char *class_filter_str = nmo_opt_str(&vals[OPT_CLASS]);
+    const char *name_pattern     = nmo_opt_str(&vals[OPT_NAME]);
+    bool include_deps            = nmo_opt_flag(&vals[OPT_DEPS]);
+    bool export_all              = nmo_opt_flag(&vals[OPT_ALL]);
+    bool dry_run                 = nmo_opt_flag(&vals[OPT_DRYRUN]);
+    const char *compress_str     = nmo_opt_str(&vals[OPT_COMPRESS]);
+    bool fast_save               = nmo_opt_flag(&vals[OPT_FAST_SAVE]);
 
     if (!dry_run && !output_path) {
         fprintf(stderr, "Error: -o/--output is required (or use --dry-run)\n");
