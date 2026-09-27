@@ -666,6 +666,70 @@ static nmo_status_t script_edit_parameterout_remove_destination(
     return NMO_OK;
 }
 
+nmo_status_t script_edit_add_parameter_destination(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t source_parameter_id,
+    nmo_object_id_t destination_id)
+{
+    nmo_parameterout_state_t *state = NULL;
+    nmo_status_t rc = NMO_OK;
+
+    if (!tx || !tx->edit || source_parameter_id == 0u || destination_id == 0u) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    state = script_edit_find_parameterout_state_in_repo(
+        nmo_workspace_internal_type_registry(tx->workspace),
+        nmo_workspace_internal_repository(tx->workspace),
+        source_parameter_id,
+        NULL);
+    if (!state || script_edit_parameterout_has_destination(state, destination_id)) {
+        return NMO_OK;
+    }
+
+    rc = nmo_workspace_edit_snapshot_bytes(tx->edit, state, sizeof(*state));
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    rc = script_edit_parameterout_append_destination(tx, state, destination_id);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    nmo_script_edit_mark(tx, NMO_WORKSPACE_EDIT_REFERENCES);
+    return NMO_OK;
+}
+
+nmo_status_t script_edit_remove_parameter_destination(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t source_parameter_id,
+    nmo_object_id_t destination_id)
+{
+    nmo_parameterout_state_t *state = NULL;
+    nmo_status_t rc = NMO_OK;
+
+    if (!tx || !tx->edit || source_parameter_id == 0u || destination_id == 0u) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    state = script_edit_find_parameterout_state_in_repo(
+        nmo_workspace_internal_type_registry(tx->workspace),
+        nmo_workspace_internal_repository(tx->workspace),
+        source_parameter_id,
+        NULL);
+    if (!state || !script_edit_parameterout_has_destination(state, destination_id)) {
+        return NMO_OK;
+    }
+
+    rc = nmo_workspace_edit_snapshot_bytes(tx->edit, state, sizeof(*state));
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    rc = script_edit_parameterout_remove_destination(tx, state, destination_id);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    nmo_script_edit_mark(tx, NMO_WORKSPACE_EDIT_REFERENCES);
+    return NMO_OK;
+}
+
 nmo_guid_t script_edit_parameter_type_guid_from_object(
     const nmo_type_registry_t *registry,
     nmo_object_t *object)

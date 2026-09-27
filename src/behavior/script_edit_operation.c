@@ -39,7 +39,7 @@ static bool script_edit_parameter_belongs_to_parent_graph(
     return true;
 }
 
-static nmo_status_t script_edit_parameterout_append_destination(
+nmo_status_t script_edit_parameterout_append_destination(
     nmo_script_edit_tx_t *tx,
     nmo_parameterout_state_t *state,
     nmo_object_id_t destination_id)

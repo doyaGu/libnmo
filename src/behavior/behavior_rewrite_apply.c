@@ -4,6 +4,7 @@
  */
 
 #include "behavior_rewrite_internal.h"
+#include "script_edit_internal.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -76,68 +77,6 @@ nmo_status_t rewrite_fold_transform_anchor_in_edit(
                                     NMO_WORKSPACE_EDIT_REFERENCES)
                                  : 0u));
     return NMO_OK;
-}
-
-static bool rewrite_parameterout_has_destination(
-    const nmo_parameterout_state_t *state,
-    nmo_object_id_t target_id) {
-    if (!state || !state->destination_ids || target_id == 0) {
-        return false;
-    }
-    for (uint32_t i = 0; i < state->destination_count; ++i) {
-        if (nmo_parameterout_destination_id(state, i) == target_id) {
-            return true;
-        }
-    }
-    return false;
-}
-
-static nmo_status_t rewrite_parameterout_add_destination(
-    nmo_parameterout_state_t *state,
-    nmo_arena_t *arena,
-    nmo_object_id_t target_id) {
-    if (!state || !arena || target_id == 0) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    if (rewrite_parameterout_has_destination(state, target_id)) {
-        return NMO_OK;
-    }
-    if (state->destination_count == UINT32_MAX) {
-        return NMO_ERR_INVALID_FORMAT;
-    }
-    nmo_ref_t *next = (nmo_ref_t *)nmo_arena_alloc(
-        arena,
-        (size_t)(state->destination_count + 1u) * sizeof(*next),
-        _Alignof(nmo_ref_t));
-    if (!next) {
-        return NMO_ERR_NOMEM;
-    }
-    if (state->destination_count > 0 && state->destination_ids != NULL) {
-        memcpy(next, state->destination_ids,
-               (size_t)state->destination_count * sizeof(*next));
-    }
-    next[state->destination_count] = nmo_ref_from_id(target_id);
-    state->destination_ids = next;
-    state->destination_count++;
-    return NMO_OK;
-}
-
-static void rewrite_parameterout_remove_destination(
-    nmo_parameterout_state_t *state,
-    nmo_object_id_t target_id) {
-    if (!state || !state->destination_ids || target_id == 0) {
-        return;
-    }
-    uint32_t kept = 0;
-    for (uint32_t i = 0; i < state->destination_count; ++i) {
-        if (nmo_parameterout_destination_id(state, i) != target_id) {
-            state->destination_ids[kept++] = state->destination_ids[i];
-        }
-    }
-    state->destination_count = kept;
-    if (kept == 0) {
-        state->destination_ids = NULL;
-    }
 }
 
 static nmo_status_t rewrite_fold_rewire_control_link(
@@ -223,12 +162,51 @@ nmo_status_t rewrite_fold_rewire_control_boundary_in_tx(
     return NMO_OK;
 }
 
-nmo_status_t rewrite_fold_rewire_parameter_boundary_in_edit(
+static nmo_status_t rewrite_fold_connect_parameter(
+    nmo_script_edit_tx_t *tx,
+    nmo_behavior_fold_report_t *report,
+    nmo_object_id_t source_parameter_id,
+    nmo_object_id_t target_parameter_id) {
+    /* Keep an unchanged connection as is: files may connect parameters
+     * of different types, which connect_parameter rejects. */
+    nmo_workspace_t *workspace = nmo_script_edit_workspace(tx);
+    const nmo_parameterin_state_t *target =
+        script_edit_find_parameterin_state_in_repo(
+            nmo_workspace_internal_type_registry(workspace),
+            nmo_workspace_internal_repository(workspace),
+            target_parameter_id, NULL);
+    if (target && nmo_parameterin_source_id(target) == source_parameter_id) {
+        return NMO_OK;
+    }
+    nmo_status_t rc = nmo_script_edit_connect_parameter(
+        tx, source_parameter_id, target_parameter_id);
+    if (rc == NMO_ERR_NOT_FOUND) {
+        rewrite_fold_report_reject(report, "parameter_target_missing",
+                                   "Boundary parameter was not found");
+    } else if (rc != NMO_OK) {
+        rewrite_fold_report_reject(report, "parameter_rewire_failed",
+                                   "Failed to rewire boundary parameter");
+    }
+    return rc;
+}
+
+static nmo_status_t rewrite_fold_check_destination(
+    nmo_behavior_fold_report_t *report,
+    nmo_status_t rc) {
+    if (rc != NMO_OK) {
+        rewrite_fold_report_reject(
+            report, "parameter_destination_failed",
+            "Failed to update fold parameter destinations");
+    }
+    return rc;
+}
+
+nmo_status_t rewrite_fold_rewire_parameter_boundary_in_tx(
+    nmo_script_edit_tx_t *tx,
     nmo_context_t *ctx,
-    nmo_workspace_t *workspace,
-    nmo_workspace_edit_t *edit,
     nmo_behavior_fold_report_t *report) {
-    if (!workspace || !edit || !report) {
+    nmo_workspace_t *workspace = nmo_script_edit_workspace(tx);
+    if (!workspace || !report) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
     if (report->boundary.parameter_in_count == 0 &&
@@ -237,9 +215,7 @@ nmo_status_t rewrite_fold_rewire_parameter_boundary_in_edit(
     }
 
     nmo_object_repository_t *repo = nmo_workspace_internal_repository(workspace);
-    const nmo_type_registry_t *registry =
-        nmo_workspace_internal_type_registry(workspace);
-    if (!repo || !registry) {
+    if (!repo) {
         return NMO_ERR_INVALID_STATE;
     }
 
@@ -261,59 +237,24 @@ nmo_status_t rewrite_fold_rewire_parameter_boundary_in_edit(
             return rc;
         }
 
-        nmo_object_t *new_target_obj =
-            nmo_object_repository_find_by_id(repo, new_parameter_id);
-        nmo_parameterin_state_t *new_target_in = new_target_obj
-            ? (nmo_parameterin_state_t *)
-                nmo_type_query_object_get_ancestor_state_by_guid(
-                    registry, new_target_obj, CKPGUID_PARAMETERIN)
-            : NULL;
-        if (!new_target_in) {
-            rewrite_fold_report_reject(
-                report, "parameter_target_missing",
-                "Fold anchor input parameter was not found");
-            return NMO_ERR_NOT_FOUND;
-        }
-        rc = nmo_workspace_edit_snapshot_bytes(edit, new_target_in,
-                                               sizeof(*new_target_in));
+        /* The anchor input takes over the outside source. */
+        rc = rewrite_fold_connect_parameter(
+            tx, report, edge->source_parameter_id, new_parameter_id);
         if (rc != NMO_OK) {
-            rewrite_fold_report_reject(
-                report, "snapshot_failed",
-                "Failed to snapshot fold anchor input parameter");
             return rc;
         }
-        nmo_parameterin_set_source_id(new_target_in,
-                                      edge->source_parameter_id);
-        new_target_in->is_shared = edge->shared ? 1u : 0u;
-
-        nmo_object_t *source_obj =
-            nmo_object_repository_find_by_id(repo, edge->source_parameter_id);
-        nmo_parameterout_state_t *source_out = source_obj
-            ? (nmo_parameterout_state_t *)
-                nmo_type_query_object_get_ancestor_state_by_guid(
-                    registry, source_obj, CKPGUID_PARAMETEROUT)
-            : NULL;
-        if (source_out) {
-            rc = nmo_workspace_edit_snapshot_bytes(edit, source_out,
-                                                   sizeof(*source_out));
-            if (rc != NMO_OK) {
-                rewrite_fold_report_reject(
-                    report, "snapshot_failed",
-                    "Failed to snapshot fold parameter source output");
-                return rc;
-            }
-            rc = rewrite_parameterout_add_destination(
-                source_out,
-                nmo_workspace_internal_document_arena(workspace),
-                new_parameter_id);
-            if (rc != NMO_OK) {
-                rewrite_fold_report_reject(
-                    report, "out_of_memory",
-                    "Failed to update fold source parameter destinations");
-                return rc;
-            }
-            rewrite_parameterout_remove_destination(source_out,
-                                                    edge->target_parameter_id);
+        rc = rewrite_fold_check_destination(
+            report, script_edit_add_parameter_destination(
+                        tx, edge->source_parameter_id, new_parameter_id));
+        if (rc != NMO_OK) {
+            return rc;
+        }
+        rc = rewrite_fold_check_destination(
+            report, script_edit_remove_parameter_destination(
+                        tx, edge->source_parameter_id,
+                        edge->target_parameter_id));
+        if (rc != NMO_OK) {
+            return rc;
         }
     }
 
@@ -334,79 +275,27 @@ nmo_status_t rewrite_fold_rewire_parameter_boundary_in_edit(
             return rc;
         }
 
-        nmo_object_t *target_obj =
-            nmo_object_repository_find_by_id(repo, edge->target_parameter_id);
-        nmo_parameterin_state_t *target_in = target_obj
-            ? (nmo_parameterin_state_t *)
-                nmo_type_query_object_get_ancestor_state_by_guid(
-                    registry, target_obj, CKPGUID_PARAMETERIN)
-            : NULL;
-        if (!target_in) {
-            rewrite_fold_report_reject(
-                report, "parameter_target_missing",
-                "Fold parameter target input was not found");
-            return NMO_ERR_NOT_FOUND;
-        }
-        rc = nmo_workspace_edit_snapshot_bytes(edit, target_in,
-                                               sizeof(*target_in));
+        /* The outside target now reads from the anchor output. */
+        rc = rewrite_fold_connect_parameter(
+            tx, report, new_parameter_id, edge->target_parameter_id);
         if (rc != NMO_OK) {
-            rewrite_fold_report_reject(
-                report, "snapshot_failed",
-                "Failed to snapshot fold parameter input");
             return rc;
         }
-        nmo_parameterin_set_source_id(target_in, new_parameter_id);
-        target_in->is_shared = edge->shared ? 1u : 0u;
-
-        nmo_object_t *new_source_obj =
-            nmo_object_repository_find_by_id(repo, new_parameter_id);
-        nmo_parameterout_state_t *new_source_out = new_source_obj
-            ? (nmo_parameterout_state_t *)
-                nmo_type_query_object_get_ancestor_state_by_guid(
-                    registry, new_source_obj, CKPGUID_PARAMETEROUT)
-            : NULL;
-        if (new_source_out) {
-            rc = nmo_workspace_edit_snapshot_bytes(edit, new_source_out,
-                                                   sizeof(*new_source_out));
-            if (rc != NMO_OK) {
-                rewrite_fold_report_reject(
-                    report, "snapshot_failed",
-                    "Failed to snapshot fold parameter output");
-                return rc;
-            }
-            rc = rewrite_parameterout_add_destination(
-                new_source_out,
-                nmo_workspace_internal_document_arena(workspace),
-                edge->target_parameter_id);
-            if (rc != NMO_OK) {
-                rewrite_fold_report_reject(
-                    report, "out_of_memory",
-                    "Failed to update fold parameter destinations");
-                return rc;
-            }
+        rc = rewrite_fold_check_destination(
+            report, script_edit_add_parameter_destination(
+                        tx, new_parameter_id, edge->target_parameter_id));
+        if (rc != NMO_OK) {
+            return rc;
         }
-
-        nmo_object_t *old_source_obj =
-            nmo_object_repository_find_by_id(repo, edge->source_parameter_id);
-        nmo_parameterout_state_t *old_source_out = old_source_obj
-            ? (nmo_parameterout_state_t *)
-                nmo_type_query_object_get_ancestor_state_by_guid(
-                    registry, old_source_obj, CKPGUID_PARAMETEROUT)
-            : NULL;
-        if (old_source_out && edge->source_parameter_id != new_parameter_id) {
-            rc = nmo_workspace_edit_snapshot_bytes(edit, old_source_out,
-                                                   sizeof(*old_source_out));
+        if (edge->source_parameter_id != new_parameter_id) {
+            rc = rewrite_fold_check_destination(
+                report, script_edit_remove_parameter_destination(
+                            tx, edge->source_parameter_id,
+                            edge->target_parameter_id));
             if (rc != NMO_OK) {
-                rewrite_fold_report_reject(
-                    report, "snapshot_failed",
-                    "Failed to snapshot old fold parameter output");
                 return rc;
             }
-            rewrite_parameterout_remove_destination(
-                old_source_out, edge->target_parameter_id);
         }
     }
-
-    nmo_workspace_edit_mark(edit, NMO_WORKSPACE_EDIT_REFERENCES);
     return NMO_OK;
 }

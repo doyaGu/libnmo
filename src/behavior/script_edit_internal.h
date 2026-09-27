@@ -194,6 +194,23 @@ bool script_edit_parameterout_has_destination(
     const nmo_parameterout_state_t *state,
     nmo_object_id_t destination_id);
 
+nmo_status_t script_edit_parameterout_append_destination(
+    nmo_script_edit_tx_t *tx,
+    nmo_parameterout_state_t *state,
+    nmo_object_id_t destination_id);
+
+/* Destination list edits on a pOut source. Sources that are not pOut are
+ * left unchanged. */
+nmo_status_t script_edit_add_parameter_destination(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t source_parameter_id,
+    nmo_object_id_t destination_id);
+
+nmo_status_t script_edit_remove_parameter_destination(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t source_parameter_id,
+    nmo_object_id_t destination_id);
+
 nmo_status_t script_edit_append_operation_slot_destroy_objects(
     nmo_script_edit_tx_t *tx,
     const nmo_parameteroperation_state_t *operation);

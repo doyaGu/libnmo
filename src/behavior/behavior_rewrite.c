@@ -1107,8 +1107,7 @@ static nmo_status_t rewrite_fold_apply_script_tx(
         if (rc != NMO_OK) {
             return rc;
         }
-        rc = rewrite_fold_rewire_parameter_boundary_in_edit(
-            ctx, workspace, edit, report);
+        rc = rewrite_fold_rewire_parameter_boundary_in_tx(tx, ctx, report);
         if (rc != NMO_OK) {
             return rc;
         }
