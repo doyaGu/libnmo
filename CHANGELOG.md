@@ -231,6 +231,35 @@ the tests build each layout dword by dword.
 - A format 0 layer whose section ends after the header has no square buffer (`Save` writes the
   buffer only when the layer has a grid).
 
+### Fixed - Small engine mismatches
+- Sprite text files store the font integers as underline, italic, weight, size (the order
+  `RCKSpriteText::Load` hands them to `SetFont` in reverse); libnmo read them as size first.
+- A legacy bitmap2 texture slot starts with a five-byte format tag (`CKTGA`, `CKJPG`, `CKDIB`,
+  `CKBMP`, `CKTIF`, `CKGIF`, `CKPCX`) that selects the reader. `nmo_texture_bitmap2_image()` strips
+  it and `texture extract` uses it; the slot's leading integer is named `unused_int`.
+- `texture extract` no longer reads the raw slot `compression` as a DXT type. The engine keeps its
+  low four bits: 0 stores the planes as they are, 1 uses Virtools' own DCT codec, anything else
+  stores no colour planes. Only 0 is decoded.
+- A new texture starts with `CKTEXTURE_USEGLOBAL` and the packed state block, as a new `RCKTexture`
+  does, so `CKTEXTURE_RAWDATA` is written instead of being read back as use-global.
+- `texture show` calls a texture external only when it embeds no bitmap, and gives the dimensions
+  and bits per pixel of a raw texture.
+- Morph controllers in the CONTROLLERS format: `nmo_objanim_morph_controller_info()` and
+  `nmo_objanim_morph_controller_key()` read the blob (key count, vertex count, has-normals, then a
+  time, positions and compressed normals per key); `animation show` and `animation keys` list them.
+- Camera: `width` and `height` are `aspect_width` and `aspect_height`; `CK_CAMERA_PROJECTION`
+  names the projection (the engine tests the low bit); `entity show` prints the aspect ratio and the
+  orthographic zoom. Editing the camera settings of a camera without a CAMERAONLY section now
+  writes the section.
+- Light: `NMO_LIGHT_FLAG_ACTIVE` and `NMO_LIGHT_FLAG_SPECULAR` name the flag bits; `entity show`
+  prints them and the spot cones and falloff instead of the specular and ambient colors, which the
+  engine computes at runtime and never stores.
+- Layers of version 2 associate `CKPGUID_INT` with their type, as the engine does, and a new layer
+  defaults to it.
+- `CK_OBJECTANIMATION_TAG0` and `_TAG1` name the two flag bits the corpus sets and the engine
+  never tests. The texture header lists the identifiers of the engine and the bitmap data flags
+  with their real values.
+
 ### Tests
 - `test_corpus_chunk_roundtrip` checks every object chunk of the corpus. It compares against a
   second load of the original file that is never saved. It tolerates only the uninitialised
