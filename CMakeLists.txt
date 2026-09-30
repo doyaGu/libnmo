@@ -171,6 +171,7 @@ set(NMO_FORMAT_SOURCES
     src/format/chunk_subchunks.c
     src/format/chunk_compression.c
     src/format/chunk_remap.c
+    src/format/chunk_residue.c
     src/format/chunk_bitmap.c
     src/format/chunk_pool.c
     src/format/manager_registry.c
