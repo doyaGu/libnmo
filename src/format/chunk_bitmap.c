@@ -303,17 +303,6 @@ static inline uint32_t nmo_chunk_bitmap_pack_argb(uint8_t r,
         (uint32_t)b;
 }
 
-enum {
-    NMO_BITMAP_STORE_NONE = 0,
-    NMO_BITMAP_STORE_ENCODED = 1,
-    NMO_BITMAP_STORE_ENCODED_WITH_ALPHA = 2
-};
-
-enum {
-    NMO_BITMAP_ALPHA_CONSTANT = 0,
-    NMO_BITMAP_ALPHA_PLANE = 1
-};
-
 static const char *nmo_chunk_bitmap_default_extension(const nmo_image_codec_t *codec) {
     if (!codec) {
         return NULL;
@@ -326,27 +315,11 @@ static const char *nmo_chunk_bitmap_default_extension(const nmo_image_codec_t *c
     return codec->name;
 }
 
-static void nmo_chunk_bitmap_extension_bytes(char out_bytes[4], const char *ext) {
-    memset(out_bytes, 0, 4);
-    if (!ext) {
-        return;
-    }
-    for (size_t i = 0; i < 3 && ext[i]; ++i) {
-        out_bytes[i] = (char)toupper((unsigned char)ext[i]);
-    }
-}
-
 static void nmo_chunk_bitmap_tag_to_string(uint32_t tag, char out_ext[4]) {
     out_ext[0] = (char)(tag & 0xFFu);
     out_ext[1] = (char)((tag >> 8) & 0xFFu);
     out_ext[2] = (char)((tag >> 16) & 0xFFu);
     out_ext[3] = '\0';
-}
-
-static uint32_t nmo_chunk_bitmap_extension_tag(const char bytes[4]) {
-    return (uint32_t)(uint8_t)bytes[0] |
-           ((uint32_t)(uint8_t)bytes[1] << 8u) |
-           ((uint32_t)(uint8_t)bytes[2] << 16u);
 }
 
 static nmo_status_t nmo_chunk_bitmap_check_desc(const nmo_image_desc_t *desc) {
@@ -471,31 +444,6 @@ static nmo_status_t nmo_chunk_bitmap_copy_rgba_to_rgb(const uint8_t *rgba,
 
     *out_rgb = rgb;
     NMO_RETURN_OK();
-}
-
-static bool nmo_chunk_bitmap_alpha_is_constant(const uint8_t *rgba,
-                                               size_t pixel_count,
-                                               uint8_t *out_value) {
-    if (!rgba || pixel_count == 0) {
-        if (out_value) {
-            *out_value = 0xFFu;
-        }
-        return true;
-    }
-
-    const uint8_t first = rgba[3];
-    for (size_t i = 1; i < pixel_count; ++i) {
-        if (rgba[i * 4u + 3u] != first) {
-            if (out_value) {
-                *out_value = (uint8_t)0;
-            }
-            return false;
-        }
-    }
-    if (out_value) {
-        *out_value = first;
-    }
-    return true;
 }
 
 static nmo_status_t nmo_chunk_bitmap_extract_alpha_plane(const uint8_t *rgba,
@@ -678,6 +626,27 @@ nmo_status_t nmo_chunk_write_raw_bitmap(nmo_chunk_t *chunk,
     return nmo_chunk_bitmap_cleanup_arena(scratch, result);
 }
 
+/* Reader identity stored with an encoded bitmap. The engine finds the reader
+ * by GUID and falls back to the extension, so a codec without a known GUID is
+ * written with a null one. */
+static nmo_guid_t nmo_chunk_bitmap_reader_guid(const nmo_image_codec_t *codec) {
+    if (codec != NULL && codec->format == NMO_BITMAP_FORMAT_PNG) {
+        return (nmo_guid_t){0x02D45C7Bu, 0x4AAC16ECu};
+    }
+    if (codec != NULL && codec->format == NMO_BITMAP_FORMAT_JPG) {
+        return (nmo_guid_t){0x4AE51AC4u, 0x04587D76u};
+    }
+    return (nmo_guid_t){0u, 0u};
+}
+
+static uint32_t nmo_chunk_bitmap_lower_extension_tag(const char *ext) {
+    uint32_t tag = 0;
+    for (size_t i = 0; i < 3 && ext != NULL && ext[i]; ++i) {
+        tag |= (uint32_t)(uint8_t)tolower((unsigned char)ext[i]) << (8u * i);
+    }
+    return tag;
+}
+
 nmo_status_t nmo_chunk_write_encoded_bitmap(nmo_chunk_t *chunk,
                                             const nmo_image_desc_t *desc,
                                             const nmo_bitmap_properties_t *props) {
@@ -708,83 +677,63 @@ nmo_status_t nmo_chunk_write_encoded_bitmap(nmo_chunk_t *chunk,
     nmo_status_t result = nmo_chunk_bitmap_convert_interleaved(desc, 4, scratch, &rgba_pixels);
     NMO_CHUNK_BITMAP_RETURN_IF_ERROR(result, scratch);
 
-    uint8_t *encoded_rgb = NULL;
-    size_t encoded_rgb_size = 0;
-    uint8_t *alpha_plane = NULL;
-    size_t alpha_plane_size = 0;
-    uint8_t alpha_constant = 0xFFu;
-    int alpha_kind = NMO_BITMAP_ALPHA_CONSTANT;
-
+    uint8_t *encoded = NULL;
+    size_t encoded_size = 0;
     const size_t pixel_count = (size_t)desc->width * (size_t)desc->height;
 
+    /* CKStateChunk::WriteReaderBitmap: kind 1 when the encoded image carries
+     * the alpha (or there is none), kind 2 when it is stored beside it. */
+    const bool alpha_beside = !codec->supports_alpha && desc->alpha_mask != 0u;
     if (codec->supports_alpha) {
-        result = codec->encode(rgba_pixels,
-                               desc->width,
-                               desc->height,
-                               4,
-                               props,
-                               scratch,
-                               &encoded_rgb,
-                               &encoded_rgb_size);
-        NMO_CHUNK_BITMAP_RETURN_IF_ERROR(result, scratch);
-
-        result = nmo_chunk_write_int(chunk, NMO_BITMAP_STORE_ENCODED);
-        NMO_CHUNK_BITMAP_RETURN_IF_ERROR(result, scratch);
+        result = codec->encode(rgba_pixels, desc->width, desc->height, 4, props,
+                               scratch, &encoded, &encoded_size);
     } else {
-        result = nmo_chunk_bitmap_copy_rgba_to_rgb(rgba_pixels, pixel_count, scratch, &encoded_rgb);
+        uint8_t *rgb_pixels = NULL;
+        result = nmo_chunk_bitmap_copy_rgba_to_rgb(rgba_pixels, pixel_count, scratch, &rgb_pixels);
         NMO_CHUNK_BITMAP_RETURN_IF_ERROR(result, scratch);
 
         nmo_bitmap_properties_t rgb_props = props ? *props : (nmo_bitmap_properties_t){0};
         rgb_props.save_alpha = false;
+        result = codec->encode(rgb_pixels, desc->width, desc->height, 3, &rgb_props,
+                               scratch, &encoded, &encoded_size);
+    }
+    NMO_CHUNK_BITMAP_RETURN_IF_ERROR(result, scratch);
 
-        result = codec->encode(encoded_rgb,
-                               desc->width,
-                               desc->height,
-                               3,
-                               &rgb_props,
-                               scratch,
-                               &encoded_rgb,
-                               &encoded_rgb_size);
+    result = nmo_chunk_write_int(chunk, alpha_beside ? 2 : 1);
+    NMO_CHUNK_BITMAP_RETURN_IF_ERROR(result, scratch);
+    result = nmo_chunk_write_dword(
+        chunk, nmo_chunk_bitmap_lower_extension_tag(nmo_chunk_bitmap_default_extension(codec)));
+    NMO_CHUNK_BITMAP_RETURN_IF_ERROR(result, scratch);
+    result = nmo_chunk_write_guid(chunk, nmo_chunk_bitmap_reader_guid(codec));
+    NMO_CHUNK_BITMAP_RETURN_IF_ERROR(result, scratch);
+    result = nmo_chunk_write_buffer(chunk, encoded, encoded_size);
+    NMO_CHUNK_BITMAP_RETURN_IF_ERROR(result, scratch);
+
+    if (alpha_beside) {
+        /* The number of distinct alpha values, then that value if it is the
+         * only one, else the alpha plane. */
+        bool seen[256] = {false};
+        uint8_t only_value = 0;
+        int distinct = 0;
+        for (size_t i = 0; i < pixel_count; ++i) {
+            uint8_t a = rgba_pixels[i * 4u + 3u];
+            if (!seen[a]) {
+                seen[a] = true;
+                only_value = a;
+                distinct++;
+            }
+        }
+        result = nmo_chunk_write_int(chunk, distinct);
         NMO_CHUNK_BITMAP_RETURN_IF_ERROR(result, scratch);
-
-        if (nmo_chunk_bitmap_alpha_is_constant(rgba_pixels, pixel_count, &alpha_constant)) {
-            alpha_kind = NMO_BITMAP_ALPHA_CONSTANT;
+        if (distinct == 1) {
+            result = nmo_chunk_write_int(chunk, only_value);
         } else {
-            alpha_kind = NMO_BITMAP_ALPHA_PLANE;
+            uint8_t *alpha_plane = NULL;
             result = nmo_chunk_bitmap_extract_alpha_plane(rgba_pixels, pixel_count, scratch, &alpha_plane);
             NMO_CHUNK_BITMAP_RETURN_IF_ERROR(result, scratch);
-            alpha_plane_size = pixel_count;
+            result = nmo_chunk_write_buffer(chunk, alpha_plane, pixel_count);
         }
-
-        result = nmo_chunk_write_int(chunk, NMO_BITMAP_STORE_ENCODED_WITH_ALPHA);
         NMO_CHUNK_BITMAP_RETURN_IF_ERROR(result, scratch);
-    }
-
-    char ext_bytes[4];
-    nmo_chunk_bitmap_extension_bytes(ext_bytes, nmo_chunk_bitmap_default_extension(codec));
-    uint32_t extension_tag = nmo_chunk_bitmap_extension_tag(ext_bytes);
-    result = nmo_chunk_write_dword(chunk, extension_tag);
-    NMO_CHUNK_BITMAP_RETURN_IF_ERROR(result, scratch);
-
-    result = nmo_chunk_write_int(chunk, desc->width);
-    NMO_CHUNK_BITMAP_RETURN_IF_ERROR(result, scratch);
-    result = nmo_chunk_write_int(chunk, desc->height);
-    NMO_CHUNK_BITMAP_RETURN_IF_ERROR(result, scratch);
-
-    result = nmo_chunk_write_buffer(chunk, encoded_rgb, encoded_rgb_size);
-    NMO_CHUNK_BITMAP_RETURN_IF_ERROR(result, scratch);
-
-    if (!codec->supports_alpha) {
-        result = nmo_chunk_write_int(chunk, alpha_kind);
-        NMO_RETURN_IF_ERROR(result);
-
-        if (alpha_kind == NMO_BITMAP_ALPHA_CONSTANT) {
-            result = nmo_chunk_write_byte(chunk, alpha_constant);
-            NMO_CHUNK_BITMAP_RETURN_IF_ERROR(result, scratch);
-        } else {
-            result = nmo_chunk_write_buffer(chunk, alpha_plane, alpha_plane_size);
-            NMO_CHUNK_BITMAP_RETURN_IF_ERROR(result, scratch);
-        }
     }
 
     return nmo_chunk_bitmap_cleanup_arena(scratch, NMO_OK);
@@ -1071,12 +1020,19 @@ nmo_status_t nmo_chunk_read_encoded_bitmap(nmo_chunk_t *chunk,
     }
     size_t start_pos = state->current_pos;
 
-    int32_t storage_type = 0;
-    nmo_status_t result = nmo_chunk_read_int(chunk, &storage_type);
+    /* CKStateChunk::ReadReaderBitmap: kind (0 none, 1 alpha in the image,
+     * 2 alpha beside it), extension, reader GUID, encoded image, and for kind 2
+     * the alpha. */
+    int32_t kind = 0;
+    nmo_status_t result = nmo_chunk_read_int(chunk, &kind);
     NMO_CHUNK_BITMAP_RETURN_IF_ERROR_WITH_ROLLBACK(result, state, start_pos);
 
-    if (storage_type == NMO_BITMAP_STORE_NONE) {
+    if (kind == 0) {
         NMO_RETURN_OK();
+    }
+    if (kind != 1 && kind != 2) {
+        NMO_CHUNK_BITMAP_RETURN_ERROR_WITH_ROLLBACK(
+            state, start_pos, NMO_ERR_CORRUPT, "Unknown encoded bitmap kind");
     }
 
     uint32_t extension_tag = 0;
@@ -1086,20 +1042,9 @@ nmo_status_t nmo_chunk_read_encoded_bitmap(nmo_chunk_t *chunk,
     char ext_bytes[4];
     nmo_chunk_bitmap_tag_to_string(extension_tag, ext_bytes);
 
-    int32_t width = 0;
-    int32_t height = 0;
-    result = nmo_chunk_read_int(chunk, &width);
+    nmo_guid_t reader_guid;
+    result = nmo_chunk_read_guid(chunk, &reader_guid);
     NMO_CHUNK_BITMAP_RETURN_IF_ERROR_WITH_ROLLBACK(result, state, start_pos);
-    result = nmo_chunk_read_int(chunk, &height);
-    NMO_CHUNK_BITMAP_RETURN_IF_ERROR_WITH_ROLLBACK(result, state, start_pos);
-
-    if (width <= 0 || height <= 0) {
-        NMO_CHUNK_BITMAP_RETURN_ERROR_WITH_ROLLBACK(
-            state,
-            start_pos,
-            NMO_ERR_INVALID_ARGUMENT,
-            "Invalid bitmap dimensions");
-    }
 
     nmo_arena_t *scratch = nmo_arena_create(NULL, 0);
     if (!scratch) {
@@ -1124,7 +1069,6 @@ nmo_status_t nmo_chunk_read_encoded_bitmap(nmo_chunk_t *chunk,
             "Encoded bitmap payload missing");
     }
 
-    int desired_channels = (storage_type == NMO_BITMAP_STORE_ENCODED) ? 4 : 3;
     const nmo_image_codec_t *codec = nmo_image_codec_find_by_extension(ext_bytes);
     if (!codec) {
         NMO_CHUNK_BITMAP_RETURN_ERROR_SCRATCH_WITH_ROLLBACK(
@@ -1135,27 +1079,22 @@ nmo_status_t nmo_chunk_read_encoded_bitmap(nmo_chunk_t *chunk,
             "Unknown bitmap extension");
     }
 
-    int decoded_width = 0;
-    int decoded_height = 0;
+    int width = 0;
+    int height = 0;
     int decoded_channels = 0;
     uint8_t *decoded_pixels = NULL;
     result = codec->decode(encoded_data,
                            encoded_size,
-                           desired_channels,
+                           kind == 1 ? 4 : 3,
                            scratch,
-                           &decoded_width,
-                           &decoded_height,
+                           &width,
+                           &height,
                            &decoded_pixels,
                            &decoded_channels);
     NMO_CHUNK_BITMAP_RETURN_IF_ERROR_SCRATCH_WITH_ROLLBACK(result, scratch, state, start_pos);
-
-    if (decoded_width != width || decoded_height != height) {
+    if (width <= 0 || height <= 0) {
         NMO_CHUNK_BITMAP_RETURN_ERROR_SCRATCH_WITH_ROLLBACK(
-            scratch,
-            state,
-            start_pos,
-            NMO_ERR_CORRUPT,
-            "Decoded bitmap dimensions mismatch");
+            scratch, state, start_pos, NMO_ERR_CORRUPT, "Invalid decoded bitmap dimensions");
     }
 
     const size_t pixel_count = (size_t)width * (size_t)height;
@@ -1172,18 +1111,19 @@ nmo_status_t nmo_chunk_read_encoded_bitmap(nmo_chunk_t *chunk,
 
     uint32_t *dst = (uint32_t *)final_pixels;
 
-    if (storage_type == NMO_BITMAP_STORE_ENCODED_WITH_ALPHA) {
-        int32_t alpha_kind = 0;
-        result = nmo_chunk_read_int(chunk, &alpha_kind);
+    if (kind == 2) {
+        int32_t distinct = 0;
+        result = nmo_chunk_read_int(chunk, &distinct);
         NMO_CHUNK_BITMAP_RETURN_IF_ERROR_SCRATCH_WITH_ROLLBACK(result, scratch, state, start_pos);
 
         uint8_t constant_alpha = 0xFFu;
         uint8_t *alpha_plane = NULL;
-
-        if (alpha_kind == NMO_BITMAP_ALPHA_CONSTANT) {
-            result = nmo_chunk_read_byte(chunk, &constant_alpha);
+        if (distinct == 1) {
+            int32_t value = 0;
+            result = nmo_chunk_read_int(chunk, &value);
             NMO_CHUNK_BITMAP_RETURN_IF_ERROR_SCRATCH_WITH_ROLLBACK(result, scratch, state, start_pos);
-        } else if (alpha_kind == NMO_BITMAP_ALPHA_PLANE) {
+            constant_alpha = (uint8_t)value;
+        } else {
             void *alpha_data = NULL;
             size_t alpha_size = 0;
             result = nmo_chunk_bitmap_read_buffer_in_arena(chunk, scratch, &alpha_data, &alpha_size,
@@ -1198,38 +1138,18 @@ nmo_status_t nmo_chunk_read_encoded_bitmap(nmo_chunk_t *chunk,
                     "Invalid alpha plane data");
             }
             alpha_plane = (uint8_t *)alpha_data;
-        } else {
-            NMO_CHUNK_BITMAP_RETURN_ERROR_SCRATCH_WITH_ROLLBACK(
-                scratch,
-                state,
-                start_pos,
-                NMO_ERR_CORRUPT,
-                "Unknown alpha storage kind");
         }
 
         for (size_t i = 0; i < pixel_count; ++i) {
-            uint8_t r = decoded_pixels[i * 3u + 0u];
-            uint8_t g = decoded_pixels[i * 3u + 1u];
-            uint8_t b = decoded_pixels[i * 3u + 2u];
-            uint8_t a = alpha_plane ? alpha_plane[i] : constant_alpha;
-            dst[i] = nmo_chunk_bitmap_pack_argb(r, g, b, a);
+            dst[i] = nmo_chunk_bitmap_pack_argb(
+                decoded_pixels[i * 3u + 0u], decoded_pixels[i * 3u + 1u],
+                decoded_pixels[i * 3u + 2u], alpha_plane ? alpha_plane[i] : constant_alpha);
         }
     } else {
-        if (decoded_channels == 4) {
-            for (size_t i = 0; i < pixel_count; ++i) {
-                uint8_t r = decoded_pixels[i * 4u + 0u];
-                uint8_t g = decoded_pixels[i * 4u + 1u];
-                uint8_t b = decoded_pixels[i * 4u + 2u];
-                uint8_t a = decoded_pixels[i * 4u + 3u];
-                dst[i] = nmo_chunk_bitmap_pack_argb(r, g, b, a);
-            }
-        } else {
-            for (size_t i = 0; i < pixel_count; ++i) {
-                uint8_t r = decoded_pixels[i * 3u + 0u];
-                uint8_t g = decoded_pixels[i * 3u + 1u];
-                uint8_t b = decoded_pixels[i * 3u + 2u];
-                dst[i] = nmo_chunk_bitmap_pack_argb(r, g, b, 0xFFu);
-            }
+        for (size_t i = 0; i < pixel_count; ++i) {
+            const uint8_t *px = decoded_pixels + i * (size_t)decoded_channels;
+            dst[i] = nmo_chunk_bitmap_pack_argb(
+                px[0], px[1], px[2], decoded_channels == 4 ? px[3] : 0xFFu);
         }
     }
 

@@ -1461,14 +1461,20 @@ NMO_API nmo_status_t nmo_chunk_read_raw_bitmap(nmo_chunk_t *chunk,
 /**
  * @brief Write encoded bitmap payload (CKStateChunk::WriteReaderBitmap)
  *
- * Uses registered codecs (PNG/JPG/etc.) to store compressed bitmap data.
+ * Layout: kind (1 when the encoded image carries the alpha or there is none,
+ * 2 when the alpha is stored beside it), the four extension bytes, the reader
+ * GUID, the size-prefixed encoded image and, for kind 2, the number of distinct
+ * alpha values followed by that value (one value) or the alpha plane.
  */
 NMO_API nmo_status_t nmo_chunk_write_encoded_bitmap(nmo_chunk_t *chunk,
                                                     const nmo_image_desc_t *desc,
                                                     const nmo_bitmap_properties_t *props);
 
 /**
- * @brief Read encoded bitmap payload (CKStateChunk::ReadBitmap2)
+ * @brief Read encoded bitmap payload (CKStateChunk::ReadReaderBitmap)
+ *
+ * The reader is chosen by the extension; the image size comes from the decoded
+ * image.
  */
 NMO_API nmo_status_t nmo_chunk_read_encoded_bitmap(nmo_chunk_t *chunk,
                                                    nmo_image_desc_t *out_desc,
