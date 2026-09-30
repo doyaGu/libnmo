@@ -304,11 +304,27 @@ the tests build each layout dword by dword.
   the engine, and a new object animation is 100 frames long.
 - A format 0 layer is written with its square buffer only when it has a grid.
 
+### Fixed - A save keeps what the file held
+- A default save used to re-serialize every loaded object through its schema, so anything the schema
+  does not model (trailing dwords of a section, sections of another version, the padding Virtools
+  leaves behind strings) was lost even for objects nobody touched. A load now remembers a digest of
+  each object's state; on save an unchanged object keeps its original chunk (its object ids are
+  translated when other objects were deleted or moved), and an edited one is written by its schema
+  and then gets back what the file held beyond it: sections the schema does not know, trailing
+  dwords, and values the schema normalized that the edit did not touch. The corpus now saves
+  byte for byte, padding included. The pieces are `nmo_chunk_digest`, `nmo_chunk_equivalent`,
+  `nmo_chunk_translate_ids_with_layout` and `nmo_chunk_merge_residue`.
+- The 3D entity z-order and the entity matrix of a legacy curve point are kept as stored; the values
+  the engine uses come from `nmo_3dentity_effective_z_order` and `nmo_curvepoint_get_position`.
+
 ### Tests
 - `test_corpus_chunk_roundtrip` checks every object chunk of the corpus. It compares against a
   second load of the original file that is never saved. It tolerates only the uninitialised
   padding bytes Virtools leaves behind strings and buffers.
 - The corpus directory walk moved into the test framework (`test_corpus_walk`).
+- `test_corpus_chunk_roundtrip` also saves the corpus with the default options and requires every
+  chunk to come back byte for byte, and deletes an object to check that the others keep their data.
+  `test_fidelity_save` edits a material that carries an extra dword and checks the dword survives.
 
 ### Added - Phase 8: Round-Trip Framework
 - DOM comparison API (`nmo_comparison.h`): diff two loaded sessions at the object
