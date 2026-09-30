@@ -62,6 +62,56 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
         nmo_array_dispose(&state->animations);
         nmo_3dentity_vtable.destroy(&state->base, NULL, context);
     } while (0))
+nmo_object_id_t nmo_character_effective_root_body_part(
+    const nmo_object_repository_t *repository,
+    const nmo_object_t *character)
+{
+    if (repository == NULL || character == NULL ||
+        character->class_id != NMO_CID_CHARACTER) {
+        return NMO_OBJECT_ID_NONE;
+    }
+    const nmo_character_state_t *state =
+        (const nmo_character_state_t *)nmo_object_get_state(character);
+    if (state == NULL) {
+        return NMO_OBJECT_ID_NONE;
+    }
+    const nmo_object_id_t stored = nmo_ref_runtime_id(&state->root_body_part);
+    if (stored != NMO_OBJECT_ID_NONE) {
+        return stored;
+    }
+
+    const size_t count = nmo_object_repository_get_count(repository);
+    for (size_t i = 0; i < count; ++i) {
+        const nmo_object_t *candidate =
+            nmo_object_repository_get_by_index(repository, i);
+        if (candidate == NULL || candidate == character) continue;
+        switch (candidate->class_id) {
+        case NMO_CID_3DENTITY:
+        case NMO_CID_3DOBJECT:
+        case NMO_CID_BODYPART:
+        case NMO_CID_CAMERA:
+        case NMO_CID_TARGETCAMERA:
+        case NMO_CID_LIGHT:
+        case NMO_CID_TARGETLIGHT:
+        case NMO_CID_SPRITE3D:
+        case NMO_CID_CHARACTER:
+        case NMO_CID_CURVE:
+        case NMO_CID_PLACE:
+        case NMO_CID_GRID:
+            break;
+        default:
+            continue;
+        }
+        const nmo_3dentity_state_t *entity =
+            (const nmo_3dentity_state_t *)nmo_object_get_state(candidate);
+        if (entity != NULL &&
+            nmo_ref_runtime_id(&entity->parent) == character->id) {
+            return candidate->id;
+        }
+    }
+    return NMO_OBJECT_ID_NONE;
+}
+
 NMO_DEFINE_OBJECT_LIFECYCLE(
     bodypart,
     nmo_bodypart_state_t,

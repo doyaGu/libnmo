@@ -59,6 +59,23 @@ typedef struct nmo_bodypart_state {
     nmo_ik_joint_t rotation_joint;
 } nmo_bodypart_state_t;
 
+/**
+ * @brief The root body part the engine works with.
+ *
+ * RCKCharacter::Load, when the chunk stores no root body part and the
+ * character has children, takes its first child as the root. root_body_part
+ * keeps what the chunk stored; this returns the stored root, or else the first
+ * child of the character in object order (the order the engine adds children
+ * while it loads the file).
+ *
+ * @param repository Repository the character belongs to
+ * @param character  The character object
+ * @return Runtime id of the root body part, or NMO_OBJECT_ID_NONE
+ */
+NMO_API nmo_object_id_t nmo_character_effective_root_body_part(
+    const nmo_object_repository_t *repository,
+    const nmo_object_t *character);
+
 NMO_API nmo_status_t nmo_character_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
