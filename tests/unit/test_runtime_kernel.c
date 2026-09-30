@@ -4075,8 +4075,8 @@ TEST(runtime_kernel, copy_remap_updates_only_resolved_patchmesh_refs) {
         {.material = nmo_ref_from_raw(102), .patch = {.type = 22}},
     };
     nmo_patchmesh_channel_t channels[] = {
-        {.material = nmo_ref_from_id(103), .flags = 33},
-        {.material = nmo_ref_from_raw(104), .flags = 44},
+        {.material = nmo_ref_from_id(103), .source_blend = 33},
+        {.material = nmo_ref_from_raw(104), .source_blend = 44},
     };
     nmo_ref_t legacy_materials[] = {
         nmo_ref_from_id(106),
@@ -4163,7 +4163,7 @@ TEST(runtime_kernel, copy_remap_validates_patchmesh_adapter_hierarchy) {
 
     nmo_patchmesh_channel_t channel = {
         .material = nmo_ref_from_id(103),
-        .flags = 33,
+        .source_blend = 33,
     };
     state.channels = &channel;
     ASSERT_EQ(NMO_OK, nmo_runtime_remap_copy_refs(
@@ -4173,7 +4173,7 @@ TEST(runtime_kernel, copy_remap_validates_patchmesh_adapter_hierarchy) {
     ASSERT_EQ(202u, nmo_ref_runtime_id(&group.material));
     ASSERT_EQ(22, group.padding);
     ASSERT_EQ(203u, nmo_ref_runtime_id(&channel.material));
-    ASSERT_EQ(33u, channel.flags);
+    ASSERT_EQ(33u, channel.source_blend);
 
     nmo_arena_destroy(arena);
     nmo_context_release(ctx);
@@ -4308,9 +4308,9 @@ TEST(runtime_kernel, normalize_and_safe_detach_keep_patchmesh_records_atomic) {
         {.material = nmo_ref_from_id(wrong_class_id), .patch = {.type = 33}},
     };
     nmo_patchmesh_channel_t channels[] = {
-        {.material = nmo_ref_from_id(material_id), .flags = 44},
-        {.material = nmo_ref_from_raw(0x7FFFFF02u), .flags = 55},
-        {.material = nmo_ref_from_id(wrong_class_id), .flags = 66},
+        {.material = nmo_ref_from_id(material_id), .source_blend = 44},
+        {.material = nmo_ref_from_raw(0x7FFFFF02u), .source_blend = 55},
+        {.material = nmo_ref_from_id(wrong_class_id), .source_blend = 66},
     };
     patchmesh->format = CKPATCHMESH_FORMAT_DATA3;
     patchmesh->patch_count = 4;
@@ -4333,11 +4333,11 @@ TEST(runtime_kernel, normalize_and_safe_detach_keep_patchmesh_records_atomic) {
     ASSERT_EQ(NMO_REF_NONE, patchmesh->patches[3].material.state);
     ASSERT_EQ(33u, patchmesh->patches[3].patch.type);
     ASSERT_EQ(NMO_REF_RESOLVED, patchmesh->channels[0].material.state);
-    ASSERT_EQ(44u, patchmesh->channels[0].flags);
+    ASSERT_EQ(44u, patchmesh->channels[0].source_blend);
     ASSERT_EQ(NMO_REF_NONE, patchmesh->channels[1].material.state);
-    ASSERT_EQ(55u, patchmesh->channels[1].flags);
+    ASSERT_EQ(55u, patchmesh->channels[1].source_blend);
     ASSERT_EQ(NMO_REF_NONE, patchmesh->channels[2].material.state);
-    ASSERT_EQ(66u, patchmesh->channels[2].flags);
+    ASSERT_EQ(66u, patchmesh->channels[2].source_blend);
 
     nmo_runtime_report_t report = {0};
     ASSERT_EQ(NMO_OK, nmo_session_destroy_objects(
@@ -4351,7 +4351,7 @@ TEST(runtime_kernel, normalize_and_safe_detach_keep_patchmesh_records_atomic) {
     ASSERT_EQ(NMO_REF_NONE, patchmesh->patches[0].material.state);
     ASSERT_EQ(11u, patchmesh->patches[0].patch.type);
     ASSERT_EQ(NMO_REF_NONE, patchmesh->channels[0].material.state);
-    ASSERT_EQ(44u, patchmesh->channels[0].flags);
+    ASSERT_EQ(44u, patchmesh->channels[0].source_blend);
 
     nmo_session_destroy(session);
     nmo_context_release(ctx);

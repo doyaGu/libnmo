@@ -95,11 +95,14 @@ typedef struct nmo_patchmesh_patch {
     uint8_t data[40];
 } nmo_patchmesh_patch_t;
 
+/* Entry 0 of a patch mesh's channel list is the base texture-coordinate set;
+ * its material is unset and its three dwords are uninitialised memory in the
+ * files. Later entries are real channels. */
 typedef struct nmo_patchmesh_channel {
     nmo_ref_t material;
-    uint32_t flags;
-    uint32_t type;
-    uint32_t subtype;
+    uint32_t source_blend;   /**< VXBLEND_MODE of the channel's source */
+    uint32_t dest_blend;     /**< VXBLEND_MODE of the channel's destination */
+    uint32_t flags;          /**< Channel flags (1 = active) */
     uint32_t patch_count;
     uint8_t *patches_raw;
     uint32_t uv_count;

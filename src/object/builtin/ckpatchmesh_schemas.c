@@ -366,12 +366,12 @@ static nmo_status_t nmo_patchmesh_decode_payload(
                 NMO_RETURN_IF_ERROR(nmo_patchmesh_require_dwords(
                     chunk, 7u + later_channel_dwords,
                     "DATA3 channel fields"));
+                NMO_PATCHMESH_READ(nmo_chunk_read_dword(chunk, &channel->source_blend),
+                                   "channel source blend");
+                NMO_PATCHMESH_READ(nmo_chunk_read_dword(chunk, &channel->dest_blend),
+                                   "channel dest blend");
                 NMO_PATCHMESH_READ(nmo_chunk_read_dword(chunk, &channel->flags),
                                    "channel flags");
-                NMO_PATCHMESH_READ(nmo_chunk_read_dword(chunk, &channel->type),
-                                   "channel type");
-                NMO_PATCHMESH_READ(nmo_chunk_read_dword(chunk, &channel->subtype),
-                                   "channel subtype");
 
                 uint32_t patches_bytes = 0;
                 uint32_t patches_count = 0;
@@ -1123,11 +1123,11 @@ static nmo_status_t nmo_patchmesh_serialize_internal(
 
         for (uint32_t i = 0; i < in_state->channel_count; ++i) {
             const nmo_patchmesh_channel_t *channel = &in_state->channels[i];
+            result = nmo_chunk_write_dword(out_chunk, channel->source_blend);
+            if (result != NMO_OK) return result;
+            result = nmo_chunk_write_dword(out_chunk, channel->dest_blend);
+            if (result != NMO_OK) return result;
             result = nmo_chunk_write_dword(out_chunk, channel->flags);
-            if (result != NMO_OK) return result;
-            result = nmo_chunk_write_dword(out_chunk, channel->type);
-            if (result != NMO_OK) return result;
-            result = nmo_chunk_write_dword(out_chunk, channel->subtype);
             if (result != NMO_OK) return result;
 
             uint32_t patches_bytes = channel->patch_count * 8u;

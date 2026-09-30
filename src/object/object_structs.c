@@ -283,9 +283,9 @@ nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry) {
     /* CKPatchMeshChannel */
     static const nmo_struct_field_def_t ckpatchmeshchannel_fields[] = {
         NMO_STRUCT_FIELD_REF_RECORD("material"),
+        NMO_STRUCT_FIELD_GUID("source_blend", CKPGUID_UINT32),
+        NMO_STRUCT_FIELD_GUID("dest_blend", CKPGUID_UINT32),
         NMO_STRUCT_FIELD_GUID("flags", CKPGUID_UINT32),
-        NMO_STRUCT_FIELD_GUID("type", CKPGUID_UINT32),
-        NMO_STRUCT_FIELD_GUID("subtype", CKPGUID_UINT32),
         NMO_STRUCT_FIELD_GUID("patch_count", CKPGUID_UINT32),
         NMO_STRUCT_FIELD_PTR_COUNTED(nmo_patchmesh_channel_t, patches_raw, patch_count, 1),
         NMO_STRUCT_FIELD_GUID("uv_count", CKPGUID_UINT32),

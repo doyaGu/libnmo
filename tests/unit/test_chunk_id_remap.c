@@ -18290,9 +18290,9 @@ TEST(chunk_id_remap, patchmesh_data3_refs_round_trip_and_failure_is_atomic) {
 
     nmo_patchmesh_channel_t channel = {
         .material = nmo_ref_from_raw(702),
-        .flags = 0x10203040u,
-        .type = 3,
-        .subtype = 9,
+        .source_blend = 0x10203040u,
+        .dest_blend = 3,
+        .flags = 9,
     };
     source.channel_count = 1;
     source.channels = &channel;
@@ -18322,7 +18322,7 @@ TEST(chunk_id_remap, patchmesh_data3_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(1u, loaded.channel_count);
     ASSERT_EQ(702u, loaded.channels[0].material.raw_id);
     ASSERT_EQ(NMO_REF_UNRESOLVED, loaded.channels[0].material.state);
-    ASSERT_EQ(0x10203040u, loaded.channels[0].flags);
+    ASSERT_EQ(0x10203040u, loaded.channels[0].source_blend);
 
     nmo_chunk_t *roundtrip = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(roundtrip);
@@ -18681,9 +18681,9 @@ TEST(chunk_id_remap, patchmesh_copy_preserves_atomic_records) {
     nmo_vector2_t channel_uv = {.x = 1.25f, .y = 2.5f};
     nmo_patchmesh_channel_t channel = {
         .material = nmo_ref_from_raw(802),
-        .flags = 31,
-        .type = 37,
-        .subtype = 41,
+        .source_blend = 31,
+        .dest_blend = 37,
+        .flags = 41,
         .patch_count = 1,
         .patches_raw = channel_patches,
         .uv_count = 1,
