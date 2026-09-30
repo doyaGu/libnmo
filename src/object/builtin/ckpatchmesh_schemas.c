@@ -986,30 +986,6 @@ static nmo_status_t nmo_patchmesh_enumerate_refs(
     return NMO_OK;
 }
 
-static nmo_status_t nmo_patchmesh_pre_delete(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)type;
-    (void)context;
-    if (instance == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_patchmesh_pre_delete");
-    }
-    NMO_RETURN_OK();
-}
-
-static void nmo_patchmesh_post_delete(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)instance;
-    (void)type;
-    (void)context;
-}
-
 static const nmo_object_serialize_pass_t nmo_patchmesh_compare_passes[] = {
     {
         .class_id = NMO_CID_PATCHMESH,
@@ -1054,8 +1030,8 @@ static uint32_t nmo_patchmesh_hash(const void *instance)
 nmo_type_vtable_t nmo_patchmesh_vtable = {
     .prepare_dependencies = nmo_patchmesh_prepare_dependencies,
     .remap_dependencies = nmo_patchmesh_remap_dependencies,
-    .pre_delete = nmo_patchmesh_pre_delete,
-    .post_delete = nmo_patchmesh_post_delete,
+    .pre_delete = nmo_object_pre_delete_checked,
+    .post_delete = nmo_object_post_delete_noop,
     NMO_OBJECT_VTABLE_EX(
         nmo_patchmesh_create,
         nmo_patchmesh_destroy,

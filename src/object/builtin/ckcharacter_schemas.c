@@ -486,16 +486,6 @@ static nmo_status_t nmo_character_enumerate_refs(
     return NMO_OK;
 }
 
-static void nmo_character_post_delete(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)instance;
-    (void)type;
-    (void)context;
-}
-
 static nmo_status_t nmo_bodypart_pre_delete(
     void *instance,
     const nmo_type_descriptor_t *type,
@@ -636,7 +626,7 @@ nmo_type_vtable_t nmo_character_vtable = {
     .prepare_dependencies = nmo_character_prepare_dependencies,
     .remap_dependencies = nmo_character_remap_dependencies,
     .pre_delete = nmo_character_pre_delete,
-    .post_delete = nmo_character_post_delete,
+    .post_delete = nmo_object_post_delete_noop,
     NMO_OBJECT_VTABLE_EX(
         nmo_character_create,
         nmo_character_destroy,

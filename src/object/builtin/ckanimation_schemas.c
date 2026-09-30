@@ -704,16 +704,6 @@ static nmo_status_t nmo_animation_pre_delete(
     NMO_RETURN_OK();
 }
 
-static void nmo_animation_post_delete(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)instance;
-    (void)type;
-    (void)context;
-}
-
 static nmo_status_t nmo_keyedanimation_pre_delete(
     void *instance,
     const nmo_type_descriptor_t *type,
@@ -1177,7 +1167,7 @@ nmo_type_vtable_t nmo_animation_vtable = {
     .prepare_dependencies = nmo_animation_prepare_dependencies,
     .remap_dependencies = nmo_animation_remap_dependencies,
     .pre_delete = nmo_animation_pre_delete,
-    .post_delete = nmo_animation_post_delete,
+    .post_delete = nmo_object_post_delete_noop,
     NMO_OBJECT_VTABLE(
         nmo_animation_create,
         nmo_animation_destroy,

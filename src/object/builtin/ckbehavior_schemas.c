@@ -2090,16 +2090,6 @@ static nmo_status_t nmo_behavior_pre_delete(
     NMO_RETURN_OK();
 }
 
-static void nmo_behavior_post_delete(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)instance;
-    (void)type;
-    (void)context;
-}
-
 static bool nmo_behavior_enumerate_array(
     const nmo_array_t *array,
     uint32_t kind,
@@ -2434,7 +2424,7 @@ nmo_type_vtable_t nmo_behavior_vtable = {
     .prepare_dependencies = nmo_behavior_prepare_dependencies,
     .remap_dependencies = nmo_behavior_remap_dependencies,
     .pre_delete = nmo_behavior_pre_delete,
-    .post_delete = nmo_behavior_post_delete,
+    .post_delete = nmo_object_post_delete_noop,
     NMO_OBJECT_VTABLE_EX(
         nmo_behavior_create,
         nmo_behavior_destroy,

@@ -474,20 +474,6 @@ nmo_status_t nmo_grid_remap_dependencies(
     return nmo_grid_validate(state, NULL, NULL);
 }
 
-static nmo_status_t nmo_grid_pre_delete(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)type;
-    (void)context;
-    if (instance == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_grid_pre_delete");
-    }
-    NMO_RETURN_OK();
-}
-
 static nmo_status_t nmo_grid_enumerate_refs(
     const void *instance,
     const nmo_type_descriptor_t *type,
@@ -510,16 +496,6 @@ static nmo_status_t nmo_grid_enumerate_refs(
         }
     }
     return NMO_OK;
-}
-
-static void nmo_grid_post_delete(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)instance;
-    (void)type;
-    (void)context;
 }
 
 /* ============================================================================
@@ -565,8 +541,8 @@ static uint32_t nmo_grid_hash(const void *instance)
 nmo_type_vtable_t nmo_grid_vtable = {
     .prepare_dependencies = nmo_grid_prepare_dependencies,
     .remap_dependencies = nmo_grid_remap_dependencies,
-    .pre_delete = nmo_grid_pre_delete,
-    .post_delete = nmo_grid_post_delete,
+    .pre_delete = nmo_object_pre_delete_checked,
+    .post_delete = nmo_object_post_delete_noop,
     NMO_OBJECT_VTABLE_EX(
         nmo_grid_create,
         nmo_grid_destroy,

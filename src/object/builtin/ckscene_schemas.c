@@ -763,16 +763,6 @@ static nmo_status_t nmo_scene_pre_delete(
     NMO_RETURN_OK();
 }
 
-static void nmo_scene_post_delete(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)instance;
-    (void)type;
-    (void)context;
-}
-
 /* ============================================================================
  * Reference enumeration
  * ============================================================================ */
@@ -868,7 +858,7 @@ nmo_type_vtable_t nmo_scene_vtable = {
     .prepare_dependencies = nmo_scene_prepare_dependencies,
     .remap_dependencies = nmo_scene_remap_dependencies,
     .pre_delete = nmo_scene_pre_delete,
-    .post_delete = nmo_scene_post_delete,
+    .post_delete = nmo_object_post_delete_noop,
     NMO_OBJECT_VTABLE_EX(
         nmo_scene_create,
         nmo_scene_destroy,

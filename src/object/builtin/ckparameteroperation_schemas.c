@@ -408,16 +408,6 @@ static nmo_status_t nmo_parameteroperation_pre_delete(
     NMO_RETURN_OK();
 }
 
-static void nmo_parameteroperation_post_delete(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)instance;
-    (void)type;
-    (void)context;
-}
-
 static nmo_status_t nmo_parameteroperation_serialize_internal(
     const void *instance,
     nmo_chunk_t *out_chunk,
@@ -610,7 +600,7 @@ nmo_type_vtable_t nmo_parameteroperation_vtable = {
     .prepare_dependencies = nmo_parameteroperation_prepare_dependencies,
     .remap_dependencies = nmo_parameteroperation_remap_dependencies,
     .pre_delete = nmo_parameteroperation_pre_delete,
-    .post_delete = nmo_parameteroperation_post_delete,
+    .post_delete = nmo_object_post_delete_noop,
     NMO_OBJECT_VTABLE(
         nmo_parameteroperation_create,
         nmo_parameteroperation_destroy,

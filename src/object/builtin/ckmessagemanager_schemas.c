@@ -304,30 +304,6 @@ nmo_status_t nmo_messagemanager_remap_dependencies(
     return nmo_messagemanager_validate(state, NULL, NULL);
 }
 
-static nmo_status_t nmo_messagemanager_pre_delete(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)type;
-    (void)context;
-    if (!instance) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_messagemanager_pre_delete");
-    }
-    NMO_RETURN_OK();
-}
-
-static void nmo_messagemanager_post_delete(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)instance;
-    (void)type;
-    (void)context;
-}
-
 static nmo_status_t nmo_messagemanager_copy(
     const void *src,
     void *dst,
@@ -453,8 +429,8 @@ static uint32_t nmo_messagemanager_hash(const void *instance)
 nmo_type_vtable_t nmo_messagemanager_vtable = {
     .prepare_dependencies = nmo_messagemanager_prepare_dependencies,
     .remap_dependencies = nmo_messagemanager_remap_dependencies,
-    .pre_delete = nmo_messagemanager_pre_delete,
-    .post_delete = nmo_messagemanager_post_delete,
+    .pre_delete = nmo_object_pre_delete_checked,
+    .post_delete = nmo_object_post_delete_noop,
     NMO_OBJECT_VTABLE(
         nmo_messagemanager_create,
         nmo_messagemanager_destroy,

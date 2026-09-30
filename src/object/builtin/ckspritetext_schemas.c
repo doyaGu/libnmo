@@ -408,16 +408,6 @@ static nmo_status_t nmo_spritetext_pre_delete(
     NMO_RETURN_OK();
 }
 
-static void nmo_spritetext_post_delete(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)instance;
-    (void)type;
-    (void)context;
-}
-
 /* ========================================================================
  * CKSpriteText Deserialization / Serialization
  * ======================================================================== */
@@ -556,7 +546,7 @@ nmo_type_vtable_t nmo_spritetext_vtable = {
     .prepare_dependencies = nmo_spritetext_prepare_dependencies,
     .remap_dependencies = nmo_spritetext_remap_dependencies,
     .pre_delete = nmo_spritetext_pre_delete,
-    .post_delete = nmo_spritetext_post_delete,
+    .post_delete = nmo_object_post_delete_noop,
     NMO_OBJECT_VTABLE(
         nmo_spritetext_create,
         nmo_spritetext_destroy,

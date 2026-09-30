@@ -731,30 +731,6 @@ nmo_status_t nmo_light_remap_dependencies(
     return nmo_object_default_validate(light_state, NULL, NULL);
 }
 
-static nmo_status_t nmo_light_pre_delete(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)type;
-    (void)context;
-    if (!instance) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_light_pre_delete");
-    }
-    NMO_RETURN_OK();
-}
-
-static void nmo_light_post_delete(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)instance;
-    (void)type;
-    (void)context;
-}
-
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
@@ -781,8 +757,8 @@ static nmo_status_t nmo_light_validate(
 nmo_type_vtable_t nmo_light_vtable = {
     .prepare_dependencies = nmo_light_prepare_dependencies,
     .remap_dependencies = nmo_light_remap_dependencies,
-    .pre_delete = nmo_light_pre_delete,
-    .post_delete = nmo_light_post_delete,
+    .pre_delete = nmo_object_pre_delete_checked,
+    .post_delete = nmo_object_post_delete_noop,
     NMO_OBJECT_VTABLE(
         nmo_light_create,
         nmo_light_destroy,

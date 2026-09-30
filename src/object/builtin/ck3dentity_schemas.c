@@ -1155,30 +1155,6 @@ nmo_status_t nmo_3dentity_remap_dependencies(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t nmo_3dentity_pre_delete(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)type;
-    (void)context;
-    if (!instance) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_3dentity_pre_delete");
-    }
-    NMO_RETURN_OK();
-}
-
-static void nmo_3dentity_post_delete(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)instance;
-    (void)type;
-    (void)context;
-}
-
 static bool nmo_3dentity_ref_equals(
     const nmo_ref_t *lhs,
     const nmo_ref_t *rhs)
@@ -1617,8 +1593,8 @@ static nmo_status_t nmo_3dentity_validate(
 nmo_type_vtable_t nmo_3dentity_vtable = {
     .prepare_dependencies = nmo_3dentity_prepare_dependencies,
     .remap_dependencies = nmo_3dentity_remap_dependencies,
-    .pre_delete = nmo_3dentity_pre_delete,
-    .post_delete = nmo_3dentity_post_delete,
+    .pre_delete = nmo_object_pre_delete_checked,
+    .post_delete = nmo_object_post_delete_noop,
     NMO_OBJECT_VTABLE(
         nmo_3dentity_create,
         nmo_3dentity_destroy,

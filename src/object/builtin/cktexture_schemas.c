@@ -1574,20 +1574,6 @@ nmo_status_t nmo_texture_remap_dependencies(
     return nmo_texture_validate(state, type, context);
 }
 
-static nmo_status_t nmo_texture_pre_delete(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)type;
-    (void)context;
-    if (instance == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_texture_pre_delete");
-    }
-    NMO_RETURN_OK();
-}
-
 nmo_status_t nmo_texture_serialize(
     const void *instance,
     nmo_chunk_t *out_chunk,
@@ -1612,16 +1598,6 @@ nmo_status_t nmo_texture_serialize(
     if (result != NMO_OK) return result;
     *out_chunk = *staged;
     return NMO_OK;
-}
-
-static void nmo_texture_post_delete(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)instance;
-    (void)type;
-    (void)context;
 }
 
 /* ============================================================================
@@ -1975,8 +1951,8 @@ static uint32_t nmo_texture_hash(const void *instance)
 nmo_type_vtable_t nmo_texture_vtable = {
     .prepare_dependencies = nmo_texture_prepare_dependencies,
     .remap_dependencies = nmo_texture_remap_dependencies,
-    .pre_delete = nmo_texture_pre_delete,
-    .post_delete = nmo_texture_post_delete,
+    .pre_delete = nmo_object_pre_delete_checked,
+    .post_delete = nmo_object_post_delete_noop,
     NMO_OBJECT_VTABLE(
         nmo_texture_create,
         nmo_texture_destroy,
