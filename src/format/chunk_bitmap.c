@@ -888,9 +888,12 @@ nmo_status_t nmo_chunk_read_raw_bitmap(nmo_chunk_t *chunk,
         return result;
     }
 
-    if (compression != 0u) {
+    /* ReadRawBitmap keeps the low four bits: 0 stores the planes as they are,
+       1 stores them in the plane codec, anything else stores no colour planes. */
+    const uint32_t plane_storage = compression & 0xFu;
+    if (plane_storage > 1u) {
         state->current_pos = start_pos;
-        return make_error(NMO_ERR_NOT_SUPPORTED, "Compressed raw bitmaps are not supported");
+        return make_error(NMO_ERR_NOT_SUPPORTED, "Raw bitmap without colour planes");
     }
 
     if (width <= 0 || height <= 0) {
@@ -943,6 +946,28 @@ nmo_status_t nmo_chunk_read_raw_bitmap(nmo_chunk_t *chunk,
                                                    "Failed to read alpha plane");
     if (result != NMO_OK) {
         return nmo_chunk_bitmap_cleanup_arena_with_rollback(scratch, state, start_pos, result);
+    }
+
+    if (plane_storage == 1u) {
+        uint8_t **planes[3] = {&b_plane, &g_plane, &r_plane};
+        size_t *sizes[3] = {&b_size, &g_size, &r_size};
+        for (int i = 0; i < 3; ++i) {
+            int plane_width = 0;
+            int plane_height = 0;
+            uint8_t *decoded = NULL;
+            result = nmo_image_decode_dct_plane(*planes[i], *sizes[i], scratch,
+                                                &plane_width, &plane_height, &decoded);
+            if (result != NMO_OK) {
+                return nmo_chunk_bitmap_cleanup_arena_with_rollback(scratch, state, start_pos, result);
+            }
+            if (plane_width != width || plane_height != height) {
+                return nmo_chunk_bitmap_cleanup_arena_with_rollback(
+                    scratch, state, start_pos,
+                    make_error(NMO_ERR_CORRUPT, "Bitmap plane size mismatch"));
+            }
+            *planes[i] = decoded;
+            *sizes[i] = plane_size;
+        }
     }
 
     if (r_size != plane_size || g_size != plane_size || b_size != plane_size) {
