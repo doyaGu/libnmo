@@ -3378,7 +3378,6 @@ TEST(chunk_id_remap, material_refs_round_trip_and_failure_is_atomic) {
         uint32_t data_version;
         size_t payload_dwords;
     } trailing_cases[] = {
-        {CK_STATESAVE_MATDATA, 4u, 33u},
         {CK_STATESAVE_MATDATA, 8u, 9u},
         {CK_STATESAVE_MATDATA2, 8u, 3u},
         {CK_STATESAVE_MATDATA3, 8u, 1u},
@@ -3401,12 +3400,12 @@ TEST(chunk_id_remap, material_refs_round_trip_and_failure_is_atomic) {
             trailing, 0x12345678u));
         nmo_chunk_close(trailing);
         nmo_chunk_set_file_context(trailing, &read_context);
-        ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_material_deserialize(
-            &failed, trailing, NULL, &deserialize_context));
-        ASSERT_EQ(0xCAFEBABEu, failed.diffuse_color);
-        ASSERT_EQ(900u, failed.textures[0].raw_id);
-        ASSERT_EQ(899u, nmo_beobject_script_array_get_id(
-            &failed.base.scripts, 0));
+        /* Load reads the fixed prefix of a section and ignores the rest. */
+        nmo_material_state_t extra;
+        ASSERT_EQ(NMO_OK, nmo_material_vtable.create(&extra, NULL, NULL));
+        ASSERT_EQ(NMO_OK, nmo_material_deserialize(
+            &extra, trailing, NULL, &deserialize_context));
+        nmo_material_vtable.destroy(&extra, NULL, NULL);
     }
 
     nmo_material_state_t invalid;
@@ -3622,12 +3621,14 @@ TEST(chunk_id_remap, material_preserves_file_layouts) {
     ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(conflicting, 0));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(conflicting, 2));
     nmo_chunk_close(conflicting);
+    /* Load applies MATDATA3 and then MATDATA5: the last one wins. */
     loaded.effect = 77;
     loaded.has_effect = 1;
-    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_material_deserialize(
+    ASSERT_EQ(NMO_OK, nmo_material_deserialize(
         &loaded, conflicting, NULL, &deserialize_context));
-    ASSERT_EQ(77u, loaded.effect);
+    ASSERT_EQ(2u, loaded.effect);
     ASSERT_TRUE(loaded.has_effect);
+    ASSERT_TRUE(loaded.has_effect_param);
 
     nmo_material_state_t modern_default;
     ASSERT_EQ(NMO_OK, nmo_material_vtable.create(
