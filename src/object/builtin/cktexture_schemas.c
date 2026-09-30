@@ -11,6 +11,7 @@
  */
 
 #include "object/builtin/nmo_texture_schemas.h"
+#include "object/builtin/nmo_bitmap_slots.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
@@ -434,15 +435,15 @@ static nmo_status_t nmo_texture_write_bitmap2_slot(
 
 /* Gives the bitmap slot array the new length; slots past the old length are
  * empty, as SetSlotCount leaves them. */
-static nmo_status_t nmo_texture_resize_slots(
-    nmo_texture_state_t *state,
+static nmo_status_t nmo_bitmap_resize_slots(
+    nmo_bitmap_slots_t *state,
     nmo_arena_t *arena,
     uint32_t new_count)
 {
     void **slots = NULL;
     size_t slot_size = 0;
     size_t slot_align = 0;
-    switch (state->bitmap_kind) {
+    switch (state->kind) {
     case CKTEXTURE_BITMAP_READER:
         slots = (void **)&state->reader_slots;
         slot_size = sizeof(nmo_texture_reader_slot_t);
@@ -482,10 +483,10 @@ static nmo_status_t nmo_texture_resize_slots(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t nmo_texture_read_slot_filenames(
+static nmo_status_t nmo_bitmap_read_slot_filenames(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
-    nmo_texture_state_t *state)
+    nmo_bitmap_slots_t *state)
 {
     int32_t count = 0;
     nmo_status_t result = nmo_chunk_read_int(chunk, &count);
@@ -496,7 +497,7 @@ static nmo_status_t nmo_texture_read_slot_filenames(
     /* The engine calls SetSlotCount(count) here, which adds empty slots or
        drops the surplus ones. */
     if (state->slot_count != (uint32_t)count) {
-        NMO_RETURN_IF_ERROR(nmo_texture_resize_slots(
+        NMO_RETURN_IF_ERROR(nmo_bitmap_resize_slots(
             state, arena, (uint32_t)count));
     }
     state->has_slot_filenames = 1;
@@ -677,6 +678,55 @@ static bool nmo_texture_seek_found(
     return *out_result == NMO_OK;
 }
 
+
+/* =============================================================================
+ * BITMAP SLOTS (shared with CKSprite)
+ * ============================================================================= */
+
+static const nmo_bitmap_slot_ids_t nmo_texture_slot_ids = {
+    .movie = CK_STATESAVE_TEXAVIFILENAME,
+    .reader = CK_STATESAVE_TEXREADER,
+    .raw = CK_STATESAVE_TEXCOMPRESSED,
+    .filenames = CK_STATESAVE_TEXFILENAMES,
+    .bitmap2 = CK_STATESAVE_TEXBITMAPS,
+};
+
+static nmo_bitmap_slots_t nmo_texture_bitmap_slots(const nmo_texture_state_t *state)
+{
+    nmo_bitmap_slots_t slots = {
+        .kind = state->bitmap_kind,
+        .slot_count = state->slot_count,
+        .reader_width = state->reader_width,
+        .reader_height = state->reader_height,
+        .reader_bpp = state->reader_bpp,
+        .reader_slots = state->reader_slots,
+        .raw_slots = state->raw_slots,
+        .bitmap2_slots = state->bitmap2_slots,
+        .has_slot_filenames = state->has_slot_filenames,
+        .slot_filenames = state->slot_filenames,
+        .has_movie_filename = state->has_movie_filename,
+        .movie_filename = state->movie_filename,
+    };
+    return slots;
+}
+
+static void nmo_texture_store_bitmap_slots(
+    nmo_texture_state_t *state, const nmo_bitmap_slots_t *slots)
+{
+    state->bitmap_kind = slots->kind;
+    state->slot_count = slots->slot_count;
+    state->reader_width = slots->reader_width;
+    state->reader_height = slots->reader_height;
+    state->reader_bpp = slots->reader_bpp;
+    state->reader_slots = slots->reader_slots;
+    state->raw_slots = slots->raw_slots;
+    state->bitmap2_slots = slots->bitmap2_slots;
+    state->has_slot_filenames = slots->has_slot_filenames;
+    state->slot_filenames = slots->slot_filenames;
+    state->has_movie_filename = slots->has_movie_filename;
+    state->movie_filename = slots->movie_filename;
+}
+
 static nmo_status_t nmo_texture_deserialize_internal(
     void *instance,
     nmo_chunk_t *chunk,
@@ -697,104 +747,14 @@ static nmo_status_t nmo_texture_deserialize_internal(
     }
     nmo_status_t seek_result = NMO_OK;
 
-    if (nmo_texture_seek_found(
-            chunk, CK_STATESAVE_TEXREADER, &seek_result)) {
-        int32_t count = 0;
-        NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &count));
-        NMO_RETURN_IF_ERROR(nmo_texture_validate_array_count(
-            chunk, count, sizeof(nmo_texture_reader_slot_t), 3, 1, "reader slot"));
-
-        int32_t width = 0;
-        int32_t height = 0;
-        int32_t bpp = 0;
-        nmo_status_t header_result = nmo_chunk_read_int(chunk, &width);
-        if (header_result != NMO_OK) return header_result;
-        header_result = nmo_chunk_read_int(chunk, &height);
-        if (header_result != NMO_OK) return header_result;
-        header_result = nmo_chunk_read_int(chunk, &bpp);
-        if (header_result != NMO_OK) return header_result;
-        out_state->reader_width = width;
-        out_state->reader_height = height;
-        out_state->reader_bpp = bpp;
-        out_state->bitmap_kind = CKTEXTURE_BITMAP_READER;
-        out_state->slot_count = (uint32_t)count;
-
-        if (count > 0) {
-            nmo_texture_reader_slot_t *slots = (nmo_texture_reader_slot_t *)nmo_arena_alloc(
-                arena, sizeof(nmo_texture_reader_slot_t) * (size_t)count, _Alignof(nmo_texture_reader_slot_t));
-            if (!slots) {
-                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate reader slots");
-            }
-            for (int32_t i = 0; i < count; ++i) {
-                nmo_status_t result = nmo_texture_read_reader_slot(chunk, arena, &slots[i]);
-                if (result != NMO_OK) return result;
-            }
-            out_state->reader_slots = slots;
-        }
-        NMO_RETURN_IF_ERROR(nmo_texture_require_identifier_end(chunk));
-    } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
-    else if (nmo_texture_seek_found(
-                 chunk, CK_STATESAVE_TEXCOMPRESSED, &seek_result)) {
-        int32_t count = 0;
-        NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &count));
-        NMO_RETURN_IF_ERROR(nmo_texture_validate_array_count(
-            chunk, count, sizeof(nmo_texture_raw_slot_t), 0, 1, "raw slot"));
-        out_state->bitmap_kind = CKTEXTURE_BITMAP_RAW;
-        out_state->slot_count = (uint32_t)count;
-
-        if (count > 0) {
-            nmo_texture_raw_slot_t *slots = (nmo_texture_raw_slot_t *)nmo_arena_alloc(
-                arena, sizeof(nmo_texture_raw_slot_t) * (size_t)count, _Alignof(nmo_texture_raw_slot_t));
-            if (!slots) {
-                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate raw slots");
-            }
-            for (int32_t i = 0; i < count; ++i) {
-                nmo_status_t result = nmo_texture_read_raw_slot(chunk, arena, &slots[i]);
-                if (result != NMO_OK) return result;
-            }
-            out_state->raw_slots = slots;
-        }
-        NMO_RETURN_IF_ERROR(nmo_texture_require_identifier_end(chunk));
-    } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
-    else if (nmo_texture_seek_found(
-                 chunk, CK_STATESAVE_TEXBITMAPS, &seek_result)) {
-        int32_t count = 0;
-        NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &count));
-        NMO_RETURN_IF_ERROR(nmo_texture_validate_array_count(
-            chunk, count, sizeof(nmo_texture_bitmap2_slot_t), 0, 2, "bitmap slot"));
-        out_state->bitmap_kind = CKTEXTURE_BITMAP_BITMAP2;
-        out_state->slot_count = (uint32_t)count;
-
-        if (count > 0) {
-            nmo_texture_bitmap2_slot_t *slots = (nmo_texture_bitmap2_slot_t *)nmo_arena_alloc(
-                arena, sizeof(nmo_texture_bitmap2_slot_t) * (size_t)count, _Alignof(nmo_texture_bitmap2_slot_t));
-            if (!slots) {
-                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate bitmap2 slots");
-            }
-            for (int32_t i = 0; i < count; ++i) {
-                nmo_status_t result = nmo_texture_read_bitmap2_slot(chunk, arena, &slots[i]);
-                if (result != NMO_OK) return result;
-            }
-            out_state->bitmap2_slots = slots;
-        }
-        NMO_RETURN_IF_ERROR(nmo_texture_require_identifier_end(chunk));
-    } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
-
-    if (nmo_texture_seek_found(
-            chunk, CK_STATESAVE_TEXFILENAMES, &seek_result)) {
-        nmo_status_t result = nmo_texture_read_slot_filenames(chunk, arena, out_state);
-        if (result != NMO_OK) return result;
-        NMO_RETURN_IF_ERROR(nmo_texture_require_identifier_end(chunk));
-    } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
-
-    if (nmo_texture_seek_found(
-            chunk, CK_STATESAVE_TEXAVIFILENAME, &seek_result)) {
-        char *movie = NULL;
-        NMO_RETURN_IF_ERROR(nmo_chunk_read_string_checked(chunk, &movie, NULL));
-        out_state->movie_filename = movie;
-        out_state->has_movie_filename = 1;
-        NMO_RETURN_IF_ERROR(nmo_texture_require_identifier_end(chunk));
-    } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
+    {
+        /* The bitmap sections are the same as a sprite's; the classes differ in
+           the identifiers. */
+        nmo_bitmap_slots_t slots = nmo_texture_bitmap_slots(out_state);
+        NMO_RETURN_IF_ERROR(nmo_bitmap_slots_read(
+            chunk, arena, &nmo_texture_slot_ids, &slots));
+        nmo_texture_store_bitmap_slots(out_state, &slots);
+    }
 
     uint32_t data_version = nmo_chunk_get_data_version(chunk);
     /* RCKTexture::Load reads the pick threshold only from data version 5. */
@@ -1436,48 +1396,10 @@ static nmo_status_t nmo_texture_serialize_internal(
         NMO_RETURN_OK();
     }
 
-    if (state->bitmap_kind == CKTEXTURE_BITMAP_READER) {
-        nmo_status_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_TEXREADER);
-        if (result != NMO_OK) return result;
-        NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, (int32_t)state->slot_count));
-        NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, state->reader_width));
-        NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, state->reader_height));
-        NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, state->reader_bpp));
-        for (uint32_t i = 0; i < state->slot_count; ++i) {
-            result = nmo_texture_write_reader_slot(chunk, &state->reader_slots[i]);
-            if (result != NMO_OK) return result;
-        }
-    } else if (state->bitmap_kind == CKTEXTURE_BITMAP_RAW) {
-        nmo_status_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_TEXCOMPRESSED);
-        if (result != NMO_OK) return result;
-        NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, (int32_t)state->slot_count));
-        for (uint32_t i = 0; i < state->slot_count; ++i) {
-            result = nmo_texture_write_raw_slot(chunk, &state->raw_slots[i]);
-            if (result != NMO_OK) return result;
-        }
-    } else if (state->bitmap_kind == CKTEXTURE_BITMAP_BITMAP2) {
-        nmo_status_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_TEXBITMAPS);
-        if (result != NMO_OK) return result;
-        NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, (int32_t)state->slot_count));
-        for (uint32_t i = 0; i < state->slot_count; ++i) {
-            result = nmo_texture_write_bitmap2_slot(chunk, &state->bitmap2_slots[i]);
-            if (result != NMO_OK) return result;
-        }
-    }
-
-    if (state->has_slot_filenames) {
-        nmo_status_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_TEXFILENAMES);
-        if (result != NMO_OK) return result;
-        NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, (int32_t)state->slot_count));
-        for (uint32_t i = 0; i < state->slot_count; ++i) {
-            NMO_RETURN_IF_ERROR(nmo_chunk_write_string(chunk, state->slot_filenames[i]));
-        }
-    }
-
-    if (state->has_movie_filename) {
-        nmo_status_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_TEXAVIFILENAME);
-        if (result != NMO_OK) return result;
-        NMO_RETURN_IF_ERROR(nmo_chunk_write_string(chunk, state->movie_filename));
+    {
+        const nmo_bitmap_slots_t slots = nmo_texture_bitmap_slots(state);
+        NMO_RETURN_IF_ERROR(nmo_bitmap_slots_write(
+            chunk, &nmo_texture_slot_ids, &slots));
     }
 
     if (state->has_pick_threshold) {
@@ -2081,4 +2003,317 @@ nmo_status_t nmo_texture_replace_bitmap(
     slot->alpha_plane_size = 0;
 
     return NMO_OK;
+}
+
+nmo_status_t nmo_bitmap_slots_read(
+    nmo_chunk_t *chunk,
+    nmo_arena_t *arena,
+    const nmo_bitmap_slot_ids_t *ids,
+    nmo_bitmap_slots_t *bitmap)
+{
+    if (chunk == NULL || arena == NULL || ids == NULL || bitmap == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    nmo_status_t seek_result = NMO_OK;
+
+    if (nmo_texture_seek_found(
+            chunk, ids->reader, &seek_result)) {
+        int32_t count = 0;
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &count));
+        NMO_RETURN_IF_ERROR(nmo_texture_validate_array_count(
+            chunk, count, sizeof(nmo_texture_reader_slot_t), 3, 1, "reader slot"));
+
+        int32_t width = 0;
+        int32_t height = 0;
+        int32_t bpp = 0;
+        nmo_status_t header_result = nmo_chunk_read_int(chunk, &width);
+        if (header_result != NMO_OK) return header_result;
+        header_result = nmo_chunk_read_int(chunk, &height);
+        if (header_result != NMO_OK) return header_result;
+        header_result = nmo_chunk_read_int(chunk, &bpp);
+        if (header_result != NMO_OK) return header_result;
+        bitmap->reader_width = width;
+        bitmap->reader_height = height;
+        bitmap->reader_bpp = bpp;
+        bitmap->kind = CKTEXTURE_BITMAP_READER;
+        bitmap->slot_count = (uint32_t)count;
+
+        if (count > 0) {
+            nmo_texture_reader_slot_t *slots = (nmo_texture_reader_slot_t *)nmo_arena_alloc(
+                arena, sizeof(nmo_texture_reader_slot_t) * (size_t)count, _Alignof(nmo_texture_reader_slot_t));
+            if (!slots) {
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate reader slots");
+            }
+            for (int32_t i = 0; i < count; ++i) {
+                nmo_status_t result = nmo_texture_read_reader_slot(chunk, arena, &slots[i]);
+                if (result != NMO_OK) return result;
+            }
+            bitmap->reader_slots = slots;
+        }
+        NMO_RETURN_IF_ERROR(nmo_texture_require_identifier_end(chunk));
+    } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
+    else if (nmo_texture_seek_found(
+                 chunk, ids->raw, &seek_result)) {
+        int32_t count = 0;
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &count));
+        NMO_RETURN_IF_ERROR(nmo_texture_validate_array_count(
+            chunk, count, sizeof(nmo_texture_raw_slot_t), 0, 1, "raw slot"));
+        bitmap->kind = CKTEXTURE_BITMAP_RAW;
+        bitmap->slot_count = (uint32_t)count;
+
+        if (count > 0) {
+            nmo_texture_raw_slot_t *slots = (nmo_texture_raw_slot_t *)nmo_arena_alloc(
+                arena, sizeof(nmo_texture_raw_slot_t) * (size_t)count, _Alignof(nmo_texture_raw_slot_t));
+            if (!slots) {
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate raw slots");
+            }
+            for (int32_t i = 0; i < count; ++i) {
+                nmo_status_t result = nmo_texture_read_raw_slot(chunk, arena, &slots[i]);
+                if (result != NMO_OK) return result;
+            }
+            bitmap->raw_slots = slots;
+        }
+        NMO_RETURN_IF_ERROR(nmo_texture_require_identifier_end(chunk));
+    } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
+    else if (nmo_texture_seek_found(
+                 chunk, ids->bitmap2, &seek_result)) {
+        int32_t count = 0;
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &count));
+        NMO_RETURN_IF_ERROR(nmo_texture_validate_array_count(
+            chunk, count, sizeof(nmo_texture_bitmap2_slot_t), 0, 2, "bitmap slot"));
+        bitmap->kind = CKTEXTURE_BITMAP_BITMAP2;
+        bitmap->slot_count = (uint32_t)count;
+
+        if (count > 0) {
+            nmo_texture_bitmap2_slot_t *slots = (nmo_texture_bitmap2_slot_t *)nmo_arena_alloc(
+                arena, sizeof(nmo_texture_bitmap2_slot_t) * (size_t)count, _Alignof(nmo_texture_bitmap2_slot_t));
+            if (!slots) {
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate bitmap2 slots");
+            }
+            for (int32_t i = 0; i < count; ++i) {
+                nmo_status_t result = nmo_texture_read_bitmap2_slot(chunk, arena, &slots[i]);
+                if (result != NMO_OK) return result;
+            }
+            bitmap->bitmap2_slots = slots;
+        }
+        NMO_RETURN_IF_ERROR(nmo_texture_require_identifier_end(chunk));
+    } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
+
+    if (nmo_texture_seek_found(
+            chunk, ids->filenames, &seek_result)) {
+        nmo_status_t result = nmo_bitmap_read_slot_filenames(chunk, arena, bitmap);
+        if (result != NMO_OK) return result;
+        NMO_RETURN_IF_ERROR(nmo_texture_require_identifier_end(chunk));
+    } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
+
+    if (nmo_texture_seek_found(
+            chunk, ids->movie, &seek_result)) {
+        char *movie = NULL;
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_string_checked(chunk, &movie, NULL));
+        bitmap->movie_filename = movie;
+        bitmap->has_movie_filename = 1;
+        NMO_RETURN_IF_ERROR(nmo_texture_require_identifier_end(chunk));
+    } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
+
+
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_bitmap_slots_write(
+    nmo_chunk_t *chunk,
+    const nmo_bitmap_slot_ids_t *ids,
+    const nmo_bitmap_slots_t *bitmap)
+{
+    if (chunk == NULL || ids == NULL || bitmap == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (bitmap->kind == CKTEXTURE_BITMAP_READER) {
+        nmo_status_t result = nmo_chunk_write_identifier(chunk, ids->reader);
+        if (result != NMO_OK) return result;
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, (int32_t)bitmap->slot_count));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, bitmap->reader_width));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, bitmap->reader_height));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, bitmap->reader_bpp));
+        for (uint32_t i = 0; i < bitmap->slot_count; ++i) {
+            result = nmo_texture_write_reader_slot(chunk, &bitmap->reader_slots[i]);
+            if (result != NMO_OK) return result;
+        }
+    } else if (bitmap->kind == CKTEXTURE_BITMAP_RAW) {
+        nmo_status_t result = nmo_chunk_write_identifier(chunk, ids->raw);
+        if (result != NMO_OK) return result;
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, (int32_t)bitmap->slot_count));
+        for (uint32_t i = 0; i < bitmap->slot_count; ++i) {
+            result = nmo_texture_write_raw_slot(chunk, &bitmap->raw_slots[i]);
+            if (result != NMO_OK) return result;
+        }
+    } else if (bitmap->kind == CKTEXTURE_BITMAP_BITMAP2) {
+        nmo_status_t result = nmo_chunk_write_identifier(chunk, ids->bitmap2);
+        if (result != NMO_OK) return result;
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, (int32_t)bitmap->slot_count));
+        for (uint32_t i = 0; i < bitmap->slot_count; ++i) {
+            result = nmo_texture_write_bitmap2_slot(chunk, &bitmap->bitmap2_slots[i]);
+            if (result != NMO_OK) return result;
+        }
+    }
+
+    if (bitmap->has_slot_filenames) {
+        nmo_status_t result = nmo_chunk_write_identifier(chunk, ids->filenames);
+        if (result != NMO_OK) return result;
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, (int32_t)bitmap->slot_count));
+        for (uint32_t i = 0; i < bitmap->slot_count; ++i) {
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_string(chunk, bitmap->slot_filenames[i]));
+        }
+    }
+
+    if (bitmap->has_movie_filename) {
+        nmo_status_t result = nmo_chunk_write_identifier(chunk, ids->movie);
+        if (result != NMO_OK) return result;
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_string(chunk, bitmap->movie_filename));
+    }
+
+
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_bitmap_slots_validate(const nmo_bitmap_slots_t *bitmap)
+{
+    if (bitmap == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    if (bitmap->slot_count > INT32_MAX) {
+        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                         "Bitmap slot count exceeds serialized range");
+    }
+    if (!bitmap->has_movie_filename && bitmap->movie_filename != NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                         "Bitmap movie file name is present without its section");
+    }
+    if (bitmap->has_slot_filenames) {
+        NMO_VALIDATE_COUNT(bitmap->slot_filenames, bitmap->slot_count, "slot_filenames");
+    } else if (bitmap->slot_filenames != NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                         "Bitmap slot file names are present without their section");
+    }
+    if (bitmap->kind == CKTEXTURE_BITMAP_READER) {
+        NMO_VALIDATE_COUNT(bitmap->reader_slots, bitmap->slot_count, "reader_slots");
+    } else if (bitmap->kind == CKTEXTURE_BITMAP_RAW) {
+        NMO_VALIDATE_COUNT(bitmap->raw_slots, bitmap->slot_count, "raw_slots");
+    } else if (bitmap->kind == CKTEXTURE_BITMAP_BITMAP2) {
+        NMO_VALIDATE_COUNT(bitmap->bitmap2_slots, bitmap->slot_count, "bitmap2_slots");
+    } else if (bitmap->kind != CKTEXTURE_BITMAP_NONE) {
+        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                         "Unknown bitmap kind");
+    }
+    if ((bitmap->kind != CKTEXTURE_BITMAP_READER && bitmap->reader_slots != NULL) ||
+        (bitmap->kind != CKTEXTURE_BITMAP_RAW && bitmap->raw_slots != NULL) ||
+        (bitmap->kind != CKTEXTURE_BITMAP_BITMAP2 && bitmap->bitmap2_slots != NULL)) {
+        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                         "Bitmap contains inactive slot storage");
+    }
+    for (uint32_t i = 0; bitmap->reader_slots != NULL && i < bitmap->slot_count; ++i) {
+        NMO_VALIDATE_BYTES(bitmap->reader_slots[i].data, bitmap->reader_slots[i].data_size,
+                           "reader_slots.data");
+        NMO_VALIDATE_BYTES(bitmap->reader_slots[i].alpha_plane,
+                           bitmap->reader_slots[i].alpha_plane_size,
+                           "reader_slots.alpha_plane");
+    }
+    for (uint32_t i = 0; bitmap->raw_slots != NULL && i < bitmap->slot_count; ++i) {
+        NMO_VALIDATE_BYTES(bitmap->raw_slots[i].blue_data, bitmap->raw_slots[i].blue_size,
+                           "raw_slots.blue_data");
+        NMO_VALIDATE_BYTES(bitmap->raw_slots[i].green_data, bitmap->raw_slots[i].green_size,
+                           "raw_slots.green_data");
+        NMO_VALIDATE_BYTES(bitmap->raw_slots[i].red_data, bitmap->raw_slots[i].red_size,
+                           "raw_slots.red_data");
+        NMO_VALIDATE_BYTES(bitmap->raw_slots[i].alpha_data, bitmap->raw_slots[i].alpha_size,
+                           "raw_slots.alpha_data");
+    }
+    for (uint32_t i = 0; bitmap->bitmap2_slots != NULL && i < bitmap->slot_count; ++i) {
+        NMO_VALIDATE_BYTES(bitmap->bitmap2_slots[i].buffer, bitmap->bitmap2_slots[i].buffer_size,
+                           "bitmap2_slots.buffer");
+    }
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_bitmap_slots_copy(
+    nmo_arena_t *arena,
+    nmo_bitmap_slots_t *dst,
+    const nmo_bitmap_slots_t *src)
+{
+    if (arena == NULL || dst == NULL || src == NULL) return NMO_ERR_INVALID_ARGUMENT;
+    nmo_bitmap_slots_t copied = *src;
+    copied.movie_filename = NULL;
+    copied.slot_filenames = NULL;
+    copied.reader_slots = NULL;
+    copied.raw_slots = NULL;
+    copied.bitmap2_slots = NULL;
+
+    NMO_RETURN_IF_ERROR(nmo_object_copy_string(
+        arena, &copied.movie_filename, src->movie_filename));
+    if (src->slot_filenames != NULL) {
+        NMO_RETURN_IF_ERROR(nmo_object_copy_string_array(
+            arena, &copied.slot_filenames, src->slot_filenames, src->slot_count));
+    }
+    if (src->reader_slots != NULL) {
+        NMO_RETURN_IF_ERROR(nmo_texture_copy_reader_slots(
+            arena, &copied.reader_slots, src->reader_slots, src->slot_count));
+    }
+    if (src->raw_slots != NULL) {
+        NMO_RETURN_IF_ERROR(nmo_texture_copy_raw_slots(
+            arena, &copied.raw_slots, src->raw_slots, src->slot_count));
+    }
+    if (src->bitmap2_slots != NULL) {
+        NMO_RETURN_IF_ERROR(nmo_texture_copy_bitmap2_slots(
+            arena, &copied.bitmap2_slots, src->bitmap2_slots, src->slot_count));
+    }
+    *dst = copied;
+    NMO_RETURN_OK();
+}
+
+bool nmo_bitmap_slots_equals(
+    const nmo_bitmap_slots_t *a,
+    const nmo_bitmap_slots_t *b)
+{
+    if (a == b) return true;
+    if (a == NULL || b == NULL) return false;
+    return a->has_movie_filename == b->has_movie_filename &&
+        nmo_texture_string_equals(a->movie_filename, b->movie_filename) &&
+        a->has_slot_filenames == b->has_slot_filenames &&
+        a->slot_count == b->slot_count &&
+        nmo_texture_slot_filenames_equal(a->slot_filenames, b->slot_filenames, a->slot_count) &&
+        a->reader_width == b->reader_width &&
+        a->reader_height == b->reader_height &&
+        a->reader_bpp == b->reader_bpp &&
+        a->kind == b->kind &&
+        nmo_texture_reader_slots_equal(a->reader_slots, b->reader_slots, a->slot_count) &&
+        nmo_texture_raw_slots_equal(a->raw_slots, b->raw_slots, a->slot_count) &&
+        nmo_texture_bitmap2_slots_equal(a->bitmap2_slots, b->bitmap2_slots, a->slot_count);
+}
+
+uint32_t nmo_bitmap_slots_hash(uint32_t hash, const nmo_bitmap_slots_t *bitmap)
+{
+    hash = nmo_hash_fnv1a32_update(hash, &bitmap->kind, sizeof(bitmap->kind));
+    hash = nmo_hash_fnv1a32_update(hash, &bitmap->slot_count, sizeof(bitmap->slot_count));
+    hash = nmo_hash_fnv1a32_update(hash, &bitmap->reader_width, sizeof(bitmap->reader_width));
+    hash = nmo_hash_fnv1a32_update(hash, &bitmap->reader_height, sizeof(bitmap->reader_height));
+    hash = nmo_hash_fnv1a32_update(hash, &bitmap->reader_bpp, sizeof(bitmap->reader_bpp));
+    hash = nmo_texture_hash_string(hash, bitmap->movie_filename);
+    for (uint32_t i = 0; bitmap->slot_filenames != NULL && i < bitmap->slot_count; ++i) {
+        hash = nmo_texture_hash_string(hash, bitmap->slot_filenames[i]);
+    }
+    for (uint32_t i = 0; bitmap->reader_slots != NULL && i < bitmap->slot_count; ++i) {
+        const nmo_texture_reader_slot_t *slot = &bitmap->reader_slots[i];
+        hash = nmo_hash_fnv1a32_update(hash, &slot->format_type, sizeof(slot->format_type));
+        hash = nmo_hash_fnv1a32_update(hash, &slot->extension, sizeof(slot->extension));
+        hash = nmo_hash_fnv1a32_update(hash, &slot->reader_guid, sizeof(slot->reader_guid));
+        hash = nmo_texture_hash_buffer(hash, slot->data, slot->data_size);
+        hash = nmo_hash_fnv1a32_update(hash, &slot->alpha_count, sizeof(slot->alpha_count));
+        hash = nmo_hash_fnv1a32_update(hash, &slot->alpha_value, sizeof(slot->alpha_value));
+        hash = nmo_texture_hash_buffer(hash, slot->alpha_plane, slot->alpha_plane_size);
+    }
+    hash = nmo_texture_hash_raw_slots(hash, bitmap->raw_slots, bitmap->raw_slots ? bitmap->slot_count : 0u);
+    for (uint32_t i = 0; bitmap->bitmap2_slots != NULL && i < bitmap->slot_count; ++i) {
+        hash = nmo_hash_fnv1a32_update(hash, &bitmap->bitmap2_slots[i].unused_int,
+                                       sizeof(bitmap->bitmap2_slots[i].unused_int));
+        hash = nmo_texture_hash_buffer(hash, bitmap->bitmap2_slots[i].buffer,
+                                       bitmap->bitmap2_slots[i].buffer_size);
+    }
+    return hash;
 }
