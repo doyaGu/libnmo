@@ -1491,6 +1491,104 @@ TEST(objanim_controllers, copy_controllers) {
     nmo_arena_destroy(arena);
 }
 
+/* ========================================================================
+ * Test: morph controller blob in the CONTROLLERS format
+ * ======================================================================== */
+TEST(objanim_controllers, morph_controller_blob_is_read_and_kept) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+    nmo_type_registry_t *registry = nmo_type_registry_create(arena);
+    ASSERT_EQ(NMO_OK, register_test_types(registry));
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(
+        registry, CKPGUID_OBJECTANIMATION);
+    ASSERT_NOT_NULL(type);
+    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+
+    /* RCKMorphController::DumpKeysTo: key count, vertex count, has normals,
+     * then per key a time, 3 floats per vertex and 4 bytes per vertex of
+     * compressed normal. Two keys of two vertices with normals. */
+    uint32_t blob[3 + 2 * (1 + 6 + 2)];
+    memset(blob, 0, sizeof(blob));
+    blob[0] = 2u;
+    blob[1] = 2u;
+    blob[2] = 1u;
+    float key_time[2] = {0.5f, 2.5f};
+    for (uint32_t k = 0; k < 2u; ++k) {
+        uint32_t *key = blob + 3 + k * 9u;
+        memcpy(key, &key_time[k], sizeof(float));
+        for (uint32_t f = 0; f < 6u; ++f) {
+            float value = (float)(k * 10u + f);
+            memcpy(key + 1 + f, &value, sizeof(float));
+        }
+        key[7] = 0x1111u * (k + 1u);
+        key[8] = 0x2222u * (k + 1u);
+    }
+
+    nmo_objectanimation_state_t out_state;
+    memset(&out_state, 0, sizeof(out_state));
+    out_state.format = CKOBJANIM_FORMAT_CONTROLLERS;
+    nmo_objanim_controller_t controller = {
+        .type = NMO_OBJANIM_CONTROLLER_MORPH,
+        .key_count = 0,
+        .data_size = sizeof(blob),
+        .data = blob,
+    };
+    out_state.controller_count = 1;
+    out_state.controllers = &controller;
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    nmo_chunk_start_write(chunk);
+    ASSERT_EQ(NMO_OK, type->vtable->serialize(&out_state, chunk, type, &ser_ctx));
+    nmo_chunk_close(chunk);
+    nmo_chunk_start_read(chunk);
+    nmo_deserialize_context_t des_ctx = nmo_deserialize_context_create(arena, NULL, NULL, 0);
+    nmo_objectanimation_state_t in_state;
+    memset(&in_state, 0, sizeof(in_state));
+    ASSERT_EQ(NMO_OK, type->vtable->deserialize(&in_state, chunk, type, &des_ctx));
+    ASSERT_EQ(1u, in_state.controller_count);
+    ASSERT_EQ(sizeof(blob), in_state.controllers[0].data_size);
+    ASSERT_EQ(0, memcmp(blob, in_state.controllers[0].data, sizeof(blob)));
+
+    nmo_objanim_morph_info_t info;
+    ASSERT_TRUE(nmo_objanim_morph_controller_info(&in_state.controllers[0], &info));
+    ASSERT_EQ(2u, info.key_count);
+    ASSERT_EQ(2u, info.vertex_count);
+    ASSERT_TRUE(info.has_normals);
+
+    float time = 0.0f;
+    const float *positions = NULL;
+    const uint8_t *normals = NULL;
+    ASSERT_TRUE(nmo_objanim_morph_controller_key(
+        &in_state.controllers[0], &info, 1, &time, &positions, &normals));
+    ASSERT_EQ(2.5f, time);
+    ASSERT_EQ(10.0f, positions[0]);
+    ASSERT_EQ(15.0f, positions[5]);
+    uint32_t normal = 0;
+    memcpy(&normal, normals, sizeof(normal));
+    ASSERT_EQ(0x2222u, normal);
+    ASSERT_FALSE(nmo_objanim_morph_controller_key(
+        &in_state.controllers[0], &info, 2, &time, NULL, NULL));
+
+    /* A size that does not match the counts is not a morph controller. */
+    nmo_objanim_controller_t cut = in_state.controllers[0];
+    cut.data_size -= 4u;
+    ASSERT_FALSE(nmo_objanim_morph_controller_info(&cut, &info));
+
+    /* An empty morph controller is the three header dwords. */
+    uint32_t empty_blob[3] = {0u, 0u, 0u};
+    nmo_objanim_controller_t empty = {
+        .type = NMO_OBJANIM_CONTROLLER_MORPH,
+        .data_size = sizeof(empty_blob),
+        .data = empty_blob,
+    };
+    ASSERT_TRUE(nmo_objanim_morph_controller_info(&empty, &info));
+    ASSERT_EQ(0u, info.key_count);
+    ASSERT_FALSE(info.has_normals);
+
+    nmo_type_registry_destroy(registry);
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(objanim_controllers, controllers_roundtrip);
     REGISTER_TEST(objanim_controllers, controllers_empty);
@@ -1521,4 +1619,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(objanim_controllers, legacy_rejects_inconsistent_controller_header);
     REGISTER_TEST(objanim_controllers, legacy_rejects_lossy_controller_state);
     REGISTER_TEST(objanim_controllers, copy_controllers);
+    REGISTER_TEST(objanim_controllers, morph_controller_blob_is_read_and_kept);
 TEST_MAIN_END()
