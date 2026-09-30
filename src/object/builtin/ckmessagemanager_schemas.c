@@ -361,24 +361,11 @@ static bool nmo_messagemanager_equals(const void *a, const void *b)
     return true;
 }
 
-static uint32_t nmo_messagemanager_hash_bytes(
-    uint32_t hash,
-    const void *data,
-    size_t size)
-{
-    const uint8_t *bytes = data;
-    for (size_t i = 0; i < size; ++i) {
-        hash ^= bytes[i];
-        hash *= 16777619u;
-    }
-    return hash;
-}
-
 static uint32_t nmo_messagemanager_hash(const void *instance)
 {
     if (instance == NULL) return 0;
     const nmo_messagemanager_state_t *state = instance;
-    uint32_t hash = nmo_messagemanager_hash_bytes(
+    uint32_t hash = nmo_hash_fnv1a32_update(
         2166136261u, &state->message_type_count,
         sizeof(state->message_type_count));
     if (state->message_type_names == NULL) return hash;
@@ -386,10 +373,10 @@ static uint32_t nmo_messagemanager_hash(const void *instance)
     for (uint32_t i = 0; i < state->message_type_count; ++i) {
         const char *name = state->message_type_names[i];
         const uint8_t present = name != NULL;
-        hash = nmo_messagemanager_hash_bytes(
+        hash = nmo_hash_fnv1a32_update(
             hash, &present, sizeof(present));
         if (present) {
-            hash = nmo_messagemanager_hash_bytes(
+            hash = nmo_hash_fnv1a32_update(
                 hash, name, strlen(name));
         }
     }

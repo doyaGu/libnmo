@@ -841,27 +841,13 @@ static bool nmo_sprite_equals(const void *a, const void *b)
             lhs->bitmap_properties_size);
 }
 
-static uint32_t nmo_sprite_hash_bytes(
-    uint32_t hash,
-    const void *data,
-    size_t size)
-{
-    const uint8_t *bytes = data;
-    if (bytes == NULL) return hash;
-    for (size_t i = 0; i < size; ++i) {
-        hash ^= bytes[i];
-        hash *= 16777619u;
-    }
-    return hash;
-}
-
 static uint32_t nmo_sprite_hash_buffer(
     uint32_t hash,
     const void *data,
     size_t size)
 {
-    hash = nmo_sprite_hash_bytes(hash, &size, sizeof(size));
-    return nmo_sprite_hash_bytes(hash, data, size);
+    hash = nmo_hash_fnv1a32_update(hash, &size, sizeof(size));
+    return nmo_hash_fnv1a32_update(hash, data, size);
 }
 
 static uint32_t nmo_sprite_hash(const void *instance)
@@ -870,7 +856,7 @@ static uint32_t nmo_sprite_hash(const void *instance)
     const nmo_sprite_state_t *state = instance;
     uint32_t hash = nmo_2dentity_vtable.hash(&state->entity);
 #define NMO_SPRITE_HASH_FIELD(field) \
-    hash = nmo_sprite_hash_bytes(hash, &state->field, sizeof(state->field))
+    hash = nmo_hash_fnv1a32_update(hash, &state->field, sizeof(state->field))
     NMO_SPRITE_HASH_FIELD(has_sprite_ref);
     NMO_SPRITE_HASH_FIELD(sprite_ref.raw_id);
     NMO_SPRITE_HASH_FIELD(sprite_ref.id);

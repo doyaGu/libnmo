@@ -775,27 +775,14 @@ static bool nmo_animation_equals(const void *a, const void *b)
     return true;
 }
 
-static uint32_t nmo_animation_hash_bytes(
-    uint32_t hash,
-    const void *data,
-    size_t size)
-{
-    const uint8_t *bytes = data;
-    for (size_t i = 0; i < size; ++i) {
-        hash ^= bytes[i];
-        hash *= 16777619u;
-    }
-    return hash;
-}
-
 static uint32_t nmo_animation_hash_ref(
     uint32_t hash,
     const nmo_ref_t *ref)
 {
-    hash = nmo_animation_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &ref->raw_id, sizeof(ref->raw_id));
-    hash = nmo_animation_hash_bytes(hash, &ref->id, sizeof(ref->id));
-    return nmo_animation_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(hash, &ref->id, sizeof(ref->id));
+    return nmo_hash_fnv1a32_update(
         hash, &ref->state, sizeof(ref->state));
 }
 
@@ -806,7 +793,7 @@ static uint32_t nmo_animation_hash(const void *instance)
     if (nmo_animation_validate(state, NULL, NULL) != NMO_OK) return 0;
     uint32_t hash = nmo_sceneobject_vtable.hash(&state->base);
 #define NMO_ANIMATION_HASH_FIELD(field) \
-    hash = nmo_animation_hash_bytes( \
+    hash = nmo_hash_fnv1a32_update( \
         hash, &state->field, sizeof(state->field))
     NMO_ANIMATION_HASH_FIELD(has_data);
     NMO_ANIMATION_HASH_FIELD(data_is_legacy);
@@ -902,14 +889,14 @@ static uint32_t nmo_animation_hash_chunk_array(
     uint32_t hash,
     const nmo_arena_array_t *array)
 {
-    hash = nmo_animation_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &array->count, sizeof(array->count));
     if (array->count == 0 || array->data == NULL ||
         array->element_size != sizeof(uint32_t) ||
         array->count > array->capacity) {
         return hash;
     }
-    return nmo_animation_hash_bytes(
+    return nmo_hash_fnv1a32_update(
         hash, array->data, array->count * sizeof(uint32_t));
 }
 
@@ -918,17 +905,17 @@ static uint32_t nmo_animation_hash_chunk(
     const nmo_chunk_t *chunk)
 {
     const uint8_t present = chunk != NULL;
-    hash = nmo_animation_hash_bytes(hash, &present, sizeof(present));
+    hash = nmo_hash_fnv1a32_update(hash, &present, sizeof(present));
     if (chunk == NULL) return hash;
     const uint8_t is_file =
         (chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0;
-    hash = nmo_animation_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &chunk->class_id, sizeof(chunk->class_id));
-    hash = nmo_animation_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &chunk->data_version, sizeof(chunk->data_version));
-    hash = nmo_animation_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &chunk->chunk_version, sizeof(chunk->chunk_version));
-    hash = nmo_animation_hash_bytes(hash, &is_file, sizeof(is_file));
+    hash = nmo_hash_fnv1a32_update(hash, &is_file, sizeof(is_file));
     hash = nmo_animation_hash_chunk_array(hash, &chunk->data);
     hash = nmo_animation_hash_chunk_array(hash, &chunk->ids);
     hash = nmo_animation_hash_chunk_array(hash, &chunk->chunk_refs);
@@ -941,18 +928,18 @@ static uint32_t nmo_keyedanimation_hash(const void *instance)
     const nmo_keyedanimation_state_t *state = instance;
     if (nmo_keyedanimation_validate(state, NULL, NULL) != NMO_OK) return 0;
     uint32_t hash = nmo_animation_vtable.hash(&state->base);
-    hash = nmo_animation_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &state->animation_count, sizeof(state->animation_count));
     for (uint32_t i = 0; i < state->animation_count; ++i) {
         hash = nmo_animation_hash_ref(hash, &state->animation_ids[i]);
     }
-    hash = nmo_animation_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &state->has_merge, sizeof(state->has_merge));
-    hash = nmo_animation_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &state->merged, sizeof(state->merged));
-    hash = nmo_animation_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &state->merge_factor, sizeof(state->merge_factor));
-    hash = nmo_animation_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &state->subanim_count, sizeof(state->subanim_count));
     for (uint32_t i = 0; i < state->subanim_count; ++i) {
         hash = nmo_animation_hash_ref(hash, &state->subanims[i].ref);
@@ -1066,7 +1053,7 @@ static uint32_t nmo_objectanimation_hash(const void *instance)
     if (nmo_objectanimation_validate(state, NULL, NULL) != NMO_OK) return 0;
     uint32_t hash = nmo_sceneobject_vtable.hash(&state->base);
 #define NMO_OBJECTANIMATION_HASH_FIELD(field) \
-    hash = nmo_animation_hash_bytes( \
+    hash = nmo_hash_fnv1a32_update( \
         hash, &state->field, sizeof(state->field))
     NMO_OBJECTANIMATION_HASH_FIELD(format);
     NMO_OBJECTANIMATION_HASH_FIELD(root_pos.x);
@@ -1094,41 +1081,41 @@ static uint32_t nmo_objectanimation_hash(const void *instance)
     NMO_OBJECTANIMATION_HASH_FIELD(has_legacy_entity_section);
     for (uint32_t i = 0; i < state->controller_count; ++i) {
         const nmo_objanim_controller_t *controller = &state->controllers[i];
-        hash = nmo_animation_hash_bytes(
+        hash = nmo_hash_fnv1a32_update(
             hash, &controller->type, sizeof(controller->type));
-        hash = nmo_animation_hash_bytes(
+        hash = nmo_hash_fnv1a32_update(
             hash, &controller->key_count, sizeof(controller->key_count));
-        hash = nmo_animation_hash_bytes(
+        hash = nmo_hash_fnv1a32_update(
             hash, &controller->data_size, sizeof(controller->data_size));
-        hash = nmo_animation_hash_bytes(
+        hash = nmo_hash_fnv1a32_update(
             hash, controller->data, controller->data_size);
     }
     NMO_OBJECTANIMATION_HASH_FIELD(morph_key_parsed_count);
     for (uint32_t i = 0; i < state->morph_key_parsed_count; ++i) {
         const nmo_objanim_morph_key_t *key = &state->morph_keys[i];
-        hash = nmo_animation_hash_bytes(
+        hash = nmo_hash_fnv1a32_update(
             hash, &key->time_step, sizeof(key->time_step));
-        hash = nmo_animation_hash_bytes(
+        hash = nmo_hash_fnv1a32_update(
             hash, &key->data_size, sizeof(key->data_size));
-        hash = nmo_animation_hash_bytes(
+        hash = nmo_hash_fnv1a32_update(
             hash, key->data, key->data_size);
     }
     NMO_OBJECTANIMATION_HASH_FIELD(morph_normals_id);
     NMO_OBJECTANIMATION_HASH_FIELD(morph_normals_count);
     for (uint32_t i = 0; i < state->morph_normals_count; ++i) {
-        hash = nmo_animation_hash_bytes(
+        hash = nmo_hash_fnv1a32_update(
             hash, &state->morph_normals_sizes[i],
             sizeof(state->morph_normals_sizes[i]));
-        hash = nmo_animation_hash_bytes(
+        hash = nmo_hash_fnv1a32_update(
             hash, state->morph_normals_data[i],
             state->morph_normals_sizes[i]);
     }
     NMO_OBJECTANIMATION_HASH_FIELD(has_legacy_morphkeys);
     NMO_OBJECTANIMATION_HASH_FIELD(legacy_morphkeys_size);
-    hash = nmo_animation_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, state->legacy_morphkeys, state->legacy_morphkeys_size);
     NMO_OBJECTANIMATION_HASH_FIELD(raw_tail_size);
-    hash = nmo_animation_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, state->raw_tail, state->raw_tail_size);
 #undef NMO_OBJECTANIMATION_HASH_FIELD
     return hash;

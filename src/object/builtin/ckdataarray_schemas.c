@@ -940,27 +940,14 @@ static bool nmo_dataarray_equals(const void *a, const void *b)
     return true;
 }
 
-static uint32_t nmo_dataarray_hash_bytes(
-    uint32_t hash,
-    const void *data,
-    size_t size)
-{
-    const uint8_t *bytes = data;
-    for (size_t i = 0; i < size; ++i) {
-        hash ^= bytes[i];
-        hash *= 16777619u;
-    }
-    return hash;
-}
-
 static uint32_t nmo_dataarray_hash_string(
     uint32_t hash,
     const char *string)
 {
     const uint8_t present = string != NULL;
-    hash = nmo_dataarray_hash_bytes(hash, &present, sizeof(present));
+    hash = nmo_hash_fnv1a32_update(hash, &present, sizeof(present));
     return present
-        ? nmo_dataarray_hash_bytes(hash, string, strlen(string) + 1u)
+        ? nmo_hash_fnv1a32_update(hash, string, strlen(string) + 1u)
         : hash;
 }
 
@@ -968,9 +955,9 @@ static uint32_t nmo_dataarray_hash_ref(
     uint32_t hash,
     const nmo_ref_t *ref)
 {
-    hash = nmo_dataarray_hash_bytes(hash, &ref->raw_id, sizeof(ref->raw_id));
-    hash = nmo_dataarray_hash_bytes(hash, &ref->id, sizeof(ref->id));
-    return nmo_dataarray_hash_bytes(hash, &ref->state, sizeof(ref->state));
+    hash = nmo_hash_fnv1a32_update(hash, &ref->raw_id, sizeof(ref->raw_id));
+    hash = nmo_hash_fnv1a32_update(hash, &ref->id, sizeof(ref->id));
+    return nmo_hash_fnv1a32_update(hash, &ref->state, sizeof(ref->state));
 }
 
 static uint32_t nmo_dataarray_hash_chunk(
@@ -978,13 +965,13 @@ static uint32_t nmo_dataarray_hash_chunk(
     const nmo_chunk_t *chunk)
 {
     const uint8_t present = chunk != NULL;
-    hash = nmo_dataarray_hash_bytes(hash, &present, sizeof(present));
+    hash = nmo_hash_fnv1a32_update(hash, &present, sizeof(present));
     if (chunk == NULL) return hash;
     size_t size = 0;
     const void *data = nmo_chunk_get_data(chunk, &size);
-    hash = nmo_dataarray_hash_bytes(hash, &size, sizeof(size));
+    hash = nmo_hash_fnv1a32_update(hash, &size, sizeof(size));
     return data != NULL && size > 0
-        ? nmo_dataarray_hash_bytes(hash, data, size)
+        ? nmo_hash_fnv1a32_update(hash, data, size)
         : hash;
 }
 
@@ -995,10 +982,10 @@ static uint32_t nmo_dataarray_hash_cell(
 {
     switch (type) {
     case CKARRAYTYPE_INT:
-        return nmo_dataarray_hash_bytes(
+        return nmo_hash_fnv1a32_update(
             hash, &cell->int_value, sizeof(cell->int_value));
     case CKARRAYTYPE_FLOAT:
-        return nmo_dataarray_hash_bytes(
+        return nmo_hash_fnv1a32_update(
             hash, &cell->float_value, sizeof(cell->float_value));
     case CKARRAYTYPE_STRING:
         return nmo_dataarray_hash_string(hash, cell->string_value);
@@ -1018,7 +1005,7 @@ static uint32_t nmo_dataarray_hash(const void *instance)
     const nmo_dataarray_state_t *state = instance;
     uint32_t hash = nmo_beobject_vtable.hash(&state->base);
 #define NMO_DATAARRAY_HASH_FIELD(field) \
-    hash = nmo_dataarray_hash_bytes(hash, &(field), sizeof(field))
+    hash = nmo_hash_fnv1a32_update(hash, &(field), sizeof(field))
     NMO_DATAARRAY_HASH_FIELD(state->column_count);
     if (state->column_count > 0 && state->column_formats == NULL) return hash;
     for (uint32_t column_index = 0;

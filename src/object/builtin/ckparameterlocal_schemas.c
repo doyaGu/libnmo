@@ -326,19 +326,6 @@ static bool nmo_parameterlocal_equals(const void *a, const void *b)
         lhs->is_setting == rhs->is_setting;
 }
 
-static uint32_t nmo_parameterlocal_hash_bytes(
-    uint32_t hash,
-    const void *data,
-    size_t size)
-{
-    const uint8_t *bytes = (const uint8_t *)data;
-    for (size_t i = 0; i < size; ++i) {
-        hash ^= bytes[i];
-        hash *= 16777619u;
-    }
-    return hash;
-}
-
 static uint32_t nmo_parameterlocal_hash(const void *instance)
 {
     if (instance == NULL) return 0;
@@ -346,7 +333,7 @@ static uint32_t nmo_parameterlocal_hash(const void *instance)
         (const nmo_parameterlocal_state_t *)instance;
     uint32_t hash = 2166136261u;
 #define NMO_PARAMETERLOCAL_HASH_FIELD(field) \
-    hash = nmo_parameterlocal_hash_bytes(hash, &(field), sizeof(field))
+    hash = nmo_hash_fnv1a32_update(hash, &(field), sizeof(field))
     NMO_PARAMETERLOCAL_HASH_FIELD(state->base.base.visibility_flags);
     NMO_PARAMETERLOCAL_HASH_FIELD(state->base.type_guid);
     NMO_PARAMETERLOCAL_HASH_FIELD(state->base.mode);
@@ -358,29 +345,29 @@ static uint32_t nmo_parameterlocal_hash(const void *instance)
 #undef NMO_PARAMETERLOCAL_HASH_FIELD
     if (state->base.buffer_data.data != NULL &&
         state->base.buffer_data.count > 0) {
-        hash = nmo_parameterlocal_hash_bytes(
+        hash = nmo_hash_fnv1a32_update(
             hash, state->base.buffer_data.data,
             state->base.buffer_data.count);
     }
     const uint8_t has_subchunk = state->base.subchunk != NULL;
-    hash = nmo_parameterlocal_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &has_subchunk, sizeof(has_subchunk));
     if (state->base.subchunk != NULL) {
         size_t chunk_size = 0;
         const void *chunk_data = nmo_chunk_get_data(
             state->base.subchunk, &chunk_size);
-        hash = nmo_parameterlocal_hash_bytes(
+        hash = nmo_hash_fnv1a32_update(
             hash, &chunk_size, sizeof(chunk_size));
         if (chunk_data != NULL && chunk_size > 0) {
-            hash = nmo_parameterlocal_hash_bytes(
+            hash = nmo_hash_fnv1a32_update(
                 hash, chunk_data, chunk_size);
         }
     }
-    hash = nmo_parameterlocal_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &state->owner, sizeof(state->owner));
-    hash = nmo_parameterlocal_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &state->is_myself, sizeof(state->is_myself));
-    hash = nmo_parameterlocal_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &state->is_setting, sizeof(state->is_setting));
     return hash;
 }

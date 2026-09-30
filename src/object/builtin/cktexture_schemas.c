@@ -1732,26 +1732,12 @@ static bool nmo_texture_equals(const void *a, const void *b)
             lhs->user_mipmap_count);
 }
 
-static uint32_t nmo_texture_hash_bytes(
-    uint32_t hash,
-    const void *data,
-    size_t size)
-{
-    const uint8_t *bytes = data;
-    if (bytes == NULL) return hash;
-    for (size_t i = 0; i < size; ++i) {
-        hash ^= bytes[i];
-        hash *= 16777619u;
-    }
-    return hash;
-}
-
 static uint32_t nmo_texture_hash_string(uint32_t hash, const char *string)
 {
     const uint8_t present = string != NULL;
-    hash = nmo_texture_hash_bytes(hash, &present, sizeof(present));
+    hash = nmo_hash_fnv1a32_update(hash, &present, sizeof(present));
     return present
-        ? nmo_texture_hash_bytes(hash, string, strlen(string) + 1u)
+        ? nmo_hash_fnv1a32_update(hash, string, strlen(string) + 1u)
         : hash;
 }
 
@@ -1760,8 +1746,8 @@ static uint32_t nmo_texture_hash_buffer(
     const void *data,
     size_t size)
 {
-    hash = nmo_texture_hash_bytes(hash, &size, sizeof(size));
-    return nmo_texture_hash_bytes(hash, data, size);
+    hash = nmo_hash_fnv1a32_update(hash, &size, sizeof(size));
+    return nmo_hash_fnv1a32_update(hash, data, size);
 }
 
 static uint32_t nmo_texture_hash_raw_slot(
@@ -1769,7 +1755,7 @@ static uint32_t nmo_texture_hash_raw_slot(
     const nmo_texture_raw_slot_t *slot)
 {
 #define NMO_TEXTURE_HASH_RAW_FIELD(field) \
-    hash = nmo_texture_hash_bytes(hash, &slot->field, sizeof(slot->field))
+    hash = nmo_hash_fnv1a32_update(hash, &slot->field, sizeof(slot->field))
     NMO_TEXTURE_HASH_RAW_FIELD(bits_per_pixel);
     NMO_TEXTURE_HASH_RAW_FIELD(width);
     NMO_TEXTURE_HASH_RAW_FIELD(height);
@@ -1793,7 +1779,7 @@ static uint32_t nmo_texture_hash_raw_slots(
 {
     if (count == 0) return hash;
     const uint8_t present = slots != NULL;
-    hash = nmo_texture_hash_bytes(hash, &present, sizeof(present));
+    hash = nmo_hash_fnv1a32_update(hash, &present, sizeof(present));
     if (slots != NULL) {
         for (uint32_t i = 0; i < count; ++i) {
             hash = nmo_texture_hash_raw_slot(hash, &slots[i]);
@@ -1808,14 +1794,14 @@ static uint32_t nmo_texture_hash(const void *instance)
     const nmo_texture_state_t *state = instance;
     uint32_t hash = nmo_beobject_vtable.hash(&state->base);
 #define NMO_TEXTURE_HASH_FIELD(field) \
-    hash = nmo_texture_hash_bytes(hash, &state->field, sizeof(state->field))
+    hash = nmo_hash_fnv1a32_update(hash, &state->field, sizeof(state->field))
     NMO_TEXTURE_HASH_FIELD(has_movie_filename);
     hash = nmo_texture_hash_string(hash, state->movie_filename);
     NMO_TEXTURE_HASH_FIELD(has_slot_filenames);
     NMO_TEXTURE_HASH_FIELD(slot_count);
     if (state->slot_count > 0) {
         const uint8_t names_present = state->slot_filenames != NULL;
-        hash = nmo_texture_hash_bytes(
+        hash = nmo_hash_fnv1a32_update(
             hash, &names_present, sizeof(names_present));
         if (state->slot_filenames != NULL) {
             for (uint32_t i = 0; i < state->slot_count; ++i) {
@@ -1830,14 +1816,14 @@ static uint32_t nmo_texture_hash(const void *instance)
     NMO_TEXTURE_HASH_FIELD(bitmap_kind);
     if (state->slot_count > 0) {
         const uint8_t reader_present = state->reader_slots != NULL;
-        hash = nmo_texture_hash_bytes(
+        hash = nmo_hash_fnv1a32_update(
             hash, &reader_present, sizeof(reader_present));
         if (state->reader_slots != NULL) {
             for (uint32_t i = 0; i < state->slot_count; ++i) {
                 const nmo_texture_reader_slot_t *slot =
                     &state->reader_slots[i];
 #define NMO_TEXTURE_HASH_READER_FIELD(field) \
-                hash = nmo_texture_hash_bytes( \
+                hash = nmo_hash_fnv1a32_update( \
                     hash, &slot->field, sizeof(slot->field))
                 NMO_TEXTURE_HASH_READER_FIELD(format_type);
                 NMO_TEXTURE_HASH_READER_FIELD(extension);
@@ -1855,13 +1841,13 @@ static uint32_t nmo_texture_hash(const void *instance)
         hash = nmo_texture_hash_raw_slots(
             hash, state->raw_slots, state->slot_count);
         const uint8_t bitmap2_present = state->bitmap2_slots != NULL;
-        hash = nmo_texture_hash_bytes(
+        hash = nmo_hash_fnv1a32_update(
             hash, &bitmap2_present, sizeof(bitmap2_present));
         if (state->bitmap2_slots != NULL) {
             for (uint32_t i = 0; i < state->slot_count; ++i) {
                 const nmo_texture_bitmap2_slot_t *slot =
                     &state->bitmap2_slots[i];
-                hash = nmo_texture_hash_bytes(
+                hash = nmo_hash_fnv1a32_update(
                     hash, &slot->header_size, sizeof(slot->header_size));
                 hash = nmo_texture_hash_buffer(
                     hash, slot->buffer, slot->buffer_size);

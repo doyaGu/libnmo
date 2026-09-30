@@ -1193,25 +1193,12 @@ static bool nmo_midisound_equals(const void *a, const void *b)
             lhs->midi_file_name, rhs->midi_file_name);
 }
 
-static uint32_t nmo_sound_hash_bytes(
-    uint32_t hash,
-    const void *data,
-    size_t size)
-{
-    const uint8_t *bytes = data;
-    for (size_t i = 0; i < size; ++i) {
-        hash ^= bytes[i];
-        hash *= 16777619u;
-    }
-    return hash;
-}
-
 static uint32_t nmo_sound_hash_string(uint32_t hash, const char *string)
 {
     const uint8_t present = string != NULL;
-    hash = nmo_sound_hash_bytes(hash, &present, sizeof(present));
+    hash = nmo_hash_fnv1a32_update(hash, &present, sizeof(present));
     return present
-        ? nmo_sound_hash_bytes(hash, string, strlen(string) + 1u)
+        ? nmo_hash_fnv1a32_update(hash, string, strlen(string) + 1u)
         : hash;
 }
 
@@ -1220,7 +1207,7 @@ static uint32_t nmo_sound_hash(const void *instance)
     if (instance == NULL) return 0;
     const nmo_sound_state_t *state = instance;
     uint32_t hash = nmo_beobject_vtable.hash(&state->base);
-    hash = nmo_sound_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &state->save_options, sizeof(state->save_options));
     return nmo_sound_hash_string(hash, state->file_name);
 }
@@ -1231,7 +1218,7 @@ static uint32_t nmo_wavesound_hash(const void *instance)
     const nmo_wavesound_state_t *state = instance;
     uint32_t hash = nmo_sound_vtable.hash(&state->base);
 #define NMO_WAVESOUND_HASH_FIELD(field) \
-    hash = nmo_sound_hash_bytes(hash, &(field), sizeof(field))
+    hash = nmo_hash_fnv1a32_update(hash, &(field), sizeof(field))
     NMO_WAVESOUND_HASH_FIELD(state->has_wave_file_name);
     hash = nmo_sound_hash_string(hash, state->wave_file_name);
     NMO_WAVESOUND_HASH_FIELD(state->has_duration);
@@ -1257,15 +1244,15 @@ static uint32_t nmo_wavesound_hash(const void *instance)
     NMO_WAVESOUND_HASH_FIELD(state->direction.x);
     NMO_WAVESOUND_HASH_FIELD(state->direction.y);
     NMO_WAVESOUND_HASH_FIELD(state->direction.z);
-    hash = nmo_sound_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, state->version2_reserved_words,
         sizeof(state->version2_reserved_words));
-    hash = nmo_sound_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, state->modern_reserved_words,
         sizeof(state->modern_reserved_words));
-    hash = nmo_sound_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, state->legacy_data2_words, 8u * sizeof(uint32_t));
-    hash = nmo_sound_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &state->legacy_data2_words[9], 11u * sizeof(uint32_t));
 #undef NMO_WAVESOUND_HASH_FIELD
     return hash;
@@ -1276,7 +1263,7 @@ static uint32_t nmo_midisound_hash(const void *instance)
     if (instance == NULL) return 0;
     const nmo_midisound_state_t *state = instance;
     uint32_t hash = nmo_sound_vtable.hash(&state->base);
-    hash = nmo_sound_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &state->has_midi_file_name,
         sizeof(state->has_midi_file_name));
     return nmo_sound_hash_string(hash, state->midi_file_name);

@@ -522,28 +522,15 @@ static bool nmo_attributemanager_equals(const void *a, const void *b)
     return true;
 }
 
-static uint32_t nmo_attributemanager_hash_bytes(
-    uint32_t hash,
-    const void *data,
-    size_t size)
-{
-    const uint8_t *bytes = data;
-    for (size_t i = 0; i < size; ++i) {
-        hash ^= bytes[i];
-        hash *= 16777619u;
-    }
-    return hash;
-}
-
 static uint32_t nmo_attributemanager_hash_string(
     uint32_t hash,
     const char *string)
 {
     const uint8_t present = string != NULL;
-    hash = nmo_attributemanager_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &present, sizeof(present));
     return present
-        ? nmo_attributemanager_hash_bytes(
+        ? nmo_hash_fnv1a32_update(
             hash, string, strlen(string) + 1u)
         : hash;
 }
@@ -554,7 +541,7 @@ static uint32_t nmo_attributemanager_hash(const void *instance)
     const nmo_attributemanager_state_t *state = instance;
     uint32_t hash = 2166136261u;
 #define NMO_ATTRIBUTEMANAGER_HASH_FIELD(value) \
-    hash = nmo_attributemanager_hash_bytes( \
+    hash = nmo_hash_fnv1a32_update( \
         hash, &(value), sizeof(value))
     NMO_ATTRIBUTEMANAGER_HASH_FIELD(state->category_count);
     if (state->category_count > 0 && state->categories == NULL) return hash;

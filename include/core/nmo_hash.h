@@ -98,6 +98,14 @@ uint32_t nmo_xxhash32(const void *data, size_t len, uint32_t seed);
 size_t nmo_hash_fnv1a(const void *data, size_t size);
 
 /**
+ * @brief Fold bytes into a running 32-bit FNV-1a hash
+ *
+ * Start with 2166136261u and call once per field to hash a record piecewise.
+ * A NULL @p data or a zero @p size returns @p hash unchanged.
+ */
+uint32_t nmo_hash_fnv1a32_update(uint32_t hash, const void *data, size_t size);
+
+/**
  * @brief Hash function for uint32_t keys (optimized with MurmurHash3 finalizer)
  * @param key Key to hash
  * @param key_size Size of key in bytes (should be 4 for uint32_t)

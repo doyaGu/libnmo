@@ -395,46 +395,33 @@ static bool nmo_parameterout_equals(const void *a, const void *b)
         (size_t)lhs->destination_count * sizeof(nmo_ref_t)) == 0;
 }
 
-static uint32_t nmo_parameterout_hash_bytes(
-    uint32_t hash,
-    const void *data,
-    size_t size)
-{
-    const uint8_t *bytes = (const uint8_t *)data;
-    for (size_t i = 0; i < size; ++i) {
-        hash ^= bytes[i];
-        hash *= 16777619u;
-    }
-    return hash;
-}
-
 static uint32_t nmo_parameterout_hash(const void *instance)
 {
     if (instance == NULL) return 0;
     const nmo_parameterout_state_t *state =
         (const nmo_parameterout_state_t *)instance;
     uint32_t hash = 2166136261u;
-    hash = nmo_parameterout_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &state->base.base.visibility_flags,
         sizeof(state->base.base.visibility_flags));
-    hash = nmo_parameterout_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &state->base.type_guid, sizeof(state->base.type_guid));
-    hash = nmo_parameterout_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &state->base.mode, sizeof(state->base.mode));
-    hash = nmo_parameterout_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &state->base.has_state, sizeof(state->base.has_state));
-    hash = nmo_parameterout_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &state->base.object_ref, sizeof(state->base.object_ref));
-    hash = nmo_parameterout_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &state->base.manager_guid, sizeof(state->base.manager_guid));
-    hash = nmo_parameterout_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &state->base.manager_value, sizeof(state->base.manager_value));
-    hash = nmo_parameterout_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &state->base.buffer_data.count,
         sizeof(state->base.buffer_data.count));
     if (state->base.buffer_data.data != NULL &&
         state->base.buffer_data.count > 0) {
-        hash = nmo_parameterout_hash_bytes(
+        hash = nmo_hash_fnv1a32_update(
             hash, state->base.buffer_data.data,
             state->base.buffer_data.count);
     }
@@ -442,23 +429,23 @@ static uint32_t nmo_parameterout_hash(const void *instance)
         size_t chunk_size = 0;
         const void *chunk_data = nmo_chunk_get_data(
             state->base.subchunk, &chunk_size);
-        hash = nmo_parameterout_hash_bytes(
+        hash = nmo_hash_fnv1a32_update(
             hash, &chunk_size, sizeof(chunk_size));
         if (chunk_data != NULL && chunk_size > 0) {
-            hash = nmo_parameterout_hash_bytes(
+            hash = nmo_hash_fnv1a32_update(
                 hash, chunk_data, chunk_size);
         }
     }
-    hash = nmo_parameterout_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &state->owner, sizeof(state->owner));
-    hash = nmo_parameterout_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &state->destination_count,
         sizeof(state->destination_count));
-    hash = nmo_parameterout_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &state->has_destinations,
         sizeof(state->has_destinations));
     if (state->destination_ids != NULL && state->destination_count > 0) {
-        hash = nmo_parameterout_hash_bytes(
+        hash = nmo_hash_fnv1a32_update(
             hash, state->destination_ids,
             (size_t)state->destination_count * sizeof(nmo_ref_t));
     }

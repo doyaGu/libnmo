@@ -273,6 +273,18 @@ size_t nmo_hash_fnv1a(const void *data, size_t size) {
     return hash;
 }
 
+uint32_t nmo_hash_fnv1a32_update(uint32_t hash, const void *data, size_t size) {
+    const unsigned char *bytes = (const unsigned char *)data;
+    if (bytes == NULL) {
+        return hash;
+    }
+    for (size_t i = 0; i < size; i++) {
+        hash ^= bytes[i];
+        hash *= 16777619u;
+    }
+    return hash;
+}
+
 size_t nmo_hash_uint32(const void *key, size_t key_size) {
     (void)key_size;
     uint32_t value = *(const uint32_t *)key;

@@ -553,45 +553,32 @@ static bool nmo_bodypart_equals(const void *a, const void *b)
                sizeof(lhs->rotation_joint.damping)) == 0;
 }
 
-static uint32_t nmo_bodypart_hash_bytes(
-    uint32_t hash,
-    const void *data,
-    size_t size)
-{
-    const uint8_t *bytes = data;
-    for (size_t i = 0; i < size; ++i) {
-        hash ^= bytes[i];
-        hash *= 16777619u;
-    }
-    return hash;
-}
-
 static uint32_t nmo_bodypart_hash(const void *instance)
 {
     if (instance == NULL) return 0;
     const nmo_bodypart_state_t *state = instance;
     uint32_t hash = nmo_3dobject_vtable.hash(&state->base);
-    hash = nmo_bodypart_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &state->has_character, sizeof(state->has_character));
-    hash = nmo_bodypart_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &state->character.raw_id, sizeof(state->character.raw_id));
-    hash = nmo_bodypart_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &state->character.id, sizeof(state->character.id));
-    hash = nmo_bodypart_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &state->character.state, sizeof(state->character.state));
-    hash = nmo_bodypart_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &state->has_rotation_joint,
         sizeof(state->has_rotation_joint));
-    hash = nmo_bodypart_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &state->rotation_joint.flags,
         sizeof(state->rotation_joint.flags));
-    hash = nmo_bodypart_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &state->rotation_joint.min,
         sizeof(state->rotation_joint.min));
-    hash = nmo_bodypart_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &state->rotation_joint.max,
         sizeof(state->rotation_joint.max));
-    return nmo_bodypart_hash_bytes(
+    return nmo_hash_fnv1a32_update(
         hash, &state->rotation_joint.damping,
         sizeof(state->rotation_joint.damping));
 }

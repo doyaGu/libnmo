@@ -629,19 +629,6 @@ static bool nmo_parameter_equals(const void *a, const void *b)
     return true;
 }
 
-static uint32_t nmo_parameter_hash_bytes(
-    uint32_t hash,
-    const void *data,
-    size_t size)
-{
-    const uint8_t *bytes = (const uint8_t *)data;
-    for (size_t i = 0; i < size; ++i) {
-        hash ^= bytes[i];
-        hash *= 16777619u;
-    }
-    return hash;
-}
-
 static uint32_t nmo_parameter_hash(const void *instance)
 {
     if (instance == NULL) return 0;
@@ -649,7 +636,7 @@ static uint32_t nmo_parameter_hash(const void *instance)
         (const nmo_parameter_state_t *)instance;
     uint32_t hash = 2166136261u;
 #define NMO_PARAMETER_HASH_FIELD(field) \
-    hash = nmo_parameter_hash_bytes(hash, &(field), sizeof(field))
+    hash = nmo_hash_fnv1a32_update(hash, &(field), sizeof(field))
     NMO_PARAMETER_HASH_FIELD(state->base.visibility_flags);
     NMO_PARAMETER_HASH_FIELD(state->type_guid);
     NMO_PARAMETER_HASH_FIELD(state->mode);
@@ -660,20 +647,20 @@ static uint32_t nmo_parameter_hash(const void *instance)
     NMO_PARAMETER_HASH_FIELD(state->buffer_data.count);
 #undef NMO_PARAMETER_HASH_FIELD
     if (state->buffer_data.data != NULL && state->buffer_data.count > 0) {
-        hash = nmo_parameter_hash_bytes(
+        hash = nmo_hash_fnv1a32_update(
             hash, state->buffer_data.data, state->buffer_data.count);
     }
     const uint8_t has_subchunk = state->subchunk != NULL;
-    hash = nmo_parameter_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &has_subchunk, sizeof(has_subchunk));
     if (state->subchunk != NULL) {
         size_t chunk_size = 0;
         const void *chunk_data = nmo_chunk_get_data(
             state->subchunk, &chunk_size);
-        hash = nmo_parameter_hash_bytes(
+        hash = nmo_hash_fnv1a32_update(
             hash, &chunk_size, sizeof(chunk_size));
         if (chunk_data != NULL && chunk_size > 0) {
-            hash = nmo_parameter_hash_bytes(
+            hash = nmo_hash_fnv1a32_update(
                 hash, chunk_data, chunk_size);
         }
     }

@@ -1237,24 +1237,11 @@ static bool nmo_3dentity_equals(const void *a, const void *b)
         lhs->has_matrix_chunk == rhs->has_matrix_chunk;
 }
 
-static uint32_t nmo_3dentity_hash_bytes(
-    uint32_t hash,
-    const void *data,
-    size_t size)
-{
-    const uint8_t *bytes = (const uint8_t *)data;
-    for (size_t i = 0; i < size; ++i) {
-        hash ^= bytes[i];
-        hash *= 16777619u;
-    }
-    return hash;
-}
-
 static uint32_t nmo_3dentity_hash_ref(uint32_t hash, const nmo_ref_t *ref)
 {
-    hash = nmo_3dentity_hash_bytes(hash, &ref->raw_id, sizeof(ref->raw_id));
-    hash = nmo_3dentity_hash_bytes(hash, &ref->id, sizeof(ref->id));
-    return nmo_3dentity_hash_bytes(hash, &ref->state, sizeof(ref->state));
+    hash = nmo_hash_fnv1a32_update(hash, &ref->raw_id, sizeof(ref->raw_id));
+    hash = nmo_hash_fnv1a32_update(hash, &ref->id, sizeof(ref->id));
+    return nmo_hash_fnv1a32_update(hash, &ref->state, sizeof(ref->state));
 }
 
 static uint32_t nmo_3dentity_hash_skin(
@@ -1262,68 +1249,68 @@ static uint32_t nmo_3dentity_hash_skin(
     const nmo_3dentity_skin_t *skin)
 {
     const uint8_t present = skin != NULL;
-    hash = nmo_3dentity_hash_bytes(hash, &present, sizeof(present));
+    hash = nmo_hash_fnv1a32_update(hash, &present, sizeof(present));
     if (skin == NULL) return hash;
 
-    hash = nmo_3dentity_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &skin->legacy_before_matrix,
         sizeof(skin->legacy_before_matrix));
-    hash = nmo_3dentity_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &skin->object_init_matrix, sizeof(skin->object_init_matrix));
-    hash = nmo_3dentity_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &skin->bone_count, sizeof(skin->bone_count));
     for (uint32_t i = 0; i < skin->bone_count && skin->bones != NULL; ++i) {
         hash = nmo_3dentity_hash_ref(hash, &skin->bones[i].bone);
-        hash = nmo_3dentity_hash_bytes(
+        hash = nmo_hash_fnv1a32_update(
             hash, &skin->bones[i].bone_flags,
             sizeof(skin->bones[i].bone_flags));
-        hash = nmo_3dentity_hash_bytes(
+        hash = nmo_hash_fnv1a32_update(
             hash, &skin->bones[i].legacy_before_matrix,
             sizeof(skin->bones[i].legacy_before_matrix));
-        hash = nmo_3dentity_hash_bytes(
+        hash = nmo_hash_fnv1a32_update(
             hash, &skin->bones[i].inverse_bind_matrix,
             sizeof(skin->bones[i].inverse_bind_matrix));
     }
-    hash = nmo_3dentity_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &skin->vertex_count, sizeof(skin->vertex_count));
     for (uint32_t i = 0;
          i < skin->vertex_count && skin->vertices != NULL;
          ++i) {
         const nmo_3dentity_skin_vertex_t *vertex = &skin->vertices[i];
-        hash = nmo_3dentity_hash_bytes(
+        hash = nmo_hash_fnv1a32_update(
             hash, &vertex->bone_count, sizeof(vertex->bone_count));
-        hash = nmo_3dentity_hash_bytes(
+        hash = nmo_hash_fnv1a32_update(
             hash, &vertex->legacy_before_position,
             sizeof(vertex->legacy_before_position));
-        hash = nmo_3dentity_hash_bytes(
+        hash = nmo_hash_fnv1a32_update(
             hash, &vertex->initial_pos, sizeof(vertex->initial_pos));
-        hash = nmo_3dentity_hash_bytes(
+        hash = nmo_hash_fnv1a32_update(
             hash, &vertex->legacy_before_indices,
             sizeof(vertex->legacy_before_indices));
         if (vertex->bone_count > 0 && vertex->bone_indices != NULL) {
-            hash = nmo_3dentity_hash_bytes(
+            hash = nmo_hash_fnv1a32_update(
                 hash, vertex->bone_indices,
                 (size_t)vertex->bone_count * sizeof(uint32_t));
         }
-        hash = nmo_3dentity_hash_bytes(
+        hash = nmo_hash_fnv1a32_update(
             hash, &vertex->legacy_before_weights,
             sizeof(vertex->legacy_before_weights));
         if (vertex->bone_count > 0 && vertex->bone_weights != NULL) {
-            hash = nmo_3dentity_hash_bytes(
+            hash = nmo_hash_fnv1a32_update(
                 hash, vertex->bone_weights,
                 (size_t)vertex->bone_count * sizeof(float));
         }
     }
-    hash = nmo_3dentity_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &skin->normal_count, sizeof(skin->normal_count));
     if (skin->normal_count > 0 && skin->normals != NULL) {
-        hash = nmo_3dentity_hash_bytes(
+        hash = nmo_hash_fnv1a32_update(
             hash, skin->normals,
             (size_t)skin->normal_count * sizeof(nmo_vector_t));
     }
-    hash = nmo_3dentity_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &skin->normals_present, sizeof(skin->normals_present));
-    return nmo_3dentity_hash_bytes(
+    return nmo_hash_fnv1a32_update(
         hash, &skin->normals_have_count, sizeof(skin->normals_have_count));
 }
 
@@ -1333,29 +1320,29 @@ static uint32_t nmo_3dentity_hash(const void *instance)
     const nmo_3dentity_state_t *state = (const nmo_3dentity_state_t *)instance;
     uint32_t hash = 2166136261u;
     const uint32_t base_hash = nmo_renderobject_vtable.hash(&state->base);
-    hash = nmo_3dentity_hash_bytes(hash, &base_hash, sizeof(base_hash));
-    hash = nmo_3dentity_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(hash, &base_hash, sizeof(base_hash));
+    hash = nmo_hash_fnv1a32_update(
         hash, state->world_matrix, sizeof(state->world_matrix));
-    hash = nmo_3dentity_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &state->legacy_matrix_prefix,
         sizeof(state->legacy_matrix_prefix));
-    hash = nmo_3dentity_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &state->entity_flags, sizeof(state->entity_flags));
-    hash = nmo_3dentity_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &state->moveable_flags, sizeof(state->moveable_flags));
     hash = nmo_3dentity_hash_ref(hash, &state->parent);
     hash = nmo_3dentity_hash_ref(hash, &state->place);
-    hash = nmo_3dentity_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &state->z_order, sizeof(state->z_order));
     hash = nmo_3dentity_hash_ref(hash, &state->current_mesh);
-    hash = nmo_3dentity_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &state->mesh_count, sizeof(state->mesh_count));
     for (uint32_t i = 0;
          i < state->mesh_count && state->mesh_ids != NULL;
          ++i) {
         hash = nmo_3dentity_hash_ref(hash, &state->mesh_ids[i]);
     }
-    hash = nmo_3dentity_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &state->animation_count, sizeof(state->animation_count));
     for (uint32_t i = 0;
          i < state->animation_count && state->animation_ids != NULL;
@@ -1363,19 +1350,19 @@ static uint32_t nmo_3dentity_hash(const void *instance)
         hash = nmo_3dentity_hash_ref(hash, &state->animation_ids[i]);
     }
     hash = nmo_3dentity_hash_skin(hash, state->skin);
-    hash = nmo_3dentity_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &state->has_mesh_chunk, sizeof(state->has_mesh_chunk));
-    hash = nmo_3dentity_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &state->has_animation_chunk,
         sizeof(state->has_animation_chunk));
-    hash = nmo_3dentity_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &state->has_entityndata_chunk,
         sizeof(state->has_entityndata_chunk));
-    hash = nmo_3dentity_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &state->has_parent_chunk, sizeof(state->has_parent_chunk));
-    hash = nmo_3dentity_hash_bytes(
+    hash = nmo_hash_fnv1a32_update(
         hash, &state->has_flags_chunk, sizeof(state->has_flags_chunk));
-    return nmo_3dentity_hash_bytes(
+    return nmo_hash_fnv1a32_update(
         hash, &state->has_matrix_chunk, sizeof(state->has_matrix_chunk));
 }
 
