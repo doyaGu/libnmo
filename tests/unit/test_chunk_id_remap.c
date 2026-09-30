@@ -9183,6 +9183,21 @@ TEST(chunk_id_remap, layer_version_2_associates_the_int_parameter) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, new_place_and_grid_start_with_the_engine_constructor_state) {
+    /* RCKPlace sets the priority 20000; RCKGrid scales itself to (1, 10, 1). */
+    nmo_place_state_t place;
+    ASSERT_EQ(NMO_OK, nmo_place_vtable.create(&place, NULL, NULL));
+    ASSERT_EQ(20000, place.base.base.base.priority);
+    nmo_place_vtable.destroy(&place, NULL, NULL);
+
+    nmo_grid_state_t grid;
+    ASSERT_EQ(NMO_OK, nmo_grid_vtable.create(&grid, NULL, NULL));
+    ASSERT_EQ(1.0f, grid.base.world_matrix[0]);
+    ASSERT_EQ(10.0f, grid.base.world_matrix[5]);
+    ASSERT_EQ(1.0f, grid.base.world_matrix[10]);
+    nmo_grid_vtable.destroy(&grid, NULL, NULL);
+}
+
 TEST(chunk_id_remap, texture_pick_threshold_needs_data_version_5) {
     /* RCKTexture::Load reads the pick threshold in its data_version >= 5
      * branch only. */
@@ -21392,6 +21407,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, spritetext_font_integers_are_in_engine_order);
     REGISTER_TEST(chunk_id_remap, bitmap2_slot_image_follows_the_format_tag);
     REGISTER_TEST(chunk_id_remap, layer_version_2_associates_the_int_parameter);
+    REGISTER_TEST(chunk_id_remap, new_place_and_grid_start_with_the_engine_constructor_state);
     REGISTER_TEST(chunk_id_remap, new_texture_writes_the_engine_default_packed_state);
     REGISTER_TEST(chunk_id_remap, texture_filename_count_resizes_the_slots);
     REGISTER_TEST(chunk_id_remap, modern_2dentity_without_its_block_keeps_the_constructor_state);
