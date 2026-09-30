@@ -75,6 +75,37 @@ typedef struct nmo_curvepoint_state {
     nmo_vector_t legacy_position;
 } nmo_curvepoint_state_t;
 
+/**
+ * @brief The position the engine gives a curve point.
+ *
+ * A point of a file older than data version 5 stores its position next to the
+ * curve data and the engine applies it after the entity data, so it replaces
+ * the translation of the entity matrix; that matrix is kept as read.
+ */
+static inline void nmo_curvepoint_get_position(
+    const nmo_curvepoint_state_t *state, nmo_vector_t *out_position)
+{
+    if (state->has_legacy_position) {
+        *out_position = state->legacy_position;
+    } else {
+        out_position->x = state->base.world_matrix[12];
+        out_position->y = state->base.world_matrix[13];
+        out_position->z = state->base.world_matrix[14];
+    }
+}
+
+/** @brief Move a curve point; the stored legacy position moves with it. */
+static inline void nmo_curvepoint_set_position(
+    nmo_curvepoint_state_t *state, float x, float y, float z)
+{
+    state->base.world_matrix[12] = x;
+    state->base.world_matrix[13] = y;
+    state->base.world_matrix[14] = z;
+    if (state->has_legacy_position) {
+        state->legacy_position = (nmo_vector_t){x, y, z};
+    }
+}
+
 NMO_API nmo_status_t nmo_curve_deserialize(
     void *instance,
     nmo_chunk_t *chunk,

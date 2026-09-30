@@ -957,10 +957,8 @@ static nmo_status_t nmo_curvepoint_deserialize_internal(
             out_state->legacy_position = legacy_position;
             out_state->has_legacy_position = 1;
             /* RCKCurvePoint::Load calls SetPosition with it after the entity
-               data, so it replaces the translation of the entity matrix. */
-            out_state->base.world_matrix[12] = legacy_position.x;
-            out_state->base.world_matrix[13] = legacy_position.y;
-            out_state->base.world_matrix[14] = legacy_position.z;
+               data; nmo_curvepoint_get_position reports it, the entity matrix
+               keeps what the file holds. */
         } else if (result != NMO_ERR_NOT_FOUND) return result;
 
         size_t tcb_section_dwords = 0;
@@ -1128,11 +1126,8 @@ static nmo_status_t nmo_curvepoint_serialize_internal(
             if (result != NMO_OK) return result;
         } else {
             /* The position the point has now. */
-            const nmo_vector_t pos = {
-                in_state->base.world_matrix[12],
-                in_state->base.world_matrix[13],
-                in_state->base.world_matrix[14],
-            };
+            nmo_vector_t pos;
+            nmo_curvepoint_get_position(in_state, &pos);
             result = nmo_chunk_write_vector3(out_chunk, &pos);
             if (result != NMO_OK) return result;
         }

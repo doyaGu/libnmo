@@ -9850,11 +9850,13 @@ TEST(chunk_id_remap, curvepoint_layout_follows_data_version) {
         &legacy_loaded, legacy, NULL, &deserialize_context));
     ASSERT_FALSE(legacy_loaded.defaultdata_is_modern);
     ASSERT_TRUE(legacy_loaded.has_legacy_position);
-    /* The legacy position is the position the point is written with, and
-     * Load applies it to the entity matrix. */
+    /* The legacy position is the position the point is written with; Load
+     * applies it on top of the entity matrix, which is kept as read. */
     ASSERT_FLOAT_EQ(7.0f, legacy_loaded.legacy_position.x, 0.0001f);
     ASSERT_FLOAT_EQ(9.0f, legacy_loaded.legacy_position.z, 0.0001f);
-    ASSERT_FLOAT_EQ(8.0f, legacy_loaded.base.world_matrix[13], 0.0001f);
+    nmo_vector_t effective;
+    nmo_curvepoint_get_position(&legacy_loaded, &effective);
+    ASSERT_FLOAT_EQ(8.0f, effective.y, 0.0001f);
     ASSERT_TRUE(legacy_loaded.has_tcb_chunk);
     ASSERT_TRUE(legacy_loaded.has_tangents_chunk);
     ASSERT_FLOAT_EQ(source.tension, legacy_loaded.tension, 0.0001f);
