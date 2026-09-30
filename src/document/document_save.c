@@ -879,7 +879,7 @@ static nmo_status_t save_build_remap_plan(nmo_serializer_t *ctx) {
         bool any_moved = false;
         for (size_t i = 0; i < ctx->object_count; i++) {
             const nmo_object_t *obj = ctx->objects[i];
-            if (obj != NULL && obj->fidelity_captured && obj->fidelity_load_index != (uint32_t)i) {
+            if (obj != NULL && obj->fidelity_load_count != 0u && obj->fidelity_load_index != (uint32_t)i) {
                 any_moved = true;
                 break;
             }
@@ -892,7 +892,7 @@ static nmo_status_t save_build_remap_plan(nmo_serializer_t *ctx) {
             size_t present = 0;
             for (size_t i = 0; i < ctx->object_count; i++) {
                 const nmo_object_t *obj = ctx->objects[i];
-                if (obj != NULL && obj->fidelity_captured) {
+                if (obj != NULL && obj->fidelity_load_count != 0u) {
                     load_count = obj->fidelity_load_count;
                     present++;
                 }
@@ -906,7 +906,7 @@ static nmo_status_t save_build_remap_plan(nmo_serializer_t *ctx) {
             }
             for (size_t i = 0; i < ctx->object_count; i++) {
                 const nmo_object_t *obj = ctx->objects[i];
-                if (obj != NULL && obj->fidelity_captured) {
+                if (obj != NULL && obj->fidelity_load_count != 0u) {
                     (void)nmo_id_remap_add(ctx->load_to_file, obj->fidelity_load_index,
                                            (nmo_object_id_t)i);
                 }
@@ -1084,6 +1084,10 @@ static nmo_status_t save_serialize_objects(nmo_serializer_t *ctx) {
                 }
             }
         }
+        /* The chunk is about to be replaced; until the state is committed the
+           old digest and canonical no longer describe it. */
+        const uint8_t was_captured = obj->fidelity_captured;
+        obj->fidelity_captured = 0;
         nmo_status_t serialize_status = NMO_OK;
         obj->chunk = serialize_object_with_schema(
             obj, ctx->type_rt, ctx->arena, save_scratch(ctx), ctx->repo, ctx->logger,
@@ -1091,6 +1095,7 @@ static nmo_status_t save_serialize_objects(nmo_serializer_t *ctx) {
 
         if (obj->chunk == NULL) {
             obj->chunk = old_chunk;
+            obj->fidelity_captured = was_captured;
             char serialize_detail[512];
             size_t serialize_detail_len =
                 nmo_last_error_message_copy(serialize_detail, sizeof(serialize_detail));
@@ -1117,6 +1122,7 @@ static nmo_status_t save_serialize_objects(nmo_serializer_t *ctx) {
         }
 
         if (obj->chunk == old_chunk) {
+            obj->fidelity_captured = was_captured;
             if (require_schema) {
                 nmo_log(ctx->logger, NMO_LOG_ERROR,
                         "Object %u reused raw chunk with schema requirement enabled",
@@ -1140,8 +1146,15 @@ static nmo_status_t save_serialize_objects(nmo_serializer_t *ctx) {
             /* Carry what the schema does not model from the old chunk into the
                new one, and remember what the state serializes to. */
             if (fidelity_current != NULL) {
+                /* The shadow tail is already part of the new chunk. */
+                size_t shadow_tail_size = 0;
+                const bool has_shadow_tail =
+                    shadow_storage != NULL &&
+                    nmo_shadow_get_chunk_tail(shadow_storage, obj->id, &shadow_tail_size) != NULL &&
+                    shadow_tail_size > 0;
                 nmo_status_t fidelity_status = nmo_object_system_fidelity_commit(
-                    obj, obj->chunk, old_chunk, fidelity_current, ctx->load_to_file,
+                    obj, obj->chunk, has_shadow_tail ? NULL : old_chunk, fidelity_current,
+                    ctx->load_to_file,
                     save_scratch(ctx), (uint32_t)i, (uint32_t)ctx->object_count);
                 if (fidelity_status != NMO_OK) {
                     nmo_log(ctx->logger, NMO_LOG_WARN,

@@ -686,7 +686,7 @@ nmo_status_t nmo_object_system_capture_fidelity(
         obj->fidelity_digest = nmo_chunk_digest(canonical);
         obj->fidelity_captured = 1;
         stats.captured++;
-        if (!nmo_chunk_equivalent(obj->chunk, canonical)) {
+        if (!nmo_chunk_equivalent_to_tracked(obj->chunk, canonical)) {
             nmo_arena_t *storage = nmo_object_get_storage_arena(obj);
             obj->fidelity_canonical = storage != NULL ? nmo_chunk_clone(canonical, storage) : NULL;
             if (obj->fidelity_canonical != NULL) {
@@ -743,9 +743,16 @@ nmo_chunk_t *nmo_object_system_fidelity_reuse(
            those of the object's current state, which has the same layout
            unless the original holds more than the schema writes. */
         if (arena == NULL || current == NULL || obj->fidelity_canonical != NULL) return NULL;
+        /* Sub-chunks and manager references sit inside the data; only the
+           ids of the chunk itself are known. */
+        if (obj->chunk->chunk_refs.count != 0 || obj->chunk->managers.count != 0) return NULL;
         chunk = nmo_chunk_clone(obj->chunk, arena);
         if (chunk == NULL) return NULL;
         chunk->file_context = NULL;
+        /* The writer emits the raw bytes when it has them; the translated data
+           has to be written instead. */
+        chunk->raw_data = NULL;
+        chunk->raw_size = 0;
         bool unresolved = false;
         if (nmo_chunk_translate_ids_with_layout(chunk, current, load_to_file,
                                                 obj->fidelity_load_count,
@@ -779,8 +786,9 @@ nmo_status_t nmo_object_system_fidelity_commit(
 
     nmo_arena_t *storage = nmo_object_get_storage_arena(obj);
     obj->fidelity_digest = nmo_chunk_digest(current);
+    obj->fidelity_captured = 1;
     obj->fidelity_canonical = NULL;
-    if (storage != NULL && !nmo_chunk_equivalent(chunk, current)) {
+    if (storage != NULL && !nmo_chunk_equivalent_to_tracked(chunk, current)) {
         obj->fidelity_canonical = nmo_chunk_clone(current, storage);
     }
     obj->fidelity_load_index = file_index;
