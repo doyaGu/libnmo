@@ -37,7 +37,11 @@ static nmo_status_t nmo_spritetext_validate(
 
 static void nmo_spritetext_set_defaults(void *instance)
 {
-    ckspritetext_init_defaults(instance, NULL);
+    nmo_spritetext_state_t *state = instance;
+    ckspritetext_init_defaults(state, NULL);
+    /* RCKSpriteText::RCKSpriteText clears the ratio offset the 2D entity sets.
+       Only a new object starts like this: Load takes the flags of the file. */
+    state->base.entity.flags &= ~(uint32_t)CK_2DENTITY_RATIOOFFSET;
 }
 
 static const nmo_object_state_member_t nmo_spritetext_members[] = {
@@ -110,8 +114,6 @@ static void ckspritetext_init_defaults(
     state->font_color = 0xFFFFFFFF;
     state->background_color = 0x00000000;
     state->needs_redraw = false;
-    /* RCKSpriteText::RCKSpriteText clears the ratio offset the 2D entity sets. */
-    state->base.entity.flags &= ~(uint32_t)CK_2DENTITY_RATIOOFFSET;
 }
 
 /* ========================================================================
