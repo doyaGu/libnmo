@@ -9245,6 +9245,45 @@ TEST(chunk_id_remap, new_2d_objects_start_with_the_engine_constructor_state) {
     nmo_spritetext_vtable.destroy(&text, NULL, NULL);
 }
 
+TEST(chunk_id_remap, entity_legacy_sections_are_ignored_next_to_ndata) {
+    /* RCK3dEntity::Load reads the parent, flags and matrix sections only in
+     * the absence of the NDATA section. */
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+
+    nmo_3dentity_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_3dentity_vtable.create(&source, NULL, NULL));
+    source.has_entityndata_chunk = 1;
+    source.has_matrix_chunk = 1;
+    source.has_flags_chunk = 1;
+    source.world_matrix[12] = 5.0f;
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    chunk->class_id = NMO_CID_3DENTITY;
+    chunk->data_version = 7;
+    chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_3dentity_serialize(&source, chunk, NULL, &serialize_context));
+    nmo_chunk_close(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(chunk, CK_STATESAVE_3DENTITYNDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(chunk, CK_STATESAVE_3DENTITYMATRIX));
+
+    nmo_3dentity_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_3dentity_vtable.create(&loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_3dentity_deserialize(&loaded, chunk, NULL, &deserialize_context));
+    ASSERT_TRUE(loaded.has_entityndata_chunk);
+    ASSERT_FALSE(loaded.has_matrix_chunk);
+    ASSERT_FALSE(loaded.has_flags_chunk);
+    ASSERT_EQ(5.0f, loaded.world_matrix[12]);
+    nmo_3dentity_vtable.destroy(&source, NULL, NULL);
+    nmo_3dentity_vtable.destroy(&loaded, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, new_place_and_grid_start_with_the_engine_constructor_state) {
     /* RCKPlace sets the priority 20000; RCKGrid scales itself to (1, 10, 1). */
     nmo_place_state_t place;
@@ -11593,7 +11632,6 @@ TEST(chunk_id_remap, entity_content_equality_ignores_storage_addresses) {
         ASSERT_NOT_NULL(states[i].skin->normals);
         states[i].skin->normals[0] = (nmo_vector_t){0.0f, 1.0f, 0.0f};
         states[i].skin->normals_present = 1;
-        states[i].skin->normals_have_count = 1;
     }
 
     ASSERT_NE(states[0].base.base.scripts.data,
@@ -21642,6 +21680,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, layer_version_2_associates_the_int_parameter);
     REGISTER_TEST(chunk_id_remap, curve_without_its_sections_keeps_the_constructor_values);
     REGISTER_TEST(chunk_id_remap, new_place_and_grid_start_with_the_engine_constructor_state);
+    REGISTER_TEST(chunk_id_remap, entity_legacy_sections_are_ignored_next_to_ndata);
     REGISTER_TEST(chunk_id_remap, new_2d_objects_start_with_the_engine_constructor_state);
     REGISTER_TEST(chunk_id_remap, new_entity_and_body_part_start_with_the_engine_constructor_state);
     REGISTER_TEST(chunk_id_remap, new_texture_writes_the_engine_default_packed_state);
