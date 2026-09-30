@@ -269,6 +269,26 @@ the tests build each layout dword by dword.
 - A new place starts with priority 20000 and a new grid with the scale (1, 10, 1), as the
   constructors set them.
 
+### Fixed - Differences the second audit found
+- New CK3dEntity objects start with an identity matrix and the moveable flags the engine constructor
+  sets (0x4000B), and new body parts with joint flags 7; they started zeroed.
+- `nmo_character_effective_root_body_part()` gives the root body part the engine works with: the
+  stored one, or the character's first child when none is stored.
+- A NEWDATA animation keeps its MORPHCOMP and MORPHNORMALS sections independently
+  (`morph_comp_*` and `morph_normals_*`; `morph_normals_id` is gone). Both are ignored when there
+  are no morph keys, as `Load` does.
+- Deleting the owner of shared animation keys moves the keys into the animations that shared them,
+  and an animation whose owner is unresolved saves as an empty CONTROLLERS animation of length 100,
+  as the engine's reference counted keyframe data behaves.
+- The mesh serializer refuses face vertex indices and material groups outside the mesh and channels
+  with more texture coordinates than vertices, which the engine reads without a check, and it no
+  longer writes an empty material list.
+- A sprite's bitmap is modelled as a texture's is: `nmo_bitmap_slots_t` holds the reader, raw and
+  obsolete slots, the slot file names and the movie file name, under the identifiers RCKSprite
+  passes to `CKBitmapData`. They were five unlabelled raw payloads.
+- Importing an OBJ into a mesh keeps the scripts, attributes, priority and visibility of the mesh
+  object; it replaced all of its state.
+
 ### Tests
 - `test_corpus_chunk_roundtrip` checks every object chunk of the corpus. It compares against a
   second load of the original file that is never saved. It tolerates only the uninitialised
