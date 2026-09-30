@@ -240,6 +240,65 @@ TEST(image_decode, reconstruct_pixels_flips_bottom_up_planes) {
     nmo_arena_destroy(arena);
 }
 
+/* Append count bits, the first one most significant, at the bit position of a
+ * stream whose bytes are filled from the least significant bit. */
+static void dct_put_bits(uint8_t *stream, size_t *position, unsigned value, unsigned count) {
+    for (unsigned i = 0; i < count; ++i) {
+        if ((value >> (count - 1u - i)) & 1u) {
+            stream[*position >> 3] |= (uint8_t)(1u << (*position & 7u));
+        }
+        (*position)++;
+    }
+}
+
+TEST(image_decode, dct_plane_dc_only_blocks) {
+    /* Quality 50 leaves the quantisation table as it is. The DC coefficient is
+     * 16 * code, a flat block has the value DC / 8 + 128, and the other 63
+     * coefficients are a run of zeros: three runs of 16 and one of 15. */
+    for (int negative = 0; negative < 2; ++negative) {
+        uint8_t stream[32];
+        memset(stream, 0, sizeof(stream));
+        stream[0] = 50;
+        const int32_t size = 8;
+        memcpy(stream + 1, &size, 4);
+        memcpy(stream + 5, &size, 4);
+        size_t position = 72;
+        if (negative) {
+            dct_put_bits(stream, &position, 1u, 2);   /* 1..2 bit value */
+            dct_put_bits(stream, &position, 0u, 1);   /* 1 bit long */
+            dct_put_bits(stream, &position, 0u, 1);   /* value bits: -1 */
+        } else {
+            dct_put_bits(stream, &position, 2u, 2);   /* 3..6 bit value */
+            dct_put_bits(stream, &position, 0u, 2);   /* 3 bits long */
+            dct_put_bits(stream, &position, 5u, 3);   /* value bits: 5 */
+        }
+        for (int run = 0; run < 3; ++run) {
+            dct_put_bits(stream, &position, 0u, 2);
+            dct_put_bits(stream, &position, 15u, 4);
+        }
+        dct_put_bits(stream, &position, 0u, 2);
+        dct_put_bits(stream, &position, 14u, 4);
+
+        nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+        ASSERT_NOT_NULL(arena);
+        int width = 0;
+        int height = 0;
+        uint8_t *plane = NULL;
+        ASSERT_EQ(NMO_OK, nmo_image_decode_dct_plane(
+            stream, (position + 7u) / 8u, arena, &width, &height, &plane));
+        ASSERT_EQ(8, width);
+        ASSERT_EQ(8, height);
+        for (int i = 0; i < 64; ++i) {
+            ASSERT_EQ(negative ? 126 : 138, plane[i]);
+        }
+
+        /* The same stream cut short ends inside the zero runs. */
+        ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_image_decode_dct_plane(
+            stream, 11, arena, &width, &height, &plane));
+        nmo_arena_destroy(arena);
+    }
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(image_decode, rgb565_decode);
     REGISTER_TEST(image_decode, argb1555_decode);
@@ -250,4 +309,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(image_decode, dxt_rejects_truncated);
     REGISTER_TEST(image_decode, dxt_rejects_zero_dims);
     REGISTER_TEST(image_decode, reconstruct_pixels_flips_bottom_up_planes);
+    REGISTER_TEST(image_decode, dct_plane_dc_only_blocks);
 TEST_MAIN_END()
