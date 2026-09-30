@@ -8657,7 +8657,7 @@ TEST(chunk_id_remap, texture_copy_preserves_nested_content) {
     };
     uint8_t bitmap2_data[] = {12, 13, 14};
     nmo_texture_bitmap2_slot_t bitmap2_slot = {
-        .header_size = 40,
+        .unused_int = 40,
         .buffer_size = sizeof(bitmap2_data),
         .buffer = bitmap2_data,
     };
@@ -9083,6 +9083,38 @@ TEST(chunk_id_remap, spritetext_font_integers_are_in_engine_order) {
 
     nmo_spritetext_vtable.destroy(&loaded, NULL, NULL);
     nmo_arena_destroy(arena);
+}
+
+TEST(chunk_id_remap, bitmap2_slot_image_follows_the_format_tag) {
+    /* ReadBitmap2 strips a five-byte format tag and selects the reader by it;
+     * a buffer without a known tag is a whole TGA. */
+    uint8_t jpg[] = {'c', 'k', 'J', 'P', 'G', 0xFF, 0xD8, 0x01};
+    uint8_t bare[] = {0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00};
+    uint8_t dib[] = {'C', 'K', 'D', 'I', 'B'};
+    nmo_texture_bitmap2_slot_t slot = {
+        .buffer = jpg, .buffer_size = sizeof(jpg),
+    };
+    const uint8_t *data = NULL;
+    size_t size = 0;
+    const char *ext = NULL;
+
+    nmo_texture_bitmap2_image(&slot, &data, &size, &ext);
+    ASSERT_EQ(jpg + 5, data);
+    ASSERT_EQ(3u, size);
+    ASSERT_STR_EQ("jpg", ext);
+
+    slot.buffer = bare;
+    slot.buffer_size = sizeof(bare);
+    nmo_texture_bitmap2_image(&slot, &data, &size, &ext);
+    ASSERT_EQ(bare, data);
+    ASSERT_EQ(sizeof(bare), size);
+    ASSERT_STR_EQ("tga", ext);
+
+    slot.buffer = dib;
+    slot.buffer_size = sizeof(dib);
+    nmo_texture_bitmap2_image(&slot, &data, &size, &ext);
+    ASSERT_EQ(0u, size);
+    ASSERT_STR_EQ("bmp", ext);
 }
 
 TEST(chunk_id_remap, texture_pick_threshold_needs_data_version_5) {
@@ -21291,6 +21323,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, texture_packed_state_follows_the_engine_leniency);
     REGISTER_TEST(chunk_id_remap, light_loading_ignores_what_the_engine_ignores);
     REGISTER_TEST(chunk_id_remap, spritetext_font_integers_are_in_engine_order);
+    REGISTER_TEST(chunk_id_remap, bitmap2_slot_image_follows_the_format_tag);
     REGISTER_TEST(chunk_id_remap, texture_filename_count_resizes_the_slots);
     REGISTER_TEST(chunk_id_remap, modern_2dentity_without_its_block_keeps_the_constructor_state);
     REGISTER_TEST(chunk_id_remap, curvepoint_unresolved_curve_round_trips_raw_id);
