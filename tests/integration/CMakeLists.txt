@@ -260,7 +260,8 @@ endif()
 # add_integration_test(test_phase6_integration)
 
 # Tests of the optional components link them explicitly. Every other test links
-# only the core library, which keeps the core free of Lua and project code.
+# only the core library, which keeps the core free of edit, Lua and project
+# code. The Lua and project components bring nmo_edit with them.
 foreach(_nmo_test IN ITEMS
         test_project_skeleton_acceptance test_generated_scene_roundtrip
         test_generated_visible_scene test_generated_script_lifecycle

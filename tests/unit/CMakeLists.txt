@@ -274,7 +274,14 @@ add_unit_test(test_orphan_reachability)
 set_tests_properties(test_orphan_reachability PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
 # Tests of the optional components link them explicitly. Every other test links
-# only the core library, which keeps the core free of Lua and project code.
+# only the core library, which keeps the core free of edit, Lua and project
+# code. The Lua and project components bring nmo_edit with them.
+foreach(_nmo_test IN ITEMS
+        test_behavior_execute test_behavior_rewrite test_edit_plan
+        test_edit_plan_json test_probe_analyzer test_script_edit_interface
+        test_script_edit_transaction test_semantic_validator)
+    target_link_libraries(${_nmo_test} PRIVATE nmo_edit)
+endforeach()
 foreach(_nmo_test IN ITEMS
         test_lua_runtime test_lua_bindings test_lua_bindings_document
         test_lua_bindings_session_runtime test_lua_bindings_object

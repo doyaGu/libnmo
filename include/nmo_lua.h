@@ -12,6 +12,7 @@
  */
 
 #include "nmo.h"
+#include "nmo_edit.h"
 
 #include "lua/nmo_lua_module.h"
 #include "lua/nmo_lua_runtime.h"

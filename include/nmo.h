@@ -14,8 +14,9 @@
  * - Format Layer: headers, chunks, objects, managers, data, chunk pool, image
  * - Canonical Model: context -> document -> workspace -> object/behavior/chunk -> export
  * - Type/Extension Layers: type system, plugins
- * - Optional components (own headers and libraries): nmo_project.h for project
- *   authoring, nmo_lua.h for the Lua runtime and bindings
+ * - Optional components (own headers and libraries): nmo_edit.h for edit plans,
+ *   script edits and behavior rewrites, nmo_project.h for project authoring,
+ *   nmo_lua.h for the Lua runtime and bindings
  *
  * Basic usage:
  * @code
@@ -148,10 +149,6 @@
 #include "behavior/nmo_behavior_query.h"
 #include "behavior/nmo_behavior_analyze.h"
 #include "behavior/nmo_behavior_view.h"
-#include "edit/nmo_behavior_edit.h"
-#include "edit/nmo_behavior_execute.h"
-#include "edit/nmo_edit_plan_json.h"
-#include "edit/nmo_probe_analyzer.h"
 #include "export/nmo_export_text.h"
 #include "export/nmo_export_json.h"
 #include "export/nmo_export_dot.h"
@@ -161,9 +158,10 @@
 // Additional type helpers
 #include "type/nmo_type_query.h"
 
-// The project authoring layer (nmo_project.h, library nmo_project) and the Lua
-// platform layer (nmo_lua.h, library nmo_lua) are separate components built on
-// top of this core library; include their umbrella headers to use them.
+// The edit layer (nmo_edit.h, library nmo_edit), the project authoring layer
+// (nmo_project.h, library nmo_project) and the Lua platform layer (nmo_lua.h,
+// library nmo_lua) are separate components built on top of this core library;
+// include their umbrella headers to use them.
 
 #ifdef __cplusplus
 extern "C" {

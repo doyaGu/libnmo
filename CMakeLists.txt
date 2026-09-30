@@ -332,30 +332,11 @@ set(NMO_EXPORT_SOURCES
 set(NMO_BEHAVIOR_SOURCES
     src/behavior/bb_registry.c
     src/behavior/behavior_boundary.c
-    src/edit/behavior_execute.c
     src/behavior/behavior_graph.c
     src/behavior/behavior_index.c
     src/behavior/behavior_query.c
-    src/edit/behavior_rewrite.c
-    src/edit/behavior_rewrite_apply.c
-    src/edit/behavior_rewrite_replace.c
     src/behavior/behavior_view.c
-    src/edit/edit_op_kind.c
-    src/edit/edit_plan.c
-    src/edit/edit_plan_executor.c
-    src/edit/edit_plan_json.c
-    src/edit/edit_plan_op.c
-    src/edit/edit_plan_report.c
-    src/edit/edit_plan_state.c
-    src/edit/probe_analyzer.c
-    src/edit/semantic_validator.c
-    src/edit/script_edit.c
     src/behavior/script_edit_graph.c
-    src/edit/script_edit_interface.c
-    src/edit/script_edit_link.c
-    src/edit/script_edit_node.c
-    src/edit/script_edit_operation.c
-    src/edit/script_edit_parameter.c
     src/behavior/script_trace_view.c
     src/behavior/script_walker.c
     src/behavior/param_value.c
@@ -445,8 +426,10 @@ install(DIRECTORY include/
 )
 
 # Optional components built on the core library. Each one installs its own
-# library, and in a shared build compiles into the shared nmo library.
+# library, and in a shared build compiles into the shared nmo library. The Lua
+# and project components build on the edit component.
 set(NMO_THIRD_PARTY_DOCDIR "${CMAKE_INSTALL_DOCDIR}/third-party")
+add_subdirectory(src/edit)
 add_subdirectory(src/lua)
 add_subdirectory(src/project)
 

@@ -23,7 +23,7 @@ if(NMO_BUILD_SHARED)
     set(NMO_PROJECT_PC_LIBS "")
 else()
     add_library(nmo_project STATIC ${NMO_PROJECT_SOURCES})
-    target_link_libraries(nmo_project PUBLIC nmo)
+    target_link_libraries(nmo_project PUBLIC nmo_edit)
     target_include_directories(nmo_project
         PRIVATE
             ${PROJECT_SOURCE_DIR}/deps

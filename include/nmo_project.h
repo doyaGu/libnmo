@@ -11,6 +11,7 @@
  */
 
 #include "nmo.h"
+#include "nmo_edit.h"
 
 #include "project/nmo_project_plan.h"
 #include "project/nmo_asset_plan.h"
