@@ -158,6 +158,12 @@ static void nmo_2dentity_set_default_source_rect(
     }
 }
 
+/* State of a freshly constructed RCK2dEntity. Load keeps it for whatever the
+ * chunk does not carry. */
+#define NMO_2DENTITY_CTOR_FLAGS \
+    (CK_2DENTITY_RESERVED3 | CK_2DENTITY_RATIOOFFSET | \
+     CK_2DENTITY_CLIPTOCAMERAVIEW | CK_2DENTITY_STICKLEFT | CK_2DENTITY_STICKTOP)
+
 /* =============================================================================
  * CK2dEntity DESERIALIZATION
  * ============================================================================= */
@@ -284,6 +290,7 @@ static nmo_status_t deserialize_legacy(
     out_state->parent = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     out_state->z_order = 0;
     nmo_2dentity_set_default_source_rect(out_state, class_id);
+    out_state->flags = NMO_2DENTITY_CTOR_FLAGS;
     
     /* Read flags (identifier 0x4000) */
     nmo_status_t seek_result = nmo_chunk_seek_identifier_with_size(
@@ -450,19 +457,24 @@ static nmo_status_t nmo_2dentity_deserialize_internal(
         size_t section_dwords = 0;
         nmo_status_t seek_result = nmo_chunk_seek_identifier_with_size(
             chunk, CK_STATESAVE_2DENTITYONLY, &section_dwords);
-        if (seek_result != NMO_OK) {
-            if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
-            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Missing modern CK2dEntity chunk (0x10F000)");
-        }
-        const size_t section_end =
-            nmo_chunk_get_position(chunk) + section_dwords;
-        result = deserialize_modern(chunk, arena, out_state, context);
-        if (result != NMO_OK) return result;
-        if (nmo_chunk_get_position(chunk) > section_end) {
-            return NMO_ERR_TRUNCATED_CHUNK;
-        }
-        if (nmo_chunk_get_position(chunk) < section_end) {
-            return NMO_ERR_INVALID_FORMAT;
+        if (seek_result == NMO_ERR_NOT_FOUND) {
+            /* Load leaves the constructor state in place. */
+            out_state->flags = NMO_2DENTITY_CTOR_FLAGS;
+            nmo_2dentity_set_default_source_rect(
+                out_state, nmo_chunk_get_class_id(chunk));
+        } else if (seek_result != NMO_OK) {
+            return seek_result;
+        } else {
+            const size_t section_end =
+                nmo_chunk_get_position(chunk) + section_dwords;
+            result = deserialize_modern(chunk, arena, out_state, context);
+            if (result != NMO_OK) return result;
+            if (nmo_chunk_get_position(chunk) > section_end) {
+                return NMO_ERR_TRUNCATED_CHUNK;
+            }
+            if (nmo_chunk_get_position(chunk) < section_end) {
+                return NMO_ERR_INVALID_FORMAT;
+            }
         }
     } else {
         /* Legacy format: separate identifiers */
