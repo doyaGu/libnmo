@@ -26,15 +26,6 @@ extern "C" {
 yyjson_mut_doc *nmo_cli_json_create_doc(void);
 
 /**
- * @brief Create a document and default top-level `data` object.
- *
- * Equivalent to:
- * - doc = nmo_cli_json_create_doc()
- * - data = yyjson_mut_obj(doc)
- */
-bool nmo_cli_json_create_data_doc(yyjson_mut_doc **out_doc, yyjson_mut_val **out_data);
-
-/**
  * @brief Add standard envelope to JSON output
  *
  * All CLI JSON outputs include:
@@ -75,15 +66,6 @@ bool nmo_cli_json_write_enveloped_and_free(yyjson_mut_doc *doc,
                                            const char *input_file,
                                            FILE *out,
                                            bool pretty);
-
-/**
- * @brief Write JSON document to string
- * @param doc JSON document
- * @param pretty Use pretty printing if true
- * @param out_len Output: string length (optional)
- * @return Allocated string (caller must free), or NULL on error
- */
-char *nmo_cli_json_write_string(yyjson_mut_doc *doc, bool pretty, size_t *out_len);
 
 /**
  * @brief Free JSON document

@@ -144,17 +144,6 @@ int nmo_opt_parse(int argc, char **argv,
                   const nmo_opt_def_t *defs, size_t def_count,
                   nmo_opt_result_t *result);
 
-/**
- * @brief Print formatted help text from option definitions.
- *
- * @param out        Output stream
- * @param usage_line Usage line (e.g. "nmo object list [options] <file>")
- * @param defs       Option definitions
- * @param def_count  Number of definitions
- */
-void nmo_opt_print_help(FILE *out, const char *usage_line,
-                        const nmo_opt_def_t *defs, size_t def_count);
-
 #ifdef __cplusplus
 }
 #endif

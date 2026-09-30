@@ -50,12 +50,4 @@ yyjson_mut_val *nmo_cli_edit_report_probe_selector_diagnostics_json(
     yyjson_mut_doc *doc,
     const nmo_probe_selector_result_t *analysis);
 
-void nmo_cli_edit_report_add_diff_counts_json(
-    yyjson_mut_doc *doc,
-    yyjson_mut_val *obj,
-    size_t changed_object_count,
-    size_t created_object_count,
-    size_t deleted_object_count,
-    size_t semantic_risk_count);
-
 #endif /* NMO_EDIT_REPORT_JSON_H */

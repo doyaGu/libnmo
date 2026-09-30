@@ -35,9 +35,6 @@ nmo_cli_record_t *nmo_cli_record_new(void);
 /** Free a record and every child record it owns. NULL is ignored. */
 void nmo_cli_record_free(nmo_cli_record_t *record);
 
-/** Number of fields added so far. */
-size_t nmo_cli_record_field_count(const nmo_cli_record_t *record);
-
 /*
  * Field adders. `key` is the JSON key (NULL: not emitted in JSON); `label` is
  * the text label (NULL: not emitted in text). Strings are copied. All adders
@@ -167,8 +164,6 @@ bool nmo_cli_record_set_text(nmo_cli_record_t *record, const char *text);
 bool nmo_cli_record_set_text_fmt(nmo_cli_record_t *record, const char *format, ...);
 /** Replace the text label of the most recently added field with a formatted one. */
 bool nmo_cli_record_set_label_fmt(nmo_cli_record_t *record, const char *format, ...);
-/** Drop the JSON side of the most recently added field. */
-void nmo_cli_record_text_only(nmo_cli_record_t *record);
 
 /**
  * Nested array of records. The returned child list is owned by the record;

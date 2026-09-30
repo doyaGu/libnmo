@@ -355,10 +355,6 @@ bool nmo_tool_parse_size_dec(const char *text, size_t *out) {
     return nmo_parse_size_range_base(text, 10, 0, SIZE_MAX, out) == NMO_OK;
 }
 
-bool nmo_tool_parse_size(const char *text, size_t *out) {
-    return nmo_parse_size_range_base(text, 0, 0, SIZE_MAX, out) == NMO_OK;
-}
-
 /* ============================================================================
  * Argument Parsing Helpers
  * ============================================================================ */

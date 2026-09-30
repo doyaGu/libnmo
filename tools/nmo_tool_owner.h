@@ -38,7 +38,6 @@ typedef nmo_session_behavior_interface_diagnostics_t nmo_tool_behavior_interface
     NMO_SESSION_PLUGIN_DEP_STATUS_MANAGER_UNAVAILABLE
 
 nmo_object_repository_t *nmo_tool_owner_repository(nmo_workspace_t *workspace);
-nmo_object_repository_t *nmo_tool_document_repository(nmo_document_t *document);
 nmo_arena_t *nmo_tool_owner_arena(nmo_workspace_t *workspace);
 nmo_ref_graph_t *nmo_tool_owner_ref_graph(nmo_workspace_t *workspace);
 nmo_behavior_index_t *nmo_tool_owner_behavior_index(nmo_workspace_t *workspace);
@@ -67,10 +66,6 @@ nmo_status_t nmo_tool_owner_preview_destroy(
     nmo_arena_t *arena,
     nmo_object_id_t **out_expanded_ids,
     size_t *out_expanded_count);
-nmo_status_t nmo_tool_owner_execute_runtime_request(
-    nmo_workspace_t *workspace,
-    const nmo_runtime_request_t *request,
-    nmo_runtime_report_t *out_report);
 
 bool nmo_tool_owner_build_hierarchy(
     nmo_context_t *ctx,

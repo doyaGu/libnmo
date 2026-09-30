@@ -15,30 +15,6 @@ yyjson_mut_doc *nmo_cli_json_create_doc(void) {
     return yyjson_mut_doc_new(NULL);
 }
 
-bool nmo_cli_json_create_data_doc(yyjson_mut_doc **out_doc, yyjson_mut_val **out_data) {
-    if (!out_doc || !out_data) {
-        return false;
-    }
-
-    *out_doc = NULL;
-    *out_data = NULL;
-
-    yyjson_mut_doc *doc = nmo_cli_json_create_doc();
-    if (!doc) {
-        return false;
-    }
-
-    yyjson_mut_val *data = yyjson_mut_obj(doc);
-    if (!data) {
-        nmo_cli_json_free_doc(doc);
-        return false;
-    }
-
-    *out_doc = doc;
-    *out_data = data;
-    return true;
-}
-
 /**
  * Get current ISO 8601 timestamp
  */
@@ -120,17 +96,6 @@ bool nmo_cli_json_write(yyjson_mut_doc *doc, FILE *out, bool pretty) {
         return true;
     }
     return false;
-}
-
-char *nmo_cli_json_write_string(yyjson_mut_doc *doc, bool pretty, size_t *out_len) {
-    if (!doc) {
-        return NULL;
-    }
-
-    yyjson_write_flag flags = (pretty ? YYJSON_WRITE_PRETTY : 0) |
-                              YYJSON_WRITE_ESCAPE_UNICODE |
-                              YYJSON_WRITE_ALLOW_INVALID_UNICODE;
-    return yyjson_mut_write(doc, flags, out_len);
 }
 
 void nmo_cli_json_free_doc(yyjson_mut_doc *doc) {

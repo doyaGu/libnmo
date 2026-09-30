@@ -6,10 +6,6 @@ nmo_object_repository_t *nmo_tool_owner_repository(nmo_workspace_t *workspace) {
     return nmo_workspace_internal_repository(workspace);
 }
 
-nmo_object_repository_t *nmo_tool_document_repository(nmo_document_t *document) {
-    return nmo_document_get_repository(document);
-}
-
 nmo_arena_t *nmo_tool_owner_arena(nmo_workspace_t *workspace) {
     return nmo_workspace_internal_document_arena(workspace);
 }
@@ -67,14 +63,6 @@ nmo_status_t nmo_tool_owner_preview_destroy(
     return nmo_workspace_internal_preview_destroy(
         workspace, object_ids, object_count, flags, arena,
         out_expanded_ids, out_expanded_count);
-}
-
-nmo_status_t nmo_tool_owner_execute_runtime_request(
-    nmo_workspace_t *workspace,
-    const nmo_runtime_request_t *request,
-    nmo_runtime_report_t *out_report)
-{
-    return nmo_workspace_internal_execute_runtime_request(workspace, request, out_report);
 }
 
 bool nmo_tool_owner_build_hierarchy(

@@ -152,19 +152,6 @@ bool nmo_cli_table_add_cell(nmo_cli_table_t *table, const char *text) {
     return true;
 }
 
-bool nmo_cli_table_add_cell_fmt(nmo_cli_table_t *table, const char *format, ...) {
-    va_list args;
-    va_start(args, format);
-    char *text = nmo_tool_vstrdup_fmt(format, args);
-    va_end(args);
-    if (!text) {
-        return false;
-    }
-    bool ok = nmo_cli_table_add_cell(table, text);
-    free(text);
-    return ok;
-}
-
 bool nmo_cli_table_add_row(nmo_cli_table_t *table, const char **cells, size_t cell_count) {
     if (!table || !cells) {
         return false;
@@ -334,17 +321,6 @@ void nmo_cli_print_heading(FILE *out, const char *title, bool colorize) {
     }
 }
 
-void nmo_cli_print_heading_fmt(FILE *out, bool colorize, const char *format, ...) {
-    va_list args;
-    va_start(args, format);
-    char *title = nmo_tool_vstrdup_fmt(format, args);
-    va_end(args);
-    if (title) {
-        nmo_cli_print_heading(out, title, colorize);
-        free(title);
-    }
-}
-
 void nmo_cli_print_kv(FILE *out, const char *key, const char *value, int key_width, bool colorize) {
     if (!out) {
         return;
@@ -370,30 +346,6 @@ void nmo_cli_print_kv_fmt(FILE *out, const char *key, int key_width, bool colori
     va_end(args);
     nmo_cli_print_kv(out, key, value ? value : "", key_width, colorize);
     free(value);
-}
-
-void nmo_cli_print_error(FILE *out, const char *format, ...) {
-    if (!out || !format) {
-        return;
-    }
-    fprintf(out, "Error: ");
-    va_list args;
-    va_start(args, format);
-    vfprintf(out, format, args);
-    va_end(args);
-    fprintf(out, "\n");
-}
-
-void nmo_cli_print_warning(FILE *out, const char *format, ...) {
-    if (!out || !format) {
-        return;
-    }
-    fprintf(out, "Warning: ");
-    va_list args;
-    va_start(args, format);
-    vfprintf(out, format, args);
-    va_end(args);
-    fprintf(out, "\n");
 }
 
 /* ============================================================================

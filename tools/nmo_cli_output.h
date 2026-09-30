@@ -104,12 +104,6 @@ bool nmo_cli_table_begin_row(nmo_cli_table_t *table);
 bool nmo_cli_table_add_cell(nmo_cli_table_t *table, const char *text);
 
 /**
- * @brief Append a printf-formatted cell of any length to the current row
- * @return true on success
- */
-bool nmo_cli_table_add_cell_fmt(nmo_cli_table_t *table, const char *format, ...);
-
-/**
  * @brief Print table to stream
  * @param table Table to print
  * @param out Output stream
@@ -132,11 +126,6 @@ void nmo_cli_table_free(nmo_cli_table_t *table);
 void nmo_cli_print_heading(FILE *out, const char *title, bool colorize);
 
 /**
- * @brief Print a printf-formatted heading of any length
- */
-void nmo_cli_print_heading_fmt(FILE *out, bool colorize, const char *format, ...);
-
-/**
  * @brief Print a key-value pair
  * @param out Output stream
  * @param key Key name
@@ -156,22 +145,6 @@ void nmo_cli_print_kv(FILE *out, const char *key, const char *value, int key_wid
  */
 void nmo_cli_print_kv_fmt(FILE *out, const char *key, int key_width, bool colorize,
                           const char *format, ...);
-
-/**
- * @brief Print an error message
- * @param out Output stream
- * @param format Printf format string
- * @param ... Format arguments
- */
-void nmo_cli_print_error(FILE *out, const char *format, ...);
-
-/**
- * @brief Print a warning message
- * @param out Output stream
- * @param format Printf format string
- * @param ... Format arguments
- */
-void nmo_cli_print_warning(FILE *out, const char *format, ...);
 
 /**
  * @brief Tree node for tree printing

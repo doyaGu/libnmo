@@ -164,21 +164,3 @@ int nmo_opt_parse(int argc, char **argv,
 
     return 0;
 }
-
-void nmo_opt_print_help(FILE *out, const char *usage_line,
-                        const nmo_opt_def_t *defs, size_t def_count)
-{
-    fprintf(out, "Usage: %s\n\nOptions:\n", usage_line);
-
-    for (size_t i = 0; i < def_count; i++) {
-        if (defs[i].short_name) {
-            fprintf(out, "  %s, %-20s %s\n",
-                    defs[i].short_name, defs[i].long_name,
-                    defs[i].help ? defs[i].help : "");
-        } else {
-            fprintf(out, "      %-20s %s\n",
-                    defs[i].long_name,
-                    defs[i].help ? defs[i].help : "");
-        }
-    }
-}

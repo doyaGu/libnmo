@@ -984,23 +984,3 @@ void nmo_cli_edit_report_add_diff_json(
     yyjson_mut_obj_add_val(doc, diff, "replay_summary", replay);
     yyjson_mut_obj_add_val(doc, obj, "diff", diff);
 }
-
-void nmo_cli_edit_report_add_diff_counts_json(
-    yyjson_mut_doc *doc,
-    yyjson_mut_val *obj,
-    size_t changed_object_count,
-    size_t created_object_count,
-    size_t deleted_object_count,
-    size_t semantic_risk_count)
-{
-    yyjson_mut_val *diff = yyjson_mut_obj(doc);
-    yyjson_mut_obj_add_uint(doc, diff, "changed_object_count",
-                            (uint64_t)changed_object_count);
-    yyjson_mut_obj_add_uint(doc, diff, "created_object_count",
-                            (uint64_t)created_object_count);
-    yyjson_mut_obj_add_uint(doc, diff, "deleted_object_count",
-                            (uint64_t)deleted_object_count);
-    yyjson_mut_obj_add_uint(doc, diff, "semantic_risk_count",
-                            (uint64_t)semantic_risk_count);
-    yyjson_mut_obj_add_val(doc, obj, "diff", diff);
-}

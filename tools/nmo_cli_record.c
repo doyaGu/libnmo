@@ -206,11 +206,6 @@ void nmo_cli_record_free(nmo_cli_record_t *record)
     free(record);
 }
 
-size_t nmo_cli_record_field_count(const nmo_cli_record_t *record)
-{
-    return record ? record->count : 0u;
-}
-
 static record_field_t *field_append(nmo_cli_record_t *record,
                                     record_kind_t kind,
                                     const char *key,
@@ -727,18 +722,6 @@ bool nmo_cli_record_set_text(nmo_cli_record_t *record, const char *text)
         return false;
     }
     return set_str(&field->text, text);
-}
-
-void nmo_cli_record_text_only(nmo_cli_record_t *record)
-{
-    record_field_t *field = field_last(record);
-    if (!field) {
-        return;
-    }
-    free(field->key);
-    field->key = NULL;
-    free(field->name_key);
-    field->name_key = NULL;
 }
 
 nmo_cli_record_array_t *nmo_cli_record_array(nmo_cli_record_t *record,
