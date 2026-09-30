@@ -6299,12 +6299,12 @@ TEST(chunk_id_remap, camera_and_light_failures_keep_previous_state) {
         }
         ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing, 0x12345678u));
         nmo_chunk_close(trailing);
-        ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_camera_deserialize(
-            &camera, trailing, NULL, &deserialize_context));
-        ASSERT_EQ(8.0f, camera.fov);
-        ASSERT_EQ(77, camera.width);
-        ASSERT_EQ(901u, nmo_beobject_script_array_get_id(
-            &camera.entity.base.base.scripts, 0));
+        /* Load reads a section positionally, so extra dwords are ignored. */
+        nmo_camera_state_t extra;
+        ASSERT_EQ(NMO_OK, nmo_camera_vtable.create(&extra, NULL, NULL));
+        ASSERT_EQ(NMO_OK, nmo_camera_deserialize(
+            &extra, trailing, NULL, &deserialize_context));
+        nmo_camera_vtable.destroy(&extra, NULL, NULL);
     }
 
     nmo_chunk_t *light_chunk = nmo_chunk_create(arena);
@@ -6773,11 +6773,10 @@ TEST(chunk_id_remap, target_camera_and_light_failures_are_atomic) {
     ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
         trailing_camera, 0x12345678u));
     nmo_chunk_close(trailing_camera);
-    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_targetcamera_deserialize(
+    ASSERT_EQ(NMO_OK, nmo_targetcamera_deserialize(
         &camera, trailing_camera, NULL, &deserialize_context));
-    ASSERT_EQ(8.0f, camera.base.fov);
     ASSERT_EQ(1u, camera.has_target);
-    ASSERT_EQ(901u, camera.target.raw_id);
+    ASSERT_EQ(801u, camera.target.raw_id);
 
     nmo_chunk_t *truncated_light = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(truncated_light);
@@ -6833,12 +6832,10 @@ TEST(chunk_id_remap, target_camera_and_light_failures_are_atomic) {
     ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
         trailing_light, 0x87654321u));
     nmo_chunk_close(trailing_light);
-    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_targetlight_deserialize(
+    ASSERT_EQ(NMO_OK, nmo_targetlight_deserialize(
         &light, trailing_light, NULL, &deserialize_context));
-    ASSERT_EQ(0x123400u, light.base.flags);
-    ASSERT_EQ(9.0f, light.base.light_power);
     ASSERT_EQ(1u, light.has_target);
-    ASSERT_EQ(902u, light.target.raw_id);
+    ASSERT_EQ(802u, light.target.raw_id);
 
     camera.target = nmo_ref_from_id(123);
     nmo_chunk_t *camera_target = nmo_chunk_create(arena);
@@ -7326,6 +7323,28 @@ TEST(chunk_id_remap, layer_unresolved_grid_round_trips_raw_id) {
     ASSERT_EQ(444u, loaded.grid.raw_id);
     ASSERT_EQ(77, loaded.format);
     ASSERT_EQ(88, loaded.version);
+
+    /* RCKLayer::Save writes the square buffer of a format 0 layer only when
+     * it has a grid, so a section that ends after the header has no buffer. */
+    nmo_chunk_t *no_buffer = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(no_buffer);
+    no_buffer->class_id = NMO_CID_LAYER;
+    no_buffer->data_version = 7;
+    no_buffer->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(no_buffer));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        no_buffer, CK_STATESAVE_LAYERDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(no_buffer, 999));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(no_buffer, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(no_buffer, 0));
+    nmo_chunk_close(no_buffer);
+    nmo_layer_state_t no_buffer_loaded;
+    ASSERT_EQ(NMO_OK, nmo_layer_vtable.create(&no_buffer_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_layer_deserialize(
+        &no_buffer_loaded, no_buffer, NULL, &deserialize_context));
+    ASSERT_FALSE(no_buffer_loaded.has_square_data);
+    ASSERT_EQ(0, no_buffer_loaded.format);
+    nmo_layer_vtable.destroy(&no_buffer_loaded, NULL, NULL);
 
     nmo_chunk_t *fixed_trailing = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(fixed_trailing);
@@ -8967,6 +8986,43 @@ TEST(chunk_id_remap, modern_2dentity_without_its_block_keeps_the_constructor_sta
     ASSERT_EQ(1.0f, loaded.source_rect.bottom);
     ASSERT_FALSE(loaded.has_parent);
     nmo_2dentity_vtable.destroy(&loaded, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_id_remap, light_loading_ignores_what_the_engine_ignores) {
+    /* RCKLight::Load reads its sections positionally: extra dwords are not
+     * looked at and any non-zero active or specular integer means true. */
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+
+    nmo_chunk_t *legacy = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(legacy);
+    legacy->class_id = NMO_CID_LIGHT;
+    legacy->data_version = 0;
+    legacy->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(legacy));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(legacy, CK_STATESAVE_LIGHTDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(legacy, VX_LIGHTPOINT));
+    for (int i = 0; i < 4; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_float(legacy, 0.5f));
+    }
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(legacy, 5));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(legacy, 0));
+    for (int i = 0; i < 7; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_float(legacy, 1.0f));
+    }
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(legacy, 0x12345678u));
+    nmo_chunk_close(legacy);
+
+    nmo_light_state_t light;
+    ASSERT_EQ(NMO_OK, nmo_light_vtable.create(&light, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_light_deserialize(
+        &light, legacy, NULL, &deserialize_context));
+    ASSERT_EQ(0x100u, light.flags & 0x300u);
+    nmo_light_vtable.destroy(&light, NULL, NULL);
     nmo_arena_destroy(arena);
 }
 
@@ -21174,6 +21230,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, legacy_2dentity_ignores_the_material_section);
     REGISTER_TEST(chunk_id_remap, texture_empty_sections_round_trip_presence);
     REGISTER_TEST(chunk_id_remap, texture_packed_state_follows_the_engine_leniency);
+    REGISTER_TEST(chunk_id_remap, light_loading_ignores_what_the_engine_ignores);
     REGISTER_TEST(chunk_id_remap, texture_filename_count_resizes_the_slots);
     REGISTER_TEST(chunk_id_remap, modern_2dentity_without_its_block_keeps_the_constructor_state);
     REGISTER_TEST(chunk_id_remap, curvepoint_unresolved_curve_round_trips_raw_id);
