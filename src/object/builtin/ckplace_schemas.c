@@ -47,6 +47,21 @@ static const nmo_object_state_layout_t nmo_place_layout = {
 
 NMO_DEFINE_OBJECT_LAYOUT_OPS(place, nmo_place_layout)
 
+/* RCKPlace::RCKPlace sets the BeObject priority to 20000, and Load leaves it
+ * alone when the chunk has no DATAS section. */
+#define NMO_PLACE_DEFAULT_PRIORITY 20000
+
+static nmo_status_t nmo_place_create_default(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    NMO_RETURN_IF_ERROR(nmo_place_create(instance, type, context));
+    ((nmo_place_state_t *)instance)->base.base.base.priority =
+        NMO_PLACE_DEFAULT_PRIORITY;
+    NMO_RETURN_OK();
+}
+
 static nmo_status_t nmo_place_restore_read_position(
     nmo_chunk_t *chunk,
     size_t position,
@@ -339,7 +354,7 @@ nmo_type_vtable_t nmo_place_vtable = {
     .pre_delete = nmo_place_pre_delete,
     .post_delete = nmo_object_post_delete_noop,
     NMO_OBJECT_VTABLE(
-        nmo_place_create,
+        nmo_place_create_default,
         nmo_place_destroy,
         nmo_place_serialize,
         nmo_place_deserialize,
@@ -459,7 +474,7 @@ nmo_status_t nmo_place_deserialize(
     nmo_place_state_t *out_state = (nmo_place_state_t *)instance;
     if (out_state == NULL || chunk == NULL) return NMO_ERR_INVALID_ARGUMENT;
     nmo_place_state_t decoded;
-    nmo_status_t result = nmo_place_create(&decoded, NULL, context);
+    nmo_status_t result = nmo_place_create_default(&decoded, NULL, context);
     if (result != NMO_OK) return result;
     nmo_beobject_state_t *old_base = &out_state->base.base.base;
     nmo_beobject_state_t *new_base = &decoded.base.base.base;
