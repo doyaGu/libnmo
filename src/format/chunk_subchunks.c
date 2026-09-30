@@ -175,7 +175,8 @@ nmo_status_t nmo_chunk_write_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t *sub) {
 
     const nmo_chunk_file_context_t *sub_file_context_before = sub->file_context;
     const uint32_t sub_options_before = sub->chunk_options;
-    if (chunk->file_context != NULL && sub->file_context == NULL) {
+    if (chunk->file_context != NULL && sub->file_context == NULL &&
+        (sub->chunk_options & NMO_CHUNK_OPTION_FILE_KEPT) == 0) {
         sub->file_context = chunk->file_context;
         sub->chunk_options |= NMO_CHUNK_OPTION_FILE;
     }
@@ -214,7 +215,8 @@ nmo_status_t nmo_chunk_write_sub_chunk_sequence(nmo_chunk_t *chunk, nmo_chunk_t 
 
     const nmo_chunk_file_context_t *sub_file_context_before = sub->file_context;
     const uint32_t sub_options_before = sub->chunk_options;
-    if (chunk->file_context != NULL && sub->file_context == NULL) {
+    if (chunk->file_context != NULL && sub->file_context == NULL &&
+        (sub->chunk_options & NMO_CHUNK_OPTION_FILE_KEPT) == 0) {
         sub->file_context = chunk->file_context;
         sub->chunk_options |= NMO_CHUNK_OPTION_FILE;
     }
@@ -377,7 +379,9 @@ nmo_status_t nmo_chunk_read_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t **out_sub)
     sub->chunk_class_id = (uint8_t) (class_id & 0xFFu);
     sub->data_version = (uint16_t) (version_info & 0xFFFFu);
     sub->chunk_version = (uint16_t) ((version_info >> 16) & 0xFFFFu);
-    sub->chunk_options = 0;
+    /* CKStateChunk::WriteSubChunk stores whether the sub-chunk itself had a
+       file, so a flag read here is written back as it was. */
+    sub->chunk_options = NMO_CHUNK_OPTION_FILE_KEPT;
     if (file_flag) sub->chunk_options |= NMO_CHUNK_OPTION_FILE;
     if (file_flag && chunk->file_context != NULL) {
         sub->file_context = chunk->file_context;

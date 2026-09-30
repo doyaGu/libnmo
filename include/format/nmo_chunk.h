@@ -33,6 +33,7 @@ typedef enum nmo_chunk_options {
     NMO_CHUNK_DONTDELETE_PTR    = 0x40, /**< Data not owned by chunk */
     NMO_CHUNK_DONTDELETE_PARSER = 0x80, /**< Parser state not owned by chunk */
     NMO_CHUNK_OPTION_PACKED     = 0x100, /**< Data is compressed */
+    NMO_CHUNK_OPTION_FILE_KEPT  = 0x200, /**< FILE came from a sub-chunk header and is written back unchanged */
 } nmo_chunk_options_t;
 
 /**
