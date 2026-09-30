@@ -12,7 +12,9 @@
  *   - 0x20000: transparent color + boolean flag
  *   - 0x10000: current slot index
  *   - 0x20000000: save options + CKBitmapProperties (v7+)
- *   - Bitmap payload identifiers: 0x200000, 0x10000000, 0x800000, 0x400000, 0x40000
+ *   - Bitmap sections, as CKBitmapData::DumpToChunk writes them: 0x200000 movie
+ *     file name, 0x10000000 reader-encoded slots, 0x800000 raw slots, 0x400000
+ *     slot file names, 0x40000 obsolete tagged slots (see nmo_bitmap_slots.h)
  */
 
 #ifndef NMO_CKSPRITE_SCHEMAS_H
@@ -20,6 +22,7 @@
 
 #include "nmo_types.h"
 #include "object/builtin/nmo_2dentity_schemas.h"
+#include "object/builtin/nmo_bitmap_slots.h"
 #include "object/nmo_ref.h"
 #include "object/nmo_object_struct_defs.h"
 #include "object/nmo_object_type_common.h"
@@ -58,9 +61,9 @@ typedef struct nmo_sprite_state {
     bool has_sprite_ref;                /**< True if cloning from another sprite */
     nmo_ref_t sprite_ref;               /**< Sprite to clone from (identifier 0x80000) */
     
-    /* Bitmap data (optional, not present if sprite_ref is used) */
-    bool has_bitmap_data;               /**< True if bitmap payload is present */
-    nmo_bitmapdata_t bitmap_data;     /**< Bitmap pixel data */
+    /* Bitmap slots (not present if sprite_ref is used) */
+    bool has_bitmap_data;               /**< True if the sprite holds its own bitmap */
+    nmo_bitmap_slots_t bitmap;          /**< Slots and file names of the bitmap */
     
     /* Video format (identifier 0x40000000), written by later engines */
     bool has_video_format;              /**< True if the section is present */
@@ -87,12 +90,15 @@ typedef struct nmo_sprite_state {
  * CHUNK IDENTIFIERS
  * ============================================================================= */
 
-/** Bitmap payload identifiers (passed to CKBitmapData::ReadFromChunk) */
-#define NMO_CKSPRITE_BITMAP_PALETTE      0x200000
-#define NMO_CKSPRITE_BITMAP_SYSTEM_COPY  0x10000000
-#define NMO_CKSPRITE_BITMAP_VIDEO_BACKUP 0x800000
-#define NMO_CKSPRITE_BITMAP_PIXELS       0x400000
-#define NMO_CKSPRITE_BITMAP_RAW          0x40000
+/** Identifiers RCKSprite passes to CKBitmapData::DumpToChunk and ReadFromChunk */
+#define NMO_CKSPRITE_BITMAP_IDS \
+    ((nmo_bitmap_slot_ids_t){ \
+        .movie = 0x200000u, \
+        .reader = 0x10000000u, \
+        .raw = 0x800000u, \
+        .filenames = 0x400000u, \
+        .bitmap2 = 0x40000u, \
+    })
 
 /* =============================================================================
  * FUNCTION POINTER TYPES

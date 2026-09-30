@@ -66,9 +66,18 @@ static const nmo_type_field_t nmo_sprite_fields[] = {
     NMO_FIELD(nmo_sprite_state_t, has_sprite_ref, CKPGUID_BOOL),
     NMO_FIELD_REF_VALUE(nmo_sprite_state_t, sprite_ref),
     NMO_FIELD(nmo_sprite_state_t, has_bitmap_data, CKPGUID_BOOL),
-    NMO_FIELD_NAMED("bitmap_data", offsetof(nmo_sprite_state_t, bitmap_data),
-                    sizeof(nmo_bitmapdata_t), NMO_GUID_STRUCT_CKBITMAPDATA,
-                    NMO_FIELD_REQUIRED, 0),
+    NMO_FIELD(nmo_sprite_state_t, bitmap.has_movie_filename, CKPGUID_BOOL),
+    NMO_FIELD_OPT(nmo_sprite_state_t, bitmap.movie_filename, CKPGUID_STRING),
+    NMO_FIELD(nmo_sprite_state_t, bitmap.has_slot_filenames, CKPGUID_BOOL),
+    NMO_FIELD(nmo_sprite_state_t, bitmap.slot_count, CKPGUID_UINT32),
+    NMO_FIELD_ARRAY_COUNTED(nmo_sprite_state_t, bitmap.slot_filenames, bitmap.slot_count, 1, CKPGUID_STRING),
+    NMO_FIELD(nmo_sprite_state_t, bitmap.reader_width, CKPGUID_INT),
+    NMO_FIELD(nmo_sprite_state_t, bitmap.reader_height, CKPGUID_INT),
+    NMO_FIELD(nmo_sprite_state_t, bitmap.reader_bpp, CKPGUID_INT),
+    NMO_FIELD(nmo_sprite_state_t, bitmap.kind, CKPGUID_UINT32),
+    NMO_FIELD_OPT(nmo_sprite_state_t, bitmap.reader_slots, CKPGUID_POINTER),
+    NMO_FIELD_OPT(nmo_sprite_state_t, bitmap.raw_slots, CKPGUID_POINTER),
+    NMO_FIELD_OPT(nmo_sprite_state_t, bitmap.bitmap2_slots, CKPGUID_POINTER),
     NMO_FIELD(nmo_sprite_state_t, has_transparency, CKPGUID_BOOL),
     NMO_FIELD(nmo_sprite_state_t, is_transparent, CKPGUID_BOOL),
     NMO_FIELD_NAMED("transparent_color", offsetof(nmo_sprite_state_t, transparent_color),
@@ -87,79 +96,6 @@ static const nmo_type_field_t nmo_sprite_fields[] = {
  * HELPER FUNCTIONS
  * ============================================================================= */
 
-/**
- * @brief Copy identifier payload without mutating parser state
- */
-static nmo_status_t nmo_sprite_copy_identifier_payload(
-    nmo_chunk_t *chunk,
-    uint32_t identifier,
-    nmo_arena_t *arena,
-    uint8_t **out_data,
-    size_t *out_size)
-{
-    if (!chunk || !out_data || !out_size) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_sprite_copy_identifier_payload");
-    }
-
-    *out_data = NULL;
-    *out_size = 0;
-
-    if (chunk->data.count == 0 || !chunk->data.data) {
-        NMO_RETURN_OK();
-    }
-
-    uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
-    size_t pos = 0;
-    while (pos + 1 < chunk->data.count && data[pos] != identifier) {
-        size_t next_pos = data[pos + 1];
-        if (next_pos == 0 || next_pos <= pos || next_pos > chunk->data.count) {
-            break;
-        }
-        pos = next_pos;
-    }
-
-    if (pos >= chunk->data.count || data[pos] != identifier) {
-        NMO_RETURN_OK();
-    }
-    if (pos + 1 >= chunk->data.count) {
-        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
-                         "Sprite bitmap identifier header is truncated");
-    }
-
-    size_t next = data[pos + 1];
-    if (next == 0 || next > chunk->data.count) {
-        next = chunk->data.count;
-    }
-
-    if (next <= pos + 2) {
-        NMO_RETURN_OK();
-    }
-
-    size_t dwords = next - (pos + 2);
-    if (dwords > SIZE_MAX / sizeof(uint32_t)) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                         "Sprite bitmap payload size overflows");
-    }
-    size_t bytes = dwords * sizeof(uint32_t);
-    if (arena == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Sprite bitmap payload requires an arena");
-    }
-    uint8_t *payload = (uint8_t *)nmo_arena_alloc(arena, bytes, 1);
-    if (!payload) {
-        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate sprite bitmap payload");
-    }
-
-    memcpy(payload, &data[pos + 2], bytes);
-    *out_data = payload;
-    *out_size = bytes;
-    NMO_RETURN_OK();
-}
-
-static nmo_status_t nmo_sprite_copy_bitmapdata(
-    nmo_arena_t *arena,
-    nmo_bitmapdata_t *dst,
-    const nmo_bitmapdata_t *src);
 static nmo_status_t nmo_sprite_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
@@ -202,6 +138,7 @@ static nmo_status_t nmo_sprite_pre_delete(
     state->has_sprite_ref = false;
     state->sprite_ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     state->has_bitmap_data = false;
+    memset(&state->bitmap, 0, sizeof(state->bitmap));
     state->bitmap_properties = NULL;
     state->bitmap_properties_size = 0;
     NMO_RETURN_OK();
@@ -247,26 +184,9 @@ static nmo_status_t deserialize_file_backed(
         out_state->has_sprite_ref = false;
         out_state->has_bitmap_data = true;
 
-        NMO_RETURN_IF_ERROR(nmo_sprite_copy_identifier_payload(
-            chunk, NMO_CKSPRITE_BITMAP_PALETTE, arena,
-            &out_state->bitmap_data.palette_data,
-            &out_state->bitmap_data.palette_size));
-        NMO_RETURN_IF_ERROR(nmo_sprite_copy_identifier_payload(
-            chunk, NMO_CKSPRITE_BITMAP_SYSTEM_COPY, arena,
-            &out_state->bitmap_data.system_copy_data,
-            &out_state->bitmap_data.system_copy_size));
-        NMO_RETURN_IF_ERROR(nmo_sprite_copy_identifier_payload(
-            chunk, NMO_CKSPRITE_BITMAP_VIDEO_BACKUP, arena,
-            &out_state->bitmap_data.video_backup_data,
-            &out_state->bitmap_data.video_backup_size));
-        NMO_RETURN_IF_ERROR(nmo_sprite_copy_identifier_payload(
-            chunk, NMO_CKSPRITE_BITMAP_PIXELS, arena,
-            &out_state->bitmap_data.pixels_data,
-            &out_state->bitmap_data.pixels_size));
-        NMO_RETURN_IF_ERROR(nmo_sprite_copy_identifier_payload(
-            chunk, NMO_CKSPRITE_BITMAP_RAW, arena,
-            &out_state->bitmap_data.raw_chunk_data,
-            &out_state->bitmap_data.raw_chunk_size));
+        const nmo_bitmap_slot_ids_t ids = NMO_CKSPRITE_BITMAP_IDS;
+        NMO_RETURN_IF_ERROR(nmo_bitmap_slots_read(
+            chunk, arena, &ids, &out_state->bitmap));
     } else return seek_result;
     
     /* Read video format (identifier 0x40000000). The Ballance engine neither
@@ -542,15 +462,6 @@ static nmo_status_t nmo_sprite_serialize_internal(
         return result;
     }
     NMO_RETURN_IF_ERROR(nmo_sprite_validate(in_state, type, context));
-    if (is_file && in_state->has_bitmap_data &&
-        (in_state->bitmap_data.width != 0u ||
-         in_state->bitmap_data.height != 0u ||
-         in_state->bitmap_data.pixel_data_size != 0u)) {
-        NMO_RETURN_ERROR(
-            NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
-            "Sprite decoded pixel data cannot be serialized losslessly");
-    }
-
     if (in_state->has_sprite_ref) {
         if (is_file || (save_flags & CK_STATESAVE_SPRITESHARED) != 0u) {
             result = nmo_chunk_write_identifier(
@@ -563,50 +474,9 @@ static nmo_status_t nmo_sprite_serialize_internal(
     
     if (is_file) {
         if (!in_state->has_sprite_ref && in_state->has_bitmap_data) {
-            /* Write bitmap payloads in SDK order (no raw chunk) */
-            if (in_state->bitmap_data.palette_data && in_state->bitmap_data.palette_size > 0) {
-                result = nmo_chunk_write_identifier(out_chunk, NMO_CKSPRITE_BITMAP_PALETTE);
-                if (result != NMO_OK) return result;
-                result = nmo_chunk_write_buffer_no_size(out_chunk,
-                    in_state->bitmap_data.palette_data,
-                    in_state->bitmap_data.palette_size);
-                if (result != NMO_OK) return result;
-            }
-            if (in_state->bitmap_data.system_copy_data && in_state->bitmap_data.system_copy_size > 0) {
-                result = nmo_chunk_write_identifier(out_chunk, NMO_CKSPRITE_BITMAP_SYSTEM_COPY);
-                if (result != NMO_OK) return result;
-                result = nmo_chunk_write_buffer_no_size(out_chunk,
-                    in_state->bitmap_data.system_copy_data,
-                    in_state->bitmap_data.system_copy_size);
-                if (result != NMO_OK) return result;
-            }
-            if (in_state->bitmap_data.video_backup_data && in_state->bitmap_data.video_backup_size > 0) {
-                result = nmo_chunk_write_identifier(out_chunk, NMO_CKSPRITE_BITMAP_VIDEO_BACKUP);
-                if (result != NMO_OK) return result;
-                result = nmo_chunk_write_buffer_no_size(out_chunk,
-                    in_state->bitmap_data.video_backup_data,
-                    in_state->bitmap_data.video_backup_size);
-                if (result != NMO_OK) return result;
-            }
-            if (in_state->bitmap_data.pixels_data && in_state->bitmap_data.pixels_size > 0) {
-                result = nmo_chunk_write_identifier(out_chunk, NMO_CKSPRITE_BITMAP_PIXELS);
-                if (result != NMO_OK) return result;
-                result = nmo_chunk_write_buffer_no_size(out_chunk,
-                    in_state->bitmap_data.pixels_data,
-                    in_state->bitmap_data.pixels_size);
-                if (result != NMO_OK) return result;
-            }
-            if (in_state->bitmap_data.raw_chunk_data &&
-                in_state->bitmap_data.raw_chunk_size > 0) {
-                result = nmo_chunk_write_identifier(
-                    out_chunk, NMO_CKSPRITE_BITMAP_RAW);
-                if (result != NMO_OK) return result;
-                result = nmo_chunk_write_buffer_no_size(
-                    out_chunk,
-                    in_state->bitmap_data.raw_chunk_data,
-                    in_state->bitmap_data.raw_chunk_size);
-                if (result != NMO_OK) return result;
-            }
+            const nmo_bitmap_slot_ids_t ids = NMO_CKSPRITE_BITMAP_IDS;
+            result = nmo_bitmap_slots_write(out_chunk, &ids, &in_state->bitmap);
+            if (result != NMO_OK) return result;
         }
 
         if (in_state->has_video_format) {
@@ -682,32 +552,6 @@ static nmo_status_t nmo_sprite_serialize_internal(
 
 NMO_DEFINE_OBJECT_STAGED_SERIALIZE(nmo_sprite)
 
-static nmo_status_t nmo_sprite_copy_bitmapdata(
-    nmo_arena_t *arena,
-    nmo_bitmapdata_t *dst,
-    const nmo_bitmapdata_t *src)
-{
-    *dst = *src;
-    dst->pixel_data = NULL;
-    dst->palette_data = NULL;
-    dst->system_copy_data = NULL;
-    dst->video_backup_data = NULL;
-    dst->pixels_data = NULL;
-    dst->raw_chunk_data = NULL;
-    NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&dst->pixel_data,
-                                              src->pixel_data, src->pixel_data_size));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&dst->palette_data,
-                                              src->palette_data, src->palette_size));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&dst->system_copy_data,
-                                              src->system_copy_data, src->system_copy_size));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&dst->video_backup_data,
-                                              src->video_backup_data, src->video_backup_size));
-    NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&dst->pixels_data,
-                                              src->pixels_data, src->pixels_size));
-    return nmo_object_copy_bytes(arena, (void **)&dst->raw_chunk_data,
-                                 src->raw_chunk_data, src->raw_chunk_size);
-}
-
 static nmo_status_t nmo_sprite_copy(
     const void *src,
     void *dst,
@@ -728,8 +572,8 @@ static nmo_status_t nmo_sprite_copy(
     target->has_sprite_ref = source->has_sprite_ref;
     target->sprite_ref = source->sprite_ref;
     target->has_bitmap_data = source->has_bitmap_data;
-    NMO_RETURN_IF_ERROR(nmo_sprite_copy_bitmapdata(
-        arena, &target->bitmap_data, &source->bitmap_data));
+    NMO_RETURN_IF_ERROR(nmo_bitmap_slots_copy(
+        arena, &target->bitmap, &source->bitmap));
     target->has_transparency = source->has_transparency;
     target->is_transparent = source->is_transparent;
     target->transparent_color = source->transparent_color;
@@ -764,27 +608,11 @@ static nmo_status_t nmo_sprite_validate(
             NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
             "Sprite reference and bitmap modes are inconsistent");
     }
-    NMO_VALIDATE_BYTES(s->bitmap_data.pixel_data, s->bitmap_data.pixel_data_size,
-                       "bitmap_data.pixel_data");
-    NMO_VALIDATE_BYTES(s->bitmap_data.palette_data, s->bitmap_data.palette_size,
-                       "bitmap_data.palette_data");
-    NMO_VALIDATE_BYTES(s->bitmap_data.system_copy_data, s->bitmap_data.system_copy_size,
-                       "bitmap_data.system_copy_data");
-    NMO_VALIDATE_BYTES(s->bitmap_data.video_backup_data, s->bitmap_data.video_backup_size,
-                       "bitmap_data.video_backup_data");
-    NMO_VALIDATE_BYTES(s->bitmap_data.pixels_data, s->bitmap_data.pixels_size,
-                       "bitmap_data.pixels_data");
-    NMO_VALIDATE_BYTES(s->bitmap_data.raw_chunk_data, s->bitmap_data.raw_chunk_size,
-                       "bitmap_data.raw_chunk_data");
+    NMO_RETURN_IF_ERROR(nmo_bitmap_slots_validate(&s->bitmap));
     NMO_VALIDATE_BYTES(s->bitmap_properties, s->bitmap_properties_size, "bitmap_properties");
     if (!s->has_bitmap_data &&
-        (s->bitmap_data.width != 0u || s->bitmap_data.height != 0u ||
-         s->bitmap_data.pixel_data_size != 0u ||
-         s->bitmap_data.palette_size != 0u ||
-         s->bitmap_data.system_copy_size != 0u ||
-         s->bitmap_data.video_backup_size != 0u ||
-         s->bitmap_data.pixels_size != 0u ||
-         s->bitmap_data.raw_chunk_size != 0u)) {
+        (s->bitmap.slot_count != 0u || s->bitmap.kind != CKTEXTURE_BITMAP_NONE ||
+         s->bitmap.has_slot_filenames || s->bitmap.has_movie_filename)) {
         NMO_RETURN_ERROR(
             NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
             "Sprite bitmap payload is present while bitmap mode is disabled");
@@ -810,35 +638,6 @@ static bool nmo_sprite_bytes_equal(
     return lhs != NULL && rhs != NULL && memcmp(lhs, rhs, size) == 0;
 }
 
-static bool nmo_sprite_bitmap_equals(
-    const nmo_bitmapdata_t *lhs,
-    const nmo_bitmapdata_t *rhs)
-{
-    return lhs->width == rhs->width &&
-        lhs->height == rhs->height &&
-        lhs->pixel_data_size == rhs->pixel_data_size &&
-        nmo_sprite_bytes_equal(
-            lhs->pixel_data, rhs->pixel_data, lhs->pixel_data_size) &&
-        lhs->palette_size == rhs->palette_size &&
-        nmo_sprite_bytes_equal(
-            lhs->palette_data, rhs->palette_data, lhs->palette_size) &&
-        lhs->system_copy_size == rhs->system_copy_size &&
-        nmo_sprite_bytes_equal(
-            lhs->system_copy_data, rhs->system_copy_data,
-            lhs->system_copy_size) &&
-        lhs->video_backup_size == rhs->video_backup_size &&
-        nmo_sprite_bytes_equal(
-            lhs->video_backup_data, rhs->video_backup_data,
-            lhs->video_backup_size) &&
-        lhs->pixels_size == rhs->pixels_size &&
-        nmo_sprite_bytes_equal(
-            lhs->pixels_data, rhs->pixels_data, lhs->pixels_size) &&
-        lhs->raw_chunk_size == rhs->raw_chunk_size &&
-        nmo_sprite_bytes_equal(
-            lhs->raw_chunk_data, rhs->raw_chunk_data,
-            lhs->raw_chunk_size);
-}
-
 static bool nmo_sprite_equals(const void *a, const void *b)
 {
     if (a == b) return true;
@@ -851,7 +650,7 @@ static bool nmo_sprite_equals(const void *a, const void *b)
         lhs->sprite_ref.id == rhs->sprite_ref.id &&
         lhs->sprite_ref.state == rhs->sprite_ref.state &&
         lhs->has_bitmap_data == rhs->has_bitmap_data &&
-        nmo_sprite_bitmap_equals(&lhs->bitmap_data, &rhs->bitmap_data) &&
+        nmo_bitmap_slots_equals(&lhs->bitmap, &rhs->bitmap) &&
         lhs->has_transparency == rhs->has_transparency &&
         lhs->is_transparent == rhs->is_transparent &&
         lhs->transparent_color == rhs->transparent_color &&
@@ -888,26 +687,7 @@ static uint32_t nmo_sprite_hash(const void *instance)
     NMO_SPRITE_HASH_FIELD(sprite_ref.id);
     NMO_SPRITE_HASH_FIELD(sprite_ref.state);
     NMO_SPRITE_HASH_FIELD(has_bitmap_data);
-    NMO_SPRITE_HASH_FIELD(bitmap_data.width);
-    NMO_SPRITE_HASH_FIELD(bitmap_data.height);
-    hash = nmo_sprite_hash_buffer(
-        hash, state->bitmap_data.pixel_data,
-        state->bitmap_data.pixel_data_size);
-    hash = nmo_sprite_hash_buffer(
-        hash, state->bitmap_data.palette_data,
-        state->bitmap_data.palette_size);
-    hash = nmo_sprite_hash_buffer(
-        hash, state->bitmap_data.system_copy_data,
-        state->bitmap_data.system_copy_size);
-    hash = nmo_sprite_hash_buffer(
-        hash, state->bitmap_data.video_backup_data,
-        state->bitmap_data.video_backup_size);
-    hash = nmo_sprite_hash_buffer(
-        hash, state->bitmap_data.pixels_data,
-        state->bitmap_data.pixels_size);
-    hash = nmo_sprite_hash_buffer(
-        hash, state->bitmap_data.raw_chunk_data,
-        state->bitmap_data.raw_chunk_size);
+    hash = nmo_bitmap_slots_hash(hash, &state->bitmap);
     NMO_SPRITE_HASH_FIELD(has_transparency);
     NMO_SPRITE_HASH_FIELD(is_transparent);
     NMO_SPRITE_HASH_FIELD(transparent_color);
