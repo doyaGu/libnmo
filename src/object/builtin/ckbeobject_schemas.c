@@ -273,29 +273,6 @@ static const nmo_type_field_t nmo_beobject_fields[] = {
  * IDENTIFIER HELPERS
  * ============================================================================= */
 
-static size_t nmo_beobject_identifier_remaining_dwords(nmo_chunk_t *chunk)
-{
-    if (!chunk || !chunk->parser_state) {
-        return 0;
-    }
-
-    nmo_chunk_parser_state_t *state = (nmo_chunk_parser_state_t *)chunk->parser_state;
-    uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
-
-    size_t next_pos = 0;
-    if (state->prev_identifier_pos + 1 < chunk->data.count) {
-        next_pos = data[state->prev_identifier_pos + 1];
-    }
-    if (next_pos == 0 || next_pos > chunk->data.count) {
-        next_pos = chunk->data.count;
-    }
-    if (next_pos < state->current_pos) {
-        return 0;
-    }
-
-    return next_pos - state->current_pos;
-}
-
 static nmo_status_t nmo_beobject_read_object_sequence(
     nmo_chunk_t *chunk,
     nmo_array_t *out_refs)
@@ -309,10 +286,10 @@ static nmo_status_t nmo_beobject_read_object_sequence(
     if (count > UINT32_MAX) {
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR, "Invalid object sequence count");
     }
-    if (count > nmo_beobject_identifier_remaining_dwords(chunk)) {
+    if (count > nmo_chunk_identifier_remaining_dwords(chunk)) {
         return NMO_ERR_TRUNCATED_CHUNK;
     }
-    if (count < nmo_beobject_identifier_remaining_dwords(chunk)) {
+    if (count < nmo_chunk_identifier_remaining_dwords(chunk)) {
         return NMO_ERR_INVALID_FORMAT;
     }
 
@@ -427,7 +404,7 @@ static nmo_status_t nmo_beobject_read_legacy_attributes(
     if ((size_t)attr_count >
             SIZE_MAX / minimum_dwords_per_attribute ||
         (size_t)attr_count * minimum_dwords_per_attribute >
-            nmo_beobject_identifier_remaining_dwords(chunk)) {
+            nmo_chunk_identifier_remaining_dwords(chunk)) {
         return NMO_ERR_TRUNCATED_CHUNK;
     }
 
@@ -634,7 +611,7 @@ static nmo_status_t nmo_beobject_deserialize_internal(
         const size_t fixed_remaining_dwords = is_file ? 3u : 4u;
         const size_t dwords_per_attribute = is_file ? 2u : 3u;
         const size_t remaining_dwords =
-            nmo_beobject_identifier_remaining_dwords(chunk);
+            nmo_chunk_identifier_remaining_dwords(chunk);
         if (remaining_dwords < fixed_remaining_dwords ||
             attr_count >
                 (remaining_dwords - fixed_remaining_dwords) /

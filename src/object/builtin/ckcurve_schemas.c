@@ -19,26 +19,6 @@
 #include "object/nmo_object_repository.h"
 #include <string.h>
 
-static size_t nmo_curve_identifier_remaining_dwords(nmo_chunk_t *chunk)
-{
-    if (!chunk || !chunk->parser_state) return 0;
-    nmo_chunk_parser_state_t *state =
-        (nmo_chunk_parser_state_t *)chunk->parser_state;
-    uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
-    if (!data || state->current_pos > chunk->data.count) return 0;
-
-    size_t next_pos = 0;
-    if (state->prev_identifier_pos + 1u < chunk->data.count) {
-        next_pos = data[state->prev_identifier_pos + 1u];
-    }
-    if (next_pos == 0 || next_pos > chunk->data.count) {
-        next_pos = chunk->data.count;
-    }
-    return state->current_pos <= next_pos
-        ? next_pos - state->current_pos
-        : 0;
-}
-
 static void nmo_curve_set_defaults(nmo_curve_state_t *state) {
     if (state == NULL) {
         return;
@@ -139,7 +119,7 @@ static nmo_status_t read_object_sequence(
                          "Curve control point count overflow");
     }
     const size_t remaining_dwords =
-        nmo_curve_identifier_remaining_dwords(chunk);
+        nmo_chunk_identifier_remaining_dwords(chunk);
     if (trailing_dwords > remaining_dwords ||
         count > remaining_dwords - trailing_dwords) {
         NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
@@ -780,7 +760,7 @@ static nmo_status_t nmo_curve_deserialize_internal(
                              "Curve saved point count overflow");
         }
 #endif
-        if ((size_t)count > nmo_curve_identifier_remaining_dwords(chunk) / 2u) {
+        if ((size_t)count > nmo_chunk_identifier_remaining_dwords(chunk) / 2u) {
             NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                              "Curve saved point count exceeds identifier payload");
         }

@@ -47,26 +47,6 @@ static const nmo_object_state_layout_t nmo_place_layout = {
 
 NMO_DEFINE_OBJECT_LAYOUT_OPS(place, nmo_place_layout)
 
-static size_t nmo_place_identifier_remaining_dwords(
-    const nmo_chunk_t *chunk)
-{
-    if (!chunk || !chunk->parser_state) return 0;
-
-    const nmo_chunk_parser_state_t *state =
-        (const nmo_chunk_parser_state_t *)chunk->parser_state;
-    const uint32_t *data =
-        NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
-    size_t next_pos = chunk->data.count;
-    if (state->prev_identifier_pos + 1u < chunk->data.count) {
-        const uint32_t candidate = data[state->prev_identifier_pos + 1u];
-        if (candidate != 0 && candidate <= chunk->data.count) {
-            next_pos = candidate;
-        }
-    }
-    if (next_pos < state->current_pos) return 0;
-    return next_pos - state->current_pos;
-}
-
 static nmo_status_t nmo_place_restore_read_position(
     nmo_chunk_t *chunk,
     size_t position,
@@ -145,7 +125,7 @@ static nmo_status_t nmo_place_deserialize_internal(
         NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &count));
         if (count < 0) return NMO_ERR_INVALID_FORMAT;
         if ((size_t)count >
-            nmo_place_identifier_remaining_dwords(chunk) / 2u) {
+            nmo_chunk_identifier_remaining_dwords(chunk) / 2u) {
             return NMO_ERR_TRUNCATED_CHUNK;
         }
         nmo_array_t portals = {0};
@@ -204,7 +184,7 @@ static nmo_status_t nmo_place_deserialize_internal(
             return nmo_place_restore_read_position(
                 chunk, sequence_start, NMO_ERR_INVALID_FORMAT);
         }
-        if (count > nmo_place_identifier_remaining_dwords(chunk)) {
+        if (count > nmo_chunk_identifier_remaining_dwords(chunk)) {
             return nmo_place_restore_read_position(
                 chunk, sequence_start, NMO_ERR_TRUNCATED_CHUNK);
         }

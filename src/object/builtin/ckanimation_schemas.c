@@ -164,29 +164,6 @@ static const nmo_type_field_t nmo_objectanimation_fields[] = {
  * IDENTIFIER HELPERS
  * ============================================================================= */
 
-static size_t nmo_animation_identifier_remaining_dwords(nmo_chunk_t *chunk)
-{
-    if (!chunk || !chunk->parser_state) {
-        return 0;
-    }
-
-    nmo_chunk_parser_state_t *state = (nmo_chunk_parser_state_t *)chunk->parser_state;
-    uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
-
-    size_t next_pos = 0;
-    if (state->prev_identifier_pos + 1 < chunk->data.count) {
-        next_pos = data[state->prev_identifier_pos + 1];
-    }
-    if (next_pos == 0 || next_pos > chunk->data.count) {
-        next_pos = chunk->data.count;
-    }
-    if (next_pos < state->current_pos) {
-        return 0;
-    }
-
-    return next_pos - state->current_pos;
-}
-
 static int nmo_animation_is_file_mode_deser(const nmo_chunk_t *chunk, void *context)
 {
     const nmo_deserialize_context_t *deser_ctx = nmo_deserialize_context_get(context);
@@ -217,7 +194,7 @@ static nmo_status_t read_ref_array(
                          "Animation reference count exceeds limits");
     }
     const size_t remaining_dwords =
-        nmo_animation_identifier_remaining_dwords(chunk);
+        nmo_chunk_identifier_remaining_dwords(chunk);
     if (trailing_dwords > remaining_dwords ||
         count > remaining_dwords - trailing_dwords) {
         NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
@@ -1324,7 +1301,7 @@ static nmo_status_t nmo_animation_validate_payload_size(
 {
     const size_t required_dwords = ((size_t)size_bytes + 3u) / 4u;
     const size_t remaining_dwords =
-        nmo_animation_identifier_remaining_dwords(chunk);
+        nmo_chunk_identifier_remaining_dwords(chunk);
     if (trailing_dwords > remaining_dwords ||
         required_dwords > remaining_dwords - trailing_dwords) {
         NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
@@ -1341,7 +1318,7 @@ static nmo_status_t nmo_objectanimation_read_morph_normals(
     uint32_t count)
 {
     if ((size_t)count >
-        nmo_animation_identifier_remaining_dwords(chunk)) {
+        nmo_chunk_identifier_remaining_dwords(chunk)) {
         NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                          "Morph normal sizes exceed identifier payload");
     }
@@ -1401,7 +1378,7 @@ static nmo_status_t read_controllers_loop(
         &controllers, sizeof(nmo_objanim_controller_t), 0u, arena));
 
     for (;;) {
-        if (nmo_animation_identifier_remaining_dwords(chunk) < 1u) {
+        if (nmo_chunk_identifier_remaining_dwords(chunk) < 1u) {
             NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                              "Controller sequence has no terminator");
         }
@@ -1411,7 +1388,7 @@ static nmo_status_t read_controllers_loop(
             break;
         }
 
-        if (nmo_animation_identifier_remaining_dwords(chunk) < 1u) {
+        if (nmo_chunk_identifier_remaining_dwords(chunk) < 1u) {
             NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                              "Controller size is truncated");
         }
@@ -1422,7 +1399,7 @@ static nmo_status_t read_controllers_loop(
                              "Controller byte size overflows");
         }
         if ((size_t)size_dwords >
-            nmo_animation_identifier_remaining_dwords(chunk)) {
+            nmo_chunk_identifier_remaining_dwords(chunk)) {
             NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                              "Controller payload exceeds identifier section");
         }
@@ -1481,7 +1458,7 @@ static nmo_status_t read_newdata_controllers(
     if (out_state->morph_key_count > 0) {
         int32_t morph_key_count = out_state->morph_key_count;
         const size_t remaining_dwords =
-            nmo_animation_identifier_remaining_dwords(chunk);
+            nmo_chunk_identifier_remaining_dwords(chunk);
         if ((size_t)morph_key_count >
                 SIZE_MAX / sizeof(nmo_objanim_morph_key_t) ||
             remaining_dwords < 8u ||
@@ -1667,7 +1644,7 @@ static nmo_status_t read_legacy_controllers(
             if ((size_t)morph_key_count >
                     SIZE_MAX / sizeof(nmo_objanim_morph_key_t) ||
                 (size_t)morph_key_count >
-                    nmo_animation_identifier_remaining_dwords(chunk) / 2u) {
+                    nmo_chunk_identifier_remaining_dwords(chunk) / 2u) {
                 NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                                  "Morph key count exceeds identifier payload");
             }
@@ -2039,7 +2016,7 @@ static nmo_status_t nmo_animation_deserialize_internal(
             &legacy_body_part_count, 1u);
         if (result != NMO_OK) return result;
         const size_t remaining_dwords =
-            nmo_animation_identifier_remaining_dwords(chunk);
+            nmo_chunk_identifier_remaining_dwords(chunk);
         if (remaining_dwords == 0) {
             NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                              "Animation root entity is missing");
@@ -2252,7 +2229,7 @@ static nmo_status_t nmo_keyedanimation_deserialize_internal(
         result = nmo_chunk_read_dword(chunk, &count);
         if (result != NMO_OK) return result;
         const size_t remaining_dwords =
-            nmo_animation_identifier_remaining_dwords(chunk);
+            nmo_chunk_identifier_remaining_dwords(chunk);
         if ((size_t)count > remaining_dwords / 2u) {
             NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                              "Subanim count exceeds identifier payload");

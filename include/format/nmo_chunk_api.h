@@ -329,6 +329,16 @@ NMO_API size_t nmo_chunk_get_position(const nmo_chunk_t *chunk);
  */
 NMO_API size_t nmo_chunk_get_remaining(const nmo_chunk_t *chunk);
 
+/**
+ * @brief Get the number of DWORDs left in the current identifier section.
+ *
+ * The section ends where the next identifier begins, or at the end of the
+ * data when there is none. Use it to reject a count that could not fit in the
+ * section before allocating for it. Returns zero when the chunk has no read
+ * state or the position is already past the section end.
+ */
+NMO_API size_t nmo_chunk_identifier_remaining_dwords(const nmo_chunk_t *chunk);
+
 /** @brief Return non-zero when the active read cursor is at end of data. */
 NMO_API int nmo_chunk_is_at_end(const nmo_chunk_t *chunk);
 

@@ -85,24 +85,6 @@ static void nmo_dataarray_destroy(
     memset(state, 0, sizeof(*state));
 }
 
-static size_t nmo_dataarray_identifier_remaining_dwords(nmo_chunk_t *chunk)
-{
-    if (chunk == NULL || chunk->parser_state == NULL) return 0;
-
-    nmo_chunk_parser_state_t *state =
-        (nmo_chunk_parser_state_t *)chunk->parser_state;
-    const uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
-    size_t next_pos = 0;
-    if (state->prev_identifier_pos + 1 < chunk->data.count) {
-        next_pos = data[state->prev_identifier_pos + 1];
-    }
-    if (next_pos == 0 || next_pos > chunk->data.count) {
-        next_pos = chunk->data.count;
-    }
-    if (next_pos < state->current_pos) return 0;
-    return next_pos - state->current_pos;
-}
-
 static bool nmo_dataarray_size_mul_overflows(size_t count, size_t element_size)
 {
     return count != 0 && element_size > SIZE_MAX / count;
@@ -199,7 +181,7 @@ static nmo_status_t nmo_dataarray_deserialize_internal(
                              "Column format allocation size overflows");
         }
         if ((size_t)column_count >
-            nmo_dataarray_identifier_remaining_dwords(chunk) / 2u) {
+            nmo_chunk_identifier_remaining_dwords(chunk) / 2u) {
             NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                              "Column count exceeds format section payload");
         }
@@ -290,7 +272,7 @@ static nmo_status_t nmo_dataarray_deserialize_internal(
         }
         const size_t total_cells =
             (size_t)row_count * out_state->column_count;
-        if (total_cells > nmo_dataarray_identifier_remaining_dwords(chunk)) {
+        if (total_cells > nmo_chunk_identifier_remaining_dwords(chunk)) {
             NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                              "Cell count exceeds data section payload");
         }

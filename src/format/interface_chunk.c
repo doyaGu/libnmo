@@ -168,26 +168,6 @@ static uint32_t behavior_section_id(size_t behavior_index, uint32_t base)
     return (uint32_t)behavior_index + base;
 }
 
-static size_t interface_identifier_remaining_dwords(
-    const nmo_chunk_t *chunk)
-{
-    if (!chunk || !chunk->parser_state) return 0;
-
-    const nmo_chunk_parser_state_t *state =
-        (const nmo_chunk_parser_state_t *)chunk->parser_state;
-    const uint32_t *data =
-        NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
-    size_t next_pos = chunk->data.count;
-    if (state->prev_identifier_pos + 1u < chunk->data.count) {
-        const uint32_t candidate = data[state->prev_identifier_pos + 1u];
-        if (candidate != 0 && candidate <= chunk->data.count) {
-            next_pos = candidate;
-        }
-    }
-    if (next_pos < state->current_pos) return 0;
-    return next_pos - state->current_pos;
-}
-
 /* ================================================================
  * Public API
  * ================================================================ */
@@ -314,7 +294,7 @@ static nmo_status_t nmo_interface_chunk_parse_impl(
     if (out->sub_count > 0) {
         const size_t available_dwords = use_sectioned
             ? chunk->data.count
-            : interface_identifier_remaining_dwords(chunk);
+            : nmo_chunk_identifier_remaining_dwords(chunk);
         if (out->sub_count > available_dwords / 9u) {
             return NMO_ERR_TRUNCATED_CHUNK;
         }
@@ -395,7 +375,7 @@ static nmo_status_t parse_parameter_section(
         ? (version >= 0x15 ? 1u : 3u) : 0u;
     const size_t minimum_dwords_per_item = 3u + mapping_dwords;
     if ((size_t)count >
-        interface_identifier_remaining_dwords(chunk) /
+        nmo_chunk_identifier_remaining_dwords(chunk) /
             minimum_dwords_per_item) {
         return NMO_ERR_TRUNCATED_CHUNK;
     }
@@ -831,7 +811,7 @@ static nmo_status_t parse_links(
     const size_t minimum_dwords_per_link =
         split_type_and_highlight ? 10u : 9u;
     if ((size_t)count >
-        interface_identifier_remaining_dwords(chunk) /
+        nmo_chunk_identifier_remaining_dwords(chunk) /
             minimum_dwords_per_link) {
         return NMO_ERR_TRUNCATED_CHUNK;
     }
@@ -895,7 +875,7 @@ static nmo_status_t parse_links(
                              "interface chunk: point count %d out of range", point_count);
         }
         const size_t remaining_dwords =
-            interface_identifier_remaining_dwords(chunk);
+            nmo_chunk_identifier_remaining_dwords(chunk);
         if (remaining_dwords < 3u ||
             (size_t)point_count > (remaining_dwords - 3u) / 2u) {
             return NMO_ERR_TRUNCATED_CHUNK;
@@ -952,7 +932,7 @@ static nmo_status_t parse_operations(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                          "interface chunk: operation count %d out of range", count);
     }
-    if ((size_t)count > interface_identifier_remaining_dwords(chunk) / 3u) {
+    if ((size_t)count > nmo_chunk_identifier_remaining_dwords(chunk) / 3u) {
         return NMO_ERR_TRUNCATED_CHUNK;
     }
     body->operation_count = (size_t)count;
@@ -1012,7 +992,7 @@ static nmo_status_t read_interface_string(
     }
 
     size_t payload_dwords = ((size_t)size + 3u) / 4u;
-    if (payload_dwords > interface_identifier_remaining_dwords(chunk)) {
+    if (payload_dwords > nmo_chunk_identifier_remaining_dwords(chunk)) {
         (void)nmo_chunk_goto(chunk, start_pos);
         NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                          "interface chunk: truncated string payload");
@@ -1044,7 +1024,7 @@ static nmo_status_t read_interface_buffer(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    const size_t remaining = interface_identifier_remaining_dwords(chunk);
+    const size_t remaining = nmo_chunk_identifier_remaining_dwords(chunk);
     if (remaining < 1u) return NMO_ERR_TRUNCATED_CHUNK;
 
     const nmo_chunk_parser_state_t *state =
@@ -1085,7 +1065,7 @@ static nmo_status_t parse_comments(
     }
     const size_t minimum_dwords_per_comment = version >= 0x16 ? 6u : 5u;
     if ((size_t)count >
-        interface_identifier_remaining_dwords(chunk) /
+        nmo_chunk_identifier_remaining_dwords(chunk) /
             minimum_dwords_per_comment) {
         return NMO_ERR_TRUNCATED_CHUNK;
     }
@@ -1154,7 +1134,7 @@ static nmo_status_t parse_parameters(
                          "interface chunk: local param count %d out of range", local_count);
     }
     const size_t local_remaining =
-        interface_identifier_remaining_dwords(chunk);
+        nmo_chunk_identifier_remaining_dwords(chunk);
     if (local_remaining < 1u ||
         (size_t)local_count > (local_remaining - 1u) / 3u) {
         return NMO_ERR_TRUNCATED_CHUNK;
@@ -1198,7 +1178,7 @@ static nmo_status_t parse_parameters(
     }
     const size_t shared_dwords_per_item = version >= 0x15 ? 4u : 6u;
     if ((size_t)shared_count >
-        interface_identifier_remaining_dwords(chunk) /
+        nmo_chunk_identifier_remaining_dwords(chunk) /
             shared_dwords_per_item) {
         return NMO_ERR_TRUNCATED_CHUNK;
     }
@@ -1268,7 +1248,7 @@ static nmo_status_t parse_graph_io_array(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                          "interface chunk: graph IO array count %d out of range", count);
     }
-    if ((size_t)count > interface_identifier_remaining_dwords(chunk) / 2u) {
+    if ((size_t)count > nmo_chunk_identifier_remaining_dwords(chunk) / 2u) {
         return NMO_ERR_TRUNCATED_CHUNK;
     }
     *out_count = (size_t)count;
@@ -1438,7 +1418,7 @@ static nmo_status_t parse_extra_data(
     }
     const size_t minimum_dwords_per_entry = extra_version >= 2 ? 2u : 1u;
     if ((size_t)entry_count >
-        interface_identifier_remaining_dwords(chunk) /
+        nmo_chunk_identifier_remaining_dwords(chunk) /
             minimum_dwords_per_entry) {
         return NMO_ERR_TRUNCATED_CHUNK;
     }
@@ -1498,7 +1478,7 @@ static nmo_status_t parse_extra_data(
                                  sub_count);
             }
             if ((size_t)sub_count >
-                interface_identifier_remaining_dwords(chunk) / 4u) {
+                nmo_chunk_identifier_remaining_dwords(chunk) / 4u) {
                 return NMO_ERR_TRUNCATED_CHUNK;
             }
             entry->sub_count = (size_t)sub_count;

@@ -240,9 +240,6 @@ static const nmo_type_field_t nmo_behavior_fields[] = {
  * HELPER FUNCTIONS
  * ============================================================================= */
 
-static size_t nmo_behavior_identifier_remaining_dwords(
-    const nmo_chunk_t *chunk);
-
 /**
  * @brief Read object ID array using XObjectPointerArray format
  */
@@ -252,7 +249,7 @@ static nmo_status_t read_object_sequence(
     size_t trailing_dwords)
 {
     const size_t section_dwords =
-        nmo_behavior_identifier_remaining_dwords(chunk);
+        nmo_chunk_identifier_remaining_dwords(chunk);
     if (trailing_dwords >= section_dwords) {
         return NMO_ERR_TRUNCATED_CHUNK;
     }
@@ -261,7 +258,7 @@ static nmo_status_t read_object_sequence(
     if (result != NMO_OK) return result;
 
     const size_t remaining_dwords =
-        nmo_behavior_identifier_remaining_dwords(chunk);
+        nmo_chunk_identifier_remaining_dwords(chunk);
     if (trailing_dwords > remaining_dwords ||
         count > remaining_dwords - trailing_dwords) {
         return NMO_ERR_TRUNCATED_CHUNK;
@@ -318,26 +315,6 @@ static nmo_status_t write_object_sequence(nmo_chunk_t *chunk, const nmo_array_t 
     NMO_RETURN_OK();
 }
 
-static size_t nmo_behavior_identifier_remaining_dwords(
-    const nmo_chunk_t *chunk)
-{
-    if (!chunk || !chunk->parser_state) return 0;
-
-    const nmo_chunk_parser_state_t *state =
-        (const nmo_chunk_parser_state_t *)chunk->parser_state;
-    const uint32_t *data =
-        NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
-    size_t next_pos = chunk->data.count;
-    if (state->prev_identifier_pos + 1u < chunk->data.count) {
-        const uint32_t candidate = data[state->prev_identifier_pos + 1u];
-        if (candidate != 0 && candidate <= chunk->data.count) {
-            next_pos = candidate;
-        }
-    }
-    if (next_pos < state->current_pos) return 0;
-    return next_pos - state->current_pos;
-}
-
 static nmo_status_t nmo_behavior_require_section_end(
     const nmo_chunk_t *chunk,
     size_t section_end)
@@ -353,7 +330,7 @@ static nmo_status_t nmo_behavior_require_dwords(
     size_t required_dwords)
 {
     return required_dwords <=
-               nmo_behavior_identifier_remaining_dwords(chunk)
+               nmo_chunk_identifier_remaining_dwords(chunk)
         ? NMO_OK
         : NMO_ERR_TRUNCATED_CHUNK;
 }
@@ -363,7 +340,7 @@ static nmo_status_t nmo_behavior_require_subchunk(
     size_t trailing_dwords)
 {
     const size_t remaining_dwords =
-        nmo_behavior_identifier_remaining_dwords(chunk);
+        nmo_chunk_identifier_remaining_dwords(chunk);
     if (trailing_dwords >= remaining_dwords ||
         chunk->parser_state == NULL || chunk->data.data == NULL) {
         return NMO_ERR_TRUNCATED_CHUNK;
@@ -395,7 +372,7 @@ static nmo_status_t read_object_subchunk_list(
     }
 
     if ((size_t)count * 2u >
-        nmo_behavior_identifier_remaining_dwords(chunk)) {
+        nmo_chunk_identifier_remaining_dwords(chunk)) {
         NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                          "Object sub-chunk count exceeds remaining DWORDs");
     }

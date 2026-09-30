@@ -204,30 +204,8 @@ static nmo_status_t nmo_mesh_peek_dword(nmo_chunk_t *chunk, uint32_t *out_value)
     NMO_RETURN_OK();
 }
 
-static size_t nmo_mesh_identifier_remaining_dwords(nmo_chunk_t *chunk) {
-    if (!chunk || !chunk->parser_state) {
-        return 0;
-    }
-
-    nmo_chunk_parser_state_t *state = (nmo_chunk_parser_state_t *)chunk->parser_state;
-    uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
-
-    size_t next_pos = 0;
-    if (state->prev_identifier_pos + 1 < chunk->data.count) {
-        next_pos = data[state->prev_identifier_pos + 1];
-    }
-    if (next_pos == 0 || next_pos > chunk->data.count) {
-        next_pos = chunk->data.count;
-    }
-    if (next_pos < state->current_pos) {
-        return 0;
-    }
-
-    return next_pos - state->current_pos;
-}
-
 static nmo_status_t nmo_mesh_require_identifier_end(nmo_chunk_t *chunk) {
-    return nmo_mesh_identifier_remaining_dwords(chunk) == 0u
+    return nmo_chunk_identifier_remaining_dwords(chunk) == 0u
         ? NMO_OK : NMO_ERR_INVALID_FORMAT;
 }
 
@@ -435,7 +413,7 @@ static nmo_status_t nmo_mesh_deserialize_vertices(
                          "Vertex buffer shorter than expected");
     }
     if (!nmo_chunk_has_read_capacity(chunk, buffer_payload_dwords) ||
-        buffer_payload_dwords > nmo_mesh_identifier_remaining_dwords(chunk)) {
+        buffer_payload_dwords > nmo_chunk_identifier_remaining_dwords(chunk)) {
         NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                          "Vertex buffer exceeds remaining DWORDs");
     }
@@ -576,7 +554,7 @@ static nmo_status_t nmo_mesh_deserialize_material_groups(
                          "Invalid mesh material group count %d", group_count);
     }
     if ((size_t)group_count >
-        nmo_mesh_identifier_remaining_dwords(chunk) / 2u) {
+        nmo_chunk_identifier_remaining_dwords(chunk) / 2u) {
         NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                          "CKMesh material groups exceed remaining DWORDs");
     }
@@ -631,7 +609,7 @@ static nmo_status_t nmo_mesh_deserialize_weights(
     }
 
     const size_t remaining_dwords =
-        nmo_mesh_identifier_remaining_dwords(chunk);
+        nmo_chunk_identifier_remaining_dwords(chunk);
     if (remaining_dwords < 1u) {
         NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                          "CKMesh %s weight payload is truncated", layout);
@@ -746,7 +724,7 @@ static nmo_status_t nmo_mesh_deserialize_modern(
         }
         if (face_count > 0) {
             if ((size_t)face_count >
-                nmo_mesh_identifier_remaining_dwords(chunk) / 2u) {
+                nmo_chunk_identifier_remaining_dwords(chunk) / 2u) {
                 NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK,
                                  NMO_SEVERITY_ERROR,
                                  "Modern mesh faces exceed remaining DWORDs");
@@ -824,7 +802,7 @@ static nmo_status_t nmo_mesh_deserialize_modern(
                 1u + (expected_bytes + sizeof(uint32_t) - 1u) /
                     sizeof(uint32_t);
             if (required_dwords >
-                nmo_mesh_identifier_remaining_dwords(chunk)) {
+                nmo_chunk_identifier_remaining_dwords(chunk)) {
                 NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK,
                                  NMO_SEVERITY_ERROR,
                                  "Modern mesh lines exceed remaining DWORDs");
@@ -869,7 +847,7 @@ static nmo_status_t nmo_mesh_deserialize_modern(
         }
         if (channel_count > 0) {
             if ((size_t)channel_count >
-                nmo_mesh_identifier_remaining_dwords(chunk) / 5u) {
+                nmo_chunk_identifier_remaining_dwords(chunk) / 5u) {
                 NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK,
                                  NMO_SEVERITY_ERROR,
                                  "Modern mesh channels exceed remaining DWORDs");
@@ -911,7 +889,7 @@ static nmo_status_t nmo_mesh_deserialize_modern(
                     }
                     if (uv_count > 0) {
                         if ((size_t)uv_count >
-                            nmo_mesh_identifier_remaining_dwords(chunk) / 2u) {
+                            nmo_chunk_identifier_remaining_dwords(chunk) / 2u) {
                             NMO_RETURN_ERROR(
                                 NMO_ERR_TRUNCATED_CHUNK,
                                 NMO_SEVERITY_ERROR,
@@ -982,7 +960,7 @@ static nmo_status_t nmo_mesh_deserialize_modern(
             const size_t serialized_dwords =
                 (size_t)serialized_pair_count + serialized_remainder;
             if (serialized_dwords >
-                nmo_mesh_identifier_remaining_dwords(chunk)) {
+                nmo_chunk_identifier_remaining_dwords(chunk)) {
                 return NMO_ERR_TRUNCATED_CHUNK;
             }
             uint32_t pair_count = serialized_pair_count;
@@ -1035,7 +1013,7 @@ static nmo_status_t nmo_mesh_deserialize_modern(
         &section_dwords));
     if (section_found) {
         if (section_dwords < 3u) return NMO_ERR_TRUNCATED_CHUNK;
-        size_t pm_bytes_total = nmo_mesh_identifier_remaining_dwords(chunk) * 4u;
+        size_t pm_bytes_total = nmo_chunk_identifier_remaining_dwords(chunk) * 4u;
         out_state->has_progressive_mesh = true;
         
         result = nmo_chunk_read_int(chunk, &out_state->pm_field_0);
@@ -1125,7 +1103,7 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
                     "Legacy mesh vertex allocation size overflows");
             }
             if (vertex_dwords >
-                nmo_mesh_identifier_remaining_dwords(chunk)) {
+                nmo_chunk_identifier_remaining_dwords(chunk)) {
                 NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK,
                                  NMO_SEVERITY_ERROR,
                                  "Legacy mesh vertices exceed remaining DWORDs");
@@ -1205,7 +1183,7 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
                     NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                     "Legacy mesh face allocation size overflows");
             }
-            if (face_dwords > nmo_mesh_identifier_remaining_dwords(chunk)) {
+            if (face_dwords > nmo_chunk_identifier_remaining_dwords(chunk)) {
                 NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK,
                                  NMO_SEVERITY_ERROR,
                                  "Legacy mesh faces exceed remaining DWORDs");
@@ -1260,7 +1238,7 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
         }
         if (line_count > 0) {
             if ((size_t)line_count >
-                nmo_mesh_identifier_remaining_dwords(chunk)) {
+                nmo_chunk_identifier_remaining_dwords(chunk)) {
                 NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK,
                                  NMO_SEVERITY_ERROR,
                                  "Legacy mesh lines exceed remaining DWORDs");
@@ -1306,7 +1284,7 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
         }
         if (channel_count > 0) {
             if ((size_t)channel_count >
-                nmo_mesh_identifier_remaining_dwords(chunk) / 5u) {
+                nmo_chunk_identifier_remaining_dwords(chunk) / 5u) {
                 NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK,
                                  NMO_SEVERITY_ERROR,
                                  "Legacy mesh channels exceed remaining DWORDs");
@@ -1343,7 +1321,7 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
 
                     if (uv_count > 0) {
                         if ((size_t)uv_count >
-                            nmo_mesh_identifier_remaining_dwords(chunk) / 2u) {
+                            nmo_chunk_identifier_remaining_dwords(chunk) / 2u) {
                             NMO_RETURN_ERROR(
                                 NMO_ERR_TRUNCATED_CHUNK,
                                 NMO_SEVERITY_ERROR,
@@ -1405,7 +1383,7 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
             const size_t serialized_dwords =
                 (size_t)serialized_pair_count + serialized_remainder;
             if (serialized_dwords >
-                nmo_mesh_identifier_remaining_dwords(chunk)) {
+                nmo_chunk_identifier_remaining_dwords(chunk)) {
                 return NMO_ERR_TRUNCATED_CHUNK;
             }
             uint32_t pair_count = serialized_pair_count;
@@ -1449,7 +1427,7 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
         &section_dwords));
     if (section_found) {
         if (section_dwords < 3u) return NMO_ERR_TRUNCATED_CHUNK;
-        size_t pm_bytes_total = nmo_mesh_identifier_remaining_dwords(chunk) * 4u;
+        size_t pm_bytes_total = nmo_chunk_identifier_remaining_dwords(chunk) * 4u;
         out_state->has_progressive_mesh = true;
 
         result = nmo_chunk_read_int(chunk, &out_state->pm_field_0);
