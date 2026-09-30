@@ -52,6 +52,12 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
         nmo_status_t result = nmo_renderobject_vtable.create(
             &state->base, NULL, context);
         if (result != NMO_OK) return result;
+        /* RCK3dEntity::RCK3dEntity: identity matrix, pickable, visible,
+           world aligned and render channels on. */
+        for (int i = 0; i < 16; ++i) {
+            state->world_matrix[i] = (i % 5 == 0) ? 1.0f : 0.0f;
+        }
+        state->moveable_flags = NMO_3DENTITY_CTOR_MOVEABLE_FLAGS;
     } while (0),
     nmo_renderobject_vtable.destroy(&state->base, NULL, context))
 
@@ -225,7 +231,7 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
     }
 
     out_state->entity_flags = 0;
-    out_state->moveable_flags = 0;
+    out_state->moveable_flags = NMO_3DENTITY_CTOR_MOVEABLE_FLAGS;
     out_state->parent = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     out_state->place = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     out_state->z_order = 0;

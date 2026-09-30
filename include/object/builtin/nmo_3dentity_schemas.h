@@ -23,6 +23,10 @@ typedef struct nmo_chunk nmo_chunk_t;
 
 typedef struct nmo_type_descriptor nmo_type_descriptor_t;
 
+/** moveable_flags of a new entity: PICKABLE | VISIBLE | RENDERCHANNELS | WORLDALIGNED
+ *  (RCK3dEntity::RCK3dEntity). */
+#define NMO_3DENTITY_CTOR_MOVEABLE_FLAGS 0x0004000Bu
+
 /**
  * @brief CK3dEntity state structure
  * 
