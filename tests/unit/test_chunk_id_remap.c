@@ -6435,10 +6435,24 @@ TEST(chunk_id_remap, camera_preserves_file_layouts) {
     ASSERT_EQ(4u, nmo_chunk_get_data_size(saved_empty));
     camera.fov = 0.5f;
     camera.has_cameraonly_chunk = 1;
-    camera.aspect_width = 65536;
-    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_camera_serialize(
-        &camera, saved_empty, NULL, &serialize_context));
-    ASSERT_EQ(4u, nmo_chunk_get_data_size(saved_empty));
+    /* RCKCamera::Save writes (Height << 16) | (Width & 0xFFFF): a width that
+     * does not fit loses its high bits. */
+    camera.aspect_width = 65536 + 4;
+    nmo_chunk_t *wide = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(wide);
+    wide->class_id = NMO_CID_CAMERA;
+    wide->data_version = 7;
+    wide->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_camera_serialize(
+        &camera, wide, NULL, &serialize_context));
+    nmo_chunk_close(wide);
+    nmo_camera_state_t wide_loaded;
+    ASSERT_EQ(NMO_OK, nmo_camera_vtable.create(&wide_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_camera_deserialize(
+        &wide_loaded, wide, NULL, &deserialize_context));
+    ASSERT_EQ(4, wide_loaded.aspect_width);
+    nmo_camera_vtable.destroy(&wide_loaded, NULL, NULL);
+    camera.aspect_width = 4;
 
     nmo_camera_state_t modern_default;
     ASSERT_EQ(NMO_OK, nmo_camera_vtable.create(
