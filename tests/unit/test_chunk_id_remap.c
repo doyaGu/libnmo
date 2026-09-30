@@ -9148,6 +9148,41 @@ TEST(chunk_id_remap, new_texture_writes_the_engine_default_packed_state) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, layer_version_2_associates_the_int_parameter) {
+    /* RCKLayer::Load calls SetAssociatedParam(type, CKPGUID_INT) for version 2
+     * and reads the GUID only from version 3. */
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    chunk->class_id = NMO_CID_LAYER;
+    chunk->data_version = 7;
+    chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, CK_STATESAVE_LAYERDATA));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(chunk, 999));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 2));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0xFF00FF00u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 1));
+    nmo_chunk_close(chunk);
+
+    nmo_layer_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_layer_vtable.create(&loaded, NULL, NULL));
+    loaded.param_guid = (nmo_guid_t){1, 2};
+    ASSERT_EQ(NMO_OK, nmo_layer_deserialize(
+        &loaded, chunk, NULL, &deserialize_context));
+    ASSERT_EQ(2, loaded.version);
+    ASSERT_FALSE(loaded.has_param_guid);
+    ASSERT_TRUE(nmo_guid_equals(loaded.param_guid, CKPGUID_INT));
+    nmo_layer_vtable.destroy(&loaded, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, texture_pick_threshold_needs_data_version_5) {
     /* RCKTexture::Load reads the pick threshold in its data_version >= 5
      * branch only. */
@@ -21356,6 +21391,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, light_loading_ignores_what_the_engine_ignores);
     REGISTER_TEST(chunk_id_remap, spritetext_font_integers_are_in_engine_order);
     REGISTER_TEST(chunk_id_remap, bitmap2_slot_image_follows_the_format_tag);
+    REGISTER_TEST(chunk_id_remap, layer_version_2_associates_the_int_parameter);
     REGISTER_TEST(chunk_id_remap, new_texture_writes_the_engine_default_packed_state);
     REGISTER_TEST(chunk_id_remap, texture_filename_count_resizes_the_slots);
     REGISTER_TEST(chunk_id_remap, modern_2dentity_without_its_block_keeps_the_constructor_state);
