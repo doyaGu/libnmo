@@ -178,7 +178,9 @@ static nmo_status_t nmo_layer_deserialize_internal(
         return NMO_ERR_TRUNCATED_CHUNK;
     }
 
-    if (out_state->format == 0) {
+    /* Save writes the square buffer of a format 0 layer only when it has a
+       grid, while Load always reads one; a section that ends here has none. */
+    if (out_state->format == 0 && nmo_chunk_get_position(chunk) < section_end) {
         void *raw = NULL;
         size_t raw_size = 0;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_buffer(chunk, &raw, &raw_size));
