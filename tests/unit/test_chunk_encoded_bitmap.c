@@ -146,9 +146,7 @@ TEST(chunk_encoded_bitmap, truncated_payload_keeps_position) {
                                    ((uint32_t)'n' << 8u) |
                                    ((uint32_t)'g' << 16u));
     ASSERT_EQ(result, NMO_OK);
-    result = nmo_chunk_write_int(chunk, 2);
-    ASSERT_EQ(result, NMO_OK);
-    result = nmo_chunk_write_int(chunk, 2);
+    result = nmo_chunk_write_guid(chunk, (nmo_guid_t){0x02D45C7Bu, 0x4AAC16ECu});
     ASSERT_EQ(result, NMO_OK);
 
     result = nmo_chunk_write_dword(chunk, 8u);
@@ -170,8 +168,66 @@ TEST(chunk_encoded_bitmap, truncated_payload_keeps_position) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_encoded_bitmap, layout_is_the_engine_reader_bitmap) {
+    /* WriteReaderBitmap: kind, extension, GUID, size-prefixed image and, for a
+     * codec without alpha, the number of distinct alpha values with that value
+     * or the alpha plane. */
+    nmo_arena_t *arena = nmo_arena_create(NULL, 512 * 1024);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_image_desc_t desc;
+    init_desc_argb32(&desc, arena, 8, 8);
+    fill_alpha_gradient(desc.image_data, desc.width, desc.height);
+
+    const nmo_bitmap_properties_t png = {.format = NMO_BITMAP_FORMAT_PNG, .save_alpha = true, .extension = "png"};
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_encoded_bitmap(chunk, &desc, &png));
+    nmo_chunk_close(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(chunk));
+    int32_t kind = 0;
+    uint32_t extension = 0;
+    nmo_guid_t guid;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_int(chunk, &kind));
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(chunk, &extension));
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_guid(chunk, &guid));
+    ASSERT_EQ(1, kind);
+    ASSERT_EQ(0x00676E70u, extension);
+    ASSERT_EQ(0x02D45C7Bu, guid.d1);
+    ASSERT_EQ(0x4AAC16ECu, guid.d2);
+
+    const nmo_bitmap_properties_t jpg = {.format = NMO_BITMAP_FORMAT_JPG, .quality = 90, .extension = "jpg"};
+    nmo_chunk_t *with_alpha = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(with_alpha);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(with_alpha));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_encoded_bitmap(with_alpha, &desc, &jpg));
+    nmo_chunk_close(with_alpha);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(with_alpha));
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_int(with_alpha, &kind));
+    ASSERT_EQ(2, kind);
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(with_alpha, &extension));
+    ASSERT_EQ(0x0067706Au, extension);
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_guid(with_alpha, &guid));
+    ASSERT_EQ(0x4AE51AC4u, guid.d1);
+    void *encoded = NULL;
+    size_t encoded_size = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_buffer(with_alpha, &encoded, &encoded_size));
+    ASSERT_TRUE(encoded_size > 0);
+    int32_t distinct = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_int(with_alpha, &distinct));
+    ASSERT_TRUE(distinct > 1);
+    void *plane = NULL;
+    size_t plane_size = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_buffer(with_alpha, &plane, &plane_size));
+    ASSERT_EQ(64u, plane_size);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_encoded_bitmap, png_roundtrip);
     REGISTER_TEST(chunk_encoded_bitmap, jpeg_with_alpha_plane);
     REGISTER_TEST(chunk_encoded_bitmap, truncated_payload_keeps_position);
+    REGISTER_TEST(chunk_encoded_bitmap, layout_is_the_engine_reader_bitmap);
 TEST_MAIN_END()
