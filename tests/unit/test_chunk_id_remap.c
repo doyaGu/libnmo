@@ -7959,12 +7959,23 @@ TEST(chunk_id_remap, sprite_raw_bitmap_payload_round_trips) {
         nmo_deserialize_context_create(
             arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
 
-    uint32_t raw_payload = 0x12345678u;
+    /* One raw slot of one pixel: the planes B, G, R, A of a 32-bit image. */
+    uint8_t planes[4] = {0x11u, 0x22u, 0x33u, 0x44u};
+    nmo_texture_raw_slot_t raw_slot = {
+        .bits_per_pixel = 32, .width = 1, .height = 1,
+        .alpha_mask = 0xFF000000u, .red_mask = 0x00FF0000u,
+        .green_mask = 0x0000FF00u, .blue_mask = 0x000000FFu,
+        .blue_size = 1, .blue_data = &planes[0],
+        .green_size = 1, .green_data = &planes[1],
+        .red_size = 1, .red_data = &planes[2],
+        .alpha_size = 1, .alpha_data = &planes[3],
+    };
     nmo_sprite_state_t source;
     ASSERT_EQ(NMO_OK, nmo_sprite_vtable.create(&source, NULL, NULL));
     source.has_bitmap_data = true;
-    source.bitmap_data.raw_chunk_data = (uint8_t *)&raw_payload;
-    source.bitmap_data.raw_chunk_size = sizeof(raw_payload);
+    source.bitmap.kind = CKTEXTURE_BITMAP_RAW;
+    source.bitmap.slot_count = 1;
+    source.bitmap.raw_slots = &raw_slot;
 
     nmo_chunk_t *chunk = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(chunk);
@@ -7973,21 +7984,22 @@ TEST(chunk_id_remap, sprite_raw_bitmap_payload_round_trips) {
     ASSERT_EQ(NMO_OK, nmo_sprite_serialize(
         &source, chunk, NULL, &serialize_context));
     nmo_chunk_close(chunk);
-    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
-        chunk, NMO_CKSPRITE_BITMAP_RAW));
-    uint32_t serialized_payload = 0u;
-    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(
-        chunk, &serialized_payload));
-    ASSERT_EQ(raw_payload, serialized_payload);
+    /* RCKSprite hands CKBitmapData 0x800000 for the raw slots. */
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(chunk, 0x800000u));
+    int32_t serialized_slots = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_int(chunk, &serialized_slots));
+    ASSERT_EQ(1, serialized_slots);
 
     nmo_sprite_state_t loaded;
     ASSERT_EQ(NMO_OK, nmo_sprite_vtable.create(&loaded, NULL, NULL));
     ASSERT_EQ(NMO_OK, nmo_sprite_deserialize(
         &loaded, chunk, NULL, &deserialize_context));
     ASSERT_TRUE(loaded.has_bitmap_data);
-    ASSERT_EQ(sizeof(raw_payload), loaded.bitmap_data.raw_chunk_size);
-    ASSERT_EQ(raw_payload,
-              *(uint32_t *)loaded.bitmap_data.raw_chunk_data);
+    ASSERT_EQ(CKTEXTURE_BITMAP_RAW, loaded.bitmap.kind);
+    ASSERT_EQ(1u, loaded.bitmap.slot_count);
+    ASSERT_EQ(32, loaded.bitmap.raw_slots[0].bits_per_pixel);
+    ASSERT_EQ(0x11u, loaded.bitmap.raw_slots[0].blue_data[0]);
+    ASSERT_EQ(0x44u, loaded.bitmap.raw_slots[0].alpha_data[0]);
     ASSERT_FALSE(loaded.has_transparency);
     ASSERT_FALSE(loaded.has_slot);
     ASSERT_FALSE(loaded.has_save_options);
@@ -8005,9 +8017,10 @@ TEST(chunk_id_remap, sprite_raw_bitmap_payload_round_trips) {
         &source, preserved, NULL, &serialize_context));
     source.has_sprite_ref = false;
     source.sprite_ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
-    source.bitmap_data.width = 1u;
-    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_sprite_serialize(
+    source.bitmap.kind = CKTEXTURE_BITMAP_READER;   /* a reader slot without its array */
+    ASSERT_NE(NMO_OK, nmo_sprite_serialize(
         &source, preserved, NULL, &serialize_context));
+    source.bitmap.kind = CKTEXTURE_BITMAP_RAW;
     ASSERT_EQ(NMO_OK, nmo_chunk_start_read(preserved));
     ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(preserved, &ignored));
     ASSERT_EQ(0xabcdef01u, ignored);
@@ -12298,20 +12311,17 @@ TEST(chunk_id_remap, sprite_copy_preserves_bitmap_content) {
     ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
         &source.entity.base.base.scripts, 101));
     source.has_bitmap_data = true;
-    source.bitmap_data.width = 2;
-    source.bitmap_data.height = 1;
-    source.bitmap_data.pixel_data_size = 2;
-    source.bitmap_data.pixel_data = nmo_arena_alloc(
-        source_arena, 2, 1);
-    source.bitmap_data.palette_size = 2;
-    source.bitmap_data.palette_data = nmo_arena_alloc(
-        source_arena, 2, 1);
-    ASSERT_NOT_NULL(source.bitmap_data.pixel_data);
-    ASSERT_NOT_NULL(source.bitmap_data.palette_data);
-    source.bitmap_data.pixel_data[0] = 0x11;
-    source.bitmap_data.pixel_data[1] = 0x22;
-    source.bitmap_data.palette_data[0] = 0x33;
-    source.bitmap_data.palette_data[1] = 0x44;
+    uint8_t encoded[2] = {0x11, 0x22};
+    nmo_texture_reader_slot_t slot = {
+        .format_type = 1, .extension = 0x00676E70u,
+        .data_size = sizeof(encoded), .data = encoded,
+    };
+    source.bitmap.kind = CKTEXTURE_BITMAP_READER;
+    source.bitmap.slot_count = 1;
+    source.bitmap.reader_width = 2;
+    source.bitmap.reader_height = 1;
+    source.bitmap.reader_bpp = 32;
+    source.bitmap.reader_slots = &slot;
     source.has_save_options = true;
     source.bitmap_properties_size = 2;
     source.bitmap_properties = nmo_arena_alloc(source_arena, 2, 1);
@@ -12326,15 +12336,15 @@ TEST(chunk_id_remap, sprite_copy_preserves_bitmap_content) {
         &source, &copy, &sprite_type, copy_arena));
     ASSERT_NE(source.entity.base.base.scripts.data,
               copy.entity.base.base.scripts.data);
-    ASSERT_NE(source.bitmap_data.pixel_data, copy.bitmap_data.pixel_data);
-    ASSERT_NE(source.bitmap_data.palette_data, copy.bitmap_data.palette_data);
+    ASSERT_NE(source.bitmap.reader_slots, copy.bitmap.reader_slots);
+    ASSERT_NE(source.bitmap.reader_slots[0].data, copy.bitmap.reader_slots[0].data);
     ASSERT_NE(source.bitmap_properties, copy.bitmap_properties);
     ASSERT_TRUE(nmo_sprite_vtable.equals(&source, &copy));
     ASSERT_EQ(nmo_sprite_vtable.hash(&source),
               nmo_sprite_vtable.hash(&copy));
 
-    copy.bitmap_data.pixel_data[0] = 0x77;
-    ASSERT_EQ(0x11, source.bitmap_data.pixel_data[0]);
+    copy.bitmap.reader_slots[0].data[0] = 0x77;
+    ASSERT_EQ(0x11, source.bitmap.reader_slots[0].data[0]);
     ASSERT_FALSE(nmo_sprite_vtable.equals(&source, &copy));
 
     nmo_sprite_vtable.destroy(&copy, NULL, NULL);
@@ -12358,11 +12368,13 @@ TEST(chunk_id_remap, spritetext_copy_preserves_base_and_strings) {
     ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
         &source.base.entity.base.base.scripts, 101));
     source.base.has_bitmap_data = true;
-    source.base.bitmap_data.pixel_data_size = 1;
-    source.base.bitmap_data.pixel_data = nmo_arena_alloc(
-        source_arena, 1, 1);
-    ASSERT_NOT_NULL(source.base.bitmap_data.pixel_data);
-    source.base.bitmap_data.pixel_data[0] = 0x11;
+    uint8_t text_encoded[1] = {0x11};
+    nmo_texture_reader_slot_t text_slot = {
+        .format_type = 1, .data_size = 1, .data = text_encoded,
+    };
+    source.base.bitmap.kind = CKTEXTURE_BITMAP_READER;
+    source.base.bitmap.slot_count = 1;
+    source.base.bitmap.reader_slots = &text_slot;
     source.text_content = "Hello";
     source.font.font_name = "Arial";
     source.font.size = 16;
@@ -12381,8 +12393,8 @@ TEST(chunk_id_remap, spritetext_copy_preserves_base_and_strings) {
         &source, &copy, &text_type, copy_arena));
     ASSERT_NE(source.base.entity.base.base.scripts.data,
               copy.base.entity.base.base.scripts.data);
-    ASSERT_NE(source.base.bitmap_data.pixel_data,
-              copy.base.bitmap_data.pixel_data);
+    ASSERT_NE(source.base.bitmap.reader_slots[0].data,
+              copy.base.bitmap.reader_slots[0].data);
     ASSERT_NE(source.text_content, copy.text_content);
     ASSERT_NE(source.font.font_name, copy.font.font_name);
     ASSERT_TRUE(nmo_spritetext_vtable.equals(&source, &copy));
