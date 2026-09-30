@@ -3101,6 +3101,38 @@ TEST(cli, specialized_read_commands_accept_exact_name_selectors) {
     yyjson_doc_free(entity_doc);
 }
 
+TEST(cli, entity_show_names_camera_and_light_fields_as_the_engine_does) {
+    TEST_REQUIRE_FIXTURE("BBSamples/Cameras/Orthographic Zoom.cmo");
+    TEST_REQUIRE_FIXTURE("BBSamples/3D Transformations/BillBoard.cmo");
+    char args[512];
+
+    snprintf(args, sizeof(args), "entity show --id 240 \"%s\"",
+             NMO_TEST_DATA_FILE("BBSamples/Cameras/Orthographic Zoom.cmo"));
+    yyjson_doc *camera_doc = run_cli_json(args);
+    ASSERT_NOT_NULL(camera_doc);
+    yyjson_val *camera = json_envelope_data(camera_doc);
+    ASSERT_NOT_NULL(camera);
+    ASSERT_STR_EQ("orthographic", yyjson_get_str(yyjson_obj_get(camera, "projection_type")));
+    ASSERT_FLOAT_EQ(0.045, yyjson_get_real(yyjson_obj_get(camera, "orthographic_zoom")), 0.0001);
+    ASSERT_EQ(4, yyjson_get_uint(yyjson_obj_get(camera, "aspect_width")));
+    ASSERT_EQ(3, yyjson_get_uint(yyjson_obj_get(camera, "aspect_height")));
+    yyjson_doc_free(camera_doc);
+
+    snprintf(args, sizeof(args), "entity show --id 103 \"%s\"",
+             NMO_TEST_DATA_FILE("BBSamples/3D Transformations/BillBoard.cmo"));
+    yyjson_doc *light_doc = run_cli_json(args);
+    ASSERT_NOT_NULL(light_doc);
+    yyjson_val *light = json_envelope_data(light_doc);
+    ASSERT_NOT_NULL(light);
+    ASSERT_STR_EQ("spot", yyjson_get_str(yyjson_obj_get(light, "light_type")));
+    ASSERT_TRUE(yyjson_get_bool(yyjson_obj_get(light, "light_active")));
+    ASSERT_TRUE(yyjson_get_bool(yyjson_obj_get(light, "light_specular_flag")));
+    ASSERT_NOT_NULL(yyjson_obj_get(light, "light_inner_cone"));
+    ASSERT_NOT_NULL(yyjson_obj_get(light, "light_outer_cone"));
+    ASSERT_NULL(yyjson_obj_get(light, "light_ambient"));
+    yyjson_doc_free(light_doc);
+}
+
 TEST(cli, object_read_commands_accept_exact_name_selectors) {
     TEST_REQUIRE_FIXTURE("Ballance/Camera.nmo");
     char args[512];
@@ -4926,6 +4958,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, mesh_real_sample_reports_material_groups_and_exports_obj_mtl);
     REGISTER_TEST(cli, mesh_real_sample_reports_progressive_and_point_variants);
     REGISTER_TEST(cli, specialized_read_commands_accept_exact_name_selectors);
+    REGISTER_TEST(cli, entity_show_names_camera_and_light_fields_as_the_engine_does);
     REGISTER_TEST(cli, object_read_commands_accept_exact_name_selectors);
     REGISTER_TEST(cli, name_selectors_report_family_specific_missing_errors);
 

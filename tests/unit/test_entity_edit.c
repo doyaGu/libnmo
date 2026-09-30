@@ -311,6 +311,8 @@ TEST(entity_edit, edits_explicit_entity_types)
     ASSERT_EQ(parent_id, nmo_ref_runtime_id(&child->parent));
     ASSERT_FLOAT_EQ(4.0f, child->world_matrix[3], 0.0001f);
     ASSERT_FLOAT_EQ(0.75f, camera->fov, 0.0001f);
+    /* The edited values are stored in the section the engine always writes. */
+    ASSERT_TRUE(camera->has_cameraonly_chunk);
     ASSERT_EQ(child_id, nmo_ref_runtime_id(&target_camera->target));
     ASSERT_FLOAT_EQ(25.0f, light->light_data.range, 0.0001f);
     ASSERT_EQ(parent_id, nmo_ref_runtime_id(&target_light->target));
