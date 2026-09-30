@@ -57,6 +57,12 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
             return result;
         }
         grid_layers_set_lifecycle(&state->layers);
+        /* RCKGrid::RCKGrid scales the new grid to (1, 10, 1). The attribute
+           named "Grid" it also sets needs the attribute manager. */
+        state->base.world_matrix[0] = 1.0f;
+        state->base.world_matrix[5] = 10.0f;
+        state->base.world_matrix[10] = 1.0f;
+        state->base.world_matrix[15] = 1.0f;
         state->width = 0;
         state->length = 0;
         state->priority = 0;
