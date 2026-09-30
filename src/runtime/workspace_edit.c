@@ -3461,6 +3461,9 @@ nmo_status_t nmo_entity_edit_set_light_settings(
     light->light_data.diffuse.a = settings->diffuse[3];
     light->light_data.range = settings->range;
     light->light_data.type = settings->type;
+    if (settings->type != VX_LIGHTSPOT) {
+        nmo_light_apply_nonspot_defaults(light);
+    }
     nmo_workspace_edit_mark(edit, NMO_WORKSPACE_EDIT_OBJECT_STATE);
     return NMO_OK;
 }

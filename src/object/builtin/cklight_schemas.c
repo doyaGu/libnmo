@@ -94,7 +94,7 @@ static void nmo_light_set_defaults(void *instance)
     state->legacy_diffuse_alpha = 1.0f;
 }
 
-static void nmo_light_apply_nonspot_defaults(nmo_light_state_t *state) {
+void nmo_light_apply_nonspot_defaults(nmo_light_state_t *state) {
     if (state == NULL) {
         return;
     }

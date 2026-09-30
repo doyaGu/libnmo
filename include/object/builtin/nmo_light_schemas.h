@@ -69,6 +69,15 @@ NMO_API nmo_status_t nmo_light_serialize(
 
 NMO_DECLARE_OBJECT_SCHEMA(nmo_light_vtable, nmo_register_light_type)
 
+/**
+ * @brief Reset the spot cone angles and falloff to the constructor defaults.
+ *
+ * CK writes these three values only for spot lights and a reload of any other
+ * light type holds the defaults, so a light that stops being a spot must not
+ * keep its cones. The file layout for a non-spot light rejects non-default ones.
+ */
+NMO_API void nmo_light_apply_nonspot_defaults(nmo_light_state_t *state);
+
 NMO_API nmo_status_t nmo_light_prepare_dependencies(
     void *instance,
     const nmo_type_descriptor_t *type,

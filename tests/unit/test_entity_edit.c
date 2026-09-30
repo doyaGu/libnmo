@@ -318,8 +318,66 @@ TEST(entity_edit, edits_explicit_entity_types)
     entity_edit_fixture_destroy(&fixture);
 }
 
+TEST(entity_edit, light_leaving_spot_resets_cones)
+{
+    entity_edit_fixture_t fixture = {0};
+    entity_edit_fixture_create(&fixture);
+
+    nmo_workspace_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK,
+              nmo_workspace_edit_begin(fixture.workspace, "light type", &edit));
+    nmo_object_id_t light_id = 0u;
+    ASSERT_EQ(NMO_OK, nmo_object_edit_create(
+        edit,
+        &(nmo_object_create_desc_t){
+            .class_id = NMO_CID_LIGHT,
+            .name = "Light",
+        },
+        &light_id));
+    ASSERT_EQ(NMO_OK, nmo_entity_edit_set_light_settings(
+        edit,
+        light_id,
+        &(nmo_entity_light_settings_t){
+            .diffuse = {1.0f, 1.0f, 1.0f, 1.0f},
+            .range = 50.0f,
+            .type = VX_LIGHTSPOT,
+        }));
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_commit(edit));
+
+    /* A spot light with cones of its own, as a loaded file would hold. */
+    const nmo_type_registry_t *registry =
+        nmo_context_get_type_registry(fixture.ctx);
+    nmo_light_state_t *light = (nmo_light_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, find_object(fixture.document, light_id), CKPGUID_LIGHT);
+    ASSERT_NOT_NULL(light);
+    light->light_data.inner_spot_cone = 0.1f;
+    light->light_data.outer_spot_cone = 0.2f;
+    light->light_data.falloff = 3.0f;
+
+    ASSERT_EQ(NMO_OK,
+              nmo_workspace_edit_begin(fixture.workspace, "to point", &edit));
+    ASSERT_EQ(NMO_OK, nmo_entity_edit_set_light_settings(
+        edit,
+        light_id,
+        &(nmo_entity_light_settings_t){
+            .diffuse = {1.0f, 1.0f, 1.0f, 1.0f},
+            .range = 50.0f,
+            .type = VX_LIGHTPOINT,
+        }));
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_commit(edit));
+
+    ASSERT_EQ(VX_LIGHTPOINT, light->light_data.type);
+    ASSERT_FLOAT_EQ(0.69813174f, light->light_data.inner_spot_cone, 0.000001f);
+    ASSERT_FLOAT_EQ(0.78539819f, light->light_data.outer_spot_cone, 0.000001f);
+    ASSERT_FLOAT_EQ(1.0f, light->light_data.falloff, 0.000001f);
+
+    entity_edit_fixture_destroy(&fixture);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(entity_edit, sets_parent);
 REGISTER_TEST(entity_edit, sets_world_matrix);
 REGISTER_TEST(entity_edit, edits_explicit_entity_types);
+REGISTER_TEST(entity_edit, light_leaving_spot_resets_cones);
 TEST_MAIN_END()
