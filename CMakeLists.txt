@@ -297,7 +297,6 @@ set(NMO_DOCUMENT_SOURCES
     src/document/document_load.c
     src/document/document_save.c
     src/document/document_perf_stats.c
-    src/document/save_buffer.c
     src/document/document_compare.c
     src/document/document_compare_result.c
     src/document/document_stats.c

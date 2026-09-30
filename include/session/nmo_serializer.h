@@ -41,7 +41,6 @@ extern "C" {
 /* Forward declarations */
 typedef struct nmo_session nmo_session_t;
 typedef struct nmo_serializer nmo_serializer_t;
-typedef struct nmo_save_buffer nmo_save_buffer_t;
 typedef struct nmo_object_repository nmo_object_repository_t;
 typedef struct nmo_object nmo_object_t;
 typedef struct nmo_id_remap nmo_id_remap_t;
