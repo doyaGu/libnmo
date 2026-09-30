@@ -61,19 +61,22 @@ foreach(source_file IN LISTS source_files)
     endforeach()
 endforeach()
 
-# The core's public headers must not pull in the optional components: lua/ and
-# project/ headers (and Lua's own lua.h) belong to nmo_lua and nmo_project only.
+# The core's public headers must not pull in the optional components: edit/,
+# lua/ and project/ headers (and Lua's own lua.h) belong to nmo_edit, nmo_lua and
+# nmo_project only. The components may include each other's headers downward:
+# edit, then lua and project on top of it.
 file(GLOB_RECURSE public_headers "${SOURCE_DIR}/include/*.h")
 set(component_violations "")
 foreach(header IN LISTS public_headers)
     file(RELATIVE_PATH relative_path "${SOURCE_DIR}" "${header}")
-    if(relative_path MATCHES "^include/(lua|project)/"
+    if(relative_path MATCHES "^include/(edit|lua|project)/"
+       OR relative_path STREQUAL "include/nmo_edit.h"
        OR relative_path STREQUAL "include/nmo_lua.h"
        OR relative_path STREQUAL "include/nmo_project.h")
         continue()
     endif()
     file(STRINGS "${header}" include_lines
-        REGEX "^[ \t]*#[ \t]*include[ \t]*\"(lua|project)/")
+        REGEX "^[ \t]*#[ \t]*include[ \t]*\"(edit|lua|project)/")
     foreach(include_line IN LISTS include_lines)
         string(APPEND component_violations "${relative_path}: ${include_line}\n")
     endforeach()
@@ -82,7 +85,7 @@ if(component_violations)
     message(FATAL_ERROR
         "Layering audit failed: core public header includes an optional component\n"
         "${component_violations}"
-        "Move the declaration into include/lua or include/project, or forward-declare the type.\n")
+        "Move the declaration into include/edit, include/lua or include/project, or forward-declare the type.\n")
 endif()
 
 # Report allowlist entries that no longer exist so the list stays honest.
