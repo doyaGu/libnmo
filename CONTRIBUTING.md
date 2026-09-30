@@ -148,12 +148,14 @@ with a lower rank.
 | 10   | `src/chunk/`    | Chunk     |
 | 11   | `src/behavior/` | Behavior  |
 | 12   | `src/export/`   | Export    |
-| 13   | `src/lua/`      | Lua       |
-| 14   | `src/project/`  | Project   |
+| 13   | `src/edit/`     | Edit      |
+| 14   | `src/lua/`      | Lua       |
+| 15   | `src/project/`  | Project   |
 
-The Lua and Project layers build into their own libraries (`nmo_lua`, `nmo_project`) on top of the
-core library `nmo`. The core must not depend on them: no core source or public header includes a
-`lua/` or `project/` header (the audit checks both), and core tests link only `nmo`.
+The Edit, Lua and Project layers build into their own libraries (`nmo_edit`, `nmo_lua`,
+`nmo_project`) on top of the core library `nmo`, and Lua and Project build on Edit. The core must
+not depend on them: no core source or public header includes an `edit/`, `lua/` or `project/`
+header (the audit checks both), and core tests link only `nmo`.
 
 ### Chunk API Notes
 

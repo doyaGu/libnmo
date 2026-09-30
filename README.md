@@ -243,11 +243,11 @@ and from layers below it. From lowest to highest:
 
 ```
 core -> io -> format -> type -> extension -> object -> session -> runtime
-     -> document -> chunk -> behavior -> export -> lua -> project
+     -> document -> chunk -> behavior -> export -> edit -> lua -> project
 ```
 
 `tests/layering_audit.cmake` (run as `test_layering_audit`) enforces this order. It is not
-yet fully clean: 43 upward includes exist today and are listed in
+yet fully clean: 42 upward includes exist today and are listed in
 `tests/layering_allowlist.txt` as debt. A new upward include fails the test, and so does an
 allowlist entry that is no longer needed.
 
@@ -263,26 +263,30 @@ allowlist entry that is no longer needed.
 | Runtime   | `src/runtime/`   | `include/runtime/`    | Context, workspace, workspace edit, session utilities                            |
 | Document  | `src/document/`  | `include/document/`   | Document load/save, stats, performance stats, comparison, file state            |
 | Chunk     | `src/chunk/`     | `include/chunk/`      | Chunk index and chunk inspection utilities                                       |
-| Behavior  | `src/behavior/`  | `include/behavior/`   | Behavior graph traversal, BB registry, parameter chains, script walker, edit plan, behavior execute |
+| Behavior  | `src/behavior/`  | `include/behavior/`   | Behavior graph traversal, BB registry, parameter chains, script walker, script edit graph |
 | Export    | `src/export/`    | `include/export/`     | DOT graph, JSON utilities, text export, ANSI, hex dump                          |
+| Edit      | `src/edit/`      | `include/edit/`       | Edit plans and their JSON form, script edits, behavior rewrites (replace, fold), semantic validator, probe analyzer, behavior execute (library `nmo_edit`) |
 | Lua       | `src/lua/`       | `include/lua/`        | Lua 5.5 runtime, module system, bindings for all layers, fold-map parser (library `nmo_lua`) |
 | Project   | `src/project/`   | `include/project/`    | Project plan, asset/scene/script authoring, executor, manifest, validator (library `nmo_project`) |
 
 ### Libraries
 
-The Lua and Project layers are separate libraries built on top of the core; the core
-library does not depend on either of them and contains no Lua code.
+The Edit, Lua and Project layers are separate libraries built on top of the core; the core
+library does not depend on any of them and contains no edit or Lua code. Lua and Project build
+on the Edit library.
 
 | Library       | CMake target   | pkg-config       | Umbrella header | Contents                                  |
 |---------------|----------------|------------------|-----------------|-------------------------------------------|
-| `libnmo`      | `nmo::nmo`     | `libnmo`         | `nmo.h`         | Everything below the Lua and Project layers |
+| `libnmo`      | `nmo::nmo`     | `libnmo`         | `nmo.h`         | Reading, writing, inspecting, and workspace edits: everything below the Edit layer |
+| `libnmo_edit` | `nmo::edit`    | `libnmo-edit`    | `nmo_edit.h`    | Edit plans, script edits, behavior rewrites, semantic validator, probe analyzer, behavior execute |
 | `libnmo_lua`  | `nmo::lua`     | `libnmo-lua`     | `nmo_lua.h`     | Lua runtime, bindings, `nmo_behavior_execution_lua_runtime()` |
 | `libnmo_project` | `nmo::project` | `libnmo-project` | `nmo_project.h` | Project plans, authoring, executor, manifest reader |
 
-`nmo.h` does not include the Lua or Project headers; include `nmo_lua.h` or `nmo_project.h`
-(or the individual `lua/*.h`, `project/*.h` headers) and link the matching library. Static
-builds produce one archive per library; with `NMO_BUILD_SHARED=ON` all three are compiled into
-the single shared `nmo` library and `nmo::lua` / `nmo::project` are interface targets on it.
+`nmo.h` does not include the Edit, Lua or Project headers; include `nmo_edit.h`, `nmo_lua.h` or
+`nmo_project.h` (or the individual `edit/*.h`, `lua/*.h`, `project/*.h` headers) and link the
+matching library. Static builds produce one archive per library; with `NMO_BUILD_SHARED=ON`
+all four are compiled into the single shared `nmo` library and `nmo::edit`, `nmo::lua` and
+`nmo::project` are interface targets on it.
 
 ### Key Design Decisions
 
@@ -404,7 +408,8 @@ data, and shell completions. Consumers can use either CMake or pkg-config:
 ```cmake
 find_package(libnmo CONFIG REQUIRED)
 target_link_libraries(app PRIVATE nmo::nmo)                  # core only
-target_link_libraries(app PRIVATE nmo::lua nmo::project nmo::nmo)   # with the optional components
+target_link_libraries(app PRIVATE nmo::edit nmo::nmo)                # edit plans and script edits
+target_link_libraries(app PRIVATE nmo::lua nmo::project nmo::nmo)   # Lua and project; both bring nmo::edit
 ```
 
 ```sh
