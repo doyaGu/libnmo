@@ -122,6 +122,20 @@ static inline void nmo_3dentity_get_position(
     }
 }
 
+/**
+ * @brief The render priority the engine applies for state->z_order.
+ *
+ * The state keeps the value the file holds; CKSceneGraphNode::SetPriority
+ * limits the priority to 10000 in either direction.
+ */
+static inline int32_t nmo_3dentity_effective_z_order(const nmo_3dentity_state_t *state)
+{
+    if (state == NULL) return 0;
+    if (state->z_order > 10000) return 10000;
+    if (state->z_order < -10000) return -10000;
+    return state->z_order;
+}
+
 #ifdef __cplusplus
 }
 #endif

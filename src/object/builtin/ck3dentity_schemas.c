@@ -433,9 +433,8 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
 
         if (data.entity_flags & CK_3DENTITY_ZORDERVALID) {
             NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &data.z_order));
-            /* CKSceneGraphNode::SetPriority keeps the priority within 10000. */
-            if (data.z_order > 10000) data.z_order = 10000;
-            if (data.z_order < -10000) data.z_order = -10000;
+            /* Kept as stored; nmo_3dentity_effective_z_order gives the priority
+               the engine uses. */
         } else {
             data.z_order = 0;
         }

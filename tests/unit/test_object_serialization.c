@@ -290,6 +290,41 @@ TEST(object_serialization, ck3dentity_roundtrip) {
     nmo_arena_destroy(arena);
 }
 
+/* Test: a z-order beyond the engine's limit is kept, and only viewed clamped */
+TEST(object_serialization, ck3dentity_z_order_is_kept_as_stored) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+    nmo_type_registry_t *registry = nmo_type_registry_create(arena);
+    ASSERT_EQ(NMO_OK, register_test_object_types(registry));
+    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    const nmo_type_descriptor_t *type = nmo_type_registry_find_by_guid(registry, CKPGUID_3DENTITY);
+    ASSERT_NOT_NULL(type);
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    nmo_chunk_start_write(chunk);
+    nmo_3dentity_state_t out;
+    memset(&out, 0, sizeof(out));
+    out.world_matrix[0] = out.world_matrix[5] = out.world_matrix[10] = out.world_matrix[15] = 1.0f;
+    out.z_order = 123456;
+    ASSERT_EQ(NMO_OK, type->vtable->serialize(&out, chunk, type, &ser_ctx));
+    nmo_chunk_close(chunk);
+
+    nmo_chunk_start_read(chunk);
+    nmo_deserialize_context_t des_ctx = nmo_deserialize_context_create(arena, NULL, NULL, 0);
+    nmo_3dentity_state_t in;
+    memset(&in, 0, sizeof(in));
+    ASSERT_EQ(NMO_OK, type->vtable->deserialize(&in, chunk, type, &des_ctx));
+    ASSERT_EQ(123456, in.z_order);
+    ASSERT_EQ(10000, nmo_3dentity_effective_z_order(&in));
+    in.z_order = -20000;
+    ASSERT_EQ(-10000, nmo_3dentity_effective_z_order(&in));
+    in.z_order = 42;
+    ASSERT_EQ(42, nmo_3dentity_effective_z_order(&in));
+
+    nmo_type_registry_destroy(registry);
+    nmo_arena_destroy(arena);
+}
+
 /* Test: CK3dEntity with transform */
 TEST(object_serialization, ck3dentity_transform) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
@@ -914,6 +949,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_serialization, ckobject_hierarchical_hidden);
     REGISTER_TEST(object_serialization, null_checks);
     REGISTER_TEST(object_serialization, ck3dentity_roundtrip);
+    REGISTER_TEST(object_serialization, ck3dentity_z_order_is_kept_as_stored);
     REGISTER_TEST(object_serialization, ck3dentity_transform);
     REGISTER_TEST(object_serialization, ckmaterial_uses_four_bit_compare_functions);
     REGISTER_TEST(object_serialization, cktexture_rejects_invalid_counts_before_allocation);
