@@ -652,6 +652,13 @@ static uint8_t *decode_reader_slot(nmo_arena_t *arena,
             pixels[i * 4 + 3] = rs->alpha_plane[i];
         }
         *out_ch = 4;
+    } else if (rs->format_type == 2 && rs->alpha_count == 1) {
+        /* A single distinct alpha: the engine blits that constant over the image. */
+        size_t pixel_count = (size_t)(*out_w) * (size_t)(*out_h);
+        for (size_t i = 0; i < pixel_count; ++i) {
+            pixels[i * 4 + 3] = (uint8_t)rs->alpha_value;
+        }
+        *out_ch = 4;
     }
 
     return pixels;

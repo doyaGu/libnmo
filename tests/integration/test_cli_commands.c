@@ -2567,6 +2567,47 @@ TEST(cli, texture_reader_alpha_plane_extracts_transparency) {
     free(png_data);
 }
 
+TEST(cli, texture_extract_applies_constant_reader_alpha) {
+    /* The reader slot stores one distinct alpha (0) instead of an alpha plane;
+     * the engine blits that constant, so the extracted image is transparent. */
+    TEST_REQUIRE_FIXTURE("BBSamples/Visuals/Volumetric Fog.cmo");
+    make_dir("test_cli_tmp_constant_alpha_extract");
+    remove("test_cli_tmp_constant_alpha_extract/fog_133.png");
+
+    char args[512];
+    snprintf(args, sizeof(args),
+             "texture extract --id 133 --out-dir \"test_cli_tmp_constant_alpha_extract\" "
+             "--overwrite \"%s\"",
+             NMO_TEST_DATA_FILE("BBSamples/Visuals/Volumetric Fog.cmo"));
+    cli_run_result_t result = run_cli_capture(args);
+    ASSERT_NOT_NULL(result.output);
+    ASSERT_EQ(NMO_CLI_EXIT_SUCCESS, result.exit_code);
+    free(result.output);
+
+    const char *png_path = "test_cli_tmp_constant_alpha_extract/fog_133.png";
+    size_t png_size = 0;
+    unsigned char *png_data = read_file_binary(png_path, &png_size);
+    ASSERT_NOT_NULL(png_data);
+
+    nmo_arena_t *decode_arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(decode_arena);
+    int width = 0;
+    int height = 0;
+    int channels = 0;
+    uint8_t *pixels = nmo_stbi_load_from_memory(
+        decode_arena, png_data, (int)png_size, &width, &height, &channels, 4);
+    ASSERT_NOT_NULL(pixels);
+    ASSERT_EQ(4, width);
+    ASSERT_EQ(256, height);
+
+    for (int i = 0; i < width * height; ++i) {
+        ASSERT_EQ(0, pixels[i * 4 + 3]);
+    }
+
+    nmo_arena_destroy(decode_arena);
+    free(png_data);
+}
+
 TEST(cli, texture_extract_reports_unsupported_empty_raw_slot) {
     TEST_REQUIRE_FIXTURE("BBSamples/3D Transformations/BillBoard.cmo");
     make_dir("test_cli_tmp_empty_raw_extract");
@@ -4872,6 +4913,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, texture_show_name_selector_reports_missing_texture);
     REGISTER_TEST(cli, texture_show_reports_raw_slot_channels);
     REGISTER_TEST(cli, texture_extract_decodes_raw_slot);
+    REGISTER_TEST(cli, texture_extract_applies_constant_reader_alpha);
     REGISTER_TEST(cli, texture_external_raw_slot_extracts_from_real_fixture);
     REGISTER_TEST(cli, texture_external_reader_slot_reports_mipmap_and_extracts);
     REGISTER_TEST(cli, texture_reader_alpha_plane_extracts_transparency);
