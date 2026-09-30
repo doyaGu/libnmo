@@ -28,10 +28,11 @@ typedef struct nmo_3dentity_skin_vertex {
     uint32_t bone_count;
     uint32_t legacy_before_position;
     nmo_vector_t initial_pos;
-    uint32_t legacy_before_indices;
-    uint32_t *bone_indices;
+    /* File order: weights, then bone indices. */
     uint32_t legacy_before_weights;
-    float *bone_weights;
+    float *bone_weights;           /**< bone_count weights; they sum to 1 per vertex */
+    uint32_t legacy_before_indices;
+    uint32_t *bone_indices;        /**< bone_count indices into the skin's bones (an int in the engine) */
 } nmo_3dentity_skin_vertex_t;
 
 typedef struct nmo_3dentity_skin_bone {

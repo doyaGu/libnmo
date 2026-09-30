@@ -657,24 +657,8 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
 
             NMO_RETURN_IF_ERROR(nmo_chunk_read_vector3(chunk, &vertex->initial_pos));
 
-            if (data_version < 6) {
-                NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(
-                    chunk, &vertex->legacy_before_indices));
-            }
-
-            if (vertex->bone_count > 0) {
-                vertex->bone_indices = (uint32_t *)nmo_arena_alloc(
-                    arena, sizeof(uint32_t) * vertex->bone_count, _Alignof(uint32_t));
-                if (!vertex->bone_indices) {
-                    NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate bone indices");
-                }
-                result = nmo_3dentity_read_raw_bytes(chunk,
-                    vertex->bone_indices, sizeof(uint32_t) * vertex->bone_count);
-                if (result != NMO_OK) {
-                    return result;
-                }
-            }
-
+            /* Per vertex the file holds the weights first, then the bone
+               indices (RCKSkinVertexData: +0x0C weights, +0x08 bones). */
             if (data_version < 6) {
                 NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(
                     chunk, &vertex->legacy_before_weights));
@@ -688,6 +672,24 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
                 }
                 result = nmo_3dentity_read_raw_bytes(chunk,
                     vertex->bone_weights, sizeof(float) * vertex->bone_count);
+                if (result != NMO_OK) {
+                    return result;
+                }
+            }
+
+            if (data_version < 6) {
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(
+                    chunk, &vertex->legacy_before_indices));
+            }
+
+            if (vertex->bone_count > 0) {
+                vertex->bone_indices = (uint32_t *)nmo_arena_alloc(
+                    arena, sizeof(uint32_t) * vertex->bone_count, _Alignof(uint32_t));
+                if (!vertex->bone_indices) {
+                    NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate bone indices");
+                }
+                result = nmo_3dentity_read_raw_bytes(chunk,
+                    vertex->bone_indices, sizeof(uint32_t) * vertex->bone_count);
                 if (result != NMO_OK) {
                     return result;
                 }
@@ -1031,14 +1033,14 @@ static nmo_status_t nmo_3dentity_serialize_internal(
 
             if (data_version < 6) {
                 result = nmo_chunk_write_dword(
-                    out_chunk, vertex->legacy_before_indices);
+                    out_chunk, vertex->legacy_before_weights);
                 if (result != NMO_OK) return result;
             }
 
             if (vertex->bone_count > 0 && vertex->bone_indices && vertex->bone_weights) {
                 result = nmo_chunk_write_buffer_no_size(out_chunk,
-                                                        vertex->bone_indices,
-                                                        sizeof(uint32_t) * vertex->bone_count);
+                                                        vertex->bone_weights,
+                                                        sizeof(float) * vertex->bone_count);
                 if (result != NMO_OK) return result;
             } else if (vertex->bone_count > 0) {
                 NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
@@ -1047,14 +1049,14 @@ static nmo_status_t nmo_3dentity_serialize_internal(
 
             if (data_version < 6) {
                 result = nmo_chunk_write_dword(
-                    out_chunk, vertex->legacy_before_weights);
+                    out_chunk, vertex->legacy_before_indices);
                 if (result != NMO_OK) return result;
             }
 
             if (vertex->bone_count > 0) {
                 result = nmo_chunk_write_buffer_no_size(out_chunk,
-                                                        vertex->bone_weights,
-                                                        sizeof(float) * vertex->bone_count);
+                                                        vertex->bone_indices,
+                                                        sizeof(uint32_t) * vertex->bone_count);
                 if (result != NMO_OK) return result;
             }
         }

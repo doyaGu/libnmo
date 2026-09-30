@@ -169,10 +169,10 @@ nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry) {
         NMO_STRUCT_FIELD_GUID("bone_count", CKPGUID_UINT32),
         NMO_STRUCT_FIELD_GUID("legacy_before_position", CKPGUID_UINT32),
         NMO_STRUCT_FIELD_GUID("initial_pos", CKPGUID_VECTOR),
-        NMO_STRUCT_FIELD_GUID("legacy_before_indices", CKPGUID_UINT32),
-        NMO_STRUCT_FIELD_PTR_COUNTED(nmo_3dentity_skin_vertex_t, bone_indices, bone_count, 1),
         NMO_STRUCT_FIELD_GUID("legacy_before_weights", CKPGUID_UINT32),
-        NMO_STRUCT_FIELD_PTR_COUNTED(nmo_3dentity_skin_vertex_t, bone_weights, bone_count, 1)
+        NMO_STRUCT_FIELD_PTR_COUNTED(nmo_3dentity_skin_vertex_t, bone_weights, bone_count, 1),
+        NMO_STRUCT_FIELD_GUID("legacy_before_indices", CKPGUID_UINT32),
+        NMO_STRUCT_FIELD_PTR_COUNTED(nmo_3dentity_skin_vertex_t, bone_indices, bone_count, 1)
     };
     static const nmo_struct_type_def_t ck3dentityskinvertex_def =
         NMO_STRUCT_DEF("CK3dEntitySkinVertex", CKPGUID_CK3DENTITYSKINVERTEX,
