@@ -428,6 +428,56 @@ static nmo_status_t nmo_texture_write_bitmap2_slot(
     return nmo_chunk_write_buffer(chunk, slot->buffer, slot->buffer_size);
 }
 
+/* Gives the bitmap slot array the new length; slots past the old length are
+ * empty, as SetSlotCount leaves them. */
+static nmo_status_t nmo_texture_resize_slots(
+    nmo_texture_state_t *state,
+    nmo_arena_t *arena,
+    uint32_t new_count)
+{
+    void **slots = NULL;
+    size_t slot_size = 0;
+    size_t slot_align = 0;
+    switch (state->bitmap_kind) {
+    case CKTEXTURE_BITMAP_READER:
+        slots = (void **)&state->reader_slots;
+        slot_size = sizeof(nmo_texture_reader_slot_t);
+        slot_align = _Alignof(nmo_texture_reader_slot_t);
+        break;
+    case CKTEXTURE_BITMAP_RAW:
+        slots = (void **)&state->raw_slots;
+        slot_size = sizeof(nmo_texture_raw_slot_t);
+        slot_align = _Alignof(nmo_texture_raw_slot_t);
+        break;
+    case CKTEXTURE_BITMAP_BITMAP2:
+        slots = (void **)&state->bitmap2_slots;
+        slot_size = sizeof(nmo_texture_bitmap2_slot_t);
+        slot_align = _Alignof(nmo_texture_bitmap2_slot_t);
+        break;
+    default:
+        break;
+    }
+
+    if (slots != NULL && new_count > 0u) {
+        uint8_t *resized = (uint8_t *)nmo_arena_alloc(
+            arena, slot_size * (size_t)new_count, slot_align);
+        if (resized == NULL) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "Failed to allocate texture slots");
+        }
+        memset(resized, 0, slot_size * (size_t)new_count);
+        uint32_t kept = state->slot_count < new_count ? state->slot_count : new_count;
+        if (*slots != NULL && kept > 0u) {
+            memcpy(resized, *slots, slot_size * (size_t)kept);
+        }
+        *slots = resized;
+    } else if (slots != NULL) {
+        *slots = NULL;
+    }
+    state->slot_count = new_count;
+    NMO_RETURN_OK();
+}
+
 static nmo_status_t nmo_texture_read_slot_filenames(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
@@ -439,12 +489,12 @@ static nmo_status_t nmo_texture_read_slot_filenames(
     NMO_RETURN_IF_ERROR(nmo_texture_validate_array_count(
         chunk, count, sizeof(char *), 0, 1, "filename"));
 
-    if (state->slot_count != 0 && state->slot_count != (uint32_t)count) {
-        NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
-                         "Texture filename count does not match bitmap slots");
+    /* The engine calls SetSlotCount(count) here, which adds empty slots or
+       drops the surplus ones. */
+    if (state->slot_count != (uint32_t)count) {
+        NMO_RETURN_IF_ERROR(nmo_texture_resize_slots(
+            state, arena, (uint32_t)count));
     }
-
-    state->slot_count = (uint32_t)count;
     state->has_slot_filenames = 1;
     if (count == 0) {
         NMO_RETURN_OK();
