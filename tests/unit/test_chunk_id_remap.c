@@ -9183,6 +9183,23 @@ TEST(chunk_id_remap, layer_version_2_associates_the_int_parameter) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, new_entity_and_body_part_start_with_the_engine_constructor_state) {
+    /* RCK3dEntity: identity matrix, moveable flags 0x4000B. RCKBodyPart: joint flags 7. */
+    nmo_3dentity_state_t entity;
+    ASSERT_EQ(NMO_OK, nmo_3dentity_vtable.create(&entity, NULL, NULL));
+    for (int i = 0; i < 16; ++i) {
+        ASSERT_EQ((i % 5 == 0) ? 1.0f : 0.0f, entity.world_matrix[i]);
+    }
+    ASSERT_EQ(0x0004000Bu, entity.moveable_flags);
+    nmo_3dentity_vtable.destroy(&entity, NULL, NULL);
+
+    nmo_bodypart_state_t part;
+    ASSERT_EQ(NMO_OK, nmo_bodypart_vtable.create(&part, NULL, NULL));
+    ASSERT_EQ(7u, part.rotation_joint.flags);
+    ASSERT_EQ(0x0004000Bu, part.base.entity.moveable_flags);
+    nmo_bodypart_vtable.destroy(&part, NULL, NULL);
+}
+
 TEST(chunk_id_remap, new_place_and_grid_start_with_the_engine_constructor_state) {
     /* RCKPlace sets the priority 20000; RCKGrid scales itself to (1, 10, 1). */
     nmo_place_state_t place;
@@ -21408,6 +21425,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, bitmap2_slot_image_follows_the_format_tag);
     REGISTER_TEST(chunk_id_remap, layer_version_2_associates_the_int_parameter);
     REGISTER_TEST(chunk_id_remap, new_place_and_grid_start_with_the_engine_constructor_state);
+    REGISTER_TEST(chunk_id_remap, new_entity_and_body_part_start_with_the_engine_constructor_state);
     REGISTER_TEST(chunk_id_remap, new_texture_writes_the_engine_default_packed_state);
     REGISTER_TEST(chunk_id_remap, texture_filename_count_resizes_the_slots);
     REGISTER_TEST(chunk_id_remap, modern_2dentity_without_its_block_keeps_the_constructor_state);
