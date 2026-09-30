@@ -17134,7 +17134,7 @@ TEST(chunk_id_remap, character_legacy_layouts_round_trip) {
     nmo_arena_destroy(arena);
 }
 
-TEST(chunk_id_remap, bodypart_rotation_joint_round_trips_without_size_prefix) {
+TEST(chunk_id_remap, bodypart_rotation_joint_round_trips_with_size_prefix) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
     ASSERT_NOT_NULL(arena);
     nmo_serialize_context_t serialize_context =
@@ -17188,7 +17188,7 @@ TEST(chunk_id_remap, bodypart_rotation_joint_round_trips_without_size_prefix) {
     legacy.has_character = 1;
     legacy.character = nmo_ref_from_raw(702);
     legacy.has_rotation_joint = 1;
-    legacy.rotation_joint.flags = 0x421u;
+    legacy.rotation_joint.flags = 0x221u;
     legacy.rotation_joint.min = (nmo_vector_t){-4.0f, -5.0f, -6.0f};
     legacy.rotation_joint.max = (nmo_vector_t){4.0f, 5.0f, 6.0f};
     legacy.rotation_joint.damping =
@@ -17206,7 +17206,8 @@ TEST(chunk_id_remap, bodypart_rotation_joint_round_trips_without_size_prefix) {
     ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
         legacy_chunk, CK_STATESAVE_BODYPARTROTJOINT,
         &section_dwords));
-    ASSERT_EQ(18u, section_dwords);
+    /* The legacy block is size-prefixed: [72] and six vectors. */
+    ASSERT_EQ(19u, section_dwords);
     ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
         legacy_chunk, CK_STATESAVE_BODYPARTCHARACTER,
         &section_dwords));
@@ -17236,7 +17237,7 @@ TEST(chunk_id_remap, bodypart_rotation_joint_round_trips_without_size_prefix) {
     ASSERT_EQ(NMO_OK, nmo_bodypart_deserialize(
         &legacy_reloaded, legacy_roundtrip, NULL,
         &deserialize_context));
-    ASSERT_EQ(0x421u, legacy_reloaded.rotation_joint.flags);
+    ASSERT_EQ(0x221u, legacy_reloaded.rotation_joint.flags);
 
     nmo_chunk_t *preserved = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(preserved);
@@ -17261,7 +17262,7 @@ TEST(chunk_id_remap, bodypart_rotation_joint_round_trips_without_size_prefix) {
         size_t payload_dwords;
     } trailing_cases[] = {
         {CK_STATESAVE_BODYPARTCHARACTER, 5u, 1u},
-        {CK_STATESAVE_BODYPARTROTJOINT, 4u, 18u},
+        {CK_STATESAVE_BODYPARTROTJOINT, 4u, 19u},
         {CK_STATESAVE_BODYPARTCHARACTER, 4u, 1u},
     };
     for (size_t i = 0;
@@ -17314,6 +17315,62 @@ TEST(chunk_id_remap, bodypart_rotation_joint_round_trips_without_size_prefix) {
     nmo_bodypart_vtable.destroy(&legacy, NULL, NULL);
     nmo_bodypart_vtable.destroy(&legacy_loaded, NULL, NULL);
     nmo_bodypart_vtable.destroy(&legacy_reloaded, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_id_remap, legacy_bodypart_joint_flags_follow_the_engine_shift) {
+    /* RCKBodyPart::Load (data_version < 5) sets flag (1, 16, 256)[vector] <<
+     * (axis - 1). On x86 a shift by -1 is a shift by 31, so axis 0 of the
+     * first vector lands on bit 31 and axis 0 of the others shifts out. */
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    chunk->class_id = NMO_CID_BODYPART;
+    chunk->data_version = 4;
+    chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
+        chunk, CK_STATESAVE_BODYPARTROTJOINT));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 72u));
+    for (size_t i = 0; i < 9; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_float(chunk, 1.0f));   /* three flag vectors */
+    }
+    const float limits[9] = {-1.0f, -2.0f, -3.0f, 1.0f, 2.0f, 3.0f, 0.5f, 0.25f, 0.125f};
+    for (size_t i = 0; i < 9; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_float(chunk, limits[i]));
+    }
+    nmo_chunk_close(chunk);
+
+    nmo_bodypart_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_bodypart_vtable.create(&loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_bodypart_deserialize(
+        &loaded, chunk, NULL, &deserialize_context));
+    ASSERT_TRUE(loaded.has_rotation_joint);
+    /* vector 0: bit 31 (axis 0), 1 (axis 1), 2 (axis 2); vector 1: 16 and 32
+     * from axes 1 and 2; vector 2: 256 and 512. */
+    ASSERT_EQ(0x80000333u, loaded.rotation_joint.flags);
+    ASSERT_EQ(-1.0f, loaded.rotation_joint.min.x);
+    ASSERT_EQ(3.0f, loaded.rotation_joint.max.z);
+    ASSERT_EQ(0.125f, loaded.rotation_joint.damping.z);
+
+    /* Flags the block cannot hold are refused instead of being read back
+     * as something else. */
+    loaded.base.entity.entity_flags |= CK_3DENTITY_IKJOINTVALID;
+    loaded.rotation_joint.flags = 0x400u;
+    nmo_chunk_t *saved = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(saved);
+    saved->class_id = NMO_CID_BODYPART;
+    saved->data_version = 4;
+    saved->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_bodypart_serialize(
+        &loaded, saved, NULL, &serialize_context));
     nmo_arena_destroy(arena);
 }
 
@@ -20681,7 +20738,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, character_refs_use_animation_hierarchy);
     REGISTER_TEST(chunk_id_remap, character_legacy_layouts_round_trip);
     REGISTER_TEST(chunk_id_remap, character_rejects_cross_section_counts_before_allocation);
-    REGISTER_TEST(chunk_id_remap, bodypart_rotation_joint_round_trips_without_size_prefix);
+    REGISTER_TEST(chunk_id_remap, bodypart_rotation_joint_round_trips_with_size_prefix);
+    REGISTER_TEST(chunk_id_remap, legacy_bodypart_joint_flags_follow_the_engine_shift);
     REGISTER_TEST(chunk_id_remap, mesh_material_refs_round_trip_without_compaction);
     REGISTER_TEST(chunk_id_remap, mesh_layout_follows_data_version);
     REGISTER_TEST(chunk_id_remap, mesh_material_sections_and_failures_are_atomic);
