@@ -2531,6 +2531,16 @@ static nmo_status_t nmo_objectanimation_deserialize_internal(
     bool section_found = false;
     size_t section_dwords = 0u;
 
+    /* RCKObjectAnimation::Load tests the data version first: the shared,
+       controllers and new-data sections exist from version 1, and in a
+       version 0 chunk the identifier 0x1000 is a three-float root vector. */
+    if (data_version < 1u) {
+        out_state->format = CKOBJANIM_FORMAT_LEGACY;
+        NMO_RETURN_IF_ERROR(read_legacy_controllers(chunk, arena, out_state));
+        nmo_objectanimation_check_refs(out_state, context);
+        NMO_RETURN_OK();
+    }
+
     NMO_RETURN_IF_ERROR(nmo_animation_seek_optional_sized(
         chunk, CK_STATESAVE_OBJANIMSHARED, &section_found,
         &section_dwords));
@@ -2672,22 +2682,15 @@ static nmo_status_t nmo_objectanimation_deserialize_internal(
     }
 
     if (out_state->format == CKOBJANIM_FORMAT_NONE) {
-        if (data_version < 1) {
-            out_state->format = CKOBJANIM_FORMAT_LEGACY;
-            /* LEGACY format: parse identifier-based sections */
-            nmo_status_t result = read_legacy_controllers(chunk, arena, out_state);
-            if (result != NMO_OK) return result;
-        } else {
-            /* Unknown format or empty, use raw_tail as fallback */
-            const size_t position = nmo_chunk_get_position(chunk);
-            const size_t total_dwords =
-                nmo_chunk_get_data_size(chunk) / sizeof(uint32_t);
-            if (position > total_dwords) return NMO_ERR_TRUNCATED_CHUNK;
-            nmo_status_t result = read_raw_tail(
-                chunk, arena, total_dwords - position,
-                (void **)&out_state->raw_tail, &out_state->raw_tail_size);
-            if (result != NMO_OK) return result;
-        }
+        /* Unknown format or empty, use raw_tail as fallback */
+        const size_t position = nmo_chunk_get_position(chunk);
+        const size_t total_dwords =
+            nmo_chunk_get_data_size(chunk) / sizeof(uint32_t);
+        if (position > total_dwords) return NMO_ERR_TRUNCATED_CHUNK;
+        nmo_status_t result = read_raw_tail(
+            chunk, arena, total_dwords - position,
+            (void **)&out_state->raw_tail, &out_state->raw_tail_size);
+        if (result != NMO_OK) return result;
     }
 
     nmo_objectanimation_check_refs(out_state, context);
