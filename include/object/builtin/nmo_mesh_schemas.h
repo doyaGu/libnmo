@@ -108,6 +108,28 @@ NMO_API nmo_status_t nmo_mesh_serialize_ex(
 
 NMO_DECLARE_OBJECT_SCHEMA(nmo_mesh_vtable, nmo_register_mesh_type)
 
+/**
+ * @brief Whether the vertex normals are the ones CK rebuilds on load.
+ *
+ * A file whose save flags omit the normals (flag 4) stands for normals that
+ * follow from the faces; the state then holds zeros. True when the mesh has
+ * vertices, all of their normals are zero and the file did not store zeros.
+ */
+NMO_API bool nmo_mesh_normals_are_derived(const nmo_mesh_state_t *state);
+
+/**
+ * @brief Build smooth vertex normals from the faces.
+ *
+ * Each face contributes its unit normal, cross(p1 - p0, p2 - p0), to its three
+ * vertices; the sums are normalized. Vertices no face reaches get zero.
+ * The corpus meshes that store their normals agree with this construction.
+ *
+ * @param out_normals Receives state->vertex_count vectors (required)
+ */
+NMO_API nmo_status_t nmo_mesh_build_vertex_normals(
+    const nmo_mesh_state_t *state,
+    nmo_vector_t *out_normals);
+
 NMO_API nmo_status_t nmo_mesh_prepare_dependencies(
     void *instance,
     const nmo_type_descriptor_t *type,

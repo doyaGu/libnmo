@@ -56,6 +56,7 @@ add_unit_test(test_obj_parser)
 add_unit_test(test_image_utils)
 add_unit_test(test_image_decode)
 add_unit_test(test_stb_adapter)
+add_unit_test(test_mesh_normals)
 
 # Legacy schema layer tests (REMOVED)
 # The legacy schema_v1 test sources have been deleted as part of the migration.

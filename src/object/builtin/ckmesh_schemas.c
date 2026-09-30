@@ -353,6 +353,74 @@ static void nmo_mesh_recompute_bounds(nmo_mesh_state_t *state) {
     state->radius = sqrtf(max_dist_sq);
 }
 
+bool nmo_mesh_normals_are_derived(const nmo_mesh_state_t *state) {
+    if (!state || !state->vertices || state->vertex_count == 0 ||
+        state->zero_normals_stored) {
+        return false;
+    }
+    for (uint32_t i = 0; i < state->vertex_count; ++i) {
+        const nmo_vector_t *normal = &state->vertices[i].normal;
+        if (normal->x != 0.0f || normal->y != 0.0f || normal->z != 0.0f) {
+            return false;
+        }
+    }
+    return true;
+}
+
+nmo_status_t nmo_mesh_build_vertex_normals(
+    const nmo_mesh_state_t *state,
+    nmo_vector_t *out_normals)
+{
+    if (!state || !out_normals) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "NULL mesh state or normals output");
+    }
+    memset(out_normals, 0, sizeof(*out_normals) * state->vertex_count);
+    if (!state->vertices || !state->face_vertex_indices) {
+        NMO_RETURN_OK();
+    }
+
+    for (uint32_t face = 0; face < state->face_count; ++face) {
+        const uint16_t *ids = &state->face_vertex_indices[3u * face];
+        if (ids[0] >= state->vertex_count || ids[1] >= state->vertex_count ||
+            ids[2] >= state->vertex_count) {
+            continue;
+        }
+        const nmo_vector_t *p0 = &state->vertices[ids[0]].position;
+        const nmo_vector_t *p1 = &state->vertices[ids[1]].position;
+        const nmo_vector_t *p2 = &state->vertices[ids[2]].position;
+        const float e1x = p1->x - p0->x, e1y = p1->y - p0->y, e1z = p1->z - p0->z;
+        const float e2x = p2->x - p0->x, e2y = p2->y - p0->y, e2z = p2->z - p0->z;
+        float nx = e1y * e2z - e1z * e2y;
+        float ny = e1z * e2x - e1x * e2z;
+        float nz = e1x * e2y - e1y * e2x;
+        const float length = sqrtf(nx * nx + ny * ny + nz * nz);
+        if (length <= 0.0f) {
+            continue;
+        }
+        nx /= length;
+        ny /= length;
+        nz /= length;
+        for (int corner = 0; corner < 3; ++corner) {
+            out_normals[ids[corner]].x += nx;
+            out_normals[ids[corner]].y += ny;
+            out_normals[ids[corner]].z += nz;
+        }
+    }
+
+    for (uint32_t i = 0; i < state->vertex_count; ++i) {
+        nmo_vector_t *normal = &out_normals[i];
+        const float length = sqrtf(normal->x * normal->x + normal->y * normal->y +
+                                   normal->z * normal->z);
+        if (length > 0.0f) {
+            normal->x /= length;
+            normal->y /= length;
+            normal->z /= length;
+        }
+    }
+    NMO_RETURN_OK();
+}
+
 /* =============================================================================
  * CKMesh DESERIALIZATION
  * ============================================================================= */

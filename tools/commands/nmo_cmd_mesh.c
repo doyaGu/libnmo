@@ -469,14 +469,24 @@ static int write_obj_file(const nmo_cmd_ctx_t *c,
         }
         fprintf(f, "\n");
 
-        /* Normals */
-        for (uint32_t vi = 0; vi < ms->vertex_count; ++vi) {
-            const nmo_vertex_t *v = &ms->vertices[vi];
-            fprintf(f, "vn %.6f %.6f %.6f\n",
-                    (double)v->normal.x,
-                    (double)v->normal.y,
-                    (double)v->normal.z);
+        /* Normals. A file that omits them stands for the normals CK rebuilds
+           from the faces, so export those instead of zeros. */
+        nmo_vector_t *derived = NULL;
+        if (nmo_mesh_normals_are_derived(ms)) {
+            derived = (nmo_vector_t *)malloc(sizeof(*derived) * ms->vertex_count);
+            if (derived && nmo_mesh_build_vertex_normals(ms, derived) != NMO_OK) {
+                free(derived);
+                derived = NULL;
+            }
         }
+        for (uint32_t vi = 0; vi < ms->vertex_count; ++vi) {
+            const nmo_vector_t *normal = derived ? &derived[vi] : &ms->vertices[vi].normal;
+            fprintf(f, "vn %.6f %.6f %.6f\n",
+                    (double)normal->x,
+                    (double)normal->y,
+                    (double)normal->z);
+        }
+        free(derived);
         fprintf(f, "\n");
     }
 
