@@ -5,6 +5,7 @@
 #include "format/nmo_obj_parser.h"
 #include "format/nmo_object.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
+#include "object/builtin/nmo_beobject_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "object/nmo_asset_edit.h"
 #include "object/nmo_class_ids.h"
@@ -475,6 +476,48 @@ TEST(asset_edit_obj_mesh, binds_derived_entity_to_explicit_mesh)
     destroy_workspace(ctx, doc, workspace);
 }
 
+TEST(asset_edit_obj_mesh, reimport_keeps_the_scripts_and_visibility_of_the_mesh)
+{
+    nmo_context_t *ctx = NULL;
+    nmo_document_t *doc = NULL;
+    nmo_workspace_t *workspace = NULL;
+    create_workspace(&ctx, &doc, &workspace);
+
+    nmo_workspace_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_begin(workspace, "obj mesh", &edit));
+    nmo_object_id_t mesh_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_object_edit_create(
+        edit, &(nmo_object_create_desc_t){.class_id = NMO_CID_MESH, .name = "Mesh"}, &mesh_id));
+
+    nmo_object_t *mesh_object = find_object(doc, mesh_id);
+    ASSERT_NOT_NULL(mesh_object);
+    nmo_mesh_state_t *before = (nmo_mesh_state_t *)nmo_object_get_state(mesh_object);
+    ASSERT_NOT_NULL(before);
+    const uint32_t visibility = before->beobject.base.base.visibility_flags;
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(&before->beobject.scripts, 4321u));
+    before->beobject.priority = 77;
+
+    nmo_arena_t *parse_arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(parse_arena);
+    nmo_obj_data_t obj = {0};
+    parse_obj_or_fail(parse_arena, "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n", &obj);
+    ASSERT_EQ(NMO_OK, nmo_asset_edit_set_obj_mesh(edit, mesh_id, &obj, NULL));
+    ASSERT_EQ(NMO_OK, nmo_asset_edit_set_obj_mesh(edit, mesh_id, &obj, NULL));
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_commit(edit));
+
+    const nmo_mesh_state_t *mesh =
+        (const nmo_mesh_state_t *)nmo_object_get_state(find_object(doc, mesh_id));
+    ASSERT_NOT_NULL(mesh);
+    ASSERT_EQ(3u, mesh->vertex_count);
+    ASSERT_EQ(1u, mesh->beobject.scripts.count);
+    ASSERT_EQ(4321u, nmo_beobject_script_array_get_id(&mesh->beobject.scripts, 0));
+    ASSERT_EQ(77, mesh->beobject.priority);
+    ASSERT_EQ(visibility, mesh->beobject.base.base.visibility_flags);
+
+    nmo_arena_destroy(parse_arena);
+    destroy_workspace(ctx, doc, workspace);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(asset_edit_obj_mesh, imports_triangle_from_parsed_obj);
 REGISTER_TEST(asset_edit_obj_mesh, binds_named_obj_materials);
@@ -486,4 +529,5 @@ REGISTER_TEST(asset_edit_obj_mesh, rejects_overflowing_face_count);
 REGISTER_TEST(asset_edit_obj_mesh, rejects_overflowing_combined_vertex_count);
 REGISTER_TEST(asset_edit_obj_mesh, imports_obj_from_file);
 REGISTER_TEST(asset_edit_obj_mesh, binds_derived_entity_to_explicit_mesh);
+REGISTER_TEST(asset_edit_obj_mesh, reimport_keeps_the_scripts_and_visibility_of_the_mesh);
 TEST_MAIN_END()
