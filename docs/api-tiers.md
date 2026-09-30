@@ -101,5 +101,6 @@ grep -rn '_API_TIER NMO_API_TIER_' include
 | `lua/nmo_lua_module.h` | Lua module registration |
 | `lua/nmo_lua_bindings.h` | Lua bindings |
 | `lua/nmo_lua_handles.h` | Lua handles |
+| `lua/nmo_lua_behavior.h` | Lua runtime of a behavior execution |
 
 Any header not listed here is Tier 2 or Tier 3. Check its `_API_TIER` macros.
