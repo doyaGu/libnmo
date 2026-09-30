@@ -69,6 +69,8 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
         nmo_status_t result = nmo_3dobject_vtable.create(
             &state->base, NULL, context);
         if (result != NMO_OK) return result;
+        /* RCKBodyPart::RCKBodyPart starts the joint with flags 7. */
+        state->rotation_joint.flags = 7u;
     } while (0),
     nmo_3dobject_vtable.destroy(&state->base, NULL, context))
 
