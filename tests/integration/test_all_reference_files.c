@@ -15,9 +15,6 @@
 #include <string.h>
 #include <miniz.h>
 
-#define CKFILE_CHUNKCOMPRESSED_OLD 1
-#define CKFILE_WHOLECOMPRESSED      8
-
 typedef struct {
     const char* filename;
     int parse_header;
@@ -164,11 +161,12 @@ static int test_parse_single_file(const char* filepath) {
                 return 0;
             }
             
-            // Decompress if needed
+            // Decompress if needed: the loader treats the data section as
+            // compressed exactly when the packed and unpacked sizes differ.
             uint8_t* data_buffer = NULL;
             size_t data_size = 0;
             
-            if ((header.file_write_mode & (CKFILE_CHUNKCOMPRESSED_OLD | CKFILE_WHOLECOMPRESSED)) != 0) {
+            if (header.data_pack_size != header.data_unpack_size) {
                 data_buffer = (uint8_t*)malloc(header.data_unpack_size);
                 if (!data_buffer) {
                     error_msg = "Data decompression buffer allocation failed";
@@ -181,12 +179,12 @@ static int test_parse_single_file(const char* filepath) {
                 
                 mz_ulong dest_len = header.data_unpack_size;
                 int uncompress_result = mz_uncompress((unsigned char*)data_buffer, &dest_len,
-                                                      (const unsigned char*)packed_buffer,
+                                                      (const unsigned char*)data_packed_buffer,
                                                       header.data_pack_size);
-                if (uncompress_result != MZ_OK) {
+                free(data_packed_buffer);
+                if (uncompress_result != MZ_OK || dest_len != header.data_unpack_size) {
                     error_msg = "Data decompression failed";
                     free(data_buffer);
-                    free(packed_buffer);
                     nmo_arena_destroy(arena);
                     nmo_io_close(io);
                     record_result(filepath, success_flags, obj_count, mgr_count, version, error_msg);
@@ -194,9 +192,8 @@ static int test_parse_single_file(const char* filepath) {
                 }
                 
                 data_size = dest_len;
-                free(packed_buffer);
             } else {
-                data_buffer = packed_buffer;
+                data_buffer = data_packed_buffer;
                 data_size = header.data_pack_size;
             }
             
