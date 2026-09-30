@@ -150,6 +150,7 @@ static const nmo_type_field_t nmo_texture_fields[] = {
     NMO_FIELD(nmo_texture_state_t, pick_threshold, CKPGUID_INT),
     /* Packed flags */
     NMO_FIELD(nmo_texture_state_t, has_oldtexonly, CKPGUID_BOOL),
+    NMO_FIELD(nmo_texture_state_t, uses_texonly_identifier, CKPGUID_BOOL),
     NMO_FIELD(nmo_texture_state_t, mipmap_level, CKPGUID_UINT8),
     NMO_FIELD(nmo_texture_state_t, save_options, NMO_GUID_ENUM_CK_TEXTURE_SAVEOPTIONS),
     NMO_FIELD(nmo_texture_state_t, is_transparent, CKPGUID_BOOL),
@@ -812,8 +813,16 @@ static nmo_status_t nmo_texture_deserialize_internal(
         NMO_RETURN_OK();
     }
 
-    if (nmo_texture_seek_found(
-            chunk, CK_STATESAVE_OLDTEXONLY, &seek_result)) {
+    /* Files written by later engines store the same packed state under
+       CK_STATESAVE_TEXONLY. */
+    bool texonly_found = nmo_texture_seek_found(
+        chunk, CK_STATESAVE_OLDTEXONLY, &seek_result);
+    if (!texonly_found && seek_result == NMO_ERR_NOT_FOUND) {
+        texonly_found = nmo_texture_seek_found(
+            chunk, CK_STATESAVE_TEXONLY, &seek_result);
+        out_state->uses_texonly_identifier = texonly_found;
+    }
+    if (texonly_found) {
         size_t payload = nmo_texture_identifier_payload_size(chunk);
         if (payload != sizeof(uint32_t) &&
             payload != 2u * sizeof(uint32_t) &&
@@ -1472,7 +1481,9 @@ static nmo_status_t nmo_texture_serialize_internal(
     }
 
     if (write_oldtexonly) {
-        nmo_status_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_OLDTEXONLY);
+        nmo_status_t result = nmo_chunk_write_identifier(
+            chunk, state->uses_texonly_identifier
+                       ? CK_STATESAVE_TEXONLY : CK_STATESAVE_OLDTEXONLY);
         if (result != NMO_OK) return result;
 
         uint32_t dword = (uint32_t)(packed_layout.mipmap_level & 0xFF);
@@ -1701,6 +1712,7 @@ static bool nmo_texture_equals(const void *a, const void *b)
         lhs->has_pick_threshold == rhs->has_pick_threshold &&
         lhs->pick_threshold == rhs->pick_threshold &&
         lhs->has_oldtexonly == rhs->has_oldtexonly &&
+        lhs->uses_texonly_identifier == rhs->uses_texonly_identifier &&
         lhs->mipmap_level == rhs->mipmap_level &&
         lhs->save_options == rhs->save_options &&
         lhs->is_transparent == rhs->is_transparent &&
@@ -1857,6 +1869,7 @@ static uint32_t nmo_texture_hash(const void *instance)
     NMO_TEXTURE_HASH_FIELD(has_pick_threshold);
     NMO_TEXTURE_HASH_FIELD(pick_threshold);
     NMO_TEXTURE_HASH_FIELD(has_oldtexonly);
+    NMO_TEXTURE_HASH_FIELD(uses_texonly_identifier);
     NMO_TEXTURE_HASH_FIELD(mipmap_level);
     NMO_TEXTURE_HASH_FIELD(save_options);
     NMO_TEXTURE_HASH_FIELD(is_transparent);

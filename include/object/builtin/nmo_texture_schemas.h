@@ -104,8 +104,10 @@ typedef struct nmo_texture_state {
     uint8_t has_pick_threshold;
     int32_t pick_threshold;
 
-    /* Packed flags (CK_STATESAVE_OLDTEXONLY) */
+    /* Packed flags (CK_STATESAVE_OLDTEXONLY, or CK_STATESAVE_TEXONLY with the
+     * same layout when uses_texonly_identifier is set) */
     uint8_t has_oldtexonly;
+    uint8_t uses_texonly_identifier;
     uint8_t mipmap_level;
     uint32_t save_options;
     uint8_t is_transparent;
