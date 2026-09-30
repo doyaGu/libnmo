@@ -58,6 +58,8 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
         if (result != NMO_OK) return result;
         state->format = CKOBJANIM_FORMAT_NONE;
         state->merge_factor = 0.5f;
+        /* Fresh keyframe data of RCKObjectAnimation is 100 frames long. */
+        state->length = 100.0f;
     } while (0),
     nmo_sceneobject_vtable.destroy(&state->base, NULL, context))
 
