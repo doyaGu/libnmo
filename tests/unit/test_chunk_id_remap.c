@@ -3438,6 +3438,22 @@ TEST(chunk_id_remap, material_refs_round_trip_and_failure_is_atomic) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, new_material_holds_the_engine_constructor_defaults) {
+    /* RCKMaterial::RCKMaterial: the colors are 0.7, 0.3 and (for the stored
+     * specular) 0.5, truncated to bytes when saved; corpus materials that
+     * were never edited carry exactly these values. */
+    nmo_material_state_t material;
+    ASSERT_EQ(NMO_OK, nmo_material_vtable.create(&material, NULL, NULL));
+    ASSERT_EQ(0xFFB2B2B2u, material.diffuse_color);
+    ASSERT_EQ(0xFF4C4C4Cu, material.ambient_color);
+    ASSERT_EQ(0xFF7F7F7Fu, material.specular_color);
+    ASSERT_EQ(0xFF000000u, material.emissive_color);
+    ASSERT_EQ(0.0f, material.specular_power);
+    /* Flag byte 6 (z write, perspective correct), z func lequal, alpha func always. */
+    ASSERT_EQ(0x80406u, material.packed_flags);
+    ASSERT_EQ(0x13212224u, material.packed_modes);
+}
+
 TEST(chunk_id_remap, material_preserves_file_layouts) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
     ASSERT_NOT_NULL(arena);
@@ -20483,6 +20499,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, behaviorlink_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, material_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, material_preserves_file_layouts);
+    REGISTER_TEST(chunk_id_remap, new_material_holds_the_engine_constructor_defaults);
     REGISTER_TEST(chunk_id_remap, parameterlocal_matches_marker_layout);
     REGISTER_TEST(chunk_id_remap, parameterin_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, parameterout_refs_round_trip_and_failure_is_atomic);

@@ -33,11 +33,11 @@ static void nmo_material_set_defaults(void *instance)
     nmo_material_state_t *state = instance;
     if (state == NULL) return;
 
-    state->diffuse_color = nmo_color_to_argb32(
-        &(nmo_color_t){0.7f, 0.7f, 0.7f, 1.0f});
-    state->ambient_color = nmo_color_to_argb32(
-        &(nmo_color_t){0.3f, 0.3f, 0.3f, 1.0f});
-    state->specular_color = 0xFF000000u;
+    /* RCKMaterial constructor: diffuse 0.7, ambient 0.3 and the stored
+       specular color 0.5, each channel truncated to a byte when saved. */
+    state->diffuse_color = 0xFFB2B2B2u;
+    state->ambient_color = 0xFF4C4C4Cu;
+    state->specular_color = 0xFF7F7F7Fu;
     state->emissive_color = 0xFF000000u;
     state->specular_power = 0.0f;
     for (size_t i = 0; i < 4; ++i) {
