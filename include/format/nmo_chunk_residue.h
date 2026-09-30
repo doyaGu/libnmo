@@ -39,6 +39,15 @@ NMO_API uint64_t nmo_chunk_digest(const nmo_chunk_t *chunk);
 NMO_API bool nmo_chunk_equivalent(const nmo_chunk_t *a, const nmo_chunk_t *b);
 
 /**
+ * @brief Like nmo_chunk_equivalent, for a chunk that tracks no ids.
+ *
+ * The id positions of tracked are taken to be those of untracked too; the
+ * values at those positions are not compared.
+ */
+NMO_API bool nmo_chunk_equivalent_to_tracked(
+    const nmo_chunk_t *untracked, const nmo_chunk_t *tracked);
+
+/**
  * @brief Translate the object ids of a chunk and its sub-chunks in place.
  *
  * An id found in map is replaced by its image. An id that is not in map but is

@@ -76,8 +76,8 @@ uint64_t nmo_chunk_digest(const nmo_chunk_t *chunk)
 /* A dword equals its copy with the upper bytes cleared. */
 static bool same_with_padding(uint32_t original, uint32_t canonical)
 {
-    for (unsigned kept = 0; kept < 4; ++kept) {
-        const uint32_t mask = kept == 0 ? 0u : (0xFFFFFFFFu >> (32 - 8 * kept));
+    for (unsigned kept = 1; kept < 4; ++kept) {
+        const uint32_t mask = 0xFFFFFFFFu >> (32 - 8 * kept);
         if ((original & mask) == canonical) return true;
     }
     return false;
@@ -109,21 +109,21 @@ static bool arrays_equal(const nmo_arena_array_t *a, const nmo_arena_array_t *b)
         (a->count == 0 || memcmp(a->data, b->data, a->count * sizeof(uint32_t)) == 0);
 }
 
-bool nmo_chunk_equivalent(const nmo_chunk_t *a, const nmo_chunk_t *b)
+static bool equivalent_impl(const nmo_chunk_t *a, const nmo_chunk_t *b, bool a_untracked)
 {
     if (a == NULL || b == NULL) return a == b;
     if (a->data_version != b->data_version || a->chunk_version != b->chunk_version ||
         a->data.count != b->data.count || !arrays_equal(&a->chunk_refs, &b->chunk_refs) ||
-        a->managers.count != b->managers.count || a->chunks.count != b->chunks.count ||
-        a->ids.count != b->ids.count) {
+        a->managers.count != b->managers.count ||
+        (!a_untracked && (a->chunks.count != b->chunks.count || a->ids.count != b->ids.count))) {
         return false;
     }
 
     const size_t count = a->data.count;
     uint8_t *marks = count > 0 ? (uint8_t *)calloc(count, 1) : NULL;
     if (count > 0 && marks == NULL) return false;
-    bool equal = count == 0 || mark_id_positions(a, marks);
-    if (equal && a->ids.count > 0) {
+    bool equal = count == 0 || mark_id_positions(a_untracked ? b : a, marks);
+    if (equal && !a_untracked && a->ids.count > 0) {
         /* The id positions must agree; their values are not compared. */
         equal = arrays_equal(&a->ids, &b->ids);
     }
@@ -132,11 +132,16 @@ bool nmo_chunk_equivalent(const nmo_chunk_t *a, const nmo_chunk_t *b)
         const uint32_t *db = chunk_words(b);
         for (size_t i = 0; i < count && equal; ++i) {
             if (marks[i] || da[i] == db[i]) continue;
+            /* A null id is 0xFFFFFFFF in a chunk written for a file and 0 in
+               one written without (which does not track it either). */
+            if (da[i] == 0xFFFFFFFFu && db[i] == 0u) continue;
             equal = same_with_padding(da[i], db[i]);
         }
     }
     free(marks);
     if (!equal) return false;
+    /* A chunk read from a file holds its sub-chunks only inside its data. */
+    if (a_untracked) return true;
 
     nmo_chunk_t *const *sa = a->chunks.count > 0 ? (nmo_chunk_t *const *)a->chunks.data : NULL;
     nmo_chunk_t *const *sb = b->chunks.count > 0 ? (nmo_chunk_t *const *)b->chunks.data : NULL;
@@ -144,6 +149,16 @@ bool nmo_chunk_equivalent(const nmo_chunk_t *a, const nmo_chunk_t *b)
         if (!nmo_chunk_equivalent(sa[i], sb[i])) return false;
     }
     return true;
+}
+
+bool nmo_chunk_equivalent(const nmo_chunk_t *a, const nmo_chunk_t *b)
+{
+    return equivalent_impl(a, b, false);
+}
+
+bool nmo_chunk_equivalent_to_tracked(const nmo_chunk_t *untracked, const nmo_chunk_t *tracked)
+{
+    return equivalent_impl(untracked, tracked, true);
 }
 
 /* ---------------------------------------------------------------------------
