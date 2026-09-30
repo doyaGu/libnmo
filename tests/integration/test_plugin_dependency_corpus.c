@@ -15,13 +15,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef _WIN32
-#include <windows.h>
-#else
-#include <dirent.h>
-#include <sys/stat.h>
-#endif
-
 typedef struct plugin_corpus_stats {
     size_t files_seen;
     size_t files_loaded;
@@ -31,23 +24,6 @@ typedef struct plugin_corpus_stats {
     size_t load_errors;
     char first_error[1024];
 } plugin_corpus_stats_t;
-
-static int has_corpus_extension(const char *name)
-{
-    const char *dot = strrchr(name, '.');
-    if (dot == NULL) {
-        return 0;
-    }
-#ifdef _WIN32
-    return _stricmp(dot, ".nmo") == 0 ||
-           _stricmp(dot, ".cmo") == 0 ||
-           _stricmp(dot, ".vmo") == 0;
-#else
-    return strcmp(dot, ".nmo") == 0 ||
-           strcmp(dot, ".cmo") == 0 ||
-           strcmp(dot, ".vmo") == 0;
-#endif
-}
 
 static void record_first_error(plugin_corpus_stats_t *stats, const char *fmt, ...)
 {
@@ -116,74 +92,16 @@ static void scan_plugin_dependencies_for_file(
     nmo_session_destroy(session);
 }
 
-#ifdef _WIN32
-static void scan_plugin_dependency_directory(
-    nmo_context_t *ctx,
-    const char *dir,
-    plugin_corpus_stats_t *stats)
+typedef struct plugin_corpus_scan {
+    nmo_context_t *ctx;
+    plugin_corpus_stats_t *stats;
+} plugin_corpus_scan_t;
+
+static void scan_corpus_file(const char *path, void *user)
 {
-    char pattern[1024];
-    snprintf(pattern, sizeof(pattern), "%s\\*", dir);
-
-    WIN32_FIND_DATAA fd;
-    HANDLE h = FindFirstFileA(pattern, &fd);
-    if (h == INVALID_HANDLE_VALUE) {
-        record_first_error(stats, "failed to open directory %s", dir);
-        return;
-    }
-
-    do {
-        if (strcmp(fd.cFileName, ".") == 0 || strcmp(fd.cFileName, "..") == 0) {
-            continue;
-        }
-
-        char path[1024];
-        snprintf(path, sizeof(path), "%s/%s", dir, fd.cFileName);
-
-        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-            scan_plugin_dependency_directory(ctx, path, stats);
-        } else if (has_corpus_extension(fd.cFileName)) {
-            scan_plugin_dependencies_for_file(ctx, path, stats);
-        }
-    } while (FindNextFileA(h, &fd));
-
-    FindClose(h);
+    plugin_corpus_scan_t *scan = (plugin_corpus_scan_t *)user;
+    scan_plugin_dependencies_for_file(scan->ctx, path, scan->stats);
 }
-#else
-static void scan_plugin_dependency_directory(
-    nmo_context_t *ctx,
-    const char *dir,
-    plugin_corpus_stats_t *stats)
-{
-    DIR *d = opendir(dir);
-    if (d == NULL) {
-        record_first_error(stats, "failed to open directory %s", dir);
-        return;
-    }
-
-    struct dirent *entry;
-    while ((entry = readdir(d)) != NULL) {
-        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
-            continue;
-        }
-
-        char path[1024];
-        snprintf(path, sizeof(path), "%s/%s", dir, entry->d_name);
-
-        struct stat st;
-        if (stat(path, &st) != 0) {
-            continue;
-        }
-        if (S_ISDIR(st.st_mode)) {
-            scan_plugin_dependency_directory(ctx, path, stats);
-        } else if (has_corpus_extension(entry->d_name)) {
-            scan_plugin_dependencies_for_file(ctx, path, stats);
-        }
-    }
-
-    closedir(d);
-}
-#endif
 
 TEST(plugin_dependency_corpus, all_reference_files_resolve_plugin_dependencies)
 {
@@ -197,7 +115,11 @@ TEST(plugin_dependency_corpus, all_reference_files_resolve_plugin_dependencies)
 
     plugin_corpus_stats_t stats;
     memset(&stats, 0, sizeof(stats));
-    scan_plugin_dependency_directory(ctx, NMO_TEST_DATA_DIR, &stats);
+    plugin_corpus_scan_t scan = { ctx, &stats };
+    if (test_corpus_walk(NMO_TEST_DATA_DIR, scan_corpus_file, &scan) != 0) {
+        record_first_error(&stats, "failed to read a directory under %s", NMO_TEST_DATA_DIR);
+        stats.load_errors++;
+    }
 
     printf("  Plugin dependency corpus: seen=%zu loaded=%zu missing_files=%zu "
            "missing_entries=%zu null_guid_files=%zu load_errors=%zu\n",

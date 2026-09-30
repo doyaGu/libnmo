@@ -12,7 +12,18 @@
  * - Comprehensive error reporting
  */
 
+#ifndef _WIN32
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+#endif
+
 #include "test_framework.h"
+
+#ifndef _WIN32
+#include <dirent.h>
+#include <sys/stat.h>
+#endif
 
 /* Global variables */
 test_suite *g_test_suite = NULL;
@@ -57,6 +68,109 @@ int test_file_exists(const char *path) {
     fclose(f);
     return 1;
 }
+
+static int test_has_corpus_extension(const char *name) {
+    const char *dot = strrchr(name, '.');
+    if (dot == NULL) {
+        return 0;
+    }
+#ifdef _WIN32
+    return _stricmp(dot, ".nmo") == 0 || _stricmp(dot, ".cmo") == 0 ||
+           _stricmp(dot, ".vmo") == 0;
+#else
+    return strcmp(dot, ".nmo") == 0 || strcmp(dot, ".cmo") == 0 ||
+           strcmp(dot, ".vmo") == 0;
+#endif
+}
+
+static char *test_join_path(const char *dir, const char *name) {
+    size_t dir_len = strlen(dir);
+    size_t name_len = strlen(name);
+    char *path = (char *)malloc(dir_len + 1 + name_len + 1);
+    if (path == NULL) {
+        return NULL;
+    }
+    memcpy(path, dir, dir_len);
+    path[dir_len] = '/';
+    memcpy(path + dir_len + 1, name, name_len + 1);
+    return path;
+}
+
+#ifdef _WIN32
+int test_corpus_walk(const char *dir, test_corpus_visit_fn visit, void *user) {
+    char *pattern = test_join_path(dir, "*");
+    if (pattern == NULL) {
+        return -1;
+    }
+
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA(pattern, &fd);
+    free(pattern);
+    if (h == INVALID_HANDLE_VALUE) {
+        return -1;
+    }
+
+    int status = 0;
+    do {
+        if (strcmp(fd.cFileName, ".") == 0 || strcmp(fd.cFileName, "..") == 0) {
+            continue;
+        }
+
+        char *path = test_join_path(dir, fd.cFileName);
+        if (path == NULL) {
+            status = -1;
+            break;
+        }
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            if (test_corpus_walk(path, visit, user) != 0) {
+                status = -1;
+            }
+        } else if (test_has_corpus_extension(fd.cFileName)) {
+            visit(path, user);
+        }
+        free(path);
+    } while (FindNextFileA(h, &fd));
+
+    FindClose(h);
+    return status;
+}
+#else
+int test_corpus_walk(const char *dir, test_corpus_visit_fn visit, void *user) {
+    DIR *d = opendir(dir);
+    if (d == NULL) {
+        return -1;
+    }
+
+    int status = 0;
+    struct dirent *entry;
+    while ((entry = readdir(d)) != NULL) {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+
+        char *path = test_join_path(dir, entry->d_name);
+        if (path == NULL) {
+            status = -1;
+            break;
+        }
+        struct stat st;
+        if (stat(path, &st) == 0) {
+            if (S_ISDIR(st.st_mode)) {
+                if (test_corpus_walk(path, visit, user) != 0) {
+                    status = -1;
+                }
+            } else if (test_has_corpus_extension(entry->d_name)) {
+                visit(path, user);
+            }
+        }
+        free(path);
+    }
+
+    closedir(d);
+    return status;
+}
+#endif
+
 static double g_total_time = 0.0;
 
 /**

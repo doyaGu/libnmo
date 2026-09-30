@@ -132,6 +132,11 @@ void test_add_result_with_time(const char *suite, const char *name, int passed,
 void test_mark_skipped(const char *message, const char *file, int line);
 int test_file_exists(const char *path);
 
+/* Corpus walking: call visit(path, user) for every .nmo, .cmo and .vmo file
+ * under dir, recursively. Returns 0, or -1 when a directory cannot be read. */
+typedef void (*test_corpus_visit_fn)(const char *path, void *user);
+int test_corpus_walk(const char *dir, test_corpus_visit_fn visit, void *user);
+
 /* Utility functions */
 double test_get_time_ms(void);
 int test_should_run_test(const char *suite, const char *name, test_category_t category);
