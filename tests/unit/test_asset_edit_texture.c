@@ -98,6 +98,12 @@ TEST(asset_edit_texture, replaces_rgba_texture_and_binds_material_slot_zero)
     ASSERT_EQ(1, texture->reader_height);
     ASSERT_NOT_NULL(texture->reader_slots);
     ASSERT_TRUE(texture->reader_slots[0].data_size > 0u);
+    /* The engine picks the decoder from the reader GUID, else the extension;
+     * these are the PNG reader's, as stored in Virtools files. */
+    ASSERT_EQ(1u, texture->reader_slots[0].format_type);
+    ASSERT_EQ(0x00676E70u, texture->reader_slots[0].extension);
+    ASSERT_EQ(0x02D45C7Bu, texture->reader_slots[0].reader_guid.d1);
+    ASSERT_EQ(0x4AAC16ECu, texture->reader_slots[0].reader_guid.d2);
 
     nmo_object_t *material_object = find_object(doc, material_id);
     ASSERT_NOT_NULL(material_object);

@@ -1985,8 +1985,13 @@ nmo_status_t nmo_texture_replace_bitmap(
     nmo_texture_reader_slot_t *slot = &state->reader_slots[0];
     slot->data = encoded;
     slot->data_size = (uint32_t)encoded_size;
+    /* The engine finds the decoder from the reader GUID, else from the
+       extension. These are the PNG reader's, as the corpus files store them. */
     slot->format_type = 1;
-    slot->extension = 0;
+    slot->extension = 0x00676E70u;   /* "png" */
+    slot->reader_guid = (nmo_guid_t){0x02D45C7Bu, 0x4AAC16ECu};
+    slot->alpha_count = 0;
+    slot->alpha_value = 0;
     slot->alpha_plane = NULL;
     slot->alpha_plane_size = 0;
 
