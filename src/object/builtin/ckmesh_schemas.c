@@ -214,21 +214,6 @@ static bool nmo_mesh_size_mul_overflows(size_t count, size_t element_size) {
     return count != 0u && element_size > SIZE_MAX / count;
 }
 
-static nmo_status_t nmo_mesh_validate_legacy_geometry(
-    const nmo_mesh_state_t *state)
-{
-    for (uint32_t i = 0; i < state->vertex_count; ++i) {
-        if (state->vertices[i].uv.x != 0.0f ||
-            state->vertices[i].uv.y != 0.0f ||
-            state->vertex_specular[i] != 0u) {
-            NMO_RETURN_ERROR(
-                NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
-                "CKMesh data versions below 9 cannot store vertex UV or specular data");
-        }
-    }
-    return NMO_OK;
-}
-
 static nmo_status_t nmo_mesh_validate_modern_geometry(
     const nmo_mesh_state_t *state)
 {
@@ -622,6 +607,82 @@ static nmo_status_t nmo_mesh_deserialize_vertices(
     return nmo_mesh_require_identifier_end(chunk);
 }
 
+/**
+ * @brief Read the line indices (CK_STATESAVE_MESHLINES).
+ *
+ * From data version 1 the indices are a size-prefixed buffer of 16-bit words.
+ * In version 0 each line is two integers.
+ */
+static nmo_status_t nmo_mesh_read_lines_section(
+    nmo_chunk_t *chunk,
+    nmo_arena_t *arena,
+    nmo_mesh_state_t *out_state,
+    uint32_t data_version)
+{
+    bool section_found = false;
+    size_t section_dwords = 0u;
+    NMO_RETURN_IF_ERROR(nmo_mesh_seek_optional(
+        chunk, CK_STATESAVE_MESHLINES, &section_found, &section_dwords));
+    if (!section_found) {
+        NMO_RETURN_OK();
+    }
+    if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+    int32_t line_count;
+    nmo_status_t result = nmo_chunk_read_int(chunk, &line_count);
+    if (result != NMO_OK) {
+        NMO_RETURN_ERROR(result, NMO_SEVERITY_ERROR,
+                         "CKMesh line count is truncated");
+    }
+    if (line_count < 0) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Invalid mesh line count");
+    }
+    if (line_count > 0) {
+        size_t expected_bytes = 0;
+        if (!nmo_safe_mul_size(
+                (size_t)line_count, 2u * sizeof(uint16_t), &expected_bytes)) {
+            NMO_RETURN_ERROR(
+                NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                "Mesh line allocation size overflows");
+        }
+        const bool buffered = data_version >= 1u;
+        const size_t required_dwords = buffered
+            ? 1u + (expected_bytes + sizeof(uint32_t) - 1u) / sizeof(uint32_t)
+            : 2u * (size_t)line_count;
+        if (required_dwords > nmo_chunk_identifier_remaining_dwords(chunk)) {
+            NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                             "Mesh lines exceed remaining DWORDs");
+        }
+        out_state->line_count = (uint32_t)line_count;
+        out_state->line_indices = (uint16_t *)nmo_arena_alloc(
+            arena, expected_bytes, alignof(uint16_t));
+        if (!out_state->line_indices) return NMO_ERR_NOMEM;
+        if (buffered) {
+            uint32_t serialized_bytes = 0u;
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(
+                chunk, &serialized_bytes));
+            if ((size_t)serialized_bytes != expected_bytes) {
+                NMO_RETURN_ERROR(
+                    NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                    "Mesh line buffer size does not match line count");
+            }
+            result = nmo_chunk_read_buffer_lendian16(
+                chunk, out_state->line_indices, expected_bytes);
+            if (result != NMO_OK) {
+                NMO_RETURN_ERROR(result, NMO_SEVERITY_ERROR,
+                                 "CKMesh line indices are truncated");
+            }
+        } else {
+            for (uint32_t i = 0; i < out_state->line_count * 2u; ++i) {
+                int32_t index = 0;
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &index));
+                out_state->line_indices[i] = (uint16_t)index;
+            }
+        }
+    }
+    return nmo_mesh_require_identifier_end(chunk);
+}
+
 static nmo_status_t nmo_mesh_deserialize_material_groups(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
@@ -864,60 +925,9 @@ static nmo_status_t nmo_mesh_deserialize_modern(
     }
     
     // Read lines (identifier CK_STATESAVE_MESHLINES, optional)
-    NMO_RETURN_IF_ERROR(nmo_mesh_seek_optional(
-        chunk, CK_STATESAVE_MESHLINES, &section_found, &section_dwords));
-    if (section_found) {
-        if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
-        int32_t line_count;
-        result = nmo_chunk_read_int(chunk, &line_count);
-        if (result != NMO_OK) {
-            NMO_RETURN_ERROR(result, NMO_SEVERITY_ERROR,
-                             "CKMesh modern line count is truncated");
-        }
-        if (line_count < 0) {
-            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                             "Invalid mesh line count");
-        }
-        if (line_count > 0) {
-            size_t expected_bytes = 0;
-            if (!nmo_safe_mul_size(
-                    (size_t)line_count, 2u * sizeof(uint16_t),
-                    &expected_bytes)) {
-                NMO_RETURN_ERROR(
-                    NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                    "Modern mesh line allocation size overflows");
-            }
-            size_t required_dwords =
-                1u + (expected_bytes + sizeof(uint32_t) - 1u) /
-                    sizeof(uint32_t);
-            if (required_dwords >
-                nmo_chunk_identifier_remaining_dwords(chunk)) {
-                NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK,
-                                 NMO_SEVERITY_ERROR,
-                                 "Modern mesh lines exceed remaining DWORDs");
-            }
-            out_state->line_count = (uint32_t)line_count;
-            out_state->line_indices = (uint16_t *)nmo_arena_alloc(
-                arena, sizeof(uint16_t) * line_count * 2, alignof(uint16_t));
-            if (!out_state->line_indices) return NMO_ERR_NOMEM;
-            uint32_t serialized_bytes = 0u;
-            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(
-                chunk, &serialized_bytes));
-            if ((size_t)serialized_bytes != expected_bytes) {
-                NMO_RETURN_ERROR(
-                    NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
-                    "Modern mesh line buffer size does not match line count");
-            }
-            result = nmo_chunk_read_buffer_lendian16(
-                chunk, out_state->line_indices, expected_bytes);
-            if (result != NMO_OK) {
-                NMO_RETURN_ERROR(result, NMO_SEVERITY_ERROR,
-                                 "CKMesh modern line indices are truncated");
-            }
-        }
-        NMO_RETURN_IF_ERROR(nmo_mesh_require_identifier_end(chunk));
-    }
-    
+    NMO_RETURN_IF_ERROR(nmo_mesh_read_lines_section(
+        chunk, arena, out_state, nmo_chunk_get_data_version(chunk)));
+
     // Read material channels (identifier CK_STATESAVE_MESHCHANNELS, optional)
     NMO_RETURN_IF_ERROR(nmo_mesh_seek_optional(
         chunk, CK_STATESAVE_MESHCHANNELS, &section_found, &section_dwords));
@@ -1128,6 +1138,337 @@ static nmo_status_t nmo_mesh_deserialize_modern(
     NMO_RETURN_OK();
 }
 
+/* ---------------------------------------------------------------------------
+ * Files with data_version < 9
+ *
+ * RCKMesh::Load hands the vertices, faces and lines of these files to an older
+ * loader. The mesh flags decide the vertex layout (RCKMesh::GetLitMode is true
+ * unless VXMESH_PRELITMODE is set), and the material groups come from the
+ * faces instead of a MESHMATERIALS section.
+ * ------------------------------------------------------------------------- */
+
+static nmo_status_t nmo_mesh_alloc_vertices(
+    nmo_arena_t *arena, nmo_mesh_state_t *state, uint32_t count)
+{
+    if (nmo_mesh_size_mul_overflows(count, sizeof(nmo_vertex_t)) ||
+        nmo_mesh_size_mul_overflows(count, sizeof(uint32_t))) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Legacy mesh vertex allocation size overflows");
+    }
+    state->vertex_count = count;
+    state->vertices = (nmo_vertex_t *)nmo_arena_alloc(
+        arena, sizeof(nmo_vertex_t) * count, alignof(nmo_vertex_t));
+    state->vertex_colors = (uint32_t *)nmo_arena_alloc(
+        arena, sizeof(uint32_t) * count, alignof(uint32_t));
+    state->vertex_specular = (uint32_t *)nmo_arena_alloc(
+        arena, sizeof(uint32_t) * count, alignof(uint32_t));
+    if (!state->vertices || !state->vertex_colors || !state->vertex_specular) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "Failed to allocate legacy vertex arrays");
+    }
+    /* SetVertexCount: zeroed vertices, white diffuse, black specular. */
+    memset(state->vertices, 0, sizeof(nmo_vertex_t) * count);
+    for (uint32_t i = 0; i < count; ++i) {
+        state->vertex_colors[i] = 0xFFFFFFFFu;
+        state->vertex_specular[i] = 0u;
+    }
+    return NMO_OK;
+}
+
+static nmo_status_t nmo_mesh_read_vector(nmo_chunk_t *chunk, nmo_vector_t *out)
+{
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out->x));
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out->y));
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out->z));
+    return NMO_OK;
+}
+
+static nmo_status_t nmo_mesh_read_legacy_vertices(
+    nmo_chunk_t *chunk,
+    nmo_arena_t *arena,
+    nmo_mesh_state_t *state,
+    uint32_t data_version)
+{
+    bool found = false;
+    size_t section_dwords = 0u;
+    NMO_RETURN_IF_ERROR(nmo_mesh_seek_optional(
+        chunk, CK_STATESAVE_MESHVERTICES, &found, &section_dwords));
+    if (!found) {
+        NMO_RETURN_OK();
+    }
+    if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+    int32_t count = 0;
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &count));
+    if (count < 0) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Invalid legacy mesh vertex count %d", count);
+    }
+    if (count == 0) {
+        return nmo_mesh_require_identifier_end(chunk);
+    }
+
+    const bool lit = (state->flags & VXMESH_PRELITMODE) == 0u;
+    uint32_t save_flags = 0u;
+    if (data_version >= 5u) {
+        if (nmo_chunk_identifier_remaining_dwords(chunk) < 1u) {
+            return NMO_ERR_TRUNCATED_CHUNK;
+        }
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &save_flags));
+    }
+
+    /* Dwords that follow: a block of arrays for version 5 and later, n
+       records for versions 1 to 4, and n records with framed vectors for
+       version 0. */
+    size_t per_vertex = 0u;
+    size_t fixed = 0u;
+    if (data_version >= 5u) {
+        if (!(save_flags & NMO_VERTEX_POS_EXTERNAL)) per_vertex += 3u;
+        if (lit) {
+            if (!(save_flags & NMO_VERTEX_NORMALS_MISSING)) per_vertex += 3u;
+        } else {
+            if (save_flags & NMO_VERTEX_COLOR1_UNIFORM) fixed += 1u;
+            else per_vertex += 1u;
+            if (save_flags & NMO_VERTEX_SPECULAR_UNIFORM) fixed += 1u;
+            else per_vertex += 1u;
+        }
+        if (save_flags & NMO_VERTEX_UV_UNIFORM) fixed += 2u;
+        else per_vertex += 2u;
+    } else if (data_version >= 1u) {
+        per_vertex = lit ? 8u : 7u;
+    } else {
+        per_vertex = 12u;
+    }
+    size_t variable = 0u;
+    size_t expected = 0u;
+    if (!nmo_safe_mul_size((size_t)count, per_vertex, &variable) ||
+        !nmo_safe_add_size(variable, fixed, &expected)) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Legacy mesh vertex payload size overflows");
+    }
+    const size_t remaining = nmo_chunk_identifier_remaining_dwords(chunk);
+    if (remaining < expected) return NMO_ERR_TRUNCATED_CHUNK;
+    if (remaining > expected) return NMO_ERR_INVALID_FORMAT;
+
+    NMO_RETURN_IF_ERROR(nmo_mesh_alloc_vertices(arena, state, (uint32_t)count));
+    nmo_vertex_t *vertices = state->vertices;
+    const uint32_t n = state->vertex_count;
+
+    if (data_version >= 5u) {
+        if (!(save_flags & NMO_VERTEX_POS_EXTERNAL)) {
+            for (uint32_t i = 0; i < n; ++i) {
+                NMO_RETURN_IF_ERROR(nmo_mesh_read_vector(chunk, &vertices[i].position));
+            }
+        }
+        if (lit) {
+            if (!(save_flags & NMO_VERTEX_NORMALS_MISSING)) {
+                for (uint32_t i = 0; i < n; ++i) {
+                    NMO_RETURN_IF_ERROR(nmo_mesh_read_vector(chunk, &vertices[i].normal));
+                }
+            }
+        } else {
+            uint32_t value = 0u;
+            if (save_flags & NMO_VERTEX_COLOR1_UNIFORM) {
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &value));
+                for (uint32_t i = 0; i < n; ++i) state->vertex_colors[i] = value;
+            } else {
+                for (uint32_t i = 0; i < n; ++i) {
+                    NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &state->vertex_colors[i]));
+                }
+            }
+            if (save_flags & NMO_VERTEX_SPECULAR_UNIFORM) {
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &value));
+                for (uint32_t i = 0; i < n; ++i) state->vertex_specular[i] = value;
+            } else {
+                for (uint32_t i = 0; i < n; ++i) {
+                    NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &state->vertex_specular[i]));
+                }
+            }
+        }
+        if (save_flags & NMO_VERTEX_UV_UNIFORM) {
+            float u = 0.0f;
+            float v = 0.0f;
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &u));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &v));
+            for (uint32_t i = 0; i < n; ++i) {
+                vertices[i].uv.x = u;
+                vertices[i].uv.y = v;
+            }
+        } else {
+            for (uint32_t i = 0; i < n; ++i) {
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &vertices[i].uv.x));
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &vertices[i].uv.y));
+            }
+        }
+    } else if (data_version >= 1u) {
+        for (uint32_t i = 0; i < n; ++i) {
+            NMO_RETURN_IF_ERROR(nmo_mesh_read_vector(chunk, &vertices[i].position));
+            if (lit) {
+                NMO_RETURN_IF_ERROR(nmo_mesh_read_vector(chunk, &vertices[i].normal));
+            } else {
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &state->vertex_colors[i]));
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &state->vertex_specular[i]));
+            }
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &vertices[i].uv.x));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &vertices[i].uv.y));
+        }
+    } else {
+        for (uint32_t i = 0; i < n; ++i) {
+            uint32_t size = 0u;
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &size));
+            if (size != sizeof(nmo_vector_t)) return NMO_ERR_INVALID_FORMAT;
+            NMO_RETURN_IF_ERROR(nmo_mesh_read_vector(chunk, &vertices[i].position));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &size));
+            if (size != sizeof(nmo_vector_t)) return NMO_ERR_INVALID_FORMAT;
+            NMO_RETURN_IF_ERROR(nmo_mesh_read_vector(chunk, &vertices[i].normal));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &state->vertex_colors[i]));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &state->vertex_specular[i]));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &vertices[i].uv.x));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &vertices[i].uv.y));
+        }
+    }
+    return nmo_mesh_require_identifier_end(chunk);
+}
+
+/* The index of the material group holding `material`, added when absent
+   (RCKMesh::SetFaceMaterial looks the material up and creates the group). */
+static uint32_t nmo_mesh_find_or_add_group(
+    nmo_mesh_state_t *state, uint32_t capacity, const nmo_ref_t *material)
+{
+    for (uint32_t i = 0; i < state->material_group_count; ++i) {
+        if (nmo_ref_serialized_id(&state->material_groups[i].material) ==
+            nmo_ref_serialized_id(material)) {
+            return i;
+        }
+    }
+    if (state->material_group_count >= capacity) {
+        return state->material_group_count - 1u;   /* cannot happen: sized by the caller */
+    }
+    nmo_material_group_t *group = &state->material_groups[state->material_group_count];
+    group->material = *material;
+    group->padding = 0;
+    return state->material_group_count++;
+}
+
+static nmo_status_t nmo_mesh_read_legacy_faces(
+    nmo_chunk_t *chunk,
+    nmo_arena_t *arena,
+    nmo_mesh_state_t *state,
+    uint32_t data_version)
+{
+    bool found = false;
+    size_t section_dwords = 0u;
+    NMO_RETURN_IF_ERROR(nmo_mesh_seek_optional(
+        chunk, CK_STATESAVE_MESHFACES, &found, &section_dwords));
+    if (!found) {
+        NMO_RETURN_OK();
+    }
+    if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+    int32_t face_count = 0;
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &face_count));
+    if (face_count < 0) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Invalid legacy mesh face count %d", face_count);
+    }
+    if (face_count == 0) {
+        return nmo_mesh_require_identifier_end(chunk);
+    }
+
+    /* Version 1 and later: a list of groups, each a material and its faces.
+       Version 0: one record per face. Every record can add a material group. */
+    int32_t group_records = face_count;
+    size_t remaining = nmo_chunk_identifier_remaining_dwords(chunk);
+    if (data_version >= 1u) {
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &group_records));
+        if (group_records < 0) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                             "Invalid legacy mesh face group count %d", group_records);
+        }
+        remaining = nmo_chunk_identifier_remaining_dwords(chunk);
+        if ((size_t)group_records > remaining / 2u) return NMO_ERR_TRUNCATED_CHUNK;
+    } else if ((size_t)face_count > remaining / 5u) {
+        return NMO_ERR_TRUNCATED_CHUNK;
+    }
+    if (nmo_mesh_size_mul_overflows((size_t)face_count, sizeof(nmo_face_t)) ||
+        nmo_mesh_size_mul_overflows((size_t)face_count, 3u * sizeof(uint16_t)) ||
+        nmo_mesh_size_mul_overflows((size_t)group_records + 1u, sizeof(nmo_material_group_t))) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
+                         "Legacy mesh face allocation size overflows");
+    }
+
+    const uint32_t capacity = (uint32_t)group_records + 1u;
+    nmo_material_group_t *groups = (nmo_material_group_t *)nmo_arena_alloc(
+        arena, sizeof(nmo_material_group_t) * capacity, alignof(nmo_material_group_t));
+    state->faces = (nmo_face_t *)nmo_arena_alloc(
+        arena, sizeof(nmo_face_t) * (size_t)face_count, alignof(nmo_face_t));
+    state->face_vertex_indices = (uint16_t *)nmo_arena_alloc(
+        arena, sizeof(uint16_t) * 3u * (size_t)face_count, alignof(uint16_t));
+    if (!groups || !state->faces || !state->face_vertex_indices) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "Failed to allocate legacy face arrays");
+    }
+    memset(state->faces, 0, sizeof(nmo_face_t) * (size_t)face_count);
+    memset(state->face_vertex_indices, 0, sizeof(uint16_t) * 3u * (size_t)face_count);
+    for (uint32_t i = 0; i < (uint32_t)face_count; ++i) {
+        state->faces[i].channel_mask = 0xFFFFu;   /* SetFaceCount */
+    }
+    /* The constructor creates group 0, with no material. */
+    groups[0].material = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+    groups[0].padding = 0;
+    state->material_groups = groups;
+    state->material_group_count = 1u;
+    state->has_material_groups = 1;
+    state->face_count = (uint32_t)face_count;
+
+    if (data_version >= 1u) {
+        uint32_t next_face = 0u;
+        for (int32_t g = 0; g < group_records; ++g) {
+            nmo_ref_t material;
+            NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &material));
+            int32_t in_group = 0;
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &in_group));
+            if (in_group < 0 ||
+                (size_t)in_group > nmo_chunk_identifier_remaining_dwords(chunk) / 2u) {
+                return NMO_ERR_TRUNCATED_CHUNK;
+            }
+            if ((uint32_t)in_group > state->face_count - next_face) {
+                return NMO_ERR_INVALID_FORMAT;
+            }
+            const uint32_t group_index =
+                nmo_mesh_find_or_add_group(state, capacity, &material);
+            for (int32_t k = 0; k < in_group; ++k, ++next_face) {
+                uint32_t first = 0u;
+                uint32_t second = 0u;
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_dword_as_words(chunk, &first));
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_dword_as_words(chunk, &second));
+                uint16_t unused = 0u;
+                nmo_unpack_dword_to_words(first,
+                    &state->face_vertex_indices[next_face * 3u + 0u],
+                    &state->face_vertex_indices[next_face * 3u + 1u]);
+                nmo_unpack_dword_to_words(second,
+                    &state->face_vertex_indices[next_face * 3u + 2u], &unused);
+                state->faces[next_face].material_group_idx = group_index;
+            }
+        }
+    } else {
+        for (uint32_t i = 0; i < state->face_count; ++i) {
+            int32_t a = 0, b = 0, c = 0;
+            uint32_t ignored = 0u;
+            nmo_ref_t material;
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &a));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &b));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &c));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &ignored));
+            NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &material));
+            state->faces[i].material_group_idx =
+                nmo_mesh_find_or_add_group(state, capacity, &material);
+            state->face_vertex_indices[i * 3u + 0u] = (uint16_t)a;
+            state->face_vertex_indices[i * 3u + 1u] = (uint16_t)b;
+            state->face_vertex_indices[i * 3u + 2u] = (uint16_t)c;
+        }
+    }
+    return nmo_mesh_require_identifier_end(chunk);
+}
+
 /**
  * @brief Deserialize CKMesh state from chunk (legacy format < v9)
  */
@@ -1156,208 +1497,28 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
         NMO_RETURN_IF_ERROR(nmo_mesh_require_identifier_end(chunk));
     }
 
-    NMO_RETURN_IF_ERROR(nmo_mesh_deserialize_material_groups(
-        chunk, arena, out_state));
-
-    NMO_RETURN_IF_ERROR(nmo_mesh_seek_optional(
-        chunk, CK_STATESAVE_MESHVERTICES, &section_found, &section_dwords));
-    if (section_found) {
-        if (section_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
-        int32_t vertex_count;
-        result = nmo_chunk_read_int(chunk, &vertex_count);
-        if (result != NMO_OK) return result;
-
-        uint32_t save_flags = 0;
-        result = nmo_chunk_read_dword(chunk, &save_flags);
-        if (result != NMO_OK) return result;
-
-        if (vertex_count < 0) {
-            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                             "Invalid legacy mesh vertex count %d", vertex_count);
+    /* The constructor's group 0 (no material); the faces add the others. */
+    {
+        nmo_material_group_t *group = (nmo_material_group_t *)nmo_arena_alloc(
+            arena, sizeof(nmo_material_group_t), alignof(nmo_material_group_t));
+        if (!group) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "Failed to allocate legacy material group");
         }
-        if (vertex_count > 0) {
-            size_t dwords_per_vertex = 3u;
-            if (save_flags & 0x02u) dwords_per_vertex += 3u;
-            if (save_flags & 0x04u) dwords_per_vertex += 1u;
-            size_t vertex_dwords = 0u;
-            if (!nmo_safe_mul_size(
-                    (size_t)vertex_count, dwords_per_vertex,
-                    &vertex_dwords) ||
-                nmo_mesh_size_mul_overflows(
-                    (size_t)vertex_count, sizeof(nmo_vertex_t)) ||
-                nmo_mesh_size_mul_overflows(
-                    (size_t)vertex_count, sizeof(uint32_t))) {
-                NMO_RETURN_ERROR(
-                    NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                    "Legacy mesh vertex allocation size overflows");
-            }
-            if (vertex_dwords >
-                nmo_chunk_identifier_remaining_dwords(chunk)) {
-                NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK,
-                                 NMO_SEVERITY_ERROR,
-                                 "Legacy mesh vertices exceed remaining DWORDs");
-            }
-            out_state->vertex_count = (uint32_t)vertex_count;
-            out_state->vertices = (nmo_vertex_t *)nmo_arena_alloc(
-                arena, sizeof(nmo_vertex_t) * out_state->vertex_count,
-                alignof(nmo_vertex_t));
-            out_state->vertex_colors = (uint32_t *)nmo_arena_alloc(
-                arena, sizeof(uint32_t) * out_state->vertex_count, alignof(uint32_t));
-            out_state->vertex_specular = (uint32_t *)nmo_arena_alloc(
-                arena, sizeof(uint32_t) * out_state->vertex_count, alignof(uint32_t));
-
-            if (!out_state->vertices || !out_state->vertex_colors || !out_state->vertex_specular) {
-                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate legacy vertex arrays");
-            }
-            memset(out_state->vertices, 0, sizeof(nmo_vertex_t) * out_state->vertex_count);
-
-            for (uint32_t i = 0; i < out_state->vertex_count; ++i) {
-                result = nmo_chunk_read_float(chunk, &out_state->vertices[i].position.x);
-                if (result != NMO_OK) return result;
-                result = nmo_chunk_read_float(chunk, &out_state->vertices[i].position.y);
-                if (result != NMO_OK) return result;
-                result = nmo_chunk_read_float(chunk, &out_state->vertices[i].position.z);
-                if (result != NMO_OK) return result;
-            }
-
-            if (save_flags & 0x02) {
-                for (uint32_t i = 0; i < out_state->vertex_count; ++i) {
-                    result = nmo_chunk_read_float(chunk, &out_state->vertices[i].normal.x);
-                    if (result != NMO_OK) return result;
-                    result = nmo_chunk_read_float(chunk, &out_state->vertices[i].normal.y);
-                    if (result != NMO_OK) return result;
-                    result = nmo_chunk_read_float(chunk, &out_state->vertices[i].normal.z);
-                    if (result != NMO_OK) return result;
-                }
-            }
-
-            if (save_flags & 0x04) {
-                for (uint32_t i = 0; i < out_state->vertex_count; ++i) {
-                    result = nmo_chunk_read_dword(chunk, &out_state->vertex_colors[i]);
-                    if (result != NMO_OK) return result;
-                    out_state->vertex_specular[i] = 0;
-                }
-            } else {
-                for (uint32_t i = 0; i < out_state->vertex_count; ++i) {
-                    out_state->vertex_colors[i] = 0;
-                    out_state->vertex_specular[i] = 0;
-                }
-            }
-        }
-        NMO_RETURN_IF_ERROR(nmo_mesh_require_identifier_end(chunk));
+        group->material = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+        group->padding = 0;
+        out_state->material_groups = group;
+        out_state->material_group_count = 1u;
+        out_state->has_material_groups = 1;
     }
 
-    NMO_RETURN_IF_ERROR(nmo_mesh_seek_optional(
-        chunk, CK_STATESAVE_MESHFACES, &section_found, &section_dwords));
-    if (section_found) {
-        if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
-        int32_t face_count;
-        result = nmo_chunk_read_int(chunk, &face_count);
-        if (result != NMO_OK) return result;
-
-        if (face_count < 0 ||
-            (uint32_t)face_count > UINT32_MAX / 3u) {
-            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                             "Invalid legacy mesh face count %d", face_count);
-        }
-        if (face_count > 0) {
-            size_t face_dwords = 0;
-            if (!nmo_safe_mul_size(
-                    (size_t)face_count, 4u, &face_dwords) ||
-                nmo_mesh_size_mul_overflows(
-                    (size_t)face_count, sizeof(nmo_face_t)) ||
-                nmo_mesh_size_mul_overflows(
-                    (size_t)face_count, 3u * sizeof(uint16_t))) {
-                NMO_RETURN_ERROR(
-                    NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                    "Legacy mesh face allocation size overflows");
-            }
-            if (face_dwords > nmo_chunk_identifier_remaining_dwords(chunk)) {
-                NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK,
-                                 NMO_SEVERITY_ERROR,
-                                 "Legacy mesh faces exceed remaining DWORDs");
-            }
-            out_state->face_count = (uint32_t)face_count;
-            out_state->faces = (nmo_face_t *)nmo_arena_alloc(
-                arena, sizeof(nmo_face_t) * out_state->face_count,
-                alignof(nmo_face_t));
-            out_state->face_vertex_indices = (uint16_t *)nmo_arena_alloc(
-                arena, sizeof(uint16_t) * out_state->face_count * 3,
-                alignof(uint16_t));
-
-            if (!out_state->faces || !out_state->face_vertex_indices) {
-                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate legacy face arrays");
-            }
-            memset(out_state->faces, 0,
-                   sizeof(nmo_face_t) * (size_t)face_count);
-
-            for (uint32_t i = 0; i < out_state->face_count; ++i) {
-                out_state->faces[i].channel_mask = 0xFFFFu;
-                uint16_t idx0, idx1, idx2;
-                uint32_t mat_idx;
-                result = nmo_chunk_read_word(chunk, &idx0);
-                if (result != NMO_OK) return result;
-                result = nmo_chunk_read_word(chunk, &idx1);
-                if (result != NMO_OK) return result;
-                result = nmo_chunk_read_word(chunk, &idx2);
-                if (result != NMO_OK) return result;
-                result = nmo_chunk_read_dword(chunk, &mat_idx);
-                if (result != NMO_OK) return result;
-
-                out_state->face_vertex_indices[i * 3 + 0] = idx0;
-                out_state->face_vertex_indices[i * 3 + 1] = idx1;
-                out_state->face_vertex_indices[i * 3 + 2] = idx2;
-                out_state->faces[i].material_group_idx = mat_idx;
-            }
-        }
-        NMO_RETURN_IF_ERROR(nmo_mesh_require_identifier_end(chunk));
-    }
-
-    NMO_RETURN_IF_ERROR(nmo_mesh_seek_optional(
-        chunk, CK_STATESAVE_MESHLINES, &section_found, &section_dwords));
-    if (section_found) {
-        if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
-        int32_t line_count;
-        result = nmo_chunk_read_int(chunk, &line_count);
-        if (result != NMO_OK) return result;
-
-        if (line_count < 0) {
-            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                             "Invalid legacy mesh line count %d", line_count);
-        }
-        if (line_count > 0) {
-            if ((size_t)line_count >
-                nmo_chunk_identifier_remaining_dwords(chunk)) {
-                NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK,
-                                 NMO_SEVERITY_ERROR,
-                                 "Legacy mesh lines exceed remaining DWORDs");
-            }
-            if (nmo_mesh_size_mul_overflows(
-                    (size_t)line_count, 2u * sizeof(uint16_t))) {
-                NMO_RETURN_ERROR(
-                    NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                    "Legacy mesh line allocation size overflows");
-            }
-            out_state->line_count = (uint32_t)line_count;
-            out_state->line_indices = (uint16_t *)nmo_arena_alloc(
-                arena, sizeof(uint16_t) * out_state->line_count * 2,
-                alignof(uint16_t));
-            if (!out_state->line_indices) {
-                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate legacy line indices");
-            }
-
-            for (uint32_t i = 0; i < out_state->line_count; ++i) {
-                uint16_t idx0, idx1;
-                result = nmo_chunk_read_word(chunk, &idx0);
-                if (result != NMO_OK) return result;
-                result = nmo_chunk_read_word(chunk, &idx1);
-                if (result != NMO_OK) return result;
-                out_state->line_indices[i * 2 + 0] = idx0;
-                out_state->line_indices[i * 2 + 1] = idx1;
-            }
-        }
-        NMO_RETURN_IF_ERROR(nmo_mesh_require_identifier_end(chunk));
-    }
+    const uint32_t data_version = nmo_chunk_get_data_version(chunk);
+    NMO_RETURN_IF_ERROR(nmo_mesh_read_legacy_vertices(
+        chunk, arena, out_state, data_version));
+    NMO_RETURN_IF_ERROR(nmo_mesh_read_legacy_faces(
+        chunk, arena, out_state, data_version));
+    NMO_RETURN_IF_ERROR(nmo_mesh_read_lines_section(
+        chunk, arena, out_state, data_version));
 
     NMO_RETURN_IF_ERROR(nmo_mesh_seek_optional(
         chunk, CK_STATESAVE_MESHCHANNELS, &section_found, &section_dwords));
@@ -1708,19 +1869,14 @@ static nmo_status_t nmo_mesh_serialize_internal(
 
     NMO_RETURN_IF_ERROR(nmo_mesh_validate(in_state, NULL, NULL));
 
-    if (nmo_chunk_get_data_version(out_chunk) == 0u) {
+    /* RCKMesh::Save always writes the current layout, whatever version the
+       file was loaded from; the older layouts are only read. */
+    if (nmo_chunk_get_data_version(out_chunk) == 0u ||
+        (!skip_geometry && nmo_chunk_get_data_version(out_chunk) < 9u)) {
         out_chunk->data_version = NMO_CHUNK_DATA_VERSION_CURRENT;
     }
-    const bool modern_layout =
-        nmo_chunk_get_data_version(out_chunk) >= 9u;
     if (!skip_geometry) {
-        if (modern_layout) {
-            NMO_RETURN_IF_ERROR(
-                nmo_mesh_validate_modern_geometry(in_state));
-        } else {
-            NMO_RETURN_IF_ERROR(
-                nmo_mesh_validate_legacy_geometry(in_state));
-        }
+        NMO_RETURN_IF_ERROR(nmo_mesh_validate_modern_geometry(in_state));
     }
 
     nmo_status_t result = nmo_beobject_serialize(&in_state->beobject, out_chunk, NULL, context);
@@ -1767,26 +1923,15 @@ static nmo_status_t nmo_mesh_serialize_internal(
             uint16_t idx2 = in_state->face_vertex_indices[i * 3 + 2];
             uint32_t mat_idx = in_state->faces[i].material_group_idx;
 
-            if (modern_layout) {
-                uint32_t packed01 = nmo_pack_words_to_dword(idx0, idx1);
-                uint32_t packed2mat = nmo_pack_words_to_dword(
-                    idx2, (uint16_t)mat_idx);
-                result = nmo_chunk_write_dword_as_words(
-                    out_chunk, packed01);
-                if (result != NMO_OK) return result;
-                result = nmo_chunk_write_dword_as_words(
-                    out_chunk, packed2mat);
-                if (result != NMO_OK) return result;
-            } else {
-                result = nmo_chunk_write_word(out_chunk, idx0);
-                if (result != NMO_OK) return result;
-                result = nmo_chunk_write_word(out_chunk, idx1);
-                if (result != NMO_OK) return result;
-                result = nmo_chunk_write_word(out_chunk, idx2);
-                if (result != NMO_OK) return result;
-                result = nmo_chunk_write_dword(out_chunk, mat_idx);
-                if (result != NMO_OK) return result;
-            }
+            uint32_t packed01 = nmo_pack_words_to_dword(idx0, idx1);
+            uint32_t packed2mat = nmo_pack_words_to_dword(
+                idx2, (uint16_t)mat_idx);
+            result = nmo_chunk_write_dword_as_words(
+                out_chunk, packed01);
+            if (result != NMO_OK) return result;
+            result = nmo_chunk_write_dword_as_words(
+                out_chunk, packed2mat);
+            if (result != NMO_OK) return result;
         }
     }
 
@@ -1796,20 +1941,14 @@ static nmo_status_t nmo_mesh_serialize_internal(
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_int(out_chunk, (int32_t)in_state->line_count);
         if (result != NMO_OK) return result;
-        if (modern_layout) {
-            if (line_bytes > UINT32_MAX) {
-                return NMO_ERR_VALIDATION_FAILED;
-            }
-            result = nmo_chunk_write_dword(
-                out_chunk, (uint32_t)line_bytes);
-            if (result != NMO_OK) return result;
-            result = nmo_chunk_write_buffer_lendian16(
-                out_chunk, in_state->line_indices, line_bytes);
-        } else {
-            result = nmo_chunk_write_buffer_no_size_lendian16(
-                out_chunk, in_state->line_indices,
-                (size_t)in_state->line_count * 2u);
+        if (line_bytes > UINT32_MAX) {
+            return NMO_ERR_VALIDATION_FAILED;
         }
+        result = nmo_chunk_write_dword(
+            out_chunk, (uint32_t)line_bytes);
+        if (result != NMO_OK) return result;
+        result = nmo_chunk_write_buffer_lendian16(
+            out_chunk, in_state->line_indices, line_bytes);
         if (result != NMO_OK) return result;
     }
 
@@ -1818,112 +1957,90 @@ static nmo_status_t nmo_mesh_serialize_internal(
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_int(out_chunk, (int32_t)in_state->vertex_count);
         if (result != NMO_OK) return result;
-        if (!modern_layout) {
-            const uint32_t legacy_save_flags = 0x06u;
-            result = nmo_chunk_write_dword(
-                out_chunk, legacy_save_flags);
-            if (result != NMO_OK) return result;
-            for (uint32_t i = 0; i < in_state->vertex_count; ++i) {
-                result = nmo_chunk_write_vector3(
-                    out_chunk, &in_state->vertices[i].position);
-                if (result != NMO_OK) return result;
-            }
-            for (uint32_t i = 0; i < in_state->vertex_count; ++i) {
-                result = nmo_chunk_write_vector3(
-                    out_chunk, &in_state->vertices[i].normal);
-                if (result != NMO_OK) return result;
-            }
-            for (uint32_t i = 0; i < in_state->vertex_count; ++i) {
-                result = nmo_chunk_write_dword(
-                    out_chunk, in_state->vertex_colors[i]);
-                if (result != NMO_OK) return result;
-            }
-        } else {
-            uint32_t vertex_save_flags =
-                nmo_mesh_compute_save_flags(in_state);
-            result = nmo_chunk_write_dword(
-                out_chunk, vertex_save_flags);
-            if (result != NMO_OK) return result;
+        uint32_t vertex_save_flags =
+            nmo_mesh_compute_save_flags(in_state);
+        result = nmo_chunk_write_dword(
+            out_chunk, vertex_save_flags);
+        if (result != NMO_OK) return result;
 
-            size_t buffer_dwords = 0;
-            if (!nmo_mesh_vertex_payload_dwords(
-                    in_state->vertex_count, vertex_save_flags,
-                    &buffer_dwords) ||
-                buffer_dwords > UINT32_MAX - 1u ||
-                nmo_mesh_size_mul_overflows(
-                    buffer_dwords, sizeof(uint32_t))) {
-                NMO_RETURN_ERROR(
-                    NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
-                    "Vertex buffer exceeds serialized limits");
-            }
-
-            uint32_t *buffer = (uint32_t *)nmo_arena_alloc(
-                arena, buffer_dwords * sizeof(uint32_t),
-                alignof(uint32_t));
-            if (!buffer) {
-                NMO_RETURN_ERROR(
-                    NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
-                    "Failed to allocate vertex buffer");
-            }
-
-            size_t offset = 0;
-            if (!(vertex_save_flags & NMO_VERTEX_POS_EXTERNAL)) {
-                for (uint32_t i = 0; i < in_state->vertex_count; ++i) {
-                    memcpy(&buffer[offset++],
-                           &in_state->vertices[i].position.x, sizeof(float));
-                    memcpy(&buffer[offset++],
-                           &in_state->vertices[i].position.y, sizeof(float));
-                    memcpy(&buffer[offset++],
-                           &in_state->vertices[i].position.z, sizeof(float));
-                }
-            }
-
-            buffer[offset++] = in_state->vertex_colors[0];
-            if (!(vertex_save_flags & NMO_VERTEX_COLOR1_UNIFORM)) {
-                for (uint32_t i = 1; i < in_state->vertex_count; ++i) {
-                    buffer[offset++] = in_state->vertex_colors[i];
-                }
-            }
-
-            buffer[offset++] = in_state->vertex_specular[0];
-            if (!(vertex_save_flags & NMO_VERTEX_SPECULAR_UNIFORM)) {
-                for (uint32_t i = 1; i < in_state->vertex_count; ++i) {
-                    buffer[offset++] = in_state->vertex_specular[i];
-                }
-            }
-
-            if (!(vertex_save_flags & NMO_VERTEX_NORMALS_MISSING)) {
-                for (uint32_t i = 0; i < in_state->vertex_count; ++i) {
-                    memcpy(&buffer[offset++],
-                           &in_state->vertices[i].normal.x, sizeof(float));
-                    memcpy(&buffer[offset++],
-                           &in_state->vertices[i].normal.y, sizeof(float));
-                    memcpy(&buffer[offset++],
-                           &in_state->vertices[i].normal.z, sizeof(float));
-                }
-            }
-
-            memcpy(&buffer[offset++],
-                   &in_state->vertices[0].uv.x, sizeof(float));
-            memcpy(&buffer[offset++],
-                   &in_state->vertices[0].uv.y, sizeof(float));
-            if (!(vertex_save_flags & NMO_VERTEX_UV_UNIFORM)) {
-                for (uint32_t i = 1; i < in_state->vertex_count; ++i) {
-                    memcpy(&buffer[offset++],
-                           &in_state->vertices[i].uv.x, sizeof(float));
-                    memcpy(&buffer[offset++],
-                           &in_state->vertices[i].uv.y, sizeof(float));
-                }
-            }
-
-            result = nmo_chunk_write_dword(
-                out_chunk, (uint32_t)(buffer_dwords + 1u));
-            if (result != NMO_OK) return result;
-            result = nmo_chunk_write_buffer_no_size(
-                out_chunk, buffer,
-                buffer_dwords * sizeof(uint32_t));
-            if (result != NMO_OK) return result;
+        size_t buffer_dwords = 0;
+        if (!nmo_mesh_vertex_payload_dwords(
+                in_state->vertex_count, vertex_save_flags,
+                &buffer_dwords) ||
+            buffer_dwords > UINT32_MAX - 1u ||
+            nmo_mesh_size_mul_overflows(
+                buffer_dwords, sizeof(uint32_t))) {
+            NMO_RETURN_ERROR(
+                NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                "Vertex buffer exceeds serialized limits");
         }
+
+        uint32_t *buffer = (uint32_t *)nmo_arena_alloc(
+            arena, buffer_dwords * sizeof(uint32_t),
+            alignof(uint32_t));
+        if (!buffer) {
+            NMO_RETURN_ERROR(
+                NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                "Failed to allocate vertex buffer");
+        }
+
+        size_t offset = 0;
+        if (!(vertex_save_flags & NMO_VERTEX_POS_EXTERNAL)) {
+            for (uint32_t i = 0; i < in_state->vertex_count; ++i) {
+                memcpy(&buffer[offset++],
+                       &in_state->vertices[i].position.x, sizeof(float));
+                memcpy(&buffer[offset++],
+                       &in_state->vertices[i].position.y, sizeof(float));
+                memcpy(&buffer[offset++],
+                       &in_state->vertices[i].position.z, sizeof(float));
+            }
+        }
+
+        buffer[offset++] = in_state->vertex_colors[0];
+        if (!(vertex_save_flags & NMO_VERTEX_COLOR1_UNIFORM)) {
+            for (uint32_t i = 1; i < in_state->vertex_count; ++i) {
+                buffer[offset++] = in_state->vertex_colors[i];
+            }
+        }
+
+        buffer[offset++] = in_state->vertex_specular[0];
+        if (!(vertex_save_flags & NMO_VERTEX_SPECULAR_UNIFORM)) {
+            for (uint32_t i = 1; i < in_state->vertex_count; ++i) {
+                buffer[offset++] = in_state->vertex_specular[i];
+            }
+        }
+
+        if (!(vertex_save_flags & NMO_VERTEX_NORMALS_MISSING)) {
+            for (uint32_t i = 0; i < in_state->vertex_count; ++i) {
+                memcpy(&buffer[offset++],
+                       &in_state->vertices[i].normal.x, sizeof(float));
+                memcpy(&buffer[offset++],
+                       &in_state->vertices[i].normal.y, sizeof(float));
+                memcpy(&buffer[offset++],
+                       &in_state->vertices[i].normal.z, sizeof(float));
+            }
+        }
+
+        memcpy(&buffer[offset++],
+               &in_state->vertices[0].uv.x, sizeof(float));
+        memcpy(&buffer[offset++],
+               &in_state->vertices[0].uv.y, sizeof(float));
+        if (!(vertex_save_flags & NMO_VERTEX_UV_UNIFORM)) {
+            for (uint32_t i = 1; i < in_state->vertex_count; ++i) {
+                memcpy(&buffer[offset++],
+                       &in_state->vertices[i].uv.x, sizeof(float));
+                memcpy(&buffer[offset++],
+                       &in_state->vertices[i].uv.y, sizeof(float));
+            }
+        }
+
+        result = nmo_chunk_write_dword(
+            out_chunk, (uint32_t)(buffer_dwords + 1u));
+        if (result != NMO_OK) return result;
+        result = nmo_chunk_write_buffer_no_size(
+            out_chunk, buffer,
+            buffer_dwords * sizeof(uint32_t));
+        if (result != NMO_OK) return result;
     }
 
     if (!skip_geometry &&
