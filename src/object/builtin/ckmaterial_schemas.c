@@ -160,6 +160,34 @@ static uint32_t nmo_material_normalize_packed_flags(uint32_t packed_flags)
            (packed_flags & 0xFF000000u);
 }
 
+/* In files with data_version < 5 each color is a size-prefixed buffer of four
+ * floats (ReadAndFillBuffer_LEndian), [16][r][g][b][a]. */
+static nmo_status_t nmo_material_read_legacy_color(
+    nmo_chunk_t *chunk, nmo_color_t *out_color)
+{
+    uint32_t size = 0;
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &size));
+    if (size != 4u * sizeof(float)) {
+        return NMO_ERR_INVALID_FORMAT;
+    }
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_color->r));
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_color->g));
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_color->b));
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_color->a));
+    return NMO_OK;
+}
+
+static nmo_status_t nmo_material_write_legacy_color(
+    nmo_chunk_t *chunk, const nmo_color_t *color)
+{
+    NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(chunk, 4u * sizeof(float)));
+    NMO_RETURN_IF_ERROR(nmo_chunk_write_float(chunk, color->r));
+    NMO_RETURN_IF_ERROR(nmo_chunk_write_float(chunk, color->g));
+    NMO_RETURN_IF_ERROR(nmo_chunk_write_float(chunk, color->b));
+    NMO_RETURN_IF_ERROR(nmo_chunk_write_float(chunk, color->a));
+    return NMO_OK;
+}
+
 static nmo_status_t nmo_material_deserialize_internal(
     void *instance,
     nmo_chunk_t *chunk,
@@ -196,7 +224,7 @@ static nmo_status_t nmo_material_deserialize_internal(
         decoded.has_material_data = 1;
         uint32_t data_version = nmo_chunk_get_data_version(chunk);
         decoded.material_data_is_legacy = data_version < 5u;
-        const size_t expected_dwords = data_version < 5u ? 29u : 9u;
+        const size_t expected_dwords = data_version < 5u ? 33u : 9u;
         if (payload_dwords < expected_dwords) {
             return NMO_ERR_TRUNCATED_CHUNK;
         }
@@ -205,49 +233,19 @@ static nmo_status_t nmo_material_deserialize_internal(
         }
 
         if (data_version < 5) {
-            float r = 0.0f, g = 0.0f, b = 0.0f, a = 0.0f;
-            float diffuse_a = 0.0f;
             nmo_color_t color;
 
-            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &r));
-            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &g));
-            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &b));
-            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &a));
-            diffuse_a = a;
-            color.r = r;
-            color.g = g;
-            color.b = b;
-            color.a = a;
+            NMO_RETURN_IF_ERROR(nmo_material_read_legacy_color(chunk, &color));
+            const float diffuse_a = color.a;
             decoded.diffuse_color = nmo_color_to_argb32(&color);
 
-            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &r));
-            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &g));
-            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &b));
-            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &a));
-            color.r = r;
-            color.g = g;
-            color.b = b;
-            color.a = a;
+            NMO_RETURN_IF_ERROR(nmo_material_read_legacy_color(chunk, &color));
             decoded.ambient_color = nmo_color_to_argb32(&color);
 
-            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &r));
-            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &g));
-            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &b));
-            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &a));
-            color.r = r;
-            color.g = g;
-            color.b = b;
-            color.a = a;
+            NMO_RETURN_IF_ERROR(nmo_material_read_legacy_color(chunk, &color));
             decoded.specular_color = nmo_color_to_argb32(&color);
 
-            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &r));
-            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &g));
-            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &b));
-            NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &a));
-            color.r = r;
-            color.g = g;
-            color.b = b;
-            color.a = a;
+            NMO_RETURN_IF_ERROR(nmo_material_read_legacy_color(chunk, &color));
             decoded.emissive_color = nmo_color_to_argb32(&color);
 
             NMO_RETURN_IF_ERROR(nmo_chunk_read_float(
@@ -615,10 +613,7 @@ static nmo_status_t nmo_material_serialize_internal(
             for (size_t i = 0; i < 4; ++i) {
                 nmo_color_t color;
                 nmo_color_from_argb32(colors[i], &color);
-                NMO_RETURN_IF_ERROR(nmo_chunk_write_float(chunk, color.r));
-                NMO_RETURN_IF_ERROR(nmo_chunk_write_float(chunk, color.g));
-                NMO_RETURN_IF_ERROR(nmo_chunk_write_float(chunk, color.b));
-                NMO_RETURN_IF_ERROR(nmo_chunk_write_float(chunk, color.a));
+                NMO_RETURN_IF_ERROR(nmo_material_write_legacy_color(chunk, &color));
             }
             NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
                 chunk, state->specular_power));

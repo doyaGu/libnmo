@@ -3301,7 +3301,9 @@ TEST(chunk_id_remap, material_refs_round_trip_and_failure_is_atomic) {
     ASSERT_EQ(NMO_OK, nmo_chunk_start_write(legacy_cross_section));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
         legacy_cross_section, CK_STATESAVE_MATDATA));
-    for (size_t i = 0; i < 28; ++i) {
+    /* One dword short of the 33 a legacy section holds: four size-prefixed
+     * colors (5 dwords each), power, texture, eleven settings. */
+    for (size_t i = 0; i < 32; ++i) {
         ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(legacy_cross_section, 0));
     }
     ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
@@ -3376,7 +3378,7 @@ TEST(chunk_id_remap, material_refs_round_trip_and_failure_is_atomic) {
         uint32_t data_version;
         size_t payload_dwords;
     } trailing_cases[] = {
-        {CK_STATESAVE_MATDATA, 4u, 29u},
+        {CK_STATESAVE_MATDATA, 4u, 33u},
         {CK_STATESAVE_MATDATA, 8u, 9u},
         {CK_STATESAVE_MATDATA2, 8u, 3u},
         {CK_STATESAVE_MATDATA3, 8u, 1u},
@@ -3452,6 +3454,90 @@ TEST(chunk_id_remap, new_material_holds_the_engine_constructor_defaults) {
     /* Flag byte 6 (z write, perspective correct), z func lequal, alpha func always. */
     ASSERT_EQ(0x80406u, material.packed_flags);
     ASSERT_EQ(0x13212224u, material.packed_modes);
+}
+
+TEST(chunk_id_remap, legacy_material_colors_are_size_prefixed_buffers) {
+    /* RCKMaterial::Load for data_version < 5 reads each color with
+     * ReadAndFillBuffer_LEndian: [16][r][g][b][a]. */
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    chunk->class_id = NMO_CID_MATERIAL;
+    chunk->data_version = 4;
+    chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, CK_STATESAVE_MATDATA));
+    const float colors[4][4] = {
+        {1.0f, 0.5f, 0.25f, 1.0f},    /* diffuse */
+        {0.0f, 0.0f, 1.0f, 1.0f},     /* ambient */
+        {1.0f, 1.0f, 1.0f, 1.0f},     /* specular */
+        {0.0f, 1.0f, 0.0f, 1.0f},     /* emissive */
+    };
+    for (size_t i = 0; i < 4; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 16u));
+        for (size_t k = 0; k < 4; ++k) {
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_float(chunk, colors[i][k]));
+        }
+    }
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_float(chunk, 12.0f));        /* power */
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0));            /* no texture */
+    const uint32_t settings[] = {
+        6u,   /* flag byte */
+        4u,   /* texture blend */
+        2u, 2u,   /* min, mag filter */
+        2u, 1u,   /* source, destination blend */
+        2u, 3u,   /* shade, fill */
+        1u,   /* address */
+        0u,   /* border color */
+        4u,   /* z function */
+    };
+    for (size_t i = 0; i < sizeof(settings) / sizeof(settings[0]); ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, settings[i]));
+    }
+    nmo_chunk_close(chunk);
+
+    nmo_material_state_t material;
+    ASSERT_EQ(NMO_OK, nmo_material_vtable.create(&material, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_material_deserialize(
+        &material, chunk, NULL, &deserialize_context));
+    ASSERT_EQ(0xFFFF8040u, material.diffuse_color);
+    ASSERT_EQ(0xFF0000FFu, material.ambient_color);
+    ASSERT_EQ(0xFFFFFFFFu, material.specular_color);
+    ASSERT_EQ(0xFF00FF00u, material.emissive_color);
+    ASSERT_EQ(12.0f, material.specular_power);
+    ASSERT_EQ(6u, material.packed_flags & 0xFFu);
+    ASSERT_EQ((uint32_t)VXCMP_LESSEQUAL, (material.packed_flags >> 8) & 0xFu);
+
+    /* What libnmo writes for data_version < 5 has the same prefixes. */
+    nmo_chunk_t *saved = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(saved);
+    saved->class_id = NMO_CID_MATERIAL;
+    saved->data_version = 4;
+    saved->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_material_serialize(
+        &material, saved, NULL, &serialize_context));
+    nmo_chunk_close(saved);
+    size_t payload_dwords = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(
+        saved, CK_STATESAVE_MATDATA, &payload_dwords));
+    ASSERT_EQ(33u, payload_dwords);
+    for (size_t i = 0; i < 4; ++i) {
+        uint32_t size = 0;
+        ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(saved, &size));
+        ASSERT_EQ(16u, size);
+        for (size_t k = 0; k < 4; ++k) {
+            float value = 0.0f;
+            ASSERT_EQ(NMO_OK, nmo_chunk_read_float(saved, &value));
+        }
+    }
+    nmo_arena_destroy(arena);
 }
 
 TEST(chunk_id_remap, material_preserves_file_layouts) {
@@ -20499,6 +20585,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, behaviorlink_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, material_refs_round_trip_and_failure_is_atomic);
     REGISTER_TEST(chunk_id_remap, material_preserves_file_layouts);
+    REGISTER_TEST(chunk_id_remap, legacy_material_colors_are_size_prefixed_buffers);
     REGISTER_TEST(chunk_id_remap, new_material_holds_the_engine_constructor_defaults);
     REGISTER_TEST(chunk_id_remap, parameterlocal_matches_marker_layout);
     REGISTER_TEST(chunk_id_remap, parameterin_refs_round_trip_and_failure_is_atomic);
