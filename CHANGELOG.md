@@ -109,6 +109,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   first key's time. They now carry it. Files written by earlier versions lack it and, in
   practice, are read as opaque blobs.
 
+### Fixed - Chunks survive save and reload byte for byte
+Found by the new `test_corpus_chunk_roundtrip`, which saves every object of `data/` and compares
+each chunk with the original (payload, id list, sub-chunk offsets, manager list and sub-chunks).
+Before these fixes about 7% of the objects came back different.
+- Sub-chunks keep the file flag stored in their header. The writer set it on every sub-chunk whose
+  parent had a file context, while `CKStateChunk::WriteSubChunk` writes whether the sub-chunk
+  itself had one.
+- Object ids inside sub-chunks whose file flag is 0 are no longer remapped in file chunks; they
+  are not file indices, and remapping them on load and save shifted every such id by one.
+- A behavior keeps the runtime bits of its flags (active, executed last frame and the `*NEXTFRAME`
+  bits) across save. They are kept in the new `nmo_behavior_state_t.runtime_flags`; `flags` is
+  unchanged.
+- Manager-mode parameters record their position in the chunk's manager list.
+- A texture reads the packed state (mip level, save options, transparent color, video format)
+  stored under `CK_STATESAVE_TEXONLY` (0xFFF000) as well as `CK_STATESAVE_OLDTEXONLY`, and writes
+  back the identifier the file used (`nmo_texture_state_t.uses_texonly_identifier`). Such textures
+  previously lost those values.
+- A mesh whose file stores an all-zero normals block writes it back instead of omitting normals
+  (`nmo_mesh_state_t.zero_normals_stored`).
+- Null strings in data arrays are written as null rather than as empty strings.
+- `texture show` reads the save options as the `CK_TEXTURE_SAVEOPTIONS` enumeration instead of a
+  mask: value 3 is now reported as `use_global` (it was `external`) and 4 as `include_original`
+  (it was `use_global`). `NMO_CKTEXTURE_USEGLOBAL` and `NMO_CKTEXTURE_INCLUDEORIGINALFILE` were
+  4 and 8 and are now 3 and 4, matching the enumeration. `is_external` is unchanged.
+- Known gaps, not written back and excluded from the test: CKPatchMesh section 0x8000 and
+  CKSprite section 0x40000000. The engine used for reference never writes them.
+
+### Tests
+- `test_corpus_chunk_roundtrip` checks every object chunk of the corpus. It compares against a
+  second load of the original file that is never saved. It tolerates only the uninitialised
+  padding bytes Virtools leaves behind strings and buffers.
+- The corpus directory walk moved into the test framework (`test_corpus_walk`).
+
 ### Added - Phase 8: Round-Trip Framework
 - DOM comparison API (`nmo_comparison.h`): diff two loaded sessions at the object
   level; used by round-trip integration tests
