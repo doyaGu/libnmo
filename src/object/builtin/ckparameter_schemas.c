@@ -422,11 +422,8 @@ static nmo_status_t nmo_parameter_serialize_internal(
             break;
 
         case CKPARAM_MODE_MANAGER:
-            result = nmo_chunk_write_dword(out_chunk, in_state->manager_guid.d1);
-            if (result != NMO_OK) return result;
-            result = nmo_chunk_write_dword(out_chunk, in_state->manager_guid.d2);
-            if (result != NMO_OK) return result;
-            result = nmo_chunk_write_dword(out_chunk, in_state->manager_value);
+            result = nmo_chunk_write_manager_int(
+                out_chunk, in_state->manager_guid, in_state->manager_value);
             if (result != NMO_OK) return result;
             break;
 
