@@ -1158,6 +1158,7 @@ static nmo_status_t save_serialize_objects(nmo_serializer_t *ctx) {
             if (fidelity_current != NULL) {
                 /* The shadow tail is already part of the new chunk. */
                 size_t shadow_tail_size = 0;
+                size_t residue_skipped = 0;
                 const bool has_shadow_tail =
                     shadow_storage != NULL &&
                     nmo_shadow_get_chunk_tail(shadow_storage, obj->id, &shadow_tail_size) != NULL &&
@@ -1165,7 +1166,13 @@ static nmo_status_t save_serialize_objects(nmo_serializer_t *ctx) {
                 nmo_status_t fidelity_status = nmo_object_system_fidelity_commit(
                     obj, obj->chunk, has_shadow_tail ? NULL : old_chunk, fidelity_current,
                     ctx->load_to_file,
-                    save_scratch(ctx), (uint32_t)i, (uint32_t)ctx->object_count);
+                    save_scratch(ctx), (uint32_t)i, (uint32_t)ctx->object_count,
+                    &residue_skipped);
+                if (residue_skipped > 0) {
+                    nmo_log(ctx->logger, NMO_LOG_WARN,
+                            "    Object %u: %zu piece(s) of its original data could not be carried over",
+                            obj->id, residue_skipped);
+                }
                 if (fidelity_status != NMO_OK) {
                     nmo_log(ctx->logger, NMO_LOG_WARN,
                             "    Could not keep the unmodeled content of object %u (code=%d)",

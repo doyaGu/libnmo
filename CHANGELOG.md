@@ -313,6 +313,23 @@ the tests build each layout dword by dword.
   dwords, and values the schema normalized that the edit did not touch. The corpus now saves
   byte for byte, padding included. The pieces are `nmo_chunk_digest`, `nmo_chunk_equivalent`,
   `nmo_chunk_translate_ids_with_layout` and `nmo_chunk_merge_residue`.
+- The level scene sub-chunk of a CKLevel (a CKScene-format chunk written with a file, so its object
+  ids are plain file indices) is read as a scene to find where its ids are; they are then held as
+  runtime ids and written as file indices, so the level scene follows the objects when indices
+  change (a subset export or a deleted object used to leave stale indices). An object that is gone
+  is written as -1.
+- A save keeps its fidelity state in step: a chunk the save replaces without committing it (a
+  save of a subset, a failed save) no longer leaves the old digest behind, a manager chunk whose
+  manager took it at load but writes none now is kept, and pieces of the original data that could
+  not be carried over are logged.
+- Smaller engine differences found by the third audit: a new mesh starts visible with render
+  channels, the odd face channel mask word goes to the last face, a controller without keys is
+  written as `{type, 1, 0}`, a sprite text load keeps the ratio offset flag of the file, sound
+  sections accept trailing dwords and a wave file name is written whole, a texture without a packed
+  state block defaults to global save options, replacing a bitmap replaces the whole image, a
+  layer edit is written in a newer layout when the loaded one cannot hold it, a character reads its
+  four references whatever the count says, message type names may be null, and the behavior array
+  flags follow the arrays.
 - The 3D entity z-order and the entity matrix of a legacy curve point are kept as stored; the values
   the engine uses come from `nmo_3dentity_effective_z_order` and `nmo_curvepoint_get_position`.
 

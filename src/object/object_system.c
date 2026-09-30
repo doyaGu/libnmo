@@ -773,15 +773,19 @@ nmo_status_t nmo_object_system_fidelity_commit(
     const nmo_id_remap_t *load_to_file,
     nmo_arena_t *arena,
     uint32_t file_index,
-    uint32_t file_count)
+    uint32_t file_count,
+    size_t *out_skipped)
 {
+    if (out_skipped != NULL) *out_skipped = 0;
     if (obj == NULL || chunk == NULL || current == NULL || arena == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
     if (obj->fidelity_canonical != NULL && original != NULL) {
+        nmo_chunk_residue_stats_t stats;
         nmo_status_t status = nmo_chunk_merge_residue(
-            chunk, original, obj->fidelity_canonical, load_to_file, arena, NULL);
+            chunk, original, obj->fidelity_canonical, load_to_file, arena, &stats);
         if (status != NMO_OK) return status;
+        if (out_skipped != NULL) *out_skipped = stats.skipped;
     }
 
     nmo_arena_t *storage = nmo_object_get_storage_arena(obj);
