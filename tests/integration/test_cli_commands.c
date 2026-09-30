@@ -2873,7 +2873,9 @@ TEST(cli, mesh_real_sample_reports_material_groups_and_exports_obj_mtl) {
     ASSERT_EQ(0, yyjson_get_uint(yyjson_obj_get(show_data, "line_count")));
     ASSERT_EQ(39, yyjson_get_uint(yyjson_obj_get(show_data, "material_group_count")));
     ASSERT_FALSE(yyjson_get_bool(yyjson_obj_get(show_data, "has_progressive_mesh")));
-    ASSERT_FLOAT_EQ(1.5129958f, (float)yyjson_get_num(yyjson_obj_get(show_data, "radius")), 0.0001f);
+    /* The mean of the 412 vertex positions and the largest distance from it,
+     * computed independently from the exported OBJ. */
+    ASSERT_FLOAT_EQ(1.691681f, (float)yyjson_get_num(yyjson_obj_get(show_data, "radius")), 0.0001f);
 
     yyjson_val *box_min = yyjson_obj_get(show_data, "local_box_min");
     yyjson_val *box_max = yyjson_obj_get(show_data, "local_box_max");

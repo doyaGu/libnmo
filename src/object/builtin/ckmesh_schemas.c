@@ -325,9 +325,19 @@ static void nmo_mesh_recompute_bounds(nmo_mesh_state_t *state) {
     state->local_box_max.x = maxx;
     state->local_box_max.y = maxy;
     state->local_box_max.z = maxz;
-    state->bary_center.x = (minx + maxx) * 0.5f;
-    state->bary_center.y = (miny + maxy) * 0.5f;
-    state->bary_center.z = (minz + maxz) * 0.5f;
+    /* RCKMesh::UpdateBoundingVolumes: the center is the mean of the vertex
+       positions, not the center of the box. */
+    double sum_x = 0.0;
+    double sum_y = 0.0;
+    double sum_z = 0.0;
+    for (uint32_t i = 0; i < state->vertex_count; ++i) {
+        sum_x += (double)state->vertices[i].position.x;
+        sum_y += (double)state->vertices[i].position.y;
+        sum_z += (double)state->vertices[i].position.z;
+    }
+    state->bary_center.x = (float)(sum_x / (double)state->vertex_count);
+    state->bary_center.y = (float)(sum_y / (double)state->vertex_count);
+    state->bary_center.z = (float)(sum_z / (double)state->vertex_count);
 
     float max_dist_sq = 0.0f;
     for (uint32_t i = 0; i < state->vertex_count; ++i) {

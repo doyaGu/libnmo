@@ -41,8 +41,8 @@ typedef struct nmo_mesh_state {
     uint32_t flags;                       ///< Raw serialized mesh flags
     
     // === Geometry attributes (40 bytes at 0x54-0x7B) ===
-    nmo_vector_t bary_center;         ///< Geometric center
-    float radius;                         ///< Bounding sphere radius
+    nmo_vector_t bary_center;         ///< Mean of the vertex positions (derived, not serialized)
+    float radius;                         ///< Largest distance from bary_center to a vertex (derived)
     nmo_vector_t local_box_min;       ///< Local bounding box min
     nmo_vector_t local_box_max;       ///< Local bounding box max
     
