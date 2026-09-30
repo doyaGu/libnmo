@@ -285,7 +285,11 @@ typedef enum CK_2DENTITY_FLAGS {
     CK_2DENTITY_STICKBOTTOM = 0x00400000
 } CK_2DENTITY_FLAGS;
 
+/* Bits 0 and 1 are set on the biped root and the floor reference in the
+ * corpus. The engine never tests them; they are kept as stored. */
 typedef enum CK_OBJECTANIMATION_FLAGS {
+    CK_OBJECTANIMATION_TAG0 = 0x00000001,
+    CK_OBJECTANIMATION_TAG1 = 0x00000002,
     CK_OBJECTANIMATION_IGNOREPOS = 0x00000004,
     CK_OBJECTANIMATION_IGNOREROT = 0x00000008,
     CK_OBJECTANIMATION_IGNORESCALE = 0x00000010,
