@@ -17,11 +17,13 @@
 #include "../test_framework.h"
 
 #include "format/nmo_chunk.h"
+#include "format/nmo_chunk_residue.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
 #include "runtime/nmo_context.h"
 #include "session/nmo_deserializer.h"
 #include "session/nmo_serializer.h"
+#include "session/nmo_runtime_kernel.h"
 #include "session/nmo_session.h"
 
 #include <stdio.h>
@@ -35,6 +37,7 @@
 
 typedef struct corpus_chunk_stats {
     nmo_context_t *ctx;
+    int require_schema; /* 1: re-serialize every object; 0: default save */
     size_t files;
     size_t objects;
     size_t load_errors;
@@ -247,7 +250,9 @@ static void check_file_roundtrip(const char *path, void *user)
     }
 
     nmo_save_options_t save_options = nmo_save_options_default();
-    save_options.flags |= NMO_SAVE_REQUIRE_SCHEMA;
+    if (stats->require_schema) {
+        save_options.flags |= NMO_SAVE_REQUIRE_SCHEMA;
+    }
     if (nmo_session_save_file(saved, SCRATCH_FILE, &save_options, NULL) != NMO_OK) {
         stats->save_errors++;
         printf("  %s: save with required schema serialization failed\n", path);
@@ -283,6 +288,7 @@ TEST(corpus_chunk_roundtrip, every_object_chunk_survives_save_and_reload)
     corpus_chunk_stats_t stats;
     memset(&stats, 0, sizeof(stats));
     stats.ctx = ctx;
+    stats.require_schema = 1;
     int walk_status = test_corpus_walk(NMO_TEST_DATA_DIR, check_file_roundtrip, &stats);
     remove(SCRATCH_FILE);
     nmo_context_release(ctx);
@@ -305,6 +311,181 @@ TEST(corpus_chunk_roundtrip, every_object_chunk_survives_save_and_reload)
     ASSERT_EQ(0u, stats.chunk_mismatches);
 }
 
+/* A default save keeps the chunk of an object nobody touched, so not even the
+ * padding Virtools leaves behind strings and buffers may change. */
+TEST(corpus_chunk_roundtrip, default_save_keeps_untouched_objects_byte_exact)
+{
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
+
+    nmo_context_desc_t desc = {0};
+    desc.data_dir = NMO_TEST_DATA_DIR;
+    nmo_context_t *ctx = nmo_context_create(&desc);
+    ASSERT_NOT_NULL(ctx);
+
+    corpus_chunk_stats_t stats;
+    memset(&stats, 0, sizeof(stats));
+    stats.ctx = ctx;
+    stats.require_schema = 0;
+    int walk_status = test_corpus_walk(NMO_TEST_DATA_DIR, check_file_roundtrip, &stats);
+    remove(SCRATCH_FILE);
+    nmo_context_release(ctx);
+
+    printf("  Default-save corpus: files=%zu objects=%zu chunk_mismatches=%zu "
+           "padding_dwords=%zu\n", stats.files, stats.objects, stats.chunk_mismatches,
+           stats.padding_fixes);
+
+    ASSERT_EQ(0, walk_status);
+    ASSERT_EQ(0u, stats.load_errors);
+    ASSERT_EQ(0u, stats.save_errors);
+    ASSERT_EQ(0u, stats.reload_errors);
+    ASSERT_EQ(0u, stats.count_mismatches);
+    ASSERT_EQ(0u, stats.missing_objects);
+    ASSERT_EQ(0u, stats.chunk_mismatches);
+    ASSERT_EQ(0u, stats.padding_fixes);
+}
+
+static nmo_object_repository_t *sort_repository;
+
+static int compare_by_class_name_index(const void *lhs, const void *rhs)
+{
+    size_t a = *(const size_t *)lhs;
+    size_t b = *(const size_t *)rhs;
+    const nmo_object_t *object_a = nmo_object_repository_get_by_index(sort_repository, a);
+    const nmo_object_t *object_b = nmo_object_repository_get_by_index(sort_repository, b);
+    if (object_a->class_id != object_b->class_id) {
+        return object_a->class_id < object_b->class_id ? -1 : 1;
+    }
+    int by_name = strcmp(object_a->name ? object_a->name : "", object_b->name ? object_b->name : "");
+    if (by_name != 0) return by_name;
+    return a < b ? -1 : (a > b ? 1 : 0);
+}
+
+/* Deleting an object moves the ones after it; the others keep their data. */
+TEST(corpus_chunk_roundtrip, deleting_an_object_keeps_the_others_intact)
+{
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
+
+    nmo_context_desc_t desc = {0};
+    desc.data_dir = NMO_TEST_DATA_DIR;
+    nmo_context_t *ctx = nmo_context_create(&desc);
+    ASSERT_NOT_NULL(ctx);
+
+    char path[1024];
+    snprintf(path, sizeof(path), "%s/Ballance/base.cmo", NMO_TEST_DATA_DIR);
+    nmo_session_t *pristine = load_session(ctx, path);
+    nmo_session_t *edited = load_session(ctx, path);
+    ASSERT_NOT_NULL(pristine);
+    ASSERT_NOT_NULL(edited);
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(edited);
+    size_t count = nmo_object_repository_get_count(repo);
+    ASSERT_GE(count, 100u);
+
+    /* A data array from the middle of the file, deleted the way the tools
+     * delete objects (references to it are detached). */
+    size_t victim_index = 0;
+    nmo_object_id_t victim_id = 0;
+    for (size_t i = count / 2; i < count; i++) {
+        const nmo_object_t *candidate = nmo_object_repository_get_by_index(repo, i);
+        if (candidate != NULL && candidate->class_id == NMO_CID_DATAARRAY) {
+            victim_index = i;
+            victim_id = candidate->id;
+            break;
+        }
+    }
+    ASSERT_NE(0u, victim_index);
+    nmo_runtime_request_t request;
+    memset(&request, 0, sizeof(request));
+    request.kind = NMO_RUNTIME_OP_DELETE;
+    request.flags = NMO_RUNTIME_REQUEST_SAFE_DETACH;
+    request.payload.destroy.ids = &victim_id;
+    request.payload.destroy.count = 1;
+    nmo_runtime_report_t report;
+    memset(&report, 0, sizeof(report));
+    ASSERT_EQ(NMO_OK, nmo_session_execute(edited, &request, &report));
+    ASSERT_EQ(count - 1u, nmo_object_repository_get_count(repo));
+
+    nmo_save_options_t save_options = nmo_save_options_default();
+    ASSERT_EQ(NMO_OK, nmo_session_save_file(edited, SCRATCH_FILE, &save_options, NULL));
+    nmo_session_t *reloaded = load_session(ctx, SCRATCH_FILE);
+    ASSERT_NOT_NULL(reloaded);
+
+    nmo_object_repository_t *before = nmo_session_get_repository(pristine);
+    nmo_object_repository_t *after = nmo_session_get_repository(reloaded);
+    ASSERT_EQ(count - 1u, nmo_object_repository_get_count(after));
+
+    /* The writer may reorder the objects: pair them up by class and name. Only the ids inside a
+     * chunk may differ. */
+    size_t *old_order = (size_t *)malloc(count * sizeof(size_t));
+    size_t *new_order = (size_t *)malloc(count * sizeof(size_t));
+    ASSERT_NOT_NULL(old_order);
+    ASSERT_NOT_NULL(new_order);
+    size_t old_count = 0;
+    for (size_t i = 0; i < count; i++) {
+        if (i != victim_index) old_order[old_count++] = i;
+    }
+    for (size_t i = 0; i < count - 1u; i++) new_order[i] = i;
+    sort_repository = before;
+    qsort(old_order, old_count, sizeof(size_t), compare_by_class_name_index);
+    sort_repository = after;
+    qsort(new_order, count - 1u, sizeof(size_t), compare_by_class_name_index);
+
+    /* Objects with the same class and name form a run; within a run each new
+     * chunk must match some old chunk that is still unclaimed. */
+    size_t differing = 0;
+    unsigned char *claimed = (unsigned char *)calloc(count, 1);
+    ASSERT_NOT_NULL(claimed);
+    size_t run_start = 0;
+    while (run_start < count - 1u) {
+        const nmo_object_t *first = nmo_object_repository_get_by_index(after, new_order[run_start]);
+        size_t run_end = run_start + 1u;
+        while (run_end < count - 1u &&
+               compare_by_class_name_index(&new_order[run_start], &new_order[run_end]) == 0) {
+            run_end++;
+        }
+        (void)first;
+        for (size_t k = run_start; k < run_end; k++) {
+            const nmo_object_t *new_object =
+                nmo_object_repository_get_by_index(after, new_order[k]);
+            int matched = 0;
+            for (size_t m = run_start; m < run_end && !matched; m++) {
+                if (claimed[m]) continue;
+                const nmo_object_t *old_object =
+                    nmo_object_repository_get_by_index(before, old_order[m]);
+                if (old_object->class_id != new_object->class_id) continue;
+                if (old_object->chunk == NULL || new_object->chunk == NULL ||
+                    nmo_chunk_equivalent(old_object->chunk, new_object->chunk)) {
+                    claimed[m] = 1;
+                    matched = 1;
+                }
+            }
+            /* Parameters that pointed at the deleted array were detached from it,
+             * so those and only those may have changed. */
+            if (!matched && new_object->class_id != NMO_CID_PARAMETEROUT &&
+                new_object->class_id != NMO_CID_PARAMETERIN &&
+                new_object->class_id != NMO_CID_PARAMETERLOCAL) {
+                differing++;
+                printf("    differs: class %u '%s'\n", (unsigned)new_object->class_id,
+                       new_object->name ? new_object->name : "");
+            }
+        }
+        run_start = run_end;
+    }
+    free(claimed);
+    free(old_order);
+    free(new_order);
+    remove(SCRATCH_FILE);
+    nmo_session_destroy(reloaded);
+    nmo_session_destroy(edited);
+    nmo_session_destroy(pristine);
+    nmo_context_release(ctx);
+    printf("  Deleted object %zu of %zu; %zu chunks outside the detached parameters differ in more than ids\n",
+           victim_index, count, differing);
+    ASSERT_EQ(0u, differing);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(corpus_chunk_roundtrip, every_object_chunk_survives_save_and_reload);
+    REGISTER_TEST(corpus_chunk_roundtrip, default_save_keeps_untouched_objects_byte_exact);
+    REGISTER_TEST(corpus_chunk_roundtrip, deleting_an_object_keeps_the_others_intact);
 TEST_MAIN_END()
