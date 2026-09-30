@@ -59,7 +59,7 @@ typedef struct nmo_project_object_spec {
     bool has_scale;
     float scale[3];
     bool has_camera;
-    float camera_fov;
+    float camera_fov;   /* full horizontal angle, radians */
     float camera_near;
     float camera_far;
     bool has_camera_target;
@@ -118,7 +118,7 @@ typedef struct nmo_project_object_desc {
     bool has_scale;
     float scale[3];
     bool has_camera;
-    float camera_fov;
+    float camera_fov;   /* full horizontal angle, radians */
     float camera_near;
     float camera_far;
     bool has_camera_target;
@@ -238,7 +238,7 @@ NMO_API nmo_status_t nmo_project_plan_set_object_scale(
 NMO_API nmo_status_t nmo_project_plan_set_camera_settings(
     nmo_project_plan_t *plan,
     uint32_t object_handle,
-    float fov,
+    float fov,          /* full horizontal angle, radians */
     float near_plane,
     float far_plane);
 
