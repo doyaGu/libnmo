@@ -1,17 +1,24 @@
 #include "behavior/nmo_behavior_execute.h"
 
-#include "lua/nmo_lua_bindings.h"
 #include "../runtime/runtime_internal.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+typedef struct behavior_execute_attachment {
+    const void *key;
+    void *data;
+    nmo_behavior_execution_attachment_dispose_fn dispose;
+} behavior_execute_attachment_t;
+
 struct nmo_behavior_execution {
     nmo_context_t *ctx;
     nmo_document_t *document;
     nmo_workspace_t *workspace;
-    nmo_lua_runtime_t *runtime;
+    behavior_execute_attachment_t *attachments;
+    size_t attachment_count;
+    size_t attachment_capacity;
     nmo_script_edit_tx_t *tx;
     nmo_behavior_execute_options_t options;
     nmo_edit_report_t edit_report;
@@ -142,6 +149,20 @@ static void behavior_execute_set_final_status(
     }
 }
 
+static void behavior_execute_dispose_attachments(nmo_behavior_execution_t *execution)
+{
+    while (execution->attachment_count > 0) {
+        behavior_execute_attachment_t *attachment =
+            &execution->attachments[--execution->attachment_count];
+        if (attachment->dispose != NULL) {
+            attachment->dispose(attachment->data);
+        }
+    }
+    free(execution->attachments);
+    execution->attachments = NULL;
+    execution->attachment_capacity = 0;
+}
+
 static void behavior_execute_destroy(nmo_behavior_execution_t *execution)
 {
     if (execution == NULL) {
@@ -153,10 +174,7 @@ static void behavior_execute_destroy(nmo_behavior_execution_t *execution)
         execution->tx = NULL;
     }
     behavior_execute_dispose_plan_report(execution);
-    if (execution->runtime != NULL) {
-        nmo_lua_runtime_destroy(execution->runtime);
-        execution->runtime = NULL;
-    }
+    behavior_execute_dispose_attachments(execution);
     if (execution->workspace != NULL) {
         nmo_workspace_destroy(execution->workspace);
         execution->workspace = NULL;
@@ -276,10 +294,53 @@ NMO_API nmo_workspace_t *nmo_behavior_execution_workspace(
     return execution != NULL ? execution->workspace : NULL;
 }
 
-NMO_API nmo_lua_runtime_t *nmo_behavior_execution_lua_runtime(
-    nmo_behavior_execution_t *execution)
+NMO_API void *nmo_behavior_execution_get_attachment(
+    nmo_behavior_execution_t *execution,
+    const void *key)
 {
-    return execution != NULL ? execution->runtime : NULL;
+    if (execution == NULL || key == NULL) {
+        return NULL;
+    }
+    for (size_t i = 0; i < execution->attachment_count; i++) {
+        if (execution->attachments[i].key == key) {
+            return execution->attachments[i].data;
+        }
+    }
+    return NULL;
+}
+
+NMO_API nmo_status_t nmo_behavior_execution_set_attachment(
+    nmo_behavior_execution_t *execution,
+    const void *key,
+    void *data,
+    nmo_behavior_execution_attachment_dispose_fn dispose)
+{
+    if (execution == NULL || key == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    for (size_t i = 0; i < execution->attachment_count; i++) {
+        if (execution->attachments[i].key == key) {
+            return NMO_ERR_INVALID_STATE;
+        }
+    }
+    if (execution->attachment_count == execution->attachment_capacity) {
+        size_t capacity = execution->attachment_capacity == 0
+            ? 2u
+            : execution->attachment_capacity * 2u;
+        behavior_execute_attachment_t *grown = (behavior_execute_attachment_t *)realloc(
+            execution->attachments, capacity * sizeof(*grown));
+        if (grown == NULL) {
+            return NMO_ERR_NOMEM;
+        }
+        execution->attachments = grown;
+        execution->attachment_capacity = capacity;
+    }
+    behavior_execute_attachment_t *attachment =
+        &execution->attachments[execution->attachment_count++];
+    attachment->key = key;
+    attachment->data = data;
+    attachment->dispose = dispose;
+    return NMO_OK;
 }
 
 NMO_API nmo_script_edit_tx_t *nmo_behavior_execution_transaction(
@@ -409,17 +470,6 @@ static nmo_status_t nmo_behavior_execute_internal(
     }
 
     status = nmo_workspace_internal_ensure_behavior_acceleration(execution->workspace);
-    if (status != NMO_OK) {
-        return behavior_execute_destroy_preserving_error(execution, status);
-    }
-
-    execution->runtime = nmo_lua_runtime_create();
-    if (execution->runtime == NULL) {
-        return behavior_execute_destroy_preserving_error(
-            execution, NMO_ERR_NOMEM);
-    }
-
-    status = nmo_lua_register_platform_bindings(execution->runtime);
     if (status != NMO_OK) {
         return behavior_execute_destroy_preserving_error(execution, status);
     }

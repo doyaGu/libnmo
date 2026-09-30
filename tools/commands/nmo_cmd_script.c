@@ -27,6 +27,7 @@
 #include "format/nmo_interface_chunk.h"
 #include "format/nmo_interface_view.h"
 #include "lua/nmo_lua_fold_map_parser.h"
+#include "lua/nmo_lua_behavior.h"
 #include "object/nmo_object_repository.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"

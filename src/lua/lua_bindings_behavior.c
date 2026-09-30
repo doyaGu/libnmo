@@ -2,6 +2,7 @@
 
 #include "behavior/nmo_behavior_analyze.h"
 #include "behavior/nmo_behavior_execute.h"
+#include "lua/nmo_lua_behavior.h"
 #include "behavior/nmo_behavior_query.h"
 #include "behavior/nmo_behavior_view.h"
 #include "behavior/nmo_script_edit_graph.h"

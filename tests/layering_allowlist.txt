@@ -2,7 +2,6 @@
 # Format: <source file> <included header>. One entry per line.
 # Each line is technical debt: the file depends on a layer above its own.
 # Remove the line once the dependency has been moved down the stack.
-src/behavior/behavior_execute.c lua/nmo_lua_bindings.h
 src/chunk/chunk_inspect.c export/nmo_ansi.h
 src/chunk/chunk_inspect.c export/nmo_export_json.h
 src/chunk/chunk_inspect.c export/nmo_export_text.h

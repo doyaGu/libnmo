@@ -362,6 +362,7 @@ set(NMO_BEHAVIOR_SOURCES
 
 # Lua platform sources
 set(NMO_LUA_SOURCES
+    src/lua/lua_behavior_execution.c
     src/lua/lua_bindings_core.c
     src/lua/lua_bindings_context.c
     src/lua/lua_bindings_behavior.c
