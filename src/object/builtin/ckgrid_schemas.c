@@ -182,11 +182,9 @@ static nmo_status_t nmo_grid_deserialize_internal(
         }
     }
     const size_t position = nmo_chunk_get_position(chunk);
-    if (position != section_end) {
+    if (position > section_end) {
         nmo_array_dispose(&layers);
-        return position > section_end
-            ? NMO_ERR_TRUNCATED_CHUNK
-            : NMO_ERR_INVALID_FORMAT;
+        return NMO_ERR_TRUNCATED_CHUNK;
     }
     nmo_array_dispose(&out_state->layers);
     out_state->layers = layers;

@@ -185,11 +185,10 @@ static nmo_status_t nmo_3dentity_require_section_end(
     const nmo_chunk_t *chunk,
     size_t section_end)
 {
-    const size_t position = nmo_chunk_get_position(chunk);
-    if (position == section_end) return NMO_OK;
-    return position > section_end
+    /* Load ignores what follows the fields it reads in a section. */
+    return nmo_chunk_get_position(chunk) > section_end
         ? NMO_ERR_TRUNCATED_CHUNK
-        : NMO_ERR_INVALID_FORMAT;
+        : NMO_OK;
 }
 
 /* =============================================================================

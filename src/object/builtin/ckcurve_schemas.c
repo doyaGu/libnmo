@@ -671,10 +671,6 @@ static nmo_status_t nmo_curve_deserialize_internal(
                 control_points_section_end) {
                 return NMO_ERR_TRUNCATED_CHUNK;
             }
-            if (nmo_chunk_get_position(chunk) <
-                control_points_section_end) {
-                return NMO_ERR_INVALID_FORMAT;
-            }
             nmo_curve_check_point_refs(
                 control_points, control_point_count, context);
             out_state->has_curve_data = 1;
@@ -687,7 +683,6 @@ static nmo_status_t nmo_curve_deserialize_internal(
             chunk, CK_STATESAVE_CURVEFITCOEFF, &fitting_section_dwords);
         if (result == NMO_OK) {
             if (fitting_section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
-            if (fitting_section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
             out_state->has_curve_data = 1;
             out_state->has_fitting_chunk = 1;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->fitting_coeff));
@@ -697,7 +692,6 @@ static nmo_status_t nmo_curve_deserialize_internal(
             chunk, CK_STATESAVE_CURVESTEPS, &steps_section_dwords);
         if (result == NMO_OK) {
             if (steps_section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
-            if (steps_section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
             out_state->has_curve_data = 1;
             out_state->has_steps_chunk = 1;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->step_count));
@@ -707,7 +701,6 @@ static nmo_status_t nmo_curve_deserialize_internal(
             chunk, CK_STATESAVE_CURVEOPEN, &open_section_dwords);
         if (result == NMO_OK) {
             if (open_section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
-            if (open_section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
             out_state->has_curve_data = 1;
             out_state->has_open_chunk = 1;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->opened));
@@ -736,9 +729,6 @@ static nmo_status_t nmo_curve_deserialize_internal(
             NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->opened));
             if (nmo_chunk_get_position(chunk) > curve_section_end) {
                 return NMO_ERR_TRUNCATED_CHUNK;
-            }
-            if (nmo_chunk_get_position(chunk) < curve_section_end) {
-                return NMO_ERR_INVALID_FORMAT;
             }
         } else if (result != NMO_ERR_NOT_FOUND) return result;
     }
@@ -789,9 +779,6 @@ static nmo_status_t nmo_curve_deserialize_internal(
         }
         if (nmo_chunk_get_position(chunk) > savepoints_section_end) {
             return NMO_ERR_TRUNCATED_CHUNK;
-        }
-        if (nmo_chunk_get_position(chunk) < savepoints_section_end) {
-            return NMO_ERR_INVALID_FORMAT;
         }
     } else if (result != NMO_ERR_NOT_FOUND) return result;
 
@@ -944,9 +931,6 @@ static nmo_status_t nmo_curvepoint_deserialize_internal(
             if (default_section_dwords < 6u) {
                 return NMO_ERR_TRUNCATED_CHUNK;
             }
-            if (default_section_dwords > 6u) {
-                return NMO_ERR_INVALID_FORMAT;
-            }
             nmo_ref_t curve = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
             int32_t tangent_mode = 0;
             int32_t linear = 0;
@@ -984,7 +968,6 @@ static nmo_status_t nmo_curvepoint_deserialize_internal(
             chunk, CK_STATESAVE_CURVEPOINTTCB, &tcb_section_dwords);
         if (result == NMO_OK) {
             if (tcb_section_dwords < 3u) return NMO_ERR_TRUNCATED_CHUNK;
-            if (tcb_section_dwords > 3u) return NMO_ERR_INVALID_FORMAT;
             out_state->has_tcb_chunk = 1;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->tension));
             NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->continuity));
@@ -999,9 +982,6 @@ static nmo_status_t nmo_curvepoint_deserialize_internal(
             if (curve_position_section_dwords < 3u) {
                 return NMO_ERR_TRUNCATED_CHUNK;
             }
-            if (curve_position_section_dwords > 3u) {
-                return NMO_ERR_INVALID_FORMAT;
-            }
             out_state->has_reserved_vector = 1;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_vector3(chunk, &out_state->reserved_vector));
         } else if (result != NMO_ERR_NOT_FOUND) return result;
@@ -1013,9 +993,6 @@ static nmo_status_t nmo_curvepoint_deserialize_internal(
         if (result == NMO_OK) {
             if (tangents_section_dwords < 6u) {
                 return NMO_ERR_TRUNCATED_CHUNK;
-            }
-            if (tangents_section_dwords > 6u) {
-                return NMO_ERR_INVALID_FORMAT;
             }
             out_state->has_tangents_chunk = 1;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_vector3(chunk, &out_state->tangent_in));
@@ -1029,9 +1006,6 @@ static nmo_status_t nmo_curvepoint_deserialize_internal(
         if (result == NMO_OK) {
             if (default_section_dwords < 12u) {
                 return NMO_ERR_TRUNCATED_CHUNK;
-            }
-            if (default_section_dwords > 12u) {
-                return NMO_ERR_INVALID_FORMAT;
             }
             nmo_ref_t curve = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
             int32_t tangent_mode = 0;
@@ -1072,7 +1046,6 @@ static nmo_status_t nmo_curvepoint_deserialize_internal(
             chunk, CK_STATESAVE_CURVEPOINTTCB, &tcb_section_dwords);
         if (result == NMO_OK) {
             if (tcb_section_dwords < 3u) return NMO_ERR_TRUNCATED_CHUNK;
-            if (tcb_section_dwords > 3u) return NMO_ERR_INVALID_FORMAT;
             out_state->has_tcb_chunk = 1;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->tension));
             NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->continuity));
@@ -1087,9 +1060,6 @@ static nmo_status_t nmo_curvepoint_deserialize_internal(
             if (curve_position_section_dwords < 3u) {
                 return NMO_ERR_TRUNCATED_CHUNK;
             }
-            if (curve_position_section_dwords > 3u) {
-                return NMO_ERR_INVALID_FORMAT;
-            }
             out_state->has_reserved_vector = 1;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_vector3(chunk, &out_state->reserved_vector));
         } else if (result != NMO_ERR_NOT_FOUND) return result;
@@ -1101,9 +1071,6 @@ static nmo_status_t nmo_curvepoint_deserialize_internal(
         if (result == NMO_OK) {
             if (tangents_section_dwords < 6u) {
                 return NMO_ERR_TRUNCATED_CHUNK;
-            }
-            if (tangents_section_dwords > 6u) {
-                return NMO_ERR_INVALID_FORMAT;
             }
             out_state->has_tangents_chunk = 1;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_vector3(chunk, &out_state->tangent_in));

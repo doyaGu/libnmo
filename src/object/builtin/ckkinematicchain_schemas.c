@@ -61,7 +61,6 @@ static nmo_status_t nmo_kinematicchain_deserialize_internal(
         chunk, CK_STATESAVE_KINEMATICCHAINALL, &section_dwords);
     if (result == NMO_OK) {
         if (section_dwords < 3u) return NMO_ERR_TRUNCATED_CHUNK;
-        if (section_dwords > 3u) return NMO_ERR_INVALID_FORMAT;
         uint32_t reserved_object_id = 0;
         result = nmo_chunk_read_dword(chunk, &reserved_object_id);
         if (result != NMO_OK) return result;

@@ -889,10 +889,6 @@ static nmo_status_t nmo_character_deserialize_internal(
                     result = NMO_ERR_TRUNCATED_CHUNK;
                     goto fail;
                 }
-                if (nmo_chunk_get_position(chunk) < section_end) {
-                    result = NMO_ERR_INVALID_FORMAT;
-                    goto fail;
-                }
             }
             result = nmo_character_seek_optional(
                 chunk, CK_STATESAVE_CHARACTERANIMATIONS, &section_found,
@@ -915,10 +911,6 @@ static nmo_status_t nmo_character_deserialize_internal(
                     result = NMO_ERR_TRUNCATED_CHUNK;
                     goto fail;
                 }
-                if (nmo_chunk_get_position(chunk) < section_end) {
-                    result = NMO_ERR_INVALID_FORMAT;
-                    goto fail;
-                }
             }
         } else {
             result = nmo_character_seek_optional(
@@ -928,10 +920,6 @@ static nmo_status_t nmo_character_deserialize_internal(
             if (section_found) {
                 if (section_dwords < 3u) {
                     result = NMO_ERR_TRUNCATED_CHUNK;
-                    goto fail;
-                }
-                if (section_dwords > 3u) {
-                    result = NMO_ERR_INVALID_FORMAT;
                     goto fail;
                 }
                 result = nmo_chunk_read_dword(
@@ -975,10 +963,6 @@ static nmo_status_t nmo_character_deserialize_internal(
                     result = NMO_ERR_TRUNCATED_CHUNK;
                     goto fail;
                 }
-                if (nmo_chunk_get_position(chunk) < section_end) {
-                    result = NMO_ERR_INVALID_FORMAT;
-                    goto fail;
-                }
             }
         }
         result = nmo_character_seek_optional(
@@ -988,10 +972,6 @@ static nmo_status_t nmo_character_deserialize_internal(
         if (section_found) {
             if (section_dwords < 1u) {
                 result = NMO_ERR_TRUNCATED_CHUNK;
-                goto fail;
-            }
-            if (section_dwords > 1u) {
-                result = NMO_ERR_INVALID_FORMAT;
                 goto fail;
             }
             result = nmo_ref_read(chunk, &decoded.root_body_part);
@@ -1004,10 +984,6 @@ static nmo_status_t nmo_character_deserialize_internal(
         if (section_found) {
             if (section_dwords < 1u) {
                 result = NMO_ERR_TRUNCATED_CHUNK;
-                goto fail;
-            }
-            if (section_dwords > 1u) {
-                result = NMO_ERR_INVALID_FORMAT;
                 goto fail;
             }
             result = nmo_ref_read(chunk, &decoded.floor_ref);
@@ -1029,10 +1005,6 @@ static nmo_status_t nmo_character_deserialize_internal(
             if (result != NMO_OK) goto fail;
             if (nmo_chunk_get_position(chunk) > section_end) {
                 result = NMO_ERR_TRUNCATED_CHUNK;
-                goto fail;
-            }
-            if (nmo_chunk_get_position(chunk) < section_end) {
-                result = NMO_ERR_INVALID_FORMAT;
                 goto fail;
             }
         }
@@ -1066,10 +1038,6 @@ static nmo_status_t nmo_character_deserialize_internal(
             }
             if (nmo_chunk_get_position(chunk) > section_end) {
                 result = NMO_ERR_TRUNCATED_CHUNK;
-                goto fail;
-            }
-            if (nmo_chunk_get_position(chunk) < section_end) {
-                result = NMO_ERR_INVALID_FORMAT;
                 goto fail;
             }
         }
@@ -1108,10 +1076,6 @@ static nmo_status_t nmo_character_deserialize_internal(
             if (result != NMO_OK) goto fail;
             if (nmo_chunk_get_position(chunk) > section_end) {
                 result = NMO_ERR_TRUNCATED_CHUNK;
-                goto fail;
-            }
-            if (nmo_chunk_get_position(chunk) < section_end) {
-                result = NMO_ERR_INVALID_FORMAT;
                 goto fail;
             }
         }
@@ -1305,9 +1269,6 @@ static nmo_status_t nmo_bodypart_deserialize_internal(
             if (section_dwords < required_dwords) {
                 return NMO_ERR_TRUNCATED_CHUNK;
             }
-            if (section_dwords > required_dwords) {
-                return NMO_ERR_INVALID_FORMAT;
-            }
             result = nmo_ref_read(chunk, &character);
             if (result != NMO_OK) return result;
             has_character = 1;
@@ -1330,7 +1291,6 @@ static nmo_status_t nmo_bodypart_deserialize_internal(
             const size_t legacy_dwords =
                 1u + NMO_BODYPART_LEGACY_JOINT_BYTES / sizeof(uint32_t);
             if (section_dwords < legacy_dwords) return NMO_ERR_TRUNCATED_CHUNK;
-            if (section_dwords > legacy_dwords) return NMO_ERR_INVALID_FORMAT;
             uint32_t block_size = 0;
             result = nmo_chunk_read_dword(chunk, &block_size);
             if (result != NMO_OK) return result;
@@ -1355,7 +1315,6 @@ static nmo_status_t nmo_bodypart_deserialize_internal(
         if (result != NMO_OK) return result;
         if (section_found) {
             if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
-            if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
             result = nmo_ref_read(chunk, &character);
             if (result != NMO_OK) return result;
             has_character = 1;

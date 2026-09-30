@@ -100,7 +100,6 @@ static nmo_status_t nmo_place_deserialize_internal(
         chunk, CK_STATESAVE_PLACECAMERA, &section_dwords);
     if (result == NMO_OK) {
         if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
-        if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
         nmo_ref_t camera = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &camera));
         nmo_ref_check_class(
@@ -117,7 +116,6 @@ static nmo_status_t nmo_place_deserialize_internal(
         chunk, CK_STATESAVE_PLACELEVEL, &section_dwords);
     if (result == NMO_OK) {
         if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
-        if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
         nmo_ref_t level = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &level));
         nmo_ref_check_class(
@@ -175,9 +173,9 @@ static nmo_status_t nmo_place_deserialize_internal(
             nmo_array_dispose(&portals);
             return result;
         }
-        if (nmo_chunk_get_position(chunk) != section_end) {
+        if (nmo_chunk_get_position(chunk) > section_end) {
             nmo_array_dispose(&portals);
-            return NMO_ERR_INVALID_FORMAT;
+            return NMO_ERR_TRUNCATED_CHUNK;
         }
         NMO_RETURN_IF_ERROR(nmo_array_swap(&out_state->portals, &portals));
         nmo_array_dispose(&portals);
@@ -237,9 +235,9 @@ static nmo_status_t nmo_place_deserialize_internal(
             nmo_ref_check_class(
                 &dest[i], repository, types, NMO_CID_3DENTITY);
         }
-        if (nmo_chunk_get_position(chunk) != section_end) {
+        if (nmo_chunk_get_position(chunk) > section_end) {
             nmo_array_dispose(&references);
-            return NMO_ERR_INVALID_FORMAT;
+            return NMO_ERR_TRUNCATED_CHUNK;
         }
         NMO_RETURN_IF_ERROR(nmo_array_swap(&out_state->references, &references));
         nmo_array_dispose(&references);
