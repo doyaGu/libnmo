@@ -269,7 +269,15 @@ static nmo_status_t nmo_layer_serialize_internal(
     NMO_RETURN_IF_ERROR(nmo_ref_write(out_chunk, &in_state->grid));
 
     if (is_file) {
-        const int32_t version = in_state->has_version ? in_state->version : 3;
+        int32_t version = in_state->has_version ? in_state->version : 3;
+        /* The older layouts have no room for what was set since; a newer
+           version keeps it (the engine's Save always writes version 3). */
+        if (version < 3 && in_state->has_param_guid &&
+            !nmo_guid_equals(in_state->param_guid, CKPGUID_INT)) {
+            version = 3;
+        }
+        if (version < 2 && in_state->has_flags && in_state->flags != 1u) version = 2;
+        if (version < 1 && in_state->has_color && in_state->color_rgba != 0u) version = 1;
         NMO_RETURN_IF_ERROR(nmo_chunk_write_int(out_chunk, in_state->format));
         NMO_RETURN_IF_ERROR(nmo_chunk_write_int(out_chunk, version));
         if (version >= 1) {

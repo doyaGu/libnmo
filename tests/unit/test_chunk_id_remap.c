@@ -17518,12 +17518,10 @@ TEST(chunk_id_remap, character_refs_round_trip_and_failure_is_atomic) {
     }
     nmo_chunk_close(invalid_scalar_count);
     nmo_chunk_set_file_context(invalid_scalar_count, &read_context);
-    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_character_deserialize(
+    /* RCKCharacter::Load reads four references whatever the count says, and
+     * ignores what is left of the section. */
+    ASSERT_EQ(NMO_OK, nmo_character_deserialize(
         &failed, invalid_scalar_count, NULL, &file_deserialize_context));
-    ASSERT_EQ(previous_data, failed.body_parts.data);
-    ASSERT_EQ(1u, failed.body_parts.count);
-    ASSERT_EQ(901u, NMO_ARRAY_DATA(
-        nmo_character_part_t, &failed.body_parts)[0].ref.raw_id);
 
     nmo_character_state_t allocation_failed;
     ASSERT_EQ(NMO_OK, nmo_character_vtable.create(

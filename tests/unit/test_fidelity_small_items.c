@@ -10,6 +10,7 @@
 #include "format/nmo_chunk_api.h"
 #include "object/builtin/nmo_2dentity_schemas.h"
 #include "object/builtin/nmo_animation_schemas.h"
+#include "object/builtin/nmo_layer_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "object/builtin/nmo_spritetext_schemas.h"
 #include "object/builtin/nmo_texture_schemas.h"
@@ -129,7 +130,48 @@ TEST(fidelity_small_items, replacing_a_bitmap_replaces_the_whole_image)
     nmo_arena_destroy(arena);
 }
 
+TEST(fidelity_small_items, layer_edit_is_kept_in_a_newer_layout)
+{
+    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+    ASSERT_NOT_NULL(arena);
+    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+
+    /* A layer loaded from version 1 has no flags in its layout. */
+    nmo_layer_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_layer_vtable.create(&source, NULL, NULL));
+    source.has_layer_data = 1;
+    source.format = 1;
+    source.has_version = 1;
+    source.version = 1;
+    source.has_color = 1;
+    source.color_rgba = 0x11223344u;
+    source.has_flags = 1;
+    source.flags = 6u;
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_layer_serialize(&source, chunk, NULL, &ser_ctx));
+    nmo_chunk_close(chunk);
+
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(chunk));
+    nmo_deserialize_context_t des_ctx = nmo_deserialize_context_create(arena, NULL, NULL, 0);
+    nmo_layer_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_layer_vtable.create(&loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_layer_deserialize(&loaded, chunk, NULL, &des_ctx));
+    ASSERT_TRUE(loaded.has_flags);
+    ASSERT_EQ(6u, loaded.flags);
+    ASSERT_EQ(0x11223344u, loaded.color_rgba);
+
+    nmo_layer_vtable.destroy(&source, NULL, NULL);
+    nmo_layer_vtable.destroy(&loaded, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
+    REGISTER_TEST(fidelity_small_items, layer_edit_is_kept_in_a_newer_layout);
     REGISTER_TEST(fidelity_small_items, empty_controller_is_written_with_a_key_count);
     REGISTER_TEST(fidelity_small_items, new_mesh_starts_visible_with_render_channels);
     REGISTER_TEST(fidelity_small_items, sprite_text_load_keeps_the_ratio_offset_flag);

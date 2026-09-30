@@ -1060,10 +1060,8 @@ static nmo_status_t nmo_character_deserialize_internal(
             size_t seq_count = 0;
             result = nmo_chunk_read_object_sequence_start(chunk, &seq_count);
             if (result != NMO_OK) goto fail;
-            if (seq_count != 4) {
-                result = NMO_ERR_INVALID_FORMAT;
-                goto fail;
-            }
+            /* RCKCharacter::Load reads the four references whatever the count says. */
+            (void)seq_count;
             result = nmo_ref_read(
                 chunk, &decoded.active_animation);
             if (result != NMO_OK) goto fail;
