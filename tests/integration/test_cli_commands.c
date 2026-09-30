@@ -2363,7 +2363,7 @@ TEST(cli, texture_extract_decodes_raw_slot) {
     yyjson_doc_free(doc);
 }
 
-TEST(cli, texture_external_raw_slot_extracts_from_real_fixture) {
+TEST(cli, texture_use_global_raw_slot_extracts_from_real_fixture) {
     TEST_REQUIRE_FIXTURE("BBSamples/Controllers/Get Mouse Displacement.cmo");
     make_dir("test_cli_tmp_external_extract");
     remove("test_cli_tmp_external_extract/Wood_175.png");
@@ -2381,7 +2381,7 @@ TEST(cli, texture_external_raw_slot_extracts_from_real_fixture) {
     ASSERT_STR_EQ("Wood", yyjson_get_str(yyjson_obj_get(show_data, "name")));
     ASSERT_STR_EQ("raw", yyjson_get_str(yyjson_obj_get(show_data, "bitmap_kind")));
     ASSERT_STR_EQ("use_global", yyjson_get_str(yyjson_obj_get(show_data, "save_options")));
-    ASSERT_TRUE(yyjson_get_bool(yyjson_obj_get(show_data, "is_external")));
+    ASSERT_FALSE(yyjson_get_bool(yyjson_obj_get(show_data, "is_external")));
 
     yyjson_val *filenames = yyjson_obj_get(show_data, "slot_filenames");
     ASSERT_NOT_NULL(filenames);
@@ -2426,7 +2426,7 @@ TEST(cli, texture_external_raw_slot_extracts_from_real_fixture) {
     yyjson_doc_free(extract_doc);
 }
 
-TEST(cli, texture_external_reader_slot_reports_mipmap_and_extracts) {
+TEST(cli, texture_use_global_reader_slot_reports_mipmap_and_extracts) {
     TEST_REQUIRE_FIXTURE("BBSamples/Controllers/Switch On Midi.cmo");
     make_dir("test_cli_tmp_reader_external_extract");
     remove("test_cli_tmp_reader_external_extract/Eva_609.png");
@@ -2444,7 +2444,7 @@ TEST(cli, texture_external_reader_slot_reports_mipmap_and_extracts) {
     ASSERT_STR_EQ("Eva", yyjson_get_str(yyjson_obj_get(show_data, "name")));
     ASSERT_STR_EQ("reader", yyjson_get_str(yyjson_obj_get(show_data, "bitmap_kind")));
     ASSERT_STR_EQ("use_global", yyjson_get_str(yyjson_obj_get(show_data, "save_options")));
-    ASSERT_TRUE(yyjson_get_bool(yyjson_obj_get(show_data, "is_external")));
+    ASSERT_FALSE(yyjson_get_bool(yyjson_obj_get(show_data, "is_external")));
     ASSERT_EQ(8, yyjson_get_uint(yyjson_obj_get(show_data, "mipmap_level")));
     ASSERT_EQ(256, yyjson_get_uint(yyjson_obj_get(show_data, "reader_width")));
     ASSERT_EQ(256, yyjson_get_uint(yyjson_obj_get(show_data, "reader_height")));
@@ -4916,8 +4916,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli, texture_show_reports_raw_slot_channels);
     REGISTER_TEST(cli, texture_extract_decodes_raw_slot);
     REGISTER_TEST(cli, texture_extract_applies_constant_reader_alpha);
-    REGISTER_TEST(cli, texture_external_raw_slot_extracts_from_real_fixture);
-    REGISTER_TEST(cli, texture_external_reader_slot_reports_mipmap_and_extracts);
+    REGISTER_TEST(cli, texture_use_global_raw_slot_extracts_from_real_fixture);
+    REGISTER_TEST(cli, texture_use_global_reader_slot_reports_mipmap_and_extracts);
     REGISTER_TEST(cli, texture_reader_alpha_plane_extracts_transparency);
     REGISTER_TEST(cli, texture_extract_reports_unsupported_empty_raw_slot);
     REGISTER_TEST(cli, animation_real_sample_reports_keyed_and_object_controllers);
