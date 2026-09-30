@@ -904,9 +904,17 @@ TEST(objanim_controllers, newdata_rejects_lossy_state) {
 
     source.controller_count = 0u;
     source.controllers = NULL;
-    source.morph_normals_id = CK_STATESAVE_OBJANIMMORPHCOMP;
+    /* A per-key section needs one entry per morph key. */
+    uint32_t comp_size = 0u;
+    void *comp_data = NULL;
+    source.morph_comp_count = 1u;
+    source.morph_comp_sizes = &comp_size;
+    source.morph_comp_data = &comp_data;
     ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_objectanimation_serialize(
         &source, preserved, NULL, &ser_ctx));
+    source.morph_comp_count = 0u;
+    source.morph_comp_sizes = NULL;
+    source.morph_comp_data = NULL;
 
     ASSERT_EQ(sizeof(uint32_t), nmo_chunk_get_data_size(preserved));
     ASSERT_EQ(NMO_OK, nmo_chunk_start_read(preserved));
