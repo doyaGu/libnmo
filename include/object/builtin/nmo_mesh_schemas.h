@@ -61,6 +61,7 @@ typedef struct nmo_mesh_state {
     uint32_t *vertex_specular;            ///< Specular colors (ARGB packed)
     float *vertex_weights;                ///< Bone weights (skinning)
     uint32_t vertex_weight_count;          ///< Vertex weight count
+    bool zero_normals_stored;             ///< The file stored all-zero normals instead of omitting them
     
     // === Material system ===
     uint32_t material_group_count;        ///< Material group count

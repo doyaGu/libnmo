@@ -153,6 +153,7 @@ static const nmo_type_field_t nmo_mesh_fields[] = {
     NMO_FIELD_ARRAY_COUNTED(nmo_mesh_state_t, vertex_specular, vertex_count, 1, CKPGUID_COLOR),
     NMO_FIELD_ARRAY_COUNTED(nmo_mesh_state_t, vertex_weights, vertex_weight_count, 1, CKPGUID_FLOAT),
     NMO_FIELD(nmo_mesh_state_t, vertex_weight_count, CKPGUID_UINT32),
+    NMO_FIELD(nmo_mesh_state_t, zero_normals_stored, CKPGUID_BOOL),
     /* Materials */
     NMO_FIELD(nmo_mesh_state_t, material_group_count, CKPGUID_UINT32),
     NMO_FIELD_ARRAY_COUNTED(nmo_mesh_state_t, material_groups, material_group_count, 1, NMO_GUID_STRUCT_CKMATERIALGROUP),
@@ -500,6 +501,16 @@ static nmo_status_t nmo_mesh_deserialize_vertices(
             if (result != NMO_OK) return result;
             result = nmo_chunk_read_float(chunk, &out_state->vertices[i].normal.z);
             if (result != NMO_OK) return result;
+        }
+        /* CK omits normals that follow the faces, so stored zeros are a
+           decision to keep when the mesh is written again. */
+        out_state->zero_normals_stored = true;
+        for (uint32_t i = 0; i < out_state->vertex_count; i++) {
+            const nmo_vector_t *normal = &out_state->vertices[i].normal;
+            if (normal->x != 0.0f || normal->y != 0.0f || normal->z != 0.0f) {
+                out_state->zero_normals_stored = false;
+                break;
+            }
         }
     }
     
@@ -1572,7 +1583,9 @@ static uint32_t nmo_mesh_compute_save_flags(
         }
     }
 
-    if (state->vertices && vertex_count > 0) {
+    if (state->zero_normals_stored) {
+        flags &= ~NMO_VERTEX_NORMALS_MISSING;
+    } else if (state->vertices && vertex_count > 0) {
         for (uint32_t i = 0; i < vertex_count; ++i) {
             if (state->vertices[i].normal.x != 0.0f ||
                 state->vertices[i].normal.y != 0.0f ||
@@ -2023,6 +2036,7 @@ static nmo_status_t nmo_mesh_copy(
     copied.line_count = s->line_count;
     copied.vertex_count = s->vertex_count;
     copied.vertex_weight_count = s->vertex_weight_count;
+    copied.zero_normals_stored = s->zero_normals_stored;
     copied.material_group_count = s->material_group_count;
     copied.has_material_groups = s->has_material_groups;
     copied.material_channel_count = s->material_channel_count;
