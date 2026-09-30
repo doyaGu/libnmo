@@ -41,6 +41,7 @@
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_object_system.h"
+#include "format/nmo_chunk_residue.h"
 #include "object/nmo_shadow_storage.h"
 #include "format/nmo_chunk_context.h"
 #include "type/nmo_type_system.h"
@@ -116,6 +117,8 @@ struct nmo_serializer {
     nmo_object_desc_t *obj_descs;
     nmo_save_id_remap_plan_t *remap_plan;
     nmo_id_remap_t *file_index_remap;
+    nmo_id_remap_t *load_to_file;   /**< index in the loaded file -> index in this file; NULL if none moved */
+    int fidelity_enabled;           /**< reuse original chunks and keep residue */
     nmo_chunk_file_context_t *chunk_file_ctx;
 
     /* Phase 1 outputs: Manager info */
@@ -864,6 +867,53 @@ static nmo_status_t save_build_remap_plan(nmo_serializer_t *ctx) {
         }
     }
 
+    /* Objects that were loaded keep the ids of their original chunks in the
+       index space of the loaded file. A save that keeps every object in
+       place can reuse those chunks; one that filters or drops objects cannot
+       tell which of their references are still valid. */
+    ctx->load_to_file = NULL;
+    ctx->fidelity_enabled =
+        ctx->options.include_ids == NULL &&
+        (ctx->options.flags & (NMO_SAVE_AS_OBJECTS | NMO_SAVE_STRIP_INCLUDED_FILES)) == 0u;
+    if (ctx->fidelity_enabled) {
+        bool any_moved = false;
+        for (size_t i = 0; i < ctx->object_count; i++) {
+            const nmo_object_t *obj = ctx->objects[i];
+            if (obj != NULL && obj->fidelity_captured && obj->fidelity_load_index != (uint32_t)i) {
+                any_moved = true;
+                break;
+            }
+        }
+        /* A chunk that refers to an object that is gone has no image for that
+           id; the table has an entry for every loaded object that is left. */
+        bool any_missing = false;
+        if (!any_moved) {
+            uint32_t load_count = 0;
+            size_t present = 0;
+            for (size_t i = 0; i < ctx->object_count; i++) {
+                const nmo_object_t *obj = ctx->objects[i];
+                if (obj != NULL && obj->fidelity_captured) {
+                    load_count = obj->fidelity_load_count;
+                    present++;
+                }
+            }
+            any_missing = present != load_count && load_count != 0;
+        }
+        if (any_moved || any_missing) {
+            ctx->load_to_file = nmo_id_remap_create(save_scratch(ctx));
+            if (ctx->load_to_file == NULL) {
+                return SAVE_ERR(NMO_ERR_NOMEM, "Load index remap allocation failed");
+            }
+            for (size_t i = 0; i < ctx->object_count; i++) {
+                const nmo_object_t *obj = ctx->objects[i];
+                if (obj != NULL && obj->fidelity_captured) {
+                    (void)nmo_id_remap_add(ctx->load_to_file, obj->fidelity_load_index,
+                                           (nmo_object_id_t)i);
+                }
+            }
+        }
+    }
+
     ctx->chunk_file_ctx = (nmo_chunk_file_context_t *)nmo_arena_alloc(
         save_scratch(ctx), sizeof(nmo_chunk_file_context_t), alignof(nmo_chunk_file_context_t));
     if (ctx->chunk_file_ctx == NULL) {
@@ -1018,6 +1068,22 @@ static nmo_status_t save_serialize_objects(nmo_serializer_t *ctx) {
         }
 
         nmo_chunk_t *old_chunk = obj->chunk;
+        nmo_chunk_t *fidelity_current = NULL;
+        if (ctx->fidelity_enabled && obj->fidelity_captured && old_chunk != NULL) {
+            nmo_fidelity_outcome_t outcome = nmo_object_system_fidelity_inspect(
+                obj, ctx->type_rt, save_scratch(ctx), save_scratch(ctx), ctx->repo,
+                ctx->logger, &fidelity_current);
+            if (outcome == NMO_FIDELITY_UNCHANGED && !require_schema) {
+                nmo_chunk_t *reused = nmo_object_system_fidelity_reuse(
+                    obj, fidelity_current, ctx->load_to_file, ctx->arena, (uint32_t)i,
+                    (uint32_t)ctx->object_count);
+                if (reused != NULL) {
+                    obj->chunk = reused;
+                    reused_count++;
+                    continue;
+                }
+            }
+        }
         nmo_status_t serialize_status = NMO_OK;
         obj->chunk = serialize_object_with_schema(
             obj, ctx->type_rt, ctx->arena, save_scratch(ctx), ctx->repo, ctx->logger,
@@ -1069,6 +1135,18 @@ static nmo_status_t save_serialize_objects(nmo_serializer_t *ctx) {
                     nmo_log(ctx->logger, NMO_LOG_WARN,
                             "    Failed to remap object IDs for object %u (code=%d)",
                             obj->id, remap_result);
+                }
+            }
+            /* Carry what the schema does not model from the old chunk into the
+               new one, and remember what the state serializes to. */
+            if (fidelity_current != NULL) {
+                nmo_status_t fidelity_status = nmo_object_system_fidelity_commit(
+                    obj, obj->chunk, old_chunk, fidelity_current, ctx->load_to_file,
+                    save_scratch(ctx), (uint32_t)i, (uint32_t)ctx->object_count);
+                if (fidelity_status != NMO_OK) {
+                    nmo_log(ctx->logger, NMO_LOG_WARN,
+                            "    Could not keep the unmodeled content of object %u (code=%d)",
+                            obj->id, fidelity_status);
                 }
             }
             /* Clear file_context pointers that refer to scratch-arena memory.
