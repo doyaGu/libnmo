@@ -27,6 +27,9 @@ add_integration_test(test_all_reference_files)
 # Phase 5+: Real file roundtrip with schema-based serialization
 add_integration_test(test_real_file_roundtrip)
 
+# Byte-level check: every object chunk of the corpus survives save and reload
+add_integration_test(test_corpus_chunk_roundtrip)
+
 # Phase 4: CKBehavior historical regression fixtures (Nop1/Nop2)
 add_integration_test(test_behavior_roundtrip_regression)
 
