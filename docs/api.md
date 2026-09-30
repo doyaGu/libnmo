@@ -114,6 +114,11 @@ The `nmo_object_edit_*` functions take a `nmo_workspace_edit_t`. Open one with
 
 ## Behavior and Script Layer
 
+The read-side functions (graph, index, walk, query, parameter decoding, registry) are in the core
+library. Edit plans, script edits, behavior execution and the probe analyzer are in the `nmo_edit`
+library (CMake `nmo::edit`, pkg-config `libnmo-edit`); include `nmo_edit.h` and link it in
+addition to `nmo`.
+
 | Function                            | Purpose                                    | Header                                     |
 |-------------------------------------|--------------------------------------------|--------------------------------------------|
 | `nmo_behavior_graph_build()`        | Build a behavior graph (free with `nmo_behavior_graph_free()`) | `include/behavior/nmo_behavior_analyze.h` |
@@ -123,14 +128,14 @@ The `nmo_object_edit_*` functions take a `nmo_workspace_edit_t`. Open one with
 | `nmo_behavior_query_collect_scripts()` | Discover all scripts in a document      | `include/behavior/nmo_behavior_query.h`    |
 | `nmo_behavior_param_value_to_string()` | Decode a parameter value to text        | `include/behavior/nmo_behavior_view.h`     |
 | `nmo_behavior_registry_find()`      | Look up Building Block prototype by GUID   | `include/behavior/nmo_behavior_registry.h` |
-| `nmo_edit_plan_create()`            | Create a new behavior edit plan            | `include/behavior/nmo_edit_plan.h`         |
-| `nmo_edit_plan_json_write()` / `nmo_edit_plan_json_read()` | Serialize / parse an edit plan as JSON | `include/behavior/nmo_edit_plan_json.h` |
-| `nmo_edit_plan_manifest_json_write()` | Write a plan with its input and output paths | `include/behavior/nmo_edit_plan_json.h` |
-| `nmo_behavior_execute()`            | Load a file, run an action, validate, save (or dry-run) | `include/behavior/nmo_behavior_execute.h` |
-| `nmo_script_edit_begin()`           | Start a script edit transaction (finish with `nmo_script_edit_commit()`) | `include/behavior/nmo_script_edit.h` |
-| `nmo_script_edit_add_node()`        | Add a node to a behavior                   | `include/behavior/nmo_script_edit.h`       |
-| `nmo_script_edit_add_io()`          | Add an IO to a behavior                    | `include/behavior/nmo_script_edit.h`       |
-| `nmo_probe_analyze_selector()`      | Analyze a behavior graph and select probe candidates | `include/behavior/nmo_probe_analyzer.h` |
+| `nmo_edit_plan_create()`            | Create a new behavior edit plan            | `include/edit/nmo_edit_plan.h`         |
+| `nmo_edit_plan_json_write()` / `nmo_edit_plan_json_read()` | Serialize / parse an edit plan as JSON | `include/edit/nmo_edit_plan_json.h` |
+| `nmo_edit_plan_manifest_json_write()` | Write a plan with its input and output paths | `include/edit/nmo_edit_plan_json.h` |
+| `nmo_behavior_execute()`            | Load a file, run an action, validate, save (or dry-run) | `include/edit/nmo_behavior_execute.h` |
+| `nmo_script_edit_begin()`           | Start a script edit transaction (finish with `nmo_script_edit_commit()`) | `include/edit/nmo_script_edit.h` |
+| `nmo_script_edit_add_node()`        | Add a node to a behavior                   | `include/edit/nmo_script_edit.h`       |
+| `nmo_script_edit_add_io()`          | Add an IO to a behavior                    | `include/edit/nmo_script_edit.h`       |
+| `nmo_probe_analyze_selector()`      | Analyze a behavior graph and select probe candidates | `include/edit/nmo_probe_analyzer.h` |
 
 `nmo_behavior_execute()` is an edit pipeline, not a behavior runtime: it does not step CKBehavior
 graphs. Its action callback receives a `nmo_behavior_execution_t` that exposes the workspace and
@@ -158,7 +163,7 @@ These functions live in the `nmo_project` library (CMake `nmo::project`, pkg-con
 A standalone runtime, with the binding groups you choose registered into it:
 
 These functions live in the `nmo_lua` library (CMake `nmo::lua`, pkg-config `libnmo-lua`);
-include `nmo_lua.h` and link it in addition to `nmo`.
+include `nmo_lua.h` and link it in addition to `nmo`. It builds on `nmo_edit`, which comes with it.
 
 ```c
 #include <nmo_lua.h>

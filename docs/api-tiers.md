@@ -94,9 +94,10 @@ grep -rn '_API_TIER NMO_API_TIER_' include
 | `format/nmo_interface_view.h` | interface view read |
 | `behavior/nmo_behavior_query.h` | behavior and script queries |
 | `behavior/nmo_behavior_view.h` | behavior view read |
-| `behavior/nmo_behavior_edit.h` | behavior edit |
-| `behavior/nmo_behavior_execute.h` | behavior execution |
-| `behavior/nmo_script_edit.h` | script edit transactions |
+| `edit/nmo_behavior_edit.h` | behavior edit |
+| `edit/nmo_behavior_execute.h` | behavior execution |
+| `edit/nmo_script_edit.h` | script edit transactions |
+| `runtime/nmo_behavior_link_edit.h` | link and interface edit primitives |
 | `lua/nmo_lua_runtime.h` | Lua runtime |
 | `lua/nmo_lua_module.h` | Lua module registration |
 | `lua/nmo_lua_bindings.h` | Lua bindings |
