@@ -225,6 +225,12 @@ the tests build each layout dword by dword.
 - A 2D entity of data version 5 or later without the `0x10F000` block keeps the constructor state
   (flags, source rectangle) instead of failing to load, and an older one without `0x4000` keeps the
   constructor flags.
+- The sections of every CK2_3D class may be longer than the engine reads; the extra dwords are
+  ignored (2D entity, sprite, sprite text, sprite 3D, 3D entity, curve, curve point, place, grid,
+  layer, character, body part, kinematic chain, animation, mesh, patch mesh, texture and material).
+  A section shorter than the fields still fails as truncated. An animation data block that is not 8
+  or 12 bytes is ignored, a patch mesh leaves the vertices, faces, lines and channels to its
+  patches, and the camera packs its aspect ratio as `(height << 16) | (width & 0xFFFF)`.
 - Camera, light, target camera and target light sections may be longer than the engine reads; the
   extra dwords are ignored as `Load` ignores them. A legacy light's active and specular integers
   mean true for any non-zero value.
