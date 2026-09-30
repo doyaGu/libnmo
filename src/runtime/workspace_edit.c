@@ -2005,9 +2005,20 @@ nmo_status_t nmo_asset_edit_set_material_render_flags(
         packed_modes = (packed_modes & ~(0xFu << 28)) |
                        (((uint32_t)flags->wrap & 0xFu) << 28);
     }
+    /* The blend factors only apply while the material's alpha blend bit (bit 3
+       of the low flag byte) is set, and the alpha function only while its
+       alpha test bit (bit 4) is: RCKMaterial::SetAsCurrent ignores them
+       otherwise. Setting either one here is a request to use it. */
+    if (flags->has_source_blend || flags->has_destination_blend) {
+        packed_flags |= 0x08u;
+    }
     if (flags->has_alpha_func) {
-        packed_flags = (packed_flags & ~(0x1Fu << 16)) |
-                       (((uint32_t)flags->alpha_func & 0x1Fu) << 16);
+        /* The file stores the function in four bits. */
+        packed_flags = (packed_flags & ~(0xFu << 16)) |
+                       (((uint32_t)flags->alpha_func & 0xFu) << 16);
+        if (flags->alpha_func != VXCMP_ALWAYS) {
+            packed_flags |= 0x10u;
+        }
     }
 
     state->packed_modes = packed_modes;

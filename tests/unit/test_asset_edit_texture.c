@@ -310,10 +310,79 @@ TEST(asset_edit_texture, sets_material_render_flags_preserving_unset_bits)
     ASSERT_EQ((2947768352u & ~0xFu) | (uint32_t)VXTEXTUREBLEND_ADD,
               material->packed_modes);
     ASSERT_EQ(VXCMP_GREATEREQUAL,
-              (VXCMPFUNC)((material->packed_flags >> 16) & 0x1Fu));
-    ASSERT_EQ((2852126720u & ~(0x1Fu << 16)) |
-                  (((uint32_t)VXCMP_GREATEREQUAL & 0x1Fu) << 16),
+              (VXCMPFUNC)((material->packed_flags >> 16) & 0xFu));
+    /* Setting an alpha function turns the alpha test bit on (0x10). */
+    ASSERT_EQ((2852126720u & ~(0xFu << 16)) |
+                  (((uint32_t)VXCMP_GREATEREQUAL & 0xFu) << 16) | 0x10u,
               material->packed_flags);
+
+    destroy_workspace(ctx, doc, workspace);
+}
+
+TEST(asset_edit_texture, blend_factors_and_alpha_func_enable_their_flag_bits)
+{
+    nmo_context_t *ctx = NULL;
+    nmo_document_t *doc = NULL;
+    nmo_workspace_t *workspace = NULL;
+    create_workspace(&ctx, &doc, &workspace);
+
+    nmo_workspace_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_begin(workspace, "blend flags", &edit));
+    nmo_object_id_t material_id = 0;
+    ASSERT_EQ(NMO_OK,
+              nmo_object_edit_create(
+                  edit,
+                  &(nmo_object_create_desc_t){.class_id = NMO_CID_MATERIAL, .name = "Mat"},
+                  &material_id));
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_commit(edit));
+
+    nmo_object_t *material_object = find_object(doc, material_id);
+    ASSERT_NOT_NULL(material_object);
+    const nmo_material_state_t *material =
+        (const nmo_material_state_t *)nmo_object_get_state(material_object);
+    ASSERT_NOT_NULL(material);
+    const uint32_t before = material->packed_flags;
+    ASSERT_EQ(0u, before & 0x18u);
+
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_begin(workspace, "blend", &edit));
+    ASSERT_EQ(NMO_OK,
+              nmo_asset_edit_set_material_render_flags(
+                  edit,
+                  material_id,
+                  &(nmo_asset_material_render_flags_t){
+                      .has_source_blend = true,
+                      .source_blend = VXBLEND_SRCALPHA,
+                      .has_destination_blend = true,
+                      .destination_blend = VXBLEND_INVSRCALPHA,
+                  }));
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_commit(edit));
+    ASSERT_EQ(0x08u, material->packed_flags & 0x18u);
+
+    /* An always-passing function does not turn the alpha test on. */
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_begin(workspace, "always", &edit));
+    ASSERT_EQ(NMO_OK,
+              nmo_asset_edit_set_material_render_flags(
+                  edit,
+                  material_id,
+                  &(nmo_asset_material_render_flags_t){
+                      .has_alpha_func = true,
+                      .alpha_func = VXCMP_ALWAYS,
+                  }));
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_commit(edit));
+    ASSERT_EQ(0x08u, material->packed_flags & 0x18u);
+
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_begin(workspace, "greater", &edit));
+    ASSERT_EQ(NMO_OK,
+              nmo_asset_edit_set_material_render_flags(
+                  edit,
+                  material_id,
+                  &(nmo_asset_material_render_flags_t){
+                      .has_alpha_func = true,
+                      .alpha_func = VXCMP_GREATER,
+                  }));
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_commit(edit));
+    ASSERT_EQ(0x18u, material->packed_flags & 0x18u);
+    ASSERT_EQ(VXCMP_GREATER, (VXCMPFUNC)((material->packed_flags >> 16) & 0xFu));
 
     destroy_workspace(ctx, doc, workspace);
 }
@@ -462,5 +531,6 @@ REGISTER_TEST(asset_edit_texture, replaces_texture_from_file);
 REGISTER_TEST(asset_edit_texture, rejects_invalid_material_texture_binding);
 REGISTER_TEST(asset_edit_texture, sets_material_render_flags_preserving_unset_bits);
 REGISTER_TEST(asset_edit_texture, sets_material_channels_preserving_unset_channels);
+REGISTER_TEST(asset_edit_texture, blend_factors_and_alpha_func_enable_their_flag_bits);
 REGISTER_TEST(asset_edit_texture, edits_explicit_asset_types);
 TEST_MAIN_END()
