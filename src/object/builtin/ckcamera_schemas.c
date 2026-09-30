@@ -332,18 +332,6 @@ static nmo_status_t nmo_camera_serialize_internal(
         }
     }
 
-    const bool writes_packed_layout =
-        (!is_file && write_camera) ||
-        (is_file && !write_legacy &&
-         in_state->has_cameraonly_chunk);
-    if (writes_packed_layout &&
-        (in_state->aspect_width < 0 || in_state->aspect_width > UINT16_MAX ||
-         in_state->aspect_height < 0 || in_state->aspect_height > UINT16_MAX)) {
-        NMO_RETURN_ERROR(
-            NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
-            "Camera dimensions cannot be represented by the packed layout");
-    }
-
     // First serialize parent CK3dEntity data
     nmo_status_t result = nmo_3dentity_serialize(&in_state->entity, out_chunk, NULL, context);
     if (result != NMO_OK) {
@@ -363,8 +351,9 @@ static nmo_status_t nmo_camera_serialize_internal(
         NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
             out_chunk, in_state->orthographic_zoom));
 
+        /* RCKCamera::Save packs (Height << 16) | (Width & 0xFFFF). */
         const uint32_t packed = ((uint32_t)in_state->aspect_height << 16) |
-            (uint32_t)in_state->aspect_width;
+            ((uint32_t)in_state->aspect_width & 0xFFFFu);
         NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(out_chunk, packed));
         NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
             out_chunk, in_state->near_plane));
