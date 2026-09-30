@@ -1597,6 +1597,31 @@ TEST(objanim_controllers, morph_controller_blob_is_read_and_kept) {
     nmo_arena_destroy(arena);
 }
 
+TEST(objanim_controllers, shared_animation_without_owner_saves_as_empty_controllers) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+
+    nmo_objectanimation_state_t state;
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_vtable.create(&state, NULL, NULL));
+    state.format = CKOBJANIM_FORMAT_SHARED;
+    state.has_shared_anim = 1;
+    state.shared_anim = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    chunk->class_id = NMO_CID_OBJECTANIMATION;
+    chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_serialize(&state, chunk, NULL, &ser_ctx));
+    nmo_chunk_close(chunk);
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OBJANIMSHARED));
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OBJANIMCONTROLLERS));
+
+    nmo_objectanimation_vtable.destroy(&state, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(objanim_controllers, controllers_roundtrip);
     REGISTER_TEST(objanim_controllers, controllers_empty);
@@ -1628,4 +1653,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(objanim_controllers, legacy_rejects_lossy_controller_state);
     REGISTER_TEST(objanim_controllers, copy_controllers);
     REGISTER_TEST(objanim_controllers, morph_controller_blob_is_read_and_kept);
+    REGISTER_TEST(objanim_controllers, shared_animation_without_owner_saves_as_empty_controllers);
 TEST_MAIN_END()

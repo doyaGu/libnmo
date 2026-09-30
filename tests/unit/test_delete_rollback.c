@@ -1,9 +1,12 @@
 #include "test_framework.h"
+#include <string.h>
 #include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_object.h"
+#include "object/builtin/nmo_animation_schemas.h"
+#include "object/nmo_ref.h"
 #include "type/nmo_type_system.h"
 #include "type/nmo_type_runtime.h"
 
@@ -262,11 +265,71 @@ TEST(delete_rollback, non_cascade_preserves_included_files) {
     nmo_context_release(ctx);
 }
 
+/**
+ * The sharers of a deleted animation keep its keys, as the engine's reference
+ * counted keyframe data does, and an animation whose owner is gone saves as an
+ * empty CONTROLLERS animation.
+ */
+TEST(delete_rollback, deleting_the_owner_of_shared_keys_moves_them_to_the_sharers) {
+    nmo_context_desc_t desc = {0};
+    nmo_context_t *ctx = nmo_context_create(&desc);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    nmo_object_id_t owner_id = 0;
+    nmo_object_id_t sharer_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_OBJECTANIMATION, "owner", (nmo_guid_t){0, 0}, &owner_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_OBJECTANIMATION, "sharer", (nmo_guid_t){0, 0}, &sharer_id, NULL));
+
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_objectanimation_state_t *owner = (nmo_objectanimation_state_t *)
+        nmo_object_get_state(nmo_object_repository_find_by_id(repo, owner_id));
+    nmo_objectanimation_state_t *sharer = (nmo_objectanimation_state_t *)
+        nmo_object_get_state(nmo_object_repository_find_by_id(repo, sharer_id));
+    ASSERT_NOT_NULL(owner);
+    ASSERT_NOT_NULL(sharer);
+
+    uint32_t keys[4] = {0x3f800000u, 1u, 2u, 3u};
+    nmo_objanim_controller_t controller = {
+        .type = 0x637c4301u, .key_count = 0, .data_size = sizeof(keys), .data = keys,
+    };
+    owner->format = CKOBJANIM_FORMAT_CONTROLLERS;
+    owner->controller_count = 1;
+    owner->controllers = &controller;
+    owner->has_length = 1;
+    owner->length = 42.0f;
+    sharer->format = CKOBJANIM_FORMAT_SHARED;
+    sharer->has_shared_anim = 1;
+    sharer->shared_anim = nmo_ref_from_id(owner_id);
+
+    nmo_runtime_report_t report = {0};
+    ASSERT_EQ(NMO_OK, nmo_session_destroy_objects(
+        session, &owner_id, 1, NMO_RUNTIME_REQUEST_SAFE_DETACH, &report));
+
+    sharer = (nmo_objectanimation_state_t *)
+        nmo_object_get_state(nmo_object_repository_find_by_id(repo, sharer_id));
+    ASSERT_NOT_NULL(sharer);
+    ASSERT_EQ(CKOBJANIM_FORMAT_CONTROLLERS, sharer->format);
+    ASSERT_EQ(1u, sharer->controller_count);
+    ASSERT_EQ(sizeof(keys), sharer->controllers[0].data_size);
+    ASSERT_NE((void *)keys, sharer->controllers[0].data);
+    ASSERT_EQ(0, memcmp(keys, sharer->controllers[0].data, sizeof(keys)));
+    ASSERT_EQ(42.0f, sharer->length);
+    ASSERT_FALSE(sharer->has_shared_anim);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(delete_rollback, pre_delete_failure_strict_no_detach);
     REGISTER_TEST(delete_rollback, pre_delete_failure_non_strict_proceeds);
     REGISTER_TEST(delete_rollback, all_hooks_pass);
     REGISTER_TEST(delete_rollback, cascade_removes_orphaned_included_files);
     REGISTER_TEST(delete_rollback, non_cascade_preserves_included_files);
+    REGISTER_TEST(delete_rollback, deleting_the_owner_of_shared_keys_moves_them_to_the_sharers);
 TEST_MAIN_END()
 
