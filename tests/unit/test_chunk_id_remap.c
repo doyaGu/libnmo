@@ -8798,6 +8798,178 @@ TEST(chunk_id_remap, legacy_2dentity_ignores_the_material_section) {
     nmo_arena_destroy(arena);
 }
 
+static nmo_chunk_t *make_texture_chunk(nmo_arena_t *arena)
+{
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    if (chunk == NULL) return NULL;
+    chunk->class_id = NMO_CID_TEXTURE;
+    chunk->data_version = 7;
+    chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    return nmo_chunk_start_write(chunk) == NMO_OK ? chunk : NULL;
+}
+
+TEST(chunk_id_remap, texture_packed_state_follows_the_engine_leniency) {
+    /* RCKTexture::Load reads the packed block positionally: flag bits it does
+     * not know are ignored, the 12-byte layout reads the video format without
+     * looking at flag 0x200, and a block without the flags dword is skipped. */
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+
+    nmo_chunk_t *chunk = make_texture_chunk(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, CK_STATESAVE_OLDTEXONLY));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0x01000003u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0x11223344u));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 2));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, _32_ARGB8888));
+    nmo_chunk_close(chunk);
+
+    nmo_texture_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_texture_vtable.create(&loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_texture_deserialize(
+        &loaded, chunk, NULL, &deserialize_context));
+    ASSERT_TRUE(loaded.has_oldtexonly);
+    ASSERT_EQ(3, loaded.mipmap_level);
+    ASSERT_EQ(0x01000000u, loaded.packed_unknown_bits);
+    ASSERT_TRUE(loaded.has_transparent_color);
+    ASSERT_EQ(0x11223344u, loaded.transparent_color);
+    ASSERT_TRUE(loaded.has_current_slot);
+    ASSERT_EQ(2, loaded.current_slot);
+    ASSERT_TRUE(loaded.has_desired_video_format);
+    ASSERT_EQ(_32_ARGB8888, loaded.desired_video_format);
+
+    /* The writer states the video format in flag 0x200 and keeps the rest. */
+    nmo_chunk_t *saved = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(saved);
+    saved->class_id = NMO_CID_TEXTURE;
+    saved->data_version = 7;
+    saved->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_texture_serialize(
+        &loaded, saved, NULL, &serialize_context));
+    nmo_chunk_close(saved);
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(saved, CK_STATESAVE_OLDTEXONLY));
+    uint32_t saved_flags = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(saved, &saved_flags));
+    ASSERT_EQ(0x01000203u, saved_flags);
+
+    /* A block with no dword at all carries nothing. */
+    nmo_chunk_t *empty = make_texture_chunk(arena);
+    ASSERT_NOT_NULL(empty);
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(empty, CK_STATESAVE_OLDTEXONLY));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(empty, CK_STATESAVE_PICKTHRESHOLD));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(empty, 5));
+    nmo_chunk_close(empty);
+    nmo_texture_state_t empty_loaded;
+    ASSERT_EQ(NMO_OK, nmo_texture_vtable.create(&empty_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_texture_deserialize(
+        &empty_loaded, empty, NULL, &deserialize_context));
+    ASSERT_FALSE(empty_loaded.has_oldtexonly);
+    ASSERT_TRUE(empty_loaded.has_pick_threshold);
+    ASSERT_EQ(5, empty_loaded.pick_threshold);
+
+    /* A block longer than any layout the engine knows is read as its flags. */
+    nmo_chunk_t *long_block = make_texture_chunk(arena);
+    ASSERT_NOT_NULL(long_block);
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(long_block, CK_STATESAVE_TEXONLY));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(long_block, 0x00000102u));
+    for (uint32_t i = 0; i < 5u; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(long_block, 0xABCD0000u + i));
+    }
+    nmo_chunk_close(long_block);
+    nmo_texture_state_t long_loaded;
+    ASSERT_EQ(NMO_OK, nmo_texture_vtable.create(&long_loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_texture_deserialize(
+        &long_loaded, long_block, NULL, &deserialize_context));
+    ASSERT_TRUE(long_loaded.uses_texonly_identifier);
+    ASSERT_EQ(2, long_loaded.mipmap_level);
+    ASSERT_TRUE(long_loaded.is_transparent);
+    ASSERT_FALSE(long_loaded.has_transparent_color);
+    ASSERT_FALSE(long_loaded.has_desired_video_format);
+
+    nmo_texture_vtable.destroy(&loaded, NULL, NULL);
+    nmo_texture_vtable.destroy(&empty_loaded, NULL, NULL);
+    nmo_texture_vtable.destroy(&long_loaded, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_id_remap, texture_filename_count_resizes_the_slots) {
+    /* RCKTexture::Load calls SetSlotCount(count) for the file name list, so it
+     * adds empty slots or drops the surplus ones. */
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+
+    const uint32_t slot_counts[] = {1u, 3u};
+    for (size_t i = 0; i < 2; ++i) {
+        nmo_chunk_t *chunk = make_texture_chunk(arena);
+        ASSERT_NOT_NULL(chunk);
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, CK_STATESAVE_TEXREADER));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, (int32_t)slot_counts[i]));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 8));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 8));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 24));
+        for (uint32_t slot = 0; slot < slot_counts[i]; ++slot) {
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0));
+        }
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, CK_STATESAVE_TEXFILENAMES));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 2));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_string(chunk, "a.png"));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_string(chunk, "b.png"));
+        nmo_chunk_close(chunk);
+
+        nmo_texture_state_t loaded;
+        ASSERT_EQ(NMO_OK, nmo_texture_vtable.create(&loaded, NULL, NULL));
+        ASSERT_EQ(NMO_OK, nmo_texture_deserialize(
+            &loaded, chunk, NULL, &deserialize_context));
+        ASSERT_EQ(2u, loaded.slot_count);
+        ASSERT_NOT_NULL(loaded.reader_slots);
+        ASSERT_EQ(0u, loaded.reader_slots[1].format_type);
+        ASSERT_STR_EQ("a.png", loaded.slot_filenames[0]);
+        ASSERT_STR_EQ("b.png", loaded.slot_filenames[1]);
+        nmo_texture_vtable.destroy(&loaded, NULL, NULL);
+    }
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_id_remap, modern_2dentity_without_its_block_keeps_the_constructor_state) {
+    /* RCK2dEntity::Load does nothing for a missing 0x10F000; the object stays
+     * as the constructor made it. */
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    chunk->class_id = NMO_CID_2DENTITY;
+    chunk->data_version = 5;
+    chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    nmo_chunk_close(chunk);
+
+    nmo_2dentity_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_2dentity_vtable.create(&loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_2dentity_deserialize(
+        &loaded, chunk, NULL, &deserialize_context));
+    ASSERT_EQ((uint32_t)(CK_2DENTITY_RESERVED3 | CK_2DENTITY_RATIOOFFSET |
+                         CK_2DENTITY_CLIPTOCAMERAVIEW | CK_2DENTITY_STICKLEFT |
+                         CK_2DENTITY_STICKTOP),
+              loaded.flags);
+    ASSERT_EQ(1.0f, loaded.source_rect.right);
+    ASSERT_EQ(1.0f, loaded.source_rect.bottom);
+    ASSERT_FALSE(loaded.has_parent);
+    nmo_2dentity_vtable.destroy(&loaded, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, texture_pick_threshold_needs_data_version_5) {
     /* RCKTexture::Load reads the pick threshold in its data_version >= 5
      * branch only. */
@@ -21001,6 +21173,9 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, texture_pick_threshold_needs_data_version_5);
     REGISTER_TEST(chunk_id_remap, legacy_2dentity_ignores_the_material_section);
     REGISTER_TEST(chunk_id_remap, texture_empty_sections_round_trip_presence);
+    REGISTER_TEST(chunk_id_remap, texture_packed_state_follows_the_engine_leniency);
+    REGISTER_TEST(chunk_id_remap, texture_filename_count_resizes_the_slots);
+    REGISTER_TEST(chunk_id_remap, modern_2dentity_without_its_block_keeps_the_constructor_state);
     REGISTER_TEST(chunk_id_remap, curvepoint_unresolved_curve_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, curvepoint_layout_follows_data_version);
     REGISTER_TEST(chunk_id_remap, curvepoint_fields_stay_in_identifier_sections);
