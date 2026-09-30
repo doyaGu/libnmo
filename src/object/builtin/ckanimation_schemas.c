@@ -1611,10 +1611,10 @@ static nmo_status_t nmo_animation_require_section_end(
     const nmo_chunk_t *chunk,
     size_t section_end)
 {
-    const size_t position = nmo_chunk_get_position(chunk);
-    if (position > section_end) return NMO_ERR_TRUNCATED_CHUNK;
-    if (position < section_end) return NMO_ERR_INVALID_FORMAT;
-    return NMO_OK;
+    /* Load ignores what follows the fields it reads in a section. */
+    return nmo_chunk_get_position(chunk) > section_end
+        ? NMO_ERR_TRUNCATED_CHUNK
+        : NMO_OK;
 }
 
 static nmo_status_t nmo_animation_validate_payload_size(
@@ -2169,7 +2169,6 @@ static nmo_status_t read_legacy_controllers(
     if (section_found) {
         out_state->has_legacy_flags_section = 1;
         if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
-        if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->flags));
     }
 
@@ -2179,7 +2178,6 @@ static nmo_status_t read_legacy_controllers(
     if (section_found) {
         out_state->has_legacy_entity_section = 1;
         if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
-        if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
         NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &out_state->entity));
     }
 
@@ -2188,7 +2186,6 @@ static nmo_status_t read_legacy_controllers(
         &section_dwords));
     if (section_found) {
         if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
-        if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
         out_state->has_length = 1;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->length));
     }
@@ -2198,7 +2195,6 @@ static nmo_status_t read_legacy_controllers(
         &section_dwords));
     if (section_found) {
         if (section_dwords < 4u) return NMO_ERR_TRUNCATED_CHUNK;
-        if (section_dwords > 4u) return NMO_ERR_INVALID_FORMAT;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->merge_factor));
         int32_t merged = 0;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &merged));
@@ -2217,7 +2213,6 @@ static nmo_status_t read_legacy_controllers(
         &section_dwords));
     if (section_found) {
         if (section_dwords < 3u) return NMO_ERR_TRUNCATED_CHUNK;
-        if (section_dwords > 3u) return NMO_ERR_INVALID_FORMAT;
         out_state->has_root_pos = 1;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_vector3(chunk, &out_state->root_pos));
     }
@@ -2273,18 +2268,12 @@ static nmo_status_t nmo_animation_deserialize_internal(
     NMO_RETURN_IF_ERROR(nmo_animation_seek_optional_sized(
         chunk, CK_STATESAVE_ANIMATIONDATA, &section_found,
         &section_dwords));
-    if (section_found) {
+    /* RCKAnimation::Load takes a block of 8 or 12 bytes and ignores any other
+       size, empty included. */
+    if (section_found && (section_dwords == 2u || section_dwords == 3u)) {
         out_state->has_data = 1;
 
         const size_t remaining_dwords = section_dwords;
-        if (remaining_dwords == 0u) {
-            NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
-                             "Animation data section is empty");
-        }
-        if (remaining_dwords != 2u && remaining_dwords != 3u) {
-            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                             "Unsupported animation data layout");
-        }
         if (remaining_dwords == 3u) {
             out_state->data_is_legacy = 1;
             int32_t can_interrupt = 0;
@@ -2319,7 +2308,6 @@ static nmo_status_t nmo_animation_deserialize_internal(
         &section_dwords));
     if (section_found) {
         if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
-        if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
         out_state->has_length = 1;
         nmo_status_t result = nmo_chunk_read_float(chunk, &out_state->length);
         if (result != NMO_OK) return result;
@@ -2345,10 +2333,6 @@ static nmo_status_t nmo_animation_deserialize_internal(
         if (remaining_dwords == 0) {
             NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
                              "Animation root entity is missing");
-        }
-        if (remaining_dwords != 1u) {
-            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                             "Animation body part section has trailing data");
         }
         nmo_ref_t root_entity = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         result = nmo_ref_read(chunk, &root_entity);
@@ -2379,7 +2363,6 @@ static nmo_status_t nmo_animation_deserialize_internal(
         &section_dwords));
     if (section_found) {
         if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
-        if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
         out_state->has_character = 1;
         nmo_ref_t character = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         nmo_status_t result = nmo_ref_read(chunk, &character);
@@ -2398,7 +2381,6 @@ static nmo_status_t nmo_animation_deserialize_internal(
         &section_dwords));
     if (section_found) {
         if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
-        if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
         out_state->has_current_step = 1;
         nmo_status_t result = nmo_chunk_read_float(chunk, &out_state->current_step);
         if (result != NMO_OK) return result;
@@ -2532,7 +2514,6 @@ static nmo_status_t nmo_keyedanimation_deserialize_internal(
         &section_dwords));
     if (section_found) {
         if (section_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
-        if (section_dwords > 2u) return NMO_ERR_INVALID_FORMAT;
         out_state->has_merge = 1;
         result = nmo_chunk_read_int(chunk, &out_state->merged);
         if (result != NMO_OK) return result;
