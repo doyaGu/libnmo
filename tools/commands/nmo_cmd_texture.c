@@ -88,11 +88,12 @@ static const char *save_options_str(uint32_t opts) {
     }
 }
 
+/* A texture is external when it keeps only file names and embeds no bitmap.
+ * The save option does not say so: CKTEXTURE_USEGLOBAL and the others choose
+ * what a later save writes, while the slots say what this file holds. */
 static bool is_external_texture(const nmo_texture_state_t *ts) {
-    /* Use-global textures have always been reported as external here, because
-     * the old mask test matched value 3; keep that. */
-    return ts->save_options == NMO_CKTEXTURE_EXTERNAL ||
-           ts->save_options == NMO_CKTEXTURE_USEGLOBAL;
+    return ts->bitmap_kind == CKTEXTURE_BITMAP_NONE &&
+           ts->has_slot_filenames && ts->slot_count > 0u;
 }
 
 static const char *format_label(const nmo_texture_state_t *ts) {
@@ -513,13 +514,25 @@ static bool texture_show_build_record(const nmo_cmd_ctx_t *c,
         return nmo_cli_record_null(rec, "state", NULL, NULL);
     }
 
+    /* Only a reader texture has the dimensions in the state; a raw texture
+     * has them in its first slot. */
+    int32_t shown_width = ts->reader_width;
+    int32_t shown_height = ts->reader_height;
+    int32_t shown_bpp = ts->reader_bpp;
+    if (ts->bitmap_kind == CKTEXTURE_BITMAP_RAW && ts->raw_slots != NULL &&
+        ts->slot_count > 0u) {
+        shown_width = ts->raw_slots[0].width;
+        shown_height = ts->raw_slots[0].height;
+        shown_bpp = ts->raw_slots[0].bits_per_pixel;
+    }
     ok = nmo_cli_record_int(rec, "reader_width", NULL, ts->reader_width);
     ok = ok && nmo_cli_record_int(rec, "reader_height", NULL, ts->reader_height);
-    ok = ok && ((ts->reader_width > 0 && ts->reader_height > 0)
+    ok = ok && ((shown_width > 0 && shown_height > 0)
                     ? nmo_cli_record_text_fmt(rec, "Dimensions", "%dx%d",
-                                              ts->reader_width, ts->reader_height)
+                                              shown_width, shown_height)
                     : nmo_cli_record_text(rec, "Dimensions", "-"));
-    ok = ok && nmo_cli_record_int(rec, "reader_bpp", "BPP", ts->reader_bpp);
+    ok = ok && nmo_cli_record_int(rec, "reader_bpp", NULL, ts->reader_bpp);
+    ok = ok && nmo_cli_record_text_fmt(rec, "BPP", "%d", shown_bpp);
     ok = ok && nmo_cli_record_str(rec, "bitmap_kind", "Bitmap Kind",
                                   bitmap_kind_str(ts->bitmap_kind));
     ok = ok && nmo_cli_record_uint(rec, "slot_count", NULL, ts->slot_count);
