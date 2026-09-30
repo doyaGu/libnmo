@@ -185,6 +185,35 @@ round-tripped, which is why the byte-level test did not see them.
   target and clear `CK_3DENTITY_FRAME`, and give the previous target `CK_3DENTITY_FRAME` back,
   as `SetTarget` does.
 
+### Fixed - Files older than the corpus
+No file in `data/` is older than data version 9 (meshes) or 10 (most classes), so these layouts had
+been written from assumptions. They now follow the engine's `Load` functions (CK2_3D.dll, CK2.dll);
+the tests build each layout dword by dword.
+- Meshes before data version 9 are read as `RCKMesh::Load` reads them. Vertices: from version 5 a
+  save flags dword and an unframed block (positions, then normals for a lit mesh or diffuse and
+  specular for a `VXMESH_PRELITMODE` mesh, then UVs), versions 1 to 4 one record per vertex, version 0
+  framed vectors. Faces come as a list of material groups, each a material and its faces (version 0:
+  a record per face), and the mesh's material groups are built from them as `SetFaceMaterial` does.
+  Lines are the framed buffer from version 1 and two integers each in version 0. Saving writes the
+  current layout and data version, as the engine does, so a mesh loaded from an older file is saved
+  as a current one.
+- Materials before data version 5 store each color as a size-prefixed buffer
+  (`[16][r][g][b][a]`), 33 dwords in all; libnmo read and wrote 29.
+- Textures before data version 5 keep the mipmap flag and image descriptor under
+  `CK_STATESAVE_TEXVIDEOFORMAT` (0x40000) and the save options under `CK_STATESAVE_TEXSAVEFORMAT`
+  (0x80000), not under 0x400000 and 0x800000. The state fields are renamed to match:
+  `has_legacy_video_format`, `legacy_video_format_data` / `_size` and `has_legacy_save_format`.
+  The pick threshold is read only from data version 5, and a reader slot whose alpha count is not 1
+  is followed by an alpha plane.
+- Body parts before data version 5 store the rotation joint as a size-prefixed block, and the joint
+  flags follow the engine's shift of `axis - 1` (axis 0 of the first vector sets bit 31 and axis 0 of
+  the other two sets nothing). A legacy block is refused for flags it cannot read back.
+- Object animations take the legacy path first for data version 0, where identifier 0x1000 is the
+  three-float root vector instead of the new-data section.
+- 2D entities read the material section only from data version 5.
+- `nmo_texture_replace_bitmap()` gives the stored PNG the PNG reader's extension and GUID, so the
+  engine can find a decoder for it.
+
 ### Tests
 - `test_corpus_chunk_roundtrip` checks every object chunk of the corpus. It compares against a
   second load of the original file that is never saved. It tolerates only the uninitialised
