@@ -1010,7 +1010,17 @@ static nmo_status_t save_serialize_managers(nmo_serializer_t *ctx) {
     if (session_managers != NULL) {
         for (uint32_t i = 0; i < session_manager_count; i++) {
             nmo_manager_data_t *fallback = &session_managers[i];
-            if ((fallback->flags & NMO_MANAGER_DATA_FLAG_DISPATCHED) != 0) {
+            /* A manager that took its chunk at load but writes none now (no
+               hook, or the hook gave no chunk) must not lose it; one that wrote
+               its own chunk replaces the loaded one. */
+            bool replaced = false;
+            for (uint32_t e = 0; e < ctx->manager_entry_count; e++) {
+                if (nmo_guid_equals(ctx->manager_entries[e].guid, fallback->guid)) {
+                    replaced = true;
+                    break;
+                }
+            }
+            if (replaced) {
                 continue;
             }
 

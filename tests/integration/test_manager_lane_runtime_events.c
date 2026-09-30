@@ -113,7 +113,83 @@ TEST(manager_lane_runtime_events, manager_chunk_roundtrip_and_event_order) {
     remove(temp_file);
 }
 
+/* A hook that takes its chunk when a file is loaded but gives none back. */
+static int manager_lane_on_event_takes_only(void *session_ptr, const nmo_runtime_event_ctx_t *ctx, void *user_data) {
+    (void)session_ptr;
+    (void)user_data;
+    (void)ctx;
+    return NMO_OK;
+}
+
+TEST(manager_lane_runtime_events, chunk_survives_a_manager_that_writes_none) {
+    const char *first_file = "test_manager_lane_first_tmp.nmo";
+    const char *second_file = "test_manager_lane_second_tmp.nmo";
+    const nmo_guid_t manager_guid = {0xA15E0001u, 0x0000BEEFu};
+
+    /* A file with a chunk of that manager. */
+    {
+        nmo_context_desc_t desc = {0};
+        nmo_context_t *ctx = nmo_context_create(&desc);
+        ASSERT_NOT_NULL(ctx);
+        manager_lane_tracker_t tracker = {0};
+        nmo_manager_t *manager = nmo_manager_create(manager_guid, "Writer", NMO_PLUGIN_MANAGER_DLL);
+        ASSERT_NOT_NULL(manager);
+        ASSERT_EQ(NMO_OK, nmo_manager_set_user_data(manager, &tracker));
+        ASSERT_EQ(NMO_OK, nmo_manager_set_on_event_hook(manager, manager_lane_on_event));
+        ASSERT_EQ(NMO_OK, nmo_manager_registry_register(
+            nmo_context_get_manager_registry(ctx), 900, manager));
+        nmo_session_t *writer = nmo_session_create(ctx);
+        ASSERT_NOT_NULL(writer);
+        nmo_object_id_t id = 0;
+        ASSERT_EQ(NMO_OK, nmo_session_create_object(writer, 1, "obj", (nmo_guid_t){0, 0}, &id, NULL));
+        ASSERT_EQ(NMO_OK, nmo_session_save_file(writer, first_file, NULL, NULL));
+        nmo_session_destroy(writer);
+        nmo_context_release(ctx);
+    }
+
+    /* A manager that accepts the chunk and writes nothing: the file still has it. */
+    {
+        nmo_context_desc_t desc = {0};
+        nmo_context_t *ctx = nmo_context_create(&desc);
+        ASSERT_NOT_NULL(ctx);
+        nmo_manager_t *manager = nmo_manager_create(manager_guid, "Silent", NMO_PLUGIN_MANAGER_DLL);
+        ASSERT_NOT_NULL(manager);
+        ASSERT_EQ(NMO_OK, nmo_manager_set_on_event_hook(manager, manager_lane_on_event_takes_only));
+        ASSERT_EQ(NMO_OK, nmo_manager_registry_register(
+            nmo_context_get_manager_registry(ctx), 900, manager));
+        nmo_session_t *session = nmo_session_create(ctx);
+        ASSERT_NOT_NULL(session);
+        ASSERT_EQ(NMO_OK, nmo_session_load_file(session, first_file, NULL, NULL));
+        ASSERT_EQ(NMO_OK, nmo_session_save_file(session, second_file, NULL, NULL));
+        nmo_session_destroy(session);
+        nmo_context_release(ctx);
+    }
+
+    /* The second file still carries it. */
+    {
+        nmo_context_desc_t desc = {0};
+        nmo_context_t *ctx = nmo_context_create(&desc);
+        ASSERT_NOT_NULL(ctx);
+        manager_lane_tracker_t tracker = {0};
+        nmo_manager_t *manager = nmo_manager_create(manager_guid, "Reader", NMO_PLUGIN_MANAGER_DLL);
+        ASSERT_NOT_NULL(manager);
+        ASSERT_EQ(NMO_OK, nmo_manager_set_user_data(manager, &tracker));
+        ASSERT_EQ(NMO_OK, nmo_manager_set_on_event_hook(manager, manager_lane_on_event));
+        ASSERT_EQ(NMO_OK, nmo_manager_registry_register(
+            nmo_context_get_manager_registry(ctx), 900, manager));
+        nmo_session_t *session = nmo_session_create(ctx);
+        ASSERT_NOT_NULL(session);
+        ASSERT_EQ(NMO_OK, nmo_session_load_file(session, second_file, NULL, NULL));
+        ASSERT_TRUE(tracker.consumed_chunk_count >= 1);
+        nmo_session_destroy(session);
+        nmo_context_release(ctx);
+    }
+    remove(first_file);
+    remove(second_file);
+}
+
 TEST_MAIN_BEGIN()
+REGISTER_TEST(manager_lane_runtime_events, chunk_survives_a_manager_that_writes_none);
 REGISTER_TEST(manager_lane_runtime_events, manager_chunk_roundtrip_and_event_order);
 TEST_MAIN_END()
 
