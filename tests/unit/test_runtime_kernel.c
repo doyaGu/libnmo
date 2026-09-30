@@ -3566,15 +3566,15 @@ TEST(runtime_kernel, dependency_remap_preserves_nonreference_state) {
     nmo_camera_state_t camera = {0};
     camera.projection_type = 99u;
     camera.fov = -1.0f;
-    camera.width = -2;
-    camera.height = 70000;
+    camera.aspect_width = -2;
+    camera.aspect_height = 70000;
     camera.near_plane = -3.0f;
     camera.far_plane = -4.0f;
     ASSERT_EQ(NMO_OK, nmo_camera_remap_dependencies(&camera, NULL, NULL));
     ASSERT_EQ(99u, camera.projection_type);
     ASSERT_FLOAT_EQ(-1.0f, camera.fov, 0.0f);
-    ASSERT_EQ(-2, camera.width);
-    ASSERT_EQ(70000, camera.height);
+    ASSERT_EQ(-2, camera.aspect_width);
+    ASSERT_EQ(70000, camera.aspect_height);
     ASSERT_FLOAT_EQ(-3.0f, camera.near_plane, 0.0f);
     ASSERT_FLOAT_EQ(-4.0f, camera.far_plane, 0.0f);
 

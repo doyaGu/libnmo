@@ -49,12 +49,9 @@ static const char *light_type_str(VXLIGHT_TYPE type) {
     }
 }
 
+/* RCKCamera tells the two apart by the low bit of the projection type. */
 static const char *projection_type_str(uint32_t type) {
-    switch (type) {
-    case 1:  return "perspective";
-    case 2:  return "orthographic";
-    default: return "unknown";
-    }
+    return (type & 1u) != 0u ? "perspective" : "orthographic";
 }
 
 /* RGBA colour as "(r, g, b, a)" on both sides. */
@@ -411,13 +408,16 @@ static bool entity_show_build_record(const nmo_cmd_ctx_t *c,
             ok = ok && nmo_cli_record_set_text_fmt(rec, "%.4f rad (%.1f deg)",
                                                    (double)cs->fov,
                                                    (double)(cs->fov * 180.0f / 3.14159265f));
+            ok = ok && nmo_cli_record_real(rec, "orthographic_zoom", "  Ortho Zoom",
+                                           (double)cs->orthographic_zoom, "%.4f");
             ok = ok && nmo_cli_record_real(rec, "near_plane", "  Near Plane",
                                            (double)cs->near_plane, "%.4f");
             ok = ok && nmo_cli_record_real(rec, "far_plane", "  Far Plane",
                                            (double)cs->far_plane, "%.4f");
-            ok = ok && nmo_cli_record_int(rec, "width", NULL, cs->width);
-            ok = ok && nmo_cli_record_int(rec, "height", NULL, cs->height);
-            ok = ok && nmo_cli_record_text_fmt(rec, "  Viewport", "%d x %d", cs->width, cs->height);
+            ok = ok && nmo_cli_record_int(rec, "aspect_width", NULL, cs->aspect_width);
+            ok = ok && nmo_cli_record_int(rec, "aspect_height", NULL, cs->aspect_height);
+            ok = ok && nmo_cli_record_text_fmt(rec, "  Aspect", "%d:%d",
+                                               cs->aspect_width, cs->aspect_height);
         }
     }
 
@@ -430,10 +430,12 @@ static bool entity_show_build_record(const nmo_cmd_ctx_t *c,
                                           light_type_str(ls->light_data.type));
             ok = ok && entity_record_color_rgba(rec, "light_diffuse", "  Diffuse",
                                                 &ls->light_data.diffuse);
-            ok = ok && entity_record_color_rgba(rec, "light_specular", "  Specular",
-                                                &ls->light_data.specular);
-            ok = ok && entity_record_color_rgba(rec, "light_ambient", "  Ambient",
-                                                &ls->light_data.ambient);
+            /* specular and ambient are runtime values of the engine, not
+             * stored in the file; the flags are what the file says. */
+            ok = ok && nmo_cli_record_bool(rec, "light_active", "  Active",
+                                           (ls->flags & NMO_LIGHT_FLAG_ACTIVE) != 0u);
+            ok = ok && nmo_cli_record_bool(rec, "light_specular_flag", "  Specular",
+                                           (ls->flags & NMO_LIGHT_FLAG_SPECULAR) != 0u);
             ok = ok && nmo_cli_record_real(rec, "light_range", "  Range",
                                            (double)ls->light_data.range, "%.4f");
             ok = ok && nmo_cli_record_real(rec, "attenuation0", NULL,
@@ -446,6 +448,14 @@ static bool entity_show_build_record(const nmo_cmd_ctx_t *c,
                                                (double)ls->light_data.attenuation0,
                                                (double)ls->light_data.attenuation1,
                                                (double)ls->light_data.attenuation2);
+            if (ls->light_data.type == VX_LIGHTSPOT) {
+                ok = ok && nmo_cli_record_real(rec, "light_inner_cone", "  Inner Cone",
+                                               (double)ls->light_data.inner_spot_cone, "%.4f");
+                ok = ok && nmo_cli_record_real(rec, "light_outer_cone", "  Outer Cone",
+                                               (double)ls->light_data.outer_spot_cone, "%.4f");
+                ok = ok && nmo_cli_record_real(rec, "light_falloff", "  Falloff",
+                                               (double)ls->light_data.falloff, "%.4f");
+            }
             ok = ok && nmo_cli_record_real(rec, "light_power", "  Power",
                                            (double)ls->light_power, "%.4f");
         }

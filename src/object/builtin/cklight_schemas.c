@@ -6,7 +6,7 @@
  * 
  * Serialization format (from CK2_3D.dll analysis):
  * 
- * Modern format (version ??):
+ * Modern format (data version 5 and later):
  * - Identifier CK_STATESAVE_LIGHTDATA (0x00400000): Core light data
  *   - DWORD: Type (low 8 bits) | Flags (high 24 bits)
  *   - DWORD: Diffuse color (packed ARGB)
@@ -60,7 +60,7 @@ static void nmo_light_set_defaults(void *instance)
     }
 
     /* Mirrors RCKLight ctor defaults (see CKRenderEngine/src/CKLight.cpp). */
-    state->flags = 0x100u;
+    state->flags = NMO_LIGHT_FLAG_ACTIVE;
     state->light_power = 1.0f;
 
     state->light_data.type = VX_LIGHTPOINT;
@@ -338,9 +338,9 @@ static nmo_status_t nmo_light_deserialize_legacy(
         }
         // Store active in flags (bit mapping matches engine: 0x100)
         if (active) {
-            out_state->flags |= 0x100u;
+            out_state->flags |= NMO_LIGHT_FLAG_ACTIVE;
         } else {
-            out_state->flags &= ~0x100u;
+            out_state->flags &= ~NMO_LIGHT_FLAG_ACTIVE;
         }
 
         // Read Specular flag
@@ -350,9 +350,9 @@ static nmo_status_t nmo_light_deserialize_legacy(
             return result;
         }
         if (specular) {
-            out_state->flags |= 0x200u;
+            out_state->flags |= NMO_LIGHT_FLAG_SPECULAR;
         } else {
-            out_state->flags &= ~0x200u;
+            out_state->flags &= ~NMO_LIGHT_FLAG_SPECULAR;
         }
 
         // Read attenuation parameters
@@ -499,7 +499,7 @@ static nmo_status_t nmo_light_serialize_internal(
     }
     const bool has_default_data =
         state->light_data.type == VX_LIGHTPOINT &&
-        state->flags == 0x100u &&
+        state->flags == NMO_LIGHT_FLAG_ACTIVE &&
         state->light_data.diffuse.r == 1.0f &&
         state->light_data.diffuse.g == 1.0f &&
         state->light_data.diffuse.b == 1.0f &&
@@ -538,7 +538,7 @@ static nmo_status_t nmo_light_serialize_internal(
             NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
             "Modern non-spot light layout cannot store spot parameters");
     }
-    if (write_legacy && (state->flags & ~(0x100u | 0x200u)) != 0u) {
+    if (write_legacy && (state->flags & ~(NMO_LIGHT_FLAG_ACTIVE | NMO_LIGHT_FLAG_SPECULAR)) != 0u) {
         NMO_RETURN_ERROR(
             NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
             "Legacy light layout cannot store the requested flags");
@@ -568,9 +568,9 @@ static nmo_status_t nmo_light_serialize_internal(
         NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
             chunk, state->legacy_diffuse_alpha));
         NMO_RETURN_IF_ERROR(nmo_chunk_write_int(
-            chunk, (state->flags & 0x100u) != 0u));
+            chunk, (state->flags & NMO_LIGHT_FLAG_ACTIVE) != 0u));
         NMO_RETURN_IF_ERROR(nmo_chunk_write_int(
-            chunk, (state->flags & 0x200u) != 0u));
+            chunk, (state->flags & NMO_LIGHT_FLAG_SPECULAR) != 0u));
         NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
             chunk, state->light_data.attenuation0));
         NMO_RETURN_IF_ERROR(nmo_chunk_write_float(

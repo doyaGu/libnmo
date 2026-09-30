@@ -12,10 +12,10 @@
  * 
  * Format structure (from reference Load/Save):
  * - CK3dEntity data (transform matrix, etc)
- * - Projection type (DWORD: CK_PERSPECTIVEPROJECTION or CK_ORTHOGRAPHICPROJECTION)
- * - FOV angle (float, radians)
+ * - Projection type (DWORD: CK_CAMERA_PROJECTION)
+ * - FOV (float, full horizontal angle in radians)
  * - Orthographic zoom (float)
- * - Packed width/height (DWORD: low=width, high=height)
+ * - Aspect ratio (DWORD: low=width, high=height of the ratio)
  * - Near clip plane (float)
  * - Far clip plane (float)
  */
@@ -45,11 +45,11 @@ static void nmo_camera_set_defaults(void *instance)
     }
 
     /* Mirrors RCKCamera ctor defaults (see CKRenderEngine/src/CKCamera.cpp). */
-    state->projection_type = 1u; /* CK_PERSPECTIVEPROJECTION */
+    state->projection_type = CK_PERSPECTIVEPROJECTION;
     state->fov = 0.5f;
     state->orthographic_zoom = 1.0f;
-    state->width = 4;
-    state->height = 3;
+    state->aspect_width = 4;
+    state->aspect_height = 3;
     state->near_plane = 1.0f;
     state->far_plane = 4000.0f;
 
@@ -65,8 +65,8 @@ static const nmo_object_state_member_t nmo_camera_members[] = {
     NMO_STATE_VALUE(nmo_camera_state_t, projection_type),
     NMO_STATE_VALUE(nmo_camera_state_t, fov),
     NMO_STATE_VALUE(nmo_camera_state_t, orthographic_zoom),
-    NMO_STATE_VALUE(nmo_camera_state_t, width),
-    NMO_STATE_VALUE(nmo_camera_state_t, height),
+    NMO_STATE_VALUE(nmo_camera_state_t, aspect_width),
+    NMO_STATE_VALUE(nmo_camera_state_t, aspect_height),
     NMO_STATE_VALUE(nmo_camera_state_t, near_plane),
     NMO_STATE_VALUE(nmo_camera_state_t, far_plane),
     NMO_STATE_VALUE(nmo_camera_state_t, has_cameraonly_chunk),
@@ -109,8 +109,8 @@ static const nmo_type_field_t nmo_camera_fields[] = {
     NMO_FIELD(nmo_camera_state_t, projection_type, CKPGUID_UINT32),
     NMO_FIELD(nmo_camera_state_t, fov, CKPGUID_FLOAT),
     NMO_FIELD(nmo_camera_state_t, orthographic_zoom, CKPGUID_FLOAT),
-    NMO_FIELD(nmo_camera_state_t, width, CKPGUID_INT),
-    NMO_FIELD(nmo_camera_state_t, height, CKPGUID_INT),
+    NMO_FIELD(nmo_camera_state_t, aspect_width, CKPGUID_INT),
+    NMO_FIELD(nmo_camera_state_t, aspect_height, CKPGUID_INT),
     NMO_FIELD(nmo_camera_state_t, near_plane, CKPGUID_FLOAT),
     NMO_FIELD(nmo_camera_state_t, far_plane, CKPGUID_FLOAT),
     NMO_FIELD(nmo_camera_state_t, has_cameraonly_chunk, CKPGUID_UINT8),
@@ -130,7 +130,7 @@ static const nmo_type_field_t nmo_camera_fields[] = {
  * 
  * Reads camera projection parameters and 3D entity transform.
  * 
- * Chunk format (version 7):
+ * Chunk format (data version 5 and later):
  * - CK3dEntity data (transform, flags, etc)
  * - DWORD projection_type
  * - float fov
@@ -200,8 +200,8 @@ static nmo_status_t nmo_camera_deserialize_internal(
         if (seek_result == NMO_OK) {
             if (payload_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
             out_state->has_aspect_chunk = 1;
-            NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &out_state->width));
-            NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &out_state->height));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &out_state->aspect_width));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &out_state->aspect_height));
         } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
         seek_result = nmo_chunk_seek_identifier_with_size(
             chunk, CK_STATESAVE_CAMERAPLANES, &payload_dwords);
@@ -224,8 +224,8 @@ static nmo_status_t nmo_camera_deserialize_internal(
 
             uint32_t packed = 0;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &packed));
-            out_state->width = (int32_t)(packed & 0xFFFF);
-            out_state->height = (int32_t)((packed >> 16) & 0xFFFF);
+            out_state->aspect_width = (int32_t)(packed & 0xFFFF);
+            out_state->aspect_height = (int32_t)((packed >> 16) & 0xFFFF);
 
             NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->near_plane));
             NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->far_plane));
@@ -303,19 +303,19 @@ static nmo_status_t nmo_camera_serialize_internal(
         out_chunk->data_version = NMO_CHUNK_DATA_VERSION_CURRENT;
     }
     const bool has_default_values =
-        in_state->projection_type == 1u && in_state->fov == 0.5f &&
+        in_state->projection_type == CK_PERSPECTIVEPROJECTION && in_state->fov == 0.5f &&
         in_state->orthographic_zoom == 1.0f &&
-        in_state->width == 4 && in_state->height == 3 &&
+        in_state->aspect_width == 4 && in_state->aspect_height == 3 &&
         in_state->near_plane == 1.0f && in_state->far_plane == 4000.0f;
 
     if (write_legacy) {
         if (in_state->has_cameraonly_chunk ||
             (!in_state->has_fov_chunk && in_state->fov != 0.5f) ||
-            (!in_state->has_proj_chunk && in_state->projection_type != 1u) ||
+            (!in_state->has_proj_chunk && in_state->projection_type != CK_PERSPECTIVEPROJECTION) ||
             (!in_state->has_ortho_chunk &&
              in_state->orthographic_zoom != 1.0f) ||
             (!in_state->has_aspect_chunk &&
-             (in_state->width != 4 || in_state->height != 3)) ||
+             (in_state->aspect_width != 4 || in_state->aspect_height != 3)) ||
             (!in_state->has_planes_chunk &&
              (in_state->near_plane != 1.0f ||
               in_state->far_plane != 4000.0f))) {
@@ -337,8 +337,8 @@ static nmo_status_t nmo_camera_serialize_internal(
         (is_file && !write_legacy &&
          in_state->has_cameraonly_chunk);
     if (writes_packed_layout &&
-        (in_state->width < 0 || in_state->width > UINT16_MAX ||
-         in_state->height < 0 || in_state->height > UINT16_MAX)) {
+        (in_state->aspect_width < 0 || in_state->aspect_width > UINT16_MAX ||
+         in_state->aspect_height < 0 || in_state->aspect_height > UINT16_MAX)) {
         NMO_RETURN_ERROR(
             NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
             "Camera dimensions cannot be represented by the packed layout");
@@ -363,8 +363,8 @@ static nmo_status_t nmo_camera_serialize_internal(
         NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
             out_chunk, in_state->orthographic_zoom));
 
-        const uint32_t packed = ((uint32_t)in_state->height << 16) |
-            (uint32_t)in_state->width;
+        const uint32_t packed = ((uint32_t)in_state->aspect_height << 16) |
+            (uint32_t)in_state->aspect_width;
         NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(out_chunk, packed));
         NMO_RETURN_IF_ERROR(nmo_chunk_write_float(
             out_chunk, in_state->near_plane));
@@ -393,8 +393,8 @@ static nmo_status_t nmo_camera_serialize_internal(
     if (in_state->has_aspect_chunk) {
         NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(
             out_chunk, CK_STATESAVE_CAMERAASPECT));
-        NMO_RETURN_IF_ERROR(nmo_chunk_write_int(out_chunk, in_state->width));
-        NMO_RETURN_IF_ERROR(nmo_chunk_write_int(out_chunk, in_state->height));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_int(out_chunk, in_state->aspect_width));
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_int(out_chunk, in_state->aspect_height));
     }
     if (in_state->has_planes_chunk) {
         NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(

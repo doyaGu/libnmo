@@ -206,6 +206,13 @@ typedef struct nmo_font_info {
  * Lighting & Materials
  * ============================================================================ */
 
+/* CKLightData. The file stores the type, the diffuse color, the attenuation,
+ * the range, for a spot light the cones and the falloff, and (separately) the
+ * power. specular, ambient, position and direction are never written: the
+ * engine derives them at runtime (specular from the specular flag and the
+ * diffuse color, position and direction from the world matrix), so they read
+ * as zero here. The cones are full angles in radians (inner is the hot spot,
+ * outer the fall off); falloff is the shape exponent. */
 typedef struct nmo_light_data {
     VXLIGHT_TYPE type;
     nmo_color_t diffuse;

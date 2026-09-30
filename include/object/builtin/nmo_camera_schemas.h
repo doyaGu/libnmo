@@ -20,21 +20,29 @@ typedef struct nmo_chunk nmo_chunk_t;
 
 typedef struct nmo_type_descriptor nmo_type_descriptor_t;
 
+/** Projection types of a camera. RCKCamera tells them apart by the low bit:
+ *  odd is perspective, even is orthographic. */
+typedef enum CK_CAMERA_PROJECTION {
+    CK_PERSPECTIVEPROJECTION = 1,
+    CK_ORTHOGRAPHICPROJECTION = 2
+} CK_CAMERA_PROJECTION;
+
 /**
  * @brief CKCamera state structure
  * 
  * Represents the deserialized state of a CKCamera object.
- * This is a PARTIAL schema - some fields are preserved as raw data.
+ * Every field of the chunk is modeled; near_plane and far_plane are the
+ * SDK's front and back clipping planes.
  */
 typedef struct nmo_camera_state {
     nmo_3dentity_state_t entity;  ///< Parent CK3dEntity state
     
     // Camera projection parameters
-    uint32_t projection_type;  ///< CK_PERSPECTIVEPROJECTION or CK_ORTHOGRAPHICPROJECTION
-    float fov;                 ///< Field of view angle (radians)
-    float orthographic_zoom;   ///< Orthographic zoom factor
-    int32_t width;             ///< Viewport width
-    int32_t height;            ///< Viewport height
+    uint32_t projection_type;  ///< CK_CAMERA_PROJECTION; the engine tests the low bit
+    float fov;                 ///< Full horizontal field of view in radians (unused when orthographic)
+    float orthographic_zoom;   ///< Orthographic zoom; half the view width is 1 / zoom
+    int32_t aspect_width;      ///< Aspect ratio numerator (width / height), 4 by default
+    int32_t aspect_height;     ///< Aspect ratio denominator, 3 by default
     float near_plane;          ///< Near clipping plane distance
     float far_plane;           ///< Far clipping plane distance
 

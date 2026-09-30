@@ -6218,11 +6218,11 @@ TEST(chunk_id_remap, camera_and_light_failures_keep_previous_state) {
     ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(
         &camera.entity.base.base.scripts, 901));
     camera.fov = 8.0f;
-    camera.width = 77;
+    camera.aspect_width = 77;
     ASSERT_NE(NMO_OK, nmo_camera_deserialize(
         &camera, camera_chunk, NULL, &deserialize_context));
     ASSERT_EQ(8.0f, camera.fov);
-    ASSERT_EQ(77, camera.width);
+    ASSERT_EQ(77, camera.aspect_width);
     ASSERT_EQ(1u, camera.entity.base.base.scripts.count);
     ASSERT_EQ(901u, nmo_beobject_script_array_get_id(
         &camera.entity.base.base.scripts, 0));
@@ -6246,7 +6246,7 @@ TEST(chunk_id_remap, camera_and_light_failures_keep_previous_state) {
     ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_camera_deserialize(
         &camera, camera_cross_section, NULL, &deserialize_context));
     ASSERT_EQ(8.0f, camera.fov);
-    ASSERT_EQ(77, camera.width);
+    ASSERT_EQ(77, camera.aspect_width);
     ASSERT_EQ(901u, nmo_beobject_script_array_get_id(
         &camera.entity.base.base.scripts, 0));
 
@@ -6264,7 +6264,7 @@ TEST(chunk_id_remap, camera_and_light_failures_keep_previous_state) {
     ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_camera_deserialize(
         &camera, legacy_camera_cross_section, NULL, &deserialize_context));
     ASSERT_EQ(8.0f, camera.fov);
-    ASSERT_EQ(77, camera.width);
+    ASSERT_EQ(77, camera.aspect_width);
     ASSERT_EQ(901u, nmo_beobject_script_array_get_id(
         &camera.entity.base.base.scripts, 0));
 
@@ -6434,7 +6434,7 @@ TEST(chunk_id_remap, camera_preserves_file_layouts) {
     ASSERT_EQ(4u, nmo_chunk_get_data_size(saved_empty));
     camera.fov = 0.5f;
     camera.has_cameraonly_chunk = 1;
-    camera.width = 65536;
+    camera.aspect_width = 65536;
     ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_camera_serialize(
         &camera, saved_empty, NULL, &serialize_context));
     ASSERT_EQ(4u, nmo_chunk_get_data_size(saved_empty));
@@ -12031,8 +12031,8 @@ TEST(chunk_id_remap, camera_copy_preserves_inherited_and_own_state) {
     source.entity.mesh_ids[0] = nmo_ref_from_raw(201);
     source.projection_type = 2;
     source.fov = 0.75f;
-    source.width = 16;
-    source.height = 9;
+    source.aspect_width = 16;
+    source.aspect_height = 9;
     source.has_cameraonly_chunk = 1;
 
     nmo_type_descriptor_t camera_type = {

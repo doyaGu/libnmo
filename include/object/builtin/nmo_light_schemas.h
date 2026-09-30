@@ -7,7 +7,6 @@
  * - RCKLight::Save at 0x1001B389 (389 bytes)
  * - CKLightData structure (104 bytes)
  * 
- * See docs/CK2_3D_reverse_notes_extended.md for detailed analysis.
  */
 
 #ifndef NMO_CKLIGHT_SCHEMAS_H
@@ -36,6 +35,10 @@ typedef struct nmo_type_descriptor nmo_type_descriptor_t;
  * Represents the deserialized state of an RCKLight object.
  * Size: RCK3dEntity (424B) + CKLightData (104B) + flags (4B) + power (4B) = 536 bytes
  */
+/** Bits of nmo_light_state_t::flags (RCKLight::Active, SetSpecularFlag). */
+#define NMO_LIGHT_FLAG_ACTIVE    0x100u
+#define NMO_LIGHT_FLAG_SPECULAR  0x200u
+
 typedef struct nmo_light_state {
     nmo_3dentity_state_t entity;  ///< Parent CK3dEntity state
     
@@ -43,7 +46,7 @@ typedef struct nmo_light_state {
     nmo_light_data_t light_data;
     
     // Flags (4 bytes at 0x210)
-    uint32_t flags;                  ///< Light flags (active, specular, etc.)
+    uint32_t flags;                  ///< NMO_LIGHT_FLAG_ACTIVE, NMO_LIGHT_FLAG_SPECULAR and entity-level bits
     
     // Power multiplier (4 bytes at 0x214)
     float light_power;               ///< Intensity multiplier (default 1.0)
