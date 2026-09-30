@@ -3,6 +3,7 @@
 
 #include "runtime/nmo_workspace.h"
 #include "behavior/nmo_behavior_analyze.h"
+#include "runtime/nmo_behavior_link_edit.h"
 #include "behavior/nmo_semantic_validator.h"
 #include "behavior/nmo_script_edit.h"
 #include "behavior/nmo_script_edit_graph.h"
@@ -135,23 +136,6 @@ typedef struct nmo_behavior_fold_report {
     const char *diagnostic_code;
     const char *diagnostic_message;
 } nmo_behavior_fold_report_t;
-
-NMO_API nmo_status_t nmo_behavior_edit_add_link(
-    nmo_workspace_edit_t *edit,
-    nmo_object_id_t parent_behavior_id,
-    nmo_object_id_t from_io_id,
-    nmo_object_id_t to_io_id,
-    int16_t activation_delay,
-    nmo_object_id_t *out_link_id);
-
-NMO_API nmo_status_t nmo_behavior_edit_remove_link(
-    nmo_workspace_edit_t *edit,
-    nmo_object_id_t parent_behavior_id,
-    nmo_object_id_t link_id);
-
-NMO_API nmo_status_t nmo_behavior_edit_mark_interface(
-    nmo_workspace_edit_t *edit,
-    nmo_object_id_t behavior_id);
 
 NMO_API nmo_status_t nmo_behavior_edit_replace_bb(
     nmo_workspace_t *workspace,

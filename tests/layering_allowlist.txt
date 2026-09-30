@@ -38,7 +38,6 @@ src/runtime/document_workspace.c document/nmo_document_load.h
 src/runtime/document_workspace.c document/nmo_document_save.h
 src/runtime/runtime_internal.h document/nmo_document.h
 src/runtime/runtime_internal.h document/nmo_document_file_state.h
-src/runtime/workspace_edit.c behavior/nmo_behavior_edit.h
 src/session/deserializer.c runtime/nmo_context.h
 src/session/runtime_delete.c runtime/nmo_context.h
 src/session/runtime_kernel.c runtime/nmo_context.h

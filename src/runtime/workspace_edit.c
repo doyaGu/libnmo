@@ -10,7 +10,7 @@
 #include "object/nmo_object_edit.h"
 #include "object/nmo_scene_edit.h"
 #include "object/nmo_sound_edit.h"
-#include "behavior/nmo_behavior_edit.h"
+#include "runtime/nmo_behavior_link_edit.h"
 
 #include "runtime_internal.h"
 #include "workspace_edit_journal_internal.h"
