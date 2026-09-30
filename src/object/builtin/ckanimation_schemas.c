@@ -3024,13 +3024,17 @@ static nmo_status_t nmo_objectanimation_serialize_internal(
             const nmo_objanim_controller_t *ctrl = &in_state->controllers[i];
             /* Controllers with keys get their count written as the blob prefix. */
             const bool has_prefix = ctrl->key_count > 0u;
+            /* The engine reads a key count from every blob, so a controller
+               without keys is written as {type, 1, 0}. */
+            const bool empty = ctrl->key_count == 0u && ctrl->data_size == 0u;
             nmo_status_t result = nmo_chunk_write_dword(out_chunk, ctrl->type);
             if (result != NMO_OK) return result;
             uint32_t size_dwords =
                 (ctrl->data_size + (has_prefix ? (uint32_t)sizeof(uint32_t) : 0u)) / 4;
+            if (empty) size_dwords = 1u;
             result = nmo_chunk_write_dword(out_chunk, size_dwords);
             if (result != NMO_OK) return result;
-            if (has_prefix) {
+            if (has_prefix || empty) {
                 result = nmo_chunk_write_dword(out_chunk, ctrl->key_count);
                 if (result != NMO_OK) return result;
             }
