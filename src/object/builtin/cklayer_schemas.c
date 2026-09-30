@@ -290,10 +290,12 @@ static nmo_status_t nmo_layer_serialize_internal(
         NMO_RETURN_IF_ERROR(nmo_chunk_write_int(out_chunk, (int32_t)(in_state->has_flags ? in_state->flags : 1)));
     }
 
-    if (in_state->format == 0) {
-        /* The format-0 payload always contains a sized buffer, including
-           the empty case. The reader cannot distinguish omission from a
-           truncated buffer header. */
+    /* RCKLayer::Save writes the square buffer of a format 0 layer only when it
+       has a grid; the reader takes a section that ends after the header as
+       one without a buffer. */
+    if (in_state->format == 0 &&
+        (in_state->has_square_data ||
+         nmo_ref_serialized_id(&in_state->grid) != NMO_OBJECT_ID_NONE)) {
         return nmo_chunk_write_buffer(
             out_chunk,
             in_state->has_square_data ? in_state->square_data : NULL,
