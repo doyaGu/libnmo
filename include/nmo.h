@@ -19,18 +19,19 @@
  *
  * Basic usage:
  * @code
- * // Create context
+ * // Create context (the descriptor is copied; pass NULL for defaults)
+ * nmo_logger_t logger = nmo_logger_stderr();
  * nmo_context_desc_t desc = {
  *     .allocator = NULL,  // Use default
- *     .logger = nmo_logger_stderr(),
+ *     .logger = &logger,
  *     .thread_pool_size = 4
  * };
  * nmo_context_t *ctx = nmo_context_create(&desc);
  * nmo_context_enable_logging(ctx, 1); // Optional: enable libnmo logs
  *
- * // Load file into a document
+ * // Load file into a document (NULL options = defaults)
  * nmo_document_t *document = NULL;
- * if (nmo_document_load_file(ctx, "file.nmo", &document) != NMO_OK) {
+ * if (nmo_document_load_file(ctx, "file.nmo", NULL, &document) != NMO_OK) {
  *     fprintf(stderr, "Error: failed to load file\n");
  * }
  *
