@@ -15,6 +15,7 @@
 #include "core/nmo_error.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_utils.h"
+#include "type/nmo_type_guids.h"
 #include "object/nmo_object_repository.h"
 #include <string.h>
 
@@ -30,7 +31,8 @@ static void nmo_layer_set_defaults(void *instance) {
     state->format = 0;
     state->version = 0;
     state->color_rgba = 0;
-    state->param_guid = (nmo_guid_t){0, 0};
+    /* The parameter type a layer type is associated with unless told otherwise. */
+    state->param_guid = CKPGUID_INT;
     state->flags = 1;
 
     state->has_layer_data = 1;
@@ -103,6 +105,7 @@ static nmo_status_t nmo_layer_deserialize_internal(
     out_state->has_version = 0;
     out_state->has_color = 0;
     out_state->has_param_guid = 0;
+    out_state->param_guid = CKPGUID_INT;
     out_state->has_flags = 0;
     out_state->has_square_data = 0;
     out_state->square_data = NULL;
@@ -276,7 +279,7 @@ static nmo_status_t nmo_layer_serialize_internal(
         }
         if (version >= 3) {
             NMO_RETURN_IF_ERROR(nmo_chunk_write_guid(out_chunk,
-                                 in_state->has_param_guid ? in_state->param_guid : (nmo_guid_t){0, 0}));
+                                 in_state->has_param_guid ? in_state->param_guid : CKPGUID_INT));
         }
         if (version >= 2) {
             NMO_RETURN_IF_ERROR(nmo_chunk_write_int(out_chunk, (int32_t)(in_state->has_flags ? in_state->flags : 1)));
