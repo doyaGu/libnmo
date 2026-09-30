@@ -953,6 +953,8 @@ nmo_status_t nmo_texture_deserialize(
     if (out_state == NULL || chunk == NULL) return NMO_ERR_INVALID_ARGUMENT;
 
     nmo_texture_state_t decoded = {0};
+    /* The CKBitmapData constructor's value, for a texture without a packed state block. */
+    decoded.save_options = NMO_CKTEXTURE_USEGLOBAL;
     if (out_state->base.scripts.allocator.alloc != NULL) {
         decoded.base.scripts.allocator = out_state->base.scripts.allocator;
     }
@@ -1972,22 +1974,28 @@ nmo_status_t nmo_texture_replace_bitmap(
     state->save_options = NMO_CKTEXTURE_IMAGEFORMAT;
     state->has_oldtexonly = 1;
 
-    /* Ensure at least one slot */
-    if (state->slot_count == 0)
-        state->slot_count = 1;
-
-    /* Switch to reader mode if needed */
-    if (state->bitmap_kind != CKTEXTURE_BITMAP_READER || !state->reader_slots) {
-        state->bitmap_kind = CKTEXTURE_BITMAP_READER;
-        state->reader_slots = (nmo_texture_reader_slot_t *)nmo_arena_alloc(
-            arena, state->slot_count * sizeof(nmo_texture_reader_slot_t), 8);
-        if (!state->reader_slots)
-            return NMO_ERR_NOMEM;
-        memset(state->reader_slots, 0,
-               state->slot_count * sizeof(nmo_texture_reader_slot_t));
-        state->raw_slots = NULL;
-        state->bitmap2_slots = NULL;
-    }
+    /* The pixels replace the whole image: one slot, no movie, no cube faces
+       and nothing that described the old image (mipmaps, save format). */
+    state->slot_count = 1;
+    state->bitmap_kind = CKTEXTURE_BITMAP_READER;
+    state->reader_slots = (nmo_texture_reader_slot_t *)nmo_arena_alloc(
+        arena, sizeof(nmo_texture_reader_slot_t), 8);
+    if (!state->reader_slots)
+        return NMO_ERR_NOMEM;
+    memset(state->reader_slots, 0, sizeof(nmo_texture_reader_slot_t));
+    state->raw_slots = NULL;
+    state->bitmap2_slots = NULL;
+    state->has_movie_filename = 0;
+    state->movie_filename = NULL;
+    state->is_cubemap = 0;
+    state->has_current_slot = 0;
+    state->current_slot = 0;
+    state->has_save_format = 0;
+    state->save_format_data = NULL;
+    state->save_format_size = 0;
+    state->has_user_mipmaps = 0;
+    state->user_mipmap_count = 0;
+    state->user_mipmaps = NULL;
 
     /* Write encoded PNG into slot 0 */
     nmo_texture_reader_slot_t *slot = &state->reader_slots[0];
