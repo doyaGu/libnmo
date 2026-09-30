@@ -225,6 +225,11 @@ the tests build each layout dword by dword.
 - A 2D entity of data version 5 or later without the `0x10F000` block keeps the constructor state
   (flags, source rectangle) instead of failing to load, and an older one without `0x4000` keeps the
   constructor flags.
+- Camera, light, target camera and target light sections may be longer than the engine reads; the
+  extra dwords are ignored as `Load` ignores them. A legacy light's active and specular integers
+  mean true for any non-zero value.
+- A format 0 layer whose section ends after the header has no square buffer (`Save` writes the
+  buffer only when the layer has a grid).
 
 ### Tests
 - `test_corpus_chunk_roundtrip` checks every object chunk of the corpus. It compares against a
