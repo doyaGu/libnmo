@@ -1510,6 +1510,64 @@ TEST(cli_write, data_entity_material_texture_animation_save_and_validate) {
     write_probe_close(&anim_probe);
 }
 
+TEST(cli_write, animation_import_controllers_format_keeps_key_counts) {
+    TEST_REQUIRE_FIXTURE("Ballance/MenuLevel.nmo");
+    make_dir("test_cli_write_tmp");
+
+    ASSERT_TRUE(write_text_file(
+        "test_cli_write_tmp/import_controllers.anim.json",
+        "{\n"
+        "  \"format\":\"CONTROLLERS\",\n"
+        "  \"entity_id\":520,\n"
+        "  \"length\":4.0,\n"
+        "  \"flags\":1,\n"
+        "  \"controllers\":[\n"
+        "    {\n"
+        "      \"type\":\"0x637c4301\",\n"
+        "      \"key_count\":2,\n"
+        "      \"keys\":[\n"
+        "        {\"time\":0,\"values\":[1,2,3]},\n"
+        "        {\"time\":2.5,\"values\":[4,5,6]}\n"
+        "      ]\n"
+        "    },\n"
+        "    {\n"
+        "      \"type\":\"0x49ed4002\",\n"
+        "      \"key_count\":1,\n"
+        "      \"keys\":[{\"time\":0,\"values\":[0,0,0,1]}]\n"
+        "    }\n"
+        "  ]\n"
+        "}\n"));
+    assert_cli_success(
+        "animation import \"test_cli_write_tmp/import_controllers.anim.json\" "
+        "\"" NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo") "\" "
+        "-o \"test_cli_write_tmp/animation_controllers_out.nmo\"",
+        "Created CKObjectAnimation");
+    assert_validate_ok("test_cli_write_tmp/animation_controllers_out.nmo");
+
+    /* CONTROLLERS blobs carry their key count, so it survives save and load. */
+    write_semantic_probe_t probe;
+    assert_probe_open(&probe, "test_cli_write_tmp/animation_controllers_out.nmo");
+    nmo_object_t *imported = write_probe_object_by_name(&probe, "imported_anim");
+    ASSERT_NOT_NULL(imported);
+    const nmo_objectanimation_state_t *state =
+        (const nmo_objectanimation_state_t *)write_probe_state(
+            &probe, imported->id, CKPGUID_OBJECTANIMATION);
+    ASSERT_NOT_NULL(state);
+    ASSERT_EQ(CKOBJANIM_FORMAT_CONTROLLERS, state->format);
+    ASSERT_EQ(2u, state->controller_count);
+    ASSERT_EQ(0x637c4301u, state->controllers[0].type);
+    ASSERT_EQ(2u, state->controllers[0].key_count);
+    ASSERT_EQ(32u, state->controllers[0].data_size);
+    const float *pos_keys = (const float *)state->controllers[0].data;
+    ASSERT_NOT_NULL(pos_keys);
+    ASSERT_FLOAT_EQ(2.5f, pos_keys[4], 0.0001f);
+    ASSERT_FLOAT_EQ(6.0f, pos_keys[7], 0.0001f);
+    ASSERT_EQ(0x49ed4002u, state->controllers[1].type);
+    ASSERT_EQ(1u, state->controllers[1].key_count);
+    ASSERT_EQ(20u, state->controllers[1].data_size);
+    write_probe_close(&probe);
+}
+
 TEST(cli_write, parameter_set_persists_typed_object_and_raw_values) {
     TEST_REQUIRE_FIXTURE("Ballance/MenuLevel.nmo");
     make_dir("test_cli_write_tmp");
@@ -1641,6 +1699,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli_write, object_create_copy_import_delete_save_and_validate);
     REGISTER_TEST(cli_write, object_export_import_snapshot_round_trips_mesh_and_matrix);
     REGISTER_TEST(cli_write, data_entity_material_texture_animation_save_and_validate);
+    REGISTER_TEST(cli_write, animation_import_controllers_format_keeps_key_counts);
     REGISTER_TEST(cli_write, parameter_set_persists_typed_object_and_raw_values);
     REGISTER_TEST(cli_write, entity_position_preserves_3dobject_chunk_and_plugin_dependencies);
 TEST_MAIN_END()
