@@ -927,3 +927,80 @@ nmo_status_t nmo_object_clone_string_array(
 
     NMO_RETURN_OK();
 }
+
+nmo_status_t nmo_object_serialize_staged(
+    const void *instance,
+    nmo_chunk_t *out_chunk,
+    const nmo_type_descriptor_t *type,
+    void *context,
+    nmo_type_validate_fn validate,
+    nmo_type_serialize_fn serialize)
+{
+    if (instance == NULL || out_chunk == NULL || out_chunk->arena == NULL ||
+        serialize == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (validate != NULL) {
+        NMO_RETURN_IF_ERROR(validate(instance, type, context));
+    }
+
+    nmo_chunk_t *staged = nmo_chunk_create(out_chunk->arena);
+    if (staged == NULL) return NMO_ERR_NOMEM;
+    staged->class_id = out_chunk->class_id;
+    staged->data_version = out_chunk->data_version;
+    staged->chunk_version = out_chunk->chunk_version;
+    staged->chunk_class_id = out_chunk->chunk_class_id;
+    staged->chunk_options = out_chunk->chunk_options;
+    staged->file_context = out_chunk->file_context;
+
+    nmo_status_t result = serialize(instance, staged, type, context);
+    if (result != NMO_OK) return result;
+    *out_chunk = *staged;
+    return NMO_OK;
+}
+
+nmo_status_t nmo_object_pre_delete_checked(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (instance == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to pre_delete");
+    }
+    NMO_RETURN_OK();
+}
+
+void nmo_object_post_delete_noop(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)instance;
+    (void)type;
+    (void)context;
+}
+
+nmo_status_t nmo_object_prepare_dependencies_checked(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    (void)type;
+    (void)context;
+    if (instance == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to prepare_dependencies");
+    }
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_object_prepare_dependencies_default(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    return nmo_object_default_validate(instance, type, context);
+}

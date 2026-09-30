@@ -208,6 +208,103 @@ NMO_API uint32_t nmo_object_layout_hash(
     NMO_DEFINE_OBJECT_LAYOUT_COPY(_prefix, _layout) \
     NMO_DEFINE_OBJECT_LAYOUT_COMPARE(_prefix, _layout)
 
+/* ============================================================================
+ * Shared Hooks and Wrappers
+ * ============================================================================ */
+
+/**
+ * @brief Serialize through a staging chunk so a failed write leaves out_chunk untouched.
+ *
+ * Checks the arguments, runs @p validate (may be NULL), lets @p serialize write
+ * into a fresh chunk that carries out_chunk's identity, and copies the staging
+ * chunk over out_chunk only when everything succeeded.
+ */
+NMO_API nmo_status_t nmo_object_serialize_staged(
+    const void *instance,
+    nmo_chunk_t *out_chunk,
+    const nmo_type_descriptor_t *type,
+    void *context,
+    nmo_type_validate_fn validate,
+    nmo_type_serialize_fn serialize);
+
+/** @brief pre_delete hook that only rejects a NULL instance. */
+NMO_API nmo_status_t nmo_object_pre_delete_checked(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+/** @brief post_delete hook that does nothing. */
+NMO_API void nmo_object_post_delete_noop(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+/** @brief prepare_dependencies hook that only rejects a NULL instance. */
+NMO_API nmo_status_t nmo_object_prepare_dependencies_checked(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+/** @brief prepare_dependencies hook that runs nmo_object_default_validate(). */
+NMO_API nmo_status_t nmo_object_prepare_dependencies_default(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
+
+/*
+ * Define the exported <prefix>_serialize / <prefix>_prepare_dependencies
+ * entry points of a class. The class provides <prefix>_serialize_internal and,
+ * where used, <prefix>_validate.
+ */
+#define NMO_DEFINE_OBJECT_STAGED_SERIALIZE(_prefix) \
+    nmo_status_t _prefix##_serialize( \
+        const void *instance, \
+        nmo_chunk_t *out_chunk, \
+        const nmo_type_descriptor_t *type, \
+        void *context) \
+    { \
+        return nmo_object_serialize_staged( \
+            instance, out_chunk, type, context, NULL, _prefix##_serialize_internal); \
+    }
+
+#define NMO_DEFINE_OBJECT_STAGED_SERIALIZE_VALIDATED(_prefix) \
+    nmo_status_t _prefix##_serialize( \
+        const void *instance, \
+        nmo_chunk_t *out_chunk, \
+        const nmo_type_descriptor_t *type, \
+        void *context) \
+    { \
+        return nmo_object_serialize_staged( \
+            instance, out_chunk, type, context, _prefix##_validate, _prefix##_serialize_internal); \
+    }
+
+#define NMO_DEFINE_OBJECT_PREPARE_VIA_VALIDATE(_prefix) \
+    nmo_status_t _prefix##_prepare_dependencies( \
+        void *instance, \
+        const nmo_type_descriptor_t *type, \
+        void *context) \
+    { \
+        return _prefix##_validate(instance, type, context); \
+    }
+
+#define NMO_DEFINE_OBJECT_PREPARE_CHECKED(_prefix) \
+    nmo_status_t _prefix##_prepare_dependencies( \
+        void *instance, \
+        const nmo_type_descriptor_t *type, \
+        void *context) \
+    { \
+        return nmo_object_prepare_dependencies_checked(instance, type, context); \
+    }
+
+#define NMO_DEFINE_OBJECT_PREPARE_DEFAULT(_prefix) \
+    nmo_status_t _prefix##_prepare_dependencies( \
+        void *instance, \
+        const nmo_type_descriptor_t *type, \
+        void *context) \
+    { \
+        return nmo_object_prepare_dependencies_default(instance, type, context); \
+    }
+
 
 /* ============================================================================
  * Generic Deep-Copy Helpers
