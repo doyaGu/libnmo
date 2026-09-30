@@ -487,6 +487,41 @@ static const nmo_type_field_t fields_data[] = {
  * Registration
  * ============================================================================ */
 
+/* Registration order matters: a type must follow the types its fields refer to. */
+#define IFACE_TYPE(GUID, NAME, CTYPE, FIELDS, VTABLE) \
+    { \
+        .guid = NMO_GUID_##GUID##_INIT, \
+        .id = NMO_TYPE_ID_INVALID, \
+        .category = NMO_TYPE_CATEGORY_STRUCT, \
+        .flags = NMO_TYPE_FLAG_POD, \
+        .name = (NAME), \
+        .size = sizeof(CTYPE), \
+        .alignment = alignof(CTYPE), \
+        .fields = (FIELDS), \
+        .field_count = sizeof(FIELDS) / sizeof((FIELDS)[0]), \
+        .vtable = &(VTABLE), \
+    }
+
+static const nmo_type_descriptor_t interface_types[] = {
+    /* Leaf types first (no dependencies on other interface types) */
+    IFACE_TYPE(IFACE_ENDPOINT, "iface_endpoint", nmo_interface_endpoint_t, fields_endpoint, vtable_endpoint),
+    IFACE_TYPE(IFACE_OPERATION, "iface_operation", nmo_interface_operation_t, fields_operation, vtable_operation),
+    IFACE_TYPE(IFACE_COMMENT, "iface_comment", nmo_interface_comment_t, fields_comment, vtable_comment),
+    IFACE_TYPE(IFACE_PARAM, "iface_param", nmo_interface_param_t, fields_param, vtable_param),
+    IFACE_TYPE(IFACE_PARAM_SET, "iface_param_set", nmo_interface_param_set_t, fields_param_set, vtable_param_set),
+    IFACE_TYPE(IFACE_GRAPH_IO, "iface_graph_io", nmo_interface_graph_io_t, fields_graph_io, vtable_graph_io),
+    IFACE_TYPE(IFACE_EXTRA_SUB, "iface_extra_sub", nmo_interface_extra_sub_t, fields_extra_sub, vtable_extra_sub),
+    IFACE_TYPE(IFACE_EXTRA_ENTRY, "iface_extra_entry", nmo_interface_extra_entry_t, fields_extra_entry, vtable_extra_entry),
+    IFACE_TYPE(IFACE_EXTRA, "iface_extra", nmo_interface_extra_t, fields_extra, vtable_extra),
+
+    /* Composite types (depend on leaf types above) */
+    IFACE_TYPE(IFACE_LINK, "iface_link", nmo_interface_link_t, fields_link, vtable_link),
+    IFACE_TYPE(IFACE_BODY, "iface_body", nmo_interface_body_t, fields_body, vtable_body),
+    IFACE_TYPE(IFACE_SCRIPT_HDR, "iface_script_header", nmo_interface_script_header_t, fields_script_hdr, vtable_script_hdr),
+    IFACE_TYPE(IFACE_BEHAVIOR, "iface_behavior", nmo_interface_behavior_t, fields_behavior, vtable_behavior),
+    IFACE_TYPE(IFACE_DATA, "iface_data", nmo_interface_data_t, fields_data, vtable_data),
+};
+
 nmo_status_t nmo_register_interface_types(nmo_type_registry_t *registry)
 {
     if (!registry) {
@@ -494,248 +529,8 @@ nmo_status_t nmo_register_interface_types(nmo_type_registry_t *registry)
                          "nmo_register_interface_types: NULL registry");
     }
 
-    nmo_status_t st;
-
-    /* Leaf types first (no dependencies on other interface types) */
-
-    {
-        nmo_type_descriptor_t desc = {
-            .guid = NMO_GUID_IFACE_ENDPOINT,
-            .name = "iface_endpoint",
-            .size = sizeof(nmo_interface_endpoint_t),
-            .alignment = alignof(nmo_interface_endpoint_t),
-            .category = NMO_TYPE_CATEGORY_STRUCT,
-            .flags = NMO_TYPE_FLAG_POD,
-            .id = NMO_TYPE_ID_INVALID,
-            .fields = fields_endpoint,
-            .field_count = sizeof(fields_endpoint) / sizeof(fields_endpoint[0]),
-            .vtable = &vtable_endpoint,
-        };
-        st = nmo_type_registry_register(registry, &desc);
-        if (st != NMO_OK) return st;
-    }
-
-    {
-        nmo_type_descriptor_t desc = {
-            .guid = NMO_GUID_IFACE_OPERATION,
-            .name = "iface_operation",
-            .size = sizeof(nmo_interface_operation_t),
-            .alignment = alignof(nmo_interface_operation_t),
-            .category = NMO_TYPE_CATEGORY_STRUCT,
-            .flags = NMO_TYPE_FLAG_POD,
-            .id = NMO_TYPE_ID_INVALID,
-            .fields = fields_operation,
-            .field_count = sizeof(fields_operation) / sizeof(fields_operation[0]),
-            .vtable = &vtable_operation,
-        };
-        st = nmo_type_registry_register(registry, &desc);
-        if (st != NMO_OK) return st;
-    }
-
-    {
-        nmo_type_descriptor_t desc = {
-            .guid = NMO_GUID_IFACE_COMMENT,
-            .name = "iface_comment",
-            .size = sizeof(nmo_interface_comment_t),
-            .alignment = alignof(nmo_interface_comment_t),
-            .category = NMO_TYPE_CATEGORY_STRUCT,
-            .flags = NMO_TYPE_FLAG_POD,
-            .id = NMO_TYPE_ID_INVALID,
-            .fields = fields_comment,
-            .field_count = sizeof(fields_comment) / sizeof(fields_comment[0]),
-            .vtable = &vtable_comment,
-        };
-        st = nmo_type_registry_register(registry, &desc);
-        if (st != NMO_OK) return st;
-    }
-
-    {
-        nmo_type_descriptor_t desc = {
-            .guid = NMO_GUID_IFACE_PARAM,
-            .name = "iface_param",
-            .size = sizeof(nmo_interface_param_t),
-            .alignment = alignof(nmo_interface_param_t),
-            .category = NMO_TYPE_CATEGORY_STRUCT,
-            .flags = NMO_TYPE_FLAG_POD,
-            .id = NMO_TYPE_ID_INVALID,
-            .fields = fields_param,
-            .field_count = sizeof(fields_param) / sizeof(fields_param[0]),
-            .vtable = &vtable_param,
-        };
-        st = nmo_type_registry_register(registry, &desc);
-        if (st != NMO_OK) return st;
-    }
-
-    {
-        nmo_type_descriptor_t desc = {
-            .guid = NMO_GUID_IFACE_PARAM_SET,
-            .name = "iface_param_set",
-            .size = sizeof(nmo_interface_param_set_t),
-            .alignment = alignof(nmo_interface_param_set_t),
-            .category = NMO_TYPE_CATEGORY_STRUCT,
-            .flags = NMO_TYPE_FLAG_POD,
-            .id = NMO_TYPE_ID_INVALID,
-            .fields = fields_param_set,
-            .field_count = sizeof(fields_param_set) / sizeof(fields_param_set[0]),
-            .vtable = &vtable_param_set,
-        };
-        st = nmo_type_registry_register(registry, &desc);
-        if (st != NMO_OK) return st;
-    }
-
-    {
-        nmo_type_descriptor_t desc = {
-            .guid = NMO_GUID_IFACE_GRAPH_IO,
-            .name = "iface_graph_io",
-            .size = sizeof(nmo_interface_graph_io_t),
-            .alignment = alignof(nmo_interface_graph_io_t),
-            .category = NMO_TYPE_CATEGORY_STRUCT,
-            .flags = NMO_TYPE_FLAG_POD,
-            .id = NMO_TYPE_ID_INVALID,
-            .fields = fields_graph_io,
-            .field_count = sizeof(fields_graph_io) / sizeof(fields_graph_io[0]),
-            .vtable = &vtable_graph_io,
-        };
-        st = nmo_type_registry_register(registry, &desc);
-        if (st != NMO_OK) return st;
-    }
-
-    {
-        nmo_type_descriptor_t desc = {
-            .guid = NMO_GUID_IFACE_EXTRA_SUB,
-            .name = "iface_extra_sub",
-            .size = sizeof(nmo_interface_extra_sub_t),
-            .alignment = alignof(nmo_interface_extra_sub_t),
-            .category = NMO_TYPE_CATEGORY_STRUCT,
-            .flags = NMO_TYPE_FLAG_POD,
-            .id = NMO_TYPE_ID_INVALID,
-            .fields = fields_extra_sub,
-            .field_count = sizeof(fields_extra_sub) / sizeof(fields_extra_sub[0]),
-            .vtable = &vtable_extra_sub,
-        };
-        st = nmo_type_registry_register(registry, &desc);
-        if (st != NMO_OK) return st;
-    }
-
-    {
-        nmo_type_descriptor_t desc = {
-            .guid = NMO_GUID_IFACE_EXTRA_ENTRY,
-            .name = "iface_extra_entry",
-            .size = sizeof(nmo_interface_extra_entry_t),
-            .alignment = alignof(nmo_interface_extra_entry_t),
-            .category = NMO_TYPE_CATEGORY_STRUCT,
-            .flags = NMO_TYPE_FLAG_POD,
-            .id = NMO_TYPE_ID_INVALID,
-            .fields = fields_extra_entry,
-            .field_count = sizeof(fields_extra_entry) / sizeof(fields_extra_entry[0]),
-            .vtable = &vtable_extra_entry,
-        };
-        st = nmo_type_registry_register(registry, &desc);
-        if (st != NMO_OK) return st;
-    }
-
-    {
-        nmo_type_descriptor_t desc = {
-            .guid = NMO_GUID_IFACE_EXTRA,
-            .name = "iface_extra",
-            .size = sizeof(nmo_interface_extra_t),
-            .alignment = alignof(nmo_interface_extra_t),
-            .category = NMO_TYPE_CATEGORY_STRUCT,
-            .flags = NMO_TYPE_FLAG_POD,
-            .id = NMO_TYPE_ID_INVALID,
-            .fields = fields_extra,
-            .field_count = sizeof(fields_extra) / sizeof(fields_extra[0]),
-            .vtable = &vtable_extra,
-        };
-        st = nmo_type_registry_register(registry, &desc);
-        if (st != NMO_OK) return st;
-    }
-
-    /* Composite types (depend on leaf types above) */
-
-    {
-        nmo_type_descriptor_t desc = {
-            .guid = NMO_GUID_IFACE_LINK,
-            .name = "iface_link",
-            .size = sizeof(nmo_interface_link_t),
-            .alignment = alignof(nmo_interface_link_t),
-            .category = NMO_TYPE_CATEGORY_STRUCT,
-            .flags = NMO_TYPE_FLAG_POD,
-            .id = NMO_TYPE_ID_INVALID,
-            .fields = fields_link,
-            .field_count = sizeof(fields_link) / sizeof(fields_link[0]),
-            .vtable = &vtable_link,
-        };
-        st = nmo_type_registry_register(registry, &desc);
-        if (st != NMO_OK) return st;
-    }
-
-    {
-        nmo_type_descriptor_t desc = {
-            .guid = NMO_GUID_IFACE_BODY,
-            .name = "iface_body",
-            .size = sizeof(nmo_interface_body_t),
-            .alignment = alignof(nmo_interface_body_t),
-            .category = NMO_TYPE_CATEGORY_STRUCT,
-            .flags = NMO_TYPE_FLAG_POD,
-            .id = NMO_TYPE_ID_INVALID,
-            .fields = fields_body,
-            .field_count = sizeof(fields_body) / sizeof(fields_body[0]),
-            .vtable = &vtable_body,
-        };
-        st = nmo_type_registry_register(registry, &desc);
-        if (st != NMO_OK) return st;
-    }
-
-    {
-        nmo_type_descriptor_t desc = {
-            .guid = NMO_GUID_IFACE_SCRIPT_HDR,
-            .name = "iface_script_header",
-            .size = sizeof(nmo_interface_script_header_t),
-            .alignment = alignof(nmo_interface_script_header_t),
-            .category = NMO_TYPE_CATEGORY_STRUCT,
-            .flags = NMO_TYPE_FLAG_POD,
-            .id = NMO_TYPE_ID_INVALID,
-            .fields = fields_script_hdr,
-            .field_count = sizeof(fields_script_hdr) / sizeof(fields_script_hdr[0]),
-            .vtable = &vtable_script_hdr,
-        };
-        st = nmo_type_registry_register(registry, &desc);
-        if (st != NMO_OK) return st;
-    }
-
-    {
-        nmo_type_descriptor_t desc = {
-            .guid = NMO_GUID_IFACE_BEHAVIOR,
-            .name = "iface_behavior",
-            .size = sizeof(nmo_interface_behavior_t),
-            .alignment = alignof(nmo_interface_behavior_t),
-            .category = NMO_TYPE_CATEGORY_STRUCT,
-            .flags = NMO_TYPE_FLAG_POD,
-            .id = NMO_TYPE_ID_INVALID,
-            .fields = fields_behavior,
-            .field_count = sizeof(fields_behavior) / sizeof(fields_behavior[0]),
-            .vtable = &vtable_behavior,
-        };
-        st = nmo_type_registry_register(registry, &desc);
-        if (st != NMO_OK) return st;
-    }
-
-    {
-        nmo_type_descriptor_t desc = {
-            .guid = NMO_GUID_IFACE_DATA,
-            .name = "iface_data",
-            .size = sizeof(nmo_interface_data_t),
-            .alignment = alignof(nmo_interface_data_t),
-            .category = NMO_TYPE_CATEGORY_STRUCT,
-            .flags = NMO_TYPE_FLAG_POD,
-            .id = NMO_TYPE_ID_INVALID,
-            .fields = fields_data,
-            .field_count = sizeof(fields_data) / sizeof(fields_data[0]),
-            .vtable = &vtable_data,
-        };
-        st = nmo_type_registry_register(registry, &desc);
-        if (st != NMO_OK) return st;
+    for (size_t i = 0; i < sizeof(interface_types) / sizeof(interface_types[0]); ++i) {
+        NMO_RETURN_IF_ERROR(nmo_type_registry_register(registry, &interface_types[i]));
     }
 
     NMO_RETURN_OK();
