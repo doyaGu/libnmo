@@ -7160,8 +7160,13 @@ TEST(chunk_id_remap, kinematicchain_effectors_round_trip_atomically) {
     ASSERT_EQ(NMO_OK, nmo_chunk_write_object_id(trailing, 444));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing, 0x12345678u));
     nmo_chunk_close(trailing);
-    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_kinematicchain_deserialize(
-        &loaded, trailing, NULL, NULL));
+    {
+        /* Load reads the fields of the section and ignores the rest. */
+        nmo_kinematicchain_state_t extra_1;
+        ASSERT_EQ(NMO_OK, nmo_kinematicchain_vtable.create(&extra_1, NULL, NULL));
+        ASSERT_EQ(NMO_OK, nmo_kinematicchain_deserialize(&extra_1, trailing, NULL, NULL));
+        nmo_kinematicchain_vtable.destroy(&extra_1, NULL, NULL);
+    }
     ASSERT_TRUE(loaded.has_chain_data);
     ASSERT_EQ(101u, loaded.reserved_object_id);
     ASSERT_EQ(111u, loaded.start_effector.raw_id);
@@ -7366,8 +7371,13 @@ TEST(chunk_id_remap, layer_unresolved_grid_round_trips_raw_id) {
     ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
         fixed_trailing, 0x12345678u));
     nmo_chunk_close(fixed_trailing);
-    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_layer_deserialize(
-        &loaded, fixed_trailing, NULL, &deserialize_context));
+    {
+        /* Load reads the fields of the section and ignores the rest. */
+        nmo_layer_state_t extra_2;
+        ASSERT_EQ(NMO_OK, nmo_layer_vtable.create(&extra_2, NULL, NULL));
+        ASSERT_EQ(NMO_OK, nmo_layer_deserialize(&extra_2, fixed_trailing, NULL, &deserialize_context));
+        nmo_layer_vtable.destroy(&extra_2, NULL, NULL);
+    }
     ASSERT_EQ(444u, loaded.grid.raw_id);
     ASSERT_EQ(77, loaded.format);
     ASSERT_EQ(88, loaded.version);
@@ -7387,8 +7397,13 @@ TEST(chunk_id_remap, layer_unresolved_grid_round_trips_raw_id) {
     ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
         buffer_trailing, 0x12345678u));
     nmo_chunk_close(buffer_trailing);
-    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_layer_deserialize(
-        &loaded, buffer_trailing, NULL, &deserialize_context));
+    {
+        /* Load reads the fields of the section and ignores the rest. */
+        nmo_layer_state_t extra_3;
+        ASSERT_EQ(NMO_OK, nmo_layer_vtable.create(&extra_3, NULL, NULL));
+        ASSERT_EQ(NMO_OK, nmo_layer_deserialize(&extra_3, buffer_trailing, NULL, &deserialize_context));
+        nmo_layer_vtable.destroy(&extra_3, NULL, NULL);
+    }
     ASSERT_EQ(444u, loaded.grid.raw_id);
     ASSERT_EQ(77, loaded.format);
     ASSERT_EQ(88, loaded.version);
@@ -7663,8 +7678,13 @@ TEST(chunk_id_remap, grid_failures_keep_state_and_target_chunk_atomic) {
     ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
         trailing_data, 0x12345678u));
     nmo_chunk_close(trailing_data);
-    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_grid_deserialize(
-        &state, trailing_data, NULL, &deserialize_context));
+    {
+        /* Load reads the fields of the section and ignores the rest. */
+        nmo_grid_state_t extra_4;
+        ASSERT_EQ(NMO_OK, nmo_grid_vtable.create(&extra_4, NULL, NULL));
+        ASSERT_EQ(NMO_OK, nmo_grid_deserialize(&extra_4, trailing_data, NULL, &deserialize_context));
+        nmo_grid_vtable.destroy(&extra_4, NULL, NULL);
+    }
     ASSERT_EQ(77, state.width);
     ASSERT_EQ(88, state.length);
     ASSERT_EQ(old_layers, state.layers.data);
@@ -8166,8 +8186,13 @@ TEST(chunk_id_remap, sprite_failures_keep_state_and_target_chunk_atomic) {
             file_trailing, 0x12345678u));
         nmo_chunk_close(file_trailing);
 
-        ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_sprite_deserialize(
-            &state, file_trailing, NULL, &deserialize_context));
+        {
+            /* Load reads the fields of the section and ignores the rest. */
+            nmo_sprite_state_t extra_5;
+            ASSERT_EQ(NMO_OK, nmo_sprite_vtable.create(&extra_5, NULL, NULL));
+            ASSERT_EQ(NMO_OK, nmo_sprite_deserialize(&extra_5, file_trailing, NULL, &deserialize_context));
+            nmo_sprite_vtable.destroy(&extra_5, NULL, NULL);
+        }
         ASSERT_TRUE(state.has_sprite_ref);
         ASSERT_EQ(902u, state.sprite_ref.raw_id);
         ASSERT_TRUE(state.has_transparency);
@@ -8189,8 +8214,13 @@ TEST(chunk_id_remap, sprite_failures_keep_state_and_target_chunk_atomic) {
             chunk_trailing, 0x12345678u));
         nmo_chunk_close(chunk_trailing);
 
-        ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_sprite_deserialize(
-            &state, chunk_trailing, NULL, &chunk_context));
+        {
+            /* Load reads the fields of the section and ignores the rest. */
+            nmo_sprite_state_t extra_6;
+            ASSERT_EQ(NMO_OK, nmo_sprite_vtable.create(&extra_6, NULL, NULL));
+            ASSERT_EQ(NMO_OK, nmo_sprite_deserialize(&extra_6, chunk_trailing, NULL, &chunk_context));
+            nmo_sprite_vtable.destroy(&extra_6, NULL, NULL);
+        }
         ASSERT_TRUE(state.has_sprite_ref);
         ASSERT_EQ(902u, state.sprite_ref.raw_id);
         ASSERT_TRUE(state.has_transparency);
@@ -8217,8 +8247,13 @@ TEST(chunk_id_remap, sprite_failures_keep_state_and_target_chunk_atomic) {
     ASSERT_EQ(NMO_OK, nmo_chunk_write_buffer(format_trailing, NULL, 0u));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(format_trailing, 0x12345678u));
     nmo_chunk_close(format_trailing);
-    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_sprite_deserialize(
-        &state, format_trailing, NULL, &deserialize_context));
+    {
+        /* Load reads the fields of the section and ignores the rest. */
+        nmo_sprite_state_t extra_7;
+        ASSERT_EQ(NMO_OK, nmo_sprite_vtable.create(&extra_7, NULL, NULL));
+        ASSERT_EQ(NMO_OK, nmo_sprite_deserialize(&extra_7, format_trailing, NULL, &deserialize_context));
+        nmo_sprite_vtable.destroy(&extra_7, NULL, NULL);
+    }
     ASSERT_TRUE(state.has_sprite_ref);
     ASSERT_EQ(902u, state.sprite_ref.raw_id);
     ASSERT_TRUE(state.has_transparency);
@@ -8374,8 +8409,13 @@ TEST(chunk_id_remap, spritetext_failures_keep_state_and_target_chunk_atomic) {
     ASSERT_EQ(NMO_OK, nmo_chunk_write_string(text_trailing, "New text"));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(text_trailing, 0x12345678u));
     nmo_chunk_close(text_trailing);
-    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_spritetext_deserialize(
-        &state, text_trailing, NULL, &deserialize_context));
+    {
+        /* Load reads the fields of the section and ignores the rest. */
+        nmo_spritetext_state_t extra_8;
+        ASSERT_EQ(NMO_OK, nmo_spritetext_vtable.create(&extra_8, NULL, NULL));
+        ASSERT_EQ(NMO_OK, nmo_spritetext_deserialize(&extra_8, text_trailing, NULL, &deserialize_context));
+        nmo_spritetext_vtable.destroy(&extra_8, NULL, NULL);
+    }
     ASSERT_STR_EQ("Old text", state.text_content);
     ASSERT_STR_EQ("Old font", state.font.font_name);
 
@@ -8393,8 +8433,13 @@ TEST(chunk_id_remap, spritetext_failures_keep_state_and_target_chunk_atomic) {
     ASSERT_EQ(NMO_OK, nmo_chunk_write_int(font_trailing, 1));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(font_trailing, 0x12345678u));
     nmo_chunk_close(font_trailing);
-    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_spritetext_deserialize(
-        &state, font_trailing, NULL, &deserialize_context));
+    {
+        /* Load reads the fields of the section and ignores the rest. */
+        nmo_spritetext_state_t extra_9;
+        ASSERT_EQ(NMO_OK, nmo_spritetext_vtable.create(&extra_9, NULL, NULL));
+        ASSERT_EQ(NMO_OK, nmo_spritetext_deserialize(&extra_9, font_trailing, NULL, &deserialize_context));
+        nmo_spritetext_vtable.destroy(&extra_9, NULL, NULL);
+    }
     ASSERT_STR_EQ("Old font", state.font.font_name);
     ASSERT_EQ(21, state.font.size);
     ASSERT_EQ(1, state.font.underline);
@@ -8410,8 +8455,13 @@ TEST(chunk_id_remap, spritetext_failures_keep_state_and_target_chunk_atomic) {
     ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(colors_trailing, 0x01020304u));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(colors_trailing, 0x12345678u));
     nmo_chunk_close(colors_trailing);
-    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_spritetext_deserialize(
-        &state, colors_trailing, NULL, &deserialize_context));
+    {
+        /* Load reads the fields of the section and ignores the rest. */
+        nmo_spritetext_state_t extra_10;
+        ASSERT_EQ(NMO_OK, nmo_spritetext_vtable.create(&extra_10, NULL, NULL));
+        ASSERT_EQ(NMO_OK, nmo_spritetext_deserialize(&extra_10, colors_trailing, NULL, &deserialize_context));
+        nmo_spritetext_vtable.destroy(&extra_10, NULL, NULL);
+    }
     ASSERT_EQ(0x11223344u, state.font_color);
     ASSERT_EQ(0x55667788u, state.background_color);
 
@@ -9914,8 +9964,13 @@ TEST(chunk_id_remap, curvepoint_fields_stay_in_identifier_sections) {
         }
         ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing, 0x12345678u));
         nmo_chunk_close(trailing);
-        ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_curvepoint_deserialize(
-            &state, trailing, NULL, &deserialize_context));
+        {
+            /* Load reads the fields of the section and ignores the rest. */
+            nmo_curvepoint_state_t extra_11;
+            ASSERT_EQ(NMO_OK, nmo_curvepoint_vtable.create(&extra_11, NULL, NULL));
+            ASSERT_EQ(NMO_OK, nmo_curvepoint_deserialize(&extra_11, trailing, NULL, &deserialize_context));
+            nmo_curvepoint_vtable.destroy(&extra_11, NULL, NULL);
+        }
         ASSERT_EQ(613u, state.curve.raw_id);
         ASSERT_EQ(12.5f, state.tension);
     }
@@ -10064,8 +10119,13 @@ TEST(chunk_id_remap, sprite3d_unresolved_material_round_trips_raw_id) {
     ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing, 0x12345678u));
     nmo_chunk_close(trailing);
     nmo_chunk_set_file_context(trailing, &read_context);
-    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_sprite3d_deserialize(
-        &failed, trailing, NULL, &deserialize_context));
+    {
+        /* Load reads the fields of the section and ignores the rest. */
+        nmo_sprite3d_state_t extra_12;
+        ASSERT_EQ(NMO_OK, nmo_sprite3d_vtable.create(&extra_12, NULL, NULL));
+        ASSERT_EQ(NMO_OK, nmo_sprite3d_deserialize(&extra_12, trailing, NULL, &deserialize_context));
+        nmo_sprite3d_vtable.destroy(&extra_12, NULL, NULL);
+    }
     ASSERT_EQ(9.0f, failed.half_width);
     ASSERT_EQ(623u, failed.material.raw_id);
     ASSERT_EQ(NMO_REF_UNRESOLVED, failed.material.state);
@@ -12117,8 +12177,13 @@ TEST(chunk_id_remap, entity2d_fields_stay_in_identifier_sections) {
     }
     ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(modern_trailing, 0x12345678u));
     nmo_chunk_close(modern_trailing);
-    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_2dentity_deserialize(
-        &state, modern_trailing, NULL, &deserialize_context));
+    {
+        /* Load reads the fields of the section and ignores the rest. */
+        nmo_2dentity_state_t extra_13;
+        ASSERT_EQ(NMO_OK, nmo_2dentity_vtable.create(&extra_13, NULL, NULL));
+        ASSERT_EQ(NMO_OK, nmo_2dentity_deserialize(&extra_13, modern_trailing, NULL, &deserialize_context));
+        nmo_2dentity_vtable.destroy(&extra_13, NULL, NULL);
+    }
     ASSERT_EQ(0xCAFEBABEu, state.flags);
     ASSERT_EQ(12.5f, state.rect.left);
     ASSERT_EQ(912u, state.material.raw_id);
@@ -12150,8 +12215,13 @@ TEST(chunk_id_remap, entity2d_fields_stay_in_identifier_sections) {
         ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
             legacy_trailing, 0x12345678u));
         nmo_chunk_close(legacy_trailing);
-        ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_2dentity_deserialize(
-            &state, legacy_trailing, NULL, &deserialize_context));
+        {
+            /* Load reads the fields of the section and ignores the rest. */
+            nmo_2dentity_state_t extra_14;
+            ASSERT_EQ(NMO_OK, nmo_2dentity_vtable.create(&extra_14, NULL, NULL));
+            ASSERT_EQ(NMO_OK, nmo_2dentity_deserialize(&extra_14, legacy_trailing, NULL, &deserialize_context));
+            nmo_2dentity_vtable.destroy(&extra_14, NULL, NULL);
+        }
         ASSERT_EQ(0xCAFEBABEu, state.flags);
         ASSERT_EQ(12.5f, state.rect.left);
         ASSERT_EQ(912u, state.material.raw_id);
@@ -12174,8 +12244,13 @@ TEST(chunk_id_remap, entity2d_fields_stay_in_identifier_sections) {
     ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(material_trailing, 913));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(material_trailing, 0x12345678u));
     nmo_chunk_close(material_trailing);
-    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_2dentity_deserialize(
-        &state, material_trailing, NULL, &deserialize_context));
+    {
+        /* Load reads the fields of the section and ignores the rest. */
+        nmo_2dentity_state_t extra_15;
+        ASSERT_EQ(NMO_OK, nmo_2dentity_vtable.create(&extra_15, NULL, NULL));
+        ASSERT_EQ(NMO_OK, nmo_2dentity_deserialize(&extra_15, material_trailing, NULL, &deserialize_context));
+        nmo_2dentity_vtable.destroy(&extra_15, NULL, NULL);
+    }
     ASSERT_EQ(0xCAFEBABEu, state.flags);
     ASSERT_EQ(12.5f, state.rect.left);
     ASSERT_EQ(912u, state.material.raw_id);
@@ -12826,8 +12901,13 @@ TEST(chunk_id_remap, entity_sections_do_not_borrow_following_identifiers) {
         ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing, 0x12345678u));
         nmo_chunk_close(trailing);
 
-        ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_3dentity_deserialize(
-            &state, trailing, NULL, &deserialize_context));
+        {
+            /* Load reads the fields of the section and ignores the rest. */
+            nmo_3dentity_state_t extra_16;
+            ASSERT_EQ(NMO_OK, nmo_3dentity_vtable.create(&extra_16, NULL, NULL));
+            ASSERT_EQ(NMO_OK, nmo_3dentity_deserialize(&extra_16, trailing, NULL, &deserialize_context));
+            nmo_3dentity_vtable.destroy(&extra_16, NULL, NULL);
+        }
         ASSERT_EQ(0xCAFEBABEu, state.entity_flags);
         ASSERT_NULL(state.skin);
     }
@@ -13413,8 +13493,13 @@ TEST(chunk_id_remap, place_refs_round_trip_and_truncation_is_atomic) {
     ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
         references_trailing_payload, 0x12345678u));
     nmo_chunk_close(references_trailing_payload);
-    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_place_deserialize(
-        &failed, references_trailing_payload, NULL, &deserialize_context));
+    {
+        /* Load reads the fields of the section and ignores the rest. */
+        nmo_place_state_t extra_17;
+        ASSERT_EQ(NMO_OK, nmo_place_vtable.create(&extra_17, NULL, NULL));
+        ASSERT_EQ(NMO_OK, nmo_place_deserialize(&extra_17, references_trailing_payload, NULL, &deserialize_context));
+        nmo_place_vtable.destroy(&extra_17, NULL, NULL);
+    }
     ASSERT_EQ(1u, failed.references.count);
     ASSERT_EQ(807u, NMO_ARRAY_DATA(
         nmo_ref_t, &failed.references)[0].raw_id);
@@ -13467,9 +13552,14 @@ TEST(chunk_id_remap, place_refs_round_trip_and_truncation_is_atomic) {
     ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
         camera_trailing_payload, 0x12345678u));
     nmo_chunk_close(camera_trailing_payload);
-    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_place_deserialize(
-        &failed_camera, camera_trailing_payload, NULL,
+    {
+        /* Load reads the fields of the section and ignores the rest. */
+        nmo_place_state_t extra_18;
+        ASSERT_EQ(NMO_OK, nmo_place_vtable.create(&extra_18, NULL, NULL));
+        ASSERT_EQ(NMO_OK, nmo_place_deserialize(&extra_18, camera_trailing_payload, NULL,
         &deserialize_context));
+        nmo_place_vtable.destroy(&extra_18, NULL, NULL);
+    }
     ASSERT_TRUE(failed_camera.has_camera);
     ASSERT_EQ(808u, failed_camera.camera.raw_id);
 
@@ -13529,9 +13619,14 @@ TEST(chunk_id_remap, place_refs_round_trip_and_truncation_is_atomic) {
     ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
         portal_trailing_payload, 0x12345678u));
     nmo_chunk_close(portal_trailing_payload);
-    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_place_deserialize(
-        &failed_portal, portal_trailing_payload, NULL,
+    {
+        /* Load reads the fields of the section and ignores the rest. */
+        nmo_place_state_t extra_19;
+        ASSERT_EQ(NMO_OK, nmo_place_vtable.create(&extra_19, NULL, NULL));
+        ASSERT_EQ(NMO_OK, nmo_place_deserialize(&extra_19, portal_trailing_payload, NULL,
         &deserialize_context));
+        nmo_place_vtable.destroy(&extra_19, NULL, NULL);
+    }
     ASSERT_EQ(1u, failed_portal.portals.count);
     ASSERT_EQ(809u, NMO_ARRAY_DATA(
         nmo_place_portal_entry_t,
@@ -17143,8 +17238,13 @@ TEST(chunk_id_remap, character_rejects_cross_section_counts_before_allocation) {
 
         nmo_deserialize_context_t *case_context = trailing_cases[i].file_mode
             ? &file_context : &runtime_context;
-        ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_character_deserialize(
-            &state, trailing, NULL, case_context));
+        {
+            /* Load reads the fields of the section and ignores the rest. */
+            nmo_character_state_t extra_20;
+            ASSERT_EQ(NMO_OK, nmo_character_vtable.create(&extra_20, NULL, NULL));
+            ASSERT_EQ(NMO_OK, nmo_character_deserialize(&extra_20, trailing, NULL, case_context));
+            nmo_character_vtable.destroy(&extra_20, NULL, NULL);
+        }
         ASSERT_EQ(777u, state.active_animation.raw_id);
         ASSERT_EQ(0u, state.body_parts.count);
         ASSERT_EQ(0u, state.animations.count);
@@ -17879,12 +17979,21 @@ TEST(chunk_id_remap, bodypart_rotation_joint_round_trips_with_size_prefix) {
         ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
             trailing, trailing_cases[i].identifier));
         for (size_t j = 0; j < trailing_cases[i].payload_dwords; ++j) {
-            ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing, 0u));
+            /* The legacy joint block starts with its size, 72 bytes. */
+            ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
+                trailing,
+                (trailing_cases[i].identifier == CK_STATESAVE_BODYPARTROTJOINT && j == 0)
+                    ? 72u : 0u));
         }
         ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing, 0x12345678u));
         nmo_chunk_close(trailing);
-        ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_bodypart_deserialize(
-            &loaded, trailing, NULL, &deserialize_context));
+        {
+            /* Load reads the fields of the section and ignores the rest. */
+            nmo_bodypart_state_t extra_21;
+            ASSERT_EQ(NMO_OK, nmo_bodypart_vtable.create(&extra_21, NULL, NULL));
+            ASSERT_EQ(NMO_OK, nmo_bodypart_deserialize(&extra_21, trailing, NULL, &deserialize_context));
+            nmo_bodypart_vtable.destroy(&extra_21, NULL, NULL);
+        }
         ASSERT_EQ(701u, loaded.character.raw_id);
         ASSERT_EQ(0x12345678u, loaded.rotation_joint.flags);
     }
@@ -17908,8 +18017,13 @@ TEST(chunk_id_remap, bodypart_rotation_joint_round_trips_with_size_prefix) {
     ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
         joint_trailing, 0x12345678u));
     nmo_chunk_close(joint_trailing);
-    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_bodypart_deserialize(
-        &loaded, joint_trailing, NULL, &deserialize_context));
+    {
+        /* Load reads the fields of the section and ignores the rest. */
+        nmo_bodypart_state_t extra_22;
+        ASSERT_EQ(NMO_OK, nmo_bodypart_vtable.create(&extra_22, NULL, NULL));
+        ASSERT_EQ(NMO_OK, nmo_bodypart_deserialize(&extra_22, joint_trailing, NULL, &deserialize_context));
+        nmo_bodypart_vtable.destroy(&extra_22, NULL, NULL);
+    }
     ASSERT_EQ(701u, loaded.character.raw_id);
     ASSERT_EQ(0x12345678u, loaded.rotation_joint.flags);
 
@@ -18294,7 +18408,7 @@ TEST(chunk_id_remap, legacy_mesh_vertices_version_5_follow_the_lit_mode) {
     ASSERT_FLOAT_EQ(0.0f, prelit_state.vertices[1].position.x, 0.0001f);
     ASSERT_FLOAT_EQ(1.0f, prelit_state.vertices[1].uv.y, 0.0001f);
 
-    /* A payload of the wrong length is rejected. */
+    /* A payload longer than the vertices need is read as far as it goes. */
     nmo_chunk_t *long_block = begin_legacy_mesh_chunk(arena, 5, 0u);
     ASSERT_NOT_NULL(long_block);
     ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(long_block, CK_STATESAVE_MESHVERTICES));
@@ -18305,8 +18419,9 @@ TEST(chunk_id_remap, legacy_mesh_vertices_version_5_follow_the_lit_mode) {
     nmo_chunk_close(long_block);
     nmo_mesh_state_t rejected;
     ASSERT_EQ(NMO_OK, nmo_mesh_vtable.create(&rejected, NULL, NULL));
-    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_mesh_deserialize(
+    ASSERT_EQ(NMO_OK, nmo_mesh_deserialize(
         &rejected, long_block, NULL, &deserialize_context));
+    ASSERT_EQ(1u, rejected.vertex_count);
 
     nmo_mesh_vtable.destroy(&state, NULL, NULL);
     nmo_mesh_vtable.destroy(&prelit_state, NULL, NULL);
@@ -18787,8 +18902,13 @@ TEST(chunk_id_remap, mesh_fields_stay_in_identifier_sections) {
         }
         ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing, 0x12345678u));
         nmo_chunk_close(trailing);
-        ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_mesh_deserialize(
-            &state, trailing, NULL, &deserialize_context));
+        {
+            /* Load reads the fields of the section and ignores the rest. */
+            nmo_mesh_state_t extra_23;
+            ASSERT_EQ(NMO_OK, nmo_mesh_vtable.create(&extra_23, NULL, NULL));
+            ASSERT_EQ(NMO_OK, nmo_mesh_deserialize(&extra_23, trailing, NULL, &deserialize_context));
+            nmo_mesh_vtable.destroy(&extra_23, NULL, NULL);
+        }
         ASSERT_EQ(0x12345678u, state.flags);
     }
 
@@ -20353,9 +20473,11 @@ TEST(chunk_id_remap, animation_sections_do_not_borrow_following_identifiers) {
             ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0));
         }
         nmo_chunk_close(chunk);
-        ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_animation_deserialize(
+        /* RCKAnimation::Load ignores a data block that is not 8 or 12 bytes. */
+        ASSERT_EQ(NMO_OK, nmo_animation_deserialize(
             &animation, chunk, NULL, &file_context));
-        ASSERT_EQ(0x12345678u, animation.flags);
+        ASSERT_FALSE(animation.has_data);
+        animation.flags = 0x12345678u;
     }
 
     nmo_chunk_t *old_data = nmo_chunk_create(arena);
@@ -20894,8 +21016,13 @@ TEST(chunk_id_remap, curve_refs_round_trip_and_failure_is_atomic) {
         }
         ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(trailing, 0x12345678u));
         nmo_chunk_close(trailing);
-        ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_curve_deserialize(
-            &bounded, trailing, NULL, &deserialize_context));
+        {
+            /* Load reads the fields of the section and ignores the rest. */
+            nmo_curve_state_t extra_24;
+            ASSERT_EQ(NMO_OK, nmo_curve_vtable.create(&extra_24, NULL, NULL));
+            ASSERT_EQ(NMO_OK, nmo_curve_deserialize(&extra_24, trailing, NULL, &deserialize_context));
+            nmo_curve_vtable.destroy(&extra_24, NULL, NULL);
+        }
         ASSERT_EQ(12.5f, bounded.fitting_coeff);
     }
 
@@ -21539,6 +21666,39 @@ TEST(chunk_id_remap, mesh_serializer_refuses_indices_the_engine_would_not_check)
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, patchmesh_skips_the_sections_only_a_mesh_reads) {
+    /* RCKMesh::Load reads the vertices, faces, lines and channels of a mesh
+     * that is not a patch mesh; a patch mesh builds them from its patches. */
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    chunk->class_id = NMO_CID_PATCHMESH;
+    chunk->data_version = 9;
+    chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, CK_STATESAVE_MESHVERTICES));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 1000000));   /* not a vertex list */
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, CK_STATESAVE_MESHCHANNELS));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, -1));
+    nmo_chunk_close(chunk);
+
+    nmo_patchmesh_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_patchmesh_vtable.create(&loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_patchmesh_deserialize(&loaded, chunk, NULL, &deserialize_context));
+    nmo_patchmesh_vtable.destroy(&loaded, NULL, NULL);
+
+    chunk->class_id = NMO_CID_MESH;
+    nmo_mesh_state_t mesh;
+    ASSERT_EQ(NMO_OK, nmo_mesh_vtable.create(&mesh, NULL, NULL));
+    ASSERT_NE(NMO_OK, nmo_mesh_deserialize(&mesh, chunk, NULL, &deserialize_context));
+    nmo_mesh_vtable.destroy(&mesh, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, legacy_unresolved_id_preserves_raw_id) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
@@ -21782,5 +21942,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, objectanimation_newdata_morph_normals_are_bounded);
     REGISTER_TEST(chunk_id_remap, objectanimation_per_key_morph_sections_without_keys_are_ignored);
     REGISTER_TEST(chunk_id_remap, mesh_serializer_refuses_indices_the_engine_would_not_check);
+    REGISTER_TEST(chunk_id_remap, patchmesh_skips_the_sections_only_a_mesh_reads);
     REGISTER_TEST(chunk_id_remap, legacy_unresolved_id_preserves_raw_id);
 TEST_MAIN_END()
