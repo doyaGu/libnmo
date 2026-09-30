@@ -488,7 +488,7 @@ static nmo_status_t nmo_dataarray_serialize_internal(
     for (uint32_t i = 0; i < in_state->column_count; i++) {
         const nmo_dataarray_column_format_t *fmt = &in_state->column_formats[i];
 
-        result = nmo_chunk_write_string(out_chunk, fmt->name ? fmt->name : "");
+        result = nmo_chunk_write_string(out_chunk, fmt->name);
         if (result != NMO_OK) return result;
 
         /* Reference writes WriteDword but reads ReadInt; use int for
@@ -528,7 +528,7 @@ static nmo_status_t nmo_dataarray_serialize_internal(
                 break;
 
             case CKARRAYTYPE_STRING:
-                result = nmo_chunk_write_string(out_chunk, cell->string_value ? cell->string_value : "");
+                result = nmo_chunk_write_string(out_chunk, cell->string_value);
                 if (result != NMO_OK) return result;
                 break;
 
