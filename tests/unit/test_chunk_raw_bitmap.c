@@ -60,6 +60,37 @@ TEST(chunk_raw_bitmap, write_read_argb32_roundtrip) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_raw_bitmap, planes_follow_pixel_byte_order) {
+    /* CKStateChunk::WriteRawBitmap writes byte 0, 1, 2, 3 of the pixel as
+     * planes, which for an ARGB pixel is blue, green, red, alpha. */
+    nmo_arena_t *arena = nmo_arena_create(NULL, 64 * 1024);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+
+    nmo_image_desc_t desc;
+    prepare_argb_image(&desc, arena, 1, 1, 0x80112233u);
+
+    nmo_chunk_start_write(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_bitmap(chunk, &desc));
+    nmo_chunk_close(chunk);
+
+    /* Header: bpp, width, height, four masks, compression; then each plane
+     * as [size][data padded to a dword]. */
+    const uint32_t *words = (const uint32_t *)chunk->data.data;
+    ASSERT_GE(chunk->data.count, 16u);
+    ASSERT_EQ(1u, words[8]);
+    ASSERT_EQ(0x33u, words[9] & 0xFFu);
+    ASSERT_EQ(1u, words[10]);
+    ASSERT_EQ(0x22u, words[11] & 0xFFu);
+    ASSERT_EQ(1u, words[12]);
+    ASSERT_EQ(0x11u, words[13] & 0xFFu);
+    ASSERT_EQ(1u, words[14]);
+    ASSERT_EQ(0x80u, words[15] & 0xFFu);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_raw_bitmap, write_read_gradient) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 256 * 1024);
     ASSERT_NOT_NULL(arena);
@@ -255,6 +286,7 @@ TEST(chunk_raw_bitmap, truncated_plane_keeps_position) {
 
 TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_raw_bitmap, write_read_argb32_roundtrip);
+    REGISTER_TEST(chunk_raw_bitmap, planes_follow_pixel_byte_order);
     REGISTER_TEST(chunk_raw_bitmap, write_read_gradient);
     REGISTER_TEST(chunk_raw_bitmap, write_read_rgb565_conversion);
     REGISTER_TEST(chunk_raw_bitmap, empty_descriptor_writes_zero);

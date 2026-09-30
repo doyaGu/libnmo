@@ -660,11 +660,13 @@ nmo_status_t nmo_chunk_write_raw_bitmap(nmo_chunk_t *chunk,
         }
     }
 
-    result = nmo_chunk_write_buffer(chunk, r_plane, plane_size);
+    /* The planes follow the byte order of a 32-bit pixel: blue, green, red,
+       then alpha (CKStateChunk::WriteRawBitmap writes byte 0, 1, 2 first). */
+    result = nmo_chunk_write_buffer(chunk, b_plane, plane_size);
     NMO_CHUNK_BITMAP_RETURN_IF_ERROR(result, scratch);
     result = nmo_chunk_write_buffer(chunk, g_plane, plane_size);
     NMO_CHUNK_BITMAP_RETURN_IF_ERROR(result, scratch);
-    result = nmo_chunk_write_buffer(chunk, b_plane, plane_size);
+    result = nmo_chunk_write_buffer(chunk, r_plane, plane_size);
     NMO_CHUNK_BITMAP_RETURN_IF_ERROR(result, scratch);
 
     if (has_alpha) {
@@ -973,8 +975,8 @@ nmo_status_t nmo_chunk_read_raw_bitmap(nmo_chunk_t *chunk,
     size_t b_size = 0;
     size_t a_size = 0;
 
-    result = nmo_chunk_bitmap_read_buffer_in_arena(chunk, scratch, (void **)&r_plane, &r_size,
-                                                   "Failed to read red plane");
+    result = nmo_chunk_bitmap_read_buffer_in_arena(chunk, scratch, (void **)&b_plane, &b_size,
+                                                   "Failed to read blue plane");
     if (result != NMO_OK) {
         return nmo_chunk_bitmap_cleanup_arena_with_rollback(scratch, state, start_pos, result);
     }
@@ -983,8 +985,8 @@ nmo_status_t nmo_chunk_read_raw_bitmap(nmo_chunk_t *chunk,
     if (result != NMO_OK) {
         return nmo_chunk_bitmap_cleanup_arena_with_rollback(scratch, state, start_pos, result);
     }
-    result = nmo_chunk_bitmap_read_buffer_in_arena(chunk, scratch, (void **)&b_plane, &b_size,
-                                                   "Failed to read blue plane");
+    result = nmo_chunk_bitmap_read_buffer_in_arena(chunk, scratch, (void **)&r_plane, &r_size,
+                                                   "Failed to read red plane");
     if (result != NMO_OK) {
         return nmo_chunk_bitmap_cleanup_arena_with_rollback(scratch, state, start_pos, result);
     }

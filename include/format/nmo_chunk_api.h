@@ -1443,7 +1443,8 @@ NMO_API nmo_status_t nmo_chunk_remap_object_ids_ex(nmo_chunk_t *chunk,
  * @brief Write planar raw bitmap payload (CKStateChunk::WriteRawBitmap)
  *
  * Writes bits-per-pixel, dimensions, channel masks, compression flag (0)
- * followed by R/G/B/(A) planes with bottom-up scanlines.
+ * followed by B/G/R/(A) planes (the byte order of a 32-bit pixel) with
+ * bottom-up scanlines.
  */
 NMO_API nmo_status_t nmo_chunk_write_raw_bitmap(nmo_chunk_t *chunk,
                                                 const nmo_image_desc_t *desc);
