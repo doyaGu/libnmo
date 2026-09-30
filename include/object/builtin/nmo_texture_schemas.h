@@ -7,14 +7,13 @@
  * Schema for CKTexture (ClassID 31), inherits from CKBeObject (ClassID 2).
  * Represents texture/image data with mipmaps and video format information.
  *
- * Serialization Identifiers (from RCKTexture analysis):
- * - 0x00200000: Palette data (for indexed color formats)
- * - 0x10000000: System memory copy flag
- * - 0x00800000: Video memory backup
- * - 0x00400000: Original file path (external texture reference)
- * - 0x00040000: Texture format and dimensions
+ * Serialization identifiers: see CK_STATESAVE_TEX* in nmo_statesave_ids.h. The
+ * bitmaps are in 0x00100000 (reader-encoded), 0x00020000 (raw planes) or the
+ * obsolete 0x00004000; the packed state is in 0x002FF000 (0x00FFF000 in later
+ * engines); 0x00200000 is the pick threshold and 0x00400000 the user mipmaps.
+ * Before data version 5 the mipmap flag and the save format sit in 0x00040000
+ * and 0x00080000.
  *
- * Reference: docs/CK2_3D_reverse_notes.md lines 341-348
  * CKTexture wraps image data with mipmap levels and rasterizer context.
  */
 
@@ -55,13 +54,11 @@ typedef struct nmo_type_descriptor nmo_type_descriptor_t;
 #define NMO_CKTEXTURE_USEGLOBAL                0x00000003  /**< Use global texture settings */
 #define NMO_CKTEXTURE_INCLUDEORIGINALFILE      0x00000004  /**< Embed original file */
 
-/** Bitmap data flags (CKBMPDATA_FLAGS) */
-#define NMO_CKBMPDATA_FREEVIDEOMEMORY          0x00000001  /**< Free video memory */
-#define NMO_CKBMPDATA_INVALID                  0x00000002  /**< Invalid bitmap */
-#define NMO_CKBMPDATA_CUBEMAP                  0x00000004  /**< Cubemap texture */
-#define NMO_CKBMPDATA_FORCERESTORE             0x00000008  /**< Force restore */
-#define NMO_CKBMPDATA_DYNAMIC                  0x00000010  /**< Dynamic texture */
-#define NMO_CKBMPDATA_HASPALETTE               0x00000020  /**< Has palette data */
+/** Bitmap data flags (CKBITMAPDATA_FLAGS) */
+#define NMO_CKBMPDATA_INVALID                  0x00000001  /**< Invalid bitmap */
+#define NMO_CKBMPDATA_TRANSPARENT              0x00000002  /**< Uses the transparent color */
+#define NMO_CKBMPDATA_FORCERESTORE             0x00000004  /**< Force restore */
+#define NMO_CKBMPDATA_CUBEMAP                  0x00000010  /**< Cubemap texture */
 
 /**
  * @brief CKTexture state structure (inherits from CKBeObject)
@@ -110,7 +107,7 @@ typedef struct nmo_texture_state {
     uint8_t uses_texonly_identifier;
     /* Flag bits the engine ignores; kept so they are written back */
     uint32_t packed_unknown_bits;
-    uint8_t mipmap_level;
+    uint8_t mipmap_level;   /* mipmap level count, 0xFF for automatic */
     uint32_t save_options;
     uint8_t is_transparent;
     uint8_t is_cubemap;
