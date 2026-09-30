@@ -740,7 +740,9 @@ static nmo_status_t nmo_texture_deserialize_internal(
         NMO_RETURN_IF_ERROR(nmo_texture_require_identifier_end(chunk));
     } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
-    if (nmo_texture_seek_found(
+    uint32_t data_version = nmo_chunk_get_data_version(chunk);
+    /* RCKTexture::Load reads the pick threshold only from data version 5. */
+    if (data_version >= 5 && nmo_texture_seek_found(
             chunk, CK_STATESAVE_PICKTHRESHOLD, &seek_result)) {
         if (nmo_texture_identifier_payload_size(chunk) != sizeof(uint32_t)) {
             return NMO_ERR_INVALID_FORMAT;
@@ -749,9 +751,9 @@ static nmo_status_t nmo_texture_deserialize_internal(
         NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &threshold));
         out_state->pick_threshold = threshold;
         out_state->has_pick_threshold = 1;
-    } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
-
-    uint32_t data_version = nmo_chunk_get_data_version(chunk);
+    } else if (data_version >= 5 && seek_result != NMO_ERR_NOT_FOUND) {
+        return seek_result;
+    }
     if (data_version < 5) {
         if (nmo_texture_seek_found(
                 chunk, CK_STATESAVE_TEXTRANSPARENT, &seek_result)) {
@@ -1430,6 +1432,11 @@ static nmo_status_t nmo_texture_serialize_internal(
     }
 
     if (state->has_pick_threshold) {
+        if (legacy_file_layout) {
+            NMO_RETURN_ERROR(
+                NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                "Texture pick threshold cannot be written to a legacy file");
+        }
         nmo_status_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_PICKTHRESHOLD);
         if (result != NMO_OK) return result;
         NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, state->pick_threshold));

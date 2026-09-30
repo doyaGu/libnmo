@@ -8770,6 +8770,58 @@ TEST(chunk_id_remap, texture_copy_preserves_nested_content) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, texture_pick_threshold_needs_data_version_5) {
+    /* RCKTexture::Load reads the pick threshold in its data_version >= 5
+     * branch only. */
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+
+    for (uint32_t data_version = 4u; data_version <= 5u; ++data_version) {
+        nmo_chunk_t *chunk = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(chunk);
+        chunk->class_id = NMO_CID_TEXTURE;
+        chunk->data_version = data_version;
+        chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+        ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, CK_STATESAVE_PICKTHRESHOLD));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 37));
+        nmo_chunk_close(chunk);
+
+        nmo_texture_state_t loaded;
+        ASSERT_EQ(NMO_OK, nmo_texture_vtable.create(&loaded, NULL, NULL));
+        ASSERT_EQ(NMO_OK, nmo_texture_deserialize(
+            &loaded, chunk, NULL, &deserialize_context));
+        if (data_version >= 5u) {
+            ASSERT_TRUE(loaded.has_pick_threshold);
+            ASSERT_EQ(37, loaded.pick_threshold);
+        } else {
+            ASSERT_FALSE(loaded.has_pick_threshold);
+        }
+        nmo_texture_vtable.destroy(&loaded, NULL, NULL);
+    }
+
+    /* A legacy file has no place for it. */
+    nmo_texture_state_t state;
+    ASSERT_EQ(NMO_OK, nmo_texture_vtable.create(&state, NULL, NULL));
+    state.has_pick_threshold = 1;
+    state.pick_threshold = 12;
+    state.has_transparent_color = 1;   /* makes the layout legacy */
+    nmo_chunk_t *legacy = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(legacy);
+    legacy->class_id = NMO_CID_TEXTURE;
+    legacy->data_version = 4;
+    legacy->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_texture_serialize(
+        &state, legacy, NULL, &serialize_context));
+    nmo_texture_vtable.destroy(&state, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, texture_preserves_legacy_file_layout) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
     ASSERT_NOT_NULL(arena);
@@ -20918,6 +20970,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, texture_failures_keep_state_and_target_chunk_atomic);
     REGISTER_TEST(chunk_id_remap, texture_copy_preserves_nested_content);
     REGISTER_TEST(chunk_id_remap, texture_preserves_legacy_file_layout);
+    REGISTER_TEST(chunk_id_remap, texture_pick_threshold_needs_data_version_5);
     REGISTER_TEST(chunk_id_remap, texture_empty_sections_round_trip_presence);
     REGISTER_TEST(chunk_id_remap, curvepoint_unresolved_curve_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, curvepoint_layout_follows_data_version);
