@@ -108,6 +108,8 @@ typedef struct nmo_texture_state {
      * same layout when uses_texonly_identifier is set) */
     uint8_t has_oldtexonly;
     uint8_t uses_texonly_identifier;
+    /* Flag bits the engine ignores; kept so they are written back */
+    uint32_t packed_unknown_bits;
     uint8_t mipmap_level;
     uint32_t save_options;
     uint8_t is_transparent;

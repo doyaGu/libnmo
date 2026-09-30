@@ -151,6 +151,7 @@ static const nmo_type_field_t nmo_texture_fields[] = {
     /* Packed flags */
     NMO_FIELD(nmo_texture_state_t, has_oldtexonly, CKPGUID_BOOL),
     NMO_FIELD(nmo_texture_state_t, uses_texonly_identifier, CKPGUID_BOOL),
+    NMO_FIELD(nmo_texture_state_t, packed_unknown_bits, CKPGUID_UINT32),
     NMO_FIELD(nmo_texture_state_t, mipmap_level, CKPGUID_UINT8),
     NMO_FIELD(nmo_texture_state_t, save_options, NMO_GUID_ENUM_CK_TEXTURE_SAVEOPTIONS),
     NMO_FIELD(nmo_texture_state_t, is_transparent, CKPGUID_BOOL),
@@ -822,37 +823,31 @@ static nmo_status_t nmo_texture_deserialize_internal(
 
     /* Files written by later engines store the same packed state under
        CK_STATESAVE_TEXONLY. */
-    bool texonly_found = nmo_texture_seek_found(
-        chunk, CK_STATESAVE_OLDTEXONLY, &seek_result);
-    if (!texonly_found && seek_result == NMO_ERR_NOT_FOUND) {
-        texonly_found = nmo_texture_seek_found(
-            chunk, CK_STATESAVE_TEXONLY, &seek_result);
-        out_state->uses_texonly_identifier = texonly_found;
+    /* Load takes a block only when it holds at least the flags dword, and
+       it reads the flags and the fields that follow positionally without
+       comparing the block size to them. */
+    size_t texonly_dwords = 0;
+    seek_result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_OLDTEXONLY, &texonly_dwords);
+    if (seek_result == NMO_ERR_NOT_FOUND) {
+        seek_result = nmo_chunk_seek_identifier_with_size(
+            chunk, CK_STATESAVE_TEXONLY, &texonly_dwords);
+        out_state->uses_texonly_identifier = seek_result == NMO_OK;
     }
-    if (texonly_found) {
-        size_t payload = nmo_texture_identifier_payload_size(chunk);
-        if (payload != sizeof(uint32_t) &&
-            payload != 2u * sizeof(uint32_t) &&
-            payload != 3u * sizeof(uint32_t) &&
-            payload != 4u * sizeof(uint32_t)) {
-            return NMO_ERR_INVALID_FORMAT;
-        }
+    if (seek_result == NMO_OK && texonly_dwords > 0u) {
+        size_t payload = texonly_dwords * sizeof(uint32_t);
         uint32_t dword = 0;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &dword));
-        if ((dword & ~UINT32_C(0x00FF07FF)) != 0u) {
-            return NMO_ERR_INVALID_FORMAT;
-        }
 
         out_state->has_oldtexonly = 1;
+        out_state->packed_unknown_bits = dword & ~UINT32_C(0x00FF07FF);
         out_state->mipmap_level = (uint8_t)(dword & 0xFF);
         out_state->save_options = (dword >> 16) & 0xFF;
         out_state->is_transparent = (dword & 0x100) != 0;
         out_state->is_cubemap = (dword & 0x400) != 0;
         const bool has_desired_flag = (dword & 0x200) != 0;
 
-        if (payload >= sizeof(uint32_t)) {
-            payload -= sizeof(uint32_t);
-        }
+        payload -= sizeof(uint32_t);
 
         if (payload == 3 * sizeof(uint32_t)) {
             NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->transparent_color));
@@ -886,13 +881,12 @@ static nmo_status_t nmo_texture_deserialize_internal(
                 out_state->has_current_slot = 1;
             }
         }
-        if (has_desired_flag != (out_state->has_desired_video_format != 0)) {
-            return NMO_ERR_INVALID_FORMAT;
-        }
-        if (nmo_chunk_identifier_remaining_dwords(chunk) != 0u) {
-            return NMO_ERR_INVALID_FORMAT;
-        }
-    } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
+        /* Any other size carries nothing the engine reads. */
+        NMO_RETURN_IF_ERROR(nmo_chunk_skip(
+            chunk, nmo_chunk_identifier_remaining_dwords(chunk)));
+    } else if (seek_result != NMO_OK && seek_result != NMO_ERR_NOT_FOUND) {
+        return seek_result;
+    }
 
     if (nmo_texture_seek_found(
             chunk, CK_STATESAVE_USERMIPMAP, &seek_result)) {
@@ -1503,6 +1497,7 @@ static nmo_status_t nmo_texture_serialize_internal(
         if (packed_layout.is_transparent) dword |= 0x100;
         if (packed_layout.is_cubemap) dword |= 0x400;
         if (packed_layout.has_desired_video_format) dword |= 0x200;
+        dword |= packed_layout.packed_unknown_bits;
 
         NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(chunk, dword));
         if (packed_layout.has_transparent_color) {
@@ -1725,6 +1720,7 @@ static bool nmo_texture_equals(const void *a, const void *b)
         lhs->pick_threshold == rhs->pick_threshold &&
         lhs->has_oldtexonly == rhs->has_oldtexonly &&
         lhs->uses_texonly_identifier == rhs->uses_texonly_identifier &&
+        lhs->packed_unknown_bits == rhs->packed_unknown_bits &&
         lhs->mipmap_level == rhs->mipmap_level &&
         lhs->save_options == rhs->save_options &&
         lhs->is_transparent == rhs->is_transparent &&
@@ -1882,6 +1878,7 @@ static uint32_t nmo_texture_hash(const void *instance)
     NMO_TEXTURE_HASH_FIELD(pick_threshold);
     NMO_TEXTURE_HASH_FIELD(has_oldtexonly);
     NMO_TEXTURE_HASH_FIELD(uses_texonly_identifier);
+    NMO_TEXTURE_HASH_FIELD(packed_unknown_bits);
     NMO_TEXTURE_HASH_FIELD(mipmap_level);
     NMO_TEXTURE_HASH_FIELD(save_options);
     NMO_TEXTURE_HASH_FIELD(is_transparent);
