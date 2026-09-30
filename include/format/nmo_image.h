@@ -201,6 +201,31 @@ NMO_API nmo_status_t nmo_image_reconstruct_pixels(
     uint8_t **out_pixels, int *out_channels);
 
 /**
+ * @brief Decode one 8-bit plane of a raw bitmap stored with compression 1.
+ *
+ * CKStateChunk::ReadRawBitmap keeps the low four bits of the compression
+ * field: 1 stores each colour plane in CCompressionTools' own DCT codec
+ * (quality byte, width, height, then the quantised 8x8 blocks), which is not
+ * JPEG.
+ *
+ * @param data      Encoded plane (the buffer read from the chunk)
+ * @param size      Its size in bytes
+ * @param arena     Arena for the plane
+ * @param out_width Receives the plane width
+ * @param out_height Receives the plane height
+ * @param out_plane Receives width * height bytes, top row first
+ * @return NMO_OK, NMO_ERR_TRUNCATED_CHUNK if the stream ends early,
+ *         NMO_ERR_INVALID_FORMAT for an impossible size
+ */
+NMO_API nmo_status_t nmo_image_decode_dct_plane(
+    const uint8_t *data,
+    size_t size,
+    nmo_arena_t *arena,
+    int *out_width,
+    int *out_height,
+    uint8_t **out_plane);
+
+/**
  * @brief Decode interleaved (non-planar) pixel data to RGBA32.
  *
  * Handles 8/16/24/32 bpp formats using mask-based channel extraction

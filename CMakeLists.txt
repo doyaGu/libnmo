@@ -177,6 +177,7 @@ set(NMO_FORMAT_SOURCES
     src/format/nmo_id_remap.c
     src/format/nmo_image.c
     src/format/nmo_image_codec.c
+    src/format/nmo_plane_codec.c
     src/format/nmo_stb_adapter.c
     src/format/interface_chunk.c
     src/format/interface_chunk_types.c
