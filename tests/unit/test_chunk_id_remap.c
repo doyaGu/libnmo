@@ -9117,6 +9117,37 @@ TEST(chunk_id_remap, bitmap2_slot_image_follows_the_format_tag) {
     ASSERT_STR_EQ("bmp", ext);
 }
 
+TEST(chunk_id_remap, new_texture_writes_the_engine_default_packed_state) {
+    /* A new RCKTexture saves with CKTEXTURE_USEGLOBAL and always writes the
+     * packed state block; RAWDATA must therefore be written, not left out. */
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+
+    const uint32_t options[] = {NMO_CKTEXTURE_USEGLOBAL, NMO_CKTEXTURE_RAWDATA};
+    for (size_t i = 0; i < 2; ++i) {
+        nmo_texture_state_t fresh;
+        ASSERT_EQ(NMO_OK, nmo_texture_vtable.create(&fresh, NULL, NULL));
+        ASSERT_EQ(NMO_CKTEXTURE_USEGLOBAL, fresh.save_options);
+        fresh.save_options = options[i];
+
+        nmo_chunk_t *chunk = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(chunk);
+        chunk->class_id = NMO_CID_TEXTURE;
+        chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+        ASSERT_EQ(NMO_OK, nmo_texture_serialize(
+            &fresh, chunk, NULL, &serialize_context));
+        nmo_chunk_close(chunk);
+        ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(chunk, CK_STATESAVE_OLDTEXONLY));
+        uint32_t flags = 0;
+        ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(chunk, &flags));
+        ASSERT_EQ(options[i] << 16, flags);
+        nmo_texture_vtable.destroy(&fresh, NULL, NULL);
+    }
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, texture_pick_threshold_needs_data_version_5) {
     /* RCKTexture::Load reads the pick threshold in its data_version >= 5
      * branch only. */
@@ -9408,6 +9439,7 @@ TEST(chunk_id_remap, texture_empty_sections_round_trip_presence) {
     ASSERT_FALSE(loaded.has_desired_video_format);
 
     source.has_oldtexonly = 0;
+    source.save_options = 0;
     nmo_chunk_t *without_oldtex = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(without_oldtex);
     without_oldtex->class_id = NMO_CID_TEXTURE;
@@ -21324,6 +21356,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, light_loading_ignores_what_the_engine_ignores);
     REGISTER_TEST(chunk_id_remap, spritetext_font_integers_are_in_engine_order);
     REGISTER_TEST(chunk_id_remap, bitmap2_slot_image_follows_the_format_tag);
+    REGISTER_TEST(chunk_id_remap, new_texture_writes_the_engine_default_packed_state);
     REGISTER_TEST(chunk_id_remap, texture_filename_count_resizes_the_slots);
     REGISTER_TEST(chunk_id_remap, modern_2dentity_without_its_block_keeps_the_constructor_state);
     REGISTER_TEST(chunk_id_remap, curvepoint_unresolved_curve_round_trips_raw_id);
