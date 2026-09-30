@@ -244,7 +244,8 @@ static nmo_status_t nmo_texture_read_reader_slot(
             result = nmo_chunk_read_int(chunk, &alpha_value);
             if (result != NMO_OK) return result;
             slot->alpha_value = (uint32_t)alpha_value;
-        } else if (distinct > 1) {
+        } else {
+            /* Any other count, 0 included, is followed by the alpha plane. */
             void *alpha_plane = NULL;
             size_t alpha_size = 0;
             result = nmo_chunk_read_buffer(chunk, &alpha_plane, &alpha_size);
@@ -283,7 +284,7 @@ static nmo_status_t nmo_texture_write_reader_slot(
         if (slot->alpha_count == 1) {
             result = nmo_chunk_write_int(chunk, (int32_t)slot->alpha_value);
             if (result != NMO_OK) return result;
-        } else if (slot->alpha_count > 1) {
+        } else {
             result = nmo_chunk_write_buffer(chunk, slot->alpha_plane, slot->alpha_plane_size);
             if (result != NMO_OK) return result;
         }

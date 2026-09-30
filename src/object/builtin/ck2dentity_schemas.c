@@ -473,8 +473,10 @@ static nmo_status_t nmo_2dentity_deserialize_internal(
         return result;
     }
     
-    /* Optional material (identifier 0x200000, CKCID_2DENTITY only) */
-    if (nmo_chunk_get_class_id(chunk) == NMO_CID_2DENTITY) {
+    /* Optional material (identifier 0x200000, CKCID_2DENTITY only). Load reads
+       it in its data_version >= 5 branch only. */
+    if (nmo_chunk_get_class_id(chunk) == NMO_CID_2DENTITY &&
+        nmo_chunk_get_data_version(chunk) >= 5u) {
         size_t section_dwords = 0;
         nmo_status_t seek_result = nmo_chunk_seek_identifier_with_size(
             chunk, CK_STATESAVE_2DENTITYMATERIAL, &section_dwords);
