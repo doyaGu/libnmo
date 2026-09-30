@@ -3115,6 +3115,17 @@ nmo_status_t nmo_entity_edit_set_camera_settings(
     camera->fov = settings->fov;
     camera->near_plane = settings->near_plane;
     camera->far_plane = settings->far_plane;
+    /* The sections holding the edited values must be written. A camera that
+       was loaded without them (the engine always writes them) gets them now;
+       one in the legacy layout gets the legacy sections of these values. */
+    if (camera->has_fov_chunk || camera->has_proj_chunk ||
+        camera->has_ortho_chunk || camera->has_aspect_chunk ||
+        camera->has_planes_chunk) {
+        camera->has_fov_chunk = 1;
+        camera->has_planes_chunk = 1;
+    } else {
+        camera->has_cameraonly_chunk = 1;
+    }
     nmo_workspace_edit_mark(edit, NMO_WORKSPACE_EDIT_OBJECT_STATE);
     return NMO_OK;
 }
