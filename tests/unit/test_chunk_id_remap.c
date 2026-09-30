@@ -18025,6 +18025,10 @@ TEST(chunk_id_remap, mesh_writes_the_current_layout) {
     source.face_count = 2u;
     source.faces = faces;
     source.face_vertex_indices = face_indices;
+    nmo_material_group_t groups[7] = {0};
+    source.has_material_groups = 1u;
+    source.material_group_count = 7u;
+    source.material_groups = groups;
     uint16_t line_indices[2] = {0x12u, 0x234u};
     source.line_count = 1u;
     source.line_indices = line_indices;
@@ -18336,7 +18340,16 @@ TEST(chunk_id_remap, legacy_mesh_faces_bring_their_material_groups) {
     ASSERT_EQ(0u, state.face_vertex_indices[8]);
     ASSERT_EQ(0xFFFFu, state.faces[2].channel_mask);
 
-    /* Saving writes the current layout and a section with the groups. */
+    /* Saving writes the current layout and a section with the groups. The
+     * faces name vertices 0 to 2, which the file did not bring. */
+    state.vertex_count = 3u;
+    state.vertices = nmo_arena_alloc(arena, 3u * sizeof(*state.vertices), _Alignof(nmo_vertex_t));
+    state.vertex_colors = nmo_arena_alloc(arena, 3u * sizeof(uint32_t), _Alignof(uint32_t));
+    state.vertex_specular = nmo_arena_alloc(arena, 3u * sizeof(uint32_t), _Alignof(uint32_t));
+    ASSERT_NOT_NULL(state.vertices);
+    memset(state.vertices, 0, 3u * sizeof(*state.vertices));
+    memset(state.vertex_colors, 0, 3u * sizeof(uint32_t));
+    memset(state.vertex_specular, 0, 3u * sizeof(uint32_t));
     nmo_chunk_t *saved = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(saved);
     saved->class_id = NMO_CID_MESH;
@@ -18449,7 +18462,8 @@ TEST(chunk_id_remap, mesh_material_sections_and_failures_are_atomic) {
     ASSERT_EQ(NMO_OK, nmo_mesh_serialize(
         &empty, empty_chunk, NULL, &serialize_context));
     nmo_chunk_close(empty_chunk);
-    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
+    /* The engine never writes an empty material list. */
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_chunk_seek_identifier(
         empty_chunk, CK_STATESAVE_MESHMATERIALS));
     ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
         empty_chunk, CK_STATESAVE_MESHCHANNELS));
@@ -18458,7 +18472,7 @@ TEST(chunk_id_remap, mesh_material_sections_and_failures_are_atomic) {
     ASSERT_EQ(NMO_OK, nmo_mesh_vtable.create(&empty_loaded, NULL, NULL));
     ASSERT_EQ(NMO_OK, nmo_mesh_deserialize(
         &empty_loaded, empty_chunk, NULL, &deserialize_context));
-    ASSERT_TRUE(empty_loaded.has_material_groups);
+    ASSERT_FALSE(empty_loaded.has_material_groups);
     ASSERT_TRUE(empty_loaded.has_material_channels);
     ASSERT_EQ(0u, empty_loaded.material_group_count);
     ASSERT_EQ(0u, empty_loaded.material_channel_count);
@@ -18776,7 +18790,21 @@ TEST(chunk_id_remap, mesh_preserves_large_material_sections) {
             (nmo_object_id_t)(group_count + i + 1u));
         source.material_channels[i].flags = i;
     }
-    const uint32_t uv_count = 1000000u;
+    /* A channel holds at most one texture coordinate per vertex. */
+    const uint32_t uv_count = 100000u;
+    source.vertex_count = uv_count;
+    source.vertices = nmo_arena_alloc(
+        arena, sizeof(*source.vertices) * uv_count, _Alignof(nmo_vertex_t));
+    source.vertex_colors = nmo_arena_alloc(
+        arena, sizeof(uint32_t) * uv_count, _Alignof(uint32_t));
+    source.vertex_specular = nmo_arena_alloc(
+        arena, sizeof(uint32_t) * uv_count, _Alignof(uint32_t));
+    ASSERT_NOT_NULL(source.vertices);
+    ASSERT_NOT_NULL(source.vertex_colors);
+    ASSERT_NOT_NULL(source.vertex_specular);
+    memset(source.vertices, 0, sizeof(*source.vertices) * uv_count);
+    memset(source.vertex_colors, 0, sizeof(uint32_t) * uv_count);
+    memset(source.vertex_specular, 0, sizeof(uint32_t) * uv_count);
     source.material_channels[channel_count - 1u].uv_count = uv_count;
     source.material_channels[channel_count - 1u].uv_coords = nmo_arena_alloc(
         arena, sizeof(nmo_vector2_t) * uv_count, _Alignof(nmo_vector2_t));
@@ -19171,6 +19199,13 @@ TEST(chunk_id_remap, mesh_copy_preserves_material_records) {
     source.has_material_groups = 1;
     source.material_group_count = 1;
     source.material_groups = &group;
+    nmo_vertex_t copy_vertex = {0};
+    uint32_t copy_color = 0;
+    uint32_t copy_specular = 0;
+    source.vertex_count = 1;
+    source.vertices = &copy_vertex;
+    source.vertex_colors = &copy_color;
+    source.vertex_specular = &copy_specular;
     source.has_material_channels = 1;
     source.material_channel_count = 1;
     source.material_channels = &channel;
@@ -21341,6 +21376,64 @@ TEST(chunk_id_remap, objectanimation_per_key_morph_sections_without_keys_are_ign
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, mesh_serializer_refuses_indices_the_engine_would_not_check) {
+    /* RCKMesh::Load uses face vertex indices, face material groups and channel
+     * texture coordinates without checking them against the arrays. */
+    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+    ASSERT_NOT_NULL(arena);
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+
+    nmo_mesh_state_t mesh;
+    ASSERT_EQ(NMO_OK, nmo_mesh_vtable.create(&mesh, NULL, NULL));
+    nmo_vertex_t vertices[3] = {0};
+    uint32_t colors[3] = {0};
+    uint32_t specular[3] = {0};
+    mesh.vertex_count = 3u;
+    mesh.vertices = vertices;
+    mesh.vertex_colors = colors;
+    mesh.vertex_specular = specular;
+    nmo_material_group_t groups[2] = {0};
+    mesh.has_material_groups = 1u;
+    mesh.material_group_count = 2u;
+    mesh.material_groups = groups;
+    nmo_face_t face = {.material_group_idx = 1u, .channel_mask = 0xFFFFu};
+    uint16_t indices[3] = {0u, 1u, 2u};
+    mesh.face_count = 1u;
+    mesh.faces = &face;
+    mesh.face_vertex_indices = indices;
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    chunk->class_id = NMO_CID_MESH;
+    chunk->data_version = 9;
+    chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_mesh_serialize(&mesh, chunk, NULL, &serialize_context));
+
+    indices[2] = 3u;   /* one past the last vertex */
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_mesh_serialize(&mesh, chunk, NULL, &serialize_context));
+    indices[2] = 2u;
+
+    face.material_group_idx = 2u;   /* one past the last group */
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_mesh_serialize(&mesh, chunk, NULL, &serialize_context));
+    face.material_group_idx = 1u;
+
+    mesh.material_group_count = 0u;   /* faces without any group */
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_mesh_serialize(&mesh, chunk, NULL, &serialize_context));
+    mesh.material_group_count = 2u;
+
+    nmo_vector2_t uvs[4] = {{0}};
+    nmo_material_channel_t channel = {.uv_count = 4u, .uv_coords = uvs};
+    mesh.has_material_channels = 1u;
+    mesh.material_channel_count = 1u;
+    mesh.material_channels = &channel;   /* 4 coordinates for 3 vertices */
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_mesh_serialize(&mesh, chunk, NULL, &serialize_context));
+    channel.uv_count = 3u;
+    ASSERT_EQ(NMO_OK, nmo_mesh_serialize(&mesh, chunk, NULL, &serialize_context));
+
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, legacy_unresolved_id_preserves_raw_id) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
@@ -21580,5 +21673,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, objectanimation_sections_do_not_borrow_following_identifiers);
     REGISTER_TEST(chunk_id_remap, objectanimation_newdata_morph_normals_are_bounded);
     REGISTER_TEST(chunk_id_remap, objectanimation_per_key_morph_sections_without_keys_are_ignored);
+    REGISTER_TEST(chunk_id_remap, mesh_serializer_refuses_indices_the_engine_would_not_check);
     REGISTER_TEST(chunk_id_remap, legacy_unresolved_id_preserves_raw_id);
 TEST_MAIN_END()
