@@ -97,6 +97,8 @@ static nmo_status_t nmo_mesh_create(
     if (!instance) return NMO_ERR_INVALID_ARGUMENT;
     nmo_mesh_state_t *state = instance;
     memset(state, 0, sizeof(*state));
+    /* RCKMesh constructor: VXMESH_VISIBLE | VXMESH_RENDERCHANNELS. */
+    state->flags = 0x0Au;
     return nmo_beobject_vtable.create(&state->beobject, NULL, context);
 }
 
@@ -1131,8 +1133,11 @@ static nmo_status_t nmo_mesh_deserialize_modern(
             }
 
             if (remainder) {
+                /* The engine stores the odd word in the last face of the mesh
+                   (its writer only makes an odd count for a mesh that has
+                   as many masks as faces). */
                 result = nmo_chunk_read_word(chunk,
-                    &out_state->faces[(uint32_t)mask_face_count - 1u].channel_mask);
+                    &out_state->faces[face_count - 1u].channel_mask);
                 if (result != NMO_OK) {
                     NMO_RETURN_ERROR(result, NMO_SEVERITY_ERROR,
                                      "CKMesh modern trailing face mask is truncated");
@@ -1699,8 +1704,11 @@ static nmo_status_t nmo_mesh_deserialize_legacy(
             }
 
             if (remainder) {
+                /* The engine stores the odd word in the last face of the mesh
+                   (its writer only makes an odd count for a mesh that has
+                   as many masks as faces). */
                 result = nmo_chunk_read_word(chunk,
-                    &out_state->faces[(uint32_t)mask_face_count - 1u].channel_mask);
+                    &out_state->faces[face_count - 1u].channel_mask);
                 if (result != NMO_OK) return result;
             }
             const size_t consumed_dwords =
