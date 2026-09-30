@@ -24,6 +24,13 @@ typedef struct nmo_type_descriptor nmo_type_descriptor_t;
 
 /**
  * @brief CKLayer state
+ *
+ * The engine takes a layer's type from its object name (a name the grid
+ * manager has not seen becomes a new type) and keeps the color and parameter
+ * GUID per type in the manager, not on the layer. A file stores the color and
+ * GUID of the layer's type, so layers with one name are expected to agree.
+ * type is only written to and read from non-file chunks and means nothing for
+ * a layer loaded from a file. Bit 0 of flags is the layer's visibility.
  */
 typedef struct nmo_layer_state {
     nmo_object_state_t base;
