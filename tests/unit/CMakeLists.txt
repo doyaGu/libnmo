@@ -272,3 +272,19 @@ add_unit_test(test_object_state_layout)
 # Orphan reachability (mark-sweep via ref graph)
 add_unit_test(test_orphan_reachability)
 set_tests_properties(test_orphan_reachability PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+# Tests of the optional components link them explicitly. Every other test links
+# only the core library, which keeps the core free of Lua and project code.
+foreach(_nmo_test IN ITEMS
+        test_lua_runtime test_lua_bindings test_lua_bindings_document
+        test_lua_bindings_session_runtime test_lua_bindings_object
+        test_lua_bindings_type test_lua_bindings_behavior
+        test_lua_bindings_plan test_lua_bindings_format)
+    target_link_libraries(${_nmo_test} PRIVATE nmo_lua)
+endforeach()
+foreach(_nmo_test IN ITEMS
+        test_public_api_smoke test_project_plan test_project_validator
+        test_project_manifest_json test_generated_project_validation
+        test_project_report_diff test_scene_authoring test_asset_authoring)
+    target_link_libraries(${_nmo_test} PRIVATE nmo_project)
+endforeach()

@@ -69,7 +69,7 @@ add_executable(nmo_cli
     commands/nmo_cmd_completion.c
 )
 set_target_properties(nmo_cli PROPERTIES OUTPUT_NAME nmo)
-target_link_libraries(nmo_cli PRIVATE nmo yyjson)
+target_link_libraries(nmo_cli PRIVATE nmo_project nmo_lua nmo yyjson)
 
 if(MINGW AND NMO_MINGW_STATIC_RUNTIME)
     target_link_options(nmo_cli PRIVATE -static)

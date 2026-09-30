@@ -1,10 +1,11 @@
 /**
  * @file main.c
- * @brief Links an installed libnmo and exercises the context and Lua runtime
+ * @brief Links an installed libnmo and exercises the core, Lua and project components
  */
 
 #include "nmo.h"
-#include "lua/nmo_lua_runtime.h"
+#include "nmo_lua.h"
+#include "nmo_project.h"
 
 #include <stdio.h>
 
@@ -31,6 +32,13 @@ int main(void) {
         return 1;
     }
     nmo_lua_runtime_destroy(runtime);
+
+    nmo_project_plan_t *plan = NULL;
+    if (nmo_project_plan_create(&plan) != NMO_OK || plan == NULL) {
+        fprintf(stderr, "nmo_project_plan_create failed\n");
+        return 1;
+    }
+    nmo_project_plan_destroy(plan);
 
     printf("libnmo %s\n", nmo_version());
     return 0;

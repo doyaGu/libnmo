@@ -5,6 +5,7 @@
 
 #include "test_framework.h"
 #include "nmo.h"
+#include "nmo_project.h"
 #include "runtime/nmo_context.h"
 #include "runtime/nmo_workspace.h"
 #include "document/nmo_document.h"

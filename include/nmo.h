@@ -13,7 +13,9 @@
  * - IO Layer: file, memory, mmap, transactional IO
  * - Format Layer: headers, chunks, objects, managers, data, chunk pool, image
  * - Canonical Model: context -> document -> workspace -> object/behavior/chunk -> export
- * - Type/Extension/Lua Layers: type system, plugins, scripting bindings
+ * - Type/Extension Layers: type system, plugins
+ * - Optional components (own headers and libraries): nmo_project.h for project
+ *   authoring, nmo_lua.h for the Lua runtime and bindings
  *
  * Basic usage:
  * @code
@@ -154,22 +156,13 @@
 #include "export/nmo_export_dot.h"
 #include "export/nmo_ansi.h"
 #include "export/nmo_hexdump.h"
-#include "project/nmo_project_plan.h"
-#include "project/nmo_asset_plan.h"
-#include "project/nmo_scene_authoring.h"
-#include "project/nmo_script_authoring.h"
-#include "project/nmo_project_validator.h"
-#include "project/nmo_project_executor.h"
-#include "project/nmo_project_manifest_json.h"
 
 // Additional type helpers
 #include "type/nmo_type_query.h"
 
-// Lua platform layer
-#include "lua/nmo_lua_module.h"
-#include "lua/nmo_lua_runtime.h"
-#include "lua/nmo_lua_bindings.h"
-#include "lua/nmo_lua_handles.h"
+// The project authoring layer (nmo_project.h, library nmo_project) and the Lua
+// platform layer (nmo_lua.h, library nmo_lua) are separate components built on
+// top of this core library; include their umbrella headers to use them.
 
 #ifdef __cplusplus
 extern "C" {

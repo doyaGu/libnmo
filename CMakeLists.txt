@@ -316,17 +316,6 @@ set(NMO_EXPORT_SOURCES
     src/export/export_json_util.c
 )
 
-# Project authoring layer sources
-set(NMO_PROJECT_SOURCES
-    src/project/project_executor.c
-    src/project/project_plan.c
-    src/project/scene_authoring.c
-    src/project/asset_authoring.c
-    src/project/script_authoring.c
-    src/project/project_manifest_json.c
-    src/project/project_validator.c
-)
-
 # Behavior layer sources
 set(NMO_BEHAVIOR_SOURCES
     src/behavior/bb_registry.c
@@ -360,28 +349,6 @@ set(NMO_BEHAVIOR_SOURCES
     src/behavior/param_value.c
 )
 
-# Lua platform sources
-set(NMO_LUA_SOURCES
-    src/lua/lua_behavior_execution.c
-    src/lua/lua_bindings_core.c
-    src/lua/lua_bindings_context.c
-    src/lua/lua_bindings_behavior.c
-    src/lua/lua_bindings_plan.c
-    src/lua/lua_bindings_document.c
-    src/lua/lua_bindings_format.c
-    src/lua/lua_bindings_object.c
-    src/lua/lua_bindings_runtime.c
-    src/lua/lua_bindings_session.c
-    src/lua/lua_bindings_type.c
-    src/lua/lua_bindings_workspace.c
-    src/lua/lua_edit_report.c
-    src/lua/lua_fold_map_parser.c
-    src/lua/lua_handles.c
-    src/lua/lua_module.c
-    src/lua/lua_pushers_generated.c
-    src/lua/lua_runtime.c
-)
-
 # Combine all sources (yyjson compiled directly into nmo)
 set(NMO_SOURCES
     ${NMO_CORE_SOURCES}
@@ -394,33 +361,25 @@ set(NMO_SOURCES
     ${NMO_CHUNK_SOURCES}
     ${NMO_EXPORT_SOURCES}
     ${NMO_BEHAVIOR_SOURCES}
-    ${NMO_LUA_SOURCES}
     ${NMO_EXTENSION_SOURCES}
-    ${NMO_PROJECT_SOURCES}
     ${NMO_YYJSON_DIR}/src/yyjson.c
 )
 
-# Create library
+# Create the core library. The Lua runtime (src/lua, target nmo_lua) and the
+# project authoring layer (src/project, target nmo_project) are separate
+# components declared below; the core does not depend on either of them.
 if(NMO_BUILD_SHARED)
     add_library(nmo SHARED ${NMO_SOURCES})
 else()
     add_library(nmo STATIC ${NMO_SOURCES})
-    if(TARGET liblua_objects)
-        target_sources(nmo PRIVATE $<TARGET_OBJECTS:liblua_objects>)
-    endif()
 endif()
 
 target_compile_definitions(nmo PUBLIC $<$<CONFIG:Debug>:NMO_ENABLE_DEBUG_ASSERTS>)
 
 # Link dependencies: miniz is compiled into the library itself.
 target_sources(nmo PRIVATE $<TARGET_OBJECTS:nmo_miniz_objects>)
-if(NMO_BUILD_SHARED)
-    target_link_libraries(nmo PRIVATE lua::lua)
-endif()
 
 target_include_directories(nmo
-    PUBLIC
-        $<BUILD_INTERFACE:${LUA_RESOLVED_SOURCE_ROOT}/src>
     PRIVATE
         ${PROJECT_SOURCE_DIR}/deps
         ${NMO_YYJSON_DIR}/src
@@ -473,16 +432,11 @@ install(DIRECTORY include/
     PATTERN "session/nmo_ref_enumerate.h" EXCLUDE
 )
 
-# The Lua headers of include/lua/ include "lua.h". Installing Lua's public
-# headers beside them lets that same-directory lookup succeed without an extra
-# include path for consumers.
-install(FILES
-    "${LUA_RESOLVED_SOURCE_ROOT}/src/lua.h"
-    "${LUA_RESOLVED_SOURCE_ROOT}/src/luaconf.h"
-    "${LUA_RESOLVED_SOURCE_ROOT}/src/lualib.h"
-    "${LUA_RESOLVED_SOURCE_ROOT}/src/lauxlib.h"
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/lua
-)
+# Optional components built on the core library. Each one installs its own
+# library, and in a shared build compiles into the shared nmo library.
+set(NMO_THIRD_PARTY_DOCDIR "${CMAKE_INSTALL_DOCDIR}/third-party")
+add_subdirectory(src/lua)
+add_subdirectory(src/project)
 
 # CMake package: find_package(libnmo) provides the nmo::nmo target.
 include(CMakePackageConfigHelpers)
@@ -556,26 +510,12 @@ install(FILES
 install(FILES LICENSE README.md CHANGELOG.md
     DESTINATION ${CMAKE_INSTALL_DOCDIR}
 )
-set(NMO_THIRD_PARTY_DOCDIR "${CMAKE_INSTALL_DOCDIR}/third-party")
 foreach(_nmo_dep IN ITEMS miniz yyjson stb)
     install(FILES "${PROJECT_SOURCE_DIR}/deps/${_nmo_dep}/LICENSE"
         DESTINATION ${NMO_THIRD_PARTY_DOCDIR}
         RENAME ${_nmo_dep}-LICENSE
     )
 endforeach()
-# Lua ships its license only as the notice at the end of lua.h.
-file(READ "${LUA_RESOLVED_SOURCE_ROOT}/src/lua.h" _nmo_lua_header)
-string(FIND "${_nmo_lua_header}" "* Copyright (C)" _nmo_lua_begin)
-string(FIND "${_nmo_lua_header}" "SOFTWARE.\n" _nmo_lua_end REVERSE)
-if(_nmo_lua_begin EQUAL -1 OR _nmo_lua_end LESS _nmo_lua_begin)
-    message(FATAL_ERROR "Could not find the license notice in lua.h")
-endif()
-math(EXPR _nmo_lua_length "${_nmo_lua_end} + 9 - ${_nmo_lua_begin}")
-string(SUBSTRING "${_nmo_lua_header}" ${_nmo_lua_begin} ${_nmo_lua_length} _nmo_lua_license)
-string(REGEX REPLACE "(^|\n)\\* ?" "\\1" _nmo_lua_license "${_nmo_lua_license}")
-file(WRITE "${PROJECT_BINARY_DIR}/lua-LICENSE" "${_nmo_lua_license}\n")
-install(FILES "${PROJECT_BINARY_DIR}/lua-LICENSE" DESTINATION ${NMO_THIRD_PARTY_DOCDIR})
-
 # Build tools (before tests so CLI tests can depend on nmo_cli target)
 if(NMO_BUILD_TOOLS)
     add_subdirectory(tools)

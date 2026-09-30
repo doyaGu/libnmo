@@ -1,0 +1,10 @@
+prefix=${pcfiledir}/../..
+libdir=${prefix}/@CMAKE_INSTALL_LIBDIR@
+includedir=${prefix}/@CMAKE_INSTALL_INCLUDEDIR@
+
+Name: libnmo-lua
+Description: Lua runtime and bindings for libnmo
+Version: @PROJECT_VERSION@
+Requires: libnmo = @PROJECT_VERSION@
+Cflags: -I${includedir}
+Libs: -L${libdir} @NMO_LUA_PC_LIBS@

@@ -6,5 +6,5 @@ project(libnmo_package_consumer LANGUAGES C)
 find_package(libnmo CONFIG REQUIRED)
 
 add_executable(package_consumer main.c)
-target_link_libraries(package_consumer PRIVATE nmo::nmo)
+target_link_libraries(package_consumer PRIVATE nmo::project nmo::lua nmo::nmo)
 set_target_properties(package_consumer PROPERTIES C_STANDARD 17 C_STANDARD_REQUIRED ON)

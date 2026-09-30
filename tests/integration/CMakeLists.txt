@@ -233,7 +233,7 @@ if(TARGET nmo_cli)
         ${REPL_COMMAND_MIRROR_SOURCES}
     )
     target_include_directories(test_repl_write_commands PRIVATE ${PROJECT_SOURCE_DIR}/tools)
-    target_link_libraries(test_repl_write_commands PRIVATE nmo test_framework yyjson)
+    target_link_libraries(test_repl_write_commands PRIVATE nmo_project nmo_lua nmo test_framework yyjson)
     add_test(NAME test_repl_write_commands COMMAND test_repl_write_commands)
     set_tests_properties(test_repl_write_commands PROPERTIES SKIP_RETURN_CODE 77)
     set_tests_properties(test_repl_write_commands PROPERTIES
@@ -248,7 +248,7 @@ if(TARGET nmo_cli)
     target_compile_definitions(test_repl_read_commands PRIVATE
         NMO_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
     )
-    target_link_libraries(test_repl_read_commands PRIVATE nmo test_framework yyjson)
+    target_link_libraries(test_repl_read_commands PRIVATE nmo_project nmo_lua nmo test_framework yyjson)
     add_test(NAME test_repl_read_commands COMMAND test_repl_read_commands)
     set_tests_properties(test_repl_read_commands PROPERTIES SKIP_RETURN_CODE 77)
     set_tests_properties(test_repl_read_commands PROPERTIES
@@ -258,3 +258,18 @@ endif()
 
 # Temporarily disabled - test_phase6_integration uses deprecated API
 # add_integration_test(test_phase6_integration)
+
+# Tests of the optional components link them explicitly. Every other test links
+# only the core library, which keeps the core free of Lua and project code.
+foreach(_nmo_test IN ITEMS
+        test_project_skeleton_acceptance test_generated_scene_roundtrip
+        test_generated_visible_scene test_generated_script_lifecycle
+        test_generated_project_rollback test_generated_project_acceptance
+        test_generated_advanced_subsystem_probes)
+    if(TARGET ${_nmo_test})
+        target_link_libraries(${_nmo_test} PRIVATE nmo_project)
+    endif()
+endforeach()
+if(TARGET test_lua_public_workflow)
+    target_link_libraries(test_lua_public_workflow PRIVATE nmo_lua)
+endif()
