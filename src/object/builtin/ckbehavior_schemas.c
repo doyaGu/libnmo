@@ -1360,10 +1360,10 @@ static nmo_status_t nmo_behavior_serialize_internal(
     }
 
     /* Calculate or preserve save flags */
-    uint32_t save_flags = 0;
-    if (in_state->has_save_flags) {
-        save_flags = in_state->save_flags;
-    } else {
+    /* Stored flags keep the bits this code does not derive; the ones that say
+       which arrays follow always agree with the arrays, as in RCKBehavior::Save. */
+    uint32_t save_flags = in_state->has_save_flags ? in_state->save_flags : 0;
+    {
         if (in_state->sub_behaviors.count > 0) save_flags |= CK_STATESAVE_BEHAVIORSUBBEHAV;
         else save_flags &= ~CK_STATESAVE_BEHAVIORSUBBEHAV;
         if (in_state->sub_behavior_links.count > 0) save_flags |= CK_STATESAVE_BEHAVIORSUBLINKS;

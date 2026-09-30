@@ -141,10 +141,7 @@ static nmo_status_t nmo_messagemanager_deserialize_internal(
         if (nmo_chunk_get_position(chunk) > section_end) {
             return NMO_ERR_TRUNCATED_CHUNK;
         }
-        if (name == NULL) {
-            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
-                             "Message type name is missing");
-        }
+        /* The engine writes a message type that is not in use as a null name. */
         names[i] = name; /* Chunk manages the buffer */
     }
 
@@ -232,10 +229,6 @@ static nmo_status_t nmo_messagemanager_serialize_internal(
     /* Write each message type name */
     for (uint32_t i = 0; i < in_state->message_type_count; i++) {
         const char *name = in_state->message_type_names[i];
-        if (name == NULL) {
-            NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
-                             "Message type name is missing");
-        }
         result = nmo_chunk_write_string(out_chunk, name);
         if (result != NMO_OK) return result;
     }
@@ -298,7 +291,8 @@ static nmo_status_t nmo_messagemanager_copy(
 
         for (uint32_t i = 0; i < source->message_type_count; ++i) {
             if (source->message_type_names[i] == NULL) {
-                return NMO_ERR_VALIDATION_FAILED;
+                names[i] = NULL;
+                continue;
             }
             names[i] = nmo_arena_strdup(
                 arena, source->message_type_names[i]);
@@ -328,11 +322,6 @@ static nmo_status_t nmo_messagemanager_validate(
     if (state->message_type_count > 0 &&
         state->message_type_names == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
-    }
-    for (uint32_t i = 0; i < state->message_type_count; ++i) {
-        if (state->message_type_names[i] == NULL) {
-            return NMO_ERR_VALIDATION_FAILED;
-        }
     }
     return NMO_OK;
 }

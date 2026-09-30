@@ -2771,13 +2771,12 @@ TEST(chunk_id_remap, messagemanager_copy_preserves_string_content) {
         .message_type_count = 1,
         .message_type_names = invalid_names,
     };
-    const char **published_names = copy.message_type_names;
-    const uint32_t published_count = copy.message_type_count;
-    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_messagemanager_vtable.copy(
+    /* The engine writes a message type that is not in use as a null name. */
+    ASSERT_EQ(NMO_OK, nmo_messagemanager_vtable.copy(
         &invalid, &copy, &type, arena));
-    ASSERT_EQ(published_names, copy.message_type_names);
-    ASSERT_EQ(published_count, copy.message_type_count);
-    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_messagemanager_vtable.validate(
+    ASSERT_EQ(1u, copy.message_type_count);
+    ASSERT_NULL(copy.message_type_names[0]);
+    ASSERT_EQ(NMO_OK, nmo_messagemanager_vtable.validate(
         &invalid, &type, NULL));
 
     nmo_arena_destroy(arena);
