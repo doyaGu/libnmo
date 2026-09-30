@@ -73,17 +73,21 @@ typedef struct nmo_keyedanimation_state {
 typedef CK_OBJECTANIMATION_FORMAT nmo_objectanimation_format_t;
 
 /**
- * @brief A single animation controller's raw key data.
+ * @brief A single animation controller's key data.
  *
- * The internal layout of keys depends on the controller type
- * (e.g., LINPOS = 16 bytes/key, LINROT = 20 bytes/key).
- * Use nmo_objanim_controller_key_size() to determine key size.
+ * With key_count > 0, data holds exactly key_count keys and nothing else; the
+ * key size depends on the controller type (see nmo_objanim_controller_key_size()
+ * and nmo_objanim_controller_keys_size()). CONTROLLERS-format files store the
+ * key count as a prefix of each controller blob; reading strips it and writing
+ * adds it back. With key_count == 0, data is an opaque blob that is written
+ * verbatim: unknown controller types, empty controllers, or blobs that do not
+ * match the layout of their type.
  */
 typedef struct nmo_objanim_controller {
     uint32_t type;       /**< CKANIMATION_CONTROLLER enum value */
-    uint32_t key_count;  /**< Explicit key count (NEWDATA/LEGACY); 0 for CONTROLLERS format */
-    uint32_t data_size;  /**< Raw key data size in bytes */
-    void    *data;       /**< Arena-allocated raw key bytes */
+    uint32_t key_count;  /**< Number of keys in data; 0 when data is an opaque blob */
+    uint32_t data_size;  /**< Size of data in bytes */
+    void    *data;       /**< Arena-allocated key bytes (or opaque blob) */
 } nmo_objanim_controller_t;
 
 /**
@@ -155,9 +159,56 @@ typedef struct nmo_objectanimation_state {
 
 /**
  * @brief Get the size of a single key for a given controller type.
- * @return Key size in bytes, or 0 if the type is unknown/variable.
+ * @return Key size in bytes, or 0 if the type is unknown or its keys have a
+ *         variable size (bezier controllers, see nmo_objanim_bezier_key_decode()).
  */
 NMO_API uint32_t nmo_objanim_controller_key_size(uint32_t controller_type);
+
+/** @brief true for the bezier position and scale controller types. */
+NMO_API bool nmo_objanim_controller_is_bezier(uint32_t controller_type);
+
+/**
+ * @brief One packed bezier key.
+ *
+ * On disk a key is 20 bytes (time, position, a dword holding two 16-bit flag
+ * words) followed by a 12-byte tangent for each flag word that has bit 0x20
+ * set: tangent[0] belongs to the low word, tangent[1] to the high word.
+ */
+typedef struct nmo_objanim_bezier_key {
+    float time;
+    float position[3];
+    uint32_t flags;
+    bool has_tangent[2];
+    float tangent[2][3];
+} nmo_objanim_bezier_key_t;
+
+/**
+ * @brief Decode the packed bezier key at key.
+ *
+ * @param key       Start of the key
+ * @param available Bytes readable at key
+ * @param out       Receives the decoded key; may be NULL
+ * @return Size of the key in bytes, or 0 if it is truncated
+ */
+NMO_API size_t nmo_objanim_bezier_key_decode(const void *key,
+                                             size_t available,
+                                             nmo_objanim_bezier_key_t *out);
+
+/**
+ * @brief Get the size of key_count consecutive keys of a controller.
+ *
+ * @param controller_type CKANIMATION_CONTROLLER enum value
+ * @param keys            Start of the keys (read for bezier controllers only)
+ * @param available       Bytes readable at keys
+ * @param key_count       Number of keys
+ * @param out_size        Receives the total size of the keys in bytes
+ * @return true if the type is known and the keys fit in available
+ */
+NMO_API bool nmo_objanim_controller_keys_size(uint32_t controller_type,
+                                              const void *keys,
+                                              size_t available,
+                                              uint32_t key_count,
+                                              size_t *out_size);
 
 NMO_API nmo_status_t nmo_animation_deserialize(
     void *instance,

@@ -541,6 +541,17 @@ static nmo_status_t nmo_objectanimation_validate(
              (s->controllers[i].data_size & 3u) != 0u)) {
             return NMO_ERR_VALIDATION_FAILED;
         }
+        if (s->format == CKOBJANIM_FORMAT_CONTROLLERS &&
+            s->controllers[i].key_count > 0u) {
+            size_t keys_size = 0u;
+            if (!nmo_objanim_controller_keys_size(
+                    s->controllers[i].type, s->controllers[i].data,
+                    s->controllers[i].data_size, s->controllers[i].key_count,
+                    &keys_size) ||
+                keys_size != s->controllers[i].data_size) {
+                return NMO_ERR_VALIDATION_FAILED;
+            }
+        }
         if (s->format == CKOBJANIM_FORMAT_NEWDATA ||
             s->format == CKOBJANIM_FORMAT_LEGACY) {
             uint32_t slot = 0u;
@@ -1219,10 +1230,134 @@ uint32_t nmo_objanim_controller_key_size(uint32_t type)
     case CKANIMATION_TCBROT_CONTROL:      return 40;
     case CKANIMATION_TCBSCL_CONTROL:      return 36;
     case CKANIMATION_TCBSCLAXIS_CONTROL:  return 40;
-    case CKANIMATION_BEZIERPOS_CONTROL:   return 44;
-    case CKANIMATION_BEZIERSCL_CONTROL:   return 44;
     default: return 0;
     }
+}
+
+/*
+ * Bezier keys are packed on disk: a 20-byte base (time, xyz and a dword with
+ * two 16-bit flag words) followed by a 12-byte tangent for each flag word that
+ * has bit 0x20 set. The engine's 44-byte key is its in-memory layout only.
+ */
+enum {
+    OBJANIM_BEZIER_BASE_KEY_SIZE = 20,
+    OBJANIM_BEZIER_TANGENT_SIZE = 12,
+    OBJANIM_BEZIER_FLAGS_OFFSET = 16,
+    OBJANIM_BEZIER_TANGENT_FLAG = 0x20,
+};
+
+bool nmo_objanim_controller_is_bezier(uint32_t type)
+{
+    return type == CKANIMATION_BEZIERPOS_CONTROL ||
+           type == CKANIMATION_BEZIERSCL_CONTROL;
+}
+
+size_t nmo_objanim_bezier_key_decode(
+    const void *key,
+    size_t available,
+    nmo_objanim_bezier_key_t *out)
+{
+    if (key == NULL || available < OBJANIM_BEZIER_BASE_KEY_SIZE) {
+        return 0u;
+    }
+    const uint8_t *bytes = (const uint8_t *)key;
+    nmo_objanim_bezier_key_t decoded;
+    memset(&decoded, 0, sizeof(decoded));
+    memcpy(&decoded.time, bytes, sizeof(float));
+    memcpy(decoded.position, bytes + sizeof(float), sizeof(decoded.position));
+    memcpy(&decoded.flags, bytes + OBJANIM_BEZIER_FLAGS_OFFSET,
+           sizeof(decoded.flags));
+
+    size_t size = OBJANIM_BEZIER_BASE_KEY_SIZE;
+    for (size_t i = 0; i < 2u; ++i) {
+        const uint32_t word = (decoded.flags >> (16u * i)) & 0xFFFFu;
+        if ((word & OBJANIM_BEZIER_TANGENT_FLAG) == 0u) {
+            continue;
+        }
+        if (available - size < OBJANIM_BEZIER_TANGENT_SIZE) {
+            return 0u;
+        }
+        decoded.has_tangent[i] = true;
+        memcpy(decoded.tangent[i], bytes + size, OBJANIM_BEZIER_TANGENT_SIZE);
+        size += OBJANIM_BEZIER_TANGENT_SIZE;
+    }
+    if (out != NULL) {
+        *out = decoded;
+    }
+    return size;
+}
+
+bool nmo_objanim_controller_keys_size(
+    uint32_t type,
+    const void *keys,
+    size_t available,
+    uint32_t key_count,
+    size_t *out_size)
+{
+    if (out_size == NULL) {
+        return false;
+    }
+
+    if (nmo_objanim_controller_is_bezier(type)) {
+        if (key_count > 0u && keys == NULL) {
+            return false;
+        }
+        size_t total = 0u;
+        for (uint32_t i = 0; i < key_count; ++i) {
+            size_t key_size = nmo_objanim_bezier_key_decode(
+                (const uint8_t *)keys + total, available - total, NULL);
+            if (key_size == 0u) {
+                return false;
+            }
+            total += key_size;
+        }
+        *out_size = total;
+        return true;
+    }
+
+    uint32_t key_size = nmo_objanim_controller_key_size(type);
+    size_t total = 0u;
+    if (key_size == 0u ||
+        !nmo_safe_mul_size(key_count, key_size, &total) ||
+        total > available) {
+        return false;
+    }
+    *out_size = total;
+    return true;
+}
+
+/*
+ * A CONTROLLERS-format blob is [u32 key_count][keys]. Returns true when `blob`
+ * is exactly that for a known controller type with at least one key; anything
+ * else (unknown types, empty controllers, trailing bytes) stays a raw blob.
+ */
+static bool objanim_controller_split_blob(
+    uint32_t type,
+    const void *blob,
+    uint32_t blob_size,
+    uint32_t *out_key_count,
+    uint32_t *out_keys_size)
+{
+    if (blob == NULL || blob_size <= sizeof(uint32_t)) {
+        return false;
+    }
+    uint32_t key_count = 0u;
+    memcpy(&key_count, blob, sizeof(key_count));
+    if (key_count == 0u) {
+        return false;
+    }
+
+    const size_t keys_available = blob_size - sizeof(uint32_t);
+    size_t keys_size = 0u;
+    if (!nmo_objanim_controller_keys_size(
+            type, (const uint8_t *)blob + sizeof(uint32_t), keys_available,
+            key_count, &keys_size) ||
+        keys_size != keys_available) {
+        return false;
+    }
+    *out_key_count = key_count;
+    *out_keys_size = (uint32_t)keys_size;
+    return true;
 }
 
 static nmo_status_t read_raw_tail(nmo_chunk_t *chunk, nmo_arena_t *arena,
@@ -1407,12 +1542,18 @@ static nmo_status_t read_controllers_loop(
             NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
                              "Controller count exceeds state limits");
         }
-        const nmo_objanim_controller_t controller = {
+        /* Known layouts drop the count prefix; other blobs stay raw. */
+        nmo_objanim_controller_t controller = {
             .type = type,
             .key_count = 0u,
             .data_size = data_size,
             .data = data,
         };
+        if (objanim_controller_split_blob(
+                type, data, data_size,
+                &controller.key_count, &controller.data_size)) {
+            controller.data = (uint8_t *)data + sizeof(uint32_t);
+        }
         NMO_RETURN_IF_ERROR(nmo_arena_array_append(
             &controllers, &controller));
     }
@@ -2681,11 +2822,18 @@ static nmo_status_t nmo_objectanimation_serialize_internal(
         /* CONTROLLERS format: write {type, data_size/4, data} per controller + terminator 0 */
         for (uint32_t i = 0; i < in_state->controller_count; ++i) {
             const nmo_objanim_controller_t *ctrl = &in_state->controllers[i];
+            /* Controllers with keys get their count written as the blob prefix. */
+            const bool has_prefix = ctrl->key_count > 0u;
             nmo_status_t result = nmo_chunk_write_dword(out_chunk, ctrl->type);
             if (result != NMO_OK) return result;
-            uint32_t size_dwords = ctrl->data_size / 4;
+            uint32_t size_dwords =
+                (ctrl->data_size + (has_prefix ? (uint32_t)sizeof(uint32_t) : 0u)) / 4;
             result = nmo_chunk_write_dword(out_chunk, size_dwords);
             if (result != NMO_OK) return result;
+            if (has_prefix) {
+                result = nmo_chunk_write_dword(out_chunk, ctrl->key_count);
+                if (result != NMO_OK) return result;
+            }
             if (ctrl->data_size > 0 && ctrl->data != NULL) {
                 result = nmo_chunk_write_buffer_no_size(out_chunk, ctrl->data, ctrl->data_size);
                 if (result != NMO_OK) return result;

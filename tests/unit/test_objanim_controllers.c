@@ -23,6 +23,9 @@
 #define CKANIMATION_LINROT_CONTROL      0x49ed4002u
 #define CKANIMATION_LINSCL_CONTROL      0x654a3a04u
 #define CKANIMATION_LINSCLAXIS_CONTROL  0x2f200b08u
+#define CKANIMATION_TCBROT_CONTROL      0x45b52a02u
+#define CKANIMATION_BEZIERPOS_CONTROL   0x921ab801u
+#define CKANIMATION_BEZIERSCL_CONTROL   0x18ab4404u
 
 static nmo_status_t register_test_types(nmo_type_registry_t *registry) {
     nmo_status_t result = nmo_register_builtin_types(registry);
@@ -69,7 +72,8 @@ TEST(objanim_controllers, controllers_roundtrip) {
 
     nmo_objanim_controller_t controllers[2];
     controllers[0].type = CKANIMATION_LINPOS_CONTROL;
-    controllers[0].key_count = 0;  /* CONTROLLERS format doesn't store key_count */
+    /* key_count 0: the data is an opaque blob and is written verbatim */
+    controllers[0].key_count = 0;
     controllers[0].data_size = 32;
     controllers[0].data = pos_keys;
     controllers[1].type = CKANIMATION_LINROT_CONTROL;
@@ -314,6 +318,379 @@ TEST(objanim_controllers, shared_no_controllers) {
     nmo_arena_destroy(arena);
 }
 
+
+/* ========================================================================
+ * CONTROLLERS blobs are [u32 key_count][keys]
+ * ======================================================================== */
+
+/* Serialize a CONTROLLERS-format animation holding the given controllers. */
+static nmo_chunk_t *serialize_controllers(nmo_arena_t *arena,
+                                          nmo_objanim_controller_t *controllers,
+                                          uint32_t count,
+                                          nmo_status_t *out_status)
+{
+    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+    nmo_objectanimation_state_t source;
+    nmo_objectanimation_vtable.create(&source, NULL, NULL);
+    source.format = CKOBJANIM_FORMAT_CONTROLLERS;
+    source.has_length = 1;
+    source.length = 1.0f;
+    source.controller_count = count;
+    source.controllers = controllers;
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    chunk->class_id = NMO_CID_OBJECTANIMATION;
+    chunk->data_version = 7;
+    chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    *out_status = nmo_objectanimation_serialize(&source, chunk, NULL, &ser_ctx);
+    nmo_chunk_close(chunk);
+    nmo_objectanimation_vtable.destroy(&source, NULL, NULL);
+    return chunk;
+}
+
+static nmo_status_t load_controllers(nmo_arena_t *arena,
+                                     nmo_chunk_t *chunk,
+                                     nmo_objectanimation_state_t *loaded)
+{
+    nmo_deserialize_context_t des_ctx = nmo_deserialize_context_create(
+        arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+    nmo_objectanimation_vtable.create(loaded, NULL, NULL);
+    nmo_chunk_start_read(chunk);
+    return nmo_objectanimation_deserialize(loaded, chunk, NULL, &des_ctx);
+}
+
+static bool chunks_have_same_payload(const nmo_chunk_t *a, const nmo_chunk_t *b)
+{
+    return a->data.count == b->data.count &&
+           memcmp(a->data.data, b->data.data,
+                  a->data.count * sizeof(uint32_t)) == 0;
+}
+
+/* Raw blob helper: [count][keys], size in bytes = 4 + keys_size. */
+static void make_blob(uint32_t *blob, uint32_t count, const void *keys, size_t keys_size)
+{
+    blob[0] = count;
+    memcpy(blob + 1, keys, keys_size);
+}
+
+TEST(objanim_controllers, controllers_read_strips_key_count_prefix) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+    ASSERT_NE(NULL, arena);
+
+    float pos_keys[8] = {0.0f, 1.0f, 2.0f, 3.0f, 5.0f, 4.0f, 5.0f, 6.0f};
+    float tcb_key[10] = {1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.1f, 0.2f, 0.3f, 0.4f, 0.5f};
+    uint32_t pos_blob[9];
+    uint32_t tcb_blob[11];
+    make_blob(pos_blob, 2u, pos_keys, sizeof(pos_keys));
+    make_blob(tcb_blob, 1u, tcb_key, sizeof(tcb_key));
+
+    /* key_count 0 controllers are opaque blobs, written as they are. */
+    nmo_objanim_controller_t raw[2] = {
+        {.type = CKANIMATION_LINPOS_CONTROL, .key_count = 0u,
+         .data_size = sizeof(pos_blob), .data = pos_blob},
+        {.type = CKANIMATION_TCBROT_CONTROL, .key_count = 0u,
+         .data_size = sizeof(tcb_blob), .data = tcb_blob},
+    };
+    nmo_status_t status = NMO_OK;
+    nmo_chunk_t *chunk = serialize_controllers(arena, raw, 2u, &status);
+    ASSERT_EQ(NMO_OK, status);
+
+    nmo_objectanimation_state_t loaded;
+    ASSERT_EQ(NMO_OK, load_controllers(arena, chunk, &loaded));
+    ASSERT_EQ(2u, loaded.controller_count);
+    ASSERT_EQ(2u, loaded.controllers[0].key_count);
+    ASSERT_EQ(sizeof(pos_keys), loaded.controllers[0].data_size);
+    ASSERT_EQ(0, memcmp(pos_keys, loaded.controllers[0].data, sizeof(pos_keys)));
+    ASSERT_EQ(1u, loaded.controllers[1].key_count);
+    ASSERT_EQ(sizeof(tcb_key), loaded.controllers[1].data_size);
+    ASSERT_EQ(0, memcmp(tcb_key, loaded.controllers[1].data, sizeof(tcb_key)));
+
+    /* Writing the parsed state reproduces the blobs byte for byte. */
+    nmo_chunk_t *again = serialize_controllers(
+        arena, loaded.controllers, loaded.controller_count, &status);
+    ASSERT_EQ(NMO_OK, status);
+    ASSERT_TRUE(chunks_have_same_payload(chunk, again));
+
+    nmo_objectanimation_vtable.destroy(&loaded, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
+TEST(objanim_controllers, controllers_write_adds_key_count_prefix) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+    ASSERT_NE(NULL, arena);
+
+    float rot_keys[10] = {0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 2.0f, 0.0f, 1.0f, 0.0f, 0.0f};
+    uint32_t blob[11];
+    make_blob(blob, 2u, rot_keys, sizeof(rot_keys));
+
+    nmo_objanim_controller_t keys_only = {
+        .type = CKANIMATION_LINROT_CONTROL, .key_count = 2u,
+        .data_size = sizeof(rot_keys), .data = rot_keys};
+    nmo_objanim_controller_t opaque = {
+        .type = CKANIMATION_LINROT_CONTROL, .key_count = 0u,
+        .data_size = sizeof(blob), .data = blob};
+
+    nmo_status_t status = NMO_OK;
+    nmo_chunk_t *from_keys = serialize_controllers(arena, &keys_only, 1u, &status);
+    ASSERT_EQ(NMO_OK, status);
+    nmo_chunk_t *from_blob = serialize_controllers(arena, &opaque, 1u, &status);
+    ASSERT_EQ(NMO_OK, status);
+    ASSERT_TRUE(chunks_have_same_payload(from_keys, from_blob));
+
+    nmo_objectanimation_state_t loaded;
+    ASSERT_EQ(NMO_OK, load_controllers(arena, from_keys, &loaded));
+    ASSERT_EQ(1u, loaded.controller_count);
+    ASSERT_EQ(2u, loaded.controllers[0].key_count);
+    ASSERT_EQ(sizeof(rot_keys), loaded.controllers[0].data_size);
+
+    nmo_objectanimation_vtable.destroy(&loaded, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
+TEST(objanim_controllers, controllers_empty_controller_roundtrips_verbatim) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+    ASSERT_NE(NULL, arena);
+
+    /* A controller without keys is stored as a lone zero count. */
+    uint32_t blob[1] = {0u};
+    nmo_objanim_controller_t empty = {
+        .type = CKANIMATION_LINPOS_CONTROL, .key_count = 0u,
+        .data_size = sizeof(blob), .data = blob};
+    nmo_status_t status = NMO_OK;
+    nmo_chunk_t *chunk = serialize_controllers(arena, &empty, 1u, &status);
+    ASSERT_EQ(NMO_OK, status);
+
+    nmo_objectanimation_state_t loaded;
+    ASSERT_EQ(NMO_OK, load_controllers(arena, chunk, &loaded));
+    ASSERT_EQ(1u, loaded.controller_count);
+    ASSERT_EQ(0u, loaded.controllers[0].key_count);
+    ASSERT_EQ(sizeof(blob), loaded.controllers[0].data_size);
+
+    nmo_chunk_t *again = serialize_controllers(
+        arena, loaded.controllers, loaded.controller_count, &status);
+    ASSERT_EQ(NMO_OK, status);
+    ASSERT_TRUE(chunks_have_same_payload(chunk, again));
+
+    nmo_objectanimation_vtable.destroy(&loaded, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
+TEST(objanim_controllers, controllers_mismatched_blobs_stay_raw) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+    ASSERT_NE(NULL, arena);
+
+    float keys[8] = {0.0f, 1.0f, 2.0f, 3.0f, 1.0f, 4.0f, 5.0f, 6.0f};
+    uint32_t too_many[9];          /* claims 3 keys, holds 2 */
+    uint32_t trailing[6];          /* 1 key plus a stray dword */
+    uint32_t unknown_type[2] = {1u, 0xdeadbeefu};
+    make_blob(too_many, 3u, keys, sizeof(keys));
+    make_blob(trailing, 1u, keys, 16u);
+    trailing[5] = 0x12345678u;
+
+    nmo_objanim_controller_t raw[3] = {
+        {.type = CKANIMATION_LINPOS_CONTROL, .key_count = 0u,
+         .data_size = sizeof(too_many), .data = too_many},
+        {.type = CKANIMATION_LINPOS_CONTROL, .key_count = 0u,
+         .data_size = sizeof(trailing), .data = trailing},
+        {.type = 0x100u, .key_count = 0u,
+         .data_size = sizeof(unknown_type), .data = unknown_type},
+    };
+    nmo_status_t status = NMO_OK;
+    nmo_chunk_t *chunk = serialize_controllers(arena, raw, 3u, &status);
+    ASSERT_EQ(NMO_OK, status);
+
+    nmo_objectanimation_state_t loaded;
+    ASSERT_EQ(NMO_OK, load_controllers(arena, chunk, &loaded));
+    ASSERT_EQ(3u, loaded.controller_count);
+    for (uint32_t i = 0; i < 3u; ++i) {
+        ASSERT_EQ(0u, loaded.controllers[i].key_count);
+        ASSERT_EQ(raw[i].data_size, loaded.controllers[i].data_size);
+        ASSERT_EQ(0, memcmp(raw[i].data, loaded.controllers[i].data, raw[i].data_size));
+    }
+
+    nmo_objectanimation_vtable.destroy(&loaded, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
+/* Append one packed bezier key; returns the new byte length. */
+static size_t append_bezier_key(uint8_t *out, size_t used, float time,
+                                uint32_t flags, const float tangents[2][3])
+{
+    const float position[3] = {time + 1.0f, time + 2.0f, time + 3.0f};
+    memcpy(out + used, &time, sizeof(float));
+    memcpy(out + used + 4, position, sizeof(position));
+    memcpy(out + used + 16, &flags, sizeof(flags));
+    used += 20u;
+    for (int t = 0; t < 2; ++t) {
+        if (((flags >> (16 * t)) & 0x20u) != 0u) {
+            memcpy(out + used, tangents[t], 12u);
+            used += 12u;
+        }
+    }
+    return used;
+}
+
+TEST(objanim_controllers, controllers_bezier_keys_are_packed) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+    ASSERT_NE(NULL, arena);
+
+    const float tangents[2][3] = {{0.5f, 0.25f, 0.125f}, {-1.0f, -2.0f, -3.0f}};
+    uint32_t blob[1 + 25];
+    uint8_t *keys = (uint8_t *)(blob + 1);
+    size_t keys_size = 0u;
+    keys_size = append_bezier_key(keys, keys_size, 0.0f, 0x00010001u, tangents);
+    keys_size = append_bezier_key(keys, keys_size, 1.0f, 0x00000021u, tangents);
+    keys_size = append_bezier_key(keys, keys_size, 2.0f, 0x00200020u, tangents);
+    ASSERT_EQ(96u, keys_size);   /* 20 + 32 + 44 */
+    blob[0] = 3u;
+
+    const uint32_t types[2] = {CKANIMATION_BEZIERPOS_CONTROL, CKANIMATION_BEZIERSCL_CONTROL};
+    nmo_objanim_controller_t raw[2];
+    for (int i = 0; i < 2; ++i) {
+        raw[i] = (nmo_objanim_controller_t){
+            .type = types[i], .key_count = 0u,
+            .data_size = (uint32_t)(sizeof(uint32_t) + keys_size), .data = blob};
+    }
+    nmo_status_t status = NMO_OK;
+    nmo_chunk_t *chunk = serialize_controllers(arena, raw, 2u, &status);
+    ASSERT_EQ(NMO_OK, status);
+
+    nmo_objectanimation_state_t loaded;
+    ASSERT_EQ(NMO_OK, load_controllers(arena, chunk, &loaded));
+    ASSERT_EQ(2u, loaded.controller_count);
+    for (uint32_t i = 0; i < 2u; ++i) {
+        ASSERT_EQ(3u, loaded.controllers[i].key_count);
+        ASSERT_EQ(keys_size, loaded.controllers[i].data_size);
+        ASSERT_EQ(0, memcmp(keys, loaded.controllers[i].data, keys_size));
+    }
+
+    nmo_objanim_bezier_key_t key;
+    const uint8_t *cursor = loaded.controllers[0].data;
+    size_t left = loaded.controllers[0].data_size;
+    size_t size = nmo_objanim_bezier_key_decode(cursor, left, &key);
+    ASSERT_EQ(20u, size);
+    ASSERT_FALSE(key.has_tangent[0]);
+    ASSERT_FALSE(key.has_tangent[1]);
+    cursor += size; left -= size;
+    size = nmo_objanim_bezier_key_decode(cursor, left, &key);
+    ASSERT_EQ(32u, size);
+    ASSERT_EQ(1.0f, key.time);
+    ASSERT_EQ(2.0f, key.position[0]);
+    ASSERT_TRUE(key.has_tangent[0]);
+    ASSERT_FALSE(key.has_tangent[1]);
+    ASSERT_EQ(0.5f, key.tangent[0][0]);
+    cursor += size; left -= size;
+    size = nmo_objanim_bezier_key_decode(cursor, left, &key);
+    ASSERT_EQ(44u, size);
+    ASSERT_TRUE(key.has_tangent[0]);
+    ASSERT_TRUE(key.has_tangent[1]);
+    ASSERT_EQ(-3.0f, key.tangent[1][2]);
+    ASSERT_EQ(left, size);
+
+    nmo_chunk_t *again = serialize_controllers(
+        arena, loaded.controllers, loaded.controller_count, &status);
+    ASSERT_EQ(NMO_OK, status);
+    ASSERT_TRUE(chunks_have_same_payload(chunk, again));
+
+    nmo_objectanimation_vtable.destroy(&loaded, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
+TEST(objanim_controllers, controllers_truncated_bezier_blob_stays_raw) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+    ASSERT_NE(NULL, arena);
+
+    /* The second key announces a tangent that the blob does not contain. */
+    uint32_t blob[1 + 10];
+    uint8_t *keys = (uint8_t *)(blob + 1);
+    const float tangents[2][3] = {{0}};
+    size_t keys_size = append_bezier_key(keys, 0u, 0.0f, 0x00010001u, tangents);
+    const float time = 1.0f;
+    const uint32_t flags = 0x00000021u;
+    memcpy(keys + keys_size, &time, sizeof(time));
+    memset(keys + keys_size + 4, 0, 12u);
+    memcpy(keys + keys_size + 16, &flags, sizeof(flags));
+    keys_size += 20u;
+    blob[0] = 2u;
+
+    nmo_objanim_controller_t raw = {
+        .type = CKANIMATION_BEZIERPOS_CONTROL, .key_count = 0u,
+        .data_size = (uint32_t)(sizeof(uint32_t) + keys_size), .data = blob};
+    nmo_status_t status = NMO_OK;
+    nmo_chunk_t *chunk = serialize_controllers(arena, &raw, 1u, &status);
+    ASSERT_EQ(NMO_OK, status);
+
+    nmo_objectanimation_state_t loaded;
+    ASSERT_EQ(NMO_OK, load_controllers(arena, chunk, &loaded));
+    ASSERT_EQ(1u, loaded.controller_count);
+    ASSERT_EQ(0u, loaded.controllers[0].key_count);
+    ASSERT_EQ(raw.data_size, loaded.controllers[0].data_size);
+
+    nmo_objectanimation_vtable.destroy(&loaded, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
+TEST(objanim_controllers, controllers_reject_inconsistent_key_count) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NE(NULL, arena);
+
+    float keys[8] = {0};
+    nmo_objanim_controller_t wrong_size = {
+        .type = CKANIMATION_LINPOS_CONTROL, .key_count = 3u,
+        .data_size = sizeof(keys), .data = keys};
+    nmo_objanim_controller_t unknown = {
+        .type = 0x100u, .key_count = 1u,
+        .data_size = 16u, .data = keys};
+
+    nmo_status_t status = NMO_OK;
+    serialize_controllers(arena, &wrong_size, 1u, &status);
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, status);
+    serialize_controllers(arena, &unknown, 1u, &status);
+    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, status);
+
+    nmo_arena_destroy(arena);
+}
+
+TEST(objanim_controllers, keys_size_helper) {
+    size_t size = 0u;
+    ASSERT_TRUE(nmo_objanim_controller_keys_size(
+        CKANIMATION_LINPOS_CONTROL, NULL, 48u, 3u, &size));
+    ASSERT_EQ(48u, size);
+    ASSERT_TRUE(nmo_objanim_controller_keys_size(
+        CKANIMATION_TCBROT_CONTROL, NULL, 100u, 2u, &size));
+    ASSERT_EQ(80u, size);
+    ASSERT_TRUE(nmo_objanim_controller_keys_size(
+        CKANIMATION_LINROT_CONTROL, NULL, 0u, 0u, &size));
+    ASSERT_EQ(0u, size);
+    ASSERT_FALSE(nmo_objanim_controller_keys_size(
+        CKANIMATION_LINPOS_CONTROL, NULL, 47u, 3u, &size));
+    ASSERT_FALSE(nmo_objanim_controller_keys_size(
+        0x100u, NULL, 100u, 1u, &size));
+    ASSERT_FALSE(nmo_objanim_controller_keys_size(
+        CKANIMATION_LINPOS_CONTROL, NULL, 16u, UINT32_MAX, &size));
+
+    const float tangents[2][3] = {{0}};
+    uint8_t bezier[64];
+    size_t used = append_bezier_key(bezier, 0u, 0.0f, 0x00000020u, tangents);
+    used = append_bezier_key(bezier, used, 1.0f, 0x00000000u, tangents);
+    ASSERT_EQ(52u, used);
+    ASSERT_TRUE(nmo_objanim_controller_keys_size(
+        CKANIMATION_BEZIERPOS_CONTROL, bezier, used, 2u, &size));
+    ASSERT_EQ(52u, size);
+    ASSERT_FALSE(nmo_objanim_controller_keys_size(
+        CKANIMATION_BEZIERPOS_CONTROL, bezier, used - 1u, 2u, &size));
+    ASSERT_FALSE(nmo_objanim_controller_keys_size(
+        CKANIMATION_BEZIERPOS_CONTROL, bezier, used, 3u, &size));
+    ASSERT_FALSE(nmo_objanim_controller_keys_size(
+        CKANIMATION_BEZIERPOS_CONTROL, NULL, 0u, 1u, &size));
+
+    ASSERT_TRUE(nmo_objanim_controller_is_bezier(CKANIMATION_BEZIERPOS_CONTROL));
+    ASSERT_TRUE(nmo_objanim_controller_is_bezier(CKANIMATION_BEZIERSCL_CONTROL));
+    ASSERT_FALSE(nmo_objanim_controller_is_bezier(CKANIMATION_LINPOS_CONTROL));
+    ASSERT_EQ(0u, nmo_objanim_controller_key_size(CKANIMATION_BEZIERPOS_CONTROL));
+}
+
 /* ========================================================================
  * Test: key size helper
  * ======================================================================== */
@@ -322,6 +699,7 @@ TEST(objanim_controllers, key_size_helper) {
     ASSERT_EQ(20, nmo_objanim_controller_key_size(CKANIMATION_LINROT_CONTROL));
     ASSERT_EQ(16, nmo_objanim_controller_key_size(CKANIMATION_LINSCL_CONTROL));
     ASSERT_EQ(20, nmo_objanim_controller_key_size(CKANIMATION_LINSCLAXIS_CONTROL));
+    ASSERT_EQ(40, nmo_objanim_controller_key_size(CKANIMATION_TCBROT_CONTROL));
     ASSERT_EQ(0, nmo_objanim_controller_key_size(0));          /* unknown */
     ASSERT_EQ(0, nmo_objanim_controller_key_size(0xDEADBEEF)); /* unknown */
 }
@@ -1040,6 +1418,14 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(objanim_controllers, controllers_preserve_terminator_delimited_count);
     REGISTER_TEST(objanim_controllers, controllers_reject_unaligned_payload);
     REGISTER_TEST(objanim_controllers, shared_no_controllers);
+    REGISTER_TEST(objanim_controllers, controllers_read_strips_key_count_prefix);
+    REGISTER_TEST(objanim_controllers, controllers_write_adds_key_count_prefix);
+    REGISTER_TEST(objanim_controllers, controllers_empty_controller_roundtrips_verbatim);
+    REGISTER_TEST(objanim_controllers, controllers_mismatched_blobs_stay_raw);
+    REGISTER_TEST(objanim_controllers, controllers_bezier_keys_are_packed);
+    REGISTER_TEST(objanim_controllers, controllers_truncated_bezier_blob_stays_raw);
+    REGISTER_TEST(objanim_controllers, controllers_reject_inconsistent_key_count);
+    REGISTER_TEST(objanim_controllers, keys_size_helper);
     REGISTER_TEST(objanim_controllers, key_size_helper);
     REGISTER_TEST(objanim_controllers, negative_morph_counts_are_rejected_atomically);
     REGISTER_TEST(objanim_controllers, oversized_morph_payload_is_rejected_before_allocation);

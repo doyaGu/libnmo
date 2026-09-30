@@ -2665,11 +2665,20 @@ TEST(cli, animation_real_sample_reports_keyed_and_object_controllers) {
     ASSERT_STR_EQ("0x637c4301", yyjson_get_str(yyjson_obj_get(ctrl0, "type")));
     ASSERT_STR_EQ("position/scale", yyjson_get_str(yyjson_obj_get(ctrl0, "type_name")));
     ASSERT_EQ(16, yyjson_get_uint(yyjson_obj_get(ctrl0, "key_size")));
-    ASSERT_EQ(116, yyjson_get_uint(yyjson_obj_get(ctrl0, "data_size")));
+    /* The controller blob is [key_count][keys]: 4 + 7 * 16 bytes on disk. */
+    ASSERT_EQ(7, yyjson_get_uint(yyjson_obj_get(ctrl0, "key_count")));
+    ASSERT_EQ(112, yyjson_get_uint(yyjson_obj_get(ctrl0, "data_size")));
+    ASSERT_EQ(7, yyjson_arr_size(yyjson_obj_get(ctrl0, "keys")));
+    yyjson_val *key0 = yyjson_arr_get(yyjson_obj_get(ctrl0, "keys"), 0);
+    ASSERT_NOT_NULL(key0);
+    ASSERT_NOT_NULL(yyjson_obj_get(key0, "time"));
+    ASSERT_EQ(3, yyjson_arr_size(yyjson_obj_get(key0, "values")));
     ASSERT_STR_EQ("0x49ed4002", yyjson_get_str(yyjson_obj_get(ctrl1, "type")));
     ASSERT_STR_EQ("rotation", yyjson_get_str(yyjson_obj_get(ctrl1, "type_name")));
     ASSERT_EQ(20, yyjson_get_uint(yyjson_obj_get(ctrl1, "key_size")));
-    ASSERT_EQ(144, yyjson_get_uint(yyjson_obj_get(ctrl1, "data_size")));
+    ASSERT_EQ(7, yyjson_get_uint(yyjson_obj_get(ctrl1, "key_count")));
+    ASSERT_EQ(140, yyjson_get_uint(yyjson_obj_get(ctrl1, "data_size")));
+    ASSERT_EQ(7, yyjson_arr_size(yyjson_obj_get(ctrl1, "keys")));
     yyjson_doc_free(keys_doc);
 }
 
@@ -2709,8 +2718,12 @@ TEST(cli, animation_export_real_sample_preserves_controller_metadata) {
     ASSERT_NOT_NULL(ctrl1);
     ASSERT_STR_EQ("0x637c4301", yyjson_get_str(yyjson_obj_get(ctrl0, "type")));
     ASSERT_EQ(16, yyjson_get_uint(yyjson_obj_get(ctrl0, "key_size")));
+    ASSERT_EQ(7, yyjson_get_uint(yyjson_obj_get(ctrl0, "key_count")));
+    ASSERT_EQ(7, yyjson_arr_size(yyjson_obj_get(ctrl0, "keys")));
     ASSERT_STR_EQ("0x49ed4002", yyjson_get_str(yyjson_obj_get(ctrl1, "type")));
     ASSERT_EQ(20, yyjson_get_uint(yyjson_obj_get(ctrl1, "key_size")));
+    ASSERT_EQ(7, yyjson_get_uint(yyjson_obj_get(ctrl1, "key_count")));
+    ASSERT_EQ(7, yyjson_arr_size(yyjson_obj_get(ctrl1, "keys")));
 
     yyjson_doc_free(doc);
     free(json);
