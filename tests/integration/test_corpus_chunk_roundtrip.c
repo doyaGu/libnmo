@@ -57,8 +57,8 @@ typedef struct corpus_chunk_stats {
  * same content. */
 static int same_padding(uint32_t original, uint32_t saved)
 {
-    for (unsigned kept_bytes = 0; kept_bytes < 4; kept_bytes++) {
-        uint32_t kept = kept_bytes == 0 ? 0u : (0xFFFFFFFFu >> (32 - 8 * kept_bytes));
+    for (unsigned kept_bytes = 1; kept_bytes < 4; kept_bytes++) {
+        uint32_t kept = 0xFFFFFFFFu >> (32 - 8 * kept_bytes);
         if ((original & kept) == saved) {
             return 1;
         }
@@ -406,7 +406,13 @@ TEST(corpus_chunk_roundtrip, deleting_an_object_keeps_the_others_intact)
     ASSERT_EQ(count - 1u, nmo_object_repository_get_count(repo));
 
     nmo_save_options_t save_options = nmo_save_options_default();
-    ASSERT_EQ(NMO_OK, nmo_session_save_file(edited, SCRATCH_FILE, &save_options, NULL));
+    nmo_status_t save_status = nmo_session_save_file(edited, SCRATCH_FILE, &save_options, NULL);
+    if (save_status != NMO_OK) {
+        char detail[512];
+        nmo_last_error_message_copy(detail, sizeof(detail));
+        printf("  save failed (%d): %s\n", (int)save_status, detail);
+    }
+    ASSERT_EQ(NMO_OK, save_status);
     nmo_session_t *reloaded = load_session(ctx, SCRATCH_FILE);
     ASSERT_NOT_NULL(reloaded);
 
@@ -460,8 +466,10 @@ TEST(corpus_chunk_roundtrip, deleting_an_object_keeps_the_others_intact)
                 }
             }
             /* Parameters that pointed at the deleted array were detached from it,
-             * so those and only those may have changed. */
-            if (!matched && new_object->class_id != NMO_CID_PARAMETEROUT &&
+             * and the level scene lists the objects of the file by index, so
+             * those may have changed. */
+            if (!matched && new_object->class_id != NMO_CID_LEVEL &&
+                new_object->class_id != NMO_CID_PARAMETEROUT &&
                 new_object->class_id != NMO_CID_PARAMETERIN &&
                 new_object->class_id != NMO_CID_PARAMETERLOCAL) {
                 differing++;
@@ -479,7 +487,7 @@ TEST(corpus_chunk_roundtrip, deleting_an_object_keeps_the_others_intact)
     nmo_session_destroy(edited);
     nmo_session_destroy(pristine);
     nmo_context_release(ctx);
-    printf("  Deleted object %zu of %zu; %zu chunks outside the detached parameters differ in more than ids\n",
+    printf("  Deleted object %zu of %zu; %zu chunks outside the level and detached parameters differ in more than ids\n",
            victim_index, count, differing);
     ASSERT_EQ(0u, differing);
 }
