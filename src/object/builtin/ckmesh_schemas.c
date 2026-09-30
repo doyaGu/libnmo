@@ -205,9 +205,10 @@ static nmo_status_t nmo_mesh_peek_dword(nmo_chunk_t *chunk, uint32_t *out_value)
     NMO_RETURN_OK();
 }
 
+/* RCKMesh::Load ignores what follows the fields it reads in a section. */
 static nmo_status_t nmo_mesh_require_identifier_end(nmo_chunk_t *chunk) {
-    return nmo_chunk_identifier_remaining_dwords(chunk) == 0u
-        ? NMO_OK : NMO_ERR_INVALID_FORMAT;
+    (void)chunk;
+    return NMO_OK;
 }
 
 static bool nmo_mesh_size_mul_overflows(size_t count, size_t element_size) {
@@ -877,18 +878,24 @@ static nmo_status_t nmo_mesh_deserialize_modern(
         NMO_RETURN_IF_ERROR(nmo_mesh_require_identifier_end(chunk));
     }
     
-    NMO_RETURN_IF_ERROR(nmo_mesh_deserialize_material_groups(
-        chunk, arena, out_state));
-    
-    // Read vertices (identifier CK_STATESAVE_MESHVERTICES)
-    result = nmo_mesh_deserialize_vertices(chunk, arena, out_state);
-    if (result != NMO_OK) {
-        return result;
+    /* RCKMesh::Load leaves the materials, vertices, faces, lines and channels
+       to a mesh; a patch mesh (class 53) builds them from its patches. */
+    const bool is_patch_mesh = chunk->class_id == NMO_CID_PATCHMESH;
+    if (!is_patch_mesh) {
+        NMO_RETURN_IF_ERROR(nmo_mesh_deserialize_material_groups(
+            chunk, arena, out_state));
+
+        // Read vertices (identifier CK_STATESAVE_MESHVERTICES)
+        result = nmo_mesh_deserialize_vertices(chunk, arena, out_state);
+        if (result != NMO_OK) {
+            return result;
+        }
     }
-    
+
     // Read faces (identifier CK_STATESAVE_MESHFACES)
     NMO_RETURN_IF_ERROR(nmo_mesh_seek_optional(
         chunk, CK_STATESAVE_MESHFACES, &section_found, &section_dwords));
+    if (is_patch_mesh) section_found = false;
     if (section_found) {
         if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
         int32_t face_count;
@@ -955,12 +962,15 @@ static nmo_status_t nmo_mesh_deserialize_modern(
     }
     
     // Read lines (identifier CK_STATESAVE_MESHLINES, optional)
-    NMO_RETURN_IF_ERROR(nmo_mesh_read_lines_section(
-        chunk, arena, out_state, nmo_chunk_get_data_version(chunk)));
+    if (!is_patch_mesh) {
+        NMO_RETURN_IF_ERROR(nmo_mesh_read_lines_section(
+            chunk, arena, out_state, nmo_chunk_get_data_version(chunk)));
+    }
 
     // Read material channels (identifier CK_STATESAVE_MESHCHANNELS, optional)
     NMO_RETURN_IF_ERROR(nmo_mesh_seek_optional(
         chunk, CK_STATESAVE_MESHCHANNELS, &section_found, &section_dwords));
+    if (is_patch_mesh) section_found = false;
     if (section_found) {
         if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
         out_state->has_material_channels = 1;
@@ -1277,7 +1287,6 @@ static nmo_status_t nmo_mesh_read_legacy_vertices(
     }
     const size_t remaining = nmo_chunk_identifier_remaining_dwords(chunk);
     if (remaining < expected) return NMO_ERR_TRUNCATED_CHUNK;
-    if (remaining > expected) return NMO_ERR_INVALID_FORMAT;
 
     NMO_RETURN_IF_ERROR(nmo_mesh_alloc_vertices(arena, state, (uint32_t)count));
     nmo_vertex_t *vertices = state->vertices;

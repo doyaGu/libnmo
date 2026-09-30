@@ -84,11 +84,12 @@ static bool nmo_texture_oldtex_layout_is_representable(
     return !state->has_transparent_color && state->has_current_slot;
 }
 
+/* RCKTexture::Load ignores what follows the fields it reads in a section. */
 static nmo_status_t nmo_texture_require_identifier_end(
     const nmo_chunk_t *chunk)
 {
-    return nmo_chunk_identifier_remaining_dwords(chunk) == 0u
-        ? NMO_OK : NMO_ERR_INVALID_FORMAT;
+    (void)chunk;
+    return NMO_OK;
 }
 
 static nmo_status_t nmo_texture_validate_array_count(
@@ -760,8 +761,8 @@ static nmo_status_t nmo_texture_deserialize_internal(
     /* RCKTexture::Load reads the pick threshold only from data version 5. */
     if (data_version >= 5 && nmo_texture_seek_found(
             chunk, CK_STATESAVE_PICKTHRESHOLD, &seek_result)) {
-        if (nmo_texture_identifier_payload_size(chunk) != sizeof(uint32_t)) {
-            return NMO_ERR_INVALID_FORMAT;
+        if (nmo_texture_identifier_payload_size(chunk) < sizeof(uint32_t)) {
+            return NMO_ERR_TRUNCATED_CHUNK;
         }
         int32_t threshold = 0;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &threshold));
@@ -773,8 +774,8 @@ static nmo_status_t nmo_texture_deserialize_internal(
     if (data_version < 5) {
         if (nmo_texture_seek_found(
                 chunk, CK_STATESAVE_TEXTRANSPARENT, &seek_result)) {
-            if (nmo_texture_identifier_payload_size(chunk) != 2u * sizeof(uint32_t)) {
-                return NMO_ERR_INVALID_FORMAT;
+            if (nmo_texture_identifier_payload_size(chunk) < 2u * sizeof(uint32_t)) {
+                return NMO_ERR_TRUNCATED_CHUNK;
             }
             uint32_t color = 0;
             uint32_t transparency = 0;
@@ -787,8 +788,8 @@ static nmo_status_t nmo_texture_deserialize_internal(
 
         if (nmo_texture_seek_found(
                 chunk, CK_STATESAVE_TEXCURRENTIMAGE, &seek_result)) {
-            if (nmo_texture_identifier_payload_size(chunk) != sizeof(uint32_t)) {
-                return NMO_ERR_INVALID_FORMAT;
+            if (nmo_texture_identifier_payload_size(chunk) < sizeof(uint32_t)) {
+                return NMO_ERR_TRUNCATED_CHUNK;
             }
             int32_t slot = 0;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &slot));
@@ -825,8 +826,8 @@ static nmo_status_t nmo_texture_deserialize_internal(
             void *format = NULL;
             size_t size = 0;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_buffer(chunk, &format, &size));
-            if (payload != 2u * sizeof(uint32_t) + ((size + 3u) & ~(size_t)3u)) {
-                return NMO_ERR_INVALID_FORMAT;
+            if (payload < 2u * sizeof(uint32_t) + ((size + 3u) & ~(size_t)3u)) {
+                return NMO_ERR_TRUNCATED_CHUNK;
             }
             out_state->save_format_data = format;
             out_state->save_format_size = size;
@@ -931,8 +932,8 @@ static nmo_status_t nmo_texture_deserialize_internal(
         void *format = NULL;
         size_t size = 0;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_buffer(chunk, &format, &size));
-        if (payload != sizeof(uint32_t) + ((size + 3u) & ~(size_t)3u)) {
-            return NMO_ERR_INVALID_FORMAT;
+        if (payload < sizeof(uint32_t) + ((size + 3u) & ~(size_t)3u)) {
+            return NMO_ERR_TRUNCATED_CHUNK;
         }
         out_state->has_save_format = 1;
         out_state->save_format_data = format;

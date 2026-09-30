@@ -107,10 +107,9 @@ static nmo_status_t nmo_patchmesh_require_section_end(
     const nmo_chunk_t *chunk,
     size_t section_end)
 {
-    const size_t position = nmo_chunk_get_position(chunk);
-    if (position > section_end) return NMO_ERR_TRUNCATED_CHUNK;
-    if (position < section_end) return NMO_ERR_INVALID_FORMAT;
-    return NMO_OK;
+    return nmo_chunk_get_position(chunk) > section_end
+        ? NMO_ERR_TRUNCATED_CHUNK
+        : NMO_OK;
 }
 
 /* =============================================================================
