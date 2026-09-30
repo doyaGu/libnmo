@@ -228,9 +228,6 @@ static nmo_status_t nmo_material_deserialize_internal(
         if (payload_dwords < expected_dwords) {
             return NMO_ERR_TRUNCATED_CHUNK;
         }
-        if (payload_dwords > expected_dwords) {
-            return NMO_ERR_INVALID_FORMAT;
-        }
 
         if (data_version < 5) {
             nmo_color_t color;
@@ -362,7 +359,6 @@ static nmo_status_t nmo_material_deserialize_internal(
         chunk, CK_STATESAVE_MATDATA2, &payload_dwords);
     if (seek_result == NMO_OK) {
         if (payload_dwords < 3u) return NMO_ERR_TRUNCATED_CHUNK;
-        if (payload_dwords > 3u) return NMO_ERR_INVALID_FORMAT;
         NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &decoded.textures[1]));
         NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &decoded.textures[2]));
         NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &decoded.textures[3]));
@@ -373,7 +369,6 @@ static nmo_status_t nmo_material_deserialize_internal(
         chunk, CK_STATESAVE_MATDATA3, &payload_dwords);
     if (seek_result == NMO_OK) {
         if (payload_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
-        if (payload_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &decoded.effect));
         decoded.has_effect = 1;
         decoded.has_effect_param = 0;
@@ -383,12 +378,7 @@ static nmo_status_t nmo_material_deserialize_internal(
         chunk, CK_STATESAVE_MATDATA5, &payload_dwords);
     if (seek_result == NMO_OK) {
         if (payload_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
-        if (payload_dwords > 2u) return NMO_ERR_INVALID_FORMAT;
-        if (decoded.has_effect) {
-            NMO_RETURN_ERROR(
-                NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
-                "Material contains conflicting effect sections");
-        }
+        /* Load applies MATDATA3 and then MATDATA5; the last one wins. */
         NMO_RETURN_IF_ERROR(nmo_ref_read(
             chunk, &decoded.effect_parameter));
         NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &decoded.effect));
