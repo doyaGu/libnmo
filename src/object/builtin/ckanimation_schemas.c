@@ -146,7 +146,9 @@ static const nmo_type_field_t nmo_objectanimation_fields[] = {
     NMO_FIELD(nmo_objectanimation_state_t, has_legacy_entity_section, CKPGUID_UINT8),
     NMO_FIELD(nmo_objectanimation_state_t, morph_key_parsed_count, CKPGUID_UINT32),
     NMO_FIELD_OPT(nmo_objectanimation_state_t, morph_keys, CKPGUID_POINTER),
-    NMO_FIELD(nmo_objectanimation_state_t, morph_normals_id, CKPGUID_UINT32),
+    NMO_FIELD(nmo_objectanimation_state_t, morph_comp_count, CKPGUID_UINT32),
+    NMO_FIELD_OPT(nmo_objectanimation_state_t, morph_comp_sizes, CKPGUID_POINTER),
+    NMO_FIELD_OPT(nmo_objectanimation_state_t, morph_comp_data, CKPGUID_POINTER),
     NMO_FIELD(nmo_objectanimation_state_t, morph_normals_count, CKPGUID_UINT32),
     NMO_FIELD_OPT(nmo_objectanimation_state_t, morph_normals_sizes, CKPGUID_POINTER),
     NMO_FIELD_OPT(nmo_objectanimation_state_t, morph_normals_data, CKPGUID_POINTER),
@@ -380,6 +382,33 @@ static nmo_status_t nmo_objectanimation_validate(
     const nmo_type_descriptor_t *type,
     void *context);
 
+static nmo_status_t nmo_objectanimation_copy_morph_section(
+    nmo_arena_t *arena,
+    uint32_t count,
+    const uint32_t *sizes,
+    void *const *data,
+    uint32_t **out_sizes,
+    void ***out_data)
+{
+    nmo_status_t result = nmo_object_copy_array(
+        arena, (void **)out_sizes, sizes, sizeof(uint32_t), count);
+    if (result != NMO_OK) return result;
+    result = nmo_object_copy_array(
+        arena, (void **)out_data, data, sizeof(void *), count);
+    if (result != NMO_OK) return result;
+    for (uint32_t i = 0; i < count; ++i) {
+        (*out_data)[i] = NULL;
+        result = nmo_object_copy_bytes(arena, &(*out_data)[i], data[i], sizes[i]);
+        if (result != NMO_OK) return result;
+    }
+    return NMO_OK;
+}
+
+static bool nmo_objectanimation_morph_section_equals(
+    uint32_t count,
+    const uint32_t *lhs_sizes, void *const *lhs_data,
+    const uint32_t *rhs_sizes, void *const *rhs_data);
+
 static nmo_status_t nmo_objectanimation_copy(
     const void *src,
     void *dst,
@@ -396,6 +425,8 @@ static nmo_status_t nmo_objectanimation_copy(
     nmo_objectanimation_state_t copied = *s;
     copied.controllers = NULL;
     copied.morph_keys = NULL;
+    copied.morph_comp_sizes = NULL;
+    copied.morph_comp_data = NULL;
     copied.morph_normals_sizes = NULL;
     copied.morph_normals_data = NULL;
     copied.legacy_morphkeys = NULL;
@@ -433,25 +464,15 @@ static nmo_status_t nmo_objectanimation_copy(
         }
     }
 
-    /* Deep copy morph normals (both arrays must be present together) */
-    result = nmo_object_copy_array(
-        arena, (void **)&copied.morph_normals_sizes,
-        s->morph_normals_sizes, sizeof(uint32_t),
-        s->morph_normals_count);
+    /* Deep copy the per-key morph sections (sizes and data go together) */
+    result = nmo_objectanimation_copy_morph_section(
+        arena, s->morph_comp_count, s->morph_comp_sizes, s->morph_comp_data,
+        &copied.morph_comp_sizes, &copied.morph_comp_data);
     if (result != NMO_OK) return result;
-    result = nmo_object_copy_array(
-        arena, (void **)&copied.morph_normals_data,
-        s->morph_normals_data, sizeof(void *), s->morph_normals_count);
+    result = nmo_objectanimation_copy_morph_section(
+        arena, s->morph_normals_count, s->morph_normals_sizes, s->morph_normals_data,
+        &copied.morph_normals_sizes, &copied.morph_normals_data);
     if (result != NMO_OK) return result;
-    if (s->morph_normals_count > 0) {
-        for (uint32_t i = 0; i < s->morph_normals_count; ++i) {
-            copied.morph_normals_data[i] = NULL;
-            result = nmo_object_copy_bytes(
-                arena, &copied.morph_normals_data[i],
-                s->morph_normals_data[i], s->morph_normals_sizes[i]);
-            if (result != NMO_OK) return result;
-        }
-    }
 
     result = nmo_object_copy_bytes(
         arena, (void **)&copied.legacy_morphkeys,
@@ -475,6 +496,8 @@ static nmo_status_t nmo_objectanimation_validate(
     const nmo_objectanimation_state_t *s = instance;
     NMO_VALIDATE_COUNT(s->controllers, s->controller_count, "controllers");
     NMO_VALIDATE_COUNT(s->morph_keys, s->morph_key_parsed_count, "morph_keys");
+    NMO_VALIDATE_COUNT(s->morph_comp_sizes, s->morph_comp_count, "morph_comp_sizes");
+    NMO_VALIDATE_COUNT(s->morph_comp_data, s->morph_comp_count, "morph_comp_data");
     NMO_VALIDATE_COUNT(s->morph_normals_sizes, s->morph_normals_count, "morph_normals_sizes");
     NMO_VALIDATE_COUNT(s->morph_normals_data, s->morph_normals_count, "morph_normals_data");
     NMO_VALIDATE_BYTES(
@@ -500,6 +523,10 @@ static nmo_status_t nmo_objectanimation_validate(
             s->morph_key_parsed_count,
             sizeof(nmo_objanim_morph_key_t), &allocation_size) ||
         !nmo_safe_mul_size(
+            s->morph_comp_count, sizeof(uint32_t), &allocation_size) ||
+        !nmo_safe_mul_size(
+            s->morph_comp_count, sizeof(void *), &allocation_size) ||
+        !nmo_safe_mul_size(
             s->morph_normals_count, sizeof(uint32_t), &allocation_size) ||
         !nmo_safe_mul_size(
             s->morph_normals_count, sizeof(void *), &allocation_size)) {
@@ -510,24 +537,17 @@ static nmo_status_t nmo_objectanimation_validate(
             (uint32_t)s->morph_key_count != s->morph_key_parsed_count) {
             return NMO_ERR_VALIDATION_FAILED;
         }
-        if (s->morph_normals_id == 0u) {
-            if (s->morph_normals_count != 0u) {
-                return NMO_ERR_VALIDATION_FAILED;
-            }
-        } else if ((s->morph_normals_id !=
-                        CK_STATESAVE_OBJANIMMORPHCOMP &&
-                    s->morph_normals_id !=
-                        CK_STATESAVE_OBJANIMMORPHNORMALS) ||
-                   s->morph_normals_count == 0u ||
-                   s->morph_normals_count !=
-                       s->morph_key_parsed_count) {
+        if ((s->morph_comp_count != 0u &&
+             s->morph_comp_count != s->morph_key_parsed_count) ||
+            (s->morph_normals_count != 0u &&
+             s->morph_normals_count != s->morph_key_parsed_count)) {
             return NMO_ERR_VALIDATION_FAILED;
         }
     }
     if (s->format == CKOBJANIM_FORMAT_LEGACY &&
         (s->morph_key_count < 0 || s->morph_vertex_count < 0 ||
          (uint32_t)s->morph_key_count != s->morph_key_parsed_count ||
-         s->morph_normals_id != 0u || s->morph_normals_count != 0u)) {
+         s->morph_comp_count != 0u || s->morph_normals_count != 0u)) {
         return NMO_ERR_VALIDATION_FAILED;
     }
     uint32_t controller_slots = 0u;
@@ -575,6 +595,12 @@ static nmo_status_t nmo_objectanimation_validate(
             s->morph_keys[i].data,
             s->morph_keys[i].data_size,
             "morph key data");
+    }
+    for (uint32_t i = 0; i < s->morph_comp_count; ++i) {
+        NMO_VALIDATE_BYTES(
+            s->morph_comp_data[i],
+            s->morph_comp_sizes[i],
+            "morph compressed data");
     }
     for (uint32_t i = 0; i < s->morph_normals_count; ++i) {
         NMO_VALIDATE_BYTES(
@@ -969,6 +995,20 @@ static bool nmo_animation_buffer_equals(
     return lhs != NULL && rhs != NULL && memcmp(lhs, rhs, size) == 0;
 }
 
+static bool nmo_objectanimation_morph_section_equals(
+    uint32_t count,
+    const uint32_t *lhs_sizes, void *const *lhs_data,
+    const uint32_t *rhs_sizes, void *const *rhs_data)
+{
+    for (uint32_t i = 0; i < count; ++i) {
+        if (lhs_sizes[i] != rhs_sizes[i] ||
+            !nmo_animation_buffer_equals(lhs_data[i], rhs_data[i], lhs_sizes[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
 static bool nmo_objectanimation_equals(const void *a, const void *b)
 {
     if (a == b) return true;
@@ -1010,7 +1050,7 @@ static bool nmo_objectanimation_equals(const void *a, const void *b)
         lhs->has_legacy_entity_section !=
             rhs->has_legacy_entity_section ||
         lhs->morph_key_parsed_count != rhs->morph_key_parsed_count ||
-        lhs->morph_normals_id != rhs->morph_normals_id ||
+        lhs->morph_comp_count != rhs->morph_comp_count ||
         lhs->morph_normals_count != rhs->morph_normals_count ||
         lhs->has_legacy_morphkeys != rhs->has_legacy_morphkeys ||
         lhs->legacy_morphkeys_size != rhs->legacy_morphkeys_size ||
@@ -1042,13 +1082,13 @@ static bool nmo_objectanimation_equals(const void *a, const void *b)
             return false;
         }
     }
-    for (uint32_t i = 0; i < lhs->morph_normals_count; ++i) {
-        if (lhs->morph_normals_sizes[i] != rhs->morph_normals_sizes[i] ||
-            !nmo_animation_buffer_equals(
-                lhs->morph_normals_data[i], rhs->morph_normals_data[i],
-                lhs->morph_normals_sizes[i])) {
-            return false;
-        }
+    if (!nmo_objectanimation_morph_section_equals(
+            lhs->morph_comp_count, lhs->morph_comp_sizes, lhs->morph_comp_data,
+            rhs->morph_comp_sizes, rhs->morph_comp_data) ||
+        !nmo_objectanimation_morph_section_equals(
+            lhs->morph_normals_count, lhs->morph_normals_sizes, lhs->morph_normals_data,
+            rhs->morph_normals_sizes, rhs->morph_normals_data)) {
+        return false;
     }
     return nmo_animation_buffer_equals(
                lhs->legacy_morphkeys, rhs->legacy_morphkeys,
@@ -1111,7 +1151,15 @@ static uint32_t nmo_objectanimation_hash(const void *instance)
         hash = nmo_hash_fnv1a32_update(
             hash, key->data, key->data_size);
     }
-    NMO_OBJECTANIMATION_HASH_FIELD(morph_normals_id);
+    NMO_OBJECTANIMATION_HASH_FIELD(morph_comp_count);
+    for (uint32_t i = 0; i < state->morph_comp_count; ++i) {
+        hash = nmo_hash_fnv1a32_update(
+            hash, &state->morph_comp_sizes[i],
+            sizeof(state->morph_comp_sizes[i]));
+        hash = nmo_hash_fnv1a32_update(
+            hash, state->morph_comp_data[i],
+            state->morph_comp_sizes[i]);
+    }
     NMO_OBJECTANIMATION_HASH_FIELD(morph_normals_count);
     for (uint32_t i = 0; i < state->morph_normals_count; ++i) {
         hash = nmo_hash_fnv1a32_update(
@@ -1510,12 +1558,13 @@ static nmo_status_t nmo_animation_validate_payload_size(
     return NMO_OK;
 }
 
-static nmo_status_t nmo_objectanimation_read_morph_normals(
+static nmo_status_t nmo_objectanimation_read_morph_section(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
-    nmo_objectanimation_state_t *out_state,
-    uint32_t identifier,
-    uint32_t count)
+    uint32_t count,
+    uint32_t *out_count,
+    uint32_t **out_sizes,
+    void ***out_data)
 {
     if ((size_t)count >
         nmo_chunk_identifier_remaining_dwords(chunk)) {
@@ -1561,10 +1610,9 @@ static nmo_status_t nmo_objectanimation_read_morph_normals(
         }
     }
 
-    out_state->morph_normals_id = identifier;
-    out_state->morph_normals_count = count;
-    out_state->morph_normals_sizes = sizes;
-    out_state->morph_normals_data = data_ptrs;
+    *out_count = count;
+    *out_sizes = sizes;
+    *out_data = data_ptrs;
     return NMO_OK;
 }
 
@@ -1748,40 +1796,36 @@ static nmo_status_t read_newdata_controllers(
         }
     }
 
-    /* 3. Check for optional morph normals */
+    /* 3. The per-key morph sections. RCKObjectAnimation::Load reads each one
+     * independently and only when it has a morph controller, which it has
+     * when there are morph keys; without keys both are ignored. */
     NMO_RETURN_IF_ERROR(nmo_animation_require_section_end(
         chunk, data_section_end));
     NMO_RETURN_IF_ERROR(nmo_animation_seek_optional_sized(
         chunk, CK_STATESAVE_OBJANIMMORPHCOMP, &section_found,
         &section_dwords));
-    if (section_found) {
-        if (out_state->morph_key_parsed_count == 0u) {
-            return NMO_ERR_INVALID_FORMAT;
-        }
+    if (section_found && out_state->morph_key_parsed_count != 0u) {
         const size_t section_end =
             nmo_chunk_get_position(chunk) + section_dwords;
-        NMO_RETURN_IF_ERROR(nmo_objectanimation_read_morph_normals(
-            chunk, arena, out_state, CK_STATESAVE_OBJANIMMORPHCOMP,
-            out_state->morph_key_parsed_count));
+        NMO_RETURN_IF_ERROR(nmo_objectanimation_read_morph_section(
+            chunk, arena, out_state->morph_key_parsed_count,
+            &out_state->morph_comp_count, &out_state->morph_comp_sizes,
+            &out_state->morph_comp_data));
         NMO_RETURN_IF_ERROR(nmo_animation_require_section_end(
             chunk, section_end));
-    } else {
-        NMO_RETURN_IF_ERROR(nmo_animation_seek_optional_sized(
-            chunk, CK_STATESAVE_OBJANIMMORPHNORMALS, &section_found,
-            &section_dwords));
-        if (section_found) {
-            if (out_state->morph_key_parsed_count == 0u) {
-                return NMO_ERR_INVALID_FORMAT;
-            }
-            const size_t section_end =
-                nmo_chunk_get_position(chunk) + section_dwords;
-            NMO_RETURN_IF_ERROR(nmo_objectanimation_read_morph_normals(
-                chunk, arena, out_state,
-                CK_STATESAVE_OBJANIMMORPHNORMALS,
-                out_state->morph_key_parsed_count));
-            NMO_RETURN_IF_ERROR(nmo_animation_require_section_end(
-                chunk, section_end));
-        }
+    }
+    NMO_RETURN_IF_ERROR(nmo_animation_seek_optional_sized(
+        chunk, CK_STATESAVE_OBJANIMMORPHNORMALS, &section_found,
+        &section_dwords));
+    if (section_found && out_state->morph_key_parsed_count != 0u) {
+        const size_t section_end =
+            nmo_chunk_get_position(chunk) + section_dwords;
+        NMO_RETURN_IF_ERROR(nmo_objectanimation_read_morph_section(
+            chunk, arena, out_state->morph_key_parsed_count,
+            &out_state->morph_normals_count, &out_state->morph_normals_sizes,
+            &out_state->morph_normals_data));
+        NMO_RETURN_IF_ERROR(nmo_animation_require_section_end(
+            chunk, section_end));
     }
 
     /* Copy controllers to arena-allocated array */
@@ -2575,7 +2619,9 @@ static nmo_status_t nmo_objectanimation_deserialize_internal(
     out_state->has_legacy_entity_section = 0;
     out_state->morph_key_parsed_count = 0;
     out_state->morph_keys = NULL;
-    out_state->morph_normals_id = 0;
+    out_state->morph_comp_count = 0;
+    out_state->morph_comp_sizes = NULL;
+    out_state->morph_comp_data = NULL;
     out_state->morph_normals_count = 0;
     out_state->morph_normals_sizes = NULL;
     out_state->morph_normals_data = NULL;
@@ -2968,18 +3014,30 @@ static nmo_status_t nmo_objectanimation_serialize_internal(
             }
         }
 
-        /* Write optional morph normals if present */
-        if (in_state->morph_normals_id != 0 && in_state->morph_normals_count > 0) {
-            nmo_status_t result = nmo_chunk_write_identifier(out_chunk, in_state->morph_normals_id);
+        /* Write the per-key morph sections that are present */
+        const struct {
+            uint32_t identifier;
+            uint32_t count;
+            const uint32_t *sizes;
+            void *const *data;
+        } morph_sections[2] = {
+            {CK_STATESAVE_OBJANIMMORPHCOMP, in_state->morph_comp_count,
+             in_state->morph_comp_sizes, in_state->morph_comp_data},
+            {CK_STATESAVE_OBJANIMMORPHNORMALS, in_state->morph_normals_count,
+             in_state->morph_normals_sizes, in_state->morph_normals_data},
+        };
+        for (int section = 0; section < 2; ++section) {
+            if (morph_sections[section].count == 0) continue;
+            nmo_status_t result = nmo_chunk_write_identifier(
+                out_chunk, morph_sections[section].identifier);
             if (result != NMO_OK) return result;
-            for (uint32_t i = 0; i < in_state->morph_normals_count; ++i) {
-                uint32_t size_bytes = in_state->morph_normals_sizes[i];
+            for (uint32_t i = 0; i < morph_sections[section].count; ++i) {
+                uint32_t size_bytes = morph_sections[section].sizes[i];
                 result = nmo_chunk_write_dword(out_chunk, size_bytes);
                 if (result != NMO_OK) return result;
-                if (size_bytes > 0 && in_state->morph_normals_data[i] != NULL) {
-                    result = nmo_chunk_write_buffer_no_size(out_chunk,
-                                                            in_state->morph_normals_data[i],
-                                                            size_bytes);
+                if (size_bytes > 0 && morph_sections[section].data[i] != NULL) {
+                    result = nmo_chunk_write_buffer_no_size(
+                        out_chunk, morph_sections[section].data[i], size_bytes);
                     if (result != NMO_OK) return result;
                 }
             }

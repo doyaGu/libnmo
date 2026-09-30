@@ -141,9 +141,14 @@ typedef struct nmo_objectanimation_state {
     uint32_t morph_key_parsed_count;
     nmo_objanim_morph_key_t *morph_keys;
 
-    /* Morph normals (NEWDATA only, optional) */
-    uint32_t morph_normals_id;      /**< 0, CK_STATESAVE_OBJANIMMORPHCOMP, or _MORPHNORMALS */
-    uint32_t morph_normals_count;
+    /* Per-key normals of the morph keys (NEWDATA only, optional). The engine
+     * reads the two sections independently: compressed vectors from
+     * CK_STATESAVE_OBJANIMMORPHCOMP and, after them, from
+     * CK_STATESAVE_OBJANIMMORPHNORMALS, which replaces them. Both are kept. */
+    uint32_t morph_comp_count;      /**< 0 or morph_key_parsed_count */
+    uint32_t *morph_comp_sizes;     /**< Per-key data sizes */
+    void   **morph_comp_data;       /**< Per-key arena-allocated buffers */
+    uint32_t morph_normals_count;   /**< 0 or morph_key_parsed_count */
     uint32_t *morph_normals_sizes;  /**< Per-key data sizes */
     void   **morph_normals_data;    /**< Per-key arena-allocated buffers */
 
