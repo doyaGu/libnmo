@@ -818,17 +818,6 @@ nmo_status_t nmo_object_repository_set_type_guid(nmo_object_repository_t *repo,
 }
 
 /**
- * Check if object exists
- */
-int nmo_object_repository_contains(const nmo_object_repository_t *repo, nmo_object_id_t id) {
-    if (repo == NULL) {
-        return 0;
-    }
-
-    return nmo_indexed_map_contains(repo->id_map, &id);
-}
-
-/**
  * Get object count
  */
 size_t nmo_object_repository_get_count(const nmo_object_repository_t *repo) {

@@ -249,10 +249,8 @@ nmo_status_t nmo_document_internal_save_file(
     const char *path,
     const nmo_save_options_t *opts);
 nmo_ref_graph_t *nmo_document_internal_ref_graph(nmo_document_t *document);
-void nmo_document_internal_invalidate_ref_graph(nmo_document_t *document);
 nmo_behavior_index_t *nmo_document_internal_behavior_index(
     nmo_document_t *document);
-void nmo_document_internal_invalidate_behavior_index(nmo_document_t *document);
 nmo_status_t nmo_document_internal_ensure_behavior_acceleration(
     nmo_document_t *document);
 void nmo_document_internal_get_behavior_interface_diagnostics(

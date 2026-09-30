@@ -444,27 +444,11 @@ nmo_ref_graph_t *nmo_document_internal_ref_graph(nmo_document_t *document)
     return session != NULL ? nmo_session_get_ref_graph(session) : NULL;
 }
 
-void nmo_document_internal_invalidate_ref_graph(nmo_document_t *document)
-{
-    nmo_session_t *session = nmo_document_internal_session(document);
-    if (session != NULL) {
-        nmo_session_invalidate_ref_graph(session);
-    }
-}
-
 nmo_behavior_index_t *nmo_document_internal_behavior_index(
     nmo_document_t *document)
 {
     nmo_session_t *session = nmo_document_internal_session(document);
     return session != NULL ? nmo_session_get_behavior_index(session) : NULL;
-}
-
-void nmo_document_internal_invalidate_behavior_index(nmo_document_t *document)
-{
-    nmo_session_t *session = nmo_document_internal_session(document);
-    if (session != NULL) {
-        nmo_session_invalidate_behavior_index(session);
-    }
 }
 
 nmo_status_t nmo_document_internal_ensure_behavior_acceleration(

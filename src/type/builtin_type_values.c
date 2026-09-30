@@ -76,8 +76,6 @@ uint32_t nmo_vt_hash_int64(const void *instance);
 bool nmo_vt_equals_uint64(const void *a, const void *b);
 uint32_t nmo_vt_hash_uint64(const void *instance);
 
-bool nmo_equals_bool(const void *a, const void *b);
-uint32_t nmo_hash_bool(const void *instance);
 bool nmo_equals_bool32(const void *a, const void *b);
 uint32_t nmo_hash_bool32(const void *instance);
 bool nmo_equals_pointer(const void *a, const void *b);
@@ -2041,19 +2039,6 @@ NMO_DEFINE_EQ_HASH_U32(int16, int16_t)
 NMO_DEFINE_EQ_HASH_U32(uint16, uint16_t)
 NMO_DEFINE_EQ_HASH_U64(int64, int64_t)
 NMO_DEFINE_EQ_HASH_U64(uint64, uint64_t)
-
-bool nmo_equals_bool(const void *a, const void *b)
-{
-    NMO_LOAD_SCALAR(bool, av, a);
-    NMO_LOAD_SCALAR(bool, bv, b);
-    return av == bv;
-}
-
-uint32_t nmo_hash_bool(const void *instance)
-{
-    NMO_LOAD_SCALAR(bool, value, instance);
-    return nmo_hash_int32(value ? 1u : 0u);
-}
 
 bool nmo_equals_bool32(const void *a, const void *b)
 {
