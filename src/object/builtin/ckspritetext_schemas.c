@@ -141,7 +141,6 @@ static nmo_status_t deserialize_font_properties(
     nmo_spritetext_state_t *state
 ) {
     char *font_name = NULL;
-    nmo_status_t result;
     
     /* Read font name */
     NMO_RETURN_IF_ERROR(nmo_chunk_read_string_checked(chunk, &font_name, NULL));
@@ -149,29 +148,13 @@ static nmo_status_t deserialize_font_properties(
     (void)arena;
     state->font.font_name = font_name;
     
-    /* Read font size */
-    result = nmo_chunk_read_int(chunk, &state->font.size);
-    if (result != NMO_OK) {
-        return result;
-    }
-    
-    /* Read font weight */
-    result = nmo_chunk_read_int(chunk, &state->font.weight);
-    if (result != NMO_OK) {
-        return result;
-    }
-    
-    /* Read italic flag */
-    result = nmo_chunk_read_int(chunk, &state->font.italic);
-    if (result != NMO_OK) {
-        return result;
-    }
-
-    /* Read underline flag */
-    result = nmo_chunk_read_int(chunk, &state->font.underline);
-    if (result != NMO_OK) {
-        return result;
-    }
+    /* RCKSpriteText::Load hands the four integers to SetFont(face, size,
+       weight, italic, underline) in reverse: the first one read is the
+       underline flag and the last one the size. */
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &state->font.underline));
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &state->font.italic));
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &state->font.weight));
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &state->font.size));
     
     NMO_RETURN_OK();
 }
@@ -312,17 +295,11 @@ static nmo_status_t ckspritetext_serialize_modern(
         return result;
     }
     
-    result = nmo_chunk_write_int(chunk, state->font.size);
-    NMO_RETURN_IF_ERROR(result);
-    
-    result = nmo_chunk_write_int(chunk, state->font.weight);
-    NMO_RETURN_IF_ERROR(result);
-    
-    result = nmo_chunk_write_int(chunk, state->font.italic);
-    NMO_RETURN_IF_ERROR(result);
-    
-    result = nmo_chunk_write_int(chunk, state->font.underline);
-    NMO_RETURN_IF_ERROR(result);
+    /* Same order as the reader: underline, italic, weight, size. */
+    NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, state->font.underline));
+    NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, state->font.italic));
+    NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, state->font.weight));
+    NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, state->font.size));
     
     /* Write identifier 0x04000000: Colors */
     result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_SPRITETEXTCOLOR);
