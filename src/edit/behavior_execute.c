@@ -1,4 +1,4 @@
-#include "behavior/nmo_behavior_execute.h"
+#include "edit/nmo_behavior_execute.h"
 
 #include "../runtime/runtime_internal.h"
 

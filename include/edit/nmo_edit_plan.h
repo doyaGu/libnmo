@@ -6,8 +6,8 @@
 #ifndef NMO_EDIT_PLAN_H
 #define NMO_EDIT_PLAN_H
 
-#include "behavior/nmo_behavior_edit.h"
-#include "behavior/nmo_probe_analyzer.h"
+#include "edit/nmo_behavior_edit.h"
+#include "edit/nmo_probe_analyzer.h"
 #include "object/nmo_object_edit.h"
 #include "runtime/nmo_workspace.h"
 #include "nmo_types.h"

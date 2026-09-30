@@ -14,7 +14,7 @@
 #include "../nmo_tool_common.h"
 #include "../nmo_opt.h"
 
-#include "behavior/nmo_edit_plan.h"
+#include "edit/nmo_edit_plan.h"
 #include "nmo.h"
 #include "runtime/nmo_workspace.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"

@@ -15,9 +15,9 @@
 #include "../nmo_tool_session.h"
 #include "../nmo_opt.h"
 
-#include "behavior/nmo_edit_plan.h"
+#include "edit/nmo_edit_plan.h"
 #include "behavior/nmo_behavior_registry.h"
-#include "behavior/nmo_probe_analyzer.h"
+#include "edit/nmo_probe_analyzer.h"
 #include "nmo.h"
 #include "document/nmo_document_stats.h"
 #include "document/nmo_document_save.h"

@@ -1,6 +1,6 @@
 #include "lua_bindings_internal.h"
 
-#include "behavior/nmo_edit_plan.h"
+#include "edit/nmo_edit_plan.h"
 #include "core/nmo_guid.h"
 #include "lua/nmo_lua_fold_map_parser.h"
 #include "lua/nmo_lua_runtime.h"

@@ -1,7 +1,7 @@
 #ifndef NMO_LUA_BEHAVIOR_H
 #define NMO_LUA_BEHAVIOR_H
 
-#include "behavior/nmo_behavior_execute.h"
+#include "edit/nmo_behavior_execute.h"
 #include "lua/nmo_lua_runtime.h"
 
 #define NMO_LUA_BEHAVIOR_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_SINGLE_TIER

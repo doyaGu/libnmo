@@ -6,7 +6,7 @@
 #ifndef NMO_EDIT_PLAN_INTERNAL_H
 #define NMO_EDIT_PLAN_INTERNAL_H
 
-#include "behavior/nmo_edit_plan.h"
+#include "edit/nmo_edit_plan.h"
 
 #include "edit_op_kind_internal.h"
 

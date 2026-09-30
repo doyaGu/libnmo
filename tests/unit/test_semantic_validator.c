@@ -1,8 +1,8 @@
 #include "test_framework.h"
 
-#include "behavior/nmo_semantic_validator.h"
-#include "behavior/nmo_edit_plan.h"
-#include "behavior/nmo_script_edit.h"
+#include "edit/nmo_semantic_validator.h"
+#include "edit/nmo_edit_plan.h"
+#include "edit/nmo_script_edit.h"
 #include "document/nmo_document.h"
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_data.h"

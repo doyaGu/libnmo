@@ -5,7 +5,7 @@
 
 #include "script_edit_internal.h"
 
-#include "behavior/nmo_behavior_edit.h"
+#include "edit/nmo_behavior_edit.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_guids.h"
 #include "type/nmo_operation_system.h"

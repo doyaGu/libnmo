@@ -3,7 +3,7 @@
  * @brief Canonical edit operation kind metadata Implementation.
  */
 
-#include "behavior/nmo_edit_plan.h"
+#include "edit/nmo_edit_plan.h"
 
 #include "edit_op_kind_internal.h"
 

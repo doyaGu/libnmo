@@ -1,11 +1,11 @@
 #include "test_framework.h"
 
 #include "document/nmo_document_save.h"
-#include "behavior/nmo_behavior_execute.h"
+#include "edit/nmo_behavior_execute.h"
 #include "behavior/nmo_behavior_query.h"
 #include "behavior/nmo_behavior_view.h"
 #include "behavior/nmo_behavior_analyze.h"
-#include "behavior/nmo_script_edit.h"
+#include "edit/nmo_script_edit.h"
 #include "core/nmo_array.h"
 #include "format/nmo_interface_chunk.h"
 #include "format/nmo_object.h"

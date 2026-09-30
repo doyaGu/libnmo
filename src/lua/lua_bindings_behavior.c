@@ -1,14 +1,14 @@
 #include "lua_bindings_internal.h"
 
 #include "behavior/nmo_behavior_analyze.h"
-#include "behavior/nmo_behavior_execute.h"
+#include "edit/nmo_behavior_execute.h"
 #include "lua/nmo_lua_behavior.h"
 #include "behavior/nmo_behavior_query.h"
 #include "behavior/nmo_behavior_view.h"
 #include "behavior/nmo_script_edit_graph.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
-#include "../behavior/edit_op_kind_internal.h"
+#include "../edit/edit_op_kind_internal.h"
 
 #include "lauxlib.h"
 

@@ -1,8 +1,8 @@
 #ifndef NMO_BEHAVIOR_EXECUTE_H
 #define NMO_BEHAVIOR_EXECUTE_H
 
-#include "behavior/nmo_edit_plan.h"
-#include "behavior/nmo_script_edit.h"
+#include "edit/nmo_edit_plan.h"
+#include "edit/nmo_script_edit.h"
 #include "document/nmo_document_load.h"
 #include "document/nmo_document_save.h"
 #include "runtime/nmo_workspace.h"

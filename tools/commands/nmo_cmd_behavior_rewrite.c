@@ -14,8 +14,8 @@
 
 #include "behavior/nmo_behavior_analyze.h"
 #include "behavior/nmo_behavior_analyze.h"
-#include "behavior/nmo_behavior_edit.h"
-#include "behavior/nmo_edit_plan.h"
+#include "edit/nmo_behavior_edit.h"
+#include "edit/nmo_edit_plan.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_parse.h"

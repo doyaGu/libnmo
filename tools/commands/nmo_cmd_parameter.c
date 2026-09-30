@@ -20,7 +20,7 @@
 
 #include "nmo.h"
 #include "behavior/nmo_behavior_analyze.h"
-#include "behavior/nmo_edit_plan.h"
+#include "edit/nmo_edit_plan.h"
 #include "runtime/nmo_context.h"
 #include "behavior/nmo_behavior_view.h"
 #include "runtime/nmo_workspace.h"

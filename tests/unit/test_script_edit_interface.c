@@ -1,7 +1,7 @@
 #include "test_framework.h"
 
 #include "document/nmo_document_save.h"
-#include "behavior/nmo_script_edit.h"
+#include "edit/nmo_script_edit.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
 #include "object/builtin/nmo_behavior_schemas.h"

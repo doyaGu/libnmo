@@ -332,30 +332,30 @@ set(NMO_EXPORT_SOURCES
 set(NMO_BEHAVIOR_SOURCES
     src/behavior/bb_registry.c
     src/behavior/behavior_boundary.c
-    src/behavior/behavior_execute.c
+    src/edit/behavior_execute.c
     src/behavior/behavior_graph.c
     src/behavior/behavior_index.c
     src/behavior/behavior_query.c
-    src/behavior/behavior_rewrite.c
-    src/behavior/behavior_rewrite_apply.c
-    src/behavior/behavior_rewrite_replace.c
+    src/edit/behavior_rewrite.c
+    src/edit/behavior_rewrite_apply.c
+    src/edit/behavior_rewrite_replace.c
     src/behavior/behavior_view.c
-    src/behavior/edit_op_kind.c
-    src/behavior/edit_plan.c
-    src/behavior/edit_plan_executor.c
-    src/behavior/edit_plan_json.c
-    src/behavior/edit_plan_op.c
-    src/behavior/edit_plan_report.c
-    src/behavior/edit_plan_state.c
-    src/behavior/probe_analyzer.c
-    src/behavior/semantic_validator.c
-    src/behavior/script_edit.c
+    src/edit/edit_op_kind.c
+    src/edit/edit_plan.c
+    src/edit/edit_plan_executor.c
+    src/edit/edit_plan_json.c
+    src/edit/edit_plan_op.c
+    src/edit/edit_plan_report.c
+    src/edit/edit_plan_state.c
+    src/edit/probe_analyzer.c
+    src/edit/semantic_validator.c
+    src/edit/script_edit.c
     src/behavior/script_edit_graph.c
-    src/behavior/script_edit_interface.c
-    src/behavior/script_edit_link.c
-    src/behavior/script_edit_node.c
-    src/behavior/script_edit_operation.c
-    src/behavior/script_edit_parameter.c
+    src/edit/script_edit_interface.c
+    src/edit/script_edit_link.c
+    src/edit/script_edit_node.c
+    src/edit/script_edit_operation.c
+    src/edit/script_edit_parameter.c
     src/behavior/script_trace_view.c
     src/behavior/script_walker.c
     src/behavior/param_value.c

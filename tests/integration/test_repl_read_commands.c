@@ -1056,17 +1056,17 @@ TEST(repl_read, behavior_rewrite_reuses_semantic_risk_json_helper) {
 }
 
 TEST(repl_read, behavior_rewrite_uses_shared_semantic_validator) {
-    assert_source_contains("include/behavior/nmo_semantic_validator.h",
+    assert_source_contains("include/edit/nmo_semantic_validator.h",
                            "nmo_semantic_validate_boundary");
-    assert_source_contains("src/behavior/semantic_validator.c",
+    assert_source_contains("src/edit/semantic_validator.c",
                            "nmo_behavior_edit_collect_semantic_risks(");
-    assert_source_contains("src/behavior/behavior_rewrite.c",
+    assert_source_contains("src/edit/behavior_rewrite.c",
                            "nmo_behavior_edit_collect_semantic_risks(");
-    assert_source_not_contains("src/behavior/behavior_rewrite.c",
+    assert_source_not_contains("src/edit/behavior_rewrite.c",
                                "rewrite_add_boundary_delay_risks");
-    assert_source_not_contains("src/behavior/behavior_rewrite.c",
+    assert_source_not_contains("src/edit/behavior_rewrite.c",
                                "rewrite_add_boundary_shared_parameter_risks");
-    assert_source_not_contains("src/behavior/behavior_rewrite.c",
+    assert_source_not_contains("src/edit/behavior_rewrite.c",
                                "rewrite_add_message_flow_risks");
 }
 
@@ -1175,16 +1175,16 @@ TEST(repl_read, lua_fold_maps_accept_patch_id_aliases) {
 }
 
 TEST(repl_read, replace_bb_semantic_risks_merge_into_edit_report) {
-    assert_source_contains("src/behavior/semantic_validator.c",
+    assert_source_contains("src/edit/semantic_validator.c",
                            "nmo_semantic_validate_boundary(");
-    assert_source_contains("src/behavior/edit_plan_executor.c",
+    assert_source_contains("src/edit/edit_plan_executor.c",
                            "replace_report.semantic_risks");
-    assert_source_contains("src/behavior/edit_plan_executor.c",
+    assert_source_contains("src/edit/edit_plan_executor.c",
                            "nmo_edit_report_merge_semantic_risks(");
 }
 
 TEST(repl_read, patch_uses_schema_v2_output_path) {
-    assert_source_contains("include/behavior/nmo_edit_plan.h",
+    assert_source_contains("include/edit/nmo_edit_plan.h",
                            "output_path");
     assert_source_contains("tools/nmo_edit_report_json.c",
                            "\"output_path\"");

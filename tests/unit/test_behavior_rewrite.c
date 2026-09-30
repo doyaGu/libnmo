@@ -5,7 +5,7 @@
 
 #include "../test_framework.h"
 
-#include "behavior/nmo_behavior_edit.h"
+#include "edit/nmo_behavior_edit.h"
 #include "core/nmo_array.h"
 #include "core/nmo_guid.h"
 #include "format/nmo_object.h"

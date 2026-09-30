@@ -5,7 +5,7 @@
 
 #include "script_edit_internal.h"
 
-#include "behavior/nmo_behavior_edit.h"
+#include "edit/nmo_behavior_edit.h"
 
 static bool script_edit_io_can_source_control(
     nmo_session_t *session,

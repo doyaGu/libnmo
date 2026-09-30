@@ -6,7 +6,7 @@
 #ifndef NMO_BEHAVIOR_EDIT_OP_KIND_INTERNAL_H
 #define NMO_BEHAVIOR_EDIT_OP_KIND_INTERNAL_H
 
-#include "behavior/nmo_edit_plan.h"
+#include "edit/nmo_edit_plan.h"
 
 #include <stdbool.h>
 

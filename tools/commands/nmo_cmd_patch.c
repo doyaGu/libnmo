@@ -12,8 +12,8 @@
 #include "../nmo_cli_write.h"
 #include "../nmo_opt.h"
 
-#include "behavior/nmo_edit_plan.h"
-#include "behavior/nmo_edit_plan_json.h"
+#include "edit/nmo_edit_plan.h"
+#include "edit/nmo_edit_plan_json.h"
 #include "core/nmo_error.h"
 #include "project/nmo_asset_plan.h"
 #include "project/nmo_project_executor.h"

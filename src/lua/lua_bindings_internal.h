@@ -3,8 +3,8 @@
 
 #include "format/nmo_object.h"
 #include "format/nmo_interface_view.h"
-#include "behavior/nmo_edit_plan.h"
-#include "behavior/nmo_script_edit.h"
+#include "edit/nmo_edit_plan.h"
+#include "edit/nmo_script_edit.h"
 #include "core/nmo_arena.h"
 #include "document/nmo_document.h"
 #include "lua/nmo_lua_bindings.h"

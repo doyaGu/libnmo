@@ -1,7 +1,7 @@
 #ifndef NMO_LUA_FOLD_MAP_PARSER_H
 #define NMO_LUA_FOLD_MAP_PARSER_H
 
-#include "behavior/nmo_behavior_edit.h"
+#include "edit/nmo_behavior_edit.h"
 
 #include <stdbool.h>
 #include <stddef.h>

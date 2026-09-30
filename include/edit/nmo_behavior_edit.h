@@ -4,8 +4,8 @@
 #include "runtime/nmo_workspace.h"
 #include "behavior/nmo_behavior_analyze.h"
 #include "runtime/nmo_behavior_link_edit.h"
-#include "behavior/nmo_semantic_validator.h"
-#include "behavior/nmo_script_edit.h"
+#include "edit/nmo_semantic_validator.h"
+#include "edit/nmo_script_edit.h"
 #include "behavior/nmo_script_edit_graph.h"
 #include "core/nmo_guid.h"
 

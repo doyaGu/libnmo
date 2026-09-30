@@ -6,7 +6,7 @@
 #include "session/nmo_session.h"
 #include "runtime/nmo_workspace.h"
 #include "object/nmo_object_edit.h"
-#include "behavior/nmo_behavior_edit.h"
+#include "edit/nmo_behavior_edit.h"
 #include "behavior/nmo_behavior_analyze.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_param_guids.h"

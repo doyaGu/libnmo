@@ -16,7 +16,7 @@
 #include "../nmo_tool_common.h"
 
 #include "nmo.h"
-#include "behavior/nmo_edit_plan.h"
+#include "edit/nmo_edit_plan.h"
 #include "runtime/nmo_context.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_parse.h"

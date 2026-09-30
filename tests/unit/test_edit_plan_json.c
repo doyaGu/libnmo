@@ -1,7 +1,7 @@
 #include "test_framework.h"
 
-#include "behavior/nmo_edit_plan.h"
-#include "behavior/nmo_edit_plan_json.h"
+#include "edit/nmo_edit_plan.h"
+#include "edit/nmo_edit_plan_json.h"
 #include "core/nmo_error.h"
 #include "object/nmo_manager_guids.h"
 #include "type/nmo_type_guids.h"

@@ -1,7 +1,7 @@
 #ifndef NMO_EDIT_REPORT_JSON_H
 #define NMO_EDIT_REPORT_JSON_H
 
-#include "behavior/nmo_edit_plan.h"
+#include "edit/nmo_edit_plan.h"
 #include "yyjson.h"
 
 #include <stdbool.h>

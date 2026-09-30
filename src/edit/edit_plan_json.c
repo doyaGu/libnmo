@@ -1,4 +1,4 @@
-#include "behavior/nmo_edit_plan_json.h"
+#include "edit/nmo_edit_plan_json.h"
 
 #include "core/nmo_guid.h"
 #include "object/nmo_manager_guids.h"

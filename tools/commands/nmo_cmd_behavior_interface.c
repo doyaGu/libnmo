@@ -14,7 +14,7 @@
 #include "../nmo_opt.h"
 
 #include "nmo.h"
-#include "behavior/nmo_behavior_edit.h"
+#include "edit/nmo_behavior_edit.h"
 #include "runtime/nmo_context.h"
 #include "core/nmo_array.h"
 #include "core/nmo_parse.h"

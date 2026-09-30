@@ -1,6 +1,6 @@
 #include "project_internal.h"
 
-#include "behavior/nmo_edit_plan.h"
+#include "edit/nmo_edit_plan.h"
 #include "core/nmo_guid.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_edit.h"

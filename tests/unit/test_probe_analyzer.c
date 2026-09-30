@@ -1,6 +1,6 @@
 #include "test_framework.h"
 
-#include "behavior/nmo_probe_analyzer.h"
+#include "edit/nmo_probe_analyzer.h"
 #include "core/nmo_array.h"
 #include "document/nmo_document.h"
 #include "runtime/nmo_context.h"

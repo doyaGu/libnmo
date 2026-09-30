@@ -6,7 +6,7 @@
 #ifndef NMO_BEHAVIOR_REWRITE_INTERNAL_H
 #define NMO_BEHAVIOR_REWRITE_INTERNAL_H
 
-#include "behavior/nmo_behavior_edit.h"
+#include "edit/nmo_behavior_edit.h"
 
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"

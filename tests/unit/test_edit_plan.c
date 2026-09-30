@@ -1,9 +1,9 @@
 #include "test_framework.h"
 
-#include "behavior/nmo_edit_plan.h"
-#include "behavior/nmo_behavior_edit.h"
+#include "edit/nmo_edit_plan.h"
+#include "edit/nmo_behavior_edit.h"
 #include "behavior/nmo_behavior_registry.h"
-#include "behavior/nmo_probe_analyzer.h"
+#include "edit/nmo_probe_analyzer.h"
 #include "core/nmo_array.h"
 #include "core/nmo_arena.h"
 #include "document/nmo_document.h"
