@@ -498,50 +498,47 @@ int nmo_cmd_animation_show(int argc, char **argv, const nmo_cli_global_opts_t *g
  * animation keys
  * ============================================================================ */
 
-/** Print decoded float keys to text output */
-static void print_keys_text(FILE *out, const nmo_objanim_controller_t *ctrl,
-                            uint32_t key_size, uint32_t floats_per_key,
-                            bool colorize) {
-    (void)colorize;
-    if (!ctrl->data || ctrl->key_count == 0) return;
+/* The text view shows at most this many keys per controller; JSON lists all. */
+enum { ANIMATION_KEYS_TEXT_LIMIT = 20 };
 
-    const float *fp = (const float *)ctrl->data;
-    uint32_t show = ctrl->key_count > 20 ? 20 : ctrl->key_count;
+/*
+ * Text lines for the keys of one controller: "t=<time> <values>" per key.
+ * Only controller types with a fixed float layout have decodable keys.
+ */
+static bool animation_keys_add_text(nmo_cli_record_t *item,
+                                    const nmo_objanim_controller_t *ctrl,
+                                    uint32_t key_size)
+{
+    if (!ctrl->data || ctrl->key_count == 0 || key_size == 0) {
+        return true;
+    }
 
-    for (uint32_t k = 0; k < show; ++k) {
-        const float *key = fp + k * (key_size / sizeof(float));
-        fprintf(out, "    t=%.4f", (double)key[0]);
-        for (uint32_t v = 1; v < floats_per_key && v < key_size / sizeof(float); ++v) {
-            fprintf(out, " %.6g", (double)key[v]);
+    const float *floats = (const float *)ctrl->data;
+    uint32_t floats_per_key = key_size / (uint32_t)sizeof(float);
+    uint32_t shown = ctrl->key_count > ANIMATION_KEYS_TEXT_LIMIT
+        ? ANIMATION_KEYS_TEXT_LIMIT
+        : ctrl->key_count;
+
+    for (uint32_t k = 0; k < shown; ++k) {
+        const float *key = floats + (size_t)k * floats_per_key;
+        if (!nmo_cli_record_raw_fmt(item, "    t=%.4f", (double)key[0])) {
+            return false;
         }
-        fputc('\n', out);
+        for (uint32_t v = 1; v < floats_per_key; ++v) {
+            if (!nmo_cli_record_raw_fmt(item, " %.6g", (double)key[v])) {
+                return false;
+            }
+        }
+        if (!nmo_cli_record_raw(item, "\n")) {
+            return false;
+        }
     }
 
-    if (ctrl->key_count > 20)
-        fprintf(out, "    ... (%u more keys)\n", ctrl->key_count - 20);
-}
-
-/** Print raw hex for unknown key types */
-static void print_keys_hex(FILE *out, const nmo_objanim_controller_t *ctrl,
-                           uint32_t key_size) {
-    if (!ctrl->data || ctrl->key_count == 0) return;
-
-    const uint8_t *bp = (const uint8_t *)ctrl->data;
-    uint32_t show = ctrl->key_count > 5 ? 5 : ctrl->key_count;
-
-    for (uint32_t k = 0; k < show; ++k) {
-        const uint8_t *key = bp + k * key_size;
-        fprintf(out, "    [%u] ", k);
-        uint32_t bytes = key_size > 32 ? 32 : key_size;
-        for (uint32_t b = 0; b < bytes; ++b)
-            fprintf(out, "%02x", key[b]);
-        if (key_size > 32)
-            fputs("...", out);
-        fputc('\n', out);
+    if (ctrl->key_count > ANIMATION_KEYS_TEXT_LIMIT) {
+        return nmo_cli_record_raw_fmt(item, "    ... (%u more keys)\n",
+                                      ctrl->key_count - ANIMATION_KEYS_TEXT_LIMIT);
     }
-
-    if (ctrl->key_count > 5)
-        fprintf(out, "    ... (%u more keys)\n", ctrl->key_count - 5);
+    return true;
 }
 
 /** Add decoded keys to JSON array */
@@ -552,21 +549,8 @@ static void add_keys_json(yyjson_mut_doc *doc, yyjson_mut_val *keys_arr,
 
     uint32_t floats_per_key = key_size / sizeof(float);
 
-    if (key_size == 16 || key_size == 20) {
-        /* Known float layout */
-        const float *fp = (const float *)ctrl->data;
-        for (uint32_t k = 0; k < ctrl->key_count; ++k) {
-            const float *key = fp + k * floats_per_key;
-            yyjson_mut_val *kobj = yyjson_mut_obj(doc);
-            yyjson_mut_obj_add_real(doc, kobj, "time", (double)key[0]);
-            yyjson_mut_val *vals = yyjson_mut_arr(doc);
-            for (uint32_t v = 1; v < floats_per_key; ++v)
-                yyjson_mut_arr_add_real(doc, vals, (double)key[v]);
-            yyjson_mut_obj_add_val(doc, kobj, "values", vals);
-            yyjson_mut_arr_add_val(keys_arr, kobj);
-        }
-    } else if (key_size > 0 && key_size % sizeof(float) == 0) {
-        /* Float-aligned but not standard - still decode as floats */
+    if (key_size > 0 && key_size % sizeof(float) == 0) {
+        /* Float layout: time followed by the value floats */
         const float *fp = (const float *)ctrl->data;
         for (uint32_t k = 0; k < ctrl->key_count; ++k) {
             const float *key = fp + k * floats_per_key;
@@ -594,23 +578,6 @@ static void add_keys_json(yyjson_mut_doc *doc, yyjson_mut_val *keys_arr,
             }
             yyjson_mut_arr_add_val(keys_arr, kobj);
         }
-    }
-}
-
-/* Text splice: the decoded keys of one controller. */
-static void animation_keys_text(FILE *out, bool colorize, const void *data)
-{
-    const nmo_objanim_controller_t *ctrl = (const nmo_objanim_controller_t *)data;
-    uint32_t key_size = nmo_objanim_controller_key_size(ctrl->type);
-    if (key_size == 16) {
-        print_keys_text(out, ctrl, key_size, 4, colorize);
-    } else if (key_size == 20) {
-        print_keys_text(out, ctrl, key_size, 5, colorize);
-    } else if (key_size > 0 && key_size % sizeof(float) == 0) {
-        print_keys_text(out, ctrl, key_size,
-                        key_size / (uint32_t)sizeof(float), colorize);
-    } else if (key_size > 0) {
-        print_keys_hex(out, ctrl, key_size);
     }
 }
 
@@ -665,7 +632,7 @@ static nmo_cli_record_t *animation_keys_record_new(
                                     "key_size=%u, data=%u bytes\n",
                                     ci, ctrl->type, controller_type_name(ctrl->type),
                                     ctrl->key_count, key_size, ctrl->data_size) &&
-             nmo_cli_record_text_splice(item, animation_keys_text, ctrl) &&
+             animation_keys_add_text(item, ctrl, key_size) &&
              nmo_cli_record_raw(item, "\n");
         if (!ok) {
             nmo_cli_record_free(item);
