@@ -67,6 +67,9 @@ static const char *controller_type_name(uint32_t type) {
     if (nmo_objanim_controller_is_bezier(type)) {
         return "bezier";
     }
+    if (type == NMO_OBJANIM_CONTROLLER_MORPH) {
+        return "morph";
+    }
     switch (nmo_objanim_controller_key_size(type)) {
         case 16: return "position/scale";
         case 20: return "rotation";
@@ -74,6 +77,14 @@ static const char *controller_type_name(uint32_t type) {
         case 40: return "tcb-rot";
         default: return "unknown";
     }
+}
+
+/* The state keeps a morph controller as one blob with key_count 0; its key
+ * count is the first dword of the blob. */
+static uint32_t controller_key_count(const nmo_objanim_controller_t *ctrl) {
+    nmo_objanim_morph_info_t morph;
+    return nmo_objanim_morph_controller_info(ctrl, &morph)
+        ? morph.key_count : ctrl->key_count;
 }
 
 static const char *animation_format_name(nmo_objectanimation_format_t fmt) {
@@ -340,7 +351,7 @@ static bool animation_show_build_record(const nmo_cmd_ctx_t *c,
             const nmo_objanim_controller_t *ctrl = &st->controllers[ci];
             ok = nmo_cli_record_text_fmt(rec, "", "type=0x%08x (%s), keys=%u, data=%u bytes",
                                          ctrl->type, controller_type_name(ctrl->type),
-                                         ctrl->key_count, ctrl->data_size) &&
+                                         controller_key_count(ctrl), ctrl->data_size) &&
                  nmo_cli_record_set_label_fmt(rec, "  [%u]", ci);
         }
         if (st->has_morph_counts) {
@@ -558,6 +569,28 @@ static uint32_t animation_float_key_stride(const nmo_objanim_controller_t *ctrl)
 static bool animation_keys_add_text(nmo_cli_record_t *item,
                                     const nmo_objanim_controller_t *ctrl)
 {
+    nmo_objanim_morph_info_t morph;
+    if (nmo_objanim_morph_controller_info(ctrl, &morph)) {
+        if (!nmo_cli_record_raw_fmt(item, "    %u vertices per key, %s\n",
+                                    morph.vertex_count,
+                                    morph.has_normals ? "with normals" : "no normals")) {
+            return false;
+        }
+        uint32_t morph_shown = morph.key_count > ANIMATION_KEYS_TEXT_LIMIT
+            ? ANIMATION_KEYS_TEXT_LIMIT : morph.key_count;
+        for (uint32_t k = 0; k < morph_shown; ++k) {
+            float time = 0.0f;
+            if (!nmo_objanim_morph_controller_key(ctrl, &morph, k, &time, NULL, NULL) ||
+                !nmo_cli_record_raw_fmt(item, "    t=%.4f\n", (double)time)) {
+                return false;
+            }
+        }
+        if (morph.key_count > ANIMATION_KEYS_TEXT_LIMIT) {
+            return nmo_cli_record_raw_fmt(item, "    ... (%u more keys)\n",
+                                          morph.key_count - ANIMATION_KEYS_TEXT_LIMIT);
+        }
+        return true;
+    }
     if (!ctrl->data || ctrl->key_count == 0) {
         return true;
     }
@@ -617,6 +650,20 @@ static void add_real_array(yyjson_mut_doc *doc, yyjson_mut_val *obj,
 /** Add decoded keys to JSON array */
 static void add_keys_json(yyjson_mut_doc *doc, yyjson_mut_val *keys_arr,
                           const nmo_objanim_controller_t *ctrl) {
+    nmo_objanim_morph_info_t morph;
+    if (nmo_objanim_morph_controller_info(ctrl, &morph)) {
+        /* Positions and normals are per vertex; list the times and the counts. */
+        for (uint32_t k = 0; k < morph.key_count; ++k) {
+            float time = 0.0f;
+            if (!nmo_objanim_morph_controller_key(ctrl, &morph, k, &time, NULL, NULL)) break;
+            yyjson_mut_val *kobj = yyjson_mut_obj(doc);
+            yyjson_mut_obj_add_real(doc, kobj, "time", (double)time);
+            yyjson_mut_obj_add_uint(doc, kobj, "vertex_count", morph.vertex_count);
+            yyjson_mut_obj_add_bool(doc, kobj, "has_normals", morph.has_normals);
+            yyjson_mut_arr_add_val(keys_arr, kobj);
+        }
+        return;
+    }
     if (!ctrl->data || ctrl->key_count == 0) return;
 
     if (nmo_objanim_controller_is_bezier(ctrl->type)) {
@@ -698,14 +745,14 @@ static nmo_cli_record_t *animation_keys_record_new(
              nmo_cli_record_str_fmt(item, "type", NULL, "0x%08x", ctrl->type) &&
              nmo_cli_record_str(item, "type_name", NULL,
                                 controller_type_name(ctrl->type)) &&
-             nmo_cli_record_uint(item, "key_count", NULL, ctrl->key_count) &&
+             nmo_cli_record_uint(item, "key_count", NULL, controller_key_count(ctrl)) &&
              nmo_cli_record_uint(item, "key_size", NULL, key_size) &&
              nmo_cli_record_uint(item, "data_size", NULL, ctrl->data_size) &&
              nmo_cli_record_json(item, animation_keys_json, ctrl) &&
              nmo_cli_record_raw_fmt(item, "Controller [%u]: type=0x%08x (%s), keys=%u, "
                                     "key_size=%u, data=%u bytes\n",
                                     ci, ctrl->type, controller_type_name(ctrl->type),
-                                    ctrl->key_count, key_size, ctrl->data_size) &&
+                                    controller_key_count(ctrl), key_size, ctrl->data_size) &&
              animation_keys_add_text(item, ctrl) &&
              nmo_cli_record_raw(item, "\n");
         if (!ok) {

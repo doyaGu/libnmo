@@ -1270,6 +1270,64 @@ bool nmo_objanim_controller_is_bezier(uint32_t type)
            type == CKANIMATION_BEZIERSCL_CONTROL;
 }
 
+static uint64_t objanim_morph_key_size(const nmo_objanim_morph_info_t *info)
+{
+    return sizeof(float) + (uint64_t)info->vertex_count * 12u +
+           (info->has_normals ? (uint64_t)info->vertex_count * 4u : 0u);
+}
+
+bool nmo_objanim_morph_controller_info(
+    const nmo_objanim_controller_t *controller,
+    nmo_objanim_morph_info_t *out_info)
+{
+    if (controller == NULL || out_info == NULL ||
+        controller->type != NMO_OBJANIM_CONTROLLER_MORPH ||
+        controller->data == NULL || controller->data_size < 12u) {
+        return false;
+    }
+    uint32_t header[3];
+    memcpy(header, controller->data, sizeof(header));
+
+    nmo_objanim_morph_info_t info = {
+        .key_count = header[0],
+        .vertex_count = header[1],
+        .has_normals = header[2] != 0u && header[0] != 0u,
+    };
+    if (info.key_count != 0u) {
+        uint64_t key_size = objanim_morph_key_size(&info);  /* below 2^36 */
+        if (key_size > (UINT64_MAX - 12u) / info.key_count ||
+            12u + (uint64_t)info.key_count * key_size != controller->data_size) {
+            return false;
+        }
+    } else if (controller->data_size != 12u) {
+        return false;
+    }
+    *out_info = info;
+    return true;
+}
+
+bool nmo_objanim_morph_controller_key(
+    const nmo_objanim_controller_t *controller,
+    const nmo_objanim_morph_info_t *info,
+    uint32_t index,
+    float *out_time,
+    const float **out_positions,
+    const uint8_t **out_normals)
+{
+    if (controller == NULL || info == NULL || index >= info->key_count) {
+        return false;
+    }
+    const uint8_t *key = (const uint8_t *)controller->data + 12u +
+                         (size_t)((uint64_t)index * objanim_morph_key_size(info));
+    if (out_time != NULL) memcpy(out_time, key, sizeof(float));
+    if (out_positions != NULL) *out_positions = (const float *)(key + 4u);
+    if (out_normals != NULL) {
+        *out_normals = info->has_normals
+            ? key + 4u + (size_t)info->vertex_count * 12u : NULL;
+    }
+    return true;
+}
+
 size_t nmo_objanim_bezier_key_decode(
     const void *key,
     size_t available,

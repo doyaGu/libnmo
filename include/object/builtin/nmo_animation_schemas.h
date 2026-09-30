@@ -229,6 +229,54 @@ NMO_API bool nmo_objanim_controller_keys_size(uint32_t controller_type,
                                               uint32_t key_count,
                                               size_t *out_size);
 
+/** @brief Controller type of the morph controller (CKANIMATION_MORPH_CONTROL). */
+#define NMO_OBJANIM_CONTROLLER_MORPH 0x73847810u
+
+/**
+ * @brief Header of a morph controller blob in the CONTROLLERS format.
+ *
+ * The blob is three dwords, `key count`, `vertex count` and `has normals`,
+ * followed by each key: a float time, 12 bytes per vertex of position and, if
+ * has_normals is set, 4 bytes per vertex of compressed normal. The controller
+ * keeps the blob whole in its data, with key_count 0.
+ */
+typedef struct nmo_objanim_morph_info {
+    uint32_t key_count;
+    uint32_t vertex_count;
+    bool has_normals;
+} nmo_objanim_morph_info_t;
+
+/**
+ * @brief Read the header of a morph controller and check that the blob has
+ *        exactly the size its counts call for.
+ *
+ * @return true if the controller is a well-formed morph controller
+ */
+NMO_API bool nmo_objanim_morph_controller_info(
+    const nmo_objanim_controller_t *controller,
+    nmo_objanim_morph_info_t *out_info);
+
+/**
+ * @brief Get one key of a morph controller.
+ *
+ * @param controller  Controller accepted by nmo_objanim_morph_controller_info()
+ * @param info        Its header
+ * @param index       Key index, below info->key_count
+ * @param out_time    Receives the key time
+ * @param out_positions Receives a pointer to vertex_count vectors of three
+ *                    floats inside the controller data; may be NULL
+ * @param out_normals Receives a pointer to vertex_count compressed normals
+ *                    (4 bytes each) or NULL without normals; may be NULL
+ * @return true if index is in range
+ */
+NMO_API bool nmo_objanim_morph_controller_key(
+    const nmo_objanim_controller_t *controller,
+    const nmo_objanim_morph_info_t *info,
+    uint32_t index,
+    float *out_time,
+    const float **out_positions,
+    const uint8_t **out_normals);
+
 NMO_API nmo_status_t nmo_animation_deserialize(
     void *instance,
     nmo_chunk_t *chunk,
