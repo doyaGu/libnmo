@@ -2,7 +2,7 @@
 
 **libnmo** is a C17 library for reading, writing, inspecting, and transforming
 Virtools composition files (`.nmo`, `.cmo`, `.vmo`). It implements a complete
-serialization pipeline with a strict layered architecture, symmetric read/write
+serialization pipeline with a layered architecture, symmetric read/write
 operations, and full compatibility with Virtools file format versions 2 through 9.
 
 ---
@@ -50,7 +50,7 @@ operations, and full compatibility with Virtools file format versions 2 through 
 - Type inheritance via parent GUID chaining
 - 4D dispatch operation tree (operation × P1 type × P2 type × result type)
 - Built-in operations: arithmetic, logic, bitwise, trigonometric, vector
-- String conversion: `nmo_type_to_string()` / `nmo_type_from_string()`
+- String conversion: `nmo_type_value_to_string()` / `nmo_type_value_from_string()`
 - Struct field reflection and introspection
 
 ### Object Layer
@@ -75,6 +75,8 @@ operations, and full compatibility with Virtools file format versions 2 through 
 
 ### Project and Authoring
 
+Library `nmo_project` (`nmo_project.h`).
+
 - Project plan: declarative scene, object, script, and asset authoring
 - Scene authoring and scene lifecycle management
 - Script authoring with behavior graph construction
@@ -82,6 +84,8 @@ operations, and full compatibility with Virtools file format versions 2 through 
 - Project manifest JSON serialization
 
 ### Lua Scripting
+
+Library `nmo_lua` (`nmo_lua.h`).
 
 - Embedded Lua 5.5 runtime with full standard libraries
 - Bindings covering: context, document, session, object, type, behavior, format,
@@ -101,9 +105,10 @@ operations, and full compatibility with Virtools file format versions 2 through 
 
 ### CLI and Tooling
 
-- `nmo` command-line tool with group/action interface covering file, chunk,
-  object, behavior, script, parameter, scene, entity, mesh, texture, material,
-  animation, type, validate, convert, diff, extension, debug, and repl
+- `nmo` command-line tool with a group/action interface and 23 groups: file,
+  chunk, object, behavior, patch, parameter, script, resource, texture, data,
+  scene, entity, material, mesh, animation, type, validate, convert, diff,
+  extension, completion, debug, and repl
 - Interactive REPL with tab completion and session persistence
 - JSON output with stable envelope (`schema_version`, `tool`, `command`)
 - Shell completions for Bash, Fish, Zsh, and PowerShell
@@ -150,8 +155,8 @@ nmo behavior interface show 10 composition.nmo
 # Script editing
 nmo script graph 10 composition.nmo
 nmo script run automation.lua composition.nmo -o edited.nmo
-nmo script node --add 10 composition.nmo -o edited.nmo
-nmo script io --add 10 composition.nmo -o edited.nmo
+nmo script node add --parent 10 --bb-guid <guid> composition.nmo -o edited.nmo
+nmo script io add --behavior 10 --kind input --name In composition.nmo -o edited.nmo
 
 # Type system
 nmo type list
@@ -182,6 +187,7 @@ save edited.nmo
 
 ```c
 #include <nmo.h>
+#include <stdio.h>
 
 int main(int argc, char **argv) {
     if (argc < 2) {
@@ -196,7 +202,7 @@ int main(int argc, char **argv) {
     }
 
     nmo_document_t *document = NULL;
-    if (nmo_document_load_file(ctx, argv[1], &document) != NMO_OK) {
+    if (nmo_document_load_file(ctx, argv[1], NULL, &document) != NMO_OK) {
         fprintf(stderr, "Failed to load: %s\n", argv[1]);
         nmo_context_release(ctx);
         return 1;
@@ -232,13 +238,18 @@ cc -o demo demo.c -lnmo
 
 ### Layer Stack
 
-Dependency direction is strict: each layer may only import from layers below it.
+Dependency direction is downward: a source file may include headers from its own layer
+and from layers below it. From lowest to highest:
 
 ```
-Project/Lua -> Behavior -> Object -> Extension -> Type -> Format -> IO -> Core
-                    \-> Document -> Session -> ...
-                    \-> Runtime (Context, Workspace)
+core -> io -> format -> type -> extension -> object -> session -> runtime
+     -> document -> chunk -> behavior -> export -> lua -> project
 ```
+
+`tests/layering_audit.cmake` (run as `test_layering_audit`) enforces this order. It is not
+yet fully clean: 43 upward includes exist today and are listed in
+`tests/layering_allowlist.txt` as debt. A new upward include fails the test, and so does an
+allowlist entry that is no longer needed.
 
 | Layer     | Source           | Headers               | Responsibility                                                                   |
 |-----------|------------------|-----------------------|----------------------------------------------------------------------------------|
@@ -254,8 +265,24 @@ Project/Lua -> Behavior -> Object -> Extension -> Type -> Format -> IO -> Core
 | Chunk     | `src/chunk/`     | `include/chunk/`      | Chunk index and chunk inspection utilities                                       |
 | Behavior  | `src/behavior/`  | `include/behavior/`   | Behavior graph traversal, BB registry, parameter chains, script walker, edit plan, behavior execute |
 | Export    | `src/export/`    | `include/export/`     | DOT graph, JSON utilities, text export, ANSI, hex dump                          |
-| Lua       | `src/lua/`       | `include/lua/`        | Lua 5.5 runtime, module system, bindings for all layers, fold-map parser        |
-| Project   | `src/project/`   | `include/project/`    | Project plan, asset/scene/script authoring, executor, manifest, validator       |
+| Lua       | `src/lua/`       | `include/lua/`        | Lua 5.5 runtime, module system, bindings for all layers, fold-map parser (library `nmo_lua`) |
+| Project   | `src/project/`   | `include/project/`    | Project plan, asset/scene/script authoring, executor, manifest, validator (library `nmo_project`) |
+
+### Libraries
+
+The Lua and Project layers are separate libraries built on top of the core; the core
+library does not depend on either of them and contains no Lua code.
+
+| Library       | CMake target   | pkg-config       | Umbrella header | Contents                                  |
+|---------------|----------------|------------------|-----------------|-------------------------------------------|
+| `libnmo`      | `nmo::nmo`     | `libnmo`         | `nmo.h`         | Everything below the Lua and Project layers |
+| `libnmo_lua`  | `nmo::lua`     | `libnmo-lua`     | `nmo_lua.h`     | Lua runtime, bindings, `nmo_behavior_execution_lua_runtime()` |
+| `libnmo_project` | `nmo::project` | `libnmo-project` | `nmo_project.h` | Project plans, authoring, executor, manifest reader |
+
+`nmo.h` does not include the Lua or Project headers; include `nmo_lua.h` or `nmo_project.h`
+(or the individual `lua/*.h`, `project/*.h` headers) and link the matching library. Static
+builds produce one archive per library; with `NMO_BUILD_SHARED=ON` all three are compiled into
+the single shared `nmo` library and `nmo::lua` / `nmo::project` are interface targets on it.
 
 ### Key Design Decisions
 
@@ -275,8 +302,9 @@ Project/Lua -> Behavior -> Object -> Extension -> Type -> Format -> IO -> Core
 - **Document/Workspace split**: `nmo_document_t` owns the parsed, immutable
   representation; `nmo_workspace_t` provides mutation and runtime services on
   top of a document. Read-only workflows never need a workspace.
-- **No upward dependencies**: lower layers never include headers from higher
-  layers, enforced at the architectural level.
+- **Downward dependencies**: lower layers should not include headers from
+  higher layers. `test_layering_audit` blocks new violations; the existing ones
+  are tracked in `tests/layering_allowlist.txt`.
 
 ---
 
@@ -291,7 +319,7 @@ Project/Lua -> Behavior -> Object -> Extension -> Type -> Format -> IO -> Core
 | miniz or zlib         | -               | Bundled miniz included as git submodule    |
 | yyjson                | -               | Bundled; required for JSON export          |
 | Lua                   | 5.5.1           | Fetched from lua.org at configure time; see below |
-| isocline              | -               | Optional; place in `deps/isocline/` for REPL line editing |
+| isocline              | -               | Optional REPL line editing (`NMO_USE_ISOCLINE`, default ON). Uses `deps/isocline/` if present, otherwise a pinned upstream archive is fetched at configure time |
 | stb                   | -               | Bundled; image decode                      |
 | Threads               | POSIX or Win32  | For atomic reference counting              |
 
@@ -344,6 +372,7 @@ cmake --build build --config Release
 | `NMO_BUILD_TOOLS`          | ON      | Build the `nmo` CLI tool                     |
 | `NMO_BUILD_EXAMPLES`       | OFF     | Build example programs                       |
 | `NMO_BUILD_SHARED`         | OFF     | Build as shared library (SOVERSION 2)        |
+| `NMO_USE_ISOCLINE`         | ON      | Line editing in the REPL (see isocline above)|
 | `NMO_MINGW_STATIC_RUNTIME` | OFF     | Link MinGW CLI executables with `-static`    |
 | `NMO_ENABLE_SIMD`          | OFF     | Enable SIMD optimizations                    |
 | `NMO_ENABLE_SANITIZERS`    | auto    | ASan/UBSan in Debug (non-Windows by default) |
@@ -374,11 +403,13 @@ data, and shell completions. Consumers can use either CMake or pkg-config:
 
 ```cmake
 find_package(libnmo CONFIG REQUIRED)
-target_link_libraries(app PRIVATE nmo::nmo)
+target_link_libraries(app PRIVATE nmo::nmo)                  # core only
+target_link_libraries(app PRIVATE nmo::lua nmo::project nmo::nmo)   # with the optional components
 ```
 
 ```sh
 cc app.c $(pkg-config --cflags --libs libnmo)
+cc app.c $(pkg-config --cflags libnmo-lua libnmo-project) $(pkg-config --static --libs libnmo-lua libnmo-project)
 ```
 
 ---
@@ -395,9 +426,15 @@ cc app.c $(pkg-config --cflags --libs libnmo)
 
 ## Testing
 
-Tests are organized under `tests/` into unit, integration, round-trip,
-performance, fuzz, stress, and batch subdirectories. Run the full suite with
-`ctest` (see [Running Tests](#running-tests) above).
+Tests are organized under `tests/` into `unit`, `integration`, `round_trip`,
+`performance`, `fuzz`, `stress`, and `package_consumer` subdirectories, plus
+three CMake source audits (`source_encoding_audit`, `schema_io_result_audit`,
+`layering_audit`). Run the full suite with `ctest` (see
+[Running Tests](#running-tests) above).
+
+Many tests read real Virtools files from `data/`. That corpus is not in the
+repository (`data/*` is git-ignored except the JSON tables). Tests that need a
+missing file are reported as skipped, not failed.
 
 ### Test Framework
 
@@ -405,28 +442,40 @@ Custom lightweight framework in `tests/test_framework.h`:
 
 ```c
 #include "test_framework.h"
+#include "nmo.h"
 
-TEST(chunk, read_dword) {
-    nmo_chunk_t *chunk = nmo_chunk_create(NULL, 4, 1);
-    ASSERT_NE(NULL, chunk);
-    nmo_chunk_destroy(chunk);
+TEST(chunk, create) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    nmo_arena_destroy(arena);
 }
+
+TEST_MAIN_BEGIN()
+    REGISTER_TEST(chunk, create);
+TEST_MAIN_END()
 ```
 
-Macros: `TEST()`, `ASSERT_EQ()`, `ASSERT_NE()`, `ASSERT_TRUE()`, `ASSERT_FALSE()`,
-`ASSERT_STREQ()`, `ASSERT_MEMEQ()`.
+Macros: `TEST()`, `REGISTER_TEST()`, `ASSERT_EQ()`, `ASSERT_NE()`, `ASSERT_TRUE()`,
+`ASSERT_FALSE()`, `ASSERT_NULL()`, `ASSERT_NOT_NULL()`, `ASSERT_STR_EQ()`,
+`ASSERT_MEM_EQ()`, and the comparison and range asserts in `tests/test_framework.h`.
+`TEST_SKIP()`, `TEST_REQUIRE_FILE()` and `TEST_REQUIRE_FIXTURE()` mark a test as
+skipped (exit code 77) when a required file is missing.
 
 ### CI Pipeline
 
-The GitHub Actions CI (`.github/workflows/ci.yml`) runs on every push to `main`
-and on every pull request:
+The GitHub Actions CI (`.github/workflows/ci.yml`) runs on every push to `main`,
+on every pull request, and on `v*` tags:
 
-- **Platforms**: Ubuntu Latest, macOS Latest, Windows Latest
-- **Build**: Release configuration, parallel compilation
-- **Test suite**: full `ctest` run with `--output-on-failure`
-- **Round-trip gate**: dedicated round-trip regression test
-- **Performance baseline**: enforces maximum load/save/mmap timings via
-  `NMO_BENCH_ENFORCE`
+- **`sanitizers`**: Ubuntu, clang, Debug build with ASan/UBSan, then `ctest`
+  without the `performance` label (those tests assert on wall-clock ratios and
+  are not meaningful on shared runners)
+- **`package`**: one Release build per platform (Linux x64 on Ubuntu 22.04,
+  macOS universal, Windows MSVC, Windows MinGW). `tools/scripts/package_release.py`
+  runs the tests, installs the package, checks the install from the outside, and
+  archives it; the archives are kept as workflow artifacts
+- **`publish-release`**: on a `vX.Y.Z` tag, publishes the packages as a GitHub
+  release
 
 ---
 
@@ -438,13 +487,13 @@ CKObject, CKBeObject, CKSceneObject, CKRenderObject, CKParameter,
 CKParameterIn, CKParameterOut, CKParameterLocal, CKParameterOperation,
 CKGroup, CKLevel, CKScene, CKBehavior, CKBehaviorIO, CKBehaviorLink,
 CK3dEntity, CK3dObject, CKMesh, CKTexture, CKMaterial, CKLight, CKCamera,
-CKCharacter, CKAnimation, CKCurve, CKPatchMesh, CKGrid, CKLayer, CKPlace,
+CKCharacter, CKAnimation, CKKeyedAnimation, CKObjectAnimation, CKCurve, CKPatchMesh, CKGrid, CKLayer, CKPlace,
 CKSound, CKSynchro, CKSprite, CKSpriteText, CKSprite3D, CK2dEntity,
 CKTargetCamera, CKTargetLight, CKKinematicChain, CKRenderContext, CKDataArray.
 
 ### Supported Managers
 
-CKInterfaceObjectManager, CKAttributeManager.
+CKInterfaceObjectManager, CKAttributeManager, CKMessageManager.
 
 ---
 
@@ -452,7 +501,7 @@ CKInterfaceObjectManager, CKAttributeManager.
 
 - **Style**: 4-space indent, 100-char line limit, K&R braces
 - **Naming**: `nmo_module_function()`, `nmo_type_name_t`, `NMO_ENUM_VALUE`, `NMO_MACRO`
-- **Layer rule**: no upward dependencies; lower layers never import higher ones
+- **Layer rule**: no new upward dependencies (checked by `test_layering_audit`)
 - **Object types**: both `serialize` and `deserialize` vtable methods required
 - **API comments**: Doxygen `/** @brief ... @param ... @return ... */` on public APIs
 - **Testing**: all tests must pass before submitting

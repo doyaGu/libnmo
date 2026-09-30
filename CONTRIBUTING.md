@@ -108,13 +108,18 @@ void *nmo_arena_alloc(nmo_arena_t *arena, size_t size, size_t align) {
 
 ### Architecture Rules
 
-The layer stack is (strict -- no upward dependencies):
+The layer stack, lowest to highest:
 
 ```
-App -> Session -> Object -> Extension -> Type -> Format -> IO -> Core
+core -> io -> format -> type -> extension -> object -> session -> runtime
+     -> document -> chunk -> behavior -> export -> lua -> project
 ```
 
-Lower layers NEVER include headers from higher layers.
+A source file may include headers from its own layer and from layers below it, never from a
+higher one. `test_layering_audit` (`tests/layering_audit.cmake`) checks this. Existing upward
+includes are recorded in `tests/layering_allowlist.txt` as debt; do not add to that file to make
+a new dependency pass. Move the dependency down the stack instead. The audit also fails when an
+allowlist entry is no longer needed, so remove the line when you pay one off.
 
 1. No circular dependencies: always depend downward in the layer hierarchy
 2. Both `serialize` AND `deserialize` vtable methods are required for every new object type
@@ -126,16 +131,29 @@ Lower layers NEVER include headers from higher layers.
 
 ### Directory Reference
 
-| Directory      | Layer     | Notes                                      |
-|----------------|-----------|---------------------------------------------|
-| src/core/      | Core      | No dependencies on any other nmo layer      |
-| src/io/        | IO        | Depends only on Core                        |
-| src/format/    | Format    | Depends on Core, IO                         |
-| src/type/      | Type      | Depends on Core, IO, Format                 |
-| src/extension/ | Extension | Depends on Core through Type                |
-| src/object/    | Object    | Depends on Core through Extension           |
-| src/session/   | Session   | Depends on Core through Object              |
-| src/app/       | App       | Depends on all lower layers                 |
+Ranks match the order in `tests/layering_audit.cmake`; a layer may include itself and any layer
+with a lower rank.
+
+| Rank | Directory       | Layer     |
+|------|-----------------|-----------|
+| 1    | `src/core/`     | Core      |
+| 2    | `src/io/`       | IO        |
+| 3    | `src/format/`   | Format    |
+| 4    | `src/type/`     | Type      |
+| 5    | `src/extension/`| Extension |
+| 6    | `src/object/`   | Object    |
+| 7    | `src/session/`  | Session   |
+| 8    | `src/runtime/`  | Runtime   |
+| 9    | `src/document/` | Document  |
+| 10   | `src/chunk/`    | Chunk     |
+| 11   | `src/behavior/` | Behavior  |
+| 12   | `src/export/`   | Export    |
+| 13   | `src/lua/`      | Lua       |
+| 14   | `src/project/`  | Project   |
+
+The Lua and Project layers build into their own libraries (`nmo_lua`, `nmo_project`) on top of the
+core library `nmo`. The core must not depend on them: no core source or public header includes a
+`lua/` or `project/` header (the audit checks both), and core tests link only `nmo`.
 
 ### Chunk API Notes
 
