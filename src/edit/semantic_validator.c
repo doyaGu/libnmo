@@ -1992,6 +1992,992 @@ static nmo_status_t semantic_add_manager_value_risk(
         object_id);
 }
 
+typedef struct semantic_op_env_t {
+    nmo_workspace_t *workspace;
+    nmo_context_t *ctx;
+    nmo_object_repository_t *repo;
+    const nmo_edit_plan_t *plan;
+    size_t op_index;
+    const nmo_edit_op_t *op;
+    nmo_behavior_semantic_risk_t **risks;
+    size_t *risk_count;
+    const nmo_type_registry_t *registry;
+} semantic_op_env_t;
+
+static nmo_status_t semantic_validate_set_parameter(const semantic_op_env_t *env)
+{
+    nmo_workspace_t *workspace = env->workspace;
+    nmo_context_t *ctx = env->ctx;
+    nmo_object_repository_t *repo = env->repo;
+    const nmo_edit_plan_t *plan = env->plan;
+    size_t op_index = env->op_index;
+    const nmo_edit_op_t *op = env->op;
+    nmo_behavior_semantic_risk_t **risks = env->risks;
+    size_t *risk_count = env->risk_count;
+    const nmo_type_registry_t *registry = env->registry;
+
+    if (op->kind == NMO_EDIT_OP_SET_PARAMETER_VALUE &&
+        op->data.set_value.parameter_ref.has_ref) {
+        NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
+            ctx,
+            plan,
+            op_index,
+            op->data.set_value.parameter_ref.operation_index,
+            op->data.set_value.parameter_ref.handle_name,
+            op->primary_id,
+            risks,
+            risk_count));
+        NMO_RETURN_IF_ERROR(semantic_add_parameter_handle_ref_risk(
+            plan,
+            op->data.set_value.parameter_ref.operation_index,
+            op->data.set_value.parameter_ref.handle_name,
+            op->primary_id,
+            risks,
+            risk_count));
+        nmo_manager_entry_options_t manager_entry =
+            op->data.set_value.has_options
+                ? op->data.set_value.options.manager_entry
+                : nmo_manager_entry_options_default();
+        const nmo_type_descriptor_t *type =
+            semantic_parameter_handle_type_desc(
+                ctx,
+                plan,
+                op->data.set_value.parameter_ref.operation_index,
+                op->data.set_value.parameter_ref.handle_name);
+        return semantic_add_manager_value_risk(
+            workspace,
+            risks,
+            risk_count,
+            op->primary_id,
+            op->data.set_value.value,
+            manager_entry,
+            semantic_manager_target_for_type(type));
+    }
+    if (op->kind == NMO_EDIT_OP_SET_PARAMETER_BYTES &&
+        op->data.set_bytes.parameter_ref.has_ref) {
+        NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
+            ctx,
+            plan,
+            op_index,
+            op->data.set_bytes.parameter_ref.operation_index,
+            op->data.set_bytes.parameter_ref.handle_name,
+            op->primary_id,
+            risks,
+            risk_count));
+        return semantic_add_parameter_handle_ref_risk(
+            plan,
+            op->data.set_bytes.parameter_ref.operation_index,
+            op->data.set_bytes.parameter_ref.handle_name,
+            op->primary_id,
+            risks,
+            risk_count);
+    }
+    if (op->kind == NMO_EDIT_OP_SET_PARAMETER_VALUE) {
+        nmo_manager_entry_options_t manager_entry =
+            op->data.set_value.has_options
+                ? op->data.set_value.options.manager_entry
+                : nmo_manager_entry_options_default();
+        NMO_RETURN_IF_ERROR(semantic_add_manager_value_risk(
+            workspace,
+            risks,
+            risk_count,
+            op->primary_id,
+            op->data.set_value.value,
+            manager_entry,
+            semantic_manager_target_for_parameter(
+                registry, repo, op->primary_id)));
+    }
+    NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+        repo, risks, risk_count, op->primary_id));
+    return semantic_add_parameter_object_ref_risk(
+        registry, repo, risks, risk_count, op->primary_id);
+}
+
+static nmo_status_t semantic_validate_add_node(const semantic_op_env_t *env)
+{
+    nmo_workspace_t *workspace = env->workspace;
+    nmo_context_t *ctx = env->ctx;
+    nmo_object_repository_t *repo = env->repo;
+    const nmo_edit_op_t *op = env->op;
+    nmo_behavior_semantic_risk_t **risks = env->risks;
+    size_t *risk_count = env->risk_count;
+    const nmo_type_registry_t *registry = env->registry;
+
+    NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+        repo, risks, risk_count,
+        op->data.add_node.parent_behavior_id));
+    NMO_RETURN_IF_ERROR(semantic_add_behavior_owner_ref_risk(
+        registry,
+        repo,
+        risks,
+        risk_count,
+        op->data.add_node.parent_behavior_id));
+    NMO_RETURN_IF_ERROR(semantic_add_building_block_risk(
+        ctx,
+        risks,
+        risk_count,
+        op->data.add_node.parent_behavior_id,
+        op->data.add_node.bb_guid));
+    return semantic_add_manager_default_risks(
+        workspace,
+        ctx,
+        risks,
+        risk_count,
+        op->data.add_node.parent_behavior_id,
+        op->data.add_node.bb_guid,
+        op->data.add_node.has_options
+            ? op->data.add_node.options.manager_entry
+            : nmo_manager_entry_options_default());
+}
+
+static nmo_status_t semantic_validate_remove_node(const semantic_op_env_t *env)
+{
+    nmo_object_repository_t *repo = env->repo;
+    const nmo_edit_op_t *op = env->op;
+    nmo_behavior_semantic_risk_t **risks = env->risks;
+    size_t *risk_count = env->risk_count;
+    const nmo_type_registry_t *registry = env->registry;
+
+    NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+        repo, risks, risk_count,
+        op->data.remove_node.parent_behavior_id));
+    NMO_RETURN_IF_ERROR(semantic_add_behavior_owner_ref_risk(
+        registry,
+        repo,
+        risks,
+        risk_count,
+        op->data.remove_node.parent_behavior_id));
+    NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+        repo, risks, risk_count, op->data.remove_node.node_id));
+    return semantic_add_behavior_node_ref_risk(
+        registry, repo, risks, risk_count, op->data.remove_node.node_id);
+}
+
+static nmo_status_t semantic_validate_add_io(const semantic_op_env_t *env)
+{
+    nmo_object_repository_t *repo = env->repo;
+    const nmo_edit_op_t *op = env->op;
+    nmo_behavior_semantic_risk_t **risks = env->risks;
+    size_t *risk_count = env->risk_count;
+    const nmo_type_registry_t *registry = env->registry;
+
+    NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+        repo, risks, risk_count, op->data.add_io.behavior_id));
+    return semantic_add_behavior_owner_ref_risk(
+        registry, repo, risks, risk_count, op->data.add_io.behavior_id);
+}
+
+static nmo_status_t semantic_validate_rename_io(const semantic_op_env_t *env)
+{
+    nmo_object_repository_t *repo = env->repo;
+    const nmo_edit_op_t *op = env->op;
+    nmo_behavior_semantic_risk_t **risks = env->risks;
+    size_t *risk_count = env->risk_count;
+    const nmo_type_registry_t *registry = env->registry;
+
+    NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+        repo, risks, risk_count, op->data.rename_io.io_id));
+    return semantic_add_behavior_io_ref_risk(
+        registry, repo, risks, risk_count, op->data.rename_io.io_id);
+}
+
+static nmo_status_t semantic_validate_remove_io(const semantic_op_env_t *env)
+{
+    nmo_object_repository_t *repo = env->repo;
+    const nmo_edit_op_t *op = env->op;
+    nmo_behavior_semantic_risk_t **risks = env->risks;
+    size_t *risk_count = env->risk_count;
+    const nmo_type_registry_t *registry = env->registry;
+
+    NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+        repo, risks, risk_count, op->data.remove_io.io_id));
+    return semantic_add_behavior_io_ref_risk(
+        registry, repo, risks, risk_count, op->data.remove_io.io_id);
+}
+
+static nmo_status_t semantic_validate_add_behavior_link(const semantic_op_env_t *env)
+{
+    nmo_context_t *ctx = env->ctx;
+    nmo_object_repository_t *repo = env->repo;
+    const nmo_edit_plan_t *plan = env->plan;
+    size_t op_index = env->op_index;
+    const nmo_edit_op_t *op = env->op;
+    nmo_behavior_semantic_risk_t **risks = env->risks;
+    size_t *risk_count = env->risk_count;
+    const nmo_type_registry_t *registry = env->registry;
+
+    NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+        repo, risks, risk_count, op->data.add_link.parent_behavior_id));
+    NMO_RETURN_IF_ERROR(semantic_add_behavior_owner_ref_risk(
+        registry,
+        repo,
+        risks,
+        risk_count,
+        op->data.add_link.parent_behavior_id));
+    if (!op->data.add_link.from_io_ref.has_ref) {
+        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+            repo, risks, risk_count, op->data.add_link.from_io_id));
+        NMO_RETURN_IF_ERROR(semantic_add_class_ref_risk(
+            registry,
+            repo,
+            risks,
+            risk_count,
+            op->data.add_link.from_io_id,
+            NMO_CID_BEHAVIORIO,
+            "control_endpoint_type_mismatch",
+            "Control-flow link endpoint must be a behavior IO"));
+        NMO_RETURN_IF_ERROR(semantic_add_control_endpoint_scope_risk(
+            registry,
+            repo,
+            risks,
+            risk_count,
+            op->data.add_link.parent_behavior_id,
+            op->data.add_link.from_io_id));
+    } else {
+        NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
+            ctx,
+            plan,
+            op_index,
+            op->data.add_link.from_io_ref.operation_index,
+            op->data.add_link.from_io_ref.handle_name,
+            op->primary_id,
+            risks,
+            risk_count));
+        NMO_RETURN_IF_ERROR(semantic_add_control_handle_ref_risk(
+            plan,
+            op->data.add_link.from_io_ref.operation_index,
+            op->data.add_link.from_io_ref.handle_name,
+            op->primary_id,
+            risks,
+            risk_count));
+    }
+    if (!op->data.add_link.to_io_ref.has_ref) {
+        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+            repo, risks, risk_count, op->data.add_link.to_io_id));
+        NMO_RETURN_IF_ERROR(semantic_add_class_ref_risk(
+            registry,
+            repo,
+            risks,
+            risk_count,
+            op->data.add_link.to_io_id,
+            NMO_CID_BEHAVIORIO,
+            "control_endpoint_type_mismatch",
+            "Control-flow link endpoint must be a behavior IO"));
+        NMO_RETURN_IF_ERROR(semantic_add_control_endpoint_scope_risk(
+            registry,
+            repo,
+            risks,
+            risk_count,
+            op->data.add_link.parent_behavior_id,
+            op->data.add_link.to_io_id));
+    } else {
+        NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
+            ctx,
+            plan,
+            op_index,
+            op->data.add_link.to_io_ref.operation_index,
+            op->data.add_link.to_io_ref.handle_name,
+            op->primary_id,
+            risks,
+            risk_count));
+        NMO_RETURN_IF_ERROR(semantic_add_control_handle_ref_risk(
+            plan,
+            op->data.add_link.to_io_ref.operation_index,
+            op->data.add_link.to_io_ref.handle_name,
+            op->primary_id,
+            risks,
+            risk_count));
+    }
+    return semantic_add_plan_activation_delay_risk(
+        risks,
+        risk_count,
+        op->data.add_link.parent_behavior_id,
+        op->data.add_link.activation_delay);
+}
+
+static nmo_status_t semantic_validate_rewire_behavior_link(const semantic_op_env_t *env)
+{
+    nmo_object_repository_t *repo = env->repo;
+    const nmo_edit_op_t *op = env->op;
+    nmo_behavior_semantic_risk_t **risks = env->risks;
+    size_t *risk_count = env->risk_count;
+    const nmo_type_registry_t *registry = env->registry;
+
+    nmo_object_id_t link_owner_id = 0u;
+    NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+        repo, risks, risk_count, op->data.rewire_link.link_id));
+    NMO_RETURN_IF_ERROR(semantic_add_class_ref_risk(
+        registry,
+        repo,
+        risks,
+        risk_count,
+        op->data.rewire_link.link_id,
+        NMO_CID_BEHAVIORLINK,
+        "control_link_type_mismatch",
+        "Control-flow link operation expects a behavior link"));
+    (void)semantic_find_behavior_link_owner(
+        registry, repo, op->data.rewire_link.link_id, &link_owner_id);
+    NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+        repo, risks, risk_count, op->data.rewire_link.from_io_id));
+    NMO_RETURN_IF_ERROR(semantic_add_class_ref_risk(
+        registry,
+        repo,
+        risks,
+        risk_count,
+        op->data.rewire_link.from_io_id,
+        NMO_CID_BEHAVIORIO,
+        "control_endpoint_type_mismatch",
+        "Control-flow link endpoint must be a behavior IO"));
+    NMO_RETURN_IF_ERROR(semantic_add_control_endpoint_scope_risk(
+        registry,
+        repo,
+        risks,
+        risk_count,
+        link_owner_id,
+        op->data.rewire_link.from_io_id));
+    NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+        repo, risks, risk_count, op->data.rewire_link.to_io_id));
+    NMO_RETURN_IF_ERROR(semantic_add_class_ref_risk(
+        registry,
+        repo,
+        risks,
+        risk_count,
+        op->data.rewire_link.to_io_id,
+        NMO_CID_BEHAVIORIO,
+        "control_endpoint_type_mismatch",
+        "Control-flow link endpoint must be a behavior IO"));
+    return semantic_add_control_endpoint_scope_risk(
+        registry,
+        repo,
+        risks,
+        risk_count,
+        link_owner_id,
+        op->data.rewire_link.to_io_id);
+}
+
+static nmo_status_t semantic_validate_set_behavior_link_delay(const semantic_op_env_t *env)
+{
+    nmo_object_repository_t *repo = env->repo;
+    const nmo_edit_op_t *op = env->op;
+    nmo_behavior_semantic_risk_t **risks = env->risks;
+    size_t *risk_count = env->risk_count;
+    const nmo_type_registry_t *registry = env->registry;
+
+    NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+        repo, risks, risk_count, op->data.set_link_delay.link_id));
+    NMO_RETURN_IF_ERROR(semantic_add_class_ref_risk(
+        registry,
+        repo,
+        risks,
+        risk_count,
+        op->data.set_link_delay.link_id,
+        NMO_CID_BEHAVIORLINK,
+        "control_link_type_mismatch",
+        "Control-flow link operation expects a behavior link"));
+    return semantic_add_plan_activation_delay_risk(
+        risks,
+        risk_count,
+        op->data.set_link_delay.link_id,
+        op->data.set_link_delay.activation_delay);
+}
+
+static nmo_status_t semantic_validate_remove_behavior_link(const semantic_op_env_t *env)
+{
+    nmo_object_repository_t *repo = env->repo;
+    const nmo_edit_op_t *op = env->op;
+    nmo_behavior_semantic_risk_t **risks = env->risks;
+    size_t *risk_count = env->risk_count;
+    const nmo_type_registry_t *registry = env->registry;
+
+    NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+        repo, risks, risk_count, op->data.remove_link.parent_behavior_id));
+    NMO_RETURN_IF_ERROR(semantic_add_behavior_owner_ref_risk(
+        registry,
+        repo,
+        risks,
+        risk_count,
+        op->data.remove_link.parent_behavior_id));
+    NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+        repo, risks, risk_count, op->data.remove_link.link_id));
+    return semantic_add_class_ref_risk(
+        registry,
+        repo,
+        risks,
+        risk_count,
+        op->data.remove_link.link_id,
+        NMO_CID_BEHAVIORLINK,
+        "control_link_type_mismatch",
+        "Control-flow link operation expects a behavior link");
+}
+
+static nmo_status_t semantic_validate_add_parameter(const semantic_op_env_t *env)
+{
+    nmo_object_repository_t *repo = env->repo;
+    const nmo_edit_op_t *op = env->op;
+    nmo_behavior_semantic_risk_t **risks = env->risks;
+    size_t *risk_count = env->risk_count;
+    const nmo_type_registry_t *registry = env->registry;
+
+    NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+        repo, risks, risk_count,
+        op->data.add_parameter.owner_behavior_id));
+    return semantic_add_behavior_owner_ref_risk(
+        registry, repo, risks, risk_count,
+        op->data.add_parameter.owner_behavior_id);
+}
+
+static nmo_status_t semantic_validate_connect_parameter(const semantic_op_env_t *env)
+{
+    nmo_context_t *ctx = env->ctx;
+    nmo_object_repository_t *repo = env->repo;
+    const nmo_edit_plan_t *plan = env->plan;
+    size_t op_index = env->op_index;
+    const nmo_edit_op_t *op = env->op;
+    nmo_behavior_semantic_risk_t **risks = env->risks;
+    size_t *risk_count = env->risk_count;
+    const nmo_type_registry_t *registry = env->registry;
+
+    NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+        repo, risks, risk_count,
+        op->data.connect_parameter.source_parameter_id));
+    NMO_RETURN_IF_ERROR(semantic_add_parameter_object_ref_risk(
+        registry, repo, risks, risk_count,
+        op->data.connect_parameter.source_parameter_id));
+    if (op->data.connect_parameter.target_parameter_ref.has_ref) {
+        NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
+            ctx,
+            plan,
+            op_index,
+            op->data.connect_parameter.target_parameter_ref.operation_index,
+            op->data.connect_parameter.target_parameter_ref.handle_name,
+            op->primary_id,
+            risks,
+            risk_count));
+        NMO_RETURN_IF_ERROR(semantic_add_parameter_handle_ref_risk(
+            plan,
+            op->data.connect_parameter.target_parameter_ref.operation_index,
+            op->data.connect_parameter.target_parameter_ref.handle_name,
+            op->primary_id,
+            risks,
+            risk_count));
+        return semantic_add_parameter_type_desc_mismatch_risk(
+            semantic_parameter_type_desc(
+                ctx,
+                repo,
+                op->data.connect_parameter.source_parameter_id),
+            semantic_parameter_handle_type_desc(
+                ctx,
+                plan,
+                op->data.connect_parameter.target_parameter_ref.operation_index,
+                op->data.connect_parameter.target_parameter_ref.handle_name),
+            risks,
+            risk_count,
+            op->primary_id);
+    }
+    NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+        repo, risks, risk_count,
+        op->data.connect_parameter.target_parameter_id));
+    NMO_RETURN_IF_ERROR(semantic_add_parameter_object_ref_risk(
+        registry, repo, risks, risk_count,
+        op->data.connect_parameter.target_parameter_id));
+    NMO_RETURN_IF_ERROR(semantic_add_parameterin_ref_risk(
+        registry, repo, risks, risk_count,
+        op->data.connect_parameter.target_parameter_id));
+    return semantic_add_parameter_type_mismatch_risk(
+        registry,
+        repo,
+        risks,
+        risk_count,
+        op->data.connect_parameter.source_parameter_id,
+        op->data.connect_parameter.target_parameter_id);
+}
+
+static nmo_status_t semantic_validate_disconnect_parameter(const semantic_op_env_t *env)
+{
+    nmo_object_repository_t *repo = env->repo;
+    const nmo_edit_op_t *op = env->op;
+    nmo_behavior_semantic_risk_t **risks = env->risks;
+    size_t *risk_count = env->risk_count;
+    const nmo_type_registry_t *registry = env->registry;
+
+    NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+        repo, risks, risk_count,
+        op->data.disconnect_parameter.target_parameter_id));
+    NMO_RETURN_IF_ERROR(semantic_add_parameter_object_ref_risk(
+        registry, repo, risks, risk_count,
+        op->data.disconnect_parameter.target_parameter_id));
+    return semantic_add_parameterin_ref_risk(
+        registry, repo, risks, risk_count,
+        op->data.disconnect_parameter.target_parameter_id);
+}
+
+static nmo_status_t semantic_validate_remove_parameter(const semantic_op_env_t *env)
+{
+    nmo_object_repository_t *repo = env->repo;
+    const nmo_edit_op_t *op = env->op;
+    nmo_behavior_semantic_risk_t **risks = env->risks;
+    size_t *risk_count = env->risk_count;
+    const nmo_type_registry_t *registry = env->registry;
+
+    NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+        repo, risks, risk_count,
+        op->data.remove_parameter.parameter_id));
+    return semantic_add_parameter_object_ref_risk(
+        registry, repo, risks, risk_count,
+        op->data.remove_parameter.parameter_id);
+}
+
+static nmo_status_t semantic_validate_add_operation(const semantic_op_env_t *env)
+{
+    nmo_context_t *ctx = env->ctx;
+    nmo_object_repository_t *repo = env->repo;
+    const nmo_edit_plan_t *plan = env->plan;
+    size_t op_index = env->op_index;
+    const nmo_edit_op_t *op = env->op;
+    nmo_behavior_semantic_risk_t **risks = env->risks;
+    size_t *risk_count = env->risk_count;
+    const nmo_type_registry_t *registry = env->registry;
+
+    const nmo_type_descriptor_t *in1_type = NULL;
+    const nmo_type_descriptor_t *in2_type = NULL;
+    const nmo_type_descriptor_t *out_type = NULL;
+    bool has_in1 = false;
+    bool has_in2 = false;
+    bool has_out = false;
+
+    NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+        repo, risks, risk_count,
+        op->data.add_operation.parent_behavior_id));
+    NMO_RETURN_IF_ERROR(semantic_add_behavior_owner_ref_risk(
+        registry,
+        repo,
+        risks,
+        risk_count,
+        op->data.add_operation.parent_behavior_id));
+    if (op->data.add_operation.in1_parameter_ref.has_ref) {
+        NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
+            ctx,
+            plan,
+            op_index,
+            op->data.add_operation.in1_parameter_ref.operation_index,
+            op->data.add_operation.in1_parameter_ref.handle_name,
+            op->primary_id,
+            risks,
+            risk_count));
+        NMO_RETURN_IF_ERROR(semantic_add_parameter_handle_ref_risk(
+            plan,
+            op->data.add_operation.in1_parameter_ref.operation_index,
+            op->data.add_operation.in1_parameter_ref.handle_name,
+            op->primary_id,
+            risks,
+            risk_count));
+        in1_type = semantic_parameter_handle_type_desc(
+            ctx,
+            plan,
+            op->data.add_operation.in1_parameter_ref.operation_index,
+            op->data.add_operation.in1_parameter_ref.handle_name);
+        has_in1 = true;
+    } else {
+        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+            repo, risks, risk_count,
+            op->data.add_operation.in1_parameter_id));
+        NMO_RETURN_IF_ERROR(semantic_add_parameter_object_ref_risk(
+            registry, repo, risks, risk_count,
+            op->data.add_operation.in1_parameter_id));
+        in1_type = semantic_parameter_type_desc(
+            ctx, repo, op->data.add_operation.in1_parameter_id);
+        has_in1 = op->data.add_operation.in1_parameter_id != 0u;
+    }
+    if (op->data.add_operation.in2_parameter_ref.has_ref) {
+        NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
+            ctx,
+            plan,
+            op_index,
+            op->data.add_operation.in2_parameter_ref.operation_index,
+            op->data.add_operation.in2_parameter_ref.handle_name,
+            op->primary_id,
+            risks,
+            risk_count));
+        NMO_RETURN_IF_ERROR(semantic_add_parameter_handle_ref_risk(
+            plan,
+            op->data.add_operation.in2_parameter_ref.operation_index,
+            op->data.add_operation.in2_parameter_ref.handle_name,
+            op->primary_id,
+            risks,
+            risk_count));
+        in2_type = semantic_parameter_handle_type_desc(
+            ctx,
+            plan,
+            op->data.add_operation.in2_parameter_ref.operation_index,
+            op->data.add_operation.in2_parameter_ref.handle_name);
+        has_in2 = true;
+    } else {
+        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+            repo, risks, risk_count,
+            op->data.add_operation.in2_parameter_id));
+        NMO_RETURN_IF_ERROR(semantic_add_parameter_object_ref_risk(
+            registry, repo, risks, risk_count,
+            op->data.add_operation.in2_parameter_id));
+        in2_type = semantic_parameter_type_desc(
+            ctx, repo, op->data.add_operation.in2_parameter_id);
+        has_in2 = op->data.add_operation.in2_parameter_id != 0u;
+    }
+    if (op->data.add_operation.out_parameter_ref.has_ref) {
+        NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
+            ctx,
+            plan,
+            op_index,
+            op->data.add_operation.out_parameter_ref.operation_index,
+            op->data.add_operation.out_parameter_ref.handle_name,
+            op->primary_id,
+            risks,
+            risk_count));
+        NMO_RETURN_IF_ERROR(semantic_add_parameter_handle_ref_risk(
+            plan,
+            op->data.add_operation.out_parameter_ref.operation_index,
+            op->data.add_operation.out_parameter_ref.handle_name,
+            op->primary_id,
+            risks,
+            risk_count));
+        out_type = semantic_parameter_handle_type_desc(
+            ctx,
+            plan,
+            op->data.add_operation.out_parameter_ref.operation_index,
+            op->data.add_operation.out_parameter_ref.handle_name);
+        has_out = true;
+    } else {
+        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+            repo, risks, risk_count,
+            op->data.add_operation.out_parameter_id));
+        NMO_RETURN_IF_ERROR(semantic_add_parameter_object_ref_risk(
+            registry, repo, risks, risk_count,
+            op->data.add_operation.out_parameter_id));
+        out_type = semantic_parameter_type_desc(
+            ctx, repo, op->data.add_operation.out_parameter_id);
+        has_out = op->data.add_operation.out_parameter_id != 0u;
+    }
+    return semantic_add_operation_signature_type_risk(
+        ctx,
+        risks,
+        risk_count,
+        op->primary_id,
+        op->data.add_operation.operation_guid,
+        in1_type,
+        has_in1,
+        in2_type,
+        has_in2,
+        out_type,
+        has_out);
+}
+
+static nmo_status_t semantic_validate_rewire_operation(const semantic_op_env_t *env)
+{
+    nmo_context_t *ctx = env->ctx;
+    nmo_object_repository_t *repo = env->repo;
+    const nmo_edit_plan_t *plan = env->plan;
+    size_t op_index = env->op_index;
+    const nmo_edit_op_t *op = env->op;
+    nmo_behavior_semantic_risk_t **risks = env->risks;
+    size_t *risk_count = env->risk_count;
+    const nmo_type_registry_t *registry = env->registry;
+
+    const nmo_parameteroperation_state_t *state = NULL;
+    const nmo_type_descriptor_t *in1_type = NULL;
+    const nmo_type_descriptor_t *in2_type = NULL;
+    const nmo_type_descriptor_t *out_type = NULL;
+    bool has_in1 = false;
+    bool has_in2 = false;
+    bool has_out = false;
+
+    NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+        repo, risks, risk_count,
+        op->data.rewire_operation.operation_id));
+    NMO_RETURN_IF_ERROR(semantic_add_class_ref_risk(
+        registry,
+        repo,
+        risks,
+        risk_count,
+        op->data.rewire_operation.operation_id,
+        NMO_CID_PARAMETEROPERATION,
+        "operation_object_type_mismatch",
+        "Edit operation expects a parameter operation"));
+    state = semantic_parameteroperation_state(
+        registry, repo, op->data.rewire_operation.operation_id);
+    if (state == NULL) {
+        return NMO_OK;
+    }
+
+    if ((op->data.rewire_operation.slot_flags &
+         NMO_SCRIPT_EDIT_OP_SLOT_IN1) != 0u) {
+        if (op->data.rewire_operation.in1_parameter_ref.has_ref) {
+            NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
+                ctx,
+                plan,
+                op_index,
+                op->data.rewire_operation.in1_parameter_ref.operation_index,
+                op->data.rewire_operation.in1_parameter_ref.handle_name,
+                op->primary_id,
+                risks,
+                risk_count));
+            NMO_RETURN_IF_ERROR(semantic_add_parameter_handle_ref_risk(
+                plan,
+                op->data.rewire_operation.in1_parameter_ref.operation_index,
+                op->data.rewire_operation.in1_parameter_ref.handle_name,
+                op->primary_id,
+                risks,
+                risk_count));
+            in1_type = semantic_parameter_handle_type_desc(
+                ctx,
+                plan,
+                op->data.rewire_operation.in1_parameter_ref.operation_index,
+                op->data.rewire_operation.in1_parameter_ref.handle_name);
+            has_in1 = true;
+        } else {
+            NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+                repo, risks, risk_count,
+                op->data.rewire_operation.in1_parameter_id));
+            NMO_RETURN_IF_ERROR(semantic_add_parameter_object_ref_risk(
+                registry, repo, risks, risk_count,
+                op->data.rewire_operation.in1_parameter_id));
+            in1_type = semantic_parameter_type_desc(
+                ctx, repo, op->data.rewire_operation.in1_parameter_id);
+            has_in1 = op->data.rewire_operation.in1_parameter_id != 0u;
+        }
+    } else {
+        const nmo_object_id_t existing_in1_id =
+            state->has_in1
+                ? nmo_parameteroperation_in1_id(state)
+                : 0u;
+        NMO_RETURN_IF_ERROR(semantic_add_operation_slot_ref_risk(
+            registry,
+            repo,
+            risks,
+            risk_count,
+            existing_in1_id));
+        in1_type = semantic_parameter_type_desc(
+            ctx, repo, existing_in1_id);
+        has_in1 = existing_in1_id != 0u;
+    }
+
+    if ((op->data.rewire_operation.slot_flags &
+         NMO_SCRIPT_EDIT_OP_SLOT_IN2) != 0u) {
+        if (op->data.rewire_operation.in2_parameter_ref.has_ref) {
+            NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
+                ctx,
+                plan,
+                op_index,
+                op->data.rewire_operation.in2_parameter_ref.operation_index,
+                op->data.rewire_operation.in2_parameter_ref.handle_name,
+                op->primary_id,
+                risks,
+                risk_count));
+            NMO_RETURN_IF_ERROR(semantic_add_parameter_handle_ref_risk(
+                plan,
+                op->data.rewire_operation.in2_parameter_ref.operation_index,
+                op->data.rewire_operation.in2_parameter_ref.handle_name,
+                op->primary_id,
+                risks,
+                risk_count));
+            in2_type = semantic_parameter_handle_type_desc(
+                ctx,
+                plan,
+                op->data.rewire_operation.in2_parameter_ref.operation_index,
+                op->data.rewire_operation.in2_parameter_ref.handle_name);
+            has_in2 = true;
+        } else {
+            NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+                repo, risks, risk_count,
+                op->data.rewire_operation.in2_parameter_id));
+            NMO_RETURN_IF_ERROR(semantic_add_parameter_object_ref_risk(
+                registry, repo, risks, risk_count,
+                op->data.rewire_operation.in2_parameter_id));
+            in2_type = semantic_parameter_type_desc(
+                ctx, repo, op->data.rewire_operation.in2_parameter_id);
+            has_in2 = op->data.rewire_operation.in2_parameter_id != 0u;
+        }
+    } else {
+        const nmo_object_id_t existing_in2_id =
+            state->has_in2
+                ? nmo_parameteroperation_in2_id(state)
+                : 0u;
+        NMO_RETURN_IF_ERROR(semantic_add_operation_slot_ref_risk(
+            registry,
+            repo,
+            risks,
+            risk_count,
+            existing_in2_id));
+        in2_type = semantic_parameter_type_desc(
+            ctx, repo, existing_in2_id);
+        has_in2 = existing_in2_id != 0u;
+    }
+
+    if ((op->data.rewire_operation.slot_flags &
+         NMO_SCRIPT_EDIT_OP_SLOT_OUT) != 0u) {
+        if (op->data.rewire_operation.out_parameter_ref.has_ref) {
+            NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
+                ctx,
+                plan,
+                op_index,
+                op->data.rewire_operation.out_parameter_ref.operation_index,
+                op->data.rewire_operation.out_parameter_ref.handle_name,
+                op->primary_id,
+                risks,
+                risk_count));
+            NMO_RETURN_IF_ERROR(semantic_add_parameter_handle_ref_risk(
+                plan,
+                op->data.rewire_operation.out_parameter_ref.operation_index,
+                op->data.rewire_operation.out_parameter_ref.handle_name,
+                op->primary_id,
+                risks,
+                risk_count));
+            out_type = semantic_parameter_handle_type_desc(
+                ctx,
+                plan,
+                op->data.rewire_operation.out_parameter_ref.operation_index,
+                op->data.rewire_operation.out_parameter_ref.handle_name);
+            has_out = true;
+        } else {
+            NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+                repo, risks, risk_count,
+                op->data.rewire_operation.out_parameter_id));
+            NMO_RETURN_IF_ERROR(semantic_add_parameter_object_ref_risk(
+                registry, repo, risks, risk_count,
+                op->data.rewire_operation.out_parameter_id));
+            out_type = semantic_parameter_type_desc(
+                ctx, repo, op->data.rewire_operation.out_parameter_id);
+            has_out = op->data.rewire_operation.out_parameter_id != 0u;
+        }
+    } else {
+        const nmo_object_id_t existing_out_id =
+            state->has_out
+                ? nmo_parameteroperation_out_id(state)
+                : 0u;
+        NMO_RETURN_IF_ERROR(semantic_add_operation_slot_ref_risk(
+            registry,
+            repo,
+            risks,
+            risk_count,
+            existing_out_id));
+        out_type = semantic_parameter_type_desc(
+            ctx, repo, existing_out_id);
+        has_out = existing_out_id != 0u;
+    }
+
+    return semantic_add_operation_signature_type_risk(
+        ctx,
+        risks,
+        risk_count,
+        op->data.rewire_operation.operation_id,
+        state->operation_guid,
+        in1_type,
+        has_in1,
+        in2_type,
+        has_in2,
+        out_type,
+        has_out);
+}
+
+static nmo_status_t semantic_validate_remove_operation(const semantic_op_env_t *env)
+{
+    nmo_object_repository_t *repo = env->repo;
+    const nmo_edit_op_t *op = env->op;
+    nmo_behavior_semantic_risk_t **risks = env->risks;
+    size_t *risk_count = env->risk_count;
+    const nmo_type_registry_t *registry = env->registry;
+
+    NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+        repo, risks, risk_count,
+        op->data.remove_operation.operation_id));
+    return semantic_add_class_ref_risk(
+        registry,
+        repo,
+        risks,
+        risk_count,
+        op->data.remove_operation.operation_id,
+        NMO_CID_PARAMETEROPERATION,
+        "operation_object_type_mismatch",
+        "Edit operation expects a parameter operation");
+}
+
+static nmo_status_t semantic_validate_interface_policy(const semantic_op_env_t *env)
+{
+    nmo_object_repository_t *repo = env->repo;
+    const nmo_edit_op_t *op = env->op;
+    nmo_behavior_semantic_risk_t **risks = env->risks;
+    size_t *risk_count = env->risk_count;
+    const nmo_type_registry_t *registry = env->registry;
+
+    NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+        repo, risks, risk_count, op->data.interface_policy.behavior_id));
+    NMO_RETURN_IF_ERROR(semantic_add_behavior_owner_ref_risk(
+        registry, repo, risks, risk_count,
+        op->data.interface_policy.behavior_id));
+    return semantic_add_interface_policy_risks(
+        registry,
+        repo,
+        risks,
+        risk_count,
+        op->data.interface_policy.behavior_id,
+        op->data.interface_policy.mode);
+}
+
+static nmo_status_t semantic_validate_set_data_cell(const semantic_op_env_t *env)
+{
+    nmo_workspace_t *workspace = env->workspace;
+    nmo_object_repository_t *repo = env->repo;
+    const nmo_edit_op_t *op = env->op;
+    nmo_behavior_semantic_risk_t **risks = env->risks;
+    size_t *risk_count = env->risk_count;
+
+    return semantic_add_data_cell_risk(
+        nmo_workspace_internal_type_registry(workspace),
+        repo,
+        risks,
+        risk_count,
+        op->data.data_cell.dataarray_id,
+        op->data.data_cell.row,
+        op->data.data_cell.col,
+        op->data.data_cell.value);
+}
+
+static nmo_status_t semantic_validate_replace_bb(const semantic_op_env_t *env)
+{
+    nmo_context_t *ctx = env->ctx;
+    nmo_object_repository_t *repo = env->repo;
+    const nmo_edit_op_t *op = env->op;
+    nmo_behavior_semantic_risk_t **risks = env->risks;
+    size_t *risk_count = env->risk_count;
+    const nmo_type_registry_t *registry = env->registry;
+
+    NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
+        repo, risks, risk_count,
+        op->data.replace_bb.desc.behavior_id));
+    NMO_RETURN_IF_ERROR(semantic_add_behavior_owner_ref_risk(
+        registry,
+        repo,
+        risks,
+        risk_count,
+        op->data.replace_bb.desc.behavior_id));
+    NMO_RETURN_IF_ERROR(semantic_add_behavior_target_consistency_risk(
+        ctx,
+        repo,
+        risks,
+        risk_count,
+        op->data.replace_bb.desc.behavior_id));
+    NMO_RETURN_IF_ERROR(semantic_add_behavior_prototype_consistency_risk(
+        registry,
+        repo,
+        risks,
+        risk_count,
+        op->data.replace_bb.desc.behavior_id));
+    return semantic_add_building_block_risk(
+        ctx,
+        risks,
+        risk_count,
+        op->data.replace_bb.desc.behavior_id,
+        op->data.replace_bb.desc.block_guid);
+}
+
 static nmo_status_t semantic_validate_basic_edit_op(
     nmo_workspace_t *workspace,
     nmo_context_t *ctx,
@@ -2007,790 +2993,62 @@ static nmo_status_t semantic_validate_basic_edit_op(
     }
     const nmo_type_registry_t *registry =
         nmo_workspace_internal_type_registry(workspace);
+    const semantic_op_env_t env = {
+        .workspace = workspace,
+        .ctx = ctx,
+        .repo = repo,
+        .plan = plan,
+        .op_index = op_index,
+        .op = op,
+        .risks = risks,
+        .risk_count = risk_count,
+        .registry = registry,
+    };
 
     switch (op->kind) {
     case NMO_EDIT_OP_SET_PARAMETER_VALUE:
     case NMO_EDIT_OP_SET_PARAMETER_BYTES:
-        if (op->kind == NMO_EDIT_OP_SET_PARAMETER_VALUE &&
-            op->data.set_value.parameter_ref.has_ref) {
-            NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
-                ctx,
-                plan,
-                op_index,
-                op->data.set_value.parameter_ref.operation_index,
-                op->data.set_value.parameter_ref.handle_name,
-                op->primary_id,
-                risks,
-                risk_count));
-            NMO_RETURN_IF_ERROR(semantic_add_parameter_handle_ref_risk(
-                plan,
-                op->data.set_value.parameter_ref.operation_index,
-                op->data.set_value.parameter_ref.handle_name,
-                op->primary_id,
-                risks,
-                risk_count));
-            nmo_manager_entry_options_t manager_entry =
-                op->data.set_value.has_options
-                    ? op->data.set_value.options.manager_entry
-                    : nmo_manager_entry_options_default();
-            const nmo_type_descriptor_t *type =
-                semantic_parameter_handle_type_desc(
-                    ctx,
-                    plan,
-                    op->data.set_value.parameter_ref.operation_index,
-                    op->data.set_value.parameter_ref.handle_name);
-            return semantic_add_manager_value_risk(
-                workspace,
-                risks,
-                risk_count,
-                op->primary_id,
-                op->data.set_value.value,
-                manager_entry,
-                semantic_manager_target_for_type(type));
-        }
-        if (op->kind == NMO_EDIT_OP_SET_PARAMETER_BYTES &&
-            op->data.set_bytes.parameter_ref.has_ref) {
-            NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
-                ctx,
-                plan,
-                op_index,
-                op->data.set_bytes.parameter_ref.operation_index,
-                op->data.set_bytes.parameter_ref.handle_name,
-                op->primary_id,
-                risks,
-                risk_count));
-            return semantic_add_parameter_handle_ref_risk(
-                plan,
-                op->data.set_bytes.parameter_ref.operation_index,
-                op->data.set_bytes.parameter_ref.handle_name,
-                op->primary_id,
-                risks,
-                risk_count);
-        }
-        if (op->kind == NMO_EDIT_OP_SET_PARAMETER_VALUE) {
-            nmo_manager_entry_options_t manager_entry =
-                op->data.set_value.has_options
-                    ? op->data.set_value.options.manager_entry
-                    : nmo_manager_entry_options_default();
-            NMO_RETURN_IF_ERROR(semantic_add_manager_value_risk(
-                workspace,
-                risks,
-                risk_count,
-                op->primary_id,
-                op->data.set_value.value,
-                manager_entry,
-                semantic_manager_target_for_parameter(
-                    registry, repo, op->primary_id)));
-        }
-        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
-            repo, risks, risk_count, op->primary_id));
-        return semantic_add_parameter_object_ref_risk(
-            registry, repo, risks, risk_count, op->primary_id);
+        return semantic_validate_set_parameter(&env);
     case NMO_EDIT_OP_ADD_NODE:
-        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
-            repo, risks, risk_count,
-            op->data.add_node.parent_behavior_id));
-        NMO_RETURN_IF_ERROR(semantic_add_behavior_owner_ref_risk(
-            registry,
-            repo,
-            risks,
-            risk_count,
-            op->data.add_node.parent_behavior_id));
-        NMO_RETURN_IF_ERROR(semantic_add_building_block_risk(
-            ctx,
-            risks,
-            risk_count,
-            op->data.add_node.parent_behavior_id,
-            op->data.add_node.bb_guid));
-        return semantic_add_manager_default_risks(
-            workspace,
-            ctx,
-            risks,
-            risk_count,
-            op->data.add_node.parent_behavior_id,
-            op->data.add_node.bb_guid,
-            op->data.add_node.has_options
-                ? op->data.add_node.options.manager_entry
-                : nmo_manager_entry_options_default());
+        return semantic_validate_add_node(&env);
     case NMO_EDIT_OP_REMOVE_NODE:
-        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
-            repo, risks, risk_count,
-            op->data.remove_node.parent_behavior_id));
-        NMO_RETURN_IF_ERROR(semantic_add_behavior_owner_ref_risk(
-            registry,
-            repo,
-            risks,
-            risk_count,
-            op->data.remove_node.parent_behavior_id));
-        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
-            repo, risks, risk_count, op->data.remove_node.node_id));
-        return semantic_add_behavior_node_ref_risk(
-            registry, repo, risks, risk_count, op->data.remove_node.node_id);
+        return semantic_validate_remove_node(&env);
     case NMO_EDIT_OP_ADD_IO:
-        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
-            repo, risks, risk_count, op->data.add_io.behavior_id));
-        return semantic_add_behavior_owner_ref_risk(
-            registry, repo, risks, risk_count, op->data.add_io.behavior_id);
+        return semantic_validate_add_io(&env);
     case NMO_EDIT_OP_RENAME_IO:
-        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
-            repo, risks, risk_count, op->data.rename_io.io_id));
-        return semantic_add_behavior_io_ref_risk(
-            registry, repo, risks, risk_count, op->data.rename_io.io_id);
+        return semantic_validate_rename_io(&env);
     case NMO_EDIT_OP_REMOVE_IO:
-        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
-            repo, risks, risk_count, op->data.remove_io.io_id));
-        return semantic_add_behavior_io_ref_risk(
-            registry, repo, risks, risk_count, op->data.remove_io.io_id);
+        return semantic_validate_remove_io(&env);
     case NMO_EDIT_OP_ADD_BEHAVIOR_LINK:
-        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
-            repo, risks, risk_count, op->data.add_link.parent_behavior_id));
-        NMO_RETURN_IF_ERROR(semantic_add_behavior_owner_ref_risk(
-            registry,
-            repo,
-            risks,
-            risk_count,
-            op->data.add_link.parent_behavior_id));
-        if (!op->data.add_link.from_io_ref.has_ref) {
-            NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
-                repo, risks, risk_count, op->data.add_link.from_io_id));
-            NMO_RETURN_IF_ERROR(semantic_add_class_ref_risk(
-                registry,
-                repo,
-                risks,
-                risk_count,
-                op->data.add_link.from_io_id,
-                NMO_CID_BEHAVIORIO,
-                "control_endpoint_type_mismatch",
-                "Control-flow link endpoint must be a behavior IO"));
-            NMO_RETURN_IF_ERROR(semantic_add_control_endpoint_scope_risk(
-                registry,
-                repo,
-                risks,
-                risk_count,
-                op->data.add_link.parent_behavior_id,
-                op->data.add_link.from_io_id));
-        } else {
-            NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
-                ctx,
-                plan,
-                op_index,
-                op->data.add_link.from_io_ref.operation_index,
-                op->data.add_link.from_io_ref.handle_name,
-                op->primary_id,
-                risks,
-                risk_count));
-            NMO_RETURN_IF_ERROR(semantic_add_control_handle_ref_risk(
-                plan,
-                op->data.add_link.from_io_ref.operation_index,
-                op->data.add_link.from_io_ref.handle_name,
-                op->primary_id,
-                risks,
-                risk_count));
-        }
-        if (!op->data.add_link.to_io_ref.has_ref) {
-            NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
-                repo, risks, risk_count, op->data.add_link.to_io_id));
-            NMO_RETURN_IF_ERROR(semantic_add_class_ref_risk(
-                registry,
-                repo,
-                risks,
-                risk_count,
-                op->data.add_link.to_io_id,
-                NMO_CID_BEHAVIORIO,
-                "control_endpoint_type_mismatch",
-                "Control-flow link endpoint must be a behavior IO"));
-            NMO_RETURN_IF_ERROR(semantic_add_control_endpoint_scope_risk(
-                registry,
-                repo,
-                risks,
-                risk_count,
-                op->data.add_link.parent_behavior_id,
-                op->data.add_link.to_io_id));
-        } else {
-            NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
-                ctx,
-                plan,
-                op_index,
-                op->data.add_link.to_io_ref.operation_index,
-                op->data.add_link.to_io_ref.handle_name,
-                op->primary_id,
-                risks,
-                risk_count));
-            NMO_RETURN_IF_ERROR(semantic_add_control_handle_ref_risk(
-                plan,
-                op->data.add_link.to_io_ref.operation_index,
-                op->data.add_link.to_io_ref.handle_name,
-                op->primary_id,
-                risks,
-                risk_count));
-        }
-        return semantic_add_plan_activation_delay_risk(
-            risks,
-            risk_count,
-            op->data.add_link.parent_behavior_id,
-            op->data.add_link.activation_delay);
+        return semantic_validate_add_behavior_link(&env);
     case NMO_EDIT_OP_REWIRE_BEHAVIOR_LINK:
-    {
-        nmo_object_id_t link_owner_id = 0u;
-        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
-            repo, risks, risk_count, op->data.rewire_link.link_id));
-        NMO_RETURN_IF_ERROR(semantic_add_class_ref_risk(
-            registry,
-            repo,
-            risks,
-            risk_count,
-            op->data.rewire_link.link_id,
-            NMO_CID_BEHAVIORLINK,
-            "control_link_type_mismatch",
-            "Control-flow link operation expects a behavior link"));
-        (void)semantic_find_behavior_link_owner(
-            registry, repo, op->data.rewire_link.link_id, &link_owner_id);
-        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
-            repo, risks, risk_count, op->data.rewire_link.from_io_id));
-        NMO_RETURN_IF_ERROR(semantic_add_class_ref_risk(
-            registry,
-            repo,
-            risks,
-            risk_count,
-            op->data.rewire_link.from_io_id,
-            NMO_CID_BEHAVIORIO,
-            "control_endpoint_type_mismatch",
-            "Control-flow link endpoint must be a behavior IO"));
-        NMO_RETURN_IF_ERROR(semantic_add_control_endpoint_scope_risk(
-            registry,
-            repo,
-            risks,
-            risk_count,
-            link_owner_id,
-            op->data.rewire_link.from_io_id));
-        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
-            repo, risks, risk_count, op->data.rewire_link.to_io_id));
-        NMO_RETURN_IF_ERROR(semantic_add_class_ref_risk(
-            registry,
-            repo,
-            risks,
-            risk_count,
-            op->data.rewire_link.to_io_id,
-            NMO_CID_BEHAVIORIO,
-            "control_endpoint_type_mismatch",
-            "Control-flow link endpoint must be a behavior IO"));
-        return semantic_add_control_endpoint_scope_risk(
-            registry,
-            repo,
-            risks,
-            risk_count,
-            link_owner_id,
-            op->data.rewire_link.to_io_id);
-    }
+        return semantic_validate_rewire_behavior_link(&env);
     case NMO_EDIT_OP_SET_BEHAVIOR_LINK_DELAY:
-        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
-            repo, risks, risk_count, op->data.set_link_delay.link_id));
-        NMO_RETURN_IF_ERROR(semantic_add_class_ref_risk(
-            registry,
-            repo,
-            risks,
-            risk_count,
-            op->data.set_link_delay.link_id,
-            NMO_CID_BEHAVIORLINK,
-            "control_link_type_mismatch",
-            "Control-flow link operation expects a behavior link"));
-        return semantic_add_plan_activation_delay_risk(
-            risks,
-            risk_count,
-            op->data.set_link_delay.link_id,
-            op->data.set_link_delay.activation_delay);
+        return semantic_validate_set_behavior_link_delay(&env);
     case NMO_EDIT_OP_REMOVE_BEHAVIOR_LINK:
-        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
-            repo, risks, risk_count, op->data.remove_link.parent_behavior_id));
-        NMO_RETURN_IF_ERROR(semantic_add_behavior_owner_ref_risk(
-            registry,
-            repo,
-            risks,
-            risk_count,
-            op->data.remove_link.parent_behavior_id));
-        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
-            repo, risks, risk_count, op->data.remove_link.link_id));
-        return semantic_add_class_ref_risk(
-            registry,
-            repo,
-            risks,
-            risk_count,
-            op->data.remove_link.link_id,
-            NMO_CID_BEHAVIORLINK,
-            "control_link_type_mismatch",
-            "Control-flow link operation expects a behavior link");
+        return semantic_validate_remove_behavior_link(&env);
     case NMO_EDIT_OP_ADD_PARAMETER:
-        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
-            repo, risks, risk_count,
-            op->data.add_parameter.owner_behavior_id));
-        return semantic_add_behavior_owner_ref_risk(
-            registry, repo, risks, risk_count,
-            op->data.add_parameter.owner_behavior_id);
+        return semantic_validate_add_parameter(&env);
     case NMO_EDIT_OP_CONNECT_PARAMETER:
-        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
-            repo, risks, risk_count,
-            op->data.connect_parameter.source_parameter_id));
-        NMO_RETURN_IF_ERROR(semantic_add_parameter_object_ref_risk(
-            registry, repo, risks, risk_count,
-            op->data.connect_parameter.source_parameter_id));
-        if (op->data.connect_parameter.target_parameter_ref.has_ref) {
-            NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
-                ctx,
-                plan,
-                op_index,
-                op->data.connect_parameter.target_parameter_ref.operation_index,
-                op->data.connect_parameter.target_parameter_ref.handle_name,
-                op->primary_id,
-                risks,
-                risk_count));
-            NMO_RETURN_IF_ERROR(semantic_add_parameter_handle_ref_risk(
-                plan,
-                op->data.connect_parameter.target_parameter_ref.operation_index,
-                op->data.connect_parameter.target_parameter_ref.handle_name,
-                op->primary_id,
-                risks,
-                risk_count));
-            return semantic_add_parameter_type_desc_mismatch_risk(
-                semantic_parameter_type_desc(
-                    ctx,
-                    repo,
-                    op->data.connect_parameter.source_parameter_id),
-                semantic_parameter_handle_type_desc(
-                    ctx,
-                    plan,
-                    op->data.connect_parameter.target_parameter_ref.operation_index,
-                    op->data.connect_parameter.target_parameter_ref.handle_name),
-                risks,
-                risk_count,
-                op->primary_id);
-        }
-        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
-            repo, risks, risk_count,
-            op->data.connect_parameter.target_parameter_id));
-        NMO_RETURN_IF_ERROR(semantic_add_parameter_object_ref_risk(
-            registry, repo, risks, risk_count,
-            op->data.connect_parameter.target_parameter_id));
-        NMO_RETURN_IF_ERROR(semantic_add_parameterin_ref_risk(
-            registry, repo, risks, risk_count,
-            op->data.connect_parameter.target_parameter_id));
-        return semantic_add_parameter_type_mismatch_risk(
-            registry,
-            repo,
-            risks,
-            risk_count,
-            op->data.connect_parameter.source_parameter_id,
-            op->data.connect_parameter.target_parameter_id);
+        return semantic_validate_connect_parameter(&env);
     case NMO_EDIT_OP_DISCONNECT_PARAMETER:
-        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
-            repo, risks, risk_count,
-            op->data.disconnect_parameter.target_parameter_id));
-        NMO_RETURN_IF_ERROR(semantic_add_parameter_object_ref_risk(
-            registry, repo, risks, risk_count,
-            op->data.disconnect_parameter.target_parameter_id));
-        return semantic_add_parameterin_ref_risk(
-            registry, repo, risks, risk_count,
-            op->data.disconnect_parameter.target_parameter_id);
+        return semantic_validate_disconnect_parameter(&env);
     case NMO_EDIT_OP_REMOVE_PARAMETER:
-        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
-            repo, risks, risk_count,
-            op->data.remove_parameter.parameter_id));
-        return semantic_add_parameter_object_ref_risk(
-            registry, repo, risks, risk_count,
-            op->data.remove_parameter.parameter_id);
-    case NMO_EDIT_OP_ADD_OPERATION: {
-        const nmo_type_descriptor_t *in1_type = NULL;
-        const nmo_type_descriptor_t *in2_type = NULL;
-        const nmo_type_descriptor_t *out_type = NULL;
-        bool has_in1 = false;
-        bool has_in2 = false;
-        bool has_out = false;
-
-        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
-            repo, risks, risk_count,
-            op->data.add_operation.parent_behavior_id));
-        NMO_RETURN_IF_ERROR(semantic_add_behavior_owner_ref_risk(
-            registry,
-            repo,
-            risks,
-            risk_count,
-            op->data.add_operation.parent_behavior_id));
-        if (op->data.add_operation.in1_parameter_ref.has_ref) {
-            NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
-                ctx,
-                plan,
-                op_index,
-                op->data.add_operation.in1_parameter_ref.operation_index,
-                op->data.add_operation.in1_parameter_ref.handle_name,
-                op->primary_id,
-                risks,
-                risk_count));
-            NMO_RETURN_IF_ERROR(semantic_add_parameter_handle_ref_risk(
-                plan,
-                op->data.add_operation.in1_parameter_ref.operation_index,
-                op->data.add_operation.in1_parameter_ref.handle_name,
-                op->primary_id,
-                risks,
-                risk_count));
-            in1_type = semantic_parameter_handle_type_desc(
-                ctx,
-                plan,
-                op->data.add_operation.in1_parameter_ref.operation_index,
-                op->data.add_operation.in1_parameter_ref.handle_name);
-            has_in1 = true;
-        } else {
-            NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
-                repo, risks, risk_count,
-                op->data.add_operation.in1_parameter_id));
-            NMO_RETURN_IF_ERROR(semantic_add_parameter_object_ref_risk(
-                registry, repo, risks, risk_count,
-                op->data.add_operation.in1_parameter_id));
-            in1_type = semantic_parameter_type_desc(
-                ctx, repo, op->data.add_operation.in1_parameter_id);
-            has_in1 = op->data.add_operation.in1_parameter_id != 0u;
-        }
-        if (op->data.add_operation.in2_parameter_ref.has_ref) {
-            NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
-                ctx,
-                plan,
-                op_index,
-                op->data.add_operation.in2_parameter_ref.operation_index,
-                op->data.add_operation.in2_parameter_ref.handle_name,
-                op->primary_id,
-                risks,
-                risk_count));
-            NMO_RETURN_IF_ERROR(semantic_add_parameter_handle_ref_risk(
-                plan,
-                op->data.add_operation.in2_parameter_ref.operation_index,
-                op->data.add_operation.in2_parameter_ref.handle_name,
-                op->primary_id,
-                risks,
-                risk_count));
-            in2_type = semantic_parameter_handle_type_desc(
-                ctx,
-                plan,
-                op->data.add_operation.in2_parameter_ref.operation_index,
-                op->data.add_operation.in2_parameter_ref.handle_name);
-            has_in2 = true;
-        } else {
-            NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
-                repo, risks, risk_count,
-                op->data.add_operation.in2_parameter_id));
-            NMO_RETURN_IF_ERROR(semantic_add_parameter_object_ref_risk(
-                registry, repo, risks, risk_count,
-                op->data.add_operation.in2_parameter_id));
-            in2_type = semantic_parameter_type_desc(
-                ctx, repo, op->data.add_operation.in2_parameter_id);
-            has_in2 = op->data.add_operation.in2_parameter_id != 0u;
-        }
-        if (op->data.add_operation.out_parameter_ref.has_ref) {
-            NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
-                ctx,
-                plan,
-                op_index,
-                op->data.add_operation.out_parameter_ref.operation_index,
-                op->data.add_operation.out_parameter_ref.handle_name,
-                op->primary_id,
-                risks,
-                risk_count));
-            NMO_RETURN_IF_ERROR(semantic_add_parameter_handle_ref_risk(
-                plan,
-                op->data.add_operation.out_parameter_ref.operation_index,
-                op->data.add_operation.out_parameter_ref.handle_name,
-                op->primary_id,
-                risks,
-                risk_count));
-            out_type = semantic_parameter_handle_type_desc(
-                ctx,
-                plan,
-                op->data.add_operation.out_parameter_ref.operation_index,
-                op->data.add_operation.out_parameter_ref.handle_name);
-            has_out = true;
-        } else {
-            NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
-                repo, risks, risk_count,
-                op->data.add_operation.out_parameter_id));
-            NMO_RETURN_IF_ERROR(semantic_add_parameter_object_ref_risk(
-                registry, repo, risks, risk_count,
-                op->data.add_operation.out_parameter_id));
-            out_type = semantic_parameter_type_desc(
-                ctx, repo, op->data.add_operation.out_parameter_id);
-            has_out = op->data.add_operation.out_parameter_id != 0u;
-        }
-        return semantic_add_operation_signature_type_risk(
-            ctx,
-            risks,
-            risk_count,
-            op->primary_id,
-            op->data.add_operation.operation_guid,
-            in1_type,
-            has_in1,
-            in2_type,
-            has_in2,
-            out_type,
-            has_out);
-    }
-    case NMO_EDIT_OP_REWIRE_OPERATION: {
-        const nmo_parameteroperation_state_t *state = NULL;
-        const nmo_type_descriptor_t *in1_type = NULL;
-        const nmo_type_descriptor_t *in2_type = NULL;
-        const nmo_type_descriptor_t *out_type = NULL;
-        bool has_in1 = false;
-        bool has_in2 = false;
-        bool has_out = false;
-
-        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
-            repo, risks, risk_count,
-            op->data.rewire_operation.operation_id));
-        NMO_RETURN_IF_ERROR(semantic_add_class_ref_risk(
-            registry,
-            repo,
-            risks,
-            risk_count,
-            op->data.rewire_operation.operation_id,
-            NMO_CID_PARAMETEROPERATION,
-            "operation_object_type_mismatch",
-            "Edit operation expects a parameter operation"));
-        state = semantic_parameteroperation_state(
-            registry, repo, op->data.rewire_operation.operation_id);
-        if (state == NULL) {
-            return NMO_OK;
-        }
-
-        if ((op->data.rewire_operation.slot_flags &
-             NMO_SCRIPT_EDIT_OP_SLOT_IN1) != 0u) {
-            if (op->data.rewire_operation.in1_parameter_ref.has_ref) {
-                NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
-                    ctx,
-                    plan,
-                    op_index,
-                    op->data.rewire_operation.in1_parameter_ref.operation_index,
-                    op->data.rewire_operation.in1_parameter_ref.handle_name,
-                    op->primary_id,
-                    risks,
-                    risk_count));
-                NMO_RETURN_IF_ERROR(semantic_add_parameter_handle_ref_risk(
-                    plan,
-                    op->data.rewire_operation.in1_parameter_ref.operation_index,
-                    op->data.rewire_operation.in1_parameter_ref.handle_name,
-                    op->primary_id,
-                    risks,
-                    risk_count));
-                in1_type = semantic_parameter_handle_type_desc(
-                    ctx,
-                    plan,
-                    op->data.rewire_operation.in1_parameter_ref.operation_index,
-                    op->data.rewire_operation.in1_parameter_ref.handle_name);
-                has_in1 = true;
-            } else {
-                NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
-                    repo, risks, risk_count,
-                    op->data.rewire_operation.in1_parameter_id));
-                NMO_RETURN_IF_ERROR(semantic_add_parameter_object_ref_risk(
-                    registry, repo, risks, risk_count,
-                    op->data.rewire_operation.in1_parameter_id));
-                in1_type = semantic_parameter_type_desc(
-                    ctx, repo, op->data.rewire_operation.in1_parameter_id);
-                has_in1 = op->data.rewire_operation.in1_parameter_id != 0u;
-            }
-        } else {
-            const nmo_object_id_t existing_in1_id =
-                state->has_in1
-                    ? nmo_parameteroperation_in1_id(state)
-                    : 0u;
-            NMO_RETURN_IF_ERROR(semantic_add_operation_slot_ref_risk(
-                registry,
-                repo,
-                risks,
-                risk_count,
-                existing_in1_id));
-            in1_type = semantic_parameter_type_desc(
-                ctx, repo, existing_in1_id);
-            has_in1 = existing_in1_id != 0u;
-        }
-
-        if ((op->data.rewire_operation.slot_flags &
-             NMO_SCRIPT_EDIT_OP_SLOT_IN2) != 0u) {
-            if (op->data.rewire_operation.in2_parameter_ref.has_ref) {
-                NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
-                    ctx,
-                    plan,
-                    op_index,
-                    op->data.rewire_operation.in2_parameter_ref.operation_index,
-                    op->data.rewire_operation.in2_parameter_ref.handle_name,
-                    op->primary_id,
-                    risks,
-                    risk_count));
-                NMO_RETURN_IF_ERROR(semantic_add_parameter_handle_ref_risk(
-                    plan,
-                    op->data.rewire_operation.in2_parameter_ref.operation_index,
-                    op->data.rewire_operation.in2_parameter_ref.handle_name,
-                    op->primary_id,
-                    risks,
-                    risk_count));
-                in2_type = semantic_parameter_handle_type_desc(
-                    ctx,
-                    plan,
-                    op->data.rewire_operation.in2_parameter_ref.operation_index,
-                    op->data.rewire_operation.in2_parameter_ref.handle_name);
-                has_in2 = true;
-            } else {
-                NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
-                    repo, risks, risk_count,
-                    op->data.rewire_operation.in2_parameter_id));
-                NMO_RETURN_IF_ERROR(semantic_add_parameter_object_ref_risk(
-                    registry, repo, risks, risk_count,
-                    op->data.rewire_operation.in2_parameter_id));
-                in2_type = semantic_parameter_type_desc(
-                    ctx, repo, op->data.rewire_operation.in2_parameter_id);
-                has_in2 = op->data.rewire_operation.in2_parameter_id != 0u;
-            }
-        } else {
-            const nmo_object_id_t existing_in2_id =
-                state->has_in2
-                    ? nmo_parameteroperation_in2_id(state)
-                    : 0u;
-            NMO_RETURN_IF_ERROR(semantic_add_operation_slot_ref_risk(
-                registry,
-                repo,
-                risks,
-                risk_count,
-                existing_in2_id));
-            in2_type = semantic_parameter_type_desc(
-                ctx, repo, existing_in2_id);
-            has_in2 = existing_in2_id != 0u;
-        }
-
-        if ((op->data.rewire_operation.slot_flags &
-             NMO_SCRIPT_EDIT_OP_SLOT_OUT) != 0u) {
-            if (op->data.rewire_operation.out_parameter_ref.has_ref) {
-                NMO_RETURN_IF_ERROR(semantic_validate_handle_ref(
-                    ctx,
-                    plan,
-                    op_index,
-                    op->data.rewire_operation.out_parameter_ref.operation_index,
-                    op->data.rewire_operation.out_parameter_ref.handle_name,
-                    op->primary_id,
-                    risks,
-                    risk_count));
-                NMO_RETURN_IF_ERROR(semantic_add_parameter_handle_ref_risk(
-                    plan,
-                    op->data.rewire_operation.out_parameter_ref.operation_index,
-                    op->data.rewire_operation.out_parameter_ref.handle_name,
-                    op->primary_id,
-                    risks,
-                    risk_count));
-                out_type = semantic_parameter_handle_type_desc(
-                    ctx,
-                    plan,
-                    op->data.rewire_operation.out_parameter_ref.operation_index,
-                    op->data.rewire_operation.out_parameter_ref.handle_name);
-                has_out = true;
-            } else {
-                NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
-                    repo, risks, risk_count,
-                    op->data.rewire_operation.out_parameter_id));
-                NMO_RETURN_IF_ERROR(semantic_add_parameter_object_ref_risk(
-                    registry, repo, risks, risk_count,
-                    op->data.rewire_operation.out_parameter_id));
-                out_type = semantic_parameter_type_desc(
-                    ctx, repo, op->data.rewire_operation.out_parameter_id);
-                has_out = op->data.rewire_operation.out_parameter_id != 0u;
-            }
-        } else {
-            const nmo_object_id_t existing_out_id =
-                state->has_out
-                    ? nmo_parameteroperation_out_id(state)
-                    : 0u;
-            NMO_RETURN_IF_ERROR(semantic_add_operation_slot_ref_risk(
-                registry,
-                repo,
-                risks,
-                risk_count,
-                existing_out_id));
-            out_type = semantic_parameter_type_desc(
-                ctx, repo, existing_out_id);
-            has_out = existing_out_id != 0u;
-        }
-
-        return semantic_add_operation_signature_type_risk(
-            ctx,
-            risks,
-            risk_count,
-            op->data.rewire_operation.operation_id,
-            state->operation_guid,
-            in1_type,
-            has_in1,
-            in2_type,
-            has_in2,
-            out_type,
-            has_out);
-    }
+        return semantic_validate_remove_parameter(&env);
+    case NMO_EDIT_OP_ADD_OPERATION:
+        return semantic_validate_add_operation(&env);
+    case NMO_EDIT_OP_REWIRE_OPERATION:
+        return semantic_validate_rewire_operation(&env);
     case NMO_EDIT_OP_REMOVE_OPERATION:
-        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
-            repo, risks, risk_count,
-            op->data.remove_operation.operation_id));
-        return semantic_add_class_ref_risk(
-            registry,
-            repo,
-            risks,
-            risk_count,
-            op->data.remove_operation.operation_id,
-            NMO_CID_PARAMETEROPERATION,
-            "operation_object_type_mismatch",
-            "Edit operation expects a parameter operation");
+        return semantic_validate_remove_operation(&env);
     case NMO_EDIT_OP_INTERFACE_POLICY:
-        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
-            repo, risks, risk_count, op->data.interface_policy.behavior_id));
-        NMO_RETURN_IF_ERROR(semantic_add_behavior_owner_ref_risk(
-            registry, repo, risks, risk_count,
-            op->data.interface_policy.behavior_id));
-        return semantic_add_interface_policy_risks(
-            registry,
-            repo,
-            risks,
-            risk_count,
-            op->data.interface_policy.behavior_id,
-            op->data.interface_policy.mode);
+        return semantic_validate_interface_policy(&env);
     case NMO_EDIT_OP_SET_DATA_CELL:
-        return semantic_add_data_cell_risk(
-            nmo_workspace_internal_type_registry(workspace),
-            repo,
-            risks,
-            risk_count,
-            op->data.data_cell.dataarray_id,
-            op->data.data_cell.row,
-            op->data.data_cell.col,
-            op->data.data_cell.value);
+        return semantic_validate_set_data_cell(&env);
     case NMO_EDIT_OP_FOLD:
         return NMO_OK;
     case NMO_EDIT_OP_REPLACE_BB:
-        NMO_RETURN_IF_ERROR(semantic_add_missing_ref_risk(
-            repo, risks, risk_count,
-            op->data.replace_bb.desc.behavior_id));
-        NMO_RETURN_IF_ERROR(semantic_add_behavior_owner_ref_risk(
-            registry,
-            repo,
-            risks,
-            risk_count,
-            op->data.replace_bb.desc.behavior_id));
-        NMO_RETURN_IF_ERROR(semantic_add_behavior_target_consistency_risk(
-            ctx,
-            repo,
-            risks,
-            risk_count,
-            op->data.replace_bb.desc.behavior_id));
-        NMO_RETURN_IF_ERROR(semantic_add_behavior_prototype_consistency_risk(
-            registry,
-            repo,
-            risks,
-            risk_count,
-            op->data.replace_bb.desc.behavior_id));
-        return semantic_add_building_block_risk(
-            ctx,
-            risks,
-            risk_count,
-            op->data.replace_bb.desc.behavior_id,
-            op->data.replace_bb.desc.block_guid);
+        return semantic_validate_replace_bb(&env);
     default:
         return NMO_OK;
     }
