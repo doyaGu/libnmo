@@ -127,6 +127,7 @@ typedef struct nmo_behavior_state {
     
     /* Core behavior properties */
     uint32_t flags;                        /**< Behavior flags (type, locked, etc.) */
+    uint32_t runtime_flags;                /**< Runtime bits CK keeps in its flags (active, *NEXTFRAME, EXECUTEDLASTFRAME), written back unchanged */
     int32_t priority;                      /**< Execution priority (default 0) */
     int32_t compatible_class_id;           /**< Compatible object class ID */
     nmo_ref_t owner;                       /**< Owner object (legacy formats) */

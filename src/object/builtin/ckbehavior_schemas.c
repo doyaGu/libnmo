@@ -47,6 +47,13 @@
 #include <stdalign.h>
 #include <string.h>
 
+/* Bits CK keeps in a behavior's flags only while it runs. Load strips them
+ * from the flags field; Save writes them back from runtime_flags. */
+#define CKBEHAVIOR_RUNTIME_STATE_FLAGS \
+    (CKBEHAVIOR_ACTIVE | CKBEHAVIOR_EXECUTEDLASTFRAME | \
+     CKBEHAVIOR_DEACTIVATENEXTFRAME | CKBEHAVIOR_RESETNEXTFRAME | \
+     CKBEHAVIOR_ACTIVATENEXTFRAME)
+
 static void nmo_behavior_ref_dispose(void *element, void *user_data)
 {
     (void)user_data;
@@ -206,6 +213,7 @@ static const nmo_type_field_t nmo_behavior_fields[] = {
     NMO_FIELD(nmo_behavior_state_t, compatible_class_id, CKPGUID_INT),
     NMO_FIELD_REF_VALUE(nmo_behavior_state_t, owner),
     NMO_FIELD(nmo_behavior_state_t, behavior_type, NMO_GUID_ENUM_CK_BEHAVIOR_TYPE),
+    NMO_FIELD(nmo_behavior_state_t, runtime_flags, CKPGUID_UINT32),
     NMO_FIELD(nmo_behavior_state_t, save_flags, CKPGUID_UINT32),
     NMO_FIELD(nmo_behavior_state_t, has_save_flags, CKPGUID_BOOL),
     NMO_FIELD(nmo_behavior_state_t, use_legacy_identifiers, CKPGUID_BOOL),
@@ -662,13 +670,10 @@ static nmo_status_t nmo_behavior_deserialize_internal(
             NMO_RETURN_IF_ERROR(nmo_behavior_require_dwords(
                 chunk, fixed_dwords));
 
-            out_state->flags = flags & ~(CKBEHAVIOR_ACTIVE |
-                                         CKBEHAVIOR_PRIORITY |
+            out_state->flags = flags & ~(CKBEHAVIOR_PRIORITY |
                                          CKBEHAVIOR_COMPATIBLECLASSID |
-                                         CKBEHAVIOR_EXECUTEDLASTFRAME |
-                                         CKBEHAVIOR_DEACTIVATENEXTFRAME |
-                                         CKBEHAVIOR_RESETNEXTFRAME |
-                                         CKBEHAVIOR_ACTIVATENEXTFRAME);
+                                         CKBEHAVIOR_RUNTIME_STATE_FLAGS);
+            out_state->runtime_flags = flags & CKBEHAVIOR_RUNTIME_STATE_FLAGS;
 
             if (flags & CKBEHAVIOR_BUILDINGBLOCK) {
                 result = nmo_chunk_read_guid(chunk, &out_state->block_guid);
@@ -779,10 +784,8 @@ static nmo_status_t nmo_behavior_deserialize_internal(
 
             result = nmo_chunk_read_dword(chunk, &flags);
             if (result != NMO_OK) return result;
-            out_state->flags = flags & ~(CKBEHAVIOR_ACTIVATENEXTFRAME |
-                                         CKBEHAVIOR_RESETNEXTFRAME |
-                                         CKBEHAVIOR_DEACTIVATENEXTFRAME |
-                                         CKBEHAVIOR_EXECUTEDLASTFRAME);
+            out_state->flags = flags & ~CKBEHAVIOR_RUNTIME_STATE_FLAGS;
+            out_state->runtime_flags = flags & CKBEHAVIOR_RUNTIME_STATE_FLAGS;
 
             {
                 uint32_t tmp_class_id = 0;
@@ -1249,7 +1252,7 @@ static nmo_status_t nmo_behavior_serialize_internal(
         NMO_RETURN_IF_ERROR(nmo_chunk_write_guid(
             out_chunk, in_state->block_guid));
         NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
-            out_chunk, in_state->flags));
+            out_chunk, in_state->flags | in_state->runtime_flags));
         NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
             out_chunk, (uint32_t)in_state->compatible_class_id));
         NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
@@ -1310,7 +1313,7 @@ static nmo_status_t nmo_behavior_serialize_internal(
     if (result != NMO_OK) return result;
 
     /* Write behavior flags */
-    uint32_t behavior_flags = in_state->flags;
+    uint32_t behavior_flags = in_state->flags | in_state->runtime_flags;
     if (!(behavior_flags & CKBEHAVIOR_BUILDINGBLOCK)) {
         behavior_flags &= ~CKBEHAVIOR_LOCKED;
     }
