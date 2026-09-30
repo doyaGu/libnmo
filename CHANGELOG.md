@@ -65,10 +65,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   per-execution data owned by optional components.
 - `nmo_chunk_identifier_remaining_dwords()` and `nmo_hash_fnv1a32_update()`, shared by the
   built-in schemas.
+- Animation controller helpers in `object/builtin/nmo_animation_schemas.h`:
+  `nmo_objanim_controller_format_key_size()` (bytes per key in a given animation format),
+  `nmo_objanim_controller_keys_size()` (bytes taken by N consecutive keys),
+  `nmo_objanim_controller_is_bezier()` and `nmo_objanim_bezier_key_decode()` with
+  `nmo_objanim_bezier_key_t` (one packed bezier key).
 
 ### Removed
 - The unused `save_buffer` module and its forward typedef `nmo_save_buffer_t`, and internal helpers
   with no callers.
+
+### Changed - Animation controllers and GUID headers
+- `nmo_objanim_controller_t` now describes decoded keys. With `key_count > 0`, `data` holds exactly
+  `key_count` keys; with `key_count == 0` it is an opaque blob that is written verbatim (unknown
+  controller types, empty controllers, or blobs that do not match the layout of their type).
+  In CONTROLLERS files `data_size` no longer includes the 4-byte key count, so it is the size of
+  the keys only, as it always was for controllers built by `animation import`, workspace edits and
+  project manifests.
+- `nmo_objanim_controller_key_size()` returns 0 for the bezier controller types (it returned 44,
+  the engine's in-memory key size). Bezier keys are variable-size on disk, so project manifests,
+  workspace edits and `animation import` now reject bezier controllers instead of writing keys of
+  the wrong size.
+- NEWDATA and LEGACY scale-axis keys are 24 bytes (time, an unused float, quaternion), not 20.
+  Workspace edits, the project validator and the manifest parser use
+  `nmo_objanim_controller_format_key_size()`, so a NEWDATA scale-axis key in a manifest has six
+  numbers. CONTROLLERS scale-axis keys stay 20 bytes (five numbers).
+- `animation keys` and `animation export` derive the bytes per key from the data, so they no
+  longer read past the data of an inconsistent controller, and they decode bezier keys (time,
+  position, flags and their tangents). `animation keys` names controller types by type rather than
+  by key size, and shows the format's `key_size`.
+- `object/nmo_object_guids.h` and `object/nmo_param_guids.h` moved to `type/nmo_object_guids.h` and
+  `type/nmo_param_guids.h`, because they only define GUID constants on top of `core/nmo_guid.h`.
+  The old headers remain as forwarders.
+
+### Fixed - CKObjectAnimation controller keys
+- CONTROLLERS-format controllers are stored as `[u32 key_count][keys]` (checked against the
+  engine in CK2_3D.dll). libnmo read the whole blob, set `key_count` to 0 and kept the count in
+  `data`, so `animation keys` and `animation export` showed no keys for any real file. Reading now
+  strips the count and fills `key_count`; writing adds it back. Every CONTROLLERS animation in
+  `data/` reserializes byte for byte.
+- Animations authored by `animation import`, workspace edits and project manifests in the
+  CONTROLLERS format were written without the key count, which the engine would read as the
+  first key's time. They now carry it. Files written by earlier versions lack it and, in
+  practice, are read as opaque blobs.
 
 ### Added - Phase 8: Round-Trip Framework
 - DOM comparison API (`nmo_comparison.h`): diff two loaded sessions at the object
