@@ -50,7 +50,7 @@ static void nmo_curvepoint_set_defaults(nmo_curvepoint_state_t *state) {
     state->has_default_data = 1;
     state->defaultdata_is_modern = 1;
     state->curve = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
-    state->use_tcb = 0;
+    state->tangent_mode = 0;
     state->linear = 0;
     state->tension = 0.0f;
     state->continuity = 0.0f;
@@ -193,7 +193,7 @@ static const nmo_type_field_t nmo_curvepoint_fields[] = {
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_curvepoint_state_t, has_default_data, CKPGUID_UINT8),
     NMO_FIELD_REF_VALUE(nmo_curvepoint_state_t, curve),
-    NMO_FIELD(nmo_curvepoint_state_t, use_tcb, CKPGUID_INT),
+    NMO_FIELD(nmo_curvepoint_state_t, tangent_mode, CKPGUID_INT),
     NMO_FIELD(nmo_curvepoint_state_t, linear, CKPGUID_INT),
     NMO_FIELD(nmo_curvepoint_state_t, tension, CKPGUID_FLOAT),
     NMO_FIELD(nmo_curvepoint_state_t, continuity, CKPGUID_FLOAT),
@@ -337,7 +337,7 @@ static nmo_status_t nmo_curvepoint_copy(
     copied.has_default_data = s->has_default_data;
     copied.defaultdata_is_modern = s->defaultdata_is_modern;
     copied.curve = s->curve;
-    copied.use_tcb = s->use_tcb;
+    copied.tangent_mode = s->tangent_mode;
     copied.linear = s->linear;
     copied.tension = s->tension;
     copied.continuity = s->continuity;
@@ -919,7 +919,7 @@ static nmo_status_t nmo_curvepoint_deserialize_internal(
     out_state->has_default_data = 0;
     out_state->defaultdata_is_modern = (data_version >= 5);
     out_state->curve = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
-    out_state->use_tcb = 0;
+    out_state->tangent_mode = 0;
     out_state->linear = 0;
     out_state->tension = 0.0f;
     out_state->continuity = 0.0f;
@@ -946,11 +946,11 @@ static nmo_status_t nmo_curvepoint_deserialize_internal(
                 return NMO_ERR_INVALID_FORMAT;
             }
             nmo_ref_t curve = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
-            int32_t use_tcb = 0;
+            int32_t tangent_mode = 0;
             int32_t linear = 0;
             nmo_vector_t legacy_position = {0.0f, 0.0f, 0.0f};
             NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &curve));
-            NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &use_tcb));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &tangent_mode));
             NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &linear));
 
             /* Legacy format includes position (3 floats) - consume it */
@@ -966,7 +966,7 @@ static nmo_status_t nmo_curvepoint_deserialize_internal(
             out_state->has_default_data = 1;
             out_state->defaultdata_is_modern = 0;
             out_state->curve = curve;
-            out_state->use_tcb = use_tcb;
+            out_state->tangent_mode = tangent_mode;
             out_state->linear = linear;
             out_state->legacy_position = legacy_position;
             out_state->has_legacy_position = 1;
@@ -1027,7 +1027,7 @@ static nmo_status_t nmo_curvepoint_deserialize_internal(
                 return NMO_ERR_INVALID_FORMAT;
             }
             nmo_ref_t curve = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
-            int32_t use_tcb = 0;
+            int32_t tangent_mode = 0;
             int32_t linear = 0;
             float tension = 0.0f;
             float continuity = 0.0f;
@@ -1035,7 +1035,7 @@ static nmo_status_t nmo_curvepoint_deserialize_internal(
             nmo_vector_t tangent_in = {0.0f, 0.0f, 0.0f};
             nmo_vector_t tangent_out = {0.0f, 0.0f, 0.0f};
             NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &curve));
-            NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &use_tcb));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &tangent_mode));
             NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &linear));
             NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &tension));
             NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &continuity));
@@ -1051,7 +1051,7 @@ static nmo_status_t nmo_curvepoint_deserialize_internal(
             out_state->has_default_data = 1;
             out_state->defaultdata_is_modern = 1;
             out_state->curve = curve;
-            out_state->use_tcb = use_tcb;
+            out_state->tangent_mode = tangent_mode;
             out_state->linear = linear;
             out_state->tension = tension;
             out_state->continuity = continuity;
@@ -1140,7 +1140,7 @@ static nmo_status_t nmo_curvepoint_serialize_internal(
         if (result != NMO_OK) return result;
         result = nmo_ref_write(out_chunk, &in_state->curve);
         if (result != NMO_OK) return result;
-        result = nmo_chunk_write_int(out_chunk, in_state->use_tcb);
+        result = nmo_chunk_write_int(out_chunk, in_state->tangent_mode);
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_int(out_chunk, in_state->linear);
         if (result != NMO_OK) return result;

@@ -8947,7 +8947,7 @@ TEST(chunk_id_remap, curvepoint_unresolved_curve_round_trips_raw_id) {
     ASSERT_EQ(NMO_OK, nmo_curvepoint_vtable.create(
         &copy_failed, NULL, NULL));
     copy_failed.curve = nmo_ref_from_raw(613);
-    copy_failed.use_tcb = 77;
+    copy_failed.tangent_mode = 77;
     nmo_allocator_t script_allocator =
         reloaded.base.base.base.scripts.allocator;
     reloaded.base.base.base.scripts.allocator = nmo_allocator_custom(
@@ -8956,7 +8956,7 @@ TEST(chunk_id_remap, curvepoint_unresolved_curve_round_trips_raw_id) {
         &reloaded, &copy_failed, &curvepoint_type, arena));
     reloaded.base.base.base.scripts.allocator = script_allocator;
     ASSERT_EQ(613u, copy_failed.curve.raw_id);
-    ASSERT_EQ(77, copy_failed.use_tcb);
+    ASSERT_EQ(77, copy_failed.tangent_mode);
 
     nmo_curvepoint_vtable.destroy(&source, NULL, NULL);
     nmo_curvepoint_vtable.destroy(&loaded, NULL, NULL);
@@ -8978,7 +8978,7 @@ TEST(chunk_id_remap, curvepoint_layout_follows_data_version) {
     nmo_curvepoint_state_t source;
     ASSERT_EQ(NMO_OK, nmo_curvepoint_vtable.create(&source, NULL, NULL));
     source.curve = nmo_ref_from_raw(721);
-    source.use_tcb = 1;
+    source.tangent_mode = 1;
     source.tension = 0.1f;
     source.continuity = 0.2f;
     source.bias = 0.3f;

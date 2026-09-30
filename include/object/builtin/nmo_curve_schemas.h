@@ -58,7 +58,7 @@ typedef struct nmo_curvepoint_state {
     uint8_t has_default_data;
     uint8_t defaultdata_is_modern;
     nmo_ref_t curve;
-    int32_t use_tcb;
+    int32_t tangent_mode;   /**< File value of the engine's m_UseTCB: 0 = TCB (tension, continuity, bias), 1 = explicit tangents. */
     int32_t linear;
     float tension;
     float continuity;
