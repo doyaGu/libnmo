@@ -535,12 +535,28 @@ static bool animation_keys_add_text_line(nmo_cli_record_t *item,
 }
 
 /*
+ * Bytes per key of a controller whose keys are floats (time first). Taken from
+ * the data itself so that it holds for every file layout, including the
+ * 24-byte scale-axis keys of NEWDATA and LEGACY files, and never reads past
+ * data. 0 when the keys cannot be decoded that way.
+ */
+static uint32_t animation_float_key_stride(const nmo_objanim_controller_t *ctrl)
+{
+    if (!ctrl->data || ctrl->key_count == 0 ||
+        nmo_objanim_controller_is_bezier(ctrl->type) ||
+        ctrl->data_size % ctrl->key_count != 0) {
+        return 0;
+    }
+    uint32_t stride = ctrl->data_size / ctrl->key_count;
+    return (stride >= sizeof(float) && stride % sizeof(float) == 0) ? stride : 0;
+}
+
+/*
  * Text lines for the keys of one controller: "t=<time> <values>" per key.
  * Controller types with an unknown layout have no decodable keys.
  */
 static bool animation_keys_add_text(nmo_cli_record_t *item,
-                                    const nmo_objanim_controller_t *ctrl,
-                                    uint32_t key_size)
+                                    const nmo_objanim_controller_t *ctrl)
 {
     if (!ctrl->data || ctrl->key_count == 0) {
         return true;
@@ -567,9 +583,10 @@ static bool animation_keys_add_text(nmo_cli_record_t *item,
             cursor += size;
             left -= size;
         }
-    } else if (key_size > 0) {
+    } else if (animation_float_key_stride(ctrl) > 0) {
         const float *floats = (const float *)ctrl->data;
-        uint32_t floats_per_key = key_size / (uint32_t)sizeof(float);
+        uint32_t floats_per_key =
+            animation_float_key_stride(ctrl) / (uint32_t)sizeof(float);
         for (uint32_t k = 0; k < shown; ++k) {
             if (!animation_keys_add_text_line(
                     item, floats + (size_t)k * floats_per_key, floats_per_key,
@@ -599,8 +616,7 @@ static void add_real_array(yyjson_mut_doc *doc, yyjson_mut_val *obj,
 
 /** Add decoded keys to JSON array */
 static void add_keys_json(yyjson_mut_doc *doc, yyjson_mut_val *keys_arr,
-                          const nmo_objanim_controller_t *ctrl,
-                          uint32_t key_size) {
+                          const nmo_objanim_controller_t *ctrl) {
     if (!ctrl->data || ctrl->key_count == 0) return;
 
     if (nmo_objanim_controller_is_bezier(ctrl->type)) {
@@ -623,9 +639,10 @@ static void add_keys_json(yyjson_mut_doc *doc, yyjson_mut_val *keys_arr,
             cursor += size;
             left -= size;
         }
-    } else if (key_size > 0) {
+    } else if (animation_float_key_stride(ctrl) > 0) {
         /* Float layout: time followed by the value floats */
-        uint32_t floats_per_key = key_size / (uint32_t)sizeof(float);
+        uint32_t floats_per_key =
+            animation_float_key_stride(ctrl) / (uint32_t)sizeof(float);
         const float *fp = (const float *)ctrl->data;
         for (uint32_t k = 0; k < ctrl->key_count; ++k) {
             const float *key = fp + (size_t)k * floats_per_key;
@@ -646,7 +663,7 @@ static bool animation_keys_json(yyjson_mut_doc *doc, yyjson_mut_val *obj,
     if (!keys_arr) {
         return false;
     }
-    add_keys_json(doc, keys_arr, ctrl, nmo_objanim_controller_key_size(ctrl->type));
+    add_keys_json(doc, keys_arr, ctrl);
     return yyjson_mut_obj_add_val(doc, obj, "keys", keys_arr);
 }
 
@@ -674,7 +691,8 @@ static nmo_cli_record_t *animation_keys_record_new(
     }
     for (uint32_t ci = 0; ok && ci < st->controller_count; ++ci) {
         const nmo_objanim_controller_t *ctrl = &st->controllers[ci];
-        uint32_t key_size = nmo_objanim_controller_key_size(ctrl->type);
+        uint32_t key_size =
+            nmo_objanim_controller_format_key_size(ctrl->type, st->format);
         nmo_cli_record_t *item = nmo_cli_record_new();
         ok = item != NULL &&
              nmo_cli_record_str_fmt(item, "type", NULL, "0x%08x", ctrl->type) &&
@@ -688,7 +706,7 @@ static nmo_cli_record_t *animation_keys_record_new(
                                     "key_size=%u, data=%u bytes\n",
                                     ci, ctrl->type, controller_type_name(ctrl->type),
                                     ctrl->key_count, key_size, ctrl->data_size) &&
-             animation_keys_add_text(item, ctrl, key_size) &&
+             animation_keys_add_text(item, ctrl) &&
              nmo_cli_record_raw(item, "\n");
         if (!ok) {
             nmo_cli_record_free(item);
@@ -844,11 +862,12 @@ static int export_one_animation(nmo_objectanimation_state_t *st,
                                controller_type_name(ctrl->type));
         yyjson_mut_obj_add_uint(doc, cobj, "key_count", ctrl->key_count);
 
-        uint32_t key_size = nmo_objanim_controller_key_size(ctrl->type);
+        uint32_t key_size =
+            nmo_objanim_controller_format_key_size(ctrl->type, st->format);
         yyjson_mut_obj_add_uint(doc, cobj, "key_size", key_size);
 
         yyjson_mut_val *keys_arr = yyjson_mut_arr(doc);
-        add_keys_json(doc, keys_arr, ctrl, key_size);
+        add_keys_json(doc, keys_arr, ctrl);
         yyjson_mut_obj_add_val(doc, cobj, "keys", keys_arr);
 
         yyjson_mut_arr_add_val(ctrl_arr, cobj);
@@ -1219,7 +1238,7 @@ int nmo_cmd_animation_import(int argc, char **argv, const nmo_cli_global_opts_t 
         }
 
         uint32_t key_count = (uint32_t)yyjson_get_uint(yyjson_obj_get(jctrl, "key_count"));
-        uint32_t key_size = nmo_objanim_controller_key_size(type);
+        uint32_t key_size = nmo_objanim_controller_format_key_size(type, format);
 
         /* Validate against JSON key_size if present */
         yyjson_val *jks = yyjson_obj_get(jctrl, "key_size");

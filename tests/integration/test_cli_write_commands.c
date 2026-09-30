@@ -1568,6 +1568,64 @@ TEST(cli_write, animation_import_controllers_format_keeps_key_counts) {
     write_probe_close(&probe);
 }
 
+TEST(cli_write, animation_import_newdata_scale_axis_uses_24_byte_keys) {
+    TEST_REQUIRE_FIXTURE("Ballance/MenuLevel.nmo");
+    make_dir("test_cli_write_tmp");
+
+    /* NEWDATA scale-axis keys are time, an unused float, then the quaternion. */
+    ASSERT_TRUE(write_text_file(
+        "test_cli_write_tmp/import_scale_axis.anim.json",
+        "{\n"
+        "  \"format\":\"NEWDATA\",\n"
+        "  \"entity_id\":520,\n"
+        "  \"length\":2.0,\n"
+        "  \"controllers\":[\n"
+        "    {\n"
+        "      \"type\":\"0x2f200b08\",\n"
+        "      \"key_count\":1,\n"
+        "      \"key_size\":24,\n"
+        "      \"keys\":[{\"time\":1.5,\"values\":[0,0.25,0.5,0.75,1]}]\n"
+        "    }\n"
+        "  ]\n"
+        "}\n"));
+    assert_cli_success(
+        "animation import \"test_cli_write_tmp/import_scale_axis.anim.json\" "
+        "\"" NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo") "\" "
+        "-o \"test_cli_write_tmp/animation_scale_axis_out.nmo\"",
+        "Created CKObjectAnimation");
+    assert_validate_ok("test_cli_write_tmp/animation_scale_axis_out.nmo");
+
+    write_semantic_probe_t probe;
+    assert_probe_open(&probe, "test_cli_write_tmp/animation_scale_axis_out.nmo");
+    nmo_object_t *imported = write_probe_object_by_name(&probe, "imported_anim");
+    ASSERT_NOT_NULL(imported);
+    const nmo_objectanimation_state_t *state =
+        (const nmo_objectanimation_state_t *)write_probe_state(
+            &probe, imported->id, CKPGUID_OBJECTANIMATION);
+    ASSERT_NOT_NULL(state);
+    ASSERT_EQ(CKOBJANIM_FORMAT_NEWDATA, state->format);
+    ASSERT_EQ(1u, state->controller_count);
+    ASSERT_EQ(0x2f200b08u, state->controllers[0].type);
+    ASSERT_EQ(1u, state->controllers[0].key_count);
+    ASSERT_EQ(24u, state->controllers[0].data_size);
+    const float *key = (const float *)state->controllers[0].data;
+    ASSERT_NOT_NULL(key);
+    ASSERT_FLOAT_EQ(1.5f, key[0], 0.0001f);
+    ASSERT_FLOAT_EQ(0.0f, key[1], 0.0001f);
+    ASSERT_FLOAT_EQ(1.0f, key[5], 0.0001f);
+    write_probe_close(&probe);
+
+    /* animation keys decodes all six floats of the stored key. */
+    assert_cli_success(
+        "animation keys --name imported_anim "
+        "\"test_cli_write_tmp/animation_scale_axis_out.nmo\"",
+        "key_size=24");
+    assert_cli_success(
+        "animation keys --name imported_anim "
+        "\"test_cli_write_tmp/animation_scale_axis_out.nmo\"",
+        "t=1.5000 0 0.25 0.5 0.75 1");
+}
+
 TEST(cli_write, parameter_set_persists_typed_object_and_raw_values) {
     TEST_REQUIRE_FIXTURE("Ballance/MenuLevel.nmo");
     make_dir("test_cli_write_tmp");
@@ -1700,6 +1758,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(cli_write, object_export_import_snapshot_round_trips_mesh_and_matrix);
     REGISTER_TEST(cli_write, data_entity_material_texture_animation_save_and_validate);
     REGISTER_TEST(cli_write, animation_import_controllers_format_keeps_key_counts);
+    REGISTER_TEST(cli_write, animation_import_newdata_scale_axis_uses_24_byte_keys);
     REGISTER_TEST(cli_write, parameter_set_persists_typed_object_and_raw_values);
     REGISTER_TEST(cli_write, entity_position_preserves_3dobject_chunk_and_plugin_dependencies);
 TEST_MAIN_END()
