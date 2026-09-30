@@ -110,6 +110,8 @@ static void ckspritetext_init_defaults(
     state->font_color = 0xFFFFFFFF;
     state->background_color = 0x00000000;
     state->needs_redraw = false;
+    /* RCKSpriteText::RCKSpriteText clears the ratio offset the 2D entity sets. */
+    state->base.entity.flags &= ~(uint32_t)CK_2DENTITY_RATIOOFFSET;
 }
 
 /* ========================================================================

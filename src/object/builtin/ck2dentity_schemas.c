@@ -164,6 +164,19 @@ static void nmo_2dentity_set_default_source_rect(
     (CK_2DENTITY_RESERVED3 | CK_2DENTITY_RATIOOFFSET | \
      CK_2DENTITY_CLIPTOCAMERAVIEW | CK_2DENTITY_STICKLEFT | CK_2DENTITY_STICKTOP)
 
+/* RCK2dEntity::RCK2dEntity: the flags above and the whole texture as source. */
+static nmo_status_t nmo_2dentity_create_default(
+    void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context)
+{
+    NMO_RETURN_IF_ERROR(nmo_2dentity_create(instance, type, context));
+    nmo_2dentity_state_t *state = (nmo_2dentity_state_t *)instance;
+    state->flags = NMO_2DENTITY_CTOR_FLAGS;
+    nmo_2dentity_set_default_source_rect(state, NMO_CID_2DENTITY);
+    NMO_RETURN_OK();
+}
+
 /* =============================================================================
  * CK2dEntity DESERIALIZATION
  * ============================================================================= */
@@ -824,7 +837,7 @@ nmo_type_vtable_t nmo_2dentity_vtable = {
     .pre_delete = nmo_2dentity_pre_delete,
     .post_delete = nmo_object_post_delete_noop,
     NMO_OBJECT_VTABLE(
-        nmo_2dentity_create,
+        nmo_2dentity_create_default,
         nmo_2dentity_destroy,
         nmo_2dentity_serialize,
         nmo_2dentity_deserialize,

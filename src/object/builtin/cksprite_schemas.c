@@ -52,6 +52,11 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
             &state->entity, NULL, context);
         if (result != NMO_OK) return result;
         state->sprite_ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+        /* RCKSprite::RCKSprite resets the source rectangle to nothing. */
+        state->entity.source_rect.left = 0.0f;
+        state->entity.source_rect.top = 0.0f;
+        state->entity.source_rect.right = 0.0f;
+        state->entity.source_rect.bottom = 0.0f;
     } while (0),
     nmo_2dentity_vtable.destroy(&state->entity, NULL, context))
 
