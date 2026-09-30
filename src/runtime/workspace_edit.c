@@ -2788,6 +2788,9 @@ nmo_status_t nmo_asset_edit_set_obj_mesh(
 
     nmo_chunk_t *chunk = NULL;
     if (status == NMO_OK) {
+        /* Only the geometry is replaced; the scripts, attributes, priority and
+           visibility of the object stay as they are. */
+        next.beobject = state->beobject;
         *state = next;
         chunk = nmo_object_get_chunk(mesh_object);
         if (chunk == NULL) {
