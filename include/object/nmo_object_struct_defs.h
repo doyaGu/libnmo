@@ -152,7 +152,8 @@ typedef struct nmo_texture_raw_slot {
     uint32_t red_mask;
     uint32_t green_mask;
     uint32_t blue_mask;
-    uint32_t compression;
+    uint32_t compression;   /* low four bits: 0 planes as stored, 1 Virtools DCT
+                               codec, other values store no colour planes */
     uint32_t blue_size;
     uint8_t *blue_data;
     uint32_t green_size;

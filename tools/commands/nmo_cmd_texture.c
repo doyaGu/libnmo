@@ -689,95 +689,6 @@ static uint8_t *decode_raw_slot(nmo_arena_t *arena,
 }
 
 /**
- * Check whether a raw slot holds compressed (e.g. DXT) data.
- */
-static bool raw_slot_is_compressed(const nmo_texture_raw_slot_t *rs) {
-    return rs->compression != 0;
-}
-
-/**
- * Map the raw slot compression field to an nmo_pixel_format_t DXT format.
- * Falls back to desired_video_format if the compression field is non-standard.
- */
-static nmo_pixel_format_t dxt_format_from_raw_slot(
-    const nmo_texture_raw_slot_t *rs, uint32_t desired_video_format) {
-    /* Common VX_TEXTURECOMPRESSION values match DXT type directly */
-    switch (rs->compression) {
-    case 1: return NMO_PIXEL_FORMAT_DXT1;
-    case 3: return NMO_PIXEL_FORMAT_DXT3;
-    case 5: return NMO_PIXEL_FORMAT_DXT5;
-    default: break;
-    }
-    /* Fall back to desired_video_format if it's a DXT format */
-    if (desired_video_format >= NMO_PIXEL_FORMAT_DXT1 &&
-        desired_video_format <= NMO_PIXEL_FORMAT_DXT5) {
-        return (nmo_pixel_format_t)desired_video_format;
-    }
-    return NMO_PIXEL_FORMAT_DXT1; /* last resort */
-}
-
-/**
- * Decode a DXT-compressed raw slot to RGBA pixels.
- * The compressed data is reconstituted from the channel buffers (typically
- * stored entirely in blue_data by the Virtools serializer).
- */
-static uint8_t *decode_raw_slot_dxt(nmo_arena_t *arena,
-                                    const nmo_texture_raw_slot_t *rs,
-                                    uint32_t desired_video_format,
-                                    int *out_w, int *out_h, int *out_ch) {
-    if (rs->width <= 0 || rs->height <= 0) return NULL;
-
-    nmo_pixel_format_t dxt_fmt = dxt_format_from_raw_slot(rs, desired_video_format);
-
-    /* Reconstitute contiguous DXT data from the 4 channel buffers.
-     * Virtools typically stores the full DXT stream in blue_data (first buffer).
-     * If data is split, concatenate all non-empty buffers. */
-    const uint8_t *bufs[] = { rs->blue_data, rs->green_data, rs->red_data, rs->alpha_data };
-    const uint32_t sizes[] = { rs->blue_size, rs->green_size, rs->red_size, rs->alpha_size };
-    size_t total_size = 0;
-    int nonempty_count = 0;
-    int first_nonempty = -1;
-    for (int i = 0; i < 4; i++) {
-        if (bufs[i] && sizes[i] > 0) {
-            total_size += sizes[i];
-            if (first_nonempty < 0) first_nonempty = i;
-            nonempty_count++;
-        }
-    }
-    if (total_size == 0 || first_nonempty < 0) return NULL;
-
-    const uint8_t *dxt_data;
-    if (nonempty_count == 1) {
-        /* Fast path: single buffer, no copy needed */
-        dxt_data = bufs[first_nonempty];
-    } else {
-        /* Concatenate multiple buffers */
-        uint8_t *concat = (uint8_t *)nmo_arena_alloc(arena, total_size, 1);
-        if (!concat) return NULL;
-        size_t offset = 0;
-        for (int i = 0; i < 4; i++) {
-            if (bufs[i] && sizes[i] > 0) {
-                memcpy(concat + offset, bufs[i], sizes[i]);
-                offset += sizes[i];
-            }
-        }
-        dxt_data = concat;
-    }
-
-    uint8_t *rgba = NULL;
-    nmo_status_t st = nmo_image_decode_dxt(
-        dxt_data, total_size,
-        rs->width, rs->height,
-        dxt_fmt, arena, &rgba);
-    if (st != NMO_OK) return NULL;
-
-    *out_w = rs->width;
-    *out_h = rs->height;
-    *out_ch = 4;
-    return rgba;
-}
-
-/**
  * Try to decode a bitmap2 slot via stb_image.
  * Returns arena-allocated RGBA buffer, or NULL on failure.
  */
@@ -987,10 +898,12 @@ static int texture_extract_run(nmo_cmd_ctx_t *ctx,
         case CKTEXTURE_BITMAP_RAW:
             if (ts->raw_slots) {
                 const nmo_texture_raw_slot_t *rs0 = &ts->raw_slots[0];
-                if (raw_slot_is_compressed(rs0)) {
-                    pixels = decode_raw_slot_dxt(arena, rs0,
-                        ts->desired_video_format, &w, &h, &ch);
-                    if (!pixels) skip_reason = "dxt_decode_failed";
+                /* ReadRawBitmap keeps the low four bits of the compression
+                 * field: 0 stores the colour planes as they are, 1 stores
+                 * them in Virtools' own DCT codec, and anything else stores
+                 * no colour planes. Save always writes 0. */
+                if ((rs0->compression & 0xFu) != 0u) {
+                    skip_reason = "unsupported_raw_compression";
                 } else {
                     pixels = decode_raw_slot(arena, rs0, &w, &h, &ch);
                     if (!pixels) {
