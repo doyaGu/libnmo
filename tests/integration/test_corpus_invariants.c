@@ -11,6 +11,7 @@
 #include "../test_framework.h"
 
 #include "object/builtin/nmo_3dentity_schemas.h"
+#include "object/builtin/nmo_character_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
 #include "runtime/nmo_context.h"
@@ -33,6 +34,10 @@ typedef struct corpus_invariants {
     size_t skin_vertices;
     size_t skin_weight_violations;
     size_t skin_index_violations;
+
+    size_t characters;
+    size_t characters_without_root;
+    size_t characters_without_effective_root;
 
     size_t reported;
 } corpus_invariants_t;
@@ -111,6 +116,22 @@ static void check_file(const char *path, void *user)
     size_t count = nmo_object_repository_get_count(repository);
     for (size_t i = 0; i < count; i++) {
         const nmo_object_t *object = nmo_object_repository_get_by_index(repository, i);
+        if (object != NULL && object->class_id == NMO_CID_CHARACTER) {
+            /* A character without a stored root takes its first child as the
+               root; the one such character of the corpus has no children (its
+               body parts name it as their character but have no parent). */
+            const nmo_character_state_t *character =
+                (const nmo_character_state_t *)nmo_object_get_state(object);
+            stats->characters++;
+            if (character != NULL &&
+                nmo_ref_runtime_id(&character->root_body_part) == NMO_OBJECT_ID_NONE) {
+                stats->characters_without_root++;
+                if (nmo_character_effective_root_body_part(repository, object) ==
+                    NMO_OBJECT_ID_NONE) {
+                    stats->characters_without_effective_root++;
+                }
+            }
+        }
         if (object == NULL || !is_3dentity_family(object->class_id)) {
             continue;
         }
@@ -150,6 +171,11 @@ TEST(corpus_invariants, decoded_values_satisfy_engine_guarantees)
     ASSERT_EQ(0u, stats.load_errors);
     ASSERT_EQ(0u, stats.skin_weight_violations);
     ASSERT_EQ(0u, stats.skin_index_violations);
+    printf("  Characters: %zu, without stored root: %zu, without effective root: %zu\n",
+           stats.characters, stats.characters_without_root,
+           stats.characters_without_effective_root);
+    ASSERT_GE(stats.characters_without_root, 1u);
+    ASSERT_EQ(stats.characters_without_root, stats.characters_without_effective_root);
 }
 
 TEST_MAIN_BEGIN()

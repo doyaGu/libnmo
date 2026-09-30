@@ -4,6 +4,8 @@
 #include "format/nmo_object.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_camera_schemas.h"
+#include "object/builtin/nmo_character_schemas.h"
+#include "object/nmo_object_repository.h"
 #include "object/builtin/nmo_light_schemas.h"
 #include "object/builtin/nmo_targetcamera_schemas.h"
 #include "object/builtin/nmo_targetlight_schemas.h"
@@ -111,6 +113,48 @@ TEST(entity_edit, sets_parent)
     ASSERT_EQ(parent_id, nmo_ref_runtime_id(&child->parent));
     ASSERT_FALSE(child->has_parent_chunk);
 
+    entity_edit_fixture_destroy(&fixture);
+}
+
+TEST(entity_edit, character_without_root_takes_its_first_child)
+{
+    entity_edit_fixture_t fixture = {0};
+    entity_edit_fixture_create(&fixture);
+
+    nmo_workspace_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_begin(fixture.workspace, "character", &edit));
+    nmo_object_id_t character_id = 0;
+    nmo_object_id_t first_id = 0;
+    nmo_object_id_t second_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_object_edit_create(
+        edit, &(nmo_object_create_desc_t){.class_id = NMO_CID_CHARACTER, .name = "Character"},
+        &character_id));
+    ASSERT_EQ(NMO_OK, nmo_object_edit_create(
+        edit, &(nmo_object_create_desc_t){.class_id = NMO_CID_BODYPART, .name = "First"},
+        &first_id));
+    ASSERT_EQ(NMO_OK, nmo_object_edit_create(
+        edit, &(nmo_object_create_desc_t){.class_id = NMO_CID_BODYPART, .name = "Second"},
+        &second_id));
+
+    nmo_object_repository_t *repository = nmo_document_get_repository(fixture.document);
+    const nmo_object_t *character = find_object(fixture.document, character_id);
+    ASSERT_NOT_NULL(repository);
+    ASSERT_NOT_NULL(character);
+    /* No child yet. */
+    ASSERT_EQ(NMO_OBJECT_ID_NONE,
+              nmo_character_effective_root_body_part(repository, character));
+
+    ASSERT_EQ(NMO_OK, nmo_entity_edit_set_parent(edit, first_id, character_id));
+    ASSERT_EQ(NMO_OK, nmo_entity_edit_set_parent(edit, second_id, character_id));
+    ASSERT_EQ(first_id, nmo_character_effective_root_body_part(repository, character));
+
+    /* A stored root wins. */
+    nmo_character_state_t *state = (nmo_character_state_t *)nmo_object_get_state(character);
+    ASSERT_NOT_NULL(state);
+    state->root_body_part = nmo_ref_from_id(second_id);
+    ASSERT_EQ(second_id, nmo_character_effective_root_body_part(repository, character));
+
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_commit(edit));
     entity_edit_fixture_destroy(&fixture);
 }
 
@@ -461,6 +505,7 @@ TEST(entity_edit, setting_a_target_maintains_the_entity_target_flags)
 
 TEST_MAIN_BEGIN()
 REGISTER_TEST(entity_edit, sets_parent);
+REGISTER_TEST(entity_edit, character_without_root_takes_its_first_child);
 REGISTER_TEST(entity_edit, sets_world_matrix);
 REGISTER_TEST(entity_edit, edits_explicit_entity_types);
 REGISTER_TEST(entity_edit, light_leaving_spot_resets_cones);
