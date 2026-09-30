@@ -259,6 +259,15 @@ the tests build each layout dword by dword.
 - `CK_OBJECTANIMATION_TAG0` and `_TAG1` name the two flag bits the corpus sets and the engine
   never tests. The texture header lists the identifiers of the engine and the bitmap data flags
   with their real values.
+- Raw bitmaps with compression 1 store each colour plane in Virtools' own DCT codec (not JPEG).
+  `nmo_image_decode_dct_plane()` decodes it; `nmo_chunk_read_raw_bitmap()` and `texture extract` use
+  it. No file in the corpus has it and the engine's `Save` never writes it.
+- `nmo_chunk_write_encoded_bitmap()` and `nmo_chunk_read_encoded_bitmap()` use the layout of
+  `CKStateChunk::WriteReaderBitmap` and `ReadReaderBitmap` (kind, extension, reader GUID, image,
+  and for a codec without alpha the distinct alpha count with the value or the alpha plane); they
+  stored their own layout before.
+- A new place starts with priority 20000 and a new grid with the scale (1, 10, 1), as the
+  constructors set them.
 
 ### Tests
 - `test_corpus_chunk_roundtrip` checks every object chunk of the corpus. It compares against a
