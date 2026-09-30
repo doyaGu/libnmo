@@ -702,6 +702,43 @@ static uint8_t *decode_raw_slot(nmo_arena_t *arena,
 }
 
 /**
+ * Decode a raw slot whose colour planes are in the plane codec (compression 1).
+ * The alpha plane stays as stored.
+ */
+static uint8_t *decode_raw_slot_dct(nmo_arena_t *arena,
+                                    const nmo_texture_raw_slot_t *rs,
+                                    int *out_w, int *out_h, int *out_ch) {
+    if (rs->width <= 0 || rs->height <= 0) return NULL;
+
+    const uint8_t *encoded[3] = {rs->blue_data, rs->green_data, rs->red_data};
+    const uint32_t sizes[3] = {rs->blue_size, rs->green_size, rs->red_size};
+    uint8_t *planes[3] = {NULL, NULL, NULL};
+    for (int i = 0; i < 3; ++i) {
+        int w = 0, h = 0;
+        if (!encoded[i] ||
+            nmo_image_decode_dct_plane(encoded[i], sizes[i], arena, &w, &h, &planes[i]) != NMO_OK ||
+            w != rs->width || h != rs->height) {
+            return NULL;
+        }
+    }
+
+    uint8_t *pixels = NULL;
+    int channels = 0;
+    const size_t plane_size = (size_t)rs->width * (size_t)rs->height;
+    if (nmo_image_reconstruct_pixels(
+            planes[2], planes[1], planes[0], rs->alpha_data,
+            (uint32_t)plane_size, (uint32_t)plane_size, (uint32_t)plane_size, rs->alpha_size,
+            rs->width, rs->height, rs->bits_per_pixel,
+            arena, &pixels, &channels) != NMO_OK) {
+        return NULL;
+    }
+    *out_w = rs->width;
+    *out_h = rs->height;
+    *out_ch = channels;
+    return pixels;
+}
+
+/**
  * Try to decode a bitmap2 slot via stb_image.
  * Returns arena-allocated RGBA buffer, or NULL on failure.
  */
@@ -913,10 +950,14 @@ static int texture_extract_run(nmo_cmd_ctx_t *ctx,
                 const nmo_texture_raw_slot_t *rs0 = &ts->raw_slots[0];
                 /* ReadRawBitmap keeps the low four bits of the compression
                  * field: 0 stores the colour planes as they are, 1 stores
-                 * them in Virtools' own DCT codec, and anything else stores
-                 * no colour planes. Save always writes 0. */
-                if ((rs0->compression & 0xFu) != 0u) {
+                 * them in Virtools' own DCT codec (nmo_image_decode_dct_plane),
+                 * and anything else stores no colour planes. Save always
+                 * writes 0. */
+                if ((rs0->compression & 0xFu) > 1u) {
                     skip_reason = "unsupported_raw_compression";
+                } else if ((rs0->compression & 0xFu) == 1u) {
+                    pixels = decode_raw_slot_dct(arena, rs0, &w, &h, &ch);
+                    if (!pixels) skip_reason = "decode_failed";
                 } else {
                     pixels = decode_raw_slot(arena, rs0, &w, &h, &ch);
                     if (!pixels) {
