@@ -1431,6 +1431,16 @@ NMO_API nmo_status_t nmo_chunk_remap_object_ids(nmo_chunk_t *chunk,
  * backup buffers from @p scratch instead of chunk->arena.  Pass NULL for
  * @p scratch to fall back to chunk->arena (same as the non-_ex variant).
  */
+/**
+ * @brief The dword a runtime object id is written as in this chunk.
+ *
+ * With a file context that maps runtime ids to file indices this is the file
+ * index (0xFFFFFFFF for the null id); without one it is the id itself.
+ * Fails when the id has no file index.
+ */
+NMO_API nmo_status_t nmo_chunk_encode_object_id(
+    const nmo_chunk_t *chunk, nmo_object_id_t id, uint32_t *out_value);
+
 NMO_API nmo_status_t nmo_chunk_remap_object_ids_ex(nmo_chunk_t *chunk,
                                                     const nmo_id_remap_t *remap,
                                                     nmo_arena_t *scratch);

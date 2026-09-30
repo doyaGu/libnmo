@@ -62,6 +62,11 @@ typedef struct nmo_level_state {
     
     /* Level scene embedded chunk */
     nmo_chunk_t *level_scene_chunk;      /**< Embedded chunk for level scene */
+    /** Positions in level_scene_chunk's data of the object ids it holds. The
+     *  chunk is written with a file, so it tracks none itself; these were
+     *  found by reading it as a scene. The ids there are runtime ids. */
+    uint32_t *level_scene_id_positions;
+    uint32_t level_scene_id_count;
     
     /* Manager state (optional, rarely used) */
     uint8_t has_inactive_manager_section; /**< Presence of LEVELINACTIVEMAN section */

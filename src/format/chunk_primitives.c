@@ -913,6 +913,12 @@ nmo_status_t nmo_chunk_read_buffer_lendian16(
 // Object References
 // =============================================================================
 
+nmo_status_t nmo_chunk_encode_object_id(const nmo_chunk_t *chunk, nmo_object_id_t id,
+                                        uint32_t *out_value) {
+    NMO_CHUNK_CHECK_ARGS(chunk, out_value, "Invalid arguments");
+    return encode_object_id(chunk, id, out_value);
+}
+
 nmo_status_t nmo_chunk_write_object_id(nmo_chunk_t *chunk, nmo_object_id_t id) {
     NMO_CHUNK_CHECK_ARG(chunk, "Invalid chunk argument");
 

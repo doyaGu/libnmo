@@ -13,6 +13,8 @@
  */
 
 #include "object/builtin/nmo_level_schemas.h"
+#include "object/builtin/nmo_scene_schemas.h"
+#include "format/nmo_chunk_residue.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
@@ -254,6 +256,109 @@ static nmo_status_t nmo_level_read_ref_sequence(
  * CKLevel DESERIALIZATION
  * ============================================================================= */
 
+/* The level scene is a chunk in the format of CKScene, written with a file, so
+ * its object ids are plain file indices and nothing records where they are.
+ * Reading it as a scene finds them: the scene is written again without a file,
+ * which tracks the ids (as runtime ids, since reading converts them). Their
+ * positions are kept and the runtime ids put into the chunk, so that saving
+ * can write them as the file indices of the file being written. Nothing
+ * changes when the scene is not reproduced exactly by that. */
+static void nmo_level_locate_scene_ids(
+    nmo_level_state_t *state,
+    nmo_chunk_t *sub,
+    nmo_arena_t *arena,
+    void *context)
+{
+    if (sub == NULL || arena == NULL || sub->class_id != NMO_CID_SCENE) return;
+    if ((sub->chunk_options & NMO_CHUNK_OPTION_FILE) == 0 || sub->ids.count != 0) return;
+
+    nmo_scene_state_t scene;
+    if (nmo_scene_vtable.create(&scene, NULL, NULL) != NMO_OK) return;
+    nmo_chunk_t *probe = NULL;
+    if (nmo_chunk_start_read(sub) == NMO_OK &&
+        nmo_scene_deserialize(&scene, sub, NULL, context) == NMO_OK) {
+        probe = nmo_chunk_create(arena);
+    }
+    bool faithful = false;
+    if (probe != NULL) {
+        probe->class_id = sub->class_id;
+        probe->chunk_class_id = sub->chunk_class_id;
+        probe->data_version = sub->data_version;
+        probe->chunk_version = sub->chunk_version;
+        probe->chunk_options = sub->chunk_options & ~(uint32_t)NMO_CHUNK_OPTION_IDS;
+        nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
+            arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+        if (nmo_chunk_start_write(probe) == NMO_OK &&
+            nmo_scene_serialize(&scene, probe, NULL, &ser_ctx) == NMO_OK) {
+            nmo_chunk_close(probe);
+            faithful = nmo_chunk_equivalent_to_tracked(sub, probe);
+        }
+    }
+    nmo_scene_vtable.destroy(&scene, NULL, NULL);
+    (void)nmo_chunk_start_read(sub);
+    if (!faithful) return;
+
+    /* One position per id; a sequence contributes its elements. */
+    const uint32_t *ids = probe->ids.count > 0 ? (const uint32_t *)probe->ids.data : NULL;
+    uint32_t *data = (uint32_t *)sub->data.data;
+    const uint32_t *probe_data = (const uint32_t *)probe->data.data;
+    size_t total = 0;
+    for (size_t i = 0; i < probe->ids.count; ++i) {
+        if (ids[i] == 0xFFFFFFFFu) {
+            if (++i >= probe->ids.count || ids[i] >= probe->data.count) return;
+            total += probe_data[ids[i]];
+        } else {
+            total++;
+        }
+    }
+    if (total == 0 || total > UINT32_MAX) return;
+    uint32_t *positions = nmo_arena_alloc(arena, total * sizeof(uint32_t), _Alignof(uint32_t));
+    if (positions == NULL) return;
+    size_t count = 0;
+    for (size_t i = 0; i < probe->ids.count; ++i) {
+        if (ids[i] == 0xFFFFFFFFu) {
+            const size_t header = ids[++i];
+            for (size_t k = 0; k < probe_data[header]; ++k) positions[count++] = (uint32_t)(header + 1u + k);
+        } else {
+            positions[count++] = ids[i];
+        }
+    }
+    for (size_t i = 0; i < count; ++i) {
+        if (positions[i] >= sub->data.count) return;
+    }
+    for (size_t i = 0; i < count; ++i) data[positions[i]] = probe_data[positions[i]];
+    state->level_scene_id_positions = positions;
+    state->level_scene_id_count = (uint32_t)count;
+}
+
+/* Writes the level scene with its object ids as file indices of this file. */
+static nmo_status_t nmo_level_write_scene(
+    const nmo_level_state_t *state,
+    nmo_chunk_t *out_chunk,
+    nmo_arena_t *arena)
+{
+    const nmo_chunk_t *raw = state->level_scene_chunk;
+    if (raw == NULL || state->level_scene_id_count == 0 || arena == NULL) {
+        return nmo_chunk_write_sub_chunk(out_chunk, state->level_scene_chunk);
+    }
+    nmo_chunk_t *sub = nmo_chunk_clone(raw, arena);
+    if (sub == NULL) return NMO_ERR_NOMEM;
+    sub->raw_data = NULL;
+    sub->raw_size = 0;
+    uint32_t *data = (uint32_t *)sub->data.data;
+    for (uint32_t i = 0; i < state->level_scene_id_count; ++i) {
+        const uint32_t pos = state->level_scene_id_positions[i];
+        if (pos >= sub->data.count) return NMO_ERR_INVALID_STATE;
+        uint32_t encoded = 0;
+        /* An object that is gone has no index: the engine reads -1 as no object. */
+        if (nmo_chunk_encode_object_id(out_chunk, data[pos], &encoded) != NMO_OK) {
+            encoded = 0xFFFFFFFFu;
+        }
+        data[pos] = encoded;
+    }
+    return nmo_chunk_write_sub_chunk(out_chunk, sub);
+}
+
 /**
  * @brief Deserialize CKLevel state from chunk
  * 
@@ -403,6 +508,8 @@ default_data_done:;
         out_state->current_scene = current_scene;
         out_state->level_scene = level_scene;
         out_state->level_scene_chunk = level_scene_chunk;
+        nmo_level_locate_scene_ids(
+            out_state, level_scene_chunk, nmo_deserialize_context_get_arena(context), context);
     } else if (result != NMO_ERR_NOT_FOUND) return result;
 
     /* Section 3: LEVELINACTIVEMAN (optional) - Inactive manager GUIDs */
@@ -655,7 +762,8 @@ static nmo_status_t nmo_level_serialize_internal(
     if (result != NMO_OK) return result;
 
     /* Write level scene sub-chunk (may be NULL) */
-    result = nmo_chunk_write_sub_chunk(out_chunk, in_state->level_scene_chunk);
+    result = nmo_level_write_scene(
+        in_state, out_chunk, nmo_serialize_context_get_arena(context));
     if (result != NMO_OK) return result;
 
     /* Section 3: LEVELINACTIVEMAN (optional) */
@@ -753,6 +861,15 @@ static nmo_status_t nmo_level_copy(
     result = nmo_object_copy_chunk(
         arena, &copied.level_scene_chunk, s->level_scene_chunk);
     if (result != NMO_OK) goto fail;
+    copied.level_scene_id_positions = NULL;
+    copied.level_scene_id_count = 0;
+    if (s->level_scene_id_count > 0) {
+        result = nmo_object_copy_array(
+            arena, (void **)&copied.level_scene_id_positions, s->level_scene_id_positions,
+            sizeof(uint32_t), s->level_scene_id_count);
+        if (result != NMO_OK) goto fail;
+        copied.level_scene_id_count = s->level_scene_id_count;
+    }
     nmo_array_dispose(&copied.inactive_manager_guids);
     result = nmo_array_clone(
         &s->inactive_manager_guids, &copied.inactive_manager_guids,
@@ -788,6 +905,8 @@ static nmo_status_t nmo_level_copy(
     if (d->level_scene_chunk == s->level_scene_chunk) {
         d->level_scene_chunk = NULL;
     }
+    d->level_scene_id_positions = NULL;
+    d->level_scene_id_count = 0;
     nmo_level_destroy(d, NULL, NULL);
     *d = copied;
     return NMO_OK;
@@ -903,6 +1022,8 @@ static nmo_status_t nmo_level_pre_delete(
     state->current_scene = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     state->level_scene = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     state->level_scene_chunk = NULL;
+    state->level_scene_id_positions = NULL;
+    state->level_scene_id_count = 0;
     state->inactive_manager_guids.count = 0;
     state->duplicate_manager_names.count = 0;
     state->duplicate_manager_tail = NULL;
