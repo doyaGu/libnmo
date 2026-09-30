@@ -129,6 +129,7 @@ static nmo_status_t remap_embedded_subchunk_recursive(uint32_t *parent_data,
                                                        size_t parent_dwords,
                                                        size_t header_pos,
                                                        uint32_t parent_chunk_version,
+                                                       int file_mode,
                                                        const nmo_id_remap_t *remap,
                                                        int *remapped_count) {
     if (!parent_data || !remap || !remapped_count) {
@@ -191,7 +192,10 @@ static nmo_status_t remap_embedded_subchunk_recursive(uint32_t *parent_data,
         NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR, "Sub-chunk layout mismatch");
     }
 
-    if (id_count > 0) {
+    /* In a file chunk, a sub-chunk written without a file (file_flag 0) does
+       not hold file indices; CKStateChunk returns its object ids untouched. */
+    const uint32_t file_flag = parent_data[header_pos + 4];
+    if (id_count > 0 && (file_flag != 0 || !file_mode)) {
         nmo_status_t result = remap_chunk_data_recursive(&parent_data[data_start],
                                                          (size_t)data_size,
                                                          &parent_data[ids_start],
@@ -241,6 +245,7 @@ static nmo_status_t remap_embedded_subchunk_recursive(uint32_t *parent_data,
                                                                             parent_dwords,
                                                                             cursor,
                                                                             child_chunk_version,
+                                                                            file_mode,
                                                                             remap,
                                                                             remapped_count);
                     NMO_RETURN_IF_ERROR(result);
@@ -259,6 +264,7 @@ static nmo_status_t remap_embedded_subchunk_recursive(uint32_t *parent_data,
                                                                     parent_dwords,
                                                                     child_header_pos,
                                                                     child_chunk_version,
+                                                                    file_mode,
                                                                     remap,
                                                                     remapped_count);
             NMO_RETURN_IF_ERROR(result);
@@ -383,6 +389,7 @@ static nmo_status_t remap_object_ids_recursive(nmo_chunk_t *chunk,
                                                                chunk->data.count,
                                                                cursor,
                                                                chunk->chunk_version,
+                                                               (chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0,
                                                                remap,
                                                                &local_count);
                     NMO_RETURN_IF_ERROR(result);
@@ -400,6 +407,7 @@ static nmo_status_t remap_object_ids_recursive(nmo_chunk_t *chunk,
                                                        chunk->data.count,
                                                        (size_t)entry,
                                                        chunk->chunk_version,
+                                                       (chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0,
                                                        remap,
                                                        &local_count);
             NMO_RETURN_IF_ERROR(result);
