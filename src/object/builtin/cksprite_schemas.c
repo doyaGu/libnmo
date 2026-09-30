@@ -173,7 +173,6 @@ static nmo_status_t deserialize_file_backed(
         chunk, CK_STATESAVE_SPRITESHARED, &section_dwords);
     if (seek_result == NMO_OK) {
         if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
-        if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
         nmo_ref_t sprite_ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         result = nmo_ref_read(chunk, &sprite_ref);
         if (result != NMO_OK) {
@@ -200,7 +199,6 @@ static nmo_status_t deserialize_file_backed(
         chunk, CK_STATESAVE_SPRITEVIDEOFORMAT, &section_dwords);
     if (seek_result == NMO_OK) {
         if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
-        if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
         result = nmo_chunk_read_dword(chunk, &out_state->video_format);
         if (result != NMO_OK) return result;
         out_state->has_video_format = true;
@@ -211,7 +209,6 @@ static nmo_status_t deserialize_file_backed(
         chunk, CK_STATESAVE_SPRITETRANSPARENT, &section_dwords);
     if (seek_result == NMO_OK) {
         if (section_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
-        if (section_dwords > 2u) return NMO_ERR_INVALID_FORMAT;
         out_state->has_transparency = true;
         result = nmo_chunk_read_dword(chunk, &out_state->transparent_color);
         if (result != NMO_OK) {
@@ -231,7 +228,6 @@ static nmo_status_t deserialize_file_backed(
         chunk, CK_STATESAVE_SPRITECURRENTIMAGE, &section_dwords);
     if (seek_result == NMO_OK) {
         if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
-        if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
         out_state->has_slot = true;
         result = nmo_chunk_read_dword(chunk, &out_state->current_slot);
         if (result != NMO_OK) {
@@ -259,9 +255,6 @@ static nmo_status_t deserialize_file_backed(
         if (result != NMO_OK) return result;
         if (nmo_chunk_get_position(chunk) > section_end) {
             return NMO_ERR_TRUNCATED_CHUNK;
-        }
-        if (nmo_chunk_get_position(chunk) < section_end) {
-            return NMO_ERR_INVALID_FORMAT;
         }
         out_state->has_save_options = true;
         out_state->save_options = save_options;
@@ -297,7 +290,6 @@ static nmo_status_t deserialize_chunk_only(
         chunk, CK_STATESAVE_SPRITETRANSPARENT, &section_dwords);
     if (seek_result == NMO_OK) {
         if (section_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
-        if (section_dwords > 2u) return NMO_ERR_INVALID_FORMAT;
         out_state->has_transparency = true;
         result = nmo_chunk_read_dword(chunk, &out_state->transparent_color);
         if (result != NMO_OK) {
@@ -316,7 +308,6 @@ static nmo_status_t deserialize_chunk_only(
         chunk, CK_STATESAVE_SPRITECURRENTIMAGE, &section_dwords);
     if (seek_result == NMO_OK) {
         if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
-        if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
         out_state->has_slot = true;
         result = nmo_chunk_read_dword(chunk, &out_state->current_slot);
         if (result != NMO_OK) {
@@ -329,7 +320,6 @@ static nmo_status_t deserialize_chunk_only(
         chunk, CK_STATESAVE_SPRITESHARED, &section_dwords);
     if (seek_result == NMO_OK) {
         if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
-        if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
         nmo_ref_t sprite_ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
         result = nmo_ref_read(chunk, &sprite_ref);
         if (result != NMO_OK) {
