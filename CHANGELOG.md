@@ -133,8 +133,37 @@ Before these fixes about 7% of the objects came back different.
   mask: value 3 is now reported as `use_global` (it was `external`) and 4 as `include_original`
   (it was `use_global`). `NMO_CKTEXTURE_USEGLOBAL` and `NMO_CKTEXTURE_INCLUDEORIGINALFILE` were
   4 and 8 and are now 3 and 4, matching the enumeration. `is_external` is unchanged.
-- Known gaps, not written back and excluded from the test: CKPatchMesh section 0x8000 and
-  CKSprite section 0x40000000. The engine used for reference never writes them.
+- Known gap, not written back and excluded from the test: CKPatchMesh section 0x8000, the face
+  masks of the built render mesh. The engine writes it but ignores it on load, so it is derived
+  data.
+
+### Fixed - Schemas read fields as the engine defines them
+An audit of the CK2_3D classes against the engine (CK2_3D.dll, CK2.dll) found fields that were
+read into the wrong member or given the wrong meaning. The bytes of these fields always
+round-tripped, which is why the byte-level test did not see them.
+- Skin vertices: the first per-vertex buffer holds the bone weights (floats that sum to one) and
+  the second the bone indices. They were read the other way round. In `nmo_3dentity_skin_vertex_t`
+  the members now follow the file order (`bone_weights`, then `bone_indices`, and the two
+  `legacy_before_*` words swap places). Checked on all 28,572 skinned vertices of the corpus.
+- Curve points: `nmo_curvepoint_state_t.use_tcb` is now `tangent_mode`. The file value is 0 for TCB
+  points and 1 for points with explicit tangents, the opposite of what the old name said.
+- Patch mesh channels: the three dwords after each texture patch id are `source_blend`,
+  `dest_blend` and `flags` (they were `flags`, `type`, `subtype`). Entry 0 of the channel list is
+  the base texture-coordinate set and its dwords are uninitialised in the files.
+- Raw texture planes are stored bottom-up: `nmo_image_reconstruct_pixels()` now returns top-down
+  pixels, so `texture extract` no longer writes raw textures upside down.
+- `nmo_chunk_write_raw_bitmap()` / `nmo_chunk_read_raw_bitmap()` order the planes like the bytes of
+  a pixel (blue, green, red, alpha). They used red, green, blue and swapped red and blue against
+  every real file.
+- `texture extract` applies the constant alpha of a reader slot that stores one distinct alpha
+  instead of a plane, so fully transparent textures no longer come out opaque.
+- The mesh bounding sphere is centered on the mean of the vertices, as `UpdateBoundingVolumes`
+  does, not on the center of the bounding box (`bary_center`, `radius`; derived values).
+- `mesh export` writes the normals CK rebuilds for meshes whose file omits them, instead of
+  lines of `vn 0 0 0`. New: `nmo_mesh_normals_are_derived()` and `nmo_mesh_build_vertex_normals()`
+  in `object/builtin/nmo_mesh_schemas.h`. The state and the bytes written are unchanged.
+- Sprites keep the video format section (`CK_STATESAVE_SPRITEVIDEOFORMAT`, 0x40000000) that later
+  engines write: `nmo_sprite_state_t.has_video_format` and `video_format`. Saving used to drop it.
 
 ### Tests
 - `test_corpus_chunk_roundtrip` checks every object chunk of the corpus. It compares against a
