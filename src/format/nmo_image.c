@@ -307,11 +307,20 @@ nmo_status_t nmo_image_reconstruct_pixels(
         return NMO_ERR_OUT_OF_BOUNDS;
     }
 
-    for (size_t i = 0; i < pixel_count; ++i) {
-        rgba[i * 4 + 0] = has_red   ? red[i]   : 0;
-        rgba[i * 4 + 1] = has_green ? green[i]  : 0;
-        rgba[i * 4 + 2] = has_blue  ? blue[i]   : 0;
-        rgba[i * 4 + 3] = has_alpha ? alpha[i]  : 255;
+    /* The planes are stored bottom-up: CKStateChunk::WriteRawBitmap starts at
+     * the last row and ReadFromChunk blits the result upside down. The output
+     * is top-down. */
+    const size_t row_pixels = (size_t)width;
+    for (size_t y = 0; y < (size_t)height; ++y) {
+        const size_t src_row = ((size_t)height - 1u - y) * row_pixels;
+        const size_t dst_row = y * row_pixels;
+        for (size_t x = 0; x < row_pixels; ++x) {
+            uint8_t *dst = &rgba[(dst_row + x) * 4];
+            dst[0] = has_red   ? red[src_row + x]   : 0;
+            dst[1] = has_green ? green[src_row + x] : 0;
+            dst[2] = has_blue  ? blue[src_row + x]  : 0;
+            dst[3] = has_alpha ? alpha[src_row + x] : 255;
+        }
     }
 
     *out_pixels = rgba;

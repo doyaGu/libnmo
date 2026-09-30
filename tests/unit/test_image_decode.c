@@ -216,6 +216,30 @@ TEST(image_decode, dxt_rejects_zero_dims) {
     nmo_arena_destroy(arena);
 }
 
+TEST(image_decode, reconstruct_pixels_flips_bottom_up_planes) {
+    /* 2x2, rows stored bottom-up: the first plane row is the bottom of the image. */
+    const uint8_t red[4]   = {10, 11, 20, 21};
+    const uint8_t green[4] = {12, 13, 22, 23};
+    const uint8_t blue[4]  = {14, 15, 24, 25};
+    const uint8_t alpha[4] = {16, 17, 26, 27};
+    nmo_arena_t *arena = nmo_arena_create(NULL, 0);
+    ASSERT_NOT_NULL(arena);
+
+    uint8_t *pixels = NULL;
+    int channels = 0;
+    ASSERT_EQ(NMO_OK, nmo_image_reconstruct_pixels(
+        red, green, blue, alpha, 4, 4, 4, 4, 2, 2, 32, arena, &pixels, &channels));
+    ASSERT_EQ(4, channels);
+
+    /* Top row of the image is the last plane row. */
+    const uint8_t expected[16] = {
+        20, 22, 24, 26,  21, 23, 25, 27,
+        10, 12, 14, 16,  11, 13, 15, 17,
+    };
+    ASSERT_EQ(0, memcmp(expected, pixels, sizeof(expected)));
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(image_decode, rgb565_decode);
     REGISTER_TEST(image_decode, argb1555_decode);
@@ -225,4 +249,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(image_decode, dxt_rejects_invalid_format);
     REGISTER_TEST(image_decode, dxt_rejects_truncated);
     REGISTER_TEST(image_decode, dxt_rejects_zero_dims);
+    REGISTER_TEST(image_decode, reconstruct_pixels_flips_bottom_up_planes);
 TEST_MAIN_END()
