@@ -628,8 +628,10 @@ static nmo_status_t nmo_curve_deserialize_internal(
     out_state->control_point_count = 0;
     out_state->control_point_ids = NULL;
     out_state->fitting_coeff = 0.0f;
-    out_state->step_count = 0;
-    out_state->opened = 0;
+    /* RCKCurve::Load assigns these only from a section that is present; the
+       constructor values (100 steps, open) stay otherwise. */
+    out_state->step_count = 100;
+    out_state->opened = 1;
     out_state->sub_point_count = 0;
     out_state->sub_points = NULL;
     out_state->has_curveonly_chunk = 0;
@@ -970,6 +972,11 @@ static nmo_status_t nmo_curvepoint_deserialize_internal(
             out_state->linear = linear;
             out_state->legacy_position = legacy_position;
             out_state->has_legacy_position = 1;
+            /* RCKCurvePoint::Load calls SetPosition with it after the entity
+               data, so it replaces the translation of the entity matrix. */
+            out_state->base.world_matrix[12] = legacy_position.x;
+            out_state->base.world_matrix[13] = legacy_position.y;
+            out_state->base.world_matrix[14] = legacy_position.z;
         } else if (result != NMO_ERR_NOT_FOUND) return result;
 
         size_t tcb_section_dwords = 0;
@@ -1131,10 +1138,6 @@ static nmo_status_t nmo_curvepoint_serialize_internal(
 
     const bool modern_layout =
         nmo_chunk_get_data_version(out_chunk) >= 5u;
-    if (modern_layout && in_state->has_legacy_position) {
-        return NMO_ERR_VALIDATION_FAILED;
-    }
-
     if (in_state->has_default_data) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_CURVEPOINTDEFAULTDATA);
         if (result != NMO_OK) return result;
@@ -1157,10 +1160,13 @@ static nmo_status_t nmo_curvepoint_serialize_internal(
             result = nmo_chunk_write_vector3(out_chunk, &in_state->tangent_out);
             if (result != NMO_OK) return result;
         } else {
-            const nmo_vector_t *pos = in_state->has_legacy_position
-                ? &in_state->legacy_position
-                : &(nmo_vector_t){0.0f, 0.0f, 0.0f};
-            result = nmo_chunk_write_vector3(out_chunk, pos);
+            /* The position the point has now. */
+            const nmo_vector_t pos = {
+                in_state->base.world_matrix[12],
+                in_state->base.world_matrix[13],
+                in_state->base.world_matrix[14],
+            };
+            result = nmo_chunk_write_vector3(out_chunk, &pos);
             if (result != NMO_OK) return result;
         }
     }
