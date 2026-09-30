@@ -34,6 +34,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - 2026-xx-xx
 
+### Changed - Lua and project layers are separate libraries
+- The Lua runtime and bindings (`src/lua`, `include/lua`) build into `libnmo_lua`, and the
+  project authoring layer (`src/project`, `include/project`) into `libnmo_project`. The core
+  `libnmo` no longer contains Lua or project code and does not depend on Lua headers. Every
+  function keeps its name and signature; consumers of those APIs link `nmo::lua` /
+  `nmo::project` (pkg-config `libnmo-lua`, `libnmo-project`) in addition to `nmo::nmo`.
+- `nmo.h` no longer includes the Lua and project headers. Use the new umbrella headers
+  `nmo_lua.h` and `nmo_project.h`, or the individual headers.
+- `nmo_behavior_execution_lua_runtime()` is declared in `lua/nmo_lua_behavior.h` instead of
+  `behavior/nmo_behavior_execute.h`, and the runtime is created on first call rather than
+  before the action callback runs. It returns NULL if creation fails.
+- With `NMO_BUILD_SHARED=ON`, core, Lua and project are still one shared library.
+
+### Added
+- `nmo_behavior_execution_set_attachment()` / `nmo_behavior_execution_get_attachment()`:
+  per-execution data owned by optional components.
+
 ### Added - Phase 8: Round-Trip Framework
 - DOM comparison API (`nmo_comparison.h`): diff two loaded sessions at the object
   level; used by round-trip integration tests
