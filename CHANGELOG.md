@@ -214,6 +214,18 @@ the tests build each layout dword by dword.
 - `nmo_texture_replace_bitmap()` gives the stored PNG the PNG reader's extension and GUID, so the
   engine can find a decoder for it.
 
+### Changed - Loading accepts what the engine accepts
+- A texture's packed state block (`CK_STATESAVE_OLDTEXONLY` / `TEXONLY`) is read as
+  `RCKTexture::Load` reads it: flag bits the engine ignores are kept in `packed_unknown_bits` and
+  written back, the 12-byte layout reads the video format whether or not flag 0x200 is set (the
+  writer then sets it), a block longer than any known layout is read as its fields, and a block
+  without a flags dword is skipped.
+- A texture's file name list resizes the bitmap slots, as `SetSlotCount` does, instead of failing
+  the object when the count differs; added slots are empty.
+- A 2D entity of data version 5 or later without the `0x10F000` block keeps the constructor state
+  (flags, source rectangle) instead of failing to load, and an older one without `0x4000` keeps the
+  constructor flags.
+
 ### Tests
 - `test_corpus_chunk_roundtrip` checks every object chunk of the corpus. It compares against a
   second load of the original file that is never saved. It tolerates only the uninitialised
