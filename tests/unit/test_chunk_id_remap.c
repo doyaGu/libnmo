@@ -7415,44 +7415,50 @@ TEST(chunk_id_remap, layer_unresolved_grid_round_trips_raw_id) {
     nmo_arena_destroy(arena);
 }
 
-TEST(chunk_id_remap, layer_default_format_writes_empty_square_buffer) {
+TEST(chunk_id_remap, layer_writes_the_square_buffer_only_with_a_grid) {
+    /* RCKLayer::Save writes the buffer of a format 0 layer only when it has a
+     * grid. */
     nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
     ASSERT_NOT_NULL(arena);
-
-    nmo_layer_state_t source;
-    nmo_layer_state_t loaded;
-    ASSERT_EQ(NMO_OK, nmo_layer_vtable.create(&source, NULL, NULL));
-    ASSERT_EQ(NMO_OK, nmo_layer_vtable.create(&loaded, NULL, NULL));
-    ASSERT_EQ(NMO_CKOBJECT_VISIBLE, source.base.visibility_flags);
-    ASSERT_EQ(0, source.format);
-    ASSERT_FALSE(source.has_square_data);
-
-    nmo_chunk_t *chunk = nmo_chunk_create(arena);
-    ASSERT_NOT_NULL(chunk);
-    chunk->class_id = NMO_CID_LAYER;
-    chunk->chunk_version = NMO_CHUNK_VERSION4;
-    chunk->data_version = 7;
-    chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
-
     nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
         arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
-    ASSERT_EQ(NMO_OK, nmo_layer_serialize(
-        &source, chunk, NULL, &serialize_context));
-    nmo_chunk_close(chunk);
-
     nmo_deserialize_context_t deserialize_context =
         nmo_deserialize_context_create(
             arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
-    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(chunk));
-    ASSERT_EQ(NMO_OK, nmo_layer_deserialize(
-        &loaded, chunk, NULL, &deserialize_context));
-    ASSERT_EQ(0, loaded.format);
-    ASSERT_TRUE(loaded.has_square_data);
-    ASSERT_EQ(0u, loaded.square_data_size);
-    ASSERT_NULL(loaded.square_data);
 
-    nmo_layer_vtable.destroy(&source, NULL, NULL);
-    nmo_layer_vtable.destroy(&loaded, NULL, NULL);
+    for (int with_grid = 0; with_grid < 2; ++with_grid) {
+        nmo_layer_state_t source;
+        nmo_layer_state_t loaded;
+        ASSERT_EQ(NMO_OK, nmo_layer_vtable.create(&source, NULL, NULL));
+        ASSERT_EQ(NMO_OK, nmo_layer_vtable.create(&loaded, NULL, NULL));
+        ASSERT_EQ(NMO_CKOBJECT_VISIBLE, source.base.visibility_flags);
+        ASSERT_EQ(0, source.format);
+        ASSERT_FALSE(source.has_square_data);
+        if (with_grid) {
+            source.grid = nmo_ref_from_raw(99);
+        }
+
+        nmo_chunk_t *chunk = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(chunk);
+        chunk->class_id = NMO_CID_LAYER;
+        chunk->chunk_version = NMO_CHUNK_VERSION4;
+        chunk->data_version = 7;
+        chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+        ASSERT_EQ(NMO_OK, nmo_layer_serialize(
+            &source, chunk, NULL, &serialize_context));
+        nmo_chunk_close(chunk);
+
+        ASSERT_EQ(NMO_OK, nmo_chunk_start_read(chunk));
+        ASSERT_EQ(NMO_OK, nmo_layer_deserialize(
+            &loaded, chunk, NULL, &deserialize_context));
+        ASSERT_EQ(0, loaded.format);
+        ASSERT_EQ(with_grid != 0, loaded.has_square_data != 0);
+        ASSERT_EQ(0u, loaded.square_data_size);
+        ASSERT_NULL(loaded.square_data);
+
+        nmo_layer_vtable.destroy(&source, NULL, NULL);
+        nmo_layer_vtable.destroy(&loaded, NULL, NULL);
+    }
     nmo_arena_destroy(arena);
 }
 
@@ -9683,6 +9689,9 @@ TEST(chunk_id_remap, curvepoint_layout_follows_data_version) {
     source.bias = 0.3f;
     source.tangent_in = (nmo_vector_t){1.0f, 2.0f, 3.0f};
     source.tangent_out = (nmo_vector_t){4.0f, 5.0f, 6.0f};
+    source.base.world_matrix[12] = 7.0f;
+    source.base.world_matrix[13] = 8.0f;
+    source.base.world_matrix[14] = 9.0f;
 
     nmo_chunk_t *legacy = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(legacy);
@@ -9711,7 +9720,11 @@ TEST(chunk_id_remap, curvepoint_layout_follows_data_version) {
         &legacy_loaded, legacy, NULL, &deserialize_context));
     ASSERT_FALSE(legacy_loaded.defaultdata_is_modern);
     ASSERT_TRUE(legacy_loaded.has_legacy_position);
-    ASSERT_FLOAT_EQ(0.0f, legacy_loaded.legacy_position.x, 0.0001f);
+    /* The legacy position is the position the point is written with, and
+     * Load applies it to the entity matrix. */
+    ASSERT_FLOAT_EQ(7.0f, legacy_loaded.legacy_position.x, 0.0001f);
+    ASSERT_FLOAT_EQ(9.0f, legacy_loaded.legacy_position.z, 0.0001f);
+    ASSERT_FLOAT_EQ(8.0f, legacy_loaded.base.world_matrix[13], 0.0001f);
     ASSERT_TRUE(legacy_loaded.has_tcb_chunk);
     ASSERT_TRUE(legacy_loaded.has_tangents_chunk);
     ASSERT_FLOAT_EQ(source.tension, legacy_loaded.tension, 0.0001f);
@@ -9731,15 +9744,6 @@ TEST(chunk_id_remap, curvepoint_layout_follows_data_version) {
     ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(modern, 0xABCD1234u));
     nmo_chunk_close(modern);
 
-    ASSERT_EQ(NMO_ERR_VALIDATION_FAILED, nmo_curvepoint_serialize(
-        &legacy_loaded, modern, NULL, &serialize_context));
-    ASSERT_EQ(4u, nmo_chunk_get_data_size(modern));
-    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(modern));
-    uint32_t marker = 0u;
-    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(modern, &marker));
-    ASSERT_EQ(0xABCD1234u, marker);
-
-    legacy_loaded.has_legacy_position = 0;
     ASSERT_EQ(NMO_OK, nmo_curvepoint_serialize(
         &legacy_loaded, modern, NULL, &serialize_context));
     nmo_chunk_close(modern);
@@ -9764,6 +9768,30 @@ TEST(chunk_id_remap, curvepoint_layout_follows_data_version) {
     nmo_curvepoint_vtable.destroy(&source, NULL, NULL);
     nmo_curvepoint_vtable.destroy(&legacy_loaded, NULL, NULL);
     nmo_curvepoint_vtable.destroy(&modern_loaded, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_id_remap, curve_without_its_sections_keeps_the_constructor_values) {
+    /* RCKCurve::Load assigns the step count and the open flag only from a
+     * section that is there; the constructor makes the curve open, 100 steps. */
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    chunk->class_id = NMO_CID_CURVE;
+    chunk->data_version = 7;
+    chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    nmo_chunk_close(chunk);
+
+    nmo_curve_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_curve_vtable.create(&loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_curve_deserialize(&loaded, chunk, NULL, &deserialize_context));
+    ASSERT_EQ(100, loaded.step_count);
+    ASSERT_TRUE(loaded.opened != 0);
+    nmo_curve_vtable.destroy(&loaded, NULL, NULL);
     nmo_arena_destroy(arena);
 }
 
@@ -21566,7 +21594,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, targetlight_unresolved_ref_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, kinematicchain_effectors_round_trip_atomically);
     REGISTER_TEST(chunk_id_remap, layer_unresolved_grid_round_trips_raw_id);
-    REGISTER_TEST(chunk_id_remap, layer_default_format_writes_empty_square_buffer);
+    REGISTER_TEST(chunk_id_remap, layer_writes_the_square_buffer_only_with_a_grid);
     REGISTER_TEST(chunk_id_remap, layer_copy_preserves_content_equality);
     REGISTER_TEST(chunk_id_remap, grid_failures_keep_state_and_target_chunk_atomic);
     REGISTER_TEST(chunk_id_remap, grid_reserved_value_round_trips);
@@ -21586,6 +21614,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, spritetext_font_integers_are_in_engine_order);
     REGISTER_TEST(chunk_id_remap, bitmap2_slot_image_follows_the_format_tag);
     REGISTER_TEST(chunk_id_remap, layer_version_2_associates_the_int_parameter);
+    REGISTER_TEST(chunk_id_remap, curve_without_its_sections_keeps_the_constructor_values);
     REGISTER_TEST(chunk_id_remap, new_place_and_grid_start_with_the_engine_constructor_state);
     REGISTER_TEST(chunk_id_remap, new_entity_and_body_part_start_with_the_engine_constructor_state);
     REGISTER_TEST(chunk_id_remap, new_texture_writes_the_engine_default_packed_state);
