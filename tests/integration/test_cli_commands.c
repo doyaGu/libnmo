@@ -2312,9 +2312,7 @@ TEST(cli, texture_show_reports_raw_slot_channels) {
     ASSERT_EQ(42, yyjson_get_uint(yyjson_obj_get(data, "id")));
     ASSERT_STR_EQ("CheckBoard1", yyjson_get_str(yyjson_obj_get(data, "name")));
     ASSERT_STR_EQ("raw", yyjson_get_str(yyjson_obj_get(data, "bitmap_kind")));
-    /* The packed state stores save option 3 (use global), which the CLI
-     * labels "external" like every other texture with that value. */
-    ASSERT_STR_EQ("external", yyjson_get_str(yyjson_obj_get(data, "save_options")));
+    ASSERT_STR_EQ("use_global", yyjson_get_str(yyjson_obj_get(data, "save_options")));
     ASSERT_EQ(1, yyjson_get_uint(yyjson_obj_get(data, "slot_count")));
 
     yyjson_val *slots = yyjson_obj_get(data, "slots");
@@ -2382,7 +2380,7 @@ TEST(cli, texture_external_raw_slot_extracts_from_real_fixture) {
     ASSERT_EQ(175, yyjson_get_uint(yyjson_obj_get(show_data, "id")));
     ASSERT_STR_EQ("Wood", yyjson_get_str(yyjson_obj_get(show_data, "name")));
     ASSERT_STR_EQ("raw", yyjson_get_str(yyjson_obj_get(show_data, "bitmap_kind")));
-    ASSERT_STR_EQ("external", yyjson_get_str(yyjson_obj_get(show_data, "save_options")));
+    ASSERT_STR_EQ("use_global", yyjson_get_str(yyjson_obj_get(show_data, "save_options")));
     ASSERT_TRUE(yyjson_get_bool(yyjson_obj_get(show_data, "is_external")));
 
     yyjson_val *filenames = yyjson_obj_get(show_data, "slot_filenames");
@@ -2445,7 +2443,7 @@ TEST(cli, texture_external_reader_slot_reports_mipmap_and_extracts) {
     ASSERT_EQ(609, yyjson_get_uint(yyjson_obj_get(show_data, "id")));
     ASSERT_STR_EQ("Eva", yyjson_get_str(yyjson_obj_get(show_data, "name")));
     ASSERT_STR_EQ("reader", yyjson_get_str(yyjson_obj_get(show_data, "bitmap_kind")));
-    ASSERT_STR_EQ("external", yyjson_get_str(yyjson_obj_get(show_data, "save_options")));
+    ASSERT_STR_EQ("use_global", yyjson_get_str(yyjson_obj_get(show_data, "save_options")));
     ASSERT_TRUE(yyjson_get_bool(yyjson_obj_get(show_data, "is_external")));
     ASSERT_EQ(8, yyjson_get_uint(yyjson_obj_get(show_data, "mipmap_level")));
     ASSERT_EQ(256, yyjson_get_uint(yyjson_obj_get(show_data, "reader_width")));

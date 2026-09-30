@@ -77,16 +77,22 @@ static const char *bitmap_kind_str(CKTEXTURE_BITMAP_KIND kind) {
     }
 }
 
+/* The save options are the enumeration CK_TEXTURE_SAVEOPTIONS, not a mask. */
 static const char *save_options_str(uint32_t opts) {
-    if (opts & NMO_CKTEXTURE_EXTERNAL)         return "external";
-    if (opts & NMO_CKTEXTURE_IMAGEFORMAT)      return "imageformat";
-    if (opts & NMO_CKTEXTURE_INCLUDEORIGINALFILE) return "include_original";
-    if (opts & NMO_CKTEXTURE_USEGLOBAL)        return "use_global";
-    return "rawdata";
+    switch (opts) {
+    case NMO_CKTEXTURE_EXTERNAL:            return "external";
+    case NMO_CKTEXTURE_IMAGEFORMAT:         return "imageformat";
+    case NMO_CKTEXTURE_USEGLOBAL:           return "use_global";
+    case NMO_CKTEXTURE_INCLUDEORIGINALFILE: return "include_original";
+    default:                                return "rawdata";
+    }
 }
 
 static bool is_external_texture(const nmo_texture_state_t *ts) {
-    return (ts->save_options & NMO_CKTEXTURE_EXTERNAL) != 0;
+    /* Use-global textures have always been reported as external here, because
+     * the old mask test matched value 3; keep that. */
+    return ts->save_options == NMO_CKTEXTURE_EXTERNAL ||
+           ts->save_options == NMO_CKTEXTURE_USEGLOBAL;
 }
 
 static const char *format_label(const nmo_texture_state_t *ts) {

@@ -52,8 +52,8 @@ typedef struct nmo_type_descriptor nmo_type_descriptor_t;
 #define NMO_CKTEXTURE_RAWDATA                  0x00000000  /**< Raw pixel data */
 #define NMO_CKTEXTURE_EXTERNAL                 0x00000001  /**< External file reference */
 #define NMO_CKTEXTURE_IMAGEFORMAT              0x00000002  /**< Compressed format (JPEG/PNG) */
-#define NMO_CKTEXTURE_USEGLOBAL                0x00000004  /**< Use global texture settings */
-#define NMO_CKTEXTURE_INCLUDEORIGINALFILE      0x00000008  /**< Embed original file */
+#define NMO_CKTEXTURE_USEGLOBAL                0x00000003  /**< Use global texture settings */
+#define NMO_CKTEXTURE_INCLUDEORIGINALFILE      0x00000004  /**< Embed original file */
 
 /** Bitmap data flags (CKBMPDATA_FLAGS) */
 #define NMO_CKBMPDATA_FREEVIDEOMEMORY          0x00000001  /**< Free video memory */
