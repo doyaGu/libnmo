@@ -131,6 +131,964 @@ static nmo_status_t edit_executor_resolve_handle_slots(
     return NMO_OK;
 }
 
+typedef struct edit_apply_env_t {
+    nmo_script_edit_tx_t *tx;
+    const nmo_edit_op_t *op;
+    nmo_object_id_t *out_result_id;
+    bool dry_run;
+    nmo_edit_report_t *report;
+    const char **out_diagnostic_code;
+    const char **out_diagnostic_message;
+    nmo_workspace_edit_t *edit;
+} edit_apply_env_t;
+
+static nmo_status_t edit_apply_set_parameter_value(const edit_apply_env_t *env)
+{
+    nmo_script_edit_tx_t *tx = env->tx;
+    const nmo_edit_op_t *op = env->op;
+    nmo_object_id_t *out_result_id = env->out_result_id;
+    nmo_edit_report_t *report = env->report;
+    const char **out_diagnostic_code = env->out_diagnostic_code;
+    const char **out_diagnostic_message = env->out_diagnostic_message;
+    nmo_workspace_edit_t *edit = env->edit;
+
+    nmo_object_id_t parameter_id = op->primary_id;
+    edit_executor_handle_slot_t parameter_slot = {
+        .ref = &op->data.set_value.parameter_ref,
+        .id = &parameter_id,
+        .diagnostic_code = "handle_not_found",
+        .diagnostic_message =
+            "Referenced edit operation handle was not found",
+        .resolve_input_parameter_source = true,
+        .source_requires_ref = false,
+    };
+    NMO_RETURN_IF_ERROR(edit_executor_resolve_handle_slots(
+        tx,
+        report,
+        &parameter_slot,
+        1u,
+        out_diagnostic_code,
+        out_diagnostic_message));
+    if (out_result_id != NULL) {
+        *out_result_id = parameter_id;
+    }
+    nmo_status_t write_rc = nmo_object_edit_set_parameter_value_ex(
+        edit,
+        parameter_id,
+        op->data.set_value.value,
+        op->data.set_value.has_options ? &op->data.set_value.options : NULL);
+    if (write_rc == NMO_OK) {
+        nmo_script_edit_mark(tx, NMO_WORKSPACE_EDIT_OBJECT_STATE |
+                                 NMO_WORKSPACE_EDIT_REFERENCES);
+    }
+    return write_rc;
+}
+
+static nmo_status_t edit_apply_set_parameter_bytes(const edit_apply_env_t *env)
+{
+    nmo_script_edit_tx_t *tx = env->tx;
+    const nmo_edit_op_t *op = env->op;
+    nmo_object_id_t *out_result_id = env->out_result_id;
+    nmo_edit_report_t *report = env->report;
+    const char **out_diagnostic_code = env->out_diagnostic_code;
+    const char **out_diagnostic_message = env->out_diagnostic_message;
+    nmo_workspace_edit_t *edit = env->edit;
+
+    nmo_object_id_t parameter_id = op->primary_id;
+    edit_executor_handle_slot_t parameter_slot = {
+        .ref = &op->data.set_bytes.parameter_ref,
+        .id = &parameter_id,
+        .diagnostic_code = "handle_not_found",
+        .diagnostic_message =
+            "Referenced edit operation parameter handle was not found",
+        .resolve_input_parameter_source = true,
+        .source_requires_ref = true,
+    };
+    NMO_RETURN_IF_ERROR(edit_executor_resolve_handle_slots(
+        tx,
+        report,
+        &parameter_slot,
+        1u,
+        out_diagnostic_code,
+        out_diagnostic_message));
+    if (out_result_id != NULL) {
+        *out_result_id = parameter_id;
+    }
+    return nmo_object_edit_set_parameter_bytes_ex(
+        edit,
+        parameter_id,
+        op->data.set_bytes.bytes,
+        op->data.set_bytes.byte_count,
+        op->data.set_bytes.has_options ? &op->data.set_bytes.options : NULL);
+}
+
+static nmo_status_t edit_apply_add_node(const edit_apply_env_t *env)
+{
+    nmo_script_edit_tx_t *tx = env->tx;
+    const nmo_edit_op_t *op = env->op;
+    nmo_object_id_t *out_result_id = env->out_result_id;
+
+    return nmo_script_edit_add_node_ex(
+        tx,
+        op->data.add_node.parent_behavior_id,
+        op->data.add_node.bb_guid,
+        op->data.add_node.name,
+        op->data.add_node.has_options
+            ? &(nmo_script_edit_add_node_options_t){
+                  .manager_entry =
+                      op->data.add_node.options.manager_entry,
+              }
+            : NULL,
+        out_result_id);
+}
+
+static nmo_status_t edit_apply_remove_node(const edit_apply_env_t *env)
+{
+    nmo_script_edit_tx_t *tx = env->tx;
+    const nmo_edit_op_t *op = env->op;
+    nmo_edit_report_t *report = env->report;
+
+    NMO_RETURN_IF_ERROR(edit_report_note_behavior_owned_deleted_objects(
+        tx,
+        report,
+        NMO_EDIT_OP_REMOVE_NODE,
+        op->data.remove_node.node_id));
+    NMO_RETURN_IF_ERROR(edit_report_note_behavior_io_detach_impacts(
+        tx,
+        report,
+        NMO_EDIT_OP_REMOVE_NODE,
+        op->data.remove_node.node_id));
+    NMO_RETURN_IF_ERROR(edit_report_note_behavior_parameter_detach_impacts(
+        tx,
+        report,
+        NMO_EDIT_OP_REMOVE_NODE,
+        op->data.remove_node.node_id));
+    return nmo_script_edit_remove_node(
+        tx,
+        op->data.remove_node.parent_behavior_id,
+        op->data.remove_node.node_id,
+        op->data.remove_node.delete_flags);
+}
+
+static nmo_status_t edit_apply_add_io(const edit_apply_env_t *env)
+{
+    nmo_script_edit_tx_t *tx = env->tx;
+    const nmo_edit_op_t *op = env->op;
+    nmo_object_id_t *out_result_id = env->out_result_id;
+
+    return nmo_script_edit_add_io(
+        tx,
+        op->data.add_io.behavior_id,
+        op->data.add_io.kind,
+        op->data.add_io.name,
+        out_result_id);
+}
+
+static nmo_status_t edit_apply_rename_io(const edit_apply_env_t *env)
+{
+    nmo_script_edit_tx_t *tx = env->tx;
+    const nmo_edit_op_t *op = env->op;
+
+    return nmo_script_edit_rename_io(
+        tx,
+        op->data.rename_io.io_id,
+        op->data.rename_io.name);
+}
+
+static nmo_status_t edit_apply_remove_io(const edit_apply_env_t *env)
+{
+    nmo_script_edit_tx_t *tx = env->tx;
+    const nmo_edit_op_t *op = env->op;
+    nmo_edit_report_t *report = env->report;
+
+    if (op->data.remove_io.detach_links) {
+        NMO_RETURN_IF_ERROR(edit_report_note_io_detach_impacts(
+            tx,
+            report,
+            NMO_EDIT_OP_REMOVE_IO,
+            op->data.remove_io.io_id));
+    }
+    return nmo_script_edit_remove_io(
+        tx,
+        op->data.remove_io.io_id,
+        op->data.remove_io.detach_links);
+}
+
+static nmo_status_t edit_apply_add_behavior_link(const edit_apply_env_t *env)
+{
+    nmo_script_edit_tx_t *tx = env->tx;
+    const nmo_edit_op_t *op = env->op;
+    nmo_object_id_t *out_result_id = env->out_result_id;
+    nmo_edit_report_t *report = env->report;
+    const char **out_diagnostic_code = env->out_diagnostic_code;
+    const char **out_diagnostic_message = env->out_diagnostic_message;
+
+    nmo_object_id_t from_io_id = op->data.add_link.from_io_id;
+    nmo_object_id_t to_io_id = op->data.add_link.to_io_id;
+    edit_executor_handle_slot_t slots[] = {
+        {
+            .ref = &op->data.add_link.from_io_ref,
+            .id = &from_io_id,
+            .diagnostic_code = "handle_not_found",
+            .diagnostic_message =
+                "Referenced edit operation output IO handle was not found",
+        },
+        {
+            .ref = &op->data.add_link.to_io_ref,
+            .id = &to_io_id,
+            .diagnostic_code = "handle_not_found",
+            .diagnostic_message =
+                "Referenced edit operation input IO handle was not found",
+        },
+    };
+    NMO_RETURN_IF_ERROR(edit_executor_resolve_handle_slots(
+        tx,
+        report,
+        slots,
+        sizeof(slots) / sizeof(slots[0]),
+        out_diagnostic_code,
+        out_diagnostic_message));
+    nmo_status_t rc = nmo_script_edit_add_behavior_link(
+        tx,
+        op->data.add_link.parent_behavior_id,
+        from_io_id,
+        to_io_id,
+        op->data.add_link.activation_delay,
+        out_result_id);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    return edit_report_note_control_link_endpoints(
+        report,
+        NMO_EDIT_OP_ADD_BEHAVIOR_LINK,
+        from_io_id,
+        to_io_id);
+}
+
+static nmo_status_t edit_apply_rewire_behavior_link(const edit_apply_env_t *env)
+{
+    nmo_script_edit_tx_t *tx = env->tx;
+    const nmo_edit_op_t *op = env->op;
+    nmo_edit_report_t *report = env->report;
+
+    nmo_object_id_t before_from_io_id = 0u;
+    nmo_object_id_t before_to_io_id = 0u;
+    uint32_t before_activation_delay = 0u;
+    edit_plan_get_behavior_link_endpoints(
+        tx,
+        op->data.rewire_link.link_id,
+        &before_from_io_id,
+        &before_to_io_id,
+        &before_activation_delay);
+    nmo_status_t rc = nmo_script_edit_rewire_behavior_link(
+        tx,
+        op->data.rewire_link.link_id,
+        op->data.rewire_link.from_io_id,
+        op->data.rewire_link.to_io_id);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    nmo_object_id_t after_from_io_id = 0u;
+    nmo_object_id_t after_to_io_id = 0u;
+    uint32_t after_activation_delay = 0u;
+    edit_plan_get_behavior_link_endpoints(
+        tx,
+        op->data.rewire_link.link_id,
+        &after_from_io_id,
+        &after_to_io_id,
+        &after_activation_delay);
+    NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
+        report,
+        op->data.rewire_link.link_id,
+        NMO_EDIT_OP_REWIRE_BEHAVIOR_LINK,
+        "primary"));
+    edit_report_set_control_link_before(
+        report->changed_objects,
+        report->changed_object_count,
+        op->data.rewire_link.link_id,
+        NMO_EDIT_OP_REWIRE_BEHAVIOR_LINK,
+        "primary",
+        before_from_io_id,
+        before_to_io_id,
+        before_activation_delay);
+    edit_report_set_control_link_after(
+        report->changed_objects,
+        report->changed_object_count,
+        op->data.rewire_link.link_id,
+        NMO_EDIT_OP_REWIRE_BEHAVIOR_LINK,
+        "primary",
+        after_from_io_id,
+        after_to_io_id,
+        after_activation_delay);
+    return edit_report_note_control_link_endpoints(
+        report,
+        NMO_EDIT_OP_REWIRE_BEHAVIOR_LINK,
+        op->data.rewire_link.from_io_id,
+        op->data.rewire_link.to_io_id);
+}
+
+static nmo_status_t edit_apply_set_behavior_link_delay(const edit_apply_env_t *env)
+{
+    nmo_script_edit_tx_t *tx = env->tx;
+    const nmo_edit_op_t *op = env->op;
+    nmo_edit_report_t *report = env->report;
+
+    nmo_object_id_t before_from_io_id = 0u;
+    nmo_object_id_t before_to_io_id = 0u;
+    uint32_t before_activation_delay = 0u;
+    edit_plan_get_behavior_link_endpoints(
+        tx,
+        op->data.set_link_delay.link_id,
+        &before_from_io_id,
+        &before_to_io_id,
+        &before_activation_delay);
+    nmo_status_t rc = nmo_script_edit_set_behavior_link_delay(
+        tx,
+        op->data.set_link_delay.link_id,
+        op->data.set_link_delay.activation_delay);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    nmo_object_id_t after_from_io_id = 0u;
+    nmo_object_id_t after_to_io_id = 0u;
+    uint32_t after_activation_delay = 0u;
+    edit_plan_get_behavior_link_endpoints(
+        tx,
+        op->data.set_link_delay.link_id,
+        &after_from_io_id,
+        &after_to_io_id,
+        &after_activation_delay);
+    NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
+        report,
+        op->data.set_link_delay.link_id,
+        NMO_EDIT_OP_SET_BEHAVIOR_LINK_DELAY,
+        "primary"));
+    edit_report_set_control_link_before(
+        report->changed_objects,
+        report->changed_object_count,
+        op->data.set_link_delay.link_id,
+        NMO_EDIT_OP_SET_BEHAVIOR_LINK_DELAY,
+        "primary",
+        before_from_io_id,
+        before_to_io_id,
+        before_activation_delay);
+    edit_report_set_control_link_after(
+        report->changed_objects,
+        report->changed_object_count,
+        op->data.set_link_delay.link_id,
+        NMO_EDIT_OP_SET_BEHAVIOR_LINK_DELAY,
+        "primary",
+        after_from_io_id,
+        after_to_io_id,
+        after_activation_delay);
+    return NMO_OK;
+}
+
+static nmo_status_t edit_apply_remove_behavior_link(const edit_apply_env_t *env)
+{
+    nmo_script_edit_tx_t *tx = env->tx;
+    const nmo_edit_op_t *op = env->op;
+    nmo_edit_report_t *report = env->report;
+
+    nmo_object_id_t from_io_id = 0u;
+    nmo_object_id_t to_io_id = 0u;
+    uint32_t activation_delay = 0u;
+    edit_plan_get_behavior_link_endpoints(
+        tx,
+        op->data.remove_link.link_id,
+        &from_io_id,
+        &to_io_id,
+        &activation_delay);
+    NMO_RETURN_IF_ERROR(nmo_edit_report_add_deleted_object(
+        report,
+        op->data.remove_link.link_id,
+        NMO_EDIT_OP_REMOVE_BEHAVIOR_LINK,
+        "primary"));
+    edit_report_set_control_link_before(
+        report->deleted_objects,
+        report->deleted_object_count,
+        op->data.remove_link.link_id,
+        NMO_EDIT_OP_REMOVE_BEHAVIOR_LINK,
+        "primary",
+        from_io_id,
+        to_io_id,
+        activation_delay);
+    nmo_status_t rc = nmo_script_edit_remove_behavior_link(
+        tx,
+        op->data.remove_link.parent_behavior_id,
+        op->data.remove_link.link_id);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    return edit_report_note_control_link_endpoints(
+        report,
+        NMO_EDIT_OP_REMOVE_BEHAVIOR_LINK,
+        from_io_id,
+        to_io_id);
+}
+
+static nmo_status_t edit_apply_add_parameter(const edit_apply_env_t *env)
+{
+    nmo_script_edit_tx_t *tx = env->tx;
+    const nmo_edit_op_t *op = env->op;
+    nmo_object_id_t *out_result_id = env->out_result_id;
+
+    return nmo_script_edit_add_parameter(
+        tx,
+        op->data.add_parameter.owner_behavior_id,
+        op->data.add_parameter.kind,
+        op->data.add_parameter.type_guid,
+        op->data.add_parameter.name,
+        out_result_id);
+}
+
+static nmo_status_t edit_apply_connect_parameter(const edit_apply_env_t *env)
+{
+    nmo_script_edit_tx_t *tx = env->tx;
+    const nmo_edit_op_t *op = env->op;
+    nmo_object_id_t *out_result_id = env->out_result_id;
+    nmo_edit_report_t *report = env->report;
+    const char **out_diagnostic_code = env->out_diagnostic_code;
+    const char **out_diagnostic_message = env->out_diagnostic_message;
+
+    nmo_object_id_t target_parameter_id =
+        op->data.connect_parameter.target_parameter_id;
+    edit_executor_handle_slot_t target_slot = {
+        .ref = &op->data.connect_parameter.target_parameter_ref,
+        .id = &target_parameter_id,
+        .diagnostic_code = "handle_not_found",
+        .diagnostic_message =
+            "Referenced edit operation parameter handle was not found",
+    };
+    NMO_RETURN_IF_ERROR(edit_executor_resolve_handle_slots(
+        tx,
+        report,
+        &target_slot,
+        1u,
+        out_diagnostic_code,
+        out_diagnostic_message));
+    nmo_object_id_t before_source_parameter_id =
+        edit_plan_get_parameterin_source(tx, target_parameter_id);
+    nmo_status_t rc = nmo_script_edit_connect_parameter(
+        tx,
+        op->data.connect_parameter.source_parameter_id,
+        target_parameter_id);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    if (out_result_id != NULL) {
+        *out_result_id = target_parameter_id;
+    }
+    nmo_object_id_t after_source_parameter_id =
+        edit_plan_get_parameterin_source(tx, target_parameter_id);
+    NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
+        report,
+        target_parameter_id,
+        NMO_EDIT_OP_CONNECT_PARAMETER,
+        "primary"));
+    edit_report_set_parameter_edge_before(
+        report->changed_objects,
+        report->changed_object_count,
+        target_parameter_id,
+        NMO_EDIT_OP_CONNECT_PARAMETER,
+        "primary",
+        before_source_parameter_id,
+        target_parameter_id);
+    edit_report_set_parameter_edge_after(
+        report->changed_objects,
+        report->changed_object_count,
+        target_parameter_id,
+        NMO_EDIT_OP_CONNECT_PARAMETER,
+        "primary",
+        after_source_parameter_id,
+        target_parameter_id);
+    return edit_report_note_parameter_edge_source(
+        report,
+        NMO_EDIT_OP_CONNECT_PARAMETER,
+        op->data.connect_parameter.source_parameter_id);
+}
+
+static nmo_status_t edit_apply_disconnect_parameter(const edit_apply_env_t *env)
+{
+    nmo_script_edit_tx_t *tx = env->tx;
+    const nmo_edit_op_t *op = env->op;
+    nmo_edit_report_t *report = env->report;
+
+    nmo_object_id_t old_source_parameter_id =
+        edit_plan_get_parameterin_source(
+            tx,
+            op->data.disconnect_parameter.target_parameter_id);
+    nmo_status_t rc = nmo_script_edit_disconnect_parameter(
+        tx,
+        op->data.disconnect_parameter.target_parameter_id);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    nmo_object_id_t after_source_parameter_id =
+        edit_plan_get_parameterin_source(
+            tx,
+            op->data.disconnect_parameter.target_parameter_id);
+    NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
+        report,
+        op->data.disconnect_parameter.target_parameter_id,
+        NMO_EDIT_OP_DISCONNECT_PARAMETER,
+        "primary"));
+    edit_report_set_parameter_edge_before(
+        report->changed_objects,
+        report->changed_object_count,
+        op->data.disconnect_parameter.target_parameter_id,
+        NMO_EDIT_OP_DISCONNECT_PARAMETER,
+        "primary",
+        old_source_parameter_id,
+        op->data.disconnect_parameter.target_parameter_id);
+    edit_report_set_parameter_edge_after(
+        report->changed_objects,
+        report->changed_object_count,
+        op->data.disconnect_parameter.target_parameter_id,
+        NMO_EDIT_OP_DISCONNECT_PARAMETER,
+        "primary",
+        after_source_parameter_id,
+        op->data.disconnect_parameter.target_parameter_id);
+    return edit_report_note_parameter_edge_source(
+        report,
+        NMO_EDIT_OP_DISCONNECT_PARAMETER,
+        old_source_parameter_id);
+}
+
+static nmo_status_t edit_apply_remove_parameter(const edit_apply_env_t *env)
+{
+    nmo_script_edit_tx_t *tx = env->tx;
+    const nmo_edit_op_t *op = env->op;
+    nmo_edit_report_t *report = env->report;
+
+    nmo_object_id_t old_source_parameter_id =
+        edit_plan_get_parameterin_source(
+            tx,
+            op->data.remove_parameter.parameter_id);
+    NMO_RETURN_IF_ERROR(edit_report_note_parameter_detach_impacts(
+        tx,
+        report,
+        NMO_EDIT_OP_REMOVE_PARAMETER,
+        op->data.remove_parameter.parameter_id));
+    nmo_status_t rc = nmo_script_edit_remove_parameter(
+        tx,
+        op->data.remove_parameter.parameter_id,
+        op->data.remove_parameter.detach);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    return edit_report_note_parameter_edge_source(
+        report,
+        NMO_EDIT_OP_REMOVE_PARAMETER,
+        old_source_parameter_id);
+}
+
+static nmo_status_t edit_apply_add_operation(const edit_apply_env_t *env)
+{
+    nmo_script_edit_tx_t *tx = env->tx;
+    const nmo_edit_op_t *op = env->op;
+    nmo_object_id_t *out_result_id = env->out_result_id;
+    nmo_edit_report_t *report = env->report;
+    const char **out_diagnostic_code = env->out_diagnostic_code;
+    const char **out_diagnostic_message = env->out_diagnostic_message;
+
+    nmo_object_id_t in1_parameter_id =
+        op->data.add_operation.in1_parameter_id;
+    nmo_object_id_t in2_parameter_id =
+        op->data.add_operation.in2_parameter_id;
+    nmo_object_id_t out_parameter_id =
+        op->data.add_operation.out_parameter_id;
+    edit_executor_handle_slot_t slots[] = {
+        {
+            .ref = &op->data.add_operation.in1_parameter_ref,
+            .id = &in1_parameter_id,
+            .diagnostic_code = "handle_not_found",
+            .diagnostic_message =
+                "Referenced edit operation input parameter handle was not found",
+        },
+        {
+            .ref = &op->data.add_operation.in2_parameter_ref,
+            .id = &in2_parameter_id,
+            .diagnostic_code = "handle_not_found",
+            .diagnostic_message =
+                "Referenced edit operation input parameter handle was not found",
+        },
+        {
+            .ref = &op->data.add_operation.out_parameter_ref,
+            .id = &out_parameter_id,
+            .diagnostic_code = "handle_not_found",
+            .diagnostic_message =
+                "Referenced edit operation output parameter handle was not found",
+        },
+    };
+    NMO_RETURN_IF_ERROR(edit_executor_resolve_handle_slots(
+        tx,
+        report,
+        slots,
+        sizeof(slots) / sizeof(slots[0]),
+        out_diagnostic_code,
+        out_diagnostic_message));
+    nmo_status_t rc = nmo_script_edit_add_operation(
+        tx,
+        op->data.add_operation.parent_behavior_id,
+        op->data.add_operation.operation_guid,
+        in1_parameter_id,
+        in2_parameter_id,
+        out_parameter_id,
+        out_result_id);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    return edit_report_note_operation_slot_parameters(
+        report,
+        NMO_EDIT_OP_ADD_OPERATION,
+        in1_parameter_id,
+        in2_parameter_id,
+        out_parameter_id);
+}
+
+static nmo_status_t edit_apply_rewire_operation(const edit_apply_env_t *env)
+{
+    nmo_script_edit_tx_t *tx = env->tx;
+    const nmo_edit_op_t *op = env->op;
+    nmo_edit_report_t *report = env->report;
+    const char **out_diagnostic_code = env->out_diagnostic_code;
+    const char **out_diagnostic_message = env->out_diagnostic_message;
+
+    const nmo_parameteroperation_state_t *before_state =
+        edit_plan_get_operation_state(
+            tx,
+            op->data.rewire_operation.operation_id);
+    nmo_parameteroperation_state_t before_state_copy;
+    const nmo_parameteroperation_state_t *before_snapshot = NULL;
+    if (before_state != NULL) {
+        before_state_copy = *before_state;
+        before_snapshot = &before_state_copy;
+    }
+    nmo_object_id_t in1_parameter_id =
+        op->data.rewire_operation.in1_parameter_id;
+    nmo_object_id_t in2_parameter_id =
+        op->data.rewire_operation.in2_parameter_id;
+    nmo_object_id_t out_parameter_id =
+        op->data.rewire_operation.out_parameter_id;
+    edit_executor_handle_slot_t slots[] = {
+        {
+            .ref = &op->data.rewire_operation.in1_parameter_ref,
+            .id = &in1_parameter_id,
+            .diagnostic_code = "missing_in1_handle",
+            .diagnostic_message =
+                "Failed to resolve in1 parameter handle",
+        },
+        {
+            .ref = &op->data.rewire_operation.in2_parameter_ref,
+            .id = &in2_parameter_id,
+            .diagnostic_code = "missing_in2_handle",
+            .diagnostic_message =
+                "Failed to resolve in2 parameter handle",
+        },
+        {
+            .ref = &op->data.rewire_operation.out_parameter_ref,
+            .id = &out_parameter_id,
+            .diagnostic_code = "missing_out_handle",
+            .diagnostic_message =
+                "Failed to resolve out parameter handle",
+        },
+    };
+    NMO_RETURN_IF_ERROR(edit_executor_resolve_handle_slots(
+        tx,
+        report,
+        slots,
+        sizeof(slots) / sizeof(slots[0]),
+        out_diagnostic_code,
+        out_diagnostic_message));
+    nmo_status_t rc = nmo_script_edit_rewire_operation(
+        tx,
+        op->data.rewire_operation.operation_id,
+        op->data.rewire_operation.slot_flags,
+        in1_parameter_id,
+        in2_parameter_id,
+        out_parameter_id);
+    if (rc != NMO_OK || report == NULL) {
+        return rc;
+    }
+    NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
+        report,
+        op->data.rewire_operation.operation_id,
+        NMO_EDIT_OP_REWIRE_OPERATION,
+        "primary"));
+    edit_report_set_operation_slot_before(
+        report->changed_objects,
+        report->changed_object_count,
+        op->data.rewire_operation.operation_id,
+        NMO_EDIT_OP_REWIRE_OPERATION,
+        "primary",
+        before_snapshot);
+    edit_report_set_operation_slot_after(
+        report->changed_objects,
+        report->changed_object_count,
+        op->data.rewire_operation.operation_id,
+        NMO_EDIT_OP_REWIRE_OPERATION,
+        "primary",
+        edit_plan_get_operation_state(
+            tx,
+            op->data.rewire_operation.operation_id));
+    return edit_report_note_operation_slot_parameters(
+        report,
+        NMO_EDIT_OP_REWIRE_OPERATION,
+        (op->data.rewire_operation.slot_flags &
+         NMO_SCRIPT_EDIT_OP_SLOT_IN1) != 0u ? in1_parameter_id : 0u,
+        (op->data.rewire_operation.slot_flags &
+         NMO_SCRIPT_EDIT_OP_SLOT_IN2) != 0u ? in2_parameter_id : 0u,
+        (op->data.rewire_operation.slot_flags &
+         NMO_SCRIPT_EDIT_OP_SLOT_OUT) != 0u ? out_parameter_id : 0u);
+}
+
+static nmo_status_t edit_apply_remove_operation(const edit_apply_env_t *env)
+{
+    nmo_script_edit_tx_t *tx = env->tx;
+    const nmo_edit_op_t *op = env->op;
+    nmo_edit_report_t *report = env->report;
+
+    const nmo_parameteroperation_state_t *before_state =
+        edit_plan_get_operation_state(
+            tx,
+            op->data.remove_operation.operation_id);
+    nmo_parameteroperation_state_t before_state_copy;
+    const nmo_parameteroperation_state_t *before_snapshot = NULL;
+    if (before_state != NULL) {
+        before_state_copy = *before_state;
+        before_snapshot = &before_state_copy;
+    }
+    nmo_object_id_t in1_parameter_id = 0u;
+    nmo_object_id_t in2_parameter_id = 0u;
+    nmo_object_id_t out_parameter_id = 0u;
+    edit_plan_get_parameter_operation_slots(
+        tx,
+        op->data.remove_operation.operation_id,
+        &in1_parameter_id,
+        &in2_parameter_id,
+        &out_parameter_id);
+    nmo_status_t rc = nmo_script_edit_remove_operation(
+        tx,
+        op->data.remove_operation.operation_id);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    NMO_RETURN_IF_ERROR(edit_report_note_operation_slot_deleted_objects(
+        tx, report, NMO_EDIT_OP_REMOVE_OPERATION, before_snapshot));
+    NMO_RETURN_IF_ERROR(nmo_edit_report_add_deleted_object(
+        report,
+        op->data.remove_operation.operation_id,
+        NMO_EDIT_OP_REMOVE_OPERATION,
+        "primary"));
+    edit_report_set_operation_slot_before(
+        report->deleted_objects,
+        report->deleted_object_count,
+        op->data.remove_operation.operation_id,
+        NMO_EDIT_OP_REMOVE_OPERATION,
+        "primary",
+        before_snapshot);
+    return edit_report_note_operation_slot_parameters(
+        report,
+        NMO_EDIT_OP_REMOVE_OPERATION,
+        in1_parameter_id,
+        in2_parameter_id,
+        out_parameter_id);
+}
+
+static nmo_status_t edit_apply_interface_policy(const edit_apply_env_t *env)
+{
+    nmo_script_edit_tx_t *tx = env->tx;
+    const nmo_edit_op_t *op = env->op;
+    nmo_edit_report_t *report = env->report;
+
+    const nmo_behavior_state_t *before_state =
+        edit_plan_get_behavior_state(
+            tx,
+            op->data.interface_policy.behavior_id);
+    nmo_behavior_state_t before_state_copy;
+    const nmo_behavior_state_t *before_snapshot = NULL;
+    if (before_state != NULL) {
+        before_state_copy = *before_state;
+        before_snapshot = &before_state_copy;
+    }
+    nmo_status_t rc = nmo_script_edit_apply_interface_policy(
+        tx,
+        op->data.interface_policy.behavior_id,
+        op->data.interface_policy.mode);
+    if (rc != NMO_OK || report == NULL) {
+        return rc;
+    }
+    NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
+        report,
+        op->data.interface_policy.behavior_id,
+        NMO_EDIT_OP_INTERFACE_POLICY,
+        "primary"));
+    edit_report_set_interface_before(
+        report->changed_objects,
+        report->changed_object_count,
+        op->data.interface_policy.behavior_id,
+        NMO_EDIT_OP_INTERFACE_POLICY,
+        "primary",
+        before_snapshot);
+    edit_report_set_interface_after(
+        report->changed_objects,
+        report->changed_object_count,
+        op->data.interface_policy.behavior_id,
+        NMO_EDIT_OP_INTERFACE_POLICY,
+        "primary",
+        edit_plan_get_behavior_state(
+            tx,
+            op->data.interface_policy.behavior_id));
+    return NMO_OK;
+}
+
+static nmo_status_t edit_apply_set_data_cell(const edit_apply_env_t *env)
+{
+    nmo_script_edit_tx_t *tx = env->tx;
+    const nmo_edit_op_t *op = env->op;
+    nmo_edit_report_t *report = env->report;
+    nmo_workspace_edit_t *edit = env->edit;
+
+    uint32_t before_type = 0u;
+    const nmo_dataarray_cell_t *before_cell =
+        edit_plan_get_data_cell(
+            tx,
+            op->data.data_cell.dataarray_id,
+            op->data.data_cell.row,
+            op->data.data_cell.col,
+            &before_type);
+    nmo_dataarray_cell_t before_cell_copy;
+    const nmo_dataarray_cell_t *before_snapshot = NULL;
+    if (before_cell != NULL) {
+        before_cell_copy = *before_cell;
+        before_snapshot = &before_cell_copy;
+    }
+    nmo_status_t rc = nmo_object_edit_set_dataarray_cell(
+        edit,
+        op->data.data_cell.dataarray_id,
+        op->data.data_cell.row,
+        op->data.data_cell.col,
+        op->data.data_cell.value);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
+        report,
+        op->data.data_cell.dataarray_id,
+        NMO_EDIT_OP_SET_DATA_CELL,
+        "data_cell"));
+    edit_report_set_data_cell_before(
+        report->changed_objects,
+        report->changed_object_count,
+        op->data.data_cell.dataarray_id,
+        NMO_EDIT_OP_SET_DATA_CELL,
+        "data_cell",
+        op->data.data_cell.row,
+        op->data.data_cell.col,
+        before_type,
+        before_snapshot);
+    uint32_t after_type = 0u;
+    const nmo_dataarray_cell_t *after_cell =
+        edit_plan_get_data_cell(
+            tx,
+            op->data.data_cell.dataarray_id,
+            op->data.data_cell.row,
+            op->data.data_cell.col,
+            &after_type);
+    edit_report_set_data_cell_after(
+        report->changed_objects,
+        report->changed_object_count,
+        op->data.data_cell.dataarray_id,
+        NMO_EDIT_OP_SET_DATA_CELL,
+        "data_cell",
+        op->data.data_cell.row,
+        op->data.data_cell.col,
+        after_type,
+        after_cell);
+    return NMO_OK;
+}
+
+static nmo_status_t edit_apply_replace_bb(const edit_apply_env_t *env)
+{
+    nmo_script_edit_tx_t *tx = env->tx;
+    const nmo_edit_op_t *op = env->op;
+    nmo_object_id_t *out_result_id = env->out_result_id;
+    nmo_edit_report_t *report = env->report;
+    const char **out_diagnostic_code = env->out_diagnostic_code;
+    const char **out_diagnostic_message = env->out_diagnostic_message;
+    nmo_workspace_edit_t *edit = env->edit;
+
+    nmo_behavior_replace_report_t replace_report = {0};
+    nmo_status_t rc = nmo_behavior_edit_replace_bb_in_edit(
+        nmo_script_edit_workspace(tx),
+        edit,
+        &op->data.replace_bb.desc,
+        &replace_report);
+    if (out_diagnostic_code != NULL) {
+        *out_diagnostic_code = replace_report.diagnostic_code;
+    }
+    if (out_diagnostic_message != NULL) {
+        *out_diagnostic_message = replace_report.diagnostic_message;
+    }
+    if (rc == NMO_OK && out_result_id != NULL) {
+        *out_result_id = op->data.replace_bb.desc.behavior_id;
+    }
+    if (rc == NMO_OK && report != NULL) {
+        rc = nmo_edit_report_merge_semantic_risks(
+            report,
+            replace_report.semantic_risks,
+            replace_report.semantic_risk_count);
+    }
+    free(replace_report.semantic_risks);
+    return rc;
+}
+
+static nmo_status_t edit_apply_fold(const edit_apply_env_t *env)
+{
+    nmo_script_edit_tx_t *tx = env->tx;
+    const nmo_edit_op_t *op = env->op;
+    nmo_object_id_t *out_result_id = env->out_result_id;
+    bool dry_run = env->dry_run;
+    nmo_edit_report_t *report = env->report;
+    const char **out_diagnostic_code = env->out_diagnostic_code;
+    const char **out_diagnostic_message = env->out_diagnostic_message;
+
+    nmo_behavior_fold_report_t fold_report = {0};
+    nmo_status_t rc = dry_run
+        ? nmo_behavior_edit_fold_analyze(
+              nmo_script_edit_workspace(tx),
+              &op->data.fold.desc,
+              &fold_report)
+        : nmo_behavior_edit_fold_in_script_tx(
+              tx,
+              &op->data.fold.desc,
+              &fold_report);
+    if (out_diagnostic_code != NULL) {
+        *out_diagnostic_code = fold_report.diagnostic_code;
+    }
+    if (out_diagnostic_message != NULL) {
+        *out_diagnostic_message = fold_report.diagnostic_message;
+    }
+    if (rc == NMO_OK && out_result_id != NULL) {
+        *out_result_id = fold_report.anchor_id != 0u
+            ? fold_report.anchor_id
+            : op->data.fold.desc.anchor_id;
+    }
+    if (rc == NMO_OK && report != NULL) {
+        rc = nmo_edit_report_merge_semantic_risks(
+            report,
+            fold_report.semantic_risks,
+            fold_report.semantic_risk_count);
+        if (rc == NMO_OK) {
+            rc = edit_report_note_fold_impact(
+                report, &fold_report, op->data.fold.desc.parent_id);
+        }
+    }
+    nmo_behavior_edit_fold_report_free(&fold_report);
+    return rc;
+}
+
 static nmo_status_t edit_executor_apply_op(
     nmo_script_edit_tx_t *tx,
     const nmo_edit_op_t *op,
@@ -151,801 +1109,62 @@ static nmo_status_t edit_executor_apply_op(
     if (edit == NULL) {
         return NMO_ERR_INVALID_STATE;
     }
+    const edit_apply_env_t env = {
+        .tx = tx,
+        .op = op,
+        .out_result_id = out_result_id,
+        .dry_run = dry_run,
+        .report = report,
+        .out_diagnostic_code = out_diagnostic_code,
+        .out_diagnostic_message = out_diagnostic_message,
+        .edit = edit,
+    };
 
     switch (op->kind) {
-    case NMO_EDIT_OP_SET_PARAMETER_VALUE: {
-        nmo_object_id_t parameter_id = op->primary_id;
-        edit_executor_handle_slot_t parameter_slot = {
-            .ref = &op->data.set_value.parameter_ref,
-            .id = &parameter_id,
-            .diagnostic_code = "handle_not_found",
-            .diagnostic_message =
-                "Referenced edit operation handle was not found",
-            .resolve_input_parameter_source = true,
-            .source_requires_ref = false,
-        };
-        NMO_RETURN_IF_ERROR(edit_executor_resolve_handle_slots(
-            tx,
-            report,
-            &parameter_slot,
-            1u,
-            out_diagnostic_code,
-            out_diagnostic_message));
-        if (out_result_id != NULL) {
-            *out_result_id = parameter_id;
-        }
-        nmo_status_t write_rc = nmo_object_edit_set_parameter_value_ex(
-            edit,
-            parameter_id,
-            op->data.set_value.value,
-            op->data.set_value.has_options ? &op->data.set_value.options : NULL);
-        if (write_rc == NMO_OK) {
-            nmo_script_edit_mark(tx, NMO_WORKSPACE_EDIT_OBJECT_STATE |
-                                     NMO_WORKSPACE_EDIT_REFERENCES);
-        }
-        return write_rc;
-    }
+    case NMO_EDIT_OP_SET_PARAMETER_VALUE:
+        return edit_apply_set_parameter_value(&env);
     case NMO_EDIT_OP_SET_PARAMETER_BYTES:
-    {
-        nmo_object_id_t parameter_id = op->primary_id;
-        edit_executor_handle_slot_t parameter_slot = {
-            .ref = &op->data.set_bytes.parameter_ref,
-            .id = &parameter_id,
-            .diagnostic_code = "handle_not_found",
-            .diagnostic_message =
-                "Referenced edit operation parameter handle was not found",
-            .resolve_input_parameter_source = true,
-            .source_requires_ref = true,
-        };
-        NMO_RETURN_IF_ERROR(edit_executor_resolve_handle_slots(
-            tx,
-            report,
-            &parameter_slot,
-            1u,
-            out_diagnostic_code,
-            out_diagnostic_message));
-        if (out_result_id != NULL) {
-            *out_result_id = parameter_id;
-        }
-        return nmo_object_edit_set_parameter_bytes_ex(
-            edit,
-            parameter_id,
-            op->data.set_bytes.bytes,
-            op->data.set_bytes.byte_count,
-            op->data.set_bytes.has_options ? &op->data.set_bytes.options : NULL);
-    }
+        return edit_apply_set_parameter_bytes(&env);
     case NMO_EDIT_OP_ADD_NODE:
-        return nmo_script_edit_add_node_ex(
-            tx,
-            op->data.add_node.parent_behavior_id,
-            op->data.add_node.bb_guid,
-            op->data.add_node.name,
-            op->data.add_node.has_options
-                ? &(nmo_script_edit_add_node_options_t){
-                      .manager_entry =
-                          op->data.add_node.options.manager_entry,
-                  }
-                : NULL,
-            out_result_id);
+        return edit_apply_add_node(&env);
     case NMO_EDIT_OP_REMOVE_NODE:
-    {
-        NMO_RETURN_IF_ERROR(edit_report_note_behavior_owned_deleted_objects(
-            tx,
-            report,
-            NMO_EDIT_OP_REMOVE_NODE,
-            op->data.remove_node.node_id));
-        NMO_RETURN_IF_ERROR(edit_report_note_behavior_io_detach_impacts(
-            tx,
-            report,
-            NMO_EDIT_OP_REMOVE_NODE,
-            op->data.remove_node.node_id));
-        NMO_RETURN_IF_ERROR(edit_report_note_behavior_parameter_detach_impacts(
-            tx,
-            report,
-            NMO_EDIT_OP_REMOVE_NODE,
-            op->data.remove_node.node_id));
-        return nmo_script_edit_remove_node(
-            tx,
-            op->data.remove_node.parent_behavior_id,
-            op->data.remove_node.node_id,
-            op->data.remove_node.delete_flags);
-    }
+        return edit_apply_remove_node(&env);
     case NMO_EDIT_OP_ADD_IO:
-        return nmo_script_edit_add_io(
-            tx,
-            op->data.add_io.behavior_id,
-            op->data.add_io.kind,
-            op->data.add_io.name,
-            out_result_id);
+        return edit_apply_add_io(&env);
     case NMO_EDIT_OP_RENAME_IO:
-        return nmo_script_edit_rename_io(
-            tx,
-            op->data.rename_io.io_id,
-            op->data.rename_io.name);
+        return edit_apply_rename_io(&env);
     case NMO_EDIT_OP_REMOVE_IO:
-    {
-        if (op->data.remove_io.detach_links) {
-            NMO_RETURN_IF_ERROR(edit_report_note_io_detach_impacts(
-                tx,
-                report,
-                NMO_EDIT_OP_REMOVE_IO,
-                op->data.remove_io.io_id));
-        }
-        return nmo_script_edit_remove_io(
-            tx,
-            op->data.remove_io.io_id,
-            op->data.remove_io.detach_links);
-    }
-    case NMO_EDIT_OP_ADD_BEHAVIOR_LINK: {
-        nmo_object_id_t from_io_id = op->data.add_link.from_io_id;
-        nmo_object_id_t to_io_id = op->data.add_link.to_io_id;
-        edit_executor_handle_slot_t slots[] = {
-            {
-                .ref = &op->data.add_link.from_io_ref,
-                .id = &from_io_id,
-                .diagnostic_code = "handle_not_found",
-                .diagnostic_message =
-                    "Referenced edit operation output IO handle was not found",
-            },
-            {
-                .ref = &op->data.add_link.to_io_ref,
-                .id = &to_io_id,
-                .diagnostic_code = "handle_not_found",
-                .diagnostic_message =
-                    "Referenced edit operation input IO handle was not found",
-            },
-        };
-        NMO_RETURN_IF_ERROR(edit_executor_resolve_handle_slots(
-            tx,
-            report,
-            slots,
-            sizeof(slots) / sizeof(slots[0]),
-            out_diagnostic_code,
-            out_diagnostic_message));
-        nmo_status_t rc = nmo_script_edit_add_behavior_link(
-            tx,
-            op->data.add_link.parent_behavior_id,
-            from_io_id,
-            to_io_id,
-            op->data.add_link.activation_delay,
-            out_result_id);
-        if (rc != NMO_OK) {
-            return rc;
-        }
-        return edit_report_note_control_link_endpoints(
-            report,
-            NMO_EDIT_OP_ADD_BEHAVIOR_LINK,
-            from_io_id,
-            to_io_id);
-    }
-    case NMO_EDIT_OP_REWIRE_BEHAVIOR_LINK: {
-        nmo_object_id_t before_from_io_id = 0u;
-        nmo_object_id_t before_to_io_id = 0u;
-        uint32_t before_activation_delay = 0u;
-        edit_plan_get_behavior_link_endpoints(
-            tx,
-            op->data.rewire_link.link_id,
-            &before_from_io_id,
-            &before_to_io_id,
-            &before_activation_delay);
-        nmo_status_t rc = nmo_script_edit_rewire_behavior_link(
-            tx,
-            op->data.rewire_link.link_id,
-            op->data.rewire_link.from_io_id,
-            op->data.rewire_link.to_io_id);
-        if (rc != NMO_OK) {
-            return rc;
-        }
-        nmo_object_id_t after_from_io_id = 0u;
-        nmo_object_id_t after_to_io_id = 0u;
-        uint32_t after_activation_delay = 0u;
-        edit_plan_get_behavior_link_endpoints(
-            tx,
-            op->data.rewire_link.link_id,
-            &after_from_io_id,
-            &after_to_io_id,
-            &after_activation_delay);
-        NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
-            report,
-            op->data.rewire_link.link_id,
-            NMO_EDIT_OP_REWIRE_BEHAVIOR_LINK,
-            "primary"));
-        edit_report_set_control_link_before(
-            report->changed_objects,
-            report->changed_object_count,
-            op->data.rewire_link.link_id,
-            NMO_EDIT_OP_REWIRE_BEHAVIOR_LINK,
-            "primary",
-            before_from_io_id,
-            before_to_io_id,
-            before_activation_delay);
-        edit_report_set_control_link_after(
-            report->changed_objects,
-            report->changed_object_count,
-            op->data.rewire_link.link_id,
-            NMO_EDIT_OP_REWIRE_BEHAVIOR_LINK,
-            "primary",
-            after_from_io_id,
-            after_to_io_id,
-            after_activation_delay);
-        return edit_report_note_control_link_endpoints(
-            report,
-            NMO_EDIT_OP_REWIRE_BEHAVIOR_LINK,
-            op->data.rewire_link.from_io_id,
-            op->data.rewire_link.to_io_id);
-    }
-    case NMO_EDIT_OP_SET_BEHAVIOR_LINK_DELAY: {
-        nmo_object_id_t before_from_io_id = 0u;
-        nmo_object_id_t before_to_io_id = 0u;
-        uint32_t before_activation_delay = 0u;
-        edit_plan_get_behavior_link_endpoints(
-            tx,
-            op->data.set_link_delay.link_id,
-            &before_from_io_id,
-            &before_to_io_id,
-            &before_activation_delay);
-        nmo_status_t rc = nmo_script_edit_set_behavior_link_delay(
-            tx,
-            op->data.set_link_delay.link_id,
-            op->data.set_link_delay.activation_delay);
-        if (rc != NMO_OK) {
-            return rc;
-        }
-        nmo_object_id_t after_from_io_id = 0u;
-        nmo_object_id_t after_to_io_id = 0u;
-        uint32_t after_activation_delay = 0u;
-        edit_plan_get_behavior_link_endpoints(
-            tx,
-            op->data.set_link_delay.link_id,
-            &after_from_io_id,
-            &after_to_io_id,
-            &after_activation_delay);
-        NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
-            report,
-            op->data.set_link_delay.link_id,
-            NMO_EDIT_OP_SET_BEHAVIOR_LINK_DELAY,
-            "primary"));
-        edit_report_set_control_link_before(
-            report->changed_objects,
-            report->changed_object_count,
-            op->data.set_link_delay.link_id,
-            NMO_EDIT_OP_SET_BEHAVIOR_LINK_DELAY,
-            "primary",
-            before_from_io_id,
-            before_to_io_id,
-            before_activation_delay);
-        edit_report_set_control_link_after(
-            report->changed_objects,
-            report->changed_object_count,
-            op->data.set_link_delay.link_id,
-            NMO_EDIT_OP_SET_BEHAVIOR_LINK_DELAY,
-            "primary",
-            after_from_io_id,
-            after_to_io_id,
-            after_activation_delay);
-        return NMO_OK;
-    }
+        return edit_apply_remove_io(&env);
+    case NMO_EDIT_OP_ADD_BEHAVIOR_LINK:
+        return edit_apply_add_behavior_link(&env);
+    case NMO_EDIT_OP_REWIRE_BEHAVIOR_LINK:
+        return edit_apply_rewire_behavior_link(&env);
+    case NMO_EDIT_OP_SET_BEHAVIOR_LINK_DELAY:
+        return edit_apply_set_behavior_link_delay(&env);
     case NMO_EDIT_OP_REMOVE_BEHAVIOR_LINK:
-    {
-        nmo_object_id_t from_io_id = 0u;
-        nmo_object_id_t to_io_id = 0u;
-        uint32_t activation_delay = 0u;
-        edit_plan_get_behavior_link_endpoints(
-            tx,
-            op->data.remove_link.link_id,
-            &from_io_id,
-            &to_io_id,
-            &activation_delay);
-        NMO_RETURN_IF_ERROR(nmo_edit_report_add_deleted_object(
-            report,
-            op->data.remove_link.link_id,
-            NMO_EDIT_OP_REMOVE_BEHAVIOR_LINK,
-            "primary"));
-        edit_report_set_control_link_before(
-            report->deleted_objects,
-            report->deleted_object_count,
-            op->data.remove_link.link_id,
-            NMO_EDIT_OP_REMOVE_BEHAVIOR_LINK,
-            "primary",
-            from_io_id,
-            to_io_id,
-            activation_delay);
-        nmo_status_t rc = nmo_script_edit_remove_behavior_link(
-            tx,
-            op->data.remove_link.parent_behavior_id,
-            op->data.remove_link.link_id);
-        if (rc != NMO_OK) {
-            return rc;
-        }
-        return edit_report_note_control_link_endpoints(
-            report,
-            NMO_EDIT_OP_REMOVE_BEHAVIOR_LINK,
-            from_io_id,
-            to_io_id);
-    }
+        return edit_apply_remove_behavior_link(&env);
     case NMO_EDIT_OP_ADD_PARAMETER:
-        return nmo_script_edit_add_parameter(
-            tx,
-            op->data.add_parameter.owner_behavior_id,
-            op->data.add_parameter.kind,
-            op->data.add_parameter.type_guid,
-            op->data.add_parameter.name,
-            out_result_id);
-    case NMO_EDIT_OP_CONNECT_PARAMETER: {
-        nmo_object_id_t target_parameter_id =
-            op->data.connect_parameter.target_parameter_id;
-        edit_executor_handle_slot_t target_slot = {
-            .ref = &op->data.connect_parameter.target_parameter_ref,
-            .id = &target_parameter_id,
-            .diagnostic_code = "handle_not_found",
-            .diagnostic_message =
-                "Referenced edit operation parameter handle was not found",
-        };
-        NMO_RETURN_IF_ERROR(edit_executor_resolve_handle_slots(
-            tx,
-            report,
-            &target_slot,
-            1u,
-            out_diagnostic_code,
-            out_diagnostic_message));
-        nmo_object_id_t before_source_parameter_id =
-            edit_plan_get_parameterin_source(tx, target_parameter_id);
-        nmo_status_t rc = nmo_script_edit_connect_parameter(
-            tx,
-            op->data.connect_parameter.source_parameter_id,
-            target_parameter_id);
-        if (rc != NMO_OK) {
-            return rc;
-        }
-        if (out_result_id != NULL) {
-            *out_result_id = target_parameter_id;
-        }
-        nmo_object_id_t after_source_parameter_id =
-            edit_plan_get_parameterin_source(tx, target_parameter_id);
-        NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
-            report,
-            target_parameter_id,
-            NMO_EDIT_OP_CONNECT_PARAMETER,
-            "primary"));
-        edit_report_set_parameter_edge_before(
-            report->changed_objects,
-            report->changed_object_count,
-            target_parameter_id,
-            NMO_EDIT_OP_CONNECT_PARAMETER,
-            "primary",
-            before_source_parameter_id,
-            target_parameter_id);
-        edit_report_set_parameter_edge_after(
-            report->changed_objects,
-            report->changed_object_count,
-            target_parameter_id,
-            NMO_EDIT_OP_CONNECT_PARAMETER,
-            "primary",
-            after_source_parameter_id,
-            target_parameter_id);
-        return edit_report_note_parameter_edge_source(
-            report,
-            NMO_EDIT_OP_CONNECT_PARAMETER,
-            op->data.connect_parameter.source_parameter_id);
-    }
-    case NMO_EDIT_OP_DISCONNECT_PARAMETER: {
-        nmo_object_id_t old_source_parameter_id =
-            edit_plan_get_parameterin_source(
-                tx,
-                op->data.disconnect_parameter.target_parameter_id);
-        nmo_status_t rc = nmo_script_edit_disconnect_parameter(
-            tx,
-            op->data.disconnect_parameter.target_parameter_id);
-        if (rc != NMO_OK) {
-            return rc;
-        }
-        nmo_object_id_t after_source_parameter_id =
-            edit_plan_get_parameterin_source(
-                tx,
-                op->data.disconnect_parameter.target_parameter_id);
-        NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
-            report,
-            op->data.disconnect_parameter.target_parameter_id,
-            NMO_EDIT_OP_DISCONNECT_PARAMETER,
-            "primary"));
-        edit_report_set_parameter_edge_before(
-            report->changed_objects,
-            report->changed_object_count,
-            op->data.disconnect_parameter.target_parameter_id,
-            NMO_EDIT_OP_DISCONNECT_PARAMETER,
-            "primary",
-            old_source_parameter_id,
-            op->data.disconnect_parameter.target_parameter_id);
-        edit_report_set_parameter_edge_after(
-            report->changed_objects,
-            report->changed_object_count,
-            op->data.disconnect_parameter.target_parameter_id,
-            NMO_EDIT_OP_DISCONNECT_PARAMETER,
-            "primary",
-            after_source_parameter_id,
-            op->data.disconnect_parameter.target_parameter_id);
-        return edit_report_note_parameter_edge_source(
-            report,
-            NMO_EDIT_OP_DISCONNECT_PARAMETER,
-            old_source_parameter_id);
-    }
+        return edit_apply_add_parameter(&env);
+    case NMO_EDIT_OP_CONNECT_PARAMETER:
+        return edit_apply_connect_parameter(&env);
+    case NMO_EDIT_OP_DISCONNECT_PARAMETER:
+        return edit_apply_disconnect_parameter(&env);
     case NMO_EDIT_OP_REMOVE_PARAMETER:
-    {
-        nmo_object_id_t old_source_parameter_id =
-            edit_plan_get_parameterin_source(
-                tx,
-                op->data.remove_parameter.parameter_id);
-        NMO_RETURN_IF_ERROR(edit_report_note_parameter_detach_impacts(
-            tx,
-            report,
-            NMO_EDIT_OP_REMOVE_PARAMETER,
-            op->data.remove_parameter.parameter_id));
-        nmo_status_t rc = nmo_script_edit_remove_parameter(
-            tx,
-            op->data.remove_parameter.parameter_id,
-            op->data.remove_parameter.detach);
-        if (rc != NMO_OK) {
-            return rc;
-        }
-        return edit_report_note_parameter_edge_source(
-            report,
-            NMO_EDIT_OP_REMOVE_PARAMETER,
-            old_source_parameter_id);
-    }
+        return edit_apply_remove_parameter(&env);
     case NMO_EDIT_OP_ADD_OPERATION:
-    {
-        nmo_object_id_t in1_parameter_id =
-            op->data.add_operation.in1_parameter_id;
-        nmo_object_id_t in2_parameter_id =
-            op->data.add_operation.in2_parameter_id;
-        nmo_object_id_t out_parameter_id =
-            op->data.add_operation.out_parameter_id;
-        edit_executor_handle_slot_t slots[] = {
-            {
-                .ref = &op->data.add_operation.in1_parameter_ref,
-                .id = &in1_parameter_id,
-                .diagnostic_code = "handle_not_found",
-                .diagnostic_message =
-                    "Referenced edit operation input parameter handle was not found",
-            },
-            {
-                .ref = &op->data.add_operation.in2_parameter_ref,
-                .id = &in2_parameter_id,
-                .diagnostic_code = "handle_not_found",
-                .diagnostic_message =
-                    "Referenced edit operation input parameter handle was not found",
-            },
-            {
-                .ref = &op->data.add_operation.out_parameter_ref,
-                .id = &out_parameter_id,
-                .diagnostic_code = "handle_not_found",
-                .diagnostic_message =
-                    "Referenced edit operation output parameter handle was not found",
-            },
-        };
-        NMO_RETURN_IF_ERROR(edit_executor_resolve_handle_slots(
-            tx,
-            report,
-            slots,
-            sizeof(slots) / sizeof(slots[0]),
-            out_diagnostic_code,
-            out_diagnostic_message));
-        nmo_status_t rc = nmo_script_edit_add_operation(
-            tx,
-            op->data.add_operation.parent_behavior_id,
-            op->data.add_operation.operation_guid,
-            in1_parameter_id,
-            in2_parameter_id,
-            out_parameter_id,
-            out_result_id);
-        if (rc != NMO_OK) {
-            return rc;
-        }
-        return edit_report_note_operation_slot_parameters(
-            report,
-            NMO_EDIT_OP_ADD_OPERATION,
-            in1_parameter_id,
-            in2_parameter_id,
-            out_parameter_id);
-    }
+        return edit_apply_add_operation(&env);
     case NMO_EDIT_OP_REWIRE_OPERATION:
-    {
-        const nmo_parameteroperation_state_t *before_state =
-            edit_plan_get_operation_state(
-                tx,
-                op->data.rewire_operation.operation_id);
-        nmo_parameteroperation_state_t before_state_copy;
-        const nmo_parameteroperation_state_t *before_snapshot = NULL;
-        if (before_state != NULL) {
-            before_state_copy = *before_state;
-            before_snapshot = &before_state_copy;
-        }
-        nmo_object_id_t in1_parameter_id =
-            op->data.rewire_operation.in1_parameter_id;
-        nmo_object_id_t in2_parameter_id =
-            op->data.rewire_operation.in2_parameter_id;
-        nmo_object_id_t out_parameter_id =
-            op->data.rewire_operation.out_parameter_id;
-        edit_executor_handle_slot_t slots[] = {
-            {
-                .ref = &op->data.rewire_operation.in1_parameter_ref,
-                .id = &in1_parameter_id,
-                .diagnostic_code = "missing_in1_handle",
-                .diagnostic_message =
-                    "Failed to resolve in1 parameter handle",
-            },
-            {
-                .ref = &op->data.rewire_operation.in2_parameter_ref,
-                .id = &in2_parameter_id,
-                .diagnostic_code = "missing_in2_handle",
-                .diagnostic_message =
-                    "Failed to resolve in2 parameter handle",
-            },
-            {
-                .ref = &op->data.rewire_operation.out_parameter_ref,
-                .id = &out_parameter_id,
-                .diagnostic_code = "missing_out_handle",
-                .diagnostic_message =
-                    "Failed to resolve out parameter handle",
-            },
-        };
-        NMO_RETURN_IF_ERROR(edit_executor_resolve_handle_slots(
-            tx,
-            report,
-            slots,
-            sizeof(slots) / sizeof(slots[0]),
-            out_diagnostic_code,
-            out_diagnostic_message));
-        nmo_status_t rc = nmo_script_edit_rewire_operation(
-            tx,
-            op->data.rewire_operation.operation_id,
-            op->data.rewire_operation.slot_flags,
-            in1_parameter_id,
-            in2_parameter_id,
-            out_parameter_id);
-        if (rc != NMO_OK || report == NULL) {
-            return rc;
-        }
-        NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
-            report,
-            op->data.rewire_operation.operation_id,
-            NMO_EDIT_OP_REWIRE_OPERATION,
-            "primary"));
-        edit_report_set_operation_slot_before(
-            report->changed_objects,
-            report->changed_object_count,
-            op->data.rewire_operation.operation_id,
-            NMO_EDIT_OP_REWIRE_OPERATION,
-            "primary",
-            before_snapshot);
-        edit_report_set_operation_slot_after(
-            report->changed_objects,
-            report->changed_object_count,
-            op->data.rewire_operation.operation_id,
-            NMO_EDIT_OP_REWIRE_OPERATION,
-            "primary",
-            edit_plan_get_operation_state(
-                tx,
-                op->data.rewire_operation.operation_id));
-        return edit_report_note_operation_slot_parameters(
-            report,
-            NMO_EDIT_OP_REWIRE_OPERATION,
-            (op->data.rewire_operation.slot_flags &
-             NMO_SCRIPT_EDIT_OP_SLOT_IN1) != 0u ? in1_parameter_id : 0u,
-            (op->data.rewire_operation.slot_flags &
-             NMO_SCRIPT_EDIT_OP_SLOT_IN2) != 0u ? in2_parameter_id : 0u,
-            (op->data.rewire_operation.slot_flags &
-             NMO_SCRIPT_EDIT_OP_SLOT_OUT) != 0u ? out_parameter_id : 0u);
-    }
-    case NMO_EDIT_OP_REMOVE_OPERATION: {
-        const nmo_parameteroperation_state_t *before_state =
-            edit_plan_get_operation_state(
-                tx,
-                op->data.remove_operation.operation_id);
-        nmo_parameteroperation_state_t before_state_copy;
-        const nmo_parameteroperation_state_t *before_snapshot = NULL;
-        if (before_state != NULL) {
-            before_state_copy = *before_state;
-            before_snapshot = &before_state_copy;
-        }
-        nmo_object_id_t in1_parameter_id = 0u;
-        nmo_object_id_t in2_parameter_id = 0u;
-        nmo_object_id_t out_parameter_id = 0u;
-        edit_plan_get_parameter_operation_slots(
-            tx,
-            op->data.remove_operation.operation_id,
-            &in1_parameter_id,
-            &in2_parameter_id,
-            &out_parameter_id);
-        nmo_status_t rc = nmo_script_edit_remove_operation(
-            tx,
-            op->data.remove_operation.operation_id);
-        if (rc != NMO_OK) {
-            return rc;
-        }
-        NMO_RETURN_IF_ERROR(edit_report_note_operation_slot_deleted_objects(
-            tx, report, NMO_EDIT_OP_REMOVE_OPERATION, before_snapshot));
-        NMO_RETURN_IF_ERROR(nmo_edit_report_add_deleted_object(
-            report,
-            op->data.remove_operation.operation_id,
-            NMO_EDIT_OP_REMOVE_OPERATION,
-            "primary"));
-        edit_report_set_operation_slot_before(
-            report->deleted_objects,
-            report->deleted_object_count,
-            op->data.remove_operation.operation_id,
-            NMO_EDIT_OP_REMOVE_OPERATION,
-            "primary",
-            before_snapshot);
-        return edit_report_note_operation_slot_parameters(
-            report,
-            NMO_EDIT_OP_REMOVE_OPERATION,
-            in1_parameter_id,
-            in2_parameter_id,
-            out_parameter_id);
-    }
+        return edit_apply_rewire_operation(&env);
+    case NMO_EDIT_OP_REMOVE_OPERATION:
+        return edit_apply_remove_operation(&env);
     case NMO_EDIT_OP_INTERFACE_POLICY:
-    {
-        const nmo_behavior_state_t *before_state =
-            edit_plan_get_behavior_state(
-                tx,
-                op->data.interface_policy.behavior_id);
-        nmo_behavior_state_t before_state_copy;
-        const nmo_behavior_state_t *before_snapshot = NULL;
-        if (before_state != NULL) {
-            before_state_copy = *before_state;
-            before_snapshot = &before_state_copy;
-        }
-        nmo_status_t rc = nmo_script_edit_apply_interface_policy(
-            tx,
-            op->data.interface_policy.behavior_id,
-            op->data.interface_policy.mode);
-        if (rc != NMO_OK || report == NULL) {
-            return rc;
-        }
-        NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
-            report,
-            op->data.interface_policy.behavior_id,
-            NMO_EDIT_OP_INTERFACE_POLICY,
-            "primary"));
-        edit_report_set_interface_before(
-            report->changed_objects,
-            report->changed_object_count,
-            op->data.interface_policy.behavior_id,
-            NMO_EDIT_OP_INTERFACE_POLICY,
-            "primary",
-            before_snapshot);
-        edit_report_set_interface_after(
-            report->changed_objects,
-            report->changed_object_count,
-            op->data.interface_policy.behavior_id,
-            NMO_EDIT_OP_INTERFACE_POLICY,
-            "primary",
-            edit_plan_get_behavior_state(
-                tx,
-                op->data.interface_policy.behavior_id));
-        return NMO_OK;
-    }
+        return edit_apply_interface_policy(&env);
     case NMO_EDIT_OP_SET_DATA_CELL:
-    {
-        uint32_t before_type = 0u;
-        const nmo_dataarray_cell_t *before_cell =
-            edit_plan_get_data_cell(
-                tx,
-                op->data.data_cell.dataarray_id,
-                op->data.data_cell.row,
-                op->data.data_cell.col,
-                &before_type);
-        nmo_dataarray_cell_t before_cell_copy;
-        const nmo_dataarray_cell_t *before_snapshot = NULL;
-        if (before_cell != NULL) {
-            before_cell_copy = *before_cell;
-            before_snapshot = &before_cell_copy;
-        }
-        nmo_status_t rc = nmo_object_edit_set_dataarray_cell(
-            edit,
-            op->data.data_cell.dataarray_id,
-            op->data.data_cell.row,
-            op->data.data_cell.col,
-            op->data.data_cell.value);
-        if (rc != NMO_OK) {
-            return rc;
-        }
-        NMO_RETURN_IF_ERROR(nmo_edit_report_add_changed_object(
-            report,
-            op->data.data_cell.dataarray_id,
-            NMO_EDIT_OP_SET_DATA_CELL,
-            "data_cell"));
-        edit_report_set_data_cell_before(
-            report->changed_objects,
-            report->changed_object_count,
-            op->data.data_cell.dataarray_id,
-            NMO_EDIT_OP_SET_DATA_CELL,
-            "data_cell",
-            op->data.data_cell.row,
-            op->data.data_cell.col,
-            before_type,
-            before_snapshot);
-        uint32_t after_type = 0u;
-        const nmo_dataarray_cell_t *after_cell =
-            edit_plan_get_data_cell(
-                tx,
-                op->data.data_cell.dataarray_id,
-                op->data.data_cell.row,
-                op->data.data_cell.col,
-                &after_type);
-        edit_report_set_data_cell_after(
-            report->changed_objects,
-            report->changed_object_count,
-            op->data.data_cell.dataarray_id,
-            NMO_EDIT_OP_SET_DATA_CELL,
-            "data_cell",
-            op->data.data_cell.row,
-            op->data.data_cell.col,
-            after_type,
-            after_cell);
-        return NMO_OK;
-    }
-    case NMO_EDIT_OP_REPLACE_BB: {
-        nmo_behavior_replace_report_t replace_report = {0};
-        nmo_status_t rc = nmo_behavior_edit_replace_bb_in_edit(
-            nmo_script_edit_workspace(tx),
-            edit,
-            &op->data.replace_bb.desc,
-            &replace_report);
-        if (out_diagnostic_code != NULL) {
-            *out_diagnostic_code = replace_report.diagnostic_code;
-        }
-        if (out_diagnostic_message != NULL) {
-            *out_diagnostic_message = replace_report.diagnostic_message;
-        }
-        if (rc == NMO_OK && out_result_id != NULL) {
-            *out_result_id = op->data.replace_bb.desc.behavior_id;
-        }
-        if (rc == NMO_OK && report != NULL) {
-            rc = nmo_edit_report_merge_semantic_risks(
-                report,
-                replace_report.semantic_risks,
-                replace_report.semantic_risk_count);
-        }
-        free(replace_report.semantic_risks);
-        return rc;
-    }
-    case NMO_EDIT_OP_FOLD: {
-        nmo_behavior_fold_report_t fold_report = {0};
-        nmo_status_t rc = dry_run
-            ? nmo_behavior_edit_fold_analyze(
-                  nmo_script_edit_workspace(tx),
-                  &op->data.fold.desc,
-                  &fold_report)
-            : nmo_behavior_edit_fold_in_script_tx(
-                  tx,
-                  &op->data.fold.desc,
-                  &fold_report);
-        if (out_diagnostic_code != NULL) {
-            *out_diagnostic_code = fold_report.diagnostic_code;
-        }
-        if (out_diagnostic_message != NULL) {
-            *out_diagnostic_message = fold_report.diagnostic_message;
-        }
-        if (rc == NMO_OK && out_result_id != NULL) {
-            *out_result_id = fold_report.anchor_id != 0u
-                ? fold_report.anchor_id
-                : op->data.fold.desc.anchor_id;
-        }
-        if (rc == NMO_OK && report != NULL) {
-            rc = nmo_edit_report_merge_semantic_risks(
-                report,
-                fold_report.semantic_risks,
-                fold_report.semantic_risk_count);
-            if (rc == NMO_OK) {
-                rc = edit_report_note_fold_impact(
-                    report, &fold_report, op->data.fold.desc.parent_id);
-            }
-        }
-        nmo_behavior_edit_fold_report_free(&fold_report);
-        return rc;
-    }
+        return edit_apply_set_data_cell(&env);
+    case NMO_EDIT_OP_REPLACE_BB:
+        return edit_apply_replace_bb(&env);
+    case NMO_EDIT_OP_FOLD:
+        return edit_apply_fold(&env);
     default:
         return NMO_ERR_NOT_SUPPORTED;
     }
