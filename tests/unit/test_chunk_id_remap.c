@@ -9026,6 +9026,65 @@ TEST(chunk_id_remap, light_loading_ignores_what_the_engine_ignores) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, spritetext_font_integers_are_in_engine_order) {
+    /* RCKSpriteText::Load reads the four integers into the arguments of
+     * SetFont(face, size, weight, italic, underline) from the last to the
+     * first: underline, italic, weight, size. */
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    chunk->class_id = NMO_CID_SPRITETEXT;
+    chunk->data_version = 4;
+    chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, CK_STATESAVE_SPRITEFONT));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_string(chunk, "Arial"));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 0));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 700));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(chunk, 24));
+    nmo_chunk_close(chunk);
+
+    nmo_spritetext_state_t loaded;
+    ASSERT_EQ(NMO_OK, nmo_spritetext_vtable.create(&loaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_spritetext_deserialize(
+        &loaded, chunk, NULL, &deserialize_context));
+    ASSERT_EQ(1, loaded.font.underline);
+    ASSERT_EQ(0, loaded.font.italic);
+    ASSERT_EQ(700, loaded.font.weight);
+    ASSERT_EQ(24, loaded.font.size);
+
+    nmo_chunk_t *saved = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(saved);
+    saved->class_id = NMO_CID_SPRITETEXT;
+    saved->data_version = 4;
+    saved->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_spritetext_serialize(
+        &loaded, saved, NULL, &serialize_context));
+    nmo_chunk_close(saved);
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(saved, CK_STATESAVE_SPRITEFONT));
+    char *name = NULL;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_string_checked(saved, &name, NULL));
+    int32_t ints[4] = {0};
+    for (int i = 0; i < 4; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_read_int(saved, &ints[i]));
+    }
+    ASSERT_EQ(1, ints[0]);
+    ASSERT_EQ(0, ints[1]);
+    ASSERT_EQ(700, ints[2]);
+    ASSERT_EQ(24, ints[3]);
+
+    nmo_spritetext_vtable.destroy(&loaded, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, texture_pick_threshold_needs_data_version_5) {
     /* RCKTexture::Load reads the pick threshold in its data_version >= 5
      * branch only. */
@@ -21231,6 +21290,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, texture_empty_sections_round_trip_presence);
     REGISTER_TEST(chunk_id_remap, texture_packed_state_follows_the_engine_leniency);
     REGISTER_TEST(chunk_id_remap, light_loading_ignores_what_the_engine_ignores);
+    REGISTER_TEST(chunk_id_remap, spritetext_font_integers_are_in_engine_order);
     REGISTER_TEST(chunk_id_remap, texture_filename_count_resizes_the_slots);
     REGISTER_TEST(chunk_id_remap, modern_2dentity_without_its_block_keeps_the_constructor_state);
     REGISTER_TEST(chunk_id_remap, curvepoint_unresolved_curve_round_trips_raw_id);
