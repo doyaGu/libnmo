@@ -20,6 +20,7 @@
  * Session layer accesses this via session getters, not direct include. */
 
 #include "object/nmo_object_repository.h"
+#include "object/nmo_object_system.h"
 #include "object/nmo_shadow_storage.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_deserialize_context.h"
@@ -1199,6 +1200,23 @@ nmo_status_t nmo_deserializer_finalize(nmo_deserializer_t *ds)
         }
         ds->phase_completed = 3;
         return runtime_result;
+    }
+
+    /* The load is complete: remember what each object's state serializes to, so
+       that a save can tell the objects that changed from those that did not. */
+    {
+        const nmo_type_runtime_t *type_rt = nmo_context_get_type_runtime(ds->ctx);
+        nmo_object_repository_t *repo = nmo_session_get_repository(ds->session);
+        if (type_rt != NULL && repo != NULL) {
+            nmo_object_system_fidelity_stats_t fidelity = {0};
+            nmo_status_t fidelity_status =
+                nmo_object_system_capture_fidelity(repo, type_rt, logger, &fidelity);
+            if (fidelity_status == NMO_OK) {
+                nmo_log(logger, NMO_LOG_INFO,
+                        "Fidelity: %zu objects captured, %zu hold more than their schema writes, %zu skipped",
+                        fidelity.captured, fidelity.with_residue, fidelity.skipped);
+            }
+        }
     }
 
     /* Now safe to release the ID mapping; finalize (remap + post_load) is complete. */
