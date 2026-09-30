@@ -214,14 +214,44 @@ static bool nmo_mesh_size_mul_overflows(size_t count, size_t element_size) {
     return count != 0u && element_size > SIZE_MAX / count;
 }
 
+/* RCKMesh::Load dereferences what it reads without a check: a face's material
+ * group and vertex indices index arrays of the mesh, and a channel's texture
+ * coordinates fill an array of one entry per vertex. A state that breaks
+ * these would write a file the engine corrupts memory with. The engine's own
+ * Save writes one texture coordinate per vertex; fewer is accepted. */
 static nmo_status_t nmo_mesh_validate_modern_geometry(
     const nmo_mesh_state_t *state)
 {
+    if (state->face_count > 0u && state->material_group_count == 0u) {
+        NMO_RETURN_ERROR(
+            NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+            "CKMesh with faces needs at least one material group");
+    }
     for (uint32_t i = 0; i < state->face_count; ++i) {
         if (state->faces[i].material_group_idx > UINT16_MAX) {
             NMO_RETURN_ERROR(
                 NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
                 "CKMesh data versions 9 and newer require 16-bit face material indices");
+        }
+        if (state->faces[i].material_group_idx >= state->material_group_count) {
+            NMO_RETURN_ERROR(
+                NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                "CKMesh face material index is outside the material groups");
+        }
+        for (uint32_t k = 0; k < 3u; ++k) {
+            if (state->face_vertex_indices[i * 3u + k] >= state->vertex_count) {
+                NMO_RETURN_ERROR(
+                    NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                    "CKMesh face vertex index is outside the vertices");
+            }
+        }
+    }
+    for (uint32_t i = 0; i < state->material_channel_count; ++i) {
+        const nmo_material_channel_t *channel = &state->material_channels[i];
+        if (channel->uv_count > state->vertex_count) {
+            NMO_RETURN_ERROR(
+                NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
+                "CKMesh channel has more texture coordinates than vertices");
         }
     }
     return NMO_OK;
@@ -1893,8 +1923,8 @@ static nmo_status_t nmo_mesh_serialize_internal(
     result = nmo_chunk_write_dword(out_chunk, in_state->flags);
     if (result != NMO_OK) return result;
 
-    if (!skip_geometry &&
-        (in_state->has_material_groups || in_state->material_group_count > 0)) {
+    /* The engine never writes an empty material list. */
+    if (!skip_geometry && in_state->material_group_count > 0) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_MESHMATERIALS);
         if (result != NMO_OK) return result;
 
