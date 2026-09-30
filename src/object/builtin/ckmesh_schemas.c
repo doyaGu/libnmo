@@ -297,7 +297,7 @@ static nmo_status_t nmo_mesh_read_raw_bytes(nmo_chunk_t *chunk, void *buffer, si
     NMO_RETURN_OK();
 }
 
-static void nmo_mesh_recompute_bounds(nmo_mesh_state_t *state) {
+void nmo_mesh_update_bounding_volumes(nmo_mesh_state_t *state) {
     if (!state || !state->vertices || state->vertex_count == 0) {
         return;
     }
@@ -1594,7 +1594,7 @@ nmo_status_t nmo_mesh_deserialize(
                             repository, types, NMO_CID_MATERIAL);
     }
 
-    nmo_mesh_recompute_bounds(&decoded);
+    nmo_mesh_update_bounding_volumes(&decoded);
     nmo_mesh_destroy(out_state, NULL, NULL);
     *out_state = decoded;
     return NMO_OK;

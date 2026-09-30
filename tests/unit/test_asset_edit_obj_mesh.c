@@ -121,9 +121,13 @@ TEST(asset_edit_obj_mesh, imports_triangle_from_parsed_obj)
     ASSERT_EQ(0u, mesh->face_vertex_indices[0]);
     ASSERT_EQ(1u, mesh->face_vertex_indices[1]);
     ASSERT_EQ(2u, mesh->face_vertex_indices[2]);
-    ASSERT_FLOAT_EQ(0.5f, mesh->bary_center.x, 0.0001f);
-    ASSERT_FLOAT_EQ(0.5f, mesh->bary_center.y, 0.0001f);
+    /* The barycenter is the mean of the three vertices, not the box center. */
+    ASSERT_FLOAT_EQ(1.0f / 3.0f, mesh->bary_center.x, 0.0001f);
+    ASSERT_FLOAT_EQ(1.0f / 3.0f, mesh->bary_center.y, 0.0001f);
     ASSERT_FLOAT_EQ(0.0f, mesh->bary_center.z, 0.0001f);
+    /* A new mesh is visible, and its faces take part in every channel. */
+    ASSERT_EQ((uint32_t)(VXMESH_VISIBLE | VXMESH_RENDERCHANNELS), mesh->flags);
+    ASSERT_EQ(0xFFFFu, mesh->faces[0].channel_mask);
 
     nmo_arena_destroy(parse_arena);
     destroy_workspace(ctx, doc, workspace);

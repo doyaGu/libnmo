@@ -109,6 +109,15 @@ NMO_API nmo_status_t nmo_mesh_serialize_ex(
 NMO_DECLARE_OBJECT_SCHEMA(nmo_mesh_vtable, nmo_register_mesh_type)
 
 /**
+ * @brief Recompute the derived bounds (RCKMesh::UpdateBoundingVolumes).
+ *
+ * Sets local_box_min/max from the vertex positions, bary_center to their mean
+ * and radius to the largest distance from the mean. Leaves the bounds alone for
+ * a mesh without vertices. None of these values is serialized.
+ */
+NMO_API void nmo_mesh_update_bounding_volumes(nmo_mesh_state_t *state);
+
+/**
  * @brief Whether the vertex normals are the ones CK rebuilds on load.
  *
  * A file whose save flags omit the normals (flag 4) stands for normals that

@@ -2169,6 +2169,12 @@ nmo_status_t nmo_asset_edit_bind_entity_mesh(
     return NMO_OK;
 }
 
+/* RCKMesh constructor: a new mesh is visible and renders its channels. A
+ * mesh without VXMESH_VISIBLE is skipped by RCK3dEntity::Render. */
+#define WORKSPACE_NEW_MESH_FLAGS ((uint32_t)(VXMESH_VISIBLE | VXMESH_RENDERCHANNELS))
+/* RCKMesh::SetFaceCount gives every new face the channel mask 0xFFFF. */
+#define WORKSPACE_NEW_FACE_CHANNEL_MASK 0xFFFFu
+
 static nmo_status_t workspace_edit_alloc_cube_mesh(
     nmo_arena_t *arena,
     nmo_vertex_t **out_vertices,
@@ -2245,6 +2251,9 @@ static nmo_status_t workspace_edit_alloc_cube_mesh(
         vertex_specular[i] = 0xFF000000u;
     }
     memset(faces, 0, sizeof(*faces) * 12u);
+    for (size_t face_index = 0; face_index < 12u; ++face_index) {
+        faces[face_index].channel_mask = WORKSPACE_NEW_FACE_CHANNEL_MASK;
+    }
     memcpy(indices, cube_indices, sizeof(cube_indices));
     memset(groups, 0, sizeof(*groups));
 
@@ -2364,74 +2373,6 @@ static nmo_object_id_t workspace_obj_mesh_material_for_name(
         }
     }
     return options->default_material_id;
-}
-
-static void workspace_obj_mesh_compute_bounds(
-    const nmo_obj_data_t *obj_data,
-    nmo_vector_t *center,
-    nmo_vector_t *box_min,
-    nmo_vector_t *box_max,
-    float *radius)
-{
-    if (obj_data == NULL || obj_data->positions == NULL ||
-        obj_data->pos_count == 0) {
-        *center = (nmo_vector_t){0.0f, 0.0f, 0.0f};
-        *box_min = (nmo_vector_t){0.0f, 0.0f, 0.0f};
-        *box_max = (nmo_vector_t){0.0f, 0.0f, 0.0f};
-        *radius = 0.0f;
-        return;
-    }
-
-    float minx = obj_data->positions[0];
-    float miny = obj_data->positions[1];
-    float minz = obj_data->positions[2];
-    float maxx = minx;
-    float maxy = miny;
-    float maxz = minz;
-
-    for (size_t i = 0; i < obj_data->pos_count; ++i) {
-        float x = obj_data->positions[i * 3u + 0u];
-        float y = obj_data->positions[i * 3u + 1u];
-        float z = obj_data->positions[i * 3u + 2u];
-        if (x < minx) {
-            minx = x;
-        }
-        if (y < miny) {
-            miny = y;
-        }
-        if (z < minz) {
-            minz = z;
-        }
-        if (x > maxx) {
-            maxx = x;
-        }
-        if (y > maxy) {
-            maxy = y;
-        }
-        if (z > maxz) {
-            maxz = z;
-        }
-    }
-
-    *box_min = (nmo_vector_t){minx, miny, minz};
-    *box_max = (nmo_vector_t){maxx, maxy, maxz};
-    *center = (nmo_vector_t){
-        (minx + maxx) * 0.5f,
-        (miny + maxy) * 0.5f,
-        (minz + maxz) * 0.5f,
-    };
-
-    float max_dist_sq = 0.0f;
-    for (size_t i = 0; i < obj_data->pos_count; ++i) {
-        float dx = obj_data->positions[i * 3u + 0u] - center->x;
-        float dy = obj_data->positions[i * 3u + 1u] - center->y;
-        float dz = obj_data->positions[i * 3u + 2u] - center->z;
-        float dist_sq = dx * dx + dy * dy + dz * dz;
-        if (dist_sq > max_dist_sq) {
-            max_dist_sq = dist_sq;
-        }
-    }
-    *radius = sqrtf(max_dist_sq);
 }
 
 static nmo_status_t workspace_obj_mesh_get_or_add_vertex(
@@ -2750,7 +2691,7 @@ static nmo_status_t workspace_obj_mesh_build(
             obj_face->material_group == NMO_OBJ_NO_MATERIAL
                 ? 0u
                 : (uint16_t)(obj_face->material_group + material_offset);
-        faces[face_index].channel_mask = 0u;
+        faces[face_index].channel_mask = WORKSPACE_NEW_FACE_CHANNEL_MASK;
     }
 
     for (size_t line_index = 0; line_index < obj_data->line_count; ++line_index) {
@@ -2771,23 +2712,8 @@ static nmo_status_t workspace_obj_mesh_build(
         }
     }
 
-    nmo_vector_t center = {0};
-    nmo_vector_t box_min = {0};
-    nmo_vector_t box_max = {0};
-    float radius = 0.0f;
-    workspace_obj_mesh_compute_bounds(
-        obj_data,
-        &center,
-        &box_min,
-        &box_max,
-        &radius);
-
     memset(out_state, 0, sizeof(*out_state));
-    out_state->flags = 0u;
-    out_state->bary_center = center;
-    out_state->radius = radius;
-    out_state->local_box_min = box_min;
-    out_state->local_box_max = box_max;
+    out_state->flags = WORKSPACE_NEW_MESH_FLAGS;
     out_state->face_count = (uint32_t)obj_data->face_count;
     out_state->faces = faces;
     out_state->face_vertex_indices = face_indices;
@@ -2804,6 +2730,7 @@ static nmo_status_t workspace_obj_mesh_build(
     out_state->material_channel_count = 0u;
     out_state->material_channels = NULL;
     out_state->is_valid = true;
+    nmo_mesh_update_bounding_volumes(out_state);
     return NMO_OK;
 }
 
@@ -3100,7 +3027,7 @@ nmo_status_t nmo_asset_edit_set_primitive_mesh(
     }
     nmo_chunk_set_data_version(chunk, 9u);
 
-    state->flags = 0u;
+    state->flags = WORKSPACE_NEW_MESH_FLAGS;
     state->bary_center = (nmo_vector_t){0.0f, 0.0f, 0.0f};
     state->radius = 0.8660254f;
     state->local_box_min = (nmo_vector_t){-0.5f, -0.5f, -0.5f};
