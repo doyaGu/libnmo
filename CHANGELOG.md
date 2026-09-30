@@ -165,6 +165,26 @@ round-tripped, which is why the byte-level test did not see them.
 - Sprites keep the video format section (`CK_STATESAVE_SPRITEVIDEOFORMAT`, 0x40000000) that later
   engines write: `nmo_sprite_state_t.has_video_format` and `video_format`. Saving used to drop it.
 
+### Changed - Editing and authoring follow the engine
+- Lights: a file whose light type is not 1 to 3 loads as a point light, as `RCKLight::Load` does,
+  instead of failing the object. The diffuse alpha is saved as 0xFF like the engine does, so a
+  light whose alpha is not 1 can be saved. `VX_LIGHTPARA` is no longer accepted by
+  `nmo_entity_edit_set_light_settings()`, `nmo_project_plan_set_light_settings()` or the manifest
+  (`light.type: "parallel"`), because the engine cannot store it. Editing a spot light into another
+  type resets its cone angles and falloff (`nmo_light_apply_nonspot_defaults()` is now public).
+- Materials: new materials get the `RCKMaterial` constructor colors (diffuse 0xFFB2B2B2, ambient
+  0xFF4C4C4C, specular 0xFF7F7F7F). `nmo_asset_edit_set_material_render_flags()` turns on the alpha
+  blend flag (bit 3) when a blend factor is set and the alpha test flag (bit 4) when an alpha
+  function other than always is set, because the engine ignores the blend factors and the alpha
+  function otherwise. The alpha function is stored in four bits; the edit masked five.
+- Meshes: meshes authored by OBJ import or as the generated cube start with `VXMESH_VISIBLE |
+  VXMESH_RENDERCHANNELS` (they had no flags and the engine does not render them) and face channel
+  masks of 0xFFFF. OBJ import uses the new `nmo_mesh_update_bounding_volumes()` like the loader.
+- `nmo_entity_edit_set_camera_target()` and `nmo_entity_edit_set_light_target()` (and with them the
+  project plan and manifest) set `CK_3DENTITY_TARGETCAMERA` / `CK_3DENTITY_TARGETLIGHT` on the new
+  target and clear `CK_3DENTITY_FRAME`, and give the previous target `CK_3DENTITY_FRAME` back,
+  as `SetTarget` does.
+
 ### Tests
 - `test_corpus_chunk_roundtrip` checks every object chunk of the corpus. It compares against a
   second load of the original file that is never saved. It tolerates only the uninitialised
