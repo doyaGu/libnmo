@@ -8779,6 +8779,9 @@ TEST(chunk_id_remap, texture_preserves_legacy_file_layout) {
         nmo_deserialize_context_create(
             arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
 
+    /* data_version < 5 layout from RCKTexture::Load: 0x40000 is the mipmap
+     * flag plus a size-prefixed image descriptor, 0x80000 the save options
+     * plus the properties buffer. */
     const uint32_t legacy_desc[] = {
         64u, 32u, 256u, 32u,
         0x00FF0000u, 0x0000FF00u, 0x000000FFu, 0xFF000000u,
@@ -8799,12 +8802,12 @@ TEST(chunk_id_remap, texture_preserves_legacy_file_layout) {
         legacy, CK_STATESAVE_TEXCURRENTIMAGE));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_int(legacy, -3));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
-        legacy, CK_STATESAVE_USERMIPMAP));
+        legacy, CK_STATESAVE_TEXVIDEOFORMAT));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_int(legacy, -7));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_buffer(
         legacy, legacy_desc, sizeof(legacy_desc)));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
-        legacy, CK_STATESAVE_TEXSYSTEMCACHING));
+        legacy, CK_STATESAVE_TEXSAVEFORMAT));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(legacy, 0x12345678u));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_buffer(
         legacy, save_format, sizeof(save_format)));
@@ -8819,14 +8822,14 @@ TEST(chunk_id_remap, texture_preserves_legacy_file_layout) {
     ASSERT_TRUE(loaded.is_transparent);
     ASSERT_TRUE(loaded.has_current_slot);
     ASSERT_EQ(-3, loaded.current_slot);
-    ASSERT_TRUE(loaded.has_legacy_user_mipmap);
+    ASSERT_TRUE(loaded.has_legacy_video_format);
     ASSERT_EQ(-7, loaded.legacy_use_mipmap);
     ASSERT_EQ(UINT8_MAX, loaded.mipmap_level);
     ASSERT_EQ(sizeof(legacy_desc) + sizeof(uint32_t),
-              loaded.legacy_user_mipmap_size);
+              loaded.legacy_video_format_size);
     ASSERT_TRUE(loaded.has_desired_video_format);
     ASSERT_EQ(_32_ARGB8888, loaded.desired_video_format);
-    ASSERT_TRUE(loaded.has_legacy_system_caching);
+    ASSERT_TRUE(loaded.has_legacy_save_format);
     ASSERT_FALSE(loaded.has_save_format);
     ASSERT_EQ(0x12345678u, loaded.save_options);
     ASSERT_EQ(sizeof(save_format), loaded.save_format_size);
@@ -8838,8 +8841,8 @@ TEST(chunk_id_remap, texture_preserves_legacy_file_layout) {
     nmo_type_descriptor_t type = {.size = sizeof(nmo_texture_state_t)};
     ASSERT_EQ(NMO_OK, nmo_texture_vtable.copy(
         &loaded, &copied, &type, arena));
-    ASSERT_NE(loaded.legacy_user_mipmap_data,
-              copied.legacy_user_mipmap_data);
+    ASSERT_NE(loaded.legacy_video_format_data,
+              copied.legacy_video_format_data);
     ASSERT_TRUE(nmo_texture_vtable.equals(&loaded, &copied));
     ASSERT_EQ(nmo_texture_vtable.hash(&loaded),
               nmo_texture_vtable.hash(&copied));
@@ -8854,10 +8857,8 @@ TEST(chunk_id_remap, texture_preserves_legacy_file_layout) {
     nmo_chunk_close(saved);
     ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_chunk_seek_identifier(
         saved, CK_STATESAVE_OLDTEXONLY));
-    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_chunk_seek_identifier(
-        saved, CK_STATESAVE_TEXSAVEFORMAT));
     ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
-        saved, CK_STATESAVE_USERMIPMAP));
+        saved, CK_STATESAVE_TEXVIDEOFORMAT));
     int32_t use_mipmap = 0;
     ASSERT_EQ(NMO_OK, nmo_chunk_read_int(saved, &use_mipmap));
     ASSERT_EQ(-7, use_mipmap);
@@ -8868,7 +8869,7 @@ TEST(chunk_id_remap, texture_preserves_legacy_file_layout) {
     ASSERT_EQ(sizeof(legacy_desc), saved_desc_size);
     ASSERT_MEM_EQ(legacy_desc, saved_desc, sizeof(legacy_desc));
     ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
-        saved, CK_STATESAVE_TEXSYSTEMCACHING));
+        saved, CK_STATESAVE_TEXSAVEFORMAT));
     uint32_t saved_options = 0;
     ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(saved, &saved_options));
     ASSERT_EQ(0x12345678u, saved_options);
@@ -8897,13 +8898,13 @@ TEST(chunk_id_remap, texture_preserves_legacy_file_layout) {
     malformed->chunk_options |= NMO_CHUNK_OPTION_FILE;
     ASSERT_EQ(NMO_OK, nmo_chunk_start_write(malformed));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(
-        malformed, CK_STATESAVE_USERMIPMAP));
+        malformed, CK_STATESAVE_TEXVIDEOFORMAT));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_int(malformed, 1));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(malformed, 64u));
     nmo_chunk_close(malformed);
     ASSERT_EQ(NMO_ERR_TRUNCATED_CHUNK, nmo_texture_deserialize(
         &loaded, malformed, NULL, &deserialize_context));
-    ASSERT_TRUE(loaded.has_legacy_user_mipmap);
+    ASSERT_TRUE(loaded.has_legacy_video_format);
     ASSERT_EQ(-7, loaded.legacy_use_mipmap);
     ASSERT_EQ(0x12345678u, loaded.save_options);
 
@@ -8923,7 +8924,7 @@ TEST(chunk_id_remap, texture_preserves_legacy_file_layout) {
     ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier(
         modern, CK_STATESAVE_OLDTEXONLY));
     ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_chunk_seek_identifier(
-        modern, CK_STATESAVE_TEXSYSTEMCACHING));
+        modern, CK_STATESAVE_TEXSAVEFORMAT));
     nmo_texture_state_t modern_loaded;
     ASSERT_EQ(NMO_OK, nmo_texture_vtable.create(
         &modern_loaded, NULL, NULL));

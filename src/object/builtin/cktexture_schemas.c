@@ -162,11 +162,11 @@ static const nmo_type_field_t nmo_texture_fields[] = {
                    NMO_FIELD_OPTIONAL, 0),
     NMO_FIELD(nmo_texture_state_t, has_current_slot, CKPGUID_BOOL),
     NMO_FIELD(nmo_texture_state_t, current_slot, CKPGUID_INT),
-    NMO_FIELD(nmo_texture_state_t, has_legacy_user_mipmap, CKPGUID_BOOL),
+    NMO_FIELD(nmo_texture_state_t, has_legacy_video_format, CKPGUID_BOOL),
     NMO_FIELD(nmo_texture_state_t, legacy_use_mipmap, CKPGUID_INT),
-    NMO_FIELD_OPT(nmo_texture_state_t, legacy_user_mipmap_data, CKPGUID_POINTER),
-    NMO_FIELD(nmo_texture_state_t, legacy_user_mipmap_size, CKPGUID_UINT64),
-    NMO_FIELD(nmo_texture_state_t, has_legacy_system_caching, CKPGUID_BOOL),
+    NMO_FIELD_OPT(nmo_texture_state_t, legacy_video_format_data, CKPGUID_POINTER),
+    NMO_FIELD(nmo_texture_state_t, legacy_video_format_size, CKPGUID_UINT64),
+    NMO_FIELD(nmo_texture_state_t, has_legacy_save_format, CKPGUID_BOOL),
     NMO_FIELD(nmo_texture_state_t, has_save_format, CKPGUID_BOOL),
     NMO_FIELD_OPT(nmo_texture_state_t, save_format_data, CKPGUID_POINTER),
     NMO_FIELD(nmo_texture_state_t, save_format_size, CKPGUID_UINT64),
@@ -595,8 +595,8 @@ static nmo_status_t nmo_texture_read_legacy_mipmap_tail(
     NMO_RETURN_IF_ERROR(nmo_chunk_read_and_fill_buffer_nosize_checked(
         chunk, tail, tail_size));
 
-    state->legacy_user_mipmap_data = tail;
-    state->legacy_user_mipmap_size = tail_size;
+    state->legacy_video_format_data = tail;
+    state->legacy_video_format_size = tail_size;
     uint32_t format = UNKNOWN_PF;
     NMO_RETURN_IF_ERROR(nmo_texture_legacy_tail_format(
         tail, tail_size, &format));
@@ -778,27 +778,31 @@ static nmo_status_t nmo_texture_deserialize_internal(
             out_state->has_current_slot = 1;
         } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
+        /* RCKTexture::Load for data_version < 5: 0x40000 holds the mipmap flag
+           and, when longer than that, a size-prefixed image descriptor that
+           gives the desired video format. */
         if (nmo_texture_seek_found(
-                chunk, CK_STATESAVE_USERMIPMAP, &seek_result)) {
+                chunk, CK_STATESAVE_TEXVIDEOFORMAT, &seek_result)) {
             size_t payload = nmo_texture_identifier_payload_size(chunk);
             if (payload < sizeof(int32_t)) return NMO_ERR_TRUNCATED_CHUNK;
             int32_t use_mipmap = 0;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &use_mipmap));
-            out_state->has_legacy_user_mipmap = 1;
+            out_state->has_legacy_video_format = 1;
             out_state->legacy_use_mipmap = use_mipmap;
             out_state->mipmap_level = use_mipmap != 0 ? UINT8_MAX : 0u;
             NMO_RETURN_IF_ERROR(nmo_texture_read_legacy_mipmap_tail(
                 out_state, chunk, arena, payload - sizeof(int32_t)));
         } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
+        /* 0x80000: save options and, past data_version 6, the properties buffer. */
         if (nmo_texture_seek_found(
-                chunk, CK_STATESAVE_TEXSYSTEMCACHING, &seek_result)) {
+                chunk, CK_STATESAVE_TEXSAVEFORMAT, &seek_result)) {
             const size_t payload = nmo_texture_identifier_payload_size(chunk);
             if (payload < 2u * sizeof(uint32_t)) return NMO_ERR_TRUNCATED_CHUNK;
             uint32_t save_options = 0;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &save_options));
             out_state->save_options = save_options;
-            out_state->has_legacy_system_caching = 1;
+            out_state->has_legacy_save_format = 1;
 
             void *format = NULL;
             size_t size = 0;
@@ -1067,7 +1071,7 @@ static nmo_status_t nmo_texture_copy(
     copied.reader_slots = NULL;
     copied.raw_slots = NULL;
     copied.bitmap2_slots = NULL;
-    copied.legacy_user_mipmap_data = NULL;
+    copied.legacy_video_format_data = NULL;
     copied.save_format_data = NULL;
     copied.user_mipmaps = NULL;
 
@@ -1095,9 +1099,9 @@ static nmo_status_t nmo_texture_copy(
     }
     if (copy_status == NMO_OK) {
         copy_status = nmo_object_copy_bytes(
-            arena, &copied.legacy_user_mipmap_data,
-            source->legacy_user_mipmap_data,
-            source->legacy_user_mipmap_size);
+            arena, &copied.legacy_video_format_data,
+            source->legacy_video_format_data,
+            source->legacy_video_format_size);
     }
     if (copy_status == NMO_OK) {
         copy_status = nmo_object_copy_bytes(
@@ -1192,11 +1196,11 @@ static nmo_status_t nmo_texture_validate(
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
                          "Texture save format exceeds serialized range");
     }
-    if (s->legacy_user_mipmap_size > UINT32_MAX ||
-        (s->legacy_user_mipmap_size & 3u) != 0u) {
+    if (s->legacy_video_format_size > UINT32_MAX ||
+        (s->legacy_video_format_size & 3u) != 0u) {
         NMO_RETURN_ERROR(
             NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
-            "Texture legacy USERMIPMAP tail is not representable");
+            "Texture legacy video format tail is not representable");
     }
     if (!s->has_pick_threshold && s->pick_threshold != 0) {
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
@@ -1215,14 +1219,14 @@ static nmo_status_t nmo_texture_validate(
             NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
             "Texture OLDTEXONLY fields cannot be serialized losslessly");
     }
-    if (!s->has_legacy_user_mipmap &&
+    if (!s->has_legacy_video_format &&
         (s->legacy_use_mipmap != 0 ||
-         s->legacy_user_mipmap_size != 0u)) {
+         s->legacy_video_format_size != 0u)) {
         NMO_RETURN_ERROR(
             NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
-            "Texture legacy USERMIPMAP data is present without its section");
+            "Texture legacy video format data is present without its section");
     }
-    if (!s->has_save_format && !s->has_legacy_system_caching &&
+    if (!s->has_save_format && !s->has_legacy_save_format &&
         s->save_format_size != 0u) {
         NMO_RETURN_ERROR(NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
                          "Texture save format is present without its section");
@@ -1232,18 +1236,18 @@ static nmo_status_t nmo_texture_validate(
                          "Texture user mipmaps are present without their section");
     }
     NMO_VALIDATE_BYTES(
-        s->legacy_user_mipmap_data, s->legacy_user_mipmap_size,
-        "legacy_user_mipmap_data");
-    if (s->has_legacy_user_mipmap) {
+        s->legacy_video_format_data, s->legacy_video_format_size,
+        "legacy_video_format_data");
+    if (s->has_legacy_video_format) {
         uint32_t legacy_format = UNKNOWN_PF;
         const nmo_status_t legacy_result = nmo_texture_legacy_tail_format(
-            s->legacy_user_mipmap_data,
-            s->legacy_user_mipmap_size,
+            s->legacy_video_format_data,
+            s->legacy_video_format_size,
             &legacy_format);
         if (legacy_result != NMO_OK) {
             NMO_RETURN_ERROR(
                 NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
-                "Texture legacy USERMIPMAP tail is malformed");
+                "Texture legacy video format tail is malformed");
         }
         if ((legacy_format != UNKNOWN_PF) !=
                 (s->has_desired_video_format != 0) ||
@@ -1299,8 +1303,8 @@ static nmo_status_t nmo_texture_serialize_internal(
     NMO_RETURN_IF_ERROR(nmo_texture_validate(state, type, context));
     const uint32_t data_version = nmo_chunk_get_data_version(chunk);
     const bool has_legacy_layout =
-        state->has_legacy_user_mipmap ||
-        state->has_legacy_system_caching ||
+        state->has_legacy_video_format ||
+        state->has_legacy_save_format ||
         (!state->has_oldtexonly &&
          (state->has_transparent_color || state->is_transparent ||
           state->has_current_slot));
@@ -1352,16 +1356,16 @@ static nmo_status_t nmo_texture_serialize_internal(
         if (state->is_cubemap ||
             (state->mipmap_level != 0u && state->mipmap_level != UINT8_MAX) ||
             (state->has_desired_video_format &&
-             !state->has_legacy_user_mipmap)) {
+             !state->has_legacy_video_format)) {
             NMO_RETURN_ERROR(
                 NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
                 "Texture state cannot be represented by the legacy layout");
         }
     } else {
-        if (state->has_legacy_user_mipmap) {
+        if (state->has_legacy_video_format) {
             NMO_RETURN_ERROR(
                 NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
-                "Texture legacy USERMIPMAP data cannot be written to the modern layout");
+                "Texture legacy video format data cannot be written to the modern layout");
         }
         if (state->save_options > UINT8_MAX ||
             (write_oldtexonly &&
@@ -1453,23 +1457,23 @@ static nmo_status_t nmo_texture_serialize_internal(
                 chunk, state->current_slot));
         }
 
-        if (state->has_legacy_user_mipmap || state->mipmap_level != 0u) {
+        if (state->has_legacy_video_format || state->mipmap_level != 0u) {
             nmo_status_t result = nmo_chunk_write_identifier(
-                chunk, CK_STATESAVE_USERMIPMAP);
+                chunk, CK_STATESAVE_TEXVIDEOFORMAT);
             if (result != NMO_OK) return result;
-            const int32_t use_mipmap = state->has_legacy_user_mipmap
+            const int32_t use_mipmap = state->has_legacy_video_format
                 ? state->legacy_use_mipmap : 1;
             NMO_RETURN_IF_ERROR(nmo_chunk_write_int(chunk, use_mipmap));
             result = nmo_chunk_write_buffer_no_size(
-                chunk, state->legacy_user_mipmap_data,
-                state->legacy_user_mipmap_size);
+                chunk, state->legacy_video_format_data,
+                state->legacy_video_format_size);
             if (result != NMO_OK) return result;
         }
 
-        if (state->has_legacy_system_caching || state->has_save_format ||
+        if (state->has_legacy_save_format || state->has_save_format ||
             state->save_options != 0u || state->save_format_size != 0u) {
             nmo_status_t result = nmo_chunk_write_identifier(
-                chunk, CK_STATESAVE_TEXSYSTEMCACHING);
+                chunk, CK_STATESAVE_TEXSAVEFORMAT);
             if (result != NMO_OK) return result;
             NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
                 chunk, state->save_options));
@@ -1507,7 +1511,7 @@ static nmo_status_t nmo_texture_serialize_internal(
         }
     }
 
-    if (state->has_save_format || state->has_legacy_system_caching) {
+    if (state->has_save_format || state->has_legacy_save_format) {
         nmo_status_t result = nmo_chunk_write_identifier(chunk, CK_STATESAVE_TEXSAVEFORMAT);
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_buffer(chunk, state->save_format_data, state->save_format_size);
@@ -1723,15 +1727,15 @@ static bool nmo_texture_equals(const void *a, const void *b)
         lhs->transparent_color == rhs->transparent_color &&
         lhs->has_current_slot == rhs->has_current_slot &&
         lhs->current_slot == rhs->current_slot &&
-        lhs->has_legacy_user_mipmap == rhs->has_legacy_user_mipmap &&
+        lhs->has_legacy_video_format == rhs->has_legacy_video_format &&
         lhs->legacy_use_mipmap == rhs->legacy_use_mipmap &&
-        lhs->legacy_user_mipmap_size == rhs->legacy_user_mipmap_size &&
+        lhs->legacy_video_format_size == rhs->legacy_video_format_size &&
         nmo_texture_bytes_equal(
-            lhs->legacy_user_mipmap_data,
-            rhs->legacy_user_mipmap_data,
-            lhs->legacy_user_mipmap_size) &&
-        lhs->has_legacy_system_caching ==
-            rhs->has_legacy_system_caching &&
+            lhs->legacy_video_format_data,
+            rhs->legacy_video_format_data,
+            lhs->legacy_video_format_size) &&
+        lhs->has_legacy_save_format ==
+            rhs->has_legacy_save_format &&
         lhs->has_save_format == rhs->has_save_format &&
         lhs->save_format_size == rhs->save_format_size &&
         nmo_texture_bytes_equal(
@@ -1880,12 +1884,12 @@ static uint32_t nmo_texture_hash(const void *instance)
     NMO_TEXTURE_HASH_FIELD(transparent_color);
     NMO_TEXTURE_HASH_FIELD(has_current_slot);
     NMO_TEXTURE_HASH_FIELD(current_slot);
-    NMO_TEXTURE_HASH_FIELD(has_legacy_user_mipmap);
+    NMO_TEXTURE_HASH_FIELD(has_legacy_video_format);
     NMO_TEXTURE_HASH_FIELD(legacy_use_mipmap);
     hash = nmo_texture_hash_buffer(
-        hash, state->legacy_user_mipmap_data,
-        state->legacy_user_mipmap_size);
-    NMO_TEXTURE_HASH_FIELD(has_legacy_system_caching);
+        hash, state->legacy_video_format_data,
+        state->legacy_video_format_size);
+    NMO_TEXTURE_HASH_FIELD(has_legacy_save_format);
     NMO_TEXTURE_HASH_FIELD(has_save_format);
     hash = nmo_texture_hash_buffer(
         hash, state->save_format_data, state->save_format_size);

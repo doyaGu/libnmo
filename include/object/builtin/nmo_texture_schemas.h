@@ -119,13 +119,15 @@ typedef struct nmo_texture_state {
     uint8_t has_current_slot;
     int32_t current_slot;
 
-    /* Pre-CHUNK_VERSION2 layout provenance.  The USERMIPMAP tail includes
-     * the serialized buffer length and its DWORD padding verbatim. */
-    uint8_t has_legacy_user_mipmap;
+    /* Layout of files with data_version < 5. CK_STATESAVE_TEXVIDEOFORMAT holds
+     * the mipmap flag and an optional size-prefixed image descriptor (the tail,
+     * kept with its length and DWORD padding verbatim); CK_STATESAVE_TEXSAVEFORMAT
+     * holds the save options and the properties buffer. */
+    uint8_t has_legacy_video_format;
     int32_t legacy_use_mipmap;
-    void *legacy_user_mipmap_data;
-    size_t legacy_user_mipmap_size;
-    uint8_t has_legacy_system_caching;
+    void *legacy_video_format_data;
+    size_t legacy_video_format_size;
+    uint8_t has_legacy_save_format;
 
     /* Save format and user mipmaps */
     uint8_t has_save_format;
