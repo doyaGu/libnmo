@@ -68,6 +68,16 @@ typedef struct nmo_object {
     /* Memory management */
     nmo_allocator_t allocator; /**< Allocator snapshot for explicit frees */
     nmo_arena_t *storage_arena; /**< Per-object arena for schema allocations */
+
+    /* Fidelity bookkeeping of a loaded object (see nmo_chunk_residue.h). It
+       lets a save reuse the original chunk of an object whose state did not
+       change and carry what the schema does not model into the chunk of one
+       that did. */
+    uint64_t fidelity_digest;          /**< Digest of the state serialized after the load */
+    nmo_chunk_t *fidelity_canonical;   /**< That serialization, kept only when the original chunk holds more */
+    uint32_t fidelity_load_index;      /**< Index of the object in the file the chunk's ids refer to */
+    uint32_t fidelity_load_count;      /**< Number of objects of that file */
+    uint8_t fidelity_captured;         /**< The fields above are valid */
 } nmo_object_t;
 
 /**

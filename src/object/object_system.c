@@ -13,6 +13,7 @@
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_chunk_context.h"
+#include "format/nmo_chunk_residue.h"
 
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_serialize_context.h"
@@ -405,7 +406,9 @@ nmo_status_t nmo_object_system_deserialize_repository(
     return NMO_OK;
 }
 
-nmo_chunk_t *nmo_object_system_serialize_object_chunk(
+/* With state_only the chunk is always the schema's serialization of the state:
+ * an object the schema cannot write yields NULL instead of its old chunk. */
+static nmo_chunk_t *object_system_serialize_impl(
     nmo_object_t *obj,
     const nmo_type_runtime_t *type_rt,
     nmo_arena_t *arena,
@@ -414,6 +417,7 @@ nmo_chunk_t *nmo_object_system_serialize_object_chunk(
     nmo_logger_t *logger,
     const nmo_shadow_storage_t *shadow_storage,
     const nmo_chunk_file_context_t *file_ctx,
+    bool state_only,
     nmo_status_t *out_status)
 {
     if (out_status != NULL) {
@@ -428,6 +432,11 @@ nmo_chunk_t *nmo_object_system_serialize_object_chunk(
     }
 
     void *state = nmo_object_get_state(obj);
+
+    if (state_only && state == NULL) {
+        if (out_status != NULL) *out_status = NMO_ERR_INVALID_STATE;
+        return NULL;
+    }
 
     if (obj->chunk != NULL && state == NULL) {
         if (logger) {
@@ -445,6 +454,10 @@ nmo_chunk_t *nmo_object_system_serialize_object_chunk(
             nmo_log(logger, NMO_LOG_WARN,
                     "    No schema found for class 0x%08X, preserving raw chunk", obj->class_id);
         }
+        if (state_only) {
+            if (out_status != NULL) *out_status = NMO_ERR_NOT_SUPPORTED;
+            return NULL;
+        }
         return obj->chunk;
     }
 
@@ -453,6 +466,10 @@ nmo_chunk_t *nmo_object_system_serialize_object_chunk(
             nmo_log(logger, NMO_LOG_WARN,
                     "    Schema '%s' has no write vtable, preserving raw chunk",
                     schema_type->name ? schema_type->name : "<unnamed>");
+        }
+        if (state_only) {
+            if (out_status != NULL) *out_status = NMO_ERR_NOT_SUPPORTED;
+            return NULL;
         }
         return obj->chunk;
     }
@@ -590,4 +607,183 @@ nmo_chunk_t *nmo_object_system_serialize_object_chunk(
     }
 
     return new_chunk;
+}
+
+nmo_chunk_t *nmo_object_system_serialize_object_chunk(
+    nmo_object_t *obj,
+    const nmo_type_runtime_t *type_rt,
+    nmo_arena_t *arena,
+    nmo_arena_t *scratch,
+    nmo_object_repository_t *repo,
+    nmo_logger_t *logger,
+    const nmo_shadow_storage_t *shadow_storage,
+    const nmo_chunk_file_context_t *file_ctx,
+    nmo_status_t *out_status)
+{
+    return object_system_serialize_impl(
+        obj, type_rt, arena, scratch, repo, logger, shadow_storage, file_ctx,
+        false, out_status);
+}
+
+nmo_chunk_t *nmo_object_system_serialize_object_state(
+    nmo_object_t *obj,
+    const nmo_type_runtime_t *type_rt,
+    nmo_arena_t *arena,
+    nmo_arena_t *scratch,
+    nmo_object_repository_t *repo,
+    nmo_logger_t *logger,
+    nmo_status_t *out_status)
+{
+    return object_system_serialize_impl(
+        obj, type_rt, arena, scratch, repo, logger, NULL, NULL, true, out_status);
+}
+
+/* ============================================================================
+ * Fidelity: original chunks of unchanged objects, residue of changed ones
+ * ============================================================================ */
+
+nmo_status_t nmo_object_system_capture_fidelity(
+    nmo_object_repository_t *repo,
+    const nmo_type_runtime_t *type_rt,
+    nmo_logger_t *logger,
+    nmo_object_system_fidelity_stats_t *out_stats)
+{
+    if (repo == NULL || type_rt == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    nmo_object_system_fidelity_stats_t stats = {0};
+    const size_t count = nmo_object_repository_get_count(repo);
+    nmo_arena_t *work = nmo_arena_create(NULL, 64u * 1024u);
+    nmo_arena_t *scratch = nmo_arena_create(NULL, 16u * 1024u);
+    if (work == NULL || scratch == NULL) {
+        nmo_arena_destroy(work);
+        nmo_arena_destroy(scratch);
+        return NMO_ERR_NOMEM;
+    }
+
+    for (size_t i = 0; i < count; ++i) {
+        nmo_object_t *obj = nmo_object_repository_get_by_index(repo, i);
+        if (obj == NULL) continue;
+        obj->fidelity_load_index = (uint32_t)i;
+        obj->fidelity_load_count = (uint32_t)count;
+        obj->fidelity_captured = 0;
+        obj->fidelity_canonical = NULL;
+        if (obj->chunk == NULL || nmo_object_get_state(obj) == NULL) {
+            stats.skipped++;
+            continue;
+        }
+
+        nmo_arena_reset(work);
+        nmo_arena_reset(scratch);
+        nmo_status_t status = NMO_OK;
+        nmo_chunk_t *canonical = nmo_object_system_serialize_object_state(
+            obj, type_rt, work, scratch, repo, logger, &status);
+        if (canonical == NULL) {
+            stats.skipped++;
+            continue;
+        }
+
+        obj->fidelity_digest = nmo_chunk_digest(canonical);
+        obj->fidelity_captured = 1;
+        stats.captured++;
+        if (!nmo_chunk_equivalent(obj->chunk, canonical)) {
+            nmo_arena_t *storage = nmo_object_get_storage_arena(obj);
+            obj->fidelity_canonical = storage != NULL ? nmo_chunk_clone(canonical, storage) : NULL;
+            if (obj->fidelity_canonical != NULL) {
+                stats.with_residue++;
+            } else {
+                obj->fidelity_captured = 0;   /* cannot keep the residue: treat as unknown */
+                stats.captured--;
+            }
+        }
+    }
+
+    nmo_arena_destroy(work);
+    nmo_arena_destroy(scratch);
+    if (out_stats != NULL) *out_stats = stats;
+    return NMO_OK;
+}
+
+nmo_fidelity_outcome_t nmo_object_system_fidelity_inspect(
+    nmo_object_t *obj,
+    const nmo_type_runtime_t *type_rt,
+    nmo_arena_t *arena,
+    nmo_arena_t *scratch,
+    nmo_object_repository_t *repo,
+    nmo_logger_t *logger,
+    nmo_chunk_t **out_current)
+{
+    if (out_current != NULL) *out_current = NULL;
+    if (obj == NULL || !obj->fidelity_captured || obj->chunk == NULL) {
+        return NMO_FIDELITY_UNKNOWN;
+    }
+    nmo_status_t status = NMO_OK;
+    nmo_chunk_t *current = nmo_object_system_serialize_object_state(
+        obj, type_rt, arena, scratch, repo, logger, &status);
+    if (current == NULL) {
+        return NMO_FIDELITY_UNKNOWN;
+    }
+    if (out_current != NULL) *out_current = current;
+    return nmo_chunk_digest(current) == obj->fidelity_digest
+        ? NMO_FIDELITY_UNCHANGED : NMO_FIDELITY_CHANGED;
+}
+
+nmo_chunk_t *nmo_object_system_fidelity_reuse(
+    nmo_object_t *obj,
+    const nmo_chunk_t *current,
+    const nmo_id_remap_t *load_to_file,
+    nmo_arena_t *arena,
+    uint32_t file_index,
+    uint32_t file_count)
+{
+    if (obj == NULL || obj->chunk == NULL || !obj->fidelity_captured) return NULL;
+    nmo_chunk_t *chunk = obj->chunk;
+    if (load_to_file != NULL && nmo_id_remap_get_count(load_to_file) > 0) {
+        /* The ids of a chunk read from a file are not tracked; their places are
+           those of the object's current state, which has the same layout
+           unless the original holds more than the schema writes. */
+        if (arena == NULL || current == NULL || obj->fidelity_canonical != NULL) return NULL;
+        chunk = nmo_chunk_clone(obj->chunk, arena);
+        if (chunk == NULL) return NULL;
+        chunk->file_context = NULL;
+        bool unresolved = false;
+        if (nmo_chunk_translate_ids_with_layout(chunk, current, load_to_file,
+                                                obj->fidelity_load_count,
+                                                &unresolved) != NMO_OK || unresolved) {
+            return NULL;
+        }
+    }
+    obj->fidelity_load_index = file_index;
+    obj->fidelity_load_count = file_count;
+    return chunk;
+}
+
+nmo_status_t nmo_object_system_fidelity_commit(
+    nmo_object_t *obj,
+    nmo_chunk_t *chunk,
+    const nmo_chunk_t *original,
+    const nmo_chunk_t *current,
+    const nmo_id_remap_t *load_to_file,
+    nmo_arena_t *arena,
+    uint32_t file_index,
+    uint32_t file_count)
+{
+    if (obj == NULL || chunk == NULL || current == NULL || arena == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (obj->fidelity_canonical != NULL && original != NULL) {
+        nmo_status_t status = nmo_chunk_merge_residue(
+            chunk, original, obj->fidelity_canonical, load_to_file, arena, NULL);
+        if (status != NMO_OK) return status;
+    }
+
+    nmo_arena_t *storage = nmo_object_get_storage_arena(obj);
+    obj->fidelity_digest = nmo_chunk_digest(current);
+    obj->fidelity_canonical = NULL;
+    if (storage != NULL && !nmo_chunk_equivalent(chunk, current)) {
+        obj->fidelity_canonical = nmo_chunk_clone(current, storage);
+    }
+    obj->fidelity_load_index = file_index;
+    obj->fidelity_load_count = file_count;
+    return NMO_OK;
 }
