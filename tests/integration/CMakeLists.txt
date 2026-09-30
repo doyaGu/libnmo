@@ -30,6 +30,10 @@ add_integration_test(test_real_file_roundtrip)
 # Byte-level check: every object chunk of the corpus survives save and reload
 add_integration_test(test_corpus_chunk_roundtrip)
 
+# Decoded corpus values satisfy what the engine guarantees
+add_integration_test(test_corpus_invariants)
+target_link_libraries(test_corpus_invariants PRIVATE m)
+
 # Phase 4: CKBehavior historical regression fixtures (Nop1/Nop2)
 add_integration_test(test_behavior_roundtrip_regression)
 
