@@ -75,6 +75,8 @@ static const nmo_type_field_t nmo_sprite_fields[] = {
                     sizeof(uint32_t), CKPGUID_COLOR, NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_sprite_state_t, has_slot, CKPGUID_BOOL),
     NMO_FIELD(nmo_sprite_state_t, current_slot, CKPGUID_UINT32),
+    NMO_FIELD(nmo_sprite_state_t, has_video_format, CKPGUID_BOOL),
+    NMO_FIELD(nmo_sprite_state_t, video_format, CKPGUID_UINT32),
     NMO_FIELD(nmo_sprite_state_t, has_save_options, CKPGUID_BOOL),
     NMO_FIELD(nmo_sprite_state_t, save_options, NMO_GUID_ENUM_CK_TEXTURE_SAVEOPTIONS),
     NMO_FIELD(nmo_sprite_state_t, bitmap_properties_size, CKPGUID_UINT64),
@@ -267,6 +269,18 @@ static nmo_status_t deserialize_file_backed(
             &out_state->bitmap_data.raw_chunk_size));
     } else return seek_result;
     
+    /* Read video format (identifier 0x40000000). The Ballance engine neither
+       reads nor writes it; files from later engines carry one dword. */
+    seek_result = nmo_chunk_seek_identifier_with_size(
+        chunk, CK_STATESAVE_SPRITEVIDEOFORMAT, &section_dwords);
+    if (seek_result == NMO_OK) {
+        if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+        if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
+        result = nmo_chunk_read_dword(chunk, &out_state->video_format);
+        if (result != NMO_OK) return result;
+        out_state->has_video_format = true;
+    } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
+
     /* Read transparency (identifier 0x20000) */
     seek_result = nmo_chunk_seek_identifier_with_size(
         chunk, CK_STATESAVE_SPRITETRANSPARENT, &section_dwords);
@@ -595,6 +609,14 @@ static nmo_status_t nmo_sprite_serialize_internal(
             }
         }
 
+        if (in_state->has_video_format) {
+            result = nmo_chunk_write_identifier(
+                out_chunk, CK_STATESAVE_SPRITEVIDEOFORMAT);
+            if (result != NMO_OK) return result;
+            result = nmo_chunk_write_dword(out_chunk, in_state->video_format);
+            if (result != NMO_OK) return result;
+        }
+
         if (in_state->has_transparency) {
             result = nmo_chunk_write_identifier(
                 out_chunk, CK_STATESAVE_SPRITETRANSPARENT);
@@ -713,6 +735,8 @@ static nmo_status_t nmo_sprite_copy(
     target->transparent_color = source->transparent_color;
     target->has_slot = source->has_slot;
     target->current_slot = source->current_slot;
+    target->has_video_format = source->has_video_format;
+    target->video_format = source->video_format;
     target->has_save_options = source->has_save_options;
     target->save_options = source->save_options;
     target->bitmap_properties = NULL;
@@ -833,6 +857,8 @@ static bool nmo_sprite_equals(const void *a, const void *b)
         lhs->transparent_color == rhs->transparent_color &&
         lhs->has_slot == rhs->has_slot &&
         lhs->current_slot == rhs->current_slot &&
+        lhs->has_video_format == rhs->has_video_format &&
+        lhs->video_format == rhs->video_format &&
         lhs->has_save_options == rhs->has_save_options &&
         lhs->save_options == rhs->save_options &&
         lhs->bitmap_properties_size == rhs->bitmap_properties_size &&
@@ -887,6 +913,8 @@ static uint32_t nmo_sprite_hash(const void *instance)
     NMO_SPRITE_HASH_FIELD(transparent_color);
     NMO_SPRITE_HASH_FIELD(has_slot);
     NMO_SPRITE_HASH_FIELD(current_slot);
+    NMO_SPRITE_HASH_FIELD(has_video_format);
+    NMO_SPRITE_HASH_FIELD(video_format);
     NMO_SPRITE_HASH_FIELD(has_save_options);
     NMO_SPRITE_HASH_FIELD(save_options);
     hash = nmo_sprite_hash_buffer(

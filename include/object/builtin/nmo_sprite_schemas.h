@@ -62,6 +62,10 @@ typedef struct nmo_sprite_state {
     bool has_bitmap_data;               /**< True if bitmap payload is present */
     nmo_bitmapdata_t bitmap_data;     /**< Bitmap pixel data */
     
+    /* Video format (identifier 0x40000000), written by later engines */
+    bool has_video_format;              /**< True if the section is present */
+    uint32_t video_format;              /**< VX_PIXELFORMAT (1 = 32-bit ARGB in the samples) */
+
     /* Transparency (identifier 0x20000) */
     bool has_transparency;              /**< True if transparency is set */
     bool is_transparent;                /**< Transparency enabled flag */

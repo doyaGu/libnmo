@@ -128,12 +128,14 @@ static const char *chunk_first_difference(const nmo_chunk_t *a, const nmo_chunk_
     return NULL;
 }
 
-/* Identifier sections that files of other engine versions carry and that no
- * schema models, so the section is not written back. The engine at hand
- * never writes them (CKPatchMesh::Save writes 0x8000000 only, CKSprite::Save
- * writes 0x20000, 0x10000 and 0x20000000 besides the bitmap data), so there
- * is nothing to check the layout against. Objects holding one are counted and
- * left out of the comparison. */
+/* Identifier sections that no schema models, so the section is not written
+ * back and the objects holding one are counted and left out of the comparison.
+ *
+ * CKPatchMesh 0x8000 is written by RCKMesh::Save for a patch mesh whose render
+ * mesh has been built: a face count and packed face masks, all zero in the
+ * corpus. Only RCKMesh::Load reads it, and a patch mesh has no faces at that
+ * point, so the engine ignores it and BuildRenderMesh recreates the faces. It
+ * is derived data; libnmo skips it on load and cannot re-emit it. */
 typedef struct known_gap {
     uint32_t class_id;
     uint32_t identifier;
@@ -141,7 +143,6 @@ typedef struct known_gap {
 
 static const known_gap_t known_gaps[] = {
     { NMO_CID_PATCHMESH, 0x00008000u },
-    { NMO_CID_SPRITE, 0x40000000u },
 };
 
 /* Sections of a chunk form a chain: [identifier][offset of the next one]. */
