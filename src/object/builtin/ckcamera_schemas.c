@@ -178,7 +178,6 @@ static nmo_status_t nmo_camera_deserialize_internal(
             chunk, CK_STATESAVE_CAMERAFOV, &payload_dwords);
         if (seek_result == NMO_OK) {
             if (payload_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
-            if (payload_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
             out_state->has_fov_chunk = 1;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->fov));
         } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
@@ -186,7 +185,6 @@ static nmo_status_t nmo_camera_deserialize_internal(
             chunk, CK_STATESAVE_CAMERAPROJTYPE, &payload_dwords);
         if (seek_result == NMO_OK) {
             if (payload_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
-            if (payload_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
             out_state->has_proj_chunk = 1;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->projection_type));
         } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
@@ -194,7 +192,6 @@ static nmo_status_t nmo_camera_deserialize_internal(
             chunk, CK_STATESAVE_CAMERAOTHOZOOM, &payload_dwords);
         if (seek_result == NMO_OK) {
             if (payload_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
-            if (payload_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
             out_state->has_ortho_chunk = 1;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->orthographic_zoom));
         } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
@@ -202,7 +199,6 @@ static nmo_status_t nmo_camera_deserialize_internal(
             chunk, CK_STATESAVE_CAMERAASPECT, &payload_dwords);
         if (seek_result == NMO_OK) {
             if (payload_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
-            if (payload_dwords > 2u) return NMO_ERR_INVALID_FORMAT;
             out_state->has_aspect_chunk = 1;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &out_state->width));
             NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &out_state->height));
@@ -211,7 +207,6 @@ static nmo_status_t nmo_camera_deserialize_internal(
             chunk, CK_STATESAVE_CAMERAPLANES, &payload_dwords);
         if (seek_result == NMO_OK) {
             if (payload_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
-            if (payload_dwords > 2u) return NMO_ERR_INVALID_FORMAT;
             out_state->has_planes_chunk = 1;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->near_plane));
             NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->far_plane));
@@ -222,7 +217,6 @@ static nmo_status_t nmo_camera_deserialize_internal(
             chunk, CK_STATESAVE_CAMERAONLY, &payload_dwords);
         if (seek_result == NMO_OK) {
             if (payload_dwords < 6u) return NMO_ERR_TRUNCATED_CHUNK;
-            if (payload_dwords > 6u) return NMO_ERR_INVALID_FORMAT;
             out_state->has_cameraonly_chunk = 1;
             NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, (int32_t *)&out_state->projection_type));
             NMO_RETURN_IF_ERROR(nmo_chunk_read_float(chunk, &out_state->fov));

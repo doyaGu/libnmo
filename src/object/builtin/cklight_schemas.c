@@ -208,9 +208,6 @@ static nmo_status_t nmo_light_deserialize_modern(
         if (payload_dwords < expected_dwords) {
             return NMO_ERR_TRUNCATED_CHUNK;
         }
-        if (payload_dwords > expected_dwords) {
-            return NMO_ERR_INVALID_FORMAT;
-        }
 
         // Read Diffuse color (packed ARGB)
         uint32_t diffuse_argb;
@@ -269,7 +266,6 @@ static nmo_status_t nmo_light_deserialize_modern(
         chunk, CK_STATESAVE_LIGHTDATA2, &payload_dwords);
     if (result == NMO_OK) {
         if (payload_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
-        if (payload_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
         out_state->has_light_power_chunk = 1;
         result = nmo_chunk_read_float(chunk, &out_state->light_power);
         if (result != NMO_OK) {
@@ -301,7 +297,6 @@ static nmo_status_t nmo_light_deserialize_legacy(
         chunk, CK_STATESAVE_LIGHTDATA, &payload_dwords);
     if (result == NMO_OK) {
         if (payload_dwords < 14u) return NMO_ERR_TRUNCATED_CHUNK;
-        if (payload_dwords > 14u) return NMO_ERR_INVALID_FORMAT;
         out_state->has_light_data_chunk = 1;
         // Read Type
         uint32_t type;
@@ -341,7 +336,6 @@ static nmo_status_t nmo_light_deserialize_legacy(
         if (result != NMO_OK) {
             return result;
         }
-        if (active != 0 && active != 1) return NMO_ERR_INVALID_FORMAT;
         // Store active in flags (bit mapping matches engine: 0x100)
         if (active) {
             out_state->flags |= 0x100u;
@@ -355,7 +349,6 @@ static nmo_status_t nmo_light_deserialize_legacy(
         if (result != NMO_OK) {
             return result;
         }
-        if (specular != 0 && specular != 1) return NMO_ERR_INVALID_FORMAT;
         if (specular) {
             out_state->flags |= 0x200u;
         } else {
