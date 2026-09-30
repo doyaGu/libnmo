@@ -375,9 +375,92 @@ TEST(entity_edit, light_leaving_spot_resets_cones)
     entity_edit_fixture_destroy(&fixture);
 }
 
+TEST(entity_edit, setting_a_target_maintains_the_entity_target_flags)
+{
+    /* RCKTargetCamera::SetTarget / RCKTargetLight::SetTarget: the new target
+     * gains the target flag and loses FRAME, the previous target the reverse. */
+    entity_edit_fixture_t fixture = {0};
+    entity_edit_fixture_create(&fixture);
+
+    nmo_workspace_edit_t *edit = NULL;
+    ASSERT_EQ(NMO_OK,
+              nmo_workspace_edit_begin(fixture.workspace, "targets", &edit));
+    nmo_object_id_t first_id = 0u;
+    nmo_object_id_t second_id = 0u;
+    nmo_object_id_t camera_id = 0u;
+    nmo_object_id_t light_id = 0u;
+    const nmo_object_create_desc_t entity_desc = {
+        .class_id = NMO_CID_OBJECT,
+        .type_guid = CKPGUID_3DENTITY,
+    };
+    ASSERT_EQ(NMO_OK, nmo_object_edit_create(
+        edit,
+        &(nmo_object_create_desc_t){.class_id = entity_desc.class_id,
+                                    .name = "First",
+                                    .type_guid = entity_desc.type_guid},
+        &first_id));
+    ASSERT_EQ(NMO_OK, nmo_object_edit_create(
+        edit,
+        &(nmo_object_create_desc_t){.class_id = entity_desc.class_id,
+                                    .name = "Second",
+                                    .type_guid = entity_desc.type_guid},
+        &second_id));
+    ASSERT_EQ(NMO_OK, nmo_object_edit_create(
+        edit,
+        &(nmo_object_create_desc_t){.class_id = NMO_CID_OBJECT,
+                                    .name = "Camera",
+                                    .type_guid = CKPGUID_TARGETCAMERA},
+        &camera_id));
+    ASSERT_EQ(NMO_OK, nmo_object_edit_create(
+        edit,
+        &(nmo_object_create_desc_t){.class_id = NMO_CID_OBJECT,
+                                    .name = "Light",
+                                    .type_guid = CKPGUID_TARGETLIGHT},
+        &light_id));
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_commit(edit));
+
+    const nmo_type_registry_t *registry =
+        nmo_context_get_type_registry(fixture.ctx);
+    nmo_3dentity_state_t *first = (nmo_3dentity_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, find_object(fixture.document, first_id), CKPGUID_3DENTITY);
+    nmo_3dentity_state_t *second = (nmo_3dentity_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, find_object(fixture.document, second_id), CKPGUID_3DENTITY);
+    ASSERT_NOT_NULL(first);
+    ASSERT_NOT_NULL(second);
+    first->entity_flags |= CK_3DENTITY_FRAME;
+    second->entity_flags |= CK_3DENTITY_FRAME;
+
+    ASSERT_EQ(NMO_OK,
+              nmo_workspace_edit_begin(fixture.workspace, "aim", &edit));
+    ASSERT_EQ(NMO_OK, nmo_entity_edit_set_camera_target(edit, camera_id, first_id));
+    ASSERT_EQ(NMO_OK, nmo_entity_edit_set_light_target(edit, light_id, first_id));
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_commit(edit));
+    ASSERT_EQ(CK_3DENTITY_TARGETCAMERA | CK_3DENTITY_TARGETLIGHT,
+              first->entity_flags & (CK_3DENTITY_TARGETCAMERA |
+                                     CK_3DENTITY_TARGETLIGHT | CK_3DENTITY_FRAME));
+
+    /* Re-aiming the camera moves its flag. Like the engine, the previous
+     * target gets FRAME back even though the light still aims at it. */
+    ASSERT_EQ(NMO_OK,
+              nmo_workspace_edit_begin(fixture.workspace, "reaim", &edit));
+    ASSERT_EQ(NMO_OK, nmo_entity_edit_set_camera_target(edit, camera_id, second_id));
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_commit(edit));
+    ASSERT_EQ(CK_3DENTITY_TARGETLIGHT | CK_3DENTITY_FRAME,
+              first->entity_flags & (CK_3DENTITY_TARGETCAMERA |
+                                     CK_3DENTITY_TARGETLIGHT | CK_3DENTITY_FRAME));
+    ASSERT_EQ(CK_3DENTITY_TARGETCAMERA,
+              second->entity_flags & (CK_3DENTITY_TARGETCAMERA |
+                                      CK_3DENTITY_TARGETLIGHT | CK_3DENTITY_FRAME));
+
+    entity_edit_fixture_destroy(&fixture);
+}
+
 TEST_MAIN_BEGIN()
 REGISTER_TEST(entity_edit, sets_parent);
 REGISTER_TEST(entity_edit, sets_world_matrix);
 REGISTER_TEST(entity_edit, edits_explicit_entity_types);
 REGISTER_TEST(entity_edit, light_leaving_spot_resets_cones);
+REGISTER_TEST(entity_edit, setting_a_target_maintains_the_entity_target_flags);
 TEST_MAIN_END()

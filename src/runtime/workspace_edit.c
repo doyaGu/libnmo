@@ -3285,6 +3285,38 @@ nmo_status_t nmo_entity_edit_set_world_matrix(
     return NMO_OK;
 }
 
+/* RCKTargetCamera::SetTarget and RCKTargetLight::SetTarget keep a flag on the
+ * entities they aim at: the new target gets target_flag and loses
+ * CK_3DENTITY_FRAME, the previous target gets the opposite. */
+static nmo_status_t workspace_edit_update_target_flags(
+    nmo_workspace_edit_t *edit,
+    const nmo_type_registry_t *registry,
+    nmo_object_repository_t *repo,
+    nmo_object_id_t entity_id,
+    uint32_t target_flag,
+    bool is_target)
+{
+    nmo_object_t *entity_object = nmo_object_repository_find_by_id(repo, entity_id);
+    nmo_3dentity_state_t *entity =
+        workspace_edit_entity_state_for_object(registry, entity_object);
+    if (entity == NULL) {
+        return NMO_OK;
+    }
+    nmo_status_t status =
+        nmo_workspace_edit_snapshot_bytes(edit, entity, sizeof(*entity));
+    if (status != NMO_OK) {
+        return status;
+    }
+    if (is_target) {
+        entity->entity_flags =
+            (entity->entity_flags | target_flag) & ~(uint32_t)CK_3DENTITY_FRAME;
+    } else {
+        entity->entity_flags =
+            (entity->entity_flags & ~target_flag) | (uint32_t)CK_3DENTITY_FRAME;
+    }
+    return NMO_OK;
+}
+
 nmo_status_t nmo_entity_edit_set_camera_target(
     nmo_workspace_edit_t *edit,
     nmo_object_id_t object_id,
@@ -3322,6 +3354,22 @@ nmo_status_t nmo_entity_edit_set_camera_target(
         nmo_workspace_edit_snapshot_bytes(edit, state, sizeof(*state));
     if (status != NMO_OK) {
         return status;
+    }
+    const nmo_object_id_t previous_target_id =
+        state->has_target ? nmo_ref_runtime_id(&state->target) : 0u;
+    if (previous_target_id != target_id) {
+        if (previous_target_id != 0u) {
+            status = workspace_edit_update_target_flags(
+                edit, registry, repo, previous_target_id, CK_3DENTITY_TARGETCAMERA, false);
+            if (status != NMO_OK) {
+                return status;
+            }
+        }
+        status = workspace_edit_update_target_flags(
+            edit, registry, repo, target_id, CK_3DENTITY_TARGETCAMERA, true);
+        if (status != NMO_OK) {
+            return status;
+        }
     }
     state->has_target = 1u;
     state->target = nmo_ref_from_id(target_id);
@@ -3443,6 +3491,22 @@ nmo_status_t nmo_entity_edit_set_light_target(
         nmo_workspace_edit_snapshot_bytes(edit, state, sizeof(*state));
     if (status != NMO_OK) {
         return status;
+    }
+    const nmo_object_id_t previous_target_id =
+        state->has_target ? nmo_ref_runtime_id(&state->target) : 0u;
+    if (previous_target_id != target_id) {
+        if (previous_target_id != 0u) {
+            status = workspace_edit_update_target_flags(
+                edit, registry, repo, previous_target_id, CK_3DENTITY_TARGETLIGHT, false);
+            if (status != NMO_OK) {
+                return status;
+            }
+        }
+        status = workspace_edit_update_target_flags(
+            edit, registry, repo, target_id, CK_3DENTITY_TARGETLIGHT, true);
+        if (status != NMO_OK) {
+            return status;
+        }
     }
     state->has_target = 1u;
     state->target = nmo_ref_from_id(target_id);
