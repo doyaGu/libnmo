@@ -655,20 +655,20 @@ TEST(objanim_controllers, controllers_reject_inconsistent_key_count) {
 TEST(objanim_controllers, keys_size_helper) {
     size_t size = 0u;
     ASSERT_TRUE(nmo_objanim_controller_keys_size(
-        CKANIMATION_LINPOS_CONTROL, NULL, 48u, 3u, &size));
+        CKANIMATION_LINPOS_CONTROL, CKOBJANIM_FORMAT_CONTROLLERS, NULL, 48u, 3u, &size));
     ASSERT_EQ(48u, size);
     ASSERT_TRUE(nmo_objanim_controller_keys_size(
-        CKANIMATION_TCBROT_CONTROL, NULL, 100u, 2u, &size));
+        CKANIMATION_TCBROT_CONTROL, CKOBJANIM_FORMAT_CONTROLLERS, NULL, 100u, 2u, &size));
     ASSERT_EQ(80u, size);
     ASSERT_TRUE(nmo_objanim_controller_keys_size(
-        CKANIMATION_LINROT_CONTROL, NULL, 0u, 0u, &size));
+        CKANIMATION_LINROT_CONTROL, CKOBJANIM_FORMAT_CONTROLLERS, NULL, 0u, 0u, &size));
     ASSERT_EQ(0u, size);
     ASSERT_FALSE(nmo_objanim_controller_keys_size(
-        CKANIMATION_LINPOS_CONTROL, NULL, 47u, 3u, &size));
+        CKANIMATION_LINPOS_CONTROL, CKOBJANIM_FORMAT_CONTROLLERS, NULL, 47u, 3u, &size));
     ASSERT_FALSE(nmo_objanim_controller_keys_size(
-        0x100u, NULL, 100u, 1u, &size));
+        0x100u, CKOBJANIM_FORMAT_CONTROLLERS, NULL, 100u, 1u, &size));
     ASSERT_FALSE(nmo_objanim_controller_keys_size(
-        CKANIMATION_LINPOS_CONTROL, NULL, 16u, UINT32_MAX, &size));
+        CKANIMATION_LINPOS_CONTROL, CKOBJANIM_FORMAT_CONTROLLERS, NULL, 16u, UINT32_MAX, &size));
 
     const float tangents[2][3] = {{0}};
     uint8_t bezier[64];
@@ -676,14 +676,14 @@ TEST(objanim_controllers, keys_size_helper) {
     used = append_bezier_key(bezier, used, 1.0f, 0x00000000u, tangents);
     ASSERT_EQ(52u, used);
     ASSERT_TRUE(nmo_objanim_controller_keys_size(
-        CKANIMATION_BEZIERPOS_CONTROL, bezier, used, 2u, &size));
+        CKANIMATION_BEZIERPOS_CONTROL, CKOBJANIM_FORMAT_CONTROLLERS, bezier, used, 2u, &size));
     ASSERT_EQ(52u, size);
     ASSERT_FALSE(nmo_objanim_controller_keys_size(
-        CKANIMATION_BEZIERPOS_CONTROL, bezier, used - 1u, 2u, &size));
+        CKANIMATION_BEZIERPOS_CONTROL, CKOBJANIM_FORMAT_CONTROLLERS, bezier, used - 1u, 2u, &size));
     ASSERT_FALSE(nmo_objanim_controller_keys_size(
-        CKANIMATION_BEZIERPOS_CONTROL, bezier, used, 3u, &size));
+        CKANIMATION_BEZIERPOS_CONTROL, CKOBJANIM_FORMAT_CONTROLLERS, bezier, used, 3u, &size));
     ASSERT_FALSE(nmo_objanim_controller_keys_size(
-        CKANIMATION_BEZIERPOS_CONTROL, NULL, 0u, 1u, &size));
+        CKANIMATION_BEZIERPOS_CONTROL, CKOBJANIM_FORMAT_CONTROLLERS, NULL, 0u, 1u, &size));
 
     ASSERT_TRUE(nmo_objanim_controller_is_bezier(CKANIMATION_BEZIERPOS_CONTROL));
     ASSERT_TRUE(nmo_objanim_controller_is_bezier(CKANIMATION_BEZIERSCL_CONTROL));
@@ -694,6 +694,32 @@ TEST(objanim_controllers, keys_size_helper) {
 /* ========================================================================
  * Test: key size helper
  * ======================================================================== */
+TEST(objanim_controllers, format_key_size_helper) {
+    /* NEWDATA and LEGACY store scale-axis keys as time, an unused float, quaternion. */
+    ASSERT_EQ(24u, nmo_objanim_controller_format_key_size(
+        CKANIMATION_LINSCLAXIS_CONTROL, CKOBJANIM_FORMAT_NEWDATA));
+    ASSERT_EQ(24u, nmo_objanim_controller_format_key_size(
+        CKANIMATION_LINSCLAXIS_CONTROL, CKOBJANIM_FORMAT_LEGACY));
+    ASSERT_EQ(20u, nmo_objanim_controller_format_key_size(
+        CKANIMATION_LINSCLAXIS_CONTROL, CKOBJANIM_FORMAT_CONTROLLERS));
+    ASSERT_EQ(16u, nmo_objanim_controller_format_key_size(
+        CKANIMATION_LINPOS_CONTROL, CKOBJANIM_FORMAT_NEWDATA));
+    ASSERT_EQ(20u, nmo_objanim_controller_format_key_size(
+        CKANIMATION_LINROT_CONTROL, CKOBJANIM_FORMAT_LEGACY));
+    ASSERT_EQ(0u, nmo_objanim_controller_format_key_size(
+        CKANIMATION_BEZIERPOS_CONTROL, CKOBJANIM_FORMAT_NEWDATA));
+
+    size_t size = 0u;
+    ASSERT_TRUE(nmo_objanim_controller_keys_size(
+        CKANIMATION_LINSCLAXIS_CONTROL, CKOBJANIM_FORMAT_NEWDATA, NULL, 48u, 2u, &size));
+    ASSERT_EQ(48u, size);
+    ASSERT_FALSE(nmo_objanim_controller_keys_size(
+        CKANIMATION_LINSCLAXIS_CONTROL, CKOBJANIM_FORMAT_NEWDATA, NULL, 40u, 2u, &size));
+    ASSERT_TRUE(nmo_objanim_controller_keys_size(
+        CKANIMATION_LINSCLAXIS_CONTROL, CKOBJANIM_FORMAT_CONTROLLERS, NULL, 40u, 2u, &size));
+    ASSERT_EQ(40u, size);
+}
+
 TEST(objanim_controllers, key_size_helper) {
     ASSERT_EQ(16, nmo_objanim_controller_key_size(CKANIMATION_LINPOS_CONTROL));
     ASSERT_EQ(20, nmo_objanim_controller_key_size(CKANIMATION_LINROT_CONTROL));
@@ -1426,6 +1452,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(objanim_controllers, controllers_truncated_bezier_blob_stays_raw);
     REGISTER_TEST(objanim_controllers, controllers_reject_inconsistent_key_count);
     REGISTER_TEST(objanim_controllers, keys_size_helper);
+    REGISTER_TEST(objanim_controllers, format_key_size_helper);
     REGISTER_TEST(objanim_controllers, key_size_helper);
     REGISTER_TEST(objanim_controllers, negative_morph_counts_are_rejected_atomically);
     REGISTER_TEST(objanim_controllers, oversized_morph_payload_is_rejected_before_allocation);

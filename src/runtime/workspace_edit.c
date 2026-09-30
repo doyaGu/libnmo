@@ -3556,7 +3556,8 @@ nmo_status_t nmo_animation_edit_set_object_animation(
         }
         for (size_t i = 0u; i < settings->controller_count; ++i) {
             const nmo_objanim_controller_t *controller = &settings->controllers[i];
-            uint32_t key_size = nmo_objanim_controller_key_size(controller->type);
+            uint32_t key_size = nmo_objanim_controller_format_key_size(
+                controller->type, settings->format);
             if (key_size == 0u || controller->key_count == 0u ||
                 controller->data_size == 0u || controller->data == NULL) {
                 return NMO_ERR_INVALID_ARGUMENT;

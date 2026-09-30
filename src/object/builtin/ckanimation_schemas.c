@@ -545,7 +545,7 @@ static nmo_status_t nmo_objectanimation_validate(
             s->controllers[i].key_count > 0u) {
             size_t keys_size = 0u;
             if (!nmo_objanim_controller_keys_size(
-                    s->controllers[i].type, s->controllers[i].data,
+                    s->controllers[i].type, s->format, s->controllers[i].data,
                     s->controllers[i].data_size, s->controllers[i].key_count,
                     &keys_size) ||
                 keys_size != s->controllers[i].data_size) {
@@ -1234,6 +1234,24 @@ uint32_t nmo_objanim_controller_key_size(uint32_t type)
     }
 }
 
+uint32_t nmo_objanim_controller_format_key_size(
+    uint32_t type,
+    nmo_objectanimation_format_t format)
+{
+    /*
+     * NEWDATA and LEGACY files store a scale-axis key as 24 bytes: the time, an
+     * unused float, then the quaternion. The engine drops the unused float when
+     * it loads them into its 20-byte key, so CONTROLLERS files (which the engine
+     * saves) use the 20-byte layout.
+     */
+    if (type == CKANIMATION_LINSCLAXIS_CONTROL &&
+        (format == CKOBJANIM_FORMAT_NEWDATA ||
+         format == CKOBJANIM_FORMAT_LEGACY)) {
+        return 24;
+    }
+    return nmo_objanim_controller_key_size(type);
+}
+
 /*
  * Bezier keys are packed on disk: a 20-byte base (time, xyz and a dword with
  * two 16-bit flag words) followed by a 12-byte tangent for each flag word that
@@ -1289,6 +1307,7 @@ size_t nmo_objanim_bezier_key_decode(
 
 bool nmo_objanim_controller_keys_size(
     uint32_t type,
+    nmo_objectanimation_format_t format,
     const void *keys,
     size_t available,
     uint32_t key_count,
@@ -1315,7 +1334,7 @@ bool nmo_objanim_controller_keys_size(
         return true;
     }
 
-    uint32_t key_size = nmo_objanim_controller_key_size(type);
+    uint32_t key_size = nmo_objanim_controller_format_key_size(type, format);
     size_t total = 0u;
     if (key_size == 0u ||
         !nmo_safe_mul_size(key_count, key_size, &total) ||
@@ -1350,7 +1369,8 @@ static bool objanim_controller_split_blob(
     const size_t keys_available = blob_size - sizeof(uint32_t);
     size_t keys_size = 0u;
     if (!nmo_objanim_controller_keys_size(
-            type, (const uint8_t *)blob + sizeof(uint32_t), keys_available,
+            type, CKOBJANIM_FORMAT_CONTROLLERS,
+            (const uint8_t *)blob + sizeof(uint32_t), keys_available,
             key_count, &keys_size) ||
         keys_size != keys_available) {
         return false;

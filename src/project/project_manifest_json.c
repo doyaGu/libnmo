@@ -1120,6 +1120,7 @@ static nmo_status_t manifest_parse_animation_morph_keys(
 
 static nmo_status_t manifest_parse_animation_controllers(
     yyjson_val *controllers_value,
+    CK_OBJECTANIMATION_FORMAT format,
     nmo_objanim_controller_t **out_controllers,
     size_t *out_controller_count)
 {
@@ -1177,7 +1178,7 @@ static nmo_status_t manifest_parse_animation_controllers(
                              "manifest animation controller type is out of range");
         }
         uint32_t type = (uint32_t)type_u64;
-        uint32_t key_size = nmo_objanim_controller_key_size(type);
+        uint32_t key_size = nmo_objanim_controller_format_key_size(type, format);
         if (key_size == 0u || key_size % sizeof(float) != 0u) {
             manifest_free_animation_controllers(controllers, controller_count);
             NMO_RETURN_ERROR(NMO_ERR_NOT_SUPPORTED, NMO_SEVERITY_ERROR,
@@ -2316,6 +2317,7 @@ static nmo_status_t manifest_parse_object_details(
             &length));
         NMO_RETURN_IF_ERROR(manifest_parse_animation_controllers(
             yyjson_obj_get(animation, "controllers"),
+            format,
             &controllers,
             &controller_count));
         nmo_status_t animation_status = manifest_parse_animation_morph_keys(

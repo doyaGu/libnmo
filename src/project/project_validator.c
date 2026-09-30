@@ -651,8 +651,8 @@ static nmo_status_t project_validation_check_objects(
                  ++controller_index) {
                 const nmo_objanim_controller_t *controller =
                     &object.animation_controllers[controller_index];
-                uint32_t key_size =
-                    nmo_objanim_controller_key_size(controller->type);
+                uint32_t key_size = nmo_objanim_controller_format_key_size(
+                    controller->type, object.animation_format);
                 if (key_size == 0u) {
                     NMO_RETURN_IF_ERROR(project_validation_add_issue_ex(
                         report,

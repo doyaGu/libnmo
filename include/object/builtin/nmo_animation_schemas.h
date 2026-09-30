@@ -159,10 +159,27 @@ typedef struct nmo_objectanimation_state {
 
 /**
  * @brief Get the size of a single key for a given controller type.
+ *
+ * This is the key size of the CONTROLLERS format and of the engine's memory.
+ * Use nmo_objanim_controller_format_key_size() for other formats.
+ *
  * @return Key size in bytes, or 0 if the type is unknown or its keys have a
  *         variable size (bezier controllers, see nmo_objanim_bezier_key_decode()).
  */
 NMO_API uint32_t nmo_objanim_controller_key_size(uint32_t controller_type);
+
+/**
+ * @brief Get the size of a single key as stored in the given animation format.
+ *
+ * Equal to nmo_objanim_controller_key_size() except for the scale-axis
+ * controller in NEWDATA and LEGACY files, whose 24-byte keys hold the time, an
+ * unused float and the quaternion.
+ *
+ * @return Key size in bytes, or 0 if the type is unknown or has variable-size keys
+ */
+NMO_API uint32_t nmo_objanim_controller_format_key_size(
+    uint32_t controller_type,
+    nmo_objectanimation_format_t format);
 
 /** @brief true for the bezier position and scale controller types. */
 NMO_API bool nmo_objanim_controller_is_bezier(uint32_t controller_type);
@@ -198,6 +215,7 @@ NMO_API size_t nmo_objanim_bezier_key_decode(const void *key,
  * @brief Get the size of key_count consecutive keys of a controller.
  *
  * @param controller_type CKANIMATION_CONTROLLER enum value
+ * @param format          Animation format the keys are stored in
  * @param keys            Start of the keys (read for bezier controllers only)
  * @param available       Bytes readable at keys
  * @param key_count       Number of keys
@@ -205,6 +223,7 @@ NMO_API size_t nmo_objanim_bezier_key_decode(const void *key,
  * @return true if the type is known and the keys fit in available
  */
 NMO_API bool nmo_objanim_controller_keys_size(uint32_t controller_type,
+                                              nmo_objectanimation_format_t format,
                                               const void *keys,
                                               size_t available,
                                               uint32_t key_count,

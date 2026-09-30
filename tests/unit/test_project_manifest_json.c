@@ -467,6 +467,53 @@ TEST(project_manifest_json, parses_objectanimation_newdata_morph_keys)
     nmo_project_plan_destroy(plan);
 }
 
+TEST(project_manifest_json, scale_axis_key_width_depends_on_format)
+{
+    /* Scale-axis keys are 5 numbers in CONTROLLERS files and 6 (with an unused
+     * float after the time) in NEWDATA files. */
+    static const struct {
+        const char *format;
+        const char *keys;
+        nmo_status_t expected;
+        uint32_t data_size;
+    } cases[] = {
+        {"controllers", "[[0,0,0,0,1]]", NMO_OK, 20u},
+        {"controllers", "[[0,0,0,0,0,1]]", NMO_ERR_INVALID_FORMAT, 0u},
+        {"newdata", "[[0,0,0,0,0,1]]", NMO_OK, 24u},
+        {"newdata", "[[0,0,0,0,1]]", NMO_ERR_INVALID_FORMAT, 0u},
+    };
+    for (size_t i = 0u; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+        char json[640];
+        snprintf(json,
+                 sizeof(json),
+                 "{"
+                 "\"version\":1,"
+                 "\"document\":{\"name\":\"Generated\"},"
+                 "\"scenes\":[{\"name\":\"Level\",\"objects\":["
+                 "{\"id\":\"target\",\"name\":\"Target\",\"class\":\"CK3dEntity\"},"
+                 "{\"name\":\"Anim\",\"class\":\"CKObjectAnimation\","
+                 "\"animation\":{\"target\":\"target\",\"format\":\"%s\","
+                 "\"controllers\":[{\"type\":790629128,\"keys\":%s}]}}"
+                 "]}]"
+                 "}",
+                 cases[i].format,
+                 cases[i].keys);
+        nmo_project_plan_t *plan = NULL;
+        ASSERT_EQ(cases[i].expected,
+                  nmo_project_manifest_json_read(json, strlen(json), &plan));
+        if (cases[i].expected != NMO_OK) {
+            ASSERT_NULL(plan);
+            continue;
+        }
+        nmo_project_object_desc_t animation = {0};
+        ASSERT_EQ(NMO_OK, nmo_project_plan_get_object(plan, 1u, &animation));
+        ASSERT_EQ(1u, animation.animation_controller_count);
+        ASSERT_EQ(1u, animation.animation_controllers[0].key_count);
+        ASSERT_EQ(cases[i].data_size, animation.animation_controllers[0].data_size);
+        nmo_project_plan_destroy(plan);
+    }
+}
+
 TEST(project_manifest_json, rejects_unproven_animation_payload_fields)
 {
     static const char *const field_names[] = {
@@ -1114,6 +1161,7 @@ REGISTER_TEST(project_manifest_json, parses_material_render_flags);
 REGISTER_TEST(project_manifest_json, parses_wavesound_authoring);
 REGISTER_TEST(project_manifest_json, parses_objectanimation_authoring);
 REGISTER_TEST(project_manifest_json, parses_objectanimation_newdata_morph_keys);
+REGISTER_TEST(project_manifest_json, scale_axis_key_width_depends_on_format);
 REGISTER_TEST(project_manifest_json, rejects_unproven_animation_payload_fields);
 REGISTER_TEST(project_manifest_json, rejects_malformed_animation_morph_keys);
 REGISTER_TEST(project_manifest_json, rejects_unproven_physics_collision_manager_fields);
