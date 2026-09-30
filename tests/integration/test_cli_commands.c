@@ -2312,7 +2312,9 @@ TEST(cli, texture_show_reports_raw_slot_channels) {
     ASSERT_EQ(42, yyjson_get_uint(yyjson_obj_get(data, "id")));
     ASSERT_STR_EQ("CheckBoard1", yyjson_get_str(yyjson_obj_get(data, "name")));
     ASSERT_STR_EQ("raw", yyjson_get_str(yyjson_obj_get(data, "bitmap_kind")));
-    ASSERT_STR_EQ("rawdata", yyjson_get_str(yyjson_obj_get(data, "save_options")));
+    /* The packed state stores save option 3 (use global), which the CLI
+     * labels "external" like every other texture with that value. */
+    ASSERT_STR_EQ("external", yyjson_get_str(yyjson_obj_get(data, "save_options")));
     ASSERT_EQ(1, yyjson_get_uint(yyjson_obj_get(data, "slot_count")));
 
     yyjson_val *slots = yyjson_obj_get(data, "slots");
