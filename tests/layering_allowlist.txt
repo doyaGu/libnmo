@@ -9,8 +9,6 @@ src/chunk/chunk_inspect.c export/nmo_hexdump.h
 src/document/document_stats.c export/nmo_export_json.h
 src/document/document_stats.c export/nmo_export_text.h
 src/extension/virtools_loader.c behavior/nmo_behavior_registry.h
-src/extension/virtools_loader.c object/nmo_object_guids.h
-src/extension/virtools_loader.c object/nmo_param_guids.h
 src/format/chunk.c object/nmo_object_repository.h
 src/format/chunk_arrays.c object/nmo_object_repository.h
 src/format/chunk_primitives.c object/nmo_object_repository.h
@@ -18,7 +16,7 @@ src/format/interface_chunk_types.c type/nmo_reflection.h
 src/format/interface_chunk_types.c type/nmo_type_system.h
 src/format/interface_view.c object/builtin/nmo_behavior_schemas.h
 src/format/interface_view.c object/nmo_class_ids.h
-src/format/interface_view.c object/nmo_object_guids.h
+src/format/interface_view.c type/nmo_object_guids.h
 src/format/interface_view.c object/nmo_object_repository.h
 src/format/interface_view.c session/nmo_session.h
 src/format/interface_view.c session/nmo_session_pipeline.h
@@ -42,5 +40,3 @@ src/session/deserializer.c runtime/nmo_context.h
 src/session/runtime_delete.c runtime/nmo_context.h
 src/session/runtime_kernel.c runtime/nmo_context.h
 src/session/runtime_kernel.c runtime/nmo_workspace.h
-src/type/builtin_types.c object/nmo_object_guids.h
-src/type/builtin_types.c object/nmo_param_guids.h

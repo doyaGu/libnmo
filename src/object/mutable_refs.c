@@ -9,7 +9,7 @@
 #include "object/builtin/nmo_patchmesh_schemas.h"
 #include "object/builtin/nmo_scene_schemas.h"
 #include "object/nmo_class_ids.h"
-#include "object/nmo_object_guids.h"
+#include "type/nmo_object_guids.h"
 #include "core/nmo_guid.h"
 
 #include <stdint.h>

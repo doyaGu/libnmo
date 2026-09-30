@@ -5,7 +5,7 @@
 #include "object/builtin/nmo_sound_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_edit.h"
-#include "object/nmo_object_guids.h"
+#include "type/nmo_object_guids.h"
 #include "object/nmo_object_query.h"
 #include "object/nmo_sound_edit.h"
 #include "runtime/nmo_context.h"

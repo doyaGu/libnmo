@@ -8,7 +8,7 @@
 #include "behavior/nmo_behavior_registry.h"
 #include "edit/nmo_behavior_edit.h"
 #include "object/nmo_class_ids.h"
-#include "object/nmo_object_guids.h"
+#include "type/nmo_object_guids.h"
 #include "object/nmo_statesave_ids.h"
 #include "object/builtin/nmo_parameterlocal_schemas.h"
 

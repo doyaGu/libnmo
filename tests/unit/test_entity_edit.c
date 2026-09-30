@@ -10,7 +10,7 @@
 #include "object/nmo_class_ids.h"
 #include "object/nmo_entity_edit.h"
 #include "object/nmo_object_edit.h"
-#include "object/nmo_object_guids.h"
+#include "type/nmo_object_guids.h"
 #include "object/nmo_object_query.h"
 #include "runtime/nmo_context.h"
 #include "runtime/nmo_workspace.h"

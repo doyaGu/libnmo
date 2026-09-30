@@ -7,7 +7,7 @@
 
 #include "edit/nmo_behavior_edit.h"
 #include "object/nmo_class_ids.h"
-#include "object/nmo_object_guids.h"
+#include "type/nmo_object_guids.h"
 #include "type/nmo_operation_system.h"
 
 #include <stdint.h>

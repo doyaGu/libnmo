@@ -3,7 +3,7 @@
 #include "session/nmo_session.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_class_ids.h"
-#include "object/nmo_object_guids.h"
+#include "type/nmo_object_guids.h"
 #include "format/nmo_object.h"
 #include "format/nmo_interface_chunk.h"
 #include "format/nmo_interface_view.h"

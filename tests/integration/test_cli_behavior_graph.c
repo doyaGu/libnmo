@@ -11,7 +11,7 @@
 #include "format/nmo_interface_chunk.h"
 #include "format/nmo_object.h"
 #include "object/nmo_class_ids.h"
-#include "object/nmo_object_guids.h"
+#include "type/nmo_object_guids.h"
 #include "object/nmo_object_repository.h"
 #include "object/builtin/nmo_beobject_schemas.h"
 #include "object/builtin/nmo_behavior_schemas.h"

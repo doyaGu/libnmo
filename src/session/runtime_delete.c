@@ -21,7 +21,7 @@
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "object/builtin/nmo_patchmesh_schemas.h"
 #include "object/builtin/nmo_place_schemas.h"
-#include "object/nmo_object_guids.h"
+#include "type/nmo_object_guids.h"
 #include "type/nmo_reflection.h"
 #include "type/nmo_type_query.h"
 #include "type/nmo_type_runtime.h"

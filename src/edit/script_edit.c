@@ -7,7 +7,7 @@
 
 #include "object/nmo_statesave_ids.h"
 #include "object/nmo_class_ids.h"
-#include "object/nmo_object_guids.h"
+#include "type/nmo_object_guids.h"
 #include "object/builtin/nmo_behaviorio_schemas.h"
 
 #include <limits.h>

@@ -18,7 +18,7 @@ extern "C" {
  * Parameter type GUIDs (CKParameter/CKParameterManager)
  *
  * Note: Object/class GUIDs (CKObject descendants) are declared in
- * include/object/nmo_object_guids.h.
+ * include/type/nmo_object_guids.h.
  */
 
 /* Core scalar parameter types */

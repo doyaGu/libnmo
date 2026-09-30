@@ -11,8 +11,8 @@
 #include "type/nmo_type_string.h"
 #include "type/nmo_type_guids.h"
 #include "type/nmo_operation_system.h"
-#include "object/nmo_object_guids.h"
-#include "object/nmo_param_guids.h"
+#include "type/nmo_object_guids.h"
+#include "type/nmo_param_guids.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_guid.h"
 

@@ -10,7 +10,7 @@
 #include "runtime/nmo_context.h"
 #include "object/builtin/nmo_beobject_schemas.h"
 #include "object/nmo_class_ids.h"
-#include "object/nmo_object_guids.h"
+#include "type/nmo_object_guids.h"
 #include "object/nmo_object_repository.h"
 #include "format/nmo_object.h"
 #include "core/nmo_array.h"

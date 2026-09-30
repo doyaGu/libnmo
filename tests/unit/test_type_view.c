@@ -4,7 +4,7 @@
 #include "type/nmo_type_system.h"
 #include "type/nmo_type_view.h"
 #include "object/nmo_class_ids.h"
-#include "object/nmo_object_guids.h"
+#include "type/nmo_object_guids.h"
 #include "format/nmo_object.h"
 
 TEST(type_view, from_class_id_returns_stable_snapshot) {

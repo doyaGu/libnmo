@@ -8,7 +8,7 @@
 #include "behavior/nmo_behavior_query.h"
 #include "document/nmo_document.h"
 #include "object/nmo_class_ids.h"
-#include "object/nmo_object_guids.h"
+#include "type/nmo_object_guids.h"
 #include "runtime/nmo_context.h"
 #include "runtime/nmo_workspace.h"
 #include "session/nmo_session.h"

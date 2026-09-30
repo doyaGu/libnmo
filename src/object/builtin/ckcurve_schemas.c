@@ -7,7 +7,7 @@
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
 #include "type/nmo_reflection.h"
-#include "object/nmo_param_guids.h"
+#include "type/nmo_param_guids.h"
 #include "object/nmo_object_struct_guids.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_deserialize_context.h"

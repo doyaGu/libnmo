@@ -11,7 +11,7 @@
 #define NMO_OBJECT_ENUM_GUIDS_H
 
 #include "core/nmo_guid.h"
-#include "object/nmo_param_guids.h"
+#include "type/nmo_param_guids.h"
 
 #ifdef __cplusplus
 extern "C" {

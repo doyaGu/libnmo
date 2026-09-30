@@ -6,10 +6,10 @@
 #include "script_edit_internal.h"
 
 #include "object/nmo_manager_guids.h"
-#include "object/nmo_param_guids.h"
+#include "type/nmo_param_guids.h"
 #include "edit/nmo_behavior_edit.h"
 #include "object/nmo_class_ids.h"
-#include "object/nmo_object_guids.h"
+#include "type/nmo_object_guids.h"
 #include "object/builtin/nmo_parameterlocal_schemas.h"
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_data.h"

@@ -29,7 +29,7 @@
 #include "object/builtin/nmo_parameterlocal_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "type/nmo_reflection.h"
-#include "object/nmo_object_guids.h"
+#include "type/nmo_object_guids.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_repository.h"
 #include "type/nmo_type_system.h"

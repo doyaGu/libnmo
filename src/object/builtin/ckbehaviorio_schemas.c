@@ -15,7 +15,7 @@
 #include "object/builtin/nmo_object_schemas.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
-#include "object/nmo_param_guids.h"
+#include "type/nmo_param_guids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"

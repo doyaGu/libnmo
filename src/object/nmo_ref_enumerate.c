@@ -9,7 +9,7 @@
 #include "object/nmo_ref_enumerate.h"
 #include "object/nmo_ref.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
-#include "object/nmo_object_guids.h"
+#include "type/nmo_object_guids.h"
 #include "format/nmo_object.h"
 #include "type/nmo_reflection.h"
 #include "type/nmo_type_query.h"

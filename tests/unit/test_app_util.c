@@ -12,7 +12,7 @@
 #include "core/nmo_utils.h"
 #include "type/nmo_type_query.h"
 #include "object/nmo_class_ids.h"
-#include "object/nmo_object_guids.h"
+#include "type/nmo_object_guids.h"
 #include "yyjson.h"
 
 #include <stdlib.h>

@@ -10,7 +10,7 @@
 #include "object/nmo_ref_graph.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_class_ids.h"
-#include "object/nmo_object_guids.h"
+#include "type/nmo_object_guids.h"
 #include "format/nmo_object.h"
 #include "type/nmo_type_system.h"
 #include "core/nmo_arena.h"

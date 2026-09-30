@@ -21,7 +21,7 @@
 #include "object/builtin/nmo_parameteroperation_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_manager_guids.h"
-#include "object/nmo_object_guids.h"
+#include "type/nmo_object_guids.h"
 
 #include "../runtime/runtime_internal.h"
 

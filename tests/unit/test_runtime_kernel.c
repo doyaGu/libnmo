@@ -7,7 +7,7 @@
 #include "object/nmo_object_system.h"
 #include "object/nmo_shadow_storage.h"
 #include "object/nmo_class_ids.h"
-#include "object/nmo_object_guids.h"
+#include "type/nmo_object_guids.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_behaviorio_schemas.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"

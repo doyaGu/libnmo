@@ -7,7 +7,7 @@
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_edit.h"
 #include "object/nmo_object_enum_defs.h"
-#include "object/nmo_object_guids.h"
+#include "type/nmo_object_guids.h"
 #include "object/nmo_object_query.h"
 #include "object/nmo_scene_edit.h"
 #include "runtime/nmo_context.h"

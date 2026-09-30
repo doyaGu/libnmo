@@ -8,7 +8,7 @@
 #include "object/nmo_object_repository.h"
 #include "object/nmo_object_system.h"
 #include "object/nmo_shadow_storage.h"
-#include "object/nmo_object_guids.h"
+#include "type/nmo_object_guids.h"
 #include "object/builtin/nmo_object_schemas.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_material_schemas.h"

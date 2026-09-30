@@ -4,7 +4,7 @@
 #include "session/nmo_session.h"
 #include "session/nmo_session_pipeline.h"
 #include "object/nmo_class_ids.h"
-#include "object/nmo_object_guids.h"
+#include "type/nmo_object_guids.h"
 #include "object/nmo_object_repository.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "format/nmo_interface_chunk.h"

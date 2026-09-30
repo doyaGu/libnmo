@@ -7,7 +7,7 @@
 #include "document/nmo_document.h"
 #include "object/nmo_object_query.h"
 #include "object/nmo_class_ids.h"
-#include "object/nmo_object_guids.h"
+#include "type/nmo_object_guids.h"
 #include "object/nmo_object_repository.h"
 #include "format/nmo_object.h"
 #include "runtime/nmo_context.h"

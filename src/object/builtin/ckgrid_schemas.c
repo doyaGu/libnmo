@@ -10,7 +10,7 @@
 #include "object/nmo_object_struct_guids.h"
 #include "type/nmo_reflection.h"
 #include "type/nmo_type_system.h"
-#include "object/nmo_param_guids.h"
+#include "type/nmo_param_guids.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_class_ids.h"
 #include "format/nmo_chunk.h"

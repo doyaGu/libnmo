@@ -13,7 +13,7 @@
 #include "object/builtin/nmo_parameterin_schemas.h"
 #include "object/builtin/nmo_parameterout_schemas.h"
 #include "object/nmo_class_ids.h"
-#include "object/nmo_object_guids.h"
+#include "type/nmo_object_guids.h"
 #include "object/nmo_statesave_ids.h"
 #include "../runtime/runtime_internal.h"
 

@@ -5,7 +5,7 @@
 
 #include "object/nmo_object_structs.h"
 #include "object/nmo_object_struct_guids.h"
-#include "object/nmo_param_guids.h"
+#include "type/nmo_param_guids.h"
 #include "type/nmo_dynamic_types.h"
 #include "type/nmo_type_guids.h"
 #include "type/nmo_type_system.h"

@@ -6,7 +6,7 @@
 #include "test_framework.h"
 #include "type/nmo_operations.h"
 #include "object/nmo_object_types.h"
-#include "object/nmo_object_guids.h"
+#include "type/nmo_object_guids.h"
 #include "object/builtin/nmo_animation_schemas.h"
 #include "type/nmo_type_system.h"
 #include "format/nmo_chunk.h"

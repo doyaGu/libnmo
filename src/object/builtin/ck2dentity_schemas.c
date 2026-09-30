@@ -21,7 +21,7 @@
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_enum_guids.h"
 #include "object/nmo_object_enum_defs.h"
-#include "object/nmo_param_guids.h"
+#include "type/nmo_param_guids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "core/nmo_error.h"

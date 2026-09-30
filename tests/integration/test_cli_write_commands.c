@@ -11,7 +11,7 @@
 #include "format/nmo_stb_adapter.h"
 #include "format/nmo_chunk.h"
 #include "object/nmo_class_ids.h"
-#include "object/nmo_object_guids.h"
+#include "type/nmo_object_guids.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_animation_schemas.h"
 #include "object/builtin/nmo_camera_schemas.h"

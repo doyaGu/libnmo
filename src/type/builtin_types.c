@@ -13,8 +13,8 @@
 #include "core/nmo_hash.h"
 #include "core/nmo_error.h"
 #include "type/nmo_type_guids.h"
-#include "object/nmo_object_guids.h"
-#include "object/nmo_param_guids.h"
+#include "type/nmo_object_guids.h"
+#include "type/nmo_param_guids.h"
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>

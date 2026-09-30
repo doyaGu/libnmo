@@ -6,7 +6,7 @@
 #include "test_framework.h"
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_type_common.h"
-#include "object/nmo_object_guids.h"
+#include "type/nmo_object_guids.h"
 #include "object/nmo_object_struct_defs.h"
 #include "object/nmo_object_struct_guids.h"
 #include "object/nmo_class_ids.h"
