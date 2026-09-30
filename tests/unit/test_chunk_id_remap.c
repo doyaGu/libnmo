@@ -9219,6 +9219,32 @@ TEST(chunk_id_remap, new_entity_and_body_part_start_with_the_engine_constructor_
     nmo_bodypart_vtable.destroy(&part, NULL, NULL);
 }
 
+TEST(chunk_id_remap, new_2d_objects_start_with_the_engine_constructor_state) {
+    /* RCK2dEntity: RESERVED3 | RATIOOFFSET | CLIPTOCAMERAVIEW | STICKLEFT |
+     * STICKTOP and the whole texture as source; RCKSprite clears the source
+     * rectangle and RCKSpriteText the ratio offset. */
+    const uint32_t entity_flags = CK_2DENTITY_RESERVED3 | CK_2DENTITY_RATIOOFFSET |
+        CK_2DENTITY_CLIPTOCAMERAVIEW | CK_2DENTITY_STICKLEFT | CK_2DENTITY_STICKTOP;
+
+    nmo_2dentity_state_t entity;
+    ASSERT_EQ(NMO_OK, nmo_2dentity_vtable.create(&entity, NULL, NULL));
+    ASSERT_EQ(entity_flags, entity.flags);
+    ASSERT_EQ(1.0f, entity.source_rect.right);
+    ASSERT_EQ(1.0f, entity.source_rect.bottom);
+    nmo_2dentity_vtable.destroy(&entity, NULL, NULL);
+
+    nmo_sprite_state_t sprite;
+    ASSERT_EQ(NMO_OK, nmo_sprite_vtable.create(&sprite, NULL, NULL));
+    ASSERT_EQ(entity_flags, sprite.entity.flags);
+    ASSERT_EQ(0.0f, sprite.entity.source_rect.right);
+    nmo_sprite_vtable.destroy(&sprite, NULL, NULL);
+
+    nmo_spritetext_state_t text;
+    ASSERT_EQ(NMO_OK, nmo_spritetext_vtable.create(&text, NULL, NULL));
+    ASSERT_EQ(entity_flags & ~(uint32_t)CK_2DENTITY_RATIOOFFSET, text.base.entity.flags);
+    nmo_spritetext_vtable.destroy(&text, NULL, NULL);
+}
+
 TEST(chunk_id_remap, new_place_and_grid_start_with_the_engine_constructor_state) {
     /* RCKPlace sets the priority 20000; RCKGrid scales itself to (1, 10, 1). */
     nmo_place_state_t place;
@@ -21616,6 +21642,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, layer_version_2_associates_the_int_parameter);
     REGISTER_TEST(chunk_id_remap, curve_without_its_sections_keeps_the_constructor_values);
     REGISTER_TEST(chunk_id_remap, new_place_and_grid_start_with_the_engine_constructor_state);
+    REGISTER_TEST(chunk_id_remap, new_2d_objects_start_with_the_engine_constructor_state);
     REGISTER_TEST(chunk_id_remap, new_entity_and_body_part_start_with_the_engine_constructor_state);
     REGISTER_TEST(chunk_id_remap, new_texture_writes_the_engine_default_packed_state);
     REGISTER_TEST(chunk_id_remap, texture_filename_count_resizes_the_slots);
