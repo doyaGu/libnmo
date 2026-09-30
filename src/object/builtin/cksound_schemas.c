@@ -211,7 +211,9 @@ static nmo_status_t nmo_sound_deserialize_internal(
             return NMO_ERR_TRUNCATED_CHUNK;
         }
         if (nmo_chunk_get_position(chunk) < section_end) {
-            return NMO_ERR_INVALID_FORMAT;
+            /* The engine ignores the rest of a section; the residue merge keeps it. */
+            NMO_RETURN_IF_ERROR(nmo_chunk_skip(
+                chunk, section_end - nmo_chunk_get_position(chunk)));
         }
         out_state->save_options = save_options;
         out_state->file_name = file_name;
@@ -330,7 +332,9 @@ static nmo_status_t nmo_wavesound_deserialize_internal(
             return NMO_ERR_TRUNCATED_CHUNK;
         }
         if (nmo_chunk_get_position(chunk) < section_end) {
-            return NMO_ERR_INVALID_FORMAT;
+            /* The engine ignores the rest of a section; the residue merge keeps it. */
+            NMO_RETURN_IF_ERROR(nmo_chunk_skip(
+                chunk, section_end - nmo_chunk_get_position(chunk)));
         }
         out_state->has_wave_file_name = 1;
         out_state->wave_file_name = wave_file_name;
@@ -347,7 +351,9 @@ static nmo_status_t nmo_wavesound_deserialize_internal(
             return NMO_ERR_TRUNCATED_CHUNK;
         }
         if (nmo_chunk_get_position(chunk) < section_end) {
-            return NMO_ERR_INVALID_FORMAT;
+            /* The engine ignores the rest of a section; the residue merge keeps it. */
+            NMO_RETURN_IF_ERROR(nmo_chunk_skip(
+                chunk, section_end - nmo_chunk_get_position(chunk)));
         }
         out_state->has_duration = 1;
         out_state->duration = duration;
@@ -459,7 +465,9 @@ static nmo_status_t nmo_wavesound_deserialize_internal(
             return NMO_ERR_TRUNCATED_CHUNK;
         }
         if (nmo_chunk_get_position(chunk) < section_end) {
-            return NMO_ERR_INVALID_FORMAT;
+            /* The engine ignores the rest of a section; the residue merge keeps it. */
+            NMO_RETURN_IF_ERROR(nmo_chunk_skip(
+                chunk, section_end - nmo_chunk_get_position(chunk)));
         }
         nmo_ref_check_class(
             &data.attached_object,
@@ -563,8 +571,8 @@ static nmo_status_t nmo_wavesound_serialize_internal(
         (!is_file && (save_flags & CK_STATESAVE_WAVSOUNDFILE) != 0)) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_WAVSOUNDFILE);
         if (result != NMO_OK) return result;
-        const char *base_name = nmo_sound_basename(in_state->wave_file_name);
-        result = nmo_chunk_write_string(out_chunk, base_name);
+        /* The engine never writes this section; its loader uses the string as it is. */
+        result = nmo_chunk_write_string(out_chunk, in_state->wave_file_name);
         if (result != NMO_OK) return result;
     }
 
@@ -722,7 +730,9 @@ static nmo_status_t nmo_midisound_deserialize_internal(
             return NMO_ERR_TRUNCATED_CHUNK;
         }
         if (nmo_chunk_get_position(chunk) < section_end) {
-            return NMO_ERR_INVALID_FORMAT;
+            /* The engine ignores the rest of a section; the residue merge keeps it. */
+            NMO_RETURN_IF_ERROR(nmo_chunk_skip(
+                chunk, section_end - nmo_chunk_get_position(chunk)));
         }
         out_state->has_midi_file_name = 1;
         out_state->midi_file_name = midi_file_name;

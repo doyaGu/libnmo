@@ -10868,10 +10868,11 @@ TEST(chunk_id_remap, sound_family_failures_keep_state_and_target_chunk_atomic) {
     ASSERT_EQ(NMO_OK, nmo_chunk_write_string(sound_trailing, "new.wav"));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(sound_trailing, 0x12345678u));
     nmo_chunk_close(sound_trailing);
-    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_sound_deserialize(
+    /* The engine ignores what follows the name, so the section loads. */
+    ASSERT_EQ(NMO_OK, nmo_sound_deserialize(
         &sound, sound_trailing, NULL, &deserialize_context));
-    ASSERT_EQ(CKSOUND_INCLUDEORIGINALFILE, sound.save_options);
-    ASSERT_STR_EQ("old.wav", sound.file_name);
+    ASSERT_EQ(CKSOUND_EXTERNAL, sound.save_options);
+    ASSERT_STR_EQ("new.wav", sound.file_name);
 
     nmo_chunk_t *midi_trailing = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(midi_trailing);
@@ -10883,11 +10884,10 @@ TEST(chunk_id_remap, sound_family_failures_keep_state_and_target_chunk_atomic) {
     ASSERT_EQ(NMO_OK, nmo_chunk_write_string(midi_trailing, "new.mid"));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(midi_trailing, 0x12345678u));
     nmo_chunk_close(midi_trailing);
-    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_midisound_deserialize(
+    ASSERT_EQ(NMO_OK, nmo_midisound_deserialize(
         &midi, midi_trailing, NULL, &deserialize_context));
-    ASSERT_STR_EQ("old.mid", midi.base.file_name);
     ASSERT_TRUE(midi.has_midi_file_name);
-    ASSERT_STR_EQ("derived.mid", midi.midi_file_name);
+    ASSERT_STR_EQ("new.mid", midi.midi_file_name);
 
     nmo_chunk_t *wave_file_trailing = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(wave_file_trailing);
@@ -10901,10 +10901,9 @@ TEST(chunk_id_remap, sound_family_failures_keep_state_and_target_chunk_atomic) {
     ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
         wave_file_trailing, 0x12345678u));
     nmo_chunk_close(wave_file_trailing);
-    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_wavesound_deserialize(
+    ASSERT_EQ(NMO_OK, nmo_wavesound_deserialize(
         &wave, wave_file_trailing, NULL, &deserialize_context));
-    ASSERT_STR_EQ("old-wave.wav", wave.wave_file_name);
-    ASSERT_EQ(2468, wave.duration);
+    ASSERT_STR_EQ("new-wave.wav", wave.wave_file_name);
 
     nmo_chunk_t *wave_duration_trailing = nmo_chunk_create(arena);
     ASSERT_NOT_NULL(wave_duration_trailing);
@@ -10917,10 +10916,9 @@ TEST(chunk_id_remap, sound_family_failures_keep_state_and_target_chunk_atomic) {
     ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
         wave_duration_trailing, 0x12345678u));
     nmo_chunk_close(wave_duration_trailing);
-    ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_wavesound_deserialize(
+    ASSERT_EQ(NMO_OK, nmo_wavesound_deserialize(
         &wave, wave_duration_trailing, NULL, &deserialize_context));
-    ASSERT_STR_EQ("old-wave.wav", wave.wave_file_name);
-    ASSERT_EQ(2468, wave.duration);
+    ASSERT_EQ(2469, wave.duration);
 
     static const struct {
         uint32_t data_version;
@@ -10957,10 +10955,9 @@ TEST(chunk_id_remap, sound_family_failures_keep_state_and_target_chunk_atomic) {
         ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(
             data2_trailing, 0x12345678u));
         nmo_chunk_close(data2_trailing);
-        ASSERT_EQ(NMO_ERR_INVALID_FORMAT, nmo_wavesound_deserialize(
+        /* Dwords after the DATA2 block are ignored, as the engine does. */
+        ASSERT_EQ(NMO_OK, nmo_wavesound_deserialize(
             &wave, data2_trailing, NULL, &deserialize_context));
-        ASSERT_STR_EQ("old-wave.wav", wave.wave_file_name);
-        ASSERT_EQ(2468, wave.duration);
     }
 
     fail_after_allocator_state_t allocator_state = {
