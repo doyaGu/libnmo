@@ -370,6 +370,82 @@ static void copy_fragment(
     }
 }
 
+/* ---------------------------------------------------------------------------
+ * Values the edit did not touch
+ * --------------------------------------------------------------------------- */
+
+static void mark_positions(const nmo_arena_array_t *list, bool *skip, size_t size)
+{
+    const uint32_t *values = array_words(list);
+    for (size_t i = 0; i < list->count; ++i) {
+        if (values[i] == ID_SEQUENCE_MARKER) {
+            ++i;  /* the position that follows is handled by the caller */
+            continue;
+        }
+        if (values[i] < size) skip[values[i]] = true;
+    }
+}
+
+/* The schema may write a value other than the one the file holds (it clamps
+ * an enum, normalizes flags). When the edit did not change such a dword, that
+ * is when the target still holds what the schema wrote at load, the file's
+ * own value goes back in. Only sections of equal length are compared, so a
+ * dword is always matched with the dword it was; a section the file made
+ * longer than the schema wrote may have a different layout and is left to the
+ * tail handling. Ids are left alone: they live in different id spaces. */
+static size_t restore_untouched_values(
+    nmo_chunk_t *target,
+    const nmo_chunk_t *original,
+    const nmo_chunk_t *canonical,
+    const section_list_t *t_sections,
+    const section_list_t *o_sections,
+    const section_list_t *c_sections,
+    nmo_arena_t *arena)
+{
+    const size_t c_total = canonical->data.count;
+    bool *skip = c_total > 0 ? nmo_arena_alloc(arena, c_total, 1) : NULL;
+    if (skip == NULL) return 0;
+    memset(skip, 0, c_total);
+    mark_positions(&canonical->ids, skip, c_total);
+    mark_positions(&canonical->chunk_refs, skip, c_total);
+    mark_positions(&canonical->managers, skip, c_total);
+    /* Sequences: the count and every id after it. */
+    const uint32_t *c_ids = array_words(&canonical->ids);
+    const uint32_t *c_data = chunk_words(canonical);
+    for (size_t i = 0; i + 1 < canonical->ids.count; ++i) {
+        if (c_ids[i] != ID_SEQUENCE_MARKER) continue;
+        const size_t header = c_ids[++i];
+        if (header >= c_total) continue;
+        const size_t end = header + 1u + c_data[header];
+        for (size_t k = header; k < end && k < c_total; ++k) skip[k] = true;
+    }
+
+    uint32_t *t_data = target->data.count > 0 ? NMO_ARENA_ARRAY_DATA(uint32_t, &target->data) : NULL;
+    const uint32_t *o_data = chunk_words(original);
+    size_t restored = 0;
+    for (size_t i = 0; i < c_sections->count; ++i) {
+        const section_t *c = &c_sections->items[i];
+        const section_t *t = find_section(t_sections, c->id);
+        const section_t *o = find_section(o_sections, c->id);
+        if (t == NULL || o == NULL || payload_dwords(t) != payload_dwords(c) ||
+            payload_dwords(o) != payload_dwords(c)) {
+            continue;
+        }
+        if (!fragment_is_plain(original, o->start, o->end)) continue;
+        for (size_t k = 0; k < payload_dwords(c); ++k) {
+            const size_t cp = c->start + 2u + k;
+            if (skip[cp]) continue;
+            const size_t tp = t->start + 2u + k;
+            const size_t op = o->start + 2u + k;
+            if (t_data[tp] == c_data[cp] && o_data[op] != c_data[cp]) {
+                t_data[tp] = o_data[op];
+                restored++;
+            }
+        }
+    }
+    return restored;
+}
+
 nmo_status_t nmo_chunk_merge_residue(
     nmo_chunk_t *target,
     const nmo_chunk_t *original,
@@ -396,6 +472,9 @@ nmo_status_t nmo_chunk_merge_residue(
         !parse_sections(canonical, arena, &c_sections)) {
         return NMO_ERR_NOMEM;
     }
+
+    stats.values_restored = restore_untouched_values(
+        target, original, canonical, &t_sections, &o_sections, &c_sections, arena);
 
     /* Collect the residue. */
     fragment_t *fragments = o_sections.count > 0

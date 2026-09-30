@@ -72,6 +72,7 @@ typedef struct nmo_chunk_residue_stats {
     size_t sections_kept;   /**< sections the canonical chunk does not have */
     size_t tails_kept;      /**< trailing dwords of sections both have */
     size_t skipped;         /**< residue that could not be carried over */
+    size_t values_restored; /**< dwords the edit left alone that get the file's value back */
 } nmo_chunk_residue_stats_t;
 
 /**

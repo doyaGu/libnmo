@@ -181,6 +181,54 @@ TEST(chunk_residue, translate_uses_the_layout_when_the_chunk_tracks_no_ids)
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_residue, merge_restores_values_the_schema_normalized_but_the_edit_left_alone)
+{
+    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+    ASSERT_NOT_NULL(arena);
+
+    /* The file holds 7 for an enum the schema clamps to 1, and an object id. */
+    nmo_chunk_t *original = begin(arena, 7);
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(original, SECTION_A));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(original, 10));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(original, 7));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(original, 4));   /* an id of the file */
+    nmo_chunk_close(original);
+
+    nmo_chunk_t *canonical = begin(arena, 7);
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(canonical, SECTION_A));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(canonical, 10));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(canonical, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_id(canonical, 4));
+    nmo_chunk_close(canonical);
+    ASSERT_FALSE(nmo_chunk_equivalent(original, canonical));
+
+    /* Edit 1 changes the first dword only: the enum keeps the file's 7. */
+    nmo_chunk_t *first = begin(arena, 7);
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(first, SECTION_A));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(first, 99));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(first, 1));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_id(first, 12));  /* the id is written differently */
+    nmo_chunk_close(first);
+    nmo_chunk_residue_stats_t stats;
+    ASSERT_EQ(NMO_OK, nmo_chunk_merge_residue(first, original, canonical, NULL, arena, &stats));
+    ASSERT_EQ(1u, stats.values_restored);
+    ASSERT_EQ(99u, words(first)[2]);
+    ASSERT_EQ(7u, words(first)[3]);
+    ASSERT_EQ(12u, words(first)[4]);
+
+    /* Edit 2 sets the enum itself: the edit wins. */
+    nmo_chunk_t *second = begin(arena, 7);
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(second, SECTION_A));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(second, 10));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(second, 2));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_id(second, 12));
+    nmo_chunk_close(second);
+    ASSERT_EQ(NMO_OK, nmo_chunk_merge_residue(second, original, canonical, NULL, arena, &stats));
+    ASSERT_EQ(0u, stats.values_restored);
+    ASSERT_EQ(2u, words(second)[3]);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_residue, merge_does_nothing_across_data_versions)
 {
     nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
@@ -206,5 +254,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_residue, equivalent_ignores_id_values_and_padding);
     REGISTER_TEST(chunk_residue, merge_keeps_unknown_sections_and_tails);
     REGISTER_TEST(chunk_residue, translate_uses_the_layout_when_the_chunk_tracks_no_ids);
+    REGISTER_TEST(chunk_residue, merge_restores_values_the_schema_normalized_but_the_edit_left_alone);
     REGISTER_TEST(chunk_residue, merge_does_nothing_across_data_versions);
 TEST_MAIN_END()
