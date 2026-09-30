@@ -1537,13 +1537,7 @@ static nmo_status_t nmo_texture_serialize_internal(
 }
 
  
-nmo_status_t nmo_texture_prepare_dependencies(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    return nmo_texture_validate(instance, type, context);
-}
+NMO_DEFINE_OBJECT_PREPARE_VIA_VALIDATE(nmo_texture)
 
 nmo_status_t nmo_texture_remap_dependencies(
     void *instance,

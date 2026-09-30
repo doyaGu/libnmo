@@ -200,19 +200,7 @@ nmo_status_t nmo_parameterlocal_serialize(
     return NMO_OK;
 }
 
-nmo_status_t nmo_parameterlocal_prepare_dependencies(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)type;
-    (void)context;
-    if (instance == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_parameterlocal_prepare_dependencies");
-    }
-    NMO_RETURN_OK();
-}
+NMO_DEFINE_OBJECT_PREPARE_CHECKED(nmo_parameterlocal)
 
 nmo_status_t nmo_parameterlocal_remap_dependencies(
     void *instance,

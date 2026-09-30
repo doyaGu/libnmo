@@ -102,13 +102,7 @@ nmo_status_t nmo_3dobject_serialize(
 }
 
 
-nmo_status_t nmo_3dobject_prepare_dependencies(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    return nmo_object_default_validate(instance, type, context);
-}
+NMO_DEFINE_OBJECT_PREPARE_DEFAULT(nmo_3dobject)
 
 nmo_status_t nmo_3dobject_remap_dependencies(
     void *instance,

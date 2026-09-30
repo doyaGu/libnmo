@@ -376,19 +376,7 @@ nmo_status_t nmo_spritetext_remap_dependencies(
     return nmo_spritetext_validate(state, NULL, context);
 }
 
-nmo_status_t nmo_spritetext_prepare_dependencies(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)type;
-    (void)context;
-    if (instance == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_spritetext_prepare_dependencies");
-    }
-    NMO_RETURN_OK();
-}
+NMO_DEFINE_OBJECT_PREPARE_CHECKED(nmo_spritetext)
 
 static nmo_status_t nmo_spritetext_pre_delete(
     void *instance,

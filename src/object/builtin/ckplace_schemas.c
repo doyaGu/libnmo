@@ -324,13 +324,7 @@ nmo_status_t nmo_place_remap_dependencies(
     return nmo_place_validate(state, NULL, NULL);
 }
 
-nmo_status_t nmo_place_prepare_dependencies(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    return nmo_place_validate(instance, type, context);
-}
+NMO_DEFINE_OBJECT_PREPARE_VIA_VALIDATE(nmo_place)
 
 static nmo_status_t nmo_place_pre_delete(
     void *instance,

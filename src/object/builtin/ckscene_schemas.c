@@ -735,13 +735,7 @@ nmo_status_t nmo_scene_remap_dependencies(
     return nmo_scene_validate(state, NULL, NULL);
 }
 
-nmo_status_t nmo_scene_prepare_dependencies(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    return nmo_scene_validate(instance, type, context);
-}
+NMO_DEFINE_OBJECT_PREPARE_VIA_VALIDATE(nmo_scene)
 
 static nmo_status_t nmo_scene_pre_delete(
     void *instance,

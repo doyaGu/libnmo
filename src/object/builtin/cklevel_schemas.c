@@ -925,13 +925,7 @@ nmo_status_t nmo_level_remap_dependencies(
     return nmo_level_validate(state, NULL, NULL);
 }
 
-nmo_status_t nmo_level_prepare_dependencies(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    return nmo_level_validate(instance, type, context);
-}
+NMO_DEFINE_OBJECT_PREPARE_VIA_VALIDATE(nmo_level)
 
 static nmo_status_t nmo_level_pre_delete(
     void *instance,

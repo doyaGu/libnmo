@@ -278,13 +278,7 @@ static nmo_status_t nmo_messagemanager_validate(
     const nmo_type_descriptor_t *type,
     void *context);
 
-nmo_status_t nmo_messagemanager_prepare_dependencies(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    return nmo_messagemanager_validate(instance, type, context);
-}
+NMO_DEFINE_OBJECT_PREPARE_VIA_VALIDATE(nmo_messagemanager)
 
 nmo_status_t nmo_messagemanager_remap_dependencies(
     void *instance,

@@ -99,13 +99,7 @@ static nmo_status_t nmo_targetcamera_deserialize_internal(
  * Vtable + registration
  * ============================================================================ */
 
-nmo_status_t nmo_targetcamera_prepare_dependencies(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    return nmo_object_default_validate(instance, type, context);
-}
+NMO_DEFINE_OBJECT_PREPARE_DEFAULT(nmo_targetcamera)
 
 nmo_status_t nmo_targetcamera_remap_dependencies(
     void *instance,

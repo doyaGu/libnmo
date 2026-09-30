@@ -99,13 +99,7 @@ static const nmo_type_field_t nmo_kinematicchain_fields[] = {
     NMO_FIELD_REF_VALUE(nmo_kinematicchain_state_t, end_effector)
 };
 
-nmo_status_t nmo_kinematicchain_prepare_dependencies(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    return nmo_object_default_validate(instance, type, context);
-}
+NMO_DEFINE_OBJECT_PREPARE_DEFAULT(nmo_kinematicchain)
 
 nmo_status_t nmo_kinematicchain_remap_dependencies(
     void *instance,

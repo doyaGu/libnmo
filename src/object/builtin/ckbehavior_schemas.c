@@ -1957,13 +1957,7 @@ nmo_status_t nmo_behavior_remap_dependencies(
     return nmo_behavior_validate(state, NULL, NULL);
 }
 
-nmo_status_t nmo_behavior_prepare_dependencies(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    return nmo_behavior_validate(instance, type, context);
-}
+NMO_DEFINE_OBJECT_PREPARE_VIA_VALIDATE(nmo_behavior)
 
 static nmo_status_t normalize_behavior_array(
     nmo_array_t *refs_array,

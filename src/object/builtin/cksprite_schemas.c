@@ -183,13 +183,7 @@ nmo_status_t nmo_sprite_remap_dependencies(
     return nmo_sprite_validate(state, NULL, NULL);
 }
 
-nmo_status_t nmo_sprite_prepare_dependencies(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    return nmo_sprite_validate(instance, type, context);
-}
+NMO_DEFINE_OBJECT_PREPARE_VIA_VALIDATE(nmo_sprite)
 
 static nmo_status_t nmo_sprite_pre_delete(
     void *instance,

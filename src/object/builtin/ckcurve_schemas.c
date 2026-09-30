@@ -435,13 +435,7 @@ static nmo_status_t nmo_curve_enumerate_refs(
  * Vtable + registration
  * ============================================================================ */
 
-nmo_status_t nmo_curve_prepare_dependencies(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    return nmo_curve_validate(instance, type, context);
-}
+NMO_DEFINE_OBJECT_PREPARE_VIA_VALIDATE(nmo_curve)
 
 nmo_status_t nmo_curve_remap_dependencies(
     void *instance,

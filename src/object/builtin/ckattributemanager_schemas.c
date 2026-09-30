@@ -397,13 +397,7 @@ static nmo_status_t nmo_attributemanager_validate(
     const nmo_type_descriptor_t *type,
     void *context);
 
-nmo_status_t nmo_attributemanager_prepare_dependencies(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    return nmo_attributemanager_validate(instance, type, context);
-}
+NMO_DEFINE_OBJECT_PREPARE_VIA_VALIDATE(nmo_attributemanager)
 
 nmo_status_t nmo_attributemanager_remap_dependencies(
     void *instance,

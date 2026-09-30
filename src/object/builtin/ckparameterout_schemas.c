@@ -337,19 +337,7 @@ static nmo_status_t nmo_parameterout_validate(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_parameterout_prepare_dependencies(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)type;
-    (void)context;
-    if (instance == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_parameterout_prepare_dependencies");
-    }
-    NMO_RETURN_OK();
-}
+NMO_DEFINE_OBJECT_PREPARE_CHECKED(nmo_parameterout)
 
 nmo_status_t nmo_parameterout_remap_dependencies(
     void *instance,

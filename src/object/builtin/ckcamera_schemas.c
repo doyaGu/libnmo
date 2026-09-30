@@ -443,13 +443,7 @@ nmo_status_t nmo_camera_serialize(
 /**
  * @brief Runtime dependency preparation for CKCamera.
  */
-nmo_status_t nmo_camera_prepare_dependencies(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    return nmo_object_default_validate(instance, type, context);
-}
+NMO_DEFINE_OBJECT_PREPARE_DEFAULT(nmo_camera)
 
 /**
  * @brief Runtime dependency remap for CKCamera.

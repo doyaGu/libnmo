@@ -796,13 +796,7 @@ nmo_status_t nmo_2dentity_remap_dependencies(
     return nmo_object_default_validate(state, NULL, NULL);
 }
 
-nmo_status_t nmo_2dentity_prepare_dependencies(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    return nmo_object_default_validate(instance, type, context);
-}
+NMO_DEFINE_OBJECT_PREPARE_DEFAULT(nmo_2dentity)
 
 static nmo_status_t nmo_2dentity_pre_delete(
     void *instance,

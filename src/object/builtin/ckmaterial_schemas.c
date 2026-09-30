@@ -449,13 +449,7 @@ nmo_status_t nmo_material_deserialize(
     return NMO_OK;
 }
 
-nmo_status_t nmo_material_prepare_dependencies(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    return nmo_object_default_validate(instance, type, context);
-}
+NMO_DEFINE_OBJECT_PREPARE_DEFAULT(nmo_material)
 
 nmo_status_t nmo_material_remap_dependencies(
     void *instance,

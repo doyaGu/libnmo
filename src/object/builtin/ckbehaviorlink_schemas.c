@@ -383,19 +383,7 @@ nmo_status_t nmo_behaviorlink_remap_dependencies(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_behaviorlink_prepare_dependencies(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)type;
-    (void)context;
-    if (instance == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_behaviorlink_prepare_dependencies");
-    }
-    NMO_RETURN_OK();
-}
+NMO_DEFINE_OBJECT_PREPARE_CHECKED(nmo_behaviorlink)
 
 static nmo_status_t nmo_behaviorlink_pre_delete(
     void *instance,

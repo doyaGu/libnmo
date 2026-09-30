@@ -105,13 +105,7 @@ static nmo_status_t nmo_targetlight_deserialize_internal(
  * Vtable + registration
  * ============================================================================ */
 
-nmo_status_t nmo_targetlight_prepare_dependencies(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    return nmo_object_default_validate(instance, type, context);
-}
+NMO_DEFINE_OBJECT_PREPARE_DEFAULT(nmo_targetlight)
 
 nmo_status_t nmo_targetlight_remap_dependencies(
     void *instance,

@@ -702,13 +702,7 @@ nmo_status_t nmo_light_serialize(
     return NMO_OK;
 }
 
-nmo_status_t nmo_light_prepare_dependencies(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    return nmo_object_default_validate(instance, type, context);
-}
+NMO_DEFINE_OBJECT_PREPARE_DEFAULT(nmo_light)
 
 nmo_status_t nmo_light_remap_dependencies(
     void *instance,

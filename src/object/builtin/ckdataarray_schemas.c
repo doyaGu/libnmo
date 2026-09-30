@@ -795,13 +795,7 @@ nmo_status_t nmo_dataarray_remap_dependencies(
     return nmo_dataarray_validate(state, NULL, NULL);
 }
 
-nmo_status_t nmo_dataarray_prepare_dependencies(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    return nmo_dataarray_validate(instance, type, context);
-}
+NMO_DEFINE_OBJECT_PREPARE_VIA_VALIDATE(nmo_dataarray)
 
 static nmo_status_t nmo_dataarray_pre_delete(
     void *instance,

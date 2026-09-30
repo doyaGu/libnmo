@@ -354,13 +354,7 @@ static nmo_status_t nmo_bodypart_validate(
     return nmo_3dobject_vtable.validate(&state->base, NULL, context);
 }
 
-nmo_status_t nmo_character_prepare_dependencies(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    return nmo_character_validate(instance, type, context);
-}
+NMO_DEFINE_OBJECT_PREPARE_VIA_VALIDATE(nmo_character)
 
 nmo_status_t nmo_character_remap_dependencies(
     void *instance,

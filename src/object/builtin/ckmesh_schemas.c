@@ -2205,13 +2205,7 @@ static nmo_status_t nmo_mesh_validate(
  * Vtable + registration
  * ============================================================================ */
 
-nmo_status_t nmo_mesh_prepare_dependencies(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    return nmo_mesh_validate(instance, type, context);
-}
+NMO_DEFINE_OBJECT_PREPARE_VIA_VALIDATE(nmo_mesh)
 
 nmo_status_t nmo_mesh_remap_dependencies(
     void *state,

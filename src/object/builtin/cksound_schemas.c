@@ -899,13 +899,7 @@ static nmo_status_t nmo_sound_validate(
     return nmo_beobject_vtable.validate(&state->base, NULL, context);
 }
 
-nmo_status_t nmo_sound_prepare_dependencies(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    return nmo_sound_validate(instance, type, context);
-}
+NMO_DEFINE_OBJECT_PREPARE_VIA_VALIDATE(nmo_sound)
 
 nmo_status_t nmo_sound_remap_dependencies(
     void *instance,

@@ -904,13 +904,7 @@ static nmo_status_t nmo_patchmesh_validate(
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_patchmesh_prepare_dependencies(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    return nmo_patchmesh_validate(instance, type, context);
-}
+NMO_DEFINE_OBJECT_PREPARE_VIA_VALIDATE(nmo_patchmesh)
 
 nmo_status_t nmo_patchmesh_remap_dependencies(
     void *instance,
