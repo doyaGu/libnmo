@@ -288,6 +288,15 @@ the tests build each layout dword by dword.
   passes to `CKBitmapData`. They were five unlabelled raw payloads.
 - Importing an OBJ into a mesh keeps the scripts, attributes, priority and visibility of the mesh
   object; it replaced all of its state.
+- Loading follows `Load` more closely: a 3D entity ignores the parent, flags and matrix sections
+  when it has NDATA, keeps its z-order within 10000, reads a skin's normals as 12 bytes per vertex
+  (the count-prefixed variant `normals_have_count` is gone) and writes no mesh section for a curve;
+  a material takes longer sections and applies MATDATA3 and then MATDATA5; a curve without its
+  sections keeps 100 steps and stays open; a legacy curve point's position replaces the translation
+  of its entity matrix.
+- New 2D entities, sprites and sprite texts start with the constructor flags and source rectangle of
+  the engine, and a new object animation is 100 frames long.
+- A format 0 layer is written with its square buffer only when it has a grid.
 
 ### Tests
 - `test_corpus_chunk_roundtrip` checks every object chunk of the corpus. It compares against a
