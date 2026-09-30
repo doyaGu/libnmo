@@ -434,6 +434,9 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
 
         if (data.entity_flags & CK_3DENTITY_ZORDERVALID) {
             NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &data.z_order));
+            /* CKSceneGraphNode::SetPriority keeps the priority within 10000. */
+            if (data.z_order > 10000) data.z_order = 10000;
+            if (data.z_order < -10000) data.z_order = -10000;
         } else {
             data.z_order = 0;
         }
@@ -454,65 +457,69 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
         *out_state = data;
     } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
-    // Legacy parent chunk
-    size_t parent_section_dwords = 0;
-    seek_result = nmo_chunk_seek_identifier_with_size(
-        chunk, CK_STATESAVE_PARENT, &parent_section_dwords);
-    if (seek_result == NMO_OK) {
-        if (parent_section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
-        const size_t parent_section_end =
-            nmo_chunk_get_position(chunk) + parent_section_dwords;
-        nmo_ref_t parent = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
-        NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &parent));
-        NMO_RETURN_IF_ERROR(nmo_3dentity_require_section_end(
-            chunk, parent_section_end));
-        nmo_ref_check_class(
-            &parent,
-            (const nmo_object_repository_t *)
-                nmo_deserialize_context_get_repository(context),
-            nmo_deserialize_context_get_type_registry(context),
-            NMO_CID_3DENTITY);
-        out_state->parent = parent;
-        out_state->has_parent_chunk = 1;
-    } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
+    /* RCK3dEntity::Load reads the parent, flags and matrix sections only when
+       the chunk has no NDATA section. */
+    if (!out_state->has_entityndata_chunk) {
+        // Legacy parent chunk
+        size_t parent_section_dwords = 0;
+        seek_result = nmo_chunk_seek_identifier_with_size(
+            chunk, CK_STATESAVE_PARENT, &parent_section_dwords);
+        if (seek_result == NMO_OK) {
+            if (parent_section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
+            const size_t parent_section_end =
+                nmo_chunk_get_position(chunk) + parent_section_dwords;
+            nmo_ref_t parent = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+            NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &parent));
+            NMO_RETURN_IF_ERROR(nmo_3dentity_require_section_end(
+                chunk, parent_section_end));
+            nmo_ref_check_class(
+                &parent,
+                (const nmo_object_repository_t *)
+                    nmo_deserialize_context_get_repository(context),
+                nmo_deserialize_context_get_type_registry(context),
+                NMO_CID_3DENTITY);
+            out_state->parent = parent;
+            out_state->has_parent_chunk = 1;
+        } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
-    // Legacy flags chunk
-    size_t flags_section_dwords = 0;
-    seek_result = nmo_chunk_seek_identifier_with_size(
-        chunk, CK_STATESAVE_3DENTITYFLAGS, &flags_section_dwords);
-    if (seek_result == NMO_OK) {
-        if (flags_section_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
-        const size_t flags_section_end =
-            nmo_chunk_get_position(chunk) + flags_section_dwords;
-        out_state->has_flags_chunk = 1;
-        NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->entity_flags));
-        NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->moveable_flags));
-        NMO_RETURN_IF_ERROR(nmo_3dentity_require_section_end(
-            chunk, flags_section_end));
-    } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
+        // Legacy flags chunk
+        size_t flags_section_dwords = 0;
+        seek_result = nmo_chunk_seek_identifier_with_size(
+            chunk, CK_STATESAVE_3DENTITYFLAGS, &flags_section_dwords);
+        if (seek_result == NMO_OK) {
+            if (flags_section_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
+            const size_t flags_section_end =
+                nmo_chunk_get_position(chunk) + flags_section_dwords;
+            out_state->has_flags_chunk = 1;
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->entity_flags));
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &out_state->moveable_flags));
+            NMO_RETURN_IF_ERROR(nmo_3dentity_require_section_end(
+                chunk, flags_section_end));
+        } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
-    // Legacy matrix chunk
-    size_t matrix_section_dwords = 0;
-    seek_result = nmo_chunk_seek_identifier_with_size(
-        chunk, CK_STATESAVE_3DENTITYMATRIX, &matrix_section_dwords);
-    if (seek_result == NMO_OK) {
-        if (matrix_section_dwords < 17u) return NMO_ERR_TRUNCATED_CHUNK;
-        const size_t matrix_section_end =
-            nmo_chunk_get_position(chunk) + matrix_section_dwords;
-        out_state->has_matrix_chunk = 1;
-        NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(
-            chunk, &out_state->legacy_matrix_prefix));
-        nmo_matrix_t mat;
-        result = nmo_chunk_read_matrix(chunk, &mat);
-        if (result != NMO_OK) return result;
-        for (int r = 0; r < 4; ++r) {
-            for (int c = 0; c < 4; ++c) {
-                out_state->world_matrix[r * 4 + c] = mat.m[r][c];
+        // Legacy matrix chunk
+        size_t matrix_section_dwords = 0;
+        seek_result = nmo_chunk_seek_identifier_with_size(
+            chunk, CK_STATESAVE_3DENTITYMATRIX, &matrix_section_dwords);
+        if (seek_result == NMO_OK) {
+            if (matrix_section_dwords < 17u) return NMO_ERR_TRUNCATED_CHUNK;
+            const size_t matrix_section_end =
+                nmo_chunk_get_position(chunk) + matrix_section_dwords;
+            out_state->has_matrix_chunk = 1;
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(
+                chunk, &out_state->legacy_matrix_prefix));
+            nmo_matrix_t mat;
+            result = nmo_chunk_read_matrix(chunk, &mat);
+            if (result != NMO_OK) return result;
+            for (int r = 0; r < 4; ++r) {
+                for (int c = 0; c < 4; ++c) {
+                    out_state->world_matrix[r * 4 + c] = mat.m[r][c];
+                }
             }
-        }
-        NMO_RETURN_IF_ERROR(nmo_3dentity_require_section_end(
-            chunk, matrix_section_end));
-    } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
+            NMO_RETURN_IF_ERROR(nmo_3dentity_require_section_end(
+                chunk, matrix_section_end));
+        } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
+    }
 
     // Skin data (identifier CK_STATESAVE_3DENTITYSKINDATA)
     size_t skin_section_dwords = 0;
@@ -720,21 +727,12 @@ static nmo_status_t nmo_3dentity_deserialize_internal(
             }
 #endif
             const size_t expected_bytes = (size_t)vertex_count_u * sizeof(nmo_vector_t);
-            uint32_t normal_count = vertex_count_u;
+            const uint32_t normal_count = vertex_count_u;
 
-            if (payload_bytes == expected_bytes + sizeof(uint32_t)) {
-                NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &normal_count));
-                out_state->skin->normals_have_count = 1;
-            } else if (payload_bytes == expected_bytes) {
-                out_state->skin->normals_have_count = 0;
-            } else {
-                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                                 "Unexpected skin normals payload size");
-            }
-
-            if (normal_count != vertex_count_u) {
-                NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                                 "Skin normal count mismatch");
+            /* Load reads 12 bytes per vertex and looks at nothing else. */
+            if (payload_bytes < expected_bytes) {
+                NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                                 "Skin normals payload is too short");
             }
 
             out_state->skin->normal_count = normal_count;
@@ -854,9 +852,11 @@ static nmo_status_t nmo_3dentity_serialize_internal(
         }
     }
 
-    const bool want_mesh_chunk = in_state->has_mesh_chunk ||
-        in_state->current_mesh.state != NMO_REF_NONE ||
-        (in_state->mesh_count > 0 && in_state->mesh_ids);
+    /* RCK3dEntity::Save leaves the mesh section out for a curve. */
+    const bool want_mesh_chunk = out_chunk->class_id != NMO_CID_CURVE &&
+        (in_state->has_mesh_chunk ||
+         in_state->current_mesh.state != NMO_REF_NONE ||
+         (in_state->mesh_count > 0 && in_state->mesh_ids));
     if (want_mesh_chunk) {
         if (in_state->mesh_count > 0 && in_state->mesh_ids == NULL) {
             NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
@@ -1081,11 +1081,6 @@ static nmo_status_t nmo_3dentity_serialize_internal(
             result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_3DENTITYSKINDATANORMALS);
             if (result != NMO_OK) return result;
 
-            if (skin->normals_have_count) {
-                result = nmo_chunk_write_int(out_chunk, (int32_t)skin->normal_count);
-                if (result != NMO_OK) return result;
-            }
-
             if (skin->normal_count > 0) {
                 result = nmo_chunk_write_buffer_no_size(out_chunk,
                                                         skin->normals,
@@ -1164,7 +1159,6 @@ static bool nmo_3dentity_skin_equals(
         lhs->normal_count != rhs->normal_count ||
         lhs->legacy_before_matrix != rhs->legacy_before_matrix ||
         lhs->normals_present != rhs->normals_present ||
-        lhs->normals_have_count != rhs->normals_have_count ||
         memcmp(&lhs->object_init_matrix, &rhs->object_init_matrix,
                sizeof(lhs->object_init_matrix)) != 0 ||
         (lhs->bone_count > 0 && (!lhs->bones || !rhs->bones)) ||
@@ -1316,10 +1310,8 @@ static uint32_t nmo_3dentity_hash_skin(
             hash, skin->normals,
             (size_t)skin->normal_count * sizeof(nmo_vector_t));
     }
-    hash = nmo_hash_fnv1a32_update(
-        hash, &skin->normals_present, sizeof(skin->normals_present));
     return nmo_hash_fnv1a32_update(
-        hash, &skin->normals_have_count, sizeof(skin->normals_have_count));
+        hash, &skin->normals_present, sizeof(skin->normals_present));
 }
 
 static uint32_t nmo_3dentity_hash(const void *instance)

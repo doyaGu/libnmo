@@ -52,7 +52,6 @@ typedef struct nmo_3dentity_skin {
     uint32_t normal_count;
     nmo_vector_t *normals;
     uint8_t normals_present;
-    uint8_t normals_have_count;
 } nmo_3dentity_skin_t;
 
 /* ============================================================================
