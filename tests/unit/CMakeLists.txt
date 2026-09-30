@@ -49,6 +49,7 @@ add_unit_test(test_chunk_truncation)  # Phase 3: Truncated chunk safety tests
 add_unit_test(test_chunk_raw_bitmap)
 add_unit_test(test_chunk_encoded_bitmap)
 add_unit_test(test_chunk_residue)
+add_unit_test(test_fidelity_small_items)
 add_unit_test(test_chunk_legacy_bitmap)
 add_unit_test(test_interface_chunk)
 add_unit_test(test_interface_edit)
