@@ -281,10 +281,13 @@ TEST(lua_bindings_plan, plan_module_executes_add_operation_dry_run)
         "assert(report.operations[1].op == 'add_operation')\n"
         "assert(report.operations[1].primary_id == 6)\n"
         "assert(report.operations[1].result_id ~= 0)\n"
-        "assert(#report.created_objects == 1)\n"
-        "assert(report.diff.created_object_count == 1)\n"
+        /* An operation is created together with its in1, in2 and out slot
+         * parameters; all four count towards the operation graph. */
+        "assert(#report.created_objects == 4)\n"
+        "assert(report.created_objects[1].id == report.operations[1].result_id)\n"
+        "assert(report.diff.created_object_count == 4)\n"
         "assert(type(report.diff.operation_graph_diff) == 'table')\n"
-        "assert(#report.diff.operation_graph_diff.created == 1)\n"
+        "assert(#report.diff.operation_graph_diff.created == 4)\n"
         "assert(#report.diff.parameter_edge_diff.created == 0)\n");
 
     nmo_lua_runtime_destroy(runtime);
