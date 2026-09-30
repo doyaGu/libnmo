@@ -407,7 +407,7 @@ static nmo_status_t nmo_texture_read_bitmap2_slot(
     int32_t header = 0;
     nmo_status_t result = nmo_chunk_read_int(chunk, &header);
     if (result != NMO_OK) return result;
-    slot->header_size = header;
+    slot->unused_int = header;
 
     void *buffer = NULL;
     size_t size = 0;
@@ -423,7 +423,7 @@ static nmo_status_t nmo_texture_write_bitmap2_slot(
     nmo_chunk_t *chunk,
     const nmo_texture_bitmap2_slot_t *slot)
 {
-    nmo_status_t result = nmo_chunk_write_int(chunk, slot->header_size);
+    nmo_status_t result = nmo_chunk_write_int(chunk, slot->unused_int);
     if (result != NMO_OK) return result;
     return nmo_chunk_write_buffer(chunk, slot->buffer, slot->buffer_size);
 }
@@ -1684,7 +1684,7 @@ static bool nmo_texture_bitmap2_slot_equals(
     const nmo_texture_bitmap2_slot_t *lhs,
     const nmo_texture_bitmap2_slot_t *rhs)
 {
-    return lhs->header_size == rhs->header_size &&
+    return lhs->unused_int == rhs->unused_int &&
         lhs->buffer_size == rhs->buffer_size &&
         nmo_texture_bytes_equal(
             lhs->buffer, rhs->buffer, lhs->buffer_size);
@@ -1918,7 +1918,7 @@ static uint32_t nmo_texture_hash(const void *instance)
                 const nmo_texture_bitmap2_slot_t *slot =
                     &state->bitmap2_slots[i];
                 hash = nmo_hash_fnv1a32_update(
-                    hash, &slot->header_size, sizeof(slot->header_size));
+                    hash, &slot->unused_int, sizeof(slot->unused_int));
                 hash = nmo_texture_hash_buffer(
                     hash, slot->buffer, slot->buffer_size);
             }
@@ -1985,6 +1985,40 @@ NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
 /* =============================================================================
  * PUBLIC MUTATION API
  * ============================================================================= */
+
+void nmo_texture_bitmap2_image(
+    const nmo_texture_bitmap2_slot_t *slot,
+    const uint8_t **out_data,
+    size_t *out_size,
+    const char **out_ext)
+{
+    static const struct {
+        const char *tag;
+        const char *ext;
+    } tags[] = {
+        {"CKTGA", "tga"}, {"CKJPG", "jpg"}, {"CKDIB", "bmp"}, {"CKBMP", "bmp"},
+        {"CKTIF", "tif"}, {"CKGIF", "gif"}, {"CKPCX", "pcx"},
+    };
+    const uint8_t *data = slot->buffer;
+    size_t size = slot->buffer_size;
+    const char *ext = "tga";
+
+    if (data != NULL && size >= 5u) {
+        for (size_t i = 0; i < sizeof(tags) / sizeof(tags[0]); ++i) {
+            size_t k = 0;
+            while (k < 5u && (data[k] | 0x20u) == ((uint8_t)tags[i].tag[k] | 0x20u)) k++;
+            if (k == 5u) {
+                data += 5;
+                size -= 5u;
+                ext = tags[i].ext;
+                break;
+            }
+        }
+    }
+    *out_data = data;
+    *out_size = size;
+    if (out_ext != NULL) *out_ext = ext;
+}
 
 nmo_status_t nmo_texture_replace_bitmap(
     nmo_texture_state_t *state,

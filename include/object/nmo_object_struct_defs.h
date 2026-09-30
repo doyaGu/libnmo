@@ -164,9 +164,11 @@ typedef struct nmo_texture_raw_slot {
 } nmo_texture_raw_slot_t;
 
 typedef struct nmo_texture_bitmap2_slot {
-    int32_t header_size;
+    int32_t unused_int;     /* ReadBitmap2 reads it and ignores it */
     uint32_t buffer_size;
-    uint8_t *buffer;
+    uint8_t *buffer;        /* five-byte format tag ("CKTGA", "CKJPG", "CKDIB",
+                               "CKBMP", "CKTIF", "CKGIF", "CKPCX"), then the
+                               encoded image; any other start is a whole TGA */
 } nmo_texture_bitmap2_slot_t;
 
 /* ============================================================================

@@ -189,6 +189,26 @@ NMO_API nmo_status_t nmo_texture_replace_bitmap(
     uint32_t height);
 
 /**
+ * @brief Locate the encoded image inside a legacy bitmap2 slot.
+ *
+ * CKStateChunk::ReadBitmap2 selects the image reader from a five-byte tag in
+ * front of the image ("CKTGA", "CKJPG", "CKDIB", "CKBMP", "CKTIF", "CKGIF",
+ * "CKPCX") and gives that reader the bytes after the tag. A buffer that starts
+ * with none of them is a whole TGA image.
+ *
+ * @param slot      Bitmap2 slot
+ * @param out_data  Receives the start of the encoded image
+ * @param out_size  Receives its size in bytes
+ * @param out_ext   Receives the file extension of the reader ("tga", "jpg",
+ *                  "bmp", "tif", "gif" or "pcx"); may be NULL
+ */
+NMO_API void nmo_texture_bitmap2_image(
+    const nmo_texture_bitmap2_slot_t *slot,
+    const uint8_t **out_data,
+    size_t *out_size,
+    const char **out_ext);
+
+/**
  * @}
  */
 

@@ -785,8 +785,12 @@ static uint8_t *decode_bitmap2_slot(nmo_arena_t *arena,
                                     const nmo_texture_bitmap2_slot_t *bs,
                                     int *out_w, int *out_h, int *out_ch) {
     if (!bs->buffer || bs->buffer_size == 0) return NULL;
+
+    const uint8_t *data = NULL;
+    size_t size = 0;
+    nmo_texture_bitmap2_image(bs, &data, &size, NULL);
     return nmo_stbi_load_from_memory(
-        arena, bs->buffer, (int)bs->buffer_size, out_w, out_h, out_ch, 4);
+        arena, data, (int)size, out_w, out_h, out_ch, 4);
 }
 
 /* ============================================================================
