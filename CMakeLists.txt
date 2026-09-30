@@ -88,6 +88,19 @@ else()
     endif()
 endif()
 
+# The optional components are static libraries that depend on the core, so a
+# link line names libnmo.a more than once to satisfy the order. Apple's linker
+# warns about that; the warning carries no information here.
+if(APPLE)
+    include(CheckCSourceCompiles)
+    set(CMAKE_REQUIRED_LINK_OPTIONS -Wl,-no_warn_duplicate_libraries)
+    check_c_source_compiles("int main(void) { return 0; }" NMO_LINKER_HAS_NO_WARN_DUPLICATE_LIBRARIES)
+    unset(CMAKE_REQUIRED_LINK_OPTIONS)
+    if(NMO_LINKER_HAS_NO_WARN_DUPLICATE_LIBRARIES)
+        add_link_options(-Wl,-no_warn_duplicate_libraries)
+    endif()
+endif()
+
 # Find bundled third-party dependencies through one shared entrypoint.
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/deps" "${CMAKE_CURRENT_BINARY_DIR}/deps" EXCLUDE_FROM_ALL)
 
