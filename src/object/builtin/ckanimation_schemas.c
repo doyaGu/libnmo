@@ -736,16 +736,89 @@ static void nmo_keyedanimation_post_delete(
     (void)context;
 }
 
+/* An animation that shares the keys of a deleted one keeps them: the engine
+ * counts the references to the keyframe data, so the sharers of a deleted owner
+ * own the keys afterwards. Only an owner in the CONTROLLERS format is
+ * materialised; its controllers and length move into each sharer. */
+static nmo_status_t nmo_objectanimation_adopt_shared_keys(
+    const nmo_objectanimation_state_t *owner_state,
+    nmo_object_repository_t *repository)
+{
+    if (owner_state->format != CKOBJANIM_FORMAT_CONTROLLERS) {
+        NMO_RETURN_OK();
+    }
+    const size_t count = nmo_object_repository_get_count(repository);
+    nmo_object_id_t owner_id = NMO_OBJECT_ID_NONE;
+    for (size_t i = 0; i < count; ++i) {
+        const nmo_object_t *candidate =
+            nmo_object_repository_get_by_index(repository, i);
+        if (candidate != NULL && candidate->state == owner_state) {
+            owner_id = candidate->id;
+            break;
+        }
+    }
+    if (owner_id == NMO_OBJECT_ID_NONE) {
+        NMO_RETURN_OK();
+    }
+
+    for (size_t i = 0; i < count; ++i) {
+        nmo_object_t *sharer =
+            nmo_object_repository_get_by_index(repository, i);
+        if (sharer == NULL || sharer->class_id != NMO_CID_OBJECTANIMATION ||
+            sharer->state == NULL || sharer->state == owner_state) {
+            continue;
+        }
+        nmo_objectanimation_state_t *state = sharer->state;
+        if (state->format != CKOBJANIM_FORMAT_SHARED ||
+            nmo_ref_runtime_id(&state->shared_anim) != owner_id ||
+            sharer->storage_arena == NULL) {
+            continue;
+        }
+
+        nmo_objanim_controller_t *controllers = NULL;
+        if (owner_state->controller_count > 0u) {
+            controllers = nmo_arena_alloc(
+                sharer->storage_arena,
+                sizeof(*controllers) * owner_state->controller_count,
+                _Alignof(nmo_objanim_controller_t));
+            if (controllers == NULL) {
+                NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                                 "Failed to allocate adopted controllers");
+            }
+            for (uint32_t c = 0; c < owner_state->controller_count; ++c) {
+                controllers[c] = owner_state->controllers[c];
+                controllers[c].data = NULL;
+                NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(
+                    sharer->storage_arena, &controllers[c].data,
+                    owner_state->controllers[c].data,
+                    owner_state->controllers[c].data_size));
+            }
+        }
+        state->format = CKOBJANIM_FORMAT_CONTROLLERS;
+        state->controllers = controllers;
+        state->controller_count = owner_state->controller_count;
+        state->has_length = 1;
+        state->length = owner_state->has_length ? owner_state->length : 100.0f;
+        state->has_shared_anim = 0;
+        state->shared_anim = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+    }
+    NMO_RETURN_OK();
+}
+
 static nmo_status_t nmo_objectanimation_pre_delete(
     void *instance,
     const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
-    (void)context;
     if (instance == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "Invalid arguments to nmo_objectanimation_pre_delete");
+    }
+    if (context != NULL) {
+        return nmo_objectanimation_adopt_shared_keys(
+            (const nmo_objectanimation_state_t *)instance,
+            (nmo_object_repository_t *)context);
     }
     NMO_RETURN_OK();
 }
@@ -2858,6 +2931,23 @@ static nmo_status_t nmo_objectanimation_serialize_internal(
     const bool is_file = nmo_animation_is_file_mode_ser(out_chunk, context);
     if (!is_file && (save_flags & CK_STATESAVE_OBJANIMALL) == 0) {
         NMO_RETURN_OK();
+    }
+
+    /* RCKObjectAnimation::Save writes SHARED only while another animation owns
+     * the keys; without an owner the animation has fresh, empty keyframe data
+     * (length 100), which it writes as CONTROLLERS. */
+    nmo_objectanimation_state_t ownerless;
+    if (in_state->format == CKOBJANIM_FORMAT_SHARED &&
+        nmo_ref_runtime_id(&in_state->shared_anim) == NMO_OBJECT_ID_NONE &&
+        in_state->shared_anim.state == NMO_REF_NONE) {
+        ownerless = *in_state;
+        ownerless.format = CKOBJANIM_FORMAT_CONTROLLERS;
+        ownerless.has_shared_anim = 0;
+        ownerless.controllers = NULL;
+        ownerless.controller_count = 0;
+        ownerless.has_length = 1;
+        ownerless.length = 100.0f;
+        in_state = &ownerless;
     }
 
     switch (in_state->format) {
