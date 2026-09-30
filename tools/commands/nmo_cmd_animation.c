@@ -64,13 +64,14 @@ int nmo_cmd_animation_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
  * ============================================================================ */
 
 static const char *controller_type_name(uint32_t type) {
-    uint32_t key_size = nmo_objanim_controller_key_size(type);
-    switch (key_size) {
+    if (nmo_objanim_controller_is_bezier(type)) {
+        return "bezier";
+    }
+    switch (nmo_objanim_controller_key_size(type)) {
         case 16: return "position/scale";
         case 20: return "rotation";
         case 36: return "tcb-pos/scl";
         case 40: return "tcb-rot";
-        case 44: return "bezier";
         default: return "unknown";
     }
 }
@@ -501,37 +502,83 @@ int nmo_cmd_animation_show(int argc, char **argv, const nmo_cli_global_opts_t *g
 /* The text view shows at most this many keys per controller; JSON lists all. */
 enum { ANIMATION_KEYS_TEXT_LIMIT = 20 };
 
+/* One text line per key, prefixed with the key time. */
+static bool animation_keys_add_text_line(nmo_cli_record_t *item,
+                                         const float *values,
+                                         uint32_t value_count,
+                                         const nmo_objanim_bezier_key_t *bezier)
+{
+    if (!nmo_cli_record_raw_fmt(item, "    t=%.4f", (double)values[0])) {
+        return false;
+    }
+    for (uint32_t v = 1; v < value_count; ++v) {
+        if (!nmo_cli_record_raw_fmt(item, " %.6g", (double)values[v])) {
+            return false;
+        }
+    }
+    if (bezier != NULL) {
+        if (!nmo_cli_record_raw_fmt(item, " flags=0x%08x", bezier->flags)) {
+            return false;
+        }
+        for (size_t t = 0; t < 2u; ++t) {
+            if (bezier->has_tangent[t] &&
+                !nmo_cli_record_raw_fmt(
+                    item, " tangent%zu=(%.6g %.6g %.6g)", t,
+                    (double)bezier->tangent[t][0],
+                    (double)bezier->tangent[t][1],
+                    (double)bezier->tangent[t][2])) {
+                return false;
+            }
+        }
+    }
+    return nmo_cli_record_raw(item, "\n");
+}
+
 /*
  * Text lines for the keys of one controller: "t=<time> <values>" per key.
- * Only controller types with a fixed float layout have decodable keys.
+ * Controller types with an unknown layout have no decodable keys.
  */
 static bool animation_keys_add_text(nmo_cli_record_t *item,
                                     const nmo_objanim_controller_t *ctrl,
                                     uint32_t key_size)
 {
-    if (!ctrl->data || ctrl->key_count == 0 || key_size == 0) {
+    if (!ctrl->data || ctrl->key_count == 0) {
         return true;
     }
 
-    const float *floats = (const float *)ctrl->data;
-    uint32_t floats_per_key = key_size / (uint32_t)sizeof(float);
     uint32_t shown = ctrl->key_count > ANIMATION_KEYS_TEXT_LIMIT
         ? ANIMATION_KEYS_TEXT_LIMIT
         : ctrl->key_count;
 
-    for (uint32_t k = 0; k < shown; ++k) {
-        const float *key = floats + (size_t)k * floats_per_key;
-        if (!nmo_cli_record_raw_fmt(item, "    t=%.4f", (double)key[0])) {
-            return false;
+    if (nmo_objanim_controller_is_bezier(ctrl->type)) {
+        const uint8_t *cursor = (const uint8_t *)ctrl->data;
+        size_t left = ctrl->data_size;
+        for (uint32_t k = 0; k < shown; ++k) {
+            nmo_objanim_bezier_key_t key;
+            size_t size = nmo_objanim_bezier_key_decode(cursor, left, &key);
+            if (size == 0) {
+                return true;
+            }
+            const float values[4] = {key.time, key.position[0], key.position[1],
+                                     key.position[2]};
+            if (!animation_keys_add_text_line(item, values, 4, &key)) {
+                return false;
+            }
+            cursor += size;
+            left -= size;
         }
-        for (uint32_t v = 1; v < floats_per_key; ++v) {
-            if (!nmo_cli_record_raw_fmt(item, " %.6g", (double)key[v])) {
+    } else if (key_size > 0) {
+        const float *floats = (const float *)ctrl->data;
+        uint32_t floats_per_key = key_size / (uint32_t)sizeof(float);
+        for (uint32_t k = 0; k < shown; ++k) {
+            if (!animation_keys_add_text_line(
+                    item, floats + (size_t)k * floats_per_key, floats_per_key,
+                    NULL)) {
                 return false;
             }
         }
-        if (!nmo_cli_record_raw(item, "\n")) {
-            return false;
-        }
+    } else {
+        return true;
     }
 
     if (ctrl->key_count > ANIMATION_KEYS_TEXT_LIMIT) {
@@ -541,41 +588,50 @@ static bool animation_keys_add_text(nmo_cli_record_t *item,
     return true;
 }
 
+static void add_real_array(yyjson_mut_doc *doc, yyjson_mut_val *obj,
+                           const char *key, const float *values, size_t count)
+{
+    yyjson_mut_val *arr = yyjson_mut_arr(doc);
+    for (size_t v = 0; v < count; ++v)
+        yyjson_mut_arr_add_real(doc, arr, (double)values[v]);
+    yyjson_mut_obj_add_val(doc, obj, key, arr);
+}
+
 /** Add decoded keys to JSON array */
 static void add_keys_json(yyjson_mut_doc *doc, yyjson_mut_val *keys_arr,
                           const nmo_objanim_controller_t *ctrl,
                           uint32_t key_size) {
     if (!ctrl->data || ctrl->key_count == 0) return;
 
-    uint32_t floats_per_key = key_size / sizeof(float);
-
-    if (key_size > 0 && key_size % sizeof(float) == 0) {
+    if (nmo_objanim_controller_is_bezier(ctrl->type)) {
+        /* Packed keys: time, position, flags and up to two tangents */
+        const uint8_t *cursor = (const uint8_t *)ctrl->data;
+        size_t left = ctrl->data_size;
+        for (uint32_t k = 0; k < ctrl->key_count; ++k) {
+            nmo_objanim_bezier_key_t key;
+            size_t size = nmo_objanim_bezier_key_decode(cursor, left, &key);
+            if (size == 0) break;
+            yyjson_mut_val *kobj = yyjson_mut_obj(doc);
+            yyjson_mut_obj_add_real(doc, kobj, "time", (double)key.time);
+            add_real_array(doc, kobj, "values", key.position, 3);
+            yyjson_mut_obj_add_uint(doc, kobj, "flags", key.flags);
+            if (key.has_tangent[0])
+                add_real_array(doc, kobj, "tangent0", key.tangent[0], 3);
+            if (key.has_tangent[1])
+                add_real_array(doc, kobj, "tangent1", key.tangent[1], 3);
+            yyjson_mut_arr_add_val(keys_arr, kobj);
+            cursor += size;
+            left -= size;
+        }
+    } else if (key_size > 0) {
         /* Float layout: time followed by the value floats */
+        uint32_t floats_per_key = key_size / (uint32_t)sizeof(float);
         const float *fp = (const float *)ctrl->data;
         for (uint32_t k = 0; k < ctrl->key_count; ++k) {
-            const float *key = fp + k * floats_per_key;
+            const float *key = fp + (size_t)k * floats_per_key;
             yyjson_mut_val *kobj = yyjson_mut_obj(doc);
             yyjson_mut_obj_add_real(doc, kobj, "time", (double)key[0]);
-            yyjson_mut_val *vals = yyjson_mut_arr(doc);
-            for (uint32_t v = 1; v < floats_per_key; ++v)
-                yyjson_mut_arr_add_real(doc, vals, (double)key[v]);
-            yyjson_mut_obj_add_val(doc, kobj, "values", vals);
-            yyjson_mut_arr_add_val(keys_arr, kobj);
-        }
-    } else {
-        /* Unknown layout - hex encode */
-        const uint8_t *bp = (const uint8_t *)ctrl->data;
-        for (uint32_t k = 0; k < ctrl->key_count; ++k) {
-            const uint8_t *key_data = bp + k * key_size;
-            yyjson_mut_val *kobj = yyjson_mut_obj(doc);
-            /* Build hex string */
-            char *hex = (char *)malloc(key_size * 2 + 1);
-            if (hex) {
-                for (uint32_t b = 0; b < key_size; ++b)
-                    snprintf(hex + b * 2, 3, "%02x", key_data[b]);
-                yyjson_mut_obj_add_strcpy(doc, kobj, "hex", hex);
-                free(hex);
-            }
+            add_real_array(doc, kobj, "values", key + 1, floats_per_key - 1u);
             yyjson_mut_arr_add_val(keys_arr, kobj);
         }
     }
@@ -1175,6 +1231,12 @@ int nmo_cmd_animation_import(int argc, char **argv, const nmo_cli_global_opts_t 
                 parse_ok = false; break;
             }
             if (key_size == 0) key_size = json_ks;
+        }
+
+        if (nmo_objanim_controller_is_bezier(type)) {
+            fprintf(stderr, "Error: Bezier controller %u has variable-size keys "
+                    "and cannot be imported\n", ci);
+            parse_ok = false; break;
         }
 
         if (key_size == 0) {
