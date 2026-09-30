@@ -46,6 +46,10 @@ NMO_DEFINE_OBJECT_LIFECYCLE(
         nmo_status_t result = nmo_beobject_vtable.create(
             &state->base, NULL, context);
         if (result != NMO_OK) return result;
+        /* RCKTexture::Save always writes the packed state block, and a
+           texture that never had one loads with CKTEXTURE_USEGLOBAL. */
+        state->has_oldtexonly = 1;
+        state->save_options = NMO_CKTEXTURE_USEGLOBAL;
     } while (0),
     nmo_texture_dispose_base_arrays(state))
 
