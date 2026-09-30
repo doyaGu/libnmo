@@ -429,6 +429,9 @@ TEST(asset_authoring, stores_camera_and_light_specs) {
                           1.0f,
                           123.0f,
                           VX_LIGHTDIREC));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, nmo_project_plan_set_light_settings(
+                                            plan, light, 0.1f, 0.2f, 0.3f, 1.0f,
+                                            123.0f, VX_LIGHTPARA));
 
     nmo_project_object_desc_t camera_desc = {0};
     ASSERT_EQ(NMO_OK, nmo_project_plan_get_object(plan, 0u, &camera_desc));

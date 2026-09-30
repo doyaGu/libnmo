@@ -1278,11 +1278,9 @@ static nmo_status_t manifest_parse_light_type(
         *out_type = VX_LIGHTSPOT;
     } else if (strcmp(type, "directional") == 0) {
         *out_type = VX_LIGHTDIREC;
-    } else if (strcmp(type, "parallel") == 0) {
-        *out_type = VX_LIGHTPARA;
     } else {
         NMO_RETURN_ERROR(NMO_ERR_NOT_SUPPORTED, NMO_SEVERITY_ERROR,
-                         "unsupported manifest light.type '%s'", type);
+                         "unsupported manifest light.type '%s' (expected point, spot or directional)", type);
     }
     NMO_RETURN_OK();
 }

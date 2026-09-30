@@ -258,6 +258,15 @@ TEST(entity_edit, edits_explicit_entity_types)
             .range = 25.0f,
             .type = VX_LIGHTSPOT,
         }));
+    /* CKLight cannot store a parallel light: a file would load it as a point light. */
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, nmo_entity_edit_set_light_settings(
+        edit,
+        light_id,
+        &(nmo_entity_light_settings_t){
+            .diffuse = {0.1f, 0.2f, 0.3f, 1.0f},
+            .range = 25.0f,
+            .type = VX_LIGHTPARA,
+        }));
     ASSERT_EQ(NMO_OK, nmo_entity_edit_set_light_target(
         edit, light_id, parent_id));
     ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,

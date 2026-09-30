@@ -3426,7 +3426,9 @@ nmo_status_t nmo_entity_edit_set_light_settings(
     if (edit == NULL || edit->finished || object_id == 0u || settings == NULL) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
-    if (settings->type < VX_LIGHTPOINT || settings->type > VX_LIGHTPARA) {
+    /* CKLight stores point, spot and directional lights; a file with any other
+       type loads as a point light, so VX_LIGHTPARA cannot be written. */
+    if (settings->type < VX_LIGHTPOINT || settings->type > VX_LIGHTDIREC) {
         return NMO_ERR_INVALID_ARGUMENT;
     }
 

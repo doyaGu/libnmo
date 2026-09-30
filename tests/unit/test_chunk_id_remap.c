@@ -6521,6 +6521,91 @@ TEST(chunk_id_remap, light_preserves_file_layouts) {
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_id_remap, light_type_outside_one_to_three_loads_as_point) {
+    /* RCKLight::Load turns any type other than point, spot and directional
+     * into a point light; the section keeps its six-dword layout. */
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+
+    const uint32_t raw_types[] = {0u, 4u, 7u, 255u};
+    for (size_t i = 0; i < sizeof(raw_types) / sizeof(raw_types[0]); ++i) {
+        nmo_chunk_t *chunk = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(chunk);
+        chunk->class_id = NMO_CID_LIGHT;
+        chunk->data_version = 10;
+        chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+        ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(chunk, CK_STATESAVE_LIGHTDATA));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, raw_types[i] | 0x300u));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, 0xFF336699u));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_float(chunk, 0.0f));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_float(chunk, 0.0f));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_float(chunk, 0.0f));
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_float(chunk, 12.0f));
+        nmo_chunk_close(chunk);
+
+        nmo_light_state_t light;
+        ASSERT_EQ(NMO_OK, nmo_light_vtable.create(&light, NULL, NULL));
+        ASSERT_EQ(NMO_OK, nmo_light_deserialize(
+            &light, chunk, NULL, &deserialize_context));
+        ASSERT_EQ(VX_LIGHTPOINT, light.light_data.type);
+        ASSERT_EQ(0x300u, light.flags);
+        ASSERT_EQ(12.0f, light.light_data.range);
+
+        nmo_chunk_t *saved = nmo_chunk_create(arena);
+        ASSERT_NOT_NULL(saved);
+        saved->class_id = NMO_CID_LIGHT;
+        saved->data_version = 10;
+        saved->chunk_options |= NMO_CHUNK_OPTION_FILE;
+        ASSERT_EQ(NMO_OK, nmo_light_serialize(
+            &light, saved, NULL, &serialize_context));
+        nmo_chunk_close(saved);
+
+        nmo_light_state_t reloaded;
+        ASSERT_EQ(NMO_OK, nmo_light_vtable.create(&reloaded, NULL, NULL));
+        ASSERT_EQ(NMO_OK, nmo_light_deserialize(
+            &reloaded, saved, NULL, &deserialize_context));
+        ASSERT_EQ(VX_LIGHTPOINT, reloaded.light_data.type);
+    }
+    nmo_arena_destroy(arena);
+}
+
+TEST(chunk_id_remap, light_diffuse_alpha_is_saved_opaque) {
+    /* CK reads the alpha of the diffuse color but always writes 0xFF. */
+    nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
+    ASSERT_NOT_NULL(arena);
+    nmo_deserialize_context_t deserialize_context =
+        nmo_deserialize_context_create(
+            arena, NULL, NULL, NMO_DESER_FLAG_FILE_MODE);
+    nmo_serialize_context_t serialize_context = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+
+    nmo_light_state_t light;
+    ASSERT_EQ(NMO_OK, nmo_light_vtable.create(&light, NULL, NULL));
+    light.light_data.diffuse.a = 0.5f;
+
+    nmo_chunk_t *saved = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(saved);
+    saved->class_id = NMO_CID_LIGHT;
+    saved->data_version = 10;
+    saved->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_light_serialize(
+        &light, saved, NULL, &serialize_context));
+    nmo_chunk_close(saved);
+
+    nmo_light_state_t reloaded;
+    ASSERT_EQ(NMO_OK, nmo_light_vtable.create(&reloaded, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_light_deserialize(
+        &reloaded, saved, NULL, &deserialize_context));
+    ASSERT_EQ(1.0f, reloaded.light_data.diffuse.a);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_id_remap, target_camera_and_light_failures_are_atomic) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
     ASSERT_NOT_NULL(arena);
@@ -20410,6 +20495,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_id_remap, camera_and_light_failures_keep_previous_state);
     REGISTER_TEST(chunk_id_remap, camera_preserves_file_layouts);
     REGISTER_TEST(chunk_id_remap, light_preserves_file_layouts);
+    REGISTER_TEST(chunk_id_remap, light_type_outside_one_to_three_loads_as_point);
+    REGISTER_TEST(chunk_id_remap, light_diffuse_alpha_is_saved_opaque);
     REGISTER_TEST(chunk_id_remap, target_camera_and_light_failures_are_atomic);
     REGISTER_TEST(chunk_id_remap, targetcamera_unresolved_ref_round_trips_raw_id);
     REGISTER_TEST(chunk_id_remap, targetlight_unresolved_ref_round_trips_raw_id);

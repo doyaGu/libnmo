@@ -2612,9 +2612,9 @@ nmo_status_t nmo_project_plan_set_light_settings(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "plan and object handle are required");
     }
-    if (type < VX_LIGHTPOINT || type > VX_LIGHTPARA) {
+    if (type < VX_LIGHTPOINT || type > VX_LIGHTDIREC) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "unsupported light type");
+                         "unsupported light type (CKLight stores point, spot and directional)");
     }
 
     for (size_t i = 0u; i < plan->object_count; ++i) {

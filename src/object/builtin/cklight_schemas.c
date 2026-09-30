@@ -164,6 +164,18 @@ static const nmo_type_field_t nmo_light_fields[] = {
  * ============================================================================= */
 
 /**
+ * RCKLight::Load keeps a type of 1 to 3 and turns anything else into a point
+ * light. The value only decides the spot cone reads, which happen for type 2
+ * before this normalisation, so the layout is the same either way.
+ */
+static VXLIGHT_TYPE nmo_light_type_from_file(uint32_t type)
+{
+    return type >= VX_LIGHTPOINT && type <= VX_LIGHTDIREC
+        ? (VXLIGHT_TYPE)type
+        : VX_LIGHTPOINT;
+}
+
+/**
  * @brief Deserialize CKLight state from chunk (modern format v5+)
  */
 static nmo_status_t nmo_light_deserialize_modern(
@@ -189,14 +201,8 @@ static nmo_status_t nmo_light_deserialize_modern(
         }
 
         // Unpack: Type in low 8 bits, Flags in high 24 bits
-        out_state->light_data.type = (VXLIGHT_TYPE)(packed_type_flags & 0xFFu);
+        out_state->light_data.type = nmo_light_type_from_file(packed_type_flags & 0xFFu);
         out_state->flags = packed_type_flags & ~0xFFu;
-
-        // Validate type
-        if (out_state->light_data.type < VX_LIGHTPOINT ||
-            out_state->light_data.type > VX_LIGHTDIREC) {
-            return NMO_ERR_INVALID_FORMAT;
-        }
         const size_t expected_dwords =
             out_state->light_data.type == VX_LIGHTSPOT ? 9u : 6u;
         if (payload_dwords < expected_dwords) {
@@ -303,13 +309,7 @@ static nmo_status_t nmo_light_deserialize_legacy(
         if (result != NMO_OK) {
             return result;
         }
-        out_state->light_data.type = (VXLIGHT_TYPE)type;
-
-        // Validate type
-        if (out_state->light_data.type < VX_LIGHTPOINT ||
-            out_state->light_data.type > VX_LIGHTDIREC) {
-            return NMO_ERR_INVALID_FORMAT;
-        }
+        out_state->light_data.type = nmo_light_type_from_file(type);
 
         // Read Diffuse.rgb (3 floats)
         result = nmo_chunk_read_float(chunk, &out_state->light_data.diffuse.r);
@@ -524,9 +524,8 @@ static nmo_status_t nmo_light_serialize_internal(
             NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
             "Legacy light layout cannot store a light power section");
     }
-    if (write_light &&
-        ((state->flags & 0xFFu) != 0u ||
-         state->light_data.diffuse.a != 1.0f)) {
+    /* The diffuse alpha is not checked: CK reads it but always writes 0xFF. */
+    if (write_light && (state->flags & 0xFFu) != 0u) {
         NMO_RETURN_ERROR(
             NMO_ERR_VALIDATION_FAILED, NMO_SEVERITY_ERROR,
             "Light data cannot be serialized losslessly");
