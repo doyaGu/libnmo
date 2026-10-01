@@ -6,6 +6,7 @@
 #include "test_framework.h"
 
 #include "core/nmo_arena.h"
+#include "core/nmo_hash.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "object/builtin/nmo_2dentity_schemas.h"
@@ -257,7 +258,23 @@ TEST(fidelity_small_items, chunks_older_than_version_four_use_the_old_object_enc
     nmo_arena_destroy(arena);
 }
 
+TEST(fidelity_small_items, murmur3_32_matches_the_reference_vectors)
+{
+    /* Published MurmurHash3_x86_32 vectors. The block loop used to start at the
+     * end of the data, so it read past it and hashed other memory. */
+    ASSERT_EQ(0u, nmo_murmur3_32("", 0, 0));
+    ASSERT_EQ(0x514E28B7u, nmo_murmur3_32("", 0, 1));
+    ASSERT_EQ(0x248BFA47u, nmo_murmur3_32("hello", 5, 0));
+    ASSERT_EQ(0x2E4FF723u, nmo_murmur3_32(
+        "The quick brown fox jumps over the lazy dog", 43, 0));
+    /* An unaligned start gives the same value as an aligned copy. */
+    char padded[16] = {0};
+    memcpy(padded + 1, "hello", 5);
+    ASSERT_EQ(0x248BFA47u, nmo_murmur3_32(padded + 1, 5, 0));
+}
+
 TEST_MAIN_BEGIN()
+    REGISTER_TEST(fidelity_small_items, murmur3_32_matches_the_reference_vectors);
     REGISTER_TEST(fidelity_small_items, chunks_older_than_version_four_use_the_old_object_encodings);
     REGISTER_TEST(fidelity_small_items, light_keeps_the_type_byte_and_alpha_the_file_holds);
     REGISTER_TEST(fidelity_small_items, layer_edit_is_kept_in_a_newer_layout);

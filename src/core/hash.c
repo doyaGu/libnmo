@@ -43,12 +43,10 @@ uint32_t nmo_murmur3_32(const void *data, size_t len, uint32_t seed) {
     const uint32_t c1 = 0xcc9e2d51;
     const uint32_t c2 = 0x1b873593;
     
-    /* Body: process 4-byte blocks */
-    const uint32_t *blocks = (const uint32_t *)(bytes + nblocks * 4);
-    
+    /* Body: process 4-byte blocks from the start of the data */
     for (size_t i = 0; i < nblocks; i++) {
         uint32_t k1;
-        memcpy(&k1, blocks + i, sizeof(uint32_t));
+        memcpy(&k1, bytes + i * 4, sizeof(uint32_t));
         
         k1 *= c1;
         k1 = rotl32(k1, 15);
