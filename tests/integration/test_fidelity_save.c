@@ -14,6 +14,7 @@
 #include "format/nmo_chunk_residue.h"
 #include "object/builtin/nmo_level_schemas.h"
 #include "object/builtin/nmo_material_schemas.h"
+#include "object/builtin/nmo_mesh_schemas.h"
 #include "session/nmo_runtime_kernel.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
@@ -303,7 +304,54 @@ TEST(fidelity_save, full_save_after_a_strip_save_is_unchanged)
     nmo_context_release(ctx);
 }
 
+/* The schema refuses to write geometry the engine loads without complaint. The
+ * chunk the object was loaded with still is writable. */
+TEST(fidelity_save, state_the_schema_refuses_keeps_its_loaded_chunk)
+{
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
+
+    nmo_context_desc_t desc = {0};
+    desc.data_dir = NMO_TEST_DATA_DIR;
+    nmo_context_t *ctx = nmo_context_create(&desc);
+    ASSERT_NOT_NULL(ctx);
+    char path[1024];
+    snprintf(path, sizeof(path), "%s/Ballance/base.cmo", NMO_TEST_DATA_DIR);
+    nmo_session_t *session = load_session(ctx, path);
+    ASSERT_NOT_NULL(session);
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+
+    nmo_object_t *mesh = NULL;
+    for (size_t i = 0; i < nmo_object_repository_get_count(repo) && mesh == NULL; i++) {
+        nmo_object_t *candidate = nmo_object_repository_get_by_index(repo, i);
+        if (candidate != NULL && candidate->class_id == NMO_CID_MESH && candidate->chunk != NULL) {
+            const nmo_mesh_state_t *state = (const nmo_mesh_state_t *)nmo_object_get_state(candidate);
+            if (state != NULL && state->face_count > 0 && state->face_vertex_indices != NULL) {
+                mesh = candidate;
+            }
+        }
+    }
+    ASSERT_NOT_NULL(mesh);
+    nmo_mesh_state_t *state = (nmo_mesh_state_t *)nmo_object_get_state(mesh);
+    state->face_vertex_indices[0] = 0xFFFFu;   /* beyond the vertices */
+
+    /* The file as the engine would load it, captured again with that state. */
+    nmo_object_system_fidelity_stats_t stats = {0};
+    ASSERT_EQ(NMO_OK, nmo_object_system_capture_fidelity(
+                          repo, nmo_context_get_type_runtime(ctx), NULL, &stats));
+    ASSERT_TRUE(mesh->fidelity_unserializable);
+
+    nmo_save_options_t options = nmo_save_options_default();
+    ASSERT_EQ(NMO_OK, nmo_session_save_file(session, SCRATCH_FILE, &options, NULL));
+    nmo_session_t *reloaded = load_session(ctx, SCRATCH_FILE);
+    ASSERT_NOT_NULL(reloaded);
+    remove(SCRATCH_FILE);
+    nmo_session_destroy(reloaded);
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
+    REGISTER_TEST(fidelity_save, state_the_schema_refuses_keeps_its_loaded_chunk);
     REGISTER_TEST(fidelity_save, full_save_after_a_strip_save_is_unchanged);
     REGISTER_TEST(fidelity_save, level_scene_follows_the_objects_when_indices_change);
     REGISTER_TEST(fidelity_save, edited_material_keeps_trailing_dwords);

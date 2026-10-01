@@ -667,6 +667,7 @@ nmo_status_t nmo_object_system_capture_fidelity(
         obj->fidelity_load_index = (uint32_t)i;
         obj->fidelity_load_count = (uint32_t)count;
         obj->fidelity_captured = 0;
+        obj->fidelity_unserializable = 0;
         obj->fidelity_canonical = NULL;
         if (obj->chunk == NULL || nmo_object_get_state(obj) == NULL) {
             stats.skipped++;
@@ -680,6 +681,11 @@ nmo_status_t nmo_object_system_capture_fidelity(
             obj, type_rt, work, scratch, repo, logger, &status);
         if (canonical == NULL) {
             stats.skipped++;
+            /* A state the schema refuses to write (the engine tolerates what
+               its checks reject): the loaded chunk is all there is of it. */
+            obj->fidelity_unserializable =
+                nmo_object_get_state(obj) != NULL &&
+                status != NMO_OK && status != NMO_ERR_NOT_SUPPORTED;
             continue;
         }
 

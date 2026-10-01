@@ -78,6 +78,7 @@ typedef struct nmo_object {
     uint32_t fidelity_load_index;      /**< Index of the object in the file the chunk's ids refer to */
     uint32_t fidelity_load_count;      /**< Number of objects of that file */
     uint8_t fidelity_captured;         /**< The fields above are valid */
+    uint8_t fidelity_unserializable;   /**< The loaded state does not serialize (a schema check fails); keep its chunk */
 } nmo_object_t;
 
 /**

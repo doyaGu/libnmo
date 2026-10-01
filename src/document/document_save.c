@@ -1103,6 +1103,19 @@ static nmo_status_t save_serialize_objects(nmo_serializer_t *ctx) {
             obj, ctx->type_rt, ctx->arena, save_scratch(ctx), ctx->repo, ctx->logger,
             shadow_storage, ctx->chunk_file_ctx, require_schema, &serialize_status);
 
+        if (obj->chunk == NULL && obj->fidelity_unserializable && ctx->fidelity_enabled &&
+            old_chunk != NULL && ctx->load_to_file == NULL && !require_schema) {
+            /* The state was never writable (the schema's checks are stricter than
+               the engine's); the chunk it was loaded from still is. */
+            nmo_log(ctx->logger, NMO_LOG_WARN,
+                    "Object %u ('%s'): its state does not serialize, keeping the chunk it was loaded with",
+                    obj->id, obj->name ? obj->name : "<unnamed>");
+            obj->chunk = old_chunk;
+            obj->fidelity_captured = was_captured;
+            reused_count++;
+            continue;
+        }
+
         if (obj->chunk == NULL) {
             obj->chunk = old_chunk;
             obj->fidelity_captured = was_captured;
