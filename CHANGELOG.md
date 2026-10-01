@@ -394,6 +394,13 @@ the tests build each layout dword by dword.
   second load of the original file that is never saved. It tolerates only the uninitialised
   padding bytes Virtools leaves behind strings and buffers.
 - The corpus directory walk moved into the test framework (`test_corpus_walk`).
+- `test_generated_chunk_roundtrip` runs the same checks on files the library generates, so CI covers
+  them without the Virtools samples: one object of every class, a project-authored level with a script,
+  and copies of the first with data the schemas do not model (a trailing dword, a section nobody knows).
+  It checks the round trip, a default save byte for byte, deleting an object, and that editing one object
+  keeps that data and changes nothing else. The comparison moved to `chunk_roundtrip_check.h`; the deletion
+  check now also compares what every object points at, by class and name, which the corpus test passed
+  even when a moved object's index was left stale (skipping the id translation is caught now).
 - `test_corpus_chunk_roundtrip` also saves the corpus with the default options and requires every
   chunk to come back byte for byte, and deletes an object to check that the others keep their data.
   `test_fidelity_save` edits a material that carries an extra dword and checks the dword survives.
