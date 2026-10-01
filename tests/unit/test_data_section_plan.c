@@ -11,13 +11,6 @@
 #include "format/nmo_data.h"
 
 static nmo_data_section_t make_mixed_data_section(nmo_arena_t *arena) {
-    static const uint8_t raw_manager_data[] = {
-        0x10, 0x00, 0x00, 0x00,
-        0x20, 0x00, 0x00, 0x00,
-        0x30, 0x00, 0x00, 0x00,
-        0x40, 0x00, 0x00, 0x00,
-    };
-
     nmo_data_section_t section = {0};
     section.manager_count = 1;
     section.object_count = 1;
@@ -27,10 +20,11 @@ static nmo_data_section_t make_mixed_data_section(nmo_arena_t *arena) {
     memset(section.objects, 0, sizeof(nmo_object_data_t));
 
     section.managers[0].guid = (nmo_guid_t){0x11223344u, 0x55667788u};
-    section.managers[0].data_size = (uint32_t)sizeof(raw_manager_data);
     section.managers[0].chunk = nmo_chunk_create(arena);
-    section.managers[0].chunk->raw_data = raw_manager_data;
-    section.managers[0].chunk->raw_size = sizeof(raw_manager_data);
+    nmo_chunk_write_dword(section.managers[0].chunk, 0x10u);
+    nmo_chunk_write_dword(section.managers[0].chunk, 0x20u);
+    nmo_chunk_write_dword(section.managers[0].chunk, 0x30u);
+    nmo_chunk_write_dword(section.managers[0].chunk, 0x40u);
 
     section.objects[0].object_id = 42;
     section.objects[0].chunk = nmo_chunk_create(arena);
@@ -61,8 +55,8 @@ TEST(data_section_plan, matches_legacy_serialization) {
     ASSERT_EQ(legacy_written, plan.total_size);
     ASSERT_EQ(1, plan.manager_count);
     ASSERT_EQ(1, plan.object_count);
-    ASSERT_TRUE(plan.manager_slices[0].borrowed);
-    ASSERT_FALSE(plan.object_slices[0].borrowed);
+    ASSERT_GT(plan.manager_slices[0].size, 0u);
+    ASSERT_GT(plan.object_slices[0].size, 0u);
 
     uint8_t *planned = nmo_arena_alloc(arena, plan.total_size, 16);
     ASSERT_NOT_NULL(planned);

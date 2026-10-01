@@ -277,11 +277,6 @@ static nmo_status_t save_get_chunk_size(nmo_chunk_t *chunk, nmo_arena_t *arena, 
         NMO_RETURN_OK();
     }
 
-    if (chunk->raw_data != NULL && chunk->raw_size > 0) {
-        *out_size = chunk->raw_size;
-        NMO_RETURN_OK();
-    }
-
     void *serialized = NULL;
     size_t serialized_size = 0;
     nmo_status_t result = nmo_chunk_serialize(chunk, &serialized, &serialized_size, arena);
@@ -996,10 +991,10 @@ static nmo_status_t save_serialize_managers(nmo_serializer_t *ctx) {
             nmo_manager_data_t *entry = &ctx->manager_entries[ctx->manager_entry_count++];
             entry->guid = manager->guid;
             entry->chunk = chunk;
-            entry->data_size = (chunk->raw_data != NULL) ? (uint32_t)chunk->raw_size : 0;
+            entry->data_size = 0;
             entry->flags = NMO_MANAGER_DATA_FLAG_DISPATCHED;
 
-            if (chunk->raw_data == NULL && remap_table != NULL) {
+            if (remap_table != NULL) {
                 nmo_status_t remap_result = nmo_chunk_remap_object_ids_ex(chunk, remap_table, save_scratch(ctx));
                 if (remap_result != NMO_OK) {
                     nmo_log(ctx->logger, NMO_LOG_WARN,
@@ -1165,7 +1160,7 @@ static nmo_status_t save_serialize_objects(nmo_serializer_t *ctx) {
             }
             reused_count++;
         } else {
-            if (obj->chunk != NULL && obj->chunk->raw_data == NULL && remap_table != NULL) {
+            if (obj->chunk != NULL && remap_table != NULL) {
                 nmo_status_t remap_result = nmo_chunk_remap_object_ids_ex(obj->chunk, remap_table, save_scratch(ctx));
                 if (remap_result != NMO_OK) {
                     nmo_log(ctx->logger, NMO_LOG_WARN,
@@ -1265,8 +1260,7 @@ static nmo_status_t save_build_data_section(nmo_serializer_t *ctx) {
             nmo_chunk_t *chunk = ctx->objects[i]->chunk;
             data_sect.objects[i].object_id = 0;
             data_sect.objects[i].chunk = chunk;
-            data_sect.objects[i].data_size = (chunk && chunk->raw_data != NULL)
-                ? (uint32_t)chunk->raw_size : 0;
+            data_sect.objects[i].data_size = 0;
         }
 
         if (file_version == 7 && remap_table != NULL) {
@@ -1892,12 +1886,6 @@ static nmo_chunk_t *serialize_object_with_schema(
     if (obj != NULL && chunk == obj->chunk) {
         save_log_require_schema_failure(
             logger, obj, "Schema required but raw chunk reuse occurred");
-        return NULL;
-    }
-
-    if (chunk->raw_data != NULL && chunk->raw_size > 0) {
-        save_log_require_schema_failure(
-            logger, obj, "Schema required but raw chunk data remains");
         return NULL;
     }
 

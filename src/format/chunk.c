@@ -938,8 +938,7 @@ nmo_chunk_t *nmo_chunk_clone(const nmo_chunk_t *src, nmo_arena_t *arena) {
         !chunk_array_state_is_valid(&src->ids, sizeof(uint32_t)) ||
         !chunk_array_state_is_valid(&src->chunk_refs, sizeof(uint32_t)) ||
         !chunk_array_state_is_valid(&src->managers, sizeof(uint32_t)) ||
-        !chunk_array_state_is_valid(&src->chunks, sizeof(nmo_chunk_t *)) ||
-        (src->raw_size > 0 && src->raw_data == NULL)) {
+        !chunk_array_state_is_valid(&src->chunks, sizeof(nmo_chunk_t *))) {
         nmo_last_error_setf(NMO_ERR_INVALID_STATE, NMO_SEVERITY_ERROR,
                             __FILE__, __LINE__,
                             "Cannot clone malformed chunk state");
@@ -958,9 +957,6 @@ nmo_chunk_t *nmo_chunk_clone(const nmo_chunk_t *src, nmo_arena_t *arena) {
     clone->chunk_class_id = src->chunk_class_id;
     clone->chunk_options = src->chunk_options;
     clone->file_context = src->file_context;
-
-    clone->raw_data = src->raw_data;
-    clone->raw_size = src->raw_size;
 
     if (src->data.count > 0) {
         nmo_status_t result = nmo_arena_array_resize(&clone->data, src->data.count);
@@ -1051,10 +1047,6 @@ static nmo_status_t chunk_parse_into(nmo_chunk_t *chunk,
     if (((uintptr_t)data % sizeof(uint32_t)) != 0) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Chunk buffer must be 4-byte aligned");
     }
-
-    /* Store raw data for round-trip saving */
-    chunk->raw_data = data;
-    chunk->raw_size = size;
 
     const uint32_t *buf = (const uint32_t *) data;
     size_t pos = 0; /* Position in DWORDs */
@@ -1474,8 +1466,6 @@ void nmo_chunk_clear(nmo_chunk_t *chunk) {
         chunk->is_compressed = 0;
         chunk->unpack_size = 0;
 
-        chunk->raw_data = NULL;
-        chunk->raw_size = 0;
         chunk->file_context = NULL;
 
         if (chunk->parser_state) {

@@ -97,13 +97,11 @@ typedef struct nmo_data_section {
 /**
  * @brief Planned serialized bytes for one Data section chunk.
  *
- * A slice either borrows existing raw chunk bytes or points at bytes serialized
- * into the caller-provided arena during plan construction.
+ * The bytes are serialized into the caller-provided arena during plan construction.
  */
 typedef struct nmo_data_chunk_slice {
     const uint8_t *bytes; /**< Serialized chunk bytes, or NULL for an empty chunk */
     size_t size;          /**< Serialized byte count */
-    bool borrowed;        /**< true when bytes points at pre-existing raw chunk data */
 } nmo_data_chunk_slice_t;
 
 /**
@@ -168,8 +166,8 @@ NMO_API nmo_status_t nmo_data_section_serialize(
 /**
  * @brief Build a single-serialize Data section plan.
  *
- * Raw chunks are borrowed directly. Generated chunks are serialized once into
- * the provided arena and then referenced by the plan.
+ * Each chunk is serialized once into the provided arena and then referenced by
+ * the plan.
  *
  * @param data_section Data section to plan
  * @param file_version File format version

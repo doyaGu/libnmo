@@ -100,10 +100,6 @@ static void reset_chunk(nmo_chunk_t *chunk) {
     chunk->is_compressed = 0;
     chunk->unpack_size = 0;
 
-    // Clear raw data
-    chunk->raw_data = NULL;
-    chunk->raw_size = 0;
-
     // Clear parser state
     if (chunk->parser_state) {
         memset(chunk->parser_state, 0, sizeof(nmo_chunk_parser_state_t));

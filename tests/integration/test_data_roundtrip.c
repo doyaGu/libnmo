@@ -22,8 +22,8 @@ static void test_manager_guid_roundtrip(void);
 static void test_object_metadata_roundtrip(void);
 static void test_mixed_data_roundtrip(void);
 static void test_manager_with_chunk_data(void);
-static void test_manager_with_chunk_data_without_raw_data(void);
-static void test_object_with_chunk_data_without_raw_data(void);
+static void test_manager_chunk_with_data_size_unset(void);
+static void test_object_chunk_with_data_size_unset(void);
 static void test_parse_with_chunk_pool(void);
 static void test_parse_failure_is_atomic(void);
 
@@ -33,8 +33,8 @@ static void register_tests(void) {
     test_register("data_roundtrip", "object_metadata_roundtrip", test_object_metadata_roundtrip);
     test_register("data_roundtrip", "mixed_data_roundtrip", test_mixed_data_roundtrip);
     test_register("data_roundtrip", "manager_with_chunk_data", test_manager_with_chunk_data);
-    test_register("data_roundtrip", "manager_with_chunk_data_without_raw_data", test_manager_with_chunk_data_without_raw_data);
-    test_register("data_roundtrip", "object_with_chunk_data_without_raw_data", test_object_with_chunk_data_without_raw_data);
+    test_register("data_roundtrip", "manager_chunk_with_data_size_unset", test_manager_chunk_with_data_size_unset);
+    test_register("data_roundtrip", "object_chunk_with_data_size_unset", test_object_chunk_with_data_size_unset);
     test_register("data_roundtrip", "parse_with_chunk_pool", test_parse_with_chunk_pool);
     test_register("data_roundtrip", "parse_failure_is_atomic", test_parse_failure_is_atomic);
 }
@@ -259,10 +259,6 @@ static void test_manager_with_chunk_data(void) {
     
     printf("  Chunk serialized to %zu bytes\n", chunk_size);
     
-    /* Store serialized data in chunk's raw_data for round-trip */
-    chunk->raw_data = chunk_data;
-    chunk->raw_size = chunk_size;
-    
     data.managers[0].chunk = chunk;
     data.managers[0].data_size = (uint32_t)chunk_size;
     
@@ -319,7 +315,7 @@ static void test_manager_with_chunk_data(void) {
     nmo_arena_destroy(arena);
 }
 
-static void test_manager_with_chunk_data_without_raw_data(void) {
+static void test_manager_chunk_with_data_size_unset(void) {
     nmo_arena_t* arena = nmo_arena_create(NULL, 8192);
     ASSERT_NOT_NULL(arena);
 
@@ -379,7 +375,7 @@ static void test_manager_with_chunk_data_without_raw_data(void) {
     nmo_arena_destroy(arena);
 }
 
-static void test_object_with_chunk_data_without_raw_data(void) {
+static void test_object_chunk_with_data_size_unset(void) {
     nmo_arena_t* arena = nmo_arena_create(NULL, 8192);
     ASSERT_NOT_NULL(arena);
 

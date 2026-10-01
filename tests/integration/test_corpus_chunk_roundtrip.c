@@ -109,6 +109,21 @@ TEST(corpus_chunk_roundtrip, deleting_an_object_keeps_the_others_intact)
     nmo_context_release(ctx);
 }
 
+TEST(corpus_chunk_roundtrip, parsed_chunks_serialize_to_the_bytes_they_came_from)
+{
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
+
+    section_bytes_stats_t stats;
+    memset(&stats, 0, sizeof(stats));
+    ASSERT_EQ(0, test_corpus_walk(NMO_TEST_DATA_DIR, check_data_section_bytes, &stats));
+    printf("  Data sections: files=%zu managers=%zu objects=%zu different=%zu errors=%zu\n",
+           stats.files, stats.managers, stats.objects, stats.different_files, stats.errors);
+    ASSERT_GE(stats.files, 1u);
+    ASSERT_GE(stats.objects, 1u);
+    ASSERT_EQ(0u, stats.errors);
+    ASSERT_EQ(0u, stats.different_files);
+}
+
 /* The interface chunk of a behavior, parsed and written again, is the chunk
  * it came from (the snapshot bitmap is kept as the file held it). */
 typedef struct interface_stats {
@@ -176,5 +191,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST_WITH_TIMEOUT(corpus_chunk_roundtrip, every_object_chunk_survives_save_and_reload, 300.0);
     REGISTER_TEST_WITH_TIMEOUT(corpus_chunk_roundtrip, default_save_keeps_untouched_objects_byte_exact, 300.0);
     REGISTER_TEST_WITH_TIMEOUT(corpus_chunk_roundtrip, deleting_an_object_keeps_the_others_intact, 300.0);
+    REGISTER_TEST_WITH_TIMEOUT(corpus_chunk_roundtrip, parsed_chunks_serialize_to_the_bytes_they_came_from, 300.0);
     REGISTER_TEST_WITH_TIMEOUT(corpus_chunk_roundtrip, parsed_interfaces_write_back_to_their_chunk, 300.0);
 TEST_MAIN_END()

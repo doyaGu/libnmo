@@ -107,9 +107,6 @@ TEST(chunk_serialize, parse_failure_preserves_chunk_state) {
     uint32_t *original_data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
     ASSERT_NOT_NULL(original_data);
     original_data[0] = 0x12345678u;
-    const uint32_t original_raw[] = { 0xCAFEBABEu };
-    chunk->raw_data = original_raw;
-    chunk->raw_size = sizeof(original_raw);
     nmo_chunk_file_context_t file_context = {0};
     nmo_chunk_set_file_context(chunk, &file_context);
 
@@ -128,8 +125,6 @@ TEST(chunk_serialize, parse_failure_preserves_chunk_state) {
     ASSERT_EQ(original_data, chunk->data.data);
     ASSERT_EQ(1u, chunk->data.count);
     ASSERT_EQ(0x12345678u, original_data[0]);
-    ASSERT_EQ(original_raw, chunk->raw_data);
-    ASSERT_EQ(sizeof(original_raw), chunk->raw_size);
 
     nmo_arena_destroy(arena);
 }

@@ -64,10 +64,6 @@ typedef struct nmo_chunk {
     int is_compressed;        /**< Legacy compression flag */
     size_t unpack_size;       /**< Uncompressed size in DWORDs (for pack/unpack) */
 
-    /* Raw data (for round-trip / re-saving) */
-    const void *raw_data; /**< Original serialized data */
-    size_t raw_size;      /**< Size of raw data in bytes */
-
     /* Memory management */
     nmo_arena_t *arena; /**< Arena for allocations */
     int owns_data;      /**< Whether to free data */
@@ -232,8 +228,9 @@ NMO_API nmo_status_t nmo_chunk_deserialize(const void *data,
  * Parses serialized chunk data in Virtools VERSION1 format.
  * Similar to deserialize but operates on an existing chunk structure.
  *
- * @note The input buffer must be 4-byte aligned and remain valid for the
- *       lifetime of the chunk (raw_data is stored for round-trip saving).
+ * @note The input buffer must be 4-byte aligned. Everything is copied into
+ *       the chunk, so the buffer may be released afterwards; serializing the
+ *       chunk again gives back the bytes it was parsed from.
  *
  * @param chunk Chunk to parse into (required)
  * @param data Serialized data buffer (required)

@@ -271,6 +271,8 @@ static nmo_chunk_t *two_dword_chunk(nmo_arena_t *arena, uint32_t first, uint32_t
         return NULL;
     }
     nmo_chunk_close(chunk);
+    /* The data section parser marks its chunks as file chunks, as they are in a file. */
+    chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
     return chunk;
 }
 

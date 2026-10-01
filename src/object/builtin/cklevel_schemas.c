@@ -346,8 +346,6 @@ static nmo_status_t nmo_level_write_scene(
     }
     nmo_chunk_t *sub = nmo_chunk_clone(raw, arena);
     if (sub == NULL) return NMO_ERR_NOMEM;
-    sub->raw_data = NULL;
-    sub->raw_size = 0;
     uint32_t *data = (uint32_t *)sub->data.data;
     for (uint32_t i = 0; i < state->level_scene_id_count; ++i) {
         const uint32_t pos = state->level_scene_id_positions[i];

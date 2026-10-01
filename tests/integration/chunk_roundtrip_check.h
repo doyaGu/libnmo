@@ -15,6 +15,9 @@
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_chunk_residue.h"
+#include "format/nmo_data.h"
+#include "format/nmo_header.h"
+#include "io/nmo_io_memory.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_ref_graph.h"
@@ -25,6 +28,7 @@
 #include "session/nmo_runtime_kernel.h"
 #include "session/nmo_session.h"
 
+#include <miniz.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -101,6 +105,12 @@ static const char *chunk_first_difference(const nmo_chunk_t *a, const nmo_chunk_
 {
     if (a->data_version != b->data_version || a->chunk_version != b->chunk_version) {
         return "version";
+    }
+    if (a->class_id != b->class_id || a->chunk_class_id != b->chunk_class_id) {
+        return "class id";
+    }
+    if (a->chunk_options != b->chunk_options) {
+        return "options";
     }
     if (!payloads_equal(&a->data, &b->data, padding_fixes)) {
         return "payload";
@@ -558,6 +568,111 @@ static void check_deletion_keeps_the_others(nmo_context_t *ctx, const char *path
     printf("  Deleted object %zu of %zu; %zu chunks outside the level and detached parameters differ in more than ids\n",
            victim_index, count, differing);
     ASSERT_EQ(0u, differing);
+}
+
+/* A chunk keeps no copy of the bytes it was parsed from, so writing it must give them back:
+ * the data section of every corpus file, parsed and serialized again, is the data section
+ * the file holds, byte for byte. This is what lets a save write chunks from their parsed
+ * form instead of from a stored copy. */
+typedef struct section_bytes_stats {
+    size_t files;
+    size_t managers;
+    size_t objects;
+    size_t different_files;
+    size_t errors;
+} section_bytes_stats_t;
+
+static unsigned char *read_file_bytes(const char *path, size_t *out_size)
+{
+    FILE *fp = fopen(path, "rb");
+    if (fp == NULL) return NULL;
+    fseek(fp, 0, SEEK_END);
+    const long size = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+    unsigned char *bytes = (unsigned char *)malloc((size_t)size + 16u);
+    if (bytes != NULL && fread(bytes, 1, (size_t)size, fp) != (size_t)size) {
+        free(bytes);
+        bytes = NULL;
+    }
+    fclose(fp);
+    *out_size = (size_t)size;
+    return bytes;
+}
+
+static void check_data_section_bytes(const char *path, void *user)
+{
+    section_bytes_stats_t *stats = (section_bytes_stats_t *)user;
+    stats->files++;
+
+    size_t file_size = 0;
+    unsigned char *file = read_file_bytes(path, &file_size);
+    unsigned char *unpacked = NULL;
+    unsigned char *rewritten = NULL;
+    nmo_arena_t *arena = NULL;
+    nmo_io_interface_t *io = file != NULL ? nmo_memory_io_open_read(file, file_size) : NULL;
+    nmo_file_header_t header;
+    if (io == NULL || nmo_file_header_parse(io, &header) != NMO_OK || header.file_version < 8u) {
+        stats->errors++;
+        goto done;
+    }
+
+    const size_t data_offset = 64u + (size_t)header.hdr1_pack_size;
+    if (data_offset + header.data_pack_size > file_size) {
+        stats->errors++;
+        goto done;
+    }
+    unpacked = (unsigned char *)malloc((size_t)header.data_unpack_size + 16u);
+    if (unpacked == NULL) {
+        stats->errors++;
+        goto done;
+    }
+    if (header.data_pack_size != header.data_unpack_size) {
+        mz_ulong length = header.data_unpack_size;
+        if (mz_uncompress(unpacked, &length, file + data_offset, header.data_pack_size) != MZ_OK ||
+            length != header.data_unpack_size) {
+            stats->errors++;
+            goto done;
+        }
+    } else {
+        memcpy(unpacked, file + data_offset, header.data_unpack_size);
+    }
+
+    arena = nmo_arena_create(NULL, 1u << 22);
+    nmo_data_section_t section;
+    memset(&section, 0, sizeof(section));
+    section.manager_count = header.manager_count;
+    section.object_count = header.object_count;
+    if (arena == NULL ||
+        nmo_data_section_parse(unpacked, header.data_unpack_size, header.file_version, &section,
+                               NULL, arena) != NMO_OK) {
+        stats->errors++;
+        goto done;
+    }
+    stats->managers += section.manager_count;
+    stats->objects += section.object_count;
+
+    const size_t size = nmo_data_section_calculate_size(&section, header.file_version, arena);
+    rewritten = (unsigned char *)malloc(size + 16u);
+    size_t written = 0;
+    if (rewritten == NULL ||
+        nmo_data_section_serialize(&section, header.file_version, rewritten, size, &written,
+                                   arena) != NMO_OK) {
+        stats->errors++;
+        goto done;
+    }
+    if (written != header.data_unpack_size || memcmp(rewritten, unpacked, written) != 0) {
+        if (stats->different_files++ < MAX_REPORTED_MISMATCHES) {
+            printf("  %s: data section differs (%zu bytes written, %u in the file)\n", path,
+                   written, (unsigned)header.data_unpack_size);
+        }
+    }
+
+done:
+    free(rewritten);
+    free(unpacked);
+    free(file);
+    nmo_arena_destroy(arena);
+    nmo_io_close(io);
 }
 
 #endif /* NMO_TEST_CHUNK_ROUNDTRIP_CHECK_H */

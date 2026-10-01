@@ -176,9 +176,6 @@ static int generate_foreign(nmo_context_t *ctx, const char *source, const char *
     for (size_t i = 0; status == NMO_OK && i < nmo_object_repository_get_count(repo); i++) {
         nmo_object_t *object = nmo_object_repository_get_by_index(repo, i);
         if (object != NULL && object->chunk != NULL && add_unmodeled_data(object->chunk, flavor)) {
-            /* The writer emits the original bytes while they are set. */
-            object->chunk->raw_data = NULL;
-            object->chunk->raw_size = 0;
             modified++;
         }
     }
@@ -434,6 +431,28 @@ static void check_edit_keeps_unmodeled_data(nmo_context_t *ctx, const char *path
     nmo_session_destroy(pristine);
 }
 
+TEST(generated_chunk_roundtrip, parsed_chunks_serialize_to_the_bytes_they_came_from)
+{
+    nmo_context_t *ctx = make_context();
+    ASSERT_NOT_NULL(ctx);
+    generate_files(ctx, NULL, NULL);
+
+    section_bytes_stats_t stats;
+    memset(&stats, 0, sizeof(stats));
+    for (size_t i = 0; i < sizeof(generated_files) / sizeof(generated_files[0]); i++) {
+        check_data_section_bytes(generated_files[i], &stats);
+    }
+    remove_generated_files();
+    nmo_context_release(ctx);
+
+    printf("  Data sections: files=%zu managers=%zu objects=%zu different=%zu errors=%zu\n",
+           stats.files, stats.managers, stats.objects, stats.different_files, stats.errors);
+    ASSERT_EQ(4u, stats.files);
+    ASSERT_GE(stats.objects, 150u);
+    ASSERT_EQ(0u, stats.errors);
+    ASSERT_EQ(0u, stats.different_files);
+}
+
 TEST(generated_chunk_roundtrip, edited_object_keeps_a_trailing_dword_it_does_not_model)
 {
     nmo_context_t *ctx = make_context();
@@ -459,6 +478,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(generated_chunk_roundtrip, every_object_chunk_survives_save_and_reload);
     REGISTER_TEST(generated_chunk_roundtrip, default_save_keeps_untouched_objects_byte_exact);
     REGISTER_TEST(generated_chunk_roundtrip, deleting_an_object_keeps_the_others_intact);
+    REGISTER_TEST(generated_chunk_roundtrip, parsed_chunks_serialize_to_the_bytes_they_came_from);
     REGISTER_TEST(generated_chunk_roundtrip, edited_object_keeps_a_trailing_dword_it_does_not_model);
     REGISTER_TEST(generated_chunk_roundtrip, edited_object_keeps_a_section_it_does_not_know);
 TEST_MAIN_END()

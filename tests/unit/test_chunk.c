@@ -177,10 +177,6 @@ TEST(chunk, clone_rejects_malformed_public_state) {
         arrays[i]->element_size = element_sizes[i];
     }
 
-    chunk->raw_size = 4;
-    ASSERT_NULL(nmo_chunk_clone(chunk, arena));
-    ASSERT_EQ(NMO_ERR_INVALID_STATE, nmo_last_error_code());
-
     nmo_arena_destroy(arena);
 }
 

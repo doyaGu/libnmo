@@ -388,16 +388,8 @@ static nmo_status_t data_section_make_slice(
     }
 
     memset(out_slice, 0, sizeof(*out_slice));
-    out_slice->borrowed = true;
 
     if (chunk == NULL) {
-        NMO_RETURN_OK();
-    }
-
-    if (chunk->raw_data != NULL && chunk->raw_size > 0) {
-        out_slice->bytes = chunk->raw_data;
-        out_slice->size = chunk->raw_size;
-        out_slice->borrowed = true;
         NMO_RETURN_OK();
     }
 
@@ -408,7 +400,6 @@ static nmo_status_t data_section_make_slice(
 
     out_slice->bytes = (const uint8_t *)serialized_data;
     out_slice->size = serialized_size;
-    out_slice->borrowed = false;
     NMO_RETURN_OK();
 }
 

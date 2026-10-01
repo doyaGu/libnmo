@@ -287,6 +287,12 @@ foreach(_nmo_test IN ITEMS
         target_link_libraries(${_nmo_test} PRIVATE nmo_project)
     endif()
 endforeach()
+# chunk_roundtrip_check.h inflates the data section of the files it checks.
+foreach(_nmo_test IN ITEMS test_corpus_chunk_roundtrip test_generated_chunk_roundtrip)
+    target_sources(${_nmo_test} PRIVATE $<TARGET_OBJECTS:nmo_miniz_objects>)
+    target_include_directories(${_nmo_test} PRIVATE
+        $<TARGET_PROPERTY:nmo_miniz_objects,INTERFACE_INCLUDE_DIRECTORIES>)
+endforeach()
 if(TARGET test_lua_public_workflow)
     target_link_libraries(test_lua_public_workflow PRIVATE nmo_lua)
 endif()

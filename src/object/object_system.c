@@ -755,10 +755,6 @@ nmo_chunk_t *nmo_object_system_fidelity_reuse(
         chunk = nmo_chunk_clone(obj->chunk, arena);
         if (chunk == NULL) return NULL;
         chunk->file_context = NULL;
-        /* The writer emits the raw bytes when it has them; the translated data
-           has to be written instead. */
-        chunk->raw_data = NULL;
-        chunk->raw_size = 0;
         bool unresolved = false;
         if (nmo_chunk_translate_ids_with_layout(chunk, current, load_to_file,
                                                 obj->fidelity_load_count,
