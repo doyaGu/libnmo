@@ -272,6 +272,19 @@ TEST(fidelity_save, full_save_after_a_strip_save_is_unchanged)
     partial.flags |= NMO_SAVE_STRIP_INCLUDED_FILES;
     ASSERT_EQ(NMO_OK, nmo_session_save_file(subset, SCRATCH_FILE, &partial, NULL));
 
+    /* That save replaced the chunk of every object that has a state, so none of
+     * them may still claim the digest of the chunk it was loaded with. */
+    nmo_object_repository_t *subset_repo = nmo_session_get_repository(subset);
+    size_t still_captured = 0;
+    for (size_t i = 0; i < nmo_object_repository_get_count(subset_repo); i++) {
+        const nmo_object_t *candidate = nmo_object_repository_get_by_index(subset_repo, i);
+        if (candidate != NULL && candidate->fidelity_captured &&
+            nmo_object_get_state(candidate) != NULL) {
+            still_captured++;
+        }
+    }
+    ASSERT_EQ(0u, still_captured);
+
     nmo_save_options_t full = nmo_save_options_default();
     ASSERT_EQ(NMO_OK, nmo_session_save_file(plain, "fidelity_plain.tmp", &full, NULL));
     ASSERT_EQ(NMO_OK, nmo_session_save_file(subset, SCRATCH_FILE, &full, NULL));
