@@ -28,7 +28,7 @@ typedef struct nmo_kinematicchain_state {
     nmo_object_state_t base;
 
     uint8_t has_chain_data;
-    uint32_t reserved_object_id; /**< Raw compatibility placeholder; normally zero */
+    nmo_ref_t reserved_ref;      /**< First dword of the section; the engine reads it as an object reference, normally null */
     nmo_ref_t start_effector;
     nmo_ref_t end_effector;
 } nmo_kinematicchain_state_t;
