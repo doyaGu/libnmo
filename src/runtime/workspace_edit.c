@@ -45,6 +45,7 @@
 #include "object/nmo_manager_guids.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
+#include "format/nmo_interface_chunk.h"
 #include "format/nmo_data.h"
 #include "format/nmo_stb_adapter.h"
 #include "format/nmo_object.h"
@@ -497,6 +498,20 @@ static nmo_status_t workspace_edit_clone_behavior_state(
             return status;
         }
     }
+
+    /* The editor layout is edited in place by the interface commands and by the
+       canonicalization policy, so the struct copy above (which shares the pointer)
+       would restore the edited data. The copy lives in the journal arena and is
+       copied back to the document arena only if the edit is rolled back. */
+    destination->interface_data = NULL;
+    if (source->interface_data != NULL) {
+        nmo_status_t status = nmo_interface_data_copy(
+            edit->journal.arena, &destination->interface_data, source->interface_data);
+        if (status != NMO_OK) {
+            workspace_edit_dispose_behavior_arrays(destination);
+            return status;
+        }
+    }
     return NMO_OK;
 }
 
@@ -504,7 +519,6 @@ static nmo_status_t rollback_behavior_state(
     nmo_workspace_edit_t *edit,
     void *payload)
 {
-    (void)edit;
     behavior_state_snapshot_t *snapshot =
         (behavior_state_snapshot_t *)payload;
     if (snapshot == NULL || snapshot->target == NULL ||
@@ -512,11 +526,29 @@ static nmo_status_t rollback_behavior_state(
         return NMO_ERR_INVALID_STATE;
     }
 
+    /* The snapshot's interface data dies with the journal; the restored state needs a
+       copy that lives as long as the document. Without one the rest is still restored
+       and the interface keeps its edited form. */
+    nmo_status_t status = NMO_OK;
+    nmo_interface_data_t *restored_interface = NULL;
+    nmo_arena_t *document_arena = nmo_workspace_internal_document_arena(edit->workspace);
+    if (snapshot->state.interface_data != NULL) {
+        status = document_arena != NULL
+            ? nmo_interface_data_copy(document_arena, &restored_interface,
+                                      snapshot->state.interface_data)
+            : NMO_ERR_INVALID_STATE;
+        if (status != NMO_OK) {
+            restored_interface = snapshot->target->interface_data;
+        }
+    }
+
     workspace_edit_dispose_behavior_arrays(snapshot->target);
     *snapshot->target = snapshot->state;
+    snapshot->target->interface_data = snapshot->state.interface_data != NULL
+        ? restored_interface : NULL;
     memset(&snapshot->state, 0, sizeof(snapshot->state));
     snapshot->owns_state = false;
-    return NMO_OK;
+    return status;
 }
 
 static nmo_status_t cleanup_behavior_state_snapshot(

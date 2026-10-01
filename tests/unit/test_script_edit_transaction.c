@@ -30,6 +30,8 @@
 #include "format/nmo_data.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
+#include "format/nmo_interface_chunk.h"
+#include "format/nmo_interface_edit.h"
 #include "core/nmo_array.h"
 #include "core/nmo_arena.h"
 #include "type/nmo_type_guids.h"
@@ -1545,9 +1547,112 @@ TEST(script_edit_transaction, ignores_conflicting_raw_behavior_link)
     nmo_context_release(ctx);
 }
 
+
+/* Gives the behavior a parsed interface: the editor layout of a script with a graph IO block. */
+static nmo_interface_data_t *attach_interface_data(nmo_object_t *object,
+                                                   nmo_behavior_state_t *state,
+                                                   nmo_object_id_t behavior_id)
+{
+    nmo_arena_t *arena = nmo_object_get_storage_arena(object);
+    nmo_interface_data_t *data = nmo_arena_alloc(arena, sizeof(*data), _Alignof(nmo_interface_data_t));
+    nmo_interface_graph_io_t *graph_io =
+        nmo_arena_alloc(arena, sizeof(*graph_io), _Alignof(nmo_interface_graph_io_t));
+    if (data == NULL || graph_io == NULL) return NULL;
+    memset(data, 0, sizeof(*data));
+    memset(graph_io, 0, sizeof(*graph_io));
+    const int32_t inputs[] = {10, 11};
+    if (nmo_interface_graph_io_set_array(&graph_io->inward_inputs, &graph_io->inward_input_tags,
+                                         &graph_io->inward_input_count,
+                                         arena, inputs, 2u) != NMO_OK) {
+        return NULL;
+    }
+    data->script.behavior_id = behavior_id;
+    data->script.h_pos = 4.0f;
+    data->script.v_pos = 8.0f;
+    data->script.body.graph_io = graph_io;
+    data->script.body.has_graph_io = true;
+    state->interface_data = data;
+    state->has_interface = true;
+    return data;
+}
+
+TEST(script_edit_transaction, rollback_restores_interface_data_changed_in_place)
+{
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_id_t behavior_id = 0;
+    create_object_or_fail(session, NMO_CID_BEHAVIOR, "script", &behavior_id);
+    nmo_object_t *object = nmo_object_repository_find_by_id(nmo_session_get_repository(session), behavior_id);
+    ASSERT_NOT_NULL(object);
+    nmo_behavior_state_t *state = (nmo_behavior_state_t *)nmo_object_get_state(object);
+    ASSERT_NOT_NULL(state);
+    nmo_interface_data_t *data = attach_interface_data(object, state, behavior_id);
+    ASSERT_NOT_NULL(data);
+
+    nmo_script_edit_tx_t *tx = NULL;
+    ASSERT_EQ(NMO_OK, begin_test_script_edit(ctx, session, "interface-rollback", &tx));
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_snapshot_behavior_state(nmo_script_edit_workspace_edit(tx), state));
+
+    /* The edit changes the layout in place: a position, a graph IO entry, a flag. */
+    state->interface_data->script.h_pos = 99.0f;
+    state->interface_data->script.flags |= NMO_INTERFACE_FLAG_FOLDED;
+    state->interface_data->script.body.graph_io->inward_inputs[1] = 77;
+    nmo_script_edit_mark(tx, NMO_WORKSPACE_EDIT_OBJECT_STATE);
+
+    nmo_script_edit_rollback(tx);
+
+    ASSERT_NOT_NULL(state->interface_data);
+    ASSERT_TRUE(state->has_interface);
+    ASSERT_TRUE(state->interface_data->script.h_pos == 4.0f);
+    ASSERT_TRUE(state->interface_data->script.v_pos == 8.0f);
+    ASSERT_EQ(0u, state->interface_data->script.flags & NMO_INTERFACE_FLAG_FOLDED);
+    ASSERT_NOT_NULL(state->interface_data->script.body.graph_io);
+    ASSERT_EQ(2u, (unsigned)state->interface_data->script.body.graph_io->inward_input_count);
+    ASSERT_EQ(10, state->interface_data->script.body.graph_io->inward_inputs[0]);
+    ASSERT_EQ(11, state->interface_data->script.body.graph_io->inward_inputs[1]);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
+TEST(script_edit_transaction, commit_keeps_interface_data_changed_in_place)
+{
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_id_t behavior_id = 0;
+    create_object_or_fail(session, NMO_CID_BEHAVIOR, "script", &behavior_id);
+    nmo_object_t *object = nmo_object_repository_find_by_id(nmo_session_get_repository(session), behavior_id);
+    ASSERT_NOT_NULL(object);
+    nmo_behavior_state_t *state = (nmo_behavior_state_t *)nmo_object_get_state(object);
+    ASSERT_NOT_NULL(state);
+    ASSERT_NOT_NULL(attach_interface_data(object, state, behavior_id));
+
+    nmo_script_edit_tx_t *tx = NULL;
+    ASSERT_EQ(NMO_OK, begin_test_script_edit(ctx, session, "interface-commit", &tx));
+    ASSERT_EQ(NMO_OK, nmo_workspace_edit_snapshot_behavior_state(nmo_script_edit_workspace_edit(tx), state));
+    state->interface_data->script.h_pos = 99.0f;
+    state->interface_data->script.body.graph_io->inward_inputs[1] = 77;
+    nmo_script_edit_mark(tx, NMO_WORKSPACE_EDIT_OBJECT_STATE);
+    ASSERT_EQ(NMO_OK, nmo_script_edit_commit(tx));
+
+    ASSERT_TRUE(state->interface_data->script.h_pos == 99.0f);
+    ASSERT_EQ(77, state->interface_data->script.body.graph_io->inward_inputs[1]);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(script_edit_transaction,
                   behavior_edit_add_link_through_workspace_owner);
+    REGISTER_TEST(script_edit_transaction,
+                  rollback_restores_interface_data_changed_in_place);
+    REGISTER_TEST(script_edit_transaction,
+                  commit_keeps_interface_data_changed_in_place);
     REGISTER_TEST(script_edit_transaction,
                   rollback_restores_original_state_after_validation_failure);
     REGISTER_TEST(script_edit_transaction,
