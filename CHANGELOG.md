@@ -343,6 +343,9 @@ the tests build each layout dword by dword.
   pixels are unchanged; encoding the pixels again gave a different BMP header, so every parsed
   interface with a snapshot differed from its chunk. All 2066 parsed interfaces of the corpus now
   write back equivalent to their chunk (`test_corpus_chunk_roundtrip`).
+- Enum and flags types that the library registers itself now derive from Integer as in the
+  engine's type table (the table was skipped for types that already existed), so operation
+  signature matching sees an enum pin as an Integer.
 - Chunks older than version 4 read the old sub-chunk layout (and newer chunks detect it as the
   engine does). The data section of a file below version 8 starts with the highest file id and
   the object count and is read and written that way; files of version 7 can be loaded.
@@ -362,6 +365,10 @@ the tests build each layout dword by dword.
   the engine uses come from `nmo_3dentity_effective_z_order` and `nmo_curvepoint_get_position`.
 
 ### Tests
+- Six corpus tests (`test_corpus_semantics_{geometry,media,scene,behavior}` and the earlier
+  `test_corpus_invariants`) check about 300 relationships the engine guarantees between decoded
+  values; each invariant must be checked at least once, and mutating a read in a scratch copy of
+  the schema makes them fail.
 - `test_corpus_chunk_roundtrip` checks every object chunk of the corpus. It compares against a
   second load of the original file that is never saved. It tolerates only the uninitialised
   padding bytes Virtools leaves behind strings and buffers.
