@@ -362,12 +362,7 @@ static nmo_status_t nmo_sprite_deserialize_internal(
     out_state->has_sprite_ref = false;
     out_state->sprite_ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
 
-    const nmo_deserialize_context_t *deserialize_context =
-        nmo_deserialize_context_get(context);
-    const bool is_file =
-        ((chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
-        (deserialize_context != NULL &&
-         (deserialize_context->flags & NMO_DESER_FLAG_FILE_MODE) != 0);
+    const bool is_file = nmo_object_deserialize_is_file(chunk, context);
     if (is_file) {
         result = deserialize_file_backed(chunk, arena, out_state);
     } else {
@@ -446,9 +441,7 @@ static nmo_status_t nmo_sprite_serialize_internal(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_sprite_serialize");
     }
     
-    const nmo_serialize_context_t *ser_ctx = nmo_serialize_context_try(context);
-    const bool is_file = ((out_chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
-        (ser_ctx != NULL && (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
+    const bool is_file = nmo_object_serialize_is_file(out_chunk, context);
     const uint32_t save_flags = nmo_serialize_context_get_save_flags(context);
 
     /* Serialize parent CK2dEntity data */

@@ -187,18 +187,6 @@ static void nmo_bodypart_legacy_from_joint_flags(
     }
 }
 
-static int nmo_character_is_file_mode_deser(const nmo_chunk_t *chunk, void *context) {
-    const nmo_deserialize_context_t *deser_ctx = nmo_deserialize_context_get(context);
-    return (chunk && (chunk->chunk_options & NMO_CHUNK_OPTION_FILE)) ||
-        (deser_ctx != NULL && (deser_ctx->flags & NMO_DESER_FLAG_FILE_MODE) != 0);
-}
-
-static int nmo_character_is_file_mode_ser(const nmo_chunk_t *chunk, void *context) {
-    const nmo_serialize_context_t *ser_ctx = nmo_serialize_context_try(context);
-    return (chunk && (chunk->chunk_options & NMO_CHUNK_OPTION_FILE)) ||
-        (ser_ctx != NULL && (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
-}
-
 static nmo_status_t read_ref_sequence(
     nmo_chunk_t *chunk,
     nmo_array_t *out_refs,
@@ -869,7 +857,7 @@ static nmo_status_t nmo_character_deserialize_internal(
     }
 
     const uint32_t data_version = nmo_chunk_get_data_version(chunk);
-    const bool is_file = nmo_character_is_file_mode_deser(chunk, context);
+    const bool is_file = nmo_object_deserialize_is_file(chunk, context);
     bool section_found = false;
     size_t section_dwords = 0;
     if (data_version < 5) {
@@ -1125,7 +1113,7 @@ static nmo_status_t nmo_character_serialize_internal(
         &in_state->base, out_chunk, NULL, context);
     if (result != NMO_OK) return result;
     const uint32_t save_flags = nmo_serialize_context_get_save_flags(context);
-    const bool is_file = nmo_character_is_file_mode_ser(out_chunk, context);
+    const bool is_file = nmo_object_serialize_is_file(out_chunk, context);
     if (!is_file && (save_flags & CK_STATESAVE_CHARACTERONLY) == 0) {
         return NMO_OK;
     }
@@ -1352,7 +1340,7 @@ static nmo_status_t nmo_bodypart_serialize_internal(
     }
 
     const uint32_t save_flags = nmo_serialize_context_get_save_flags(context);
-    const bool is_file = nmo_character_is_file_mode_ser(out_chunk, context);
+    const bool is_file = nmo_object_serialize_is_file(out_chunk, context);
     if (!is_file && (save_flags & CK_STATESAVE_BODYPARTONLY) == 0) {
         NMO_RETURN_OK();
     }

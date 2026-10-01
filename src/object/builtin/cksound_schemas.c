@@ -558,9 +558,7 @@ static nmo_status_t nmo_wavesound_serialize_internal(
         return result;
     }
 
-    const nmo_serialize_context_t *ser_ctx = nmo_serialize_context_try(context);
-    const bool is_file = ((out_chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
-        (ser_ctx != NULL && (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
+    const bool is_file = nmo_object_serialize_is_file(out_chunk, context);
     const uint32_t save_flags = nmo_serialize_context_get_save_flags(context);
 
     if (!is_file && (save_flags & CK_STATESAVE_WAVSOUNDONLY) == 0) {

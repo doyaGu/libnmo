@@ -507,12 +507,7 @@ static nmo_status_t nmo_beobject_deserialize_internal(
     nmo_status_t result = nmo_sceneobject_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;
     
-    const nmo_deserialize_context_t *deser_ctx =
-        nmo_deserialize_context_get(context);
-    const bool is_file =
-        ((chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
-        (deser_ctx != NULL &&
-         (deser_ctx->flags & NMO_DESER_FLAG_FILE_MODE) != 0);
+    const bool is_file = nmo_object_deserialize_is_file(chunk, context);
     const uint32_t data_version = nmo_chunk_get_data_version(chunk);
 
     /* Load scripts array - optional section (legacy + modern) */

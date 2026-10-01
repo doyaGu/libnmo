@@ -410,6 +410,32 @@ NMO_API nmo_status_t nmo_object_clone_string_array(
     } while (0)
 
 /* ============================================================================
+ * File Mode
+ * ============================================================================ */
+
+/**
+ * @brief Whether a chunk is being written in file mode
+ *
+ * True when the chunk carries the FILE option or the serialize context asks for
+ * file mode. A file chunk holds no id table and uses the layouts a file stores;
+ * the other mode is the CKStateChunk of a save-flag subset.
+ */
+static inline bool nmo_object_serialize_is_file(const nmo_chunk_t *chunk, void *context)
+{
+    const nmo_serialize_context_t *ctx = nmo_serialize_context_try(context);
+    return (chunk != NULL && (chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
+           (ctx != NULL && (ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
+}
+
+/** @brief Whether a chunk is being read in file mode (see nmo_object_serialize_is_file()) */
+static inline bool nmo_object_deserialize_is_file(const nmo_chunk_t *chunk, void *context)
+{
+    const nmo_deserialize_context_t *ctx = nmo_deserialize_context_get(context);
+    return (chunk != NULL && (chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
+           (ctx != NULL && (ctx->flags & NMO_DESER_FLAG_FILE_MODE) != 0);
+}
+
+/* ============================================================================
  * Per-Type Lifecycle Helpers
  * ============================================================================ */
 #define NMO_DEFINE_OBJECT_LIFECYCLE(_prefix, _state_t, _init_block, _destroy_block) \

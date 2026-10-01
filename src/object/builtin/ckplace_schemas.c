@@ -85,12 +85,7 @@ static nmo_status_t nmo_place_deserialize_internal(
         return result;
     }
 
-    const nmo_deserialize_context_t *deser_ctx =
-        nmo_deserialize_context_get(context);
-    const int file_mode =
-        ((chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
-        (deser_ctx != NULL &&
-         (deser_ctx->flags & NMO_DESER_FLAG_FILE_MODE) != 0);
+    const bool file_mode = nmo_object_deserialize_is_file(chunk, context);
     if (!file_mode) {
         NMO_RETURN_OK();
     }
@@ -386,9 +381,7 @@ static nmo_status_t nmo_place_serialize_internal(
         return result;
     }
 
-    const nmo_serialize_context_t *ser_ctx = nmo_serialize_context_try(context);
-    const bool is_file = ((out_chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
-        (ser_ctx != NULL && (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
+    const bool is_file = nmo_object_serialize_is_file(out_chunk, context);
     const uint32_t save_flags = nmo_serialize_context_get_save_flags(context);
 
     if (!is_file && save_flags == 0) {

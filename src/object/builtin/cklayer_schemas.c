@@ -133,12 +133,7 @@ static nmo_status_t nmo_layer_deserialize_internal(
         NMO_CID_GRID);
     out_state->grid = grid;
 
-    const nmo_deserialize_context_t *deser_ctx =
-        nmo_deserialize_context_get(context);
-    const int file_mode =
-        ((chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
-        (deser_ctx != NULL &&
-         (deser_ctx->flags & NMO_DESER_FLAG_FILE_MODE) != 0);
+    const bool file_mode = nmo_object_deserialize_is_file(chunk, context);
     if (file_mode) {
         int32_t format = 0;
         int32_t version = 0;
@@ -249,9 +244,7 @@ static nmo_status_t nmo_layer_serialize_internal(
     nmo_status_t result = nmo_object_serialize(&in_state->base, out_chunk, NULL, context);
     if (result != NMO_OK) return result;
 
-    const nmo_serialize_context_t *ser_ctx = nmo_serialize_context_try(context);
-    const int is_file = ((out_chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
-        (ser_ctx != NULL && (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
+    const bool is_file = nmo_object_serialize_is_file(out_chunk, context);
     if (!is_file) {
         uint32_t save_flags = nmo_serialize_context_get_save_flags(context);
         if ((save_flags & CK_STATESAVE_LAYERDATA) == 0) {

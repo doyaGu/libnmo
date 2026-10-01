@@ -169,20 +169,6 @@ static const nmo_type_field_t nmo_objectanimation_fields[] = {
  * IDENTIFIER HELPERS
  * ============================================================================= */
 
-static int nmo_animation_is_file_mode_deser(const nmo_chunk_t *chunk, void *context)
-{
-    const nmo_deserialize_context_t *deser_ctx = nmo_deserialize_context_get(context);
-    return (chunk && (chunk->chunk_options & NMO_CHUNK_OPTION_FILE)) ||
-        (deser_ctx != NULL && (deser_ctx->flags & NMO_DESER_FLAG_FILE_MODE) != 0);
-}
-
-static int nmo_animation_is_file_mode_ser(const nmo_chunk_t *chunk, void *context)
-{
-    const nmo_serialize_context_t *ser_ctx = nmo_serialize_context_try(context);
-    return (chunk && (chunk->chunk_options & NMO_CHUNK_OPTION_FILE)) ||
-        (ser_ctx != NULL && (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
-}
-
 /* Chunks older than CHUNK_VERSION1 hold an object array as a leading non-zero
  * dword, 4 dwords that are skipped, a count and then that many plain object
  * ids (XSObjectPointerArray::Load 0x2402b715, CKStateChunk::ReadXObjectArray
@@ -2571,7 +2557,7 @@ static nmo_status_t nmo_animation_serialize_internal(
     }
 
     const uint32_t save_flags = nmo_serialize_context_get_save_flags(context);
-    const bool is_file = nmo_animation_is_file_mode_ser(out_chunk, context);
+    const bool is_file = nmo_object_serialize_is_file(out_chunk, context);
     if (!is_file && save_flags == 0) {
         NMO_RETURN_OK();
     }
@@ -2687,7 +2673,7 @@ static nmo_status_t nmo_keyedanimation_deserialize_internal(
         if (result != NMO_OK) return result;
     }
 
-    const bool is_file = nmo_animation_is_file_mode_deser(chunk, context);
+    const bool is_file = nmo_object_deserialize_is_file(chunk, context);
     if (!is_file) {
         NMO_RETURN_IF_ERROR(nmo_animation_seek_optional_sized(
             chunk, CK_STATESAVE_KEYEDANIMSUBANIMS, &section_found,
@@ -2761,7 +2747,7 @@ static nmo_status_t nmo_keyedanimation_serialize_internal(
     if (result != NMO_OK) return result;
 
     const uint32_t save_flags = nmo_serialize_context_get_save_flags(context);
-    const bool is_file = nmo_animation_is_file_mode_ser(out_chunk, context);
+    const bool is_file = nmo_object_serialize_is_file(out_chunk, context);
 
     if (is_file || (save_flags & CK_STATESAVE_KEYEDANIMANIMLIST) != 0) {
         result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_KEYEDANIMANIMLIST);
@@ -3080,7 +3066,7 @@ static nmo_status_t nmo_objectanimation_serialize_internal(
     }
 
     const uint32_t save_flags = nmo_serialize_context_get_save_flags(context);
-    const bool is_file = nmo_animation_is_file_mode_ser(out_chunk, context);
+    const bool is_file = nmo_object_serialize_is_file(out_chunk, context);
     if (!is_file && (save_flags & CK_STATESAVE_OBJANIMALL) == 0) {
         NMO_RETURN_OK();
     }

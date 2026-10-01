@@ -99,12 +99,7 @@ static nmo_status_t nmo_grid_deserialize_internal(
     out_state->has_file_flag = 0;
     out_state->file_flag = 0;
 
-    const nmo_deserialize_context_t *deserialize_context =
-        nmo_deserialize_context_get(context);
-    const int is_file =
-        ((chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
-        (deserialize_context != NULL &&
-         (deserialize_context->flags & NMO_DESER_FLAG_FILE_MODE) != 0);
+    const bool is_file = nmo_object_deserialize_is_file(chunk, context);
 
     size_t section_dwords = 0;
     result = nmo_chunk_seek_identifier_with_size(
@@ -248,9 +243,7 @@ static nmo_status_t nmo_grid_serialize_internal(
     nmo_status_t result = nmo_3dentity_serialize(&in_state->base, out_chunk, NULL, context);
     if (result != NMO_OK) return result;
 
-    const nmo_serialize_context_t *ser_ctx = nmo_serialize_context_try(context);
-    const int is_file = ((out_chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
-        (ser_ctx != NULL && (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
+    const bool is_file = nmo_object_serialize_is_file(out_chunk, context);
     if (!is_file) {
         uint32_t save_flags = nmo_serialize_context_get_save_flags(context);
         if ((save_flags & CK_STATESAVE_GRIDONLY) == 0) {

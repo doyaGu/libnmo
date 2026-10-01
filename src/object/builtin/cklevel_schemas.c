@@ -389,9 +389,7 @@ static nmo_status_t nmo_level_deserialize_internal(
     nmo_status_t result = nmo_beobject_deserialize(&out_state->base, chunk, NULL, context);
     if (result != NMO_OK) return result;
 
-    nmo_deserialize_context_t *deser_ctx = nmo_deserialize_context_get(context);
-    const bool is_file = ((chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
-        (deser_ctx != NULL && (deser_ctx->flags & NMO_DESER_FLAG_FILE_MODE) != 0);
+    const bool is_file = nmo_object_deserialize_is_file(chunk, context);
     if (!is_file) {
         NMO_RETURN_OK();
     }
@@ -709,9 +707,7 @@ static nmo_status_t nmo_level_serialize_internal(
     nmo_status_t result = nmo_beobject_serialize(&in_state->base, out_chunk, NULL, context);
     if (result != NMO_OK) return result;
 
-    const nmo_serialize_context_t *ser_ctx = nmo_serialize_context_try(context);
-    const bool is_file = ((out_chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
-        (ser_ctx != NULL && (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
+    const bool is_file = nmo_object_serialize_is_file(out_chunk, context);
     if (!is_file) {
         NMO_RETURN_OK();
     }

@@ -113,11 +113,8 @@ static const nmo_type_field_t nmo_dataarray_fields[] = {
 };
 
 static int nmo_dataarray_is_file_mode(const nmo_chunk_t *chunk, void *context) {
-    const nmo_deserialize_context_t *deser_ctx = nmo_deserialize_context_get(context);
-    const nmo_serialize_context_t *ser_ctx = nmo_serialize_context_try(context);
-    return (chunk && (chunk->chunk_options & NMO_CHUNK_OPTION_FILE)) ||
-        (deser_ctx != NULL && (deser_ctx->flags & NMO_DESER_FLAG_FILE_MODE) != 0) ||
-        (ser_ctx != NULL && (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
+    return nmo_object_deserialize_is_file(chunk, context) ||
+           nmo_object_serialize_is_file(chunk, context);
 }
 
 /* =============================================================================

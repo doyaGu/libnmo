@@ -491,9 +491,7 @@ static nmo_status_t nmo_light_serialize_internal(
 
     NMO_RETURN_IF_ERROR(nmo_light_validate(state, type, context));
 
-    const nmo_serialize_context_t *ser_ctx = nmo_serialize_context_try(context);
-    const bool is_file = ((chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
-        (ser_ctx != NULL && (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
+    const bool is_file = nmo_object_serialize_is_file(chunk, context);
     const bool write_light = is_file ||
         (nmo_serialize_context_get_save_flags(context) &
          CK_STATESAVE_LIGHTONLY) != 0;

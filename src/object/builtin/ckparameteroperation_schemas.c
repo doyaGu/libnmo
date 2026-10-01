@@ -186,12 +186,7 @@ static nmo_status_t nmo_parameteroperation_deserialize_internal(
     decoded.has_in2 = 0;
     decoded.has_out = 0;
 
-    const nmo_deserialize_context_t *deserialize_context =
-        nmo_deserialize_context_get(context);
-    const int is_file =
-        ((chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
-        (deserialize_context != NULL &&
-         (deserialize_context->flags & NMO_DESER_FLAG_FILE_MODE) != 0);
+    const bool is_file = nmo_object_deserialize_is_file(chunk, context);
 
     if (is_file) {
         size_t section_dwords = 0;

@@ -63,18 +63,6 @@ static const nmo_type_field_t nmo_group_fields[] = {
     NMO_FIELD(nmo_group_state_t, has_group_data, CKPGUID_UINT8)
 };
 
-static int nmo_group_is_file_mode_ser(const nmo_chunk_t *chunk, void *context)
-{
-    const nmo_serialize_context_t *ser_ctx = nmo_serialize_context_try(context);
-    if (chunk && ((chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0)) {
-        return 1;
-    }
-    if (ser_ctx && ((ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0)) {
-        return 1;
-    }
-    return 0;
-}
-
 /* =============================================================================
  * CKGroup DESERIALIZATION
  * ============================================================================= */
@@ -239,7 +227,7 @@ static nmo_status_t nmo_group_serialize_internal(
     nmo_status_t result = nmo_beobject_serialize(&in_state->base, out_chunk, NULL, context);
     if (result != NMO_OK) return result;
 
-    const bool is_file = nmo_group_is_file_mode_ser(out_chunk, context);
+    const bool is_file = nmo_object_serialize_is_file(out_chunk, context);
     const uint32_t save_flags = nmo_serialize_context_get_save_flags(context);
     if (!is_file && save_flags == 0) {
         NMO_RETURN_OK();

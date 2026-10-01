@@ -816,7 +816,6 @@ static nmo_status_t nmo_3dentity_serialize_internal(
     (void)type;
     const nmo_3dentity_state_t *in_state = (const nmo_3dentity_state_t *)instance;
     nmo_arena_t *arena = nmo_serialize_context_get_arena(context);
-    const nmo_serialize_context_t *ser_ctx = nmo_serialize_context_try(context);
 
     if (!in_state || !out_chunk || !arena) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to CK3dEntity serialize");
@@ -841,8 +840,7 @@ static nmo_status_t nmo_3dentity_serialize_internal(
         return result;
     }
 
-    const bool is_file = ((out_chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
-        (ser_ctx != NULL && (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
+    const bool is_file = nmo_object_serialize_is_file(out_chunk, context);
     if (!is_file) {
         const uint32_t save_flags = nmo_serialize_context_get_save_flags(context);
         if ((save_flags & CK_STATESAVE_3DENTITYONLY) == 0) {
