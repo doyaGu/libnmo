@@ -385,6 +385,14 @@ the tests build each layout dword by dword.
   commands used to change the layout first and open a separate edit only to mark it, so a failed or dry-run
   command could not be undone.
 
+### Changed - workspace_edit.c is split by edit family
+- `src/runtime/workspace_edit.c` (5,479 lines) became `workspace_edit.c` (transactions, snapshots,
+  journal actions) and one file per family: `_object`, `_param`, `_manager`, `_scene`, `_asset`, `_entity`,
+  `_animation`, `_sound`, `_behavior`, plus `_common` and `workspace_edit_internal.h` for what several
+  families share. The largest file is 1,310 lines. Nothing else changed: the exported symbols of `libnmo.a`
+  are the same, the helpers that stopped being file local gained a `workspace_edit_` prefix, and the whole
+  suite passes in the normal, pattern-init and ASan builds.
+
 ### Changed - Chunks keep no copy of the bytes they were parsed from
 - `nmo_chunk_t` lost `raw_data` and `raw_size`, and `nmo_data_chunk_slice_t` lost `borrowed`. A parsed chunk
   used to keep its source buffer and the data section writer emitted those bytes instead of the chunk, so a
