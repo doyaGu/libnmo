@@ -735,6 +735,7 @@ static nmo_status_t nmo_midisound_deserialize_internal(
                 chunk, section_end - nmo_chunk_get_position(chunk)));
         }
         out_state->has_midi_file_name = 1;
+        out_state->midi_file_name_from_file = 1;
         out_state->midi_file_name = midi_file_name;
     } else if (seek_result != NMO_ERR_NOT_FOUND) return seek_result;
 
@@ -782,7 +783,13 @@ static nmo_status_t nmo_midisound_serialize_internal(
         return result;
     }
 
-    /* CKMidiSound::Save does not emit a MIDISOUNDFILE identifier */
+    /* CKMidiSound::Save does not emit a MIDISOUNDFILE identifier; one that a
+       file held stays, since Load reads it. */
+    if (in_state->has_midi_file_name && in_state->midi_file_name_from_file) {
+        result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_MIDISOUNDFILE);
+        if (result != NMO_OK) return result;
+        return nmo_chunk_write_string(out_chunk, in_state->midi_file_name);
+    }
     NMO_RETURN_OK();
 }
 

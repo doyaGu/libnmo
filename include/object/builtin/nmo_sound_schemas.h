@@ -82,6 +82,10 @@ typedef struct nmo_midisound_state {
     nmo_sound_state_t base;
     uint8_t has_midi_file_name;
     char *midi_file_name;
+    /** The name came from a MIDISOUNDFILE section of a file. The engine's Save
+     *  never writes one, so a name set by authoring is not written; one read
+     *  from a file is, as Load reads it in place of the name of the sound. */
+    uint8_t midi_file_name_from_file;
 } nmo_midisound_state_t;
 
 /* Serialization entry points */
