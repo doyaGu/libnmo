@@ -193,20 +193,6 @@ static inline uint32_t nmo_pack_words_to_dword(uint16_t lo, uint16_t hi) {
  * IDENTIFIER HELPERS
  * ============================================================================= */
 
-static nmo_status_t nmo_mesh_peek_dword(nmo_chunk_t *chunk, uint32_t *out_value) {
-    if (!chunk || !out_value) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_mesh_peek_dword");
-    }
-
-    NMO_CHUNK_CHECK_BOUNDS_MSG(chunk, 1, "Cannot peek beyond data");
-
-    nmo_chunk_parser_state_t *state = (nmo_chunk_parser_state_t *)chunk->parser_state;
-    uint32_t *data = NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
-    *out_value = data[state->current_pos];
-
-    NMO_RETURN_OK();
-}
-
 /* RCKMesh::Load ignores what follows the fields it reads in a section. */
 static nmo_status_t nmo_mesh_require_identifier_end(nmo_chunk_t *chunk) {
     (void)chunk;
@@ -798,13 +784,11 @@ static nmo_status_t nmo_mesh_deserialize_weights(
                          "CKMesh %s weight payload is truncated", layout);
     }
 
-    bool buffered = false;
-    if (allocation_size <= UINT32_MAX && remaining_dwords >= 2u) {
-        uint32_t first_dword = 0u;
-        result = nmo_mesh_peek_dword(chunk, &first_dword);
-        if (result != NMO_OK) return result;
-        buffered = first_dword == (uint32_t)allocation_size;
-    }
+    /* RCKMesh::Load tells the two forms apart by the section size alone: a
+       section of more than 8 bytes (the count, then more than one DWORD) holds
+       a size-prefixed buffer, otherwise the count is followed by one float
+       that every vertex takes. */
+    const bool buffered = remaining_dwords >= 2u;
     if (buffered &&
         (size_t)weight_count > remaining_dwords - 1u) {
         NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
@@ -822,17 +806,28 @@ static nmo_status_t nmo_mesh_deserialize_weights(
         uint32_t buffer_size = 0u;
         result = nmo_chunk_read_dword(chunk, &buffer_size);
         if (result != NMO_OK) return result;
-        if (buffer_size != (uint32_t)allocation_size) {
-            NMO_RETURN_ERROR(NMO_ERR_INVALID_FORMAT, NMO_SEVERITY_ERROR,
-                             "CKMesh %s weight buffer size is invalid",
-                             layout);
-        }
-        result = nmo_mesh_read_raw_bytes(chunk, weights, allocation_size);
-        if (result != NMO_OK) return result;
-        if (remaining_dwords >= (size_t)weight_count + 2u) {
-            float tail_weight = 0.0f;
-            result = nmo_chunk_read_float(chunk, &tail_weight);
+        const size_t available_bytes =
+            (remaining_dwords - 1u) * sizeof(uint32_t);
+        if (buffer_size == (uint32_t)allocation_size) {
+            result = nmo_mesh_read_raw_bytes(chunk, weights, allocation_size);
             if (result != NMO_OK) return result;
+            if (remaining_dwords >= (size_t)weight_count + 2u) {
+                float tail_weight = 0.0f;
+                result = nmo_chunk_read_float(chunk, &tail_weight);
+                if (result != NMO_OK) return result;
+            }
+        } else {
+            /* The engine copies the size the buffer states into the weights
+               whatever the count is; keep what fits and leave the rest
+               zero rather than refusing the mesh. */
+            size_t copy_bytes = buffer_size > (uint32_t)INT32_MAX ? 0u : buffer_size;
+            if (copy_bytes > allocation_size) copy_bytes = allocation_size;
+            if (copy_bytes > available_bytes) copy_bytes = available_bytes;
+            memset(weights, 0, allocation_size);
+            if (copy_bytes > 0u) {
+                result = nmo_mesh_read_raw_bytes(chunk, weights, copy_bytes);
+                if (result != NMO_OK) return result;
+            }
         }
     } else {
         float uniform_weight = 0.0f;
