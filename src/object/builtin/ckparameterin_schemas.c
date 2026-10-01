@@ -556,16 +556,7 @@ static nmo_status_t nmo_parameterin_pre_delete(
  * Vtable + registration
  * ============================================================================ */
 
-static nmo_status_t nmo_parameterin_validate(
-    const void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)type;
-    if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
-    const nmo_parameterin_state_t *state = instance;
-    return nmo_object_vtable.validate(&state->base, NULL, context);
-}
+NMO_DEFINE_OBJECT_VALIDATE_BASE(nmo_parameterin, nmo_parameterin_state_t, base, nmo_object_vtable)
 
 nmo_type_vtable_t nmo_parameterin_vtable = {
     .prepare_dependencies = nmo_parameterin_prepare_dependencies,

@@ -122,16 +122,7 @@ nmo_status_t nmo_renderobject_serialize(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t nmo_renderobject_validate(
-    const void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)type;
-    if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
-    const nmo_renderobject_state_t *state = instance;
-    return nmo_beobject_vtable.validate(&state->base, NULL, context);
-}
+NMO_DEFINE_OBJECT_VALIDATE_BASE(nmo_renderobject, nmo_renderobject_state_t, base, nmo_beobject_vtable)
 
 nmo_status_t nmo_renderobject_prepare_dependencies(
     void *instance,

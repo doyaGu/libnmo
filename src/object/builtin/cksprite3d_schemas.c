@@ -258,16 +258,7 @@ nmo_status_t nmo_sprite3d_remap_dependencies(
  * Vtable + registration
  * ============================================================================ */
 
-static nmo_status_t nmo_sprite3d_validate(
-    const void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)type;
-    if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
-    const nmo_sprite3d_state_t *state = instance;
-    return nmo_3dentity_vtable.validate(&state->base, NULL, context);
-}
+NMO_DEFINE_OBJECT_VALIDATE_BASE(nmo_sprite3d, nmo_sprite3d_state_t, base, nmo_3dentity_vtable)
 
 nmo_type_vtable_t nmo_sprite3d_vtable = {
     .prepare_dependencies = nmo_sprite3d_prepare_dependencies,

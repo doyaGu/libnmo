@@ -306,6 +306,22 @@ NMO_API nmo_status_t nmo_object_prepare_dependencies_default(
             _prefix##_serialize_staged_body); \
     }
 
+/*
+ * Static <prefix>_validate of a class with nothing to check of its own: it only
+ * validates the base state embedded as _base_member with the base class vtable.
+ */
+#define NMO_DEFINE_OBJECT_VALIDATE_BASE(_prefix, _state_t, _base_member, _base_vtable) \
+    static nmo_status_t _prefix##_validate( \
+        const void *instance, \
+        const nmo_type_descriptor_t *type, \
+        void *context) \
+    { \
+        (void)type; \
+        if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT; \
+        const _state_t *state = (const _state_t *)instance; \
+        return _base_vtable.validate(&state->_base_member, NULL, context); \
+    }
+
 #define NMO_DEFINE_OBJECT_PREPARE_VIA_VALIDATE(_prefix) \
     nmo_status_t _prefix##_prepare_dependencies( \
         void *instance, \

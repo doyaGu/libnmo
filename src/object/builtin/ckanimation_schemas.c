@@ -677,13 +677,7 @@ nmo_status_t nmo_animation_remap_dependencies(
     return nmo_animation_validate(state, NULL, NULL);
 }
 
-nmo_status_t nmo_keyedanimation_prepare_dependencies(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    return nmo_keyedanimation_validate(instance, type, context);
-}
+NMO_DEFINE_OBJECT_PREPARE_VIA_VALIDATE(nmo_keyedanimation)
 
 nmo_status_t nmo_keyedanimation_remap_dependencies(
     void *instance,
@@ -713,13 +707,7 @@ nmo_status_t nmo_keyedanimation_remap_dependencies(
     return nmo_keyedanimation_validate(state, NULL, NULL);
 }
 
-nmo_status_t nmo_objectanimation_prepare_dependencies(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    return nmo_objectanimation_validate(instance, type, context);
-}
+NMO_DEFINE_OBJECT_PREPARE_VIA_VALIDATE(nmo_objectanimation)
 
 nmo_status_t nmo_objectanimation_remap_dependencies(
     void *instance,
@@ -755,30 +743,6 @@ static nmo_status_t nmo_animation_pre_delete(
     nmo_animation_state_t *state = instance;
     state->legacy_body_part_count = 0;
     NMO_RETURN_OK();
-}
-
-static nmo_status_t nmo_keyedanimation_pre_delete(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)type;
-    (void)context;
-    if (instance == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_keyedanimation_pre_delete");
-    }
-    NMO_RETURN_OK();
-}
-
-static void nmo_keyedanimation_post_delete(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)instance;
-    (void)type;
-    (void)context;
 }
 
 /* An animation that shares the keys of a deleted one keeps them: the engine
@@ -866,16 +830,6 @@ static nmo_status_t nmo_objectanimation_pre_delete(
             (nmo_object_repository_t *)context);
     }
     NMO_RETURN_OK();
-}
-
-static void nmo_objectanimation_post_delete(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)instance;
-    (void)type;
-    (void)context;
 }
 
 /* ============================================================================
@@ -1325,8 +1279,8 @@ nmo_type_vtable_t nmo_animation_vtable = {
 nmo_type_vtable_t nmo_keyedanimation_vtable = {
     .prepare_dependencies = nmo_keyedanimation_prepare_dependencies,
     .remap_dependencies = nmo_keyedanimation_remap_dependencies,
-    .pre_delete = nmo_keyedanimation_pre_delete,
-    .post_delete = nmo_keyedanimation_post_delete,
+    .pre_delete = nmo_object_pre_delete_checked,
+    .post_delete = nmo_object_post_delete_noop,
     NMO_OBJECT_VTABLE_EX(
         nmo_keyedanimation_create,
         nmo_keyedanimation_destroy,
@@ -1343,7 +1297,7 @@ nmo_type_vtable_t nmo_objectanimation_vtable = {
     .prepare_dependencies = nmo_objectanimation_prepare_dependencies,
     .remap_dependencies = nmo_objectanimation_remap_dependencies,
     .pre_delete = nmo_objectanimation_pre_delete,
-    .post_delete = nmo_objectanimation_post_delete,
+    .post_delete = nmo_object_post_delete_noop,
     NMO_OBJECT_VTABLE(
         nmo_objectanimation_create,
         nmo_objectanimation_destroy,

@@ -402,16 +402,7 @@ static nmo_status_t nmo_bodypart_copy(
     return NMO_OK;
 }
 
-static nmo_status_t nmo_bodypart_validate(
-    const void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)type;
-    if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
-    const nmo_bodypart_state_t *state = instance;
-    return nmo_3dobject_vtable.validate(&state->base, NULL, context);
-}
+NMO_DEFINE_OBJECT_VALIDATE_BASE(nmo_bodypart, nmo_bodypart_state_t, base, nmo_3dobject_vtable)
 
 NMO_DEFINE_OBJECT_PREPARE_VIA_VALIDATE(nmo_character)
 
@@ -438,13 +429,7 @@ nmo_status_t nmo_character_remap_dependencies(
     return nmo_character_validate(state, NULL, NULL);
 }
 
-nmo_status_t nmo_bodypart_prepare_dependencies(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    return nmo_bodypart_validate(instance, type, context);
-}
+NMO_DEFINE_OBJECT_PREPARE_VIA_VALIDATE(nmo_bodypart)
 
 nmo_status_t nmo_bodypart_remap_dependencies(
     void *instance,
@@ -537,30 +522,6 @@ static nmo_status_t nmo_character_enumerate_refs(
         }
     }
     return NMO_OK;
-}
-
-static nmo_status_t nmo_bodypart_pre_delete(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)type;
-    (void)context;
-    if (instance == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_bodypart_pre_delete");
-    }
-    NMO_RETURN_OK();
-}
-
-static void nmo_bodypart_post_delete(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)instance;
-    (void)type;
-    (void)context;
 }
 
 
@@ -682,8 +643,8 @@ nmo_type_vtable_t nmo_character_vtable = {
 nmo_type_vtable_t nmo_bodypart_vtable = {
     .prepare_dependencies = nmo_bodypart_prepare_dependencies,
     .remap_dependencies = nmo_bodypart_remap_dependencies,
-    .pre_delete = nmo_bodypart_pre_delete,
-    .post_delete = nmo_bodypart_post_delete,
+    .pre_delete = nmo_object_pre_delete_checked,
+    .post_delete = nmo_object_post_delete_noop,
     NMO_OBJECT_VTABLE(
         nmo_bodypart_create,
         nmo_bodypart_destroy,

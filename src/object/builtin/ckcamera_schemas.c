@@ -430,16 +430,7 @@ nmo_status_t nmo_camera_remap_dependencies(
  * Vtable + registration
  * ============================================================================ */
 
-static nmo_status_t nmo_camera_validate(
-    const void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)type;
-    if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
-    const nmo_camera_state_t *state = instance;
-    return nmo_3dentity_vtable.validate(&state->entity, NULL, context);
-}
+NMO_DEFINE_OBJECT_VALIDATE_BASE(nmo_camera, nmo_camera_state_t, entity, nmo_3dentity_vtable)
 
 nmo_type_vtable_t nmo_camera_vtable = {
     .prepare_dependencies = nmo_camera_prepare_dependencies,

@@ -370,16 +370,7 @@ fail:
     return result;
 }
 
-static nmo_status_t nmo_curvepoint_validate(
-    const void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)type;
-    if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
-    const nmo_curvepoint_state_t *state = instance;
-    return nmo_3dentity_vtable.validate(&state->base, NULL, context);
-}
+NMO_DEFINE_OBJECT_VALIDATE_BASE(nmo_curvepoint, nmo_curvepoint_state_t, base, nmo_3dentity_vtable)
 
 static nmo_status_t nmo_curve_enumerate_refs(
     const void *instance,
@@ -447,13 +438,7 @@ nmo_status_t nmo_curve_remap_dependencies(
     return nmo_curve_validate(state, NULL, NULL);
 }
 
-nmo_status_t nmo_curvepoint_prepare_dependencies(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    return nmo_curvepoint_validate(instance, type, context);
-}
+NMO_DEFINE_OBJECT_PREPARE_VIA_VALIDATE(nmo_curvepoint)
 
 nmo_status_t nmo_curvepoint_remap_dependencies(
     void *instance,
@@ -473,30 +458,6 @@ nmo_status_t nmo_curvepoint_remap_dependencies(
 
     /* Preserve optional-section flags and unresolved curve reference. */
     return nmo_curvepoint_validate(state, NULL, NULL);
-}
-
-static nmo_status_t nmo_curvepoint_pre_delete(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)type;
-    (void)context;
-    if (instance == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_curvepoint_pre_delete");
-    }
-    NMO_RETURN_OK();
-}
-
-static void nmo_curvepoint_post_delete(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)instance;
-    (void)type;
-    (void)context;
 }
 
 static const nmo_object_serialize_pass_t nmo_curve_compare_pass = {
@@ -562,8 +523,8 @@ nmo_type_vtable_t nmo_curve_vtable = {
 nmo_type_vtable_t nmo_curvepoint_vtable = {
     .prepare_dependencies = nmo_curvepoint_prepare_dependencies,
     .remap_dependencies = nmo_curvepoint_remap_dependencies,
-    .pre_delete = nmo_curvepoint_pre_delete,
-    .post_delete = nmo_curvepoint_post_delete,
+    .pre_delete = nmo_object_pre_delete_checked,
+    .post_delete = nmo_object_post_delete_noop,
     NMO_OBJECT_VTABLE(
         nmo_curvepoint_create,
         nmo_curvepoint_destroy,

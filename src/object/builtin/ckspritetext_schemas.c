@@ -469,16 +469,7 @@ NMO_DEFINE_OBJECT_STAGED_SERIALIZE(nmo_spritetext)
  * Vtable + registration
  * ============================================================================ */
 
-static nmo_status_t nmo_spritetext_validate(
-    const void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)type;
-    if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
-    const nmo_spritetext_state_t *state = instance;
-    return nmo_sprite_vtable.validate(&state->base, NULL, context);
-}
+NMO_DEFINE_OBJECT_VALIDATE_BASE(nmo_spritetext, nmo_spritetext_state_t, base, nmo_sprite_vtable)
 
 nmo_type_vtable_t nmo_spritetext_vtable = {
     .prepare_dependencies = nmo_spritetext_prepare_dependencies,

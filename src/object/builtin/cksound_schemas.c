@@ -837,16 +837,7 @@ static nmo_status_t nmo_sound_copy(
     return NMO_OK;
 }
 
-static nmo_status_t nmo_sound_validate(
-    const void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)type;
-    if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
-    const nmo_sound_state_t *state = instance;
-    return nmo_beobject_vtable.validate(&state->base, NULL, context);
-}
+NMO_DEFINE_OBJECT_VALIDATE_BASE(nmo_sound, nmo_sound_state_t, base, nmo_beobject_vtable)
 
 NMO_DEFINE_OBJECT_PREPARE_VIA_VALIDATE(nmo_sound)
 
@@ -911,24 +902,9 @@ static nmo_status_t nmo_wavesound_copy(
     return NMO_OK;
 }
 
-static nmo_status_t nmo_wavesound_validate(
-    const void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)type;
-    if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
-    const nmo_wavesound_state_t *state = instance;
-    return nmo_sound_vtable.validate(&state->base, NULL, context);
-}
+NMO_DEFINE_OBJECT_VALIDATE_BASE(nmo_wavesound, nmo_wavesound_state_t, base, nmo_sound_vtable)
 
-nmo_status_t nmo_wavesound_prepare_dependencies(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    return nmo_wavesound_validate(instance, type, context);
-}
+NMO_DEFINE_OBJECT_PREPARE_VIA_VALIDATE(nmo_wavesound)
 
 nmo_status_t nmo_wavesound_remap_dependencies(
     void *instance,
@@ -993,24 +969,9 @@ static nmo_status_t nmo_midisound_copy(
     return NMO_OK;
 }
 
-static nmo_status_t nmo_midisound_validate(
-    const void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)type;
-    if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
-    const nmo_midisound_state_t *state = instance;
-    return nmo_sound_vtable.validate(&state->base, NULL, context);
-}
+NMO_DEFINE_OBJECT_VALIDATE_BASE(nmo_midisound, nmo_midisound_state_t, base, nmo_sound_vtable)
 
-nmo_status_t nmo_midisound_prepare_dependencies(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    return nmo_midisound_validate(instance, type, context);
-}
+NMO_DEFINE_OBJECT_PREPARE_VIA_VALIDATE(nmo_midisound)
 
 nmo_status_t nmo_midisound_remap_dependencies(
     void *instance,
@@ -1030,54 +991,6 @@ nmo_status_t nmo_midisound_remap_dependencies(
     NMO_RETURN_IF_ERROR(nmo_sound_remap_dependencies(&state->base, NULL, context));
 
     return nmo_midisound_validate(state, NULL, NULL);
-}
-
-static nmo_status_t nmo_wavesound_pre_delete(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)type;
-    (void)context;
-    if (!instance) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_wavesound_pre_delete");
-    }
-    NMO_RETURN_OK();
-}
-
-static void nmo_wavesound_post_delete(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)instance;
-    (void)type;
-    (void)context;
-}
-
-static nmo_status_t nmo_midisound_pre_delete(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)type;
-    (void)context;
-    if (!instance) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_midisound_pre_delete");
-    }
-    NMO_RETURN_OK();
-}
-
-static void nmo_midisound_post_delete(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)instance;
-    (void)type;
-    (void)context;
 }
 
 /* ============================================================================
@@ -1259,8 +1172,8 @@ nmo_type_vtable_t nmo_sound_vtable = {
 nmo_type_vtable_t nmo_wavesound_vtable = {
     .prepare_dependencies = nmo_wavesound_prepare_dependencies,
     .remap_dependencies = nmo_wavesound_remap_dependencies,
-    .pre_delete = nmo_wavesound_pre_delete,
-    .post_delete = nmo_wavesound_post_delete,
+    .pre_delete = nmo_object_pre_delete_checked,
+    .post_delete = nmo_object_post_delete_noop,
     NMO_OBJECT_VTABLE(
         nmo_wavesound_create,
         nmo_wavesound_destroy,
@@ -1275,8 +1188,8 @@ nmo_type_vtable_t nmo_wavesound_vtable = {
 nmo_type_vtable_t nmo_midisound_vtable = {
     .prepare_dependencies = nmo_midisound_prepare_dependencies,
     .remap_dependencies = nmo_midisound_remap_dependencies,
-    .pre_delete = nmo_midisound_pre_delete,
-    .post_delete = nmo_midisound_post_delete,
+    .pre_delete = nmo_object_pre_delete_checked,
+    .post_delete = nmo_object_post_delete_noop,
     NMO_OBJECT_VTABLE(
         nmo_midisound_create,
         nmo_midisound_destroy,

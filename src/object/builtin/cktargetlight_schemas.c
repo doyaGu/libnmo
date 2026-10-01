@@ -126,16 +126,7 @@ nmo_status_t nmo_targetlight_remap_dependencies(
     return nmo_object_default_validate(state, NULL, NULL);
 }
 
-static nmo_status_t nmo_targetlight_validate(
-    const void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)type;
-    if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
-    const nmo_targetlight_state_t *state = instance;
-    return nmo_light_vtable.validate(&state->base, NULL, context);
-}
+NMO_DEFINE_OBJECT_VALIDATE_BASE(nmo_targetlight, nmo_targetlight_state_t, base, nmo_light_vtable)
 
 nmo_type_vtable_t nmo_targetlight_vtable = {
     .prepare_dependencies = nmo_targetlight_prepare_dependencies,

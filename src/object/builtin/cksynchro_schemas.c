@@ -586,54 +586,6 @@ static nmo_status_t nmo_synchro_pre_delete(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t nmo_state_pre_delete(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)type;
-    (void)context;
-    if (!instance) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_state_pre_delete");
-    }
-    NMO_RETURN_OK();
-}
-
-static void nmo_state_post_delete(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)instance;
-    (void)type;
-    (void)context;
-}
-
-static nmo_status_t nmo_criticalsection_pre_delete(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)type;
-    (void)context;
-    if (!instance) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
-                         "Invalid arguments to nmo_criticalsection_pre_delete");
-    }
-    NMO_RETURN_OK();
-}
-
-static void nmo_criticalsection_post_delete(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)instance;
-    (void)type;
-    (void)context;
-}
-
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
@@ -783,16 +735,7 @@ static nmo_status_t nmo_state_copy(
     return NMO_OK;
 }
 
-static nmo_status_t nmo_state_validate(
-    const void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)type;
-    if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
-    const nmo_state_state_t *state = instance;
-    return nmo_object_vtable.validate(&state->base, NULL, context);
-}
+NMO_DEFINE_OBJECT_VALIDATE_BASE(nmo_state, nmo_state_state_t, base, nmo_object_vtable)
 
 static bool nmo_state_equals(const void *a, const void *b)
 {
@@ -826,16 +769,7 @@ static nmo_status_t nmo_criticalsection_copy(
     return NMO_OK;
 }
 
-static nmo_status_t nmo_criticalsection_validate(
-    const void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)type;
-    if (instance == NULL) return NMO_ERR_INVALID_ARGUMENT;
-    const nmo_criticalsection_state_t *state = instance;
-    return nmo_object_vtable.validate(&state->base, NULL, context);
-}
+NMO_DEFINE_OBJECT_VALIDATE_BASE(nmo_criticalsection, nmo_criticalsection_state_t, base, nmo_object_vtable)
 
 static bool nmo_criticalsection_equals(const void *a, const void *b)
 {
@@ -879,8 +813,8 @@ nmo_type_vtable_t nmo_synchro_vtable = {
 nmo_type_vtable_t nmo_state_vtable = {
     .prepare_dependencies = nmo_state_prepare_dependencies,
     .remap_dependencies = nmo_state_remap_dependencies,
-    .pre_delete = nmo_state_pre_delete,
-    .post_delete = nmo_state_post_delete,
+    .pre_delete = nmo_object_pre_delete_checked,
+    .post_delete = nmo_object_post_delete_noop,
     NMO_OBJECT_VTABLE(
         nmo_state_create,
         nmo_state_destroy,
@@ -895,8 +829,8 @@ nmo_type_vtable_t nmo_state_vtable = {
 nmo_type_vtable_t nmo_criticalsection_vtable = {
     .prepare_dependencies = nmo_criticalsection_prepare_dependencies,
     .remap_dependencies = nmo_criticalsection_remap_dependencies,
-    .pre_delete = nmo_criticalsection_pre_delete,
-    .post_delete = nmo_criticalsection_post_delete,
+    .pre_delete = nmo_object_pre_delete_checked,
+    .post_delete = nmo_object_post_delete_noop,
     NMO_OBJECT_VTABLE(
         nmo_criticalsection_create,
         nmo_criticalsection_destroy,
