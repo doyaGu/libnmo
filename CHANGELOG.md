@@ -382,6 +382,17 @@ the tests build each layout dword by dword.
 - `test_corpus_chunk_roundtrip` also saves the corpus with the default options and requires every
   chunk to come back byte for byte, and deletes an object to check that the others keep their data.
   `test_fidelity_save` edits a material that carries an extra dword and checks the dword survives.
+- Three interface chunk tests did not clear their parse context, so the `is_script` and `is_known`
+  callbacks were read from the stack. The Linux CI build crashed on it; macOS happened to hand out
+  zeros. They clear the context now.
+- The corpus tests no longer link `m` by name (Windows has no such library); `nmo` already links it
+  where it exists.
+- The level scene probe allocates its scene state from the arena. GCC on MinGW reported a false
+  array-bounds error for the stack object.
+- CI has a `ubuntu-clang-pattern-init` job that builds with `-ftrivial-auto-var-init=pattern` and
+  runs the suite, so a struct used without being cleared fails on every platform. A local scan
+  with the same flag, heap scribbling and the clang static analyzer found no other case, and the
+  CLI output over the corpus is identical with and without the flag.
 
 ### Added - Phase 8: Round-Trip Framework
 - DOM comparison API (`nmo_comparison.h`): diff two loaded sessions at the object
