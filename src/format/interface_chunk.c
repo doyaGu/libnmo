@@ -69,6 +69,7 @@ static nmo_status_t parse_script_header(
     nmo_arena_t *arena,
     uint32_t version,
     bool use_sectioned,
+    const nmo_interface_parse_ctx_t *ctx,
     nmo_interface_script_header_t *out,
     uint32_t *format_flags);
 
@@ -294,14 +295,14 @@ static nmo_status_t nmo_interface_chunk_parse_impl(
             &found);
         NMO_RETURN_IF_ERROR(st);
     }
-    st = parse_script_header(chunk, arena, version, use_sectioned,
+    st = parse_script_header(chunk, arena, version, use_sectioned, ctx,
                              &out->script, &out->format_flags);
     NMO_RETURN_IF_ERROR(st);
 
-    /* Script body */
+    /* Script body (the body of a graph that is not a script has graph IO) */
     if (out->script.body.has_body) {
         st = parse_body(chunk, arena, version, ctx,
-                        out->script.behavior_id, 0, true,
+                        out->script.behavior_id, 0, !out->script.graph_root,
                         use_sectioned, &out->script.body);
         NMO_RETURN_IF_ERROR(st);
     }
@@ -449,6 +450,7 @@ static nmo_status_t parse_script_header(
     nmo_arena_t *arena,
     uint32_t version,
     bool use_sectioned,
+    const nmo_interface_parse_ctx_t *ctx,
     nmo_interface_script_header_t *out,
     uint32_t *format_flags)
 {
@@ -471,6 +473,26 @@ static nmo_status_t parse_script_header(
     NMO_RETURN_IF_ERROR(st);
     st = nmo_chunk_read_float(chunk, &out->v_pos);
     NMO_RETURN_IF_ERROR(st);
+
+    /* The root of a behavior that is not a script has the header of a
+       sub-behavior: sizes instead of the start position, no snapshot, no color. */
+    if (!use_sectioned && ctx != NULL && ctx->is_script != NULL &&
+        !ctx->is_script(out->behavior_id, ctx->user_data)) {
+        out->graph_root = true;
+        st = nmo_chunk_read_float(chunk, &out->h_size);
+        NMO_RETURN_IF_ERROR(st);
+        st = nmo_chunk_read_float(chunk, &out->v_size);
+        NMO_RETURN_IF_ERROR(st);
+        st = nmo_chunk_read_float(chunk, &out->h_expand_size);
+        NMO_RETURN_IF_ERROR(st);
+        st = nmo_chunk_read_float(chunk, &out->v_expand_size);
+        NMO_RETURN_IF_ERROR(st);
+        if (format_flags) {
+            *format_flags &= ~NMO_INTERFACE_FORMAT_COLOR_PRESENT;
+        }
+        out->body.has_body = !(out->flags & NMO_INTERFACE_FLAG_HEADER_ONLY);
+        return NMO_OK;
+    }
 
     /* Script-specific: h_start_pos, v_start_pos, v_size */
     st = nmo_chunk_read_float(chunk, &out->h_start_pos);
@@ -782,7 +804,21 @@ static nmo_status_t parse_body(
         is_building_block = ctx->is_building_block(behavior_id, ctx->user_data);
     }
 
-    if (!is_building_block) {
+    if (!is_building_block && ctx && ctx->is_known &&
+        !ctx->is_known(behavior_id, ctx->user_data)) {
+        /* A behavior the file no longer has: take its parameters if there are
+           any that the rest of the chunk can hold. */
+        nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
+        const size_t saved = state ? state->current_pos : 0;
+        out->has_params = true;
+        st = parse_parameters(chunk, arena, version, &out->params);
+        if (st != NMO_OK) {
+            if (state) state->current_pos = saved;
+            out->has_params = false;
+            memset(&out->params, 0, sizeof(out->params));
+            is_building_block = true;
+        }
+    } else if (!is_building_block) {
         out->has_params = true;
         st = parse_parameters(chunk, arena, version, &out->params);
         NMO_RETURN_IF_ERROR(st);
@@ -1918,6 +1954,18 @@ static nmo_status_t write_script_header(
     st = nmo_chunk_write_float(chunk, hdr->v_pos);
     NMO_RETURN_IF_ERROR(st);
 
+    if (hdr->graph_root) {
+        st = nmo_chunk_write_float(chunk, hdr->h_size);
+        NMO_RETURN_IF_ERROR(st);
+        st = nmo_chunk_write_float(chunk, hdr->v_size);
+        NMO_RETURN_IF_ERROR(st);
+        st = nmo_chunk_write_float(chunk, hdr->h_expand_size);
+        NMO_RETURN_IF_ERROR(st);
+        st = nmo_chunk_write_float(chunk, hdr->v_expand_size);
+        NMO_RETURN_IF_ERROR(st);
+        return NMO_OK;
+    }
+
     st = nmo_chunk_write_float(chunk, hdr->h_start_pos);
     NMO_RETURN_IF_ERROR(st);
     st = nmo_chunk_write_float(chunk, hdr->v_start_pos);
@@ -2239,7 +2287,7 @@ static nmo_status_t nmo_interface_chunk_write_internal(
     /* Script body */
     if (data->script.body.has_body) {
         st = write_body(chunk, data, ctx, &data->script.body,
-                        data->script.behavior_id, 0, true);
+                        data->script.behavior_id, 0, !data->script.graph_root);
         NMO_RETURN_IF_ERROR(st);
     }
 

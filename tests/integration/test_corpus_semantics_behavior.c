@@ -159,7 +159,8 @@
     X(IF_OPS, "interface: operations belong to the graph") \
     X(IF_LOCALS, "interface: the local parameter count is the graph's") \
     X(IF_PARAM_LINK_ENDS, "interface: parameter link ends name existing parameter slots") \
-    X(IF_FINITE, "interface: positions, sizes and routing points are finite")
+    X(IF_FINITE, "interface: positions, sizes and routing points are finite") \
+    X(IF_ROOT_KIND, "interface: the root has a script header exactly when the behavior is a script")
 
 typedef enum inv_id {
 #define X(id, text) INV_##id,
@@ -1783,6 +1784,26 @@ static void check_interface(file_ctx_t *f, fact_t *fact)
     }
     const nmo_interface_data_t *data = state->interface_data;
     const int runtime_ids = state->interface_ids_are_runtime;
+
+    /* The editor writes a script header for a script and the header of a sub-behavior for a
+       graph that is not one (the chunk of a script is rewritten whenever it changes). */
+    CHECK(f, INV_IF_ROOT_KIND, data->script.graph_root == ((state->flags & CKBEHAVIOR_SCRIPT) == 0u),
+          fact->object, "root header kind against the behavior's script flag");
+    if (data->script.graph_root) {
+        /* The chunk of a graph below a script is not kept in step with the graph (the editor
+           only refreshes the script's), so only its numbers can be checked. */
+        int graph_finite = isfinite(data->script.h_pos) && isfinite(data->script.v_pos) &&
+                           isfinite(data->script.h_size) && isfinite(data->script.v_size) &&
+                           isfinite(data->script.h_expand_size) &&
+                           isfinite(data->script.v_expand_size);
+        for (size_t k = 0; k < data->sub_count; k++) {
+            const nmo_interface_behavior_t *sub = &data->subs[k];
+            graph_finite &= isfinite(sub->h_pos) && isfinite(sub->v_pos) &&
+                            isfinite(sub->h_size) && isfinite(sub->v_size);
+        }
+        CHECK(f, INV_IF_FINITE, graph_finite, fact->object, "non-finite position or size");
+        return;
+    }
 
     /* The sub-behavior entries are all the behaviors below the graph, each once. */
     int subs_ok = data->sub_count == count_descendants(f, fact, 0);

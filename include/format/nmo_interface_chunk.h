@@ -227,6 +227,13 @@ typedef struct nmo_interface_script_header {
     float h_pos, v_pos;                     /* behavior rect position */
     float h_start_pos, v_start_pos;         /* script start position */
     float v_size;
+    /* The root of the chunk is a behavior that is not a script: its header is
+     * the one of a sub-behavior (h_pos, v_pos, h_size, v_size, expand sizes);
+     * h_start_pos, v_start_pos, the snapshot and the color do not exist. */
+    bool graph_root;
+    float h_size;
+    float h_expand_size;
+    float v_expand_size;
     nmo_image_desc_t snapshot_desc;         /* decoded bitmap descriptor */
     void *snapshot_data;                    /* decoded pixels, NULL for empty */
     size_t snapshot_size;                   /* byte size of snapshot_data */
@@ -310,6 +317,17 @@ typedef struct nmo_interface_data {
  */
 typedef struct nmo_interface_parse_ctx {
     bool (*is_building_block)(nmo_object_id_t id, void *user_data);
+    /* Optional. Whether the behavior is a script (CKBEHAVIOR_SCRIPT). The root
+     * of the chunk of a behavior that is not a script is written with the
+     * header of a sub-behavior (six floats, no start position or snapshot)
+     * and carries graph input/output tables. Without this callback the root
+     * is taken for a script. */
+    bool (*is_script)(nmo_object_id_t id, void *user_data);
+    /* Optional. Whether the id names a behavior of the file. A sub-behavior of
+     * an id that does not (the file still lists a behavior that is gone) has
+     * unknown parameters: they are read when the chunk has them and left when
+     * it does not. */
+    bool (*is_known)(nmo_object_id_t id, void *user_data);
     void *user_data;
     /* Layout (inline vs sectioned) is auto-detected from the identifier
      * chain — no caller flag needed. */

@@ -2113,6 +2113,43 @@ typedef struct nmo_interface_lookup_ctx {
     bool prefer_runtime_ids;
 } nmo_interface_lookup_ctx_t;
 
+static bool is_known_cb(nmo_object_id_t id, void *user_data) {
+    if (id == 0) return false;
+    nmo_interface_lookup_ctx_t *lookup =
+        (nmo_interface_lookup_ctx_t *)user_data;
+    if (!lookup || !lookup->repo) return true;
+    nmo_object_t *obj = lookup->prefer_runtime_ids
+        ? nmo_object_repository_find_by_id(lookup->repo, id)
+        : nmo_object_repository_find_by_file_id(lookup->repo, id);
+    if (!obj) {
+        obj = lookup->prefer_runtime_ids
+            ? nmo_object_repository_find_by_file_id(lookup->repo, id)
+            : nmo_object_repository_find_by_id(lookup->repo, id);
+    }
+    return obj != NULL && obj->class_id == NMO_CID_BEHAVIOR;
+}
+
+static bool is_script_cb(nmo_object_id_t id, void *user_data) {
+    if (id == 0) return true;
+    nmo_interface_lookup_ctx_t *lookup =
+        (nmo_interface_lookup_ctx_t *)user_data;
+    if (!lookup || !lookup->repo) return true;
+    nmo_object_repository_t *repo = lookup->repo;
+    nmo_object_t *obj = NULL;
+    if (lookup->prefer_runtime_ids) {
+        obj = nmo_object_repository_find_by_id(repo, id);
+        if (!obj) obj = nmo_object_repository_find_by_file_id(repo, id);
+    } else {
+        obj = nmo_object_repository_find_by_file_id(repo, id);
+        if (!obj) obj = nmo_object_repository_find_by_id(repo, id);
+    }
+    if (!obj || obj->class_id != NMO_CID_BEHAVIOR) return true;
+    const nmo_behavior_state_t *state =
+        (const nmo_behavior_state_t *)nmo_object_get_state(obj);
+    if (!state) return true;
+    return (state->flags & CKBEHAVIOR_SCRIPT) != 0;
+}
+
 static bool is_building_block_cb(nmo_object_id_t id, void *user_data) {
     if (id == 0) return false;
     nmo_interface_lookup_ctx_t *lookup =
@@ -2204,6 +2241,8 @@ nmo_status_t nmo_behavior_parse_all_interfaces_ex(
     nmo_interface_parse_ctx_t ctx;
     memset(&ctx, 0, sizeof(ctx));
     ctx.is_building_block = is_building_block_cb;
+    ctx.is_script = is_script_cb;
+    ctx.is_known = is_known_cb;
     ctx.user_data = &lookup_ctx;
     /* Layout (inline vs sectioned) is auto-detected by the parser. */
 

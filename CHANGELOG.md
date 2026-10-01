@@ -343,6 +343,12 @@ the tests build each layout dword by dword.
   pixels are unchanged; encoding the pixels again gave a different BMP header, so every parsed
   interface with a snapshot differed from its chunk. All 2066 parsed interfaces of the corpus now
   write back equivalent to their chunk (`test_corpus_chunk_roundtrip`).
+- The interface chunk of a behavior that is not a script (a graph below a script) is parsed:
+  its root has the header of a sub-behavior (sizes instead of the start position, no snapshot or
+  color) and carries graph input/output tables, and a sub-behavior whose id the file no longer has
+  may lack its parameter section. All 183 such chunks of the corpus parse and write back
+  equivalent (they used to be kept raw), and `nmo_interface_parse_ctx_t` gained `is_script` and
+  `is_known` callbacks for it.
 - Enum and flags types that the library registers itself now derive from Integer as in the
   engine's type table (the table was skipped for types that already existed), so operation
   signature matching sees an enum pin as an Integer.

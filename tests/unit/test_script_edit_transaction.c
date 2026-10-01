@@ -1094,6 +1094,24 @@ TEST(script_edit_transaction,
     session = nmo_session_load(ctx, NMO_TEST_DATA_FILE("Ballance/MenuLevel.nmo"));
     ASSERT_NOT_NULL(session);
 
+    /* The interface of a graph that is not a script used to fail to parse in this file;
+     * they all parse now, so cut one short to have a diagnostic from before the edit. */
+    nmo_object_repository_t *repository = nmo_session_get_repository(session);
+    int cut = 0;
+    for (size_t i = 0; i < nmo_object_repository_get_count(repository) && !cut; i++) {
+        nmo_object_t *candidate = nmo_object_repository_get_by_index(repository, i);
+        nmo_behavior_state_t *candidate_state =
+            candidate != NULL && candidate->class_id == NMO_CID_BEHAVIOR
+                ? (nmo_behavior_state_t *)nmo_object_get_state(candidate) : NULL;
+        if (candidate_state != NULL && candidate_state->interface_chunk != NULL &&
+            (candidate_state->flags & CKBEHAVIOR_BUILDINGBLOCK) == 0u &&
+            candidate_state->interface_chunk->data.count > 40u) {
+            candidate_state->interface_chunk->data.count = 20u;
+            cut = 1;
+        }
+    }
+    ASSERT_TRUE(cut);
+
     ASSERT_EQ(NMO_OK, nmo_session_ensure_behavior_acceleration(session));
     nmo_session_get_behavior_interface_diagnostics(session, &diag);
     ASSERT_TRUE(diag.attempted);
