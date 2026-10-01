@@ -23,6 +23,7 @@ nmo_id_remap_t *nmo_id_remap_create(nmo_arena_t *arena) {
     remap->arena = arena;
     remap->lookup = NULL;
     remap->lookup_capacity = 0;
+    remap->needs_scan = 0;
 
     return remap;
 }
@@ -74,8 +75,11 @@ nmo_status_t nmo_id_remap_add(nmo_id_remap_t *remap, nmo_object_id_t old_id, nmo
             remap->lookup_capacity = new_cap;
         }
     }
-    if (remap->lookup != NULL && slot < remap->lookup_capacity) {
+    if (remap->lookup != NULL && slot < remap->lookup_capacity && new_id + 1 != 0) {
         remap->lookup[slot] = new_id + 1;
+    } else {
+        /* A target of UINT32_MAX encodes as zero, or the table could not be grown. */
+        remap->needs_scan = 1;
     }
 
     NMO_RETURN_OK();
@@ -98,7 +102,10 @@ nmo_status_t nmo_id_remap_lookup_id(const nmo_id_remap_t *remap, nmo_object_id_t
          * direct-table transform. Fall back to the authoritative entries. */
     }
 
-    /* Fallback: linear scan if lookup table not available */
+    /* A miss in the direct table is final unless some entry is not in it. */
+    if (!remap->needs_scan) {
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_WARNING, "ID not found in remap table");
+    }
     for (size_t i = 0; i < remap->count; i++) {
         if (remap->entries[i].old_id == old_id) {
             *out_new_id = remap->entries[i].new_id;
@@ -116,6 +123,7 @@ size_t nmo_id_remap_get_count(const nmo_id_remap_t *remap) {
 void nmo_id_remap_clear(nmo_id_remap_t *remap) {
     if (remap) {
         remap->count = 0;
+        remap->needs_scan = 0;
         if (remap->lookup != NULL && remap->lookup_capacity > 0) {
             memset(remap->lookup, 0, remap->lookup_capacity * sizeof(nmo_object_id_t));
         }
