@@ -70,7 +70,7 @@ _nmo() {
             mesh) echo 'list ls show s export x import imp' ;;
             animation) echo 'list ls show s keys k export x import imp' ;;
             type) echo 'list ls show s class-tree ct' ;;
-            validate) echo 'all a structure st references ref resources res orphans orp' ;;
+            validate) echo 'all a structure st references ref resources res orphans orp checksum crc' ;;
             convert) echo 'copy cp version v strip st merge m export x' ;;
             diff) echo 'summary s objects obj chunks ch full f' ;;
             extension) echo 'list ls load ld info i check ch' ;;
@@ -314,6 +314,8 @@ _nmo() {
             validate/res/) echo '--strict --fail-on-warning' ;;
             validate/orphans/) echo '-c --class --strict --summary -o --strip' ;;
             validate/orp/) echo '-c --class --strict --summary -o --strip' ;;
+            validate/checksum/) echo '--strict' ;;
+            validate/crc/) echo '--strict' ;;
             convert/copy/) echo '-o --output --compress --sequential-ids --no-managers --strip-resources --validate --fast-save' ;;
             convert/cp/) echo '-o --output --compress --sequential-ids --no-managers --strip-resources --validate --fast-save' ;;
             convert/version/) echo '' ;;

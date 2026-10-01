@@ -40,6 +40,11 @@ int nmo_cmd_validate_resources(int argc, char **argv, const nmo_cli_global_opts_
  */
 int nmo_cmd_validate_orphans(int argc, char **argv, const nmo_cli_global_opts_t *global);
 
+/**
+ * @brief nmo validate checksum - Compare the stored file checksum with the computed one
+ */
+int nmo_cmd_validate_checksum(int argc, char **argv, const nmo_cli_global_opts_t *global);
+
 #ifdef __cplusplus
 }
 #endif

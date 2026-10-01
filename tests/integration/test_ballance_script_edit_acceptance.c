@@ -260,7 +260,10 @@ TEST(ballance_acceptance, validate_base)
     cli_run_result_t result = run_cli_capture(args);
     ASSERT_NOT_NULL(result.output);
     ASSERT_EQ(0, result.exit_code);
-    ASSERT_STR_CONTAINS(result.output, "Result: VALID");
+    /* The only finding is the header checksum, wrong since the file was written
+     * (test_file_checksum); no object or reference is reported. */
+    ASSERT_STR_CONTAINS(result.output, "File checksum mismatch");
+    ASSERT_STR_CONTAINS(result.output, "Errors      : 1");
     free(result.output);
 }
 
@@ -444,7 +447,10 @@ TEST(ballance_acceptance, failed_patch_chain_does_not_write_output)
     cli_run_result_t validate = run_cli_capture(args);
     ASSERT_NOT_NULL(validate.output);
     ASSERT_EQ(0, validate.exit_code);
-    ASSERT_STR_CONTAINS(validate.output, "Result: VALID");
+    /* The source file stays as it was. Its header checksum has been wrong since it
+     * was written (test_file_checksum), which is the one error it reports. */
+    ASSERT_STR_CONTAINS(validate.output, "File checksum mismatch");
+    ASSERT_STR_CONTAINS(validate.output, "Errors      : 1");
     free(validate.output);
 
     remove(patch);

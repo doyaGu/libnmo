@@ -47,11 +47,12 @@ static int nmo_cmd_validate_structure_in_session(nmo_cmd_ctx_t *c, int argc, cha
 static int nmo_cmd_validate_references_in_session(nmo_cmd_ctx_t *c, int argc, char **argv);
 static int nmo_cmd_validate_resources_in_session(nmo_cmd_ctx_t *c, int argc, char **argv);
 static int nmo_cmd_validate_orphans_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv);
+static int nmo_cmd_validate_checksum_in_session(nmo_cmd_ctx_t *c, int argc, char **argv);
 
 int nmo_cmd_validate_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
 {
     if (!ctx || argc < 1 || !argv || !argv[0]) {
-        fprintf(stderr, "Usage: validate all|structure|references|resources|orphans ...\n");
+        fprintf(stderr, "Usage: validate all|structure|references|resources|orphans|checksum ...\n");
         return NMO_CLI_EXIT_ARG_ERROR;
     }
 
@@ -69,6 +70,9 @@ int nmo_cmd_validate_in_session(nmo_cmd_ctx_t *ctx, int argc, char **argv)
     }
     if (strcmp(argv[0], "orphans") == 0 || strcmp(argv[0], "orp") == 0) {
         return nmo_cmd_validate_orphans_in_session(ctx, argc, argv);
+    }
+    if (strcmp(argv[0], "checksum") == 0 || strcmp(argv[0], "crc") == 0) {
+        return nmo_cmd_validate_checksum_in_session(ctx, argc, argv);
     }
 
     fprintf(stderr, "Unsupported validate read action in session: %s\n", argv[0]);
@@ -362,6 +366,23 @@ static int validate_structure_object(size_t index, nmo_object_t *obj,
  * Core validation logic for a single file: appends the load diagnostics, the
  * per-object findings, and the summary to `rec`.
  */
+/* The header checksum differs from the one computed over the file; CK2 refuses such a file. */
+static nmo_cli_record_t *validate_checksum_issue_record(const nmo_file_info_t *info)
+{
+    nmo_cli_record_t *item = nmo_cli_record_new();
+    if (!item) {
+        return NULL;
+    }
+    nmo_cli_record_str(item, "severity", NULL, "error");
+    nmo_cli_record_str(item, "message", NULL, "file checksum mismatch");
+    nmo_cli_record_uint(item, "crc_stored", NULL, info->crc_stored);
+    nmo_cli_record_uint(item, "crc_computed", NULL, info->crc_computed);
+    nmo_cli_record_set_summary_fmt(
+        item, "File checksum mismatch: stored 0x%08" PRIX32 ", computed 0x%08" PRIX32,
+        info->crc_stored, info->crc_computed);
+    return item;
+}
+
 static int validate_all_run(nmo_cmd_ctx_t *cmd,
                             const nmo_cli_global_opts_t *global,
                             nmo_cli_record_t *rec)
@@ -377,6 +398,14 @@ static int validate_all_run(nmo_cmd_ctx_t *cmd,
             nmo_cli_record_array_add(
                 validate_data.lines,
                 validate_load_issue_record(&cmd->load_diagnostics->issues[i]));
+        }
+    }
+    if (cmd->document) {
+        const nmo_file_info_t info = nmo_document_get_file_info(cmd->document);
+        if (info.crc_status == NMO_CRC_MISMATCH) {
+            validate_data.error_count++;
+            nmo_cli_record_array_add(validate_data.lines,
+                                     validate_checksum_issue_record(&info));
         }
     }
     nmo_core_iter_result_t query_result = {0};
@@ -612,6 +641,61 @@ int nmo_cmd_validate_structure(int argc, char **argv, const nmo_cli_global_opts_
     rc = nmo_cmd_ctx_done(&c, rc);
     nmo_load_diagnostics_destroy(&diagnostics);
     return rc;
+}
+
+/* ============================================================================
+ * validate checksum
+ * ============================================================================ */
+
+static const char *validate_crc_status_name(nmo_crc_status_t status)
+{
+    switch (status) {
+    case NMO_CRC_OK: return "ok";
+    case NMO_CRC_MISMATCH: return "mismatch";
+    default: return "not_checked";
+    }
+}
+
+static int nmo_cmd_validate_checksum_in_session(nmo_cmd_ctx_t *c, int argc, char **argv)
+{
+    (void)argc;
+    (void)argv;
+    if (!c || !c->document) {
+        return NMO_CLI_EXIT_ARG_ERROR;
+    }
+    const nmo_file_info_t info = nmo_document_get_file_info(c->document);
+
+    nmo_cli_record_t *rec = nmo_cli_record_new();
+    if (!rec) {
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+    nmo_cli_record_title(rec, "Checksum Validation");
+    nmo_cli_record_str(rec, "file", "File", c->file_path);
+    nmo_cli_record_raw(rec, "\n");
+    nmo_cli_record_uint(rec, "file_version", NULL, info.file_version);
+    nmo_cli_record_str(rec, "status", NULL, validate_crc_status_name(info.crc_status));
+    nmo_cli_record_bool(rec, "valid", NULL, info.crc_status != NMO_CRC_MISMATCH);
+    nmo_cli_record_uint(rec, "crc_stored", NULL, info.crc_stored);
+    nmo_cli_record_uint(rec, "crc_computed", NULL, info.crc_computed);
+    nmo_cli_record_raw_fmt(rec, "Stored:   0x%08" PRIX32 "\n", info.crc_stored);
+    nmo_cli_record_raw_fmt(rec, "Computed: 0x%08" PRIX32 "\n", info.crc_computed);
+    nmo_cli_record_raw_fmt(rec, "Result:   %s\n",
+                           info.crc_status == NMO_CRC_MISMATCH ? "MISMATCH" : "OK");
+
+    int exit_code = NMO_CLI_EXIT_SUCCESS;
+    if (info.crc_status == NMO_CRC_MISMATCH && c->global && c->global->strict_mode) {
+        exit_code = NMO_CLI_EXIT_STRICT_FAILURE;
+    }
+    return validate_emit(c, rec, "validate.checksum", c->file_path, 10, exit_code);
+}
+
+int nmo_cmd_validate_checksum(int argc, char **argv, const nmo_cli_global_opts_t *global)
+{
+    nmo_cmd_ctx_t c;
+    int rc = nmo_cmd_ctx_init(&c, argc, argv, global);
+    if (rc) return rc;
+    rc = nmo_cmd_validate_checksum_in_session(&c, argc, argv);
+    return nmo_cmd_ctx_done(&c, rc);
 }
 
 /* ============================================================================

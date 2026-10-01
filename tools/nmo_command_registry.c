@@ -307,6 +307,15 @@ static void validate_resources_usage(FILE *out) {
     fprintf(out, "  --fail-on-warning   Exit with code 4 if warnings exist\n");
 }
 
+static void validate_checksum_usage(FILE *out) {
+    fprintf(out, "Usage: nmo validate checksum [--strict] <file>\n\n");
+    fprintf(out, "Compare the checksum in the file header with the one computed over the file.\n");
+    fprintf(out, "CK2 refuses a file whose checksums differ; libnmo opens it and reports the\n");
+    fprintf(out, "difference here.\n\n");
+    fprintf(out, "Options:\n");
+    fprintf(out, "  --strict            Exit with code 3 on a mismatch\n");
+}
+
 static void validate_orphans_usage(FILE *out) {
     fprintf(out, "Usage: nmo validate orphans [options] <file>\n\n");
     fprintf(out, "Find unreferenced (orphan) objects with zero incoming references.\n\n");
@@ -1152,6 +1161,7 @@ static const nmo_cli_action_t validate_actions[] = {
     ACTION("references", "ref", "Validate object references", nmo_cmd_validate_references, validate_references_usage, NMO_REPL_ACTION_READ_SESSION),
     ACTION("resources", "res", "Validate embedded resources", nmo_cmd_validate_resources, validate_resources_usage, NMO_REPL_ACTION_READ_SESSION),
     ACTION("orphans", "orp", "Find unreferenced objects", nmo_cmd_validate_orphans, validate_orphans_usage, NMO_REPL_ACTION_READ_SESSION),
+    ACTION("checksum", "crc", "Verify the file checksum", nmo_cmd_validate_checksum, validate_checksum_usage, NMO_REPL_ACTION_READ_SESSION),
 };
 
 static const nmo_cli_action_t convert_actions[] = {

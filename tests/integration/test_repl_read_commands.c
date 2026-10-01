@@ -877,6 +877,7 @@ TEST(repl_read, family_repl_read_cores_are_directly_callable) {
     char *validate_references[] = {"references"};
     char *validate_resources[] = {"resources"};
     char *validate_orphans[] = {"orphans"};
+    char *validate_checksum[] = {"checksum"};
     char *diff_summary[2] = {"summary", NMO_TEST_DATA_FILE("Ballance/Camera.nmo")};
     char *diff_objects[2] = {"objects", NMO_TEST_DATA_FILE("Ballance/Camera.nmo")};
     char *diff_chunks[2] = {"chunks", NMO_TEST_DATA_FILE("Ballance/Camera.nmo")};
@@ -901,6 +902,7 @@ TEST(repl_read, family_repl_read_cores_are_directly_callable) {
     assert_in_session_ok(&repl, nmo_cmd_validate_in_session, 1, validate_references);
     assert_in_session_ok(&repl, nmo_cmd_validate_in_session, 1, validate_resources);
     assert_in_session_ok(&repl, nmo_cmd_validate_in_session, 1, validate_orphans);
+    assert_in_session_ok(&repl, nmo_cmd_validate_in_session, 1, validate_checksum);
     assert_in_session_ok(&repl, nmo_cmd_diff_in_session, 2, diff_summary);
     assert_in_session_ok(&repl, nmo_cmd_diff_in_session, 2, diff_objects);
     assert_in_session_ok(&repl, nmo_cmd_diff_in_session, 2, diff_chunks);

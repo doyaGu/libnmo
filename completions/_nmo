@@ -324,6 +324,8 @@ _nmo_action_flags() {
         validate/res/) echo '--strict --fail-on-warning' ;;
         validate/orphans/) echo '-c --class --strict --summary -o --strip' ;;
         validate/orp/) echo '-c --class --strict --summary -o --strip' ;;
+        validate/checksum/) echo '--strict' ;;
+        validate/crc/) echo '--strict' ;;
         convert/copy/) echo '-o --output --compress --sequential-ids --no-managers --strip-resources --validate --fast-save' ;;
         convert/cp/) echo '-o --output --compress --sequential-ids --no-managers --strip-resources --validate --fast-save' ;;
         convert/version/) echo '' ;;
@@ -597,6 +599,8 @@ _nmo_actions() {
                 'res:Alias for resources'
                 'orphans:Find unreferenced objects'
                 'orp:Alias for orphans'
+                'checksum:Verify the file checksum'
+                'crc:Alias for checksum'
             ) ;;
         convert)
             acts=(
