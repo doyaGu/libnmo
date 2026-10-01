@@ -106,6 +106,7 @@ typedef enum nmo_load_flags {
     NMO_LOAD_CHECK_DEPENDENCIES = 0x0020,
     NMO_LOAD_PRESERVE_SHADOW    = 0x0080,
     NMO_LOAD_STRICT             = 0x0100, /**< Error on unresolved references */
+    NMO_LOAD_VERIFY_CRC         = 0x0200, /**< Error on a file checksum mismatch, as CK2 does (default: warn) */
 } nmo_load_flags_t;
 
 /**

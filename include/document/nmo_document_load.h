@@ -18,6 +18,13 @@ typedef struct nmo_plugin_dep nmo_plugin_dep_t;
 typedef struct nmo_header nmo_header_t;
 typedef struct nmo_manager_data nmo_manager_data_t;
 
+/** Result of comparing the stored file checksum with the one computed from the file bytes. */
+typedef enum nmo_crc_status {
+    NMO_CRC_NOT_CHECKED = 0,   /**< The sections the checksum covers were not read */
+    NMO_CRC_OK,                /**< Stored and computed checksums agree */
+    NMO_CRC_MISMATCH           /**< They differ; CK2 refuses such a file (CKERR_FILECRCERROR) */
+} nmo_crc_status_t;
+
 typedef struct nmo_file_info {
     uint32_t file_version;
     uint32_t file_version2;
@@ -28,6 +35,9 @@ typedef struct nmo_file_info {
     uint32_t object_count;
     uint32_t manager_count;
     uint32_t write_mode;
+    nmo_crc_status_t crc_status;   /**< Set once the data section has been read */
+    uint32_t crc_stored;           /**< Checksum in the file header */
+    uint32_t crc_computed;         /**< Checksum computed as the file version defines it */
 } nmo_file_info_t;
 
 typedef struct nmo_file_state {

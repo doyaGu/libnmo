@@ -80,6 +80,7 @@ typedef struct nmo_deserializer {
     /* Header data */
     nmo_file_header_t header;
     nmo_header1_t hdr1;
+    const uint8_t *hdr1_packed;     /* Header1 as stored, for the file checksum (arena owned) */
 
     /* Data section */
     nmo_data_section_t data_sect;
@@ -546,6 +547,7 @@ nmo_status_t nmo_deserializer_parse_header(nmo_deserializer_t *ds)
             ds->header.hdr1_pack_size);
 
     memset(&ds->hdr1, 0, sizeof(nmo_header1_t));
+    ds->hdr1_packed = NULL;
     ds->hdr1.object_count = ds->header.object_count;
 
     if ((ds->header.hdr1_pack_size > 0 && ds->header.hdr1_unpack_size == 0) ||
@@ -585,6 +587,8 @@ nmo_status_t nmo_deserializer_parse_header(nmo_deserializer_t *ds)
             nmo_log(logger, NMO_LOG_ERROR, "Truncated header1 data");
             return NMO_ERR_TRUNCATED_CHUNK;
         }
+
+        ds->hdr1_packed = (const uint8_t *)packed_hdr1;
 
         /* Decompress if needed */
         void *hdr1_data = NULL;
@@ -687,6 +691,46 @@ nmo_status_t nmo_deserializer_parse_header(nmo_deserializer_t *ds)
     ds->phase_completed = 1;
     nmo_session_internal_set_partial_load(
         session, ds->options.profile != NMO_LOAD_PROFILE_FULL);
+    return NMO_OK;
+}
+
+/* Compare the stored file checksum with the one the file version defines. CK2 refuses a file
+ * whose checksums differ; libnmo records the result and warns, and fails only when asked
+ * (NMO_LOAD_VERIFY_CRC), so a file edited by another tool can still be opened and repaired. */
+static nmo_status_t deserializer_check_crc(nmo_deserializer_t *ds,
+                                           const void *data_packed,
+                                           const void *data_unpacked,
+                                           size_t data_unpacked_size)
+{
+    const nmo_file_header_t *header = &ds->header;
+    nmo_file_info_t info = nmo_session_get_file_info(ds->session);
+    info.crc_stored = header->crc;
+    info.crc_status = NMO_CRC_OK;
+    info.crc_computed = header->crc;
+
+    if (header->file_version >= 2) {
+        info.crc_computed = nmo_file_crc_for_version(
+            header,
+            ds->hdr1_packed, header->hdr1_pack_size,
+            (const uint8_t *)data_packed, header->data_pack_size,
+            (const uint8_t *)data_unpacked, data_unpacked_size);
+        if (info.crc_computed != header->crc) {
+            info.crc_status = NMO_CRC_MISMATCH;
+        }
+    }
+    (void)nmo_session_set_file_info(ds->session, &info);
+
+    if (info.crc_status != NMO_CRC_MISMATCH) {
+        return NMO_OK;
+    }
+    nmo_log(ds->logger, NMO_LOG_WARN,
+            "File checksum mismatch (stored 0x%08X, computed 0x%08X)",
+            (unsigned)info.crc_stored, (unsigned)info.crc_computed);
+    if ((ds->options.flags & NMO_LOAD_VERIFY_CRC) != 0) {
+        NMO_RETURN_ERROR(NMO_ERR_CHECKSUM_MISMATCH, NMO_SEVERITY_ERROR,
+                         "File checksum mismatch (stored 0x%08X, computed 0x%08X)",
+                         (unsigned)info.crc_stored, (unsigned)info.crc_computed);
+    }
     return NMO_OK;
 }
 
@@ -826,9 +870,19 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
     ds->data_sect.manager_count = ds->header.manager_count;
     ds->data_sect.object_count = ds->header.object_count;
 
+    const void *crc_data_packed = NULL;
+    const void *crc_data_unpacked = NULL;
+    size_t crc_data_unpacked_size = 0;
+
     /* Skip data section if empty */
     if (ds->header.data_pack_size == 0 || ds->header.data_unpack_size == 0) {
         nmo_log(logger, NMO_LOG_INFO, "  No data section (empty file or minimal format)");
+        nmo_status_t crc_status = deserializer_check_crc(ds, NULL, NULL, 0);
+        if (crc_status != NMO_OK) {
+            nmo_id_mapping_destroy(id_map);
+            ds->id_mapping = NULL;
+            return crc_status;
+        }
     } else {
         /* Read packed data */
         void *packed_buffer = nmo_arena_alloc(arena, ds->header.data_pack_size, 16);
@@ -900,6 +954,18 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
             /* Already uncompressed */
             data_buffer = packed_buffer;
             data_size = ds->header.data_pack_size;
+        }
+
+        crc_data_packed = packed_buffer;
+        crc_data_unpacked = data_buffer;
+        crc_data_unpacked_size = data_size;
+
+        nmo_status_t crc_status = deserializer_check_crc(
+            ds, crc_data_packed, crc_data_unpacked, crc_data_unpacked_size);
+        if (crc_status != NMO_OK) {
+            nmo_id_mapping_destroy(id_map);
+            ds->id_mapping = NULL;
+            return crc_status;
         }
 
         /* Parse Data section */
