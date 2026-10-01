@@ -11,11 +11,13 @@
 #include "object/builtin/nmo_2dentity_schemas.h"
 #include "object/builtin/nmo_animation_schemas.h"
 #include "object/builtin/nmo_layer_schemas.h"
+#include "object/builtin/nmo_light_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "object/builtin/nmo_spritetext_schemas.h"
 #include "object/builtin/nmo_texture_schemas.h"
 #include "object/nmo_deserialize_context.h"
 #include "object/nmo_serialize_context.h"
+#include "object/nmo_statesave_ids.h"
 
 #include <string.h>
 
@@ -170,7 +172,58 @@ TEST(fidelity_small_items, layer_edit_is_kept_in_a_newer_layout)
     nmo_arena_destroy(arena);
 }
 
+TEST(fidelity_small_items, light_keeps_the_type_byte_and_alpha_the_file_holds)
+{
+    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+    ASSERT_NOT_NULL(arena);
+    nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
+        arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
+
+    /* A file with type byte 9 (the engine reads it as a point light) and an
+     * alpha of 0x40 (the engine writes 0xFF). */
+    nmo_light_state_t source;
+    ASSERT_EQ(NMO_OK, nmo_light_vtable.create(&source, NULL, NULL));
+    source.light_data.type = VX_LIGHTPOINT;
+    source.has_raw_light_data = 1;
+    source.raw_type_dword = 0x00000209u;
+    source.raw_diffuse_argb = 0x40112233u;
+    nmo_color_from_argb32(source.raw_diffuse_argb, &source.light_data.diffuse);
+
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    ASSERT_EQ(NMO_OK, nmo_light_serialize(&source, chunk, NULL, &ser_ctx));
+    nmo_chunk_close(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(chunk));
+    size_t section = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(chunk, CK_STATESAVE_LIGHTDATA, &section));
+    uint32_t packed = 0, argb = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(chunk, &packed));
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(chunk, &argb));
+    ASSERT_EQ(9u, packed & 0xFFu);
+    ASSERT_EQ(0x40112233u, argb);
+
+    /* Once the colour is edited the engine's rule applies again. */
+    source.light_data.diffuse.r = 0.5f;
+    nmo_chunk_t *edited = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(edited);
+    edited->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(edited));
+    ASSERT_EQ(NMO_OK, nmo_light_serialize(&source, edited, NULL, &ser_ctx));
+    nmo_chunk_close(edited);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(edited));
+    ASSERT_EQ(NMO_OK, nmo_chunk_seek_identifier_with_size(edited, CK_STATESAVE_LIGHTDATA, &section));
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(edited, &packed));
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_dword(edited, &argb));
+    ASSERT_EQ(0xFFu, argb >> 24);
+
+    nmo_light_vtable.destroy(&source, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
+    REGISTER_TEST(fidelity_small_items, light_keeps_the_type_byte_and_alpha_the_file_holds);
     REGISTER_TEST(fidelity_small_items, layer_edit_is_kept_in_a_newer_layout);
     REGISTER_TEST(fidelity_small_items, empty_controller_is_written_with_a_key_count);
     REGISTER_TEST(fidelity_small_items, new_mesh_starts_visible_with_render_channels);

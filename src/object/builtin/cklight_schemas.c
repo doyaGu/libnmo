@@ -111,7 +111,10 @@ static const nmo_object_state_member_t nmo_light_members[] = {
     NMO_STATE_VALUE(nmo_light_state_t, has_light_data_chunk),
     NMO_STATE_VALUE(nmo_light_state_t, has_light_power_chunk),
     NMO_STATE_VALUE(nmo_light_state_t, light_data_is_legacy),
-    NMO_STATE_VALUE(nmo_light_state_t, legacy_diffuse_alpha)
+    NMO_STATE_VALUE(nmo_light_state_t, legacy_diffuse_alpha),
+    NMO_STATE_VALUE(nmo_light_state_t, has_raw_light_data),
+    NMO_STATE_VALUE(nmo_light_state_t, raw_type_dword),
+    NMO_STATE_VALUE(nmo_light_state_t, raw_diffuse_argb)
 };
 
 static const nmo_object_state_layout_t nmo_light_layout = {
@@ -216,6 +219,9 @@ static nmo_status_t nmo_light_deserialize_modern(
             return result;
         }
         nmo_color_from_argb32(diffuse_argb, &out_state->light_data.diffuse);
+        out_state->has_raw_light_data = 1;
+        out_state->raw_type_dword = packed_type_flags;
+        out_state->raw_diffuse_argb = diffuse_argb;
 
         // Read attenuation parameters
         result = nmo_chunk_read_float(chunk, &out_state->light_data.attenuation0);
@@ -597,7 +603,12 @@ static nmo_status_t nmo_light_serialize_internal(
     }
 
     // Pack Type|Flags (engine stores flags in upper 24 bits)
-    uint32_t packed_type_flags = ((uint32_t)state->light_data.type & 0xFFu) | (state->flags & ~0xFFu);
+    uint32_t type_byte = (uint32_t)state->light_data.type & 0xFFu;
+    if (state->has_raw_light_data &&
+        nmo_light_type_from_file(state->raw_type_dword & 0xFFu) == state->light_data.type) {
+        type_byte = state->raw_type_dword & 0xFFu;
+    }
+    uint32_t packed_type_flags = type_byte | (state->flags & ~0xFFu);
     result = nmo_chunk_write_dword(chunk, packed_type_flags);
     if (result != NMO_OK) {
         return result;
@@ -605,6 +616,13 @@ static nmo_status_t nmo_light_serialize_internal(
 
     // Pack and write Diffuse color as ARGB (engine forces alpha to 0xFF)
     uint32_t diffuse_argb = nmo_color_to_argb32_opaque(&state->light_data.diffuse);
+    if (state->has_raw_light_data) {
+        nmo_color_t raw_color;
+        nmo_color_from_argb32(state->raw_diffuse_argb, &raw_color);
+        if (memcmp(&raw_color, &state->light_data.diffuse, sizeof(raw_color)) == 0) {
+            diffuse_argb = state->raw_diffuse_argb;
+        }
+    }
     result = nmo_chunk_write_dword(chunk, diffuse_argb);
     if (result != NMO_OK) {
         return result;

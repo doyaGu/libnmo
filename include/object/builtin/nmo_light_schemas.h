@@ -56,6 +56,14 @@ typedef struct nmo_light_state {
     uint8_t has_light_power_chunk;
     uint8_t light_data_is_legacy;
     float legacy_diffuse_alpha;
+
+    /* What the LIGHTDATA section held where the engine alters it on load (an
+     * unknown type becomes a point light) or on save (the alpha of the diffuse
+     * colour becomes 0xFF). Written back while the field they stand for is
+     * unchanged. */
+    uint8_t has_raw_light_data;
+    uint32_t raw_type_dword;
+    uint32_t raw_diffuse_argb;
 } nmo_light_state_t;
 
 NMO_API nmo_status_t nmo_light_deserialize(
