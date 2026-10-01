@@ -42,6 +42,34 @@ jobs:
           UBSAN_OPTIONS: print_stacktrace=1
         run: ctest --test-dir build --output-on-failure --parallel 4 --label-exclude performance
 
+  # Every automatic variable starts as 0xAA bytes, so a struct that is used
+  # without being cleared fails the same way on every platform instead of
+  # depending on what the stack held (macOS happened to hand out zeros).
+  auto-var-init:
+    name: ubuntu-clang-pattern-init
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Install Ninja
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      - name: Configure
+        env:
+          CC: clang
+        run: >
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DCMAKE_C_FLAGS=-ftrivial-auto-var-init=pattern
+          -DNMO_ENABLE_SANITIZERS=OFF
+
+      - name: Build
+        run: cmake --build build --parallel -- -k 0
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure --parallel 4 --label-exclude performance
+
   # Release builds: tools/scripts/package_release.py runs the test suite,
   # installs the package, checks it from the outside and archives it.
   package:
