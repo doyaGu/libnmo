@@ -17,7 +17,10 @@
 #include "../test_framework.h"
 
 #include "format/nmo_chunk.h"
+#include "format/nmo_chunk_api.h"
 #include "format/nmo_chunk_residue.h"
+#include "format/nmo_interface_chunk.h"
+#include "object/builtin/nmo_behavior_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
 #include "runtime/nmo_context.h"
@@ -492,9 +495,72 @@ TEST(corpus_chunk_roundtrip, deleting_an_object_keeps_the_others_intact)
     ASSERT_EQ(0u, differing);
 }
 
+/* The interface chunk of a behavior, parsed and written again, is the chunk
+ * it came from (the snapshot bitmap is kept as the file held it). */
+typedef struct interface_stats {
+    nmo_context_t *ctx;
+    size_t files;
+    size_t parsed;
+    size_t different;
+} interface_stats_t;
+
+static void check_interfaces(const char *path, void *user)
+{
+    interface_stats_t *stats = (interface_stats_t *)user;
+    stats->files++;
+    nmo_session_t *session = load_session(stats->ctx, path);
+    if (session == NULL) return;
+    nmo_object_repository_t *repo = nmo_session_get_repository(session);
+    nmo_behavior_interface_parse_stats_t parse_stats;
+    (void)nmo_behavior_parse_all_interfaces_ex(repo, NULL, &parse_stats);
+    for (size_t i = 0; i < nmo_object_repository_get_count(repo); i++) {
+        nmo_object_t *object = nmo_object_repository_get_by_index(repo, i);
+        if (object == NULL || object->class_id != NMO_CID_BEHAVIOR) continue;
+        nmo_behavior_state_t *state = (nmo_behavior_state_t *)nmo_object_get_state(object);
+        if (state == NULL || state->interface_chunk == NULL || state->interface_data == NULL) continue;
+        stats->parsed++;
+        nmo_arena_t *arena = nmo_arena_create(NULL, 1u << 16);
+        nmo_chunk_t *written = arena != NULL ? nmo_chunk_create(arena) : NULL;
+        if (written == NULL || nmo_chunk_start_write(written) != NMO_OK ||
+            nmo_interface_chunk_write(written, state->interface_data, NULL) != NMO_OK) {
+            stats->different++;
+        } else {
+            nmo_chunk_close(written);
+            if (!nmo_chunk_equivalent_to_tracked(state->interface_chunk, written)) {
+                if (stats->different++ < MAX_REPORTED_MISMATCHES) {
+                    printf("  %s: behavior %u interface differs\n", path, (unsigned)object->id);
+                }
+            }
+        }
+        nmo_arena_destroy(arena);
+    }
+    nmo_session_destroy(session);
+}
+
+TEST(corpus_chunk_roundtrip, parsed_interfaces_write_back_to_their_chunk)
+{
+    TEST_REQUIRE_FIXTURE("Ballance/base.cmo");
+
+    nmo_context_desc_t desc = {0};
+    desc.data_dir = NMO_TEST_DATA_DIR;
+    nmo_context_t *ctx = nmo_context_create(&desc);
+    ASSERT_NOT_NULL(ctx);
+    interface_stats_t stats;
+    memset(&stats, 0, sizeof(stats));
+    stats.ctx = ctx;
+    int walk_status = test_corpus_walk(NMO_TEST_DATA_DIR, check_interfaces, &stats);
+    nmo_context_release(ctx);
+    printf("  Interface corpus: files=%zu parsed=%zu different=%zu\n",
+           stats.files, stats.parsed, stats.different);
+    ASSERT_EQ(0, walk_status);
+    ASSERT_GE(stats.parsed, 1u);
+    ASSERT_EQ(0u, stats.different);
+}
+
 TEST_MAIN_BEGIN()
     /* A pass over the whole corpus; slow under a sanitizer. */
     REGISTER_TEST_WITH_TIMEOUT(corpus_chunk_roundtrip, every_object_chunk_survives_save_and_reload, 300.0);
     REGISTER_TEST_WITH_TIMEOUT(corpus_chunk_roundtrip, default_save_keeps_untouched_objects_byte_exact, 300.0);
     REGISTER_TEST_WITH_TIMEOUT(corpus_chunk_roundtrip, deleting_an_object_keeps_the_others_intact, 300.0);
+    REGISTER_TEST_WITH_TIMEOUT(corpus_chunk_roundtrip, parsed_interfaces_write_back_to_their_chunk, 300.0);
 TEST_MAIN_END()

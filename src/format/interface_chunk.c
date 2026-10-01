@@ -48,6 +48,22 @@
  * Internal helpers
  * ================================================================ */
 
+/* FNV-1a over the descriptor and the decoded pixels of the script snapshot. */
+static uint64_t snapshot_pixel_hash(const nmo_image_desc_t *desc, const void *pixels, size_t size)
+{
+    uint64_t hash = 14695981039346656037ull;
+    const int32_t dims[2] = {(int32_t)desc->width, (int32_t)desc->height};
+    const uint8_t *dim_bytes = (const uint8_t *)dims;
+    for (size_t i = 0; i < sizeof(dims); ++i) {
+        hash = (hash ^ dim_bytes[i]) * 1099511628211ull;
+    }
+    const uint8_t *bytes = (const uint8_t *)pixels;
+    for (size_t i = 0; bytes != NULL && i < size; ++i) {
+        hash = (hash ^ bytes[i]) * 1099511628211ull;
+    }
+    return hash;
+}
+
 static nmo_status_t parse_script_header(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
@@ -436,7 +452,6 @@ static nmo_status_t parse_script_header(
     nmo_interface_script_header_t *out,
     uint32_t *format_flags)
 {
-    (void)arena;
     nmo_status_t st;
 
     /* behavior_id */
@@ -477,9 +492,11 @@ static nmo_status_t parse_script_header(
     memset(&bitmap_desc, 0, sizeof(bitmap_desc));
     memset(&bitmap_props, 0, sizeof(bitmap_props));
 
+    const size_t bitmap_start = nmo_chunk_get_position(chunk);
     st = nmo_chunk_read_bitmap_legacy(chunk, &bitmap_desc, &bitmap_pixels,
                                       &bitmap_props);
     NMO_RETURN_IF_ERROR(st);
+    const size_t bitmap_end = nmo_chunk_get_position(chunk);
 
     out->snapshot_desc = bitmap_desc;
     out->snapshot_props = bitmap_props;
@@ -487,6 +504,20 @@ static nmo_status_t parse_script_header(
         out->snapshot_data = bitmap_pixels;
         out->snapshot_size = (size_t)bitmap_desc.width * (size_t)bitmap_desc.height * 4u;
         out->has_snapshot = true;
+        out->snapshot_raw = NULL;
+        out->snapshot_raw_dwords = 0;
+        if (arena != NULL && bitmap_end > bitmap_start && bitmap_end <= chunk->data.count) {
+            uint32_t *raw = nmo_arena_alloc(arena, (bitmap_end - bitmap_start) * sizeof(uint32_t),
+                                            _Alignof(uint32_t));
+            if (raw != NULL) {
+                memcpy(raw, (const uint32_t *)chunk->data.data + bitmap_start,
+                       (bitmap_end - bitmap_start) * sizeof(uint32_t));
+                out->snapshot_raw = raw;
+                out->snapshot_raw_dwords = bitmap_end - bitmap_start;
+                out->snapshot_raw_hash = snapshot_pixel_hash(&out->snapshot_desc,
+                                                              out->snapshot_data, out->snapshot_size);
+            }
+        }
     } else {
         memset(&out->snapshot_desc, 0, sizeof(out->snapshot_desc));
         memset(&out->snapshot_props, 0, sizeof(out->snapshot_props));
@@ -1895,7 +1926,14 @@ static nmo_status_t write_script_header(
     NMO_RETURN_IF_ERROR(st);
 
     /* Bitmap (snapshot): use original codec properties for round-trip fidelity */
-    if (hdr->has_snapshot && hdr->snapshot_data) {
+    if (hdr->has_snapshot && hdr->snapshot_data && hdr->snapshot_raw != NULL &&
+        snapshot_pixel_hash(&hdr->snapshot_desc, hdr->snapshot_data, hdr->snapshot_size) ==
+            hdr->snapshot_raw_hash) {
+        /* Unchanged pixels: the block the chunk held. */
+        st = nmo_chunk_write_buffer_no_size(chunk, hdr->snapshot_raw,
+                                            hdr->snapshot_raw_dwords * sizeof(uint32_t));
+        NMO_RETURN_IF_ERROR(st);
+    } else if (hdr->has_snapshot && hdr->snapshot_data) {
         nmo_image_desc_t desc = hdr->snapshot_desc;
         desc.image_data = (uint8_t *)hdr->snapshot_data;
         st = nmo_chunk_write_bitmap_legacy(chunk, &desc, &hdr->snapshot_props);

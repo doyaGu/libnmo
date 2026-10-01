@@ -232,6 +232,14 @@ typedef struct nmo_interface_script_header {
     size_t snapshot_size;                   /* byte size of snapshot_data */
     bool has_snapshot;                      /* true when snapshot_desc has image data */
     nmo_bitmap_properties_t snapshot_props; /* original codec properties for write */
+    /* The bitmap block as the chunk held it (both sizes, signature, payload,
+     * padded to dwords). While the decoded pixels still hash to
+     * snapshot_raw_hash it is written back as it was; encoding the pixels
+     * again does not give the same bytes (the BMP header of the engine's
+     * codec is not the one libnmo's encoder writes). */
+    const uint32_t *snapshot_raw;
+    size_t snapshot_raw_dwords;
+    uint64_t snapshot_raw_hash;
     uint32_t color;                         /* inline v >= 0x14, sectioned default */
     nmo_interface_body_t body;              /* empty if flags & 0x8000 */
 } nmo_interface_script_header_t;
