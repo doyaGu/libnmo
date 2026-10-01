@@ -393,6 +393,11 @@ the tests build each layout dword by dword.
   runs the suite, so a struct used without being cleared fails on every platform. A local scan
   with the same flag, heap scribbling and the clang static analyzer found no other case, and the
   CLI output over the corpus is identical with and without the flag.
+- CI also has a `ubuntu-clang-msan` job (MemorySanitizer with origin tracking). It found that the type
+  registry left `element_size` unwritten in field definitions it builds in the arena
+  (`nmo_type_registry_add_field`, `nmo_type_registry_register_struct_string`), which
+  `register_struct` and `finalize_struct` then read. Both clear the definition now. The corpus is not
+  in CI, so this job runs the tests that need no corpus files.
 
 ### Added - Phase 8: Round-Trip Framework
 - DOM comparison API (`nmo_comparison.h`): diff two loaded sessions at the object
