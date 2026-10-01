@@ -126,6 +126,7 @@ static const nmo_type_field_t nmo_objectanimation_fields[] = {
     NMO_FIELD(nmo_objectanimation_state_t, format, NMO_GUID_ENUM_CK_OBJECTANIMATION_FORMAT),
     NMO_FIELD(nmo_objectanimation_state_t, root_pos, CKPGUID_VECTOR),
     NMO_FIELD(nmo_objectanimation_state_t, has_root_pos, CKPGUID_UINT8),
+    NMO_FIELD(nmo_objectanimation_state_t, root_extra, CKPGUID_VECTOR4),
     NMO_FIELD(nmo_objectanimation_state_t, flags, CKPGUID_UINT32),
     NMO_FIELD_REF_VALUE(nmo_objectanimation_state_t, entity),
     NMO_FIELD(nmo_objectanimation_state_t, has_length, CKPGUID_UINT8),
@@ -182,6 +183,58 @@ static int nmo_animation_is_file_mode_ser(const nmo_chunk_t *chunk, void *contex
         (ser_ctx != NULL && (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
 }
 
+/* Chunks older than CHUNK_VERSION1 hold an object array as a leading non-zero
+ * dword, 4 dwords that are skipped, a count and then that many plain object
+ * ids (XSObjectPointerArray::Load 0x2402b715, CKStateChunk::ReadXObjectArray
+ * 0x24022ac0). The ids are not file indices, so they are kept as raw ids. */
+static nmo_status_t read_ref_array_before_chunk_version1(
+    nmo_chunk_t *chunk,
+    nmo_arena_t *arena,
+    nmo_ref_t **out_refs,
+    uint32_t *out_count,
+    size_t trailing_dwords)
+{
+    *out_refs = NULL;
+    *out_count = 0u;
+    uint32_t lead = 0u;
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &lead));
+    if (lead == 0u) NMO_RETURN_OK();
+
+    const size_t header_dwords = 5u;
+    if (nmo_chunk_identifier_remaining_dwords(chunk) < header_dwords) {
+        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                         "Old animation reference array header is truncated");
+    }
+    NMO_RETURN_IF_ERROR(nmo_chunk_skip(chunk, 4u));
+    int32_t signed_count = 0;
+    NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &signed_count));
+    /* The engine loops only while the count is positive. */
+    if (signed_count <= 0) NMO_RETURN_OK();
+
+    const size_t count = (size_t)signed_count;
+    const size_t remaining_dwords =
+        nmo_chunk_identifier_remaining_dwords(chunk);
+    if (trailing_dwords > remaining_dwords ||
+        count > remaining_dwords - trailing_dwords) {
+        NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                         "Animation reference count exceeds identifier payload");
+    }
+    nmo_ref_t *refs = (nmo_ref_t *)nmo_arena_alloc(
+        arena, count * sizeof(nmo_ref_t), _Alignof(nmo_ref_t));
+    if (!refs) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "Failed to allocate animation references");
+    }
+    for (size_t i = 0; i < count; ++i) {
+        uint32_t id = 0u;
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &id));
+        refs[i] = nmo_ref_from_raw((nmo_object_id_t)id);
+    }
+    *out_refs = refs;
+    *out_count = (uint32_t)count;
+    NMO_RETURN_OK();
+}
+
 static nmo_status_t read_ref_array(
     nmo_chunk_t *chunk,
     nmo_arena_t *arena,
@@ -189,6 +242,10 @@ static nmo_status_t read_ref_array(
     uint32_t *out_count,
     size_t trailing_dwords)
 {
+    if (nmo_chunk_get_chunk_version(chunk) < NMO_CHUNK_VERSION1) {
+        return read_ref_array_before_chunk_version1(
+            chunk, arena, out_refs, out_count, trailing_dwords);
+    }
     size_t count = 0;
     nmo_status_t result = nmo_chunk_read_object_sequence_start(
         chunk, &count);
@@ -1098,6 +1155,10 @@ static bool nmo_objectanimation_equals(const void *a, const void *b)
         !nmo_animation_float_equals(lhs->root_pos.y, rhs->root_pos.y) ||
         !nmo_animation_float_equals(lhs->root_pos.z, rhs->root_pos.z) ||
         lhs->has_root_pos != rhs->has_root_pos ||
+        !nmo_animation_float_equals(lhs->root_extra.x, rhs->root_extra.x) ||
+        !nmo_animation_float_equals(lhs->root_extra.y, rhs->root_extra.y) ||
+        !nmo_animation_float_equals(lhs->root_extra.z, rhs->root_extra.z) ||
+        !nmo_animation_float_equals(lhs->root_extra.w, rhs->root_extra.w) ||
         lhs->flags != rhs->flags ||
         !nmo_animation_ref_equals(&lhs->entity, &rhs->entity) ||
         lhs->has_length != rhs->has_length ||
@@ -1186,6 +1247,10 @@ static uint32_t nmo_objectanimation_hash(const void *instance)
     NMO_OBJECTANIMATION_HASH_FIELD(root_pos.y);
     NMO_OBJECTANIMATION_HASH_FIELD(root_pos.z);
     NMO_OBJECTANIMATION_HASH_FIELD(has_root_pos);
+    NMO_OBJECTANIMATION_HASH_FIELD(root_extra.x);
+    NMO_OBJECTANIMATION_HASH_FIELD(root_extra.y);
+    NMO_OBJECTANIMATION_HASH_FIELD(root_extra.z);
+    NMO_OBJECTANIMATION_HASH_FIELD(root_extra.w);
     NMO_OBJECTANIMATION_HASH_FIELD(flags);
     hash = nmo_animation_hash_ref(hash, &state->entity);
     NMO_OBJECTANIMATION_HASH_FIELD(has_length);
@@ -1559,6 +1624,107 @@ static bool objanim_controller_split_blob(
     *out_key_count = key_count;
     *out_keys_size = (uint32_t)keys_size;
     return true;
+}
+
+/* A chunk without a keyframe section keeps the sections it holds as a chain of
+ * identifier sections, {id, next, payload...} with next relative to the start
+ * of the buffer. The base object sections the state already holds are left
+ * out, so writing them back after those cannot repeat them or lose a section
+ * that sits before them. */
+static bool unread_section_at(
+    const uint8_t *bytes,
+    size_t dwords,
+    size_t index,
+    uint32_t *out_id,
+    size_t *out_end,
+    bool *out_last)
+{
+    if (dwords - index < 2u) return false;
+    uint32_t next = 0u;
+    memcpy(out_id, bytes + index * sizeof(uint32_t), sizeof(*out_id));
+    memcpy(&next, bytes + (index + 1u) * sizeof(uint32_t), sizeof(next));
+    *out_last = next == 0u;
+    if (*out_last) {
+        *out_end = dwords;
+        return true;
+    }
+    if (next < index + 2u || next > dwords - 2u) return false;
+    *out_end = next;
+    return true;
+}
+
+static bool unread_sections_are_chain(const uint8_t *bytes, size_t dwords)
+{
+    size_t index = 0u;
+    bool last = false;
+    while (!last) {
+        uint32_t id = 0u;
+        size_t end = 0u;
+        if (!unread_section_at(bytes, dwords, index, &id, &end, &last)) {
+            return false;
+        }
+        index = end;
+    }
+    return true;
+}
+
+static nmo_status_t read_unread_sections(
+    nmo_chunk_t *chunk,
+    nmo_arena_t *arena,
+    const nmo_objectanimation_state_t *state,
+    void **out_data,
+    size_t *out_size)
+{
+    const uint8_t *bytes = (const uint8_t *)chunk->data.data;
+    const size_t dwords = chunk->data.count;
+    *out_data = NULL;
+    *out_size = 0u;
+    if (dwords == 0u) NMO_RETURN_OK();
+    if (!unread_sections_are_chain(bytes, dwords)) {
+        return NMO_ERR_NOT_FOUND;
+    }
+
+    uint32_t base_id = 0u;
+    if ((state->base.base.visibility_flags & NMO_CKOBJECT_HIERARCHICAL) != 0u) {
+        base_id = CK_STATESAVE_OBJECTHIERAHIDDEN;
+    } else if ((state->base.base.visibility_flags & NMO_CKOBJECT_VISIBLE) == 0u) {
+        base_id = CK_STATESAVE_OBJECTHIDDEN;
+    }
+
+    uint8_t *tail = nmo_arena_alloc(arena, dwords * sizeof(uint32_t), 1);
+    if (!tail) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR, "Failed to allocate raw tail buffer");
+    }
+    size_t used = 0u;
+    size_t previous = (size_t)-1;
+    size_t index = 0u;
+    bool last = false;
+    while (!last) {
+        uint32_t id = 0u;
+        size_t end = 0u;
+        (void)unread_section_at(bytes, dwords, index, &id, &end, &last);
+        if (base_id != 0u && id == base_id) {
+            base_id = 0u;
+        } else {
+            const size_t section = end - index;
+            memcpy(tail + used * sizeof(uint32_t),
+                   bytes + index * sizeof(uint32_t), section * sizeof(uint32_t));
+            if (previous != (size_t)-1) {
+                const uint32_t link = (uint32_t)used;
+                memcpy(tail + (previous + 1u) * sizeof(uint32_t), &link, sizeof(link));
+            }
+            const uint32_t none = 0u;
+            memcpy(tail + (used + 1u) * sizeof(uint32_t), &none, sizeof(none));
+            previous = used;
+            used += section;
+        }
+        index = end;
+    }
+    if (used > 0u) {
+        *out_data = tail;
+        *out_size = used * sizeof(uint32_t);
+    }
+    NMO_RETURN_OK();
 }
 
 static nmo_status_t read_raw_tail(nmo_chunk_t *chunk, nmo_arena_t *arena,
@@ -2653,10 +2819,13 @@ static nmo_status_t nmo_objectanimation_deserialize_internal(
     out_state->root_pos.x = 0.0f;
     out_state->root_pos.y = 0.0f;
     out_state->root_pos.z = 0.0f;
+    out_state->root_extra = (nmo_vector4_t){0.0f, 0.0f, 0.0f, 0.0f};
     out_state->flags = 0;
     out_state->entity = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     out_state->has_length = 0;
-    out_state->length = 0.0f;
+    /* A chunk without a keyframe section leaves the constructor's keyframe data
+       (100 frames) in place; the legacy path below clears it first. */
+    out_state->length = 100.0f;
     out_state->has_merge = 0;
     out_state->merge_factor = 0.5f;
     out_state->anim1 = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
@@ -2696,6 +2865,9 @@ static nmo_status_t nmo_objectanimation_deserialize_internal(
        version 0 chunk the identifier 0x1000 is a three-float root vector. */
     if (data_version < 1u) {
         out_state->format = CKOBJANIM_FORMAT_LEGACY;
+        /* The keyframe data is cleared (length 0) before the sections are
+           read, and only a length section sets it again. */
+        out_state->length = 0.0f;
         NMO_RETURN_IF_ERROR(read_legacy_controllers(chunk, arena, out_state));
         nmo_objectanimation_check_refs(out_state, context);
         NMO_RETURN_OK();
@@ -2715,11 +2887,8 @@ static nmo_status_t nmo_objectanimation_deserialize_internal(
         out_state->has_root_pos = 1;
         result = nmo_chunk_read_vector3(chunk, &out_state->root_pos);
         if (result != NMO_OK) return result;
-        for (int i = 0; i < 4; ++i) {
-            float tmp = 0.0f;
-            result = nmo_chunk_read_float(chunk, &tmp);
-            if (result != NMO_OK) return result;
-        }
+        result = nmo_chunk_read_vector4(chunk, &out_state->root_extra);
+        if (result != NMO_OK) return result;
         result = nmo_chunk_read_dword(chunk, &out_state->flags);
         if (result != NMO_OK) return result;
         if ((out_state->flags & 0x80u) != 0u && section_dwords < 13u) {
@@ -2760,11 +2929,8 @@ static nmo_status_t nmo_objectanimation_deserialize_internal(
         out_state->has_root_pos = 1;
         nmo_status_t result = nmo_chunk_read_vector3(chunk, &out_state->root_pos);
         if (result != NMO_OK) return result;
-        for (int i = 0; i < 4; ++i) {
-            float tmp = 0.0f;
-            result = nmo_chunk_read_float(chunk, &tmp);
-            if (result != NMO_OK) return result;
-        }
+        result = nmo_chunk_read_vector4(chunk, &out_state->root_extra);
+        if (result != NMO_OK) return result;
         result = nmo_chunk_read_dword(chunk, &out_state->flags);
         if (result != NMO_OK) return result;
         if ((out_state->flags & 0x80u) != 0u && section_dwords < 14u) {
@@ -2804,11 +2970,8 @@ static nmo_status_t nmo_objectanimation_deserialize_internal(
         out_state->has_root_pos = 1;
         nmo_status_t result = nmo_chunk_read_vector3(chunk, &out_state->root_pos);
         if (result != NMO_OK) return result;
-        for (int i = 0; i < 4; ++i) {
-            float tmp = 0.0f;
-            result = nmo_chunk_read_float(chunk, &tmp);
-            if (result != NMO_OK) return result;
-        }
+        result = nmo_chunk_read_vector4(chunk, &out_state->root_extra);
+        if (result != NMO_OK) return result;
         out_state->has_morph_counts = 1;
         result = nmo_chunk_read_int(chunk, &out_state->morph_vertex_count);
         if (result != NMO_OK) return result;
@@ -2842,14 +3005,20 @@ static nmo_status_t nmo_objectanimation_deserialize_internal(
     }
 
     if (out_state->format == CKOBJANIM_FORMAT_NONE) {
-        /* Unknown format or empty, use raw_tail as fallback */
-        const size_t position = nmo_chunk_get_position(chunk);
-        const size_t total_dwords =
-            nmo_chunk_get_data_size(chunk) / sizeof(uint32_t);
-        if (position > total_dwords) return NMO_ERR_TRUNCATED_CHUNK;
-        nmo_status_t result = read_raw_tail(
-            chunk, arena, total_dwords - position,
+        /* Unknown format or empty, keep the sections as raw_tail */
+        nmo_status_t result = read_unread_sections(
+            chunk, arena, out_state,
             (void **)&out_state->raw_tail, &out_state->raw_tail_size);
+        if (result == NMO_ERR_NOT_FOUND) {
+            /* Not an identifier chain: keep the rest of the data as it is. */
+            const size_t position = nmo_chunk_get_position(chunk);
+            const size_t total_dwords =
+                nmo_chunk_get_data_size(chunk) / sizeof(uint32_t);
+            if (position > total_dwords) return NMO_ERR_TRUNCATED_CHUNK;
+            result = read_raw_tail(
+                chunk, arena, total_dwords - position,
+                (void **)&out_state->raw_tail, &out_state->raw_tail_size);
+        }
         if (result != NMO_OK) return result;
     }
 
@@ -2941,10 +3110,8 @@ static nmo_status_t nmo_objectanimation_serialize_internal(
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_vector3(out_chunk, &in_state->root_pos);
         if (result != NMO_OK) return result;
-        for (int i = 0; i < 4; ++i) {
-            result = nmo_chunk_write_float(out_chunk, 0.0f);
-            if (result != NMO_OK) return result;
-        }
+        result = nmo_chunk_write_vector4(out_chunk, &in_state->root_extra);
+        if (result != NMO_OK) return result;
         result = nmo_chunk_write_dword(out_chunk, in_state->flags);
         if (result != NMO_OK) return result;
         result = nmo_ref_write(out_chunk, &in_state->entity);
@@ -2964,10 +3131,8 @@ static nmo_status_t nmo_objectanimation_serialize_internal(
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_vector3(out_chunk, &in_state->root_pos);
         if (result != NMO_OK) return result;
-        for (int i = 0; i < 4; ++i) {
-            result = nmo_chunk_write_float(out_chunk, 0.0f);
-            if (result != NMO_OK) return result;
-        }
+        result = nmo_chunk_write_vector4(out_chunk, &in_state->root_extra);
+        if (result != NMO_OK) return result;
         result = nmo_chunk_write_dword(out_chunk, in_state->flags);
         if (result != NMO_OK) return result;
         result = nmo_ref_write(out_chunk, &in_state->entity);
@@ -2989,10 +3154,8 @@ static nmo_status_t nmo_objectanimation_serialize_internal(
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_vector3(out_chunk, &in_state->root_pos);
         if (result != NMO_OK) return result;
-        for (int i = 0; i < 4; ++i) {
-            result = nmo_chunk_write_float(out_chunk, 0.0f);
-            if (result != NMO_OK) return result;
-        }
+        result = nmo_chunk_write_vector4(out_chunk, &in_state->root_extra);
+        if (result != NMO_OK) return result;
         result = nmo_chunk_write_int(out_chunk, in_state->morph_vertex_count);
         if (result != NMO_OK) return result;
         result = nmo_chunk_write_int(out_chunk, in_state->morph_key_count);
@@ -3242,6 +3405,27 @@ static nmo_status_t nmo_objectanimation_serialize_internal(
                                                                  in_state->raw_tail,
                                                                  in_state->raw_tail_size);
             if (result != NMO_OK) return result;
+        }
+    } else if (in_state->format == CKOBJANIM_FORMAT_NONE &&
+               in_state->raw_tail && in_state->raw_tail_size > 0 &&
+               (in_state->raw_tail_size & 3u) == 0u &&
+               unread_sections_are_chain(
+                   in_state->raw_tail, in_state->raw_tail_size / 4u)) {
+        /* Write the kept sections through the identifier chain, after the
+           base object sections. */
+        const size_t dwords = in_state->raw_tail_size / 4u;
+        size_t index = 0u;
+        bool last = false;
+        while (!last) {
+            uint32_t id = 0u;
+            size_t end = 0u;
+            (void)unread_section_at(
+                in_state->raw_tail, dwords, index, &id, &end, &last);
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(out_chunk, id));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_buffer_no_size(
+                out_chunk, in_state->raw_tail + (index + 2u) * 4u,
+                (end - index - 2u) * 4u));
+            index = end;
         }
     } else {
         /* Fallback: write raw_tail if present */

@@ -109,6 +109,11 @@ typedef struct nmo_objectanimation_state {
 
     nmo_vector_t root_pos;
     uint8_t has_root_pos;
+    /* The four floats after the root vector of the SHARED, CONTROLLERS and
+     * NEWDATA sections. The engine reads them and drops them (it always writes
+     * zeros); they are kept so a file that holds other values is written back
+     * unchanged. */
+    nmo_vector4_t root_extra;
 
     uint32_t flags;
     nmo_ref_t entity;
@@ -157,7 +162,11 @@ typedef struct nmo_objectanimation_state {
     uint8_t *legacy_morphkeys;
     size_t legacy_morphkeys_size;
 
-    /* Fallback for unparseable remainder */
+    /* Fallback for unparseable remainder. For an animation without a keyframe
+     * section (CKOBJANIM_FORMAT_NONE) it holds the other identifier sections of
+     * the chunk as a chain whose links count from the start of the buffer; the
+     * base object sections are left out. For SHARED it holds the bytes the
+     * section has beyond the fields that are read. */
     uint8_t *raw_tail;
     size_t raw_tail_size;
 } nmo_objectanimation_state_t;
