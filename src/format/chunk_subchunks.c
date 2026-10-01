@@ -257,6 +257,70 @@ nmo_status_t nmo_chunk_start_read_sub_chunk_sequence(nmo_chunk_t *chunk, size_t 
     NMO_RETURN_OK();
 }
 
+/* The layout CKStateChunk::ReadSubChunk (CK2 0x24023208) reads for chunks older
+   than version 4: [size][class][data size][skipped][data]. The size counts
+   itself, so the next sub-chunk starts `size` dwords after it. A newer chunk is
+   read this way too when the dword after the class, plus four, equals the size,
+   because that dword would be the old data size (a current header has the
+   versions there). The sub-chunk is made the way the engine makes it: both
+   versions 0, the data only, and no file. */
+static nmo_status_t read_old_layout_sub_chunk(
+    nmo_chunk_t *chunk, size_t start_pos, uint32_t class_id,
+    nmo_chunk_t **out_sub)
+{
+    nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
+    uint32_t data_size = 0;
+    uint32_t skipped = 0;
+
+    nmo_status_t result = nmo_chunk_read_dword(chunk, &data_size);
+    if (result == NMO_OK) {
+        result = nmo_chunk_read_dword(chunk, &skipped);
+    }
+    if (result != NMO_OK) {
+        state->current_pos = start_pos;
+        return result;
+    }
+    (void) skipped;
+
+    if (!nmo_chunk_has_read_capacity(chunk, data_size)) {
+        state->current_pos = start_pos;
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                               "Old sub-chunk data out of bounds");
+    }
+
+    nmo_chunk_t *sub = nmo_chunk_create(chunk->arena);
+    if (!sub) {
+        state->current_pos = start_pos;
+        NMO_CHUNK_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                               "Failed to create sub-chunk");
+    }
+
+    sub->class_id = class_id;
+    sub->chunk_class_id = (uint8_t) (class_id & 0xFFu);
+    sub->data_version = 0;
+    sub->chunk_version = 0;
+    /* No file: written back with a zero file flag, as the engine does. */
+    sub->chunk_options = NMO_CHUNK_OPTION_FILE_KEPT;
+
+    if (data_size > 0) {
+        result = nmo_arena_array_resize(&sub->data, data_size);
+        if (result != NMO_OK) {
+            state->current_pos = start_pos;
+            return result;
+        }
+
+        const uint32_t *parent_data =
+            NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+        uint32_t *sub_data = NMO_ARENA_ARRAY_DATA(uint32_t, &sub->data);
+        memcpy(sub_data, &parent_data[state->current_pos],
+               (size_t) data_size * sizeof(uint32_t));
+        state->current_pos += data_size;
+    }
+
+    *out_sub = sub;
+    NMO_RETURN_OK();
+}
+
 nmo_status_t nmo_chunk_read_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t **out_sub) {
     NMO_CHUNK_CHECK_ARGS(chunk, out_sub, "Invalid arguments");
 
@@ -297,6 +361,21 @@ nmo_status_t nmo_chunk_read_sub_chunk(nmo_chunk_t *chunk, nmo_chunk_t **out_sub)
     if (result != NMO_OK) {
         state->current_pos = start_pos;
         return result;
+    }
+
+    /* The engine reads the old layout from a chunk older than version 4, and
+       from a newer one when the next dword plus four is the size. */
+    {
+        int old_layout = (int16_t) chunk->chunk_version < NMO_CHUNK_VERSION1;
+        if (!old_layout && nmo_chunk_has_read_capacity(chunk, 1)) {
+            const uint32_t *parent_data =
+                NMO_ARENA_ARRAY_DATA(uint32_t, &chunk->data);
+            old_layout = (uint32_t) (parent_data[state->current_pos] + 4u) ==
+                         total_size;
+        }
+        if (old_layout) {
+            return read_old_layout_sub_chunk(chunk, start_pos, class_id, out_sub);
+        }
     }
 
     result = nmo_chunk_read_dword(chunk, &version_info);
