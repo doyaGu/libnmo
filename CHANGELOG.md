@@ -339,6 +339,10 @@ the tests build each layout dword by dword.
   of arrays and strings depended on other memory; it now matches the reference vectors. Object
   diffs print counted arrays, state chunks and opaque pointers by content instead of by address, so
   `diff objects` gives the same output on every run (apart from the JSON timestamp).
+- The snapshot bitmap of a parsed interface chunk is written back as the file held it while its
+  pixels are unchanged; encoding the pixels again gave a different BMP header, so every parsed
+  interface with a snapshot differed from its chunk. All 2066 parsed interfaces of the corpus now
+  write back equivalent to their chunk (`test_corpus_chunk_roundtrip`).
 - Chunks older than version 4 read the old sub-chunk layout (and newer chunks detect it as the
   engine does). The data section of a file below version 8 starts with the highest file id and
   the object count and is read and written that way; files of version 7 can be loaded.
