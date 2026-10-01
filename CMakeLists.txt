@@ -296,6 +296,16 @@ set(NMO_RUNTIME_SOURCES
     src/runtime/session_util.c
     src/runtime/workspace_edit_journal.c
     src/runtime/workspace_edit.c
+    src/runtime/workspace_edit_animation.c
+    src/runtime/workspace_edit_asset.c
+    src/runtime/workspace_edit_behavior.c
+    src/runtime/workspace_edit_common.c
+    src/runtime/workspace_edit_entity.c
+    src/runtime/workspace_edit_manager.c
+    src/runtime/workspace_edit_object.c
+    src/runtime/workspace_edit_param.c
+    src/runtime/workspace_edit_scene.c
+    src/runtime/workspace_edit_sound.c
     src/session/object_system.c
     src/session/deserializer.c
     src/session/id_mapping.c
