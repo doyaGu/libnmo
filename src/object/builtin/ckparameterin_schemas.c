@@ -36,6 +36,7 @@ static void nmo_parameterin_set_defaults(void *instance)
 
 static const nmo_object_state_member_t nmo_parameterin_members[] = {
     NMO_STATE_VALUE(nmo_parameterin_state_t, type_guid),
+    NMO_STATE_VALUE(nmo_parameterin_state_t, file_type_guid),
     NMO_STATE_VALUE(nmo_parameterin_state_t, legacy_prefix_ref),
     NMO_STATE_VALUE(nmo_parameterin_state_t, source),
     NMO_STATE_VALUE(nmo_parameterin_state_t, owner),
@@ -44,7 +45,8 @@ static const nmo_object_state_member_t nmo_parameterin_members[] = {
     NMO_STATE_VALUE(nmo_parameterin_state_t, has_legacy_layout),
     NMO_STATE_VALUE(nmo_parameterin_state_t, has_data),
     NMO_STATE_VALUE(nmo_parameterin_state_t, has_owner),
-    NMO_STATE_VALUE(nmo_parameterin_state_t, has_source)
+    NMO_STATE_VALUE(nmo_parameterin_state_t, has_source),
+    NMO_STATE_VALUE(nmo_parameterin_state_t, has_file_type_guid)
 };
 
 static const nmo_object_state_layout_t nmo_parameterin_layout = {
@@ -59,18 +61,31 @@ static const nmo_object_state_layout_t nmo_parameterin_layout = {
 
 NMO_DEFINE_OBJECT_LAYOUT_OPS(parameterin, nmo_parameterin_layout)
 
-static void nmo_parameterin_convert_legacy_guid(nmo_guid_t *guid) {
-    if (guid == NULL) {
-        return;
+/* CKParameterIn::Load maps these three legacy type GUIDs to the current ones. */
+static nmo_guid_t nmo_parameterin_map_legacy_guid(nmo_guid_t guid) {
+    if (nmo_guid_equals(guid, CKPGUID_OLDMESSAGE)) {
+        return CKPGUID_MESSAGE;
     }
+    if (nmo_guid_equals(guid, CKPGUID_OLDATTRIBUTE)) {
+        return CKPGUID_ATTRIBUTE;
+    }
+    if (nmo_guid_equals(guid, CKPGUID_OLDTIME)) {
+        return CKPGUID_TIME;
+    }
+    return guid;
+}
 
-    if (nmo_guid_equals(*guid, CKPGUID_OLDMESSAGE)) {
-        *guid = CKPGUID_MESSAGE;
-    } else if (nmo_guid_equals(*guid, CKPGUID_OLDATTRIBUTE)) {
-        *guid = CKPGUID_ATTRIBUTE;
-    } else if (nmo_guid_equals(*guid, CKPGUID_OLDTIME)) {
-        *guid = CKPGUID_TIME;
+/* The GUID to write: the one the file held, as long as it still maps to the
+ * state's type GUID (an edit of type_guid wins). */
+static nmo_guid_t nmo_parameterin_written_guid(
+    const nmo_parameterin_state_t *state)
+{
+    if (state->has_file_type_guid &&
+        nmo_guid_equals(nmo_parameterin_map_legacy_guid(state->file_type_guid),
+                        state->type_guid)) {
+        return state->file_type_guid;
     }
+    return state->type_guid;
 }
 
 /* =============================================================================
@@ -82,6 +97,7 @@ static const nmo_type_field_t nmo_parameterin_fields[] = {
                     sizeof(nmo_object_state_t), CKPGUID_OBJECT,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_parameterin_state_t, type_guid, CKPGUID_GUID),
+    NMO_FIELD(nmo_parameterin_state_t, file_type_guid, CKPGUID_GUID),
     NMO_FIELD_REF_VALUE(nmo_parameterin_state_t, legacy_prefix_ref),
     NMO_FIELD_REF_VALUE(nmo_parameterin_state_t, source),
     NMO_FIELD_REF_VALUE(nmo_parameterin_state_t, owner),
@@ -90,7 +106,8 @@ static const nmo_type_field_t nmo_parameterin_fields[] = {
     NMO_FIELD(nmo_parameterin_state_t, has_legacy_layout, CKPGUID_UINT8),
     NMO_FIELD(nmo_parameterin_state_t, has_data, CKPGUID_UINT8),
     NMO_FIELD(nmo_parameterin_state_t, has_owner, CKPGUID_UINT8),
-    NMO_FIELD(nmo_parameterin_state_t, has_source, CKPGUID_UINT8)
+    NMO_FIELD(nmo_parameterin_state_t, has_source, CKPGUID_UINT8),
+    NMO_FIELD(nmo_parameterin_state_t, has_file_type_guid, CKPGUID_UINT8)
 };
 
 static void nmo_parameterin_check_source(
@@ -152,6 +169,7 @@ static nmo_status_t nmo_parameterin_deserialize_internal(
 
     const uint32_t data_version = nmo_chunk_get_data_version(chunk);
     nmo_guid_t type_guid = NMO_GUID_NULL;
+    nmo_guid_t file_type_guid = NMO_GUID_NULL;
     nmo_ref_t legacy_prefix_ref =
         nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     nmo_ref_t source = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
@@ -175,8 +193,8 @@ static nmo_status_t nmo_parameterin_deserialize_internal(
             if (section_dwords > expected_dwords) {
                 return NMO_ERR_INVALID_FORMAT;
             }
-            NMO_RETURN_IF_ERROR(nmo_chunk_read_guid(chunk, &type_guid));
-            nmo_parameterin_convert_legacy_guid(&type_guid);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_guid(chunk, &file_type_guid));
+            type_guid = nmo_parameterin_map_legacy_guid(file_type_guid);
             if (data_version < 5) {
                 NMO_RETURN_IF_ERROR(nmo_ref_read(
                     chunk, &legacy_prefix_ref));
@@ -197,8 +215,8 @@ static nmo_status_t nmo_parameterin_deserialize_internal(
                 if (section_dwords > expected_dwords) {
                     return NMO_ERR_INVALID_FORMAT;
                 }
-                NMO_RETURN_IF_ERROR(nmo_chunk_read_guid(chunk, &type_guid));
-                nmo_parameterin_convert_legacy_guid(&type_guid);
+                NMO_RETURN_IF_ERROR(nmo_chunk_read_guid(chunk, &file_type_guid));
+                type_guid = nmo_parameterin_map_legacy_guid(file_type_guid);
                 if (data_version < 5) {
                     NMO_RETURN_IF_ERROR(nmo_ref_read(
                         chunk, &legacy_prefix_ref));
@@ -217,28 +235,30 @@ static nmo_status_t nmo_parameterin_deserialize_internal(
                     if (section_dwords > 5u) {
                         return NMO_ERR_INVALID_FORMAT;
                     }
-                    NMO_RETURN_IF_ERROR(nmo_chunk_read_guid(
-                        chunk, &type_guid));
-                    nmo_parameterin_convert_legacy_guid(&type_guid);
+                    NMO_RETURN_IF_ERROR(nmo_chunk_read_guid(chunk, &file_type_guid));
+                    type_guid = nmo_parameterin_map_legacy_guid(file_type_guid);
 
-                    nmo_ref_t out_source =
+                    nmo_ref_t shared_source =
                         nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
-                    nmo_ref_t parameter =
+                    nmo_ref_t direct_source =
                         nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
                     NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &owner));
-                    NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &out_source));
-                    NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &parameter));
+                    NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &shared_source));
+                    NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &direct_source));
                     has_data = 1;
                     has_owner = 1;
                     has_source = 1;
 
-                    if (nmo_ref_serialized_id(&out_source) !=
+                    /* CKParameterIn::Load keeps one source slot: the second
+                     * reference makes the input shared, the third is a direct
+                     * out source used only when the second is empty. */
+                    if (nmo_ref_serialized_id(&shared_source) !=
                         NMO_OBJECT_ID_NONE) {
-                        source = out_source;
-                    } else if (nmo_ref_serialized_id(&parameter) !=
-                               NMO_OBJECT_ID_NONE) {
-                        source = parameter;
+                        source = shared_source;
                         is_shared = 1;
+                    } else if (nmo_ref_serialized_id(&direct_source) !=
+                               NMO_OBJECT_ID_NONE) {
+                        source = direct_source;
                     }
                 } else if (result != NMO_ERR_NOT_FOUND) return result;
             } else return result;
@@ -251,8 +271,8 @@ static nmo_status_t nmo_parameterin_deserialize_internal(
         if (result == NMO_OK) {
             if (section_dwords < 2u) return NMO_ERR_TRUNCATED_CHUNK;
             if (section_dwords > 2u) return NMO_ERR_INVALID_FORMAT;
-            NMO_RETURN_IF_ERROR(nmo_chunk_read_guid(chunk, &type_guid));
-            nmo_parameterin_convert_legacy_guid(&type_guid);
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_guid(chunk, &file_type_guid));
+            type_guid = nmo_parameterin_map_legacy_guid(file_type_guid);
             has_data = 1;
         } else if (result != NMO_ERR_NOT_FOUND) return result;
         result = nmo_chunk_seek_identifier_with_size(
@@ -303,6 +323,9 @@ static nmo_status_t nmo_parameterin_deserialize_internal(
     nmo_parameterin_check_source(
         &source, repository, types, is_shared);
     out_state->type_guid = type_guid;
+    out_state->file_type_guid = file_type_guid;
+    out_state->has_file_type_guid =
+        !nmo_guid_equals(file_type_guid, type_guid);
     out_state->legacy_prefix_ref = legacy_prefix_ref;
     out_state->source = source;
     out_state->owner = owner;
@@ -393,7 +416,7 @@ static nmo_status_t nmo_parameterin_serialize_internal(
             result = nmo_chunk_write_identifier(
                 out_chunk, CK_STATESAVE_PARAMETERIN_DEFAULTDATA);
             if (result != NMO_OK) return result;
-            result = nmo_chunk_write_guid(out_chunk, in_state->type_guid);
+            result = nmo_chunk_write_guid(out_chunk, nmo_parameterin_written_guid(in_state));
             if (result != NMO_OK) return result;
         }
 
@@ -430,17 +453,18 @@ static nmo_status_t nmo_parameterin_serialize_internal(
         result = nmo_chunk_write_identifier(
             out_chunk, CK_STATESAVE_PARAMETERIN_DEFAULTDATA);
         if (result != NMO_OK) return result;
-        result = nmo_chunk_write_guid(out_chunk, in_state->type_guid);
+        result = nmo_chunk_write_guid(out_chunk, nmo_parameterin_written_guid(in_state));
         if (result != NMO_OK) return result;
         result = nmo_ref_write(out_chunk, &in_state->owner);
+        if (result != NMO_OK) return result;
+        /* Second reference is the shared source, third the direct one. */
+        result = nmo_ref_write(
+            out_chunk,
+            has_source && in_state->is_shared ? &in_state->source : &none);
         if (result != NMO_OK) return result;
         result = nmo_ref_write(
             out_chunk,
             has_source && !in_state->is_shared ? &in_state->source : &none);
-        if (result != NMO_OK) return result;
-        result = nmo_ref_write(
-            out_chunk,
-            has_source && in_state->is_shared ? &in_state->source : &none);
         if (result != NMO_OK) return result;
         if (in_state->is_disabled) {
             result = nmo_chunk_write_identifier(
@@ -467,7 +491,7 @@ static nmo_status_t nmo_parameterin_serialize_internal(
     result = nmo_chunk_write_identifier(out_chunk, identifier);
     if (result != NMO_OK) return result;
 
-    result = nmo_chunk_write_guid(out_chunk, in_state->type_guid);
+    result = nmo_chunk_write_guid(out_chunk, nmo_parameterin_written_guid(in_state));
     if (result != NMO_OK) return result;
 
     if (data_version < 5) {

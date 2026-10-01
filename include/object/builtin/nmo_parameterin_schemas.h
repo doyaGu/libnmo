@@ -43,7 +43,8 @@ typedef struct nmo_parameterin_state {
     /* Base CKObject state */
     nmo_object_state_t base;
 
-    nmo_guid_t type_guid;              /**< Parameter type GUID */
+    nmo_guid_t type_guid;              /**< Parameter type GUID (legacy GUIDs mapped as the engine does) */
+    nmo_guid_t file_type_guid;         /**< GUID the file held when it differed from type_guid */
     nmo_ref_t legacy_prefix_ref;        /**< Preserved v1-v4 prefix reference */
     nmo_ref_t source;                  /**< Source parameter (direct or shared) */
     nmo_ref_t owner;                   /**< Owner behavior or parameter operation */
@@ -53,6 +54,7 @@ typedef struct nmo_parameterin_state {
     uint8_t has_data;                  /**< Data section was present */
     uint8_t has_owner;                 /**< Owner lane/section was present */
     uint8_t has_source;                /**< Source lane/section was present */
+    uint8_t has_file_type_guid;        /**< file_type_guid holds a legacy GUID that load mapped */
 } nmo_parameterin_state_t;
 
 static inline nmo_object_id_t nmo_parameterin_source_id(

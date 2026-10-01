@@ -91,6 +91,22 @@ static const nmo_type_field_t nmo_parameter_fields[] = {
 /* From CKParameter.cpp */
 #define CK_PARAM_IDENTIFIER  0x00000040
 
+nmo_guid_t nmo_parameter_effective_type_guid(
+    const nmo_parameter_state_t *state)
+{
+    if (state == NULL) return NMO_GUID_NULL;
+    const nmo_guid_t guid = state->type_guid;
+    if (nmo_guid_equals(guid, CKPGUID_OLDMESSAGE)) return CKPGUID_MESSAGE;
+    if (nmo_guid_equals(guid, CKPGUID_OLDATTRIBUTE)) return CKPGUID_ATTRIBUTE;
+    if (nmo_guid_equals(guid, CKPGUID_ID)) {
+        /* The engine maps the old id type to 30EC20AB-6DF6517D. */
+        const nmo_guid_t mapped = NMO_GUID_INIT(0x30EC20ABu, 0x6DF6517Du);
+        return mapped;
+    }
+    if (nmo_guid_equals(guid, CKPGUID_OLDTIME)) return CKPGUID_TIME;
+    return guid;
+}
+
 static void nmo_parameter_check_object_ref(
     nmo_ref_t *ref,
     nmo_guid_t parameter_type_guid,
@@ -235,7 +251,7 @@ static nmo_status_t nmo_parameter_deserialize_internal(
             return NMO_ERR_INVALID_FORMAT;
         }
         nmo_parameter_check_object_ref(
-            &object_ref, out_state->type_guid, context);
+            &object_ref, nmo_parameter_effective_type_guid(out_state), context);
         out_state->mode = CKPARAM_MODE_OBJECT;
         out_state->object_ref = object_ref;
         NMO_RETURN_OK();

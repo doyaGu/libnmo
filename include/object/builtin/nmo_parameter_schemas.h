@@ -146,6 +146,17 @@ NMO_API nmo_parameter_state_t *nmo_parameter_get_mutable_state(nmo_object_t *obj
 NMO_API const nmo_parameter_state_t *nmo_parameter_get_state(const nmo_object_t *obj);
 
 /**
+ * @brief Type GUID the engine uses for a parameter after load.
+ *
+ * CKParameter::Load maps four legacy type GUIDs (old message, attribute,
+ * time and id) to the current ones. The state keeps the GUID the file holds,
+ * because the buffer that goes with it is still in the old layout; use this
+ * to look the type up the way the engine does.
+ */
+NMO_API nmo_guid_t nmo_parameter_effective_type_guid(
+    const nmo_parameter_state_t *state);
+
+/**
  * @brief Get a parameter's buffer value as a string.
  *
  * @param obj       Parameter object (CKParameter, CKParameterOut, CKParameterLocal)

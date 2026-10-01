@@ -29,6 +29,7 @@ static void nmo_parameteroperation_set_defaults(void *instance)
 
 static const nmo_object_state_member_t nmo_parameteroperation_members[] = {
     NMO_STATE_VALUE(nmo_parameteroperation_state_t, operation_guid),
+    NMO_STATE_VALUE(nmo_parameteroperation_state_t, file_operation_guid),
     NMO_STATE_VALUE(nmo_parameteroperation_state_t, legacy_prefix_ref),
     NMO_STATE_VALUE(nmo_parameteroperation_state_t, owner),
     NMO_STATE_VALUE(nmo_parameteroperation_state_t, in1.ref),
@@ -43,7 +44,8 @@ static const nmo_object_state_member_t nmo_parameteroperation_members[] = {
     NMO_STATE_VALUE(nmo_parameteroperation_state_t, has_owner),
     NMO_STATE_VALUE(nmo_parameteroperation_state_t, has_in1),
     NMO_STATE_VALUE(nmo_parameteroperation_state_t, has_in2),
-    NMO_STATE_VALUE(nmo_parameteroperation_state_t, has_out)
+    NMO_STATE_VALUE(nmo_parameteroperation_state_t, has_out),
+    NMO_STATE_VALUE(nmo_parameteroperation_state_t, has_file_operation_guid)
 };
 
 static const nmo_object_state_layout_t nmo_parameteroperation_layout = {
@@ -58,6 +60,47 @@ static const nmo_object_state_layout_t nmo_parameteroperation_layout = {
 
 NMO_DEFINE_OBJECT_LAYOUT_OPS(parameteroperation, nmo_parameteroperation_layout)
 
+/* The engine's VerifyGUID table (CK2.dll 0x24009E64): six operation GUIDs of
+ * older Virtools versions and the ones CKParameterOperation::Load maps them to. */
+static const struct {
+    nmo_guid_t from;
+    nmo_guid_t to;
+} nmo_parameteroperation_guid_map[] = {
+    {NMO_GUID_INIT(0x0CD9471Au, 0x52D93818u), NMO_GUID_INIT(0x4BC87AEAu, 0x6B5B643Eu)},
+    {NMO_GUID_INIT(0x48C20DEDu, 0xFEC20DA3u), NMO_GUID_INIT(0x4BC87AEAu, 0x6B5B643Eu)},
+    {NMO_GUID_INIT(0x48C20DEFu, 0xFECD00A0u), NMO_GUID_INIT(0x12926657u, 0x6228322Eu)},
+    {NMO_GUID_INIT(0x48C20DEEu, 0xFEC200ADu), NMO_GUID_INIT(0x389F72BDu, 0x7AEF3482u)},
+    {NMO_GUID_INIT(0x48C20DEDu, 0xFEC20DA0u), NMO_GUID_INIT(0x093D5158u, 0x53EF47A0u)},
+    {NMO_GUID_INIT(0x06B94737u, 0x20D32C21u), NMO_GUID_INIT(0x25991E7Eu, 0x32CC55E7u)},
+};
+
+static nmo_guid_t nmo_parameteroperation_verify_guid(nmo_guid_t guid)
+{
+    for (size_t i = 0;
+         i < sizeof(nmo_parameteroperation_guid_map) /
+                 sizeof(nmo_parameteroperation_guid_map[0]);
+         ++i) {
+        if (nmo_guid_equals(guid, nmo_parameteroperation_guid_map[i].from)) {
+            return nmo_parameteroperation_guid_map[i].to;
+        }
+    }
+    return guid;
+}
+
+/* The GUID to write: the one the file held, as long as it still maps to the
+ * state's operation GUID (an edit of operation_guid wins). */
+static nmo_guid_t nmo_parameteroperation_written_guid(
+    const nmo_parameteroperation_state_t *state)
+{
+    if (state->has_file_operation_guid &&
+        nmo_guid_equals(
+            nmo_parameteroperation_verify_guid(state->file_operation_guid),
+            state->operation_guid)) {
+        return state->file_operation_guid;
+    }
+    return state->operation_guid;
+}
+
 /* =============================================================================
  * REFLECTION FIELDS
  * ============================================================================= */
@@ -67,6 +110,7 @@ static const nmo_type_field_t nmo_parameteroperation_fields[] = {
                     sizeof(nmo_object_state_t), CKPGUID_NONE,
                     NMO_FIELD_REQUIRED, 0),
     NMO_FIELD(nmo_parameteroperation_state_t, operation_guid, CKPGUID_GUID),
+    NMO_FIELD(nmo_parameteroperation_state_t, file_operation_guid, CKPGUID_GUID),
     NMO_FIELD_REF_VALUE(nmo_parameteroperation_state_t, legacy_prefix_ref),
     NMO_FIELD_NAMED("owner", offsetof(nmo_parameteroperation_state_t, owner),
                     sizeof(nmo_ref_t), CKPGUID_ID,
@@ -124,6 +168,8 @@ static nmo_status_t nmo_parameteroperation_deserialize_internal(
 
     nmo_parameteroperation_state_t decoded = *out_state;
     memset(&decoded.operation_guid, 0, sizeof(decoded.operation_guid));
+    memset(&decoded.file_operation_guid, 0, sizeof(decoded.file_operation_guid));
+    decoded.has_file_operation_guid = 0;
     decoded.legacy_prefix_ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     decoded.owner = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
     decoded.in1.ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
@@ -289,6 +335,12 @@ static nmo_status_t nmo_parameteroperation_deserialize_internal(
     } else if (result != NMO_ERR_NOT_FOUND) return result;
 
 commit:
+    /* CKParameterOperation::Load maps the operation GUID with VerifyGUID. */
+    decoded.file_operation_guid = decoded.operation_guid;
+    decoded.operation_guid =
+        nmo_parameteroperation_verify_guid(decoded.file_operation_guid);
+    decoded.has_file_operation_guid = !nmo_guid_equals(
+        decoded.file_operation_guid, decoded.operation_guid);
     {
         const nmo_object_repository_t *repository =
             (const nmo_object_repository_t *)
@@ -426,7 +478,7 @@ static nmo_status_t nmo_parameteroperation_serialize_internal(
                 NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(
                     out_chunk, CK_STATESAVE_OPERATIONOP));
                 NMO_RETURN_IF_ERROR(nmo_chunk_write_guid(
-                    out_chunk, in_state->operation_guid));
+                    out_chunk, nmo_parameteroperation_written_guid(in_state)));
             }
             if (in_state->has_owner) {
                 NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(
@@ -456,7 +508,7 @@ static nmo_status_t nmo_parameteroperation_serialize_internal(
         nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_OPERATIONNEWDATA);
         if (result != NMO_OK) return result;
 
-        result = nmo_chunk_write_guid(out_chunk, in_state->operation_guid);
+        result = nmo_chunk_write_guid(out_chunk, nmo_parameteroperation_written_guid(in_state));
         if (result != NMO_OK) return result;
 
         size_t ref_count = in_state->has_out ? 3u :
@@ -495,7 +547,7 @@ static nmo_status_t nmo_parameteroperation_serialize_internal(
     if ((save_flags & CK_STATESAVE_OPERATIONOP) != 0) {
         nmo_status_t result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_OPERATIONOP);
         if (result != NMO_OK) return result;
-        result = nmo_chunk_write_guid(out_chunk, in_state->operation_guid);
+        result = nmo_chunk_write_guid(out_chunk, nmo_parameteroperation_written_guid(in_state));
         if (result != NMO_OK) return result;
     }
 

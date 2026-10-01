@@ -5767,10 +5767,12 @@ TEST(chunk_id_remap, parameter_refs_require_layout_classes) {
         owned_input, CK_STATESAVE_PARAMETERIN_DEFAULTDATA));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_guid(
         owned_input, (nmo_guid_t){3u, 4u}));
+    /* CKParameterIn::Load: the second reference is the shared source, the
+     * third the direct out source. */
     ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(owned_input, 704u));
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(owned_input, 701u));
     ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(
         owned_input, NMO_OBJECT_ID_NONE));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_raw_object_id(owned_input, 701u));
     nmo_chunk_close(owned_input);
     nmo_chunk_set_file_context(owned_input, &file_context);
 

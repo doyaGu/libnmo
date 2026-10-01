@@ -33,7 +33,8 @@ typedef struct nmo_parameteroperation_ref {
  */
 typedef struct nmo_parameteroperation_state {
     nmo_object_state_t base;
-    nmo_guid_t operation_guid;
+    nmo_guid_t operation_guid;      /**< Operation GUID (legacy GUIDs mapped as the engine does) */
+    nmo_guid_t file_operation_guid; /**< GUID the file held when it differed from operation_guid */
     nmo_ref_t legacy_prefix_ref;
     nmo_ref_t owner;
     nmo_parameteroperation_ref_t in1;
@@ -46,6 +47,7 @@ typedef struct nmo_parameteroperation_state {
     uint8_t has_in1;
     uint8_t has_in2;
     uint8_t has_out;
+    uint8_t has_file_operation_guid; /**< file_operation_guid holds a legacy GUID that load mapped */
 } nmo_parameteroperation_state_t;
 
 static inline nmo_object_id_t nmo_parameteroperation_owner_id(
