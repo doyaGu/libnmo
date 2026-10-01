@@ -370,6 +370,21 @@ the tests build each layout dword by dword.
 - The 3D entity z-order and the entity matrix of a legacy curve point are kept as stored; the values
   the engine uses come from `nmo_3dentity_effective_z_order` and `nmo_curvepoint_get_position`.
 
+### Fixed - Rolling back an edit restores the interface of a behavior
+- The snapshot a script edit takes of a behavior copied the struct, which shares the `interface_data`
+  pointer, so changes made to the editor layout in place survived `nmo_script_edit_rollback` while the graph
+  arrays came back. After `remove_node` and the canonicalize policy the interface held one sub less than the
+  graph and a rollback left it that way (`rollback_restores_the_interface_the_policy_canonicalized`). The
+  snapshot now deep-copies the interface data (`nmo_interface_data_copy`, moved to the format layer and
+  checked against all 2,304 interfaces of the corpus) into the journal and a rollback copies it back.
+- `nmo_interface_graph_io_set_array` takes the matching tag array and clears it. It used to leave the tags
+  of the old ports behind the new array, so a longer port list made the writer read tags past the end. The
+  interface data copy accepts ports without tags.
+- `nmo_script_edit_open_interface` and `nmo_script_edit_interface_changed` are the gateway for in-place edits
+  of the editor layout, and every `nmo behavior interface` command runs inside a script edit transaction. The
+  commands used to change the layout first and open a separate edit only to mark it, so a failed or dry-run
+  command could not be undone.
+
 ### Changed - Chunks keep no copy of the bytes they were parsed from
 - `nmo_chunk_t` lost `raw_data` and `raw_size`, and `nmo_data_chunk_slice_t` lost `borrowed`. A parsed chunk
   used to keep its source buffer and the data section writer emitted those bytes instead of the chunk, so a
