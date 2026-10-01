@@ -65,7 +65,11 @@ add_integration_test(test_generated_scene_roundtrip)
 add_integration_test(test_generated_visible_scene)
 add_integration_test(test_generated_script_lifecycle)
 add_integration_test(test_generated_project_rollback)
+add_integration_test(test_generated_chunk_roundtrip)
 set_tests_properties(test_generated_script_lifecycle PROPERTIES
+    ENVIRONMENT "NMO_DATA_DIR=${PROJECT_SOURCE_DIR}/data"
+)
+set_tests_properties(test_generated_chunk_roundtrip PROPERTIES
     ENVIRONMENT "NMO_DATA_DIR=${PROJECT_SOURCE_DIR}/data"
 )
 
@@ -278,7 +282,7 @@ foreach(_nmo_test IN ITEMS
         test_project_skeleton_acceptance test_generated_scene_roundtrip
         test_generated_visible_scene test_generated_script_lifecycle
         test_generated_project_rollback test_generated_project_acceptance
-        test_generated_advanced_subsystem_probes)
+        test_generated_advanced_subsystem_probes test_generated_chunk_roundtrip)
     if(TARGET ${_nmo_test})
         target_link_libraries(${_nmo_test} PRIVATE nmo_project)
     endif()
