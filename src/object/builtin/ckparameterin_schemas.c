@@ -376,12 +376,7 @@ static nmo_status_t nmo_parameterin_serialize_internal(
     }
 
     /* Write base CKObject state (merged into this chunk by AddChunkAndDelete) */
-    const nmo_serialize_context_t *ser_ctx =
-        nmo_serialize_context_try(context);
-    const bool is_file =
-        ((out_chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
-        (ser_ctx != NULL &&
-         (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
+    const bool is_file = nmo_object_serialize_is_file(out_chunk, context);
     uint32_t data_version = nmo_chunk_get_data_version(out_chunk);
     const bool legacy_layout =
         data_version == 0u && in_state->has_legacy_layout;

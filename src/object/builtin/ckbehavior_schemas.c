@@ -1088,10 +1088,7 @@ static nmo_status_t nmo_behavior_serialize_internal(
 
     const nmo_serialize_context_t *ser_ctx =
         nmo_serialize_context_try(context);
-    const bool is_file =
-        ((out_chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
-        (ser_ctx != NULL &&
-         (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
+    const bool is_file = nmo_object_serialize_is_file(out_chunk, context);
     const bool write_file_format = is_file;
     const uint32_t data_version =
         nmo_chunk_get_data_version(out_chunk);

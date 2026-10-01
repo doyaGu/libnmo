@@ -437,12 +437,7 @@ static nmo_status_t nmo_parameteroperation_serialize_internal(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_parameteroperation_serialize");
     }
 
-    const nmo_serialize_context_t *serialize_context =
-        nmo_serialize_context_try(context);
-    const int is_file =
-        ((out_chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
-        (serialize_context != NULL &&
-         (serialize_context->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
+    const bool is_file = nmo_object_serialize_is_file(out_chunk, context);
     uint32_t data_version = nmo_chunk_get_data_version(out_chunk);
     const bool legacy_file_layout = is_file && data_version < 5u &&
         (data_version != 0u || in_state->has_legacy_prefix ||

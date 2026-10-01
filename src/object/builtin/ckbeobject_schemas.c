@@ -788,12 +788,7 @@ static nmo_status_t nmo_beobject_serialize_internal(
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_beobject_serialize");
     }
 
-    const nmo_serialize_context_t *ser_ctx =
-        nmo_serialize_context_try(context);
-    const bool is_file =
-        ((out_chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
-        (ser_ctx != NULL &&
-         (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
+    const bool is_file = nmo_object_serialize_is_file(out_chunk, context);
     const bool write_data_section = is_file &&
         (in_state->has_data_section || in_state->priority != 0);
     const uint32_t requested_data_version =

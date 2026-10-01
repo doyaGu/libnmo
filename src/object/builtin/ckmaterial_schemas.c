@@ -535,11 +535,7 @@ static nmo_status_t nmo_material_serialize_internal(
     (void)type;
     const nmo_material_state_t *state = (const nmo_material_state_t *)instance;
     const nmo_serialize_context_t *ser_ctx = nmo_serialize_context_try(context);
-    const bool is_file =
-        (chunk != NULL &&
-         (chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0) ||
-        (ser_ctx != NULL &&
-         (ser_ctx->flags & NMO_SERIALIZE_FLAG_FILE_MODE) != 0);
+    const bool is_file = nmo_object_serialize_is_file(chunk, context);
     const uint32_t save_flags = ser_ctx ? ser_ctx->save_flags : 0;
 
     if (!state || !chunk) {
