@@ -10,6 +10,9 @@
 #include "runtime/nmo_context.h"
 #include "session/nmo_session.h"
 #include "runtime/nmo_workspace.h"
+#include "format/nmo_chunk.h"
+#include "format/nmo_chunk_api.h"
+#include "format/nmo_chunk_residue.h"
 #include "format/nmo_interface_chunk.h"
 #include "format/nmo_object.h"
 #include "type/nmo_type_query.h"
@@ -605,6 +608,70 @@ TEST(script_edit_interface, removes_interface_from_explicit_behavior_type)
     nmo_context_release(ctx);
 }
 
+/* The interface of a script as the chunk it writes. */
+static nmo_chunk_t *encode_interface(nmo_arena_t *arena, const nmo_interface_data_t *data)
+{
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    if (chunk == NULL || nmo_chunk_start_write(chunk) != NMO_OK ||
+        nmo_interface_chunk_write(chunk, data, NULL) != NMO_OK) {
+        return NULL;
+    }
+    nmo_chunk_close(chunk);
+    return chunk;
+}
+
+TEST(script_edit_interface, rollback_restores_the_interface_the_policy_canonicalized)
+{
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
+
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){ .data_dir = NMO_TEST_DATA_DIR });
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    ASSERT_EQ(NMO_OK, nmo_session_load_file(session, NMO_SCRIPT_INTERFACE_FIXTURE, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_ensure_behavior_acceleration(session));
+
+    nmo_behavior_state_t *state = find_behavior_state(session, NMO_SCRIPT_INTERFACE_TARGET_ID, NULL);
+    ASSERT_NOT_NULL(state);
+    ASSERT_NOT_NULL(state->interface_data);
+    const size_t interface_subs_before = state->interface_data->sub_count;
+    const size_t graph_subs_before = state->sub_behaviors.count;
+    ASSERT_GE(graph_subs_before, 1u);
+
+    nmo_arena_t *arena = nmo_arena_create(NULL, 1u << 20);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t *before = encode_interface(arena, state->interface_data);
+    ASSERT_NOT_NULL(before);
+
+    /* Remove a node and canonicalize: the interface drops the node's entry. */
+    nmo_script_edit_tx_t *tx = NULL;
+    ASSERT_EQ(NMO_OK, begin_test_script_edit(ctx, session, "interface rollback", &tx));
+    const nmo_object_id_t node_id = nmo_behavior_ref_array_get_id(&state->sub_behaviors, 0u);
+    ASSERT_EQ(NMO_OK, nmo_script_edit_remove_node(tx, NMO_SCRIPT_INTERFACE_TARGET_ID, node_id, 0u));
+    ASSERT_EQ(NMO_OK, nmo_script_edit_apply_interface_policy(
+        tx, NMO_SCRIPT_INTERFACE_TARGET_ID, NMO_SCRIPT_EDIT_INTERFACE_CANONICALIZE));
+    ASSERT_LT(state->interface_data->sub_count, interface_subs_before);
+    nmo_chunk_t *during = encode_interface(arena, state->interface_data);
+    ASSERT_NOT_NULL(during);
+    ASSERT_FALSE(nmo_chunk_equivalent_to_tracked(before, during));
+
+    nmo_script_edit_rollback(tx);
+
+    /* The graph came back, and so did the interface that describes it. */
+    state = find_behavior_state(session, NMO_SCRIPT_INTERFACE_TARGET_ID, NULL);
+    ASSERT_NOT_NULL(state);
+    ASSERT_EQ(graph_subs_before, state->sub_behaviors.count);
+    ASSERT_NOT_NULL(state->interface_data);
+    ASSERT_EQ(interface_subs_before, state->interface_data->sub_count);
+    nmo_chunk_t *after = encode_interface(arena, state->interface_data);
+    ASSERT_NOT_NULL(after);
+    ASSERT_TRUE(nmo_chunk_equivalent_to_tracked(before, after));
+
+    nmo_arena_destroy(arena);
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(script_edit_interface,
                   remove_io_canonicalize_updates_interface_data_in_memory);
@@ -614,6 +681,8 @@ TEST_MAIN_BEGIN()
                   canonicalize_resolves_explicit_interface_objects);
     REGISTER_TEST(script_edit_interface,
                   removes_interface_from_explicit_behavior_type);
+    REGISTER_TEST(script_edit_interface,
+                  rollback_restores_the_interface_the_policy_canonicalized);
 TEST_MAIN_END()
 
 
