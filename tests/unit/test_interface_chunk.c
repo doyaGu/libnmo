@@ -5,6 +5,7 @@
 
 #include "test_framework.h"
 #include "format/nmo_interface_chunk.h"
+#include "format/nmo_interface_edit.h"
 #include "format/nmo_chunk_context.h"
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_chunk.h"
@@ -3198,6 +3199,48 @@ TEST(interface_chunk, sectioned_parameter_and_graph_sections_round_trip) {
     nmo_arena_destroy(arena);
 }
 
+TEST(interface_chunk, replacing_graph_io_ports_drops_the_tags_of_the_old_ports) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t *encoded = make_params_and_graph_io_fixture(arena);
+    ASSERT_NOT_NULL(encoded);
+
+    nmo_interface_data_t parsed;
+    memset(&parsed, 0, sizeof(parsed));
+    ASSERT_EQ(NMO_OK, nmo_interface_chunk_parse(encoded, arena, NULL, &parsed));
+    nmo_interface_graph_io_t *gio = parsed.script.body.graph_io;
+    ASSERT_NOT_NULL(gio);
+    ASSERT_NOT_NULL(gio->inward_input_tags);
+    ASSERT_EQ(1, (int)gio->inward_input_count);
+    ASSERT_EQ(71, gio->inward_input_tags[0]);
+
+    /* Three ports where the file had one. The old tag array holds one entry; writing
+       the new ports must not read a second and third from it. */
+    const int32_t ports[] = {5, 6, 7};
+    ASSERT_EQ(NMO_OK, nmo_interface_graph_io_set_array(&gio->inward_inputs, &gio->inward_input_tags,
+                                                       &gio->inward_input_count, arena, ports, 3u));
+    ASSERT_NULL(gio->inward_input_tags);
+
+    nmo_chunk_t *rewritten = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(rewritten);
+    ASSERT_EQ(NMO_OK, nmo_interface_chunk_write(rewritten, &parsed, NULL));
+    nmo_interface_data_t again;
+    memset(&again, 0, sizeof(again));
+    ASSERT_EQ(NMO_OK, nmo_interface_chunk_parse(rewritten, arena, NULL, &again));
+    const nmo_interface_graph_io_t *back = again.script.body.graph_io;
+    ASSERT_NOT_NULL(back);
+    ASSERT_EQ(3, (int)back->inward_input_count);
+    for (int i = 0; i < 3; i++) {
+        ASSERT_EQ(ports[i], back->inward_inputs[i]);
+        ASSERT_EQ(-1, back->inward_input_tags[i]);   /* the default marker of an input */
+    }
+    /* The other arrays kept theirs. */
+    ASSERT_EQ(72, back->outward_input_tags[0]);
+    ASSERT_EQ(74, back->outward_output_tags[0]);
+
+    nmo_arena_destroy(arena);
+}
+
 TEST(interface_chunk, data_copy_is_a_deep_independent_copy) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
     ASSERT_NOT_NULL(arena);
@@ -3223,6 +3266,17 @@ TEST(interface_chunk, data_copy_is_a_deep_independent_copy) {
     ASSERT_EQ(NMO_OK, nmo_interface_chunk_write(from_original, &parsed, NULL));
     ASSERT_EQ(NMO_OK, nmo_interface_chunk_write(from_copy, copy, NULL));
     assert_chunk_dwords_equal(from_original, from_copy);
+
+    /* Ports without tags (a set_array result) copy too. */
+    {
+        nmo_interface_data_t *untagged = NULL;
+        parsed.script.body.graph_io->inward_input_tags = NULL;
+        ASSERT_EQ(NMO_OK, nmo_interface_data_copy(arena, &untagged, &parsed));
+        ASSERT_NOT_NULL(untagged);
+        ASSERT_NULL(untagged->script.body.graph_io->inward_input_tags);
+        ASSERT_NOT_NULL(untagged->script.body.graph_io->outward_input_tags);
+        parsed.script.body.graph_io->inward_input_tags = copy->script.body.graph_io->inward_input_tags;
+    }
 
     /* Changing the original does not reach the copy. */
     parsed.script.h_pos += 5.0f;
@@ -3316,5 +3370,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(interface_chunk, sectioned_body_count_stays_in_section);
     REGISTER_TEST(interface_chunk, sectioned_parameter_and_graph_sections_round_trip);
     REGISTER_TEST(interface_chunk, data_copy_is_a_deep_independent_copy);
+    REGISTER_TEST(interface_chunk, replacing_graph_io_ports_drops_the_tags_of_the_old_ports);
 TEST_MAIN_END()
 

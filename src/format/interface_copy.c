@@ -103,7 +103,7 @@ static nmo_status_t nmo_interface_copy_graph_io(
     copy->inward_input_tags = NULL;
     copy->outward_input_tags = NULL;
     copy->inward_output_tags = NULL;
-    copy->outward_output_tags = NULL;
+    copy->outward_output_tags = NULL; /* tags are optional: the writer then uses the port's default marker */
 
     NMO_RETURN_IF_ERROR(nmo_interface_copy_array(
         arena, (void **)&copy->inward_inputs, src->inward_inputs,
@@ -117,18 +117,26 @@ static nmo_status_t nmo_interface_copy_graph_io(
     NMO_RETURN_IF_ERROR(nmo_interface_copy_array(
         arena, (void **)&copy->outward_outputs, src->outward_outputs,
         sizeof(int32_t), src->outward_output_count, "graph outward outputs"));
-    NMO_RETURN_IF_ERROR(nmo_interface_copy_array(
-        arena, (void **)&copy->inward_input_tags, src->inward_input_tags,
-        sizeof(int32_t), src->inward_input_count, "graph inward input tags"));
-    NMO_RETURN_IF_ERROR(nmo_interface_copy_array(
-        arena, (void **)&copy->outward_input_tags, src->outward_input_tags,
-        sizeof(int32_t), src->outward_input_count, "graph outward input tags"));
-    NMO_RETURN_IF_ERROR(nmo_interface_copy_array(
-        arena, (void **)&copy->inward_output_tags, src->inward_output_tags,
-        sizeof(int32_t), src->inward_output_count, "graph inward output tags"));
-    NMO_RETURN_IF_ERROR(nmo_interface_copy_array(
-        arena, (void **)&copy->outward_output_tags, src->outward_output_tags,
-        sizeof(int32_t), src->outward_output_count, "graph outward output tags"));
+    if (src->inward_input_tags != NULL) {
+        NMO_RETURN_IF_ERROR(nmo_interface_copy_array(
+            arena, (void **)&copy->inward_input_tags, src->inward_input_tags,
+            sizeof(int32_t), src->inward_input_count, "graph inward input tags"));
+    }
+    if (src->outward_input_tags != NULL) {
+        NMO_RETURN_IF_ERROR(nmo_interface_copy_array(
+            arena, (void **)&copy->outward_input_tags, src->outward_input_tags,
+            sizeof(int32_t), src->outward_input_count, "graph outward input tags"));
+    }
+    if (src->inward_output_tags != NULL) {
+        NMO_RETURN_IF_ERROR(nmo_interface_copy_array(
+            arena, (void **)&copy->inward_output_tags, src->inward_output_tags,
+            sizeof(int32_t), src->inward_output_count, "graph inward output tags"));
+    }
+    if (src->outward_output_tags != NULL) {
+        NMO_RETURN_IF_ERROR(nmo_interface_copy_array(
+            arena, (void **)&copy->outward_output_tags, src->outward_output_tags,
+            sizeof(int32_t), src->outward_output_count, "graph outward output tags"));
+    }
 
     *dst = copy;
     NMO_RETURN_OK();

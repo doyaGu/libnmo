@@ -303,18 +303,20 @@ nmo_status_t nmo_interface_link_remove_point(
 
 nmo_status_t nmo_interface_graph_io_set_array(
     int32_t **array_ptr,
+    int32_t **tags_ptr,
     size_t *count_ptr,
     nmo_arena_t *arena,
     const int32_t *values,
     size_t count)
 {
-    if (!array_ptr || !count_ptr || !arena) {
+    if (!array_ptr || !tags_ptr || !count_ptr || !arena) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "interface edit: graph_io_set_array NULL argument");
     }
 
     if (count == 0) {
         *array_ptr = NULL;
+        *tags_ptr = NULL;
         *count_ptr = 0;
         return NMO_OK;
     }
@@ -333,6 +335,8 @@ nmo_status_t nmo_interface_graph_io_set_array(
     memcpy(new_arr, values, count * sizeof(int32_t));
 
     *array_ptr = new_arr;
+    /* The old tags belong to the old ports and have the old length. */
+    *tags_ptr = NULL;
     *count_ptr = count;
     return NMO_OK;
 }

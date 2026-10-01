@@ -189,10 +189,14 @@ NMO_API nmo_status_t nmo_interface_link_remove_point(
 /**
  * @brief Set a graph IO port ordering array.
  * Arena-allocates new array and copies values. Pass to any of the 4 arrays
- * via pointer-to-pointer (e.g. &gio->inward_inputs, &gio->inward_input_count).
+ * via pointer-to-pointer (e.g. &gio->inward_inputs, &gio->inward_input_tags,
+ * &gio->inward_input_count). The tags of the old ports are dropped, so the
+ * writer gives the new ports the default marker (-1 for inputs, 1 for outputs);
+ * keeping them would leave tags of the wrong length behind the new array.
  */
 NMO_API nmo_status_t nmo_interface_graph_io_set_array(
     int32_t **array_ptr,
+    int32_t **tags_ptr,
     size_t *count_ptr,
     nmo_arena_t *arena,
     const int32_t *values,

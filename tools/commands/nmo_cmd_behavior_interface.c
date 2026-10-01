@@ -1473,7 +1473,7 @@ static int iface_graph_io_mutate(
     nmo_status_t st = NMO_OK;
 
     if (args->has_inward_inputs) {
-        st = nmo_interface_graph_io_set_array(&gio->inward_inputs, &gio->inward_input_count,
+        st = nmo_interface_graph_io_set_array(&gio->inward_inputs, &gio->inward_input_tags, &gio->inward_input_count,
                                               arena, args->inward_inputs, args->inward_input_count);
         if (st != NMO_OK) {
             fprintf(stderr, "Error: %s\n", nmo_error_string(st));
@@ -1482,7 +1482,7 @@ static int iface_graph_io_mutate(
         args->arrays_set++;
     }
     if (args->has_inward_outputs) {
-        st = nmo_interface_graph_io_set_array(&gio->inward_outputs, &gio->inward_output_count,
+        st = nmo_interface_graph_io_set_array(&gio->inward_outputs, &gio->inward_output_tags, &gio->inward_output_count,
                                               arena, args->inward_outputs, args->inward_output_count);
         if (st != NMO_OK) {
             fprintf(stderr, "Error: %s\n", nmo_error_string(st));
@@ -1491,7 +1491,7 @@ static int iface_graph_io_mutate(
         args->arrays_set++;
     }
     if (args->has_outward_inputs) {
-        st = nmo_interface_graph_io_set_array(&gio->outward_inputs, &gio->outward_input_count,
+        st = nmo_interface_graph_io_set_array(&gio->outward_inputs, &gio->outward_input_tags, &gio->outward_input_count,
                                               arena, args->outward_inputs, args->outward_input_count);
         if (st != NMO_OK) {
             fprintf(stderr, "Error: %s\n", nmo_error_string(st));
@@ -1500,7 +1500,7 @@ static int iface_graph_io_mutate(
         args->arrays_set++;
     }
     if (args->has_outward_outputs) {
-        st = nmo_interface_graph_io_set_array(&gio->outward_outputs, &gio->outward_output_count,
+        st = nmo_interface_graph_io_set_array(&gio->outward_outputs, &gio->outward_output_tags, &gio->outward_output_count,
                                               arena, args->outward_outputs, args->outward_output_count);
         if (st != NMO_OK) {
             fprintf(stderr, "Error: %s\n", nmo_error_string(st));
