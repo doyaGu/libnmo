@@ -322,6 +322,23 @@ the tests build each layout dword by dword.
   save of a subset, a failed save) no longer leaves the old digest behind, a manager chunk whose
   manager took it at load but writes none now is kept, and pieces of the original data that could
   not be carried over are logged.
+- Edited objects keep more of what the file held: section tails survive in chunks that hold
+  sub-chunks or manager ids, a light keeps the type byte and diffuse alpha the file holds while the
+  field is unchanged, a character keeps a SAVEPARTS section, a midi sound keeps a MIDISOUNDFILE name
+  read from a file, a data array column keeps the old time GUID, ParameterIn and ParameterOperation
+  keep the type GUID of the file next to the mapped one, and an object animation keeps the four
+  floats the engine ignores and its sections before OBJECTHIDDEN. A state the schema refuses to
+  write (stricter than the engine's checks) keeps the chunk it was loaded with. A kinematic chain
+  reads its first dword as an object reference.
+- Following the engine: ParameterIn's second reference of the DEFAULTDATA layout is the shared
+  source (they were swapped), legacy building blocks keep their parameter and IO sections, an
+  object animation without a keyframe section has length 100, a raw bitmap of any non-zero bit depth
+  decodes, the buffered mesh weights form is decided by section size, and object ids and object
+  arrays of chunks older than version 4 are read in their old encoding.
+- File version below 8: the CRC is the Adler32 of the data section as `CKFile` checks it
+  (`nmo_file_crc_for_version`, `nmo_file_header_verify_crc`), the manager block is not written
+  below version 6, and a file below version 7 is refused at load (its object table is in the
+  chunks, which is not read).
 - Smaller engine differences found by the third audit: a new mesh starts visible with render
   channels, the odd face channel mask word goes to the last face, a controller without keys is
   written as `{type, 1, 0}`, a sprite text load keeps the ratio offset flag of the file, sound
