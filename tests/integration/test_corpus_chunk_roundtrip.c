@@ -493,7 +493,8 @@ TEST(corpus_chunk_roundtrip, deleting_an_object_keeps_the_others_intact)
 }
 
 TEST_MAIN_BEGIN()
-    REGISTER_TEST(corpus_chunk_roundtrip, every_object_chunk_survives_save_and_reload);
-    REGISTER_TEST(corpus_chunk_roundtrip, default_save_keeps_untouched_objects_byte_exact);
-    REGISTER_TEST(corpus_chunk_roundtrip, deleting_an_object_keeps_the_others_intact);
+    /* A pass over the whole corpus; slow under a sanitizer. */
+    REGISTER_TEST_WITH_TIMEOUT(corpus_chunk_roundtrip, every_object_chunk_survives_save_and_reload, 300.0);
+    REGISTER_TEST_WITH_TIMEOUT(corpus_chunk_roundtrip, default_save_keeps_untouched_objects_byte_exact, 300.0);
+    REGISTER_TEST_WITH_TIMEOUT(corpus_chunk_roundtrip, deleting_an_object_keeps_the_others_intact, 300.0);
 TEST_MAIN_END()
