@@ -370,6 +370,21 @@ the tests build each layout dword by dword.
 - The 3D entity z-order and the entity matrix of a legacy curve point are kept as stored; the values
   the engine uses come from `nmo_3dentity_effective_z_order` and `nmo_curvepoint_get_position`.
 
+### Added - File checksum check
+- Loading computes the header checksum the way `CKFile` does for the file version (Adler32 over both
+  header parts, the packed Header1 and the packed data for version 8 and later; over the data section
+  below that) and compares it with the stored one. `nmo_file_info_t` gained `crc_status`
+  (`NMO_CRC_NOT_CHECKED`, `NMO_CRC_OK`, `NMO_CRC_MISMATCH`), `crc_stored` and `crc_computed`.
+- A mismatch is logged as a warning and the file still opens, so a file edited by another tool can be
+  repaired. CK2 refuses such a file (`CKERR_FILECRCERROR`); `NMO_LOAD_VERIFY_CRC` does the same and
+  fails with `NMO_ERR_CHECKSUM_MISMATCH`.
+- `nmo validate checksum <file>` (alias `crc`) prints both values, and `--strict` exits with code 3 on a
+  mismatch. `nmo validate all` reports a mismatch as an error.
+- 512 of the 513 corpus files carry the checksum the engine computes. `Ballance/base.cmo` stores
+  0xC6C7A400 where the computation, checked independently, gives 0x196CA3FC; `validate all` on it
+  reports that one error. `test_file_checksum` covers a generated file, a flipped header field, a
+  flipped stored checksum and the whole corpus.
+
 ### Tests
 - Six corpus tests (`test_corpus_semantics_{geometry,media,scene,behavior}` and the earlier
   `test_corpus_invariants`) check about 300 relationships the engine guarantees between decoded
