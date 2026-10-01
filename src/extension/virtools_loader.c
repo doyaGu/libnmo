@@ -211,9 +211,21 @@ nmo_status_t nmo_virtools_load_param_types(nmo_type_registry_t *registry, const 
         nmo_guid_t guid = get_guid(item, "guid");
         if (nmo_guid_is_null(guid)) continue;
 
-        /* Skip if already registered */
-        if (nmo_type_registry_guid_to_type_id(registry, guid) != NMO_TYPE_ID_INVALID)
+        /* A type the library registered itself keeps its definition, but not
+           its place in the derivation tree, which only the engine's table has:
+           every enum and flags type derives from Integer there. */
+        if (nmo_type_registry_guid_to_type_id(registry, guid) != NMO_TYPE_ID_INVALID) {
+            nmo_type_descriptor_t *existing =
+                (nmo_type_descriptor_t *)nmo_type_registry_find_by_guid(registry, guid);
+            const nmo_guid_t derived_from = get_guid(item, "derived_from");
+            if (existing != NULL && nmo_guid_is_null(existing->base_type) &&
+                !nmo_guid_is_null(derived_from) &&
+                !nmo_guid_equals(derived_from, existing->guid) &&
+                nmo_type_registry_guid_to_type_id(registry, derived_from) != NMO_TYPE_ID_INVALID) {
+                existing->base_type = derived_from;
+            }
             continue;
+        }
 
         nmo_type_descriptor_t desc;
         memset(&desc, 0, sizeof(desc));

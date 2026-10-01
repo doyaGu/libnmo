@@ -20,6 +20,10 @@
 #include "object/nmo_object_repository.h"
 #include "object/nmo_object_system.h"
 #include "runtime/nmo_context.h"
+#include "type/nmo_type_system.h"
+#include "type/nmo_type_guids.h"
+#include "type/nmo_param_guids.h"
+#include "object/nmo_object_enum_guids.h"
 #include "session/nmo_session.h"
 
 #include <stdio.h>
@@ -350,7 +354,30 @@ TEST(fidelity_save, state_the_schema_refuses_keeps_its_loaded_chunk)
     nmo_context_release(ctx);
 }
 
+/* The engine's table derives every enum and flags type from Integer; types the
+ * library registers itself used to lose that. */
+TEST(fidelity_save, enum_and_flags_types_derive_from_integer)
+{
+    nmo_context_desc_t desc = {0};
+    desc.data_dir = NMO_TEST_DATA_DIR;
+    nmo_context_t *ctx = nmo_context_create(&desc);
+    ASSERT_NOT_NULL(ctx);
+    nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
+    ASSERT_NOT_NULL(registry);
+    const nmo_type_id_t integer = nmo_type_registry_guid_to_type_id(registry, CKPGUID_INT);
+    const nmo_type_id_t save_options =
+        nmo_type_registry_guid_to_type_id(registry, CKPGUID_BLENDMODE);
+    if (integer == NMO_TYPE_ID_INVALID || save_options == NMO_TYPE_ID_INVALID) {
+        nmo_context_release(ctx);
+        TEST_SKIP("Virtools parameter types are not loaded");
+    }
+    ASSERT_TRUE(nmo_type_is_derived_from(registry, save_options, integer));
+    ASSERT_TRUE(nmo_type_is_compatible(registry, save_options, integer));
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
+    REGISTER_TEST(fidelity_save, enum_and_flags_types_derive_from_integer);
     REGISTER_TEST(fidelity_save, state_the_schema_refuses_keeps_its_loaded_chunk);
     REGISTER_TEST(fidelity_save, full_save_after_a_strip_save_is_unchanged);
     REGISTER_TEST(fidelity_save, level_scene_follows_the_objects_when_indices_change);
