@@ -335,6 +335,13 @@ the tests build each layout dword by dword.
   object animation without a keyframe section has length 100, a raw bitmap of any non-zero bit depth
   decodes, the buffered mesh weights form is decided by section size, and object ids and object
   arrays of chunks older than version 4 are read in their old encoding.
+- `nmo_murmur3_32` read past the end of its data (the block loop started at the end), so the hashes
+  of arrays and strings depended on other memory; it now matches the reference vectors. Object
+  diffs print counted arrays, state chunks and opaque pointers by content instead of by address, so
+  `diff objects` gives the same output on every run (apart from the JSON timestamp).
+- Chunks older than version 4 read the old sub-chunk layout (and newer chunks detect it as the
+  engine does). The data section of a file below version 8 starts with the highest file id and
+  the object count and is read and written that way; files of version 7 can be loaded.
 - File version below 8: the CRC is the Adler32 of the data section as `CKFile` checks it
   (`nmo_file_crc_for_version`, `nmo_file_header_verify_crc`), the manager block is not written
   below version 6, and a file below version 7 is refused at load (its object table is in the
