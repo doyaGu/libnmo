@@ -797,9 +797,14 @@ nmo_status_t nmo_object_system_fidelity_commit(
     nmo_arena_t *storage = nmo_object_get_storage_arena(obj);
     obj->fidelity_digest = nmo_chunk_digest(current);
     obj->fidelity_captured = 1;
+    nmo_chunk_t *previous = obj->fidelity_canonical;
     obj->fidelity_canonical = NULL;
     if (storage != NULL && !nmo_chunk_equivalent_to_tracked(chunk, current)) {
-        obj->fidelity_canonical = nmo_chunk_clone(current, storage);
+        /* Saving again without touching the object must not pile up copies. */
+        obj->fidelity_canonical =
+            previous != NULL && nmo_chunk_equivalent(previous, current)
+                ? previous
+                : nmo_chunk_clone(current, storage);
     }
     obj->fidelity_load_index = file_index;
     obj->fidelity_load_count = file_count;
