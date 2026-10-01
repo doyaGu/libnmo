@@ -40,6 +40,9 @@ typedef struct nmo_character_state {
     nmo_array_t animations;                 /**< nmo_ref_t */
 
     uint32_t legacy_animation_prefix;
+    /** The file holds a SAVEPARTS section (the engine writes it only to a chunk
+     *  without a file); it is written back to a file while this is set. */
+    uint8_t has_save_parts_section;
     nmo_ref_t active_animation;
     nmo_ref_t anim_dest;
     nmo_ref_t root_body_part;

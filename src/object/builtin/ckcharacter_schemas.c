@@ -247,6 +247,7 @@ static const nmo_type_field_t nmo_character_fields[] = {
         NMO_GUID_STRUCT_CKCHARACTERSUBPART),
     NMO_FIELD_REF_RECORD_ARRAY(nmo_character_state_t, animations),
     NMO_FIELD(nmo_character_state_t, legacy_animation_prefix, CKPGUID_UINT32),
+    NMO_FIELD(nmo_character_state_t, has_save_parts_section, CKPGUID_UINT8),
     NMO_FIELD_NAMED("active_animation", offsetof(nmo_character_state_t, active_animation),
                     sizeof(nmo_ref_t), CKPGUID_ID,
                     NMO_FIELD_REFERENCE | NMO_FIELD_REF_RECORD,
@@ -305,6 +306,7 @@ static nmo_status_t nmo_character_copy(
         &s->base, &copied.base, &base_type, arena);
     if (result != NMO_OK) goto fail;
     copied.legacy_animation_prefix = s->legacy_animation_prefix;
+    copied.has_save_parts_section = s->has_save_parts_section;
     copied.active_animation = s->active_animation;
     copied.anim_dest = s->anim_dest;
     copied.root_body_part = s->root_body_part;
@@ -1017,6 +1019,7 @@ static nmo_status_t nmo_character_deserialize_internal(
                 result = NMO_ERR_TRUNCATED_CHUNK;
                 goto fail;
             }
+            decoded.has_save_parts_section = 1;
             const size_t section_end =
                 nmo_chunk_get_position(chunk) + section_dwords;
             size_t count = 0;
@@ -1093,6 +1096,7 @@ static nmo_status_t nmo_character_deserialize_internal(
     out_state->floor_ref = decoded.floor_ref;
     out_state->legacy_animation_prefix =
         decoded.legacy_animation_prefix;
+    out_state->has_save_parts_section = decoded.has_save_parts_section;
     nmo_array_dispose(&decoded.body_parts);
     nmo_array_dispose(&decoded.animations);
     return NMO_OK;
@@ -1191,7 +1195,8 @@ static nmo_status_t nmo_character_serialize_internal(
     result = write_part_sequence(out_chunk, &in_state->body_parts);
     if (result != NMO_OK) return result;
 
-    if (!is_file && (save_flags & CK_STATESAVE_CHARACTERSAVEPARTS) != 0) {
+    if ((!is_file && (save_flags & CK_STATESAVE_CHARACTERSAVEPARTS) != 0) ||
+        (is_file && in_state->has_save_parts_section)) {
         result = nmo_chunk_write_identifier(
             out_chunk, CK_STATESAVE_CHARACTERSAVEPARTS);
         if (result != NMO_OK) return result;
