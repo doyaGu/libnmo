@@ -2189,9 +2189,28 @@ nmo_status_t nmo_chunk_read_object_sequence_start(nmo_chunk_t *chunk, size_t *ou
     size_t start_pos = nmo_chunk_get_position(chunk);
 
     int32_t count;
-    nmo_status_t result = nmo_chunk_read_int(chunk, &count);
-    NMO_RETURN_IF_ERROR(result);
     nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
+    nmo_status_t result;
+    if (chunk->chunk_version < NMO_CHUNK_VERSION1) {
+        /* XObjectArray::Load of chunks older than version 4: a lead dword (zero
+           ends the array), four dwords to skip, then the count. */
+        uint32_t lead = 0;
+        result = nmo_chunk_read_dword(chunk, &lead);
+        NMO_RETURN_IF_ERROR(result);
+        if (lead == 0) {
+            NMO_RETURN_OK();
+        }
+        result = nmo_chunk_skip(chunk, 4);
+        if (result != NMO_OK) {
+            state->current_pos = start_pos;
+            return result;
+        }
+    }
+    result = nmo_chunk_read_int(chunk, &count);
+    if (result != NMO_OK) {
+        state->current_pos = start_pos;
+        return result;
+    }
 
     if (count < 0) {
         state->current_pos = start_pos;
@@ -2210,6 +2229,13 @@ nmo_status_t nmo_chunk_read_object_sequence_start(nmo_chunk_t *chunk, size_t *ou
 }
 
 nmo_status_t nmo_chunk_read_object_sequence_item(nmo_chunk_t *chunk, nmo_object_id_t *out_id) {
+    if (chunk != NULL && out_id != NULL && chunk->chunk_version < NMO_CHUNK_VERSION1) {
+        /* The array of an old chunk holds plain ids, no mapping through a file. */
+        uint32_t raw = 0;
+        NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &raw));
+        *out_id = (nmo_object_id_t)raw;
+        NMO_RETURN_OK();
+    }
     return nmo_chunk_read_object_id(chunk, out_id);
 }
 

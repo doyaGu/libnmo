@@ -973,6 +973,24 @@ nmo_status_t nmo_chunk_read_object_id(nmo_chunk_t *chunk, nmo_object_id_t *out_i
     nmo_chunk_parser_state_t *state = nmo_chunk_get_parser_state(chunk);
     uint32_t *data_dwords = get_data_u32(chunk);
     const size_t start_pos = state->current_pos;
+    if (chunk->chunk_version < NMO_CHUNK_VERSION1) {
+        /* CKStateChunk::ReadObjectID of chunks older than version 4: a flag
+           dword, and when it is set two dwords to skip and the id, not mapped
+           through a file. */
+        const uint32_t present = data_dwords[state->current_pos++];
+        if (present == 0) {
+            *out_id = NMO_OBJECT_ID_NONE;
+            return NMO_OK;
+        }
+        if (!nmo_chunk_has_read_capacity(chunk, 3)) {
+            state->current_pos = start_pos;
+            NMO_CHUNK_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                                   "Object id of an old chunk is truncated");
+        }
+        state->current_pos += 2;
+        *out_id = (nmo_object_id_t)data_dwords[state->current_pos++];
+        return NMO_OK;
+    }
     const uint32_t raw_id = data_dwords[state->current_pos++];
     nmo_object_id_t id = NMO_OBJECT_ID_NONE;
     nmo_status_t result = decode_object_id(chunk, raw_id, false, &id);

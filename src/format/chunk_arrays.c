@@ -267,7 +267,7 @@ nmo_status_t nmo_chunk_read_object_id_array(nmo_chunk_t *chunk,
 
     // Read IDs
     for (size_t i = 0; i < count; i++) {
-        result = nmo_chunk_read_object_id(chunk, &ids[i]);
+        result = nmo_chunk_read_object_sequence_item(chunk, &ids[i]);
         if (result != NMO_OK) {
             nmo_chunk_get_parser_state(chunk)->current_pos = start_pos;
             return result;

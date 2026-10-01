@@ -222,7 +222,43 @@ TEST(fidelity_small_items, light_keeps_the_type_byte_and_alpha_the_file_holds)
     nmo_arena_destroy(arena);
 }
 
+TEST(fidelity_small_items, chunks_older_than_version_four_use_the_old_object_encodings)
+{
+    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(chunk));
+    /* an object id: flag, two dwords to skip, the id; a null one: flag 0 */
+    const uint32_t words[] = {1u, 0xAAAAAAAAu, 0xBBBBBBBBu, 77u, 0u,
+    /* an array: lead dword, four to skip, count, plain ids; then an empty one: lead 0 */
+                              1u, 9u, 9u, 9u, 9u, 2u, 5u, 6u, 0u};
+    for (size_t i = 0; i < sizeof(words) / sizeof(words[0]); i++) {
+        ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(chunk, words[i]));
+    }
+    nmo_chunk_close(chunk);
+    chunk->chunk_version = 3;
+    ASSERT_EQ(NMO_OK, nmo_chunk_start_read(chunk));
+
+    nmo_object_id_t id = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_object_id(chunk, &id));
+    ASSERT_EQ(77u, id);
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_object_id(chunk, &id));
+    ASSERT_EQ(NMO_OBJECT_ID_NONE, id);
+
+    nmo_object_id_t *ids = NULL;
+    size_t count = 0;
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_object_id_array(chunk, &ids, &count, arena));
+    ASSERT_EQ(2u, count);
+    ASSERT_EQ(5u, ids[0]);
+    ASSERT_EQ(6u, ids[1]);
+    ASSERT_EQ(NMO_OK, nmo_chunk_read_object_id_array(chunk, &ids, &count, arena));
+    ASSERT_EQ(0u, count);
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
+    REGISTER_TEST(fidelity_small_items, chunks_older_than_version_four_use_the_old_object_encodings);
     REGISTER_TEST(fidelity_small_items, light_keeps_the_type_byte_and_alpha_the_file_holds);
     REGISTER_TEST(fidelity_small_items, layer_edit_is_kept_in_a_newer_layout);
     REGISTER_TEST(fidelity_small_items, empty_controller_is_written_with_a_key_count);
