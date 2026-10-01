@@ -14,6 +14,7 @@
  *    section nobody knows).
  */
 
+#define SCRATCH_FILE "generated_chunk_roundtrip.tmp"
 #include "chunk_roundtrip_check.h"
 
 #include "document/nmo_document_load.h"

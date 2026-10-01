@@ -36,7 +36,11 @@
 /* Mismatches beyond this many are counted but not printed. */
 #define MAX_REPORTED_MISMATCHES 20
 
+/* Each test executable sets its own name before including this header: ctest runs them in
+ * parallel in the same directory. */
+#ifndef SCRATCH_FILE
 #define SCRATCH_FILE "corpus_chunk_roundtrip.tmp"
+#endif
 
 typedef struct corpus_chunk_stats {
     nmo_context_t *ctx;
