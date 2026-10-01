@@ -370,6 +370,16 @@ the tests build each layout dword by dword.
 - The 3D entity z-order and the entity matrix of a legacy curve point are kept as stored; the values
   the engine uses come from `nmo_3dentity_effective_z_order` and `nmo_curvepoint_get_position`.
 
+### Changed - Chunks keep no copy of the bytes they were parsed from
+- `nmo_chunk_t` lost `raw_data` and `raw_size`, and `nmo_data_chunk_slice_t` lost `borrowed`. A parsed chunk
+  used to keep its source buffer and the data section writer emitted those bytes instead of the chunk, so a
+  save could not tell whether the parser and the serializer agreed. They do: the parsed chunks of every
+  corpus file (206,928 objects, 1,891 managers) serialize to the bytes they came from, and
+  `parsed_chunks_serialize_to_the_bytes_they_came_from` checks the whole data section of each file, on the
+  corpus and on generated files. The chunk comparison also covers chunk options and class ids now.
+- A chunk written by a manager hook is remapped to file ids like every other chunk; before, one that had been
+  parsed from bytes was left alone.
+
 ### Added - File checksum check
 - Loading computes the header checksum the way `CKFile` does for the file version (Adler32 over both
   header parts, the packed Header1 and the packed data for version 8 and later; over the data section
