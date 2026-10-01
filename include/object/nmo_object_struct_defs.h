@@ -259,6 +259,10 @@ typedef struct nmo_dataarray_column_format {
     const char *name;
     CK_ARRAYTYPE type;
     nmo_guid_t parameter_type_guid;
+    /** The GUID the file held where the loader maps an old one (CKPGUID_OLDTIME);
+     *  written back while parameter_type_guid is still what it maps to. */
+    nmo_guid_t file_parameter_type_guid;
+    uint8_t has_file_parameter_type_guid;
 } nmo_dataarray_column_format_t;
 
 typedef struct nmo_dataarray_parameter {

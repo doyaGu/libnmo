@@ -220,6 +220,8 @@ static nmo_status_t nmo_dataarray_deserialize_internal(
 
                     /* Handle legacy CKPGUID_OLDTIME (8-byte GUID) */
                     if (nmo_guid_equals(fmt->parameter_type_guid, CKPGUID_OLDTIME)) {
+                        fmt->file_parameter_type_guid = fmt->parameter_type_guid;
+                        fmt->has_file_parameter_type_guid = 1;
                         fmt->parameter_type_guid = CKPGUID_TIME;
                     }
                 } else {
@@ -497,7 +499,13 @@ static nmo_status_t nmo_dataarray_serialize_internal(
         if (result != NMO_OK) return result;
 
         if (fmt->type == CKARRAYTYPE_PARAMETER) {
-            result = nmo_chunk_write_guid(out_chunk, fmt->parameter_type_guid);
+            nmo_guid_t column_guid = fmt->parameter_type_guid;
+            if (fmt->has_file_parameter_type_guid &&
+                nmo_guid_equals(column_guid, CKPGUID_TIME) &&
+                nmo_guid_equals(fmt->file_parameter_type_guid, CKPGUID_OLDTIME)) {
+                column_guid = fmt->file_parameter_type_guid;
+            }
+            result = nmo_chunk_write_guid(out_chunk, column_guid);
             if (result != NMO_OK) return result;
         }
     }

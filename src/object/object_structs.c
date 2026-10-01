@@ -298,7 +298,9 @@ nmo_status_t nmo_register_object_structs(nmo_type_registry_t *registry) {
     static const nmo_struct_field_def_t ckdataarraycolumnformat_fields[] = {
         NMO_STRUCT_FIELD_GUID("name", CKPGUID_STRING),
         NMO_STRUCT_FIELD_GUID("type", NMO_GUID_ENUM_CK_ARRAYTYPE),
-        NMO_STRUCT_FIELD_GUID("parameter_type_guid", CKPGUID_GUID)
+        NMO_STRUCT_FIELD_GUID("parameter_type_guid", CKPGUID_GUID),
+        NMO_STRUCT_FIELD_GUID("file_parameter_type_guid", CKPGUID_GUID),
+        NMO_STRUCT_FIELD_GUID("has_file_parameter_type_guid", CKPGUID_UINT8)
     };
     static const nmo_struct_type_def_t ckdataarraycolumnformat_def =
         NMO_STRUCT_DEF("CKDataArrayColumnFormat", NMO_GUID_STRUCT_CKDATAARRAYCOLUMNFORMAT, ckdataarraycolumnformat_fields);
