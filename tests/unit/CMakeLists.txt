@@ -10,7 +10,7 @@ endmacro()
 # Core layer tests
 add_unit_test(test_allocator)
 # The test asks for SIZE_MAX bytes and expects NULL; a sanitizer would abort instead.
-set_tests_properties(test_allocator PROPERTIES ENVIRONMENT "ASAN_OPTIONS=allocator_may_return_null=1")
+set_tests_properties(test_allocator PROPERTIES ENVIRONMENT "ASAN_OPTIONS=allocator_may_return_null=1;MSAN_OPTIONS=allocator_may_return_null=1")
 add_unit_test(test_arena)
 add_unit_test(test_error)
 add_unit_test(test_logger)

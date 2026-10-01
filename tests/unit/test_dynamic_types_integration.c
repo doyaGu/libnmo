@@ -215,7 +215,7 @@ TEST(dynamic_types_integration, large_struct_with_many_fields) {
         "field_0", "field_1", "field_2", "field_3", "field_4",
         "field_5", "field_6", "field_7", "field_8", "field_9"
     };
-    nmo_struct_field_def_t fields[10];
+    nmo_struct_field_def_t fields[10] = {0};
     for (int i = 0; i < 10; i++) {
         fields[i].name = field_names[i];
         fields[i].type_name = (i % 2 == 0) ? "int" : "float";

@@ -801,6 +801,7 @@ nmo_status_t nmo_type_registry_add_field(
     
     /* Add new field */
     nmo_struct_field_def_t *field = &incomplete->fields[incomplete->field_count];
+    memset(field, 0, sizeof(*field));
     field->name = nmo_arena_strdup(type_registry->arena, field_name);
     field->type_name = nmo_arena_strdup(type_registry->arena, field_type_name);
     field->type_guid = NMO_NULL_GUID;
@@ -1078,6 +1079,7 @@ nmo_status_t nmo_type_registry_register_struct_string(
         snprintf(field_name, sizeof(field_name), "field%u", (unsigned int)i);
         
         /* Initialize field definition */
+        memset(&fields[i], 0, sizeof(fields[i]));
         fields[i].name = nmo_arena_strdup(temp_arena, field_name);
         fields[i].type_name = nmo_arena_strdup(temp_arena, type_name_str);
         fields[i].type_guid = parse_result.base_type_guid;
