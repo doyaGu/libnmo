@@ -393,6 +393,16 @@ the tests build each layout dword by dword.
   are the same, the helpers that stopped being file local gained a `workspace_edit_` prefix, and the whole
   suite passes in the normal, pattern-init and ASan builds.
 
+### Changed - Schema boilerplate shared
+- 21 hand-copied staged serialize wrappers use `NMO_DEFINE_OBJECT_STAGED_SERIALIZE[_STATE]`; the file mode
+  check (spelled out 29 times, plus six local helpers) is `nmo_object_serialize_is_file` and
+  `nmo_object_deserialize_is_file`; seven no-op `pre_delete` and eight no-op `post_delete` functions use the
+  shared ones; eight `prepare_dependencies` use `NMO_DEFINE_OBJECT_PREPARE_VIA_VALIDATE`; seventeen
+  `validate` functions that only validated the base state use `NMO_DEFINE_OBJECT_VALIDATE_BASE`. About 1,000
+  lines fewer in `src/object/builtin`, no change in the exported symbols or in any test result.
+- The generated and the corpus round-trip tests no longer share a scratch file name; ctest ran them in
+  parallel in the same directory.
+
 ### Changed - Chunks keep no copy of the bytes they were parsed from
 - `nmo_chunk_t` lost `raw_data` and `raw_size`, and `nmo_data_chunk_slice_t` lost `borrowed`. A parsed chunk
   used to keep its source buffer and the data section writer emitted those bytes instead of the chunk, so a
