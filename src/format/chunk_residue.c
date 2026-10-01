@@ -496,7 +496,6 @@ nmo_status_t nmo_chunk_merge_residue(
         ? nmo_arena_alloc(arena, o_sections.count * sizeof(fragment_t), _Alignof(fragment_t))
         : NULL;
     size_t fragment_count = 0;
-    const bool tails_allowed = target->chunk_refs.count == 0 && target->managers.count == 0;
     for (size_t i = 0; i < o_sections.count; ++i) {
         const section_t *o = &o_sections.items[i];
         const section_t *c = find_section(&c_sections, o->id);
@@ -508,7 +507,7 @@ nmo_status_t nmo_chunk_merge_residue(
         } else if (payload_dwords(o) > payload_dwords(c)) {
             if (t == NULL) continue;  /* the edit removed the section */
             const size_t tail_start = o->start + 2u + payload_dwords(c);
-            if (!tails_allowed || !fragment_is_plain(original, tail_start, o->end)) {
+            if (!fragment_is_plain(original, tail_start, o->end)) {
                 stats.skipped++;
                 continue;
             }
@@ -585,6 +584,23 @@ nmo_status_t nmo_chunk_merge_residue(
         }
     }
     qsort(entries, entry_count, sizeof(id_entry_t), compare_id_entries);
+
+    /* The positions of sub-chunks and manager ids move with their sections. */
+    if (target->chunk_refs.count > 0) {
+        uint32_t *refs = NMO_ARENA_ARRAY_DATA(uint32_t, &target->chunk_refs);
+        for (size_t k = 0; k < target->chunk_refs.count; ++k) {
+            if (refs[k] == ID_SEQUENCE_MARKER) {
+                if (++k >= target->chunk_refs.count) break;
+            }
+            refs[k] = (uint32_t)map_position(&t_sections, section_new_start, refs[k]);
+        }
+    }
+    if (target->managers.count > 0) {
+        uint32_t *managers = NMO_ARENA_ARRAY_DATA(uint32_t, &target->managers);
+        for (size_t k = 0; k < target->managers.count; ++k) {
+            managers[k] = (uint32_t)map_position(&t_sections, section_new_start, managers[k]);
+        }
+    }
 
     /* Install the result. */
     nmo_status_t status = nmo_arena_array_resize(&target->data, out_pos);

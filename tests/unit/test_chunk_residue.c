@@ -229,6 +229,49 @@ TEST(chunk_residue, merge_restores_values_the_schema_normalized_but_the_edit_lef
     nmo_arena_destroy(arena);
 }
 
+TEST(chunk_residue, merge_moves_sub_chunk_references_with_their_sections)
+{
+    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_chunk_t *original = begin(arena, 7);
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(original, SECTION_A));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(original, 10));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(original, 0xAAAA0001u));   /* tail */
+    nmo_chunk_close(original);
+
+    nmo_chunk_t *canonical = begin(arena, 7);
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(canonical, SECTION_A));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(canonical, 10));
+    nmo_chunk_close(canonical);
+
+    /* The edited chunk has a sub-chunk in a later section. */
+    nmo_chunk_t *sub = begin(arena, 7);
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(sub, 0x5151u));
+    nmo_chunk_close(sub);
+    nmo_chunk_t *target = begin(arena, 7);
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(target, SECTION_A));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(target, 99));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(target, SECTION_B));
+    ASSERT_EQ(NMO_OK, nmo_chunk_write_sub_chunk(target, sub));
+    nmo_chunk_close(target);
+    ASSERT_EQ(1u, target->chunk_refs.count);
+    const uint32_t before = ((const uint32_t *)target->chunk_refs.data)[0];
+    const uint32_t header_dword = words(target)[before];
+
+    nmo_chunk_residue_stats_t stats;
+    ASSERT_EQ(NMO_OK, nmo_chunk_merge_residue(target, original, canonical, NULL, arena, &stats));
+    ASSERT_EQ(1u, stats.tails_kept);
+    ASSERT_EQ(0u, stats.skipped);
+    ASSERT_EQ(1u, target->chunk_refs.count);
+    const uint32_t after = ((const uint32_t *)target->chunk_refs.data)[0];
+    ASSERT_EQ(before + 1u, after);
+    /* The reference still names the header of the sub-chunk. */
+    ASSERT_EQ(header_dword, words(target)[after]);
+    ASSERT_EQ(0xAAAA0001u, words(target)[3]);
+    nmo_arena_destroy(arena);
+}
+
 TEST(chunk_residue, merge_does_nothing_across_data_versions)
 {
     nmo_arena_t *arena = nmo_arena_create(NULL, 16384);
@@ -255,5 +298,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(chunk_residue, merge_keeps_unknown_sections_and_tails);
     REGISTER_TEST(chunk_residue, translate_uses_the_layout_when_the_chunk_tracks_no_ids);
     REGISTER_TEST(chunk_residue, merge_restores_values_the_schema_normalized_but_the_edit_left_alone);
+    REGISTER_TEST(chunk_residue, merge_moves_sub_chunk_references_with_their_sections);
     REGISTER_TEST(chunk_residue, merge_does_nothing_across_data_versions);
 TEST_MAIN_END()
