@@ -518,6 +518,12 @@ nmo_status_t nmo_chunk_merge_residue(
         if (out_stats != NULL) *out_stats = stats;
         return NMO_OK;
     }
+    /* Where the ids of a chunk read from a file are is unknown, so a piece
+       that is carried over cannot have them translated. */
+    if (original_to_target != NULL && nmo_id_remap_get_count(original_to_target) > 0 &&
+        original->ids.count == 0) {
+        stats.ids_unknown = fragment_count;
+    }
 
     /* Rebuild the data: each section of the target with its tail, then the new sections. */
     const uint32_t *t_data = chunk_words(target);

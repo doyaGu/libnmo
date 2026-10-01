@@ -82,6 +82,7 @@ typedef struct nmo_chunk_residue_stats {
     size_t tails_kept;      /**< trailing dwords of sections both have */
     size_t skipped;         /**< residue that could not be carried over */
     size_t values_restored; /**< dwords the edit left alone that get the file's value back */
+    size_t ids_unknown;     /**< carried pieces that may hold object ids that moved (original tracks none) */
 } nmo_chunk_residue_stats_t;
 
 /**

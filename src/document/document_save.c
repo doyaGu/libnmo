@@ -1170,7 +1170,7 @@ static nmo_status_t save_serialize_objects(nmo_serializer_t *ctx) {
                     &residue_skipped);
                 if (residue_skipped > 0) {
                     nmo_log(ctx->logger, NMO_LOG_WARN,
-                            "    Object %u: %zu piece(s) of its original data could not be carried over",
+                            "    Object %u: %zu piece(s) of its original data could not be carried over or may refer to objects that moved",
                             obj->id, residue_skipped);
                 }
                 if (fidelity_status != NMO_OK) {

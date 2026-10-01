@@ -785,7 +785,7 @@ nmo_status_t nmo_object_system_fidelity_commit(
         nmo_status_t status = nmo_chunk_merge_residue(
             chunk, original, obj->fidelity_canonical, load_to_file, arena, &stats);
         if (status != NMO_OK) return status;
-        if (out_skipped != NULL) *out_skipped = stats.skipped;
+        if (out_skipped != NULL) *out_skipped = stats.skipped + stats.ids_unknown;
     }
 
     nmo_arena_t *storage = nmo_object_get_storage_arena(obj);
