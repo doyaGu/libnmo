@@ -1915,6 +1915,17 @@ NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
  * PUBLIC MUTATION API
  * ============================================================================= */
 
+uint32_t nmo_texture_effective_desired_video_format(
+    const nmo_texture_state_t *state)
+{
+    if (state == NULL) return UNKNOWN_PF;
+    /* The state keeps what the file holds; the engine replaces a value above
+       _32_X8L8V8U8 once the load is done. */
+    return state->desired_video_format > _32_X8L8V8U8
+        ? (uint32_t)_16_ARGB1555
+        : state->desired_video_format;
+}
+
 void nmo_texture_bitmap2_image(
     const nmo_texture_bitmap2_slot_t *slot,
     const uint8_t **out_data,

@@ -287,9 +287,12 @@ nmo_status_t nmo_image_reconstruct_pixels(
         return NMO_ERR_INVALID_FORMAT;
     }
 
-    /* Only handle 32bpp (1 byte per channel) for now */
-    if (bpp != 32) {
-        return NMO_ERR_NOT_SUPPORTED;
+    /* CKStateChunk::ReadRawBitmap only tests the stored bits per pixel for
+     * zero (no image). Whatever its value, the planes that follow are one byte
+     * per pixel each and the engine builds a 32-bit image from them, so a raw
+     * slot below 24 bits per pixel decodes like a 32-bit one. */
+    if (bpp == 0) {
+        return NMO_ERR_INVALID_FORMAT;
     }
 
     size_t pixel_count = (size_t)width * (size_t)height;

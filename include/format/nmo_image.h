@@ -171,9 +171,10 @@ NMO_API size_t nmo_image_calc_size(
 /**
  * @brief Reconstruct interleaved RGBA pixels from separated channel buffers.
  *
- * Handles the common 32bpp case where each channel is a 1-byte-per-pixel
- * buffer. Non-32bpp formats return NMO_ERR_NOT_SUPPORTED. The channel buffers
- * are bottom-up, as a CKTexture raw slot stores them; the output is top-down.
+ * Each channel is a 1-byte-per-pixel buffer. The engine ignores the bits per
+ * pixel stored with a raw slot except for zero (no image), so any non-zero
+ * value (8, 16, 24, 32 ...) decodes the same way. The channel buffers are
+ * bottom-up, as a CKTexture raw slot stores them; the output is top-down.
  *
  * @param red       Red channel buffer (NULL = fill zeros)
  * @param green     Green channel buffer (NULL = fill zeros)
@@ -185,11 +186,11 @@ NMO_API size_t nmo_image_calc_size(
  * @param alpha_size Size of alpha buffer in bytes
  * @param width     Image width
  * @param height    Image height
- * @param bpp       Bits per pixel (must be 32 for now)
+ * @param bpp       Bits per pixel stored with the slot (non-zero)
  * @param arena     Arena for output allocation
  * @param out_pixels Output: interleaved RGBA pixel buffer
  * @param out_channels Output: channel count (always 4)
- * @return NMO_OK on success, NMO_ERR_NOT_SUPPORTED for non-32bpp
+ * @return NMO_OK on success, NMO_ERR_INVALID_FORMAT for bpp 0
  */
 NMO_API nmo_status_t nmo_image_reconstruct_pixels(
     const uint8_t *red, const uint8_t *green,

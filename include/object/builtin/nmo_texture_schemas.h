@@ -206,6 +206,16 @@ NMO_API void nmo_texture_bitmap2_image(
     const char **out_ext);
 
 /**
+ * @brief Desired video format as the engine uses it after a load.
+ *
+ * RCKTexture::Load ends with "a value above _32_X8L8V8U8 becomes
+ * _16_ARGB1555". The state keeps the value the file holds (and writes it
+ * back); this returns the one the engine would work with.
+ */
+NMO_API uint32_t nmo_texture_effective_desired_video_format(
+    const nmo_texture_state_t *state);
+
+/**
  * @}
  */
 
