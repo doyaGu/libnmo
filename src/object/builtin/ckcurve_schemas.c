@@ -1188,32 +1188,7 @@ nmo_status_t nmo_curve_deserialize(
     return NMO_OK;
 }
 
-nmo_status_t nmo_curve_serialize(
-    const void *instance,
-    nmo_chunk_t *out_chunk,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)type;
-    const nmo_curve_state_t *in_state = (const nmo_curve_state_t *)instance;
-    if (!in_state || !out_chunk || !out_chunk->arena) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    nmo_status_t result = nmo_curve_validate(in_state, type, context);
-    if (result != NMO_OK) return result;
-    nmo_chunk_t *staged = nmo_chunk_create(out_chunk->arena);
-    if (!staged) return NMO_ERR_NOMEM;
-    staged->class_id = out_chunk->class_id;
-    staged->data_version = out_chunk->data_version;
-    staged->chunk_version = out_chunk->chunk_version;
-    staged->chunk_class_id = out_chunk->chunk_class_id;
-    staged->chunk_options = out_chunk->chunk_options;
-    staged->file_context = out_chunk->file_context;
-    result = nmo_curve_serialize_internal(in_state, staged, context);
-    if (result != NMO_OK) return result;
-    *out_chunk = *staged;
-    return NMO_OK;
-}
+NMO_DEFINE_OBJECT_STAGED_SERIALIZE_STATE(nmo_curve, nmo_curve_state_t, nmo_curve_validate)
 
 nmo_status_t nmo_curvepoint_deserialize(
     void *instance,
@@ -1237,29 +1212,4 @@ nmo_status_t nmo_curvepoint_deserialize(
     return NMO_OK;
 }
 
-nmo_status_t nmo_curvepoint_serialize(
-    const void *instance,
-    nmo_chunk_t *out_chunk,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)type;
-    const nmo_curvepoint_state_t *in_state = (const nmo_curvepoint_state_t *)instance;
-    if (!in_state || !out_chunk || !out_chunk->arena) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    nmo_status_t result = nmo_curvepoint_validate(in_state, type, context);
-    if (result != NMO_OK) return result;
-    nmo_chunk_t *staged = nmo_chunk_create(out_chunk->arena);
-    if (!staged) return NMO_ERR_NOMEM;
-    staged->class_id = out_chunk->class_id;
-    staged->data_version = out_chunk->data_version;
-    staged->chunk_version = out_chunk->chunk_version;
-    staged->chunk_class_id = out_chunk->chunk_class_id;
-    staged->chunk_options = out_chunk->chunk_options;
-    staged->file_context = out_chunk->file_context;
-    result = nmo_curvepoint_serialize_internal(in_state, staged, context);
-    if (result != NMO_OK) return result;
-    *out_chunk = *staged;
-    return NMO_OK;
-}
+NMO_DEFINE_OBJECT_STAGED_SERIALIZE_STATE(nmo_curvepoint, nmo_curvepoint_state_t, nmo_curvepoint_validate)

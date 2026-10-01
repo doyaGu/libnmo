@@ -424,29 +424,7 @@ static nmo_status_t nmo_state_serialize_internal(
     return nmo_chunk_write_int(out_chunk, in_state->event_flag);
 }
 
-nmo_status_t nmo_state_serialize(
-    const void *instance,
-    nmo_chunk_t *out_chunk,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    if (instance == NULL || out_chunk == NULL || out_chunk->arena == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    nmo_chunk_t *staged = nmo_chunk_create(out_chunk->arena);
-    if (staged == NULL) return NMO_ERR_NOMEM;
-    staged->class_id = out_chunk->class_id;
-    staged->data_version = out_chunk->data_version;
-    staged->chunk_version = out_chunk->chunk_version;
-    staged->chunk_class_id = out_chunk->chunk_class_id;
-    staged->chunk_options = out_chunk->chunk_options;
-    staged->file_context = out_chunk->file_context;
-    nmo_status_t result = nmo_state_serialize_internal(
-        instance, staged, type, context);
-    if (result != NMO_OK) return result;
-    *out_chunk = *staged;
-    return NMO_OK;
-}
+NMO_DEFINE_OBJECT_STAGED_SERIALIZE(nmo_state)
 
 /* =============================================================================
  * CKCriticalSectionObject
@@ -532,29 +510,7 @@ static nmo_status_t nmo_criticalsection_serialize_internal(
     return nmo_ref_write(out_chunk, &in_state->object_in_section);
 }
 
-nmo_status_t nmo_criticalsection_serialize(
-    const void *instance,
-    nmo_chunk_t *out_chunk,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    if (instance == NULL || out_chunk == NULL || out_chunk->arena == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    nmo_chunk_t *staged = nmo_chunk_create(out_chunk->arena);
-    if (staged == NULL) return NMO_ERR_NOMEM;
-    staged->class_id = out_chunk->class_id;
-    staged->data_version = out_chunk->data_version;
-    staged->chunk_version = out_chunk->chunk_version;
-    staged->chunk_class_id = out_chunk->chunk_class_id;
-    staged->chunk_options = out_chunk->chunk_options;
-    staged->file_context = out_chunk->file_context;
-    nmo_status_t result = nmo_criticalsection_serialize_internal(
-        instance, staged, type, context);
-    if (result != NMO_OK) return result;
-    *out_chunk = *staged;
-    return NMO_OK;
-}
+NMO_DEFINE_OBJECT_STAGED_SERIALIZE(nmo_criticalsection)
 
 /* =============================================================================
  * CKStateObject FINISH LOADING

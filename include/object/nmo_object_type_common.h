@@ -278,6 +278,34 @@ NMO_API nmo_status_t nmo_object_prepare_dependencies_default(
             instance, out_chunk, type, context, _prefix##_validate, _prefix##_serialize_internal); \
     }
 
+/*
+ * Same entry point for a class whose <prefix>_serialize_internal takes the typed
+ * state and no type descriptor:
+ *   internal(const _state_t *state, nmo_chunk_t *chunk, void *context)
+ * _validate is a type_validate function or NULL.
+ */
+#define NMO_DEFINE_OBJECT_STAGED_SERIALIZE_STATE(_prefix, _state_t, _validate) \
+    static nmo_status_t _prefix##_serialize_staged_body( \
+        const void *instance, \
+        nmo_chunk_t *out_chunk, \
+        const nmo_type_descriptor_t *type, \
+        void *context) \
+    { \
+        (void)type; \
+        return _prefix##_serialize_internal( \
+            (const _state_t *)instance, out_chunk, context); \
+    } \
+    nmo_status_t _prefix##_serialize( \
+        const void *instance, \
+        nmo_chunk_t *out_chunk, \
+        const nmo_type_descriptor_t *type, \
+        void *context) \
+    { \
+        return nmo_object_serialize_staged( \
+            instance, out_chunk, type, context, _validate, \
+            _prefix##_serialize_staged_body); \
+    }
+
 #define NMO_DEFINE_OBJECT_PREPARE_VIA_VALIDATE(_prefix) \
     nmo_status_t _prefix##_prepare_dependencies( \
         void *instance, \

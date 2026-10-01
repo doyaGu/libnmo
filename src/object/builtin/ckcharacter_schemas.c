@@ -1438,31 +1438,7 @@ nmo_status_t nmo_character_deserialize(
     return NMO_OK;
 }
 
-nmo_status_t nmo_character_serialize(
-    const void *instance,
-    nmo_chunk_t *out_chunk,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    const nmo_character_state_t *in_state = (const nmo_character_state_t *)instance;
-    if (in_state == NULL || out_chunk == NULL || out_chunk->arena == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    nmo_chunk_t *staged = nmo_chunk_create(out_chunk->arena);
-    if (staged == NULL) return NMO_ERR_NOMEM;
-    staged->class_id = out_chunk->class_id;
-    staged->data_version = out_chunk->data_version;
-    staged->chunk_version = out_chunk->chunk_version;
-    staged->chunk_class_id = out_chunk->chunk_class_id;
-    staged->chunk_options = out_chunk->chunk_options;
-    staged->file_context = out_chunk->file_context;
-    nmo_status_t result = nmo_character_serialize_internal(
-        in_state, staged, context);
-    if (result != NMO_OK) return result;
-    *out_chunk = *staged;
-    (void)type;
-    return NMO_OK;
-}
+NMO_DEFINE_OBJECT_STAGED_SERIALIZE_STATE(nmo_character, nmo_character_state_t, NULL)
 
 nmo_status_t nmo_bodypart_deserialize(
     void *instance,
@@ -1489,28 +1465,4 @@ nmo_status_t nmo_bodypart_deserialize(
     return NMO_OK;
 }
 
-nmo_status_t nmo_bodypart_serialize(
-    const void *instance,
-    nmo_chunk_t *out_chunk,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    const nmo_bodypart_state_t *in_state = (const nmo_bodypart_state_t *)instance;
-    if (in_state == NULL || out_chunk == NULL || out_chunk->arena == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    nmo_chunk_t *staged = nmo_chunk_create(out_chunk->arena);
-    if (staged == NULL) return NMO_ERR_NOMEM;
-    staged->class_id = out_chunk->class_id;
-    staged->data_version = out_chunk->data_version;
-    staged->chunk_version = out_chunk->chunk_version;
-    staged->chunk_class_id = out_chunk->chunk_class_id;
-    staged->chunk_options = out_chunk->chunk_options;
-    staged->file_context = out_chunk->file_context;
-    nmo_status_t result = nmo_bodypart_serialize_internal(
-        in_state, staged, context);
-    if (result != NMO_OK) return result;
-    *out_chunk = *staged;
-    (void)type;
-    return NMO_OK;
-}
+NMO_DEFINE_OBJECT_STAGED_SERIALIZE_STATE(nmo_bodypart, nmo_bodypart_state_t, NULL)

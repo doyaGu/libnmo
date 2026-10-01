@@ -686,31 +686,7 @@ write_power:
     NMO_RETURN_OK();
 }
 
-nmo_status_t nmo_light_serialize(
-    const void *instance,
-    nmo_chunk_t *chunk,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    if (instance == NULL || chunk == NULL || chunk->arena == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    nmo_chunk_t *staged = nmo_chunk_create(chunk->arena);
-    if (staged == NULL) return NMO_ERR_NOMEM;
-    staged->class_id = chunk->class_id;
-    staged->data_version = chunk->data_version;
-    staged->chunk_version = chunk->chunk_version;
-    staged->chunk_class_id = chunk->chunk_class_id;
-    staged->chunk_options = chunk->chunk_options;
-    staged->file_context = chunk->file_context;
-
-    nmo_status_t result = nmo_light_serialize_internal(
-        instance, staged, type, context);
-    if (result != NMO_OK) return result;
-    *chunk = *staged;
-    return NMO_OK;
-}
+NMO_DEFINE_OBJECT_STAGED_SERIALIZE(nmo_light)
 
 NMO_DEFINE_OBJECT_PREPARE_DEFAULT(nmo_light)
 
