@@ -8,6 +8,7 @@
 #include "core/nmo_hash.h"
 #include "document/nmo_document.h"
 #include "format/nmo_chunk_api.h"
+#include "format/nmo_chunk_residue.h"
 #include "format/nmo_object.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_ref.h"
@@ -1786,6 +1787,8 @@ static bool apply_hungarian(class_matrix_array_t *mats,
 }
 
 static void format_field_value(char *buf, size_t buf_size,
+                               const nmo_type_descriptor_t *owner_type,
+                               const void *owner_instance,
                                const nmo_type_field_t *field,
                                const void *ptr,
                                const nmo_object_repository_t *repo,
@@ -1794,6 +1797,51 @@ static void format_field_value(char *buf, size_t buf_size,
     if (!buf || !buf_size) return;
     if (!field || !ptr) {
         snprintf(buf, buf_size, "(null)");
+        return;
+    }
+
+    /* An array stored as a pointer and a count field: show the count (and the
+       strings of a string array), never the bytes of the pointers. */
+    if ((field->flags & NMO_FIELD_REPEATED) && field->count_field_name != NULL &&
+        field->size == sizeof(void *)) {
+        diff_repeated_view_t view;
+        nmo_type_registry_t *view_registry = ctx ? nmo_context_get_type_registry(ctx) : NULL;
+        if (!diff_get_repeated_view(owner_type, owner_instance, field, view_registry, &view)) {
+            snprintf(buf, buf_size, "<array>");
+            return;
+        }
+        if (nmo_guid_equals(field->type_guid, CKPGUID_STRING) &&
+            view.element_size == sizeof(char *) && view.data != NULL) {
+            const char *const *names = (const char *const *)view.data;
+            size_t used = (size_t)snprintf(buf, buf_size, "<%zu strings:", view.count);
+            for (size_t i = 0; i < view.count && i < 4 && used < buf_size; i++) {
+                used += (size_t)snprintf(buf + used, buf_size - used, " \"%s\"",
+                                         names[i] ? names[i] : "");
+            }
+            if (used < buf_size) {
+                snprintf(buf + used, buf_size - used, "%s>", view.count > 4 ? " ..." : "");
+            }
+            return;
+        }
+        snprintf(buf, buf_size, "<array count=%zu>", view.count);
+        return;
+    }
+
+    /* A state chunk held by pointer: its size and a digest of its content. */
+    if (nmo_guid_equals(field->type_guid, CKPGUID_STATECHUNK) && field->size == sizeof(void *)) {
+        const nmo_chunk_t *held = *(const nmo_chunk_t *const *)ptr;
+        if (held == NULL) {
+            snprintf(buf, buf_size, "(null)");
+        } else {
+            snprintf(buf, buf_size, "<chunk %zu dwords #%08X>", held->data.count,
+                     (unsigned)(nmo_chunk_digest(held) & 0xFFFFFFFFu));
+        }
+        return;
+    }
+
+    /* An untyped pointer: its address is not a value. */
+    if (nmo_guid_equals(field->type_guid, CKPGUID_POINTER) && field->size == sizeof(void *)) {
+        snprintf(buf, buf_size, *(const void *const *)ptr ? "<data>" : "(null)");
         return;
     }
 
@@ -1916,8 +1964,8 @@ static bool build_field_diffs(const nmo_object_t *obj1,
             if (same) continue;
 
             char before[NMO_DIFF_VALUE_MAX], after[NMO_DIFF_VALUE_MAX];
-            format_field_value(before, sizeof(before), f1, p1, s1->repo, s1->ctx);
-            if (f2) format_field_value(after, sizeof(after), f2, p2, s2->repo, s2->ctx);
+            format_field_value(before, sizeof(before), t1, st1, f1, p1, s1->repo, s1->ctx);
+            if (f2) format_field_value(after, sizeof(after), t2, st2, f2, p2, s2->repo, s2->ctx);
             else snprintf(after, sizeof(after), "(missing)");
             total++;
         }
@@ -1953,8 +2001,8 @@ static bool build_field_diffs(const nmo_object_t *obj1,
             }
             if (same) continue;
 
-            format_field_value(fds[wi].before, sizeof(fds[wi].before), f1, p1, s1->repo, s1->ctx);
-            if (f2) format_field_value(fds[wi].after, sizeof(fds[wi].after), f2, p2, s2->repo, s2->ctx);
+            format_field_value(fds[wi].before, sizeof(fds[wi].before), t1, st1, f1, p1, s1->repo, s1->ctx);
+            if (f2) format_field_value(fds[wi].after, sizeof(fds[wi].after), t2, st2, f2, p2, s2->repo, s2->ctx);
             else snprintf(fds[wi].after, sizeof(fds[wi].after), "(missing)");
             fds[wi].field_name = nmo_arena_strdup(arena, f1->name);
             if (!fds[wi].field_name) return false;
