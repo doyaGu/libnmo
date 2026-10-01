@@ -974,3 +974,55 @@ NMO_API nmo_status_t nmo_script_edit_apply_interface_policy(
     }
     return NMO_OK;
 }
+
+nmo_status_t nmo_script_edit_open_interface(nmo_script_edit_tx_t *tx,
+                                            nmo_object_id_t behavior_id,
+                                            nmo_interface_data_t **out_data,
+                                            nmo_arena_t **out_arena)
+{
+    if (!tx || !tx->edit || tx->finished || !out_data) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    *out_data = NULL;
+    if (out_arena) {
+        *out_arena = NULL;
+    }
+
+    nmo_object_t *object = NULL;
+    nmo_behavior_state_t *behavior = script_edit_find_behavior_state_in_repo(
+        nmo_workspace_internal_type_registry(tx->workspace),
+        nmo_workspace_internal_repository(tx->workspace),
+        behavior_id,
+        &object);
+    if (!behavior) {
+        return NMO_ERR_NOT_FOUND;
+    }
+    if (!behavior->interface_data) {
+        return NMO_ERR_INVALID_STATE;
+    }
+
+    nmo_status_t rc = nmo_workspace_edit_snapshot_behavior_state(tx->edit, behavior);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    *out_data = behavior->interface_data;
+    if (out_arena) {
+        *out_arena = nmo_object_get_storage_arena(object);
+    }
+    return NMO_OK;
+}
+
+nmo_status_t nmo_script_edit_interface_changed(nmo_script_edit_tx_t *tx,
+                                               nmo_object_id_t behavior_id)
+{
+    if (!tx || !tx->edit || tx->finished) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    nmo_status_t rc = nmo_behavior_edit_mark_interface(tx->edit, behavior_id);
+    if (rc != NMO_OK) {
+        return rc;
+    }
+    tx->report.interface_changes++;
+    nmo_script_edit_mark(tx, NMO_WORKSPACE_EDIT_OBJECT_STATE);
+    return NMO_OK;
+}

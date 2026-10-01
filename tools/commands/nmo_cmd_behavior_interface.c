@@ -15,6 +15,7 @@
 
 #include "nmo.h"
 #include "edit/nmo_behavior_edit.h"
+#include "edit/nmo_script_edit.h"
 #include "runtime/nmo_context.h"
 #include "core/nmo_array.h"
 #include "core/nmo_parse.h"
@@ -290,6 +291,14 @@ static bool iface_add_body(nmo_cli_record_t *rec, const nmo_interface_body_t *bo
  * Interface edit: shared helpers
  * ================================================================ */
 
+/*
+ * Every interface edit runs in one script edit transaction, opened by
+ * iface_resolve_then_mutate around the mutator: the layout is snapshotted when the
+ * mutator opens it, and a failed or dry-run edit is rolled back instead of leaving
+ * the session half edited.
+ */
+static nmo_script_edit_tx_t *iface_edit_tx;
+
 static nmo_interface_data_t *iface_edit_get_data(
     nmo_cmd_ctx_t *c, uint32_t target_id,
     nmo_object_t **out_obj)
@@ -314,8 +323,17 @@ static nmo_interface_data_t *iface_edit_get_data(
         nmo_cmd_behavior_print_interface_diagnostics(stderr, c->workspace);
         return NULL;
     }
+    nmo_interface_data_t *data = NULL;
+    nmo_status_t open_status = iface_edit_tx != NULL
+        ? nmo_script_edit_open_interface(iface_edit_tx, target_id, &data, NULL)
+        : NMO_ERR_INVALID_STATE;
+    if (open_status != NMO_OK) {
+        fprintf(stderr, "Error: Cannot open the interface of behavior %u: %s\n",
+                target_id, nmo_error_string(open_status));
+        return NULL;
+    }
     if (out_obj) *out_obj = beh;
-    return bs->interface_data;
+    return data;
 }
 
 static bool iface_validate_behavior_id(nmo_cmd_ctx_t *c, uint32_t beh_id) {
@@ -509,16 +527,10 @@ static void translate_body(nmo_interface_body_t *body, float dx, float dy);
 
 static int iface_mark_changed(nmo_cmd_ctx_t *c, nmo_object_id_t target_id)
 {
-    nmo_workspace_edit_t *edit = NULL;
-    nmo_status_t st = nmo_workspace_edit_begin(c->workspace, "behavior interface edit", &edit);
-    if (st == NMO_OK) {
-        st = nmo_behavior_edit_mark_interface(edit, target_id);
-    }
-    if (st == NMO_OK) {
-        st = nmo_workspace_edit_commit(edit);
-    } else if (edit != NULL) {
-        nmo_workspace_edit_rollback(edit);
-    }
+    (void)c;
+    nmo_status_t st = iface_edit_tx != NULL
+        ? nmo_script_edit_interface_changed(iface_edit_tx, target_id)
+        : NMO_ERR_INVALID_STATE;
     if (st != NMO_OK) {
         fprintf(stderr, "Error: Failed to mark interface edit: %s\n", nmo_error_string(st));
         return NMO_CLI_EXIT_INTERNAL_ERROR;
@@ -1714,7 +1726,35 @@ static int iface_resolve_then_mutate(
 
     (void)target;
     *args->target_id = (uint32_t)target_id;
-    return args->mutate(c, dry_run, output_path, args->payload);
+
+    if (nmo_tool_owner_ensure_behavior_acceleration(c->workspace) != NMO_OK) {
+        fprintf(stderr, "Error: Failed to build behavior acceleration\n");
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+    nmo_status_t begin_status = nmo_script_edit_begin(c->workspace, "behavior interface edit",
+                                                      &iface_edit_tx);
+    if (begin_status != NMO_OK) {
+        iface_edit_tx = NULL;
+        fprintf(stderr, "Error: Cannot start the interface edit: %s\n",
+                nmo_error_string(begin_status));
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+
+    rc = args->mutate(c, dry_run, output_path, args->payload);
+    nmo_script_edit_tx_t *tx = iface_edit_tx;
+    iface_edit_tx = NULL;
+    if (rc != NMO_CLI_EXIT_SUCCESS || dry_run) {
+        /* A dry run reports what the edit would do and leaves the session alone. */
+        nmo_script_edit_rollback(tx);
+        return rc;
+    }
+    nmo_status_t commit_status = nmo_script_edit_commit(tx);
+    if (commit_status != NMO_OK) {
+        fprintf(stderr, "Error: Failed to commit the interface edit: %s\n",
+                nmo_error_string(commit_status));
+        return NMO_CLI_EXIT_INTERNAL_ERROR;
+    }
+    return NMO_CLI_EXIT_SUCCESS;
 }
 
 static int iface_resolved_report(

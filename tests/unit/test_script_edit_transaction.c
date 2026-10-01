@@ -1646,6 +1646,57 @@ TEST(script_edit_transaction, commit_keeps_interface_data_changed_in_place)
     nmo_context_release(ctx);
 }
 
+TEST(script_edit_transaction, open_interface_edits_in_place_and_rolls_back)
+{
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    nmo_object_id_t behavior_id = 0;
+    create_object_or_fail(session, NMO_CID_BEHAVIOR, "script", &behavior_id);
+    nmo_object_t *object = nmo_object_repository_find_by_id(nmo_session_get_repository(session), behavior_id);
+    ASSERT_NOT_NULL(object);
+    nmo_behavior_state_t *state = (nmo_behavior_state_t *)nmo_object_get_state(object);
+    ASSERT_NOT_NULL(state);
+
+    /* Without a parsed interface there is nothing to open; an unknown object is not found. */
+    nmo_script_edit_tx_t *tx = NULL;
+    nmo_interface_data_t *data = NULL;
+    nmo_arena_t *arena = NULL;
+    ASSERT_EQ(NMO_OK, begin_test_script_edit(ctx, session, "open-interface", &tx));
+    ASSERT_EQ(NMO_ERR_INVALID_STATE, nmo_script_edit_open_interface(tx, behavior_id, &data, &arena));
+    ASSERT_NULL(data);
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_script_edit_open_interface(tx, 999999u, &data, &arena));
+    nmo_script_edit_rollback(tx);
+
+    ASSERT_NOT_NULL(attach_interface_data(object, state, behavior_id));
+    ASSERT_EQ(NMO_OK, begin_test_script_edit(ctx, session, "open-interface", &tx));
+    ASSERT_EQ(NMO_OK, nmo_script_edit_open_interface(tx, behavior_id, &data, &arena));
+    ASSERT_TRUE(data == state->interface_data);
+    ASSERT_NOT_NULL(arena);
+    data->script.h_pos = 50.0f;
+    data->script.body.graph_io->inward_inputs[0] = 42;
+    ASSERT_EQ(NMO_OK, nmo_script_edit_interface_changed(tx, behavior_id));
+    ASSERT_EQ(1u, nmo_script_edit_report(tx)->interface_changes);
+    ASSERT_NE(NMO_OK, nmo_script_edit_interface_changed(tx, 999999u));
+    nmo_script_edit_rollback(tx);
+
+    ASSERT_NOT_NULL(state->interface_data);
+    ASSERT_TRUE(state->interface_data->script.h_pos == 4.0f);
+    ASSERT_EQ(10, state->interface_data->script.body.graph_io->inward_inputs[0]);
+
+    /* The same edit committed stays. */
+    ASSERT_EQ(NMO_OK, begin_test_script_edit(ctx, session, "open-interface", &tx));
+    ASSERT_EQ(NMO_OK, nmo_script_edit_open_interface(tx, behavior_id, &data, &arena));
+    data->script.h_pos = 50.0f;
+    ASSERT_EQ(NMO_OK, nmo_script_edit_interface_changed(tx, behavior_id));
+    ASSERT_EQ(NMO_OK, nmo_script_edit_commit(tx));
+    ASSERT_TRUE(state->interface_data->script.h_pos == 50.0f);
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(script_edit_transaction,
                   behavior_edit_add_link_through_workspace_owner);
@@ -1653,6 +1704,8 @@ TEST_MAIN_BEGIN()
                   rollback_restores_interface_data_changed_in_place);
     REGISTER_TEST(script_edit_transaction,
                   commit_keeps_interface_data_changed_in_place);
+    REGISTER_TEST(script_edit_transaction,
+                  open_interface_edits_in_place_and_rolls_back);
     REGISTER_TEST(script_edit_transaction,
                   rollback_restores_original_state_after_validation_failure);
     REGISTER_TEST(script_edit_transaction,

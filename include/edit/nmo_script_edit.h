@@ -22,6 +22,8 @@ extern "C" {
 
 typedef struct nmo_context nmo_context_t;
 typedef struct nmo_script_edit_tx nmo_script_edit_tx_t;
+typedef struct nmo_interface_data nmo_interface_data_t;
+typedef struct nmo_arena nmo_arena_t;
 
 /*
  * Script edit transactions are the stable write-oriented behavior API.
@@ -111,6 +113,35 @@ NMO_API nmo_status_t nmo_script_edit_apply_interface_policy(
     nmo_script_edit_tx_t *tx,
     nmo_object_id_t behavior_id,
     nmo_script_edit_interface_mode_t mode);
+
+/**
+ * @brief Open the parsed interface (editor layout) of a behavior for editing in place.
+ *
+ * Takes the snapshot a rollback restores the interface from, so every change made
+ * through the returned pointers is undone if the transaction is rolled back.
+ * Call nmo_script_edit_interface_changed() after the change.
+ *
+ * @param tx          Transaction
+ * @param behavior_id Behavior that owns the interface
+ * @param out_data    Receives the interface data; valid until the transaction ends
+ * @param out_arena   Receives the arena new interface data must be allocated from (may be NULL)
+ * @return NMO_OK, NMO_ERR_NOT_FOUND if the object is not a behavior, or
+ *         NMO_ERR_INVALID_STATE if it has no parsed interface
+ */
+NMO_API nmo_status_t nmo_script_edit_open_interface(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t behavior_id,
+    nmo_interface_data_t **out_data,
+    nmo_arena_t **out_arena);
+
+/**
+ * @brief Record that the interface of a behavior was changed since it was opened.
+ *
+ * Marks the interface for re-encoding on save and counts the change in the report.
+ */
+NMO_API nmo_status_t nmo_script_edit_interface_changed(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t behavior_id);
 
 NMO_API nmo_status_t nmo_script_edit_add_node(
     nmo_script_edit_tx_t *tx,
