@@ -356,6 +356,23 @@ NMO_API nmo_status_t nmo_interface_chunk_parse(
     nmo_interface_data_t *out);
 
 /**
+ * @brief Deep-copy parsed interface data
+ *
+ * Every array, string, body and the script snapshot bytes are copied into the
+ * arena, so the copy stays valid and independent of the source. A NULL source
+ * gives a NULL copy.
+ *
+ * @param arena Arena for the copy (required)
+ * @param dst   Receives the copy (required)
+ * @param src   Interface data to copy, or NULL
+ * @return NMO_OK on success, error code on failure
+ */
+NMO_API nmo_status_t nmo_interface_data_copy(
+    nmo_arena_t *arena,
+    nmo_interface_data_t **dst,
+    const nmo_interface_data_t *src);
+
+/**
  * @brief Serialize structured interface data into an InterfaceChunk.
  *
  * Writes from nmo_interface_data_t only.  This function must not copy a

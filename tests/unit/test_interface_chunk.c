@@ -3097,61 +3097,69 @@ TEST(interface_chunk, sectioned_body_count_stays_in_section) {
     nmo_arena_destroy(arena);
 }
 
-TEST(interface_chunk, sectioned_parameter_and_graph_sections_round_trip) {
-    nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
-    ASSERT_NOT_NULL(arena);
-
+/* A script root with two local and one shared parameter slot and a graph IO block, written the
+   way a file holds it and independent of nmo_interface_chunk_write. */
+static nmo_chunk_t *make_params_and_graph_io_fixture(nmo_arena_t *arena)
+{
     nmo_chunk_t *encoded = nmo_chunk_create(arena);
-    ASSERT_NOT_NULL(encoded);
-    ASSERT_EQ(NMO_OK, nmo_chunk_start_write(encoded));
+    if (encoded == NULL || nmo_chunk_start_write(encoded) != NMO_OK) return NULL;
 
     /* Hand-authored wire fixture, independent of nmo_interface_chunk_write.
        Field order mirrors the Dev section tables: coordinate pairs first,
        then styles/mappings; graph tables contain (value, tag) pairs. */
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(encoded, 0xB0000001u));
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_dword(encoded, 0x16));
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(encoded, 0xB0000002u));
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 1));
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(encoded, 0xB0070000u));
+    (void)nmo_chunk_write_identifier(encoded, 0xB0000001u);
+    (void)nmo_chunk_write_dword(encoded, 0x16);
+    (void)nmo_chunk_write_identifier(encoded, 0xB0000002u);
+    (void)nmo_chunk_write_int(encoded, 1);
+    (void)nmo_chunk_write_identifier(encoded, 0xB0070000u);
     write_script_header_fields(encoded, 100, 0, 0, 0.0f, 0.0f);
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_float(encoded, 10.0f));
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_float(encoded, 20.0f));
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_float(encoded, 50.0f));
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 0));
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 0));
+    (void)nmo_chunk_write_float(encoded, 10.0f);
+    (void)nmo_chunk_write_float(encoded, 20.0f);
+    (void)nmo_chunk_write_float(encoded, 50.0f);
+    (void)nmo_chunk_write_int(encoded, 0);
+    (void)nmo_chunk_write_int(encoded, 0);
 
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(encoded, 0xB0040000u));
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 2));
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 1));
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 2));
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 4));
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 5));
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 3));
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 6));
+    (void)nmo_chunk_write_identifier(encoded, 0xB0040000u);
+    (void)nmo_chunk_write_int(encoded, 2);
+    (void)nmo_chunk_write_int(encoded, 1);
+    (void)nmo_chunk_write_int(encoded, 2);
+    (void)nmo_chunk_write_int(encoded, 4);
+    (void)nmo_chunk_write_int(encoded, 5);
+    (void)nmo_chunk_write_int(encoded, 3);
+    (void)nmo_chunk_write_int(encoded, 6);
 
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(encoded, 0xB0090000u));
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 1));
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 7));
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 8));
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 9));
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_object_id(encoded, 0x1234));
+    (void)nmo_chunk_write_identifier(encoded, 0xB0090000u);
+    (void)nmo_chunk_write_int(encoded, 1);
+    (void)nmo_chunk_write_int(encoded, 7);
+    (void)nmo_chunk_write_int(encoded, 8);
+    (void)nmo_chunk_write_int(encoded, 9);
+    (void)nmo_chunk_write_object_id(encoded, 0x1234);
 
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(encoded, 0xB0050000u));
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 1));
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 10));
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 71));
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 1));
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 20));
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 72));
+    (void)nmo_chunk_write_identifier(encoded, 0xB0050000u);
+    (void)nmo_chunk_write_int(encoded, 1);
+    (void)nmo_chunk_write_int(encoded, 10);
+    (void)nmo_chunk_write_int(encoded, 71);
+    (void)nmo_chunk_write_int(encoded, 1);
+    (void)nmo_chunk_write_int(encoded, 20);
+    (void)nmo_chunk_write_int(encoded, 72);
 
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_identifier(encoded, 0xB0060000u));
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 1));
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 30));
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 73));
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 1));
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 40));
-    ASSERT_EQ(NMO_OK, nmo_chunk_write_int(encoded, 74));
+    (void)nmo_chunk_write_identifier(encoded, 0xB0060000u);
+    (void)nmo_chunk_write_int(encoded, 1);
+    (void)nmo_chunk_write_int(encoded, 30);
+    (void)nmo_chunk_write_int(encoded, 73);
+    (void)nmo_chunk_write_int(encoded, 1);
+    (void)nmo_chunk_write_int(encoded, 40);
+    (void)nmo_chunk_write_int(encoded, 74);
     nmo_chunk_close(encoded);
+    return encoded;
+}
+
+TEST(interface_chunk, sectioned_parameter_and_graph_sections_round_trip) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 32768);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_chunk_t *encoded = make_params_and_graph_io_fixture(arena);
+    ASSERT_NOT_NULL(encoded);
     ASSERT_TRUE(chunk_has_identifier(encoded, 0xB0040000u));
     ASSERT_TRUE(chunk_has_identifier(encoded, 0xB0050000u));
     ASSERT_TRUE(chunk_has_identifier(encoded, 0xB0060000u));
@@ -3186,6 +3194,48 @@ TEST(interface_chunk, sectioned_parameter_and_graph_sections_round_trip) {
     nmo_interface_data_t rejected;
     memset(&rejected, 0, sizeof(rejected));
     ASSERT_TRUE(nmo_interface_chunk_parse(truncated, arena, NULL, &rejected) != NMO_OK);
+
+    nmo_arena_destroy(arena);
+}
+
+TEST(interface_chunk, data_copy_is_a_deep_independent_copy) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 65536);
+    ASSERT_NOT_NULL(arena);
+    nmo_chunk_t *encoded = make_params_and_graph_io_fixture(arena);
+    ASSERT_NOT_NULL(encoded);
+
+    nmo_interface_data_t parsed;
+    memset(&parsed, 0, sizeof(parsed));
+    ASSERT_EQ(NMO_OK, nmo_interface_chunk_parse(encoded, arena, NULL, &parsed));
+
+    nmo_interface_data_t *copy = NULL;
+    ASSERT_EQ(NMO_OK, nmo_interface_data_copy(arena, &copy, &parsed));
+    ASSERT_NOT_NULL(copy);
+    ASSERT_TRUE(copy != &parsed);
+    ASSERT_TRUE(copy->script.body.graph_io != parsed.script.body.graph_io);
+    ASSERT_TRUE(copy->script.body.graph_io->inward_inputs != parsed.script.body.graph_io->inward_inputs);
+
+    /* The copy writes the chunk the original writes. */
+    nmo_chunk_t *from_original = nmo_chunk_create(arena);
+    nmo_chunk_t *from_copy = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(from_original);
+    ASSERT_NOT_NULL(from_copy);
+    ASSERT_EQ(NMO_OK, nmo_interface_chunk_write(from_original, &parsed, NULL));
+    ASSERT_EQ(NMO_OK, nmo_interface_chunk_write(from_copy, copy, NULL));
+    assert_chunk_dwords_equal(from_original, from_copy);
+
+    /* Changing the original does not reach the copy. */
+    parsed.script.h_pos += 5.0f;
+    parsed.script.body.graph_io->inward_inputs[0] = 999;
+    parsed.script.body.params.local_count = 0;
+    ASSERT_EQ(10, copy->script.body.graph_io->inward_inputs[0]);
+    ASSERT_EQ(2, (int)copy->script.body.params.local_count);
+    ASSERT_TRUE(copy->script.h_pos != parsed.script.h_pos);
+
+    nmo_interface_data_t *none = copy;
+    ASSERT_EQ(NMO_OK, nmo_interface_data_copy(arena, &none, NULL));
+    ASSERT_NULL(none);
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, nmo_interface_data_copy(arena, NULL, &parsed));
 
     nmo_arena_destroy(arena);
 }
@@ -3265,5 +3315,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(interface_chunk, sectioned_graph_count_stays_in_section);
     REGISTER_TEST(interface_chunk, sectioned_body_count_stays_in_section);
     REGISTER_TEST(interface_chunk, sectioned_parameter_and_graph_sections_round_trip);
+    REGISTER_TEST(interface_chunk, data_copy_is_a_deep_independent_copy);
 TEST_MAIN_END()
 

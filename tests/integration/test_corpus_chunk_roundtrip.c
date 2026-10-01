@@ -131,6 +131,7 @@ typedef struct interface_stats {
     size_t files;
     size_t parsed;
     size_t different;
+    size_t copy_different;
 } interface_stats_t;
 
 static void check_interfaces(const char *path, void *user)
@@ -160,6 +161,17 @@ static void check_interfaces(const char *path, void *user)
                     printf("  %s: behavior %u interface differs\n", path, (unsigned)object->id);
                 }
             }
+            /* A deep copy writes the same chunk: the edit journal restores this copy on rollback. */
+            nmo_interface_data_t *copy = NULL;
+            nmo_chunk_t *from_copy = nmo_chunk_create(arena);
+            if (nmo_interface_data_copy(arena, &copy, state->interface_data) != NMO_OK ||
+                from_copy == NULL || nmo_chunk_start_write(from_copy) != NMO_OK ||
+                nmo_interface_chunk_write(from_copy, copy, NULL) != NMO_OK ||
+                (nmo_chunk_close(from_copy), !nmo_chunk_equivalent(written, from_copy))) {
+                if (stats->copy_different++ < MAX_REPORTED_MISMATCHES) {
+                    printf("  %s: behavior %u interface copy differs\n", path, (unsigned)object->id);
+                }
+            }
         }
         nmo_arena_destroy(arena);
     }
@@ -179,11 +191,12 @@ TEST(corpus_chunk_roundtrip, parsed_interfaces_write_back_to_their_chunk)
     stats.ctx = ctx;
     int walk_status = test_corpus_walk(NMO_TEST_DATA_DIR, check_interfaces, &stats);
     nmo_context_release(ctx);
-    printf("  Interface corpus: files=%zu parsed=%zu different=%zu\n",
-           stats.files, stats.parsed, stats.different);
+    printf("  Interface corpus: files=%zu parsed=%zu different=%zu copy_different=%zu\n",
+           stats.files, stats.parsed, stats.different, stats.copy_different);
     ASSERT_EQ(0, walk_status);
     ASSERT_GE(stats.parsed, 1u);
     ASSERT_EQ(0u, stats.different);
+    ASSERT_EQ(0u, stats.copy_different);
 }
 
 TEST_MAIN_BEGIN()
