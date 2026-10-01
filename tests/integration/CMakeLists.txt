@@ -33,15 +33,10 @@ add_integration_test(test_fidelity_save)
 
 # Decoded corpus values satisfy what the engine guarantees
 add_integration_test(test_corpus_invariants)
-target_link_libraries(test_corpus_invariants PRIVATE m)
 add_integration_test(test_corpus_semantics_media)
-target_link_libraries(test_corpus_semantics_media PRIVATE m)
 add_integration_test(test_corpus_semantics_geometry)
-target_link_libraries(test_corpus_semantics_geometry PRIVATE m)
 add_integration_test(test_corpus_semantics_scene)
-target_link_libraries(test_corpus_semantics_scene PRIVATE m)
 add_integration_test(test_corpus_semantics_behavior)
-target_link_libraries(test_corpus_semantics_behavior PRIVATE m)
 
 # Phase 4: CKBehavior historical regression fixtures (Nop1/Nop2)
 add_integration_test(test_behavior_roundtrip_regression)

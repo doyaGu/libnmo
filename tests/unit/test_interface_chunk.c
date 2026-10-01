@@ -1233,6 +1233,7 @@ TEST(interface_chunk, parse_graph_io) {
     test_bb_data_t bb_data;
     bb_data.bb_id = 999; /* some other ID */
     nmo_interface_parse_ctx_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
     ctx.is_building_block = test_is_building_block;
     ctx.user_data = &bb_data;
 
@@ -1320,6 +1321,7 @@ TEST(interface_chunk, parse_graph_io_skipped_for_bb) {
     test_bb_data_t bb_data;
     bb_data.bb_id = 200;
     nmo_interface_parse_ctx_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
     ctx.is_building_block = test_is_building_block;
     ctx.user_data = &bb_data;
 
@@ -1380,6 +1382,7 @@ TEST(interface_chunk, graph_io_skipped_for_script) {
     test_bb_data_t bb_data;
     bb_data.bb_id = 999;
     nmo_interface_parse_ctx_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
     ctx.is_building_block = test_is_building_block;
     ctx.user_data = &bb_data;
 

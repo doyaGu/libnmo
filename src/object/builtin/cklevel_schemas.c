@@ -272,11 +272,14 @@ static void nmo_level_locate_scene_ids(
     if (sub == NULL || arena == NULL || sub->class_id != NMO_CID_SCENE) return;
     if ((sub->chunk_options & NMO_CHUNK_OPTION_FILE) == 0 || sub->ids.count != 0) return;
 
-    nmo_scene_state_t scene;
-    if (nmo_scene_vtable.create(&scene, NULL, NULL) != NMO_OK) return;
+    /* Not a stack object: GCC (MinGW) wrongly relates the level lifecycle's
+     * memset to this local through the inlined destroy and rejects the build. */
+    nmo_scene_state_t *scene = nmo_arena_alloc(
+        arena, sizeof(*scene), _Alignof(nmo_scene_state_t));
+    if (scene == NULL || nmo_scene_vtable.create(scene, NULL, NULL) != NMO_OK) return;
     nmo_chunk_t *probe = NULL;
     if (nmo_chunk_start_read(sub) == NMO_OK &&
-        nmo_scene_deserialize(&scene, sub, NULL, context) == NMO_OK) {
+        nmo_scene_deserialize(scene, sub, NULL, context) == NMO_OK) {
         probe = nmo_chunk_create(arena);
     }
     bool faithful = false;
@@ -289,12 +292,12 @@ static void nmo_level_locate_scene_ids(
         nmo_serialize_context_t ser_ctx = nmo_serialize_context_create(
             arena, NULL, NMO_SERIALIZE_FLAG_FILE_MODE, 0);
         if (nmo_chunk_start_write(probe) == NMO_OK &&
-            nmo_scene_serialize(&scene, probe, NULL, &ser_ctx) == NMO_OK) {
+            nmo_scene_serialize(scene, probe, NULL, &ser_ctx) == NMO_OK) {
             nmo_chunk_close(probe);
             faithful = nmo_chunk_equivalent_to_tracked(sub, probe);
         }
     }
-    nmo_scene_vtable.destroy(&scene, NULL, NULL);
+    nmo_scene_vtable.destroy(scene, NULL, NULL);
     (void)nmo_chunk_start_read(sub);
     if (!faithful) return;
 
