@@ -70,6 +70,37 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure --parallel 4 --label-exclude performance
 
+  # MemorySanitizer reports a read of memory that was allocated or declared
+  # but never written, which pattern initialization cannot see for heap
+  # blocks and struct padding. Origin tracking names the allocation.
+  memory-sanitizer:
+    name: ubuntu-clang-msan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Install Ninja
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      - name: Configure
+        env:
+          CC: clang
+        run: >
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DNMO_ENABLE_SANITIZERS=OFF
+          "-DCMAKE_C_FLAGS=-O1 -fsanitize=memory -fsanitize-memory-track-origins=2 -fno-omit-frame-pointer"
+          -DCMAKE_EXE_LINKER_FLAGS=-fsanitize=memory
+
+      - name: Build
+        run: cmake --build build --parallel -- -k 0
+
+      - name: Test
+        env:
+          MSAN_OPTIONS: print_stats=0:halt_on_error=1:exitcode=86
+        run: ctest --test-dir build --output-on-failure --parallel 4 --label-exclude performance
+
   # Release builds: tools/scripts/package_release.py runs the test suite,
   # installs the package, checks it from the outside and archives it.
   package:
