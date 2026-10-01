@@ -299,6 +299,13 @@ static nmo_status_t save_compute_manager_data_size(nmo_serializer_t *ctx, size_t
     }
 
     size_t total = 0;
+    /* The manager block exists from file version 6; older engines ignore it. */
+    const uint32_t manager_file_version =
+        ctx->file_info.file_version != 0 ? ctx->file_info.file_version : 8u;
+    if (manager_file_version < 6u) {
+        *out_size = 0;
+        NMO_RETURN_OK();
+    }
     for (uint32_t i = 0; i < ctx->manager_entry_count; i++) {
         const nmo_manager_data_t *mgr = &ctx->manager_entries[i];
         size_t chunk_size = 0;
@@ -1561,7 +1568,7 @@ static nmo_status_t save_write_file(nmo_serializer_t *ctx, const char *path) {
 
     /* Counts */
     header.object_count = (uint32_t)ctx->object_count;
-    header.manager_count = ctx->manager_entry_count;
+    header.manager_count = header.file_version >= 6u ? ctx->manager_entry_count : 0u;
 
     /* Sizes */
     header.hdr1_pack_size = ctx->header1_pack_size;
@@ -1591,11 +1598,13 @@ static nmo_status_t save_write_file(nmo_serializer_t *ctx, const char *path) {
     uint32_t crc = 0;
     if (ctx->options.compute_crc) {
         uint64_t crc_start = save_perf_begin(ctx);
-        crc = nmo_file_header_compute_crc(&header,
-                                          (const uint8_t *)ctx->header1_packed,
-                                          ctx->header1_pack_size,
-                                          (const uint8_t *)ctx->data_packed,
-                                          ctx->data_pack_size);
+        crc = nmo_file_crc_for_version(&header,
+                                       (const uint8_t *)ctx->header1_packed,
+                                       ctx->header1_pack_size,
+                                       (const uint8_t *)ctx->data_packed,
+                                       ctx->data_pack_size,
+                                       (const uint8_t *)ctx->data_buffer,
+                                       ctx->data_unpack_size);
         save_perf_end(ctx, NMO_SAVE_PERF_CRC, crc_start);
     }
     header.crc = crc;

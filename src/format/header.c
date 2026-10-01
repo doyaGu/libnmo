@@ -182,9 +182,9 @@ nmo_status_t nmo_file_header_parse(nmo_io_interface_t *io, nmo_file_header_t *he
 }
 
 /**
- * Validate Virtools file header
+ * Check what every header needs: signature, version range, FileVersion2
  */
-nmo_status_t nmo_file_header_validate(const nmo_file_header_t *header) {
+static nmo_status_t file_header_validate_basic(const nmo_file_header_t *header) {
     /* Validate argument */
     if (header == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Header cannot be NULL");
@@ -202,6 +202,25 @@ nmo_status_t nmo_file_header_validate(const nmo_file_header_t *header) {
     if (header->file_version2 != 0) {
         NMO_RETURN_ERROR(NMO_ERR_UNSUPPORTED_VERSION, NMO_SEVERITY_ERROR,
                          "Unsupported legacy file header (FileVersion2 != 0)");
+    }
+
+    NMO_RETURN_OK();
+}
+
+/**
+ * Validate Virtools file header for loading
+ */
+nmo_status_t nmo_file_header_validate(const nmo_file_header_t *header) {
+    NMO_RETURN_IF_ERROR(file_header_validate_basic(header));
+
+    /* CKFile::ReadFileData reads the object id of a version 4 to 6 entry from
+     * the data section and takes the class id and the name from the chunk, and
+     * these versions have no Header1 object table. The loader is built on that
+     * table, so refuse them here rather than failing later on a partial
+     * parse. */
+    if (header->file_version < 7) {
+        NMO_RETURN_ERROR(NMO_ERR_UNSUPPORTED_VERSION, NMO_SEVERITY_ERROR,
+                         "File versions below 7 (no Header1 object table) cannot be loaded");
     }
 
     NMO_RETURN_OK();
@@ -237,6 +256,73 @@ uint32_t nmo_file_header_compute_crc(const nmo_file_header_t *header,
     return crc;
 }
 
+uint32_t nmo_file_data_crc(const uint8_t *data, size_t size) {
+    if (size == 0 || data == NULL) {
+        return 0;
+    }
+    return (uint32_t)mz_adler32(0, data, (size_t)size);
+}
+
+uint32_t nmo_file_crc_for_version(const nmo_file_header_t *header,
+                                  const uint8_t *header1_packed,
+                                  uint32_t header1_pack_size,
+                                  const uint8_t *data_packed,
+                                  uint32_t data_pack_size,
+                                  const uint8_t *data_unpacked,
+                                  size_t data_unpack_size) {
+    if (header == NULL) {
+        return 0;
+    }
+    if (header->file_version >= 8) {
+        return nmo_file_header_compute_crc(header, header1_packed, header1_pack_size,
+                                           data_packed, data_pack_size);
+    }
+    if (header->file_version < 2) {
+        return 0;
+    }
+    if (data_unpack_size > 0 && data_unpacked == NULL) {
+        return 0;
+    }
+    return nmo_file_data_crc(data_unpacked, data_unpack_size);
+}
+
+nmo_status_t nmo_file_header_verify_crc(const nmo_file_header_t *header,
+                                        const uint8_t *header1_packed,
+                                        uint32_t header1_pack_size,
+                                        const uint8_t *data_packed,
+                                        uint32_t data_pack_size,
+                                        const uint8_t *data_unpacked,
+                                        size_t data_unpack_size) {
+    if (header == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Header cannot be NULL");
+    }
+    if (header->file_version < 2) {
+        /* The engine only warns about such old files. */
+        NMO_RETURN_OK();
+    }
+    if (header->file_version >= 8) {
+        if ((header1_pack_size > 0 && header1_packed == NULL) ||
+            (data_pack_size > 0 && data_packed == NULL)) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                             "Missing section bytes for the file checksum");
+        }
+    } else if (data_unpack_size > 0 && data_unpacked == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Missing unpacked data for the file checksum");
+    }
+
+    const uint32_t expected = nmo_file_crc_for_version(header,
+                                                       header1_packed, header1_pack_size,
+                                                       data_packed, data_pack_size,
+                                                       data_unpacked, data_unpack_size);
+    if (expected != header->crc) {
+        NMO_RETURN_ERROR(NMO_ERR_CHECKSUM_MISMATCH, NMO_SEVERITY_ERROR,
+                         "File checksum mismatch (stored 0x%08X, computed 0x%08X)",
+                         (unsigned)header->crc, (unsigned)expected);
+    }
+    NMO_RETURN_OK();
+}
+
 /**
  * Serialize Virtools file header to IO
  */
@@ -245,7 +331,7 @@ nmo_status_t nmo_file_header_serialize(const nmo_file_header_t *header, nmo_io_i
     if (header == NULL || io == NULL) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Header and IO interface cannot be NULL");
     }
-    NMO_RETURN_IF_ERROR(nmo_file_header_validate(header));
+    NMO_RETURN_IF_ERROR(file_header_validate_basic(header));
 
     /* Write Part0 - signature (8 bytes) */
     NMO_RETURN_IF_ERROR_CTX(

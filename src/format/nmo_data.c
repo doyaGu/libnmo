@@ -22,6 +22,17 @@
     } while (0)
 
 /**
+ * @brief Whether a data section of this file version carries the manager block
+ *
+ * CKFile::ReadFileData reads the managers only from file version 6 on. In
+ * older files the bytes are not a manager block, and a writer that put one in
+ * would make the engine read the first manager as an object.
+ */
+static bool data_section_has_manager_block(uint32_t file_version) {
+    return file_version >= 6u;
+}
+
+/**
  * @brief Parse manager data from buffer
  *
  * Manager data format (for file_version >= 6):
@@ -257,7 +268,10 @@ nmo_status_t nmo_data_section_parse(
 
     nmo_data_section_t staged;
     memset(&staged, 0, sizeof(staged));
-    staged.manager_count = data_section->manager_count;
+    /* The engine does not read a manager block below file version 6, so the
+       section holds no managers whatever the header says. */
+    staged.manager_count = data_section_has_manager_block(file_version)
+        ? data_section->manager_count : 0u;
     staged.object_count = data_section->object_count;
 
     const uint8_t *buffer = (const uint8_t *) data;
@@ -265,7 +279,7 @@ nmo_status_t nmo_data_section_parse(
 
     /* Parse manager data (file_version >= 6) */
     nmo_status_t result = NMO_OK;
-    if (file_version >= 6 && staged.manager_count > 0) {
+    if (data_section_has_manager_block(file_version) && staged.manager_count > 0) {
         result = parse_manager_data(
             buffer, size, &pos, &staged, chunk_pool, arena);
         if (result != NMO_OK) {
@@ -380,7 +394,7 @@ nmo_status_t nmo_data_section_plan_build(
     nmo_data_section_plan_t staged;
     memset(&staged, 0, sizeof(staged));
 
-    if (data_section->manager_count > 0) {
+    if (data_section->manager_count > 0 && data_section_has_manager_block(file_version)) {
         size_t slice_bytes = 0;
         if (!nmo_safe_mul_size(sizeof(nmo_data_chunk_slice_t),
                                data_section->manager_count,
@@ -446,7 +460,9 @@ static nmo_status_t data_section_validate_plan(
     const nmo_data_section_t *data_section,
     const nmo_data_section_plan_t *plan,
     uint32_t file_version) {
-    if (plan->manager_count != data_section->manager_count ||
+    const uint32_t expected_manager_count =
+        data_section_has_manager_block(file_version) ? data_section->manager_count : 0u;
+    if (plan->manager_count != expected_manager_count ||
         plan->object_count != data_section->object_count) {
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "Data section plan does not match section counts");
@@ -514,7 +530,7 @@ nmo_status_t nmo_data_section_plan_write(
 
     size_t pos = 0;
 
-    for (uint32_t i = 0; i < data_section->manager_count; i++) {
+    for (uint32_t i = 0; i < plan->manager_count; i++) {
         const nmo_manager_data_t *mgr = &data_section->managers[i];
         const nmo_data_chunk_slice_t *slice = &plan->manager_slices[i];
 
@@ -563,8 +579,9 @@ size_t nmo_data_section_calculate_size(
 
     size_t total_size = 0;
 
-    /* Manager data */
-    for (uint32_t i = 0; i < data_section->manager_count; i++) {
+    /* Manager data (none before file version 6) */
+    for (uint32_t i = 0; data_section_has_manager_block(file_version) &&
+                         i < data_section->manager_count; i++) {
         const nmo_manager_data_t *mgr = &data_section->managers[i];
         if (!nmo_safe_add_size(total_size, 8u, &total_size) ||
             !nmo_safe_add_size(total_size, 4u, &total_size)) {

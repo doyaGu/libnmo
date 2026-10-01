@@ -115,7 +115,14 @@ NMO_API nmo_status_t nmo_file_header_parse(nmo_io_interface_t *io, nmo_file_head
  * @return NMO_OK if valid, error code otherwise
  *         NMO_ERR_INVALID_ARGUMENT if header is NULL
  *         NMO_ERR_INVALID_SIGNATURE if signature doesn't match "Nemo Fi\0"
- *         NMO_ERR_UNSUPPORTED_VERSION if file_version < 2 or > 9
+ *         NMO_ERR_UNSUPPORTED_VERSION if file_version < 2 or > 9, or below 7
+ *         (see below)
+ *
+ * This is the check a load makes. Versions 2 to 6 still parse
+ * (nmo_file_header_parse) so that their header can be inspected, but they are
+ * refused here: CKFile::ReadFileData reads their object ids from the data
+ * section and their class ids and names from the object chunks, and has no
+ * Header1 object table, none of which the loader supports.
  */
 NMO_API nmo_status_t nmo_file_header_validate(const nmo_file_header_t *header);
 
@@ -137,6 +144,65 @@ NMO_API uint32_t nmo_file_header_compute_crc(const nmo_file_header_t *header,
                                              uint32_t header1_pack_size,
                                              const uint8_t *data_packed,
                                              uint32_t data_pack_size);
+
+/**
+ * @brief Adler-32 of a block of data as CKComputeDataCRC computes it
+ *
+ * CKComputeDataCRC(buffer, size, 0) is zlib's adler32 started from 0 rather
+ * than from 1, which is what mz_adler32(0, ...) does.
+ *
+ * @param data Bytes to checksum
+ * @param size Number of bytes
+ * @return Checksum (0 for an empty block)
+ */
+NMO_API uint32_t nmo_file_data_crc(const uint8_t *data, size_t size);
+
+/**
+ * @brief Compute the file checksum a given file version stores
+ *
+ * CKFile::ReadFileHeaders checks, for file version 8 and later, the
+ * checksum of nmo_file_header_compute_crc (header parts, packed Header1,
+ * packed data). CKFile::ReadFileData checks, for the versions below 8 (and not
+ * below 2), the checksum of the unpacked data section instead:
+ * CKComputeDataCRC(data, size, 0), stored in the same header field. The
+ * Header1 and the header are not part of it. The data the engine sums is its
+ * buffer from the start of the data section: with a compressed section
+ * (file_write_mode & 9) that is exactly the unpacked section, with an
+ * uncompressed one it runs to the end of the file, so bytes after the
+ * section (included files) are summed too and must be in @p data_unpacked.
+ * Versions below 2 are not checked, and 0 is returned for them.
+ *
+ * @param header Header (file_version selects the algorithm)
+ * @param header1_packed Packed Header1 bytes (file version 8 and later)
+ * @param header1_pack_size Packed Header1 size
+ * @param data_packed Packed data bytes (file version 8 and later)
+ * @param data_pack_size Packed data size
+ * @param data_unpacked Unpacked data bytes (file versions below 8)
+ * @param data_unpack_size Unpacked data size
+ * @return Checksum, or 0 if arguments are invalid
+ */
+NMO_API uint32_t nmo_file_crc_for_version(const nmo_file_header_t *header,
+                                          const uint8_t *header1_packed,
+                                          uint32_t header1_pack_size,
+                                          const uint8_t *data_packed,
+                                          uint32_t data_pack_size,
+                                          const uint8_t *data_unpacked,
+                                          size_t data_unpack_size);
+
+/**
+ * @brief Check header->crc the way the engine does for the file version
+ *
+ * @return NMO_OK when the checksum matches (or the version is not checked),
+ *         NMO_ERR_CHECKSUM_MISMATCH when it does not,
+ *         NMO_ERR_INVALID_ARGUMENT for a NULL header or missing section bytes
+ */
+NMO_API nmo_status_t nmo_file_header_verify_crc(const nmo_file_header_t *header,
+                                                const uint8_t *header1_packed,
+                                                uint32_t header1_pack_size,
+                                                const uint8_t *data_packed,
+                                                uint32_t data_pack_size,
+                                                const uint8_t *data_unpacked,
+                                                size_t data_unpack_size);
 
 /**
  * @brief Serialize Virtools file header to IO
