@@ -1246,12 +1246,14 @@ static nmo_status_t save_build_data_section(nmo_serializer_t *ctx) {
     if (file_version == 0) file_version = 8;
 
     nmo_id_remap_t *remap_table = NULL;
-    if (file_version < 7) {
+    if (file_version < 8) {
         remap_table = nmo_save_id_remap_plan_get_table(ctx->remap_plan);
-        if (remap_table == NULL) {
+        if (remap_table == NULL && file_version < 7) {
             return SAVE_ERR(NMO_ERR_INVALID_STATE, "Missing ID remap table for legacy save");
         }
     }
+    /* The data section of a file below version 8 starts with the highest file id. */
+    nmo_object_id_t highest_file_id = 0;
 
     /* Copy chunk pointers */
     for (size_t i = 0; i < ctx->object_count; i++) {
@@ -1267,6 +1269,13 @@ static nmo_status_t save_build_data_section(nmo_serializer_t *ctx) {
                 ? (uint32_t)chunk->raw_size : 0;
         }
 
+        if (file_version == 7 && remap_table != NULL) {
+            nmo_object_id_t file_id = 0;
+            if (nmo_id_remap_lookup_id(remap_table, ctx->objects[i]->id, &file_id) == NMO_OK &&
+                file_id > highest_file_id) {
+                highest_file_id = file_id;
+            }
+        }
         if (file_version < 7) {
             nmo_object_id_t file_id = 0;
             int lookup_result = nmo_id_remap_lookup_id(remap_table, ctx->objects[i]->id, &file_id);
@@ -1277,7 +1286,11 @@ static nmo_status_t save_build_data_section(nmo_serializer_t *ctx) {
                 return SAVE_ERR(lookup_result, "Legacy object ID remap failed");
             }
             data_sect.objects[i].object_id = file_id;
+            if (file_id > highest_file_id) highest_file_id = file_id;
         }
+    }
+    if (file_version < 8) {
+        data_sect.save_id_max = highest_file_id;
     }
 
     /* Build data section plan and serialize generated chunks once. */

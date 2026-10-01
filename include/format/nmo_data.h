@@ -3,9 +3,15 @@
  * @brief NMO Data section structures and parsing
  *
  * The Data section contains serialized manager and object state data.
- * Format (for file_version >= 6):
+ * Format (CKFile::ReadFileData):
  *
- * 1. Manager Data (if manager_count > 0):
+ * 0. Counts (only if file_version < 8):
+ *    - save_id_max (4 bytes uint32), the highest object ID saved
+ *    - object_count (4 bytes uint32)
+ *    From file version 8 on both are in the file header instead.
+ *
+ * 1. Manager Data (file_version >= 6, if manager_count > 0, which the header
+ *    gives):
  *    For each manager:
  *      - CKGUID (8 bytes: d1, d2)
  *      - data_size (4 bytes int32)
@@ -17,7 +23,7 @@
  *      - data_size (4 bytes int32)
  *      - chunk_data (data_size bytes) - CKStateChunk format
  *
- * For file_version >= 8, object IDs are stored in Header1, not in Data section.
+ * For file_version >= 7, object IDs are stored in Header1, not in Data section.
  */
 
 #ifndef NMO_DATA_H
@@ -78,6 +84,14 @@ typedef struct nmo_data_section {
     /* Object data */
     uint32_t object_count;    /**< Number of objects */
     nmo_object_data_t *objects; /**< Array of object data */
+
+    /**
+     * Highest object ID saved. The section holds it only below file version 8
+     * (CKFile::ReadFileData then replaces the header's value with it); parse
+     * sets it from there and serialize writes it there. From version 8 on it
+     * is in the header, and parse leaves this field as the caller set it.
+     */
+    uint32_t save_id_max;
 } nmo_data_section_t;
 
 /**
@@ -108,6 +122,13 @@ typedef struct nmo_data_section_plan {
  *
  * Parses the Data section which contains manager and object state chunks.
  * The object_count and manager_count must be set before calling (from file header).
+ *
+ * Below file version 8 the section starts with its own save_id_max and
+ * object_count. The engine uses that object count instead of the header's, so
+ * on return object_count is the section's, and save_id_max is its value. At
+ * file version 7, whose header holds the object table, a section that claims
+ * more objects than the header is corrupt (the engine would run past the
+ * table); one with fewer leaves the remaining header objects without a chunk.
  *
  * @param data Buffer containing data section
  * @param size Size of buffer

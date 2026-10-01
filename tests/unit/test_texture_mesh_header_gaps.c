@@ -251,10 +251,11 @@ TEST(data_gaps, manager_block_is_only_written_from_version_6)
     section.object_count = 1u;
     section.objects = &object;
 
-    /* version, bytes: manager entry 12 (6+), object entry header 8 (below 7)
-     * or 4 (7+), no chunk data in either entry. */
+    /* version, bytes: 8 leading bytes below version 8 (SaveIDMax, ObjectCount),
+     * manager entry 12 (6+), object entry header 8 (below 7) or 4 (7+), no
+     * chunk data in either entry. */
     const struct { uint32_t version; size_t expected; } cases[] = {
-        {5u, 8u}, {6u, 20u}, {7u, 16u}, {8u, 16u},
+        {5u, 16u}, {6u, 28u}, {7u, 24u}, {8u, 16u},
     };
     for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
         uint8_t buffer[64];

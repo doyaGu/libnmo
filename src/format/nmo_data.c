@@ -33,6 +33,24 @@ static bool data_section_has_manager_block(uint32_t file_version) {
 }
 
 /**
+ * @brief Whether a data section of this file version starts with its own counts
+ *
+ * CKFile::ReadFileData reads SaveIDMax and ObjectCount from the first eight
+ * bytes of the section for every file version below 8. From version 8 on the
+ * header holds them.
+ */
+static bool data_section_has_leading_counts(uint32_t file_version) {
+    return file_version < 8u;
+}
+
+/**
+ * @brief Bytes the leading counts take in a data section of this file version
+ */
+static size_t data_section_leading_bytes(uint32_t file_version) {
+    return data_section_has_leading_counts(file_version) ? 8u : 0u;
+}
+
+/**
  * @brief Parse manager data from buffer
  *
  * Manager data format (for file_version >= 6):
@@ -273,9 +291,40 @@ nmo_status_t nmo_data_section_parse(
     staged.manager_count = data_section_has_manager_block(file_version)
         ? data_section->manager_count : 0u;
     staged.object_count = data_section->object_count;
+    staged.save_id_max = data_section->save_id_max;
 
     const uint8_t *buffer = (const uint8_t *) data;
     size_t pos = 0;
+
+    /* Below version 8 the section carries SaveIDMax and ObjectCount first,
+       and the engine reads the objects by the section's count. */
+    if (data_section_has_leading_counts(file_version)) {
+        CHECK_BUFFER_SIZE(arena, pos, 8, size);
+        staged.save_id_max = nmo_read_u32_le(buffer + pos);
+        pos += 4;
+        const uint32_t section_object_count = nmo_read_u32_le(buffer + pos);
+        pos += 4;
+
+        /* From version 7 the object table is in the header and has as many
+           entries as the header says; the engine fills it from the section. */
+        if (file_version >= 7u && section_object_count > staged.object_count) {
+            NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR,
+                             "Data section holds %u objects but the header declares %u",
+                             (unsigned) section_object_count,
+                             (unsigned) staged.object_count);
+        }
+        /* An entry takes at least its size field, so a count the rest of the
+           section cannot hold is rejected before anything is allocated for it. */
+        if (file_version >= 4u) {
+            const size_t entry_min = (file_version < 7u) ? 8u : 4u;
+            if ((size_t) section_object_count > (size - pos) / entry_min) {
+                NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
+                                 "Data section object count %u does not fit the section",
+                                 (unsigned) section_object_count);
+            }
+        }
+        staged.object_count = section_object_count;
+    }
 
     /* Parse manager data (file_version >= 6) */
     nmo_status_t result = NMO_OK;
@@ -393,6 +442,7 @@ nmo_status_t nmo_data_section_plan_build(
 
     nmo_data_section_plan_t staged;
     memset(&staged, 0, sizeof(staged));
+    staged.total_size = data_section_leading_bytes(file_version);
 
     if (data_section->manager_count > 0 && data_section_has_manager_block(file_version)) {
         size_t slice_bytes = 0;
@@ -476,7 +526,7 @@ static nmo_status_t data_section_validate_plan(
                          "Missing object slices");
     }
 
-    size_t expected_size = 0;
+    size_t expected_size = data_section_leading_bytes(file_version);
     for (size_t i = 0; i < plan->manager_count; i++) {
         const nmo_data_chunk_slice_t *slice = &plan->manager_slices[i];
         if (slice->size > 0 && slice->bytes == NULL) {
@@ -530,6 +580,13 @@ nmo_status_t nmo_data_section_plan_write(
 
     size_t pos = 0;
 
+    if (data_section_has_leading_counts(file_version)) {
+        nmo_write_u32_le(output + pos, data_section->save_id_max);
+        pos += 4;
+        nmo_write_u32_le(output + pos, data_section->object_count);
+        pos += 4;
+    }
+
     for (uint32_t i = 0; i < plan->manager_count; i++) {
         const nmo_manager_data_t *mgr = &data_section->managers[i];
         const nmo_data_chunk_slice_t *slice = &plan->manager_slices[i];
@@ -577,7 +634,7 @@ size_t nmo_data_section_calculate_size(
         return 0;
     }
 
-    size_t total_size = 0;
+    size_t total_size = data_section_leading_bytes(file_version);
 
     /* Manager data (none before file version 6) */
     for (uint32_t i = 0; data_section_has_manager_block(file_version) &&
