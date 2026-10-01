@@ -932,19 +932,20 @@ static nmo_status_t nmo_behavior_deserialize_internal(
         chunk, out_state));
 
     if (nmo_chunk_get_data_version(chunk) < 5) {
-        if (out_state->flags & CKBEHAVIOR_BUILDINGBLOCK) {
-            NMO_RETURN_OK();
+        /* CKBehavior::Load reads the graph arrays only when the behavior has
+         * graph data (not a building block) and the parameter and input/output
+         * arrays whatever the behavior kind. */
+        if (!(out_state->flags & CKBEHAVIOR_BUILDINGBLOCK)) {
+            NMO_RETURN_IF_ERROR(nmo_behavior_read_ref_section(
+                chunk, CK_STATESAVE_BEHAVIORSUBBEHAV,
+                &out_state->sub_behaviors));
+            NMO_RETURN_IF_ERROR(nmo_behavior_read_ref_section(
+                chunk, CK_STATESAVE_BEHAVIORSUBLINKS,
+                &out_state->sub_behavior_links));
+            NMO_RETURN_IF_ERROR(nmo_behavior_read_ref_section(
+                chunk, CK_STATESAVE_BEHAVIOROPERATIONS,
+                &out_state->operations));
         }
-
-        NMO_RETURN_IF_ERROR(nmo_behavior_read_ref_section(
-            chunk, CK_STATESAVE_BEHAVIORSUBBEHAV,
-            &out_state->sub_behaviors));
-        NMO_RETURN_IF_ERROR(nmo_behavior_read_ref_section(
-            chunk, CK_STATESAVE_BEHAVIORSUBLINKS,
-            &out_state->sub_behavior_links));
-        NMO_RETURN_IF_ERROR(nmo_behavior_read_ref_section(
-            chunk, CK_STATESAVE_BEHAVIOROPERATIONS,
-            &out_state->operations));
         NMO_RETURN_IF_ERROR(nmo_behavior_read_ref_section(
             chunk, CK_STATESAVE_BEHAVIORINPARAMS,
             &out_state->in_parameters));
@@ -1232,15 +1233,12 @@ static nmo_status_t nmo_behavior_serialize_internal(
                 NMO_OBJECT_ID_NONE) {
             return NMO_ERR_VALIDATION_FAILED;
         }
+        /* Only the graph arrays belong to graph behaviors; the engine reads
+         * the parameter and input/output arrays of building blocks too. */
         if ((in_state->flags & CKBEHAVIOR_BUILDINGBLOCK) != 0u &&
             (in_state->sub_behaviors.count != 0u ||
              in_state->sub_behavior_links.count != 0u ||
-             in_state->operations.count != 0u ||
-             in_state->in_parameters.count != 0u ||
-             in_state->out_parameters.count != 0u ||
-             in_state->local_parameters.count != 0u ||
-             in_state->inputs.count != 0u ||
-             in_state->outputs.count != 0u)) {
+             in_state->operations.count != 0u)) {
             return NMO_ERR_VALIDATION_FAILED;
         }
 
@@ -1275,22 +1273,22 @@ static nmo_status_t nmo_behavior_serialize_internal(
             NMO_RETURN_IF_ERROR(nmo_behavior_write_ref_section(
                 out_chunk, CK_STATESAVE_BEHAVIOROPERATIONS,
                 &in_state->operations));
-            NMO_RETURN_IF_ERROR(nmo_behavior_write_ref_section(
-                out_chunk, CK_STATESAVE_BEHAVIORINPARAMS,
-                &in_state->in_parameters));
-            NMO_RETURN_IF_ERROR(nmo_behavior_write_ref_section(
-                out_chunk, CK_STATESAVE_BEHAVIORLOCALPARAMS,
-                &in_state->local_parameters));
-            NMO_RETURN_IF_ERROR(nmo_behavior_write_ref_section(
-                out_chunk, CK_STATESAVE_BEHAVIOROUTPARAMS,
-                &in_state->out_parameters));
-            NMO_RETURN_IF_ERROR(nmo_behavior_write_ref_section(
-                out_chunk, CK_STATESAVE_BEHAVIORINPUTS,
-                &in_state->inputs));
-            NMO_RETURN_IF_ERROR(nmo_behavior_write_ref_section(
-                out_chunk, CK_STATESAVE_BEHAVIOROUTPUTS,
-                &in_state->outputs));
         }
+        NMO_RETURN_IF_ERROR(nmo_behavior_write_ref_section(
+            out_chunk, CK_STATESAVE_BEHAVIORINPARAMS,
+            &in_state->in_parameters));
+        NMO_RETURN_IF_ERROR(nmo_behavior_write_ref_section(
+            out_chunk, CK_STATESAVE_BEHAVIORLOCALPARAMS,
+            &in_state->local_parameters));
+        NMO_RETURN_IF_ERROR(nmo_behavior_write_ref_section(
+            out_chunk, CK_STATESAVE_BEHAVIOROUTPARAMS,
+            &in_state->out_parameters));
+        NMO_RETURN_IF_ERROR(nmo_behavior_write_ref_section(
+            out_chunk, CK_STATESAVE_BEHAVIORINPUTS,
+            &in_state->inputs));
+        NMO_RETURN_IF_ERROR(nmo_behavior_write_ref_section(
+            out_chunk, CK_STATESAVE_BEHAVIOROUTPUTS,
+            &in_state->outputs));
 
         if (in_state->has_single_activity) {
             const uint32_t single_activity_id =
