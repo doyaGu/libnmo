@@ -28,8 +28,6 @@
 #include <stdint.h>
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(attributemanager, nmo_attributemanager_state_t)
-
 /* =============================================================================
  * IDENTIFIER CONSTANTS
  * ============================================================================= */
@@ -373,6 +371,54 @@ static nmo_status_t nmo_attributemanager_validate(
     const nmo_type_descriptor_t *type,
     void *context);
 
+static const nmo_object_state_member_t nmo_attribute_category_members[] = {
+    NMO_STATE_STRING(nmo_attribute_category_t, name),
+    NMO_STATE_VALUE(nmo_attribute_category_t, flags),
+    NMO_STATE_VALUE(nmo_attribute_category_t, present)
+};
+
+static const nmo_object_state_layout_t nmo_attribute_category_layout = {
+    .size = sizeof(nmo_attribute_category_t),
+    .members = nmo_attribute_category_members,
+    .member_count = sizeof(nmo_attribute_category_members) /
+        sizeof(nmo_attribute_category_members[0]),
+};
+
+static const nmo_object_state_member_t nmo_attribute_descriptor_members[] = {
+    NMO_STATE_STRING(nmo_attribute_descriptor_t, name),
+    NMO_STATE_VALUE(nmo_attribute_descriptor_t, parameter_type_guid),
+    NMO_STATE_VALUE(nmo_attribute_descriptor_t, category_index),
+    NMO_STATE_VALUE(nmo_attribute_descriptor_t, compatible_class_id),
+    NMO_STATE_VALUE(nmo_attribute_descriptor_t, flags),
+    NMO_STATE_VALUE(nmo_attribute_descriptor_t, present)
+};
+
+static const nmo_object_state_layout_t nmo_attribute_descriptor_layout = {
+    .size = sizeof(nmo_attribute_descriptor_t),
+    .members = nmo_attribute_descriptor_members,
+    .member_count = sizeof(nmo_attribute_descriptor_members) /
+        sizeof(nmo_attribute_descriptor_members[0]),
+};
+
+static const nmo_object_state_member_t nmo_attributemanager_members[] = {
+    NMO_STATE_VALUE(nmo_attributemanager_state_t, category_count),
+    NMO_STATE_COUNTED_RECORDS(nmo_attributemanager_state_t, categories,
+                              category_count, nmo_attribute_category_layout),
+    NMO_STATE_VALUE(nmo_attributemanager_state_t, attribute_count),
+    NMO_STATE_COUNTED_RECORDS(nmo_attributemanager_state_t, attributes,
+                              attribute_count, nmo_attribute_descriptor_layout)
+};
+
+static const nmo_object_state_layout_t nmo_attributemanager_layout = {
+    .size = sizeof(nmo_attributemanager_state_t),
+    .members = nmo_attributemanager_members,
+    .member_count = sizeof(nmo_attributemanager_members) /
+        sizeof(nmo_attributemanager_members[0]),
+    .validate = nmo_attributemanager_validate,
+};
+
+NMO_DEFINE_OBJECT_LAYOUT_OPS(attributemanager, nmo_attributemanager_layout)
+
 NMO_DEFINE_OBJECT_PREPARE_VIA_VALIDATE(nmo_attributemanager)
 
 nmo_status_t nmo_attributemanager_remap_dependencies(
@@ -391,46 +437,6 @@ nmo_status_t nmo_attributemanager_remap_dependencies(
     nmo_attributemanager_state_t *state = (nmo_attributemanager_state_t *)instance;
 
     return nmo_attributemanager_validate(state, NULL, NULL);
-}
-
-static nmo_status_t nmo_attributemanager_copy(
-    const void *src,
-    void *dst,
-    const nmo_type_descriptor_t *type,
-    nmo_arena_t *arena)
-{
-    if (src == NULL || dst == NULL || arena == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    NMO_RETURN_IF_ERROR(nmo_attributemanager_validate(src, type, NULL));
-
-    const nmo_attributemanager_state_t *source = src;
-    nmo_attributemanager_state_t copied = {
-        .category_count = source->category_count,
-        .attribute_count = source->attribute_count,
-    };
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(
-        arena, (void **)&copied.categories, source->categories,
-        sizeof(*copied.categories), copied.category_count));
-    for (uint32_t i = 0; i < copied.category_count; ++i) {
-        copied.categories[i].name = NULL;
-        NMO_RETURN_IF_ERROR(nmo_object_copy_string(
-            arena, (char **)&copied.categories[i].name,
-            source->categories[i].name));
-    }
-
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(
-        arena, (void **)&copied.attributes, source->attributes,
-        sizeof(*copied.attributes), copied.attribute_count));
-    for (uint32_t i = 0; i < copied.attribute_count; ++i) {
-        copied.attributes[i].name = NULL;
-        NMO_RETURN_IF_ERROR(nmo_object_copy_string(
-            arena, (char **)&copied.attributes[i].name,
-            source->attributes[i].name));
-    }
-
-    *(nmo_attributemanager_state_t *)dst = copied;
-    return NMO_OK;
 }
 
 static nmo_status_t nmo_attributemanager_validate(
@@ -466,105 +472,6 @@ static nmo_status_t nmo_attributemanager_validate(
         }
     }
     return NMO_OK;
-}
-
-static bool nmo_attributemanager_string_equals(
-    const char *lhs,
-    const char *rhs)
-{
-    if (lhs == rhs) return true;
-    return lhs != NULL && rhs != NULL && strcmp(lhs, rhs) == 0;
-}
-
-static bool nmo_attributemanager_equals(const void *a, const void *b)
-{
-    if (a == b) return true;
-    if (a == NULL || b == NULL) return false;
-
-    const nmo_attributemanager_state_t *lhs = a;
-    const nmo_attributemanager_state_t *rhs = b;
-    if (lhs->category_count != rhs->category_count ||
-        lhs->attribute_count != rhs->attribute_count) {
-        return false;
-    }
-    if ((lhs->category_count > 0 &&
-         (lhs->categories == NULL || rhs->categories == NULL)) ||
-        (lhs->attribute_count > 0 &&
-         (lhs->attributes == NULL || rhs->attributes == NULL))) {
-        return false;
-    }
-
-    for (uint32_t i = 0; i < lhs->category_count; ++i) {
-        const nmo_attribute_category_t *lhs_category = &lhs->categories[i];
-        const nmo_attribute_category_t *rhs_category = &rhs->categories[i];
-        if (!nmo_attributemanager_string_equals(
-                lhs_category->name, rhs_category->name) ||
-            lhs_category->flags != rhs_category->flags ||
-            lhs_category->present != rhs_category->present) {
-            return false;
-        }
-    }
-    for (uint32_t i = 0; i < lhs->attribute_count; ++i) {
-        const nmo_attribute_descriptor_t *lhs_attribute = &lhs->attributes[i];
-        const nmo_attribute_descriptor_t *rhs_attribute = &rhs->attributes[i];
-        if (!nmo_attributemanager_string_equals(
-                lhs_attribute->name, rhs_attribute->name) ||
-            !nmo_guid_equals(lhs_attribute->parameter_type_guid,
-                             rhs_attribute->parameter_type_guid) ||
-            lhs_attribute->category_index != rhs_attribute->category_index ||
-            lhs_attribute->compatible_class_id !=
-                rhs_attribute->compatible_class_id ||
-            lhs_attribute->flags != rhs_attribute->flags ||
-            lhs_attribute->present != rhs_attribute->present) {
-            return false;
-        }
-    }
-    return true;
-}
-
-static uint32_t nmo_attributemanager_hash_string(
-    uint32_t hash,
-    const char *string)
-{
-    const uint8_t present = string != NULL;
-    hash = nmo_hash_fnv1a32_update(
-        hash, &present, sizeof(present));
-    return present
-        ? nmo_hash_fnv1a32_update(
-            hash, string, strlen(string) + 1u)
-        : hash;
-}
-
-static uint32_t nmo_attributemanager_hash(const void *instance)
-{
-    if (instance == NULL) return 0;
-    const nmo_attributemanager_state_t *state = instance;
-    uint32_t hash = 2166136261u;
-#define NMO_ATTRIBUTEMANAGER_HASH_FIELD(value) \
-    hash = nmo_hash_fnv1a32_update( \
-        hash, &(value), sizeof(value))
-    NMO_ATTRIBUTEMANAGER_HASH_FIELD(state->category_count);
-    if (state->category_count > 0 && state->categories == NULL) return hash;
-    for (uint32_t i = 0; i < state->category_count; ++i) {
-        const nmo_attribute_category_t *category = &state->categories[i];
-        hash = nmo_attributemanager_hash_string(hash, category->name);
-        NMO_ATTRIBUTEMANAGER_HASH_FIELD(category->flags);
-        NMO_ATTRIBUTEMANAGER_HASH_FIELD(category->present);
-    }
-    NMO_ATTRIBUTEMANAGER_HASH_FIELD(state->attribute_count);
-    if (state->attribute_count > 0 && state->attributes == NULL) return hash;
-    for (uint32_t i = 0; i < state->attribute_count; ++i) {
-        const nmo_attribute_descriptor_t *attribute = &state->attributes[i];
-        hash = nmo_attributemanager_hash_string(hash, attribute->name);
-        NMO_ATTRIBUTEMANAGER_HASH_FIELD(attribute->parameter_type_guid.d1);
-        NMO_ATTRIBUTEMANAGER_HASH_FIELD(attribute->parameter_type_guid.d2);
-        NMO_ATTRIBUTEMANAGER_HASH_FIELD(attribute->category_index);
-        NMO_ATTRIBUTEMANAGER_HASH_FIELD(attribute->compatible_class_id);
-        NMO_ATTRIBUTEMANAGER_HASH_FIELD(attribute->flags);
-        NMO_ATTRIBUTEMANAGER_HASH_FIELD(attribute->present);
-    }
-#undef NMO_ATTRIBUTEMANAGER_HASH_FIELD
-    return hash;
 }
 
 nmo_type_vtable_t nmo_attributemanager_vtable = {

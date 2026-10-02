@@ -26,8 +26,6 @@
 #include <stdint.h>
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE_SIMPLE(messagemanager, nmo_messagemanager_state_t)
-
 /* =============================================================================
  * IDENTIFIER CONSTANTS
  * ============================================================================= */
@@ -267,44 +265,37 @@ nmo_status_t nmo_messagemanager_remap_dependencies(
     return nmo_messagemanager_validate(state, NULL, NULL);
 }
 
-static nmo_status_t nmo_messagemanager_copy(
-    const void *src,
-    void *dst,
-    const nmo_type_descriptor_t *type,
-    nmo_arena_t *arena)
-{
-    if (src == NULL || dst == NULL || arena == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
+/* One name of the list, as a record of its own. */
+typedef struct nmo_messagemanager_name {
+    const char *text;
+} nmo_messagemanager_name_t;
 
-    const nmo_messagemanager_state_t *source = src;
-    NMO_RETURN_IF_ERROR(nmo_messagemanager_validate(
-        source, type, NULL));
+static const nmo_object_state_member_t nmo_messagemanager_name_members[] = {
+    NMO_STATE_STRING(nmo_messagemanager_name_t, text)
+};
 
-    const char **names = NULL;
-    if (source->message_type_count > 0) {
-        names = nmo_arena_alloc(
-            arena,
-            (size_t)source->message_type_count * sizeof(*names),
-            _Alignof(char *));
-        if (names == NULL) return NMO_ERR_NOMEM;
+static const nmo_object_state_layout_t nmo_messagemanager_name_layout = {
+    .size = sizeof(nmo_messagemanager_name_t),
+    .members = nmo_messagemanager_name_members,
+    .member_count = sizeof(nmo_messagemanager_name_members) /
+        sizeof(nmo_messagemanager_name_members[0]),
+};
 
-        for (uint32_t i = 0; i < source->message_type_count; ++i) {
-            if (source->message_type_names[i] == NULL) {
-                names[i] = NULL;
-                continue;
-            }
-            names[i] = nmo_arena_strdup(
-                arena, source->message_type_names[i]);
-            if (names[i] == NULL) return NMO_ERR_NOMEM;
-        }
-    }
+static const nmo_object_state_member_t nmo_messagemanager_members[] = {
+    NMO_STATE_VALUE(nmo_messagemanager_state_t, message_type_count),
+    NMO_STATE_COUNTED_RECORDS(nmo_messagemanager_state_t, message_type_names,
+                              message_type_count, nmo_messagemanager_name_layout)
+};
 
-    nmo_messagemanager_state_t *target = dst;
-    target->message_type_count = source->message_type_count;
-    target->message_type_names = names;
-    return NMO_OK;
-}
+static const nmo_object_state_layout_t nmo_messagemanager_layout = {
+    .size = sizeof(nmo_messagemanager_state_t),
+    .members = nmo_messagemanager_members,
+    .member_count = sizeof(nmo_messagemanager_members) /
+        sizeof(nmo_messagemanager_members[0]),
+    .validate = nmo_messagemanager_validate,
+};
+
+NMO_DEFINE_OBJECT_LAYOUT_OPS(messagemanager, nmo_messagemanager_layout)
 
 static nmo_status_t nmo_messagemanager_validate(
     const void *instance,
@@ -324,52 +315,6 @@ static nmo_status_t nmo_messagemanager_validate(
         return NMO_ERR_INVALID_ARGUMENT;
     }
     return NMO_OK;
-}
-
-static bool nmo_messagemanager_equals(const void *a, const void *b)
-{
-    if (a == b) return true;
-    if (a == NULL || b == NULL) return false;
-
-    const nmo_messagemanager_state_t *lhs = a;
-    const nmo_messagemanager_state_t *rhs = b;
-    if (lhs->message_type_count != rhs->message_type_count) return false;
-    if (lhs->message_type_count > 0 &&
-        (lhs->message_type_names == NULL || rhs->message_type_names == NULL)) {
-        return false;
-    }
-    for (uint32_t i = 0; i < lhs->message_type_count; ++i) {
-        const char *lhs_name = lhs->message_type_names[i];
-        const char *rhs_name = rhs->message_type_names[i];
-        if (lhs_name == rhs_name) continue;
-        if (lhs_name == NULL || rhs_name == NULL ||
-            strcmp(lhs_name, rhs_name) != 0) {
-            return false;
-        }
-    }
-    return true;
-}
-
-static uint32_t nmo_messagemanager_hash(const void *instance)
-{
-    if (instance == NULL) return 0;
-    const nmo_messagemanager_state_t *state = instance;
-    uint32_t hash = nmo_hash_fnv1a32_update(
-        2166136261u, &state->message_type_count,
-        sizeof(state->message_type_count));
-    if (state->message_type_names == NULL) return hash;
-
-    for (uint32_t i = 0; i < state->message_type_count; ++i) {
-        const char *name = state->message_type_names[i];
-        const uint8_t present = name != NULL;
-        hash = nmo_hash_fnv1a32_update(
-            hash, &present, sizeof(present));
-        if (present) {
-            hash = nmo_hash_fnv1a32_update(
-                hash, name, strlen(name));
-        }
-    }
-    return hash;
 }
 
 nmo_type_vtable_t nmo_messagemanager_vtable = {

@@ -10,6 +10,7 @@
 #include "format/nmo_chunk_api.h"
 #include "object/nmo_ref.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
+#include "object/builtin/nmo_attributemanager_schemas.h"
 #include "object/builtin/nmo_beobject_schemas.h"
 #include "object/builtin/nmo_bitmap_slots.h"
 #include "object/builtin/nmo_character_schemas.h"
@@ -17,6 +18,7 @@
 #include "object/builtin/nmo_grid_schemas.h"
 #include "object/builtin/nmo_group_schemas.h"
 #include "object/builtin/nmo_layer_schemas.h"
+#include "object/builtin/nmo_messagemanager_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "object/builtin/nmo_parameteroperation_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
@@ -1304,6 +1306,90 @@ TEST(object_state_layout, sprite_bitmap_copies_through_the_custom_member) {
     nmo_arena_destroy(arena);
 }
 
+/* ---- Managers and the level ---- */
+
+TEST(object_state_layout, message_manager_names_copy_by_content) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_messagemanager_state_t source;
+    nmo_messagemanager_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_messagemanager_vtable.create(&source, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_messagemanager_vtable.create(&copied, NULL, NULL));
+    ASSERT_TRUE(nmo_messagemanager_vtable.equals(&source, &copied));
+
+    const char *names[3] = {"OnClick", NULL, "OnDrop"};
+    source.message_type_count = 3;
+    source.message_type_names = names;
+    ASSERT_FALSE(nmo_messagemanager_vtable.equals(&source, &copied));
+    ASSERT_EQ(NMO_OK, nmo_messagemanager_vtable.copy(&source, &copied, NULL, arena));
+    ASSERT_EQ(3u, copied.message_type_count);
+    ASSERT_TRUE(copied.message_type_names != names);
+    ASSERT_TRUE(copied.message_type_names[0] != names[0]);
+    ASSERT_EQ(0, strcmp("OnDrop", copied.message_type_names[2]));
+    ASSERT_NULL(copied.message_type_names[1]);
+    ASSERT_TRUE(nmo_messagemanager_vtable.equals(&source, &copied));
+    ASSERT_EQ(nmo_messagemanager_vtable.hash(&source),
+              nmo_messagemanager_vtable.hash(&copied));
+
+    copied.message_type_names[1] = "OnHover";
+    ASSERT_FALSE(nmo_messagemanager_vtable.equals(&source, &copied));
+    copied.message_type_names[1] = NULL;
+    copied.message_type_count = 2;
+    ASSERT_FALSE(nmo_messagemanager_vtable.equals(&source, &copied));
+
+    /* A count with no names is invalid and is not copied. */
+    nmo_messagemanager_state_t broken = {.message_type_count = 2};
+    nmo_messagemanager_state_t target = {.message_type_count = 1};
+    ASSERT_NE(NMO_OK, nmo_messagemanager_vtable.copy(&broken, &target, NULL, arena));
+    ASSERT_EQ(1u, target.message_type_count);
+    nmo_arena_destroy(arena);
+}
+
+TEST(object_state_layout, attribute_manager_categories_and_attributes_copy) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_attributemanager_state_t source;
+    nmo_attributemanager_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_attributemanager_vtable.create(&source, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_attributemanager_vtable.create(&copied, NULL, NULL));
+
+    nmo_attribute_category_t categories[2] = {
+        {.name = "Physics", .flags = 3u, .present = true},
+        {.name = NULL, .flags = 0u, .present = false},
+    };
+    nmo_attribute_descriptor_t attributes[1];
+    memset(attributes, 0, sizeof(attributes));
+    attributes[0].name = "Mass";
+    attributes[0].category_index = 0;
+    attributes[0].compatible_class_id = 18;
+    attributes[0].flags = 5u;
+    attributes[0].present = true;
+    source.category_count = 2;
+    source.categories = categories;
+    source.attribute_count = 1;
+    source.attributes = attributes;
+
+    ASSERT_EQ(NMO_OK, nmo_attributemanager_vtable.copy(&source, &copied, NULL, arena));
+    ASSERT_TRUE(copied.categories != categories);
+    ASSERT_TRUE(copied.categories[0].name != categories[0].name);
+    ASSERT_EQ(0, strcmp("Physics", copied.categories[0].name));
+    ASSERT_NULL(copied.categories[1].name);
+    ASSERT_EQ(3u, copied.categories[0].flags);
+    ASSERT_TRUE(copied.attributes != attributes);
+    ASSERT_EQ(0, strcmp("Mass", copied.attributes[0].name));
+    ASSERT_EQ(18, copied.attributes[0].compatible_class_id);
+    ASSERT_TRUE(nmo_attributemanager_vtable.equals(&source, &copied));
+    ASSERT_EQ(nmo_attributemanager_vtable.hash(&source),
+              nmo_attributemanager_vtable.hash(&copied));
+
+    copied.attributes[0].flags = 6u;
+    ASSERT_FALSE(nmo_attributemanager_vtable.equals(&source, &copied));
+    copied.attributes[0].flags = 5u;
+    copied.categories[0].name = "Other";
+    ASSERT_FALSE(nmo_attributemanager_vtable.equals(&source, &copied));
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(object_state_layout, place_copy_equals_hash);
     REGISTER_TEST(object_state_layout, copy_into_shallow_alias_detaches_arrays);
@@ -1332,4 +1418,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_state_layout, bitmap_slots_api_copies_compares_and_hashes_a_plain_record);
     REGISTER_TEST(object_state_layout, texture_lanes_and_buffers_copy);
     REGISTER_TEST(object_state_layout, sprite_bitmap_copies_through_the_custom_member);
+    REGISTER_TEST(object_state_layout, message_manager_names_copy_by_content);
+    REGISTER_TEST(object_state_layout, attribute_manager_categories_and_attributes_copy);
 TEST_MAIN_END()
