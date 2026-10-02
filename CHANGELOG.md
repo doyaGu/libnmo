@@ -450,6 +450,21 @@ the tests build each layout dword by dword.
   column and whether it held one, which `serialize` writes back and the hook ignored; the hash values of the
   classes above changed, which only the object diff and the hook coverage test read.
 
+### Changed - Chunk sections described next to the state layout
+- A state layout can list the identifier sections of its class (`nmo_object_sections_t`): per section the
+  identifier, a presence member, the fields (a dword, an int16 stored as an int, a pair of int16 packed in one
+  dword, a reference checked against a class), a phase (the sections of a later phase are read only when none
+  of an earlier phase was found) and whether a longer section is accepted. `nmo_object_layout_serialize` and
+  `nmo_object_layout_deserialize` write and read the base state and the sections, and
+  `NMO_DEFINE_OBJECT_LAYOUT_SERDE` defines the exported entry points of a class. A read decodes into a fresh
+  state and replaces the old one only when it succeeded; a save to a chunk without a file writes the sections
+  only under the class's save flags.
+- CKBehaviorIO, CKBehaviorLink (new layout and the three legacy sections) and CKKinematicChain use it: 341
+  lines fewer in their schemas, 350 more in the engine. `test_section_schemas` pins the wire format of the
+  three (identifier, offsets, section sizes and the error for a short or a long one, phase order, save flags,
+  class mismatch of a reference, atomic failure) and was run against the hand written code first: the same
+  eight tests pass on both, and the corpus byte round trip is unchanged.
+
 ### Fixed - Copying a behavior dropped its runtime flags
 - The copy hook of a behavior did not carry `runtime_flags` (active, executed last frame, activate or reset
   next frame), so a copied behavior was saved with those bits cleared and did not equal its original. It was
