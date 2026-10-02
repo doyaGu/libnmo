@@ -10,7 +10,7 @@
  * (well-formed files have no unresolved references).
  */
 TEST(strict_load, clean_file_succeeds) {
-    TEST_REQUIRE_FILE("data/Ballance/P_Modul_01.nmo");
+    TEST_REQUIRE_FIXTURE("Ballance/P_Modul_01.nmo");
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
 
@@ -21,14 +21,7 @@ TEST(strict_load, clean_file_succeeds) {
     opts.flags |= NMO_LOAD_STRICT;
 
     nmo_runtime_report_t report = {0};
-    int result = nmo_session_load_file(session, "data/Ballance/P_Modul_01.nmo", &opts, &report);
-    if (result == NMO_ERR_FILE_NOT_FOUND || result == NMO_ERR_CANT_OPEN_FILE) {
-        /* Skip if test data not available */
-        nmo_session_destroy(session);
-        nmo_context_release(ctx);
-        return;
-    }
-
+    int result = nmo_session_load_file(session, NMO_TEST_DATA_FILE("Ballance/P_Modul_01.nmo"), &opts, &report);
     ASSERT_EQ(NMO_OK, result);
 
     /* Verify load stats show zero unresolved */
@@ -45,7 +38,7 @@ TEST(strict_load, clean_file_succeeds) {
  * Non-strict loading with a valid file also succeeds (regression guard).
  */
 TEST(strict_load, non_strict_default_succeeds) {
-    TEST_REQUIRE_FILE("data/Ballance/P_Modul_01.nmo");
+    TEST_REQUIRE_FIXTURE("Ballance/P_Modul_01.nmo");
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
 
@@ -53,13 +46,7 @@ TEST(strict_load, non_strict_default_succeeds) {
     ASSERT_NOT_NULL(session);
 
     nmo_runtime_report_t report = {0};
-    int result = nmo_session_load_file(session, "data/Ballance/P_Modul_01.nmo", NULL, &report);
-    if (result == NMO_ERR_FILE_NOT_FOUND || result == NMO_ERR_CANT_OPEN_FILE) {
-        nmo_session_destroy(session);
-        nmo_context_release(ctx);
-        return;
-    }
-
+    int result = nmo_session_load_file(session, NMO_TEST_DATA_FILE("Ballance/P_Modul_01.nmo"), NULL, &report);
     ASSERT_EQ(NMO_OK, result);
 
     nmo_session_destroy(session);

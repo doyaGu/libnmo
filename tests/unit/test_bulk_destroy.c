@@ -7,17 +7,13 @@
 #include <stdio.h>
 
 TEST(bulk_destroy, take_and_destroy_all) {
-    TEST_REQUIRE_FILE("data/Ballance/P_Modul_01.nmo");
+    TEST_REQUIRE_FIXTURE("Ballance/P_Modul_01.nmo");
     nmo_context_desc_t desc = {0};
     nmo_context_t *ctx = nmo_context_create(&desc);
     ASSERT_NOT_NULL(ctx);
 
-    nmo_session_t *session = nmo_session_load(ctx, "data/Ballance/P_Modul_01.nmo");
-    if (!session) {
-        /* Skip if test data not available */
-        nmo_context_release(ctx);
-        return;
-    }
+    nmo_session_t *session = nmo_session_load(ctx, NMO_TEST_DATA_FILE("Ballance/P_Modul_01.nmo"));
+    ASSERT_NOT_NULL(session);
 
     nmo_object_repository_t *repo = nmo_session_get_repository(session);
     ASSERT_NOT_NULL(repo);
@@ -33,12 +29,15 @@ TEST(bulk_destroy, take_and_destroy_all) {
         ids[i] = nmo_object_get_id(all[i]);
     }
 
-    /* Take + destroy each, print progress */
+    /* Take + destroy each, print progress. A taken object no longer belongs to
+     * the session, so its state is released before the object, as the session
+     * does when it deletes one. */
     size_t destroyed = 0;
     for (size_t i = 0; i < total; i++) {
         nmo_object_t *obj = NULL;
         int rc = nmo_object_repository_take(repo, ids[i], &obj);
         if (rc == NMO_OK && obj != NULL) {
+            nmo_runtime_destroy_object_state(session, obj);
             nmo_object_destroy(obj);
             destroyed++;
         }
@@ -53,16 +52,13 @@ TEST(bulk_destroy, take_and_destroy_all) {
 }
 
 TEST(bulk_destroy, session_destroy_objects_bulk) {
-    TEST_REQUIRE_FILE("data/Ballance/P_Modul_01.nmo");
+    TEST_REQUIRE_FIXTURE("Ballance/P_Modul_01.nmo");
     nmo_context_desc_t desc = {0};
     nmo_context_t *ctx = nmo_context_create(&desc);
     ASSERT_NOT_NULL(ctx);
 
-    nmo_session_t *session = nmo_session_load(ctx, "data/Ballance/P_Modul_01.nmo");
-    if (!session) {
-        nmo_context_release(ctx);
-        return;
-    }
+    nmo_session_t *session = nmo_session_load(ctx, NMO_TEST_DATA_FILE("Ballance/P_Modul_01.nmo"));
+    ASSERT_NOT_NULL(session);
 
     nmo_object_repository_t *repo = nmo_session_get_repository(session);
     size_t total = 0;

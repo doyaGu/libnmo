@@ -1699,7 +1699,7 @@ TEST(interface_chunk, parse_extra_sub_with_id2_values) {
  * ============================================================================ */
 
 TEST(interface_chunk, integration_real_file) {
-    TEST_REQUIRE_FILE("data/BBSamples/3D Transformations/Look At.cmo");
+    TEST_REQUIRE_FIXTURE("BBSamples/3D Transformations/Look At.cmo");
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
 
@@ -1708,13 +1708,8 @@ TEST(interface_chunk, integration_real_file) {
 
     /* Try BBSamples file first (should have interface chunks) */
     int load_ok = nmo_session_load_file(session,
-        "data/BBSamples/3D Transformations/Look At.cmo", NULL, NULL);
-    if (load_ok != NMO_OK) {
-        /* Test data not available -- skip */
-        nmo_session_destroy(session);
-        nmo_context_release(ctx);
-        return;
-    }
+        NMO_TEST_DATA_FILE("BBSamples/3D Transformations/Look At.cmo"), NULL, NULL);
+    ASSERT_EQ(NMO_OK, load_ok);
 
     ASSERT_EQ(NMO_OK, nmo_session_ensure_behavior_acceleration(session));
 
@@ -1774,7 +1769,7 @@ TEST(interface_chunk, integration_real_file) {
 }
 
 TEST(interface_chunk, integration_prevent_collision_parses_all_interfaces) {
-    TEST_REQUIRE_FILE("data/BBSamples/Collisions/Prevent Collision.cmo");
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
 
@@ -1782,12 +1777,8 @@ TEST(interface_chunk, integration_prevent_collision_parses_all_interfaces) {
     ASSERT_NOT_NULL(session);
 
     int load_ok = nmo_session_load_file(session,
-        "data/BBSamples/Collisions/Prevent Collision.cmo", NULL, NULL);
-    if (load_ok != NMO_OK) {
-        nmo_session_destroy(session);
-        nmo_context_release(ctx);
-        return;
-    }
+        NMO_TEST_DATA_FILE("BBSamples/Collisions/Prevent Collision.cmo"), NULL, NULL);
+    ASSERT_EQ(NMO_OK, load_ok);
     ASSERT_EQ(NMO_OK, nmo_session_ensure_behavior_acceleration(session));
 
     nmo_object_repository_t *repo = nmo_session_get_repository(session);
@@ -2335,19 +2326,15 @@ TEST(interface_chunk, write_sectioned_sparse_body_emits_vsd_sections) {
  * ============================================================================ */
 
 TEST(interface_chunk, write_real_file_byte_level_oracle) {
-    TEST_REQUIRE_FILE("data/BBSamples/Collisions/Prevent Collision.cmo");
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     nmo_context_t *ctx = nmo_context_create(NULL);
     ASSERT_NOT_NULL(ctx);
     nmo_session_t *session = nmo_session_create(ctx);
     ASSERT_NOT_NULL(session);
 
     int load_ok = nmo_session_load_file(session,
-        "data/BBSamples/Collisions/Prevent Collision.cmo", NULL, NULL);
-    if (load_ok != NMO_OK) {
-        nmo_session_destroy(session);
-        nmo_context_release(ctx);
-        return;  /* skip if data not available */
-    }
+        NMO_TEST_DATA_FILE("BBSamples/Collisions/Prevent Collision.cmo"), NULL, NULL);
+    ASSERT_EQ(NMO_OK, load_ok);
     ASSERT_EQ(NMO_OK, nmo_session_ensure_behavior_acceleration(session));
 
     nmo_object_repository_t *repo = nmo_session_get_repository(session);
@@ -2743,7 +2730,7 @@ TEST(interface_chunk, extra_buffer_stays_in_section) {
  * ============================================================================ */
 
 TEST(interface_chunk, serialize_structured_write_round_trip) {
-    TEST_REQUIRE_FILE("data/BBSamples/Collisions/Prevent Collision.cmo");
+    TEST_REQUIRE_FIXTURE("BBSamples/Collisions/Prevent Collision.cmo");
     /* Load a real file, modify an interface_data field, save, reload,
      * verify the modification is present.  If the save path copied
      * the raw interface_chunk instead of using the structured writer,
@@ -2754,12 +2741,8 @@ TEST(interface_chunk, serialize_structured_write_round_trip) {
     ASSERT_NOT_NULL(session);
 
     int load_ok = nmo_session_load_file(session,
-        "data/BBSamples/Collisions/Prevent Collision.cmo", NULL, NULL);
-    if (load_ok != NMO_OK) {
-        nmo_session_destroy(session);
-        nmo_context_release(ctx);
-        return;  /* skip if data not available */
-    }
+        NMO_TEST_DATA_FILE("BBSamples/Collisions/Prevent Collision.cmo"), NULL, NULL);
+    ASSERT_EQ(NMO_OK, load_ok);
     ASSERT_EQ(NMO_OK, nmo_session_ensure_behavior_acceleration(session));
 
     /* Find behavior 253 (file_id 250), a Script with interface_data */
