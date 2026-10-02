@@ -629,7 +629,8 @@ static int class_world_init(fixture_t *f, class_world_t *w)
     }
     w->repository = nmo_object_repository_create(NULL);
     if (w->repository == NULL) return 0;
-    static const struct {
+    /* Not static: the GUIDs are compound literals. */
+    const struct {
         nmo_object_id_t id;
         nmo_class_id_t class_id;
         nmo_guid_t guid;
@@ -701,6 +702,8 @@ TEST(section_schemas, references_are_checked_against_the_class_they_must_have)
 
     nmo_behaviorlink_vtable.destroy(&link, NULL, NULL);
     nmo_kinematicchain_vtable.destroy(&chain, NULL, NULL);
+    nmo_object_repository_destroy(w.repository);
+    nmo_type_registry_destroy(w.types);
     nmo_arena_destroy(f.arena);
 }
 
