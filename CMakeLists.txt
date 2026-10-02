@@ -181,7 +181,6 @@ set(NMO_FORMAT_SOURCES
     src/format/nmo_plane_codec.c
     src/format/nmo_stb_adapter.c
     src/format/interface_chunk.c
-    src/format/interface_chunk_types.c
     src/format/interface_copy.c
     src/format/interface_edit.c
     src/format/obj_parser.c
@@ -257,6 +256,7 @@ set(NMO_OBJECT_SOURCES
 
 # Type System sources
 set(NMO_TYPE_SOURCES
+    src/type/interface_chunk_types.c
     src/type/type_registry.c
     src/type/type_runtime.c
     src/type/plugin_support.c

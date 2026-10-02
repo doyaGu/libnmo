@@ -5,8 +5,6 @@
 src/format/chunk.c object/nmo_object_repository.h
 src/format/chunk_arrays.c object/nmo_object_repository.h
 src/format/chunk_primitives.c object/nmo_object_repository.h
-src/format/interface_chunk_types.c type/nmo_reflection.h
-src/format/interface_chunk_types.c type/nmo_type_system.h
 src/object/object_diff.c document/nmo_document.h
 src/object/object_hierarchy.c runtime/nmo_context.h
 src/object/object_hierarchy.c session/nmo_session.h
