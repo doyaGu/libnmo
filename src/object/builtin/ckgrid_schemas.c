@@ -43,35 +43,53 @@ static nmo_status_t nmo_grid_validate(
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_DEFINE_OBJECT_LIFECYCLE(
-    grid,
-    nmo_grid_state_t,
-    do {
-        nmo_status_t result = nmo_3dentity_vtable.create(
-            &state->base, NULL, context);
-        if (result != NMO_OK) return result;
-        result = nmo_array_init(
-            &state->layers, sizeof(nmo_grid_layer_t), 0, NULL);
-        if (result != NMO_OK) {
-            nmo_grid_dispose_state_arrays(state);
-            return result;
-        }
-        grid_layers_set_lifecycle(&state->layers);
-        /* RCKGrid::RCKGrid scales the new grid to (1, 10, 1). The attribute
-           named "Grid" it also sets needs the attribute manager. */
-        state->base.world_matrix[0] = 1.0f;
-        state->base.world_matrix[5] = 10.0f;
-        state->base.world_matrix[10] = 1.0f;
-        state->base.world_matrix[15] = 1.0f;
-        state->width = 0;
-        state->length = 0;
-        state->priority = 0;
-        state->orientation_mode = 0;
-        state->has_grid_data = 1;
-        state->has_file_flag = 0;
-        state->file_flag = 0;
-    } while (0),
-    nmo_grid_dispose_state_arrays(state))
+/* RCKGrid::RCKGrid scales the new grid to (1, 10, 1). The attribute named
+   "Grid" it also sets needs the attribute manager. */
+static void nmo_grid_set_defaults(void *instance)
+{
+    nmo_grid_state_t *state = instance;
+    state->base.world_matrix[0] = 1.0f;
+    state->base.world_matrix[5] = 10.0f;
+    state->base.world_matrix[10] = 1.0f;
+    state->base.world_matrix[15] = 1.0f;
+    state->has_grid_data = 1;
+}
+
+static const nmo_object_state_member_t nmo_grid_layer_members[] = {
+    NMO_STATE_VALUE(nmo_grid_layer_t, ref),
+    NMO_STATE_CHUNK(nmo_grid_layer_t, chunk)
+};
+
+static const nmo_object_state_layout_t nmo_grid_layer_layout = {
+    .size = sizeof(nmo_grid_layer_t),
+    .members = nmo_grid_layer_members,
+    .member_count = sizeof(nmo_grid_layer_members) /
+        sizeof(nmo_grid_layer_members[0]),
+};
+
+static const nmo_object_state_member_t nmo_grid_members[] = {
+    NMO_STATE_VALUE(nmo_grid_state_t, width),
+    NMO_STATE_VALUE(nmo_grid_state_t, length),
+    NMO_STATE_VALUE(nmo_grid_state_t, reserved_value),
+    NMO_STATE_VALUE(nmo_grid_state_t, priority),
+    NMO_STATE_VALUE(nmo_grid_state_t, orientation_mode),
+    NMO_STATE_VALUE(nmo_grid_state_t, has_grid_data),
+    NMO_STATE_VALUE(nmo_grid_state_t, has_file_flag),
+    NMO_STATE_VALUE(nmo_grid_state_t, file_flag),
+    NMO_STATE_RECORDS(nmo_grid_state_t, layers, nmo_grid_layer_layout)
+};
+
+static const nmo_object_state_layout_t nmo_grid_layout = {
+    .size = sizeof(nmo_grid_state_t),
+    .base_vtable = &nmo_3dentity_vtable,
+    .members = nmo_grid_members,
+    .member_count = sizeof(nmo_grid_members) / sizeof(nmo_grid_members[0]),
+    .set_defaults = nmo_grid_set_defaults,
+    .validate = nmo_grid_validate,
+};
+
+NMO_DEFINE_OBJECT_LAYOUT_LIFECYCLE(grid, nmo_grid_layout)
+NMO_DEFINE_OBJECT_LAYOUT_COPY(grid, nmo_grid_layout)
 
 static void nmo_grid_dispose_state_arrays(nmo_grid_state_t *state)
 {
@@ -302,75 +320,6 @@ static const nmo_type_field_t nmo_grid_fields[] = {
     NMO_FIELD(nmo_grid_state_t, file_flag, CKPGUID_INT),
     NMO_FIELD_ARRAY(nmo_grid_state_t, layers, NMO_GUID_STRUCT_CKGRIDLAYER)
 };
-
-static nmo_status_t nmo_grid_copy(
-    const void *src,
-    void *dst,
-    const nmo_type_descriptor_t *type,
-    nmo_arena_t *arena)
-{
-    (void)type;
-    const nmo_grid_state_t *s = src;
-    nmo_grid_state_t *d = dst;
-    if (s == NULL || d == NULL || arena == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    NMO_RETURN_IF_ERROR(nmo_grid_validate(s, NULL, NULL));
-
-    nmo_grid_state_t copied;
-    nmo_status_t result = nmo_grid_create(&copied, NULL, NULL);
-    if (result != NMO_OK) return result;
-    result = nmo_3dentity_vtable.copy(
-        &s->base, &copied.base, NULL, arena);
-    if (result != NMO_OK) goto fail;
-
-    copied.width = s->width;
-    copied.length = s->length;
-    copied.reserved_value = s->reserved_value;
-    copied.priority = s->priority;
-    copied.orientation_mode = s->orientation_mode;
-    copied.has_grid_data = s->has_grid_data;
-    copied.has_file_flag = s->has_file_flag;
-    copied.file_flag = s->file_flag;
-
-    nmo_array_dispose(&copied.layers);
-    result = nmo_array_init(
-        &copied.layers, sizeof(nmo_grid_layer_t),
-        s->layers.count, &s->layers.allocator);
-    if (result != NMO_OK) goto fail;
-    grid_layers_set_lifecycle(&copied.layers);
-    nmo_grid_layer_t *dst_layers = NULL;
-    result = nmo_array_extend(
-        &copied.layers, s->layers.count, (void **)&dst_layers);
-    if (result != NMO_OK) goto fail;
-    const nmo_grid_layer_t *src_layers = NMO_ARRAY_DATA(
-        nmo_grid_layer_t, &s->layers);
-    for (size_t i = 0; i < s->layers.count; ++i) {
-        dst_layers[i].ref = src_layers[i].ref;
-        result = nmo_object_copy_chunk(
-            arena, &dst_layers[i].chunk, src_layers[i].chunk);
-        if (result != NMO_OK) goto fail;
-    }
-
-#define NMO_GRID_DETACH_SHARED_ARRAY(field) \
-    do { \
-        if (d->field.data == s->field.data) { \
-            memset(&d->field, 0, sizeof(d->field)); \
-        } \
-    } while (0)
-    NMO_GRID_DETACH_SHARED_ARRAY(base.base.base.scripts);
-    NMO_GRID_DETACH_SHARED_ARRAY(base.base.base.attributes);
-    NMO_GRID_DETACH_SHARED_ARRAY(base.base.base.legacy_attributes);
-    NMO_GRID_DETACH_SHARED_ARRAY(layers);
-#undef NMO_GRID_DETACH_SHARED_ARRAY
-    nmo_grid_destroy(d, NULL, NULL);
-    *d = copied;
-    return NMO_OK;
-
-fail:
-    nmo_grid_destroy(&copied, NULL, NULL);
-    return result;
-}
 
 static nmo_status_t nmo_grid_validate(
     const void *instance,

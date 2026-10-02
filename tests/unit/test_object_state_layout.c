@@ -10,6 +10,7 @@
 #include "format/nmo_chunk_api.h"
 #include "object/nmo_ref.h"
 #include "object/builtin/nmo_character_schemas.h"
+#include "object/builtin/nmo_grid_schemas.h"
 #include "object/builtin/nmo_group_schemas.h"
 #include "object/builtin/nmo_layer_schemas.h"
 #include "object/builtin/nmo_parameteroperation_schemas.h"
@@ -450,6 +451,38 @@ TEST(object_state_layout, scene_descriptors_copy_with_their_chunks) {
     nmo_arena_destroy(arena);
 }
 
+TEST(object_state_layout, grid_defaults_and_layers_copy) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_grid_state_t source;
+    nmo_grid_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_grid_vtable.create(&source, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_grid_vtable.create(&copied, NULL, NULL));
+    ASSERT_EQ(10.0f, source.base.world_matrix[5]);
+    ASSERT_EQ(1u, source.has_grid_data);
+
+    const nmo_grid_layer_t layer = {
+        .ref = nmo_ref_from_raw(95),
+        .chunk = make_chunk(arena, 0xB2u),
+    };
+    ASSERT_NOT_NULL(layer.chunk);
+    ASSERT_EQ(NMO_OK, nmo_array_append(&source.layers, &layer));
+    source.width = 4;
+    source.length = 6;
+    ASSERT_EQ(NMO_OK, nmo_grid_vtable.copy(&source, &copied, NULL, arena));
+    const nmo_grid_layer_t *copy_layer =
+        NMO_ARRAY_DATA(nmo_grid_layer_t, &copied.layers);
+    ASSERT_EQ(1u, copied.layers.count);
+    ASSERT_EQ(95u, copy_layer->ref.raw_id);
+    ASSERT_TRUE(copy_layer->chunk != layer.chunk);
+    ASSERT_EQ(4, copied.width);
+    ASSERT_EQ(6, copied.length);
+
+    nmo_grid_vtable.destroy(&source, NULL, NULL);
+    nmo_grid_vtable.destroy(&copied, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 /* A state that exercises the member kinds with a count of each width, records
  * that have padding, and the failure paths. */
 typedef struct synthetic_record {
@@ -566,5 +599,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_state_layout, bodypart_joint_defaults_and_copy);
     REGISTER_TEST(object_state_layout, parameterout_destinations_copy_by_content);
     REGISTER_TEST(object_state_layout, scene_descriptors_copy_with_their_chunks);
+    REGISTER_TEST(object_state_layout, grid_defaults_and_layers_copy);
     REGISTER_TEST(object_state_layout, counted_and_record_members_of_both_widths);
 TEST_MAIN_END()
