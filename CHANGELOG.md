@@ -465,6 +465,11 @@ the tests build each layout dword by dword.
   class mismatch of a reference, atomic failure) and was run against the hand written code first: the same
   eight tests pass on both, and the corpus byte round trip is unchanged.
 
+### Removed - BeObject attribute clone helpers
+- `nmo_beobject_clone_attributes` and `nmo_beobject_clone_legacy_attributes` are gone. They deep copied the modern
+  and the legacy attribute arrays of a CKBeObject for the hand written copy hook; the state layout of the
+  behavior object does that now, and nothing else called them.
+
 ### Fixed - Copying a behavior dropped its runtime flags
 - The copy hook of a behavior did not carry `runtime_flags` (active, executed last frame, activate or reset
   next frame), so a copied behavior was saved with those bits cleared and did not equal its original. It was
