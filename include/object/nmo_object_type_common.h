@@ -105,26 +105,40 @@ typedef enum nmo_object_state_member_kind {
     NMO_OBJECT_STATE_MEMBER_CHUNK  /**< Arena-owned nmo_chunk_t *, compared by chunk data */
 } nmo_object_state_member_kind_t;
 
+/** Member flags */
+#define NMO_OBJECT_STATE_MEMBER_UNCOMPARED 0x1u /**< Copied, but left out of equals and hash */
+
 typedef struct nmo_object_state_member {
     nmo_object_state_member_kind_t kind;
     size_t offset;
     size_t size;        /**< VALUE: member size; ARRAY: element size */
     size_t size_offset; /**< BYTES: offset of the size_t byte count */
+    uint32_t flags;     /**< NMO_OBJECT_STATE_MEMBER_* flags */
 } nmo_object_state_member_t;
 
 #define NMO_STATE_VALUE(_state_t, _member) \
     {NMO_OBJECT_STATE_MEMBER_VALUE, offsetof(_state_t, _member), \
-     sizeof(((_state_t *)0)->_member), 0}
+     sizeof(((_state_t *)0)->_member), 0, 0}
+/* Elements [_first, _first + _count) of a fixed array member, as one value */
+#define NMO_STATE_ELEMENTS(_state_t, _member, _first, _count) \
+    {NMO_OBJECT_STATE_MEMBER_VALUE, offsetof(_state_t, _member[_first]), \
+     sizeof(((_state_t *)0)->_member[0]) * (_count), 0, 0}
+/* Elements that are copied but are not part of the state equals and hash
+ * compare, because the serialized form derives them from another member. */
+#define NMO_STATE_ELEMENTS_UNCOMPARED(_state_t, _member, _first, _count) \
+    {NMO_OBJECT_STATE_MEMBER_VALUE, offsetof(_state_t, _member[_first]), \
+     sizeof(((_state_t *)0)->_member[0]) * (_count), 0, \
+     NMO_OBJECT_STATE_MEMBER_UNCOMPARED}
 #define NMO_STATE_ARRAY(_state_t, _member, _element_t) \
     {NMO_OBJECT_STATE_MEMBER_ARRAY, offsetof(_state_t, _member), \
-     sizeof(_element_t), 0}
+     sizeof(_element_t), 0, 0}
 #define NMO_STATE_BYTES(_state_t, _member, _size_member) \
     {NMO_OBJECT_STATE_MEMBER_BYTES, offsetof(_state_t, _member), 0, \
-     offsetof(_state_t, _size_member)}
+     offsetof(_state_t, _size_member), 0}
 #define NMO_STATE_STRING(_state_t, _member) \
-    {NMO_OBJECT_STATE_MEMBER_STRING, offsetof(_state_t, _member), 0, 0}
+    {NMO_OBJECT_STATE_MEMBER_STRING, offsetof(_state_t, _member), 0, 0, 0}
 #define NMO_STATE_CHUNK(_state_t, _member) \
-    {NMO_OBJECT_STATE_MEMBER_CHUNK, offsetof(_state_t, _member), 0, 0}
+    {NMO_OBJECT_STATE_MEMBER_CHUNK, offsetof(_state_t, _member), 0, 0, 0}
 
 /**
  * @brief State layout of a class whose own members need no custom logic.

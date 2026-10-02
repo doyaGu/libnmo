@@ -39,31 +39,6 @@ static void nmo_sound_dispose_base_arrays(nmo_sound_state_t *state)
     nmo_array_dispose(&state->base.legacy_attributes);
 }
 
-NMO_DEFINE_OBJECT_LIFECYCLE(
-    sound,
-    nmo_sound_state_t,
-    do {
-        nmo_status_t result = nmo_beobject_vtable.create(
-            &state->base, NULL, context);
-        if (result != NMO_OK) return result;
-        state->save_options = CKSOUND_USEGLOBAL;
-        state->file_name = NULL;
-    } while (0),
-    nmo_sound_dispose_base_arrays(state))
-
-NMO_DEFINE_OBJECT_LIFECYCLE(
-    wavesound,
-    nmo_wavesound_state_t,
-    do {
-        nmo_status_t result = nmo_beobject_vtable.create(
-            &state->base.base, NULL, context);
-        if (result != NMO_OK) return result;
-        state->base.save_options = CKSOUND_USEGLOBAL;
-        state->base.file_name = NULL;
-        state->attached_object = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
-    } while (0),
-    nmo_sound_dispose_base_arrays(&state->base))
-
 static void nmo_sound_copy_base_allocators(
     nmo_sound_state_t *dst,
     const nmo_sound_state_t *src)
@@ -79,18 +54,6 @@ static void nmo_sound_copy_base_allocators(
             src->base.legacy_attributes.allocator;
     }
 }
-
-NMO_DEFINE_OBJECT_LIFECYCLE(
-    midisound,
-    nmo_midisound_state_t,
-    do {
-        nmo_status_t result = nmo_beobject_vtable.create(
-            &state->base.base, NULL, context);
-        if (result != NMO_OK) return result;
-        state->base.save_options = CKSOUND_USEGLOBAL;
-        state->base.file_name = NULL;
-    } while (0),
-    nmo_sound_dispose_base_arrays(&state->base))
 
 /* =============================================================================
  * REFLECTION FIELDS
@@ -786,56 +749,92 @@ static nmo_status_t nmo_midisound_validate(
     const nmo_type_descriptor_t *type,
     void *context);
 
-static nmo_status_t nmo_sound_copy(
-    const void *src,
-    void *dst,
-    const nmo_type_descriptor_t *type,
-    nmo_arena_t *arena)
+static void nmo_sound_set_defaults(void *instance)
 {
-    if (src == NULL || dst == NULL || arena == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    if (src == dst) return NMO_OK;
-    NMO_RETURN_IF_ERROR(nmo_sound_validate(src, type, NULL));
-
-    const nmo_sound_state_t *source = src;
-    nmo_sound_state_t copied;
-    nmo_status_t result = nmo_sound_create(&copied, type, NULL);
-    if (result != NMO_OK) return result;
-    nmo_type_descriptor_t base_type = {
-        .size = sizeof(nmo_beobject_state_t),
-    };
-    result = nmo_beobject_vtable.copy(
-        &source->base, &copied.base, &base_type, arena);
-    if (result != NMO_OK) {
-#define NMO_SOUND_RELEASE_COPIED_ARRAY(field) \
-        do { \
-            if (copied.base.field.data == source->base.field.data) { \
-                memset(&copied.base.field, 0, sizeof(copied.base.field)); \
-            } else { \
-                nmo_array_dispose(&copied.base.field); \
-            } \
-        } while (0)
-        NMO_SOUND_RELEASE_COPIED_ARRAY(scripts);
-        NMO_SOUND_RELEASE_COPIED_ARRAY(attributes);
-        NMO_SOUND_RELEASE_COPIED_ARRAY(legacy_attributes);
-#undef NMO_SOUND_RELEASE_COPIED_ARRAY
-        return result;
-    }
-
-    copied.save_options = source->save_options;
-    result = nmo_object_copy_string(
-        arena, &copied.file_name, source->file_name);
-    if (result != NMO_OK) {
-        nmo_sound_dispose_base_arrays(&copied);
-        return result;
-    }
-
-    nmo_sound_state_t *target = dst;
-    nmo_sound_dispose_base_arrays(target);
-    *target = copied;
-    return NMO_OK;
+    nmo_sound_state_t *state = instance;
+    state->save_options = CKSOUND_USEGLOBAL;
 }
+
+static const nmo_object_state_member_t nmo_sound_members[] = {
+    NMO_STATE_VALUE(nmo_sound_state_t, save_options),
+    NMO_STATE_STRING(nmo_sound_state_t, file_name)
+};
+
+static const nmo_object_state_layout_t nmo_sound_layout = {
+    .size = sizeof(nmo_sound_state_t),
+    .base_vtable = &nmo_beobject_vtable,
+    .base_size = sizeof(nmo_beobject_state_t),
+    .members = nmo_sound_members,
+    .member_count = sizeof(nmo_sound_members) / sizeof(nmo_sound_members[0]),
+    .set_defaults = nmo_sound_set_defaults,
+    .validate = nmo_sound_validate,
+};
+
+NMO_DEFINE_OBJECT_LAYOUT_OPS(sound, nmo_sound_layout)
+
+static void nmo_wavesound_set_defaults(void *instance)
+{
+    nmo_wavesound_state_t *state = instance;
+    state->attached_object = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+}
+
+/* Word 8 of the pre-version-2 DATA2 block holds the loop mode, which the
+ * writer derives from state_flags, so it is copied but not compared. */
+static const nmo_object_state_member_t nmo_wavesound_members[] = {
+    NMO_STATE_VALUE(nmo_wavesound_state_t, has_wave_file_name),
+    NMO_STATE_STRING(nmo_wavesound_state_t, wave_file_name),
+    NMO_STATE_VALUE(nmo_wavesound_state_t, has_duration),
+    NMO_STATE_VALUE(nmo_wavesound_state_t, duration),
+    NMO_STATE_VALUE(nmo_wavesound_state_t, has_data2),
+    NMO_STATE_VALUE(nmo_wavesound_state_t, state_flags),
+    NMO_STATE_VALUE(nmo_wavesound_state_t, priority),
+    NMO_STATE_VALUE(nmo_wavesound_state_t, gain),
+    NMO_STATE_VALUE(nmo_wavesound_state_t, pan),
+    NMO_STATE_VALUE(nmo_wavesound_state_t, pitch),
+    NMO_STATE_VALUE(nmo_wavesound_state_t, cone_in_angle),
+    NMO_STATE_VALUE(nmo_wavesound_state_t, cone_out_angle),
+    NMO_STATE_VALUE(nmo_wavesound_state_t, cone_out_gain),
+    NMO_STATE_VALUE(nmo_wavesound_state_t, min_distance),
+    NMO_STATE_VALUE(nmo_wavesound_state_t, max_distance),
+    NMO_STATE_VALUE(nmo_wavesound_state_t, distance_behavior),
+    NMO_STATE_VALUE(nmo_wavesound_state_t, attached_object),
+    NMO_STATE_VALUE(nmo_wavesound_state_t, position),
+    NMO_STATE_VALUE(nmo_wavesound_state_t, direction),
+    NMO_STATE_VALUE(nmo_wavesound_state_t, version2_reserved_words),
+    NMO_STATE_VALUE(nmo_wavesound_state_t, modern_reserved_words),
+    NMO_STATE_ELEMENTS(nmo_wavesound_state_t, legacy_data2_words, 0, 8),
+    NMO_STATE_ELEMENTS_UNCOMPARED(nmo_wavesound_state_t, legacy_data2_words, 8, 1),
+    NMO_STATE_ELEMENTS(nmo_wavesound_state_t, legacy_data2_words, 9, 11)
+};
+
+static const nmo_object_state_layout_t nmo_wavesound_layout = {
+    .size = sizeof(nmo_wavesound_state_t),
+    .base_vtable = &nmo_sound_vtable,
+    .base_size = sizeof(nmo_sound_state_t),
+    .members = nmo_wavesound_members,
+    .member_count = sizeof(nmo_wavesound_members) / sizeof(nmo_wavesound_members[0]),
+    .set_defaults = nmo_wavesound_set_defaults,
+    .validate = nmo_wavesound_validate,
+};
+
+NMO_DEFINE_OBJECT_LAYOUT_OPS(wavesound, nmo_wavesound_layout)
+
+static const nmo_object_state_member_t nmo_midisound_members[] = {
+    NMO_STATE_VALUE(nmo_midisound_state_t, has_midi_file_name),
+    NMO_STATE_STRING(nmo_midisound_state_t, midi_file_name),
+    NMO_STATE_VALUE(nmo_midisound_state_t, midi_file_name_from_file)
+};
+
+static const nmo_object_state_layout_t nmo_midisound_layout = {
+    .size = sizeof(nmo_midisound_state_t),
+    .base_vtable = &nmo_sound_vtable,
+    .base_size = sizeof(nmo_sound_state_t),
+    .members = nmo_midisound_members,
+    .member_count = sizeof(nmo_midisound_members) / sizeof(nmo_midisound_members[0]),
+    .validate = nmo_midisound_validate,
+};
+
+NMO_DEFINE_OBJECT_LAYOUT_OPS(midisound, nmo_midisound_layout)
 
 NMO_DEFINE_OBJECT_VALIDATE_BASE(nmo_sound, nmo_sound_state_t, base, nmo_beobject_vtable)
 
@@ -857,49 +856,6 @@ nmo_status_t nmo_sound_remap_dependencies(
     NMO_RETURN_IF_ERROR(nmo_beobject_remap_dependencies(&state->base, NULL, context));
 
     return nmo_sound_validate(state, NULL, NULL);
-}
-
-static nmo_status_t nmo_wavesound_copy(
-    const void *src,
-    void *dst,
-    const nmo_type_descriptor_t *type,
-    nmo_arena_t *arena)
-{
-    if (src == NULL || dst == NULL || arena == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    if (src == dst) return NMO_OK;
-    NMO_RETURN_IF_ERROR(nmo_wavesound_validate(src, type, NULL));
-
-    const nmo_wavesound_state_t *source = src;
-    nmo_wavesound_state_t copied;
-    nmo_status_t result = nmo_wavesound_create(&copied, type, NULL);
-    if (result != NMO_OK) return result;
-    nmo_type_descriptor_t base_type = {
-        .size = sizeof(nmo_sound_state_t),
-    };
-    result = nmo_sound_vtable.copy(
-        &source->base, &copied.base, &base_type, arena);
-    if (result != NMO_OK) {
-        nmo_wavesound_destroy(&copied, type, NULL);
-        return result;
-    }
-
-    nmo_sound_state_t copied_base = copied.base;
-    copied = *source;
-    copied.base = copied_base;
-    copied.wave_file_name = NULL;
-    result = nmo_object_copy_string(
-        arena, &copied.wave_file_name, source->wave_file_name);
-    if (result != NMO_OK) {
-        nmo_wavesound_destroy(&copied, type, NULL);
-        return result;
-    }
-
-    nmo_wavesound_state_t *target = dst;
-    nmo_sound_dispose_base_arrays(&target->base);
-    *target = copied;
-    return NMO_OK;
 }
 
 NMO_DEFINE_OBJECT_VALIDATE_BASE(nmo_wavesound, nmo_wavesound_state_t, base, nmo_sound_vtable)
@@ -924,49 +880,6 @@ nmo_status_t nmo_wavesound_remap_dependencies(
 
     /* Preserve DATA2 presence and unresolved attachment reference. */
     return nmo_wavesound_validate(state, NULL, NULL);
-}
-
-static nmo_status_t nmo_midisound_copy(
-    const void *src,
-    void *dst,
-    const nmo_type_descriptor_t *type,
-    nmo_arena_t *arena)
-{
-    if (src == NULL || dst == NULL || arena == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    if (src == dst) return NMO_OK;
-    NMO_RETURN_IF_ERROR(nmo_midisound_validate(src, type, NULL));
-
-    const nmo_midisound_state_t *source = src;
-    nmo_midisound_state_t copied;
-    nmo_status_t result = nmo_midisound_create(&copied, type, NULL);
-    if (result != NMO_OK) return result;
-    nmo_type_descriptor_t base_type = {
-        .size = sizeof(nmo_sound_state_t),
-    };
-    result = nmo_sound_vtable.copy(
-        &source->base, &copied.base, &base_type, arena);
-    if (result != NMO_OK) {
-        nmo_midisound_destroy(&copied, type, NULL);
-        return result;
-    }
-
-    nmo_sound_state_t copied_base = copied.base;
-    copied = *source;
-    copied.base = copied_base;
-    copied.midi_file_name = NULL;
-    result = nmo_object_copy_string(
-        arena, &copied.midi_file_name, source->midi_file_name);
-    if (result != NMO_OK) {
-        nmo_midisound_destroy(&copied, type, NULL);
-        return result;
-    }
-
-    nmo_midisound_state_t *target = dst;
-    nmo_sound_dispose_base_arrays(&target->base);
-    *target = copied;
-    return NMO_OK;
 }
 
 NMO_DEFINE_OBJECT_VALIDATE_BASE(nmo_midisound, nmo_midisound_state_t, base, nmo_sound_vtable)
@@ -996,162 +909,6 @@ nmo_status_t nmo_midisound_remap_dependencies(
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
-
-static bool nmo_sound_string_equals(const char *lhs, const char *rhs)
-{
-    if (lhs == rhs) return true;
-    return lhs != NULL && rhs != NULL && strcmp(lhs, rhs) == 0;
-}
-
-static bool nmo_sound_equals(const void *a, const void *b)
-{
-    if (a == b) return true;
-    if (a == NULL || b == NULL) return false;
-    const nmo_sound_state_t *lhs = a;
-    const nmo_sound_state_t *rhs = b;
-    return nmo_beobject_vtable.equals(&lhs->base, &rhs->base) &&
-        lhs->save_options == rhs->save_options &&
-        nmo_sound_string_equals(lhs->file_name, rhs->file_name);
-}
-
-static bool nmo_sound_ref_equals(const nmo_ref_t *lhs, const nmo_ref_t *rhs)
-{
-    return lhs->raw_id == rhs->raw_id &&
-        lhs->id == rhs->id &&
-        lhs->state == rhs->state;
-}
-
-static bool nmo_wavesound_equals(const void *a, const void *b)
-{
-    if (a == b) return true;
-    if (a == NULL || b == NULL) return false;
-    const nmo_wavesound_state_t *lhs = a;
-    const nmo_wavesound_state_t *rhs = b;
-    return nmo_sound_vtable.equals(&lhs->base, &rhs->base) &&
-        lhs->has_wave_file_name == rhs->has_wave_file_name &&
-        nmo_sound_string_equals(
-            lhs->wave_file_name, rhs->wave_file_name) &&
-        lhs->has_duration == rhs->has_duration &&
-        lhs->duration == rhs->duration &&
-        lhs->has_data2 == rhs->has_data2 &&
-        lhs->state_flags == rhs->state_flags &&
-        memcmp(&lhs->priority, &rhs->priority, sizeof(lhs->priority)) == 0 &&
-        memcmp(&lhs->gain, &rhs->gain, sizeof(lhs->gain)) == 0 &&
-        memcmp(&lhs->pan, &rhs->pan, sizeof(lhs->pan)) == 0 &&
-        memcmp(&lhs->pitch, &rhs->pitch, sizeof(lhs->pitch)) == 0 &&
-        memcmp(&lhs->cone_in_angle, &rhs->cone_in_angle,
-               sizeof(lhs->cone_in_angle)) == 0 &&
-        memcmp(&lhs->cone_out_angle, &rhs->cone_out_angle,
-               sizeof(lhs->cone_out_angle)) == 0 &&
-        memcmp(&lhs->cone_out_gain, &rhs->cone_out_gain,
-               sizeof(lhs->cone_out_gain)) == 0 &&
-        memcmp(&lhs->min_distance, &rhs->min_distance,
-               sizeof(lhs->min_distance)) == 0 &&
-        memcmp(&lhs->max_distance, &rhs->max_distance,
-               sizeof(lhs->max_distance)) == 0 &&
-        lhs->distance_behavior == rhs->distance_behavior &&
-        nmo_sound_ref_equals(&lhs->attached_object, &rhs->attached_object) &&
-        memcmp(&lhs->position, &rhs->position, sizeof(lhs->position)) == 0 &&
-        memcmp(&lhs->direction, &rhs->direction, sizeof(lhs->direction)) == 0 &&
-        memcmp(lhs->version2_reserved_words,
-               rhs->version2_reserved_words,
-               sizeof(lhs->version2_reserved_words)) == 0 &&
-        memcmp(lhs->modern_reserved_words,
-               rhs->modern_reserved_words,
-               sizeof(lhs->modern_reserved_words)) == 0 &&
-        memcmp(lhs->legacy_data2_words, rhs->legacy_data2_words,
-               8u * sizeof(uint32_t)) == 0 &&
-        memcmp(&lhs->legacy_data2_words[9], &rhs->legacy_data2_words[9],
-               11u * sizeof(uint32_t)) == 0;
-}
-
-static bool nmo_midisound_equals(const void *a, const void *b)
-{
-    if (a == b) return true;
-    if (a == NULL || b == NULL) return false;
-    const nmo_midisound_state_t *lhs = a;
-    const nmo_midisound_state_t *rhs = b;
-    return nmo_sound_vtable.equals(&lhs->base, &rhs->base) &&
-        lhs->has_midi_file_name == rhs->has_midi_file_name &&
-        nmo_sound_string_equals(
-            lhs->midi_file_name, rhs->midi_file_name);
-}
-
-static uint32_t nmo_sound_hash_string(uint32_t hash, const char *string)
-{
-    const uint8_t present = string != NULL;
-    hash = nmo_hash_fnv1a32_update(hash, &present, sizeof(present));
-    return present
-        ? nmo_hash_fnv1a32_update(hash, string, strlen(string) + 1u)
-        : hash;
-}
-
-static uint32_t nmo_sound_hash(const void *instance)
-{
-    if (instance == NULL) return 0;
-    const nmo_sound_state_t *state = instance;
-    uint32_t hash = nmo_beobject_vtable.hash(&state->base);
-    hash = nmo_hash_fnv1a32_update(
-        hash, &state->save_options, sizeof(state->save_options));
-    return nmo_sound_hash_string(hash, state->file_name);
-}
-
-static uint32_t nmo_wavesound_hash(const void *instance)
-{
-    if (instance == NULL) return 0;
-    const nmo_wavesound_state_t *state = instance;
-    uint32_t hash = nmo_sound_vtable.hash(&state->base);
-#define NMO_WAVESOUND_HASH_FIELD(field) \
-    hash = nmo_hash_fnv1a32_update(hash, &(field), sizeof(field))
-    NMO_WAVESOUND_HASH_FIELD(state->has_wave_file_name);
-    hash = nmo_sound_hash_string(hash, state->wave_file_name);
-    NMO_WAVESOUND_HASH_FIELD(state->has_duration);
-    NMO_WAVESOUND_HASH_FIELD(state->duration);
-    NMO_WAVESOUND_HASH_FIELD(state->has_data2);
-    NMO_WAVESOUND_HASH_FIELD(state->state_flags);
-    NMO_WAVESOUND_HASH_FIELD(state->priority);
-    NMO_WAVESOUND_HASH_FIELD(state->gain);
-    NMO_WAVESOUND_HASH_FIELD(state->pan);
-    NMO_WAVESOUND_HASH_FIELD(state->pitch);
-    NMO_WAVESOUND_HASH_FIELD(state->cone_in_angle);
-    NMO_WAVESOUND_HASH_FIELD(state->cone_out_angle);
-    NMO_WAVESOUND_HASH_FIELD(state->cone_out_gain);
-    NMO_WAVESOUND_HASH_FIELD(state->min_distance);
-    NMO_WAVESOUND_HASH_FIELD(state->max_distance);
-    NMO_WAVESOUND_HASH_FIELD(state->distance_behavior);
-    NMO_WAVESOUND_HASH_FIELD(state->attached_object.raw_id);
-    NMO_WAVESOUND_HASH_FIELD(state->attached_object.id);
-    NMO_WAVESOUND_HASH_FIELD(state->attached_object.state);
-    NMO_WAVESOUND_HASH_FIELD(state->position.x);
-    NMO_WAVESOUND_HASH_FIELD(state->position.y);
-    NMO_WAVESOUND_HASH_FIELD(state->position.z);
-    NMO_WAVESOUND_HASH_FIELD(state->direction.x);
-    NMO_WAVESOUND_HASH_FIELD(state->direction.y);
-    NMO_WAVESOUND_HASH_FIELD(state->direction.z);
-    hash = nmo_hash_fnv1a32_update(
-        hash, state->version2_reserved_words,
-        sizeof(state->version2_reserved_words));
-    hash = nmo_hash_fnv1a32_update(
-        hash, state->modern_reserved_words,
-        sizeof(state->modern_reserved_words));
-    hash = nmo_hash_fnv1a32_update(
-        hash, state->legacy_data2_words, 8u * sizeof(uint32_t));
-    hash = nmo_hash_fnv1a32_update(
-        hash, &state->legacy_data2_words[9], 11u * sizeof(uint32_t));
-#undef NMO_WAVESOUND_HASH_FIELD
-    return hash;
-}
-
-static uint32_t nmo_midisound_hash(const void *instance)
-{
-    if (instance == NULL) return 0;
-    const nmo_midisound_state_t *state = instance;
-    uint32_t hash = nmo_sound_vtable.hash(&state->base);
-    hash = nmo_hash_fnv1a32_update(
-        hash, &state->has_midi_file_name,
-        sizeof(state->has_midi_file_name));
-    return nmo_sound_hash_string(hash, state->midi_file_name);
-}
 
 nmo_type_vtable_t nmo_sound_vtable = {
     .prepare_dependencies = nmo_sound_prepare_dependencies,

@@ -15,6 +15,7 @@
 #include "object/builtin/nmo_parameteroperation_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "object/builtin/nmo_place_schemas.h"
+#include "object/builtin/nmo_sound_schemas.h"
 #include "object/builtin/nmo_spritetext_schemas.h"
 #include "object/builtin/nmo_synchro_schemas.h"
 #include "object/builtin/nmo_targetlight_schemas.h"
@@ -210,6 +211,64 @@ TEST(object_state_layout, parameteroperation_chunks_copy_by_content) {
     nmo_arena_destroy(arena);
 }
 
+TEST(object_state_layout, wavesound_loop_mode_word_is_copied_not_compared) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_wavesound_state_t source;
+    nmo_wavesound_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_wavesound_vtable.create(&source, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_wavesound_vtable.create(&copied, NULL, NULL));
+    ASSERT_EQ(NMO_OBJECT_ID_NONE, source.attached_object.raw_id);
+
+    source.base.file_name = "ping.wav";
+    source.wave_file_name = "pong.wav";
+    source.legacy_data2_words[0] = 0x12345678u;
+    source.legacy_data2_words[8] = 7u;
+    source.legacy_data2_words[19] = 0x87654321u;
+    ASSERT_EQ(NMO_OK, nmo_wavesound_vtable.copy(&source, &copied, NULL, arena));
+    ASSERT_EQ(7u, copied.legacy_data2_words[8]);
+    ASSERT_EQ(0x87654321u, copied.legacy_data2_words[19]);
+    ASSERT_EQ(0, strcmp("pong.wav", copied.wave_file_name));
+    ASSERT_TRUE(copied.wave_file_name != source.wave_file_name);
+    ASSERT_TRUE(nmo_wavesound_vtable.equals(&source, &copied));
+
+    copied.legacy_data2_words[8] = 0u;
+    ASSERT_TRUE(nmo_wavesound_vtable.equals(&source, &copied));
+    ASSERT_EQ(nmo_wavesound_vtable.hash(&source),
+              nmo_wavesound_vtable.hash(&copied));
+    copied.legacy_data2_words[9] ^= 1u;
+    ASSERT_FALSE(nmo_wavesound_vtable.equals(&source, &copied));
+    copied.legacy_data2_words[9] ^= 1u;
+    copied.legacy_data2_words[7] ^= 1u;
+    ASSERT_FALSE(nmo_wavesound_vtable.equals(&source, &copied));
+
+    nmo_wavesound_vtable.destroy(&source, NULL, NULL);
+    nmo_wavesound_vtable.destroy(&copied, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
+TEST(object_state_layout, midisound_file_origin_is_compared) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_midisound_state_t source;
+    nmo_midisound_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_midisound_vtable.create(&source, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_midisound_vtable.create(&copied, NULL, NULL));
+
+    source.has_midi_file_name = 1;
+    source.midi_file_name = "song.mid";
+    source.midi_file_name_from_file = 1;
+    ASSERT_EQ(NMO_OK, nmo_midisound_vtable.copy(&source, &copied, NULL, arena));
+    ASSERT_EQ(1u, copied.midi_file_name_from_file);
+    ASSERT_TRUE(nmo_midisound_vtable.equals(&source, &copied));
+    copied.midi_file_name_from_file = 0;
+    ASSERT_FALSE(nmo_midisound_vtable.equals(&source, &copied));
+
+    nmo_midisound_vtable.destroy(&source, NULL, NULL);
+    nmo_midisound_vtable.destroy(&copied, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(object_state_layout, synchro_reference_arrays_copy_and_compare) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
@@ -314,6 +373,8 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_state_layout, targetlight_defaults_and_value_copy);
     REGISTER_TEST(object_state_layout, spritetext_strings_copy_by_content);
     REGISTER_TEST(object_state_layout, parameteroperation_chunks_copy_by_content);
+    REGISTER_TEST(object_state_layout, wavesound_loop_mode_word_is_copied_not_compared);
+    REGISTER_TEST(object_state_layout, midisound_file_origin_is_compared);
     REGISTER_TEST(object_state_layout, synchro_reference_arrays_copy_and_compare);
     REGISTER_TEST(object_state_layout, parameter_payload_lanes_copy_by_content);
     REGISTER_TEST(object_state_layout, bodypart_joint_defaults_and_copy);

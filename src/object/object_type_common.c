@@ -497,6 +497,7 @@ bool nmo_object_layout_equals(
 
     for (size_t i = 0; i < layout->member_count; ++i) {
         const nmo_object_state_member_t *member = &layout->members[i];
+        if ((member->flags & NMO_OBJECT_STATE_MEMBER_UNCOMPARED) != 0u) continue;
         const void *lhs = layout_member_ptr_const(a, member->offset);
         const void *rhs = layout_member_ptr_const(b, member->offset);
         switch (member->kind) {
@@ -563,6 +564,7 @@ uint32_t nmo_object_layout_hash(
 
     for (size_t i = 0; i < layout->member_count; ++i) {
         const nmo_object_state_member_t *member = &layout->members[i];
+        if ((member->flags & NMO_OBJECT_STATE_MEMBER_UNCOMPARED) != 0u) continue;
         const void *value = layout_member_ptr_const(instance, member->offset);
         switch (member->kind) {
         case NMO_OBJECT_STATE_MEMBER_VALUE:
