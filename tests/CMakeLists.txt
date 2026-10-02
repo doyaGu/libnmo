@@ -1,7 +1,9 @@
 # Test framework
 add_library(test_framework STATIC test_framework.c)
 target_include_directories(test_framework PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_compile_definitions(test_framework PUBLIC NMO_TEST_DATA_DIR="${PROJECT_SOURCE_DIR}/data")
+target_compile_definitions(test_framework PUBLIC
+    NMO_TEST_DATA_DIR="${PROJECT_SOURCE_DIR}/data"
+    NMO_TEST_SCRATCH_DIR="${CMAKE_CURRENT_BINARY_DIR}/scratch")
 
 add_test(
     NAME test_schema_io_result_audit

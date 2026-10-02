@@ -20,7 +20,11 @@
 
 #include "test_framework.h"
 
-#ifndef _WIN32
+#include <errno.h>
+
+#ifdef _WIN32
+#include <direct.h>
+#else
 #include <dirent.h>
 #include <sys/stat.h>
 #endif
@@ -242,10 +246,22 @@ int test_should_run_test(const char *suite, const char *name, test_category_t ca
     return 1;
 }
 
+static void test_create_scratch_dir(void) {
+#ifdef _WIN32
+    int rc = _mkdir(NMO_TEST_SCRATCH_DIR);
+#else
+    int rc = mkdir(NMO_TEST_SCRATCH_DIR, 0777);
+#endif
+    if (rc != 0 && errno != EEXIST) {
+        fprintf(stderr, "Cannot create the scratch directory %s\n", NMO_TEST_SCRATCH_DIR);
+    }
+}
+
 /**
  * Initialize the test framework
  */
 void test_framework_init(void) {
+    test_create_scratch_dir();
     if (g_test_suite == NULL) {
         g_test_suite = (test_suite *)malloc(sizeof(test_suite));
         if (!g_test_suite) {

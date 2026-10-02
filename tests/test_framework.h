@@ -36,6 +36,15 @@
 
 #define NMO_TEST_DATA_FILE(name) NMO_TEST_DATA_DIR "/" name
 
+/* Directory for the files a test writes, in the build tree; test_framework_init
+ * creates it. A test whose working directory is the source root writes here
+ * rather than to a relative path. */
+#ifndef NMO_TEST_SCRATCH_DIR
+#define NMO_TEST_SCRATCH_DIR "test_scratch"
+#endif
+
+#define NMO_TEST_SCRATCH_FILE(name) NMO_TEST_SCRATCH_DIR "/" name
+
 #ifdef __cplusplus
 extern "C" {
 #endif
