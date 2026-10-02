@@ -9,6 +9,7 @@
 #include "behavior/nmo_behavior_analyze.h"
 #include "behavior/nmo_behavior_view.h"
 #include "../runtime/runtime_internal.h"
+#include "behavior_internal.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
 #include "object/builtin/nmo_behavior_schemas.h"

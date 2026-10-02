@@ -15,6 +15,7 @@
 #include "type/nmo_type_query.h"
 
 #include "../runtime/runtime_internal.h"
+#include "behavior_internal.h"
 
 #include <stdlib.h>
 #include <string.h>

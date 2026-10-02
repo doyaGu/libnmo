@@ -9,6 +9,7 @@
 #include "object/nmo_context.h"
 #include "session/nmo_session.h"
 #include "../../src/runtime/runtime_internal.h"
+#include "../../src/behavior/behavior_internal.h"
 #include "object/nmo_object_edit.h"
 #include "object/nmo_class_ids.h"
 #include "type/nmo_object_guids.h"

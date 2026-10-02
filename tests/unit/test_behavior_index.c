@@ -4,6 +4,7 @@
  */
 
 #include "../test_framework.h"
+#include "../../src/behavior/behavior_internal.h"
 #include "behavior/nmo_behavior_analyze.h"
 #include "object/nmo_context.h"
 #include "runtime/nmo_workspace.h"

@@ -4,6 +4,7 @@
  */
 
 #include "../test_framework.h"
+#include "../../src/behavior/behavior_internal.h"
 
 #include "edit/nmo_behavior_edit.h"
 #include "core/nmo_array.h"

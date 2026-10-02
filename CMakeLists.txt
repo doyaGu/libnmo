@@ -287,7 +287,6 @@ set(NMO_EXTENSION_SOURCES
 
 # Runtime/session layer sources
 set(NMO_RUNTIME_SOURCES
-    src/runtime/interface_view.c
     src/runtime/object_hierarchy.c
     src/runtime/object_query.c
     src/runtime/object_import.c
@@ -345,6 +344,8 @@ set(NMO_EXPORT_SOURCES
 
 # Behavior layer sources
 set(NMO_BEHAVIOR_SOURCES
+    src/behavior/behavior_acceleration.c
+    src/behavior/interface_view.c
     src/behavior/behavior_boundary.c
     src/behavior/behavior_graph.c
     src/behavior/behavior_index.c

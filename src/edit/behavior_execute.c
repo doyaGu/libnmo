@@ -1,6 +1,7 @@
 #include "edit/nmo_behavior_execute.h"
 
 #include "../runtime/runtime_internal.h"
+#include "../behavior/behavior_internal.h"
 
 #include <stdio.h>
 #include <stdlib.h>

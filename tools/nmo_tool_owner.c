@@ -1,6 +1,7 @@
 #include "nmo_tool_owner.h"
 
 #include "../src/runtime/runtime_internal.h"
+#include "../src/behavior/behavior_internal.h"
 
 nmo_object_repository_t *nmo_tool_owner_repository(nmo_workspace_t *workspace) {
     return nmo_workspace_internal_repository(workspace);

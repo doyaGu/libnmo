@@ -1,5 +1,6 @@
 #include "behavior/nmo_behavior_analyze.h"
 #include "../runtime/runtime_internal.h"
+#include "behavior_internal.h"
 #include "type/nmo_type_query.h"
 #include "core/nmo_error.h"
 #include "core/nmo_array.h"

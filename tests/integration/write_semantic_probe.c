@@ -1,4 +1,5 @@
 #include "write_semantic_probe.h"
+#include "../../src/behavior/behavior_internal.h"
 
 #include "document/nmo_document_load.h"
 #include "session/nmo_runtime_kernel.h"

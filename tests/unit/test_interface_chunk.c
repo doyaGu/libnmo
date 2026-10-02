@@ -4,6 +4,7 @@
  */
 
 #include "test_framework.h"
+#include "../../src/behavior/behavior_internal.h"
 #include "format/nmo_interface_chunk.h"
 #include "format/nmo_interface_edit.h"
 #include "format/nmo_chunk_context.h"

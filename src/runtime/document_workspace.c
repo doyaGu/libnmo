@@ -27,7 +27,6 @@
 #include "format/nmo_chunk_pool.h"
 #include "format/nmo_header1.h"
 #include "extension/nmo_behavior_registry.h"
-#include "behavior/nmo_behavior_analyze.h"
 #include "object/nmo_ref_graph.h"
 #include "object/nmo_manager_guids.h"
 #include "type/nmo_type_runtime.h"
@@ -52,8 +51,6 @@ struct nmo_workspace {
 /**
  * Create session
  */
-static int nmo_session_build_behavior_index(nmo_session_t *session);
-static int nmo_session_ensure_behavior_index(nmo_session_t *session);
 static void nmo_session_post_load(nmo_session_t *session);
 
 static nmo_allocator_t owner_allocator_from_context(nmo_context_t *ctx)
@@ -370,22 +367,6 @@ nmo_ref_graph_t *nmo_document_internal_ref_graph(nmo_document_t *document)
     return session != NULL ? nmo_session_get_ref_graph(session) : NULL;
 }
 
-nmo_behavior_index_t *nmo_document_internal_behavior_index(
-    nmo_document_t *document)
-{
-    nmo_session_t *session = nmo_document_internal_session(document);
-    return session != NULL ? nmo_session_get_behavior_index(session) : NULL;
-}
-
-nmo_status_t nmo_document_internal_ensure_behavior_acceleration(
-    nmo_document_t *document)
-{
-    nmo_session_t *session = nmo_document_internal_session(document);
-    return session != NULL
-        ? nmo_session_ensure_behavior_acceleration(session)
-        : NMO_ERR_INVALID_STATE;
-}
-
 void nmo_document_internal_get_behavior_interface_diagnostics(
     nmo_document_t *document,
     nmo_session_behavior_interface_diagnostics_t *out_diag)
@@ -397,17 +378,6 @@ void nmo_document_internal_get_behavior_interface_diagnostics(
     if (session != NULL && out_diag != NULL) {
         nmo_session_get_behavior_interface_diagnostics(session, out_diag);
     }
-}
-
-nmo_status_t nmo_document_internal_interface_view_from_behavior(
-    nmo_document_t *document,
-    nmo_object_id_t owner_behavior_id,
-    nmo_interface_view_t *out_view)
-{
-    nmo_session_t *session = nmo_document_internal_session(document);
-    return session != NULL
-        ? nmo_interface_view_from_behavior(session, owner_behavior_id, out_view)
-        : NMO_ERR_INVALID_STATE;
 }
 
 nmo_status_t nmo_document_internal_apply_edit_flags(
@@ -507,22 +477,6 @@ nmo_ref_graph_t *nmo_workspace_internal_ref_graph(nmo_workspace_t *workspace)
         : NULL;
 }
 
-nmo_behavior_index_t *nmo_workspace_internal_behavior_index(
-    nmo_workspace_t *workspace)
-{
-    return workspace != NULL
-        ? nmo_document_internal_behavior_index(workspace->document)
-        : NULL;
-}
-
-nmo_status_t nmo_workspace_internal_ensure_behavior_acceleration(
-    nmo_workspace_t *workspace)
-{
-    return workspace != NULL
-        ? nmo_document_internal_ensure_behavior_acceleration(workspace->document)
-        : NMO_ERR_INVALID_STATE;
-}
-
 void nmo_workspace_internal_get_behavior_interface_diagnostics(
     nmo_workspace_t *workspace,
     nmo_session_behavior_interface_diagnostics_t *out_diag)
@@ -534,19 +488,6 @@ void nmo_workspace_internal_get_behavior_interface_diagnostics(
     } else if (out_diag != NULL) {
         memset(out_diag, 0, sizeof(*out_diag));
     }
-}
-
-nmo_status_t nmo_workspace_internal_interface_view_from_behavior(
-    nmo_workspace_t *workspace,
-    nmo_object_id_t owner_behavior_id,
-    nmo_interface_view_t *out_view)
-{
-    return workspace != NULL
-        ? nmo_document_internal_interface_view_from_behavior(
-              workspace->document,
-              owner_behavior_id,
-              out_view)
-        : NMO_ERR_INVALID_STATE;
 }
 
 nmo_status_t nmo_workspace_internal_create_object(
@@ -784,10 +725,11 @@ void nmo_session_destroy(nmo_session_t *session) {
             session->chunk_pool_capacity = 0;
         }
 
-        if (session->behavior_index != NULL) {
-            nmo_behavior_index_destroy(session->behavior_index);
-            session->behavior_index = NULL;
+        if (session->behavior_index != NULL &&
+            session->behavior_index_destroy != NULL) {
+            session->behavior_index_destroy(session->behavior_index);
         }
+        session->behavior_index = NULL;
 
         /* Destroy cached ref graph and its dedicated arena */
         if (session->cached_ref_graph != NULL) {
@@ -810,120 +752,6 @@ void nmo_session_destroy(nmo_session_t *session) {
 
         nmo_free(&session->allocator, session);
     }
-}
-
-nmo_behavior_index_t *nmo_session_get_behavior_index(nmo_session_t *session) {
-    if (session == NULL) return NULL;
-    int index_result = nmo_session_ensure_behavior_index(session);
-    if (index_result != NMO_OK) {
-        return NULL;
-    }
-    return session->behavior_index;
-}
-
-static int nmo_session_build_behavior_index(nmo_session_t *session) {
-    if (session == NULL || session->context == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    if (session->behavior_index != NULL) {
-        return NMO_OK;
-    }
-
-    session->behavior_index = nmo_behavior_index_create(session->arena);
-    if (session->behavior_index != NULL) {
-        nmo_document_t *document = NULL;
-        nmo_workspace_t *workspace = NULL;
-        int build_result = NMO_OK;
-
-        build_result = nmo_session_borrow_document(session, &document);
-        if (build_result != NMO_OK) {
-            nmo_behavior_index_destroy(session->behavior_index);
-            session->behavior_index = NULL;
-            return build_result;
-        }
-        build_result = nmo_workspace_create(session->context, document, &workspace);
-        if (build_result == NMO_OK) {
-            build_result = nmo_behavior_index_build(session->behavior_index, workspace);
-        }
-        nmo_workspace_destroy(workspace);
-        nmo_document_destroy(document);
-        if (build_result != NMO_OK) {
-            nmo_behavior_index_destroy(session->behavior_index);
-            session->behavior_index = NULL;
-            return build_result;
-        }
-        return NMO_OK;
-    }
-    return NMO_ERR_NOMEM;
-}
-
-static int nmo_session_ensure_behavior_index(nmo_session_t *session) {
-    if (session == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    if (session->behavior_accel_dirty && session->behavior_index != NULL) {
-        nmo_behavior_index_destroy(session->behavior_index);
-        session->behavior_index = NULL;
-    }
-
-    if (session->behavior_accel_dirty || session->behavior_index == NULL) {
-        int build_result = nmo_session_build_behavior_index(session);
-        if (build_result != NMO_OK) {
-            session->behavior_accel_built = 0;
-            session->behavior_accel_dirty = 1;
-            return build_result;
-        }
-        session->behavior_accel_dirty = 0;
-    }
-
-    return NMO_OK;
-}
-
-nmo_status_t nmo_session_ensure_behavior_acceleration(nmo_session_t *session) {
-    if (session == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    if (session->behavior_accel_built &&
-        !session->behavior_accel_dirty &&
-        !session->behavior_interface_dirty) {
-        return NMO_OK;
-    }
-
-    int index_result = nmo_session_ensure_behavior_index(session);
-    if (index_result != NMO_OK) {
-        return index_result;
-    }
-
-    if ((session->behavior_interface_dirty || !session->behavior_accel_built) &&
-        session->repository != NULL) {
-        nmo_logger_t *logger = session->context
-            ? nmo_context_get_logger(session->context)
-            : NULL;
-        nmo_behavior_interface_parse_stats_t stats;
-        memset(&stats, 0, sizeof(stats));
-        nmo_status_t parse_result = nmo_behavior_parse_all_interfaces_ex(
-            session->repository, logger, &stats);
-        session->behavior_interface_parse_stats = stats;
-        session->behavior_interface_parse_attempted = 1;
-        if (parse_result != NMO_OK) {
-            if (logger) {
-                nmo_log(logger, NMO_LOG_WARN,
-                        "Behavior interface parsing reported errors; first status=%d object=%u file_id=%u offset=%zu/%zu",
-                        parse_result,
-                        stats.first_error_object_id,
-                        stats.first_error_file_id,
-                        stats.first_error_reader_offset,
-                        stats.first_error_chunk_dwords);
-            }
-        }
-        session->behavior_interface_dirty = 0;
-    }
-
-    session->behavior_accel_built = 1;
-    session->behavior_accel_dirty = 0;
-    return NMO_OK;
 }
 
 void nmo_session_get_behavior_interface_diagnostics(

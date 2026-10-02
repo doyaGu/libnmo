@@ -37,6 +37,7 @@
 #include "type/nmo_type_query.h"
 #include "type/nmo_type_guids.h"
 #include "../../src/runtime/runtime_internal.h"
+#include "../../src/behavior/behavior_internal.h"
 
 #include <string.h>
 

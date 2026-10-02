@@ -94,6 +94,7 @@ typedef struct nmo_session {
 
     /* Behavior acceleration (lazy after load, lazy-rebuilt when dirty) */
     nmo_behavior_index_t *behavior_index;
+    void (*behavior_index_destroy)(nmo_behavior_index_t *index); /* set by its builder */
     int behavior_accel_dirty;
     int behavior_accel_built;
     int behavior_interface_dirty;

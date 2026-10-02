@@ -110,10 +110,6 @@ nmo_status_t nmo_session_preview_destroy(
     nmo_arena_t *arena,
     nmo_object_id_t **out_expanded_ids,
     size_t *out_expanded_count);
-nmo_behavior_index_t *nmo_session_get_behavior_index(
-    nmo_session_t *session);
-nmo_status_t nmo_session_ensure_behavior_acceleration(
-    nmo_session_t *session);
 void nmo_session_get_behavior_interface_diagnostics(
     const nmo_session_t *session,
     nmo_session_behavior_interface_diagnostics_t *out_diag);
@@ -151,17 +147,9 @@ nmo_status_t nmo_document_internal_save_file(
     const char *path,
     const nmo_save_options_t *opts);
 nmo_ref_graph_t *nmo_document_internal_ref_graph(nmo_document_t *document);
-nmo_behavior_index_t *nmo_document_internal_behavior_index(
-    nmo_document_t *document);
-nmo_status_t nmo_document_internal_ensure_behavior_acceleration(
-    nmo_document_t *document);
 void nmo_document_internal_get_behavior_interface_diagnostics(
     nmo_document_t *document,
     nmo_session_behavior_interface_diagnostics_t *out_diag);
-nmo_status_t nmo_document_internal_interface_view_from_behavior(
-    nmo_document_t *document,
-    nmo_object_id_t owner_behavior_id,
-    nmo_interface_view_t *out_view);
 nmo_status_t nmo_document_internal_apply_edit_flags(
     nmo_document_t *document,
     uint32_t flags);
@@ -197,17 +185,9 @@ const nmo_type_registry_t *nmo_workspace_internal_type_registry(
 nmo_arena_t *nmo_workspace_internal_document_arena(
     const nmo_workspace_t *workspace);
 nmo_ref_graph_t *nmo_workspace_internal_ref_graph(nmo_workspace_t *workspace);
-nmo_behavior_index_t *nmo_workspace_internal_behavior_index(
-    nmo_workspace_t *workspace);
-nmo_status_t nmo_workspace_internal_ensure_behavior_acceleration(
-    nmo_workspace_t *workspace);
 void nmo_workspace_internal_get_behavior_interface_diagnostics(
     nmo_workspace_t *workspace,
     nmo_session_behavior_interface_diagnostics_t *out_diag);
-nmo_status_t nmo_workspace_internal_interface_view_from_behavior(
-    nmo_workspace_t *workspace,
-    nmo_object_id_t owner_behavior_id,
-    nmo_interface_view_t *out_view);
 nmo_status_t nmo_workspace_internal_create_object(
     nmo_workspace_t *workspace,
     nmo_class_id_t class_id,

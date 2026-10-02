@@ -4,6 +4,7 @@
  */
 
 #include "script_edit_internal.h"
+#include "../behavior/behavior_internal.h"
 
 #include "object/nmo_statesave_ids.h"
 #include "object/nmo_class_ids.h"

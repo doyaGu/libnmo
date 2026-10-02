@@ -1,4 +1,5 @@
 #include "test_framework.h"
+#include "../../src/behavior/behavior_internal.h"
 
 #include "../../tools/nmo_cli_common.h"
 #include "document/nmo_document_save.h"

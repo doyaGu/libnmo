@@ -21,6 +21,7 @@
 #include "session/nmo_serializer.h"
 #include "type/nmo_type_guids.h"
 #include "../../src/runtime/runtime_internal.h"
+#include "../../src/behavior/behavior_internal.h"
 
 #include <stdio.h>
 #include <string.h>

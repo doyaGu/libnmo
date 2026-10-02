@@ -4,6 +4,7 @@
  */
 
 #include "test_framework.h"
+#include "../../src/behavior/behavior_internal.h"
 #include "write_semantic_probe.h"
 
 #include "../../tools/nmo_cli_common.h"
