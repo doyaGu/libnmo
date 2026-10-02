@@ -24,7 +24,7 @@
 #include "core/nmo_parse.h"
 #include "core/nmo_utils.h"
 
-#include "../runtime/runtime_internal.h"
+#include "runtime_internal.h"
 
 #include "yyjson.h"
 

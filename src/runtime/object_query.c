@@ -3,12 +3,12 @@
  * @brief Library-level object query helpers.
  */
 
-#include "object_query_internal.h"
+#include "../object/object_query_internal.h"
 
 #include "core/nmo_arena.h"
 #include "format/nmo_object.h"
 #include "object/nmo_object_repository.h"
-#include "../runtime/runtime_internal.h"
+#include "runtime_internal.h"
 #include "object/nmo_context.h"
 #include "session/nmo_session.h"
 #include "type/nmo_type_system.h"

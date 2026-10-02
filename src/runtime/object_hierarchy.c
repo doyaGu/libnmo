@@ -1,6 +1,6 @@
 #include "object/nmo_object_hierarchy.h"
 
-#include "../runtime/runtime_internal.h"
+#include "runtime_internal.h"
 #include "object/nmo_context.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_pipeline.h"

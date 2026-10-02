@@ -195,14 +195,9 @@ set(NMO_OBJECT_SOURCES
     src/object/object_structs.c
     src/object/object_types.c
     src/object/object_repository.c
-    src/object/object_refs.c
     src/object/ref.c
-    src/object/object_query.c
     src/object/object_query_index.c
     src/object/object_index.c
-    src/object/object_hierarchy.c
-    src/object/object_diff.c
-    src/object/object_import.c
     src/object/object_system.c
     src/object/mutable_refs.c
     src/object/shadow_storage.c
@@ -292,6 +287,11 @@ set(NMO_EXTENSION_SOURCES
 # Runtime/session layer sources
 set(NMO_RUNTIME_SOURCES
     src/runtime/interface_view.c
+    src/runtime/object_diff.c
+    src/runtime/object_hierarchy.c
+    src/runtime/object_query.c
+    src/runtime/object_import.c
+    src/runtime/object_refs.c
     src/runtime/object_summary.c
     src/runtime/document_workspace.c
     src/runtime/session_util.c

@@ -1,6 +1,6 @@
 #include "object/nmo_object_diff.h"
 
-#include "../runtime/runtime_internal.h"
+#include "runtime_internal.h"
 #include "core/nmo_allocator.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_array.h"

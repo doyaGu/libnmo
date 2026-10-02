@@ -5,10 +5,6 @@
 src/format/chunk.c object/nmo_object_repository.h
 src/format/chunk_arrays.c object/nmo_object_repository.h
 src/format/chunk_primitives.c object/nmo_object_repository.h
-src/object/object_diff.c document/nmo_document.h
-src/object/object_hierarchy.c session/nmo_session.h
-src/object/object_hierarchy.c session/nmo_session_pipeline.h
-src/object/object_query.c session/nmo_session.h
 src/runtime/document_workspace.c behavior/nmo_behavior_analyze.h
 src/session/runtime_kernel.c runtime/nmo_workspace.h
 # Relative includes of another layer's private header, which the audit did not
@@ -19,11 +15,6 @@ src/document/document_file_state.c ../runtime/runtime_internal.h
 src/document/document_load.c ../runtime/runtime_internal.h
 src/document/document_save.c ../runtime/runtime_internal.h
 src/document/document_stats.c ../runtime/runtime_internal.h
-src/object/object_diff.c ../runtime/runtime_internal.h
-src/object/object_hierarchy.c ../runtime/runtime_internal.h
-src/object/object_import.c ../runtime/runtime_internal.h
-src/object/object_query.c ../runtime/runtime_internal.h
-src/object/object_refs.c ../runtime/runtime_internal.h
 src/session/deserializer.c ../runtime/runtime_internal.h
 src/session/runtime_delete.c ../runtime/runtime_internal.h
 src/session/runtime_kernel.c ../runtime/runtime_internal.h

@@ -2,7 +2,7 @@
 
 #include "object/nmo_object_repository.h"
 #include "object/nmo_ref_graph.h"
-#include "../runtime/runtime_internal.h"
+#include "runtime_internal.h"
 
 nmo_status_t nmo_object_refs_iterate(
     nmo_document_t *document,
