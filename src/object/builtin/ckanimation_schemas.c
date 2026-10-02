@@ -1701,7 +1701,8 @@ static nmo_status_t read_legacy_controllers(
     bool section_found = false;
     size_t section_dwords = 0u;
 
-    /* Preserve the old morphkeys payload without assigning unproven semantics. */
+    /* Load seeks the old morph keys section and reads nothing from it; the
+       payload is kept as it is so a save writes it back. */
     NMO_RETURN_IF_ERROR(nmo_animation_seek_optional_sized(
         chunk, CK_STATESAVE_OBJANIMMORPHKEYS, &section_found,
         &section_dwords));
@@ -2509,7 +2510,8 @@ static nmo_status_t nmo_objectanimation_deserialize_internal(
             result = nmo_ref_read(chunk, &out_state->anim2);
             if (result != NMO_OK) return result;
         }
-        /* SHARED format has no controller data, keep raw_tail for any remainder */
+        /* SHARED format has no controller data. Load ignores what the section
+           holds beyond these fields; raw_tail keeps it for the save. */
         const size_t position = nmo_chunk_get_position(chunk);
         if (position > section_end) return NMO_ERR_TRUNCATED_CHUNK;
         result = read_raw_tail(
@@ -2609,7 +2611,9 @@ static nmo_status_t nmo_objectanimation_deserialize_internal(
     }
 
     if (out_state->format == CKOBJANIM_FORMAT_NONE) {
-        /* Unknown format or empty, keep the sections as raw_tail */
+        /* No keyframe section: Load reads no other section of such a chunk
+           (the morph sections need a morph controller), so the sections are
+           kept as raw_tail for the save. */
         nmo_status_t result = read_unread_sections(
             chunk, arena, out_state,
             (void **)&out_state->raw_tail, &out_state->raw_tail_size);

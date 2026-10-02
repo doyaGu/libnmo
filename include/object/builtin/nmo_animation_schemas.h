@@ -157,16 +157,21 @@ typedef struct nmo_objectanimation_state {
     uint32_t *morph_normals_sizes;  /**< Per-key data sizes */
     void   **morph_normals_data;    /**< Per-key arena-allocated buffers */
 
-    /* Uninterpreted CK_STATESAVE_OBJANIMMORPHKEYS payload (LEGACY only) */
+    /* CK_STATESAVE_OBJANIMMORPHKEYS payload of a data version 0 chunk (LEGACY
+     * only). RCKObjectAnimation::Load seeks the section and reads nothing from
+     * it, and Save never writes it, so it has no meaning to decode; the bytes
+     * are kept so that saving the object writes them back. */
     uint8_t has_legacy_morphkeys;
     uint8_t *legacy_morphkeys;
     size_t legacy_morphkeys_size;
 
-    /* Fallback for unparseable remainder. For an animation without a keyframe
-     * section (CKOBJANIM_FORMAT_NONE) it holds the other identifier sections of
-     * the chunk as a chain whose links count from the start of the buffer; the
-     * base object sections are left out. For SHARED it holds the bytes the
-     * section has beyond the fields that are read. */
+    /* Bytes the engine does not read, kept so that a save writes them back.
+     * For an animation without a keyframe section (CKOBJANIM_FORMAT_NONE) it
+     * holds the other identifier sections of the chunk as a chain whose links
+     * count from the start of the buffer; the base object sections are left
+     * out. For SHARED it holds the bytes the section has beyond the fields that
+     * are read. RCKObjectAnimation::Load reads none of these bytes, and Save
+     * never writes such bytes. */
     uint8_t *raw_tail;
     size_t raw_tail_size;
 } nmo_objectanimation_state_t;
