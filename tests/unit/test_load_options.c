@@ -101,16 +101,20 @@ TEST(load_options, metadata_profile_stops_after_header_and_rejects_mutation)
     ASSERT_NOT_NULL(repo);
     ASSERT_EQ((size_t)0, nmo_object_repository_get_count(repo));
 
-    remove("test_metadata_profile_should_not_save.nmo");
+    const char *session_save_path =
+        NMO_TEST_SCRATCH_FILE("test_metadata_profile_should_not_save.nmo");
+    const char *direct_save_path =
+        NMO_TEST_SCRATCH_FILE("test_metadata_profile_direct_save_should_not_save.nmo");
+    remove(session_save_path);
     ASSERT_EQ(NMO_ERR_INVALID_STATE,
               nmo_session_save_file(session,
-                                    "test_metadata_profile_should_not_save.nmo",
+                                    session_save_path,
                                     NULL,
                                     NULL));
-    remove("test_metadata_profile_direct_save_should_not_save.nmo");
+    remove(direct_save_path);
     ASSERT_EQ(NMO_ERR_INVALID_STATE,
               nmo_save_file(session,
-                            "test_metadata_profile_direct_save_should_not_save.nmo",
+                            direct_save_path,
                             NULL));
 
     nmo_object_id_t created_id = 0;
@@ -645,8 +649,8 @@ TEST(load_options, custom_allocator_controls_object_and_schema_storage)
 TEST(load_options, changed_object_save_preserves_unlisted_chunks)
 {
     TEST_REQUIRE_FILE("data/Ballance/Camera.nmo");
-    const char *preserved_path = "test_changed_only_preserved.nmo";
-    const char *default_path = "test_changed_only_default.nmo";
+    const char *preserved_path = NMO_TEST_SCRATCH_FILE("test_changed_only_preserved.nmo");
+    const char *default_path = NMO_TEST_SCRATCH_FILE("test_changed_only_default.nmo");
     remove(preserved_path);
     remove(default_path);
 
@@ -756,7 +760,7 @@ TEST(load_options, phased_header1_classifies_payload_failures)
 
 TEST(load_options, load_file_preserves_header_errors)
 {
-    const char *path = "test_load_options_invalid_header.nmo";
+    const char *path = NMO_TEST_SCRATCH_FILE("test_load_options_invalid_header.nmo");
     FILE *file = fopen(path, "wb");
     ASSERT_NOT_NULL(file);
     static const uint8_t invalid_signature[8] = {

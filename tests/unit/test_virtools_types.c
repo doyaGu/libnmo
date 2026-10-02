@@ -292,7 +292,7 @@ TEST(vt, object_like_primitive_classes_parse_object_ids_from_string) {
 }
 
 TEST(vt, raw_json_loader_marks_object_refs_and_parses_ids) {
-    const char *path = "test_object_ref_param_type_tmp.json";
+    const char *path = NMO_TEST_SCRATCH_FILE("test_object_ref_param_type_tmp.json");
     FILE *file = fopen(path, "wb");
     ASSERT_TRUE(file != NULL);
     ASSERT_TRUE(fputs(
@@ -431,7 +431,7 @@ TEST(vt, time_is_builtin_and_json_loader_does_not_override_it) {
 }
 
 TEST(vt, json_loader_propagates_registration_failure) {
-    const char *path = "test_virtools_loader_failure.json";
+    const char *path = NMO_TEST_SCRATCH_FILE("test_virtools_loader_failure.json");
     FILE *fp = fopen(path, "wb");
     ASSERT_TRUE(fp != NULL);
     fputs("[{\"guid\":[3735928559,65],\"name\":\"Late Enum\","
