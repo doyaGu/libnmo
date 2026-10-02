@@ -347,8 +347,13 @@ What breaks source compatibility, in short; the sections below give the details.
   script edit transaction; `nmo_behavior_edit_replace_bb_in_script_tx()` is the transaction entry
   point of replace-bb, which the edit plan executor uses.
 - `tools/commands/nmo_cmd_script.c` (4,590 lines) and `nmo_cmd_behavior_interface.c` (3,857) are
-  split by command into files of at most 1,754 lines; the functions are unchanged. The operation
-  references of an edit plan are checked from a table of reference fields.
+  split by command into files of at most 1,754 lines; the functions are unchanged.
+- Every edit plan op kind is encoded and decoded from its field table (`src/edit/edit_plan_json.c`,
+  2,995 lines before, 2,567 after): the table now also describes an id or a handle of an earlier
+  operation, hex bytes, id arrays, fold maps, manager entry options, and fields that are written
+  only when one of them was given, so the nine hand-written readers and writers are gone. The
+  references to earlier operations are checked from the same tables. Every plan is written as
+  before; thirteen invalid inputs that were refused without a message now name the field.
 
 ### Removed - Unused APIs (July to September)
 - Headers: `session/nmo_builder.h` (the staged file builder), `session/nmo_runtime_result.h` (result
