@@ -2325,6 +2325,41 @@ static nmo_status_t validate_operation_ref_index(
     return NMO_OK;
 }
 
+/** A field of an op that may name a handle of an earlier operation instead of an id. */
+typedef struct edit_op_ref_slot {
+    nmo_edit_op_kind_t kind;
+    const char *key;   /**< The operation key, for the error message */
+    size_t offset;     /**< Of the nmo_edit_handle_ref_t in nmo_edit_op_t */
+} edit_op_ref_slot_t;
+
+#define OP_REF_SLOT(_kind, _key, _member) \
+    {(_kind), (_key), offsetof(nmo_edit_op_t, data._member)}
+
+static const edit_op_ref_slot_t EDIT_OP_REF_SLOTS[] = {
+    OP_REF_SLOT(NMO_EDIT_OP_SET_PARAMETER_VALUE, "parameter_operation",
+                set_value.parameter_ref),
+    OP_REF_SLOT(NMO_EDIT_OP_SET_PARAMETER_BYTES, "parameter_operation",
+                set_bytes.parameter_ref),
+    OP_REF_SLOT(NMO_EDIT_OP_ADD_BEHAVIOR_LINK, "from_operation",
+                add_link.from_io_ref),
+    OP_REF_SLOT(NMO_EDIT_OP_ADD_BEHAVIOR_LINK, "to_operation",
+                add_link.to_io_ref),
+    OP_REF_SLOT(NMO_EDIT_OP_CONNECT_PARAMETER, "target_operation",
+                connect_parameter.target_parameter_ref),
+    OP_REF_SLOT(NMO_EDIT_OP_ADD_OPERATION, "in1_operation",
+                add_operation.in1_parameter_ref),
+    OP_REF_SLOT(NMO_EDIT_OP_ADD_OPERATION, "in2_operation",
+                add_operation.in2_parameter_ref),
+    OP_REF_SLOT(NMO_EDIT_OP_ADD_OPERATION, "out_operation",
+                add_operation.out_parameter_ref),
+    OP_REF_SLOT(NMO_EDIT_OP_REWIRE_OPERATION, "in1_operation",
+                rewire_operation.in1_parameter_ref),
+    OP_REF_SLOT(NMO_EDIT_OP_REWIRE_OPERATION, "in2_operation",
+                rewire_operation.in2_parameter_ref),
+    OP_REF_SLOT(NMO_EDIT_OP_REWIRE_OPERATION, "out_operation",
+                rewire_operation.out_parameter_ref),
+};
+
 static nmo_status_t validate_parsed_op_refs(
     const nmo_edit_op_t *op,
     size_t current_index)
@@ -2333,91 +2368,17 @@ static nmo_status_t validate_parsed_op_refs(
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    switch (op->kind) {
-        case NMO_EDIT_OP_SET_PARAMETER_VALUE:
-            if (op->data.set_value.parameter_ref.has_ref) {
-                return validate_operation_ref_index(
-                    "parameter_operation",
-                    op->data.set_value.parameter_ref.operation_index,
-                    current_index);
-            }
-            break;
-        case NMO_EDIT_OP_SET_PARAMETER_BYTES:
-            if (op->data.set_bytes.parameter_ref.has_ref) {
-                return validate_operation_ref_index(
-                    "parameter_operation",
-                    op->data.set_bytes.parameter_ref.operation_index,
-                    current_index);
-            }
-            break;
-        case NMO_EDIT_OP_ADD_BEHAVIOR_LINK:
-            if (op->data.add_link.from_io_ref.has_ref) {
-                NMO_RETURN_IF_ERROR(validate_operation_ref_index(
-                    "from_operation",
-                    op->data.add_link.from_io_ref.operation_index,
-                    current_index));
-            }
-            if (op->data.add_link.to_io_ref.has_ref) {
-                NMO_RETURN_IF_ERROR(validate_operation_ref_index(
-                    "to_operation",
-                    op->data.add_link.to_io_ref.operation_index,
-                    current_index));
-            }
-            break;
-        case NMO_EDIT_OP_CONNECT_PARAMETER:
-            if (op->data.connect_parameter.target_parameter_ref.has_ref) {
-                return validate_operation_ref_index(
-                    "target_operation",
-                    op->data.connect_parameter
-                        .target_parameter_ref.operation_index,
-                    current_index);
-            }
-            break;
-        case NMO_EDIT_OP_ADD_OPERATION:
-            if (op->data.add_operation.in1_parameter_ref.has_ref) {
-                NMO_RETURN_IF_ERROR(validate_operation_ref_index(
-                    "in1_operation",
-                    op->data.add_operation.in1_parameter_ref.operation_index,
-                    current_index));
-            }
-            if (op->data.add_operation.in2_parameter_ref.has_ref) {
-                NMO_RETURN_IF_ERROR(validate_operation_ref_index(
-                    "in2_operation",
-                    op->data.add_operation.in2_parameter_ref.operation_index,
-                    current_index));
-            }
-            if (op->data.add_operation.out_parameter_ref.has_ref) {
-                NMO_RETURN_IF_ERROR(validate_operation_ref_index(
-                    "out_operation",
-                    op->data.add_operation.out_parameter_ref.operation_index,
-                    current_index));
-            }
-            break;
-        case NMO_EDIT_OP_REWIRE_OPERATION:
-            if (op->data.rewire_operation.in1_parameter_ref.has_ref) {
-                NMO_RETURN_IF_ERROR(validate_operation_ref_index(
-                    "in1_operation",
-                    op->data.rewire_operation
-                        .in1_parameter_ref.operation_index,
-                    current_index));
-            }
-            if (op->data.rewire_operation.in2_parameter_ref.has_ref) {
-                NMO_RETURN_IF_ERROR(validate_operation_ref_index(
-                    "in2_operation",
-                    op->data.rewire_operation
-                        .in2_parameter_ref.operation_index,
-                    current_index));
-            }
-            if (op->data.rewire_operation.out_parameter_ref.has_ref) {
-                NMO_RETURN_IF_ERROR(validate_operation_ref_index(
-                    "out_operation",
-                    op->data.rewire_operation
-                        .out_parameter_ref.operation_index,
-                    current_index));
-            }
-            break;
-        default:
-            break;
+    for (size_t i = 0; i < sizeof(EDIT_OP_REF_SLOTS) / sizeof(EDIT_OP_REF_SLOTS[0]); ++i) {
+        const edit_op_ref_slot_t *slot = &EDIT_OP_REF_SLOTS[i];
+        if (slot->kind != op->kind) {
+            continue;
+        }
+        const nmo_edit_handle_ref_t *ref = (const nmo_edit_handle_ref_t *)(
+            (const unsigned char *)op + slot->offset);
+        if (ref->has_ref) {
+            NMO_RETURN_IF_ERROR(validate_operation_ref_index(
+                slot->key, ref->operation_index, current_index));
+        }
     }
     return NMO_OK;
 }
