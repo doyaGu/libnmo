@@ -25,6 +25,26 @@ static const nmo_object_state_member_t nmo_kinematicchain_members[] = {
     NMO_STATE_VALUE(nmo_kinematicchain_state_t, end_effector)
 };
 
+/* CKKinematicChain::Save writes the chain in one section: a reserved reference,
+ * then the start and the end effector (body parts). */
+static const nmo_object_section_field_t nmo_kinematicchain_chain_fields[] = {
+    NMO_SECTION_FIELD_REF(nmo_kinematicchain_state_t, reserved_ref, 0),
+    NMO_SECTION_FIELD_REF(nmo_kinematicchain_state_t, start_effector, NMO_CID_BODYPART),
+    NMO_SECTION_FIELD_REF(nmo_kinematicchain_state_t, end_effector, NMO_CID_BODYPART)
+};
+
+/* A longer section is read as far as its fields go. */
+static const nmo_object_section_t nmo_kinematicchain_section_list[] = {
+    NMO_SECTION(CK_STATESAVE_KINEMATICCHAINALL, nmo_kinematicchain_state_t,
+                has_chain_data, 0, NMO_OBJECT_SECTION_ALLOW_LONGER,
+                nmo_kinematicchain_chain_fields)
+};
+
+static const nmo_object_sections_t nmo_kinematicchain_sections = {
+    NMO_SECTION_LIST(nmo_kinematicchain_section_list),
+    .non_file_save_flags = CK_STATESAVE_KINEMATICCHAINALL,
+};
+
 static const nmo_object_state_layout_t nmo_kinematicchain_layout = {
     .size = sizeof(nmo_kinematicchain_state_t),
     .base_vtable = &nmo_object_vtable,
@@ -32,61 +52,13 @@ static const nmo_object_state_layout_t nmo_kinematicchain_layout = {
     .members = nmo_kinematicchain_members,
     .member_count =
         sizeof(nmo_kinematicchain_members) / sizeof(nmo_kinematicchain_members[0]),
+    .sections = &nmo_kinematicchain_sections,
 };
 
 NMO_DEFINE_OBJECT_LAYOUT_OPS(kinematicchain, nmo_kinematicchain_layout)
 
 #include <stddef.h>
 #include <stdalign.h>
-
-static nmo_status_t nmo_kinematicchain_deserialize_internal(
-    nmo_kinematicchain_state_t *out_state,
-    nmo_chunk_t *chunk,
-    void *context)
-{
-    if (!chunk || !out_state) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_kinematicchain_deserialize");
-    }
-
-    out_state->has_chain_data = 0;
-    out_state->reserved_ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
-    out_state->start_effector = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
-    out_state->end_effector = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
-
-    nmo_status_t result = nmo_object_deserialize(&out_state->base, chunk, NULL, context);
-    if (result != NMO_OK) return result;
-
-    size_t section_dwords = 0;
-    result = nmo_chunk_seek_identifier_with_size(
-        chunk, CK_STATESAVE_KINEMATICCHAINALL, &section_dwords);
-    if (result == NMO_OK) {
-        if (section_dwords < 3u) return NMO_ERR_TRUNCATED_CHUNK;
-        nmo_ref_t reserved_ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
-        result = nmo_ref_read(chunk, &reserved_ref);
-        if (result != NMO_OK) return result;
-        nmo_ref_t start_effector = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
-        nmo_ref_t end_effector = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
-        result = nmo_ref_read(chunk, &start_effector);
-        if (result != NMO_OK) return result;
-        result = nmo_ref_read(chunk, &end_effector);
-        if (result != NMO_OK) return result;
-        const nmo_object_repository_t *repository =
-            (const nmo_object_repository_t *)
-                nmo_deserialize_context_get_repository(context);
-        const nmo_type_registry_t *types =
-            nmo_deserialize_context_get_type_registry(context);
-        nmo_ref_check_class(
-            &start_effector, repository, types, NMO_CID_BODYPART);
-        nmo_ref_check_class(
-            &end_effector, repository, types, NMO_CID_BODYPART);
-        out_state->has_chain_data = 1;
-        out_state->reserved_ref = reserved_ref;
-        out_state->start_effector = start_effector;
-        out_state->end_effector = end_effector;
-    } else if (result != NMO_ERR_NOT_FOUND) return result;
-
-    NMO_RETURN_OK();
-}
 
 static const nmo_type_field_t nmo_kinematicchain_fields[] = {
     NMO_FIELD_NAMED("base", offsetof(nmo_kinematicchain_state_t, base),
@@ -143,6 +115,8 @@ static nmo_status_t nmo_kinematicchain_pre_delete(
 
 NMO_DEFINE_OBJECT_VALIDATE_BASE(nmo_kinematicchain, nmo_kinematicchain_state_t, base, nmo_object_vtable)
 
+NMO_DEFINE_OBJECT_LAYOUT_SERDE(nmo_kinematicchain, nmo_kinematicchain_layout, nmo_kinematicchain_validate)
+
 nmo_type_vtable_t nmo_kinematicchain_vtable = {
     .prepare_dependencies = nmo_kinematicchain_prepare_dependencies,
     .remap_dependencies = nmo_kinematicchain_remap_dependencies,
@@ -169,54 +143,3 @@ NMO_DEFINE_OBJECT_REGISTRATION_RUNTIME_FIELDS(
     &nmo_kinematicchain_vtable,
     nmo_kinematicchain_fields)
 
-static nmo_status_t nmo_kinematicchain_serialize_internal(
-    const nmo_kinematicchain_state_t *in_state,
-    nmo_chunk_t *out_chunk,
-    void *context)
-{
-    if (!in_state || !out_chunk) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_kinematicchain_serialize");
-    }
-
-    nmo_status_t result = nmo_object_serialize(&in_state->base, out_chunk, NULL, context);
-    if (result != NMO_OK) return result;
-
-    const bool is_file = nmo_object_serialize_is_file(out_chunk, context);
-    const uint32_t save_flags = nmo_serialize_context_get_save_flags(context);
-    if (!in_state->has_chain_data ||
-        (!is_file && (save_flags & CK_STATESAVE_KINEMATICCHAINALL) == 0)) {
-        NMO_RETURN_OK();
-    }
-
-    {
-        result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_KINEMATICCHAINALL);
-        if (result != NMO_OK) return result;
-        result = nmo_ref_write(out_chunk, &in_state->reserved_ref);
-        if (result != NMO_OK) return result;
-        result = nmo_ref_write(out_chunk, &in_state->start_effector);
-        if (result != NMO_OK) return result;
-        result = nmo_ref_write(out_chunk, &in_state->end_effector);
-        if (result != NMO_OK) return result;
-    }
-
-    NMO_RETURN_OK();
-}
-
-nmo_status_t nmo_kinematicchain_deserialize(
-    void *instance,
-    nmo_chunk_t *chunk,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)type;
-    nmo_kinematicchain_state_t *out_state = (nmo_kinematicchain_state_t *)instance;
-    if (out_state == NULL || chunk == NULL) return NMO_ERR_INVALID_ARGUMENT;
-    nmo_kinematicchain_state_t decoded = *out_state;
-    nmo_status_t result = nmo_kinematicchain_deserialize_internal(
-        &decoded, chunk, context);
-    if (result != NMO_OK) return result;
-    *out_state = decoded;
-    return NMO_OK;
-}
-
-NMO_DEFINE_OBJECT_STAGED_SERIALIZE_STATE(nmo_kinematicchain, nmo_kinematicchain_state_t, nmo_kinematicchain_validate)
