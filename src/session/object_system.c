@@ -576,7 +576,7 @@ nmo_status_t nmo_object_system_prepare_loaded_objects(
     }
     file_ctx->file_to_runtime = remap_table;
     file_ctx->runtime_to_file = NULL;
-    file_ctx->repository = repo;
+    file_ctx->ref_tokens = nmo_object_repository_ref_tokens(repo);
 
     if (created_objects != NULL) {
         for (size_t i = 0; i < desc_count; i++) {

@@ -1018,7 +1018,7 @@ TEST(chunk_id_remap, behavior_owner_requires_beobject_class) {
     ASSERT_EQ(NMO_OK, nmo_id_remap_add(file_to_runtime, 742u, 1751u));
     nmo_chunk_file_context_t file_context = {
         .file_to_runtime = file_to_runtime,
-        .repository = repository,
+        .ref_tokens = nmo_object_repository_ref_tokens(repository),
     };
     nmo_type_runtime_t type_runtime = {.types = types, .ops = NULL};
     nmo_deserialize_context_t context = nmo_deserialize_context_create(
@@ -1770,7 +1770,7 @@ TEST(chunk_id_remap, dataarray_parameter_cells_require_parameter_class) {
     ASSERT_EQ(NMO_OK, nmo_id_remap_add(file_to_runtime, 752u, 1761u));
     nmo_chunk_file_context_t file_context = {
         .file_to_runtime = file_to_runtime,
-        .repository = repository,
+        .ref_tokens = nmo_object_repository_ref_tokens(repository),
     };
     nmo_type_runtime_t type_runtime = {.types = types, .ops = NULL};
     nmo_deserialize_context_t deserialize_context =
@@ -5738,7 +5738,7 @@ TEST(chunk_id_remap, parameter_refs_require_layout_classes) {
     nmo_chunk_close(chunk);
     nmo_chunk_file_context_t file_context = {
         .file_to_runtime = file_to_runtime,
-        .repository = repository,
+        .ref_tokens = nmo_object_repository_ref_tokens(repository),
     };
     nmo_chunk_set_file_context(chunk, &file_context);
     nmo_type_runtime_t type_runtime = {.types = types, .ops = NULL};
@@ -13783,7 +13783,7 @@ TEST(chunk_id_remap, place_child_refs_require_3dentity_class) {
     ASSERT_EQ(NMO_OK, nmo_id_remap_add(file_to_runtime, 712u, 1721u));
     nmo_chunk_file_context_t file_context = {
         .file_to_runtime = file_to_runtime,
-        .repository = repository,
+        .ref_tokens = nmo_object_repository_ref_tokens(repository),
     };
     nmo_type_runtime_t type_runtime = {.types = types, .ops = NULL};
     nmo_deserialize_context_t context = nmo_deserialize_context_create(
@@ -15098,7 +15098,7 @@ TEST(chunk_id_remap, scene_object_descs_require_sceneobject_class) {
     ASSERT_EQ(NMO_OK, nmo_id_remap_add(file_to_runtime, 702u, 1711u));
     nmo_chunk_file_context_t file_context = {
         .file_to_runtime = file_to_runtime,
-        .repository = repository,
+        .ref_tokens = nmo_object_repository_ref_tokens(repository),
     };
     nmo_type_runtime_t type_runtime = {.types = types, .ops = NULL};
     nmo_deserialize_context_t context = nmo_deserialize_context_create(
@@ -15683,7 +15683,7 @@ TEST(chunk_id_remap, synchro_refs_require_beobject_class) {
     ASSERT_EQ(NMO_OK, nmo_id_remap_add(file_to_runtime, 702u, 1711u));
     nmo_chunk_file_context_t file_context = {
         .file_to_runtime = file_to_runtime,
-        .repository = repository,
+        .ref_tokens = nmo_object_repository_ref_tokens(repository),
     };
     nmo_type_runtime_t type_runtime = {.types = types, .ops = NULL};
     nmo_deserialize_context_t context = nmo_deserialize_context_create(
@@ -15890,7 +15890,7 @@ TEST(chunk_id_remap, beobject_attributes_require_parameterout_class) {
     ASSERT_EQ(NMO_OK, nmo_id_remap_add(file_to_runtime, 732u, 1741u));
     nmo_chunk_file_context_t file_context = {
         .file_to_runtime = file_to_runtime,
-        .repository = repository,
+        .ref_tokens = nmo_object_repository_ref_tokens(repository),
     };
     nmo_type_runtime_t type_runtime = {.types = types, .ops = NULL};
     nmo_deserialize_context_t context = nmo_deserialize_context_create(
@@ -17636,7 +17636,7 @@ TEST(chunk_id_remap, character_refs_use_animation_hierarchy) {
     ASSERT_EQ(NMO_OK, nmo_id_remap_add(file_to_runtime, 723u, 1732u));
     nmo_chunk_file_context_t file_context = {
         .file_to_runtime = file_to_runtime,
-        .repository = repository,
+        .ref_tokens = nmo_object_repository_ref_tokens(repository),
     };
     nmo_type_runtime_t type_runtime = {.types = types, .ops = NULL};
     nmo_deserialize_context_t context = nmo_deserialize_context_create(
@@ -21737,7 +21737,7 @@ TEST(chunk_id_remap, legacy_unresolved_id_preserves_raw_id) {
 
     nmo_chunk_file_context_t read_context = {
         .file_to_runtime = file_to_runtime,
-        .repository = repo,
+        .ref_tokens = nmo_object_repository_ref_tokens(repo),
     };
     nmo_chunk_set_file_context(chunk, &read_context);
     ASSERT_EQ(NMO_OK, nmo_chunk_start_read(chunk));
@@ -21754,7 +21754,7 @@ TEST(chunk_id_remap, legacy_unresolved_id_preserves_raw_id) {
     ASSERT_NOT_NULL(output);
     nmo_chunk_file_context_t write_context = {
         .runtime_to_file = runtime_to_file,
-        .repository = repo,
+        .ref_tokens = nmo_object_repository_ref_tokens(repo),
     };
     nmo_chunk_set_file_context(output, &write_context);
     ASSERT_EQ(NMO_OK, nmo_chunk_start_write(output));

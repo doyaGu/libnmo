@@ -10,6 +10,7 @@
 #include "core/nmo_error.h"
 #include "core/nmo_allocator.h"
 #include "core/nmo_guid.h"
+#include "format/nmo_chunk_context.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -81,6 +82,13 @@ NMO_API bool nmo_object_repository_get_unresolved_ref_raw(
     const nmo_object_repository_t *repository,
     nmo_object_id_t token,
     nmo_object_id_t *out_raw_id);
+
+/**
+ * The repository's unresolved-reference tokens as the chunk code uses them
+ * (nmo_chunk_file_context_t.ref_tokens). NULL for a NULL repository.
+ */
+NMO_API const nmo_ref_tokens_t *nmo_object_repository_ref_tokens(
+    nmo_object_repository_t *repository);
 
 /**
  * @brief Attach or detach an object index for incremental maintenance

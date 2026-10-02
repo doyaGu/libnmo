@@ -1212,7 +1212,7 @@ static nmo_status_t nmo_behavior_serialize_internal(
                     }
                     interface_file_ctx->runtime_to_file = interface_remap;
                     interface_file_ctx->file_to_runtime = NULL;
-                    interface_file_ctx->repository = repo;
+                    interface_file_ctx->ref_tokens = nmo_object_repository_ref_tokens(repo);
                     nmo_chunk_set_file_context(interface_out, interface_file_ctx);
                 } else {
                     NMO_RETURN_ERROR(

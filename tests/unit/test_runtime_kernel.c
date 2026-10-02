@@ -3672,7 +3672,7 @@ TEST(runtime_kernel, serializer_failure_does_not_reuse_raw_chunk) {
     ASSERT_NOT_NULL(runtime_to_file);
     nmo_chunk_file_context_t file_context = {
         .runtime_to_file = runtime_to_file,
-        .repository = repo,
+        .ref_tokens = nmo_object_repository_ref_tokens(repo),
     };
     nmo_status_t serialize_status = NMO_OK;
     nmo_chunk_t *serialized = nmo_object_system_serialize_object_chunk(

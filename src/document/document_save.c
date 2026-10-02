@@ -923,7 +923,7 @@ static nmo_status_t save_build_remap_plan(nmo_serializer_t *ctx) {
     }
     ctx->chunk_file_ctx->runtime_to_file = ctx->file_index_remap;
     ctx->chunk_file_ctx->file_to_runtime = NULL;
-    ctx->chunk_file_ctx->repository = ctx->repo;
+    ctx->chunk_file_ctx->ref_tokens = nmo_object_repository_ref_tokens(ctx->repo);
 
     NMO_RETURN_OK();
 }

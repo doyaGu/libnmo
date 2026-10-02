@@ -44,6 +44,7 @@ typedef struct nmo_object_repository {
     nmo_hash_table_t *unresolved_raw_to_token; /* raw file ID -> runtime token */
     nmo_hash_table_t *unresolved_token_to_raw; /* runtime token -> raw file ID */
     nmo_object_id_t next_unresolved_token;
+    nmo_ref_tokens_t ref_tokens;               /* the two tables above, for the chunk code */
 
     /* Runtime ID allocator */
     nmo_object_id_t next_runtime_id;
@@ -62,6 +63,24 @@ typedef struct nmo_object_repository {
     nmo_object_t **scratch_class;
     size_t scratch_class_capacity;
 } nmo_object_repository_t;
+
+static nmo_status_t nmo_object_repository_ref_tokens_intern(
+    void *owner,
+    nmo_object_id_t raw_id,
+    nmo_object_id_t *out_token)
+{
+    return nmo_object_repository_intern_unresolved_ref(
+        (nmo_object_repository_t *)owner, raw_id, out_token);
+}
+
+static bool nmo_object_repository_ref_tokens_get_raw(
+    const void *owner,
+    nmo_object_id_t token,
+    nmo_object_id_t *out_raw_id)
+{
+    return nmo_object_repository_get_unresolved_ref_raw(
+        (const nmo_object_repository_t *)owner, token, out_raw_id);
+}
 
 static void nmo_object_repository_dispose_object_ptr(void *element, void *user_data) {
     (void)user_data;
@@ -342,6 +361,9 @@ nmo_object_repository_t *nmo_object_repository_create(const nmo_allocator_t *all
 
     repo->next_runtime_id = 1; /* Start from 1 (0 is invalid) */
     repo->next_unresolved_token = NMO_OBJECT_ID_INVALID - 1u;
+    repo->ref_tokens.owner = repo;
+    repo->ref_tokens.intern = nmo_object_repository_ref_tokens_intern;
+    repo->ref_tokens.get_raw = nmo_object_repository_ref_tokens_get_raw;
     return repo;
 }
 
@@ -446,6 +468,12 @@ bool nmo_object_repository_get_unresolved_ref_raw(
     if (repo == NULL || out_raw_id == NULL) return false;
     return nmo_hash_table_get(
         repo->unresolved_token_to_raw, &token, out_raw_id) == NMO_OK;
+}
+
+const nmo_ref_tokens_t *nmo_object_repository_ref_tokens(
+    nmo_object_repository_t *repo)
+{
+    return repo != NULL ? &repo->ref_tokens : NULL;
 }
 
 void nmo_object_repository_set_index(

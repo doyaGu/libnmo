@@ -57,9 +57,9 @@ nmo_status_t nmo_ref_read(nmo_chunk_t *chunk, nmo_ref_t *out_ref)
     } else if (ref.state == NMO_REF_UNRESOLVED) {
         const nmo_chunk_file_context_t *file_context =
             nmo_chunk_get_file_context(chunk);
-        if (file_context != NULL && file_context->repository != NULL) {
-            result = nmo_object_repository_intern_unresolved_ref(
-                file_context->repository, raw_id, &ref.id);
+        if (file_context != NULL && file_context->ref_tokens != NULL) {
+            result = file_context->ref_tokens->intern(
+                file_context->ref_tokens->owner, raw_id, &ref.id);
             if (result != NMO_OK) {
                 if (start_pos != (size_t)-1) {
                     (void)nmo_chunk_goto(chunk, start_pos);
@@ -162,9 +162,9 @@ nmo_status_t nmo_ref_write_sequence(
                 continue;
             }
             nmo_object_id_t unresolved_raw = NMO_OBJECT_ID_NONE;
-            if (file_context->repository != NULL &&
-                nmo_object_repository_get_unresolved_ref_raw(
-                    file_context->repository, refs[i].id, &unresolved_raw)) {
+            if (file_context->ref_tokens != NULL &&
+                file_context->ref_tokens->get_raw(
+                    file_context->ref_tokens->owner, refs[i].id, &unresolved_raw)) {
                 continue;
             }
             nmo_object_id_t file_id = NMO_OBJECT_ID_NONE;

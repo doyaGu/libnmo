@@ -2,9 +2,6 @@
 # Format: <source file> <included header>. One entry per line.
 # Each line is technical debt: the file depends on a layer above its own.
 # Remove the line once the dependency has been moved down the stack.
-src/format/chunk.c object/nmo_object_repository.h
-src/format/chunk_arrays.c object/nmo_object_repository.h
-src/format/chunk_primitives.c object/nmo_object_repository.h
 src/runtime/document_workspace.c behavior/nmo_behavior_analyze.h
 src/runtime/document_workspace.c document/nmo_document.h
 src/runtime/document_workspace.c document/nmo_document_load.h

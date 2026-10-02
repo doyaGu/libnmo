@@ -8,7 +8,6 @@
 #include "format/nmo_chunk_context.h"
 #include "format/nmo_id_remap.h"
 #include "core/nmo_utils.h"
-#include "object/nmo_object_repository.h"
 #include <string.h>
 #include <stdint.h>
 
@@ -2146,9 +2145,9 @@ nmo_status_t nmo_chunk_write_object_sequence_item(nmo_chunk_t *chunk, nmo_object
             encoded_value = NMO_OBJECT_ID_INVALID;
         } else {
             nmo_object_id_t unresolved_raw = NMO_OBJECT_ID_NONE;
-            if (ctx->repository != NULL &&
-                nmo_object_repository_get_unresolved_ref_raw(
-                    ctx->repository, id, &unresolved_raw)) {
+            if (ctx->ref_tokens != NULL &&
+                ctx->ref_tokens->get_raw(
+                    ctx->ref_tokens->owner, id, &unresolved_raw)) {
                 encoded_value = (uint32_t)unresolved_raw;
                 return nmo_chunk_write_int(chunk, (int32_t)encoded_value);
             }

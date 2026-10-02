@@ -5,7 +5,6 @@
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_chunk_context.h"
 #include "format/nmo_id_remap.h"
-#include "object/nmo_object_repository.h"
 #include "core/nmo_utils.h"
 #include <string.h>
 
@@ -42,9 +41,9 @@ static nmo_status_t encode_object_id(const nmo_chunk_t *chunk,
     }
 
     nmo_object_id_t unresolved_raw = NMO_OBJECT_ID_NONE;
-    if (ctx->repository != NULL &&
-        nmo_object_repository_get_unresolved_ref_raw(
-            ctx->repository, id, &unresolved_raw)) {
+    if (ctx->ref_tokens != NULL &&
+        ctx->ref_tokens->get_raw(
+            ctx->ref_tokens->owner, id, &unresolved_raw)) {
         *out_value = (uint32_t)unresolved_raw;
         return NMO_OK;
     }
@@ -83,12 +82,12 @@ static nmo_status_t decode_object_id(
         return NMO_OK;
     }
 
-    if (preserve_only || ctx->repository == NULL) {
+    if (preserve_only || ctx->ref_tokens == NULL) {
         *out_id = NMO_OBJECT_ID_NONE;
         return NMO_OK;
     }
-    return nmo_object_repository_intern_unresolved_ref(
-        ctx->repository, (nmo_object_id_t)raw_id, out_id);
+    return ctx->ref_tokens->intern(
+        ctx->ref_tokens->owner, (nmo_object_id_t)raw_id, out_id);
 }
 
 // =============================================================================

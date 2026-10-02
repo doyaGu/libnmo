@@ -6,7 +6,6 @@
 #include "format/nmo_chunk_context.h"
 #include "format/nmo_id_remap.h"
 #include "core/nmo_utils.h"
-#include "object/nmo_object_repository.h"
 #include <string.h>
 #include <limits.h>
 #include <stdint.h>
@@ -299,9 +298,9 @@ nmo_status_t nmo_chunk_write_object_id_array(nmo_chunk_t *chunk,
                 continue;
             }
             nmo_object_id_t unresolved_raw = NMO_OBJECT_ID_NONE;
-            if (ctx->repository != NULL &&
-                nmo_object_repository_get_unresolved_ref_raw(
-                    ctx->repository, ids[i], &unresolved_raw)) {
+            if (ctx->ref_tokens != NULL &&
+                ctx->ref_tokens->get_raw(
+                    ctx->ref_tokens->owner, ids[i], &unresolved_raw)) {
                 continue;
             }
             nmo_object_id_t file_id = NMO_OBJECT_ID_NONE;

@@ -654,7 +654,7 @@ static int class_world_init(fixture_t *f, class_world_t *w)
     }
     w->runtime.types = w->types;
     w->file_context.file_to_runtime = f->file_to_runtime;
-    w->file_context.repository = w->repository;
+    w->file_context.ref_tokens = nmo_object_repository_ref_tokens(w->repository);
     return 1;
 }
 
