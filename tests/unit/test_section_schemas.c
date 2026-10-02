@@ -22,7 +22,14 @@
 #include "object/builtin/nmo_kinematicchain_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_deserialize_context.h"
+#include "format/nmo_object.h"
+#include "object/nmo_object_repository.h"
+#include "object/nmo_object_types.h"
 #include "object/nmo_ref.h"
+#include "type/nmo_object_guids.h"
+#include "type/nmo_operations.h"
+#include "type/nmo_type_runtime.h"
+#include "type/nmo_type_system.h"
 #include "object/nmo_serialize_context.h"
 #include "object/nmo_statesave_ids.h"
 #include <stdio.h>
@@ -601,6 +608,102 @@ TEST(section_schemas, kinematicchain_reads_and_writes_its_chain_section)
     nmo_arena_destroy(f.arena);
 }
 
+/* ---- The class a reference must have ---- */
+
+typedef struct class_world {
+    nmo_type_registry_t *types;
+    nmo_object_repository_t *repository;
+    nmo_type_runtime_t runtime;
+    nmo_chunk_file_context_t file_context;
+} class_world_t;
+
+/* Files ids 11 and 12 name objects of the wrong class, 21 and 22 a behavior IO
+ * and a body part. */
+static int class_world_init(fixture_t *f, class_world_t *w)
+{
+    memset(w, 0, sizeof(*w));
+    w->types = nmo_type_registry_create(f->arena);
+    if (w->types == NULL || nmo_register_builtin_types(w->types) != NMO_OK ||
+        nmo_register_object_types(w->types) != NMO_OK) {
+        return 0;
+    }
+    w->repository = nmo_object_repository_create(NULL);
+    if (w->repository == NULL) return 0;
+    static const struct {
+        nmo_object_id_t id;
+        nmo_class_id_t class_id;
+        nmo_guid_t guid;
+    } objects[] = {
+        {1101u, NMO_CID_SCENEOBJECT, CKPGUID_SCENEOBJECT},
+        {1102u, NMO_CID_SCENEOBJECT, CKPGUID_SCENEOBJECT},
+        {1201u, NMO_CID_BEHAVIORIO, CKPGUID_BEHAVIORIO},
+        {1202u, NMO_CID_BODYPART, CKPGUID_BODYPART},
+    };
+    for (size_t i = 0; i < sizeof(objects) / sizeof(objects[0]); ++i) {
+        nmo_object_t *object = nmo_object_create(NULL, objects[i].id, objects[i].class_id);
+        if (object == NULL || nmo_object_set_type_guid(object, objects[i].guid) != NMO_OK ||
+            nmo_object_repository_add(w->repository, &object) != NMO_OK) {
+            return 0;
+        }
+    }
+    static const nmo_object_id_t file_ids[] = {11u, 12u, 21u, 22u};
+    static const nmo_object_id_t runtime_ids[] = {1101u, 1102u, 1201u, 1202u};
+    for (size_t i = 0; i < 4; ++i) {
+        if (nmo_id_remap_add(f->file_to_runtime, file_ids[i], runtime_ids[i]) != NMO_OK) return 0;
+    }
+    w->runtime.types = w->types;
+    w->file_context.file_to_runtime = f->file_to_runtime;
+    w->file_context.repository = w->repository;
+    return 1;
+}
+
+TEST(section_schemas, references_are_checked_against_the_class_they_must_have)
+{
+    fixture_t f;
+    class_world_t w;
+    ASSERT_TRUE(fixture_init(&f));
+    ASSERT_TRUE(class_world_init(&f, &w));
+    nmo_deserialize_context_t context = nmo_deserialize_context_create(
+        f.arena, w.repository, &w.runtime, NMO_DESER_FLAG_FILE_MODE);
+
+    /* A link's ends must be behavior IOs, in the new and in the legacy layout. */
+    nmo_behaviorlink_state_t link;
+    ASSERT_EQ(NMO_OK, nmo_behaviorlink_vtable.create(&link, NULL, NULL));
+    const uint32_t new_layout[] = {0x00020001u, 11u, 21u};
+    nmo_chunk_t *chunk = section_chunk(&f, NMO_CID_BEHAVIORLINK, CK_STATESAVE_BEHAV_LINK_NEWDATA,
+                                       new_layout, 3, 0);
+    nmo_chunk_set_file_context(chunk, &w.file_context);
+    ASSERT_EQ(NMO_OK, nmo_behaviorlink_deserialize(&link, chunk, NULL, &context));
+    ASSERT_EQ(NMO_REF_CLASS_MISMATCH, link.in_io.state);
+    ASSERT_EQ(11u, link.in_io.raw_id);
+    ASSERT_EQ(1101u, link.in_io.id);
+    ASSERT_EQ(NMO_REF_RESOLVED, link.out_io.state);
+    ASSERT_EQ(1201u, link.out_io.id);
+
+    const uint32_t ios[] = {21u, 12u};
+    chunk = section_chunk(&f, NMO_CID_BEHAVIORLINK, CK_STATESAVE_BEHAV_LINK_IOS, ios, 2, 0);
+    nmo_chunk_set_file_context(chunk, &w.file_context);
+    ASSERT_EQ(NMO_OK, nmo_behaviorlink_deserialize(&link, chunk, NULL, &context));
+    ASSERT_EQ(NMO_REF_RESOLVED, link.in_io.state);
+    ASSERT_EQ(NMO_REF_CLASS_MISMATCH, link.out_io.state);
+
+    /* A chain's effectors must be body parts; its reserved reference is not checked. */
+    nmo_kinematicchain_state_t chain;
+    ASSERT_EQ(NMO_OK, nmo_kinematicchain_vtable.create(&chain, NULL, NULL));
+    const uint32_t chain_words[] = {11u, 22u, 12u};
+    chunk = section_chunk(&f, NMO_CID_KINEMATICCHAIN, CK_STATESAVE_KINEMATICCHAINALL,
+                          chain_words, 3, 0);
+    nmo_chunk_set_file_context(chunk, &w.file_context);
+    ASSERT_EQ(NMO_OK, nmo_kinematicchain_deserialize(&chain, chunk, NULL, &context));
+    ASSERT_EQ(NMO_REF_RESOLVED, chain.reserved_ref.state);
+    ASSERT_EQ(NMO_REF_RESOLVED, chain.start_effector.state);
+    ASSERT_EQ(NMO_REF_CLASS_MISMATCH, chain.end_effector.state);
+
+    nmo_behaviorlink_vtable.destroy(&link, NULL, NULL);
+    nmo_kinematicchain_vtable.destroy(&chain, NULL, NULL);
+    nmo_arena_destroy(f.arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(section_schemas, behaviorio_reads_its_flags_section);
     REGISTER_TEST(section_schemas, behaviorio_writes_its_flags_section);
@@ -609,4 +712,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(section_schemas, behaviorlink_writes_the_layout_it_was_read_in);
     REGISTER_TEST(section_schemas, behaviorlink_refuses_states_it_cannot_write_losslessly);
     REGISTER_TEST(section_schemas, kinematicchain_reads_and_writes_its_chain_section);
+    REGISTER_TEST(section_schemas, references_are_checked_against_the_class_they_must_have);
 TEST_MAIN_END()
