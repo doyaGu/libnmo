@@ -277,6 +277,7 @@ add_unit_test(test_io_mmap)
 add_unit_test(test_comparison)
 add_unit_test(test_object_diff)
 add_unit_test(test_object_state_layout)
+add_unit_test(test_section_schemas)
 
 # Orphan reachability (mark-sweep via ref graph)
 add_unit_test(test_orphan_reachability)
