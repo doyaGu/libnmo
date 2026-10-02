@@ -6,7 +6,8 @@
 #ifndef NMO_SESSION_H
 #define NMO_SESSION_H
 
-#include "document/nmo_document_load.h"
+#include "object/nmo_context.h"
+#include "format/nmo_file_state.h"
 #include "nmo_types.h"
 #include "core/nmo_error.h"
 
