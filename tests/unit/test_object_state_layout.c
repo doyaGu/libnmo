@@ -9,6 +9,7 @@
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "object/nmo_ref.h"
+#include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_beobject_schemas.h"
 #include "object/builtin/nmo_character_schemas.h"
 #include "object/builtin/nmo_grid_schemas.h"
@@ -677,6 +678,83 @@ TEST(object_state_layout, counted_and_record_members_of_both_widths) {
     nmo_arena_destroy(arena);
 }
 
+TEST(object_state_layout, entity_skin_copies_deeply) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_3dentity_state_t source;
+    nmo_3dentity_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_3dentity_vtable.create(&source, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_3dentity_vtable.create(&copied, NULL, NULL));
+    ASSERT_EQ(1.0f, source.world_matrix[15]);
+    ASSERT_EQ(NMO_3DENTITY_CTOR_MOVEABLE_FLAGS, source.moveable_flags);
+
+    nmo_ref_t meshes[2] = {nmo_ref_from_raw(120), nmo_ref_from_raw(121)};
+    source.mesh_ids = meshes;
+    source.mesh_count = 2;
+    nmo_3dentity_skin_bone_t bones[2];
+    memset(bones, 0, sizeof(bones));
+    bones[1].bone = nmo_ref_from_raw(122);
+    bones[1].bone_flags = 3u;
+    uint32_t indices[2] = {0u, 1u};
+    float weights[2] = {0.25f, 0.75f};
+    nmo_3dentity_skin_vertex_t vertices[2];
+    memset(vertices, 0, sizeof(vertices));
+    vertices[1].bone_count = 2;
+    vertices[1].bone_indices = indices;
+    vertices[1].bone_weights = weights;
+    nmo_vector_t normals[2] = {{0.f, 1.f, 0.f}, {1.f, 0.f, 0.f}};
+    nmo_3dentity_skin_t skin;
+    memset(&skin, 0, sizeof(skin));
+    skin.bone_count = 2;
+    skin.bones = bones;
+    skin.vertex_count = 2;
+    skin.vertices = vertices;
+    skin.normal_count = 2;
+    skin.normals = normals;
+    skin.normals_present = 1;
+    source.skin = &skin;
+
+    ASSERT_EQ(NMO_OK, nmo_3dentity_vtable.copy(&source, &copied, NULL, arena));
+    ASSERT_NOT_NULL(copied.skin);
+    ASSERT_TRUE(copied.skin != source.skin);
+    ASSERT_TRUE(copied.skin->bones != bones);
+    ASSERT_TRUE(copied.skin->vertices != vertices);
+    ASSERT_TRUE(copied.skin->vertices[1].bone_indices != indices);
+    ASSERT_TRUE(copied.skin->vertices[1].bone_weights != weights);
+    ASSERT_TRUE(copied.skin->normals != normals);
+    ASSERT_EQ(3u, copied.skin->bones[1].bone_flags);
+    ASSERT_EQ(0.75f, copied.skin->vertices[1].bone_weights[1]);
+    ASSERT_TRUE(copied.mesh_ids != meshes);
+    ASSERT_EQ(121u, copied.mesh_ids[1].raw_id);
+    ASSERT_TRUE(nmo_3dentity_vtable.equals(&source, &copied));
+    ASSERT_EQ(nmo_3dentity_vtable.hash(&source), nmo_3dentity_vtable.hash(&copied));
+
+    copied.skin->vertices[1].bone_weights[0] = 0.5f;
+    ASSERT_FALSE(nmo_3dentity_vtable.equals(&source, &copied));
+    copied.skin->vertices[1].bone_weights[0] = 0.25f;
+    ASSERT_TRUE(nmo_3dentity_vtable.equals(&source, &copied));
+    nmo_3dentity_skin_t *skin_copy = copied.skin;
+    copied.skin = NULL;
+    ASSERT_FALSE(nmo_3dentity_vtable.equals(&source, &copied));
+    copied.skin = skin_copy;
+
+    /* A vertex that claims bones it does not have is invalid and is not copied. */
+    vertices[1].bone_weights = NULL;
+    nmo_3dentity_state_t other;
+    ASSERT_EQ(NMO_OK, nmo_3dentity_vtable.create(&other, NULL, NULL));
+    other.z_order = 77;
+    ASSERT_NE(NMO_OK, nmo_3dentity_vtable.copy(&source, &other, NULL, arena));
+    ASSERT_EQ(77, other.z_order);
+
+    source.skin = NULL;
+    source.mesh_ids = NULL;
+    source.mesh_count = 0;
+    nmo_3dentity_vtable.destroy(&source, NULL, NULL);
+    nmo_3dentity_vtable.destroy(&copied, NULL, NULL);
+    nmo_3dentity_vtable.destroy(&other, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 /* A record that holds a counted array of its own, reached through a pointer,
  * with the count of the outer array computed from the state. */
 typedef struct nested_leaf {
@@ -810,5 +888,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_state_layout, character_parts_and_animations_copy);
     REGISTER_TEST(object_state_layout, beobject_attributes_copy_with_strings_and_chunks);
     REGISTER_TEST(object_state_layout, counted_and_record_members_of_both_widths);
+    REGISTER_TEST(object_state_layout, entity_skin_copies_deeply);
     REGISTER_TEST(object_state_layout, record_pointer_with_nested_counted_members);
 TEST_MAIN_END()
