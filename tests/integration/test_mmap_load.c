@@ -1,16 +1,18 @@
 /**
  * @file test_mmap_load.c
- * @brief Integration test for mmap load strategy on real files
+ * @brief Integration test for the mmap load path on real files
+ *
+ * The loader maps a file into memory when neither of its sections is
+ * compressed. Almost every sample is compressed; the two below are not. They are
+ * local, git-ignored files; without them the test is skipped.
  */
 
+#include "../test_framework.h"
 #include "document/nmo_document_load.h"
-#include "session/nmo_deserializer.h"
 #include "runtime/nmo_context.h"
 #include "format/nmo_header.h"
 #include "io/nmo_io_file.h"
 #include "io/nmo_io_mmap.h"
-#include <stdio.h>
-#include <string.h>
 
 static int file_is_compressed(const char *path) {
     nmo_io_interface_t *io = nmo_file_io_open(path, NMO_IO_READ);
@@ -41,91 +43,38 @@ static int file_is_compressed(const char *path) {
 
     return is_compressed;
 }
-static int test_mmap_load_files(void) {
-    printf("=== Test: MMAP Load Strategy (Real Files) ===\n");
 
+TEST(mmap_load, uncompressed_samples_load) {
     if (!nmo_io_mmap_supported()) {
-        printf("  MMAP not supported on this platform (skipped)\n");
-        printf("=== Test SKIPPED ===\n\n");
-        return 0;
+        TEST_SKIP("mmap is not supported on this platform");
     }
 
-    const char *test_files[] = {
-        "data/Empty.nmo",
-        "data/Empty.cmo",
-        "data/Empty.vmo",
-        "data/Nop.cmo",
-        "data/Nop1.cmo",
-        "data/Nop2.cmo",
-        NULL
+    static const char *const samples[] = {
+        NMO_TEST_DATA_FILE("TechnicalSamples/VSL/Documentation samples/Hello World.cmo"),
+        NMO_TEST_DATA_FILE("BBSamples/Lights/Static Lightmap.cmo"),
     };
 
-    int files_tested = 0;
-    int files_loaded = 0;
+    for (size_t i = 0; i < sizeof(samples) / sizeof(samples[0]); i++) {
+        TEST_REQUIRE_FILE(samples[i]);
+        /* A compressed file would take the buffered path instead. */
+        ASSERT_EQ(0, file_is_compressed(samples[i]));
 
-    for (int i = 0; test_files[i] != NULL; i++) {
-        const char *filename = test_files[i];
-
-        FILE *f = fopen(filename, "rb");
-        if (f == NULL) {
-            printf("  File not found: %s (skipped)\n", filename);
-            continue;
-        }
-        fclose(f);
-
-        int is_compressed = file_is_compressed(filename);
-        if (is_compressed < 0) {
-            printf("  Failed to read header: %s (skipped)\n", filename);
-            continue;
-        }
-
-        if (is_compressed) {
-            printf("  Compressed file: %s (skipped for mmap)\n", filename);
-            continue;
-        }
-
-        files_tested++;
-
-        nmo_context_desc_t ctx_desc;
-        memset(&ctx_desc, 0, sizeof(nmo_context_desc_t));
-
-        nmo_context_t *ctx = nmo_context_create(&ctx_desc);
-        if (ctx == NULL) {
-            printf("  ERROR: Failed to create context for %s\n", filename);
-            continue;
-        }
+        nmo_context_t *ctx = nmo_context_create(NULL);
+        ASSERT_NOT_NULL(ctx);
 
         nmo_load_options_t opts = nmo_load_options_default();
         nmo_document_t *document = NULL;
-
-        printf("  Loading (mmap): %s... ", filename);
-        fflush(stdout);
-
-        int result = nmo_document_load_file(ctx, filename, &opts, &document);
+        const int result = nmo_document_load_file(ctx, samples[i], &opts, &document);
         if (result == NMO_OK) {
-            printf("SUCCESS\n");
-            files_loaded++;
             nmo_document_destroy(document);
         } else {
-            printf("FAILED (error %d)\n", result);
+            printf("  %s: load failed with %d\n", samples[i], result);
         }
-
         nmo_context_release(ctx);
+        ASSERT_EQ(NMO_OK, result);
     }
-
-    printf("\nSummary: Tested %d uncompressed file(s), loaded %d successfully\n",
-           files_tested, files_loaded);
-
-    if (files_tested == 0) {
-        printf("  No uncompressed test files found (this is OK for a fresh build)\n");
-    }
-
-    printf("=== Test COMPLETED ===\n\n");
-    return 0;
 }
 
-int main(void) {
-    return test_mmap_load_files();
-}
-
-
+TEST_MAIN_BEGIN()
+    REGISTER_TEST(mmap_load, uncompressed_samples_load);
+TEST_MAIN_END()
