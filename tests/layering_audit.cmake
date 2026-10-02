@@ -13,7 +13,7 @@ if(NOT SOURCE_DIR)
 endif()
 
 # Lowest layer first. Must match the README layer table.
-set(layers core io format type extension object export document session runtime chunk behavior edit lua project)
+set(layers core io format type extension object export session runtime document chunk behavior edit lua project)
 
 file(STRINGS "${SOURCE_DIR}/tests/layering_allowlist.txt" allowlist_lines)
 set(allowlist "")
