@@ -19,6 +19,7 @@
 #include "object/nmo_object_repository.h"
 #include "object/nmo_class_ids.h"
 #include "object/builtin/nmo_behavior_schemas.h"
+#include "object/nmo_object_enum_defs.h"
 #include "object/nmo_serialize_context.h"
 #include "type/nmo_type_system.h"
 #include "type/nmo_type_string.h"
@@ -2986,6 +2987,27 @@ TEST(interface_chunk, behavior_copy_deep_copies_interface_data) {
     nmo_arena_destroy(arena);
 }
 
+TEST(interface_chunk, behavior_copy_keeps_the_runtime_flags) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+    nmo_behavior_state_t src;
+    nmo_behavior_state_t dst;
+    ASSERT_EQ(NMO_OK, nmo_behavior_vtable.create(&src, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_behavior_vtable.create(&dst, NULL, NULL));
+    src.flags = CKBEHAVIOR_WAITSFORMESSAGE;
+    src.runtime_flags = CKBEHAVIOR_ACTIVE | CKBEHAVIOR_EXECUTEDLASTFRAME;
+
+    ASSERT_EQ(NMO_OK, nmo_behavior_vtable.copy(&src, &dst, NULL, arena));
+    ASSERT_EQ(CKBEHAVIOR_WAITSFORMESSAGE, dst.flags);
+    ASSERT_EQ(CKBEHAVIOR_ACTIVE | CKBEHAVIOR_EXECUTEDLASTFRAME, dst.runtime_flags);
+    ASSERT_TRUE(nmo_behavior_vtable.equals(&src, &dst));
+    ASSERT_EQ(nmo_behavior_vtable.hash(&src), nmo_behavior_vtable.hash(&dst));
+
+    nmo_behavior_vtable.destroy(&src, NULL, NULL);
+    nmo_behavior_vtable.destroy(&dst, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(interface_chunk, sectioned_parameter_count_stays_in_section) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
     ASSERT_NOT_NULL(arena);
@@ -3365,6 +3387,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(interface_chunk, parse_file_context_chunk_falls_back_when_ids_are_raw);
     REGISTER_TEST(interface_chunk, serialize_raw_interface_ids_requires_repository_for_file_context);
     REGISTER_TEST(interface_chunk, behavior_copy_deep_copies_interface_data);
+    REGISTER_TEST(interface_chunk, behavior_copy_keeps_the_runtime_flags);
     REGISTER_TEST(interface_chunk, sectioned_parameter_count_stays_in_section);
     REGISTER_TEST(interface_chunk, sectioned_graph_count_stays_in_section);
     REGISTER_TEST(interface_chunk, sectioned_body_count_stays_in_section);

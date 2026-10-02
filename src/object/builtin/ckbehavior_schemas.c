@@ -1499,6 +1499,7 @@ static nmo_status_t nmo_behavior_copy(
     if (result != NMO_OK) goto fail;
 
     copied.flags = s->flags;
+    copied.runtime_flags = s->runtime_flags;
     copied.priority = s->priority;
     copied.compatible_class_id = s->compatible_class_id;
     copied.owner = s->owner;
