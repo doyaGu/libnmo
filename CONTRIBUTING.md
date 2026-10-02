@@ -111,15 +111,18 @@ void *nmo_arena_alloc(nmo_arena_t *arena, size_t size, size_t align) {
 The layer stack, lowest to highest:
 
 ```
-core -> io -> format -> type -> extension -> object -> session -> runtime
-     -> document -> chunk -> behavior -> export -> lua -> project
+core -> io -> format -> type -> extension -> object -> export -> session
+     -> runtime -> document -> chunk -> behavior -> edit -> lua -> project
 ```
 
 A source file may include headers from its own layer and from layers below it, never from a
-higher one. `test_layering_audit` (`tests/layering_audit.cmake`) checks this. Existing upward
-includes are recorded in `tests/layering_allowlist.txt` as debt; do not add to that file to make
-a new dependency pass. Move the dependency down the stack instead. The audit also fails when an
-allowlist entry is no longer needed, so remove the line when you pay one off.
+higher one; a relative include of another layer's private header (`"../runtime/x.h"`) counts too.
+`test_layering_audit` (`tests/layering_audit.cmake`) checks this. Upward includes would be
+recorded in `tests/layering_allowlist.txt` as debt, and the file is empty; do not add to it to
+make a new dependency pass. Move the dependency down the stack instead, or give the lower layer an
+interface the higher one fills in (as `nmo_chunk_file_context_t.ref_tokens` and
+`nmo_session_t.behavior_index_destroy` do). The audit also fails when an allowlist entry is no
+longer needed.
 
 1. No circular dependencies: always depend downward in the layer hierarchy
 2. Both `serialize` AND `deserialize` vtable methods are required for every new object type

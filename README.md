@@ -242,29 +242,30 @@ Dependency direction is downward: a source file may include headers from its own
 and from layers below it. From lowest to highest:
 
 ```
-core -> io -> format -> type -> extension -> object -> session -> runtime
-     -> document -> chunk -> behavior -> export -> edit -> lua -> project
+core -> io -> format -> type -> extension -> object -> export -> session
+     -> runtime -> document -> chunk -> behavior -> edit -> lua -> project
 ```
 
-`tests/layering_audit.cmake` (run as `test_layering_audit`) enforces this order. It is not
-yet fully clean: 42 upward includes exist today and are listed in
-`tests/layering_allowlist.txt` as debt. A new upward include fails the test, and so does an
-allowlist entry that is no longer needed.
+`tests/layering_audit.cmake` (run as `test_layering_audit`) enforces this order, for direct
+includes and for relative includes of another layer's private headers
+(`"../runtime/runtime_internal.h"`). No source file includes a header of a higher layer:
+`tests/layering_allowlist.txt`, where such an include would be listed as debt, is empty. A new
+upward include fails the test, and so does an allowlist entry that is no longer needed.
 
 | Layer     | Source           | Headers               | Responsibility                                                                   |
 |-----------|------------------|-----------------------|----------------------------------------------------------------------------------|
 | Core      | `src/core/`      | `include/core/`       | Arena, allocator, GUID, hash tables, containers, error, math, logging           |
-| IO        | `src/io/`        | `include/io/`         | File, memory, mmap, compressed, checksummed, transactional IO                   |
-| Format    | `src/format/`    | `include/format/`     | File header, chunk parser/writer, ID remap, image codec, obj parser             |
-| Type      | `src/type/`      | `include/type/`       | GUID-based type registry, operation dispatch, string conversion, reflection      |
-| Extension | `src/extension/` | `include/extension/`  | Plugin registry, DLL loading, host ABI, diagnostics, Virtools loader            |
-| Object    | `src/object/`    | `include/object/`     | CK class and manager schemas, vtable dispatch, repository, index, shadow storage |
-| Session   | `src/session/`   | `include/session/`    | Deserializer, builder, ID sanitizer, reference resolver, runtime kernel, delete |
-| Runtime   | `src/runtime/`   | `include/runtime/`    | Context, workspace, workspace edit, session utilities                            |
-| Document  | `src/document/`  | `include/document/`   | Document load/save, stats, performance stats, comparison, file state            |
-| Chunk     | `src/chunk/`     | `include/chunk/`      | Chunk index and chunk inspection utilities                                       |
-| Behavior  | `src/behavior/`  | `include/behavior/`   | Behavior graph traversal, BB registry, parameter chains, script walker, script edit graph |
+| IO        | `src/io/`        | `include/io/`         | File, memory, mmap and transactional IO                                          |
+| Format    | `src/format/`    | `include/format/`     | File header, chunks, ID remap, image codec, obj parser, file state types, load and save phase timing |
+| Type      | `src/type/`      | `include/type/`       | GUID-based type registry, operation dispatch, string conversion, reflection, ancestor state lookup |
+| Extension | `src/extension/` | `include/extension/`  | Plugin registry, DLL loading, host ABI, diagnostics, Virtools loader, building block registry |
+| Object    | `src/object/`    | `include/object/`     | Context, CK class and manager schemas, vtable dispatch, repository, index, shadow storage |
 | Export    | `src/export/`    | `include/export/`     | DOT graph, JSON utilities, text export, ANSI, hex dump                          |
+| Session   | `src/session/`   | `include/session/`    | Session state, load and save pipelines, deserializer, serializer, ID sanitizer, reference resolver, runtime kernel, delete |
+| Runtime   | `src/runtime/`   | `include/runtime/`    | Document and workspace objects, workspace edit, object queries, hierarchy, imports and reference graphs, summaries, session utilities |
+| Document  | `src/document/`  | `include/document/`   | Document load and save entry points, stats, comparison, file state, object diff |
+| Chunk     | `src/chunk/`     | `include/chunk/`      | Chunk index and chunk inspection utilities                                       |
+| Behavior  | `src/behavior/`  | `include/behavior/`   | Behavior graph traversal, behavior acceleration and interface views, parameter chains, script walker, script edit graph |
 | Edit      | `src/edit/`      | `include/edit/`       | Edit plans and their JSON form, script edits, behavior rewrites (replace, fold), semantic validator, probe analyzer, behavior execute (library `nmo_edit`) |
 | Lua       | `src/lua/`       | `include/lua/`        | Lua 5.5 runtime, module system, bindings for all layers, fold-map parser (library `nmo_lua`) |
 | Project   | `src/project/`   | `include/project/`    | Project plan, asset/scene/script authoring, executor, manifest, validator (library `nmo_project`) |
@@ -306,9 +307,9 @@ all four are compiled into the single shared `nmo` library and `nmo::edit`, `nmo
 - **Document/Workspace split**: `nmo_document_t` owns the parsed, immutable
   representation; `nmo_workspace_t` provides mutation and runtime services on
   top of a document. Read-only workflows never need a workspace.
-- **Downward dependencies**: lower layers should not include headers from
-  higher layers. `test_layering_audit` blocks new violations; the existing ones
-  are tracked in `tests/layering_allowlist.txt`.
+- **Downward dependencies**: lower layers do not include headers from higher
+  layers. `test_layering_audit` blocks new violations; the allowlist for
+  existing ones (`tests/layering_allowlist.txt`) is empty.
 
 ---
 
