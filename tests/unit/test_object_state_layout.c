@@ -19,6 +19,7 @@
 #include "object/builtin/nmo_grid_schemas.h"
 #include "object/builtin/nmo_group_schemas.h"
 #include "object/builtin/nmo_layer_schemas.h"
+#include "object/builtin/nmo_level_schemas.h"
 #include "object/builtin/nmo_messagemanager_schemas.h"
 #include "object/builtin/nmo_mesh_schemas.h"
 #include "object/builtin/nmo_parameteroperation_schemas.h"
@@ -1424,6 +1425,63 @@ TEST(object_state_layout, interface_manager_chunks_copy) {
     nmo_arena_destroy(arena);
 }
 
+TEST(object_state_layout, level_lists_chunk_and_tail_copy) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+    nmo_level_state_t source;
+    nmo_level_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_level_vtable.create(&source, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_level_vtable.create(&copied, NULL, NULL));
+    ASSERT_EQ(sizeof(nmo_ref_t), source.scene_ids.element_size);
+    ASSERT_EQ(sizeof(nmo_guid_t), source.inactive_manager_guids.element_size);
+    ASSERT_EQ(sizeof(char *), source.duplicate_manager_names.element_size);
+
+    const nmo_ref_t scene = nmo_ref_from_raw(140);
+    ASSERT_EQ(NMO_OK, nmo_array_append(&source.scene_ids, &scene));
+    const nmo_guid_t manager = {.d1 = 0xAAu, .d2 = 0xBBu};
+    ASSERT_EQ(NMO_OK, nmo_array_append(&source.inactive_manager_guids, &manager));
+    char *duplicate = "Timer";
+    ASSERT_EQ(NMO_OK, nmo_array_append(&source.duplicate_manager_names, &duplicate));
+    source.has_inactive_manager_section = 1;
+    source.has_duplicate_manager_section = 1;
+    uint8_t tail[4] = {1, 2, 3, 4};
+    source.duplicate_manager_tail = tail;
+    source.duplicate_manager_tail_size = 4;
+    uint32_t positions[2] = {3u, 9u};
+    source.level_scene_id_positions = positions;
+    source.level_scene_id_count = 2;
+    source.level_scene_chunk = make_chunk(arena, 0xAB12u);
+    ASSERT_NOT_NULL(source.level_scene_chunk);
+    source.current_scene = nmo_ref_from_raw(141);
+
+    ASSERT_EQ(NMO_OK, nmo_level_vtable.copy(&source, &copied, NULL, arena));
+    ASSERT_EQ(1u, copied.scene_ids.count);
+    ASSERT_TRUE(copied.scene_ids.data != source.scene_ids.data);
+    ASSERT_EQ(1u, copied.inactive_manager_guids.count);
+    ASSERT_EQ(1u, copied.duplicate_manager_names.count);
+    char **copied_names = NMO_ARRAY_DATA(char *, &copied.duplicate_manager_names);
+    ASSERT_TRUE(copied_names[0] != duplicate);
+    ASSERT_EQ(0, strcmp("Timer", copied_names[0]));
+    ASSERT_TRUE(copied.duplicate_manager_tail != tail);
+    ASSERT_EQ(3u, copied.duplicate_manager_tail[2]);
+    ASSERT_TRUE(copied.level_scene_id_positions != positions);
+    ASSERT_EQ(9u, copied.level_scene_id_positions[1]);
+    ASSERT_EQ(2u, copied.level_scene_id_count);
+    ASSERT_NOT_NULL(copied.level_scene_chunk);
+    ASSERT_TRUE(copied.level_scene_chunk != source.level_scene_chunk);
+    ASSERT_EQ(141u, copied.current_scene.raw_id);
+    ASSERT_TRUE(nmo_level_vtable.equals(&source, &copied));
+    ASSERT_EQ(nmo_level_vtable.hash(&source), nmo_level_vtable.hash(&copied));
+
+    source.duplicate_manager_tail = NULL;
+    source.duplicate_manager_tail_size = 0;
+    source.level_scene_id_positions = NULL;
+    source.level_scene_id_count = 0;
+    nmo_level_vtable.destroy(&source, NULL, NULL);
+    nmo_level_vtable.destroy(&copied, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(object_state_layout, place_copy_equals_hash);
     REGISTER_TEST(object_state_layout, copy_into_shallow_alias_detaches_arrays);
@@ -1455,4 +1513,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_state_layout, message_manager_names_copy_by_content);
     REGISTER_TEST(object_state_layout, attribute_manager_categories_and_attributes_copy);
     REGISTER_TEST(object_state_layout, interface_manager_chunks_copy);
+    REGISTER_TEST(object_state_layout, level_lists_chunk_and_tail_copy);
 TEST_MAIN_END()

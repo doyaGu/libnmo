@@ -39,44 +39,52 @@ static nmo_status_t nmo_level_validate(
     const nmo_type_descriptor_t *type,
     void *context);
 
-NMO_DEFINE_OBJECT_LIFECYCLE(
-    level,
-    nmo_level_state_t,
-    do {
-        state->has_inactive_manager_section = 0;
-        nmo_status_t result = nmo_beobject_vtable.create(
-            &state->base, NULL, context);
-        if (result != NMO_OK) return result;
-        result = nmo_array_init(
-            &state->legacy_object_ids, sizeof(nmo_ref_t), 0, NULL);
-        if (result != NMO_OK) {
-            nmo_level_dispose_state_arrays(state);
-            return result;
-        }
-        result = nmo_array_init(
-            &state->legacy_pointer_ids, sizeof(nmo_ref_t), 0, NULL);
-        if (result != NMO_OK) {
-            nmo_level_dispose_state_arrays(state);
-            return result;
-        }
-        result = nmo_array_init(&state->scene_ids, sizeof(nmo_ref_t), 0, NULL);
-        if (result != NMO_OK) {
-            nmo_level_dispose_state_arrays(state);
-            return result;
-        }
-        result = nmo_array_init(&state->inactive_manager_guids, sizeof(nmo_guid_t), 0, NULL);
-        if (result != NMO_OK) {
-            nmo_level_dispose_state_arrays(state);
-            return result;
-        }
-        result = nmo_array_init(&state->duplicate_manager_names, sizeof(char *), 0, NULL);
-        if (result != NMO_OK) {
-            nmo_level_dispose_state_arrays(state);
-            return result;
-        }
-        nmo_object_array_set_string_lifecycle(&state->duplicate_manager_names);
-    } while (0),
-    nmo_level_dispose_state_arrays(state))
+/* One name of the duplicate manager list, as a record of its own. */
+typedef struct nmo_level_manager_name {
+    char *text;
+} nmo_level_manager_name_t;
+
+static const nmo_object_state_member_t nmo_level_manager_name_members[] = {
+    NMO_STATE_STRING(nmo_level_manager_name_t, text)
+};
+
+static const nmo_object_state_layout_t nmo_level_manager_name_layout = {
+    .size = sizeof(nmo_level_manager_name_t),
+    .members = nmo_level_manager_name_members,
+    .member_count = sizeof(nmo_level_manager_name_members) /
+        sizeof(nmo_level_manager_name_members[0]),
+};
+
+static const nmo_object_state_member_t nmo_level_members[] = {
+    NMO_STATE_ARRAY(nmo_level_state_t, legacy_object_ids, nmo_ref_t),
+    NMO_STATE_ARRAY(nmo_level_state_t, legacy_pointer_ids, nmo_ref_t),
+    NMO_STATE_ARRAY(nmo_level_state_t, scene_ids, nmo_ref_t),
+    NMO_STATE_VALUE(nmo_level_state_t, current_scene),
+    NMO_STATE_VALUE(nmo_level_state_t, level_scene),
+    NMO_STATE_CHUNK(nmo_level_state_t, level_scene_chunk),
+    NMO_STATE_VALUE(nmo_level_state_t, level_scene_id_count),
+    NMO_STATE_COUNTED(nmo_level_state_t, level_scene_id_positions,
+                      level_scene_id_count, uint32_t),
+    NMO_STATE_VALUE(nmo_level_state_t, has_inactive_manager_section),
+    NMO_STATE_ARRAY(nmo_level_state_t, inactive_manager_guids, nmo_guid_t),
+    NMO_STATE_VALUE(nmo_level_state_t, has_duplicate_manager_section),
+    NMO_STATE_RECORDS(nmo_level_state_t, duplicate_manager_names,
+                      nmo_level_manager_name_layout),
+    NMO_STATE_VALUE(nmo_level_state_t, duplicate_manager_tail_size),
+    NMO_STATE_BYTES(nmo_level_state_t, duplicate_manager_tail,
+                    duplicate_manager_tail_size)
+};
+
+static const nmo_object_state_layout_t nmo_level_layout = {
+    .size = sizeof(nmo_level_state_t),
+    .base_vtable = &nmo_beobject_vtable,
+    .members = nmo_level_members,
+    .member_count = sizeof(nmo_level_members) / sizeof(nmo_level_members[0]),
+    .validate = nmo_level_validate,
+};
+
+NMO_DEFINE_OBJECT_LAYOUT_LIFECYCLE(level, nmo_level_layout)
+NMO_DEFINE_OBJECT_LAYOUT_COPY(level, nmo_level_layout)
 
 static void nmo_level_dispose_state_arrays(nmo_level_state_t *state)
 {
@@ -813,104 +821,6 @@ static nmo_status_t nmo_level_serialize_internal(
     }
 
     NMO_RETURN_OK();
-}
-
-static nmo_status_t nmo_level_copy(
-    const void *src,
-    void *dst,
-    const nmo_type_descriptor_t *type,
-    nmo_arena_t *arena)
-{
-    const nmo_level_state_t *s = src;
-    nmo_level_state_t *d = dst;
-    (void)type;
-    if (s == NULL || d == NULL || arena == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    NMO_RETURN_IF_ERROR(nmo_level_validate(s, NULL, NULL));
-
-    nmo_level_state_t copied;
-    nmo_status_t result = nmo_level_create(&copied, NULL, NULL);
-    if (result != NMO_OK) return result;
-    result = nmo_beobject_vtable.copy(
-        &s->base, &copied.base, NULL, arena);
-    if (result != NMO_OK) goto fail;
-    copied.current_scene = s->current_scene;
-    copied.level_scene = s->level_scene;
-    copied.has_inactive_manager_section = s->has_inactive_manager_section;
-    copied.has_duplicate_manager_section =
-        s->has_duplicate_manager_section;
-
-    nmo_array_dispose(&copied.legacy_object_ids);
-    result = nmo_array_clone(
-        &s->legacy_object_ids, &copied.legacy_object_ids,
-        &s->legacy_object_ids.allocator);
-    if (result != NMO_OK) goto fail;
-    nmo_array_dispose(&copied.legacy_pointer_ids);
-    result = nmo_array_clone(
-        &s->legacy_pointer_ids, &copied.legacy_pointer_ids,
-        &s->legacy_pointer_ids.allocator);
-    if (result != NMO_OK) goto fail;
-    nmo_array_dispose(&copied.scene_ids);
-    result = nmo_array_clone(
-        &s->scene_ids, &copied.scene_ids, &s->scene_ids.allocator);
-    if (result != NMO_OK) goto fail;
-    result = nmo_object_copy_chunk(
-        arena, &copied.level_scene_chunk, s->level_scene_chunk);
-    if (result != NMO_OK) goto fail;
-    copied.level_scene_id_positions = NULL;
-    copied.level_scene_id_count = 0;
-    if (s->level_scene_id_count > 0) {
-        result = nmo_object_copy_array(
-            arena, (void **)&copied.level_scene_id_positions, s->level_scene_id_positions,
-            sizeof(uint32_t), s->level_scene_id_count);
-        if (result != NMO_OK) goto fail;
-        copied.level_scene_id_count = s->level_scene_id_count;
-    }
-    nmo_array_dispose(&copied.inactive_manager_guids);
-    result = nmo_array_clone(
-        &s->inactive_manager_guids, &copied.inactive_manager_guids,
-        &s->inactive_manager_guids.allocator);
-    if (result != NMO_OK) goto fail;
-    nmo_array_dispose(&copied.duplicate_manager_names);
-    result = nmo_object_clone_string_array(
-        arena, &copied.duplicate_manager_names,
-        &s->duplicate_manager_names);
-    if (result != NMO_OK) goto fail;
-    nmo_object_array_set_string_lifecycle(&copied.duplicate_manager_names);
-    result = nmo_object_copy_bytes(
-        arena, (void **)&copied.duplicate_manager_tail,
-        s->duplicate_manager_tail, s->duplicate_manager_tail_size);
-    if (result != NMO_OK) goto fail;
-    copied.duplicate_manager_tail_size = s->duplicate_manager_tail_size;
-
-#define NMO_LEVEL_DETACH_SHARED_ARRAY(field) \
-    do { \
-        if (d->field.data == s->field.data) { \
-            memset(&d->field, 0, sizeof(d->field)); \
-        } \
-    } while (0)
-    NMO_LEVEL_DETACH_SHARED_ARRAY(base.scripts);
-    NMO_LEVEL_DETACH_SHARED_ARRAY(base.attributes);
-    NMO_LEVEL_DETACH_SHARED_ARRAY(base.legacy_attributes);
-    NMO_LEVEL_DETACH_SHARED_ARRAY(legacy_object_ids);
-    NMO_LEVEL_DETACH_SHARED_ARRAY(legacy_pointer_ids);
-    NMO_LEVEL_DETACH_SHARED_ARRAY(scene_ids);
-    NMO_LEVEL_DETACH_SHARED_ARRAY(inactive_manager_guids);
-    NMO_LEVEL_DETACH_SHARED_ARRAY(duplicate_manager_names);
-#undef NMO_LEVEL_DETACH_SHARED_ARRAY
-    if (d->level_scene_chunk == s->level_scene_chunk) {
-        d->level_scene_chunk = NULL;
-    }
-    d->level_scene_id_positions = NULL;
-    d->level_scene_id_count = 0;
-    nmo_level_destroy(d, NULL, NULL);
-    *d = copied;
-    return NMO_OK;
-
-fail:
-    nmo_level_destroy(&copied, NULL, NULL);
-    return result;
 }
 
 NMO_DEFINE_OBJECT_STAGED_SERIALIZE(nmo_level)
