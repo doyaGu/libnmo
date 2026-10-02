@@ -369,6 +369,18 @@ nmo_status_t nmo_object_system_create_objects_from_header1(
         const int is_reference_only = (desc->flags & NMO_OBJECT_REFERENCE_FLAG) != 0;
         const uint32_t sanitized_id = nmo_id_sanitize(desc->file_id);
 
+        /* CKFile::FinishLoading creates no object for an entry without data,
+         * and CKContext::CreateObject none of class 0. Below file version 7 an
+         * entry without a chunk has no class, so it is the entry that has
+         * neither; its file id resolves to nothing, as in the engine. */
+        if (desc->class_id == 0) {
+            if (logger) {
+                nmo_log(logger, NMO_LOG_INFO,
+                        "  Skipped object %zu without a class (file_id=%u)", i, sanitized_id);
+            }
+            continue;
+        }
+
         nmo_object_t *obj = nmo_object_create(object_allocator, NMO_OBJECT_ID_NONE, desc->class_id);
         if (obj == NULL) {
             object_system_rollback_created(repo, created, desc_count);
