@@ -425,6 +425,12 @@ nmo_serializer_t *nmo_serializer_create(
 
     /* Get file info from session */
     save_ctx->file_info = nmo_session_get_file_info(session);
+    /* CKFile::Save always writes the current file version. libnmo keeps the
+     * version of a file it loaded from version 7 on; a file loaded below 7 has
+     * no Header1 that could hold the object table, so it is written as 8. */
+    if (save_ctx->file_info.file_version != 0u && save_ctx->file_info.file_version < 7u) {
+        save_ctx->file_info.file_version = 8u;
+    }
 
     return save_ctx;
 }
