@@ -38,6 +38,21 @@ static const nmo_object_state_member_t nmo_behaviorio_members[] = {
     NMO_STATE_VALUE(nmo_behaviorio_state_t, has_flags)
 };
 
+/* CKBehaviorIO::Save writes the flags in one section. */
+static const nmo_object_section_field_t nmo_behaviorio_flag_fields[] = {
+    NMO_SECTION_FIELD_DWORD(nmo_behaviorio_state_t, old_flags)
+};
+
+static const nmo_object_section_t nmo_behaviorio_section_list[] = {
+    NMO_SECTION(CK_STATESAVE_BEHAV_IOFLAGS, nmo_behaviorio_state_t, has_flags, 0, 0,
+                nmo_behaviorio_flag_fields)
+};
+
+static const nmo_object_sections_t nmo_behaviorio_sections = {
+    NMO_SECTION_LIST(nmo_behaviorio_section_list),
+    .non_file_save_flags = CK_STATESAVE_BEHAVIOONLY,
+};
+
 static const nmo_object_state_layout_t nmo_behaviorio_layout = {
     .size = sizeof(nmo_behaviorio_state_t),
     .base_vtable = &nmo_object_vtable,
@@ -46,6 +61,7 @@ static const nmo_object_state_layout_t nmo_behaviorio_layout = {
     .member_count =
         sizeof(nmo_behaviorio_members) / sizeof(nmo_behaviorio_members[0]),
     .set_defaults = nmo_behaviorio_set_defaults,
+    .sections = &nmo_behaviorio_sections,
 };
 
 NMO_DEFINE_OBJECT_LAYOUT_OPS(behaviorio, nmo_behaviorio_layout)
@@ -54,6 +70,8 @@ static nmo_status_t nmo_behaviorio_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
     void *context);
+
+NMO_DEFINE_OBJECT_LAYOUT_SERDE(nmo_behaviorio, nmo_behaviorio_layout, nmo_behaviorio_validate)
 
 /* =============================================================================
  * REFLECTION FIELDS
@@ -84,65 +102,6 @@ static const nmo_type_field_t nmo_behaviorio_fields[] = {
  * @param out_state Output structure to fill
  * @return Result indicating success or error
  */
-static nmo_status_t nmo_behaviorio_deserialize_internal(
-    void *instance,
-    nmo_chunk_t *chunk,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)type;
-    nmo_behaviorio_state_t *out_state = (nmo_behaviorio_state_t *)instance;
-
-    if (chunk == NULL || out_state == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_behaviorio_deserialize");
-    }
-
-    /* Read base CKObject state (merged into this chunk by AddChunkAndDelete) */
-    nmo_status_t result = nmo_object_deserialize(&out_state->base, chunk, NULL, context);
-    if (result != NMO_OK) return result;
-
-    /* Read I/O flags.  Newly-created states persist this section, while a
-     * loaded legacy chunk must retain its absence. */
-    out_state->has_flags = false;
-    size_t section_dwords = 0;
-    result = nmo_chunk_seek_identifier_with_size(
-        chunk, CK_STATESAVE_BEHAV_IOFLAGS, &section_dwords);
-    if (result == NMO_OK) {
-        if (section_dwords < 1u) return NMO_ERR_TRUNCATED_CHUNK;
-        if (section_dwords > 1u) return NMO_ERR_INVALID_FORMAT;
-        result = nmo_chunk_read_dword(chunk, &out_state->old_flags);
-        if (result != NMO_OK) return result;
-        out_state->has_flags = true;
-    } else if (result != NMO_ERR_NOT_FOUND) return result;
-    /* Note: If identifier not found, old_flags remains 0 (valid for older versions) */
-
-    NMO_RETURN_OK();
-}
-
-nmo_status_t nmo_behaviorio_deserialize(
-    void *instance,
-    nmo_chunk_t *chunk,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    nmo_behaviorio_state_t *out_state = (nmo_behaviorio_state_t *)instance;
-    if (out_state == NULL || chunk == NULL) return NMO_ERR_INVALID_ARGUMENT;
-
-    nmo_behaviorio_state_t decoded;
-    nmo_status_t result = nmo_behaviorio_create(&decoded, type, context);
-    if (result != NMO_OK) return result;
-    result = nmo_behaviorio_deserialize_internal(
-        &decoded, chunk, type, context);
-    if (result != NMO_OK) {
-        nmo_behaviorio_destroy(&decoded, type, context);
-        return result;
-    }
-
-    nmo_behaviorio_destroy(out_state, type, context);
-    *out_state = decoded;
-    return NMO_OK;
-}
-
 /* =============================================================================
  * CKBehaviorIO SERIALIZATION
  * ============================================================================= */
@@ -159,49 +118,6 @@ nmo_status_t nmo_behaviorio_deserialize(
  * @param state Input state structure
  * @return Result indicating success or error
  */
-static nmo_status_t nmo_behaviorio_serialize_internal(
-    const void *instance,
-    nmo_chunk_t *out_chunk,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)type;
-    const nmo_behaviorio_state_t *in_state = (const nmo_behaviorio_state_t *)instance;
-
-    if (in_state == NULL || out_chunk == NULL) {
-        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR, "Invalid arguments to nmo_behaviorio_serialize");
-    }
-    NMO_RETURN_IF_ERROR(nmo_behaviorio_validate(
-        in_state, type, context));
-
-    nmo_status_t result;
-
-    /* Write base CKObject state (merged into this chunk by AddChunkAndDelete) */
-    result = nmo_object_serialize(&in_state->base, out_chunk, NULL, context);
-    if (result != NMO_OK) return result;
-
-    const bool is_file = nmo_object_serialize_is_file(out_chunk, context);
-
-    if (!is_file) {
-        uint32_t save_flags = nmo_serialize_context_get_save_flags(context);
-        if ((save_flags & CK_STATESAVE_BEHAVIOONLY) == 0) {
-            return NMO_OK;
-        }
-    }
-
-    if (!in_state->has_flags) return NMO_OK;
-
-    result = nmo_chunk_write_identifier(out_chunk, CK_STATESAVE_BEHAV_IOFLAGS);
-    if (result != NMO_OK) return result;
-
-    result = nmo_chunk_write_dword(out_chunk, in_state->old_flags);
-    if (result != NMO_OK) return result;
-
-    NMO_RETURN_OK();
-}
-
-NMO_DEFINE_OBJECT_STAGED_SERIALIZE(nmo_behaviorio)
-
 nmo_status_t nmo_behaviorio_remap_dependencies(
     void *instance,
     const nmo_type_descriptor_t *type,
