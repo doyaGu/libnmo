@@ -103,8 +103,9 @@ typedef enum nmo_object_state_member_kind {
     NMO_OBJECT_STATE_MEMBER_BYTES, /**< Arena-owned buffer sized by a size_t member */
     NMO_OBJECT_STATE_MEMBER_STRING, /**< Arena-owned NUL-terminated string, compared by content */
     NMO_OBJECT_STATE_MEMBER_CHUNK, /**< Arena-owned nmo_chunk_t *, compared by chunk data */
-    NMO_OBJECT_STATE_MEMBER_COUNTED, /**< Arena-owned array of trivially copyable elements, counted by an integer member */
-    NMO_OBJECT_STATE_MEMBER_RECORDS /**< Owned nmo_array_t of records laid out by a nested member list */
+    NMO_OBJECT_STATE_MEMBER_COUNTED, /**< Arena-owned array counted by an integer member or a count function; elements are trivially copyable, or records when .record is set */
+    NMO_OBJECT_STATE_MEMBER_RECORDS, /**< Owned nmo_array_t of records laid out by a nested member list */
+    NMO_OBJECT_STATE_MEMBER_RECORD_PTR /**< Arena-owned pointer to one record, NULL when absent */
 } nmo_object_state_member_kind_t;
 
 typedef struct nmo_object_state_layout nmo_object_state_layout_t;
@@ -119,7 +120,11 @@ typedef struct nmo_object_state_member {
     size_t size_offset; /**< BYTES, COUNTED: offset of the integer element count */
     size_t count_size;  /**< COUNTED: byte width of the count (4 or 8) */
     uint32_t flags;     /**< NMO_OBJECT_STATE_MEMBER_* flags */
-    const nmo_object_state_layout_t *record; /**< RECORDS: layout of one element */
+    /** COUNTED: element count computed from the state that holds the member
+     *  (the record, for a member of a record), instead of read from a member. */
+    size_t (*count_fn)(const void *owner);
+    /** COUNTED, RECORDS, RECORD_PTR: layout of one element */
+    const nmo_object_state_layout_t *record;
 } nmo_object_state_member_t;
 
 #define NMO_STATE_VALUE(_state_t, _member) \
@@ -152,6 +157,23 @@ typedef struct nmo_object_state_member {
      .offset = offsetof(_state_t, _member), .size = sizeof(_element_t), \
      .size_offset = offsetof(_state_t, _count_member), \
      .count_size = sizeof(((_state_t *)0)->_count_member)}
+/* A pointer to as many elements as _count_fn(state) returns. */
+#define NMO_STATE_COUNTED_BY(_state_t, _member, _count_fn, _element_t) \
+    {.kind = NMO_OBJECT_STATE_MEMBER_COUNTED, \
+     .offset = offsetof(_state_t, _member), .size = sizeof(_element_t), \
+     .count_fn = (_count_fn)}
+/* A pointer to _count_member records, each laid out by _record. */
+#define NMO_STATE_COUNTED_RECORDS(_state_t, _member, _count_member, _record) \
+    {.kind = NMO_OBJECT_STATE_MEMBER_COUNTED, \
+     .offset = offsetof(_state_t, _member), \
+     .size = (_record).size, \
+     .size_offset = offsetof(_state_t, _count_member), \
+     .count_size = sizeof(((_state_t *)0)->_count_member), \
+     .record = &(_record)}
+/* A pointer to one record laid out by _record, NULL when there is none. */
+#define NMO_STATE_RECORD_PTR(_state_t, _member, _record) \
+    {.kind = NMO_OBJECT_STATE_MEMBER_RECORD_PTR, \
+     .offset = offsetof(_state_t, _member), .record = &(_record)}
 #define NMO_STATE_STRING(_state_t, _member) \
     {.kind = NMO_OBJECT_STATE_MEMBER_STRING, \
      .offset = offsetof(_state_t, _member)}

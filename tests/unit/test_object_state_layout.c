@@ -677,6 +677,121 @@ TEST(object_state_layout, counted_and_record_members_of_both_widths) {
     nmo_arena_destroy(arena);
 }
 
+/* A record that holds a counted array of its own, reached through a pointer,
+ * with the count of the outer array computed from the state. */
+typedef struct nested_leaf {
+    uint32_t id;
+    char *label;
+} nested_leaf_t;
+
+typedef struct nested_node {
+    uint32_t leaf_count;
+    nested_leaf_t *leaves;
+    uint16_t pair_source;
+    uint16_t *pairs;
+} nested_node_t;
+
+typedef struct nested_state {
+    nmo_object_state_t base;
+    nested_node_t *root;
+    uint32_t pair_factor;
+} nested_state_t;
+
+static const nmo_object_state_member_t nested_leaf_members[] = {
+    NMO_STATE_VALUE(nested_leaf_t, id),
+    NMO_STATE_STRING(nested_leaf_t, label)
+};
+
+static const nmo_object_state_layout_t nested_leaf_layout = {
+    .size = sizeof(nested_leaf_t),
+    .members = nested_leaf_members,
+    .member_count = sizeof(nested_leaf_members) / sizeof(nested_leaf_members[0]),
+};
+
+static size_t nested_pair_count(const void *owner)
+{
+    return (size_t)((const nested_node_t *)owner)->pair_source * 2u;
+}
+
+static const nmo_object_state_member_t nested_node_members[] = {
+    NMO_STATE_VALUE(nested_node_t, leaf_count),
+    NMO_STATE_COUNTED_RECORDS(nested_node_t, leaves, leaf_count, nested_leaf_layout),
+    NMO_STATE_VALUE(nested_node_t, pair_source),
+    NMO_STATE_COUNTED_BY(nested_node_t, pairs, nested_pair_count, uint16_t)
+};
+
+static const nmo_object_state_layout_t nested_node_layout = {
+    .size = sizeof(nested_node_t),
+    .members = nested_node_members,
+    .member_count = sizeof(nested_node_members) / sizeof(nested_node_members[0]),
+};
+
+static const nmo_object_state_member_t nested_members[] = {
+    NMO_STATE_RECORD_PTR(nested_state_t, root, nested_node_layout),
+    NMO_STATE_VALUE(nested_state_t, pair_factor)
+};
+
+static const nmo_object_state_layout_t nested_layout = {
+    .size = sizeof(nested_state_t),
+    .base_vtable = &nmo_object_vtable,
+    .base_size = sizeof(nmo_object_state_t),
+    .members = nested_members,
+    .member_count = sizeof(nested_members) / sizeof(nested_members[0]),
+};
+
+TEST(object_state_layout, record_pointer_with_nested_counted_members) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nested_state_t source;
+    nested_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_object_layout_create(&nested_layout, &source, NULL));
+    ASSERT_EQ(NMO_OK, nmo_object_layout_create(&nested_layout, &copied, NULL));
+
+    /* No record: equal to another state without one, and copied as none. */
+    ASSERT_TRUE(nmo_object_layout_equals(&nested_layout, &source, &copied));
+    ASSERT_EQ(NMO_OK, nmo_object_layout_copy(&nested_layout, &source, &copied, arena));
+    ASSERT_NULL(copied.root);
+
+    nested_leaf_t leaves[2] = {{1u, "one"}, {2u, "two"}};
+    uint16_t pairs[4] = {10, 11, 12, 13};
+    nested_node_t node = {
+        .leaf_count = 2, .leaves = leaves, .pair_source = 2, .pairs = pairs,
+    };
+    source.root = &node;
+    ASSERT_FALSE(nmo_object_layout_equals(&nested_layout, &source, &copied));
+    ASSERT_EQ(NMO_OK, nmo_object_layout_copy(&nested_layout, &source, &copied, arena));
+    ASSERT_NOT_NULL(copied.root);
+    ASSERT_TRUE(copied.root != &node);
+    ASSERT_TRUE(copied.root->leaves != leaves);
+    ASSERT_TRUE(copied.root->leaves[1].label != leaves[1].label);
+    ASSERT_EQ(0, strcmp("two", copied.root->leaves[1].label));
+    ASSERT_TRUE(copied.root->pairs != pairs);
+    ASSERT_EQ(13u, copied.root->pairs[3]);
+    ASSERT_TRUE(nmo_object_layout_equals(&nested_layout, &source, &copied));
+    ASSERT_EQ(nmo_object_layout_hash(&nested_layout, &source),
+              nmo_object_layout_hash(&nested_layout, &copied));
+
+    copied.root->pairs[3] = 14u;
+    ASSERT_FALSE(nmo_object_layout_equals(&nested_layout, &source, &copied));
+    copied.root->pairs[3] = 13u;
+    copied.root->leaves[0].label = "uno";
+    ASSERT_FALSE(nmo_object_layout_equals(&nested_layout, &source, &copied));
+    ASSERT_NE(nmo_object_layout_hash(&nested_layout, &source),
+              nmo_object_layout_hash(&nested_layout, &copied));
+
+    /* The count of the pairs follows the record: a missing array is an error. */
+    node.pair_source = 3;
+    node.pairs = NULL;
+    nested_state_t untouched = copied;
+    ASSERT_NE(NMO_OK, nmo_object_layout_copy(&nested_layout, &source, &copied, arena));
+    ASSERT_EQ(0, memcmp(&untouched, &copied, sizeof(copied)));
+
+    source.root = NULL;
+    nmo_object_layout_destroy(&nested_layout, &source, NULL);
+    nmo_object_layout_destroy(&nested_layout, &copied, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(object_state_layout, place_copy_equals_hash);
     REGISTER_TEST(object_state_layout, copy_into_shallow_alias_detaches_arrays);
@@ -695,4 +810,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_state_layout, character_parts_and_animations_copy);
     REGISTER_TEST(object_state_layout, beobject_attributes_copy_with_strings_and_chunks);
     REGISTER_TEST(object_state_layout, counted_and_record_members_of_both_widths);
+    REGISTER_TEST(object_state_layout, record_pointer_with_nested_counted_members);
 TEST_MAIN_END()

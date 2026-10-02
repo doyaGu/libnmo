@@ -287,6 +287,7 @@ static size_t layout_counted_count(
     const void *instance,
     const nmo_object_state_member_t *member)
 {
+    if (member->count_fn != NULL) return member->count_fn(instance);
     const void *count_ptr =
         layout_member_ptr_const(instance, member->size_offset);
     switch (layout_count_size(member)) {
@@ -394,6 +395,24 @@ static uint32_t layout_members_hash(
     size_t member_count,
     const void *instance);
 
+static bool layout_counted_records_equal(
+    const nmo_object_state_member_t *member,
+    const void *lhs,
+    const void *rhs,
+    size_t count)
+{
+    const nmo_object_state_layout_t *record = member->record;
+    for (size_t i = 0; i < count; ++i) {
+        if (!layout_members_equal(
+                record->members, record->member_count,
+                (const uint8_t *)lhs + i * record->size,
+                (const uint8_t *)rhs + i * record->size)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 static bool layout_records_equal(
     const nmo_object_state_layout_t *record,
     const nmo_array_t *la,
@@ -444,15 +463,33 @@ static bool layout_members_equal(
         }
         case NMO_OBJECT_STATE_MEMBER_BYTES:
         case NMO_OBJECT_STATE_MEMBER_COUNTED: {
-            size_t lhs_bytes = 0;
-            size_t rhs_bytes = 0;
-            if (!layout_counted_bytes(a, member, &lhs_bytes) ||
-                !layout_counted_bytes(b, member, &rhs_bytes) ||
-                layout_counted_count(a, member) !=
-                    layout_counted_count(b, member) ||
-                !layout_bytes_equal(layout_pointer_member(a, member),
-                                    layout_pointer_member(b, member),
-                                    lhs_bytes)) {
+            const size_t count = layout_counted_count(a, member);
+            const void *lhs_data = layout_pointer_member(a, member);
+            const void *rhs_data = layout_pointer_member(b, member);
+            size_t bytes = 0;
+            if (count != layout_counted_count(b, member) ||
+                !layout_counted_bytes(a, member, &bytes)) {
+                return false;
+            }
+            if (member->record != NULL) {
+                if (count > 0 && (lhs_data == NULL || rhs_data == NULL ||
+                    !layout_counted_records_equal(
+                        member, lhs_data, rhs_data, count))) {
+                    return false;
+                }
+            } else if (!layout_bytes_equal(lhs_data, rhs_data, bytes)) {
+                return false;
+            }
+            break;
+        }
+        case NMO_OBJECT_STATE_MEMBER_RECORD_PTR: {
+            const void *lhs_record = layout_pointer_member(a, member);
+            const void *rhs_record = layout_pointer_member(b, member);
+            if (lhs_record == rhs_record) break;
+            if (lhs_record == NULL || rhs_record == NULL ||
+                !layout_members_equal(member->record->members,
+                                      member->record->member_count,
+                                      lhs_record, rhs_record)) {
                 return false;
             }
             break;
@@ -506,8 +543,27 @@ static uint32_t layout_members_hash(
             const void *data = layout_pointer_member(instance, member);
             size_t bytes = 0;
             hash = layout_hash_bytes(hash, &count, sizeof(count));
-            if (data != NULL && layout_counted_bytes(instance, member, &bytes)) {
+            if (data != NULL && member->record != NULL) {
+                for (size_t r = 0; r < count; ++r) {
+                    hash = layout_members_hash(
+                        hash, member->record->members,
+                        member->record->member_count,
+                        (const uint8_t *)data + r * member->record->size);
+                }
+            } else if (data != NULL &&
+                       layout_counted_bytes(instance, member, &bytes)) {
                 hash = layout_hash_bytes(hash, data, bytes);
+            }
+            break;
+        }
+        case NMO_OBJECT_STATE_MEMBER_RECORD_PTR: {
+            const void *record = layout_pointer_member(instance, member);
+            const uint8_t present = record != NULL;
+            hash = layout_hash_bytes(hash, &present, sizeof(present));
+            if (record != NULL) {
+                hash = layout_members_hash(
+                    hash, member->record->members,
+                    member->record->member_count, record);
             }
             break;
         }
@@ -649,9 +705,34 @@ static nmo_status_t layout_copy_owned(
         if (bytes == 0) return NMO_OK;
         if (from == NULL || arena == NULL) return NMO_ERR_INVALID_ARGUMENT;
         /* The element type is not known here, so align for any of them. */
-        out->pointer = nmo_arena_alloc(arena, bytes, NMO_MAX_ALIGN);
-        if (out->pointer == NULL) return NMO_ERR_NOMEM;
-        memcpy(out->pointer, from, bytes);
+        void *copy = nmo_arena_alloc(arena, bytes, NMO_MAX_ALIGN);
+        if (copy == NULL) return NMO_ERR_NOMEM;
+        memcpy(copy, from, bytes);
+        if (member->record != NULL) {
+            const nmo_object_state_layout_t *record = member->record;
+            const size_t count = layout_counted_count(src, member);
+            for (size_t i = 0; i < count; ++i) {
+                NMO_RETURN_IF_ERROR(layout_copy_members_into(
+                    record->members, record->member_count,
+                    (const uint8_t *)from + i * record->size,
+                    (uint8_t *)copy + i * record->size, arena));
+            }
+        }
+        out->pointer = copy;
+        return NMO_OK;
+    }
+    case NMO_OBJECT_STATE_MEMBER_RECORD_PTR: {
+        const nmo_object_state_layout_t *record = member->record;
+        const void *from = layout_pointer_member(src, member);
+        out->pointer = NULL;
+        if (from == NULL) return NMO_OK;
+        if (arena == NULL) return NMO_ERR_INVALID_ARGUMENT;
+        void *copy = nmo_arena_alloc(arena, record->size, NMO_MAX_ALIGN);
+        if (copy == NULL) return NMO_ERR_NOMEM;
+        memcpy(copy, from, record->size);
+        NMO_RETURN_IF_ERROR(layout_copy_members_into(
+            record->members, record->member_count, from, copy, arena));
+        out->pointer = copy;
         return NMO_OK;
     }
     case NMO_OBJECT_STATE_MEMBER_STRING: {
