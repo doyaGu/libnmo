@@ -1,6 +1,6 @@
 #include "format/nmo_interface_view.h"
 
-#include "../runtime/runtime_internal.h"
+#include "runtime_internal.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_pipeline.h"
 #include "object/nmo_class_ids.h"

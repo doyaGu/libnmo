@@ -184,7 +184,6 @@ set(NMO_FORMAT_SOURCES
     src/format/interface_chunk_types.c
     src/format/interface_copy.c
     src/format/interface_edit.c
-    src/format/interface_view.c
     src/format/obj_parser.c
 )
 
@@ -293,6 +292,7 @@ set(NMO_EXTENSION_SOURCES
 # Runtime/session layer sources
 set(NMO_RUNTIME_SOURCES
     src/runtime/context.c
+    src/runtime/interface_view.c
     src/runtime/document_workspace.c
     src/runtime/session_util.c
     src/runtime/workspace_edit_journal.c

@@ -7,13 +7,6 @@ src/format/chunk_arrays.c object/nmo_object_repository.h
 src/format/chunk_primitives.c object/nmo_object_repository.h
 src/format/interface_chunk_types.c type/nmo_reflection.h
 src/format/interface_chunk_types.c type/nmo_type_system.h
-src/format/interface_view.c object/builtin/nmo_behavior_schemas.h
-src/format/interface_view.c object/nmo_class_ids.h
-src/format/interface_view.c type/nmo_object_guids.h
-src/format/interface_view.c object/nmo_object_repository.h
-src/format/interface_view.c session/nmo_session.h
-src/format/interface_view.c session/nmo_session_pipeline.h
-src/format/interface_view.c type/nmo_type_query.h
 src/object/object_diff.c document/nmo_document.h
 src/object/object_hierarchy.c runtime/nmo_context.h
 src/object/object_hierarchy.c session/nmo_session.h
@@ -34,7 +27,6 @@ src/document/document_file_state.c ../runtime/runtime_internal.h
 src/document/document_load.c ../runtime/runtime_internal.h
 src/document/document_save.c ../runtime/runtime_internal.h
 src/document/document_stats.c ../runtime/runtime_internal.h
-src/format/interface_view.c ../runtime/runtime_internal.h
 src/object/object_diff.c ../runtime/runtime_internal.h
 src/object/object_hierarchy.c ../runtime/runtime_internal.h
 src/object/object_import.c ../runtime/runtime_internal.h
