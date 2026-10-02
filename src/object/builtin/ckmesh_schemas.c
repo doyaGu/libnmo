@@ -88,36 +88,105 @@
 #include <string.h>
 #include <math.h>
 
-static nmo_status_t nmo_mesh_create(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)type;
-    if (!instance) return NMO_ERR_INVALID_ARGUMENT;
-    nmo_mesh_state_t *state = instance;
-    memset(state, 0, sizeof(*state));
-    /* RCKMesh constructor: VXMESH_VISIBLE | VXMESH_RENDERCHANNELS. */
-    state->flags = 0x0Au;
-    return nmo_beobject_vtable.create(&state->beobject, NULL, context);
-}
-
-static void nmo_mesh_destroy(
-    void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context)
-{
-    (void)type;
-    nmo_mesh_state_t *state = instance;
-    if (!state) return;
-    nmo_beobject_vtable.destroy(&state->beobject, NULL, context);
-    memset(state, 0, sizeof(*state));
-}
-
 static nmo_status_t nmo_mesh_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
     void *context);
+
+/* RCKMesh constructor: VXMESH_VISIBLE | VXMESH_RENDERCHANNELS. */
+static void nmo_mesh_set_defaults(void *instance)
+{
+    nmo_mesh_state_t *state = instance;
+    state->flags = 0x0Au;
+}
+
+static size_t nmo_mesh_face_index_count(const void *owner)
+{
+    return (size_t)((const nmo_mesh_state_t *)owner)->face_count * 3u;
+}
+
+static size_t nmo_mesh_line_index_count(const void *owner)
+{
+    return (size_t)((const nmo_mesh_state_t *)owner)->line_count * 2u;
+}
+
+/* A state built in memory may leave the weight count 0 and still point at one
+ * weight per vertex. */
+static size_t nmo_mesh_effective_weight_count(const void *owner)
+{
+    const nmo_mesh_state_t *state = owner;
+    return state->vertex_weight_count > 0u
+        ? state->vertex_weight_count
+        : (state->vertex_weights != NULL ? state->vertex_count : 0u);
+}
+
+static const nmo_object_state_member_t nmo_mesh_channel_members[] = {
+    NMO_STATE_VALUE(nmo_material_channel_t, material),
+    NMO_STATE_VALUE(nmo_material_channel_t, flags),
+    NMO_STATE_VALUE(nmo_material_channel_t, source_blend),
+    NMO_STATE_VALUE(nmo_material_channel_t, dest_blend),
+    NMO_STATE_VALUE(nmo_material_channel_t, uv_count),
+    NMO_STATE_COUNTED(nmo_material_channel_t, uv_coords, uv_count, nmo_vector2_t)
+};
+
+static const nmo_object_state_layout_t nmo_mesh_channel_layout = {
+    .size = sizeof(nmo_material_channel_t),
+    .members = nmo_mesh_channel_members,
+    .member_count = sizeof(nmo_mesh_channel_members) /
+        sizeof(nmo_mesh_channel_members[0]),
+};
+
+static const nmo_object_state_member_t nmo_mesh_members[] = {
+    NMO_STATE_VALUE(nmo_mesh_state_t, flags),
+    NMO_STATE_VALUE(nmo_mesh_state_t, bary_center),
+    NMO_STATE_VALUE(nmo_mesh_state_t, radius),
+    NMO_STATE_VALUE(nmo_mesh_state_t, local_box_min),
+    NMO_STATE_VALUE(nmo_mesh_state_t, local_box_max),
+    NMO_STATE_VALUE(nmo_mesh_state_t, face_count),
+    NMO_STATE_COUNTED(nmo_mesh_state_t, faces, face_count, nmo_face_t),
+    NMO_STATE_COUNTED_BY(nmo_mesh_state_t, face_vertex_indices,
+                         nmo_mesh_face_index_count, uint16_t),
+    NMO_STATE_VALUE(nmo_mesh_state_t, line_count),
+    NMO_STATE_COUNTED_BY(nmo_mesh_state_t, line_indices,
+                         nmo_mesh_line_index_count, uint16_t),
+    NMO_STATE_VALUE(nmo_mesh_state_t, vertex_count),
+    NMO_STATE_COUNTED(nmo_mesh_state_t, vertices, vertex_count, nmo_vertex_t),
+    NMO_STATE_COUNTED(nmo_mesh_state_t, vertex_colors, vertex_count, uint32_t),
+    NMO_STATE_COUNTED(nmo_mesh_state_t, vertex_specular, vertex_count, uint32_t),
+    NMO_STATE_VALUE(nmo_mesh_state_t, vertex_weight_count),
+    NMO_STATE_COUNTED_BY(nmo_mesh_state_t, vertex_weights,
+                         nmo_mesh_effective_weight_count, float),
+    NMO_STATE_VALUE(nmo_mesh_state_t, zero_normals_stored),
+    NMO_STATE_VALUE(nmo_mesh_state_t, material_group_count),
+    NMO_STATE_COUNTED(nmo_mesh_state_t, material_groups, material_group_count,
+                      nmo_material_group_t),
+    NMO_STATE_VALUE(nmo_mesh_state_t, has_material_groups),
+    NMO_STATE_VALUE(nmo_mesh_state_t, material_channel_count),
+    NMO_STATE_COUNTED_RECORDS(nmo_mesh_state_t, material_channels,
+                              material_channel_count, nmo_mesh_channel_layout),
+    NMO_STATE_VALUE(nmo_mesh_state_t, has_material_channels),
+    NMO_STATE_VALUE(nmo_mesh_state_t, is_valid),
+    NMO_STATE_VALUE(nmo_mesh_state_t, vertex_buffer_handle),
+    NMO_STATE_VALUE(nmo_mesh_state_t, index_buffer_handle),
+    NMO_STATE_VALUE(nmo_mesh_state_t, has_progressive_mesh),
+    NMO_STATE_VALUE(nmo_mesh_state_t, pm_field_0),
+    NMO_STATE_VALUE(nmo_mesh_state_t, pm_morph_enabled),
+    NMO_STATE_VALUE(nmo_mesh_state_t, pm_morph_step),
+    NMO_STATE_VALUE(nmo_mesh_state_t, pm_data_size),
+    NMO_STATE_COUNTED(nmo_mesh_state_t, pm_data, pm_data_size, uint8_t)
+};
+
+static const nmo_object_state_layout_t nmo_mesh_layout = {
+    .size = sizeof(nmo_mesh_state_t),
+    .base_vtable = &nmo_beobject_vtable,
+    .members = nmo_mesh_members,
+    .member_count = sizeof(nmo_mesh_members) / sizeof(nmo_mesh_members[0]),
+    .set_defaults = nmo_mesh_set_defaults,
+    .validate = nmo_mesh_validate,
+};
+
+NMO_DEFINE_OBJECT_LAYOUT_LIFECYCLE(mesh, nmo_mesh_layout)
+NMO_DEFINE_OBJECT_LAYOUT_COPY(mesh, nmo_mesh_layout)
 
 /* =============================================================================
  * REFLECTION FIELDS
@@ -2240,117 +2309,6 @@ nmo_status_t nmo_mesh_serialize(
     return nmo_mesh_serialize_ex(instance, out_chunk, type, context, false);
 }
 
-static nmo_status_t nmo_mesh_copy(
-    const void *src,
-    void *dst,
-    const nmo_type_descriptor_t *type,
-    nmo_arena_t *arena)
-{
-    (void)type;
-    const nmo_mesh_state_t *s = src;
-    nmo_mesh_state_t *d = dst;
-    if (s == NULL || d == NULL || arena == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    NMO_RETURN_IF_ERROR(nmo_mesh_validate(s, NULL, NULL));
-
-    nmo_mesh_state_t copied;
-    nmo_status_t result = nmo_mesh_create(&copied, NULL, NULL);
-    if (result != NMO_OK) return result;
-    result = nmo_beobject_vtable.copy(
-        &s->beobject, &copied.beobject, NULL, arena);
-    if (result != NMO_OK) goto fail;
-
-    copied.flags = s->flags;
-    copied.bary_center = s->bary_center;
-    copied.radius = s->radius;
-    copied.local_box_min = s->local_box_min;
-    copied.local_box_max = s->local_box_max;
-    copied.face_count = s->face_count;
-    copied.line_count = s->line_count;
-    copied.vertex_count = s->vertex_count;
-    copied.vertex_weight_count = s->vertex_weight_count;
-    copied.zero_normals_stored = s->zero_normals_stored;
-    copied.material_group_count = s->material_group_count;
-    copied.has_material_groups = s->has_material_groups;
-    copied.material_channel_count = s->material_channel_count;
-    copied.has_material_channels = s->has_material_channels;
-    copied.is_valid = s->is_valid;
-    copied.vertex_buffer_handle = s->vertex_buffer_handle;
-    copied.index_buffer_handle = s->index_buffer_handle;
-    copied.has_progressive_mesh = s->has_progressive_mesh;
-    copied.pm_field_0 = s->pm_field_0;
-    copied.pm_morph_enabled = s->pm_morph_enabled;
-    copied.pm_morph_step = s->pm_morph_step;
-    copied.pm_data_size = s->pm_data_size;
-    const uint32_t copied_weight_count = s->vertex_weight_count > 0u
-        ? s->vertex_weight_count
-        : (s->vertex_weights != NULL ? s->vertex_count : 0u);
-
-    result = nmo_object_copy_array(arena, (void **)&copied.faces,
-        s->faces, sizeof(nmo_face_t), s->face_count);
-    if (result != NMO_OK) goto fail;
-    result = nmo_object_copy_array(
-        arena, (void **)&copied.face_vertex_indices,
-        s->face_vertex_indices, sizeof(uint16_t),
-        (uint32_t)(s->face_count * 3u));
-    if (result != NMO_OK) goto fail;
-    result = nmo_object_copy_array(arena, (void **)&copied.line_indices,
-        s->line_indices, sizeof(uint16_t),
-        (uint32_t)(s->line_count * 2u));
-    if (result != NMO_OK) goto fail;
-    result = nmo_object_copy_array(arena, (void **)&copied.vertices,
-        s->vertices, sizeof(nmo_vertex_t), s->vertex_count);
-    if (result != NMO_OK) goto fail;
-    result = nmo_object_copy_array(arena, (void **)&copied.vertex_colors,
-        s->vertex_colors, sizeof(uint32_t), s->vertex_count);
-    if (result != NMO_OK) goto fail;
-    result = nmo_object_copy_array(arena, (void **)&copied.vertex_specular,
-        s->vertex_specular, sizeof(uint32_t), s->vertex_count);
-    if (result != NMO_OK) goto fail;
-    result = nmo_object_copy_array(arena, (void **)&copied.vertex_weights,
-        s->vertex_weights, sizeof(float), copied_weight_count);
-    if (result != NMO_OK) goto fail;
-    result = nmo_object_copy_array(arena, (void **)&copied.material_groups,
-        s->material_groups, sizeof(nmo_material_group_t),
-        s->material_group_count);
-    if (result != NMO_OK) goto fail;
-    result = nmo_object_copy_array(
-        arena, (void **)&copied.material_channels,
-        s->material_channels, sizeof(nmo_material_channel_t),
-        s->material_channel_count);
-    if (result != NMO_OK) goto fail;
-    for (uint32_t i = 0; i < s->material_channel_count; ++i) {
-        result = nmo_object_copy_array(
-            arena, (void **)&copied.material_channels[i].uv_coords,
-            s->material_channels[i].uv_coords, sizeof(nmo_vector2_t),
-            s->material_channels[i].uv_count);
-        if (result != NMO_OK) goto fail;
-    }
-    result = nmo_object_copy_bytes(
-        arena, &copied.pm_data, s->pm_data, s->pm_data_size);
-    if (result != NMO_OK) goto fail;
-
-    if (d->beobject.scripts.data == s->beobject.scripts.data) {
-        memset(&d->beobject.scripts, 0, sizeof(d->beobject.scripts));
-    }
-    if (d->beobject.attributes.data == s->beobject.attributes.data) {
-        memset(&d->beobject.attributes, 0, sizeof(d->beobject.attributes));
-    }
-    if (d->beobject.legacy_attributes.data ==
-        s->beobject.legacy_attributes.data) {
-        memset(&d->beobject.legacy_attributes, 0,
-               sizeof(d->beobject.legacy_attributes));
-    }
-    nmo_mesh_destroy(d, NULL, NULL);
-    *d = copied;
-    return NMO_OK;
-
-fail:
-    nmo_mesh_destroy(&copied, NULL, NULL);
-    return result;
-}
-
 static nmo_status_t nmo_mesh_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
@@ -2359,9 +2317,8 @@ static nmo_status_t nmo_mesh_validate(
     (void)type;
     const nmo_mesh_state_t *s = instance;
     if (!s) return NMO_ERR_INVALID_ARGUMENT;
-    const uint32_t effective_weight_count = s->vertex_weight_count > 0u
-        ? s->vertex_weight_count
-        : (s->vertex_weights != NULL ? s->vertex_count : 0u);
+    const uint32_t effective_weight_count =
+        (uint32_t)nmo_mesh_effective_weight_count(s);
     NMO_RETURN_IF_ERROR(nmo_beobject_vtable.validate(
         &s->beobject, NULL, context));
     if (s->face_count > UINT32_MAX / 3u ||

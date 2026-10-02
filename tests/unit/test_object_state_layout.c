@@ -15,6 +15,7 @@
 #include "object/builtin/nmo_grid_schemas.h"
 #include "object/builtin/nmo_group_schemas.h"
 #include "object/builtin/nmo_layer_schemas.h"
+#include "object/builtin/nmo_mesh_schemas.h"
 #include "object/builtin/nmo_parameteroperation_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "object/builtin/nmo_parameterout_schemas.h"
@@ -755,6 +756,77 @@ TEST(object_state_layout, entity_skin_copies_deeply) {
     nmo_arena_destroy(arena);
 }
 
+TEST(object_state_layout, mesh_counts_follow_the_state) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+    nmo_mesh_state_t source;
+    nmo_mesh_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_mesh_vtable.create(&source, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_mesh_vtable.create(&copied, NULL, NULL));
+    ASSERT_EQ(0x0Au, source.flags);
+
+    nmo_face_t faces[2];
+    memset(faces, 0, sizeof(faces));
+    faces[1].material_group_idx = 1u;
+    uint16_t face_indices[6] = {0, 1, 2, 2, 1, 0};
+    uint16_t line_indices[4] = {0, 1, 1, 2};
+    nmo_vertex_t vertices[3];
+    memset(vertices, 0, sizeof(vertices));
+    uint32_t colors[3] = {1u, 2u, 3u};
+    uint32_t specular[3] = {4u, 5u, 6u};
+    float weights[3] = {0.1f, 0.2f, 0.3f};
+    nmo_vector2_t uvs[2] = {{0.f, 1.f}, {1.f, 0.f}};
+    nmo_material_channel_t channel;
+    memset(&channel, 0, sizeof(channel));
+    channel.uv_count = 2;
+    channel.uv_coords = uvs;
+    uint8_t progressive[3] = {7u, 8u, 9u};
+    source.face_count = 2;
+    source.faces = faces;
+    source.face_vertex_indices = face_indices;
+    source.line_count = 2;
+    source.line_indices = line_indices;
+    source.vertex_count = 3;
+    source.vertices = vertices;
+    source.vertex_colors = colors;
+    source.vertex_specular = specular;
+    /* No weight count: the weights are one per vertex. */
+    source.vertex_weights = weights;
+    source.material_channel_count = 1;
+    source.material_channels = &channel;
+    source.pm_data_size = 3;
+    source.pm_data = progressive;
+
+    ASSERT_EQ(NMO_OK, nmo_mesh_vtable.copy(&source, &copied, NULL, arena));
+    ASSERT_TRUE(copied.face_vertex_indices != face_indices);
+    ASSERT_EQ(0, memcmp(copied.face_vertex_indices, face_indices, sizeof(face_indices)));
+    ASSERT_EQ(0, memcmp(copied.line_indices, line_indices, sizeof(line_indices)));
+    ASSERT_EQ(0, memcmp(copied.vertex_weights, weights, sizeof(weights)));
+    ASSERT_TRUE(copied.vertex_weights != weights);
+    ASSERT_EQ(0u, copied.vertex_weight_count);
+    ASSERT_TRUE(copied.material_channels != &channel);
+    ASSERT_TRUE(copied.material_channels[0].uv_coords != uvs);
+    ASSERT_EQ(1.0f, copied.material_channels[0].uv_coords[1].x);
+    ASSERT_TRUE(copied.pm_data != progressive);
+    ASSERT_EQ(9u, ((const uint8_t *)copied.pm_data)[2]);
+    ASSERT_EQ(1u, copied.faces[1].material_group_idx);
+
+    source.vertex_weights = NULL;
+    source.pm_data = NULL;
+    source.pm_data_size = 0;
+    source.material_channels = NULL;
+    source.material_channel_count = 0;
+    source.faces = NULL;
+    source.face_vertex_indices = NULL;
+    source.line_indices = NULL;
+    source.vertices = NULL;
+    source.vertex_colors = NULL;
+    source.vertex_specular = NULL;
+    nmo_mesh_vtable.destroy(&source, NULL, NULL);
+    nmo_mesh_vtable.destroy(&copied, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 /* A record that holds a counted array of its own, reached through a pointer,
  * with the count of the outer array computed from the state. */
 typedef struct nested_leaf {
@@ -889,5 +961,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_state_layout, beobject_attributes_copy_with_strings_and_chunks);
     REGISTER_TEST(object_state_layout, counted_and_record_members_of_both_widths);
     REGISTER_TEST(object_state_layout, entity_skin_copies_deeply);
+    REGISTER_TEST(object_state_layout, mesh_counts_follow_the_state);
     REGISTER_TEST(object_state_layout, record_pointer_with_nested_counted_members);
 TEST_MAIN_END()
