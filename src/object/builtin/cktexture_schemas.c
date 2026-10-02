@@ -40,24 +40,181 @@ static void nmo_texture_dispose_base_arrays(nmo_texture_state_t *state)
     nmo_array_dispose(&state->base.legacy_attributes);
 }
 
-NMO_DEFINE_OBJECT_LIFECYCLE(
-    texture,
-    nmo_texture_state_t,
-    do {
-        nmo_status_t result = nmo_beobject_vtable.create(
-            &state->base, NULL, context);
-        if (result != NMO_OK) return result;
-        /* RCKTexture::Save always writes the packed state block, and a
-           texture that never had one loads with CKTEXTURE_USEGLOBAL. */
-        state->has_oldtexonly = 1;
-        state->save_options = NMO_CKTEXTURE_USEGLOBAL;
-    } while (0),
-    nmo_texture_dispose_base_arrays(state))
-
 static nmo_status_t nmo_texture_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
     void *context);
+
+/* One name of the slot_filenames list, as a record of its own. */
+typedef struct nmo_texture_slot_filename {
+    char *text;
+} nmo_texture_slot_filename_t;
+
+static const nmo_object_state_member_t nmo_texture_slot_filename_members[] = {
+    NMO_STATE_STRING(nmo_texture_slot_filename_t, text)
+};
+
+static const nmo_object_state_layout_t nmo_texture_slot_filename_layout = {
+    .size = sizeof(nmo_texture_slot_filename_t),
+    .members = nmo_texture_slot_filename_members,
+    .member_count = sizeof(nmo_texture_slot_filename_members) /
+        sizeof(nmo_texture_slot_filename_members[0]),
+};
+
+static const nmo_object_state_member_t nmo_texture_reader_slot_members[] = {
+    NMO_STATE_VALUE(nmo_texture_reader_slot_t, format_type),
+    NMO_STATE_VALUE(nmo_texture_reader_slot_t, extension),
+    NMO_STATE_VALUE(nmo_texture_reader_slot_t, reader_guid),
+    NMO_STATE_VALUE(nmo_texture_reader_slot_t, data_size),
+    NMO_STATE_COUNTED(nmo_texture_reader_slot_t, data, data_size, uint8_t),
+    NMO_STATE_VALUE(nmo_texture_reader_slot_t, alpha_count),
+    NMO_STATE_VALUE(nmo_texture_reader_slot_t, alpha_value),
+    NMO_STATE_VALUE(nmo_texture_reader_slot_t, alpha_plane_size),
+    NMO_STATE_COUNTED(nmo_texture_reader_slot_t, alpha_plane, alpha_plane_size,
+                      uint8_t)
+};
+
+static const nmo_object_state_layout_t nmo_texture_reader_slot_layout = {
+    .size = sizeof(nmo_texture_reader_slot_t),
+    .members = nmo_texture_reader_slot_members,
+    .member_count = sizeof(nmo_texture_reader_slot_members) /
+        sizeof(nmo_texture_reader_slot_members[0]),
+};
+
+static const nmo_object_state_member_t nmo_texture_raw_slot_members[] = {
+    NMO_STATE_VALUE(nmo_texture_raw_slot_t, bits_per_pixel),
+    NMO_STATE_VALUE(nmo_texture_raw_slot_t, width),
+    NMO_STATE_VALUE(nmo_texture_raw_slot_t, height),
+    NMO_STATE_VALUE(nmo_texture_raw_slot_t, alpha_mask),
+    NMO_STATE_VALUE(nmo_texture_raw_slot_t, red_mask),
+    NMO_STATE_VALUE(nmo_texture_raw_slot_t, green_mask),
+    NMO_STATE_VALUE(nmo_texture_raw_slot_t, blue_mask),
+    NMO_STATE_VALUE(nmo_texture_raw_slot_t, compression),
+    NMO_STATE_VALUE(nmo_texture_raw_slot_t, blue_size),
+    NMO_STATE_COUNTED(nmo_texture_raw_slot_t, blue_data, blue_size, uint8_t),
+    NMO_STATE_VALUE(nmo_texture_raw_slot_t, green_size),
+    NMO_STATE_COUNTED(nmo_texture_raw_slot_t, green_data, green_size, uint8_t),
+    NMO_STATE_VALUE(nmo_texture_raw_slot_t, red_size),
+    NMO_STATE_COUNTED(nmo_texture_raw_slot_t, red_data, red_size, uint8_t),
+    NMO_STATE_VALUE(nmo_texture_raw_slot_t, alpha_size),
+    NMO_STATE_COUNTED(nmo_texture_raw_slot_t, alpha_data, alpha_size, uint8_t)
+};
+
+static const nmo_object_state_layout_t nmo_texture_raw_slot_layout = {
+    .size = sizeof(nmo_texture_raw_slot_t),
+    .members = nmo_texture_raw_slot_members,
+    .member_count = sizeof(nmo_texture_raw_slot_members) /
+        sizeof(nmo_texture_raw_slot_members[0]),
+};
+
+static const nmo_object_state_member_t nmo_texture_bitmap2_slot_members[] = {
+    NMO_STATE_VALUE(nmo_texture_bitmap2_slot_t, unused_int),
+    NMO_STATE_VALUE(nmo_texture_bitmap2_slot_t, buffer_size),
+    NMO_STATE_COUNTED(nmo_texture_bitmap2_slot_t, buffer, buffer_size, uint8_t)
+};
+
+static const nmo_object_state_layout_t nmo_texture_bitmap2_slot_layout = {
+    .size = sizeof(nmo_texture_bitmap2_slot_t),
+    .members = nmo_texture_bitmap2_slot_members,
+    .member_count = sizeof(nmo_texture_bitmap2_slot_members) /
+        sizeof(nmo_texture_bitmap2_slot_members[0]),
+};
+
+/* The bitmap lanes: the pointer of a lane the bitmap does not use is NULL while
+ * slot_count is not 0. */
+static const nmo_object_state_member_t nmo_bitmap_slots_members[] = {
+    NMO_STATE_VALUE(nmo_bitmap_slots_t, kind),
+    NMO_STATE_VALUE(nmo_bitmap_slots_t, slot_count),
+    NMO_STATE_VALUE(nmo_bitmap_slots_t, reader_width),
+    NMO_STATE_VALUE(nmo_bitmap_slots_t, reader_height),
+    NMO_STATE_VALUE(nmo_bitmap_slots_t, reader_bpp),
+    NMO_STATE_COUNTED_RECORDS_OPTIONAL(nmo_bitmap_slots_t, reader_slots,
+                                       slot_count, nmo_texture_reader_slot_layout),
+    NMO_STATE_COUNTED_RECORDS_OPTIONAL(nmo_bitmap_slots_t, raw_slots,
+                                       slot_count, nmo_texture_raw_slot_layout),
+    NMO_STATE_COUNTED_RECORDS_OPTIONAL(nmo_bitmap_slots_t, bitmap2_slots,
+                                       slot_count, nmo_texture_bitmap2_slot_layout),
+    NMO_STATE_VALUE(nmo_bitmap_slots_t, has_slot_filenames),
+    NMO_STATE_COUNTED_RECORDS_OPTIONAL(nmo_bitmap_slots_t, slot_filenames,
+                                       slot_count, nmo_texture_slot_filename_layout),
+    NMO_STATE_VALUE(nmo_bitmap_slots_t, has_movie_filename),
+    NMO_STATE_STRING(nmo_bitmap_slots_t, movie_filename)
+};
+
+static const nmo_object_state_layout_t nmo_bitmap_slots_layout = {
+    .size = sizeof(nmo_bitmap_slots_t),
+    .members = nmo_bitmap_slots_members,
+    .member_count = sizeof(nmo_bitmap_slots_members) /
+        sizeof(nmo_bitmap_slots_members[0]),
+};
+
+static const nmo_object_state_member_t nmo_texture_members[] = {
+    NMO_STATE_VALUE(nmo_texture_state_t, has_movie_filename),
+    NMO_STATE_STRING(nmo_texture_state_t, movie_filename),
+    NMO_STATE_VALUE(nmo_texture_state_t, has_slot_filenames),
+    NMO_STATE_VALUE(nmo_texture_state_t, slot_count),
+    NMO_STATE_COUNTED_RECORDS_OPTIONAL(nmo_texture_state_t, slot_filenames,
+                                       slot_count, nmo_texture_slot_filename_layout),
+    NMO_STATE_VALUE(nmo_texture_state_t, reader_width),
+    NMO_STATE_VALUE(nmo_texture_state_t, reader_height),
+    NMO_STATE_VALUE(nmo_texture_state_t, reader_bpp),
+    NMO_STATE_VALUE(nmo_texture_state_t, bitmap_kind),
+    NMO_STATE_COUNTED_RECORDS_OPTIONAL(nmo_texture_state_t, reader_slots,
+                                       slot_count, nmo_texture_reader_slot_layout),
+    NMO_STATE_COUNTED_RECORDS_OPTIONAL(nmo_texture_state_t, raw_slots,
+                                       slot_count, nmo_texture_raw_slot_layout),
+    NMO_STATE_COUNTED_RECORDS_OPTIONAL(nmo_texture_state_t, bitmap2_slots,
+                                       slot_count, nmo_texture_bitmap2_slot_layout),
+    NMO_STATE_VALUE(nmo_texture_state_t, has_pick_threshold),
+    NMO_STATE_VALUE(nmo_texture_state_t, pick_threshold),
+    NMO_STATE_VALUE(nmo_texture_state_t, has_oldtexonly),
+    NMO_STATE_VALUE(nmo_texture_state_t, uses_texonly_identifier),
+    NMO_STATE_VALUE(nmo_texture_state_t, packed_unknown_bits),
+    NMO_STATE_VALUE(nmo_texture_state_t, mipmap_level),
+    NMO_STATE_VALUE(nmo_texture_state_t, save_options),
+    NMO_STATE_VALUE(nmo_texture_state_t, is_transparent),
+    NMO_STATE_VALUE(nmo_texture_state_t, is_cubemap),
+    NMO_STATE_VALUE(nmo_texture_state_t, has_desired_video_format),
+    NMO_STATE_VALUE(nmo_texture_state_t, desired_video_format),
+    NMO_STATE_VALUE(nmo_texture_state_t, has_transparent_color),
+    NMO_STATE_VALUE(nmo_texture_state_t, transparent_color),
+    NMO_STATE_VALUE(nmo_texture_state_t, has_current_slot),
+    NMO_STATE_VALUE(nmo_texture_state_t, current_slot),
+    NMO_STATE_VALUE(nmo_texture_state_t, has_legacy_video_format),
+    NMO_STATE_VALUE(nmo_texture_state_t, legacy_use_mipmap),
+    NMO_STATE_VALUE(nmo_texture_state_t, legacy_video_format_size),
+    NMO_STATE_BYTES(nmo_texture_state_t, legacy_video_format_data,
+                    legacy_video_format_size),
+    NMO_STATE_VALUE(nmo_texture_state_t, has_legacy_save_format),
+    NMO_STATE_VALUE(nmo_texture_state_t, has_save_format),
+    NMO_STATE_VALUE(nmo_texture_state_t, save_format_size),
+    NMO_STATE_BYTES(nmo_texture_state_t, save_format_data, save_format_size),
+    NMO_STATE_VALUE(nmo_texture_state_t, has_user_mipmaps),
+    NMO_STATE_VALUE(nmo_texture_state_t, user_mipmap_count),
+    NMO_STATE_COUNTED_RECORDS_OPTIONAL(nmo_texture_state_t, user_mipmaps,
+                                       user_mipmap_count, nmo_texture_raw_slot_layout)
+};
+
+/* RCKTexture::Save always writes the packed state block, and a texture that
+ * never had one loads with CKTEXTURE_USEGLOBAL. */
+static void nmo_texture_set_defaults(void *instance)
+{
+    nmo_texture_state_t *state = instance;
+    state->has_oldtexonly = 1;
+    state->save_options = NMO_CKTEXTURE_USEGLOBAL;
+}
+
+static const nmo_object_state_layout_t nmo_texture_layout = {
+    .size = sizeof(nmo_texture_state_t),
+    .base_vtable = &nmo_beobject_vtable,
+    .base_size = sizeof(nmo_beobject_state_t),
+    .members = nmo_texture_members,
+    .member_count = sizeof(nmo_texture_members) / sizeof(nmo_texture_members[0]),
+    .set_defaults = nmo_texture_set_defaults,
+    .validate = nmo_texture_validate,
+};
+
+NMO_DEFINE_OBJECT_LAYOUT_OPS(texture, nmo_texture_layout)
 
 static bool nmo_texture_oldtex_layout_is_representable(
     const nmo_texture_state_t *state)
@@ -978,166 +1135,6 @@ nmo_status_t nmo_texture_deserialize(
     return NMO_OK;
 }
 
-static nmo_status_t nmo_texture_copy_reader_slots(
-    nmo_arena_t *arena,
-    nmo_texture_reader_slot_t **dst,
-    const nmo_texture_reader_slot_t *src,
-    uint32_t count)
-{
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)dst, src,
-                                              sizeof(nmo_texture_reader_slot_t), count));
-    for (uint32_t i = 0; i < count; ++i) {
-        NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&(*dst)[i].data,
-                                                  src[i].data, src[i].data_size));
-        NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&(*dst)[i].alpha_plane,
-                                                  src[i].alpha_plane, src[i].alpha_plane_size));
-    }
-    NMO_RETURN_OK();
-}
-
-static nmo_status_t nmo_texture_copy_raw_slots(
-    nmo_arena_t *arena,
-    nmo_texture_raw_slot_t **dst,
-    const nmo_texture_raw_slot_t *src,
-    uint32_t count)
-{
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)dst, src,
-                                              sizeof(nmo_texture_raw_slot_t), count));
-    for (uint32_t i = 0; i < count; ++i) {
-        NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&(*dst)[i].blue_data,
-                                                  src[i].blue_data, src[i].blue_size));
-        NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&(*dst)[i].green_data,
-                                                  src[i].green_data, src[i].green_size));
-        NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&(*dst)[i].red_data,
-                                                  src[i].red_data, src[i].red_size));
-        NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&(*dst)[i].alpha_data,
-                                                  src[i].alpha_data, src[i].alpha_size));
-    }
-    NMO_RETURN_OK();
-}
-
-static nmo_status_t nmo_texture_copy_bitmap2_slots(
-    nmo_arena_t *arena,
-    nmo_texture_bitmap2_slot_t **dst,
-    const nmo_texture_bitmap2_slot_t *src,
-    uint32_t count)
-{
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(arena, (void **)dst, src,
-                                              sizeof(nmo_texture_bitmap2_slot_t), count));
-    for (uint32_t i = 0; i < count; ++i) {
-        NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(arena, (void **)&(*dst)[i].buffer,
-                                                  src[i].buffer, src[i].buffer_size));
-    }
-    NMO_RETURN_OK();
-}
-
-static void nmo_texture_release_failed_base_copy(
-    nmo_texture_state_t *copied,
-    const nmo_texture_state_t *source)
-{
-#define NMO_TEXTURE_RELEASE_BASE_ARRAY(field) \
-    do { \
-        if (copied->base.field.data == source->base.field.data) { \
-            memset(&copied->base.field, 0, sizeof(copied->base.field)); \
-        } else { \
-            nmo_array_dispose(&copied->base.field); \
-        } \
-    } while (0)
-    NMO_TEXTURE_RELEASE_BASE_ARRAY(scripts);
-    NMO_TEXTURE_RELEASE_BASE_ARRAY(attributes);
-    NMO_TEXTURE_RELEASE_BASE_ARRAY(legacy_attributes);
-#undef NMO_TEXTURE_RELEASE_BASE_ARRAY
-}
-
-static nmo_status_t nmo_texture_copy(
-    const void *src,
-    void *dst,
-    const nmo_type_descriptor_t *type,
-    nmo_arena_t *arena)
-{
-    (void)type;
-    if (src == NULL || dst == NULL || arena == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    if (src == dst) return NMO_OK;
-    NMO_RETURN_IF_ERROR(nmo_texture_validate(src, type, NULL));
-
-    const nmo_texture_state_t *source = src;
-    nmo_texture_state_t copied;
-    nmo_status_t copy_status = nmo_texture_create(&copied, type, NULL);
-    if (copy_status != NMO_OK) return copy_status;
-
-    nmo_type_descriptor_t base_type = {
-        .size = sizeof(nmo_beobject_state_t),
-    };
-    copy_status = nmo_beobject_vtable.copy(
-        &source->base, &copied.base, &base_type, arena);
-    if (copy_status != NMO_OK) {
-        nmo_texture_release_failed_base_copy(&copied, source);
-        return copy_status;
-    }
-
-    nmo_beobject_state_t copied_base = copied.base;
-    copied = *source;
-    copied.base = copied_base;
-    copied.movie_filename = NULL;
-    copied.slot_filenames = NULL;
-    copied.reader_slots = NULL;
-    copied.raw_slots = NULL;
-    copied.bitmap2_slots = NULL;
-    copied.legacy_video_format_data = NULL;
-    copied.save_format_data = NULL;
-    copied.user_mipmaps = NULL;
-
-    copy_status = nmo_object_copy_string(
-        arena, &copied.movie_filename, source->movie_filename);
-    if (copy_status == NMO_OK && source->slot_filenames != NULL) {
-        copy_status = nmo_object_copy_string_array(
-            arena, &copied.slot_filenames,
-            source->slot_filenames, source->slot_count);
-    }
-    if (copy_status == NMO_OK && source->reader_slots != NULL) {
-        copy_status = nmo_texture_copy_reader_slots(
-            arena, &copied.reader_slots,
-            source->reader_slots, source->slot_count);
-    }
-    if (copy_status == NMO_OK && source->raw_slots != NULL) {
-        copy_status = nmo_texture_copy_raw_slots(
-            arena, &copied.raw_slots,
-            source->raw_slots, source->slot_count);
-    }
-    if (copy_status == NMO_OK && source->bitmap2_slots != NULL) {
-        copy_status = nmo_texture_copy_bitmap2_slots(
-            arena, &copied.bitmap2_slots,
-            source->bitmap2_slots, source->slot_count);
-    }
-    if (copy_status == NMO_OK) {
-        copy_status = nmo_object_copy_bytes(
-            arena, &copied.legacy_video_format_data,
-            source->legacy_video_format_data,
-            source->legacy_video_format_size);
-    }
-    if (copy_status == NMO_OK) {
-        copy_status = nmo_object_copy_bytes(
-            arena, &copied.save_format_data,
-            source->save_format_data, source->save_format_size);
-    }
-    if (copy_status == NMO_OK && source->user_mipmaps != NULL) {
-        copy_status = nmo_texture_copy_raw_slots(
-            arena, &copied.user_mipmaps,
-            source->user_mipmaps, source->user_mipmap_count);
-    }
-    if (copy_status != NMO_OK) {
-        nmo_texture_dispose_base_arrays(&copied);
-        return copy_status;
-    }
-
-    nmo_texture_state_t *target = dst;
-    nmo_texture_dispose_base_arrays(target);
-    *target = copied;
-    return NMO_OK;
-}
-
 static nmo_status_t nmo_texture_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
@@ -1550,340 +1547,6 @@ NMO_DEFINE_OBJECT_STAGED_SERIALIZE(nmo_texture)
  * Vtable + registration
  * ============================================================================ */
 
-static bool nmo_texture_string_equals(const char *lhs, const char *rhs)
-{
-    if (lhs == rhs) return true;
-    return lhs != NULL && rhs != NULL && strcmp(lhs, rhs) == 0;
-}
-
-static bool nmo_texture_bytes_equal(
-    const void *lhs,
-    const void *rhs,
-    size_t size)
-{
-    if (size == 0) return true;
-    return lhs != NULL && rhs != NULL && memcmp(lhs, rhs, size) == 0;
-}
-
-static bool nmo_texture_reader_slot_equals(
-    const nmo_texture_reader_slot_t *lhs,
-    const nmo_texture_reader_slot_t *rhs)
-{
-    return lhs->format_type == rhs->format_type &&
-        lhs->extension == rhs->extension &&
-        memcmp(&lhs->reader_guid, &rhs->reader_guid,
-               sizeof(lhs->reader_guid)) == 0 &&
-        lhs->data_size == rhs->data_size &&
-        nmo_texture_bytes_equal(lhs->data, rhs->data, lhs->data_size) &&
-        lhs->alpha_count == rhs->alpha_count &&
-        lhs->alpha_value == rhs->alpha_value &&
-        lhs->alpha_plane_size == rhs->alpha_plane_size &&
-        nmo_texture_bytes_equal(
-            lhs->alpha_plane, rhs->alpha_plane, lhs->alpha_plane_size);
-}
-
-static bool nmo_texture_raw_slot_equals(
-    const nmo_texture_raw_slot_t *lhs,
-    const nmo_texture_raw_slot_t *rhs)
-{
-    return lhs->bits_per_pixel == rhs->bits_per_pixel &&
-        lhs->width == rhs->width &&
-        lhs->height == rhs->height &&
-        lhs->alpha_mask == rhs->alpha_mask &&
-        lhs->red_mask == rhs->red_mask &&
-        lhs->green_mask == rhs->green_mask &&
-        lhs->blue_mask == rhs->blue_mask &&
-        lhs->compression == rhs->compression &&
-        lhs->blue_size == rhs->blue_size &&
-        nmo_texture_bytes_equal(
-            lhs->blue_data, rhs->blue_data, lhs->blue_size) &&
-        lhs->green_size == rhs->green_size &&
-        nmo_texture_bytes_equal(
-            lhs->green_data, rhs->green_data, lhs->green_size) &&
-        lhs->red_size == rhs->red_size &&
-        nmo_texture_bytes_equal(
-            lhs->red_data, rhs->red_data, lhs->red_size) &&
-        lhs->alpha_size == rhs->alpha_size &&
-        nmo_texture_bytes_equal(
-            lhs->alpha_data, rhs->alpha_data, lhs->alpha_size);
-}
-
-static bool nmo_texture_bitmap2_slot_equals(
-    const nmo_texture_bitmap2_slot_t *lhs,
-    const nmo_texture_bitmap2_slot_t *rhs)
-{
-    return lhs->unused_int == rhs->unused_int &&
-        lhs->buffer_size == rhs->buffer_size &&
-        nmo_texture_bytes_equal(
-            lhs->buffer, rhs->buffer, lhs->buffer_size);
-}
-
-static bool nmo_texture_slot_filenames_equal(
-    char *const *lhs,
-    char *const *rhs,
-    uint32_t count)
-{
-    if (count == 0 || lhs == rhs) return true;
-    if (lhs == NULL || rhs == NULL) return false;
-    for (uint32_t i = 0; i < count; ++i) {
-        if (!nmo_texture_string_equals(lhs[i], rhs[i])) return false;
-    }
-    return true;
-}
-
-static bool nmo_texture_reader_slots_equal(
-    const nmo_texture_reader_slot_t *lhs,
-    const nmo_texture_reader_slot_t *rhs,
-    uint32_t count)
-{
-    if (count == 0 || lhs == rhs) return true;
-    if (lhs == NULL || rhs == NULL) return false;
-    for (uint32_t i = 0; i < count; ++i) {
-        if (!nmo_texture_reader_slot_equals(&lhs[i], &rhs[i])) return false;
-    }
-    return true;
-}
-
-static bool nmo_texture_raw_slots_equal(
-    const nmo_texture_raw_slot_t *lhs,
-    const nmo_texture_raw_slot_t *rhs,
-    uint32_t count)
-{
-    if (count == 0 || lhs == rhs) return true;
-    if (lhs == NULL || rhs == NULL) return false;
-    for (uint32_t i = 0; i < count; ++i) {
-        if (!nmo_texture_raw_slot_equals(&lhs[i], &rhs[i])) return false;
-    }
-    return true;
-}
-
-static bool nmo_texture_bitmap2_slots_equal(
-    const nmo_texture_bitmap2_slot_t *lhs,
-    const nmo_texture_bitmap2_slot_t *rhs,
-    uint32_t count)
-{
-    if (count == 0 || lhs == rhs) return true;
-    if (lhs == NULL || rhs == NULL) return false;
-    for (uint32_t i = 0; i < count; ++i) {
-        if (!nmo_texture_bitmap2_slot_equals(&lhs[i], &rhs[i])) return false;
-    }
-    return true;
-}
-
-static bool nmo_texture_equals(const void *a, const void *b)
-{
-    if (a == b) return true;
-    if (a == NULL || b == NULL) return false;
-    const nmo_texture_state_t *lhs = a;
-    const nmo_texture_state_t *rhs = b;
-    return nmo_beobject_vtable.equals(&lhs->base, &rhs->base) &&
-        lhs->has_movie_filename == rhs->has_movie_filename &&
-        nmo_texture_string_equals(
-            lhs->movie_filename, rhs->movie_filename) &&
-        lhs->has_slot_filenames == rhs->has_slot_filenames &&
-        lhs->slot_count == rhs->slot_count &&
-        nmo_texture_slot_filenames_equal(
-            lhs->slot_filenames, rhs->slot_filenames, lhs->slot_count) &&
-        lhs->reader_width == rhs->reader_width &&
-        lhs->reader_height == rhs->reader_height &&
-        lhs->reader_bpp == rhs->reader_bpp &&
-        lhs->bitmap_kind == rhs->bitmap_kind &&
-        nmo_texture_reader_slots_equal(
-            lhs->reader_slots, rhs->reader_slots, lhs->slot_count) &&
-        nmo_texture_raw_slots_equal(
-            lhs->raw_slots, rhs->raw_slots, lhs->slot_count) &&
-        nmo_texture_bitmap2_slots_equal(
-            lhs->bitmap2_slots, rhs->bitmap2_slots, lhs->slot_count) &&
-        lhs->has_pick_threshold == rhs->has_pick_threshold &&
-        lhs->pick_threshold == rhs->pick_threshold &&
-        lhs->has_oldtexonly == rhs->has_oldtexonly &&
-        lhs->uses_texonly_identifier == rhs->uses_texonly_identifier &&
-        lhs->packed_unknown_bits == rhs->packed_unknown_bits &&
-        lhs->mipmap_level == rhs->mipmap_level &&
-        lhs->save_options == rhs->save_options &&
-        lhs->is_transparent == rhs->is_transparent &&
-        lhs->is_cubemap == rhs->is_cubemap &&
-        lhs->has_desired_video_format == rhs->has_desired_video_format &&
-        lhs->desired_video_format == rhs->desired_video_format &&
-        lhs->has_transparent_color == rhs->has_transparent_color &&
-        lhs->transparent_color == rhs->transparent_color &&
-        lhs->has_current_slot == rhs->has_current_slot &&
-        lhs->current_slot == rhs->current_slot &&
-        lhs->has_legacy_video_format == rhs->has_legacy_video_format &&
-        lhs->legacy_use_mipmap == rhs->legacy_use_mipmap &&
-        lhs->legacy_video_format_size == rhs->legacy_video_format_size &&
-        nmo_texture_bytes_equal(
-            lhs->legacy_video_format_data,
-            rhs->legacy_video_format_data,
-            lhs->legacy_video_format_size) &&
-        lhs->has_legacy_save_format ==
-            rhs->has_legacy_save_format &&
-        lhs->has_save_format == rhs->has_save_format &&
-        lhs->save_format_size == rhs->save_format_size &&
-        nmo_texture_bytes_equal(
-            lhs->save_format_data, rhs->save_format_data,
-            lhs->save_format_size) &&
-        lhs->has_user_mipmaps == rhs->has_user_mipmaps &&
-        lhs->user_mipmap_count == rhs->user_mipmap_count &&
-        nmo_texture_raw_slots_equal(
-            lhs->user_mipmaps, rhs->user_mipmaps,
-            lhs->user_mipmap_count);
-}
-
-static uint32_t nmo_texture_hash_string(uint32_t hash, const char *string)
-{
-    const uint8_t present = string != NULL;
-    hash = nmo_hash_fnv1a32_update(hash, &present, sizeof(present));
-    return present
-        ? nmo_hash_fnv1a32_update(hash, string, strlen(string) + 1u)
-        : hash;
-}
-
-static uint32_t nmo_texture_hash_buffer(
-    uint32_t hash,
-    const void *data,
-    size_t size)
-{
-    hash = nmo_hash_fnv1a32_update(hash, &size, sizeof(size));
-    return nmo_hash_fnv1a32_update(hash, data, size);
-}
-
-static uint32_t nmo_texture_hash_raw_slot(
-    uint32_t hash,
-    const nmo_texture_raw_slot_t *slot)
-{
-#define NMO_TEXTURE_HASH_RAW_FIELD(field) \
-    hash = nmo_hash_fnv1a32_update(hash, &slot->field, sizeof(slot->field))
-    NMO_TEXTURE_HASH_RAW_FIELD(bits_per_pixel);
-    NMO_TEXTURE_HASH_RAW_FIELD(width);
-    NMO_TEXTURE_HASH_RAW_FIELD(height);
-    NMO_TEXTURE_HASH_RAW_FIELD(alpha_mask);
-    NMO_TEXTURE_HASH_RAW_FIELD(red_mask);
-    NMO_TEXTURE_HASH_RAW_FIELD(green_mask);
-    NMO_TEXTURE_HASH_RAW_FIELD(blue_mask);
-    NMO_TEXTURE_HASH_RAW_FIELD(compression);
-    hash = nmo_texture_hash_buffer(hash, slot->blue_data, slot->blue_size);
-    hash = nmo_texture_hash_buffer(hash, slot->green_data, slot->green_size);
-    hash = nmo_texture_hash_buffer(hash, slot->red_data, slot->red_size);
-    hash = nmo_texture_hash_buffer(hash, slot->alpha_data, slot->alpha_size);
-#undef NMO_TEXTURE_HASH_RAW_FIELD
-    return hash;
-}
-
-static uint32_t nmo_texture_hash_raw_slots(
-    uint32_t hash,
-    const nmo_texture_raw_slot_t *slots,
-    uint32_t count)
-{
-    if (count == 0) return hash;
-    const uint8_t present = slots != NULL;
-    hash = nmo_hash_fnv1a32_update(hash, &present, sizeof(present));
-    if (slots != NULL) {
-        for (uint32_t i = 0; i < count; ++i) {
-            hash = nmo_texture_hash_raw_slot(hash, &slots[i]);
-        }
-    }
-    return hash;
-}
-
-static uint32_t nmo_texture_hash(const void *instance)
-{
-    if (instance == NULL) return 0;
-    const nmo_texture_state_t *state = instance;
-    uint32_t hash = nmo_beobject_vtable.hash(&state->base);
-#define NMO_TEXTURE_HASH_FIELD(field) \
-    hash = nmo_hash_fnv1a32_update(hash, &state->field, sizeof(state->field))
-    NMO_TEXTURE_HASH_FIELD(has_movie_filename);
-    hash = nmo_texture_hash_string(hash, state->movie_filename);
-    NMO_TEXTURE_HASH_FIELD(has_slot_filenames);
-    NMO_TEXTURE_HASH_FIELD(slot_count);
-    if (state->slot_count > 0) {
-        const uint8_t names_present = state->slot_filenames != NULL;
-        hash = nmo_hash_fnv1a32_update(
-            hash, &names_present, sizeof(names_present));
-        if (state->slot_filenames != NULL) {
-            for (uint32_t i = 0; i < state->slot_count; ++i) {
-                hash = nmo_texture_hash_string(
-                    hash, state->slot_filenames[i]);
-            }
-        }
-    }
-    NMO_TEXTURE_HASH_FIELD(reader_width);
-    NMO_TEXTURE_HASH_FIELD(reader_height);
-    NMO_TEXTURE_HASH_FIELD(reader_bpp);
-    NMO_TEXTURE_HASH_FIELD(bitmap_kind);
-    if (state->slot_count > 0) {
-        const uint8_t reader_present = state->reader_slots != NULL;
-        hash = nmo_hash_fnv1a32_update(
-            hash, &reader_present, sizeof(reader_present));
-        if (state->reader_slots != NULL) {
-            for (uint32_t i = 0; i < state->slot_count; ++i) {
-                const nmo_texture_reader_slot_t *slot =
-                    &state->reader_slots[i];
-#define NMO_TEXTURE_HASH_READER_FIELD(field) \
-                hash = nmo_hash_fnv1a32_update( \
-                    hash, &slot->field, sizeof(slot->field))
-                NMO_TEXTURE_HASH_READER_FIELD(format_type);
-                NMO_TEXTURE_HASH_READER_FIELD(extension);
-                NMO_TEXTURE_HASH_READER_FIELD(reader_guid.d1);
-                NMO_TEXTURE_HASH_READER_FIELD(reader_guid.d2);
-                hash = nmo_texture_hash_buffer(
-                    hash, slot->data, slot->data_size);
-                NMO_TEXTURE_HASH_READER_FIELD(alpha_count);
-                NMO_TEXTURE_HASH_READER_FIELD(alpha_value);
-                hash = nmo_texture_hash_buffer(
-                    hash, slot->alpha_plane, slot->alpha_plane_size);
-#undef NMO_TEXTURE_HASH_READER_FIELD
-            }
-        }
-        hash = nmo_texture_hash_raw_slots(
-            hash, state->raw_slots, state->slot_count);
-        const uint8_t bitmap2_present = state->bitmap2_slots != NULL;
-        hash = nmo_hash_fnv1a32_update(
-            hash, &bitmap2_present, sizeof(bitmap2_present));
-        if (state->bitmap2_slots != NULL) {
-            for (uint32_t i = 0; i < state->slot_count; ++i) {
-                const nmo_texture_bitmap2_slot_t *slot =
-                    &state->bitmap2_slots[i];
-                hash = nmo_hash_fnv1a32_update(
-                    hash, &slot->unused_int, sizeof(slot->unused_int));
-                hash = nmo_texture_hash_buffer(
-                    hash, slot->buffer, slot->buffer_size);
-            }
-        }
-    }
-    NMO_TEXTURE_HASH_FIELD(has_pick_threshold);
-    NMO_TEXTURE_HASH_FIELD(pick_threshold);
-    NMO_TEXTURE_HASH_FIELD(has_oldtexonly);
-    NMO_TEXTURE_HASH_FIELD(uses_texonly_identifier);
-    NMO_TEXTURE_HASH_FIELD(packed_unknown_bits);
-    NMO_TEXTURE_HASH_FIELD(mipmap_level);
-    NMO_TEXTURE_HASH_FIELD(save_options);
-    NMO_TEXTURE_HASH_FIELD(is_transparent);
-    NMO_TEXTURE_HASH_FIELD(is_cubemap);
-    NMO_TEXTURE_HASH_FIELD(has_desired_video_format);
-    NMO_TEXTURE_HASH_FIELD(desired_video_format);
-    NMO_TEXTURE_HASH_FIELD(has_transparent_color);
-    NMO_TEXTURE_HASH_FIELD(transparent_color);
-    NMO_TEXTURE_HASH_FIELD(has_current_slot);
-    NMO_TEXTURE_HASH_FIELD(current_slot);
-    NMO_TEXTURE_HASH_FIELD(has_legacy_video_format);
-    NMO_TEXTURE_HASH_FIELD(legacy_use_mipmap);
-    hash = nmo_texture_hash_buffer(
-        hash, state->legacy_video_format_data,
-        state->legacy_video_format_size);
-    NMO_TEXTURE_HASH_FIELD(has_legacy_save_format);
-    NMO_TEXTURE_HASH_FIELD(has_save_format);
-    hash = nmo_texture_hash_buffer(
-        hash, state->save_format_data, state->save_format_size);
-    NMO_TEXTURE_HASH_FIELD(has_user_mipmaps);
-    NMO_TEXTURE_HASH_FIELD(user_mipmap_count);
-    hash = nmo_texture_hash_raw_slots(
-        hash, state->user_mipmaps, state->user_mipmap_count);
-#undef NMO_TEXTURE_HASH_FIELD
-    return hash;
-}
-
 nmo_type_vtable_t nmo_texture_vtable = {
     .prepare_dependencies = nmo_texture_prepare_dependencies,
     .remap_dependencies = nmo_texture_remap_dependencies,
@@ -2257,82 +1920,17 @@ nmo_status_t nmo_bitmap_slots_copy(
     const nmo_bitmap_slots_t *src)
 {
     if (arena == NULL || dst == NULL || src == NULL) return NMO_ERR_INVALID_ARGUMENT;
-    nmo_bitmap_slots_t copied = *src;
-    copied.movie_filename = NULL;
-    copied.slot_filenames = NULL;
-    copied.reader_slots = NULL;
-    copied.raw_slots = NULL;
-    copied.bitmap2_slots = NULL;
-
-    NMO_RETURN_IF_ERROR(nmo_object_copy_string(
-        arena, &copied.movie_filename, src->movie_filename));
-    if (src->slot_filenames != NULL) {
-        NMO_RETURN_IF_ERROR(nmo_object_copy_string_array(
-            arena, &copied.slot_filenames, src->slot_filenames, src->slot_count));
-    }
-    if (src->reader_slots != NULL) {
-        NMO_RETURN_IF_ERROR(nmo_texture_copy_reader_slots(
-            arena, &copied.reader_slots, src->reader_slots, src->slot_count));
-    }
-    if (src->raw_slots != NULL) {
-        NMO_RETURN_IF_ERROR(nmo_texture_copy_raw_slots(
-            arena, &copied.raw_slots, src->raw_slots, src->slot_count));
-    }
-    if (src->bitmap2_slots != NULL) {
-        NMO_RETURN_IF_ERROR(nmo_texture_copy_bitmap2_slots(
-            arena, &copied.bitmap2_slots, src->bitmap2_slots, src->slot_count));
-    }
-    *dst = copied;
-    NMO_RETURN_OK();
+    return nmo_object_layout_copy(&nmo_bitmap_slots_layout, src, dst, arena);
 }
 
 bool nmo_bitmap_slots_equals(
     const nmo_bitmap_slots_t *a,
     const nmo_bitmap_slots_t *b)
 {
-    if (a == b) return true;
-    if (a == NULL || b == NULL) return false;
-    return a->has_movie_filename == b->has_movie_filename &&
-        nmo_texture_string_equals(a->movie_filename, b->movie_filename) &&
-        a->has_slot_filenames == b->has_slot_filenames &&
-        a->slot_count == b->slot_count &&
-        nmo_texture_slot_filenames_equal(a->slot_filenames, b->slot_filenames, a->slot_count) &&
-        a->reader_width == b->reader_width &&
-        a->reader_height == b->reader_height &&
-        a->reader_bpp == b->reader_bpp &&
-        a->kind == b->kind &&
-        nmo_texture_reader_slots_equal(a->reader_slots, b->reader_slots, a->slot_count) &&
-        nmo_texture_raw_slots_equal(a->raw_slots, b->raw_slots, a->slot_count) &&
-        nmo_texture_bitmap2_slots_equal(a->bitmap2_slots, b->bitmap2_slots, a->slot_count);
+    return nmo_object_layout_equals(&nmo_bitmap_slots_layout, a, b);
 }
 
 uint32_t nmo_bitmap_slots_hash(uint32_t hash, const nmo_bitmap_slots_t *bitmap)
 {
-    hash = nmo_hash_fnv1a32_update(hash, &bitmap->kind, sizeof(bitmap->kind));
-    hash = nmo_hash_fnv1a32_update(hash, &bitmap->slot_count, sizeof(bitmap->slot_count));
-    hash = nmo_hash_fnv1a32_update(hash, &bitmap->reader_width, sizeof(bitmap->reader_width));
-    hash = nmo_hash_fnv1a32_update(hash, &bitmap->reader_height, sizeof(bitmap->reader_height));
-    hash = nmo_hash_fnv1a32_update(hash, &bitmap->reader_bpp, sizeof(bitmap->reader_bpp));
-    hash = nmo_texture_hash_string(hash, bitmap->movie_filename);
-    for (uint32_t i = 0; bitmap->slot_filenames != NULL && i < bitmap->slot_count; ++i) {
-        hash = nmo_texture_hash_string(hash, bitmap->slot_filenames[i]);
-    }
-    for (uint32_t i = 0; bitmap->reader_slots != NULL && i < bitmap->slot_count; ++i) {
-        const nmo_texture_reader_slot_t *slot = &bitmap->reader_slots[i];
-        hash = nmo_hash_fnv1a32_update(hash, &slot->format_type, sizeof(slot->format_type));
-        hash = nmo_hash_fnv1a32_update(hash, &slot->extension, sizeof(slot->extension));
-        hash = nmo_hash_fnv1a32_update(hash, &slot->reader_guid, sizeof(slot->reader_guid));
-        hash = nmo_texture_hash_buffer(hash, slot->data, slot->data_size);
-        hash = nmo_hash_fnv1a32_update(hash, &slot->alpha_count, sizeof(slot->alpha_count));
-        hash = nmo_hash_fnv1a32_update(hash, &slot->alpha_value, sizeof(slot->alpha_value));
-        hash = nmo_texture_hash_buffer(hash, slot->alpha_plane, slot->alpha_plane_size);
-    }
-    hash = nmo_texture_hash_raw_slots(hash, bitmap->raw_slots, bitmap->raw_slots ? bitmap->slot_count : 0u);
-    for (uint32_t i = 0; bitmap->bitmap2_slots != NULL && i < bitmap->slot_count; ++i) {
-        hash = nmo_hash_fnv1a32_update(hash, &bitmap->bitmap2_slots[i].unused_int,
-                                       sizeof(bitmap->bitmap2_slots[i].unused_int));
-        hash = nmo_texture_hash_buffer(hash, bitmap->bitmap2_slots[i].buffer,
-                                       bitmap->bitmap2_slots[i].buffer_size);
-    }
-    return hash;
+    return nmo_object_layout_hash_from(&nmo_bitmap_slots_layout, hash, bitmap);
 }

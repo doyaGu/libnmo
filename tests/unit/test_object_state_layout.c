@@ -11,6 +11,7 @@
 #include "object/nmo_ref.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
 #include "object/builtin/nmo_beobject_schemas.h"
+#include "object/builtin/nmo_bitmap_slots.h"
 #include "object/builtin/nmo_character_schemas.h"
 #include "object/builtin/nmo_curve_schemas.h"
 #include "object/builtin/nmo_grid_schemas.h"
@@ -27,6 +28,7 @@
 #include "object/builtin/nmo_spritetext_schemas.h"
 #include "object/builtin/nmo_sprite_schemas.h"
 #include "object/builtin/nmo_synchro_schemas.h"
+#include "object/builtin/nmo_texture_schemas.h"
 #include "object/builtin/nmo_targetlight_schemas.h"
 #include "object/builtin/nmo_object_schemas.h"
 #include "object/nmo_object_type_common.h"
@@ -1155,6 +1157,109 @@ TEST(object_state_layout, custom_members_use_their_functions_and_fail_atomically
     nmo_arena_destroy(arena);
 }
 
+TEST(object_state_layout, bitmap_slots_api_copies_compares_and_hashes_a_plain_record) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+    uint8_t blue[3] = {1, 2, 3};
+    nmo_texture_raw_slot_t raw[2];
+    memset(raw, 0, sizeof(raw));
+    raw[1].width = 4;
+    raw[1].blue_size = 3;
+    raw[1].blue_data = blue;
+    char *names[2] = {"a.bmp", NULL};
+    nmo_bitmap_slots_t source;
+    memset(&source, 0, sizeof(source));
+    source.kind = CKTEXTURE_BITMAP_RAW;
+    source.slot_count = 2;
+    source.raw_slots = raw;
+    source.has_slot_filenames = 1;
+    source.slot_filenames = names;
+    source.has_movie_filename = 1;
+    source.movie_filename = "clip.avi";
+    /* The reader and obsolete lanes are NULL while slot_count is 2. */
+
+    nmo_bitmap_slots_t copied;
+    memset(&copied, 0, sizeof(copied));
+    ASSERT_EQ(NMO_OK, nmo_bitmap_slots_copy(arena, &copied, &source));
+    ASSERT_TRUE(copied.raw_slots != raw);
+    ASSERT_TRUE(copied.raw_slots[1].blue_data != blue);
+    ASSERT_EQ(0, memcmp(copied.raw_slots[1].blue_data, blue, 3));
+    ASSERT_NULL(copied.reader_slots);
+    ASSERT_NULL(copied.bitmap2_slots);
+    ASSERT_TRUE(copied.slot_filenames != names);
+    ASSERT_EQ(0, strcmp("a.bmp", copied.slot_filenames[0]));
+    ASSERT_NULL(copied.slot_filenames[1]);
+    ASSERT_TRUE(copied.movie_filename != source.movie_filename);
+    ASSERT_TRUE(nmo_bitmap_slots_equals(&source, &copied));
+    ASSERT_EQ(nmo_bitmap_slots_hash(17u, &source), nmo_bitmap_slots_hash(17u, &copied));
+    ASSERT_NE(nmo_bitmap_slots_hash(17u, &source), nmo_bitmap_slots_hash(18u, &source));
+
+    copied.raw_slots[1].blue_data[2] = 9;
+    ASSERT_FALSE(nmo_bitmap_slots_equals(&source, &copied));
+    copied.raw_slots[1].blue_data[2] = 3;
+    copied.slot_filenames[1] = "b.bmp";
+    ASSERT_FALSE(nmo_bitmap_slots_equals(&source, &copied));
+    nmo_arena_destroy(arena);
+}
+
+TEST(object_state_layout, texture_lanes_and_buffers_copy) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+    nmo_texture_state_t source;
+    nmo_texture_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_texture_vtable.create(&source, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_texture_vtable.create(&copied, NULL, NULL));
+    ASSERT_EQ(1u, source.has_oldtexonly);
+    ASSERT_EQ(NMO_CKTEXTURE_USEGLOBAL, source.save_options);
+
+    uint8_t payload[4] = {9, 8, 7, 6};
+    nmo_texture_reader_slot_t reader[1];
+    memset(reader, 0, sizeof(reader));
+    reader[0].data_size = 4;
+    reader[0].data = payload;
+    char *names[1] = {"tex.png"};
+    uint8_t format[2] = {5, 6};
+    nmo_texture_raw_slot_t mip[1];
+    memset(mip, 0, sizeof(mip));
+    mip[0].height = 2;
+    source.has_slot_filenames = 1;
+    source.slot_count = 1;
+    source.slot_filenames = names;
+    source.bitmap_kind = CKTEXTURE_BITMAP_READER;
+    source.reader_slots = reader;
+    source.has_save_format = 1;
+    source.save_format_size = 2;
+    source.save_format_data = format;
+    source.has_user_mipmaps = 1;
+    source.user_mipmap_count = 1;
+    source.user_mipmaps = mip;
+
+    ASSERT_EQ(NMO_OK, nmo_texture_vtable.copy(&source, &copied, NULL, arena));
+    ASSERT_TRUE(copied.reader_slots != reader);
+    ASSERT_TRUE(copied.reader_slots[0].data != payload);
+    ASSERT_EQ(7u, copied.reader_slots[0].data[2]);
+    ASSERT_NULL(copied.raw_slots);
+    ASSERT_NULL(copied.bitmap2_slots);
+    ASSERT_TRUE(copied.slot_filenames != names);
+    ASSERT_EQ(0, strcmp("tex.png", copied.slot_filenames[0]));
+    ASSERT_TRUE(copied.save_format_data != format);
+    ASSERT_EQ(2, copied.user_mipmaps[0].height);
+    ASSERT_TRUE(nmo_texture_vtable.equals(&source, &copied));
+    ASSERT_EQ(nmo_texture_vtable.hash(&source), nmo_texture_vtable.hash(&copied));
+
+    copied.reader_slots[0].data[0] = 0;
+    ASSERT_FALSE(nmo_texture_vtable.equals(&source, &copied));
+
+    source.slot_filenames = NULL;
+    source.reader_slots = NULL;
+    source.save_format_data = NULL;
+    source.save_format_size = 0;
+    source.user_mipmaps = NULL;
+    nmo_texture_vtable.destroy(&source, NULL, NULL);
+    nmo_texture_vtable.destroy(&copied, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST(object_state_layout, sprite_bitmap_copies_through_the_custom_member) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
     ASSERT_NOT_NULL(arena);
@@ -1224,5 +1329,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_state_layout, record_pointer_with_nested_counted_members);
     REGISTER_TEST(object_state_layout, optional_lanes_may_be_null_while_the_count_is_not);
     REGISTER_TEST(object_state_layout, custom_members_use_their_functions_and_fail_atomically);
+    REGISTER_TEST(object_state_layout, bitmap_slots_api_copies_compares_and_hashes_a_plain_record);
+    REGISTER_TEST(object_state_layout, texture_lanes_and_buffers_copy);
     REGISTER_TEST(object_state_layout, sprite_bitmap_copies_through_the_custom_member);
 TEST_MAIN_END()
