@@ -87,6 +87,7 @@ int main(void) {
     nmo_type_registry_t *registry = nmo_type_registry_create(arena);
     if (!registry) {
         fprintf(stderr, "Error: Failed to create type registry\n");
+        nmo_type_registry_destroy(registry);
         nmo_arena_destroy(arena);
         return 1;
     }
@@ -95,6 +96,7 @@ int main(void) {
     if (result != NMO_OK) {
         fprintf(stderr, "Error: Failed to register builtin types (%s)\n",
                 nmo_error_string(result));
+        nmo_type_registry_destroy(registry);
         nmo_arena_destroy(arena);
         return 1;
     }
@@ -103,6 +105,7 @@ int main(void) {
     if (result != NMO_OK) {
         fprintf(stderr, "Error: Failed to register example types (%s)\n",
                 nmo_error_string(result));
+        nmo_type_registry_destroy(registry);
         nmo_arena_destroy(arena);
         return 1;
     }
@@ -122,6 +125,7 @@ int main(void) {
         printf("\nRegistered enum: %s\n", blend_type->name);
     }
 
+    nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
     printf("\nDone.\n");
     return 0;

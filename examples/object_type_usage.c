@@ -41,6 +41,7 @@ void example_basic_usage(void) {
     nmo_status_t result = nmo_register_builtin_types(registry);
     if (result != NMO_OK) {
         printf("Failed to register builtin types\n");
+        nmo_type_registry_destroy(registry);
         nmo_arena_destroy(arena);
         return;
     }
@@ -49,6 +50,7 @@ void example_basic_usage(void) {
     result = nmo_register_object_types(registry);
     if (result != NMO_OK) {
         printf("Failed to register object types\n");
+        nmo_type_registry_destroy(registry);
         nmo_arena_destroy(arena);
         return;
     }
@@ -79,6 +81,7 @@ void example_basic_usage(void) {
         printf("\n");
     }
     
+    nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
 }
 
@@ -94,6 +97,7 @@ void example_inheritance(void) {
     nmo_status_t result = nmo_register_object_types(registry);
     if (result != NMO_OK) {
         printf("Failed to register object types\n");
+        nmo_type_registry_destroy(registry);
         nmo_arena_destroy(arena);
         return;
     }
@@ -110,6 +114,7 @@ void example_inheritance(void) {
     
     if (!sprite || !entity2d || !renderobj || !ckobject) {
         printf("Failed to find required types\n");
+        nmo_type_registry_destroy(registry);
         nmo_arena_destroy(arena);
         return;
     }
@@ -131,6 +136,7 @@ void example_inheritance(void) {
            nmo_is_object_type(registry, CKPGUID_INT) ? "YES" : "NO");
     printf("\n");
     
+    nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
 }
 
@@ -146,6 +152,7 @@ void example_serialization(void) {
     nmo_status_t result = nmo_register_object_types(registry);
     if (result != NMO_OK) {
         printf("Failed to register object types\n");
+        nmo_type_registry_destroy(registry);
         nmo_arena_destroy(arena);
         return;
     }
@@ -156,6 +163,7 @@ void example_serialization(void) {
     
     if (!ckobject_type || !ckobject_type->vtable) {
         printf("CKObject type not found or no vtable\n");
+        nmo_type_registry_destroy(registry);
         nmo_arena_destroy(arena);
         return;
     }
@@ -199,6 +207,7 @@ void example_serialization(void) {
     }
     printf("\n");
     
+    nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
 }
 
@@ -214,6 +223,7 @@ void example_3d_entity(void) {
     nmo_status_t result = nmo_register_object_types(registry);
     if (result != NMO_OK) {
         printf("Failed to register object types\n");
+        nmo_type_registry_destroy(registry);
         nmo_arena_destroy(arena);
         return;
     }
@@ -224,6 +234,7 @@ void example_3d_entity(void) {
     
     if (!entity3d_type || !entity3d_type->vtable) {
         printf("CK3dEntity type not found or no vtable\n");
+        nmo_type_registry_destroy(registry);
         nmo_arena_destroy(arena);
         return;
     }
@@ -263,6 +274,7 @@ void example_3d_entity(void) {
              chunk_bytes / 4);
     } else {
         printf("✗ Serialization failed with code %d\n", result);
+        nmo_type_registry_destroy(registry);
         nmo_arena_destroy(arena);
         return;
     }
@@ -288,6 +300,7 @@ void example_3d_entity(void) {
     }
     printf("\n");
     
+    nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
 }
 
@@ -331,6 +344,7 @@ void example_categories(void) {
     }
     printf("\n");
     
+    nmo_type_registry_destroy(registry);
     nmo_arena_destroy(arena);
 }
 
