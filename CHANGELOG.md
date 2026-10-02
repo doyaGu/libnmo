@@ -434,6 +434,22 @@ the tests build each layout dword by dword.
   about 3,000 lines fewer in `src/object/builtin`, with 1,660 added in the engine, the layouts and the tests.
 - Hash values of the 3D entity, sprite and texture classes changed; only the object diff reads them.
 
+### Changed - Every schema defines its state hooks from a state layout
+- The functions of a custom member (`NMO_STATE_CUSTOM`) get the state that holds the member, so a member that
+  depends on a sibling can read it: the cells of a data array row follow the column types, and the buffers of
+  the morph sections of an object animation follow the sizes next to them. `equals` and `hash` of a custom
+  member may be NULL in a layout that is used for lifecycle and copy only.
+- The message manager, attribute manager, interface object manager, level, data array, animation, keyed
+  animation, object animation, behavior and object classes use layouts for what was hand written: create,
+  copy, equals and hash of the message manager, attribute manager, data array, animation, keyed animation and
+  object animation; create and copy of the interface object manager, level and behavior (they compare through
+  the serialized form); equals and hash of the object base state. All 43 built-in schemas use layouts now.
+  With the previous entries about 4,600 lines fewer in `src/object/builtin` for 2,400 lines added in the
+  engine, the layouts and the tests.
+- Behavior differences: `equals` of a data array now also compares the parameter type GUID the file held for a
+  column and whether it held one, which `serialize` writes back and the hook ignored; the hash values of the
+  classes above changed, which only the object diff and the hook coverage test read.
+
 ### Fixed - Copying a behavior dropped its runtime flags
 - The copy hook of a behavior did not carry `runtime_flags` (active, executed last frame, activate or reset
   next frame), so a copied behavior was saved with those bits cleared and did not equal its original. It was
