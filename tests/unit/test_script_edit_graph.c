@@ -18,6 +18,8 @@
 #include "type/nmo_type_query.h"
 
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 static bool open_test_file(const char *path,
                            nmo_context_t **out_ctx,
@@ -187,8 +189,167 @@ TEST(script_edit_graph, preserves_explicit_parameter_types)
     nmo_context_release(ctx);
 }
 
+/* A query naming an object id, in a heap string of the exact size. */
+static char *query_with_id(const char *format, nmo_object_id_t id)
+{
+    int length = snprintf(NULL, 0, format, (unsigned)id);
+    char *text = length >= 0 ? (char *)malloc((size_t)length + 1u) : NULL;
+    if (text != NULL) {
+        snprintf(text, (size_t)length + 1u, format, (unsigned)id);
+    }
+    return text;
+}
+
+static nmo_status_t resolve_handle(const nmo_script_edit_graph_t *graph,
+                                   nmo_script_edit_handle_kind_t kind,
+                                   const char *text,
+                                   nmo_object_id_t *out_id)
+{
+    nmo_script_edit_handle_t handle = {0};
+    handle.kind = kind;
+    if (kind == NMO_SCRIPT_EDIT_HANDLE_ALIAS) {
+        handle.alias = text;
+    } else {
+        handle.query = text;
+    }
+    *out_id = 0u;
+    return nmo_script_edit_graph_resolve_handle(graph, &handle, out_id);
+}
+
+TEST(script_edit_graph, resolves_alias_and_query_handles_to_one_node)
+{
+    nmo_context_t *ctx = nmo_context_create(NULL);
+    ASSERT_NOT_NULL(ctx);
+    nmo_session_t *session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+
+    nmo_object_id_t owner_id = 0;
+    nmo_object_id_t behavior_id = 0;
+    nmo_object_id_t input_ids[3] = {0};
+    const char *input_names[3] = {"Typed input", "Same", "Same"};
+    nmo_object_id_t output_id = 0;
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_BEOBJECT, "Owner", (nmo_guid_t){0, 0}, &owner_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, 0, "Script", CKPGUID_BEHAVIOR, &behavior_id, NULL));
+    for (size_t i = 0; i < 3u; ++i) {
+        ASSERT_EQ(NMO_OK, nmo_session_create_object(
+            session, 0, input_names[i], CKPGUID_PARAMETERIN, &input_ids[i], NULL));
+    }
+    /* With a class id, so that a query can name the class. */
+    ASSERT_EQ(NMO_OK, nmo_session_create_object(
+        session, NMO_CID_PARAMETEROUT, "Result", CKPGUID_PARAMETEROUT, &output_id, NULL));
+
+    nmo_document_t *document = NULL;
+    ASSERT_EQ(NMO_OK, nmo_session_borrow_document(session, &document));
+    nmo_object_repository_t *repo = nmo_document_get_repository(document);
+    const nmo_type_registry_t *registry = nmo_context_get_type_registry(ctx);
+    nmo_beobject_state_t *owner = (nmo_beobject_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, nmo_object_repository_find_by_id(repo, owner_id), CKPGUID_BEOBJECT);
+    nmo_behavior_state_t *behavior = (nmo_behavior_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, nmo_object_repository_find_by_id(repo, behavior_id), CKPGUID_BEHAVIOR);
+    nmo_parameterout_state_t *output = (nmo_parameterout_state_t *)
+        nmo_type_query_object_get_ancestor_state_by_guid(
+            registry, nmo_object_repository_find_by_id(repo, output_id), CKPGUID_PARAMETEROUT);
+    ASSERT_NOT_NULL(owner);
+    ASSERT_NOT_NULL(behavior);
+    ASSERT_NOT_NULL(output);
+    for (size_t i = 0; i < 3u; ++i) {
+        nmo_parameterin_state_t *input = (nmo_parameterin_state_t *)
+            nmo_type_query_object_get_ancestor_state_by_guid(
+                registry, nmo_object_repository_find_by_id(repo, input_ids[i]),
+                CKPGUID_PARAMETERIN);
+        ASSERT_NOT_NULL(input);
+        nmo_parameterin_set_owner_id(input, behavior_id);
+        ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(
+            &behavior->in_parameters, input_ids[i], NULL));
+    }
+    nmo_parameterout_set_owner_id(output, behavior_id);
+    ASSERT_EQ(NMO_OK, nmo_behavior_ref_array_append(
+        &behavior->out_parameters, output_id, NULL));
+    ASSERT_EQ(NMO_OK, nmo_beobject_script_array_append(&owner->scripts, behavior_id));
+
+    nmo_workspace_t *workspace = NULL;
+    ASSERT_EQ(NMO_OK, nmo_workspace_create(ctx, document, &workspace));
+    nmo_script_edit_graph_t *graph = NULL;
+    ASSERT_EQ(NMO_OK, nmo_script_edit_graph_build(workspace, behavior_id, UINT32_MAX, &graph));
+    ASSERT_NOT_NULL(graph);
+
+    nmo_object_id_t id = 0;
+    /* An alias is a node name that only one node has. */
+    ASSERT_EQ(NMO_OK, resolve_handle(graph, NMO_SCRIPT_EDIT_HANDLE_ALIAS, "Script", &id));
+    ASSERT_EQ(behavior_id, id);
+    ASSERT_EQ(NMO_OK, resolve_handle(graph, NMO_SCRIPT_EDIT_HANDLE_ALIAS, "Typed input", &id));
+    ASSERT_EQ(input_ids[0], id);
+    ASSERT_EQ(NMO_ERR_NOT_FOUND,
+              resolve_handle(graph, NMO_SCRIPT_EDIT_HANDLE_ALIAS, "Missing", &id));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              resolve_handle(graph, NMO_SCRIPT_EDIT_HANDLE_ALIAS, "Same", &id));
+    ASSERT_STR_CONTAINS(nmo_last_error_message(), "matches 2 graph nodes");
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+              resolve_handle(graph, NMO_SCRIPT_EDIT_HANDLE_ALIAS, "", &id));
+
+    /* A query narrows the nodes down with every term. */
+    ASSERT_EQ(NMO_OK, resolve_handle(graph, NMO_SCRIPT_EDIT_HANDLE_QUERY, "kind=behavior", &id));
+    ASSERT_EQ(behavior_id, id);
+    ASSERT_EQ(NMO_OK, resolve_handle(graph, NMO_SCRIPT_EDIT_HANDLE_QUERY,
+                                     "name=Same slot=2", &id));
+    ASSERT_EQ(input_ids[2], id);
+    ASSERT_EQ(NMO_OK, resolve_handle(graph, NMO_SCRIPT_EDIT_HANDLE_QUERY,
+                                     "  kind=parameter   name=\"Typed input\" ", &id));
+    ASSERT_EQ(input_ids[0], id);
+    char *by_owner = query_with_id("owner=%u slot_kind=param_out", behavior_id);
+    ASSERT_NOT_NULL(by_owner);
+    ASSERT_EQ(NMO_OK, resolve_handle(graph, NMO_SCRIPT_EDIT_HANDLE_QUERY, by_owner, &id));
+    ASSERT_EQ(output_id, id);
+    free(by_owner);
+    char *by_id = query_with_id("id=%u", input_ids[1]);
+    ASSERT_NOT_NULL(by_id);
+    ASSERT_EQ(NMO_OK, resolve_handle(graph, NMO_SCRIPT_EDIT_HANDLE_QUERY, by_id, &id));
+    ASSERT_EQ(input_ids[1], id);
+    free(by_id);
+    ASSERT_EQ(NMO_OK, resolve_handle(graph, NMO_SCRIPT_EDIT_HANDLE_QUERY,
+                                     "class=CKParameterOut", &id));
+    ASSERT_EQ(output_id, id);
+    char *by_class_id = query_with_id("class=%u", NMO_CID_PARAMETEROUT);
+    ASSERT_NOT_NULL(by_class_id);
+    ASSERT_EQ(NMO_OK, resolve_handle(graph, NMO_SCRIPT_EDIT_HANDLE_QUERY, by_class_id, &id));
+    ASSERT_EQ(output_id, id);
+    free(by_class_id);
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, resolve_handle(graph, NMO_SCRIPT_EDIT_HANDLE_QUERY,
+                                                "kind=operation", &id));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, resolve_handle(graph, NMO_SCRIPT_EDIT_HANDLE_QUERY,
+                                                       "name=Same", &id));
+
+    /* Malformed queries. */
+    const char *const malformed[] = {
+        "", "   ", "name", "color=red", "kind=widget", "slot=-1", "depth=x",
+        "name=\"unterminated", "name=",
+    };
+    for (size_t i = 0; i < sizeof(malformed) / sizeof(malformed[0]); ++i) {
+        ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT,
+                  resolve_handle(graph, NMO_SCRIPT_EDIT_HANDLE_QUERY, malformed[i], &id));
+    }
+
+    /* An operation whose primary handle is an alias validates. */
+    nmo_script_edit_op_t op = {0};
+    op.kind = NMO_SCRIPT_EDIT_OP_PARAM_REMOVE;
+    op.primary.kind = NMO_SCRIPT_EDIT_HANDLE_ALIAS;
+    op.primary.alias = "Result";
+    ASSERT_EQ(NMO_OK, nmo_script_edit_graph_validate_operation(graph, &op));
+
+    nmo_script_edit_graph_destroy(graph);
+    nmo_workspace_destroy(workspace);
+    nmo_document_destroy(document);
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(script_edit_graph, build_reports_edit_ready_graph_for_ballance_root);
     REGISTER_TEST(script_edit_graph, preserves_explicit_parameter_types);
+    REGISTER_TEST(script_edit_graph, resolves_alias_and_query_handles_to_one_node);
 TEST_MAIN_END()
 

@@ -90,7 +90,11 @@ TEST(lua_bindings_behavior, behavior_module_exposes_nested_graph_helpers_and_no_
         "assert(owner == nil or type(owner.object_id) == 'number')\n"
         "local outgoing = behavior.graph.outgoing_control(ws, 237, graph.nodes[1].owner_behavior_id)\n"
         "assert(outgoing == nil or type(outgoing) == 'table')\n"
-        "assert(type(behavior.graph.validate_operation(ws, 237, { kind = 'validate' })) == 'boolean')\n");
+        "assert(type(behavior.graph.validate_operation(ws, 237, { kind = 'validate' })) == 'boolean')\n"
+        "assert(behavior.graph.resolve_handle(ws, 237, { query = 'id=237' }) == 237)\n"
+        "assert(behavior.graph.resolve_handle(ws, 237, { query = 'kind=behavior depth=0' }) == 237)\n"
+        "assert(behavior.graph.resolve_handle(ws, 237, { alias = 'No node has this name' }) == nil)\n"
+        "assert(not pcall(behavior.graph.resolve_handle, ws, 237, { query = 'colour=red' }))\n");
 
     nmo_lua_runtime_destroy(runtime);
 }

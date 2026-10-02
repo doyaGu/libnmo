@@ -64,6 +64,21 @@ typedef struct nmo_script_edit_data_edge {
     bool shared;
 } nmo_script_edit_data_edge_t;
 
+/*
+ * How a handle names a node of the graph:
+ * - OBJECT_ID: object_id itself.
+ * - ALIAS: the node whose name is alias.
+ * - QUERY: the node that matches every key=value term of query. Terms are
+ *   separated by spaces; a value with spaces is written in double quotes, with
+ *   \" and \\ inside. Keys: id, kind (behavior, io, parameter, operation,
+ *   link), name, class (a class name or id), parent, owner, slot, slot_kind
+ *   (io_in, io_out, param_in, param_out, param_local, param_target, operation,
+ *   sub_behavior, sub_link, or the nmo_port_kind_t value) and depth. For
+ *   example: kind=parameter name="Target Position" owner=12.
+ * - SLOT: entry slot_index of the slot_kind array of behavior owner_id.
+ * An alias or a query resolves only when exactly one node matches: none is
+ * NMO_ERR_NOT_FOUND, more than one NMO_ERR_INVALID_ARGUMENT.
+ */
 typedef enum nmo_script_edit_handle_kind {
     NMO_SCRIPT_EDIT_HANDLE_OBJECT_ID = 0,
     NMO_SCRIPT_EDIT_HANDLE_ALIAS,

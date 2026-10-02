@@ -91,6 +91,15 @@ What breaks source compatibility, in short; the sections below give the details.
   reports that one error. `test_file_checksum` covers a generated file, a flipped header field, a
   flipped stored checksum and the whole corpus.
 
+### Added - Alias and query handles of the script edit graph
+- `nmo_script_edit_graph_resolve_handle()` resolves `NMO_SCRIPT_EDIT_HANDLE_ALIAS` (the node with
+  that name) and `NMO_SCRIPT_EDIT_HANDLE_QUERY` (the node that matches every `key=value` term:
+  `id`, `kind`, `name`, `class`, `parent`, `owner`, `slot`, `slot_kind`, `depth`; quoted values
+  may hold spaces), which returned not implemented. Either resolves only when exactly one node
+  matches: none is `NMO_ERR_NOT_FOUND`, more than one `NMO_ERR_INVALID_ARGUMENT`. The Lua
+  `behavior.graph.resolve_handle()` and `validate_operation()` take them as `{ alias = ... }` and
+  `{ query = ... }`.
+
 ### Added - Files of versions 2 to 6
 - Files below version 7 load as CK2 loads them (`CKFile::ReadFileHeaders`, `ReadFileData`): no
   Header1 is read, below version 5 the data section is the rest of the file, each object takes its

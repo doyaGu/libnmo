@@ -1315,6 +1315,385 @@ NMO_API nmo_status_t nmo_script_edit_graph_get_external_refs(
     NMO_RETURN_OK();
 }
 
+/* ---------------------------------------------------------------------------
+ * Alias and query handles
+ *
+ * An alias is the name of a node. A query is a list of key=value terms
+ * separated by spaces, all of which a node must match; a value with spaces is
+ * written in double quotes, with \" and \\ inside. Keys: id, kind (behavior,
+ * io, parameter, operation, link), name, class (a class name or id), parent,
+ * owner, slot, slot_kind (a port kind name such as io_in, or its number) and
+ * depth. Either handle resolves only when exactly one node matches.
+ * ------------------------------------------------------------------------- */
+
+typedef enum graph_query_key {
+    GRAPH_QUERY_ID,
+    GRAPH_QUERY_KIND,
+    GRAPH_QUERY_NAME,
+    GRAPH_QUERY_CLASS,
+    GRAPH_QUERY_PARENT,
+    GRAPH_QUERY_OWNER,
+    GRAPH_QUERY_SLOT,
+    GRAPH_QUERY_SLOT_KIND,
+    GRAPH_QUERY_DEPTH,
+} graph_query_key_t;
+
+typedef struct graph_query_term {
+    graph_query_key_t key;
+    const char *text; /**< The value as written, unescaped */
+    char *owned;      /**< text when the term allocated it */
+    bool is_number;
+    uint64_t number;
+} graph_query_term_t;
+
+typedef struct graph_query_name {
+    const char *name;
+    uint64_t value;
+} graph_query_name_t;
+
+static const graph_query_name_t GRAPH_QUERY_KEYS[] = {
+    {"id", GRAPH_QUERY_ID},
+    {"kind", GRAPH_QUERY_KIND},
+    {"name", GRAPH_QUERY_NAME},
+    {"class", GRAPH_QUERY_CLASS},
+    {"parent", GRAPH_QUERY_PARENT},
+    {"owner", GRAPH_QUERY_OWNER},
+    {"slot", GRAPH_QUERY_SLOT},
+    {"slot_kind", GRAPH_QUERY_SLOT_KIND},
+    {"depth", GRAPH_QUERY_DEPTH},
+    {NULL, 0},
+};
+
+static const graph_query_name_t GRAPH_QUERY_NODE_KINDS[] = {
+    {"behavior", NMO_SCRIPT_EDIT_NODE_BEHAVIOR},
+    {"io", NMO_SCRIPT_EDIT_NODE_IO},
+    {"parameter", NMO_SCRIPT_EDIT_NODE_PARAMETER},
+    {"operation", NMO_SCRIPT_EDIT_NODE_OPERATION},
+    {"link", NMO_SCRIPT_EDIT_NODE_LINK},
+    {NULL, 0},
+};
+
+static const graph_query_name_t GRAPH_QUERY_PORT_KINDS[] = {
+    {"io_in", NMO_PORT_IO_IN},
+    {"io_out", NMO_PORT_IO_OUT},
+    {"param_in", NMO_PORT_PARAM_IN},
+    {"param_out", NMO_PORT_PARAM_OUT},
+    {"param_local", NMO_PORT_PARAM_LOCAL},
+    {"param_target", NMO_PORT_PARAM_TARGET},
+    {"operation", NMO_PORT_OPERATION},
+    {"sub_behavior", NMO_PORT_SUB_BEHAVIOR},
+    {"sub_link", NMO_PORT_SUB_LINK},
+    {NULL, 0},
+};
+
+static bool graph_query_lookup(const graph_query_name_t *names,
+                               const char *text,
+                               uint64_t *out_value)
+{
+    for (const graph_query_name_t *entry = names; entry->name != NULL; ++entry) {
+        if (strcmp(entry->name, text) == 0) {
+            *out_value = entry->value;
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool graph_query_parse_number(const char *text, uint64_t *out_value)
+{
+    if (text[0] < '0' || text[0] > '9') {
+        return false;
+    }
+    char *end = NULL;
+    unsigned long long value = strtoull(text, &end, 10);
+    if (end == NULL || *end != '\0' || value > UINT32_MAX) {
+        return false;
+    }
+    *out_value = (uint64_t)value;
+    return true;
+}
+
+static void graph_query_free(graph_query_term_t *terms, size_t count)
+{
+    for (size_t i = 0; terms != NULL && i < count; ++i) {
+        free(terms[i].owned);
+    }
+    free(terms);
+}
+
+/* Read one value at *cursor: a run up to the next space, or a quoted string. */
+static nmo_status_t graph_query_read_value(const char **cursor, char **out_text)
+{
+    const char *p = *cursor;
+    size_t length = 0;
+    char *text = NULL;
+    if (*p == '"') {
+        const char *start = ++p;
+        while (*p != '\0' && *p != '"') {
+            if (*p == '\\' && (p[1] == '"' || p[1] == '\\')) {
+                ++p;
+            }
+            ++p;
+            ++length;
+        }
+        if (*p != '"') {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                             "unterminated quoted value in graph query");
+        }
+        text = (char *)malloc(length + 1u);
+        if (text == NULL) {
+            return NMO_ERR_NOMEM;
+        }
+        size_t out = 0;
+        for (const char *q = start; q < p; ++q) {
+            if (*q == '\\' && (q[1] == '"' || q[1] == '\\')) {
+                ++q;
+            }
+            text[out++] = *q;
+        }
+        text[out] = '\0';
+        *cursor = p + 1;
+    } else {
+        const char *start = p;
+        while (*p != '\0' && *p != ' ' && *p != '\t') {
+            ++p;
+        }
+        length = (size_t)(p - start);
+        if (length == 0) {
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                             "empty value in graph query");
+        }
+        text = (char *)malloc(length + 1u);
+        if (text == NULL) {
+            return NMO_ERR_NOMEM;
+        }
+        memcpy(text, start, length);
+        text[length] = '\0';
+        *cursor = p;
+    }
+    *out_text = text;
+    return NMO_OK;
+}
+
+/* Turn the value of a term into what its key compares with. */
+static nmo_status_t graph_query_check_value(graph_query_term_t *term, const char *key)
+{
+    switch (term->key) {
+    case GRAPH_QUERY_NAME:
+        return NMO_OK;
+    case GRAPH_QUERY_CLASS:
+        term->is_number = graph_query_parse_number(term->text, &term->number);
+        return NMO_OK;
+    case GRAPH_QUERY_KIND:
+        term->is_number = graph_query_lookup(GRAPH_QUERY_NODE_KINDS, term->text, &term->number);
+        break;
+    case GRAPH_QUERY_SLOT_KIND:
+        term->is_number = graph_query_lookup(GRAPH_QUERY_PORT_KINDS, term->text, &term->number) ||
+                          graph_query_parse_number(term->text, &term->number);
+        break;
+    default:
+        term->is_number = graph_query_parse_number(term->text, &term->number);
+        break;
+    }
+    if (!term->is_number) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "invalid %s '%s' in graph query", key, term->text);
+    }
+    return NMO_OK;
+}
+
+static nmo_status_t graph_query_parse(const char *query,
+                                      graph_query_term_t **out_terms,
+                                      size_t *out_count)
+{
+    graph_query_term_t *terms = NULL;
+    size_t count = 0;
+    size_t capacity = 0;
+    const char *cursor = query;
+    nmo_status_t status = NMO_OK;
+
+    *out_terms = NULL;
+    *out_count = 0;
+    for (;;) {
+        while (*cursor == ' ' || *cursor == '\t') {
+            ++cursor;
+        }
+        if (*cursor == '\0') {
+            break;
+        }
+        const char *key_start = cursor;
+        while (*cursor != '\0' && *cursor != '=' && *cursor != ' ' && *cursor != '\t') {
+            ++cursor;
+        }
+        if (*cursor != '=') {
+            graph_query_free(terms, count);
+            NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                             "graph query term '%.*s' has no '='",
+                             (int)(cursor - key_start), key_start);
+        }
+        const size_t key_length = (size_t)(cursor - key_start);
+        char *key = (char *)malloc(key_length + 1u);
+        if (key == NULL) {
+            graph_query_free(terms, count);
+            return NMO_ERR_NOMEM;
+        }
+        memcpy(key, key_start, key_length);
+        key[key_length] = '\0';
+        ++cursor;
+
+        uint64_t key_value = 0;
+        if (!graph_query_lookup(GRAPH_QUERY_KEYS, key, &key_value)) {
+            nmo_last_error_setf(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                                __FILE__, __LINE__, "unknown graph query key '%s'", key);
+            free(key);
+            graph_query_free(terms, count);
+            return NMO_ERR_INVALID_ARGUMENT;
+        }
+        if (count == capacity) {
+            size_t grown_capacity = capacity ? capacity * 2u : 4u;
+            graph_query_term_t *grown = (graph_query_term_t *)realloc(
+                terms, grown_capacity * sizeof(*grown));
+            if (grown == NULL) {
+                free(key);
+                graph_query_free(terms, count);
+                return NMO_ERR_NOMEM;
+            }
+            terms = grown;
+            capacity = grown_capacity;
+        }
+        graph_query_term_t *term = &terms[count];
+        memset(term, 0, sizeof(*term));
+        term->key = (graph_query_key_t)key_value;
+        status = graph_query_read_value(&cursor, &term->owned);
+        term->text = term->owned;
+        if (status == NMO_OK) {
+            ++count;
+            status = graph_query_check_value(term, key);
+        }
+        free(key);
+        if (status != NMO_OK) {
+            graph_query_free(terms, count);
+            return status;
+        }
+    }
+    if (count == 0) {
+        free(terms);
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "graph query has no terms");
+    }
+    *out_terms = terms;
+    *out_count = count;
+    return NMO_OK;
+}
+
+static bool graph_query_matches(const nmo_script_edit_node_t *node,
+                                const graph_query_term_t *terms,
+                                size_t count)
+{
+    for (size_t i = 0; i < count; ++i) {
+        const graph_query_term_t *term = &terms[i];
+        bool match = false;
+        switch (term->key) {
+        case GRAPH_QUERY_ID:
+            match = node->object_id == term->number;
+            break;
+        case GRAPH_QUERY_KIND:
+            match = (uint64_t)node->kind == term->number;
+            break;
+        case GRAPH_QUERY_NAME:
+            match = node->name != NULL && strcmp(node->name, term->text) == 0;
+            break;
+        case GRAPH_QUERY_CLASS:
+            match = term->is_number
+                ? node->class_id == term->number
+                : node->class_name != NULL && strcmp(node->class_name, term->text) == 0;
+            break;
+        case GRAPH_QUERY_PARENT:
+            match = node->parent_behavior_id == term->number;
+            break;
+        case GRAPH_QUERY_OWNER:
+            match = node->owner_behavior_id == term->number;
+            break;
+        case GRAPH_QUERY_SLOT:
+            match = node->owner_behavior_id != 0 && node->owner_slot_index >= 0 &&
+                    (uint64_t)node->owner_slot_index == term->number;
+            break;
+        case GRAPH_QUERY_SLOT_KIND:
+            match = node->owner_behavior_id != 0 && node->owner_slot_kind == term->number;
+            break;
+        case GRAPH_QUERY_DEPTH:
+            match = node->depth == term->number;
+            break;
+        }
+        if (!match) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* The one node the terms match; what describes the handle goes in messages. */
+static nmo_status_t graph_find_unique_node(const nmo_script_edit_graph_t *graph,
+                                           const graph_query_term_t *terms,
+                                           size_t count,
+                                           const char *what,
+                                           const char *text,
+                                           nmo_object_id_t *out_object_id)
+{
+    const nmo_script_edit_node_t *found = NULL;
+    size_t matches = 0;
+    for (size_t i = 0; i < graph->node_count; ++i) {
+        if (graph_query_matches(&graph->nodes[i], terms, count)) {
+            if (matches == 0) {
+                found = &graph->nodes[i];
+            }
+            ++matches;
+        }
+    }
+    if (matches == 0) {
+        NMO_RETURN_ERROR(NMO_ERR_NOT_FOUND, NMO_SEVERITY_ERROR,
+                         "no graph node matches %s '%s'", what, text);
+    }
+    if (matches > 1) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "%s '%s' matches %zu graph nodes", what, text, matches);
+    }
+    *out_object_id = found->object_id;
+    NMO_RETURN_OK();
+}
+
+static nmo_status_t graph_resolve_alias(const nmo_script_edit_graph_t *graph,
+                                        const char *alias,
+                                        nmo_object_id_t *out_object_id)
+{
+    if (alias == NULL || alias[0] == '\0') {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "alias handle must contain a name");
+    }
+    graph_query_term_t term = {
+        .key = GRAPH_QUERY_NAME,
+        .text = alias,
+    };
+    return graph_find_unique_node(graph, &term, 1u, "alias", alias, out_object_id);
+}
+
+static nmo_status_t graph_resolve_query(const nmo_script_edit_graph_t *graph,
+                                        const char *query,
+                                        nmo_object_id_t *out_object_id)
+{
+    if (query == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "query handle must contain a query");
+    }
+    graph_query_term_t *terms = NULL;
+    size_t count = 0;
+    NMO_RETURN_IF_ERROR(graph_query_parse(query, &terms, &count));
+    nmo_status_t status = graph_find_unique_node(graph, terms, count, "query", query,
+                                                 out_object_id);
+    graph_query_free(terms, count);
+    return status;
+}
+
 NMO_API nmo_status_t nmo_script_edit_graph_resolve_handle(
     const nmo_script_edit_graph_t *graph,
     const nmo_script_edit_handle_t *handle,
@@ -1340,9 +1719,9 @@ NMO_API nmo_status_t nmo_script_edit_graph_resolve_handle(
     case NMO_SCRIPT_EDIT_HANDLE_SLOT:
         break;
     case NMO_SCRIPT_EDIT_HANDLE_ALIAS:
+        return graph_resolve_alias(graph, handle->alias, out_object_id);
     case NMO_SCRIPT_EDIT_HANDLE_QUERY:
-        NMO_RETURN_ERROR(NMO_ERR_NOT_IMPLEMENTED, NMO_SEVERITY_ERROR,
-                         "handle kind is reserved for later tasks");
+        return graph_resolve_query(graph, handle->query, out_object_id);
     default:
         NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
                          "unknown handle kind");
