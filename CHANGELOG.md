@@ -44,8 +44,9 @@ What breaks source compatibility, in short; the sections below give the details.
   returns 0 for bezier controllers, raw bitmap planes are in blue, green, red, alpha order,
   `nmo_image_reconstruct_pixels()` returns rows top-down, and the hash values of most classes differ.
 - Changed behavior: a default save keeps the original chunk of every object that did not change, a
-  checksum mismatch on load is a warning (`NMO_LOAD_VERIFY_CRC` makes it an error), and files older
-  than version 7 are refused at load.
+  checksum mismatch on load is a warning (`NMO_LOAD_VERIFY_CRC` makes it an error), files of
+  versions 2 to 6 load and are saved as version 8, and an object table entry of class 0 creates no
+  object.
 
 ### Added - Build, install and release packages (July to September)
 - Lua 5.5.1 is downloaded and SHA-256 verified at configure time (FetchContent), and isocline, the REPL
@@ -89,6 +90,22 @@ What breaks source compatibility, in short; the sections below give the details.
   0xC6C7A400 where the computation, checked independently, gives 0x196CA3FC; `validate all` on it
   reports that one error. `test_file_checksum` covers a generated file, a flipped header field, a
   flipped stored checksum and the whole corpus.
+
+### Added - Files of versions 2 to 6
+- Files below version 7 load as CK2 loads them (`CKFile::ReadFileHeaders`, `ReadFileData`): no
+  Header1 is read, below version 5 the data section is the rest of the file, each object takes its
+  id from the data section, its class from its chunk and its name from the chunk's
+  `CK_STATESAVE_NAME` section. The object entries of versions 2 and 3 carry their own class id,
+  save flags and stored size, and their dwords are zlib packed when the write mode has
+  `NMO_FILE_WRITE_CHUNK_COMPRESSED_OLD` and the sizes differ; their chunks take data and chunk
+  version 0. `nmo_data_section_t` has a `file_write_mode` field for that.
+- Such a file is saved as version 8, as `CKFile::Save` writes the current version; the old
+  layouts have no Header1 for the object table.
+- An object table entry of class 0 creates no object (`CKFile::FinishLoading` creates none for an
+  entry without data, which below version 7 is the entry without a class); its file id resolves
+  to nothing.
+- The corpus has no such file; `test_legacy_file_load` builds files of each version, compressed
+  and not, and checks the load and the save.
 
 ### Changed - CLI output comes from records (July to September)
 - Every command builds its output as a record (`tools/nmo_cli_record.h`) and renders it as text,
@@ -623,8 +640,7 @@ the tests build each layout dword by dword.
   the object count and is read and written that way; files of version 7 can be loaded.
 - File version below 8: the CRC is the Adler32 of the data section as `CKFile` checks it
   (`nmo_file_crc_for_version`, `nmo_file_header_verify_crc`), the manager block is not written
-  below version 6, and a file below version 7 is refused at load (its object table is in the
-  chunks, which is not read).
+  below version 6. Files below version 7 load since; see "Added - Files of versions 2 to 6".
 - Smaller engine differences found by the third audit: a new mesh starts visible with render
   channels, the odd face channel mask word goes to the last face, a controller without keys is
   written as `{type, 1, 0}`, a sprite text load keeps the ratio offset flag of the file, sound

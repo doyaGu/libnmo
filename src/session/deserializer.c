@@ -10,6 +10,7 @@
 #include "session/nmo_session.h"
 #include "session/nmo_session_pipeline.h"
 #include "object/nmo_context.h"
+#include "object/nmo_statesave_ids.h"
 #include "session/nmo_runtime_kernel.h"
 #include "session/nmo_deserializer.h"
 #include "session/nmo_session_pipeline.h"
@@ -43,6 +44,7 @@
 #include "core/nmo_logger.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_error.h"
+#include "core/nmo_utils.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -549,20 +551,27 @@ nmo_status_t nmo_deserializer_parse_header(nmo_deserializer_t *ds)
     ds->hdr1_packed = NULL;
     ds->hdr1.object_count = ds->header.object_count;
 
-    if ((ds->header.hdr1_pack_size > 0 && ds->header.hdr1_unpack_size == 0) ||
-        (ds->header.hdr1_pack_size == 0 && ds->header.hdr1_unpack_size > 0)) {
+    if (ds->header.file_version >= 7u &&
+        ((ds->header.hdr1_pack_size > 0 && ds->header.hdr1_unpack_size == 0) ||
+         (ds->header.hdr1_pack_size == 0 && ds->header.hdr1_unpack_size > 0))) {
         nmo_log(logger, NMO_LOG_ERROR, "Invalid header1 size fields");
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    if (ds->header.hdr1_pack_size > NMO_PARSER_MAX_HEADER1_SIZE ||
-        ds->header.hdr1_unpack_size > NMO_PARSER_MAX_HEADER1_SIZE) {
+    if (ds->header.file_version >= 7u &&
+        (ds->header.hdr1_pack_size > NMO_PARSER_MAX_HEADER1_SIZE ||
+         ds->header.hdr1_unpack_size > NMO_PARSER_MAX_HEADER1_SIZE)) {
         nmo_log(logger, NMO_LOG_ERROR, "Header1 size exceeds limit");
         return NMO_ERR_INVALID_ARGUMENT;
     }
 
-    /* Skip header1 if empty */
-    if (ds->header.hdr1_pack_size == 0 || ds->header.hdr1_unpack_size == 0) {
+    /* Below version 7 the engine reads no Header1 (CKFile::ReadFileHeaders
+     * leaves the cursor at the data section whatever the size fields say); the
+     * object table is built from the data section in Phase 8. */
+    if (ds->header.file_version < 7u) {
+        nmo_log(logger, NMO_LOG_INFO, "  No header1 below file version 7");
+        ds->hdr1.object_count = 0;
+    } else if (ds->header.hdr1_pack_size == 0 || ds->header.hdr1_unpack_size == 0) {
         nmo_log(logger, NMO_LOG_INFO, "  No header1 data (empty file or minimal format)");
         ds->hdr1.plugin_dep_count = 0;
         ds->hdr1.plugin_deps = NULL;
@@ -690,6 +699,104 @@ nmo_status_t nmo_deserializer_parse_header(nmo_deserializer_t *ds)
     ds->phase_completed = 1;
     nmo_session_internal_set_partial_load(
         session, ds->options.profile != NMO_LOAD_PROFILE_FULL);
+    return NMO_OK;
+}
+
+/* Below file version 5 the header has no section sizes, and CKFile::ReadFileData
+ * takes the rest of the file as the data section. */
+static nmo_status_t deserializer_read_to_end(nmo_io_interface_t *io,
+                                             nmo_arena_t *arena,
+                                             void **out_buffer,
+                                             size_t *out_size)
+{
+    size_t capacity = 64u * 1024u;
+    size_t size = 0;
+    uint8_t *buffer = (uint8_t *)malloc(capacity);
+    *out_buffer = NULL;
+    *out_size = 0;
+    if (buffer == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    for (;;) {
+        if (size == capacity) {
+            if (capacity > SIZE_MAX / 2u) {
+                free(buffer);
+                return NMO_ERR_NOMEM;
+            }
+            uint8_t *grown = (uint8_t *)realloc(buffer, capacity * 2u);
+            if (grown == NULL) {
+                free(buffer);
+                return NMO_ERR_NOMEM;
+            }
+            buffer = grown;
+            capacity *= 2u;
+        }
+        size_t got = 0;
+        nmo_status_t st = nmo_io_read(io, buffer + size, capacity - size, &got);
+        if (st != NMO_OK) {
+            free(buffer);
+            return st;
+        }
+        if (got == 0) {
+            break;
+        }
+        size += got;
+    }
+    if (size > 0) {
+        void *copy = nmo_arena_alloc(arena, size, 16);
+        if (copy == NULL) {
+            free(buffer);
+            return NMO_ERR_NOMEM;
+        }
+        memcpy(copy, buffer, size);
+        *out_buffer = copy;
+        *out_size = size;
+    }
+    free(buffer);
+    return NMO_OK;
+}
+
+/* Files below version 7 have no Header1 object table. CKFile::ReadFileData takes
+ * the object id from the data section, the class id from the chunk and the name
+ * from the string of the chunk's CK_STATESAVE_NAME section (it seeks
+ * CKCID_OBJECT, the same value 1); an entry without a chunk keeps class 0 and no
+ * name. */
+static nmo_status_t deserializer_build_legacy_object_table(nmo_deserializer_t *ds)
+{
+    const uint32_t count = ds->data_sect.object_count;
+    ds->hdr1.object_count = count;
+    ds->hdr1.objects = NULL;
+    if (count == 0 || ds->data_sect.objects == NULL) {
+        return NMO_OK;
+    }
+    size_t bytes = 0;
+    if (!nmo_safe_mul_size(count, sizeof(nmo_object_desc_t), &bytes)) {
+        NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR,
+                         "Object table allocation overflow");
+    }
+    nmo_object_desc_t *objects = (nmo_object_desc_t *)nmo_arena_alloc(
+        ds->arena, bytes, alignof(nmo_object_desc_t));
+    if (objects == NULL) {
+        return NMO_ERR_NOMEM;
+    }
+    memset(objects, 0, bytes);
+    for (uint32_t i = 0; i < count; ++i) {
+        const nmo_object_data_t *entry = &ds->data_sect.objects[i];
+        nmo_object_desc_t *desc = &objects[i];
+        desc->flags = (entry->object_id & NMO_OBJECT_REFERENCE_FLAG) ? NMO_OBJECT_REFERENCE_FLAG : 0u;
+        desc->file_id = entry->object_id & ~NMO_OBJECT_REFERENCE_FLAG;
+        if (entry->chunk == NULL) {
+            continue;
+        }
+        desc->class_id = entry->chunk->class_id;
+        char *name = NULL;
+        if (nmo_chunk_start_read(entry->chunk) == NMO_OK &&
+            nmo_chunk_seek_identifier(entry->chunk, CK_STATESAVE_NAME) == NMO_OK &&
+            nmo_chunk_read_string(entry->chunk, &name) > 0) {
+            desc->name = name;
+        }
+    }
+    ds->hdr1.objects = objects;
     return NMO_OK;
 }
 
@@ -868,13 +975,16 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
     memset(&ds->data_sect, 0, sizeof(nmo_data_section_t));
     ds->data_sect.manager_count = ds->header.manager_count;
     ds->data_sect.object_count = ds->header.object_count;
+    ds->data_sect.file_write_mode = ds->header.file_write_mode;
+    const bool data_to_end = ds->header.file_version < 5u;
 
     const void *crc_data_packed = NULL;
     const void *crc_data_unpacked = NULL;
     size_t crc_data_unpacked_size = 0;
 
     /* Skip data section if empty */
-    if (ds->header.data_pack_size == 0 || ds->header.data_unpack_size == 0) {
+    if (!data_to_end &&
+        (ds->header.data_pack_size == 0 || ds->header.data_unpack_size == 0)) {
         nmo_log(logger, NMO_LOG_INFO, "  No data section (empty file or minimal format)");
         nmo_status_t crc_status = deserializer_check_crc(ds, NULL, NULL, 0);
         if (crc_status != NMO_OK) {
@@ -884,17 +994,20 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
         }
     } else {
         /* Read packed data */
-        void *packed_buffer = nmo_arena_alloc(arena, ds->header.data_pack_size, 16);
-        if (packed_buffer == NULL) {
-            nmo_log(logger, NMO_LOG_ERROR, "Failed to allocate packed data buffer");
-            nmo_id_mapping_destroy(id_map);
-            ds->id_mapping = NULL;
-            return NMO_ERR_NOMEM;
-        }
-
+        void *packed_buffer = NULL;
+        size_t packed_size = ds->header.data_pack_size;
         size_t bytes_read = 0;
         uint64_t data_read_start = load_perf_begin(ds);
-        int read_result = nmo_io_read(io, packed_buffer, ds->header.data_pack_size, &bytes_read);
+        int read_result = NMO_OK;
+        if (data_to_end) {
+            read_result = deserializer_read_to_end(io, arena, &packed_buffer, &packed_size);
+            bytes_read = packed_size;
+        } else {
+            packed_buffer = nmo_arena_alloc(arena, packed_size, 16);
+            read_result = packed_buffer != NULL
+                ? nmo_io_read(io, packed_buffer, packed_size, &bytes_read)
+                : NMO_ERR_NOMEM;
+        }
         load_perf_end(ds, NMO_LOAD_PERF_DATA_READ, data_read_start);
         if (read_result != NMO_OK) {
             nmo_log(logger, NMO_LOG_ERROR, "Failed to read data section");
@@ -902,7 +1015,7 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
             ds->id_mapping = NULL;
             return read_result;
         }
-        if (bytes_read != ds->header.data_pack_size) {
+        if (bytes_read != packed_size) {
             nmo_log(logger, NMO_LOG_ERROR, "Truncated data section");
             nmo_id_mapping_destroy(id_map);
             ds->id_mapping = NULL;
@@ -913,7 +1026,7 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
         void *data_buffer = NULL;
         size_t data_size = 0;
 
-        if (ds->header.data_pack_size != ds->header.data_unpack_size) {
+        if (!data_to_end && ds->header.data_pack_size != ds->header.data_unpack_size) {
             nmo_log(logger, NMO_LOG_INFO, "  Decompressing data: %u -> %u bytes",
                     ds->header.data_pack_size, ds->header.data_unpack_size);
 
@@ -952,7 +1065,7 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
         } else {
             /* Already uncompressed */
             data_buffer = packed_buffer;
-            data_size = ds->header.data_pack_size;
+            data_size = packed_size;
         }
 
         crc_data_packed = packed_buffer;
@@ -988,9 +1101,24 @@ nmo_status_t nmo_deserializer_parse_objects(nmo_deserializer_t *ds)
             return result;
         }
 
+        if (data_to_end) {
+            nmo_file_info_t info = nmo_session_get_file_info(session);
+            info.file_size = 32u + data_size;
+            (void)nmo_session_set_file_info(session, &info);
+        }
+
         nmo_log(logger, NMO_LOG_INFO, "  Data section parsed successfully");
         nmo_log(logger, NMO_LOG_INFO, "  Managers parsed: %u", ds->data_sect.manager_count);
         nmo_log(logger, NMO_LOG_INFO, "  Objects parsed: %u", ds->data_sect.object_count);
+    }
+
+    if (ds->header.file_version < 7u) {
+        result = deserializer_build_legacy_object_table(ds);
+        if (result != NMO_OK) {
+            nmo_id_mapping_destroy(id_map);
+            ds->id_mapping = NULL;
+            return result;
+        }
     }
 
     /* Load included files */

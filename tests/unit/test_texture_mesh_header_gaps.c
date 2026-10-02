@@ -308,7 +308,7 @@ static nmo_file_header_t sample_header(uint32_t version)
     return header;
 }
 
-TEST(header_gaps, versions_below_7_parse_but_are_refused_for_loading)
+TEST(header_gaps, versions_5_to_8_parse_and_validate)
 {
     for (uint32_t version = 5u; version <= 8u; ++version) {
         nmo_file_header_t header = sample_header(version);
@@ -330,11 +330,7 @@ TEST(header_gaps, versions_below_7_parse_but_are_refused_for_loading)
         nmo_io_close(read_io);
         nmo_io_close(write_io);
 
-        if (version < 7u) {
-            ASSERT_EQ(NMO_ERR_UNSUPPORTED_VERSION, nmo_file_header_validate(&parsed));
-        } else {
-            ASSERT_EQ(NMO_OK, nmo_file_header_validate(&parsed));
-        }
+        ASSERT_EQ(NMO_OK, nmo_file_header_validate(&parsed));
     }
 }
 
@@ -605,7 +601,7 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(mesh_gaps, weight_section_of_eight_bytes_is_the_uniform_form);
     REGISTER_TEST(mesh_gaps, weight_section_of_more_than_eight_bytes_is_a_buffer);
     REGISTER_TEST(data_gaps, manager_block_is_only_written_from_version_6);
-    REGISTER_TEST(header_gaps, versions_below_7_parse_but_are_refused_for_loading);
+    REGISTER_TEST(header_gaps, versions_5_to_8_parse_and_validate);
     REGISTER_TEST(header_gaps, data_checksum_is_adler32_from_zero);
     REGISTER_TEST(header_gaps, version_7_checksum_covers_the_unpacked_data_only);
     REGISTER_TEST(header_gaps, version_8_checksum_is_the_header_and_packed_sections);

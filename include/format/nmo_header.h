@@ -115,14 +115,13 @@ NMO_API nmo_status_t nmo_file_header_parse(nmo_io_interface_t *io, nmo_file_head
  * @return NMO_OK if valid, error code otherwise
  *         NMO_ERR_INVALID_ARGUMENT if header is NULL
  *         NMO_ERR_INVALID_SIGNATURE if signature doesn't match "Nemo Fi\0"
- *         NMO_ERR_UNSUPPORTED_VERSION if file_version < 2 or > 9, or below 7
- *         (see below)
+ *         NMO_ERR_UNSUPPORTED_VERSION if file_version < 2 or > 9, or
+ *         FileVersion2 is not 0
  *
- * This is the check a load makes. Versions 2 to 6 still parse
- * (nmo_file_header_parse) so that their header can be inspected, but they are
- * refused here: CKFile::ReadFileData reads their object ids from the data
- * section and their class ids and names from the object chunks, and has no
- * Header1 object table, none of which the loader supports.
+ * This is the check a load makes. Versions 2 to 6 have no Header1 object
+ * table: CKFile::ReadFileData reads their object ids from the data section and
+ * their class ids and names from the object chunks, and the deserializer does
+ * the same.
  */
 NMO_API nmo_status_t nmo_file_header_validate(const nmo_file_header_t *header);
 

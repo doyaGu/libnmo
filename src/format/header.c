@@ -211,19 +211,9 @@ static nmo_status_t file_header_validate_basic(const nmo_file_header_t *header) 
  * Validate Virtools file header for loading
  */
 nmo_status_t nmo_file_header_validate(const nmo_file_header_t *header) {
-    NMO_RETURN_IF_ERROR(file_header_validate_basic(header));
-
-    /* CKFile::ReadFileData reads the object id of a version 4 to 6 entry from
-     * the data section and takes the class id and the name from the chunk, and
-     * these versions have no Header1 object table. The loader is built on that
-     * table, so refuse them here rather than failing later on a partial
-     * parse. */
-    if (header->file_version < 7) {
-        NMO_RETURN_ERROR(NMO_ERR_UNSUPPORTED_VERSION, NMO_SEVERITY_ERROR,
-                         "File versions below 7 (no Header1 object table) cannot be loaded");
-    }
-
-    NMO_RETURN_OK();
+    /* Files below version 7 have no Header1 object table; the deserializer
+     * builds it from the data section as CKFile::ReadFileData does. */
+    return file_header_validate_basic(header);
 }
 
 uint32_t nmo_file_header_compute_crc(const nmo_file_header_t *header,
