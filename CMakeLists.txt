@@ -191,7 +191,6 @@ set(NMO_FORMAT_SOURCES
 set(NMO_OBJECT_SOURCES
     src/object/context.c
     src/object/object_type_common.c
-    src/object/object_ancestor_state.c
     src/object/object_enums.c
     src/object/object_structs.c
     src/object/object_types.c
@@ -252,6 +251,7 @@ set(NMO_OBJECT_SOURCES
 
 # Type System sources
 set(NMO_TYPE_SOURCES
+    src/type/object_ancestor_state.c
     src/type/interface_chunk_types.c
     src/type/type_registry.c
     src/type/type_runtime.c
