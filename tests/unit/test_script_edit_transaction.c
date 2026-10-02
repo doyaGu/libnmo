@@ -450,6 +450,40 @@ TEST(script_edit_transaction, rollback_restores_original_state_after_validation_
     nmo_context_release(ctx);
 }
 
+TEST(script_edit_transaction, rename_node_renames_a_behavior_and_rolls_back)
+{
+    nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
+    nmo_session_t *session = NULL;
+    nmo_object_repository_t *repo = NULL;
+    nmo_script_edit_tx_t *tx = NULL;
+    nmo_object_id_t behavior_id = 0;
+    nmo_object_id_t entity_id = 0;
+
+    ASSERT_NOT_NULL(ctx);
+    session = nmo_session_create(ctx);
+    ASSERT_NOT_NULL(session);
+    repo = nmo_session_get_repository(session);
+    ASSERT_NOT_NULL(repo);
+    create_object_or_fail(session, NMO_CID_BEHAVIOR, "Old Name", &behavior_id);
+    create_object_or_fail(session, NMO_CID_3DENTITY, "Entity", &entity_id);
+
+    ASSERT_EQ(NMO_OK, begin_test_script_edit(ctx, session, "rename-node", &tx));
+    ASSERT_EQ(NMO_OK, nmo_script_edit_rename_node(tx, behavior_id, "New Name"));
+    ASSERT_STR_EQ("New Name",
+                  nmo_object_get_name(nmo_object_repository_find_by_id(repo, behavior_id)));
+    /* Only behaviors are nodes. */
+    ASSERT_EQ(NMO_ERR_NOT_FOUND, nmo_script_edit_rename_node(tx, entity_id, "Other"));
+    ASSERT_STR_EQ("Entity",
+                  nmo_object_get_name(nmo_object_repository_find_by_id(repo, entity_id)));
+    ASSERT_EQ(NMO_ERR_INVALID_ARGUMENT, nmo_script_edit_rename_node(tx, behavior_id, ""));
+    nmo_script_edit_rollback(tx);
+    ASSERT_STR_EQ("Old Name",
+                  nmo_object_get_name(nmo_object_repository_find_by_id(repo, behavior_id)));
+
+    nmo_session_destroy(session);
+    nmo_context_release(ctx);
+}
+
 TEST(script_edit_transaction, behavior_edit_add_link_through_workspace_owner)
 {
     nmo_context_t *ctx = nmo_context_create(&(nmo_context_desc_t){0});
@@ -1699,6 +1733,7 @@ TEST(script_edit_transaction, open_interface_edits_in_place_and_rolls_back)
 }
 
 TEST_MAIN_BEGIN()
+    REGISTER_TEST(script_edit_transaction, rename_node_renames_a_behavior_and_rolls_back);
     REGISTER_TEST(script_edit_transaction,
                   behavior_edit_add_link_through_workspace_owner);
     REGISTER_TEST(script_edit_transaction,

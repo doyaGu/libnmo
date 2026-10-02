@@ -171,6 +171,15 @@ NMO_API nmo_status_t nmo_script_edit_add_io(
     const char *name,
     nmo_object_id_t *out_io_id);
 
+/**
+ * Rename a behavior of the graph (a node, or the script itself).
+ * NMO_ERR_NOT_FOUND when node_id is not a behavior.
+ */
+NMO_API nmo_status_t nmo_script_edit_rename_node(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t node_id,
+    const char *name);
+
 NMO_API nmo_status_t nmo_script_edit_rename_io(
     nmo_script_edit_tx_t *tx,
     nmo_object_id_t io_id,

@@ -663,6 +663,24 @@ NMO_API nmo_status_t nmo_script_edit_add_io(
     return NMO_OK;
 }
 
+NMO_API nmo_status_t nmo_script_edit_rename_node(
+    nmo_script_edit_tx_t *tx,
+    nmo_object_id_t node_id,
+    const char *name)
+{
+    if (!tx || !tx->edit || node_id == 0 || !name || name[0] == '\0') {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    if (!script_edit_find_behavior_state_in_repo(
+            nmo_workspace_internal_type_registry(tx->workspace),
+            nmo_workspace_internal_repository(tx->workspace),
+            node_id,
+            NULL)) {
+        return NMO_ERR_NOT_FOUND;
+    }
+    return nmo_object_edit_rename(tx->edit, node_id, name);
+}
+
 NMO_API nmo_status_t nmo_script_edit_rename_io(
     nmo_script_edit_tx_t *tx,
     nmo_object_id_t io_id,
