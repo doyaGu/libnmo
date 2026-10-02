@@ -5,7 +5,7 @@
 
 #include "behavior/nmo_behavior_query.h"
 #include "chunk/nmo_chunk_index.h"
-#include "document/nmo_document.h"
+#include "runtime/nmo_document.h"
 #include "document/nmo_document_load.h"
 #include "document/nmo_document_stats.h"
 #include "object/nmo_object_edit.h"

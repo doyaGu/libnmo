@@ -1,7 +1,7 @@
 #ifndef NMO_RUNTIME_WORKSPACE_H
 #define NMO_RUNTIME_WORKSPACE_H
 
-#include "document/nmo_document.h"
+#include "runtime/nmo_document.h"
 #include "nmo_types.h"
 #include "core/nmo_error.h"
 #include "object/nmo_edit_flags.h"

@@ -2,7 +2,7 @@
 #define NMO_DOCUMENT_FILE_STATE_H
 
 #include "document/nmo_document_load.h"
-#include "document/nmo_document.h"
+#include "runtime/nmo_document.h"
 #include "core/nmo_arena_array.h"
 #include "core/nmo_error.h"
 

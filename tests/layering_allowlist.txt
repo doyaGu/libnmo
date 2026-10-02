@@ -2,11 +2,4 @@
 # Format: <source file> <included header>. One entry per line.
 # Each line is technical debt: the file depends on a layer above its own.
 # Remove the line once the dependency has been moved down the stack.
-src/runtime/document_workspace.c document/nmo_document.h
-src/runtime/document_workspace.c document/nmo_document_load.h
-src/runtime/document_workspace.c document/nmo_document_save.h
-src/runtime/runtime_internal.h document/nmo_document.h
-src/runtime/runtime_internal.h document/nmo_document_file_state.h
-# Relative includes of another layer's private header, which the audit did not
-# see before. Most are runtime_internal.h: the session object is implemented in
-# src/runtime/document_workspace.c, so every layer that uses it reaches up.
+# The list is empty: no source file includes a header of a higher layer.

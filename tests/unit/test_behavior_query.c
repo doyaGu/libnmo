@@ -1,7 +1,7 @@
 #include "test_framework.h"
 
 #include "behavior/nmo_behavior_query.h"
-#include "document/nmo_document.h"
+#include "runtime/nmo_document.h"
 #include "document/nmo_document_load.h"
 #include "session/nmo_session.h"
 #include "session/nmo_runtime_kernel.h"

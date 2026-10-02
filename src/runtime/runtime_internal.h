@@ -9,8 +9,7 @@
 #define NMO_SESSION_RUNTIME_INTERNAL_H
 
 #include "core/nmo_error.h"
-#include "document/nmo_document.h"
-#include "document/nmo_document_file_state.h"
+#include "runtime/nmo_document.h"
 #include "runtime/nmo_workspace.h"
 #include "../session/session_internal.h"
 #include "object/nmo_context.h"

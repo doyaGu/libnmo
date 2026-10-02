@@ -3,7 +3,7 @@
 #include "document/nmo_document_load.h"
 #include "document/nmo_document_save.h"
 #include "core/nmo_guid.h"
-#include "document/nmo_document.h"
+#include "runtime/nmo_document.h"
 #include "lua/nmo_lua_runtime.h"
 #include "object/nmo_object_index.h"
 #include "object/nmo_object_query.h"

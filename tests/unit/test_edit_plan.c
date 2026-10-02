@@ -6,7 +6,7 @@
 #include "edit/nmo_probe_analyzer.h"
 #include "core/nmo_array.h"
 #include "core/nmo_arena.h"
-#include "document/nmo_document.h"
+#include "runtime/nmo_document.h"
 #include "format/nmo_data.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"

@@ -128,7 +128,7 @@
 // Reorganization owner headers
 #include "object/nmo_context.h"
 #include "runtime/nmo_workspace.h"
-#include "document/nmo_document.h"
+#include "runtime/nmo_document.h"
 #include "document/nmo_document_load.h"
 #include "document/nmo_document_file_state.h"
 #include "document/nmo_document_save.h"

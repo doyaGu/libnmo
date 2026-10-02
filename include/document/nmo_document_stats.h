@@ -1,7 +1,7 @@
 #ifndef NMO_DOCUMENT_STATS_H
 #define NMO_DOCUMENT_STATS_H
 
-#include "document/nmo_document.h"
+#include "runtime/nmo_document.h"
 
 #include <stdio.h>
 

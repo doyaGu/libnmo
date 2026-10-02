@@ -6,7 +6,7 @@
 #include "core/nmo_array.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_hash.h"
-#include "document/nmo_document.h"
+#include "runtime/nmo_document.h"
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_chunk_residue.h"
 #include "format/nmo_object.h"

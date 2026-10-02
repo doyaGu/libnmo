@@ -25,7 +25,7 @@
 #include "project/nmo_project_plan.h"
 #include "project/nmo_scene_authoring.h"
 #include "project/nmo_script_authoring.h"
-#include "document/nmo_document.h"
+#include "runtime/nmo_document.h"
 #include "document/nmo_document_save.h"
 #include "runtime/nmo_workspace.h"
 #include "../../src/runtime/runtime_internal.h"

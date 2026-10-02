@@ -3,7 +3,7 @@
 
 #include "nmo_types.h"
 #include "core/nmo_error.h"
-#include "document/nmo_document.h"
+#include "runtime/nmo_document.h"
 #include "object/nmo_ref_graph.h"
 
 typedef struct nmo_object nmo_object_t;

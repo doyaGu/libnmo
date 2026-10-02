@@ -6,7 +6,7 @@
 #include "test_framework.h"
 #include "nmo.h"
 
-#include "document/nmo_document.h"
+#include "runtime/nmo_document.h"
 #include "object/nmo_object_edit.h"
 #include "object/nmo_object_repository.h"
 #include "object/builtin/nmo_sound_schemas.h"

@@ -1,6 +1,6 @@
 #include "test_framework.h"
 
-#include "document/nmo_document.h"
+#include "runtime/nmo_document.h"
 #include "edit/nmo_behavior_edit.h"
 #include "extension/nmo_behavior_registry.h"
 #include "edit/nmo_script_edit.h"

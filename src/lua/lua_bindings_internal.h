@@ -6,7 +6,7 @@
 #include "edit/nmo_edit_plan.h"
 #include "edit/nmo_script_edit.h"
 #include "core/nmo_arena.h"
-#include "document/nmo_document.h"
+#include "runtime/nmo_document.h"
 #include "lua/nmo_lua_bindings.h"
 #include "lua/nmo_lua_handles.h"
 #include "lua/nmo_lua_module.h"

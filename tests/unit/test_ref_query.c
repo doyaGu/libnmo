@@ -4,7 +4,7 @@
 #include "session/nmo_runtime_kernel.h"
 #include "session/nmo_session_pipeline.h"
 #include "../../src/runtime/runtime_internal.h"
-#include "document/nmo_document.h"
+#include "runtime/nmo_document.h"
 #include "object/nmo_object_refs.h"
 #include "object/nmo_class_ids.h"
 #include "object/builtin/nmo_group_schemas.h"

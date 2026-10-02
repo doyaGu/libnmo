@@ -4,7 +4,7 @@
  */
 
 #include "test_framework.h"
-#include "document/nmo_document.h"
+#include "runtime/nmo_document.h"
 #include "object/nmo_object_query.h"
 #include "object/nmo_class_ids.h"
 #include "type/nmo_object_guids.h"

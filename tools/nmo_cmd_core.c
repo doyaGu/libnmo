@@ -9,7 +9,7 @@
 #include "nmo_cli_common.h"
 #include "nmo_tool_common.h"
 #include "behavior/nmo_behavior_view.h"
-#include "document/nmo_document.h"
+#include "runtime/nmo_document.h"
 #include "object/nmo_object_diff.h"
 #include "object/nmo_object_query.h"
 #include "object/nmo_object_refs.h"

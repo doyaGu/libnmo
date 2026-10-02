@@ -1,7 +1,7 @@
 #include "test_framework.h"
 
 #include "document/nmo_document_load.h"
-#include "document/nmo_document.h"
+#include "runtime/nmo_document.h"
 #include "format/nmo_object.h"
 #include "object/nmo_class_ids.h"
 #include "object/builtin/nmo_animation_schemas.h"

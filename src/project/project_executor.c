@@ -1,6 +1,6 @@
 #include "project/nmo_project_executor.h"
 
-#include "document/nmo_document.h"
+#include "runtime/nmo_document.h"
 #include "document/nmo_document_file_state.h"
 #include "document/nmo_document_load.h"
 #include "document/nmo_document_save.h"

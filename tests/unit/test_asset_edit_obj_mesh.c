@@ -1,7 +1,7 @@
 #include "test_framework.h"
 
 #include "core/nmo_arena.h"
-#include "document/nmo_document.h"
+#include "runtime/nmo_document.h"
 #include "format/nmo_obj_parser.h"
 #include "format/nmo_object.h"
 #include "object/builtin/nmo_3dentity_schemas.h"

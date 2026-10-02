@@ -9,7 +9,7 @@
 #include "nmo_types.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
-#include "document/nmo_document.h"
+#include "runtime/nmo_document.h"
 
 #include <stdbool.h>
 #include <stddef.h>

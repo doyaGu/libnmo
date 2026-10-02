@@ -9,7 +9,7 @@
 
 #include "../test_framework.h"
 
-#include "document/nmo_document.h"
+#include "runtime/nmo_document.h"
 #include "document/nmo_document_load.h"
 #include "document/nmo_document_save.h"
 #include "object/nmo_context.h"

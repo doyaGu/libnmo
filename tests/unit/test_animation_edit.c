@@ -1,6 +1,6 @@
 #include "test_framework.h"
 
-#include "document/nmo_document.h"
+#include "runtime/nmo_document.h"
 #include "format/nmo_object.h"
 #include "object/builtin/nmo_animation_schemas.h"
 #include "object/nmo_animation_edit.h"

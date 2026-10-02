@@ -1,7 +1,7 @@
 #ifndef NMO_DOCUMENT_SAVE_H
 #define NMO_DOCUMENT_SAVE_H
 
-#include "document/nmo_document.h"
+#include "runtime/nmo_document.h"
 #include "core/nmo_error.h"
 
 #define NMO_SAVE_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_SINGLE_TIER

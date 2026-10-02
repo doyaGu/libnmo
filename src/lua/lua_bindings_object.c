@@ -1,6 +1,6 @@
 #include "lua_bindings_internal.h"
 
-#include "document/nmo_document.h"
+#include "runtime/nmo_document.h"
 #include "object/nmo_object_index.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_object_query.h"

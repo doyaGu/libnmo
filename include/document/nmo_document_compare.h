@@ -1,7 +1,7 @@
 #ifndef NMO_DOCUMENT_COMPARE_H
 #define NMO_DOCUMENT_COMPARE_H
 
-#include "document/nmo_document.h"
+#include "runtime/nmo_document.h"
 #include "nmo_types.h"
 #include "core/nmo_error.h"
 

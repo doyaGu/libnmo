@@ -8,7 +8,7 @@
 #include "nmo_project.h"
 #include "object/nmo_context.h"
 #include "runtime/nmo_workspace.h"
-#include "document/nmo_document.h"
+#include "runtime/nmo_document.h"
 #include "document/nmo_document_load.h"
 #include "document/nmo_document_file_state.h"
 #include "document/nmo_document_save.h"
@@ -219,7 +219,7 @@ TEST(public_api_smoke, canonical_umbrella_and_headers_exclude_legacy_worldview) 
     ASSERT_NULL(strstr(umbrella, "behavior/nmo_script_executor.h"));
     free(umbrella);
 
-    char *document_header = read_source_text("include/document/nmo_document.h");
+    char *document_header = read_source_text("include/runtime/nmo_document.h");
     ASSERT_NOT_NULL(document_header);
     ASSERT_NULL(strstr(document_header, "nmo_document_borrow_session"));
     ASSERT_NULL(strstr(document_header, "nmo_document_session("));
