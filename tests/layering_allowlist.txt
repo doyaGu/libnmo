@@ -35,4 +35,3 @@ src/object/object_summary.c ../runtime/runtime_internal.h
 src/session/deserializer.c ../runtime/runtime_internal.h
 src/session/runtime_delete.c ../runtime/runtime_internal.h
 src/session/runtime_kernel.c ../runtime/runtime_internal.h
-src/session/runtime_ref_remap.c ../runtime/runtime_internal.h
