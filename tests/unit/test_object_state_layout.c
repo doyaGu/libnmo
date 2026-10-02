@@ -9,6 +9,7 @@
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
 #include "object/nmo_ref.h"
+#include "object/builtin/nmo_character_schemas.h"
 #include "object/builtin/nmo_group_schemas.h"
 #include "object/builtin/nmo_layer_schemas.h"
 #include "object/builtin/nmo_parameteroperation_schemas.h"
@@ -278,6 +279,34 @@ TEST(object_state_layout, parameter_payload_lanes_copy_by_content) {
     nmo_arena_destroy(arena);
 }
 
+TEST(object_state_layout, bodypart_joint_defaults_and_copy) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_bodypart_state_t source;
+    nmo_bodypart_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_bodypart_vtable.create(&source, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_bodypart_vtable.create(&copied, NULL, NULL));
+    ASSERT_EQ(7u, source.rotation_joint.flags);
+
+    source.has_character = 1;
+    source.character = nmo_ref_from_raw(70);
+    source.has_rotation_joint = 1;
+    source.rotation_joint.flags = 5u;
+    source.rotation_joint.max.y = 1.5f;
+    ASSERT_EQ(NMO_OK, nmo_bodypart_vtable.copy(&source, &copied, NULL, arena));
+    ASSERT_EQ(70u, copied.character.raw_id);
+    ASSERT_EQ(5u, copied.rotation_joint.flags);
+    ASSERT_TRUE(nmo_bodypart_vtable.equals(&source, &copied));
+    ASSERT_EQ(nmo_bodypart_vtable.hash(&source), nmo_bodypart_vtable.hash(&copied));
+
+    copied.rotation_joint.max.y = 2.0f;
+    ASSERT_FALSE(nmo_bodypart_vtable.equals(&source, &copied));
+
+    nmo_bodypart_vtable.destroy(&source, NULL, NULL);
+    nmo_bodypart_vtable.destroy(&copied, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(object_state_layout, place_copy_equals_hash);
     REGISTER_TEST(object_state_layout, copy_into_shallow_alias_detaches_arrays);
@@ -287,4 +316,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_state_layout, parameteroperation_chunks_copy_by_content);
     REGISTER_TEST(object_state_layout, synchro_reference_arrays_copy_and_compare);
     REGISTER_TEST(object_state_layout, parameter_payload_lanes_copy_by_content);
+    REGISTER_TEST(object_state_layout, bodypart_joint_defaults_and_copy);
 TEST_MAIN_END()

@@ -112,18 +112,6 @@ nmo_object_id_t nmo_character_effective_root_body_part(
     return NMO_OBJECT_ID_NONE;
 }
 
-NMO_DEFINE_OBJECT_LIFECYCLE(
-    bodypart,
-    nmo_bodypart_state_t,
-    do {
-        nmo_status_t result = nmo_3dobject_vtable.create(
-            &state->base, NULL, context);
-        if (result != NMO_OK) return result;
-        /* RCKBodyPart::RCKBodyPart starts the joint with flags 7. */
-        state->rotation_joint.flags = 7u;
-    } while (0),
-    nmo_3dobject_vtable.destroy(&state->base, NULL, context))
-
 static void character_copy_base_allocators(
     nmo_3dentity_state_t *destination,
     const nmo_3dentity_state_t *source)
@@ -380,27 +368,30 @@ static nmo_status_t nmo_character_validate(
     NMO_RETURN_OK();
 }
 
-static nmo_status_t nmo_bodypart_copy(
-    const void *src,
-    void *dst,
-    const nmo_type_descriptor_t *type,
-    nmo_arena_t *arena)
+/* RCKBodyPart::RCKBodyPart starts the joint with flags 7. */
+static void nmo_bodypart_set_defaults(void *instance)
 {
-    (void)type;
-    if (src == NULL || dst == NULL) return NMO_ERR_INVALID_ARGUMENT;
-    const nmo_bodypart_state_t *source = src;
-    nmo_bodypart_state_t *target = dst;
-    nmo_type_descriptor_t base_type = {
-        .size = sizeof(nmo_3dobject_state_t),
-    };
-    NMO_RETURN_IF_ERROR(nmo_3dobject_vtable.copy(
-        &source->base, &target->base, &base_type, arena));
-    target->has_character = source->has_character;
-    target->character = source->character;
-    target->has_rotation_joint = source->has_rotation_joint;
-    target->rotation_joint = source->rotation_joint;
-    return NMO_OK;
+    nmo_bodypart_state_t *state = instance;
+    state->rotation_joint.flags = 7u;
 }
+
+static const nmo_object_state_member_t nmo_bodypart_members[] = {
+    NMO_STATE_VALUE(nmo_bodypart_state_t, has_character),
+    NMO_STATE_VALUE(nmo_bodypart_state_t, character),
+    NMO_STATE_VALUE(nmo_bodypart_state_t, has_rotation_joint),
+    NMO_STATE_VALUE(nmo_bodypart_state_t, rotation_joint)
+};
+
+static const nmo_object_state_layout_t nmo_bodypart_layout = {
+    .size = sizeof(nmo_bodypart_state_t),
+    .base_vtable = &nmo_3dobject_vtable,
+    .base_size = sizeof(nmo_3dobject_state_t),
+    .members = nmo_bodypart_members,
+    .member_count = sizeof(nmo_bodypart_members) / sizeof(nmo_bodypart_members[0]),
+    .set_defaults = nmo_bodypart_set_defaults,
+};
+
+NMO_DEFINE_OBJECT_LAYOUT_OPS(bodypart, nmo_bodypart_layout)
 
 NMO_DEFINE_OBJECT_VALIDATE_BASE(nmo_bodypart, nmo_bodypart_state_t, base, nmo_3dobject_vtable)
 
@@ -570,57 +561,6 @@ static uint32_t nmo_character_hash(const void *instance)
         sizeof(nmo_character_compare_passes) /
             sizeof(nmo_character_compare_passes[0]),
         4096);
-}
-
-static bool nmo_bodypart_equals(const void *a, const void *b)
-{
-    if (a == b) return true;
-    if (a == NULL || b == NULL) return false;
-    const nmo_bodypart_state_t *lhs = a;
-    const nmo_bodypart_state_t *rhs = b;
-    return nmo_3dobject_vtable.equals(&lhs->base, &rhs->base) &&
-        lhs->has_character == rhs->has_character &&
-        lhs->character.raw_id == rhs->character.raw_id &&
-        lhs->character.id == rhs->character.id &&
-        lhs->character.state == rhs->character.state &&
-        lhs->has_rotation_joint == rhs->has_rotation_joint &&
-        lhs->rotation_joint.flags == rhs->rotation_joint.flags &&
-        memcmp(&lhs->rotation_joint.min, &rhs->rotation_joint.min,
-               sizeof(lhs->rotation_joint.min)) == 0 &&
-        memcmp(&lhs->rotation_joint.max, &rhs->rotation_joint.max,
-               sizeof(lhs->rotation_joint.max)) == 0 &&
-        memcmp(&lhs->rotation_joint.damping, &rhs->rotation_joint.damping,
-               sizeof(lhs->rotation_joint.damping)) == 0;
-}
-
-static uint32_t nmo_bodypart_hash(const void *instance)
-{
-    if (instance == NULL) return 0;
-    const nmo_bodypart_state_t *state = instance;
-    uint32_t hash = nmo_3dobject_vtable.hash(&state->base);
-    hash = nmo_hash_fnv1a32_update(
-        hash, &state->has_character, sizeof(state->has_character));
-    hash = nmo_hash_fnv1a32_update(
-        hash, &state->character.raw_id, sizeof(state->character.raw_id));
-    hash = nmo_hash_fnv1a32_update(
-        hash, &state->character.id, sizeof(state->character.id));
-    hash = nmo_hash_fnv1a32_update(
-        hash, &state->character.state, sizeof(state->character.state));
-    hash = nmo_hash_fnv1a32_update(
-        hash, &state->has_rotation_joint,
-        sizeof(state->has_rotation_joint));
-    hash = nmo_hash_fnv1a32_update(
-        hash, &state->rotation_joint.flags,
-        sizeof(state->rotation_joint.flags));
-    hash = nmo_hash_fnv1a32_update(
-        hash, &state->rotation_joint.min,
-        sizeof(state->rotation_joint.min));
-    hash = nmo_hash_fnv1a32_update(
-        hash, &state->rotation_joint.max,
-        sizeof(state->rotation_joint.max));
-    return nmo_hash_fnv1a32_update(
-        hash, &state->rotation_joint.damping,
-        sizeof(state->rotation_joint.damping));
 }
 
 nmo_type_vtable_t nmo_character_vtable = {
