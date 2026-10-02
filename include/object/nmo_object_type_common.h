@@ -229,6 +229,81 @@ typedef struct nmo_object_state_member {
     {.kind = NMO_OBJECT_STATE_MEMBER_RECORDS, \
      .offset = offsetof(_state_t, _member), .record = &(_record)}
 
+/* ============================================================================
+ * Section-Driven Serialize and Deserialize
+ * ============================================================================ */
+
+/** Kinds of value a section holds. Each takes one dword of the chunk. */
+typedef enum nmo_object_section_field_kind {
+    NMO_OBJECT_SECTION_DWORD,       /**< uint32_t member */
+    NMO_OBJECT_SECTION_INT16_AS_INT, /**< int16_t member stored as a 32 bit int */
+    NMO_OBJECT_SECTION_INT16_PAIR,  /**< two int16_t members in one dword, the first in the low half */
+    NMO_OBJECT_SECTION_REF          /**< nmo_ref_t member, checked against a class on read */
+} nmo_object_section_field_kind_t;
+
+typedef struct nmo_object_section_field {
+    nmo_object_section_field_kind_t kind;
+    size_t offset;       /**< the member; INT16_PAIR: the one in the low half */
+    size_t offset_high;  /**< INT16_PAIR: the member in the high half */
+    nmo_class_id_t ref_class; /**< REF: class the target must derive from, 0 for any */
+} nmo_object_section_field_t;
+
+/** The section is read although it holds more dwords than its fields take. */
+#define NMO_OBJECT_SECTION_ALLOW_LONGER 0x1u
+
+/**
+ * @brief One identifier section of a chunk.
+ *
+ * A reader looks the identifier up and, when it finds it, checks the size,
+ * reads the fields in order and sets the presence member. A writer writes the
+ * section when its presence member is set.
+ */
+typedef struct nmo_object_section {
+    uint32_t identifier;
+    /** Offset of a one byte presence member, 0 for none (offset 0 is the base state). */
+    size_t present_offset;
+    /** A reader tries the sections of a phase only when it found none of an earlier phase. */
+    uint32_t phase;
+    uint32_t flags; /**< NMO_OBJECT_SECTION_* flags */
+    const nmo_object_section_field_t *fields;
+    size_t field_count;
+} nmo_object_section_t;
+
+/**
+ * @brief The sections of a class, in the order they are written.
+ *
+ * Phases are numbered from 0 and the sections are listed by phase.
+ */
+typedef struct nmo_object_sections {
+    const nmo_object_section_t *sections;
+    size_t count;
+    /** A one byte member a reader sets when it found any section, 0 for none. */
+    size_t any_present_offset;
+    /** A save to a chunk without a file writes the sections only when the save flags include one of these. */
+    uint32_t non_file_save_flags;
+} nmo_object_sections_t;
+
+/* One section: its identifier, the presence member of _state_t, its phase, flags and field list. */
+#define NMO_SECTION(_identifier, _state_t, _present_member, _phase, _flags, _fields) \
+    {.identifier = (_identifier), \
+     .present_offset = offsetof(_state_t, _present_member), \
+     .phase = (_phase), .flags = (_flags), \
+     .fields = (_fields), \
+     .field_count = sizeof(_fields) / sizeof((_fields)[0])}
+/* The list of sections of an nmo_object_sections_t. */
+#define NMO_SECTION_LIST(_list) \
+    .sections = (_list), .count = sizeof(_list) / sizeof((_list)[0])
+#define NMO_SECTION_FIELD_DWORD(_state_t, _member) \
+    {.kind = NMO_OBJECT_SECTION_DWORD, .offset = offsetof(_state_t, _member)}
+#define NMO_SECTION_FIELD_INT16_AS_INT(_state_t, _member) \
+    {.kind = NMO_OBJECT_SECTION_INT16_AS_INT, .offset = offsetof(_state_t, _member)}
+#define NMO_SECTION_FIELD_INT16_PAIR(_state_t, _low, _high) \
+    {.kind = NMO_OBJECT_SECTION_INT16_PAIR, .offset = offsetof(_state_t, _low), \
+     .offset_high = offsetof(_state_t, _high)}
+#define NMO_SECTION_FIELD_REF(_state_t, _member, _class) \
+    {.kind = NMO_OBJECT_SECTION_REF, .offset = offsetof(_state_t, _member), \
+     .ref_class = (_class)}
+
 /**
  * @brief State layout of a class whose own members need no custom logic.
  *
@@ -245,6 +320,8 @@ struct nmo_object_state_layout {
     nmo_status_t (*validate)(const void *instance,
                              const nmo_type_descriptor_t *type,
                              void *context);
+    /** The chunk sections of the class, NULL for a layout that serializes by hand. */
+    const nmo_object_sections_t *sections;
 };
 
 NMO_API nmo_status_t nmo_object_layout_create(
@@ -277,6 +354,28 @@ NMO_API uint32_t nmo_object_layout_hash_from(
     const nmo_object_state_layout_t *layout,
     uint32_t hash,
     const void *instance);
+
+/**
+ * @brief Write the base state, then the sections of the layout that are present.
+ *
+ * Without a file, nothing is written unless the save flags include
+ * sections->non_file_save_flags.
+ */
+NMO_API nmo_status_t nmo_object_layout_serialize(
+    const nmo_object_state_layout_t *layout,
+    const void *instance,
+    nmo_chunk_t *out_chunk,
+    void *context);
+
+/**
+ * @brief Read the base state and the sections of the layout into a fresh state
+ *        and replace instance by it; instance is left alone on failure.
+ */
+NMO_API nmo_status_t nmo_object_layout_deserialize(
+    const nmo_object_state_layout_t *layout,
+    void *instance,
+    nmo_chunk_t *chunk,
+    void *context);
 
 /* Vtable hooks over a layout: nmo_<prefix>_create/_destroy, _copy, _equals/_hash */
 #define NMO_DEFINE_OBJECT_LAYOUT_LIFECYCLE(_prefix, _layout) \
@@ -316,6 +415,41 @@ NMO_API uint32_t nmo_object_layout_hash_from(
     NMO_DEFINE_OBJECT_LAYOUT_LIFECYCLE(_prefix, _layout) \
     NMO_DEFINE_OBJECT_LAYOUT_COPY(_prefix, _layout) \
     NMO_DEFINE_OBJECT_LAYOUT_COMPARE(_prefix, _layout)
+
+/*
+ * Define the exported <_prefix>_serialize and <_prefix>_deserialize of a class
+ * whose layout lists its sections. _prefix is the full prefix of the exported
+ * names (nmo_behaviorlink); _validate is checked before anything is written.
+ */
+#define NMO_DEFINE_OBJECT_LAYOUT_SERDE(_prefix, _layout, _validate) \
+    static nmo_status_t _prefix##_serialize_sections( \
+        const void *instance, \
+        nmo_chunk_t *out_chunk, \
+        const nmo_type_descriptor_t *type, \
+        void *context) \
+    { \
+        (void)type; \
+        return nmo_object_layout_serialize(&(_layout), instance, out_chunk, context); \
+    } \
+    nmo_status_t _prefix##_serialize( \
+        const void *instance, \
+        nmo_chunk_t *out_chunk, \
+        const nmo_type_descriptor_t *type, \
+        void *context) \
+    { \
+        return nmo_object_serialize_staged( \
+            instance, out_chunk, type, context, _validate, \
+            _prefix##_serialize_sections); \
+    } \
+    nmo_status_t _prefix##_deserialize( \
+        void *instance, \
+        nmo_chunk_t *chunk, \
+        const nmo_type_descriptor_t *type, \
+        void *context) \
+    { \
+        (void)type; \
+        return nmo_object_layout_deserialize(&(_layout), instance, chunk, context); \
+    }
 
 /* ============================================================================
  * Shared Hooks and Wrappers

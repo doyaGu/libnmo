@@ -9,12 +9,14 @@ endif()
 
 foreach(schema_file IN LISTS schema_files)
     file(READ "${schema_file}" schema_contents)
-    if(NOT schema_contents MATCHES "_deserialize[ 	\r\n]*\\(")
+    if(NOT schema_contents MATCHES "_deserialize[ 	\r\n]*\\(" AND
+       NOT schema_contents MATCHES "NMO_DEFINE_OBJECT_LAYOUT_SERDE[ 	]*\\(")
         string(APPEND failures
             "${schema_file}: missing deserialize implementation\n")
     endif()
     if(NOT schema_contents MATCHES "_serialize[ 	\r\n]*\\(" AND
-       NOT schema_contents MATCHES "NMO_DEFINE_OBJECT_STAGED_SERIALIZE(_VALIDATED|_STATE)?[ 	]*\\(")
+       NOT schema_contents MATCHES "NMO_DEFINE_OBJECT_STAGED_SERIALIZE(_VALIDATED|_STATE)?[ 	]*\\(" AND
+       NOT schema_contents MATCHES "NMO_DEFINE_OBJECT_LAYOUT_SERDE[ 	]*\\(")
         string(APPEND failures
             "${schema_file}: missing serialize implementation\n")
     endif()

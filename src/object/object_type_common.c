@@ -9,6 +9,8 @@
 #include "core/nmo_error.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"
+#include "object/nmo_object_repository.h"
+#include "object/nmo_ref.h"
 #include "type/nmo_reflection.h"
 #include <stdint.h>
 #include <stdlib.h>
@@ -983,6 +985,223 @@ uint32_t nmo_object_layout_hash(
         instance);
 }
 
+
+/* ============================================================================
+ * Section-Driven Serialize and Deserialize
+ * ============================================================================ */
+
+static uint8_t *section_flag(void *instance, size_t offset)
+{
+    return (uint8_t *)instance + offset;
+}
+
+static bool section_flag_set(const void *instance, size_t offset)
+{
+    return offset == 0 || *((const uint8_t *)instance + offset) != 0;
+}
+
+static nmo_status_t section_read_fields(
+    const nmo_object_section_t *section,
+    void *instance,
+    nmo_chunk_t *chunk,
+    void *context)
+{
+    const nmo_object_repository_t *repository =
+        (const nmo_object_repository_t *)nmo_deserialize_context_get_repository(context);
+    const nmo_type_registry_t *types = nmo_deserialize_context_get_type_registry(context);
+    for (size_t i = 0; i < section->field_count; ++i) {
+        const nmo_object_section_field_t *field = &section->fields[i];
+        uint8_t *member = (uint8_t *)instance + field->offset;
+        switch (field->kind) {
+        case NMO_OBJECT_SECTION_DWORD: {
+            uint32_t value = 0;
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &value));
+            memcpy(member, &value, sizeof(value));
+            break;
+        }
+        case NMO_OBJECT_SECTION_INT16_AS_INT: {
+            int32_t value = 0;
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_int(chunk, &value));
+            const int16_t narrow = (int16_t)value;
+            memcpy(member, &narrow, sizeof(narrow));
+            break;
+        }
+        case NMO_OBJECT_SECTION_INT16_PAIR: {
+            uint32_t value = 0;
+            NMO_RETURN_IF_ERROR(nmo_chunk_read_dword(chunk, &value));
+            const int16_t low = (int16_t)(value & 0xFFFFu);
+            const int16_t high = (int16_t)((value >> 16) & 0xFFFFu);
+            memcpy(member, &low, sizeof(low));
+            memcpy((uint8_t *)instance + field->offset_high, &high, sizeof(high));
+            break;
+        }
+        case NMO_OBJECT_SECTION_REF: {
+            nmo_ref_t ref;
+            NMO_RETURN_IF_ERROR(nmo_ref_read(chunk, &ref));
+            if (field->ref_class != 0) {
+                nmo_ref_check_class(&ref, repository, types, field->ref_class);
+            }
+            memcpy(member, &ref, sizeof(ref));
+            break;
+        }
+        }
+    }
+    return NMO_OK;
+}
+
+static nmo_status_t section_write_fields(
+    const nmo_object_section_t *section,
+    const void *instance,
+    nmo_chunk_t *out_chunk)
+{
+    for (size_t i = 0; i < section->field_count; ++i) {
+        const nmo_object_section_field_t *field = &section->fields[i];
+        const uint8_t *member = (const uint8_t *)instance + field->offset;
+        switch (field->kind) {
+        case NMO_OBJECT_SECTION_DWORD: {
+            uint32_t value;
+            memcpy(&value, member, sizeof(value));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(out_chunk, value));
+            break;
+        }
+        case NMO_OBJECT_SECTION_INT16_AS_INT: {
+            int16_t narrow;
+            memcpy(&narrow, member, sizeof(narrow));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_int(out_chunk, (int32_t)narrow));
+            break;
+        }
+        case NMO_OBJECT_SECTION_INT16_PAIR: {
+            int16_t low;
+            int16_t high;
+            memcpy(&low, member, sizeof(low));
+            memcpy(&high, (const uint8_t *)instance + field->offset_high, sizeof(high));
+            NMO_RETURN_IF_ERROR(nmo_chunk_write_dword(
+                out_chunk,
+                ((uint32_t)low & 0xFFFFu) | (((uint32_t)high & 0xFFFFu) << 16)));
+            break;
+        }
+        case NMO_OBJECT_SECTION_REF: {
+            nmo_ref_t ref;
+            memcpy(&ref, member, sizeof(ref));
+            NMO_RETURN_IF_ERROR(nmo_ref_write(out_chunk, &ref));
+            break;
+        }
+        }
+    }
+    return NMO_OK;
+}
+
+nmo_status_t nmo_object_layout_serialize(
+    const nmo_object_state_layout_t *layout,
+    const void *instance,
+    nmo_chunk_t *out_chunk,
+    void *context)
+{
+    if (layout == NULL || layout->sections == NULL || instance == NULL ||
+        out_chunk == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_INVALID_ARGUMENT, NMO_SEVERITY_ERROR,
+                         "Invalid arguments to nmo_object_layout_serialize");
+    }
+    const nmo_object_sections_t *sections = layout->sections;
+    NMO_RETURN_IF_ERROR(layout->base_vtable->serialize(
+        instance, out_chunk, NULL, context));
+
+    if (!nmo_object_serialize_is_file(out_chunk, context) &&
+        (nmo_serialize_context_get_save_flags(context) &
+         sections->non_file_save_flags) == 0u) {
+        NMO_RETURN_OK();
+    }
+    for (size_t i = 0; i < sections->count; ++i) {
+        const nmo_object_section_t *section = &sections->sections[i];
+        if (!section_flag_set(instance, section->present_offset)) continue;
+        NMO_RETURN_IF_ERROR(nmo_chunk_write_identifier(out_chunk, section->identifier));
+        NMO_RETURN_IF_ERROR(section_write_fields(section, instance, out_chunk));
+    }
+    NMO_RETURN_OK();
+}
+
+nmo_status_t nmo_object_layout_deserialize(
+    const nmo_object_state_layout_t *layout,
+    void *instance,
+    nmo_chunk_t *chunk,
+    void *context)
+{
+    if (layout == NULL || layout->sections == NULL || instance == NULL ||
+        chunk == NULL) {
+        return NMO_ERR_INVALID_ARGUMENT;
+    }
+    const nmo_object_sections_t *sections = layout->sections;
+
+    void *decoded = calloc(1, layout->size);
+    if (decoded == NULL) return NMO_ERR_NOMEM;
+    nmo_status_t result = nmo_object_layout_create(layout, decoded, context);
+    if (result != NMO_OK) {
+        free(decoded);
+        return result;
+    }
+    result = layout->base_vtable->deserialize(decoded, chunk, NULL, context);
+
+    /* A section absent from the chunk is absent from the state, whatever the
+     * state of a new object says. */
+    for (size_t i = 0; i < sections->count; ++i) {
+        if (sections->sections[i].present_offset != 0) {
+            *section_flag(decoded, sections->sections[i].present_offset) = 0;
+        }
+    }
+    if (sections->any_present_offset != 0) {
+        *section_flag(decoded, sections->any_present_offset) = 0;
+    }
+
+    bool found_in_earlier_phase = false;
+    bool found_in_this_phase = false;
+    uint32_t phase = 0;
+    for (size_t i = 0; result == NMO_OK && i < sections->count; ++i) {
+        const nmo_object_section_t *section = &sections->sections[i];
+        if (section->phase != phase) {
+            phase = section->phase;
+            found_in_earlier_phase = found_in_earlier_phase || found_in_this_phase;
+            found_in_this_phase = false;
+        }
+        if (found_in_earlier_phase) continue;
+
+        size_t section_dwords = 0;
+        result = nmo_chunk_seek_identifier_with_size(
+            chunk, section->identifier, &section_dwords);
+        if (result == NMO_ERR_NOT_FOUND) {
+            result = NMO_OK;
+            continue;
+        }
+        if (result != NMO_OK) break;
+
+        /* Every field takes one dword. */
+        if (section_dwords < section->field_count) {
+            result = NMO_ERR_TRUNCATED_CHUNK;
+        } else if (section_dwords > section->field_count &&
+                   (section->flags & NMO_OBJECT_SECTION_ALLOW_LONGER) == 0u) {
+            result = NMO_ERR_INVALID_FORMAT;
+        } else {
+            result = section_read_fields(section, decoded, chunk, context);
+        }
+        if (result != NMO_OK) break;
+        if (section->present_offset != 0) {
+            *section_flag(decoded, section->present_offset) = 1;
+        }
+        if (sections->any_present_offset != 0) {
+            *section_flag(decoded, sections->any_present_offset) = 1;
+        }
+        found_in_this_phase = true;
+    }
+
+    if (result != NMO_OK) {
+        nmo_object_layout_destroy(layout, decoded, context);
+        free(decoded);
+        return result;
+    }
+    nmo_object_layout_destroy(layout, instance, context);
+    memcpy(instance, decoded, layout->size);
+    free(decoded);
+    NMO_RETURN_OK();
+}
 
 nmo_status_t nmo_object_copy_bytes(
     nmo_arena_t *arena,
