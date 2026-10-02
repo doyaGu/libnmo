@@ -8,6 +8,7 @@
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_chunk_pool.h"
 #include "core/nmo_utils.h"
+#include "miniz.h"
 #include <string.h>
 #include <stdalign.h>
 
@@ -144,6 +145,89 @@ static nmo_status_t parse_manager_data(
 }
 
 /**
+ * @brief Parse an object entry of a file below version 4
+ *
+ * CKFile::ReadFileData reads these entries itself instead of through
+ * CKStateChunk::ConvertFromBuffer: after the object id and the size comes,
+ * when the size is not zero, the class id, the save flags, the stored size and
+ * the stored bytes. The chunk is built as CKStateChunk(class id, NULL) builds
+ * it, with data and chunk version 0, so its reads take the layout of chunks
+ * older than version 4. With NMO_FILE_WRITE_CHUNK_COMPRESSED_OLD and a stored
+ * size that differs from the size, the bytes are zlib packed; a chunk that
+ * does not unpack is dropped, as the engine drops it.
+ */
+static nmo_status_t parse_object_entry_v2(
+    const uint8_t *data,
+    size_t size,
+    size_t *pos,
+    uint32_t file_write_mode,
+    uint32_t index,
+    nmo_object_data_t *obj,
+    nmo_chunk_pool_t *chunk_pool,
+    nmo_arena_t *arena) {
+    CHECK_BUFFER_SIZE(arena, *pos, 8, size);
+    obj->object_id = nmo_read_u32_le(data + *pos);
+    obj->data_size = nmo_read_u32_le(data + *pos + 4);
+    *pos += 8;
+    obj->chunk = NULL;
+    if ((int32_t)obj->data_size <= 0) {
+        obj->data_size = 0;
+        NMO_RETURN_OK();
+    }
+
+    CHECK_BUFFER_SIZE(arena, *pos, 12, size);
+    const uint32_t class_id = nmo_read_u32_le(data + *pos);
+    const uint32_t stored_size = nmo_read_u32_le(data + *pos + 8);
+    *pos += 12;
+    if (class_id == 0) {
+        NMO_RETURN_ERROR(NMO_ERR_CORRUPT, NMO_SEVERITY_ERROR,
+                         "Object entry %u has no class id", (unsigned)index);
+    }
+    CHECK_BUFFER_SIZE(arena, *pos, stored_size, size);
+    const uint8_t *stored = data + *pos;
+    *pos += stored_size;
+
+    const bool packed = stored_size != obj->data_size &&
+                        (file_write_mode & NMO_FILE_WRITE_CHUNK_COMPRESSED_OLD) != 0;
+    const uint8_t *bytes = stored;
+    size_t byte_count = stored_size;
+    uint8_t *unpacked = NULL;
+    if (packed) {
+        unpacked = (uint8_t *)nmo_arena_alloc(arena, obj->data_size, alignof(uint32_t));
+        if (unpacked == NULL) {
+            NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                             "Failed to allocate object entry %u", (unsigned)index);
+        }
+        mz_ulong unpacked_size = obj->data_size;
+        if (mz_uncompress(unpacked, &unpacked_size, stored, stored_size) != MZ_OK) {
+            obj->data_size = 0;
+            NMO_RETURN_OK();
+        }
+        bytes = unpacked;
+        byte_count = (size_t)unpacked_size;
+    }
+
+    nmo_chunk_t *chunk = allocate_chunk(chunk_pool, arena);
+    if (chunk == NULL) {
+        NMO_RETURN_ERROR(NMO_ERR_NOMEM, NMO_SEVERITY_ERROR,
+                         "Failed to create object chunk (index=%u)", (unsigned)index);
+    }
+    chunk->class_id = class_id;
+    chunk->chunk_class_id = (uint8_t)(class_id & 0xFFu);
+    chunk->data_version = 0;
+    chunk->chunk_version = 0;
+    chunk->chunk_options |= NMO_CHUNK_OPTION_FILE;
+    const size_t dword_count = byte_count / sizeof(uint32_t);
+    for (size_t i = 0; i < dword_count; ++i) {
+        const uint32_t value = nmo_read_u32_le(bytes + i * sizeof(uint32_t));
+        NMO_RETURN_IF_ERROR(nmo_arena_array_append(&chunk->data, &value));
+    }
+    chunk->uncompressed_size = dword_count * sizeof(uint32_t);
+    obj->chunk = chunk;
+    NMO_RETURN_OK();
+}
+
+/**
  * @brief Parse object data from buffer
  *
  * Object data format (for file_version >= 4):
@@ -184,6 +268,11 @@ static nmo_status_t parse_object_data(
         nmo_object_data_t *obj = &section->objects[i];
 
         obj->object_id = 0;
+        if (file_version < 4) {
+            NMO_RETURN_IF_ERROR(parse_object_entry_v2(
+                data, size, pos, section->file_write_mode, i, obj, chunk_pool, arena));
+            continue;
+        }
 
         /* For file_version < 7, object ID is stored here */
         /* For file_version >= 8, object IDs are in Header1 */
@@ -292,6 +381,7 @@ nmo_status_t nmo_data_section_parse(
         ? data_section->manager_count : 0u;
     staged.object_count = data_section->object_count;
     staged.save_id_max = data_section->save_id_max;
+    staged.file_write_mode = data_section->file_write_mode;
 
     const uint8_t *buffer = (const uint8_t *) data;
     size_t pos = 0;
@@ -315,7 +405,7 @@ nmo_status_t nmo_data_section_parse(
         }
         /* An entry takes at least its size field, so a count the rest of the
            section cannot hold is rejected before anything is allocated for it. */
-        if (file_version >= 4u) {
+        {
             const size_t entry_min = (file_version < 7u) ? 8u : 4u;
             if ((size_t) section_object_count > (size - pos) / entry_min) {
                 NMO_RETURN_ERROR(NMO_ERR_TRUNCATED_CHUNK, NMO_SEVERITY_ERROR,
@@ -337,8 +427,8 @@ nmo_status_t nmo_data_section_parse(
         }
     }
 
-    /* Parse object data (file_version >= 4) */
-    if (file_version >= 4 && staged.object_count > 0) {
+    /* Parse object data */
+    if (staged.object_count > 0) {
         result = parse_object_data(
             buffer, size, &pos, file_version, &staged, chunk_pool, arena);
         if (result != NMO_OK) {

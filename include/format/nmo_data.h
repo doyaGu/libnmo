@@ -92,6 +92,13 @@ typedef struct nmo_data_section {
      * is in the header, and parse leaves this field as the caller set it.
      */
     uint32_t save_id_max;
+
+    /**
+     * The header's FileWriteMode; parse reads it and leaves it unchanged. Below
+     * file version 4 an object entry whose stored size differs from its size is
+     * zlib packed when NMO_FILE_WRITE_CHUNK_COMPRESSED_OLD is set.
+     */
+    uint32_t file_write_mode;
 } nmo_data_section_t;
 
 /**
