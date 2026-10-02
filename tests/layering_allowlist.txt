@@ -29,3 +29,23 @@ src/session/deserializer.c runtime/nmo_context.h
 src/session/runtime_delete.c runtime/nmo_context.h
 src/session/runtime_kernel.c runtime/nmo_context.h
 src/session/runtime_kernel.c runtime/nmo_workspace.h
+# Relative includes of another layer's private header, which the audit did not
+# see before. Most are runtime_internal.h: the session object is implemented in
+# src/runtime/document_workspace.c, so every layer that uses it reaches up.
+src/document/document_compare.c ../runtime/runtime_internal.h
+src/document/document_file_state.c ../runtime/runtime_internal.h
+src/document/document_load.c ../runtime/runtime_internal.h
+src/document/document_save.c ../runtime/runtime_internal.h
+src/document/document_stats.c ../runtime/runtime_internal.h
+src/format/interface_view.c ../runtime/runtime_internal.h
+src/object/object_diff.c ../runtime/runtime_internal.h
+src/object/object_hierarchy.c ../runtime/runtime_internal.h
+src/object/object_import.c ../runtime/runtime_internal.h
+src/object/object_query.c ../runtime/runtime_internal.h
+src/object/object_refs.c ../runtime/runtime_internal.h
+src/object/object_summary.c ../export/export_json_util_internal.h
+src/object/object_summary.c ../runtime/runtime_internal.h
+src/session/deserializer.c ../runtime/runtime_internal.h
+src/session/runtime_delete.c ../runtime/runtime_internal.h
+src/session/runtime_kernel.c ../runtime/runtime_internal.h
+src/session/runtime_ref_remap.c ../runtime/runtime_internal.h
