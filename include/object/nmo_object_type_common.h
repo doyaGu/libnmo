@@ -110,15 +110,22 @@ typedef enum nmo_object_state_member_kind {
 } nmo_object_state_member_kind_t;
 
 /**
- * @brief Functions of a CUSTOM member. The value they work on holds only
- *        arena-owned memory, so a copy needs no teardown.
+ * @brief Functions of a CUSTOM member.
+ *
+ * A function gets the member and the state that holds it (the record, for a
+ * member of a record), so a member whose shape depends on a sibling, such as the
+ * cells of a row that follow the column types, can read the sibling. The value
+ * holds only arena-owned memory, so a copy needs no teardown. equals and hash
+ * may be NULL when the layout is used for lifecycle and copy only.
  */
 typedef struct nmo_object_state_custom_ops {
-    /** Copy *src over *dst; leave *dst alone on failure. */
-    nmo_status_t (*copy)(nmo_arena_t *arena, void *dst, const void *src);
-    bool (*equals)(const void *a, const void *b);
+    /** Copy *src over *dst; leave *dst alone on failure. src_owner holds src. */
+    nmo_status_t (*copy)(nmo_arena_t *arena, void *dst, const void *src,
+                         const void *src_owner);
+    bool (*equals)(const void *a, const void *b,
+                   const void *a_owner, const void *b_owner);
     /** Fold the value into a running FNV-1a hash. */
-    uint32_t (*hash)(uint32_t hash, const void *value);
+    uint32_t (*hash)(uint32_t hash, const void *value, const void *owner);
 } nmo_object_state_custom_ops_t;
 
 typedef struct nmo_object_state_layout nmo_object_state_layout_t;

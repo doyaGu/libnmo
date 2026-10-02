@@ -474,7 +474,7 @@ static bool layout_members_equal(
             break;
         }
         case NMO_OBJECT_STATE_MEMBER_CUSTOM:
-            if (!member->custom->equals(lhs, rhs)) return false;
+            if (!member->custom->equals(lhs, rhs, a, b)) return false;
             break;
         case NMO_OBJECT_STATE_MEMBER_BYTES:
         case NMO_OBJECT_STATE_MEMBER_COUNTED: {
@@ -582,7 +582,7 @@ static uint32_t layout_members_hash(
             break;
         }
         case NMO_OBJECT_STATE_MEMBER_CUSTOM:
-            hash = member->custom->hash(hash, value);
+            hash = member->custom->hash(hash, value, instance);
             break;
         case NMO_OBJECT_STATE_MEMBER_RECORD_PTR: {
             const void *record = layout_pointer_member(instance, member);
@@ -729,7 +729,8 @@ static nmo_status_t layout_copy_owned(
         out->pointer = calloc(1, member->size);
         if (out->pointer == NULL) return NMO_ERR_NOMEM;
         const nmo_status_t result = member->custom->copy(
-            arena, out->pointer, layout_member_ptr_const(src, member->offset));
+            arena, out->pointer, layout_member_ptr_const(src, member->offset),
+            src);
         if (result != NMO_OK) {
             free(out->pointer);
             out->pointer = NULL;
@@ -837,7 +838,7 @@ static nmo_status_t layout_copy_members_into(
         if (member->kind == NMO_OBJECT_STATE_MEMBER_CUSTOM) {
             NMO_RETURN_IF_ERROR(member->custom->copy(
                 arena, layout_member_ptr(dst, member->offset),
-                layout_member_ptr_const(src, member->offset)));
+                layout_member_ptr_const(src, member->offset), src));
             continue;
         }
         layout_owned_t owned;

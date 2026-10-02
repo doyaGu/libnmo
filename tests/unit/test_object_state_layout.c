@@ -1039,22 +1039,31 @@ typedef struct lane_state {
 static int custom_copy_calls;
 static int custom_copy_fails;
 
-static nmo_status_t lane_custom_copy(nmo_arena_t *arena, void *dst, const void *src)
+/* The offset added to a copy follows the count of the state that holds the
+ * value, so a function that reads its owner shows in the result. */
+static nmo_status_t lane_custom_copy(
+    nmo_arena_t *arena, void *dst, const void *src, const void *src_owner)
 {
     (void)arena;
     custom_copy_calls++;
     if (custom_copy_fails) return NMO_ERR_NOMEM;
-    *(uint32_t *)dst = *(const uint32_t *)src + 1000u;
+    *(uint32_t *)dst = *(const uint32_t *)src +
+        1000u * (1u + ((const lane_state_t *)src_owner)->count);
     return NMO_OK;
 }
 
-static bool lane_custom_equals(const void *a, const void *b)
+static bool lane_custom_equals(
+    const void *a, const void *b, const void *a_owner, const void *b_owner)
 {
+    (void)a_owner;
+    (void)b_owner;
     return (*(const uint32_t *)a % 1000u) == (*(const uint32_t *)b % 1000u);
 }
 
-static uint32_t lane_custom_hash(uint32_t hash, const void *value)
+static uint32_t lane_custom_hash(
+    uint32_t hash, const void *value, const void *owner)
 {
+    (void)owner;
     const uint32_t reduced = *(const uint32_t *)value % 1000u;
     return hash ^ reduced;
 }
@@ -1096,6 +1105,7 @@ TEST(object_state_layout, optional_lanes_may_be_null_while_the_count_is_not) {
     ASSERT_EQ(NMO_OK, nmo_object_layout_copy(&lane_layout, &source, &copied, arena));
     ASSERT_TRUE(copied.lane_a != lane_a);
     ASSERT_EQ(3u, copied.lane_a[2]);
+    ASSERT_EQ(4007u, copied.custom_value);
     ASSERT_NULL(copied.lane_b);
     ASSERT_TRUE(nmo_object_layout_equals(&lane_layout, &source, &copied));
     ASSERT_EQ(nmo_object_layout_hash(&lane_layout, &source),
@@ -1137,6 +1147,7 @@ TEST(object_state_layout, custom_members_use_their_functions_and_fail_atomically
     custom_copy_fails = 0;
     ASSERT_EQ(NMO_OK, nmo_object_layout_copy(&lane_layout, &source, &copied, arena));
     ASSERT_EQ(1, custom_copy_calls);
+    /* 7 + 1000 * (1 + the count of the source state, which was 0) */
     ASSERT_EQ(1007u, copied.custom_value);
     /* The function decides what equal means: 1007 and 7 agree modulo 1000. */
     ASSERT_TRUE(nmo_object_layout_equals(&lane_layout, &source, &copied));

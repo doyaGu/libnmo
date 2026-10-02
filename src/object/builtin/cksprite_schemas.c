@@ -35,18 +35,25 @@
 #include <stdint.h>
 #include <string.h>
 
-static nmo_status_t nmo_sprite_bitmap_copy(nmo_arena_t *arena, void *dst, const void *src)
+static nmo_status_t nmo_sprite_bitmap_copy(
+    nmo_arena_t *arena, void *dst, const void *src, const void *src_owner)
 {
+    (void)src_owner;
     return nmo_bitmap_slots_copy(arena, dst, src);
 }
 
-static bool nmo_sprite_bitmap_equals(const void *a, const void *b)
+static bool nmo_sprite_bitmap_equals(
+    const void *a, const void *b, const void *a_owner, const void *b_owner)
 {
+    (void)a_owner;
+    (void)b_owner;
     return nmo_bitmap_slots_equals(a, b);
 }
 
-static uint32_t nmo_sprite_bitmap_hash(uint32_t hash, const void *value)
+static uint32_t nmo_sprite_bitmap_hash(
+    uint32_t hash, const void *value, const void *owner)
 {
+    (void)owner;
     return nmo_bitmap_slots_hash(hash, value);
 }
 
