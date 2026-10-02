@@ -24,44 +24,318 @@
 #include <string.h>
 #include <stddef.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE(
-    animation,
-    nmo_animation_state_t,
-    do {
-        nmo_status_t result = nmo_sceneobject_vtable.create(
-            &state->base, NULL, context);
-        if (result != NMO_OK) return result;
-        state->flags = CKANIMATION_LINKTOFRAMERATE | CKANIMATION_CANBEBREAK;
-        state->frame_rate = 30.0f;
-        state->length = 100.0f;
-        state->current_step = 0.0f;
-    } while (0),
-    nmo_sceneobject_vtable.destroy(&state->base, NULL, context))
+static nmo_status_t nmo_animation_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
+static nmo_status_t nmo_keyedanimation_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
+static nmo_status_t nmo_objectanimation_validate(
+    const void *instance,
+    const nmo_type_descriptor_t *type,
+    void *context);
 
-NMO_DEFINE_OBJECT_LIFECYCLE(
-    keyedanimation,
-    nmo_keyedanimation_state_t,
-    do {
-        nmo_status_t result = nmo_animation_vtable.create(
-            &state->base, NULL, context);
-        if (result != NMO_OK) return result;
-        state->merge_factor = 0.5f;
-    } while (0),
-    nmo_animation_vtable.destroy(&state->base, NULL, context))
+static void nmo_animation_set_defaults(void *instance)
+{
+    nmo_animation_state_t *state = instance;
+    state->flags = CKANIMATION_LINKTOFRAMERATE | CKANIMATION_CANBEBREAK;
+    state->frame_rate = 30.0f;
+    state->length = 100.0f;
+    state->current_step = 0.0f;
+}
 
-NMO_DEFINE_OBJECT_LIFECYCLE(
-    objectanimation,
-    nmo_objectanimation_state_t,
-    do {
-        nmo_status_t result = nmo_sceneobject_vtable.create(
-            &state->base, NULL, context);
-        if (result != NMO_OK) return result;
-        state->format = CKOBJANIM_FORMAT_NONE;
-        state->merge_factor = 0.5f;
-        /* Fresh keyframe data of RCKObjectAnimation is 100 frames long. */
-        state->length = 100.0f;
-    } while (0),
-    nmo_sceneobject_vtable.destroy(&state->base, NULL, context))
+static const nmo_object_state_member_t nmo_animation_members[] = {
+    NMO_STATE_VALUE(nmo_animation_state_t, has_data),
+    NMO_STATE_VALUE(nmo_animation_state_t, data_is_legacy),
+    NMO_STATE_VALUE(nmo_animation_state_t, flags),
+    NMO_STATE_VALUE(nmo_animation_state_t, frame_rate),
+    NMO_STATE_VALUE(nmo_animation_state_t, has_length),
+    NMO_STATE_VALUE(nmo_animation_state_t, length),
+    NMO_STATE_VALUE(nmo_animation_state_t, has_root_entity),
+    NMO_STATE_VALUE(nmo_animation_state_t, legacy_body_part_count),
+    NMO_STATE_COUNTED(nmo_animation_state_t, legacy_body_parts,
+                      legacy_body_part_count, nmo_ref_t),
+    NMO_STATE_VALUE(nmo_animation_state_t, root_entity),
+    NMO_STATE_VALUE(nmo_animation_state_t, has_character),
+    NMO_STATE_VALUE(nmo_animation_state_t, character),
+    NMO_STATE_VALUE(nmo_animation_state_t, has_current_step),
+    NMO_STATE_VALUE(nmo_animation_state_t, current_step)
+};
+
+static const nmo_object_state_layout_t nmo_animation_layout = {
+    .size = sizeof(nmo_animation_state_t),
+    .base_vtable = &nmo_sceneobject_vtable,
+    .base_size = sizeof(nmo_sceneobject_state_t),
+    .members = nmo_animation_members,
+    .member_count = sizeof(nmo_animation_members) /
+        sizeof(nmo_animation_members[0]),
+    .set_defaults = nmo_animation_set_defaults,
+    .validate = nmo_animation_validate,
+};
+
+NMO_DEFINE_OBJECT_LAYOUT_OPS(animation, nmo_animation_layout)
+
+static void nmo_keyedanimation_set_defaults(void *instance)
+{
+    nmo_keyedanimation_state_t *state = instance;
+    state->merge_factor = 0.5f;
+}
+
+static const nmo_object_state_member_t nmo_keyedanimation_subanim_members[] = {
+    NMO_STATE_VALUE(nmo_keyedanimation_subanim_t, ref),
+    NMO_STATE_CHUNK(nmo_keyedanimation_subanim_t, chunk)
+};
+
+static const nmo_object_state_layout_t nmo_keyedanimation_subanim_layout = {
+    .size = sizeof(nmo_keyedanimation_subanim_t),
+    .members = nmo_keyedanimation_subanim_members,
+    .member_count = sizeof(nmo_keyedanimation_subanim_members) /
+        sizeof(nmo_keyedanimation_subanim_members[0]),
+};
+
+static const nmo_object_state_member_t nmo_keyedanimation_members[] = {
+    NMO_STATE_VALUE(nmo_keyedanimation_state_t, animation_count),
+    NMO_STATE_COUNTED(nmo_keyedanimation_state_t, animation_ids,
+                      animation_count, nmo_ref_t),
+    NMO_STATE_VALUE(nmo_keyedanimation_state_t, has_merge),
+    NMO_STATE_VALUE(nmo_keyedanimation_state_t, merged),
+    NMO_STATE_VALUE(nmo_keyedanimation_state_t, merge_factor),
+    NMO_STATE_VALUE(nmo_keyedanimation_state_t, subanim_count),
+    NMO_STATE_COUNTED_RECORDS(nmo_keyedanimation_state_t, subanims,
+                              subanim_count, nmo_keyedanimation_subanim_layout)
+};
+
+static const nmo_object_state_layout_t nmo_keyedanimation_layout = {
+    .size = sizeof(nmo_keyedanimation_state_t),
+    .base_vtable = &nmo_animation_vtable,
+    .base_size = sizeof(nmo_animation_state_t),
+    .members = nmo_keyedanimation_members,
+    .member_count = sizeof(nmo_keyedanimation_members) /
+        sizeof(nmo_keyedanimation_members[0]),
+    .set_defaults = nmo_keyedanimation_set_defaults,
+    .validate = nmo_keyedanimation_validate,
+};
+
+NMO_DEFINE_OBJECT_LAYOUT_OPS(keyedanimation, nmo_keyedanimation_layout)
+
+/* The morph sections hold a count, the size of each buffer and the buffers.
+ * The buffers follow the sizes next to them, so they are members of their own
+ * that read the sizes from the state. */
+static nmo_status_t nmo_objectanimation_morph_data_copy(
+    nmo_arena_t *arena, void *dst, void *const *data,
+    const uint32_t *sizes, uint32_t count)
+{
+    void **copy = NULL;
+    NMO_RETURN_IF_ERROR(nmo_object_copy_array(
+        arena, (void **)&copy, data, sizeof(void *), count));
+    for (uint32_t i = 0; i < count; ++i) {
+        copy[i] = NULL;
+        NMO_RETURN_IF_ERROR(nmo_object_copy_bytes(
+            arena, &copy[i], data[i], sizes[i]));
+    }
+    memcpy(dst, &copy, sizeof(copy));
+    return NMO_OK;
+}
+
+static bool nmo_objectanimation_morph_data_equal(
+    uint32_t count, const uint32_t *sizes, void *const *lhs, void *const *rhs)
+{
+    if (count == 0) return true;
+    if (sizes == NULL || lhs == NULL || rhs == NULL) return false;
+    for (uint32_t i = 0; i < count; ++i) {
+        if (sizes[i] == 0) continue;
+        if (lhs[i] == NULL || rhs[i] == NULL ||
+            memcmp(lhs[i], rhs[i], sizes[i]) != 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static uint32_t nmo_objectanimation_morph_data_hash(
+    uint32_t hash, uint32_t count, const uint32_t *sizes, void *const *data)
+{
+    for (uint32_t i = 0; sizes != NULL && data != NULL && i < count; ++i) {
+        if (data[i] != NULL && sizes[i] > 0) {
+            hash = nmo_hash_fnv1a32_update(hash, data[i], sizes[i]);
+        }
+    }
+    return hash;
+}
+
+static nmo_status_t nmo_objectanimation_comp_copy(
+    nmo_arena_t *arena, void *dst, const void *src, const void *src_owner)
+{
+    const nmo_objectanimation_state_t *owner = src_owner;
+    (void)src;
+    return nmo_objectanimation_morph_data_copy(
+        arena, dst, owner->morph_comp_data, owner->morph_comp_sizes,
+        owner->morph_comp_count);
+}
+
+static bool nmo_objectanimation_comp_equal(
+    const void *a, const void *b, const void *a_owner, const void *b_owner)
+{
+    const nmo_objectanimation_state_t *lhs = a_owner;
+    const nmo_objectanimation_state_t *rhs = b_owner;
+    (void)a;
+    (void)b;
+    return nmo_objectanimation_morph_data_equal(
+        lhs->morph_comp_count, lhs->morph_comp_sizes,
+        lhs->morph_comp_data, rhs->morph_comp_data);
+}
+
+static uint32_t nmo_objectanimation_comp_hash(
+    uint32_t hash, const void *value, const void *owner)
+{
+    const nmo_objectanimation_state_t *state = owner;
+    (void)value;
+    return nmo_objectanimation_morph_data_hash(
+        hash, state->morph_comp_count, state->morph_comp_sizes,
+        state->morph_comp_data);
+}
+
+static const nmo_object_state_custom_ops_t nmo_objectanimation_comp_ops = {
+    .copy = nmo_objectanimation_comp_copy,
+    .equals = nmo_objectanimation_comp_equal,
+    .hash = nmo_objectanimation_comp_hash,
+};
+
+static nmo_status_t nmo_objectanimation_normals_copy(
+    nmo_arena_t *arena, void *dst, const void *src, const void *src_owner)
+{
+    const nmo_objectanimation_state_t *owner = src_owner;
+    (void)src;
+    return nmo_objectanimation_morph_data_copy(
+        arena, dst, owner->morph_normals_data, owner->morph_normals_sizes,
+        owner->morph_normals_count);
+}
+
+static bool nmo_objectanimation_normals_equal(
+    const void *a, const void *b, const void *a_owner, const void *b_owner)
+{
+    const nmo_objectanimation_state_t *lhs = a_owner;
+    const nmo_objectanimation_state_t *rhs = b_owner;
+    (void)a;
+    (void)b;
+    return nmo_objectanimation_morph_data_equal(
+        lhs->morph_normals_count, lhs->morph_normals_sizes,
+        lhs->morph_normals_data, rhs->morph_normals_data);
+}
+
+static uint32_t nmo_objectanimation_normals_hash(
+    uint32_t hash, const void *value, const void *owner)
+{
+    const nmo_objectanimation_state_t *state = owner;
+    (void)value;
+    return nmo_objectanimation_morph_data_hash(
+        hash, state->morph_normals_count, state->morph_normals_sizes,
+        state->morph_normals_data);
+}
+
+static const nmo_object_state_custom_ops_t nmo_objectanimation_normals_ops = {
+    .copy = nmo_objectanimation_normals_copy,
+    .equals = nmo_objectanimation_normals_equal,
+    .hash = nmo_objectanimation_normals_hash,
+};
+
+static void nmo_objectanimation_set_defaults(void *instance)
+{
+    nmo_objectanimation_state_t *state = instance;
+    state->format = CKOBJANIM_FORMAT_NONE;
+    state->merge_factor = 0.5f;
+    /* Fresh keyframe data of RCKObjectAnimation is 100 frames long. */
+    state->length = 100.0f;
+}
+
+static const nmo_object_state_member_t nmo_objanim_controller_members[] = {
+    NMO_STATE_VALUE(nmo_objanim_controller_t, type),
+    NMO_STATE_VALUE(nmo_objanim_controller_t, key_count),
+    NMO_STATE_VALUE(nmo_objanim_controller_t, data_size),
+    NMO_STATE_COUNTED(nmo_objanim_controller_t, data, data_size, uint8_t)
+};
+
+static const nmo_object_state_layout_t nmo_objanim_controller_layout = {
+    .size = sizeof(nmo_objanim_controller_t),
+    .members = nmo_objanim_controller_members,
+    .member_count = sizeof(nmo_objanim_controller_members) /
+        sizeof(nmo_objanim_controller_members[0]),
+};
+
+static const nmo_object_state_member_t nmo_objanim_morph_key_members[] = {
+    NMO_STATE_VALUE(nmo_objanim_morph_key_t, time_step),
+    NMO_STATE_VALUE(nmo_objanim_morph_key_t, data_size),
+    NMO_STATE_COUNTED(nmo_objanim_morph_key_t, data, data_size, uint8_t)
+};
+
+static const nmo_object_state_layout_t nmo_objanim_morph_key_layout = {
+    .size = sizeof(nmo_objanim_morph_key_t),
+    .members = nmo_objanim_morph_key_members,
+    .member_count = sizeof(nmo_objanim_morph_key_members) /
+        sizeof(nmo_objanim_morph_key_members[0]),
+};
+
+static const nmo_object_state_member_t nmo_objectanimation_members[] = {
+    NMO_STATE_VALUE(nmo_objectanimation_state_t, format),
+    NMO_STATE_VALUE(nmo_objectanimation_state_t, root_pos),
+    NMO_STATE_VALUE(nmo_objectanimation_state_t, has_root_pos),
+    NMO_STATE_VALUE(nmo_objectanimation_state_t, root_extra),
+    NMO_STATE_VALUE(nmo_objectanimation_state_t, flags),
+    NMO_STATE_VALUE(nmo_objectanimation_state_t, entity),
+    NMO_STATE_VALUE(nmo_objectanimation_state_t, has_length),
+    NMO_STATE_VALUE(nmo_objectanimation_state_t, length),
+    NMO_STATE_VALUE(nmo_objectanimation_state_t, has_merge),
+    NMO_STATE_VALUE(nmo_objectanimation_state_t, merge_factor),
+    NMO_STATE_VALUE(nmo_objectanimation_state_t, anim1),
+    NMO_STATE_VALUE(nmo_objectanimation_state_t, anim2),
+    NMO_STATE_VALUE(nmo_objectanimation_state_t, has_shared_anim),
+    NMO_STATE_VALUE(nmo_objectanimation_state_t, shared_anim),
+    NMO_STATE_VALUE(nmo_objectanimation_state_t, has_morph_counts),
+    NMO_STATE_VALUE(nmo_objectanimation_state_t, morph_vertex_count),
+    NMO_STATE_VALUE(nmo_objectanimation_state_t, morph_key_count),
+    NMO_STATE_VALUE(nmo_objectanimation_state_t, controller_count),
+    NMO_STATE_COUNTED_RECORDS(nmo_objectanimation_state_t, controllers,
+                              controller_count, nmo_objanim_controller_layout),
+    NMO_STATE_VALUE(nmo_objectanimation_state_t, has_legacy_position_section),
+    NMO_STATE_VALUE(nmo_objectanimation_state_t, has_legacy_rotation_section),
+    NMO_STATE_VALUE(nmo_objectanimation_state_t, has_legacy_scale_section),
+    NMO_STATE_VALUE(nmo_objectanimation_state_t, has_legacy_flags_section),
+    NMO_STATE_VALUE(nmo_objectanimation_state_t, has_legacy_entity_section),
+    NMO_STATE_VALUE(nmo_objectanimation_state_t, morph_key_parsed_count),
+    NMO_STATE_COUNTED_RECORDS(nmo_objectanimation_state_t, morph_keys,
+                              morph_key_parsed_count, nmo_objanim_morph_key_layout),
+    NMO_STATE_VALUE(nmo_objectanimation_state_t, morph_comp_count),
+    NMO_STATE_COUNTED(nmo_objectanimation_state_t, morph_comp_sizes,
+                      morph_comp_count, uint32_t),
+    NMO_STATE_CUSTOM(nmo_objectanimation_state_t, morph_comp_data,
+                     nmo_objectanimation_comp_ops),
+    NMO_STATE_VALUE(nmo_objectanimation_state_t, morph_normals_count),
+    NMO_STATE_COUNTED(nmo_objectanimation_state_t, morph_normals_sizes,
+                      morph_normals_count, uint32_t),
+    NMO_STATE_CUSTOM(nmo_objectanimation_state_t, morph_normals_data,
+                     nmo_objectanimation_normals_ops),
+    NMO_STATE_VALUE(nmo_objectanimation_state_t, has_legacy_morphkeys),
+    NMO_STATE_VALUE(nmo_objectanimation_state_t, legacy_morphkeys_size),
+    NMO_STATE_BYTES(nmo_objectanimation_state_t, legacy_morphkeys,
+                    legacy_morphkeys_size),
+    NMO_STATE_VALUE(nmo_objectanimation_state_t, raw_tail_size),
+    NMO_STATE_BYTES(nmo_objectanimation_state_t, raw_tail, raw_tail_size)
+};
+
+static const nmo_object_state_layout_t nmo_objectanimation_layout = {
+    .size = sizeof(nmo_objectanimation_state_t),
+    .base_vtable = &nmo_sceneobject_vtable,
+    .base_size = sizeof(nmo_sceneobject_state_t),
+    .members = nmo_objectanimation_members,
+    .member_count = sizeof(nmo_objectanimation_members) /
+        sizeof(nmo_objectanimation_members[0]),
+    .set_defaults = nmo_objectanimation_set_defaults,
+    .validate = nmo_objectanimation_validate,
+};
+
+NMO_DEFINE_OBJECT_LAYOUT_OPS(objectanimation, nmo_objectanimation_layout)
 
 /* CKAnimation flag bits (subset used during legacy load) */
 #define CKANIMATION_LINKTOFRAMERATE       0x00000001u
@@ -284,34 +558,6 @@ static void nmo_objectanimation_check_refs(
 static nmo_status_t nmo_animation_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
-    void *context);
-
-static nmo_status_t nmo_animation_copy(
-    const void *src,
-    void *dst,
-    const nmo_type_descriptor_t *type,
-    nmo_arena_t *arena)
-{
-    (void)type;
-    if (src == NULL || dst == NULL) return NMO_ERR_INVALID_ARGUMENT;
-    const nmo_animation_state_t *s = src;
-    nmo_animation_state_t *d = dst;
-    NMO_RETURN_IF_ERROR(nmo_animation_validate(s, NULL, NULL));
-    if (src == dst) return NMO_OK;
-
-    nmo_animation_state_t copied = *s;
-    copied.legacy_body_parts = NULL;
-    NMO_RETURN_IF_ERROR(nmo_object_copy_array(
-        arena, (void **)&copied.legacy_body_parts,
-        s->legacy_body_parts, sizeof(nmo_ref_t),
-        s->legacy_body_part_count));
-    *d = copied;
-    return NMO_OK;
-}
-
-static nmo_status_t nmo_animation_validate(
-    const void *instance,
-    const nmo_type_descriptor_t *type,
     void *context)
 {
     (void)type;
@@ -329,55 +575,6 @@ static nmo_status_t nmo_animation_validate(
         return NMO_ERR_VALIDATION_FAILED;
     }
     return nmo_sceneobject_vtable.validate(&state->base, NULL, context);
-}
-
-static nmo_status_t nmo_keyedanimation_validate(
-    const void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context);
-
-static nmo_status_t nmo_keyedanimation_copy(
-    const void *src,
-    void *dst,
-    const nmo_type_descriptor_t *type,
-    nmo_arena_t *arena)
-{
-    (void)type;
-    if (src == NULL || dst == NULL) return NMO_ERR_INVALID_ARGUMENT;
-    const nmo_keyedanimation_state_t *s = src;
-    nmo_keyedanimation_state_t *d = dst;
-    NMO_RETURN_IF_ERROR(nmo_keyedanimation_validate(s, NULL, NULL));
-    if (src == dst) return NMO_OK;
-
-    nmo_keyedanimation_state_t copied = *s;
-    copied.base.legacy_body_parts = NULL;
-    copied.animation_ids = NULL;
-    copied.subanims = NULL;
-    nmo_status_t result = nmo_object_copy_array(
-        arena, (void **)&copied.base.legacy_body_parts,
-        s->base.legacy_body_parts, sizeof(nmo_ref_t),
-        s->base.legacy_body_part_count);
-    if (result != NMO_OK) return result;
-    result = nmo_object_copy_array(
-        arena, (void **)&copied.animation_ids,
-        s->animation_ids, sizeof(nmo_ref_t), s->animation_count);
-    if (result != NMO_OK) return result;
-    if (s->subanim_count > 0) {
-        result = nmo_object_copy_array(
-            arena, (void **)&copied.subanims,
-            s->subanims, sizeof(nmo_keyedanimation_subanim_t),
-            s->subanim_count);
-        if (result != NMO_OK) return result;
-        for (uint32_t i = 0; i < s->subanim_count; ++i) {
-            nmo_chunk_t *clone = NULL;
-            result = nmo_object_copy_chunk(
-                arena, &clone, s->subanims[i].chunk);
-            if (result != NMO_OK) return result;
-            copied.subanims[i].chunk = clone;
-        }
-    }
-    *d = copied;
-    NMO_RETURN_OK();
 }
 
 static nmo_status_t nmo_keyedanimation_validate(
@@ -419,115 +616,6 @@ static nmo_status_t nmo_keyedanimation_enumerate_refs(
             return NMO_OK;
         }
     }
-    return NMO_OK;
-}
-
-static nmo_status_t nmo_objectanimation_validate(
-    const void *instance,
-    const nmo_type_descriptor_t *type,
-    void *context);
-
-static nmo_status_t nmo_objectanimation_copy_morph_section(
-    nmo_arena_t *arena,
-    uint32_t count,
-    const uint32_t *sizes,
-    void *const *data,
-    uint32_t **out_sizes,
-    void ***out_data)
-{
-    nmo_status_t result = nmo_object_copy_array(
-        arena, (void **)out_sizes, sizes, sizeof(uint32_t), count);
-    if (result != NMO_OK) return result;
-    result = nmo_object_copy_array(
-        arena, (void **)out_data, data, sizeof(void *), count);
-    if (result != NMO_OK) return result;
-    for (uint32_t i = 0; i < count; ++i) {
-        (*out_data)[i] = NULL;
-        result = nmo_object_copy_bytes(arena, &(*out_data)[i], data[i], sizes[i]);
-        if (result != NMO_OK) return result;
-    }
-    return NMO_OK;
-}
-
-static bool nmo_objectanimation_morph_section_equals(
-    uint32_t count,
-    const uint32_t *lhs_sizes, void *const *lhs_data,
-    const uint32_t *rhs_sizes, void *const *rhs_data);
-
-static nmo_status_t nmo_objectanimation_copy(
-    const void *src,
-    void *dst,
-    const nmo_type_descriptor_t *type,
-    nmo_arena_t *arena)
-{
-    (void)type;
-    if (src == NULL || dst == NULL) return NMO_ERR_INVALID_ARGUMENT;
-    const nmo_objectanimation_state_t *s = src;
-    nmo_objectanimation_state_t *d = dst;
-    NMO_RETURN_IF_ERROR(nmo_objectanimation_validate(s, NULL, NULL));
-    if (src == dst) return NMO_OK;
-
-    nmo_objectanimation_state_t copied = *s;
-    copied.controllers = NULL;
-    copied.morph_keys = NULL;
-    copied.morph_comp_sizes = NULL;
-    copied.morph_comp_data = NULL;
-    copied.morph_normals_sizes = NULL;
-    copied.morph_normals_data = NULL;
-    copied.legacy_morphkeys = NULL;
-    copied.raw_tail = NULL;
-
-    /* Deep copy controllers */
-    nmo_status_t result = nmo_object_copy_array(
-        arena, (void **)&copied.controllers,
-        s->controllers, sizeof(nmo_objanim_controller_t),
-        s->controller_count);
-    if (result != NMO_OK) return result;
-    if (s->controller_count > 0) {
-        for (uint32_t i = 0; i < s->controller_count; ++i) {
-            copied.controllers[i].data = NULL;
-            result = nmo_object_copy_bytes(
-                arena, &copied.controllers[i].data,
-                s->controllers[i].data, s->controllers[i].data_size);
-            if (result != NMO_OK) return result;
-        }
-    }
-
-    /* Deep copy morph keys */
-    result = nmo_object_copy_array(
-        arena, (void **)&copied.morph_keys,
-        s->morph_keys, sizeof(nmo_objanim_morph_key_t),
-        s->morph_key_parsed_count);
-    if (result != NMO_OK) return result;
-    if (s->morph_key_parsed_count > 0) {
-        for (uint32_t i = 0; i < s->morph_key_parsed_count; ++i) {
-            copied.morph_keys[i].data = NULL;
-            result = nmo_object_copy_bytes(
-                arena, &copied.morph_keys[i].data,
-                s->morph_keys[i].data, s->morph_keys[i].data_size);
-            if (result != NMO_OK) return result;
-        }
-    }
-
-    /* Deep copy the per-key morph sections (sizes and data go together) */
-    result = nmo_objectanimation_copy_morph_section(
-        arena, s->morph_comp_count, s->morph_comp_sizes, s->morph_comp_data,
-        &copied.morph_comp_sizes, &copied.morph_comp_data);
-    if (result != NMO_OK) return result;
-    result = nmo_objectanimation_copy_morph_section(
-        arena, s->morph_normals_count, s->morph_normals_sizes, s->morph_normals_data,
-        &copied.morph_normals_sizes, &copied.morph_normals_data);
-    if (result != NMO_OK) return result;
-
-    result = nmo_object_copy_bytes(
-        arena, (void **)&copied.legacy_morphkeys,
-        s->legacy_morphkeys, s->legacy_morphkeys_size);
-    if (result != NMO_OK) return result;
-    result = nmo_object_copy_bytes(
-        arena, (void **)&copied.raw_tail,
-        s->raw_tail, s->raw_tail_size);
-    if (result != NMO_OK) return result;
-    *d = copied;
     return NMO_OK;
 }
 
@@ -835,430 +923,6 @@ static nmo_status_t nmo_objectanimation_pre_delete(
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
-
-static bool nmo_animation_ref_equals(
-    const nmo_ref_t *lhs,
-    const nmo_ref_t *rhs)
-{
-    return lhs->raw_id == rhs->raw_id &&
-        lhs->id == rhs->id &&
-        lhs->state == rhs->state;
-}
-
-static bool nmo_animation_float_equals(float lhs, float rhs)
-{
-    return memcmp(&lhs, &rhs, sizeof(lhs)) == 0;
-}
-
-static bool nmo_animation_equals(const void *a, const void *b)
-{
-    if (a == b) return true;
-    if (a == NULL || b == NULL) return false;
-    const nmo_animation_state_t *lhs = a;
-    const nmo_animation_state_t *rhs = b;
-    if (nmo_animation_validate(lhs, NULL, NULL) != NMO_OK ||
-        nmo_animation_validate(rhs, NULL, NULL) != NMO_OK ||
-        !nmo_sceneobject_vtable.equals(&lhs->base, &rhs->base) ||
-        lhs->has_data != rhs->has_data ||
-        lhs->data_is_legacy != rhs->data_is_legacy ||
-        lhs->flags != rhs->flags ||
-        !nmo_animation_float_equals(lhs->frame_rate, rhs->frame_rate) ||
-        lhs->has_length != rhs->has_length ||
-        !nmo_animation_float_equals(lhs->length, rhs->length) ||
-        lhs->has_root_entity != rhs->has_root_entity ||
-        lhs->legacy_body_part_count != rhs->legacy_body_part_count ||
-        !nmo_animation_ref_equals(&lhs->root_entity, &rhs->root_entity) ||
-        lhs->has_character != rhs->has_character ||
-        !nmo_animation_ref_equals(&lhs->character, &rhs->character) ||
-        lhs->has_current_step != rhs->has_current_step ||
-        !nmo_animation_float_equals(lhs->current_step, rhs->current_step)) {
-        return false;
-    }
-    for (uint32_t i = 0; i < lhs->legacy_body_part_count; ++i) {
-        if (!nmo_animation_ref_equals(
-                &lhs->legacy_body_parts[i],
-                &rhs->legacy_body_parts[i])) {
-            return false;
-        }
-    }
-    return true;
-}
-
-static uint32_t nmo_animation_hash_ref(
-    uint32_t hash,
-    const nmo_ref_t *ref)
-{
-    hash = nmo_hash_fnv1a32_update(
-        hash, &ref->raw_id, sizeof(ref->raw_id));
-    hash = nmo_hash_fnv1a32_update(hash, &ref->id, sizeof(ref->id));
-    return nmo_hash_fnv1a32_update(
-        hash, &ref->state, sizeof(ref->state));
-}
-
-static uint32_t nmo_animation_hash(const void *instance)
-{
-    if (instance == NULL) return 0;
-    const nmo_animation_state_t *state = instance;
-    if (nmo_animation_validate(state, NULL, NULL) != NMO_OK) return 0;
-    uint32_t hash = nmo_sceneobject_vtable.hash(&state->base);
-#define NMO_ANIMATION_HASH_FIELD(field) \
-    hash = nmo_hash_fnv1a32_update( \
-        hash, &state->field, sizeof(state->field))
-    NMO_ANIMATION_HASH_FIELD(has_data);
-    NMO_ANIMATION_HASH_FIELD(data_is_legacy);
-    NMO_ANIMATION_HASH_FIELD(flags);
-    NMO_ANIMATION_HASH_FIELD(frame_rate);
-    NMO_ANIMATION_HASH_FIELD(has_length);
-    NMO_ANIMATION_HASH_FIELD(length);
-    NMO_ANIMATION_HASH_FIELD(has_root_entity);
-    NMO_ANIMATION_HASH_FIELD(legacy_body_part_count);
-    for (uint32_t i = 0; i < state->legacy_body_part_count; ++i) {
-        hash = nmo_animation_hash_ref(
-            hash, &state->legacy_body_parts[i]);
-    }
-    hash = nmo_animation_hash_ref(hash, &state->root_entity);
-    NMO_ANIMATION_HASH_FIELD(has_character);
-    hash = nmo_animation_hash_ref(hash, &state->character);
-    NMO_ANIMATION_HASH_FIELD(has_current_step);
-    NMO_ANIMATION_HASH_FIELD(current_step);
-#undef NMO_ANIMATION_HASH_FIELD
-    return hash;
-}
-
-static bool nmo_animation_chunk_array_equals(
-    const nmo_arena_array_t *lhs,
-    const nmo_arena_array_t *rhs)
-{
-    if (lhs->count != rhs->count) return false;
-    if (lhs->count == 0) return true;
-    if (lhs->data == NULL || rhs->data == NULL ||
-        lhs->element_size != sizeof(uint32_t) ||
-        rhs->element_size != sizeof(uint32_t) ||
-        lhs->count > lhs->capacity || rhs->count > rhs->capacity) {
-        return false;
-    }
-    return memcmp(
-        lhs->data, rhs->data,
-        lhs->count * sizeof(uint32_t)) == 0;
-}
-
-static bool nmo_animation_chunk_equals(
-    const nmo_chunk_t *lhs,
-    const nmo_chunk_t *rhs)
-{
-    if (lhs == rhs) return true;
-    if (lhs == NULL || rhs == NULL) return false;
-    return lhs->class_id == rhs->class_id &&
-        lhs->data_version == rhs->data_version &&
-        lhs->chunk_version == rhs->chunk_version &&
-        ((lhs->chunk_options ^ rhs->chunk_options) &
-         NMO_CHUNK_OPTION_FILE) == 0 &&
-        nmo_animation_chunk_array_equals(&lhs->data, &rhs->data) &&
-        nmo_animation_chunk_array_equals(&lhs->ids, &rhs->ids) &&
-        nmo_animation_chunk_array_equals(
-            &lhs->chunk_refs, &rhs->chunk_refs) &&
-        nmo_animation_chunk_array_equals(&lhs->managers, &rhs->managers);
-}
-
-static bool nmo_keyedanimation_equals(const void *a, const void *b)
-{
-    if (a == b) return true;
-    if (a == NULL || b == NULL) return false;
-    const nmo_keyedanimation_state_t *lhs = a;
-    const nmo_keyedanimation_state_t *rhs = b;
-    if (nmo_keyedanimation_validate(lhs, NULL, NULL) != NMO_OK ||
-        nmo_keyedanimation_validate(rhs, NULL, NULL) != NMO_OK ||
-        !nmo_animation_vtable.equals(&lhs->base, &rhs->base) ||
-        lhs->animation_count != rhs->animation_count ||
-        lhs->has_merge != rhs->has_merge ||
-        lhs->merged != rhs->merged ||
-        !nmo_animation_float_equals(
-            lhs->merge_factor, rhs->merge_factor) ||
-        lhs->subanim_count != rhs->subanim_count) {
-        return false;
-    }
-    for (uint32_t i = 0; i < lhs->animation_count; ++i) {
-        if (!nmo_animation_ref_equals(
-                &lhs->animation_ids[i], &rhs->animation_ids[i])) {
-            return false;
-        }
-    }
-    for (uint32_t i = 0; i < lhs->subanim_count; ++i) {
-        if (!nmo_animation_ref_equals(
-                &lhs->subanims[i].ref, &rhs->subanims[i].ref) ||
-            !nmo_animation_chunk_equals(
-                lhs->subanims[i].chunk, rhs->subanims[i].chunk)) {
-            return false;
-        }
-    }
-    return true;
-}
-
-static uint32_t nmo_animation_hash_chunk_array(
-    uint32_t hash,
-    const nmo_arena_array_t *array)
-{
-    hash = nmo_hash_fnv1a32_update(
-        hash, &array->count, sizeof(array->count));
-    if (array->count == 0 || array->data == NULL ||
-        array->element_size != sizeof(uint32_t) ||
-        array->count > array->capacity) {
-        return hash;
-    }
-    return nmo_hash_fnv1a32_update(
-        hash, array->data, array->count * sizeof(uint32_t));
-}
-
-static uint32_t nmo_animation_hash_chunk(
-    uint32_t hash,
-    const nmo_chunk_t *chunk)
-{
-    const uint8_t present = chunk != NULL;
-    hash = nmo_hash_fnv1a32_update(hash, &present, sizeof(present));
-    if (chunk == NULL) return hash;
-    const uint8_t is_file =
-        (chunk->chunk_options & NMO_CHUNK_OPTION_FILE) != 0;
-    hash = nmo_hash_fnv1a32_update(
-        hash, &chunk->class_id, sizeof(chunk->class_id));
-    hash = nmo_hash_fnv1a32_update(
-        hash, &chunk->data_version, sizeof(chunk->data_version));
-    hash = nmo_hash_fnv1a32_update(
-        hash, &chunk->chunk_version, sizeof(chunk->chunk_version));
-    hash = nmo_hash_fnv1a32_update(hash, &is_file, sizeof(is_file));
-    hash = nmo_animation_hash_chunk_array(hash, &chunk->data);
-    hash = nmo_animation_hash_chunk_array(hash, &chunk->ids);
-    hash = nmo_animation_hash_chunk_array(hash, &chunk->chunk_refs);
-    return nmo_animation_hash_chunk_array(hash, &chunk->managers);
-}
-
-static uint32_t nmo_keyedanimation_hash(const void *instance)
-{
-    if (instance == NULL) return 0;
-    const nmo_keyedanimation_state_t *state = instance;
-    if (nmo_keyedanimation_validate(state, NULL, NULL) != NMO_OK) return 0;
-    uint32_t hash = nmo_animation_vtable.hash(&state->base);
-    hash = nmo_hash_fnv1a32_update(
-        hash, &state->animation_count, sizeof(state->animation_count));
-    for (uint32_t i = 0; i < state->animation_count; ++i) {
-        hash = nmo_animation_hash_ref(hash, &state->animation_ids[i]);
-    }
-    hash = nmo_hash_fnv1a32_update(
-        hash, &state->has_merge, sizeof(state->has_merge));
-    hash = nmo_hash_fnv1a32_update(
-        hash, &state->merged, sizeof(state->merged));
-    hash = nmo_hash_fnv1a32_update(
-        hash, &state->merge_factor, sizeof(state->merge_factor));
-    hash = nmo_hash_fnv1a32_update(
-        hash, &state->subanim_count, sizeof(state->subanim_count));
-    for (uint32_t i = 0; i < state->subanim_count; ++i) {
-        hash = nmo_animation_hash_ref(hash, &state->subanims[i].ref);
-        hash = nmo_animation_hash_chunk(
-            hash, state->subanims[i].chunk);
-    }
-    return hash;
-}
-
-static bool nmo_animation_buffer_equals(
-    const void *lhs,
-    const void *rhs,
-    size_t size)
-{
-    if (size == 0) return true;
-    return lhs != NULL && rhs != NULL && memcmp(lhs, rhs, size) == 0;
-}
-
-static bool nmo_objectanimation_morph_section_equals(
-    uint32_t count,
-    const uint32_t *lhs_sizes, void *const *lhs_data,
-    const uint32_t *rhs_sizes, void *const *rhs_data)
-{
-    for (uint32_t i = 0; i < count; ++i) {
-        if (lhs_sizes[i] != rhs_sizes[i] ||
-            !nmo_animation_buffer_equals(lhs_data[i], rhs_data[i], lhs_sizes[i])) {
-            return false;
-        }
-    }
-    return true;
-}
-
-static bool nmo_objectanimation_equals(const void *a, const void *b)
-{
-    if (a == b) return true;
-    if (a == NULL || b == NULL) return false;
-    const nmo_objectanimation_state_t *lhs = a;
-    const nmo_objectanimation_state_t *rhs = b;
-    if (nmo_objectanimation_validate(lhs, NULL, NULL) != NMO_OK ||
-        nmo_objectanimation_validate(rhs, NULL, NULL) != NMO_OK ||
-        !nmo_sceneobject_vtable.equals(&lhs->base, &rhs->base) ||
-        lhs->format != rhs->format ||
-        !nmo_animation_float_equals(lhs->root_pos.x, rhs->root_pos.x) ||
-        !nmo_animation_float_equals(lhs->root_pos.y, rhs->root_pos.y) ||
-        !nmo_animation_float_equals(lhs->root_pos.z, rhs->root_pos.z) ||
-        lhs->has_root_pos != rhs->has_root_pos ||
-        !nmo_animation_float_equals(lhs->root_extra.x, rhs->root_extra.x) ||
-        !nmo_animation_float_equals(lhs->root_extra.y, rhs->root_extra.y) ||
-        !nmo_animation_float_equals(lhs->root_extra.z, rhs->root_extra.z) ||
-        !nmo_animation_float_equals(lhs->root_extra.w, rhs->root_extra.w) ||
-        lhs->flags != rhs->flags ||
-        !nmo_animation_ref_equals(&lhs->entity, &rhs->entity) ||
-        lhs->has_length != rhs->has_length ||
-        !nmo_animation_float_equals(lhs->length, rhs->length) ||
-        lhs->has_merge != rhs->has_merge ||
-        !nmo_animation_float_equals(
-            lhs->merge_factor, rhs->merge_factor) ||
-        !nmo_animation_ref_equals(&lhs->anim1, &rhs->anim1) ||
-        !nmo_animation_ref_equals(&lhs->anim2, &rhs->anim2) ||
-        lhs->has_shared_anim != rhs->has_shared_anim ||
-        !nmo_animation_ref_equals(
-            &lhs->shared_anim, &rhs->shared_anim) ||
-        lhs->has_morph_counts != rhs->has_morph_counts ||
-        lhs->morph_vertex_count != rhs->morph_vertex_count ||
-        lhs->morph_key_count != rhs->morph_key_count ||
-        lhs->controller_count != rhs->controller_count ||
-        lhs->has_legacy_position_section !=
-            rhs->has_legacy_position_section ||
-        lhs->has_legacy_rotation_section !=
-            rhs->has_legacy_rotation_section ||
-        lhs->has_legacy_scale_section !=
-            rhs->has_legacy_scale_section ||
-        lhs->has_legacy_flags_section !=
-            rhs->has_legacy_flags_section ||
-        lhs->has_legacy_entity_section !=
-            rhs->has_legacy_entity_section ||
-        lhs->morph_key_parsed_count != rhs->morph_key_parsed_count ||
-        lhs->morph_comp_count != rhs->morph_comp_count ||
-        lhs->morph_normals_count != rhs->morph_normals_count ||
-        lhs->has_legacy_morphkeys != rhs->has_legacy_morphkeys ||
-        lhs->legacy_morphkeys_size != rhs->legacy_morphkeys_size ||
-        lhs->raw_tail_size != rhs->raw_tail_size) {
-        return false;
-    }
-    for (uint32_t i = 0; i < lhs->controller_count; ++i) {
-        const nmo_objanim_controller_t *lhs_controller =
-            &lhs->controllers[i];
-        const nmo_objanim_controller_t *rhs_controller =
-            &rhs->controllers[i];
-        if (lhs_controller->type != rhs_controller->type ||
-            lhs_controller->key_count != rhs_controller->key_count ||
-            lhs_controller->data_size != rhs_controller->data_size ||
-            !nmo_animation_buffer_equals(
-                lhs_controller->data, rhs_controller->data,
-                lhs_controller->data_size)) {
-            return false;
-        }
-    }
-    for (uint32_t i = 0; i < lhs->morph_key_parsed_count; ++i) {
-        const nmo_objanim_morph_key_t *lhs_key = &lhs->morph_keys[i];
-        const nmo_objanim_morph_key_t *rhs_key = &rhs->morph_keys[i];
-        if (!nmo_animation_float_equals(
-                lhs_key->time_step, rhs_key->time_step) ||
-            lhs_key->data_size != rhs_key->data_size ||
-            !nmo_animation_buffer_equals(
-                lhs_key->data, rhs_key->data, lhs_key->data_size)) {
-            return false;
-        }
-    }
-    if (!nmo_objectanimation_morph_section_equals(
-            lhs->morph_comp_count, lhs->morph_comp_sizes, lhs->morph_comp_data,
-            rhs->morph_comp_sizes, rhs->morph_comp_data) ||
-        !nmo_objectanimation_morph_section_equals(
-            lhs->morph_normals_count, lhs->morph_normals_sizes, lhs->morph_normals_data,
-            rhs->morph_normals_sizes, rhs->morph_normals_data)) {
-        return false;
-    }
-    return nmo_animation_buffer_equals(
-               lhs->legacy_morphkeys, rhs->legacy_morphkeys,
-               lhs->legacy_morphkeys_size) &&
-        nmo_animation_buffer_equals(
-            lhs->raw_tail, rhs->raw_tail, lhs->raw_tail_size);
-}
-
-static uint32_t nmo_objectanimation_hash(const void *instance)
-{
-    if (instance == NULL) return 0;
-    const nmo_objectanimation_state_t *state = instance;
-    if (nmo_objectanimation_validate(state, NULL, NULL) != NMO_OK) return 0;
-    uint32_t hash = nmo_sceneobject_vtable.hash(&state->base);
-#define NMO_OBJECTANIMATION_HASH_FIELD(field) \
-    hash = nmo_hash_fnv1a32_update( \
-        hash, &state->field, sizeof(state->field))
-    NMO_OBJECTANIMATION_HASH_FIELD(format);
-    NMO_OBJECTANIMATION_HASH_FIELD(root_pos.x);
-    NMO_OBJECTANIMATION_HASH_FIELD(root_pos.y);
-    NMO_OBJECTANIMATION_HASH_FIELD(root_pos.z);
-    NMO_OBJECTANIMATION_HASH_FIELD(has_root_pos);
-    NMO_OBJECTANIMATION_HASH_FIELD(root_extra.x);
-    NMO_OBJECTANIMATION_HASH_FIELD(root_extra.y);
-    NMO_OBJECTANIMATION_HASH_FIELD(root_extra.z);
-    NMO_OBJECTANIMATION_HASH_FIELD(root_extra.w);
-    NMO_OBJECTANIMATION_HASH_FIELD(flags);
-    hash = nmo_animation_hash_ref(hash, &state->entity);
-    NMO_OBJECTANIMATION_HASH_FIELD(has_length);
-    NMO_OBJECTANIMATION_HASH_FIELD(length);
-    NMO_OBJECTANIMATION_HASH_FIELD(has_merge);
-    NMO_OBJECTANIMATION_HASH_FIELD(merge_factor);
-    hash = nmo_animation_hash_ref(hash, &state->anim1);
-    hash = nmo_animation_hash_ref(hash, &state->anim2);
-    NMO_OBJECTANIMATION_HASH_FIELD(has_shared_anim);
-    hash = nmo_animation_hash_ref(hash, &state->shared_anim);
-    NMO_OBJECTANIMATION_HASH_FIELD(has_morph_counts);
-    NMO_OBJECTANIMATION_HASH_FIELD(morph_vertex_count);
-    NMO_OBJECTANIMATION_HASH_FIELD(morph_key_count);
-    NMO_OBJECTANIMATION_HASH_FIELD(controller_count);
-    NMO_OBJECTANIMATION_HASH_FIELD(has_legacy_position_section);
-    NMO_OBJECTANIMATION_HASH_FIELD(has_legacy_rotation_section);
-    NMO_OBJECTANIMATION_HASH_FIELD(has_legacy_scale_section);
-    NMO_OBJECTANIMATION_HASH_FIELD(has_legacy_flags_section);
-    NMO_OBJECTANIMATION_HASH_FIELD(has_legacy_entity_section);
-    for (uint32_t i = 0; i < state->controller_count; ++i) {
-        const nmo_objanim_controller_t *controller = &state->controllers[i];
-        hash = nmo_hash_fnv1a32_update(
-            hash, &controller->type, sizeof(controller->type));
-        hash = nmo_hash_fnv1a32_update(
-            hash, &controller->key_count, sizeof(controller->key_count));
-        hash = nmo_hash_fnv1a32_update(
-            hash, &controller->data_size, sizeof(controller->data_size));
-        hash = nmo_hash_fnv1a32_update(
-            hash, controller->data, controller->data_size);
-    }
-    NMO_OBJECTANIMATION_HASH_FIELD(morph_key_parsed_count);
-    for (uint32_t i = 0; i < state->morph_key_parsed_count; ++i) {
-        const nmo_objanim_morph_key_t *key = &state->morph_keys[i];
-        hash = nmo_hash_fnv1a32_update(
-            hash, &key->time_step, sizeof(key->time_step));
-        hash = nmo_hash_fnv1a32_update(
-            hash, &key->data_size, sizeof(key->data_size));
-        hash = nmo_hash_fnv1a32_update(
-            hash, key->data, key->data_size);
-    }
-    NMO_OBJECTANIMATION_HASH_FIELD(morph_comp_count);
-    for (uint32_t i = 0; i < state->morph_comp_count; ++i) {
-        hash = nmo_hash_fnv1a32_update(
-            hash, &state->morph_comp_sizes[i],
-            sizeof(state->morph_comp_sizes[i]));
-        hash = nmo_hash_fnv1a32_update(
-            hash, state->morph_comp_data[i],
-            state->morph_comp_sizes[i]);
-    }
-    NMO_OBJECTANIMATION_HASH_FIELD(morph_normals_count);
-    for (uint32_t i = 0; i < state->morph_normals_count; ++i) {
-        hash = nmo_hash_fnv1a32_update(
-            hash, &state->morph_normals_sizes[i],
-            sizeof(state->morph_normals_sizes[i]));
-        hash = nmo_hash_fnv1a32_update(
-            hash, state->morph_normals_data[i],
-            state->morph_normals_sizes[i]);
-    }
-    NMO_OBJECTANIMATION_HASH_FIELD(has_legacy_morphkeys);
-    NMO_OBJECTANIMATION_HASH_FIELD(legacy_morphkeys_size);
-    hash = nmo_hash_fnv1a32_update(
-        hash, state->legacy_morphkeys, state->legacy_morphkeys_size);
-    NMO_OBJECTANIMATION_HASH_FIELD(raw_tail_size);
-    hash = nmo_hash_fnv1a32_update(
-        hash, state->raw_tail, state->raw_tail_size);
-#undef NMO_OBJECTANIMATION_HASH_FIELD
-    return hash;
-}
 
 nmo_type_vtable_t nmo_animation_vtable = {
     .prepare_dependencies = nmo_animation_prepare_dependencies,

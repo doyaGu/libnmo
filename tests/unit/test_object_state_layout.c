@@ -10,6 +10,7 @@
 #include "format/nmo_chunk_api.h"
 #include "object/nmo_ref.h"
 #include "object/builtin/nmo_3dentity_schemas.h"
+#include "object/builtin/nmo_animation_schemas.h"
 #include "object/builtin/nmo_attributemanager_schemas.h"
 #include "object/builtin/nmo_beobject_schemas.h"
 #include "object/builtin/nmo_bitmap_slots.h"
@@ -1590,6 +1591,132 @@ TEST(object_state_layout, dataarray_cells_follow_their_column_types) {
     nmo_arena_destroy(arena);
 }
 
+TEST(object_state_layout, animations_copy_controllers_morph_keys_and_sections) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+    nmo_objectanimation_state_t source;
+    nmo_objectanimation_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_vtable.create(&source, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_vtable.create(&copied, NULL, NULL));
+    ASSERT_EQ(100.0f, source.length);
+    ASSERT_EQ(0.5f, source.merge_factor);
+
+    uint8_t key_bytes[16];
+    memset(key_bytes, 0x5A, sizeof(key_bytes));
+    nmo_objanim_controller_t controller = {
+        .type = 0x637c4301u, .key_count = 1u, .data_size = 16u, .data = key_bytes,
+    };
+    uint8_t vertex_bytes[6] = {1, 2, 3, 4, 5, 6};
+    nmo_objanim_morph_key_t morph_key = {
+        .time_step = 2.0f, .data_size = 6u, .data = vertex_bytes,
+    };
+    uint8_t comp_bytes[3] = {7, 8, 9};
+    void *comp_data[1] = {comp_bytes};
+    uint32_t comp_sizes[1] = {3u};
+    uint8_t normal_bytes[2] = {10, 11};
+    void *normal_data[1] = {normal_bytes};
+    uint32_t normal_sizes[1] = {2u};
+    uint8_t tail[4] = {0xA, 0xB, 0xC, 0xD};
+    source.format = CKOBJANIM_FORMAT_NEWDATA;
+    source.has_morph_counts = 1;
+    source.morph_vertex_count = 1;
+    source.morph_key_count = 1;
+    source.controller_count = 1;
+    source.controllers = &controller;
+    source.morph_key_parsed_count = 1;
+    source.morph_keys = &morph_key;
+    source.morph_comp_count = 1;
+    source.morph_comp_sizes = comp_sizes;
+    source.morph_comp_data = comp_data;
+    source.morph_normals_count = 1;
+    source.morph_normals_sizes = normal_sizes;
+    source.morph_normals_data = normal_data;
+    source.raw_tail_size = 4;
+    source.raw_tail = tail;
+
+    ASSERT_EQ(NMO_OK, nmo_objectanimation_vtable.copy(&source, &copied, NULL, arena));
+    ASSERT_TRUE(copied.controllers != &controller);
+    ASSERT_TRUE(copied.controllers[0].data != key_bytes);
+    ASSERT_EQ(0x5A, ((const uint8_t *)copied.controllers[0].data)[15]);
+    ASSERT_TRUE(copied.morph_keys[0].data != vertex_bytes);
+    ASSERT_EQ(2.0f, copied.morph_keys[0].time_step);
+    ASSERT_TRUE(copied.morph_comp_sizes != comp_sizes);
+    ASSERT_TRUE(copied.morph_comp_data != comp_data);
+    ASSERT_TRUE(copied.morph_comp_data[0] != comp_bytes);
+    ASSERT_EQ(9, ((const uint8_t *)copied.morph_comp_data[0])[2]);
+    ASSERT_TRUE(copied.morph_normals_data[0] != normal_bytes);
+    ASSERT_TRUE(copied.raw_tail != tail);
+    ASSERT_TRUE(nmo_objectanimation_vtable.equals(&source, &copied));
+    ASSERT_EQ(nmo_objectanimation_vtable.hash(&source),
+              nmo_objectanimation_vtable.hash(&copied));
+
+    /* Each buffer is compared by the size next to it. */
+    ((uint8_t *)copied.morph_comp_data[0])[1] ^= 1u;
+    ASSERT_FALSE(nmo_objectanimation_vtable.equals(&source, &copied));
+    ASSERT_NE(nmo_objectanimation_vtable.hash(&source),
+              nmo_objectanimation_vtable.hash(&copied));
+    ((uint8_t *)copied.morph_comp_data[0])[1] ^= 1u;
+    ((uint8_t *)copied.morph_normals_data[0])[0] ^= 1u;
+    ASSERT_FALSE(nmo_objectanimation_vtable.equals(&source, &copied));
+    ((uint8_t *)copied.morph_normals_data[0])[0] ^= 1u;
+    ASSERT_TRUE(nmo_objectanimation_vtable.equals(&source, &copied));
+    ((uint8_t *)copied.controllers[0].data)[0] ^= 1u;
+    ASSERT_FALSE(nmo_objectanimation_vtable.equals(&source, &copied));
+
+    source.controllers = NULL;
+    source.controller_count = 0;
+    source.morph_keys = NULL;
+    source.morph_key_parsed_count = 0;
+    source.morph_comp_sizes = NULL;
+    source.morph_comp_data = NULL;
+    source.morph_comp_count = 0;
+    source.morph_normals_sizes = NULL;
+    source.morph_normals_data = NULL;
+    source.morph_normals_count = 0;
+    source.raw_tail = NULL;
+    source.raw_tail_size = 0;
+    nmo_objectanimation_vtable.destroy(&source, NULL, NULL);
+    nmo_objectanimation_vtable.destroy(&copied, NULL, NULL);
+
+    nmo_keyedanimation_state_t keyed;
+    nmo_keyedanimation_state_t keyed_copy;
+    ASSERT_EQ(NMO_OK, nmo_keyedanimation_vtable.create(&keyed, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_keyedanimation_vtable.create(&keyed_copy, NULL, NULL));
+    ASSERT_EQ(30.0f, keyed.base.frame_rate);
+    nmo_ref_t body_parts[2] = {nmo_ref_from_raw(170), nmo_ref_from_raw(171)};
+    nmo_ref_t members[1] = {nmo_ref_from_raw(172)};
+    nmo_keyedanimation_subanim_t subanims[1] = {
+        {.ref = nmo_ref_from_raw(173), .chunk = make_chunk(arena, 0x2222u)},
+    };
+    ASSERT_NOT_NULL(subanims[0].chunk);
+    keyed.base.legacy_body_part_count = 2;
+    keyed.base.legacy_body_parts = body_parts;
+    keyed.animation_count = 1;
+    keyed.animation_ids = members;
+    keyed.subanim_count = 1;
+    keyed.subanims = subanims;
+    ASSERT_EQ(NMO_OK, nmo_keyedanimation_vtable.copy(&keyed, &keyed_copy, NULL, arena));
+    ASSERT_TRUE(keyed_copy.base.legacy_body_parts != body_parts);
+    ASSERT_EQ(171u, keyed_copy.base.legacy_body_parts[1].raw_id);
+    ASSERT_TRUE(keyed_copy.animation_ids != members);
+    ASSERT_TRUE(keyed_copy.subanims != subanims);
+    ASSERT_TRUE(keyed_copy.subanims[0].chunk != subanims[0].chunk);
+    ASSERT_TRUE(nmo_keyedanimation_vtable.equals(&keyed, &keyed_copy));
+    ASSERT_EQ(nmo_keyedanimation_vtable.hash(&keyed),
+              nmo_keyedanimation_vtable.hash(&keyed_copy));
+    keyed_copy.base.legacy_body_parts[0] = nmo_ref_from_raw(999);
+    ASSERT_FALSE(nmo_keyedanimation_vtable.equals(&keyed, &keyed_copy));
+    keyed.base.legacy_body_parts = NULL;
+    keyed.base.legacy_body_part_count = 0;
+    keyed.animation_ids = NULL;
+    keyed.animation_count = 0;
+    keyed.subanims = NULL;
+    keyed.subanim_count = 0;
+    nmo_keyedanimation_vtable.destroy(&keyed, NULL, NULL);
+    nmo_keyedanimation_vtable.destroy(&keyed_copy, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(object_state_layout, place_copy_equals_hash);
     REGISTER_TEST(object_state_layout, copy_into_shallow_alias_detaches_arrays);
@@ -1623,4 +1750,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_state_layout, interface_manager_chunks_copy);
     REGISTER_TEST(object_state_layout, level_lists_chunk_and_tail_copy);
     REGISTER_TEST(object_state_layout, dataarray_cells_follow_their_column_types);
+    REGISTER_TEST(object_state_layout, animations_copy_controllers_morph_keys_and_sections);
 TEST_MAIN_END()
