@@ -10,7 +10,7 @@
 #include "type/nmo_object_guids.h"
 #include "object/nmo_object_repository.h"
 #include "format/nmo_object.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_pipeline.h"
 #include "../../src/runtime/runtime_internal.h"

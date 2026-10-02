@@ -10,7 +10,7 @@
 #include "core/nmo_error.h"
 #include "extension/nmo_extension_registry.h"
 #include "extension/nmo_virtools_loader.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 
 #include <ctype.h>
 #include <stdio.h>

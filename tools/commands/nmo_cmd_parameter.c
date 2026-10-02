@@ -21,7 +21,7 @@
 #include "nmo.h"
 #include "behavior/nmo_behavior_analyze.h"
 #include "edit/nmo_edit_plan.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "behavior/nmo_behavior_view.h"
 #include "runtime/nmo_workspace.h"
 #include "object/nmo_object_types.h"

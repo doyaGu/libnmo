@@ -21,7 +21,7 @@
 #include "nmo.h"
 #include "document/nmo_document_stats.h"
 #include "document/nmo_document_save.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "core/nmo_error.h"
 #include "core/nmo_guid.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"

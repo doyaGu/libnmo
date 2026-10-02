@@ -7,7 +7,7 @@
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_parameteroperation_schemas.h"
 #include "type/nmo_object_guids.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "session/nmo_session.h"
 #include "runtime/nmo_workspace.h"
 #include "format/nmo_chunk.h"

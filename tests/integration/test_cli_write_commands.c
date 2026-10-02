@@ -22,7 +22,7 @@
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "object/builtin/nmo_scene_schemas.h"
 #include "object/builtin/nmo_texture_schemas.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "session/nmo_session.h"
 #include "session/nmo_runtime_kernel.h"
 

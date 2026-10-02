@@ -4,7 +4,7 @@
 #include "project/nmo_asset_plan.h"
 #include "project/nmo_scene_authoring.h"
 #include "project/nmo_script_authoring.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "type/nmo_type_query.h"
 #include "yyjson.h"
 

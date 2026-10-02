@@ -1,6 +1,6 @@
 #include "../test_framework.h"
 #include "session/nmo_session.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "document/nmo_document_load.h"
 #include "document/nmo_document_save.h"
 #include "object/nmo_object_repository.h"

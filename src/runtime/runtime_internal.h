@@ -12,7 +12,7 @@
 #include "document/nmo_document.h"
 #include "document/nmo_document_file_state.h"
 #include "runtime/nmo_workspace.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "session/nmo_deserializer.h"
 #include "session/nmo_runtime_kernel.h"
 #include "session/nmo_session_pipeline.h"

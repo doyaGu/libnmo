@@ -14,7 +14,7 @@
 
 #include "nmo.h"
 #include "chunk/nmo_chunk_index.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 
 #include "format/nmo_chunk_api.h"
 

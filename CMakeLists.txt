@@ -188,6 +188,7 @@ set(NMO_FORMAT_SOURCES
 
 # Object layer sources
 set(NMO_OBJECT_SOURCES
+    src/object/context.c
     src/object/object_type_common.c
     src/object/object_ancestor_state.c
     src/object/object_enums.c
@@ -291,7 +292,6 @@ set(NMO_EXTENSION_SOURCES
 
 # Runtime/session layer sources
 set(NMO_RUNTIME_SOURCES
-    src/runtime/context.c
     src/runtime/interface_view.c
     src/runtime/document_workspace.c
     src/runtime/session_util.c

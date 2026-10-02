@@ -14,7 +14,7 @@
 
 #include "nmo.h"
 #include "behavior/nmo_behavior_analyze.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "format/nmo_object.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_behaviorlink_schemas.h"

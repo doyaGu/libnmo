@@ -1,6 +1,6 @@
 #include "session/nmo_runtime_kernel.h"
 
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "session/nmo_session.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_arena_array.h"

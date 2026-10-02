@@ -16,7 +16,7 @@
 #include "object/nmo_object_summary.h"
 
 #include "nmo.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "object/nmo_object_hierarchy.h"
 #include "core/nmo_arena.h"
 #include "object/nmo_class_ids.h"

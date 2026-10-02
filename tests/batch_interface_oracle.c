@@ -17,7 +17,7 @@
 #include <sys/stat.h>
 #endif
 
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "session/nmo_session.h"
 #include "runtime/runtime_internal.h"
 #include "format/nmo_object.h"

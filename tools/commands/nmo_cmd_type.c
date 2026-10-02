@@ -11,7 +11,7 @@
 #include "../nmo_tool_common.h"
 
 #include "nmo.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "type/nmo_type_system.h"
 #include "nmo_tool_common.h"
 

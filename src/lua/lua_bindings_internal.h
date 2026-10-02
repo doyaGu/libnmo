@@ -13,7 +13,7 @@
 #include "object/nmo_object_query.h"
 #include "object/nmo_object_repository.h"
 #include "runtime/nmo_workspace.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "session/nmo_session.h"
 #include "../runtime/runtime_internal.h"
 #include "lua_pushers_generated.h"

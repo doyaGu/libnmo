@@ -33,7 +33,7 @@
 #include "object/builtin/nmo_texture_schemas.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "session/nmo_session.h"
 #include "type/nmo_type_query.h"
 

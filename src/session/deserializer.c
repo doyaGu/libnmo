@@ -10,7 +10,7 @@
 
 #include "session/nmo_session.h"
 #include "session/nmo_session_pipeline.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "session/nmo_runtime_kernel.h"
 #include "session/nmo_deserializer.h"
 #include "session/nmo_session_pipeline.h"

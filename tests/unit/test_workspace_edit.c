@@ -2,7 +2,7 @@
 
 #include "document/nmo_document.h"
 #include "object/nmo_object_query.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "session/nmo_session.h"
 #include "runtime/nmo_workspace.h"
 #include "object/nmo_object_edit.h"

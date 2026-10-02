@@ -9,7 +9,7 @@
 #include "document/nmo_document.h"
 #include "object/nmo_class_ids.h"
 #include "type/nmo_object_guids.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "runtime/nmo_workspace.h"
 #include "session/nmo_session.h"
 #include "core/nmo_array.h"

@@ -6,7 +6,7 @@
 #include "object/nmo_object_query.h"
 #include "format/nmo_object.h"
 #include "runtime/nmo_workspace.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "session/nmo_session.h"
 #include "../../src/runtime/runtime_internal.h"
 

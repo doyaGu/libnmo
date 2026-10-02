@@ -5,7 +5,7 @@
 
 #include "../test_framework.h"
 #include "extension/nmo_virtools_loader.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "type/nmo_operations.h"
 #include "type/nmo_type_system.h"
 #include "type/nmo_type_string.h"

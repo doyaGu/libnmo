@@ -10,7 +10,7 @@
 #include "test_framework.h"
 #include "nmo.h"
 #include "behavior/nmo_behavior_analyze.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "runtime/nmo_workspace.h"
 #include "session/nmo_session.h"
 #include "core/nmo_allocator.h"

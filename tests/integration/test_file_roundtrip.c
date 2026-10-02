@@ -9,7 +9,7 @@
 
 #include "../test_framework.h"
 #include "document/nmo_document_load.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 
 static nmo_context_t *create_context(void) {
     nmo_context_desc_t desc;

@@ -7,7 +7,7 @@
 #include "nmo.h"
 #include "behavior/nmo_behavior_view.h"
 #include "runtime/nmo_workspace.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "session/nmo_session.h"
 #include "type/nmo_type_system.h"
 #include "type/nmo_type_guids.h"

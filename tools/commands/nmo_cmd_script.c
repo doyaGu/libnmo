@@ -31,7 +31,7 @@
 #include "object/nmo_object_repository.h"
 #include "object/builtin/nmo_behavior_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "type/nmo_operation_system.h"
 #include "type/nmo_type_system.h"
 

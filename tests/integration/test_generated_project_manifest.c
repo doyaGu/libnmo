@@ -3,7 +3,7 @@
 #include "document/nmo_document_load.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_query.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "yyjson.h"
 
 #include <stdio.h>

@@ -40,7 +40,7 @@
 #include "object/nmo_manager_guids.h"
 #include "object/nmo_object_enum_defs.h"
 #include "object/nmo_object_repository.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "session/nmo_session.h"
 #include "type/nmo_param_guids.h"
 #include "type/nmo_type_query.h"

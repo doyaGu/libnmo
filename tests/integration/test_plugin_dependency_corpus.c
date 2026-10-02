@@ -7,7 +7,7 @@
 
 #include "document/nmo_document_load.h"
 #include "core/nmo_guid.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "session/nmo_deserializer.h"
 #include "session/nmo_session.h"
 

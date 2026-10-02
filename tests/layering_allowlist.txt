@@ -6,16 +6,11 @@ src/format/chunk.c object/nmo_object_repository.h
 src/format/chunk_arrays.c object/nmo_object_repository.h
 src/format/chunk_primitives.c object/nmo_object_repository.h
 src/object/object_diff.c document/nmo_document.h
-src/object/object_hierarchy.c runtime/nmo_context.h
 src/object/object_hierarchy.c session/nmo_session.h
 src/object/object_hierarchy.c session/nmo_session_pipeline.h
-src/object/object_query.c runtime/nmo_context.h
 src/object/object_query.c session/nmo_session.h
 src/object/object_summary.c export/nmo_ansi.h
 src/runtime/document_workspace.c behavior/nmo_behavior_analyze.h
-src/session/deserializer.c runtime/nmo_context.h
-src/session/runtime_delete.c runtime/nmo_context.h
-src/session/runtime_kernel.c runtime/nmo_context.h
 src/session/runtime_kernel.c runtime/nmo_workspace.h
 # Relative includes of another layer's private header, which the audit did not
 # see before. Most are runtime_internal.h: the session object is implemented in

@@ -7,7 +7,7 @@
 #include "project/nmo_project_executor.h"
 #include "project/nmo_project_plan.h"
 #include "project/nmo_scene_authoring.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 
 #include <stdio.h>
 

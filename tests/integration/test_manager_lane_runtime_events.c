@@ -1,5 +1,5 @@
 #include "test_framework.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "session/nmo_session.h"
 #include "format/nmo_chunk.h"
 #include "format/nmo_chunk_api.h"

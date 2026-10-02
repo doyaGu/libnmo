@@ -1,7 +1,7 @@
 #include "object/nmo_object_hierarchy.h"
 
 #include "../runtime/runtime_internal.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_pipeline.h"
 #include "format/nmo_object.h"

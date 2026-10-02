@@ -14,7 +14,7 @@
 #include "core/nmo_arena.h"
 #include "core/nmo_arena_array.h"
 #include "core/nmo_allocator.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "session/nmo_session.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_class_ids.h"

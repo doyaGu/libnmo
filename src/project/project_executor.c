@@ -10,7 +10,7 @@
 #include "project_internal.h"
 #include "project/nmo_project_plan.h"
 #include "project/nmo_script_authoring.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "runtime/nmo_workspace.h"
 
 #include <stddef.h>

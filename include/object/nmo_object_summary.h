@@ -1,7 +1,7 @@
 #ifndef NMO_OBJECT_SUMMARY_OWNER_H
 #define NMO_OBJECT_SUMMARY_OWNER_H
 
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "core/nmo_guid.h"
 #include "format/nmo_object.h"
 #include "nmo_types.h"

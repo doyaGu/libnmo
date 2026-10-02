@@ -15,7 +15,7 @@
 #include "object/nmo_object_enum_defs.h"
 #include "type/nmo_object_guids.h"
 #include "object/nmo_object_repository.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "type/nmo_type_guids.h"
 #include "type/nmo_type_query.h"
 #include "../runtime/runtime_internal.h"

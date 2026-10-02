@@ -1,5 +1,5 @@
 #include "runtime_internal.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "session/nmo_runtime_kernel.h"
 #include "session/nmo_session.h"
 #include "core/nmo_error.h"

@@ -11,7 +11,7 @@
 #include "../../tools/nmo_cli_common.h"
 #include "yyjson.h"
 
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "session/nmo_session.h"
 #include "session/nmo_runtime_kernel.h"
 #include "session/nmo_session_pipeline.h"

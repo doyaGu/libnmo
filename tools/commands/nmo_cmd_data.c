@@ -17,7 +17,7 @@
 
 #include "nmo.h"
 #include "edit/nmo_edit_plan.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_parse.h"
 #include "object/nmo_class_ids.h"

@@ -14,7 +14,7 @@
 #include "../nmo_tool_common.h"
 
 #include "nmo.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_parse.h"
 #include "object/nmo_class_ids.h"

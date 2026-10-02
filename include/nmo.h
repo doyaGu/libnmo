@@ -126,7 +126,7 @@
 #include "extension/nmo_extension_host.h"
 
 // Reorganization owner headers
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "runtime/nmo_workspace.h"
 #include "document/nmo_document.h"
 #include "document/nmo_document_load.h"

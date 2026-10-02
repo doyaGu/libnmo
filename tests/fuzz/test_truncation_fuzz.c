@@ -10,7 +10,7 @@
  */
 
 #include "../test_framework.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "document/nmo_document_load.h"
 #include "session/nmo_session.h"
 #include "core/nmo_error.h"

@@ -16,7 +16,7 @@
 #include "../nmo_opt.h"
 
 #include "nmo.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "format/nmo_interface_chunk.h"
 #include "format/nmo_object.h"
 #include "object/builtin/nmo_behavior_schemas.h"

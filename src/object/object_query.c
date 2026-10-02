@@ -9,7 +9,7 @@
 #include "format/nmo_object.h"
 #include "object/nmo_object_repository.h"
 #include "../runtime/runtime_internal.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "session/nmo_session.h"
 #include "type/nmo_type_system.h"
 

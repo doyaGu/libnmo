@@ -10,7 +10,7 @@
 #include "../nmo_cli_record.h"
 #include "../nmo_tool_common.h"
 #include "nmo.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "extension/nmo_extension_registry.h"
 #include "core/nmo_guid.h"
 #include <stdio.h>

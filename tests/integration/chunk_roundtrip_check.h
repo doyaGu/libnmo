@@ -22,7 +22,7 @@
 #include "object/nmo_object_repository.h"
 #include "object/nmo_ref_graph.h"
 #include "type/nmo_type_system.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "session/nmo_deserializer.h"
 #include "session/nmo_serializer.h"
 #include "session/nmo_runtime_kernel.h"

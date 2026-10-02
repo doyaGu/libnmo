@@ -10,7 +10,7 @@
 #include "type/nmo_object_guids.h"
 #include "object/nmo_object_query.h"
 #include "object/nmo_scene_edit.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "runtime/nmo_workspace.h"
 #include "type/nmo_type_query.h"
 

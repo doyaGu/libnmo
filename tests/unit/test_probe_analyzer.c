@@ -3,7 +3,7 @@
 #include "edit/nmo_probe_analyzer.h"
 #include "core/nmo_array.h"
 #include "document/nmo_document.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "runtime/nmo_workspace.h"
 #include "format/nmo_object.h"
 #include "object/builtin/nmo_behavior_schemas.h"

@@ -7,7 +7,7 @@
 #include "document/nmo_document_compare.h"
 #include "session/nmo_session.h"
 #include "session/nmo_session_pipeline.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "object/nmo_object_repository.h"
 #include "format/nmo_object.h"
 #include "format/nmo_data.h"

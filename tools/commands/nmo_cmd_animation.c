@@ -15,7 +15,7 @@
 #include "../nmo_tool_common.h"
 
 #include "nmo.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "document/nmo_document_save.h"
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_edit.h"

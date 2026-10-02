@@ -19,7 +19,7 @@
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_object_system.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "type/nmo_type_system.h"
 #include "type/nmo_type_guids.h"
 #include "type/nmo_param_guids.h"

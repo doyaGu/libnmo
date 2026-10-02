@@ -1,5 +1,5 @@
 #include "test_framework.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "type/nmo_type_system.h"
 
 #include <stdio.h>

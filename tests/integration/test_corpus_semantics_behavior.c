@@ -46,7 +46,7 @@
 #include "object/nmo_object_repository.h"
 #include "object/nmo_ref_graph.h"
 #include "object/nmo_statesave_ids.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "session/nmo_deserializer.h"
 #include "session/nmo_session.h"
 #include "type/nmo_object_guids.h"

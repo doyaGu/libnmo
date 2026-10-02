@@ -17,7 +17,7 @@
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_header.h"
 #include "format/nmo_object.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "session/nmo_deserializer.h"
 #include "session/nmo_serializer.h"
 #include "session/nmo_session.h"

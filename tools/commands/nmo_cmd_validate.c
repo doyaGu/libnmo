@@ -22,7 +22,7 @@
 #include "nmo.h"
 #include "chunk/nmo_chunk_inspect.h"
 #include "document/nmo_document_save.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "core/nmo_arena.h"
 #include "format/nmo_chunk_api.h"
 #include "format/nmo_object.h"

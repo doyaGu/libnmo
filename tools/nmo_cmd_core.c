@@ -13,7 +13,7 @@
 #include "object/nmo_object_diff.h"
 #include "object/nmo_object_query.h"
 #include "object/nmo_object_refs.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "runtime/nmo_workspace.h"
 #include "type/nmo_type_string.h"
 #include "object/nmo_object_repository.h"

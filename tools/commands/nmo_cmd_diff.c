@@ -12,7 +12,7 @@
 #include "../nmo_tool_common.h"
 #include "nmo.h"
 #include "document/nmo_document_compare.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "chunk/nmo_chunk_inspect.h"
 #include "object/nmo_object_diff.h"
 #include "format/nmo_object.h"

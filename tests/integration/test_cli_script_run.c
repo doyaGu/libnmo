@@ -6,7 +6,7 @@
 #include "behavior/nmo_behavior_view.h"
 #include "format/nmo_interface_view.h"
 #include "runtime/nmo_workspace.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "session/nmo_runtime_kernel.h"
 #include "session/nmo_session.h"
 #include "yyjson.h"

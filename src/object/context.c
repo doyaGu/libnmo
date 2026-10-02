@@ -3,7 +3,7 @@
  * @brief Global context implementation
  */
 
-#include "runtime_internal.h"
+#include "object/nmo_context.h"
 #include "extension/nmo_extension_registry.h"
 #include "core/nmo_allocator.h"
 #include "core/nmo_logger.h"

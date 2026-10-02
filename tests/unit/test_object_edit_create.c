@@ -5,7 +5,7 @@
 #include "object/nmo_class_ids.h"
 #include "object/nmo_object_edit.h"
 #include "object/nmo_object_query.h"
-#include "runtime/nmo_context.h"
+#include "object/nmo_context.h"
 #include "runtime/nmo_workspace.h"
 
 typedef struct object_edit_fixture {
