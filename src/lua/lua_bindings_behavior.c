@@ -2249,29 +2249,7 @@ static int nmo_lua_behavior_add_node(lua_State *state)
         state, handle->plan, NMO_EDIT_OP_ADD_NODE);
 }
 
-static int nmo_lua_behavior_remove_node(lua_State *state)
-{
-    nmo_lua_script_edit_tx_handle_data_t *handle = NULL;
-    nmo_object_id_t parent_behavior_id = 0u;
-    nmo_object_id_t node_id = 0u;
-    uint32_t delete_flags = 0u;
-    nmo_status_t status = nmo_lua_behavior_check_active_edit_handle(state, 1, &handle);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Invalid script edit handle");
-    }
-
-    parent_behavior_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
-    node_id = (nmo_object_id_t)luaL_checkinteger(state, 3);
-    delete_flags = nmo_lua_behavior_optional_flags(state, 4, 0u);
-    status = nmo_edit_plan_add_remove_node(handle->plan,
-                                           parent_behavior_id,
-                                           node_id,
-                                           delete_flags);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Failed to remove behavior node");
-    }
-    return 0;
-}
+#include "lua_bindings_behavior_ops.generated.inc"
 
 static int nmo_lua_behavior_add_io(lua_State *state)
 {
@@ -2297,44 +2275,6 @@ static int nmo_lua_behavior_add_io(lua_State *state)
     }
     return nmo_lua_behavior_push_pending_handle(
         state, handle->plan, NMO_EDIT_OP_ADD_IO);
-}
-
-static int nmo_lua_behavior_rename_io(lua_State *state)
-{
-    nmo_lua_script_edit_tx_handle_data_t *handle = NULL;
-    nmo_object_id_t io_id = 0u;
-    const char *name = NULL;
-    nmo_status_t status = nmo_lua_behavior_check_active_edit_handle(state, 1, &handle);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Invalid script edit handle");
-    }
-
-    io_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
-    name = luaL_checkstring(state, 3);
-    status = nmo_edit_plan_add_rename_io(handle->plan, io_id, name);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Failed to rename io");
-    }
-    return 0;
-}
-
-static int nmo_lua_behavior_remove_io(lua_State *state)
-{
-    nmo_lua_script_edit_tx_handle_data_t *handle = NULL;
-    nmo_object_id_t io_id = 0u;
-    int detach_links = 0;
-    nmo_status_t status = nmo_lua_behavior_check_active_edit_handle(state, 1, &handle);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Invalid script edit handle");
-    }
-
-    io_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
-    detach_links = lua_toboolean(state, 3);
-    status = nmo_edit_plan_add_remove_io(handle->plan, io_id, detach_links != 0);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Failed to remove io");
-    }
-    return 0;
 }
 
 static int nmo_lua_behavior_add_parameter(lua_State *state)
@@ -2473,40 +2413,6 @@ static int nmo_lua_behavior_connect_parameter(lua_State *state)
     return 0;
 }
 
-static int nmo_lua_behavior_disconnect_parameter(lua_State *state)
-{
-    nmo_lua_script_edit_tx_handle_data_t *handle = NULL;
-    nmo_object_id_t target_parameter_id = 0u;
-    nmo_status_t status = nmo_lua_behavior_check_active_edit_handle(state, 1, &handle);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Invalid script edit handle");
-    }
-    target_parameter_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
-    status = nmo_edit_plan_add_disconnect_parameter(handle->plan, target_parameter_id);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Failed to disconnect parameter");
-    }
-    return 0;
-}
-
-static int nmo_lua_behavior_remove_parameter(lua_State *state)
-{
-    nmo_lua_script_edit_tx_handle_data_t *handle = NULL;
-    nmo_object_id_t parameter_id = 0u;
-    int detach = 0;
-    nmo_status_t status = nmo_lua_behavior_check_active_edit_handle(state, 1, &handle);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Invalid script edit handle");
-    }
-    parameter_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
-    detach = lua_toboolean(state, 3);
-    status = nmo_edit_plan_add_remove_parameter(handle->plan, parameter_id, detach != 0);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Failed to remove parameter");
-    }
-    return 0;
-}
-
 static int nmo_lua_behavior_add_link(lua_State *state)
 {
     nmo_lua_script_edit_tx_handle_data_t *handle = NULL;
@@ -2545,65 +2451,6 @@ static int nmo_lua_behavior_add_link(lua_State *state)
     }
     return nmo_lua_behavior_push_pending_handle(
         state, handle->plan, NMO_EDIT_OP_ADD_BEHAVIOR_LINK);
-}
-
-static int nmo_lua_behavior_rewire_link(lua_State *state)
-{
-    nmo_lua_script_edit_tx_handle_data_t *handle = NULL;
-    nmo_object_id_t link_id = 0u;
-    nmo_object_id_t from_io_id = 0u;
-    nmo_object_id_t to_io_id = 0u;
-    nmo_status_t status = nmo_lua_behavior_check_active_edit_handle(state, 1, &handle);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Invalid script edit handle");
-    }
-    link_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
-    from_io_id = (nmo_object_id_t)luaL_checkinteger(state, 3);
-    to_io_id = (nmo_object_id_t)luaL_checkinteger(state, 4);
-    status = nmo_edit_plan_add_rewire_behavior_link(
-        handle->plan, link_id, from_io_id, to_io_id);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Failed to rewire link");
-    }
-    return 0;
-}
-
-static int nmo_lua_behavior_set_link_delay(lua_State *state)
-{
-    nmo_lua_script_edit_tx_handle_data_t *handle = NULL;
-    nmo_object_id_t link_id = 0u;
-    uint32_t activation_delay = 0u;
-    nmo_status_t status = nmo_lua_behavior_check_active_edit_handle(state, 1, &handle);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Invalid script edit handle");
-    }
-    link_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
-    activation_delay = (uint32_t)luaL_checkinteger(state, 3);
-    status = nmo_edit_plan_add_set_behavior_link_delay(
-        handle->plan, link_id, activation_delay);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Failed to set link delay");
-    }
-    return 0;
-}
-
-static int nmo_lua_behavior_remove_link(lua_State *state)
-{
-    nmo_lua_script_edit_tx_handle_data_t *handle = NULL;
-    nmo_object_id_t parent_behavior_id = 0u;
-    nmo_object_id_t link_id = 0u;
-    nmo_status_t status = nmo_lua_behavior_check_active_edit_handle(state, 1, &handle);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Invalid script edit handle");
-    }
-    parent_behavior_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
-    link_id = (nmo_object_id_t)luaL_checkinteger(state, 3);
-    status = nmo_edit_plan_add_remove_behavior_link(
-        handle->plan, parent_behavior_id, link_id);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Failed to remove link");
-    }
-    return 0;
 }
 
 static int nmo_lua_behavior_add_operation(lua_State *state)

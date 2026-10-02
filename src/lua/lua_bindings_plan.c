@@ -324,142 +324,7 @@ static int nmo_lua_plan_add_io(lua_State *state)
     return 0;
 }
 
-static int nmo_lua_plan_rename_io(lua_State *state)
-{
-    nmo_edit_plan_t *plan = NULL;
-    nmo_status_t status = nmo_lua_check_edit_plan_handle(state, 1, &plan);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Invalid edit plan handle");
-    }
-
-    nmo_object_id_t io_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
-    const char *name = luaL_checkstring(state, 3);
-
-    status = nmo_edit_plan_add_rename_io(plan, io_id, name);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Failed to add rename io op");
-    }
-    return 0;
-}
-
-static int nmo_lua_plan_remove_io(lua_State *state)
-{
-    nmo_edit_plan_t *plan = NULL;
-    nmo_status_t status = nmo_lua_check_edit_plan_handle(state, 1, &plan);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Invalid edit plan handle");
-    }
-
-    nmo_object_id_t io_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
-    bool detach_links = lua_toboolean(state, 3) != 0;
-
-    status = nmo_edit_plan_add_remove_io(plan, io_id, detach_links);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Failed to add remove io op");
-    }
-    return 0;
-}
-
-static int nmo_lua_plan_remove_node(lua_State *state)
-{
-    nmo_edit_plan_t *plan = NULL;
-    nmo_status_t status = nmo_lua_check_edit_plan_handle(state, 1, &plan);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Invalid edit plan handle");
-    }
-
-    nmo_object_id_t parent_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
-    nmo_object_id_t node_id = (nmo_object_id_t)luaL_checkinteger(state, 3);
-    uint32_t delete_flags = (uint32_t)luaL_optinteger(state, 4, 0);
-
-    status = nmo_edit_plan_add_remove_node(
-        plan, parent_id, node_id, delete_flags);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Failed to add remove node op");
-    }
-    return 0;
-}
-
-static int nmo_lua_plan_add_behavior_link(lua_State *state)
-{
-    nmo_edit_plan_t *plan = NULL;
-    nmo_status_t status = nmo_lua_check_edit_plan_handle(state, 1, &plan);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Invalid edit plan handle");
-    }
-
-    nmo_object_id_t parent_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
-    nmo_object_id_t from_io_id = (nmo_object_id_t)luaL_checkinteger(state, 3);
-    nmo_object_id_t to_io_id = (nmo_object_id_t)luaL_checkinteger(state, 4);
-    uint32_t delay = (uint32_t)luaL_optinteger(state, 5, 0);
-
-    status = nmo_edit_plan_add_behavior_link(
-        plan, parent_id, from_io_id, NULL, to_io_id, NULL, delay);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(
-            state, status, "Failed to add behavior link op");
-    }
-    return 0;
-}
-
-static int nmo_lua_plan_rewire_behavior_link(lua_State *state)
-{
-    nmo_edit_plan_t *plan = NULL;
-    nmo_status_t status = nmo_lua_check_edit_plan_handle(state, 1, &plan);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Invalid edit plan handle");
-    }
-
-    nmo_object_id_t link_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
-    nmo_object_id_t from_io_id = (nmo_object_id_t)luaL_checkinteger(state, 3);
-    nmo_object_id_t to_io_id = (nmo_object_id_t)luaL_checkinteger(state, 4);
-
-    status = nmo_edit_plan_add_rewire_behavior_link(
-        plan, link_id, from_io_id, to_io_id);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(
-            state, status, "Failed to add rewire behavior link op");
-    }
-    return 0;
-}
-
-static int nmo_lua_plan_set_behavior_link_delay(lua_State *state)
-{
-    nmo_edit_plan_t *plan = NULL;
-    nmo_status_t status = nmo_lua_check_edit_plan_handle(state, 1, &plan);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Invalid edit plan handle");
-    }
-
-    nmo_object_id_t link_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
-    uint32_t delay = (uint32_t)luaL_checkinteger(state, 3);
-
-    status = nmo_edit_plan_add_set_behavior_link_delay(plan, link_id, delay);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(
-            state, status, "Failed to add behavior link delay op");
-    }
-    return 0;
-}
-
-static int nmo_lua_plan_remove_behavior_link(lua_State *state)
-{
-    nmo_edit_plan_t *plan = NULL;
-    nmo_status_t status = nmo_lua_check_edit_plan_handle(state, 1, &plan);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Invalid edit plan handle");
-    }
-
-    nmo_object_id_t parent_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
-    nmo_object_id_t link_id = (nmo_object_id_t)luaL_checkinteger(state, 3);
-
-    status = nmo_edit_plan_add_remove_behavior_link(plan, parent_id, link_id);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(
-            state, status, "Failed to add remove behavior link op");
-    }
-    return 0;
-}
+#include "lua_bindings_plan_ops.generated.inc"
 
 static bool nmo_lua_plan_parse_parameter_kind(
     const char *text,
@@ -514,26 +379,6 @@ static int nmo_lua_plan_add_parameter(lua_State *state)
     return 0;
 }
 
-static int nmo_lua_plan_connect_parameter(lua_State *state)
-{
-    nmo_edit_plan_t *plan = NULL;
-    nmo_status_t status = nmo_lua_check_edit_plan_handle(state, 1, &plan);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Invalid edit plan handle");
-    }
-
-    nmo_object_id_t source_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
-    nmo_object_id_t target_id = (nmo_object_id_t)luaL_checkinteger(state, 3);
-
-    status = nmo_edit_plan_add_connect_parameter(
-        plan, source_id, target_id, NULL);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(
-            state, status, "Failed to add connect parameter op");
-    }
-    return 0;
-}
-
 static int nmo_lua_plan_connect_parameter_to_handle(lua_State *state)
 {
     nmo_edit_plan_t *plan = NULL;
@@ -559,43 +404,6 @@ static int nmo_lua_plan_connect_parameter_to_handle(lua_State *state)
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(
             state, status, "Failed to add connect parameter handle op");
-    }
-    return 0;
-}
-
-static int nmo_lua_plan_disconnect_parameter(lua_State *state)
-{
-    nmo_edit_plan_t *plan = NULL;
-    nmo_status_t status = nmo_lua_check_edit_plan_handle(state, 1, &plan);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Invalid edit plan handle");
-    }
-
-    nmo_object_id_t target_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
-
-    status = nmo_edit_plan_add_disconnect_parameter(plan, target_id);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(
-            state, status, "Failed to add disconnect parameter op");
-    }
-    return 0;
-}
-
-static int nmo_lua_plan_remove_parameter(lua_State *state)
-{
-    nmo_edit_plan_t *plan = NULL;
-    nmo_status_t status = nmo_lua_check_edit_plan_handle(state, 1, &plan);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Invalid edit plan handle");
-    }
-
-    nmo_object_id_t parameter_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
-    bool detach = lua_toboolean(state, 3) != 0;
-
-    status = nmo_edit_plan_add_remove_parameter(plan, parameter_id, detach);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(
-            state, status, "Failed to add remove parameter op");
     }
     return 0;
 }
@@ -683,24 +491,6 @@ static int nmo_lua_plan_rewire_operation(lua_State *state)
     if (status != NMO_OK) {
         return nmo_lua_raise_last_error(
             state, status, "Failed to add rewire operation op");
-    }
-    return 0;
-}
-
-static int nmo_lua_plan_remove_operation(lua_State *state)
-{
-    nmo_edit_plan_t *plan = NULL;
-    nmo_status_t status = nmo_lua_check_edit_plan_handle(state, 1, &plan);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(state, status, "Invalid edit plan handle");
-    }
-
-    nmo_object_id_t operation_id = (nmo_object_id_t)luaL_checkinteger(state, 2);
-
-    status = nmo_edit_plan_add_remove_operation(plan, operation_id);
-    if (status != NMO_OK) {
-        return nmo_lua_raise_last_error(
-            state, status, "Failed to add remove operation op");
     }
     return 0;
 }

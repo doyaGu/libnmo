@@ -62,6 +62,12 @@ if(Python3_Interpreter_FOUND)
                 ${PROJECT_SOURCE_DIR}/tools/scripts/gen_lua_pushers.py
                 --check
     )
+    add_test(
+        NAME test_lua_edit_bindings_generated
+        COMMAND ${Python3_EXECUTABLE}
+                ${PROJECT_SOURCE_DIR}/tools/scripts/gen_lua_edit_bindings.py
+                --check
+    )
 endif()
 
 # Unit tests
