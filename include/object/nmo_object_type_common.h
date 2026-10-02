@@ -182,7 +182,6 @@ typedef struct nmo_object_state_member {
 #define NMO_STATE_COUNTED_RECORDS(_state_t, _member, _count_member, _record) \
     {.kind = NMO_OBJECT_STATE_MEMBER_COUNTED, \
      .offset = offsetof(_state_t, _member), \
-     .size = (_record).size, \
      .size_offset = offsetof(_state_t, _count_member), \
      .count_size = sizeof(((_state_t *)0)->_count_member), \
      .record = &(_record)}
@@ -197,7 +196,6 @@ typedef struct nmo_object_state_member {
 #define NMO_STATE_COUNTED_RECORDS_OPTIONAL(_state_t, _member, _count_member, _record) \
     {.kind = NMO_OBJECT_STATE_MEMBER_COUNTED, \
      .offset = offsetof(_state_t, _member), \
-     .size = (_record).size, \
      .size_offset = offsetof(_state_t, _count_member), \
      .count_size = sizeof(((_state_t *)0)->_count_member), \
      .flags = NMO_OBJECT_STATE_MEMBER_OPTIONAL, \

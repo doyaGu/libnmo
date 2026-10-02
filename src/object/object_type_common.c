@@ -271,10 +271,12 @@ static const void *layout_member_ptr_const(
     return (const uint8_t *)instance + offset;
 }
 
-/* A BYTES member is a COUNTED member of single bytes counted by a size_t. */
+/* A BYTES member is a COUNTED member of single bytes counted by a size_t; the
+ * element of a COUNTED member of records is a record. */
 static size_t layout_element_size(const nmo_object_state_member_t *member)
 {
-    return member->kind == NMO_OBJECT_STATE_MEMBER_BYTES ? 1u : member->size;
+    if (member->kind == NMO_OBJECT_STATE_MEMBER_BYTES) return 1u;
+    return member->record != NULL ? member->record->size : member->size;
 }
 
 static size_t layout_count_size(const nmo_object_state_member_t *member)
