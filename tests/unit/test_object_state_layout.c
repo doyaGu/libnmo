@@ -12,6 +12,7 @@
 #include "object/builtin/nmo_group_schemas.h"
 #include "object/builtin/nmo_layer_schemas.h"
 #include "object/builtin/nmo_parameteroperation_schemas.h"
+#include "object/builtin/nmo_parameter_schemas.h"
 #include "object/builtin/nmo_place_schemas.h"
 #include "object/builtin/nmo_spritetext_schemas.h"
 #include "object/builtin/nmo_synchro_schemas.h"
@@ -239,6 +240,44 @@ TEST(object_state_layout, synchro_reference_arrays_copy_and_compare) {
     nmo_arena_destroy(arena);
 }
 
+TEST(object_state_layout, parameter_payload_lanes_copy_by_content) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_parameter_state_t source;
+    nmo_parameter_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_parameter_vtable.create(&source, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_parameter_vtable.create(&copied, NULL, NULL));
+    ASSERT_EQ(CKPARAM_MODE_NONE, source.mode);
+    ASSERT_EQ(NMO_OBJECT_ID_NONE, source.object_ref.raw_id);
+
+    const uint8_t payload[] = {1u, 2u, 3u};
+    for (size_t i = 0; i < sizeof(payload); ++i) {
+        ASSERT_EQ(NMO_OK, nmo_array_append(&source.buffer_data, &payload[i]));
+    }
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    ASSERT_NOT_NULL(chunk);
+    nmo_chunk_start_write(chunk);
+    nmo_chunk_write_dword(chunk, 0xCAFEF00Du);
+    nmo_chunk_close(chunk);
+    source.subchunk = chunk;
+    source.manager_value = 9;
+
+    ASSERT_EQ(NMO_OK, nmo_parameter_vtable.copy(&source, &copied, NULL, arena));
+    ASSERT_EQ(3u, copied.buffer_data.count);
+    ASSERT_TRUE(copied.buffer_data.data != source.buffer_data.data);
+    ASSERT_NOT_NULL(copied.subchunk);
+    ASSERT_TRUE(copied.subchunk != source.subchunk);
+    ASSERT_TRUE(nmo_parameter_vtable.equals(&source, &copied));
+    ASSERT_EQ(nmo_parameter_vtable.hash(&source), nmo_parameter_vtable.hash(&copied));
+
+    NMO_ARRAY_DATA(uint8_t, &copied.buffer_data)[1] = 9u;
+    ASSERT_FALSE(nmo_parameter_vtable.equals(&source, &copied));
+
+    nmo_parameter_vtable.destroy(&source, NULL, NULL);
+    nmo_parameter_vtable.destroy(&copied, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(object_state_layout, place_copy_equals_hash);
     REGISTER_TEST(object_state_layout, copy_into_shallow_alias_detaches_arrays);
@@ -247,4 +286,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_state_layout, spritetext_strings_copy_by_content);
     REGISTER_TEST(object_state_layout, parameteroperation_chunks_copy_by_content);
     REGISTER_TEST(object_state_layout, synchro_reference_arrays_copy_and_compare);
+    REGISTER_TEST(object_state_layout, parameter_payload_lanes_copy_by_content);
 TEST_MAIN_END()

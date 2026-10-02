@@ -24,16 +24,6 @@
 #include "nmo_types.h"
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE(
-    parameterlocal,
-    nmo_parameterlocal_state_t,
-    do {
-        NMO_RETURN_IF_ERROR(nmo_parameter_vtable.create(
-            &state->base, NULL, context));
-        state->owner = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
-    } while (0),
-    nmo_parameter_vtable.destroy(&state->base, NULL, context))
-
 /* =============================================================================
  * REFLECTION FIELDS
  * ============================================================================= */
@@ -224,44 +214,30 @@ static nmo_status_t nmo_parameterlocal_validate(
     const nmo_type_descriptor_t *type,
     void *context);
 
-static nmo_status_t nmo_parameterlocal_copy(
-    const void *src,
-    void *dst,
-    const nmo_type_descriptor_t *type,
-    nmo_arena_t *arena)
+static void nmo_parameterlocal_set_defaults(void *instance)
 {
-    (void)type;
-    if (src == NULL || dst == NULL) return NMO_ERR_INVALID_ARGUMENT;
-    if (src == dst) return NMO_OK;
-    const nmo_parameterlocal_state_t *s =
-        (const nmo_parameterlocal_state_t *)src;
-    nmo_parameterlocal_state_t *d = (nmo_parameterlocal_state_t *)dst;
-    NMO_RETURN_IF_ERROR(nmo_parameterlocal_validate(s, type, NULL));
-
-    nmo_parameterlocal_state_t copied;
-    nmo_status_t result = nmo_parameterlocal_create(
-        &copied, NULL, NULL);
-    if (result != NMO_OK) return result;
-    result = nmo_parameter_vtable.copy(
-        &s->base, &copied.base, NULL, arena);
-    if (result != NMO_OK) goto fail;
-
-    copied.owner = s->owner;
-    copied.is_myself = s->is_myself;
-    copied.is_setting = s->is_setting;
-
-    if (s->base.buffer_data.data != NULL &&
-        d->base.buffer_data.data == s->base.buffer_data.data) {
-        memset(&d->base.buffer_data, 0, sizeof(d->base.buffer_data));
-    }
-    nmo_parameterlocal_destroy(d, NULL, NULL);
-    *d = copied;
-    return NMO_OK;
-
-fail:
-    nmo_parameterlocal_destroy(&copied, NULL, NULL);
-    return result;
+    nmo_parameterlocal_state_t *state = instance;
+    state->owner = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
 }
+
+static const nmo_object_state_member_t nmo_parameterlocal_members[] = {
+    NMO_STATE_VALUE(nmo_parameterlocal_state_t, owner),
+    NMO_STATE_VALUE(nmo_parameterlocal_state_t, is_myself),
+    NMO_STATE_VALUE(nmo_parameterlocal_state_t, is_setting)
+};
+
+static const nmo_object_state_layout_t nmo_parameterlocal_layout = {
+    .size = sizeof(nmo_parameterlocal_state_t),
+    .base_vtable = &nmo_parameter_vtable,
+    .base_size = sizeof(nmo_parameter_state_t),
+    .members = nmo_parameterlocal_members,
+    .member_count = sizeof(nmo_parameterlocal_members) /
+        sizeof(nmo_parameterlocal_members[0]),
+    .set_defaults = nmo_parameterlocal_set_defaults,
+    .validate = nmo_parameterlocal_validate,
+};
+
+NMO_DEFINE_OBJECT_LAYOUT_OPS(parameterlocal, nmo_parameterlocal_layout)
 
 static nmo_status_t nmo_parameterlocal_validate(
     const void *instance,
@@ -273,101 +249,6 @@ static nmo_status_t nmo_parameterlocal_validate(
     const nmo_parameterlocal_state_t *state =
         (const nmo_parameterlocal_state_t *)instance;
     return nmo_parameter_vtable.validate(&state->base, NULL, context);
-}
-
-static bool nmo_parameterlocal_base_equals(
-    const nmo_parameter_state_t *lhs,
-    const nmo_parameter_state_t *rhs)
-{
-    if (lhs->base.visibility_flags != rhs->base.visibility_flags ||
-        !nmo_guid_equals(lhs->type_guid, rhs->type_guid) ||
-        lhs->mode != rhs->mode ||
-        lhs->has_state != rhs->has_state ||
-        memcmp(&lhs->object_ref, &rhs->object_ref,
-               sizeof(nmo_ref_t)) != 0 ||
-        !nmo_guid_equals(lhs->manager_guid, rhs->manager_guid) ||
-        lhs->manager_value != rhs->manager_value ||
-        lhs->buffer_data.count != rhs->buffer_data.count ||
-        (lhs->buffer_data.count > 0 &&
-         (lhs->buffer_data.data == NULL || rhs->buffer_data.data == NULL ||
-          memcmp(lhs->buffer_data.data, rhs->buffer_data.data,
-                 lhs->buffer_data.count) != 0)) ||
-        ((lhs->subchunk == NULL) != (rhs->subchunk == NULL))) {
-        return false;
-    }
-    if (lhs->subchunk != NULL) {
-        size_t lhs_size = 0;
-        size_t rhs_size = 0;
-        const void *lhs_data = nmo_chunk_get_data(lhs->subchunk, &lhs_size);
-        const void *rhs_data = nmo_chunk_get_data(rhs->subchunk, &rhs_size);
-        if (lhs_size != rhs_size ||
-            (lhs_size > 0 &&
-             (lhs_data == NULL || rhs_data == NULL ||
-              memcmp(lhs_data, rhs_data, lhs_size) != 0))) {
-            return false;
-        }
-    }
-    return true;
-}
-
-static bool nmo_parameterlocal_equals(const void *a, const void *b)
-{
-    if (a == b) return true;
-    if (a == NULL || b == NULL) return false;
-    const nmo_parameterlocal_state_t *lhs =
-        (const nmo_parameterlocal_state_t *)a;
-    const nmo_parameterlocal_state_t *rhs =
-        (const nmo_parameterlocal_state_t *)b;
-    return nmo_parameterlocal_base_equals(&lhs->base, &rhs->base) &&
-        memcmp(&lhs->owner, &rhs->owner, sizeof(nmo_ref_t)) == 0 &&
-        lhs->is_myself == rhs->is_myself &&
-        lhs->is_setting == rhs->is_setting;
-}
-
-static uint32_t nmo_parameterlocal_hash(const void *instance)
-{
-    if (instance == NULL) return 0;
-    const nmo_parameterlocal_state_t *state =
-        (const nmo_parameterlocal_state_t *)instance;
-    uint32_t hash = 2166136261u;
-#define NMO_PARAMETERLOCAL_HASH_FIELD(field) \
-    hash = nmo_hash_fnv1a32_update(hash, &(field), sizeof(field))
-    NMO_PARAMETERLOCAL_HASH_FIELD(state->base.base.visibility_flags);
-    NMO_PARAMETERLOCAL_HASH_FIELD(state->base.type_guid);
-    NMO_PARAMETERLOCAL_HASH_FIELD(state->base.mode);
-    NMO_PARAMETERLOCAL_HASH_FIELD(state->base.has_state);
-    NMO_PARAMETERLOCAL_HASH_FIELD(state->base.object_ref);
-    NMO_PARAMETERLOCAL_HASH_FIELD(state->base.manager_guid);
-    NMO_PARAMETERLOCAL_HASH_FIELD(state->base.manager_value);
-    NMO_PARAMETERLOCAL_HASH_FIELD(state->base.buffer_data.count);
-#undef NMO_PARAMETERLOCAL_HASH_FIELD
-    if (state->base.buffer_data.data != NULL &&
-        state->base.buffer_data.count > 0) {
-        hash = nmo_hash_fnv1a32_update(
-            hash, state->base.buffer_data.data,
-            state->base.buffer_data.count);
-    }
-    const uint8_t has_subchunk = state->base.subchunk != NULL;
-    hash = nmo_hash_fnv1a32_update(
-        hash, &has_subchunk, sizeof(has_subchunk));
-    if (state->base.subchunk != NULL) {
-        size_t chunk_size = 0;
-        const void *chunk_data = nmo_chunk_get_data(
-            state->base.subchunk, &chunk_size);
-        hash = nmo_hash_fnv1a32_update(
-            hash, &chunk_size, sizeof(chunk_size));
-        if (chunk_data != NULL && chunk_size > 0) {
-            hash = nmo_hash_fnv1a32_update(
-                hash, chunk_data, chunk_size);
-        }
-    }
-    hash = nmo_hash_fnv1a32_update(
-        hash, &state->owner, sizeof(state->owner));
-    hash = nmo_hash_fnv1a32_update(
-        hash, &state->is_myself, sizeof(state->is_myself));
-    hash = nmo_hash_fnv1a32_update(
-        hash, &state->is_setting, sizeof(state->is_setting));
-    return hash;
 }
 
 nmo_type_vtable_t nmo_parameterlocal_vtable = {
