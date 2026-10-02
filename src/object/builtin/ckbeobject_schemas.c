@@ -193,57 +193,6 @@ nmo_status_t nmo_beobject_attribute_array_append(
     return nmo_array_append(attributes, &attribute);
 }
 
-nmo_status_t nmo_beobject_clone_attributes(
-    nmo_arena_t *arena,
-    nmo_array_t *destination,
-    const nmo_array_t *source)
-{
-    if (arena == NULL || destination == NULL || source == NULL ||
-        (source->element_size != 0 &&
-         source->element_size != sizeof(nmo_beobject_attribute_t)) ||
-        (source->count > 0 &&
-         source->element_size != sizeof(nmo_beobject_attribute_t)) ||
-        (source->count > 0 && source->data == NULL)) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    if (destination->data == source->data) {
-        memset(destination, 0, sizeof(*destination));
-    } else {
-        nmo_container_lifecycle_t no_lifecycle = NMO_CONTAINER_LIFECYCLE_INIT;
-        nmo_array_set_lifecycle(destination, &no_lifecycle);
-        nmo_array_dispose(destination);
-    }
-    NMO_RETURN_IF_ERROR(nmo_array_init(
-        destination,
-        sizeof(nmo_beobject_attribute_t),
-        source->count,
-        &source->allocator));
-    nmo_beobject_attribute_array_set_lifecycle(destination);
-
-    nmo_beobject_attribute_t *dst = NULL;
-    nmo_status_t result = nmo_array_extend(
-        destination, source->count, (void **)&dst);
-    if (result != NMO_OK) {
-        nmo_array_dispose(destination);
-        return result;
-    }
-    const nmo_beobject_attribute_t *src = NMO_ARRAY_DATA(
-        nmo_beobject_attribute_t, source);
-    for (size_t i = 0; i < source->count; ++i) {
-        dst[i].parameter = src[i].parameter;
-        dst[i].type_id = src[i].type_id;
-        if (src[i].chunk != NULL) {
-            dst[i].chunk = nmo_chunk_clone(src[i].chunk, arena);
-            if (dst[i].chunk == NULL) {
-                nmo_array_dispose(destination);
-                return NMO_ERR_NOMEM;
-            }
-        }
-    }
-    return NMO_OK;
-}
-
 /* =============================================================================
  * REFLECTION FIELDS
  * ============================================================================= */
@@ -1039,65 +988,6 @@ static nmo_status_t nmo_beobject_serialize_internal(
 }
 
 NMO_DEFINE_OBJECT_STAGED_SERIALIZE_VALIDATED(nmo_beobject)
-
-nmo_status_t nmo_beobject_clone_legacy_attributes(
-    nmo_arena_t *arena,
-    nmo_array_t *destination,
-    const nmo_array_t *source)
-{
-    if (arena == NULL || destination == NULL || source == NULL ||
-        (source->element_size != 0 &&
-         source->element_size != sizeof(nmo_beobject_legacy_attribute_t)) ||
-        (source->count > 0 &&
-         (source->data == NULL || source->element_size !=
-             sizeof(nmo_beobject_legacy_attribute_t)))) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-
-    if (destination->data == source->data) {
-        memset(destination, 0, sizeof(*destination));
-    } else {
-        nmo_array_dispose(destination);
-    }
-    nmo_status_t result = nmo_array_init(
-        destination, sizeof(nmo_beobject_legacy_attribute_t),
-        source->count, &source->allocator);
-    if (result != NMO_OK) return result;
-
-    nmo_beobject_legacy_attribute_t *dst = NULL;
-    result = nmo_array_extend(
-        destination, source->count, (void **)&dst);
-    if (result != NMO_OK) {
-        nmo_array_dispose(destination);
-        return result;
-    }
-    const nmo_beobject_legacy_attribute_t *src = NMO_ARRAY_DATA(
-        nmo_beobject_legacy_attribute_t, source);
-    for (size_t i = 0; i < source->count; ++i) {
-        dst[i].compatible_class_id = src[i].compatible_class_id;
-        dst[i].parameter_guid = src[i].parameter_guid;
-        dst[i].parameter = src[i].parameter;
-        if (src[i].name != NULL) {
-            size_t length = strlen(src[i].name) + 1;
-            dst[i].name = (char *)nmo_arena_alloc(arena, length, 1);
-            if (dst[i].name == NULL) {
-                nmo_array_dispose(destination);
-                return NMO_ERR_NOMEM;
-            }
-            memcpy(dst[i].name, src[i].name, length);
-        }
-        if (src[i].category != NULL) {
-            size_t length = strlen(src[i].category) + 1;
-            dst[i].category = (char *)nmo_arena_alloc(arena, length, 1);
-            if (dst[i].category == NULL) {
-                nmo_array_dispose(destination);
-                return NMO_ERR_NOMEM;
-            }
-            memcpy(dst[i].category, src[i].category, length);
-        }
-    }
-    return NMO_OK;
-}
 
 static nmo_status_t nmo_beobject_validate(
     const void *instance,
