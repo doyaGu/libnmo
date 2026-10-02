@@ -15,6 +15,7 @@
 #include "object/builtin/nmo_bitmap_slots.h"
 #include "object/builtin/nmo_character_schemas.h"
 #include "object/builtin/nmo_curve_schemas.h"
+#include "object/builtin/nmo_dataarray_schemas.h"
 #include "object/builtin/nmo_interfaceobjectmanager_schemas.h"
 #include "object/builtin/nmo_grid_schemas.h"
 #include "object/builtin/nmo_group_schemas.h"
@@ -1493,6 +1494,102 @@ TEST(object_state_layout, level_lists_chunk_and_tail_copy) {
     nmo_arena_destroy(arena);
 }
 
+TEST(object_state_layout, dataarray_cells_follow_their_column_types) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+    nmo_dataarray_state_t source;
+    nmo_dataarray_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_dataarray_vtable.create(&source, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_dataarray_vtable.create(&copied, NULL, NULL));
+    ASSERT_EQ(-1, source.key_column);
+
+    nmo_dataarray_column_format_t columns[5];
+    memset(columns, 0, sizeof(columns));
+    columns[0].name = "id";
+    columns[0].type = CKARRAYTYPE_INT;
+    columns[1].name = "scale";
+    columns[1].type = CKARRAYTYPE_FLOAT;
+    columns[2].name = "label";
+    columns[2].type = CKARRAYTYPE_STRING;
+    columns[3].name = "target";
+    columns[3].type = CKARRAYTYPE_OBJECT;
+    columns[4].name = "value";
+    columns[4].type = CKARRAYTYPE_PARAMETER;
+    columns[4].has_file_parameter_type_guid = 1;
+    columns[4].file_parameter_type_guid.d1 = 0x77u;
+
+    nmo_dataarray_cell_t cells[2][5];
+    memset(cells, 0, sizeof(cells));
+    nmo_dataarray_row_t rows[2] = {
+        {.column_count = 5, .cells = cells[0]},
+        {.column_count = 5, .cells = cells[1]},
+    };
+    for (int r = 0; r < 2; ++r) {
+        cells[r][0].int_value = 10 + r;
+        cells[r][1].float_value = 0.5f + (float)r;
+        cells[r][3].object_ref = nmo_ref_from_raw(150u + (uint32_t)r);
+        cells[r][4].parameter.ref = nmo_ref_from_raw(160u + (uint32_t)r);
+    }
+    cells[0][2].string_value = "first";
+    cells[1][2].string_value = NULL;
+    cells[0][4].parameter.chunk = make_chunk(arena, 0x1111u);
+    ASSERT_NOT_NULL(cells[0][4].parameter.chunk);
+    source.column_count = 5;
+    source.column_formats = columns;
+    source.row_count = 2;
+    source.rows = rows;
+
+    ASSERT_EQ(NMO_OK, nmo_dataarray_vtable.copy(&source, &copied, NULL, arena));
+    ASSERT_TRUE(copied.column_formats != columns);
+    ASSERT_TRUE(copied.column_formats[0].name != columns[0].name);
+    ASSERT_EQ(0, strcmp("label", copied.column_formats[2].name));
+    ASSERT_EQ(0x77u, copied.column_formats[4].file_parameter_type_guid.d1);
+    ASSERT_TRUE(copied.rows != rows);
+    ASSERT_TRUE(copied.rows[0].cells != cells[0]);
+    ASSERT_EQ(11, copied.rows[1].cells[0].int_value);
+    ASSERT_EQ(1.5f, copied.rows[1].cells[1].float_value);
+    ASSERT_TRUE(copied.rows[0].cells[2].string_value != cells[0][2].string_value);
+    ASSERT_EQ(0, strcmp("first", copied.rows[0].cells[2].string_value));
+    ASSERT_NULL(copied.rows[1].cells[2].string_value);
+    ASSERT_EQ(151u, copied.rows[1].cells[3].object_ref.raw_id);
+    ASSERT_EQ(160u, copied.rows[0].cells[4].parameter.ref.raw_id);
+    ASSERT_NOT_NULL(copied.rows[0].cells[4].parameter.chunk);
+    ASSERT_TRUE(copied.rows[0].cells[4].parameter.chunk != cells[0][4].parameter.chunk);
+    ASSERT_NULL(copied.rows[1].cells[4].parameter.chunk);
+    ASSERT_TRUE(nmo_dataarray_vtable.equals(&source, &copied));
+    ASSERT_EQ(nmo_dataarray_vtable.hash(&source), nmo_dataarray_vtable.hash(&copied));
+
+    /* Each cell is compared as the type of its column says. */
+    copied.rows[1].cells[2].string_value = "second";
+    ASSERT_FALSE(nmo_dataarray_vtable.equals(&source, &copied));
+    copied.rows[1].cells[2].string_value = NULL;
+    copied.rows[0].cells[4].parameter.chunk = NULL;
+    ASSERT_FALSE(nmo_dataarray_vtable.equals(&source, &copied));
+    ASSERT_NE(nmo_dataarray_vtable.hash(&source), nmo_dataarray_vtable.hash(&copied));
+    copied.rows[0].cells[4].parameter.chunk = make_chunk(arena, 0x1111u);
+    ASSERT_TRUE(nmo_dataarray_vtable.equals(&source, &copied));
+    /* The file's own parameter type GUID is part of what is written back. */
+    copied.column_formats[4].file_parameter_type_guid.d1 = 0x78u;
+    ASSERT_FALSE(nmo_dataarray_vtable.equals(&source, &copied));
+
+    /* A row whose width differs from the columns is invalid and is not copied. */
+    rows[1].column_count = 4;
+    nmo_dataarray_state_t other;
+    ASSERT_EQ(NMO_OK, nmo_dataarray_vtable.create(&other, NULL, NULL));
+    other.order = 3;
+    ASSERT_NE(NMO_OK, nmo_dataarray_vtable.copy(&source, &other, NULL, arena));
+    ASSERT_EQ(3, other.order);
+
+    source.column_formats = NULL;
+    source.column_count = 0;
+    source.rows = NULL;
+    source.row_count = 0;
+    nmo_dataarray_vtable.destroy(&source, NULL, NULL);
+    nmo_dataarray_vtable.destroy(&copied, NULL, NULL);
+    nmo_dataarray_vtable.destroy(&other, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(object_state_layout, place_copy_equals_hash);
     REGISTER_TEST(object_state_layout, copy_into_shallow_alias_detaches_arrays);
@@ -1525,4 +1622,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_state_layout, attribute_manager_categories_and_attributes_copy);
     REGISTER_TEST(object_state_layout, interface_manager_chunks_copy);
     REGISTER_TEST(object_state_layout, level_lists_chunk_and_tail_copy);
+    REGISTER_TEST(object_state_layout, dataarray_cells_follow_their_column_types);
 TEST_MAIN_END()
