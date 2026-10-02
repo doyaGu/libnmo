@@ -66,24 +66,18 @@ static void nmo_object_schema_destroy(
     memset(instance, 0, sizeof(nmo_object_state_t));
 }
 
-static bool nmo_object_state_equals(const void *a, const void *b)
-{
-    if (a == b) {
-        return true;
-    }
-    if (!a || !b) {
-        return false;
-    }
-    return memcmp(a, b, sizeof(nmo_object_state_t)) == 0;
-}
+static const nmo_object_state_member_t nmo_object_state_members[] = {
+    NMO_STATE_VALUE(nmo_object_state_t, visibility_flags)
+};
 
-static uint32_t nmo_object_state_hash(const void *instance)
-{
-    if (!instance) {
-        return 0;
-    }
-    return (uint32_t)nmo_hash_fnv1a(instance, sizeof(nmo_object_state_t));
-}
+static const nmo_object_state_layout_t nmo_object_state_layout = {
+    .size = sizeof(nmo_object_state_t),
+    .members = nmo_object_state_members,
+    .member_count = sizeof(nmo_object_state_members) /
+        sizeof(nmo_object_state_members[0]),
+};
+
+NMO_DEFINE_OBJECT_LAYOUT_COMPARE(object_state, nmo_object_state_layout)
 
 /* =============================================================================
  * CKObject DESERIALIZATION
