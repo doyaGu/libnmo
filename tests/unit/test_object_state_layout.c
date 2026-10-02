@@ -20,6 +20,7 @@
 #include "object/builtin/nmo_parameteroperation_schemas.h"
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "object/builtin/nmo_parameterout_schemas.h"
+#include "object/builtin/nmo_patchmesh_schemas.h"
 #include "object/builtin/nmo_place_schemas.h"
 #include "object/builtin/nmo_scene_schemas.h"
 #include "object/builtin/nmo_sound_schemas.h"
@@ -861,6 +862,48 @@ TEST(object_state_layout, curve_sub_points_copy_with_their_chunks) {
     nmo_arena_destroy(arena);
 }
 
+TEST(object_state_layout, patchmesh_channels_copy_their_buffers) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+
+    nmo_patchmesh_state_t patch;
+    nmo_patchmesh_state_t patch_copy;
+    ASSERT_EQ(NMO_OK, nmo_patchmesh_vtable.create(&patch, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_patchmesh_vtable.create(&patch_copy, NULL, NULL));
+    ASSERT_EQ(0x0Au, patch.base.flags);
+    uint8_t raw_patches[16] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
+    nmo_vector2_t patch_uvs[1] = {{0.5f, 0.5f}};
+    nmo_patchmesh_channel_t channel;
+    memset(&channel, 0, sizeof(channel));
+    channel.patch_count = 2;
+    channel.patches_raw = raw_patches;
+    channel.uv_count = 1;
+    channel.uvs = patch_uvs;
+    uint8_t edges[12] = {7, 8, 9};
+    patch.channel_count = 1;
+    patch.channels = &channel;
+    patch.edge_count = 1;
+    patch.edge_data_size = sizeof(edges);
+    patch.edge_data = edges;
+    ASSERT_EQ(NMO_OK,
+              nmo_patchmesh_vtable.copy(&patch, &patch_copy, NULL, arena));
+    ASSERT_TRUE(patch_copy.channels != &channel);
+    ASSERT_TRUE(patch_copy.channels[0].patches_raw != raw_patches);
+    ASSERT_EQ(0, memcmp(patch_copy.channels[0].patches_raw, raw_patches,
+                        sizeof(raw_patches)));
+    ASSERT_TRUE(patch_copy.channels[0].uvs != patch_uvs);
+    ASSERT_TRUE(patch_copy.edge_data != edges);
+    ASSERT_EQ(9u, patch_copy.edge_data[2]);
+    patch.channels = NULL;
+    patch.channel_count = 0;
+    patch.edge_data = NULL;
+    patch.edge_count = 0;
+    patch.edge_data_size = 0;
+    nmo_patchmesh_vtable.destroy(&patch, NULL, NULL);
+    nmo_patchmesh_vtable.destroy(&patch_copy, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 /* A record that holds a counted array of its own, reached through a pointer,
  * with the count of the outer array computed from the state. */
 typedef struct nested_leaf {
@@ -997,5 +1040,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_state_layout, entity_skin_copies_deeply);
     REGISTER_TEST(object_state_layout, mesh_counts_follow_the_state);
     REGISTER_TEST(object_state_layout, curve_sub_points_copy_with_their_chunks);
+    REGISTER_TEST(object_state_layout, patchmesh_channels_copy_their_buffers);
     REGISTER_TEST(object_state_layout, record_pointer_with_nested_counted_members);
 TEST_MAIN_END()
