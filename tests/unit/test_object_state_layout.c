@@ -25,6 +25,7 @@
 #include "object/builtin/nmo_scene_schemas.h"
 #include "object/builtin/nmo_sound_schemas.h"
 #include "object/builtin/nmo_spritetext_schemas.h"
+#include "object/builtin/nmo_sprite_schemas.h"
 #include "object/builtin/nmo_synchro_schemas.h"
 #include "object/builtin/nmo_targetlight_schemas.h"
 #include "object/builtin/nmo_object_schemas.h"
@@ -1154,6 +1155,50 @@ TEST(object_state_layout, custom_members_use_their_functions_and_fail_atomically
     nmo_arena_destroy(arena);
 }
 
+TEST(object_state_layout, sprite_bitmap_copies_through_the_custom_member) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 8192);
+    ASSERT_NOT_NULL(arena);
+    nmo_sprite_state_t source;
+    nmo_sprite_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_sprite_vtable.create(&source, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_sprite_vtable.create(&copied, NULL, NULL));
+    ASSERT_EQ(NMO_OBJECT_ID_NONE, source.sprite_ref.raw_id);
+    ASSERT_EQ(0.0f, source.entity.source_rect.right);
+
+    uint8_t blue[2] = {3, 4};
+    nmo_texture_raw_slot_t raw[1];
+    memset(raw, 0, sizeof(raw));
+    raw[0].blue_size = 2;
+    raw[0].blue_data = blue;
+    uint8_t properties[3] = {1, 2, 3};
+    source.has_bitmap_data = 1;
+    source.bitmap.kind = CKTEXTURE_BITMAP_RAW;
+    source.bitmap.slot_count = 1;
+    source.bitmap.raw_slots = raw;
+    source.bitmap_properties_size = 3;
+    source.bitmap_properties = properties;
+    source.current_slot = 4;
+
+    ASSERT_EQ(NMO_OK, nmo_sprite_vtable.copy(&source, &copied, NULL, arena));
+    ASSERT_TRUE(copied.bitmap.raw_slots != raw);
+    ASSERT_TRUE(copied.bitmap.raw_slots[0].blue_data != blue);
+    ASSERT_TRUE(copied.bitmap_properties != properties);
+    ASSERT_EQ(3u, copied.bitmap_properties[2]);
+    ASSERT_EQ(4u, copied.current_slot);
+    ASSERT_TRUE(nmo_sprite_vtable.equals(&source, &copied));
+    ASSERT_EQ(nmo_sprite_vtable.hash(&source), nmo_sprite_vtable.hash(&copied));
+    copied.bitmap.raw_slots[0].blue_data[0] = 0;
+    ASSERT_FALSE(nmo_sprite_vtable.equals(&source, &copied));
+
+    source.bitmap.raw_slots = NULL;
+    source.bitmap.slot_count = 0;
+    source.bitmap_properties = NULL;
+    source.bitmap_properties_size = 0;
+    nmo_sprite_vtable.destroy(&source, NULL, NULL);
+    nmo_sprite_vtable.destroy(&copied, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(object_state_layout, place_copy_equals_hash);
     REGISTER_TEST(object_state_layout, copy_into_shallow_alias_detaches_arrays);
@@ -1179,4 +1224,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_state_layout, record_pointer_with_nested_counted_members);
     REGISTER_TEST(object_state_layout, optional_lanes_may_be_null_while_the_count_is_not);
     REGISTER_TEST(object_state_layout, custom_members_use_their_functions_and_fail_atomically);
+    REGISTER_TEST(object_state_layout, sprite_bitmap_copies_through_the_custom_member);
 TEST_MAIN_END()

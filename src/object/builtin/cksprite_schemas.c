@@ -35,6 +35,67 @@
 #include <stdint.h>
 #include <string.h>
 
+static nmo_status_t nmo_sprite_bitmap_copy(nmo_arena_t *arena, void *dst, const void *src)
+{
+    return nmo_bitmap_slots_copy(arena, dst, src);
+}
+
+static bool nmo_sprite_bitmap_equals(const void *a, const void *b)
+{
+    return nmo_bitmap_slots_equals(a, b);
+}
+
+static uint32_t nmo_sprite_bitmap_hash(uint32_t hash, const void *value)
+{
+    return nmo_bitmap_slots_hash(hash, value);
+}
+
+static const nmo_object_state_custom_ops_t nmo_sprite_bitmap_ops = {
+    .copy = nmo_sprite_bitmap_copy,
+    .equals = nmo_sprite_bitmap_equals,
+    .hash = nmo_sprite_bitmap_hash,
+};
+
+/* RCKSprite::RCKSprite resets the source rectangle to nothing. */
+static void nmo_sprite_set_defaults(void *instance)
+{
+    nmo_sprite_state_t *state = instance;
+    state->sprite_ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
+    state->entity.source_rect.left = 0.0f;
+    state->entity.source_rect.top = 0.0f;
+    state->entity.source_rect.right = 0.0f;
+    state->entity.source_rect.bottom = 0.0f;
+}
+
+static const nmo_object_state_member_t nmo_sprite_members[] = {
+    NMO_STATE_VALUE(nmo_sprite_state_t, has_sprite_ref),
+    NMO_STATE_VALUE(nmo_sprite_state_t, sprite_ref),
+    NMO_STATE_VALUE(nmo_sprite_state_t, has_bitmap_data),
+    NMO_STATE_CUSTOM(nmo_sprite_state_t, bitmap, nmo_sprite_bitmap_ops),
+    NMO_STATE_VALUE(nmo_sprite_state_t, has_transparency),
+    NMO_STATE_VALUE(nmo_sprite_state_t, is_transparent),
+    NMO_STATE_VALUE(nmo_sprite_state_t, transparent_color),
+    NMO_STATE_VALUE(nmo_sprite_state_t, has_slot),
+    NMO_STATE_VALUE(nmo_sprite_state_t, current_slot),
+    NMO_STATE_VALUE(nmo_sprite_state_t, has_video_format),
+    NMO_STATE_VALUE(nmo_sprite_state_t, video_format),
+    NMO_STATE_VALUE(nmo_sprite_state_t, has_save_options),
+    NMO_STATE_VALUE(nmo_sprite_state_t, save_options),
+    NMO_STATE_VALUE(nmo_sprite_state_t, bitmap_properties_size),
+    NMO_STATE_BYTES(nmo_sprite_state_t, bitmap_properties, bitmap_properties_size)
+};
+
+static const nmo_object_state_layout_t nmo_sprite_layout = {
+    .size = sizeof(nmo_sprite_state_t),
+    .base_vtable = &nmo_2dentity_vtable,
+    .base_size = sizeof(nmo_2dentity_state_t),
+    .members = nmo_sprite_members,
+    .member_count = sizeof(nmo_sprite_members) / sizeof(nmo_sprite_members[0]),
+    .set_defaults = nmo_sprite_set_defaults,
+};
+
+NMO_DEFINE_OBJECT_LAYOUT_OPS(sprite, nmo_sprite_layout)
+
 static void nmo_sprite_dispose_base_arrays(nmo_sprite_state_t *state)
 {
     if (state == NULL) return;
@@ -43,22 +104,6 @@ static void nmo_sprite_dispose_base_arrays(nmo_sprite_state_t *state)
     nmo_array_dispose(&beobject->attributes);
     nmo_array_dispose(&beobject->legacy_attributes);
 }
-
-NMO_DEFINE_OBJECT_LIFECYCLE(
-    sprite,
-    nmo_sprite_state_t,
-    do {
-        nmo_status_t result = nmo_2dentity_vtable.create(
-            &state->entity, NULL, context);
-        if (result != NMO_OK) return result;
-        state->sprite_ref = nmo_ref_from_raw(NMO_OBJECT_ID_NONE);
-        /* RCKSprite::RCKSprite resets the source rectangle to nothing. */
-        state->entity.source_rect.left = 0.0f;
-        state->entity.source_rect.top = 0.0f;
-        state->entity.source_rect.right = 0.0f;
-        state->entity.source_rect.bottom = 0.0f;
-    } while (0),
-    nmo_2dentity_vtable.destroy(&state->entity, NULL, context))
 
 /* =============================================================================
  * REFLECTION FIELDS
@@ -540,44 +585,6 @@ static nmo_status_t nmo_sprite_serialize_internal(
 
 NMO_DEFINE_OBJECT_STAGED_SERIALIZE(nmo_sprite)
 
-static nmo_status_t nmo_sprite_copy(
-    const void *src,
-    void *dst,
-    const nmo_type_descriptor_t *type,
-    nmo_arena_t *arena)
-{
-    (void)type;
-    if (src == NULL || dst == NULL || arena == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    const nmo_sprite_state_t *source = src;
-    nmo_sprite_state_t *target = dst;
-    nmo_type_descriptor_t base_type = {
-        .size = sizeof(nmo_2dentity_state_t),
-    };
-    NMO_RETURN_IF_ERROR(nmo_2dentity_vtable.copy(
-        &source->entity, &target->entity, &base_type, arena));
-    target->has_sprite_ref = source->has_sprite_ref;
-    target->sprite_ref = source->sprite_ref;
-    target->has_bitmap_data = source->has_bitmap_data;
-    NMO_RETURN_IF_ERROR(nmo_bitmap_slots_copy(
-        arena, &target->bitmap, &source->bitmap));
-    target->has_transparency = source->has_transparency;
-    target->is_transparent = source->is_transparent;
-    target->transparent_color = source->transparent_color;
-    target->has_slot = source->has_slot;
-    target->current_slot = source->current_slot;
-    target->has_video_format = source->has_video_format;
-    target->video_format = source->video_format;
-    target->has_save_options = source->has_save_options;
-    target->save_options = source->save_options;
-    target->bitmap_properties = NULL;
-    target->bitmap_properties_size = source->bitmap_properties_size;
-    return nmo_object_copy_bytes(
-        arena, (void **)&target->bitmap_properties,
-        source->bitmap_properties, source->bitmap_properties_size);
-}
-
 static nmo_status_t nmo_sprite_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
@@ -616,80 +623,6 @@ static nmo_status_t nmo_sprite_validate(
 /* ============================================================================
  * Vtable + registration
  * ============================================================================ */
-
-static bool nmo_sprite_bytes_equal(
-    const void *lhs,
-    const void *rhs,
-    size_t size)
-{
-    if (size == 0) return true;
-    return lhs != NULL && rhs != NULL && memcmp(lhs, rhs, size) == 0;
-}
-
-static bool nmo_sprite_equals(const void *a, const void *b)
-{
-    if (a == b) return true;
-    if (a == NULL || b == NULL) return false;
-    const nmo_sprite_state_t *lhs = a;
-    const nmo_sprite_state_t *rhs = b;
-    return nmo_2dentity_vtable.equals(&lhs->entity, &rhs->entity) &&
-        lhs->has_sprite_ref == rhs->has_sprite_ref &&
-        lhs->sprite_ref.raw_id == rhs->sprite_ref.raw_id &&
-        lhs->sprite_ref.id == rhs->sprite_ref.id &&
-        lhs->sprite_ref.state == rhs->sprite_ref.state &&
-        lhs->has_bitmap_data == rhs->has_bitmap_data &&
-        nmo_bitmap_slots_equals(&lhs->bitmap, &rhs->bitmap) &&
-        lhs->has_transparency == rhs->has_transparency &&
-        lhs->is_transparent == rhs->is_transparent &&
-        lhs->transparent_color == rhs->transparent_color &&
-        lhs->has_slot == rhs->has_slot &&
-        lhs->current_slot == rhs->current_slot &&
-        lhs->has_video_format == rhs->has_video_format &&
-        lhs->video_format == rhs->video_format &&
-        lhs->has_save_options == rhs->has_save_options &&
-        lhs->save_options == rhs->save_options &&
-        lhs->bitmap_properties_size == rhs->bitmap_properties_size &&
-        nmo_sprite_bytes_equal(
-            lhs->bitmap_properties, rhs->bitmap_properties,
-            lhs->bitmap_properties_size);
-}
-
-static uint32_t nmo_sprite_hash_buffer(
-    uint32_t hash,
-    const void *data,
-    size_t size)
-{
-    hash = nmo_hash_fnv1a32_update(hash, &size, sizeof(size));
-    return nmo_hash_fnv1a32_update(hash, data, size);
-}
-
-static uint32_t nmo_sprite_hash(const void *instance)
-{
-    if (instance == NULL) return 0;
-    const nmo_sprite_state_t *state = instance;
-    uint32_t hash = nmo_2dentity_vtable.hash(&state->entity);
-#define NMO_SPRITE_HASH_FIELD(field) \
-    hash = nmo_hash_fnv1a32_update(hash, &state->field, sizeof(state->field))
-    NMO_SPRITE_HASH_FIELD(has_sprite_ref);
-    NMO_SPRITE_HASH_FIELD(sprite_ref.raw_id);
-    NMO_SPRITE_HASH_FIELD(sprite_ref.id);
-    NMO_SPRITE_HASH_FIELD(sprite_ref.state);
-    NMO_SPRITE_HASH_FIELD(has_bitmap_data);
-    hash = nmo_bitmap_slots_hash(hash, &state->bitmap);
-    NMO_SPRITE_HASH_FIELD(has_transparency);
-    NMO_SPRITE_HASH_FIELD(is_transparent);
-    NMO_SPRITE_HASH_FIELD(transparent_color);
-    NMO_SPRITE_HASH_FIELD(has_slot);
-    NMO_SPRITE_HASH_FIELD(current_slot);
-    NMO_SPRITE_HASH_FIELD(has_video_format);
-    NMO_SPRITE_HASH_FIELD(video_format);
-    NMO_SPRITE_HASH_FIELD(has_save_options);
-    NMO_SPRITE_HASH_FIELD(save_options);
-    hash = nmo_sprite_hash_buffer(
-        hash, state->bitmap_properties, state->bitmap_properties_size);
-#undef NMO_SPRITE_HASH_FIELD
-    return hash;
-}
 
 nmo_type_vtable_t nmo_sprite_vtable = {
     .prepare_dependencies = nmo_sprite_prepare_dependencies,
