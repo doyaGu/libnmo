@@ -22,6 +22,14 @@ What breaks source compatibility, in short; the sections below give the details.
   removed (see "Unused APIs"). The chunk parser and writer objects give way to the `nmo_chunk_*`
   functions of `format/nmo_chunk_api.h`, and the `nmo_io_file_*` and `nmo_io_memory_*` functions to
   `nmo_file_io_open()`, `nmo_memory_io_open_read()` and `nmo_memory_io_open_write()`.
+- Headers moved to the layer of their code; the old paths stay as forwarders:
+  `runtime/nmo_context.h` is now `object/nmo_context.h`, `document/nmo_document.h` is
+  `runtime/nmo_document.h`, `behavior/nmo_behavior_registry.h` is `extension/nmo_behavior_registry.h`
+  and `document/nmo_document_perf_stats.h` is `format/nmo_perf_stats.h`. The file state types moved
+  from `document/nmo_document_load.h` to `format/nmo_file_state.h`, and the workspace edit flags
+  to `object/nmo_edit_flags.h`; both are included where they were before.
+- `nmo_chunk_file_context_t.repository` is replaced by `ref_tokens`; set it with
+  `nmo_object_repository_ref_tokens(repository)`.
 - Three signatures changed: `nmo_behavior_normalize_references()` takes the type registry,
   `nmo_interface_graph_io_set_array()` takes the tag array of the ports, and
   `nmo_object_format_path()` returns the full length of the path, as snprintf does.
@@ -309,6 +317,34 @@ What breaks source compatibility, in short; the sections below give the details.
   corpus and on generated files. The chunk comparison also covers chunk options and class ids now.
 - A chunk written by a manager hook is remapped to file ids like every other chunk; before, one that had been
   parsed from bytes was left alone.
+
+### Changed - Every layer depends only on the layers below it
+- The layering audit (`test_layering_audit`) also checks relative includes of another layer's
+  private headers (`"../runtime/runtime_internal.h"`); seventeen such upward includes had gone
+  unseen. Counting function calls between layers as well, 50 references pointed up; none does now,
+  and `tests/layering_allowlist.txt` is empty (38 entries before).
+- The layer order puts export above object and below session (export uses nothing above object,
+  and chunk and document use it).
+- Moved to the layer of what they depend on, with the old header paths as forwarders: the context
+  to object, the building block registry to extension, the interface chunk type registration and
+  the ancestor state lookup to type, the load and save phase timing to format, the document object
+  (`nmo_document_create` and its accessors, implemented by the runtime) to runtime, the object
+  queries, hierarchy, imports, reference graphs and summaries to runtime, the object diff to
+  document, and the load and save pipelines (`nmo_load_file`, `nmo_save_file`, the serializer) to
+  session.
+- The session is implemented in the session layer (`src/session/session.c`, struct in
+  `session_internal.h`); it lived in `src/runtime/document_workspace.c`, so the session code
+  called 34 functions of the runtime. The behavior index it caches is built in the behavior layer
+  (`behavior_acceleration.c`), which leaves the session the function that releases it.
+- The chunk code reads and writes unresolved-reference tokens through `nmo_ref_tokens_t`
+  (`format/nmo_chunk_context.h`), which the object repository provides, instead of calling the
+  repository.
+- Fold and replace-bb rename behaviors through the new `nmo_script_edit_rename_node()` inside their
+  script edit transaction; `nmo_behavior_edit_replace_bb_in_script_tx()` is the transaction entry
+  point of replace-bb, which the edit plan executor uses.
+- `tools/commands/nmo_cmd_script.c` (4,590 lines) and `nmo_cmd_behavior_interface.c` (3,857) are
+  split by command into files of at most 1,754 lines; the functions are unchanged. The operation
+  references of an edit plan are checked from a table of reference fields.
 
 ### Removed - Unused APIs (July to September)
 - Headers: `session/nmo_builder.h` (the staged file builder), `session/nmo_runtime_result.h` (result
