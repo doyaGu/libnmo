@@ -14,6 +14,7 @@
 #include "object/builtin/nmo_parameteroperation_schemas.h"
 #include "object/builtin/nmo_place_schemas.h"
 #include "object/builtin/nmo_spritetext_schemas.h"
+#include "object/builtin/nmo_synchro_schemas.h"
 #include "object/builtin/nmo_targetlight_schemas.h"
 #include <string.h>
 
@@ -207,6 +208,37 @@ TEST(object_state_layout, parameteroperation_chunks_copy_by_content) {
     nmo_arena_destroy(arena);
 }
 
+TEST(object_state_layout, synchro_reference_arrays_copy_and_compare) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_synchro_state_t source;
+    nmo_synchro_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_synchro_vtable.create(&source, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_synchro_vtable.create(&copied, NULL, NULL));
+    ASSERT_EQ(sizeof(nmo_ref_t), source.arrived_ids.element_size);
+
+    source.max_waiters = 3;
+    const nmo_ref_t arrived = nmo_ref_from_raw(40);
+    const nmo_ref_t passed = nmo_ref_from_raw(41);
+    ASSERT_EQ(NMO_OK, nmo_array_append(&source.arrived_ids, &arrived));
+    ASSERT_EQ(NMO_OK, nmo_array_append(&source.passed_ids, &passed));
+    ASSERT_EQ(NMO_OK, nmo_synchro_vtable.copy(&source, &copied, NULL, arena));
+    ASSERT_EQ(3, copied.max_waiters);
+    ASSERT_TRUE(copied.arrived_ids.data != source.arrived_ids.data);
+    ASSERT_TRUE(nmo_synchro_vtable.equals(&source, &copied));
+    ASSERT_EQ(nmo_synchro_vtable.hash(&source), nmo_synchro_vtable.hash(&copied));
+
+    /* The same references in the other array are a different state. */
+    nmo_array_t swapped = copied.arrived_ids;
+    copied.arrived_ids = copied.passed_ids;
+    copied.passed_ids = swapped;
+    ASSERT_FALSE(nmo_synchro_vtable.equals(&source, &copied));
+
+    nmo_synchro_vtable.destroy(&source, NULL, NULL);
+    nmo_synchro_vtable.destroy(&copied, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(object_state_layout, place_copy_equals_hash);
     REGISTER_TEST(object_state_layout, copy_into_shallow_alias_detaches_arrays);
@@ -214,4 +246,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_state_layout, targetlight_defaults_and_value_copy);
     REGISTER_TEST(object_state_layout, spritetext_strings_copy_by_content);
     REGISTER_TEST(object_state_layout, parameteroperation_chunks_copy_by_content);
+    REGISTER_TEST(object_state_layout, synchro_reference_arrays_copy_and_compare);
 TEST_MAIN_END()

@@ -17,50 +17,6 @@
 #include "type/nmo_reflection.h"
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE(
-    synchro,
-    nmo_synchro_state_t,
-    do {
-        nmo_status_t result = nmo_object_vtable.create(
-            &state->base, NULL, context);
-        if (result != NMO_OK) return result;
-        result = nmo_array_init(
-            &state->arrived_ids, sizeof(nmo_ref_t), 0, NULL);
-        if (result != NMO_OK) {
-            nmo_object_vtable.destroy(&state->base, NULL, context);
-            return result;
-        }
-        result = nmo_array_init(&state->passed_ids, sizeof(nmo_ref_t), 0, NULL);
-        if (result != NMO_OK) {
-            nmo_array_dispose(&state->arrived_ids);
-            nmo_object_vtable.destroy(&state->base, NULL, context);
-            return result;
-        }
-    } while (0),
-    do {
-        nmo_array_dispose(&state->arrived_ids);
-        nmo_array_dispose(&state->passed_ids);
-        nmo_object_vtable.destroy(&state->base, NULL, context);
-    } while (0))
-NMO_DEFINE_OBJECT_LIFECYCLE(
-    state,
-    nmo_state_state_t,
-    do {
-        nmo_status_t result = nmo_object_vtable.create(
-            &state->base, NULL, context);
-        if (result != NMO_OK) return result;
-    } while (0),
-    nmo_object_vtable.destroy(&state->base, NULL, context))
-NMO_DEFINE_OBJECT_LIFECYCLE(
-    criticalsection,
-    nmo_criticalsection_state_t,
-    do {
-        nmo_status_t result = nmo_object_vtable.create(
-            &state->base, NULL, context);
-        if (result != NMO_OK) return result;
-    } while (0),
-    nmo_object_vtable.destroy(&state->base, NULL, context))
-
 static void nmo_synchro_dispose_arrays(nmo_synchro_state_t *state)
 {
     if (state == NULL) return;
@@ -135,6 +91,52 @@ static nmo_status_t nmo_synchro_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
     void *context);
+
+static const nmo_object_state_member_t nmo_synchro_members[] = {
+    NMO_STATE_VALUE(nmo_synchro_state_t, max_waiters),
+    NMO_STATE_ARRAY(nmo_synchro_state_t, arrived_ids, nmo_ref_t),
+    NMO_STATE_ARRAY(nmo_synchro_state_t, passed_ids, nmo_ref_t)
+};
+
+static const nmo_object_state_layout_t nmo_synchro_layout = {
+    .size = sizeof(nmo_synchro_state_t),
+    .base_vtable = &nmo_object_vtable,
+    .base_size = sizeof(nmo_object_state_t),
+    .members = nmo_synchro_members,
+    .member_count = sizeof(nmo_synchro_members) / sizeof(nmo_synchro_members[0]),
+    .validate = nmo_synchro_validate,
+};
+
+NMO_DEFINE_OBJECT_LAYOUT_OPS(synchro, nmo_synchro_layout)
+
+static const nmo_object_state_member_t nmo_state_members[] = {
+    NMO_STATE_VALUE(nmo_state_state_t, event_flag)
+};
+
+static const nmo_object_state_layout_t nmo_state_layout = {
+    .size = sizeof(nmo_state_state_t),
+    .base_vtable = &nmo_object_vtable,
+    .base_size = sizeof(nmo_object_state_t),
+    .members = nmo_state_members,
+    .member_count = sizeof(nmo_state_members) / sizeof(nmo_state_members[0]),
+};
+
+NMO_DEFINE_OBJECT_LAYOUT_OPS(state, nmo_state_layout)
+
+static const nmo_object_state_member_t nmo_criticalsection_members[] = {
+    NMO_STATE_VALUE(nmo_criticalsection_state_t, object_in_section)
+};
+
+static const nmo_object_state_layout_t nmo_criticalsection_layout = {
+    .size = sizeof(nmo_criticalsection_state_t),
+    .base_vtable = &nmo_object_vtable,
+    .base_size = sizeof(nmo_object_state_t),
+    .members = nmo_criticalsection_members,
+    .member_count = sizeof(nmo_criticalsection_members) /
+        sizeof(nmo_criticalsection_members[0]),
+};
+
+NMO_DEFINE_OBJECT_LAYOUT_OPS(criticalsection, nmo_criticalsection_layout)
 
 static nmo_status_t nmo_synchro_read_ref_array(
     nmo_chunk_t *chunk,
@@ -590,49 +592,6 @@ static nmo_status_t nmo_synchro_pre_delete(
  * Vtable + registration
  * ============================================================================ */
 
-static nmo_status_t nmo_synchro_copy(
-    const void *src,
-    void *dst,
-    const nmo_type_descriptor_t *type,
-    nmo_arena_t *arena)
-{
-    (void)type;
-    (void)arena;
-    if (src == NULL || dst == NULL) return NMO_ERR_INVALID_ARGUMENT;
-    if (src == dst) return NMO_OK;
-    const nmo_synchro_state_t *s = (const nmo_synchro_state_t *)src;
-    nmo_synchro_state_t *d = (nmo_synchro_state_t *)dst;
-    NMO_RETURN_IF_ERROR(nmo_synchro_validate(s, type, NULL));
-    nmo_array_t arrived_ids = {0};
-    nmo_array_t passed_ids = {0};
-    nmo_status_t result = nmo_array_clone(
-        &s->arrived_ids, &arrived_ids, &s->arrived_ids.allocator);
-    if (result != NMO_OK) return result;
-    result = nmo_array_clone(
-        &s->passed_ids, &passed_ids, &s->passed_ids.allocator);
-    if (result != NMO_OK) {
-        nmo_array_dispose(&arrived_ids);
-        return result;
-    }
-    nmo_synchro_state_t copied = {
-        .base = s->base,
-        .max_waiters = s->max_waiters,
-        .arrived_ids = arrived_ids,
-        .passed_ids = passed_ids,
-    };
-    if (s->arrived_ids.data != NULL &&
-        d->arrived_ids.data == s->arrived_ids.data) {
-        memset(&d->arrived_ids, 0, sizeof(d->arrived_ids));
-    }
-    if (s->passed_ids.data != NULL &&
-        d->passed_ids.data == s->passed_ids.data) {
-        memset(&d->passed_ids, 0, sizeof(d->passed_ids));
-    }
-    nmo_synchro_destroy(d, NULL, NULL);
-    *d = copied;
-    return NMO_OK;
-}
-
 static nmo_status_t nmo_synchro_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
@@ -654,145 +613,9 @@ static nmo_status_t nmo_synchro_validate(
     return nmo_object_vtable.validate(&state->base, NULL, context);
 }
 
-static bool nmo_synchro_ref_arrays_equal(
-    const nmo_array_t *a,
-    const nmo_array_t *b)
-{
-    if (a->count != b->count) return false;
-    const nmo_ref_t *refs_a = NMO_ARRAY_DATA(nmo_ref_t, a);
-    const nmo_ref_t *refs_b = NMO_ARRAY_DATA(nmo_ref_t, b);
-    for (size_t i = 0; i < a->count; ++i) {
-        if (refs_a[i].raw_id != refs_b[i].raw_id ||
-            refs_a[i].id != refs_b[i].id ||
-            refs_a[i].state != refs_b[i].state) {
-            return false;
-        }
-    }
-    return true;
-}
-
-static bool nmo_synchro_equals(const void *a, const void *b)
-{
-    if (a == b) return true;
-    if (a == NULL || b == NULL) return false;
-    const nmo_synchro_state_t *sa = (const nmo_synchro_state_t *)a;
-    const nmo_synchro_state_t *sb = (const nmo_synchro_state_t *)b;
-    if (nmo_synchro_validate(sa, NULL, NULL) != NMO_OK ||
-        nmo_synchro_validate(sb, NULL, NULL) != NMO_OK) {
-        return false;
-    }
-    return nmo_object_vtable.equals(&sa->base, &sb->base) &&
-        sa->max_waiters == sb->max_waiters &&
-        nmo_synchro_ref_arrays_equal(&sa->arrived_ids, &sb->arrived_ids) &&
-        nmo_synchro_ref_arrays_equal(&sa->passed_ids, &sb->passed_ids);
-}
-
-static uint32_t nmo_synchro_hash_u32(uint32_t hash, uint32_t value)
-{
-    for (size_t i = 0; i < sizeof(value); ++i) {
-        hash ^= (uint8_t)(value >> (i * 8u));
-        hash *= 16777619u;
-    }
-    return hash;
-}
-
-static uint32_t nmo_synchro_hash(const void *instance)
-{
-    if (instance == NULL) return 0;
-    const nmo_synchro_state_t *state =
-        (const nmo_synchro_state_t *)instance;
-    if (nmo_synchro_validate(state, NULL, NULL) != NMO_OK) return 0;
-    uint32_t hash = nmo_object_vtable.hash(&state->base);
-    hash = nmo_synchro_hash_u32(hash, (uint32_t)state->max_waiters);
-    const nmo_array_t *arrays[] = {
-        &state->arrived_ids, &state->passed_ids
-    };
-    for (size_t array_index = 0; array_index < 2; ++array_index) {
-        hash = nmo_synchro_hash_u32(
-            hash, (uint32_t)arrays[array_index]->count);
-        const nmo_ref_t *refs = NMO_ARRAY_DATA(
-            nmo_ref_t, arrays[array_index]);
-        for (size_t i = 0; i < arrays[array_index]->count; ++i) {
-            hash = nmo_synchro_hash_u32(hash, refs[i].raw_id);
-            hash = nmo_synchro_hash_u32(hash, refs[i].id);
-            hash = nmo_synchro_hash_u32(hash, (uint32_t)refs[i].state);
-        }
-    }
-    return hash;
-}
-
-static nmo_status_t nmo_state_copy(
-    const void *src,
-    void *dst,
-    const nmo_type_descriptor_t *type,
-    nmo_arena_t *arena)
-{
-    (void)type;
-    (void)arena;
-    if (src == NULL || dst == NULL) return NMO_ERR_INVALID_ARGUMENT;
-    if (src != dst) *(nmo_state_state_t *)dst =
-        *(const nmo_state_state_t *)src;
-    return NMO_OK;
-}
-
 NMO_DEFINE_OBJECT_VALIDATE_BASE(nmo_state, nmo_state_state_t, base, nmo_object_vtable)
 
-static bool nmo_state_equals(const void *a, const void *b)
-{
-    if (a == b) return true;
-    if (a == NULL || b == NULL) return false;
-    const nmo_state_state_t *lhs = a;
-    const nmo_state_state_t *rhs = b;
-    return nmo_object_vtable.equals(&lhs->base, &rhs->base) &&
-        lhs->event_flag == rhs->event_flag;
-}
-
-static uint32_t nmo_state_hash(const void *instance)
-{
-    if (instance == NULL) return 0;
-    const nmo_state_state_t *state = instance;
-    return nmo_synchro_hash_u32(
-        nmo_object_vtable.hash(&state->base), (uint32_t)state->event_flag);
-}
-
-static nmo_status_t nmo_criticalsection_copy(
-    const void *src,
-    void *dst,
-    const nmo_type_descriptor_t *type,
-    nmo_arena_t *arena)
-{
-    (void)type;
-    (void)arena;
-    if (src == NULL || dst == NULL) return NMO_ERR_INVALID_ARGUMENT;
-    if (src != dst) *(nmo_criticalsection_state_t *)dst =
-        *(const nmo_criticalsection_state_t *)src;
-    return NMO_OK;
-}
-
 NMO_DEFINE_OBJECT_VALIDATE_BASE(nmo_criticalsection, nmo_criticalsection_state_t, base, nmo_object_vtable)
-
-static bool nmo_criticalsection_equals(const void *a, const void *b)
-{
-    if (a == b) return true;
-    if (a == NULL || b == NULL) return false;
-    const nmo_criticalsection_state_t *lhs = a;
-    const nmo_criticalsection_state_t *rhs = b;
-    return nmo_object_vtable.equals(&lhs->base, &rhs->base) &&
-        lhs->object_in_section.raw_id == rhs->object_in_section.raw_id &&
-        lhs->object_in_section.id == rhs->object_in_section.id &&
-        lhs->object_in_section.state == rhs->object_in_section.state;
-}
-
-static uint32_t nmo_criticalsection_hash(const void *instance)
-{
-    if (instance == NULL) return 0;
-    const nmo_criticalsection_state_t *state = instance;
-    uint32_t hash = nmo_object_vtable.hash(&state->base);
-    hash = nmo_synchro_hash_u32(hash, state->object_in_section.raw_id);
-    hash = nmo_synchro_hash_u32(hash, state->object_in_section.id);
-    return nmo_synchro_hash_u32(
-        hash, (uint32_t)state->object_in_section.state);
-}
 
 nmo_type_vtable_t nmo_synchro_vtable = {
     .prepare_dependencies = nmo_synchro_prepare_dependencies,
