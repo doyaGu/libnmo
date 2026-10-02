@@ -419,6 +419,29 @@ the tests build each layout dword by dword.
   object no longer return false and 0 for a state that fails validation; the hash values of these classes
   changed, which only the object diff and the hook coverage test read.
 
+### Changed - State layouts cover the entity, geometry and bitmap classes
+- Members of a layout can be counted by a function (`NMO_STATE_COUNTED_BY`: three indices per face, the mesh
+  weight count that falls back to the vertex count), be counted records (`NMO_STATE_COUNTED_RECORDS`: skin
+  bones and vertices, patch channels, material channels, bitmap slots), point at one record
+  (`NMO_STATE_RECORD_PTR`: the skin), be optional (`NMO_STATE_COUNTED_*_OPTIONAL`: the unused lanes of a bitmap
+  are NULL while the slot count is not), or be custom (`NMO_STATE_CUSTOM`: a value with its own copy, equals and
+  hash functions, like the sprite bitmap). A layout needs no base (`base_vtable` is NULL) when it describes a
+  plain record, and `nmo_object_layout_hash_from` hashes a layout into a running hash.
+- The 3D entity (skin included), mesh, patch mesh, curve, curve point, sprite and texture classes take their
+  create, copy, equals and hash (the mesh, patch mesh, curve and curve point compare through the serialized
+  form, and only create and copy come from the layout) from layouts, and so do the bitmap slot functions
+  `nmo_bitmap_slots_copy`, `_equals` and `_hash`. 35 of the 43 schemas use layouts; with the previous entry
+  about 3,000 lines fewer in `src/object/builtin`, with 1,660 added in the engine, the layouts and the tests.
+- Hash values of the 3D entity, sprite and texture classes changed; only the object diff reads them.
+
+### Fixed - Copying a behavior dropped its runtime flags
+- The copy hook of a behavior did not carry `runtime_flags` (active, executed last frame, activate or reset
+  next frame), so a copied behavior was saved with those bits cleared and did not equal its original. It was
+  found by `test_corpus_state_copy`, which copies the state of every object of the corpus into a zeroed and a
+  created state and checks validate, equals, hash and the serialized dwords of the copy, and destroys the
+  copy before the original so shared memory shows under the sanitizers. 2,723 behaviors of the corpus were
+  affected.
+
 ### Changed - Chunks keep no copy of the bytes they were parsed from
 - `nmo_chunk_t` lost `raw_data` and `raw_size`, and `nmo_data_chunk_slice_t` lost `borrowed`. A parsed chunk
   used to keep its source buffer and the data section writer emitted those bytes instead of the chunk, so a
