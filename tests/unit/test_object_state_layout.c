@@ -1019,6 +1019,141 @@ TEST(object_state_layout, record_pointer_with_nested_counted_members) {
     nmo_arena_destroy(arena);
 }
 
+/* ---- Optional lanes, custom members and records without a base ---- */
+
+typedef struct lane_state {
+    nmo_object_state_t base;
+    uint32_t count;
+    uint16_t *lane_a;
+    uint16_t *lane_b;
+    uint32_t custom_value;
+} lane_state_t;
+
+static int custom_copy_calls;
+static int custom_copy_fails;
+
+static nmo_status_t lane_custom_copy(nmo_arena_t *arena, void *dst, const void *src)
+{
+    (void)arena;
+    custom_copy_calls++;
+    if (custom_copy_fails) return NMO_ERR_NOMEM;
+    *(uint32_t *)dst = *(const uint32_t *)src + 1000u;
+    return NMO_OK;
+}
+
+static bool lane_custom_equals(const void *a, const void *b)
+{
+    return (*(const uint32_t *)a % 1000u) == (*(const uint32_t *)b % 1000u);
+}
+
+static uint32_t lane_custom_hash(uint32_t hash, const void *value)
+{
+    const uint32_t reduced = *(const uint32_t *)value % 1000u;
+    return hash ^ reduced;
+}
+
+static const nmo_object_state_custom_ops_t lane_custom_ops = {
+    .copy = lane_custom_copy,
+    .equals = lane_custom_equals,
+    .hash = lane_custom_hash,
+};
+
+static const nmo_object_state_member_t lane_members[] = {
+    NMO_STATE_VALUE(lane_state_t, count),
+    NMO_STATE_COUNTED_OPTIONAL(lane_state_t, lane_a, count, uint16_t),
+    NMO_STATE_COUNTED_OPTIONAL(lane_state_t, lane_b, count, uint16_t),
+    NMO_STATE_CUSTOM(lane_state_t, custom_value, lane_custom_ops)
+};
+
+static const nmo_object_state_layout_t lane_layout = {
+    .size = sizeof(lane_state_t),
+    .base_vtable = &nmo_object_vtable,
+    .base_size = sizeof(nmo_object_state_t),
+    .members = lane_members,
+    .member_count = sizeof(lane_members) / sizeof(lane_members[0]),
+};
+
+TEST(object_state_layout, optional_lanes_may_be_null_while_the_count_is_not) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    lane_state_t source;
+    lane_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_object_layout_create(&lane_layout, &source, NULL));
+    ASSERT_EQ(NMO_OK, nmo_object_layout_create(&lane_layout, &copied, NULL));
+
+    uint16_t lane_a[3] = {1, 2, 3};
+    source.count = 3;
+    source.lane_a = lane_a;
+    source.lane_b = NULL;
+    source.custom_value = 7;
+    ASSERT_EQ(NMO_OK, nmo_object_layout_copy(&lane_layout, &source, &copied, arena));
+    ASSERT_TRUE(copied.lane_a != lane_a);
+    ASSERT_EQ(3u, copied.lane_a[2]);
+    ASSERT_NULL(copied.lane_b);
+    ASSERT_TRUE(nmo_object_layout_equals(&lane_layout, &source, &copied));
+    ASSERT_EQ(nmo_object_layout_hash(&lane_layout, &source),
+              nmo_object_layout_hash(&lane_layout, &copied));
+
+    /* An absent lane and a present one differ; a lane with no element is absent. */
+    uint16_t lane_b[3] = {4, 5, 6};
+    copied.lane_b = lane_b;
+    ASSERT_FALSE(nmo_object_layout_equals(&lane_layout, &source, &copied));
+    ASSERT_NE(nmo_object_layout_hash(&lane_layout, &source),
+              nmo_object_layout_hash(&lane_layout, &copied));
+    copied.lane_b = NULL;
+    source.count = 0;
+    copied.count = 0;
+    source.lane_a = lane_a;
+    copied.lane_a = NULL;
+    ASSERT_TRUE(nmo_object_layout_equals(&lane_layout, &source, &copied));
+    ASSERT_EQ(nmo_object_layout_hash(&lane_layout, &source),
+              nmo_object_layout_hash(&lane_layout, &copied));
+
+    source.lane_a = NULL;
+    nmo_object_layout_destroy(&lane_layout, &source, NULL);
+    nmo_object_layout_destroy(&lane_layout, &copied, NULL);
+    nmo_arena_destroy(arena);
+}
+
+TEST(object_state_layout, custom_members_use_their_functions_and_fail_atomically) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    lane_state_t source;
+    lane_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_object_layout_create(&lane_layout, &source, NULL));
+    ASSERT_EQ(NMO_OK, nmo_object_layout_create(&lane_layout, &copied, NULL));
+    source.count = 0;
+    source.custom_value = 7;
+    copied.custom_value = 55;
+
+    custom_copy_calls = 0;
+    custom_copy_fails = 0;
+    ASSERT_EQ(NMO_OK, nmo_object_layout_copy(&lane_layout, &source, &copied, arena));
+    ASSERT_EQ(1, custom_copy_calls);
+    ASSERT_EQ(1007u, copied.custom_value);
+    /* The function decides what equal means: 1007 and 7 agree modulo 1000. */
+    ASSERT_TRUE(nmo_object_layout_equals(&lane_layout, &source, &copied));
+    ASSERT_EQ(nmo_object_layout_hash(&lane_layout, &source),
+              nmo_object_layout_hash(&lane_layout, &copied));
+    copied.custom_value = 8;
+    ASSERT_FALSE(nmo_object_layout_equals(&lane_layout, &source, &copied));
+
+    /* A failing function leaves the target as it was, base included. */
+    copied.custom_value = 55;
+    copied.base.visibility_flags = 9;
+    source.base.visibility_flags = 1;
+    custom_copy_fails = 1;
+    ASSERT_EQ(NMO_ERR_NOMEM,
+              nmo_object_layout_copy(&lane_layout, &source, &copied, arena));
+    custom_copy_fails = 0;
+    ASSERT_EQ(55u, copied.custom_value);
+    ASSERT_EQ(9u, copied.base.visibility_flags);
+
+    nmo_object_layout_destroy(&lane_layout, &source, NULL);
+    nmo_object_layout_destroy(&lane_layout, &copied, NULL);
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(object_state_layout, place_copy_equals_hash);
     REGISTER_TEST(object_state_layout, copy_into_shallow_alias_detaches_arrays);
@@ -1042,4 +1177,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_state_layout, curve_sub_points_copy_with_their_chunks);
     REGISTER_TEST(object_state_layout, patchmesh_channels_copy_their_buffers);
     REGISTER_TEST(object_state_layout, record_pointer_with_nested_counted_members);
+    REGISTER_TEST(object_state_layout, optional_lanes_may_be_null_while_the_count_is_not);
+    REGISTER_TEST(object_state_layout, custom_members_use_their_functions_and_fail_atomically);
 TEST_MAIN_END()

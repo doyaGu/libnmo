@@ -105,13 +105,27 @@ typedef enum nmo_object_state_member_kind {
     NMO_OBJECT_STATE_MEMBER_CHUNK, /**< Arena-owned nmo_chunk_t *, compared by chunk data */
     NMO_OBJECT_STATE_MEMBER_COUNTED, /**< Arena-owned array counted by an integer member or a count function; elements are trivially copyable, or records when .record is set */
     NMO_OBJECT_STATE_MEMBER_RECORDS, /**< Owned nmo_array_t of records laid out by a nested member list */
-    NMO_OBJECT_STATE_MEMBER_RECORD_PTR /**< Arena-owned pointer to one record, NULL when absent */
+    NMO_OBJECT_STATE_MEMBER_RECORD_PTR, /**< Arena-owned pointer to one record, NULL when absent */
+    NMO_OBJECT_STATE_MEMBER_CUSTOM /**< Embedded value copied, compared and hashed by functions */
 } nmo_object_state_member_kind_t;
+
+/**
+ * @brief Functions of a CUSTOM member. The value they work on holds only
+ *        arena-owned memory, so a copy needs no teardown.
+ */
+typedef struct nmo_object_state_custom_ops {
+    /** Copy *src over *dst; leave *dst alone on failure. */
+    nmo_status_t (*copy)(nmo_arena_t *arena, void *dst, const void *src);
+    bool (*equals)(const void *a, const void *b);
+    /** Fold the value into a running FNV-1a hash. */
+    uint32_t (*hash)(uint32_t hash, const void *value);
+} nmo_object_state_custom_ops_t;
 
 typedef struct nmo_object_state_layout nmo_object_state_layout_t;
 
 /** Member flags */
 #define NMO_OBJECT_STATE_MEMBER_UNCOMPARED 0x1u /**< Copied, but left out of equals and hash */
+#define NMO_OBJECT_STATE_MEMBER_OPTIONAL 0x2u /**< COUNTED, BYTES: a NULL pointer means absent whatever the count says */
 
 typedef struct nmo_object_state_member {
     nmo_object_state_member_kind_t kind;
@@ -125,6 +139,8 @@ typedef struct nmo_object_state_member {
     size_t (*count_fn)(const void *owner);
     /** COUNTED, RECORDS, RECORD_PTR: layout of one element */
     const nmo_object_state_layout_t *record;
+    /** CUSTOM: how to copy, compare and hash the value */
+    const nmo_object_state_custom_ops_t *custom;
 } nmo_object_state_member_t;
 
 #define NMO_STATE_VALUE(_state_t, _member) \
@@ -170,6 +186,27 @@ typedef struct nmo_object_state_member {
      .size_offset = offsetof(_state_t, _count_member), \
      .count_size = sizeof(((_state_t *)0)->_count_member), \
      .record = &(_record)}
+/* As NMO_STATE_COUNTED and NMO_STATE_COUNTED_RECORDS, for a pointer that is
+ * NULL while its count is not 0 when the lane it belongs to is unused. */
+#define NMO_STATE_COUNTED_OPTIONAL(_state_t, _member, _count_member, _element_t) \
+    {.kind = NMO_OBJECT_STATE_MEMBER_COUNTED, \
+     .offset = offsetof(_state_t, _member), .size = sizeof(_element_t), \
+     .size_offset = offsetof(_state_t, _count_member), \
+     .count_size = sizeof(((_state_t *)0)->_count_member), \
+     .flags = NMO_OBJECT_STATE_MEMBER_OPTIONAL}
+#define NMO_STATE_COUNTED_RECORDS_OPTIONAL(_state_t, _member, _count_member, _record) \
+    {.kind = NMO_OBJECT_STATE_MEMBER_COUNTED, \
+     .offset = offsetof(_state_t, _member), \
+     .size = (_record).size, \
+     .size_offset = offsetof(_state_t, _count_member), \
+     .count_size = sizeof(((_state_t *)0)->_count_member), \
+     .flags = NMO_OBJECT_STATE_MEMBER_OPTIONAL, \
+     .record = &(_record)}
+/* An embedded value handled by the functions in _ops. */
+#define NMO_STATE_CUSTOM(_state_t, _member, _ops) \
+    {.kind = NMO_OBJECT_STATE_MEMBER_CUSTOM, \
+     .offset = offsetof(_state_t, _member), \
+     .size = sizeof(((_state_t *)0)->_member), .custom = &(_ops)}
 /* A pointer to one record laid out by _record, NULL when there is none. */
 #define NMO_STATE_RECORD_PTR(_state_t, _member, _record) \
     {.kind = NMO_OBJECT_STATE_MEMBER_RECORD_PTR, \
@@ -195,7 +232,7 @@ typedef struct nmo_object_state_member {
  */
 struct nmo_object_state_layout {
     size_t size;
-    const nmo_type_vtable_t *base_vtable;
+    const nmo_type_vtable_t *base_vtable; /**< NULL for a layout of a plain record */
     size_t base_size;        /**< Type size handed to the base copy; 0 hands no type */
     const nmo_object_state_member_t *members;
     size_t member_count;
@@ -228,6 +265,12 @@ NMO_API bool nmo_object_layout_equals(
 
 NMO_API uint32_t nmo_object_layout_hash(
     const nmo_object_state_layout_t *layout,
+    const void *instance);
+
+/** @brief Fold the members of a layout into a running FNV-1a hash (the base is not hashed). */
+NMO_API uint32_t nmo_object_layout_hash_from(
+    const nmo_object_state_layout_t *layout,
+    uint32_t hash,
     const void *instance);
 
 /* Vtable hooks over a layout: nmo_<prefix>_create/_destroy, _copy, _equals/_hash */
