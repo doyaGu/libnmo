@@ -606,6 +606,13 @@ the tests build each layout dword by dword.
   copy before the original so shared memory shows under the sanitizers. 2,723 behaviors of the corpus were
   affected.
 
+### Fixed - The object name index kept freed names as keys
+- An entry of the name index (`nmo_object_index_t`) used the name storage of the first object with that
+  name as its key. When that object was taken out of the repository, deleted or renamed while another
+  object still had the name, the key pointed at freed memory, so the next lookup of the name read freed
+  memory or missed the entry. Each entry now keeps its own copy of the name. Virtools files often give
+  several objects the same name, so deleting or renaming objects of a session with an object index hit it.
+
 ### Tests
 - Six corpus tests (`test_corpus_semantics_{geometry,media,scene,behavior}` and the earlier
   `test_corpus_invariants`) check about 300 relationships the engine guarantees between decoded
@@ -646,6 +653,13 @@ the tests build each layout dword by dword.
   tests that wrote elsewhere use it: `test_io_mmap` wrote into `data/`, and `test_behavior_execute`,
   `test_load_options` and `test_virtools_types`, which run with the source root as their working
   directory, wrote there (`test_behavior_execute` left six `.cmo` files behind on every run).
+- Six tests named their samples relative to the working directory, which is the build directory under
+  CTest, so they never found them: `test_bulk_destroy`, `test_strict_load` and four cases of
+  `test_interface_chunk` skipped even with the corpus present, and `test_file_roundtrip` and
+  `test_mmap_load` printed "skipped" and returned 0, so CTest counted them as passed. They use
+  `NMO_TEST_DATA_FILE()` and `TEST_REQUIRE_FIXTURE()`, a sample that does not load fails the case, and
+  the two integration tests load samples that exist (the Nop files, and the two uncompressed samples for
+  the mmap path). Running them found the name index bug above.
 
 ## [0.2.0] - 2026-07-14
 
