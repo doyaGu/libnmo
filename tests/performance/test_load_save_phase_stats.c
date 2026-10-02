@@ -7,7 +7,7 @@
 #include "nmo.h"
 #include "document/nmo_document_load.h"
 #include "document/nmo_document_save.h"
-#include "document/nmo_document_perf_stats.h"
+#include "format/nmo_perf_stats.h"
 
 #include <stdbool.h>
 #include <stdio.h>

@@ -28,7 +28,7 @@
 
 #include "nmo_types.h"
 #include "core/nmo_error.h"
-#include "document/nmo_document_perf_stats.h"
+#include "format/nmo_perf_stats.h"
 #include "object/nmo_object_system.h"
 
 #ifdef __cplusplus

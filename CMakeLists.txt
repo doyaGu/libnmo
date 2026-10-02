@@ -160,6 +160,7 @@ endif()
 
 # Format layer sources
 set(NMO_FORMAT_SOURCES
+    src/format/perf_stats.c
     src/format/header.c
     src/format/header1.c
     src/format/nmo_data.c
@@ -323,7 +324,6 @@ set(NMO_DOCUMENT_SOURCES
     src/document/document_file_state.c
     src/document/document_load.c
     src/document/document_save.c
-    src/document/document_perf_stats.c
     src/document/document_compare.c
     src/document/document_compare_result.c
     src/document/document_stats.c

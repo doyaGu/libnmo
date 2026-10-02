@@ -3,7 +3,7 @@
  * @brief Phase-level load/save performance statistics helpers
  */
 
-#include "document/nmo_document_perf_stats.h"
+#include "format/nmo_perf_stats.h"
 
 #include <string.h>
 

@@ -132,7 +132,7 @@
 #include "document/nmo_document_load.h"
 #include "document/nmo_document_file_state.h"
 #include "document/nmo_document_save.h"
-#include "document/nmo_document_perf_stats.h"
+#include "format/nmo_perf_stats.h"
 #include "document/nmo_document_stats.h"
 #include "document/nmo_document_compare.h"
 #include "chunk/nmo_chunk_index.h"
