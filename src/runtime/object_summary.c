@@ -26,7 +26,7 @@
 #include "type/nmo_type_view.h"
 #include "type/nmo_type_guids.h"
 #include "type/nmo_param_guids.h"
-#include "../runtime/runtime_internal.h"
+#include "runtime_internal.h"
 #include "core/nmo_guid.h"
 #include "object/nmo_object_repository.h"
 #include "object/nmo_ref.h"
