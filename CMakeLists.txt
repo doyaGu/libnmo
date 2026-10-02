@@ -282,6 +282,7 @@ set(NMO_TYPE_SOURCES
 
 # Extension layer sources
 set(NMO_EXTENSION_SOURCES
+    src/extension/bb_registry.c
     src/extension/extension_registry.c
     src/extension/extension_loader.c
     src/extension/extension_host.c
@@ -343,7 +344,6 @@ set(NMO_EXPORT_SOURCES
 
 # Behavior layer sources
 set(NMO_BEHAVIOR_SOURCES
-    src/behavior/bb_registry.c
     src/behavior/behavior_boundary.c
     src/behavior/behavior_graph.c
     src/behavior/behavior_index.c

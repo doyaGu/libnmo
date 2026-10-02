@@ -22,7 +22,7 @@
 #include "type/nmo_type_query.h"
 #include "type/nmo_type_system.h"
 #include "core/nmo_guid.h"
-#include "behavior/nmo_behavior_registry.h"
+#include "extension/nmo_behavior_registry.h"
 
 #include <stdio.h>
 #include <string.h>

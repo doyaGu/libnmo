@@ -2,7 +2,7 @@
 
 #include "document/nmo_document.h"
 #include "edit/nmo_behavior_edit.h"
-#include "behavior/nmo_behavior_registry.h"
+#include "extension/nmo_behavior_registry.h"
 #include "edit/nmo_script_edit.h"
 #include "behavior/nmo_behavior_analyze.h"
 #include "runtime/nmo_workspace.h"

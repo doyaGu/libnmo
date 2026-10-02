@@ -21,7 +21,7 @@
 #include "object/nmo_object_hierarchy.h"
 #include "object/nmo_object_summary.h"
 #include "object/nmo_object_diff.h"
-#include "behavior/nmo_behavior_registry.h"
+#include "extension/nmo_behavior_registry.h"
 #include "behavior/nmo_behavior_query.h"
 #include "behavior/nmo_behavior_analyze.h"
 #include "behavior/nmo_behavior_view.h"

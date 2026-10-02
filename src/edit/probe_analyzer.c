@@ -1,6 +1,6 @@
 #include "edit/nmo_probe_analyzer.h"
 
-#include "behavior/nmo_behavior_registry.h"
+#include "extension/nmo_behavior_registry.h"
 #include "core/nmo_array.h"
 #include "format/nmo_object.h"
 #include "object/builtin/nmo_behavior_schemas.h"

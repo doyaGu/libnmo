@@ -145,7 +145,7 @@
 #include "object/nmo_animation_edit.h"
 #include "object/nmo_sound_edit.h"
 #include "object/nmo_object_hierarchy.h"
-#include "behavior/nmo_behavior_registry.h"
+#include "extension/nmo_behavior_registry.h"
 #include "behavior/nmo_behavior_query.h"
 #include "behavior/nmo_behavior_analyze.h"
 #include "behavior/nmo_behavior_view.h"

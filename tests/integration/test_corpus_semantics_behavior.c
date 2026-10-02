@@ -26,7 +26,7 @@
 
 #include "../test_framework.h"
 
-#include "behavior/nmo_behavior_registry.h"
+#include "extension/nmo_behavior_registry.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_array.h"
 #include "core/nmo_guid.h"

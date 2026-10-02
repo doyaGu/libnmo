@@ -16,7 +16,7 @@
 #include "../nmo_opt.h"
 
 #include "edit/nmo_edit_plan.h"
-#include "behavior/nmo_behavior_registry.h"
+#include "extension/nmo_behavior_registry.h"
 #include "edit/nmo_probe_analyzer.h"
 #include "nmo.h"
 #include "document/nmo_document_stats.h"

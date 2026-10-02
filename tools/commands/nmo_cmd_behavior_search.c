@@ -27,7 +27,7 @@
 #include "object/nmo_object_types.h"
 #include "object/nmo_object_repository.h"
 #include "type/nmo_type_system.h"
-#include "behavior/nmo_behavior_registry.h"
+#include "extension/nmo_behavior_registry.h"
 
 #include <stdint.h>
 #include <stdio.h>

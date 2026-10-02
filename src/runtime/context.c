@@ -15,7 +15,7 @@
 #include "format/nmo_manager_registry.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_array.h"
-#include "behavior/nmo_behavior_registry.h"
+#include "extension/nmo_behavior_registry.h"
 #include "extension/nmo_virtools_data_plugin.h"
 #include "format/nmo_interface_chunk.h"
 #include <stdlib.h>

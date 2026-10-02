@@ -5,7 +5,7 @@
  * All data is loaded at runtime by external loaders (e.g. nmo_json virtools_loader).
  */
 
-#include "behavior/nmo_behavior_registry.h"
+#include "extension/nmo_behavior_registry.h"
 #include "core/nmo_guid.h"
 #include "core/nmo_arena.h"
 #include "core/nmo_hash_table.h"

@@ -26,7 +26,7 @@
 #include "format/nmo_data.h"
 #include "format/nmo_chunk_pool.h"
 #include "format/nmo_header1.h"
-#include "behavior/nmo_behavior_registry.h"
+#include "extension/nmo_behavior_registry.h"
 #include "behavior/nmo_behavior_analyze.h"
 #include "object/nmo_ref_graph.h"
 #include "object/nmo_manager_guids.h"
