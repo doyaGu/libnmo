@@ -15,6 +15,7 @@
 #include "object/builtin/nmo_bitmap_slots.h"
 #include "object/builtin/nmo_character_schemas.h"
 #include "object/builtin/nmo_curve_schemas.h"
+#include "object/builtin/nmo_interfaceobjectmanager_schemas.h"
 #include "object/builtin/nmo_grid_schemas.h"
 #include "object/builtin/nmo_group_schemas.h"
 #include "object/builtin/nmo_layer_schemas.h"
@@ -1390,6 +1391,39 @@ TEST(object_state_layout, attribute_manager_categories_and_attributes_copy) {
     nmo_arena_destroy(arena);
 }
 
+TEST(object_state_layout, interface_manager_chunks_copy) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_interfaceobjectmanager_state_t source;
+    nmo_interfaceobjectmanager_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_interfaceobjectmanager_vtable.create(&source, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_interfaceobjectmanager_vtable.create(&copied, NULL, NULL));
+    ASSERT_EQ(1u, source.has_chunks_chunk);
+    ASSERT_EQ(1u, source.has_guid_chunk);
+
+    nmo_chunk_t *chunks[2] = {make_chunk(arena, 0xF1u), NULL};
+    ASSERT_NOT_NULL(chunks[0]);
+    source.chunk_count = 2;
+    source.chunks = chunks;
+    source.guid.d1 = 0x11223344u;
+    ASSERT_EQ(NMO_OK,
+              nmo_interfaceobjectmanager_vtable.copy(&source, &copied, NULL, arena));
+    ASSERT_EQ(2, copied.chunk_count);
+    ASSERT_TRUE(copied.chunks != chunks);
+    ASSERT_NOT_NULL(copied.chunks[0]);
+    ASSERT_TRUE(copied.chunks[0] != chunks[0]);
+    ASSERT_NULL(copied.chunks[1]);
+    ASSERT_EQ(0x11223344u, copied.guid.d1);
+    ASSERT_TRUE(nmo_interfaceobjectmanager_vtable.equals(&source, &copied));
+
+    /* A negative count is invalid and is not copied. */
+    source.chunk_count = -1;
+    ASSERT_NE(NMO_OK,
+              nmo_interfaceobjectmanager_vtable.copy(&source, &copied, NULL, arena));
+    ASSERT_EQ(2, copied.chunk_count);
+    nmo_arena_destroy(arena);
+}
+
 TEST_MAIN_BEGIN()
     REGISTER_TEST(object_state_layout, place_copy_equals_hash);
     REGISTER_TEST(object_state_layout, copy_into_shallow_alias_detaches_arrays);
@@ -1420,4 +1454,5 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_state_layout, sprite_bitmap_copies_through_the_custom_member);
     REGISTER_TEST(object_state_layout, message_manager_names_copy_by_content);
     REGISTER_TEST(object_state_layout, attribute_manager_categories_and_attributes_copy);
+    REGISTER_TEST(object_state_layout, interface_manager_chunks_copy);
 TEST_MAIN_END()

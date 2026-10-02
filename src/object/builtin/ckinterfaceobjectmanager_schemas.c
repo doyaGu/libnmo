@@ -22,20 +22,6 @@
 #include <stdalign.h>
 #include <string.h>
 
-NMO_DEFINE_OBJECT_LIFECYCLE(
-    interfaceobjectmanager,
-    nmo_interfaceobjectmanager_state_t,
-    do {
-        NMO_RETURN_IF_ERROR(nmo_object_vtable.create(
-            &state->base, NULL, context));
-        state->chunk_count = 0;
-        state->chunks = NULL;
-        state->has_chunks_chunk = 1;
-        state->guid = NMO_GUID_NULL;
-        state->has_guid_chunk = 1;
-    } while (0),
-    nmo_object_vtable.destroy(&state->base, NULL, context))
-
 /* =============================================================================
  * REFLECTION FIELDS
  * ============================================================================= */
@@ -160,47 +146,52 @@ static nmo_status_t nmo_interfaceobjectmanager_validate(
     const nmo_type_descriptor_t *type,
     void *context);
 
-static nmo_status_t nmo_interfaceobjectmanager_copy(
-    const void *src,
-    void *dst,
-    const nmo_type_descriptor_t *type,
-    nmo_arena_t *arena)
+/* One chunk of the list, as a record of its own. */
+typedef struct nmo_interfaceobjectmanager_chunk {
+    nmo_chunk_t *chunk;
+} nmo_interfaceobjectmanager_chunk_t;
+
+static const nmo_object_state_member_t nmo_interfaceobjectmanager_chunk_members[] = {
+    NMO_STATE_CHUNK(nmo_interfaceobjectmanager_chunk_t, chunk)
+};
+
+static const nmo_object_state_layout_t nmo_interfaceobjectmanager_chunk_layout = {
+    .size = sizeof(nmo_interfaceobjectmanager_chunk_t),
+    .members = nmo_interfaceobjectmanager_chunk_members,
+    .member_count = sizeof(nmo_interfaceobjectmanager_chunk_members) /
+        sizeof(nmo_interfaceobjectmanager_chunk_members[0]),
+};
+
+static void nmo_interfaceobjectmanager_set_defaults(void *instance)
 {
-    const nmo_interfaceobjectmanager_state_t *s = src;
-    nmo_interfaceobjectmanager_state_t *d = dst;
-    if (s == NULL || d == NULL || arena == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    NMO_RETURN_IF_ERROR(nmo_interfaceobjectmanager_validate(
-        s, type, NULL));
-
-    nmo_interfaceobjectmanager_state_t copied;
-    nmo_status_t result = nmo_interfaceobjectmanager_create(
-        &copied, NULL, NULL);
-    if (result != NMO_OK) return result;
-    nmo_type_descriptor_t base_type = {
-        .size = sizeof(nmo_object_state_t),
-    };
-    result = nmo_object_vtable.copy(
-        &s->base, &copied.base, &base_type, arena);
-    if (result != NMO_OK) goto fail;
-
-    copied.chunk_count = s->chunk_count;
-    copied.has_chunks_chunk = s->has_chunks_chunk;
-    copied.guid = s->guid;
-    copied.has_guid_chunk = s->has_guid_chunk;
-    result = nmo_object_copy_chunk_array(
-        arena, &copied.chunks, s->chunks, (uint32_t)s->chunk_count);
-    if (result != NMO_OK) goto fail;
-
-    nmo_interfaceobjectmanager_destroy(d, NULL, NULL);
-    *d = copied;
-    return NMO_OK;
-
-fail:
-    nmo_interfaceobjectmanager_destroy(&copied, NULL, NULL);
-    return result;
+    nmo_interfaceobjectmanager_state_t *state = instance;
+    state->has_chunks_chunk = 1;
+    state->guid = NMO_GUID_NULL;
+    state->has_guid_chunk = 1;
 }
+
+static const nmo_object_state_member_t nmo_interfaceobjectmanager_members[] = {
+    NMO_STATE_VALUE(nmo_interfaceobjectmanager_state_t, chunk_count),
+    NMO_STATE_COUNTED_RECORDS(nmo_interfaceobjectmanager_state_t, chunks,
+                              chunk_count, nmo_interfaceobjectmanager_chunk_layout),
+    NMO_STATE_VALUE(nmo_interfaceobjectmanager_state_t, has_chunks_chunk),
+    NMO_STATE_VALUE(nmo_interfaceobjectmanager_state_t, guid),
+    NMO_STATE_VALUE(nmo_interfaceobjectmanager_state_t, has_guid_chunk)
+};
+
+static const nmo_object_state_layout_t nmo_interfaceobjectmanager_layout = {
+    .size = sizeof(nmo_interfaceobjectmanager_state_t),
+    .base_vtable = &nmo_object_vtable,
+    .base_size = sizeof(nmo_object_state_t),
+    .members = nmo_interfaceobjectmanager_members,
+    .member_count = sizeof(nmo_interfaceobjectmanager_members) /
+        sizeof(nmo_interfaceobjectmanager_members[0]),
+    .set_defaults = nmo_interfaceobjectmanager_set_defaults,
+    .validate = nmo_interfaceobjectmanager_validate,
+};
+
+NMO_DEFINE_OBJECT_LAYOUT_LIFECYCLE(interfaceobjectmanager, nmo_interfaceobjectmanager_layout)
+NMO_DEFINE_OBJECT_LAYOUT_COPY(interfaceobjectmanager, nmo_interfaceobjectmanager_layout)
 
 static nmo_status_t nmo_interfaceobjectmanager_validate(
     const void *instance,
