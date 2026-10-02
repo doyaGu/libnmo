@@ -59,23 +59,6 @@ static void nmo_scene_object_descs_set_lifecycle(nmo_array_t *descs)
 
 static void nmo_scene_dispose_state_arrays(nmo_scene_state_t *state);
 
-NMO_DEFINE_OBJECT_LIFECYCLE(
-    scene,
-    nmo_scene_state_t,
-    do {
-        nmo_status_t result = nmo_beobject_vtable.create(
-            &state->base, NULL, context);
-        if (result != NMO_OK) return result;
-        result = nmo_array_init(
-            &state->object_descs, sizeof(nmo_scene_object_desc_t), 0, NULL);
-        if (result != NMO_OK) {
-            nmo_scene_dispose_state_arrays(state);
-            return result;
-        }
-        nmo_scene_object_descs_set_lifecycle(&state->object_descs);
-    } while (0),
-    nmo_scene_dispose_state_arrays(state))
-
 static void nmo_scene_dispose_state_arrays(nmo_scene_state_t *state)
 {
     if (state == NULL) return;
@@ -118,6 +101,47 @@ static nmo_status_t nmo_scene_validate(
     const void *instance,
     const nmo_type_descriptor_t *type,
     void *context);
+
+static const nmo_object_state_member_t nmo_scene_object_desc_members[] = {
+    NMO_STATE_VALUE(nmo_scene_object_desc_t, ref),
+    NMO_STATE_VALUE(nmo_scene_object_desc_t, flags),
+    NMO_STATE_CHUNK(nmo_scene_object_desc_t, initial_value),
+    NMO_STATE_CHUNK(nmo_scene_object_desc_t, reserved)
+};
+
+static const nmo_object_state_layout_t nmo_scene_object_desc_layout = {
+    .size = sizeof(nmo_scene_object_desc_t),
+    .members = nmo_scene_object_desc_members,
+    .member_count = sizeof(nmo_scene_object_desc_members) /
+        sizeof(nmo_scene_object_desc_members[0]),
+};
+
+static const nmo_object_state_member_t nmo_scene_members[] = {
+    NMO_STATE_VALUE(nmo_scene_state_t, level),
+    NMO_STATE_RECORDS(nmo_scene_state_t, object_descs,
+                      nmo_scene_object_desc_layout),
+    NMO_STATE_VALUE(nmo_scene_state_t, environment_settings),
+    NMO_STATE_VALUE(nmo_scene_state_t, background_color),
+    NMO_STATE_VALUE(nmo_scene_state_t, ambient_light_color),
+    NMO_STATE_VALUE(nmo_scene_state_t, fog_mode),
+    NMO_STATE_VALUE(nmo_scene_state_t, fog_color),
+    NMO_STATE_VALUE(nmo_scene_state_t, fog_start),
+    NMO_STATE_VALUE(nmo_scene_state_t, fog_end),
+    NMO_STATE_VALUE(nmo_scene_state_t, fog_density),
+    NMO_STATE_VALUE(nmo_scene_state_t, background_texture),
+    NMO_STATE_VALUE(nmo_scene_state_t, starting_camera)
+};
+
+static const nmo_object_state_layout_t nmo_scene_layout = {
+    .size = sizeof(nmo_scene_state_t),
+    .base_vtable = &nmo_beobject_vtable,
+    .members = nmo_scene_members,
+    .member_count = sizeof(nmo_scene_members) / sizeof(nmo_scene_members[0]),
+    .validate = nmo_scene_validate,
+};
+
+NMO_DEFINE_OBJECT_LAYOUT_LIFECYCLE(scene, nmo_scene_layout)
+NMO_DEFINE_OBJECT_LAYOUT_COPY(scene, nmo_scene_layout)
 
 static nmo_status_t nmo_scene_read_new_data(
     nmo_scene_state_t *out_state,
@@ -575,82 +599,6 @@ static nmo_status_t nmo_scene_serialize_internal(
 }
 
 NMO_DEFINE_OBJECT_STAGED_SERIALIZE(nmo_scene)
-
-static nmo_status_t nmo_scene_copy(
-    const void *src,
-    void *dst,
-    const nmo_type_descriptor_t *type,
-    nmo_arena_t *arena)
-{
-    (void)type;
-    const nmo_scene_state_t *s = src;
-    nmo_scene_state_t *d = dst;
-    if (s == NULL || d == NULL || arena == NULL) {
-        return NMO_ERR_INVALID_ARGUMENT;
-    }
-    NMO_RETURN_IF_ERROR(nmo_scene_validate(s, NULL, NULL));
-
-    nmo_scene_state_t copied;
-    nmo_status_t result = nmo_scene_create(&copied, NULL, NULL);
-    if (result != NMO_OK) return result;
-    result = nmo_beobject_vtable.copy(
-        &s->base, &copied.base, NULL, arena);
-    if (result != NMO_OK) goto fail;
-
-    copied.level = s->level;
-    copied.environment_settings = s->environment_settings;
-    copied.background_color = s->background_color;
-    copied.ambient_light_color = s->ambient_light_color;
-    copied.fog_mode = s->fog_mode;
-    copied.fog_color = s->fog_color;
-    copied.fog_start = s->fog_start;
-    copied.fog_end = s->fog_end;
-    copied.fog_density = s->fog_density;
-    copied.background_texture = s->background_texture;
-    copied.starting_camera = s->starting_camera;
-
-    nmo_array_dispose(&copied.object_descs);
-    result = nmo_array_init(
-        &copied.object_descs, sizeof(nmo_scene_object_desc_t),
-        s->object_descs.count, &s->object_descs.allocator);
-    if (result != NMO_OK) goto fail;
-    nmo_scene_object_descs_set_lifecycle(&copied.object_descs);
-    nmo_scene_object_desc_t *dst_descs = NULL;
-    result = nmo_array_extend(
-        &copied.object_descs, s->object_descs.count, (void **)&dst_descs);
-    if (result != NMO_OK) goto fail;
-    const nmo_scene_object_desc_t *src_descs = NMO_ARRAY_DATA(
-        nmo_scene_object_desc_t, &s->object_descs);
-    for (size_t i = 0; i < s->object_descs.count; ++i) {
-        dst_descs[i].ref = src_descs[i].ref;
-        dst_descs[i].flags = src_descs[i].flags;
-        result = nmo_object_copy_chunk(
-            arena, &dst_descs[i].initial_value, src_descs[i].initial_value);
-        if (result != NMO_OK) goto fail;
-        result = nmo_object_copy_chunk(
-            arena, &dst_descs[i].reserved, src_descs[i].reserved);
-        if (result != NMO_OK) goto fail;
-    }
-
-#define NMO_SCENE_DETACH_SHARED_ARRAY(field) \
-    do { \
-        if (d->field.data == s->field.data) { \
-            memset(&d->field, 0, sizeof(d->field)); \
-        } \
-    } while (0)
-    NMO_SCENE_DETACH_SHARED_ARRAY(base.scripts);
-    NMO_SCENE_DETACH_SHARED_ARRAY(base.attributes);
-    NMO_SCENE_DETACH_SHARED_ARRAY(base.legacy_attributes);
-    NMO_SCENE_DETACH_SHARED_ARRAY(object_descs);
-#undef NMO_SCENE_DETACH_SHARED_ARRAY
-    nmo_scene_destroy(d, NULL, NULL);
-    *d = copied;
-    return NMO_OK;
-
-fail:
-    nmo_scene_destroy(&copied, NULL, NULL);
-    return result;
-}
 
 static nmo_status_t nmo_scene_validate(
     const void *instance,

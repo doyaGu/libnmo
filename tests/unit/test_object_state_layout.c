@@ -16,6 +16,7 @@
 #include "object/builtin/nmo_parameter_schemas.h"
 #include "object/builtin/nmo_parameterout_schemas.h"
 #include "object/builtin/nmo_place_schemas.h"
+#include "object/builtin/nmo_scene_schemas.h"
 #include "object/builtin/nmo_sound_schemas.h"
 #include "object/builtin/nmo_spritetext_schemas.h"
 #include "object/builtin/nmo_synchro_schemas.h"
@@ -370,6 +371,16 @@ TEST(object_state_layout, bodypart_joint_defaults_and_copy) {
     nmo_arena_destroy(arena);
 }
 
+static nmo_chunk_t *make_chunk(nmo_arena_t *arena, uint32_t word)
+{
+    nmo_chunk_t *chunk = nmo_chunk_create(arena);
+    if (chunk == NULL) return NULL;
+    nmo_chunk_start_write(chunk);
+    nmo_chunk_write_dword(chunk, word);
+    nmo_chunk_close(chunk);
+    return chunk;
+}
+
 TEST(object_state_layout, parameterout_destinations_copy_by_content) {
     nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
     ASSERT_NOT_NULL(arena);
@@ -399,6 +410,43 @@ TEST(object_state_layout, parameterout_destinations_copy_by_content) {
 
     nmo_parameterout_vtable.destroy(&source, NULL, NULL);
     nmo_parameterout_vtable.destroy(&copied, NULL, NULL);
+    nmo_arena_destroy(arena);
+}
+
+TEST(object_state_layout, scene_descriptors_copy_with_their_chunks) {
+    nmo_arena_t *arena = nmo_arena_create(NULL, 4096);
+    ASSERT_NOT_NULL(arena);
+    nmo_scene_state_t source;
+    nmo_scene_state_t copied;
+    ASSERT_EQ(NMO_OK, nmo_scene_vtable.create(&source, NULL, NULL));
+    ASSERT_EQ(NMO_OK, nmo_scene_vtable.create(&copied, NULL, NULL));
+    ASSERT_EQ(sizeof(nmo_scene_object_desc_t), source.object_descs.element_size);
+
+    const nmo_scene_object_desc_t desc = {
+        .ref = nmo_ref_from_raw(90),
+        .initial_value = make_chunk(arena, 0xA1u),
+        .reserved = NULL,
+        .flags = 0x18u,
+    };
+    ASSERT_NOT_NULL(desc.initial_value);
+    ASSERT_EQ(NMO_OK, nmo_array_append(&source.object_descs, &desc));
+    source.fog_end = 12.5f;
+    source.starting_camera = nmo_ref_from_raw(91);
+
+    ASSERT_EQ(NMO_OK, nmo_scene_vtable.copy(&source, &copied, NULL, arena));
+    ASSERT_EQ(1u, copied.object_descs.count);
+    const nmo_scene_object_desc_t *copy_desc =
+        NMO_ARRAY_DATA(nmo_scene_object_desc_t, &copied.object_descs);
+    ASSERT_EQ(90u, copy_desc->ref.raw_id);
+    ASSERT_EQ(0x18u, copy_desc->flags);
+    ASSERT_NOT_NULL(copy_desc->initial_value);
+    ASSERT_TRUE(copy_desc->initial_value != desc.initial_value);
+    ASSERT_NULL(copy_desc->reserved);
+    ASSERT_EQ(91u, copied.starting_camera.raw_id);
+    ASSERT_TRUE(copied.object_descs.data != source.object_descs.data);
+
+    nmo_scene_vtable.destroy(&source, NULL, NULL);
+    nmo_scene_vtable.destroy(&copied, NULL, NULL);
     nmo_arena_destroy(arena);
 }
 
@@ -517,5 +565,6 @@ TEST_MAIN_BEGIN()
     REGISTER_TEST(object_state_layout, parameter_payload_lanes_copy_by_content);
     REGISTER_TEST(object_state_layout, bodypart_joint_defaults_and_copy);
     REGISTER_TEST(object_state_layout, parameterout_destinations_copy_by_content);
+    REGISTER_TEST(object_state_layout, scene_descriptors_copy_with_their_chunks);
     REGISTER_TEST(object_state_layout, counted_and_record_members_of_both_widths);
 TEST_MAIN_END()
