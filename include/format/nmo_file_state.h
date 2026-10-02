@@ -1,7 +1,8 @@
 /**
  * @file nmo_file_state.h
  * @brief What a load records about the file: version, checksum, manager data,
- *        plugin dependencies, load statistics and plugin diagnostics
+ *        plugin dependencies, included files, load statistics and plugin
+ *        diagnostics
  *
  * Plain data shared by the session, which fills it while loading, and the
  * document API, which reports it (document/nmo_document_load.h).
@@ -11,6 +12,7 @@
 #define NMO_FILE_STATE_H
 
 #include "nmo_types.h"
+#include "core/nmo_arena_array.h"
 #include "core/nmo_guid.h"
 
 #include <stddef.h>
@@ -100,6 +102,23 @@ typedef struct nmo_session_plugin_diagnostics {
     size_t outdated_count;
     int extension_registry_available;
 } nmo_session_plugin_diagnostics_t;
+
+typedef struct nmo_included_file {
+    const char *name;
+    const void *data;
+    uint32_t size;
+    nmo_arena_array_t owner_ids;
+    uint32_t attributes;
+} nmo_included_file_t;
+
+#define NMO_INCLUDED_FILE_ATTR_BORROWED      0x00000001u
+#define NMO_INCLUDED_FILE_ATTR_METADATA_ONLY 0x00000002u
+
+typedef struct nmo_included_file_metadata {
+    const nmo_object_id_t *owner_ids;
+    uint32_t owner_count;
+    uint32_t attributes;
+} nmo_included_file_metadata_t;
 
 #ifdef __cplusplus
 }

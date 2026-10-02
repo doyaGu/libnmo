@@ -13,23 +13,6 @@ extern "C" {
 #define NMO_DOCUMENT_FILE_STATE_PUBLIC_HEADER_KIND NMO_PUBLIC_HEADER_KIND_SINGLE_TIER
 #define NMO_DOCUMENT_FILE_STATE_API_TIER NMO_API_TIER_ADVANCED_C
 
-typedef struct nmo_included_file {
-    const char *name;
-    const void *data;
-    uint32_t size;
-    nmo_arena_array_t owner_ids;
-    uint32_t attributes;
-} nmo_included_file_t;
-
-#define NMO_INCLUDED_FILE_ATTR_BORROWED      0x00000001u
-#define NMO_INCLUDED_FILE_ATTR_METADATA_ONLY 0x00000002u
-
-typedef struct nmo_included_file_metadata {
-    const nmo_object_id_t *owner_ids;
-    uint32_t owner_count;
-    uint32_t attributes;
-} nmo_included_file_metadata_t;
-
 NMO_API nmo_included_file_t *nmo_document_get_included_files(
     const nmo_document_t *document,
     uint32_t *out_count);

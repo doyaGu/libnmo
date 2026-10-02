@@ -4,6 +4,7 @@
 #include "document/nmo_document.h"
 #include "nmo_types.h"
 #include "core/nmo_error.h"
+#include "object/nmo_edit_flags.h"
 
 #include <stddef.h>
 
@@ -18,14 +19,6 @@ extern "C" {
 typedef struct nmo_context nmo_context_t;
 typedef struct nmo_workspace_edit nmo_workspace_edit_t;
 typedef struct nmo_workspace nmo_workspace_t;
-
-typedef enum nmo_workspace_edit_flags {
-    NMO_WORKSPACE_EDIT_OBJECT_STATE   = 1u << 0,
-    NMO_WORKSPACE_EDIT_REFERENCES     = 1u << 1,
-    NMO_WORKSPACE_EDIT_BEHAVIOR_GRAPH = 1u << 2,
-    NMO_WORKSPACE_EDIT_NAMES          = 1u << 3,
-    NMO_WORKSPACE_EDIT_RESOURCES      = 1u << 4
-} nmo_workspace_edit_flags_t;
 
 NMO_API nmo_status_t nmo_workspace_create(
     nmo_context_t *ctx,
