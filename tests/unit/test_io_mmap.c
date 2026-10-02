@@ -10,7 +10,7 @@
 #include <string.h>
 
 /* Test file paths */
-static char test_file_path[512];
+static const char *const test_file_path = NMO_TEST_SCRATCH_FILE("test_io_mmap.bin");
 static const char *test_data = "Hello, mmap! This is test data for memory-mapped IO.";
 static size_t test_data_len;
 
@@ -19,7 +19,6 @@ static size_t test_data_len;
  * ============================================================================ */
 
 static int create_test_file(void) {
-    snprintf(test_file_path, sizeof(test_file_path), "%s/mmap_test_file.bin", NMO_TEST_DATA_DIR);
     test_data_len = strlen(test_data);
     
     FILE *f = fopen(test_file_path, "wb");
