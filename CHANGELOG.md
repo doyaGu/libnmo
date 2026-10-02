@@ -538,6 +538,11 @@ the tests build each layout dword by dword.
   (`nmo_type_registry_add_field`, `nmo_type_registry_register_struct_string`), which
   `register_struct` and `finalize_struct` then read. Both clear the definition now. The corpus is not
   in CI, so this job runs the tests that need no corpus files.
+- Tests no longer write into the source tree. The framework creates a scratch directory in the build
+  tree (`NMO_TEST_SCRATCH_DIR`, `<build>/tests/scratch`, with `NMO_TEST_SCRATCH_FILE(name)`), and the
+  tests that wrote elsewhere use it: `test_io_mmap` wrote into `data/`, and `test_behavior_execute`,
+  `test_load_options` and `test_virtools_types`, which run with the source root as their working
+  directory, wrote there (`test_behavior_execute` left six `.cmo` files behind on every run).
 
 ### Added - Phase 8: Round-Trip Framework
 - DOM comparison API (`nmo_comparison.h`): diff two loaded sessions at the object
