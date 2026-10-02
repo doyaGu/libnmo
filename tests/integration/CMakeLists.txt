@@ -227,6 +227,10 @@ if(TARGET nmo_cli)
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_behavior_rewrite.c
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_behavior_search.c
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_behavior_interface.c
+        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_behavior_interface_comment.c
+        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_behavior_interface_layout.c
+        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_behavior_interface_link.c
+        ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_behavior_interface_show.c
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_behavior_link.c
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_patch.c
         ${PROJECT_SOURCE_DIR}/tools/commands/nmo_cmd_parameter.c
